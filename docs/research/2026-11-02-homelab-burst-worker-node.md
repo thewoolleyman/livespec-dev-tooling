@@ -10,6 +10,8 @@ Start with a single manually enabled worker and one ARC canary workload. A Hetzn
 
 **AWS does not change this.** EKS cannot act as a worker-only node joined to an existing non-EKS cluster: every EKS node registers with an EKS control plane billed per cluster-hour. The AWS equivalent of this recommendation is a plain EC2 k3s agent. A comparable x86 instance in `us-east-1` costs about **$88 burst / $251 retained on Spot, or $181 / $533 on-demand**, roughly 6–15× the CX53 (see [AWS comparison](#aws-comparison-eks-and-ec2)).
 
+**Expected relief is modest per node.** Measured against poweredge (72 Haswell threads, 377.8 GiB), one CX53 supplies about **11–24% of its CPU and 8.5% of its memory**, after adjusting for per-vCPU speed. A c7a.4xlarge supplies about 46% of its CPU. CPU, not memory, is the binding resource. See [expected load relief](#expected-load-relief-measured-against-poweredge).
+
 This is a **3–5 engineer-day integration estimate**, not an install-command estimate. Production autoscaling adds work. It has bounded migration rework: retain IaC, scoped identity, workload policy and telemetry, but replace Ubuntu/k3s bootstrap with Talos/Omni/KubeSpan when the successor substrate is ready. A worker attached to the home API server is burst capacity, **not independent backup during a home outage**.
 
 ## Evidence and limits
@@ -177,6 +179,46 @@ The cluster fee from the [EKS pricing page](https://aws.amazon.com/eks/pricing/)
 - **Spot interruptions.** The notice is a best-effort two minutes. The worker needs an interruption watcher, such as aws-node-termination-handler or an IMDS poller, to taint, cordon and drain. A killed ARC job fails its GitHub check and needs an explicit re-run, never a masked retry. Gates and factory runs stay off Spot, as option C already says. Prefer the instance types with low interruption bands and diversify across AZs. In `us-east-1` today, c7i.4xlarge sits in the >20% band and c7a.4xlarge in the 5–10% band.
 - **Governance.** The homelab AWS allowlist permits only t4g.small/medium and gp3 volumes up to 20 GiB, and denies ASGs. Any of these instances therefore needs a separately owned account, or an explicit policy decision. It is not a quiet use of the homelab account.
 - **Effort.** An on-demand EC2 worker keeps option A's **3–5 days**. Add about 0.5–1 day for the VPC, security group, instance profile and account or cost ownership, which Hetzner does not need beyond its Cloud project. Spot moves the estimate to option C's **8–14 days**. An EKS-based route is option D's 5–8 / 8–15 days plus EKS-specific IAM, VPC CNI and add-on work. Hybrid Nodes is a cluster migration, not a burst pilot.
+
+## Expected load relief, measured against poweredge
+
+Added at the maintainer's request: how much of poweredge's work each option could plausibly take, as a percentage of poweredge's CPU and memory.
+
+**The baseline, read live at about 23:50Z on 2026-11-02**, via `lscpu`, `free` and `k3s kubectl` on the host: poweredge is a dual **Xeon E5-2696 v3** (Haswell, 2014). It has 2 × 18 cores, which gives **72 hardware threads**. It also has **377.8 GiB** RAM, with 72 CPU and 377.8 GiB allocatable, and it advertises **32 churn slots**. At that moment its pods requested 29.25 CPU (40%) and 55.7 GiB memory (14%), and the 1-minute load average was **229 on 72 threads**. **CPU is the binding resource. Memory is not.** poweredge uses about a seventh of its RAM by request. The memory percentages below are therefore small but rarely the limit, and the CPU column is the one that predicts relief.
+
+**Per-vCPU speed.** A vCPU count alone misleads, because a cloud vCPU and a poweredge thread do different amounts of work. The adjustment uses [PassMark](https://www.cpubenchmark.net/) multithread ratings divided by thread count, read 2026-11-03:
+
+| CPU | Multithread rating | Ratings per thread | Relative to poweredge |
+|---|---:|---:|---:|
+| E5-2696 v3 (18 cores / 36 threads; poweredge) | 21,144 | 587 per thread | 1.00 |
+| Xeon Platinum 8488C (48 cores / 96 threads; c7i, m7i) | 88,667 | 924 per thread | **1.57** per vCPU, where each vCPU is a hyperthread |
+| EPYC 9R14 (96 cores / 192 threads; c7a, m7a) | 116,475 | 1,213 per core | **2.07** per vCPU. On 7th-generation AMD instances each vCPU is a full physical core |
+| EPYC 7763 (Milan, 64 cores / 128 threads) / EPYC 9R14 per thread | 84,004 / 116,475 | 656 / 607 per thread | **1.03–1.12**, used for a dedicated AMD hyperthread such as Hetzner CCX. Hetzner says only "AMD", so the model is unconfirmed |
+| Hetzner CX shared vCPU ("Intel/AMD", unspecified) | n/a | n/a | **0.5–1.1**, an assumption. Shared vCPUs carry no sustained-CPU promise, and contention lowers the floor |
+
+Single-thread ratings favour the modern parts by less: 2,037 for poweredge against 3,113 for the 8488C and 2,518 for Milan. That matters for serial build steps. PassMark is a generic benchmark, not a compile benchmark. These factors are **planning estimates for the pilot to replace with measured jobs per hour**, not measurements of this fleet's workloads. c7g (Graviton) is shown at its nominal count only, because arm64 is excluded until proven.
+
+| Option / candidate | vCPU / RAM | CPU vs poweredge, nominal count | CPU vs poweredge, speed-adjusted | Memory vs poweredge | Proportional share of poweredge's 32 churn slots | 4-CPU / 7.45 GiB factory sandboxes that fit |
+|---|---|---:|---:|---:|---:|---:|
+| poweredge (baseline) | 72 threads / 377.8 GiB | 100% | 100% | 100% | 32 | about 17 by CPU request |
+| **A: Hetzner CX43** | 8 shared / 16 GB | 11% | 6–12% | 4% | 2–4 | 1 |
+| **A: Hetzner CX53** (recommended pilot) | 16 shared / 32 GB | 22% | **11–24%** | 8.5% | 4–8 | at most 3 |
+| A: Hetzner CCX33 | 8 dedicated / 32 GB | 11% | 11–12% | 8.5% | about 4 | 1 |
+| A on AWS: m7i.2xlarge | 8 / 32 GiB | 11% | 17% | 8.5% | about 6 | 1 |
+| A on AWS: m7a.2xlarge | 8 / 32 GiB | 11% | 23% | 8.5% | about 7 | 1 |
+| A on AWS: c7i.4xlarge | 16 / 32 GiB | 22% | 35% | 8.5% | about 11 | at most 3 |
+| A on AWS: c7a.4xlarge | 16 / 32 GiB | 22% | **46%** | 8.5% | about 15 | at most 3 |
+| A on AWS: c7g.4xlarge (arm64) | 16 / 32 GiB | 22% | not estimated | 8.5% | n/a until multiarch | n/a |
+| **B: pool of N workers** | N × the node | N × row | N × row; for example, 4 × CX53 = 44–98%, at $142/month retained | N × row | N × row | N × row |
+| **C: Spot** | same rows as the AWS lines | same | same, **times the share of hours not lost to interruptions**, minus re-run work | same | same | none: factory and gates stay off Spot |
+| **D: separate cluster** | workers as above, plus a control plane | same as the worker rows | same as the worker rows. The control-plane node (for example a CX23) adds **0%** | same | relief applies only to repositories routed to it | as worker |
+
+How to read it:
+
+- **The proportional churn-slot column is not a cap.** It is poweredge's 32 slots scaled by the speed-adjusted CPU share. It is a planning ratio, and the [capacity guidance](../../.ai/ci-node-capacity-reads.md) forbids deriving a cap from vCPU counts. The pilot starts at one canary job and measures the real figure.
+- **These are upper bounds.** Effective relief is lower by cold-cache and image-warm time, by WAN latency to home caches and the API server, and, on Spot, by lost and re-run jobs. A worker also only relieves what can be scheduled on it. Factory sandboxes need 4 CPU each, so a 16-vCPU node holds at most three.
+- **Against the whole home cluster** the share is smaller. The three home nodes advertise 120 vCPU (72 + 32 + 16), and gmktec's Zen 5 threads are individually faster than poweredge's. A single CX53 is about 13% of that nominal count. A single c7a.4xlarge is the only one-node option that approaches half a poweredge.
+- **Price per unit of relief.** On the speed-adjusted midpoint, a retained CX53 costs about **$2/month per poweredge-percent**: $35.59 for about 17.5%. A retained c7a.4xlarge on Spot costs about **$6.30**: $289.85 for 46%. On-demand it costs about **$13.30**: $611.07 for 46%. For burst use, a CX53 costs about $0.80 and a c7a on Spot about $2.20. This ranking holds unless the pilot measures the CX53's shared vCPUs near the bottom of their range, which is the case the CCX33 or c7a fallback exists for.
 
 ## Alignment with the Talos plan
 
