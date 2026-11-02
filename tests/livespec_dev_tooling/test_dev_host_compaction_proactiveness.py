@@ -35,3 +35,14 @@ def test_dev_host_play_installs_and_verifies_the_proactive_compaction_setting() 
     assert "sysctl -n vm.compaction_proactiveness" in tasks
     assert "vm.compaction_proactiveness = 0" in dropin
     assert "== '0'" in tasks
+
+
+def test_drop_in_records_the_measurement_and_preserves_on_demand_compaction() -> None:
+    """The durable setting retains its narrowly-scoped operational rationale."""
+    dropin = (_ROLE / "files" / _DROPIN_NAME).read_text(encoding="utf-8")
+
+    assert "106%" in dropin
+    assert "proactive" in dropin.lower()
+    assert "kswapd" in dropin
+    assert "kcompactd at watermark pressure" in dropin
+    assert "direct compaction" in dropin
