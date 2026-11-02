@@ -610,3 +610,66 @@ def test_the_dev_host_play_installs_the_retention_script_and_its_daily_timer() -
         f"than waiting out a whole day first:\n{timer}"
     )
     assert "WantedBy=timers.target" in timer, f"the timer must be installable:\n{timer}"
+
+
+def _remove_fstrim_cron(*, tmp_path: Path, cron: Path) -> tuple[int, str]:
+    """Run the role's fstrim-cron task alone, against a scratch path, in a scratch play."""
+    play = tmp_path / "fstrim-cron.yml"
+    play.write_text(
+        "- hosts: localhost\n"
+        "  connection: local\n"
+        "  gather_facts: false\n"
+        "  tasks:\n"
+        "    - ansible.builtin.include_role:\n"
+        f"        name: {_ROLE_NAME}\n"
+        "        tasks_from: fstrim_cron\n",
+        encoding="utf-8",
+    )
+    done = subprocess.run(
+        [
+            "uvx",
+            "--from",
+            _ansible_core_pin(),
+            "ansible-playbook",
+            "-i",
+            "localhost,",
+            "-e",
+            f"dev_host_retention_retired_fstrim_cron={cron}",
+            "-e",
+            "ansible_become=false",
+            str(play),
+        ],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        timeout=_TIMEOUT_SECONDS,
+        check=False,
+        env=os.environ | {"ANSIBLE_ROLES_PATH": str(_ANSIBLE / "roles"), "ANSIBLE_NOCOWS": "1"},
+    )
+    return done.returncode, done.stdout + done.stderr
+
+
+def test_the_converge_removes_the_hourly_fstrim_cron(*, tmp_path: Path) -> None:
+    """A present hourly fstrim cron is gone after the converge, and a second converge is a no-op."""
+    cron = tmp_path / "cron.hourly" / "fstrim"
+    cron.parent.mkdir()
+    cron.write_text("#!/bin/sh\nfstrim /\n", encoding="utf-8")
+    cron.chmod(0o755)
+    returncode, output = _remove_fstrim_cron(tmp_path=tmp_path, cron=cron)
+    assert returncode == 0, output
+    assert not cron.exists(), output
+    returncode, output = _remove_fstrim_cron(tmp_path=tmp_path, cron=cron)
+    assert returncode == 0, output
+    assert "changed=0" in output, output
+
+
+def test_the_role_targets_the_hourly_cron_and_keeps_the_weekly_timer() -> None:
+    """The removal names the real cron path, and the weekly trim it relies on stays armed."""
+    defaults = _read(path=_DEFAULTS)
+    assert "dev_host_retention_retired_fstrim_cron: /etc/cron.hourly/fstrim" in defaults, defaults
+    assert "dev_host_retention_fstrim_timer: fstrim.timer" in defaults, defaults
+    tasks = _read(path=_TASKS)
+    assert "include_tasks: fstrim_cron.yml" in tasks, tasks
+    keep = tasks.split("- name: Keep the weekly fstrim timer enabled and started", maxsplit=1)
+    assert len(keep) == 2, f"the role must keep the weekly fstrim timer armed:\n{tasks}"
+    assert "enabled: true" in keep[1] and "state: started" in keep[1], keep[1]
