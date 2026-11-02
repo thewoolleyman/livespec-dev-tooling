@@ -58,6 +58,20 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.156.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.155.0...v1.156.0) (2026-11-02)
+
+
+### Features
+
+* delegate suite-green replay ([c5f23b7](https://github.com/thewoolleyman/livespec-dev-tooling/commit/c5f23b705c56172e5a459f101385a2e989ae5a88))
+* delegate suite-green replay ([3ae7953](https://github.com/thewoolleyman/livespec-dev-tooling/commit/3ae7953fb06ac76595e9b757f76074046bd97380))
+
+
+### Bug Fixes
+
+* **gate-runner:** select venues through the project environment ([8efedfc](https://github.com/thewoolleyman/livespec-dev-tooling/commit/8efedfc8e2345ddc667ec845eeb41f314f36f5c2))
+* **worktree-pack:** preserve legacy local gate verdicts ([2a32607](https://github.com/thewoolleyman/livespec-dev-tooling/commit/2a326075a65f3d0b1ac95b0ac50b0da3b22825df))
+
 ## [1.155.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.154.0...v1.155.0) (2026-11-02)
 
 
