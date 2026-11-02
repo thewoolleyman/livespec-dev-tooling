@@ -40,7 +40,7 @@
       - dev_host_retention_bulk_dump_cap_bytes | string | length > 0
       - dev_host_retention_capacity_check_bin | string | length > 0
       - dev_host_retention_capacity_check_state_dir | string | length > 0
-      - dev_host_retention_retired_fstrim_cron | string | length > 0
+      - dev_host_retention_retired_hourly_crons | length > 0
       - dev_host_retention_fstrim_timer | string | length > 0
     fail_msg: >-
       Every field of the dev host retention must carry a non-empty value; check
@@ -244,8 +244,8 @@
   become: true
   when: not ansible_check_mode or dev_host_retention_timer_unit.stat.exists
 
-- name: Keep the hourly fstrim cron absent
-  ansible.builtin.include_tasks: fstrim_cron.yml
+- name: Keep the retired hourly crons absent
+  ansible.builtin.include_tasks: retired_hourly_crons.yml
 
 - name: Keep the weekly fstrim timer enabled and started
   # The hourly cron is redundant only BECAUSE this weekly sweep and the online
