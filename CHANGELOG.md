@@ -58,6 +58,15 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.158.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.157.0...v1.158.0) (2026-11-02)
+
+
+### Features
+
+* **ansible:** the Fabro server instances and the k3s unit run at a host-declared CPU weight ([edf376b](https://github.com/thewoolleyman/livespec-dev-tooling/commit/edf376be4fee382654645ed02ffed6b83ece6f6e))
+* bound suite-green replay on progress ([63554c6](https://github.com/thewoolleyman/livespec-dev-tooling/commit/63554c64306fdf657f30b8b67b9b0895e8438cb7))
+* configure suite-green progress bound ([55f4c81](https://github.com/thewoolleyman/livespec-dev-tooling/commit/55f4c818c5cbf13ffeb2fe8f5603ce49d4bb25fa))
+
 ## [1.157.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.156.0...v1.157.0) (2026-11-02)
 
 
