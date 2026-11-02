@@ -194,6 +194,26 @@ Every tick reports, in this order:
 The coordinator never reorders, adds or drops a priority on its own initiative. It reports evidence for a change as a
 finding with a recommendation.
 
+**A priority leaves the list only when its plan is completely closed.** That means both:
+
+- the plan is archived: `plan/archive/<slug>/` is on master and its epic is closed;
+- its seat's session has ended and its herdr pane and tab are closed.
+
+Once both hold, the coordinator archives anything still outstanding through the owning seat, closes the seat, and drops
+the priority from the list. The drop is a `priorities-record` append that carries the maintainer's words. Until the
+maintainer acknowledges it, every tick report keeps a line under `FOR THE MAINTAINER`:
+
+```text
+COMPLETED: <plan-slug (epic-id)> archived <ref>, seat closed <UTC> — acknowledge to clear.
+```
+
+A plan whose children are closed but which still owes its proof, review or archive is NOT complete. It stays on the
+list with its true status word, and its seat stays open.
+
+Maintainer ruling 2026-11-02 ~06:4xZ, recorded verbatim on epic `livespec-dev-tooling-6tgd2z`. Measured that day:
+priority 1, dolt-connection-exhaustion, had all five carriers closed. It still owed dolt-server-xbilme's seven-day
+sizing window (deferred to 2026-11-08), then its plan proof and archive.
+
 ## 10. Fleet health, checked every tick
 
 - **Spend alerts.** Run `/usr/local/bin/with-livespec-env.sh -- python3 -I ~/token-spend-report/scripts/spend_staleness.py`.
