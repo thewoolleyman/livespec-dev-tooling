@@ -1050,15 +1050,43 @@ wait_for_stand_in_proxy() {
   deadline=$((SECONDS + deadline_seconds))
   while [ "${SECONDS}" -lt "${deadline}" ]; do
     remaining=$((deadline - SECONDS))
-    if timeout --signal=KILL "${remaining}s" bash -c '
-      exec 9<>"/dev/tcp/127.0.0.1/$1"
-      printf "HEAD / HTTP/1.0\\r\\n\\r\\n" >&9
-      IFS= read -r status <&9
-      case "${status}" in
-        HTTP/*) exit 0 ;;
-      esac
-      exit 1
-    ' bash "${port}" 2>/dev/null; then
+    # Bash's /dev/tcp open can block before the shell reaches the HTTP read.
+    # Keep one absolute deadline through connect, write, and response read;
+    # timeout is still the hard bound for interpreter start and any unexpected
+    # socket operation that does not honour its per-operation timeout.
+    if timeout --signal=KILL "${remaining}s" python3 - "${port}" "${remaining}" 2>/dev/null <<'PY'
+import socket
+import sys
+import time
+
+port = int(sys.argv[1])
+deadline = time.monotonic() + float(sys.argv[2])
+
+
+def remaining_seconds() -> float:
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        raise TimeoutError
+    return remaining
+
+
+try:
+    with socket.create_connection(("127.0.0.1", port), timeout=remaining_seconds()) as client:
+        client.settimeout(remaining_seconds())
+        client.sendall(b"HEAD / HTTP/1.0\\r\\n\\r\\n")
+        response = b""
+        while b"\\n" not in response:
+            client.settimeout(remaining_seconds())
+            chunk = client.recv(1)
+            if not chunk:
+                raise ConnectionError
+            response += chunk
+except (ConnectionError, OSError, TimeoutError):
+    raise SystemExit(1)
+
+raise SystemExit(0 if response.startswith(b"HTTP/") else 1)
+PY
+    then
       return 0
     fi
     sleep 0.1
