@@ -32,11 +32,9 @@ k3s_config_node_taint_drop_in: /etc/rancher/k3s/config.yaml.d/10-node-taint.yaml
 #
 # WHERE THE VALUES COME FROM, AND WHY PER-NODE. The profile's KUBELET_ARGS. A
 # node's reservations are measured against the OTHER workloads on that one
-# machine — hp-xubuntu's Docker sandbox slice and its two Fabro servers — so they
-# belong to no other node and cannot live in the shared file. The arithmetic and
-# the resulting pod-allocatable figures are recorded in
-# ../../docker_sandbox_slice/HOST_VARS.md, beside the slice limits they are
-# computed from.
+# machine, so they belong to no other node and cannot live in the shared file.
+# The arithmetic and the resulting pod-allocatable figures are recorded in
+# ../HOST_VARS.md, beside the role that renders them.
 k3s_config_kubelet_args_drop_in: /etc/rancher/k3s/config.yaml.d/20-kubelet-args.yaml
 # The node's data directory, from the profile's NODE_DATA_DIR, and the systemd
 # drop-in that refuses to start the agent before the volume holding it is

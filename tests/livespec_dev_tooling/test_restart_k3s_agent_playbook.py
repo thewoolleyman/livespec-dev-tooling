@@ -10,7 +10,9 @@ On hp-xubuntu that gap was measured: the role wrote
 `cpu=14500m,memory=25088Mi`) at 19:38 PDT 2026-10-13 while `k3s-agent` had been
 running since 19:19, so the live node kept reporting allocatable `cpu=16`,
 `memory=32176236Ki` instead of the few hundred millicores and ~3Gi the
-coexistence budget in `ansible/roles/docker_sandbox_slice/HOST_VARS.md` derives.
+coexistence budget of that time derived (the current budget is
+`ansible/roles/k3s_config/HOST_VARS.md`, in its hp-xubuntu factory-worker
+kubelet budget section).
 The only committed restart path was `ansible/reboot-ci-server.yml`, which reboots
 the SERVER; a hand `systemctl restart k3s-agent` over ssh is exactly what the
 Driver's `fleet_host_guard.py` refuses, and hp-xubuntu is the Fabro factory host,
