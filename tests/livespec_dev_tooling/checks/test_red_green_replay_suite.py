@@ -1,7 +1,7 @@
 """Mirror-paired test for `livespec_dev_tooling/checks/_red_green_replay_suite.py`.
 
-The helper carries the suite-green leg's worker-count argv, bounded
-timeout, process-group kill, and order-independent output checksum.
+The helper carries the suite-green leg's worker-count argv, its
+progress-bound, process-group kill, and order-independent output checksum.
 """
 
 from __future__ import annotations
@@ -111,14 +111,26 @@ def test_xdist_importable_matches_find_spec() -> None:
     assert mod.xdist_importable() is (importlib.util.find_spec("xdist") is not None)
 
 
-def test_timeout_default_and_override() -> None:
+def test_suite_bound_defaults_to_a_stall_window_without_a_total_ceiling() -> None:
+    """A slow suite may run indefinitely while it continues to print output."""
     mod = _load()
-    assert mod.DEFAULT_TIMEOUT_SECONDS == 2400
-    assert mod.suite_timeout_seconds(environ={}) == 2400
-    assert mod.suite_timeout_seconds(environ={"LIVESPEC_SUITE_GREEN_TIMEOUT_SECONDS": "90"}) == 90
+    assert hasattr(mod, "suite_bound")
+    bound = mod.suite_bound(environ={})
+    assert bound.stall_seconds == 900
+    assert bound.ceiling_seconds is None
+    assert mod.suite_bound(environ={"LIVESPEC_SUITE_GREEN_STALL_SECONDS": "90"}).stall_seconds == 90
+    assert (
+        mod.suite_bound(environ={"LIVESPEC_SUITE_GREEN_TIMEOUT_SECONDS": "4800"}).ceiling_seconds
+        == 4800
+    )
     for bad in ("", "abc", "0", "-5"):
-        environ = {"LIVESPEC_SUITE_GREEN_TIMEOUT_SECONDS": bad}
-        assert mod.suite_timeout_seconds(environ=environ) == 2400
+        environ = {
+            "LIVESPEC_SUITE_GREEN_STALL_SECONDS": bad,
+            "LIVESPEC_SUITE_GREEN_TIMEOUT_SECONDS": bad,
+        }
+        invalid = mod.suite_bound(environ=environ)
+        assert invalid.stall_seconds == 900
+        assert invalid.ceiling_seconds is None
 
 
 def test_checksum_ignores_line_order_and_duration() -> None:

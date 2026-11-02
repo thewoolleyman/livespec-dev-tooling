@@ -5,8 +5,8 @@ shared test support changed; every other case runs the full pytest suite
 inside the commit-msg hook. On a large suite a serial run takes tens of
 minutes, so this helper module parallelizes it under pytest-xdist (worker count from the
 `test_nprocs` env var when a justfile exports it, else the consumers'
-lane-aware rule), bounds it with a
-timeout whose expiry kills the whole process group (xdist workers
+lane-aware rule), bounds it on output progress with an optional total
+ceiling whose expiry kills the whole process group (xdist workers
 included), and checksums its output over a canonical form that does not
 depend on parallel line ordering or run duration.
 
@@ -42,20 +42,22 @@ from _red_green_replay_protocol import RED_GREEN_REPLAY_PROTOCOL  # noqa: E402
 from _red_green_replay_trailers import write_trailers  # noqa: E402
 
 __all__: list[str] = [
-    "DEFAULT_TIMEOUT_SECONDS",
+    "DEFAULT_STALL_SECONDS",
+    "SuiteBound",
     "SuiteRun",
     "_handle_suite_green_mode",
     "canonical_output_checksum",
     "has_shared_test_support",
     "run_suite",
     "stages_only_shared_test_support",
+    "suite_bound",
     "suite_pytest_argv",
-    "suite_timeout_seconds",
     "xdist_importable",
 ]
 
-DEFAULT_TIMEOUT_SECONDS: int = 2400
-_TIMEOUT_ENV: str = "LIVESPEC_SUITE_GREEN_TIMEOUT_SECONDS"
+DEFAULT_STALL_SECONDS: int = 900
+_STALL_ENV: str = "LIVESPEC_SUITE_GREEN_STALL_SECONDS"
+_CEILING_ENV: str = "LIVESPEC_SUITE_GREEN_TIMEOUT_SECONDS"
 _NPROCS_ENV: str = "test_nprocs"
 _LANE_ENV: str = "LIVESPEC_CI_LANE"
 _PARALLELISM_ENV: str = "LIVESPEC_TEST_PARALLELISM"
@@ -86,12 +88,31 @@ class SuiteRun:
     timed_out: bool
 
 
+@dataclass(frozen=True, kw_only=True)
+class SuiteBound:
+    """The suite's output-progress window and optional total runtime ceiling."""
+
+    stall_seconds: int
+    ceiling_seconds: int | None
+
+
+def _positive_seconds(*, raw: str) -> int | None:
+    """Parse a strictly positive whole-second bound, if one was supplied."""
+    text = raw.strip()
+    return int(text) if text.isdigit() and int(text) > 0 else None
+
+
+def suite_bound(*, environ: Mapping[str, str]) -> SuiteBound:
+    """Return the stall window and optional operator-selected total ceiling."""
+    return SuiteBound(
+        stall_seconds=_positive_seconds(raw=environ.get(_STALL_ENV, "")) or DEFAULT_STALL_SECONDS,
+        ceiling_seconds=_positive_seconds(raw=environ.get(_CEILING_ENV, "")),
+    )
+
+
 def suite_timeout_seconds(*, environ: Mapping[str, str]) -> int:
-    """Return the suite-green timeout; unset, non-numeric or <=0 means the default."""
-    raw = environ.get(_TIMEOUT_ENV, "").strip()
-    if raw.isdigit() and int(raw) > 0:
-        return int(raw)
-    return DEFAULT_TIMEOUT_SECONDS
+    """Return the legacy total ceiling while the runner transitions to `SuiteBound`."""
+    return suite_bound(environ=environ).ceiling_seconds or 2400
 
 
 def _lane_worker_count(*, environ: Mapping[str, str], visible_cpus: int) -> str:
