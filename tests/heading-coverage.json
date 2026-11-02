@@ -1488,6 +1488,22 @@
   },
   {
     "spec_root": "SPECIFICATION",
+    "spec_file": "non-functional-requirements.md",
+    "heading": "## Interactive fleet seat profile",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, running the committed seat launcher against the committed fleet seat profile: each defined class starts its session with the profile's model, effort and auto-compact threshold and with none of its own, a loop or monitor class carries a bounded lifetime, and an undefined class is refused before any session starts. livespec-dev-tooling-3fxp3u owns it.",
+    "work_item": "livespec-dev-tooling-3fxp3u"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: an interactive seat launched by class runs with the model and effort its profile class names",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, launching a seat of a profile class `monitor` through the committed seat launcher and asserting the session's argv carries that class's model, effort and auto-compact threshold, and that a class the profile does not define is refused naming it. livespec-dev-tooling-3fxp3u owns it.",
+    "work_item": "livespec-dev-tooling-3fxp3u"
+  },
+  {
+    "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a delegated pre-commit aggregate with no cluster verdict gates locally",
     "test": "TODO",

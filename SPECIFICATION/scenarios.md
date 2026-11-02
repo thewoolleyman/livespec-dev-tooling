@@ -1904,6 +1904,16 @@ And the event MUST carry `spend.price_fallback` = `true` and a `cost_note` namin
 
 And a response on `gpt-6.1-sol` itself MUST be sent at its list price with no fallback marker
 
+## Scenario: an interactive seat launched by class runs with the model and effort its profile class names
+
+Given the committed fleet seat profile defines a class `monitor` with model `claude-sonnet-5-5`, effort `medium` and an auto-compact threshold below the model's context ceiling
+
+When the committed seat launcher starts a seat of class `monitor`
+
+Then the session MUST be started with model `claude-sonnet-5-5`, effort `medium` and that auto-compact threshold, all taken from the profile
+
+And a launch naming a class the profile does not define MUST be refused before any session starts, naming the class
+
 ## Scenario: a pipefail script reports a match in a large input as a match
 
 Given a shell script under `ci-runner/` that runs with `set -o pipefail` and tests whether its input contains a pattern

@@ -289,6 +289,16 @@ Every trigger description MUST name the emitter path, the receiver path, the own
 
 **Corrections are retract and restate, once.** A sent event's cost MUST NOT be corrected by deleting or overwriting it. A correction MUST be written as a pair. The retraction (`spend.correction` = `retract`) MUST negate exactly the numeric fields the original event carried — its `cost_usd`, its token fields and its per-component USD fields — and MUST carry the original's consumer and account fields unchanged, only when the original carried them. The restatement (`spend.correction` = `restate`) carries the corrected price. Sums over any time window, model and consumer then come out correct. A correction MUST be applied at most once per response, and the emitter's state MUST record that it ran, so that a second run is refused rather than retracting events already sent at the corrected price.
 
+## Interactive fleet seat profile
+
+**Scope.** This section governs the interactive fleet seats this repository's tooling launches on the dev host: the long-lived Claude Code sessions that coordinate, monitor, drive a plan or run a loop on the maintainer's behalf, as distinct from factory runs, which §"Fabro factory host provisioning" and the factory's own configuration govern. It fixes where a seat's model, effort and context bound are set and how conformance is observed. It does not fix their values, which are the maintainer's call.
+
+**One committed profile.** This repository MUST carry ONE committed fleet seat profile that names, for each seat class it defines (at least one class for coordinator and monitor seats and one for implementing seats), the model, the reasoning effort and the context bound a seat of that class runs with. The context bound MUST state the auto-compact threshold, and it MUST be set below the model's context ceiling. For a loop or monitor class it MUST also state a bounded lifetime after which the seat writes a ledger-held handoff and is replaced by a fresh session. Changing a value for a class MUST be one edit to the profile.
+
+**Every launcher reads it.** Every committed launcher of an interactive fleet seat on the dev host MUST take the seat's model, effort and context bound from the profile, for the class named at launch, and MUST NOT carry a model, effort or context bound of its own. A launch that names a class the profile does not define MUST be refused before any session starts, naming the class.
+
+**Observable in llm-spend.** The model and effort a seat runs with MUST be the ones its class names in the profile. They appear as `spend.model` and `spend.effort` on that seat's responses in the `llm-spend` dataset, so conformance MUST be judged there and not from the launch command alone.
+
 ## Runner-pool node rebuild recipe
 
 **Scope.** This section states this repository's obligation, as the repository that provisions the fleet's self-hosted CI runner pool, under livespec `SPECIFICATION/non-functional-requirements.md` §"Self-hosted CI runner host requirements" clause "A host carrying fleet CI MUST be rebuildable from bare metal by a committed procedure". The property is that specification's; the recipe, its profiles, and its rehearsal obligation are this repository's.

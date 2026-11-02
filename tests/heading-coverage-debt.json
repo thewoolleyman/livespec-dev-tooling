@@ -65,6 +65,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "non-functional-requirements.md",
+    "heading": "## Interactive fleet seat profile",
+    "work_item": "livespec-dev-tooling-3fxp3u",
+    "first_seen": "2026-11-02"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "non-functional-requirements.md",
     "heading": "## LLM-spend telemetry pricing",
     "work_item": "livespec-dev-tooling-mnj7",
     "first_seen": "2026-11-01"
@@ -439,6 +446,13 @@
     "heading": "## Scenario: an explicit local gate-runner run is recorded as local",
     "work_item": "livespec-dev-tooling-qgv3tb",
     "first_seen": "2026-11-01"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: an interactive seat launched by class runs with the model and effort its profile class names",
+    "work_item": "livespec-dev-tooling-3fxp3u",
+    "first_seen": "2026-11-02"
   },
   {
     "spec_root": "SPECIFICATION",
