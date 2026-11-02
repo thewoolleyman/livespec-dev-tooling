@@ -2023,3 +2023,65 @@ Given the dev host's collector is converged from the merged configuration
 When 15 minutes pass
 
 Then the `livespec` environment's metrics dataset MUST hold `system.linux.memory.available` stamped with the dev host's `host.name` within that window
+
+## Scenario: a failing test the run did not touch is retried on its own and reported as a flake
+
+Given a repository that loads livespec-dev-tooling's flake-retry pytest plugin
+
+And a failing test whose closure, dotted module names and literal-named paths are all absent from the run's change set
+
+When that test fails on its first attempt and passes on a later one
+
+Then the plugin MUST re-run only that test, in the same session, at most 3 more times and 60 seconds apart, and the session MUST pass
+
+And the terminal summary MUST list the test under `FLAKE-RETRIED` with its attempts and outcome, `tmp/flake-retries/` MUST hold one JSON line for its node id, and under GitHub Actions a `::warning` annotation MUST name it
+
+## Scenario: an untouched test that fails every attempt still fails the session
+
+Given a repository that loads livespec-dev-tooling's flake-retry pytest plugin
+
+And a failing test the run's change set does not touch
+
+When that test fails on its first attempt and on each re-run
+
+Then the plugin MUST re-run it exactly 3 times, 60 seconds apart, and the session MUST fail
+
+And the `FLAKE-RETRIED` block MUST report the test's final outcome as failed
+
+## Scenario: a failing test the run touched fails at once with no retry
+
+Given a repository that loads livespec-dev-tooling's flake-retry pytest plugin
+
+And a change set that contains a module in a failing test's in-repository import closure, or a fixture file under a directory whose name appears as a string literal in that closure
+
+When that test fails
+
+Then the session MUST fail on that first failure, and the plugin MUST NOT re-run the test
+
+## Scenario: a change set that touches the build or the plugin disables every retry
+
+Given a repository that loads livespec-dev-tooling's flake-retry pytest plugin
+
+And a change set that contains `pyproject.toml`, `uv.lock`, `justfile`, a `conftest.py` or the plugin itself, or a change set that cannot be computed, or a failing test whose closure holds a module that cannot be parsed
+
+When any test in the session fails
+
+Then the plugin MUST NOT re-run any test in that session
+
+## Scenario: every retried failure files one root-fix work item
+
+Given `tmp/flake-retries/` holds records for two node ids, one of which already has an open root-fix work item
+
+When the host-side flake reader runs
+
+Then it MUST file exactly one root-fix work item, for the node id that had none
+
+## Scenario: the replay legs never retry the Red test and never accept a final failure
+
+Given a repository that loads livespec-dev-tooling's flake-retry pytest plugin
+
+When the red-green-replay Red leg runs its staged failing test
+
+Then the plugin MUST NOT re-run it
+
+And when a Green or suite-green replay leg's suite passes after a re-run, the leg MUST accept the summary, while a suite whose final outcome is a failure MUST still be refused

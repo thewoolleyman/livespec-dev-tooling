@@ -1678,5 +1678,53 @@
     "test": "TODO",
     "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, asserting the dev host's collector configuration routes its host-metrics pipeline to the livespec environment as well as agent-activity. livespec-dev-tooling-z6yf2a owns it.",
     "work_item": "livespec-dev-tooling-z6yf2a"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a failing test the run did not touch is retried on its own and reported as a flake",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this scenario, driving a pytest session that loads the flake-retry plugin against a fixture repository with a controlled change set; livespec-dev-tooling-crxcy4 owns it.",
+    "work_item": "livespec-dev-tooling-crxcy4"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: an untouched test that fails every attempt still fails the session",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this scenario, driving a pytest session that loads the flake-retry plugin against a fixture repository with a controlled change set; livespec-dev-tooling-crxcy4 owns it.",
+    "work_item": "livespec-dev-tooling-crxcy4"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a failing test the run touched fails at once with no retry",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this scenario, driving a pytest session that loads the flake-retry plugin against a fixture repository with a controlled change set; livespec-dev-tooling-crxcy4 owns it.",
+    "work_item": "livespec-dev-tooling-crxcy4"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a change set that touches the build or the plugin disables every retry",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this scenario, driving a pytest session that loads the flake-retry plugin against a fixture repository with a controlled change set; livespec-dev-tooling-crxcy4 owns it.",
+    "work_item": "livespec-dev-tooling-crxcy4"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: every retried failure files one root-fix work item",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this scenario, driving a pytest session that loads the flake-retry plugin against a fixture repository with a controlled change set; livespec-dev-tooling-crxcy4 owns it.",
+    "work_item": "livespec-dev-tooling-crxcy4"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: the replay legs never retry the Red test and never accept a final failure",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this scenario, driving a pytest session that loads the flake-retry plugin against a fixture repository with a controlled change set; livespec-dev-tooling-crxcy4 owns it.",
+    "work_item": "livespec-dev-tooling-crxcy4"
   }
 ]
