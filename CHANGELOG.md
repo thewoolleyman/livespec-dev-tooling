@@ -58,6 +58,15 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.146.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.146.0...v1.146.1) (2026-11-02)
+
+
+### Bug Fixes
+
+* configure uv cache pruning ([e8da07c](https://github.com/thewoolleyman/livespec-dev-tooling/commit/e8da07cfc139bb25c64265d8404e4d265b90ee54))
+* configure uv cache pruning ([edf8867](https://github.com/thewoolleyman/livespec-dev-tooling/commit/edf886751e6ed7a6fb8764b924ade26528122aaf))
+* configure uv cache pruning ([8ac37c7](https://github.com/thewoolleyman/livespec-dev-tooling/commit/8ac37c7e045f28c5b8bfcb88f30aba301d569f50))
+
 ## [1.146.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.145.1...v1.146.0) (2026-11-02)
 
 
