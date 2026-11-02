@@ -192,6 +192,9 @@ def test_run_suite_timeout_kills_the_whole_process_group(tmp_path: Path) -> None
     assert run.returncode is None
     assert spawned.exists(), "the marked grandchild never started, so the kill proved nothing"
     hang_guard = time.monotonic() + 30
-    while _live_processes_carrying(token) and time.monotonic() < hang_guard:
-        time.sleep(0.1)
+    # A hang guard, not a verdict: SIGKILL normally lands before the first
+    # re-read, so whether the body ever runs depends on scheduling, and per-file
+    # coverage must not depend on it.
+    while _live_processes_carrying(token) and time.monotonic() < hang_guard:  # pragma: no branch
+        time.sleep(0.1)  # pragma: no cover
     assert _live_processes_carrying(token) == []
