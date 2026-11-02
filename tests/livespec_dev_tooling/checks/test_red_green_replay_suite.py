@@ -1,17 +1,15 @@
 """Mirror-paired test for `livespec_dev_tooling/checks/_red_green_replay_suite.py`.
 
-The helper carries the suite-green leg's worker-count argv, bounded
-timeout, process-group kill, and order-independent output checksum.
+The helper carries the suite-green leg's worker-count argv, replay routing,
+and order-independent output checksum. Its progress-bounded runner has its
+own cohesive mirror-paired test module.
 """
 
 from __future__ import annotations
 
-import contextlib
 import importlib.util
 import inspect
 import sys
-import time
-import uuid
 from pathlib import Path
 
 __all__: list[str] = []
@@ -111,14 +109,9 @@ def test_xdist_importable_matches_find_spec() -> None:
     assert mod.xdist_importable() is (importlib.util.find_spec("xdist") is not None)
 
 
-def test_timeout_default_and_override() -> None:
+def test_progress_bound_runner_surface_is_reexported() -> None:
     mod = _load()
-    assert mod.DEFAULT_TIMEOUT_SECONDS == 2400
-    assert mod.suite_timeout_seconds(environ={}) == 2400
-    assert mod.suite_timeout_seconds(environ={"LIVESPEC_SUITE_GREEN_TIMEOUT_SECONDS": "90"}) == 90
-    for bad in ("", "abc", "0", "-5"):
-        environ = {"LIVESPEC_SUITE_GREEN_TIMEOUT_SECONDS": bad}
-        assert mod.suite_timeout_seconds(environ=environ) == 2400
+    assert mod.SuiteBound(stall_seconds=900, ceiling_seconds=None) == mod.suite_bound(environ={})
 
 
 def test_checksum_ignores_line_order_and_duration() -> None:
@@ -138,22 +131,6 @@ def test_checksum_differs_when_outcome_count_differs() -> None:
     one = mod.canonical_output_checksum(output="3 passed in 1.00s\n")
     other = mod.canonical_output_checksum(output="4 passed in 1.00s\n")
     assert one != other
-
-
-def test_run_suite_captures_output_and_returncode() -> None:
-    mod = _load()
-    run = mod.run_suite(
-        argv=[
-            sys.executable,
-            "-c",
-            "import sys; print('out'); print('err', file=sys.stderr); sys.exit(3)",
-        ],
-        timeout_seconds=30,
-    )
-    assert run.returncode == 3
-    assert run.timed_out is False
-    assert "out" in run.output
-    assert "err" in run.output
 
 
 def test_suite_green_without_a_gates_credential_runs_locally_and_says_so(
@@ -177,9 +154,9 @@ def test_suite_green_without_a_gates_credential_runs_locally_and_says_so(
     )
     monkeypatch.setattr(mod, "xdist_importable", lambda: False)
 
-    def local_suite(*, argv: list[str], timeout_seconds: int):
+    def local_suite(*, argv: list[str], bound):
         local_runs.append(argv)
-        assert timeout_seconds == 2400
+        assert bound == mod.SuiteBound(stall_seconds=900, ceiling_seconds=None)
         return mod.SuiteRun(returncode=0, output="1 passed in 0.01s\n", timed_out=False)
 
     monkeypatch.setattr(mod, "run_suite", local_suite)
@@ -234,9 +211,9 @@ def test_suite_green_uses_job_evidence_and_falls_back_when_it_has_no_verdict(
     monkeypatch.setattr(mod, "run_replay", lambda **_kwargs: next(verdicts))
     monkeypatch.setattr(mod, "xdist_importable", lambda: False)
 
-    def local_suite(*, argv: list[str], timeout_seconds: int):
+    def local_suite(*, argv: list[str], bound):
         local_runs.append(argv)
-        assert timeout_seconds == 2400
+        assert bound == mod.SuiteBound(stall_seconds=900, ceiling_seconds=None)
         return mod.SuiteRun(returncode=0, output="1 passed in 0.01s\n", timed_out=False)
 
     monkeypatch.setattr(mod, "run_suite", local_suite)
@@ -289,53 +266,3 @@ class _RecordingLog:
 
     def warning(self, event: str, **kwargs: object) -> None:
         self.records.append(("warning", event, kwargs))
-
-
-def _live_processes_carrying(token: str) -> list[str]:
-    """Pids of non-zombie processes whose command line carries `token`."""
-    live: list[str] = []
-    for proc in Path("/proc").glob("[0-9]*"):
-        # A process can exit between the glob and the reads; one that does is
-        # not live, which the defaults below already say, with no branch for
-        # per-file coverage to need luck to reach.
-        cmdline, state = "", "Z"
-        with contextlib.suppress(OSError):
-            cmdline = (proc / "cmdline").read_bytes().replace(b"\0", b" ").decode(errors="replace")
-            state = (proc / "stat").read_text().rsplit(")", 1)[1].split()[0]
-        live += [proc.name] * (token in cmdline and state != "Z")
-    return live
-
-
-def test_run_suite_timeout_kills_the_whole_process_group(tmp_path: Path) -> None:
-    """The timeout kills the suite's whole process group, judged by ORDERING.
-
-    The leader backgrounds a marked grandchild before it does anything else and
-    then waits forever, so the 2 s timeout always fires. The verdict never rests
-    on how fast an interpreter starts: the earlier form waited for a Python
-    child to write its pid file, and under host load the kill landed first and
-    the read raised FileNotFoundError (kubernetes-sandbox-backend's commit gate,
-    2026-11-02). The grandchild's FIRST action is a shell builtin that creates
-    `spawned`, so the test proves it existed before the kill without waiting
-    on any interpreter. It then asserts that no process carrying the marker
-    outlives the kill: the grandchild is in the group, and a run_suite that
-    killed only the leader would leave it running. Requiring `spawned` keeps
-    the no-survivor assertion from passing vacuously on a grandchild that
-    never started.
-    """
-    mod = _load()
-    token = f"livespec-killpg-probe-{uuid.uuid4().hex}"
-    spawned = tmp_path / "spawned"
-    leader = f"sh -c ': > {spawned}; sleep 300; :' {token} & sleep 300; :"
-
-    run = mod.run_suite(argv=["sh", "-c", leader], timeout_seconds=2)
-
-    assert run.timed_out is True
-    assert run.returncode is None
-    assert spawned.exists(), "the marked grandchild never started, so the kill proved nothing"
-    hang_guard = time.monotonic() + 30
-    # A hang guard, not a verdict: SIGKILL normally lands before the first
-    # re-read, so whether the body ever runs depends on scheduling, and per-file
-    # coverage must not depend on it.
-    while _live_processes_carrying(token) and time.monotonic() < hang_guard:  # pragma: no branch
-        time.sleep(0.1)  # pragma: no cover
-    assert _live_processes_carrying(token) == []
