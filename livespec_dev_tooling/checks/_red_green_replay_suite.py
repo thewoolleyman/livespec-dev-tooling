@@ -41,6 +41,8 @@ if str(_SCRIPT_DIR) not in sys.path:
 from _red_green_replay_protocol import RED_GREEN_REPLAY_PROTOCOL  # noqa: E402
 from _red_green_replay_trailers import write_trailers  # noqa: E402
 
+from livespec_dev_tooling.commit_replay_delegate import run_replay  # noqa: E402
+
 __all__: list[str] = [
     "DEFAULT_TIMEOUT_SECONDS",
     "SuiteRun",
@@ -258,7 +260,13 @@ def _handle_suite_green_mode(
         scope=scope,
         timeout_seconds=timeout_seconds,
     )
+    verdict = run_replay(repo_root=Path.cwd(), pytest_argv=["pytest", *argv[3:]])
     suite_result = run_suite(argv=argv, timeout_seconds=timeout_seconds)
+    log.info(
+        "commit-time replay gated locally",
+        check_id="red-green-replay-gated-locally",
+        reason=verdict.reason,
+    )
     if suite_result.timed_out:
         timeout_message = (
             f"suite-green-timeout: the suite-green leg exceeded {timeout_seconds}s; the pytest "
