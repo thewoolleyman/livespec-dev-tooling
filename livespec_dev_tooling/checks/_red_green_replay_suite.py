@@ -3,12 +3,11 @@
 The green-verified leg runs the staged tests for a test-only change, unless
 shared test support changed; every other case runs the full pytest suite
 inside the commit-msg hook. On a large suite a serial run takes tens of
-minutes, so this helper module parallelizes it under pytest-xdist (worker count from the
-`test_nprocs` env var when a justfile exports it, else the consumers'
-lane-aware rule), bounds it with a
-timeout whose expiry kills the whole process group (xdist workers
-included), and checksums its output over a canonical form that does not
-depend on parallel line ordering or run duration.
+minutes, so this helper module parallelizes it under pytest-xdist (worker count
+from the `test_nprocs` env var when a justfile exports it, else the consumers'
+lane-aware rule), kills a silent process group after its stall window, and
+checksums its output over a canonical form that does not depend on parallel line
+ordering or run duration.
 
 Split out of `_red_green_replay_modes.py` to keep that module under the
 file-LLOC ceiling. The leading underscore marks a private sibling.
@@ -21,11 +20,8 @@ import hashlib
 import importlib.util
 import os
 import re
-import signal
-import subprocess
 import sys
 from collections.abc import Mapping
-from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -39,12 +35,19 @@ if str(_SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(_SCRIPT_DIR))
 
 from _red_green_replay_protocol import RED_GREEN_REPLAY_PROTOCOL  # noqa: E402
+from _red_green_replay_suite_runner import (  # noqa: E402
+    SuiteBound,
+    SuiteProgress,
+    SuiteRun,
+    kill_reason,
+    run_suite,
+)
 from _red_green_replay_trailers import write_trailers  # noqa: E402
 
 __all__: list[str] = [
     "DEFAULT_STALL_SECONDS",
-    "DEFAULT_TIMEOUT_SECONDS",
     "SuiteBound",
+    "SuiteProgress",
     "SuiteRun",
     "_handle_suite_green_mode",
     "canonical_output_checksum",
@@ -54,18 +57,15 @@ __all__: list[str] = [
     "stages_only_shared_test_support",
     "suite_bound",
     "suite_pytest_argv",
-    "suite_timeout_seconds",
     "xdist_importable",
 ]
 
 DEFAULT_STALL_SECONDS: int = 900
-DEFAULT_TIMEOUT_SECONDS: int = 2400
 _STALL_ENV: str = "LIVESPEC_SUITE_GREEN_STALL_SECONDS"
 _TIMEOUT_ENV: str = "LIVESPEC_SUITE_GREEN_TIMEOUT_SECONDS"
 _NPROCS_ENV: str = "test_nprocs"
 _LANE_ENV: str = "LIVESPEC_CI_LANE"
 _PARALLELISM_ENV: str = "LIVESPEC_TEST_PARALLELISM"
-_KILL_GRACE_SECONDS: int = 30
 
 # Lines that vary with xdist scheduling or terminal progress, not with the
 # suite's verdict: worker chatter, `created: N/N workers`, `N workers [M items]`
@@ -83,23 +83,6 @@ _TRACEBACK_LINE = re.compile(r"^\S+\.py:\d+: .+$", re.MULTILINE)
 _FAILURE_DETAIL_LIMIT = 4000
 
 
-@dataclass(frozen=True, kw_only=True)
-class SuiteRun:
-    """Outcome of one bounded suite run; `returncode` is None on timeout."""
-
-    returncode: int | None
-    output: str
-    timed_out: bool
-
-
-@dataclass(frozen=True, kw_only=True)
-class SuiteBound:
-    """The progress stall window and optional wall-clock ceiling for a suite run."""
-
-    stall_seconds: int
-    ceiling_seconds: int | None
-
-
 def _positive_seconds(*, raw: str) -> int | None:
     """Return a valid positive duration, or None for an unset/invalid value."""
     text = raw.strip()
@@ -112,25 +95,6 @@ def suite_bound(*, environ: Mapping[str, str]) -> SuiteBound:
         stall_seconds=_positive_seconds(raw=environ.get(_STALL_ENV, "")) or DEFAULT_STALL_SECONDS,
         ceiling_seconds=_positive_seconds(raw=environ.get(_TIMEOUT_ENV, "")),
     )
-
-
-def kill_reason(
-    *, started: float, last_progress: float, now: float, bound: SuiteBound
-) -> str | None:
-    """Return the reached bound, giving an explicitly configured ceiling precedence."""
-    if bound.ceiling_seconds is not None and now - started >= bound.ceiling_seconds:
-        return "ceiling"
-    if now - last_progress >= bound.stall_seconds:
-        return "stalled"
-    return None
-
-
-def suite_timeout_seconds(*, environ: Mapping[str, str]) -> int:
-    """Return the suite-green timeout; unset, non-numeric or <=0 means the default."""
-    raw = environ.get(_TIMEOUT_ENV, "").strip()
-    if raw.isdigit() and int(raw) > 0:
-        return int(raw)
-    return DEFAULT_TIMEOUT_SECONDS
 
 
 def _lane_worker_count(*, environ: Mapping[str, str], visible_cpus: int) -> str:
@@ -229,24 +193,6 @@ def _suite_failure_detail(*, output: str) -> str:
     return "\n".join(_TRACEBACK_LINE.findall(output))[:_FAILURE_DETAIL_LIMIT]
 
 
-def run_suite(*, argv: list[str], timeout_seconds: int) -> SuiteRun:
-    """Run `argv` in its own process group; on timeout kill the whole group."""
-    with subprocess.Popen(
-        argv,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-        start_new_session=True,
-    ) as proc:
-        try:
-            stdout, stderr = proc.communicate(timeout=timeout_seconds)
-        except subprocess.TimeoutExpired:
-            os.killpg(proc.pid, signal.SIGKILL)
-            stdout, stderr = proc.communicate(timeout=_KILL_GRACE_SECONDS)
-            return SuiteRun(returncode=None, output=(stdout or "") + (stderr or ""), timed_out=True)
-        return SuiteRun(returncode=proc.returncode, output=stdout + stderr, timed_out=False)
-
-
 def _handle_suite_green_mode(
     *,
     msg_path: Path,
@@ -283,7 +229,7 @@ def _handle_suite_green_mode(
             check_id="red-green-replay-suite-green-serial-fallback",
             hint="Add pytest-xdist to this repo's dev dependencies to parallelize this leg.",
         )
-    timeout_seconds = suite_timeout_seconds(environ=os.environ)
+    bound = suite_bound(environ=os.environ)
     argv = suite_pytest_argv(
         environ=os.environ,
         test_paths=selected_tests,
@@ -295,23 +241,31 @@ def _handle_suite_green_mode(
         check_id="red-green-replay-suite-green-argv",
         argv=argv,
         scope=scope,
-        timeout_seconds=timeout_seconds,
+        stall_seconds=bound.stall_seconds,
+        ceiling_seconds=bound.ceiling_seconds,
     )
-    suite_result = run_suite(argv=argv, timeout_seconds=timeout_seconds)
+    suite_result = run_suite(argv=argv, bound=bound)
     if suite_result.timed_out:
         timeout_message = (
-            f"suite-green-timeout: the suite-green leg exceeded {timeout_seconds}s; the pytest "
-            "process group was killed (raise LIVESPEC_SUITE_GREEN_TIMEOUT_SECONDS to allow longer)"
+            f"suite-green-timeout: the suite-green leg was killed ({suite_result.kill_reason}): "
+            f"its stall window is {bound.stall_seconds}s with no new output ({_STALL_ENV}) and "
+            f"its total ceiling is {bound.ceiling_seconds or 'unset'} ({_TIMEOUT_ENV}); the pytest "
+            "process group was killed"
         )
         log.error(
             timeout_message,
             check_id="red-green-replay-suite-green-timeout",
             leg="suite-green",
-            timeout_seconds=timeout_seconds,
-            timeout_env_var="LIVESPEC_SUITE_GREEN_TIMEOUT_SECONDS",
+            kill_reason=suite_result.kill_reason,
+            stall_seconds=bound.stall_seconds,
+            ceiling_seconds=bound.ceiling_seconds,
+            stall_env_var=_STALL_ENV,
+            timeout_env_var=_TIMEOUT_ENV,
             hint=(
-                "The suite-green leg is bounded by LIVESPEC_SUITE_GREEN_TIMEOUT_SECONDS "
-                f"(default 2400, now {timeout_seconds}). Parallelism comes from `test_nprocs`."
+                "The suite-green leg is bounded by progress: it is killed only after "
+                f"{_STALL_ENV} seconds (default {DEFAULT_STALL_SECONDS}) without output, or past "
+                f"{_TIMEOUT_ENV} seconds in total when that opt-in ceiling is set. Parallelism "
+                "comes from `test_nprocs`."
             ),
             protocol=RED_GREEN_REPLAY_PROTOCOL,
         )

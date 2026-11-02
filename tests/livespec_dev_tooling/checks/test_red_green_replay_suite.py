@@ -173,12 +173,28 @@ def test_run_suite_captures_output_and_returncode() -> None:
             "-c",
             "import sys; print('out'); print('err', file=sys.stderr); sys.exit(3)",
         ],
-        timeout_seconds=30,
+        bound=mod.SuiteBound(stall_seconds=30, ceiling_seconds=None),
     )
     assert run.returncode == 3
     assert run.timed_out is False
     assert "out" in run.output
     assert "err" in run.output
+
+
+def test_output_progress_keeps_a_slow_suite_alive_past_its_stall_window() -> None:
+    """Every arriving output chunk restarts the stall clock, not the total run time."""
+    mod = _load()
+    run = mod.run_suite(
+        argv=[
+            sys.executable,
+            "-c",
+            "import time\nfor _ in range(4):\n print('.', flush=True); time.sleep(0.4)",
+        ],
+        bound=mod.SuiteBound(stall_seconds=1, ceiling_seconds=None),
+    )
+    assert run.returncode == 0
+    assert run.timed_out is False
+    assert run.output == ".\n.\n.\n.\n"
 
 
 def _live_processes_carrying(token: str) -> list[str]:
@@ -196,11 +212,11 @@ def _live_processes_carrying(token: str) -> list[str]:
     return live
 
 
-def test_run_suite_timeout_kills_the_whole_process_group(tmp_path: Path) -> None:
-    """The timeout kills the suite's whole process group, judged by ORDERING.
+def test_run_suite_stall_kills_the_whole_process_group(tmp_path: Path) -> None:
+    """A silent suite kills its whole process group, judged by ORDERING.
 
     The leader backgrounds a marked grandchild before it does anything else and
-    then waits forever, so the 2 s timeout always fires. The verdict never rests
+    then waits forever, so the 2 s stall window always expires. The verdict never rests
     on how fast an interpreter starts: the earlier form waited for a Python
     child to write its pid file, and under host load the kill landed first and
     the read raised FileNotFoundError (kubernetes-sandbox-backend's commit gate,
@@ -217,9 +233,13 @@ def test_run_suite_timeout_kills_the_whole_process_group(tmp_path: Path) -> None
     spawned = tmp_path / "spawned"
     leader = f"sh -c ': > {spawned}; sleep 300; :' {token} & sleep 300; :"
 
-    run = mod.run_suite(argv=["sh", "-c", leader], timeout_seconds=2)
+    run = mod.run_suite(
+        argv=["sh", "-c", leader],
+        bound=mod.SuiteBound(stall_seconds=2, ceiling_seconds=None),
+    )
 
     assert run.timed_out is True
+    assert run.kill_reason == "stalled"
     assert run.returncode is None
     assert spawned.exists(), "the marked grandchild never started, so the kill proved nothing"
     hang_guard = time.monotonic() + 30
