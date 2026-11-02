@@ -12,29 +12,21 @@
 
 # hp-xubuntu LEFT `sandbox_hosts` on 2026-11-02 (plan gmktec-factory-placement,
 # item livespec-dev-tooling-2yn4yb). Its `fabro_server` and `docker_sandbox_slice`
-# sections were removed. The sections below for roles that only
-# ansible/fabro-hosts.yml applies are DORMANT, because no play reaches hp with
-# them any more:
-#   container_reclaim, disk_guard, factory_kubeconfig, otel_receiver,
-#   sandbox_storage, sccache_redis, storage_reclaim.
-# The services those roles installed are still on the host, and nothing
-# converges them now. Their re-homing or retirement is tracked as follow-up
-# work. lan_ssh_fallback and otel_collector are still reached, through
-# lan-ssh-fallback.yml and ci-pool.yml.
+# sections were removed then. It is now in `former_sandbox_hosts`, and
+# ansible/former-sandbox-hosts.yml converges what the sandbox play left on it
+# (livespec-dev-tooling-j53hzi). That play keeps sandbox_storage and disk_guard,
+# and retires container_reclaim, otel_receiver, sccache_redis and storage_reclaim
+# through `<role>_state: absent`. factory_kubeconfig is no longer applied.
+# lan_ssh_fallback and otel_collector are reached through lan-ssh-fallback.yml
+# and ci-pool.yml.
 
 # --- container_reclaim ---
-container_reclaim_canonical_host: hp-xubuntu.perch-rudd.ts.net
-container_reclaim_system_hostname: hp-xubuntu
+# RETIRED on this host 2026-11-02 (livespec-dev-tooling-j53hzi), through
+# ansible/former-sandbox-hosts.yml.
+container_reclaim_state: absent
 
 # --- disk_guard ---
 disk_guard_threshold_gb: 40
-
-# --- factory_kubeconfig ---
-# The LOCAL account whose tailnet ssh key reaches the control-plane node, and
-# the account put in the credential's read group. cwoolley, NOT ubuntu: the
-# tailnet ACL rejects the ubuntu account on this host, so the fleet default
-# would fail the refresh as an ssh timeout nobody is watching.
-factory_kubeconfig_ssh_user: cwoolley
 
 # --- lan_ssh_fallback ---
 # OpenSSH binds the WIRED LAN address only (never the tailnet address); the
@@ -77,14 +69,10 @@ otel_collector_env_from_controller:
   - HONEYCOMB_INGEST_KEY_LIVESPEC
 
 # --- otel_receiver ---
-# The account and environment file of the hand-installed unit this role
-# replaced (measured 2026-10-17). The env file holds the ingest key and is
-# provisioned outside the role.
-otel_receiver_enabled: true
-otel_receiver_user: cwoolley
-otel_receiver_group: cwoolley
-otel_receiver_home: /home/cwoolley
-otel_receiver_env_file: /home/cwoolley/.fabro/storage/otel-receiver.env
+# RETIRED on this host 2026-11-02 (livespec-dev-tooling-j53hzi), through
+# ansible/former-sandbox-hosts.yml. Its environment file, inside the retained
+# read-only ~/.fabro, is left untouched.
+otel_receiver_state: absent
 
 # --- sandbox_storage ---
 # The former Steam disk (Fanxiang S101 4 TB SATA SSD, was NTFS "4TB SSD"),
@@ -112,21 +100,12 @@ sandbox_storage_reclaim_extra_paths:
   - /var/tmp/fpsync-docker.log
 
 # --- sccache_redis ---
-sccache_redis_bind_addr: 172.17.0.1
-sccache_redis_port: 6379
-sccache_redis_maxmemory: 4gb
-sccache_redis_container_memory: 5g
+# RETIRED on this host 2026-11-02 (livespec-dev-tooling-j53hzi), through
+# ansible/former-sandbox-hosts.yml. Nothing reads it: CI pods use the in-cluster
+# sccache-redis service.
+sccache_redis_state: absent
 
 # --- storage_reclaim ---
-storage_reclaim_canonical_host: hp-xubuntu.perch-rudd.ts.net
-storage_reclaim_system_hostname: hp-xubuntu
-storage_reclaim_service_user: cwoolley
-storage_reclaim_home: /home/cwoolley
-# storage_reclaim_worktree_root defaults to /home/cwoolley/.worktrees, which
-# DOES NOT EXIST on this host and is not expected to. hp is a dedicated factory
-# running sandboxed dispatches rather than interactive sessions, so the worktree
-# layer that dominates the vps has never appeared here. The reclaimer treats a
-# missing root as an empty inventory, and the role reports it rather than
-# failing, so the mechanism is armed and reporting if the layer ever appears.
-# storage_reclaim_checkout_roots defaults to /home/cwoolley/repos, which is
-# correct here: 3 clones, measured 2026-08-22.
+# RETIRED on this host 2026-11-02 (livespec-dev-tooling-j53hzi), through
+# ansible/former-sandbox-hosts.yml. This host carries no interactive worktrees.
+storage_reclaim_state: absent

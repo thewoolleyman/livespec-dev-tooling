@@ -46,7 +46,9 @@ _GATES_PLAY = _ANSIBLE / "gates-kubeconfig.yml"
 _ROLE = _ANSIBLE / "roles" / "factory_kubeconfig"
 _TASKS = _ROLE / "tasks" / "main.yml"
 _DEFAULTS = _ROLE / "defaults" / "main.yml"
-_HOST_VARS = _ANSIBLE / "inventory" / "host_vars" / "hp-xubuntu.yml"
+# gmktec-xubuntu, the host that runs today's Fabro servers. hp-xubuntu no longer
+# carries the role (livespec-dev-tooling-j53hzi).
+_HOST_VARS = _ANSIBLE / "inventory" / "host_vars" / "gmktec-xubuntu.yml"
 _GATES_TASKS = _ANSIBLE / "roles" / "gates_kubeconfig" / "tasks" / "main.yml"
 
 # The group the play must target. Every host that runs a Fabro server is
@@ -254,7 +256,7 @@ def test_the_role_reads_this_hosts_ssh_identity_from_its_host_vars() -> None:
 
     assert "factory_kubeconfig_ssh_user:" in defaults
     assert re.search(r"^factory_kubeconfig_ssh_user: \S+$", host_vars, re.MULTILINE), (
-        "ansible/inventory/host_vars/hp-xubuntu.yml must declare "
+        "ansible/inventory/host_vars/gmktec-xubuntu.yml must declare "
         "factory_kubeconfig_ssh_user: the fetching account varies by machine, and "
         "host_vars is the only place a machine's values are bound"
     )

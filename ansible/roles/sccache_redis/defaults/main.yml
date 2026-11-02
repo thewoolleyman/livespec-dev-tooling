@@ -32,3 +32,8 @@ sccache_redis_container_memory: 5g
 # install failed. 30 one-second attempts, as the shell installer's loop did.
 sccache_redis_ping_retries: 30
 sccache_redis_ping_delay: 1
+
+# `absent` retires the role on this host: tasks/retire.yml stops, disables and
+# removes the units the role installed, and the install half never runs
+# (livespec-dev-tooling-j53hzi). `present` is the install.
+sccache_redis_state: present

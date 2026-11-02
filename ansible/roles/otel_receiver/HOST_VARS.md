@@ -42,7 +42,16 @@ existing file is never overwritten and never read back.
 | `otel_receiver_orchestrator_version` | `v0.211.0` (role default) | the release the receiver runs |
 
 ```yaml
-# hp-xubuntu (measured 2026-10-17 from the hand-installed unit)
+# hp-xubuntu: RETIRED 2026-11-02 (livespec-dev-tooling-j53hzi), through
+# ansible/former-sandbox-hosts.yml. tasks/retire.yml stops, disables and removes
+# the units this role installed.
+otel_receiver_state: absent
+```
+
+The install values hp carried until then:
+
+```yaml
+# hp-xubuntu (until 2026-11-02) (measured 2026-10-17 from the hand-installed unit)
 otel_receiver_enabled: true
 otel_receiver_user: cwoolley
 otel_receiver_group: cwoolley

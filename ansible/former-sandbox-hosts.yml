@@ -1,0 +1,41 @@
+---
+# Hosts that left `sandbox_hosts` (ansible/fabro-hosts.yml) and still carry what
+# that play installed. Livespec-dev-tooling-j53hzi, plan gmktec-factory-placement.
+#
+# hp-xubuntu left `sandbox_hosts` on 2026-11-02 to become a Kubernetes factory
+# worker (#3103). Seven roles had reached it only through the sandbox play, so
+# nothing converged what they installed. This play gives each one an owner again:
+#
+# - KEPT, converged here exactly as before: `sandbox_storage` and `disk_guard`.
+#   sandbox_storage owns the second disk. k3s-agent's data directory lives on it
+#   (`--data-dir /srv/sandbox-storage/k3s`, with a drop-in that requires the
+#   mount, #3094), and so does the swap partition. A plain converge never formats
+#   and never stops docker or containerd, and nothing here restarts k3s-agent.
+#   disk_guard keeps the low-water journal and apt hygiene a host still wants.
+# - RETIRED through `<role>_state: absent` in the host's host_vars: sccache_redis,
+#   otel_receiver, storage_reclaim and container_reclaim. Each one's
+#   tasks/retire.yml stops, disables and removes the units the role installed, and
+#   never reaches its install half.
+# - factory_kubeconfig installed no unit. It is simply no longer applied, and its
+#   host_vars section is gone.
+#
+# Run a drift report BEFORE any apply, and read it for k3s-agent and the
+# /srv/sandbox-storage mount. Neither may change here.
+
+- name: Former Fabro sandbox host
+  hosts: former_sandbox_hosts
+  gather_facts: true
+  roles:
+    - role: sandbox_storage
+      tags: [sandbox_storage]
+      when: sandbox_storage_enabled | default(true) | bool
+    - role: disk_guard
+      tags: [disk_guard]
+    - role: sccache_redis
+      tags: [sccache_redis]
+    - role: otel_receiver
+      tags: [otel_receiver]
+    - role: storage_reclaim
+      tags: [storage_reclaim]
+    - role: container_reclaim
+      tags: [container_reclaim]
