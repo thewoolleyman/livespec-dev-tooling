@@ -58,7 +58,7 @@ with no installed runner is SKIPPED and says so.
 | `dev_host_retention_tmp_threshold_percent` | `75` | `/tmp` used-share alert threshold |
 | `dev_host_retention_bulk_dump_dir` | `/var/tmp/livespec-dumps` | dump directory, required to resolve onto the root filesystem and never tmpfs |
 | `dev_host_retention_bulk_dump_cap_bytes` | `21474836480` | 20 G (20 GiB) bulk-dump cap; the oldest files go first |
-| `dev_host_retention_retired_fstrim_cron` | `/etc/cron.hourly/fstrim` | the hand-installed hourly fstrim cron the role keeps ABSENT; see "Trim cadence" below |
+| `dev_host_retention_retired_hourly_crons` | `[/etc/cron.hourly/fstrim, /etc/cron.hourly/free]` | the hand-installed hourly crons the role keeps ABSENT; see "Retired hourly crons" below |
 | `dev_host_retention_fstrim_timer` | `fstrim.timer` | the weekly systemd trim timer the role keeps enabled and started |
 | `dev_host_retention_capacity_repeat_interval_seconds` | `3600` | one-hour minimum interval between repeated capacity notifications per filesystem |
 | `dev_host_retention_user` | `root` | the login the retention runs as; see below, it is the one value the dev host must set |
@@ -133,7 +133,7 @@ To run one retention by hand — the same thing the timer does:
 sudo -u ubuntu /usr/local/sbin/livespec-dev-host-retention
 ```
 
-## Trim cadence
+## Retired hourly crons
 
 `/` is trimmed two ways, and the role keeps it that way: the root filesystem's
 online `discard` mount option trims blocks as they are freed, and systemd's

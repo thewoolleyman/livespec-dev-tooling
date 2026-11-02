@@ -1,0 +1,27 @@
+---
+# Keep the hand-installed hourly crons off the dev host.
+#
+# Both were hand-installed on 2026-01-06, owned by no package and managed by
+# no role. The maintainer approved removing them ("ok remove it", 2026-11-02).
+#
+# /etc/cron.hourly/fstrim ran `fstrim /` every hour. Measured 2026-11-02 (plan
+# dev-host-disk-retention): one run took 10 min 57 s in uninterruptible IO wait
+# and discarded about 85 GiB, raising IO pressure from :17 to :45 past every
+# hour, about 2.4-3.2 TiB of discards a day on a 678 G disk. It was redundant:
+# `/` is mounted with `discard`, which trims freed blocks as they are freed,
+# and systemd's weekly `fstrim.timer` sweeps whatever that misses.
+#
+# /etc/cron.hourly/free ran `echo 1 > /proc/sys/vm/drop_caches` every hour.
+# Dropping the page cache on a busy build host throws away warm file data that
+# every running build and gate then re-reads from disk; the kernel already
+# reclaims page cache under memory pressure on its own.
+#
+# Kept as its own tasks file so the absence can be checked against scratch
+# paths without touching the host's cron directory.
+
+- name: Remove the retired hand-installed hourly crons
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop: "{{ dev_host_retention_retired_hourly_crons }}"
+  become: true
