@@ -29,6 +29,13 @@
   },
   {
     "spec_root": "SPECIFICATION",
+    "spec_file": "contracts.md",
+    "heading": "## Suite-green replay leg",
+    "work_item": "livespec-dev-tooling-z5fwwn",
+    "first_seen": "2026-11-02"
+  },
+  {
+    "spec_root": "SPECIFICATION",
     "spec_file": "non-functional-requirements.md",
     "heading": "## Docker engine install guard",
     "work_item": "livespec-dev-tooling-ubpufs",
@@ -89,6 +96,13 @@
     "heading": "## Scenario: a Docker engine install guard publish resumed after a kill during dpkg -i completes the trigger handler that install activated",
     "work_item": "livespec-dev-tooling-mrr7ye",
     "first_seen": "2026-10-17"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a behaviour-preserving commit runs the full suite, and an empty run is refused",
+    "work_item": "livespec-dev-tooling-z5fwwn",
+    "first_seen": "2026-11-02"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -212,6 +226,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: a long suite-green run that keeps printing output is not ended",
+    "work_item": "livespec-dev-tooling-t4rx4t",
+    "first_seen": "2026-11-02"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: a master red past the threshold with no revert in flight raises needs-attention",
     "work_item": "livespec-dev-tooling-4xrhck",
     "first_seen": "2026-10-22"
@@ -236,6 +257,13 @@
     "heading": "## Scenario: a red master whose re-run passes is classified a flake and never merges a revert",
     "work_item": "livespec-dev-tooling-zcp5vb",
     "first_seen": "2026-10-22"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a refused suite-green run names why each test failed",
+    "work_item": "livespec-dev-tooling-z5fwwn",
+    "first_seen": "2026-11-02"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -271,6 +299,27 @@
     "heading": "## Scenario: a stalled or contested fix-forward releases the held revert",
     "work_item": "livespec-dev-tooling-joqff6",
     "first_seen": "2026-10-22"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a suite-green leg reuses a passing full pre-commit aggregate on the same tree",
+    "work_item": "livespec-dev-tooling-z5fwwn",
+    "first_seen": "2026-11-02"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a suite-green leg runs the full suite when the pre-commit aggregate judged a different tree or ran partially",
+    "work_item": "livespec-dev-tooling-z5fwwn",
+    "first_seen": "2026-11-02"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a suite-green run that stops printing output for the stall window is ended",
+    "work_item": "livespec-dev-tooling-t4rx4t",
+    "first_seen": "2026-11-02"
   },
   {
     "spec_root": "SPECIFICATION",
