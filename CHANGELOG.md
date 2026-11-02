@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.146.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.145.1...v1.146.0) (2026-11-02)
+
+
+### Features
+
+* **ansible:** fabro_server keeps a retained parked instance read-only ([71b04f4](https://github.com/thewoolleyman/livespec-dev-tooling/commit/71b04f42cb7a1a3596761e8c366863ab5c0f1c9e))
+
 ## [1.145.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.145.0...v1.145.1) (2026-11-02)
 
 
