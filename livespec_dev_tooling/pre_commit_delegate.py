@@ -7,6 +7,10 @@ import sys
 from dataclasses import dataclass, replace
 from pathlib import Path
 
+from livespec_dev_tooling._gate_host_authority import (
+    host_authority_decision,
+    run_host_authority_members,
+)
 from livespec_dev_tooling.config import ConfigParseError, load_delegated_pre_commit
 from livespec_dev_tooling.gate_credential import gates_kubeconfig_readable
 from livespec_dev_tooling.gate_remote_delegate import gate_remote_request, resolve_renderer
@@ -125,13 +129,19 @@ def _run_remote(*, repo_root: Path, tree_hash: str) -> PreCommitVerdict:
             tree_hash=tree_hash,
         )
     if remote.state == GATE_PASSED:
+        joined = host_authority_decision(
+            verdict=remote,
+            ran=run_host_authority_members(
+                repo_root=repo_root, tree_hash=tree_hash, runner=default_gate_command_runner
+            ),
+        )
         return PreCommitVerdict(
             local=False,
-            reason=remote.detail,
-            job_name=remote.job_name,
+            reason=joined.detail,
+            job_name=joined.job_name,
             tree_hash=tree_hash,
-            exit_status=0,
-            output_checksum=remote.output_checksum,
+            exit_status=0 if joined.state == GATE_PASSED else 1,
+            output_checksum=joined.output_checksum,
         )
     if remote.state == GATE_FAILED:
         return PreCommitVerdict(
