@@ -66,7 +66,7 @@ fi
 
 # Gate 3: never cross a mount point under the root (a stray bind mount would
 # turn rm -rf into a write somewhere else).
-if findmnt -rn -o TARGET | grep -Fx -v "$STORAGE_ROOT" | grep -q "^${STORAGE_ROOT}/"; then
+if findmnt -rn -o TARGET | grep -Fx -v "$STORAGE_ROOT" | grep "^${STORAGE_ROOT}/" >/dev/null; then
   log "REFUSED: a mount point exists below ${STORAGE_ROOT}"
   findmnt -rn -o TARGET | grep "^${STORAGE_ROOT}/" >&2
   exit 1

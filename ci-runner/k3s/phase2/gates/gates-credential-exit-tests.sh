@@ -160,14 +160,14 @@ else
   fi
   forbidden_found=0
   for forbidden in delete deletecollection patch update escalate bind impersonate; do
-    if printf '%s\n' "${role_doc}" | grep -qE "\"${forbidden}\""; then
+    if printf '%s\n' "${role_doc}" | grep -E "\"${forbidden}\"" >/dev/null; then
       fail "Role grants the forbidden verb ${forbidden}"
       forbidden_found=1
     fi
   done
   [ "${forbidden_found}" -eq 0 ] &&
     pass "Role grants no delete/deletecollection/patch/update/escalate/bind/impersonate"
-  if printf '%s\n' "${role_doc}" | grep -qE '"\*"'; then
+  if printf '%s\n' "${role_doc}" | grep -E '"\*"' >/dev/null; then
     fail "Role carries a wildcard"
   else
     pass "Role carries no wildcard"
@@ -214,7 +214,7 @@ if [ "${secret_kinds}" != "1" ]; then
 elif [ "${sa_token_type}" != "1" ]; then
   fail "the one declared Secret is not a ServiceAccount token — a standing credential?"
 elif printf '%s\n' "${declared_yaml}" \
-     | grep -qiE 'github|ghs_|github_pat_|^[[:space:]]*(data|stringData):'; then
+     | grep -iE 'github|ghs_|github_pat_|^[[:space:]]*(data|stringData >/dev/null):'; then
   fail "the declared YAML carries credential material: $(printf '%s\n' "${declared_yaml}" | grep -niE 'github|ghs_|^[[:space:]]*(data|stringData):')"
 else
   pass "the only Secret is the ServiceAccount token; no GitHub credential is in source"

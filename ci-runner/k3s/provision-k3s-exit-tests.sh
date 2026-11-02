@@ -146,12 +146,12 @@ else
   no "server plan equals the historical ordered command sequence"
   diff <(printf '%s\n' "$EXPECTED_SERVER_PLAN") <(printf '%s\n' "$SERVER_PLAN") || true
 fi
-if printf '%s\n' "$REPLY_OUT" | grep -q '^role:     server$'; then
+if printf '%s\n' "$REPLY_OUT" | grep '^role:     server$' >/dev/null; then
   ok "server plan header states the role it read from the profile"
 else
   no "server plan header states the role it read from the profile"
 fi
-if printf '%s\n' "$SERVER_PLAN" | grep -q 'SKIP'; then
+if printf '%s\n' "$SERVER_PLAN" | grep 'SKIP' >/dev/null; then
   no "a server skips nothing"
 else
   ok "a server skips nothing"
@@ -180,7 +180,7 @@ for fragment in \
   "--node-taint node-role/ci=pending:NoSchedule" \
   "--node-label k3s-role=arc-runner-host"
 do
-  if printf '%s\n' "$AGENT_COMMAND" | grep -qF -- "$fragment"; then
+  if printf '%s\n' "$AGENT_COMMAND" | grep -F -- "$fragment" >/dev/null; then
     ok "the agent install command carries: ${fragment}"
   else
     no "the agent install command carries: ${fragment} (got: ${AGENT_COMMAND})"
@@ -189,13 +189,13 @@ done
 
 # The token is read AT RUN TIME out of the file k3s is pointed at; the command
 # never carries the token itself, and this tree never holds one.
-if printf '%s\n' "$AGENT_COMMAND" | grep -qF 'K10deadbeef'; then
+if printf '%s\n' "$AGENT_COMMAND" | grep -F 'K10deadbeef' >/dev/null; then
   no "the install command names the token FILE and never the token"
 else
   ok "the install command names the token FILE and never the token"
 fi
 
-if printf '%s\n' "$AGENT_PLAN" | grep -qF "RUN  [agent] 1. Install k3s v1.36.2+k3s1 AGENT joining https://192.168.1.200:6443"; then
+if printf '%s\n' "$AGENT_PLAN" | grep -F "RUN  [agent] 1. Install k3s v1.36.2+k3s1 AGENT joining https://192.168.1.200:6443" >/dev/null; then
   ok "the agent RUNs the pinned agent install, naming the cluster it joins"
 else
   no "the agent RUNs the pinned agent install, naming the cluster it joins"
@@ -208,12 +208,12 @@ for fragment in \
   "2b. Label this node as the cache-tier carrier" \
   "3. Make kubectl usable for the provisioning admin"
 do
-  if printf '%s\n' "$AGENT_PLAN" | grep -qF "SKIP [agent] ${fragment}"; then
+  if printf '%s\n' "$AGENT_PLAN" | grep -F "SKIP [agent] ${fragment}" >/dev/null; then
     ok "agent SKIPs: ${fragment}"
   else
     no "agent SKIPs: ${fragment}"
   fi
-  if printf '%s\n' "$AGENT_PLAN" | grep -qF "RUN  [agent] ${fragment}"; then
+  if printf '%s\n' "$AGENT_PLAN" | grep -F "RUN  [agent] ${fragment}" >/dev/null; then
     no "agent plan must not RUN: ${fragment}"
   else
     ok "agent plan does not RUN: ${fragment}"
@@ -247,7 +247,7 @@ AUTO_IP_PROFILE="${TMPROOT}/agent-auto-ip.env"
 agent_profile "$AUTO_IP_PROFILE" 's#^NODE_ADDRESS=.*#NODE_ADDRESS=auto#' \
   's#^NODE_NETWORK_INTERFACE=.*#NODE_NETWORK_INTERFACE=auto#'
 run_plan --dry-run "$AUTO_IP_PROFILE"
-if [ "$REPLY_RC" -eq 0 ] && ! printf '%s\n' "$REPLY_OUT" | grep -qF -- '--node-ip'; then
+if [ "$REPLY_RC" -eq 0 ] && ! printf '%s\n' "$REPLY_OUT" | grep -F -- '--node-ip' >/dev/null; then
   ok "NODE_ADDRESS=auto pins no --node-ip"
 else
   no "NODE_ADDRESS=auto pins no --node-ip (rc=${REPLY_RC})"
@@ -258,7 +258,7 @@ agent_profile "$TWO_TAINTS_PROFILE" \
   's#^NODE_TAINTS=.*#NODE_TAINTS=node-role/ci=pending:NoSchedule tier=none:NoExecute#'
 run_plan --dry-run "$TWO_TAINTS_PROFILE"
 if [ "$REPLY_RC" -eq 0 ] \
-  && printf '%s\n' "$REPLY_OUT" | grep -qF -- '--node-taint node-role/ci=pending:NoSchedule --node-taint tier=none:NoExecute'; then
+  && printf '%s\n' "$REPLY_OUT" | grep -F -- '--node-taint node-role/ci=pending:NoSchedule --node-taint tier=none:NoExecute' >/dev/null; then
   ok "every NODE_TAINTS record becomes its own --node-taint"
 else
   no "every NODE_TAINTS record becomes its own --node-taint (rc=${REPLY_RC})"
@@ -274,7 +274,7 @@ if [ -s "$TRIPWIRE" ]; then
 else
   ok "the dry runs executed no host-mutating command"
 fi
-if printf '%s\n' "$AGENT_OUT" | grep -q 'NOTHING was executed'; then
+if printf '%s\n' "$AGENT_OUT" | grep 'NOTHING was executed' >/dev/null; then
   ok "the dry run says so in its own output"
 else
   no "the dry run says so in its own output"
@@ -338,7 +338,7 @@ refuses "a missing profile is refused, naming the path" \
   "profile not found" "${TMPROOT}/does-not-exist.env"
 
 run_plan --dry-run
-if [ "$REPLY_RC" -ne 0 ] && printf '%s\n' "$REPLY_OUT" | grep -q 'no profile given'; then
+if [ "$REPLY_RC" -ne 0 ] && printf '%s\n' "$REPLY_OUT" | grep 'no profile given' >/dev/null; then
   ok "no profile at all is refused with the usage line"
 else
   no "no profile at all is refused with the usage line"
@@ -400,7 +400,7 @@ fi
 # reads names which machine it is for.
 for header in 'node:     gmktec-xubuntu' 'role:     agent' \
               'join:     https://192.168.1.200:6443'; do
-  if printf '%s\n' "$GMKTEC_OUT" | grep -qxF "$header"; then
+  if printf '%s\n' "$GMKTEC_OUT" | grep -xF "$header" >/dev/null; then
     ok "E3  the plan header states: ${header}"
   else
     no "E3  the plan header states: ${header}"
@@ -420,7 +420,7 @@ for fragment in \
   "--node-ip 192.168.1.156" \
   "--node-label k3s-role=arc-runner-host"
 do
-  if printf '%s\n' "$GMKTEC_COMMAND" | grep -qF -- "$fragment"; then
+  if printf '%s\n' "$GMKTEC_COMMAND" | grep -F -- "$fragment" >/dev/null; then
     ok "E4  the gmktec agent install line carries: ${fragment}"
   else
     no "E4  the gmktec agent install line carries: ${fragment} (got: ${GMKTEC_COMMAND})"
@@ -429,7 +429,7 @@ done
 
 # R5 opened this node, so its NODE_TAINTS is empty and the install line carries
 # no --node-taint at all — the taint that kept it closed is gone.
-if printf '%s\n' "$GMKTEC_COMMAND" | grep -qF -- '--node-taint'; then
+if printf '%s\n' "$GMKTEC_COMMAND" | grep -F -- '--node-taint' >/dev/null; then
   no "E4b  the opened gmktec profile emits NO --node-taint (got: ${GMKTEC_COMMAND})"
 else
   ok "E4b  the opened gmktec profile emits NO --node-taint"
@@ -437,7 +437,7 @@ fi
 
 # `--node-ip` is the bare address, never the /24 the profile states: the CIDR is
 # what netplan wants and what k3s would reject.
-if printf '%s\n' "$GMKTEC_COMMAND" | grep -qF -- '192.168.1.156/24'; then
+if printf '%s\n' "$GMKTEC_COMMAND" | grep -F -- '192.168.1.156/24' >/dev/null; then
   no "E5  the install line pins the bare address, not the netplan CIDR"
 else
   ok "E5  the install line pins the bare address, not the netplan CIDR"
@@ -506,7 +506,7 @@ fi
 
 for header in 'node:     hp-xubuntu' 'role:     agent' \
               'join:     https://192.168.1.200:6443'; do
-  if printf '%s\n' "$HP_OUT" | grep -qxF "$header"; then
+  if printf '%s\n' "$HP_OUT" | grep -xF "$header" >/dev/null; then
     ok "F3  the plan header states: ${header}"
   else
     no "F3  the plan header states: ${header}"
@@ -526,20 +526,20 @@ for fragment in \
   "--node-label k3s-role=arc-runner-host" \
   "--data-dir /srv/sandbox-storage/k3s"
 do
-  if printf '%s\n' "$HP_COMMAND" | grep -qF -- "$fragment"; then
+  if printf '%s\n' "$HP_COMMAND" | grep -F -- "$fragment" >/dev/null; then
     ok "F4  the hp agent install line carries: ${fragment}"
   else
     no "F4  the hp agent install line carries: ${fragment} (got: ${HP_COMMAND})"
   fi
 done
 
-if printf '%s\n' "$HP_COMMAND" | grep -qF -- '--node-taint'; then
+if printf '%s\n' "$HP_COMMAND" | grep -F -- '--node-taint' >/dev/null; then
   no "F4b the runner-only hp profile emits NO --node-taint (got: ${HP_COMMAND})"
 else
   ok "F4b the runner-only hp profile emits NO --node-taint"
 fi
 
-if printf '%s\n' "$HP_COMMAND" | grep -qF -- '192.168.1.4/24'; then
+if printf '%s\n' "$HP_COMMAND" | grep -F -- '192.168.1.4/24' >/dev/null; then
   no "F5  the install line pins the bare address, not the netplan CIDR"
 else
   ok "F5  the install line pins the bare address, not the netplan CIDR"

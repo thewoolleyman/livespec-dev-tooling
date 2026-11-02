@@ -149,7 +149,7 @@ diagnose_host_state_divergence() {
         echo ":: pre-push: host-state divergence check skipped: unable to determine a green CI run"
         return
     fi
-    green_run="$(printf '%s\n' "$green_run" | sed -n '1p')"
+    green_run="$(printf '%s\n' "$green_run" | sed -n 1p)"
     if [ -z "$green_run" ]; then
         echo ":: pre-push: host-state divergence check skipped: no successful CI workflow run among the last 20 master runs"
         return

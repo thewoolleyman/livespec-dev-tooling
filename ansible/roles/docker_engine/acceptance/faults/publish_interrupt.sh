@@ -20,19 +20,19 @@ until vm $I 'pgrep -f "^dpkg -i" >/dev/null' 2>/dev/null || ! kill -0 $CPID 2>/d
 RUN=$(latest_run $I)
 [ -n "$RUN" ] && kill -0 $CPID 2>/dev/null || { echo "######## VOID: no guard run reached dpkg -i (see $L.converge.out); not a verdict"; exit 3; }
 if [ "${FAULTS_KILL_ON:-dpkg}" = trigger ]; then
-  vm $I "sudo bash -c 'for n in \$(seq 1 2400); do pgrep -x mandb >/dev/null && break; pgrep -f \"^dpkg -i\" >/dev/null || { echo no-trigger; exit 0; }; sleep 0.05; done; pgrep -x mandb >/dev/null || { echo no-trigger; exit 0; }; u=\$(systemctl list-units --plain --no-legend \"docker-engine-guard-publish-*\" | awk \"{print \\\$1}\" | head -1); echo killing \$u during the man-db trigger; systemctl kill -s KILL \$u; pkill -KILL -f \"^dpkg -i\"; pkill -KILL -x mandb; true'" | tee $L.kill.out
+  vm $I "sudo bash -c 'for n in \$(seq 1 2400); do pgrep -x mandb >/dev/null && break; pgrep -f \"^dpkg -i\" >/dev/null || { echo no-trigger; exit 0; }; sleep 0.05; done; pgrep -x mandb >/dev/null || { echo no-trigger; exit 0; }; u=\$(systemctl list-units --plain --no-legend \"docker-engine-guard-publish-*\" | awk \"{print \\\$1}\" | sed -n 1p); echo killing \$u during the man-db trigger; systemctl kill -s KILL \$u; pkill -KILL -f \"^dpkg -i\"; pkill -KILL -x mandb; true'" | tee $L.kill.out
   grep -q no-trigger $L.kill.out && { kill -KILL -- -$CPID 2>/dev/null; echo "######## VOID: dpkg -i ended before man-db's trigger ran; not a verdict"; exit 3; }
 else
-vm $I "sudo bash -c 'u=\$(systemctl list-units --plain --no-legend \"docker-engine-guard-publish-*\" | awk \"{print \\\$1}\" | head -1); echo killing \$u during dpkg; systemctl kill -s KILL \$u; pkill -KILL -f \"^dpkg -i\"; true'"
+vm $I "sudo bash -c 'u=\$(systemctl list-units --plain --no-legend \"docker-engine-guard-publish-*\" | awk \"{print \\\$1}\" | sed -n 1p); echo killing \$u during dpkg; systemctl kill -s KILL \$u; pkill -KILL -f \"^dpkg -i\"; true'"
 fi
 kill -KILL -- -$CPID 2>/dev/null
 sleep 5
-echo "######## run=$RUN phase=$(phase_of $I); dpkg --audit:"; vm $I 'sudo dpkg --audit | head -5'
+echo "######## run=$RUN phase=$(phase_of $I); dpkg --audit:"; vm $I 'sudo dpkg --audit | sed -n 1,5p'
 echo "######## package states after the kill:"; vm $I "dpkg-query -W -f='\${Package} \${Status}\\n' man-db runc containerd docker.io"
 if [ "$HOW" = recover ]; then
   echo "######## next controller (expect refusal)"; converge $I $L.second.log -e docker_engine_window_seconds=$W
   echo "######## recover"; converge $I $L.recover.log -e docker_engine_window_seconds=$W -e docker_engine_recover=$RUN
-  vm $I "sudo bash -c 'echo phase=\$(cat /var/lib/docker-engine-guard/runs/$RUN/phase); dpkg --audit | head -3; cat /var/lib/docker-engine-guard/confirmed 2>/dev/null || echo no-marker'"
+  vm $I "sudo bash -c 'echo phase=\$(cat /var/lib/docker-engine-guard/runs/$RUN/phase); dpkg --audit | sed -n 1,3p; cat /var/lib/docker-engine-guard/confirmed 2>/dev/null || echo no-marker'"
 else
   echo "######## roll back from publishing"; guard_op $I rollback "$RUN"
   rolled_back_check $I

@@ -19,7 +19,7 @@ until [ "$(phase_of $I)" = observing ] || ! kill -0 $CPID 2>/dev/null; do sleep 
 RUN=$(latest_run $I); t0=$SECONDS; echo "######## P-02 run=$RUN observing at $(date -u +%T); flipping FORWARD at +${FLIP}s (${LEAD}s before the last sample)"
 sleep "$FLIP"; vm $I 'sudo iptables -P FORWARD DROP'; echo "FORWARD -> DROP at $(date -u +%T) (+$((SECONDS - t0))s)"
 wait $CPID; tail -3 $L.converge.out | cut -c1-250
-if vm $I "sudo journalctl -u docker-engine-guard-observe.service --since=-$((SECONDS - t0 + 60))s --no-pager -o cat | grep -q 'observe proceed'"; then
+if vm $I "sudo journalctl -u docker-engine-guard-observe.service --since=-$((SECONDS - t0 + 60))s --no-pager -o cat | grep 'observe proceed' >/dev/null"; then
   echo "######## P-02 AIM-MISS: the observer passed every sample, so the flip landed after its last sample; not a verdict"; exit 3; fi
 t1=$SECONDS; until case "$(phase_of $I)" in rolled-back|rollback-partial|confirmed) true;; *) false;; esac || [ $((SECONDS - t1)) -gt 1200 ]; do sleep 3; done
 echo "######## P-02 phase=$(phase_of $I) $((SECONDS - t0))s after observing began"

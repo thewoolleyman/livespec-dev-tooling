@@ -103,7 +103,7 @@ order_ok() {
   local out="$1"; shift
   local prev=0 pat idx
   for pat in "$@"; do
-    idx="$(printf '%s\n' "$out" | grep -nF -- "$pat" | head -1 | cut -d: -f1)"
+    idx="$(printf '%s\n' "$out" | grep -nF -- "$pat" | sed -n 1p | cut -d: -f1)"
     if [ -z "$idx" ]; then
       printf '        missing line: %s\n' "$pat"
       return 1
@@ -152,15 +152,15 @@ else
   no "A2  mount, debootstrap, fstab, chroot install, initramfs, bootloader — in that order"
 fi
 
-if printf '%s' "$POWEREDGE_OUT" | grep -qF 'chroot /mnt/target efibootmgr --create --disk=/dev/sda --part=1 --label=ubuntu --loader=\EFI\ubuntu\shimx64.efi'; then
+if printf '%s' "$POWEREDGE_OUT" | grep -F 'chroot /mnt/target efibootmgr --create --disk=/dev/sda --part=1 --label=ubuntu --loader=\EFI\ubuntu\shimx64.efi' >/dev/null; then
   ok "A3  the firmware boot entry is registered on the profile's disk and ESP partition"
 else
   no "A3  the firmware boot entry is registered on the profile's disk and ESP partition"
 fi
 
-if printf '%s' "$POWEREDGE_OUT" | grep -qF 'write /mnt/target/etc/hostname' \
-   && printf '%s' "$POWEREDGE_OUT" | grep -qF 'poweredge-xubuntu' \
-   && printf '%s' "$POWEREDGE_OUT" | grep -qF 'chroot /mnt/target useradd --create-home --shell /bin/bash --groups=sudo ci-admin'; then
+if printf '%s' "$POWEREDGE_OUT" | grep -F 'write /mnt/target/etc/hostname' \
+ >/dev/null   && printf '%s' "$POWEREDGE_OUT" | grep -F 'poweredge-xubuntu' \
+ >/dev/null   && printf '%s' "$POWEREDGE_OUT" | grep -F 'chroot /mnt/target useradd --create-home --shell /bin/bash --groups=sudo ci-admin' >/dev/null; then
   ok "A4  the hostname and the operator account come from the profile"
 else
   no "A4  the hostname and the operator account come from the profile"
@@ -168,8 +168,8 @@ fi
 
 # NODE_ADDRESS=auto in this profile, so the node pins nothing and takes a lease
 # — which is what ../provision-k3s.sh assumes by passing no --node-ip.
-if printf '%s' "$POWEREDGE_OUT" | grep -qF 'write /mnt/target/etc/netplan/10-ci-runner.yaml' \
-   && printf '%s' "$POWEREDGE_OUT" | grep -qF 'dhcp4: true'; then
+if printf '%s' "$POWEREDGE_OUT" | grep -F 'write /mnt/target/etc/netplan/10-ci-runner.yaml' \
+ >/dev/null   && printf '%s' "$POWEREDGE_OUT" | grep -F 'dhcp4: true' >/dev/null; then
   ok "A5  the profile's network address (auto) is rendered as a lease"
 else
   no "A5  the profile's network address (auto) is rendered as a lease"
@@ -180,14 +180,14 @@ echo
 echo "== B. The rendered fstab finds everything by LABEL =="
 # ---------------------------------------------------------------------------
 
-if printf '%s' "$POWEREDGE_OUT" | grep -qF 'LABEL=root / ext4 defaults 0 1' \
-   && printf '%s' "$POWEREDGE_OUT" | grep -qF 'LABEL=ESP /boot/efi vfat umask=0077 0 1'; then
+if printf '%s' "$POWEREDGE_OUT" | grep -F 'LABEL=root / ext4 defaults 0 1' \
+ >/dev/null   && printf '%s' "$POWEREDGE_OUT" | grep -F 'LABEL=ESP /boot/efi vfat umask=0077 0 1' >/dev/null; then
   ok "B1  root and the EFI system partition are mounted by LABEL"
 else
   no "B1  root and the EFI system partition are mounted by LABEL"
 fi
 
-if printf '%s' "$POWEREDGE_OUT" | grep -qF 'LABEL=swap none swap sw 0 0'; then
+if printf '%s' "$POWEREDGE_OUT" | grep -F 'LABEL=swap none swap sw 0 0' >/dev/null; then
   ok "B2  the profile's swap volume is enabled by LABEL"
 else
   no "B2  the profile's swap volume is enabled by LABEL"
@@ -212,7 +212,7 @@ if [ "${#FSTAB_TIER_LINES[@]}" -ne 5 ]; then
 else
   missing=""
   for line in "${FSTAB_TIER_LINES[@]}"; do
-    printf '%s' "$POWEREDGE_OUT" | grep -qF -- "$line" || missing="${missing}
+    printf '%s' "$POWEREDGE_OUT" | grep -F -- "$line" >/dev/null || missing="${missing}
         ${line}"
   done
   if [ -z "$missing" ]; then
@@ -249,7 +249,7 @@ fi
 
 # The recorded end state of the 2026-09-04 rebuild, derived here from the
 # profile's ROOT_LABEL rather than written down: root=/dev/mapper/poweredge-root.
-if printf '%s' "$POWEREDGE_OUT" | grep -qF 'GRUB_CMDLINE_LINUX="root=/dev/mapper/poweredge-root rd.lvm.lv=poweredge/root"'; then
+if printf '%s' "$POWEREDGE_OUT" | grep -F 'GRUB_CMDLINE_LINUX="root=/dev/mapper/poweredge-root rd.lvm.lv=poweredge/root"' >/dev/null; then
   ok "C2  the bootloader gets root by its LVM id, and the volume to activate"
 else
   no "C2  the bootloader gets root by its LVM id, and the volume to activate"
@@ -268,8 +268,8 @@ mkdir -p "${SAME}/etc"
 printf 'ID=ubuntu\nVERSION_CODENAME=resolute\n' > "${SAME}/etc/os-release"
 run_install "$BARE" --dry-run "--mount-root=${SAME}" "$POWEREDGE"
 if [ "$REPLY_RC" -eq 0 ] \
-   && printf '%s' "$REPLY_OUT" | grep -qF 'already carries ubuntu resolute' \
-   && ! printf '%s' "$REPLY_OUT" | grep -qF '+ debootstrap'; then
+   && printf '%s' "$REPLY_OUT" | grep -F 'already carries ubuntu resolute' \
+ >/dev/null   && ! printf '%s' "$REPLY_OUT" | grep -F '+ debootstrap' >/dev/null; then
   ok "D1  a root volume already carrying the profile's release is left alone and reported"
 else
   no "D1  a root volume already carrying the profile's release is left alone and reported (rc=${REPLY_RC})"
@@ -282,8 +282,8 @@ mkdir -p "${OTHER}/etc"
 printf 'ID=ubuntu\nVERSION_CODENAME=noble\n' > "${OTHER}/etc/os-release"
 run_install "$BARE" --dry-run "--mount-root=${OTHER}" "$POWEREDGE"
 if [ "$REPLY_RC" -ne 0 ] \
-   && printf '%s' "$REPLY_OUT" | grep -qF 'REFUSED' \
-   && printf '%s' "$REPLY_OUT" | grep -qF '/dev/poweredge/root'; then
+   && printf '%s' "$REPLY_OUT" | grep -F 'REFUSED' \
+ >/dev/null   && printf '%s' "$REPLY_OUT" | grep -F '/dev/poweredge/root' >/dev/null; then
   ok "D2  overwriting a populated root volume without consent exits non-zero and names the volume"
 else
   no "D2  overwriting a populated root volume without consent exits non-zero and names the volume (rc=${REPLY_RC})"
@@ -291,7 +291,7 @@ else
 fi
 
 run_install "$BARE" --dry-run "--mount-root=${OTHER}" --i-consent-to-destroy=/dev/poweredge/ci-cache "$POWEREDGE"
-if [ "$REPLY_RC" -ne 0 ] && printf '%s' "$REPLY_OUT" | grep -qF 'REFUSED'; then
+if [ "$REPLY_RC" -ne 0 ] && printf '%s' "$REPLY_OUT" | grep -F 'REFUSED' >/dev/null; then
   ok "D3  consent naming a DIFFERENT volume does not grant this one"
 else
   no "D3  consent naming a DIFFERENT volume does not grant this one (rc=${REPLY_RC})"
@@ -299,8 +299,8 @@ fi
 
 run_install "$BARE" --dry-run "--mount-root=${OTHER}" --i-consent-to-destroy=/dev/poweredge/root "$POWEREDGE"
 if [ "$REPLY_RC" -eq 0 ] \
-   && printf '%s' "$REPLY_OUT" | grep -qF 'consent given for /dev/poweredge/root' \
-   && printf '%s' "$REPLY_OUT" | grep -qF '+ debootstrap'; then
+   && printf '%s' "$REPLY_OUT" | grep -F 'consent given for /dev/poweredge/root' \
+ >/dev/null   && printf '%s' "$REPLY_OUT" | grep -F '+ debootstrap' >/dev/null; then
   ok "D4  consent naming exactly that volume lets the install through"
 else
   no "D4  consent naming exactly that volume lets the install through (rc=${REPLY_RC})"
@@ -312,7 +312,7 @@ fi
 UNKNOWN="${TMPROOT}/unknown-content"
 mkdir -p "${UNKNOWN}/srv"
 run_install "$BARE" --dry-run "--mount-root=${UNKNOWN}" "$POWEREDGE"
-if [ "$REPLY_RC" -ne 0 ] && printf '%s' "$REPLY_OUT" | grep -qF '/dev/poweredge/root'; then
+if [ "$REPLY_RC" -ne 0 ] && printf '%s' "$REPLY_OUT" | grep -F '/dev/poweredge/root' >/dev/null; then
   ok "D5  a populated root volume with no recognisable release is refused too"
 else
   no "D5  a populated root volume with no recognisable release is refused too (rc=${REPLY_RC})"
@@ -352,7 +352,7 @@ p="${TMPROOT}/unknown-key.env"
 cp "$POWEREDGE" "$p"
 printf 'NOT_A_PROFILE_KEY=x\n' >> "$p"
 run_install "$BARE" --dry-run "$p"
-if [ "$REPLY_RC" -ne 0 ] && printf '%s' "$REPLY_OUT" | grep -qF "unknown profile key 'NOT_A_PROFILE_KEY'"; then
+if [ "$REPLY_RC" -ne 0 ] && printf '%s' "$REPLY_OUT" | grep -F "unknown profile key 'NOT_A_PROFILE_KEY'" >/dev/null; then
   ok "E3  the profile is validated as data by the parser every stage shares"
 else
   no "E3  the profile is validated as data by the parser every stage shares (rc=${REPLY_RC})"
@@ -381,8 +381,8 @@ GMKTEC="${HERE}/profiles/gmktec-xubuntu.env"
 
 run_install "$BARE" --dry-run "$GMKTEC"
 if [ "$REPLY_RC" -ne 0 ] \
-   && printf '%s' "$REPLY_OUT" | grep -qF 'ROOT_LABEL is empty' \
-   && printf '%s' "$REPLY_OUT" | grep -qF 'gmktec-xubuntu'; then
+   && printf '%s' "$REPLY_OUT" | grep -F 'ROOT_LABEL is empty' \
+ >/dev/null   && printf '%s' "$REPLY_OUT" | grep -F 'gmktec-xubuntu' >/dev/null; then
   ok "F1  the committed free-space node's profile is refused, naming the empty ROOT_LABEL and the node"
 else
   no "F1  the committed free-space node's profile is refused, naming the empty ROOT_LABEL and the node (rc=${REPLY_RC})"
@@ -398,7 +398,7 @@ fi
 p="${TMPROOT}/whole-device-no-root-label.env"
 sed 's|^ROOT_LABEL=.*|ROOT_LABEL=|' "$POWEREDGE" > "$p"
 run_install "$BARE" --dry-run "$p"
-if [ "$REPLY_RC" -ne 0 ] && printf '%s' "$REPLY_OUT" | grep -qF "profile key 'ROOT_LABEL' must not be empty"; then
+if [ "$REPLY_RC" -ne 0 ] && printf '%s' "$REPLY_OUT" | grep -F "profile key 'ROOT_LABEL' must not be empty" >/dev/null; then
   ok "F2  a whole-device profile may not spell its root label empty at all"
 else
   no "F2  a whole-device profile may not spell its root label empty at all (rc=${REPLY_RC})"
@@ -408,7 +408,7 @@ fi
 # And the refusal is fail-CLOSED: it happens before anything is derived from the
 # profile and before any mount, so no dry run above may have planned a step
 # against the node that keeps its root.
-if ! printf '%s' "$REPLY_OUT" | grep -qF '+ ' && [ ! -s "$TRIPWIRE" ]; then
+if ! printf '%s' "$REPLY_OUT" | grep -F '+ ' >/dev/null && [ ! -s "$TRIPWIRE" ]; then
   ok "F3  the refusals plan nothing and execute nothing"
 else
   no "F3  the refusals planned or executed something:"

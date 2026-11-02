@@ -445,7 +445,7 @@ step_k3s_install() {
     # original test only compared against a stripped form and a re-prefixed
     # form ("vv1.36…") and so REFUSED every re-run on an installed host — found
     # 2026-09-02 the first time this script was re-run live for idempotency.
-    current="$(k3s --version | head -1 | awk '{print $3}')"
+    current="$(k3s --version | sed -n 1p | awk '{print $3}')"
     if [ "$current" = "$K3S_VERSION" ] || [ "$current" = "${K3S_VERSION#v}" ] || [ "v${current}" = "$K3S_VERSION" ]; then
       echo "k3s already installed at ${K3S_VERSION} — leaving the ${ROLE} alone"
     else
@@ -466,7 +466,7 @@ step_helm() {
   # host would boot into a cluster the converge could not rebuild. Pinned and
   # checksum-verified against the release's published .sha256sum.
   local arch helm_arch tarball tmp
-  if command -v helm >/dev/null 2>&1 && helm version --short 2>/dev/null | grep -q "^${HELM_VERSION}+"; then
+  if command -v helm >/dev/null 2>&1 && helm version --short 2>/dev/null | grep "^${HELM_VERSION}+" >/dev/null; then
     echo "helm already installed at ${HELM_VERSION} — skipping install"
   else
     arch="$(uname -m)"
@@ -490,7 +490,7 @@ step_helm() {
 step_node_ready() {
   export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
   for _ in $(seq 1 60); do
-    if k3s kubectl get nodes --no-headers 2>/dev/null | grep -q ' Ready'; then
+    if k3s kubectl get nodes --no-headers 2>/dev/null | grep ' Ready' >/dev/null; then
       break
     fi
     sleep 2

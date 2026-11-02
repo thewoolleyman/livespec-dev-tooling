@@ -131,7 +131,7 @@ fi
 server_url="$(awk -F'server:[[:space:]]*' '/^[[:space:]]*server:/ {print $2; exit}' "${CONFIG}" 2>/dev/null | tr -d "\"'[:space:]")"
 if [ -z "${server_url}" ]; then
   server_url="$(systemctl cat "${AGENT_UNIT}" 2>/dev/null \
-      | awk '/--server/ {getline v; gsub(/[[:space:]'"'"'\\]/,"",v); print v; exit}')"
+      | awk '/--server/ && !found {getline v; gsub(/[[:space:]'"'"'\\]/,"",v); print v; found=1}')"
 fi
 if [ -z "${server_url}" ]; then
   # Neither source names a server: not a joined agent (or the layout moved);

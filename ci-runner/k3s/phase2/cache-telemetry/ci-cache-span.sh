@@ -122,8 +122,8 @@ gateway_from_proc_route() {
 # `via` is required: a default route with no gateway (`default dev eth0 scope
 # link`) has no address to post to, and its third field is an interface name.
 default_gateway() {
-  gw=$(ip -4 route show default 2>/dev/null | awk '$1 == "default" && $2 == "via" { print $3; exit }')
-  [ -n "${gw}" ] || gw=$(ip route 2>/dev/null | awk '$1 == "default" && $2 == "via" { print $3; exit }')
+  gw=$(ip -4 route show default 2>/dev/null | awk '$1 == "default" && $2 == "via" && !found { print $3; found=1 }')
+  [ -n "${gw}" ] || gw=$(ip route 2>/dev/null | awk '$1 == "default" && $2 == "via" && !found { print $3; found=1 }')
   [ -n "${gw}" ] || gw=$(gateway_from_proc_route || true)
   # Dotted quad or nothing: a partial parse of the /proc fallback above would
   # otherwise publish a plausible, WRONG address, which is the failure shape

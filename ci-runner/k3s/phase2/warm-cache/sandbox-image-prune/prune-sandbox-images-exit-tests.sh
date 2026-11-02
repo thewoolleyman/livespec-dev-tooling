@@ -287,7 +287,7 @@ if [ "$status" -eq 0 ]; then ok "a report-only run exits 0"; else no "a report-o
 removable="$(would_remove "$OUT")"
 
 # A. Scope: the ARC runner image is not a candidate and is never named.
-if ! printf '%s\n' "$removable" | grep -q 'sha256:run1' && ! grep -q 'actions-runner' "$OUT"; then
+if ! printf '%s\n' "$removable" | grep 'sha256:run1' >/dev/null && ! grep 'actions-runner' "$OUT" >/dev/null; then
   ok "A. the pinned ARC runner image is neither a candidate nor mentioned"
 else
   no "A. the ARC runner image reached the report"
@@ -295,19 +295,19 @@ fi
 
 # B. A CronJob-only tag, older than the newest N, survives; the still-older
 #    release beside it does not.
-if ! printf '%s\n' "$removable" | grep -q 'sha256:eee1'; then
+if ! printf '%s\n' "$removable" | grep 'sha256:eee1' >/dev/null; then
   ok "B. python-rust-fuzz-v1.46.0 is kept — only a CronJob jobTemplate names it"
 else
   no "B. python-rust-fuzz-v1.46.0 was classified as removable"
 fi
-if printf '%s\n' "$removable" | grep -q 'sha256:hhh1'; then
+if printf '%s\n' "$removable" | grep 'sha256:hhh1' >/dev/null; then
   ok "B. python-rust-fuzz-v1.45.0, which nothing names, is removable"
 else
   no "B. python-rust-fuzz-v1.45.0 was not classified as removable"
 fi
 
 # C. Per-family: the single-release `base` family keeps its release.
-if ! printf '%s\n' "$removable" | grep -q 'sha256:lll1'; then
+if ! printf '%s\n' "$removable" | grep 'sha256:lll1' >/dev/null; then
   ok "C. base-v1.10.0 is kept — a global newest-N would have starved its family"
 else
   no "C. the only release of the base family was classified as removable"
@@ -319,15 +319,15 @@ else
 fi
 
 # D. Semantic order: v1.5.0 goes, v1.49.0 stays.
-if printf '%s\n' "$removable" | grep -q 'sha256:ccc1' \
-   && ! printf '%s\n' "$removable" | grep -q 'sha256:bbb1'; then
+if printf '%s\n' "$removable" | grep 'sha256:ccc1' \
+ >/dev/null   && ! printf '%s\n' "$removable" | grep 'sha256:bbb1' >/dev/null; then
   ok "D. python-v1.5.0 is removable and python-v1.49.0 is kept (semantic, not lexical)"
 else
   no "D. the v1.5.0 / v1.49.0 pair was ordered lexically"
 fi
 
 # E. One record, two tags: a kept tag saves the whole record.
-if ! printf '%s\n' "$removable" | grep -q 'sha256:iii1'; then
+if ! printf '%s\n' "$removable" | grep 'sha256:iii1' >/dev/null; then
   ok "E. the record carrying both python-rust-v1.58.6 and v1.20.0 is kept whole"
 else
   no "E. a record holding a kept tag was classified as removable"
@@ -353,14 +353,14 @@ else
 fi
 
 # K. An unversioned tag keeps its record.
-if ! printf '%s\n' "$removable" | grep -q 'sha256:mmm1'; then
+if ! printf '%s\n' "$removable" | grep 'sha256:mmm1' >/dev/null; then
   ok "K. the python-sha-abc1234 record is kept — no version, no defensible order"
 else
   no "K. an unversioned-tag record was classified as removable"
 fi
 
 # L. A record shared with another repository keeps it.
-if ! printf '%s\n' "$removable" | grep -q 'sha256:nnn1'; then
+if ! printf '%s\n' "$removable" | grep 'sha256:nnn1' >/dev/null; then
   ok "L. a record also tagged in another repository is kept"
 else
   no "L. a record shared outside the repository was classified as removable"
@@ -369,7 +369,7 @@ fi
 # N. A release that ONLY a committed manifest pins is kept. This is the
 #    reported case in miniature: python-v1.40.1 is outside the keep window, no
 #    cluster object and no container names it, and the repository pins it.
-if ! printf '%s\n' "$removable" | grep -q 'sha256:ddd0'; then
+if ! printf '%s\n' "$removable" | grep 'sha256:ddd0' >/dev/null; then
   ok "N. python-v1.40.1 is kept — a committed manifest pins it and nothing live does"
 else
   no "N. python-v1.40.1 was classified as removable despite a committed manifest pinning it"
@@ -398,12 +398,12 @@ printf '\n-- the same fixture, with a repo-pins file that does NOT name it --\n'
 # of the fixture that would have kept ddd0 anyway.
 OUT="${TMPROOT}/otherpins.out"
 PRUNE_SCRIPT="$SCRIPT_OTHER_PINS" run_prune "$OUT"; status=$?
-if [ "$status" -eq 0 ] && would_remove "$OUT" | grep -q 'sha256:ddd0'; then
+if [ "$status" -eq 0 ] && would_remove "$OUT" | grep 'sha256:ddd0' >/dev/null; then
   ok "N. with that pin absent from the repository, the same release IS a candidate"
 else
   no "N. the control did not reclassify python-v1.40.1 (status ${status}) — case N proves nothing"
 fi
-if ! would_remove "$OUT" | grep -q 'sha256:eee1'; then
+if ! would_remove "$OUT" | grep 'sha256:eee1' >/dev/null; then
   ok "N. the CronJob-protected release is unaffected by the repository content"
 else
   no "N. dropping a repo pin also unprotected a live-referenced release"
@@ -466,13 +466,13 @@ printf '\n-- late protection --\n'
 OUT="${TMPROOT}/late.out"
 FAKE_CLUSTER_JSON_2="$CLUSTER_JSON_LATE" run_prune "$OUT" --apply; status=$?
 applied="$(sort -u < "$TRIPWIRE_RMI")"
-if [ "$status" -eq 0 ] && ! printf '%s\n' "$applied" | grep -q 'sha256:ccc1' \
-   && grep -q 'became referenced while this run was deciding' "$OUT"; then
+if [ "$status" -eq 0 ] && ! printf '%s\n' "$applied" | grep 'sha256:ccc1' \
+ >/dev/null   && grep -q 'became referenced while this run was deciding' "$OUT"; then
   ok "M. a candidate referenced by a pod admitted mid-run is skipped, not removed"
 else
   no "M. late protection did not skip the newly-referenced record (status ${status})"
 fi
-if printf '%s\n' "$applied" | grep -q 'sha256:ddd1'; then
+if printf '%s\n' "$applied" | grep 'sha256:ddd1' >/dev/null; then
   ok "M. the other candidates were still removed"
 else
   no "M. one late protection stopped the rest of the run"

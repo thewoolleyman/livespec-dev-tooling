@@ -114,7 +114,7 @@ log() { printf '\n== %s ==\n' "$*"; }
 # declared a key twice, and the role that reconciles THIS label is the one this
 # script must never disagree with.
 profile_value() {  # profile_value FILE KEY
-  sed -n "s/^$2=//p" "$1" | head -n1 | tr -d '[:space:]'
+  sed -n "s/^$2=//p" "$1" | sed -n 1p | tr -d '[:space:]'
 }
 
 # Is this node registered in the API yet? A node still re-registering answers
