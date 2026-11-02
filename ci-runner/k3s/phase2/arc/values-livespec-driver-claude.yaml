@@ -49,6 +49,27 @@ template:
       # rather than straight to the Kubernetes scheduler.
       kueue.x-k8s.io/queue-name: livespec-driver-claude-lq
   spec:
+    # Prefer gmktec-xubuntu for runner pods (orchestrator bd-ib-nmuyjc scope
+    # event 2026-11-02T17:10:45Z; coordinator legacy-coordinator-agent accepted).
+    # A runner pod requests only ci-runner.io/churn-slot and no cpu or memory,
+    # so the default scheduler's least-allocated scoring placed EVERY runner on
+    # poweredge-xubuntu: measured 2026-11-02 ~17:30Z, 28 runner pods used 59.5 of
+    # poweredge's 72 cores (99% busy) while gmktec held 0 runners, 12 free churn
+    # slots and 84% idle CPU. PREFERRED, never required: the churn-slot budget
+    # still caps gmktec at its own slot count, overflow lands on poweredge, and
+    # no pod is ever left Pending by this preference. Runner pods are BestEffort
+    # QoS and factory sandbox pods Guaranteed, so under contention on gmktec the
+    # sandboxes keep their CPU. It also moves veth churn off the k3s server
+    # node (orchestrator bd-ib-v7h3az).
+    affinity:
+      nodeAffinity:
+        preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            preference:
+              matchExpressions:
+                - key: kubernetes.io/hostname
+                  operator: In
+                  values: ["gmktec-xubuntu"]
     securityContext:
       runAsNonRoot: true
       runAsUser: 1000
