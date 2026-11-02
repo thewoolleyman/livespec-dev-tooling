@@ -112,6 +112,11 @@ NODE_LABEL="k3s-role=arc-runner-host"
 # (step 2b) rather than via --node-label, because --node-label applies only on
 # a FRESH install and this script must be re-runnable on a provisioned node.
 TIER_CARRIER_LABEL="ci-runner.io/cache-tier-carrier=true"
+# The warm uv lower is a different storage fact from the carrier's hostPath
+# singletons.  Every node with ci-workvols needs a local generation because
+# local-path seeds a volume from that node's hidden .warm sibling; the carrier
+# alone still owns the proxy-store and compilation-cache writes.
+WARM_UV_NODE_LABEL="ci-runner.io/warm-uv-cache=true"
 # The FACTORY role label, rendered from the node's own FACTORY_NODE key, and the
 # third distinct thing a node can be in this pool. NODE_LABEL above is the
 # RUNNER role; TIER_CARRIER_LABEL is "the node whose disks the pool's hostPath
@@ -132,6 +137,9 @@ FACTORY_NODE_LABEL="ci-runner.io/factory=true"
 # The tier whose presence PROVES this node is the carrier (phase2/
 # storage-layout/): the label is only set when it is actually mounted here.
 CACHE_TIER_MOUNT="${CI_CACHE_TIER_MOUNT:-/var/cache/ci-runner}"
+# The per-node warm uv writer follows the local-path provisioner's root on
+# ci-workvols, rather than the carrier's ci-cache mount above.
+WARM_UV_TIER_MOUNT="${CI_WORKVOLS_TIER_MOUNT:-/var/lib/rancher/k3s/storage}"
 
 USAGE="usage: ${SCRIPT_NAME} [--dry-run] PROFILE   (PROFILE = phase0-bare-metal/profiles/<node>.env, which carries CLUSTER_ROLE and every other node-specific value)"
 
@@ -204,6 +212,14 @@ append_profile_node_args() {
   # factory host joins without it and the selector means something.
   if [ "${CFG[FACTORY_NODE]}" = true ]; then
     args+=(--node-label "$FACTORY_NODE_LABEL")
+  fi
+
+  # `CI_NODE_FACILITIES=full` is the profile fact that this procedure has
+  # already used to create the ci-workvols tier before k3s registers.  Put the
+  # warm-uv label on the initial registration for both server and agent nodes;
+  # the boot converge checks the live mount and re-asserts it after restarts.
+  if [ "${CFG[CI_NODE_FACILITIES]}" = full ]; then
+    args+=(--node-label "$WARM_UV_NODE_LABEL")
   fi
 
   # Where k3s keeps THIS node's data — the bundled containerd's store above
@@ -495,6 +511,12 @@ step_tier_label() {
     # without carrying a tier. It simply must not attract the hostPath
     # singletons, and an absent label is exactly how it does not.
     echo "WARN: ${CACHE_TIER_MOUNT} is not a mountpoint on ${node_name} — NOT labelling it ${TIER_CARRIER_LABEL}; the hostPath singletons (sccache redis, crates proxy, PyPI proxy, warm-cache CronJob) will not schedule here"
+  fi
+  if findmnt -no TARGET "${WARM_UV_TIER_MOUNT}" >/dev/null 2>&1; then
+    k3s kubectl label node "${node_name}" "${WARM_UV_NODE_LABEL}" --overwrite
+    echo "${node_name} carries ${WARM_UV_TIER_MOUNT}; labelled ${WARM_UV_NODE_LABEL}"
+  else
+    echo "WARN: ${WARM_UV_TIER_MOUNT} is not a mountpoint on ${node_name} — NOT labelling it ${WARM_UV_NODE_LABEL}; local-path volumes here remain cold"
   fi
 }
 

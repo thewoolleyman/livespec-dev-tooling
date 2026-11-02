@@ -263,6 +263,10 @@ SCCACHE_REDIS_WRITER_PASSWORD="${SCCACHE_REDIS_WRITER_PASSWORD:-}"
 SCCACHE_WRITER_PORT="${SCCACHE_WRITER_PORT:-4227}"
 JOB_WORK_ROOT="${JOB_WORK_ROOT:-/__w}"
 POPULATE_ADMITTED_JOB_THRESHOLD="${POPULATE_ADMITTED_JOB_THRESHOLD:-16}"
+# The carrier's CronJob writes every cache tier.  The per-workvol DaemonSet
+# uses this same verified uv writer with this switch set, so it never becomes
+# a second writer of the carrier-only crates, sccache, or target caches.
+WARM_CACHE_UV_ONLY="${WARM_CACHE_UV_ONLY:-false}"
 K8S_SA_DIR="${K8S_SA_DIR:-/var/run/secrets/kubernetes.io/serviceaccount}"
 GENERATIONS_DIR="${WARM_ROOT}/uv-generations"
 SRC_DIR="${WARM_ROOT}/src"
@@ -362,6 +366,10 @@ sys.exit(1) if v is None else print(v)' "$1" "$2" 2>/dev/null
 # PREFLIGHT — fail-closed, before anything is touched.
 command -v uv >/dev/null || { log "FATAL: uv not on PATH"; exit 2; }
 command -v git >/dev/null || { log "FATAL: git not on PATH"; exit 2; }
+[ "${WARM_CACHE_UV_ONLY}" = true ] || [ "${WARM_CACHE_UV_ONLY}" = false ] || {
+  log "FATAL: WARM_CACHE_UV_ONLY must be true or false"
+  exit 2
+}
 command -v python3 >/dev/null || { log "FATAL: python3 not on PATH"; exit 2; }
 python3 -c 'import tomllib' 2>/dev/null || { log "FATAL: python3 is older than 3.11 (no tomllib); the verifier cannot run"; exit 2; }
 [ -r "${VERIFIER}" ] || { log "FATAL: verifier ${VERIFIER} not readable (converge-warm-cache.sh ships it in the script ConfigMap)"; exit 2; }
@@ -786,6 +794,11 @@ sccache_built=0
 sccache_skipped=0
 sccache_skipped_busy=0
 admitted_last=""
+target_built=0
+target_skipped=0
+target_skipped_busy=0
+fuzz_toolchain=""
+if [ "${WARM_CACHE_UV_ONLY}" = false ]; then
 for name in "${fetched[@]}"; do
   src="${SRC_DIR}/${name}"
   if [ -f "${src}/Cargo.lock" ]; then
@@ -923,8 +936,6 @@ done
 #    cargo-fuzz, c++); on any other image every repository is skipped, loudly.
 TARGET_GEN_ROOT="${WARM_ROOT}/target-generations"
 TARGET_LINK_ROOT="${WARM_ROOT}/target"
-target_built=0; target_skipped=0; target_skipped_busy=0
-fuzz_toolchain=""
 if command -v cargo >/dev/null && command -v c++ >/dev/null \
    && rustc +nightly --version >/dev/null 2>&1 && cargo +nightly fuzz --version >/dev/null 2>&1; then
   fuzz_toolchain="nightly-$(rustc +nightly --version 2>/dev/null | awk '{print $2}')@cargo-fuzz-$(cargo +nightly fuzz --version 2>/dev/null | awk '{print $2}')"
@@ -1017,6 +1028,9 @@ PY
     done
   fi
 done
+else
+  log "uv-only mode: carrier-only cargo, sccache and target-cache writes skipped"
+fi
 
 log "run summary: uv generation $(basename "${published_gen:-none}") (rebuilt=${rebuilt} refused=${refused} verified=${verified}, ${synced} repositories synced), ${cargo_warmed} pre-warmed for cargo, sccache builds: ${sccache_built} built / ${sccache_skipped} skipped / ${sccache_skipped_busy} skipped-busy, target generations: ${target_built} built / ${target_skipped} skipped / ${target_skipped_busy} skipped-busy"
 

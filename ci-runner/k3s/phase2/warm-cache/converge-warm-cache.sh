@@ -2,8 +2,9 @@
 # converge-warm-cache.sh — the one idempotent converge of the warm uv cache's
 # CLUSTER objects: the PyPI files proxy (./pypi-proxy/pypi-proxy.yaml —
 # Deployment, Service, nginx ConfigMap; the populator builds every generation
-# through it), the `ci-warm-cache` Namespace + budget ConfigMap + CronJob
-# (./warm-cache-cronjob.yaml), the `warm-cache-repos` ConfigMap derived from
+# through it), the `ci-warm-cache` Namespace + budget ConfigMap + carrier
+# CronJob + per-workvol uv DaemonSet (./warm-cache-cronjob.yaml), the
+# `warm-cache-repos` ConfigMap derived from
 # the ARC values files, and the `warm-cache-populate` script ConfigMap
 # converged from ./warm-cache-populate.sh AND ./verify-uv-cache.py (with its
 # ./uv_cache_layout.py). Applies

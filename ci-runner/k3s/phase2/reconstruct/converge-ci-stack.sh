@@ -394,6 +394,22 @@ else
   echo "WARN: could not label node ${this_node} with ${TIER_CARRIER_LABEL} -- the hostPath singletons converged below stay Pending until it is set (kubectl label node ${this_node} ${TIER_CARRIER_LABEL} --overwrite)"
 fi
 
+# The uv lower is intentionally broader than the carrier label above.  A
+# local-path helper seeds a new work volume from this node's own hidden .warm
+# directory, so every node that has the ci-workvols mount needs its own warm
+# generation.  The DaemonSet selects this label; it excludes the carrier,
+# whose singleton CronJob keeps writing its local generation alongside the
+# proxy, cargo pre-warm and compilation cache.
+WARM_UV_TIER_MOUNT="${CI_WORKVOLS_TIER_MOUNT:-/var/lib/rancher/k3s/storage}"
+WARM_UV_LABEL="ci-runner.io/warm-uv-cache=true"
+if ! findmnt -no TARGET "${WARM_UV_TIER_MOUNT}" >/dev/null 2>&1; then
+  echo "WARN: ${WARM_UV_TIER_MOUNT} is not a mountpoint on ${this_node} -- NOT labelling it ${WARM_UV_LABEL}; local-path volumes here remain cold by design"
+elif kubectl label node "$this_node" "$WARM_UV_LABEL" --overwrite >/dev/null 2>&1; then
+  echo "${this_node} carries ${WARM_UV_TIER_MOUNT}; ${WARM_UV_LABEL} asserted"
+else
+  echo "WARN: could not label node ${this_node} with ${WARM_UV_LABEL} -- its local-path volumes remain cold until it is set (kubectl label node ${this_node} ${WARM_UV_LABEL} --overwrite)"
+fi
+
 # ---------------------------------------------------------------------------
 log "2. Fail-closed pre-gate: the GitHub App installation secret must already exist"
 # Mirrors install-arc.sh step 0. The secret's REQUIRED location is
