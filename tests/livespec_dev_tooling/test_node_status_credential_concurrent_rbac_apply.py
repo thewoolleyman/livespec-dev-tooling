@@ -138,6 +138,10 @@ _PER_NODE_KINDS = ("ServiceAccount", "Secret", "ClusterRole", "ClusterRoleBindin
 # making the committed serialized arm wait: only the control arm enables it.
 _RENDEZVOUS_TIMEOUT_SECONDS = 15
 
+# The deadline for the direct no-peer check, which has no second agent to wait
+# for and so needs only to prove the wait ends.
+_NO_PEER_TIMEOUT_SECONDS = 1
+
 # Bounded: a cold `uvx` resolves and caches ansible-core before the first play
 # runs. A hung play must fail this test rather than the suite's whole budget.
 _PLAYBOOK_TIMEOUT_SECONDS = 600
@@ -378,6 +382,40 @@ def _run_lifted_task(
     )
 
 
+def _apply_with_no_peer(*, root: Path) -> subprocess.CompletedProcess[str]:
+    """One rendezvous-enabled server-side apply whose peer never arrives.
+
+    Driven against the stand-in directly with a short deadline: the bounded
+    no-peer failure is the stand-in's own behaviour, and routing it through a
+    one-agent ansible play would spend the full production deadline plus a play
+    start-up on every run.
+    """
+    captures = root / "captures"
+    captures.mkdir(parents=True)
+    enters = root / "enters"
+    enters.mkdir()
+    log = root / "apply.log"
+    log.write_text("", encoding="utf-8")
+    return subprocess.run(
+        ["/bin/sh", str(_KUBECTL_STAND_IN_PATH), "apply", "-f", "-"],
+        input="kind: Namespace\n",
+        env={
+            **os.environ,
+            "RBAC_APPLY_LOCK": str(root / "lock"),
+            "RBAC_APPLY_LOG": str(log),
+            "RBAC_APPLY_CAPTURES": str(captures),
+            "RBAC_APPLY_ENTERS": str(enters),
+            "RBAC_APPLY_NAMESPACE": _SHARED_NAMESPACE,
+            "RBAC_APPLY_RENDEZVOUS": "enabled",
+            "RBAC_APPLY_RENDEZVOUS_TIMEOUT_SECONDS": str(_NO_PEER_TIMEOUT_SECONDS),
+        },
+        capture_output=True,
+        text=True,
+        timeout=_NO_PEER_TIMEOUT_SECONDS + 30,
+        check=False,
+    )
+
+
 @pytest.fixture(scope="module")
 def serialized(*, tmp_path_factory: pytest.TempPathFactory) -> _Run:
     """One run of the COMMITTED task, shared by every assertion made about it."""
@@ -465,21 +503,19 @@ def test_the_same_apply_without_its_serialization_does_overlap(*, tmp_path: Path
         f"two agents' applies of one object race on its resourceVersion"
     )
 
-    missing_peer_root = tmp_path / "missing-peer"
-    missing_peer_root.mkdir()
-    missing_peer = _run_lifted_task(
-        root=missing_peer_root,
-        task="\n".join([*kept, ""]),
-        agents=_AGENTS[:1],
-    )
+    missing_peer = _apply_with_no_peer(root=tmp_path / "missing-peer")
     assert missing_peer.returncode != 0
-    assert "two unserialized applies were never in flight together" in missing_peer.output
+    assert "two unserialized applies were never in flight together" in missing_peer.stderr
 
     run = _run_lifted_task(
         root=tmp_path,
         task="\n".join([*kept, ""]),
     )
 
+    assert run.returncode == 0, (
+        f"the unserialized play must succeed for both agents: a peer that never "
+        f"arrived fails the stand-in, and that must never read as a pass:\n{run.output}"
+    )
     assert "overlap" in _markers(run=run), (
         f"two unserialized applies were never in flight together, so this "
         f"control arm cannot convict one that does; the role's serialization "
