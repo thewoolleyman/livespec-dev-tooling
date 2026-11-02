@@ -51,3 +51,21 @@ revert wrote: "unexpected token ' ' at 1:7". It therefore opened no release
 after #3131. The commit that lands this note carries `Release-As: 1.152.2`,
 so that a release containing both iascyn's fix and the revert is cut and
 fanned out, superseding v1.152.1.
+
+### Correction (2026-11-02, ~13:05Z)
+
+That footer was unnecessary, and it was harmful. qgv3tb's `feat` released
+v1.153.0 at 12:58:52Z, before the note merged, and that release already
+carries the revert and iascyn's fix. The `Release-As: 1.152.2` footer then made
+release-please propose release PR #3136 at 1.152.2, which is BELOW v1.153.0.
+#3136 was converted to draft to stop it auto-merging, and it is closed
+unmerged.
+
+release-please honours the newest `Release-As` footer since the last release.
+The commit that lands this correction therefore carries
+`Release-As: 1.153.1`, so that the pending release goes forward rather than
+backward.
+
+The lesson: before forcing a release with a footer, re-read the latest
+published tag at merge time, not at authoring time. On a busy master, an
+ordinary `feat` or `fix` can cut the release first.
