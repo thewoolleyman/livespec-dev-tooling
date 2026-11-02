@@ -252,6 +252,12 @@ class GateRunOutcome:
     time as gate time. The empty string is an ABSENCE for S7b to render as one,
     never an instant: Kubernetes sets `completionTime` when a Job SUCCEEDS, so a
     Job that ended `Failed` ordinarily reports a start and no completion.
+
+    `tree_hash` is the tree this client was asked to gate. `reported_tree_hash` is
+    the tree the created Job's own `livespec.gate/tree-hash` label names, and the
+    empty string when the label is absent — never the requested tree echoed back,
+    so a caller comparing the two can tell a Job that gated another tree, or that
+    never said which tree it gated, from one that gated the tree it was asked for.
     """
 
     tree_hash: str
@@ -262,6 +268,7 @@ class GateRunOutcome:
     started_at: str = ""
     finished_at: str = ""
     output_checksum: str = ""
+    reported_tree_hash: str = ""
 
 
 def run_gate(
@@ -445,7 +452,7 @@ def _gate_a_pushed_tree(
     if isinstance(named, Failure):
         return Failure(named.failure())
     job_name = named.unwrap()
-    reported_tree = created_job_tree_hash(payload=submitted.unwrap().stdout) or tree_hash
+    reported_tree = created_job_tree_hash(payload=submitted.unwrap().stdout)
     # ONLY when a token was actually minted, which is the state of a push whose
     # repository names a PRIVATE cross-repo sibling and of no other. The step is
     # AFTER the submit because the Secret is owner-referenced to the Job the
@@ -492,7 +499,8 @@ def _gate_a_pushed_tree(
     )
     return streamed.map(
         lambda ran: GateRunOutcome(
-            tree_hash=reported_tree,
+            tree_hash=tree_hash,
+            reported_tree_hash=reported_tree,
             job_name=job_name,
             terminal_state=ended.condition,
             logs_returncode=ran.returncode,

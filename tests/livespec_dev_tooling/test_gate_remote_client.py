@@ -450,17 +450,19 @@ def test_the_outcome_names_the_tree_the_created_job_reports() -> None:
     outcome = run_gate(request=request, runner=cluster, sleeper=cluster.sleep)
 
     assert is_successful(outcome)
-    assert outcome.unwrap().tree_hash == other
+    assert outcome.unwrap().reported_tree_hash == other
+    assert outcome.unwrap().tree_hash == _TREE
 
 
-def test_a_created_job_without_a_tree_label_reports_the_requested_tree() -> None:
-    """A submit answer that omits the label leaves the requested tree as the outcome's tree."""
+def test_a_created_job_without_a_tree_label_reports_no_tree() -> None:
+    """A submit answer that omits the label reports no tree; the request is never echoed back."""
     cluster = _StubCluster()
     request = dataclasses.replace(_REQUEST, tree_hash=_TREE)
 
     outcome = run_gate(request=request, runner=cluster, sleeper=cluster.sleep)
 
     assert is_successful(outcome)
+    assert outcome.unwrap().reported_tree_hash == ""
     assert outcome.unwrap().tree_hash == _TREE
 
 
