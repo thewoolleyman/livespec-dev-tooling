@@ -72,3 +72,12 @@ k3s_config_skip_marker: /var/lib/rancher/k3s/server/manifests/local-storage.yaml
 k3s_config_wait_seconds: 120
 k3s_config_poll_seconds: 2
 k3s_config_containerd_socket: /run/k3s/containerd/containerd.sock
+
+# k3s's own data directory, used when a node's profile leaves NODE_DATA_DIR
+# empty. The kubelet's configuration drop-in directory is under it.
+k3s_config_default_data_dir: /var/lib/rancher/k3s
+# Whether the kubelet kills only the process that exceeds a container's memory
+# limit (true) or the container's whole cgroup (false, the kubelet default on
+# cgroup v2). See HOST_VARS.md, "Single-process OOM kill" (bd-ib-3kdjct).
+k3s_config_single_process_oom_kill: true
+k3s_config_single_process_oom_kill_drop_in: 50-single-process-oom-kill.conf

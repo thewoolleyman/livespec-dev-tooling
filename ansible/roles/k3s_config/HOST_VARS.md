@@ -70,3 +70,43 @@ pods, which the `factory` namespace's ResourceQuota bounds
    two halves of one budget, and they move together.
 3. **The factory pod's declared resources change.** The three-pod fit above is
    computed from `4` CPU and `7630Mi`.
+
+## Single-process OOM kill
+
+**What it is for.** Orchestrator work-item `bd-ib-3kdjct` (plan epic
+`bd-ib-nmuyjc`) requires that one runaway command fails only that command and
+does not destroy the sandbox. On cgroup v2 the kubelet sets `memory.oom.group=1`
+on every container cgroup by default, so when one process hits the container's
+memory limit the kernel kills every process in the container.
+
+**What broke, measured 2026-11-02.** In factory pod
+`petri-01m6dp57ek5q0p8arn07bgwad8-l0` (7630 MB limit, on poweredge-xubuntu), the
+agent's own pytest reached about 7.5 GB at 08:44:35Z. The group kill took the
+codex agent with it. Every uncommitted change was lost, and the run's checkpoint
+found the sandbox unreachable.
+
+**What the role does.** On every node, server and agent alike, it installs
+`<data-dir>/agent/etc/kubelet.conf.d/50-single-process-oom-kill.conf`. `<data-dir>`
+is the profile's `NODE_DATA_DIR`, or `/var/lib/rancher/k3s` when that is empty.
+The file carries `singleProcessOOMKill: true` (KubeletConfiguration, Kubernetes
+1.32+), and k3s's kubelet merges it over its own `00-k3s-defaults.conf` through
+`--config-dir`. The kubelet then leaves `memory.oom.group` unset, and the kernel
+kills only the process it selects, usually the largest.
+
+| variable | default | meaning |
+| --- | --- | --- |
+| `k3s_config_single_process_oom_kill` | `true` | install the drop-in; `false` removes it |
+| `k3s_config_single_process_oom_kill_drop_in` | `50-single-process-oom-kill.conf` | the drop-in's file name |
+| `k3s_config_default_data_dir` | `/var/lib/rancher/k3s` | k3s's data directory when the profile names none |
+
+**Scope.** Node-wide: it applies to every container on the node, ARC runner
+and gate pods included.
+
+**When it takes effect.** On the next k3s start, and only for containers created
+after it; a running container keeps the `memory.oom.group` value it was created
+with. Reach that start on an agent through `ansible/restart-k3s-agent.yml`. On
+the server, use a coordinated `k3s` restart. Check a new pod's container cgroup
+with `cat .../memory.oom.group`; it reads `0` once the drop-in is in force.
+
+**Rollback.** Set `k3s_config_single_process_oom_kill: false` for the node,
+re-apply `ansible/ci-pool.yml`, and restart k3s on that node.
