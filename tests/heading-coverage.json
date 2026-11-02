@@ -1617,6 +1617,14 @@
   },
   {
     "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a blocked radar target names each open blocker by tenant and id",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading. It computes readiness over ledger record fixtures in both dependency-row spellings, asserting NOT READY with exactly the open blocks and blocked_by blockers named as tenant:id, and DONE for a closed entry. livespec-dev-tooling-m2x5pt owns it.",
+    "work_item": "livespec-dev-tooling-m2x5pt"
+  },
+  {
+    "spec_root": "SPECIFICATION",
     "spec_file": "non-functional-requirements.md",
     "heading": "## Scheduler Honeycomb input contract",
     "test": "TODO",
