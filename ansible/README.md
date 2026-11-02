@@ -88,6 +88,7 @@ source of truth for how the tool is invoked.
 | `node-loss-drill.yml` | `ci_pool`, and only the AGENT host its confirmation names | nothing — no committed artifact could take a pool node's k3s agent down |
 | `restart-k3s-agent.yml` | `ci_pool`, and only the AGENT host its confirmation names | nothing — no committed artifact could restart a pool agent's k3s agent |
 | `restart-k3s-server.yml` | `ci_pool`, and only the SERVER host its confirmation names | nothing — no committed artifact could restart the pool server's k3s unit without rebooting the host |
+| `k3s-window-drain.yml` | `ci_pool`, acting once on the SERVER, only for the action its confirmation names | nothing — no committed artifact could pause runner intake or cordon a pool node |
 | `container-termination-drill.yml` | `ci_pool`, and only the k3s SERVER its confirmation names | nothing — no committed artifact could produce a crash-looping or OOM-killed container |
 
 `container-termination-drill.yml` is the ONE sanctioned way to make the cluster
