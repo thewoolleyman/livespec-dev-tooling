@@ -184,6 +184,57 @@ def test_same_tree_full_pre_commit_evidence_reuses_the_aggregate_run(
     assert "TDD-Suite-Green-Producer: pre-commit-aggregate:run-123" in message
 
 
+def test_direct_suite_module_covers_the_serial_fallback(
+    *, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The split module itself logs its serial fallback and writes trailers."""
+    mod = _load()
+    monkeypatch.setattr(mod, "read_pre_commit_evidence", lambda **_kwargs: None)
+    monkeypatch.setattr(mod, "xdist_importable", lambda: False)
+    monkeypatch.setattr(
+        mod,
+        "run_suite",
+        lambda **_kwargs: mod.SuiteRun(returncode=0, output="5 passed in 1.00s\n", timed_out=False),
+    )
+    msg_path = tmp_path / "COMMIT_EDITMSG"
+    msg_path.write_text("refactor: behaviour-preserving change\n", encoding="utf-8")
+
+    assert (
+        mod.handle_suite_green_mode(
+            msg_path=msg_path,
+            log=structlog.get_logger(),
+            staged_paths=["livespec_dev_tooling/example.py"],
+        )
+        == 0
+    )
+    assert "TDD-Suite-Green-Scope: full-suite" in msg_path.read_text(encoding="utf-8")
+
+
+def test_direct_suite_module_rejects_a_timeout_without_trailers(
+    *, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The split module's timeout branch remains a named refusing outcome."""
+    mod = _load()
+    monkeypatch.setattr(mod, "read_pre_commit_evidence", lambda **_kwargs: None)
+    monkeypatch.setattr(
+        mod,
+        "run_suite",
+        lambda **_kwargs: mod.SuiteRun(returncode=None, output="", timed_out=True),
+    )
+    msg_path = tmp_path / "COMMIT_EDITMSG"
+    msg_path.write_text("refactor: behaviour-preserving change\n", encoding="utf-8")
+
+    assert (
+        mod.handle_suite_green_mode(
+            msg_path=msg_path,
+            log=structlog.get_logger(),
+            staged_paths=["livespec_dev_tooling/example.py"],
+        )
+        == 1
+    )
+    assert "TDD-Suite-Green" not in msg_path.read_text(encoding="utf-8")
+
+
 def test_pre_commit_evidence_is_recorded_for_the_staged_tree(
     *, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
