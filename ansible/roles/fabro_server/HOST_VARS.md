@@ -763,13 +763,18 @@ by hand. Never put it in host_vars.
 
 The current Fabro server's host (plan `petri-factory-on-gmktec`). The fleet
 factory runs here as two instances under the `cwoolley` account: `fabro-server`
-on port 32276 under `/home/cwoolley/.fabro`, and the registered-provider carrier
-canary `fabro-server-candidate` on port 32278 under
-`/home/cwoolley/.fabro-candidate`. The canary runs the next carrier BESIDE the
-fleet instance rather than in place of it — its own unit, port, state root and
-`binary_path` — and is retired (`service_state: stopped`) once the fleet
-instance carries the build it proved; its own `max_concurrent_runs` is 2 because
-it shares this host with the fleet instance's runs. The org-owned
+on port 32276 under `/home/cwoolley/.fabro`, and `fabro-server-candidate` on
+port 32278 under `/home/cwoolley/.fabro-candidate`. The candidate began as the
+registered-provider carrier canary; by the maintainer's ruling of 2026-11-02 it
+is now the fleet instance's PERMANENT MIRROR — a hot fallback, and the
+fabro-currency seat's dogfood factory. It is configured exactly like
+`fabro-server` (environments, providers and their `process_spec`, vault, App id,
+`max_concurrent_runs`, otel) and differs only in its identity — its own unit,
+port, state root, `binary_path` and `HOME` — in the build it is dogfooding, and
+in each kubernetes provider's record store, which must not be shared (the
+plugin lists sandboxes from its state directory). Both instances launch into the
+same `factory` namespace, so the shared `factory-runs` quota bounds them
+together. The org-owned
 `fabro-server-mi-homelab` on port 32277 is declared beside them and belongs to a
 different project, not to the fleet factory.
 
