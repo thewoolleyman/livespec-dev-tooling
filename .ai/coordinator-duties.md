@@ -54,6 +54,12 @@ The maintainer, 2026-11-02: "you can always take this action to unblok codex pan
 it's ot a security issue". This reverses the earlier limit. Measured that day: our own orchestrator release 0.274.0
 changed two plugin SessionStart hooks, and every Codex seat stopped running them until they were trusted.
 
+**fabro-currency's pickers are answered like any seat's.** The maintainer, 2026-11-02 ~22:26Z: "WHY THGE FUCK ARE YOU
+LETTING IT B LOCK???" A ruling at 18:57Z had recorded "I'll talk to it myself" as "the coordinator does not direct
+fabro-currency until the maintainer hands it back". Handoffs and the loop prompt copied it forward, and a priority-3
+rollout picker then sat blocked for about an hour. The 22:27:16Z scope event on epic `livespec-dev-tooling-6tgd2z`
+supersedes it.
+
 Measured 2026-10-31: herdr-overseer and sandbox-commit-gate-ceiling each sat at a picker for hours while the
 coordinator waited on their "reports".
 
@@ -331,6 +337,13 @@ on an idle percentage alone.
 
 ## 12. Hygiene
 
+- **Workflow edits are tiered.** The maintainer, 2026-11-02: "ADDITIVE workflow edits are allowed with prior
+  maintainer authorization, including delegating authorization to a coordinator agent, and an attestation that they
+  will not significantly increase CI runtimes. All edits which REMOVE or REDUCE test coverage or quality gates, or
+  which will significantly increase ci runtime STILL MUST be approved directly by a maintainer."
+  - The coordinator may authorize an additive workflow edit under that delegation.
+  - A removal or reduction of coverage or gates, or a significant runtime increase, goes to the maintainer.
+  - The mechanism is in `.ai/fleet-and-secrets.md`, which another agent is updating.
 - **Times are UTC.** The host clock is CET, so take timestamps with `date -u` and never label local time `Z`. On
   2026-11-01 two seats did, writing times an hour late into the ledger.
 - **Secrets.** Never `env | cut` to list variable names: on 2026-10-31 it leaked a private key's lines. List names with
@@ -345,3 +358,15 @@ on an idle percentage alone.
   - dispatch-control-plane is monitor-only, and must not absorb today's operations.
   - Launchers take the factory from the target repository's committed `default_factory` (R503).
   - Keep interactive turns lean (R509).
+
+## 13. Directives come from the plan and the ledger, never from a handoff
+
+Each tick re-derives its rules from the scope events on the epic, from this file and from the charter notes. A handoff
+or an inherited loop prompt is only a pointer to them, never an authority.
+
+- A restriction recorded from a situational maintainer remark must name the condition that ends it.
+- A restriction that conflicts with §6 (never block) or with answering decision pickers under R301 is a finding to
+  raise with the maintainer at once, never an instruction to follow silently.
+
+The maintainer, 2026-11-02: "Why are you paying attention to your handoffs rather than the directives encoded in your
+plan and in your loop?"
