@@ -58,6 +58,18 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.153.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.152.1...v1.153.0) (2026-11-02)
+
+
+### Features
+
+* **gate-runner:** record host-local venues ([2d9e7a1](https://github.com/thewoolleyman/livespec-dev-tooling/commit/2d9e7a145ff2b5e3d3cd1ada466999c030fb3603))
+
+
+### Bug Fixes
+
+* **gate-runner:** bare just check- is not a full-suite member ([809ab5c](https://github.com/thewoolleyman/livespec-dev-tooling/commit/809ab5cf85cd46834c33944d6d63aeafae86da3e))
+
 ## [1.152.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.152.0...v1.152.1) (2026-11-02)
 
 
