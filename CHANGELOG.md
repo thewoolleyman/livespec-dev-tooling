@@ -58,6 +58,14 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.154.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.153.2...v1.154.0) (2026-11-02)
+
+
+### Features
+
+* **ansible:** every k3s node's kubelet kills only the process that exceeds a container's memory limit ([33739a9](https://github.com/thewoolleyman/livespec-dev-tooling/commit/33739a9ee7bac0d8d9dc528e26e4b40adf4896ed))
+* **ansible:** the sandbox image warm keeps only current tags in each store it fills ([2b2e93f](https://github.com/thewoolleyman/livespec-dev-tooling/commit/2b2e93f365f6c60f0ed9b3d44724f12a89c9abb9))
+
 ## [1.153.2](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.153.1...v1.153.2) (2026-11-02)
 
 
