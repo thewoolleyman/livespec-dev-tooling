@@ -58,6 +58,21 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.155.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.154.0...v1.155.0) (2026-11-02)
+
+
+### Features
+
+* **ansible:** a fenced playbook pauses CI runner intake and cordons a pool node for a k3s restart window ([e88b2c6](https://github.com/thewoolleyman/livespec-dev-tooling/commit/e88b2c6430038afee083f85e3abd42d4b89946a9))
+* **ansible:** pin sandbox-driver-kubernetes v0.6.0, which reports its pod's node to the factory worker ([80ef884](https://github.com/thewoolleyman/livespec-dev-tooling/commit/80ef884a13e716dd7256c89718aba2d3196f6492))
+
+
+### Bug Fixes
+
+* **ansible:** dev_host_retention also removes the hourly drop_caches cron ([e5f4d43](https://github.com/thewoolleyman/livespec-dev-tooling/commit/e5f4d431cda5026553cffeee914c81ee3acaa876))
+* **ansible:** dev_host_retention removes the hand-installed hourly fstrim cron ([d24753b](https://github.com/thewoolleyman/livespec-dev-tooling/commit/d24753b202e85670efbd80b9d4157eb851dd06c2))
+* **ansible:** name homelab's App key vault entry by absolute path, as Fabro requires of a file entry ([ae1cf0e](https://github.com/thewoolleyman/livespec-dev-tooling/commit/ae1cf0e90f6627736fabbd2cec26a4d639f84c16))
+
 ## [1.154.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.153.2...v1.154.0) (2026-11-02)
 
 
