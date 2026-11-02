@@ -1563,16 +1563,14 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "non-functional-requirements.md",
     "heading": "## Shell script pipeline verdicts",
-    "test": "TODO",
-    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, running each swept pipefail shell script against an input larger than 64 KiB that contains its pattern; livespec-dev-tooling-ftgiu4 owns it.",
+    "test": "tests.test_pipefail_reader_sweep.test_pipefail_scripts_do_not_use_early_exiting_pipeline_readers",
     "work_item": "livespec-dev-tooling-ftgiu4"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a pipefail script reports a match in a large input as a match",
-    "test": "TODO",
-    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, running each swept pipefail shell script against an input larger than 64 KiB that contains its pattern; livespec-dev-tooling-ftgiu4 owns it.",
+    "test": "tests.test_pipefail_reader_sweep.test_pipefail_scripts_do_not_use_early_exiting_pipeline_readers",
     "work_item": "livespec-dev-tooling-ftgiu4"
   },
   {

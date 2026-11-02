@@ -8,6 +8,8 @@ from pathlib import Path
 
 import pytest
 
+pytestmark = pytest.mark.integration
+
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 _SHELL_TREES = ("ansible/", "ci-runner/", "dev-tooling/", "scripts/")
 _AGENT_JOIN_TOKEN_EXIT_TEST = _REPO_ROOT / (

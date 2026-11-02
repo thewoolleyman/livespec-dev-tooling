@@ -99,13 +99,6 @@
   },
   {
     "spec_root": "SPECIFICATION",
-    "spec_file": "non-functional-requirements.md",
-    "heading": "## Shell script pipeline verdicts",
-    "work_item": "livespec-dev-tooling-ftgiu4",
-    "first_seen": "2026-11-02"
-  },
-  {
-    "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a Docker engine install guard observation sample ignores pod veths on a bridge the snapshot recorded",
     "work_item": "livespec-dev-tooling-eaigbj",
@@ -291,13 +284,6 @@
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a per-tick query set larger than the budget constant fails the unit tests",
     "work_item": "livespec-dev-tooling-34bee5",
-    "first_seen": "2026-11-02"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a pipefail script reports a match in a large input as a match",
-    "work_item": "livespec-dev-tooling-ftgiu4",
     "first_seen": "2026-11-02"
   },
   {
