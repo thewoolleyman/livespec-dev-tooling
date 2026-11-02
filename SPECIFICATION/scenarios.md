@@ -1810,6 +1810,80 @@ When the commit-msg `red_green_replay` check runs its suite-green leg
 
 Then the commit MUST be refused
 
+## Scenario: a behaviour-preserving commit runs the full suite, and an empty run is refused
+
+Given a commit that stages `livespec_dev_tooling/foo.py` and no test file, whose `HEAD` carries no Red awaiting a Green
+
+When the commit-msg `red_green_replay` check runs its suite-green leg
+
+Then it MUST run the full pytest suite against the staged tree
+
+And on pytest exit `0` it MUST record `TDD-Suite-Green-Scope: full-suite`, a `TDD-Suite-Green-Output-Checksum` and a `TDD-Suite-Green-Captured-At` trailer
+
+And on any non-zero pytest exit, pytest exit `5` included, the commit MUST be refused with a `suite-red` event
+
+## Scenario: a suite-green run that stops printing output for the stall window is ended
+
+Given `LIVESPEC_SUITE_GREEN_STALL_SECONDS` is `60` and `LIVESPEC_SUITE_GREEN_TIMEOUT_SECONDS` is unset
+
+And the suite-green leg's pytest run prints no new output for 60 seconds
+
+When the commit-msg `red_green_replay` check runs its suite-green leg
+
+Then it MUST kill the run's whole process group, pytest-xdist workers included
+
+And the commit MUST be refused with an event naming the 60-second stall window and `LIVESPEC_SUITE_GREEN_STALL_SECONDS`
+
+And no `TDD-Suite-Green-*` trailer MUST be recorded
+
+## Scenario: a long suite-green run that keeps printing output is not ended
+
+Given `LIVESPEC_SUITE_GREEN_STALL_SECONDS` and `LIVESPEC_SUITE_GREEN_TIMEOUT_SECONDS` are unset
+
+And the suite-green leg's pytest run takes 3000 seconds, never going 900 seconds without new output, and exits `0`
+
+When the commit-msg `red_green_replay` check runs its suite-green leg
+
+Then it MUST NOT end the run
+
+And it MUST record the same `TDD-Suite-Green-Output-Checksum` that a 300-second run of the same green suite records
+
+## Scenario: a refused suite-green run names why each test failed
+
+Given a commit whose suite-green leg selects `tests/test_alpha.py`, whose test `test_one` fails with `AssertionError: expected 2`
+
+When the commit-msg `red_green_replay` check runs its suite-green leg
+
+Then it MUST invoke pytest with `--tb=line`
+
+And the `suite-red` event MUST carry a `failure_summary` naming `tests/test_alpha.py::test_one`
+
+And the event MUST carry a `failure_detail` holding the line `tests/test_alpha.py:<line>: AssertionError: expected 2`
+
+## Scenario: a suite-green leg reuses a passing full pre-commit aggregate on the same tree
+
+Given the pre-commit hook of a behaviour-preserving commit has just run the full check aggregate to a passing result on tree `T`
+
+And `git write-tree` names tree `T` for the index when the commit-msg hook runs
+
+When the commit-msg `red_green_replay` check runs its suite-green leg
+
+Then it MUST NOT start a pytest suite run
+
+And it MUST record its `TDD-Suite-Green-*` trailers from the aggregate run, naming that run
+
+## Scenario: a suite-green leg runs the full suite when the pre-commit aggregate judged a different tree or ran partially
+
+Given the pre-commit hook of a behaviour-preserving commit ran the check aggregate on tree `T1`, or ran only part of the aggregate
+
+And `git write-tree` names tree `T2` for the index when the commit-msg hook runs, or the aggregate run did not run the full suite
+
+When the commit-msg `red_green_replay` check runs its suite-green leg
+
+Then it MUST run the full pytest suite against the staged tree
+
+And it MUST record its `TDD-Suite-Green-*` trailers only from that run
+
 ## Scenario: the whole-suite coverage run prints its thirty slowest test phases
 
 Given a `just check-per-file-coverage` run whose test suite has more than thirty test phases

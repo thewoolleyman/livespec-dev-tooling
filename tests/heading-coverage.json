@@ -1305,6 +1305,54 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: a behaviour-preserving commit runs the full suite, and an empty run is refused",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) or an integration-marked test is owed for this heading, driving the suite-green leg on a staged product change to a full-suite green and to a `suite-red` refusal on pytest exit 5; livespec-dev-tooling-z5fwwn owns it.",
+    "work_item": "livespec-dev-tooling-z5fwwn"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a suite-green run that stops printing output for the stall window is ended",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) or an integration-marked test is owed for this heading, driving the suite-green leg against a pytest run that goes silent for the stall window; livespec-dev-tooling-t4rx4t owns it.",
+    "work_item": "livespec-dev-tooling-t4rx4t"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a long suite-green run that keeps printing output is not ended",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) or an integration-marked test is owed for this heading, driving the suite-green leg against a long run that keeps printing output and comparing its output checksum with a fast run; livespec-dev-tooling-t4rx4t owns it.",
+    "work_item": "livespec-dev-tooling-t4rx4t"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a refused suite-green run names why each test failed",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) or an integration-marked test is owed for this heading, driving the suite-green leg on a failing staged test and asserting the `suite-red` event's `failure_summary` and `failure_detail`; livespec-dev-tooling-z5fwwn owns it.",
+    "work_item": "livespec-dev-tooling-z5fwwn"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a suite-green leg reuses a passing full pre-commit aggregate on the same tree",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) or an integration-marked test is owed for this heading, driving the commit-msg suite-green leg after a passing full pre-commit aggregate on the same tree; livespec-dev-tooling-z5fwwn owns it.",
+    "work_item": "livespec-dev-tooling-z5fwwn"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a suite-green leg runs the full suite when the pre-commit aggregate judged a different tree or ran partially",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) or an integration-marked test is owed for this heading, driving the commit-msg suite-green leg after a pre-commit aggregate on a different tree or a partial aggregate; livespec-dev-tooling-z5fwwn owns it.",
+    "work_item": "livespec-dev-tooling-z5fwwn"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: the whole-suite coverage run prints its thirty slowest test phases",
     "test": "TODO",
     "reason": "Spec-first: a real test at the integration tier or above is owed for this scenario, driving `just check-per-file-coverage` and asserting its output lists the thirty slowest test phases with their durations; livespec-dev-tooling-tt4w7h owns it.",
@@ -1317,6 +1365,14 @@
     "test": "TODO",
     "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, exercising the gate client's commit-time delegation of the red_green_replay test runs against a staged tree; livespec-dev-tooling-sewnfp owns it.",
     "work_item": "livespec-dev-tooling-sewnfp"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "contracts.md",
+    "heading": "## Suite-green replay leg",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, driving the `red_green_replay` check's suite-green leg end-to-end on a staged tree across its scope, progress-bound, failure-detail and same-tree-reuse clauses; livespec-dev-tooling-z5fwwn owns it.",
+    "work_item": "livespec-dev-tooling-z5fwwn"
   },
   {
     "spec_root": "SPECIFICATION",
