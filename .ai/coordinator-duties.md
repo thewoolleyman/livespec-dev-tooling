@@ -294,7 +294,7 @@ ticket order (its charter), so on every pass it also:
 The coordinator runs the same stall Monitor from its own seat (local launcher logs, `fleet-cap` and the queue
 directory only, never ssh with sudo kubectl) as a second, independent check, and its tick still opens with the
 UTILIZATION read. The two seats do not rely on each other's report. Maintainer, 2026-11-02 ~18:2xZ: "What are you
-actually doing to make this more reliable from the dispatcher's perspective as well as yours?"
+actually doing to make this more reliable from the dispatcher's perspective as well as yours?" The maintainer ratified this split on 2026-11-02 ~18:4xZ as an amendment to legacy-dispatcher-agent's charter: "yes on maintainer call, this is correct separation of responsibilities".
 
 **Ask the connector before asking the maintainer.** When the answer to an ask lives in a system the coordinator has
 a connector for (Gmail, Calendar, Drive, Slack, Honeycomb), query it first. If the connector is missing or
