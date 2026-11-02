@@ -16,6 +16,7 @@ file-LLOC ceiling. The leading underscore marks a private sibling.
 
 from __future__ import annotations
 
+import codecs
 import datetime
 import hashlib
 import importlib.util
@@ -24,10 +25,12 @@ import re
 import signal
 import subprocess
 import sys
-from collections.abc import Mapping
-from dataclasses import dataclass
+import threading
+import time
+from collections.abc import Callable, Mapping
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import IO, TYPE_CHECKING, cast
 
 if TYPE_CHECKING:  # pragma: no cover
     import structlog.stdlib
@@ -44,6 +47,7 @@ from _red_green_replay_trailers import write_trailers  # noqa: E402
 __all__: list[str] = [
     "DEFAULT_STALL_SECONDS",
     "SuiteBound",
+    "SuiteProgress",
     "SuiteRun",
     "_handle_suite_green_mode",
     "canonical_output_checksum",
@@ -58,6 +62,8 @@ __all__: list[str] = [
 DEFAULT_STALL_SECONDS: int = 900
 _STALL_ENV: str = "LIVESPEC_SUITE_GREEN_STALL_SECONDS"
 _CEILING_ENV: str = "LIVESPEC_SUITE_GREEN_TIMEOUT_SECONDS"
+_POLL_SECONDS: float = 0.25
+_READ_BYTES: int = 65_536
 _NPROCS_ENV: str = "test_nprocs"
 _LANE_ENV: str = "LIVESPEC_CI_LANE"
 _PARALLELISM_ENV: str = "LIVESPEC_TEST_PARALLELISM"
@@ -67,8 +73,8 @@ _KILL_GRACE_SECONDS: int = 30
 # suite's verdict: worker chatter, `created: N/N workers`, `N workers [M items]`
 # and `....F..  [ 42%]` progress rows.
 _NOISE_LINE = re.compile(
-    r"^(\[gw\d+\].*|created: \d+/\d+ workers?.*|\d+ workers? \[\d+ items?\].*"
-    r"|[.FEsxX]*\s*\[\s*\d+%\])$"
+    r"^(\[gw\d+\].*|created: \d+/\d+ workers?.*|"
+    r"\d+ workers? \[\d+ items?\].*|[.FEsxX]*\s*\[\s*\d+%\])$"
 )
 _DURATION = re.compile(r"\bin \d+(?:\.\d+)?s(?: \(\d+:\d{2}:\d{2}\))?")
 _FAILED_SUMMARY_LINE = re.compile(r"^(?:FAILED|ERROR)\s+(\S+)", re.MULTILINE)
@@ -81,11 +87,12 @@ _FAILURE_DETAIL_LIMIT = 4000
 
 @dataclass(frozen=True, kw_only=True)
 class SuiteRun:
-    """Outcome of one bounded suite run; `returncode` is None on timeout."""
+    """Outcome of one bounded suite run; `returncode` is None when it is killed."""
 
     returncode: int | None
     output: str
     timed_out: bool
+    kill_reason: str | None = None
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -94,6 +101,26 @@ class SuiteBound:
 
     stall_seconds: int
     ceiling_seconds: int | None
+
+
+@dataclass(kw_only=True)
+class SuiteProgress:
+    """The received suite output and the instant at which it most recently advanced."""
+
+    clock: Callable[[], float]
+    last: float = field(init=False)
+    chunks: list[str] = field(default_factory=list, init=False)
+
+    def __post_init__(self) -> None:
+        self.last = self.clock()
+
+    @property
+    def output(self) -> str:
+        return "".join(self.chunks)
+
+    def saw(self, *, chunk: str) -> None:
+        self.chunks.append(chunk)
+        self.last = self.clock()
 
 
 def _positive_seconds(*, raw: str) -> int | None:
@@ -110,9 +137,15 @@ def suite_bound(*, environ: Mapping[str, str]) -> SuiteBound:
     )
 
 
-def suite_timeout_seconds(*, environ: Mapping[str, str]) -> int:
-    """Return the legacy total ceiling while the runner transitions to `SuiteBound`."""
-    return suite_bound(environ=environ).ceiling_seconds or 2400
+def kill_reason(
+    *, started: float, last_progress: float, now: float, bound: SuiteBound
+) -> str | None:
+    """Name the elapsed bound that ends a suite, if either has expired."""
+    if bound.ceiling_seconds is not None and now - started >= bound.ceiling_seconds:
+        return "ceiling"
+    if now - last_progress >= bound.stall_seconds:
+        return "stalled"
+    return None
 
 
 def _lane_worker_count(*, environ: Mapping[str, str], visible_cpus: int) -> str:
@@ -211,22 +244,55 @@ def _suite_failure_detail(*, output: str) -> str:
     return "\n".join(_TRACEBACK_LINE.findall(output))[:_FAILURE_DETAIL_LIMIT]
 
 
-def run_suite(*, argv: list[str], timeout_seconds: int) -> SuiteRun:
-    """Run `argv` in its own process group; on timeout kill the whole group."""
+def _drain(*, stream: IO[bytes], progress: SuiteProgress) -> None:
+    """Receive every output chunk, resetting progress until the pipe closes."""
+    decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
+    for chunk in iter(lambda: os.read(stream.fileno(), _READ_BYTES), b""):
+        progress.saw(chunk=decoder.decode(chunk))
+    trailing = decoder.decode(b"", final=True)
+    if trailing:
+        progress.saw(chunk=trailing)
+
+
+def run_suite(*, argv: list[str], bound: SuiteBound) -> SuiteRun:
+    """Run `argv` in its own process group and kill it after a silent window."""
     with subprocess.Popen(
         argv,
         stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
+        stderr=subprocess.STDOUT,
+        env={**os.environ, "PYTHONUNBUFFERED": "1"},
         start_new_session=True,
     ) as proc:
-        try:
-            stdout, stderr = proc.communicate(timeout=timeout_seconds)
-        except subprocess.TimeoutExpired:
+        progress = SuiteProgress(clock=time.monotonic)
+        started = progress.last
+        reader = threading.Thread(
+            target=_drain,
+            kwargs={"stream": cast("IO[bytes]", proc.stdout), "progress": progress},
+            daemon=True,
+        )
+        reader.start()
+        reason: str | None = None
+        while reason is None:
+            try:
+                _ = proc.wait(timeout=_POLL_SECONDS)
+                break
+            except subprocess.TimeoutExpired:
+                reason = kill_reason(
+                    started=started,
+                    last_progress=progress.last,
+                    now=time.monotonic(),
+                    bound=bound,
+                )
+        if reason is not None:
             os.killpg(proc.pid, signal.SIGKILL)
-            stdout, stderr = proc.communicate(timeout=_KILL_GRACE_SECONDS)
-            return SuiteRun(returncode=None, output=(stdout or "") + (stderr or ""), timed_out=True)
-        return SuiteRun(returncode=proc.returncode, output=stdout + stderr, timed_out=False)
+            _ = proc.wait(timeout=_KILL_GRACE_SECONDS)
+        reader.join(timeout=_KILL_GRACE_SECONDS)
+        return SuiteRun(
+            returncode=None if reason is not None else proc.returncode,
+            output=progress.output,
+            timed_out=reason is not None,
+            kill_reason=reason,
+        )
 
 
 def _handle_suite_green_mode(
@@ -265,7 +331,7 @@ def _handle_suite_green_mode(
             check_id="red-green-replay-suite-green-serial-fallback",
             hint="Add pytest-xdist to this repo's dev dependencies to parallelize this leg.",
         )
-    timeout_seconds = suite_timeout_seconds(environ=os.environ)
+    bound = suite_bound(environ=os.environ)
     argv = suite_pytest_argv(
         environ=os.environ,
         test_paths=selected_tests,
@@ -277,23 +343,29 @@ def _handle_suite_green_mode(
         check_id="red-green-replay-suite-green-argv",
         argv=argv,
         scope=scope,
-        timeout_seconds=timeout_seconds,
+        stall_seconds=bound.stall_seconds,
+        ceiling_seconds=bound.ceiling_seconds,
     )
-    suite_result = run_suite(argv=argv, timeout_seconds=timeout_seconds)
+    suite_result = run_suite(argv=argv, bound=bound)
     if suite_result.timed_out:
         timeout_message = (
-            f"suite-green-timeout: the suite-green leg exceeded {timeout_seconds}s; the pytest "
-            "process group was killed (raise LIVESPEC_SUITE_GREEN_TIMEOUT_SECONDS to allow longer)"
+            f"suite-green-timeout: the suite-green leg was killed ({suite_result.kill_reason}): "
+            f"its stall window is {bound.stall_seconds}s with no new output ({_STALL_ENV}) and "
+            f"its total ceiling is {bound.ceiling_seconds or 'unset'} ({_CEILING_ENV}); the pytest "
+            "process group was killed"
         )
         log.error(
             timeout_message,
             check_id="red-green-replay-suite-green-timeout",
             leg="suite-green",
-            timeout_seconds=timeout_seconds,
+            kill_reason=suite_result.kill_reason,
+            stall_seconds=bound.stall_seconds,
+            ceiling_seconds=bound.ceiling_seconds,
+            stall_env_var=_STALL_ENV,
             timeout_env_var="LIVESPEC_SUITE_GREEN_TIMEOUT_SECONDS",
             hint=(
-                "The suite-green leg is bounded by LIVESPEC_SUITE_GREEN_TIMEOUT_SECONDS "
-                f"(default 2400, now {timeout_seconds}). Parallelism comes from `test_nprocs`."
+                "The suite-green leg is bounded by output progress; an optional total ceiling is "
+                f"set through {_CEILING_ENV}. Parallelism comes from `test_nprocs`."
             ),
             protocol=RED_GREEN_REPLAY_PROTOCOL,
         )

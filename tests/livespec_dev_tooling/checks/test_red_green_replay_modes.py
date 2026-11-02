@@ -254,9 +254,8 @@ def _run_suite_leg(
 
     seen: dict[str, object] = {}
 
-    def fake_run_suite(*, argv: list[str], timeout_seconds: int | None = None, bound=None):
+    def fake_run_suite(*, argv: list[str], bound):
         seen["argv"] = argv
-        seen["timeout"] = timeout_seconds
         seen["bound"] = bound
         return suite_run
 
@@ -307,7 +306,7 @@ def test_suite_green_timeout_rejects_with_named_check_id(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
-    run = _suite_run_cls()(returncode=None, output="", timed_out=True)
+    run = _suite_run_cls()(returncode=None, output="", timed_out=True, kill_reason="ceiling")
     monkeypatch.setenv("LIVESPEC_SUITE_GREEN_TIMEOUT_SECONDS", "77")
     rc, log, message, _seen, _ = _run_suite_leg(monkeypatch, tmp_path, suite_run=run)
     assert rc == 1
@@ -317,6 +316,8 @@ def test_suite_green_timeout_rejects_with_named_check_id(
     assert "suite-green" in event
     assert "77" in event
     assert "LIVESPEC_SUITE_GREEN_TIMEOUT_SECONDS" in event
+    assert "LIVESPEC_SUITE_GREEN_STALL_SECONDS" in event
+    assert "ceiling" in event
 
 
 def test_suite_green_nonzero_and_exit_five_still_reject_without_trailers(
