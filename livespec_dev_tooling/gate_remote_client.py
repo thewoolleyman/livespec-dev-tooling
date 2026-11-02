@@ -102,6 +102,7 @@ from livespec_dev_tooling.gate_remote_job_status import (
     COMPLETE_CONDITION,
     Terminal,
     created_job_name,
+    created_job_tree_hash,
     reported_time,
     terminal_condition,
     unreadable,
@@ -444,6 +445,7 @@ def _gate_a_pushed_tree(
     if isinstance(named, Failure):
         return Failure(named.failure())
     job_name = named.unwrap()
+    reported_tree = created_job_tree_hash(payload=submitted.unwrap().stdout) or tree_hash
     # ONLY when a token was actually minted, which is the state of a push whose
     # repository names a PRIVATE cross-repo sibling and of no other. The step is
     # AFTER the submit because the Secret is owner-referenced to the Job the
@@ -490,7 +492,7 @@ def _gate_a_pushed_tree(
     )
     return streamed.map(
         lambda ran: GateRunOutcome(
-            tree_hash=tree_hash,
+            tree_hash=reported_tree,
             job_name=job_name,
             terminal_state=ended.condition,
             logs_returncode=ran.returncode,
