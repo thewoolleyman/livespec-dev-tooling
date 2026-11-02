@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.145.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.145.0...v1.145.1) (2026-11-02)
+
+
+### Bug Fixes
+
+* require btop-loop inventory binding ([f4a0c46](https://github.com/thewoolleyman/livespec-dev-tooling/commit/f4a0c466ab8d131b3b87e2472b0f4458b6df2998))
+
 ## [1.145.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.144.0...v1.145.0) (2026-11-01)
 
 
