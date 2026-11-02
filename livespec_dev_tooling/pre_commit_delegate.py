@@ -19,7 +19,7 @@ from livespec_dev_tooling.gate_remote_verdict import (
 
 __all__: list[str] = ["PreCommitVerdict", "main", "run_pre_commit"]
 
-_CHECK_SUITE = ("check-pre-commit",)
+_CHECK_SUITE = ("check-pre-commit-gated-tree",)
 _LOCAL_FALLBACK = 75
 
 
