@@ -235,7 +235,7 @@ def _decided(
         job_started_at=outcome.started_at or None,
         job_finished_at=outcome.finished_at or None,
         output_checksum=outcome.output_checksum or None,
-        tree_hash=outcome.tree_hash,
+        tree_hash=outcome.reported_tree_hash or None,
     )
 
 
