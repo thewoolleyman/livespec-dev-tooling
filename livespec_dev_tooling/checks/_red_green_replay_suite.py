@@ -261,12 +261,38 @@ def _handle_suite_green_mode(
         timeout_seconds=timeout_seconds,
     )
     verdict = run_replay(repo_root=Path.cwd(), pytest_argv=["pytest", *argv[3:]])
-    suite_result = run_suite(argv=argv, timeout_seconds=timeout_seconds)
-    log.info(
-        "commit-time replay gated locally",
-        check_id="red-green-replay-gated-locally",
-        reason=verdict.reason,
-    )
+    if (
+        not verdict.local
+        and verdict.exit_status is not None
+        and verdict.job_name is not None
+        and verdict.tree_hash is not None
+        and verdict.output_checksum is not None
+    ):
+        suite_result = SuiteRun(
+            returncode=verdict.exit_status,
+            output=verdict.reason,
+            timed_out=False,
+        )
+        output_checksum = verdict.output_checksum
+        gate_trailers = (
+            ("TDD-Suite-Green-Gate-Job", verdict.job_name),
+            ("TDD-Suite-Green-Staged-Tree", verdict.tree_hash),
+        )
+        log.info(
+            "commit-time replay gated by a gate Job",
+            check_id="red-green-replay-delegated",
+            job_name=verdict.job_name,
+            tree_hash=verdict.tree_hash,
+        )
+    else:
+        suite_result = run_suite(argv=argv, timeout_seconds=timeout_seconds)
+        output_checksum = canonical_output_checksum(output=suite_result.output)
+        gate_trailers: tuple[tuple[str, str], ...] = ()
+        log.info(
+            "commit-time replay gated locally",
+            check_id="red-green-replay-gated-locally",
+            reason=verdict.reason,
+        )
     if suite_result.timed_out:
         timeout_message = (
             f"suite-green-timeout: the suite-green leg exceeded {timeout_seconds}s; the pytest "
@@ -304,7 +330,6 @@ def _handle_suite_green_mode(
             protocol=RED_GREEN_REPLAY_PROTOCOL,
         )
         return 1
-    output_checksum = canonical_output_checksum(output=suite_output)
     captured_at = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     write_trailers(
         msg_path=msg_path,
@@ -312,6 +337,7 @@ def _handle_suite_green_mode(
             ("TDD-Suite-Green-Scope", scope),
             ("TDD-Suite-Green-Output-Checksum", output_checksum),
             ("TDD-Suite-Green-Captured-At", captured_at),
+            *gate_trailers,
         ),
     )
     return 0

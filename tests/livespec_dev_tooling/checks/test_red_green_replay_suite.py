@@ -205,6 +205,79 @@ def test_suite_green_without_a_gates_credential_runs_locally_and_says_so(
     ]
 
 
+def test_suite_green_uses_job_evidence_and_falls_back_when_it_has_no_verdict(
+    *, monkeypatch, tmp_path: Path
+) -> None:
+    """A Job verdict gates suite-green; an absent one reruns it on the committing host."""
+    from livespec_dev_tooling.commit_replay_delegate import ReplayVerdict
+
+    mod = _load()
+    monkeypatch.chdir(tmp_path)
+    message = tmp_path / "COMMIT_EDITMSG"
+    message.write_text("chore: suite green\n", encoding="utf-8")
+    log = _RecordingLog()
+    local_runs: list[list[str]] = []
+    verdicts = iter(
+        (
+            ReplayVerdict(
+                local=False,
+                reason="the Job passed",
+                job_name="gate-suite-1",
+                tree_hash="a" * 40,
+                exit_status=0,
+                output_checksum="sha256:remote-output",
+            ),
+            ReplayVerdict(local=False, reason="the gate Job reached no verdict"),
+        )
+    )
+
+    monkeypatch.setattr(mod, "run_replay", lambda **_kwargs: next(verdicts))
+    monkeypatch.setattr(mod, "xdist_importable", lambda: False)
+
+    def local_suite(*, argv: list[str], timeout_seconds: int):
+        local_runs.append(argv)
+        assert timeout_seconds == 2400
+        return mod.SuiteRun(returncode=0, output="1 passed in 0.01s\n", timed_out=False)
+
+    monkeypatch.setattr(mod, "run_suite", local_suite)
+
+    assert (
+        mod._handle_suite_green_mode(  # noqa: SLF001
+            msg_path=message,
+            log=log,
+            staged_paths=["tests/test_changed.py"],
+            tests_paths=["tests/test_changed.py"],
+        )
+        == 0
+    )
+    remote_message = message.read_text(encoding="utf-8")
+    assert local_runs == []
+    assert "TDD-Suite-Green-Gate-Job: gate-suite-1" in remote_message
+    assert f"TDD-Suite-Green-Staged-Tree: {'a' * 40}" in remote_message
+    assert "TDD-Suite-Green-Output-Checksum: sha256:remote-output" in remote_message
+
+    message.write_text("chore: suite green fallback\n", encoding="utf-8")
+    assert (
+        mod._handle_suite_green_mode(  # noqa: SLF001
+            msg_path=message,
+            log=log,
+            staged_paths=["tests/test_changed.py"],
+            tests_paths=["tests/test_changed.py"],
+        )
+        == 0
+    )
+    fallback_message = message.read_text(encoding="utf-8")
+    assert local_runs == [
+        [sys.executable, "-m", "pytest", "--tb=line", "-q", "tests/test_changed.py"]
+    ]
+    assert "TDD-Suite-Green-Gate-Job" not in fallback_message
+    assert "TDD-Suite-Green-Output-Checksum: sha256:remote-output" not in fallback_message
+    assert [event for _level, event, _kwargs in log.records if event.startswith("commit-time")] == [
+        "commit-time replay gated by a gate Job",
+        "commit-time replay gated locally",
+    ]
+
+
 class _RecordingLog:
     """Minimal structured logger for suite-green route assertions."""
 
