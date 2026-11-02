@@ -1,0 +1,176 @@
+---
+# k3s-window-drain.yml — the ONE sanctioned way to pause the CI runner pool's
+# intake and to cordon or uncordon a pool node around a k3s restart window, so
+# the restart can run without killing a CI job or waiting for a naturally idle
+# pool.
+#
+# WHY IT EXISTS (orchestrator work-items bd-ib-v7h3az and bd-ib-3kdjct; the
+# maintainer-approved combined k3s restart window, livespec-dev-tooling-6tgd2z
+# scope event 2026-11-02T14:13:05Z). `restart-k3s-server.yml` waits for the
+# arc-runners pool to read idle twice, and `restart-k3s-agent.yml` refuses a
+# node running any pod a DaemonSet does not own. On 2026-11-02 the pool held
+# 15-51 busy runner pods all afternoon and never went idle, so both restarts
+# refused. The maintainer's direction: drain load to the other workers just long
+# enough to restart without disrupting. The only ways to do that were hand
+# `kubectl patch` / `kubectl cordon` commands, which the Driver's
+# `fleet_host_guard.py` refuses as hand changes to the fleet. This playbook is
+# that gap closed, in the fenced shape the restart playbooks already use.
+#
+# FOUR ACTIONS, ONE CONFIRMATION EACH. `k3s_window_action` selects one:
+#   pause-arc    — for EVERY AutoscalingRunnerSet, record its spec.maxRunners in
+#                  the annotation `livespec.dev/window-paused-max-runners`, then
+#                  set maxRunners to 0. GitHub queues new jobs instead of failing
+#                  them; runners already running a job keep running it. A set
+#                  that already carries the record is left alone, so a re-run
+#                  never overwrites the original value with 0.
+#   restore-arc  — set every recorded set's maxRunners back to its recorded value
+#                  EXACTLY and remove the record. It REFUSES when no set carries a
+#                  record, so a stray restore cannot invent limits.
+#   cordon       — mark the confirmed node unschedulable, so new pods land on the
+#                  other nodes while the node's running pods finish.
+#   uncordon     — mark it schedulable again.
+# NOTHING HERE EVICTS, DRAINS OR DELETES A POD. Evicting a busy runner pod kills
+# its CI job, and the ARC workflow pods are unmanaged, so a drain is exactly the
+# disruption this window must avoid. The operator waits for the node's work to
+# finish (the agent playbook's pod gate is the check), and factory sandbox pods
+# follow the dispatcher's cancel-and-re-dispatch route.
+#
+# THE FENCE IS A VARIABLE. Without `k3s_window_confirm=<action>` naming the same
+# action as `k3s_window_action`, the play reads nothing and changes nothing. The
+# node actions also require `k3s_window_node` to name a pool node in the
+# inventory. Everything runs once, on the pool's server, under its admin
+# kubeconfig.
+
+- name: Pause or restore CI runner intake, or cordon or uncordon a pool node, for a k3s window
+  hosts: ci_pool
+  gather_facts: false
+  vars:
+    k3s_window_admin_kubeconfig: /etc/rancher/k3s/k3s.yaml
+    k3s_window_record_annotation: livespec.dev/window-paused-max-runners
+    k3s_window_actions: [pause-arc, restore-arc, cordon, uncordon]
+    k3s_window_node_actions: [cordon, uncordon]
+    k3s_window_requested: >-
+      {{ k3s_window_action | default('') in k3s_window_actions
+         and k3s_window_confirm | default('') == k3s_window_action | default('')
+         and cluster_role | default('') == 'server' }}
+    k3s_window_node_known: >-
+      {{ k3s_window_node | default('') in groups['ci_pool'] }}
+  tasks:
+    - name: Report a run that carries no matching confirmation
+      ansible.builtin.debug:
+        msg: >-
+          Not acting on {{ inventory_hostname }}: this run needs
+          `k3s_window_action` set to one of {{ k3s_window_actions | join(', ') }}
+          and `k3s_window_confirm` naming the same action (it carries action
+          `{{ k3s_window_action | default('<unset>') }}`, confirm
+          `{{ k3s_window_confirm | default('<unset>') }}`), and acts only on the
+          pool's server. Nothing was read and nothing was changed.
+      when:
+        - cluster_role | default('') == 'server'
+        - not (k3s_window_requested | bool)
+
+    - name: Refuse a node action that does not name a pool node
+      ansible.builtin.fail:
+        msg: >-
+          Refusing `{{ k3s_window_action }}`: `k3s_window_node` is
+          `{{ k3s_window_node | default('<unset>') }}`, which is not a ci_pool
+          host in the inventory. Nothing was changed.
+      when:
+        - k3s_window_requested | bool
+        - k3s_window_action in k3s_window_node_actions
+        - not (k3s_window_node_known | bool)
+
+    - name: Pause every runner set's intake, recording its limit first
+      when:
+        - k3s_window_requested | bool
+        - k3s_window_action == 'pause-arc'
+      ansible.builtin.shell:
+        executable: /bin/bash
+        # Read the sets ONCE, fail closed on a read that did not happen, and for
+        # each set record the limit BEFORE zeroing it. A set already carrying the
+        # record keeps it: re-running pause must never record the paused 0.
+        cmd: |
+          set -euo pipefail
+          template='{range .items[*]}{.metadata.namespace}{" "}{.metadata.name}'
+          template+='{" "}{.spec.maxRunners}{" "}'
+          template+='{.metadata.annotations.livespec\.dev/window-paused-max-runners}{"\n"}{end}'
+          sets="$(kubectl get autoscalingrunnersets --all-namespaces \
+            --output "jsonpath=${template}")"
+          printf '%s\n' "${sets}" | while read -r namespace name max recorded; do
+            test -n "${namespace}" || continue
+            if test -z "${recorded}"; then
+              kubectl annotate autoscalingrunnerset --namespace "${namespace}" "${name}" \
+                '{{ k3s_window_record_annotation }}'="${max}"
+              recorded="${max}"
+            fi
+            kubectl patch autoscalingrunnerset --namespace "${namespace}" "${name}" \
+              --type merge --patch '{"spec":{"maxRunners":0}}' >/dev/null
+            printf 'paused %s/%s maxRunners %s -> 0 (recorded %s)\n' \
+              "${namespace}" "${name}" "${max}" "${recorded}"
+          done
+      become: true
+      environment:
+        KUBECONFIG: "{{ k3s_window_admin_kubeconfig }}"
+      register: k3s_window_pause
+      changed_when: k3s_window_pause.stdout != ''
+
+    - name: Restore every recorded runner set's limit exactly
+      when:
+        - k3s_window_requested | bool
+        - k3s_window_action == 'restore-arc'
+      ansible.builtin.shell:
+        executable: /bin/bash
+        cmd: |
+          set -euo pipefail
+          template='{range .items[*]}{.metadata.namespace}{" "}{.metadata.name}{" "}'
+          template+='{.metadata.annotations.livespec\.dev/window-paused-max-runners}{"\n"}{end}'
+          sets="$(kubectl get autoscalingrunnersets --all-namespaces \
+            --output "jsonpath=${template}")"
+          restored=0
+          while read -r namespace name recorded; do
+            test -n "${namespace}" || continue
+            test -n "${recorded}" || continue
+            case "${recorded}" in
+              *[!0-9]*) printf 'refusing %s/%s: recorded value %s is not a count\n' \
+                "${namespace}" "${name}" "${recorded}" >&2; exit 1 ;;
+            esac
+            kubectl patch autoscalingrunnerset --namespace "${namespace}" "${name}" \
+              --type merge --patch "{\"spec\":{\"maxRunners\":${recorded}}}" >/dev/null
+            kubectl annotate autoscalingrunnerset --namespace "${namespace}" "${name}" \
+              '{{ k3s_window_record_annotation }}-'
+            printf 'restored %s/%s maxRunners -> %s\n' "${namespace}" "${name}" "${recorded}"
+            restored=$((restored + 1))
+          done <<< "${sets}"
+          if test "${restored}" -eq 0; then
+            echo 'refusing restore-arc: no runner set carries a recorded limit' >&2
+            exit 1
+          fi
+      become: true
+      environment:
+        KUBECONFIG: "{{ k3s_window_admin_kubeconfig }}"
+      register: k3s_window_restore
+      changed_when: k3s_window_restore.rc == 0
+
+    - name: Cordon or uncordon the confirmed node
+      when:
+        - k3s_window_requested | bool
+        - k3s_window_action in k3s_window_node_actions
+      ansible.builtin.command:
+        argv:
+          - kubectl
+          - "{{ k3s_window_action }}"
+          - "{{ k3s_window_node }}"
+      become: true
+      environment:
+        KUBECONFIG: "{{ k3s_window_admin_kubeconfig }}"
+      register: k3s_window_node_change
+      changed_when: "'already' not in k3s_window_node_change.stdout"
+
+    - name: Report what the action did
+      when: k3s_window_requested | bool
+      ansible.builtin.debug:
+        msg: >-
+          {{ k3s_window_action }} on the pool:
+          {{ (k3s_window_pause.stdout_lines | default([]))
+             + (k3s_window_restore.stdout_lines | default([]))
+             + (k3s_window_node_change.stdout_lines | default([])) }}
