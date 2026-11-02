@@ -163,7 +163,7 @@ def test_a_green_aggregate_prints_no_digest() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Both hook gates inherit the tail through the bare aggregate line
+# Both hook gates preserve the dispatcher's complete aggregate output
 # ---------------------------------------------------------------------------
 
 
@@ -176,10 +176,9 @@ def test_both_hook_aggregates_route_through_the_dispatcher(script_name: str) -> 
 
     The digest is emitted by the dispatcher, so the pre-commit half of the
     acceptance criteria holds only while both gates keep running the SAME
-    aggregate the dispatcher owns. Asserted as the invocation line rather than
-    as an output shape because that is the property that can regress: a hook
-    that pipes, tees or re-implements the aggregate would still print
-    something, just not this.
+    aggregate the dispatcher owns. Pre-commit may tee that output to mint its
+    same-tree evidence, but it must preserve the aggregate's exit status and
+    relay every output line.
     """
     script = (_REPO_ROOT / "scripts" / "just" / script_name).read_text(encoding="utf-8")
     invocations = [
@@ -189,9 +188,13 @@ def test_both_hook_aggregates_route_through_the_dispatcher(script_name: str) -> 
     ]
 
     assert invocations, f"{script_name} no longer invokes the `just check` aggregate"
-    assert all(
-        "|" not in line for line in invocations
-    ), f"{script_name} pipes the aggregate; the dispatcher's tail would no longer be the tail"
+    if script_name == "check-pre-commit.sh":
+        assert 'just hook_gate=1 check 2>&1 | tee "$aggregate_log"' in script
+        assert "aggregate_status=${PIPESTATUS[0]}" in script
+    else:
+        assert all(
+            "|" not in line for line in invocations
+        ), f"{script_name} pipes the aggregate; the dispatcher's tail would no longer be the tail"
     if script_name == "check-pre-push.sh":
         assert 'cat "$gate_output"' in script, (
             "the pre-push hook may capture the aggregate to diagnose individual pytest failures, "

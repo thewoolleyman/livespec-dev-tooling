@@ -12,6 +12,9 @@ import inspect
 import sys
 from pathlib import Path
 
+import pytest
+import structlog
+
 __all__: list[str] = []
 
 _MODULE_PATH = (
@@ -131,6 +134,92 @@ def test_checksum_differs_when_outcome_count_differs() -> None:
     one = mod.canonical_output_checksum(output="3 passed in 1.00s\n")
     other = mod.canonical_output_checksum(output="4 passed in 1.00s\n")
     assert one != other
+
+
+def test_same_tree_full_pre_commit_evidence_reuses_the_aggregate_run(
+    *, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A full pre-commit verdict on this index tree replaces a second suite run."""
+    mod = _load()
+    assert hasattr(mod, "handle_suite_green_mode")
+    evidence = mod.PreCommitAggregateEvidence(
+        tree_hash="same-tree",
+        run_id="pre-commit-aggregate:run-123",
+        output_checksum="sha256:aggregate-output",
+        captured_at="2026-11-02T12:00:00Z",
+    )
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(mod, "read_pre_commit_evidence", lambda **_kwargs: evidence)
+    monkeypatch.setattr(mod, "staged_tree_hash", lambda **_kwargs: "same-tree")
+    suite_runs: list[object] = []
+    monkeypatch.setattr(mod, "run_suite", lambda **kwargs: suite_runs.append(kwargs))
+    msg_path = tmp_path / "COMMIT_EDITMSG"
+    msg_path.write_text("refactor: behaviour-preserving change\n", encoding="utf-8")
+
+    assert (
+        mod.handle_suite_green_mode(
+            msg_path=msg_path,
+            log=structlog.get_logger(),
+            staged_paths=["livespec_dev_tooling/example.py"],
+        )
+        == 0
+    )
+    assert suite_runs == []
+    message = msg_path.read_text(encoding="utf-8")
+    assert "TDD-Suite-Green-Output-Checksum: sha256:aggregate-output" in message
+    assert "TDD-Suite-Green-Producer: pre-commit-aggregate:run-123" in message
+
+
+@pytest.mark.parametrize("evidence_tree", [None, "different-tree"])
+def test_missing_or_other_tree_pre_commit_evidence_runs_a_fresh_full_suite(
+    *, evidence_tree: str | None, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Only a matching, full aggregate may replace the staged-tree suite run."""
+    from livespec_dev_tooling.commit_replay_delegate import ReplayVerdict
+
+    mod = _load()
+    assert hasattr(mod, "handle_suite_green_mode")
+    evidence = (
+        None
+        if evidence_tree is None
+        else mod.PreCommitAggregateEvidence(
+            tree_hash=evidence_tree,
+            run_id="pre-commit-aggregate:other",
+            output_checksum="sha256:other-output",
+            captured_at="2026-11-02T12:00:00Z",
+        )
+    )
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(mod, "read_pre_commit_evidence", lambda **_kwargs: evidence)
+    monkeypatch.setattr(mod, "staged_tree_hash", lambda **_kwargs: "same-tree")
+    monkeypatch.setattr(
+        mod,
+        "run_replay",
+        lambda **_kwargs: ReplayVerdict(local=True, reason="gates kubeconfig is not readable"),
+    )
+    monkeypatch.setattr(mod, "xdist_importable", lambda: False)
+    suite_runs: list[object] = []
+
+    def local_suite(**kwargs: object) -> object:
+        suite_runs.append(kwargs)
+        return mod.SuiteRun(returncode=0, output="5 passed in 1.00s\n", timed_out=False)
+
+    monkeypatch.setattr(mod, "run_suite", local_suite)
+    msg_path = tmp_path / "COMMIT_EDITMSG"
+    msg_path.write_text("refactor: behaviour-preserving change\n", encoding="utf-8")
+
+    assert (
+        mod.handle_suite_green_mode(
+            msg_path=msg_path,
+            log=structlog.get_logger(),
+            staged_paths=["livespec_dev_tooling/example.py"],
+        )
+        == 0
+    )
+    assert len(suite_runs) == 1
+    message = msg_path.read_text(encoding="utf-8")
+    assert "TDD-Suite-Green-Output-Checksum: sha256:other-output" not in message
+    assert "TDD-Suite-Green-Producer:" not in message
 
 
 def test_suite_green_without_a_gates_credential_runs_locally_and_says_so(
