@@ -190,6 +190,22 @@
     - role: factory_workspace_root
       tags: [factory_workspace_root]
       when: ci_pool_factory_node == 'true'
+    # And the image that pod is built from, held in THIS node's k3s containerd
+    # before the scheduler weighs the node (work-item bd-ib-kogktm, in the
+    # livespec-orchestrator-beads-fabro tenant). Measured 2026-10-26: every
+    # factory pod landed on poweredge-xubuntu and none on gmktec-xubuntu, whose
+    # containerd held python-agent-v1.93.5 and not the v1.114.1 the pods ran.
+    # The fabro-hosts.yml warm fills DOCKER's store, which no pod reads. This is
+    # the same role filling the CRI store instead, under its own unit names, so
+    # it is disjoint from the docker warm on a host in both plays. Its timer
+    # re-reads every Fabro server's committed process_spec image on master, so
+    # a pin bump is pulled with no apply. Same FACTORY_NODE gate as the
+    # workspace root above. Restarts nothing, drains nothing; see the role's
+    # HOST_VARS.md §"The containerd store".
+    - role: sandbox_image_warm
+      tags: [sandbox_image_warm_containerd]
+      when: ci_pool_factory_node == 'true'
+      sandbox_image_warm_store: containerd
     # Before 4/10 — mint+deliver the agent's scoped node-status credential, so
     # the reapply timer below has something to authenticate with (agent-only,
     # self-gated).

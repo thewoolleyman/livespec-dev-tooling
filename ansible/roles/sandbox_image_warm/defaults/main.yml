@@ -4,10 +4,31 @@
 # for the operator procedure, the rollback and the condition under which this
 # control is retired.
 
-sandbox_image_warm_bin: /usr/local/sbin/livespec-sandbox-image-warm
+# WHICH IMAGE STORE THIS INSTANCE OF THE WARM FILLS. `docker` (the default) is
+# a docker Fabro factory host's own store, reached by ansible/fabro-hosts.yml.
+# `containerd` is a k3s factory node's CRI store, the one a Kubernetes factory
+# pod is pulled into, reached by ansible/ci-pool.yml on every node whose profile
+# declares FACTORY_NODE=true (work-item bd-ib-kogktm). The play passes it as a
+# role parameter, never through host_vars: hp-xubuntu and gmktec-xubuntu are in
+# BOTH plays and carry both warms, so a host_vars value would flip both.
+sandbox_image_warm_store: docker
+
+# `present` installs and arms the warm; `absent` retires it (tasks/absent.yml):
+# stops and disables its timer and removes its runner and units, through the
+# committed apply, because the fleet host guard refuses doing that by hand.
+sandbox_image_warm_state: present
+
+# Every name below is derived from the store, so the two warms on one host are
+# DISJOINT — their own runner, units and lock files — and rolling one back
+# never touches the other. The docker names are the ones this role installed
+# before the containerd store existed, so a docker host's converge is unchanged.
+sandbox_image_warm_name: >-
+  livespec-sandbox-image-warm{{ '' if sandbox_image_warm_store == 'docker'
+  else '-' ~ sandbox_image_warm_store }}
+sandbox_image_warm_bin: /usr/local/sbin/{{ sandbox_image_warm_name | trim }}
 sandbox_image_warm_unit_dir: /etc/systemd/system
-sandbox_image_warm_service: livespec-sandbox-image-warm.service
-sandbox_image_warm_timer: livespec-sandbox-image-warm.timer
+sandbox_image_warm_service: "{{ sandbox_image_warm_name | trim }}.service"
+sandbox_image_warm_timer: "{{ sandbox_image_warm_name | trim }}.timer"
 
 # The image whose tags are warmed, and the LAYER prefixes of the tags within it.
 # A factory host warms one reference per prefix: `<image>:<prefix>-v<version>`.
@@ -29,7 +50,7 @@ sandbox_image_warm_pin_url: >-
 
 # One lock file per warmed reference, on tmpfs: the lock has no meaning across a
 # reboot, and a stale lock file under /var would outlive the pull it guarded.
-sandbox_image_warm_lock_dir: /run/livespec-sandbox-image-warm
+sandbox_image_warm_lock_dir: /run/{{ sandbox_image_warm_name | trim }}
 # How long a warm waits for a concurrent warm's pull before giving up. Generous
 # on purpose: waiting is the whole point, and the alternative to waiting is the
 # second concurrent pull that tore down the first one's leases. A warm that hits
@@ -45,3 +66,43 @@ sandbox_image_warm_randomized_delay_sec: 30
 # Bounds ONE warm, layer download included; the lock wait above is bounded
 # separately and is the larger of the two concerns.
 sandbox_image_warm_timeout_start_sec: 45min
+
+# --- the containerd store only ----------------------------------------------
+
+# The CRI client the containerd warm reads and pulls through. `k3s crictl` and
+# not a bare `crictl`: the k3s uninstall and some installs drop the crictl
+# symlink, and the multicall binary already points at k3s's own socket. A pull
+# through the CRI is what makes the image one kubelet sees; a bare `ctr` pull
+# would not carry the CRI's labels.
+sandbox_image_warm_crictl: /usr/local/bin/k3s crictl
+
+# WHERE A CONTAINERD WARM'S REFERENCES COME FROM. A Kubernetes sandbox is built
+# from the registered provider's `process_spec.image` in the Fabro server's
+# host_vars, a tag that moves on its own schedule rather than with this
+# repository's release. So the warm re-reads those committed host_vars files on
+# master every tick, and a pin bump merged to master is warmed with nobody
+# applying anything. The files are every Fabro factory host's (sandbox_hosts),
+# resolved from the inventory so no machine is named here; a host whose file
+# declares no process_spec contributes nothing. Empty for the docker store,
+# which keeps reading the release pin above.
+sandbox_image_warm_host_vars_base_url: >-
+  https://raw.githubusercontent.com/thewoolleyman/livespec-dev-tooling/master/ansible/inventory/host_vars
+sandbox_image_warm_process_spec_urls: >-
+  {{ (groups['sandbox_hosts'] | default([]) | sort
+      | map('regex_replace', '^(.*)$', (sandbox_image_warm_host_vars_base_url | trim) ~ '/\\1.yml')
+      | list)
+     if sandbox_image_warm_store == 'containerd' else [] }}
+
+# What the inventory ITSELF says those files carry: every process_spec image of
+# every Fabro server instance on every host. Read only by the converge, which
+# refuses to arm a containerd warm against an inventory that declares none; the
+# timer reads master, not this, so the two agree whenever master is applied.
+sandbox_image_warm_inventory_process_spec_images: >-
+  {{ groups['all'] | map('extract', hostvars)
+     | selectattr('fabro_server_instances', 'defined')
+     | map(attribute='fabro_server_instances') | flatten(levels=1)
+     | selectattr('sandbox_providers', 'defined')
+     | map(attribute='sandbox_providers') | map('dict2items') | flatten(levels=1)
+     | map(attribute='value') | selectattr('process_spec', 'defined')
+     | map(attribute='process_spec') | selectattr('image', 'defined')
+     | map(attribute='image') | unique | sort }}

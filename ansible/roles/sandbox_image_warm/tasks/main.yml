@@ -19,6 +19,66 @@
 # explicitly that no operator command runs by hand. Enabling without starting
 # would make the first warm wait for a reboot of a host that is deliberately
 # long-lived.
+#
+# THE CONTAINERD STORE (work-item bd-ib-kogktm, livespec-orchestrator-beads-fabro
+# tenant). ansible/ci-pool.yml includes this same role with
+# `sandbox_image_warm_store: containerd` on every k3s node whose profile declares
+# FACTORY_NODE=true, so the image a Kubernetes factory pod is built from is in
+# that node's k3s containerd before the scheduler weighs the node. It is the
+# same mechanism — one oneshot, one timer, the same flock and re-check — under
+# its own names, so it is a facility DISJOINT from the docker warm on a host
+# that carries both. That converge restarts nothing either: not k3s, not
+# dockerd, not any Fabro server, and it drains nothing. A pull through the CRI
+# runs beside live pods exactly as kubelet's own pulls do.
+
+- name: Refuse an image store this warm does not know
+  ansible.builtin.assert:
+    that:
+      - sandbox_image_warm_store in ['docker', 'containerd']
+    fail_msg: >-
+      sandbox_image_warm_store is {{ sandbox_image_warm_store | to_json }}; it
+      must be docker (a Fabro factory host's own store) or containerd (a k3s
+      factory node's CRI store). Nothing was installed.
+    success_msg: this warm fills the {{ sandbox_image_warm_store }} store
+
+- name: Refuse a warm state this role does not know
+  ansible.builtin.assert:
+    that:
+      - sandbox_image_warm_state in ['present', 'absent']
+    fail_msg: >-
+      sandbox_image_warm_state is {{ sandbox_image_warm_state | to_json }}; it
+      must be present (install and arm) or absent (retire). Nothing was changed.
+    success_msg: this warm is {{ sandbox_image_warm_state }}
+
+- name: Retire this warm when its state is absent
+  ansible.builtin.include_tasks: absent.yml
+  when: sandbox_image_warm_state == 'absent'
+
+- name: Stop here when this warm is retired
+  ansible.builtin.meta: end_role
+  when: sandbox_image_warm_state == 'absent'
+
+- name: Refuse a containerd warm with nothing to read its references from
+  # A containerd warm with no process_spec source would fall back to the
+  # release pin, which names a tag no Kubernetes sandbox is built from — a warm
+  # that pulls diligently and never the image a pod needs. And an inventory that
+  # declares no process_spec image at all means no Fabro server builds pods, so
+  # arming the warm would be a timer that fails every tick for no reason.
+  ansible.builtin.assert:
+    that:
+      - sandbox_image_warm_process_spec_urls | length > 0
+      - sandbox_image_warm_inventory_process_spec_images | length > 0
+      - sandbox_image_warm_crictl | string | trim | length > 0
+    fail_msg: >-
+      a containerd warm needs at least one committed host_vars file to read
+      process_spec images from (got {{ sandbox_image_warm_process_spec_urls | to_json }}),
+      an inventory that declares at least one Fabro server instance's
+      sandbox_providers.<kind>.process_spec.image, and a crictl command.
+      Nothing was installed.
+    success_msg: >-
+      the inventory declares {{ sandbox_image_warm_inventory_process_spec_images | join(', ') }};
+      the timer re-reads them from {{ sandbox_image_warm_process_spec_urls | length }} file(s) on master
+  when: sandbox_image_warm_store == 'containerd'
 
 - name: Refuse an empty value in any field of the sandbox image warm
   # Jinja catches an UNDEFINED variable on its own, but an empty string

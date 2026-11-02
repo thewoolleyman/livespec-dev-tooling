@@ -1,0 +1,6 @@
+---
+# Notified only by tasks/absent.yml, after it removes a retired warm's units.
+- name: Reload systemd after retiring a sandbox image warm
+  ansible.builtin.systemd_service:
+    daemon_reload: true
+  become: true

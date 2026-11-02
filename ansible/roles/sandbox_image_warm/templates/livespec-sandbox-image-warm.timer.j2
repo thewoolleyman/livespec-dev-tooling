@@ -10,7 +10,11 @@
 -#}
 # {{ ansible_managed }}
 [Unit]
+{% if sandbox_image_warm_store == 'containerd' %}
+Description=Periodic warm of this k3s factory node's containerd sandbox image store
+{% else %}
 Description=Periodic warm of this Fabro factory host's sandbox image store
+{% endif %}
 
 [Timer]
 OnBootSec={{ sandbox_image_warm_on_boot_sec }}

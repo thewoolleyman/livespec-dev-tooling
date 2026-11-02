@@ -6,13 +6,25 @@
   Each Environment= line is QUOTED as a whole: the tag-prefix list is joined on
   a space, and an unquoted assignment carrying a space would hand systemd a
   second, nameless assignment rather than a list.
+
+  The containerd store orders after k3s and pulls in NOTHING: Wants= would START
+  docker on a k3s node that has it installed and stopped, and starting k3s is a
+  restart this converge must never cause. After= on a unit that is absent (the
+  server has k3s.service, an agent k3s-agent.service) is a no-op.
 -#}
 # {{ ansible_managed }}
 [Unit]
+{% if sandbox_image_warm_store == 'containerd' %}
+Description=Warm this k3s factory node's containerd sandbox image store
+Documentation=https://github.com/thewoolleyman/livespec-dev-tooling/blob/master/ansible/roles/sandbox_image_warm/HOST_VARS.md
+After=network-online.target k3s.service k3s-agent.service
+Wants=network-online.target
+{% else %}
 Description=Warm this Fabro factory host's sandbox image store
 Documentation=https://github.com/thewoolleyman/livespec-dev-tooling/blob/master/ansible/roles/sandbox_image_warm/HOST_VARS.md
 After=network-online.target docker.service
 Wants=network-online.target docker.service
+{% endif %}
 
 [Service]
 Type=oneshot
@@ -27,3 +39,13 @@ Environment="LIVESPEC_SANDBOX_IMAGE_WARM_TAG_PREFIXES={{ sandbox_image_warm_tag_
 Environment="LIVESPEC_SANDBOX_IMAGE_WARM_PIN_URL={{ sandbox_image_warm_pin_url | trim }}"
 Environment="LIVESPEC_SANDBOX_IMAGE_WARM_LOCK_DIR={{ sandbox_image_warm_lock_dir }}"
 Environment="LIVESPEC_SANDBOX_IMAGE_WARM_LOCK_TIMEOUT_SECONDS={{ sandbox_image_warm_lock_timeout_seconds }}"
+{#
+  The docker unit renders byte-identical to its pre-store form, so adding the
+  containerd store is no drift on a docker factory host: the script's own
+  default store is docker.
+-#}
+{% if sandbox_image_warm_store == 'containerd' %}
+Environment="LIVESPEC_SANDBOX_IMAGE_WARM_STORE={{ sandbox_image_warm_store }}"
+Environment="LIVESPEC_SANDBOX_IMAGE_WARM_CRICTL={{ sandbox_image_warm_crictl }}"
+Environment="LIVESPEC_SANDBOX_IMAGE_WARM_PROCESS_SPEC_URLS={{ sandbox_image_warm_process_spec_urls | join(' ') }}"
+{% endif %}
