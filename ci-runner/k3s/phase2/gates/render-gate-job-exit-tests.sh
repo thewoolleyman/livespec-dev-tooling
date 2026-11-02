@@ -369,7 +369,7 @@ echo "== T. uvx uses the proxy Simple API without globally changing uv's index =
 # A frozen uv.lock carries absolute file-host URLs and is routed per artifact.
 # Only uvx lacks such a lock, so its shim gets the proxy's rewritten Simple API
 # and can retry normal PyPI if resolution through the proxy fails.
-proxy_origin="$(grep -A1 -F 'name: PYPI_FILES_PROXY' "${out_a}" | grep -oE 'value: .*' | head -1)"
+  proxy_origin="$(grep -A1 -F 'name: PYPI_FILES_PROXY' "${out_a}" | grep -oE 'value: .*' | sed -n 1p)"
 if grep -qF 'name: UV_DEFAULT_INDEX' "${out_a}"; then
   fail "the gate globally sets UV_DEFAULT_INDEX, so uv run cannot fall through from a proxy miss"
 elif [ "${proxy_origin}" != 'value: http://pypi-proxy.ci-warm-cache.svc.cluster.local:8081' ]; then
@@ -387,7 +387,7 @@ echo "== V. the operator cache kill switch makes the gate's uv volume cold =="
 operator_out="${SCRATCH}/operator-cache-off.yaml"
 if CI_CACHE_KILL_SWITCH=operator "${RENDERER}" --repo-root "${SCRATCH}/repo-a" \
      --tree-hash "${HASH_A}" "${OUR_SUITE[@]}" > "${operator_out}" 2>"${SCRATCH}/operator-cache-off.err"; then
-  operator_switch="$(grep -A1 -F 'name: CI_CACHE_KILL_SWITCH' "${operator_out}" | grep -oE 'value: .*' | head -1)"
+  operator_switch="$(grep -A1 -F 'name: CI_CACHE_KILL_SWITCH' "${operator_out}" | grep -oE 'value: .*' | sed -n 1p)"
   if [ "${operator_switch}" != 'value: "operator"' ]; then
     fail "CI_CACHE_KILL_SWITCH=operator does not reach the gate container"
   elif grep -F 'postStart:' "${operator_out}" >/dev/null; then
@@ -1109,8 +1109,8 @@ printf '%s\n' "${lock_body}" > "${SCRATCH}/gate-cwd/uv.lock"
 if GATE_TEST_PROXY="http://127.0.0.1:${proxy_port}" run_gate_script "${declared_out}" "verify publish"; then
   proxied_good="http://127.0.0.1:${proxy_port}/packages/good/good-1.0.whl"
   rewritten="$(cat "${SCRATCH}/gate-cwd/uv.lock")"
-  if printf '%s' "${rewritten}" | grep -qF "${proxied_good}" && \
-     printf '%s' "${rewritten}" | grep -qF "${lock_missing}"; then
+  if printf '%s' "${rewritten}" | grep -F "${proxied_good}" >/dev/null && \
+     printf '%s' "${rewritten}" | grep -F "${lock_missing}" >/dev/null; then
     pass "a served locked artifact uses the proxy while its missing neighbour stays direct"
   else
     fail "the lock did not route only the proxy-served artifact: ${rewritten}"

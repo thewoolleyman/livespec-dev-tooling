@@ -306,7 +306,7 @@ remove_superseded() {
         [[ -n ${pinned[$reference]:-} ]] && continue
         id=${id_of[$reference]:-}
         [[ -z $id ]] && continue
-        if printf '%s\n' "$protected_ids" | grep -qxF -- "$id"; then
+        if printf '%s\n' "$protected_ids" | grep -xF -- "$id" >/dev/null; then
             log "kept: $reference (in use, or it shares an image with a protected reference)"
             continue
         fi
@@ -318,7 +318,7 @@ remove_superseded() {
         fi
         if [[ $STORE == containerd ]]; then
             if ! in_use=$(store_in_use_ids) ||
-                printf '%s\n' "$in_use" | grep -qxF -- "$id"; then
+                printf '%s\n' "$in_use" | grep -xF -- "$id" >/dev/null; then
                 log "ERROR: a container began referencing $reference during its removal;" \
                     "pulling it back"
                 store_pull "$reference" || log "ERROR: could not pull $reference back"

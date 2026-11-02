@@ -15,7 +15,7 @@ _AGENT_JOIN_TOKEN_EXIT_TEST = _REPO_ROOT / (
 )
 _EARLY_READER = re.compile(
     r"""\|\s*(?:
-        grep\b[^\n]*(?:-[A-Za-z]*q\b|--quiet\b|-m\s*1\b|-m1\b)
+        grep\b(?:\s+-[^\s'\"]*)*?\s+(?:-[A-Za-z]*q[A-Za-z]*\b|--quiet\b|-m\s*1\b|-m1\b)
         |head\b\s+(?:-1\b|-n\s*1\b|-n1\b|-c\s*1\b|-c1\b)
         |awk\b[^\n]*\bexit\b
     )""",
