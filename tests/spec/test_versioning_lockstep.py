@@ -143,8 +143,24 @@ def _version_change_subject(*, repo_root: Path, declared: str) -> str:
     readable history at all.
     """
     pickaxe = f'-Sversion = "{declared}"'
-    args = ["log", "-1", "--format=%s", pickaxe, "--", "pyproject.toml"]
-    return _git(repo_root=repo_root, args=args, check=False).strip()
+    args = ["log", "-1", "--format=%s", pickaxe, *_writer_search_revisions(repo_root=repo_root)]
+    return _git(repo_root=repo_root, args=[*args, "--", "pyproject.toml"], check=False).strip()
+
+
+def _writer_search_revisions(*, repo_root: Path) -> list[str]:
+    """The revisions whose history may hold the commit that wrote the declared version.
+
+    HEAD alone, except while a merge is in progress: the merge result is staged
+    but not yet committed, so a version the INCOMING side wrote is declared by the
+    working tree yet reachable only from `MERGE_HEAD`. A factory refresh merges
+    `origin/master` into its run branch and the merge commit's own hook runs this
+    suite, so without `MERGE_HEAD` every refresh crossing a release found no writer
+    and failed the in-flight admission (livespec-dev-tooling-gqpnbf).
+    """
+    merge_head = _git(
+        repo_root=repo_root, args=["rev-parse", "-q", "--verify", "MERGE_HEAD"], check=False
+    ).strip()
+    return ["HEAD", merge_head] if merge_head else ["HEAD"]
 
 
 def _tag_lockstep_holds(*, repo_root: Path) -> bool:
@@ -226,6 +242,58 @@ def test_a_release_commit_awaiting_its_tag_keeps_the_lockstep(tmp_path: Path) ->
         "`release-please` lands the release commit before it creates the tag, so a clone "
         "taken in that window declares a version no tag names yet — and failing it there "
         "parks correctly merged work for the 23 seconds the window lasts"
+    )
+
+
+def _merge_in_progress(*, root: Path, incoming_subject: str) -> Path:
+    """A checkout mid-merge whose INCOMING side wrote the declared version.
+
+    `master` declares 1.95.6 and carries its tag; `incoming` adds one commit,
+    authored with `incoming_subject`, declaring 1.95.7. `master` then merges it
+    with `--no-commit`, so the working tree declares 1.95.7 while HEAD's history
+    holds no commit that wrote it — the state a refresh's merge-commit hook reads.
+    """
+    checkout = _make_checkout(
+        root=root, declared="1.95.6", subject="chore(master): release 1.95.6", tags=("v1.95.6",)
+    )
+    _git(repo_root=checkout, args=["checkout", "-q", "-b", "incoming"])
+    (checkout / "pyproject.toml").write_text('[project]\nversion = "1.95.7"\n', encoding="utf-8")
+    _git(repo_root=checkout, args=["add", "pyproject.toml"])
+    _git(repo_root=checkout, args=[*_FIXTURE_IDENTITY, "commit", "-q", "-m", incoming_subject])
+    _git(repo_root=checkout, args=["checkout", "-q", "master"])
+    _git(repo_root=checkout, args=["checkout", "-q", "-b", "run-branch"])
+    (checkout / "work.txt").write_text("run work\n", encoding="utf-8")
+    _git(repo_root=checkout, args=["add", "work.txt"])
+    _git(repo_root=checkout, args=[*_FIXTURE_IDENTITY, "commit", "-q", "-m", "feat: run work"])
+    _git(
+        repo_root=checkout,
+        args=[*_FIXTURE_IDENTITY, "merge", "-q", "--no-commit", "--no-ff", "incoming"],
+    )
+    return checkout
+
+
+def test_a_merge_bringing_in_a_release_commit_keeps_the_lockstep(tmp_path: Path) -> None:
+    """A refresh merge whose incoming side carries the release commit, its tag not yet here."""
+    checkout = _merge_in_progress(
+        root=tmp_path / "refresh-merge", incoming_subject="chore(master): release 1.95.7"
+    )
+
+    assert _tag_lockstep_holds(repo_root=checkout), (
+        "a merge in progress declares the incoming release's version before any commit on "
+        "HEAD wrote it, so the writer must be looked up through MERGE_HEAD too — otherwise "
+        "every factory refresh that crosses a release fails its own merge-commit hook"
+    )
+
+
+def test_a_merge_bringing_in_a_hand_bump_breaks_the_lockstep(tmp_path: Path) -> None:
+    """Looking through MERGE_HEAD admits only a release commit, never a second writer."""
+    checkout = _merge_in_progress(
+        root=tmp_path / "refresh-hand-bump", incoming_subject="chore: bump the version by hand"
+    )
+
+    assert not _tag_lockstep_holds(repo_root=checkout), (
+        "widening the writer search to MERGE_HEAD must not widen the admission: an "
+        "untagged version a non-release commit wrote is still the second writer"
     )
 
 
