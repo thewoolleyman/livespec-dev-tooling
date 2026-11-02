@@ -1076,10 +1076,9 @@
 # factory that cannot start. Nothing becomes live until the rename, which is
 # rename(2) within one directory.
 #
-# All three are gated on the single decision fact, so a converged host skips
-# them and the role stays idempotent — and, because only the rename notifies,
-# a dry run cannot produce a phantom restart of a live factory out of a copy
-# it never performed.
+# A converged host skips all three and the role stays idempotent. Staging notifies
+# as well as promotion: a staged candidate is durable configuration drift that
+# must produce the same restart marker as a changed unit file.
 
 - name: Stage this instance's binary beside the one it replaces
   # The owner, group and mode are set HERE, once, because rename(2) carries
