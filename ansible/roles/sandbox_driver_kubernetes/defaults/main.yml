@@ -31,8 +31,10 @@
 # refused, and credential values travelled in that URL (measured 2026-10-23 on
 # gmktec, run 01M5N2W7TNBC; bd-ib-xwqn23). v0.5.0 adds `topology_spread`, which the
 # rendered config below now carries; earlier releases reject it as an unknown field.
-sandbox_driver_kubernetes_version: v0.5.0
-sandbox_driver_kubernetes_sha256: d93437f0bcb495e13a3373a4d2578cc0b2dba2c39c1ad5f3fdcf801ce0788b6e
+# v0.6.0 reports the pod's node as K8S_NODE_NAME in sandbox/environment, which
+# Fabro's run_turn spans name as k8s.node.name (bd-ib-motuct).
+sandbox_driver_kubernetes_version: v0.6.0
+sandbox_driver_kubernetes_sha256: f6a8ec3d670a7ff902277bf0be8fc392d1e87ebd24584c103fd9b54b900d1f8d
 # The upstream CLI (`lithos-sandbox`, crate sandbox-driver-cli), built by the
 # plugin's release workflow at the sandbox-driver revision the plugin pins, so
 # the CLI and the plugin speak the same protocol revision.
@@ -41,7 +43,7 @@ sandbox_driver_kubernetes_cli_sha256: 5c17f37394b858e48cc2a8a4e9ae5744d1a4dbb455
 # The lifecycle proof driver, released beside the plugin: it holds one plugin
 # process across a control-plane reboot or a node going NotReady, which a
 # per-command CLI cannot (bd-ib-ad6dby).
-sandbox_driver_kubernetes_proof_sha256: 592288b3524d5e61f5997070cda4418160f3783071045dc1498e24a4e0de0b71
+sandbox_driver_kubernetes_proof_sha256: d95d579862efffc89b64aee5cc0412f08babdf537d35bfffbb6f387e566e981c
 sandbox_driver_kubernetes_release_url: >-
   https://github.com/thewoolleyman/sandbox-driver-kubernetes/releases/download/{{ sandbox_driver_kubernetes_version }}
 sandbox_driver_kubernetes_bin_dir: /usr/local/bin

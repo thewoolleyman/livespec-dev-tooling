@@ -43,6 +43,7 @@ the script the armed unit runs.
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import subprocess
@@ -610,3 +611,72 @@ def test_the_dev_host_play_installs_the_retention_script_and_its_daily_timer() -
         f"than waiting out a whole day first:\n{timer}"
     )
     assert "WantedBy=timers.target" in timer, f"the timer must be installable:\n{timer}"
+
+
+def _remove_retired_crons(*, tmp_path: Path, crons: list[Path]) -> tuple[int, str]:
+    """Run the role's retired-cron task alone, against scratch paths, in a scratch play."""
+    play = tmp_path / "retired-crons.yml"
+    play.write_text(
+        "- hosts: localhost\n"
+        "  connection: local\n"
+        "  gather_facts: false\n"
+        "  tasks:\n"
+        "    - ansible.builtin.include_role:\n"
+        f"        name: {_ROLE_NAME}\n"
+        "        tasks_from: retired_hourly_crons\n",
+        encoding="utf-8",
+    )
+    retired = json.dumps({"dev_host_retention_retired_hourly_crons": [str(c) for c in crons]})
+    done = subprocess.run(
+        [
+            "uvx",
+            "--from",
+            _ansible_core_pin(),
+            "ansible-playbook",
+            "-i",
+            "localhost,",
+            "-e",
+            retired,
+            "-e",
+            "ansible_become=false",
+            str(play),
+        ],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        timeout=_TIMEOUT_SECONDS,
+        check=False,
+        env=os.environ | {"ANSIBLE_ROLES_PATH": str(_ANSIBLE / "roles"), "ANSIBLE_NOCOWS": "1"},
+    )
+    return done.returncode, done.stdout + done.stderr
+
+
+def test_the_converge_removes_the_retired_hourly_crons(*, tmp_path: Path) -> None:
+    """Present hourly crons are gone after the converge, and a second converge is a no-op."""
+    hourly = tmp_path / "cron.hourly"
+    hourly.mkdir()
+    fstrim = hourly / "fstrim"
+    fstrim.write_text("#!/bin/sh\nfstrim /\n", encoding="utf-8")
+    free = hourly / "free"
+    free.write_text("#!/bin/sh\necho 1 > /proc/sys/vm/drop_caches\n", encoding="utf-8")
+    returncode, output = _remove_retired_crons(tmp_path=tmp_path, crons=[fstrim, free])
+    assert returncode == 0, output
+    assert not fstrim.exists() and not free.exists(), output
+    returncode, output = _remove_retired_crons(tmp_path=tmp_path, crons=[fstrim, free])
+    assert returncode == 0, output
+    assert "changed=0" in output, output
+
+
+def test_the_role_retires_both_hourly_crons_and_keeps_the_weekly_timer() -> None:
+    """The removal names both real cron paths, and the weekly trim it relies on stays armed."""
+    defaults = _read(path=_DEFAULTS)
+    retired = defaults.split("dev_host_retention_retired_hourly_crons:", maxsplit=1)
+    assert len(retired) == 2, defaults
+    listed = retired[1].split("\n\n", maxsplit=1)[0]
+    assert "- /etc/cron.hourly/fstrim" in listed and "- /etc/cron.hourly/free" in listed, listed
+    assert "dev_host_retention_fstrim_timer: fstrim.timer" in defaults, defaults
+    tasks = _read(path=_TASKS)
+    assert "include_tasks: retired_hourly_crons.yml" in tasks, tasks
+    keep = tasks.split("- name: Keep the weekly fstrim timer enabled and started", maxsplit=1)
+    assert len(keep) == 2, f"the role must keep the weekly fstrim timer armed:\n{tasks}"
+    assert "enabled: true" in keep[1] and "state: started" in keep[1], keep[1]
