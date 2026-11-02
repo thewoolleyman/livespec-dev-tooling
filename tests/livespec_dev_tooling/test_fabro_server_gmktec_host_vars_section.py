@@ -72,7 +72,15 @@ _PROVIDERS_SECTION = "## Sandbox-driver plugin providers"
 _FLEET_UNIT = "fabro-server"
 _CANDIDATE_UNIT = "fabro-server-candidate"
 _DEPLOYED_BUILD = "0.393.0-nightly.1"
+# The registered-provider carrier the canary proved, and the build every instance
+# but the fleet one still runs.
 _DEPLOYED_COMMIT = "9f6c38f"
+# The fleet instance's build: that carrier plus the per-run GitHub App selection
+# (livespec-orchestrator-beads-fabro bd-ib-voozdp, thewoolleyman/fabro#13). The
+# coordinator ruled it onto `fabro-server` alone on 2026-11-02, so the two
+# instances this module reads are pinned to DIFFERENT builds by design.
+_FLEET_COMMIT = "613add1"
+_PINNED_COMMIT = {"fabro-server": _FLEET_COMMIT, "fabro-server-candidate": _DEPLOYED_COMMIT}
 _SUPERSEDED_CARRIER = "adeefec"
 _SUPERSEDED_BUILD_REFERENCE = "#1048"
 _PROCESS_SPEC_KEY = "process_spec"
@@ -151,22 +159,25 @@ def test_the_section_describes_both_instances_the_host_vars_declare() -> None:
         )
 
 
-def test_the_section_names_the_build_both_instances_are_pinned_to() -> None:
-    """The deployed carrier, and not the carrier it superseded.
+def test_the_section_names_the_build_each_instance_is_pinned_to() -> None:
+    """Each instance's deployed carrier, and not the carrier they superseded.
 
-    The `binary_source` agreement is asserted first because it is what makes the
-    prose's "both instances" true: a section naming one build for two instances
-    that `host_vars` pins differently would be a false sentence this module had
-    certified.
+    The `binary_source` reading is asserted first because it is what makes the
+    prose true: the section names the fleet instance's build and the build the
+    candidate keeps, so a `host_vars` pin that moved either one without the prose
+    would be a false sentence this module had certified.
     """
     for unit in (_FLEET_UNIT, _CANDIDATE_UNIT):
         source = _scalar(body=_instance(unit=unit), key="binary_source")
-        assert _DEPLOYED_COMMIT in source, (
+        assert _PINNED_COMMIT[unit] in source, (
             f"{_HOST_VARS} pins `{unit}` to {source}, which does not carry commit "
-            f"{_DEPLOYED_COMMIT}; the prose below names one build for both instances, so "
-            f"the two declarations must agree before it can say so"
+            f"{_PINNED_COMMIT[unit]}; the prose below names that build for `{unit}`, so "
+            f"the declaration must agree before it can say so"
         )
     section = _section(title=_HOST_SECTION)
+    assert (
+        _FLEET_COMMIT in section
+    ), f"the {_HOST_SECTION} section must name the fleet instance's build {_FLEET_COMMIT}"
     assert _DEPLOYED_BUILD in section and _DEPLOYED_COMMIT in section, (
         f"the {_HOST_SECTION} section must name the deployed carrier {_DEPLOYED_BUILD} at "
         f"commit {_DEPLOYED_COMMIT}: it is the build the host runs, and the one a rollback "
