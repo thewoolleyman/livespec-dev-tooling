@@ -40,7 +40,13 @@ herdr pane read <pane_id>   # read the question
 
 Resolve a DECISION picker yourself under ruling R301 with `herdr pane send-keys <pane_id> <keys>`. Then SendMessage
 the explicit answer, so the seat has it in words and knows the coordinator chose under delegated authority. Never
-answer tool-permission, billing or Codex hook-trust prompts.
+answer tool-permission or billing prompts.
+
+**Codex hook-trust prompts are the coordinator's to answer.** A Codex review prompt such as "N hooks need review before
+they can run" (`t trust all`) may always be answered with trust, to unblock a Codex pane, without asking the maintainer.
+The maintainer, 2026-11-02: "you can always take this action to unblok codex panes, claude doens't even ask this so
+it's ot a security issue". This reverses the earlier limit. Measured that day: our own orchestrator release 0.274.0
+changed two plugin SessionStart hooks, and every Codex seat stopped running them until they were trusted.
 
 Measured 2026-10-31: herdr-overseer and sandbox-commit-gate-ceiling each sat at a picker for hours while the
 coordinator waited on their "reports".
@@ -262,7 +268,6 @@ on an idle percentage alone.
 - **Maintainer-given limits.** These are the only ones:
   - Never choose paid credits.
   - Never change caam rules (rule E), and never second-guess caam account selection (R489).
-  - Never answer Codex hook-trust prompts.
   - dispatch-control-plane is monitor-only, and must not absorb today's operations.
   - Launchers take the factory from the target repository's committed `default_factory` (R503).
   - Keep interactive turns lean (R509).
