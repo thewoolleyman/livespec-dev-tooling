@@ -148,10 +148,14 @@ the manifest's header explains that the memo's tested config did not have:
 the store is FLAT (no `levels=`), because nginx's level subdirectories are
 0700 and the capability-less populator could not count them; and
 `readOnlyRootFilesystem` holds because nginx's pid and temp paths point at
-emptyDirs. Workflow pods never use the proxy (their locks are untouched),
-so there is no hostPort and no NetworkPolicy change. An unreachable proxy
-degrades a rebuild to a direct PyPI build and records
-`proxy_unavailable=1`; it never fails the run.
+emptyDirs. Workflow pods never use the proxy (their locks are untouched), but
+delegated gate Jobs do: their ephemeral work volumes start from the same warm
+generation, and their pod script routes each locked artifact the proxy serves
+through `/packages/` while leaving a miss or unreachable proxy direct to PyPI.
+Their `UV_DEFAULT_INDEX` also routes `uvx` tool environments through the
+proxy's rewritten Simple API. There is no hostPort or NetworkPolicy change. An
+unreachable proxy degrades a rebuild or gate artifact to direct PyPI; it never
+fails the run.
 
 ## Verifier
 
