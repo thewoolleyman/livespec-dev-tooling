@@ -577,3 +577,233 @@ def test_origin_main_is_the_fallback_base_when_origin_head_is_unset(
 
     assert completed.returncode == 1, completed.stderr
     assert str(_WORKFLOW) in completed.stderr
+
+
+# ---------------------------------------------------------------------------
+# The two tiers (maintainer ruling, 2026-11-02): an ADDITIVE workflow edit is
+# admitted under the delegable `approval:workflow-edit-additive` label when the
+# declaration attests `change=additive` and `ci_runtime=no-significant-increase`
+# and the diff mechanically adds lines only; every other workflow edit still
+# needs the maintainer-set `approval:workflow-edit`.
+# ---------------------------------------------------------------------------
+
+_ADDITIVE_LABEL = "approval:workflow-edit-additive"
+
+
+def _additive_declaration_text(*, ci_runtime: str | None = "no-significant-increase") -> str:
+    runtime_line = "" if ci_runtime is None else f"ci_runtime={ci_runtime}\n"
+    return f"{_declaration_text()}change=additive\n{runtime_line}"
+
+
+def _modify_workflow(*, repo: Path) -> None:
+    """Rewrite an existing workflow line in place and commit it — a modification, not an addition."""
+    workflow = repo / _WORKFLOW
+    _ = workflow.write_text(
+        workflow.read_text(encoding="utf-8").replace("on: push\n", "on: pull_request\n"),
+        encoding="utf-8",
+    )
+    _commit_all(repo=repo, message="modify workflow")
+
+
+def _ledgered_repo_with_declaration(
+    *, tmp_path: Path, declaration: str, modify: bool = False
+) -> Path:
+    repo = _init_repo_with_origin(tmp_path=tmp_path)
+    if modify:
+        _modify_workflow(repo=repo)
+    else:
+        _edit_workflow(repo=repo, commit=True)
+    _declare(repo=repo, text=declaration, commit=True)
+    _add_ledger_pointer(repo=repo)
+    return repo
+
+
+def test_attested_additive_edit_passes_under_the_delegable_label(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The ADDITIVE tier: attested, add-only diff, `approval:workflow-edit-additive` → pass."""
+    monkeypatch.chdir(tmp_path)
+    repo = _ledgered_repo_with_declaration(
+        tmp_path=tmp_path, declaration=_additive_declaration_text()
+    )
+    fake_bin = tmp_path / "fakebin"
+    argv_log = _fake_bd(fake_bin=fake_bin, labels=[_ADDITIVE_LABEL])
+
+    completed = _run_guard(repo=repo, path_prefix=fake_bin)
+
+    assert completed.returncode == 0, completed.stderr
+    assert _ADDITIVE_LABEL in completed.stderr
+    assert "additive" in completed.stderr
+    assert argv_log.read_text(encoding="utf-8").splitlines() == [f"show {_WORK_ITEM} --json"]
+
+
+def test_attested_additive_edit_also_passes_under_the_maintainer_label(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    repo = _ledgered_repo_with_declaration(
+        tmp_path=tmp_path, declaration=_additive_declaration_text()
+    )
+    fake_bin = tmp_path / "fakebin"
+    _ = _fake_bd(fake_bin=fake_bin, labels=[_APPROVAL_LABEL])
+
+    completed = _run_guard(repo=repo, path_prefix=fake_bin)
+
+    assert completed.returncode == 0, completed.stderr
+    assert _APPROVAL_LABEL in completed.stderr
+
+
+def test_unattested_edit_is_not_admitted_by_the_delegable_label(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """No `change=additive` attestation → the MAINTAINER tier; the additive label does not suffice."""
+    monkeypatch.chdir(tmp_path)
+    repo = _ledgered_repo_with_declaration(tmp_path=tmp_path, declaration=_declaration_text())
+    fake_bin = tmp_path / "fakebin"
+    _ = _fake_bd(fake_bin=fake_bin, labels=[_ADDITIVE_LABEL])
+
+    completed = _run_guard(repo=repo, path_prefix=fake_bin)
+
+    assert completed.returncode == 1, completed.stderr
+    assert "maintainer tier" in completed.stderr
+    assert f"bd label add {_WORK_ITEM} {_APPROVAL_LABEL}" in completed.stderr
+
+
+def test_additive_claim_without_runtime_attestation_is_the_maintainer_tier(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    repo = _ledgered_repo_with_declaration(
+        tmp_path=tmp_path, declaration=_additive_declaration_text(ci_runtime=None)
+    )
+    fake_bin = tmp_path / "fakebin"
+    _ = _fake_bd(fake_bin=fake_bin, labels=[_ADDITIVE_LABEL])
+
+    completed = _run_guard(repo=repo, path_prefix=fake_bin)
+
+    assert completed.returncode == 1, completed.stderr
+    assert "ci_runtime=no-significant-increase" in completed.stderr
+    assert "maintainer tier" in completed.stderr
+
+
+def test_runtime_attestation_of_an_increase_is_the_maintainer_tier(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    repo = _ledgered_repo_with_declaration(
+        tmp_path=tmp_path,
+        declaration=_additive_declaration_text(ci_runtime="significant-increase"),
+    )
+    fake_bin = tmp_path / "fakebin"
+    _ = _fake_bd(fake_bin=fake_bin, labels=[_ADDITIVE_LABEL])
+
+    completed = _run_guard(repo=repo, path_prefix=fake_bin)
+
+    assert completed.returncode == 1, completed.stderr
+    assert "maintainer tier" in completed.stderr
+
+
+def test_false_additive_claim_is_refused_naming_the_modified_line(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`change=additive` over a diff that modifies a line is refused — even under the maintainer label."""
+    monkeypatch.chdir(tmp_path)
+    repo = _ledgered_repo_with_declaration(
+        tmp_path=tmp_path, declaration=_additive_declaration_text(), modify=True
+    )
+    fake_bin = tmp_path / "fakebin"
+    _ = _fake_bd(fake_bin=fake_bin, labels=[_APPROVAL_LABEL, _ADDITIVE_LABEL])
+
+    completed = _run_guard(repo=repo, path_prefix=fake_bin)
+
+    assert completed.returncode == 1, completed.stderr
+    assert "change=additive" in completed.stderr
+    assert "-on: push" in completed.stderr
+    assert str(_WORKFLOW) in completed.stderr
+
+
+def test_false_additive_claim_is_refused_even_without_a_ledger(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    repo = _init_repo_with_origin(tmp_path=tmp_path)
+    _modify_workflow(repo=repo)
+    _declare(repo=repo, text=_additive_declaration_text(), commit=True)
+
+    completed = _run_guard(repo=repo)
+
+    assert completed.returncode == 1, completed.stderr
+    assert "-on: push" in completed.stderr
+
+
+def test_deleting_a_workflow_file_is_not_additive(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    repo = _init_repo_with_origin(tmp_path=tmp_path)
+    (repo / _WORKFLOW).unlink()
+    _commit_all(repo=repo, message="delete workflow")
+    _declare(repo=repo, text=_additive_declaration_text(), commit=True)
+    _add_ledger_pointer(repo=repo)
+    fake_bin = tmp_path / "fakebin"
+    _ = _fake_bd(fake_bin=fake_bin, labels=[_ADDITIVE_LABEL])
+
+    completed = _run_guard(repo=repo, path_prefix=fake_bin)
+
+    assert completed.returncode == 1, completed.stderr
+    assert "-name: ci" in completed.stderr
+
+
+def test_a_committed_deletion_restored_only_on_disk_is_still_refused(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The guard judges what is pushed: HEAD's modification counts even if the working tree undoes it."""
+    monkeypatch.chdir(tmp_path)
+    repo = _init_repo_with_origin(tmp_path=tmp_path)
+    original = (repo / _WORKFLOW).read_text(encoding="utf-8")
+    _modify_workflow(repo=repo)
+    _declare(repo=repo, text=_additive_declaration_text(), commit=True)
+    _ = (repo / _WORKFLOW).write_text(original, encoding="utf-8")
+
+    completed = _run_guard(repo=repo)
+
+    assert completed.returncode == 1, completed.stderr
+    assert "-on: push" in completed.stderr
+
+
+def test_a_new_untracked_workflow_file_is_additive(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    repo = _init_repo_with_origin(tmp_path=tmp_path)
+    _write(path=repo / ".github" / "workflows" / "extra.yml", text="name: extra\n")
+    _declare(repo=repo, text=_additive_declaration_text(), commit=False)
+    _add_ledger_pointer(repo=repo)
+    fake_bin = tmp_path / "fakebin"
+    _ = _fake_bd(fake_bin=fake_bin, labels=[_ADDITIVE_LABEL])
+
+    completed = _run_guard(repo=repo, path_prefix=fake_bin)
+
+    assert completed.returncode == 0, completed.stderr
+
+
+@pytest.mark.parametrize(
+    ("extra", "reason"),
+    [
+        ("change=subtractive\n", "change= must be"),
+        ("change=additive\nchange=additive\n", "at most one change= line"),
+        ("change=additive\nci_runtime=a\nci_runtime=b\n", "at most one ci_runtime= line"),
+    ],
+)
+def test_malformed_tier_attestations_fail_closed(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, extra: str, reason: str
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    repo = _init_repo_with_origin(tmp_path=tmp_path)
+    _edit_workflow(repo=repo, commit=True)
+    _declare(repo=repo, text=f"{_declaration_text()}{extra}", commit=True)
+
+    completed = _run_guard(repo=repo)
+
+    assert completed.returncode == 2, completed.stderr
+    assert reason in completed.stderr

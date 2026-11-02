@@ -100,7 +100,11 @@ passthrough.
 A push that changes anything under `.github/workflows/` needs three things before the pre-push gate admits it:
 
 1. A per-change `.livespec-workflow-edit-exemption` in the branch, with exactly one `work_item=<ledger-id>` line and one `reason=` line. An exemption inherited from master is refused.
-2. The `approval:workflow-edit` label on that work item. An agent sets it only on the maintainer's explicit per-case authorization.
+2. A label on that work item that admits the change's tier (maintainer ruling, 2026-11-02):
+   - **ADDITIVE tier.** The workflow diff only adds lines. It deletes and modifies nothing under `.github/workflows/`, measured mechanically against the merge base. The exemption also attests `change=additive` and `ci_runtime=no-significant-increase`. The item needs `approval:workflow-edit-additive`, which an agent may set only under the maintainer's prior authorization. That authorization may be delegated to a coordinator agent. `approval:workflow-edit` also satisfies this tier.
+   - **MAINTAINER tier.** Everything else needs `approval:workflow-edit`, which only the maintainer sets, directly: any deleted or modified workflow line, any edit that removes or reduces test coverage or quality gates, any edit that significantly increases CI runtime, and any exemption without the additive attestation. An agent never sets this label.
+
+   The guard refuses an exemption that claims `change=additive` over a diff with deleted or modified lines, and names those lines. No environment variable or flag changes either tier.
 3. The push run inside the credential wrapper:
 
    ```bash

@@ -6,9 +6,11 @@ installed files from the six sources here: the four scripts
 `branch-protection.sh` (server-side branch-protection mirror), `gate-run.sh`
 (the detached gate runner), and `check-no-workflow-edits.sh` (the fleet's
 ONE workflow-edit guard: an authorship control at the agent boundary whose
-only override is a tracked per-change declaration verified against a
-human-set `approval:workflow-edit` ledger label — no environment escape of
-any kind; livespec-dev-tooling-fy02), plus the two justfile fragments
+only override is a tracked per-change declaration verified against a ledger
+label in one of two tiers — an attested add-only edit admitted by the
+delegable `approval:workflow-edit-additive` label, and every other edit by
+the maintainer-only `approval:workflow-edit` label — no environment escape of
+any kind; livespec-dev-tooling-fy02, tiered 2026-11-02), plus the two justfile fragments
 `worktree.just` (the four `just worktree-*` lifecycle recipe stanzas) and
 `branch-protection.just` (the `protect-default-branch` /
 `check-branch-protection` recipe stanzas), each `import`ed by the consumer

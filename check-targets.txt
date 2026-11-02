@@ -105,7 +105,8 @@ check-no-direct-github-access  # purity: tree-pure
 # untracked working set — none of which the committed tree determines.
 #
 # It also reads an AUTHORIZATION held outside the tree — the
-# `approval:workflow-edit` label on a named work item, through `bd` — and FAILS
+# `approval:workflow-edit` (or, for an attested add-only edit,
+# `approval:workflow-edit-additive`) label on a named work item, through `bd` — and FAILS
 # CLOSED when it cannot. A gate pod holds neither `bd` nor the ledger
 # credential, so inside a delegated gate Job it can only ever fail closed:
 # measured 2026-10-19 on gate-livespec-dev-tooling-54f19942138d, which refused
