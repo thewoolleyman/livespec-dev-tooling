@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.150.2](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.150.1...v1.150.2) (2026-11-02)
+
+
+### Bug Fixes
+
+* **config:** disable delegated_pre_commit until its gate Job bootstraps the checkout ([b1c77c9](https://github.com/thewoolleyman/livespec-dev-tooling/commit/b1c77c97770f048915ad31bf50a4f2abca9df880))
+
 ## [1.150.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.150.0...v1.150.1) (2026-11-02)
 
 
