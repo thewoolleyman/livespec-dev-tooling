@@ -58,6 +58,7 @@
 #   S. the uv cache path is backed by a generic ephemeral local-path work volume,
 #      so the provisioner seeds the current warm generation before the gate starts.
 #   T. uv and uvx misses resolve through the in-cluster PyPI files proxy.
+#   U. a locked artifact the proxy cannot serve falls through to PyPI directly.
 #
 # WHY R EXISTS (livespec-dev-tooling-mex6ga). A member declaring it reads an
 # authorization held outside the tree must not run in the gate Job, but the Job
@@ -598,9 +599,13 @@ run_gate_script() {
   # own exit status, which IS the Job's verdict.
   : > "${SCRATCH}/stub.log"
   gate_script "$1" > "${SCRATCH}/gate-script.sh"
-  PATH="${STUB_DIR}:${PATH}" STUB_LOG="${SCRATCH}/stub.log" PROVIDED="$2" \
-    CLONE_FAILS="${3:-}" \
-    bash "${SCRATCH}/gate-script.sh" > "${SCRATCH}/gate.out" 2> "${SCRATCH}/gate.err"
+  mkdir -p "${SCRATCH}/gate-cwd"
+  (
+    cd "${SCRATCH}/gate-cwd" || exit 1
+    PATH="${STUB_DIR}:${PATH}" STUB_LOG="${SCRATCH}/stub.log" PROVIDED="$2" \
+      CLONE_FAILS="${3:-}" PYPI_FILES_PROXY="${GATE_TEST_PROXY:-http://127.0.0.1:9}" \
+      bash "${SCRATCH}/gate-script.sh" > "${SCRATCH}/gate.out" 2> "${SCRATCH}/gate.err"
+  )
 }
 
 if run_gate_script "${declared_out}" "verify publish"; then
@@ -994,6 +999,50 @@ elif grep -qF 'is not a plain just' "${SCRATCH}/authority-member-shell.err"; the
   pass "an authority skip member name carrying shell is refused at render time"
 else
   fail "refused without naming the cause: $(cat "${SCRATCH}/authority-member-shell.err")"
+fi
+
+echo "== U. locked artifacts use the proxy when served and fall through on a miss =="
+# Run the rendered script against a local stand-in proxy. It serves exactly one
+# locked artifact: that URL must be rewritten, while the 404 remains direct.
+# Stopping the proxy then proves an unavailable service leaves both direct and
+# does not turn install-worktree-pack's preparation into a gate failure.
+lock_good='https://files.pythonhosted.org/packages/good/good-1.0.whl'
+lock_missing='https://files.pythonhosted.org/packages/missing/missing-1.0.whl'
+lock_body="wheels = [{ url = \"${lock_good}\", hash = \"sha256:good\" }, { url = \"${lock_missing}\", hash = \"sha256:missing\" }]"
+proxy_root="${SCRATCH}/fake-proxy"
+mkdir -p "${proxy_root}/packages/good" "${SCRATCH}/gate-cwd"
+printf 'wheel\n' > "${proxy_root}/packages/good/good-1.0.whl"
+proxy_port="$(python3 -c 'import socket; s = socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1]); s.close()')"
+(cd "${proxy_root}" && exec python3 -m http.server "${proxy_port}" --bind 127.0.0.1 >/dev/null 2>&1) &
+proxy_pid=$!
+for _ in 1 2 3 4 5 6 7 8 9 10; do
+  (exec 9<>"/dev/tcp/127.0.0.1/${proxy_port}") 2>/dev/null && break
+  sleep 0.1
+done
+printf '%s\n' "${lock_body}" > "${SCRATCH}/gate-cwd/uv.lock"
+if GATE_TEST_PROXY="http://127.0.0.1:${proxy_port}" run_gate_script "${declared_out}" "verify publish"; then
+  proxied_good="http://127.0.0.1:${proxy_port}/packages/good/good-1.0.whl"
+  rewritten="$(cat "${SCRATCH}/gate-cwd/uv.lock")"
+  if printf '%s' "${rewritten}" | grep -qF "${proxied_good}" && \
+     printf '%s' "${rewritten}" | grep -qF "${lock_missing}"; then
+    pass "a served locked artifact uses the proxy while its missing neighbour stays direct"
+  else
+    fail "the lock did not route only the proxy-served artifact: ${rewritten}"
+  fi
+else
+  fail "the gate script failed while preparing a lock with a proxy miss: $(cat "${SCRATCH}/gate.err")"
+fi
+kill "${proxy_pid}" 2>/dev/null || true
+wait "${proxy_pid}" 2>/dev/null || true
+printf '%s\n' "${lock_body}" > "${SCRATCH}/gate-cwd/uv.lock"
+if run_gate_script "${declared_out}" "verify publish"; then
+  if [ "$(cat "${SCRATCH}/gate-cwd/uv.lock")" = "${lock_body}" ]; then
+    pass "an unreachable proxy leaves locked artifacts direct and the gate preparation succeeds"
+  else
+    fail "an unreachable proxy rewrote a lock instead of falling through: $(cat "${SCRATCH}/gate-cwd/uv.lock")"
+  fi
+else
+  fail "an unreachable proxy made gate preparation fail: $(cat "${SCRATCH}/gate.err")"
 fi
 
 echo
