@@ -899,8 +899,12 @@ def _install_scope(
     instance: Mapping[str, str],
     host_checksum: str | None,
     source_checksum: str | None,
+    unit_activity: str | None = None,
 ) -> dict[str, _Value]:
     """Every name the role's binary-install guards read, for one instance and one host state.
+
+    `unit_activity` overrides the modelled `systemctl is-active` answer; left unset, a
+    stopped instance is inactive and every running one active.
 
     `host_checksum=None` models a `binary_path` with no file at it: `stat` reports
     `exists: false` and OMITS `checksum` entirely rather than reporting an empty one,
@@ -921,7 +925,7 @@ def _install_scope(
     # scenario models a stopped instance as inactive and every running one as
     # active, which is enough to make the role's own expression distinguish a
     # safe initial/parked install from the deferred live-server path.
-    scope["fabro_server_is_active.stdout"] = (
+    scope["fabro_server_is_active.stdout"] = unit_activity or (
         "inactive" if scope["fabro_server_service_state"] == "stopped" else "active"
     )
     scope[_REPLACE_FACT] = _evaluate(
@@ -1283,6 +1287,45 @@ def test_a_host_binary_that_differs_from_its_source_is_replaced_by_renaming_a_st
         f"rename(2) within a directory, so the binary is either the old build or the new one "
         f"and never a half-written file; argv={argv}"
     )
+
+
+def test_an_instance_with_a_live_process_in_any_transitional_state_is_not_promoted() -> None:
+    """`activating`, `deactivating` and `reloading` all have a Fabro process to protect."""
+    instance = {
+        **_instance_named(unit=_CANDIDATE_UNIT, source=_INVENTORY),
+        "service_state": "running",
+    }
+    for activity in ("activating", "deactivating", "reloading", "active"):
+        scope = _install_scope(
+            instance=instance,
+            host_checksum="0" * 64,
+            source_checksum=_CANDIDATE_BINARY_SHA256,
+            unit_activity=activity,
+        )
+        assert scope[_INSTALL_NOW_FACT] is False, (
+            f"a unit reported as {activity!r} has a live Fabro process launching workers from "
+            "binary_path; promoting over it recreates the ENOENT worker-spawn failure"
+        )
+        assert not _holds(conditions=_when(name=_RENAME_TASK), scope=scope)
+
+
+def test_an_instance_with_no_live_process_promotes_a_differing_binary() -> None:
+    """`inactive` (including an absent unit) and `failed` have no executable to preserve."""
+    instance = {
+        **_instance_named(unit=_CANDIDATE_UNIT, source=_INVENTORY),
+        "service_state": "running",
+    }
+    for activity in ("inactive", "failed"):
+        scope = _install_scope(
+            instance=instance,
+            host_checksum="0" * 64,
+            source_checksum=_CANDIDATE_BINARY_SHA256,
+            unit_activity=activity,
+        )
+        assert scope[_INSTALL_NOW_FACT] is True, (
+            f"a unit reported as {activity!r} has no running server whose executable path "
+            "needs preserving, so the staged build may be promoted"
+        )
 
 
 def test_a_running_instance_stages_a_differing_binary_without_promoting_it() -> None:
