@@ -264,7 +264,7 @@ done
 [ "$api_ready" = true ] || { echo "FATAL: API server did not answer /readyz within 120s"; exit 1; }
 ready=false
 for _ in $(seq 1 60); do
-  if kubectl get nodes --no-headers 2>/dev/null | grep -q ' Ready'; then
+  if kubectl get nodes --no-headers 2>/dev/null | grep ' Ready' >/dev/null; then
     ready=true
     break
   fi
@@ -620,7 +620,7 @@ check_listeners() {
   lst="$(listeners)"
   while IFS='|' read -r name ars ref; do
     [ -n "$name" ] || continue
-    cur="$(printf '%s\n' "$sets" | awk -F'|' -v a="$ars" '$1 == a {print $2; exit}')"
+    cur="$(printf '%s\n' "$sets" | awk -F'|' -v a="$ars" '$1 == a && !found {print $2; found=1}')"
     if [ -z "$cur" ]; then
       printf '  %-48s PENDING (no live EphemeralRunnerSet for %s yet)\n' "$name" "$ars"
     elif [ "$ref" = "$cur" ]; then

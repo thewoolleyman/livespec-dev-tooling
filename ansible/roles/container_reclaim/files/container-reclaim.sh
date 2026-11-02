@@ -92,7 +92,7 @@ docker_store_root() {
 
 containerd_store_root() {
     # `containerd config dump` prints `root = '/var/lib/containerd'`.
-    containerd config dump 2>/dev/null | awk -F"'" '/^root[[:space:]]*=/{print $2; exit}' || true
+    containerd config dump 2>/dev/null | awk -F"'" '/^root[[:space:]]*=/ && !found {print $2; found=1}' || true
 }
 
 store_root_is_readable() {

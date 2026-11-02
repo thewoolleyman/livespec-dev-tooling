@@ -251,7 +251,7 @@ worktree_idle_days() {
     for name in "${ARTIFACT_NAMES[@]}"; do prune_expr+=(-o -name "${name}"); done
     newest="$(find "${d}" -mindepth 1 -maxdepth 4 \
         \( -name .git "${prune_expr[@]}" \) -prune -o \
-        -type f -printf '%T@\n' 2>/dev/null | sort -rn | head -1)"
+        -type f -printf '%T@\n' 2>/dev/null | sort -rn | sed -n 1p)"
     [[ -z "${newest}" ]] && { echo 99999; return 0; }
     now="$(date +%s)"
     echo $(( (now - ${newest%.*}) / 86400 ))

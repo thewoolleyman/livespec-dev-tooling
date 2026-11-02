@@ -179,19 +179,19 @@ else
   printf '%s\n' "$REPLY_OUT"
 fi
 
-if printf '%s\n' "$REPLY_OUT" | grep -qxF "target:   ${TARGET}"; then
+if printf '%s\n' "$REPLY_OUT" | grep -xF "target: ${TARGET}" >/dev/null; then
   ok "A2  the plan names the CLUSTER_TOKEN_FILE the profile carries"
 else
   no "A2  the plan names the CLUSTER_TOKEN_FILE the profile carries"
 fi
 
-if printf '%s\n' "$REPLY_OUT" | grep -qxF 'mode:     0600 root:root'; then
+if printf '%s\n' "$REPLY_OUT" | grep -xF 'mode: 0600 root:root' >/dev/null; then
   ok "A3  the plan names the mode 0600 root:root"
 else
   no "A3  the plan names the mode 0600 root:root"
 fi
 
-if printf '%s\n' "$REPLY_OUT" | grep -q "^parent:   ${TARGET_DIR} (exists"; then
+if printf '%s\n' "$REPLY_OUT" | grep "^parent: ${TARGET_DIR} (exists" >/dev/null; then
   ok "A4  the plan reports an existing parent as existing"
 else
   no "A4  the plan reports an existing parent as existing"
@@ -211,7 +211,7 @@ else
   ok "A6  --dry-run executed no host-mutating command"
 fi
 
-if printf '%s\n' "$REPLY_OUT" | grep -q 'NOTHING was executed'; then
+if printf '%s\n' "$REPLY_OUT" | grep 'NOTHING was executed' >/dev/null; then
   ok "A7  the dry run says so in its own output"
 else
   no "A7  the dry run says so in its own output"
@@ -261,7 +261,7 @@ else
   ok "B5  the token never appears on a command line"
 fi
 
-if printf '%s\n' "$REPLY_OUT" | grep -qF "$FIXTURE_TOKEN"; then
+if printf '%s\n' "$REPLY_OUT" | grep -F "$FIXTURE_TOKEN" >/dev/null; then
   no "B6  the token is never echoed to the operator"
 else
   ok "B6  the token is never echoed to the operator"
@@ -274,7 +274,7 @@ printf '\n== C. an identical second run reports the file unchanged ==\n'
 : > "$SUDO_LOG"
 run_seed "$WORKBIN" "$AGENT_PROFILE"
 
-if [ "$REPLY_RC" -eq 0 ] && printf '%s\n' "$REPLY_OUT" | grep -qF 'unchanged:'; then
+if [ "$REPLY_RC" -eq 0 ] && printf '%s\n' "$REPLY_OUT" | grep -F 'unchanged:' >/dev/null; then
   ok "C1  the second run exits 0 and reports the file unchanged"
 else
   no "C1  the second run exits 0 and reports the file unchanged (rc=${REPLY_RC})"
@@ -422,8 +422,8 @@ printf '\n== E. the committed gmktec-xubuntu profile plans the node'"'"'s own pa
 run_seed "$TRIPBIN" --dry-run "$AGENT_COMMITTED"
 
 if [ "$REPLY_RC" -eq 0 ] \
-   && printf '%s\n' "$REPLY_OUT" | grep -qxF 'target:   /etc/rancher/k3s/agent-join-token' \
-   && printf '%s\n' "$REPLY_OUT" | grep -qxF 'node:     gmktec-xubuntu'; then
+   && printf '%s\n' "$REPLY_OUT" | grep -xF 'target: /etc/rancher/k3s/agent-join-token' \
+ >/dev/null   && printf '%s\n' "$REPLY_OUT" | grep -xF 'node: gmktec-xubuntu' >/dev/null; then
   ok "E1  the committed profile plans the seed of /etc/rancher/k3s/agent-join-token on gmktec-xubuntu"
 else
   no "E1  the committed profile plans the seed of /etc/rancher/k3s/agent-join-token on gmktec-xubuntu (rc=${REPLY_RC})"
@@ -439,8 +439,8 @@ fi
 # The defect this fixed, asserted on the COMMITTED value: whether or not
 # /etc/rancher/k3s exists on the machine running this suite, the plan for that
 # node is never a refusal — it either finds the directory or makes it.
-if printf '%s\n' "$REPLY_OUT" | grep -q '^parent:   /etc/rancher/k3s (' \
-   && ! printf '%s\n' "$REPLY_OUT" | grep -q 'would refuse'; then
+if printf '%s\n' "$REPLY_OUT" | grep '^parent: /etc/rancher/k3s (' \
+ >/dev/null   && ! printf '%s\n' "$REPLY_OUT" | grep 'would refuse' >/dev/null; then
   ok "E3  the committed profile's parent is never a refusal, on a fresh node or a provisioned one"
 else
   no "E3  the committed profile's parent is never a refusal, on a fresh node or a provisioned one"
@@ -476,14 +476,14 @@ else
   printf '%s\n' "$REPLY_OUT"
 fi
 
-if printf '%s\n' "$REPLY_OUT" | grep -q "^parent:   ${FRESH_PARENT} (absent.*will be created 0755 root:root)$"; then
+if printf '%s\n' "$REPLY_OUT" | grep "^parent: ${FRESH_PARENT} (absent.*will be created 0755 root:root >/dev/null)$"; then
   ok "F2  the plan's parent line says it will be created 0755 root:root"
 else
   no "F2  the plan's parent line says it will be created 0755 root:root"
   printf '%s\n' "$REPLY_OUT"
 fi
 
-if printf '%s\n' "$REPLY_OUT" | grep -qxF "+ sudo install -d -m 0755 -o root -g root ${FRESH_PARENT}"; then
+if printf '%s\n' "$REPLY_OUT" | grep -xF "+ sudo install -d -m 0755 -o root -g root ${FRESH_PARENT}" >/dev/null; then
   ok "F3  the plan prints the creation as a '+ ' line"
 else
   no "F3  the plan prints the creation as a '+ ' line"

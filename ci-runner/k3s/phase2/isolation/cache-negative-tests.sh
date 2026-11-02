@@ -81,7 +81,7 @@ if [ ! -d "${WARM_SEED}" ]; then
   report warm-seed-private fail "precondition: ${WARM_SEED} is absent — this volume was not seeded (provisioner setup script, no published generation, or a tier without reflink)"
 else
   outside="$(find -H "${WARM_SEED}" -type f -links +1 -printf '%i\t%n\t%p\n' 2>/dev/null \
-    | awk -F'\t' '{c[$1]++; n[$1]=$2; p[$1]=$3} END {for (i in c) if (c[i] < n[i]) {print p[i]; exit}}')"
+    | awk -F'\t' '{c[$1]++; n[$1]=$2; p[$1]=$3} END {for (i in c) if (c[i] < n[i] && !found) {print p[i]; found=1}}')"
   if [ -n "${outside}" ]; then
     if ( : >> "${outside}" ) 2>/dev/null; then
       report warm-seed-private fail "VIOLATION: ${outside} is an inode with a link outside this tree (link count $(stat -c %h "${outside}"), owner uid $(stat -c %u "${outside}")) and it opened for writing from a job — a shared cache is writable"
@@ -92,7 +92,7 @@ else
     sample="$(find -H "${WARM_SEED}" -type f -size +64k -print -quit 2>/dev/null)"
     reflink="reflink unverified (no filefrag in this image)"
     if command -v filefrag >/dev/null 2>&1 && [ -n "${sample}" ]; then
-      if filefrag -v "${sample}" 2>/dev/null | grep -q 'shared'; then
+      if filefrag -v "${sample}" 2>/dev/null | grep 'shared' >/dev/null; then
         reflink="extents of ${sample} shared with the generation (reflink copy)"
       else
         reflink=""

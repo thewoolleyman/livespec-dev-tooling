@@ -187,7 +187,7 @@ if [[ -n "${token_match:-}" ]]; then
     fi
     memoized=0
     for target in "${gated[@]}"; do
-        if printf '%s\n' "${world_reading_members}" | grep -Fqx -- "${target}"; then
+        if printf '%s\n' "${world_reading_members}" | grep -Fx -- "${target}" >/dev/null; then
             printf ':: green token matched: running world-reading member %s\n' "${target}"
         else
             effective_skip="${effective_skip} ${target}"

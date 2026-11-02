@@ -197,7 +197,7 @@ set_label() {
   case "$fstype" in
     ext4) tune2fs -L "$label" "$dev" >/dev/null || die "tune2fs -L ${label} ${dev}" ;;
     xfs)
-      mp="$(findmnt -rn -S "$dev" -o TARGET | head -1)"
+      mp="$(findmnt -rn -S "$dev" -o TARGET | sed -n 1p)"
       if [ -n "$mp" ]; then
         xfs_io -c "label -s ${label}" "$mp" >/dev/null || die "xfs_io label ${label} on ${mp}"
       else
@@ -251,7 +251,7 @@ cmd_prepare() {
   fi
 
   if vgs --noheadings -o vg_name "$vg" >/dev/null 2>&1; then
-    pvs --noheadings -o vg_name "$pv" | grep -q "$vg" || die "VG ${vg} exists but ${pv} is not one of its PVs"
+    pvs --noheadings -o vg_name "$pv" | grep "$vg" >/dev/null || die "VG ${vg} exists but ${pv} is not one of its PVs"
     log "VG ${vg} present"
   else
     vgcreate "$vg" "$pv" >/dev/null || die "vgcreate ${vg} ${pv}"
@@ -287,7 +287,7 @@ cmd_prepare() {
 
   tmp="${TMP_ROOT}/${role}"
   install -d -m 0755 "$tmp"
-  findmnt -n --target "$tmp" | grep -q "^${tmp} " || mount "$dev" "$tmp" || die "mount ${dev} ${tmp}"
+  findmnt -n --target "$tmp" | grep "^${tmp} " >/dev/null || mount "$dev" "$tmp" || die "mount ${dev} ${tmp}"
   log "bulk copy ${src} → ${tmp} (live; the switch takes the final delta)"
   rsync_tier "$src" "$tmp" --info=progress2 ; rc=$?
   [ "$rc" -eq 0 ] || die "bulk rsync rc=${rc}"
@@ -301,8 +301,8 @@ switch_preconditions() {  # sets OLD NEW SRC BIND TMP
   local role="$1"
   [ "$role" != "ci-cache" ] || die "ci-cache (the tier root) is not moved by this tool: the tier mounts live on it"
   SRC="$(tier_mount "$role")"; BIND="$(bind_target "$role")"; TMP="${TMP_ROOT}/${role}"
-  findmnt -n --target "$SRC" | grep -q "^${SRC} " || die "${SRC} is not mounted"
-  findmnt -n --target "$TMP" | grep -q "^${TMP} " || die "${TMP} is not mounted — run prepare ${role} first"
+  findmnt -n --target "$SRC" | grep "^${SRC} " >/dev/null || die "${SRC} is not mounted"
+  findmnt -n --target "$TMP" | grep "^${TMP} " >/dev/null || die "${TMP} is not mounted — run prepare ${role} first"
   OLD="$(one_device_with_label "$role")"
   NEW="$(one_device_with_label "new-$(suffix "$role")")"
   [ "$(findmnt -n -o SOURCE "$SRC")" = "$OLD" ] || die "${SRC} is mounted from $(findmnt -n -o SOURCE "$SRC"), not from LABEL=${role} (${OLD})"
@@ -416,7 +416,7 @@ cmd_switch_live() {
   [ "$(findmnt -n -o SOURCE "$SRC")" = "$NEW" ] || die "${SRC} top mount is not ${NEW}"
   [ "$(findmnt -n -o SOURCE "$BIND")" = "$NEW" ] || die "${BIND} top mount is not ${NEW}"
   # The old mounts must still be present underneath (units stay active).
-  findmnt -rn -S "$OLD" -o TARGET | grep -qx "$SRC" || die "old tier mount vanished from under ${SRC} — unexpected"
+  findmnt -rn -S "$OLD" -o TARGET | grep -x "$SRC" >/dev/null || die "old tier mount vanished from under ${SRC} — unexpected"
   log "switched: new work volumes land on ${NEW}; $(old_device_pod_binds "$OLD") running pod(s) still hold a volume on ${OLD}"
   log "next: wait for 'drain-status ${role}' to report 0, then 'finish-live ${role}'"
 }
@@ -465,7 +465,7 @@ cmd_reclaim() {
   [ $# -eq 1 ] || die "usage: reclaim ROLE"
   local role="$1" old new oldlv newlv vg fstype mp
   new="$(one_device_with_label "$role")"
-  old="$(devices_with_label "old-$(suffix "$role")" | head -1)"
+  old="$(devices_with_label "old-$(suffix "$role")" | sed -n 1p)"
   [ -n "$old" ] || die "no volume carries LABEL=old-$(suffix "$role"); nothing to reclaim"
   [ -z "$(findmnt -rn -S "$old" -o TARGET)" ] || die "${old} is still mounted ($(findmnt -rn -S "$old" -o TARGET | tr '\n' ' ')); reclaim only after the boot that drops it"
   oldlv="$(lv_of_device "$old")"; newlv="$(lv_of_device "$new")"
@@ -479,7 +479,7 @@ cmd_reclaim() {
   fi
   lvextend -l +100%FREE "$newlv" >/dev/null || die "lvextend ${newlv}"
   fstype="$(fstype_of "$new")"
-  mp="$(findmnt -rn -S "$new" -o TARGET | head -1)"
+  mp="$(findmnt -rn -S "$new" -o TARGET | sed -n 1p)"
   case "$fstype" in
     xfs)  [ -n "$mp" ] || die "xfs_growfs needs the filesystem mounted"; xfs_growfs "$mp" >/dev/null || die "xfs_growfs ${mp}" ;;
     ext4) resize2fs "$new" >/dev/null || die "resize2fs ${new}" ;;

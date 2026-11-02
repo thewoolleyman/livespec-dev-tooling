@@ -281,7 +281,7 @@ fi
 logs="$(kubectl logs "job/${job_name}" -n "${NAMESPACE}" 2>&1)"
 printf '%s\n' "${logs}"
 
-unreachable="$(printf '%s\n' "${logs}" | grep -m1 '^UNREACHABLE ' || true)"
+unreachable="$(printf '%s\n' "${logs}" | grep '^UNREACHABLE ' | sed -n 1p || true)"
 if [ -n "${unreachable}" ]; then
   fatal "${unreachable#UNREACHABLE }: unreachable from a factory pod on ${node}" 1
 fi
@@ -289,7 +289,7 @@ fi
 # The verdict LINE, not the Job's exit status: a container that exited 0 without
 # probing — a changed command, a shell that died after its last `reached` line —
 # would otherwise be read as a reach nobody observed. Silence is not a pass.
-printf '%s\n' "${logs}" | grep -q '^ALL ENDPOINTS REACHED$' \
-  || fatal "job ${job_name} produced no all-reached verdict (wait exit ${wait_rc})" 1
+printf '%s\n' "${logs}" | grep '^ALL ENDPOINTS REACHED$' \
+ >/dev/null  || fatal "job ${job_name} produced no all-reached verdict (wait exit ${wait_rc})" 1
 
 echo "OK: every endpoint was reached from a factory pod on ${node}, running ${image}"

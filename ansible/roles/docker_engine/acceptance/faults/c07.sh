@@ -10,4 +10,4 @@ RUN=$(latest_run $I); echo "run=$RUN"
 vm $I "sudo bash -c 'cat /var/lib/docker-engine-guard/confirmed; echo; echo committed > /var/lib/docker-engine-guard/runs/$RUN/phase; sync; echo phase=\$(cat /var/lib/docker-engine-guard/runs/$RUN/phase)'"
 echo "######## waiting 130 s"; sleep 130
 echo "######## retry confirm"; guard_op $I confirm "$RUN"
-echo "######## after"; vm $I "sudo bash -c 'echo phase=\$(cat /var/lib/docker-engine-guard/runs/$RUN/phase); cat /var/lib/docker-engine-guard/confirmed; echo; for u in containerd.service docker.service docker.socket; do echo \$u \$(systemctl is-enabled \$u)/\$(systemctl is-active \$u); done; iptables -S FORWARD | head -1'"
+echo "######## after"; vm $I "sudo bash -c 'echo phase=\$(cat /var/lib/docker-engine-guard/runs/$RUN/phase); cat /var/lib/docker-engine-guard/confirmed; echo; for u in containerd.service docker.service docker.socket; do echo \$u \$(systemctl is-enabled \$u)/\$(systemctl is-active \$u); done; iptables -S FORWARD | sed -n 1p'"

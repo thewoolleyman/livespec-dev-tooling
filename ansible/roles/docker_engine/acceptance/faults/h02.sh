@@ -18,7 +18,7 @@ state() {
     for r in /var/lib/docker-engine-guard/runs/*; do echo \"\$(basename \$r) phase=\$(cat \$r/phase)\"; done
     for u in containerd.service docker.service docker.socket; do echo \"\$u \$(systemctl is-enabled \$u)/\$(systemctl is-active \$u) since=\$(systemctl show -p ActiveEnterTimestampMonotonic --value \$u)\"; done
     echo daemon.json: \$(sha256sum < /etc/docker/daemon.json | cut -c1-16)
-    echo forward: \$(iptables -S FORWARD | head -1) / \$(ip6tables -S FORWARD | head -1)
+    echo forward: \$(iptables -S FORWARD | sed -n 1p) / \$(ip6tables -S FORWARD | sed -n 1p)
   "'
 }
 echo "######## before"; state | tee tmp/faults/h02.before

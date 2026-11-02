@@ -206,7 +206,7 @@ if [ -z "${present}" ]; then
   "${CTR[@]}" -n "${CTR_NAMESPACE}" images pull "${digest_ref}" >/dev/null || die "ctr pull ${digest_ref} failed"
   mount_ref="${digest_ref}"
 else
-  mount_ref="$(printf '%s\n' "${present}" | head -1)"
+  mount_ref="$(printf '%s\n' "${present}" | sed -n 1p)"
   echo "present as ${mount_ref}"
 fi
 
@@ -228,7 +228,7 @@ src="${mnt}/home/runner/externals"
 log "3. Cross-check the runner inside the image"
 deps="${mnt}/home/runner/bin/Runner.Listener.deps.json"
 [ -f "${deps}" ] || die "${deps} missing — not a runner image?"
-inside="$(grep -o '"Runner.Listener/[0-9][0-9.]*"' "${deps}" | head -1 | sed 's/.*\///; s/"//')"
+inside="$(grep -o '"Runner.Listener/[0-9][0-9.]*"' "${deps}" | sed -n 1p | sed 's/.*\///; s/"//')"
 [ "${inside}" = "${runner_version}" ] || die "image tag says runner ${runner_version} but the image carries Runner.Listener/${inside}"
 echo "Runner.Listener/${inside} matches the tag"
 if [ -n "${expect_hook_sha}" ]; then

@@ -22,7 +22,7 @@ after_reboot() {
     for u in containerd.service docker.service docker.socket; do echo \"\$u active=\$(systemctl is-active \$u) enabled=\$(systemctl is-enabled \$u 2>&1)\"; done
     echo docker-rules-v4: \$(iptables -S | grep -c DOCKER) v6: \$(ip6tables -S | grep -c DOCKER)
     echo docker0: \$(ip -o link show docker0 2>/dev/null | cut -d: -f2 || echo absent)
-    echo forward: \$(iptables -S FORWARD | head -1)'"
+    echo forward: \$(iptables -S FORWARD | sed -n 1p)'"
 }
 echo "######## restore guard-vm-$I"; restore $I || exit 1
 echo; echo "################ B-01 / B-02b: reboot at started"
