@@ -435,6 +435,35 @@ def test_every_later_step_names_the_job_the_cluster_assigned() -> None:
     assert f"job/{assigned}" in cluster.only(kind="stream-logs").argv
 
 
+def test_the_outcome_names_the_tree_the_created_job_reports() -> None:
+    """The outcome's tree is the created Job's own label, not the tree that was asked for.
+
+    A caller that compares the outcome's tree to the tree it staged can only catch a Job
+    gating another tree if the outcome carries what the Job reports. Echoing the request
+    back would make that comparison vacuous.
+    """
+    other = "c" * 40
+    created = json.dumps({"metadata": {"name": _JOB, "labels": {"livespec.gate/tree-hash": other}}})
+    cluster = _StubCluster(created_payload=created)
+    request = dataclasses.replace(_REQUEST, tree_hash=_TREE)
+
+    outcome = run_gate(request=request, runner=cluster, sleeper=cluster.sleep)
+
+    assert is_successful(outcome)
+    assert outcome.unwrap().tree_hash == other
+
+
+def test_a_created_job_without_a_tree_label_reports_the_requested_tree() -> None:
+    """A submit answer that omits the label leaves the requested tree as the outcome's tree."""
+    cluster = _StubCluster()
+    request = dataclasses.replace(_REQUEST, tree_hash=_TREE)
+
+    outcome = run_gate(request=request, runner=cluster, sleeper=cluster.sleep)
+
+    assert is_successful(outcome)
+    assert outcome.unwrap().tree_hash == _TREE
+
+
 @pytest.mark.parametrize(
     "payload",
     [

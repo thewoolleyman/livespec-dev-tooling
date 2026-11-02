@@ -23,6 +23,7 @@ __all__: list[str] = [
     "COMPLETE_CONDITION",
     "Terminal",
     "created_job_name",
+    "created_job_tree_hash",
     "reported_time",
     "terminal_condition",
     "unreadable",
@@ -31,6 +32,7 @@ __all__: list[str] = [
 COMPLETE_CONDITION = "Complete"
 _TERMINAL_CONDITION_TYPES = frozenset({COMPLETE_CONDITION, "Failed"})
 _CONDITION_ASSERTED = "True"
+_TREE_HASH_LABEL = "livespec.gate/tree-hash"
 _JobPayload: TypeAlias = Mapping[str, Mapping[str, object]]
 _Conditions: TypeAlias = Sequence[Mapping[str, str]]
 
@@ -84,6 +86,17 @@ def created_job_name(
             detail="the submit response carries no metadata.name for the created Job",
         )
     )
+
+
+def created_job_tree_hash(*, payload: str) -> str:
+    """The tree the created Job's `livespec.gate/tree-hash` label names, or empty when unreported.
+
+    Read only after `created_job_name` has parsed the same payload, so it is valid JSON.
+    """
+    parsed = cast("_JobPayload", json.loads(payload))
+    labels = cast("Mapping[str, object] | None", parsed.get("metadata", {}).get("labels"))
+    reported = labels.get(_TREE_HASH_LABEL) if labels is not None else None
+    return reported if isinstance(reported, str) else ""
 
 
 def reported_time(*, status: Mapping[str, object], key: str) -> str:
