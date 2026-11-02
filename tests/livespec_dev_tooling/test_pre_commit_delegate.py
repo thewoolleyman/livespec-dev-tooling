@@ -158,6 +158,82 @@ def test_an_absent_or_wrong_tree_cluster_outcome_gates_locally(
     assert verdict.tree_hash == "a" * 40
 
 
+@pytest.mark.parametrize(
+    ("returncode", "expected_status"),
+    [(0, 0), (1, 1), (None, 1)],
+)
+def test_a_green_pre_commit_job_is_joined_with_the_host_authority_members(
+    *,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    returncode: int | None,
+    expected_status: int,
+) -> None:
+    """A green Job never accepts a commit the committing host's authority members refuse."""
+    from returns.result import Success
+
+    from livespec_dev_tooling._gate_host_authority import HostAuthorityRun
+    from livespec_dev_tooling.gate_remote_client import GateRunRequest
+    from livespec_dev_tooling.gate_remote_verdict import GATE_PASSED, GateVerdict
+
+    module = _module()
+    _ = (tmp_path / "pyproject.toml").write_text(
+        "[tool.livespec_dev_tooling]\ndelegated_pre_commit = true\n",
+        encoding="utf-8",
+    )
+    seen: dict[str, object] = {}
+
+    def authority(**kwargs: object) -> tuple[HostAuthorityRun, ...]:
+        seen.update(kwargs)
+        return (
+            HostAuthorityRun(
+                member="check-no-workflow-edits",
+                tree_hash="a" * 40,
+                returncode=returncode,
+                detail="unauthorized workflow edit",
+            ),
+        )
+
+    monkeypatch.setattr(module, "gates_kubeconfig_readable", lambda: True)
+    monkeypatch.setattr(module, "_staged_tree_hash", lambda **_kwargs: "a" * 40)
+    monkeypatch.setattr(module, "_staged_commit", lambda **_kwargs: "b" * 40)
+    monkeypatch.setattr(module, "resolve_renderer", lambda **_kwargs: Path("renderer"))
+    monkeypatch.setattr(
+        module,
+        "gate_remote_request",
+        lambda **_kwargs: Success(
+            GateRunRequest(
+                repo_root=tmp_path,
+                mirror_url="mirror",
+                manifest="manifest",
+                gate_ref="refs/gates/tree",
+            )
+        ),
+    )
+    monkeypatch.setattr(module, "run_host_authority_members", authority)
+    monkeypatch.setattr(
+        module,
+        "run_gated_push",
+        lambda **_kwargs: GateVerdict(
+            state=GATE_PASSED,
+            detail="the Job passed",
+            token_written=True,
+            job_name="gate-pre-commit-1",
+            tree_hash="a" * 40,
+        ),
+    )
+
+    verdict = module.run_pre_commit(repo_root=tmp_path)
+
+    assert seen["repo_root"] == tmp_path
+    assert seen["tree_hash"] == "a" * 40
+    assert verdict.local is False
+    assert verdict.exit_status == expected_status
+    assert verdict.job_name == "gate-pre-commit-1"
+    if expected_status:
+        assert "check-no-workflow-edits" in verdict.reason
+
+
 def _git(*, cwd: Path, args: list[str]) -> str:
     """Run one git command in a throwaway repository and return its stdout."""
     env = {
