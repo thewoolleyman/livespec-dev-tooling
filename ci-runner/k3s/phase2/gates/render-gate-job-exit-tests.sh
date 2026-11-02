@@ -1073,9 +1073,9 @@ def remaining_seconds() -> float:
 try:
     with socket.create_connection(("127.0.0.1", port), timeout=remaining_seconds()) as client:
         client.settimeout(remaining_seconds())
-        client.sendall(b"HEAD / HTTP/1.0\\r\\n\\r\\n")
+        client.sendall(b"HEAD / HTTP/1.0\r\n\r\n")
         response = b""
-        while b"\\n" not in response:
+        while b"\n" not in response:
             client.settimeout(remaining_seconds())
             chunk = client.recv(1)
             if not chunk:
