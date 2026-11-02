@@ -80,7 +80,12 @@ _DEPLOYED_COMMIT = "9f6c38f"
 # coordinator ruled it onto `fabro-server` alone on 2026-11-02, so the two
 # instances this module reads are pinned to DIFFERENT builds by design.
 _FLEET_COMMIT = "613add1"
-_PINNED_COMMIT = {"fabro-server": _FLEET_COMMIT, "fabro-server-candidate": _DEPLOYED_COMMIT}
+# The candidate's build: the carrier tip on that branch, the fleet build plus the
+# node name on run_turn spans (thewoolleyman/fabro#14). The maintainer ruled it
+# onto the candidate and fabro-server-mi-homelab on 2026-11-02 (plan
+# fabro-currency), ahead of the fleet instance.
+_CANDIDATE_COMMIT = "84fb903"
+_PINNED_COMMIT = {"fabro-server": _FLEET_COMMIT, "fabro-server-candidate": _CANDIDATE_COMMIT}
 _SUPERSEDED_CARRIER = "adeefec"
 _SUPERSEDED_BUILD_REFERENCE = "#1048"
 _PROCESS_SPEC_KEY = "process_spec"
@@ -175,9 +180,8 @@ def test_the_section_names_the_build_each_instance_is_pinned_to() -> None:
             f"the declaration must agree before it can say so"
         )
     section = _section(title=_HOST_SECTION)
-    assert (
-        _FLEET_COMMIT in section
-    ), f"the {_HOST_SECTION} section must name the fleet instance's build {_FLEET_COMMIT}"
+    for commit in (_FLEET_COMMIT, _CANDIDATE_COMMIT):
+        assert commit in section, f"the {_HOST_SECTION} section must name the build {commit}"
     assert _DEPLOYED_BUILD in section and _DEPLOYED_COMMIT in section, (
         f"the {_HOST_SECTION} section must name the deployed carrier {_DEPLOYED_BUILD} at "
         f"commit {_DEPLOYED_COMMIT}: it is the build the host runs, and the one a rollback "
