@@ -58,6 +58,15 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.158.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.158.0...v1.158.1) (2026-11-02)
+
+
+### Bug Fixes
+
+* **ci-runner:** a work volume the provisioner seeds twice keeps its first seed ([eb5cb57](https://github.com/thewoolleyman/livespec-dev-tooling/commit/eb5cb5755f6c0f01474443868934a3bca210b52b))
+* cover per-node warm uv cache placement ([007e332](https://github.com/thewoolleyman/livespec-dev-tooling/commit/007e3322d6bf2784fb038c07fe9f2d380ed7c1f7))
+* pin delegated pyright warm-up behavior ([7d083c5](https://github.com/thewoolleyman/livespec-dev-tooling/commit/7d083c5af4df7a370509fb558525ff601921c9c5))
+
 ## [1.158.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.157.0...v1.158.0) (2026-11-02)
 
 
