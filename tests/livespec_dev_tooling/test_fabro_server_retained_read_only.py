@@ -149,10 +149,10 @@ def legacy_home(tmp_path: Path) -> Iterator[Path]:
     _ = stored.write_text("{}\n", encoding="utf-8")
     stored.chmod(0o644)
     yield home
-    # Hand write access back so pytest can remove the temporary tree.
+    # Hand write access back so pytest can remove the temporary tree. The fixture
+    # creates no symlink, so every entry is a file or a directory to chmod.
     for path in [home, *home.rglob("*")]:
-        if not path.is_symlink():
-            path.chmod(path.stat().st_mode | stat.S_IWUSR)
+        path.chmod(path.stat().st_mode | stat.S_IWUSR)
 
 
 def _write_bits(home: Path) -> dict[str, int]:
