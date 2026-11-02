@@ -6,6 +6,7 @@ import importlib
 import os
 import subprocess
 import sys
+import textwrap
 import time
 from pathlib import Path
 
@@ -306,6 +307,68 @@ def test_gate_start_keeps_commit_and_push_hooks_on_the_launching_host(*, tmp_pat
             "command outside full-suite set\n"
         )
     assert hook_log.read_text(encoding="utf-8").splitlines() == ["pre-commit", "pre-push"]
+
+
+@pytest.mark.parametrize(
+    ("remote_exit", "expected_wait_exit"),
+    [
+        pytest.param(0, 0, id="job-verdict-streams-into-the-run-record"),
+        pytest.param(75, 75, id="lost-job-is-died-without-verdict-without-local-retry"),
+    ],
+)
+def test_gate_start_runs_the_cluster_client_over_the_worktree_tree(
+    *, tmp_path: Path, remote_exit: int, expected_wait_exit: int
+) -> None:
+    """The shell runner reaches its cluster child and preserves its remote verdict."""
+    root, environment, original_index_tree = _worktree_with_uncommitted_content(tmp_path=tmp_path)
+    fake_package = tmp_path / "fake-package" / "livespec_dev_tooling"
+    _ = fake_package.mkdir(parents=True)
+    _ = (fake_package / "__init__.py").write_text("", encoding="utf-8")
+    _ = (fake_package / "gate_runner_delegate.py").write_text(
+        textwrap.dedent(
+            f"""\
+            import pathlib
+            import sys
+
+            if sys.argv[1:2] != ["run"]:
+                print("cluster_job")
+                print("eligible full-suite command")
+                raise SystemExit(0)
+
+            run_dir = pathlib.Path(sys.argv[sys.argv.index("--run-dir") + 1])
+            (run_dir / "tree_hash").write_text("worktree-tree\\n", encoding="utf-8")
+            (run_dir / "job_name").write_text("gate-worktree-job\\n", encoding="utf-8")
+            print("remote job output")
+            raise SystemExit({remote_exit})
+            """
+        ),
+        encoding="utf-8",
+    )
+    fake_bin = tmp_path / "bin"
+    _ = fake_bin.mkdir()
+    local_just_log = tmp_path / "local-just.log"
+    _ = (fake_bin / "uv").write_text('#!/bin/sh\nshift 3\nexec python3 "$@"\n', encoding="utf-8")
+    _ = (fake_bin / "just").write_text(
+        f'#!/bin/sh\nprintf "local:%s\\n" "$*" >> "{local_just_log}"\n', encoding="utf-8"
+    )
+    for executable in (fake_bin / "uv", fake_bin / "just"):
+        _ = executable.chmod(0o755)
+    environment["PATH"] = f"{fake_bin}{os.pathsep}{environment['PATH']}"
+    environment["PYTHONPATH"] = f"{fake_package.parent}{os.pathsep}{environment['PYTHONPATH']}"
+
+    run_dir = _start(root=root, env=environment, args=["--", "just", "check"])
+    waited = _run(args=["bash", str(_RUNNER), "wait", run_dir.name], cwd=root, env=environment)
+
+    assert waited.returncode == expected_wait_exit
+    assert (run_dir / "venue").read_text(encoding="utf-8") == "cluster_job\n"
+    assert (run_dir / "tree_hash").read_text(encoding="utf-8") == "worktree-tree\n"
+    assert (run_dir / "job_name").read_text(encoding="utf-8") == "gate-worktree-job\n"
+    assert "remote job output" in (run_dir / "output.log").read_text(encoding="utf-8")
+    assert (
+        _run(args=["git", "write-tree"], cwd=root, env=environment).stdout.strip()
+        == original_index_tree
+    )
+    assert not local_just_log.exists()
 
 
 def test_a_cluster_gate_uses_the_worktree_tree_and_records_its_job(
