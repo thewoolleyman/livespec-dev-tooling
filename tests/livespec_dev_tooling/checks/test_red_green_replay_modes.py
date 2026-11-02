@@ -162,8 +162,11 @@ def test_green_leg_uses_a_delegated_verdict_and_records_its_job_evidence(
         == 0
     )
     assert local_pytest.call_count == 0
-    assert ("TDD-Green-Gate-Job", "gate-green-1") in recorded
-    assert ("TDD-Green-Staged-Tree", "b" * 40) in recorded
+    assert {
+        ("TDD-Green-Gate-Job", "gate-green-1"),
+        ("TDD-Green-Staged-Tree", "b" * 40),
+        ("TDD-Green-Output-Checksum", "sha256:remote-output"),
+    } <= set(recorded)
 
 
 def test_an_absent_remote_verdict_runs_the_replay_locally(

@@ -290,6 +290,7 @@ def _handle_green_mode(
             ("TDD-Green-Verified-At", green_verified_at),
             ("TDD-Green-Parent-Reflog", green_parent_reflog),
             *replay.trailers,
+            *((("TDD-Green-Output-Checksum", replay.output_checksum),) if replay.trailers else ()),
         ),
     )
     return 0
