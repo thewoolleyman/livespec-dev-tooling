@@ -49,6 +49,7 @@ __all__: list[str] = [
     "_handle_suite_green_mode",
     "canonical_output_checksum",
     "has_shared_test_support",
+    "kill_reason",
     "run_suite",
     "stages_only_shared_test_support",
     "suite_bound",
@@ -111,6 +112,17 @@ def suite_bound(*, environ: Mapping[str, str]) -> SuiteBound:
         stall_seconds=_positive_seconds(raw=environ.get(_STALL_ENV, "")) or DEFAULT_STALL_SECONDS,
         ceiling_seconds=_positive_seconds(raw=environ.get(_TIMEOUT_ENV, "")),
     )
+
+
+def kill_reason(
+    *, started: float, last_progress: float, now: float, bound: SuiteBound
+) -> str | None:
+    """Return the reached bound, giving an explicitly configured ceiling precedence."""
+    if bound.ceiling_seconds is not None and now - started >= bound.ceiling_seconds:
+        return "ceiling"
+    if now - last_progress >= bound.stall_seconds:
+        return "stalled"
+    return None
 
 
 def suite_timeout_seconds(*, environ: Mapping[str, str]) -> int:

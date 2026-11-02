@@ -132,6 +132,20 @@ def test_the_default_bound_is_a_stall_window_with_no_total_ceiling() -> None:
         )
 
 
+def test_progress_resets_the_stall_window_however_long_the_run_has_lasted() -> None:
+    """The kill decision reads the latest output instant, not merely the start."""
+    mod = _load()
+    bound = mod.SuiteBound(stall_seconds=900, ceiling_seconds=None)
+    assert mod.kill_reason(started=0.0, last_progress=10_740.0, now=10_800.0, bound=bound) is None
+    assert (
+        mod.kill_reason(started=0.0, last_progress=9_900.0, now=10_800.0, bound=bound) == "stalled"
+    )
+    ceiling = mod.SuiteBound(stall_seconds=900, ceiling_seconds=4_800)
+    assert (
+        mod.kill_reason(started=0.0, last_progress=4_799.0, now=4_800.0, bound=ceiling) == "ceiling"
+    )
+
+
 def test_checksum_ignores_line_order_and_duration() -> None:
     mod = _load()
     first = (
