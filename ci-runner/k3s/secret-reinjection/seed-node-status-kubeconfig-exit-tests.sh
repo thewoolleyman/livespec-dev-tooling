@@ -194,19 +194,19 @@ else
   printf '%s\n' "$REPLY_OUT"
 fi
 
-if printf '%s\n' "$REPLY_OUT" | grep -xF "target: ${TARGET}" >/dev/null; then
+if printf '%s\n' "$REPLY_OUT" | grep -xF "target:   ${TARGET}" >/dev/null; then
   ok "A2  the plan names the CHURN_KUBECONFIG_FILE the profile carries"
 else
   no "A2  the plan names the CHURN_KUBECONFIG_FILE the profile carries"
 fi
 
-if printf '%s\n' "$REPLY_OUT" | grep -xF 'mode: 0600 root:root' >/dev/null; then
+if printf '%s\n' "$REPLY_OUT" | grep -xF 'mode:     0600 root:root' >/dev/null; then
   ok "A3  the plan names the mode 0600 root:root"
 else
   no "A3  the plan names the mode 0600 root:root"
 fi
 
-if printf '%s\n' "$REPLY_OUT" | grep '^grants: get,patch on nodes/status for gmktec-xubuntu only' >/dev/null; then
+if printf '%s\n' "$REPLY_OUT" | grep '^grants:   get,patch on nodes/status for gmktec-xubuntu only' >/dev/null; then
   ok "A4  the plan states what the credential grants, and what it is not"
 else
   no "A4  the plan states what the credential grants, and what it is not"
@@ -386,7 +386,7 @@ run_seed "$TRIPBIN" --dry-run "$AGENT_COMMITTED"
 # On a machine that has no /etc/rancher/k3s the plan reports the parent as one
 # it would CREATE; on one that has it, as existing. Either is correct, and
 # neither is what this case is about -- the TARGET is.
-if printf '%s\n' "$REPLY_OUT" | grep -xF "target: ${AGENT_COMMITTED_TARGET}" >/dev/null; then
+if printf '%s\n' "$REPLY_OUT" | grep -xF "target:   ${AGENT_COMMITTED_TARGET}" >/dev/null; then
   ok "E1  the committed profile plans the seed of ${AGENT_COMMITTED_TARGET}"
 else
   no "E1  the committed profile plans the seed of ${AGENT_COMMITTED_TARGET}"
@@ -420,7 +420,7 @@ agent_profile "$FRESH_PROFILE" "$FRESH_TARGET"
 unset "$KUBECONFIG_VAR"
 run_seed "$TRIPBIN" --dry-run "$FRESH_PROFILE"
 
-if printf '%s\n' "$REPLY_OUT" | grep "^parent: ${FRESH_DIR} (absent, and it is the k3s configuration directory" >/dev/null; then
+if printf '%s\n' "$REPLY_OUT" | grep "^parent:   ${FRESH_DIR} (absent, and it is the k3s configuration directory" >/dev/null; then
   ok "F1  the plan reports the absent k3s config directory as one it will create"
 else
   no "F1  the plan reports the absent k3s config directory as one it will create"
