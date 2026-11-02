@@ -217,6 +217,37 @@ def test_suite_red_summary_names_erroring_tests_and_collection_modules(
     assert "tests/test_collection.py" in summary
 
 
+def test_suite_red_keeps_each_failing_tests_one_line_traceback(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    """Suite-red keeps the assertion text, not only the node id.
+
+    A 1-in-465 flake refused a commit gate on 2026-11-02 (run
+    20261102T032559Z-472192) while the leg ran `--tb=no`, so the one message
+    that named its cause was thrown away (livespec-dev-tooling-ymjw5d).
+    """
+    run = _suite_run_cls()(
+        returncode=1,
+        output=(
+            f"{' .' * 250}F\n"
+            "/workspace/tests/consumer/test_memo.py:323: AssertionError: and the number "
+            "of members skipped must be reported; output=':: ERROR: up-front uv sync failed'\n"
+            "=========================== short test summary info ============================\n"
+            "FAILED tests/consumer/test_memo.py::test_counts_what_it_skipped\n"
+        ),
+        timed_out=False,
+    )
+    rc, log, _message, _seen, _ = _run_suite_leg(monkeypatch, tmp_path, suite_run=run)
+
+    assert rc == 1
+    failure_event = next(kwargs for level, _event, kwargs in log.records if level == "error")
+    detail = failure_event["failure_detail"]
+    assert isinstance(detail, str)
+    assert "test_memo.py:323: AssertionError" in detail
+    assert "ERROR: up-front uv sync failed" in detail
+
+
 def _suite_run_cls():
     _load_modes()  # puts the checks dir on sys.path
     from _red_green_replay_suite import SuiteRun

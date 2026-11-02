@@ -38,7 +38,7 @@ def test_argv_uses_test_nprocs_for_worker_count() -> None:
     argv = mod.suite_pytest_argv(
         environ={"test_nprocs": "4"}, xdist_available=True, visible_cpus=32
     )
-    assert argv == [sys.executable, "-m", "pytest", "--tb=no", "-q", "-n", "4"]
+    assert argv == [sys.executable, "-m", "pytest", "--tb=line", "-q", "-n", "4"]
 
 
 def test_argv_accepts_staged_test_paths() -> None:
@@ -97,7 +97,7 @@ def test_argv_falls_back_to_serial_without_xdist() -> None:
     argv = mod.suite_pytest_argv(
         environ={"test_nprocs": "4"}, xdist_available=False, visible_cpus=32
     )
-    assert argv == [sys.executable, "-m", "pytest", "--tb=no", "-q"]
+    assert argv == [sys.executable, "-m", "pytest", "--tb=line", "-q"]
 
 
 def test_xdist_importable_matches_find_spec() -> None:
