@@ -20,6 +20,7 @@ The drained-restart tag itself restarts dockerd, so no test selects it.
 from __future__ import annotations
 
 import json
+import os
 import re
 import subprocess
 from pathlib import Path
@@ -83,11 +84,7 @@ def _run(*, tmp_path: Path, state: str) -> tuple[int, str]:
         text=True,
         timeout=_TIMEOUT_SECONDS,
         check=False,
-        env={
-            "ANSIBLE_ROLES_PATH": str(_ROLES),
-            "PATH": "/usr/local/bin:/usr/bin:/bin:" + str(Path.home() / ".local" / "bin"),
-            "HOME": str(Path.home()),
-        },
+        env={**os.environ, "ANSIBLE_ROLES_PATH": str(_ROLES)},
     )
     return completed.returncode, completed.stdout + completed.stderr
 
