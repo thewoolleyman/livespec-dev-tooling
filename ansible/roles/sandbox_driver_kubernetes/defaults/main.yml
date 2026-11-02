@@ -29,9 +29,10 @@
 # so the exec request URL carries only a fixed wrapper: under v0.4.0 a prepare
 # step with a 48 KB inline payload built an ~80 KB URL that the API path
 # refused, and credential values travelled in that URL (measured 2026-10-23 on
-# gmktec, run 01M5N2W7TNBC; bd-ib-xwqn23).
-sandbox_driver_kubernetes_version: v0.4.1
-sandbox_driver_kubernetes_sha256: 52f30f8b235da167c8f63c2c53dbabb947fc41946fdcb3c8a3b133af2f4ace84
+# gmktec, run 01M5N2W7TNBC; bd-ib-xwqn23). v0.5.0 adds `topology_spread`, which the
+# rendered config below now carries; earlier releases reject it as an unknown field.
+sandbox_driver_kubernetes_version: v0.5.0
+sandbox_driver_kubernetes_sha256: d93437f0bcb495e13a3373a4d2578cc0b2dba2c39c1ad5f3fdcf801ce0788b6e
 # The upstream CLI (`lithos-sandbox`, crate sandbox-driver-cli), built by the
 # plugin's release workflow at the sandbox-driver revision the plugin pins, so
 # the CLI and the plugin speak the same protocol revision.
@@ -40,7 +41,7 @@ sandbox_driver_kubernetes_cli_sha256: 5c17f37394b858e48cc2a8a4e9ae5744d1a4dbb455
 # The lifecycle proof driver, released beside the plugin: it holds one plugin
 # process across a control-plane reboot or a node going NotReady, which a
 # per-command CLI cannot (bd-ib-ad6dby).
-sandbox_driver_kubernetes_proof_sha256: 1e5aa12dacb9228be5a0698bd7207d3ea9a87f04903a55d832e0179d4348b108
+sandbox_driver_kubernetes_proof_sha256: 592288b3524d5e61f5997070cda4418160f3783071045dc1498e24a4e0de0b71
 sandbox_driver_kubernetes_release_url: >-
   https://github.com/thewoolleyman/sandbox-driver-kubernetes/releases/download/{{ sandbox_driver_kubernetes_version }}
 sandbox_driver_kubernetes_bin_dir: /usr/local/bin
@@ -95,6 +96,18 @@ sandbox_driver_kubernetes_tolerations:
   - key: node.kubernetes.io/unreachable
     operator: Exists
     effect: NoExecute
+# Spread each sandbox's first pod across the factory nodes. Without it the
+# default scheduler's resource scoring stacked every sandbox on one node: on
+# 2026-11-02, 3 of 3 new pods went to the same node while two other factory
+# nodes stood idle (orchestrator bd-ib-kogktm). ScheduleAnyway is a
+# scoring preference, so it never leaves a pod Pending and never overrides a
+# filter: a node a filter excludes still gets no pod, which is how a hard-filter
+# defect would show after this lands. Needs plugin v0.5.0 or later, which is
+# the first release that knows the field (the plugin rejects unknown fields).
+sandbox_driver_kubernetes_topology_spread:
+  - topology_key: kubernetes.io/hostname
+    max_skew: 1
+    when_unsatisfiable: ScheduleAnyway
 sandbox_driver_kubernetes_workspace_root: /srv/factory-workspaces
 # The node-loaded AppArmor profile every sandbox pod runs under. On these
 # kernels an exec'd process is stacked as `cri-containerd.apparmor.d//&unconfined`

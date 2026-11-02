@@ -25,6 +25,18 @@
 # derived from the tailnet name would refuse to run on the very host it
 # targets.
 
+- name: Retire the role on a host whose state is absent
+  # Statically imported, so this `when` reaches every retirement task, and the
+  # role's tags apply to them exactly as to the install below.
+  ansible.builtin.import_tasks: retire.yml
+  when: storage_reclaim_state == 'absent'
+
+- name: End the role for a host retiring it
+  # Nothing below may run for such a host, because it would reinstall what the
+  # retirement just removed.
+  ansible.builtin.meta: end_role
+  when: storage_reclaim_state == 'absent'
+
 - name: Look up the account that owns the worktrees
   # fail_key is false so a missing account reaches the assert below, which can
   # say what to create and where. getent's own failure names only the key.

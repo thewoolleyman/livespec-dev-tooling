@@ -29,6 +29,18 @@
 # gateway check below is a different thing and does migrate — it is about this
 # host's docker configuration, not about which host this is.
 
+- name: Retire the role on a host whose state is absent
+  # Statically imported, so this `when` reaches every retirement task, and the
+  # role's tags apply to them exactly as to the install below.
+  ansible.builtin.import_tasks: retire.yml
+  when: sccache_redis_state == 'absent'
+
+- name: End the role for a host retiring it
+  # Nothing below may run for such a host, because it would reinstall what the
+  # retirement just removed.
+  ansible.builtin.meta: end_role
+  when: sccache_redis_state == 'absent'
+
 - name: Refuse an empty value in any field of the rendered unit
   # render-unit.sh checked each of these six was set AND non-empty before
   # substituting it. Jinja catches an UNDEFINED variable on its own, but an

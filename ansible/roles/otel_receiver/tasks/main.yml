@@ -1,4 +1,16 @@
 ---
+- name: Retire the role on a host whose state is absent
+  # Statically imported, so this `when` reaches every retirement task, and the
+  # role's tags apply to them exactly as to the install below.
+  ansible.builtin.import_tasks: retire.yml
+  when: otel_receiver_state == 'absent'
+
+- name: End the role for a host retiring it
+  # Nothing below may run for such a host, because it would reinstall what the
+  # retirement just removed.
+  ansible.builtin.meta: end_role
+  when: otel_receiver_state == 'absent'
+
 - name: Skip a host that does not run the receiver
   ansible.builtin.meta: end_role
   when: not (otel_receiver_enabled | bool)

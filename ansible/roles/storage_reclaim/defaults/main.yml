@@ -53,3 +53,8 @@ storage_reclaim_unit_dir: /etc/systemd/system
 storage_reclaim_script_dest: "{{ storage_reclaim_libexec_dir }}/storage-reclaim.sh"
 storage_reclaim_env_dest: "{{ storage_reclaim_libexec_dir }}/storage-reclaim.env"
 storage_reclaim_timer_name: storage-reclaim.timer
+
+# `absent` retires the role on this host: tasks/retire.yml stops, disables and
+# removes the units the role installed, and the install half never runs
+# (livespec-dev-tooling-j53hzi). `present` is the install.
+storage_reclaim_state: present

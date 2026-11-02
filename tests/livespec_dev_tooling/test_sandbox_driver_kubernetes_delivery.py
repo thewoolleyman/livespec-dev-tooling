@@ -104,6 +104,15 @@ def test_the_plugin_reads_the_factory_credential_and_refreshes_it_on_a_rejection
     assert _default(name="sandbox_driver_kubernetes_apparmor_profile") == "ci-runner-workflow"
 
 
+def test_the_pinned_plugin_knows_the_topology_spread_field() -> None:
+    version = _default(name="sandbox_driver_kubernetes_version")
+    major, minor = (int(part) for part in version.lstrip("v").split(".")[:2])
+    assert (major, minor) >= (0, 5), (
+        f"the rendered config carries topology_spread, which plugin {version} rejects as an "
+        f"unknown field: it would fail to start every sandbox. Pin v0.5.0 or later"
+    )
+
+
 def test_no_machine_is_named() -> None:
     for path in (_TASKS, _DEFAULTS, _PLUGIN_TEMPLATE, _CLI_TEMPLATE):
         text = _read(path=path)

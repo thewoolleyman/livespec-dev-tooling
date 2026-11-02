@@ -1,0 +1,51 @@
+---
+# storage_reclaim — retiring the role on one host (`storage_reclaim_state: absent`).
+#
+# Added 2026-11-02 for livespec-dev-tooling-j53hzi (plan gmktec-factory-placement).
+# hp-xubuntu left `sandbox_hosts` and is now a Kubernetes factory worker. The units
+# this role installed there serve nothing, and the fleet host guard forbids removing
+# them by hand. So a host leaves the role through the committed role.
+#
+# WHAT IT REMOVES: the reclaim timer and the service it triggers. Timers are listed before the service they trigger, so
+# nothing re-fires the service between the two stops. Only the UNIT files are
+# removed. Scripts, environment files and data the role wrote stay where they are,
+# because nothing runs them once the units are gone. Removing any of them would be
+# a separate, deliberate change.
+#
+# Each unit is stopped and disabled ONLY when its unit file is present, so a host
+# that never carried the role, or one already retired, converges with no change.
+
+- name: Look for the units storage_reclaim installed on this host
+  ansible.builtin.stat:
+    path: "{{ storage_reclaim_unit_dir }}/{{ item }}"
+  loop: "{{ [storage_reclaim_timer_name, 'storage-reclaim.service'] }}"
+  register: storage_reclaim_retire_units
+
+- name: Stop and disable each unit storage_reclaim installed
+  ansible.builtin.systemd_service:
+    name: "{{ item.item }}"
+    state: stopped
+    enabled: false
+  become: true
+  loop: "{{ storage_reclaim_retire_units.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+  when: item.stat.exists
+
+- name: Remove each unit file storage_reclaim installed
+  ansible.builtin.file:
+    path: "{{ item.stat.path }}"
+    state: absent
+  become: true
+  loop: "{{ storage_reclaim_retire_units.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+  when: item.stat.exists
+
+- name: Reload systemd after removing storage_reclaim's units
+  ansible.builtin.systemd_service:
+    daemon_reload: true
+  become: true
+  # Keyed on what the stat found rather than on the removal's `changed`, so a
+  # retired host (no unit left) skips it and a second converge changes nothing.
+  when: storage_reclaim_retire_units.results | selectattr('stat.exists') | list | length > 0

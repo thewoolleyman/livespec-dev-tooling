@@ -18,3 +18,10 @@ refresh_command = [{% for arg in sandbox_driver_kubernetes_refresh_command %}"{{
 {{ field }} = "{{ t[field] }}"
 {% endfor %}
 {% endfor %}
+{% for s in sandbox_driver_kubernetes_topology_spread %}
+
+[[topology_spread]]
+topology_key = "{{ s.topology_key }}"
+max_skew = {{ s.max_skew | default(1) | int }}
+when_unsatisfiable = "{{ s.when_unsatisfiable | default('ScheduleAnyway') }}"
+{% endfor %}

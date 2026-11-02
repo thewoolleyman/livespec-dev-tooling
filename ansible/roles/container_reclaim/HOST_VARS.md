@@ -14,7 +14,16 @@ values. Only override one of those in `host_vars` when a measurement on that
 host justifies a different number.
 
 ```yaml
-# hp-xubuntu
+# hp-xubuntu: RETIRED 2026-11-02 (livespec-dev-tooling-j53hzi), through
+# ansible/former-sandbox-hosts.yml. tasks/retire.yml stops, disables and removes
+# the units this role installed.
+container_reclaim_state: absent
+```
+
+The install values hp carried until then:
+
+```yaml
+# hp-xubuntu (until 2026-11-02)
 container_reclaim_canonical_host: hp-xubuntu.perch-rudd.ts.net
 container_reclaim_system_hostname: hp-xubuntu
 ```

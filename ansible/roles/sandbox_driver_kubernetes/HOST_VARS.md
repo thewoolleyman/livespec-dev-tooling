@@ -25,4 +25,5 @@ different HOME sets `sandbox_driver_kubernetes_config_homes`.
 | `sandbox_driver_kubernetes_cli_sha256` | the release asset's digest | the CLI's committed digest |
 | `sandbox_driver_kubernetes_config_homes` | `[fabro_server_host_home]` | every HOME the plugin is launched under |
 | `sandbox_driver_kubernetes_workspace_root` | `/srv/factory-workspaces` | the persistent per-node workspace root (livespec-dev-tooling-due2h6) |
+| `sandbox_driver_kubernetes_topology_spread` | one entry: `kubernetes.io/hostname`, max skew 1, `ScheduleAnyway` | topology spread constraints on each sandbox's first pod, counted over every sandbox pod; needs plugin v0.5.0+. `[]` returns placement to the scheduler's default scoring |
 | `sandbox_driver_kubernetes_tolerations` | the factory taint, plus indefinite `not-ready` and `unreachable` NoExecute tolerations | taints sandbox pods tolerate; overriding the list drops the node-outage pair unless it is restated |
