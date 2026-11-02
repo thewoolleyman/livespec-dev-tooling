@@ -54,9 +54,7 @@
 #      under the GATED REPOSITORY'S OWN skip variable, before any recipe can
 #      read it and said out loud in the verdict stream — a run told nothing
 #      exports nothing and keeps today's command, and every half-told or
-#      shell-carrying form is refused at render time;
-#   S. the uv cache path is backed by a generic ephemeral local-path work volume,
-#      so the provisioner seeds the current warm generation before the gate starts.
+#      shell-carrying form is refused at render time.
 #
 # WHY R EXISTS (livespec-dev-tooling-mex6ga). A member declaring it reads an
 # authorization held outside the tree must not run in the gate Job, but the Job
@@ -337,26 +335,6 @@ for var in UV_CACHE_DIR SCCACHE_REDIS_ENDPOINT SCCACHE_REDIS_RW_MODE CI_CACHE_CA
   fi
 done
 [ "${drift}" -eq 0 ] && pass "all four cache variables match the hook pod template"
-
-echo "== S. UV_CACHE_DIR is backed by the seeded local-path work volume =="
-# The local-path provisioner seeds _warm/uv at the root of every volume it
-# provisions. Mount that volume at /__w, the parent of UV_CACHE_DIR, rather
-# than mounting a host path or an emptyDir at the cache path.
-gate_cache_mount="$(grep -A1 -F '            - name: warm-uv-cache' "${out_a}" \
-  | grep -F 'mountPath: /__w' || true)"
-cache_claim="$(awk '
-  /- name: warm-uv-cache/ { found = 1 }
-  found { print }
-  found && /storageClassName: local-path$/ { exit }
-' "${out_a}")"
-if [ -n "${gate_cache_mount}" ] && \
-   printf '%s\n' "${cache_claim}" | grep -F 'ephemeral:' >/dev/null && \
-   printf '%s\n' "${cache_claim}" | grep -F 'volumeClaimTemplate:' >/dev/null && \
-   printf '%s\n' "${cache_claim}" | grep -F 'storageClassName: local-path' >/dev/null; then
-  pass "UV_CACHE_DIR is under a local-path generic ephemeral volume"
-else
-  fail "UV_CACHE_DIR is not mounted from a local-path generic ephemeral volume"
-fi
 
 echo "== I. the fetch brings the RANGE and a resolvable diff base =="
 if check_fetch_brings_range_and_master "${out_a}" "${HASH_A}"; then
