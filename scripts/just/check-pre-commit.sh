@@ -66,9 +66,11 @@ just hook_gate=1 check 2>&1 | tee "$aggregate_log"
 aggregate_status=${PIPESTATUS[0]}
 set -e
 # `just check` reads the working tree, so its verdict speaks for the staged
-# tree only when the two are identical; with unstaged differences no token is
-# recorded and commit-msg runs the full suite-green leg.
-if [[ "$aggregate_status" -eq 0 ]] && git diff --quiet; then
+# tree only when the two are identical; with unstaged differences, or with
+# untracked non-ignored files the suite may read, no token is recorded and
+# commit-msg runs the full suite-green leg.
+if [[ "$aggregate_status" -eq 0 ]] && git diff --quiet \
+    && [[ -z "$(git ls-files --others --exclude-standard)" ]]; then
     staged_tree=$(git write-tree)
     run_id="pre-commit-aggregate:$(date -u +%Y%m%dT%H%M%SZ):${staged_tree}"
     output_checksum="sha256:$(sha256sum "$aggregate_log" | awk '{print $1}')"
