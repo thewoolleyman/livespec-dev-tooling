@@ -256,6 +256,25 @@ def test_gate_start_uses_the_project_python_when_no_venv_is_activated(*, tmp_pat
     )
 
 
+def test_selector_cli_strips_gate_starts_command_separator(
+    *, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A full suite launched by gate-start reaches the delegated venue selector."""
+    module = importlib.import_module("livespec_dev_tooling.gate_runner_delegate")
+    selected: dict[str, object] = {}
+
+    def choose(**kwargs: object) -> object:
+        selected.update(kwargs)
+        return module.GateVenue(venue="cluster_job", reason="eligible full-suite command")
+
+    monkeypatch.setattr(module, "select_for_repository", choose)
+    monkeypatch.setattr(module.sys, "argv", ["gate-runner-venue", "--", "just", "check"])
+
+    assert module.main() == 0
+    assert selected["command"] == ("just", "check")
+    assert capsys.readouterr().out == "cluster_job\neligible full-suite command\n"
+
+
 def test_gate_start_keeps_commit_and_push_hooks_on_the_launching_host(*, tmp_path: Path) -> None:
     """Commit and push remain local so their own hook delegation can run."""
     root, environment = _init_repo(tmp_path=tmp_path)

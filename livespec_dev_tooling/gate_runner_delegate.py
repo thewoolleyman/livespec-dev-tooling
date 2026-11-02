@@ -242,8 +242,13 @@ def main() -> int:
     if len(sys.argv) > 1 and sys.argv[1] == "run":
         return _run_main()
     arguments = _arguments()
+    command = (
+        tuple(arguments.command[1:])
+        if arguments.command[:1] == ["--"]
+        else tuple(arguments.command)
+    )
     selected = select_for_repository(
-        command=tuple(arguments.command), force_local=arguments.force_local, repo_root=Path.cwd()
+        command=command, force_local=arguments.force_local, repo_root=Path.cwd()
     )
     _ = sys.stdout.write(f"{selected.venue}\n{selected.reason}\n")
     return 0
