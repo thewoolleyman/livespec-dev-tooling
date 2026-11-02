@@ -84,12 +84,16 @@ sandbox_image_warm_crictl: /usr/local/bin/k3s crictl
 # applying anything. The files are every Fabro factory host's (sandbox_hosts),
 # resolved from the inventory so no machine is named here; a host whose file
 # declares no process_spec contributes nothing. Empty for the docker store,
-# which keeps reading the release pin above.
+# which keeps reading the release pin above. Each URL is built by prefixing and
+# suffixing the host name, NEVER with a regex back-reference: under ansible-core
+# 2.21.4 a `\\1` replacement renders literally (measured 2026-11-02, every URL
+# read host_vars/\1.yml).
 sandbox_image_warm_host_vars_base_url: >-
   https://raw.githubusercontent.com/thewoolleyman/livespec-dev-tooling/master/ansible/inventory/host_vars
 sandbox_image_warm_process_spec_urls: >-
   {{ (groups['sandbox_hosts'] | default([]) | sort
-      | map('regex_replace', '^(.*)$', (sandbox_image_warm_host_vars_base_url | trim) ~ '/\\1.yml')
+      | map('regex_replace', '^', (sandbox_image_warm_host_vars_base_url | trim) ~ '/')
+      | map('regex_replace', '$', '.yml')
       | list)
      if sandbox_image_warm_store == 'containerd' else [] }}
 
