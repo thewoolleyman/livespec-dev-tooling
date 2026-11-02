@@ -53,7 +53,7 @@ def test_an_unreadable_gates_kubeconfig_runs_the_pre_commit_gate_locally(
 def test_a_credentialed_pre_commit_delegates_the_staged_tree(
     *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The Job receives a commit wrapping the index tree and its check recipe."""
+    """The Job preserves its declared bootstrap before replacing its aggregate."""
     from returns.result import Success
 
     from livespec_dev_tooling.gate_remote_client import GateRunRequest
@@ -61,7 +61,14 @@ def test_a_credentialed_pre_commit_delegates_the_staged_tree(
 
     module = _module()
     _ = (tmp_path / "pyproject.toml").write_text(
-        "[tool.livespec_dev_tooling]\ndelegated_pre_commit = true\n",
+        "[tool.livespec_dev_tooling]\n"
+        "delegated_pre_commit = true\n"
+        "gate_check_suite = [\n"
+        '    "install-worktree-pack",\n'
+        '    "install-commit-refuse-hooks",\n'
+        '    "warm-typecheck",\n'
+        '    "hook_gate=1 check",\n'
+        "]\n",
         encoding="utf-8",
     )
     request = GateRunRequest(
@@ -96,11 +103,23 @@ def test_a_credentialed_pre_commit_delegates_the_staged_tree(
     verdict = module.run_pre_commit(repo_root=tmp_path)
 
     assert captured["tree_hash"] == "a" * 40
-    assert captured["check_suite"] == ("check-pre-commit-gated-tree",)
+    assert captured["check_suite"] == (
+        "install-worktree-pack",
+        "install-commit-refuse-hooks",
+        "warm-typecheck",
+        "check-pre-commit-gated-tree",
+    )
     assert verdict.local is False
     assert verdict.job_name == "gate-pre-commit-1"
     assert verdict.tree_hash == "a" * 40
     assert verdict.exit_status == 0
+
+
+def test_this_repository_enables_delegated_pre_commit_after_the_bootstrap_fix() -> None:
+    """The released dev-tooling configuration opts into the repaired Job path."""
+    from livespec_dev_tooling.config import load_delegated_pre_commit
+
+    assert load_delegated_pre_commit(repo_root=_REPO_ROOT) is True
 
 
 @pytest.mark.parametrize(
