@@ -106,10 +106,21 @@ def _changed(*, run: subprocess.CompletedProcess[str]) -> int:
     return int(recap["count"])
 
 
+def _set_sysctl_calls(*, monkeypatch: pytest.MonkeyPatch, value: str | None) -> None:
+    """Set or clear the fake sysctl log location for one converge case."""
+    if value is None:
+        monkeypatch.delenv("SYSCTL_CALLS", raising=False)
+    else:
+        monkeypatch.setenv("SYSCTL_CALLS", value)
+
+
+@pytest.mark.parametrize("prior_sysctl_calls", [None, "pre-existing-sysctl-calls"])
 def test_the_dev_host_play_converges_the_documented_proactive_compaction_dropin(
-    *, tmp_path: Path
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, prior_sysctl_calls: str | None
 ) -> None:
     """The drop-in reaches the host, applies now, and is unchanged on a second apply."""
+    _set_sysctl_calls(monkeypatch=monkeypatch, value=prior_sysctl_calls)
+
     assert _ROLE.is_dir(), (
         "ansible/dev-host.yml needs a dev_host_compaction role: otherwise the measured "
         "proactive-compaction setting remains a hand-applied sysctl"
@@ -143,6 +154,7 @@ def test_the_dev_host_play_converges_the_documented_proactive_compaction_dropin(
     assert (sysctl_dir / _DROPIN_NAME).read_text(encoding="utf-8").endswith(f"{_DROPIN_LINE}\n")
     assert calls.read_text(encoding="utf-8") == f"--load {sysctl_dir / _DROPIN_NAME}\n"
     assert _changed(run=second) == 0, second.stdout + second.stderr
+    assert os.environ.get("SYSCTL_CALLS") == prior_sysctl_calls
 
 
 def test_the_role_is_a_tagged_dev_host_converge_and_records_its_safety_rationale() -> None:
