@@ -28,3 +28,33 @@ def test_radar_exports_seeded_typed_entries() -> None:
     assert radar.RADAR[0].id == "livespec-dev-tooling-w7ley3"
     assert all(entry.kind == "plan" for entry in radar.RADAR)
     assert all(entry.said_at == date(2026, 11, 2) for entry in radar.RADAR)
+
+
+def test_structural_validation_names_duplicate_indexes_and_bad_references() -> None:
+    """Offline validation diagnoses the two defects that need no ledger."""
+    radar = importlib.import_module("livespec_dev_tooling.radar.radar")
+
+    assert hasattr(radar, "validate_structure")
+
+    entry = radar.RadarEntry(
+        kind="item",
+        tenant="tenant-a",
+        id="item-a",
+        words="radar target",
+        said_at=date(2026, 11, 2),
+        blocked_by=("tenant-b:item-b",),
+    )
+    duplicate_errors = radar.validate_structure((entry, entry))
+    assert duplicate_errors == ("duplicate radar entry tenant-a:item-a at indexes 0 and 1",)
+
+    malformed = radar.RadarEntry(
+        kind="item",
+        tenant="tenant-c",
+        id="item-c",
+        words="radar target",
+        said_at=date(2026, 11, 2),
+        blocked_by=("missing-id:",),
+    )
+    assert radar.validate_structure((malformed,)) == (
+        "radar entry 0 tenant-c:item-c has malformed blocked_by reference 'missing-id:'",
+    )

@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from datetime import date
 from typing import Literal
 
-__all__: list[str] = ["RADAR", "RadarEntry"]
+__all__: list[str] = ["RADAR", "RadarEntry", "validate_structure"]
 
 
 @dataclass(frozen=True, kw_only=True, slots=True)
@@ -19,6 +19,44 @@ class RadarEntry:
     words: str
     said_at: date
     blocked_by: tuple[str, ...] = ()
+
+
+class _StructuralValidator:
+    """Validate radar defects knowable from committed data alone."""
+
+    def __call__(self, entries: tuple[RadarEntry, ...]) -> tuple[str, ...]:
+        errors: list[str] = []
+        indexes_by_target: dict[tuple[str, str], int] = {}
+        for index, entry in enumerate(entries):
+            target = (entry.tenant, entry.id)
+            target_description = f"{entry.tenant}:{entry.id}"
+            prior_index = indexes_by_target.get(target)
+            if prior_index is None:
+                indexes_by_target[target] = index
+            else:
+                duplicate_description = f"duplicate radar entry {target_description}"
+                errors.append(f"{duplicate_description} at indexes {prior_index} and {index}")
+            entry_description = f"radar entry {index} {target_description}"
+            for reference in entry.blocked_by:
+                if reference.count(":") != 1:
+                    errors.append(
+                        f"{entry_description} has malformed blocked_by reference {reference!r}"
+                    )
+                    continue
+                tenant, identifier = reference.split(":")
+                if not tenant or not identifier:
+                    errors.append(
+                        f"{entry_description} has malformed blocked_by reference {reference!r}"
+                    )
+        return tuple(errors)
+
+    def ensure(self, *, entries: tuple[RadarEntry, ...]) -> None:
+        """Reject committed entries carrying an offline structural defect."""
+        if errors := self(entries):
+            raise ValueError("\n".join(errors))
+
+
+validate_structure: _StructuralValidator = _StructuralValidator()
 
 
 RADAR: tuple[RadarEntry, ...] = (
@@ -125,3 +163,5 @@ RADAR: tuple[RadarEntry, ...] = (
         said_at=date(2026, 11, 2),
     ),
 )
+
+validate_structure.ensure(entries=RADAR)
