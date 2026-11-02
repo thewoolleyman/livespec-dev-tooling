@@ -374,6 +374,8 @@ elif ! grep -F 'location /simple/' "${PYPI_PROXY_TEMPLATE}" >/dev/null; then
 elif ! grep -F 'https://files.pythonhosted.org/packages/' "${PYPI_PROXY_TEMPLATE}" >/dev/null || \
      ! grep -F 'http://pypi-proxy.ci-warm-cache.svc.cluster.local:8081/packages/' "${PYPI_PROXY_TEMPLATE}" >/dev/null; then
   fail "the PyPI files proxy does not rewrite Simple API artifact URLs through /packages/"
+elif ! awk '/location \/simple\/ \{/ { in_simple = 1 } in_simple && /proxy_set_header Accept-Encoding "";/ { found = 1 } in_simple && /^        \}/ { in_simple = 0 } END { exit found ? 0 : 1 }' "${PYPI_PROXY_TEMPLATE}"; then
+  fail "the PyPI files proxy /simple/ location forwards the client Accept-Encoding, so sub_filter cannot rewrite gzipped responses"
 else
   pass "uv and uvx use the proxy Simple API and its rewritten artifact URLs"
 fi
