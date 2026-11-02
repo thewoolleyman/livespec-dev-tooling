@@ -1,0 +1,12 @@
+---
+# The header is part of the managed policy: using copy preserves the measurement
+# and the scope statement instead of reducing the durable setting to one line.
+- name: Install the dev host proactive-compaction policy
+  ansible.builtin.copy:
+    src: "{{ dev_host_compaction_dropin_name }}"
+    dest: "{{ dev_host_compaction_sysctl_dir }}/{{ dev_host_compaction_dropin_name }}"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+  notify: Apply the dev host proactive-compaction policy

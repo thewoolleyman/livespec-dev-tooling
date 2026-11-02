@@ -1,0 +1,11 @@
+---
+- name: Apply the dev host proactive-compaction policy
+  # Loading just this drop-in makes the persistent policy effective now without
+  # reapplying unrelated kernel settings from every file under /etc/sysctl.d.
+  ansible.builtin.command:
+    argv:
+      - "{{ dev_host_compaction_sysctl_bin }}"
+      - --load
+      - "{{ dev_host_compaction_sysctl_dir }}/{{ dev_host_compaction_dropin_name }}"
+  become: true
+  changed_when: true
