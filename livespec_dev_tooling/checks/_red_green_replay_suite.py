@@ -136,14 +136,15 @@ def xdist_importable() -> bool:
 def has_shared_test_support(*, staged_paths: list[str]) -> bool:
     """Return whether staged test material can affect tests it does not name.
 
-    Every file below ``tests/`` other than a ``test_*.py`` test module is
-    conservatively shared support.  That includes ``conftest.py``, package
-    initializers, fixture modules, and fixture data; any can alter collection
-    or behavior outside the named test files.
+    Files below ``tests/`` other than ``test_*.py`` modules are conservatively
+    shared support, except Markdown documentation. That includes
+    ``conftest.py``, package initializers, fixture modules, and fixture data;
+    any can alter collection or behavior outside the named test files.
     """
     return any(
         path.startswith("tests/")
         and not (Path(path).suffix == ".py" and Path(path).name.startswith("test_"))
+        and Path(path).suffix.lower() not in {".md", ".markdown"}
         for path in staged_paths
     )
 

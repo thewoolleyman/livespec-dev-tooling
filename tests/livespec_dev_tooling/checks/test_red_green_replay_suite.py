@@ -54,11 +54,17 @@ def test_argv_accepts_staged_test_paths() -> None:
     assert argv[-3:] == ["-n", "8", "tests/test_changed.py"]
 
 
-def test_shared_test_support_requires_the_full_suite() -> None:
-    """A conftest change keeps the suite-green replay broad."""
+def test_shared_test_support_excludes_documentation_but_keeps_executable_support() -> None:
+    """Only material that can affect other tests broadens suite-green replay."""
     mod = _load()
     assert hasattr(mod, "has_shared_test_support")
+    assert not mod.has_shared_test_support(
+        staged_paths=["tests/test_changed.py", "tests/prompts/CLAUDE.md"]
+    )
     assert mod.has_shared_test_support(staged_paths=["tests/test_changed.py", "tests/conftest.py"])
+    assert mod.has_shared_test_support(
+        staged_paths=["tests/test_changed.py", "tests/fixtures/user.json"]
+    )
 
 
 # Without `test_nprocs` (most consumers compute it in a script and never export
