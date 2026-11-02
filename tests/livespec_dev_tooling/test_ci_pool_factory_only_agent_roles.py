@@ -369,12 +369,15 @@ def test_the_posture_fact_the_gates_read_comes_from_the_profile_key_that_owns_it
     assert facts == {
         "ci_pool_ci_node_facilities": ("CI_NODE_FACILITIES", "full"),
         "ci_pool_factory_node": ("FACTORY_NODE", "false"),
+        "ci_pool_node_data_dir": ("NODE_DATA_DIR", ""),
     }, (
-        f"the play must read exactly two posture facts from the profile — "
+        f"the play must read exactly three facts from the profile — "
         f"`ci_pool_ci_node_facilities` from CI_NODE_FACILITIES, defaulting to the parser's own "
-        f"default `full`, and `ci_pool_factory_node` from FACTORY_NODE, defaulting to the "
-        f"parser's own `false` — so a profile written before either key existed resolves to "
-        f"the posture it already has; got {facts}"
+        f"default `full`; `ci_pool_factory_node` from FACTORY_NODE, defaulting to the "
+        f"parser's own `false`; and `ci_pool_node_data_dir` from NODE_DATA_DIR, defaulting to "
+        f"'' (k3s's own data directory), which the containerd warm needs to reach a moved "
+        f"node's crictl.yaml — so a profile written before any key existed resolves to "
+        f"what it already has; got {facts}"
     )
 
 

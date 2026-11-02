@@ -141,6 +141,11 @@
     ci_pool_factory_node: >-
       {{ lookup('ansible.builtin.file', ci_pool_profile)
       | regex_findall('^FACTORY_NODE=(.*)$', multiline=True) | first | default('false') }}
+    # The node's moved k3s data directory, or '' on k3s's default. The containerd
+    # warm needs it to reach this node's crictl.yaml (see that role's defaults).
+    ci_pool_node_data_dir: >-
+      {{ lookup('ansible.builtin.file', ci_pool_profile)
+      | regex_findall('^NODE_DATA_DIR=(.*)$', multiline=True) | first | default('') }}
   roles:
     # 1/10 — k3s config (server or agent); self-gated.
     - role: k3s_config
@@ -206,6 +211,7 @@
       tags: [sandbox_image_warm_containerd]
       when: ci_pool_factory_node == 'true'
       sandbox_image_warm_store: containerd
+      sandbox_image_warm_k3s_data_dir: "{{ ci_pool_node_data_dir }}"
     # Before 4/10 — mint+deliver the agent's scoped node-status credential, so
     # the reapply timer below has something to authenticate with (agent-only,
     # self-gated).

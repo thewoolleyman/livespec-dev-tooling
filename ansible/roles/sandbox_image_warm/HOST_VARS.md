@@ -70,6 +70,7 @@ something to differ from.
 | `sandbox_image_warm_randomized_delay_sec` | `30` | jitter, so two factory hosts do not pull the same new tag in the same second |
 | `sandbox_image_warm_timeout_start_sec` | `45min` | bounds ONE warm, layer download included |
 | `sandbox_image_warm_crictl` | `/usr/local/bin/k3s crictl` | containerd store only: the CRI client the warm reads and pulls through |
+| `sandbox_image_warm_k3s_data_dir` | `''` (ci-pool.yml passes the profile's `NODE_DATA_DIR`) | containerd store only: a moved k3s data directory; when set, the CRI client becomes `k3s --data-dir <dir> crictl` |
 | `sandbox_image_warm_host_vars_base_url` | this repository's `ansible/inventory/host_vars` on `master` | containerd store only: where the committed host_vars files are read from |
 | `sandbox_image_warm_process_spec_urls` | one URL per `sandbox_hosts` member, for the containerd store; `[]` for docker | containerd store only: the files whose `process_spec.image` values the warm pulls, re-read every tick |
 | `sandbox_image_warm_inventory_process_spec_images` | every `fabro_server_instances[].sandbox_providers.<kind>.process_spec.image` in the inventory | containerd store only: read by the converge alone, which refuses to arm a containerd warm when it is empty |
