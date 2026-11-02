@@ -74,7 +74,17 @@ sandbox_image_warm_timeout_start_sec: 45min
 # symlink, and the multicall binary already points at k3s's own socket. A pull
 # through the CRI is what makes the image one kubelet sees; a bare `ctr` pull
 # would not carry the CRI's labels.
-sandbox_image_warm_crictl: /usr/local/bin/k3s crictl
+# A node whose profile moves k3s's data directory (NODE_DATA_DIR, today only
+# hp-xubuntu at /srv/sandbox-storage/k3s) keeps its crictl.yaml under that
+# directory, and a bare `k3s crictl` looks only under the default one. Measured
+# 2026-11-02: every pull on hp failed with "load config file: stat
+# /var/lib/rancher/k3s/data/<hash>/bin/crictl.yaml: no such file or directory",
+# while `k3s --data-dir /srv/sandbox-storage/k3s crictl images` worked. So the
+# client names the data directory whenever ci-pool.yml supplies one.
+sandbox_image_warm_k3s_data_dir: ''
+sandbox_image_warm_crictl: >-
+  /usr/local/bin/k3s{{ (' --data-dir ' ~ sandbox_image_warm_k3s_data_dir)
+  if (sandbox_image_warm_k3s_data_dir | string | trim | length > 0) else '' }} crictl
 
 # WHERE A CONTAINERD WARM'S REFERENCES COME FROM. A Kubernetes sandbox is built
 # from the registered provider's `process_spec.image` in the Fabro server's
