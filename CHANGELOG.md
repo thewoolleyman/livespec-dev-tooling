@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.148.2](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.148.1...v1.148.2) (2026-11-02)
+
+
+### Bug Fixes
+
+* **ansible:** build the containerd warm's process_spec URLs without a regex back-reference ([569de08](https://github.com/thewoolleyman/livespec-dev-tooling/commit/569de080cec0b2b638deea68e8a15c3153b6ed64))
+
 ## [1.148.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.148.0...v1.148.1) (2026-11-02)
 
 
