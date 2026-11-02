@@ -17,6 +17,7 @@ __all__: list[str] = []
 _MODULE_PATH = Path(__file__).parents[2] / "livespec_dev_tooling" / "gate_runner_delegate.py"
 _RUNNER = Path("dev-tooling") / "gate-run.sh"
 _RUN_TIMEOUT_S = 15.0
+_POLL_INTERVAL_S = 0.05
 
 
 @pytest.mark.parametrize(
@@ -51,6 +52,15 @@ _RUN_TIMEOUT_S = 15.0
             "host_local",
             "command outside full-suite set",
             id="non-full-suite",
+        ),
+        pytest.param(
+            ("just", "check-"),
+            False,
+            True,
+            True,
+            "host_local",
+            "command outside full-suite set",
+            id="bare-check-dash-is-not-a-member",
         ),
         pytest.param(
             ("git", "commit", "-m", "keep-hooks"),
@@ -167,10 +177,11 @@ def _start(*, root: Path, env: dict[str, str], args: list[str]) -> Path:
     assert launched.returncode == 0, launched.stderr
     run_id = launched.stdout.strip()
     run_dir = root / "tmp" / "gate-runs" / run_id
-    deadline = time.monotonic() + _RUN_TIMEOUT_S
-    while not (run_dir / "exit_code").is_file():
-        assert time.monotonic() < deadline, f"gate run {run_id} did not finish"
-        time.sleep(0.05)
+    finished = any(
+        (run_dir / "exit_code").is_file() or time.sleep(_POLL_INTERVAL_S)
+        for _ in range(int(_RUN_TIMEOUT_S / _POLL_INTERVAL_S))
+    )
+    assert finished, f"gate run {run_id} did not finish"
     return run_dir
 
 
