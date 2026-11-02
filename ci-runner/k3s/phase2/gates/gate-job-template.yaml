@@ -549,8 +549,11 @@ spec:
             # /packages/ artifacts instead of files.pythonhosted.org.
             - name: UV_DEFAULT_INDEX
               value: http://pypi-proxy.ci-warm-cache.svc.cluster.local:8081/simple
+            # Keep the fleet cache kill switch on the gate's one seeded work
+            # volume too. The postStart hook below removes only this Job's
+            # private reflink seed when an operator needs a cold control.
             - name: CI_CACHE_KILL_SWITCH
-              value: ""
+              value: "@@CACHE_KILL_SWITCH@@"
             - name: SCCACHE_REDIS_ENDPOINT
               value: redis://sccache-redis.ci-sccache.svc.cluster.local:6379
             - name: SCCACHE_REDIS_RW_MODE
@@ -588,6 +591,18 @@ spec:
               # for memory and cannot be evicted under node pressure mid-run,
               # which would read as a gate failure rather than as an eviction.
               memory: "@@MEMORY@@"
+          lifecycle:
+            postStart:
+              exec:
+                command:
+                  - /bin/sh
+                  - -c
+                  - |
+                    # Match the ARC hook template: the operator switch removes
+                    # this volume's private seed, never the warm generation.
+                    if [ "${CI_CACHE_KILL_SWITCH:-}" = "operator" ]; then
+                      rm -rf /__w/_warm/uv
+                    fi
           volumeMounts:
             - name: workspace
               mountPath: /workspace

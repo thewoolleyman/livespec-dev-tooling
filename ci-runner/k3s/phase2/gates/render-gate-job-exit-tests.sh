@@ -57,6 +57,8 @@
 #      shell-carrying form is refused at render time;
 #   S. the uv cache path is backed by a generic ephemeral local-path work volume,
 #      so the provisioner seeds the current warm generation before the gate starts.
+#   T. uv and uvx misses resolve through the in-cluster PyPI files proxy; and
+#   U. the operator cache kill switch reaches the gate and removes its uv seed.
 #
 # WHY R EXISTS (livespec-dev-tooling-mex6ga). A member declaring it reads an
 # authorization held outside the tree must not run in the gate Job, but the Job
@@ -374,6 +376,22 @@ elif ! grep -F 'https://files.pythonhosted.org/packages/' "${PYPI_PROXY_TEMPLATE
   fail "the PyPI files proxy does not rewrite Simple API artifact URLs through /packages/"
 else
   pass "uv and uvx use the proxy Simple API and its rewritten artifact URLs"
+fi
+
+echo "== U. the operator cache kill switch makes the gate's uv volume cold =="
+operator_out="${SCRATCH}/operator-cache-off.yaml"
+if CI_CACHE_KILL_SWITCH=operator "${RENDERER}" --repo-root "${SCRATCH}/repo-a" \
+     --tree-hash "${HASH_A}" "${OUR_SUITE[@]}" > "${operator_out}" 2>"${SCRATCH}/operator-cache-off.err"; then
+  operator_switch="$(grep -A1 -F 'name: CI_CACHE_KILL_SWITCH' "${operator_out}" | grep -oE 'value: .*' | head -1)"
+  if [ "${operator_switch}" != 'value: "operator"' ]; then
+    fail "CI_CACHE_KILL_SWITCH=operator does not reach the gate container"
+  elif ! grep -F 'rm -rf /__w/_warm/uv' "${operator_out}" >/dev/null; then
+    fail "the operator cache kill switch does not remove the gate's uv seed"
+  else
+    pass "the operator switch reaches the gate and removes its uv seed"
+  fi
+else
+  fail "renderer errored under CI_CACHE_KILL_SWITCH=operator: $(cat "${SCRATCH}/operator-cache-off.err")"
 fi
 
 echo "== I. the fetch brings the RANGE and a resolvable diff base =="
