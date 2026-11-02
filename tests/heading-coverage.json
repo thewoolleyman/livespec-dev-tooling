@@ -1426,8 +1426,8 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "non-functional-requirements.md",
     "heading": "## LLM-spend telemetry pricing",
-    "test": "TODO",
-    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, exercising the LLM-spend emitter's shared price table: a listed model priced at list with no fallback marker, a dated id priced as its listed model, an unlisted model priced at its family fallback and marked, and a second correction run refused; the emitter is host-local (~/token-spend-report), so the test needs it moved under a tested surface first. livespec-dev-tooling-mnj7 owns it.",
+    "test": "tests.livespec_dev_tooling.test_llm_spend.test_listed_model_is_priced_at_list_with_no_fallback_marker",
+    "reason": "Integration-tier (module-level `pytest.mark.integration`): the shared price table every LLM-spend emitter prices from (`livespec_dev_tooling.llm_spend`, re-exported by the host emitters' `prices.py`), driven from a model id to the cost fields an emitter sends. This arm holds the \"one price table, list prices\" clause: a listed model at its list price with no fallback marker. Sibling arms in the same module hold the rest of the section: a dated or suffixed Anthropic id priced as its listed model, an unlisted model at its family's marked fallback, an unknown family at the provider's top model, a non-zero cost that never rounds to $0, and a second correction run refused by `claim_correction` against a real done marker.",
     "work_item": "livespec-dev-tooling-mnj7"
   },
   {
@@ -1482,8 +1482,8 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a token-bearing response on a model the LLM-spend price table does not list is sent at a marked fallback price",
-    "test": "TODO",
-    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, sending a gpt-7-sol response through the emitter's pricing path and asserting a non-zero cost at gpt-6.1-sol's list price, spend.price_fallback=true and a cost_note naming gpt-6.1-sol; the emitter is host-local (~/token-spend-report), so the test needs it moved under a tested surface first. livespec-dev-tooling-mnj7 owns it.",
+    "test": "tests.livespec_dev_tooling.test_llm_spend.test_unlisted_model_is_sent_at_a_marked_fallback_price",
+    "reason": "Integration-tier (module-level `pytest.mark.integration`, the scenario-tier floor): a `gpt-7-sol` response is priced through the shared table the emitters use and its sent fields are read back: a non-zero `cost_usd` equal to `gpt-6.1-sol`'s list price for the same tokens, `spend.price_fallback` true and a `cost_note` naming `gpt-6.1-sol`, while a `gpt-6.1-sol` response carries no marker.",
     "work_item": "livespec-dev-tooling-mnj7"
   },
   {
