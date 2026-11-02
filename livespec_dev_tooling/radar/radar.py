@@ -18,7 +18,7 @@ class RadarEntry:
     id: str
     words: str
     said_at: date
-    blocked_by: tuple[str, ...] = ()
+    blocked_by: tuple[str, ...]
 
 
 class _StructuralValidator:
@@ -70,6 +70,7 @@ RADAR: tuple[RadarEntry, ...] = (
             "the maintainer."
         ),
         said_at=date(2026, 11, 2),
+        blocked_by=(),
     ),
     RadarEntry(
         kind="plan",
@@ -77,6 +78,7 @@ RADAR: tuple[RadarEntry, ...] = (
         id="livespec-dev-tooling-6vuiwe",
         words="VPS load: dev-host-test-gate-load",
         said_at=date(2026, 11, 2),
+        blocked_by=(),
     ),
     RadarEntry(
         kind="plan",
@@ -84,6 +86,7 @@ RADAR: tuple[RadarEntry, ...] = (
         id="livespec-dev-tooling-sv6m5p",
         words="VPS load: implement-test-performance",
         said_at=date(2026, 11, 2),
+        blocked_by=(),
     ),
     RadarEntry(
         kind="plan",
@@ -91,6 +94,7 @@ RADAR: tuple[RadarEntry, ...] = (
         id="bd-ib-nmuyjc",
         words="Fleet capacity balancing: kubernetes-sandbox-backend",
         said_at=date(2026, 11, 2),
+        blocked_by=(),
     ),
     RadarEntry(
         kind="plan",
@@ -98,6 +102,7 @@ RADAR: tuple[RadarEntry, ...] = (
         id="livespec-dev-tooling-me5aqz",
         words="Fleet capacity balancing: gmktec-factory-placement",
         said_at=date(2026, 11, 2),
+        blocked_by=(),
     ),
     RadarEntry(
         kind="plan",
@@ -105,6 +110,7 @@ RADAR: tuple[RadarEntry, ...] = (
         id="bd-ib-opbzv3",
         words="Fleet capacity balancing: factory-idle-with-ready-work",
         said_at=date(2026, 11, 2),
+        blocked_by=(),
     ),
     RadarEntry(
         kind="plan",
@@ -112,6 +118,7 @@ RADAR: tuple[RadarEntry, ...] = (
         id="overseer-uzvcbn",
         words="herdr-overseer",
         said_at=date(2026, 11, 2),
+        blocked_by=(),
     ),
     RadarEntry(
         kind="plan",
@@ -119,6 +126,7 @@ RADAR: tuple[RadarEntry, ...] = (
         id="bd-ib-b2jzxw",
         words="anthropic-burn-mitigation",
         said_at=date(2026, 11, 2),
+        blocked_by=(),
     ),
     RadarEntry(
         kind="plan",
@@ -126,6 +134,7 @@ RADAR: tuple[RadarEntry, ...] = (
         id="livespec-dev-tooling-vspttc",
         words="codex-implement-cost-per-run",
         said_at=date(2026, 11, 2),
+        blocked_by=(),
     ),
     RadarEntry(
         kind="plan",
@@ -133,6 +142,7 @@ RADAR: tuple[RadarEntry, ...] = (
         id="bd-ib-qy5wol",
         words="sandbox-commit-gate-ceiling",
         said_at=date(2026, 11, 2),
+        blocked_by=(),
     ),
     RadarEntry(
         kind="plan",
@@ -140,6 +150,7 @@ RADAR: tuple[RadarEntry, ...] = (
         id="livespec-dev-tooling-qgwxo4",
         words="dev-host-disk-retention",
         said_at=date(2026, 11, 2),
+        blocked_by=(),
     ),
     RadarEntry(
         kind="plan",
@@ -147,6 +158,7 @@ RADAR: tuple[RadarEntry, ...] = (
         id="livespec-dev-tooling-s2aqob",
         words="kubernetes-observability",
         said_at=date(2026, 11, 2),
+        blocked_by=(),
     ),
     RadarEntry(
         kind="plan",
@@ -154,6 +166,7 @@ RADAR: tuple[RadarEntry, ...] = (
         id="bd-ib-k6dqwc",
         words="dispatch-control-plane: maintainer-driven",
         said_at=date(2026, 11, 2),
+        blocked_by=(),
     ),
     RadarEntry(
         kind="plan",
@@ -161,6 +174,7 @@ RADAR: tuple[RadarEntry, ...] = (
         id="livespec-3rfjga",
         words="codex-plugin-hook-path-regression",
         said_at=date(2026, 11, 2),
+        blocked_by=(),
     ),
 )
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import importlib
 from datetime import date
 
@@ -36,7 +37,26 @@ def test_invalid_committed_radar_is_rejected_at_import() -> None:
         id="livespec-dev-tooling-w7ley3",
         words="duplicate target",
         said_at=date(2026, 11, 2),
+        blocked_by=(),
     )
 
     with pytest.raises(ValueError, match=r"duplicate radar entry livespec-dev-tooling:"):
         radar.validate_structure.ensure(entries=(entry, entry))
+
+
+def test_every_radar_entry_field_is_required() -> None:
+    """No field has a default, so omitting any of them is a type error."""
+    radar = importlib.import_module("livespec_dev_tooling.radar.radar")
+
+    assert all(
+        field.default is dataclasses.MISSING and field.default_factory is dataclasses.MISSING
+        for field in dataclasses.fields(radar.RadarEntry)
+    )
+    with pytest.raises(TypeError, match="blocked_by"):
+        radar.RadarEntry(
+            kind="item",
+            tenant="tenant-a",
+            id="item-a",
+            words="radar target",
+            said_at=date(2026, 11, 2),
+        )
