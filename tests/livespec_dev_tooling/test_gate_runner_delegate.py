@@ -327,3 +327,143 @@ def test_a_cluster_gate_without_a_verdict_never_runs_the_command_locally(
 
     assert outcome.exit_status == 75
     assert invoked == []
+
+
+@pytest.mark.parametrize(
+    ("command", "state", "expected_status", "pytest_argv", "check_suite"),
+    [
+        pytest.param(("just", "check"), "PASSED", 0, None, ("check",), id="just-pass"),
+        pytest.param(
+            ("mise", "exec", "--", "just", "check-types"),
+            "FAILED",
+            1,
+            None,
+            ("check-types",),
+            id="mise-just-fail",
+        ),
+        pytest.param(
+            ("pytest", "tests/unit"),
+            "NO_VERDICT",
+            75,
+            ("pytest", "tests/unit"),
+            (),
+            id="pytest-lost",
+        ),
+        pytest.param(
+            ("uv", "run", "pytest", "tests/unit"),
+            "unknown",
+            75,
+            ("pytest", "tests/unit"),
+            (),
+            id="uv-pytest-unknown",
+        ),
+    ],
+)
+def test_cluster_gate_translates_each_remote_verdict_and_command(
+    *,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    command: tuple[str, ...],
+    state: str,
+    expected_status: int,
+    pytest_argv: tuple[str, ...] | None,
+    check_suite: tuple[str, ...],
+) -> None:
+    """Remote verdicts and direct command arguments retain their distinct meanings."""
+    from returns.result import Success
+
+    from livespec_dev_tooling.gate_remote_client import GateRunRequest
+    from livespec_dev_tooling.gate_remote_verdict import GateVerdict
+
+    module = importlib.import_module("livespec_dev_tooling.gate_runner_delegate")
+    root, _ = _init_repo(tmp_path=tmp_path)
+    captured: dict[str, object] = {}
+    request = GateRunRequest(
+        repo_root=root, mirror_url="mirror", manifest="manifest", gate_ref="ref"
+    )
+
+    monkeypatch.setattr(module, "_working_tree_source", lambda **_kwargs: ("tree", "commit"))
+    monkeypatch.setattr(module, "resolve_renderer", lambda **_kwargs: Path("renderer"))
+    monkeypatch.setattr(
+        module,
+        "gate_remote_request",
+        lambda **kwargs: captured.update(kwargs) or Success(request),
+    )
+    monkeypatch.setattr(
+        module,
+        "run_gated_push",
+        lambda **_kwargs: GateVerdict(state=state, detail="remote", token_written=False),
+    )
+
+    outcome = module.run_cluster_gate(repo_root=root, command=command)
+
+    assert outcome.exit_status == expected_status
+    assert captured["pytest_argv"] == pytest_argv
+    assert captured["check_suite"] == check_suite
+
+
+def test_cluster_gate_records_an_assembly_failure_without_invoking_the_job(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A request assembly fault is a no-verdict result, not a local fallback."""
+    from returns.result import Failure
+
+    from livespec_dev_tooling.gate_remote_invocation import GateStepFailed
+
+    module = importlib.import_module("livespec_dev_tooling.gate_runner_delegate")
+    root, _ = _init_repo(tmp_path=tmp_path)
+    invoked: list[object] = []
+    monkeypatch.setattr(module, "_working_tree_source", lambda **_kwargs: ("tree", "commit"))
+    monkeypatch.setattr(
+        module,
+        "gate_remote_request",
+        lambda **_kwargs: Failure(
+            GateStepFailed(step="render", argv=(), returncode=None, detail="lost")
+        ),
+    )
+    monkeypatch.setattr(module, "run_gated_push", lambda **kwargs: invoked.append(kwargs))
+
+    outcome = module.run_cluster_gate(repo_root=root, command=("just", "check"))
+
+    assert outcome.exit_status == 75
+    assert "lost" in capsys.readouterr().err
+    assert invoked == []
+
+
+def test_cluster_gate_records_a_lost_tree_creation(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An unreadable temporary tree reports no verdict before a Job can exist."""
+    module = importlib.import_module("livespec_dev_tooling.gate_runner_delegate")
+    root, _ = _init_repo(tmp_path=tmp_path)
+    monkeypatch.setattr(module, "_temporary_index_succeeded", lambda **_kwargs: False)
+
+    outcome = module.run_cluster_gate(repo_root=root, command=("just", "check"))
+
+    assert outcome.exit_status == 75
+    assert outcome.tree_hash == ""
+
+
+def test_cluster_runner_cli_persists_remote_evidence(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The shell child can persist the tree and Job fields that gate-status reads."""
+    module = importlib.import_module("livespec_dev_tooling.gate_runner_delegate")
+    run_dir = tmp_path / "run"
+    _ = run_dir.mkdir()
+    monkeypatch.setattr(
+        module,
+        "run_cluster_gate",
+        lambda **_kwargs: module.ClusterGateResult(
+            exit_status=75, tree_hash="tree", job_name="job"
+        ),
+    )
+    monkeypatch.setattr(
+        module.sys,
+        "argv",
+        ["gate-runner-venue", "run", "--run-dir", str(run_dir), "--", "just", "check"],
+    )
+
+    assert module.main() == 75
+    assert (run_dir / "tree_hash").read_text(encoding="utf-8") == "tree\n"
+    assert (run_dir / "job_name").read_text(encoding="utf-8") == "job\n"
