@@ -99,6 +99,7 @@ private_siblings=()
 private_sibling_secret=""
 authority_skip_env=""
 authority_skip_members=()
+cache_kill_switch="${CI_CACHE_KILL_SWITCH:-}"
 
 # WHERE livespec CORE comes from, for the consumer whose aggregate runs
 # `check-doctor-static` (R4.S7c part ii, freeze-driver ruling R92 2026-10-17).
@@ -138,6 +139,14 @@ for v in repo_root tree_hash; do
 done
 [ -d "${repo_root}" ] || { echo "FATAL: --repo-root ${repo_root} is not a directory" >&2; exit 2; }
 [ -f "${TEMPLATE}" ] || { echo "FATAL: template not found: ${TEMPLATE}" >&2; exit 1; }
+
+# The cache switch is rendered into a YAML double-quoted value and controls a
+# deletion in the gate container, so accept the fleet's two declared states
+# rather than interpolating an arbitrary inherited environment value.
+case "${cache_kill_switch}" in
+  "" | operator) ;;
+  *) echo "FATAL: CI_CACHE_KILL_SWITCH must be empty or operator" >&2; exit 2 ;;
+esac
 
 # A Kubernetes label value must accept it, and the tree hash is what makes every
 # Job of one tree selectable now that the Job's own name is assigned by the API
@@ -666,6 +675,7 @@ substitute SOURCE_URL        "${source_url}"
 substitute CPU               "${cpu}"
 substitute MEMORY            "${memory}"
 substitute PARALLELISM       "${parallelism}"
+substitute CACHE_KILL_SWITCH "${cache_kill_switch}"
 substitute TTL_SECONDS       "${ttl_seconds}"
 substitute LIVESPEC_CORE_URL "${LIVESPEC_CORE_URL}"
 substitute LIVESPEC_CORE_REF "${livespec_core_ref}"
