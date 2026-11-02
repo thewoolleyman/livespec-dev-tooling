@@ -141,6 +141,15 @@ first. Detection is the `api-unavailable` Honeycomb alarm. The full
 reasoning and mitigation ladder sit beside the pin in
 `provision-k3s.sh`.
 
+**The crash recurred at cap 32** on 2026-11-02 13:01:13Z (`bd-ib-v7h3az`):
+the churn-slot cap counts ARC runner pods only, while each runner's workflow
+pod and every factory and gates pod also creates a veth. The ladder's rung 4
+is therefore taken: `node_sysctl` ships
+`phase2/node-netlink-rmem/60-k3s-netlink-rmem-default.conf`, raising
+`net.core.rmem_default` from 212992 to 4194304 on every pool node. flannel's
+link-subscription netlink socket never sets `SO_RCVBUF`, so it inherits that
+default; the change reaches k3s at its next start on each node.
+
 Nothing floats `latest` (rule restated here after the tree that first
 carried it was deleted under `livespec-s43svm.19`). The runner image is
 pinned by tag AND digest because the image embeds the container hook

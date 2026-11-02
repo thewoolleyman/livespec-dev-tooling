@@ -1,0 +1,193 @@
+---
+# restart-k3s-server.yml — the ONE sanctioned way to restart the pool SERVER's
+# `k3s` unit (the control plane) WITHOUT rebooting the host, so a start-time
+# setting reaches the running server.
+#
+# WHY IT EXISTS (orchestrator work-item bd-ib-v7h3az). The k3s server crashed at
+# 2026-11-02 13:01:13Z in flannel v0.28.4's watchVXLANDevice: its netlink
+# link-subscription socket overran its receive buffer under veth churn. The fix
+# is a larger net.core.rmem_default (node_sysctl), but a socket's buffer is fixed
+# when the socket is CREATED, so the value reaches flannel only at the next k3s
+# start. The committed paths could not get there: `restart-k3s-agent.yml`
+# refuses the server by design, `reboot-ci-server.yml` reboots the whole host
+# (and rebuilds the cluster from its tmpfs datastore), and a hand `systemctl
+# restart k3s` over ssh is exactly what the Driver's `fleet_host_guard.py`
+# refuses. This playbook closes that gap in the shape `reboot-ci-server.yml`
+# already uses: the same confirmation fence and the same two-read idle gate,
+# with a unit restart in place of the reboot and a verification after it.
+#
+# THE FENCE IS A VARIABLE, NOT OMISSION FROM A LIST. Without
+# `k3s_server_restart_confirm=<this host's inventory name>` it reads nothing,
+# changes nothing and exits 0, and the host must also be the pool's `server`, so
+# a confirmation naming an agent reaches nothing here.
+#
+# WHY THE IDLE GATE. A server restart takes the cluster API away for tens of
+# seconds (measured about 17 s on 2026-11-02). A runner pod mid-job loses its
+# container hook's API calls in that window and fails the job, as 17 jobs did on
+# 2026-09-06 (livespec-n5eudb). So the restart waits for the arc-runners pool to
+# read idle on two consecutive reads, retried within a bounded window, and a pool
+# that never goes quiet ends in a REFUSAL rather than in a restart. Factory runs
+# are held by the dispatcher (hold-gmktec) before this play is invoked; that is
+# an operator step, not something this play can see.
+#
+# WHAT THE VERIFICATION READS. After the restart: the API's /readyz, every node's
+# Ready condition, and the receive buffer (`rb`) of every rtnl socket the new
+# k3s-server process holds, so the apply's own output is the evidence that the
+# start-time sysctl took effect. Rollback is node_sysctl at the old value plus
+# another run of this playbook.
+
+- name: Restart the k3s CI server's k3s unit once its runner pool is idle
+  hosts: ci_pool
+  gather_facts: false
+  vars:
+    k3s_server_restart_runner_namespace: arc-runners
+    k3s_server_restart_admin_kubeconfig: /etc/rancher/k3s/k3s.yaml
+    k3s_server_restart_unit: k3s
+    k3s_server_restart_idle_interval: 60
+    # ADDITIONAL attempts on top of the first: 15 means 16 attempts and a bounded
+    # wait of roughly 31 minutes before the refusal.
+    k3s_server_restart_idle_retries: 15
+    k3s_server_restart_status_interval: 5
+    k3s_server_restart_status_retries: 60
+    k3s_server_restart_requested: >-
+      {{ k3s_server_restart_confirm | default('') == inventory_hostname
+         and cluster_role | default('') == 'server' }}
+  tasks:
+    - name: Report a run that carries no server-restart confirmation for this host
+      ansible.builtin.debug:
+        msg: >-
+          Not restarting {{ k3s_server_restart_unit }} on {{ inventory_hostname }}:
+          this run does not carry
+          `k3s_server_restart_confirm={{ inventory_hostname }}` (it carries
+          `{{ k3s_server_restart_confirm | default('<unset>') }}`), or this host
+          is not the pool's server (cluster_role
+          `{{ cluster_role | default('<unset>') }}`). Nothing was read and nothing
+          was changed. To restart this host's k3s server, run from the control
+          node with the runner pool idle and factory launches held: just
+          ansible-apply ansible/restart-k3s-server.yml -e
+          k3s_server_restart_confirm={{ inventory_hostname }}
+      when: not (k3s_server_restart_requested | bool)
+
+    - name: Hold the restart until the runner pool reads idle twice
+      when: k3s_server_restart_requested | bool
+      block:
+        - name: Wait for two consecutive idle reads of the runner pool
+          # Same read as reboot-ci-server.yml, and the same fail-closed shape:
+          # `local pods` and its assignment are separate statements so a kubectl
+          # that failed reaches `set -e` instead of reading as an empty, idle pool.
+          ansible.builtin.shell:
+            executable: /bin/bash
+            cmd: |
+              set -euo pipefail
+              busy_pods() {
+                local pods
+                pods="$(kubectl get pods \
+                  --namespace '{{ k3s_server_restart_runner_namespace }}' \
+                  --output 'jsonpath={range .items[*]}{.metadata.name}={.status.phase}{"\n"}{end}')"
+                printf '%s\n' "${pods}" \
+                  | { grep -v -E '^$|=(Succeeded|Completed)$' || true; }
+              }
+              first="$(busy_pods)"
+              sleep '{{ k3s_server_restart_idle_interval }}'
+              second="$(busy_pods)"
+              printf '%s\n%s\n' "${first}" "${second}" \
+                | { grep -v -E '^$' || true; }
+          become: true
+          environment:
+            KUBECONFIG: "{{ k3s_server_restart_admin_kubeconfig }}"
+          register: k3s_server_restart_pool_reads
+          check_mode: false
+          changed_when: false
+          until: >-
+            k3s_server_restart_pool_reads.rc == 0
+            and k3s_server_restart_pool_reads.stdout == ''
+          failed_when: >-
+            k3s_server_restart_pool_reads.rc != 0
+            or k3s_server_restart_pool_reads.stdout != ''
+          retries: "{{ k3s_server_restart_idle_retries }}"
+          delay: "{{ k3s_server_restart_idle_interval }}"
+      rescue:
+        # A rescue that succeeded would let the restart below run. It fails.
+        - name: Refuse to restart a server whose runner pool never went idle
+          ansible.builtin.fail:
+            msg: >-
+              Refusing to restart {{ k3s_server_restart_unit }} on
+              {{ inventory_hostname }}: the
+              {{ k3s_server_restart_runner_namespace }} runner pool did not read
+              idle on two consecutive reads
+              {{ k3s_server_restart_idle_interval }}s apart, over
+              {{ k3s_server_restart_idle_retries | int + 1 }} attempts. Busy
+              runner pods on the last read:
+              {{ k3s_server_restart_pool_reads.stdout_lines | default([]) | join(', ') }}.
+              Nothing was restarted and nothing on this host was changed.
+
+    - name: Note that a check run withholds the server restart itself
+      ansible.builtin.debug:
+        msg: >-
+          `--check`: {{ k3s_server_restart_unit }} on {{ inventory_hostname }}
+          would be restarted; the runner pool read idle. The restart and its
+          verification are withheld. Re-run without `--check` to perform it.
+      when:
+        - k3s_server_restart_requested | bool
+        - ansible_check_mode
+
+    - name: Restart the server and verify the cluster came back
+      when:
+        - k3s_server_restart_requested | bool
+        - not ansible_check_mode
+      become: true
+      block:
+        - name: Restart the k3s server unit
+          ansible.builtin.systemd_service:
+            name: "{{ k3s_server_restart_unit }}"
+            state: restarted
+
+        - name: Wait until the API reports ready and every node Ready
+          ansible.builtin.shell:
+            executable: /bin/bash
+            cmd: |
+              set -euo pipefail
+              readyz="$(kubectl get --raw /readyz)"
+              nodes="$(kubectl get nodes \
+                --output 'jsonpath={range .items[*]}{.metadata.name}={range .status.conditions[?(@.type=="Ready")]}{.status}{end}{"\n"}{end}')"
+              printf 'readyz=%s observed-at=%s\n%s\n' \
+                "${readyz}" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "${nodes}"
+          environment:
+            KUBECONFIG: "{{ k3s_server_restart_admin_kubeconfig }}"
+          register: k3s_server_restart_api_reads
+          changed_when: false
+          until: >-
+            k3s_server_restart_api_reads.rc == 0
+            and 'readyz=ok' in k3s_server_restart_api_reads.stdout
+            and '=False' not in k3s_server_restart_api_reads.stdout
+            and '=Unknown' not in k3s_server_restart_api_reads.stdout
+          failed_when: >-
+            k3s_server_restart_api_reads.rc != 0
+            or 'readyz=ok' not in k3s_server_restart_api_reads.stdout
+            or '=False' in k3s_server_restart_api_reads.stdout
+            or '=Unknown' in k3s_server_restart_api_reads.stdout
+          retries: "{{ k3s_server_restart_status_retries }}"
+          delay: "{{ k3s_server_restart_status_interval }}"
+
+        - name: Read the receive buffer of the new server process's rtnl sockets
+          ansible.builtin.shell:
+            executable: /bin/bash
+            cmd: |
+              set -euo pipefail
+              pid="$(systemctl show --property MainPID --value '{{ k3s_server_restart_unit }}')"
+              printf 'main-pid=%s net.core.rmem_default=%s\n' \
+                "${pid}" "$(sysctl -n net.core.rmem_default)"
+              ss -f netlink -a -p -m \
+                | grep -A1 -E "^UNCONN.*rtnl:k3s-server/${pid}( |$)" \
+                | grep -o -E 'rb[0-9]+' | sort | uniq -c
+          register: k3s_server_restart_rtnl_reads
+          changed_when: false
+
+        - name: Report the restarted server's API, nodes and socket buffers
+          ansible.builtin.debug:
+            msg: >-
+              {{ k3s_server_restart_unit }} on {{ inventory_hostname }} was
+              restarted and the cluster is back:
+              {{ k3s_server_restart_api_reads.stdout_lines | join('; ') }}.
+              rtnl receive buffers of the new process:
+              {{ k3s_server_restart_rtnl_reads.stdout_lines | join('; ') }}.

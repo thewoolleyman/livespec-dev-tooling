@@ -92,6 +92,14 @@ SCRIPT_NAME="$(basename "$0")"
 # because a closed channel is always immediately ready in a Go select).
 # Detection is the `api-unavailable` alarm, live in Honeycomb since
 # 2026-09-08.
+#
+# RUNG 4 TAKEN (bd-ib-v7h3az, 2026-11-02). The crash recurred AT CAP 32 on
+# 2026-11-02 13:01:13Z, because the churn-slot cap counts ARC runner pods only
+# (workflow, factory and gates pods add veths without a slot). The node_sysctl
+# role now raises net.core.rmem_default to 4 MiB on every pool node
+# (ci-runner/k3s/phase2/node-netlink-rmem/), the buffer flannel's
+# never-sized netlink subscription socket inherits; it reaches k3s at its next
+# start. Rung 3, the upstream two-value receive, remains the durable fix.
 K3S_VERSION="v1.36.2+k3s1"
 HELM_VERSION="v3.21.4"        # co-maintained with README.md "Pinned versions"
 NODE_LABEL="k3s-role=arc-runner-host"
