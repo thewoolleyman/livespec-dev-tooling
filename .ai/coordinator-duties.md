@@ -65,6 +65,15 @@ record in the repo and in the ledger, and must never re-park a coordinator's ans
 Measured 2026-11-01: spec-implementation-lockstep and petri asked the maintainer again about kojs3t, v265 and tavof6,
 all three of which the coordinator had already answered.
 
+**Pressing a human-only valve.** Some valves, such as `resolve-blocked:<id>:ready`, refuse any agent identity and
+accept only a human invoker. Under R301/R493 the owning seat presses such a valve with `--invoker human:thewoolleyman`,
+and its recorded answer names the coordinator's ruling and the time it was made. The seat sends the coordinator the
+decision. It does not park a picker for the maintainer.
+
+Measured 2026-11-02 ~20:5xZ–21:1xZ: three seats in a row stopped at maintainer pickers for this valve: bd-ib-nmuyjc.6
+(kubernetes-sandbox-backend), overseer-eq5fvj (dev-host-test-gate-load) and bd-ib-u6llci (dispatcher-run-watch-cost).
+The maintainer answered each in-session before the coordinator reached it.
+
 **The coordinator directs; it does not do the work.** It answers pickers and routes decisions. It does not run drive
 valve actions itself, does not edit other plans' repositories or records, and does not implement. It sends each action
 to the seat that owns it. Its own plan's records and this guidance file are its to keep current.
@@ -94,6 +103,11 @@ pane and its own report are never evidence that the plan is moving. For each own
 3. Compare the plan's typed `next_action` with that audit. A plan awaiting one item while other children are held is a
    stall. Route it to the owning seat at once, not at the seat's next tick.
 4. DEPENDENCIES lists every non-closed child with its hold reason, never the subset a seat is working.
+5. A plan may live in a different repository with its own ledger tenant. Audit it in its own repo and tenant. While
+   that tenant is unreachable, report "ledger not yet onboarded", never "no plan". Example: the Hetzner priority's
+   plan bootstrap-credentials-and-onboarding lives in `/data/projects/hetzner-xubuntu-info`, tenant
+   `hetzner-xubuntu-info` (prefix `hxi`), which was not yet onboarded on 2026-11-02. Maintainer correction 2026-11-02
+   ~20:0xZ, recorded verbatim on epic `livespec-dev-tooling-6tgd2z`.
 
 Measured 2026-11-02: priority 3, dev-host-test-gate-load, had its two main carriers (qgv3tb, 3buhph) at
 `pending-approval` from 21:30Z on Definition-of-Done findings that went stale when spec v108 merged at 23:45Z. The seat
@@ -280,6 +294,15 @@ about one launch every 3 minutes, while the fleet ran 4–9 live against a cap o
 about 38 tickets queued in arrival order. The coordinator audited each item's ticket and called that "not a stall",
 saw `fleet=6` and 87 % idle in a launcher log line, and asked about it as a side question instead of ruling on it.
 The fix is bd-ib-x7bwug.
+
+**A breakage fix may exceed a repository's WIP cap by one.** A stop-the-line shared-tooling breakage fix ticketed at
+the queue head launches past its target repository's R77 WIP cap by exactly one slot (cap+1). Fleet and per-host caps
+still bind, and nothing is cancelled to make room. The launcher lists such items in
+`tmp/petri-canary/r77-breakage-exception` in the orchestrator repo. Coordinator ruling under R301, recorded on epic
+`livespec-dev-tooling-6tgd2z` at 2026-11-02T20:25:41Z.
+
+Measured 2026-11-02: the first case, livespec-dev-tooling-nhjx (the gates pyright first-run install race), launched at
+20:42Z while livespec-dev-tooling read 10/10 active.
 
 **The dispatcher watches throughput first; the coordinator checks it independently.** The coordinator's tick samples
 every ~20 minutes, so it cannot be the first to see a stall. legacy-dispatcher-agent runs the launchers and owns
