@@ -186,6 +186,17 @@ def _start(*, root: Path, env: dict[str, str], args: list[str]) -> Path:
     return run_dir
 
 
+def _worktree_with_uncommitted_content(*, tmp_path: Path) -> tuple[Path, dict[str, str], str]:
+    """Return a committed fixture whose worktree now differs from its index."""
+    root, environment = _init_repo(tmp_path=tmp_path)
+    _ = (root / "tracked.txt").write_text("base\n", encoding="utf-8")
+    _ = _run(args=["git", "add", "tracked.txt"], cwd=root, env=environment)
+    _ = _run(args=["git", "commit", "--quiet", "-m", "base"], cwd=root, env=environment)
+    index_tree = _run(args=["git", "write-tree"], cwd=root, env=environment).stdout.strip()
+    _ = (root / "tracked.txt").write_text("uncommitted\n", encoding="utf-8")
+    return root, environment, index_tree
+
+
 def test_gate_start_records_and_executes_every_host_local_path(*, tmp_path: Path) -> None:
     """Explicit, undelegated and non-suite commands stay local and record why."""
     root, environment = _init_repo(tmp_path=tmp_path)
@@ -276,3 +287,232 @@ def test_gate_start_keeps_commit_and_push_hooks_on_the_launching_host(*, tmp_pat
             "command outside full-suite set\n"
         )
     assert hook_log.read_text(encoding="utf-8").splitlines() == ["pre-commit", "pre-push"]
+
+
+def test_a_cluster_gate_uses_the_worktree_tree_and_records_its_job(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A delegated full suite publishes uncommitted content without changing the index."""
+    from returns.result import Success
+
+    from livespec_dev_tooling.gate_remote_client import GateRunRequest
+    from livespec_dev_tooling.gate_remote_verdict import GATE_PASSED, GateVerdict
+
+    module = importlib.import_module("livespec_dev_tooling.gate_runner_delegate")
+    assert hasattr(module, "run_cluster_gate")
+    root, environment, original_index_tree = _worktree_with_uncommitted_content(tmp_path=tmp_path)
+
+    captured: dict[str, object] = {}
+    request = GateRunRequest(
+        repo_root=root,
+        mirror_url="mirror",
+        manifest="manifest",
+        gate_ref="refs/gates/worktree",
+    )
+
+    def build(**kwargs: object) -> object:
+        captured.update(kwargs)
+        return Success(request)
+
+    def gate(**kwargs: object) -> GateVerdict:
+        captured["request"] = kwargs["request"]
+        return GateVerdict(
+            state=GATE_PASSED,
+            detail="the gate passed",
+            token_written=False,
+            job_name="gate-worktree-1",
+        )
+
+    monkeypatch.setattr(module, "gate_remote_request", build)
+    monkeypatch.setattr(module, "resolve_renderer", lambda **_kwargs: Path("renderer"))
+    monkeypatch.setattr(module, "run_gated_push", gate)
+
+    outcome = module.run_cluster_gate(repo_root=root, command=("just", "check"))
+
+    assert outcome.exit_status == 0
+    assert outcome.job_name == "gate-worktree-1"
+    assert outcome.tree_hash != original_index_tree
+    assert (
+        _run(args=["git", "write-tree"], cwd=root, env=environment).stdout.strip()
+        == original_index_tree
+    )
+    pushed = captured["request"]
+    assert pushed.source_ref != "HEAD"
+    assert pushed.tree_hash == outcome.tree_hash
+    assert pushed.capture_output is False
+    assert captured["check_suite"] == ("check",)
+
+
+def test_a_cluster_gate_without_a_verdict_exits_75_without_a_local_retry(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A lost Job remains a no-verdict result; the launching host never re-runs it."""
+    from returns.result import Failure
+
+    from livespec_dev_tooling.gate_remote_invocation import GateStepFailed
+
+    module = importlib.import_module("livespec_dev_tooling.gate_runner_delegate")
+    assert hasattr(module, "ClusterGateResult")
+    root, _ = _init_repo(tmp_path=tmp_path)
+    invoked: list[object] = []
+
+    monkeypatch.setattr(module, "_working_tree_source", lambda **_kwargs: ("tree", "commit"))
+    monkeypatch.setattr(
+        module,
+        "gate_remote_request",
+        lambda **_kwargs: Failure(
+            GateStepFailed(step="submit", argv=(), returncode=None, detail="lost")
+        ),
+    )
+    monkeypatch.setattr(module, "run_gated_push", lambda **kwargs: invoked.append(kwargs))
+
+    outcome = module.run_cluster_gate(repo_root=root, command=("just", "check"))
+
+    assert outcome.exit_status == 75
+    assert outcome.job_name == ""
+    assert invoked == []
+
+
+def test_cluster_runner_cli_records_tree_and_job_for_gate_status(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The detached shell child persists the cluster evidence in its run record."""
+    module = importlib.import_module("livespec_dev_tooling.gate_runner_delegate")
+    run_dir = tmp_path / "run"
+    _ = run_dir.mkdir()
+    monkeypatch.setattr(
+        module,
+        "run_cluster_gate",
+        lambda **_kwargs: module.ClusterGateResult(
+            exit_status=75, tree_hash="tree", job_name="job"
+        ),
+    )
+    monkeypatch.setattr(
+        module.sys,
+        "argv",
+        ["gate-runner-venue", "run", "--run-dir", str(run_dir), "--", "just", "check"],
+    )
+
+    assert module.main() == 75
+    assert (run_dir / "tree_hash").read_text(encoding="utf-8") == "tree\n"
+    assert (run_dir / "job_name").read_text(encoding="utf-8") == "job\n"
+
+
+def _command_result(*, returncode: int = 0, stdout: str = "") -> object:
+    """Build one successful command-seam answer for a temporary-index branch."""
+    from returns.result import Success
+
+    from livespec_dev_tooling.gate_remote_invocation import GateCommandResult
+
+    return Success(GateCommandResult(returncode=returncode, stdout=stdout, stderr=""))
+
+
+@pytest.mark.parametrize(
+    "responses",
+    [
+        pytest.param(("not-run",), id="index-command-does-not-run"),
+        pytest.param(("", "", ""), id="tree-is-empty"),
+        pytest.param(("", "", "tree", "not-run"), id="commit-does-not-run"),
+        pytest.param(("", "", "tree", ""), id="commit-is-empty"),
+    ],
+)
+def test_temporary_index_failures_are_no_verdicts_and_restore_the_callers_index(
+    *,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    responses: tuple[str, ...],
+) -> None:
+    """Every temporary-index failure leaves the caller's index selection intact."""
+    from returns.result import Failure
+
+    from livespec_dev_tooling.gate_remote_invocation import GateCommandNotRun
+
+    module = importlib.import_module("livespec_dev_tooling.gate_runner_delegate")
+    assert hasattr(module, "run_cluster_gate")
+    answers = iter(responses)
+
+    def run(**_kwargs: object) -> object:
+        answer = next(answers)
+        if answer == "not-run":
+            return Failure(GateCommandNotRun(argv=("git",), detail="missing"))
+        return _command_result(stdout=answer)
+
+    monkeypatch.setattr(module, "default_gate_command_runner", run)
+    monkeypatch.setenv("GIT_INDEX_FILE", "callers-index")
+
+    assert module.run_cluster_gate(repo_root=tmp_path, command=("just", "check")).exit_status == 75
+    assert os.environ["GIT_INDEX_FILE"] == "callers-index"
+
+
+@pytest.mark.parametrize(
+    ("command", "expected_pytest", "expected_suite"),
+    [
+        pytest.param(("pytest", "tests/unit"), ("pytest", "tests/unit"), (), id="pytest"),
+        pytest.param(
+            ("uv", "run", "pytest", "tests/unit"),
+            ("pytest", "tests/unit"),
+            (),
+            id="uv-pytest",
+        ),
+    ],
+)
+def test_cluster_gate_translates_pytest_commands_and_a_missing_tree_to_no_verdict(
+    *,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    command: tuple[str, ...],
+    expected_pytest: tuple[str, ...],
+    expected_suite: tuple[str, ...],
+) -> None:
+    """Pytest spellings preserve their arguments, while an unreadable tree is never local."""
+    from returns.result import Success
+
+    from livespec_dev_tooling.gate_remote_client import GateRunRequest
+    from livespec_dev_tooling.gate_remote_verdict import GATE_FAILED, GateVerdict
+
+    module = importlib.import_module("livespec_dev_tooling.gate_runner_delegate")
+    assert hasattr(module, "run_cluster_gate")
+    captured: dict[str, object] = {}
+    request = GateRunRequest(
+        repo_root=tmp_path, mirror_url="mirror", manifest="manifest", gate_ref="ref"
+    )
+    monkeypatch.setattr(module, "_working_tree_source", lambda **_kwargs: ("tree", "commit"))
+    monkeypatch.setattr(module, "resolve_renderer", lambda **_kwargs: Path("renderer"))
+    monkeypatch.setattr(
+        module, "gate_remote_request", lambda **kwargs: captured.update(kwargs) or Success(request)
+    )
+    monkeypatch.setattr(
+        module,
+        "run_gated_push",
+        lambda **_kwargs: GateVerdict(state=GATE_FAILED, detail="red", token_written=False),
+    )
+
+    outcome = module.run_cluster_gate(repo_root=tmp_path, command=command)
+
+    assert outcome.exit_status == 1
+    assert captured["pytest_argv"] == expected_pytest
+    assert captured["check_suite"] == expected_suite
+    monkeypatch.setattr(module, "_working_tree_source", lambda **_kwargs: None)
+    assert module.run_cluster_gate(repo_root=tmp_path, command=command).exit_status == 75
+
+
+def test_cluster_runner_cli_omits_absent_evidence_and_streams_its_detail(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A lost cluster response creates no invented evidence but preserves its explanation."""
+    module = importlib.import_module("livespec_dev_tooling.gate_runner_delegate")
+    run_dir = tmp_path / "run"
+    _ = run_dir.mkdir()
+    monkeypatch.setattr(
+        module,
+        "run_cluster_gate",
+        lambda **_kwargs: module.ClusterGateResult(
+            exit_status=75, tree_hash="", job_name="", detail="lost"
+        ),
+    )
+    monkeypatch.setattr(module.sys, "argv", ["gate-runner-venue", "run", "--run-dir", str(run_dir)])
+
+    assert module.main() == 75
+    assert not (run_dir / "tree_hash").exists()
+    assert not (run_dir / "job_name").exists()
+    assert capsys.readouterr().err == "lost\n"

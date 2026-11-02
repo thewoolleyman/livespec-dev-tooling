@@ -771,7 +771,12 @@ cmd_child() {
     # errexit off for the gate itself: a non-zero exit is the verdict we
     # are here to capture, not an error in the runner.
     set +e
-    "$@" >>"$dir/output.log" 2>&1
+    if [[ "$(cat "$dir/venue")" == "cluster_job" ]]; then
+        python3 -m livespec_dev_tooling.gate_runner_delegate run --run-dir "$dir" -- "$@" \
+            >>"$dir/output.log" 2>&1
+    else
+        "$@" >>"$dir/output.log" 2>&1
+    fi
     local code=$?
     set -e
 
@@ -919,6 +924,8 @@ cmd_status() {
     printf '  venue             : %s (%s)\n' \
         "$(cat "$dir/venue" 2>/dev/null || echo '?')" \
         "$(cat "$dir/venue_reason" 2>/dev/null || echo '?')"
+    [[ -f "$dir/job_name" ]] && printf '  Job name          : %s\n' "$(cat "$dir/job_name")"
+    [[ -f "$dir/tree_hash" ]] && printf '  tree hash         : %s\n' "$(cat "$dir/tree_hash")"
     printf '  command           : %s\n' "$(tr '\n' ' ' <"$dir/command" 2>/dev/null || echo '?')"
     printf '  worktree          : %s\n' "$(cat "$dir/worktree" 2>/dev/null || echo '?')"
     printf '  branch @ head     : %s @ %s\n' \
