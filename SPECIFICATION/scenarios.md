@@ -1970,6 +1970,22 @@ And readers MUST treat `livespec-dev-tooling-p2` as needing no work
 
 And `just radar-validate` MUST fail naming `livespec-dev-tooling-p2` as a closed entry
 
+## Scenario: a blocked radar target names each open blocker by tenant and id
+
+Given item `livespec-dev-tooling-i1` has a `blocks` edge to the open item `livespec-dev-tooling-j1` and a `blocks` edge to the closed item `livespec-dev-tooling-j2`
+
+And `livespec-dev-tooling-i1` is listed on the radar with `blocked_by` `livespec:livespec-k1`, which is open, and a `relates-to` edge to the open item `livespec-dev-tooling-j3`
+
+And `livespec-dev-tooling-c1` is listed on the radar and is closed
+
+When readiness is computed for `livespec-dev-tooling-i1` and for `livespec-dev-tooling-c1`
+
+Then `livespec-dev-tooling-i1` MUST be NOT READY
+
+And its blockers MUST be exactly `livespec-dev-tooling:livespec-dev-tooling-j1` and `livespec:livespec-k1`
+
+And `livespec-dev-tooling-c1` MUST be DONE, and MUST NOT be reported as READY or NOT READY
+
 ## Scenario: a Honeycomb query spec whose result lacks an expected column fails its contract test
 
 Given a committed query spec that expects column `p90_cpu_seconds` of type float
