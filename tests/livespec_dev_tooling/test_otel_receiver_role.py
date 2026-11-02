@@ -30,6 +30,11 @@ from pathlib import Path
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _PLAY = _REPO_ROOT / "ansible" / "fabro-hosts.yml"
 _HP_VARS = _REPO_ROOT / "ansible" / "inventory" / "host_vars" / "hp-xubuntu.yml"
+# hp-xubuntu's fabro_server section left the inventory on 2026-11-02
+# (livespec-dev-tooling-2yn4yb); its factory checkout is read from the frozen copy.
+_HP_FABRO_SERVER = (
+    _REPO_ROOT / "tests" / "fixtures" / "fabro_server" / "hp-xubuntu-fabro-server-2026-11-02.yml"
+)
 _ROLE = _REPO_ROOT / "ansible" / "roles" / "otel_receiver"
 _DEFAULTS = _ROLE / "defaults" / "main.yml"
 _TASKS = _ROLE / "tasks" / "main.yml"
@@ -90,7 +95,7 @@ def test_the_clone_is_the_roles_own_never_the_factory_checkout() -> None:
         "{{ otel_receiver_install_root }}", install_root
     )
     factory_checkout = _scalar(
-        text=_HP_VARS.read_text(encoding="utf-8"), name="fabro_server_host_checkout"
+        text=_HP_FABRO_SERVER.read_text(encoding="utf-8"), name="fabro_server_host_checkout"
     )
     assert Path(orchestrator_dir) != Path(factory_checkout)
     assert Path(factory_checkout) not in Path(orchestrator_dir).parents

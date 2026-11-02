@@ -14,8 +14,9 @@ declared here so the play owns it. Nothing else in the role needs configuring.
 
 ## Targeting
 
-`hp-xubuntu` is in the inventory's `sandbox_hosts` group and `vps` is in
-`dev_hosts`, so a playbook that installs every Fabro instance has to name both
+`gmktec-xubuntu` is in the inventory's `sandbox_hosts` group and `vps` is in
+`dev_hosts`. hp-xubuntu left `sandbox_hosts` on 2026-11-02; see its block below.
+So so a playbook that installs every Fabro instance has to name both
 groups (`hosts: dev_hosts:sandbox_hosts`) or the inventory needs a group that
 holds exactly these two. That is an inventory decision, not a role one.
 
@@ -407,6 +408,17 @@ that clears it without restarting — a deferral that could be dismissed is a
 deferral that would be, which is the failure this whole section exists to end.
 
 ## `host_vars/hp-xubuntu.yml`
+
+**Retired from the inventory on 2026-11-02** (plan gmktec-factory-placement, item
+livespec-dev-tooling-2yn4yb). hp-xubuntu left `sandbox_hosts`, and these instances
+left its `host_vars`. On the host, all three are stopped and disabled. The fleet
+instance's binary and state root are kept read-only as the rollback path
+(livespec-dev-tooling-yw7via), and the other two instances' files are kept as
+they were. The block below is kept as the role's worked example. The axis and
+catalog scenarios read it beside a frozen verbatim copy of the retired section,
+`tests/fixtures/fabro_server/hp-xubuntu-fabro-server-2026-11-02.yml`. To return
+hp as a Fabro host, re-add it to `sandbox_hosts` and restore this section to its
+`host_vars`.
 
 ```yaml
 # The service account is cwoolley, NOT ubuntu: the tailnet ACL rejects the
