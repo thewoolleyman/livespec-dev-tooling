@@ -58,6 +58,18 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.151.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.150.2...v1.151.0) (2026-11-02)
+
+
+### Features
+
+* **ansible:** spread factory sandbox pods across nodes with sandbox-driver-kubernetes v0.5.0 ([a11ee26](https://github.com/thewoolleyman/livespec-dev-tooling/commit/a11ee26830434ec17bb08d0e7162b542de2b6e1a))
+
+
+### Bug Fixes
+
+* **ansible:** refresh tools judge the whole fetched kubeconfig, not a SIGPIPE race ([61a8be9](https://github.com/thewoolleyman/livespec-dev-tooling/commit/61a8be93117a852c8acfac2a6141911b35e1d16c))
+
 ## [1.150.2](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.150.1...v1.150.2) (2026-11-02)
 
 
