@@ -1,0 +1,37 @@
+---
+# sandbox_image_warm — retire ONE warm (`sandbox_image_warm_state: absent`).
+#
+# The rollback through the committed path: the fleet host guard refuses a
+# by-hand `systemctl disable` on a factory host, and reverting a role does not
+# remove what an earlier converge installed. Setting the state to absent on the
+# play's role entry and applying with the warm's own tag stops and disables its
+# timer and removes its runner and two units. It removes nothing else: every
+# name here is derived from `sandbox_image_warm_store`, so retiring the
+# containerd warm leaves the docker warm on the same host untouched, and the
+# images already pulled stay where they are, ordinary images that kubelet's
+# image GC and the server's prune reclaim on their own terms.
+
+- name: Check whether this sandbox image warm's timer unit is installed
+  ansible.builtin.stat:
+    path: "{{ sandbox_image_warm_unit_dir }}/{{ sandbox_image_warm_timer }}"
+  become: true
+  register: sandbox_image_warm_retire_timer_unit
+
+- name: Stop and disable this sandbox image warm's timer
+  ansible.builtin.systemd_service:
+    name: "{{ sandbox_image_warm_timer }}"
+    enabled: false
+    state: stopped
+  become: true
+  when: sandbox_image_warm_retire_timer_unit.stat.exists
+
+- name: Remove this sandbox image warm's runner and units
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  become: true
+  loop:
+    - "{{ sandbox_image_warm_unit_dir }}/{{ sandbox_image_warm_timer }}"
+    - "{{ sandbox_image_warm_unit_dir }}/{{ sandbox_image_warm_service }}"
+    - "{{ sandbox_image_warm_bin }}"
+  notify: Reload systemd after retiring a sandbox image warm

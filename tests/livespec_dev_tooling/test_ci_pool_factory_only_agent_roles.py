@@ -90,6 +90,11 @@ _HP_MUST_RUN = frozenset(
         # names, because it is the node the backend plan's lifecycle proofs run
         # against.
         "factory_workspace_root",
+        # And the image a factory pod is built from, in this node's k3s
+        # containerd (work-item bd-ib-kogktm, livespec-orchestrator-beads-fabro
+        # tenant): gated on FACTORY_NODE like the workspace root, so hp, a
+        # factory-only agent, carries it.
+        "sandbox_image_warm",
         # And the collector that makes "closed" VISIBLE rather than merely true
         # (livespec-dev-tooling-ool6ws). A factory-only node executes no CI job
         # and still carries load, and the runner-pool node telemetry rules in
@@ -114,6 +119,9 @@ _POWEREDGE_ROLES = (
     "fpart",
     "apparmor_profile",
     "factory_workspace_root",
+    # The containerd warm of the factory pod image, beside the workspace root on
+    # the same FACTORY_NODE gate (work-item bd-ib-kogktm).
+    "sandbox_image_warm",
     "node_status_credential",
     "node_extended_resource",
     "node_taints",
@@ -166,6 +174,9 @@ _GMKTEC_ROLES = (
     "fpart",
     "apparmor_profile",
     "factory_workspace_root",
+    # The containerd warm of the factory pod image, beside the workspace root on
+    # the same FACTORY_NODE gate (work-item bd-ib-kogktm).
+    "sandbox_image_warm",
     "node_status_credential",
     "node_extended_resource",
     "node_taints",

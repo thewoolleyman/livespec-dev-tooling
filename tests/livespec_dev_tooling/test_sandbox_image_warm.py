@@ -80,6 +80,7 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 _JUSTFILE = _REPO_ROOT / "justfile"
 _ANSIBLE = _REPO_ROOT / "ansible"
 _PLAYBOOK = _ANSIBLE / "fabro-hosts.yml"
+_CI_POOL_PLAYBOOK = _ANSIBLE / "ci-pool.yml"
 _LEGACY_INVENTORY = _ANSIBLE / "inventory" / "legacy.yml"
 _ROLE_NAME = "sandbox_image_warm"
 _ROLE = _ANSIBLE / "roles" / _ROLE_NAME
@@ -135,17 +136,57 @@ esac
 
 _CURL_STUB = """#!/usr/bin/env bash
 # A `curl` that answers with this repository's release manifest, or refuses when
-# the arm under test is an unreadable pin.
+# the arm under test is an unreadable pin. A URL whose basename is a file in
+# STUB_SPEC_DIR answers with that file instead: a committed host_vars file the
+# containerd warm reads its process_spec images from. A URL whose basename is
+# listed in STUB_UNREADABLE refuses, as a fetch that failed.
 set -uo pipefail
 [[ "${STUB_PIN_READABLE:-1}" == 1 ]] || exit 7
+url="${!#}"
+name="${url##*/}"
+for refused in ${STUB_UNREADABLE:-}; do
+    [[ "$name" == "$refused" ]] && exit 22
+done
+if [[ -n "${STUB_SPEC_DIR:-}" && -f "$STUB_SPEC_DIR/$name" ]]; then
+    cat "$STUB_SPEC_DIR/$name"
+    exit 0
+fi
 printf '%s' "$STUB_PIN_BODY"
+"""
+
+_CRICTL_STUB = """#!/usr/bin/env bash
+# A `crictl` over the SAME marker-file store and log as the docker stub, so an
+# arm can tell which client a warm used by which stub wrote the log line:
+# `crictl-pull-*` here, `pull-*` there. `inspecti` is the CRI store read.
+set -uo pipefail
+
+key() { printf '%s' "$1" | tr -c 'A-Za-z0-9._-' '_'; }
+
+case "${1:-}" in
+    inspecti)
+        [[ -f "$STUB_STORE/$(key "${2:-}")" ]] || exit 1
+        ;;
+    pull)
+        printf 'crictl-pull-start %s\\n' "${2:-}" >>"$STUB_LOG"
+        sleep "$STUB_PULL_SECONDS"
+        : >"$STUB_STORE/$(key "${2:-}")"
+        printf 'crictl-pull-end %s\\n' "${2:-}" >>"$STUB_LOG"
+        ;;
+    *)
+        exit 2
+        ;;
+esac
 """
 
 # ONE source for the stub set, so the writer (`_install_stubs`) and the watcher
 # (`_stub_identities`) can never disagree about which files the concurrency arm
 # must not see rewritten.
 _STUB_DIR_NAME = "bin"
-_STUBS: tuple[tuple[str, str], ...] = (("docker", _DOCKER_STUB), ("curl", _CURL_STUB))
+_STUBS: tuple[tuple[str, str], ...] = (
+    ("docker", _DOCKER_STUB),
+    ("curl", _CURL_STUB),
+    ("crictl", _CRICTL_STUB),
+)
 
 
 def _read(*, path: Path) -> str:
@@ -333,6 +374,213 @@ def test_a_pin_the_host_cannot_read_fails_the_warm_rather_than_reporting_success
     assert (
         _docker_log(tmp_path=tmp_path) == []
     ), "a warm with no version must not pull a reference it could not derive"
+
+
+# --- the containerd store (work-item bd-ib-kogktm) --------------------------
+#
+# A Kubernetes factory pod is pulled by the k3s node's kubelet into K3S
+# CONTAINERD's store, which the docker warm never touches. Measured 2026-10-26:
+# gmktec-xubuntu's containerd held python-agent-v1.93.5 and not the v1.114.1 the
+# pods ran, and every factory pod landed on poweredge-xubuntu. The containerd
+# store points the same serialized, re-checked pull at the CRI, and reads its
+# references from the registered provider's `process_spec.image` in the
+# committed host_vars on master, re-read every tick, so a pin bump is pulled
+# with nobody applying anything.
+
+_SPEC_REFERENCE = f"{_IMAGE}:python-agent-v1.136.2"
+_SPEC_RUST_REFERENCE = f"{_IMAGE}:python-rust-agent-v1.136.2"
+# The shape of a Fabro server host's host_vars, cut to the parts the read must
+# get right: two providers, a second instance repeating one image, a
+# commented-out rollback image, an `image:` OUTSIDE any process_spec (a docker
+# environment's), and an image outside the sandbox repository.
+_SPEC_HOST_VARS = f"""fabro_server_instances:
+  - unit_name: fabro-server
+    environments:
+      - id: livespec-ci-rust
+        image: {_IMAGE}:python-rust-agent-v1.0.0
+    sandbox_providers:
+      kubernetes:
+        path: /usr/local/bin/sandbox-driver-kubernetes
+        process_spec:
+          # image: {_IMAGE}:python-agent-v0.0.1
+          image: {_SPEC_REFERENCE}
+          cpu_cores: 4
+      kubernetes-rust:
+        process_spec:
+          image: "{_SPEC_RUST_REFERENCE}"  # follows the rust layer
+          memory_mb: 7629
+  - unit_name: fabro-server-candidate
+    sandbox_providers:
+      kubernetes:
+        process_spec:
+          image: {_SPEC_REFERENCE}
+      elsewhere:
+        process_spec:
+          image: docker.io/library/busybox:1
+"""
+_NO_SPEC_HOST_VARS = (
+    "fabro_server_instances:\n  - unit_name: fabro-server\n    service_state: stopped\n"
+)
+
+
+def _write_specs(*, tmp_path: Path, specs: dict[str, str]) -> Path:
+    """The host_vars files the stub `curl` serves, one per name."""
+    spec_dir = tmp_path / "specs"
+    spec_dir.mkdir(exist_ok=True)
+    for name, body in specs.items():
+        (spec_dir / name).write_text(body, encoding="utf-8")
+    return spec_dir
+
+
+def _containerd_warm(
+    *,
+    tmp_path: Path,
+    specs: dict[str, str],
+    unreadable: tuple[str, ...] = (),
+    concurrent: bool = False,
+) -> subprocess.CompletedProcess[str]:
+    """ONE containerd warm of the committed script over `specs`' host_vars files.
+
+    `concurrent=True` writes NOTHING — no stub, no spec file — because the caller
+    already did, and a rewrite would truncate a file the sibling warm may be
+    exec'ing or reading (see `_warm_env` on ETXTBSY).
+    """
+    _read(path=_SCRIPT)
+    spec_dir = tmp_path / "specs" if concurrent else _write_specs(tmp_path=tmp_path, specs=specs)
+    env = _warm_env(tmp_path=tmp_path, pin_readable=True, install_stubs=not concurrent) | {
+        "STUB_SPEC_DIR": str(spec_dir),
+        "STUB_UNREADABLE": " ".join(unreadable),
+        "LIVESPEC_SANDBOX_IMAGE_WARM_STORE": "containerd",
+        "LIVESPEC_SANDBOX_IMAGE_WARM_CRICTL": "crictl",
+        "LIVESPEC_SANDBOX_IMAGE_WARM_PROCESS_SPEC_URLS": " ".join(
+            f"https://spec.invalid/host_vars/{name}" for name in specs
+        ),
+    }
+    return subprocess.run(
+        ["bash", str(_SCRIPT)],
+        capture_output=True,
+        text=True,
+        timeout=_TIMEOUT_SECONDS,
+        check=False,
+        env=env,
+    )
+
+
+def test_a_containerd_warm_pulls_every_process_spec_image_through_the_cri(
+    *, tmp_path: Path
+) -> None:
+    done = _containerd_warm(
+        tmp_path=tmp_path,
+        specs={"factory-a.yml": _SPEC_HOST_VARS, "factory-b.yml": _NO_SPEC_HOST_VARS},
+    )
+    assert done.returncode == 0, done.stdout + done.stderr
+    assert _docker_log(tmp_path=tmp_path) == [
+        f"crictl-pull-start {_SPEC_REFERENCE}",
+        f"crictl-pull-end {_SPEC_REFERENCE}",
+        f"crictl-pull-start {_SPEC_RUST_REFERENCE}",
+        f"crictl-pull-end {_SPEC_RUST_REFERENCE}",
+    ], (
+        "a containerd warm must pull, through crictl and never docker, exactly the "
+        "process_spec images inside the sandbox repository, each once — not the "
+        "commented-out rollback image, not a docker environment's image, not an image "
+        f"of another repository, and not the release-pin tag: {done.stdout + done.stderr}"
+    )
+
+
+def test_a_process_spec_image_the_node_already_holds_is_never_pulled(*, tmp_path: Path) -> None:
+    store = tmp_path / "store"
+    store.mkdir()
+    for reference in (_SPEC_REFERENCE, _SPEC_RUST_REFERENCE):
+        (store / re.sub(r"[^A-Za-z0-9._-]", "_", reference)).write_text("", encoding="utf-8")
+    done = _containerd_warm(tmp_path=tmp_path, specs={"factory-a.yml": _SPEC_HOST_VARS})
+    assert done.returncode == 0, done.stdout + done.stderr
+    assert (
+        _docker_log(tmp_path=tmp_path) == []
+    ), "a warm whose images are already in the node's containerd must pull nothing"
+
+
+def test_two_concurrent_containerd_warms_pull_each_image_exactly_once(*, tmp_path: Path) -> None:
+    stub_dir = _install_stubs(tmp_path=tmp_path)
+    installed = _stub_identities(stub_dir=stub_dir)
+    spec = {"factory-a.yml": _SPEC_HOST_VARS}
+    _write_specs(tmp_path=tmp_path, specs=spec)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        runs = [
+            pool.submit(_containerd_warm, tmp_path=tmp_path, specs=spec, concurrent=True)
+            for _ in range(2)
+        ]
+        results = [run.result() for run in runs]
+    assert _stub_identities(stub_dir=stub_dir) == installed
+    for done in results:
+        assert done.returncode == 0, done.stdout + done.stderr
+    log = _docker_log(tmp_path=tmp_path)
+    for reference in (_SPEC_REFERENCE, _SPEC_RUST_REFERENCE):
+        assert log.count(f"crictl-pull-start {reference}") == 1, (
+            "two containerd warms racing on an image the node lacks must pull it once: " f"{log}"
+        )
+
+
+def test_an_unreadable_process_spec_source_fails_the_warm_and_pulls_nothing(
+    *, tmp_path: Path
+) -> None:
+    """A partial read can omit the very pin that moved, so ANY unreadable file fails."""
+    done = _containerd_warm(
+        tmp_path=tmp_path,
+        specs={"factory-a.yml": _SPEC_HOST_VARS, "factory-b.yml": _NO_SPEC_HOST_VARS},
+        unreadable=("factory-b.yml",),
+    )
+    assert done.returncode != 0, done.stdout + done.stderr
+    assert _docker_log(tmp_path=tmp_path) == [], "a failed source read must pull nothing"
+
+
+def test_sources_declaring_no_process_spec_image_fail_the_warm(*, tmp_path: Path) -> None:
+    """Nothing to pull is a broken read, not a healthy tick: never fall back to the pin."""
+    done = _containerd_warm(tmp_path=tmp_path, specs={"factory-b.yml": _NO_SPEC_HOST_VARS})
+    assert done.returncode != 0, done.stdout + done.stderr
+    assert _docker_log(tmp_path=tmp_path) == [], (
+        "a containerd warm with no process_spec image must not pull the release-pin tag "
+        "instead: no Kubernetes sandbox is built from it"
+    )
+
+
+def test_ci_pool_arms_a_containerd_warm_on_every_factory_node_under_its_own_tag() -> None:
+    play = _read(path=_CI_POOL_PLAYBOOK)
+    entry = re.search(
+        r"^    - role: sandbox_image_warm\n(?P<body>(?:      .*\n)+)", play, re.MULTILINE
+    )
+    assert entry is not None, (
+        "ansible/ci-pool.yml must include sandbox_image_warm, so every k3s factory node's "
+        "containerd holds the image its factory pods are built from"
+    )
+    body = entry["body"]
+    assert "      sandbox_image_warm_store: containerd\n" in body, body
+    assert (
+        "      when: ci_pool_factory_node == 'true'\n" in body
+    ), f"the containerd warm must be gated on the profile's FACTORY_NODE:\n{body}"
+    assert "      tags: [sandbox_image_warm_containerd]\n" in body, (
+        "the containerd warm needs its own tag so the host window can apply it alone, "
+        f"distinct from the docker warm's:\n{body}"
+    )
+    service = _read(path=_SERVICE_TEMPLATE)
+    for variable in (
+        "LIVESPEC_SANDBOX_IMAGE_WARM_STORE",
+        "LIVESPEC_SANDBOX_IMAGE_WARM_CRICTL",
+        "LIVESPEC_SANDBOX_IMAGE_WARM_PROCESS_SPEC_URLS",
+    ):
+        assert variable in service, f"the unit must pass {variable}:\n{service}"
+    assert (
+        "Wants=network-online.target docker.service" in service.split("{% else %}")[1]
+    ), "only the docker store may pull docker.service in"
+    containerd_unit = service.split("{% if sandbox_image_warm_store == 'containerd' %}")[1]
+    containerd_unit = containerd_unit.split("{% else %}")[0]
+    assert "docker" not in containerd_unit, (
+        "a containerd warm must not Want or order on docker: Wants= would START dockerd on "
+        f"a node where it is installed and stopped:\n{containerd_unit}"
+    )
+    doc = _read(path=_ROLE_DOC)
+    assert (
+        "just ansible-apply ansible/ci-pool.yml --tags sandbox_image_warm_containerd" in doc
+    ), "the role's HOST_VARS.md must carry the containerd warm's apply command"
 
 
 # --- the committed play and role ------------------------------------------
