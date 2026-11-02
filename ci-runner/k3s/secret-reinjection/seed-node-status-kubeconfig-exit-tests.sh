@@ -194,19 +194,19 @@ else
   printf '%s\n' "$REPLY_OUT"
 fi
 
-if printf '%s\n' "$REPLY_OUT" | grep -qxF "target:   ${TARGET}"; then
+if printf '%s\n' "$REPLY_OUT" | grep -xF "target:   ${TARGET}" >/dev/null; then
   ok "A2  the plan names the CHURN_KUBECONFIG_FILE the profile carries"
 else
   no "A2  the plan names the CHURN_KUBECONFIG_FILE the profile carries"
 fi
 
-if printf '%s\n' "$REPLY_OUT" | grep -qxF 'mode:     0600 root:root'; then
+if printf '%s\n' "$REPLY_OUT" | grep -xF 'mode:     0600 root:root' >/dev/null; then
   ok "A3  the plan names the mode 0600 root:root"
 else
   no "A3  the plan names the mode 0600 root:root"
 fi
 
-if printf '%s\n' "$REPLY_OUT" | grep -q '^grants:   get,patch on nodes/status for gmktec-xubuntu only'; then
+if printf '%s\n' "$REPLY_OUT" | grep '^grants:   get,patch on nodes/status for gmktec-xubuntu only' >/dev/null; then
   ok "A4  the plan states what the credential grants, and what it is not"
 else
   no "A4  the plan states what the credential grants, and what it is not"
@@ -270,7 +270,7 @@ else
   cat "$SUDO_LOG"
 fi
 
-if printf '%s\n' "$REPLY_OUT" | grep -qF 'notasecret'; then
+if printf '%s\n' "$REPLY_OUT" | grep -F 'notasecret' >/dev/null; then
   no "B6  the credential is never echoed into the script's own output"
 else
   ok "B6  the credential is never echoed into the script's own output"
@@ -282,7 +282,7 @@ printf '\n== C. an immediate second run reports the file unchanged ==\n'
 : > "$SUDO_LOG"
 run_seed "$WORKBIN" "$AGENT_PROFILE"
 
-if [ "$REPLY_RC" -eq 0 ] && printf '%s\n' "$REPLY_OUT" | grep -q 'unchanged:'; then
+if [ "$REPLY_RC" -eq 0 ] && printf '%s\n' "$REPLY_OUT" | grep 'unchanged:' >/dev/null; then
   ok "C1  the second run reports the target unchanged"
 else
   no "C1  the second run reports the target unchanged (rc=${REPLY_RC})"
@@ -332,7 +332,7 @@ refuses() {
   run_seed "$bin" "$@"
   if [ "$REPLY_RC" -eq 0 ]; then
     no "${desc} (exited 0)"
-  elif ! printf '%s\n' "$REPLY_OUT" | grep -qF "$want"; then
+  elif ! printf '%s\n' "$REPLY_OUT" | grep -F "$want" >/dev/null; then
     no "${desc} (exited ${REPLY_RC} but did not say '${want}')"
     printf '%s\n' "$REPLY_OUT" | tail -3
   else
@@ -386,7 +386,7 @@ run_seed "$TRIPBIN" --dry-run "$AGENT_COMMITTED"
 # On a machine that has no /etc/rancher/k3s the plan reports the parent as one
 # it would CREATE; on one that has it, as existing. Either is correct, and
 # neither is what this case is about -- the TARGET is.
-if printf '%s\n' "$REPLY_OUT" | grep -qxF "target:   ${AGENT_COMMITTED_TARGET}"; then
+if printf '%s\n' "$REPLY_OUT" | grep -xF "target:   ${AGENT_COMMITTED_TARGET}" >/dev/null; then
   ok "E1  the committed profile plans the seed of ${AGENT_COMMITTED_TARGET}"
 else
   no "E1  the committed profile plans the seed of ${AGENT_COMMITTED_TARGET}"
@@ -420,14 +420,14 @@ agent_profile "$FRESH_PROFILE" "$FRESH_TARGET"
 unset "$KUBECONFIG_VAR"
 run_seed "$TRIPBIN" --dry-run "$FRESH_PROFILE"
 
-if printf '%s\n' "$REPLY_OUT" | grep -q "^parent:   ${FRESH_DIR} (absent, and it is the k3s configuration directory"; then
+if printf '%s\n' "$REPLY_OUT" | grep "^parent:   ${FRESH_DIR} (absent, and it is the k3s configuration directory" >/dev/null; then
   ok "F1  the plan reports the absent k3s config directory as one it will create"
 else
   no "F1  the plan reports the absent k3s config directory as one it will create"
   printf '%s\n' "$REPLY_OUT"
 fi
 
-if printf '%s\n' "$REPLY_OUT" | grep -q "^+ sudo install -d -m 0755 -o root -g root ${FRESH_DIR}$"; then
+if printf '%s\n' "$REPLY_OUT" | grep "^+ sudo install -d -m 0755 -o root -g root ${FRESH_DIR}$" >/dev/null; then
   ok "F2  the creation is printed as a '+ ' line"
 else
   no "F2  the creation is printed as a '+ ' line"

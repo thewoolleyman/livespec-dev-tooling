@@ -161,7 +161,7 @@ order_ok() {
   local out="$1"; shift
   local prev=0 pat idx
   for pat in "$@"; do
-    idx="$(printf '%s\n' "$out" | grep -nF -- "$pat" | head -1 | cut -d: -f1)"
+    idx="$(printf '%s\n' "$out" | grep -nF -- "$pat" | sed -n 1p | cut -d: -f1)"
     if [ -z "$idx" ]; then
       printf '        missing line: %s\n' "$pat"
       return 1
@@ -259,7 +259,7 @@ p="${TMPROOT}/missing-key.env"
 write_profile "$p"
 grep -v '^ROLE_TIERS=' "$p" > "${p}.tmp" && mv "${p}.tmp" "$p"
 run_layout "$BARE" --dry-run "$p"
-if [ "$REPLY_RC" -ne 0 ] && printf '%s' "$REPLY_OUT" | grep -qF "missing required profile key 'ROLE_TIERS'"; then
+if [ "$REPLY_RC" -ne 0 ] && printf '%s' "$REPLY_OUT" | grep -F "missing required profile key 'ROLE_TIERS'" >/dev/null; then
   ok "A1  a profile missing a required key is refused, naming the key"
 else
   no "A1  a profile missing a required key is refused, naming the key (rc=${REPLY_RC})"
@@ -270,7 +270,7 @@ p="${TMPROOT}/unknown-key.env"
 write_profile "$p"
 printf 'NOT_A_PROFILE_KEY=x\n' >> "$p"
 run_layout "$BARE" --dry-run "$p"
-if [ "$REPLY_RC" -ne 0 ] && printf '%s' "$REPLY_OUT" | grep -qF "unknown profile key 'NOT_A_PROFILE_KEY'"; then
+if [ "$REPLY_RC" -ne 0 ] && printf '%s' "$REPLY_OUT" | grep -F "unknown profile key 'NOT_A_PROFILE_KEY'" >/dev/null; then
   ok "A2  an unknown key is refused, naming it"
 else
   no "A2  an unknown key is refused, naming it (rc=${REPLY_RC})"
@@ -280,7 +280,7 @@ p="${TMPROOT}/empty-value.env"
 write_profile "$p"
 sed 's|^TARGET_DEVICE=.*|TARGET_DEVICE=|' "$p" > "${p}.tmp" && mv "${p}.tmp" "$p"
 run_layout "$BARE" --dry-run "$p"
-if [ "$REPLY_RC" -ne 0 ] && printf '%s' "$REPLY_OUT" | grep -qF "profile key 'TARGET_DEVICE' must not be empty"; then
+if [ "$REPLY_RC" -ne 0 ] && printf '%s' "$REPLY_OUT" | grep -F "profile key 'TARGET_DEVICE' must not be empty" >/dev/null; then
   ok "A3  a required key present but empty is refused, naming it"
 else
   no "A3  a required key present but empty is refused, naming it (rc=${REPLY_RC})"
@@ -290,7 +290,7 @@ p="${TMPROOT}/bad-record.env"
 write_profile "$p"
 sed 's|^LOGICAL_VOLUMES=.*|LOGICAL_VOLUMES=fixturevg:ci-cache:1TiB|' "$p" > "${p}.tmp" && mv "${p}.tmp" "$p"
 run_layout "$BARE" --dry-run "$p"
-if [ "$REPLY_RC" -ne 0 ] && printf '%s' "$REPLY_OUT" | grep -qF 'is not <vg>:<lv>:<size>:<fstype>:<label>'; then
+if [ "$REPLY_RC" -ne 0 ] && printf '%s' "$REPLY_OUT" | grep -F 'is not <vg>:<lv>:<size>:<fstype>:<label>' >/dev/null; then
   ok "A4  a malformed logical-volume record is refused, naming the record shape"
 else
   no "A4  a malformed logical-volume record is refused, naming the record shape (rc=${REPLY_RC})"
@@ -300,7 +300,7 @@ p="${TMPROOT}/orphan-tier.env"
 write_profile "$p"
 sed 's|^ROLE_TIERS=.*|ROLE_TIERS=ci-workvols:fixturevg|' "$p" > "${p}.tmp" && mv "${p}.tmp" "$p"
 run_layout "$BARE" --dry-run "$p"
-if [ "$REPLY_RC" -ne 0 ] && printf '%s' "$REPLY_OUT" | grep -qF "role 'ci-workvols'"; then
+if [ "$REPLY_RC" -ne 0 ] && printf '%s' "$REPLY_OUT" | grep -F "role 'ci-workvols'" >/dev/null; then
   ok "A5  a role tier with no logical volume carrying its label is refused"
 else
   no "A5  a role tier with no logical volume carrying its label is refused (rc=${REPLY_RC})"
@@ -310,7 +310,7 @@ p="${TMPROOT}/long-label.env"
 write_profile "$p"
 sed 's|^LOGICAL_VOLUMES=.*|LOGICAL_VOLUMES=fixturevg:wv:1TiB:xfs:thirteenchars|; s|^ROLE_TIERS=.*|ROLE_TIERS=thirteenchars:fixturevg|' "$p" > "${p}.tmp" && mv "${p}.tmp" "$p"
 run_layout "$BARE" --dry-run "$p"
-if [ "$REPLY_RC" -ne 0 ] && printf '%s' "$REPLY_OUT" | grep -qF "exceeds xfs's 12-byte limit"; then
+if [ "$REPLY_RC" -ne 0 ] && printf '%s' "$REPLY_OUT" | grep -F "exceeds xfs's 12-byte limit" >/dev/null; then
   ok "A6  a label longer than its filesystem's limit is refused rather than truncated"
 else
   no "A6  a label longer than its filesystem's limit is refused rather than truncated (rc=${REPLY_RC})"
@@ -363,14 +363,14 @@ fi
 # The other two role tiers, and the filesystem types migrate-tier.sh's
 # role_fstype decides: ci-containerd ext4 on nvmea, ci-workvols XFS with reflink
 # on nvmeb — one tier per medium.
-if printf '%s' "$POWEREDGE_OUT" | grep -qF 'mkfs.ext4 -q -L ci-containerd /dev/nvmea/ci-containerd' \
-   && printf '%s' "$POWEREDGE_OUT" | grep -qF 'mkfs.xfs -q -m reflink=1 -L ci-workvols /dev/nvmeb/ci-workvols'; then
+if printf '%s' "$POWEREDGE_OUT" | grep -F 'mkfs.ext4 -q -L ci-containerd /dev/nvmea/ci-containerd' >/dev/null \
+   && printf '%s' "$POWEREDGE_OUT" | grep -F 'mkfs.xfs -q -m reflink=1 -L ci-workvols /dev/nvmeb/ci-workvols' >/dev/null; then
   ok "B3  all three role labels are made, ci-workvols as XFS with reflink=1 on nvmeb"
 else
   no "B3  all three role labels are made, ci-workvols as XFS with reflink=1 on nvmeb"
 fi
 
-if printf '%s' "$POWEREDGE_OUT" | grep -qF 'mkfs.vfat -F 32 -n ESP /dev/sda1'; then
+if printf '%s' "$POWEREDGE_OUT" | grep -F 'mkfs.vfat -F 32 -n ESP /dev/sda1' >/dev/null; then
   ok "B4  the EFI system partition is made as FAT labelled ESP"
 else
   no "B4  the EFI system partition is made as FAT labelled ESP"
@@ -411,7 +411,7 @@ p="${TMPROOT}/perc-profile.env"
 sed "s|^CONTROLLER_CLI=.*|CONTROLLER_CLI=${PERC}/perccli64|" "$POWEREDGE" > "$p"
 run_layout "$PERC" --dry-run "$p"
 if [ "$REPLY_RC" -eq 0 ] \
-   && printf '%s' "$REPLY_OUT" | grep -qF 'add vd type=raid5 drives=32:0-6 strip=64 wb ra direct'; then
+   && printf '%s' "$REPLY_OUT" | grep -F 'add vd type=raid5 drives=32:0-6 strip=64 wb ra direct' >/dev/null; then
   ok "B5  VD_ENCLOSURE=auto resolves to this node's enclosure 32 off the controller"
 else
   no "B5  VD_ENCLOSURE=auto resolves to this node's enclosure 32 off the controller (rc=${REPLY_RC})"
@@ -436,8 +436,8 @@ exit 2'
 
 run_layout "$POPULATED" --dry-run "$POWEREDGE"
 if [ "$REPLY_RC" -ne 0 ] \
-   && printf '%s' "$REPLY_OUT" | grep -qF 'REFUSED' \
-   && printf '%s' "$REPLY_OUT" | grep -qF '/dev/sda'; then
+   && printf '%s' "$REPLY_OUT" | grep -F 'REFUSED' >/dev/null \
+   && printf '%s' "$REPLY_OUT" | grep -F '/dev/sda' >/dev/null; then
   ok "C1  repartitioning a populated disk without consent exits non-zero and names the disk"
 else
   no "C1  repartitioning a populated disk without consent exits non-zero and names the disk (rc=${REPLY_RC})"
@@ -445,7 +445,7 @@ else
 fi
 
 run_layout "$POPULATED" --dry-run --i-consent-to-destroy=/dev/sdz "$POWEREDGE"
-if [ "$REPLY_RC" -ne 0 ] && printf '%s' "$REPLY_OUT" | grep -qF 'REFUSED'; then
+if [ "$REPLY_RC" -ne 0 ] && printf '%s' "$REPLY_OUT" | grep -F 'REFUSED' >/dev/null; then
   ok "C2  consent naming a DIFFERENT target does not grant this one"
 else
   no "C2  consent naming a DIFFERENT target does not grant this one (rc=${REPLY_RC})"
@@ -453,8 +453,8 @@ fi
 
 run_layout "$POPULATED" --dry-run --i-consent-to-destroy=/dev/sda "$POWEREDGE"
 if [ "$REPLY_RC" -eq 0 ] \
-   && printf '%s' "$REPLY_OUT" | grep -qF 'consent given for /dev/sda' \
-   && printf '%s' "$REPLY_OUT" | grep -qF 'wipefs --all /dev/sda'; then
+   && printf '%s' "$REPLY_OUT" | grep -F 'consent given for /dev/sda' >/dev/null \
+   && printf '%s' "$REPLY_OUT" | grep -F 'wipefs --all /dev/sda' >/dev/null; then
   ok "C3  consent naming exactly that target lets the step through"
 else
   no "C3  consent naming exactly that target lets the step through (rc=${REPLY_RC})"
@@ -473,8 +473,8 @@ fi
 exit 2'
 
 run_layout "$LV_POPULATED" --dry-run "$POWEREDGE"
-if [ "$REPLY_RC" -ne 0 ] && printf '%s' "$REPLY_OUT" | grep -qF 'REFUSED' \
-   && printf '%s' "$REPLY_OUT" | grep -qF '/dev/poweredge/ci-cache'; then
+if [ "$REPLY_RC" -ne 0 ] && printf '%s' "$REPLY_OUT" | grep -F 'REFUSED' >/dev/null \
+   && printf '%s' "$REPLY_OUT" | grep -F '/dev/poweredge/ci-cache' >/dev/null; then
   ok "C4  remaking a populated logical volume without consent refuses, naming the volume"
 else
   no "C4  remaking a populated logical volume without consent refuses, naming the volume (rc=${REPLY_RC})"
@@ -512,8 +512,8 @@ p="${TMPROOT}/converged.env"
 write_profile "$p"
 run_layout "$CONVERGED" --dry-run "$p"
 if [ "$REPLY_RC" -eq 0 ] \
-   && printf '%s' "$REPLY_OUT" | grep -qF 'already in the state' \
-   && ! printf '%s\n' "$REPLY_OUT" | grep -q '^+ '; then
+   && printf '%s' "$REPLY_OUT" | grep -F 'already in the state' >/dev/null \
+   && ! printf '%s\n' "$REPLY_OUT" | grep '^+ ' >/dev/null; then
   ok "D2  a node already in its profile's declared state plans no command and says so"
 else
   no "D2  a node already in its profile's declared state plans no command and says so (rc=${REPLY_RC})"
@@ -521,7 +521,7 @@ else
 fi
 
 run_layout "$BARE" --dry-run "$p"
-if [ "$REPLY_RC" -eq 0 ] && ! printf '%s' "$REPLY_OUT" | grep -qF 'add vd'; then
+if [ "$REPLY_RC" -eq 0 ] && ! printf '%s' "$REPLY_OUT" | grep -F 'add vd' >/dev/null; then
   ok "D3  a profile declaring no storage controller skips the virtual-disk stage"
 else
   no "D3  a profile declaring no storage controller skips the virtual-disk stage (rc=${REPLY_RC})"
@@ -588,7 +588,7 @@ fi
 # header says it changes only by re-reading the host.
 missing=""
 while IFS= read -r want; do
-  recorded_facts "$FACTS" | grep -qxF "$want" || missing="${missing}
+  recorded_facts "$FACTS" | grep -xF "$want" >/dev/null || missing="${missing}
         ${want}"
 done <<'EOF'
 lv poweredge swap 8GiB swap swap
@@ -619,9 +619,9 @@ FS_RC="$REPLY_RC"
 new_partition_lines="$(printf '%s\n' "$FS_OUT" | grep -c '^+ sgdisk --new' || true)"
 
 if [ "$FS_RC" -eq 0 ] \
-   && ! printf '%s\n' "$FS_OUT" | grep -q '^+ .*add vd' \
-   && ! printf '%s\n' "$FS_OUT" | grep -q '^+ .*--zap-all' \
-   && ! printf '%s\n' "$FS_OUT" | grep -q '^+ wipefs'; then
+   && ! printf '%s\n' "$FS_OUT" | grep '^+ .*add vd' >/dev/null \
+   && ! printf '%s\n' "$FS_OUT" | grep '^+ .*--zap-all' >/dev/null \
+   && ! printf '%s\n' "$FS_OUT" | grep '^+ wipefs' >/dev/null; then
   ok "F1  a free-space plan emits no controller command and no zap"
 else
   no "F1  a free-space plan emits no controller command and no zap (rc=${FS_RC})"
@@ -632,7 +632,7 @@ fi
 # are taken, so 3), typed LVM, and taking the largest free region — which is
 # what sgdisk's `0:0` means, and why no size for it appears in the profile.
 if [ "$new_partition_lines" -eq 1 ] \
-   && printf '%s\n' "$FS_OUT" | grep -qxF '+ sgdisk --new=3:0:0 --typecode=3:8e00 --change-name=3:lvm /dev/fixture'; then
+   && printf '%s\n' "$FS_OUT" | grep -xF '+ sgdisk --new=3:0:0 --typecode=3:8e00 --change-name=3:lvm /dev/fixture' >/dev/null; then
   ok "F2  exactly one new partition, at the next free number, typed LVM over the free region"
 else
   no "F2  exactly one new partition, at the next free number, typed LVM over the free region (${new_partition_lines} new-partition command(s))"
@@ -642,8 +642,8 @@ fi
 # The node boots off the EFI system partition it already has. A plan that
 # remade it would take the bootloader with it, so the plan must not contain the
 # mkfs at all — not merely refuse it later.
-if ! printf '%s\n' "$FS_OUT" | grep -q '^+ mkfs.vfat' \
-   && printf '%s' "$FS_OUT" | grep -qF 'already boots from'; then
+if ! printf '%s\n' "$FS_OUT" | grep '^+ mkfs.vfat' >/dev/null \
+   && printf '%s' "$FS_OUT" | grep -F 'already boots from' >/dev/null; then
   ok "F3  the existing EFI system partition is left alone, and the plan says so"
 else
   no "F3  the existing EFI system partition is left alone, and the plan says so"
@@ -652,8 +652,8 @@ fi
 
 # The tiers still get built: preservation is about the partitions named, not
 # about the run doing nothing.
-if printf '%s' "$FS_OUT" | grep -qF 'pvcreate --yes /dev/fixture3' \
-   && printf '%s' "$FS_OUT" | grep -qF 'mkfs.ext4 -q -L ci-cache /dev/fixturevg/ci-cache'; then
+if printf '%s' "$FS_OUT" | grep -F 'pvcreate --yes /dev/fixture3' >/dev/null \
+   && printf '%s' "$FS_OUT" | grep -F 'mkfs.ext4 -q -L ci-cache /dev/fixturevg/ci-cache' >/dev/null; then
   ok "F4  the tail partition still becomes the physical volume, the group and the labelled filesystem"
 else
   no "F4  the tail partition still becomes the physical volume, the group and the labelled filesystem"
@@ -666,9 +666,9 @@ p="${TMPROOT}/freespace-clobber.env"
 write_freespace_profile "$p" /dev/fixture1
 run_layout "$FREESPACE" --dry-run "$p"
 if [ "$REPLY_RC" -ne 0 ] \
-   && printf '%s' "$REPLY_OUT" | grep -qF 'REFUSED' \
-   && printf '%s' "$REPLY_OUT" | grep -qF '/dev/fixture1' \
-   && printf '%s' "$REPLY_OUT" | grep -qF 'PRESERVED_PARTITIONS'; then
+   && printf '%s' "$REPLY_OUT" | grep -F 'REFUSED' >/dev/null \
+   && printf '%s' "$REPLY_OUT" | grep -F '/dev/fixture1' >/dev/null \
+   && printf '%s' "$REPLY_OUT" | grep -F 'PRESERVED_PARTITIONS' >/dev/null; then
   ok "F5  a step naming a preserved partition exits non-zero and names that partition"
 else
   no "F5  a step naming a preserved partition exits non-zero and names that partition (rc=${REPLY_RC})"
@@ -679,7 +679,7 @@ fi
 # names a target the profile is willing to lose, so naming a preserved one must
 # not unlock it.
 run_layout "$FREESPACE" --dry-run --i-consent-to-destroy=/dev/fixture1 "$p"
-if [ "$REPLY_RC" -ne 0 ] && printf '%s' "$REPLY_OUT" | grep -qF 'REFUSED'; then
+if [ "$REPLY_RC" -ne 0 ] && printf '%s' "$REPLY_OUT" | grep -F 'REFUSED' >/dev/null; then
   ok "F6  --i-consent-to-destroy does not unlock a preserved partition"
 else
   no "F6  --i-consent-to-destroy does not unlock a preserved partition (rc=${REPLY_RC})"
@@ -712,9 +712,9 @@ exit 2'
 
 run_layout "$FS_POPULATED" --dry-run "$p"
 if [ "$REPLY_RC" -ne 0 ] \
-   && printf '%s' "$REPLY_OUT" | grep -qF 'PRESERVED_PARTITIONS' \
-   && printf '%s' "$REPLY_OUT" | grep -qF '/dev/fixture1' \
-   && ! printf '%s' "$REPLY_OUT" | grep -qF 'Re-run with --i-consent-to-destroy'; then
+   && printf '%s' "$REPLY_OUT" | grep -F 'PRESERVED_PARTITIONS' >/dev/null \
+   && printf '%s' "$REPLY_OUT" | grep -F '/dev/fixture1' >/dev/null \
+   && ! printf '%s' "$REPLY_OUT" | grep -F 'Re-run with --i-consent-to-destroy' >/dev/null; then
   ok "F6a a preserved partition that CARRIES a filesystem refuses as preserved, never as a consent prompt"
 else
   no "F6a a preserved partition that CARRIES a filesystem refuses as preserved, never as a consent prompt (rc=${REPLY_RC})"
@@ -728,7 +728,7 @@ p="${TMPROOT}/freespace-nothing-preserved.env"
 write_profile "$p"
 printf 'DISK_PLAN=free-space\n' >> "$p"
 run_layout "$BARE" --dry-run "$p"
-if [ "$REPLY_RC" -ne 0 ] && printf '%s' "$REPLY_OUT" | grep -qF 'must name the partitions it preserves in PRESERVED_PARTITIONS'; then
+if [ "$REPLY_RC" -ne 0 ] && printf '%s' "$REPLY_OUT" | grep -F 'must name the partitions it preserves in PRESERVED_PARTITIONS' >/dev/null; then
   ok "F7  free-space with nothing preserved is refused"
 else
   no "F7  free-space with nothing preserved is refused (rc=${REPLY_RC})"
@@ -738,7 +738,7 @@ p="${TMPROOT}/whole-device-preserving.env"
 write_profile "$p"
 printf 'PRESERVED_PARTITIONS=/dev/fixture1\n' >> "$p"
 run_layout "$BARE" --dry-run "$p"
-if [ "$REPLY_RC" -ne 0 ] && printf '%s' "$REPLY_OUT" | grep -qF 'cannot preserve'; then
+if [ "$REPLY_RC" -ne 0 ] && printf '%s' "$REPLY_OUT" | grep -F 'cannot preserve' >/dev/null; then
   ok "F8  whole-device naming a preserved partition is refused rather than silently erasing it"
 else
   no "F8  whole-device naming a preserved partition is refused rather than silently erasing it (rc=${REPLY_RC})"
@@ -748,7 +748,7 @@ p="${TMPROOT}/bad-disk-plan.env"
 write_profile "$p"
 printf 'DISK_PLAN=partial\n' >> "$p"
 run_layout "$BARE" --dry-run "$p"
-if [ "$REPLY_RC" -ne 0 ] && printf '%s' "$REPLY_OUT" | grep -qF "DISK_PLAN must be 'whole-device' or 'free-space', got 'partial'"; then
+if [ "$REPLY_RC" -ne 0 ] && printf '%s' "$REPLY_OUT" | grep -F "DISK_PLAN must be 'whole-device' or 'free-space', got 'partial'" >/dev/null; then
   ok "F9  an unknown DISK_PLAN is refused, naming what was given"
 else
   no "F9  an unknown DISK_PLAN is refused, naming what was given (rc=${REPLY_RC})"
@@ -760,7 +760,7 @@ p="${TMPROOT}/agent-no-join.env"
 write_profile "$p"
 sed 's|^CLUSTER_ROLE=.*|CLUSTER_ROLE=agent|' "$p" > "${p}.tmp" && mv "${p}.tmp" "$p"
 run_layout "$BARE" --dry-run "$p"
-if [ "$REPLY_RC" -ne 0 ] && printf '%s' "$REPLY_OUT" | grep -qF 'CLUSTER_ROLE=agent must name both CLUSTER_JOIN_ADDRESS and CLUSTER_TOKEN_FILE'; then
+if [ "$REPLY_RC" -ne 0 ] && printf '%s' "$REPLY_OUT" | grep -F 'CLUSTER_ROLE=agent must name both CLUSTER_JOIN_ADDRESS and CLUSTER_TOKEN_FILE' >/dev/null; then
   ok "F10 an agent with no join address and no token file is refused"
 else
   no "F10 an agent with no join address and no token file is refused (rc=${REPLY_RC})"
@@ -771,7 +771,7 @@ write_profile "$p"
 sed -e 's|^CLUSTER_ROLE=.*|CLUSTER_ROLE=agent|' \
     -e 's|^CLUSTER_JOIN_ADDRESS=.*|CLUSTER_JOIN_ADDRESS=https://fixture.invalid:6443|' "$p" > "${p}.tmp" && mv "${p}.tmp" "$p"
 run_layout "$BARE" --dry-run "$p"
-if [ "$REPLY_RC" -ne 0 ] && printf '%s' "$REPLY_OUT" | grep -qF 'CLUSTER_ROLE=agent must name both'; then
+if [ "$REPLY_RC" -ne 0 ] && printf '%s' "$REPLY_OUT" | grep -F 'CLUSTER_ROLE=agent must name both' >/dev/null; then
   ok "F11 an agent with a join address but no token file is refused too"
 else
   no "F11 an agent with a join address but no token file is refused too (rc=${REPLY_RC})"
@@ -867,7 +867,7 @@ gmktec_declared() {  # gmktec_declared -> `KEY value` lines for the keys G1 chec
 GMKTEC_DECLARED="$(gmktec_declared)"
 missing=""
 while IFS= read -r want; do
-  printf '%s\n' "$GMKTEC_DECLARED" | grep -qxF "$want" || missing="${missing}
+  printf '%s\n' "$GMKTEC_DECLARED" | grep -xF "$want" >/dev/null || missing="${missing}
         ${want}"
 done <<'EOF'
 CONTROLLER_KIND none
@@ -930,10 +930,10 @@ fi
 # The node has no controller and keeps its operating system, so the two
 # destructive halves of the whole-device plan must be absent from the plan
 # ENTIRELY — not merely refused later.
-if ! printf '%s\n' "$GM_OUT" | grep -q '^+ .*add vd' \
-   && ! printf '%s\n' "$GM_OUT" | grep -q '^+ .*--zap-all' \
-   && ! printf '%s\n' "$GM_OUT" | grep -q '^+ wipefs' \
-   && ! printf '%s\n' "$GM_OUT" | grep -q '^+ mkfs.vfat'; then
+if ! printf '%s\n' "$GM_OUT" | grep '^+ .*add vd' >/dev/null \
+   && ! printf '%s\n' "$GM_OUT" | grep '^+ .*--zap-all' >/dev/null \
+   && ! printf '%s\n' "$GM_OUT" | grep '^+ wipefs' >/dev/null \
+   && ! printf '%s\n' "$GM_OUT" | grep '^+ mkfs.vfat' >/dev/null; then
   ok "G3  no controller command, no zap, no wipefs, and no mkfs over the ESP it boots from"
 else
   no "G3  no controller command, no zap, no wipefs, and no mkfs over the ESP it boots from"
@@ -945,7 +945,7 @@ fi
 # Those two agreeing is the one thing the profile cannot state and the plan
 # cannot check for itself, so it is asserted here.
 if [ "$gm_new_partitions" -eq 1 ] \
-   && printf '%s\n' "$GM_OUT" | grep -qxF '+ sgdisk --new=3:0:0 --typecode=3:8e00 --change-name=3:lvm /dev/nvme0n1'; then
+   && printf '%s\n' "$GM_OUT" | grep -xF '+ sgdisk --new=3:0:0 --typecode=3:8e00 --change-name=3:lvm /dev/nvme0n1' >/dev/null; then
   ok "G4  exactly one new partition, numbered 3 off the device's own table, typed LVM"
 else
   no "G4  exactly one new partition, numbered 3 off the device's own table (${gm_new_partitions} new-partition command(s))"
@@ -981,9 +981,9 @@ for preserved in /dev/nvme0n1p1 /dev/nvme0n1p2; do
   sed "s|^VOLUME_GROUPS=.*|VOLUME_GROUPS=nvmea:${preserved}|" "$GMKTEC" > "$p"
   run_layout "$GMKTEC_BIN" --dry-run "$p"
   if [ "$REPLY_RC" -ne 0 ] \
-     && printf '%s' "$REPLY_OUT" | grep -qF 'REFUSED' \
-     && printf '%s' "$REPLY_OUT" | grep -qF "$preserved" \
-     && printf '%s' "$REPLY_OUT" | grep -qF 'PRESERVED_PARTITIONS'; then
+     && printf '%s' "$REPLY_OUT" | grep -F 'REFUSED' >/dev/null \
+     && printf '%s' "$REPLY_OUT" | grep -F "$preserved" >/dev/null \
+     && printf '%s' "$REPLY_OUT" | grep -F 'PRESERVED_PARTITIONS' >/dev/null; then
     ok "G6  a step naming ${preserved} is refused, naming it and PRESERVED_PARTITIONS"
   else
     no "G6  a step naming ${preserved} is refused, naming it and PRESERVED_PARTITIONS (rc=${REPLY_RC})"
@@ -993,7 +993,7 @@ for preserved in /dev/nvme0n1p1 /dev/nvme0n1p2; do
   # And consent does not unlock it: preservation is a different key, not a
   # stronger flavour of consent.
   run_layout "$GMKTEC_BIN" --dry-run "--i-consent-to-destroy=${preserved}" "$p"
-  if [ "$REPLY_RC" -ne 0 ] && printf '%s' "$REPLY_OUT" | grep -qF 'REFUSED'; then
+  if [ "$REPLY_RC" -ne 0 ] && printf '%s' "$REPLY_OUT" | grep -F 'REFUSED' >/dev/null; then
     ok "G7  --i-consent-to-destroy=${preserved} does not unlock it either"
   else
     no "G7  --i-consent-to-destroy=${preserved} does not unlock it either (rc=${REPLY_RC})"
@@ -1080,7 +1080,7 @@ fi
 # re-reading the host.
 missing=""
 while IFS= read -r want; do
-  printf '%s\n' "$recorded_keys" | grep -qxF "$want" || missing="${missing}
+  printf '%s\n' "$recorded_keys" | grep -xF "$want" >/dev/null || missing="${missing}
         ${want}"
 done <<'EOF'
 key ESP_LABEL
@@ -1125,8 +1125,8 @@ highest_recorded_part="$(printf '%s\n' "$recorded_parts" | awk 'NF {print $2}' \
 next_free_part=$((highest_recorded_part + 1))
 if [ "$recorded_part_devices" = "$declared_preserved" ] \
    && [ "$recorded_esp" = "$declared_esp" ] \
-   && printf '%s\n' "$GM_OUT" | grep -qF "sgdisk --new=${next_free_part}:0:0" \
-   && printf '%s\n' "$GMKTEC_DECLARED" | grep -qxF "VOLUME_GROUPS nvmea:/dev/nvme0n1p${next_free_part}"; then
+   && printf '%s\n' "$GM_OUT" | grep -F "sgdisk --new=${next_free_part}:0:0" >/dev/null \
+   && printf '%s\n' "$GMKTEC_DECLARED" | grep -xF "VOLUME_GROUPS nvmea:/dev/nvme0n1p${next_free_part}" >/dev/null; then
   ok "G13 the record's two preserved partitions are the profile's, and the plan takes the next number after them (${next_free_part})"
 else
   no "G13 the record's preserved partitions, the ESP or the derived partition number disagree with the profile"
@@ -1194,15 +1194,15 @@ run_layout_only "$GM_NO_TOOLS" --dry-run "$GMKTEC"
 PF_FS_OUT="$REPLY_OUT"
 PF_FS_RC="$REPLY_RC"
 pf_apt_lines="$(printf '%s\n' "$PF_FS_OUT" | grep -c '^+ apt-get ' || true)"
-pf_apt_idx="$(printf '%s\n' "$PF_FS_OUT" | grep -n '^+ apt-get ' | head -1 | cut -d: -f1)"
-pf_sgdisk_idx="$(printf '%s\n' "$PF_FS_OUT" | grep -n '^+ sgdisk ' | head -1 | cut -d: -f1)"
+pf_apt_idx="$(printf '%s\n' "$PF_FS_OUT" | grep -n '^+ apt-get ' | sed -n 1p | cut -d: -f1)"
+pf_sgdisk_idx="$(printf '%s\n' "$PF_FS_OUT" | grep -n '^+ sgdisk ' | sed -n 1p | cut -d: -f1)"
 
 # ONE apt-get line, naming both packages and only the packages actually missing:
 # `vgcreate` and `lvcreate` are also lvm2's, so a per-tool install would ask for
 # lvm2 three times and read as three separate problems.
 if [ "$PF_FS_RC" -eq 0 ] \
    && [ "$pf_apt_lines" -eq 1 ] \
-   && printf '%s\n' "$PF_FS_OUT" | grep -qxF '+ apt-get install -y --no-install-recommends lvm2 xfsprogs'; then
+   && printf '%s\n' "$PF_FS_OUT" | grep -xF '+ apt-get install -y --no-install-recommends lvm2 xfsprogs' >/dev/null; then
   ok "H1  free-space with lvm2 and xfsprogs absent plans exactly one apt-get, naming both packages"
 else
   no "H1  free-space with lvm2 and xfsprogs absent plans exactly one apt-get, naming both packages (rc=${PF_FS_RC}, ${pf_apt_lines} apt-get line(s))"
@@ -1249,9 +1249,9 @@ PF_WD_OUT="$REPLY_OUT"
 PF_WD_RC="$REPLY_RC"
 
 if [ "$PF_WD_RC" -eq 0 ] \
-   && printf '%s\n' "$PF_WD_OUT" | grep -qxF 'WOULD REFUSE: pvcreate absent (lvm2)' \
-   && printf '%s\n' "$PF_WD_OUT" | grep -qxF 'WOULD REFUSE: mkfs.xfs absent (xfsprogs)' \
-   && ! printf '%s\n' "$PF_WD_OUT" | grep -q '^+ apt-get'; then
+   && printf '%s\n' "$PF_WD_OUT" | grep -xF 'WOULD REFUSE: pvcreate absent (lvm2)' >/dev/null \
+   && printf '%s\n' "$PF_WD_OUT" | grep -xF 'WOULD REFUSE: mkfs.xfs absent (xfsprogs)' >/dev/null \
+   && ! printf '%s\n' "$PF_WD_OUT" | grep '^+ apt-get' >/dev/null; then
   ok "H4  whole-device names each absent tool and its package as WOULD REFUSE, and installs nothing"
 else
   no "H4  whole-device names each absent tool and its package as WOULD REFUSE, and installs nothing (rc=${PF_WD_RC})"
@@ -1272,8 +1272,8 @@ fi
 # The control, and the reason the two assertions above mean anything: on a node
 # that HAS every tool the preflight is silent in both plans. `POWEREDGE_OUT` and
 # `GM_OUT` are the §B and §G runs, whose fake PATHs carry all of them.
-if ! printf '%s\n' "$POWEREDGE_OUT" | grep -q 'apt-get\|WOULD REFUSE' \
-   && ! printf '%s\n' "$GM_OUT" | grep -q 'apt-get\|WOULD REFUSE'; then
+if ! printf '%s\n' "$POWEREDGE_OUT" | grep 'apt-get\|WOULD REFUSE' >/dev/null \
+   && ! printf '%s\n' "$GM_OUT" | grep 'apt-get\|WOULD REFUSE' >/dev/null; then
   ok "H6  with every tool present, neither profile's plan carries an apt-get or a WOULD REFUSE line"
 else
   no "H6  a plan carries an apt-get or WOULD REFUSE line with every tool present"
@@ -1296,10 +1296,10 @@ REPLY_OUT="$(TRIPWIRE="$LIVE_TRIPWIRE" PATH="$PE_LIVE" "$SCRIPT" "$POWEREDGE" 2>
 REPLY_RC=$?
 
 if [ "$REPLY_RC" -ne 0 ] \
-   && printf '%s\n' "$REPLY_OUT" | grep -qF 'REFUSED' \
-   && printf '%s\n' "$REPLY_OUT" | grep -qF 'pvcreate' \
-   && printf '%s\n' "$REPLY_OUT" | grep -qF 'lvm2' \
-   && ! printf '%s\n' "$REPLY_OUT" | grep -q '^+ ' \
+   && printf '%s\n' "$REPLY_OUT" | grep -F 'REFUSED' >/dev/null \
+   && printf '%s\n' "$REPLY_OUT" | grep -F 'pvcreate' >/dev/null \
+   && printf '%s\n' "$REPLY_OUT" | grep -F 'lvm2' >/dev/null \
+   && ! printf '%s\n' "$REPLY_OUT" | grep '^+ ' >/dev/null \
    && [ ! -s "$LIVE_TRIPWIRE" ]; then
   ok "H7  a LIVE whole-device run with an absent tool exits non-zero having executed nothing"
 else
@@ -1348,8 +1348,8 @@ fi
 
 # A stage that printed nothing would be indistinguishable from one that failed
 # to read the profile, so the no-op has to SAY why it is one, naming the key.
-if printf '%s' "$HP_OUT" | grep -qF 'CI_NODE_FACILITIES=runner-only' \
-   && printf '%s' "$HP_OUT" | grep -qF 'PRESERVED_PARTITIONS remains the standing refusal'; then
+if printf '%s' "$HP_OUT" | grep -F 'CI_NODE_FACILITIES=runner-only' >/dev/null \
+   && printf '%s' "$HP_OUT" | grep -F 'PRESERVED_PARTITIONS remains the standing refusal' >/dev/null; then
   ok "J2  the no-op names the key it is a no-op for, and that preservation is still armed"
 else
   no "J2  the no-op names the key it is a no-op for, and that preservation is still armed"
@@ -1376,9 +1376,9 @@ for protected in /dev/sda1 /dev/sda2 /dev/sdc1 /dev/sdc2; do
   hp_clobbering "$protected"
   run_layout "$BARE" --dry-run "$REPLY_PROFILE"
   if [ "$REPLY_RC" -ne 0 ] \
-     && printf '%s' "$REPLY_OUT" | grep -qF 'REFUSED' \
-     && printf '%s' "$REPLY_OUT" | grep -qF "$protected" \
-     && printf '%s' "$REPLY_OUT" | grep -qF 'PRESERVED_PARTITIONS'; then
+     && printf '%s' "$REPLY_OUT" | grep -F 'REFUSED' >/dev/null \
+     && printf '%s' "$REPLY_OUT" | grep -F "$protected" >/dev/null \
+     && printf '%s' "$REPLY_OUT" | grep -F 'PRESERVED_PARTITIONS' >/dev/null; then
     ok "J3  a step naming ${protected} is refused, naming that partition and the key"
   else
     no "J3  a step naming ${protected} is refused, naming that partition and the key (rc=${REPLY_RC})"
@@ -1390,7 +1390,7 @@ for protected in /dev/sda1 /dev/sda2 /dev/sdc1 /dev/sdc2; do
   # be overridden, which is the one thing it promises it cannot.
   run_layout "$BARE" --dry-run "--i-consent-to-destroy=${protected}" "$REPLY_PROFILE"
   if [ "$REPLY_RC" -ne 0 ] \
-     && printf '%s' "$REPLY_OUT" | grep -qF 'no --i-consent-to-destroy unlocks it'; then
+     && printf '%s' "$REPLY_OUT" | grep -F 'no --i-consent-to-destroy unlocks it' >/dev/null; then
     ok "J4  --i-consent-to-destroy does not unlock ${protected}, and the refusal says so"
   else
     no "J4  --i-consent-to-destroy does not unlock ${protected}, and the refusal says so (rc=${REPLY_RC})"
@@ -1450,7 +1450,7 @@ fi
 p="${TMPROOT}/hp-advertising-capacity.env"
 sed 's#^ADMISSION_CAPACITY_C=.*#ADMISSION_CAPACITY_C=12#' "$HP_CLOSED" > "$p"
 run_layout "$BARE" --dry-run "$p"
-if [ "$REPLY_RC" -ne 0 ] && printf '%s' "$REPLY_OUT" | grep -qF 'ADMISSION_CAPACITY_C must be 0'; then
+if [ "$REPLY_RC" -ne 0 ] && printf '%s' "$REPLY_OUT" | grep -F 'ADMISSION_CAPACITY_C must be 0' >/dev/null; then
   ok "J10 a closed node advertising churn slots is refused"
 else
   no "J10 a closed node advertising churn slots is refused (rc=${REPLY_RC})"
@@ -1459,7 +1459,7 @@ fi
 p="${TMPROOT}/hp-untainted.env"
 sed 's#^NODE_TAINTS=.*#NODE_TAINTS=#' "$HP_CLOSED" > "$p"
 run_layout "$BARE" --dry-run "$p"
-if [ "$REPLY_RC" -ne 0 ] && printf '%s' "$REPLY_OUT" | grep -qF 'must carry a node-role/ci='; then
+if [ "$REPLY_RC" -ne 0 ] && printf '%s' "$REPLY_OUT" | grep -F 'must carry a node-role/ci=' >/dev/null; then
   ok "J11 a closed node with no node-role/ci taint is refused"
 else
   no "J11 a closed node with no node-role/ci taint is refused (rc=${REPLY_RC})"
@@ -1469,7 +1469,7 @@ p="${TMPROOT}/hp-misspelt-posture.env"
 sed 's#^CI_NODE_FACILITIES=.*#CI_NODE_FACILITIES=non#' "$HP" > "$p"
 run_layout "$BARE" --dry-run "$p"
 if [ "$REPLY_RC" -ne 0 ] \
-   && printf '%s' "$REPLY_OUT" | grep -qF "CI_NODE_FACILITIES must be 'full', 'none' or 'runner-only', got 'non'"; then
+   && printf '%s' "$REPLY_OUT" | grep -F "CI_NODE_FACILITIES must be 'full', 'none' or 'runner-only', got 'non'" >/dev/null; then
   ok "J8  a posture value the parser does not know is refused as a POSTURE, not as an empty key"
 else
   no "J8  a posture value the parser does not know is refused as a POSTURE, not as an empty key (rc=${REPLY_RC})"

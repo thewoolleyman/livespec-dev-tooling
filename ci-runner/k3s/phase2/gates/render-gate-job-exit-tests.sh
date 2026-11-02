@@ -228,9 +228,9 @@ check_fetch_brings_range_and_master() {
 # satisfy it.
 check_bootstrap_precedes_check() {
   local f="$1" pack hooks aggregate
-  pack="$(grep -nE '^\s*just install-worktree-pack$' "$f" | head -1 | cut -d: -f1)"
-  hooks="$(grep -nE '^\s*just install-commit-refuse-hooks$' "$f" | head -1 | cut -d: -f1)"
-  aggregate="$(grep -nE '^\s*just hook_gate=1 check$' "$f" | head -1 | cut -d: -f1)"
+  pack="$(grep -nE '^\s*just install-worktree-pack$' "$f" | sed -n 1p | cut -d: -f1)"
+  hooks="$(grep -nE '^\s*just install-commit-refuse-hooks$' "$f" | sed -n 1p | cut -d: -f1)"
+  aggregate="$(grep -nE '^\s*just hook_gate=1 check$' "$f" | sed -n 1p | cut -d: -f1)"
   [ -n "${pack}" ]      || { echo "    missing: just install-worktree-pack"; return 1; }
   [ -n "${hooks}" ]     || { echo "    missing: just install-commit-refuse-hooks"; return 1; }
   [ -n "${aggregate}" ] || { echo "    missing: the just check aggregate"; return 1; }
@@ -335,8 +335,8 @@ echo "== H. the cache env matches ../arc/hook-pod-template.yaml =="
 # template sets carries the same value the hook pod template gives it.
 drift=0
 for var in UV_CACHE_DIR SCCACHE_REDIS_ENDPOINT SCCACHE_REDIS_RW_MODE CI_CACHE_CANARY_N; do
-  ours="$(grep -A1 -F "name: ${var}" "${TEMPLATE}" | grep -oE 'value: .*' | head -1)"
-  theirs="$(grep -A1 -F "name: ${var}" "${HOOK_POD_TEMPLATE}" | grep -oE 'value: .*' | head -1)"
+  ours="$(grep -A1 -F "name: ${var}" "${TEMPLATE}" | grep -oE 'value: .*' | sed -n 1p)"
+  theirs="$(grep -A1 -F "name: ${var}" "${HOOK_POD_TEMPLATE}" | grep -oE 'value: .*' | sed -n 1p)"
   if [ -z "${ours}" ]; then
     fail "${var} is absent from the gate template"; drift=1
   elif [ "${ours}" != "${theirs}" ]; then
@@ -369,7 +369,7 @@ echo "== T. uvx uses the proxy Simple API without globally changing uv's index =
 # A frozen uv.lock carries absolute file-host URLs and is routed per artifact.
 # Only uvx lacks such a lock, so its shim gets the proxy's rewritten Simple API
 # and can retry normal PyPI if resolution through the proxy fails.
-proxy_origin="$(grep -A1 -F 'name: PYPI_FILES_PROXY' "${out_a}" | grep -oE 'value: .*' | head -1)"
+proxy_origin="$(grep -A1 -F 'name: PYPI_FILES_PROXY' "${out_a}" | grep -oE 'value: .*' | sed -n 1p)"
 if grep -qF 'name: UV_DEFAULT_INDEX' "${out_a}"; then
   fail "the gate globally sets UV_DEFAULT_INDEX, so uv run cannot fall through from a proxy miss"
 elif [ "${proxy_origin}" != 'value: http://pypi-proxy.ci-warm-cache.svc.cluster.local:8081' ]; then
@@ -387,7 +387,7 @@ echo "== V. the operator cache kill switch makes the gate's uv volume cold =="
 operator_out="${SCRATCH}/operator-cache-off.yaml"
 if CI_CACHE_KILL_SWITCH=operator "${RENDERER}" --repo-root "${SCRATCH}/repo-a" \
      --tree-hash "${HASH_A}" "${OUR_SUITE[@]}" > "${operator_out}" 2>"${SCRATCH}/operator-cache-off.err"; then
-  operator_switch="$(grep -A1 -F 'name: CI_CACHE_KILL_SWITCH' "${operator_out}" | grep -oE 'value: .*' | head -1)"
+  operator_switch="$(grep -A1 -F 'name: CI_CACHE_KILL_SWITCH' "${operator_out}" | grep -oE 'value: .*' | sed -n 1p)"
   if [ "${operator_switch}" != 'value: "operator"' ]; then
     fail "CI_CACHE_KILL_SWITCH=operator does not reach the gate container"
   elif grep -F 'postStart:' "${operator_out}" >/dev/null; then
@@ -743,7 +743,7 @@ make_siblings() {
 # reports as `integer expression expected` and the arm then reads as a PASS —
 # which is how this very edit first presented.
 sibling_root() { gate_script "$1" | sed -n "s/^export LIVESPEC_SIBLING_CLONES_ROOT='\(.*\)'$/\1/p"; }
-script_line() { gate_script "$1" | grep -n -- "$2" | head -1 | cut -d: -f1; }
+script_line() { gate_script "$1" | grep -n -- "$2" | sed -n 1p | cut -d: -f1; }
 last_script_line() { gate_script "$1" | grep -n -- "$2" | tail -1 | cut -d: -f1; }
 
 repo_siblings="${SCRATCH}/repo-siblings"
@@ -869,8 +869,8 @@ private_mount="/run/secrets/gate-private-siblings"
 if "${RENDERER}" --repo-root "${repo_siblings}" --tree-hash "${HASH_A}" \
      --check-suite verify --private-sibling widget-core \
      --private-sibling-secret "${private_secret}" > "${private_out}" 2>"${SCRATCH}/private.err"; then
-  private_clone="$(gate_script "${private_out}" | grep -F "'https://github.com/acme/widget-core'" | head -1)"
-  public_clone="$(gate_script "${private_out}" | grep -F "'https://github.com/acme/widget-docs'" | head -1)"
+  private_clone="$(gate_script "${private_out}" | grep -F "'https://github.com/acme/widget-core'" | sed -n 1p)"
+  public_clone="$(gate_script "${private_out}" | grep -F "'https://github.com/acme/widget-docs'" | sed -n 1p)"
   if ! printf '%s' "${private_clone}" | grep -F "http.extraHeader" >/dev/null; then
     fail "the private sibling's clone carries no authorization: ${private_clone}"
   elif ! printf '%s' "${private_clone}" | grep -F "cat ${private_mount}/token" >/dev/null; then

@@ -34,8 +34,8 @@ log() { printf '\n== %s ==\n' "$*"; }
 
 # ---------------------------------------------------------------------------
 log "0. Pre-gate: the operator identity must already carry what the gate needs"
-id -nG "$OPERATOR" | tr ' ' '\n' | grep -qx docker \
-  || { echo "FATAL: $OPERATOR is not in the docker group (the gate drives DinD)"; exit 1; }
+id -nG "$OPERATOR" | tr ' ' '\n' | grep -x docker \
+ >/dev/null  || { echo "FATAL: $OPERATOR is not in the docker group (the gate drives DinD)"; exit 1; }
 [ -r "/home/${OPERATOR}/.codex/auth.json" ] \
   || { echo "FATAL: missing /home/${OPERATOR}/.codex/auth.json (the Codex credential the gate projects)"; exit 1; }
 [ -x "/home/${OPERATOR}/.fabro/bin/fabro" ] \
@@ -78,7 +78,7 @@ else
   useradd --system --no-create-home --shell /usr/sbin/nologin "$SUP_USER"
   echo "  created ${SUP_USER} (system account, nologin)"
 fi
-if id -nG "$SUP_USER" | tr ' ' '\n' | grep -qx "$SUP_GROUP"; then
+if id -nG "$SUP_USER" | tr ' ' '\n' | grep -x "$SUP_GROUP" >/dev/null; then
   echo "  ${SUP_USER} is in ${SUP_GROUP}"
 else
   usermod -aG "$SUP_GROUP" "$SUP_USER"
@@ -87,8 +87,8 @@ fi
 # Verify rather than trust the two writes above: a supervisor that cannot read
 # the credential fails at mint time, deep inside a queued gate run, where the
 # cause is far less obvious than it is here.
-id -nG "$SUP_USER" | tr ' ' '\n' | grep -qx "$SUP_GROUP" \
-  || { echo "FATAL: ${SUP_USER} is still not in ${SUP_GROUP} after usermod"; exit 1; }
+id -nG "$SUP_USER" | tr ' ' '\n' | grep -x "$SUP_GROUP" \
+ >/dev/null  || { echo "FATAL: ${SUP_USER} is still not in ${SUP_GROUP} after usermod"; exit 1; }
 
 # ---------------------------------------------------------------------------
 log "1. Actions runner ${RUNNER_VERSION} under the operator's own gate-runner dir"

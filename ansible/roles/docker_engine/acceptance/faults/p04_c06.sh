@@ -23,4 +23,4 @@ done
 echo "######## phase=$(phase_of $I) at $(date -u +%T) after $((SECONDS - t0))s; ssh probe failures=$ssh_fail"
 echo "######## rolled-back check"; rolled_back_check $I
 echo "######## C-06: confirm after the deadline"; guard_op $I confirm "$RUN"
-echo "######## after the late confirm"; rolled_back_check $I | head -2
+echo "######## after the late confirm"; rolled_back_check $I | sed -n 1,2p

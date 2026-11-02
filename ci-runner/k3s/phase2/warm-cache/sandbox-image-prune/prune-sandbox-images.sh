@@ -478,7 +478,7 @@ for family in $(printf '%s\n' "${!FAMILY_SEEN[@]}" | sort); do
   ordered="$(printf '%s\n' "${versions[@]}" | sort -t. -k1,1nr -k2,2nr -k3,3nr)"
   total="${#versions[@]}"
   kept="$(printf '%s\n' "$ordered" | head -n "$KEEP_PER_FAMILY")"
-  newest="$(printf '%s\n' "$ordered" | head -n 1)"
+  newest="$(printf '%s\n' "$ordered" | sed -n 1p)"
   oldest_kept="$(printf '%s\n' "$kept" | tail -n 1)"
   # What is actually kept, which is fewer than the budget when the family has
   # fewer versions than that — a summary line claiming to keep ten of six

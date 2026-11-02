@@ -255,7 +255,7 @@ fi
 # `|| true` on the `git remote get-url origin` read above.
 if [ -z "${livespec_core_ref}" ] && [ -f "${repo_root}/.livespec.jsonc" ]; then
   livespec_core_ref="$(grep -oE '"pinned"[[:space:]]*:[[:space:]]*"[^"]*"' "${repo_root}/.livespec.jsonc" \
-    | head -1 | sed -E 's/.*:[[:space:]]*"([^"]*)".*/\1/' || true)"
+    | sed -n 1p | sed -E 's/.*:[[:space:]]*"([^"]*)".*/\1/' || true)"
 fi
 [ -n "${livespec_core_ref}" ] || livespec_core_ref="${LIVESPEC_CORE_REF_FALLBACK}"
 # The value goes into the pod's shell script, so the character set is bounded

@@ -165,7 +165,7 @@ SECRET_NAME="${SA_NAME}"
 RENDERED_RBAC="$(sed "s|${PLACEHOLDER}|${NODE_NAME}|g" "$RBAC_TEMPLATE")"
 
 # Fail loudly rather than applying a grant bound to a node that does not exist.
-if printf '%s' "$RENDERED_RBAC" | grep -q "$PLACEHOLDER"; then
+if printf '%s' "$RENDERED_RBAC" | grep "$PLACEHOLDER" >/dev/null; then
   die "${PLACEHOLDER} survived substitution in the rendered ${RBAC_TEMPLATE}"
 fi
 

@@ -143,10 +143,10 @@ if out="$(converge "${root_a}")"; then
   after="$(fingerprint "${root_a}")"
   marker_after="$(stat -c '%Y' "${root_a}/alpha-repo.git/git-daemon-export-ok")"
   if [ "${before}" != "${after}" ]; then
-    fail "B: the tree changed on a second converge: $(diff <(printf '%s\n' "${before}") <(printf '%s\n' "${after}") | head -5)"
+    fail "B: the tree changed on a second converge: $(diff <(printf '%s\n' "${before}") <(printf '%s\n' "${after}") | sed -n 1,5p)"
   elif [ "${marker_before}" != "${marker_after}" ]; then
     fail "B: git-daemon-export-ok was restamped on a second converge (${marker_before} -> ${marker_after}); the touch must be guarded"
-  elif ! printf '%s' "${out}" | grep -q "already initialised"; then
+  elif ! printf '%s' "${out}" | grep "already initialised" >/dev/null; then
     fail "B: the second converge did not report the mirrors as already initialised"
   else
     pass "second converge is a no-op over the tree and over the export marker"
@@ -160,7 +160,7 @@ root_c="${SCRATCH}/mirror-c"
 for bad in "../escape" "a/b" ".hidden"; do
   if out="$(converge "${root_c}" --repo "${bad}")"; then
     fail "C: --repo '${bad}' was accepted"
-  elif ! printf '%s' "${out}" | grep -q "refusing repository name"; then
+  elif ! printf '%s' "${out}" | grep "refusing repository name" >/dev/null; then
     fail "C: --repo '${bad}' failed for the wrong reason: ${out}"
   else
     pass "--repo '${bad}' refused"
@@ -226,9 +226,9 @@ stamp_reflog "${MIRROR}" "refs/gates/${TREE[new]}" "$((NOW - CUTOFF_SECONDS + 10
 echo "== D. the sweep prunes past the cutoff and keeps inside it, aged from the reflog =="
 if out="$("${PRUNE}" --mirror-root "${PRUNE_ROOT}" --max-age-seconds "${CUTOFF_SECONDS}" 2>&1)"; then
   remaining="$(git --git-dir="${MIRROR}" for-each-ref --format='%(refname)' 'refs/gates/')"
-  if printf '%s\n' "${remaining}" | grep -qF "refs/gates/${TREE[old]}"; then
+  if printf '%s\n' "${remaining}" | grep -F "refs/gates/${TREE[old]}" >/dev/null; then
     fail "D: the ref pushed $((CUTOFF_SECONDS + 100))s ago survived a ${CUTOFF_SECONDS}s cutoff"
-  elif ! printf '%s\n' "${remaining}" | grep -qF "refs/gates/${TREE[new]}"; then
+  elif ! printf '%s\n' "${remaining}" | grep -F "refs/gates/${TREE[new]}" >/dev/null; then
     fail "D: the ref pushed $((CUTOFF_SECONDS - 100))s ago was pruned by a ${CUTOFF_SECONDS}s cutoff"
   else
     pass "cutoff holds at the boundary in both directions (reflog age)"
@@ -238,8 +238,8 @@ else
 fi
 
 echo "== F. a ref with no age source is reported and left alone =="
-if printf '%s' "${out}" | grep -q "age unknown, NOT pruned"; then
-  if git --git-dir="${MIRROR}" for-each-ref --format='%(refname)' 'refs/gates/' | grep -qF "refs/gates/${TREE[unaged]}"; then
+if printf '%s' "${out}" | grep "age unknown, NOT pruned" >/dev/null; then
+  if git --git-dir="${MIRROR}" for-each-ref --format='%(refname)' 'refs/gates/' | grep -F "refs/gates/${TREE[unaged]}" >/dev/null; then
     pass "the unageable ref was named on stderr and kept"
   else
     fail "F: the unageable ref was pruned despite having no age source"
@@ -263,9 +263,9 @@ touch -d "@$((NOW - CUTOFF_SECONDS - 100))" "${MIRROR_M}/refs/gates/mtime-old"
 touch -d "@$((NOW - CUTOFF_SECONDS + 100))" "${MIRROR_M}/refs/gates/mtime-new"
 if out="$("${PRUNE}" --mirror-root "$(dirname "${MIRROR_M}")" --max-age-seconds "${CUTOFF_SECONDS}" 2>&1)"; then
   remaining="$(git --git-dir="${MIRROR_M}" for-each-ref --format='%(refname)' 'refs/gates/')"
-  if printf '%s\n' "${remaining}" | grep -qF "refs/gates/mtime-old"; then
+  if printf '%s\n' "${remaining}" | grep -F "refs/gates/mtime-old" >/dev/null; then
     fail "E: the ref last written $((CUTOFF_SECONDS + 100))s ago survived a ${CUTOFF_SECONDS}s cutoff"
-  elif ! printf '%s\n' "${remaining}" | grep -qF "refs/gates/mtime-new"; then
+  elif ! printf '%s\n' "${remaining}" | grep -F "refs/gates/mtime-new" >/dev/null; then
     fail "E: the ref last written $((CUTOFF_SECONDS - 100))s ago was pruned by a ${CUTOFF_SECONDS}s cutoff"
   else
     pass "cutoff holds at the boundary in both directions (mtime fallback)"
@@ -330,7 +330,7 @@ if grep -q -- '--forbid-override=receive-pack' "${EFFECTIVE_MANIFEST}"; then
 else
   fail "G: --forbid-override=receive-pack is absent"
 fi
-if grep -A3 'name: mirror' "${EFFECTIVE_MANIFEST}" | grep -q 'readOnly: true'; then
+if grep -A3 'name: mirror' "${EFFECTIVE_MANIFEST}" | grep 'readOnly: true' >/dev/null; then
   pass "the mirror is mounted readOnly"
 else
   fail "G: the mirror volumeMount is not readOnly: true"
@@ -340,14 +340,14 @@ if grep -q 'hostPort' "${EFFECTIVE_MANIFEST}"; then
 else
   pass "no hostPort: reachable from pods only"
 fi
-if grep -A1 'path: /var/cache/ci-runner/gates-mirror' "${EFFECTIVE_MANIFEST}" | grep -q 'type: Directory$'; then
+if grep -A1 'path: /var/cache/ci-runner/gates-mirror' "${EFFECTIVE_MANIFEST}" | grep 'type: Directory$' >/dev/null; then
   pass "hostPath type is Directory, so kubelet cannot create a root-owned mirror the receive path could not write to"
 else
   fail "G: the mirror hostPath is not 'type: Directory'"
 fi
 
 echo "== H. the Service is exactly what render-gate-job.sh defaults --source-url to =="
-default_url="$(grep -oE 'git://[^"$]+' "${RENDERER}" | head -1)"
+default_url="$(grep -oE 'git://[^"$]+' "${RENDERER}" | sed -n 1p)"
 host_part="${default_url#git://}"
 host_part="${host_part%%/*}"
 if [ "${host_part}" = "git-gates.gates.svc.cluster.local" ]; then
@@ -365,7 +365,7 @@ else
 fi
 # The daemon resolves /<repo>.git against its --base-path, so the base path and
 # the hostPath must name the same directory or every fetch 404s.
-base_path="$(grep -oE '\-\-base-path=[^"]+' "${EFFECTIVE_MANIFEST}" | head -1)"
+base_path="$(grep -oE '\-\-base-path=[^"]+' "${EFFECTIVE_MANIFEST}" | sed -n 1p)"
 base_path="${base_path#--base-path=}"
 if grep -q "path: /var/cache/ci-runner/$(basename "${base_path}")$" "${EFFECTIVE_MANIFEST}"; then
   pass "--base-path ${base_path} is the directory the hostPath mounts"
@@ -387,7 +387,7 @@ echo "== J. nothing in this slice references /var/lib/git =="
 offenders=""
 for f in "${MANIFEST}" "${CONVERGE}" "${PRUNE}" "${SCRIPT_DIR}/gate-ref-prune.service" "${SCRIPT_DIR}/gate-ref-prune.timer"; do
   [ -f "${f}" ] || continue
-  effective "${f}" | grep -q '/var/lib/git' && offenders="${offenders} $(basename "${f}")"
+  effective "${f}" | grep '/var/lib/git' >/dev/null && offenders="${offenders} $(basename "${f}")"
 done
 if [ -n "${offenders}" ]; then
   fail "J: /var/lib/git referenced in:${offenders} (research/003 correction 3 moved the mirror to the ci-cache tier)"

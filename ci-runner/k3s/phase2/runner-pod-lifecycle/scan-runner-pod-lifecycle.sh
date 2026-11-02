@@ -581,7 +581,7 @@ log "1. pvc-pending: PVCs in ${NAMESPACE} Pending > ${PVC_PENDING_SECONDS}s (cla
 POD_ROWS=""; pods_read=1
 if POD_ROWS="$(kc pods -n "$NAMESPACE" get pods -o jsonpath='{range .items[*]}{.metadata.name}|{.metadata.uid}|{range .spec.schedulingGates[*]}{.name}{" "}{end}|{range .status.containerStatuses[*]}{.state.terminated.reason}{" "}{end}{"\n"}{end}' 2>&1)"; then :; else
   pods_read=0
-  echo "  could not list pods ($(printf '%s' "$POD_ROWS" | head -1)); gated claims will be counted as pending; livespec.ci_lifecycle.pvc-gated withheld" >&2
+  echo "  could not list pods ($(printf '%s' "$POD_ROWS" | sed -n 1p)); gated claims will be counted as pending; livespec.ci_lifecycle.pvc-gated withheld" >&2
   POD_ROWS=""
 fi
 # The runner pods' work volumes are GENERIC EPHEMERAL volumes (ARC kubernetes
@@ -709,7 +709,7 @@ while IFS='|' read -r last_ts event_ts reason object message; do
   [ "$age" != unknown ] && [ "$age" -le "$WINDOW_SECONDS" ] || continue
   case "$reason" in
     Failed|FailedCreatePodSandBox)
-      if printf '%s' "$message" | grep -qE "$CREATE_SIGNATURE"; then
+      if printf '%s' "$message" | grep -E "$CREATE_SIGNATURE" >/dev/null; then
         create_hits=$((create_hits+1)); add_detail "    event=${reason} pod=${object} age=${age}s: $(printf '%s' "$message" | cut -c1-120)"
       fi ;;
     FailedKillPod) killpod_hits=$((killpod_hits+1)) ;;
@@ -866,7 +866,7 @@ if [ -z "$warm_budget_from" ]; then
     warm_budget_bytes="${cm_row%%|*}"; warm_budget_files="${cm_row#*|}"; warm_budget_from="ConfigMap ${WARM_BUDGET_CONFIGMAP}"
   else
     warm_budget_bytes=""; warm_budget_files=""
-    echo "  budget unreadable from last-run.json AND ConfigMap ${WARM_BUDGET_CONFIGMAP} ($(printf '%s' "$cm_row" | head -1)): the size legs cannot be judged"
+    echo "  budget unreadable from last-run.json AND ConfigMap ${WARM_BUDGET_CONFIGMAP} ($(printf '%s' "$cm_row" | sed -n 1p)): the size legs cannot be judged"
   fi
 fi
 if [ -L "${WARM_ROOT}/uv" ]; then
@@ -1275,7 +1275,7 @@ emit_lifecycle_metrics() {
     metrics="${metrics},$(gauge_json livespec.ci_churn_slot.quota_sum "Sum of nominalQuota for ci-runner.io/churn-slot across ClusterQueues" "{slots}" "$quota_sum" "$now_ns")"
     summary="${summary} livespec.ci_kueue.pending=${pending} livespec.ci_kueue.admitted=${admitted} livespec.ci_churn_slot.quota_sum=${quota_sum}"
   else
-    echo "  emit: could not read ClusterQueues ($(printf '%s' "$cq_rows" | head -1)); omitting livespec.ci_kueue.* and livespec.ci_churn_slot.quota_sum rather than sending false zeros" >&2
+    echo "  emit: could not read ClusterQueues ($(printf '%s' "$cq_rows" | sed -n 1p)); omitting livespec.ci_kueue.* and livespec.ci_churn_slot.quota_sum rather than sending false zeros" >&2
   fi
 
   if node_rows="$(kc emit get nodes -o jsonpath='{range .items[*]}{.metadata.name}|{.status.allocatable.ci-runner\.io/churn-slot}{"\n"}{end}' 2>&1)"; then
@@ -1287,7 +1287,7 @@ emit_lifecycle_metrics() {
     metrics="${metrics},$(gauge_json livespec.ci_churn_slot.allocatable "Allocatable ci-runner.io/churn-slot summed over the cluster's nodes (0 = extended resource not registered)" "{slots}" "$allocatable" "$now_ns")"
     summary="${summary} livespec.ci_churn_slot.allocatable=${allocatable}"
   else
-    echo "  emit: could not read nodes ($(printf '%s' "$node_rows" | head -1)); omitting livespec.ci_churn_slot.allocatable rather than sending a false zero" >&2
+    echo "  emit: could not read nodes ($(printf '%s' "$node_rows" | sed -n 1p)); omitting livespec.ci_churn_slot.allocatable rather than sending a false zero" >&2
   fi
 
   warm_metrics_fragment "$now_ns"

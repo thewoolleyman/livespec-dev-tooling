@@ -660,7 +660,7 @@ fi
 # The firmware boot entry. grub-install normally writes one itself; this makes
 # it explicit and idempotent, and is the step the recorded Boot#### entry of
 # the 2026-09-04 rebuild corresponds to.
-if printf '%s' "$(probe efibootmgr)" | grep -qF " ${CFG[BOOT_ENTRY_LABEL]}"; then
+if printf '%s' "$(probe efibootmgr)" | grep -F " ${CFG[BOOT_ENTRY_LABEL]}" >/dev/null; then
   note "no change: a firmware boot entry labelled ${CFG[BOOT_ENTRY_LABEL]} exists"
 else
   run chroot "$MOUNT_ROOT" efibootmgr --create \

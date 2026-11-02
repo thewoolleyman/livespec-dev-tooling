@@ -28,7 +28,7 @@ for ((attempt = 1; attempt <= ATTEMPTS; attempt++)); do
     if curl -fsS --max-time 5 -H "Host: ${CANONICAL_HOST}" -H 'Accept: text/html' "${RUNS_URL}" -o /dev/null \
         && curl -fsS --max-time 5 -H "Host: ${CANONICAL_HOST}" -H 'Accept: text/html' "${LOGIN_URL}" -o "${body}" \
         && grep -qF '<title>Fabro</title>' "${body}"; then
-        asset_path="$(grep -oE 'src="[^"]+\.js"' "${body}" | head -n 1 | cut -d '"' -f 2 || true)"
+        asset_path="$(grep -oE 'src="[^"]+\.js"' "${body}" | sed -n 1p | cut -d '"' -f 2 || true)"
         if [[ -n "${asset_path}" ]] \
             && curl -fsS --max-time 10 -H "Host: ${CANONICAL_HOST}" "${BASE_URL}${asset_path}" -o /dev/null; then
             exit 0

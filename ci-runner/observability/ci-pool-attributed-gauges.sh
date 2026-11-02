@@ -513,7 +513,7 @@ elif cq_rows="$(kc_kueue get clusterqueues -o jsonpath="${CQ_JSONPATH}" 2>&1)"; 
   done <<< "${cq_rows}"
   log "read ${queues_emitted} ClusterQueue(s) covering ${CHURN_SLOT_RESOURCE}"
 else
-  log "could not read ClusterQueues ($(printf '%s' "${cq_rows}" | head -1)); omitting every livespec.ci_pool.queue_* gauge rather than sending false zeros" >&2
+  log "could not read ClusterQueues ($(printf '%s' "${cq_rows}" | sed -n 1p)); omitting every livespec.ci_pool.queue_* gauge rather than sending false zeros" >&2
   failed=1
 fi
 
@@ -587,7 +587,7 @@ if er_rows="$(kc get ephemeralrunners --all-namespaces -o jsonpath="${ER_JSONPAT
   fi
   log "read ${er_total} EphemeralRunner(s) across all namespaces"
 else
-  log "could not read EphemeralRunners ($(printf '%s' "${er_rows}" | head -1)); omitting livespec.ci_pool.runners and .runners_total rather than sending false zeros" >&2
+  log "could not read EphemeralRunners ($(printf '%s' "${er_rows}" | sed -n 1p)); omitting livespec.ci_pool.runners and .runners_total rather than sending false zeros" >&2
   failed=1
 fi
 
@@ -612,7 +612,7 @@ if pod_rows="$(kc_start get pods --all-namespaces -o jsonpath="${PODS_JSONPATH}"
   printf '%s\n' "${pod_rows}" > "${pods_raw}"
   start_sources=$((start_sources + 1))
 else
-  log "could not read pods ($(printf '%s' "${pod_rows}" | head -1)); omitting every livespec.ci_pool.start_* gauge and every start event this tick rather than sending false zeros" >&2
+  log "could not read pods ($(printf '%s' "${pod_rows}" | sed -n 1p)); omitting every livespec.ci_pool.start_* gauge and every start event this tick rather than sending false zeros" >&2
   failed=1
 fi
 
@@ -622,7 +622,7 @@ else
   # NOT fatal to the start signal: the volume sub-interval is one attribute
   # inside phase 1, so an unreadable PV listing costs that attribute and
   # nothing else. The four phases still read from the pods listing.
-  log "could not read PersistentVolumes ($(printf '%s' "${pv_rows}" | head -1)); the start phases are still emitted, without their work-volume sub-interval" >&2
+  log "could not read PersistentVolumes ($(printf '%s' "${pv_rows}" | sed -n 1p)); the start phases are still emitted, without their work-volume sub-interval" >&2
   : > "${volumes_raw}"
   failed=1
 fi

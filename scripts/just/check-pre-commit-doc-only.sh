@@ -37,7 +37,7 @@ just check-comment-line-anchors
 just check-agents-ai-references-resolve
 just check-plan-anchor-declared
 just check-vendor-manifest
-if git diff --cached --name-only | grep -qx 'tests/heading-coverage.json'; then
+if git diff --cached --name-only | grep -x 'tests/heading-coverage.json' >/dev/null; then
     echo ":: staged changeset edits tests/heading-coverage.json — arming the TODO-ownership release tier for the entries this commit authors"
     LIVESPEC_FAIL_IF_HEADING_COVERAGE_TODOS_EXIST=true \
         LIVESPEC_SCOPE_HEADING_COVERAGE_TODOS_TO_HEAD_DIFF=true \
@@ -63,7 +63,7 @@ fi
 # cop-out. An out-of-scope finding is still reported (warning,
 # `out_of_staged_scope`), and a baseline git cannot produce falls back to
 # judging every reason rather than to judging none.
-if git diff --cached --name-only | grep -qx 'tests/heading-coverage.json'; then
+if git diff --cached --name-only | grep -x 'tests/heading-coverage.json' >/dev/null; then
     echo ":: staged changeset edits tests/heading-coverage.json — arming the TODO-reason acknowledgment guard for the rows this commit authors"
     LIVESPEC_SCOPE_HEADING_COVERAGE_REASONS_TO_HEAD_DIFF=true \
         just check-heading-coverage
