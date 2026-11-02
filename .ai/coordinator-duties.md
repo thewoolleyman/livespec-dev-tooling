@@ -191,9 +191,10 @@ had to point out the tabs left behind after a shutdown.
 Every tick reports, in this order:
 
 1. The ownership line: `Coordinator owns no work. Owning plans this tick: ...`.
-2. PRIORITIES: every current maintainer-set priority (at most 10), one line each, read fresh from the latest
-   `priorities-record` scope event on the coordinator's epic. If the record cannot be read, the report says so at the
-   top instead of guessing.
+2. PRIORITIES: every current maintainer-set priority, one line each, read fresh from the latest
+   `priorities-record` scope event on the coordinator's epic. The list has no length cap: print it in full, because its
+   length is the maintainer's signal to drop entries. If the record cannot be read, the report says so at the top
+   instead of guessing.
 3. DEPENDENCIES: nested ONLY for priorities 1-3.
    - The owning plan appears as `plan-slug (epic-id)`, with work items as `title (work-item-id)` nested under it.
    - Each line has one status word and a short blocker note.
@@ -204,16 +205,22 @@ Every tick reports, in this order:
 4. The actions taken this tick.
 5. `FOR THE MAINTAINER (non-blocking)`, re-derived every tick (§7). It reads `none` if there is nothing to ask.
 
-**Slot 0, the stability override, is not a catch-all.** It holds only a live critical blocker, or a high-priority
-performance, security or stability item, while that item actually blocks flow. Once work flows again, or a stopgap
-mitigates it, the item moves back to its owning plan's normal priority slot, and slot 0 reads `clear`. The durable
-fix of a mitigated outage is tracked in that normal slot, not in slot 0.
+**There is no slot 0 and no override.** Urgency is expressed only by the order of the list. A stability item that
+must come first is placed first by a `priorities-record` change, never parked in a separate override slot. The report
+prints no slot 0.
 
 Maintainer corrections, 2026-11-02 ~14:3xZ, recorded verbatim on epic `livespec-dev-tooling-6tgd2z`: "Your report is
-flawed in numbers, you have multiple 1a, and 1b, and no 2 in dependencies section", and "The '0' override is a good
-idea, but it cannot be a catch all … Once things are flowing or able to move again or mitigated with a stopgap, the
-items must move back to a normal dedicated priority slot". The same session also wrote "bd-ib-voozdp needs it" in an
-ask, a bare id inside a reason clause; §7's naming rule covers every clause of every maintainer-facing line.
+flawed in numbers, you have multiple 1a, and 1b, and no 2 in dependencies section". The same session also wrote
+"bd-ib-voozdp needs it" in an ask, a bare id inside a reason clause; §7's naming rule covers every clause of every
+maintainer-facing line. A slot-0 "stability override" was first narrowed ("it cannot be a catch all"), then removed
+outright at ~14:5xZ: "we need to just remove the override concept. Overrides will be represented by changing the
+order. Anything else will just result in the override being a catch-all bucket that nothing ever leaves and gets
+constantly yak-shaved."
+
+**Deprioritizing never cancels in-flight work.** A started item runs to completion, including its wrap-up (rework,
+acceptance, proofs). Cancel only runaway work, or work whose output will not be used. An infrastructure restart's
+cancel-and-immediately-re-dispatch is a resume, not a cancellation. Maintainer ruling 2026-11-02 ~14:5xZ, recorded on
+epic `livespec-dev-tooling-6tgd2z`.
 
 The coordinator never reorders, adds or drops a priority on its own initiative. It reports evidence for a change as a
 finding with a recommendation.
@@ -243,6 +250,12 @@ up. That is not finished."
 Maintainer ruling 2026-11-02 ~06:4xZ, recorded verbatim on epic `livespec-dev-tooling-6tgd2z`. Measured that day:
 priority 1, dolt-connection-exhaustion, had all five carriers closed. It still owed dolt-server-xbilme's seven-day
 sizing window (deferred to 2026-11-08), then its plan proof and archive.
+
+**No premature plan creation during a brainstorm.** While the maintainer is brainstorming a design, answer and
+recommend when asked, but do not propose opening the plan or its seat, and do not append the open design questions to
+routine status messages. Open it only once the maintainer says the brainstorm is done. The maintainer, 2026-11-02
+~15:0xZ: "We're not done discussing this plan yet. Don't keep jumping to try to create it. Wait until I tell you
+we're done brainstorming."
 
 ## 10. Fleet health, checked every tick
 
