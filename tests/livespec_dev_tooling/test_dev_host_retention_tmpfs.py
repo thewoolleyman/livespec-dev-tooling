@@ -49,6 +49,28 @@ def _tmp_consumers(*, tmp_root: Path, bulk: Path) -> tuple[Path, Path, Path, Pat
     return dead, live, old_pytest, new_pytest, oldest, newest
 
 
+def _mount_of(*, path: Path) -> str:
+    """The mount `path` resolves to, as the script's own `findmnt` check reads it."""
+    argv = ["findmnt", "-no", "TARGET,FSTYPE", "-T", str(path)]
+    return (
+        subprocess.run(argv, capture_output=True, check=False, text=True).stdout
+        if shutil.which("findmnt")
+        else ""
+    )
+
+
+def _on_root_filesystem(*, candidates: tuple[Path, ...]) -> Path:
+    """The first candidate on the root filesystem, where the script requires bulk dumps.
+
+    The script refuses a bulk-dump directory on any other mount. Which scratch
+    directory qualifies differs by host: pytest's base temp is under a tmpfs
+    /tmp on the dev host, and the checkout is on a separate volume in a gate
+    pod. Without `findmnt` the script skips the check, so any candidate does.
+    """
+    root = _mount_of(path=Path("/"))
+    return next(candidate for candidate in candidates if _mount_of(path=candidate) == root)
+
+
 def _hermetic_env(*, tmp_path: Path, tmp_root: Path, bulk: Path) -> dict[str, str]:
     """The run's environment, confined to the test's own directories.
 
@@ -82,11 +104,13 @@ def test_retention_reclaims_dead_tmp_scratch_pytest_and_oldest_bulk_dumps(
     """One run keeps a live session but bounds every new tmpfs consumer."""
     assert _RETENTION.is_file(), "the committed retention script must implement tmpfs cleanup"
     tmp_root = tmp_path / "tmp"
-    # The script refuses a bulk-dump directory on tmpfs, and pytest's base temp
-    # is under /tmp, which is tmpfs on the dev host; the checkout's ignored tmp/
-    # is on the root filesystem the script requires.
     (_ROOT / "tmp").mkdir(exist_ok=True)
-    bulk = Path(tempfile.mkdtemp(prefix="retention-bulk-", dir=_ROOT / "tmp"))
+    bulk = Path(
+        tempfile.mkdtemp(
+            prefix="retention-bulk-",
+            dir=_on_root_filesystem(candidates=(tmp_path, _ROOT / "tmp")),
+        )
+    )
     dead, live, old_pytest, new_pytest, oldest, newest = _tmp_consumers(
         tmp_root=tmp_root, bulk=bulk
     )
