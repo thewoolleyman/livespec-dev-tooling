@@ -5,6 +5,8 @@
 
 dev_host_retention_bin: /usr/local/sbin/livespec-dev-host-retention
 dev_host_retention_uv_bin: /usr/bin/uv
+# Only read to name the installed versions when the configured uv is missing.
+dev_host_retention_uv_installs_dir: "/home/{{ dev_host_retention_user }}/.local/share/mise/installs/uv"
 dev_host_retention_unit_dir: /etc/systemd/system
 dev_host_retention_service: livespec-dev-host-retention.service
 dev_host_retention_timer: livespec-dev-host-retention.timer
