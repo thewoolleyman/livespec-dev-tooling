@@ -1,1 +1,794 @@
-AGENTS.md
+# Agent instructions
+
+## Codex dogfooding (OpenAI Codex CLI/TUI)
+
+This repo's `/livespec:*` and orchestrator surfaces can be dogfooded from
+OpenAI Codex CLI/TUI, not just Claude Code. Unlike the Claude path (plugins
+enabled PER PROJECT via a committed `.claude/settings.json`), Codex plugin
+enablement is **HOST-WIDE**: each registration persists in `~/.codex/config.toml`
+and applies to every project on the host. Codex offers no project-scoped plugin
+enablement, so there is no committed-settings analogue for the Codex path.
+
+Install the three fleet plugins host-wide: livespec CORE (the artifact carrier
+that ships the spec-side prose and wrappers), the `livespec-driver-codex` Codex
+Driver (which supplies the `/livespec:*` operation surface over core's prose),
+and the selected orchestrator plugin:
+
+```bash
+# livespec CORE (spec-side prose + wrappers; no skills of its own):
+codex plugin marketplace add thewoolleyman/livespec
+codex plugin add livespec@livespec
+
+# The Codex Driver (supplies the spec-side /livespec:* operation surface):
+codex plugin marketplace add thewoolleyman/livespec-driver-codex
+codex plugin add livespec@livespec-driver-codex
+
+# The selected orchestrator plugin (ships its own Codex skills):
+codex plugin marketplace add thewoolleyman/livespec-orchestrator-beads-fabro
+codex plugin add livespec-orchestrator-beads-fabro@livespec-orchestrator-beads-fabro
+```
+
+Once installed, Codex operations are driven via `codex exec` and NAME-selected as
+`<plugin>:<op>` (for example, `livespec:next`,
+`livespec-orchestrator-beads-fabro:list-work-items`) rather than as
+`/`-prefixed slash commands. The distributed Drivers resolve their prose at
+runtime; no `AGENTS.md` skill-to-prose mapping is required. See
+`livespec/SPECIFICATION/contracts.md` §"Plugin distribution" and
+`livespec/SPECIFICATION/non-functional-requirements.md` §"Codex dogfooding
+contracts" for the authoritative install and resolution contracts.
+
+The Codex TUI picker displays skills by short name with the plugin as context.
+In `/skills` → `List skills` (or the `@` picker), search the operation name,
+for example `orchestrate`; the row renders as
+`orchestrate (livespec-orchestrator-beads-fabro)` with kind `Skill`. The
+colon-qualified form `livespec-orchestrator-beads-fabro:orchestrate` is still
+valid for prompt / `codex exec` name selection and model-visible skill
+references, but it is not the picker row operators should expect.
+
+## Progressive durable guidance
+
+This file carries the always-load instructions. Load the sibling guidance files
+only when their topic is active.
+
+**Match a trigger on the OBSERVABLE you are reading, not on your own framing of
+the task.** This index is the only thing standing between you and a file you
+need, and framing is its weak link: you will describe a task in your own words,
+and those words may not appear below. Before any decision that rests on a
+measured observable — a load average, a queue depth, a disk latency, a memory
+figure, a hit rate — name the observable and search this list for THAT word.
+Recorded because it failed on 2026-09-08: a session setting a factory dispatch
+width off a load average matched its own phrase "choosing concurrency" against
+this index, found nothing, and never opened `ci-node-capacity-reads.md` — whose
+trigger line named both a slot cap and a large load average. The document was
+adequate; the session's indexing of its own situation was not, and the cost was
+silent, because a throttle raises no error.
+
+The files:
+
+- Read `.ai/livespec-operation-gotchas.md` before running or editing
+  livespec revise/propose-change flows, spec heading coverage, or commit-prefix
+  classification logic — and, whatever your role, before capturing a path from
+  `ls` in a command substitution (`$(ls -d …)`, `$(ls -td … | head -1)`) or
+  reporting a surprising `No such file or directory`: `ls` is aliased to lsd
+  here, the symptom is a FALSE ABSENCE, and it has cost three different roles a
+  false observation across 42 days.
+- Read `.ai/fleet-and-secrets.md` before pushing any change under
+  `.github/workflows/` (it needs an exemption, a label and the wrapper), before
+  changing fleet coordination workflows,
+  maintainer signaling, GitHub App automation, or 1Password-backed secret
+  projection, and before relying on a session environment variable
+  (such as `LIVESPEC_PLAN_UNATTENDED`) inside a `with-livespec-env.sh` call —
+  the wrapper scrubs the caller's environment.
+- Read `.ai/ci-node-storage-tiers.md` before touching the CI runner node's
+  storage tiers (`ci-cache`, `ci-containerd`, `ci-workvols`), installing or
+  surveying NVMe hardware on the node, or running anything under
+  `ci-runner/k3s/phase2/storage-layout/` — the media-swap model, the link
+  survey that is the acceptance test for any card or socket change, and the
+  udev / fio / stale-copy traps that each cost real time on 2026-09-04.
+- Read `.ai/ci-node-capacity-reads.md` before setting ANY host's concurrency
+  or slot cap — the CI node's churn-slot cap `C`, a factory dispatch width, a
+  worker count — and before diagnosing "the node is slow" or a large load
+  average, or proposing CPU protection for k3s or the removal of a k3s
+  component. The trigger is the OBSERVABLE, not the machine: the method
+  generalizes to any host, and a 2026-09-08 drain throttled itself for hours
+  on the dev host reading load 17.5/18 as saturation when `mpstat` in the same
+  minute said 55% IDLE — why the
+  cap is throughput-derived rather than utilization-derived, why load average
+  is not CPU busy and `sar`'s 10-minute buckets hide bursts, why `k3s-server`
+  is already protected by cgroup parity, why `metrics-server` stays, and the
+  `iostat` column trap that fired a false alarm on 2026-09-06.
+- Read `.ai/gate-runtime-vs-harness-patience.md` before running `just check`,
+  committing product `.py`, or diagnosing a gate command that produced no
+  output — the commit aggregate can outlast the harness's 20-minute tool-call
+  ceiling, and a kill with no verdict is NOT a hook refusal.
+- Read `.ai/factory-span-receiver.md` before diagnosing a factory
+  `build.cargo-*` span that lacks an attribute the sandbox shim attaches, or
+  before naming "the sandbox pin" as the gate for factory-telemetry evidence —
+  the receiver that scrubs those spans is the DISPATCHING PROJECT's installed
+  orchestrator plugin build, installs are per project, and a running
+  dispatcher loop keeps its build until restarted (paid for 2026-09-07).
+- Read `.ai/honeycomb-query-credential.md` before running a Honeycomb query
+  from a script or timer, or before concluding that no credential can run
+  queries — `HONEYCOMB_CONFIG_KEY_LIVESPEC` reports `queries: false`, but
+  `HONEYCOMB_MCP_API_KEY_LIVESPEC` runs them through `mcp.honeycomb.io/mcp`
+  (a 2026-10-18 plan parked on a maintainer question it never needed). The same file also covers two traps of the `hcq.py` query helper: its JSON gets truncated when read from the wrapper's stdout, and an over-wide breakdown burns the shared query budget. It also gives the filters that count factory Codex implement spend.
+- Read `.ai/bulk-data-copies.md` before copying, migrating, or moving a data
+  tree between disks or hosts on any fleet machine — a container store, a
+  volume, a cache tier, a disk-to-disk move — and before reaching for `rsync`,
+  `cp -a`, or a hand-rolled parallel split to do it. `fpsync` is the standard
+  tool: measure the file count and layout first, pass `-lptgoD -HAX
+  --numeric-ids` (it rejects `-a`), log progress, and checksum only AFTER the
+  copy against a quiet source (paid for on hp-xubuntu, 2026-10-12).
+- Read `.ai/fabro-dispatch-diagnosis.md` before launching a factory dispatch
+  yourself (route it through the `petri-factory-on-gmktec` seat, never a direct
+  `drive impl:` call), before reading anything into a quiet or stuck factory
+  dispatch, before adding a ledger comment meant to
+  reach a running worker or to record a queued item's wait, or before claiming
+  a template token renders (or not) in a Fabro run — a bare `fabro ps` asks the
+  wrong server, `runnable` can mean an orphaned run that will never start, a
+  worker's brief is frozen at dispatch, a comment saying an item is "held"
+  makes petri's screen refuse it, and `fabro create` plus `fabro dump` shows
+  the resolved spec.
+- Read `.ai/false-green-gates-and-audits.md` before trusting a green gate
+  that disagrees with reality, writing a gate that replays a production step,
+  auditing `.livespec.jsonc` keys across the fleet, or re-running a coverage
+  report that died with `NoSource` — each records a plausible, error-free
+  wrong answer measured in this fleet.
+- Read `.ai/plan-resume-pointer-reads.md` before calling `resume_directive`
+  to inspect a plan, or before trusting a plan's `next_action` whose
+  `required_result` is an `item_comment` marker. The call persists a new
+  pointer when it reads the old one as satisfied, and on 2026-10-21 an
+  `item_comment` wait satisfied itself through its own progress-event comment,
+  so a read silently advanced epic mvalxq to a premature review step.
+- Read `.ai/factory-restart-cancels-runs.md` before any Fabro server restart,
+  engine upgrade or chain step that needs a factory with zero active runs. A
+  factory run is restartable: cancel the live runs through the server's
+  `POST /api/v1/runs/{id}/cancel` (no client has a cancel verb, and
+  `fabro rm --force` deletes the record), do the step, and re-dispatch them at
+  once. Never hold the fleet cap at 0 waiting for runs to end — on
+  2026-10-23/24 that cost about 1 h 50 min (maintainer direction 2026-10-24).
+- Read `.ai/already-satisfied-items.md` before filing a fix item from a
+  failure measured in a CONSUMING repository, or before closing an `active`
+  item whose fix is already on master. A stale consumer pin fakes a missing
+  fix (tlfc3w, 2026-10-24, spent a factory run proving a no-op), and neither
+  `accept` nor `reconcile-merged` closes an active item with no PR of its own.
+- Read `.ai/independent-host-replay-identity.md` before launching a session to
+  replay a host-captured proof (`host_verified`). A replayer started from your
+  own shell inherits `CLAUDE_CODE_SESSION_ID`, so `post-host-record` resolves
+  it to YOUR identity and refuses its verdict as a self-replay (c62xtb,
+  2026-10-25). Name this repository's GIT release tag in the record's
+  build, never an image tag, or the replay is silently not counted (jxepvj).
+  The same file holds the three-push capture recipe for a delegated-gate
+  carrier, and why a replayer's PID is no sign it has finished (r6qc2o,
+  2026-10-28).
+- Read `.ai/claude-transcript-usage-dedupe.md` before summing tokens or cost
+  out of Claude Code transcripts (`~/.claude/projects/**/*.jsonl`). One
+  response is written as several records that repeat the same `usage`, so a
+  plain sum is 2-3x too high. A 2026-10-26 scan put a judge's median input at
+  875k tokens; deduped by `message.id` it was 438k.
+- Read `.ai/herdr-tab-placement.md` before creating a herdr tab that has to sit
+  in a particular position, or before concluding herdr cannot move a tab.
+  `tab create` appends at the end. `tab.move` exists in the socket API, not in
+  the `herdr tab` CLI (corrected by the maintainer, 2026-10-26).
+- Read `.ai/coordinator-duties.md` before directing other seats as a
+  coordinator, before stating what a burn or spend fix is worth, before
+  retrying any check that failed intermittently, or before waiting on a seat's
+  "report". Rank spend only from measured Honeycomb data, fix a flake at its
+  root and never retry it, unblock a `blocked` seat's picker every tick, and
+  have the owning session decide before the maintainer is asked (maintainer
+  corrections, 2026-10-31).
+- Read `.ai/janitor-failed-output.md` before diagnosing a `failed at
+  janitor-post-merge` or a red `check-per-file-coverage` in a janitor checkout,
+  or before saying a janitor discarded its output. It did not: the full pytest
+  output is in `tmp/janitor-failed-output/*.json`, and the checkout's
+  `.pytest_cache/v/cache/lastfailed` names the failing test in two seconds. A
+  2026-10-27 session searched for `*.log`, found nothing, and had to retract
+  "the janitor discards output" to the coordinator.
+- Read `.ai/stale-plugin-build-path.md` before saying an orchestrator verb,
+  function or flag does not exist, or before running a plugin script from a
+  skill's base directory. A long session's skill path can be an OLDER build
+  than this project's install. On 2026-11-01 a session reported that no
+  `classify-tier` verb existed, and the coordinator ruled on that report. The
+  verb had shipped in the installed build.
+
+## Backlog drive — this repo has no foreman seat
+
+The open backlog of this repository is owned by the plan
+`dev-tooling-backlog-drain` (`plan/dev-tooling-backlog-drain/`, ledger epic in
+`associated_work_item_id`). **The drive mechanism is the `drain-backlog`
+skill**, read by absolute path:
+
+```text
+/data/projects/livespec-overseer/.claude/skills/drain-backlog/SKILL.md
+```
+
+Read that skill in full, then this plan's charter,
+`plan/dev-tooling-backlog-drain/research/001-charter-dev-tooling-backlog-drain.md`,
+which is now only the DELTA — what is true of this drive and nothing else. The
+skill owns preconditions, the snapshot and its tiers, triage batching and the
+sorting rule, factory-only execution and the exemption enum, the failed-run
+decision, the detached probe-gated engine, the loop, what may be filed,
+handoffs, and the evidence gotchas. Do not restate any of that here or there.
+
+Four rules are repeated in this always-load file on purpose, because a rule
+that lives only in a document you must remember to open is the layer that
+fails alone:
+
+- **Do not invoke `/livespec-overseer:foreman` for this repository**, and do
+  not start a tmux worker session for a work item. The console repo's
+  `retire-overseer-and-redesign-control-plane-around-console` plan retired tmux
+  as a transport (its decisions D1, D4, D5); this repo applies that now. The
+  resident foreman role, pane rosters, `foreman-act` proposals, and escalation
+  JSON files are not used here.
+- **The scope is the plan's frozen 258-item snapshot**,
+  `plan/dev-tooling-backlog-drain/research/002-snapshot-2026-09-06.json`, and
+  NOT `tmp/drain-backlog/snapshot.json` — that file exists in this repo too
+  (210 ids, a later freeze) because another actor runs the same skill against
+  this tenant. Do not read one for the other. New items are admitted only under
+  SKILL.md §6; anything else is a `PARKING LOT` comment on the plan epic.
+- **Resume from the ledger, and resume INTO THE LOOP.** Run
+  `/livespec-orchestrator-beads-fabro:plan dev-tooling-backlog-drain`, take the
+  epic's typed `next_action`, and in the SAME turn invoke `/loop` with no
+  interval (SKILL.md §5 carries the tick and the verbatim loop prompt). A
+  session that has resumed this plan and is not looping is STALLED BY
+  DEFINITION: it has no watcher, so nothing it dispatched can reach it.
+  Recorded 2026-09-06 after the first resume wrote a handoff and parked, and
+  the maintainer had to notice by hand.
+- **Engines are DETACHED and gated on the measured probe, never on a clock.**
+  Launch through `setsid nohup` so a run outlives the session, and hold a
+  launch only for the credential probe (`dispatcher.py claude-cred-status
+  --json`, `condition: usable`) or master CI. A "resets at HH:MMZ" in a handoff
+  or a 429 body is a claim, not a measurement; never write a "sleep until
+  HH:MM" resumer. Recorded 2026-09-06 after three clock resumers held an idle
+  factory for two hours with a usable credential and no exhaustion record.
+
+## Decision authority — when to ask, proceed, or self-resolve
+
+Fleet-standard guidance, ported from `livespec/AGENTS.md` ("When to ask,
+proceed, or self-resolve") and `livespec-orchestrator-beads-fabro/AGENTS.md`
+("Drive authorized work to completion; do not over-ask"). The default is to
+decide and report, not to escalate.
+
+- **Drive authorized work to completion; do not over-ask.** When the maintainer
+  names a goal and says to finish or continue it, execute the WHOLE arc —
+  implement, dispatch, PR, merge, iterate, archive — without pausing to confirm
+  each already-authorized step. An operator-flow step that says "present options
+  and let the user select" is satisfied by a standing directive once the goal is
+  named; do not re-prompt. Default to acting, then reporting outcomes.
+- **Research before gating.** If a question is answerable by reading the code,
+  the spec, the docs, or by testing on a live system, do that, decide,
+  implement, and report for objection. Reserve gates for genuine product or
+  values calls, irreversible or outward-facing actions, and secret or
+  host-mutation authorization.
+- **Only ask on genuine doubt, one thing at a time.** Self-resolve trivial
+  wording fixes, internal-consistency repairs, and items clearly aligned with
+  established preferences, presenting each with its disposition. When a gate is
+  warranted, ask exactly one question per turn.
+- **One investigation, one finding, one question.** When a focused investigation
+  surfaces unrelated discrepancies, finish the original question first and
+  surface only the load-bearing finding; log side observations briefly. Cosmetic
+  drift never blocks on its own.
+- **Prescribed destructive ops are pre-authorized.** When a destructive git
+  operation is the codified mechanism of an adopted workflow — the
+  `git commit --amend` of the Red→Green step, for instance — the adoption is the
+  authorization. Keep per-instance gating for ad-hoc `--amend`, force-push,
+  `reset --hard`, or `branch -D` on unmerged branches.
+
+Two rules this repository earned the hard way, from the 2026-08-20 stall
+investigation:
+
+- **An unratified filter inside a check is conformance, not ratification.**
+  Narrowing, excluding, or filtering inside an enforcement check to match what
+  the ratified spec already says is a conformance fix — implement it and report
+  it. It only becomes a ratification question when the change would make the
+  check assert something the spec does not.
+- **A question you can answer with a recommendation is a finding, not a
+  maintainer question.** If you can state the options, the costs, and which one
+  you would pick, you have already done the deciding work. Decide it, record the
+  reasoning where the work is tracked, and report it as decided.
+- **"Decide them from a fresh context" means the fresh session decides.** When
+  a handoff records that the maintainer asked for a plan's blockers to be walked
+  and DECIDED from a fresh context, the new session's uncontaminated judgment is
+  the decision mechanism; a research note that already carries a recommendation
+  per item is a set of findings, not a questionnaire. Read the maintainer's
+  direction in the handoff, not the prior session's paraphrase of it into a
+  next action — if the two disagree, the direction wins. Decide each item, do
+  the research the decision needs (on 2026-09-04 one of six rested on a
+  misidentified blocker and changed on verification), record each answer where
+  the item names it, execute the consequences, and report for objection. The
+  2026-09-04 resume opened by putting decision 1 back to the maintainer as a
+  picker and was told, bluntly, that this was the wrong thing.
+
+## Ordering — confirm the reader before you write
+
+The decision-authority section above says WHO decides. This one says WHEN a
+write is safe to make:
+
+> **Never write durable state into a component you have not first confirmed is
+> running the code that preserves it.**
+
+Stated alone this reads as obvious. It is recorded because it is not: it cost
+real work three times on 2026-08-20, in three unrelated subsystems, each time
+rediscovered from scratch by a session that would have agreed with the rule if
+asked. In two of the three, the reversed order DESTROYED SOMETHING RECOVERABLE —
+that is what separates this from an ordinary sequencing preference. Writing
+early is not merely wasted; it can consume the budget that would have let you
+retry.
+
+- **Arming a check ahead of adoption — the one this repo actually paid for.**
+  The Railway decoupling landed in `46c5dab`, turned FIVE repos red, and was
+  reverted in `f4247110`. `plan/rop-railway-enforcement/` now carries the
+  standing constraint "Do not arm the check anywhere", because a check armed
+  before the repos it judges have adopted the shape is a check writing verdicts
+  into a fleet that cannot satisfy them. Adoption first, then arming.
+- **Writing a seat anchor into a seat mid-build.** A foreman wrote a console
+  seat's anchor epic at 05:49Z into a seat still executing a build whose
+  `register_foreman_track` delete-and-recreates that row. The write was doomed
+  at the moment it was made; the epic died at the 06:29:50Z tick, and the
+  failure presented as nothing having happened at all — the worst shape, because
+  silence is indistinguishable from success.
+- **Re-running acceptance against an unfixed matcher.** `reconcile-merged` must
+  run only AFTER the criteria defect that caused a false rework is fixed. Run
+  against unfixed criteria it fails identically — but unlike the first failure,
+  that one REACHES the matcher and spends the last rework attempt, converting a
+  recoverable item into a blocked one.
+
+- **Refreshing the disk copy and calling the mounted ConfigMap converged.**
+  On 2026-09-06 a session ran `install-converge-unit.sh` and the sccache
+  converge on the node, verified "warm-cache-populate.sh == git", and recorded
+  the populator's BGSAVE half as live. The CronJob mounts the
+  `warm-cache-populate` ConfigMap, which only `converge-warm-cache.sh` writes;
+  it stayed at the previous SHA for two hours while the merged code sat on
+  disk. Nothing errored. The reader is the ConfigMap: verify
+  `kubectl get configmap -n <ns> <name> -o jsonpath='{.data.<file>}' | sha256sum`
+  against git, not the boot-durable copy, and re-apply just the drifted
+  ConfigMap with the `--dry-run=client -o yaml | kubectl apply -f -` form its
+  converge script uses (livespec-dev-tooling-efqeip.3, 08:08Z comment).
+
+How to apply it: before a durable write, name the component that will hold the
+state and establish that the code it is currently running is the code that
+preserves it. "It was deployed" is not that; "the version now serving is the
+version with the fix" is. When you cannot establish it, the honest move is to
+wait — waiting is not a maintainer question. And note the shared failure mode
+across all three: the destructive case is SILENT, so the absence of an error is
+not evidence the write survived.
+
+## Beads runtime prerequisites
+
+This repo's work-item store is a per-repo beads/Dolt TENANT on the shared
+family dolt-server — NOT JSONL files. A clone reaches its tenant only when ALL
+of the following hold:
+
+- **`bd` CLI, pinned**, through the public lifecycle-guard entry point at
+  `/usr/local/bin/bd`. This repo's mise config MUST NOT declare or install
+  `bd`: an activated mise tool or a regenerated shim can shadow that policy
+  boundary. When `LIVESPEC_BD_PATH` is set it MUST point at `/usr/local/bin/bd`;
+  otherwise `bd` on `PATH` MUST resolve there.
+- **A running Dolt `sql-server`** reachable over **TCP `127.0.0.1:3307`**.
+  Family tenants force TCP, not the unix socket: `.beads/config.yaml` carries
+  `dolt.*` host/port keys and NO `socket` key.
+- **The tenant password** in the environment as a single bare
+  `BEADS_DOLT_PASSWORD`, injected by the wrapper below — never a per-tenant
+  variable, never a value read out of `.beads/` or `.livespec.jsonc`. Probe
+  secrets only (`printenv NAME | wc -c`); never echo a value.
+- **The `.beads/` pointer files**: `config.yaml` (committed) and
+  `metadata.json` (gitignored, regenerable). NEVER run `bd init` in a primary
+  checkout or a worktree — it auto-commits and clobbers `.beads/`.
+
+### Ledger access needs the credential wrapper
+
+The tenant password is projected from 1Password rather than stored on disk. A
+bare `bd` therefore fails with:
+
+```text
+Error: failed to open database: failed to check if database
+"livespec-dev-tooling" exists on server 127.0.0.1:3307:
+Error 1045 (28000): Access denied for user 'livespec-dev-tooling'
+```
+
+That signature is a MISSING CREDENTIAL, not a store outage, not a corrupt
+database, and not a reason to start diagnosing the Dolt server. Re-run through
+the installed wrapper:
+
+```bash
+/usr/local/bin/with-livespec-env.sh -- bd show <work-item-id>
+```
+
+Three sessions independently lost a diagnostic cycle to this on 2026-08-19 and
+2026-08-20. Read `.ai/fleet-and-secrets.md` for the full projection story
+(1Password environment id, encrypted service-account token, wrapper factory
+repo) before changing anything about how the secrets are injected.
+
+### A second loud signature: the wrapper's own `op` call failed
+
+A `bd` command run through the wrapper can also fail with:
+
+```text
+[ERROR] <timestamp> (500) Internal Server Error: Server experienced a fatal error.
+```
+
+That signature belongs to the WRAPPER, not to the Dolt server. The wrapper
+calls the 1Password CLI to fetch the credential before `bd` starts. When the
+1Password service answers HTTP 500, the wrapper fails and `bd` never runs. The
+string is compiled into the 1Password CLI (`strings /usr/local/bin/op` contains
+it). A Dolt or MySQL failure looks different: it reads `Error NNNN (SQLSTATE)`,
+like the 1045 above.
+
+Remedy: check whether the write landed (read it back, with stderr kept
+separate), then retry once. Do not start diagnosing the Dolt server. Measured
+2026-10-16 at 23:02:07Z and 23:10:31Z on two `bd comment` writes to this
+tenant. Neither write landed, an immediate retry of each succeeded, reads kept
+working throughout, and `doltdb.service` logged no error, fatal or panic in
+either window. Reads keep working because the wrapper serves most calls from
+its five-minute cache and only calls 1Password on a cache miss. If this
+recurs often, it belongs to the 1password-env-wrapper owner (retry with
+backoff when `op` returns a 5xx), not to this repository or to dolt-server.
+
+### Two SILENT signatures beside that loud one
+
+`Error 1045` is an ERROR: it stops the caller, so it teaches itself. The two
+below do not error. Each returns a VALID-LOOKING SUCCESS carrying a wrong
+answer, and both wrong answers have the same shape — an empty or short result
+that a caller reads as "there is nothing there". A reader who has learned only
+the loud signature will not recognise either.
+
+- **An empty embedded store answering instead of the tenant.** A query served
+  by a stray `embeddeddolt/` store does not fail; the empty database returns an
+  empty RESULT, so "item not found" or a zero-row list is indistinguishable
+  from a true answer. The tell is an `embeddeddolt/` directory beside `.beads/`
+  rather than inside it — `bd` resolves that path against the process cwd, so
+  the name is right and the parent is wrong. The root `.gitignore` now covers
+  it (livespec-dev-tooling-to6hh2), which stops the litter but NOT the silent
+  answer: when a query reports emptiness, confirm the wrapper was used and the
+  answer came from `127.0.0.1:3307` before believing it.
+- **`bd list` omits closed items unless the status filter is widened** — an
+  id's absence from a default listing is not evidence the item does not exist.
+  Measured on this tenant 2026-08-21: `bd list --limit 0 --json` returned 227
+  items and ZERO closed, while `bd list --all --limit 0 --json` returned 537,
+  309 of them closed. The default view hid 58% of the ledger. Any "no item
+  covers X" or "X is not in the ledger" claim taken with a plain `bd list` is
+  unsound. The canonical widened form is `--status all` (see the catalogue
+  below); `--all` and `--status all` were compared record by record across all
+  523 records of this tenant on 2026-08-21 and returned identical id sets.
+
+### The beads read-surface trap catalogue
+
+Recorded in `bd-ib-cfncp5` and ported here because THIS tenant is where they
+were measured. Every one of them returns a clean, plausible, WRONG answer —
+none errors, so none teaches itself. An agent grooming this ledger meets them
+before it meets any of them by surprise.
+
+- **`--status all` is load-bearing: without it `bd list` HIDES EVERY CLOSED
+  ITEM**, and reports the truncated set as a normal non-empty result with no
+  warning. This is the same fact as the bullet above, stated as the rule the
+  code already follows: `BeadsClient.list_issues` emits the `--status all`
+  form, so an operator surveying with a bare `bd list` and the code are
+  reading different ledgers. A prior-art scan MUST use it — `closed` is where
+  "this was already built" and "the maintainer already ruled on this" live.
+- **`bd list --status open` matches NOTHING here.** This store holds livespec
+  lifecycle statuses — `backlog`, `ready`, `blocked`, `active`, `acceptance`,
+  `pending-approval`, `closed`. The beads-native `open` / `in_progress` names
+  are normalized away, so a native-name filter silently returns an empty set
+  rather than erroring.
+- **`bd ready` is DEAD here, for that same reason.** It filters on the
+  beads-native `open` status this store never uses, so it prints
+  `✨ No open issues` and exits 0 while ready work exists. Measured 2026-08-19
+  on a family tenant: `bd ready --json` returned `[]` against 18 items at
+  `status == ready`. `--limit 0` changes nothing. Do not use it to choose
+  work — use the orchestrator plugin's `next` operation.
+- **Do NOT substitute a `status == ready` filter for `next` either.** `ready`
+  is a lifecycle STATUS, not a computed readiness, so filtering on it IGNORES
+  BLOCKERS and picks work that must not start yet — silently, because the row
+  looks exactly like genuinely-ready work. Use the filter to survey what
+  exists, never to choose what to start.
+- **Enumerating an epic's children: NEITHER the id-prefix form NOR the
+  `parent` field is complete on its own — the answer is their UNION.** The
+  store links children two ways and each hand-rolled filter is blind to one.
+  An explicit `parent-child` dependency edge populates `parent` in
+  `bd list --json`; the implicit dotted-id hierarchy does NOT — `bd` honours
+  it (it refuses to add a redundant edge) while the JSON listing still reports
+  `parent: null`. Measured 2026-08-19: filtering on `parent == <epic>`
+  returned 22 children and silently omitted a 23rd that exists and is
+  `backlog`.
+- **A key missing from a raw JSON record does NOT mean the value was lost.**
+  `bd`'s Go serializer omits any field holding its zero value rather than
+  emitting `null` or `[]`. Measured 2026-08-21 across all 523 records of THIS
+  tenant: 25 distinct keys appear and only 10 appear on every record —
+  `labels` on 243, `metadata` on 183, `dependencies` on 194, `parent` on 116.
+  A grooming pass saw `labels` absent on 280 of 523 and reasonably concluded
+  the listing had dropped them; three controls (server-side `--label` counts
+  versus client-side counts, symmetric difference 0 in every case) proved it
+  had not. There IS a real way to lose labels — the `--skip-labels` flag — and
+  nothing in the normal path passes it.
+- **A dependency row's key names differ BY SURFACE, and neither spelling
+  generalizes.** Measured 2026-08-30 on this tenant: all 500 dependency rows
+  from `bd list --status all --json` carry `depends_on_id` + `type` and none
+  carries `id` + `dependency_type`, while the same edge read through
+  `bd show <id> --json` carries `id` + `dependency_type` and neither of the
+  others. An accessor written from one surface reads a live edge as dangling
+  on the other. Print `sorted(row.keys())` before indexing.
+- **The dependency array is NOT a blocker list.** Measured 2026-08-21 over all
+  261 dependency rows in this tenant: `parent-child` 116, `blocks` 93,
+  `relates-to` 26, `discovered-from` 23, `related` 2, `duplicates` 1 — so 168
+  of 261 rows (64%) are NOT blockers, and a filter treating the array as one
+  is wrong for the majority of its own input in the direction of INVENTING
+  blockers. Prefer the orchestrator's `list-work-items --json` projection,
+  whose `depends_on` is blocks-only and whose records are dense (no
+  `omitempty` sparseness), to any raw per-item read. Its `parent` is populated
+  from the native field and the `parent-child` edge, so it still inherits the
+  dotted-id blind spot above: it is the right surface for an item's parent and
+  is still NOT a complete child enumeration.
+
+## Agent prerequisites for plugin work
+
+When investigating or changing anything related to the Claude Code plugin
+installation, marketplace, or distribution, establish execution context FIRST —
+do not assume how the system works:
+
+1. Run `claude plugin marketplace list` to see which marketplaces are
+   configured and whether they point to local files or remote repos. Changes to
+   a local `marketplace.json` do NOT affect installs from a remote GitHub
+   marketplace.
+2. Trace where the actual install command fetches from (local vs remote) before
+   changing anything, and verify your change affects that code path.
+3. For remote marketplaces, push to GitHub then test; for local, use
+   `/plugin marketplace add ./.claude-plugin/marketplace.json`. Never test local
+   changes against a remote marketplace and assume they apply.
+
+The Codex equivalent of step 1 is `codex plugin marketplace list`; see
+"Codex dogfooding" above for why enablement there is host-wide rather than
+per-project.
+
+## Daily commands
+
+- `just bootstrap` — first-touch setup on a fresh clone; idempotently sets
+  `livespec.primaryPath`, installs the canonical commit-refuse hook at
+  `.git/hooks/pre-commit` + `.git/hooks/pre-push`, installs lefthook hooks,
+  registers `~/.worktrees` in mise's `trusted_config_paths`, and resolves
+  plugin dependencies.
+- `just check` — the full enforcement aggregate (lint, types, tests, coverage,
+  AST checks). It is the load-bearing safety net; it runs locally, in
+  pre-push, and in CI. Dispatch it DETACHED — see
+  `.ai/gate-runtime-vs-harness-patience.md`; the commit aggregate can outlast
+  the harness's tool-call ceiling and a kill produces no verdict.
+- `just gate-start` / `just gate-wait <run-id>` — the detached runner for any
+  gate command. `gate-wait` exits with the gate's own exit code, or `75` for
+  `DIED_WITHOUT_VERDICT`.
+- `just worktree-create <branch>` — the only sanctioned way to create a
+  worktree; see "Repository mutation protocol" below.
+
+## Revise co-edit discipline — `tests/heading-coverage.json`
+
+Every revise pass that adds, changes, or removes a `## ` heading in any spec
+file MUST update `tests/heading-coverage.json` in the same change so the
+heading-coverage map stays in lockstep with the spec. Edit it in the revise
+COMMIT, not through `resulting_files[]`: the revise CLI only accepts paths that
+exist under the spec target, and `tests/` is outside it. Diff the proposed `## `
+heading set against the current spec file's H2 set; add an entry for each new
+heading, and drop entries for removed headings. `check-heading-coverage` is the
+gate that catches a pass that forgot.
+
+A new entry may be a spec-first `"test": "TODO"` row, but pre-commit holds it to
+two more rules, and each one refuses the commit (both measured on the v097
+revise, 2026-10-26):
+
+- **The `reason` must name the tier the owed test runs at**, plus the work item
+  that owns it. For example: "A real test at the integration tier or above is
+  owed for this heading: … livespec-dev-tooling-7enfyd owns it." Without the
+  tier, the refusal reads `does-not-acknowledge-an-owed-test` with
+  `missing: tier`.
+- **Register the row in the debt register.** Run
+  `just generate-heading-coverage-debt-register` and stage
+  `tests/heading-coverage-debt.json`. The register is generated, so never edit it
+  by hand. Without it, `check-heading-coverage-debt-register` refuses with
+  `unregistered_todo`.
+
+Read the commit gate's `VERDICT` line before you push. A backgrounded
+`gate-wait … | tail` exits 0 even when the gate refused, because a pipe's exit
+code is the tail's. On v097 that sent a branch to the remote with no revise
+commit on it.
+
+## Repository mutation protocol
+
+Every repo change uses a worktree → PR → merge → cleanup path. Treat
+leaving dirty state, committing on the primary checkout, or asking the
+user whether to commit as failures of the workflow, not as acceptable
+stopping points.
+
+1. Confirm the primary checkout before editing:
+
+   ```bash
+   git -C /data/projects/livespec-dev-tooling config --get livespec.primaryPath
+   git -C /data/projects/livespec-dev-tooling status --short --branch
+   ```
+
+2. If the change will modify tracked files, create a dedicated worktree
+   from the primary checkout's `master` and do all edits there. Every
+   fleet worktree lives under the per-user root `~/.worktrees/<repo>/<branch>`
+   (never a peer of the clones in `/data/projects`); `just bootstrap`
+   registers `~/.worktrees` in mise's `trusted_config_paths`, so a
+   freshly created worktree's `.mise.toml` auto-trusts and the first
+   `mise exec` inside it never stops on the "config not trusted" prompt:
+
+   Create it with the worktree-discipline pack's recipe, which adds the
+   worktree under that root, provisions the gitignored pack into it, and
+   runs the hydrate hook (run it from the primary checkout):
+
+   ```bash
+   mise exec -- just worktree-create <branch>
+   ```
+
+   A raw `mise exec -- git -C /data/projects/livespec-dev-tooling worktree add -b <branch>
+   "$HOME/.worktrees/livespec-dev-tooling/<branch>" master` also yields a usable
+   worktree — the pre-commit and pre-push hooks install the pack before
+   any gate reads it, so the worktree can commit and push with no
+   `just bootstrap` — but it skips hydration, so prefer the recipe.
+
+3. Use `mise exec -- git commit ...` and `mise exec -- git push ...` so
+   the mise-managed lefthook hooks actually run. Never pass
+   `--no-verify`; if a hook fails, fix the cause or halt with the
+   failure.
+4. Open a PR, wait for required checks, and merge through the PR using
+   the repo's rebase-merge discipline.
+5. After merge, refresh `/data/projects/livespec-dev-tooling` to
+   `origin/master`, remove the feature worktree, delete the local
+   branch, and verify the primary checkout is clean on `master`.
+
+Do not leave orphaned worktrees. If a session must stop before cleanup,
+record the active worktree path, branch, PR, validation state, and next
+action in the relevant handoff document.
+
+## Red-Green-Replay commit protocol
+
+Product `.py` changes are committed via a 2-step single-commit TDD ritual,
+enforced by the `red_green_replay` commit-refuse hook (it inspects the staged
+tree and writes `TDD-*` trailers). The final result is ONE commit carrying the
+test, the impl, and both trailer sets.
+
+1. **Red commit.** Stage the test file ALONE — no impl — and commit with a
+   `fix:`/`feat:` subject. The hook runs pytest on the staged tree; the staged
+   test MUST fail on pytest (non-zero exit). An `ImportError` or a collection
+   error counts as a failure to the hook, BUT you SHOULD prefer a genuine
+   assertion failure so Red proves the behavior is actually unimplemented
+   rather than merely unimportable — see the new-module stub technique below.
+   It records `TDD-Red-*` trailers (test path, failure reason, test-file
+   checksum, output checksum, captured-at).
+   - Gotcha: the impl must be UNMODIFIED on disk at the Red commit, because the
+     hook's pytest reads the on-disk module. If the impl already carries the
+     change the test passes, and the hook rejects with `test-passed-at-red`.
+2. **Green amend.** Stage the impl and run `git commit --amend`. The hook sees
+   the `TDD-Red-*` trailers + the staged impl, re-runs the SAME test (now
+   passing), and records `TDD-Green-*` trailers. The test file bytes MUST be
+   byte-identical across the Red→Green pair; to change the test, author a fresh
+   Red commit.
+
+### Both legs run the full aggregate — run them DETACHED
+
+Either leg can outlast the harness's 20-minute tool-call ceiling, and when it
+does the kill produces NO verdict and looks exactly like a hook refusal. Dispatch
+gate commands through the detached runner instead of a bare foreground call:
+
+```bash
+run_id=$(mise exec -- just gate-start -- mise exec -- git commit --amend --no-edit)
+mise exec -- just gate-wait "$run_id"     # background THIS; killing it is harmless
+```
+
+`gate-wait` exits with the gate's own exit code, or **75** for
+`DIED_WITHOUT_VERDICT` — the state that says the gate did not finish, which is
+neither a pass nor a refusal. Never infer a verdict from silence. Read
+`.ai/gate-runtime-vs-harness-patience.md` before diagnosing a quiet gate.
+
+### New-module stub technique (avoiding false reds)
+
+When the impl module under test does NOT exist yet, the natural Red would be an
+`ImportError` or a collection error rather than an assertion failure. The hook
+accepts that as a failing Red, but it does not prove the behavior is
+unimplemented — only that the module is unimportable. To make Red fail on a
+genuine assertion instead:
+
+1. At Red time, create the impl module as a minimal **stub** on disk — enough
+   that the test imports and runs, but its assertion FAILS (e.g. a function
+   that returns a wrong/sentinel value, or raises `NotImplementedError` only
+   when that still yields an assertion failure rather than a collection error).
+2. The stub must NOT make the test pass — a passing test at Red trips the
+   hook's `test-passed-at-red` gate.
+3. Then the **Green amend** replaces the stub with the real implementation that
+   makes the assertion pass.
+
+This keeps Red honest: it proves the behavior is unimplemented, not merely that
+the module is missing.
+
+**Exempt:** changesets with no product `.py` (docs, spec, work-items, shell,
+config) use `chore(...)` / `docs(...)` / `chore(spec):` subjects and skip the
+ritual entirely. Always use `mise exec -- git ...` so the hooks fire; never
+pass `--no-verify`.
+
+### The server-side revert — this protocol and ci-gate-discipline reconciled
+
+The two directives read together, because each is incomplete without the other:
+
+- livespec's ci-gate-discipline directive (`ci-gate-discipline.md`, in that
+  repo's `.ai/` guidance tree) MANDATES that when master CI is red and
+  local commits are blocked by that red, the revert is created SERVER-SIDE —
+  through the forge's own revert API — precisely because no local hook mediates
+  it. It forbids adding any lever, flag or severity knob without exception.
+- This protocol's commit-range gate requires TDD trailer evidence on every
+  commit touching product impl `.py`, and those trailers are stamped by the
+  local hook.
+
+A server-side revert cannot carry trailers BECAUSE no local hook mediates it,
+which is the property the directive requires it to have. Read naively the two
+rules are mutually blocking, and on 2026-08-22 in livespec-overseer they were:
+PR 1630 was a server-side revert created exactly as directed and was refused by
+`check-red-green-replay` while the repo sat dispatch-dead.
+
+They are now reconciled IN CODE. The range gate exempts a commit that verifies
+against GitHub's pinned web-flow signing key AND is byte-identical to the
+reverted commit's parent at every product impl `.py` path it touches. Both
+halves are required; the exemption is keyed on evidence an agent cannot
+fabricate, NEVER on a subject line, and it transfers evidence (the restored
+bytes already earned trailers on the commit that introduced them) rather than
+waiving it. It is the only exemption, and it does not reopen the lever this
+protocol and `ci-gate-discipline.md` both forbid.
+
+⛔ Do NOT "fix" a refused revert by exempting a subject prefix, by exempting the
+range while master is red, or with `LIVESPEC_CHECK_SKIP`. All three are
+forgeable carve-outs an agent can produce at will. Read
+`docs/server-side-revert-exemption.md` before touching the exemption, the range
+gate's remedy hint, or `_red_green_replay_revert.py`; it also carries the
+reciprocal paragraph that still has to land in the livespec repo's own copy
+of that directive.
+
+## Stop the line for breakages
+
+**Stop the line for breakages.** When shared factory or fleet tooling is
+BROKEN — a bad model/adapter config, a stale-but-fixable plugin build a session
+dispatches through, a mint/credential outage, a gate wedged by a defect — HALT,
+fix the root cause or notify its owner and WAIT for the fix, and resume only on
+the NORMAL path once the fix rolls out through the ordinary channel (release →
+`ensure-plugins` → reload → normal dispatch). Never pin a build, re-route, or
+otherwise route around a breakage to keep your own work moving: a broken-window
+workaround normalizes the outage, hides it from a real fix, and validates only
+your private path, not the one every other session and fleet member uses. A
+transient (a rate-limit window that resets, an intermittent ENOSPC) is waited
+out and retried on the normal path; a permanent tool limitation is designed
+within — neither is a bypass. The two shapes already recorded in this repo's
+guidance are the positive cases, not exceptions: the detached gate runner in
+`.ai/gate-runtime-vs-harness-patience.md` designs WITHIN the harness's tool-call
+ceiling — a permanent limitation — without weakening a single verdict, and the
+fix order in `.ai/factory-span-receiver.md` (update the plugin in the
+dispatching project, restart its loop, THEN dispatch) IS the normal-path resume,
+never a pinned build. Fleet source: the livespec `agent-disciplines.md`
+discipline §"A factory or tooling BREAKAGE stops the line" (maintainer ruling
+2026-09-10).
+
+## CI runner routing
+
+This repo's gating CI reads the `CI_RUNNER_LABELS` repository variable
+directly at each gating job's `runs-on`, with an inline
+`|| '["ubuntu-latest"]'` fallback — the same pattern the other fleet repos on
+self-hosted capacity use, and the posture ratified in
+`SPECIFICATION/constraints.md` §"CI matrix shape" (v048). Reverting to hosted
+is MANUAL: set the variable back to `["ubuntu-latest"]` or delete it.
+Real production traffic on the `livespec-dev-tooling-k3s` scale set was cut
+and proven 2026-08-18 (livespec-s43svm.23), completing the fleet's 8-of-8
+k3s cutover sequence (livespec-s43svm.16).
+
+This replaced a two-probe health-check router (`select-ci-runner` calling
+`reusable-ci-runner-router.yml`, plus the `ci-runner-health` composite
+Action), retired as `livespec-s43svm.23` because it CANNOT work against ARC
+scale sets: `gha-runner-scale-set` runners register with an EMPTY label array,
+so a label-subset probe never matches them, and the sets run `min-runners: 0`,
+so an idle set has zero registered runners by design. Left in place it failed
+its probe on every run and silently routed every job to hosted capacity
+regardless of `CI_RUNNER_LABELS`.
+
+Do NOT reintroduce a pre-flight label probe for ARC capacity. If automatic
+failover is ever wanted again, it needs a mechanism that does not depend on
+scale-set runners carrying labels or on a runner existing while the set is
+idle.
+
+See `docs/ci-runner-failover.md` for the operator-facing routing and fork-safety
+detail, and
+`livespec/plan/fleet-ci-runner-pool/research/k3s-arc-kueue-migration.md`
+("Real-traffic cutover log") for the cross-repo record.

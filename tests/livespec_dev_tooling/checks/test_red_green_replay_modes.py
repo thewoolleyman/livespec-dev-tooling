@@ -13,7 +13,12 @@ leading underscore stripped).
 
 from __future__ import annotations
 
+import hashlib
+import subprocess
 from pathlib import Path
+from unittest.mock import Mock
+
+import pytest
 
 __all__: list[str] = []
 
@@ -50,6 +55,160 @@ def test_red_green_replay_modes_helpers_importable() -> None:
     assert callable(module._handle_red_mode)  # noqa: SLF001
     assert callable(module._handle_green_mode)  # noqa: SLF001
     assert callable(module._handle_suite_green_mode)  # noqa: SLF001
+
+
+def test_red_leg_uses_a_delegated_verdict_and_records_its_job_evidence(
+    *, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A delegated Red learns failure from the Job without running pytest locally."""
+    from livespec_dev_tooling.commit_replay_delegate import ReplayVerdict
+
+    modes = _load_modes()
+    assert hasattr(modes, "run_replay")
+    test_path = tmp_path / "tests" / "test_red.py"
+    test_path.parent.mkdir()
+    test_path.write_text("def test_red() -> None:\n    assert False\n", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    local_pytest = Mock()
+    recorded: list[tuple[str, str]] = []
+
+    def delegated(*, repo_root: Path, pytest_argv: list[str]) -> ReplayVerdict:
+        assert repo_root == tmp_path
+        assert pytest_argv == ["pytest", "tests/test_red.py", "--tb=no", "-q"]
+        return ReplayVerdict(
+            local=False,
+            reason="the Job reported a failing Red test",
+            job_name="gate-red-1",
+            tree_hash="a" * 40,
+            exit_status=1,
+            output_checksum="sha256:remote-output",
+        )
+
+    def record(*, msg_path: Path, trailers: tuple[tuple[str, str], ...]) -> None:
+        assert msg_path.name == "COMMIT_EDITMSG"
+        recorded.extend(trailers)
+
+    monkeypatch.setattr(modes, "run_replay", delegated)
+    monkeypatch.setattr(modes.subprocess, "run", local_pytest)
+    monkeypatch.setattr(modes, "write_trailers", record)
+    message = tmp_path / "COMMIT_EDITMSG"
+    message.write_text("feat: red\n", encoding="utf-8")
+
+    assert (
+        modes._handle_red_mode(  # noqa: SLF001
+            msg_path=message,
+            log=_RecordingLog(),
+            tests_paths=["tests/test_red.py"],
+        )
+        == 0
+    )
+    assert local_pytest.call_count == 0
+    assert ("TDD-Red-Output-Checksum", "sha256:remote-output") in recorded
+    assert ("TDD-Red-Gate-Job", "gate-red-1") in recorded
+    assert ("TDD-Red-Staged-Tree", "a" * 40) in recorded
+
+
+def test_green_leg_uses_a_delegated_verdict_and_records_its_job_evidence(
+    *, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A delegated Green learns success from the Job without running pytest locally."""
+    from returns.io import IOSuccess
+
+    from livespec_dev_tooling.commit_replay_delegate import ReplayVerdict
+
+    modes = _load_modes()
+    test_path = tmp_path / "tests" / "test_green.py"
+    test_path.parent.mkdir()
+    test_bytes = b"def test_green() -> None:\n    assert True\n"
+    test_path.write_bytes(test_bytes)
+    checksum = f"sha256:{hashlib.sha256(test_bytes).hexdigest()}"
+    monkeypatch.chdir(tmp_path)
+    local_pytest = Mock()
+    recorded: list[tuple[str, str]] = []
+
+    def delegated(*, repo_root: Path, pytest_argv: list[str]) -> ReplayVerdict:
+        assert repo_root == tmp_path
+        assert pytest_argv == ["pytest", "tests/test_green.py", "--tb=no", "-q"]
+        return ReplayVerdict(
+            local=False,
+            reason="the Job reported a passing Green test",
+            job_name="gate-green-1",
+            tree_hash="b" * 40,
+            exit_status=0,
+            output_checksum="sha256:remote-output",
+        )
+
+    def trailer(*, key: str) -> object:
+        return IOSuccess("tests/test_green.py" if key == "TDD-Red-Test" else checksum)
+
+    def record(*, msg_path: Path, trailers: tuple[tuple[str, str], ...]) -> None:
+        assert msg_path.name == "COMMIT_EDITMSG"
+        recorded.extend(trailers)
+
+    monkeypatch.setattr(modes, "run_replay", delegated)
+    monkeypatch.setattr(modes, "head_trailer_value", trailer)
+    monkeypatch.setattr(modes, "current_head_sha", lambda: IOSuccess("c" * 40))
+    monkeypatch.setattr(modes.subprocess, "run", local_pytest)
+    monkeypatch.setattr(modes, "write_trailers", record)
+    message = tmp_path / "COMMIT_EDITMSG"
+    message.write_text("feat: green\n", encoding="utf-8")
+
+    assert (
+        modes._handle_green_mode(  # noqa: SLF001
+            msg_path=message,
+            log=_RecordingLog(),
+            impl_paths=["livespec/widget.py"],
+        )
+        == 0
+    )
+    assert local_pytest.call_count == 0
+    assert {
+        ("TDD-Green-Gate-Job", "gate-green-1"),
+        ("TDD-Green-Staged-Tree", "b" * 40),
+        ("TDD-Green-Output-Checksum", "sha256:remote-output"),
+    } <= set(recorded)
+
+
+def test_an_absent_remote_verdict_runs_the_replay_locally(
+    *, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """No remote outcome falls through to pytest and carries no remote trailers."""
+    from livespec_dev_tooling.commit_replay_delegate import ReplayVerdict
+
+    modes = _load_modes()
+    monkeypatch.chdir(tmp_path)
+    log = _RecordingLog()
+    monkeypatch.setattr(
+        modes,
+        "run_replay",
+        lambda **_kwargs: ReplayVerdict(
+            local=False,
+            reason="the gate Job reached no verdict",
+        ),
+    )
+    local_argvs: list[list[str]] = []
+
+    def local_run(argv: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        local_argvs.append(argv)
+        return subprocess.CompletedProcess(
+            args=(), returncode=1, stdout="local failure\n", stderr=""
+        )
+
+    monkeypatch.setattr(modes.subprocess, "run", local_run)
+
+    replay = modes._run_replay_test(  # noqa: SLF001
+        log=log,
+        pytest_argv=["/abs/python", "-m", "pytest", "/abs/tests/test_red.py"],
+        job_pytest_argv=["pytest", "tests/test_red.py"],
+        trailer_prefix="Red",
+    )
+
+    assert local_argvs == [["/abs/python", "-m", "pytest", "/abs/tests/test_red.py"]]
+
+    assert replay.returncode == 1
+    assert replay.output == "local failure\n"
+    assert replay.trailers == ()
+    assert [event for _level, event, _kwargs in log.records] == ["commit-time replay gated locally"]
 
 
 class _RecordingLog:
@@ -215,6 +374,37 @@ def test_suite_red_summary_names_erroring_tests_and_collection_modules(
     assert isinstance(summary, str)
     assert "tests/test_setup.py::test_requires_fixture" in summary
     assert "tests/test_collection.py" in summary
+
+
+def test_suite_red_keeps_each_failing_tests_one_line_traceback(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    """Suite-red keeps the assertion text, not only the node id.
+
+    A 1-in-465 flake refused a commit gate on 2026-11-02 (run
+    20261102T032559Z-472192) while the leg ran `--tb=no`, so the one message
+    that named its cause was thrown away (livespec-dev-tooling-ymjw5d).
+    """
+    run = _suite_run_cls()(
+        returncode=1,
+        output=(
+            f"{' .' * 250}F\n"
+            "/workspace/tests/consumer/test_memo.py:323: AssertionError: and the number "
+            "of members skipped must be reported; output=':: ERROR: up-front uv sync failed'\n"
+            "=========================== short test summary info ============================\n"
+            "FAILED tests/consumer/test_memo.py::test_counts_what_it_skipped\n"
+        ),
+        timed_out=False,
+    )
+    rc, log, _message, _seen, _ = _run_suite_leg(monkeypatch, tmp_path, suite_run=run)
+
+    assert rc == 1
+    failure_event = next(kwargs for level, _event, kwargs in log.records if level == "error")
+    detail = failure_event["failure_detail"]
+    assert isinstance(detail, str)
+    assert "test_memo.py:323: AssertionError" in detail
+    assert "ERROR: up-front uv sync failed" in detail
 
 
 def _suite_run_cls():

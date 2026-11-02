@@ -27,15 +27,20 @@
 # and in host_vars (livespec-dev-tooling-prdxxe; `just
 # check-ansible-hostname-free` refuses a regression).
 #
-# ONE HOST IS IN TWO GROUPS, AND THAT IS THE POINT. `hp-xubuntu` is a Fabro
-# FACTORY host that also joins the k3s pool as a factory-only agent
-# (livespec-dev-tooling-7we6po), so it appears in BOTH `sandbox_hosts` — where
-# ansible/fabro-hosts.yml reaches it, and which it never leaves — and `ci_pool`,
-# where ansible/ci-pool.yml does. Two groups is not two owners: the two plays
-# converge disjoint facilities on it, and the overlap they have to coexist
-# inside is this host's kubelet reservation budget, recorded in
-# ansible/roles/docker_sandbox_slice/HOST_VARS.md §"Coexistence with the k3s
-# agent".
+# hp-xubuntu LEFT `sandbox_hosts` on 2026-11-02 (plan gmktec-factory-placement,
+# item livespec-dev-tooling-2yn4yb). It had been a Fabro FACTORY host that also
+# joined the k3s pool as a factory-only agent (livespec-dev-tooling-7we6po).
+# What changed:
+# - Every repository now dispatches to the Fabro server on gmktec-xubuntu.
+# - hp's three Fabro instances are stopped and disabled, and their binaries and
+#   state are kept on disk read-only (livespec-dev-tooling-yw7via).
+# - Its Docker sandbox slice was retired through the role.
+# hp is now ONLY in `ci_pool`, where ansible/ci-pool.yml reaches it, and it is
+# being reworked into a Kubernetes factory worker (bd-ib-nmuyjc). Its kubelet
+# reservation budget is recorded with the k3s_config role, in
+# ansible/roles/k3s_config/HOST_VARS.md. ansible/fabro-hosts.yml no longer
+# reaches hp. To return it as a Fabro host, re-add it here, restore its
+# `fabro_server_instances` from git history, and re-apply.
 # ---------------------------------------------------------------------------
 all:
   children:
@@ -60,15 +65,13 @@ all:
             # The posture is its committed profile's, not this file's — the play
             # reads CI_NODE_FACILITIES=none out of
             # ci-runner/k3s/phase0-bare-metal/profiles/hp-xubuntu.env and gates
-            # the tier and job-execution roles off it. Also in `sandbox_hosts`
-            # below, which it never leaves.
+            # the tier and job-execution roles off it. It left `sandbox_hosts` on
+            # 2026-11-02; see the header.
             hp-xubuntu:
               ansible_user: cwoolley
               cluster_role: agent
         sandbox_hosts:
           hosts:
-            hp-xubuntu:
-              ansible_user: cwoolley
             # The current Fabro server's host (plan petri-factory-on-gmktec). An
             # untainted CI node too, so it is in ci_pool, sandbox_hosts and
             # docker_engine_hosts; its Docker must be confirmed by

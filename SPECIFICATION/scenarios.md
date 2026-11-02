@@ -734,6 +734,94 @@ And `daemon.json` MUST carry `cgroup-parent` naming that slice and every key it 
 
 And `dockerd` MUST NOT have been restarted, and the pending restart MUST be recorded
 
+## Scenario: the sandbox image warm removes the tags it pulled for an earlier pin once the current pin is present
+
+Given a factory host whose sandbox image warm pulled the tags of an earlier pin into its image store, either a k3s node's containerd store or a Docker factory host's image store
+
+And the store also holds a sandbox image tag the warm did not pull
+
+And a reference in the new pinned set resolves to the same image as one of the earlier-pin tags
+
+And a second earlier-pin tag resolves to the same image as a tag the warm did not pull, and a third resolves to the same image as a tag a container references
+
+When a release bump moves the warm's pinned set and a warm run has pulled every reference of the new pinned set, and no other step of that run fails
+
+Then the store MUST hold every reference of the new pinned set, including the one that shares an image with an earlier-pin tag
+
+And the store MUST NOT hold any tag the warm pulled for the earlier pin that is not in use, unless removing it would delete a reference of the new pinned set
+
+And the tag the warm did not pull MUST still be present
+
+And the tag the warm did not pull that shares an image with the second earlier-pin tag, and the tag the container references, MUST still be present
+
+And the run MUST exit zero
+
+## Scenario: the sandbox image warm keeps an earlier-pin tag that a container still references
+
+Given a factory host whose sandbox image warm pulled the tag of an earlier pin, and a container on that host, in any state, references that tag
+
+When a warm run pulls every reference of a newer pinned set and makes its removal pass
+
+Then the tag the container references MUST still be present in the store
+
+And the run MUST NOT exit non-zero on account of that tag
+
+And a later warm run, made after no container on the host references that tag, MUST remove it
+
+## Scenario: a sandbox image warm run that has not resolved and pulled the whole pinned set removes nothing
+
+Given a factory host whose sandbox image warm pulled the tags of an earlier pin into its image store
+
+When a release bump moves the warm's pinned set, and a warm run either fails to pull at least one reference of the new pinned set or fails to read one source of that pinned set
+
+Then that run MUST NOT remove any tag
+
+And the store MUST still hold every tag the warm pulled for the earlier pin
+
+And a run that failed to read a source MUST exit non-zero, naming that source
+
+## Scenario: a container that starts during a sandbox image warm removal keeps its tag
+
+Given a factory host whose sandbox image warm has pulled every reference of its current pinned set, and is removing a tag of an earlier pin that no container referenced when the warm checked
+
+When a container begins referencing that tag after the check and before the removal completes
+
+Then the warm MUST NOT have passed a force flag to a store whose runtime refuses to remove a referenced image
+
+And the store MUST hold that tag when the run ends
+
+And that run MUST exit non-zero, naming the tag
+
+## Scenario: a sandbox image warm removal the store rejects leaves the tag and fails the run
+
+Given a factory host whose sandbox image warm has pulled every reference of its current pinned set, and it also pulled a tag of an earlier pin that no container references
+
+When the warm's removal pass tries to remove that tag and the store refuses, or the removal errors
+
+Then the tag MUST still be present in the store
+
+And that run MUST exit non-zero, naming the tag
+
+## Scenario: a disabled removal pass leaves every tag the sandbox image warm pulled
+
+Given a factory host whose sandbox image warm has the role variable set that disables its removal pass, and the warm pulled the tags of an earlier pin
+
+When a release bump moves the warm's pinned set and a warm run pulls every reference of the new pinned set
+
+Then the store MUST still hold every tag the warm pulled for the earlier pin
+
+And the store MUST hold every reference of the new pinned set
+
+## Scenario: the sandbox image warm's record of the tags it pulled survives a reboot
+
+Given a factory host whose sandbox image warm pulled the tags of an earlier pin, and whose store also holds a sandbox image tag that was present before the warm first kept its record
+
+When the host reboots after a release bump moves the warm's pinned set, and the next warm run pulls every reference of the new pinned set
+
+Then the store MUST NOT hold any tag the warm pulled for the earlier pin that is not in use
+
+And the tag that was present before the warm first kept its record MUST still be present
+
 ## Scenario: an opted-in push from a host that cannot read the gates kubeconfig gates locally
 
 Given a consumer repository whose `[tool.livespec_dev_tooling]` table sets `delegated_gate = true`

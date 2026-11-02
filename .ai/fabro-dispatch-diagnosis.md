@@ -93,6 +93,36 @@ way to reach a dispatched worker is to remove the run and re-dispatch so the
 goal file regenerates. Prefer waiting over churning a healthy run, and put
 anything load-bearing on the item before dispatch.
 
+## A queued ticket has a launcher, not a dispatcher loop
+
+Measured 2026-11-02 on `livespec-dev-tooling-qgv3tb`.
+
+An item petri has ticketed but not yet started has a live gmktec LAUNCHER
+waiting in the FIFO queue, or in the master-CI preflight deferral that restarts
+on every new master run. It has no `dispatcher.py loop --item <id>` process.
+The loop appears only when the launcher's turn comes. A plan seat that saw
+qgv3tb's loop exit at a preflight deferral, and found no loop afterwards,
+reported the item as dropped. It had already been relaunched on the same
+ticket and was queued behind an older one.
+
+**How to apply:** before calling a ticketed item lost, look for its launcher
+as well as its loop, or ask the dispatcher seat that owns the queue.
+
+## Re-dispatching a failed run: release, then resume
+
+Measured 2026-11-02 on `livespec-dev-tooling-3buhph`.
+
+A few minutes after a failed outcome row, the engine parks the item at
+`blocked` with `blocked-reason:needs-human`. Its `livespec-needs-human-cause`
+comment names the valve. `dispatcher.py resume --item <id>` refuses any item
+that is not `ready` ("a resume never steps around the ledger's human
+decision"). So a re-dispatch-by-resume takes two acts. First,
+`drive.py --action resolve-blocked:<id>:ready` releases the item. Then the
+dispatcher seat runs the resume. Resume restarts from the published pull
+request's checkpoint and keeps its branch. A plain dispatch starts over, and
+on 3buhph that would have repeated four review-fix rounds on an 814-line
+draft.
+
 ## A comment saying an item is "held" holds it
 
 Measured 2026-10-30 on `livespec-dev-tooling-2zii7l`.

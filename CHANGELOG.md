@@ -58,6 +58,28 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.149.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.149.0...v1.149.1) (2026-11-02)
+
+
+### Bug Fixes
+
+* a failing suite-green replay run records each failing test's one-line traceback ([be6e48a](https://github.com/thewoolleyman/livespec-dev-tooling/commit/be6e48afa528bcd305b51f0bffabd088ba0b3201))
+
+## [1.149.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.148.2...v1.149.0) (2026-11-02)
+
+
+### Features
+
+* delegate Green replay legs ([825b71b](https://github.com/thewoolleyman/livespec-dev-tooling/commit/825b71bab0a73df10c4df6f6d5574158cf9d558f))
+* delegate Red replay legs ([16485a9](https://github.com/thewoolleyman/livespec-dev-tooling/commit/16485a9226497bbaa96b80900116a99999ad62fe))
+
+
+### Bug Fixes
+
+* **ansible:** let the containerd warm reach crictl on a node whose k3s data directory moved ([f6a2af1](https://github.com/thewoolleyman/livespec-dev-tooling/commit/f6a2af136c023f150073dd2a3aa8554aece63ec8))
+* hand delegated replay legs a Job-relative pytest argv ([cb0ab0b](https://github.com/thewoolleyman/livespec-dev-tooling/commit/cb0ab0b772c2eebeaf1e0e06e45499df72677b5f))
+* record the gate Job output checksum on a delegated Green leg ([2b6a137](https://github.com/thewoolleyman/livespec-dev-tooling/commit/2b6a13754ea5c97e22412eb4ae4a0db45682ded1))
+
 ## [1.148.2](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.148.1...v1.148.2) (2026-11-02)
 
 

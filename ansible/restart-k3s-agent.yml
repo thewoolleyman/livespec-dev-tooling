@@ -14,7 +14,9 @@
 # eviction-hard) at 19:38 PDT 2026-10-13 while `k3s-agent` had been running since
 # 19:19, so the live node still reported allocatable `cpu=16`,
 # `memory=32176236Ki` instead of the few hundred millicores and ~3Gi the
-# coexistence budget in `roles/docker_sandbox_slice/HOST_VARS.md` derives. The
+# coexistence budget of that time derived (that budget was sized around hp's
+# Docker sandbox slice, retired 2026-11-02; the current budget is
+# `roles/k3s_config/HOST_VARS.md` §"hp-xubuntu factory-worker kubelet budget"). The
 # only committed restart path was `reboot-ci-server.yml`, which reboots the
 # SERVER; a hand `systemctl restart k3s-agent` over ssh is exactly what the
 # Driver's `fleet_host_guard.py` refuses; and hp-xubuntu is the Fabro factory
@@ -92,8 +94,8 @@
 #
 # Governing clause: `SPECIFICATION/non-functional-requirements.md`
 # §"Consent-gated pool-node disruption", clause "Committed and consent-gated".
-# The reservations this restart makes effective: `roles/docker_sandbox_slice/HOST_VARS.md`
-# §"Coexistence with the k3s agent". Operator-facing description: `README.md`
+# The reservations this restart makes effective: `roles/k3s_config/HOST_VARS.md`
+# §"hp-xubuntu factory-worker kubelet budget". Operator-facing description: `README.md`
 # §"The playbooks".
 
 - name: Restart one agent node's k3s agent so its start configuration takes effect
@@ -397,7 +399,7 @@
                   figure equal to its capacity means this node's profile
                   declares no KUBELET_ARGS reservations, or the rendered
                   drop-in was not read — see
-                  ansible/roles/docker_sandbox_slice/HOST_VARS.md
-                  §"Coexistence with the k3s agent" for the budget a factory
+                  ansible/roles/k3s_config/HOST_VARS.md
+                  §"hp-xubuntu factory-worker kubelet budget" for the budget a factory
                   node is expected to hold back. No workload on this node was
                   touched and nothing else on the host was changed.

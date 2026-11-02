@@ -29,3 +29,34 @@ Two traps:
 Before calling any credential insufficient, list every name the wrapper injects
 (`with-livespec-env.sh -- env | cut -d= -f1 | grep -i honey` — names only, never
 values) and grep the fleet repositories for how each one is used.
+
+## Two traps when you run the query helper
+
+The helper is `~/token-spend-report/scripts/hcq.py`. Both of these traps were measured on 2026-11-02 by plan
+codex-implement-cost-per-run.
+
+- **Do not read results from the wrapper's stdout.** Run as
+  `with-livespec-env.sh -- python3 hcq.py ... > file`, the JSON in the file stopped mid-record at about 3 KB. The
+  command reported no error, and the file would not parse. Instead, have Python write the result itself:
+  `json.dump(hcq.rows(dataset, spec), open(path, 'w'))`.
+- **A breakdown over 100 groups spends the query budget fast.** When a result has more than 100 groups, `hcq.rows`
+  splits the time window in half and queries each half, repeating until every piece fits. A high-cardinality
+  breakdown can therefore spend many of the MCP key's 100 queries per hour before it gives up. That key is shared with
+  the dispatcher's reflector. Breaking `codex-app-server` down by span `name` for a single dispatch did exactly this.
+  Narrow a breakdown before you widen its window.
+
+To count factory Codex implement spend in `llm-spend`, filter on all four of these:
+
+- `source = codex-app-server`
+- `spend.where = factory`
+- `spend.schema = 2`
+- `node = implement`
+
+The `node` filter drops the provisional `pending` rows and the `retract` rows, so only the final, attributed copy of
+each response is counted.
+
+The `usd.*` component columns are missing from some events. Recompute the component split from the token sums and
+`prices.py`.
+
+The per-run rollup is `kind = codex-implement-run`, sent by `emit_codex_runs.py`. Read cost per run from that event
+rather than summing responses yourself.

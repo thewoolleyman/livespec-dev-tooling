@@ -70,6 +70,11 @@ _NOISE_LINE = re.compile(
 )
 _DURATION = re.compile(r"\bin \d+(?:\.\d+)?s(?: \(\d+:\d{2}:\d{2}\))?")
 _FAILED_SUMMARY_LINE = re.compile(r"^(?:FAILED|ERROR)\s+(\S+)", re.MULTILINE)
+# One `--tb=line` traceback: `<path>.py:<line>: <exception text>`. Kept so a
+# refused commit names WHY a test failed, not only which one did: a `--tb=no`
+# run threw that text away (livespec-dev-tooling-ymjw5d).
+_TRACEBACK_LINE = re.compile(r"^\S+\.py:\d+: .+$", re.MULTILINE)
+_FAILURE_DETAIL_LIMIT = 4000
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -114,7 +119,7 @@ def suite_pytest_argv(
     visible_cpus: int,
 ) -> list[str]:
     """Return pytest argv for the suite or the supplied staged test paths."""
-    argv = [sys.executable, "-m", "pytest", "--tb=no", "-q"]
+    argv = [sys.executable, "-m", "pytest", "--tb=line", "-q"]
     if not xdist_available:
         return [*argv, *(test_paths or [])]
     nprocs = environ.get(_NPROCS_ENV, "").strip() or _lane_worker_count(
@@ -177,6 +182,11 @@ def _suite_failure_summary(*, output: str) -> str:
     if failed_node_ids:
         return " ".join(failed_node_ids)[:400]
     return " ".join(output.split())[:400]
+
+
+def _suite_failure_detail(*, output: str) -> str:
+    """Return each failing test's one-line traceback, bounded in size."""
+    return "\n".join(_TRACEBACK_LINE.findall(output))[:_FAILURE_DETAIL_LIMIT]
 
 
 def run_suite(*, argv: list[str], timeout_seconds: int) -> SuiteRun:
@@ -273,6 +283,7 @@ def _handle_suite_green_mode(
             check_id="red-green-replay-suite-red",
             pytest_returncode=suite_result.returncode,
             failure_summary=_suite_failure_summary(output=suite_output),
+            failure_detail=_suite_failure_detail(output=suite_output),
             hint=(
                 "The green-verified leg requires its selected tests to pass (exit 0; "
                 "an empty selection, pytest exit 5, also rejects): a behavior-"

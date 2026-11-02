@@ -1437,5 +1437,61 @@
     "test": "TODO",
     "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, exercising the pre-commit hook's delegation of `just check-pre-commit` to a gates Job keyed to the staged tree; livespec-dev-tooling-3buhph owns it.",
     "work_item": "livespec-dev-tooling-3buhph"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: the sandbox image warm removes the tags it pulled for an earlier pin once the current pin is present",
+    "test": "TODO",
+    "reason": "Spec-first (v109): a real test at the integration tier or above is owed for this heading, exercising ansible/roles/sandbox_image_warm's removal pass against a real image store on a factory node (k3s containerd, and gmktec-xubuntu's Docker store). livespec-dev-tooling-xknoqf owns it.",
+    "work_item": "livespec-dev-tooling-xknoqf"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: the sandbox image warm keeps an earlier-pin tag that a container still references",
+    "test": "TODO",
+    "reason": "Spec-first (v109): a real test at the integration tier or above is owed for this heading, exercising ansible/roles/sandbox_image_warm's removal pass against a real image store on a factory node (k3s containerd, and gmktec-xubuntu's Docker store). livespec-dev-tooling-xknoqf owns it.",
+    "work_item": "livespec-dev-tooling-xknoqf"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a sandbox image warm run that has not resolved and pulled the whole pinned set removes nothing",
+    "test": "TODO",
+    "reason": "Spec-first (v109): a real test at the integration tier or above is owed for this heading, exercising ansible/roles/sandbox_image_warm's removal pass against a real image store on a factory node (k3s containerd, and gmktec-xubuntu's Docker store). livespec-dev-tooling-xknoqf owns it.",
+    "work_item": "livespec-dev-tooling-xknoqf"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a container that starts during a sandbox image warm removal keeps its tag",
+    "test": "TODO",
+    "reason": "Spec-first (v109): a real test at the integration tier or above is owed for this heading, exercising ansible/roles/sandbox_image_warm's removal pass against a real image store on a factory node (k3s containerd, and gmktec-xubuntu's Docker store). livespec-dev-tooling-xknoqf owns it.",
+    "work_item": "livespec-dev-tooling-xknoqf"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a sandbox image warm removal the store rejects leaves the tag and fails the run",
+    "test": "TODO",
+    "reason": "Spec-first (v109): a real test at the integration tier or above is owed for this heading, exercising ansible/roles/sandbox_image_warm's removal pass against a real image store on a factory node (k3s containerd, and gmktec-xubuntu's Docker store). livespec-dev-tooling-xknoqf owns it.",
+    "work_item": "livespec-dev-tooling-xknoqf"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a disabled removal pass leaves every tag the sandbox image warm pulled",
+    "test": "TODO",
+    "reason": "Spec-first (v109): a real test at the integration tier or above is owed for this heading, exercising ansible/roles/sandbox_image_warm's removal pass against a real image store on a factory node (k3s containerd, and gmktec-xubuntu's Docker store). livespec-dev-tooling-xknoqf owns it.",
+    "work_item": "livespec-dev-tooling-xknoqf"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: the sandbox image warm's record of the tags it pulled survives a reboot",
+    "test": "TODO",
+    "reason": "Spec-first (v109): a real test at the integration tier or above is owed for this heading, exercising ansible/roles/sandbox_image_warm's removal pass against a real image store on a factory node (k3s containerd, and gmktec-xubuntu's Docker store). livespec-dev-tooling-xknoqf owns it.",
+    "work_item": "livespec-dev-tooling-xknoqf"
   }
 ]
