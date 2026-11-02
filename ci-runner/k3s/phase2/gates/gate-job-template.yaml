@@ -398,8 +398,7 @@ spec:
               # suite started would reach nothing it ran.
               @@GATE_AUTHORITY_SKIP@@
               # LOCKED ARTIFACTS USE THE PYPI FILES PROXY PER ARTIFACT.
-              # UV_DEFAULT_INDEX above reaches uvx and unlocked dependencies,
-              # but frozen uv.lock entries carry absolute
+              # Frozen uv.lock entries carry absolute
               # files.pythonhosted.org URLs. The previous whole-lock prefix
               # rewrite checked only /health, then made a proxy 404 read as an
               # unsatisfiable package. Probe every locked artifact instead:
@@ -479,6 +478,40 @@ spec:
                 echo ":: gate: ${locks} uv.lock file(s): ${proxied} locked artifacts through ${PYPI_FILES_PROXY}, ${direct} direct PyPI fallbacks"
               else
                 echo ":: gate: WARN: pypi files proxy ${PYPI_FILES_PROXY} not answering /health; locked artifacts will be fetched directly from files.pythonhosted.org" >&2
+              fi
+              # Tool environments have no committed lock to rewrite.  Give uvx
+              # the proxy's rewritten Simple API only for its own invocation;
+              # setting UV_DEFAULT_INDEX on the whole container makes `uv run`
+              # re-resolve a locked project against a missing proxy index.  A
+              # live proxy can still disappear or miss a package between this
+              # probe and uvx's request, so retry only resolver/download
+              # failures against normal PyPI.  A tool's own non-zero verdict
+              # remains its verdict and is never retried.
+              gate_uvx="$(command -v uvx || true)"
+              if [ -n "${gate_uvx}" ] && gate_pypi_proxy_serves /simple/; then
+                gate_uvx_bin="$(mktemp -d)"
+                cat > "${gate_uvx_bin}/uvx" <<'GATE_UVX'
+              #!/usr/bin/env bash
+              set -u
+              output="$(mktemp)"
+              if env UV_DEFAULT_INDEX="${PYPI_FILES_PROXY}/simple" "${GATE_REAL_UVX}" "$@" >"${output}" 2>&1; then
+                cat "${output}"
+                rm -f "${output}"
+                exit 0
+              fi
+              status=$?
+              cat "${output}" >&2
+              if grep -Eiq 'not found in the package registry|failed to (fetch|download)|error sending request|connection (refused|reset|timed out)|network is unreachable' "${output}"; then
+                echo ":: gate: WARN: uvx proxy resolution failed; retrying directly from PyPI" >&2
+                rm -f "${output}"
+                exec env -u UV_DEFAULT_INDEX -u UV_INDEX_URL "${GATE_REAL_UVX}" "$@"
+              fi
+              rm -f "${output}"
+              exit "${status}"
+              GATE_UVX
+                chmod 755 "${gate_uvx_bin}/uvx"
+                export GATE_REAL_UVX="${gate_uvx}"
+                export PATH="${gate_uvx_bin}:${PATH}"
               fi
               for recipe in @@GATE_RECIPE_NAMES@@; do
                 if just --show "${recipe}" > /dev/null 2>&1; then
@@ -645,11 +678,6 @@ spec:
             # cannot drift. Keep these in step with that file's container env.
             - name: UV_CACHE_DIR
               value: /__w/_warm/uv
-            # uvx and unlocked build dependencies read the Simple API. The
-            # proxy rewrites its artifact links through the cached /packages/
-            # route, so a tool environment misses use the same warm service.
-            - name: UV_DEFAULT_INDEX
-              value: http://pypi-proxy.ci-warm-cache.svc.cluster.local:8081/simple
             # Frozen locks retain absolute files.pythonhosted.org URLs. The
             # gate script probes this origin per artifact before replacing only
             # URLs the proxy can serve; a miss remains direct PyPI.
