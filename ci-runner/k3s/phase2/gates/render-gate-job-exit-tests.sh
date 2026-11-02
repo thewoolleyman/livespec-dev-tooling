@@ -1042,6 +1042,21 @@ else
   fail "refused without naming the cause: $(cat "${SCRATCH}/authority-member-shell.err")"
 fi
 
+# Wait until a stand-in proxy answers HTTP, not merely until it accepts a connection, and for up to 30 s:
+# the gate script gives the proxy 2 s to answer /health and treats silence as "proxy down", so a stand-in
+# still starting under CI load turned the W case's proxied artifact direct (master run 41505312652, PR 3174).
+wait_for_stand_in_proxy() {
+  local port="$1" _
+  for _ in $(seq 1 300); do
+    if (exec 9<>"/dev/tcp/127.0.0.1/${port}" && printf 'HEAD / HTTP/1.0\r\n\r\n' >&9 && head -n 1 <&9 | grep -q '^HTTP/') 2>/dev/null; then
+      return 0
+    fi
+    sleep 0.1
+  done
+  fail "the stand-in proxy on port ${port} never answered HTTP within 30 s"
+  return 1
+}
+
 echo "== U. uvx retries direct PyPI when the proxy fails after a healthy probe =="
 uvx_proxy_root="${SCRATCH}/uvx-proxy"
 mkdir -p "${uvx_proxy_root}/simple"
@@ -1049,10 +1064,7 @@ printf 'simple api\n' > "${uvx_proxy_root}/simple/index.html"
 uvx_proxy_port="$(python3 -c 'import socket; s = socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1]); s.close()')"
 (cd "${uvx_proxy_root}" && exec python3 -m http.server "${uvx_proxy_port}" --bind 127.0.0.1 >/dev/null 2>&1) &
 uvx_proxy_pid=$!
-for _ in 1 2 3 4 5 6 7 8 9 10; do
-  (exec 9<>"/dev/tcp/127.0.0.1/${uvx_proxy_port}") 2>/dev/null && break
-  sleep 0.1
-done
+wait_for_stand_in_proxy "${uvx_proxy_port}"
 if GATE_TEST_PROXY="http://127.0.0.1:${uvx_proxy_port}" UVX_PROXY_FAIL=1 GATE_RUN_UVX=1 \
      run_gate_script "${declared_out}" "verify publish"; then
   if grep -qF "uvx index=http://127.0.0.1:${uvx_proxy_port}/simple args=test-tool" "${SCRATCH}/stub.log" && \
@@ -1092,10 +1104,7 @@ printf 'wheel\n' > "${proxy_root}/packages/good/good-1.0.whl"
 proxy_port="$(python3 -c 'import socket; s = socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1]); s.close()')"
 (cd "${proxy_root}" && exec python3 -m http.server "${proxy_port}" --bind 127.0.0.1 >/dev/null 2>&1) &
 proxy_pid=$!
-for _ in 1 2 3 4 5 6 7 8 9 10; do
-  (exec 9<>"/dev/tcp/127.0.0.1/${proxy_port}") 2>/dev/null && break
-  sleep 0.1
-done
+wait_for_stand_in_proxy "${proxy_port}"
 printf '%s\n' "${lock_body}" > "${SCRATCH}/gate-cwd/uv.lock"
 if GATE_TEST_PROXY="http://127.0.0.1:${proxy_port}" run_gate_script "${declared_out}" "verify publish"; then
   proxied_good="http://127.0.0.1:${proxy_port}/packages/good/good-1.0.whl"
