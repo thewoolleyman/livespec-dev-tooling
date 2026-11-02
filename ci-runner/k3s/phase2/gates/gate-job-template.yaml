@@ -544,6 +544,11 @@ spec:
             # cannot drift. Keep these in step with that file's container env.
             - name: UV_CACHE_DIR
               value: /__w/_warm/uv
+            # The files proxy also serves a rewritten Simple API. This routes
+            # unseeded uv and uvx tool environments through its cached
+            # /packages/ artifacts instead of files.pythonhosted.org.
+            - name: UV_DEFAULT_INDEX
+              value: http://pypi-proxy.ci-warm-cache.svc.cluster.local:8081/simple
             - name: CI_CACHE_KILL_SWITCH
               value: ""
             - name: SCCACHE_REDIS_ENDPOINT
