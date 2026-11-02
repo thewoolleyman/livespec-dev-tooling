@@ -259,6 +259,31 @@ we're done brainstorming."
 
 ## 10. Fleet health, checked every tick
 
+**Throughput first: the coordinator owns infrastructure utilization.** Every tick, before anything else in this
+section, read the factory's throughput and treat an unused slot as a stall:
+
+- live runs against the fleet cap and each per-host cap;
+- queued tickets, and launches in the last 30 minutes (from the launcher `seq-*.log` LAUNCH lines);
+- idle on every execution target: gmktec, poweredge, hp and the VPS.
+
+When live runs sit below the cap while tickets wait, the cap is not the constraint, and something serializes. Find
+the serializer that tick, name its mechanism, and route the fix as a stop-the-line. Do NOT read a cap, a freeze or a
+hold as the constraint before checking that it binds. Also check every tick that the queue head follows the
+priorities record: an arrival-ordered queue buries top-priority work. Read `.ai/ci-node-capacity-reads.md` before
+any cap, hold or throttle call.
+
+The maintainer, 2026-11-02 ~16:5xZ: "I am also very disappointed in you that you did not notice the serialization
+bottleneck yourself, resulting in underutilization of the infrastructure. That is one of your main mandates. You are
+supposed to be looking at it." Measured that day: one gmk launcher FIFO ran one model-backed preflight at a time,
+about one launch every 3 minutes, while the fleet ran 4–9 live against a cap of 10 and gmktec sat 74–96 % idle, with
+about 38 tickets queued in arrival order. The coordinator audited each item's ticket and called that "not a stall",
+saw `fleet=6` and 87 % idle in a launcher log line, and asked about it as a side question instead of ruling on it.
+The fix is bd-ib-x7bwug.
+
+**Ask the connector before asking the maintainer.** When the answer to an ask lives in a system the coordinator has
+a connector for (Gmail, Calendar, Drive, Slack, Honeycomb), query it first. If the connector is missing or
+unauthenticated, the ask becomes "fix connector X", with the exact symptom. Maintainer correction 2026-11-02.
+
 - **Spend alerts.** Run `/usr/local/bin/with-livespec-env.sh -- python3 -I ~/token-spend-report/scripts/spend_staleness.py`.
   Exit 0 means ok, 1 means a trigger is firing, and 2 means the check failed. Run it bare and it prints
   `CHECK FAILED KeyError` but exits 0, so it must run inside the wrapper.
