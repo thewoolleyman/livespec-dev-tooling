@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.153.2](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.153.1...v1.153.2) (2026-11-02)
+
+
+### Bug Fixes
+
+* **gates:** fall back from proxy-only uvx resolution ([e217bba](https://github.com/thewoolleyman/livespec-dev-tooling/commit/e217bbaff830562bf364b4d9f60318af04b2a828))
+
 ## [1.153.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.153.0...v1.153.1) (2026-11-02)
 
 
