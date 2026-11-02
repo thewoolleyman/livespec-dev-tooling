@@ -1,13 +1,13 @@
 # pypi-proxy.yaml — the host-served PyPI FILES cache the warm-cache populator
 # builds every generation through (livespec-41w4, Carrier F2 of the livespec
 # plan ci-runner-pod-lifecycle-reliability): one nginx `proxy_cache` in front
-# of files.pythonhosted.org, on the `ci-cache` storage tier. The warm-cache
-# populator rewrites locked artifact URLs to it; gate Jobs use its rewritten
-# Simple API for uv and uvx cache misses. There is no hostPort and no
-# NetworkPolicy change. Same shape as ../../crates-proxy/ (one nginx, one
-# hostPath store, verified upstream TLS, no write surface).
+# of files.pythonhosted.org, on the `ci-cache` storage tier, read ONLY by the
+# `warm-cache-populate` CronJob over cluster DNS. Workflow pods never use it
+# (their locks are untouched; they read the seeded generation), so there is no
+# hostPort and no NetworkPolicy change. Same shape as ../../crates-proxy/
+# (one nginx, one hostPath store, verified upstream TLS, no write surface).
 #
-# WHY A FILES PROXY AND A REWRITTEN SIMPLE API. `uv sync --frozen` downloads every
+# WHY A FILES PROXY AND NOT AN INDEX PROXY. `uv sync --frozen` downloads every
 # locked distribution from the ABSOLUTE files.pythonhosted.org URL recorded in
 # uv.lock; UV_DEFAULT_INDEX / UV_INDEX_URL serve only unlocked build
 # dependencies. An index proxy (devpi, proxpi) therefore caches NOTHING for a
@@ -17,12 +17,9 @@
 # clone of each lock (`https://files.pythonhosted.org/packages/` ->
 # `http://pypi-proxy.ci-warm-cache.svc.cluster.local:8081/packages/`), and a
 # pure prefix swap needs nothing but `location /packages/` on a caching
-# reverse proxy. An unseeded `uvx` first consults PyPI's Simple API, which
-# returns those same absolute artifact URLs; `/simple/` proxies that API and
-# rewrites its file-host prefix back through `/packages/`. This is why nginx
-# rather than devpi (no file-cache bound at all) or proxpi (LFU, 230 MiB RSS
-# after one union, no hit/miss surface). The comparison table is in
-# ../README.md "Proxy choice".
+# reverse proxy — which is why nginx and not devpi (no file-cache bound at
+# all) or proxpi (LFU, 230 MiB RSS after one union, no hit/miss surface). The
+# comparison table is in ../README.md "Proxy choice".
 #
 # THE STORE IS FLAT, ON PURPOSE. `proxy_cache_path` carries no `levels=`:
 # nginx creates level subdirectories 0700 owned by its worker user, and the
@@ -127,32 +124,12 @@ data:
       # route; a config-time resolution pins the CDN addresses).
       resolver 10.43.0.10 valid=300s ipv6=off;
       upstream pypi_files { zone pypi_files 64k; server files.pythonhosted.org:443 resolve; keepalive 32; }
-      upstream pypi_simple { zone pypi_simple 64k; server pypi.org:443 resolve; keepalive 32; }
 
       server {
         listen 8081 default_server;
 
         # The populator's preflight probe.
         location = /health { return 200 'ok\n'; }
-
-        # uvx resolves an unseeded tool through the Simple API. Its metadata
-        # names immutable files.pythonhosted.org artifacts, so rewrite that
-        # prefix to this Service's cached /packages/ route before uv reads it.
-        location /simple/ {
-          limit_except GET HEAD { deny all; }
-          proxy_pass https://pypi_simple;
-          proxy_ssl_name pypi.org;
-          proxy_set_header Host pypi.org;
-          proxy_cache pypi;
-          proxy_cache_key $uri;
-          proxy_cache_valid 200 30d;
-          proxy_cache_valid 404 1m;
-          proxy_ignore_headers Cache-Control Expires Set-Cookie;
-          sub_filter_once off;
-          sub_filter_types application/vnd.pypi.simple.v1+json text/html;
-          sub_filter 'https://files.pythonhosted.org/packages/' 'http://pypi-proxy.ci-warm-cache.svc.cluster.local:8081/packages/';
-          add_header X-Cache-Status $upstream_cache_status always;
-        }
 
         # The one proxied path: the prefix the populator swaps into its
         # clone's uv.lock. Immutable, content-addressed wheel and sdist URLs.

@@ -117,7 +117,6 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 RENDERER="${SCRIPT_DIR}/render-gate-job.sh"
 TEMPLATE="${SCRIPT_DIR}/gate-job-template.yaml"
 HOOK_POD_TEMPLATE="${SCRIPT_DIR}/../arc/hook-pod-template.yaml"
-PYPI_PROXY_TEMPLATE="${SCRIPT_DIR}/../warm-cache/pypi-proxy/pypi-proxy.yaml"
 SCRATCH="$(mktemp -d)"
 trap 'rm -rf "${SCRATCH}"' EXIT
 
@@ -131,7 +130,6 @@ fail() { echo "  FAIL  $1"; failures=$((failures + 1)); }
 [ -x "${RENDERER}" ] || { echo "FATAL: ${RENDERER} not found or not executable" >&2; exit 1; }
 [ -f "${TEMPLATE}" ] || { echo "FATAL: ${TEMPLATE} not found" >&2; exit 1; }
 [ -f "${HOOK_POD_TEMPLATE}" ] || { echo "FATAL: ${HOOK_POD_TEMPLATE} not found" >&2; exit 1; }
-[ -f "${PYPI_PROXY_TEMPLATE}" ] || { echo "FATAL: ${PYPI_PROXY_TEMPLATE} not found" >&2; exit 1; }
 
 # --- fixture repositories -----------------------------------------------------
 make_repo() {
@@ -358,22 +356,6 @@ if [ -n "${gate_cache_mount}" ] && \
   pass "UV_CACHE_DIR is under a local-path generic ephemeral volume"
 else
   fail "UV_CACHE_DIR is not mounted from a local-path generic ephemeral volume"
-fi
-
-echo "== T. uv and uvx misses resolve through the in-cluster PyPI files proxy =="
-# uvx resolves an unseeded tool from the Simple API, whose response names the
-# artifact at files.pythonhosted.org. The gate must use the proxy's Simple API,
-# and that proxy must rewrite those artifact URLs back to its /packages/ cache.
-proxy_index="$(grep -A1 -F 'name: UV_DEFAULT_INDEX' "${out_a}" | grep -oE 'value: .*' | head -1)"
-if [ "${proxy_index}" != 'value: http://pypi-proxy.ci-warm-cache.svc.cluster.local:8081/simple' ]; then
-  fail "the gate does not set UV_DEFAULT_INDEX to the PyPI files proxy Simple API"
-elif ! grep -F 'location /simple/' "${PYPI_PROXY_TEMPLATE}" >/dev/null; then
-  fail "the PyPI files proxy does not serve the Simple API"
-elif ! grep -F 'https://files.pythonhosted.org/packages/' "${PYPI_PROXY_TEMPLATE}" >/dev/null || \
-     ! grep -F 'http://pypi-proxy.ci-warm-cache.svc.cluster.local:8081/packages/' "${PYPI_PROXY_TEMPLATE}" >/dev/null; then
-  fail "the PyPI files proxy does not rewrite Simple API artifact URLs through /packages/"
-else
-  pass "uv and uvx use the proxy Simple API and its rewritten artifact URLs"
 fi
 
 echo "== I. the fetch brings the RANGE and a resolvable diff base =="
