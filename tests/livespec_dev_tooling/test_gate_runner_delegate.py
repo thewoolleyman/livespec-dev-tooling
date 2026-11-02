@@ -379,6 +379,36 @@ def test_gate_start_runs_the_cluster_client_over_the_worktree_tree(
     assert not local_just_log.exists()
 
 
+def test_gate_start_runs_the_cluster_child_in_the_project_environment(*, tmp_path: Path) -> None:
+    """The detached cluster child uses the project interpreter, not bare ``python3``."""
+    root, environment, _ = _worktree_with_uncommitted_content(tmp_path=tmp_path)
+    fake_bin = tmp_path / "bin"
+    _ = fake_bin.mkdir()
+    uv_log = tmp_path / "uv.log"
+    _ = (fake_bin / "python3").write_text("#!/bin/sh\nexit 83\n", encoding="utf-8")
+    _ = (fake_bin / "uv").write_text(
+        "#!/bin/sh\n"
+        f'printf "%s\\n" "$*" >> "{uv_log}"\n'
+        "shift 3\n"
+        'if test "$3" = run; then echo "remote job output"; exit 0; fi\n'
+        'echo cluster_job; echo "eligible full-suite command"\n',
+        encoding="utf-8",
+    )
+    for executable in (fake_bin / "python3", fake_bin / "uv"):
+        _ = executable.chmod(0o755)
+    environment["PATH"] = f"{fake_bin}{os.pathsep}{environment['PATH']}"
+
+    run_dir = _start(root=root, env=environment, args=["--", "just", "check"])
+
+    assert (run_dir / "venue").read_text(encoding="utf-8") == "cluster_job\n"
+    assert (run_dir / "exit_code").read_text(encoding="utf-8").strip() == "0"
+    assert "remote job output" in (run_dir / "output.log").read_text(encoding="utf-8")
+    assert any(
+        line.startswith("run --no-sync python -m livespec_dev_tooling.gate_runner_delegate run ")
+        for line in uv_log.read_text(encoding="utf-8").splitlines()
+    )
+
+
 def test_a_cluster_gate_uses_the_worktree_tree_and_records_its_job(
     *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
