@@ -60,4 +60,16 @@ fi
 # just check-fleet-conformance-admin, whose verdict is a fact about nine OTHER
 # repositories' live admin state and so can refuse a commit that has nothing
 # to do with it (work-item livespec-dev-tooling-mmqe, absorbing tkzf).
-just hook_gate=1 check
+aggregate_log=$(mktemp "$(git rev-parse --git-path livespec-pre-commit-aggregate.XXXXXX)")
+set +e
+just hook_gate=1 check 2>&1 | tee "$aggregate_log"
+aggregate_status=${PIPESTATUS[0]}
+set -e
+if [[ "$aggregate_status" -eq 0 ]]; then
+    staged_tree=$(git write-tree)
+    run_id="pre-commit-aggregate:$(date -u +%Y%m%dT%H%M%SZ):${staged_tree}"
+    output_checksum="sha256:$(sha256sum "$aggregate_log" | awk '{print $1}')"
+    uv run python -m livespec_dev_tooling.green_token write-pre-commit "$run_id" "$output_checksum"
+fi
+rm -f "$aggregate_log"
+exit "$aggregate_status"

@@ -14,6 +14,9 @@ import time
 import uuid
 from pathlib import Path
 
+import pytest
+import structlog
+
 __all__: list[str] = []
 
 _MODULE_PATH = (
@@ -138,6 +141,84 @@ def test_checksum_differs_when_outcome_count_differs() -> None:
     one = mod.canonical_output_checksum(output="3 passed in 1.00s\n")
     other = mod.canonical_output_checksum(output="4 passed in 1.00s\n")
     assert one != other
+
+
+def test_same_tree_full_pre_commit_evidence_reuses_the_aggregate_run(
+    *, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A full pre-commit verdict on this index tree replaces a second suite run."""
+    mod = _load()
+    assert hasattr(mod, "handle_suite_green_mode")
+    evidence = mod.PreCommitAggregateEvidence(
+        tree_hash="same-tree",
+        run_id="pre-commit-aggregate:run-123",
+        output_checksum="sha256:aggregate-output",
+        captured_at="2026-11-02T12:00:00Z",
+    )
+
+    def pre_commit_evidence(*, cwd: Path) -> object:
+        _ = cwd
+        return evidence
+
+    def index_tree(*, cwd: Path) -> str:
+        _ = cwd
+        return "same-tree"
+
+    monkeypatch.setattr(mod, "read_pre_commit_evidence", pre_commit_evidence)
+    monkeypatch.setattr(mod, "staged_tree_hash", index_tree)
+    suite_runs: list[object] = []
+    monkeypatch.setattr(mod, "run_suite", lambda **kwargs: suite_runs.append(kwargs))
+    msg_path = tmp_path / "COMMIT_EDITMSG"
+    msg_path.write_text("refactor: behaviour-preserving change\n", encoding="utf-8")
+
+    result = mod.handle_suite_green_mode(
+        msg_path=msg_path,
+        log=structlog.get_logger(),
+        staged_paths=["livespec_dev_tooling/example.py"],
+    )
+
+    assert result == 0
+    assert suite_runs == []
+    message = msg_path.read_text(encoding="utf-8")
+    assert "TDD-Suite-Green-Output-Checksum: sha256:aggregate-output" in message
+    assert "TDD-Suite-Green-Producer: pre-commit-aggregate:run-123" in message
+
+
+def test_pre_commit_evidence_is_recorded_for_the_staged_tree(
+    *, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The aggregate token records the run, exact index tree, and its output digest."""
+    from livespec_dev_tooling import green_token
+
+    token_path = tmp_path / "livespec-green-token.json"
+
+    def token_file(*, cwd: Path) -> Path:
+        _ = cwd
+        return token_path
+
+    def index_tree(*, cwd: Path) -> str:
+        _ = cwd
+        return "staged-tree"
+
+    monkeypatch.setattr(green_token, "_token_path", token_file)
+    monkeypatch.setattr(green_token, "_index_tree_hash", index_tree)
+
+    result = green_token.write_pre_commit_evidence(
+        cwd=tmp_path,
+        log=structlog.get_logger(),
+        run_id="pre-commit-aggregate:run-123",
+        output_checksum="sha256:aggregate-output",
+    )
+
+    assert result == 0
+    evidence = green_token.read_pre_commit_evidence(cwd=tmp_path)
+    assert evidence is not None
+    assert evidence == green_token.PreCommitAggregateEvidence(
+        tree_hash="staged-tree",
+        run_id="pre-commit-aggregate:run-123",
+        output_checksum="sha256:aggregate-output",
+        captured_at=evidence.captured_at,
+    )
 
 
 def test_run_suite_captures_output_and_returncode() -> None:

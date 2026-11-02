@@ -403,6 +403,33 @@ def test_write_overwrites_existing_token(
     assert token.get("tree_hash") == expected
 
 
+def test_write_pre_commit_requires_provenance_and_records_it(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The pre-commit token CLI requires and preserves the aggregate's identity."""
+    _init_repo(repo=tmp_path)
+    run = _run_module(
+        cwd=tmp_path,
+        command="write-pre-commit",
+        targets=("pre-commit-aggregate:run-123", "sha256:aggregate-output"),
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+    )
+    assert run.returncode == 0
+    token_path = _git_dir(repo=tmp_path) / "livespec-green-token.json"
+    token = json.loads(token_path.read_text(encoding="utf-8"))
+    assert token["pre_commit_aggregate"]["run_id"] == "pre-commit-aggregate:run-123"
+
+    refused = _run_module(
+        cwd=tmp_path,
+        command="write-pre-commit",
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+    )
+    assert refused.returncode != 0
+    assert "needs RUN_ID and OUTPUT_CHECKSUM" in refused.stderr
+
+
 def test_world_reading_prints_the_members_the_token_must_not_memoize(
     *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

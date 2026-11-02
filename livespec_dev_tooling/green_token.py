@@ -73,14 +73,24 @@ from returns.pipeline import is_successful  # noqa: E402  — vendor-path-aware 
 from returns.unsafe import unsafe_perform_io  # noqa: E402  — vendor-path-aware import.
 
 from livespec_dev_tooling import check_purity  # noqa: E402  — vendor-path-aware import.
+from livespec_dev_tooling._green_token_evidence import (  # noqa: E402
+    PreCommitAggregateEvidence,
+    persist_pre_commit_evidence,
+    read_evidence,
+)
+from livespec_dev_tooling._green_token_evidence import (  # noqa: E402
+    index_tree_hash as _index_tree_hash,
+)
 
 __all__: list[str] = []
 
 _TOKEN_FILE = "livespec-green-token.json"  # noqa: S105
 _WRITE = "write"
+_WRITE_PRE_COMMIT = "write-pre-commit"
 _CHECK = "check"
 _WORLD_READING = "world-reading"
 _UNDECLARED = "undeclared"
+_PRE_COMMIT_ARGUMENT_COUNT = 2
 
 
 def _git_dir(*, cwd: Path) -> Path:
@@ -177,6 +187,33 @@ def write_token(*, cwd: Path, log: structlog.stdlib.BoundLogger) -> int:
     except (OSError, subprocess.CalledProcessError) as exc:  # pragma: no cover
         log.warning("green token write failed; non-blocking", error=str(exc))
     return 0
+
+
+def write_pre_commit_evidence(
+    *,
+    cwd: Path,
+    log: structlog.stdlib.BoundLogger,
+    run_id: str,
+    output_checksum: str,
+) -> int:
+    """Record a passed full pre-commit aggregate against its staged index tree."""
+    try:
+        tree_hash = _index_tree_hash(cwd=cwd)
+    except (OSError, subprocess.CalledProcessError) as exc:  # pragma: no cover
+        log.warning("pre-commit aggregate evidence write failed; non-blocking", error=str(exc))
+        return 0
+    return persist_pre_commit_evidence(
+        path=_token_path(cwd=cwd),
+        tree_hash=tree_hash,
+        log=log,
+        run_id=run_id,
+        output_checksum=output_checksum,
+    )
+
+
+def read_pre_commit_evidence(*, cwd: Path) -> PreCommitAggregateEvidence | None:
+    """Return valid full pre-commit evidence, or None when it cannot be established."""
+    return read_evidence(path=_token_path(cwd=cwd))
 
 
 def check_token(*, cwd: Path, log: structlog.stdlib.BoundLogger) -> int:
@@ -316,7 +353,7 @@ def main() -> int:
     )
     _ = parser.add_argument(
         "command",
-        choices=[_WRITE, _CHECK, _WORLD_READING, _UNDECLARED],
+        choices=[_WRITE, _WRITE_PRE_COMMIT, _CHECK, _WORLD_READING, _UNDECLARED],
         help=(
             "'write' records a green token; 'check' tests if the token is valid; "
             "'world-reading' prints the given targets a token match may not stand in "
@@ -335,6 +372,15 @@ def main() -> int:
 
     if parsed.command == _WRITE:
         return write_token(cwd=cwd, log=log)
+    if parsed.command == _WRITE_PRE_COMMIT:
+        if len(targets) != _PRE_COMMIT_ARGUMENT_COUNT:
+            parser.error("write-pre-commit needs RUN_ID and OUTPUT_CHECKSUM")
+        return write_pre_commit_evidence(
+            cwd=cwd,
+            log=log,
+            run_id=targets[0],
+            output_checksum=targets[1],
+        )
     if parsed.command == _CHECK:
         return check_token(cwd=cwd, log=log)
     if parsed.command == _WORLD_READING:

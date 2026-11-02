@@ -41,13 +41,21 @@ if str(_SCRIPT_DIR) not in sys.path:
 from _red_green_replay_protocol import RED_GREEN_REPLAY_PROTOCOL  # noqa: E402
 from _red_green_replay_trailers import write_trailers  # noqa: E402
 
+from livespec_dev_tooling.green_token import (  # noqa: E402
+    PreCommitAggregateEvidence,
+    read_pre_commit_evidence,
+)
+
 __all__: list[str] = [
     "DEFAULT_TIMEOUT_SECONDS",
+    "PreCommitAggregateEvidence",
     "SuiteRun",
     "_handle_suite_green_mode",
     "canonical_output_checksum",
+    "handle_suite_green_mode",
     "has_shared_test_support",
     "run_suite",
+    "staged_tree_hash",
     "stages_only_shared_test_support",
     "suite_pytest_argv",
     "suite_timeout_seconds",
@@ -133,6 +141,21 @@ def xdist_importable() -> bool:
     return importlib.util.find_spec("xdist") is not None
 
 
+def staged_tree_hash(*, cwd: Path) -> str | None:
+    """Return the current index tree, or None when the hook cannot establish it."""
+    try:
+        result = subprocess.run(
+            ["git", "write-tree"],
+            cwd=str(cwd),
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+    except (OSError, subprocess.CalledProcessError):
+        return None
+    return result.stdout.strip() or None
+
+
 def has_shared_test_support(*, staged_paths: list[str]) -> bool:
     """Return whether staged test material can affect tests it does not name.
 
@@ -208,7 +231,7 @@ def run_suite(*, argv: list[str], timeout_seconds: int) -> SuiteRun:
         return SuiteRun(returncode=proc.returncode, output=stdout + stderr, timed_out=False)
 
 
-def _handle_suite_green_mode(
+def handle_suite_green_mode(
     *,
     msg_path: Path,
     log: structlog.stdlib.BoundLogger,
@@ -237,6 +260,26 @@ def _handle_suite_green_mode(
         staged_paths=staged_paths,
         tests_paths=selected_tests,
     )
+    if scope == "full-suite":
+        evidence = read_pre_commit_evidence(cwd=Path.cwd())
+        index_tree = staged_tree_hash(cwd=Path.cwd())
+        if evidence is not None and evidence.tree_hash == index_tree:
+            log.info(
+                "suite-green-reused-pre-commit-aggregate",
+                check_id="red-green-replay-suite-green-reused-pre-commit-aggregate",
+                tree_hash=index_tree,
+                run_id=evidence.run_id,
+            )
+            write_trailers(
+                msg_path=msg_path,
+                trailers=(
+                    ("TDD-Suite-Green-Scope", scope),
+                    ("TDD-Suite-Green-Output-Checksum", evidence.output_checksum),
+                    ("TDD-Suite-Green-Captured-At", evidence.captured_at),
+                    ("TDD-Suite-Green-Producer", evidence.run_id),
+                ),
+            )
+            return 0
     xdist_available = xdist_importable()
     if not xdist_available:
         log.warning(
@@ -307,3 +350,6 @@ def _handle_suite_green_mode(
         ),
     )
     return 0
+
+
+_handle_suite_green_mode = handle_suite_green_mode
