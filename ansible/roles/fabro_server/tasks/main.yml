@@ -1289,7 +1289,12 @@
   check_mode: true
   diff: true
   register: fabro_server_settings_drift
-  when: not (fabro_server_manage_settings | bool)
+  # A retained read-only instance is frozen as the rollback path: its
+  # settings.toml lost its write bit with the rest of the state root, so this
+  # comparison would report that mode on every drift read as if it were drift.
+  when:
+    - not (fabro_server_manage_settings | bool)
+    - not (fabro_server_retained_read_only | bool)
 
 - name: Name the settings drift in the run output
   ansible.builtin.debug:
@@ -1318,7 +1323,10 @@
     mode: "{{ fabro_server_settings_mode }}"
   become: true
   diff: true
-  when: fabro_server_manage_settings | bool
+  # Never for a retained read-only instance, whose files are frozen.
+  when:
+    - fabro_server_manage_settings | bool
+    - not (fabro_server_retained_read_only | bool)
   notify: Fabro instance files changed
 
 # --- supervise -------------------------------------------------------------
