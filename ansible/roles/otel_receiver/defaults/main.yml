@@ -45,3 +45,8 @@ otel_receiver_restart_pending_marker: "{{ otel_receiver_state_dir }}/restart-pen
 # -e otel_receiver_restart_allowed=true inside an announced window; otherwise it
 # records the restart as pending and the next allowed run applies it.
 otel_receiver_restart_allowed: false
+
+# `absent` retires the role on this host: tasks/retire.yml stops, disables and
+# removes the units the role installed, and the install half never runs
+# (livespec-dev-tooling-j53hzi). `present` is the install.
+otel_receiver_state: present

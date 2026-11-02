@@ -10,7 +10,16 @@ Every one of these equals this role's default, so **`hp-xubuntu` needs no
 something to differ from — and so the sizing rationale is not lost.
 
 ```yaml
-# hp-xubuntu
+# hp-xubuntu: RETIRED 2026-11-02 (livespec-dev-tooling-j53hzi), through
+# ansible/former-sandbox-hosts.yml. tasks/retire.yml stops, disables and removes
+# the units this role installed.
+sccache_redis_state: absent
+```
+
+The install values hp carried until then:
+
+```yaml
+# hp-xubuntu (until 2026-11-02)
 sccache_redis_bind_addr: 172.17.0.1
 sccache_redis_port: 6379
 sccache_redis_maxmemory: 4gb

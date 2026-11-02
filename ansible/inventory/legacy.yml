@@ -70,6 +70,14 @@ all:
             hp-xubuntu:
               ansible_user: cwoolley
               cluster_role: agent
+        # Hosts that LEFT `sandbox_hosts` and still carry what its play
+        # installed. ansible/former-sandbox-hosts.yml converges them: it keeps the
+        # sandbox-play roles a host still needs, and retires the rest through each
+        # role's `<role>_state: absent` (livespec-dev-tooling-j53hzi).
+        former_sandbox_hosts:
+          hosts:
+            hp-xubuntu:
+              ansible_user: cwoolley
         sandbox_hosts:
           hosts:
             # The current Fabro server's host (plan petri-factory-on-gmktec). An

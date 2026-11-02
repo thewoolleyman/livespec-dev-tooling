@@ -29,7 +29,9 @@ from pathlib import Path
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _PLAY = _REPO_ROOT / "ansible" / "fabro-hosts.yml"
-_HP_VARS = _REPO_ROOT / "ansible" / "inventory" / "host_vars" / "hp-xubuntu.yml"
+# gmktec-xubuntu, the host whose Fabro instances export to the receiver today.
+# hp-xubuntu retired the role on 2026-11-02 (livespec-dev-tooling-j53hzi).
+_HOST_VARS = _REPO_ROOT / "ansible" / "inventory" / "host_vars" / "gmktec-xubuntu.yml"
 # hp-xubuntu's fabro_server section left the inventory on 2026-11-02
 # (livespec-dev-tooling-2yn4yb); its factory checkout is read from the frozen copy.
 _HP_FABRO_SERVER = (
@@ -54,13 +56,13 @@ def _tasks() -> list[str]:
     return [f"- name: {chunk}" for chunk in body.split("\n- name: ")[1:]]
 
 
-def test_the_sandbox_hosts_play_converges_the_receiver_and_hp_enables_it() -> None:
+def test_the_sandbox_hosts_play_converges_the_receiver_and_its_host_enables_it() -> None:
     play = _PLAY.read_text(encoding="utf-8")
     sandbox = play.split("hosts: sandbox_hosts", 1)[1].split("\n- name: ", 1)[0]
     assert re.search(r"^    - role: otel_receiver$", sandbox, re.MULTILINE), sandbox
     assert re.search(r"^      tags: \[otel_receiver\]$", sandbox, re.MULTILINE), sandbox
-    hp_vars = _HP_VARS.read_text(encoding="utf-8")
-    assert _scalar(text=hp_vars, name="otel_receiver_enabled") == "true"
+    host_vars = _HOST_VARS.read_text(encoding="utf-8")
+    assert _scalar(text=host_vars, name="otel_receiver_enabled") == "true"
     assert (
         _scalar(text=_DEFAULTS.read_text(encoding="utf-8"), name="otel_receiver_enabled") == "false"
     )
@@ -87,7 +89,7 @@ def test_the_clone_is_the_roles_own_never_the_factory_checkout() -> None:
     assert "fabro_server_host_checkout" not in role_text.replace(
         "never fabro_server_host_checkout", ""
     )
-    home = _scalar(text=_HP_VARS.read_text(encoding="utf-8"), name="otel_receiver_home")
+    home = _scalar(text=_HOST_VARS.read_text(encoding="utf-8"), name="otel_receiver_home")
     install_root = _scalar(text=defaults, name="otel_receiver_install_root").replace(
         "{{ otel_receiver_home }}", home
     )

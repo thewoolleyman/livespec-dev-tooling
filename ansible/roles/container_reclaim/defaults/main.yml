@@ -41,3 +41,8 @@ container_reclaim_unit_dir: /etc/systemd/system
 container_reclaim_script_dest: "{{ container_reclaim_libexec_dir }}/container-reclaim.sh"
 container_reclaim_env_dest: "{{ container_reclaim_libexec_dir }}/container-reclaim.env"
 container_reclaim_timer_name: container-reclaim.timer
+
+# `absent` retires the role on this host: tasks/retire.yml stops, disables and
+# removes the units the role installed, and the install half never runs
+# (livespec-dev-tooling-j53hzi). `present` is the install.
+container_reclaim_state: present

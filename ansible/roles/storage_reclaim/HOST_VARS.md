@@ -15,7 +15,16 @@ defaulted as derivations of the service user and home, so each block below sets
 one only where that derivation is wrong for the host.
 
 ```yaml
-# hp-xubuntu
+# hp-xubuntu: RETIRED 2026-11-02 (livespec-dev-tooling-j53hzi), through
+# ansible/former-sandbox-hosts.yml. tasks/retire.yml stops, disables and removes
+# the units this role installed.
+storage_reclaim_state: absent
+```
+
+The install values hp carried until then:
+
+```yaml
+# hp-xubuntu (until 2026-11-02)
 storage_reclaim_canonical_host: hp-xubuntu.perch-rudd.ts.net
 storage_reclaim_system_hostname: hp-xubuntu
 storage_reclaim_service_user: cwoolley

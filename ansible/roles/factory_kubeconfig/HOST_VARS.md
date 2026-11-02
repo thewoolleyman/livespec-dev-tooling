@@ -39,8 +39,12 @@ server does not need this role edited.
 | `factory_kubeconfig_refresh_env` | `/etc/ci-runner/factory-refresh.env` | defaults | where the runtime tools read this host's pool facts |
 | `factory_kubeconfig_bin_dir` | `/usr/local/bin` | defaults | where kubectl and the two runtime tools land |
 
+hp-xubuntu no longer carries this role. It left `sandbox_hosts` on 2026-11-02, and
+ansible/former-sandbox-hosts.yml does not apply the role (livespec-dev-tooling-j53hzi).
+Its former block was:
+
 ```yaml
-# hp-xubuntu
+# hp-xubuntu (until 2026-11-02)
 factory_kubeconfig_ssh_user: cwoolley
 ```
 
