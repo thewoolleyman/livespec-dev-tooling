@@ -220,6 +220,9 @@ plan_lifecycle_anchor = true
 # so. Nothing about the fail-closed rule moves: once a push HAS delegated, a
 # verdict that never arrives refuses it rather than falling back to local.
 delegated_gate = true
+# The dev host delegates this commit-time aggregate when it can submit a gates
+# Job; sandbox and credentialless hosts retain the local pre-commit gate.
+delegated_pre_commit = true
 # What THIS repository's gate Job runs, in order — its own declaration rather
 # than a constant inside the shared `gate-job-template.yaml`
 # (livespec-dev-tooling-saxz). Three of these four exist in no other
