@@ -1,0 +1,7 @@
+---
+# The dev VPS is the only host this role reaches.  Keep the paths configurable
+# so its converge can be exercised without writing the test runner's /etc or
+# /proc/sys.
+dev_host_compaction_sysctl_dir: /etc/sysctl.d
+dev_host_compaction_dropin_name: 90-dev-host-disable-proactive-compaction.conf
+dev_host_compaction_sysctl_bin: /usr/sbin/sysctl

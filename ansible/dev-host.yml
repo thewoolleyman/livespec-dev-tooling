@@ -74,3 +74,8 @@
     # concurrency limit".
     - role: local_gate_slots
       tags: [local_gate_slots]
+    # On this VPS, proactive compaction could repeatedly chase an unreachable
+    # fragmentation target and burn a core; the role leaves on-demand paths
+    # alone. See its managed drop-in for the host measurement and rationale.
+    - role: dev_host_compaction
+      tags: [dev_host_compaction]
