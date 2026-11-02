@@ -387,8 +387,19 @@ if CI_CACHE_KILL_SWITCH=operator "${RENDERER}" --repo-root "${SCRATCH}/repo-a" \
     fail "CI_CACHE_KILL_SWITCH=operator does not reach the gate container"
   elif ! grep -F 'rm -rf /__w/_warm/uv' "${operator_out}" >/dev/null; then
     fail "the operator cache kill switch does not remove the gate's uv seed"
+  elif grep -F 'postStart:' "${operator_out}" >/dev/null; then
+    fail "the gate removes its uv seed in a postStart hook, which runs concurrently with the entrypoint"
+  elif ! awk '
+      /^      initContainers:/ { in_init = 1; next }
+      /^      containers:/ { in_init = 0 }
+      in_init && /- name: apply-cache-kill-switch/ { named = 1 }
+      in_init && named && /rm -rf \/__w\/_warm\/uv/ { removed = 1 }
+      in_init && named && /mountPath: \/__w$/ { mounted = 1 }
+      END { exit !(removed && mounted) }
+    ' "${operator_out}"; then
+    fail "the uv seed is not removed by an init container that mounts the warm-uv-cache volume at /__w"
   else
-    pass "the operator switch reaches the gate and removes its uv seed"
+    pass "the operator switch reaches the gate and an init container removes its uv seed before the entrypoint"
   fi
 else
   fail "renderer errored under CI_CACHE_KILL_SWITCH=operator: $(cat "${SCRATCH}/operator-cache-off.err")"
