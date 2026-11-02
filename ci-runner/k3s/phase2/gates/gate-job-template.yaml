@@ -522,6 +522,15 @@ spec:
                 { printf '%s\n' "${missing}" > /dev/termination-log; } 2> /dev/null || true
                 exit 1
               done
+              # `pyright`'s Python package installs its Node payload, including
+              # bundled typeshed, the first time it runs. Gate recipes fan out
+              # in parallel, so two members can otherwise read that extraction
+              # midway through and type-check against a partial stdlib. The
+              # consumer's lock is the authority for whether this executable is
+              # available: an unpinned consumer keeps its recipe unchanged.
+              if [ -f uv.lock ] && grep -Eq '^[[:space:]]*name = "pyright"[[:space:]]*$' uv.lock; then
+                uv run --frozen pyright --version
+              fi
               # THE RECIPES, CAPTURED — AND THE VERDICT DETAIL THEY OWN
               # (livespec-dev-tooling-plbimj). Everything above this line is
               # PROVISIONING, and each step above names itself in the
