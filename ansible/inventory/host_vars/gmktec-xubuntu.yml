@@ -418,8 +418,11 @@ fabro_server_instances:
     # environment's resources: the first canary build, 9b8ee43d8, ran Docker
     # sandboxes with no CPU or memory limit (measured 2026-10-23, run
     # 01M5K59S7H8W), where the fleet instance's carrier enforces 4 CPU / 8GB.
-    binary_source: /home/ubuntu/.local/state/fabro-web-prod/v0393-9f6c38fab/fabro
-    binary_sha256: e8ebf8ac88e5e18128ad559918b90341fc0dac93f1f5f7ff571039a1763f09d6
+    # 84fb903b8 (2026-11-02) is the carrier tip: per-run GitHub App selection
+    # and the node name on run_turn spans (thewoolleyman/fabro#14). BUILD_INFO
+    # beside the binary records the provenance.
+    binary_source: /home/ubuntu/.local/state/fabro-web-prod/v0393-84fb903b8/fabro
+    binary_sha256: d196f2a84decdf79fd2235c7126bd87050fec0f0806ed0a83c6948b7126fb7ce
     # The fleet instance's catalog, entry for entry; the reasons for each
     # entry are given there. Bump the images together with it.
     environments:
@@ -459,10 +462,14 @@ fabro_server_instances:
     # explicit /home/cwoolley/.local/state/sandbox-driver-kubernetes-rust,
     # which would be that same collision, so it names one under this
     # instance's root. Bump both sha256 together with the fleet instance's.
+    # The digest here is the one INSTALLED at /usr/local/bin on gmktec
+    # (d93437f0, measured 2026-11-02), not the role default v0.6.0 (f6a8ec3d),
+    # because every instance verifies it at start. It moves to v0.7.0
+    # (93ca024d) while each instance is empty, after main moves.
     sandbox_providers:
       kubernetes:
         path: /usr/local/bin/sandbox-driver-kubernetes
-        sha256: f6a8ec3d670a7ff902277bf0be8fc392d1e87ebd24584c103fd9b54b900d1f8d
+        sha256: d93437f0bcb495e13a3373a4d2578cc0b2dba2c39c1ad5f3fdcf801ce0788b6e
         inherit_env:
           - HOME
           - PATH
@@ -474,7 +481,7 @@ fabro_server_instances:
           memory_mb: 7629
       kubernetes-rust:
         path: /usr/local/bin/sandbox-driver-kubernetes
-        sha256: f6a8ec3d670a7ff902277bf0be8fc392d1e87ebd24584c103fd9b54b900d1f8d
+        sha256: d93437f0bcb495e13a3373a4d2578cc0b2dba2c39c1ad5f3fdcf801ce0788b6e
         inherit_env:
           - HOME
           - PATH
@@ -531,8 +538,11 @@ fabro_server_instances:
     # reverse. Keep the pair equal to the fleet instance's unless a change is
     # meant for one of them alone.
     binary_path: /home/cwoolley/.fabro-mi-homelab/bin/fabro
-    binary_source: /home/ubuntu/.local/state/fabro-web-prod/v0393-9f6c38fab/fabro
-    binary_sha256: e8ebf8ac88e5e18128ad559918b90341fc0dac93f1f5f7ff571039a1763f09d6
+    # 84fb903b8 (2026-11-02) is the carrier tip: per-run GitHub App selection
+    # and the node name on run_turn spans (thewoolleyman/fabro#14). BUILD_INFO
+    # beside the binary records the provenance.
+    binary_source: /home/ubuntu/.local/state/fabro-web-prod/v0393-84fb903b8/fabro
+    binary_sha256: d196f2a84decdf79fd2235c7126bd87050fec0f0806ed0a83c6948b7126fb7ce
     # The tag FOLLOWS homelab's own workflow pin
     # (.fabro/workflows/implement-work-item/workflow.toml in mi-homelab/homelab,
     # python-agent-v1.126.0), not the orchestrator's; bump the two together.
@@ -568,10 +578,14 @@ fabro_server_instances:
     # and the refresh tool's env-file and destination, which the plugin's 401
     # refresh inherits so it re-fetches homelab's credential, never the fleet's.
     # Bump its sha256 together with the fleet instance's.
+    # The digest here is the one INSTALLED at /usr/local/bin on gmktec
+    # (d93437f0, measured 2026-11-02), not the role default v0.6.0 (f6a8ec3d),
+    # because every instance verifies it at start. It moves to v0.7.0
+    # (93ca024d) while each instance is empty, after main moves.
     sandbox_providers:
       kubernetes:
         path: /usr/local/bin/sandbox-driver-kubernetes
-        sha256: f6a8ec3d670a7ff902277bf0be8fc392d1e87ebd24584c103fd9b54b900d1f8d
+        sha256: d93437f0bcb495e13a3373a4d2578cc0b2dba2c39c1ad5f3fdcf801ce0788b6e
         inherit_env:
           - HOME
           - PATH

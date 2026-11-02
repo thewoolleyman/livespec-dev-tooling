@@ -39,6 +39,16 @@ def test_the_pinned_plugin_reports_its_pods_node_in_the_sandbox_environment() ->
     )
 
 
+# The digest INSTALLED at /usr/local/bin on gmktec (v0.5.0, measured 2026-11-02).
+# The plugin is one shared binary every instance verifies at start, so it moves
+# only in a window where every instance on it is empty. Until main's window, an
+# instance restarted for another reason (the fabro-currency candidate rollout)
+# must pin the digest actually on the host, or it refuses to start. The fleet
+# instance itself is held to the role's digest by
+# test_fabro_server_gmktec_host_vars_section.
+_GMKTEC_INSTALLED_DIGEST = "d93437f0bcb495e13a3373a4d2578cc0b2dba2c39c1ad5f3fdcf801ce0788b6e"
+
+
 def test_every_gmktec_provider_kind_running_the_plugin_carries_the_pinned_digest() -> None:
     digest = _default(name="sandbox_driver_kubernetes_sha256")
     text = _GMKTEC.read_text(encoding="utf-8")
@@ -46,7 +56,9 @@ def test_every_gmktec_provider_kind_running_the_plugin_carries_the_pinned_digest
     assert (
         len(pinned) >= 2
     ), f"expected the gmktec provider kinds that run the plugin, found {pinned!r}"
-    assert set(pinned) == {digest}, (
-        f"gmktec provider kinds pin {sorted(set(pinned))} but the role installs {digest}; Fabro refuses "
-        f"a plugin whose digest differs from the one it was configured with"
+    assert digest in pinned, f"no gmktec provider kind pins the role's digest {digest}"
+    assert set(pinned) <= {digest, _GMKTEC_INSTALLED_DIGEST}, (
+        f"gmktec provider kinds pin {sorted(set(pinned))} but the role installs {digest} and the "
+        f"host holds {_GMKTEC_INSTALLED_DIGEST}; Fabro refuses a plugin whose digest differs from "
+        f"the one it was configured with"
     )

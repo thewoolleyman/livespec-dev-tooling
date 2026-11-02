@@ -778,18 +778,20 @@ together. The org-owned
 `fabro-server-mi-homelab` on port 32277 is declared beside them and belongs to a
 different project, not to the fleet factory.
 
-The candidate is pinned to Fabro `0.393.0-nightly.1` at commit `9f6c38f` — the
-registered-provider carrier, `thewoolleyman/fabro`
-`carrier-candidate-registered-20261023` with Petri `e92b191`, staged on the
-control node and carried from there by `binary_source` and `binary_sha256`. It
-replaces the v0.382 carrier the fleet instance ran while this host was being
-stood up. The fleet instance runs the next commit on that same carrier branch,
-`613add1` (2026-11-02): `9f6c38f` plus the per-run GitHub App selection
+The registered-provider carrier is Fabro `0.393.0-nightly.1` at commit `9f6c38f`
+— `thewoolleyman/fabro` `carrier-candidate-registered-20261023` with Petri
+`e92b191`, staged on the control node and carried from there by `binary_source`
+and `binary_sha256`. It replaced the v0.382 carrier the fleet instance ran while
+this host was being stood up. The fleet instance runs `613add1` (2026-11-02) on
+that same carrier branch: `9f6c38f` plus the per-run GitHub App selection
 (`[run.integrations.github.app]`, `thewoolleyman/fabro#13`,
 livespec-orchestrator-beads-fabro `bd-ib-voozdp`), which lets a run on the
-shared instance publish as its target repository's own App. The coordinator
-ruled that build onto `fabro-server` alone, so the candidate and
-`fabro-server-mi-homelab` keep `9f6c38f`. The rollback target is named in `host_vars` beside the pin and never
+shared instance publish as its target repository's own App. The candidate and
+`fabro-server-mi-homelab` run the branch tip `84fb903` (2026-11-02): `613add1`
+plus the node name on `run_turn` spans (`thewoolleyman/fabro#14`), ruled onto
+those two ahead of the fleet instance by the maintainer (plan `fabro-currency`).
+Both pin the plugin digest installed on the host until the window that moves
+the fleet instance moves the shared plugin. The rollback target is named in `host_vars` beside the pin and never
 here, because that is the file an operator rolling back edits.
 
 `fabro_server_host_checkout_remote` is declared because the host had no
