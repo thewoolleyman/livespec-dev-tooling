@@ -47,6 +47,8 @@ from _red_green_replay_trailers import (  # noqa: E402  — sibling private impo
 from returns.io import IOFailure  # noqa: E402  — vendor-path-aware import.
 from returns.unsafe import unsafe_perform_io  # noqa: E402  — vendor-path-aware import.
 
+from livespec_dev_tooling.commit_replay_delegate import run_replay  # noqa: E402
+
 # These symbols form this private sibling module's public surface to
 # its sole importer, `red_green_replay.py` (the parent supervisor imports
 # them after a runtime `sys.path.insert`). Declaring them in `__all__` marks
@@ -60,6 +62,65 @@ __all__: list[str] = [
     "_handle_suite_green_mode",
     "_refuse_half_pair",
 ]
+
+
+class _ReplayTestRun:
+    """One replay result, retaining remote provenance only for a real verdict."""
+
+    def __init__(
+        self,
+        *,
+        returncode: int,
+        output: str,
+        output_checksum: str,
+        trailers: tuple[tuple[str, str], ...],
+    ) -> None:
+        self.returncode = returncode
+        self.output = output
+        self.output_checksum = output_checksum
+        self.trailers = trailers
+
+
+def _run_replay_test(
+    *, log: structlog.stdlib.BoundLogger, pytest_argv: list[str], trailer_prefix: str
+) -> _ReplayTestRun:
+    """Use the gate Job's verdict, or run locally when it did not produce one."""
+    verdict = run_replay(repo_root=Path.cwd(), pytest_argv=pytest_argv)
+    if (
+        not verdict.local
+        and verdict.exit_status is not None
+        and verdict.job_name is not None
+        and verdict.tree_hash is not None
+        and verdict.output_checksum is not None
+    ):
+        log.info(
+            "commit-time replay gated by a gate Job",
+            check_id="red-green-replay-delegated",
+            job_name=verdict.job_name,
+            tree_hash=verdict.tree_hash,
+        )
+        return _ReplayTestRun(
+            returncode=verdict.exit_status,
+            output=verdict.reason,
+            output_checksum=verdict.output_checksum,
+            trailers=(
+                (f"TDD-{trailer_prefix}-Gate-Job", verdict.job_name),
+                (f"TDD-{trailer_prefix}-Staged-Tree", verdict.tree_hash),
+            ),
+        )
+    log.info(
+        "commit-time replay gated locally",
+        check_id="red-green-replay-gated-locally",
+        reason=verdict.reason,
+    )
+    local = subprocess.run(pytest_argv, capture_output=True, text=True, check=False)
+    output = local.stdout + local.stderr
+    return _ReplayTestRun(
+        returncode=local.returncode,
+        output=output,
+        output_checksum=f"sha256:{hashlib.sha256(output.encode('utf-8')).hexdigest()}",
+        trailers=(),
+    )
 
 
 def _refuse_half_pair(*, log: structlog.stdlib.BoundLogger, dropped: tuple[str, ...]) -> int:
@@ -111,19 +172,18 @@ def _handle_red_mode(
         tests_paths=tests_paths,
         test_file_checksum=test_file_checksum,
     )
-    pytest_result = subprocess.run(
-        [sys.executable, "-m", "pytest", str(test_file_path), "--tb=no", "-q"],
-        capture_output=True,
-        text=True,
-        check=False,
+    replay = _run_replay_test(
+        log=log,
+        pytest_argv=[sys.executable, "-m", "pytest", str(test_file_path), "--tb=no", "-q"],
+        trailer_prefix="Red",
     )
-    if pytest_result.returncode == 0:
+    if replay.returncode == 0:
         log.error(
             "test-passed-at-red-moment: not a valid Red moment",
             check_id="red-green-replay-test-passed-at-red",
             tests_paths=tests_paths,
             test_file_checksum=test_file_checksum,
-            pytest_returncode=pytest_result.returncode,
+            pytest_returncode=replay.returncode,
             hint=(
                 "Red mode requires the staged test to fail; "
                 "if the test already passes, this is not a Red "
@@ -138,20 +198,19 @@ def _handle_red_mode(
         check_id="red-green-replay-red-pytest-result",
         tests_paths=tests_paths,
         test_file_checksum=test_file_checksum,
-        pytest_returncode=pytest_result.returncode,
+        pytest_returncode=replay.returncode,
     )
-    pytest_output = pytest_result.stdout + pytest_result.stderr
-    output_checksum = f"sha256:{hashlib.sha256(pytest_output.encode('utf-8')).hexdigest()}"
     captured_at = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    failure_reason = " ".join(pytest_output.split())[:200]
+    failure_reason = " ".join(replay.output.split())[:200]
     write_trailers(
         msg_path=msg_path,
         trailers=(
             ("TDD-Red-Test", tests_paths[0]),
             ("TDD-Red-Failure-Reason", failure_reason),
             ("TDD-Red-Test-File-Checksum", test_file_checksum),
-            ("TDD-Red-Output-Checksum", output_checksum),
+            ("TDD-Red-Output-Checksum", replay.output_checksum),
             ("TDD-Red-Captured-At", captured_at),
+            *replay.trailers,
         ),
     )
     return 0
