@@ -379,6 +379,89 @@ spec:
               # before any recipe can read it, and an export written after the
               # suite started would reach nothing it ran.
               @@GATE_AUTHORITY_SKIP@@
+              # LOCKED ARTIFACTS USE THE PYPI FILES PROXY PER ARTIFACT.
+              # UV_DEFAULT_INDEX above reaches uvx and unlocked dependencies,
+              # but frozen uv.lock entries carry absolute
+              # files.pythonhosted.org URLs. The previous whole-lock prefix
+              # rewrite checked only /health, then made a proxy 404 read as an
+              # unsatisfiable package. Probe every locked artifact instead:
+              # rewrite the URLs the proxy serves, preserving hashes, and leave
+              # a miss or unreachable service at its original PyPI URL. The
+              # workspace is a throwaway fetch, so the rewritten lock never
+              # leaves this Job.
+              gate_pypi_proxy_serves() {
+                local path="$1" hostport host port
+                hostport="${PYPI_FILES_PROXY#http://}"
+                host="${hostport%%:*}"
+                port="${hostport##*:}"
+                timeout 2 bash -c '
+                  host="$1" port="$2" path="$3"
+                  exec 9<>"/dev/tcp/${host}/${port}" || exit 1
+                  printf "HEAD %s HTTP/1.0\r\nHost: %s\r\n\r\n" "${path}" "${host}" >&9
+                  status="$(head -n 1 <&9)"
+                  case "${status}" in
+                    HTTP/*\ 2*) exit 0 ;;
+                    *) exit 1 ;;
+                  esac
+                ' _ "${host}" "${port}" "${path}"
+              }
+              gate_pypi_proxy_answers() {
+                local path="$1" hostport host port
+                hostport="${PYPI_FILES_PROXY#http://}"
+                host="${hostport%%:*}"
+                port="${hostport##*:}"
+                timeout 2 bash -c '
+                  host="$1" port="$2" path="$3"
+                  exec 9<>"/dev/tcp/${host}/${port}" || exit 1
+                  printf "HEAD %s HTTP/1.0\r\nHost: %s\r\n\r\n" "${path}" "${host}" >&9
+                  status="$(head -n 1 <&9)"
+                  case "${status}" in
+                    HTTP/*) exit 0 ;;
+                    *) exit 1 ;;
+                  esac
+                ' _ "${host}" "${port}" "${path}"
+              }
+              rewrite_lock_through_pypi_proxy() {
+                local lock="$1" unavailable path served=0 direct=0
+                unavailable="$(mktemp)"
+                while IFS= read -r artifact; do
+                  path="${artifact#https://files.pythonhosted.org}"
+                  if gate_pypi_proxy_serves "${path}"; then
+                    served=$((served + 1))
+                  else
+                    printf '%s\n' "${path}" >> "${unavailable}"
+                    direct=$((direct + 1))
+                  fi
+                done < <(grep -oE 'https://files\.pythonhosted\.org/packages/[^" ]+' "${lock}" || true)
+                rewrite_script="$(mktemp)"
+                printf '%s\n' \
+                  'import pathlib' \
+                  'import sys' \
+                  'lock_path = pathlib.Path(sys.argv[1])' \
+                  'proxy = sys.argv[2]' \
+                  'unavailable = set(pathlib.Path(sys.argv[3]).read_text(encoding="utf-8").splitlines())' \
+                  'origin = "https://files.pythonhosted.org"' \
+                  'rewritten = lock_path.read_text(encoding="utf-8").replace(origin, proxy)' \
+                  'for path in unavailable: rewritten = rewritten.replace(f"{proxy}{path}", f"{origin}{path}")' \
+                  'lock_path.write_text(rewritten, encoding="utf-8")' > "${rewrite_script}"
+                python3 "${rewrite_script}" "${lock}" "${PYPI_FILES_PROXY}" "${unavailable}"
+                rm -f "${unavailable}" "${rewrite_script}"
+                printf '%s %s\n' "${served}" "${direct}"
+              }
+              if gate_pypi_proxy_answers /health; then
+                locks=0
+                proxied=0
+                direct=0
+                while IFS= read -r -d '' lock; do
+                  read -r served fallback < <(rewrite_lock_through_pypi_proxy "${lock}")
+                  locks=$((locks + 1))
+                  proxied=$((proxied + served))
+                  direct=$((direct + fallback))
+                done < <(find . -name uv.lock -not -path '*/.git/*' -print0)
+                echo ":: gate: ${locks} uv.lock file(s): ${proxied} locked artifacts through ${PYPI_FILES_PROXY}, ${direct} direct PyPI fallbacks"
+              else
+                echo ":: gate: WARN: pypi files proxy ${PYPI_FILES_PROXY} not answering /health; locked artifacts will be fetched directly from files.pythonhosted.org" >&2
+              fi
               for recipe in @@GATE_RECIPE_NAMES@@; do
                 if just --show "${recipe}" > /dev/null 2>&1; then
                   continue
