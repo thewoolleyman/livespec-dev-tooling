@@ -45,10 +45,16 @@ def test_an_absent_commit_replay_opt_in_runs_locally(*, tmp_path: Path) -> None:
     ],
 )
 def test_an_unavailable_replay_route_runs_locally(
-    *, tmp_path: Path, config: str, reason: str
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, config: str, reason: str
 ) -> None:
-    """Only a literal opt-in on a credentialed host selects delegation."""
+    """Only a literal opt-in on a credentialed host selects delegation.
+
+    The credential is pinned ABSENT here rather than read from the host: on the
+    dev host the gates kubeconfig IS readable, so asking the real host made the
+    opted-in case delegate and fail (livespec-dev-tooling-7ywtmk).
+    """
     module = _module()
+    monkeypatch.setattr(module, "gates_kubeconfig_readable", lambda: False)
     _ = (tmp_path / "pyproject.toml").write_text(config, encoding="utf-8")
 
     verdict = module.run_replay(repo_root=tmp_path, pytest_argv=["pytest", "tests/test_widget.py"])
