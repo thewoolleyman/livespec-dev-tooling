@@ -14,8 +14,9 @@
 #      `githubConfigUrl` of a per-repository scale set, de-duplicated: the
 #      live set of repositories routed to this pool, so the populator warms
 #      exactly the lockfiles this pool's jobs resolve and no hand-maintained
-#      second list can drift from the routing), the Namespace + CronJob from
-#      warm-cache-cronjob.yaml (with the `warm-cache-budget` ConfigMap), and
+#      second list can drift from the routing), the Namespace + carrier CronJob
+#      + per-workvol DaemonSet from warm-cache-cronjob.yaml (with the
+#      `warm-cache-budget` ConfigMap), and
 #      the script ConfigMap from ./warm-cache-populate.sh plus
 #      ./verify-uv-cache.py. That converge is ALSO what the
 #      reconstruct-on-boot path runs every boot (the datastore is tmpfs and

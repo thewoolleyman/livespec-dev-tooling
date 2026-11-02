@@ -16,16 +16,16 @@ every run.
 
 ## What it is
 
-A fleet-wide warm **uv** cache lower at
-`/var/lib/rancher/k3s/storage/.warm/uv`, written by exactly one trusted
-writer and reflink-copied into every runner work volume at the moment the
-volume is created:
+A per-runner-node warm **uv** cache lower at
+`/var/lib/rancher/k3s/storage/.warm/uv`, written by exactly one trusted writer
+on that node and reflink-copied into every runner work volume at the moment the
+local-path provisioner creates it:
 
 | Path | Role |
 |---|---|
 | `warm-cache-populate.sh` | The populator. Clones or fast-forwards every routed repository's default branch, hashes its `uv.lock`, and — when any lock changed, the published generation no longer verifies, or it is older than 24 h — builds a NEW generation from an EMPTY directory: per repository it rewrites the file-host prefix in its own clone's lock to the PyPI files proxy and runs `uv sync --frozen --all-groups --no-install-project --no-install-workspace` with that generation as `UV_CACHE_DIR`; runs the verifier; checks the budget; writes the generation's manifest; publishes with one atomic symlink rename; prunes to the newest two. A run with nothing changed verifies the live generation and records `rebuilt=0`. Every run writes `last-run.json` for the host sweep. For every repository with a `Cargo.lock` it also runs `cargo fetch --locked` through the crates proxy (`../crates-proxy/`) and builds the default branch with sccache as the compilation cache's one writer (`../sccache/`) when the branch or toolchain changed. Its header carries the whole control flow and the exit codes. |
 | `verify-uv-cache.py`, `uv_cache_layout.py` | The verifier (stdlib plus `returns`, both files shipped in the populator's ConfigMap and mounted together at `/scripts`): maps every entry of a uv 0.9.x cache back to a `(name, version)` and fails on any entry no routed lock references. The layout module holds the bucket table and the scanners; the CLI holds the lock union, the build-dependency closure and the report — split at the repo's per-file LLOC ceiling. "Verifier" below. |
-| `warm-cache-cronjob.yaml` | Namespace `ci-warm-cache`, the `warm-cache-budget` ConfigMap (the two budget numbers and their derivation), and the `warm-cache-populate` CronJob (every 30 min, `concurrencyPolicy: Forbid`), running the populator in the same fabro sandbox image the fleet's CI jobs execute in (the `python-rust` layer, so `cargo` is present), with the warm root mounted read-WRITE — the only mount of that path in the cluster — and the proxy's store mounted read-only for the hit-ratio count. |
+| `warm-cache-cronjob.yaml` | Namespace `ci-warm-cache`, the `warm-cache-budget` ConfigMap, the carrier-only `warm-cache-populate` CronJob (the one writer of cargo, sccache and target caches), and the `warm-uv-cache-populate` DaemonSet. The DaemonSet selects every non-carrier node labelled `ci-runner.io/warm-uv-cache=true`, writes only that node's uv lower, starts one run immediately and repeats every 30 minutes. |
 | `pypi-proxy/` | The PyPI FILES proxy every rebuild fetches through: one nginx `proxy_cache` in front of `files.pythonhosted.org` on the `ci-cache` tier, read only by the populator. "The PyPI files proxy" below and its own README. |
 | `converge-warm-cache.sh` | The idempotent converge of every cluster object here: the proxy (with a bounded rollout wait), the budget ConfigMap + CronJob, the `warm-cache-repos` ConfigMap derived from `../arc/values-*.yaml`, and the script ConfigMap from the populator AND the verifier. Run by the boot converge and by `install-warm-cache.sh`. |
 | `install-warm-cache.sh` | The attended superset: the converge, one populate Job run immediately and waited for, then `arc-hook-pod-template` converged via `../arc/converge-hook-pod-template.sh`. Idempotent; re-run after adding a routed repository. |
