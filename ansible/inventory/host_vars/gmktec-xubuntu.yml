@@ -340,6 +340,26 @@ fabro_server_instances:
         type: file
         description: GitHub App 3668528 private key
         from_controller_env: GITHUB_PRIVATE_KEY
+      # The per-run App selection source for homelab's runs on this shared
+      # instance (livespec-orchestrator-beads-fabro bd-ib-voozdp, fabro#13): a
+      # run whose config names [run.integrations.github.app] app_id_secret =
+      # HOMELAB_GITHUB_APP_ID and private_key_secret =
+      # HOMELAB_GITHUB_APP_PRIVATE_KEY publishes as homelab's org App 4688510,
+      # not as the fleet App above. The key comes from homelab's OWN controller
+      # variable, never from GITHUB_PRIVATE_KEY, for the reason the
+      # fabro-server-mi-homelab entry below gives. An apply that finds this
+      # vault lacking either name refuses unless that variable is bound, so
+      # bind it for the apply that first creates them:
+      #   hl param run --bind MI_HOMELAB_GITHUB_PRIVATE_KEY=/homelab/v1/providers/github/mi-homelab-factory-bot/private-key
+      # Once both names exist, later applies never read the variable again.
+      - name: HOMELAB_GITHUB_APP_ID
+        type: token
+        description: GitHub App id of homelab's org App (mi-homelab-factory-bot); an id, not a secret
+        value: "4688510"
+      - name: HOMELAB_GITHUB_APP_PRIVATE_KEY
+        type: file
+        description: GitHub App 4688510 (mi-homelab-factory-bot) private key, selected per run
+        from_controller_env: MI_HOMELAB_GITHUB_PRIVATE_KEY
       - name: OPENAI_API_KEY
         type: token
         description: placeholder so ACP-only graphs pass fabro.model.no_ready_provider admission; not a real key
