@@ -773,12 +773,18 @@ it shares this host with the fleet instance's runs. The org-owned
 `fabro-server-mi-homelab` on port 32277 is declared beside them and belongs to a
 different project, not to the fleet factory.
 
-Both are pinned to Fabro `0.393.0-nightly.1` at commit `9f6c38f` — the
+The candidate is pinned to Fabro `0.393.0-nightly.1` at commit `9f6c38f` — the
 registered-provider carrier, `thewoolleyman/fabro`
 `carrier-candidate-registered-20261023` with Petri `e92b191`, staged on the
 control node and carried from there by `binary_source` and `binary_sha256`. It
 replaces the v0.382 carrier the fleet instance ran while this host was being
-stood up. The rollback target is named in `host_vars` beside the pin and never
+stood up. The fleet instance runs the next commit on that same carrier branch,
+`613add1` (2026-11-02): `9f6c38f` plus the per-run GitHub App selection
+(`[run.integrations.github.app]`, `thewoolleyman/fabro#13`,
+livespec-orchestrator-beads-fabro `bd-ib-voozdp`), which lets a run on the
+shared instance publish as its target repository's own App. The coordinator
+ruled that build onto `fabro-server` alone, so the candidate and
+`fabro-server-mi-homelab` keep `9f6c38f`. The rollback target is named in `host_vars` beside the pin and never
 here, because that is the file an operator rolling back edits.
 
 `fabro_server_host_checkout_remote` is declared because the host had no
@@ -848,7 +854,8 @@ are needed before a run can use the plugin:
 Declaring a provider requires a Fabro build that registers an unbundled kind as a
 Petri registered provider (plan `kubernetes-sandbox-backend`; Petri PRs #122 and
 #131). The deployed one is the carrier `0.393.0-nightly.1` (`9f6c38f`), which
-every Fabro instance on `gmktec-xubuntu` is pinned to. Such a build requires a
+every Fabro instance on `gmktec-xubuntu` runs, the fleet instance through its
+successor `613add1` on the same carrier branch. Such a build requires a
 `process_spec`, the sandbox-driver `SandboxSpec` every sandbox of that kind is
 built from, and refuses the provider without one. The role renders it from three keys: `image`
 (the OCI reference), `cpu_cores` and `memory_mb`. Petri lays each run's own

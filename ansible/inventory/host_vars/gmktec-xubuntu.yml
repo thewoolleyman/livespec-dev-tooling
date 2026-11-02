@@ -207,12 +207,18 @@ fabro_server_instances:
     # memory.max 8000634880, identical to this instance's previous carrier, both
     # driven by the fleet's pinned 0.382 client. thewoolleyman/fabro
     # carrier-candidate-registered-20261023 at 9f6c38fab, Petri e92b191;
-    # provenance in BUILD_INFO. ROLLBACK: set these two back to
-    # /home/ubuntu/.local/state/fabro-web-prod/v0389-bf5a2dc35/fabro and
-    # b70c2ec605985344d1fbc83d371b57673a2c391b0b5e8dd3413d3a3fa5ffb853 (bf5a2dc, the
-    # 0.389 carrier, kept staged on vps) and apply in a held window.
-    binary_source: /home/ubuntu/.local/state/fabro-web-prod/v0393-9f6c38fab/fabro
-    binary_sha256: e8ebf8ac88e5e18128ad559918b90341fc0dac93f1f5f7ff571039a1763f09d6
+    # provenance in BUILD_INFO.
+    # 2026-11-02: moved to 613add19c, the next commit on that same carrier
+    # branch: 9f6c38fab plus the per-run GitHub App selection
+    # ([run.integrations.github.app], thewoolleyman/fabro#13,
+    # livespec-orchestrator-beads-fabro bd-ib-voozdp). The coordinator ruled it
+    # onto this instance alone; the candidate and fabro-server-mi-homelab below
+    # keep 9f6c38fab. ROLLBACK: set these two back to
+    # /home/ubuntu/.local/state/fabro-web-prod/v0393-9f6c38fab/fabro and
+    # e8ebf8ac88e5e18128ad559918b90341fc0dac93f1f5f7ff571039a1763f09d6 (9f6c38fab,
+    # still staged on vps for the other two instances) and apply in a held window.
+    binary_source: /home/ubuntu/.local/state/fabro-web-prod/v0393-613add19c/fabro
+    binary_sha256: def1dc89890c0481f8e733016ab78481dd2f26d8cab9248eb6b4b1fec5f6a344
     # The tag the orchestrator workflow pins today
     # (.claude-plugin/.fabro/workflows/implement-work-item/workflow.toml,
     # python-agent-v1.136.2). On this engine the catalog, not the workflow
