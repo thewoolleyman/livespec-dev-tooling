@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.157.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.156.0...v1.157.0) (2026-11-02)
+
+
+### Features
+
+* **llm-spend:** one tested price table for every LLM-spend emitter (livespec-dev-tooling-mnj7) ([7de1694](https://github.com/thewoolleyman/livespec-dev-tooling/commit/7de16940857e8271be50e8abd6563c8b4175daf5))
+
 ## [1.156.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.155.0...v1.156.0) (2026-11-02)
 
 
