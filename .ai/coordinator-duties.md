@@ -280,6 +280,21 @@ about 38 tickets queued in arrival order. The coordinator audited each item's ti
 saw `fleet=6` and 87 % idle in a launcher log line, and asked about it as a side question instead of ruling on it.
 The fix is bd-ib-x7bwug.
 
+**The dispatcher watches throughput first; the coordinator checks it independently.** The coordinator's tick samples
+every ~20 minutes, so it cannot be the first to see a stall. legacy-dispatcher-agent runs the launchers and owns
+ticket order (its charter), so on every pass it also:
+
+- orders queued tickets by the current priorities record, FIFO only within one priority;
+- reads live runs against the fleet cap and each per-host cap, with the queue depth;
+- arms a Monitor that fires when live runs stay below the cap for 5 minutes while tickets wait and no hold is set,
+  and on that event names the serializer and messages the coordinator at once, without waiting for a tick;
+- carries this duty in its own loop prompt and restart handoff, so a restart does not drop it.
+
+The coordinator runs the same stall Monitor from its own seat (local launcher logs, `fleet-cap` and the queue
+directory only, never ssh with sudo kubectl) as a second, independent check, and its tick still opens with the
+UTILIZATION read. The two seats do not rely on each other's report. Maintainer, 2026-11-02 ~18:2xZ: "What are you
+actually doing to make this more reliable from the dispatcher's perspective as well as yours?"
+
 **Ask the connector before asking the maintainer.** When the answer to an ask lives in a system the coordinator has
 a connector for (Gmail, Calendar, Drive, Slack, Honeycomb), query it first. If the connector is missing or
 unauthenticated, the ask becomes "fix connector X", with the exact symptom. Maintainer correction 2026-11-02.
