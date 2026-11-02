@@ -131,6 +131,9 @@
     success_msg: the checkout root {{ item }} is absolute
   loop: "{{ dev_host_retention_checkout_roots }}"
 
+- name: Refuse a missing or non-executable uv executable
+  ansible.builtin.include_tasks: uv_bin.yml
+
 - name: Install the dev host retention script
   # `validate` runs bash's own parser over the staged copy, so a retention that
   # cannot be parsed is refused here rather than discovered as a failed timer

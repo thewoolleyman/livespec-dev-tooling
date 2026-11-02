@@ -61,6 +61,7 @@ with no installed runner is SKIPPED and says so.
 | `dev_host_retention_capacity_repeat_interval_seconds` | `3600` | one-hour minimum interval between repeated capacity notifications per filesystem |
 | `dev_host_retention_user` | `root` | the login the retention runs as; see below, it is the one value the dev host must set |
 | `dev_host_retention_uv_bin` | `/usr/bin/uv` | absolute path to the uv executable the retention invokes while pruning that user's cache |
+| `dev_host_retention_uv_installs_dir` | `/home/<user>/.local/share/mise/installs/uv` | read only to list the installed mise uv versions when the converge refuses a missing `dev_host_retention_uv_bin` |
 | `dev_host_retention_checkout_roots` | `[/data/projects]` | the directories the governed checkouts sit directly inside; the sweep descends one level and takes every entry carrying a `.git` |
 | `dev_host_retention_filesystem` | `/` | the filesystem whose free space each run reports before and after |
 | `dev_host_retention_bin` | `/usr/local/sbin/livespec-dev-host-retention` | where the retention script is installed |
@@ -80,7 +81,15 @@ for a host nobody has set this on.
 **Why `dev_host_retention_uv_bin` is an absolute path.** The systemd unit runs
 as root, whose PATH does not include a login's mise shims. The unit passes this
 configured executable to the script, which sets the retention user's HOME when
-it invokes a non-root user's uv so a mise shim can resolve its configuration.
+it invokes a non-root user's uv. Point it at a concrete, version-pinned binary,
+never a mise shim: run from the unit, with cwd `/` and no project configuration,
+the shim fails with `No version is set for shim: uv`, so the prune never runs
+(measured on the dev host 2026-11-02).
+
+The converge FAILS when the configured path is missing or not executable, and
+the failure names the installed mise uv versions. A version-pinned install is
+removed by an uninstall, and the script on its own would only log that and
+carry on, which on an unattended timer nobody reads.
 
 Linked worktrees need no entry of their own: a worktree's gate runs are written
 to its PRIMARY checkout's store, which is why a run outlives the worktree that
@@ -91,7 +100,7 @@ started it.
 # `ubuntu` login's (the same login `codex_config_user` and `fabro_server_host_user`
 # name).
 dev_host_retention_user: ubuntu
-dev_host_retention_uv_bin: /home/ubuntu/.local/share/mise/shims/uv
+dev_host_retention_uv_bin: /home/ubuntu/.local/share/mise/installs/uv/0.11.10/uv-x86_64-unknown-linux-musl/uv
 ```
 
 ## Operator procedure

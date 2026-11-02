@@ -475,7 +475,12 @@ def test_the_retention_service_hands_its_configured_uv_executable_to_the_script(
 
 
 def test_the_uv_executable_is_documented_and_set_for_the_dev_host() -> None:
-    """The mise shim is explicit because systemd does not inherit the login PATH."""
+    """The dev host names a concrete, version-pinned uv binary, never a mise shim.
+
+    systemd does not inherit the login PATH, and a mise shim run from the unit
+    (cwd `/`, no project configuration) fails with "No version is set for shim:
+    uv", so the prune never runs. mise's `latest` alias can move on an upgrade.
+    """
     doc = _read(path=_ROLE_DOC)
     assert _UV_BIN_VARIABLE in doc, (
         f"the owning role's HOST_VARS.md must document {_UV_BIN_VARIABLE}: the "
@@ -483,12 +488,14 @@ def test_the_uv_executable_is_documented_and_set_for_the_dev_host() -> None:
     )
     vps_host_vars = _read(path=_VPS_HOST_VARS)
     assert re.search(
-        rf"^{_UV_BIN_VARIABLE}: /home/ubuntu/\.local/share/mise/shims/uv$",
+        rf"^{_UV_BIN_VARIABLE}: /home/ubuntu/\.local/share/mise/installs/uv/"
+        r"\d+\.\d+\.\d+/[^/\s]+/uv$",
         vps_host_vars,
         re.MULTILINE,
     ), (
-        "the dev host must configure ubuntu's uv shim, which is the executable that "
-        f"can prune the cache systemd's root PATH cannot reach:\n{vps_host_vars}"
+        "the dev host must configure a version-pinned uv binary under mise's installs, "
+        "which runs from the root-run unit where the shim cannot resolve a version:\n"
+        f"{vps_host_vars}"
     )
 
 
@@ -520,6 +527,66 @@ def _list_tasks(*, tags: list[str] | None) -> str:
     )
     assert done.returncode == 0, done.stdout + done.stderr
     return done.stdout
+
+
+def _check_uv_bin(*, tmp_path: Path, uv_bin: Path, installs: Path) -> tuple[int, str]:
+    """Run the role's uv-executable check alone, against this machine, in a scratch play."""
+    play = tmp_path / "uv-bin-check.yml"
+    play.write_text(
+        "- hosts: localhost\n"
+        "  connection: local\n"
+        "  gather_facts: false\n"
+        "  tasks:\n"
+        "    - ansible.builtin.include_role:\n"
+        f"        name: {_ROLE_NAME}\n"
+        "        tasks_from: uv_bin\n",
+        encoding="utf-8",
+    )
+    done = subprocess.run(
+        [
+            "uvx",
+            "--from",
+            _ansible_core_pin(),
+            "ansible-playbook",
+            "-i",
+            "localhost,",
+            "-e",
+            f"{_UV_BIN_VARIABLE}={uv_bin}",
+            "-e",
+            f"dev_host_retention_uv_installs_dir={installs}",
+            str(play),
+        ],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        timeout=_TIMEOUT_SECONDS,
+        check=False,
+        env=os.environ | {"ANSIBLE_ROLES_PATH": str(_ANSIBLE / "roles"), "ANSIBLE_NOCOWS": "1"},
+    )
+    return done.returncode, done.stdout + done.stderr
+
+
+def test_the_converge_fails_naming_a_missing_uv_executable_and_the_installed_versions(
+    *, tmp_path: Path
+) -> None:
+    """A uv path that is gone fails the apply loudly instead of a log line nobody reads."""
+    installs = tmp_path / "installs" / "uv"
+    (installs / "0.11.10").mkdir(parents=True)
+    (installs / "0.9.28").mkdir()
+    missing = tmp_path / "installs" / "uv" / "0.5.20" / "uv"
+    returncode, output = _check_uv_bin(tmp_path=tmp_path, uv_bin=missing, installs=installs)
+    assert returncode != 0, output
+    assert str(missing) in output, output
+    assert "0.11.10" in output and "0.9.28" in output, output
+
+
+def test_the_converge_accepts_an_executable_uv(*, tmp_path: Path) -> None:
+    """An executable configured uv passes the same check."""
+    uv_bin = tmp_path / "uv"
+    uv_bin.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    uv_bin.chmod(0o755)
+    returncode, output = _check_uv_bin(tmp_path=tmp_path, uv_bin=uv_bin, installs=tmp_path)
+    assert returncode == 0, output
 
 
 def test_the_dev_host_play_installs_the_retention_script_and_its_daily_timer() -> None:

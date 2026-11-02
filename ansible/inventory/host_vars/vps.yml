@@ -39,8 +39,13 @@ container_reclaim_system_hostname: vmi3006760
 # leave the 52G one measured on 2026-10-21.
 dev_host_retention_user: ubuntu
 # systemd runs this role as root, whose PATH does not include ubuntu's mise
-# shims. The retention script supplies ubuntu's HOME while invoking this shim.
-dev_host_retention_uv_bin: /home/ubuntu/.local/share/mise/shims/uv
+# shims. A concrete, version-pinned binary, NOT the mise shim: run from the
+# service (cwd /, no project config) the shim fails with "No version is set
+# for shim: uv" (measured 2026-11-02), so the prune never ran. Pinned rather
+# than mise's installs/uv/latest, which a mise upgrade can move. Re-point this
+# when that uv version is uninstalled; the converge refuses a missing path and
+# names the installed versions.
+dev_host_retention_uv_bin: /home/ubuntu/.local/share/mise/installs/uv/0.11.10/uv-x86_64-unknown-linux-musl/uv
 
 # --- fabro_server ---
 fabro_server_host_user: ubuntu

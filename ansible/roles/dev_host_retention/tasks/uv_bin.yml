@@ -1,0 +1,31 @@
+---
+# Refuse a configured uv executable that is missing or not executable.
+#
+# The retention script logs "configured uv executable is not executable" and
+# carries on, which on an unattended timer is a log line nobody reads: the uv
+# cache would stop being pruned with nothing failing. The dev host points this
+# variable at a version-pinned mise install, which an uninstall removes, so the
+# converge refuses it here and names the versions that ARE installed.
+- name: Read the configured uv executable
+  ansible.builtin.stat:
+    path: "{{ dev_host_retention_uv_bin }}"
+  register: dev_host_retention_uv_bin_stat
+
+- name: List the installed mise uv versions
+  ansible.builtin.find:
+    paths: "{{ dev_host_retention_uv_installs_dir }}"
+    file_type: directory
+  register: dev_host_retention_uv_installs
+
+- name: Refuse a uv executable that is missing or not executable
+  ansible.builtin.assert:
+    that:
+      - dev_host_retention_uv_bin_stat.stat.exists
+      - dev_host_retention_uv_bin_stat.stat.executable
+    fail_msg: >-
+      dev_host_retention_uv_bin {{ dev_host_retention_uv_bin }} is missing or not
+      executable, so the retention would never prune the uv cache. Installed mise uv
+      versions under {{ dev_host_retention_uv_installs_dir }}:
+      {{ dev_host_retention_uv_installs.files | map(attribute='path') | map('basename') | sort | join(', ') or 'none' }}.
+      Re-point dev_host_retention_uv_bin in this host's host_vars.
+    success_msg: the configured uv executable is executable
