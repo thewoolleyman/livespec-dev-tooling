@@ -38,10 +38,6 @@ def _tracked_shell_paths() -> tuple[Path, ...]:
     return tuple(paths)
 
 
-def _non_comment_lines(*, text: str) -> tuple[str, ...]:
-    return tuple(line for line in text.splitlines() if not line.lstrip().startswith("#"))
-
-
 def _run_reader_form(*, form: str, matched: bool, large: bool) -> int:
     value = "needle\n" if matched else "other\n"
     if large:
@@ -63,6 +59,20 @@ def _run_reader_form(*, form: str, matched: bool, large: bool) -> int:
     return completed.returncode
 
 
+def _early_reader_violations(*, paths: tuple[Path, ...], repo_root: Path) -> tuple[str, ...]:
+    violations: list[str] = []
+    for path in paths:
+        text = path.read_text(encoding="utf-8")
+        if "pipefail" not in text:
+            continue
+        for line_number, line in enumerate(text.splitlines(), start=1):
+            if line.lstrip().startswith("#"):
+                continue
+            if _EARLY_READER.search(line):
+                violations.append(f"{path.relative_to(repo_root)}:{line_number}: {line.strip()}")
+    return tuple(violations)
+
+
 def test_pipefail_reader_forms_keep_their_small_input_verdict_on_large_input() -> None:
     """Each approved rewrite preserves its match verdict past a pipe buffer."""
     for form in ("here-string", "draining-reader", "writer-status-excluded"):
@@ -75,13 +85,20 @@ def test_pipefail_reader_forms_keep_their_small_input_verdict_on_large_input() -
 
 def test_pipefail_scripts_do_not_use_early_exiting_pipeline_readers() -> None:
     """Every sweep rewrite uses an approved whole-input or status-isolating form."""
-    violations: list[str] = []
-    for path in _tracked_shell_paths():
-        text = path.read_text(encoding="utf-8")
-        if "pipefail" not in text:
-            continue
-        for line_number, line in enumerate(_non_comment_lines(text=text), start=1):
-            if _EARLY_READER.search(line):
-                violations.append(f"{path.relative_to(_REPO_ROOT)}:{line_number}: {line.strip()}")
+    violations = _early_reader_violations(paths=_tracked_shell_paths(), repo_root=_REPO_ROOT)
 
     assert not violations, "\n".join(violations)
+
+
+def test_pipefail_sweep_reports_an_early_exiting_reader(tmp_path: Path) -> None:
+    """The sweep must make unsafe readers actionable rather than silently skipping them."""
+    unsafe_script = tmp_path / "scripts" / "unsafe.sh"
+    unsafe_script.parent.mkdir()
+    unsafe_script.write_text(
+        "#!/usr/bin/env bash\nset -o pipefail\nprintf 'needle\\n' | grep -q needle\n",
+        encoding="utf-8",
+    )
+
+    assert _early_reader_violations(paths=(unsafe_script,), repo_root=tmp_path) == (
+        "scripts/unsafe.sh:3: printf 'needle\\n' | grep -q needle",
+    )
