@@ -5,7 +5,6 @@ from __future__ import annotations
 import importlib
 import os
 import subprocess
-import time
 from pathlib import Path
 
 import pytest
@@ -89,6 +88,15 @@ _RUN_TIMEOUT_S = 15.0
             id="mise-just-check-member",
         ),
         pytest.param(
+            ("just", "check-"),
+            False,
+            True,
+            True,
+            "host_local",
+            "command outside full-suite set",
+            id="bare-check-dash-recipe",
+        ),
+        pytest.param(
             ("uv", "run", "pytest", "tests"),
             False,
             True,
@@ -132,7 +140,9 @@ def _environment(*, project_root: Path) -> dict[str, str]:
     return environment
 
 
-def _run(*, args: list[str], cwd: Path, env: dict[str, str]) -> subprocess.CompletedProcess[str]:
+def _run(
+    *, args: list[str], cwd: Path, env: dict[str, str], timeout: float | None = None
+) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         args,
         cwd=str(cwd),
@@ -140,6 +150,7 @@ def _run(*, args: list[str], cwd: Path, env: dict[str, str]) -> subprocess.Compl
         check=False,
         capture_output=True,
         text=True,
+        timeout=timeout,
     )
 
 
@@ -167,10 +178,10 @@ def _start(*, root: Path, env: dict[str, str], args: list[str]) -> Path:
     assert launched.returncode == 0, launched.stderr
     run_id = launched.stdout.strip()
     run_dir = root / "tmp" / "gate-runs" / run_id
-    deadline = time.monotonic() + _RUN_TIMEOUT_S
-    while not (run_dir / "exit_code").is_file():
-        assert time.monotonic() < deadline, f"gate run {run_id} did not finish"
-        time.sleep(0.05)
+    waited = _run(
+        args=["bash", str(_RUNNER), "wait", run_id], cwd=root, env=env, timeout=_RUN_TIMEOUT_S
+    )
+    assert waited.returncode == 0, waited.stdout + waited.stderr
     return run_dir
 
 
