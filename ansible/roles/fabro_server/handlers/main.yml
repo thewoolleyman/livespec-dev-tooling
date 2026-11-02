@@ -76,11 +76,12 @@
       {{ fabro_server_unit_name }} on {{ inventory_hostname }} OWES A RESTART.
 
       Files this role manages for this instance — its systemd unit, its OTLP
-      drop-in, its settings.toml, or the Fabro binary at
-      {{ fabro_server_binary_path }} — describe a server that is not the one
-      currently running. The run that changed them had
-      fabro_server_restart_allowed false, so nothing was restarted and the
-      instance keeps serving its current runs under the OLD configuration.
+      drop-in, its settings.toml, or a Fabro binary staged at
+      {{ fabro_server_binary_path }}.incoming — describe a server that is not
+      the one currently running. The run that changed them had
+      fabro_server_restart_allowed false, so nothing was restarted. For a
+      staged binary, {{ fabro_server_binary_path }} remains the old executable
+      until the allowed restart promotes the candidate.
 
       To apply it: re-run this role against this instance with
       -e fabro_server_restart_allowed=true, inside a window in which the

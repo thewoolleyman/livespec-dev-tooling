@@ -90,18 +90,22 @@ For an instance that declares the pair, one apply does this and only this:
    the run if the file is absent or hashes to anything but `binary_sha256`.
    Nothing on the factory host has been read at this point, let alone written.
 2. Compares `binary_sha256` against the digest of whatever the host holds at
-   `binary_path`. Equal means the host already runs that build and steps 3–5 are
+   `binary_path`. Equal means the host already runs that build and steps 3–6 are
    all skipped — a converged host reports no change.
 3. Stages a copy at `<binary_path>.incoming`, owned by the instance's service
    user with mode `0755`.
-4. Keeps the outgoing binary at `<binary_path>.<first-12-of-its-sha256>.bak`, so
-   a rollback can name the build it is returning to. Skipped on a first install,
-   where there is nothing to keep.
-5. Renames the staged copy onto `binary_path` — `rename(2)` within one
+4. When this run can safely start or restart the instance, keeps the outgoing
+   binary at `<binary_path>.<first-12-of-its-sha256>.bak`, so a rollback can
+   name the build it is returning to. Skipped on a first install, where there is
+   nothing to keep.
+5. In that same safe-start or allowed-restart run, renames the staged copy onto
+   `binary_path` — `rename(2)` within one
    directory, so the binary is either the old build or the new one and never a
    half-written file. `binary_path` is what a running server's `ExecStart` named
    and what `Restart=always` re-execs, which is why nothing is ever written to it
    directly.
+6. Otherwise, leaves the candidate at `<binary_path>.incoming`, leaves
+   `binary_path` untouched, and records the deferred restart.
 
 A replacement notifies the same `Fabro instance files changed` handler a changed
 unit file does, so it obeys the same two refusals: the handler does nothing
@@ -109,18 +113,18 @@ unless `fabro_server_restart_allowed` is set, and whenever that flag IS set the
 carrying-runs preflight has already halted the play if the instance is carrying
 runs.
 
-**Replacing a binary therefore never interrupts a live factory.** Note the one
-case the two refusals do not cover and why it is still safe: with the default
-`fabro_server_restart_allowed` false, the carrying-runs probe is skipped
-entirely, so the binary is replaced under a busy factory. `rename(2)` does not
-touch the inode a running process already execs — the server keeps serving its
-runs from the old build, the new one sits at `binary_path` waiting for the next
-start, and the handler says out loud in the run output that it did not restart.
-Picking up the new build is then an operator's deliberate act: quiesce the
-instance and re-run with `-e fabro_server_restart_allowed=true`, or restart it by
-hand. That re-run works because the refusing run RECORDED the deferral on the
-host — see "The deferred restart" below for what it wrote and what the re-run
-does with it.
+**A deferred binary update never unlinks a live factory executable.** A running
+Fabro server spawns each run's worker from its own executable path. Renaming a
+new binary over that path leaves the server process alive but causes Linux to
+report its executable as `<binary_path> (deleted)`, so later worker spawns fail.
+`binary_path` is never replaced while its server will not restart. With the
+default `fabro_server_restart_allowed` false, a busy factory therefore keeps the
+old binary at `binary_path` and the requested build at
+`<binary_path>.incoming`; the handler records the deferred restart. Picking up
+the new build is then an operator's deliberate act: quiesce the instance and
+re-run with `-e fabro_server_restart_allowed=true`. That run promotes the staged
+build before restarting the server — see "The deferred restart" below for what
+the refusing run wrote and what the re-run does with it.
 
 **Quiesce means cancel the runs, then re-dispatch them — never wait for them to
 end.** A factory run is restartable, so the carrying-runs refusal means "cancel to
