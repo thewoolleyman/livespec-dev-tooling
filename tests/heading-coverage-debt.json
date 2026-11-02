@@ -114,13 +114,6 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario: a container that starts during a sandbox image warm removal keeps its tag",
-    "work_item": "livespec-dev-tooling-xknoqf",
-    "first_seen": "2026-11-02"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
     "heading": "## Scenario: a delegated gate-runner run with no cluster verdict ends without a verdict",
     "work_item": "livespec-dev-tooling-qgv3tb",
     "first_seen": "2026-11-01"
@@ -166,13 +159,6 @@
     "heading": "## Scenario: a dev-tooling release fan-out whose sandbox image never appears fails naming the missing tags",
     "work_item": "livespec-dev-tooling-epcoja",
     "first_seen": "2026-10-22"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a disabled removal pass leaves every tag the sandbox image warm pulled",
-    "work_item": "livespec-dev-tooling-xknoqf",
-    "first_seen": "2026-11-02"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -263,20 +249,6 @@
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a refused suite-green run names why each test failed",
     "work_item": "livespec-dev-tooling-z5fwwn",
-    "first_seen": "2026-11-02"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a sandbox image warm removal the store rejects leaves the tag and fails the run",
-    "work_item": "livespec-dev-tooling-xknoqf",
-    "first_seen": "2026-11-02"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a sandbox image warm run that has not resolved and pulled the whole pinned set removes nothing",
-    "work_item": "livespec-dev-tooling-xknoqf",
     "first_seen": "2026-11-02"
   },
   {
@@ -467,27 +439,6 @@
     "heading": "## Scenario: the fabro_server role deletes an instance's retired sandbox environments",
     "work_item": "livespec-dev-tooling-lmuhvi",
     "first_seen": "2026-10-30"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: the sandbox image warm keeps an earlier-pin tag that a container still references",
-    "work_item": "livespec-dev-tooling-xknoqf",
-    "first_seen": "2026-11-02"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: the sandbox image warm removes the tags it pulled for an earlier pin once the current pin is present",
-    "work_item": "livespec-dev-tooling-xknoqf",
-    "first_seen": "2026-11-02"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: the sandbox image warm's record of the tags it pulled survives a reboot",
-    "work_item": "livespec-dev-tooling-xknoqf",
-    "first_seen": "2026-11-02"
   },
   {
     "spec_root": "SPECIFICATION",

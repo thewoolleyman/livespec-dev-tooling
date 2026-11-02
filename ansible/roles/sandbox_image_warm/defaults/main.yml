@@ -56,6 +56,14 @@ sandbox_image_warm_lock_dir: /run/{{ sandbox_image_warm_name | trim }}
 # second concurrent pull that tore down the first one's leases. A warm that hits
 # this ceiling exits non-zero and pulls NOTHING.
 sandbox_image_warm_lock_timeout_seconds: 1800
+# The removal pass (livespec-dev-tooling-xknoqf; spec "The sandbox image warm
+# keeps only current tags."): once the whole pinned set is present, each run
+# removes the tags THIS warm pulled for earlier pins that no container uses.
+# Set false to keep every tag without retiring the warm.
+sandbox_image_warm_remove_superseded: true
+# Where the warm records the tags it pulled, one reference per line in
+# <dir>/pulled. It is the unit's StateDirectory, so it survives a reboot.
+sandbox_image_warm_record_dir: /var/lib/{{ sandbox_image_warm_name | trim }}
 
 # The cadence. Short enough that a pin bump is warmed long before a dispatch
 # reaches the new tag, cheap enough to run on that cadence forever: a tick whose

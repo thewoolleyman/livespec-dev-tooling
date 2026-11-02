@@ -1498,56 +1498,49 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: the sandbox image warm removes the tags it pulled for an earlier pin once the current pin is present",
-    "test": "TODO",
-    "reason": "Spec-first (v109): a real test at the integration tier or above is owed for this heading, exercising ansible/roles/sandbox_image_warm's removal pass against a real image store on a factory node (k3s containerd, and gmktec-xubuntu's Docker store). livespec-dev-tooling-xknoqf owns it.",
+    "test": "tests.livespec_dev_tooling.test_sandbox_image_warm_keep_current_tags.test_the_warm_removes_the_tags_it_pulled_for_an_earlier_pin_once_the_new_pin_is_present",
     "work_item": "livespec-dev-tooling-xknoqf"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: the sandbox image warm keeps an earlier-pin tag that a container still references",
-    "test": "TODO",
-    "reason": "Spec-first (v109): a real test at the integration tier or above is owed for this heading, exercising ansible/roles/sandbox_image_warm's removal pass against a real image store on a factory node (k3s containerd, and gmktec-xubuntu's Docker store). livespec-dev-tooling-xknoqf owns it.",
+    "test": "tests.livespec_dev_tooling.test_sandbox_image_warm_keep_current_tags.test_the_warm_keeps_an_earlier_pin_tag_a_container_references_and_removes_it_once_free",
     "work_item": "livespec-dev-tooling-xknoqf"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a sandbox image warm run that has not resolved and pulled the whole pinned set removes nothing",
-    "test": "TODO",
-    "reason": "Spec-first (v109): a real test at the integration tier or above is owed for this heading, exercising ansible/roles/sandbox_image_warm's removal pass against a real image store on a factory node (k3s containerd, and gmktec-xubuntu's Docker store). livespec-dev-tooling-xknoqf owns it.",
+    "test": "tests.livespec_dev_tooling.test_sandbox_image_warm_keep_current_tags.test_a_warm_run_that_has_not_resolved_and_pulled_the_whole_pinned_set_removes_nothing",
     "work_item": "livespec-dev-tooling-xknoqf"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a container that starts during a sandbox image warm removal keeps its tag",
-    "test": "TODO",
-    "reason": "Spec-first (v109): a real test at the integration tier or above is owed for this heading, exercising ansible/roles/sandbox_image_warm's removal pass against a real image store on a factory node (k3s containerd, and gmktec-xubuntu's Docker store). livespec-dev-tooling-xknoqf owns it.",
+    "test": "tests.livespec_dev_tooling.test_sandbox_image_warm_keep_current_tags.test_a_container_that_starts_during_a_removal_keeps_its_tag_and_fails_the_run",
     "work_item": "livespec-dev-tooling-xknoqf"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a sandbox image warm removal the store rejects leaves the tag and fails the run",
-    "test": "TODO",
-    "reason": "Spec-first (v109): a real test at the integration tier or above is owed for this heading, exercising ansible/roles/sandbox_image_warm's removal pass against a real image store on a factory node (k3s containerd, and gmktec-xubuntu's Docker store). livespec-dev-tooling-xknoqf owns it.",
+    "test": "tests.livespec_dev_tooling.test_sandbox_image_warm_keep_current_tags.test_a_removal_the_store_rejects_leaves_the_tag_and_fails_the_run",
     "work_item": "livespec-dev-tooling-xknoqf"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a disabled removal pass leaves every tag the sandbox image warm pulled",
-    "test": "TODO",
-    "reason": "Spec-first (v109): a real test at the integration tier or above is owed for this heading, exercising ansible/roles/sandbox_image_warm's removal pass against a real image store on a factory node (k3s containerd, and gmktec-xubuntu's Docker store). livespec-dev-tooling-xknoqf owns it.",
+    "test": "tests.livespec_dev_tooling.test_sandbox_image_warm_keep_current_tags.test_a_disabled_removal_pass_leaves_every_tag_the_warm_pulled",
     "work_item": "livespec-dev-tooling-xknoqf"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: the sandbox image warm's record of the tags it pulled survives a reboot",
-    "test": "TODO",
-    "reason": "Spec-first (v109): a real test at the integration tier or above is owed for this heading, exercising ansible/roles/sandbox_image_warm's removal pass against a real image store on a factory node (k3s containerd, and gmktec-xubuntu's Docker store). livespec-dev-tooling-xknoqf owns it.",
+    "test": "tests.livespec_dev_tooling.test_sandbox_image_warm_keep_current_tags.test_the_warms_record_of_the_tags_it_pulled_survives_a_reboot",
     "work_item": "livespec-dev-tooling-xknoqf"
   }
 ]
