@@ -647,3 +647,28 @@ livespec-dev-tooling's manifest parser and its fleet-conformance sweep are the r
 - The sweep MUST hold a `released` adopter whose profile is `["instruction-only"]` to the adopter plugin-currency row and to no other row. A committed `.claude/settings.json` declaring `livespecPluginCurrencySuccessor` with a non-empty `mechanism` and `documentedIn` satisfies that row.
 - The sweep MUST report an adopter whose `posture` is not `released` as posture-excluded and MUST NOT fail on it.
 - The member parser MUST read a `fleet` member entry by its `repo` and `class` alone and MUST NOT read a profile from it, so a `profile` written on a `fleet` member entry has no effect.
+
+## Maintainer radar
+
+The coordinator's priority order MUST be held in one committed, type-checked Python module of this repository, `livespec_dev_tooling/radar/radar.py`, which exports `RADAR`, an immutable tuple of `RadarEntry` values. Each entry MUST carry exactly these fields:
+
+- `kind`: `plan` or `item`.
+- `tenant`: the ledger tenant that holds the target.
+- `id`: the target's id.
+- `words`: the maintainer's words that put the target on the radar.
+- `said_at`: the date of those words.
+- `blocked_by`: zero or more `<tenant>:<id>` references, for blockers the ledger cannot express across tenants.
+
+The tuple index MUST be the only order. An entry MUST NOT carry a priority number, an override or slot marker, and the tuple MUST NOT be length-bounded: urgency is expressed only by reordering, and the radar's length is the maintainer's signal to drop entries. Only the maintainer orders the radar. A session that has evidence the order should change MUST report it as a finding and MUST NOT edit the array itself.
+
+A radar is VALID only when ALL of the following hold:
+
+- No `(tenant, id)` pair appears twice.
+- No `item` entry is a child of a `plan` entry listed elsewhere in the radar.
+- Every entry, and every `blocked_by` reference, resolves in its tenant's ledger and is not closed.
+- Every `plan` entry's epic has a `plan/<slug>/` directory in its tenant's repository.
+- Every `blocked_by` reference has the form `<tenant>:<id>` with both parts non-empty.
+
+Defects that need only the committed file MUST fail `just check`. These are duplicate pairs, malformed references and schema violations, the last through the repository's type gate. Defects that need the ledger MUST NOT be checked inside `just check`, because `just check` also runs where no ledger is reachable, and per constraints.md §"No network I/O" a check module performs no network I/O. They MUST instead be checked by the ONE load-time entry point every radar consumer calls, and by a `just radar-validate` recipe run through the credential wrapper. That entry point MUST refuse an invalid radar, naming every defect, and MUST NOT return a partial, cached or previously valid radar in its place.
+
+An entry's target is NOT READY when it is closed, or when any of its blockers is not closed. Its blockers are its ledger `blocks` edges and its declared `blocked_by` references. `parent-child`, `relates-to`, `discovered-from`, `related` and `duplicates` edges MUST NOT block. A plan's children MUST be computed as the union of its dotted-id descendants and the items carrying a `parent-child` edge to its epic, because neither source is complete alone. Readers MUST accept both dependency-row spellings the ledger emits: `depends_on_id` with `type` (from `bd list`) and `id` with `dependency_type` (from `bd show`). Readers MUST read an absent `dependencies` key as no edges.

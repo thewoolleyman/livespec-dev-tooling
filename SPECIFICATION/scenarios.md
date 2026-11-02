@@ -1903,3 +1903,37 @@ Then the event's `cost_usd` MUST be non-zero and computed at `gpt-6.1-sol`'s lis
 And the event MUST carry `spend.price_fallback` = `true` and a `cost_note` naming `gpt-6.1-sol`
 
 And a response on `gpt-6.1-sol` itself MUST be sent at its list price with no fallback marker
+
+## Scenario: a radar that lists the same target twice fails just check
+
+Given the committed `RADAR` lists tenant `livespec-dev-tooling`, id `livespec-dev-tooling-abc123` at index 2 and again at index 5
+
+When `just check` runs
+
+Then the aggregate MUST fail
+
+And the failure MUST name `livespec-dev-tooling-abc123` and both indexes
+
+## Scenario: a radar consumer refuses an item already covered by a listed plan
+
+Given the committed `RADAR` lists `plan` entry `livespec-dev-tooling-p1` and, at a later index, `item` entry `livespec-dev-tooling-p1.3`
+
+And `livespec-dev-tooling-p1.3` has a null `parent` field and no `parent-child` edge
+
+When a radar consumer calls the radar load entry point
+
+Then the call MUST refuse with a defect naming `livespec-dev-tooling-p1.3` as a child of `livespec-dev-tooling-p1`
+
+And the consumer MUST receive no radar entries
+
+## Scenario: a related edge does not block a radar target
+
+Given item `I` has a `relates-to` edge to an open item `J`, a `discovered-from` edge to an open item `K`, and a `blocks` edge to a closed item `L`
+
+And `I` is listed on the radar with an empty `blocked_by`
+
+When readiness is computed for `I`
+
+Then `I` MUST be ready
+
+And no open item MUST be named as its blocker

@@ -1542,5 +1542,37 @@
     "heading": "## Scenario: the sandbox image warm's record of the tags it pulled survives a reboot",
     "test": "tests.livespec_dev_tooling.test_sandbox_image_warm_keep_current_tags.test_the_warms_record_of_the_tags_it_pulled_survives_a_reboot",
     "work_item": "livespec-dev-tooling-xknoqf"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "non-functional-requirements.md",
+    "heading": "## Maintainer radar",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, importing the committed RADAR, running its structural validation and the ledger validation through load_radar on fixtures; plan radar-and-deterministic-admission slice 1. livespec-dev-tooling-xhbgdg owns it.",
+    "work_item": "livespec-dev-tooling-xhbgdg"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a radar that lists the same target twice fails just check",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, running the repo-local radar test against a radar listing one target twice and asserting the failure names the id and both indexes. livespec-dev-tooling-xhbgdg owns it.",
+    "work_item": "livespec-dev-tooling-xhbgdg"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a radar consumer refuses an item already covered by a listed plan",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, calling load_radar over a ledger fixture where an item entry is a dotted-id child of a listed plan and asserting the refusal and that no entries are returned. livespec-dev-tooling-22wpdk owns it.",
+    "work_item": "livespec-dev-tooling-22wpdk"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a related edge does not block a radar target",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, computing readiness over ledger fixtures in both dependency-row spellings with relates-to and discovered-from edges to open items and a blocks edge to a closed item. livespec-dev-tooling-m2x5pt owns it.",
+    "work_item": "livespec-dev-tooling-m2x5pt"
   }
 ]
