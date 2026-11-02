@@ -223,6 +223,17 @@ fi
 exit 0
 """
 
+# The pre-recipe pyright invocation is provisioning, not a recipe. Record it
+# beside the `just` calls so the scenario can establish that it finished before
+# the aggregate while keeping the test offline and deterministic.
+_UV_STUB = """#!/usr/bin/env bash
+printf 'uv %s\\n' "$*" >> "${STUB_LOG}"
+if [ "$*" = "run --frozen pyright --version" ]; then
+  exit 0
+fi
+exit 99
+"""
+
 # A `git` that NEVER REACHES THE NETWORK, because these fixture siblings are
 # `github.com/acme/*` and a real clone of them is both a network call this suite
 # forbids itself and a 404. A `clone` succeeds, or — under `CLONE_FAILS` — fails
@@ -270,6 +281,7 @@ def _a_consumer_repository(
     declaration: str,
     core_pin: str | None = None,
     siblings: tuple[tuple[str, str], ...] = (),
+    pyright_pinned: bool = False,
 ) -> Path:
     """A fixture consuming repository, with the one workflow the renderer reads.
 
@@ -286,6 +298,9 @@ def _a_consumer_repository(
     registers under `cross_repo_targets` — the same map a cross-repo reader
     looks a cited sibling up in. The empty default writes no such block, which
     is the consumer that declares no siblings at all.
+
+    `pyright_pinned` writes the lock entry that requires serial pyright
+    provisioning. A consumer without it must not receive an extra `uv` call.
     """
     root.mkdir(parents=True, exist_ok=True)
     if core_pin is not None or siblings:
@@ -318,6 +333,11 @@ def _a_consumer_repository(
         f"[tool.livespec_dev_tooling]\ndelegated_gate = true\n{declaration}",
         encoding="utf-8",
     )
+    if pyright_pinned:
+        _ = (root / "uv.lock").write_text(
+            'version = 1\n\n[[package]]\nname = "pyright"\nversion = "1.1.391"\n',
+            encoding="utf-8",
+        )
     return root
 
 
@@ -643,6 +663,59 @@ def test_the_gate_job_runs_the_consumers_own_declared_recipe_and_none_of_ours(
         assert f"just {ours}" not in silent_manifest
 
 
+def test_a_pinned_pyright_is_warmed_serially_before_the_gate_recipe(*, tmp_path: Path) -> None:
+    """A pyright lock gets one warm-up; an unpinned consumer gets no new step.
+
+    `pyright`'s Python wrapper npm-installs its Node payload, including bundled
+    typeshed, on its first invocation. Two parallel aggregate members can both
+    enter that install; the later one can see a directory while the alphabetical
+    extract has not yet reached `uuid.pyi`. The gate therefore invokes the
+    CONSUMER'S locked pyright once before it begins the recipe that fans out.
+
+    The second arm is not merely an absence check: it executes the rendered
+    script with a consumer that has no pyright lock entry and proves its exact
+    `just` sequence is unchanged. That keeps this provisioning narrowly tied to
+    the lock which supplies the executable, rather than making every delegated
+    gate depend on an optional tool.
+    """
+    pinned = _a_consumer_repository(
+        root=tmp_path / "pinned",
+        declaration=f'gate_check_suite = ["{_CONSUMER_RECIPE}"]\n',
+        pyright_pinned=True,
+    )
+    unpinned = _a_consumer_repository(
+        root=tmp_path / "unpinned",
+        declaration=f'gate_check_suite = ["{_CONSUMER_RECIPE}"]\n',
+    )
+    pinned_pod = tmp_path / "pinned-pod"
+    pinned_pod.mkdir()
+    _ = (pinned_pod / "uv.lock").write_text(
+        (pinned / "uv.lock").read_text(encoding="utf-8"), encoding="utf-8"
+    )
+
+    pinned_status, _out, pinned_error, pinned_invocations = _run_the_pod_script(
+        manifest=_rendered_for(repo_root=pinned),
+        root=pinned_pod,
+        provides=(_CONSUMER_RECIPE,),
+    )
+    unpinned_status, _out, unpinned_error, unpinned_invocations = _run_the_pod_script(
+        manifest=_rendered_for(repo_root=unpinned),
+        root=tmp_path / "unpinned-pod",
+        provides=(_CONSUMER_RECIPE,),
+    )
+
+    assert pinned_status == 0, pinned_error
+    assert unpinned_status == 0, unpinned_error
+    assert pinned_invocations.count("uv run --frozen pyright --version") == 1
+    assert pinned_invocations.index("uv run --frozen pyright --version") < pinned_invocations.index(
+        f"just {_CONSUMER_RECIPE}"
+    )
+    assert unpinned_invocations == [
+        f"just --show {_CONSUMER_RECIPE}",
+        f"just {_CONSUMER_RECIPE}",
+    ]
+
+
 def test_a_consumer_that_declares_nothing_gets_the_recipe_its_own_pre_push_names(
     *, tmp_path: Path
 ) -> None:
@@ -815,7 +888,7 @@ def _run_the_pod_script(
     """
     stub_dir = root / "bin"
     stub_dir.mkdir(parents=True)
-    for name, body in (("just", _JUST_STUB), ("git", _GIT_STUB)):
+    for name, body in (("just", _JUST_STUB), ("git", _GIT_STUB), ("uv", _UV_STUB)):
         stub = stub_dir / name
         _ = stub.write_text(body, encoding="utf-8")
         stub.chmod(0o755)
