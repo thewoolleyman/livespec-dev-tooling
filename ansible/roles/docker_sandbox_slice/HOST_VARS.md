@@ -31,6 +31,7 @@ something to differ from — and so the sizing rationale is not lost.
 | `docker_sandbox_slice_daemon_config` | `/etc/docker/daemon.json` | the daemon configuration the role edits |
 | `docker_sandbox_slice_daemon_service` | `docker.service` | the unit a drained restart restarts |
 | `docker_sandbox_slice_pending_restart_marker` | `/var/lib/docker-sandbox-slice/restart-pending` | where a converge records that the running daemon has not loaded the envelope |
+| `docker_sandbox_slice_state` | `present` | `present` installs and holds the envelope. `absent` RETIRES it on a host that keeps its daemon; see "Retiring the envelope on one host" below. Any other value is refused before anything is written |
 | `docker_sandbox_slice_docker_engine_state_root` | `/var/lib/docker-engine-guard` | the docker_engine guard's state root. Where it exists without its `confirmed` marker the guard has not committed (or rolled back, leaving `dockerd` on disk), so the role treats the host as having no daemon and leaves the daemon configuration to the guard |
 
 ```yaml
@@ -175,6 +176,34 @@ Rolling back returns the host to **no per-container and no aggregate limits at
 all**, which is the state that motivated this role. Prefer raising
 `docker_sandbox_slice_memory_max` / `docker_sandbox_slice_cpu_quota` in this
 host's `host_vars` to removing the envelope.
+
+## Retiring the envelope on one host
+
+Set `docker_sandbox_slice_state: absent` in that host's `host_vars`. The role
+then runs `tasks/retire.yml` and ends, and never reaches the install half. The
+same one rule holds: a converge never restarts `dockerd`.
+
+1. Read the drift: `just ansible-drift ansible/fabro-hosts.yml --limit <host>
+   --tags docker_sandbox_slice`. It shows `cgroup-parent` leaving `daemon.json`,
+   with every other key kept, and the pending-restart marker being written.
+2. Converge it: `just ansible-apply ansible/fabro-hosts.yml --limit <host>
+   --tags docker_sandbox_slice`. Running containers stay in the slice, because
+   the running daemon loaded the key when it started.
+3. Drain the host as in "The drained restart" step 3. Then take the restart:
+   `just ansible-apply ansible/fabro-hosts.yml --limit <host> --tags
+   docker_sandbox_slice_drained_restart`. That run restarts `dockerd`, stops the
+   slice, removes its unit, reloads systemd and clears the marker. The slice
+   cannot be stopped before the restart, because stopping a slice kills every
+   process in it.
+4. Verify:
+   - `daemon.json` names no `cgroup-parent`;
+   - `systemctl status fabro-sandbox.slice` reports the unit not found;
+   - the marker file is gone.
+
+A host that later leaves `sandbox_hosts` keeps this state, because no further
+converge reaches it. Measured first on hp-xubuntu, 2026-11-02 (plan
+gmktec-factory-placement, item livespec-dev-tooling-2yn4yb). That host leaves
+the factory role and is being reworked into a Kubernetes factory worker.
 
 ## Expiry
 

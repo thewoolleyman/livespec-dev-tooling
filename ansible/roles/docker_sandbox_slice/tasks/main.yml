@@ -62,6 +62,33 @@
       '.slice'; got '{{ docker_sandbox_slice_name }}'.
     success_msg: "{{ docker_sandbox_slice_name }} is a slice unit name"
 
+- name: Refuse an unrecognised docker_sandbox_slice_state disposition
+  # Two words, not a boolean: a typo must fail here rather than read as
+  # "not absent" and re-arm an envelope a host is leaving.
+  ansible.builtin.assert:
+    that:
+      - docker_sandbox_slice_state in ['present', 'absent']
+    fail_msg: >-
+      docker_sandbox_slice_state is '{{ docker_sandbox_slice_state }}'; it
+      must be present or absent.
+    success_msg: docker_sandbox_slice_state disposition is understood
+
+- name: Retire the envelope on a host whose state is absent
+  # Statically imported, so this `when` reaches every retirement task and the
+  # role's tags (and the drained-restart tag on the restart tasks) apply to
+  # them exactly as to the install below.
+  ansible.builtin.import_tasks: retire.yml
+  when: docker_sandbox_slice_state == 'absent'
+
+- name: End the role for a host retiring the envelope
+  # Nothing below may run for such a host: it would reinstall the slice and
+  # write cgroup-parent back. It also carries the drained-restart tag, so a run
+  # narrowed to that tag ends here after the retirement's own restart instead of
+  # reaching the install's restart a second time. It restarts nothing itself.
+  ansible.builtin.meta: end_role
+  when: docker_sandbox_slice_state == 'absent'
+  tags: [docker_sandbox_slice_drained_restart]
+
 - name: Ask the container daemon which cgroup driver it uses
   # The envelope rests entirely on this: `cgroup-parent` naming a `.slice` is
   # meaningful to the SYSTEMD driver and not to cgroupfs, where the daemon would
