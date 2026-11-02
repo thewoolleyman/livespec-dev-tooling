@@ -83,7 +83,8 @@ here as the evidence that this evaluator agrees with the Jinja the host actually
 
 THAT EVALUATOR IS A RESTRICTED JINJA, AND ONE ARM KEEPS IT HONEST. It understands
 names, string and integer literals, parentheses, `not`/`and`/`or`, the six
-comparisons, a `[:n]` slice and exactly three filters (`length`, `bool`, `default`).
+comparisons, a `[:n]` slice and exactly four filters (`length`, `bool`, `default`,
+`trim`).
 `test_the_binary_install_guards_stay_inside_the_vocabulary_this_test_can_evaluate`
 evaluates every guard the arms below read and fails the moment one grows a form the
 evaluator does not know, rather than letting a guard go silently unevaluated — an
@@ -144,6 +145,7 @@ _DIGEST_REFUSAL = (
 )
 _MISSING_REFUSAL = "Refuse a host with no built Fabro binary"
 _REPLACE_DECISION = "Decide whether this instance's binary must be replaced"
+_INSTALL_NOW_DECISION = "Decide whether this run may promote this instance's staged binary"
 _STAGE_TASK = "Stage this instance's binary beside the one it replaces"
 _BACKUP_TASK = "Keep the outgoing binary beside the one that replaces it"
 _RENAME_TASK = "Rename the staged copy onto this instance's binary path"
@@ -154,6 +156,7 @@ _UNIT_INSTALL = "Install the instance's systemd unit"
 _RESTART_HANDLER = "Restart the Fabro instance"
 _FILES_CHANGED = "Fabro instance files changed"
 _REPLACE_FACT = "fabro_server_binary_replace"
+_INSTALL_NOW_FACT = "fabro_server_binary_install_now"
 
 # The v0.382 carrier build the fabro-currency cutover moves hp's production factory
 # onto: where it is staged on the control node, and the digest it hashes to. Both are
@@ -681,7 +684,7 @@ _EXPRESSION_TOKEN = re.compile(
     r"[A-Za-z_][A-Za-z_0-9.]*|[0-9]+)"
 )
 _EXPRESSION_NAME = re.compile(r"[A-Za-z_][A-Za-z_0-9.]*")
-_EVALUABLE_FILTERS = ("bool", "default", "length")
+_EVALUABLE_FILTERS = ("bool", "default", "length", "trim")
 # `<`, `>=` and `<=` are deliberately ABSENT rather than written and never exercised.
 # The tokenizer does not emit them either, so a guard that grew one fails the
 # vocabulary control as an unknown token instead of being evaluated by a branch no
@@ -711,7 +714,7 @@ def _expression_tokens(*, expression: str) -> list[str]:
 
 
 def _apply_filter(*, name: str, value: _Value, argument: _Value) -> _Value:
-    """One Jinja filter of the three this evaluator knows."""
+    """One Jinja filter of the four this evaluator knows."""
     assert name in _EVALUABLE_FILTERS, (
         f"the role's guard uses the Jinja filter {name!r}; this evaluator knows only "
         f"{list(_EVALUABLE_FILTERS)}"
@@ -726,6 +729,9 @@ def _apply_filter(*, name: str, value: _Value, argument: _Value) -> _Value:
         # replacement decision at all: a `set_fact` template can reach a `when:` as the
         # STRING "False", which is truthy to Python and false to `| bool`.
         return value in (True, "True", "true", "yes", 1)
+    if name == "trim":
+        assert isinstance(value, str), f"`| trim` is evaluated for strings only here; {value!r}"
+        return value.strip()
     return argument if value is None else value
 
 
@@ -911,12 +917,29 @@ def _install_scope(
     scope["fabro_server_binary.stat.checksum"] = host_checksum
     scope["fabro_server_binary_source_stat.stat.exists"] = source_checksum is not None
     scope["fabro_server_binary_source_stat.stat.checksum"] = source_checksum
+    # The promotion decision reads systemd's preceding activity probe.  This
+    # scenario models a stopped instance as inactive and every running one as
+    # active, which is enough to make the role's own expression distinguish a
+    # safe initial/parked install from the deferred live-server path.
+    scope["fabro_server_is_active.stdout"] = (
+        "inactive" if scope["fabro_server_service_state"] == "stopped" else "active"
+    )
     scope[_REPLACE_FACT] = _evaluate(
         expression=_template_expression(
             value=_module_argument(
                 body=_task_body(name=_REPLACE_DECISION),
                 module="ansible.builtin.set_fact",
                 argument=_REPLACE_FACT,
+            )
+        ),
+        scope=scope,
+    )
+    scope[_INSTALL_NOW_FACT] = _evaluate(
+        expression=_template_expression(
+            value=_module_argument(
+                body=_task_body(name=_INSTALL_NOW_DECISION),
+                module="ansible.builtin.set_fact",
+                argument=_INSTALL_NOW_FACT,
             )
         ),
         scope=scope,
@@ -1260,6 +1283,30 @@ def test_a_host_binary_that_differs_from_its_source_is_replaced_by_renaming_a_st
         f"rename(2) within a directory, so the binary is either the old build or the new one "
         f"and never a half-written file; argv={argv}"
     )
+
+
+def test_a_running_instance_stages_a_differing_binary_without_promoting_it() -> None:
+    """A deferred converge must preserve the executable path of a live server."""
+    instance = {
+        **_instance_named(unit=_CANDIDATE_UNIT, source=_INVENTORY),
+        "service_state": "running",
+    }
+    scope = _install_scope(
+        instance=instance, host_checksum="0" * 64, source_checksum=_CANDIDATE_BINARY_SHA256
+    )
+
+    assert scope[_INSTALL_NOW_FACT] is False, (
+        "the default restart flag must defer promotion when the service is active; replacing "
+        "binary_path would unlink the executable from which that server spawns workers"
+    )
+    assert _holds(
+        conditions=_when(name=_STAGE_TASK), scope=scope
+    ), "the declared binary must still be staged for the attended restart that follows"
+    for name in (_BACKUP_TASK, _RENAME_TASK):
+        assert not _holds(conditions=_when(name=name), scope=scope), (
+            f"{name!r} must not run in deferred mode: binary_path remains the live server's "
+            "worker-launch path until the allowed restart"
+        )
 
 
 def test_the_outgoing_binary_is_kept_beside_its_replacement_under_its_own_digest() -> None:
