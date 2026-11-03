@@ -162,13 +162,16 @@ def _normalized_real_target_inventory() -> tuple[str, ...]:
 
 
 def test_real_check_recipe_is_legacy_readable_exact_inventory_mirror() -> None:
-    """CORE's v1.17.1 reader sees the exact authoritative 82-target inventory."""
+    """CORE's v1.17.1 reader sees the exact authoritative 83-target inventory."""
     justfile_text = (_REPO_ROOT / "justfile").read_text(encoding="utf-8")
 
     wired = _legacy_core_v1_17_1_extract_check_slugs(justfile_text=justfile_text)
 
     assert wired == _normalized_real_target_inventory()
-    # 82 since livespec-dev-tooling-lirki2 wired the repo-private
+    # 83 since livespec-dev-tooling-5d3cvr added the canonical
+    # `check-delegated-gate-check-suite`, which prevents delegated pushes from
+    # selecting a pre-commit aggregate in their final pre-push suite slot.
+    # The 82nd was livespec-dev-tooling-lirki2's repo-private
     # `check-dev-host-fabro-client-bins-declared` (every
     # `dispatcher.factories.<name>.bin` this repository commits names the `path` of
     # one `fabro_client_builds` entry, so the Fabro client a Dispatcher EXECS is one
@@ -206,7 +209,7 @@ def test_real_check_recipe_is_legacy_readable_exact_inventory_mirror() -> None:
     # stays EXACT rather than becoming a `>=`: its job is to make any change to
     # the inventory a deliberate edit here, and a lower bound would let a silent
     # drop through.
-    assert wired is not None and len(wired) == 82
+    assert wired is not None and len(wired) == 83
     canonical = unsafe_perform_io(canonical_check_slugs().unwrap())
     assert not set(canonical).difference(wired)
     assert _legacy_core_v1_17_1_extract_check_slugs(justfile_text="default:\n    true\n") is None

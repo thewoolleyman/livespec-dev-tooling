@@ -246,6 +246,7 @@ check:
         check-claude-md-coverage
         check-comment-line-anchors
         check-commit-pairs-source-and-test
+        check-delegated-gate-check-suite
         check-file-lloc
         check-fleet-marketplace-relative-sources
         check-global-writes
@@ -818,6 +819,12 @@ check-comment-line-anchors:
 
 check-commit-pairs-source-and-test:
     uv run python -m livespec_dev_tooling.checks.commit_pairs_source_and_test
+
+# A delegated gate suite is shared by its pre-commit and pre-push routes.
+# Its final declaration is therefore the pre-push slot and may not invoke a
+# pre-commit aggregate.
+check-delegated-gate-check-suite:
+    uv run python -m livespec_dev_tooling.checks.delegated_gate_check_suite
 
 check-file-lloc:
     uv run python -m livespec_dev_tooling.checks.file_lloc

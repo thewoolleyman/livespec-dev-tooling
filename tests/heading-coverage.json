@@ -1522,9 +1522,7 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a delegated gate check suite ending in the pre-commit aggregate is refused",
-    "test": "TODO",
-    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, running the shared consumer pre-commit and pre-push check aggregates' gate-check-suite refusal as a subprocess against fixture repositories in the scenario's shapes (a delegated suite ending in check-pre-commit refused with pyproject.toml, gate_check_suite, the final entry and check-pre-push named; check-pre-push, hook_gate=1 check, an absent key and a non-delegated repository accepted) and asserting exit codes and output. livespec-dev-tooling-5d3cvr owns it.",
-    "work_item": "livespec-dev-tooling-5d3cvr"
+    "test": "tests.consumer.test_delegated_gate_check_suite.test_shared_gate_aggregates_refuse_only_pre_commit_recipes_in_the_final_slot"
   },
   {
     "spec_root": "SPECIFICATION",
