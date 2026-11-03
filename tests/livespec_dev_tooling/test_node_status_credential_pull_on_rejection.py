@@ -346,8 +346,8 @@ _REMOTE_HOST = "poweredge-xubuntu"
 
 def _run_refresh(
     *, tmp_path: Path, fetched: str = _FIXTURE_KUBECONFIG, already_there: str | None = None
-) -> tuple[int, list[str], Path]:
-    """Run the shipped refresh tool against a faked host; return code, argv, dest.
+) -> tuple[int, str, list[str], Path]:
+    """Run the shipped refresh tool against a faked host; return code, output, argv, dest.
 
     `already_there` pre-creates the destination, which is the state the refresh is
     actually called in: the pull-on-rejection path reaches it precisely when the
@@ -386,7 +386,7 @@ def _run_refresh(
         check=False,
     )
     invoked = log.read_text(encoding="utf-8").splitlines() if log.is_file() else []
-    return completed.returncode, invoked, dest
+    return completed.returncode, completed.stdout + completed.stderr, invoked, dest
 
 
 def test_the_refresh_tool_pulls_the_credential_from_the_control_plane_node(
