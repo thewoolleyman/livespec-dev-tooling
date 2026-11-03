@@ -716,6 +716,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: an apply refuses a plugin binary whose digest differs from an instance pin, and drift compares live pins to the installed binary",
+    "work_item": "livespec-dev-tooling-rnsfgg",
+    "first_seen": "2026-11-03"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: the replay legs never retry the Red test and never accept a final failure",
     "work_item": "livespec-dev-tooling-crxcy4",
     "first_seen": "2026-11-03"
