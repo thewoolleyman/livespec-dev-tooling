@@ -52,10 +52,23 @@ codex-implement-cost-per-run.
   command reported no error, and the file would not parse. Instead, have Python write the result itself:
   `json.dump(hcq.rows(dataset, spec), open(path, 'w'))`.
 - **A breakdown over 100 groups spends the query budget fast.** When a result has more than 100 groups, `hcq.rows`
-  splits the time window in half and queries each half, repeating until every piece fits. A high-cardinality
-  breakdown can therefore spend many of the MCP key's 100 queries per hour before it gives up. That key is shared with
-  the dispatcher's reflector. Breaking `codex-app-server` down by span `name` for a single dispatch did exactly this.
-  Narrow a breakdown before you widen its window.
+  splits the time window into as many pieces as the reported row count needs, at 85 groups a piece, and repeats on
+  any piece that still overflows. A caller that passes `hint=` also stores its groups per second in
+  `state/hcq-density.json`, and the next call pre-splits from it instead of paying for the overflowing first query.
+  The cost of a per-span breakdown is still about one query per 85 spans, whatever the cadence. That key's budget is
+  about 100 queries per hour, shared with the dispatcher's reflector. Breaking `codex-app-server` down by span `name`
+  for a single dispatch spent a large part of it. Narrow a breakdown before you widen its window.
+
+## Counting what a script spends
+
+`hcq.py` appends one line per `run_query` call to `~/token-spend-report/state/hcq-calls.jsonl`, with the time, the
+calling script, the dataset, the window and the breakdowns. Read that file first to attribute calls. Use
+`~/token-spend-report/measure/` to measure the whole host, including callers that do not use `hcq.py`.
+`mcpq-run.sh <log>` counts `run_query` writes through libssl with a bpftrace uprobe, and `sni-run.sh <log>`
+counts TLS ClientHellos to `mcp.honeycomb.io` with tcpdump. Each runs for one hour. Before trusting either count,
+fire one control query and check that both logs show it. Stop the probes by their own process ids, not with
+`pkill -f`. On 2026-11-03 the token-spend timers were measured at 133 of 139 queries in an hour. Plan
+token-spend-analysis note 010 records that measurement and the fix.
 
 To count factory Codex implement spend in `llm-spend`, filter on all four of these:
 
