@@ -202,8 +202,17 @@ def retry_marker_for(
     return {"reruns": RETRY_ATTEMPTS, "reruns_delay": RETRY_DELAY_SECONDS}
 
 
-def mark_untouched_tests(*, root: Path, items: list[pytest.Item]) -> None:
-    """Mark only tests proven untouched by this session's complete change set."""
+def mark_untouched_tests(*, root: Path, items: list[pytest.Item], can_retry: bool = True) -> None:
+    """Mark only tests proven untouched by this session's complete change set.
+
+    `flaky` is pytest-rerunfailures' marker. A consumer can load this plugin
+    through its entry point without that package installed, and there the
+    marker is unregistered and `--strict-markers` kills collection
+    (livespec-dev-tooling-he3pf2). With no rerunfailures in the session nothing
+    is marked: an untouched failure then simply stands, unretried.
+    """
+    if not can_retry:
+        return
     paths = change_paths(repo_root=root)
     if paths is None:
         return
@@ -274,8 +283,11 @@ class _CollectionHook:
     def __call__(
         self, session: pytest.Session, config: pytest.Config, items: list[pytest.Item]
     ) -> None:
-        del config
-        mark_untouched_tests(root=Path(str(session.config.rootpath)), items=items)
+        mark_untouched_tests(
+            root=Path(str(session.config.rootpath)),
+            items=items,
+            can_retry=config.pluginmanager.hasplugin("rerunfailures"),
+        )
 
 
 class _ReportHook:
