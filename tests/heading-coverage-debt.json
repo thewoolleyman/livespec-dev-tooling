@@ -464,6 +464,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: a routed job's checkout fetches only the objects its git object seed lacks, and falls back to a full fetch when the seed is missing",
+    "work_item": "livespec-dev-tooling-dciyg5",
+    "first_seen": "2026-11-03"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: a runner work volume on a runner-only node is provisioned under the profile's directory and starts unseeded",
     "work_item": "livespec-dev-tooling-zreev4",
     "first_seen": "2026-11-03"
