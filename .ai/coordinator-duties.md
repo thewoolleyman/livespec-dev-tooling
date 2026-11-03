@@ -303,6 +303,21 @@ about 38 tickets queued in arrival order. The coordinator audited each item's ti
 saw `fleet=6` and 87 % idle in a launcher log line, and asked about it as a side question instead of ruling on it.
 The fix is bd-ib-x7bwug.
 
+**Read every node, every tick.** Read each execution node's real utilization (VPS, gmktec, poweredge, hp): PSI, idle,
+memory, and pods per namespace including pending. Flag any node idle while another is saturated.
+
+- A failed ssh is a prompt to try the host's working user, never a conclusion. hp needs `cwoolley@hp-xubuntu`, because
+  `ubuntu@` fails with "tailscale: failed to look up local user".
+- Use `scripts/coordinator/fleet-utilization.sh` once it lands.
+- The coordinator routes; anything needing more than one read-only command goes to the owning seat or a background
+  subagent.
+
+Measured 2026-11-02 ~23:45Z: hp sat about 60% idle (16 cores, PSI about 0.3%) while gmktec (load 102/32) and poweredge
+(load 191/72) were saturated and 26 ARC runners were Kueue-gated. The coordinator had called hp "unreachable" off one
+failed ssh. The maintainer: "leaving HP completely unutilized and just throwing up your hands when you couldn't reach
+it is a complete failure on your part." On the routing rule, the maintainer: "Are you doing the work yourself rather
+than delegating it?"
+
 **The dispatcher watches throughput first; the coordinator checks it independently.** The coordinator's tick samples
 every ~20 minutes, so it cannot be the first to see a stall. legacy-dispatcher-agent runs the launchers and owns
 ticket order (its charter), so on every pass it also:
