@@ -625,6 +625,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: one fleet-wide command adopts the current plugin builds in every fleet member and refuses a split adoption",
+    "work_item": "livespec-dev-tooling-jzwgjw",
+    "first_seen": "2026-11-03"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: the cohort churn-slot quota equals the sum of the nodes' declared capacities",
     "work_item": "livespec-dev-tooling-zreev4",
     "first_seen": "2026-11-03"

@@ -2195,3 +2195,15 @@ When `python -m livespec_dev_tooling.checks.codex_hook_reconcilable` runs in tha
 Then it MUST exit `0`
 
 And it MUST emit an `info` event with `manifests_checked` `0` and `commands_checked` `0` and a message saying that the repository ships no Codex plugin hooks
+
+## Scenario: one fleet-wide command adopts the current plugin builds in every fleet member and refuses a split adoption
+
+Given livespec core's fleet manifest lists the members whose local clones are on this host, and each member's committed `.claude/settings.json` enables the orchestrator plugin
+
+When the operator runs `just ensure-plugins-fleet` in livespec-dev-tooling
+
+Then the recipe MUST run each member's own `ensure-plugins` recipe in that member's clone and MUST print, for every member and every enabled plugin, the installed build before and after, read from `installed_plugins.json` for that member's project path
+
+And when one member's clone is missing, the recipe MUST still run every other member, MUST name the missing member and its cause, and MUST exit non-zero
+
+And when every member's `ensure-plugins` succeeds but the orchestrator plugin is left installed at two different builds across the members, the recipe MUST exit non-zero, naming the plugin, both builds and the members holding each
