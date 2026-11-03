@@ -7,9 +7,10 @@
 #   has not yet wired its own release-please.yml as of v070, and
 #   livespec-dev-tooling is the first livespec-governed repo to do so.
 #
-# Behavior: on every push to master, release-please opens (or updates)
-# a release PR carrying the next-version bump per Conventional
-# Commits → semver mapping:
+# Behavior: on a SCHEDULE (every four hours, at :41) and on
+# workflow_dispatch, release-please opens (or updates) a release PR
+# carrying the next-version bump per Conventional Commits → semver
+# mapping:
 #
 #   feat:                                   → MINOR
 #   fix:                                    → PATCH
@@ -41,9 +42,32 @@
 
 name: Release Please
 
+# Release window (livespec-dev-tooling-aplxhg, plan ci-runtime-and-cost):
+# releases are coalesced into a four-hour window instead of one per merge.
+# Measured over 7 days to 2026-11-03: release mechanics were 34% of fleet k3s
+# CI time (release-please PR CI, release master CI and the sibling pin-bump
+# fan-out), and this repo cut 49 releases, about 20 on 2026-11-02 alone.
+#
+#   schedule / workflow_dispatch -> full pass: open or update the release PR
+#                                   with everything merged since the last
+#                                   release, and tag a merged one.
+#   push to master               -> ONLY when the head commit is a merged
+#                                   release PR ("chore(master): release"),
+#                                   and then TAG ONLY (skip-github-pull-request),
+#                                   so the release and its sibling fan-out fire
+#                                   at once while the next release PR still
+#                                   waits for the window. Any other push does
+#                                   nothing here.
+#
+# So at most six release PRs open per UTC day, and at most six releases cut.
+# The pin-currency settle window (contracts.md "Pin-currency severity policy",
+# two hours from the release's published_at) is unaffected: it is measured
+# from publish time, and the fan-out still fires on release: published.
 on:
   push:
     branches: [master]
+  schedule:
+    - cron: "41 */4 * * *"
   workflow_dispatch:
 
 # Serialize release-please per ref (livespec-dev-tooling plan dfixhe). Two
@@ -62,6 +86,7 @@ permissions:
 
 jobs:
   release-please:
+    if: github.event_name != 'push' || startsWith(github.event.head_commit.message, 'chore(master): release')
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -82,3 +107,4 @@ jobs:
           token: ${{ steps.app-token.outputs.token }}
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
+          skip-github-pull-request: ${{ github.event_name == 'push' }}

@@ -1,2 +1,2 @@
-work_item=livespec-dev-tooling-7xv7sy
-reason=Keep reusable-master-health-reconcile.yml byte-identical to the reconciler canonical body after replacing its printf | grep -qx green-sha membership test with a here-string (SIGPIPE under pipefail); maintainer-tier, approval:workflow-edit set by legacy-coordinator-agent under the 15:00:49Z standing ruling.
+work_item=livespec-dev-tooling-aplxhg
+reason=Coalesce releases into a four-hour window: release-please opens or updates its release PR only on a schedule (every 4 h) or workflow_dispatch, and a push runs it only to tag a just-merged release PR (skip-github-pull-request). Release mechanics measured at 34% of fleet k3s CI time over 7 days (plan ci-runtime-and-cost). Maintainer ruling 2026-11-03 15:00:49Z: "get this done too".
