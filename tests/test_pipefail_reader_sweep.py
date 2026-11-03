@@ -73,6 +73,45 @@ def _early_reader_violations(*, paths: tuple[Path, ...], repo_root: Path) -> tup
     return tuple(violations)
 
 
+def _quoted_reader_redirection_violations(
+    *, paths: tuple[Path, ...], repo_root: Path
+) -> tuple[str, ...]:
+    """Find rewrites that accidentally turn a grep pattern into a redirection."""
+    violations: list[str] = []
+    for path in paths:
+        for line_number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+            grep = re.search(r"\|\s*grep\b", line)
+            if grep and _has_quoted_redirection(line[grep.end() :]):
+                violations.append(f"{path.relative_to(repo_root)}:{line_number}: {line.strip()}")
+    return tuple(violations)
+
+
+def _has_quoted_redirection(arguments: str) -> bool:
+    """Return whether a quoted shell word contains a grep output redirection."""
+    quote: str | None = None
+    escaped = False
+    quoted_word: list[str] = []
+    for character in arguments:
+        if quote is None:
+            if character in "'\"":
+                quote = character
+                quoted_word = []
+            continue
+        if escaped:
+            quoted_word.append(character)
+            escaped = False
+        elif character == "\\":
+            quoted_word.append(character)
+            escaped = True
+        elif character == quote:
+            if re.search(r">\s*/dev/null", "".join(quoted_word)):
+                return True
+            quote = None
+        else:
+            quoted_word.append(character)
+    return False
+
+
 def test_pipefail_reader_forms_keep_their_small_input_verdict_on_large_input() -> None:
     """Each approved rewrite preserves its match verdict past a pipe buffer."""
     for form in ("here-string", "draining-reader", "writer-status-excluded"):
@@ -90,6 +129,15 @@ def test_pipefail_scripts_do_not_use_early_exiting_pipeline_readers() -> None:
     assert not violations, "\n".join(violations)
 
 
+def test_pipefail_sweep_keeps_reader_redirections_outside_quoted_patterns() -> None:
+    """A whole-input grep rewrite must not alter its pattern while adding redirection."""
+    violations = _quoted_reader_redirection_violations(
+        paths=_tracked_shell_paths(), repo_root=_REPO_ROOT
+    )
+
+    assert not violations, "\n".join(violations)
+
+
 def test_pipefail_sweep_reports_an_early_exiting_reader(tmp_path: Path) -> None:
     """The sweep must make unsafe readers actionable rather than silently skipping them."""
     unsafe_script = tmp_path / "scripts" / "unsafe.sh"
@@ -101,4 +149,18 @@ def test_pipefail_sweep_reports_an_early_exiting_reader(tmp_path: Path) -> None:
 
     assert _early_reader_violations(paths=(unsafe_script,), repo_root=tmp_path) == (
         "scripts/unsafe.sh:3: printf 'needle\\n' | grep -q needle",
+    )
+
+
+def test_pipefail_sweep_reports_a_redirection_inside_a_quoted_pattern(tmp_path: Path) -> None:
+    """A redirection must follow grep's pattern, rather than becoming part of it."""
+    unsafe_script = tmp_path / "scripts" / "unsafe.sh"
+    unsafe_script.parent.mkdir()
+    unsafe_script.write_text(
+        "#!/usr/bin/env bash\nset -o pipefail\nprintf 'needle\\n' | grep 'needle >/dev/null'\n",
+        encoding="utf-8",
+    )
+
+    assert _quoted_reader_redirection_violations(paths=(unsafe_script,), repo_root=tmp_path) == (
+        "scripts/unsafe.sh:3: printf 'needle\\n' | grep 'needle >/dev/null'",
     )
