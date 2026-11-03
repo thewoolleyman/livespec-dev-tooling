@@ -58,6 +58,19 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.161.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.160.0...v1.161.0) (2026-11-03)
+
+
+### Features
+
+* a runner-only node posture opens hp-xubuntu to CI, rebalancing 8 churn slots from poweredge (livespec-dev-tooling-zreev4) ([1600d54](https://github.com/thewoolleyman/livespec-dev-tooling/commit/1600d54e03b3eb129df3f339ff8294d135798f60))
+
+
+### Bug Fixes
+
+* reconcile warm uv labels from pool profiles ([0bf5fbd](https://github.com/thewoolleyman/livespec-dev-tooling/commit/0bf5fbd6d9036c01414fd9207e37b1317b3c8a07))
+* wait for warm uv agents to register ([558d89e](https://github.com/thewoolleyman/livespec-dev-tooling/commit/558d89ebd1011e9a80e9baa23b0a2005a94e7f6d))
+
 ## [1.160.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.159.0...v1.160.0) (2026-11-03)
 
 
