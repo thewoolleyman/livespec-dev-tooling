@@ -188,14 +188,36 @@
     ansible_facts['services'][ci_converge_unit_reapply_service]['status'] | default('absent') != 'enabled'
     or not ci_converge_unit_reapply_script_present.stat.exists
 
+- name: Read the converge unit's last result
+  # A changed tree is installed before the converge runs, so a converge that
+  # fails leaves those inputs in place with no success behind them. The next
+  # apply copies nothing and would skip the unit; the unit's own Result is what
+  # tells "unchanged since success" from "unchanged since failure".
+  ansible.builtin.command:
+    argv:
+      - systemctl
+      - show
+      - --property=Result
+      - "{{ ci_converge_unit_service }}"
+  register: ci_converge_unit_prior_state
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  become: true
+
 - name: Decide whether the installed CI stack inputs changed
   # Every result here is an artifact consumed by converge-ci-stack.service (or
-  # its unit). A normal apply only starts the live converge after at least one
-  # changed; this is the idempotence boundary that makes a second unchanged
-  # `just ansible-apply ansible/ci-pool.yml` report no change.
+  # its unit), plus the unit's last failure. A normal apply only starts the live
+  # converge after at least one changed or the last converge did not succeed;
+  # this is the idempotence boundary that makes a second unchanged
+  # `just ansible-apply ansible/ci-pool.yml` after a successful converge report
+  # no change.
   ansible.builtin.set_fact:
     ci_converge_unit_inputs_changed: >-
-      {{ ci_converge_unit_named_members.changed
+      {{ (ci_converge_unit_prior_state.stdout | default('')
+          | regex_findall('^Result=(.*)$', multiline=True) | first | default('success'))
+         != 'success'
+         or ci_converge_unit_named_members.changed
          or ci_converge_unit_glob_members.changed
          or ci_converge_unit_arc_charts_pulled.changed
          or ci_converge_unit_profiles_copied.changed

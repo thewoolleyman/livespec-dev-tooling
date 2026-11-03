@@ -59,6 +59,24 @@ def test_failed_converge_names_its_result_and_journal_tail() -> None:
     ), "the assertion failure must name the systemd Result, not only systemctl's exit code"
 
 
+def test_failed_prior_converge_is_retried_on_unchanged_inputs() -> None:
+    """A tree installed by a failed converge is not reported as converged."""
+    tasks = _tasks_text()
+    read = tasks.index("- name: Read the converge unit's last result")
+    decide = tasks.index("- name: Decide whether the installed CI stack inputs changed")
+    run = tasks.index("- name: Run the CI stack converge after changed inputs")
+    assert read < decide < run, (
+        "the unit's last result must be read before the start gate is decided, and the "
+        "gate must precede the start"
+    )
+    gate = tasks[decide:run]
+    assert "ci_converge_unit_prior_state" in gate, (
+        "the start gate must treat the unit's last result as an input, so inputs that "
+        "were installed by a failed converge are retried instead of reported unchanged"
+    )
+    assert "!= 'success'" in gate, "a last result other than success must start the converge"
+
+
 def test_unchanged_inputs_skip_the_live_converge() -> None:
     """The second apply stays unchanged instead of re-running a successful stack."""
     tasks = _tasks_text()
