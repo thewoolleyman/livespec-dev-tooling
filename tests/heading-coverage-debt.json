@@ -100,6 +100,27 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: Codex plugin hooks wrapped in shell conditionals with existing plugin-root entrypoints pass",
+    "work_item": "livespec-dev-tooling-yhacv6",
+    "first_seen": "2026-11-03"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a Codex plugin hook command that mentions CLAUDE_PLUGIN_ROOT without a braced plugin-root path fails the producing repository's gate",
+    "work_item": "livespec-dev-tooling-yhacv6",
+    "first_seen": "2026-11-03"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a Codex plugin hook entrypoint missing from the plugin payload fails the producing repository's gate",
+    "work_item": "livespec-dev-tooling-yhacv6",
+    "first_seen": "2026-11-03"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: a Docker engine install guard observation sample ignores pod veths on a bridge the snapshot recorded",
     "work_item": "livespec-dev-tooling-eaigbj",
     "first_seen": "2026-10-18"
@@ -366,6 +387,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: a repository that ships no Codex plugin passes the Codex hook check and reports that it examined nothing",
+    "work_item": "livespec-dev-tooling-yhacv6",
+    "first_seen": "2026-11-03"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: a runner work volume on a runner-only node is provisioned under the profile's directory and starts unseeded",
     "work_item": "livespec-dev-tooling-zreev4",
     "first_seen": "2026-11-03"
@@ -522,6 +550,13 @@
     "spec_file": "scenarios.md",
     "heading": "## Scenario: an unknown CI-facilities posture is refused",
     "work_item": "livespec-dev-tooling-zreev4",
+    "first_seen": "2026-11-03"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: an unparseable Codex plugin hooks file fails the producing repository's gate",
+    "work_item": "livespec-dev-tooling-yhacv6",
     "first_seen": "2026-11-03"
   },
   {
