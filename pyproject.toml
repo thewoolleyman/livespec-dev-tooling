@@ -554,6 +554,8 @@ supervisor_entry_files = [
     # `just ensure-plugins` / `ensure-codex-plugins`. Reconciles marketplace
     # and plugin registration; `main()` returns the reconcile exit code.
     "livespec_dev_tooling/fleet/ensure_plugins.py",
+    # `just ensure-plugins-fleet`. Reconciles every manifest member locally.
+    "livespec_dev_tooling/fleet/ensure_plugins_fleet.py",
     # `just` + `.github/workflows/ci.yml`. Installs the commit-refuse hooks;
     # `main()` is the installer supervisor.
     "livespec_dev_tooling/install_commit_refuse_hooks.py",
