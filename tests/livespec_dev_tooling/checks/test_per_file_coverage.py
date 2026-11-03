@@ -359,6 +359,40 @@ def test_per_file_coverage_empty_data_emits_actionable_hint(
     )
 
 
+def test_per_file_coverage_rejects_corrupt_data_with_writer_set(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A malformed coverage database fails loudly before any coverage verdict.
+
+    A concurrent writer can leave an SQLite file which exists but lacks
+    coverage.py's ``tracer`` or ``arc`` tables.  The per-file gate must turn
+    that otherwise raw SQLite exception into a diagnostic that identifies the
+    exact data file and the aggregate coverage writer set.
+    """
+    corrupt_db = tmp_path / ".coverage"
+    corrupt_db.write_bytes(b"SQLite format 3\x00" + (b"\x00" * 4096))
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("COVERAGE_FILE", raising=False)
+    monkeypatch.setenv(
+        "LIVESPEC_COVERAGE_WRITERS",
+        "check-per-file-coverage, check-coverage",
+    )
+
+    module = _load_per_file_coverage_module()
+    rc = module.main()
+
+    captured = capsys.readouterr()
+    combined = captured.out + captured.err
+    assert rc != 0, f"corrupt coverage data must fail the gate; rc={rc} output={combined!r}"
+    assert str(corrupt_db) in combined, f"diagnostic must name data file; output={combined!r}"
+    assert (
+        "check-per-file-coverage, check-coverage" in combined
+    ), f"diagnostic must name aggregate coverage writers; output={combined!r}"
+    assert (
+        "no such table" not in combined.lower()
+    ), f"raw SQLite failure must not leak through; output={combined!r}"
+
+
 def test_per_file_coverage_module_importable_without_running_main() -> None:
     """The check module imports cleanly without invoking main().
 

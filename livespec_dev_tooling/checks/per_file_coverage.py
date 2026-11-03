@@ -68,6 +68,7 @@ from coverage import (  # noqa: E402  — uv-managed dep, available post-vendor-
     Coverage,
     CoverageData,
 )
+from coverage.exceptions import DataError  # noqa: E402  — coverage data parse failure.
 
 __all__: list[str] = []
 
@@ -97,6 +98,14 @@ _EMPTY_COVERAGE_HINT: str = (
     "(the parallel check dispatcher assigns one per coverage namespace). "
     "See the parallel_check_dispatcher coverage-isolation docstring."
 )
+
+_CORRUPT_COVERAGE_HINT: str = (
+    "coverage data is unreadable; a writer may have been interrupted or another "
+    "aggregate may have written this file concurrently. Each aggregate target must "
+    "use its dispatcher-provided namespaced COVERAGE_FILE."
+)
+
+_WRITERS_ENV: str = "LIVESPEC_COVERAGE_WRITERS"
 
 
 # Vanished-source diagnostic (work-item livespec-dev-tooling-5xh8): a
@@ -156,6 +165,11 @@ def _resolve_data_file(*, cwd: Path) -> Path:
     return cwd / _DEFAULT_DATA_FILE
 
 
+def _coverage_writers() -> str:
+    """Return the aggregate coverage writer set supplied by the dispatcher."""
+    return os.environ.get(_WRITERS_ENV, "check-per-file-coverage")
+
+
 def main() -> int:
     structlog.configure(
         processors=[
@@ -177,7 +191,16 @@ def main() -> int:
         return 1
 
     cov = Coverage(data_file=str(coverage_file))
-    cov.load()
+    try:
+        cov.load()
+    except DataError:
+        log.exception(
+            "coverage data unreadable",
+            data_file=str(coverage_file),
+            writers=_coverage_writers(),
+            hint=_CORRUPT_COVERAGE_HINT,
+        )
+        return 1
 
     # Vanished-source rewrite (work-item livespec-dev-tooling-5xh8): drop
     # every measured file whose source is gone BEFORE json_report walks
