@@ -587,7 +587,7 @@ if [ "${1:-}" = "--show" ]; then
   esac
 fi
 if [ "${GATE_RUN_UVX:-}" = 1 ]; then
-  uvx test-tool
+  uvx test-tool || exit $?
 fi
 exit 0
 STUB
@@ -615,6 +615,10 @@ printf 'uvx index=%s args=%s\n' "${UV_DEFAULT_INDEX:-}" "$*" >> "${STUB_LOG}"
 if [ -n "${UVX_PROXY_FAIL:-}" ] && [ -n "${UV_DEFAULT_INDEX:-}" ]; then
   echo 'error: failed to fetch package metadata from proxy' >&2
   exit 1
+fi
+if [ -n "${UVX_TOOL_FAILS:-}" ]; then
+  echo 'PLAY RECAP localhost : ok=3 failed=1'
+  exit 2
 fi
 exit 0
 STUB
@@ -644,7 +648,8 @@ run_gate_script() {
     cd "${SCRATCH}/gate-cwd" || exit 1
     PATH="${STUB_DIR}:${PATH}" STUB_LOG="${SCRATCH}/stub.log" PROVIDED="$2" \
       CLONE_FAILS="${3:-}" PYPI_FILES_PROXY="${GATE_TEST_PROXY:-http://127.0.0.1:9}" \
-      UVX_PROXY_FAIL="${UVX_PROXY_FAIL:-}" GATE_RUN_UVX="${GATE_RUN_UVX:-}" \
+      UVX_PROXY_FAIL="${UVX_PROXY_FAIL:-}" UVX_TOOL_FAILS="${UVX_TOOL_FAILS:-}" \
+      GATE_RUN_UVX="${GATE_RUN_UVX:-}" \
       bash "${SCRATCH}/gate-script.sh" > "${SCRATCH}/gate.out" 2> "${SCRATCH}/gate.err"
   )
 }
@@ -1084,6 +1089,16 @@ if wait_for_stand_in_proxy "${uvx_proxy_port}"; then
     fi
   else
     fail "the uvx proxy-fallback path made the gate fail: $(cat "${SCRATCH}/gate.err")"
+  fi
+  # A tool that RAN through the proxy and failed is a verdict, not a resolver
+  # failure: the shim must hand back its non-zero status and never retry it.
+  if GATE_TEST_PROXY="http://127.0.0.1:${uvx_proxy_port}" UVX_TOOL_FAILS=1 GATE_RUN_UVX=1 \
+       run_gate_script "${declared_out}" "verify publish"; then
+    fail "a failing tool run through the uvx proxy shim let the gate pass"
+  elif [ "$(grep -c '^uvx index=' "${SCRATCH}/stub.log")" -eq 1 ]; then
+    pass "a failing tool run through the uvx proxy shim fails the gate without a retry"
+  else
+    fail "a failing tool through the uvx proxy shim was retried: $(cat "${SCRATCH}/stub.log")"
   fi
 fi
 kill "${uvx_proxy_pid}" 2>/dev/null || true

@@ -494,12 +494,16 @@ spec:
               #!/usr/bin/env bash
               set -u
               output="$(mktemp)"
-              if env UV_DEFAULT_INDEX="${PYPI_FILES_PROXY}/simple" "${GATE_REAL_UVX}" "$@" >"${output}" 2>&1; then
+              # Capture the status on its own line: `$?` read after an
+              # `if ...; fi` whose branch did not run is the if's own status, 0,
+              # which turned every failing tool's verdict green (2026-11-03).
+              env UV_DEFAULT_INDEX="${PYPI_FILES_PROXY}/simple" "${GATE_REAL_UVX}" "$@" >"${output}" 2>&1
+              status=$?
+              if [ "${status}" -eq 0 ]; then
                 cat "${output}"
                 rm -f "${output}"
                 exit 0
               fi
-              status=$?
               cat "${output}" >&2
               if grep -Eiq 'not found in the package registry|failed to (fetch|download)|error sending request|connection (refused|reset|timed out)|network is unreachable' "${output}"; then
                 echo ":: gate: WARN: uvx proxy resolution failed; retrying directly from PyPI" >&2
