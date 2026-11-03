@@ -222,8 +222,9 @@ NODE_STATUS_SA_PREFIX="node-status-patcher-"
 
 # Live release -> phase-2 values file. The SINGLE source of truth in this
 # script for what gets applied; co-maintained with phase2/README.md
-# "Applying a scale set's values" (three names diverge from a plain
-# values-<repo>.yaml, all for reasons recorded there). Excludes
+# "Applying a scale set's values" (several names diverge from a plain
+# values-<repo>.yaml, all for reasons recorded there; livespec-dev-master-k3s
+# is livespec-dev-tooling's master-push slice, a second scale set for one repo). Excludes
 # arc/values-EXAMPLE-repo.yaml (a template, not a live release). NOTE the
 # phase-1 install-arc.sh step 2 applies `poweredge-xubuntu-k3s` from the
 # phase-1 file arc/values-host-unique.yaml; this converge SUPERSEDES that with
@@ -236,6 +237,7 @@ declare -A SCALE_SETS=(
   [livespec-orchestrator-git-k3s]="values-livespec-orchestrator-git-jsonl.yaml"
   [livespec-orchestrator-k3s]="values-livespec-orchestrator-beads-fabro.yaml"
   [livespec-dev-tooling-k3s]="values-livespec-dev-tooling.yaml"
+  [livespec-dev-master-k3s]="values-livespec-dev-tooling-master.yaml"
   [livespec-driver-claude-k3s]="values-livespec-driver-claude.yaml"
   [livespec-driver-codex-k3s]="values-livespec-driver-codex.yaml"
   [livespec-driver-pi-k3s]="values-livespec-driver-pi.yaml"

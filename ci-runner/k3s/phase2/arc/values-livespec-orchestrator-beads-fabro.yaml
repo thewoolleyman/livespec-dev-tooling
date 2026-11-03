@@ -202,5 +202,12 @@ template:
 # exception is deleted because the rule itself now exceeds it. See
 # ../kueue/DERIVATION.md "Measured job-hours re-derivation at C = 44
 # (2026-10-22)".
+#
+# 58 -> 52 on 2026-11-03: the ClusterQueue donated three slots (29 -> 26) to
+# the livespec-dev-tooling master-push slice, and the ceiling follows the rule,
+# max(2 x 26, 6) = 52. At 11:10Z that day this scale set ran 13 of its 58, so
+# 52 is not expected to bind; the watch item is this repo's pull_request p90
+# job wait for 24 h after the change. See ../kueue/DERIVATION.md "The
+# master-push slice for livespec-dev-tooling (2026-11-03)".
 minRunners: 0
-maxRunners: 58
+maxRunners: 52

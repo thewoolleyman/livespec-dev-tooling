@@ -897,6 +897,126 @@ nothing: the scheduler only stops placing new ones there until it drains below.
 **Reverting** is the same two profile edits back: hp to `CI_NODE_FACILITIES=none`,
 capacity 0 and the factory taint, and poweredge to 32.
 
+## The master-push slice for livespec-dev-tooling (2026-11-03)
+
+Work-item `livespec-dev-tooling-lzkzwb`, plan `ci-runtime-and-cost` (epic
+`livespec-dev-tooling-ib3oe3`); ruled by legacy-coordinator-agent on
+2026-11-03 (delegated tier), donor re-ruled the same morning. The cohort gains
+an ELEVENTH member, `livespec-dev-tooling-master-cq`, and it is the first that
+is not a whole repository: it is one repository's master-push events, routed to
+their own scale set (`../arc/values-livespec-dev-tooling-master.yaml`, scale set
+`livespec-dev-master-k3s`).
+
+**The measurement.** Read-only over the 24 h to about 11:50Z on 2026-11-03
+(`plan/ci-runtime-and-cost/research/003-master-push-ci-queue-time-2026-11-03.md`,
+which carries the reproduction script): dev-tooling master-push CI jobs waited
+**p90 50.7 min** (max 109.7) to start, against **p90 19.3 min** for its
+pull_request jobs. Every dev-tooling master run in the release storms
+(23:30–03:15Z and 08:13–10:00Z) waited 28–110 min, and overseer master runs
+waited 82–116 min. A starved master is not only slow: the orchestrator
+Dispatcher's master-CI preflight refuses every dev-tooling dispatch while
+master CI stays pending, so master latency gates the whole factory for this
+repository (items `ftgiu4` and `dnokt2` were refused).
+
+**Why a WorkloadPriorityClass cannot fix it.** Both events name ONE `runs-on`
+target, so GitHub holds ONE assignment queue for them and ARC one 12-runner
+ceiling. ARC creates a runner pod BEFORE GitHub assigns it a job; the pod
+carries only repo, scale-set, `patch-id` and `runner-spec-hash` labels, so
+nothing at pod creation knows which event the pod will serve. A priority could
+only reorder pods already inside one ClusterQueue, which are still behind the
+same GitHub queue and the same ceiling. The only place the two events can be
+told apart is `runs-on`, which is why the routing contract
+(`SPECIFICATION/constraints.md` §"CI matrix shape", proposed change
+`master-push-ci-routing`) gains `CI_RUNNER_LABELS_MASTER`.
+
+**The slice.**
+
+| object | value |
+|---|---|
+| scale set | `livespec-dev-master-k3s`, `githubConfigUrl` the same repository, pod label `kueue.x-k8s.io/queue-name: livespec-dev-tooling-master-lq` |
+| `maxRunners` | max(2 × 3, 6) = **6** ("Bounding maxRunners to the quota (2026-09-06)") |
+| ClusterQueue | `livespec-dev-tooling-master-cq`, cohort `fleet-ci-runner-pool` |
+| `nominalQuota` (churn-slot) | **3** |
+| `lendingLimit` (churn-slot) | **0** |
+| preemption | `reclaimWithinCohort: Never`, `borrowWithinCohort.policy: Never`, `withinClusterQueue: Never` (stated explicitly) |
+| `fairSharing.weight` | 1, as every sibling |
+
+The ruled name was `livespec-dev-tooling-master-k3s`, which is 31 characters
+and breaks `../README.md` "`runnerScaleSetName` MUST stay <=30 characters". By
+that rule's mechanical truncation the repo-name portion becomes the longest
+hyphen-bounded prefix that fits the 19 characters left after `-master-k3s`,
+`livespec-dev`. The LocalQueue and ClusterQueue keep the full name.
+
+**The donor, and the re-ruling.** The first ruling took the 3 slots from
+dev-tooling's own 6 (6 → 3) and gave the master set `maxRunners` 9. It was
+withdrawn: under "Bounding maxRunners to the quota (2026-09-06)" a quota of 3
+sets dev-tooling's ceiling to max(2 × 3, 6) = 6, halving its pull-request
+ceiling from 12 to 6. That ceiling is the binding term today: the
+`kubernetes-sandbox-backend` measurement of 11:10–11:15Z on 2026-11-03 showed
+the GitHub-side wait is the ARC ceiling, not Kueue admission, so halving it
+would have moved the queue from master onto PRs rather than removed it. The
+re-ruled donor is `livespec-orchestrator-beads-fabro`, which at 11:10Z was
+running 13 of its 58 runners:
+
+| ClusterQueue | `nominalQuota` before | after | scale set `maxRunners` before | after |
+|---|---:|---:|---:|---:|
+| `livespec-orchestrator-beads-fabro-cq` | 29 | **26** | 58 | **52** |
+| `livespec-dev-tooling-cq` | 6 | 6 | 12 | 12 |
+| `livespec-dev-tooling-master-cq` | — | **3** | — | **6** |
+| every other member (8 queues) | 9 | 9 | 48 | 48 |
+| **cohort sum** | **44** | **44** | **118** | **118** |
+
+The eleven quotas still sum to exactly C = 44, so "The rebalance at C = 44"
+and the per-node capacities are untouched. The eleven ceilings still total
+118 (the orchestrator's −6 is the new set's +6), so at a full 44-runner
+admission at most 74 runner objects are gated in the cluster, as before. The orchestrator's
+rule value 52 remains above its long-deleted 12-runner exception. The
+Recorded exceptions to the rule table remains absent because 52 is not below
+12.
+
+**Why `lendingLimit: 0`.** Every other member lends its whole unused floor,
+which is Kueue's default and what makes "Repositories MAY fairly borrow unused
+capacity" real. The master slice must not, because reclaim is Never in this
+cohort (the standing "NEVER EVICT A HEALTHY RUNNING JOB" directive above): a
+lent master slot would be borrowed by a pull-request backlog and would come
+back only when that borrower's job finished — the very wait the slice exists to
+remove. With `lendingLimit: 0` Kueue reserves `nominalQuota − lendingLimit` = 3
+slots for the slice's exclusive use, so the lendable pool the other ten draw
+on is 41, not 44. The price is up to 3 of 44 slots (7 %) idle while no master
+run is queued. The slice may still BORROW above its 3 from idle peers, up to
+its 6-runner ceiling. `lendingLimit` is beta and enabled by default at the
+pinned Kueue v0.19.1 (v1beta2 ClusterQueue CRD in
+`core/upstream-manifests-v0.19.1.yaml`).
+
+**Why preemption stays Never.** Preemption would get master its slots faster
+by evicting PR jobs mid-run, which the directive above forbids outright. The
+reservation buys the same property — a master job starts as soon as a reserved
+slot is free — without killing work in flight.
+
+**The watch item.** The donor gives up 3 guaranteed slots and 6 ceiling. For
+24 h after the change, measure `livespec-orchestrator-beads-fabro`
+pull_request p90 job wait (research 003's script, pointed at that repository)
+and tell the coordinator if it worsens materially before `bd-ib-xufdwx` lands.
+
+**The order** (Ordering — confirm the reader before you write):
+
+1. Converge the ClusterQueue and LocalQueue, then the scale set (and the
+   donor's lowered quota and ceiling) — `reconstruct/converge-ci-stack.sh`
+   applies every `cluster-queue-*.yaml` in step 5 and every scale set in its
+   `SCALE_SETS` map in step 7.
+2. Confirm the `livespec-dev-master-k3s` listener has REGISTERED with GitHub
+   (the listener pod is Running and the scale set appears under the
+   repository's runner scale sets), and that `kubectl get clusterqueue`
+   shows the new queue with quota 3 and the eleven quotas summing to 44.
+3. Only then set `CI_RUNNER_LABELS_MASTER` to `["livespec-dev-master-k3s"]`
+   through `../../set-ci-runner-labels.sh`'s guarded path. Until it is set the
+   `ci.yml` expression falls through to `CI_RUNNER_LABELS` and the new scale
+   set idles at zero runners; setting it first would route master pushes to a
+   target with no listener, and they would queue forever.
+
+Reverting is deleting `CI_RUNNER_LABELS_MASTER` (pushes return to
+`CI_RUNNER_LABELS` at once), then the reverse of the manifest change.
+
 ## Bounding maxRunners to the quota (2026-09-06)
 
 Maintainer decision 2026-09-06 (livespec plan `poweredge-raid-array-maintenance`,

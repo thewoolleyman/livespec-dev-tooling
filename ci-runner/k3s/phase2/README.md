@@ -1276,7 +1276,7 @@ empty directory and let the runner start against a hook that is not
 there.
 
 The mapping from scale-set name to values file is not always
-`values-<repo>.yaml` — four names diverge, all for reasons recorded in
+`values-<repo>.yaml` — five names diverge, all for reasons recorded in
 the files themselves:
 
 | Live release | Values file |
@@ -1286,6 +1286,7 @@ the files themselves:
 | `livespec-orchestrator-git-k3s` | `arc/values-livespec-orchestrator-git-jsonl.yaml` |
 | `livespec-orchestrator-k3s` | `arc/values-livespec-orchestrator-beads-fabro.yaml` |
 | `livespec-dev-tooling-k3s` | `arc/values-livespec-dev-tooling.yaml` |
+| `livespec-dev-master-k3s` | `arc/values-livespec-dev-tooling-master.yaml` |
 | `livespec-driver-claude-k3s` | `arc/values-livespec-driver-claude.yaml` |
 | `livespec-driver-codex-k3s` | `arc/values-livespec-driver-codex.yaml` |
 | `livespec-driver-pi-k3s` | `arc/values-livespec-driver-pi.yaml` |
@@ -1298,7 +1299,15 @@ retired under `livespec-s43svm.28`.)
 
 The first three diverge because a scale-set name must stay <=30 characters
 (see the naming rule above) while a values file is named for the repo it
-serves; the fourth for the same reason.
+serves; the fourth for the same reason. `livespec-dev-master-k3s` is the one
+row that is not a whole repository: it is `livespec-dev-tooling`'s
+master-push slice (2026-11-03, `livespec-dev-tooling-lzkzwb`), a second scale
+set on the same repository that `ci.yml` reaches only through the
+`CI_RUNNER_LABELS_MASTER` variable. `livespec-dev-tooling-master-k3s` would be
+31 characters, so the repo-name portion is truncated at the longest
+hyphen-bounded prefix that fits after `-master-k3s`; see
+`kueue/DERIVATION.md` "The master-push slice for livespec-dev-tooling
+(2026-11-03)".
 
 To check a release against its file without changing anything, compare
 the two YAML documents directly — `helm get values <release> -n
