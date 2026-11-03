@@ -58,6 +58,18 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.165.6](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.165.5...v1.165.6) (2026-11-03)
+
+
+### Bug Fixes
+
+* record config writes after lock release ([0bef21f](https://github.com/thewoolleyman/livespec-dev-tooling/commit/0bef21f8a21e31fbba94fc57b36a45efa6b383da))
+* **scripts:** drain the line-broken heading-coverage reader and sweep joined pipelines ([1b2aef4](https://github.com/thewoolleyman/livespec-dev-tooling/commit/1b2aef4c0d99fa7c20bd9683571d2d53e8e2e349))
+* **shell:** make pipefail reader verdicts reliable ([eb976d4](https://github.com/thewoolleyman/livespec-dev-tooling/commit/eb976d4e4fcf3b863e7b236ebe9a9c010c8b4ba1))
+* **shell:** preserve pipefail grep predicates ([88646d8](https://github.com/thewoolleyman/livespec-dev-tooling/commit/88646d89358577adcc7fb11a10a08ad475e020c1))
+* **shell:** preserve pipefail sweep after refresh ([02594c3](https://github.com/thewoolleyman/livespec-dev-tooling/commit/02594c3c0d8f4eb370c7d3cb038741374e22e2ed))
+* test gate-path membership without piping into grep -q under pipefail ([603f751](https://github.com/thewoolleyman/livespec-dev-tooling/commit/603f7517bf0269d764f9b35e3ba27ae70b2da586))
+
 ## [1.165.5](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.165.4...v1.165.5) (2026-11-03)
 
 
