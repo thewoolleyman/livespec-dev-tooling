@@ -211,6 +211,7 @@ def main() -> int:
         tree_hash=verdict.tree_hash,
         exit_status=verdict.exit_status,
         output_checksum=verdict.output_checksum,
+        reason=verdict.reason,
     )
     if (
         verdict.exit_status == 0

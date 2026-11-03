@@ -219,11 +219,16 @@ def test_a_matching_failed_job_refuses_the_commit(
 
 
 @pytest.mark.parametrize(
-    ("verdict", "expected"),
+    ("verdict", "expected", "expected_reason"),
     [
-        ("local", 75),
-        ("passed", 0),
-        ("failed", 1),
+        ("local", 75, None),
+        ("passed", 0, None),
+        (
+            "host_authority_refused",
+            1,
+            "check-no-workflow-edits: Error 1045 (28000): Access denied",
+        ),
+        ("job_failed", 1, "check-pre-commit-gated-tree: staged tree check failed"),
     ],
 )
 def test_main_narrates_the_selected_route(
@@ -232,8 +237,9 @@ def test_main_narrates_the_selected_route(
     capsys: pytest.CaptureFixture[str],
     verdict: str,
     expected: int,
+    expected_reason: str | None,
 ) -> None:
-    """The shell receives a distinct local-fallback exit status and narration."""
+    """Red delegated verdicts name their source and detail beside Job tree evidence."""
     module = _module()
     routes = {
         "local": module.PreCommitVerdict(local=True, reason="gates kubeconfig is not readable"),
@@ -244,9 +250,16 @@ def test_main_narrates_the_selected_route(
             tree_hash="a" * 40,
             exit_status=0,
         ),
-        "failed": module.PreCommitVerdict(
+        "host_authority_refused": module.PreCommitVerdict(
             local=False,
-            reason="failed",
+            reason="check-no-workflow-edits: Error 1045 (28000): Access denied",
+            job_name="gate-pre-commit-1",
+            tree_hash="a" * 40,
+            exit_status=1,
+        ),
+        "job_failed": module.PreCommitVerdict(
+            local=False,
+            reason="check-pre-commit-gated-tree: staged tree check failed",
             job_name="gate-pre-commit-1",
             tree_hash="a" * 40,
             exit_status=1,
@@ -262,6 +275,9 @@ def test_main_narrates_the_selected_route(
         assert "GATED_LOCALLY" in output
     else:
         assert "gate-pre-commit-1" in output
+        assert "a" * 40 in output
+    if expected_reason is not None:
+        assert expected_reason in output
 
 
 def test_main_is_silent_for_a_repository_that_did_not_opt_in(
