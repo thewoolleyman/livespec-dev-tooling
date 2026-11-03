@@ -39,6 +39,12 @@ _NOTE = "NOTE: zero check targets completed"
 _VERDICT_TIMEOUT_S = 90.0
 _POLL_INTERVAL_S = 0.1
 _GATE_EXIT_CODE = 7
+# The flip writer's rendezvous ceilings and the exit codes it reports when one
+# is hit. Kept well inside _VERDICT_TIMEOUT_S, so a broken rendezvous surfaces
+# as a wrong exit code rather than as a missing verdict.
+_WRITER_CEILING_S = 60
+_WRITER_LOCK_UNSEEN_EXIT = 3
+_WRITER_RELEASE_UNRECORDED_EXIT = 4
 
 # git sets these in a hook's environment when it fires inside a worktree;
 # under a lefthook pre-commit they leak in from the surrounding repo.
@@ -247,16 +253,41 @@ def test_the_verdict_poll_helper_gives_up_rather_than_blocking_forever(*, tmp_pa
 
 
 def _flip_writer(*, tmp_path: Path, primary: Path) -> Path:
-    """A gate command that holds a config lock, writes it, then lingers."""
+    """A gate command that flips core.bare in lock-step with the watcher.
+
+    Every step is ORDERED by a rendezvous with the watcher's own state files,
+    never by a fixed sleep (livespec-dev-tooling-lndv2l): the writer holds
+    the lock until the watcher has recorded seeing it, then publishes the
+    write, then stays alive until the RELEASED record has landed, so the
+    record can name it. The 60 s waits are liveness ceilings against a hang
+    only; a writer that hits one exits with a distinct code, which the
+    exit-code assertion reports as a broken rendezvous.
+    """
     writer = tmp_path / "flip-writer.sh"
     config = primary / ".git" / "config"
+    store = primary / _STORE
     _ = writer.write_text(
         "#!/usr/bin/env bash\n"
+        "await() {\n"
+        f"    local deadline=$((SECONDS + {_WRITER_CEILING_S}))\n"
+        '    until "$@"; do\n'
+        '        [[ "$SECONDS" -lt "$deadline" ]] || return 1\n'
+        "        sleep 0.05\n"
+        "    done\n"
+        "}\n"
+        "lock_seen() {\n"
+        "    local f\n"
+        f'    for f in "{store}"/*/config.lock-seen; do [[ -e "$f" ]] && return 0; done\n'
+        "    return 1\n"
+        "}\n"
+        "release_recorded() {\n"
+        f'    grep -qs "config.lock RELEASED" "{store}"/*/config-writes.log\n'
+        "}\n"
         f'cp "{config}" "{config}.lock"\n'
-        "sleep 0.5\n"
+        f"await lock_seen || exit {_WRITER_LOCK_UNSEEN_EXIT}\n"
         f'git config --file "{config}.lock" core.bare true\n'
         f'mv "{config}.lock" "{config}"\n'
-        "sleep 2\n"
+        f"await release_recorded || exit {_WRITER_RELEASE_UNRECORDED_EXIT}\n"
         f"exit {_GATE_EXIT_CODE}\n",
         encoding="utf-8",
     )

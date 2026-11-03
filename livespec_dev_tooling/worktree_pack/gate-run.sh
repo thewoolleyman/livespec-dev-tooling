@@ -92,6 +92,13 @@
 #                      carrying the current core.bare value, the gate
 #                      child's descendant process tree, and any
 #                      /proc/*/fd holder of the config or its lock
+#   watch.armed        touched by the watcher after its first pass; the
+#                      gate is launched only once it exists
+#   config.lock-seen   touched by the watcher when it first sees the
+#                      config's lockfile (an observation, never a record)
+#   watch.stop         touched by the child when the gate has exited; the
+#                      watcher drains — finishes any in-flight record, runs
+#                      one final pass — and exits on its own
 #   core_after         the same digest, captured after the gate finishes
 #   CORE_BARE_FLIP     written only when before != after; `status` surfaces
 #                      it loudly
@@ -149,6 +156,14 @@ readonly POLL_INTERVAL_S=0.1
 # snapshot. A tick forks nothing (see `config_changed`), so the cadence
 # costs wakeups only.
 readonly WATCH_INTERVAL_S=0.2
+# Liveness ceilings for the watcher's two rendezvous with the child
+# (livespec-dev-tooling-lndv2l). Neither decides an outcome: the gate waits
+# for `watch.armed` and the child waits for the drained watcher to exit, and
+# these only bound how long a HUNG watcher can hold either up. Past the arm
+# ceiling the gate launches anyway; past the drain ceiling the watcher is
+# killed. Whole seconds, because they are checked against `$SECONDS`.
+readonly WATCH_ARM_CEILING_S=30
+readonly WATCH_DRAIN_CEILING_S=120
 
 # Descriptor that no writer ever feeds, so a timed `read` on it is a sleep
 # that spawns nothing. `sleep` is an external program: one fork+exec per
@@ -169,6 +184,13 @@ open_idle_fd() {
             IDLE_FD="$fd"
             return 0
         fi
+    fi
+    IDLE_FD=""
+}
+
+close_idle_fd() {
+    if [[ -n "$IDLE_FD" ]]; then
+        exec {IDLE_FD}>&- || true
     fi
     IDLE_FD=""
 }
@@ -417,37 +439,53 @@ config_rebaseline() {
     : >"$stamp" 2>/dev/null || true
 }
 
-# Parent pid from /proc/<pid>/stat without forking: `comm` may itself
-# contain spaces and parentheses, so everything through the LAST `) ` is
-# dropped before the state and ppid fields are read off the remainder.
-proc_ppid() {
+# Parent pid from /proc/<pid>/stat, returned in PROC_PPID (`?` when the
+# process is gone). `comm` may itself contain spaces and parentheses, so
+# everything through the LAST `) ` is dropped before the state and ppid
+# fields are read off the remainder.
+#
+# Fork-free BY CONSTRUCTION: a builtin `read` and parameter expansion, with
+# the answer handed back in a variable. The previous version printed it and
+# every caller captured it with `$(...)` — a fork per /proc entry. On a
+# 960-process dev host at load 112 that one scan took 50 s
+# (livespec-dev-tooling-lndv2l), which is how a record stayed "still being
+# composed" long enough for the gate to end around it.
+PROC_PPID="?"
+read_proc_ppid() {
     local line="" rest
-    { line="$(<"/proc/$1/stat")"; } 2>/dev/null || line=""
-    [[ -n "$line" ]] || { printf '?'; return 0; }
+    PROC_PPID="?"
+    { read -r line <"/proc/$1/stat"; } 2>/dev/null || true
+    [[ -n "$line" ]] || return 0
     rest="${line##*) }"
     rest="${rest#* }"
-    printf '%s' "${rest%% *}"
+    PROC_PPID="${rest%% *}"
 }
 
 # Every process descended from the gate child, breadth-first. The gate
 # runs `just check`, which fans out through a dispatcher, so the writer we
-# are hunting is typically several levels below the child.
+# are hunting is typically several levels below the child. One fork-free
+# pass over /proc builds a parent -> children index, so the walk costs one
+# lookup per descendant instead of one scan of every pid per descendant.
 descendant_pids() {
-    local root="$1" d cur i
-    local -a pids=() ppids=() frontier=("$root") found=()
+    local root="$1" d pid cur i=0
+    local -A children=() seen=()
+    local -a frontier=("$root")
     for d in /proc/[0-9]*; do
-        pids+=("${d##*/}")
-        ppids+=("$(proc_ppid "${d##*/}")")
+        pid="${d##*/}"
+        read_proc_ppid "$pid"
+        children[$PROC_PPID]+="$pid "
     done
-    while [[ "${#frontier[@]}" -gt 0 ]]; do
-        cur="${frontier[0]}"
-        frontier=("${frontier[@]:1}")
-        found+=("$cur")
-        for i in "${!pids[@]}"; do
-            [[ "${ppids[$i]}" == "$cur" ]] && frontier+=("${pids[$i]}")
+    while [[ "$i" -lt "${#frontier[@]}" ]]; do
+        cur="${frontier[$i]}"
+        i=$((i + 1))
+        # A pid recycled mid-scan can make the index cyclic; visit once.
+        [[ -z "${seen[$cur]:-}" ]] || continue
+        seen[$cur]=1
+        printf '%s\n' "$cur"
+        for pid in ${children[$cur]:-}; do
+            frontier+=("$pid")
         done
     done
-    printf '%s\n' "${found[@]}"
 }
 
 # Processes holding the config (or its lock) OPEN right now. This is the
@@ -456,11 +494,13 @@ descendant_pids() {
 # is why it runs only on an event and never on the poll path.
 # ONE `find` over /proc/*/fd, not one `readlink` fork per descriptor. The
 # per-fd loop this replaces forked 6,223 times on a 1,000-process host and
-# took 55 s — longer than the flip test's writer waits — so the record was
-# still being composed when the gate ended and the watcher was stopped, and
-# an empty config-writes.log read as "nothing wrote". It passed on CI only
-# because a runner pod's /proc holds a handful of processes. `find -lname`
-# resolves every link in-process in about 0.1 s on the same host.
+# took 55 s, so the record was still being composed when the gate ended and
+# the watcher was killed, and an empty config-writes.log read as "nothing
+# wrote". `find -lname` resolves every link in-process in about 0.1 s on the
+# same host. Speed is no longer what keeps the record, though: the watcher
+# is now DRAINED on stop rather than killed (livespec-dev-tooling-lndv2l),
+# so a slow attribution delays the verdict instead of losing the record —
+# which is why the process-tree scan beside this one is fork-free too.
 fd_holders() {
     local -a expr=()
     local target hits="" fd
@@ -480,25 +520,29 @@ fd_holders() {
 
 proc_attribution() {
     local gate_pid="$1" cfg="$2" pid cmd
+    local -a argv=()
     if [[ ! -d /proc ]]; then
         printf '    (no /proc on this host — writer attribution unavailable)\n'
         return 0
     fi
     printf '    gate descendant process tree (pid ppid cmdline):\n'
-    for pid in $(descendant_pids "$gate_pid"); do
-        cmd=""
-        cmd="$(tr '\0' ' ' <"/proc/$pid/cmdline" 2>/dev/null)" || cmd=""
-        printf '      %-8s %-8s %s\n' "$pid" "$(proc_ppid "$pid")" "${cmd:-<exited>}"
-    done
+    # Fork-free per descendant, like the scan itself: `mapfile -d ''` splits
+    # the NUL-separated cmdline in-process.
+    while IFS= read -r pid; do
+        argv=()
+        { mapfile -d '' -t argv <"/proc/$pid/cmdline"; } 2>/dev/null || argv=()
+        cmd="${argv[*]:-}"
+        read_proc_ppid "$pid"
+        printf '      %-8s %-8s %s\n' "$pid" "$PROC_PPID" "${cmd:-<exited>}"
+    done < <(descendant_pids "$gate_pid")
     printf '    /proc/*/fd holders of the shared config or its lock:\n'
     fd_holders "$cfg" "$cfg.lock"
 }
 
-# Compose the whole record, THEN append it in one write. Appending it
-# piecemeal loses the tail whenever the gate finishes while attribution is
-# still being gathered — the watcher is stopped at that moment, and what
-# survives is a header with no writer under it, which reads exactly like a
-# complete record that found nothing.
+# Compose the whole record, THEN append it in one write. A reader of the log
+# (the flip test's writer, a human tailing it) must never see a header with
+# no writer under it, which reads exactly like a complete record that found
+# nothing — and the drain-ceiling kill can still interrupt a hung watcher.
 record_config_event() {
     local log="$1" reason="$2" cfg="$3" gate_pid="$4" record=""
     record="$(
@@ -510,7 +554,36 @@ record_config_event() {
     printf '%s\n' "$record" >>"$log" 2>/dev/null || true
 }
 
-# Poll the shared config and its lockfile for as long as the gate lives.
+# One detection pass over the shared config and its lockfile. It reads and
+# updates the CALLING `watch_config_writes`'s locals through bash's dynamic
+# scope (cfg, dir, gate_pid, log, lock, ref, stamp, last, lock_seen), so the
+# poll loop and the final drain pass share one lock/last state.
+config_watch_pass() {
+    local cur
+    if [[ -e "$lock" ]]; then
+        if [[ "$lock_seen" == "0" ]]; then
+            lock_seen=1
+            # An OBSERVATION, not a record: at appearance `$cfg` is still the
+            # old file, so nothing is attributed yet. It lives beside the log,
+            # never in it, so a run with no write keeps an empty log.
+            : >"$dir/config.lock-seen" 2>/dev/null || true
+        fi
+    elif [[ "$lock_seen" == "1" ]]; then
+        # Git publishes the new config by renaming the lock over it. Read
+        # only after that lock disappears: at appearance, `$cfg` is still
+        # the old file and would attribute a stale core.bare value.
+        record_config_event "$log" "config.lock RELEASED" "$cfg" "$gate_pid"
+        lock_seen=0
+    fi
+    if config_changed "$cfg" "$ref" "$stamp"; then
+        cur="$(config_signature "$cfg")"
+        record_config_event "$log" "config CHANGED ($last -> $cur)" "$cfg" "$gate_pid"
+        last="$cur"
+        config_rebaseline "$cfg" "$ref" "$stamp"
+    fi
+}
+
+# Poll the shared config and its lockfile until the child asks it to stop.
 # Runs in a background subshell with errexit relaxed: an observer that
 # aborts on its own first hiccup is worse than no observer, because its
 # silence reads as "nothing happened".
@@ -521,32 +594,57 @@ record_config_event() {
 # scheduled before this subshell did, so the "before" sample was already
 # the AFTER state and the write was never reported. The caller samples it
 # before the gate is launched, where no race exists.
+#
+# The watch is ORDERED against the gate by two rendezvous, never by
+# wall-clock luck (livespec-dev-tooling-lndv2l). It touches `watch.armed`
+# after its first pass, and the child launches the gate only once that
+# exists — so the watcher is already polling when the gate starts. And it
+# is never killed mid-record: the child touches `watch.stop` when the gate
+# exits, and the watcher then finishes whatever it is composing, runs ONE
+# final pass (a lock released or a config changed since the last pass),
+# and exits on its own. The child's own death still ends the loop, so an
+# orphaned watcher cannot outlive the run.
 watch_config_writes() {
     local cfg="$1" dir="$2" gate_pid="$3" last="$4"
     local log="$dir/config-writes.log" lock="$cfg.lock"
     local ref="$dir/config.ref" stamp="$dir/config.stamp"
-    local cur lock_seen=0
+    local armed="$dir/watch.armed" stop="$dir/watch.stop"
+    local lock_seen=0
     open_idle_fd
-    while kill -0 "$gate_pid" 2>/dev/null; do
-        if [[ -e "$lock" ]]; then
-            if [[ "$lock_seen" == "0" ]]; then
-                lock_seen=1
-            fi
-        elif [[ "$lock_seen" == "1" ]]; then
-            # Git publishes the new config by renaming the lock over it. Read
-            # only after that lock disappears: at appearance, `$cfg` is still
-            # the old file and would attribute a stale core.bare value.
-            record_config_event "$log" "config.lock RELEASED" "$cfg" "$gate_pid"
-            lock_seen=0
-        fi
-        if config_changed "$cfg" "$ref" "$stamp"; then
-            cur="$(config_signature "$cfg")"
-            record_config_event "$log" "config CHANGED ($last -> $cur)" "$cfg" "$gate_pid"
-            last="$cur"
-            config_rebaseline "$cfg" "$ref" "$stamp"
-        fi
+    while [[ ! -e "$stop" ]] && kill -0 "$gate_pid" 2>/dev/null; do
+        config_watch_pass
+        [[ -e "$armed" ]] || : >"$armed" 2>/dev/null || true
         idle_sleep "$WATCH_INTERVAL_S"
     done
+    config_watch_pass
+}
+
+# Block until the watcher has armed (or exited, or the ceiling passed).
+# Builtins only — `[[ ]]`, `kill -0`, `$SECONDS`, a timed `read` — so the
+# wait costs wakeups, not processes.
+await_watch_armed() {
+    local dir="$1" watch_pid="$2"
+    local deadline=$((SECONDS + WATCH_ARM_CEILING_S))
+    while [[ ! -e "$dir/watch.armed" ]] && kill -0 "$watch_pid" 2>/dev/null; do
+        [[ "$SECONDS" -lt "$deadline" ]] || return 0
+        idle_sleep "$POLL_INTERVAL_S"
+    done
+}
+
+# Ask the watcher to stop, let it drain, and reap it. Only a watcher still
+# alive past the drain ceiling — a hung observer — is killed.
+drain_watcher() {
+    local dir="$1" watch_pid="$2"
+    local deadline=$((SECONDS + WATCH_DRAIN_CEILING_S))
+    : >"$dir/watch.stop" 2>/dev/null || true
+    while kill -0 "$watch_pid" 2>/dev/null; do
+        if [[ "$SECONDS" -ge "$deadline" ]]; then
+            kill "$watch_pid" 2>/dev/null || true
+            break
+        fi
+        idle_sleep "$POLL_INTERVAL_S"
+    done
+    wait "$watch_pid" 2>/dev/null || true
 }
 
 # Write the marker iff the shared `[core]` block is not what it was. The
@@ -764,6 +862,12 @@ cmd_child() {
         # errexit/nounset relaxed inside the watcher for the same reason.
         ( set +e +u +o pipefail; watch_config_writes "$cfg" "$dir" "$$" "$baseline" ) &
         watch_pid=$!
+        # Launch the gate only once the watcher is polling. Opened after
+        # the fork so the watcher keeps its own descriptor, and closed
+        # again before the gate so the gate inherits nothing of ours.
+        open_idle_fd || true
+        await_watch_armed "$dir" "$watch_pid" || true
+        close_idle_fd || true
     fi
 
     # errexit off for the gate itself: a non-zero exit is the verdict we
@@ -780,13 +884,17 @@ cmd_child() {
 
     # core_after is captured BEFORE the watcher is stopped, so a write
     # landing in the teardown gap is still attributed rather than merely
-    # detected.
+    # detected. The watcher is then DRAINED, not killed: it completes any
+    # record it is composing and runs one final pass before it exits, so an
+    # attribution still in flight when the gate ended is kept rather than
+    # discarded (livespec-dev-tooling-lndv2l).
     if [[ -n "$cfg" ]]; then
         capture_core_state "$cfg" "$dir/core_after" || true
     fi
     if [[ -n "$watch_pid" ]]; then
-        kill "$watch_pid" 2>/dev/null || true
-        wait "$watch_pid" 2>/dev/null || true
+        open_idle_fd || true
+        drain_watcher "$dir" "$watch_pid" || true
+        close_idle_fd || true
     fi
     rm -f "$dir/config.ref" "$dir/config.stamp" 2>/dev/null || true
     if [[ -n "$cfg" ]]; then
