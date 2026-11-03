@@ -297,3 +297,30 @@ def test_main_is_silent_for_a_repository_that_did_not_opt_in(
 
     assert module.main() == 75
     assert capsys.readouterr().err == ""
+
+
+def test_main_reports_the_submitted_job_and_its_admission_state_when_waiting_stops(
+    *, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A stopped pre-commit wait leaves an actionable Job identity in hook output."""
+    module = _module()
+    assert "admitted" in module.PreCommitVerdict.__dataclass_fields__
+    monkeypatch.setattr(
+        module,
+        "run_pre_commit",
+        lambda **_kwargs: module.PreCommitVerdict(
+            local=False,
+            reason="admission wait expired",
+            job_name="gate-pre-commit-1",
+            tree_hash="a" * 40,
+            admitted=False,
+            exit_status=1,
+        ),
+    )
+    monkeypatch.setattr("sys.argv", ["pre_commit_delegate.py", "run"])
+
+    assert module.main() == 1
+
+    output = capsys.readouterr().err
+    assert "gate-pre-commit-1" in output
+    assert '"admitted": false' in output

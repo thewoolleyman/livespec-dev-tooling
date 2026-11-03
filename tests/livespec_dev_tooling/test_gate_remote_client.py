@@ -119,8 +119,8 @@ def _kind_of(*, argv: Sequence[str]) -> str:
     """Name the plumbing step one argv belongs to, for the assertions below."""
     if "rev-parse" in argv:
         return "read-tree"
-    if "--delete" in argv:
-        return "delete-ref"
+    if "delete" in argv:
+        return "delete-job" if "job" in argv else "delete-ref"
     if "push" in argv:
         return "push-ref"
     if "create" in argv:
@@ -725,6 +725,37 @@ def test_a_gate_that_never_reaches_a_terminal_state_fails_rather_than_polling_fo
     assert outcome.failure().returncode is None
     assert cluster.kinds.count("get-job") == 3
     assert cluster.kinds[-1] == "delete-ref"
+
+
+def test_a_submitted_job_is_deleted_when_the_client_stops_waiting() -> None:
+    """A no-verdict wait must not leave a later-admitted Job behind."""
+    cluster = _StubCluster(job_states=("Active",))
+    request = dataclasses.replace(
+        _REQUEST, poll_timeout_seconds=30.0, admission_timeout_seconds=30.0
+    )
+
+    outcome = run_gate(request=request, runner=cluster, sleeper=cluster.sleep)
+
+    assert isinstance(outcome, Failure)
+    assert cluster.kinds == [
+        "read-tree",
+        "push-ref",
+        "submit-job",
+        "get-job",
+        "get-job",
+        "get-job",
+        "delete-job",
+        "delete-ref",
+    ]
+    assert cluster.only(kind="delete-job").argv == (
+        GATES_WRAPPER,
+        "kubectl",
+        "--namespace",
+        "gates",
+        "delete",
+        "job",
+        _JOB,
+    )
 
 
 def test_a_job_the_cluster_will_not_report_on_fails_the_wait() -> None:

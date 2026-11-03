@@ -211,6 +211,58 @@ def test_an_absent_or_wrong_tree_cluster_outcome_gates_locally(
     assert verdict.tree_hash == "a" * 40
 
 
+def test_a_submitted_job_without_a_verdict_refuses_without_a_local_aggregate(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A queued Job is already a gate attempt, not a reason to run the aggregate locally."""
+    from returns.result import Success
+
+    from livespec_dev_tooling.gate_remote_client import GateRunRequest
+    from livespec_dev_tooling.gate_remote_verdict import GATE_NO_VERDICT, GateVerdict
+
+    module = _module()
+    assert "admitted" in GateVerdict.__dataclass_fields__
+    assert "admitted" in module.PreCommitVerdict.__dataclass_fields__
+    _ = (tmp_path / "pyproject.toml").write_text(
+        "[tool.livespec_dev_tooling]\ndelegated_pre_commit = true\n", encoding="utf-8"
+    )
+    monkeypatch.setattr(module, "gates_kubeconfig_readable", lambda: True)
+    monkeypatch.setattr(module, "_staged_tree_hash", lambda **_kwargs: "a" * 40)
+    monkeypatch.setattr(module, "_staged_commit", lambda **_kwargs: "b" * 40)
+    monkeypatch.setattr(module, "resolve_renderer", lambda **_kwargs: Path("renderer"))
+    monkeypatch.setattr(
+        module,
+        "gate_remote_request",
+        lambda **_kwargs: Success(
+            GateRunRequest(
+                repo_root=tmp_path,
+                mirror_url="mirror",
+                manifest="manifest",
+                gate_ref="refs/gates/tree",
+            )
+        ),
+    )
+    monkeypatch.setattr(
+        module,
+        "run_gated_push",
+        lambda **_kwargs: GateVerdict(
+            state=GATE_NO_VERDICT,
+            detail="admission wait expired",
+            token_written=False,
+            job_name="gate-pre-commit-1",
+            tree_hash="a" * 40,
+            admitted=False,
+        ),
+    )
+
+    verdict = module.run_pre_commit(repo_root=tmp_path)
+
+    assert verdict.local is False
+    assert verdict.exit_status == 1
+    assert verdict.job_name == "gate-pre-commit-1"
+    assert verdict.admitted is False
+
+
 @pytest.mark.parametrize(
     ("returncode", "expected_status"),
     [(0, 0), (1, 1), (None, 1)],

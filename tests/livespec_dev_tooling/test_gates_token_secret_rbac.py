@@ -111,6 +111,20 @@ def test_the_gate_submitter_may_create_secrets_and_do_nothing_else_with_them() -
     assert '"*"' not in rule
 
 
+def test_the_gate_submitter_may_delete_the_jobs_it_submits() -> None:
+    """A timed-out client must reclaim its own suspended Job before it returns."""
+    jobs_rules = [rule for rule in _rules() if 'resources: ["jobs"]' in rule]
+
+    assert len(jobs_rules) == 1, (
+        f"{_RBAC.name} must carry exactly one jobs rule so the gate client's submit, watch, "
+        f"and cleanup authority remain together; found {len(jobs_rules)}"
+    )
+    assert 'verbs: ["create", "get", "list", "watch", "delete"]' in jobs_rules[0], (
+        "the gates Role must allow the submitter to delete the Job it created after an "
+        "admission or runtime wait expires"
+    )
+
+
 def test_the_rbac_manifest_declares_no_secret_holding_a_github_credential() -> None:
     """The per-run token Secret is created at submit time and exists in no source.
 
