@@ -1,0 +1,57 @@
+---
+- name: Create the pressure telemetry library directory
+  ansible.builtin.file:
+    path: "{{ pressure_telemetry_lib_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+
+- name: Install the pressure telemetry emitter
+  # A copy gives --check a concrete drift line naming inventory_hostname when
+  # the live emitter's bytes differ from this merged definition.
+  ansible.builtin.copy:
+    src: pressure-telemetry.sh
+    dest: "{{ pressure_telemetry_script_dest }}"
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+
+- name: Install the pressure telemetry service unit
+  ansible.builtin.template:
+    src: pressure-telemetry.service.j2
+    dest: "{{ pressure_telemetry_unit_dir }}/{{ pressure_telemetry_service_name }}"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+  notify: Reload systemd for pressure telemetry
+
+- name: Check whether the pressure telemetry timer is already installed
+  ansible.builtin.stat:
+    path: "{{ pressure_telemetry_unit_dir }}/{{ pressure_telemetry_timer_name }}"
+  register: pressure_telemetry_timer_unit
+  become: true
+
+- name: Install the pressure telemetry timer unit
+  ansible.builtin.template:
+    src: pressure-telemetry.timer.j2
+    dest: "{{ pressure_telemetry_unit_dir }}/{{ pressure_telemetry_timer_name }}"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+  notify: Reload systemd for pressure telemetry
+
+- name: Publish changed pressure telemetry units before arming the timer
+  ansible.builtin.meta: flush_handlers
+
+- name: Enable and start the pressure telemetry timer
+  ansible.builtin.systemd_service:
+    name: "{{ pressure_telemetry_timer_name }}"
+    enabled: true
+    state: started
+  become: true
+  when: not ansible_check_mode or pressure_telemetry_timer_unit.stat.exists

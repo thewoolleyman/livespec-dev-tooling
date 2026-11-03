@@ -378,6 +378,11 @@
     # the credential wrapper; see ../ansible/README.md for the two commands.
     - role: otel_collector
       tags: [otel_collector]
+    # The complete kernel PSI surface is independent of the node's k3s role,
+    # so every execution target emits it after its collector has supplied the
+    # direct OTLP ingest key.
+    - role: pressure_telemetry
+      tags: [pressure_telemetry]
     # 12 — and LAST, because arming its timer prunes this node's containerd on
     # the spot on any host up longer than OnBootSec. Server-only as a hard
     # refusal, not a skip: the prune's central gate is a cluster-wide PodSpec
