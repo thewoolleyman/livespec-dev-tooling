@@ -79,12 +79,14 @@ _DEPLOYED_COMMIT = "9f6c38f"
 # (livespec-orchestrator-beads-fabro bd-ib-voozdp, thewoolleyman/fabro#13). The
 # coordinator ruled it onto `fabro-server` alone on 2026-11-02, so the two
 # instances this module reads are pinned to DIFFERENT builds by design.
-_FLEET_COMMIT = "613add1"
+# 2026-11-03: every gmktec instance is pinned to the run-store fix build
+# 95a2e5b (bd-ib-h7kbco, thewoolleyman/fabro#16), so both units read the same.
+_FLEET_COMMIT = "95a2e5b"
 # The candidate's build: the carrier tip on that branch, the fleet build plus the
 # node name on run_turn spans (thewoolleyman/fabro#14). The maintainer ruled it
 # onto the candidate and fabro-server-mi-homelab on 2026-11-02 (plan
 # fabro-currency), ahead of the fleet instance.
-_CANDIDATE_COMMIT = "84fb903"
+_CANDIDATE_COMMIT = "95a2e5b"
 _PINNED_COMMIT = {"fabro-server": _FLEET_COMMIT, "fabro-server-candidate": _CANDIDATE_COMMIT}
 _SUPERSEDED_CARRIER = "adeefec"
 _SUPERSEDED_BUILD_REFERENCE = "#1048"
