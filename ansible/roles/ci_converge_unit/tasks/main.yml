@@ -11,13 +11,13 @@
 # converge self-contained and boot-durable with no checkout present; the
 # repository stays the source of truth and this role is the refresh step.
 #
-# THIS ROLE DISTRIBUTES; IT DOES NOT APPLY. Everything under the tree is
+# THIS ROLE DISTRIBUTES AND APPLIES CHANGED INPUTS. Everything under the tree is
 # Kubernetes-declarative — Kueue queues, ARC values, manifests, kustomizations —
 # and stays that way. The converge script's own cluster control flow is
-# deliberately untouched by this conversion.
-#
-# WHY ENABLED AND NOT STARTED: starting the service APPLIES the stack live. It
-# runs on the next boot, or when an operator starts it by hand.
+# deliberately untouched by this conversion. Once the role refreshes any of
+# those inputs, it starts the committed unit and waits for it before the apply
+# returns. When the tree is already current, it does neither, which preserves
+# the no-change result of a second apply.
 #
 # NOT copied here: patch-node-churn-capacity.sh. Converge step 1b runs it from
 # this same directory, but node_extended_resource owns that file — one owner per
@@ -61,6 +61,7 @@
   loop: "{{ ci_converge_unit_files }}"
   loop_control:
     label: "{{ item.dest }}"
+  register: ci_converge_unit_named_members
 
 - name: Copy the glob-derived members of the installed tree
   # All 0644: every one of them is a manifest or a values file the converge
@@ -73,6 +74,7 @@
     mode: "0644"
   become: true
   loop: "{{ ci_converge_unit_glob_files | sort }}"
+  register: ci_converge_unit_glob_members
 
 - name: Pull the pinned ARC Helm charts into the installed artifact tree
   # The ONE member of the installed set that is FETCHED rather than copied out of
@@ -94,6 +96,7 @@
       {{ ci_converge_unit_lib_dir }}/arc/charts/{{ item }}-{{ ci_converge_unit_arc_chart_version }}.tgz
   become: true
   loop: "{{ ci_converge_unit_arc_charts }}"
+  register: ci_converge_unit_arc_charts_pulled
 
 - name: Copy every ci_pool node's committed profile into the installed tree
   # The boot converge's step 10f reconciles each pool node's FACTORY label from
@@ -115,6 +118,7 @@
     mode: "0644"
   become: true
   loop: "{{ ci_converge_unit_pool_profiles }}"
+  register: ci_converge_unit_profiles_copied
 
 - name: Copy the Kueue webhook probe's RBAC manifest
   # The ONE member of the installed set that comes from outside phase2/.
@@ -125,6 +129,7 @@
     group: root
     mode: "0644"
   become: true
+  register: ci_converge_unit_observability_manifest
 
 - name: Check whether the converge unit is already installed
   # Read BEFORE the task that writes it: under --check the unit file is only
@@ -144,17 +149,20 @@
     mode: "0644"
   become: true
   notify: Reload systemd for the converge unit
+  register: ci_converge_unit_installed
 
 - name: Publish a changed unit before enabling it
   ansible.builtin.meta: flush_handlers
 
 - name: Enable the converge unit for the next boot
-  # `enabled: true` and NO `state:`. Starting it applies the whole cluster stack.
+  # Starting remains in the changed-input block below: an unchanged tree must
+  # leave this oneshot alone so a second apply reports no change.
   ansible.builtin.systemd_service:
     name: "{{ ci_converge_unit_service }}"
     enabled: true
   become: true
   when: not ansible_check_mode or ci_converge_unit_present.stat.exists
+  register: ci_converge_unit_enabled
 
 - name: Read whether the churn-slot reapply unit is in place
   ansible.builtin.service_facts:
@@ -180,26 +188,28 @@
     ansible_facts['services'][ci_converge_unit_reapply_service]['status'] | default('absent') != 'enabled'
     or not ci_converge_unit_reapply_script_present.stat.exists
 
-- name: Run the boot converge now, on this apply only
-  # CONSENT-GATED by ci_converge_unit_run_now (default false; pass
-  # `-e ci_converge_unit_run_now=true` on ONE apply). converge-ci-stack.service
-  # applies the WHOLE cluster stack — the provisioner, Kueue, every
-  # ClusterQueue, ARC and every scale set — so starting it mid-apply changes the
-  # live pool under whatever CI jobs are running. A routine apply must never
-  # reach that, which is why the default only ENABLES the unit (above).
-  #
-  # THE BOOT PATH IS UNCHANGED: with the switch off this role behaves exactly as
-  # before, and the unit still runs at every boot, which is what rebuilds the
-  # tmpfs datastore. The switch exists because enable-only means a committed
-  # change to an applied manifest reaches the cluster only at the next reboot:
-  # found on the third live ci-pool.yml apply (2026-10-10), the unit had last
-  # run at the 2026-09-28 boot, so the committed ClusterQueue quotas (sum 44)
-  # had never been applied and the live queues still summed to 32.
-  #
-  # Never under --check: there is no dry form of applying the stack, so a drift
-  # report shows these tasks skipped whatever the switch says.
+- name: Decide whether the installed CI stack inputs changed
+  # Every result here is an artifact consumed by converge-ci-stack.service (or
+  # its unit). A normal apply only starts the live converge after at least one
+  # changed; this is the idempotence boundary that makes a second unchanged
+  # `just ansible-apply ansible/ci-pool.yml` report no change.
+  ansible.builtin.set_fact:
+    ci_converge_unit_inputs_changed: >-
+      {{ ci_converge_unit_named_members.changed
+         or ci_converge_unit_glob_members.changed
+         or ci_converge_unit_arc_charts_pulled.changed
+         or ci_converge_unit_profiles_copied.changed
+         or ci_converge_unit_observability_manifest.changed
+         or ci_converge_unit_installed.changed
+         or ci_converge_unit_enabled.changed }}
+  changed_when: false
+
+- name: Run the CI stack converge after changed inputs
+  # Never under --check: there is no dry form of applying the stack. On a real
+  # apply, this follows the copies and unit enable above, so the unit reads the
+  # exact committed tree this run installed.
   when:
-    - ci_converge_unit_run_now | bool
+    - ci_converge_unit_inputs_changed | bool
     - not ansible_check_mode
   block:
     - name: Start the converge unit
@@ -210,7 +220,7 @@
       ansible.builtin.systemd_service:
         name: "{{ ci_converge_unit_service }}"
         state: started
-      register: ci_converge_unit_run_now_start
+      register: ci_converge_unit_converge_start
       failed_when: false
       become: true
 
@@ -226,43 +236,63 @@
           - --property=Result
           - --property=ExecMainStatus
           - "{{ ci_converge_unit_service }}"
-      register: ci_converge_unit_run_now_state
+      register: ci_converge_unit_converge_state
       until: >-
-        (ci_converge_unit_run_now_state.stdout
+        (ci_converge_unit_converge_state.stdout
          | regex_findall('^ActiveState=(.*)$', multiline=True) | first | default(''))
         not in ['activating', 'active', 'deactivating', 'reloading']
       retries: >-
-        {{ (ci_converge_unit_run_now_wait_seconds | int
-            / ci_converge_unit_run_now_poll_seconds | int) | round | int }}
-      delay: "{{ ci_converge_unit_run_now_poll_seconds }}"
+        {{ (ci_converge_unit_converge_wait_seconds | int
+            / ci_converge_unit_converge_poll_seconds | int) | round | int }}
+      delay: "{{ ci_converge_unit_converge_poll_seconds }}"
       changed_when: false
+      failed_when: false
       become: true
 
     - name: Read the converge's result
       ansible.builtin.set_fact:
-        ci_converge_unit_run_now_result: >-
-          {{ ci_converge_unit_run_now_state.stdout
+        ci_converge_unit_converge_result: >-
+          {{ ci_converge_unit_converge_state.stdout
           | regex_findall('^Result=(.*)$', multiline=True) | first | default('') }}
-        ci_converge_unit_run_now_exit: >-
-          {{ ci_converge_unit_run_now_state.stdout
+        ci_converge_unit_converge_exit: >-
+          {{ ci_converge_unit_converge_state.stdout
           | regex_findall('^ExecMainStatus=(.*)$', multiline=True) | first | default('') }}
 
     - name: Report the converge's result
       ansible.builtin.debug:
         msg: >-
           {{ ci_converge_unit_service }} ran now on {{ inventory_hostname }}:
-          Result={{ ci_converge_unit_run_now_result }}
-          ExecMainStatus={{ ci_converge_unit_run_now_exit }}
-          (start: {{ ci_converge_unit_run_now_start.msg | default('ok') }})
+          Result={{ ci_converge_unit_converge_result }}
+          ExecMainStatus={{ ci_converge_unit_converge_exit }}
+          (start: {{ ci_converge_unit_converge_start.msg | default('ok') }})
+
+    - name: Read the failed converge journal tail
+      # The systemd result says WHAT failed; the final journal lines say WHY.
+      # Capture them in this same apply so failure is actionable without a
+      # separate, prohibited by-hand host start or inspection step.
+      ansible.builtin.command:
+        argv:
+          - journalctl
+          - --unit
+          - "{{ ci_converge_unit_service }}"
+          - --lines
+          - "{{ ci_converge_unit_journal_tail_lines }}"
+          - --no-pager
+      register: ci_converge_unit_journal_tail
+      changed_when: false
+      failed_when: false
+      become: true
+      when: ci_converge_unit_converge_result != 'success'
 
     - name: Refuse a converge that did not succeed
       ansible.builtin.assert:
         that:
-          - ci_converge_unit_run_now_result == 'success'
+          - ci_converge_unit_converge_result == 'success'
         fail_msg: >-
-          {{ ci_converge_unit_service }} ended with Result={{ ci_converge_unit_run_now_result }}
-          (ExecMainStatus={{ ci_converge_unit_run_now_exit }}); read
-          `journalctl -u {{ ci_converge_unit_service }}` on {{ inventory_hostname }}.
+          {{ ci_converge_unit_service }} ended with Result={{ ci_converge_unit_converge_result }}
+          (ExecMainStatus={{ ci_converge_unit_converge_exit }}) on {{ inventory_hostname }}.
+          Journal tail:
+          {{ ci_converge_unit_journal_tail.stdout | default('(journal unavailable)') }}
           The stack is partly applied; the converge is idempotent, so fix the cause
-          and re-run with ci_converge_unit_run_now=true.
+          and re-run the committed ci-pool apply.
         success_msg: "{{ ci_converge_unit_service }}: success"
