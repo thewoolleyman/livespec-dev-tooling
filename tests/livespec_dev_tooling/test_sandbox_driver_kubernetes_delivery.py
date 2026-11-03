@@ -30,6 +30,7 @@ _TASKS = _ROLE / "tasks" / "main.yml"
 _DEFAULTS = _ROLE / "defaults" / "main.yml"
 _PLUGIN_TEMPLATE = _ROLE / "templates" / "plugin-config.toml.j2"
 _CLI_TEMPLATE = _ROLE / "templates" / "cli-config.toml.j2"
+_HOST_VARS_DOC = _ROLE / "HOST_VARS.md"
 
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 
@@ -134,6 +135,20 @@ def test_the_role_refuses_every_conflicting_declared_provider_pin_before_downloa
     assert "sandbox_driver_kubernetes_pin_conflicts" in tasks
     assert "unit_name" in tasks
     assert "sandbox_driver_kubernetes_sha256" in tasks
+
+
+def test_matching_or_absent_instance_pins_leave_the_plugin_install_available() -> None:
+    """Only a pin for this binary path can refuse its normal installation."""
+    tasks = _read(path=_TASKS)
+    collector = _read(path=_TASKS.parent / "collect_pin_conflicts.yml")
+    documentation = _read(path=_HOST_VARS_DOC)
+    assert "fabro_server_instances | default([])" in tasks
+    assert "sandbox_providers" in collector
+    assert "item.value.path" in collector
+    assert "item.value.sha256" in collector
+    assert "sandbox_driver_kubernetes_pin_conflicts | length == 0" in tasks
+    assert "fabro_server_instances[].sandbox_providers" in documentation
+    assert "path" in documentation and "sha256" in documentation
 
 
 def test_no_machine_is_named() -> None:
