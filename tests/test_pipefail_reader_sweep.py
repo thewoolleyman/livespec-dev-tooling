@@ -65,12 +65,33 @@ def _early_reader_violations(*, paths: tuple[Path, ...], repo_root: Path) -> tup
         text = path.read_text(encoding="utf-8")
         if "pipefail" not in text:
             continue
-        for line_number, line in enumerate(text.splitlines(), start=1):
-            if line.lstrip().startswith("#"):
-                continue
+        for line_number, line in _logical_lines(text):
             if _EARLY_READER.search(line):
-                violations.append(f"{path.relative_to(repo_root)}:{line_number}: {line.strip()}")
+                violations.append(f"{path.relative_to(repo_root)}:{line_number}: {line}")
     return tuple(violations)
+
+
+def _logical_lines(text: str) -> tuple[tuple[int, str], ...]:
+    """Join `|` and `\\` continuations so a line-broken pipeline is scanned whole."""
+    logical: list[tuple[int, str]] = []
+    pending: list[str] = []
+    start = 0
+    for line_number, raw in enumerate(text.splitlines(), start=1):
+        stripped = raw.strip()
+        if not pending and stripped.startswith("#"):
+            continue
+        if not pending:
+            start = line_number
+        continues = (stripped.endswith("|") and not stripped.endswith("||")) or stripped.endswith(
+            "\\"
+        )
+        pending.append(stripped.removesuffix("\\").strip() if continues else stripped)
+        if not continues:
+            logical.append((start, " ".join(pending)))
+            pending = []
+    if pending:
+        logical.append((start, " ".join(pending)))
+    return tuple(logical)
 
 
 def _quoted_reader_redirection_violations(
@@ -163,4 +184,19 @@ def test_pipefail_sweep_reports_a_redirection_inside_a_quoted_pattern(tmp_path: 
 
     assert _quoted_reader_redirection_violations(paths=(unsafe_script,), repo_root=tmp_path) == (
         "scripts/unsafe.sh:3: printf 'needle\\n' | grep 'needle >/dev/null'",
+    )
+
+
+def test_pipefail_sweep_reports_a_line_broken_early_exiting_reader(tmp_path: Path) -> None:
+    """A reader placed on the line after its writer's trailing pipe is still reported."""
+    unsafe_script = tmp_path / "scripts" / "unsafe.sh"
+    unsafe_script.parent.mkdir()
+    unsafe_script.write_text(
+        "#!/usr/bin/env bash\nset -o pipefail\nif git diff --cached --name-only |\n"
+        "    grep -qxE 'needle'; then\n    :\nfi\n",
+        encoding="utf-8",
+    )
+
+    assert _early_reader_violations(paths=(unsafe_script,), repo_root=tmp_path) == (
+        "scripts/unsafe.sh:3: if git diff --cached --name-only | grep -qxE 'needle'; then",
     )

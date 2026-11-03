@@ -87,7 +87,7 @@ fi
 # changeset touching neither file gets the unscoped whole-register verdict,
 # which the frozen baseline already satisfies.
 if git diff --cached --name-only |
-    grep -qxE 'tests/heading-coverage(-debt)?\.json'; then
+    grep -xE 'tests/heading-coverage(-debt)?\.json' >/dev/null; then
     echo ":: staged changeset edits a heading-coverage file — scoping the debt ratchet to the rows this commit authors"
     LIVESPEC_SCOPE_HEADING_COVERAGE_DEBT_TO_HEAD_DIFF=true \
         just check-heading-coverage-debt-register
