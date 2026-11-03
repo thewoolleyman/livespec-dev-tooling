@@ -242,6 +242,21 @@ fails alone:
   HH:MM" resumer. Recorded 2026-09-06 after three clock resumers held an idle
   factory for two hours with a usable credential and no exhaustion record.
 
+## Resuming legacy-coordinator-agent — straight into the loop
+
+A request to resume plan `legacy-coordinator-agent` (epic
+`livespec-dev-tooling-6tgd2z`) means: read `.ai/coordinator-duties.md` IN FULL
+first, then start the coordinator `/loop` with no interval IN THE SAME TURN.
+The epic's `next_action` is written as `kind: human` because this plan has no
+executable kind for "run the loop". The plan operation's prose says a `human`
+kind "always raises the picker", and for THIS plan that rule does not apply:
+the coordinator never blocks on the maintainer (coordinator-duties §6). Do not
+ask whether to start the loop. Maintainer asks go non-blocking in the tick
+report. Recorded 2026-11-03: a resumed coordinator ran the plan operation,
+stopped at the `human` pointer, and asked the maintainer about fifteen times
+whether to start the loop while seats ran unwatched. The maintainer: "YOU HAD
+ONE JOB".
+
 ## Decision authority — when to ask, proceed, or self-resolve
 
 Fleet-standard guidance, ported from `livespec/AGENTS.md` ("When to ask,
