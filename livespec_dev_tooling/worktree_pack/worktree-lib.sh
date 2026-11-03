@@ -636,7 +636,10 @@ worktree_reap() {
                 merged=1
                 merged_reason="ancestor of $base_ref"
             elif cherry_out="$(git -C "$primary" cherry "$base_ref" "$wt_head" 2>/dev/null)"; then
-                if ! printf '%s\n' "$cherry_out" | grep -q '^+'; then
+                # A here-string, never `printf | grep -q`: under pipefail grep -q's
+                # early exit SIGPIPEs the writer, and the 141 read unlanded work as
+                # landed (livespec-dev-tooling-7xv7sy).
+                if ! grep -q '^+' <<<"$cherry_out"; then
                     merged=1
                     merged_reason="patch-id equivalent to $base_ref (git cherry)"
                 fi
