@@ -250,6 +250,8 @@
       # Covers a converge already running when the start was asked for (the
       # module then starts nothing) and a start job that returned early. A
       # oneshot without RemainAfterExit ends inactive (or failed), never active.
+      # Exhausting the retries FAILS the play, so a converge still running at the
+      # bound is never reported as a finished apply.
       ansible.builtin.command:
         argv:
           - systemctl
@@ -268,11 +270,13 @@
             / ci_converge_unit_converge_poll_seconds | int) | round | int }}
       delay: "{{ ci_converge_unit_converge_poll_seconds }}"
       changed_when: false
-      failed_when: false
       become: true
 
     - name: Read the converge's result
       ansible.builtin.set_fact:
+        ci_converge_unit_converge_active: >-
+          {{ ci_converge_unit_converge_state.stdout
+          | regex_findall('^ActiveState=(.*)$', multiline=True) | first | default('') }}
         ci_converge_unit_converge_result: >-
           {{ ci_converge_unit_converge_state.stdout
           | regex_findall('^Result=(.*)$', multiline=True) | first | default('') }}
@@ -309,9 +313,11 @@
     - name: Refuse a converge that did not succeed
       ansible.builtin.assert:
         that:
+          - ci_converge_unit_converge_active in ['inactive', 'failed']
           - ci_converge_unit_converge_result == 'success'
         fail_msg: >-
           {{ ci_converge_unit_service }} ended with Result={{ ci_converge_unit_converge_result }}
+          ActiveState={{ ci_converge_unit_converge_active }}
           (ExecMainStatus={{ ci_converge_unit_converge_exit }}) on {{ inventory_hostname }}.
           Journal tail:
           {{ ci_converge_unit_journal_tail.stdout | default('(journal unavailable)') }}
