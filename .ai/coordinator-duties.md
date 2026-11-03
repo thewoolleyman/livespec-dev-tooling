@@ -19,11 +19,17 @@ cost fixes by the work they remove (rule F).
 Measured 2026-10-31: the item ranked a top burn fix (bd-ib-qbtf7s, inline scripts) was worth about $0.35 per run,
 about 5% of a $6.68 factory run. The unworked top sink was long-lived local seats, about $4,000 per 7 days.
 
-## 2. Never retry a flaky check: fix its root cause
+## 2. A flaky test gets an in-place retry and a root fix, never a whole-job rerun
 
-A check that fails intermittently is a defect, and retrying it is the definition of insanity. Find the commit that
-introduced the flaky bound (`git log -1 -- <test file>`), and route the root fix to that commit's owner as top
-priority. Tell every waiting session to STOP retrying and wait for the fix to merge.
+A test the run did not touch is retried up to 3 times, 60 seconds apart, on its own and never as a whole-job rerun,
+and every retried failure gets a root-fix item at once. The retry is the flake-retry pytest plugin's, inside the
+same pytest session (non-functional-requirements.md §"Testing approach", maintainer rulings on
+livespec-dev-tooling-6tgd2z, 2026-11-02 18:38:21Z and 18:39:54Z). A test the run touched, or one whose closure
+cannot be read, is never retried. No seat re-runs a CI job, a suite or a factory run to get past a flake.
+
+A check that fails intermittently is still a defect. Find the commit that introduced the flaky bound
+(`git log -1 -- <test file>`), and route the root fix to that commit's owner as top priority. Tell every waiting
+session to wait for the fix to merge rather than re-run anything.
 
 Measured 2026-10-31: `bd-guard/test/test-capture-start.sh` asserted a 5.0 s wall-clock bound, added that day by
 bd-ib-qbwd7n (#4036). Under normal host load it measured 8-13 s, and it blocked every hand commit in the orchestrator

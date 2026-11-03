@@ -175,8 +175,8 @@ The files:
 - Read `.ai/coordinator-duties.md` before directing other seats as a
   coordinator, before stating what a burn or spend fix is worth, before
   retrying any check that failed intermittently, or before waiting on a seat's
-  "report". Rank spend only from measured Honeycomb data, fix a flake at its
-  root and never retry it, unblock a `blocked` seat's picker every tick, and
+  "report". Rank spend only from measured Honeycomb data, give a flake its
+  in-place test retry and a root fix but never a job rerun, unblock a `blocked` seat's picker every tick, and
   have the owning session decide before the maintainer is asked (maintainer
   corrections, 2026-10-31).
 - Read `.ai/janitor-failed-output.md` before diagnosing a `failed at

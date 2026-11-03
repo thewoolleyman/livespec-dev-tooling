@@ -57,11 +57,26 @@ from livespec_dev_tooling.commit_replay_delegate import run_replay  # noqa: E402
 # extraPaths-resolved sibling boundary.
 __all__: list[str] = [
     "RED_GREEN_REPLAY_PROTOCOL",
+    "RED_LEG_NO_RETRY_ARGS",
     "_handle_green_mode",
     "_handle_red_mode",
     "_handle_suite_green_mode",
     "_refuse_half_pair",
 ]
+
+
+# The Red leg proves a test FAILS, so it must never re-run one: a flake retry
+# there could turn a genuine failure into a pass and record a false Red. The
+# untouched-test retry plugin is switched off by name for that leg only. An
+# unknown `-p no:` name is not an error, so this is safe in a consumer that does
+# not load the plugin (non-functional-requirements.md, the untouched-test retry
+# rule of its testing approach).
+RED_LEG_NO_RETRY_ARGS: tuple[str, ...] = ("-p", "no:livespec_flake_retry")
+
+
+def _red_pytest_argv(*, head: tuple[str, ...], target: str) -> list[str]:
+    """One Red-leg pytest argv: the retry plugin off, the single staged test file."""
+    return [*head, *RED_LEG_NO_RETRY_ARGS, target, "--tb=no", "-q"]
 
 
 class _ReplayTestRun(NamedTuple):
@@ -174,8 +189,10 @@ def _handle_red_mode(
     )
     replay = _run_replay_test(
         log=log,
-        pytest_argv=[sys.executable, "-m", "pytest", str(test_file_path), "--tb=no", "-q"],
-        job_pytest_argv=["pytest", tests_paths[0], "--tb=no", "-q"],
+        pytest_argv=_red_pytest_argv(
+            head=(sys.executable, "-m", "pytest"), target=str(test_file_path)
+        ),
+        job_pytest_argv=_red_pytest_argv(head=("pytest",), target=tests_paths[0]),
         trailer_prefix="Red",
     )
     if replay.returncode == 0:

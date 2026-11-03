@@ -55,6 +55,7 @@ readme = "README.md"
 # sandbox and every delegated gate pod: it reads one host file, finds none, and
 # returns without creating, writing or printing anything.
 [project.entry-points.pytest11]
+livespec_flake_retry = "livespec_dev_tooling.flake_retry"
 livespec_local_gate_slots = "livespec_dev_tooling.local_gate_slots"
 
 [tool.hatch.build.targets.wheel]
@@ -94,6 +95,7 @@ dev = [
     "ruff==0.8.6",
     "pyright==1.1.391",
     "pytest==8.3.4",
+    "pytest-rerunfailures==14.0",
     "pytest-cov==6.0.0",
     "pytest-icdiff==0.9",
     "pytest-xdist==3.8.0",
@@ -747,6 +749,12 @@ subprocess_spawn_allowlist = [
     # stageable would conceal the very shadowing these regress. The children
     # scrub COVERAGE_PROCESS_START + COV_CORE_* per the contract above.
     "tests/livespec_dev_tooling/test_budgeted_gh.py",
+    # The flake-retry session tests must run a REAL pytest session: the plugin's
+    # hooks are positional pluggy calls, pytest-rerunfailures reruns inside the
+    # session, and the plugin keeps per-session module state, none of which an
+    # in-process call reproduces. The children scrub COVERAGE_PROCESS_START +
+    # COV_CORE_* per the contract above.
+    "tests/livespec_dev_tooling/test_flake_retry_session.py",
     "tests/livespec_dev_tooling/test_green_token.py",
     "tests/livespec_dev_tooling/test_no_direct_github_access.py",
     "tests/livespec_dev_tooling/test_tdd_commit.py",

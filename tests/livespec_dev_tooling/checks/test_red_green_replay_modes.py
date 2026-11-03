@@ -74,7 +74,13 @@ def test_red_leg_uses_a_delegated_verdict_and_records_its_job_evidence(
 
     def delegated(*, repo_root: Path, pytest_argv: list[str]) -> ReplayVerdict:
         assert repo_root == tmp_path
-        assert pytest_argv == ["pytest", "tests/test_red.py", "--tb=no", "-q"]
+        assert pytest_argv == [
+            "pytest",
+            *modes.RED_LEG_NO_RETRY_ARGS,
+            "tests/test_red.py",
+            "--tb=no",
+            "-q",
+        ]
         return ReplayVerdict(
             local=False,
             reason="the Job reported a failing Red test",

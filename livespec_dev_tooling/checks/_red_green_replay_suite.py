@@ -85,7 +85,7 @@ _NOISE_LINE = re.compile(
     "".join(
         (
             r"^(\[gw\d+\].*|created: \d+/\d+ workers?.*|\d+ workers? \[\d+ items?\].*",
-            r"|[.FEsxX]*\s*\[\s*\d+%\])$",
+            r"|[.FEsxXR]*\s*\[\s*\d+%\])$",
         )
     )
 )
