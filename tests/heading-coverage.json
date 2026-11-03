@@ -1918,5 +1918,93 @@
     "test": "TODO",
     "work_item": "livespec-dev-tooling-un3zhi",
     "reason": "A real test at the integration tier or above is owed for this heading: an integration test of the committed live-converge playbook proving it runs the CI stack converge and waits, fails naming the unit result and journal tail when the converge fails, and reports no change on an unchanged host (proposal no-committed-apply-runs-the, v124). livespec-dev-tooling-un3zhi owns it."
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "contracts.md",
+    "heading": "## Expedited incident execution",
+    "test": "TODO",
+    "reason": "A real test at the integration tier or above is owed for this heading: the normally shipped incident capability must exercise this contract with ordinary-path controls; livespec-dev-tooling-sh3vz3 owns the implementation and scenario evidence under plan livespec-dev-tooling-bqnzcm.",
+    "work_item": "livespec-dev-tooling-sh3vz3"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: an incident invocation resolves mode before ordinary gate selection",
+    "test": "TODO",
+    "reason": "A real test at the integration tier or above is owed for this heading: the normally shipped incident capability must exercise this contract with ordinary-path controls; livespec-dev-tooling-sh3vz3 owns the implementation and scenario evidence under plan livespec-dev-tooling-bqnzcm.",
+    "work_item": "livespec-dev-tooling-sh3vz3"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: an expedited local gate skips slow work and preserves fast failures",
+    "test": "TODO",
+    "reason": "A real test at the integration tier or above is owed for this heading: the normally shipped incident capability must exercise this contract with ordinary-path controls; livespec-dev-tooling-cerkbn owns the implementation and scenario evidence under plan livespec-dev-tooling-bqnzcm.",
+    "work_item": "livespec-dev-tooling-cerkbn"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: focused incident verification cannot satisfy normal validation",
+    "test": "TODO",
+    "reason": "A real test at the integration tier or above is owed for this heading: the normally shipped incident capability must exercise this contract with ordinary-path controls; livespec-dev-tooling-xluwqj owns the implementation and scenario evidence under plan livespec-dev-tooling-bqnzcm.",
+    "work_item": "livespec-dev-tooling-xluwqj"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: incident commit provenance remains verifiable on normal master",
+    "test": "TODO",
+    "reason": "A real test at the integration tier or above is owed for this heading: the normally shipped incident capability must exercise this contract with ordinary-path controls; livespec-dev-tooling-gvylzw owns the implementation and scenario evidence under plan livespec-dev-tooling-bqnzcm.",
+    "work_item": "livespec-dev-tooling-gvylzw"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: an expedited PR defers coverage and spec work while master runs normally",
+    "test": "TODO",
+    "reason": "A real test at the integration tier or above is owed for this heading: the normally shipped incident capability must exercise this contract with ordinary-path controls; livespec-dev-tooling-egy3ri owns the implementation and scenario evidence under plan livespec-dev-tooling-bqnzcm.",
+    "work_item": "livespec-dev-tooling-egy3ri"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: the first required master leaf failure fences incident recovery",
+    "test": "TODO",
+    "reason": "A real test at the integration tier or above is owed for this heading: the normally shipped incident capability must exercise this contract with ordinary-path controls; livespec-dev-tooling-47ij37 owns the implementation and scenario evidence under plan livespec-dev-tooling-bqnzcm.",
+    "work_item": "livespec-dev-tooling-47ij37"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: an incident revert preserves later changes without waiting for CI",
+    "test": "TODO",
+    "reason": "A real test at the integration tier or above is owed for this heading: the normally shipped incident capability must exercise this contract with ordinary-path controls; livespec-dev-tooling-lgfo3v owns the implementation and scenario evidence under plan livespec-dev-tooling-bqnzcm.",
+    "work_item": "livespec-dev-tooling-lgfo3v"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a reverted incident retains its original CI evidence before another attempt",
+    "test": "TODO",
+    "reason": "A real test at the integration tier or above is owed for this heading: the normally shipped incident capability must exercise this contract with ordinary-path controls; livespec-dev-tooling-kobmka owns the implementation and scenario evidence under plan livespec-dev-tooling-bqnzcm.",
+    "work_item": "livespec-dev-tooling-kobmka"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: an incident rollback follows released artifacts into consuming repositories",
+    "test": "TODO",
+    "reason": "A real test at the integration tier or above is owed for this heading: the normally shipped incident capability must exercise this contract with ordinary-path controls; livespec-dev-tooling-vg36aq owns the implementation and scenario evidence under plan livespec-dev-tooling-bqnzcm.",
+    "work_item": "livespec-dev-tooling-vg36aq"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: incident enablement follows complete installed-fleet capability proof",
+    "test": "TODO",
+    "reason": "A real test at the integration tier or above is owed for this heading: the normally shipped incident capability must exercise this contract with ordinary-path controls; livespec-dev-tooling-wlrlt2 owns the implementation and scenario evidence under plan livespec-dev-tooling-bqnzcm.",
+    "work_item": "livespec-dev-tooling-wlrlt2"
   }
 ]
