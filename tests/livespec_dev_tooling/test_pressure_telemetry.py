@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import json
+import os
+import subprocess
 from pathlib import Path
 
 __all__: list[str] = []
@@ -50,3 +53,52 @@ def test_pressure_emitter_sends_every_psi_line_directly_from_each_execution_targ
     tasks = _TASKS.read_text(encoding="utf-8")
     assert "ansible.builtin.copy:" in tasks
     assert "ansible.builtin.template:" in tasks
+
+
+def test_pressure_emitter_posts_parseable_otlp_metrics_with_its_host_name(tmp_path: Path) -> None:
+    """The direct OTLP payload is valid and carries all PSI gauges for its host."""
+    capture = tmp_path / "otlp-payload.json"
+    curl = tmp_path / "curl"
+    curl.write_text(
+        "#!/usr/bin/env bash\n"
+        "set -euo pipefail\n"
+        "while (($#)); do\n"
+        '  case "$1" in\n'
+        '    -d) printf \'%s\' "$2" > "${PRESSURE_TELEMETRY_CAPTURE:?}"; shift 2 ;;\n'
+        "    *) shift ;;\n"
+        "  esac\n"
+        "done\n",
+        encoding="utf-8",
+    )
+    curl.chmod(0o755)
+
+    completed = subprocess.run(
+        ["bash", str(_SCRIPT)],
+        capture_output=True,
+        check=False,
+        env=os.environ
+        | {
+            "HONEYCOMB_INGEST_KEY_LIVESPEC": "test-ingest-key",
+            "PATH": f"{tmp_path}:{os.environ['PATH']}",
+            "PRESSURE_TELEMETRY_CAPTURE": str(capture),
+        },
+        text=True,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    payload = json.loads(capture.read_text(encoding="utf-8"))
+    resource = payload["resourceMetrics"][0]["resource"]
+    attributes = {attribute["key"]: attribute["value"] for attribute in resource["attributes"]}
+    expected_host = subprocess.run(
+        ["hostname", "-s"], capture_output=True, check=True, text=True
+    ).stdout.strip()
+    assert attributes["host.name"] == {"stringValue": expected_host}
+
+    metrics = payload["resourceMetrics"][0]["scopeMetrics"][0]["metrics"]
+    assert len(metrics) == 18
+    assert {metric["name"] for metric in metrics} == {
+        f"livespec.host.pressure.{resource}.{line}.{field}"
+        for resource in ("cpu", "memory", "io")
+        for line in ("some", "full")
+        for field in ("avg10", "avg60", "avg300")
+    }
