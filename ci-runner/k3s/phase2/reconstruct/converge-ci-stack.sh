@@ -158,6 +158,7 @@ RENDER_SA_KUBECONFIG="${SCRIPT_DIR}/render-sa-kubeconfig.sh"
 # fail-closed check below: a boot that cannot reconcile one node's label must
 # still build the cluster stack, so step 10f tests it there and WARNs.
 FACTORY_LABEL_CONVERGE="${SCRIPT_DIR}/converge-factory-node-labels.sh"
+WARM_UV_LABEL_CONVERGE="${SCRIPT_DIR}/converge-warm-uv-node-labels.sh"
 for d in "$ARC_DIR" "$KUEUE_DIR" "$PROVISIONER_DIR" "$WARM_CACHE_DIR" "$OBSERVABILITY_DIR" "$GATES_DIR" "$FACTORY_DIR" "$FACTORY_MI_HOMELAB_DIR"; do
   [ -d "$d" ] || { echo "FATAL: artifact dir not found: ${d}" >&2; exit 1; }
 done
@@ -964,6 +965,19 @@ elif ! "${FACTORY_LABEL_CONVERGE}"; then
 fi
 
 # ---------------------------------------------------------------------------
+log "10g. Reconcile every ci_pool node's warm-uv label from its committed profile"
+# Step 1c deliberately keeps its local mount-derived assertion: it verifies
+# this server's own storage before hostPath singletons use it.  This separate
+# server-side pass covers agents that have already registered, whose local
+# mounts the server cannot inspect.  The helper reads the same installed pool
+# profiles as step 10f and labels precisely CI_NODE_FACILITIES=full nodes.
+if [ ! -x "${WARM_UV_LABEL_CONVERGE}" ]; then
+  echo "WARN: ${WARM_UV_LABEL_CONVERGE} is missing, so full-facilities agents do not get a warm-uv generation selector until ci_converge_unit is re-applied"
+elif ! "${WARM_UV_LABEL_CONVERGE}"; then
+  echo "WARN: warm-uv node-label reconcile failed (see above); affected local-path volumes remain cold until it succeeds"
+fi
+
+# ---------------------------------------------------------------------------
 log "11. Verify (informational — non-fatal reads of the converged state)"
 kubectl -n kube-system get deployment local-path-provisioner
 kubectl -n "$CONTROLLER_NAMESPACE" get deployment -l app.kubernetes.io/name=gha-rs-controller
@@ -976,4 +990,4 @@ kubectl -n ci-warm-cache get cronjob
 kubectl get nodes -l k3s-role=arc-runner-host \
   -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}ci-runner.io/churn-slot={.status.allocatable.ci-runner\.io/churn-slot}{"\n"}{end}'
 
-log "DONE. CI cluster stack converged: churn-slot capacity asserted + provisioner + Kueue + all queues + ARC controller + ${#SCALE_SETS[@]} scale sets + hook ConfigMap + registry mirror + warm-cache CronJob + probe identity + gate source mirrors and daemon + factory namespace, quota, egress policy, launcher identity and its rendered kubeconfig + every ci_pool node's factory label."
+log "DONE. CI cluster stack converged: churn-slot capacity asserted + provisioner + Kueue + all queues + ARC controller + ${#SCALE_SETS[@]} scale sets + hook ConfigMap + registry mirror + warm-cache CronJob + probe identity + gate source mirrors and daemon + factory namespace, quota, egress policy, launcher identity and its rendered kubeconfig + every ci_pool node's factory and warm-uv labels."
