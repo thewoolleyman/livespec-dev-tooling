@@ -38,6 +38,7 @@ from __future__ import annotations
 
 import os
 import subprocess
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pytest
@@ -194,6 +195,11 @@ class _Host:
         with self.containers.open("a", encoding="utf-8") as containers:
             containers.write(self._id(ref) + "\n")
 
+    def start_containers(self, *, ref: str, count: int) -> None:
+        """Start `count` containers from one image."""
+        with self.containers.open("a", encoding="utf-8") as containers:
+            containers.write((self._id(ref) + "\n") * count)
+
     def clear_containers(self) -> None:
         self.containers.write_text("", encoding="utf-8")
 
@@ -210,6 +216,7 @@ class _Host:
         version: str,
         extra: dict[str, str] | None = None,
         prefixes: tuple[str, ...] = (_PREFIX,),
+        write_process_spec: bool = True,
     ) -> subprocess.CompletedProcess[str]:
         """ONE warm run with the pinned set at `version`."""
         assert _SCRIPT.is_file(), f"{_SCRIPT.relative_to(_REPO_ROOT)} must exist"
@@ -229,7 +236,7 @@ class _Host:
             "LIVESPEC_SANDBOX_IMAGE_WARM_STORE": self.store,
             "LIVESPEC_SANDBOX_IMAGE_WARM_CRICTL": "crictl",
         }
-        if self.store == "containerd":
+        if self.store == "containerd" and write_process_spec:
             body = "fabro_server_instances:\n  - sandbox_providers:\n      kubernetes:\n"
             body += "        process_spec:\n"
             for prefix in prefixes:
@@ -324,6 +331,63 @@ def test_the_warm_keeps_an_earlier_pin_tag_a_container_references_and_removes_it
 
     assert later.returncode == 0, _output(later)
     assert old_ref not in host.held(), "once no container references it, a later run removes it"
+
+
+@_STORES
+def test_the_warm_keeps_a_referenced_tag_when_the_in_use_listing_is_large(
+    *, tmp_path: Path, store: str
+) -> None:
+    """A protected id remains protected when the store reports many containers.
+
+    `grep -qxF` may find the first matching id before its `printf` producer has
+    written the complete listing.  Under `pipefail`, that producer's SIGPIPE
+    must not turn the successful protected-tag lookup into a false negative.
+    """
+    host = _Host(tmp_path=tmp_path, store=store)
+    old_ref = _ref(version=_OLD_VERSION)
+    assert host.warm(version=_OLD_VERSION).returncode == 0
+    host.start_containers(ref=old_ref, count=4_096)
+
+    kept = host.warm(version=_NEW_VERSION)
+
+    assert kept.returncode == 0, _output(kept)
+    assert old_ref in host.held(), "a tag referenced by any container must stay"
+    assert not [line for line in host.log_lines() if line.endswith(f"-rmi {old_ref}")]
+
+
+@_STORES
+def test_2000_concurrent_warms_keep_an_earlier_pin_tag_a_container_references(
+    *, tmp_path: Path, store: str
+) -> None:
+    """Scenario: concurrent warms never remove a tag an existing container uses."""
+    host = _Host(tmp_path=tmp_path, store=store)
+    old_ref = _ref(version=_OLD_VERSION)
+    assert host.warm(version=_OLD_VERSION).returncode == 0
+    host.start_container(ref=old_ref)
+    # Preload the new pin without a removal pass, so the 2,000 measured runs
+    # exercise the protected-tag decision rather than concurrent pulls.
+    assert (
+        host.warm(
+            version=_NEW_VERSION,
+            extra={"LIVESPEC_SANDBOX_IMAGE_WARM_REMOVE_SUPERSEDED": "false"},
+        ).returncode
+        == 0
+    )
+
+    with ThreadPoolExecutor(max_workers=32) as executor:
+        completed = list(
+            executor.map(
+                lambda _: host.warm(version=_NEW_VERSION, write_process_spec=False),
+                range(2_000),
+            )
+        )
+
+    assert all(done.returncode == 0 for done in completed), "\n".join(
+        _output(done) for done in completed if done.returncode != 0
+    )
+    assert old_ref in host.held(), "every run must retain the referenced earlier-pin tag"
+    assert not [line for line in host.log_lines() if line.endswith(f"-rmi {old_ref}")]
+    assert not any("began referencing" in _output(done) for done in completed)
 
 
 @_STORES
