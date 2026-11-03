@@ -2221,3 +2221,17 @@ Then the recipe MUST run each member's own `ensure-plugins` recipe in that membe
 And when one member's clone is missing, the recipe MUST still run every other member, MUST name the missing member and its cause, and MUST exit non-zero
 
 And when every member's `ensure-plugins` succeeds but the orchestrator plugin is left installed at two different builds across the members, the recipe MUST exit non-zero, naming the plugin, both builds and the members holding each
+
+## Scenario: a default-branch push routes to the master runner target and a pull request does not
+
+Given this repository's `ci.yml` gating jobs read `CI_RUNNER_LABELS_MASTER` ahead of `CI_RUNNER_LABELS` for `push` events, with the hosted literal as the last term
+
+When `CI_RUNNER_LABELS_MASTER` names a self-hosted target and a commit is pushed to master
+
+Then every gating job of that push run MUST run on the target `CI_RUNNER_LABELS_MASTER` names
+
+And every gating job of a pull-request run opened at the same time MUST run on the target `CI_RUNNER_LABELS` names
+
+And when `CI_RUNNER_LABELS_MASTER` is deleted, the next push run's gating jobs MUST run on the target `CI_RUNNER_LABELS` names
+
+And the last term of every gating job's `runs-on` expression MUST be a GitHub-hosted literal
