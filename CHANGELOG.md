@@ -58,6 +58,18 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.167.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.166.1...v1.167.0) (2026-11-03)
+
+
+### Features
+
+* file one root-fix work item per retried test node id (livespec-dev-tooling-lanocb) ([8a6d18b](https://github.com/thewoolleyman/livespec-dev-tooling/commit/8a6d18b5194b9d9ab16fb1e9821a9fef3e71df62))
+
+
+### Bug Fixes
+
+* mark a test flaky only when pytest-rerunfailures is active (livespec-dev-tooling-he3pf2) ([69daaf6](https://github.com/thewoolleyman/livespec-dev-tooling/commit/69daaf60dadf915ff3e83a67d40987affb7091da))
+
 ## [1.166.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.166.0...v1.166.1) (2026-11-03)
 
 
