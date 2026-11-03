@@ -445,6 +445,23 @@ def _install_pyright_warmup_stub(*, tmp_path: Path, monkeypatch: pytest.MonkeyPa
     monkeypatch.setenv("PYRIGHT_READY", str(tmp_path / "pyright-ready"))
 
 
+def _write_uv_lock(*, tmp_path: Path, dev: list[str], optional: list[str] | None = None) -> None:
+    """Write a uv.lock whose root package pins `dev` in its dev group."""
+    dev_lines = "".join(f'    {{ name = "{name}" }},\n' for name in dev)
+    optional_lines = "".join(f'    {{ name = "{name}" }},\n' for name in optional or [])
+    text = (
+        "version = 1\n\n"
+        '[[package]]\nname = "pyright"\nversion = "1.1.391"\n'
+        'source = { registry = "https://pypi.org/simple" }\n\n'
+        '[[package]]\nname = "consumer"\nversion = "0.1.0"\n'
+        'source = { editable = "." }\n\n'
+        f"[package.dev-dependencies]\ndev = [\n{dev_lines}]\n"
+    )
+    if optional:
+        text += f"\n[package.optional-dependencies]\nextra = [\n{optional_lines}]\n"
+    _ = (tmp_path / "uv.lock").write_text(text, encoding="utf-8")
+
+
 class _DispatcherRun(NamedTuple):
     """In-process stand-in for the subprocess `CompletedProcess` shape."""
 
@@ -539,10 +556,7 @@ def test_main_warms_locked_pyright_before_starting_any_target(
 ) -> None:
     """A pinned pyright completes its serial install before fan-out begins."""
     _install_pyright_warmup_stub(tmp_path=tmp_path, monkeypatch=monkeypatch)
-    _ = (tmp_path / "uv.lock").write_text(
-        'version = 1\n\n[[package]]\nname = "pyright"\nversion = "1.1.391"\n',
-        encoding="utf-8",
-    )
+    _write_uv_lock(tmp_path=tmp_path, dev=["pyright", "ruff"])
     target_log = tmp_path / "targets.log"
     _write_justfile(
         tmp_path=tmp_path,
@@ -573,10 +587,7 @@ def test_main_warms_locked_pyright_before_starting_any_target(
         "check-types",
         "check-no-shadow-ledger-body-typechecks",
     }
-    _ = (tmp_path / "uv.lock").write_text(
-        'version = 1\n\n[[package]]\nname = "ruff"\nversion = "0.8.6"\n',
-        encoding="utf-8",
-    )
+    _write_uv_lock(tmp_path=tmp_path, dev=["ruff"], optional=["pyright"])
     unpinned = _run_dispatcher(
         tmp_path=tmp_path,
         args=["--", "check-unpinned"],
@@ -596,10 +607,7 @@ def test_main_stops_before_any_target_when_locked_pyright_provisioning_fails(
     """A failed pyright provision is reported before the target fan-out starts."""
     _install_pyright_warmup_stub(tmp_path=tmp_path, monkeypatch=monkeypatch)
     monkeypatch.setenv("PYRIGHT_WARMUP_STATUS", "7")
-    _ = (tmp_path / "uv.lock").write_text(
-        'version = 1\n\n[[package]]\nname = "pyright"\nversion = "1.1.391"\n',
-        encoding="utf-8",
-    )
+    _write_uv_lock(tmp_path=tmp_path, dev=["pyright", "ruff"])
     target_marker = tmp_path / "target-ran"
     _write_justfile(tmp_path=tmp_path, content=f"check-types:\n    touch {target_marker}\n")
 
@@ -621,10 +629,7 @@ def test_main_does_not_repeat_the_shell_warmup(
     """The marker from check.sh suppresses only the dispatcher's duplicate warm-up."""
     _install_pyright_warmup_stub(tmp_path=tmp_path, monkeypatch=monkeypatch)
     monkeypatch.setenv("LIVESPEC_PYRIGHT_WARMED", "1")
-    _ = (tmp_path / "uv.lock").write_text(
-        'version = 1\n\n[[package]]\nname = "pyright"\nversion = "1.1.391"\n',
-        encoding="utf-8",
-    )
+    _write_uv_lock(tmp_path=tmp_path, dev=["pyright", "ruff"])
     target_marker = tmp_path / "target-ran"
     _write_justfile(tmp_path=tmp_path, content=f"check-types:\n    touch {target_marker}\n")
 

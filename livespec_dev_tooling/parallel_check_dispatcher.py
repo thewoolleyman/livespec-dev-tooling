@@ -79,6 +79,7 @@ if str(_VENDOR_DIR) not in sys.path:
 
 import structlog  # noqa: E402  — vendor-path-aware import after sys.path insert.
 
+from livespec_dev_tooling._pyright_warmup import warm_locked_pyright  # noqa: E402
 from livespec_dev_tooling.check_failure_digest import (  # noqa: E402
     failure_digest_lines,
 )
@@ -160,17 +161,6 @@ def _cap_workers(*, requested: int | None) -> int:
     """Return the effective worker count: min(cpu_count, requested or DEFAULT)."""
     cap = requested if requested is not None else 8
     return max(1, min(os.cpu_count() or 1, cap))
-
-
-def _warm_locked_pyright(*, cwd: Path, already_warmed: bool) -> int:
-    """Run locked pyright once before a caller fans out check targets."""
-    if already_warmed or not (cwd / "uv.lock").is_file():
-        return 0
-    if 'name = "pyright"' not in (cwd / "uv.lock").read_text(encoding="utf-8"):
-        return 0
-    return subprocess.call(  # noqa: S603
-        ["uv", "run", "--frozen", "pyright", "--version"],  # noqa: S607
-    )
 
 
 def _build_namespace_dirs(
@@ -441,7 +431,7 @@ def main() -> int:
         workers=max_workers,
         skip=list(skip_set),
     )
-    if _warm_locked_pyright(cwd=cwd, already_warmed=already_warmed) != 0:
+    if warm_locked_pyright(cwd=cwd, already_warmed=already_warmed) != 0:
         _write(text="ERROR: pyright provisioning failed; no check target started.\n")
         return 1
     results = _run_all(
