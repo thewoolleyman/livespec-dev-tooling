@@ -213,10 +213,11 @@ stays off it while the three job-environment roles run, gated `!= 'none'`. Read
 for the test that resolves the whole answer from the inventory and the profiles.
 
 The third axis is `FACTORY_NODE`, and it asks a question neither of the other two
-can: **can this node take a factory pod?** All three nodes answer `true` — the
-server included, which is why it is not `cluster_role`, and `hp-xubuntu` answers
-it under a different CI posture from the server's, which is why it is not
-`CI_NODE_FACILITIES`.
+can: **can this node take a factory pod?** poweredge and gmktec answer `true` —
+the server included, which is why it is not `cluster_role`. `hp-xubuntu`
+answers `false` since 2026-11-03 (orchestrator epic `bd-ib-nmuyjc`: its cores go
+to CI runners), and the answer changed without its CI posture changing, which is
+why it is not `CI_NODE_FACILITIES`.
 `factory_workspace_root` is gated on it: the kubernetes-sandbox-backend plugin
 takes ONE `workspace_root`, so every node that advertises factory capacity must
 already carry a directory at that one absolute path

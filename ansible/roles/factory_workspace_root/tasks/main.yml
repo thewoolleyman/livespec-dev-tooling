@@ -6,8 +6,9 @@
 # `workspace_root` for the whole backend, so the path is a fleet-wide constant
 # and every node that can be scheduled a factory pod must already carry a
 # directory at it. "Every node that can take a factory pod" is the FACTORY_NODE
-# axis of a node's committed phase0 profile — today all three pool nodes,
-# including the untainted server (maintainer ruling 2026-10-13) — which is why
+# axis of a node's committed phase0 profile — today poweredge and gmktec,
+# including the untainted server (maintainer ruling 2026-10-13); hp-xubuntu
+# left the set on 2026-11-03 (orchestrator epic bd-ib-nmuyjc) — which is why
 # ../../ci-pool.yml gates this role on that key and on neither `cluster_role`
 # nor `CI_NODE_FACILITIES`.
 #

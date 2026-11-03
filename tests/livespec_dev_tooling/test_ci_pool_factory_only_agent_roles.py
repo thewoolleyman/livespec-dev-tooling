@@ -77,6 +77,15 @@ _HP_MUST_NOT_RUN = frozenset(
         # The tier role: hp declares no tier, and the role refuses the apply at
         # its first label resolution on a node with none.
         "storage_layout",
+        # The two FACTORY_NODE-gated roles (livespec-dev-tooling-due2h6,
+        # orchestrator work-item bd-ib-kogktm). Since 2026-11-03 hp declares
+        # FACTORY_NODE=false (orchestrator plan kubernetes-sandbox-backend, epic
+        # bd-ib-nmuyjc): its 16 cores go to CI runners, and new factory sandboxes
+        # land on poweredge and gmktec. The play stops reaching both roles there;
+        # what they already installed stays, inert, so reverting is the same
+        # profile edit back.
+        "factory_workspace_root",
+        "sandbox_image_warm",
     }
 )
 _HP_MUST_RUN = frozenset(
@@ -98,17 +107,6 @@ _HP_MUST_RUN = frozenset(
         # reconciled on every ci_pool node and `node_taints` owns exactly one
         # taint key and nothing else.
         "node_labels",
-        # And the workspace root that label's capacity is useless without
-        # (livespec-dev-tooling-due2h6): hp carries no CI tier and still has to
-        # offer the ONE path the sandbox backend's single `workspace_root`
-        # names, because it is the node the backend plan's lifecycle proofs run
-        # against.
-        "factory_workspace_root",
-        # And the image a factory pod is built from, in this node's k3s
-        # containerd (work-item bd-ib-kogktm, livespec-orchestrator-beads-fabro
-        # tenant): gated on FACTORY_NODE like the workspace root, so hp, a
-        # factory-only agent, carries it.
-        "sandbox_image_warm",
         # And the collector that makes "closed" VISIBLE rather than merely true
         # (livespec-dev-tooling-ool6ws). A factory-only node executes no CI job
         # and still carries load, and the runner-pool node telemetry rules in

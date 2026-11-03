@@ -1,12 +1,16 @@
-"""Every pool node's k3s install plan carries the FACTORY node label; hp-xubuntu's joins.
+"""A pool node's k3s install plan carries the FACTORY node label iff its profile declares it.
 
 WHY THIS FILE EXISTS (work-item livespec-dev-tooling-7we6po, maintainer rulings
 2026-10-12 and 2026-10-13 on epic livespec-sqvj7p). `hp-xubuntu` joins the k3s
 pool as a FULL agent. It was CLOSED TO CI by its committed profile until
 2026-11-03 and is now `runner-only` (livespec-dev-tooling-zreev4): no
 `node-role/ci` taint and `ADMISSION_CAPACITY_C=8`, so its plan registers no
-`--node-taint` at all — and all THREE pool nodes carry a per-node FACTORY
-label that the kubernetes-sandbox-backend plugin will select on. The label is a
+`--node-taint` at all. The three pool nodes carried a per-node FACTORY label
+that the kubernetes-sandbox-backend plugin selects on until 2026-11-03, when
+hp-xubuntu's profile moved to `FACTORY_NODE=false` (orchestrator plan
+kubernetes-sandbox-backend, epic bd-ib-nmuyjc; the factory moves off hp per
+livespec-dev-tooling-dfixhe and plan bd-ib-fyozyd), so its 16 cores go to CI
+runners and new factory sandboxes land on poweredge and gmktec. The label is a
 fact of each node's committed profile (`FACTORY_NODE`), rendered by the ONE
 procedure, so a fourth node is a fourth profile and never a fourth script —
 which is what the runner-pool node rebuild recipe in
@@ -172,23 +176,40 @@ def _install_command(*, output: str) -> str:
 def test_every_committed_pool_profile_plans_the_factory_node_label(
     *, tripwire_path: tuple[str, Path], tmp_path: Path
 ) -> None:
-    """All three nodes carry the factory label: poweredge, gmktec AND hp.
+    """Each committed profile plans the factory label exactly when it declares it.
 
-    The maintainer's ruling is that the label is per-node and on every pool node,
-    because the kubernetes-sandbox-backend plugin selects on it and poweredge
-    stays untainted. So this is asserted over the committed set rather than over
-    a list this file keeps — a fourth profile is covered the day it lands.
+    The label is per-node and read from each profile, because the
+    kubernetes-sandbox-backend plugin selects on it and poweredge stays
+    untainted. Asserted over the committed set rather than over a list this file
+    keeps, so a fourth profile is covered the day it lands. poweredge and gmktec
+    declare it; hp-xubuntu has declared FACTORY_NODE=false since 2026-11-03.
     """
     _hp_profile()
+    planned: set[str] = set()
     for node, profile in sorted(_committed_profiles().items()):
+        declared = re.search(
+            r"^FACTORY_NODE=(?P<value>.*)$", profile.read_text(encoding="utf-8"), re.MULTILINE
+        )
+        assert declared is not None, f"{node}'s profile must declare FACTORY_NODE"
         command = _install_command(
             output=_dry_run(profile=profile, tripwire_path=tripwire_path, tmp_path=tmp_path)
         )
-        assert f"--node-label {_FACTORY_LABEL}" in command, (
-            f"{node}'s install plan must register the factory node label "
-            f"{_FACTORY_LABEL!r}: the sandbox backend selects factory capacity on it, and a "
-            f"node that joins without it is invisible to that selector;\ncommand={command!r}"
-        )
+        if declared["value"] == "true":
+            planned.add(node)
+            assert f"--node-label {_FACTORY_LABEL}" in command, (
+                f"{node}'s install plan must register the factory node label "
+                f"{_FACTORY_LABEL!r}: the sandbox backend selects factory capacity on it, and a "
+                f"node that joins without it is invisible to that selector;\ncommand={command!r}"
+            )
+        else:
+            assert _FACTORY_LABEL not in command, (
+                f"{node} declares FACTORY_NODE={declared['value']}, so its install plan must "
+                f"register no factory label;\ncommand={command!r}"
+            )
+    assert planned == {
+        "poweredge-xubuntu",
+        "gmktec-xubuntu",
+    }, f"poweredge and gmktec are the factory nodes today; planned={sorted(planned)}"
 
 
 def test_the_hp_plan_is_the_agent_join_its_measured_facts_imply(
@@ -206,11 +227,14 @@ def test_the_hp_plan_is_the_agent_join_its_measured_facts_imply(
         f"agent --server {_HP_JOIN}",
         f"--node-ip {_HP_NODE_IP}",
         f"--data-dir {_HP_DATA_DIR}",
-        f"--node-label {_FACTORY_LABEL}",
     ):
         assert (
             fragment in command
         ), f"hp's agent install command must carry {fragment!r};\ncommand={command!r}"
+    assert _FACTORY_LABEL not in command, (
+        f"hp declares FACTORY_NODE=false, so its join must register no factory label;"
+        f"\ncommand={command!r}"
+    )
     assert "--node-taint" not in command, (
         f"runner-only hp declares no NODE_TAINTS, so its join must register no taint: a "
         f"{_HP_TAINT} registered here would stop the scheduler placing the runners Kueue "
@@ -231,22 +255,27 @@ def test_a_profile_that_declares_no_factory_node_plans_no_factory_label(
 ) -> None:
     """The control arm: the label must come from the PROFILE, not from the script.
 
-    Without this every assertion above would pass against a script that appended
-    the label unconditionally, and `FACTORY_NODE` would be decoration.
+    Without this the assertions above would pass against a script that dropped
+    the label for hp unconditionally, and `FACTORY_NODE` would be decoration. The
+    same hp profile flipped to `FACTORY_NODE=true` must plan the label, and a
+    gmktec profile flipped to `false` must plan none.
     """
     source = _hp_profile().read_text(encoding="utf-8")
-    assert "FACTORY_NODE=true" in source, (
-        f"hp's profile must declare FACTORY_NODE=true — the key is what the label is "
+    assert re.search(r"^FACTORY_NODE=false$", source, re.MULTILINE), (
+        f"hp's profile must declare FACTORY_NODE=false — the key is what the label is "
         f"rendered from;\nprofile={source!r}"
     )
-    fixture = tmp_path / "not-a-factory.env"
-    fixture.write_text(source.replace("FACTORY_NODE=true", "FACTORY_NODE=false"), encoding="utf-8")
-    command = _install_command(
-        output=_dry_run(profile=fixture, tripwire_path=tripwire_path, tmp_path=tmp_path)
+    as_factory = tmp_path / "hp-as-a-factory.env"
+    as_factory.write_text(
+        re.sub(r"^FACTORY_NODE=false$", "FACTORY_NODE=true", source, flags=re.MULTILINE),
+        encoding="utf-8",
     )
-    assert _FACTORY_LABEL not in command, (
-        f"a node whose profile declares FACTORY_NODE=false must plan no factory label at "
-        f"all;\ncommand={command!r}"
+    command = _install_command(
+        output=_dry_run(profile=as_factory, tripwire_path=tripwire_path, tmp_path=tmp_path)
+    )
+    assert f"--node-label {_FACTORY_LABEL}" in command, (
+        f"a node whose profile declares FACTORY_NODE=true must plan the factory label;"
+        f"\ncommand={command!r}"
     )
 
 

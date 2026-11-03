@@ -121,7 +121,9 @@ WARM_UV_NODE_LABEL="ci-runner.io/warm-uv-cache=true"
 # third distinct thing a node can be in this pool. NODE_LABEL above is the
 # RUNNER role; TIER_CARRIER_LABEL is "the node whose disks the pool's hostPath
 # singletons live on"; this one is "the node the kubernetes-sandbox-backend may
-# place a Fabro sandbox pod on". ALL THREE pool nodes carry it — poweredge stays
+# place a Fabro sandbox pod on". poweredge and gmktec carry it (hp-xubuntu
+# declares FACTORY_NODE=false since 2026-11-03, orchestrator epic bd-ib-nmuyjc),
+# and poweredge stays
 # untainted, so the factory nodes are not "the tainted ones" and no existing
 # label or taint can stand in for this one (maintainer ruling 2026-10-13,
 # livespec epic livespec-sqvj7p).
