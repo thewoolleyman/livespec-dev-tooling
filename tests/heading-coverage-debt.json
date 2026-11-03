@@ -184,6 +184,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: a default-branch push routes to the master runner target and a pull request does not",
+    "work_item": "livespec-dev-tooling-lzkzwb",
+    "first_seen": "2026-11-03"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: a delegated gate check suite ending in the pre-commit aggregate is refused",
     "work_item": "livespec-dev-tooling-5d3cvr",
     "first_seen": "2026-11-03"
