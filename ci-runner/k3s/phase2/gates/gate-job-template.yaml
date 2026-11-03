@@ -493,24 +493,25 @@ spec:
                 cat > "${gate_uvx_bin}/uvx" <<'GATE_UVX'
               #!/usr/bin/env bash
               set -u
-              output="$(mktemp)"
-              # Capture the status on its own line: `$?` read after an
-              # `if ...; fi` whose branch did not run is the if's own status, 0,
-              # which turned every failing tool's verdict green (2026-11-03).
-              env UV_DEFAULT_INDEX="${PYPI_FILES_PROXY}/simple" "${GATE_REAL_UVX}" "$@" >"${output}" 2>&1
+              out="$(mktemp)"
+              err="$(mktemp)"
+              # Keep the tool's own streams apart and capture the status on its
+              # own line. Merging stderr into stdout, and printing a failing
+              # run's whole output to stderr, moved a tool's stdout where its
+              # callers do not read it; and `$?` read after an `if ...; fi` whose
+              # branch did not run is the if's own status, 0, which turned every
+              # failing tool's verdict green (2026-11-03).
+              env UV_DEFAULT_INDEX="${PYPI_FILES_PROXY}/simple" "${GATE_REAL_UVX}" "$@" >"${out}" 2>"${err}"
               status=$?
-              if [ "${status}" -eq 0 ]; then
-                cat "${output}"
-                rm -f "${output}"
-                exit 0
-              fi
-              cat "${output}" >&2
-              if grep -Eiq 'not found in the package registry|failed to (fetch|download)|error sending request|connection (refused|reset|timed out)|network is unreachable' "${output}"; then
+              if [ "${status}" -ne 0 ] && grep -Eiq 'not found in the package registry|failed to (fetch|download)|error sending request|connection (refused|reset|timed out)|network is unreachable' "${err}"; then
+                cat "${err}" >&2
                 echo ":: gate: WARN: uvx proxy resolution failed; retrying directly from PyPI" >&2
-                rm -f "${output}"
+                rm -f "${out}" "${err}"
                 exec env -u UV_DEFAULT_INDEX -u UV_INDEX_URL "${GATE_REAL_UVX}" "$@"
               fi
-              rm -f "${output}"
+              cat "${out}"
+              cat "${err}" >&2
+              rm -f "${out}" "${err}"
               exit "${status}"
               GATE_UVX
                 chmod 755 "${gate_uvx_bin}/uvx"
