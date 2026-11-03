@@ -24,6 +24,7 @@ __all__: list[str] = [
     "Terminal",
     "created_job_name",
     "created_job_tree_hash",
+    "job_admitted",
     "reported_time",
     "terminal_condition",
     "unreadable",
@@ -103,6 +104,21 @@ def reported_time(*, status: Mapping[str, object], key: str) -> str:
     """Return a Job clock reading, or an empty string when the Job omitted it."""
     reading = status.get(key)
     return reading if isinstance(reading, str) else ""
+
+
+def job_admitted(*, argv: Sequence[str], payload: str, step: str) -> Result[bool, GateStepFailed]:
+    """Return whether Kueue has released the Job from its admission suspension.
+
+    A submitted Kueue Job waits with ``spec.suspend: true``. Admission clears
+    that field before Kubernetes starts the Job, so an absent or false value is
+    the boundary at which the gate's runtime budget starts.
+    """
+    try:
+        parsed = cast("_JobPayload", json.loads(payload))
+    except json.JSONDecodeError as error:
+        return Failure(unreadable(step=step, argv=argv, detail=f"unreadable job status: {error}"))
+    spec = parsed.get("spec", {})
+    return Success(spec.get("suspend") is not True)
 
 
 def terminal_condition(

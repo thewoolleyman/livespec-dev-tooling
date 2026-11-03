@@ -103,6 +103,7 @@ from livespec_dev_tooling.gate_remote_job_status import (
     Terminal,
     created_job_name,
     created_job_tree_hash,
+    job_admitted,
     reported_time,
     terminal_condition,
     unreadable,
@@ -221,6 +222,7 @@ class GateRunRequest:
     private_sibling_secret: str = ""
     namespace: str = GATE_NAMESPACE
     poll_interval_seconds: float = 10.0
+    admission_timeout_seconds: float = 3600.0
     poll_timeout_seconds: float = 3600.0
 
 
@@ -544,7 +546,7 @@ def _failure_message(*, request: GateRunRequest, runner: GateCommandRunner, job_
     return read.map(lambda ran: ran.stdout.strip()).value_or("")
 
 
-def _poll_budget(*, request: GateRunRequest) -> int:
+def _poll_budget(*, timeout_seconds: float, request: GateRunRequest) -> int:
     """How many polls the timeout buys at this interval.
 
     Derived rather than read from a clock, so the client needs no time source
@@ -553,7 +555,7 @@ def _poll_budget(*, request: GateRunRequest) -> int:
     ceiling correspondingly later. That is the honest cost of one fewer seam,
     and the bound's job is to stop an unbounded wait, not to time it.
     """
-    return max(1, int(request.poll_timeout_seconds // request.poll_interval_seconds))
+    return max(1, int(timeout_seconds // request.poll_interval_seconds))
 
 
 def _await_terminal_state(
@@ -573,7 +575,12 @@ def _await_terminal_state(
     a later `get` can legitimately find nothing.
     """
     argv = [*_kubectl(request=request), "get", "job", job_name, "--output", "json"]
-    for _ in range(_poll_budget(request=request)):
+    admission_polls_left = _poll_budget(
+        timeout_seconds=request.admission_timeout_seconds, request=request
+    )
+    runtime_polls_left = _poll_budget(timeout_seconds=request.poll_timeout_seconds, request=request)
+    admitted = False
+    while True:
         lifted = require_success(
             step=_AWAIT_STEP, argv=argv, outcome=runner(argv=argv, cwd=request.repo_root)
         )
@@ -585,6 +592,26 @@ def _await_terminal_state(
         ended = condition.unwrap()
         if ended is not None:
             return Success(ended)
+        observed_admission = job_admitted(
+            argv=argv, payload=lifted.unwrap().stdout, step=_AWAIT_STEP
+        )
+        if isinstance(observed_admission, Failure):
+            return Failure(observed_admission.failure())
+        if observed_admission.unwrap():
+            admitted = True
+        if admitted:
+            runtime_polls_left -= 1
+            if runtime_polls_left == 0:
+                gave_up = (
+                    f"{job_name} reached no terminal condition within "
+                    f"{request.poll_timeout_seconds:g}s after admission"
+                )
+                return Failure(unreadable(step=_AWAIT_STEP, argv=argv, detail=gave_up))
+        else:
+            admission_polls_left -= 1
+            if admission_polls_left == 0:
+                gave_up = (
+                    f"{job_name} was not admitted within " f"{request.admission_timeout_seconds:g}s"
+                )
+                return Failure(unreadable(step=_AWAIT_STEP, argv=argv, detail=gave_up))
         sleeper(seconds=request.poll_interval_seconds)
-    gave_up = f"{job_name} reached no terminal condition within {request.poll_timeout_seconds:g}s"
-    return Failure(unreadable(step=_AWAIT_STEP, argv=argv, detail=gave_up))
