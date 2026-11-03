@@ -86,3 +86,22 @@ def test_unchanged_inputs_skip_the_live_converge() -> None:
         "the live converge block must be gated by changed installed inputs, so a second "
         "apply reports no change when the host already carries the successful tree"
     )
+
+
+def test_converge_still_running_at_the_wait_bound_fails_the_apply() -> None:
+    """A unit still active at timeout must fail the play, not read as success."""
+    tasks = _tasks_text()
+    start = tasks.index("- name: Wait for the converge to exit")
+    end = tasks.index("- name: Read the converge's result")
+    wait = tasks[start:end]
+    assert "failed_when" not in wait, (
+        "the bounded wait must not suppress its exhausted-retry failure, or a converge "
+        "still running at the bound would let the apply return as if it had finished"
+    )
+    assert "ci_converge_unit_converge_active" in tasks, (
+        "the converge's terminal ActiveState must be read so Result=success on a unit "
+        "that is still active is not mistaken for a finished converge"
+    )
+    assert (
+        "['inactive', 'failed']" in tasks[end:]
+    ), "the assertion must require a terminal ActiveState as well as Result=success"
