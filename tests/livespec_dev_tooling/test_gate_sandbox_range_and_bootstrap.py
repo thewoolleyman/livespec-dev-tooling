@@ -238,10 +238,22 @@ def test_stand_in_proxy_readiness_bounds_a_blocked_tcp_connect() -> None:
     request is sent, so the helper must bound that connect itself and report
     the fixture failure instead of letting a watchdog kill the suite.
     """
+    listener_ready_attempts = 100
+    listener_ready_poll_interval_seconds = 0.01
+    stand_in_proxy_ready_deadline_seconds = 1
+    subprocess_timeout_margin_seconds = 5
+    subprocess_timeout_seconds = (
+        listener_ready_attempts * listener_ready_poll_interval_seconds
+        + stand_in_proxy_ready_deadline_seconds
+        + subprocess_timeout_margin_seconds
+    )
     script = r"""
 set -u
 helper="$(sed -n '/^wait_for_stand_in_proxy() {/,/^}/p' "$1")"
 eval "${helper}"
+listener_ready_attempts="$2"
+listener_ready_poll_interval_seconds="$3"
+stand_in_proxy_ready_deadline_seconds="$4"
 failures=0
 fail() { printf 'FAIL  %s\n' "$1"; failures=$((failures + 1)); }
 port="$(python3 -c 'import socket; s = socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1]); s.close()')"
@@ -269,22 +281,31 @@ for _ in range(128):
 time.sleep(10)
 PY
 listener_pid=$!
-for _ in $(seq 1 100); do
+for _ in $(seq 1 "${listener_ready_attempts}"); do
   [ -s "${ready}" ] && break
-  sleep 0.01
+  sleep "${listener_ready_poll_interval_seconds}"
 done
 trap 'kill "${listener_pid}" 2>/dev/null || true; wait "${listener_pid}" 2>/dev/null || true; rm -f "${ready}"' EXIT
 [ -s "${ready}" ] || exit 2
-STAND_IN_PROXY_READY_DEADLINE_SECONDS=1 wait_for_stand_in_proxy "${port}"
+STAND_IN_PROXY_READY_DEADLINE_SECONDS="${stand_in_proxy_ready_deadline_seconds}" wait_for_stand_in_proxy "${port}"
 exit $?
 """
     completed = subprocess.run(
-        ["bash", "-c", script, "--", str(_EXIT_TESTS)],
+        [
+            "bash",
+            "-c",
+            script,
+            "--",
+            str(_EXIT_TESTS),
+            str(listener_ready_attempts),
+            str(listener_ready_poll_interval_seconds),
+            str(stand_in_proxy_ready_deadline_seconds),
+        ],
         cwd=_REPO_ROOT,
         capture_output=True,
         text=True,
         check=False,
-        timeout=4,
+        timeout=subprocess_timeout_seconds,
     )
 
     assert completed.returncode == 1, completed.stdout + completed.stderr
