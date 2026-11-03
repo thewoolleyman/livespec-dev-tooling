@@ -56,6 +56,13 @@ fabro_factory_registry:
   mi-homelab:
     host: gmktec-xubuntu
     unit_name: fabro-server-mi-homelab
+  # `candidate` is gmktec's fabro-server-candidate (:32278): the permanent
+  # mirror of `petri` and its hot fallback, owned by plan fabro-currency as its
+  # dogfood factory (maintainer ruling 2026-11-02T19:22:32Z). Its runs share
+  # gmktec, and the shared fleet cap, with `petri`.
+  candidate:
+    host: gmktec-xubuntu
+    unit_name: fabro-server-candidate
 
 # --- fabro_client ---
 #

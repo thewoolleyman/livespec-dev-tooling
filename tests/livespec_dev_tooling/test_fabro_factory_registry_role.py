@@ -164,9 +164,15 @@ _HOMELAB_FACTORY = "mi-homelab"
 # name before the move, so no recorded factory could be orphaned.
 _HOMELAB_HOST = "gmktec-xubuntu"
 _HOMELAB_UNIT = "fabro-server-mi-homelab"
+_CANDIDATE_FACTORY = "candidate"
+_CANDIDATE_UNIT = "fabro-server-candidate"
 _COMMITTED_FACTORIES: Mapping[str, Mapping[str, str]] = {
     "petri": {"host": "gmktec-xubuntu", "unit_name": "fabro-server"},
     _HOMELAB_FACTORY: {"host": _HOMELAB_HOST, "unit_name": _HOMELAB_UNIT},
+    # gmktec's fabro-server-candidate: the permanent mirror of `petri` and plan
+    # fabro-currency's dogfood factory (maintainer ruling 2026-11-02). It is a
+    # third instance on the same host, so it too is told apart only by unit_name.
+    _CANDIDATE_FACTORY: {"host": "gmktec-xubuntu", "unit_name": _CANDIDATE_UNIT},
 }
 
 
@@ -707,6 +713,11 @@ def test_the_committed_inventory_declares_a_registry_that_resolves(*, tmp_path: 
             f"{_HOMELAB_FACTORY} must resolve to the {_HOMELAB_UNIT} instance's own address, "
             f"not to another instance on {_HOMELAB_HOST}: {entries}"
         )
+        assert (
+            entries[_CANDIDATE_FACTORY]["server"]
+            == "https://"
+            + _committed_canonical_host(host="gmktec-xubuntu", unit_name=_CANDIDATE_UNIT)
+        ), f"{_CANDIDATE_FACTORY} must resolve to the {_CANDIDATE_UNIT} instance's own address: {entries}"
 
 
 def test_the_role_documents_the_variable_it_reads() -> None:
