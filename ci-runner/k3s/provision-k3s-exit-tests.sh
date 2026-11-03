@@ -113,18 +113,20 @@ agent_profile "$AGENT_PROFILE"
 # future edit reorders a step, drops one, or changes a single flag of the
 # install the single-node runbook ran.
 #
-# ONE FLAG HAS BEEN ADDED TO IT DELIBERATELY, which is the only way this file
-# may change. `--node-label ci-runner.io/factory=true` landed with
+# TWO LABELS HAVE BEEN ADDED TO IT DELIBERATELY, which are the only way this
+# file may change. `--node-label ci-runner.io/factory=true` landed with
 # livespec-dev-tooling-7we6po: all three pool nodes carry the FACTORY label the
 # kubernetes-sandbox-backend selects on, and this node — the UNTAINTED server —
 # is one of them, which is why the label could not be expressed as "the tainted
-# nodes". It is rendered from this node's own FACTORY_NODE key, so the literal
-# below changes if and only if that key does.
+# nodes". `--node-label ci-runner.io/warm-uv-cache=true` lands with the
+# warm-uv cache placement and is rendered for profiles with full CI storage.
+# Both are rendered from this node's own profile facts, so the literal below
+# changes if and only if those facts do.
 # ---------------------------------------------------------------------------
 read -r -d '' EXPECTED_SERVER_PLAN <<'EOF'
 RUN  [server] 0. Install the fleet's k3s server config BEFORE the first k3s start
 RUN  [server] 1. Install k3s v1.36.2+k3s1 (idempotent — skip if already at this version)
-     + curl -sfL https://get.k3s.io | INSTALL_K3S_VERSION='v1.36.2+k3s1' INSTALL_K3S_EXEC='server --disable traefik --disable servicelb --node-label k3s-role=arc-runner-host --node-label ci-runner.io/factory=true' sh -s -
+     + curl -sfL https://get.k3s.io | INSTALL_K3S_VERSION='v1.36.2+k3s1' INSTALL_K3S_EXEC='server --disable traefik --disable servicelb --node-label k3s-role=arc-runner-host --node-label ci-runner.io/factory=true --node-label ci-runner.io/warm-uv-cache=true' sh -s -
 RUN  [server] 1b. Install helm v3.21.4 (idempotent — skip if already at this version)
 RUN  [server] 2. Wait for the node to report Ready
 RUN  [server] 2b. Label this node as the cache-tier carrier (idempotent)

@@ -31,7 +31,7 @@ fi
 command -v kubectl >/dev/null || { echo "FATAL: kubectl not found on PATH" >&2; exit 1; }
 
 profile_value() { # profile_value FILE KEY
-  sed -n "s/^$2=//p" "$1" | head -n1 | tr -d '[:space:]'
+  sed -n "s/^$2=//p" "$1" | sed -n 1p | tr -d '[:space:]'
 }
 
 node_registered() { # node_registered NODE
