@@ -173,6 +173,12 @@ def _head_has_unpaired_red_trailers(*, cwd: Path) -> bool:
     return has_red and not has_green
 
 
+def _is_beside_test(*, path: str) -> bool:
+    """Whether a source-tree Python path uses a conventional test-module name."""
+    name = Path(path).name
+    return name == "conftest.py" or name.startswith("test_")
+
+
 def _is_docs_only_change(*, path: str, cwd: Path, log: structlog.stdlib.BoundLogger) -> bool:
     """Whether a staged source path differs from HEAD only in comments/docstrings.
 
@@ -267,9 +273,20 @@ def main() -> int:
         if path.startswith(source_prefixes)
         and path.endswith(".py")
         and path not in exempt_paths
+        and not _is_beside_test(path=path)
         and not is_vendored_path(rel_path=Path(path))
     ]
-    test_changes = [path for path in staged if path.startswith(config.tests_tree_prefix)]
+    test_changes = [
+        path
+        for path in staged
+        if path.startswith(config.tests_tree_prefix)
+        or (
+            path.startswith(source_prefixes)
+            and path.endswith(".py")
+            and _is_beside_test(path=path)
+            and not is_vendored_path(rel_path=Path(path))
+        )
+    ]
 
     if source_changes and not test_changes:
         unpaired = [

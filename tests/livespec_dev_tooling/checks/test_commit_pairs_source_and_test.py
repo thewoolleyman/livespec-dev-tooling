@@ -472,6 +472,67 @@ def test_commit_pairs_accepts_staged_source_with_staged_test(
     )
 
 
+_BESIDE_TEST_PYPROJECT = """\
+[tool.livespec_dev_tooling]
+source_trees = ["overseer"]
+source_tree_prefixes = ["overseer/"]
+tests_tree_prefix = "tests/"
+"""
+
+
+def _init_beside_test_repo(*, tmp_path: Path) -> None:
+    """Create a consumer whose tests live beside modules in its source tree."""
+    _git(cwd=tmp_path, args=["init", "-q"])
+    _git(cwd=tmp_path, args=["config", "user.email", "test@example.com"])
+    _git(cwd=tmp_path, args=["config", "user.name", "Test"])
+    (tmp_path / "pyproject.toml").write_text(_BESIDE_TEST_PYPROJECT, encoding="utf-8")
+    (tmp_path / "README.md").write_text("baseline\n", encoding="utf-8")
+    _git(cwd=tmp_path, args=["add", "pyproject.toml", "README.md"])
+    _git(cwd=tmp_path, args=["commit", "-m", "baseline"])
+    (tmp_path / "overseer").mkdir()
+
+
+@pytest.mark.parametrize("filename", ["test_supervisor.py", "conftest.py"])
+def test_commit_pairs_accepts_a_beside_test_without_a_tests_tree_change(
+    *,
+    filename: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A test-named source-tree module is a test change, not a source change."""
+    _init_beside_test_repo(tmp_path=tmp_path)
+    beside_test = tmp_path / "overseer" / filename
+    beside_test.write_text("def test_behavior() -> None:\n    assert True\n", encoding="utf-8")
+    _git(cwd=tmp_path, args=["add", f"overseer/{filename}"])
+
+    result = _run_check(tmp_path=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
+
+    assert result.returncode == 0, (
+        f"commit_pairs_source_and_test should accept the beside test `{filename}` "
+        f"without a tests-tree change; got returncode={result.returncode} "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+
+
+def test_commit_pairs_rejects_non_test_source_without_any_test_change(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A source-tree module that is not a beside test remains paired-source work."""
+    _init_beside_test_repo(tmp_path=tmp_path)
+    source = tmp_path / "overseer" / "supervisor.py"
+    source.write_text("VALUE = 1\n", encoding="utf-8")
+    _git(cwd=tmp_path, args=["add", "overseer/supervisor.py"])
+
+    result = _run_check(tmp_path=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
+
+    assert result.returncode != 0, (
+        "commit_pairs_source_and_test should reject a non-test source module "
+        f"without either kind of test change; got returncode={result.returncode} "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+
+
 _CARRIER_PYPROJECT = """\
 [tool.livespec_dev_tooling]
 source_tree_prefixes = [".claude-plugin/hooks/"]
