@@ -223,6 +223,8 @@ entry from live state: `herdr agent list` in full, plus ledger reads.
   spawns gh api rate_limit once per bead card every 30 s (bd-ib-zm4gpr)`. Name a plan as `plan-slug (epic-id)`. This
   applies to asks, status lines and summaries alike. Maintainer correction 2026-11-02 ~06:4xZ, recorded on epic
   `livespec-dev-tooling-6tgd2z`, after an attestation ask named only `bd-ib-zm4gpr`.
+- Name hosts by their real hostname, never "dev host". The dev VPS is `vmi3006760.contaboserver.net`. The maintainer,
+  2026-11-03: "Use a real freaking hostname".
 
 Measured 2026-11-01: the coordinator copied an ask about a "closed" seat forward, although the maintainer had reopened
 it. It also called a plan by its repository's name.
@@ -408,6 +410,8 @@ on an idle percentage alone.
   - A removal or reduction of coverage or gates, or a significant runtime increase, goes to the maintainer.
   - The mechanism is in `.ai/fleet-and-secrets.md`, which another agent is updating.
   - **Additive means LOGICALLY additive: the edit runs the same or more, never less.** Adding jobs, steps or checks, and adding OR MODIFYING `runs-on` routing, is additive. The coordinator authorizes such an edit itself under the delegation when it is also not significantly slower (`approval:workflow-edit-additive`). Only an edit that runs less (removing or reducing tests, coverage or quality gates) or is significantly slower goes to the maintainer, and that ask says which of the two it is and why. A line-diff count is NOT the test. The maintainer, 2026-11-03 ~13:4xZ, recorded on epic `livespec-dev-tooling-6tgd2z` at 13:28:58Z: "Additive means LOGICALLY ADDITIVE. E.g., ADDS MORE STUFF TO RUN, NOT RUNS LESS STUFF. Adding OR MODIFYING a runs on is absolutitely ADDITIVE." The guard check-no-workflow-edits.sh still measures a line diff until its fix lands, and that fix is routed to ci-runtime-and-cost.
+  - **actionlint first.** Before the coordinator sets `approval:workflow-edit-additive`, the exact edited workflow file must pass `actionlint` clean, and that output is recorded on the item. Measured 2026-11-03: #3317 merged a release-please.yml whose unquoted `if:` contained `: `. It was invalid YAML, every local gate and the PR CI passed it, and dev-tooling releases were blocked from 19:49Z to 21:45Z. The maintainer, 2026-11-03 ~22:0xZ: "Yes, approve actionlint. You should not have asked me this, it's additive and presumably not slow."
+  - **Never ask the maintainer to acknowledge an additive edit.** An additive, not-significantly-slower workflow edit, or a rule change of that kind, is decided and reported, never listed under FOR THE MAINTAINER. Only a removal or reduction of coverage or gates, or a significant runtime increase, goes to the maintainer. The maintainer, 2026-11-03: "You should only ask for non-additive or large impact."
 - **Times are UTC.** The host clock is CET, so take timestamps with `date -u` and never label local time `Z`. On
   2026-11-01 two seats did, writing times an hour late into the ledger.
 - **Secrets.** Never `env | cut` to list variable names: on 2026-10-31 it leaked a private key's lines. List names with
