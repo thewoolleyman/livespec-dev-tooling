@@ -55,8 +55,9 @@ from __future__ import annotations
 import io
 import json
 import os
+import sqlite3
 import sys
-from contextlib import redirect_stdout
+from contextlib import closing, redirect_stdout
 from pathlib import Path
 
 _VENDOR_DIR = Path(__file__).resolve().parent.parent / "_vendor"
@@ -97,6 +98,51 @@ _EMPTY_COVERAGE_HINT: str = (
     "(the parallel check dispatcher assigns one per coverage namespace). "
     "See the parallel_check_dispatcher coverage-isolation docstring."
 )
+
+# Unreadable-data guard (work-item livespec-dev-tooling-3wz453). A data file
+# that is 0 bytes, is not an SQLite database, or lacks one of coverage.py's
+# schema tables is what a second writer leaves behind when two processes
+# write the same data file at once. Reading it used to surface as a bare
+# sqlite traceback (`no such table: tracer`) or, for a 0-byte file, as the
+# empty-data message above, neither of which names who wrote it. The guard
+# runs BEFORE any read, so no per-file verdict is ever reported from such a
+# file, and it names the file and the aggregate's coverage writers — the
+# parallel check dispatcher exports that set; a standalone run is its own
+# only writer.
+_SQLITE_HEADER: bytes = b"SQLite format 3\x00"
+_COVERAGE_TABLES: frozenset[str] = frozenset(
+    {"arc", "context", "coverage_schema", "file", "line_bits", "meta", "tracer"}
+)
+_WRITERS_ENV: str = "LIVESPEC_COVERAGE_WRITERS"
+_STANDALONE_WRITER: str = "check-per-file-coverage"
+_UNREADABLE_COVERAGE_HINT: str = (
+    "the coverage data file is unreadable, which is what a second writer of "
+    "the same data file leaves behind; no per-file verdict was reported from "
+    "it. Each aggregate target must write its own namespaced data file (the "
+    "parallel check dispatcher assigns one per coverage namespace); re-run "
+    "after finding which listed writer, or which other process in this "
+    "worktree, shared it."
+)
+
+
+def _unreadable_condition(*, data_file: Path) -> str | None:
+    """Return why `data_file` is not a readable coverage database, else None."""
+    with data_file.open("rb") as handle:
+        header = handle.read(len(_SQLITE_HEADER))
+    if not header:
+        return "the data file is 0 bytes"
+    if header != _SQLITE_HEADER:
+        return "the data file is not an SQLite database"
+    uri = f"{data_file.resolve().as_uri()}?mode=ro"
+    try:
+        with closing(sqlite3.connect(uri, uri=True)) as db:
+            rows = db.execute("select name from sqlite_master where type = 'table'").fetchall()
+    except sqlite3.DatabaseError:
+        return "the data file is not a readable SQLite database"
+    missing = sorted(_COVERAGE_TABLES - {str(row[0]) for row in rows})
+    if missing:
+        return f"the data file lacks coverage table(s): {', '.join(missing)}"
+    return None
 
 
 # Vanished-source diagnostic (work-item livespec-dev-tooling-5xh8): a
@@ -173,6 +219,16 @@ def main() -> int:
             "no coverage data found",
             expected_path=str(coverage_file),
             hint=_EMPTY_COVERAGE_HINT,
+        )
+        return 1
+    condition = _unreadable_condition(data_file=coverage_file)
+    if condition is not None:
+        log.error(
+            "coverage data unreadable",
+            data_file=str(coverage_file),
+            condition=condition,
+            writers=os.environ.get(_WRITERS_ENV) or _STANDALONE_WRITER,
+            hint=_UNREADABLE_COVERAGE_HINT,
         )
         return 1
 
