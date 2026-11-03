@@ -94,18 +94,18 @@ done
 
 payload="$(cat <<JSON
 {
-  \"resourceMetrics\": [
+  "resourceMetrics": [
     {
-      \"resource\": {
-        \"attributes\": [
-          { \"key\": \"service.name\", \"value\": { \"stringValue\": \"livespec-pressure-telemetry\" } },
-          { \"key\": \"host.name\", \"value\": { \"stringValue\": \"${host_name}\" } }
+      "resource": {
+        "attributes": [
+          { "key": "service.name", "value": { "stringValue": "livespec-pressure-telemetry" } },
+          { "key": "host.name", "value": { "stringValue": "${host_name}" } }
         ]
       },
-      \"scopeMetrics\": [
+      "scopeMetrics": [
         {
-          \"scope\": { \"name\": \"livespec-pressure-telemetry\" },
-          \"metrics\": [${metrics}
+          "scope": { "name": "livespec-pressure-telemetry" },
+          "metrics": [${metrics}
           ]
         }
       ]
