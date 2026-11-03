@@ -280,6 +280,39 @@ after this quota reads back 64) are live. gmktec's Fabro instance already
 declares `max_concurrent_runs: 16` but enforces 12 until its pending restart,
 taken at the first natural dip to four or fewer live runs.
 
+## One sandbox of termination headroom (2026-11-03)
+
+**Why it moved.** The fleet cap stays at sixteen runs, and the quota held
+exactly sixteen sandboxes, so a launch that arrived while an ENDED run's pod
+was still terminating was refused at admission. Run 01M6F90G3YVX died this way
+at 2026-11-02 23:45Z, with `requests.cpu` reading 64/64, and a second refusal
+followed at 2026-11-03 02:53Z. At 03:10Z the quota read 60/64 cpu against 15
+live petri runs and 15 pods, one pod per run with no leaked pod, so the
+refusals are attributed to termination lag, not to a leak. The coordinator
+ruled (b): add one sandbox of headroom and keep the fleet cap at sixteen.
+
+The sandbox is the one the fleet instance's provider declares: 4 cpu and
+7629 MB (7630Mi), requests equal to limits.
+
+| term | arithmetic | value |
+|---|---|---|
+| `requests.cpu` | 64 + 4 | **68** |
+| `requests.memory` | 128Gi (131072Mi) + 7630Mi | **138702Mi** |
+| `limits.cpu` | 64 + 4 | **68** |
+| `limits.memory` | 136Gi (139264Mi) + 7630Mi | **146894Mi** |
+| `pods` | 32 + (1 sandbox + 1 in-flight replacement) | **34** |
+
+**Checked against the pool.** The fleet can now hold 68 cpu, about 4 above what
+sixteen live runs request, and only while a seventeenth sandbox is finishing
+its termination. Against the 2026-10-27 arithmetic of the section above, that
+is 68 + mi-homelab 8 + CI 17 = 93 of ~104 schedulable cpu, before counting
+hp-xubuntu, which has since joined the pool. Workspace disk is unaffected in
+practice: 38 pods (with mi-homelab's 4) at about 0.6 G is about 23 G.
+
+**What this does not change.** petri's launcher cap and gmktec's
+`max_concurrent_runs` stay at 16. This headroom is for admission during
+termination, not a seventeenth concurrent run.
+
 ## The egress targets
 
 The policy default-denies ingress (`podSelector: {}`, `ingress: []`) and allows
