@@ -116,6 +116,9 @@ _HP_MUST_RUN = frozenset(
         # the pool's cluster whatever its posture — so this role is ungated, and
         # hp is the node that proves the gate is absent.
         "otel_collector",
+        # The pressure emitter is node-local telemetry, so this factory-only
+        # host must emit it too.
+        "pressure_telemetry",
     }
 )
 
@@ -180,6 +183,8 @@ _POWEREDGE_ROLES = (
     # included, and `test_otel_collector_ci_pool_converge.py` resolves each
     # node's shape and renders the unit it gets.
     "otel_collector",
+    # The direct PSI emitter reads the collector-managed livespec ingest key.
+    "pressure_telemetry",
     "sandbox_image_prune",
 )
 _GMKTEC_ROLES = (
@@ -209,6 +214,7 @@ _GMKTEC_ROLES = (
     # This is the one pool node whose collector no hand-run installer ever
     # placed: its configuration was merged for this converge.
     "otel_collector",
+    "pressure_telemetry",
 )
 
 # The label both carriers must spell identically: the install command at join
