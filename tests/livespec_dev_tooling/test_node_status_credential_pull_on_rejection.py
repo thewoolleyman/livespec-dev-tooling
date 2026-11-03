@@ -398,11 +398,14 @@ def test_the_refresh_tool_pulls_the_credential_from_the_control_plane_node(
     nothing else — the narrowest remote verb that can deliver it, and the one that
     cannot change cluster state even by mistake.
     """
-    code, invoked, _dest = _run_refresh(tmp_path=tmp_path)
+    result = _run_refresh(tmp_path=tmp_path)
+
+    assert len(result) == 4
+    code, output, invoked, _dest = result
 
     fetches = [line for line in invoked if "ssh" in line]
 
-    assert code == 0
+    assert code == 0, output
     assert len(fetches) == 1
     assert _REMOTE_HOST in fetches[0]
     assert f"sudo cat /etc/ci-runner/node-status-{_AGENT_NODE}.kubeconfig" in fetches[0]
@@ -419,9 +422,12 @@ def test_the_refresh_tool_replaces_an_existing_credential_at_0600_root_owned(
     exists on Ubuntu 25.10+, so the write is a temp file and a rename, which is
     atomic and behaves the same under either coreutils.
     """
-    code, invoked, dest = _run_refresh(
+    result = _run_refresh(
         tmp_path=tmp_path, already_there="stale: the credential a refresh must replace\n"
     )
+
+    assert len(result) == 4
+    code, _output, invoked, dest = result
 
     assert code == 0
     assert dest.read_text(encoding="utf-8") == _FIXTURE_KUBECONFIG
@@ -438,9 +444,12 @@ def test_the_refresh_tool_refuses_to_overwrite_a_credential_with_a_non_kubeconfi
     would then be unrecoverable rather than self-healing.
     """
     stale = "stale: still the best credential this node has\n"
-    code, _invoked, dest = _run_refresh(
+    result = _run_refresh(
         tmp_path=tmp_path, fetched="poweredge-xubuntu: command not found\n", already_there=stale
     )
+
+    assert len(result) == 4
+    code, _output, _invoked, dest = result
 
     assert code != 0
     assert dest.read_text(encoding="utf-8") == stale
