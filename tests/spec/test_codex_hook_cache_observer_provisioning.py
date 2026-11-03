@@ -54,3 +54,23 @@ def test_codex_config_provisions_a_lingering_user_observer_from_the_driver_relea
         "the converge must verify the installed observer is active rather than "
         "trusting a successful start request"
     )
+
+
+def test_codex_config_stages_the_driver_release_the_unit_executes_from() -> None:
+    """The unit's ExecStart path exists on a host that only ran ensure-codex-plugins."""
+    defaults = _DEFAULTS.read_text(encoding="utf-8")
+    tasks = _TASKS.read_text(encoding="utf-8")
+
+    assert "ansible.builtin.git:" in tasks, (
+        "nothing else stages the Driver's dev-tooling under ~/.local/share; the "
+        "role must stage it before asserting on the unit source"
+    )
+    assert tasks.index("ansible.builtin.git:") < tasks.index(
+        "codex_config_observer_unit_source_stat"
+    ), "the Driver must be staged before the role reads the unit definition from it"
+    assert "codex_config_observer_driver_dir" in defaults and (
+        'dest: "{{ codex_config_observer_driver_dir }}"' in tasks
+    ), "the checkout must land in the directory the unit's ExecStart runs from"
+    assert "codex_config_observer_driver_version: release" in defaults, (
+        "the staged Driver must track the same release ref ensure-codex-plugins " "registers"
+    )
