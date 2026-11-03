@@ -315,7 +315,7 @@ fabro_server_instances:
     sandbox_providers:
       kubernetes:
         path: /usr/local/bin/sandbox-driver-kubernetes
-        sha256: 93ca024da1a215e5deb50d62c021e98059f0a76f0ea235a0fd1c819e62d9a799
+        sha256: d93437f0bcb495e13a3373a4d2578cc0b2dba2c39c1ad5f3fdcf801ce0788b6e
         inherit_env:
           - HOME
           - PATH
@@ -325,7 +325,7 @@ fabro_server_instances:
           memory_mb: 7629
       kubernetes-rust:
         path: /usr/local/bin/sandbox-driver-kubernetes
-        sha256: 93ca024da1a215e5deb50d62c021e98059f0a76f0ea235a0fd1c819e62d9a799
+        sha256: d93437f0bcb495e13a3373a4d2578cc0b2dba2c39c1ad5f3fdcf801ce0788b6e
         inherit_env:
           - HOME
           - PATH
@@ -462,16 +462,14 @@ fabro_server_instances:
     # explicit /home/cwoolley/.local/state/sandbox-driver-kubernetes-rust,
     # which would be that same collision, so it names one under this
     # instance's root. Bump both sha256 together with the fleet instance's.
-    # The digest here equals the role default (v0.7.0, 93ca024d), because the
-    # role installs ONE binary at /usr/local/bin and every instance verifies it
-    # at start: a pin left behind fails any restart once the binary moves. This
-    # instance adopts v0.7.0 at its next start, which its owner times at zero
-    # runs. An apply with the default fabro_server_restart_allowed=false only
-    # records the deferred restart; it never restarts this instance.
+    # The digest here equals the role default (v0.5.0, d93437f0), the binary the
+    # role installs at /usr/local/bin. Fabro verifies it against this pin at
+    # EVERY plugin launch, so the pin and the binary must always be equal; see
+    # the role's defaults/main.yml.
     sandbox_providers:
       kubernetes:
         path: /usr/local/bin/sandbox-driver-kubernetes
-        sha256: 93ca024da1a215e5deb50d62c021e98059f0a76f0ea235a0fd1c819e62d9a799
+        sha256: d93437f0bcb495e13a3373a4d2578cc0b2dba2c39c1ad5f3fdcf801ce0788b6e
         inherit_env:
           - HOME
           - PATH
@@ -483,7 +481,7 @@ fabro_server_instances:
           memory_mb: 7629
       kubernetes-rust:
         path: /usr/local/bin/sandbox-driver-kubernetes
-        sha256: 93ca024da1a215e5deb50d62c021e98059f0a76f0ea235a0fd1c819e62d9a799
+        sha256: d93437f0bcb495e13a3373a4d2578cc0b2dba2c39c1ad5f3fdcf801ce0788b6e
         inherit_env:
           - HOME
           - PATH
@@ -580,16 +578,14 @@ fabro_server_instances:
     # and the refresh tool's env-file and destination, which the plugin's 401
     # refresh inherits so it re-fetches homelab's credential, never the fleet's.
     # Bump its sha256 together with the fleet instance's.
-    # The digest here equals the role default (v0.7.0, 93ca024d), because the
-    # role installs ONE binary at /usr/local/bin and every instance verifies it
-    # at start: a pin left behind fails any restart once the binary moves. This
-    # instance adopts v0.7.0 at its next start, which its owner times at zero
-    # runs. An apply with the default fabro_server_restart_allowed=false only
-    # records the deferred restart; it never restarts this instance.
+    # The digest here equals the role default (v0.5.0, d93437f0), the binary the
+    # role installs at /usr/local/bin. Fabro verifies it against this pin at
+    # EVERY plugin launch, so the pin and the binary must always be equal; see
+    # the role's defaults/main.yml.
     sandbox_providers:
       kubernetes:
         path: /usr/local/bin/sandbox-driver-kubernetes
-        sha256: 93ca024da1a215e5deb50d62c021e98059f0a76f0ea235a0fd1c819e62d9a799
+        sha256: d93437f0bcb495e13a3373a4d2578cc0b2dba2c39c1ad5f3fdcf801ce0788b6e
         inherit_env:
           - HOME
           - PATH

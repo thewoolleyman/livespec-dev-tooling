@@ -35,8 +35,19 @@
 # Fabro's run_turn spans name as k8s.node.name (bd-ib-motuct). v0.7.0 retries a
 # request whose API connection is refused, for up to two minutes, so a k3s server
 # restart no longer fails every live run's next exec (bd-ib-cakk3c).
-sandbox_driver_kubernetes_version: v0.7.0
-sandbox_driver_kubernetes_sha256: 93ca024da1a215e5deb50d62c021e98059f0a76f0ea235a0fd1c819e62d9a799
+#
+# PINNED BACK TO v0.5.0 (2026-11-03), the release INSTALLED on gmktec and the one
+# every live Fabro instance's settings.toml pins (d93437f0). Fabro verifies the
+# plugin's sha256 against the instance's pin at EVERY plugin launch (each scope
+# acquire, in every run worker), not only at server start. So replacing this
+# binary under a server pinned to another digest fails every launch: measured
+# 09:01:10-09:14:51Z, when a v0.7.0 apply killed six runs on main
+# ("invalid spec: sha256: checksum mismatch ... pinned d93437f0, found 93ca024d").
+# v0.6.0 and v0.7.0 return only through a per-instance versioned install path
+# whose binary and pin change together at zero runs; do not bump this default
+# alone.
+sandbox_driver_kubernetes_version: v0.5.0
+sandbox_driver_kubernetes_sha256: d93437f0bcb495e13a3373a4d2578cc0b2dba2c39c1ad5f3fdcf801ce0788b6e
 # The upstream CLI (`lithos-sandbox`, crate sandbox-driver-cli), built by the
 # plugin's release workflow at the sandbox-driver revision the plugin pins, so
 # the CLI and the plugin speak the same protocol revision.
@@ -45,7 +56,7 @@ sandbox_driver_kubernetes_cli_sha256: 5c17f37394b858e48cc2a8a4e9ae5744d1a4dbb455
 # The lifecycle proof driver, released beside the plugin: it holds one plugin
 # process across a control-plane reboot or a node going NotReady, which a
 # per-command CLI cannot (bd-ib-ad6dby).
-sandbox_driver_kubernetes_proof_sha256: 5a32f81dd5314b6c1cc06f29e3364a9badfd824736aa80921d2642c270bef325
+sandbox_driver_kubernetes_proof_sha256: 592288b3524d5e61f5997070cda4418160f3783071045dc1498e24a4e0de0b71
 sandbox_driver_kubernetes_release_url: >-
   https://github.com/thewoolleyman/sandbox-driver-kubernetes/releases/download/{{ sandbox_driver_kubernetes_version }}
 sandbox_driver_kubernetes_bin_dir: /usr/local/bin
