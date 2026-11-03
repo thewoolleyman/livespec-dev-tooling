@@ -802,7 +802,13 @@ shared instance publish as its target repository's own App. The candidate and
 plus the node name on `run_turn` spans (`thewoolleyman/fabro#14`), ruled onto
 those two ahead of the fleet instance by the maintainer (plan `fabro-currency`).
 Both pin the plugin digest installed on the host until the window that moves
-the fleet instance moves the shared plugin. The rollback target is named in `host_vars` beside the pin and never
+the fleet instance moves the shared plugin. All three instances are now pinned
+to `95a2e5b` (2026-11-03), the branch tip after `84fb903`: the run-store busy
+retry and short delete batches (`thewoolleyman/fabro#16`,
+livespec-orchestrator-beads-fabro `bd-ib-h7kbco`), the fix for the fleet
+instance's "database is locked" store fault. The candidate and mi-homelab move
+at zero runs and the fleet instance in a cancel-and-redispatch window, so until
+each restarts it still serves its earlier build. The rollback target is named in `host_vars` beside the pin and never
 here, because that is the file an operator rolling back edits.
 
 `fabro_server_host_checkout_remote` is declared because the host had no
