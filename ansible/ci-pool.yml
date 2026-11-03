@@ -313,6 +313,13 @@
     - role: ci_local_path_provisioner
       tags: [ci_local_path_provisioner]
       when: cluster_role == 'server'
+    # The factory namespace's `factory-runs` ResourceQuota ALONE, under its own
+    # tag, so a quota change reaches the cluster without a whole-stack converge
+    # under live CI (orchestrator plan bd-ib-nmuyjc). Same pattern as above: it
+    # diffs under --check and fails unless the live spec.hard equals git.
+    - role: ci_factory_quota
+      tags: [ci_factory_quota]
+      when: cluster_role == 'server'
     # Beside it, and AFTER it on purpose: the factory reach proof as a converge
     # artifact (livespec-dev-tooling-jvnqwv, freeze ruling R70 of 2026-10-16).
     # It installs ci-runner/k3s/phase2/factory/verify-factory-reach.sh, its

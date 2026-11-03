@@ -1,0 +1,6 @@
+---
+# The manifest holding the ONE object this role applies: the `factory-runs`
+# ResourceQuota, read from the committed factory namespace manifest.
+ci_factory_quota_manifest: "{{ role_path }}/../../../ci-runner/k3s/phase2/factory/factory-namespace.yaml"
+# The server's admin kubeconfig, the same one ../ci_local_path_provisioner reads.
+ci_factory_quota_kubeconfig: /etc/rancher/k3s/k3s.yaml
