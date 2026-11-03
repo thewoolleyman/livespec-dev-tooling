@@ -1,9 +1,10 @@
 # cluster-queue-gates.yaml — the Kueue admission home for GATE Jobs: the
-# `just check` aggregate runs offloaded to the second pool node, gmktec-xubuntu.
+# `just check` aggregate runs offloaded to the gate-capable pool nodes,
+# gmktec-xubuntu and hp-xubuntu.
 #
-# It carries FIVE objects, applied in this file's own document order because
-# each depends on the one before it: the `gates` Namespace, the `gates-flavor`
-# ResourceFlavor, the `gates-cq` ClusterQueue, the `gate-priority`
+# It carries SIX objects, applied in this file's own document order because
+# each depends on the one before it: the `gates` Namespace, the gmktec and hp
+# ResourceFlavors, the `gates-cq` ClusterQueue, the `gate-priority`
 # WorkloadPriorityClass, and the `gates-lq` LocalQueue.
 #
 # WHY THE FILE IS NAMED `cluster-queue-*`: ../../reconstruct/converge-ci-stack.sh
@@ -30,8 +31,9 @@
 # apportionment — the ten repositories' churn-slot quotas still sum to exactly
 # C, unchanged by this file.
 #
-# Read DERIVATION.md "The gates quota on gmktec-xubuntu (2026-09-08)" before
-# changing either number below. Both are FIRST ESTIMATES to confirm by soak.
+# Read DERIVATION.md "The gates quota on gmktec-xubuntu and hp-xubuntu
+# (2026-11-03)" before changing either node's numbers. Both are FIRST ESTIMATES
+# to confirm by soak.
 ---
 apiVersion: v1
 kind: Namespace
@@ -75,6 +77,19 @@ spec:
 # pins every gate to this node alone.
 ---
 apiVersion: kueue.x-k8s.io/v1beta2
+kind: ResourceFlavor
+metadata:
+  name: gates-hp-flavor
+spec:
+  nodeLabels:
+    # hp-xubuntu is runner-only: it carries no cache-tier singleton, but its
+    # dedicated warm-uv DaemonSet populates the .warm sibling of this node's
+    # local-path root. This hostname flavor is what lets Kueue choose that
+    # independently-sized gate lane rather than merely admitting a fourth gate
+    # to gmktec.
+    kubernetes.io/hostname: hp-xubuntu
+---
+apiVersion: kueue.x-k8s.io/v1beta2
 kind: ClusterQueue
 metadata:
   name: gates-cq
@@ -82,7 +97,7 @@ spec:
   # NO `cohortName`, on purpose. A cohort exists so members can lend and borrow
   # unused quota, and every member of `fleet-ci-runner-pool` is denominated in
   # `ci-runner.io/churn-slot` over `churn-slot-flavor`. `gates-cq` covers
-  # different resources over a different flavor on a different node, so it has
+  # different resources over its own flavors on dedicated gate nodes, so it has
   # nothing those queues could borrow and nothing it could borrow from them —
   # joining would add a relationship that can only ever be inert. Same reasoning
   # as `cluster-queue-phase1-proof.yaml`.
@@ -119,6 +134,20 @@ spec:
               nominalQuota: 15
             - name: "memory"
               nominalQuota: 24Gi
+        - name: gates-hp-flavor
+          resources:
+            # hp-xubuntu has 14500m CPU / 27.2 GiB allocatable, but currently
+            # carries up to three 4-CPU factory sandboxes while their existing
+            # work drains. One 5-CPU gate is therefore the only safe additional
+            # lane: it schedules as soon as hp has at most two such sandboxes,
+            # and FACTORY_NODE=false prevents new sandboxes from refilling that
+            # contention. 8 Gi gives the gate's 6 Gi request two Gi of measured
+            # headroom without admitting a second gate. DERIVATION.md records
+            # the full arithmetic and the required post-change soak.
+            - name: "cpu"
+              nominalQuota: 5
+            - name: "memory"
+              nominalQuota: 8Gi
 ---
 apiVersion: kueue.x-k8s.io/v1beta2
 kind: WorkloadPriorityClass
