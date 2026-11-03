@@ -58,6 +58,18 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.165.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.164.1...v1.165.0) (2026-11-03)
+
+
+### Features
+
+* **ansible:** converge the factory-runs ResourceQuota alone under its own tag ([540d006](https://github.com/thewoolleyman/livespec-dev-tooling/commit/540d0065f7d8daf456a63357f9f20acb8c5de799))
+
+
+### Bug Fixes
+
+* **ansible:** verify the container hook bundle with sha256, not copy's sha1 checksum ([6004fd1](https://github.com/thewoolleyman/livespec-dev-tooling/commit/6004fd1f1ad27283007109d6614b47ce21361df1))
+
 ## [1.164.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.164.0...v1.164.1) (2026-11-03)
 
 
