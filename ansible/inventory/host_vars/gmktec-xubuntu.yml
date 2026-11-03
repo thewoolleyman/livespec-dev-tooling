@@ -223,8 +223,12 @@ fabro_server_instances:
     # /home/ubuntu/.local/state/fabro-web-prod/v0393-9f6c38fab/fabro and
     # e8ebf8ac88e5e18128ad559918b90341fc0dac93f1f5f7ff571039a1763f09d6 (9f6c38fab,
     # still staged on vps for the other two instances) and apply in a held window.
-    binary_source: /home/ubuntu/.local/state/fabro-web-prod/v0393-613add19c/fabro
-    binary_sha256: def1dc89890c0481f8e733016ab78481dd2f26d8cab9248eb6b4b1fec5f6a344
+    # 2026-11-03: 95a2e5b80 = 84fb903b8 plus the run-store busy retry and short
+    # delete batches (thewoolleyman/fabro#16, livespec-orchestrator-beads-fabro
+    # bd-ib-h7kbco: a run DELETE on the 102 GB main store held the SQLite write
+    # lock past the 5 s busy timeout and failed concurrent runs' appends).
+    binary_source: /home/ubuntu/.local/state/fabro-web-prod/v0393-95a2e5b80/fabro
+    binary_sha256: 996d4e23dd327df4bf225f78302233d31ee925e9da5083074aa4c29e2240b072
     # The tag the orchestrator workflow pins today
     # (.claude-plugin/.fabro/workflows/implement-work-item/workflow.toml,
     # python-agent-v1.136.2). On this engine the catalog, not the workflow
@@ -421,8 +425,12 @@ fabro_server_instances:
     # 84fb903b8 (2026-11-02) is the carrier tip: per-run GitHub App selection
     # and the node name on run_turn spans (thewoolleyman/fabro#14). BUILD_INFO
     # beside the binary records the provenance.
-    binary_source: /home/ubuntu/.local/state/fabro-web-prod/v0393-84fb903b8/fabro
-    binary_sha256: d196f2a84decdf79fd2235c7126bd87050fec0f0806ed0a83c6948b7126fb7ce
+    # 2026-11-03: 95a2e5b80 = 84fb903b8 plus the run-store busy retry and short
+    # delete batches (thewoolleyman/fabro#16, livespec-orchestrator-beads-fabro
+    # bd-ib-h7kbco: a run DELETE on the 102 GB main store held the SQLite write
+    # lock past the 5 s busy timeout and failed concurrent runs' appends).
+    binary_source: /home/ubuntu/.local/state/fabro-web-prod/v0393-95a2e5b80/fabro
+    binary_sha256: 996d4e23dd327df4bf225f78302233d31ee925e9da5083074aa4c29e2240b072
     # The fleet instance's catalog, entry for entry; the reasons for each
     # entry are given there. Bump the images together with it.
     environments:
@@ -541,8 +549,12 @@ fabro_server_instances:
     # 84fb903b8 (2026-11-02) is the carrier tip: per-run GitHub App selection
     # and the node name on run_turn spans (thewoolleyman/fabro#14). BUILD_INFO
     # beside the binary records the provenance.
-    binary_source: /home/ubuntu/.local/state/fabro-web-prod/v0393-84fb903b8/fabro
-    binary_sha256: d196f2a84decdf79fd2235c7126bd87050fec0f0806ed0a83c6948b7126fb7ce
+    # 2026-11-03: 95a2e5b80 = 84fb903b8 plus the run-store busy retry and short
+    # delete batches (thewoolleyman/fabro#16, livespec-orchestrator-beads-fabro
+    # bd-ib-h7kbco: a run DELETE on the 102 GB main store held the SQLite write
+    # lock past the 5 s busy timeout and failed concurrent runs' appends).
+    binary_source: /home/ubuntu/.local/state/fabro-web-prod/v0393-95a2e5b80/fabro
+    binary_sha256: 996d4e23dd327df4bf225f78302233d31ee925e9da5083074aa4c29e2240b072
     # The tag FOLLOWS homelab's own workflow pin
     # (.fabro/workflows/implement-work-item/workflow.toml in mi-homelab/homelab,
     # python-agent-v1.126.0), not the orchestrator's; bump the two together.
