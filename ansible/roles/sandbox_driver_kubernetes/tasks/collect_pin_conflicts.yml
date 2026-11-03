@@ -1,0 +1,21 @@
+---
+# This include is read once per host-local Fabro instance by tasks/main.yml.
+# Keep the declaration surface here: a provider pin is always the provider's
+# `path` and `sha256` below `fabro_server_instances[].sandbox_providers`.
+
+- name: Collect a conflicting sandbox-provider pin
+  ansible.builtin.set_fact:
+    sandbox_driver_kubernetes_pin_conflicts: >-
+      {{ sandbox_driver_kubernetes_pin_conflicts + [
+           {
+             'instance': sandbox_driver_kubernetes_pin_instance.unit_name,
+             'provider': item.key,
+             'declared_sha256': item.value.sha256,
+           },
+         ] }}
+  loop: "{{ sandbox_driver_kubernetes_pin_instance.sandbox_providers | default({}) | dict2items }}"
+  loop_control:
+    label: "{{ item.key }}"
+  when:
+    - item.value.path | default('') == sandbox_driver_kubernetes_bin_dir ~ '/sandbox-driver-kubernetes'
+    - item.value.sha256 | default('') != sandbox_driver_kubernetes_sha256

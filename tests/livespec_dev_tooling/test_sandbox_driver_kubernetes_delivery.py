@@ -113,6 +113,29 @@ def test_the_pinned_plugin_knows_the_topology_spread_field() -> None:
     )
 
 
+def test_the_role_refuses_every_conflicting_declared_provider_pin_before_downloading() -> None:
+    """One host binary cannot replace a digest any local Fabro instance pins.
+
+    The guard reads the documented ``sandbox_providers`` instance key, collects
+    every provider whose path is the plugin path and whose pin conflicts, then
+    raises one refusal before the first ``get_url`` can download or move bytes.
+    A single assertion after the loop is deliberate: its diagnostic identifies
+    every affected instance rather than stopping at the first one.
+    """
+    tasks = _read(path=_TASKS)
+    install = tasks.find("- name: Install the pinned binaries")
+    guard = tasks.find("- name: Refuse a plugin digest that conflicts with a Fabro instance pin")
+    assert guard >= 0, "the role must refuse a binary digest that conflicts with an instance pin"
+    assert (
+        guard < install
+    ), "the pin refusal must run before any get_url download or destination move"
+    assert "fabro_server_instances" in tasks
+    assert "sandbox_providers" in tasks
+    assert "sandbox_driver_kubernetes_pin_conflicts" in tasks
+    assert "unit_name" in tasks
+    assert "sandbox_driver_kubernetes_sha256" in tasks
+
+
 def test_no_machine_is_named() -> None:
     for path in (_TASKS, _DEFAULTS, _PLUGIN_TEMPLATE, _CLI_TEMPLATE):
         text = _read(path=path)
