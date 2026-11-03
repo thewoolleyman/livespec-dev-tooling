@@ -77,7 +77,7 @@ for profile in "${PROFILES_DIR}"/*.env; do
   fi
   case "$facilities" in
     full) full_nodes+=("$node") ;;
-    none) other_nodes+=("$node") ;;
+    none|runner-only) other_nodes+=("$node") ;;
     *)
       echo "WARN: ${profile} has CI_NODE_FACILITIES=${facilities}; refusing to change ${node}" >&2
       unreadable=1

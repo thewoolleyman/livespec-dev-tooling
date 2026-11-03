@@ -52,6 +52,7 @@ if [ "$1" = "get" ] && [ "$2" = "node" ]; then
 fi
 if [ "$1" = "get" ] && [ "$2" = "nodes" ]; then
   printf 'node/agent-without-facilities\\n'
+  printf 'node/agent-runner-only\\n'
   exit 0
 fi
 """
@@ -153,7 +154,47 @@ def test_warm_uv_population_reaches_each_work_volume_node_without_moving_the_car
     )
 
 
-def test_server_converge_labels_a_full_facilities_agent_and_removes_the_other_label(
+def _server_label_converge_env(*, tmp_path: Path, profiles: Path, log: Path) -> dict[str, str]:
+    """Build the environment that points the server label converge at a fake kubectl."""
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    kubectl = bin_dir / "kubectl"
+    kubectl.write_text(f"#!/usr/bin/env bash\n{_KUBECTL_SHIM}", encoding="utf-8")
+    kubectl.chmod(0o755)
+    kubeconfig = tmp_path / "kubeconfig"
+    kubeconfig.write_text("apiVersion: v1\nkind: Config\n", encoding="utf-8")
+    env = {key: value for key, value in os.environ.items() if not key.startswith("COVERAGE_")}
+    env.update(
+        {
+            "ARGV_LOG": str(log),
+            "LATE_NODE": "agent-with-facilities",
+            "LATE_PROBE_LOG": str(tmp_path / "late-probes"),
+            "LATE_PROBES": "1",
+            "CI_WARM_UV_LABEL_PROFILES_DIR": str(profiles),
+            "CI_WARM_UV_LABEL_WAIT_SECONDS": "3",
+            "CI_WARM_UV_LABEL_POLL_SECONDS": "1",
+            "KUBECONFIG": str(kubeconfig),
+            "PATH": f"{bin_dir}{os.pathsep}{env['PATH']}",
+        }
+    )
+    return env
+
+
+def _run_server_label_converge(
+    *, tmp_path: Path, env: dict[str, str]
+) -> subprocess.CompletedProcess[str]:
+    """Run the real server label converge helper once under `env`."""
+    return subprocess.run(
+        ["bash", str(_SERVER_LABEL_CONVERGE)],
+        cwd=tmp_path,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+
+def test_server_converge_reconciles_every_facilities_posture_and_rejects_unknown_values(
     *, tmp_path: Path
 ) -> None:
     """The server uses every installed profile, rather than only its own mount.
@@ -177,36 +218,13 @@ def test_server_converge_labels_a_full_facilities_agent_and_removes_the_other_la
     (profiles / "agent-without-facilities.env").write_text(
         "NODE_NAME=agent-without-facilities\nCI_NODE_FACILITIES=none\n", encoding="utf-8"
     )
-    bin_dir = tmp_path / "bin"
-    bin_dir.mkdir()
-    kubectl = bin_dir / "kubectl"
-    kubectl.write_text(f"#!/usr/bin/env bash\n{_KUBECTL_SHIM}", encoding="utf-8")
-    kubectl.chmod(0o755)
+    runner_only_profile = profiles / "agent-runner-only.env"
+    runner_only_profile.write_text(
+        "NODE_NAME=agent-runner-only\nCI_NODE_FACILITIES=runner-only\n", encoding="utf-8"
+    )
     log = tmp_path / "argv.log"
-    kubeconfig = tmp_path / "kubeconfig"
-    kubeconfig.write_text("apiVersion: v1\nkind: Config\n", encoding="utf-8")
-    env = {key: value for key, value in os.environ.items() if not key.startswith("COVERAGE_")}
-    env.update(
-        {
-            "ARGV_LOG": str(log),
-            "LATE_NODE": "agent-with-facilities",
-            "LATE_PROBE_LOG": str(tmp_path / "late-probes"),
-            "LATE_PROBES": "1",
-            "CI_WARM_UV_LABEL_PROFILES_DIR": str(profiles),
-            "CI_WARM_UV_LABEL_WAIT_SECONDS": "3",
-            "CI_WARM_UV_LABEL_POLL_SECONDS": "1",
-            "KUBECONFIG": str(kubeconfig),
-            "PATH": f"{bin_dir}{os.pathsep}{env['PATH']}",
-        }
-    )
-    completed = subprocess.run(
-        ["bash", str(_SERVER_LABEL_CONVERGE)],
-        cwd=tmp_path,
-        env=env,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    env = _server_label_converge_env(tmp_path=tmp_path, profiles=profiles, log=log)
+    completed = _run_server_label_converge(tmp_path=tmp_path, env=env)
     invoked = log.read_text(encoding="utf-8").splitlines()
 
     assert completed.returncode == 0, completed.stdout + completed.stderr
@@ -219,6 +237,14 @@ def test_server_converge_labels_a_full_facilities_agent_and_removes_the_other_la
         "converge must probe again before asserting the warm-uv label"
     )
     assert "kubectl label node agent-without-facilities ci-runner.io/warm-uv-cache-" in invoked
+    assert "kubectl label node agent-runner-only ci-runner.io/warm-uv-cache-" in invoked
+
+    runner_only_profile.write_text(
+        "NODE_NAME=agent-runner-only\nCI_NODE_FACILITIES=unknown\n", encoding="utf-8"
+    )
+    invalid = _run_server_label_converge(tmp_path=tmp_path, env=env)
+    assert invalid.returncode != 0
+    assert "agent-runner-only.env has CI_NODE_FACILITIES=unknown" in invalid.stderr
 
     boot_converge = _BOOT_CONVERGE.read_text(encoding="utf-8")
     assert _SERVER_LABEL_CONVERGE.name in boot_converge
