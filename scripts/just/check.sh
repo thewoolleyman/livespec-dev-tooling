@@ -187,7 +187,10 @@ if [[ -n "${token_match:-}" ]]; then
     fi
     memoized=0
     for target in "${gated[@]}"; do
-        if printf '%s\n' "${world_reading_members}" | grep -Fqx -- "${target}"; then
+        # A here-string, never `printf | grep -q`: under pipefail grep -q exits on
+        # its first match, SIGPIPEs the writer, and the 141 read a world-reading
+        # member as tree-pure and memoized it away (livespec-dev-tooling-iiu3dp).
+        if grep -Fqx -- "${target}" <<<"${world_reading_members}"; then
             printf ':: green token matched: running world-reading member %s\n' "${target}"
         else
             effective_skip="${effective_skip} ${target}"

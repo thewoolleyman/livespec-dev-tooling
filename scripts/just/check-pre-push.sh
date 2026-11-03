@@ -188,7 +188,10 @@ diagnose_host_state_divergence() {
     cat "$rerun_output"
     mapfile -t rerun_failures < <(awk '$1 == "FAILED" { print $2 }' "$rerun_output")
     for node_id in "${failed_nodes[@]}"; do
-        if printf '%s\n' "${rerun_failures[@]}" | grep -Fqx "$node_id"; then
+        # A here-string, never `printf | grep -q`: under pipefail grep -q's early
+        # exit SIGPIPEs the writer and reads a match as a miss
+        # (livespec-dev-tooling-iiu3dp).
+        if grep -Fqx -- "$node_id" <<<"$(printf '%s\n' "${rerun_failures[@]}")"; then
             echo ":: pre-push: host-state divergence: ${node_id} also fails on green CI run ${green_run_id}"
         fi
     done
