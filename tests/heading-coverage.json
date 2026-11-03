@@ -1686,5 +1686,101 @@
     "test": "TODO",
     "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, asserting the dev host's collector configuration routes its host-metrics pipeline to the livespec environment as well as agent-activity. livespec-dev-tooling-z6yf2a owns it.",
     "work_item": "livespec-dev-tooling-z6yf2a"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a runner-only profile opens a node to CI without planning a storage change",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, exercising the runner-only node posture through the committed profile parser, storage-stage exit tests, ci-pool role gating, local-path provisioner or Kueue manifests, or, for a host-observed scenario, through its host-captured proof on hp-xubuntu. livespec-dev-tooling-zreev4 owns it.",
+    "work_item": "livespec-dev-tooling-zreev4"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a runner-only profile that keeps its CI-closing taint is refused",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, exercising the runner-only node posture through the committed profile parser, storage-stage exit tests, ci-pool role gating, local-path provisioner or Kueue manifests, or, for a host-observed scenario, through its host-captured proof on hp-xubuntu. livespec-dev-tooling-zreev4 owns it.",
+    "work_item": "livespec-dev-tooling-zreev4"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a runner-only profile with zero admission capacity is refused",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, exercising the runner-only node posture through the committed profile parser, storage-stage exit tests, ci-pool role gating, local-path provisioner or Kueue manifests, or, for a host-observed scenario, through its host-captured proof on hp-xubuntu. livespec-dev-tooling-zreev4 owns it.",
+    "work_item": "livespec-dev-tooling-zreev4"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a runner work volume on a runner-only node is provisioned under the profile's directory and starts unseeded",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, exercising the runner-only node posture through the committed profile parser, storage-stage exit tests, ci-pool role gating, local-path provisioner or Kueue manifests, or, for a host-observed scenario, through its host-captured proof on hp-xubuntu. livespec-dev-tooling-zreev4 owns it.",
+    "work_item": "livespec-dev-tooling-zreev4"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: the cohort churn-slot quota equals the sum of the nodes' declared capacities",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, exercising the runner-only node posture through the committed profile parser, storage-stage exit tests, ci-pool role gating, local-path provisioner or Kueue manifests, or, for a host-observed scenario, through its host-captured proof on hp-xubuntu. livespec-dev-tooling-zreev4 owns it.",
+    "work_item": "livespec-dev-tooling-zreev4"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: an unknown CI-facilities posture is refused",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, exercising the runner-only node posture through the committed profile parser, storage-stage exit tests, ci-pool role gating, local-path provisioner or Kueue manifests, or, for a host-observed scenario, through its host-captured proof on hp-xubuntu. livespec-dev-tooling-zreev4 owns it.",
+    "work_item": "livespec-dev-tooling-zreev4"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a runner-only profile with no work-volume directory is refused",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, exercising the runner-only node posture through the committed profile parser, storage-stage exit tests, ci-pool role gating, local-path provisioner or Kueue manifests, or, for a host-observed scenario, through its host-captured proof on hp-xubuntu. livespec-dev-tooling-zreev4 owns it.",
+    "work_item": "livespec-dev-tooling-zreev4"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a closed profile with admission capacity or without its CI-closing taint is refused",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, exercising the runner-only node posture through the committed profile parser, storage-stage exit tests, ci-pool role gating, local-path provisioner or Kueue manifests, or, for a host-observed scenario, through its host-captured proof on hp-xubuntu. livespec-dev-tooling-zreev4 owns it.",
+    "work_item": "livespec-dev-tooling-zreev4"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a runner-only node receives the runner container hook and still takes factory sandboxes",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, exercising the runner-only node posture through the committed profile parser, storage-stage exit tests, ci-pool role gating, local-path provisioner or Kueue manifests, or, for a host-observed scenario, through its host-captured proof on hp-xubuntu. livespec-dev-tooling-zreev4 owns it.",
+    "work_item": "livespec-dev-tooling-zreev4"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a job on a runner-only node reads the pool's host-served caches over the node network",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, exercising the runner-only node posture through the committed profile parser, storage-stage exit tests, ci-pool role gating, local-path provisioner or Kueue manifests, or, for a host-observed scenario, through its host-captured proof on hp-xubuntu. livespec-dev-tooling-zreev4 owns it.",
+    "work_item": "livespec-dev-tooling-zreev4"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a move from none to runner-only is rehearsed by its provisioning apply",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, exercising the runner-only node posture through the committed profile parser, storage-stage exit tests, ci-pool role gating, local-path provisioner or Kueue manifests, or, for a host-observed scenario, through its host-captured proof on hp-xubuntu. livespec-dev-tooling-zreev4 owns it.",
+    "work_item": "livespec-dev-tooling-zreev4"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a move to or from full still needs an empty-storage rehearsal",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, exercising the runner-only node posture through the committed profile parser, storage-stage exit tests, ci-pool role gating, local-path provisioner or Kueue manifests, or, for a host-observed scenario, through its host-captured proof on hp-xubuntu. livespec-dev-tooling-zreev4 owns it.",
+    "work_item": "livespec-dev-tooling-zreev4"
   }
 ]
