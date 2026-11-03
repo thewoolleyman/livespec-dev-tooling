@@ -62,27 +62,64 @@
     mode: "0755"
   become: true
 
+- name: Hash the committed hook bundle on the controller
+  # `ansible.builtin.copy`'s `checksum` parameter is SHA-1, while the bundle's
+  # committed manifest (index.js.sha256) is SHA-256, so passing the manifest
+  # to `checksum` refused EVERY real transfer with "Copied file does not match
+  # the expected checksum". No existing node ever transferred the file again
+  # after the hand-run installer seeded it, so the defect first fired on
+  # hp-xubuntu's runner-only opening on 2026-11-03 (livespec-dev-tooling-zreev4).
+  # The manifest is now checked twice with the algorithm it is written in:
+  # against the committed source BEFORE the copy, so a corrupt or substituted
+  # index.js never reaches a host, and against the installed file AFTER it.
+  ansible.builtin.stat:
+    path: "{{ container_hook_phase2_dir }}/container-hook/bundle/{{ container_hook_runner_version }}/index.js"
+    checksum_algorithm: sha256
+  delegate_to: localhost
+  become: false
+  register: container_hook_bundle_source
+
+- name: Refuse a committed hook bundle that disagrees with its own manifest
+  ansible.builtin.assert:
+    that:
+      - container_hook_bundle_source.stat.checksum == container_hook_bundle_manifest_sha256
+    fail_msg: >-
+      the committed index.js sha256 {{ container_hook_bundle_source.stat.checksum }} does not
+      equal its manifest {{ container_hook_bundle_manifest_sha256 }}
+  vars:
+    container_hook_bundle_manifest_sha256: >-
+      {{ lookup('ansible.builtin.file',
+                container_hook_phase2_dir ~ '/container-hook/bundle/'
+                ~ container_hook_runner_version ~ '/index.js.sha256').split() | first }}
+
 - name: Install the fleet-patched container hook bundle
-  # The checksum is the bundle's OWN committed manifest, so a corrupt or
-  # substituted index.js is refused before it reaches the host rather than
-  # after. install-container-hook.sh verified the same digest before and after
-  # the copy; `copy` with a checksum collapses that into one guarantee.
   ansible.builtin.copy:
     src: "{{ container_hook_phase2_dir }}/container-hook/bundle/{{ container_hook_runner_version }}/{{ item }}"
     dest: "{{ container_hook_hooks_root }}/{{ container_hook_runner_version }}/{{ item }}"
     owner: root
     group: root
     mode: "0644"
-    checksum: >-
-      {{ (lookup('ansible.builtin.file',
-                 container_hook_phase2_dir ~ '/container-hook/bundle/'
-                 ~ container_hook_runner_version ~ '/index.js.sha256').split() | first)
-         if item == 'index.js' else omit }}
   become: true
   loop:
     - index.js
     - index.js.sha256
     - BUILD-INFO
+
+- name: Hash the installed hook bundle
+  ansible.builtin.stat:
+    path: "{{ container_hook_hooks_root }}/{{ container_hook_runner_version }}/index.js"
+    checksum_algorithm: sha256
+  become: true
+  register: container_hook_bundle_installed
+
+- name: Refuse an installed hook bundle that disagrees with the committed manifest
+  # In --check mode a first install has nothing on the host to hash yet.
+  ansible.builtin.assert:
+    that:
+      - ansible_check_mode or container_hook_bundle_installed.stat.checksum == container_hook_bundle_source.stat.checksum
+    fail_msg: >-
+      the installed index.js sha256 {{ container_hook_bundle_installed.stat.checksum | default('absent') }}
+      does not equal the committed {{ container_hook_bundle_source.stat.checksum }}
 
 - name: Check whether this runner version's externals are already seeded
   # The marker extract-externals.sh writes at the end of a successful
