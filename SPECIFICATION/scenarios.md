@@ -1732,6 +1732,20 @@ And the hook output MUST say that it gated locally
 
 And the commit MUST NOT be refused because the cluster returned no verdict
 
+## Scenario: a delegated gate check suite ending in the pre-commit aggregate is refused
+
+Given a consuming repository whose `[tool.livespec_dev_tooling]` sets `delegated_gate = true`
+
+And declares `gate_check_suite = ["install-worktree-pack", "check-pre-commit"]`
+
+When its shared pre-commit or pre-push check aggregate runs
+
+Then the aggregate MUST fail
+
+And its output MUST name `pyproject.toml`, the key `gate_check_suite`, the final entry `check-pre-commit` and the expected final recipe `check-pre-push`
+
+And the same aggregate MUST NOT fail on that rule when the declared suite ends in `check-pre-push` or in `hook_gate=1 check`, when the key is absent, or when `delegated_gate` is not `true`
+
 ## Scenario: a canonical check waived in pyproject.toml is exempt from the aggregate and fleet gates
 
 Given a fleet member whose `pyproject.toml` declares `canonical_check_waivers` under `[tool.livespec_dev_tooling]` with slug `check-heading-coverage` and a non-empty reason
