@@ -373,7 +373,10 @@ jobs:
           green_shas=$(jq -r '[ .[] | select(.conclusion == "success") | .head_sha ]
                               | unique | .[]' runs.json)
           for sha in $(jq -r '.[].sha' commits.json); do
-            if printf '%s\n' "${green_shas}" | grep -qx "${sha}"; then
+            # A here-string, never `printf | grep -q`: under pipefail grep -q's
+            # early exit SIGPIPEs the writer, and the 141 read a green sha as a
+            # culprit candidate (livespec-dev-tooling-7xv7sy).
+            if grep -qx -- "${sha}" <<<"${green_shas}"; then
               continue
             fi
             paths=$(gh api "repos/${REPO}/commits/${sha}" --jq '

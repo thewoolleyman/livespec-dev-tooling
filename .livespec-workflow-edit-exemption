@@ -1,2 +1,2 @@
-work_item=livespec-dev-tooling-jw3cyl
-reason=Hand the job GITHUB_TOKEN to the base and python sandbox image builds as a BuildKit secret mounted only for `mise use`, so a hosted runner shared IP cannot rate-limit the release image build (v1.143.2 build failed 403 rate limit, run 41324169993).
+work_item=livespec-dev-tooling-7xv7sy
+reason=Keep reusable-master-health-reconcile.yml byte-identical to the reconciler canonical body after replacing its printf | grep -qx green-sha membership test with a here-string (SIGPIPE under pipefail); maintainer-tier, approval:workflow-edit set by legacy-coordinator-agent under the 15:00:49Z standing ruling.
