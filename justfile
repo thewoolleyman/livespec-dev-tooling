@@ -195,6 +195,9 @@ install-worktree-pack:
 ensure-plugins:
     mise exec -- uv run --no-sync python -m livespec_dev_tooling.fleet.ensure_plugins
 
+ensure-plugins-fleet:
+    mise exec -- uv run --no-sync python -m livespec_dev_tooling.fleet.ensure_plugins_fleet
+
 # Compare each enabled Claude plugin's installed build with the locally
 # resolved origin/<ref> of its committed marketplace pin. This is deliberately
 # a world-state operator probe rather than a member of `check:`: installed
