@@ -66,6 +66,12 @@ ci_converge_unit_files:
   - src: reconstruct/converge-factory-node-labels.sh
     dest: converge-factory-node-labels.sh
     mode: "0755"
+  # The server-side warm-uv label reconcile.  The local-path provisioner seeds
+  # only from the node-local warm root, so each full-facilities agent needs the
+  # DaemonSet selector after it has registered (livespec-dev-tooling-ovv4fn).
+  - src: reconstruct/converge-warm-uv-node-labels.sh
+    dest: converge-warm-uv-node-labels.sh
+    mode: "0755"
   - src: arc/converge-hook-pod-template.sh
     dest: arc/converge-hook-pod-template.sh
     mode: "0755"
