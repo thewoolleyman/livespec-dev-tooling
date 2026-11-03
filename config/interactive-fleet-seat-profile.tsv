@@ -1,0 +1,4 @@
+class	model	effort	auto_compact_threshold	model_context_ceiling	lifetime_seconds
+coordinator	claude-opus-5-5	medium	200000	1000000	21600
+monitor	claude-opus-5-5	medium	200000	1000000	14400
+implementer	claude-opus-5-5	medium	200000	1000000	28800
