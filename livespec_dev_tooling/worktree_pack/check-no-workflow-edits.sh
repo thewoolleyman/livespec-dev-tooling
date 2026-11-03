@@ -150,13 +150,53 @@ if ! base="$(resolve_base_ref)"; then
 fi
 
 # --------------------------------------------------------------------------
+# 2b. Pending base — what the pending (staged and on-disk) change is measured
+#     against
+# --------------------------------------------------------------------------
+# Committed work is measured from the merge base of <base> and HEAD
+# (`<base>...HEAD`). Pending work is measured from the merge base the NEXT
+# commit will have. That is the same point, except while a merge is in progress
+# (MERGE_HEAD present). The commit being prepared then has HEAD and every
+# MERGE_HEAD as parents, so its merge base with <base> is the merge base of
+# <base> and that hypothetical commit: `git merge-base <base> HEAD <merge heads>`.
+# When the merge brings in <base> itself (a branch refresh), that point is
+# <base>. Content the merge INHERITS from <base> is then identical to its
+# baseline and is never counted as this change's workflow edit, while anything
+# the branch itself changed still differs from it. Measuring pending work
+# against HEAD instead counted every workflow file <base> had changed since the
+# fork point as an edit by the branch. That refused every factory refresh-repair
+# merge of a master that had moved workflow files (bd-ib-yuwftp run
+# 01M6FTF5A9Y8, 2026-11-03), and it let a declaration merged in from <base> pass
+# as "authored in this change".
+merge_base="$(git merge-base "$base" HEAD 2>/dev/null || true)"
+pending_base="$merge_base"
+merge_head_file="$(git rev-parse --git-path MERGE_HEAD)"
+if [[ -n "$merge_base" && -f "$merge_head_file" ]]; then
+    mapfile -t merge_heads < <(sed '/^$/d' "$merge_head_file")
+    if ! pending_base="$(git merge-base "$base" HEAD "${merge_heads[@]}" 2>/dev/null)"; then
+        pending_base=""
+    fi
+fi
+
+# The pending views: `--cached <pending_base>` is the index, `<pending_base>` the
+# work tree. With no common history to measure from, they fall back to the
+# index against HEAD and the work tree against the index, as before.
+if [[ -n "$pending_base" ]]; then
+    staged_view=(--cached "$pending_base")
+    unstaged_view=("$pending_base")
+else
+    staged_view=(--cached)
+    unstaged_view=()
+fi
+
+# --------------------------------------------------------------------------
 # 3. Scope — committed, staged, unstaged, and untracked workflow paths
 # --------------------------------------------------------------------------
 workflow_paths="$(
     {
         git diff --name-only "${base}...HEAD" -- "$workflows_dir"
-        git diff --name-only --cached -- "$workflows_dir"
-        git diff --name-only -- "$workflows_dir"
+        git diff --name-only "${staged_view[@]}" -- "$workflows_dir"
+        git diff --name-only "${unstaged_view[@]}" -- "$workflows_dir"
         git ls-files --others --exclude-standard -- "$workflows_dir"
     } | sed '/^$/d' | sort -u
 )"
@@ -214,9 +254,17 @@ inspect_declaration() {
     # disable the guard permanently. Requiring it in this branch's own diff
     # (or staged/unstaged, for the pre-commit moment) keeps one exemption
     # bound to one reviewed change.
+    # Pending authorship is measured against the pending base. A declaration
+    # that an in-progress merge brings in from <base> is therefore inherited,
+    # not authored here.
     local declared_here declared_pending
     declared_here="$(git diff --name-only "${base}...HEAD" -- "$declaration")"
-    declared_pending="$(git status --short -- "$declaration")"
+    declared_pending="$(
+        {
+            git diff --name-only "${staged_view[@]}" -- "$declaration"
+            git diff --name-only "${unstaged_view[@]}" -- "$declaration"
+        } | sed '/^$/d'
+    )"
     if [[ -z "$declared_here" && -z "$declared_pending" ]]; then
         note "workflow-edit exemption declaration is inherited from $base, not authored by this change"
         note "an exemption is per-change: add or update $declaration in this branch"
@@ -314,12 +362,14 @@ esac
 # committed (and so what is pushed), what is staged, and what is on disk. A
 # modification is a deletion plus an addition, so deleted lines are exactly
 # the "deleted or modified" set. Untracked workflow files are new files and
-# so add-only by construction.
-merge_base="$(git merge-base "$base" HEAD 2>/dev/null || true)"
+# so add-only by construction. The pending views are measured against the
+# pending base (step 2b), so a line that an in-progress merge brings in from
+# <base> is never read as this change deleting or modifying it. The branch's
+# own committed and pending deletions are still read.
 non_additive_lines() {
     local -a views=()
-    if [[ -n "$merge_base" ]]; then
-        views=("$merge_base HEAD" "--cached $merge_base" "$merge_base")
+    if [[ -n "$merge_base" && -n "$pending_base" ]]; then
+        views=("$merge_base HEAD" "--cached $pending_base" "$pending_base")
     else
         views=("--cached" "")
     fi
