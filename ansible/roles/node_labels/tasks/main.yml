@@ -38,8 +38,10 @@
 # to the install command; `ci-runner.io/cache-tier-carrier` is set by
 # provision-k3s.sh step 2b and only when the tier is actually mounted.
 #
-# EVERY ci_pool NODE RUNS IT, server included. All three pool nodes carry the
-# factory label and poweredge-xubuntu is UNTAINTED, which is why the label had
+# EVERY ci_pool NODE RUNS IT, server included, and it REMOVES the label from a
+# node whose profile declares FACTORY_NODE=false (hp-xubuntu since 2026-11-03,
+# orchestrator epic bd-ib-nmuyjc). poweredge and gmktec carry the factory label
+# and poweredge-xubuntu is UNTAINTED, which is why the label had
 # to exist at all: "the factory nodes" cannot be spelled as "the tainted ones"
 # (maintainer ruling 2026-10-13, livespec epic livespec-sqvj7p). The kubectl
 # calls are delegated to the server; the NODE is inventory_hostname.

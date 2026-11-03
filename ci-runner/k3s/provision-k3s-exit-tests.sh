@@ -473,7 +473,7 @@ fi
 # does not carry, and provision-k3s.sh refuses an absent token file in
 # `--dry-run` too.
 # ---------------------------------------------------------------------------
-printf '\n== F. the committed hp-xubuntu profile: a factory-only agent ==\n'
+printf '\n== F. the committed hp-xubuntu profile: a runner-only agent, not a factory node ==\n'
 
 HP_COMMITTED="${HERE}/phase0-bare-metal/profiles/hp-xubuntu.env"
 HP_TOKEN="${TMPROOT}/hp-join-token"
@@ -524,7 +524,6 @@ for fragment in \
   "--token-file ${HP_TOKEN}" \
   "--node-ip 192.168.1.4" \
   "--node-label k3s-role=arc-runner-host" \
-  "--node-label ci-runner.io/factory=true" \
   "--data-dir /srv/sandbox-storage/k3s"
 do
   if printf '%s\n' "$HP_COMMAND" | grep -qF -- "$fragment"; then
@@ -546,24 +545,27 @@ else
   ok "F5  the install line pins the bare address, not the netplan CIDR"
 fi
 
-# The FACTORY label is on all three nodes, and it comes from the PROFILE. The
-# second assertion is the one that matters: without it the label could be a
-# literal the script appends unconditionally, and FACTORY_NODE would be
-# decoration.
+# The FACTORY label comes from the PROFILE. Since 2026-11-03 (plan
+# kubernetes-sandbox-backend, epic bd-ib-nmuyjc) hp-xubuntu declares
+# FACTORY_NODE=false, so new factory sandboxes land on poweredge and gmktec and
+# hp's cores go to CI runners. F7 is the control arm in the other direction:
+# without it the label's absence on hp could be a literal the script drops
+# unconditionally, and FACTORY_NODE would be decoration.
 if printf '%s\n' "$GMKTEC_COMMAND" | grep -qF -- '--node-label ci-runner.io/factory=true' \
-   && printf '%s\n' "$SERVER_PLAN" | grep -qF -- '--node-label ci-runner.io/factory=true'; then
-  ok "F6  every committed pool profile plans the factory label, the server included"
+   && printf '%s\n' "$SERVER_PLAN" | grep -qF -- '--node-label ci-runner.io/factory=true' \
+   && ! printf '%s\n' "$HP_COMMAND" | grep -qF -- 'ci-runner.io/factory'; then
+  ok "F6  the server and gmktec plan the factory label, and the hp profile (FACTORY_NODE=false) plans none"
 else
-  no "F6  every committed pool profile plans the factory label, the server included"
+  no "F6  the server and gmktec plan the factory label, and the hp profile (FACTORY_NODE=false) plans none"
 fi
 
-NOT_FACTORY="${TMPROOT}/hp-not-a-factory.env"
-sed 's/^FACTORY_NODE=true$/FACTORY_NODE=false/' "$HP_PROFILE" > "$NOT_FACTORY"
-run_plan --dry-run "$NOT_FACTORY"
-if [ "$REPLY_RC" -eq 0 ] && ! printf '%s\n' "$REPLY_OUT" | grep -qF -- 'ci-runner.io/factory'; then
-  ok "F7  a profile declaring FACTORY_NODE=false plans NO factory label"
+AS_FACTORY="${TMPROOT}/hp-as-a-factory.env"
+sed 's/^FACTORY_NODE=false$/FACTORY_NODE=true/' "$HP_PROFILE" > "$AS_FACTORY"
+run_plan --dry-run "$AS_FACTORY"
+if [ "$REPLY_RC" -eq 0 ] && printf '%s\n' "$REPLY_OUT" | grep -qF -- '--node-label ci-runner.io/factory=true'; then
+  ok "F7  the same profile declaring FACTORY_NODE=true plans the factory label"
 else
-  no "F7  a profile declaring FACTORY_NODE=false plans NO factory label (rc=${REPLY_RC})"
+  no "F7  the same profile declaring FACTORY_NODE=true plans the factory label (rc=${REPLY_RC})"
 fi
 
 # The five server-only steps are the server's on this node too — the posture

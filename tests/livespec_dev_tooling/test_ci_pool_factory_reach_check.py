@@ -93,10 +93,13 @@ _ADMIN_KUBECONFIG = "/etc/rancher/k3s/k3s.yaml"
 # a `factory` ResourceQuota slot on a node sharing its box with the CI pool.
 _RUN_NOW = "factory_reach_check_run_now"
 
-# The nodes the Definition of Done's host-captured leg names. The default run
-# covers every `ci_pool` node whose profile sets FACTORY_NODE=true, which is all
-# three today — the server included, since poweredge takes factory pods too.
-_HOST_CAPTURED_NODES = ("hp-xubuntu", "gmktec-xubuntu")
+# The nodes the Definition of Done's host-captured leg names that are still
+# factory nodes. The default run covers every `ci_pool` node whose profile sets
+# FACTORY_NODE=true: poweredge and gmktec. hp-xubuntu, which the leg also named,
+# declares FACTORY_NODE=false since 2026-11-03 (orchestrator plan
+# kubernetes-sandbox-backend, epic bd-ib-nmuyjc), so the default run no longer
+# covers it.
+_HOST_CAPTURED_NODES = ("gmktec-xubuntu",)
 
 # A `roles:` entry and its optional gate, matched as text because no YAML
 # library is importable in this suite (the package is deliberately
