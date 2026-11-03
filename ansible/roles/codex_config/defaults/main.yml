@@ -19,3 +19,12 @@ codex_config_feature: default_mode_request_user_input
 
 # What `codex features list` prints in the final column for an enabled feature.
 codex_config_enabled_state: "true"
+
+# The released Codex Driver owns this definition.  Host provisioning copies it
+# into the operator's user-unit directory rather than maintaining a second
+# ExecStart here, so a Driver update changes one canonical unit definition.
+codex_config_observer_unit_name: livespec-codex-hook-cache-observer.service
+codex_config_observer_unit_source: "{{ ansible_env.HOME }}/.local/share/livespec-driver-codex/dev-tooling/livespec-codex-hook-cache-observer.service"
+codex_config_observer_unit_dir: "{{ ansible_env.HOME }}/.config/systemd/user"
+codex_config_observer_unit_dest: "{{ ansible_env.HOME }}/.config/systemd/user/livespec-codex-hook-cache-observer.service"
+codex_config_user_runtime_dir: "/run/user/{{ ansible_facts['user_uid'] }}"
