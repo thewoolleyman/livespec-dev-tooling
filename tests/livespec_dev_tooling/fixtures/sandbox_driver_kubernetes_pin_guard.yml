@@ -1,0 +1,163 @@
+---
+# Committed proof fixture for livespec-dev-tooling-rnsfgg.  It uses only a
+# disposable local directory and never contacts a host or an upstream release.
+#
+# Run one case at a time, for example:
+#
+#   uvx --from ansible-core==2.21.4 ansible-playbook \
+#     -i localhost, tests/livespec_dev_tooling/fixtures/sandbox_driver_kubernetes_pin_guard.yml \
+#     -e sandbox_driver_kubernetes_pin_guard_case=mismatch
+#
+# The mismatch case deliberately exits non-zero: that is the proof that the
+# role refuses the proposed binary before its get_url tasks.  The matching and
+# unpinned cases install the fixture binary.  Run the live-drift case with
+# --check; it seeds an installed fixture binary while its live settings pin
+# disagrees, so the role reports DRIFT without changing a real host.
+- name: Exercise the sandbox-driver Kubernetes pin guard locally
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    sandbox_driver_kubernetes_pin_guard_case: matching
+    sandbox_driver_kubernetes_pin_guard_root: >-
+      /tmp/livespec-sandbox-driver-kubernetes-pin-guard
+    sandbox_driver_kubernetes_pin_guard_asset: >-
+      sandbox-driver-kubernetes-fixture-x86_64-unknown-linux-gnu
+    sandbox_driver_kubernetes_pin_guard_proof_asset: >-
+      sandbox-driver-kubernetes-proof-fixture-x86_64-unknown-linux-gnu
+    sandbox_driver_kubernetes_pin_guard_cli_asset: >-
+      lithos-sandbox-fixture-x86_64-unknown-linux-gnu
+  pre_tasks:
+    - name: Refuse an unknown fixture case
+      ansible.builtin.assert:
+        that:
+          - sandbox_driver_kubernetes_pin_guard_case in ['matching', 'mismatch', 'unpinned', 'live-drift']
+        fail_msg: >-
+          sandbox_driver_kubernetes_pin_guard_case must be matching, mismatch,
+          unpinned, or live-drift.
+
+    - name: Create the scratch fixture directories
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        mode: "0700"
+      loop:
+        - "{{ sandbox_driver_kubernetes_pin_guard_root }}"
+        - "{{ sandbox_driver_kubernetes_pin_guard_root }}/bin"
+        - "{{ sandbox_driver_kubernetes_pin_guard_root }}/config-home"
+        - "{{ sandbox_driver_kubernetes_pin_guard_root }}/fabro-instance"
+      check_mode: false
+
+    - name: Write the local fixture release assets
+      ansible.builtin.copy:
+        content: "fixture {{ item }}\n"
+        dest: "{{ sandbox_driver_kubernetes_pin_guard_root }}/{{ item }}"
+        mode: "0700"
+      loop:
+        - "{{ sandbox_driver_kubernetes_pin_guard_asset }}"
+        - "{{ sandbox_driver_kubernetes_pin_guard_proof_asset }}"
+        - "{{ sandbox_driver_kubernetes_pin_guard_cli_asset }}"
+      check_mode: false
+
+    - name: Calculate the fixture plugin digest
+      ansible.builtin.stat:
+        path: >-
+          {{ sandbox_driver_kubernetes_pin_guard_root }}/{{ sandbox_driver_kubernetes_pin_guard_asset }}
+        checksum_algorithm: sha256
+      register: sandbox_driver_kubernetes_pin_guard_plugin
+      check_mode: false
+
+    - name: Calculate the fixture companion digests
+      ansible.builtin.stat:
+        path: "{{ sandbox_driver_kubernetes_pin_guard_root }}/{{ item }}"
+        checksum_algorithm: sha256
+      loop:
+        - "{{ sandbox_driver_kubernetes_pin_guard_proof_asset }}"
+        - "{{ sandbox_driver_kubernetes_pin_guard_cli_asset }}"
+      register: sandbox_driver_kubernetes_pin_guard_companions
+      check_mode: false
+
+    - name: Set the fixture digests
+      ansible.builtin.set_fact:
+        sandbox_driver_kubernetes_pin_guard_digest: >-
+          {{ sandbox_driver_kubernetes_pin_guard_plugin.stat.checksum }}
+        sandbox_driver_kubernetes_pin_guard_wrong_digest: >-
+          {{ '0' * 64 if sandbox_driver_kubernetes_pin_guard_plugin.stat.checksum != '0' * 64 else '1' * 64 }}
+        sandbox_driver_kubernetes_pin_guard_proof_digest: >-
+          {{ sandbox_driver_kubernetes_pin_guard_companions.results[0].stat.checksum }}
+        sandbox_driver_kubernetes_pin_guard_cli_digest: >-
+          {{ sandbox_driver_kubernetes_pin_guard_companions.results[1].stat.checksum }}
+      check_mode: false
+
+    - name: Set the live settings digest for this fixture case
+      ansible.builtin.set_fact:
+        sandbox_driver_kubernetes_pin_guard_live_digest: >-
+          {{ sandbox_driver_kubernetes_pin_guard_wrong_digest
+             if sandbox_driver_kubernetes_pin_guard_case == 'live-drift'
+             else sandbox_driver_kubernetes_pin_guard_digest }}
+      check_mode: false
+
+    - name: Seed the live Fabro settings pin for this fixture case
+      ansible.builtin.copy:
+        content: |
+          [server.sandbox.providers.kubernetes]
+          enabled = true
+          path = "{{ sandbox_driver_kubernetes_pin_guard_root }}/bin/sandbox-driver-kubernetes"
+          sha256 = "{{ sandbox_driver_kubernetes_pin_guard_live_digest }}"
+        dest: "{{ sandbox_driver_kubernetes_pin_guard_root }}/fabro-instance/settings.toml"
+        mode: "0600"
+      check_mode: false
+
+    - name: Seed an installed binary for the live-drift check
+      ansible.builtin.copy:
+        src: >-
+          {{ sandbox_driver_kubernetes_pin_guard_root }}/{{ sandbox_driver_kubernetes_pin_guard_asset }}
+        dest: >-
+          {{ sandbox_driver_kubernetes_pin_guard_root }}/bin/sandbox-driver-kubernetes
+        mode: "0700"
+      when: sandbox_driver_kubernetes_pin_guard_case == 'live-drift'
+      check_mode: false
+
+    - name: Remove the fixture plugin before each apply proof
+      ansible.builtin.file:
+        path: >-
+          {{ sandbox_driver_kubernetes_pin_guard_root }}/bin/sandbox-driver-kubernetes
+        state: absent
+      when: sandbox_driver_kubernetes_pin_guard_case != 'live-drift'
+      check_mode: false
+
+  tasks:
+    - name: Apply the sandbox-driver Kubernetes role to the scratch fixture
+      ansible.builtin.include_role:
+        # noqa role-name[path] -- the fixture lives outside ansible/, so this
+        # explicit repository-relative role path keeps direct proof commands
+        # independent of the caller's current directory and config file.
+        name: "{{ playbook_dir }}/../../../ansible/roles/sandbox_driver_kubernetes"
+      vars:
+        sandbox_driver_kubernetes_version: fixture
+        sandbox_driver_kubernetes_release_url: >-
+          file://{{ sandbox_driver_kubernetes_pin_guard_root }}
+        sandbox_driver_kubernetes_sha256: >-
+          {{ sandbox_driver_kubernetes_pin_guard_digest }}
+        sandbox_driver_kubernetes_proof_sha256: >-
+          {{ sandbox_driver_kubernetes_pin_guard_proof_digest }}
+        sandbox_driver_kubernetes_cli_rev: fixture
+        sandbox_driver_kubernetes_cli_sha256: >-
+          {{ sandbox_driver_kubernetes_pin_guard_cli_digest }}
+        sandbox_driver_kubernetes_bin_dir: >-
+          {{ sandbox_driver_kubernetes_pin_guard_root }}/bin
+        sandbox_driver_kubernetes_user: root
+        sandbox_driver_kubernetes_group: root
+        sandbox_driver_kubernetes_config_homes:
+          - "{{ sandbox_driver_kubernetes_pin_guard_root }}/config-home"
+        fabro_server_instances:
+          - unit_name: fixture-fabro-server
+            home_dir: "{{ sandbox_driver_kubernetes_pin_guard_root }}/fabro-instance"
+            sandbox_providers: >-
+              {{ {} if sandbox_driver_kubernetes_pin_guard_case == 'unpinned' else
+                 {'kubernetes': {
+                   'path': sandbox_driver_kubernetes_pin_guard_root ~ '/bin/sandbox-driver-kubernetes',
+                   'sha256': sandbox_driver_kubernetes_pin_guard_wrong_digest
+                     if sandbox_driver_kubernetes_pin_guard_case == 'mismatch'
+                     else sandbox_driver_kubernetes_pin_guard_digest
+                 }} }}

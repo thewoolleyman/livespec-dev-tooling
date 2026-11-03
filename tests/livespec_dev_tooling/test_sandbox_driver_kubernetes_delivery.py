@@ -31,6 +31,7 @@ _DEFAULTS = _ROLE / "defaults" / "main.yml"
 _PLUGIN_TEMPLATE = _ROLE / "templates" / "plugin-config.toml.j2"
 _CLI_TEMPLATE = _ROLE / "templates" / "cli-config.toml.j2"
 _HOST_VARS_DOC = _ROLE / "HOST_VARS.md"
+_LIVE_PIN_DRIFT_TASKS = _ROLE / "tasks" / "report_live_pin_drift.yml"
 
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 
@@ -149,6 +150,22 @@ def test_matching_or_absent_instance_pins_leave_the_plugin_install_available() -
     assert "sandbox_driver_kubernetes_pin_conflicts | length == 0" in tasks
     assert "fabro_server_instances[].sandbox_providers" in documentation
     assert "path" in documentation and "sha256" in documentation
+
+
+def test_drift_reports_each_live_provider_pin_against_its_installed_binary() -> None:
+    """Check mode reads live settings and binary bytes without changing either."""
+    tasks = _read(path=_TASKS)
+    drift = _read(path=_LIVE_PIN_DRIFT_TASKS)
+    assert (
+        "- name: Report each live Fabro sandbox-provider pin against its installed binary" in tasks
+    )
+    assert "ansible.builtin.stat" in drift
+    assert "checksum_algorithm: sha256" in drift
+    assert "ansible.builtin.slurp" in drift
+    assert "settings.toml" in drift
+    assert "live pin" in drift
+    assert "DRIFT" in drift
+    assert "changed_when" in drift
 
 
 def test_no_machine_is_named() -> None:
