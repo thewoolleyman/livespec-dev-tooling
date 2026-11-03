@@ -58,6 +58,14 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.165.3](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.165.2...v1.165.3) (2026-11-03)
+
+
+### Bug Fixes
+
+* accept Codex hook dispatcher ([b79d772](https://github.com/thewoolleyman/livespec-dev-tooling/commit/b79d77256b02aae4b1667c5655846c49e22458f8))
+* Codex hook-bundle diagnostic names both accepted Bash entry points ([fb6b2e7](https://github.com/thewoolleyman/livespec-dev-tooling/commit/fb6b2e7f8dffc23c2e6f71163780c74abf6cf11c))
+
 ## [1.165.2](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.165.1...v1.165.2) (2026-11-03)
 
 
