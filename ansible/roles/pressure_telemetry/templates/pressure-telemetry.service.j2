@@ -1,0 +1,17 @@
+# {{ ansible_managed }}
+[Unit]
+Description=Emit host CPU, memory, and I/O pressure stall metrics
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+# The otel_collector role appends HONEYCOMB_INGEST_KEY_LIVESPEC to this file on
+# every execution target.  This emitter posts OTLP directly, so no collector
+# configuration change is required.
+EnvironmentFile=/etc/otel-collector/.env
+ExecStart={{ pressure_telemetry_script_dest }}
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
