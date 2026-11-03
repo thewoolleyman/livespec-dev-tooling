@@ -1415,7 +1415,7 @@ done
 p="${TMPROOT}/hp-runner-only-at-zero.env"
 sed 's#^ADMISSION_CAPACITY_C=.*#ADMISSION_CAPACITY_C=0#' "$HP" > "$p"
 run_layout "$BARE" --dry-run "$p"
-if [ "$REPLY_RC" -ne 0 ] && printf '%s' "$REPLY_OUT" | grep -qF 'ADMISSION_CAPACITY_C must be a positive integer'; then
+if [ "$REPLY_RC" -ne 0 ] && printf '%s' "$REPLY_OUT" | grep -F 'ADMISSION_CAPACITY_C must be a positive integer' >/dev/null; then
   ok "J6  a runner-only node advertising no churn slot is refused"
 else
   no "J6  a runner-only node advertising no churn slot is refused (rc=${REPLY_RC})"
@@ -1424,7 +1424,7 @@ fi
 p="${TMPROOT}/hp-runner-only-tainted.env"
 sed 's#^NODE_TAINTS=.*#NODE_TAINTS=node-role/ci=factory:NoSchedule#' "$HP" > "$p"
 run_layout "$BARE" --dry-run "$p"
-if [ "$REPLY_RC" -ne 0 ] && printf '%s' "$REPLY_OUT" | grep -qF 'NODE_TAINTS must carry no node-role/ci record'; then
+if [ "$REPLY_RC" -ne 0 ] && printf '%s' "$REPLY_OUT" | grep -F 'NODE_TAINTS must carry no node-role/ci record' >/dev/null; then
   ok "J7  a runner-only node keeping its node-role/ci taint is refused"
 else
   no "J7  a runner-only node keeping its node-role/ci taint is refused (rc=${REPLY_RC})"
@@ -1439,7 +1439,7 @@ sed -e 's#^CI_NODE_FACILITIES=.*#CI_NODE_FACILITIES=none#' \
     -e 's#^ADMISSION_CAPACITY_C=.*#ADMISSION_CAPACITY_C=0#' \
     "$HP" > "$HP_CLOSED"
 run_layout "$BARE" --dry-run "$HP_CLOSED"
-if [ "$REPLY_RC" -eq 0 ] && printf '%s' "$REPLY_OUT" | grep -qF 'CI_NODE_FACILITIES=none' \
+if [ "$REPLY_RC" -eq 0 ] && printf '%s' "$REPLY_OUT" | grep -F 'CI_NODE_FACILITIES=none' >/dev/null \
    && [ "$(printf '%s\n' "$REPLY_OUT" | grep -c '^+ ' || true)" -eq 0 ]; then
   ok "J9  the closed hp profile plans NOT ONE mutating command and names CI_NODE_FACILITIES=none"
 else
