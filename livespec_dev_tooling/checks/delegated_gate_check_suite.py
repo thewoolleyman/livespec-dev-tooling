@@ -33,7 +33,7 @@ CHECK_PURITY = "tree-pure"
 _CHECK_ID = "delegated_gate_check_suite"
 _FAIL_EXIT = 4
 _PRE_COMMIT_RECIPES = frozenset({"check-pre-commit", "check-pre-commit-gated-tree"})
-_ASSIGNMENT = re.compile(r"[A-Za-z_][A-Za-z0-9_]*=\S+")
+_ASSIGNMENT = re.compile(r"[A-Za-z_][A-Za-z0-9_]*=\S*")
 
 
 def _recipe(*, entry: str) -> str | None:

@@ -96,6 +96,17 @@ def _write_config(*, root: Path, body: str) -> None:
             + "\n",
             4,
         ),
+        (
+            "\n".join(
+                (
+                    "[tool.livespec_dev_tooling]",
+                    "delegated_gate = true",
+                    'gate_check_suite = ["hook_gate= check-pre-commit"]',
+                )
+            )
+            + "\n",
+            4,
+        ),
     ],
 )
 def test_main_checks_only_the_declared_final_pre_push_slot(
