@@ -60,6 +60,33 @@
       this role only configures it.
     success_msg: "codex resolves"
 
+- name: Stage the released Driver dev-tooling for the observer unit
+  # The unit's ExecStart and its definition both live under this directory, and
+  # no other provisioning step stages it.  `force` keeps the staged tree a
+  # faithful copy of the release ref, since the observer runs from it.
+  ansible.builtin.git:
+    repo: "{{ codex_config_observer_driver_repo }}"
+    dest: "{{ codex_config_observer_driver_dir }}"
+    version: "{{ codex_config_observer_driver_version }}"
+    update: true
+    force: true
+  become: false
+  register: codex_config_observer_driver_checkout
+
+- name: Report that an apply would stage the released Driver dev-tooling
+  # Under --check the clone does not happen, so the source stat below would
+  # read an absent file and the unit copy would have nothing to copy.  Say what
+  # an apply does instead of failing the drift report on a task that never ran.
+  ansible.builtin.debug:
+    msg: >-
+      DRIFT: the released Driver dev-tooling is not current at
+      {{ codex_config_observer_driver_dir }}. An apply would stage
+      {{ codex_config_observer_driver_repo }} at
+      {{ codex_config_observer_driver_version }} there.
+  when:
+    - ansible_check_mode
+    - codex_config_observer_driver_checkout is changed
+
 - name: Require the released Driver observer unit
   # The Driver is the only owner of the observer's ExecStart and restart
   # policy.  Refuse before writing a stale or locally invented substitute when
@@ -83,6 +110,7 @@
       livespec-driver-codex before converging this role; do not replace the
       Driver-owned definition with a local copy.
     success_msg: released Driver observer unit is available
+  when: not (ansible_check_mode and codex_config_observer_driver_checkout is changed)
 
 - name: Read whether the Codex operator lingers after logout
   ansible.builtin.command:
@@ -153,6 +181,7 @@
     mode: "0644"
     remote_src: true
   become: false
+  when: not (ansible_check_mode and codex_config_observer_driver_checkout is changed)
 
 - name: Enable and start the Codex hook-cache observer unit
   ansible.builtin.systemd_service:
@@ -165,6 +194,22 @@
     XDG_RUNTIME_DIR: "{{ codex_config_user_runtime_dir }}"
     DBUS_SESSION_BUS_ADDRESS: "unix:path={{ codex_config_user_runtime_dir }}/bus"
   become: false
+  when: not (ansible_check_mode and codex_config_observer_driver_checkout is changed)
+
+- name: Restart the Codex hook-cache observer when the staged Driver code changed
+  # A running observer keeps the code it started with; the unit file is
+  # unchanged by a Driver release, so enabling and starting it is not enough.
+  ansible.builtin.systemd_service:
+    name: "{{ codex_config_observer_unit_name }}"
+    scope: user
+    state: restarted
+  environment:
+    XDG_RUNTIME_DIR: "{{ codex_config_user_runtime_dir }}"
+    DBUS_SESSION_BUS_ADDRESS: "unix:path={{ codex_config_user_runtime_dir }}/bus"
+  become: false
+  when:
+    - not ansible_check_mode
+    - codex_config_observer_driver_checkout is changed
 
 - name: Read the Codex hook-cache observer unit state back
   ansible.builtin.command:
