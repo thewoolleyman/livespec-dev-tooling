@@ -62,8 +62,15 @@ def test_malformed_ordinary_flags_are_named_configuration_refusals() -> None:
 
 
 def test_revert_wins_over_repair_and_requires_a_complete_identity() -> None:
-    """The stronger emergency signal is selected before ordinary repair work."""
+    """The stronger emergency signal selects only a recorded incident merge."""
     module = _module()
+
+    unrecorded = module.resolve_execution_context(
+        environ={module.EXPEDITED_INCIDENT_RESPONSE_REVERT: "1"},
+        invocation=module.Invocation.ORDINARY,
+        identity=_identity(module=module),
+    )
+    assert not unrecorded.is_successful
 
     selected = module.resolve_execution_context(
         environ={
@@ -71,7 +78,16 @@ def test_revert_wins_over_repair_and_requires_a_complete_identity() -> None:
             module.EXPEDITED_INCIDENT_RESPONSE_REVERT: "1",
         },
         invocation=module.Invocation.ORDINARY,
-        identity=_identity(module=module),
+        identity=module.OperationIdentity(
+            incident_item_id="livespec-dev-tooling-incident",
+            attempt_id="attempt-001",
+            phase="emergency-revert",
+            repository="thewoolleyman/livespec-dev-tooling",
+            base_sha="a" * 40,
+            head_sha="b" * 40,
+            operation_id="operation-001",
+            recorded_incident_merge_sha="c" * 40,
+        ),
     )
     missing = module.resolve_execution_context(
         environ={module.EXPEDITED_INCIDENT_RESPONSE_REVERT: "1"},
@@ -80,6 +96,7 @@ def test_revert_wins_over_repair_and_requires_a_complete_identity() -> None:
     )
 
     assert selected.unwrap().mode is module.ExecutionMode.EMERGENCY_REVERT
+    assert unrecorded.failure().code == "missing-recorded-incident-merge"
     assert missing.failure().code == "missing-incident-identity"
 
 
