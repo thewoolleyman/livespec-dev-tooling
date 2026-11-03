@@ -1902,5 +1902,21 @@
     "test": "TODO",
     "reason": "Spec-first: a real test at the integration tier or above is owed for this scenario, driving a pytest session that loads the flake-retry plugin against a fixture repository with a controlled change set; livespec-dev-tooling-crxcy4 owns it.",
     "work_item": "livespec-dev-tooling-crxcy4"
+  },
+  {
+    "heading": "## Scenario: a CI job killed at Set up job by an action-download 429 is re-run with backoff",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "work_item": "livespec-dev-tooling-cetyrq",
+    "reason": "A real test at the integration tier or above is owed for this heading: an integration test of this repository's Set-up-job 429 re-run workflow over recorded job logs, proving a 429 or 'An action could not be found' failure at Set up job is re-run with a growing wait up to three attempts and that a later-step failure is not re-run (proposal a-ci-job-that-fails, v124). livespec-dev-tooling-cetyrq owns it."
+  },
+  {
+    "heading": "## Scenario: a merged runner-pool change reaches the live cluster through one committed apply",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "work_item": "livespec-dev-tooling-un3zhi",
+    "reason": "A real test at the integration tier or above is owed for this heading: an integration test of the committed live-converge playbook proving it runs the CI stack converge and waits, fails naming the unit result and journal tail when the converge fails, and reports no change on an unchanged host (proposal no-committed-apply-runs-the, v124). livespec-dev-tooling-un3zhi owns it."
   }
 ]

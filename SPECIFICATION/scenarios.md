@@ -80,7 +80,7 @@ Then the PR adds the new check module under `livespec_dev_tooling/checks/<new-sl
 
 And the PR bumps `pyproject.toml`'s `version` field with a `feat:` Conventional Commit
 
-And `release-please` opens a corresponding release PR on merge that cuts the next MINOR version
+And `release-please` opens a corresponding release PR at its next release window that cuts the next MINOR version
 
 ## Scenario: a breaking change to an existing check's CLI ships as a MAJOR bump
 
@@ -2311,3 +2311,31 @@ When the red-green-replay Red leg runs its staged failing test
 Then the plugin MUST NOT re-run it
 
 And when a Green or suite-green replay leg's suite passes after a re-run, the leg MUST accept the summary, while a suite whose final outcome is a failure MUST still be refused
+
+## Scenario: a CI job killed at Set up job by an action-download 429 is re-run with backoff
+
+Given a gating CI job of livespec-dev-tooling that failed at its runner's `Set up job` step
+
+And its log shows the runner's action download refused with `429 (Too Many Requests)`
+
+When the job's workflow run completes
+
+Then the job MUST be re-run automatically after a wait
+
+And a second such failure MUST be re-run after a longer wait, up to three automatic attempts
+
+And a job that failed at any later step MUST NOT be re-run, and its failure MUST stay the run's verdict
+
+## Scenario: a merged runner-pool change reaches the live cluster through one committed apply
+
+Given a merged change that adds a runner scale set and its ClusterQueue under `ci-runner/k3s/phase2/`
+
+And the converge tree on the CI server has been refreshed to that change
+
+When the operator runs the committed live-converge apply from the control node
+
+Then the CI stack converge MUST run on the CI server and the apply MUST wait for it
+
+And the new scale set's listener and ClusterQueue MUST exist on the live cluster
+
+And a second run of the same apply MUST report no change
