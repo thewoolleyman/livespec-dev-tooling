@@ -1056,6 +1056,10 @@ wait_for_stand_in_proxy() {
   deadline=$((SECONDS + deadline_seconds))
   while [ "${SECONDS}" -lt "${deadline}" ]; do
     remaining=$((deadline - SECONDS))
+    if [ "${remaining}" -le 0 ]; then
+      fail "the stand-in proxy on port ${port} never answered HTTP within ${deadline_seconds} s"
+      return 1
+    fi
     # A TCP open alone accepts a listener whose HTTP service is not ready.
     # curl requires a successful HTTP status, while its connection and total
     # transfer limits each use the time left from this helper's one deadline.
