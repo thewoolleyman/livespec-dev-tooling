@@ -9,6 +9,11 @@ import tempfile
 from dataclasses import dataclass, replace
 from pathlib import Path
 
+from livespec_dev_tooling._gate_host_authority import (
+    host_authority_decision,
+    run_host_authority_members,
+)
+from livespec_dev_tooling.config import load_gate_check_suite
 from livespec_dev_tooling.gate_credential import gates_kubeconfig_readable
 from livespec_dev_tooling.gate_remote_delegate import (
     delegated_gate_enabled,
@@ -177,6 +182,10 @@ def run_cluster_gate(*, repo_root: Path, command: tuple[str, ...]) -> ClusterGat
         return ClusterGateResult(exit_status=75, tree_hash="", job_name="")
     tree_hash, source_ref = source
     pytest_argv, check_suite = _remote_command(command=command)
+    if check_suite == ("check",):
+        declared = load_gate_check_suite(repo_root=repo_root)
+        if declared is not None:
+            check_suite = declared
     built = gate_remote_request(
         repo_root=repo_root,
         renderer=resolve_renderer(repo_root=repo_root),
@@ -199,6 +208,15 @@ def run_cluster_gate(*, repo_root: Path, command: tuple[str, ...]) -> ClusterGat
         capture_output=False,
     )
     verdict = run_gated_push(request=request, runner=default_gate_command_runner)
+    if verdict.state == GATE_PASSED:
+        verdict = host_authority_decision(
+            verdict=verdict,
+            ran=run_host_authority_members(
+                repo_root=repo_root,
+                tree_hash=tree_hash,
+                runner=default_gate_command_runner,
+            ),
+        )
     status = 0 if verdict.state == GATE_PASSED else 1 if verdict.state == GATE_FAILED else 75
     return ClusterGateResult(
         exit_status=status,
