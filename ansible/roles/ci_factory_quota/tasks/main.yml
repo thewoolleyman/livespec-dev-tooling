@@ -1,0 +1,104 @@
+---
+# ci_factory_quota: apply ONLY the `factory-runs` ResourceQuota from
+# ci-runner/k3s/phase2/factory/factory-namespace.yaml on the k3s server
+# (orchestrator plan bd-ib-nmuyjc, coordinator ruling (b) of 2026-11-03).
+#
+# WHY A ROLE OF ITS OWN. The boot converge (../ci_converge_unit) is the only
+# other path that applies this file, and it re-applies the WHOLE stack: Kueue,
+# every ClusterQueue, ARC and every scale set. So a quota change reaches the
+# cluster only at the next reboot, or through a whole-stack run under live CI,
+# which the coordinator vetoes. This role is the ../ci_local_path_provisioner
+# pattern: it converges that ONE object and nothing else. The namespace, the
+# NetworkPolicy and every other object in the same file are left to the boot
+# converge.
+#
+# The object is selected from the committed multi-document manifest by
+# kind == ResourceQuota and handed to kubectl as JSON, so the role can never
+# apply a sibling document.
+#
+# UNDER --check the diff below still RUNS (check_mode: false; `kubectl diff`
+# writes nothing) and reports a pending change as `changed`, so
+# `just ansible-drift ansible/ci-pool.yml --tags ci_factory_quota` shows the
+# drift instead of a silent `skipping`.
+#
+# AFTER THE APPLY it reads the live quota's spec.hard back and FAILS unless it
+# equals the committed one. The API server's admission reads spec.hard, so
+# that is what must match git.
+
+- name: Refuse to run anywhere but the k3s server
+  ansible.builtin.assert:
+    that:
+      - cluster_role == 'server'
+
+- name: Select the committed factory-runs ResourceQuota
+  ansible.builtin.set_fact:
+    ci_factory_quota_object: >-
+      {{ lookup('ansible.builtin.file', ci_factory_quota_manifest)
+         | ansible.builtin.from_yaml_all
+         | select('mapping')
+         | selectattr('kind', 'equalto', 'ResourceQuota')
+         | list }}
+
+- name: Fail unless the manifest holds exactly one ResourceQuota, factory/factory-runs
+  ansible.builtin.assert:
+    that:
+      - ci_factory_quota_object | length == 1
+      - ci_factory_quota_object[0].metadata.name == 'factory-runs'
+      - ci_factory_quota_object[0].metadata.namespace == 'factory'
+    fail_msg: >-
+      {{ ci_factory_quota_manifest }} must hold exactly one ResourceQuota,
+      factory/factory-runs; found {{ ci_factory_quota_object | length }}
+
+- name: Diff the committed factory-runs ResourceQuota against the cluster
+  ansible.builtin.command:
+    argv: [kubectl, diff, -f, "-"]
+    stdin: "{{ ci_factory_quota_object[0] | to_json }}"
+  environment:
+    KUBECONFIG: "{{ ci_factory_quota_kubeconfig }}"
+  become: true
+  check_mode: false
+  register: ci_factory_quota_diff
+  # kubectl diff: 0 = no drift, 1 = drift, anything else = the diff failed.
+  changed_when: ci_factory_quota_diff.rc == 1
+  failed_when: ci_factory_quota_diff.rc > 1
+
+- name: Apply the committed factory-runs ResourceQuota
+  ansible.builtin.command:
+    argv: [kubectl, apply, -f, "-"]
+    stdin: "{{ ci_factory_quota_object[0] | to_json }}"
+  environment:
+    KUBECONFIG: "{{ ci_factory_quota_kubeconfig }}"
+  become: true
+  when: ci_factory_quota_diff.rc == 1
+  changed_when: true
+
+- name: Read the live factory-runs quota's spec.hard back
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - -n
+      - factory
+      - get
+      - resourcequota
+      - factory-runs
+      - -o
+      - jsonpath={.spec.hard}
+  environment:
+    KUBECONFIG: "{{ ci_factory_quota_kubeconfig }}"
+  become: true
+  check_mode: false
+  changed_when: false
+  register: ci_factory_quota_live_hard
+  when: not ansible_check_mode
+
+- name: Fail unless the live spec.hard is the committed one
+  ansible.builtin.assert:
+    that:
+      - (ci_factory_quota_live_hard.stdout | from_json) == ci_factory_quota_object[0].spec.hard
+    fail_msg: >-
+      factory/factory-runs spec.hard {{ ci_factory_quota_live_hard.stdout }} is not
+      the committed {{ ci_factory_quota_object[0].spec.hard | to_json }}
+    success_msg: >-
+      live factory-runs spec.hard {{ ci_factory_quota_object[0].spec.hard | to_json }}
+      equals git
+  when: not ansible_check_mode

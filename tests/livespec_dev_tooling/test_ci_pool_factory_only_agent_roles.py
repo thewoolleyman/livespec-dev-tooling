@@ -154,6 +154,9 @@ _POWEREDGE_ROLES = (
     # The local-path provisioner manifest alone, under its own tag
     # (livespec-dev-tooling-5j5x). Server-only.
     "ci_local_path_provisioner",
+    # The factory-runs ResourceQuota alone, under its own tag (orchestrator plan
+    # bd-ib-nmuyjc). Server-only.
+    "ci_factory_quota",
     # The factory reach proof's install-and-consent-gated-run step
     # (livespec-dev-tooling-jvnqwv, freeze ruling R70). Server-only, and the ONE
     # role here gated on `cluster_role` rather than FACTORY_NODE despite being
