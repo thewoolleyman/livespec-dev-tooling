@@ -14,11 +14,18 @@ then FLAGS an idle node beside a saturated one. Saturation is judged from CPU
 PSI and mpstat idle, never from load average (see
 .ai/ci-node-capacity-reads.md). Every ssh has a ConnectTimeout and an overall
 timeout; a host that fails every candidate user is reported UNREACHABLE with the
-error, never skipped. Nothing here mutates: only cat / mpstat / kubectl get.
+error, never skipped. Nothing here mutates: only cat / mpstat / kubectl get / bd list.
+
+The UNTICKETED-READY section reads every livespec beads tenant's READY items
+through the credential wrapper and flags any non-epic READY item older than
+30 minutes that has no dispatcher ticket behind it (no seq-<id>.log, no queue
+entry, no capture-argv in the last 6 h). A tenant whose read fails is reported
+UNREADABLE, never skipped.
 """
 
 import argparse
 import collections
+import concurrent.futures
 import datetime
 import json
 import pathlib
@@ -50,6 +57,12 @@ LAUNCH_WINDOW_S = 30 * 60
 MIN_POD_COLS = 8
 QUOTA_COLS = 3
 SSH_BIN = shutil.which("ssh") or "ssh"
+PROJECTS = pathlib.Path("/data/projects")
+ENV_WRAPPER = "/usr/local/bin/with-livespec-env.sh"
+READY_SECTION_TIMEOUT_S = 60
+READY_STALE_S = 30 * 60
+CAPTURE_WINDOW_S = 6 * 3600
+TITLE_MAX = 80
 
 
 def out(text=""):
@@ -261,7 +274,123 @@ def recent_launches(now):
     return sorted(set(launches), key=lambda ln: -seconds_ago(ln[:8], now))
 
 
-def build_flags(nodes, cluster, factory):
+def ready_tenants():
+    """Every livespec repo under /data/projects that carries a beads tenant pointer."""
+    repos = [PROJECTS / "livespec", *sorted(PROJECTS.glob("livespec-*"))]
+    return [r for r in repos if (r / ".beads" / "config.yaml").is_file()]
+
+
+def first_error_line(text):
+    lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
+    real = [ln for ln in lines if not ln.lower().startswith("warning")]
+    return ((real or lines or ["no output"])[0])[:200]
+
+
+def read_ready(repo, timeout_s):
+    """READY items of one tenant via the wrapper (`bd ready` is dead here; see CLAUDE.md)."""
+    argv = [ENV_WRAPPER, "--", "bd", "list", "--status", "ready", "--limit", "0", "--json"]
+    try:
+        proc = subprocess.run(  # noqa: S603
+            argv, cwd=repo, capture_output=True, text=True, timeout=timeout_s, check=False
+        )
+    except subprocess.TimeoutExpired:
+        return None, f"timeout after {timeout_s}s"
+    except OSError as exc:
+        return None, str(exc)
+    if proc.returncode != 0:
+        return None, first_error_line(proc.stderr or proc.stdout or f"exit {proc.returncode}")
+    try:
+        items = json.loads(proc.stdout or "[]")
+    except ValueError as exc:
+        return None, f"unparseable JSON: {exc}"
+    if not isinstance(items, list):
+        return None, "unexpected JSON shape (not a list)"
+    return items, None
+
+
+def queue_texts():
+    texts = []
+    try:
+        for p in QUEUE_DIR.iterdir():
+            if p.is_file():
+                try:
+                    texts.append(p.read_text(errors="replace"))
+                except OSError:
+                    continue
+    except OSError:
+        pass
+    return texts
+
+
+def is_ticketed(item_id, queued):
+    if (CANARY / f"seq-{item_id}.log").exists():
+        return True
+    pat = re.compile(r"(?<![\w.-])" + re.escape(item_id) + r"(?![\w.-])")
+    if any(pat.search(t) for t in queued):
+        return True
+    cutoff = time.time() - CAPTURE_WINDOW_S
+    return any(p.stat().st_mtime >= cutoff for p in CANARY.glob(f"{item_id}-r*.capture-argv"))
+
+
+def fmt_age(seconds):
+    m = int(seconds // 60)
+    if m < 60:
+        return f"{m}m"
+    h, m = divmod(m, 60)
+    if h < 48:
+        return f"{h}h{m:02d}m"
+    return f"{h // 24}d{h % 24:02d}h"
+
+
+def read_unticketed_ready():
+    """Flag non-epic READY items >30m old with no ticket, across every tenant, in ~60s total."""
+    result = {"tenants": [], "unreadable": [], "items": []}
+    now = datetime.datetime.now(datetime.UTC)
+    deadline = time.monotonic() + READY_SECTION_TIMEOUT_S
+    tenants = ready_tenants()
+    pool = concurrent.futures.ThreadPoolExecutor(max_workers=max(1, len(tenants)))
+    futures = {pool.submit(read_ready, r, READY_SECTION_TIMEOUT_S - 5): r for r in tenants}
+    reads = {}
+    for fut, repo in futures.items():
+        remaining = max(0.1, deadline - time.monotonic())
+        try:
+            reads[repo] = fut.result(timeout=remaining)
+        except concurrent.futures.TimeoutError:
+            reads[repo] = (None, f"section timeout after {READY_SECTION_TIMEOUT_S}s")
+    pool.shutdown(wait=False, cancel_futures=True)
+    queued = queue_texts()
+    for repo in tenants:
+        items, err = reads[repo]
+        if err is not None:
+            result["unreadable"].append({"repo": repo.name, "error": err})
+            continue
+        result["tenants"].append({"repo": repo.name, "ready": len(items)})
+        for it in items:
+            if it.get("issue_type") == "epic" or not it.get("id"):
+                continue
+            try:
+                stamp = (it.get("updated_at") or "").replace("Z", "+00:00")
+                updated = datetime.datetime.fromisoformat(stamp)
+            except ValueError:
+                continue
+            age = (now - updated).total_seconds()
+            if age <= READY_STALE_S or is_ticketed(it["id"], queued):
+                continue
+            result["items"].append(
+                {
+                    "repo": repo.name,
+                    "id": it["id"],
+                    "age_s": int(age),
+                    "age": fmt_age(age),
+                    "priority": it.get("priority"),
+                    "title": (it.get("title") or "")[:TITLE_MAX],
+                }
+            )
+    result["items"].sort(key=lambda r: (r["repo"], -r["age_s"]))
+    return result
+
+
+def build_flags(nodes, cluster, factory, unticketed):
     flags = []
     live = [n for n in nodes if n["reachable"] and n["name"] != "vps"]
     for n in nodes:
@@ -292,10 +421,15 @@ def build_flags(nodes, cluster, factory):
         )
     elif c is not None and f < c and q:
         flags.append(f"BELOW-CAP fleet={f} cap={c} with {q} ticket(s) queued")
+    for u in unticketed["unreadable"]:
+        flags.append(f"UNREADABLE {u['repo']}: {u['error']}")
+    if unticketed["items"]:
+        n = len(unticketed["items"])
+        flags.append(f"UNTICKETED-READY {n} item(s) ready >30m with no ticket (see section)")
     return flags
 
 
-def render(nodes, cluster, factory, flags):
+def render(nodes, cluster, factory, unticketed, flags):
     ns_all = sorted({ns for v in cluster["pods"].values() for ns in v})
     out(f"FLEET UTILIZATION {datetime.datetime.now(datetime.UTC):%Y-%m-%dT%H:%M:%SZ}")
     out(
@@ -331,6 +465,15 @@ def render(nodes, cluster, factory, flags):
     out(f"LAUNCH lines, last 30 min: {len(factory['launches_30m'])}")
     for line in factory["launches_30m"][-5:]:
         out(f"  {line}")
+    tenants = ", ".join(f"{t['repo']}={t['ready']}" for t in unticketed["tenants"]) or "-"
+    out("\nUNTICKETED-READY (non-epic READY >30m, no seq log / queue entry / 6h capture-argv)")
+    out(f"  tenants read (ready count): {tenants}")
+    for u in unticketed["unreadable"]:
+        out(f"  UNREADABLE {u['repo']}: {u['error']}")
+    for it in unticketed["items"]:
+        out(f"  {it['repo']:34} {it['id']:40} {it['age']:>8}  {it['title']}")
+    if not unticketed["items"]:
+        out("  none")
     out("\nFLAGS")
     for flag in flags or ["none"]:
         out(f"  {flag}")
@@ -342,15 +485,23 @@ def main():
     args = ap.parse_args()
     nodes = [probe_node(h) for h in HOSTS] + [probe_vps()]
     cluster, factory = read_cluster(), read_factory()
-    flags = build_flags(nodes, cluster, factory)
+    unticketed = read_unticketed_ready()
+    flags = build_flags(nodes, cluster, factory, unticketed)
     if args.json:
         out(
             json.dumps(
-                {"nodes": nodes, "cluster": cluster, "factory": factory, "flags": flags}, indent=2
+                {
+                    "nodes": nodes,
+                    "cluster": cluster,
+                    "factory": factory,
+                    "unticketed_ready": unticketed,
+                    "flags": flags,
+                },
+                indent=2,
             )
         )
     else:
-        render(nodes, cluster, factory, flags)
+        render(nodes, cluster, factory, unticketed, flags)
     return 0
 
 

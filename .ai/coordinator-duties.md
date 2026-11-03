@@ -117,6 +117,17 @@ file is rewritten, so read the last lines before acting on one.
 
 Measured 2026-11-01: j6piwg and 7u4tii sat refused as spec-change tier for 4 h while the ledger showed both as `ready`.
 
+**Sweep for unticketed READY work every tick, and read Codex seats directly.** A READY item with no ticket behind it is
+a stall, however it got there. Every tick, read the UNTICKETED-READY section of
+`scripts/coordinator/fleet-utilization.sh`, and route every flagged item belonging to a plan on the priorities record to
+legacy-dispatcher-agent, at that plan's priority. A Codex seat cannot SendMessage a Claude seat, so its asks land in
+ledger comments that nobody reads. Read every Codex seat's pane each tick
+(`herdr pane read <pane> --source recent-unwrapped`), and treat any item that carries the label `dispatch:requested` as
+a request to the dispatcher. Measured 2026-11-03: livespec-dev-tooling-xllgai, the only factory blocker of the Hetzner
+track, sat READY and unticketed from about 14:31Z to 16:2xZ. Its Codex owner had posted its pickup requests as comments
+on bd-ib-voozdp. The maintainer: "Ensure there is a permanent fix for this", recorded on epic
+`livespec-dev-tooling-6tgd2z`.
+
 **Audit every child of a top-3 plan, every tick.** A seat that is busy on one child hides the rest of its plan, so its
 pane and its own report are never evidence that the plan is moving. For each owning plan of priorities 1-3:
 
