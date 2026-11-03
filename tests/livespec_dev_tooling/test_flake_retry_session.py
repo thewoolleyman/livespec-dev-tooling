@@ -15,6 +15,7 @@ import sys
 from pathlib import Path
 from types import SimpleNamespace
 from typing import cast
+from unittest.mock import Mock
 
 import pytest
 
@@ -213,6 +214,10 @@ def _unknown_change_set(**_: object) -> None:
     return None
 
 
+def _config_with_rerunfailures(*, active: bool) -> SimpleNamespace:
+    return SimpleNamespace(pluginmanager=SimpleNamespace(hasplugin=Mock(return_value=active)))
+
+
 def _capturing_reporter(*, into: list[str]) -> SimpleNamespace:
     def write_sep(*args: str, **_: object) -> None:
         into.append(args[1])
@@ -235,11 +240,33 @@ def test_the_collection_hook_marks_only_untouched_tests(
 
     session = SimpleNamespace(config=SimpleNamespace(rootpath=tmp_path))
     plugin.pytest_collection_modifyitems(
-        session, None, [item("test_safe.py"), item("test_changed.py")]
+        session,
+        _config_with_rerunfailures(active=True),
+        [item("test_safe.py"), item("test_changed.py")],
     )
 
     assert len(markers["test_safe.py"]) == 1
     assert markers["test_changed.py"] == []
+
+
+def test_the_collection_hook_marks_nothing_without_the_rerunfailures_plugin(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A session without pytest-rerunfailures gets no `flaky` marker it cannot honour."""
+    plugin = importlib.import_module("livespec_dev_tooling.flake_retry")
+    _ = (tmp_path / "test_safe.py").write_text("X = 1\n", encoding="utf-8")
+    monkeypatch.setattr(plugin, "change_paths", _only_test_changed_changed)
+    added: list[object] = []
+    config = _config_with_rerunfailures(active=False)
+
+    plugin.pytest_collection_modifyitems(
+        SimpleNamespace(config=SimpleNamespace(rootpath=tmp_path)),
+        config,
+        [SimpleNamespace(path=tmp_path / "test_safe.py", add_marker=added.append)],
+    )
+
+    assert added == []
+    config.pluginmanager.hasplugin.assert_called_once_with("rerunfailures")
 
 
 def test_the_collection_hook_marks_nothing_when_the_change_set_is_unknown(
@@ -480,3 +507,17 @@ def test_the_summary_hook_annotates_each_retry_under_github_actions(
     )
 
     assert written[-1] == "::warning::FLAKE-RETRIED t.py::t"
+
+
+@pytest.mark.integration
+def test_a_consumer_without_rerunfailures_collects_under_strict_markers(*, tmp_path: Path) -> None:
+    """With pytest-rerunfailures absent the session runs: the failure stands, unretried."""
+    repo = _flaky_repository(root=tmp_path, touch_test=False)
+
+    completed = _run_session(repo=repo, extra=("-p", "no:rerunfailures", "--strict-markers"))
+    output = completed.stdout + completed.stderr
+
+    assert "INTERNALERROR" not in output
+    assert completed.returncode == 1, output
+    assert "1 failed" in output
+    assert "FLAKE-RETRIED" not in output
