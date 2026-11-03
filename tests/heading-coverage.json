@@ -2006,5 +2006,13 @@
     "test": "TODO",
     "reason": "A real test at the integration tier or above is owed for this heading: the normally shipped incident capability must exercise this contract with ordinary-path controls; livespec-dev-tooling-wlrlt2 owns the implementation and scenario evidence under plan livespec-dev-tooling-bqnzcm.",
     "work_item": "livespec-dev-tooling-wlrlt2"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a routed job sets up its actions from the pool's action-archive cache, and falls back to a download when an archive is missing",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above (a host-captured end-to-end run) is owed for this scenario, running a routed job on the k3s pool with the action-archive cache populated, absent and kill-switched and reading each job's Set up job log; livespec-dev-tooling-a35sa4 owns it, and its Definition of Done asserts this behaviour.",
+    "work_item": "livespec-dev-tooling-a35sa4"
   }
 ]
