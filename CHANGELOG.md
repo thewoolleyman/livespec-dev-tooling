@@ -58,6 +58,14 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.164.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.164.0...v1.164.1) (2026-11-03)
+
+
+### Bug Fixes
+
+* **gates:** keep a uvx tool's stdout and stderr apart through the proxy shim ([91fd8cc](https://github.com/thewoolleyman/livespec-dev-tooling/commit/91fd8cc6593fc17f801dc137d241978a2a0e5230))
+* **gates:** propagate a failing tool's status through the uvx proxy shim ([aebd99a](https://github.com/thewoolleyman/livespec-dev-tooling/commit/aebd99a9c84d8c44e7f509c844f5f8fe087b8ae5))
+
 ## [1.164.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.163.0...v1.164.0) (2026-11-03)
 
 
