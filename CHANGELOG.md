@@ -58,6 +58,23 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.164.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.163.0...v1.164.0) (2026-11-03)
+
+
+### Features
+
+* define Honeycomb tick query contract ([046d67f](https://github.com/thewoolleyman/livespec-dev-tooling/commit/046d67f1e4facfa1e729159bb9707a6cc1c24178))
+* reuse matching pre-commit suite evidence ([093e651](https://github.com/thewoolleyman/livespec-dev-tooling/commit/093e65144123dd5376b51893d4f9ac42e5c79ed3))
+
+
+### Bug Fixes
+
+* certify only the tree the pre-commit aggregate ran against ([250d39e](https://github.com/thewoolleyman/livespec-dev-tooling/commit/250d39e9515ee6fff08f917b58fdb1f0c5978797))
+* correct the cited other-caller query rate beside the per-tick budget constant ([b707aa4](https://github.com/thewoolleyman/livespec-dev-tooling/commit/b707aa4b045a30c666bb4bdb8563baffde0d0e04))
+* provision locked pyright before parallel checks ([50bb26f](https://github.com/thewoolleyman/livespec-dev-tooling/commit/50bb26f08aeca81ea674c4f1904c8fbc2e1aa5cf))
+* record same-tree evidence when the delegated pre-commit aggregate passes ([af73dbe](https://github.com/thewoolleyman/livespec-dev-tooling/commit/af73dbe265f1c48a06b0c9967d40f516ab2cadea))
+* warm pyright only when the root package's dev group pins it ([1014443](https://github.com/thewoolleyman/livespec-dev-tooling/commit/101444336063d05bba1cfef924d17ebd865fa3ff))
+
 ## [1.163.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.162.0...v1.163.0) (2026-11-03)
 
 
