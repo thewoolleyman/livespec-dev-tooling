@@ -58,6 +58,21 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.163.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.162.0...v1.163.0) (2026-11-03)
+
+
+### Features
+
+* add pressure telemetry acceptance test ([1c4c17a](https://github.com/thewoolleyman/livespec-dev-tooling/commit/1c4c17a77f1ff11d5797e7af0ff3a03f29d5640e))
+* provision the Codex hook-cache observer ([43ed55f](https://github.com/thewoolleyman/livespec-dev-tooling/commit/43ed55f47164201aa86bde4df062a155698343ef))
+* require dev host pressure telemetry key ([98d406b](https://github.com/thewoolleyman/livespec-dev-tooling/commit/98d406bada06c215efc0af6ec5af36bc382613e3))
+
+
+### Bug Fixes
+
+* emit valid pressure telemetry OTLP JSON ([2094771](https://github.com/thewoolleyman/livespec-dev-tooling/commit/2094771e296c79d2a40f810d5219df68e0f4802b))
+* stage the Driver release the observer unit executes from ([45e99e2](https://github.com/thewoolleyman/livespec-dev-tooling/commit/45e99e27127549c059e65be1531fe5f2e8137369))
+
 ## [1.162.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.161.0...v1.162.0) (2026-11-03)
 
 
