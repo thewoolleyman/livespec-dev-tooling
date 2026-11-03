@@ -3,13 +3,10 @@ set -euo pipefail
 
 : "${test_nprocs:?}"
 
-# Clean-env producer (work-item livespec-dev-tooling-yilyxr.1): COVERAGE_FILE
-# is UNSET for both the suite run and the per-file read, so the measurement is
-# IDENTICAL to CI's standalone clean jobs by construction — the lenient
-# self-referential-branch divergence that reverted the previous reuse
-# optimization cannot occur when the producer itself runs clean. The combined
-# repo-root `.coverage` this produces is the single data file check-coverage
-# then consumes instead of running the full suite a second time.
+# Namespaced producer (work-item livespec-dev-tooling-3wz453): preserve the
+# dispatcher's COVERAGE_FILE when present. Each aggregate receives its own
+# namespace, so simultaneous aggregates cannot write or combine the same data
+# file. Standalone/CI runs leave it unset and use the familiar repo-root file.
 #
 # Provenance marker (work-item livespec-dev-tooling-sc0z): the suite run is
 # stamped with the tracked-tree id from scripts/just/coverage-reuse-id.sh so
@@ -18,12 +15,15 @@ set -euo pipefail
 # the new one written only AFTER pytest succeeds, so a marker never outlives
 # the data it vouches for; per_file_coverage runs after the stamp so a
 # per-file failure still leaves the consumer a reusable, current file.
-reuse_stamp=.livespec-coverage-reuse-token
+coverage_file="${COVERAGE_FILE:-.coverage}"
+coverage_dir="$(dirname "$coverage_file")"
+reuse_stamp="$coverage_dir/.livespec-coverage-reuse-token"
+mkdir -p "$coverage_dir"
 rm -f "$reuse_stamp"
-env -u COVERAGE_FILE uv run pytest -n "${test_nprocs}" --cov --cov-branch --cov-config=pyproject.toml --cov-report=term-missing --durations=30
+uv run pytest -n "${test_nprocs}" --cov --cov-branch --cov-config=pyproject.toml --cov-report=term-missing --durations=30
 if reuse_id="$(scripts/just/coverage-reuse-id.sh)"; then
     printf '%s\n' "$reuse_id" > "$reuse_stamp"
 else
     echo ":: check-per-file-coverage: no coverage provenance id (not a git work tree); leaving no reuse marker"
 fi
-env -u COVERAGE_FILE uv run python -m livespec_dev_tooling.checks.per_file_coverage
+uv run python -m livespec_dev_tooling.checks.per_file_coverage

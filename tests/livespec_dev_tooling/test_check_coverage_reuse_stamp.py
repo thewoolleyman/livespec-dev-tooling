@@ -42,13 +42,15 @@ _REPORT_LINE = "run coverage report --fail-under=100"
 _FAKE_UV = """#!/usr/bin/env bash
 set -euo pipefail
 printf '%s\\n' "$*" >> "$UV_LOG"
+coverage_file="${COVERAGE_FILE:-.coverage}"
 case "$1 $2" in
     "run coverage")
-        printf 'TOTAL %s 0 100%%\\n' "$(cat .coverage)"
+        printf 'TOTAL %s 0 100%%\\n' "$(cat "$coverage_file")"
         exit "${FAKE_REPORT_STATUS:-0}"
         ;;
     "run pytest")
-        printf '%s\\n' "${FAKE_PYTEST_TOTAL:-1000}" > .coverage
+        mkdir -p "$(dirname "$coverage_file")"
+        printf '%s\\n' "${FAKE_PYTEST_TOTAL:-1000}" > "$coverage_file"
         printf 'TOTAL %s 0 100%%\\n' "${FAKE_PYTEST_TOTAL:-1000}"
         exit "${FAKE_PYTEST_STATUS:-0}"
         ;;
@@ -172,6 +174,40 @@ def test_producer_marker_unlocks_consume_once_reuse(*, tmp_path: Path) -> None:
     assert _uv_log(tmp_path=tmp_path) == [_PYTEST_WITH_DURATIONS_LINE, _PER_FILE_LINE, _REPORT_LINE]
     assert not (tmp_path / ".coverage").exists()
     assert not (tmp_path / _REUSE_STAMP).exists()
+
+
+def test_producer_and_consumer_reuse_the_dispatcher_namespace(*, tmp_path: Path) -> None:
+    """The full-tree pair writes and reads only its namespaced coverage file.
+
+    The parallel dispatcher supplies a unique ``COVERAGE_FILE`` per aggregate.
+    The scripts must preserve it (rather than unsetting it to use the shared
+    worktree root), and store the provenance marker beside that namespaced data
+    so simultaneous aggregates cannot validate or consume each other's run.
+    """
+    _install_harness(tmp_path=tmp_path, git_tree=True)
+    namespace = tmp_path / "covns-aggregate-a"
+    coverage_file = namespace / ".coverage"
+    producer = _run(
+        tmp_path=tmp_path,
+        script="check-per-file-coverage.sh",
+        extra={"COVERAGE_FILE": str(coverage_file), "FAKE_PYTEST_TOTAL": "4242"},
+    )
+
+    assert producer.returncode == 0, producer.stderr
+    assert coverage_file.read_text(encoding="utf-8") == "4242\n"
+    assert (namespace / _REUSE_STAMP).is_file(), "marker must stay with namespaced data"
+    assert not (tmp_path / ".coverage").exists(), "producer must not write shared root data"
+
+    consumer = _run(
+        tmp_path=tmp_path,
+        script="check-coverage.sh",
+        extra={"COVERAGE_FILE": str(coverage_file)},
+    )
+
+    assert consumer.returncode == 0, consumer.stderr
+    assert _reported_total(output=consumer.stdout) == "4242"
+    assert not coverage_file.exists(), "consumer must consume only its namespaced data"
+    assert not (namespace / _REUSE_STAMP).exists(), "consumer must consume its namespace marker"
 
 
 def test_producer_lists_the_thirty_slowest_test_phases(*, tmp_path: Path) -> None:

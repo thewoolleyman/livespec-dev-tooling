@@ -507,9 +507,9 @@ check-changed:
 
 # Aggregate (total) coverage gate at `fail_under = 100` (pyproject.toml
 # [tool.coverage.report]). Consume-once reuse of the CLEAN producer run
-# (work-item livespec-dev-tooling-yilyxr.1): check-per-file-coverage now
-# runs its suite with COVERAGE_FILE UNSET, so its repo-root `.coverage`
-# measures IDENTICALLY to this recipe's own clean run by construction.
+# (work-item livespec-dev-tooling-yilyxr.1): check-per-file-coverage produces
+# data in the dispatcher's unique COVERAGE_FILE namespace (or the repo root
+# when invoked standalone), which this ordered consumer reuses.
 # When that file is present (the `just check` aggregate — the dispatcher
 # serializes this target after the producer), this recipe reads it via
 # `coverage report --fail-under=100` and DELETES it, so no stale data
@@ -981,17 +981,12 @@ check-pbt-coverage-pure-modules:
 # Per-file 100% line+branch coverage gate. Runs pytest --cov upfront so
 # the data file exists when per_file_coverage reads it.
 #
-# CLEAN-ENV PRODUCER (work-item livespec-dev-tooling-yilyxr.1): the
-# script runs both the suite and the per-file read with COVERAGE_FILE
-# explicitly UNSET (`env -u`), overriding the dispatcher's namespaced
-# export from work-item livespec-dev-tooling-cmn. That makes this run
-# measure IDENTICALLY to CI's standalone clean jobs — the
-# self-referential-branch leniency that once forced check-coverage to
-# re-run the whole suite cannot occur — and its combined repo-root
-# `.coverage` is the single data file check-coverage consumes
-# (consume-once; see that recipe's comment). This is the PRODUCER of
-# the full-tree coverage data shared with check-coverage; CI proves the
-# clean-env full-suite measurement daily in both standalone matrix jobs.
+# NAMESPACED PRODUCER (work-item livespec-dev-tooling-3wz453): the script
+# preserves the dispatcher's COVERAGE_FILE export, so each aggregate writes
+# and reads only its own coverage data. Standalone CI leaves it unset and uses
+# the repo-root `.coverage`. This is the producer of the full-tree coverage
+# data shared with check-coverage; the dispatcher serializes the consumer
+# behind the writer.
 # The run is stamped with a provenance marker
 # (`.livespec-coverage-reuse-token`, gitignored) so the consumer can tell
 # this file from a focused-run leftover (work-item livespec-dev-tooling-sc0z).
