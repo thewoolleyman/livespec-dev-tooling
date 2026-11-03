@@ -69,6 +69,7 @@ class OperationIdentity:
     base_sha: str
     head_sha: str
     operation_id: str
+    recorded_incident_merge_sha: str | None = None
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -157,6 +158,21 @@ def _identity_refusal(*, identity: OperationIdentity | None) -> IncidentConfigur
     return None
 
 
+def _revert_refusal(*, identity: OperationIdentity | None) -> IncidentConfigurationRefusal | None:
+    """Require an emergency operation to name the merge it is allowed to undo."""
+    if identity is None or identity.recorded_incident_merge_sha is None:
+        return IncidentConfigurationRefusal(
+            code="missing-recorded-incident-merge",
+            detail="an emergency revert requires the recorded incident merge SHA it reverses",
+        )
+    if not identity.recorded_incident_merge_sha.strip():
+        return IncidentConfigurationRefusal(
+            code="invalid-recorded-incident-merge",
+            detail="an emergency revert recorded incident merge SHA must not be empty",
+        )
+    return None
+
+
 def _success(*, context: ExecutionContext) -> IncidentResolution:
     """Construct a successful resolution boundary value."""
     return IncidentResolution(result=Success(context))
@@ -165,6 +181,29 @@ def _success(*, context: ExecutionContext) -> IncidentResolution:
 def _failure(*, refusal: IncidentConfigurationRefusal) -> IncidentResolution:
     """Construct a named configuration-refusal boundary value."""
     return IncidentResolution(result=Failure(refusal))
+
+
+def _incident_mode(*, environ: Mapping[str, str]) -> Result[str, IncidentConfigurationRefusal]:
+    """Parse both ambient flags once, with the revert flag taking precedence."""
+    repair = parse_incident_truth_value(
+        name=EXPEDITED_INCIDENT_RESPONSE,
+        value=environ.get(EXPEDITED_INCIDENT_RESPONSE),
+    )
+    if not is_successful(repair):
+        return Failure(repair.failure())
+    revert = parse_incident_truth_value(
+        name=EXPEDITED_INCIDENT_RESPONSE_REVERT,
+        value=environ.get(EXPEDITED_INCIDENT_RESPONSE_REVERT),
+    )
+    if not is_successful(revert):
+        return Failure(revert.failure())
+    return Success(
+        ExecutionMode.EMERGENCY_REVERT
+        if revert.unwrap()
+        else ExecutionMode.EXPEDITED_REPAIR
+        if repair.unwrap()
+        else ExecutionMode.NORMAL
+    )
 
 
 def resolve_execution_context(
@@ -188,28 +227,17 @@ def resolve_execution_context(
                 identity=None,
             ),
         )
-    repair = parse_incident_truth_value(
-        name=EXPEDITED_INCIDENT_RESPONSE,
-        value=environ.get(EXPEDITED_INCIDENT_RESPONSE),
-    )
-    if not is_successful(repair):
-        return _failure(refusal=repair.failure())
-    revert = parse_incident_truth_value(
-        name=EXPEDITED_INCIDENT_RESPONSE_REVERT,
-        value=environ.get(EXPEDITED_INCIDENT_RESPONSE_REVERT),
-    )
-    if not is_successful(revert):
-        return _failure(refusal=revert.failure())
-    mode = (
-        ExecutionMode.EMERGENCY_REVERT
-        if revert.unwrap()
-        else ExecutionMode.EXPEDITED_REPAIR
-        if repair.unwrap()
-        else ExecutionMode.NORMAL
-    )
+    selected_mode = _incident_mode(environ=environ)
+    if not is_successful(selected_mode):
+        return _failure(refusal=selected_mode.failure())
+    mode = selected_mode.unwrap()
     if mode is ExecutionMode.NORMAL:
         return _success(context=ExecutionContext(mode=mode, invocation=invocation, identity=None))
     refusal = _identity_refusal(identity=identity)
     if refusal is not None:
         return _failure(refusal=refusal)
+    if mode is ExecutionMode.EMERGENCY_REVERT:
+        revert_refusal = _revert_refusal(identity=identity)
+        if revert_refusal is not None:
+            return _failure(refusal=revert_refusal)
     return _success(context=ExecutionContext(mode=mode, invocation=invocation, identity=identity))
