@@ -463,6 +463,43 @@ def test_a_cluster_gate_uses_the_worktree_tree_and_records_its_job(
     assert captured["check_suite"] == ("check",)
 
 
+def test_a_cluster_just_check_uses_the_declared_bootstrap_before_the_aggregate(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A gate-start full suite keeps the consumer's declared preparation steps."""
+    from returns.result import Success
+
+    from livespec_dev_tooling.gate_remote_client import GateRunRequest
+    from livespec_dev_tooling.gate_remote_verdict import GATE_PASSED, GateVerdict
+
+    module = importlib.import_module("livespec_dev_tooling.gate_runner_delegate")
+    root, _ = _init_repo(tmp_path=tmp_path)
+    _ = (root / "pyproject.toml").write_text(
+        "[tool.livespec_dev_tooling]\n"
+        "delegated_gate = true\n"
+        'gate_check_suite = ["install-pack", "install-hooks", "check"]\n',
+        encoding="utf-8",
+    )
+    captured: dict[str, object] = {}
+    request = GateRunRequest(
+        repo_root=root, mirror_url="mirror", manifest="manifest", gate_ref="ref"
+    )
+    monkeypatch.setattr(module, "_working_tree_source", lambda **_kwargs: ("tree", "commit"))
+    monkeypatch.setattr(module, "resolve_renderer", lambda **_kwargs: Path("renderer"))
+    monkeypatch.setattr(
+        module, "gate_remote_request", lambda **kwargs: captured.update(kwargs) or Success(request)
+    )
+    monkeypatch.setattr(
+        module,
+        "run_gated_push",
+        lambda **_kwargs: GateVerdict(state=GATE_PASSED, detail="green", token_written=False),
+    )
+
+    assert module.run_cluster_gate(repo_root=root, command=("just", "check")).exit_status == 0
+
+    assert captured["check_suite"] == ("install-pack", "install-hooks", "check")
+
+
 def test_a_cluster_gate_without_a_verdict_exits_75_without_a_local_retry(
     *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
