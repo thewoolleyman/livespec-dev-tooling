@@ -200,3 +200,13 @@ def test_pipefail_sweep_reports_a_line_broken_early_exiting_reader(tmp_path: Pat
     assert _early_reader_violations(paths=(unsafe_script,), repo_root=tmp_path) == (
         "scripts/unsafe.sh:3: if git diff --cached --name-only | grep -qxE 'needle'; then",
     )
+
+
+def test_pipefail_sweep_keeps_a_trailing_continuation_for_diagnostics() -> None:
+    """An incomplete final pipeline remains visible to the logical-line scanner."""
+    logical_lines = _logical_lines("set -o pipefail\nprintf 'needle\\n' |\n")
+
+    assert logical_lines == (
+        (1, "set -o pipefail"),
+        (2, "printf 'needle\\n' |"),
+    )
