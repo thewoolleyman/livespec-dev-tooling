@@ -618,6 +618,7 @@ if [ -n "${UVX_PROXY_FAIL:-}" ] && [ -n "${UV_DEFAULT_INDEX:-}" ]; then
 fi
 if [ -n "${UVX_TOOL_FAILS:-}" ]; then
   echo 'PLAY RECAP localhost : ok=3 failed=1'
+  echo 'tool diagnostic on stderr' >&2
   exit 2
 fi
 exit 0
@@ -1095,10 +1096,14 @@ if wait_for_stand_in_proxy "${uvx_proxy_port}"; then
   if GATE_TEST_PROXY="http://127.0.0.1:${uvx_proxy_port}" UVX_TOOL_FAILS=1 GATE_RUN_UVX=1 \
        run_gate_script "${declared_out}" "verify publish"; then
     fail "a failing tool run through the uvx proxy shim let the gate pass"
-  elif [ "$(grep -c '^uvx index=' "${SCRATCH}/stub.log")" -eq 1 ]; then
-    pass "a failing tool run through the uvx proxy shim fails the gate without a retry"
-  else
+  elif [ "$(grep -c '^uvx index=' "${SCRATCH}/stub.log")" -ne 1 ]; then
     fail "a failing tool through the uvx proxy shim was retried: $(cat "${SCRATCH}/stub.log")"
+  elif grep -qF 'PLAY RECAP' "${SCRATCH}/gate.out" && \
+       grep -qF 'tool diagnostic on stderr' "${SCRATCH}/gate.err" && \
+       ! grep -qF 'tool diagnostic on stderr' "${SCRATCH}/gate.out"; then
+    pass "a failing tool run through the uvx proxy shim fails the gate without a retry, its streams kept apart"
+  else
+    fail "the uvx proxy shim moved a failing tool's output between streams: out=$(cat "${SCRATCH}/gate.out") err=$(cat "${SCRATCH}/gate.err")"
   fi
 fi
 kill "${uvx_proxy_pid}" 2>/dev/null || true
