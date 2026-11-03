@@ -274,8 +274,8 @@ record_prune() {
 # removal failed or a containerd removal had to be undone; a tag left in place
 # because it is protected is not a failure.
 remove_superseded() {
-    local images in_use protected_ids reference id status=0
-    local -A pinned=() recorded=() id_of=()
+    local images in_use reference id status=0 began_referencing=0
+    local -A pinned=() recorded=() id_of=() protected_ids=()
     for reference in "$@"; do pinned[$reference]=1; done
     while IFS= read -r reference; do
         [[ -n $reference ]] && recorded[$reference]=1
@@ -293,20 +293,20 @@ remove_superseded() {
     done <<<"$images"
     # An image id is PROTECTED when any reference of it is pinned, was not
     # pulled by this warm, or when a container uses it.
-    protected_ids=$(
-        printf '%s\n' "$in_use"
-        while read -r reference id; do
-            [[ -z $reference ]] && continue
-            if [[ -n ${pinned[$reference]:-} || -z ${recorded[$reference]:-} ]]; then
-                printf '%s\n' "$id"
-            fi
-        done <<<"$images"
-    )
+    while IFS= read -r id; do
+        [[ -n $id ]] && protected_ids[$id]=1
+    done <<<"$in_use"
+    while read -r reference id; do
+        [[ -z $reference ]] && continue
+        if [[ -n ${pinned[$reference]:-} || -z ${recorded[$reference]:-} ]]; then
+            protected_ids[$id]=1
+        fi
+    done <<<"$images"
     for reference in "${!recorded[@]}"; do
         [[ -n ${pinned[$reference]:-} ]] && continue
         id=${id_of[$reference]:-}
         [[ -z $id ]] && continue
-        if printf '%s\n' "$protected_ids" | grep -qxF -- "$id"; then
+        if [[ -n ${protected_ids[$id]:-} ]]; then
             log "kept: $reference (in use, or it shares an image with a protected reference)"
             continue
         fi
@@ -317,8 +317,18 @@ remove_superseded() {
             continue
         fi
         if [[ $STORE == containerd ]]; then
-            if ! in_use=$(store_in_use_ids) ||
-                printf '%s\n' "$in_use" | grep -qxF -- "$id"; then
+            if ! in_use=$(store_in_use_ids); then
+                began_referencing=1
+            else
+                began_referencing=0
+                while IFS= read -r in_use_id; do
+                    if [[ $in_use_id == "$id" ]]; then
+                        began_referencing=1
+                        break
+                    fi
+                done <<<"$in_use"
+            fi
+            if [[ $began_referencing -eq 1 ]]; then
                 log "ERROR: a container began referencing $reference during its removal;" \
                     "pulling it back"
                 store_pull "$reference" || log "ERROR: could not pull $reference back"
