@@ -28,6 +28,12 @@ provider, declared digest, and proposed digest. Providers at other paths do not
 participate, so a host that declares no provider at this path installs the
 plugin normally.
 
+`just ansible-drift ansible/fabro-hosts.yml` reads each instance's live
+`settings.toml` and sha256 of every declared provider's installed binary. It
+reports `equal` when the two digests agree and `DRIFT` (an Ansible changed
+result) when a live pin or binary is missing or they differ; the drift read
+does not change either file.
+
 ## Variables
 
 | variable | default | meaning |

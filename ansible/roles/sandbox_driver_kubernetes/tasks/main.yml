@@ -89,3 +89,12 @@
     mode: "0644"
   become: true
   loop: "{{ sandbox_driver_kubernetes_config_homes }}"
+
+- name: Report each live Fabro sandbox-provider pin against its installed binary
+  # This read-only include runs under --check, which makes ansible-drift show a
+  # live settings.toml pin that no longer agrees with the binary it launches.
+  ansible.builtin.include_tasks: report_live_pin_drift.yml
+  loop: "{{ fabro_server_instances | default([]) }}"
+  loop_control:
+    loop_var: sandbox_driver_kubernetes_drift_instance
+    label: "{{ sandbox_driver_kubernetes_drift_instance.unit_name | default('unnamed instance') }}"
