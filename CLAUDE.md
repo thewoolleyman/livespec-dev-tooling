@@ -124,8 +124,10 @@ The files:
   `drive impl:` call), before reading anything into a quiet or stuck factory
   dispatch, before adding a ledger comment meant to
   reach a running worker or to record a queued item's wait, or before claiming
-  a template token renders (or not) in a Fabro run — a bare `fabro ps` asks the
-  wrong server, `runnable` can mean an orphaned run that will never start, a
+  a template token renders (or not) in a Fabro run, or before calling a failed
+  run "fresh" — a bare `fabro ps` asks the wrong server, the petri server can
+  resume a run after a store fault without the drive record showing it,
+  `runnable` can mean an orphaned run that will never start, a
   worker's brief is frozen at dispatch, a comment saying an item is "held"
   makes petri's screen refuse it, and `fabro create` plus `fabro dump` shows
   the resolved spec.
