@@ -331,6 +331,6 @@ def test_codex_hook_bundle_guard_not_referenced(*, tmp_path: Path) -> None:
         ),
     )
     assert (
-        "hooks.json PreToolUse/Bash entry MUST reference 'livespec_footgun_guard.py'"
-        in _codex_violations(root=tmp_path)
+        "hooks.json PreToolUse/Bash entry MUST reference 'pretooluse_dispatch.py' "
+        "(or 'livespec_footgun_guard.py')" in _codex_violations(root=tmp_path)
     )
