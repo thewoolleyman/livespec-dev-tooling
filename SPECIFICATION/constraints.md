@@ -30,11 +30,13 @@ Every check MUST follow the wrapper-shape contract codified in `contracts.md` §
 
 The library MUST apply its own checks to itself. Specifically, `just check` in this repo MUST run every shared check this library ships, against this repo's own source tree. Self-application is the dogfood loop that guarantees the shared checks are usable in practice — a check that the library cannot apply to itself is a check that no consumer can apply either.
 
+The incident execution selector defined in `contracts.md` §"Expedited incident execution" MAY defer invocation of members only for an authorized expedited repair or recorded emergency revert. It MUST preserve the complete normal aggregate and the real pass/fail behavior of check implementations, including fixture tests.
+
 Self-application is bootstrap-ordered: at library-bootstrap time, `just check` runs only the tool-backed subset (ruff, pyright, pytest); structural checks come online as each migrates from livespec-core.
 
 ## CI matrix shape
 
-CI workflows shipped by this library MUST mirror the per-target matrix shape with zero-`.py` subsetting on `pull_request` events and unconditional full-aggregate on `master` and `merge_group` events. The constraint is consumer-observable: any reusable workflow this library ships expects matrix consumers to see the same per-event shape on their own CI status checks. Deviating from the shape on a release would break consumers' branch-protection wiring that names individual matrix entries as required checks.
+CI workflows shipped by this library MUST mirror the per-target matrix shape with zero-`.py` subsetting on `pull_request` events and unconditional full-aggregate on `master` and `merge_group` events. The constraint is consumer-observable: any reusable workflow this library ships expects matrix consumers to see the same per-event shape on their own CI status checks. Deviating from the shape on a release would break consumers' branch-protection wiring that names individual matrix entries as required checks. The sole incident-specific selection exception is the exact authorized repair-PR form in `contracts.md` §"Expedited incident execution": it MUST retain stable protected aggregate names, disclose every deferred coverage or spec-enforcement invocation, and leave every master push and normal factory follow-up on the complete normal job graph.
 
 This repository's merge-gating CI routes to self-hosted capacity through the `CI_RUNNER_LABELS` repository variable, read directly at each gating job's `runs-on` with an inline literal fallback naming GitHub-hosted capacity. This is the fleet's standard self-hosted routing pattern. Setting the variable to a self-hosted target routes there. Restoring it to the hosted literal, or deleting it so the inline fallback applies, returns the gate to GitHub-hosted capacity.
 

@@ -2339,3 +2339,113 @@ Then the CI stack converge MUST run on the CI server and the apply MUST wait for
 And the new scale set's listener and ClusterQueue MUST exist on the live cluster
 
 And a second run of the same apply MUST report no change
+
+## Scenario: an incident invocation resolves mode before ordinary gate selection
+
+```gherkin
+Given an authorized incident item with explicit attempt/phase and exact repository/base/head identity, and ordinary behavior retained as a control
+When the operator exercises resolve trusted incident mode and operation identity
+Then an expedited invocation resolves its incident item, attempt, phase, repository and base/head into one typed execution context before selecting any gate.
+And an emergency revert resolves only against a recorded incident merge and takes precedence over an expedited repair flag.
+And normal master and normal factory follow-up force normal mode before interpreting inherited incident flags, including malformed values.
+And ordinary invocation preserves existing gate behavior while invalid incident identity produces a named configuration refusal.
+```
+
+## Scenario: an expedited local gate skips slow work and preserves fast failures
+
+```gherkin
+Given an authorized incident item with explicit attempt/phase and exact repository/base/head identity, and ordinary behavior retained as a control
+When the operator exercises select and bound expedited local gates before delegation
+Then expedited commit and push select applicable local gates before staging prechecks, autofix, normal evidence lookup, cluster probes or remote submission.
+And a known slow or unclassified gate is reported as deferred with its reason instead of launching the normal full aggregate.
+And an unknown selected gate that reaches sixty seconds terminates its owned process group and records deferred-timeout.
+And a selected fast gate failure refuses the repair with the actual failure while ordinary work retains normal gate selection.
+```
+
+## Scenario: focused incident verification cannot satisfy normal validation
+
+```gherkin
+Given an authorized incident item with explicit attempt/phase and exact repository/base/head identity, and ordinary behavior retained as a control
+When the operator exercises capture focused incident tests and touched-file coverage without normal cache reuse
+Then incident verification executes changed or directly related tests and reports coverage under existing thresholds only for the cumulative touched executable paths.
+And incident proof records one manual reproduction with expected and observed outcome alongside the focused test and coverage evidence.
+And focused collection uses isolated evidence keyed by mode, scope and exact tree while normal consumers reject partial incident evidence.
+And fixture tests of enforcement implementations retain their real positive and negative behavior when incident context is inherited.
+```
+
+## Scenario: incident commit provenance remains verifiable on normal master
+
+```gherkin
+Given an authorized incident item with explicit attempt/phase and exact repository/base/head identity, and ordinary behavior retained as a control
+When the operator exercises validate incident commit receipts and scoped host authorization
+Then an expedited repair publishes the exact EXPEDITED_INCIDENT_RESPONSE flag marker beside changed code or tests and binds its commit receipt to the recorded incident attempt.
+And normal range and replay readers validate historical incident provenance against the recorded PR, head and landed commits after the label or environment has disappeared.
+And an expedited receipt records deferred replay honestly and remains distinct from normal TDD proof.
+And a workflow incident requires its scoped host authorization receipt through the credential boundary while the factory retains its existing workflow credential scope.
+```
+
+## Scenario: an expedited PR defers coverage and spec work while master runs normally
+
+```gherkin
+Given an authorized incident item with explicit attempt/phase and exact repository/base/head identity, and ordinary behavior retained as a control
+When the operator exercises select expedited pr checks while forcing complete normal master ci
+Then a trusted expedited PR signal selects the declared fast checks while recording coverage and spec enforcement producers and consumers as intentionally deferred.
+And mixed CI batches and direct actions execute retained fast targets and publish a required aggregate that distinguishes actual passes, failures and deferred work.
+And a new PR head invalidates earlier incident verdicts and label events reconcile mode before permitting merge.
+And every normal master push disables both incident flags and selects its complete normal job graph regardless of PR labels, markers or ambient configuration.
+```
+
+## Scenario: the first required master leaf failure fences incident recovery
+
+```gherkin
+Given an authorized incident item with explicit attempt/phase and exact repository/base/head identity, and ordinary behavior retained as a control
+When the operator exercises fence incident recovery actions on an independent first-failure observer
+Then an incident merge is admitted only with a durable observer receipt from a known-good released controller independent of the candidate incident tree.
+And the first failing required master leaf job emits a trusted recovery action while other jobs in the same original run can continue.
+And atomic per-repository action ownership and incident generation validation prevent delayed events or duplicate delivery from mutating a corrected attempt.
+And recovery reads its trusted operation receipt and action fence during tenant or credential-wrapper failure and reconciles exact receipts back when service returns.
+```
+
+## Scenario: an incident revert preserves later changes without waiting for CI
+
+```gherkin
+Given an authorized incident item with explicit attempt/phase and exact repository/base/head identity, and ordinary behavior retained as a control
+When the operator exercises apply and merge the complete incident inverse without quality gates
+Then the incident recovery controller constructs the inverse of the complete landed multi-commit incident patch against current master and preserves unrelated later edits.
+And a changed expected head causes inverse recomputation while a genuine overlap enters an owned rollback-conflict phase.
+And the authorized revert merges through the scoped recovery principal without local tests, factory work or pre-merge CI waits.
+And recovery records exact action and merge receipts across timeout or restart while ordinary actors retain their existing branch protection obligations.
+```
+
+## Scenario: a reverted incident retains its original CI evidence before another attempt
+
+```gherkin
+Given an authorized incident item with explicit attempt/phase and exact repository/base/head identity, and ordinary behavior retained as a control
+When the operator exercises preserve failed incident ci and corrected attempt evidence
+Then revert and replacement events preserve the original master run and its expected job graph through terminal results.
+And evidence distinguishes completed, failed, prerequisite-blocked, cancelled and never-created checks and retains missing original-tree work as owned debt.
+And a corrected expedited attempt reuses the incident item while preserving its previous PR, merge, revert and evidence identities.
+And a new attempt after classification requires a repair or measured resolution rather than relanding unchanged code onto the same unresolved failure.
+```
+
+## Scenario: an incident rollback follows released artifacts into consuming repositories
+
+```gherkin
+Given an authorized incident item with explicit attempt/phase and exact repository/base/head identity, and ordinary behavior retained as a control
+When the operator exercises recover incident releases and adopted fleet consumers
+Then an incident release records source-to-tag, image, pin-carrier and installed-consumer attribution before adoption is acknowledged.
+And an incident revert fences stale queued adoption and assigns corrective release or rollback work to consumers that already adopted the affected artifact.
+And related master or other-PR regressions reopen the same incident attempt chain with stale cleanup actions fenced.
+And an irreversible-state change becomes eligible for unattended rollback only when its existing safe compensation is recorded.
+```
+
+## Scenario: incident enablement follows complete installed-fleet capability proof
+
+```gherkin
+Given an authorized incident item with explicit attempt/phase and exact repository/base/head identity, and ordinary behavior retained as a control
+When the operator exercises reconcile the incident surface inventory across installed fleet consumers
+Then the fleet audit expands the committed manifest and reports an explicit implemented, deliberately-normal or not-applicable disposition for every incident surface and consumer.
+And enablement requires serving-version evidence for gate readers, templates, driver hooks, recovery authorization and independent controller in each applicable consumer.
+And consumer closure retains normal factory proof over the cumulative incident scope and all deferred spec and verification obligations.
+And the operator can inspect attempts, skip reasons, focused evidence, CI runs, rollback and final factory proof through the incident item identity.
+```

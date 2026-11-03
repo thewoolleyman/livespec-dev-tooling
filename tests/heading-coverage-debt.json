@@ -23,6 +23,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "contracts.md",
+    "heading": "## Expedited incident execution",
+    "work_item": "livespec-dev-tooling-sh3vz3",
+    "first_seen": "2026-11-03"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "contracts.md",
     "heading": "## Master-health reconciler",
     "work_item": "livespec-dev-tooling-zcp5vb",
     "first_seen": "2026-10-22"
@@ -102,6 +109,13 @@
     "spec_file": "scenarios.md",
     "heading": "## Scenario: Codex plugin hooks wrapped in shell conditionals with existing plugin-root entrypoints pass",
     "work_item": "livespec-dev-tooling-yhacv6",
+    "first_seen": "2026-11-03"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a CI job killed at Set up job by an action-download 429 is re-run with backoff",
+    "work_item": "livespec-dev-tooling-cetyrq",
     "first_seen": "2026-11-03"
   },
   {
@@ -359,6 +373,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: a merged runner-pool change reaches the live cluster through one committed apply",
+    "work_item": "livespec-dev-tooling-un3zhi",
+    "first_seen": "2026-11-03"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: a move from none to runner-only is rehearsed by its provisioning apply",
     "work_item": "livespec-dev-tooling-zreev4",
     "first_seen": "2026-11-03"
@@ -424,6 +445,13 @@
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a repository that ships no Codex plugin passes the Codex hook check and reports that it examined nothing",
     "work_item": "livespec-dev-tooling-yhacv6",
+    "first_seen": "2026-11-03"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a reverted incident retains its original CI evidence before another attempt",
+    "work_item": "livespec-dev-tooling-kobmka",
     "first_seen": "2026-11-03"
   },
   {
@@ -555,6 +583,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: an apply refuses a plugin binary whose digest differs from an instance pin, and drift compares live pins to the installed binary",
+    "work_item": "livespec-dev-tooling-rnsfgg",
+    "first_seen": "2026-11-03"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: an execution target's pressure stall readings are queryable in livespec by host",
     "work_item": "livespec-dev-tooling-i7yxpt",
     "first_seen": "2026-11-02"
@@ -562,9 +597,44 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: an expedited PR defers coverage and spec work while master runs normally",
+    "work_item": "livespec-dev-tooling-egy3ri",
+    "first_seen": "2026-11-03"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: an expedited local gate skips slow work and preserves fast failures",
+    "work_item": "livespec-dev-tooling-cerkbn",
+    "first_seen": "2026-11-03"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: an explicit local gate-runner run is recorded as local",
     "work_item": "livespec-dev-tooling-qgv3tb",
     "first_seen": "2026-11-01"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: an incident invocation resolves mode before ordinary gate selection",
+    "work_item": "livespec-dev-tooling-sh3vz3",
+    "first_seen": "2026-11-03"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: an incident revert preserves later changes without waiting for CI",
+    "work_item": "livespec-dev-tooling-lgfo3v",
+    "first_seen": "2026-11-03"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: an incident rollback follows released artifacts into consuming repositories",
+    "work_item": "livespec-dev-tooling-vg36aq",
+    "first_seen": "2026-11-03"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -667,6 +737,27 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: focused incident verification cannot satisfy normal validation",
+    "work_item": "livespec-dev-tooling-xluwqj",
+    "first_seen": "2026-11-03"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: incident commit provenance remains verifiable on normal master",
+    "work_item": "livespec-dev-tooling-gvylzw",
+    "first_seen": "2026-11-03"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: incident enablement follows complete installed-fleet capability proof",
+    "work_item": "livespec-dev-tooling-wlrlt2",
+    "first_seen": "2026-11-03"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: missing or malformed reconciler configuration fails closed to revert-by-default",
     "work_item": "livespec-dev-tooling-joqff6",
     "first_seen": "2026-10-22"
@@ -716,8 +807,8 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario: an apply refuses a plugin binary whose digest differs from an instance pin, and drift compares live pins to the installed binary",
-    "work_item": "livespec-dev-tooling-rnsfgg",
+    "heading": "## Scenario: the first required master leaf failure fences incident recovery",
+    "work_item": "livespec-dev-tooling-47ij37",
     "first_seen": "2026-11-03"
   },
   {
@@ -733,19 +824,5 @@
     "heading": "## Scenario: the whole-suite coverage run prints its thirty slowest test phases",
     "work_item": "livespec-dev-tooling-tt4w7h",
     "first_seen": "2026-11-01"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a CI job killed at Set up job by an action-download 429 is re-run with backoff",
-    "work_item": "livespec-dev-tooling-cetyrq",
-    "first_seen": "2026-11-03"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a merged runner-pool change reaches the live cluster through one committed apply",
-    "work_item": "livespec-dev-tooling-un3zhi",
-    "first_seen": "2026-11-03"
   }
 ]

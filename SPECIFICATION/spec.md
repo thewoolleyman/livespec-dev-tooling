@@ -7,6 +7,8 @@ livespec-dev-tooling is the canonical home for the shared enforcement-suite chec
 
 Throughout this spec, the token "v1" refers to the library's first MAJOR release line (semver `1.x.x`). Pre-1.0 `0.x` releases are bootstrap territory and do not satisfy any rule scoped to "v1"; "v1" rules become binding at the `1.0.0` cutover. Rules without a "v1" qualifier are unconditional and bind every release.
 
+The library MUST expose the optional authorized incident capability defined in `contracts.md` §"Expedited incident execution", including its incident-only validation reductions and recovery obligations. Ordinary invocation and trusted normal master or factory execution MUST retain their complete existing policy.
+
 ## Architecture
 
 ### Two consumption surfaces
@@ -41,7 +43,7 @@ A livespec-dev-tooling change MUST satisfy this DoD before merge:
 
 - The change flows through the propose-change / revise loop against this library's own `SPECIFICATION/`; no out-of-band edits to ratified spec content.
 - Tests for any new check are paired with the implementation per the standard 1:1 mirror discipline at `tests/livespec_dev_tooling/checks/test_<slug>.py`.
-- `just check` is green: ruff lint and format, pyright strict + 7 strict-plus diagnostics, pytest with 100% line + branch coverage, plus every structural check this library applies to itself once those checks have migrated from livespec-core.
+- `just check` is green: ruff lint and format, pyright strict + 7 strict-plus diagnostics, pytest with 100% line + branch coverage, plus every structural check this library applies to itself once those checks have migrated from livespec-core. This full-aggregate requirement applies to normal execution; an authorized expedited repair or recorded emergency revert MUST instead satisfy the specific pre-merge obligations in `contracts.md` §"Expedited incident execution", with complete normal master validation and normal factory repayment still required.
 - For any change that adds, renames, or removes a check module, the `## ` heading inventory in `contracts.md` §"Shared check inventory" MUST be co-edited atomically.
 - The doctor static phase passes against the working spec; the LLM-driven phase passes against any revise pass that lands new spec content.
 
