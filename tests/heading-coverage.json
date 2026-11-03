@@ -1782,5 +1782,45 @@
     "test": "TODO",
     "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, exercising the runner-only node posture through the committed profile parser, storage-stage exit tests, ci-pool role gating, local-path provisioner or Kueue manifests, or, for a host-observed scenario, through its host-captured proof on hp-xubuntu. livespec-dev-tooling-zreev4 owns it.",
     "work_item": "livespec-dev-tooling-zreev4"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a Codex plugin hook command that mentions CLAUDE_PLUGIN_ROOT without a braced plugin-root path fails the producing repository's gate",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, running `python -m livespec_dev_tooling.checks.codex_hook_reconcilable` as a subprocess against a fixture git repository in the scenario's shape and asserting its exit code and structured stderr. livespec-dev-tooling-yhacv6 owns it.",
+    "work_item": "livespec-dev-tooling-yhacv6"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a Codex plugin hook entrypoint missing from the plugin payload fails the producing repository's gate",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, running `python -m livespec_dev_tooling.checks.codex_hook_reconcilable` as a subprocess against a fixture git repository in the scenario's shape and asserting its exit code and structured stderr. livespec-dev-tooling-yhacv6 owns it.",
+    "work_item": "livespec-dev-tooling-yhacv6"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: an unparseable Codex plugin hooks file fails the producing repository's gate",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, running `python -m livespec_dev_tooling.checks.codex_hook_reconcilable` as a subprocess against a fixture git repository in the scenario's shape and asserting its exit code and structured stderr. livespec-dev-tooling-yhacv6 owns it.",
+    "work_item": "livespec-dev-tooling-yhacv6"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: Codex plugin hooks wrapped in shell conditionals with existing plugin-root entrypoints pass",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, running `python -m livespec_dev_tooling.checks.codex_hook_reconcilable` as a subprocess against a fixture git repository in the scenario's shape and asserting its exit code and structured stderr. livespec-dev-tooling-yhacv6 owns it.",
+    "work_item": "livespec-dev-tooling-yhacv6"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a repository that ships no Codex plugin passes the Codex hook check and reports that it examined nothing",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, running `python -m livespec_dev_tooling.checks.codex_hook_reconcilable` as a subprocess against a fixture git repository in the scenario's shape and asserting its exit code and structured stderr. livespec-dev-tooling-yhacv6 owns it.",
+    "work_item": "livespec-dev-tooling-yhacv6"
   }
 ]

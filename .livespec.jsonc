@@ -142,6 +142,9 @@
     ],
     "livespec-orchestrator-beads-fabro": [
       "SPECIFICATION/contracts.md §\"Factory addresses resolved from a host registry\""
+    ],
+    "livespec-driver-codex": [
+      "SPECIFICATION/contracts.md §\"Codex hook-cache compatibility\""
     ]
   },
   // Planning/work-item-resolution registry. These targets are the repo slugs

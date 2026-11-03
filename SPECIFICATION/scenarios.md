@@ -2145,3 +2145,53 @@ Given a pool node whose profile changes its `CI_NODE_FACILITIES` to or from `ful
 When the change is applied without a rehearsal from empty storage
 
 Then the node's rebuild procedure MUST be treated as unproven for that node
+
+## Scenario: a Codex plugin hook command that mentions CLAUDE_PLUGIN_ROOT without a braced plugin-root path fails the producing repository's gate
+
+Given a repository that tracks `.claude-plugin/.codex-plugin/plugin.json` and a default `.claude-plugin/hooks/hooks.json` whose `SessionStart` event declares the command `python3 "$CLAUDE_PLUGIN_ROOT/hooks/start.py"`
+
+When `python -m livespec_dev_tooling.checks.codex_hook_reconcilable` runs in that repository
+
+Then it MUST exit `4`
+
+And it MUST emit a `fail` finding with `failure_mode` `no_plugin_root_path` whose `manifest` is `.claude-plugin/.codex-plugin/plugin.json`, whose `event` is `SessionStart`, and whose `command` is that command
+
+## Scenario: a Codex plugin hook entrypoint missing from the plugin payload fails the producing repository's gate
+
+Given a repository that tracks `livespec/.codex-plugin/plugin.json` with a `hooks` entry of `./hooks/hooks.json`, whose `Stop` event declares the command `python3 "${CLAUDE_PLUGIN_ROOT}/hooks/gone.py"`, and that tracks no file `livespec/hooks/gone.py`
+
+When `python -m livespec_dev_tooling.checks.codex_hook_reconcilable` runs in that repository
+
+Then it MUST exit `4`
+
+And it MUST emit a `fail` finding with `failure_mode` `entrypoint_missing` whose `entrypoint` is `livespec/hooks/gone.py`, and which names the manifest, the `Stop` event and the command
+
+## Scenario: an unparseable Codex plugin hooks file fails the producing repository's gate
+
+Given a repository that tracks a Codex plugin manifest and a default hooks file whose content is not valid JSON
+
+When `python -m livespec_dev_tooling.checks.codex_hook_reconcilable` runs in that repository
+
+Then it MUST exit `4`
+
+And it MUST emit a `fail` finding with `failure_mode` `unparseable_hooks_file` whose `path` names that hooks file
+
+## Scenario: Codex plugin hooks wrapped in shell conditionals with existing plugin-root entrypoints pass
+
+Given a repository that tracks a Codex plugin manifest and a default hooks file declaring one command `if [ -n "${CODEX_THREAD_ID:-}" ]; then exit 0; fi; python3 "${CLAUDE_PLUGIN_ROOT}/hooks/a.py"` and one command `if [ -n "${CODEX_THREAD_ID:-}" ]; then exit 0; fi; bash "${CLAUDE_PLUGIN_ROOT}/hooks/b.sh"`, and that tracks both `hooks/a.py` and `hooks/b.sh` under the plugin root
+
+When `python -m livespec_dev_tooling.checks.codex_hook_reconcilable` runs in that repository
+
+Then it MUST exit `0`
+
+And it MUST emit an `info` event with `manifests_checked` `1` and `commands_checked` `2`
+
+## Scenario: a repository that ships no Codex plugin passes the Codex hook check and reports that it examined nothing
+
+Given a git repository that tracks no file named `plugin.json` under a `.codex-plugin` directory
+
+When `python -m livespec_dev_tooling.checks.codex_hook_reconcilable` runs in that repository
+
+Then it MUST exit `0`
+
+And it MUST emit an `info` event with `manifests_checked` `0` and `commands_checked` `0` and a message saying that the repository ships no Codex plugin hooks
