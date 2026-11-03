@@ -12,6 +12,15 @@ is re-guessed by whoever next needs it.
 Work-item `livespec-dev-tooling-due2h6`. Plan: livespec
 `factory-worker-nodes-gitops`, epic `livespec-sqvj7p`.
 
+## RAISED 2026-11-03: the ceiling is now thirty-four pods
+
+The `factory-runs` quota gained one sandbox of termination headroom while the
+fleet cap stays at 16 runs, so `pods: "34"`;
+`ci-runner/k3s/phase2/factory/DERIVATION.md` "One sandbox of termination
+headroom" carries the derivation. 38 pods (with mi-homelab's 4) at the measured
+513-588 MB per workspace need about 23 G, still well inside the 104 G free on
+`poweredge-xubuntu` recorded below.
+
 ## RAISED 2026-10-27: the ceiling is now thirty-two pods
 
 The `factory-runs` quota was raised from 12 to 16 concurrent runs, so `pods: "32"`;

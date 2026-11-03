@@ -27,6 +27,11 @@ metadata:
     app.kubernetes.io/managed-by: livespec-ci-runner-factory
     livespec.workitem: f5e6vl
 ---
+# RAISED 2026-11-03 by ONE sandbox of termination headroom, fleet cap still 16
+# runs: ./DERIVATION.md "One sandbox of termination headroom" (coordinator
+# ruling (b), 2026-11-03: a 17th acquire was refused while an ended run's pod
+# still held its 4 cpu).
+#
 # RAISED 2026-10-27 from 12 to 16 concurrent runs: ./DERIVATION.md "The quota,
 # raised to sixteen runs" (coordinator ruling R84, after a clean three-hour soak
 # at twelve and poweredge averaging 53.7 % idle over ten minutes at 12 live runs).
@@ -62,11 +67,11 @@ metadata:
     livespec.workitem: f5e6vl
 spec:
   hard:
-    requests.cpu: "64"
-    requests.memory: 128Gi
-    limits.cpu: "64"
-    limits.memory: 136Gi
-    pods: "32"
+    requests.cpu: "68"
+    requests.memory: 138702Mi
+    limits.cpu: "68"
+    limits.memory: 146894Mi
+    pods: "34"
 ---
 # ./DERIVATION.md "The egress targets" — default-deny ingress, and egress only
 # to cluster DNS, the tailnet (the beads Dolt tenant and the telemetry
