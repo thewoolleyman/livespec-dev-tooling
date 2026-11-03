@@ -58,6 +58,18 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.160.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.159.0...v1.160.0) (2026-11-03)
+
+
+### Features
+
+* **pack:** two-tier workflow-edit guard — attested add-only edits pass under a delegable label ([a648cc6](https://github.com/thewoolleyman/livespec-dev-tooling/commit/a648cc6ab3c3b05a0e3b1082a0d17589cca1bc76))
+
+
+### Bug Fixes
+
+* classify beside tests as test changes ([089a63c](https://github.com/thewoolleyman/livespec-dev-tooling/commit/089a63c3798e3db2ad4aad3df309dfc83ffd7b89))
+
 ## [1.159.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.158.1...v1.159.0) (2026-11-03)
 
 
