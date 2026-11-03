@@ -5,3 +5,5 @@
 dev_host_compaction_sysctl_dir: /etc/sysctl.d
 dev_host_compaction_dropin_name: 90-dev-host-disable-proactive-compaction.conf
 dev_host_compaction_sysctl_bin: /usr/sbin/sysctl
+dev_host_compaction_owner: root
+dev_host_compaction_group: root

@@ -15,9 +15,12 @@ path, and idempotence — while the post-play kernel reading remains host-captur
 
 from __future__ import annotations
 
+import grp
 import json
 import os
+import pwd
 import re
+import stat
 import subprocess
 from pathlib import Path
 
@@ -76,6 +79,8 @@ def _converge(
         {
             "dev_host_compaction_sysctl_dir": str(sysctl_dir),
             "dev_host_compaction_sysctl_bin": str(sysctl_bin),
+            "dev_host_compaction_owner": _invoking_owner(),
+            "dev_host_compaction_group": _invoking_group(),
         }
     )
     return subprocess.run(
@@ -112,6 +117,23 @@ def _set_sysctl_calls(*, monkeypatch: pytest.MonkeyPatch, value: str | None) -> 
         monkeypatch.delenv("SYSCTL_CALLS", raising=False)
     else:
         monkeypatch.setenv("SYSCTL_CALLS", value)
+
+
+def _invoking_owner() -> str:
+    """The account that can own files in an unprivileged test run."""
+    return pwd.getpwuid(os.getuid()).pw_name
+
+
+def _invoking_group() -> str:
+    """The primary group of the account that runs this test."""
+    return grp.getgrgid(os.getgid()).gr_name
+
+
+def _assert_dropin_metadata(*, dropin: Path) -> None:
+    """The synthetic drop-in belongs to the unprivileged test account."""
+    assert pwd.getpwuid(dropin.stat().st_uid).pw_name == _invoking_owner()
+    assert grp.getgrgid(dropin.stat().st_gid).gr_name == _invoking_group()
+    assert stat.S_IMODE(dropin.stat().st_mode) == 0o644
 
 
 @pytest.mark.parametrize("prior_sysctl_calls", [None, "pre-existing-sysctl-calls"])
@@ -151,7 +173,9 @@ def test_the_dev_host_play_converges_the_documented_proactive_compaction_dropin(
 
     assert first.returncode == 0, first.stdout + first.stderr
     assert second.returncode == 0, second.stdout + second.stderr
-    assert (sysctl_dir / _DROPIN_NAME).read_text(encoding="utf-8").endswith(f"{_DROPIN_LINE}\n")
+    dropin = sysctl_dir / _DROPIN_NAME
+    assert dropin.read_text(encoding="utf-8").endswith(f"{_DROPIN_LINE}\n")
+    _assert_dropin_metadata(dropin=dropin)
     assert calls.read_text(encoding="utf-8") == f"--load {sysctl_dir / _DROPIN_NAME}\n"
     assert _changed(run=second) == 0, second.stdout + second.stderr
     assert os.environ.get("SYSCTL_CALLS") == prior_sysctl_calls
@@ -171,3 +195,11 @@ def test_the_role_is_a_tagged_dev_host_converge_and_records_its_safety_rationale
     assert _DROPIN_LINE in text, text
     assert "106%" in text and "kcompactd0" in text, text
     assert "on-demand compaction" in text and "direct compaction" in text, text
+
+    defaults = (_ROLE / "defaults" / "main.yml").read_text(encoding="utf-8")
+    tasks = (_ROLE / "tasks" / "main.yml").read_text(encoding="utf-8")
+    assert "dev_host_compaction_owner: root" in defaults, defaults
+    assert "dev_host_compaction_group: root" in defaults, defaults
+    assert 'owner: "{{ dev_host_compaction_owner }}"' in tasks, tasks
+    assert 'group: "{{ dev_host_compaction_group }}"' in tasks, tasks
+    assert 'mode: "0644"' in tasks, tasks

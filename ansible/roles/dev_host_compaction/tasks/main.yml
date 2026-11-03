@@ -5,8 +5,8 @@
   ansible.builtin.copy:
     src: "{{ dev_host_compaction_dropin_name }}"
     dest: "{{ dev_host_compaction_sysctl_dir }}/{{ dev_host_compaction_dropin_name }}"
-    owner: root
-    group: root
+    owner: "{{ dev_host_compaction_owner }}"
+    group: "{{ dev_host_compaction_group }}"
     mode: "0644"
   become: true
   notify: Apply the dev host proactive-compaction policy
