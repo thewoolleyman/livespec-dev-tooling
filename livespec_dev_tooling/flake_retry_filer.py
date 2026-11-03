@@ -32,6 +32,7 @@ __all__: list[str] = ["file_root_fixes", "main"]
 
 _RETRY_RECORDS_DIR = Path("tmp") / "flake-retries"
 _ROOT_FIX_PREFIX = "root-fix: "
+_DEFINITION_OF_DONE_REFERENCE = "## Testing approach"
 
 
 def _retry_nodeids(*, repo_root: Path) -> tuple[str, ...]:
@@ -80,6 +81,20 @@ def _open_root_fix_nodeids(*, repo_root: Path, runner: GateCommandRunner) -> set
     return open_nodeids
 
 
+def _root_fix_description(*, nodeid: str) -> str:
+    """Return a description whose Definition of Done lets the factory dispatch the item."""
+    return (
+        f"Root-cause fix for retried test node id: {nodeid}\n"
+        "\n"
+        "## Definition of Done\n"
+        "\n"
+        f"References: {_DEFINITION_OF_DONE_REFERENCE}\n"
+        "\n"
+        f"- Test node id `{nodeid}` passes on its first attempt in a run of the "
+        "repository's test suite, with no flake-retry record written for it.\n"
+    )
+
+
 def _create_root_fix(*, nodeid: str, repo_root: Path, runner: GateCommandRunner) -> None:
     """Create the root-fix item whose title is also the de-duplication key."""
     _ = _command_result(
@@ -88,7 +103,7 @@ def _create_root_fix(*, nodeid: str, repo_root: Path, runner: GateCommandRunner)
             "create",
             f"{_ROOT_FIX_PREFIX}{nodeid}",
             "--description",
-            f"Root-cause fix for retried test node id: {nodeid}",
+            _root_fix_description(nodeid=nodeid),
             "--type",
             "bug",
             "--priority",
