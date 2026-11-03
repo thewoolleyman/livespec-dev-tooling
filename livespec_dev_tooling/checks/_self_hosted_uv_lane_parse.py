@@ -111,16 +111,19 @@ def variable_fallback_literal(*, value: str, variable: str) -> str | None:
       Reported rather than passed silently.
     * a non-empty string -- the de-quoted fallback literal.
 
-    The FIRST reference to the variable is the anchor, and the operator must
-    follow it immediately. That is what makes the result the ROUTING fallback
-    in both the `runs-on` and lane-selection `env` shapes, rather than the last
-    `||` alternative -- which on the `env` shape is the uv value, not a routing
-    literal at all.
+    The FIRST complete reference to the variable is the anchor, and the
+    operator must follow it immediately. A longer identifier sharing its
+    prefix is not that reference: for example, `CI_RUNNER_LABELS_MASTER` must
+    not hide a later `CI_RUNNER_LABELS`. That is what makes the result the
+    ROUTING fallback in both the `runs-on` and lane-selection `env` shapes,
+    rather than the last `||` alternative -- which on the `env` shape is the
+    uv value, not a routing literal at all.
     """
     reference = f"{_VARS_PREFIX}{variable}"
-    if reference not in value:
+    match = re.search(rf"{re.escape(reference)}(?![A-Za-z0-9_])", value)
+    if match is None:
         return None
-    _, _, remainder = value.partition(reference)
+    remainder = value[match.end() :]
     remainder = remainder.lstrip()
     if not remainder.startswith(_OR_OPERATOR):
         return None

@@ -62,6 +62,16 @@ _UV_DOWNLOADS = (
 _UV_TIMEOUT = (
     "${{ contains(vars.CI_RUNNER_LABELS || '[\"ubuntu-latest\"]', 'ubuntu') " "&& '30' || '60' }}"
 )
+_MASTER_ROUTING = (
+    "github.event_name == 'push' && vars.CI_RUNNER_LABELS_MASTER || vars.CI_RUNNER_LABELS"
+)
+_MASTER_RUNS_ON = f"${{{{ fromJSON({_MASTER_ROUTING} || '[\"ubuntu-latest\"]') }}}}"
+_MASTER_UV_DOWNLOADS = (
+    f"${{{{ contains({_MASTER_ROUTING} || '[\"ubuntu-latest\"]', 'ubuntu') && '50' || '4' }}}}"
+)
+_MASTER_UV_TIMEOUT = (
+    f"${{{{ contains({_MASTER_ROUTING} || '[\"ubuntu-latest\"]', 'ubuntu') && '30' || '60' }}}}"
+)
 
 
 def _write_workflow(*, tmp_path: Path, name: str, body: str) -> Path:
@@ -167,6 +177,27 @@ def test_correctly_configured_routed_workflow_passes(
     _ = _write_workflow(
         tmp_path=tmp_path, name="ci.yml", body=_routed_workflow(env_lines=_CORRECT_ENV)
     )
+    assert _run(tmp_path=tmp_path, monkeypatch=monkeypatch) == 0
+
+
+def test_master_push_routing_with_lockstep_uv_lane_passes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Master routing must not mask the ordinary routing-variable fallback."""
+    body = f"""name: CI
+on: push
+
+env:
+  UV_CONCURRENT_DOWNLOADS: {_MASTER_UV_DOWNLOADS}
+  UV_HTTP_TIMEOUT: {_MASTER_UV_TIMEOUT}
+
+jobs:
+  build:
+    runs-on: {_MASTER_RUNS_ON}
+    steps:
+      - run: uv sync --locked
+"""
+    _ = _write_workflow(tmp_path=tmp_path, name="ci.yml", body=body)
     assert _run(tmp_path=tmp_path, monkeypatch=monkeypatch) == 0
 
 
