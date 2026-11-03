@@ -28,11 +28,47 @@ from livespec_dev_tooling.gate_remote_invocation import (  # noqa: E402
     default_gate_command_runner,
 )
 
-__all__: list[str] = ["file_root_fixes", "main"]
+__all__: list[str] = ["file_root_fixes", "main", "registered_plugin_root"]
 
 _RETRY_RECORDS_DIR = Path("tmp") / "flake-retries"
 _ROOT_FIX_PREFIX = "root-fix: "
 _DEFINITION_OF_DONE_REFERENCE = "## Testing approach"
+_PLUGIN_NAME = "livespec-orchestrator-beads-fabro"
+_PLUGIN_REGISTRY = Path(".claude") / "plugins" / "installed_plugins.json"
+# Runs inside the registered orchestrator build so the filer calls the one shared
+# intake Definition-of-Ready primitive instead of copying its routing rules. Every
+# gate answer is true: a root fix is one coherent, test-verified, repo-targeted fix.
+_INTAKE_ROUTING_SNIPPET = """\
+import sys
+from pathlib import Path
+
+plugin_root, item_id = sys.argv[1], sys.argv[2]
+sys.path.insert(0, f"{plugin_root}/scripts")
+sys.path.insert(0, f"{plugin_root}/scripts/_vendor")
+from returns.pipeline import is_successful
+from returns.unsafe import unsafe_perform_io
+from livespec_orchestrator_beads_fabro.commands._config import resolve_store_config
+from livespec_orchestrator_beads_fabro.intake_dor import (
+    DefinitionOfReadyChecklist,
+    apply_intake_dor,
+)
+
+routed = apply_intake_dor(
+    path=resolve_store_config(cwd=Path.cwd(), work_items_arg=None),
+    item_id=item_id,
+    checklist=DefinitionOfReadyChecklist(
+        single_coherent_done=True,
+        autonomously_verifiable=True,
+        autonomy_tiered=True,
+        dependency_linked=True,
+        repo_targeted=True,
+        above_floor=True,
+    ),
+)
+if not is_successful(routed):
+    sys.exit(1)
+sys.stdout.write(f"{unsafe_perform_io(routed.unwrap())}\\n")
+"""
 
 
 def _retry_nodeids(*, repo_root: Path) -> tuple[str, ...]:
@@ -95,9 +131,22 @@ def _root_fix_description(*, nodeid: str) -> str:
     )
 
 
-def _create_root_fix(*, nodeid: str, repo_root: Path, runner: GateCommandRunner) -> None:
+def _created_item_id(*, stdout: str) -> str:
+    """Read the server-assigned id out of a ``bd create --json`` body."""
+    parsed = cast("object", json.loads(stdout))
+    if isinstance(parsed, list):
+        records = cast("list[object]", parsed)
+        parsed = records[0] if records else None
+    if isinstance(parsed, dict):
+        item_id = cast("dict[str, object]", parsed).get("id")
+        if isinstance(item_id, str):
+            return item_id
+    raise TypeError
+
+
+def _create_root_fix(*, nodeid: str, repo_root: Path, runner: GateCommandRunner) -> str:
     """Create the root-fix item whose title is also the de-duplication key."""
-    _ = _command_result(
+    result = _command_result(
         argv=[
             "bd",
             "create",
@@ -108,13 +157,41 @@ def _create_root_fix(*, nodeid: str, repo_root: Path, runner: GateCommandRunner)
             "bug",
             "--priority",
             "0",
+            "--json",
         ],
+        repo_root=repo_root,
+        runner=runner,
+    )
+    return _created_item_id(stdout=result.stdout)
+
+
+def _route_through_intake(
+    *, item_id: str, plugin_root: Path, repo_root: Path, runner: GateCommandRunner
+) -> None:
+    """Triage the filed item so it rests in a dispatchable status, not raw ``backlog``."""
+    _ = _command_result(
+        argv=["python3", "-c", _INTAKE_ROUTING_SNIPPET, str(plugin_root), item_id],
         repo_root=repo_root,
         runner=runner,
     )
 
 
-def file_root_fixes(*, repo_root: Path, runner: GateCommandRunner) -> tuple[str, ...]:
+def registered_plugin_root(*, repo_root: Path, registry: Path) -> Path:
+    """Return the orchestrator build the host's plugin registry records for ``repo_root``."""
+    parsed = cast("dict[str, object]", json.loads(registry.read_text(encoding="utf-8")))
+    plugins = cast("dict[str, list[dict[str, str]]]", parsed["plugins"])
+    for key, entries in plugins.items():
+        if key.split("@", maxsplit=1)[0] != _PLUGIN_NAME:
+            continue
+        for entry in entries:
+            if Path(entry["projectPath"]).resolve() == repo_root.resolve():
+                return Path(entry["installPath"])
+    raise OSError
+
+
+def file_root_fixes(
+    *, repo_root: Path, runner: GateCommandRunner, plugin_root: Path
+) -> tuple[str, ...]:
     """File root fixes for retry records that have no open root-fix item."""
     nodeids = _retry_nodeids(repo_root=repo_root)
     existing = _open_root_fix_nodeids(repo_root=repo_root, runner=runner)
@@ -122,7 +199,10 @@ def file_root_fixes(*, repo_root: Path, runner: GateCommandRunner) -> tuple[str,
     for nodeid in nodeids:
         if nodeid in existing:
             continue
-        _create_root_fix(nodeid=nodeid, repo_root=repo_root, runner=runner)
+        item_id = _create_root_fix(nodeid=nodeid, repo_root=repo_root, runner=runner)
+        _route_through_intake(
+            item_id=item_id, plugin_root=plugin_root, repo_root=repo_root, runner=runner
+        )
         filed.append(nodeid)
     return tuple(filed)
 
@@ -144,7 +224,14 @@ def main(*, argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     _ = parser.add_argument("--repo-root", type=Path, default=Path.cwd())
     arguments = parser.parse_args(argv)
-    filed = file_root_fixes(repo_root=arguments.repo_root, runner=default_gate_command_runner)
+    plugin_root = registered_plugin_root(
+        repo_root=arguments.repo_root, registry=Path.home() / _PLUGIN_REGISTRY
+    )
+    filed = file_root_fixes(
+        repo_root=arguments.repo_root,
+        runner=default_gate_command_runner,
+        plugin_root=plugin_root,
+    )
     _ = _logger().info("filed flake root fixes", nodeids=filed, count=len(filed))
     return 0
 
