@@ -58,6 +58,26 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.162.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.161.0...v1.162.0) (2026-11-03)
+
+
+### Features
+
+* add failing seat profile launcher coverage ([b8ae9df](https://github.com/thewoolleyman/livespec-dev-tooling/commit/b8ae9df89d6fbbbadff7a4a959195f3abdf54334))
+* read radar blockers and plan children ([4ed584b](https://github.com/thewoolleyman/livespec-dev-tooling/commit/4ed584b717278389b5306e2a45bf1eee0dc5e186))
+* report closed radar targets as done ([aa3821f](https://github.com/thewoolleyman/livespec-dev-tooling/commit/aa3821f0bd786469bf5a07ecce42d7d7842fc829))
+
+
+### Bug Fixes
+
+* **coordinator:** report the petri gmktec fleet only; flag cap mismatch ([cdfc819](https://github.com/thewoolleyman/livespec-dev-tooling/commit/cdfc81996325340e5a5066ee0f7aa8f4c772724f))
+* **gates:** bound stand-in proxy probe ([f37b66f](https://github.com/thewoolleyman/livespec-dev-tooling/commit/f37b66f0cb6441c309fe3bac0b7b2b384143dd81))
+* **gates:** bound stand-in proxy readiness ([d3ecc9a](https://github.com/thewoolleyman/livespec-dev-tooling/commit/d3ecc9af4ba6e2075df9a943a0a74fba8b2e653e))
+* **gates:** send bounded proxy probe ([ee91cca](https://github.com/thewoolleyman/livespec-dev-tooling/commit/ee91cca9a56b7e08de1f387de9b81ab10b89b6a5))
+* **gates:** skip a section's gate run when its stand-in proxy never answered ([ab0cdd3](https://github.com/thewoolleyman/livespec-dev-tooling/commit/ab0cdd3cd2827f83991aafd3006df64f0ac43535))
+* **gates:** use bounded HTTP proxy readiness ([0c0ba34](https://github.com/thewoolleyman/livespec-dev-tooling/commit/0c0ba3451227dec36aa2d43ebee5cdea7c405bae))
+* satisfy interactive seat launcher shell lint ([cacad09](https://github.com/thewoolleyman/livespec-dev-tooling/commit/cacad09e1558ce990964754218fa38a84e9589e4))
+
 ## [1.161.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.160.0...v1.161.0) (2026-11-03)
 
 
