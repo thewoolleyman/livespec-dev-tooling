@@ -114,15 +114,35 @@ The revert mode has precedence when both are set, and is permitted only for a
 revert of a recorded incident merge. An ordinary feature cannot use it.
 
 Every invocation resolves the incident work-item id from explicit command/PR
-metadata and checks it against the required marker. The same id follows local
+metadata using the mode-specific evidence below. The same id follows local
 work, PR attempts, reverts, and the eventual factory run. No separate repair or
 marker-removal item substitutes for the incident id. A general implementation
 task for this plan is distinct from a future incident using the feature.
 
+| Mode | Identity evidence | Marker rule |
+| --- | --- | --- |
+| Expedited repair | Incident id, attempt id, repository, base/head and authorized PR metadata. | Required in the resulting code/test tree. |
+| Emergency revert | Recorded attempt, incident merge SHA, current target and inverse change. | Validate the original marker/provenance; resulting tree may remove it. |
+| Normal master | Exact push SHA and normal workflow identity. | May remain, with no effect on execution mode. |
+| Normal factory follow-up | Incident id, successful attempt, fresh dispatch/run/PR and cumulative original scope. | Remove the original attempt's marker, with both flags absent. |
+| Ordinary work | Existing normal identity. | Historical markers confer no exemption. |
+
+Resolve trusted event/phase context BEFORE parsing ambient flags: normal master
+and normal factory follow-up force both flags off, including malformed inherited
+values. Keep the incident id stable but give every repair/revert/follow-up its own
+attempt/phase/operation and carrier PR identity. Branch recovery, merged-PR lookup,
+claim stamps, proof pointers, acceptance and completion must use that current
+identity, never the first merged PR found for feat/<item> or a title/body mention.
+Preserve the attempt history when replacing a current dispatch claim. Distinguish
+incident recovery attempts from normal acceptance rework/nonconvergence budgets.
+
 Flags are invocation-scoped. Never export them host-wide, store them as repository
-defaults, or bake them into an image. Credential wrappers scrub caller env:
-pass the selected flag and nonsecret incident context explicitly AFTER the
-wrapper boundary. Instrument hook/dispatcher/delegated boundaries so operators
+defaults, or bake them into an image. Measure environment propagation across each
+installed credential wrapper instead of trusting older guidance: the installed
+with-livespec-env.sh now captures and restores the caller environment, while
+.ai/fleet-and-secrets.md describes its earlier scrubbing behavior. Explicitly
+passing the selected flag and nonsecret incident context AFTER the wrapper
+boundary remains a portable route. Instrument hook/dispatcher/delegated boundaries so operators
 can see the effective mode, item, head SHA and skipped work. Do not launch the
 normal remote/delegated full aggregate merely because it runs off the local host.
 
@@ -153,8 +173,13 @@ Inventory all entry points, including commit-msg replay, source/test pairing,
 pre-commit, pre-push, explicit just check, agent hook guards, the check dispatcher,
 delegated Jobs, range checks, PR provenance, CI matrices, acceptance and aggregate
 jobs. Avoid a hidden slow gate behind a fast wrapper or a second whole-suite run.
+Resolve a typed execution plan BEFORE staged prechecks, autofix, source/test
+pairing, normal token reads, delegation, replay or fallback. Every entry point
+receives the same mode and scope. A delegated failure must retain that selection,
+never fall back to a full local aggregate or the renderer's default check-pre-push.
 Measure gate duration from existing evidence or a bounded trial; skip known slow
-gates before launching. Time out unknown gates at sixty seconds, stop their owned
+gates before launching. Prefer skipping unclassified gates to dozens of serial
+one-minute exploratory trials. Time out unknown gates at sixty seconds, stop their owned
 children, and report deferred-timeout rather than passed. Unknown timing must not
 fall back to the full aggregate. Run real fast gates, including inexpensive
 correctness/style checks, and honor their failures. The one-minute rule is per
@@ -177,12 +202,58 @@ declared fast change checks; do not replace coverage with another full test suit
 Inventory and remove indirect spec/coverage dependencies from the expedited path.
 Logs and the aggregate distinguish executed/pass, failed and intentionally deferred.
 
+Select enforcement invocations and tests explicitly; do not turn check library
+implementations into unconditional successes when the flag is inherited. A test
+may call heading_coverage.main() in-process expecting both a clean pass and a
+broken-fixture failure. Classify governed-tree enforcement, fixture-based tests of
+an enforcement implementation, and tests that launch broad/spec/coverage checks
+separately, including fixtures, nested pytest and subprocesses. Local fast spec
+checks may report deliberately deferred incident spec debt, but cannot hold the
+repair for that declared debt; normal factory follow-up restores enforcement.
+
 Expedited evidence never creates a normal green token, normal TDD/factory proof,
 or reusable normal coverage artifact. Cache identity includes mode and validation
 scope, or caches are disabled for expedited results. Full master cannot inherit a
 PR skip list. Commit replay/range enforcement must recognize historical expedited
 provenance without invented TDD trailers or refusing master merely because expensive
 pre-merge replay was deferred; its normal runtime test/coverage work still runs.
+
+Define a distinct incident commit receipt carrying item, attempt and phase;
+its semantics are deferred verification, never full TDD success. The local
+provenance hook also records `Factory-Override: EXPEDITED_INCIDENT_RESPONSE flag:
+<id>` on the commit as its audited explanation. The range checker validates the
+incident receipt against exact recorded PR/head/landed-commit evidence rather than
+accepting a bare forgeable trailer, a currently set environment variable or only
+the PR label. That historical evidence remains readable on normal master after
+merge; reading it does not enable expedited execution there.
+
+Expedited repair and revert choose HOST LOCAL before any cluster eligibility
+probe, mirror-ref publication or Job submission, including the detached runner's
+independent venue selector. Their focused tests and touched-file coverage also
+remain local. Normal delegated jobs explicitly remove both flags. Keeping mode
+and scope explicit at remote boundaries remains necessary to reject leaks and
+prevent a failed or stale selector from falling back to full work.
+
+For mixed CI batches, pass the shared typed selected-target plan into each batch
+loop and direct action; do not skip an entire mixed job containing retained fast
+checks or run its whole body accidentally. Include incremental coverage, rate-
+budget/network conformance, doctor-static, e2e/acceptance and pre-tag/release gates
+in each repository's timing and applicability inventory. Define the incident
+shape in the CI matrix parser and parity/completeness checks; an accidental
+mechanical pass is not conformance to the new policy.
+
+Provision the incident labels in every applicable consumer, subscribe to the
+relevant label events, and explicitly arm ordinary expedited PR merge when the
+existing auto-enable workflow admits only maintainer-authored PRs. The emergency
+revert uses the controller's direct scoped capability instead of auto-merge.
+
+Reuse an existing incident work item where possible. A new incident needs fast
+canonical filing with its identity, scope and behavioral intent; slow model-backed
+DoD/governing-heading admission cannot sit in front of local incident work.
+Defer that admission judgment to the normal factory follow-up without changing
+the item's identity. If its tenant is unavailable, use an already recorded
+incident id/receipt rather than manufacturing an untracked item or querying the
+broken store before every recovery action.
 
 ## Incident lifecycle and mandatory follow-through
 
@@ -197,7 +268,10 @@ pre-merge replay was deferred; its normal runtime test/coverage work still runs.
 
    Replace the placeholder with the incident's real id. Keep the comment next to
    the change, not only in a PR body or plan note. Preserve it through squash or
-   rebase. Record touched paths, original base/head and focused evidence. Deferred
+   rebase. A deletion-only or non-commentable config change uses a legal adjacent
+   existing code/test carrier; the marker cannot break the format being repaired
+   or serve as its own behavioral evidence. Record touched paths, original
+   base/head and focused evidence. Deferred
    spec changes do not hold the incident fix behind propose-change/revise.
 
 2. **Merge the expedited PR promptly.** Project incident mode into this PR's CI,
@@ -207,22 +281,37 @@ pre-merge replay was deferred; its normal runtime test/coverage work still runs.
    repair itself. Preserve normal worktree/PR identity and authentication.
 
 3. **Watch the exact merge on master.** Record the resulting master merge SHA,
-   workflow run and all required job conclusions. Master unconditionally disables
+   complete landed commit set, pre-incident and resulting trees, normalized full
+   PR patch, workflow run and all required job conclusions. Rebase merging can
+   land several commits; the terminal merge SHA alone is not the rollback unit.
+   Master unconditionally disables
    both flags and runs its existing complete policy; master may normally run
    fewer checks than a normal PR, which is why the factory follow-up is required.
    Missing, cancelled or unreadable runs are unresolved evidence, never green.
 
 4. **On the first required master failure, revert immediately.** Trigger at the
    first failing required job rather than waiting for the aggregate or other
-   jobs to finish. EXPEDITED_INCIDENT_RESPONSE_REVERT bypasses all local gates,
+   jobs to finish. Deliver a trusted job/check-completion event or explicit CI
+   failure callback to an independently hosted controller. Required failure
+   producers mean all leaf jobs/matrix legs contributing to the protected
+   aggregate, not only the final ci-green context. Establish a durable observer
+   receipt before merge; its control code and authorization use a known-good
+   released build independent of the incident tree being repaired. The existing
+   completed-workflow trigger and five-minute reconciler schedule cannot meet
+   this requirement. EXPEDITED_INCIDENT_RESPONSE_REVERT bypasses all local gates,
    factory work and pre-merge CI waits, including red-master and TDD barriers.
-   Use a narrow revert of the recorded incident change, preserving later work.
+   Revert the COMPLETE recorded incident patch against current master with an
+   expected-head compare-and-swap, preserving later work. Recompute on head
+   movement; never restore whole old files over descendants or revert only the
+   last commit of a multi-commit incident.
    Verify target identity and construct the inverse diff; those operations are
    necessary to perform the revert and must not launch a validation aggregate.
    If branch protection requires a special App merge path, provision it during
    implementation; opening a revert PR with auto-merge waiting on CI does NOT
    satisfy this requirement. No global disable of branch protection. Resolve an
-   overlap explicitly rather than resetting unrelated changes away.
+   overlap explicitly in a rollback-conflict phase with an identified owner,
+   rather than resetting unrelated changes away. Resolving the inverse diff is
+   necessary revert construction, not a reason to run pre-merge quality checks.
 
 5. **Keep the failed run alive; then repair all failures.** Do not cancel the
    original master run when the revert or replacement push arrives. Adjust
@@ -232,6 +321,19 @@ pre-merge replay was deferred; its normal runtime test/coverage work still runs.
    original run finishes, fix all revealed breakages, re-run focused local
    verification, and submit a NEW expedited PR on the SAME item with the marker.
    Keep an attempt chain rather than replacing the failed attempt's evidence.
+
+   First failure always triggers rollback without classification delay. After
+   collection, classify failures as incident defects, pre-existing defects,
+   infrastructure failures or unresolved, with an owner for each. Do not repeatedly
+   reland unchanged code to retry a still-broken base or infrastructure; a new
+   attempt needs a repair or measured resolution evidence.
+
+   Workflow completion does not prove every check ran: dependents may be skipped
+   after a prerequisite fails. Record the expected normal job graph and distinguish
+   completed, failed, blocked-by-prerequisite, cancelled and never-created legs.
+   Leave the original run untouched. After rollback, collect missing evidence in
+   an explicitly identified continuation on the original incident tree where
+   feasible, or retain each missing check as unresolved follow-up debt.
 
 6. **On master success, repay through factory.** Keep the incident item open and
    dispatch a NEW normal factory run for it. A new PR removes the marker with BOTH
@@ -248,6 +350,12 @@ pre-merge replay was deferred; its normal runtime test/coverage work still runs.
    follow-up PR. Do not revert the healthy original master merge solely because
    the follow-up exposed an uncaught case.
 
+   The cumulative original diff, focused evidence and attempt history also feed
+   acceptance's evidence corpus. Its input cannot be only the marker-removal
+   patch. Close/no-change-needed and reconcile-merged paths may not consume an
+   old expedited merge as completion, and stale run completions after an ownership
+   transfer may not write proof or close the item.
+
 7. **Monitor master and other PRs concurrently.** Monitor every open PR and new
    PR runs in the affected repository and affected fleet consumers for failures
    attributable to the incident. Record attribution with failing job/test and
@@ -262,16 +370,34 @@ pre-merge replay was deferred; its normal runtime test/coverage work still runs.
    all markers removed and recorded spec debt repaid. Monitor throughout recovery
    and follow-up, and perform a final scan of master and other PR failures before
    closure. Persist unresolved attribution or affected consumer rollout as an
-   owned obligation rather than silently ending monitoring.
+   owned obligation rather than silently ending monitoring. The installed observer
+   retains incident-to-change attribution after closure so a later related master
+   or PR regression can reopen the same incident and its recovery cycle.
 
 Monitoring runs independently of the interactive session, using existing durable
 workflow/observer mechanisms with a ledger-owned incident phase and run identity.
 Restart reconciles observed SHA/run/PR state and resumes the same operation.
 Deduplicate revert events, follow-up dispatch and completion so a restart, webhook
 redelivery or the existing reconciler cannot create two reverts or factory runs.
+Use an atomic per-repository action lease and per-incident generation/phase fence
+shared with master-health reconciliation. Revalidate that fence immediately before
+each dispatch, merge or revert. Persist intent before the forge call and reconcile
+its exact receipt after timeout before retrying. A reverted generation cannot
+merge a previously green cleanup PR; a delayed failure from an old attempt cannot
+revert its corrected replacement. Fence concurrent incident episodes independently
+while serializing conflicting repository mutations.
 No new notification-only cron, foreground polling loop, or unbounded live agent
 session is the supervision design. Record actual action receipts, not promises
 that an owner will check later.
+
+Recovery must remain executable when the failing component is the tenant ledger,
+credential projection, factory, gates namespace or self-hosted runner pool. Keep
+the trusted operation receipt and action fence on an independently available
+control surface; do not require a fresh call through the failed component just to
+select incident mode or revert. Reconcile receipts back to the incident work item
+when its tenant becomes reachable, without inventing a second lifecycle truth or
+allowing duplicate side effects. Exercise the ledger-unavailable and credential-
+wrapper-unavailable cases in the controlled recovery proof.
 
 ## Speed, risk and policy decisions
 
@@ -291,12 +417,64 @@ Ordinary work retains those rules. Existing server-side revert signing helps
 with provenance but does not itself provide an unchecked merge capability.
 Inspect the current forge merge authorization before promising no-check reverts.
 
+Chosen revert design: a dedicated recovery-controller identity, with forge
+ruleset authorization scoped to the incident revert controller and its validated
+inverse patch. Provision it in the normal rollout and adapt branch-protection
+alignment, fleet reconcile and canonical specs to this narrow principal while
+retaining required checks for ordinary actors. If classic branch protection would
+still refuse the operation, migrate the overlapping protections under the same
+normally tested rollout rather than toggling them off during an incident. A
+label-skipped green stub job is not the no-check revert: it still waits for CI
+scheduling, contrary to the requested immediate path. This design grants the
+controller a specific recovery capability, not the factory worker or arbitrary
+flag-bearing shell a general merge bypass.
+
+The incident contract must explicitly admit a scoped workflow-edit authorization
+receipt at the local host-authority gate, which currently says no flag changes
+its tiers. An incident flag alone is not a new credential. Factory workers retain
+their existing lack of workflow write scope. If normal factory follow-up must
+repair a workflow, an authorized host publisher applies the normally validated
+factory tree to the SAME incident carrier PR with its required workflow-edit
+receipt. This is publication transport, not another work item, a factory bypass,
+or a permanent workflow credential grant to sandboxes.
+
+Retrospective factory-bypass audits must recognize recorded incident repair and
+revert receipts as declared exceptions with outstanding normal repayment, without
+adding an unrestricted allow-label. Generated Copier justfiles, lefthook wiring,
+reusable CI matrices and direct run-check actions are separate adoption surfaces.
+Ratify the specific incident exception in parity/completeness guards rather than
+turning those guards off or relaxing them for ordinary PRs.
+
+Deferring a spec amendment does not disable normal master conformance checks.
+If master exposes a deferred spec discrepancy, revert, collect the full result,
+and include its required correction in the next attempt; no permanent waiver
+or silent master skip is introduced to make the expedited merge stay green.
+
+Source rollback is only one recovery leg. Track source commits to release tags,
+images, pin bumps and installed consumers. On incident rollback, stop queued
+adoption of the bad artifact, supersede its pending pin carriers and repair
+consumers that already adopted it through owned rollback or corrective releases.
+Keep the original master CI alive while doing so. A green source master does not
+close deployed recovery. Irreversible external-state changes are ineligible for
+unattended automatic rollback under this path unless a safe compensating operation
+is already recorded; this is a draft risk-control decision for objection, not a
+new blanket approval gate for reversible code fixes.
+
 The implementation rollout must be normal and unexpedited. Land the shared
 contract and readers, release, adopt consumers, verify the serving versions, then
 enable use. Coordinate edits to ci.yml with ci-runtime-and-cost and cache owners;
 do not consume their PRs or silently reorder the coordinator's priorities.
 The user authorized drafting this path; this plan itself does not use it to skip
 the present documentation change's checks.
+
+Verify controller installation repository by repository rather than assuming the
+existing reconciler is live everywhere. At audit time only the livespec checkout
+of the four main repos had a master-health-reconcile.yml shim; the other three
+had reusable/canonical source but no installed local shim. The rollout must install
+the applicable observation/control path and prove it is serving before enabling
+an incident merge. Release prefixes, plugin/package release, sandbox-image builds,
+queued fan-out and consumer pin CI remain measured recovery dependencies; a merged
+source PR is not evidence that the running factory uses the repaired build.
 
 ## Implementation sequence
 
@@ -339,6 +517,13 @@ conclusions, skip reasons and the SAME incident id across attempts. Exercise:
   healthy master, and a related failure on another PR causing the revert cycle.
 - Observer restart, duplicate events, competing reconciler, intervening commits,
   comment-only diff optimization and attempted premature work-item closure.
+- Multi-commit rebase merge, a later unrelated edit to the same file, overlapping
+  incidents, stale observer events and a crash after merge but before receipt.
+- Release/image fan-out and queued consumer adoption between incident merge and
+  failure, including adoption arriving after the source revert.
+- First leaf failure while a sibling still runs, broken incident-tree observer
+  code, prerequisite-skipped normal checks, and an already-red base that must not
+  trigger an unchanged reland loop.
 
 Retain the existing plan archive requirements: all children disposed, independent
 completeness review, captured then independently verified plan Proof of Done,
