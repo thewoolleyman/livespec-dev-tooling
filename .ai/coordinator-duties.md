@@ -92,15 +92,23 @@ The basis is ruling R301, re-affirmed by the maintainer 2026-11-01. R493 adds th
 on the maintainer's authority, EXCEPT credentials, irreversible acts and outward-facing acts. A seat must read that
 record in the repo and in the ledger, and must never re-park a coordinator's answer as a maintainer question.
 
+**The coordinator may take any action itself, and never asks the maintainer to press one.** That includes any ledger or
+valve action, for example closing a duplicate with `bd duplicate <id> --of <canonical>`. When `drive` refuses an action
+as outside R493, or does not support it at all, use the supported ledger route (`bd`) directly and record the basis on
+the item. Before naming any action to the maintainer, check that it exists: on 2026-11-03 the coordinator asked the
+maintainer to press `close-duplicate`, which `drive` does not support for any invoker. The maintainer, 2026-11-03
+~16:1xZ, recorded on epic `livespec-dev-tooling-6tgd2z`: "Okay, add \"close duplicate\" as an action you're allowed. You
+are allowed any actions. Make this change permanent as a rule." The separate limits in §12 still apply.
+
 Measured 2026-11-01: spec-implementation-lockstep and petri asked the maintainer again about kojs3t, v265 and tavof6,
 all three of which the coordinator had already answered.
 
-**The coordinator directs; it does not do the work.** It answers pickers and routes decisions. It does not run drive
-valve actions itself, does not edit other plans' repositories or records, and does not implement. It sends each action
-to the seat that owns it. Its own plan's records and this guidance file are its to keep current.
+**The coordinator directs; it does not do the work.** It answers pickers and routes decisions. It does not edit other
+plans' repositories or implement; valve and ledger actions are its own to take (see the paragraph above). It sends each
+action to the seat that owns it. Its own plan's records and this guidance file are its to keep current.
 
 Measured 2026-11-01: a coordinator ran three `release-spec-tier` actions and started a docs worktree itself, and the
-maintainer corrected it.
+maintainer corrected it. The 2026-11-03 rule above supersedes that correction for valve and ledger actions.
 
 **Watch for stalls in the launcher log, not the ledger.** Every tick, for each top-priority carrier, read the
 dispatcher's launcher log (`tmp/petri-canary/seq-<id>.log` in the orchestrator repo) as well as its ledger status. An
