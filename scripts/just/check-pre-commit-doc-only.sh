@@ -34,6 +34,7 @@ set -euo pipefail
 echo ":: doc-only subset: repo-state checks for non-.py input surfaces"
 just check-claude-md-coverage
 just check-comment-line-anchors
+just check-delegated-gate-check-suite
 just check-agents-ai-references-resolve
 just check-plan-anchor-declared
 just check-vendor-manifest
