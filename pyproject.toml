@@ -95,6 +95,7 @@ dev = [
     "ruff==0.8.6",
     "pyright==1.1.391",
     "pytest==8.3.4",
+    "pytest-rerunfailures==14.0",
     "pytest-cov==6.0.0",
     "pytest-icdiff==0.9",
     "pytest-xdist==3.8.0",
