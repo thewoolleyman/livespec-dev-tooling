@@ -123,6 +123,33 @@ request's checkpoint and keeps its branch. A plain dispatch starts over, and
 on 3buhph that would have repeated four review-fix rounds on an 814-line
 draft.
 
+## A run that looks fresh may have been resumed by the server
+
+Measured 2026-11-03 on `livespec-dev-tooling-lndv2l`.
+
+The drive record and the ledger comments do not show a resume that the petri
+SERVER makes on its own. After a store-append host error, the server resumes
+the run itself. That resume restores only `/workspace`. It does not re-run the
+prepare steps that write the plugin helpers under `/root/.claude/plugins`, so
+the run then fails with `LIVESPEC_JANITOR_PLUGIN_GATE_FAILED` (or
+`LIVESPEC_PROOF_GRADE_PROGRAM_ABSENT`). That is breakage bd-ib-ljw2xg.
+
+Run `01M6GT4E9JEC` was launched fresh, and a plan seat reported it to the
+coordinator as proof that the helper loss hits fresh runs too. It had been
+server-resumed at 13:53:51Z, after a store error at 13:53:38Z. Four other
+runs that looked fresh earlier that day turned out the same way. A wrong
+"fresh run" report makes a known breakage look wider than it is, and it can
+justify a fleet-wide dispatch hold.
+
+**How to apply:** before calling a run fresh, read its server log with the
+carrier-petri client and look for the resume:
+
+```bash
+~/.local/state/fabro-currency/carrier-petri-*/fabro logs <run> \
+  --server https://gmktec-xubuntu.perch-rudd.ts.net:32276 \
+  | grep -E 'Resuming Petri run|fencing a recorded sandbox'
+```
+
 ## A comment saying an item is "held" holds it
 
 Measured 2026-10-30 on `livespec-dev-tooling-2zii7l`.
