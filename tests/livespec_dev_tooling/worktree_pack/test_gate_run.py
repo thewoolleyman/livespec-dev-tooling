@@ -247,17 +247,16 @@ def test_the_verdict_poll_helper_gives_up_rather_than_blocking_forever(*, tmp_pa
 
 
 def _flip_writer(*, tmp_path: Path, primary: Path) -> Path:
-    """A gate command that writes the PRIMARY's shared config, then lingers."""
+    """A gate command that holds a config lock, writes it, then lingers."""
     writer = tmp_path / "flip-writer.sh"
     config = primary / ".git" / "config"
     _ = writer.write_text(
         "#!/usr/bin/env bash\n"
-        f'git config --file "{config}" core.bare true\n'
-        f"deadline=$((SECONDS + {int(_VERDICT_TIMEOUT_S) // 2}))\n"
-        'while [ "$SECONDS" -lt "$deadline" ]; do\n'
-        f'    grep -qs . "{primary / _STORE}"/*/config-writes.log && break\n'
-        "    sleep 0.1\n"
-        "done\n"
+        f'cp "{config}" "{config}.lock"\n'
+        "sleep 0.5\n"
+        f'git config --file "{config}.lock" core.bare true\n'
+        f'mv "{config}.lock" "{config}"\n'
+        "sleep 2\n"
         f"exit {_GATE_EXIT_CODE}\n",
         encoding="utf-8",
     )
@@ -350,8 +349,9 @@ def test_a_config_flip_during_the_gate_marks_the_run_and_names_the_writer(
 
     writes = (run_dir / "config-writes.log").read_text(encoding="utf-8")
     assert writes.strip() != ""
-    assert "core.bare now: true" in writes
-    assert writer.name in writes
+    released_record = writes.partition("config.lock RELEASED")[2]
+    assert "core.bare now: true" in released_record
+    assert writer.name in released_record
 
     status = _gate(cwd=primary, env=env, args=["status", run_id])
     # Non-fatal: the gate's own exit code is transported unchanged, and the

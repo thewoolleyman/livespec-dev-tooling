@@ -88,7 +88,7 @@
 #                      captured before the gate starts
 #   config-writes.log  appended by a dependency-free background watcher
 #                      (no inotify-tools, no auditd, no root) whenever the
-#                      shared config changes or its lockfile appears —
+#                      shared config changes or its lockfile is released —
 #                      carrying the current core.bare value, the gate
 #                      child's descendant process tree, and any
 #                      /proc/*/fd holder of the config or its lock
@@ -530,10 +530,13 @@ watch_config_writes() {
     while kill -0 "$gate_pid" 2>/dev/null; do
         if [[ -e "$lock" ]]; then
             if [[ "$lock_seen" == "0" ]]; then
-                record_config_event "$log" "config.lock APPEARED" "$cfg" "$gate_pid"
                 lock_seen=1
             fi
-        else
+        elif [[ "$lock_seen" == "1" ]]; then
+            # Git publishes the new config by renaming the lock over it. Read
+            # only after that lock disappears: at appearance, `$cfg` is still
+            # the old file and would attribute a stale core.bare value.
+            record_config_event "$log" "config.lock RELEASED" "$cfg" "$gate_pid"
             lock_seen=0
         fi
         if config_changed "$cfg" "$ref" "$stamp"; then
