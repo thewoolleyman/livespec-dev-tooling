@@ -1,2 +1,2 @@
-work_item=livespec-dev-tooling-jw3cyl
-reason=Hand the job GITHUB_TOKEN to the base and python sandbox image builds as a BuildKit secret mounted only for `mise use`, so a hosted runner shared IP cannot rate-limit the release image build (v1.143.2 build failed 403 rate limit, run 41324169993).
+work_item=livespec-dev-tooling-lzkzwb
+reason=Route push-event gating jobs through CI_RUNNER_LABELS_MASTER ahead of CI_RUNNER_LABELS (spec v121 master-push-ci-routing), so master CI runs on the reserved livespec-dev-master-k3s slice; master-push job wait measured p90 50.7 min vs PR 19.3 min (plan ci-runtime-and-cost research 003). Changes runs-on routing only; no gate, job or matrix entry is added or removed.
