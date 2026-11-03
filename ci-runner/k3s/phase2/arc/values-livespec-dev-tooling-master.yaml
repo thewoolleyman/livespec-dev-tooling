@@ -1,0 +1,189 @@
+# values-livespec-dev-tooling-master.yaml -- the AutoscalingRunnerSet for
+# `livespec-dev-tooling`'s MASTER-PUSH CI only. Its sibling
+# values-livespec-dev-tooling.yaml serves the same repository's pull-request
+# CI (and, until CI_RUNNER_LABELS_MASTER is set, its master pushes too).
+# Work-item livespec-dev-tooling-lzkzwb, plan ci-runtime-and-cost (epic
+# livespec-dev-tooling-ib3oe3); read ../kueue/DERIVATION.md "The master-push
+# slice for livespec-dev-tooling (2026-11-03)" first.
+#
+# WHY A SECOND SCALE SET FOR ONE REPOSITORY. Measured 2026-11-03 over 24 h:
+# dev-tooling master-push jobs waited p90 50.7 min to start against p90 19.3
+# min for pull_request jobs, because both events name ONE runs-on target and
+# so share one GitHub assignment queue and one 12-runner ceiling. ARC creates
+# the runner pod BEFORE GitHub assigns it a job, so nothing at pod creation
+# knows the triggering event and no Kueue priority can separate the two; only
+# `runs-on` can. ci.yml's gating jobs route a `push` through the
+# CI_RUNNER_LABELS_MASTER repository variable to THIS scale set, which drains
+# into its own reserved, non-lendable ClusterQueue
+# (../kueue/cluster-queue-livespec-dev-tooling-master.yaml).
+#
+# THE NAME. `livespec-dev-tooling-master-k3s` is 31 characters, one over the
+# README.md "`runnerScaleSetName` MUST stay <=30 characters" budget. Per that
+# rule the repo-name portion is truncated at the longest hyphen-bounded prefix
+# that fits the 19 characters left after `-master-k3s` -- `livespec-dev` --
+# mechanically, never an invented abbreviation (the same rule that named
+# `livespec-orchestrator-k3s` and `livespec-console-beads-k3s`). The
+# LocalQueue and ClusterQueue keep the full name: Kubernetes object names have
+# no such budget. CI_RUNNER_LABELS_MASTER must name THIS scale-set name.
+#
+# githubConfigUrl is the SAME repository as the sibling's: the App installation
+# already covers it, so no `thewoolleyman-ci-runners` selection change is
+# needed. Two scale sets on one repository are told apart by GitHub only by
+# their runnerScaleSetName, which is what `runs-on` names.
+#
+# Everything below the name and the queue label is the sibling's body
+# verbatim -- the WORKFLOW-POD AppArmor wiring (livespec-s43svm.25, see
+# values-livespec-overseer.yaml and ../apparmor/ci-runner-workflow), the
+# fleet container hook and externals pre-seed (livespec-wm7c), and
+# `fsGroupChangePolicy: OnRootMismatch` (livespec-lvtu). A runner-image bump
+# rewrites this file with every other values file
+# (../container-hook/README.md "Runner-image bump procedure").
+githubConfigUrl: "https://github.com/thewoolleyman/livespec-dev-tooling"
+githubConfigSecret: arc-github-app-installation  # same secret as phase 1 -- see ../../README.md "Credential separation"
+
+runnerScaleSetName: "livespec-dev-master-k3s"
+
+containerMode:
+  type: "kubernetes"
+  kubernetesModeWorkVolumeClaim:
+    accessModes: ["ReadWriteOnce"]
+    storageClassName: "local-path"
+    resources:
+      requests:
+        # NOT a quota and NOT a reservation. `local-path` is a mkdir-only
+        # provisioner with no size enforcement, so this request neither bounds
+        # nor reserves the work volume: one job's volume can grow to the whole
+        # ci-workvols tier (measured on the console lane, its plan
+        # optimize-console-builds research/002). It is here only because a PVC
+        # spec requires a storage request; the actual bound is the tier's
+        # capacity and the ephemeral volume's deletion with the runner pod.
+        storage: 5Gi
+
+template:
+  metadata:
+    labels:
+      # Routes this scale set's runner pods through the master slice's LocalQueue
+      # rather than straight to the Kubernetes scheduler.
+      kueue.x-k8s.io/queue-name: livespec-dev-tooling-master-lq
+  spec:
+    securityContext:
+      runAsNonRoot: true
+      runAsUser: 1000
+      runAsGroup: 1000
+      fsGroup: 1000
+      # OnRootMismatch, not the default Always: the work volume is born with
+      # the warm uv cache already in it as ~190k REFLINK COPIES (the
+      # local-path provisioner's setup script, ../local-path-provisioner/;
+      # hardlinks until 2026-09-06), and Always would have the kubelet
+      # chgrp+chmod every one of them on this pod's mount -- a per-start
+      # walk of the whole cache. The setup script leaves the
+      # volume root exactly as Always would (gid 1000, mode 2777), so the
+      # kubelet sees no mismatch and skips the walk (livespec-lvtu).
+      fsGroupChangePolicy: OnRootMismatch
+    volumes:
+      # Carries ../arc/hook-pod-template.yaml into the runner pod so the
+      # container hook can read it. Additive: the chart appends its own `work`
+      # volume for kubernetes mode, and declaring this one does not displace it.
+      - name: hook-pod-template
+        configMap:
+          name: arc-hook-pod-template
+      # The FLEET-PATCHED ARC container hook (../container-hook/), read-only
+      # from the node, where ../install-node.sh step 7c installed it. It skips
+      # the 595 MB / 9,028-file externals copy its unpatched twin makes on
+      # EVERY job start, when the work volume was pre-seeded with the matching
+      # runner version (livespec-wm7c, decision livespec-b1c6).
+      # `type: File` on purpose: a node that has not installed this hook fails
+      # the pod loudly instead of mounting an empty directory the runner would
+      # then quietly fall back from.
+      - name: fleet-container-hook
+        hostPath:
+          path: /usr/local/lib/ci-runner-k3s/hooks/2.336.0/index.js
+          type: File
+    containers:
+      - name: runner
+        # Pinned tag + digest (livespec-s43svm handoff finding, 2026-08-25;
+        # was `latest`; see the k3s README's "Pinned versions — nothing floats
+        # `latest`").
+        # The digest is the image the pool was verified on: its container
+        # hook has no fs-init init container and merges the hook template
+        # the way its header documents (see ../hook-pod-template.yaml or
+        # the phase2 copy). Bump BOTH tag and digest together, re-read the
+        # hook's initContainers behaviour, then helm upgrade + recycle.
+        # Since livespec-wm7c a bump is ALSO a hook rebuild, a re-extraction
+        # and a values rewrite: the `fleet-container-hook` hostPath above and
+        # ACTIONS_RUNNER_PRESEEDED_EXTERNALS_VERSION below carry this same
+        # version and move with it, in every one of these files at once
+        # (../container-hook/README.md "Runner-image bump procedure").
+        image: ghcr.io/actions/actions-runner:2.336.0@sha256:0cfdcc701ce933c6d243c6b0b2da767366dc9f2e99961d4c3754b0b78084cdda
+        command: ["/home/runner/run.sh"]
+        env:
+          - name: ACTIONS_RUNNER_REQUIRE_JOB_CONTAINER
+            value: "false"
+          # THE EXTERNALS PRE-SEED (livespec-wm7c, decision livespec-b1c6):
+          # run the fleet-patched hook mounted below instead of the image's
+          # own, and tell it which runner version's externals the work volume
+          # was born with. The hook skips its copy ONLY when this names the
+          # version whose marker the seed left in <work volume>/externals;
+          # unset, or naming another version, and the copy runs exactly as
+          # upstream's. The seed itself is the local-path provisioner's setup
+          # script (../local-path-provisioner/), from the `current` pointer
+          # ../container-hook/extract-externals.sh publishes.
+          # THESE TWO, the `fleet-container-hook` hostPath above and the
+          # `image:` pin above are ONE runner version and move together in one
+          # change; there is nowhere to state it once, because each values
+          # file is applied on its own (`helm upgrade -f`). A half-rewritten
+          # set is refused by ../container-hook/install-container-hook.sh
+          # before it installs anything. See ../container-hook/README.md
+          # "Runner-image bump procedure".
+          - name: ACTIONS_RUNNER_CONTAINER_HOOKS
+            value: /home/runner/fleet-hook/index.js
+          - name: ACTIONS_RUNNER_PRESEEDED_EXTERNALS_VERSION
+            value: "2.336.0"
+          # THE WORKFLOW-POD FIX -- see values-livespec-overseer.yaml for the
+          # full root cause. In kubernetes container mode the job's `container:`
+          # image runs in a SEPARATE pod the hook creates, whose securityContext
+          # is empty and which nothing else in this values file reaches. This env
+          # var is the hook's one supported seam for extending that pod's spec;
+          # it pins the pod to the node-loaded `ci-runner-workflow` AppArmor
+          # profile (../apparmor/ci-runner-workflow), which reproduces every
+          # containerd deny rule verbatim and widens ONLY the ptrace/signal peer
+          # expressions so a stacked AppArmor label matches them.
+          - name: ACTIONS_RUNNER_CONTAINER_HOOK_TEMPLATE
+            value: /home/runner/hook-template/hook-pod-template.yaml
+        volumeMounts:
+          - name: hook-pod-template
+            mountPath: /home/runner/hook-template
+            readOnly: true
+          # The fleet-patched hook, at exactly the path
+          # ACTIONS_RUNNER_CONTAINER_HOOKS names. Read-only: the runner
+          # executes it and never writes it.
+          - name: fleet-container-hook
+            mountPath: /home/runner/fleet-hook/index.js
+            readOnly: true
+        securityContext:
+          allowPrivilegeEscalation: false
+          privileged: false
+          capabilities:
+            drop: ["ALL"]
+        resources:
+          # Exactly ONE churn-slot per runner pod -- see values-livespec.yaml.
+          requests:
+            ci-runner.io/churn-slot: "1"
+          limits:
+            ci-runner.io/churn-slot: "1"
+
+# This scale set's ceiling term of the admission formula (`doubled repository
+# logical ceiling`). It is NOT the same number as the
+# `livespec-dev-tooling-master-cq` ClusterQueue's nominalQuota, which is the
+# slice's reserved share of the pool's churn-slot capacity -- a different term
+# of the same min(). See README.md "Two enforcement points, two DIFFERENT
+# numbers" and ../kueue/DERIVATION.md; the relation to hold is
+# nominalQuota <= maxRunners.
+#
+# max(2 x nominalQuota, 6) = max(2 x 3, 6) = 6, the rule of
+# ../kueue/DERIVATION.md "Bounding maxRunners to the quota (2026-09-06)". A
+# dev-tooling master run is ~9 gating jobs, so 6 drains one run in two waves:
+# its first 3 start on the reserved slots and up to 3 more on borrowed ones.
+# Recompute whenever C or this slice's quota changes.
+minRunners: 0
+maxRunners: 6

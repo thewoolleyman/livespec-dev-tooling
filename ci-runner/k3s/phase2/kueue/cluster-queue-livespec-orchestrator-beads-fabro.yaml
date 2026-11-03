@@ -32,9 +32,10 @@
 #
 # nominalQuota is this repo's GUARANTEED FLOOR, not its ceiling. Unused quota
 # anywhere in the `fleet-ci-runner-pool` cohort is borrowable automatically,
-# so this repo can burst well above 2 when its peers are idle. The per-repo
+# so this repo can burst well above 26 when its peers are idle (except into the
+# master-push slice, which lends nothing). The per-repo
 # ceiling is a SEPARATE number — ../arc/values-livespec-orchestrator-beads-fabro.yaml's
-# maxRunners (6). The two are different terms of the same min() and are
+# maxRunners (52). The two are different terms of the same min() and are
 # correctly UNEQUAL; see DERIVATION.md "The four terms and where each one lives".
 #
 # API version confirmed live against the pinned Kueue v0.19.1 install on
@@ -61,7 +62,12 @@ spec:
           resources:
             - name: "ci-runner.io/churn-slot"
               # Measured-job-hours re-derivation, 2026-10-22: see DERIVATION.md.
-              nominalQuota: 29
+              # 29 -> 26 on 2026-11-03: three slots DONATED to the
+              # livespec-dev-tooling master-push slice
+              # (cluster-queue-livespec-dev-tooling-master.yaml) so the cohort
+              # still sums to C = 44. See DERIVATION.md "The master-push slice
+              # for livespec-dev-tooling (2026-11-03)".
+              nominalQuota: 26
 ---
 apiVersion: kueue.x-k8s.io/v1beta2
 kind: LocalQueue

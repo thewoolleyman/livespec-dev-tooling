@@ -83,6 +83,7 @@ _NAME = re.compile(r"^  name:\s*(?P<name>\S+)", re.MULTILINE)
 _COHORT_NAME = re.compile(r"^  cohortName:\s*(?P<cohort>\S+)", re.MULTILINE)
 _CLUSTER_QUEUE = re.compile(r"^  clusterQueue:\s*(?P<cq>\S+)", re.MULTILINE)
 _NOMINAL_QUOTA = re.compile(r"^\s+nominalQuota:\s*(?P<quota>\d+)\s*$", re.MULTILINE)
+_LENDING_LIMIT = re.compile(r"^\s+lendingLimit:\s*(?P<limit>\S+)\s*$", re.MULTILINE)
 _MAX_RUNNERS = re.compile(r"^\s*maxRunners:\s*(?P<max>\d+)\s*$", re.MULTILINE)
 _QUEUE_NAME = re.compile(r"^\s*kueue\.x-k8s\.io/queue-name:\s*(?P<lq>\S+)\s*$", re.MULTILINE)
 _ADMISSION_CAPACITY = re.compile(r"^ADMISSION_CAPACITY_C=(?P<capacity>\d+)\s*$", re.MULTILINE)
@@ -225,8 +226,9 @@ def test_the_fair_shares_sum_to_the_capacity_the_node_profiles_declare() -> None
 def test_measured_job_hours_derive_the_committed_fair_shares() -> None:
     """Seven-day pool job-hours are the dated, auditable source of every quota."""
     expected = {
-        "livespec-orchestrator-beads-fabro-cq": 29,
+        "livespec-orchestrator-beads-fabro-cq": 26,
         "livespec-dev-tooling-cq": 6,
+        "livespec-dev-tooling-master-cq": 3,
         "livespec-cq": 2,
         "livespec-overseer-cq": 1,
         "livespec-orchestrator-git-jsonl-cq": 1,
@@ -242,6 +244,31 @@ def test_measured_job_hours_derive_the_committed_fair_shares() -> None:
     assert "## Measured job-hours re-derivation at C = 44 (2026-10-22)" in derivation
     assert "SUM(duration_ms) / 3,600,000" in derivation
     assert "deducts one from `livespec-orchestrator-beads-fabro` (30 → 29)" in derivation
+    assert "## The master-push slice for livespec-dev-tooling (2026-11-03)" in derivation
+
+
+def test_master_push_slice_reserves_its_quota_and_lends_none_of_it() -> None:
+    """The master slice's floor is reserved: `lendingLimit: 0`, no preemption.
+
+    Reclaim is Never across the cohort, so a lent master slot would only come
+    back when the pull-request job borrowing it finished — the wait the slice
+    exists to remove. Every OTHER member must keep lending its whole floor.
+    """
+    lending = {
+        document_name.group("name"): limit.group("limit")
+        for document in _documents()
+        if (document_name := _NAME.search(document)) is not None
+        and (limit := _LENDING_LIMIT.search(document)) is not None
+    }
+    assert lending == {"livespec-dev-tooling-master-cq": "0"}
+    master = next(
+        document
+        for document in _documents()
+        if (found := _NAME.search(document)) is not None
+        and found.group("name") == "livespec-dev-tooling-master-cq"
+    )
+    for setting in ("reclaimWithinCohort: Never", "policy: Never", "withinClusterQueue: Never"):
+        assert setting in master
 
 
 def test_rederived_orchestrator_ceiling_removes_its_recorded_exception() -> None:
@@ -251,11 +278,11 @@ def test_rederived_orchestrator_ceiling_removes_its_recorded_exception() -> None
     rule_value = max(_CEILING_MULTIPLE * quota, _CEILING_FLOOR)
     derivation = _DERIVATION.read_text(encoding="utf-8")
 
-    assert rule_value == 58
+    assert rule_value == 52
     assert rule_value >= 12
     assert "## Recorded exceptions to the rule" not in derivation
     assert (
-        "The Recorded exceptions to the rule table remains absent because 58 is not below 12."
+        "The Recorded exceptions to the rule table remains absent because 52 is not below 12."
         in " ".join(derivation.split())
     )
 

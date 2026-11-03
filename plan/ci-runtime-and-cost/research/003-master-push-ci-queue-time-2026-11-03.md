@@ -29,13 +29,14 @@ A WorkloadPriorityClass alone cannot fix this. It would only reorder pods alread
 
 ## Ruled change (legacy-coordinator-agent, 2026-11-03 ~11:55Z)
 
-- A dedicated master scale set `livespec-dev-tooling-master-k3s` (maxRunners 9), with a LocalQueue into a new `livespec-dev-tooling-master-cq` in cohort `fleet-ci-runner-pool`.
-  - nominalQuota 3 is taken from dev-tooling's 6, which becomes 3. The sum stays 44.
+- A dedicated master scale set (maxRunners 6 = max(2 × 3, 6)), with a LocalQueue into a new `livespec-dev-tooling-master-cq` in cohort `fleet-ci-runner-pool`. The ruled name `livespec-dev-tooling-master-k3s` is 31 characters, over the phase2 README's 30-character `runnerScaleSetName` limit, so the committed scale set is `livespec-dev-master-k3s` by that rule's hyphen-bounded truncation.
+  - nominalQuota 3 is taken from `livespec-orchestrator-beads-fabro-cq`, which goes 29 → 26; its scale set's maxRunners goes 58 → 52. dev-tooling stays at quota 6 and maxRunners 12. The sum stays 44.
+  - **Donor re-ruled (~11:25Z).** The first ruling took the 3 from dev-tooling's 6 (6 → 3) and gave the master set maxRunners 9. It was withdrawn because `ci-runner/k3s/phase2/kueue/DERIVATION.md` "Bounding maxRunners to the quota (2026-09-06)" would then set dev-tooling's ceiling to max(2 × 3, 6) = 6, halving its PR ceiling from 12. The `kubernetes-sandbox-backend` measurement at 11:10–11:15Z showed the GitHub-side wait is that ARC ceiling, not Kueue, while the orchestrator was using 13 of its 58 runners. Watch item: the orchestrator's pull_request p90 job wait for 24 h after the change.
   - `lendingLimit: 0` on the churn-slot resource. Reclaim is Never, so without it the idle master floor would be borrowed and never returned.
   - Preemption stays Never.
 - ci.yml gating `runs-on` becomes `fromJSON(github.event_name == 'push' && vars.CI_RUNNER_LABELS_MASTER || vars.CI_RUNNER_LABELS || '["ubuntu-latest"]')`. It is inert until the variable is set.
 - Order: converge the scale set and CQ, confirm the listener has registered, then set `CI_RUNNER_LABELS_MASTER`.
-- The 6→3 floor trade is approved: a starved master blocks every dev-tooling dispatch through the master-CI preflight, and PRs still borrow above 3.
+- ~~The 6→3 floor trade is approved~~ — superseded by the donor re-ruling above; dev-tooling keeps its 6. The reason a reserved master slice is worth 3 slots stands: a starved master blocks every dev-tooling dispatch through the master-CI preflight.
 - The routing contract in `constraints.md` §"CI matrix shape" changes, so a propose-change and revise come first (topic `master-push-ci-routing`). DERIVATION.md gains a section for the quota move.
 - Overseer follows the same pattern once dev-tooling proves it.
 - Open question for the maintainer, NOT taken: a master `concurrency` group that cancels superseded master runs would shrink the bursts. It would also remove the per-commit verdicts the red-master reconciler uses to find a breaking commit, which is a gate reduction and so the maintainer's call.

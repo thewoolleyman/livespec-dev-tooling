@@ -56,6 +56,10 @@ spec:
           resources:
             - name: "ci-runner.io/churn-slot"
               # Measured-job-hours re-derivation, 2026-10-22: see DERIVATION.md.
+              # UNCHANGED by the 2026-11-03 master-push slice: this repo's
+              # master pushes moved to livespec-dev-tooling-master-cq, whose 3
+              # slots came from the orchestrator, not from here (DERIVATION.md
+              # "The master-push slice for livespec-dev-tooling (2026-11-03)").
               nominalQuota: 6
 ---
 apiVersion: kueue.x-k8s.io/v1beta2
