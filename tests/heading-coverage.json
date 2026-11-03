@@ -1172,6 +1172,14 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: an apply refuses a plugin binary whose digest differs from an instance pin, and drift compares live pins to the installed binary",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this scenario, converging the plugin-installing role against fabro_server_instances whose declared pin differs from and equals the plugin sha256, and running the fabro-hosts drift comparison of each live settings.toml pin against the installed binary; livespec-dev-tooling-rnsfgg owns it, and its Definition of Done asserts this behaviour.",
+    "work_item": "livespec-dev-tooling-rnsfgg"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: a member whose only error findings are stale pins still receives the release dispatch",
     "test": "TODO",
     "reason": "Spec-first: an integration-tier test of the dispatch-matrix filter is owed; exercised by the implementing item livespec-dev-tooling-epcoja.",

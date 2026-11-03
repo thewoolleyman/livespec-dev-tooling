@@ -1462,6 +1462,20 @@ And a converge while a non-terminal run on that instance uses a listed id MUST f
 
 And a converge of a mapping that lists one id in both `environments` and `retired_environments` MUST fail before changing anything
 
+## Scenario: an apply refuses a plugin binary whose digest differs from an instance pin, and drift compares live pins to the installed binary
+
+Given a factory host whose `fabro_server_instances` declare sha256 `d93437f0...` for the sandbox provider at `/usr/local/bin/sandbox-driver-kubernetes`
+
+When an apply of the role that installs that plugin carries sha256 `93ca024d...` for the same path
+
+Then the apply MUST fail before the binary is downloaded or moved, naming each disagreeing instance and both digests
+
+And the file at that path MUST be unchanged
+
+And an apply whose plugin sha256 equals every instance's declared pin for that path MUST install the binary
+
+And `just ansible-drift ansible/fabro-hosts.yml` MUST report as drift any instance whose live `settings.toml` sha256 for that provider differs from the sha256 of the installed binary
+
 ## Scenario: a member whose only error findings are stale pins still receives the release dispatch
 
 Given a fleet member whose only error-severity findings in the fan-out preflight are pin-currency staleness findings
