@@ -840,6 +840,63 @@ incorrectly below the rule. The Recorded exceptions to the rule table remains
 absent because 58 is not below 12. The ten ceilings total 118; at a full
 44-runner admission, at most 74 runner objects are gated in the cluster.
 
+## The rebalance at C = 44 — hp-xubuntu opened runner-only (2026-11-03)
+
+Work-item `livespec-dev-tooling-zreev4`, plan `kubernetes-sandbox-backend`
+(epic `bd-ib-nmuyjc`, livespec-orchestrator-beads-fabro tenant); fleet
+coordinator ruling of 2026-11-03. `hp-xubuntu` had joined the pool closed to CI
+(`CI_NODE_FACILITIES=none`, capacity 0). It was opened under the new
+`runner-only` posture with **8** churn slots, and those 8 slots were MOVED from
+`poweredge-xubuntu` rather than added:
+
+| node | before | after |
+|---|---:|---:|
+| `poweredge-xubuntu` | 32 | **24** |
+| `gmktec-xubuntu` | 12 | 12 |
+| `hp-xubuntu` | 0 | **8** |
+| **cohort total C** | **44** | **44** |
+
+**Why move slots rather than add them.** Measured read-only at about 23:55Z on
+2026-11-02: `kubectl top node` read poweredge at about 98 % CPU (load about 191
+on 72 cores) and gmktec at 96 %, while hp ran 3 factory sandboxes at 3.6 of its
+16 cores (24 %) and 2.5 GiB (9 %). On a node pinned at 98 % CPU the CPU-bound
+phases of its jobs are zero-sum, so 8 fewer concurrent jobs there cost little
+throughput, and the same 8 jobs on idle hp get cores of their own. Runner pods
+request no cpu or memory, only `ci-runner.io/churn-slot: 1`, so hp's request
+budget (82 % held by its 3 sandboxes) does not bound them; its churn-slot
+capacity does.
+
+**Why the total stays 44.** The JIT startup batch of
+`SPECIFICATION/non-functional-requirements.md` §"Adaptive JIT runner admission
+budget" may spend at most 450 of GitHub's 900 REST points per minute, about 45
+mint pairs, and nothing in the pool caps a cold start except the registered
+capacity. `tests/consumer/test_jit_admission_scenarios.py` therefore holds the
+profiles' summed capacity at or below 45. Adding hp's 8 on top (C = 52) would
+let one cold start mint about 520 points; so C stays at 44.
+
+**What does not change.** The ten `nominalQuota`s and every scale set's
+`maxRunners` are exactly the "Measured job-hours re-derivation at C = 44
+(2026-10-22)" values: Kueue's cohort quota is cluster-wide and the total did not
+move. Only per-node PLACEMENT moves, and the scheduler enforces it: each node
+advertises its own capacity (`node_extended_resource` stamps the profile's
+`ADMISSION_CAPACITY_C`), so poweredge now takes at most 24 runner pods and hp at
+most 8. `tests/spec/test_jit_admission_budget.py` asserts the three profiles sum
+to 44 and to the cohort's quotas.
+
+**8 is a STARTING value** for hp. Raise it, taking the same number off another
+node while the startup budget caps the total, while p95 job duration on hp
+grows about linearly and hp's memory holds; lower it if jobs on hp stretch or
+memory pressure appears. Neither 24 nor 8 has earned a soak yet.
+
+**Convergence order** is the R5 one: `node_status_credential`, then
+`node_extended_resource` stamps hp's 8 and poweredge's 24, then `node_taints`
+removes hp's `node-role/ci=factory:NoSchedule`, so hp is opened for scheduling
+last. Lowering poweredge to 24 while it runs more than 24 runner pods evicts
+nothing: the scheduler only stops placing new ones there until it drains below.
+
+**Reverting** is the same two profile edits back: hp to `CI_NODE_FACILITIES=none`,
+capacity 0 and the factory taint, and poweredge to 32.
+
 ## Bounding maxRunners to the quota (2026-09-06)
 
 Maintainer decision 2026-09-06 (livespec plan `poweredge-raid-array-maintenance`,

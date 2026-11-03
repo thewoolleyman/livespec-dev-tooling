@@ -16,12 +16,26 @@
 #
 # CONTENT: byte-for-byte the k3s v1.36.2+k3s1 bundled manifest (image
 # rancher/local-path-provisioner:v0.0.36, path /var/lib/rancher/k3s/storage,
-# default StorageClass `local-path`, WaitForFirstConsumer) plus THREE additions
+# default StorageClass `local-path`, WaitForFirstConsumer) plus FOUR additions
 # — the container `args:`, the warm-cache seed in the ConfigMap's `setup`
-# script, and the externals seed at the end of that same script. Keep the image
+# script, the externals seed at the end of that same script, and one
+# `nodePathMap` entry per runner-only node (below). Keep the image
 # pin in lockstep with the k3s version in
 # ../../provision-k3s.sh: a k3s upgrade that bumps the bundled provisioner is
 # the moment to re-diff this file against the new bundled copy.
+#
+# THE RUNNER-ONLY NODES (livespec-dev-tooling-zreev4): every node whose phase0
+# profile declares CI_NODE_FACILITIES=runner-only gets its OWN nodePathMap entry
+# below, naming that profile's RUNNER_WORKVOL_DIR, because such a node carries
+# no ci-workvols tier for the default path to be a bind onto. The entries are
+# typed here rather than rendered, because this file is applied byte-for-byte
+# and the ci_local_path_provisioner role asserts the live setup script equals
+# git; tests/livespec_dev_tooling/test_runner_only_node_posture.py fails the
+# moment the entries and the runner-only profiles disagree. Neither seed below
+# reaches such a node: the warm-cache CronJob writes `.warm` only on the cache
+# tier carrier, so `${VOL_DIR%/*}/.warm` does not exist there and the volume
+# starts cold, and its filesystem need not support reflink, in which case the
+# externals copy fails and leaves none, as it does anywhere reflink is absent.
 #
 # THE WARM-CACHE SEED (livespec plan `ci-runner-pod-lifecycle-reliability`,
 # research/005, carrier `livespec-lvtu`; made private per volume under
@@ -277,6 +291,10 @@ data:
       {
         "node":"DEFAULT_PATH_FOR_NON_LISTED_NODES",
         "paths":["/var/lib/rancher/k3s/storage"]
+      },
+      {
+        "node":"hp-xubuntu",
+        "paths":["/srv/sandbox-storage/runner-workvols"]
       }
       ]
     }

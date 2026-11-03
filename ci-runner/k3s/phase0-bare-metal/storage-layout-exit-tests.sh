@@ -1311,6 +1311,12 @@ fi
 # ---------------------------------------------------------------------------
 echo
 echo "== J. The COMMITTED third node's profile: hp-xubuntu declares NO CI storage =="
+# SINCE 2026-11-03 hp IS `runner-only` (livespec-dev-tooling-zreev4): open to CI
+# runner pods at capacity 8 with no taint, still declaring no storage. J1-J4 run
+# against the committed profile; J5-J8 grade the runner-only posture's own
+# declarations and refusals, and J9-J11 keep grading the closed `none` posture
+# against HP_CLOSED, the committed profile put back to it, because reverting the
+# opening is exactly that edit and the parser must still hold it.
 # ---------------------------------------------------------------------------
 # Sections F and G proved the free-space plan and the second node's data. This
 # node is a third SHAPE rather than a third instance: `CI_NODE_FACILITIES=none`
@@ -1342,7 +1348,7 @@ fi
 
 # A stage that printed nothing would be indistinguishable from one that failed
 # to read the profile, so the no-op has to SAY why it is one, naming the key.
-if printf '%s' "$HP_OUT" | grep -qF 'CI_NODE_FACILITIES=none' \
+if printf '%s' "$HP_OUT" | grep -qF 'CI_NODE_FACILITIES=runner-only' \
    && printf '%s' "$HP_OUT" | grep -qF 'PRESERVED_PARTITIONS remains the standing refusal'; then
   ok "J2  the no-op names the key it is a no-op for, and that preservation is still armed"
 else
@@ -1358,6 +1364,7 @@ fi
 hp_clobbering() {  # hp_clobbering PARTITION -> path in REPLY_PROFILE
   REPLY_PROFILE="${TMPROOT}/hp-clobber-$(printf '%s' "$1" | tr '/' '-').env"
   sed -e 's#^CI_NODE_FACILITIES=.*#CI_NODE_FACILITIES=full#' \
+      -e 's#^RUNNER_WORKVOL_DIR=.*#RUNNER_WORKVOL_DIR=#' \
       -e 's#^PV_PARTLABEL=.*#PV_PARTLABEL=lvm#' \
       -e "s#^VOLUME_GROUPS=.*#VOLUME_GROUPS=nvmea:${1}#" \
       -e 's#^LOGICAL_VOLUMES=.*#LOGICAL_VOLUMES=nvmea:ci-cache:10GiB:ext4:ci-cache#' \
@@ -1391,12 +1398,13 @@ for protected in /dev/sda1 /dev/sda2 /dev/sdc1 /dev/sdc2; do
   fi
 done
 
-# The three ways the committed profile says "taking nothing", and the parser's
-# refusal of each one taken away. The values are read from the file rather than
+# The ways the committed profile says "runners without tiers", and the parser's
+# refusal of each one broken. The values are read from the file rather than
 # restated, and the refusals are what make the posture a statement rather than
-# three coincidences that happen to agree today.
-for declared in 'CI_NODE_FACILITIES=none' 'ADMISSION_CAPACITY_C=0' \
-                'CLUSTER_ROLE=agent' 'NODE_TAINTS=node-role/ci=factory:NoSchedule'; do
+# coincidences that happen to agree today.
+for declared in 'CI_NODE_FACILITIES=runner-only' 'ADMISSION_CAPACITY_C=8' \
+                'CLUSTER_ROLE=agent' 'NODE_TAINTS=' \
+                'RUNNER_WORKVOL_DIR=/srv/sandbox-storage/runner-workvols'; do
   if grep -qxF "$declared" "$HP"; then
     ok "J5  the committed profile declares: ${declared}"
   else
@@ -1404,29 +1412,64 @@ for declared in 'CI_NODE_FACILITIES=none' 'ADMISSION_CAPACITY_C=0' \
   fi
 done
 
+p="${TMPROOT}/hp-runner-only-at-zero.env"
+sed 's#^ADMISSION_CAPACITY_C=.*#ADMISSION_CAPACITY_C=0#' "$HP" > "$p"
+run_layout "$BARE" --dry-run "$p"
+if [ "$REPLY_RC" -ne 0 ] && printf '%s' "$REPLY_OUT" | grep -qF 'ADMISSION_CAPACITY_C must be a positive integer'; then
+  ok "J6  a runner-only node advertising no churn slot is refused"
+else
+  no "J6  a runner-only node advertising no churn slot is refused (rc=${REPLY_RC})"
+fi
+
+p="${TMPROOT}/hp-runner-only-tainted.env"
+sed 's#^NODE_TAINTS=.*#NODE_TAINTS=node-role/ci=factory:NoSchedule#' "$HP" > "$p"
+run_layout "$BARE" --dry-run "$p"
+if [ "$REPLY_RC" -ne 0 ] && printf '%s' "$REPLY_OUT" | grep -qF 'NODE_TAINTS must carry no node-role/ci record'; then
+  ok "J7  a runner-only node keeping its node-role/ci taint is refused"
+else
+  no "J7  a runner-only node keeping its node-role/ci taint is refused (rc=${REPLY_RC})"
+fi
+
+# HP_CLOSED — the committed profile put back to the closed posture hp held until
+# 2026-11-03. Reverting the opening is this edit, so `none` stays graded.
+HP_CLOSED="${TMPROOT}/hp-closed.env"
+sed -e 's#^CI_NODE_FACILITIES=.*#CI_NODE_FACILITIES=none#' \
+    -e 's#^RUNNER_WORKVOL_DIR=.*#RUNNER_WORKVOL_DIR=#' \
+    -e 's#^NODE_TAINTS=.*#NODE_TAINTS=node-role/ci=factory:NoSchedule#' \
+    -e 's#^ADMISSION_CAPACITY_C=.*#ADMISSION_CAPACITY_C=0#' \
+    "$HP" > "$HP_CLOSED"
+run_layout "$BARE" --dry-run "$HP_CLOSED"
+if [ "$REPLY_RC" -eq 0 ] && printf '%s' "$REPLY_OUT" | grep -qF 'CI_NODE_FACILITIES=none' \
+   && [ "$(printf '%s\n' "$REPLY_OUT" | grep -c '^+ ' || true)" -eq 0 ]; then
+  ok "J9  the closed hp profile plans NOT ONE mutating command and names CI_NODE_FACILITIES=none"
+else
+  no "J9  the closed hp profile plans NOT ONE mutating command and names CI_NODE_FACILITIES=none (rc=${REPLY_RC})"
+  printf '%s\n' "$REPLY_OUT"
+fi
+
 p="${TMPROOT}/hp-advertising-capacity.env"
-sed 's#^ADMISSION_CAPACITY_C=.*#ADMISSION_CAPACITY_C=12#' "$HP" > "$p"
+sed 's#^ADMISSION_CAPACITY_C=.*#ADMISSION_CAPACITY_C=12#' "$HP_CLOSED" > "$p"
 run_layout "$BARE" --dry-run "$p"
 if [ "$REPLY_RC" -ne 0 ] && printf '%s' "$REPLY_OUT" | grep -qF 'ADMISSION_CAPACITY_C must be 0'; then
-  ok "J6  a closed node advertising churn slots is refused"
+  ok "J10 a closed node advertising churn slots is refused"
 else
-  no "J6  a closed node advertising churn slots is refused (rc=${REPLY_RC})"
+  no "J10 a closed node advertising churn slots is refused (rc=${REPLY_RC})"
 fi
 
 p="${TMPROOT}/hp-untainted.env"
-sed 's#^NODE_TAINTS=.*#NODE_TAINTS=#' "$HP" > "$p"
+sed 's#^NODE_TAINTS=.*#NODE_TAINTS=#' "$HP_CLOSED" > "$p"
 run_layout "$BARE" --dry-run "$p"
 if [ "$REPLY_RC" -ne 0 ] && printf '%s' "$REPLY_OUT" | grep -qF 'must carry a node-role/ci='; then
-  ok "J7  a closed node with no node-role/ci taint is refused"
+  ok "J11 a closed node with no node-role/ci taint is refused"
 else
-  no "J7  a closed node with no node-role/ci taint is refused (rc=${REPLY_RC})"
+  no "J11 a closed node with no node-role/ci taint is refused (rc=${REPLY_RC})"
 fi
 
 p="${TMPROOT}/hp-misspelt-posture.env"
 sed 's#^CI_NODE_FACILITIES=.*#CI_NODE_FACILITIES=non#' "$HP" > "$p"
 run_layout "$BARE" --dry-run "$p"
 if [ "$REPLY_RC" -ne 0 ] \
-   && printf '%s' "$REPLY_OUT" | grep -qF "CI_NODE_FACILITIES must be 'full' or 'none', got 'non'"; then
+   && printf '%s' "$REPLY_OUT" | grep -qF "CI_NODE_FACILITIES must be 'full', 'none' or 'runner-only', got 'non'"; then
   ok "J8  a posture value the parser does not know is refused as a POSTURE, not as an empty key"
 else
   no "J8  a posture value the parser does not know is refused as a POSTURE, not as an empty key (rc=${REPLY_RC})"

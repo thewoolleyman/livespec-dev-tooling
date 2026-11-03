@@ -61,11 +61,12 @@ all:
             gmktec-xubuntu:
               ansible_user: cwoolley
               cluster_role: agent
-            # A FACTORY-ONLY agent: it joins the pool and executes no CI job.
-            # The posture is its committed profile's, not this file's — the play
-            # reads CI_NODE_FACILITIES=none out of
+            # A FACTORY agent that also takes CI runner pods without carrying a
+            # storage tier (since 2026-11-03, livespec-dev-tooling-zreev4). The
+            # posture is its committed profile's, not this file's — the play
+            # reads CI_NODE_FACILITIES=runner-only out of
             # ci-runner/k3s/phase0-bare-metal/profiles/hp-xubuntu.env and gates
-            # the tier and job-execution roles off it. It left `sandbox_hosts` on
+            # the tier role off it. It left `sandbox_hosts` on
             # 2026-11-02; see the header.
             hp-xubuntu:
               ansible_user: cwoolley

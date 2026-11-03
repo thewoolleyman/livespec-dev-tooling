@@ -8,8 +8,10 @@ here. This file records only the arithmetic that a value cannot carry itself.
 
 ## hp-xubuntu factory-worker kubelet budget
 
-**What the budget is for.** `hp-xubuntu` runs a k3s agent as a factory-only node:
-it is closed to CI, and Kubernetes factory pods are placed on it. The kubelet
+**What the budget is for.** `hp-xubuntu` runs a k3s agent as a factory node.
+Since 2026-11-03 it is also open to CI runner pods under the `runner-only`
+posture (livespec-dev-tooling-zreev4); runner pods request only a churn slot,
+so this budget is still sized for the factory pods placed on it. The kubelet
 must hold back what the host itself needs, so that pods cannot starve k3s, `sshd`
 or the page cache. The rest it offers to factory pods. The records live in **one**
 place: `KUBELET_ARGS` in `ci-runner/k3s/phase0-bare-metal/profiles/hp-xubuntu.env`.
@@ -52,11 +54,14 @@ on CPU. Confirm the live figures after the apply with
 own arithmetic is the authority, and `ansible/restart-k3s-agent.yml` prints
 capacity beside allocatable for exactly this purpose.
 
-**Why `ADMISSION_CAPACITY_C` stays `0`.** That key counts CI churn slots, not
-factory pods. hp stays closed to CI, and `profile.sh` refuses a non-zero value on
-a node whose `CI_NODE_FACILITIES=none`. The allocatable line above is for factory
-pods, which the `factory` namespace's ResourceQuota bounds
-(`ci-runner/k3s/phase2/factory/DERIVATION.md`), not for runner pods.
+**Why `ADMISSION_CAPACITY_C` is a separate number.** That key counts CI churn
+slots, not factory pods. It was `0` while hp was closed to CI and is `8` since the
+`runner-only` opening, moved from poweredge-xubuntu with the cohort total held at 44
+(`ci-runner/k3s/phase2/kueue/DERIVATION.md` "The rebalance at C = 44 — hp-xubuntu
+opened runner-only (2026-11-03)"). Runner pods request no
+cpu or memory, so they do not draw on the allocatable line above. That line is
+for factory pods, which the `factory` namespace's ResourceQuota bounds
+(`ci-runner/k3s/phase2/factory/DERIVATION.md`).
 
 **When this budget is revisited.** Revisit it in any of these three cases:
 

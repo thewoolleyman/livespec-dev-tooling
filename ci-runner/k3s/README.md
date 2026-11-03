@@ -86,7 +86,7 @@ sequence has:
 
 | Profile | The node it is | What it takes from the sequence |
 |---|---|---|
-| `phase0-bare-metal/profiles/poweredge-xubuntu.env` | the first pool node: a PowerEdge with a PERC H730P, three media, and the control plane | all four steps, `DISK_PLAN=whole-device`, `CLUSTER_ROLE=server`, capacity `C=32` |
+| `phase0-bare-metal/profiles/poweredge-xubuntu.env` | the first pool node: a PowerEdge with a PERC H730P, three media, and the control plane | all four steps, `DISK_PLAN=whole-device`, `CLUSTER_ROLE=server`, capacity `C=24` (32 until the 2026-11-03 rebalance moved 8 slots to `hp-xubuntu`) |
 | `phase0-bare-metal/profiles/gmktec-xubuntu.env` | the second pool node: a GMKtec with one 2 TB NVMe, no storage controller, and the Xubuntu it already runs | steps 1, 3 and 4. `DISK_PLAN=free-space` preserves the root and EFI partitions at `nvme0n1p1`/`nvme0n1p2` and puts volume group `nvmea` — all three tiers — in the 1441 GiB tail at `nvme0n1p3`; `CLUSTER_ROLE=agent` joins `https://192.168.1.200:6443` from `eno1` at `192.168.1.156/24`. Since R5 (`livespec-dev-tooling-xa6o`) `NODE_TAINTS` is empty and capacity is `C=12` — the node is open for general CI churn (the live `node-role/ci=pending:NoSchedule` on the already-joined node is removed by a one-time `kubectl taint … node-role/ci-` at converge, since `--node-taint` applies only at registration). **Step 2 is skipped and refuses if run**: the node keeps its operating system, which is the whole reason its plan is `free-space`. |
 
 **The `gmktec-xubuntu` build is this recipe's first rehearsal.** The first

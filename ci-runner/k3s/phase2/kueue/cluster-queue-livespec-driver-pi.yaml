@@ -17,7 +17,7 @@
 #   demand weight w = 13 (this repo's MEASURED CI-matrix width — see the note
 #                         below, it is not a podman-era inheritance)
 #   fleet weight sum W = 516 (482 podman-era + livespec-driver-pi's 13 + livespec-orchestrator-beads-fabro's 21)
-#   pool churn-slot capacity C = 44 (per-node: poweredge 32 + gmktec 12; churn-slot capacity is per-node while the Kueue cohort quota is cluster-wide, so it sums to both nodes -- see DERIVATION.md "The derivation at C = 44 -- the two-node pool (2026-09-11)")
+#   pool churn-slot capacity C = 44 (per-node since the 2026-11-03 rebalance: poweredge 24 + gmktec 12 + hp 8; poweredge 32 + gmktec 12 from R5; churn-slot capacity is per-node while the Kueue cohort quota is cluster-wide, so it sums to both nodes -- see DERIVATION.md "The derivation at C = 44 -- the two-node pool (2026-09-11)")
 #   exact share = C * w / W = 1.1085  ->  floor 1, no leftover = 1
 #
 # AT C = 44 THE OLD C = 16 COHORT-SUM EXCEPTION IS STILL GONE. At the old C = 16

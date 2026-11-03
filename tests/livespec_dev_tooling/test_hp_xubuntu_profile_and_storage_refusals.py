@@ -16,6 +16,14 @@ stages receive — defaults, emptiness rules and the posture refusals all live i
 three-line bash harness sources it, calls `profile_load`, and prints the
 resulting `CFG` table; that printed table is what the assertions read.
 
+SINCE 2026-11-03 hp IS `runner-only` (livespec-dev-tooling-zreev4): open to CI
+runner pods at capacity 8, with no `node-role/ci` taint, no storage tier and a
+runner work-volume directory on its existing `sandbox-stores` mount. The parse
+assertions below read that posture off the committed profile, and its own
+refusals are tested by removal exactly as `none`'s are. `none`'s refusals stay
+tested too, against a fixture that puts hp back to the closed posture, because
+reverting the opening is that same edit and the parser must still hold it.
+
 THE THREE-WAY REFUSAL IS THE POINT OF THE POSTURE, AND IT IS TESTED BY REMOVAL.
 `CI_NODE_FACILITIES=none` means "joins the pool, executes no CI job", and the
 parser refuses it unless the profile ALSO declares no CI storage,
@@ -178,6 +186,10 @@ def _clobbering_fixture(*, partition: str, tmp_path: Path) -> Path:
     for line in _HP_PROFILE.read_text(encoding="utf-8").splitlines():
         if line.startswith("CI_NODE_FACILITIES="):
             edited.append("CI_NODE_FACILITIES=full")
+        elif line.startswith("RUNNER_WORKVOL_DIR="):
+            # `full` keeps its runner volumes on the ci-workvols tier, so the
+            # parser refuses a work-volume directory beside it.
+            edited.append("RUNNER_WORKVOL_DIR=")
         elif line.startswith("PV_PARTLABEL="):
             edited.append("PV_PARTLABEL=lvm")
         elif line.startswith("VOLUME_GROUPS="):
@@ -193,13 +205,20 @@ def _clobbering_fixture(*, partition: str, tmp_path: Path) -> Path:
     return fixture
 
 
-def _without(*, line_prefix: str, replacement: str, tmp_path: Path, name: str) -> Path:
-    """hp's committed profile with one key's line replaced."""
+def _without(
+    *,
+    line_prefix: str,
+    replacement: str,
+    tmp_path: Path,
+    name: str,
+    source: Path = _HP_PROFILE,
+) -> Path:
+    """`source` (hp's committed profile by default) with one key's line replaced."""
     fixture = tmp_path / name
     fixture.write_text(
         "\n".join(
             replacement if line.startswith(line_prefix) else line
-            for line in _HP_PROFILE.read_text(encoding="utf-8").splitlines()
+            for line in source.read_text(encoding="utf-8").splitlines()
         )
         + "\n",
         encoding="utf-8",
@@ -207,20 +226,120 @@ def _without(*, line_prefix: str, replacement: str, tmp_path: Path, name: str) -
     return fixture
 
 
+# The closed posture hp held until 2026-11-03, as the four lines that differ from
+# the committed runner-only profile. Reverting the opening is exactly this edit.
+_CLOSED_LINES = {
+    "CI_NODE_FACILITIES=": "CI_NODE_FACILITIES=none",
+    "RUNNER_WORKVOL_DIR=": "RUNNER_WORKVOL_DIR=",
+    "NODE_TAINTS=": "NODE_TAINTS=node-role/ci=factory:NoSchedule",
+    "ADMISSION_CAPACITY_C=": "ADMISSION_CAPACITY_C=0",
+}
+
+
+def _closed_fixture(*, tmp_path: Path) -> Path:
+    """hp's committed profile put back to the closed `none` posture."""
+    lines = []
+    for line in _HP_PROFILE.read_text(encoding="utf-8").splitlines():
+        prefix = next((key for key in _CLOSED_LINES if line.startswith(key)), None)
+        lines.append(_CLOSED_LINES[prefix] if prefix else line)
+    fixture = tmp_path / "hp-closed.env"
+    fixture.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return fixture
+
+
 # --- the parse half of the assertion ---------------------------------------
 
 
-def test_the_committed_hp_profile_parses_as_a_closed_agent_at_capacity_zero() -> None:
-    """The three values the Definition of Done names, as the ONE parser resolves them."""
+def test_the_committed_hp_profile_parses_as_a_runner_only_agent_at_capacity_eight() -> None:
+    """hp's opened posture, as the ONE parser resolves it (livespec-dev-tooling-zreev4)."""
     parsed = _parsed(profile=_HP_PROFILE)
     assert parsed["CLUSTER_ROLE"] == "agent", (
         f"hp joins the pool as an AGENT; the parser read CLUSTER_ROLE="
         f"{parsed['CLUSTER_ROLE']!r}"
     )
+    assert parsed["CI_NODE_FACILITIES"] == "runner-only", (
+        f"hp takes CI runner pods without carrying storage tiers, so its posture must be "
+        f"`runner-only`; the parser read {parsed['CI_NODE_FACILITIES']!r}"
+    )
+    assert parsed["ADMISSION_CAPACITY_C"] == "8", (
+        f"hp advertises 8 churn slots, moved from poweredge so the cohort's quota stays 44 "
+        f"(poweredge 24 + gmktec 12 + hp 8); the parser read {parsed['ADMISSION_CAPACITY_C']!r}"
+    )
+    assert "node-role/ci=" not in parsed["NODE_TAINTS"], (
+        f"hp must carry no node-role/ci taint: the capacity opens Kueue's admission and only "
+        f"an absent taint lets the scheduler place the runners; got {parsed['NODE_TAINTS']!r}"
+    )
+    assert parsed["RUNNER_WORKVOL_DIR"].startswith("/srv/sandbox-storage/"), (
+        f"hp's runner work volumes live on its existing sandbox-stores mount; the parser read "
+        f"RUNNER_WORKVOL_DIR={parsed['RUNNER_WORKVOL_DIR']!r}"
+    )
+    assert parsed["FACTORY_NODE"] == "true", (
+        f"and hp stays a factory node, so its sandboxes keep selecting on the factory label; "
+        f"got FACTORY_NODE={parsed['FACTORY_NODE']!r}"
+    )
+    for key in ("PV_PARTLABEL", "VOLUME_GROUPS", "LOGICAL_VOLUMES", "ROLE_TIERS"):
+        assert parsed[key] == "", f"runner-only hp declares no storage, so {key} is empty"
+
+
+def test_the_runner_only_posture_cannot_be_half_undone_one_key_at_a_time(*, tmp_path: Path) -> None:
+    """Each leg of "runners without tiers" broken in turn, and refused by name."""
+    _refused(
+        profile=_without(
+            line_prefix="ADMISSION_CAPACITY_C=",
+            replacement="ADMISSION_CAPACITY_C=0",
+            tmp_path=tmp_path,
+            name="hp-runner-only-at-zero.env",
+        ),
+        naming="ADMISSION_CAPACITY_C must be a positive integer",
+    )
+    _refused(
+        profile=_without(
+            line_prefix="NODE_TAINTS=",
+            replacement="NODE_TAINTS=node-role/ci=factory:NoSchedule",
+            tmp_path=tmp_path,
+            name="hp-runner-only-tainted.env",
+        ),
+        naming="NODE_TAINTS must carry no node-role/ci record",
+    )
+    _refused(
+        profile=_without(
+            line_prefix="ROLE_TIERS=",
+            replacement="ROLE_TIERS=ci-cache:nvmea",
+            tmp_path=tmp_path,
+            name="hp-runner-only-declaring-a-tier.env",
+        ),
+        naming="'ROLE_TIERS' must be empty",
+    )
+    _refused(
+        profile=_without(
+            line_prefix="RUNNER_WORKVOL_DIR=",
+            replacement="RUNNER_WORKVOL_DIR=",
+            tmp_path=tmp_path,
+            name="hp-runner-only-without-workvol.env",
+        ),
+        naming="RUNNER_WORKVOL_DIR must name the existing directory",
+    )
+    _refused(
+        profile=_without(
+            line_prefix="RUNNER_WORKVOL_DIR=",
+            replacement="RUNNER_WORKVOL_DIR=runner-workvols",
+            tmp_path=tmp_path,
+            name="hp-runner-only-relative-workvol.env",
+        ),
+        naming="RUNNER_WORKVOL_DIR must be an absolute path",
+    )
+
+
+def test_the_closed_fixture_parses_as_a_closed_agent_at_capacity_zero(*, tmp_path: Path) -> None:
+    """The posture hp held until 2026-11-03, which reverting the opening restores."""
+    parsed = _parsed(profile=_closed_fixture(tmp_path=tmp_path))
+    assert parsed["CLUSTER_ROLE"] == "agent", (
+        f"hp joins the pool as an AGENT; the parser read CLUSTER_ROLE="
+        f"{parsed['CLUSTER_ROLE']!r}"
+    )
     assert parsed["ADMISSION_CAPACITY_C"] == "0", (
-        f"hp must advertise NO churn slot, which is what keeps the cohort's quota at 44 "
-        f"(poweredge 32 + gmktec 12 + hp 0) rather than changing the number the whole Kueue "
-        f"derivation rests on; the parser read {parsed['ADMISSION_CAPACITY_C']!r}"
+        f"closed hp must advertise NO churn slot; the parser read "
+        f"{parsed['ADMISSION_CAPACITY_C']!r}"
     )
     assert "node-role/ci=" in parsed["NODE_TAINTS"], (
         f"hp's NODE_TAINTS must be non-empty and carry a node-role/ci record: the zero "
@@ -245,12 +364,14 @@ def test_the_closed_posture_cannot_be_half_undone_one_key_at_a_time(*, tmp_path:
     admit work it has nothing to run it with; one that left the taint off would
     be scheduled onto directly, past Kueue entirely.
     """
+    closed = _closed_fixture(tmp_path=tmp_path)
     _refused(
         profile=_without(
             line_prefix="ADMISSION_CAPACITY_C=",
             replacement="ADMISSION_CAPACITY_C=12",
             tmp_path=tmp_path,
             name="hp-advertising-capacity.env",
+            source=closed,
         ),
         naming="ADMISSION_CAPACITY_C must be 0",
     )
@@ -260,6 +381,7 @@ def test_the_closed_posture_cannot_be_half_undone_one_key_at_a_time(*, tmp_path:
             replacement="NODE_TAINTS=",
             tmp_path=tmp_path,
             name="hp-untainted.env",
+            source=closed,
         ),
         naming="must carry a node-role/ci=",
     )
@@ -269,8 +391,19 @@ def test_the_closed_posture_cannot_be_half_undone_one_key_at_a_time(*, tmp_path:
             replacement="ROLE_TIERS=ci-cache:nvmea",
             tmp_path=tmp_path,
             name="hp-declaring-a-tier.env",
+            source=closed,
         ),
         naming="'ROLE_TIERS' must be empty",
+    )
+    _refused(
+        profile=_without(
+            line_prefix="RUNNER_WORKVOL_DIR=",
+            replacement="RUNNER_WORKVOL_DIR=/srv/sandbox-storage/runner-workvols",
+            tmp_path=tmp_path,
+            name="hp-closed-with-workvol.env",
+            source=closed,
+        ),
+        naming="RUNNER_WORKVOL_DIR must be empty",
     )
 
 
@@ -290,7 +423,16 @@ def test_a_posture_the_parser_does_not_know_is_refused_rather_than_defaulted(
             tmp_path=tmp_path,
             name="hp-misspelt-posture.env",
         ),
-        naming="CI_NODE_FACILITIES must be 'full' or 'none', got 'non'",
+        naming="CI_NODE_FACILITIES must be 'full', 'none' or 'runner-only', got 'non'",
+    )
+    _refused(
+        profile=_without(
+            line_prefix="CI_NODE_FACILITIES=",
+            replacement="CI_NODE_FACILITIES=partial",
+            tmp_path=tmp_path,
+            name="hp-unknown-posture.env",
+        ),
+        naming="CI_NODE_FACILITIES must be 'full', 'none' or 'runner-only', got 'partial'",
     )
 
 
@@ -316,14 +458,25 @@ def test_stage_one_plans_not_one_command_against_the_committed_hp_profile(
     )
     planned = [line for line in completed.stdout.splitlines() if line.startswith("+ ")]
     assert planned == [], (
-        f"stage 1 must plan NO mutating command on a node declaring CI_NODE_FACILITIES=none; "
-        f"it planned {planned}"
+        f"stage 1 must plan NO mutating command on a node declaring "
+        f"CI_NODE_FACILITIES=runner-only; it planned {planned}"
     )
-    assert "CI_NODE_FACILITIES=none" in completed.stdout, (
+    assert "CI_NODE_FACILITIES=runner-only" in completed.stdout, (
         f"and it must say WHY it has nothing to do, naming the key: a stage that printed "
         f"nothing would be indistinguishable from one that failed to read the profile;\n"
         f"stdout={completed.stdout!r}"
     )
+
+
+def test_stage_one_plans_not_one_command_against_the_closed_fixture(
+    *, probe_path: tuple[str, Path], tmp_path: Path
+) -> None:
+    """The `none` arm of the same exit, so reverting the opening also plans nothing."""
+    completed = _stage_one(profile=_closed_fixture(tmp_path=tmp_path), probe_path=probe_path)
+    assert completed.returncode == 0, f"{completed.stdout}{completed.stderr}"
+    planned = [line for line in completed.stdout.splitlines() if line.startswith("+ ")]
+    assert planned == [], f"stage 1 against closed hp must plan nothing; it planned {planned}"
+    assert "CI_NODE_FACILITIES=none" in completed.stdout, completed.stdout
 
 
 @pytest.mark.parametrize("partition", _PROTECTED)

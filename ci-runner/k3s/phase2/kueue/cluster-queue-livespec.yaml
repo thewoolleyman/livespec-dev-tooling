@@ -11,12 +11,12 @@
 # nominalQuota derivation for THIS repo:
 #   demand weight w = 75 (podman-era ci-runner-supervisor apportionment)
 #   fleet weight sum W = 516 (482 podman-era + livespec-driver-pi's 13 + livespec-orchestrator-beads-fabro's 21)
-#   pool churn-slot capacity C = 44 (per-node: poweredge 32 + gmktec 12; churn-slot capacity is per-node while the Kueue cohort quota is cluster-wide, so it sums to both nodes -- see DERIVATION.md "The derivation at C = 44 -- the two-node pool (2026-09-11)")
+#   pool churn-slot capacity C = 44 (per-node since the 2026-11-03 rebalance: poweredge 24 + gmktec 12 + hp 8; poweredge 32 + gmktec 12 from R5; churn-slot capacity is per-node while the Kueue cohort quota is cluster-wide, so it sums to both nodes -- see DERIVATION.md "The derivation at C = 44 -- the two-node pool (2026-09-11)")
 #   exact share = C * w / W = 6.3953  ->  floor 6, no leftover = 6
 #
 # The ten repositories' nominalQuota values sum to exactly 44 = C = 44 (plan
 # k3s-on-gmktec-for-vps-usage / epic livespec-sab5gn R5, 2026-09-11). C is now
-# the TWO-NODE total — poweredge 32 + gmktec 12 — because churn-slot capacity is
+# the pool total — poweredge 24 + gmktec 12 + hp 8 since 2026-11-03, poweredge 32 + gmktec 12 from R5 — because churn-slot capacity is
 # per-node while the Kueue cohort quota is cluster-wide, so the ten values sum to
 # the pool's whole capacity across both nodes. Every repository's exact share
 # exceeds 1, so the apportionment carries NO `max(1, ...)` excess. Cohort

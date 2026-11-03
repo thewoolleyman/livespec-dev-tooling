@@ -2,9 +2,10 @@
 
 WHY THIS FILE EXISTS (work-item livespec-dev-tooling-7we6po, maintainer rulings
 2026-10-12 and 2026-10-13 on epic livespec-sqvj7p). `hp-xubuntu` joins the k3s
-pool as a FULL agent but CLOSED TO CI by its committed profile — a
-`node-role/ci` `NoSchedule` taint plus `ADMISSION_CAPACITY_C=0`, so the cohort's
-churn-slot quota stays 44 — and all THREE pool nodes carry a per-node FACTORY
+pool as a FULL agent. It was CLOSED TO CI by its committed profile until
+2026-11-03 and is now `runner-only` (livespec-dev-tooling-zreev4): no
+`node-role/ci` taint and `ADMISSION_CAPACITY_C=8`, so its plan registers no
+`--node-taint` at all — and all THREE pool nodes carry a per-node FACTORY
 label that the kubernetes-sandbox-backend plugin will select on. The label is a
 fact of each node's committed profile (`FACTORY_NODE`), rendered by the ONE
 procedure, so a fourth node is a fourth profile and never a fourth script —
@@ -193,7 +194,7 @@ def test_every_committed_pool_profile_plans_the_factory_node_label(
 def test_the_hp_plan_is_the_agent_join_its_measured_facts_imply(
     *, tripwire_path: tuple[str, Path], tmp_path: Path
 ) -> None:
-    """hp joins the first node's cluster, pinned, tainted, and on the sandbox disk.
+    """hp joins the first node's cluster, pinned, UNtainted, and on the sandbox disk.
 
     `--node-ip` is PINNED and not inferred because hp's wired `enp11s0` and its
     wireless `wlp10s0` are both on 192.168.1.0/24: a node that registered on the
@@ -204,13 +205,17 @@ def test_the_hp_plan_is_the_agent_join_its_measured_facts_imply(
     for fragment in (
         f"agent --server {_HP_JOIN}",
         f"--node-ip {_HP_NODE_IP}",
-        f"--node-taint {_HP_TAINT}",
         f"--data-dir {_HP_DATA_DIR}",
         f"--node-label {_FACTORY_LABEL}",
     ):
         assert (
             fragment in command
         ), f"hp's agent install command must carry {fragment!r};\ncommand={command!r}"
+    assert "--node-taint" not in command, (
+        f"runner-only hp declares no NODE_TAINTS, so its join must register no taint: a "
+        f"{_HP_TAINT} registered here would stop the scheduler placing the runners Kueue "
+        f"admits;\ncommand={command!r}"
+    )
     assert _HP_NODE_CIDR not in command, (
         f"`--node-ip` must be the BARE address: the netplan CIDR is what the base-OS stage "
         f"writes and what k3s rejects;\ncommand={command!r}"

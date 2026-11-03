@@ -290,7 +290,7 @@ fs_label_of() { probe blkid -p -s LABEL -o value "$1"; }
 # needs no root either — which is why this condition carries the posture and not
 # only the mode. Without it a `none` profile would be refused unprivileged for a
 # run that would have changed nothing.
-if [ "$DRY_RUN" -eq 0 ] && [ "${CFG[CI_NODE_FACILITIES]}" != "none" ] && [ "$(id -u)" -ne 0 ]; then
+if [ "$DRY_RUN" -eq 0 ] && [ "${CFG[CI_NODE_FACILITIES]}" = "full" ] && [ "$(id -u)" -ne 0 ]; then
   die "must run as root (it writes partition tables, volume groups and filesystems). Use --dry-run to see the plan unprivileged."
 fi
 
@@ -339,10 +339,21 @@ fi
 # ./storage-layout-exit-tests.sh §J proves, by running this stage against
 # hp's own preserved list with a tier declared onto each protected partition.
 # ---------------------------------------------------------------------------
-if [ "${CFG[CI_NODE_FACILITIES]}" = "none" ]; then
+# A `runner-only` node (livespec-dev-tooling-zreev4) takes CI runner pods but
+# declares no storage either: its runner work volumes live under the existing
+# directory RUNNER_WORKVOL_DIR names, so it takes exactly this exit. That is what
+# makes moving a node between `none` and `runner-only` a profile edit plus the
+# node-provisioning apply, with no storage stage at all.
+if [ "${CFG[CI_NODE_FACILITIES]}" != "full" ]; then
   stage "no CI storage declared — this stage has nothing to do on ${CFG[NODE_NAME]}"
-  note "CI_NODE_FACILITIES=none: this node joins the pool and executes no CI job, so it"
-  note "declares no physical volume, no volume group, no logical volume and no role tier."
+  if [ "${CFG[CI_NODE_FACILITIES]}" = "runner-only" ]; then
+    note "CI_NODE_FACILITIES=runner-only: this node takes CI runner pods on the existing"
+    note "directory ${CFG[RUNNER_WORKVOL_DIR]}, so it declares no physical volume, no volume"
+    note "group, no logical volume and no role tier."
+  else
+    note "CI_NODE_FACILITIES=none: this node joins the pool and executes no CI job, so it"
+    note "declares no physical volume, no volume group, no logical volume and no role tier."
+  fi
   note "Nothing here is written, no tool is installed, and no device is touched."
   note "PRESERVED_PARTITIONS remains the standing refusal for the day it declares tiers:"
   note "  ${CFG[PRESERVED_PARTITIONS]}"

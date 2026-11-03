@@ -132,8 +132,22 @@ PROFILE_REQUIRED_KEYS=(
 #                         job, so it declares no physical volume, no volume
 #                         group, no logical volume and no tier, and the stages
 #                         and roles that build or feed them self-gate off.
+#                         `runner-only` — the node takes CI RUNNER pods at its
+#                         declared admission capacity but carries none of the
+#                         pool's storage tiers (livespec-dev-tooling-zreev4): no
+#                         physical volume, no volume group, no logical volume
+#                         and no tier, so the storage stage plans nothing and
+#                         opening the node never repartitions a disk. Its runner
+#                         work volumes live under RUNNER_WORKVOL_DIR, its jobs
+#                         read the pool's host-served caches over the node
+#                         network and start with no seeded tree (cold).
 #                         `full` is the default because it is what both nodes
 #                         written before the key existed are.
+#   RUNNER_WORKVOL_DIR    the existing directory a `runner-only` node's local-path
+#                         provisioner creates runner work volumes under. REQUIRED
+#                         non-empty under `runner-only` and REQUIRED empty under
+#                         the other two postures, whose work volumes live on the
+#                         `ci-workvols` tier (`full`) or do not exist (`none`).
 #   FACTORY_NODE          `true` renders this node's FACTORY node label, which
 #                         the kubernetes-sandbox-backend selects factory
 #                         capacity on. `false` is the default — the behaviour
@@ -161,6 +175,7 @@ declare -gA PROFILE_KEY_DEFAULTS=(
   [NODE_TAINTS]=""
   [CHURN_KUBECONFIG_FILE]=""
   [CI_NODE_FACILITIES]=full
+  [RUNNER_WORKVOL_DIR]=""
   [FACTORY_NODE]=false
   [NODE_DATA_DIR]=""
   [KUBELET_ARGS]=""
@@ -259,8 +274,8 @@ profile_load() {
     *) die "${PROFILE_PATH}: FACTORY_NODE must be 'true' or 'false', got '${CFG[FACTORY_NODE]}'" ;;
   esac
   case "${CFG[CI_NODE_FACILITIES]}" in
-    full | none) ;;
-    *) die "${PROFILE_PATH}: CI_NODE_FACILITIES must be 'full' or 'none', got '${CFG[CI_NODE_FACILITIES]}'" ;;
+    full | none | runner-only) ;;
+    *) die "${PROFILE_PATH}: CI_NODE_FACILITIES must be 'full', 'none' or 'runner-only', got '${CFG[CI_NODE_FACILITIES]}'" ;;
   esac
 
   # Emptiness. CLUSTER_JOIN_ADDRESS is empty for a node that forms its own
@@ -277,6 +292,7 @@ profile_load() {
     CHURN_KUBECONFIG_FILE
     NODE_DATA_DIR
     KUBELET_ARGS
+    RUNNER_WORKVOL_DIR
   )
   # A node declaring NO CI facilities declares no storage for them either, and
   # the four keys below are the storage it would otherwise declare: the
@@ -284,7 +300,9 @@ profile_load() {
   # logical volumes in it and the role tiers on them. They are permitted empty
   # here and REQUIRED empty further down — a node cannot name a tier it has
   # said it does not carry.
-  if [ "${CFG[CI_NODE_FACILITIES]}" = "none" ]; then
+  # A `runner-only` node declares no storage either: it takes runner pods, but
+  # on a directory of an existing mount rather than on a tier of its own.
+  if [ "${CFG[CI_NODE_FACILITIES]}" != "full" ]; then
     may_be_empty+=(PV_PARTLABEL VOLUME_GROUPS LOGICAL_VOLUMES ROLE_TIERS)
   fi
   if [ "${CFG[CONTROLLER_KIND]}" = "none" ]; then
@@ -343,9 +361,39 @@ profile_load() {
   # -------------------------------------------------------------------------
   case "${CFG[CI_NODE_FACILITIES]}" in
     full)
-      # Nothing to oblige: the three storage keys are required non-empty
-      # already, which IS the `full` shape.
-      ;;
+      # The three storage keys are required non-empty already, which IS the
+      # `full` shape. Its work volumes live on the ci-workvols tier, so a
+      # runner work-volume directory would be a second, unused answer.
+      if [ -n "${CFG[RUNNER_WORKVOL_DIR]}" ]; then
+        die "${PROFILE_PATH}: CI_NODE_FACILITIES=full keeps its runner work volumes on the ci-workvols tier, so RUNNER_WORKVOL_DIR must be empty; it names '${CFG[RUNNER_WORKVOL_DIR]}'. Set CI_NODE_FACILITIES=runner-only for a node with no tiers."
+      fi ;;
+    runner-only)
+      # TAKING RUNNERS WITHOUT TIERS, AND CHECKED AGAINST ITSELF
+      # (livespec-dev-tooling-zreev4). The node declares no storage, admits a
+      # positive number of churn slots, is OPEN to CI scheduling, and names the
+      # existing directory its runner work volumes live under. Moving a node
+      # between `none` and `runner-only` is therefore a profile edit plus the
+      # node-provisioning apply, and the storage stage plans nothing either way.
+      local key
+      for key in PV_PARTLABEL VOLUME_GROUPS LOGICAL_VOLUMES ROLE_TIERS; do
+        if [ -n "${CFG[$key]}" ]; then
+          die "${PROFILE_PATH}: CI_NODE_FACILITIES=runner-only declares no CI storage tier, so '${key}' must be empty; it names '${CFG[$key]}'. Set CI_NODE_FACILITIES=full if this node really does carry the pool's tiers."
+        fi
+      done
+      if ! [[ "${CFG[ADMISSION_CAPACITY_C]}" =~ ^[1-9][0-9]*$ ]]; then
+        die "${PROFILE_PATH}: CI_NODE_FACILITIES=runner-only executes CI jobs, so ADMISSION_CAPACITY_C must be a positive integer; it is '${CFG[ADMISSION_CAPACITY_C]}'. A node open to runners that advertises no churn slot admits nothing."
+      fi
+      case " ${CFG[NODE_TAINTS]} " in
+        *" ${PROFILE_CI_TAINT_KEY}="*)
+          die "${PROFILE_PATH}: CI_NODE_FACILITIES=runner-only is OPEN to CI scheduling, so NODE_TAINTS must carry no ${PROFILE_CI_TAINT_KEY} record; it is '${CFG[NODE_TAINTS]}'. The taint would stop the scheduler placing the runners Kueue admits." ;;
+      esac
+      if [ -z "${CFG[RUNNER_WORKVOL_DIR]}" ]; then
+        die "${PROFILE_PATH}: CI_NODE_FACILITIES=runner-only has no ci-workvols tier, so RUNNER_WORKVOL_DIR must name the existing directory its runner work volumes live under"
+      fi
+      case "${CFG[RUNNER_WORKVOL_DIR]}" in
+        /*) ;;
+        *) die "${PROFILE_PATH}: RUNNER_WORKVOL_DIR must be an absolute path; it is '${CFG[RUNNER_WORKVOL_DIR]}'" ;;
+      esac ;;
     none)
       # TAKING NOTHING, SAID THREE WAYS, AND CHECKED AGAINST ITSELF. A node that
       # carries none of the CI facilities must also declare no storage for them,
@@ -366,7 +414,10 @@ profile_load() {
       case " ${CFG[NODE_TAINTS]} " in
         *" ${PROFILE_CI_TAINT_KEY}="*) ;;
         *) die "${PROFILE_PATH}: CI_NODE_FACILITIES=none must also be CLOSED to CI scheduling, so NODE_TAINTS must carry a ${PROFILE_CI_TAINT_KEY}=<value>:<Effect> record; it is '${CFG[NODE_TAINTS]}'. ADMISSION_CAPACITY_C=0 stops Kueue's admission; the taint is what stops the scheduler." ;;
-      esac ;;
+      esac
+      if [ -n "${CFG[RUNNER_WORKVOL_DIR]}" ]; then
+        die "${PROFILE_PATH}: CI_NODE_FACILITIES=none runs no runner pod, so RUNNER_WORKVOL_DIR must be empty; it names '${CFG[RUNNER_WORKVOL_DIR]}'"
+      fi ;;
     # No third arm: the enum was validated above, before the emptiness rules it
     # selects, so an unrecognised value has already been refused by name and
     # cannot reach here.

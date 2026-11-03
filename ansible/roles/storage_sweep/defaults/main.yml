@@ -9,3 +9,10 @@ storage_sweep_dropin_dir: /etc/systemd/system/sweep-runner-scratch.service.d
 # the 10- prefix that orders it among any siblings, exactly as the shell wrote it.
 storage_sweep_dropin_name: 10-agent-ordering.conf
 storage_sweep_datastore_mount_unit: var-lib-rancher-k3s-server-db.mount
+# The directory the sweep clears, when it is not the script's own default of
+# /var/lib/rancher/k3s/storage. ci-pool.yml passes a runner-only node's
+# RUNNER_WORKVOL_DIR here (livespec-dev-tooling-zreev4), because that node's
+# local-path provisioner creates its runner volumes there; every other node
+# passes '' and keeps the default, with no drop-in at all.
+storage_sweep_storage_root: ""
+storage_sweep_root_dropin_name: 20-storage-root.conf
