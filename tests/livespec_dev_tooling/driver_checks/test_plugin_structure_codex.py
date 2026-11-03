@@ -296,6 +296,28 @@ def test_codex_hook_bundle_no_bash_entry(*, tmp_path: Path) -> None:
     )
 
 
+def test_codex_hook_bundle_dispatcher_referenced(*, tmp_path: Path) -> None:
+    """A Bash PreToolUse entry invokes the dispatcher, not the in-process guard."""
+    _make_codex_tree(root=tmp_path)
+    _w(path=tmp_path / "livespec" / "hooks" / "pretooluse_dispatch.py", content="# dispatcher\n")
+    _w(
+        path=tmp_path / "livespec" / "hooks" / "hooks.json",
+        content=json.dumps(
+            {
+                "hooks": {
+                    "PreToolUse": [
+                        {
+                            "matcher": "Bash",
+                            "hooks": [{"command": "python pretooluse_dispatch.py"}],
+                        }
+                    ]
+                }
+            }
+        ),
+    )
+    assert _codex_violations(root=tmp_path) == []
+
+
 def test_codex_hook_bundle_guard_not_referenced(*, tmp_path: Path) -> None:
     _make_codex_tree(root=tmp_path)
     _w(

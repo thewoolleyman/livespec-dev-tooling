@@ -26,7 +26,7 @@ CODEX profile invariants (preserved verbatim from the codex copy):
 5. Fenced wrapper-invocation rules (shared with the claude profile).
 6. `livespec/hooks/hooks.json` parses, has NO top-level `description`
    key, and registers a PreToolUse/Bash matcher whose command references
-   `livespec_footgun_guard.py`; the guard script exists.
+   the dispatcher or footgun guard; the guard script exists.
 """
 
 from __future__ import annotations
@@ -281,12 +281,13 @@ def _codex_hook_bundle_violations(*, root: Path) -> ProfileViolations:
     if not bash_entries:
         out.append("hooks.json MUST register a PreToolUse entry with matcher 'Bash'")
         return IOSuccess(out)
-    guard_referenced = any(
-        "livespec_footgun_guard.py" in inner.get("command", "")
+    hook_entry_point_referenced = any(
+        "pretooluse_dispatch.py" in inner.get("command", "")
+        or "livespec_footgun_guard.py" in inner.get("command", "")
         for entry in bash_entries
         for inner in entry.get("hooks", [])
     )
-    if not guard_referenced:
+    if not hook_entry_point_referenced:
         out.append("hooks.json PreToolUse/Bash entry MUST reference 'livespec_footgun_guard.py'")
     return IOSuccess(out)
 
