@@ -238,12 +238,12 @@ def test_stand_in_proxy_readiness_bounds_a_blocked_tcp_connect() -> None:
     request is sent, so the helper must bound that connect itself and report
     the fixture failure instead of letting a watchdog kill the suite.
     """
-    listener_ready_attempts = 100
+    listener_ready_deadline_seconds = 10
     listener_ready_poll_interval_seconds = 0.01
     stand_in_proxy_ready_deadline_seconds = 1
     subprocess_timeout_margin_seconds = 5
     subprocess_timeout_seconds = (
-        listener_ready_attempts * listener_ready_poll_interval_seconds
+        listener_ready_deadline_seconds
         + stand_in_proxy_ready_deadline_seconds
         + subprocess_timeout_margin_seconds
     )
@@ -251,7 +251,7 @@ def test_stand_in_proxy_readiness_bounds_a_blocked_tcp_connect() -> None:
 set -u
 helper="$(sed -n '/^wait_for_stand_in_proxy() {/,/^}/p' "$1")"
 eval "${helper}"
-listener_ready_attempts="$2"
+listener_ready_deadline_seconds="$2"
 listener_ready_poll_interval_seconds="$3"
 stand_in_proxy_ready_deadline_seconds="$4"
 failures=0
@@ -281,12 +281,15 @@ for _ in range(128):
 time.sleep(10)
 PY
 listener_pid=$!
-for _ in $(seq 1 "${listener_ready_attempts}"); do
-  [ -s "${ready}" ] && break
+trap 'kill "${listener_pid}" 2>/dev/null || true; wait "${listener_pid}" 2>/dev/null || true; rm -f "${ready}"' EXIT
+listener_ready_started_at="${SECONDS}"
+while ! [ -s "${ready}" ]; do
+  if [ $((SECONDS - listener_ready_started_at)) -ge "${listener_ready_deadline_seconds}" ]; then
+    printf 'fixture listener did not write its ready file within %s s\n' "${listener_ready_deadline_seconds}" >&2
+    exit 2
+  fi
   sleep "${listener_ready_poll_interval_seconds}"
 done
-trap 'kill "${listener_pid}" 2>/dev/null || true; wait "${listener_pid}" 2>/dev/null || true; rm -f "${ready}"' EXIT
-[ -s "${ready}" ] || exit 2
 STAND_IN_PROXY_READY_DEADLINE_SECONDS="${stand_in_proxy_ready_deadline_seconds}" wait_for_stand_in_proxy "${port}"
 exit $?
 """
@@ -297,7 +300,7 @@ exit $?
             script,
             "--",
             str(_EXIT_TESTS),
-            str(listener_ready_attempts),
+            str(listener_ready_deadline_seconds),
             str(listener_ready_poll_interval_seconds),
             str(stand_in_proxy_ready_deadline_seconds),
         ],
