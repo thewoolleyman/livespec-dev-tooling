@@ -58,6 +58,14 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.165.2](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.165.1...v1.165.2) (2026-11-03)
+
+
+### Bug Fixes
+
+* **ansible:** pin sandbox-driver-kubernetes back to v0.5.0, the binary and digest live on gmktec ([c679122](https://github.com/thewoolleyman/livespec-dev-tooling/commit/c67912241e435cd0b354a7883e27ee7a4edfbedf))
+* **ci-runner:** remove the warm-uv label from a runner-only node instead of refusing it (livespec-dev-tooling-esxswq) ([25ee669](https://github.com/thewoolleyman/livespec-dev-tooling/commit/25ee669b55837c09762449b5de54e5f2eaaddfe9))
+
 ## [1.165.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.165.0...v1.165.1) (2026-11-03)
 
 
