@@ -195,6 +195,12 @@ install-worktree-pack:
 ensure-plugins:
     mise exec -- uv run --no-sync python -m livespec_dev_tooling.fleet.ensure_plugins
 
+# Adopt the current Claude plugin builds in every local fleet member clone.
+# Membership is read from livespec core's committed manifest by the command;
+# each member keeps ownership of its own reconciliation recipe.
+ensure-plugins-fleet:
+    mise exec -- uv run --no-sync python -m livespec_dev_tooling.fleet.ensure_plugins_fleet
+
 # Compare each enabled Claude plugin's installed build with the locally
 # resolved origin/<ref> of its committed marketplace pin. This is deliberately
 # a world-state operator probe rather than a member of `check:`: installed

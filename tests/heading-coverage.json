@@ -1835,8 +1835,8 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: one fleet-wide command adopts the current plugin builds in every fleet member and refuses a split adoption",
-    "test": "TODO",
-    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading. It runs `just ensure-plugins-fleet` against fixture member clones and a fixture installed_plugins.json, and asserts the per-member before and after builds, the run continuing past a missing clone with a non-zero exit, and the refusal of a split build. livespec-dev-tooling-jzwgjw owns it.",
+    "test": "tests/livespec_dev_tooling/fleet/test_ensure_plugins_fleet.py",
+    "reason": "The hermetic fleet-adoption tests construct member clones and an installed_plugins.json registry, then assert before/after reports, isolated member failures, and split-build refusal.",
     "work_item": "livespec-dev-tooling-jzwgjw"
   }
 ]
