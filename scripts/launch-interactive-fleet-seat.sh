@@ -2,7 +2,8 @@
 # Start one named interactive Claude seat from its committed class profile.
 set -euo pipefail
 
-readonly script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+readonly script_dir
 readonly profile_path="${script_dir}/../config/interactive-fleet-seat-profile.tsv"
 
 usage() {
