@@ -414,6 +414,22 @@ And every cache span for that job MUST carry `build.cache.kill_switch` equal to 
 
 And the job's timings MUST be queryable against non-canary jobs of the same repository and phase
 
+## Scenario: a routed job sets up its actions from the pool's action-archive cache, and falls back to a download when an archive is missing
+
+Given the pool's action-archive cache holds the archive of every `uses:` action ref pinned on the default branches of the routed repositories
+
+When a routed job whose `uses:` actions are all in the cache starts on a node that holds the cache
+
+Then the job's Set up job step MUST set up each action from the private seed in its own work volume, and its log MUST show no download from the forge's archive host
+
+And a routed job on a `runner-only` node MUST download its actions and run to its own outcome
+
+And when a newly pinned action ref reaches a routed repository's default branch, the cache MUST hold its archive after the next populator run
+
+And a job whose `uses:` action is absent from the cache, or whose cache is unreadable, MUST download that action and run to its own outcome
+
+And under the fleet kill switch every job MUST download its actions as it would without the tier
+
 ## Scenario: a stale warm-cache generation fires the trigger
 
 Given the populator has not published a generation for longer than twice its schedule interval
