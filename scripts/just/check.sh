@@ -198,7 +198,7 @@ if [[ -n "${token_match:-}" ]]; then
         "${memoized}"
 fi
 
-uv run python -m livespec_dev_tooling.parallel_check_dispatcher --skip "${effective_skip}" -- "${targets[@]}" || exit 1
+LIVESPEC_PYRIGHT_WARMED=1 uv run python -m livespec_dev_tooling.parallel_check_dispatcher --skip "${effective_skip}" -- "${targets[@]}" || exit 1
 
 # `hook_gate` is deliberately NOT disqualifying here, unlike `skip` and
 # `red_staged`. The token's ONLY consumer is check-pre-push.sh, which is

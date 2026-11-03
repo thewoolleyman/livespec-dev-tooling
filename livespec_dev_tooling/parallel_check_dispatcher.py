@@ -85,8 +85,6 @@ from livespec_dev_tooling.check_failure_digest import (  # noqa: E402
 
 __all__: list[str] = []
 
-_DEFAULT_MAX_WORKERS: int = 8
-
 # Coverage-namespace assignment (work-item livespec-dev-tooling-cmn).
 # Each coverage-touching target is mapped to a namespace key. The
 # dispatcher mints ONE unique temp dir per distinct key and exports it
@@ -160,8 +158,19 @@ def _configure_logger() -> structlog.stdlib.BoundLogger:
 
 def _cap_workers(*, requested: int | None) -> int:
     """Return the effective worker count: min(cpu_count, requested or DEFAULT)."""
-    cap = requested if requested is not None else _DEFAULT_MAX_WORKERS
+    cap = requested if requested is not None else 8
     return max(1, min(os.cpu_count() or 1, cap))
+
+
+def _warm_locked_pyright(*, cwd: Path, already_warmed: bool) -> int:
+    """Run locked pyright once before a caller fans out check targets."""
+    if already_warmed or not (cwd / "uv.lock").is_file():
+        return 0
+    if 'name = "pyright"' not in (cwd / "uv.lock").read_text(encoding="utf-8"):
+        return 0
+    return subprocess.call(  # noqa: S603
+        ["uv", "run", "--frozen", "pyright", "--version"],  # noqa: S607
+    )
 
 
 def _build_namespace_dirs(
@@ -425,12 +434,16 @@ def main() -> int:
     skip_set: frozenset[str] = frozenset(skip_str.split())
     max_workers = _cap_workers(requested=cast(int | None, args.workers))
     cwd = Path.cwd()
+    already_warmed = os.environ.pop("LIVESPEC_PYRIGHT_WARMED", None) == "1"
     log.info(
         "parallel_check_dispatcher_starting",
         targets=len(cast(list[str], args.targets)),
         workers=max_workers,
         skip=list(skip_set),
     )
+    if _warm_locked_pyright(cwd=cwd, already_warmed=already_warmed) != 0:
+        _write(text="ERROR: pyright provisioning failed; no check target started.\n")
+        return 1
     results = _run_all(
         targets=cast(list[str], args.targets),
         skip_set=skip_set,

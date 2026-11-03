@@ -421,6 +421,30 @@ def _write_justfile(*, tmp_path: Path, content: str) -> None:
     (tmp_path / "justfile").write_text(content, encoding="utf-8")
 
 
+def _install_pyright_warmup_stub(*, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Install a `uv` stub that records and completes pyright provisioning."""
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    stub = bin_dir / "uv"
+    _ = stub.write_text(
+        "#!/bin/sh\n"
+        'printf \'%s\\n\' "$*" >> "$PYRIGHT_LOG"\n'
+        "if [ \"$*\" = 'run --frozen pyright --version' ]; then\n"
+        '    if [ "${PYRIGHT_WARMUP_STATUS:-0}" -ne 0 ]; then\n'
+        '        exit "$PYRIGHT_WARMUP_STATUS"\n'
+        "    fi\n"
+        '    touch "$PYRIGHT_READY"\n'
+        "    exit 0\n"
+        "fi\n"
+        "exit 99\n",
+        encoding="utf-8",
+    )
+    stub.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{bin_dir}:{os.environ['PATH']}")
+    monkeypatch.setenv("PYRIGHT_LOG", str(tmp_path / "pyright.log"))
+    monkeypatch.setenv("PYRIGHT_READY", str(tmp_path / "pyright-ready"))
+
+
 class _DispatcherRun(NamedTuple):
     """In-process stand-in for the subprocess `CompletedProcess` shape."""
 
@@ -508,6 +532,112 @@ def test_main_skips_targets_in_skip_list(
     )
     combined = result.stdout.lower()
     assert "skipped" in combined
+
+
+def test_main_warms_locked_pyright_before_starting_any_target(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A pinned pyright completes its serial install before fan-out begins."""
+    _install_pyright_warmup_stub(tmp_path=tmp_path, monkeypatch=monkeypatch)
+    _ = (tmp_path / "uv.lock").write_text(
+        'version = 1\n\n[[package]]\nname = "pyright"\nversion = "1.1.391"\n',
+        encoding="utf-8",
+    )
+    target_log = tmp_path / "targets.log"
+    _write_justfile(
+        tmp_path=tmp_path,
+        content=(
+            "check-types:\n"
+            f"    test -f {tmp_path / 'pyright-ready'}\n"
+            f"    echo check-types >> {target_log}\n\n"
+            "check-no-shadow-ledger-body-typechecks:\n"
+            f"    test -f {tmp_path / 'pyright-ready'}\n"
+            f"    echo check-no-shadow-ledger-body-typechecks >> {target_log}\n\n"
+            "check-unpinned:\n"
+            f"    echo check-unpinned >> {target_log}\n"
+        ),
+    )
+
+    result = _run_dispatcher(
+        tmp_path=tmp_path,
+        args=["--", "check-types", "check-no-shadow-ledger-body-typechecks"],
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert (tmp_path / "pyright.log").read_text(encoding="utf-8").splitlines() == [
+        "run --frozen pyright --version"
+    ]
+    assert set(target_log.read_text(encoding="utf-8").splitlines()) == {
+        "check-types",
+        "check-no-shadow-ledger-body-typechecks",
+    }
+    _ = (tmp_path / "uv.lock").write_text(
+        'version = 1\n\n[[package]]\nname = "ruff"\nversion = "0.8.6"\n',
+        encoding="utf-8",
+    )
+    unpinned = _run_dispatcher(
+        tmp_path=tmp_path,
+        args=["--", "check-unpinned"],
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+    )
+    assert unpinned.returncode == 0, unpinned.stdout + unpinned.stderr
+    assert (tmp_path / "pyright.log").read_text(encoding="utf-8").splitlines() == [
+        "run --frozen pyright --version"
+    ]
+    assert target_log.read_text(encoding="utf-8").splitlines()[-1] == "check-unpinned"
+
+
+def test_main_stops_before_any_target_when_locked_pyright_provisioning_fails(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A failed pyright provision is reported before the target fan-out starts."""
+    _install_pyright_warmup_stub(tmp_path=tmp_path, monkeypatch=monkeypatch)
+    monkeypatch.setenv("PYRIGHT_WARMUP_STATUS", "7")
+    _ = (tmp_path / "uv.lock").write_text(
+        'version = 1\n\n[[package]]\nname = "pyright"\nversion = "1.1.391"\n',
+        encoding="utf-8",
+    )
+    target_marker = tmp_path / "target-ran"
+    _write_justfile(tmp_path=tmp_path, content=f"check-types:\n    touch {target_marker}\n")
+
+    result = _run_dispatcher(
+        tmp_path=tmp_path,
+        args=["--", "check-types"],
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+    )
+
+    assert result.returncode == 1
+    assert "pyright" in (result.stdout + result.stderr).lower()
+    assert not target_marker.exists(), "a provisioning failure must start no check target"
+
+
+def test_main_does_not_repeat_the_shell_warmup(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The marker from check.sh suppresses only the dispatcher's duplicate warm-up."""
+    _install_pyright_warmup_stub(tmp_path=tmp_path, monkeypatch=monkeypatch)
+    monkeypatch.setenv("LIVESPEC_PYRIGHT_WARMED", "1")
+    _ = (tmp_path / "uv.lock").write_text(
+        'version = 1\n\n[[package]]\nname = "pyright"\nversion = "1.1.391"\n',
+        encoding="utf-8",
+    )
+    target_marker = tmp_path / "target-ran"
+    _write_justfile(tmp_path=tmp_path, content=f"check-types:\n    touch {target_marker}\n")
+
+    result = _run_dispatcher(
+        tmp_path=tmp_path,
+        args=["--", "check-types"],
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert target_marker.exists()
+    assert not (tmp_path / "pyright.log").exists(), "the shell warm-up must not run twice"
 
 
 def test_coverage_dependency_ordering_enforced(
