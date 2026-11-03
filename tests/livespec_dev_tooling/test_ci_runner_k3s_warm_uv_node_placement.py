@@ -39,6 +39,14 @@ _KUBECTL_SHIM = """\
 printf 'kubectl %s\\n' "$*" >> "$ARGV_LOG"
 if [ "$1" = "label" ]; then exit 0; fi
 if [ "$1" = "get" ] && [ "$2" = "node" ]; then
+  if [ "$3" = "${LATE_NODE:-}" ]; then
+    printf x >> "$LATE_PROBE_LOG"
+    seen="$(wc -c < "$LATE_PROBE_LOG" | tr -d ' ')"
+    if [ "$seen" -le "${LATE_PROBES:-0}" ]; then
+      printf 'Error from server (NotFound): nodes "%s" not found\\n' "$3" >&2
+      exit 1
+    fi
+  fi
   printf 'node/%s\\n' "$3"
   exit 0
 fi
@@ -181,7 +189,12 @@ def test_server_converge_labels_a_full_facilities_agent_and_removes_the_other_la
     env.update(
         {
             "ARGV_LOG": str(log),
+            "LATE_NODE": "agent-with-facilities",
+            "LATE_PROBE_LOG": str(tmp_path / "late-probes"),
+            "LATE_PROBES": "1",
             "CI_WARM_UV_LABEL_PROFILES_DIR": str(profiles),
+            "CI_WARM_UV_LABEL_WAIT_SECONDS": "3",
+            "CI_WARM_UV_LABEL_POLL_SECONDS": "1",
             "KUBECONFIG": str(kubeconfig),
             "PATH": f"{bin_dir}{os.pathsep}{env['PATH']}",
         }
@@ -200,6 +213,10 @@ def test_server_converge_labels_a_full_facilities_agent_and_removes_the_other_la
     assert (
         "kubectl label --overwrite node agent-with-facilities ci-runner.io/warm-uv-cache=true"
         in invoked
+    )
+    assert invoked.count("kubectl get node agent-with-facilities -o name") == 2, (
+        "the full-facilities agent registered after the server's first probe; the server "
+        "converge must probe again before asserting the warm-uv label"
     )
     assert "kubectl label node agent-without-facilities ci-runner.io/warm-uv-cache-" in invoked
 
