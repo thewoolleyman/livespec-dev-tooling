@@ -163,6 +163,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: a change set that touches the build or the plugin disables every retry",
+    "work_item": "livespec-dev-tooling-crxcy4",
+    "first_seen": "2026-11-03"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: a closed profile with admission capacity or without its CI-closing taint is refused",
     "work_item": "livespec-dev-tooling-zreev4",
     "first_seen": "2026-11-03"
@@ -264,6 +271,20 @@
     "heading": "## Scenario: a failed revert-path drill raises needs-attention",
     "work_item": "livespec-dev-tooling-yilv6p",
     "first_seen": "2026-10-22"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a failing test the run did not touch is retried on its own and reported as a flake",
+    "work_item": "livespec-dev-tooling-crxcy4",
+    "first_seen": "2026-11-03"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a failing test the run touched fails at once with no retry",
+    "work_item": "livespec-dev-tooling-crxcy4",
+    "first_seen": "2026-11-03"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -597,6 +618,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: an untouched test that fails every attempt still fails the session",
+    "work_item": "livespec-dev-tooling-crxcy4",
+    "first_seen": "2026-11-03"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: at the hard cap a revert whose CI is not green is not merged",
     "work_item": "livespec-dev-tooling-joqff6",
     "first_seen": "2026-10-22"
@@ -621,6 +649,13 @@
     "heading": "## Scenario: every k3s pool node's load is visible and a silent node fires its dead-man",
     "work_item": "livespec-dev-tooling-uftb4o",
     "first_seen": "2026-10-24"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: every retried failure files one root-fix work item",
+    "work_item": "livespec-dev-tooling-crxcy4",
+    "first_seen": "2026-11-03"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -677,6 +712,13 @@
     "heading": "## Scenario: the fabro_server role deletes an instance's retired sandbox environments",
     "work_item": "livespec-dev-tooling-lmuhvi",
     "first_seen": "2026-10-30"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: the replay legs never retry the Red test and never accept a final failure",
+    "work_item": "livespec-dev-tooling-crxcy4",
+    "first_seen": "2026-11-03"
   },
   {
     "spec_root": "SPECIFICATION",
