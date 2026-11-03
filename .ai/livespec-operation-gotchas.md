@@ -23,6 +23,34 @@ When revise/propose-change validation fails without useful stderr, inspect the
 wrapper's validation helpers directly or increase structured logging rather
 than guessing at the payload shape.
 
+### Delegated-mode evidence
+
+This repository revises in `delegated` mode, with `auto-spawn` review and
+`ratification_reviewer_model: ["sonnet"]`. Measured on v119 (2026-11-03):
+
+- `ratification_evidence.reviewer_identity` must EQUAL `reviewer_model`, for
+  example both `"sonnet"`. A descriptive identity is refused with "ratification
+  reviewer identity/model mismatch" (exit 4). See core
+  `_revise_ratification_errors._reviewer_error`.
+- Compute `content_digest` with core's
+  `livespec.commands._revise_ratification._canonical_ratification_digest(
+  decision={"resulting_files": rf}, proposal_bytes=<the proposed-change file's
+  bytes>)`. `delegated_decision_evidence` carries the same digest.
+- The reviewer is a separate read-only agent on the configured model. Have it
+  recompute the digest itself and report `NO BLOCKERS` with a `date -u`
+  timestamp, so its verdict binds to the exact bytes.
+- The CLI numbers the new version from `history/`. When another revise PR is
+  open, let it merge first, rebase, and build `resulting_files` from the new
+  master. Otherwise the two PRs claim the same version.
+
+A spec-change-tier dispatch hold does not always need a revise. When the
+dispatch judgement's own rationale says the ratified text already states the
+behaviour, and the item's Definition of Done only adds extras, rewrite the
+Definition of Done to the ratified text. The behaviour digest changes, so the
+next dispatch retakes the classification. `dispatcher.py classify-tier` only
+reports the standing record, so it cannot preview that (bd-ib-nesy77,
+2026-11-03).
+
 ## Heading-Coverage Co-Edits
 
 Any change that adds, renames, or removes a live `## ` H2 heading in
