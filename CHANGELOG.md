@@ -58,6 +58,18 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.166.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.165.6...v1.166.0) (2026-11-03)
+
+
+### Features
+
+* retry a failing test the run did not touch, up to 3 times on its own (livespec-dev-tooling-crxcy4) ([c480d4f](https://github.com/thewoolleyman/livespec-dev-tooling/commit/c480d4f7e61d15410a92c87613178573b382339c))
+
+
+### Bug Fixes
+
+* make RBAC overlap control deterministic ([741ce0c](https://github.com/thewoolleyman/livespec-dev-tooling/commit/741ce0c5124ed49962e1035b472bb5c7fb705a1c))
+
 ## [1.165.6](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.165.5...v1.165.6) (2026-11-03)
 
 
