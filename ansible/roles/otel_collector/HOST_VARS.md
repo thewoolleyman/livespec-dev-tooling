@@ -52,6 +52,14 @@ none.
 | `otel_collector_env_from_controller` | `[]` | control-node variables to append to the environment file when it lacks them |
 
 ```yaml
+# vps — the dev host's collector keeps the default configuration, but the
+# direct pressure emitter also reads this managed environment file.  Declare
+# the key here rather than relying on a hand-placed value on the control node.
+otel_collector_env_from_controller:
+  - HONEYCOMB_INGEST_KEY_LIVESPEC
+```
+
+```yaml
 # poweredge-xubuntu — the CLUSTER-READING collector, the one node whose
 # configuration discovers every kubelet from the API server and scrapes it.
 otel_collector_config_file: config.ci-runner-host.yaml
