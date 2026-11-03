@@ -1063,6 +1063,13 @@ markers = [
 
 [tool.coverage.run]
 branch = true
+# The data file is the aggregate's own namespace when the coverage scripts
+# export LIVESPEC_COVERAGE_DATA_FILE, and the usual repo-root `.coverage`
+# otherwise (CI, a manual run). It is passed this way, not as COVERAGE_FILE,
+# so the tests never see COVERAGE_FILE set and measure exactly as CI's clean
+# run does (work-items livespec-dev-tooling-yilyxr.1, livespec-dev-tooling-3wz453;
+# see scripts/just/check-per-file-coverage.sh).
+data_file = "${LIVESPEC_COVERAGE_DATA_FILE-.coverage}"
 # Coverage uses an `omit`-only blocklist (no `source` allowlist).
 # The tests/livespec_dev_tooling/checks/ suite invokes check
 # scripts via `subprocess.run` with `cwd=tmp_path`; pytest-cov's

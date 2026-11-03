@@ -204,6 +204,12 @@ def _target_env(*, name: str, namespace_dirs: dict[str, Path]) -> dict[str, str]
     spawned by the target inherits this COVERAGE_FILE, so its data lands
     in the same isolated dir. Returns None for non-coverage targets (the
     subprocess then inherits the parent env unchanged).
+
+    It also exports LIVESPEC_COVERAGE_WRITERS: every coverage-touching
+    target whose namespace is in play in this aggregate, so
+    per_file_coverage's unreadable-data diagnostic names each process that
+    could have written coverage in the run (work-item
+    livespec-dev-tooling-3wz453).
     """
     key = _COVERAGE_NAMESPACES.get(name)
     if key is None:
@@ -212,6 +218,8 @@ def _target_env(*, name: str, namespace_dirs: dict[str, Path]) -> dict[str, str]
     env = dict(os.environ)
     env["COVERAGE_FILE"] = str(ns_dir / ".coverage")
     env["TMPDIR"] = str(ns_dir / "tmp")
+    writers = sorted(target for target, ns in _COVERAGE_NAMESPACES.items() if ns in namespace_dirs)
+    env["LIVESPEC_COVERAGE_WRITERS"] = ", ".join(writers)
     return env
 
 

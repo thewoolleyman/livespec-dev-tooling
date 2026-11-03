@@ -28,8 +28,19 @@ _SCRIPTS = ("check-coverage.sh", "check-per-file-coverage.sh", "coverage-reuse-i
 _REUSE_STAMP = ".livespec-coverage-reuse-token"
 # Inputs the scripts read that a host may already export: a GitHub runner
 # sets GITHUB_ACTIONS into every process, which would flip the consumer's
-# venue branch for every test below. Stripped so each test owns them.
-_HOST_INPUTS = frozenset({"GITHUB_ACTIONS", "COVERAGE_PROCESS_START"})
+# venue branch for every test below. Stripped so each test owns them. The
+# coverage data-file inputs are stripped too (work-item
+# livespec-dev-tooling-3wz453): the scripts honour COVERAGE_FILE, so a fake
+# producer that inherited a live aggregate's data file would overwrite it.
+_HOST_INPUTS = frozenset(
+    {
+        "COVERAGE_FILE",
+        "COVERAGE_PROCESS_START",
+        "GITHUB_ACTIONS",
+        "LIVESPEC_COVERAGE_DATA_FILE",
+        "LIVESPEC_COVERAGE_WRITERS",
+    }
+)
 _PYTEST_LINE = (
     "run pytest -n 1 --cov --cov-branch --cov-config=pyproject.toml --cov-report=term-missing"
 )
@@ -237,8 +248,12 @@ def test_env_strips_the_host_inputs_the_scripts_read(
     """A GitHub runner exports GITHUB_ACTIONS everywhere; the harness must own that input."""
     monkeypatch.setenv("GITHUB_ACTIONS", "true")
     monkeypatch.setenv("COV_CORE_SOURCE", "leaked")
+    monkeypatch.setenv("COVERAGE_FILE", "leaked")
+    monkeypatch.setenv("LIVESPEC_COVERAGE_DATA_FILE", "leaked")
 
     env = _env(tmp_path=tmp_path, extra={})
 
     assert "GITHUB_ACTIONS" not in env
     assert "COV_CORE_SOURCE" not in env
+    assert "COVERAGE_FILE" not in env
+    assert "LIVESPEC_COVERAGE_DATA_FILE" not in env
