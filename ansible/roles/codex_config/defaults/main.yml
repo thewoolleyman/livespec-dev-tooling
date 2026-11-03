@@ -19,3 +19,22 @@ codex_config_feature: default_mode_request_user_input
 
 # What `codex features list` prints in the final column for an enabled feature.
 codex_config_enabled_state: "true"
+
+# The released Codex Driver owns this definition.  Host provisioning copies it
+# into the operator's user-unit directory rather than maintaining a second
+# ExecStart here, so a Driver update changes one canonical unit definition.
+#
+# The unit's ExecStart runs the observer from this staged directory
+# (%h/.local/share/livespec-driver-codex/dev-tooling/), and nothing else puts
+# the Driver's dev-tooling there: ensure-codex-plugins only registers the
+# marketplace plugins.  The role therefore stages the Driver's `release` ref
+# (the same ref ensure-codex-plugins registers) at that path before it reads
+# the unit definition from it.
+codex_config_observer_driver_repo: https://github.com/thewoolleyman/livespec-driver-codex.git
+codex_config_observer_driver_version: release
+codex_config_observer_driver_dir: "{{ ansible_env.HOME }}/.local/share/livespec-driver-codex"
+codex_config_observer_unit_name: livespec-codex-hook-cache-observer.service
+codex_config_observer_unit_source: "{{ ansible_env.HOME }}/.local/share/livespec-driver-codex/dev-tooling/livespec-codex-hook-cache-observer.service"
+codex_config_observer_unit_dir: "{{ ansible_env.HOME }}/.config/systemd/user"
+codex_config_observer_unit_dest: "{{ ansible_env.HOME }}/.config/systemd/user/livespec-codex-hook-cache-observer.service"
+codex_config_user_runtime_dir: "/run/user/{{ ansible_facts['user_uid'] }}"

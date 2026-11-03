@@ -1,0 +1,8 @@
+---
+# Pressure Stall Information is a kernel interface, so this small emitter has
+# no per-host configuration: every execution target runs the same definition.
+pressure_telemetry_lib_dir: /usr/local/lib/livespec
+pressure_telemetry_unit_dir: /etc/systemd/system
+pressure_telemetry_script_dest: "{{ pressure_telemetry_lib_dir }}/pressure-telemetry.sh"
+pressure_telemetry_service_name: livespec-pressure-telemetry.service
+pressure_telemetry_timer_name: livespec-pressure-telemetry.timer

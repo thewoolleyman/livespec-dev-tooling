@@ -129,6 +129,13 @@ honeycomb_mcp_checkout: /data/projects/vps-info
 # --- honeycomb_trigger_recipients_check ---
 honeycomb_trigger_recipients_check_checkout: /data/projects/vps-info
 
+# --- otel_collector ---
+# The pressure telemetry service posts OTLP directly and reads the collector's
+# managed environment file, so this key must be converged on the dev host just
+# as it is on every ci_pool target.
+otel_collector_env_from_controller:
+  - HONEYCOMB_INGEST_KEY_LIVESPEC
+
 # --- ssh_hardening ---
 ssh_hardening_public_address: 66.94.121.15
 ssh_hardening_password_user: ubuntu
