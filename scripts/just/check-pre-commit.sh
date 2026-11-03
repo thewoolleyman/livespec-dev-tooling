@@ -61,6 +61,7 @@ fi
 # repositories' live admin state and so can refuse a commit that has nothing
 # to do with it (work-item livespec-dev-tooling-mmqe, absorbing tkzf).
 aggregate_log=$(mktemp "$(git rev-parse --git-path livespec-pre-commit-aggregate.XXXXXX)")
+staged_tree=$(git write-tree)
 set +e
 just hook_gate=1 check 2>&1 | tee "$aggregate_log"
 aggregate_status=${PIPESTATUS[0]}
@@ -68,10 +69,13 @@ set -e
 # `just check` reads the working tree, so its verdict speaks for the staged
 # tree only when the two are identical; with unstaged differences, or with
 # untracked non-ignored files the suite may read, no token is recorded and
-# commit-msg runs the full suite-green leg.
+# commit-msg runs the full suite-green leg. The tree is captured BEFORE the
+# aggregate and the token is written only if the index still names that tree
+# afterwards, so a concurrent index change cannot certify a tree the suite
+# never ran against.
 if [[ "$aggregate_status" -eq 0 ]] && git diff --quiet \
-    && [[ -z "$(git ls-files --others --exclude-standard)" ]]; then
-    staged_tree=$(git write-tree)
+    && [[ -z "$(git ls-files --others --exclude-standard)" ]] \
+    && [[ "$(git write-tree)" == "$staged_tree" ]]; then
     run_id="pre-commit-aggregate:$(date -u +%Y%m%dT%H%M%SZ):${staged_tree}"
     output_checksum="sha256:$(sha256sum "$aggregate_log" | awk '{print $1}')"
     uv run python -m livespec_dev_tooling.green_token write-pre-commit "$run_id" "$output_checksum"

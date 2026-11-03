@@ -8,6 +8,7 @@ import os
 import shutil
 import subprocess
 from pathlib import Path
+from unittest import mock
 
 import pytest
 
@@ -352,6 +353,16 @@ def test_the_gated_tree_recipe_restores_the_staged_index_before_the_aggregate(
     assert _git(cwd=tmp_path, args=["write-tree"]) == tree
 
 
+def _dirty_the_tree(*, tmp_path: Path, dirty: str) -> None:
+    """Leave the tree dirty in the one way `dirty` names, after staging base.py."""
+    if dirty == "unstaged":
+        _ = (tmp_path / "base.py").write_text("base = 3\n", encoding="utf-8")
+    elif dirty == "untracked":
+        _ = (tmp_path / "conftest.py").write_text("x = 1\n", encoding="utf-8")
+    elif dirty == "ignored":
+        _ = (tmp_path / "ignored.txt").write_text("x\n", encoding="utf-8")
+
+
 def _run_pre_commit_with_stub_aggregate(*, tmp_path: Path, dirty: str) -> list[str]:
     """Run the shipped pre-commit recipe with a passing full-aggregate stub."""
     scripts = tmp_path / "scripts" / "just"
@@ -371,7 +382,10 @@ def _run_pre_commit_with_stub_aggregate(*, tmp_path: Path, dirty: str) -> list[s
         encoding="utf-8",
     )
     just = bin_dir / "just"
-    _ = just.write_text("#!/usr/bin/env bash\necho aggregate-ok\nexit 0\n", encoding="utf-8")
+    moves_index = "echo moved > moved.txt\ngit add moved.txt\n" if dirty == "index-moves" else ""
+    _ = just.write_text(
+        f"#!/usr/bin/env bash\n{moves_index}echo aggregate-ok\nexit 0\n", encoding="utf-8"
+    )
     uv.chmod(0o755)
     just.chmod(0o755)
     _git(cwd=tmp_path, args=["init", "-q", "-b", "main"])
@@ -381,12 +395,7 @@ def _run_pre_commit_with_stub_aggregate(*, tmp_path: Path, dirty: str) -> list[s
     _git(cwd=tmp_path, args=["commit", "-q", "-m", "base"])
     _ = (tmp_path / "base.py").write_text("base = 2\n", encoding="utf-8")
     _git(cwd=tmp_path, args=["add", "base.py"])
-    if dirty == "unstaged":
-        _ = (tmp_path / "base.py").write_text("base = 3\n", encoding="utf-8")
-    elif dirty == "untracked":
-        _ = (tmp_path / "conftest.py").write_text("x = 1\n", encoding="utf-8")
-    elif dirty == "ignored":
-        _ = (tmp_path / "ignored.txt").write_text("x\n", encoding="utf-8")
+    _dirty_the_tree(tmp_path=tmp_path, dirty=dirty)
     env = {
         key: value
         for key, value in os.environ.items()
@@ -408,8 +417,9 @@ def _run_pre_commit_with_stub_aggregate(*, tmp_path: Path, dirty: str) -> list[s
 def test_only_a_clean_full_pre_commit_aggregate_records_reusable_evidence(
     *, tmp_path: Path
 ) -> None:
-    """Unstaged or untracked files make the aggregate a different-tree verdict."""
-    for dirty, expected_writes in (("none", 1), ("ignored", 1), ("unstaged", 0), ("untracked", 0)):
+    """Unstaged, untracked, or mid-run index changes make the aggregate a different-tree verdict."""
+    cases = (("none", 1), ("ignored", 1), ("unstaged", 0), ("untracked", 0), ("index-moves", 0))
+    for dirty, expected_writes in cases:
         sub = tmp_path / dirty
         sub.mkdir()
         assert (
@@ -423,14 +433,14 @@ def _run_main_with_delegated_verdict(
     """Run the delegate's CLI with a stubbed verdict; return its status and token."""
     module = _module()
     _git(cwd=tmp_path, args=["init", "-q", "-b", "main"])
-    for key in [name for name in os.environ if name.startswith("GIT_")]:
-        monkeypatch.delenv(key)
+    scrubbed = {name: value for name, value in os.environ.items() if not name.startswith("GIT_")}
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr("sys.argv", ["pre_commit_delegate", "run"])
     monkeypatch.setattr(
         module, "run_pre_commit", lambda **_kwargs: module.PreCommitVerdict(**verdict_fields)
     )
-    status = module.main()
+    with mock.patch.dict(os.environ, scrubbed, clear=True):
+        status = module.main()
     token_path = tmp_path / ".git" / "livespec-green-token.json"
     token = json.loads(token_path.read_text(encoding="utf-8")) if token_path.exists() else {}
     return status, token
