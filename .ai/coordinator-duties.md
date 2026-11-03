@@ -168,6 +168,7 @@ run autonomously, never block."
 - An ask that is genuinely the maintainer's (host mutation, secrets, a values call) goes in the tick report as plain
   text under `FOR THE MAINTAINER (non-blocking)`, and the seat keeps looping. The item waits; the seat does not.
 - Never self-wind-down (rule D).
+- **A resume goes straight into the loop.** A session resuming this plan starts the coordinator `/loop` in the same turn. The epic's `next_action` is written as `kind: human`, but that is a pointer for the next session, not a gate. Never ask the maintainer whether to start or resume the loop. Maintainer correction 2026-11-03 ~13:0xZ, after a resumed session asked about fifteen times: "Why did the loop stop? Why would you need to ask me to start it?"
 
 This is enforced. The user-scope hook `~/.claude/hooks/no-blocking-picker-guard.py` (matcher `AskUserQuestion`) denies
 the tool for the sessions named in its `AUTONOMOUS_SEATS` set. The detail is in
@@ -373,6 +374,7 @@ on an idle percentage alone.
   - The coordinator may authorize an additive workflow edit under that delegation.
   - A removal or reduction of coverage or gates, or a significant runtime increase, goes to the maintainer.
   - The mechanism is in `.ai/fleet-and-secrets.md`, which another agent is updating.
+  - Before putting an `approval:workflow-edit` ask to the maintainer, the coordinator first decides whether the edit is ADDITIVE and NOT SLOW. If it is, the coordinator authorizes it itself under the delegation. If it is not, the ask states which test failed and why: the lines it modifies or deletes, or its measured runtime effect. Maintainer correction 2026-11-03: "If this falls under one of those then you should give details of why it's slow or not additive."
 - **Times are UTC.** The host clock is CET, so take timestamps with `date -u` and never label local time `Z`. On
   2026-11-01 two seats did, writing times an hour late into the ledger.
 - **Secrets.** Never `env | cut` to list variable names: on 2026-10-31 it leaked a private key's lines. List names with
