@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.167.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.167.0...v1.167.1) (2026-11-03)
+
+
+### Bug Fixes
+
+* retain refresh tool output in node credential tests ([c1850c7](https://github.com/thewoolleyman/livespec-dev-tooling/commit/c1850c74413f1c370866cc1a32cd32fd49dac57c))
+
 ## [1.167.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.166.1...v1.167.0) (2026-11-03)
 
 
