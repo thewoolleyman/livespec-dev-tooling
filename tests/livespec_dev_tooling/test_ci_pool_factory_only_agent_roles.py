@@ -1,6 +1,12 @@
 """Which `ansible/ci-pool.yml` roles run on each `ci_pool` host — resolved, not assumed.
 
-THE QUESTION THIS FILE ANSWERS (work-item livespec-dev-tooling-7we6po,
+SINCE 2026-11-03 hp IS `runner-only` (livespec-dev-tooling-zreev4). It still
+carries no storage tier, so `storage_layout` stays off it, but it now runs CI
+RUNNER pods, so the three roles that install what runner and job pods mount —
+`container_hook`, `sccache_binary`, `cache_telemetry` — run on it. Those three
+are gated `!= 'none'`, and the resolver accepts `!=` beside `==` for them.
+
+THE QUESTION THIS FILE ANSWERED FIRST (work-item livespec-dev-tooling-7we6po,
 Definition of Done assertion 2). `hp-xubuntu` joins `ci_pool` as a FACTORY-ONLY
 agent: it carries none of the pool's CI storage tiers and executes no CI job, so
 four of the play's roles have nothing to do on it. `poweredge-xubuntu` and
@@ -64,18 +70,26 @@ _PROFILES = _REPO_ROOT / "ci-runner" / "k3s" / "phase0-bare-metal" / "profiles"
 _NODE_LABELS_DEFAULTS = _ANSIBLE / "roles" / "node_labels" / "defaults" / "main.yml"
 _PROVISION = _REPO_ROOT / "ci-runner" / "k3s" / "provision-k3s.sh"
 
-# The Definition of Done's own four-and-four, stated because it states them.
+# What hp, a runner-only factory agent, must and must not run.
 _HP = "hp-xubuntu"
 _HP_MUST_NOT_RUN = frozenset(
     {
+        # The tier role: hp declares no tier, and the role refuses the apply at
+        # its first label resolution on a node with none.
         "storage_layout",
-        "container_hook",
-        "sccache_binary",
-        "cache_telemetry",
     }
 )
 _HP_MUST_RUN = frozenset(
     {
+        # What runner and job pods mount (livespec-dev-tooling-zreev4): the
+        # fleet-patched ARC hook every runner pod mounts `type: File`, and the two
+        # binaries arc/hook-pod-template.yaml mounts into every job container.
+        "container_hook",
+        "sccache_binary",
+        "cache_telemetry",
+        # And the boot-time orphan sweep, pointed at hp's runner work-volume
+        # directory by the play.
+        "storage_sweep",
         "k3s_config",
         "agent_rejoin",
         "node_taints",
@@ -212,7 +226,7 @@ _ROLE_ENTRY = re.compile(
 )
 _WHEN_LINE = re.compile(r"^      when: (?P<expression>.+)$", re.MULTILINE)
 # The only shape a gate may take, so this resolver cannot disagree with Jinja.
-_GATE = re.compile(r"^(?P<fact>[a-z_]+) == '(?P<literal>[\w-]+)'$")
+_GATE = re.compile(r"^(?P<fact>[a-z_]+) (?P<operator>==|!=) '(?P<literal>[\w-]+)'$")
 # A play-level var whose value is the profile's own `^KEY=value$` line, read with
 # the same `regex_findall | first | default(...)` chain every role in this tree
 # reads a profile with.
@@ -317,7 +331,8 @@ def _resolved_roles(*, facts: dict[str, str]) -> tuple[str, ...]:
             continue
         parsed = _GATE.fullmatch(gate)
         assert parsed is not None, f"unresolvable gate {gate!r} (see the vocabulary test)"
-        if facts[parsed["fact"]] == parsed["literal"]:
+        matches = facts[parsed["fact"]] == parsed["literal"]
+        if matches == (parsed["operator"] == "=="):
             resolved.append(role)
     return tuple(resolved)
 
@@ -354,7 +369,8 @@ def test_every_role_gate_stays_inside_the_vocabulary_this_test_can_resolve() -> 
         parsed = _GATE.fullmatch(gate)
         assert parsed is not None, (
             f"the `when:` on role {role} is {gate!r}, which this resolver cannot evaluate "
-            f"faithfully. A gate must be `<fact> == '<literal>'`: neither Ansible nor Jinja "
+            f"faithfully. A gate must be `<fact> == '<literal>'` or `<fact> != '<literal>'`: "
+            f"neither Ansible nor Jinja "
             f"is importable in this suite, so a richer expression would be resolved WRONG "
             f"here and right on the host"
         )
@@ -373,13 +389,16 @@ def test_the_posture_fact_the_gates_read_comes_from_the_profile_key_that_owns_it
         "ci_pool_ci_node_facilities": ("CI_NODE_FACILITIES", "full"),
         "ci_pool_factory_node": ("FACTORY_NODE", "false"),
         "ci_pool_node_data_dir": ("NODE_DATA_DIR", ""),
+        "ci_pool_runner_workvol_dir": ("RUNNER_WORKVOL_DIR", ""),
     }, (
-        f"the play must read exactly three facts from the profile — "
+        f"the play must read exactly four facts from the profile — "
         f"`ci_pool_ci_node_facilities` from CI_NODE_FACILITIES, defaulting to the parser's own "
         f"default `full`; `ci_pool_factory_node` from FACTORY_NODE, defaulting to the "
         f"parser's own `false`; and `ci_pool_node_data_dir` from NODE_DATA_DIR, defaulting to "
         f"'' (k3s's own data directory), which the containerd warm needs to reach a moved "
-        f"node's crictl.yaml — so a profile written before any key existed resolves to "
+        f"node's crictl.yaml; and `ci_pool_runner_workvol_dir` from RUNNER_WORKVOL_DIR, "
+        f"defaulting to '' (no runner-only work-volume directory) — so a profile written "
+        f"before any key existed resolves to "
         f"what it already has; got {facts}"
     )
 
@@ -387,15 +406,11 @@ def test_the_posture_fact_the_gates_read_comes_from_the_profile_key_that_owns_it
 # --- the Definition of Done's second assertion ------------------------------
 
 
-def test_hp_runs_no_task_of_the_four_roles_a_factory_only_agent_has_nothing_for() -> None:
-    """The tiers it does not carry, and the job-execution facilities it never uses.
+def test_hp_runs_no_task_of_the_tier_role_a_runner_only_agent_has_nothing_for() -> None:
+    """The tiers it does not carry.
 
-    `storage_layout` mounts and binds the three LABEL-keyed tiers; `container_hook`
-    extracts the fleet-patched ARC container hook and its externals;
-    `sccache_binary` and `cache_telemetry` install the two binaries
-    `arc/hook-pod-template.yaml` mounts read-only into every JOB container. hp
-    declares no tier and runs no job, so all four would converge a facility with
-    nothing on the other end of it.
+    `storage_layout` mounts and binds the three LABEL-keyed tiers. hp declares no
+    tier, so it would converge a facility with nothing on the other end of it.
     """
     resolved = set(_roles_by_host()[_HP])
     leaked = sorted(_HP_MUST_NOT_RUN & resolved)
@@ -406,8 +421,12 @@ def test_hp_runs_no_task_of_the_four_roles_a_factory_only_agent_has_nothing_for(
     )
 
 
-def test_hp_runs_the_four_roles_that_make_a_closed_node_closed_and_visible() -> None:
-    """What a factory-only agent still needs, and why each one.
+def test_hp_runs_the_roles_a_runner_only_factory_agent_needs() -> None:
+    """What a runner-only factory agent needs, and why each one.
+
+    `container_hook`, `sccache_binary` and `cache_telemetry` install what runner
+    and job pods mount, so a runner pod on hp can start and its jobs find the
+    pool-provided binaries.
 
     `k3s_config` renders the taint the node STARTS with, which is what survives a
     control-plane reboot; `agent_rejoin` installs the watchdog that re-registers

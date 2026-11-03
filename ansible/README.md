@@ -205,15 +205,18 @@ profile parser refuses unless the profile *also* declares no tier,
 `ADMISSION_CAPACITY_C=0` and a `node-role/ci` taint), and the four roles whose
 whole subject is a CI tier or a CI job's execution environment —
 `storage_layout`, `sccache_binary`, `cache_telemetry`, `container_hook` — are
-gated on it with a `when:` in this one play rather than in a second play. Read
-`ci-pool.yml`'s header for the three roles a closed node still runs and why each
-one, and `tests/livespec_dev_tooling/test_ci_pool_factory_only_agent_roles.py`
+gated on it with a `when:` in this one play rather than in a second play. Since
+2026-11-03 hp is `runner-only` instead (livespec-dev-tooling-zreev4): it takes CI
+runner pods at capacity 8 with no tier and no taint, so only `storage_layout`
+stays off it while the three job-environment roles run, gated `!= 'none'`. Read
+`ci-pool.yml`'s header for each posture's role decisions and why, and `tests/livespec_dev_tooling/test_ci_pool_factory_only_agent_roles.py`
 for the test that resolves the whole answer from the inventory and the profiles.
 
 The third axis is `FACTORY_NODE`, and it asks a question neither of the other two
 can: **can this node take a factory pod?** All three nodes answer `true` — the
 server included, which is why it is not `cluster_role`, and `hp-xubuntu` answers
-it while executing no CI job, which is why it is not `CI_NODE_FACILITIES`.
+it under a different CI posture from the server's, which is why it is not
+`CI_NODE_FACILITIES`.
 `factory_workspace_root` is gated on it: the kubernetes-sandbox-backend plugin
 takes ONE `workspace_root`, so every node that advertises factory capacity must
 already carry a directory at that one absolute path

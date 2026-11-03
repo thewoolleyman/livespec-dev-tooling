@@ -111,6 +111,46 @@
   when: storage_sweep_cluster_role == 'agent'
   notify: Reload systemd for the scratch sweep
 
+# A node whose runner volumes live somewhere other than the script's default
+# root (a runner-only node, livespec-dev-tooling-zreev4) gets the root as an
+# Environment= line, plus the mount that root needs before the sweep may run.
+# Every other node gets NO such drop-in, and an earlier one is removed, so the
+# unit is byte-identical to before wherever the root is the default.
+- name: Create the sweep drop-in directory for a non-default storage root
+  ansible.builtin.file:
+    path: "{{ storage_sweep_dropin_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+  when: storage_sweep_storage_root | length > 0
+
+- name: Install the storage-root drop-in
+  ansible.builtin.copy:
+    content: |
+      # Rendered by ansible/roles/storage_sweep from the node profile's
+      # RUNNER_WORKVOL_DIR (livespec-dev-tooling-zreev4). Do not hand-edit.
+      [Unit]
+      RequiresMountsFor={{ storage_sweep_storage_root }}
+      [Service]
+      Environment=STORAGE_ROOT={{ storage_sweep_storage_root }}
+    dest: "{{ storage_sweep_dropin_dir }}/{{ storage_sweep_root_dropin_name }}"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+  when: storage_sweep_storage_root | length > 0
+  notify: Reload systemd for the scratch sweep
+
+- name: Remove a storage-root drop-in the profile no longer declares
+  ansible.builtin.file:
+    path: "{{ storage_sweep_dropin_dir }}/{{ storage_sweep_root_dropin_name }}"
+    state: absent
+  become: true
+  when: storage_sweep_storage_root | length == 0
+  notify: Reload systemd for the scratch sweep
+
 - name: Publish a changed unit before enabling it
   ansible.builtin.meta: flush_handlers
 

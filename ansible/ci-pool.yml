@@ -122,6 +122,35 @@
 #     default.
 # Running all three is also what makes "opening hp to CI later is a profile edit
 # plus an apply" true: nothing has to be minted, loaded or installed first.
+#
+# THE THIRD POSTURE, `runner-only` (livespec-dev-tooling-zreev4). hp-xubuntu was
+# opened to CI without carving storage tiers: the only committed route to open
+# a node had been `full`, whose tiers the bare-metal stage would have to create
+# on disks hp has no free space on. A `runner-only` node takes CI RUNNER pods at
+# its declared admission capacity on an existing directory its profile names
+# (RUNNER_WORKVOL_DIR), reads the pool's host-served caches over the node
+# network, and starts its jobs cold. Each posture-gated role is decided
+# explicitly for it:
+#   * storage_layout stays `full`-only. It mounts and binds the three
+#     LABEL-keyed tiers, which a runner-only node does not carry, and refuses
+#     the apply at its first label resolution on a node that has none.
+#   * container_hook RUNS (gated `!= 'none'`). Every runner pod hostPath-mounts
+#     the fleet-patched hook at /usr/local/lib/ci-runner-k3s/hooks with
+#     `type: File`, so a runner pod on a node without it cannot start. Its
+#     storage root is the profile's RUNNER_WORKVOL_DIR, because that is where
+#     the local-path provisioner creates this node's runner volumes and so
+#     where the provisioner's setup script looks for `.externals/current`.
+#     On a filesystem without reflink that seed fails and the hook copies the
+#     externals itself, which is the cold path the setup script already takes.
+#   * sccache_binary and cache_telemetry RUN (gated `!= 'none'`). Both install
+#     into /usr/local/lib/ci-runner-k3s/bin, which arc/hook-pod-template.yaml
+#     mounts into every JOB container. The compilation cache they reach is the
+#     pool's host-served one (the ci-sccache redis Service), read over the node
+#     network, which is exactly how a runner-only node meets the build-cache
+#     tiers.
+#   * storage_sweep receives the profile's RUNNER_WORKVOL_DIR as its
+#     STORAGE_ROOT, so the boot-time orphan sweep clears the directory this
+#     node's runner volumes actually live in.
 
 - name: K3s CI pool node-local provisioning
   hosts: ci_pool
@@ -146,6 +175,12 @@
     ci_pool_node_data_dir: >-
       {{ lookup('ansible.builtin.file', ci_pool_profile)
       | regex_findall('^NODE_DATA_DIR=(.*)$', multiline=True) | first | default('') }}
+    # The runner-only posture's work-volume directory, or '' on every other
+    # posture (the parser requires both halves of that). The container hook's
+    # externals root and the storage sweep's root follow it.
+    ci_pool_runner_workvol_dir: >-
+      {{ lookup('ansible.builtin.file', ci_pool_profile)
+      | regex_findall('^RUNNER_WORKVOL_DIR=(.*)$', multiline=True) | first | default('') }}
   roles:
     # 1/10 — k3s config (server or agent); self-gated.
     - role: k3s_config
@@ -250,18 +285,23 @@
     # install into the directory arc/hook-pod-template.yaml mounts READ-ONLY into
     # every JOB container, and cache_telemetry's spans are about the cache tiers.
     # A node that runs no job has nothing on the other end of either.
+    # A runner-only node runs JOBS too, so it gets both (see the header).
     - role: sccache_binary
       tags: [sccache_binary]
-      when: ci_pool_ci_node_facilities == 'full'
+      when: ci_pool_ci_node_facilities != 'none'
     - role: cache_telemetry
       tags: [cache_telemetry]
-      when: ci_pool_ci_node_facilities == 'full'
+      when: ci_pool_ci_node_facilities != 'none'
     # 7c/10 — fleet-patched ARC container hook + externals extraction. Gated: it
     # extracts the runner image's externals under the local-path root for ARC's
     # container hook, which only a node running RUNNER pods uses.
+    # A runner-only node runs RUNNER pods, which mount the hook `type: File`;
+    # its externals root is the node's runner work-volume directory.
     - role: container_hook
       tags: [container_hook]
-      when: ci_pool_ci_node_facilities == 'full'
+      when: ci_pool_ci_node_facilities != 'none'
+      container_hook_storage_root: >-
+        {{ ci_pool_runner_workvol_dir if ci_pool_runner_workvol_dir else '/var/lib/rancher/k3s/storage' }}
     # 8/10 — reconstruct-on-boot converge unit (server-only, STEP_SKIP).
     - role: ci_converge_unit
       tags: [ci_converge_unit]
@@ -302,6 +342,7 @@
     # 10/10 — boot-time orphaned-scratch sweep; self-gated.
     - role: storage_sweep
       tags: [storage_sweep]
+      storage_sweep_storage_root: "{{ ci_pool_runner_workvol_dir }}"
     # 11 — the four node-local OTLP emitters, the host-silence heartbeat among
     # them (see the header's "TWO MORE STEPS"). Server-only: three of the four
     # read a cluster credential only the server holds or renders, and the

@@ -516,15 +516,13 @@ done
 # The install line itself. `--node-ip` is PINNED because this host's wired
 # `enp11s0` and its wireless `wlp10s0` are BOTH on 192.168.1.0/24, so a node
 # that registered on the wireless address would be one the cluster cannot reach
-# it on. The taint's VALUE is `factory` rather than the `pending` gmktec joined
-# with: this node is not waiting to be opened, it is closed because it is a
-# factory host, which is the reason an operator reading the node needs.
+# it on. Since the runner-only opening (livespec-dev-tooling-zreev4) the profile
+# declares no NODE_TAINTS, so the join registers NO --node-taint (F4b).
 for fragment in \
   "INSTALL_K3S_VERSION='v1.36.2+k3s1'" \
   "agent --server https://192.168.1.200:6443" \
   "--token-file ${HP_TOKEN}" \
   "--node-ip 192.168.1.4" \
-  "--node-taint node-role/ci=factory:NoSchedule" \
   "--node-label k3s-role=arc-runner-host" \
   "--node-label ci-runner.io/factory=true" \
   "--data-dir /srv/sandbox-storage/k3s"
@@ -535,6 +533,12 @@ do
     no "F4  the hp agent install line carries: ${fragment} (got: ${HP_COMMAND})"
   fi
 done
+
+if printf '%s\n' "$HP_COMMAND" | grep -qF -- '--node-taint'; then
+  no "F4b the runner-only hp profile emits NO --node-taint (got: ${HP_COMMAND})"
+else
+  ok "F4b the runner-only hp profile emits NO --node-taint"
+fi
 
 if printf '%s\n' "$HP_COMMAND" | grep -qF -- '192.168.1.4/24'; then
   no "F5  the install line pins the bare address, not the netplan CIDR"
@@ -572,11 +576,12 @@ else
   no "F8  the committed profile skips the five steps that are the server's (${hp_skips} skipped)"
 fi
 
-# The three ways this profile says "taking nothing", read straight out of the
-# committed file. profile.sh REFUSES the profile if any one of them is missing,
-# so a node is opened to CI only by an edit that satisfies all three at once.
-for declared in 'CLUSTER_ROLE=agent' 'ADMISSION_CAPACITY_C=0' \
-                'CI_NODE_FACILITIES=none' 'NODE_TAINTS=node-role/ci=factory:NoSchedule'; do
+# The ways this profile says "runners without tiers", read straight out of the
+# committed file. profile.sh REFUSES the profile if any one of them is broken,
+# so the posture changes only by an edit that satisfies all of them at once.
+for declared in 'CLUSTER_ROLE=agent' 'ADMISSION_CAPACITY_C=8' \
+                'CI_NODE_FACILITIES=runner-only' 'NODE_TAINTS=' \
+                'RUNNER_WORKVOL_DIR=/srv/sandbox-storage/runner-workvols'; do
   if grep -qxF "$declared" "$HP_COMMITTED"; then
     ok "F9  the committed profile declares: ${declared}"
   else

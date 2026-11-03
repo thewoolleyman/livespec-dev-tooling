@@ -773,7 +773,7 @@ log "7. capacity-absent: allocatable ci-runner.io/churn-slot on ${NODE_SELECTOR}
 # node-status patch, not kubelet-owned, and a dependency-failed boot leaves
 # the reapply unit unrun (2026-09-04) — every admitted runner pod is
 # unschedulable and no capacity signal says so. PER-NODE since R5: each node
-# carries its OWN capacity (poweredge 32, gmktec 12), so "capacity-absent" is
+# carries its OWN capacity (poweredge 24, gmktec 12, hp 8 since 2026-11-03), so "capacity-absent" is
 # read literally per node — a node whose allocatable is missing OR zero is a hit
 # and contributes 0 to the pool total. Zero counts because a churn-slot node at
 # 0 admits nothing, which is capacity-absent for scheduling exactly as a missing
