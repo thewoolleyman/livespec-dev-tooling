@@ -318,6 +318,10 @@ failed ssh. The maintainer: "leaving HP completely unutilized and just throwing 
 it is a complete failure on your part." On the routing rule, the maintainer: "Are you doing the work yourself rather
 than delegating it?"
 
+hp-xubuntu's idleness on 2026-11-02 and 03 came from its CI-closed posture, not from host capacity. Opening hp as a
+runner-only node fixed it (v117, 8 CI slots, first job 08:28Z 2026-11-03), so an idle hp means checking its posture
+first.
+
 **The dispatcher watches throughput first; the coordinator checks it independently.** The coordinator's tick samples
 every ~20 minutes, so it cannot be the first to see a stall. legacy-dispatcher-agent runs the launchers and owns
 ticket order (its charter), so on every pass it also:
