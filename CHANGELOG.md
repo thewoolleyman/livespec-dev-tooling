@@ -58,6 +58,23 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.159.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.158.1...v1.159.0) (2026-11-03)
+
+
+### Features
+
+* **ansible:** converge the local-path provisioner manifest alone under its own tag ([4183f27](https://github.com/thewoolleyman/livespec-dev-tooling/commit/4183f2742bd4ea99e0f1c7990cba9a948404cbfd))
+* delegate detached full-suite gate runs ([6b9c7de](https://github.com/thewoolleyman/livespec-dev-tooling/commit/6b9c7dedc79c30b848dc9e0a1f7f110fc8e39c84))
+
+
+### Bug Fixes
+
+* **fabro_server:** do not promote a staged binary over an active instance being parked ([d469d6d](https://github.com/thewoolleyman/livespec-dev-tooling/commit/d469d6dc6cc36804b9b7bd830c07df4aa47dece4))
+* **fabro_server:** do not promote a staged binary over an active parked instance on an allowed restart ([d435b96](https://github.com/thewoolleyman/livespec-dev-tooling/commit/d435b9617ca6cd8bdcac419ee872250d6c67d6ab))
+* **fabro_server:** promote a staged binary only when no server process is live ([e6b66fb](https://github.com/thewoolleyman/livespec-dev-tooling/commit/e6b66fb01c7bfbfba472518320b046453081190f))
+* **fabro:** protect deferred binary promotion ([410a261](https://github.com/thewoolleyman/livespec-dev-tooling/commit/410a26192f9f44bfab6d0d1de99fb9ab4e0bd1fe))
+* **gate-run:** run the detached cluster child in the project environment ([2882618](https://github.com/thewoolleyman/livespec-dev-tooling/commit/28826187086f05fea774675dff7132d93289c704))
+
 ## [1.158.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.158.0...v1.158.1) (2026-11-02)
 
 
