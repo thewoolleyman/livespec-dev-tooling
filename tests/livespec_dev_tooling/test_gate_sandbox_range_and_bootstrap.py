@@ -30,8 +30,6 @@ import subprocess
 from itertools import takewhile
 from pathlib import Path
 
-import pytest
-
 from livespec_dev_tooling import gate_remote_client
 
 __all__: list[str] = []
@@ -280,20 +278,14 @@ trap 'kill "${listener_pid}" 2>/dev/null || true; wait "${listener_pid}" 2>/dev/
 STAND_IN_PROXY_READY_DEADLINE_SECONDS=1 wait_for_stand_in_proxy "${port}"
 exit $?
 """
-    try:
-        completed = subprocess.run(
-            ["bash", "-c", script, "--", str(_EXIT_TESTS)],
-            cwd=_REPO_ROOT,
-            capture_output=True,
-            text=True,
-            check=False,
-            timeout=4,
-        )
-    except subprocess.TimeoutExpired as error:
-        pytest.fail(
-            "the blocked connect escaped the readiness deadline instead of "
-            f"reporting the stand-in proxy failure: {error}"
-        )
+    completed = subprocess.run(
+        ["bash", "-c", script, "--", str(_EXIT_TESTS)],
+        cwd=_REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=4,
+    )
 
     assert completed.returncode == 1, completed.stdout + completed.stderr
     assert "FAIL  the stand-in proxy on port" in completed.stdout
