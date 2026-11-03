@@ -387,6 +387,30 @@ def _utc_calendar_date(*, committed_at: str) -> str:
     return datetime.fromisoformat(instant).astimezone(timezone.utc).date().isoformat()
 
 
+def _walked_revisions(*, cwd: Path) -> list[str]:
+    """The revisions whose history `first_seen_dates` walks.
+
+    Outside a merge this is empty, and `git log` walks HEAD's history as it
+    always has. While a merge is in progress, the commit the hook is judging
+    will have HEAD and every MERGE_HEAD as parents. The rows that merge brings
+    in were introduced by commits reachable only from MERGE_HEAD, so the walk
+    covers HEAD plus every MERGE_HEAD. Walking HEAD alone gave those rows no
+    first-seen evidence, and the register refused a factory refresh-repair
+    merge whose full suite had passed (bd-ib-yuwftp run 01M6GK2VGVRT,
+    2026-11-03).
+    """
+    merge_head_path = _git_stdout(cwd=cwd, args=["rev-parse", "--git-path", "MERGE_HEAD"]).strip()
+    if not merge_head_path:
+        return []
+    # `--git-path` answers relative to `cwd` in a plain clone and absolute in a
+    # linked worktree; joining onto an absolute path yields that path unchanged.
+    merge_head_file = cwd / merge_head_path
+    if not merge_head_file.is_file():
+        return []
+    merge_heads = merge_head_file.read_text(encoding="utf-8").split()
+    return ["HEAD", *merge_heads]
+
+
 def first_seen_dates(*, cwd: Path, spec_root: str | None = None) -> dict[tuple[str, str, str], str]:
     """Key → UTC calendar date of the earliest commit whose registry carried it as `TODO`.
 
@@ -403,7 +427,14 @@ def first_seen_dates(*, cwd: Path, spec_root: str | None = None) -> dict[tuple[s
     configured_root = spec_root if spec_root is not None else configured_spec_root(cwd=cwd)
     log = _git_stdout(
         cwd=cwd,
-        args=["log", "--reverse", "--format=%H %cI", "--", COVERAGE_PATH.as_posix()],
+        args=[
+            "log",
+            "--reverse",
+            "--format=%H %cI",
+            *_walked_revisions(cwd=cwd),
+            "--",
+            COVERAGE_PATH.as_posix(),
+        ],
     )
     dates: dict[tuple[str, str, str], str] = {}
     for line in log.splitlines():
