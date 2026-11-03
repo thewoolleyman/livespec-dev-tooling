@@ -723,6 +723,39 @@ def test_coverage_target_runs_with_isolated_coverage_file_env(
     ).exists(), f"the minted namespace COVERAGE_FILE should be cleaned up after the run; {coverage_file!r} remains"
 
 
+def test_coverage_target_receives_the_active_aggregate_writer_set(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A corrupt-data diagnostic can name every coverage writer in this aggregate.
+
+    The per-file reader consumes ``LIVESPEC_COVERAGE_WRITERS`` when its
+    coverage database is unreadable.  It must be the active aggregate's
+    writers, rather than a hard-coded fallback, so an operator can identify
+    every process that could have touched the data file.
+    """
+    probe = tmp_path / "coverage_writers_probe"
+    justfile_text = (
+        "check-per-file-coverage:\n"
+        f'    printf "%s\\n" "$LIVESPEC_COVERAGE_WRITERS" > {probe}\n'
+        "\n"
+        "check-check-coverage-incremental:\n"
+        "    true\n"
+    )
+    _write_justfile(tmp_path=tmp_path, content=justfile_text)
+
+    result = _run_dispatcher(
+        tmp_path=tmp_path,
+        args=["--", "check-per-file-coverage", "check-check-coverage-incremental"],
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert probe.read_text(encoding="utf-8") == (
+        "check-per-file-coverage, check-check-coverage-incremental\n"
+    )
+
+
 def test_incremental_runs_concurrently_with_no_prereq_edge(
     *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
