@@ -196,14 +196,22 @@ def read_factory():
         "fleet_cap_file": None,
         "queue_depth": None,
         "launches_30m": [],
+        "fleet_log": None,
+        "cap_mismatch": False,
+        "other_families": {},
     }
     try:
         fac["fleet_cap_file"] = int((CANARY / "fleet-cap").read_text().strip())
     except (OSError, ValueError):
         fac["fleet_cap_file"] = None
-    best = newest_fleet_line(now)
-    if best:
-        fac["fleet_line_age_s"], fac["fleet"], fac["cap"] = best
+    rows = fleet_lines(now)
+    petri, fac["other_families"] = split_families(rows, fac["fleet_cap_file"])
+    if petri:
+        fac["fleet_line_age_s"], fac["fleet"], _cap, fac["fleet_log"] = petri[0]
+        fac["cap"] = fac["fleet_cap_file"]
+    elif rows:
+        fac["fleet_line_age_s"], fac["fleet"], fac["cap"], fac["fleet_log"] = rows[0]
+        fac["cap_mismatch"] = True
     try:
         fac["queue_depth"] = sum(1 for p in QUEUE_DIR.iterdir() if p.is_file())
     except OSError:
@@ -212,17 +220,33 @@ def read_factory():
     return fac
 
 
-def newest_fleet_line(now):
-    best = None
+FLEET_RE = re.compile(r"(\d\d:\d\d:\d\d) .*?fleet=(\d+)(?: cap=(\d+))?")
+
+
+def fleet_lines(now):
+    """Every fleet=N [cap=M] line in the window as (age, fleet, cap_or_None, log, kind)."""
+    rows = []
     for path in recent_files("seq-*.log", FLEET_WINDOW_S):
         for line in path.read_text(errors="replace").splitlines():
-            m = re.match(r"(\d\d:\d\d:\d\d) .*fleet=(\d+) cap=(\d+)", line)
+            m = FLEET_RE.match(line)
             if not m:
                 continue
             age = seconds_ago(m.group(1), now)
-            if age <= FLEET_WINDOW_S and (best is None or age < best[0]):
-                best = (age, int(m.group(2)), int(m.group(3)))
-    return best
+            if age <= FLEET_WINDOW_S:
+                cap = int(m.group(3)) if m.group(3) else None
+                rows.append((age, int(m.group(2)), cap, path.name))
+    return sorted(rows, key=lambda r: r[0])
+
+
+def split_families(rows, cap_file):
+    """Petri gmktec fleet = lines whose cap equals the fleet-cap file (or a green line
+    with no cap); every other cap is a different launcher family."""
+    petri = [r for r in rows if r[2] is None or r[2] == cap_file]
+    others = {}
+    for r in rows:
+        if r not in petri and r[3] not in others:
+            others[r[3]] = {"age_s": r[0], "fleet": r[1], "cap": r[2]}
+    return petri, others
 
 
 def recent_launches(now):
@@ -261,6 +285,11 @@ def build_flags(nodes, cluster, factory):
     f, c, q = factory["fleet"], factory["cap"], factory["queue_depth"]
     if f is None:
         flags.append("FACTORY no fleet=/cap= line within the last 20 minutes (launcher silent?)")
+    elif factory["cap_mismatch"]:
+        flags.append(
+            f"CAP-MISMATCH no recent petri line with cap={factory['fleet_cap_file']} "
+            f"(fleet-cap file); newest line says fleet={f} cap={c} from {factory['fleet_log']}"
+        )
     elif c is not None and f < c and q:
         flags.append(f"BELOW-CAP fleet={f} cap={c} with {q} ticket(s) queued")
     return flags
@@ -294,9 +323,11 @@ def render(nodes, cluster, factory, flags):
         out(f"  {q['namespace']}/{q['name']}: {q['usage']}")
     out(
         f"\nFactory: fleet={factory['fleet']} cap={factory['cap']} "
-        f"(line age {factory['fleet_line_age_s']}s) fleet-cap-file={factory['fleet_cap_file']} "
+        f"(petri gmktec, line age {factory['fleet_line_age_s']}s, {factory['fleet_log']}) fleet-cap-file={factory['fleet_cap_file']} "
         f"queue-depth={factory['queue_depth']}"
     )
+    for log, o in sorted(factory["other_families"].items()):
+        out(f"  other launcher family {log}: fleet={o['fleet']} cap={o['cap']} (age {o['age_s']}s)")
     out(f"LAUNCH lines, last 30 min: {len(factory['launches_30m'])}")
     for line in factory["launches_30m"][-5:]:
         out(f"  {line}")
