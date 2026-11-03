@@ -733,5 +733,19 @@
     "heading": "## Scenario: the whole-suite coverage run prints its thirty slowest test phases",
     "work_item": "livespec-dev-tooling-tt4w7h",
     "first_seen": "2026-11-01"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a CI job killed at Set up job by an action-download 429 is re-run with backoff",
+    "work_item": "livespec-dev-tooling-cetyrq",
+    "first_seen": "2026-11-03"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a merged runner-pool change reaches the live cluster through one committed apply",
+    "work_item": "livespec-dev-tooling-un3zhi",
+    "first_seen": "2026-11-03"
   }
 ]
