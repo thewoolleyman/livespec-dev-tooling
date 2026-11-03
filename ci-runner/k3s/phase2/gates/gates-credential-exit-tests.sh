@@ -214,7 +214,7 @@ if [ "${secret_kinds}" != "1" ]; then
 elif [ "${sa_token_type}" != "1" ]; then
   fail "the one declared Secret is not a ServiceAccount token — a standing credential?"
 elif printf '%s\n' "${declared_yaml}" \
-     | grep -iE 'github|ghs_|github_pat_|^[[:space:]]*(data|stringData >/dev/null):'; then
+     | grep -iE 'github|ghs_|github_pat_|^[[:space:]]*(data|stringData):' >/dev/null; then
   fail "the declared YAML carries credential material: $(printf '%s\n' "${declared_yaml}" | grep -niE 'github|ghs_|^[[:space:]]*(data|stringData):')"
 else
   pass "the only Secret is the ServiceAccount token; no GitHub credential is in source"
