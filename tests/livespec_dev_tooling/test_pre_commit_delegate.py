@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib
+import json
 import os
 import shutil
 import subprocess
@@ -414,3 +415,69 @@ def test_only_a_clean_full_pre_commit_aggregate_records_reusable_evidence(
         assert (
             len(_run_pre_commit_with_stub_aggregate(tmp_path=sub, dirty=dirty)) == expected_writes
         )
+
+
+def _run_main_with_delegated_verdict(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, **verdict_fields: object
+) -> tuple[int, dict[str, object]]:
+    """Run the delegate's CLI with a stubbed verdict; return its status and token."""
+    module = _module()
+    _git(cwd=tmp_path, args=["init", "-q", "-b", "main"])
+    for key in [name for name in os.environ if name.startswith("GIT_")]:
+        monkeypatch.delenv(key)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("sys.argv", ["pre_commit_delegate", "run"])
+    monkeypatch.setattr(
+        module, "run_pre_commit", lambda **_kwargs: module.PreCommitVerdict(**verdict_fields)
+    )
+    status = module.main()
+    token_path = tmp_path / ".git" / "livespec-green-token.json"
+    token = json.loads(token_path.read_text(encoding="utf-8")) if token_path.exists() else {}
+    return status, token
+
+
+def test_a_passing_delegated_aggregate_records_reusable_same_tree_evidence(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A green gate Job verdict is the full aggregate, so commit-msg may reuse it."""
+    status, token = _run_main_with_delegated_verdict(
+        tmp_path=tmp_path,
+        monkeypatch=monkeypatch,
+        local=False,
+        reason="the Job passed",
+        job_name="gate-pre-commit-1",
+        tree_hash="a" * 40,
+        exit_status=0,
+        output_checksum="sha256:job-output",
+    )
+
+    assert status == 0
+    assert "pre_commit_aggregate" in token
+    evidence = token["pre_commit_aggregate"]
+    assert token["tree_hash"] == "a" * 40
+    assert evidence["tree_hash"] == "a" * 40
+    assert "gate-pre-commit-1" in evidence["run_id"]
+    assert evidence["output_checksum"] == "sha256:job-output"
+
+
+def test_a_failed_or_unattributable_delegated_aggregate_records_no_evidence(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Only a passed verdict naming its tree, Job, and output may stand in for the suite."""
+    cases: list[dict[str, object]] = [
+        {"exit_status": 1, "output_checksum": "sha256:job-output", "job_name": "gate-1"},
+        {"exit_status": 0, "output_checksum": None, "job_name": "gate-1"},
+        {"exit_status": 0, "output_checksum": "sha256:job-output", "job_name": None},
+        {
+            "exit_status": 0,
+            "output_checksum": "sha256:job-output",
+            "job_name": "gate-1",
+            "tree_hash": None,
+        },
+    ]
+    for index, case in enumerate(cases):
+        sub = tmp_path / str(index)
+        sub.mkdir()
+        fields: dict[str, object] = {"local": False, "reason": "r", "tree_hash": "a" * 40, **case}
+        _, token = _run_main_with_delegated_verdict(tmp_path=sub, monkeypatch=monkeypatch, **fields)
+        assert token == {}, case

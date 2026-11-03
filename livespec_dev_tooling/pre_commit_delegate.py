@@ -21,6 +21,7 @@ from livespec_dev_tooling.gate_remote_verdict import (
     GATE_PASSED,
     run_gated_push,
 )
+from livespec_dev_tooling.green_token import write_pre_commit_evidence
 
 __all__: list[str] = ["PreCommitVerdict", "main", "run_pre_commit"]
 
@@ -211,6 +212,19 @@ def main() -> int:
         exit_status=verdict.exit_status,
         output_checksum=verdict.output_checksum,
     )
+    if (
+        verdict.exit_status == 0
+        and verdict.tree_hash
+        and verdict.job_name
+        and verdict.output_checksum
+    ):
+        _ = write_pre_commit_evidence(
+            cwd=Path.cwd(),
+            log=log,
+            run_id=f"pre-commit-delegate:{verdict.job_name}:{verdict.tree_hash}",
+            output_checksum=verdict.output_checksum,
+            tree_hash=verdict.tree_hash,
+        )
     return 1 if verdict.exit_status is None else verdict.exit_status
 
 

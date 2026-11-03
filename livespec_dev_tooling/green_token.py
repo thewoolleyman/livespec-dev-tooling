@@ -195,10 +195,15 @@ def write_pre_commit_evidence(
     log: structlog.stdlib.BoundLogger,
     run_id: str,
     output_checksum: str,
+    tree_hash: str | None = None,
 ) -> int:
-    """Record a passed full pre-commit aggregate against its staged index tree."""
+    """Record a passed full pre-commit aggregate against the tree it judged.
+
+    The tree defaults to the current index tree; a delegated verdict passes the
+    tree its gate Job judged, so the evidence is keyed to that verdict.
+    """
     try:
-        tree_hash = _index_tree_hash(cwd=cwd)
+        tree_hash = tree_hash or _index_tree_hash(cwd=cwd)
     except (OSError, subprocess.CalledProcessError) as exc:  # pragma: no cover
         log.warning("pre-commit aggregate evidence write failed; non-blocking", error=str(exc))
         return 0
