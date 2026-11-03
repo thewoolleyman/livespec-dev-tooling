@@ -29,7 +29,7 @@ _REUSE_STAMP = ".livespec-coverage-reuse-token"
 # Inputs the scripts read that a host may already export: a GitHub runner
 # sets GITHUB_ACTIONS into every process, which would flip the consumer's
 # venue branch for every test below. Stripped so each test owns them.
-_HOST_INPUTS = frozenset({"GITHUB_ACTIONS", "COVERAGE_PROCESS_START"})
+_HOST_INPUTS = frozenset({"COVERAGE_FILE", "GITHUB_ACTIONS", "COVERAGE_PROCESS_START"})
 _PYTEST_LINE = (
     "run pytest -n 1 --cov --cov-branch --cov-config=pyproject.toml --cov-report=term-missing"
 )

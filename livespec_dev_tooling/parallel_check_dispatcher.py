@@ -212,6 +212,7 @@ def _target_env(*, name: str, namespace_dirs: dict[str, Path]) -> dict[str, str]
     env = dict(os.environ)
     env["COVERAGE_FILE"] = str(ns_dir / ".coverage")
     env["TMPDIR"] = str(ns_dir / "tmp")
+    env["LIVESPEC_COVERAGE_WRITERS"] = "check-per-file-coverage, check-check-coverage-incremental"
     return env
 
 
@@ -392,7 +393,11 @@ def _run_all(
             if name in skip_set:
                 continue
             futures[name] = _submit_target(
-                name=name, pool=pool, futures=futures, namespace_dirs=namespace_dirs, cwd=cwd
+                name=name,
+                pool=pool,
+                futures=futures,
+                namespace_dirs=namespace_dirs,
+                cwd=cwd,
             )
         for fut in as_completed(futures.values()):
             _emit_result(result=fut.result(), log=log)
