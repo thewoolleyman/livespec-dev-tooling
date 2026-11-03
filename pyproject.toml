@@ -55,6 +55,7 @@ readme = "README.md"
 # sandbox and every delegated gate pod: it reads one host file, finds none, and
 # returns without creating, writing or printing anything.
 [project.entry-points.pytest11]
+livespec_flake_retry = "livespec_dev_tooling.flake_retry"
 livespec_local_gate_slots = "livespec_dev_tooling.local_gate_slots"
 
 [tool.hatch.build.targets.wheel]
