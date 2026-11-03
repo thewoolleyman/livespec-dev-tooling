@@ -84,7 +84,7 @@ fabro_factory_registry:
 # both, and the R668 rollback to `legacy` stays usable through the bd-ib-iud52v
 # soak, so BOTH are declared and each factory names its own.
 #
-# BOTH SOURCES ARE ALREADY STAGED ON THE CONTROL NODE, and that is not a
+# THE ORIGINAL TWO SOURCES ARE ALREADY STAGED ON THE CONTROL NODE, and that is not a
 # coincidence: they are the same two builds `ansible/inventory/host_vars/hp-
 # xubuntu.yml` carries as that host's `fabro_server` `binary_source` values —
 # fabro 0.254.0 at 8869e88 and the v0.382 carrier at adeefec4c, both rebuilt
@@ -127,6 +127,13 @@ fabro_client_builds:
   - path: /home/ubuntu/.local/state/fabro-currency/carrier-petri-v0.382-adeefec4c/fabro
     source: /home/ubuntu/.local/state/fabro-web-prod/v0382-adeefec/fabro
     sha256: 26872440c75c50edfd59a0d33f1401baf70a9e5de81fb65192a1f7042817f7c1
+  # R301 homelab rollout: fabro 0.393.0-nightly.1 (613add1 2026-11-02),
+  # source thewoolleyman/fabro 613add19ca15ee0e05a92f688d559dace0e64b36,
+  # Petri e92b191. The same owned staged artifact serves main Petri :32276.
+  # Retain the earlier clients for repositories and live jobs that name them.
+  - path: /home/ubuntu/.local/state/fabro-currency/carrier-petri-v0.393-613add19c/fabro
+    source: /home/ubuntu/.local/state/fabro-web-prod/v0393-613add19c/fabro
+    sha256: def1dc89890c0481f8e733016ab78481dd2f26d8cab9248eb6b4b1fec5f6a344
 
 # --- local_gate_slots ---
 #

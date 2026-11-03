@@ -52,8 +52,22 @@ than left to be inferred from fifteen repositories:
 
 | declared `path` | the `bin` that names it |
 | --- | --- |
-| `…/fabro-currency/carrier-petri-v0.382-adeefec4c/fabro` | every fleet repository's `dispatcher.factories.petri.bin`, including this repository's own |
+| `…/fabro-currency/carrier-petri-v0.382-adeefec4c/fabro` | fleet repositories retaining the earlier `dispatcher.factories.petri.bin`, including this repository's own |
 | `…/fabro-currency/carrier-legacy-v0.254-8869e88/fabro` | each repository that declares a `legacy` factory, per `bd-ib-zb2hso` step 1. None commits one yet |
+| `…/fabro-currency/carrier-petri-v0.393-613add19c/fabro` | homelab's `dispatcher.factories.petri.bin` after its R301 rollout |
+
+The R301 homelab rollout consumes the existing owned staged carrier, not a new
+fork or tag: `fabro 0.393.0-nightly.1 (613add1 2026-11-02)`, source
+`thewoolleyman/fabro` commit `613add19ca15ee0e05a92f688d559dace0e64b36`,
+Petri `e92b191`. Its source is
+`/home/ubuntu/.local/state/fabro-web-prod/v0393-613add19c/fabro`, with SHA256
+`def1dc89890c0481f8e733016ab78481dd2f26d8cab9248eb6b4b1fec5f6a344`.
+The existing dev-host play stages that digest at the newly declared client path;
+only homelab's factory declaration selects it. The global PATH client, prior
+declared clients and all server binaries remain unchanged. Read drift and apply
+only `ansible/dev-host.yml --limit vps
+--tags fabro_client` for this rollout. Client installation and offline validation
+do not establish the owner's live per-run App proof or authorize dispatch.
 
 For THIS repository the correspondence is enforced:
 `check-dev-host-fabro-client-bins-declared` fails this repository's `just check`
