@@ -35,6 +35,14 @@ exists, leave the fix to its owner, or name the item in your PR so its factory r
 2026-11-02: PR #3182 fixed the `render-gate-job-exit-tests.sh` proxy readiness flake while
 livespec-dev-tooling-b2mnrq, the same flake, already had a factory run in flight.
 
+**A 429 is not a flake: re-run it.** A CI job or step that failed on an HTTP 429 rate limit (for example,
+codeload.github.com refusing an `actions/checkout` download at Set up job) is re-run with incremental backoff, and
+repeated if the 429 repeats. Any seat may do this without asking. Never rebase, push an empty commit or close/reopen
+to get a fresh run for a 429. The no-rerun rule above applies to genuine test failures only. The maintainer,
+2026-11-03 ~14:1xZ, recorded on epic `livespec-dev-tooling-6tgd2z` at 14:06:47Z: "Retrying on a 429 (and multiple
+times after a incremental backoff wait if it happens mutiple times) should be a no brainer. Why would you uselessly
+rebase and do more unnecwessary work?"
+
 ## 3. Unblock blocked seats every tick
 
 A seat sitting at a picker produces no reports, so waiting on its report waits forever. Every tick:
