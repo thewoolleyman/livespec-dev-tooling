@@ -57,20 +57,45 @@ def test_the_reader_skips_an_open_root_fix_and_files_the_other_nodeid(*, tmp_pat
     filed = filer.file_root_fixes(repo_root=tmp_path, runner=runner)
 
     assert filed == (nodeid_without_fix,)
-    assert calls == [
-        ["bd", "list", "--status", "all", "--json"],
-        [
-            "bd",
-            "create",
-            f"root-fix: {nodeid_without_fix}",
-            "--description",
-            f"Root-cause fix for retried test node id: {nodeid_without_fix}",
-            "--type",
-            "bug",
-            "--priority",
-            "0",
-        ],
+    assert [call[:3] for call in calls] == [
+        ["bd", "list", "--status"],
+        ["bd", "create", f"root-fix: {nodeid_without_fix}"],
     ]
+
+
+def test_a_filed_root_fix_carries_a_definition_of_done_naming_the_nodeid(*, tmp_path: Path) -> None:
+    """The factory can dispatch the item because its description grades the retried node id."""
+    module_path = _REPO_ROOT / "livespec_dev_tooling" / "flake_retry_filer.py"
+    assert module_path.is_file(), "the host-side flake reader must be shipped"
+    records = tmp_path / "tmp" / "flake-retries"
+    _ = records.mkdir(parents=True)
+    nodeid = "tests/test_example.py::test_needs_root_fix"
+    _ = (records / "retries.jsonl").write_text(
+        json.dumps({"nodeid": nodeid}) + "\n", encoding="utf-8"
+    )
+    calls: list[list[str]] = []
+
+    def runner(*, argv: list[str], cwd: Path, **_: object) -> Success[GateCommandResult]:
+        del cwd
+        calls.append(argv)
+        return Success(GateCommandResult(returncode=0, stdout="[]", stderr=""))
+
+    filer = importlib.import_module("livespec_dev_tooling.flake_retry_filer")
+
+    assert filer.file_root_fixes(repo_root=tmp_path, runner=runner) == (nodeid,)
+
+    create = next(call for call in calls if call[1] == "create")
+    description = create[create.index("--description") + 1]
+    assert description == (
+        f"Root-cause fix for retried test node id: {nodeid}\n"
+        "\n"
+        "## Definition of Done\n"
+        "\n"
+        "References: ## Testing approach\n"
+        "\n"
+        f"- Test node id `{nodeid}` passes on its first attempt in a run of the "
+        "repository's test suite, with no flake-retry record written for it.\n"
+    )
 
 
 def test_the_reader_returns_cleanly_when_no_retry_records_exist(*, tmp_path: Path) -> None:
