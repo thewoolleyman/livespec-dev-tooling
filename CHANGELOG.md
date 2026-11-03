@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.166.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.166.0...v1.166.1) (2026-11-03)
+
+
+### Bug Fixes
+
+* **gate-run:** order the config write-watch by rendezvous, drain it on stop (livespec-dev-tooling-lndv2l) ([7dfb82a](https://github.com/thewoolleyman/livespec-dev-tooling/commit/7dfb82add8453fa9e9f8d505e230d69b0f9a43e6))
+
 ## [1.166.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.165.6...v1.166.0) (2026-11-03)
 
 
