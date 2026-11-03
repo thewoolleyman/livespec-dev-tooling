@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import importlib
+import json
 import re
 from pathlib import Path
+
+import pytest
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -32,3 +35,67 @@ def test_pytest_loads_the_plugin_from_the_shared_entry_point() -> None:
 
     assert pytest11 is not None
     assert 'livespec_flake_retry = "livespec_dev_tooling.flake_retry"' in pytest11.group("body")
+
+
+@pytest.mark.integration
+def test_an_untouched_test_is_marked_for_a_bounded_single_test_retry(*, tmp_path: Path) -> None:
+    """Closure analysis enables the pytest-rerunfailures marker only when safe."""
+    (tmp_path / "app.py").write_text("VALUE = 1\n", encoding="utf-8")
+    test_path = tmp_path / "test_example.py"
+    test_path.write_text("import app\nassert app.VALUE == 1\n", encoding="utf-8")
+
+    plugin = importlib.import_module("livespec_dev_tooling.flake_retry")
+
+    marker = plugin.retry_marker_for(
+        repo_root=tmp_path,
+        test_path=test_path,
+        change_paths={Path("README.md")},
+    )
+
+    assert marker == {"reruns": 3, "reruns_delay": 60}
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    ("changed", "source"),
+    [
+        ("app.py", "import app\n"),
+        ("fixtures", 'FIXTURE_DIR = "fixtures"\n'),
+        ("pyproject.toml", "import app\n"),
+    ],
+)
+def test_a_touched_or_session_unsafe_test_has_no_retry_marker(
+    *, tmp_path: Path, changed: str, source: str
+) -> None:
+    """Changed closure modules, literal paths, and build files fail immediately."""
+    (tmp_path / "app.py").write_text("VALUE = 1\n", encoding="utf-8")
+    test_path = tmp_path / "test_example.py"
+    test_path.write_text(source, encoding="utf-8")
+
+    plugin = importlib.import_module("livespec_dev_tooling.flake_retry")
+
+    assert (
+        plugin.retry_marker_for(
+            repo_root=tmp_path,
+            test_path=test_path,
+            change_paths={Path(changed)},
+        )
+        is None
+    )
+
+
+def test_retried_results_are_written_and_rendered_without_hiding_final_failure(
+    *, tmp_path: Path
+) -> None:
+    """Retried tests leave one machine-readable record and a terminal-summary row."""
+    plugin = importlib.import_module("livespec_dev_tooling.flake_retry")
+    record = plugin.RetryResult(nodeid="test_example.py::test_flaky", attempts=4, outcome="failed")
+
+    output = plugin.write_retry_records(repo_root=tmp_path, results=[record])
+
+    assert output == tmp_path / "tmp" / "flake-retries" / "retries.jsonl"
+    assert [json.loads(line) for line in output.read_text(encoding="utf-8").splitlines()] == [
+        {"attempts": 4, "nodeid": "test_example.py::test_flaky", "outcome": "failed"}
+    ]
+    assert "FLAKE-RETRIED" in plugin.retry_summary(results=[record])
+    assert "failed" in plugin.retry_summary(results=[record])
