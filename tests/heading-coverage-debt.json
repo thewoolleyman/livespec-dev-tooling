@@ -149,6 +149,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: a closed profile with admission capacity or without its CI-closing taint is refused",
+    "work_item": "livespec-dev-tooling-zreev4",
+    "first_seen": "2026-11-03"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: a closed radar entry is reported as done and does not stall its consumers",
     "work_item": "livespec-dev-tooling-22wpdk",
     "first_seen": "2026-11-02"
@@ -261,6 +268,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: a job on a runner-only node reads the pool's host-served caches over the node network",
+    "work_item": "livespec-dev-tooling-zreev4",
+    "first_seen": "2026-11-03"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: a later master commit touching a culprit path blocks the revert",
     "work_item": "livespec-dev-tooling-joqff6",
     "first_seen": "2026-10-22"
@@ -292,6 +306,20 @@
     "heading": "## Scenario: a member with an unparseable pin file or a non-pin error row is still excluded from the release dispatch",
     "work_item": "livespec-dev-tooling-epcoja",
     "first_seen": "2026-10-24"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a move from none to runner-only is rehearsed by its provisioning apply",
+    "work_item": "livespec-dev-tooling-zreev4",
+    "first_seen": "2026-11-03"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a move to or from full still needs an empty-storage rehearsal",
+    "work_item": "livespec-dev-tooling-zreev4",
+    "first_seen": "2026-11-03"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -341,6 +369,48 @@
     "heading": "## Scenario: a related edge does not block a radar target",
     "work_item": "livespec-dev-tooling-m2x5pt",
     "first_seen": "2026-11-02"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a runner work volume on a runner-only node is provisioned under the profile's directory and starts unseeded",
+    "work_item": "livespec-dev-tooling-zreev4",
+    "first_seen": "2026-11-03"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a runner-only node receives the runner container hook and still takes factory sandboxes",
+    "work_item": "livespec-dev-tooling-zreev4",
+    "first_seen": "2026-11-03"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a runner-only profile opens a node to CI without planning a storage change",
+    "work_item": "livespec-dev-tooling-zreev4",
+    "first_seen": "2026-11-03"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a runner-only profile that keeps its CI-closing taint is refused",
+    "work_item": "livespec-dev-tooling-zreev4",
+    "first_seen": "2026-11-03"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a runner-only profile with no work-volume directory is refused",
+    "work_item": "livespec-dev-tooling-zreev4",
+    "first_seen": "2026-11-03"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a runner-only profile with zero admission capacity is refused",
+    "work_item": "livespec-dev-tooling-zreev4",
+    "first_seen": "2026-11-03"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -464,6 +534,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: an unknown CI-facilities posture is refused",
+    "work_item": "livespec-dev-tooling-zreev4",
+    "first_seen": "2026-11-03"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: an unparseable member .livespec.jsonc is a tenant-connection finding, never a skip",
     "work_item": "livespec-dev-tooling-kvvfo3",
     "first_seen": "2026-10-30"
@@ -523,6 +600,13 @@
     "heading": "## Scenario: missing or malformed reconciler configuration fails closed to revert-by-default",
     "work_item": "livespec-dev-tooling-joqff6",
     "first_seen": "2026-10-22"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: the cohort churn-slot quota equals the sum of the nodes' declared capacities",
+    "work_item": "livespec-dev-tooling-zreev4",
+    "first_seen": "2026-11-03"
   },
   {
     "spec_root": "SPECIFICATION",

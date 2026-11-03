@@ -2039,3 +2039,109 @@ Given the dev host's collector is converged from the merged configuration
 When 15 minutes pass
 
 Then the `livespec` environment's metrics dataset MUST hold `system.linux.memory.available` stamped with the dev host's `host.name` within that window
+
+## Scenario: a runner-only profile opens a node to CI without planning a storage change
+
+Given a pool node profile declaring `CI_NODE_FACILITIES=runner-only`, `ADMISSION_CAPACITY_C=8`, no CI-closing taint, no physical volume, volume group, logical volume or tier, and a runner work-volume directory on an existing mount
+
+When the bare-metal storage stage plans against that profile
+
+Then the plan MUST contain no mutating command and MUST say that the posture declares no storage
+
+And the profile parser MUST accept the profile
+
+## Scenario: a runner-only profile that keeps its CI-closing taint is refused
+
+Given a pool node profile declaring `CI_NODE_FACILITIES=runner-only` with `NODE_TAINTS` carrying a `node-role/ci` record
+
+When the profile parser reads it
+
+Then the parser MUST exit non-zero with a message naming `NODE_TAINTS`
+
+## Scenario: a runner-only profile with zero admission capacity is refused
+
+Given a pool node profile declaring `CI_NODE_FACILITIES=runner-only` with `ADMISSION_CAPACITY_C=0`
+
+When the profile parser reads it
+
+Then the parser MUST exit non-zero with a message naming `ADMISSION_CAPACITY_C`
+
+## Scenario: a runner work volume on a runner-only node is provisioned under the profile's directory and starts unseeded
+
+Given a converged `runner-only` node whose profile names a runner work-volume directory
+
+When the volume provisioner provisions a runner work volume on that node
+
+Then the volume MUST be created under that directory
+
+And the volume MUST carry no seeded warm tree and MUST be writable by the runner
+
+## Scenario: the cohort churn-slot quota equals the sum of the nodes' declared capacities
+
+Given the committed pool node profiles
+
+When the Kueue cohort churn-slot quota is read from the committed manifests
+
+Then it MUST equal the sum of every pool node profile's `ADMISSION_CAPACITY_C`
+
+## Scenario: an unknown CI-facilities posture is refused
+
+Given a pool node profile declaring `CI_NODE_FACILITIES=partial`
+
+When the profile parser reads it
+
+Then the parser MUST exit non-zero with a message naming `CI_NODE_FACILITIES` and the value `partial`
+
+## Scenario: a runner-only profile with no work-volume directory is refused
+
+Given a pool node profile declaring `CI_NODE_FACILITIES=runner-only` with an empty `RUNNER_WORKVOL_DIR`
+
+When the profile parser reads it
+
+Then the parser MUST exit non-zero with a message naming `RUNNER_WORKVOL_DIR`
+
+## Scenario: a closed profile with admission capacity or without its CI-closing taint is refused
+
+Given a pool node profile declaring `CI_NODE_FACILITIES=none` with `ADMISSION_CAPACITY_C=4`, or with no `node-role/ci` record in `NODE_TAINTS`
+
+When the profile parser reads it
+
+Then the parser MUST exit non-zero with a message naming `ADMISSION_CAPACITY_C` or `NODE_TAINTS` respectively
+
+## Scenario: a runner-only node receives the runner container hook and still takes factory sandboxes
+
+Given a pool node profile declaring `CI_NODE_FACILITIES=runner-only` and `FACTORY_NODE=true`
+
+When the node-provisioning stage is applied to that node
+
+Then the node MUST carry the runner container hook the stage installs on a `full` node
+
+And the node MUST carry the `ci-runner.io/factory=true` label, and a factory sandbox pod MUST schedule on it
+
+## Scenario: a job on a runner-only node reads the pool's host-served caches over the node network
+
+Given a converged `runner-only` node and the pool's dependency proxies and shared compilation cache running on another pool node
+
+When a CI job runs on the runner-only node
+
+Then the job MUST reach the dependency proxies and the shared compilation cache over the pool's node network
+
+And the job MUST start with no seeded warm tree in its work volume
+
+## Scenario: a move from none to runner-only is rehearsed by its provisioning apply
+
+Given a pool node whose profile changes from `CI_NODE_FACILITIES=none` to `CI_NODE_FACILITIES=runner-only`
+
+When the node-provisioning apply takes the node to executing a CI job
+
+Then that apply MUST count as the profile change's rehearsal without emptying the node's storage
+
+And the owning ledger item MUST record the apply run, the procedure revision and profile it ran with, the runner pod and node, and the job id
+
+## Scenario: a move to or from full still needs an empty-storage rehearsal
+
+Given a pool node whose profile changes its `CI_NODE_FACILITIES` to or from `full`
+
+When the change is applied without a rehearsal from empty storage
+
+Then the node's rebuild procedure MUST be treated as unproven for that node
