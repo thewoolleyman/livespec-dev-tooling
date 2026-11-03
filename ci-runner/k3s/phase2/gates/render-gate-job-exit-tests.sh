@@ -1139,8 +1139,8 @@ if wait_for_stand_in_proxy "${proxy_port}"; then
   if GATE_TEST_PROXY="http://127.0.0.1:${proxy_port}" run_gate_script "${declared_out}" "verify publish"; then
     proxied_good="http://127.0.0.1:${proxy_port}/packages/good/good-1.0.whl"
     rewritten="$(cat "${SCRATCH}/gate-cwd/uv.lock")"
-    if printf '%s' "${rewritten}" | grep -qF "${proxied_good}" && \
-       printf '%s' "${rewritten}" | grep -qF "${lock_missing}"; then
+    if printf '%s' "${rewritten}" | grep -F "${proxied_good}" >/dev/null && \
+       printf '%s' "${rewritten}" | grep -F "${lock_missing}" >/dev/null; then
       pass "a served locked artifact uses the proxy while its missing neighbour stays direct"
     else
       fail "the lock did not route only the proxy-served artifact: ${rewritten}"

@@ -553,9 +553,9 @@ fi
 # hp's cores go to CI runners. F7 is the control arm in the other direction:
 # without it the label's absence on hp could be a literal the script drops
 # unconditionally, and FACTORY_NODE would be decoration.
-if printf '%s\n' "$GMKTEC_COMMAND" | grep -qF -- '--node-label ci-runner.io/factory=true' \
-   && printf '%s\n' "$SERVER_PLAN" | grep -qF -- '--node-label ci-runner.io/factory=true' \
-   && ! printf '%s\n' "$HP_COMMAND" | grep -qF -- 'ci-runner.io/factory'; then
+if printf '%s\n' "$GMKTEC_COMMAND" | grep -F -- '--node-label ci-runner.io/factory=true' >/dev/null \
+   && printf '%s\n' "$SERVER_PLAN" | grep -F -- '--node-label ci-runner.io/factory=true' >/dev/null \
+   && ! printf '%s\n' "$HP_COMMAND" | grep -F -- 'ci-runner.io/factory' >/dev/null; then
   ok "F6  the server and gmktec plan the factory label, and the hp profile (FACTORY_NODE=false) plans none"
 else
   no "F6  the server and gmktec plan the factory label, and the hp profile (FACTORY_NODE=false) plans none"
@@ -564,7 +564,7 @@ fi
 AS_FACTORY="${TMPROOT}/hp-as-a-factory.env"
 sed 's/^FACTORY_NODE=false$/FACTORY_NODE=true/' "$HP_PROFILE" > "$AS_FACTORY"
 run_plan --dry-run "$AS_FACTORY"
-if [ "$REPLY_RC" -eq 0 ] && printf '%s\n' "$REPLY_OUT" | grep -qF -- '--node-label ci-runner.io/factory=true'; then
+if [ "$REPLY_RC" -eq 0 ] && printf '%s\n' "$REPLY_OUT" | grep -F -- '--node-label ci-runner.io/factory=true' >/dev/null; then
   ok "F7  the same profile declaring FACTORY_NODE=true plans the factory label"
 else
   no "F7  the same profile declaring FACTORY_NODE=true plans the factory label (rc=${REPLY_RC})"
