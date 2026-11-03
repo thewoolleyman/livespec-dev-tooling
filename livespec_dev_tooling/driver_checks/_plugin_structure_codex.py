@@ -288,7 +288,10 @@ def _codex_hook_bundle_violations(*, root: Path) -> ProfileViolations:
         for inner in entry.get("hooks", [])
     )
     if not hook_entry_point_referenced:
-        out.append("hooks.json PreToolUse/Bash entry MUST reference 'livespec_footgun_guard.py'")
+        out.append(
+            "hooks.json PreToolUse/Bash entry MUST reference 'pretooluse_dispatch.py' "
+            "(or 'livespec_footgun_guard.py')"
+        )
     return IOSuccess(out)
 
 
