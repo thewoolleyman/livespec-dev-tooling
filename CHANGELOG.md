@@ -58,6 +58,18 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.167.2](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.167.1...v1.167.2) (2026-11-03)
+
+
+### Bug Fixes
+
+* **ansible:** fail the converge apply when the unit is still running at the wait bound ([a196c51](https://github.com/thewoolleyman/livespec-dev-tooling/commit/a196c519e603173c89b8ae62d7927eacd3f2264e))
+* **ansible:** retry the CI stack converge when its last run did not succeed ([b9bd649](https://github.com/thewoolleyman/livespec-dev-tooling/commit/b9bd64992d5fb080d62c72f3d533d81c89ca042e))
+* cover expired stand-in proxy readiness budget ([2d13233](https://github.com/thewoolleyman/livespec-dev-tooling/commit/2d13233294e320148f6ddd67e30b9633300c521f))
+* isolate each aggregate's coverage data and refuse unreadable data (livespec-dev-tooling-3wz453) ([347a21e](https://github.com/thewoolleyman/livespec-dev-tooling/commit/347a21e5108da1b3f60f1388579b08ef9d157479))
+* make dev-host compaction ownership configurable ([b130dd1](https://github.com/thewoolleyman/livespec-dev-tooling/commit/b130dd14253455e6fca5c7777ca2003bfd7e080f))
+* require live CI stack converge on changed apply ([0a9936b](https://github.com/thewoolleyman/livespec-dev-tooling/commit/0a9936b0bec4a3845e027a2ca50993f7c0b7cf38))
+
 ## [1.167.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.167.0...v1.167.1) (2026-11-03)
 
 
