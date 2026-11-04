@@ -58,6 +58,24 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.171.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.170.0...v1.171.0) (2026-11-04)
+
+
+### Features
+
+* **incident:** connect CI execution to current incident policy (livespec-dev-tooling-egy3ri) ([f59a0d1](https://github.com/thewoolleyman/livespec-dev-tooling/commit/f59a0d1dd877be2eaa46a85cc17e3ac6c93bfd06))
+* **incident:** fence hosted CI through read-only current queries (livespec-dev-tooling-47ij37) ([0d76fe7](https://github.com/thewoolleyman/livespec-dev-tooling/commit/0d76fe7991b03da7a9319ce71b4c48a865d0a002))
+* **incident:** serve the independent observer from a protected installation (livespec-dev-tooling-47ij37) ([0ed6729](https://github.com/thewoolleyman/livespec-dev-tooling/commit/0ed6729f907e08f22186b64431ff90d8fdb8b17e))
+* preserve later work in complete incident inverses (livespec-dev-tooling-lgfo3v) ([e0d7f11](https://github.com/thewoolleyman/livespec-dev-tooling/commit/e0d7f11a2385338573c234e0ba3ab8f38917e918))
+* retain incident release and consumer recovery receipts (livespec-dev-tooling-vg36aq) ([be2ba52](https://github.com/thewoolleyman/livespec-dev-tooling/commit/be2ba526b111ff9ae503483dd9bb1ddaf1dce0c9))
+
+
+### Bug Fixes
+
+* guard app-token push before aggregate ([35b68a2](https://github.com/thewoolleyman/livespec-dev-tooling/commit/35b68a20ef7ada42fdfa1d6da4fc7cbac88e3a83))
+* guard app-token push only before the local pre-push aggregate ([c6cdc80](https://github.com/thewoolleyman/livespec-dev-tooling/commit/c6cdc80cf852d1fde032bdca413b56e36e3851d5))
+* **incident:** isolate inverse patch identity from source diff settings (livespec-dev-tooling-lgfo3v) ([20e7c22](https://github.com/thewoolleyman/livespec-dev-tooling/commit/20e7c227a182a5e79c498bb38609e43f39fcac9d))
+
 ## [1.170.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.169.0...v1.170.0) (2026-11-04)
 
 
