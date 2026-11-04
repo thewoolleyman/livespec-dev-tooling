@@ -2146,6 +2146,17 @@ When the Kueue cohort churn-slot quota is read from the committed manifests
 
 Then it MUST equal the sum of every pool node profile's `ADMISSION_CAPACITY_C`
 
+## Scenario: a runner pod is placed on the node with the lowest churn-slot use, whatever its CPU requests
+
+Given two pool nodes that both carry the runner-host label and no CI-closing taint
+And node A has a lower fraction of its declared churn-slot capacity in use than node B, and at least one free churn slot
+And node A's requested CPU fraction from non-runner pods is higher than node B's
+
+When a new CI runner pod is admitted
+
+Then it MUST be placed on node A
+And a pod that is not a CI runner pod MUST still be placed by the default scheduler profile
+
 ## Scenario: an unknown CI-facilities posture is refused
 
 Given a pool node profile declaring `CI_NODE_FACILITIES=partial`

@@ -464,6 +464,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: a runner pod is placed on the node with the lowest churn-slot use, whatever its CPU requests",
+    "work_item": "livespec-dev-tooling-mtvxde",
+    "first_seen": "2026-11-04"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: a runner work volume on a runner-only node is provisioned under the profile's directory and starts unseeded",
     "work_item": "livespec-dev-tooling-zreev4",
     "first_seen": "2026-11-03"
