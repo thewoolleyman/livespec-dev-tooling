@@ -10,6 +10,13 @@ from pathlib import Path
 from typing import Protocol, cast
 
 from livespec_dev_tooling.fleet._local_context import CommandResult
+from livespec_dev_tooling.fleet._manifest_git import (
+    GitReader,
+    GitReadRefused,
+    default_git_reader,
+    git_file_text,
+)
+from livespec_dev_tooling.fleet._origin_remote import owner_or_origin
 from livespec_dev_tooling.fleet._plugin_build_currency_reads import served_build_identifier
 from livespec_dev_tooling.fleet._plugin_settings import split_enablement
 from livespec_dev_tooling.fleet.contract import parse_manifest
@@ -20,7 +27,13 @@ _VENDOR_DIR = Path(__file__).resolve().parent.parent / "_vendor"
 if str(_VENDOR_DIR) not in sys.path:
     sys.path.insert(0, str(_VENDOR_DIR))
 
-__all__: list[str] = ["FleetAdoption", "RecipeRunner", "adopt", "main"]
+from returns.io import IOFailure  # noqa: E402  — vendor-path-aware import.
+from returns.unsafe import unsafe_perform_io  # noqa: E402  — vendor-path-aware import.
+
+__all__: list[str] = ["FleetAdoption", "RecipeRunner", "adopt", "fetch_master_manifest", "main"]
+
+MANIFEST_REPO = "livespec"
+MANIFEST_PATH = ".livespec-fleet-manifest.jsonc"
 
 
 class RecipeRunner(Protocol):
@@ -61,11 +74,19 @@ def _build(*, registry_text: str | None, plugin: str, member_path: Path) -> str:
     return identifier.sha or f"<unresolved: {identifier.unresolved}>"
 
 
+def fetch_master_manifest(*, owner: str, read_git: GitReader) -> str | GitReadRefused:
+    """The fleet manifest bytes from livespec master, or the refusal that stopped the read."""
+    read = git_file_text(run=read_git, owner=owner, repo=MANIFEST_REPO, path=MANIFEST_PATH)
+    if isinstance(read, IOFailure):
+        return unsafe_perform_io(read.failure())
+    return unsafe_perform_io(read.unwrap())
+
+
 def adopt(
-    *, manifest_path: Path, clones_root: Path, registry_path: Path, run: RecipeRunner
+    *, manifest_source: str, clones_root: Path, registry_path: Path, run: RecipeRunner
 ) -> FleetAdoption:
     """Adopt plugins for every member declared by the fleet manifest."""
-    parsed = parse_manifest(source=manifest_path.read_text(encoding="utf-8"))
+    parsed = parse_manifest(source=manifest_source)
     lines: list[str] = []
     failures: list[str] = []
     builds: dict[str, dict[str, list[str]]] = {}
@@ -119,9 +140,24 @@ def _run_recipe(*, args: list[str], cwd: Path | None = None) -> CommandResult:  
 
 def main() -> int:  # pragma: no cover
     """Run fleet adoption against sibling clones on the current host."""
+    resolved = owner_or_origin(argument=None)
+    if isinstance(resolved, IOFailure):
+        failure = unsafe_perform_io(resolved.failure())
+        _ = sys.stderr.write(
+            f"ensure-plugins-fleet: owner unresolvable [{failure.reason}]: {failure.detail}\n"
+        )
+        return 1
+    owner = unsafe_perform_io(resolved.unwrap())
+    manifest = fetch_master_manifest(owner=owner, read_git=default_git_reader)
+    if isinstance(manifest, GitReadRefused):
+        _ = sys.stderr.write(
+            f"ensure-plugins-fleet: fleet manifest unreadable from {owner}/{MANIFEST_REPO} "
+            f"master [{manifest.kind}, exit {manifest.returncode}]: {manifest.detail}\n"
+        )
+        return 1
     root = Path(os.environ.get("LIVESPEC_FLEET_CLONES_ROOT", Path.cwd().parent))
     report = adopt(
-        manifest_path=root / "livespec" / ".livespec-fleet-manifest.jsonc",
+        manifest_source=manifest,
         clones_root=root,
         registry_path=Path.home() / ".claude" / "plugins" / "installed_plugins.json",
         run=_run_recipe,
