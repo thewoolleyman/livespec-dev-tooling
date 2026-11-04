@@ -16,9 +16,11 @@
 # land changes to `.github/workflows/` autonomously. Every workflow edit needs
 # prior authorization recorded on the ledger, in one of TWO TIERS:
 #
-#   ADDITIVE tier — the workflow diff adds lines only (no deleted or modified
-#     line under `.github/workflows/`, measured mechanically against the merge
-#     base), AND the declaration attests `change=additive` and
+#   ADDITIVE tier — the workflow diff is logically additive: it runs the same
+#     work or more. A modification to `runs-on` routing, an `env` value, or a
+#     `concurrency.group` value is permitted when the key remains present;
+#     edits that can make existing work run less are not. The declaration
+#     attests `change=additive` and
 #     `ci_runtime=no-significant-increase`. Admitted under the label
 #     `approval:workflow-edit-additive`, which the maintainer MAY delegate to a
 #     coordinator agent to set (or under the maintainer label below).
@@ -29,8 +31,8 @@
 #     `approval:workflow-edit`, which ONLY the maintainer sets, directly. An
 #     agent never sets it.
 #
-# A declaration that CLAIMS `change=additive` over a diff that deletes or
-# modifies a workflow line is refused outright, naming the offending lines —
+# A declaration that CLAIMS `change=additive` over a diff that can make
+# existing work run less is refused outright, naming the offending lines —
 # whatever label the item carries. An agent may INVOKE an authorization but
 # cannot FABRICATE it.
 #
@@ -66,10 +68,12 @@
 #            binds to one reviewed change.
 #        (t) the tier: `change=additive` is checked against the union of the
 #            committed (<merge-base>..HEAD), staged and unstaged workflow
-#            diffs; any deleted line (a modification is a deletion plus an
-#            addition), a deleted file, or a mode change refuses the claim
-#            with exit 1 and the offending lines. An attested, add-only edit
-#            is the ADDITIVE tier; anything else is the MAINTAINER tier.
+#            diffs. A deleted workflow file or mode change refuses the claim.
+#            A deleted nonblank, noncomment line is permitted only when the
+#            post-image retains its `runs-on`, `concurrency.group`, or `env`
+#            key path; added lines that can make work run less refuse it.
+#            An attested logically additive edit is the ADDITIVE tier;
+#            anything else is the MAINTAINER tier.
 #        (b) when the repo has a ledger (`.beads/config.yaml` present), the
 #            named work item MUST carry a label that admits the tier, read
 #            via `bd show <id> --json` (`LIVESPEC_BD_PATH` if set and
@@ -323,16 +327,16 @@ print_human_procedure() {
         echo "$guard: the two-step authorization path:"
         echo "  1. add or update $declaration in THIS branch (tracked), with exactly one"
         echo "     work_item=<ledger-id> line and exactly one reason=<reviewable reason> line;"
-        echo "     an edit that ONLY ADDS workflow lines may also attest the additive tier with"
+        echo "     a logically additive edit (the same work or more) may also attest the additive tier with"
         echo "       change=additive"
         echo "       ci_runtime=no-significant-increase"
         echo "  2. the work item must carry a label that admits the tier:"
-        echo "     ADDITIVE tier (attested, add-only diff):"
+        echo "     ADDITIVE tier (attested, logically additive diff):"
         echo "       bd label add <ledger-id> $additive_label"
         echo "       (set only under the maintainer's prior authorization — directly, or by a"
         echo "        coordinator agent holding delegated maintainer authority)"
-        echo "     MAINTAINER tier (any deleted or modified workflow line, any reduction of test"
-        echo "     coverage or quality gates, any significant CI-runtime increase, or no attestation):"
+        echo "     MAINTAINER tier (an edit that can run existing work less often, any reduction"
+        echo "     of test coverage or quality gates, any significant CI-runtime increase, or no attestation):"
         echo "       bd label add <ledger-id> $approval_label"
         echo "       (set ONLY by the maintainer, directly; an agent never sets it)"
         echo "  No environment variable or flag bypasses this guard."
@@ -358,31 +362,153 @@ esac
 # --------------------------------------------------------------------------
 # 4t. The tier — an additive claim is verified against the diff itself
 # --------------------------------------------------------------------------
-# Every deleted line in any of the three views of the change: what is
-# committed (and so what is pushed), what is staged, and what is on disk. A
-# modification is a deletion plus an addition, so deleted lines are exactly
-# the "deleted or modified" set. Untracked workflow files are new files and
-# so add-only by construction. The pending views are measured against the
-# pending base (step 2b), so a line that an in-progress merge brings in from
-# <base> is never read as this change deleting or modifying it. The branch's
-# own committed and pending deletions are still read.
+# The additive tier is logical, not textual: it permits a modification only
+# when the post-image still carries the same `runs-on`, `concurrency.group`,
+# or `env` key path. A deleted blank or comment-only line is inert. Everything
+# else deleted can reduce the existing workflow and is refused. Added `if`,
+# `continue-on-error`, path filters, and `cancel-in-progress: true` also can
+# make work run less, so they are refused. Untracked workflow files have no
+# base-side deletions but are still checked for those added-line forms.
+#
+# Every view is inspected separately: committed work (what is pushed), staged
+# work, and the working tree. The pending views are measured against the
+# pending base (step 2b), so a line inherited through an in-progress merge is
+# never read as this change's deletion.
+non_additive_lines_for_view() {
+    local base_ref="$1" post_ref="$2"
+    shift 2
+    local path base_file post_file diff_file
+    while IFS= read -r path; do
+        [[ -z "$path" ]] && continue
+        base_file="$(mktemp)"
+        post_file="$(mktemp)"
+        diff_file="$(mktemp)"
+        if ! git show "${base_ref}:${path}" >"$base_file" 2>/dev/null; then
+            : >"$base_file"
+        fi
+        if [[ "$post_ref" == "WORKTREE" ]]; then
+            if [[ -f "$path" ]]; then
+                cat "$path" >"$post_file"
+            else
+                : >"$post_file"
+            fi
+        elif [[ "$post_ref" == ":" ]]; then
+            if ! git show ":${path}" >"$post_file" 2>/dev/null; then
+                : >"$post_file"
+            fi
+        elif ! git show "${post_ref}:${path}" >"$post_file" 2>/dev/null; then
+            : >"$post_file"
+        fi
+        git diff --no-ext-diff --no-renames --no-color -U0 "$@" -- "$path" >"$diff_file"
+        awk -v workflow="$path" -v base_file="$base_file" -v post_file="$post_file" '
+            function record_path(line, line_number, paths,    indent, rest, key, parent) {
+                if (line ~ /^[[:space:]]*($|#)/) return
+                match(line, /^[[:space:]]*/)
+                indent = RLENGTH
+                rest = substr(line, indent + 1)
+                sub(/^-[[:space:]]+/, "", rest)
+                if (rest !~ /^[^:#][^:]*:/) return
+                key = rest
+                sub(/:.*/, "", key)
+                sub(/[[:space:]]+$/, "", key)
+                while (stack_depth > 0 && stack_indent[stack_depth] >= indent) {
+                    delete stack_indent[stack_depth]
+                    delete stack_path[stack_depth]
+                    stack_depth--
+                }
+                parent = stack_depth > 0 ? stack_path[stack_depth] : ""
+                paths[line_number] = parent == "" ? key : parent "." key
+                stack_depth++
+                stack_indent[stack_depth] = indent
+                stack_path[stack_depth] = paths[line_number]
+            }
+            FILENAME == base_file {
+                record_path($0, FNR, base_paths)
+                next
+            }
+            FILENAME == post_file {
+                if (FNR == 1) stack_depth = 0
+                record_path($0, FNR, post_lines)
+                if (FNR in post_lines) post_paths[post_lines[FNR]] = 1
+                next
+            }
+            /^(old|new|deleted file) mode / {
+                print workflow ": " $0
+                next
+            }
+            /^@@/ {
+                old_line = $0
+                sub(/^@@ -/, "", old_line)
+                sub(/,.*/, "", old_line)
+                old_line += 0
+                in_hunk = 1
+                next
+            }
+            !in_hunk { next }
+            /^---/ { next }
+            /^-/ {
+                deleted = substr($0, 2)
+                if (deleted !~ /^[[:space:]]*($|#)/) {
+                    key_path = base_paths[old_line]
+                    permitted = 0
+                    if (key_path != "" && post_paths[key_path]) {
+                        if (key_path ~ /(^|[.])runs-on$/ || key_path ~ /(^|[.])concurrency[.]group$/ || key_path ~ /(^|[.])env([.]|$)/) {
+                            permitted = 1
+                        }
+                    }
+                    if (!permitted) print workflow ": -" deleted
+                }
+                old_line++
+                next
+            }
+            /^\+\+\+/ { next }
+            /^\+/ {
+                added = substr($0, 2)
+                if (added ~ /^[[:space:]]*(if|continue-on-error|paths|paths-ignore|branches-ignore):/ ||
+                    added ~ /^[[:space:]]*cancel-in-progress:[[:space:]]*true([[:space:]]*(#.*)?)?$/) {
+                    added_display = added
+                    sub(/^[[:space:]]+/, "", added_display)
+                    print workflow ": +" added_display
+                }
+            }
+        ' "$base_file" "$post_file" "$diff_file"
+        rm -f "$base_file" "$post_file" "$diff_file"
+    done < <(git diff --no-ext-diff --no-renames --name-only "$@" -- "$workflows_dir")
+}
+
+non_additive_untracked_lines() {
+    local path
+    while IFS= read -r path; do
+        [[ -z "$path" ]] && continue
+        awk -v workflow="$path" '
+            {
+                added = $0
+                if (added ~ /^[[:space:]]*(if|continue-on-error|paths|paths-ignore|branches-ignore):/ ||
+                    added ~ /^[[:space:]]*cancel-in-progress:[[:space:]]*true([[:space:]]*(#.*)?)?$/) {
+                    added_display = added
+                    sub(/^[[:space:]]+/, "", added_display)
+                    print workflow ": +" added_display
+                }
+            }
+        ' "$path"
+    done < <(git ls-files --others --exclude-standard -- "$workflows_dir")
+}
+
 non_additive_lines() {
-    local -a views=()
     if [[ -n "$merge_base" && -n "$pending_base" ]]; then
-        views=("$merge_base HEAD" "--cached $pending_base" "$pending_base")
+        {
+            non_additive_lines_for_view "$merge_base" HEAD "$merge_base" HEAD
+            non_additive_lines_for_view "$pending_base" : --cached "$pending_base"
+            non_additive_lines_for_view "$pending_base" WORKTREE "$pending_base"
+            non_additive_untracked_lines
+        } | awk '!seen[$0]++'
     else
-        views=("--cached" "")
+        {
+            non_additive_lines_for_view HEAD : --cached
+            non_additive_lines_for_view : WORKTREE
+            non_additive_untracked_lines
+        } | awk '!seen[$0]++'
     fi
-    local view
-    for view in "${views[@]}"; do
-        # shellcheck disable=SC2086  # each view is a deliberate word list
-        git diff --no-ext-diff --no-renames --no-color -U0 $view -- "$workflows_dir" | awk '
-            /^diff --git / { file = $NF; sub(/^b\//, "", file); in_hunk = 0; next }
-            /^(old|new|deleted file) mode / { print file ": " $0; next }
-            /^@@/ { in_hunk = 1; next }
-            in_hunk && /^-/ { print file ": " $0 }
-        '
-    done | awk '!seen[$0]++'
 }
 
 tier="maintainer"
@@ -391,10 +517,10 @@ if [[ "$change_claim" == "additive" ]]; then
     if [[ -n "$offending_lines" ]]; then
         print_offending_paths
         {
-            echo "$guard: $declaration claims change=additive, but the workflow diff deletes or modifies lines:"
+            echo "$guard: $declaration claims change=additive, but the workflow diff can run existing work less:"
             printf '%s\n' "$offending_lines" | sed 's/^/  /'
             echo "$guard: a false additive attestation is refused whatever label the item carries;"
-            echo "  remove change=additive (the MAINTAINER tier, label $approval_label) or make the edit add-only"
+            echo "  remove change=additive (the MAINTAINER tier, label $approval_label) or make the edit logically additive"
         } >&2
         exit 1
     fi

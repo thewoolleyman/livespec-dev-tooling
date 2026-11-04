@@ -89,7 +89,12 @@ def _install_guard(*, repo: Path) -> None:
     script.chmod(0o755)
 
 
-def _init_repo_with_origin(*, tmp_path: Path, base_declaration: str | None = None) -> Path:
+def _init_repo_with_origin(
+    *,
+    tmp_path: Path,
+    base_declaration: str | None = None,
+    workflow_text: str = "name: ci\non: push\njobs: {}\n",
+) -> Path:
     """A clone on a feature branch whose `origin` advertises `master` as default.
 
     The base commit carries one workflow file. When `base_declaration` is
@@ -108,7 +113,7 @@ def _init_repo_with_origin(*, tmp_path: Path, base_declaration: str | None = Non
     _run_git(args=["init", "--quiet", "--initial-branch=master"], cwd=repo)
     _run_git(args=["config", "--local", "user.name", "Test User"], cwd=repo)
     _run_git(args=["config", "--local", "user.email", "test@example.com"], cwd=repo)
-    _write(path=repo / _WORKFLOW, text="name: ci\non: push\njobs: {}\n")
+    _write(path=repo / _WORKFLOW, text=workflow_text)
     _write(path=repo / "README.md", text="# fixture\n")
     _write(path=repo / ".gitignore", text="/dev-tooling/\n")
     if base_declaration is not None:
@@ -605,6 +610,15 @@ def _modify_workflow(*, repo: Path) -> None:
     _commit_all(repo=repo, message="modify workflow")
 
 
+def _replace_workflow(*, repo: Path, old: str, new: str) -> None:
+    """Replace one existing workflow fragment and commit the resulting modification."""
+    workflow = repo / _WORKFLOW
+    body = workflow.read_text(encoding="utf-8")
+    assert old in body
+    _ = workflow.write_text(body.replace(old, new), encoding="utf-8")
+    _commit_all(repo=repo, message="modify workflow")
+
+
 def _ledgered_repo_with_declaration(
     *, tmp_path: Path, declaration: str, modify: bool = False
 ) -> Path:
@@ -720,6 +734,127 @@ def test_false_additive_claim_is_refused_naming_the_modified_line(
     assert "change=additive" in completed.stderr
     assert "-on: push" in completed.stderr
     assert str(_WORKFLOW) in completed.stderr
+
+
+@pytest.mark.parametrize(
+    "workflow_text",
+    [
+        "name: ci\non: push\njobs:\n  check:\n    runs-on: ubuntu-latest\n",
+        "name: ci\non: push\njobs:\n  check:\n    runs-on: ubuntu-latest\n    env:\n      FLAG: old\n",
+        "name: ci\non: push\njobs:\n  check:\n    runs-on: ubuntu-latest\n    concurrency:\n      group: old\n",
+    ],
+)
+def test_logically_additive_value_modifications_pass_under_the_delegable_label(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, workflow_text: str
+) -> None:
+    """Routing, environment, and concurrency-group value changes retain the existing work."""
+    monkeypatch.chdir(tmp_path)
+    repo = _init_repo_with_origin(
+        tmp_path=tmp_path,
+        workflow_text=workflow_text,
+    )
+    if "FLAG" in workflow_text:
+        _replace_workflow(repo=repo, old="FLAG: old", new="FLAG: new")
+    elif "group: old" in workflow_text:
+        _replace_workflow(repo=repo, old="group: old", new="group: new")
+    else:
+        _replace_workflow(repo=repo, old="runs-on: ubuntu-latest", new="runs-on: self-hosted")
+    _declare(repo=repo, text=_additive_declaration_text(), commit=True)
+    _add_ledger_pointer(repo=repo)
+    fake_bin = tmp_path / "fakebin"
+    _ = _fake_bd(fake_bin=fake_bin, labels=[_ADDITIVE_LABEL])
+
+    completed = _run_guard(repo=repo, path_prefix=fake_bin)
+
+    assert completed.returncode == 0, completed.stderr
+
+
+@pytest.mark.parametrize(
+    ("old", "new", "offending_line"),
+    [
+        ("on: push\n", "# on: push\n", "-on: push"),
+        ("    steps:\n", "", "-    steps:"),
+        ("        run: pytest\n", "", "-        run: pytest"),
+        ("needs: setup\n", "", "-    needs: setup"),
+        ("with: {}\n", "", "-        with: {}"),
+    ],
+)
+def test_logically_subtractive_deletions_are_refused_naming_each_line(
+    *,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    old: str,
+    new: str,
+    offending_line: str,
+) -> None:
+    """Removing workflow structure remains outside the delegable tier."""
+    monkeypatch.chdir(tmp_path)
+    repo = _init_repo_with_origin(
+        tmp_path=tmp_path,
+        workflow_text=(
+            "name: ci\non: push\njobs:\n  check:\n    runs-on: ubuntu-latest\n"
+            "    needs: setup\n    steps:\n      - name: run\n        run: pytest\n        with: {}\n      - uses: actions/a@v1\n"
+            "        with: {}\n      - run: true\n    steps-extra: []\n"
+        ),
+    )
+    _replace_workflow(repo=repo, old=old, new=new)
+    _declare(repo=repo, text=_additive_declaration_text(), commit=True)
+
+    completed = _run_guard(repo=repo)
+
+    assert completed.returncode == 1, completed.stderr
+    assert offending_line in completed.stderr
+
+
+@pytest.mark.parametrize(
+    ("old", "new"),
+    [
+        ("# a comment\n", "# a revised comment\n"),
+        ("# a comment\n\non: push", "# a comment\n \non: push"),
+    ],
+)
+def test_blank_and_comment_only_modifications_are_additive(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, old: str, new: str
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    repo = _init_repo_with_origin(
+        tmp_path=tmp_path,
+        workflow_text="name: ci\n# a comment\n\non: push\njobs: {}\n",
+    )
+    _replace_workflow(repo=repo, old=old, new=new)
+    _declare(repo=repo, text=_additive_declaration_text(), commit=True)
+    _add_ledger_pointer(repo=repo)
+    fake_bin = tmp_path / "fakebin"
+    _ = _fake_bd(fake_bin=fake_bin, labels=[_ADDITIVE_LABEL])
+
+    completed = _run_guard(repo=repo, path_prefix=fake_bin)
+
+    assert completed.returncode == 0, completed.stderr
+
+
+@pytest.mark.parametrize(
+    "added_line",
+    [
+        "    if: false\n",
+        "    continue-on-error: true\n",
+        "    cancel-in-progress: true\n",
+        "    paths-ignore: ['docs/**']\n",
+    ],
+)
+def test_additive_claim_refuses_new_lines_that_can_run_less_work(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, added_line: str
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    repo = _init_repo_with_origin(tmp_path=tmp_path)
+    workflow = repo / _WORKFLOW
+    _ = workflow.write_text(workflow.read_text(encoding="utf-8") + added_line, encoding="utf-8")
+    _commit_all(repo=repo, message="restrict workflow")
+    _declare(repo=repo, text=_additive_declaration_text(), commit=True)
+
+    completed = _run_guard(repo=repo)
+
+    assert completed.returncode == 1, completed.stderr
+    assert f"+{added_line.strip()}" in completed.stderr
 
 
 def test_false_additive_claim_is_refused_even_without_a_ledger(
