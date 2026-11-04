@@ -292,11 +292,25 @@ def test_a_new_vm_gets_an_xfs_data_disk_created_once(host: _Host) -> None:
     assert result.returncode == 0, result.stderr
     calls = _calls(host=host)
     assert [c for c in calls if c.startswith("limactl disk create ")] == [
-        "limactl disk create macbook-air-homelab-worker-data --size=90GiB --format=raw"
+        "limactl disk create hwdata --size=90GiB --format=raw"
     ]
     create = next(c for c in calls if c.startswith("limactl create "))
-    assert '"name":"macbook-air-homelab-worker-data"' in create
+    assert '"name":"hwdata"' in create
     assert '"fsType":"xfs"' in create
+    assert (
+        "limactl shell --workdir / macbook-air-homelab-worker sudo bash -s -- /mnt/lima-hwdata"
+        in calls
+    )
+
+
+def test_the_data_disk_filesystem_label_fits_the_xfs_limit() -> None:
+    # Lima formats an additional disk with `mkfs.<fs> -L lima-<disk name>` (v2.2.1
+    # boot.Linux/05-lima-disks.sh), and an XFS label holds at most 12 characters. A longer
+    # name leaves the disk unformatted and unmounted, measured on macbook-m4-max 2026-11-04.
+    script = _SCRIPT.read_text(encoding="utf-8")
+    declared = [line for line in script.splitlines() if line.startswith("data_disk=")]
+    assert declared == ['data_disk="hwdata"']
+    assert len("lima-hwdata") <= 12
 
 
 def test_a_missing_vm_capability_stops_the_task_naming_it_with_its_remedy(host: _Host) -> None:
