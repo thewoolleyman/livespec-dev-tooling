@@ -89,39 +89,6 @@ if uv run python -m livespec_dev_tooling.green_token check 2>&1; then
     exec just hook_gate=1 token_match=1 check
 fi
 
-# Git connects to the remote and obtains this credential BEFORE it invokes this
-# hook.  An installation token lasts roughly one hour, but a loaded dev host's
-# full aggregate can exceed that lifetime.  The hook cannot refresh the token
-# held by Git's already-open remote process, so running the aggregate here
-# would turn a passing gate into a guaranteed HTTP 401 when send-pack resumes.
-#
-# The fleet's per-clone helper is deliberately the narrow selector: other
-# credential helpers do not establish this App-token lifetime bound.  A green
-# token above has already handled the safe path, because it lets this hook skip
-# the long tree-pure aggregate while Git obtains a fresh credential for this
-# push.
-uses_fleet_app_credential_helper() {
-    local helpers
-    helpers="$(git config --get-all credential.https://github.com.helper 2>/dev/null || true)"
-    case "$helpers" in
-        *livespec-agent-github-credential-helper*) return 0 ;;
-        *) return 1 ;;
-    esac
-}
-
-if uses_fleet_app_credential_helper; then
-    cat >&2 <<'MESSAGE'
-:: pre-push: refusing before the full aggregate. Git already holds a fleet
-:: GitHub App installation token with an approximately one-hour lifetime; on a
-:: loaded dev host the aggregate can outlive it and send-pack then fails HTTP 401.
-:: Remedy: run `just gate-start --local -- just check`, wait for its green
-:: verdict with `just gate-wait <run-id>`, then retry `git push`. The green
-:: token skips the long tree-pure aggregate and Git obtains a fresh token for
-:: the retry.
-MESSAGE
-    exit 78
-fi
-
 # The DELEGATED-GATE fall-through (R4.S7c of plan livespec
 # `k3s-on-gmktec-for-vps-usage`; the contract is this repo's
 # SPECIFICATION/contracts.md §"Delegated pre-push gate"). This repo HAS opted in
@@ -147,6 +114,41 @@ fi
 if uv run python -m livespec_dev_tooling.gate_remote_delegate enabled; then
     echo ":: pre-push: delegated gate is enabled for this repo; gating on the cluster"
     exec uv run python -m livespec_dev_tooling.gate_remote_delegate run
+fi
+
+# Git connects to the remote and obtains this credential BEFORE it invokes this
+# hook.  An installation token lasts roughly one hour, but a loaded dev host's
+# full aggregate can exceed that lifetime.  The hook cannot refresh the token
+# held by Git's already-open remote process, so running the aggregate here
+# would turn a passing gate into a guaranteed HTTP 401 when send-pack resumes.
+#
+# The fleet's per-clone helper is deliberately the narrow selector: other
+# credential helpers do not establish this App-token lifetime bound.  A green
+# token above has already handled the safe path, because it lets this hook skip
+# the long tree-pure aggregate while Git obtains a fresh credential for this
+# push.  The guard sits BELOW the delegated-gate switch because it protects only
+# the local aggregate this script is about to start; a push that gates on the
+# cluster never reaches it.
+uses_fleet_app_credential_helper() {
+    local helpers
+    helpers="$(git config --get-all credential.https://github.com.helper 2>/dev/null || true)"
+    case "$helpers" in
+        *livespec-agent-github-credential-helper*) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+if uses_fleet_app_credential_helper; then
+    cat >&2 <<'MESSAGE'
+:: pre-push: refusing before the full aggregate. Git already holds a fleet
+:: GitHub App installation token with an approximately one-hour lifetime; on a
+:: loaded dev host the aggregate can outlive it and send-pack then fails HTTP 401.
+:: Remedy: run `just gate-start --local -- just check`, wait for its green
+:: verdict with `just gate-wait <run-id>`, then retry `git push`. The green
+:: token skips the long tree-pure aggregate and Git obtains a fresh token for
+:: the retry.
+MESSAGE
+    exit 78
 fi
 
 diagnose_host_state_divergence() {

@@ -380,17 +380,8 @@ def test_an_opted_in_push_from_a_host_without_the_credential_gates_locally(
     assert not [line for line in invoked if "gate_remote_delegate run" in line]
 
 
-def test_a_fleet_app_helper_refuses_before_an_unmemoized_pre_push_aggregate(
-    *, tmp_path: Path
-) -> None:
-    """A token Git already fetched cannot outlive an unbounded hook gate.
-
-    Git opens its authenticated remote before it invokes ``pre-push``.  The
-    fleet helper mints an installation token with an approximately one-hour
-    lifetime, while the full aggregate can take longer under host load.  A
-    fresh local aggregate writes the green token before Git connects; the
-    subsequent hook then skips the long tree-pure leg with a fresh credential.
-    """
+def _a_clone_using_the_fleet_app_helper(*, tmp_path: Path) -> Path:
+    """A git clone whose GitHub credential comes from the fleet's per-clone App helper."""
     push = tmp_path / "push"
     push.mkdir()
     _ = subprocess.run(
@@ -408,11 +399,42 @@ def test_a_fleet_app_helper_refuses_before_an_unmemoized_pre_push_aggregate(
         capture_output=True,
         text=True,
     )
+    return push
+
+
+def test_a_fleet_app_helper_refuses_before_an_unmemoized_local_aggregate(*, tmp_path: Path) -> None:
+    """A token Git already fetched cannot outlive an unbounded local hook gate.
+
+    Git opens its authenticated remote before it invokes ``pre-push``.  The
+    fleet helper mints an installation token with an approximately one-hour
+    lifetime, while the full local aggregate can take longer under host load.  A
+    fresh local aggregate writes the green token before Git connects; the
+    subsequent hook then skips the long tree-pure leg with a fresh credential.
+    The refusal sits AFTER the delegation probe, so it guards only the local
+    aggregate a push is about to start.
+    """
+    push = _a_clone_using_the_fleet_app_helper(tmp_path=tmp_path)
 
     code, invoked = _run_pre_push(tmp_path=push, switch_exit="1")
 
     assert code == 78
-    assert invoked == ["uv run python -m livespec_dev_tooling.green_token check"]
+    assert invoked == [
+        "uv run python -m livespec_dev_tooling.green_token check",
+        "uv run python -m livespec_dev_tooling.gate_remote_delegate enabled",
+    ]
+
+
+def test_a_fleet_app_helper_still_delegates_when_the_cluster_gate_is_selected(
+    *, tmp_path: Path
+) -> None:
+    """The credential-lifetime refusal never blocks a push that gates on the cluster."""
+    push = _a_clone_using_the_fleet_app_helper(tmp_path=tmp_path)
+
+    code, invoked = _run_pre_push(tmp_path=push, switch_exit="0")
+
+    assert code == 0
+    assert [line for line in invoked if "gate_remote_delegate run" in line]
+    assert not [line for line in invoked if line.startswith("just ")]
 
 
 def test_the_gate_pods_own_check_pre_push_gates_locally_instead_of_delegating_again(
