@@ -2,23 +2,29 @@
 
 Research date: 2026-11-03 UTC. Proposed implementation design; no worker image, bootstrap recipe, host installation, enrollment or cluster change was executed by this research.
 
+Interface clarified 2026-11-04: one worker container per host or configured cloud execution target; the command accepts the host/target name and derives the worker identity.
+
 ## Recommendation and scope
 
 **Build the custom OCI worker in livespec-dev-tooling. Start with one existing Linux amd64 PC, prove a representative workload, then enable native arm64 workloads on the Macs.** Keep a single image source and operator interface, with explicit cluster and runtime profiles. The supplied architecture decision is the preferred direction: upstream kubelet and containerd, standard Kubernetes authentication, no K3s agent dependency. Its portability is a property to prove, not something an OCI manifest alone supplies.
 
 This is a separate option from the [cloud burst report](https://github.com/thewoolleyman/livespec-dev-tooling/blob/master/docs/research/2026-11-02-homelab-burst-worker-node.md), which examines provisioned cloud machines and their economics. Here the first capacity comes from already-owned PCs, a MacBook and a Mac Mini, with the same packaging usable on compatible cloud Docker hosts. The original report's workload admission, local storage and throughput criteria still apply.
 
-The proposed interface is:
+**Run one worker container per host.** Its kubelet and nested containerd run multiple pods, each containing its own workload containers. Additional capacity comes from adding hosts, not from creating more worker containers on the same machine.
+
+The proposed interface takes the host name:
 
 ```sh
-just start-homelab-worker-node-container spare-pc-worker-01
-just start-homelab-worker-node-container macbook-m4-worker-01
-just start-homelab-worker-node-container macbook-m4-worker-02
-just status-homelab-worker-node-container macbook-m4-worker-01
-just stop-homelab-worker-node-container macbook-m4-worker-01
+just start-homelab-worker-node-container spare-pc
+just start-homelab-worker-node-container macbook-m4
+just start-homelab-worker-node-container mac-mini
+just status-homelab-worker-node-container macbook-m4
+just stop-homelab-worker-node-container macbook-m4
 ```
 
-These are **proposed recipes, not commands available today**. The required argument is the worker's host identifier: it becomes its Kubernetes Node name and exact Tailscale hostname. Each copy needs a distinct identifier, tailnet identity, network namespace, kubelet identity and storage. Record the physical machine separately, so two copies on one Mac are never counted as separate failure domains. If the physical Mac already owns `macbook-m4` in Tailscale, use `macbook-m4-worker-01`; do not rename or impersonate its existing identity.
+These are **proposed recipes, not commands available today**. The required argument identifies the physical host by its existing Tailscale name, or selects a declared cloud execution target. The wrapper derives one stable worker identity as `<host-or-target>-homelab-worker`: `macbook-m4` produces the container name, Kubernetes Node name and worker Tailscale hostname `macbook-m4-homelab-worker`. A rerun reconciles that same worker and its persistent storage. There is no replica count, instance suffix or second worker per physical host in the initial interface.
+
+The existing host identity remains the bootstrap/administrative address. The derived worker has its own tailnet identity so its Linux network namespace is reachable, including inside a Mac's Linux VM; this is a second network identity, not a second worker container. Record the host-to-worker relationship explicitly and preserve the host's existing name and credentials. A cloud target resolves through configuration to the selected provider/service and runtime, with the same stable naming and single-worker lifecycle. It is eligible only if that service supports the required privileged nested runtime and networking; accepting a cloud target name does not establish those capabilities or authorize new paid resources.
 
 Dev-tooling is the right owner: it already owns the workload images, CI node integration, cache provisioning, delegated gates and host configuration. Tailscale policy and credential issuance stay with their existing owners; collector configuration stays in `thewoolleyman/otel-collector`; future Talos fleet admission stays with homelab. Do not create another image registry, secret store, scheduler or observability product.
 
@@ -54,7 +60,7 @@ Publish a new image such as `ghcr.io/thewoolleyman/livespec-worker-node`, separa
 
 Use established containerized-node patterns for cgroups, writable `/run`, mount propagation and process supervision. [kind's Docker launch code](https://github.com/kubernetes-sigs/kind/blob/main/pkg/cluster/internal/providers/docker/provision.go) and [base image](https://github.com/kubernetes-sigs/kind/blob/main/images/base/Dockerfile) are useful references; they do not make an external-cluster join supported automatically. A conventional minimal systemd arrangement is acceptable if it reduces custom supervisor code; avoid building a new init system.
 
-Do not run two copies with host networking or shared kubelet/containerd directories. They would collide on ports, interfaces, iptables and identities. Use a private outer Docker network namespace for each copy, its own delegated cgroup subtree, and explicit persistent volumes. No Docker socket is mounted into build pods. Privilege at the outer node container is a host trust decision, not strong isolation from that host.
+Use a private outer Docker network namespace, a delegated cgroup subtree and explicit persistent volumes for the host's single worker. Its inner runtime supplies the separate pod and workload-container namespaces; multiple pods do not require multiple outer worker containers. No Docker socket is mounted into build pods. Privilege at the outer node container is a host trust decision, not strong isolation from that host.
 
 For the current profile, package support files at the paths the manifests already read, even where a path contains `k3s`. For example, `/usr/local/lib/ci-runner-k3s/hooks/2.336.0/index.js` is an existing hostPath contract; retaining that pathname does not require running a K3s agent. Render the actual CRI endpoint explicitly rather than relying on `k3s crictl` defaults.
 
@@ -62,7 +68,7 @@ For the current profile, package support files at the paths the manifests alread
 
 **Standard Kubernetes authentication is feasible, but the cluster needs an enrollment profile.** K3s's [API-server source at the examined version](https://github.com/k3s-io/k3s/blob/v1.36.2%2Bk3s1/pkg/daemons/control/server.go) enables bootstrap-token authentication. This establishes one prerequisite; it does not establish that the exact RBAC, approvers and signer configuration needed by these workers already exist.
 
-The controller-side preparation should install a narrowly scoped, reviewed enrollment path once. Then the wrapper can obtain a short-lived bootstrap credential through the existing authorized credential source, pin the cluster endpoint and CA, submit the node's CSR and wait for the verified result. The resulting kubelet client identity is `system:node:<worker-id>` in `system:nodes`, with certificate rotation and Node authorization/restriction preserved. Configure the node's serving certificate separately with the expected tailnet DNS/IP SANs.
+The controller-side preparation should install a narrowly scoped, reviewed enrollment path once. Then the wrapper can obtain a short-lived bootstrap credential through the existing authorized credential source, pin the cluster endpoint and CA, submit the node's CSR and wait for the verified result. The resulting kubelet client identity is `system:node:<host-or-target>-homelab-worker` in `system:nodes`, with certificate rotation and Node authorization/restriction preserved. Configure the node's serving certificate separately with the expected tailnet DNS/IP SANs.
 
 [Kubernetes TLS bootstrap documentation](https://kubernetes.io/docs/reference/access-authn-authz/kubelet-tls-bootstrapping/) explicitly distinguishes client and serving certificates: built-in approvers do **not** automatically approve kubelet serving certificates. For the pilot, a controller-side bootstrap command may verify and approve the exact expected CSR. Do not grant every worker permission to approve arbitrary CSRs, place a signing CA on worker machines, or distribute cluster-admin kubeconfigs. CNI and kube-proxy need their own appropriately scoped identities; a node's kubelet identity is not a general node-listing credential. The [K3s Flannel integration](https://github.com/k3s-io/k3s/blob/v1.36.2%2Bk3s1/pkg/agent/flannel/setup.go) itself calls out this distinction.
 
@@ -76,7 +82,7 @@ Pin a worker release to the deployed Kubernetes version rather than installing u
 
 ## Networking through Tailscale without opening household ports
 
-Run kernel-mode Tailscale **inside the worker's network namespace**, whether its binaries are bundled in the custom image or its pinned official container shares that namespace. Bundling is the simplest operator-facing packaging; a sidecar remains an implementation choice. This gives every copy a unique routable node address without requiring host networking or `-p` mappings. Host-native Tailscale may remain installed for administration, but it is not a substitute for the worker's network identity, especially on macOS.
+Run kernel-mode Tailscale **inside the worker's network namespace**, whether its binaries are bundled in the custom image or its pinned official container shares that namespace. Bundling is the simplest operator-facing packaging; a networking sidecar remains an implementation choice and does not constitute another Kubernetes worker. This gives the host's worker a routable node address under the derived `<host-or-target>-homelab-worker` name without requiring host networking or `-p` mappings. Host-native Tailscale provides bootstrap/administrative access under the existing host name, but it is not a substitute for the worker's network identity, especially on macOS.
 
 [Tailscale's container parameters](https://tailscale.com/docs/features/containers/docker/docker-params) document persisted state, explicit hostname, login-once behavior and that userspace mode is the default. Set kernel mode deliberately, provide `/dev/net/tun` and the necessary privileges, and retain state across restarts. Its [containerboot implementation](https://github.com/tailscale/tailscale/blob/main/cmd/containerboot/main.go) supports `file:` credentials. Use short-lived enrollment material scoped to the worker tag; steady-state operation uses the persisted device identity. [Userspace SOCKS/HTTP proxying](https://tailscale.com/kb/1112/userspace-networking) is not the proposed transport for arbitrary CNI traffic.
 
@@ -107,7 +113,7 @@ No household router forwarding or public kubelet/VXLAN/OTLP port should be neede
 
 The wrapper can converge its own settings and verify shared network policy. It cannot grant itself tailnet administration or silently authorize a subnet route. Missing shared prerequisites should produce one actionable diagnostic, with no partially admitted worker.
 
-## Host portability and multiple copies
+## Host portability and pod capacity
 
 | Host | First implementation posture | What must be established |
 |---|---|---|
@@ -127,22 +133,22 @@ The existing ARC workflow template requires `hostUsers: false` and a **Localhost
 
 The current image chain is not yet a native Apple Silicon lane: the base Dockerfile downloads `gh_*_linux_amd64`, and the agent layer pins x86_64 sccache and herdr assets. The image build workflow has no multi-platform build declaration. The runner image digest, hook externals, populator image and all auxiliary images also need architecture checks. Convert asset selection to `TARGETARCH` with per-architecture checksums and publish manifest lists for the selected workload chain. Start Mac validation with the Python-only chain, then the Rust chain; do not use QEMU-emulated amd64 compiles as the promised capacity gain or relabel an arm64 node as amd64.
 
-Multiple copies are valid for separate identities, testing or placement, but create no additional physical CPU. Enforce a physical-host/VM aggregate resource budget across copies, and measure admission rather than multiplying advertised capacities. The kubelet must not advertise the entire shared host independently for every copy: verify cgroup-derived capacity and use a bounded advertised pod envelope/reservations where necessary, as well as outer runtime limits. The budget must include system services, all nested pods and cache warmers. Follow the [capacity guidance](../../.ai/ci-node-capacity-reads.md); no numeric slot cap is authorized by this report.
+Allocate a host/VM resource budget to its single worker, then let Kubernetes schedule multiple pods within that budget. Verify that the kubelet's advertised allocatable resources fit the worker's configured envelope rather than assuming outer runtime limits automatically change Node capacity. The budget must include worker services, all nested pods and cache warmers while preserving capacity for the host's other uses. Follow the [capacity guidance](../../.ai/ci-node-capacity-reads.md); no numeric pod or slot cap is authorized by this report.
 
 Keep the Mac's storage in the Linux VM's local disk rather than a macOS shared source directory. A laptop closing its lid or losing power can strand jobs: use the normal drain command before planned sleep; unexpected disappearance must yield an identifiable failed/interrupted run, never green. Do not change global sleep policy without an explicit operator setting.
 
 ## Idempotent bootstrap and lifecycle contract
 
-Keep the just recipe thin, delegating to one versioned bootstrap script and reviewed cluster profile. The required identifier is sufficient only when the default cluster and authorized credential source have already been configured. Optional flags can select runtime, cluster profile, resource envelope and physical-host label; avoid a new configuration framework.
+Keep the just recipe thin, delegating to one versioned bootstrap script and reviewed cluster profile. The required host/target name is sufficient only when the default cluster and authorized credential source have already been configured. Resolve cloud targets through declared provider/service configuration. Optional flags can select runtime, cluster profile and resource envelope; derive the physical-host label from the resolved target rather than requiring another worker identifier. Avoid a new configuration framework or replica-management interface.
 
-1. Validate the identifier, acquire a per-worker lock, resolve the Docker context and detect OS, CPU architecture and existing runtime. Refuse an unintended remote Docker context; local secret files and storage paths cannot be assumed to exist on a remote daemon.
+1. Resolve and validate the requested host/target, derive `<host-or-target>-homelab-worker`, and acquire a lock for that canonical host/target. Verify the expected host and runtime context before installing anything; remote execution must explicitly handle credential delivery and storage on that target rather than assuming local paths exist on a remote daemon. Detect OS, CPU architecture and existing runtime.
 2. Ensure the supported runtime is installed/running; select the named Mac VM where needed. Probe the **engine's Linux kernel**, not `uname` on Darwin, plus cgroups, TUN, networking modules, AppArmor, user namespaces, mount propagation and available disk. Persist only owned host changes and explain any restart required; never restart a shared engine with other running work automatically.
-3. Read the existing local worker manifest and its identity/state volumes. Ensure no other live container or remote machine owns the same identity. An unchanged rerun reuses the same Tailscale identity, Kubernetes node and runtime state; it does not mint another device or wipe credentials.
+3. Read the host/target's existing worker manifest and its identity/state volumes. Reconcile the single existing worker, and refuse a second worker or a conflicting identity claim for that host. An unchanged rerun reuses the same derived name, Tailscale identity, Kubernetes Node and runtime state; it does not mint another device, append an instance suffix or wipe credentials.
 4. Fetch missing enrollment material through the authorized source into restricted temporary files. Start the digest-pinned node container with private networking, explicit mounts/cgroups and a restart policy. Keep bootstrap credentials separate from persistent runtime identity and remove disposable enrollment material after use.
 5. Establish Tailscale, verify exact hostname/device ownership and ACL reachability, then perform CA-pinned Kubernetes bootstrap. Start the runtime and cluster-specific network agents. Keep the node tainted/cordoned until the full node/workload check passes.
 6. Converge support files, local storage, caches, telemetry and node labels. Prove one representative workload and advertise only the measured admission allocation through the owning control-plane configuration. Report image/profile revision, node/tailnet identity, health and useful next action without secret values.
 
-Use separate persistent stores for device/kubelet identity, inner containerd and work/cache data. Never clone a live state volume to create another copy. Preserve identity on a normal stop/start; a deliberate destroy revokes the device/bootstrap identity, removes the Kubernetes Node after drain, and deletes only explicitly selected owned state. Upgrades cordon/drain and replace one copy at a time; a digest change must not force-kill existing factory or gate work. A failed drain reports the remaining jobs and holds rather than deleting on a timer.
+Use separate persistent stores for device/kubelet identity, inner containerd and work/cache data. State belongs to the host/target's single worker; never clone a live identity volume onto another host. Preserve identity on a normal stop/start; a deliberate destroy revokes the worker's device/bootstrap identity, removes its Kubernetes Node after drain, and deletes only explicitly selected owned state. Preserve the physical host's Tailscale identity. Upgrades cordon/drain and replace that host's worker before admitting new pods; a digest change must not force-kill existing factory or gate work. A failed drain reports the remaining jobs and holds rather than deleting on a timer.
 
 Record the enrollment material's expiry and support renewal/re-enrollment diagnostics. Rerunning the wrapper should recover a stopped container and detect stale cluster identity; it must not interpret an unavailable API as permission to delete identities. Protect key-bearing volumes at rest; the diagnostic manifest contains references and public identifiers, not secret values.
 
@@ -195,7 +201,7 @@ Keep the existing cluster controllers and declarative manifests. The wrapper own
 
 - **ARC:** current [values](../../ci-runner/k3s/phase2/arc/values-livespec-dev-tooling.yaml) require the fleet hook hostPath and compatible runner externals. [ResourceFlavor](../../ci-runner/k3s/phase2/kueue/resource-flavor.yaml) matches `k3s-role=arc-runner-host`, and admission uses `ci-runner.io/churn-slot`. New capacity needs the right labels, measured resource advertisement and an explicit quota allocation. ARM workloads need architecture-aware placement/flavors and matching runner/workload images; avoid mixed-architecture runner/workflow pairs on a shared local PVC.
 - **Delegated gates:** [gates-flavor](../../ci-runner/k3s/phase2/kueue/cluster-queue-gates.yaml) currently selects `gmktec-xubuntu`. Extend it deliberately only after proving the new node, credentials, cache path, source mirror and exact tree/base refs. Keep gate verdict and lost-run semantics unchanged.
-- **Factory:** eligibility, namespace quotas, provider configuration and dispatcher limits remain separate from Kueue's ARC admission. Add proven compatible nodes to placement without restarting the factory service. Long model runs should initially use stable plugged-in hosts; multiple laptop containers do not provide independent availability.
+- **Factory:** eligibility, namespace quotas, provider configuration and dispatcher limits remain separate from Kueue's ARC admission. Add proven compatible nodes to placement without restarting the factory service. A host's single worker may run multiple factory pods within its admitted budget; long model runs should initially use stable plugged-in hosts.
 
 The existing [boot converge](../../ci-runner/k3s/phase2/reconstruct/converge-ci-stack.sh) is the current declarative delivery mechanism. Package new node support and cluster manifests through it and the wrapper's profile; do not install Flux as an unrelated prerequisite. A rebuilt node should reconcile into the same intended role without transferring ownership of cluster controllers to the laptop.
 
@@ -224,8 +230,8 @@ Acceptance evidence must cover:
 
 | Area | Required result |
 |---|---|
-| Idempotence and identity | Repeated bootstrap produces one container/device/Node per ID, preserves state and rejects a duplicate claimant; two IDs coexist without collisions |
-| Runtime and capacity | Inner pods use containerd; cgroup accounting and aggregate host limits hold under simultaneous copies; architecture matches executable workloads |
+| Idempotence and identity | Repeated bootstrap with the same host/target name preserves exactly one worker container, worker device and Kubernetes Node under `<host-or-target>-homelab-worker`; a second worker on that host is refused, different hosts receive distinct identities, and any existing host Tailscale identity is preserved |
+| Runtime and capacity | Multiple pods run concurrently through the single worker's inner containerd; advertised allocatable resources, cgroup accounting and runtime limits respect the host/VM budget; architecture matches executable workloads |
 | Network and policy | Bidirectional old/new-node pods, DNS/ClusterIP, deny/allow NetworkPolicy tests, API streaming and stats, MTU, reconnect and no public host port exposure |
 | Actual fleet workload | A routed ARC job with the real hook/AppArmor/userns posture succeeds; gates and factory each need their own proof before claiming support |
 | Cache correctness and performance | Cold/warm timings and image bytes, local uv generation/reflink, sccache hits, writer denial, cache outage/cold canary, free-space bound and architecture-correct artifacts |
