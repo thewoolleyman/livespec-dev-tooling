@@ -276,6 +276,12 @@ spec:
         # creates a cold cache there.
         - name: UV_CACHE_DIR
           value: /__w/_warm/uv
+        # Frozen locks name files.pythonhosted.org directly, so the index
+        # cannot route them.  The pool mounts its wrapper over mise's uv shim;
+        # it sends only proxy-held artifacts to this read-only Service and
+        # leaves an unready source to the wrapper's cold fallback.
+        - name: PYPI_FILES_PROXY
+          value: http://pypi-proxy.ci-warm-cache.svc.cluster.local:8081
         # Fleet-wide kill switch (header item 4): "" = tiers on; "operator" = off.
         - name: CI_CACHE_KILL_SWITCH
           value: ""
@@ -316,6 +322,10 @@ spec:
       volumeMounts:
         - name: ci-runner-bin
           mountPath: /opt/ci-runner/bin
+          readOnly: true
+        - name: ci-runner-bin
+          mountPath: /root/.local/share/mise/shims/uv
+          subPath: uv
           readOnly: true
       lifecycle:
         postStart:

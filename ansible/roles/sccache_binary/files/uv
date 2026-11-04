@@ -1,0 +1,79 @@
+#!/usr/bin/env bash
+# Route frozen-lock artifacts through the pool's read-only PyPI files proxy.
+#
+# `uv.lock` records absolute files.pythonhosted.org URLs, so an index setting
+# cannot route a locked sync.  The runner mounts this wrapper over mise's uv
+# shim.  It temporarily substitutes only artifacts the proxy can serve, then
+# restores the job's private lock before returning uv's own verdict.
+set -u
+
+proxy="${PYPI_FILES_PROXY:-}"
+shim_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+path_without_shim="${PATH#"${shim_dir}":}"
+real_uv="$(PATH="${path_without_shim}" command -v uv 2>/dev/null || true)"
+
+if [ -z "${real_uv}" ] || [ ! -x "${real_uv}" ]; then
+  real_uv="$(mise which uv 2>/dev/null || true)"
+fi
+
+if [ -z "${real_uv}" ] || [ ! -x "${real_uv}" ]; then
+  echo "WARN: pool uv proxy shim could not resolve mise's uv binary" >&2
+  exit 1
+fi
+
+case "${1:-}" in
+  sync|run) ;;
+  *) exec "${real_uv}" "$@" ;;
+esac
+
+if [ -z "${proxy}" ] || ! command -v curl >/dev/null 2>&1; then
+  exec "${real_uv}" "$@"
+fi
+
+lock_dir="$(pwd -P)"
+while [ "${lock_dir}" != / ] && [ ! -f "${lock_dir}/uv.lock" ]; do
+  lock_dir="$(dirname "${lock_dir}")"
+done
+lock="${lock_dir}/uv.lock"
+
+if [ ! -f "${lock}" ]; then
+  exec "${real_uv}" "$@"
+fi
+
+if ! curl -fsS --head --max-time 2 "${proxy%/}/health" >/dev/null; then
+  echo "WARN: PyPI files proxy ${proxy} is unreachable; resolving directly from PyPI" >&2
+  exit 1
+fi
+
+unavailable="$(mktemp)"
+backup="$(mktemp "${lock}.pypi-proxy.XXXXXX")"
+cleanup() {
+  mv -f "${backup}" "${lock}" 2>/dev/null || true
+  rm -f "${unavailable}"
+}
+trap cleanup EXIT
+
+cp -- "${lock}" "${backup}"
+while IFS= read -r artifact; do
+  path="${artifact#https://files.pythonhosted.org}"
+  if ! curl -fsS --head --max-time 2 "${proxy%/}${path}" >/dev/null; then
+    printf '%s\n' "${path}" >> "${unavailable}"
+  fi
+done < <(grep -oE 'https://files\.pythonhosted\.org/packages/[^" ]+' "${lock}" || true)
+
+python3 - "${lock}" "${proxy%/}" "${unavailable}" <<'PY'
+import pathlib
+import sys
+
+lock_path = pathlib.Path(sys.argv[1])
+proxy = sys.argv[2]
+unavailable = set(pathlib.Path(sys.argv[3]).read_text(encoding="utf-8").splitlines())
+origin = "https://files.pythonhosted.org"
+rewritten = lock_path.read_text(encoding="utf-8").replace(origin, proxy)
+for path in unavailable:
+    rewritten = rewritten.replace(f"{proxy}{path}", f"{origin}{path}")
+lock_path.write_text(rewritten, encoding="utf-8")
+PY
+
+"${real_uv}" "$@"
+exit $?

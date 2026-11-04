@@ -34,19 +34,28 @@
       {{ sccache_binary_present.stat.exists
          and (sccache_binary_installed_version.stdout | default('')) is search('sccache ' ~ sccache_binary_version ~ '$') }}
 
+- name: Create the pool-provided binary directory
+  ansible.builtin.file:
+    path: "{{ sccache_binary_bin_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+
+- name: Install the pool uv files-proxy shim
+  ansible.builtin.copy:
+    src: uv
+    dest: "{{ sccache_binary_bin_dir }}/uv"
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+
 - name: Install the pinned sccache
   when: not sccache_binary_current
   become: true
   block:
-    - name: Create the pool-provided binary directory
-      # Explicit, because --check cannot see past a missing parent.
-      ansible.builtin.file:
-        path: "{{ sccache_binary_bin_dir }}"
-        state: directory
-        owner: root
-        group: root
-        mode: "0755"
-
     - name: Create the download staging directory
       ansible.builtin.file:
         path: "{{ sccache_binary_stage_dir }}"
