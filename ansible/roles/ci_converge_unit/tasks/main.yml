@@ -23,6 +23,50 @@
 # this same directory, but node_extended_resource owns that file — one owner per
 # file. Its absence is warned about at the end of this role, as the shell warned.
 
+- name: Read which retired scratch units are still installed
+  # A capture's scratch unit (see ci_converge_unit_retired_scratch_units) is
+  # removed through this committed apply, never by hand on the host.
+  ansible.builtin.stat:
+    path: "{{ ci_converge_unit_unit_dir }}/{{ item }}"
+  loop: "{{ ci_converge_unit_retired_scratch_units }}"
+  register: ci_converge_unit_retired_present
+  become: true
+
+- name: Stop and disable each retired scratch unit
+  ansible.builtin.systemd_service:
+    name: "{{ item.item }}"
+    state: stopped
+    enabled: false
+  loop: "{{ ci_converge_unit_retired_present.results }}"
+  when: item.stat.exists
+  become: true
+
+- name: Remove each retired scratch unit file
+  ansible.builtin.file:
+    path: "{{ ci_converge_unit_unit_dir }}/{{ item.item }}"
+    state: absent
+  loop: "{{ ci_converge_unit_retired_present.results }}"
+  when: item.stat.exists
+  become: true
+  register: ci_converge_unit_retired_removed
+
+- name: Reload systemd and clear the failed state of removed scratch units
+  # reset-failed drops a removed unit that ended failed from `systemctl --failed`.
+  ansible.builtin.command:
+    argv: "{{ ['systemctl', 'reset-failed'] + (ci_converge_unit_retired_removed.results | selectattr('changed') | map(attribute='item.item') | list) }}"
+  when: ci_converge_unit_retired_removed.results | selectattr('changed') | list | length > 0
+  failed_when: false
+  changed_when: false
+  become: true
+  notify: Reload systemd for the converge unit
+
+- name: Remove each retired scratch directory
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop: "{{ ci_converge_unit_retired_scratch_dirs }}"
+  become: true
+
 - name: Resolve the glob-derived members of the installed tree
   # The three sets the shell installer resolves with a shell glob. Resolving
   # them here rather than listing them keeps a new per-repo queue or scale set
@@ -161,7 +205,11 @@
     name: "{{ ci_converge_unit_service }}"
     enabled: true
   become: true
-  when: not ansible_check_mode or ci_converge_unit_present.stat.exists
+  # Only the production converge is enabled for boot: a scratch unit a
+  # host-captured proof points this role at must not run at the next boot.
+  when:
+    - not ansible_check_mode or ci_converge_unit_present.stat.exists
+    - ci_converge_unit_service == ci_converge_unit_production_service
   register: ci_converge_unit_enabled
 
 - name: Read whether the churn-slot reapply unit is in place
