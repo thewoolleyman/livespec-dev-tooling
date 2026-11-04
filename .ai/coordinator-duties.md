@@ -463,6 +463,20 @@ unauthenticated, the ask becomes "fix connector X", with the exact symptom. Main
   `auto-predump.sh` filled it.
 - **Seats.** Read `herdr agent list` (§3, §7).
 
+**Prove a model or routing change in one factory pod before widening it.** Any model, adapter or routing change
+goes out in three steps, and the coordinator holds every seat to them:
+
+1. **Prove it runs first.** One real turn inside a factory pod, on the current image, before any routing change.
+2. **Start small.** One item through a per-item or per-dispatch override, or a small fraction of dispatches. Never a
+   repository's committed default, and never the highest-load repository first.
+3. **Gate the rest.** Further launches on the new route wait until that first counted turn has produced real output.
+
+The maintainer, 2026-11-04 ~19:5xZ, recorded on epic `livespec-dev-tooling-6tgd2z` at 19:38:09Z: "Hmm, seems like
+making the [Opus] change on the most important and highly loaded repo was a horrible idea, huh?" Measured that day:
+#4388 changed the orchestrator's committed implement/fix default, so 100% of that repository's dispatches moved to an
+unverified model. Eight items died at implement from 18:15Z to 19:19Z on a Claude Code 2.1.170 HTTP 400, until #4396
+(998e45933) reverted it.
+
 ## 11. Reading host capacity
 
 Read `.ai/ci-node-capacity-reads.md` before any throttle, cap or launch gate. A cap is derived from throughput, not
