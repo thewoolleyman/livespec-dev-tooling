@@ -268,6 +268,17 @@ def test_a_stale_or_missing_reading_clears_the_taint_everywhere(tmp_path: Path) 
     assert f"reading-unknown:{_GMK}" in run.stdout
 
 
+def test_a_node_that_publishes_no_pressure_condition_is_unknown(tmp_path: Path) -> None:
+    run, mutations = _reconcile(
+        tmp_path,
+        nodes=[_node(_PE, avg60=45.0, alloc="72"), _node(_GMK, avg60=None)],
+        pods=[],
+    )
+    assert run.returncode == 0, run.stderr
+    assert mutations == [], mutations
+    assert f"reading-unknown:{_GMK}" in run.stdout
+
+
 def test_a_gap_under_twenty_points_does_not_steer(tmp_path: Path) -> None:
     run, mutations = _reconcile(
         tmp_path,
