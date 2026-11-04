@@ -130,7 +130,8 @@ The files:
   `runnable` can mean an orphaned run that will never start, a
   worker's brief is frozen at dispatch, a comment saying an item is "held"
   makes petri's screen refuse it, and `fabro create` plus `fabro dump` shows
-  the resolved spec.
+  the resolved spec. Read it also before rebasing a factory PR: a moved head
+  makes resume refuse.
 - Read `.ai/false-green-gates-and-audits.md` before trusting a green gate
   that disagrees with reality, writing a gate that replays a production step,
   auditing `.livespec.jsonc` keys across the fleet, or re-running a coverage
