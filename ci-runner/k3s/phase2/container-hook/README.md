@@ -256,3 +256,21 @@ touch while that item was editing them:
   survived — all of which need the host apply (the `container_hook` role via
   `just ansible-apply ansible/ci-pool.yml`, then
   the values applied per release and idle runners recycled).
+
+## The entry point in front of the patched hook (`livespec-dev-tooling-dciyg5`)
+
+Every `../arc/values-*.yaml` now points `ACTIONS_RUNNER_CONTAINER_HOOKS` at
+`/home/runner/hook-template/git-seed-hook.js`, a file of the `arc-hook-pod-template`
+ConfigMap (the whole ConfigMap is already mounted there), not at the patched hook.
+That entry point reads the runner's one stdin line, and for `prepare_job` alone
+adds `GIT_ALTERNATE_OBJECT_DIRECTORIES=/__w/_warm/git/<repo>/objects` to
+`args.container.environmentVariables` when that directory exists in the work
+volume and neither `CI_CACHE_KILL_SWITCH` nor the canary (`CI_CACHE_CANARY_N`, the
+same cksum rule as postStart) turns the tiers off, then runs the patched hook
+`/home/runner/fleet-hook/index.js` (override: `FLEET_REAL_CONTAINER_HOOK`) with
+the line, its stdout and stderr inherited and its exit status kept. Every other
+command and every declined `prepare_job` reaches the patched hook byte for byte.
+It is a separate file, and not a second patch to the bundle, so a runner-image
+bump (which re-derives `externals-skip.patch`) never has to carry it.
+`<repo>` is the last path segment of `RUNNER_WORKSPACE`, which the runner derives
+from the job's repository, so a workflow cannot name another repository's seed.

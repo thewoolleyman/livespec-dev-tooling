@@ -1060,6 +1060,62 @@ read-only credential on that node first, the shape
 as a stated limitation rather than left to be discovered as an
 inconsistency.
 
+## Git object seed: one repository's default-branch objects per volume
+
+`livespec-dev-tooling-dciyg5` (plan `ci-cache-optimization`, lever 2; the plan's
+research/004 and research/005 hold the measurements). Every routed job's
+`actions/checkout` fetched the repository's history from the forge; with
+`fetch-depth: 0` that was 5-24 s at the p50-p90 and the largest part of the
+checkout tail. A node benchmark found a local mirror no faster than the forge on
+a loaded node (it still builds a pack per job), and the forge fetched with the
+default-branch objects present as a git alternate at 0.5-1.1 s on every node.
+
+- **The populator** (`warm-cache-populate.sh`, step 5) keeps
+  `${WARM_ROOT}/git-src/<repo>.git`, a bare mirror of ONLY the default branch and
+  the tags (fetched with explicit refspecs, never `refs/pull/*`), and publishes
+  per repository `${WARM_ROOT}/git-generations/<repo>/<stamp>/objects` through the
+  relative symlink `${WARM_ROOT}/git/<repo>`. The generation is a fresh
+  `git clone --mirror --no-local` of the mirror, repacked to one pack, and it is
+  VERIFIED before publish: every ref is the default branch or a tag, and the set
+  of objects in the store equals the set reachable from those refs, so no
+  object that only a pull request reaches can be in a seed.
+- **The budget** is `git-bytes` / `git-files` in the `warm-cache-budget`
+  ConfigMap, beside the uv numbers and read by the populator as
+  `WARM_GIT_BUDGET_BYTES` / `WARM_GIT_BUDGET_FILES`. It caps ONE repository's
+  store, which is what one volume is seeded with. Over either axis the
+  generation is renamed `<stamp>.refused`, the previous one stays live and the
+  repository is reported as `<repo>:git-over-budget`.
+- **A run that changes nothing builds nothing:** the default branch tip and tag
+  set are hashed into the generation's `.git-seed-manifest.json` and compared.
+- **Prune:** the newest `KEEP_GENERATIONS`, the live one, and any generation
+  younger than `WARM_GIT_RETAIN_SECONDS` (6 h) stay, so a generation a helper pod
+  is still copying is never removed.
+- **The provisioner** reflink-copies `objects/` into
+  `<volume>/_warm/git/<repo>/objects` and stamps `.generation`. DECISION
+  (dciyg5, the ratification review's open question): a volume holds ITS OWN
+  repository's seed only. The repository comes from the claim name, whose pod
+  name begins with the scale set's name; the table in the `setup` script is
+  pinned to `arc/values-*.yaml` by `tests/livespec_dev_tooling/test_git_object_seed.py`.
+  A scale set the table does not name runs cold.
+- **The job container** gets `GIT_ALTERNATE_OBJECT_DIRECTORIES` from
+  `arc/git-seed-hook.js` (the runner's container hook entry point), only when
+  that directory exists and neither the kill switch nor the canary is on. The
+  fleet-patched hook then runs unchanged. See `../container-hook/README.md`.
+- **Telemetry:** postStart records a `git` row (hit = the variable is set and
+  names a directory that exists), preStop replays it as a `cache.warm-copy`
+  span with `build.cache.tier=git`, the generation and its age;
+  `ci-cache-gauges.sh` emits `livespec.ci_cache.generation_age_s` and
+  `generation_bytes` with `tier=git`.
+- **Roll-out order** (nothing is silent in either direction, but the order
+  matters): converge the populator ConfigMap and the budget, let one populate
+  publish `git/<repo>` for every repository, converge `arc-hook-pod-template`
+  (now carrying `git-seed-hook.js`), then `helm upgrade` each scale set and
+  recycle idle runners. A values file applied BEFORE the ConfigMap names a hook
+  file the runner cannot find.
+- A `runner-only` node runs this tier cold (an alternate must be a local path and
+  the node carries no warm root). Not yet built: a stale-generation trigger and a
+  sweep finding for a git generation over budget.
+
 ## Tiers 2 and 3
 
 The other two tiers from the design record are not here: tier 2, a local
