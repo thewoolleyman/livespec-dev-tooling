@@ -247,6 +247,7 @@ check:
         check-ci-gate-parity
         check-ci-matrix-completeness
         check-claude-md-coverage
+        check-codex-hook-reconcilable
         check-comment-line-anchors
         check-commit-pairs-source-and-test
         check-delegated-gate-check-suite
@@ -816,6 +817,11 @@ check-ci-matrix-completeness:
 
 check-claude-md-coverage:
     uv run python -m livespec_dev_tooling.checks.claude_md_coverage
+
+# Release gate for Codex plugin hooks: every `${CLAUDE_PLUGIN_ROOT}/` hook
+# entrypoint must be a tracked payload file the hook-cache reconciler can retain.
+check-codex-hook-reconcilable:
+    uv run python -m livespec_dev_tooling.checks.codex_hook_reconcilable
 
 check-comment-line-anchors:
     uv run python -m livespec_dev_tooling.checks.comment_line_anchors

@@ -162,13 +162,15 @@ def _normalized_real_target_inventory() -> tuple[str, ...]:
 
 
 def test_real_check_recipe_is_legacy_readable_exact_inventory_mirror() -> None:
-    """CORE's v1.17.1 reader sees the exact authoritative 83-target inventory."""
+    """CORE's v1.17.1 reader sees the exact authoritative 84-target inventory."""
     justfile_text = (_REPO_ROOT / "justfile").read_text(encoding="utf-8")
 
     wired = _legacy_core_v1_17_1_extract_check_slugs(justfile_text=justfile_text)
 
     assert wired == _normalized_real_target_inventory()
-    # 83 since livespec-dev-tooling-5d3cvr added the canonical
+    # 84 since livespec-dev-tooling-yhacv6 added the canonical
+    # `check-codex-hook-reconcilable` (the Codex hook-cache reconciliation release gate).
+    # The 83rd was livespec-dev-tooling-5d3cvr, which added the canonical
     # `check-delegated-gate-check-suite`, which prevents delegated pushes from
     # selecting a pre-commit aggregate in their final pre-push suite slot.
     # The 82nd was livespec-dev-tooling-lirki2's repo-private
@@ -209,7 +211,7 @@ def test_real_check_recipe_is_legacy_readable_exact_inventory_mirror() -> None:
     # stays EXACT rather than becoming a `>=`: its job is to make any change to
     # the inventory a deliberate edit here, and a lower bound would let a silent
     # drop through.
-    assert wired is not None and len(wired) == 83
+    assert wired is not None and len(wired) == 84
     canonical = unsafe_perform_io(canonical_check_slugs().unwrap())
     assert not set(canonical).difference(wired)
     assert _legacy_core_v1_17_1_extract_check_slugs(justfile_text="default:\n    true\n") is None
