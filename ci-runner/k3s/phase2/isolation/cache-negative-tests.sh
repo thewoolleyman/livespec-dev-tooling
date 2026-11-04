@@ -21,13 +21,15 @@
 # telemetry export puts that conclusion in Honeycomb's github-ci dataset
 # where the `CI cache negative tests failed` trigger reads it.
 #
-# EVERY CASE MUST BE ABLE TO FAIL. A case is a violation when the forbidden
-# thing SUCCEEDS, and ALSO when the precondition that makes the assertion
-# meaningful is absent (no warm seed in the volume, no redis to refuse): a
-# pod without the seed or the template's env is a misconfigured pool, not a
-# passing test. The negative control (a pod given the warm root itself,
-# writable, and a writer credential on purpose) turns cases 1 and 3 red —
-# run it with the Job in ./negative-control-job.yaml on the host.
+# EVERY BREACH CASE MUST BE ABLE TO FAIL. A case is a violation when the
+# forbidden thing SUCCEEDS, and a missing precondition for the redis or proxy
+# check is still a failed tier. An absent warm seed is different: runner-only
+# nodes and filesystems without reflink legitimately start a job cold, so case
+# 1 reports that state without calling it a trust-boundary failure. Whenever a
+# seed exists, though, it must be private and usable. The negative control (a
+# pod given the warm root itself, writable, and a writer credential on purpose)
+# turns cases 1 and 3 red — run it with the Job in ./negative-control-job.yaml
+# on the host.
 #
 # Exit 0 only when every case passes; one `case=<name> result=pass|fail
 # <detail>` line per case on stdout either way.
@@ -78,7 +80,7 @@ report() { printf 'case=%s result=%s %s\n' "$1" "$2" "$3"; [ "$2" = pass ] || rc
 # 2026-09-06 and this case passed vacuously in the control. -H follows only
 # that top-level argument.
 if [ ! -d "${WARM_SEED}" ]; then
-  report warm-seed-private fail "precondition: ${WARM_SEED} is absent — this volume was not seeded (provisioner setup script, no published generation, or a tier without reflink)"
+  report warm-seed-private pass "state: no warm seed at ${WARM_SEED}; this job starts cold (runner-only node, no published generation, or a tier without reflink)"
 else
   outside="$(find -H "${WARM_SEED}" -type f -links +1 -printf '%i\t%n\t%p\n' 2>/dev/null \
     | awk -F'\t' '{c[$1]++; n[$1]=$2; p[$1]=$3} END {for (i in c) if (c[i] < n[i] && !found) {print p[i]; found=1}}')"
