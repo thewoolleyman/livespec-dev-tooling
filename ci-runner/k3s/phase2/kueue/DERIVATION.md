@@ -977,6 +977,31 @@ the two idle nodes. Test parallelism stays at 3 per job.
 gmktec or hp exceeds PSI60 about 30 under load, or if Kueue-gated runners pile up
 while poweredge PSI60 is under about 25.
 
+### Second interim step: hp back to 5, gmktec 21 (2026-11-04 ~15:45Z)
+
+Ordered by `legacy-coordinator-agent` under R301/R493 on `ci-runtime-and-cost`'s
+15:36Z read. `hp-xubuntu` ran at 15.64 of 16 cores with 5 runners. Their workflow
+pods used 6.17, 2.68, 2.66 and 1.96 cores each, even at 3 test workers per job,
+because `just check` runs its non-pytest targets beside the pytest lane. So 8
+slots oversubscribe its 14.5 allocatable CPU. hp returns to its cores-derived
+5. The 3 slots go to `gmktec-xubuntu`, the idlest node all afternoon (PSI60
+0.1-0.4, 45-71 % idle). `poweredge-xubuntu` keeps 18 so the `ci-runner-scheduler`
+canary (`livespec-dev-tooling-mtvxde`) can show its placement.
+
+| node | first interim | second interim |
+|---|---:|---:|
+| `poweredge-xubuntu` | 18 | 18 |
+| `gmktec-xubuntu` | 18 | **21** |
+| `hp-xubuntu` | 8 | **5** |
+| **cohort total C** | **44** | **44** |
+
+**Revert** to 18 / 18 / 8 if gmktec's idle falls below about 5 % AND its
+BestEffort CI-slice `cpu.pressure` avg60 goes above about 30. That is the
+saturation signal ruled on 2026-11-04 and recorded on
+`livespec-dev-tooling-6e5pyj`; host PSI is not the signal. Watch too that
+gmktec's factory sandboxes keep their headroom, since gmktec carries the petri
+factory.
+
 ## The master-push slice for livespec-dev-tooling (2026-11-03)
 
 Work-item `livespec-dev-tooling-lzkzwb`, plan `ci-runtime-and-cost` (epic
