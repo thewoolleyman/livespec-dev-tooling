@@ -814,7 +814,9 @@ again, to `8764f1d`: `95a2e5b` plus `thewoolleyman/fabro#15`, `#18` and `#19`
 `bd-ib-ljw2xg`), rolled out the same way. Later on 2026-11-04 all three move to
 `c39bdbd`: `8764f1d` plus `thewoolleyman/fabro#22`, `#21` and `#23`
 (livespec-orchestrator-beads-fabro `bd-ib-gmuxd4` and `bd-ib-xoh477`), rolled out
-the same way. The rollback target is named in `host_vars` beside the pin and never
+the same way. Later still on 2026-11-04 all three move to `da6c801`: `c39bdbd`
+plus `thewoolleyman/fabro#24` (livespec-orchestrator-beads-fabro `bd-ib-uctbct`),
+rolled out the same way. The rollback target is named in `host_vars` beside the pin and never
 here, because that is the file an operator rolling back edits.
 
 `fabro_server_host_checkout_remote` is declared because the host had no
