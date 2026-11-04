@@ -2102,6 +2102,70 @@ When 15 minutes pass
 
 Then the `livespec` environment's metrics dataset MUST hold `system.linux.memory.available` stamped with the dev host's `host.name` within that window
 
+## Scenario: the radar admission function decides every ready target identically on identical inputs
+
+Given a radar whose readiness snapshot reports targets `A`, `B` and `C` READY and target `D` NOT READY
+
+And a fixed inventory file, thresholds file and Honeycomb snapshot
+
+When the admission function runs twice on those same inputs
+
+Then the two outputs MUST be identical byte for byte
+
+And each output MUST hold exactly one `admit` or `refuse` decision for each of `A`, `B` and `C`, and none for `D`
+
+And every `refuse` decision MUST name its rule id and the numbers it compared
+
+## Scenario: the highest-ordered ready target is admitted to any execution target with headroom for its cost
+
+Given radar targets `A` at index 1 and `B` at index 2 are READY, and their run class has a p90 cost of 600 CPU-seconds, 4 GiB peak memory and 1 slot
+
+And execution target `gmktec-xubuntu` has headroom of 0 slots, and execution target `hp-xubuntu` has headroom of 1 slot, 2000 CPU-seconds and 8 GiB
+
+When the admission function runs
+
+Then `A` MUST be admitted to `hp-xubuntu` with its rule id
+
+And `B` MUST be refused with a rule id and the slot numbers compared for each execution target
+
+## Scenario: a lower-ordered target does not backfill an execution target a higher-ordered waiting target could use
+
+Given radar target `A` at index 1 is READY with a run class that needs 8 GiB peak memory, and target `B` at index 2 is READY with a run class that needs 1 GiB
+
+And execution target `hp-xubuntu` has 6 GiB of memory headroom and accepts both run classes, and execution target `poweredge-xubuntu` has 12 GiB and accepts only `B`'s run class
+
+When the admission function runs
+
+Then `A` MUST be refused naming 8 GiB against 6 GiB on `hp-xubuntu`
+
+And `B` MAY be admitted to `hp-xubuntu` or `poweredge-xubuntu`, because `A` could use neither
+
+And when `hp-xubuntu`'s memory headroom is raised to 9 GiB, `A` MUST be admitted to `hp-xubuntu` and `B` MUST NOT be admitted to `hp-xubuntu` ahead of it
+
+## Scenario: an execution target stays closed until its reading falls back past the exit threshold
+
+Given the thresholds file sets memory pressure `enter` 20 and `exit` 10 for `hp-xubuntu`
+
+And the Honeycomb snapshot's memory-pressure series for `hp-xubuntu` reads 5, then 25, then 15, oldest first
+
+When the admission function runs with a READY target whose run class `hp-xubuntu` accepts
+
+Then the function MUST NOT admit it to `hp-xubuntu`
+
+And the refusal MUST name the memory-pressure rule and the numbers 15 and 10
+
+And when the series instead ends 25, then 8, the function MUST treat `hp-xubuntu` as admitting again
+
+## Scenario: a new execution target is admissible from one inventory entry
+
+Given an inventory fixture listing `gmktec-xubuntu` and `hp-xubuntu`, both without headroom for a READY target's run class
+
+When one inventory entry for `hetzner-xubuntu` accepting that run class is added, with its thresholds-file values and a Honeycomb snapshot giving it headroom
+
+Then the admission function MUST admit the target to `hetzner-xubuntu`
+
+And the change MUST touch no file other than the inventory file, the thresholds file and the snapshot fixture
+
 ## Scenario: a runner-only profile opens a node to CI without planning a storage change
 
 Given a pool node profile declaring `CI_NODE_FACILITIES=runner-only`, `ADMISSION_CAPACITY_C=8`, no CI-closing taint, no physical volume, volume group, logical volume or tier, and a runner work-volume directory on an existing mount

@@ -1679,6 +1679,14 @@
   },
   {
     "spec_root": "SPECIFICATION",
+    "spec_file": "non-functional-requirements.md",
+    "heading": "## Radar admission function",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, running the admission function over fixture radar, readiness, inventory, thresholds and Honeycomb snapshot inputs and asserting its decisions and decision-log records; plan radar-and-deterministic-admission slice 3. livespec-dev-tooling-hvfc6c owns it.",
+    "work_item": "livespec-dev-tooling-hvfc6c"
+  },
+  {
+    "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: an execution target's pressure stall readings are queryable in livespec by host",
     "test": "TODO",
@@ -1700,6 +1708,46 @@
     "test": "TODO",
     "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, asserting the dev host's collector configuration routes its host-metrics pipeline to the livespec environment as well as agent-activity. livespec-dev-tooling-z6yf2a owns it.",
     "work_item": "livespec-dev-tooling-z6yf2a"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: the radar admission function decides every ready target identically on identical inputs",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, running the function twice on fixed inputs and asserting byte-identical output with one decision per READY target. livespec-dev-tooling-hvfc6c owns it.",
+    "work_item": "livespec-dev-tooling-hvfc6c"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: the highest-ordered ready target is admitted to any execution target with headroom for its cost",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, asserting the first READY target is admitted to the only execution target with headroom and the second is refused with the slot numbers. livespec-dev-tooling-hvfc6c owns it.",
+    "work_item": "livespec-dev-tooling-hvfc6c"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a lower-ordered target does not backfill an execution target a higher-ordered waiting target could use",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, asserting backfill is refused on an execution target a refused higher-ordered target could use. livespec-dev-tooling-hvfc6c owns it.",
+    "work_item": "livespec-dev-tooling-hvfc6c"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: an execution target stays closed until its reading falls back past the exit threshold",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, replaying fixture pressure series through enter and exit thresholds and asserting the admit state. livespec-dev-tooling-hvfc6c owns it.",
+    "work_item": "livespec-dev-tooling-hvfc6c"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a new execution target is admissible from one inventory entry",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, adding one inventory fixture entry and asserting the new target admits with no code change. livespec-dev-tooling-hvfc6c owns it.",
+    "work_item": "livespec-dev-tooling-hvfc6c"
   },
   {
     "spec_root": "SPECIFICATION",

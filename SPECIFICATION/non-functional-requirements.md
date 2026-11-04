@@ -773,3 +773,30 @@ When the endpoint is unreachable, returns an error, or the per-tick budget is ex
 **The dev host's host metrics reach `livespec`.** The dev host's host metrics MUST also arrive in the `livespec` environment's metrics dataset stamped with its `host.name`, not only in the `agent-activity` environment. That includes `system.linux.memory.available`.
 
 **Converged, never hand-installed.** The pressure emitter on every execution target MUST be converged by this repository's Ansible tree from the control node. A hand-run installer MUST NOT be the deployment path, and the drift report of the playbook that converges it MUST report a host whose emitter differs from the merged definition.
+
+## Radar admission function
+
+The radar admission function decides, for every radar target that §"Maintainer radar" reports READY, whether it is admitted and on which execution target. It MUST be one pure function in this repository's `livespec_dev_tooling/radar/` package. Its inputs MUST be exactly these five:
+
+- the validated radar returned by the radar load entry point;
+- the readiness snapshot computed from that radar;
+- the committed execution-target inventory file;
+- the committed thresholds file;
+- the Honeycomb snapshot read under §"Scheduler Honeycomb input contract", or that clause's fallback defaults.
+
+The function MUST perform no I/O: it MUST NOT read the ledger, query Honeycomb, read a file or read the clock. Its callers read the inputs and pass them in. The same inputs MUST produce the same output byte for byte.
+
+**Every ready target gets a decision.** The output MUST hold exactly one decision for every READY target, in radar order, and a READY target MUST NOT be omitted. A decision MUST be either `admit`, naming the execution target and the rule id that admitted it, or `refuse`, naming the rule id and the numbers it compared: the measured value, the threshold or cost it was compared with, and the execution target. DONE and NOT READY targets receive no decision. A decision made from fallback inputs MUST carry `inputs: fallback` with the failure reason, as §"Scheduler Honeycomb input contract" requires.
+
+**Placement rules.** A run class is the key that per-run cost is grouped by. For a factory run it is the name of the Fabro workflow the run executed, such as `implement-work-item`, as the run's terminal dispatch span reports it. For local work on the dev host it is the kind of that work: `gate`, `replay` or `interactive`. Each READY target has a run class, and each run class has a cost read from the Honeycomb snapshot: its p90 CPU-seconds, its p90 peak memory and its concurrency cost. An execution target's headroom is what its measured readings and its thresholds leave free, less the cost of every target already admitted to it in the same decision. The function MUST decide targets in radar order and apply these two rules:
+
+- The highest-ordered READY target not yet decided MUST be admitted to an execution target whose headroom covers its run-class cost, whenever any inventory target accepting its run class has such headroom.
+- A lower-ordered READY target MUST be admitted to an execution target only when no higher-ordered READY target that was refused could use that execution target's remaining headroom. A lower-ordered target MUST NOT take capacity a higher-ordered waiting target could have used.
+
+When no execution target can admit a target, its decision MUST be `refuse` naming, for each execution target that accepts its run class, the observable that did not fit and the two numbers compared.
+
+**Thresholds are data, with hysteresis.** Thresholds MUST live in one committed data file, holding an `enter` and an `exit` value per observable and per execution target. An execution target MUST stop admitting on an observable when that observable's reading reaches `enter`, and MUST NOT admit on it again until the reading falls back past `exit`. The function MUST derive that state from the Honeycomb snapshot's own series for the observable, replayed oldest to newest from a clear state through the `enter` and `exit` rule, and MUST NOT read any stored previous state. Every concurrency cap in the thresholds file MUST name the measured throughput figure it is derived from: the figure, its unit, the date it was measured and the query that measured it. A cap MUST NOT be derived from a utilisation percentage alone. The function's load of the thresholds file MUST refuse a cap that names no throughput figure.
+
+**Execution targets are inventory entries.** The committed inventory file MUST hold one entry per execution target, naming its `host.name` and the run classes it accepts. Adding an execution target MUST need only a new inventory entry, plus that target's thresholds-file values; it MUST NOT need a change to the function's code.
+
+**Shadow mode.** The function's caller MUST append every decision the function returns to a decision log on the host that ran it, stamping each record with the tick's UTC time, which the caller reads. Each log record MUST carry that time, the radar index, the target as `<tenant>:<id>`, the run class, the decision, the execution target when admitted, the rule id, the numbers compared, and whether the inputs were `honeycomb` or `fallback`. A launcher MUST NOT start, hold or cancel a launch on the function's output until this specification names that launcher as a consumer of the function.
