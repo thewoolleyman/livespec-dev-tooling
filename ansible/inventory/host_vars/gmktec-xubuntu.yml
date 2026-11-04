@@ -238,8 +238,14 @@ fabro_server_instances:
     # carrier-candidate-registered-20261023 tip. ROLLBACK: v0393-8764f1de8/fabro
     # and bfc64b281771643833944b9a82cd1db2b9c84766a7bf00e267c4ecff4f8319d5,
     # still staged on vps.
-    binary_source: /home/ubuntu/.local/state/fabro-web-prod/v0393-c39bdbded/fabro
-    binary_sha256: e93c96b721a356d88b9dc54da009bc4da7c820f37f7146ef888e10c1ca4f6e96
+    # 2026-11-04: da6c8015a = c39bdbded plus thewoolleyman/fabro#24
+    # (bd-ib-uctbct: a transiently rejected source-branch push is retried with
+    # backoff, and its redacted stderr is kept in the Unpublished error), the
+    # carrier-candidate-registered-20261023 tip. ROLLBACK: v0393-c39bdbded/fabro
+    # and e93c96b721a356d88b9dc54da009bc4da7c820f37f7146ef888e10c1ca4f6e96,
+    # still staged on vps.
+    binary_source: /home/ubuntu/.local/state/fabro-web-prod/v0393-da6c8015a/fabro
+    binary_sha256: cd66859f873aa97b614e6812217b24dca7aa0f50aef661c2cb79b45d2083bb59
     # The tag the orchestrator workflow pins today
     # (.claude-plugin/.fabro/workflows/implement-work-item/workflow.toml,
     # python-agent-v1.136.2). On this engine the catalog, not the workflow
@@ -451,8 +457,14 @@ fabro_server_instances:
     # carrier-candidate-registered-20261023 tip. ROLLBACK: v0393-8764f1de8/fabro
     # and bfc64b281771643833944b9a82cd1db2b9c84766a7bf00e267c4ecff4f8319d5,
     # still staged on vps.
-    binary_source: /home/ubuntu/.local/state/fabro-web-prod/v0393-c39bdbded/fabro
-    binary_sha256: e93c96b721a356d88b9dc54da009bc4da7c820f37f7146ef888e10c1ca4f6e96
+    # 2026-11-04: da6c8015a = c39bdbded plus thewoolleyman/fabro#24
+    # (bd-ib-uctbct: a transiently rejected source-branch push is retried with
+    # backoff, and its redacted stderr is kept in the Unpublished error), the
+    # carrier-candidate-registered-20261023 tip. ROLLBACK: v0393-c39bdbded/fabro
+    # and e93c96b721a356d88b9dc54da009bc4da7c820f37f7146ef888e10c1ca4f6e96,
+    # still staged on vps.
+    binary_source: /home/ubuntu/.local/state/fabro-web-prod/v0393-da6c8015a/fabro
+    binary_sha256: cd66859f873aa97b614e6812217b24dca7aa0f50aef661c2cb79b45d2083bb59
     # The fleet instance's catalog, entry for entry; the reasons for each
     # entry are given there. Bump the images together with it.
     environments:
@@ -586,8 +598,14 @@ fabro_server_instances:
     # carrier-candidate-registered-20261023 tip. ROLLBACK: v0393-8764f1de8/fabro
     # and bfc64b281771643833944b9a82cd1db2b9c84766a7bf00e267c4ecff4f8319d5,
     # still staged on vps.
-    binary_source: /home/ubuntu/.local/state/fabro-web-prod/v0393-c39bdbded/fabro
-    binary_sha256: e93c96b721a356d88b9dc54da009bc4da7c820f37f7146ef888e10c1ca4f6e96
+    # 2026-11-04: da6c8015a = c39bdbded plus thewoolleyman/fabro#24
+    # (bd-ib-uctbct: a transiently rejected source-branch push is retried with
+    # backoff, and its redacted stderr is kept in the Unpublished error), the
+    # carrier-candidate-registered-20261023 tip. ROLLBACK: v0393-c39bdbded/fabro
+    # and e93c96b721a356d88b9dc54da009bc4da7c820f37f7146ef888e10c1ca4f6e96,
+    # still staged on vps.
+    binary_source: /home/ubuntu/.local/state/fabro-web-prod/v0393-da6c8015a/fabro
+    binary_sha256: cd66859f873aa97b614e6812217b24dca7aa0f50aef661c2cb79b45d2083bb59
     # The tag FOLLOWS homelab's own workflow pin
     # (.fabro/workflows/implement-work-item/workflow.toml in mi-homelab/homelab,
     # python-agent-v1.126.0), not the orchestrator's; bump the two together.
