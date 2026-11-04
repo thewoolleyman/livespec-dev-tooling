@@ -197,6 +197,18 @@ Measured 2026-10-31: the coordinator held three "maintainer decisions". One was 
 replay credential that a re-capture against the current release avoids entirely. The maintainer asked why each needed
 them.
 
+**A hand-landed carrier closes through the valves that exist today, never through a future factory feature.** An item
+implemented and merged outside the factory, for example under a local-only expedited exception, is closed by the
+coordinator with the existing valves: `accept:<id>` for an item in `acceptance`, `dispatcher.py reconcile-merged` for
+one with its own merged PR, or the admin out-of-band closure. The basis is recorded on the item. It is never parked
+waiting for a factory proof record that an unreleased feature would one day write, and it never goes to the maintainer
+as a blocker. A stalled, idle or wedged Codex seat is fixed by the coordinator directly, with a nudge, a hand wrap-up
+or a restart, and is never listed as a maintainer item. The maintainer, 2026-11-04 ~13:0xZ, recorded on epic
+`livespec-dev-tooling-6tgd2z`: "WHY ARE YOU BLOCKING THIS: ... GET IT DONE SOMEHOW. ... Just manually fix the codex
+seats, no justification to block. restart it or whatever". Measured that day: ten P1 carriers of
+expedited-incident-response-flag sat for about ten hours waiting on the proof-only resume chain (bd-ib-a7zpxy), while
+`accept:` closed the six in `acceptance` at once, all green.
+
 ## 6. Never block: no pickers, ever
 
 The maintainer, 2026-11-01: "You should be forbidden from presenting blocking pickers. You are only ever supposed to
