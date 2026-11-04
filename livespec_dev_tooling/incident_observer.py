@@ -10,6 +10,7 @@ from typing import cast
 
 from livespec_dev_tooling._incident_observer_store import (
     load_record,
+    read_observer_arm,
     read_registration,
     registration_record,
     repository_lock,
@@ -43,12 +44,15 @@ def admit_observer(
     authorize_current: Callable[[ObserverRegistration], bool],
     released_controller: Callable[[str, str], bool],
 ) -> ObserverResult:
-    """Persist the pre-merge observer receipt only after canonical authorization.
+    """Persist a standalone master binding after canonical authorization.
 
     ``authorize_current`` is the canonical current-reader adapter, not a JSON
     parser, label, flag, or historical-reader result. It must bind every identity
     and receipt byte. Build verification belongs to the known-good controller's
     independently provisioned release allowlist, never to candidate code.
+    A future merge must instead use the pre-merge arm protocol: a real master
+    SHA/run does not exist before that merge, and this low-level operation is
+    not evidence of pre-merge readiness.
     """
     refusal = _admission_refusal(
         registration=registration,
@@ -59,6 +63,10 @@ def admit_observer(
         return ObserverResult(status="refused", reason=refusal)
     with repository_lock(directory=directory, repository=registration.repository) as path:
         record = load_record(path=path)
+        if record.get("observer_arm_id"):
+            return ObserverResult(
+                status="refused", reason="armed observer requires authenticated post-merge binding"
+            )
         previous = read_registration(record=record)
         if previous == registration:
             return ObserverResult(status="admitted", reason="same durable observer receipt")
@@ -75,9 +83,7 @@ def admit_observer(
             )
         record["registration"] = registration_record(registration=registration)
         save_record(path=path, record=record)
-    return ObserverResult(
-        status="admitted", reason="durable independent observer armed before merge"
-    )
+    return ObserverResult(status="admitted", reason="durable independent master observer bound")
 
 
 def handle_job_callback(
@@ -123,13 +129,18 @@ def handle_job_callback(
                 action_id=action_id,
             )
         intent = RecoveryIntent(
-            action_id=action_id, registration=registration, completion=completion
+            action_id=action_id,
+            registration=registration,
+            completion=completion,
+            observer_arm=read_observer_arm(record=record),
         )
         action: dict[str, object] = {
             "status": "pending",
             "registration": registration_record(registration=registration),
             "completion": asdict(completion),
             "receipt": None,
+            "observer_arm": record.get("observer_arm"),
+            "observer_arm_id": record.get("observer_arm_id"),
         }
         actions[action_id] = action
         record["actions"] = actions
@@ -211,7 +222,12 @@ def route_ordinary_action(
     cannot race its revert or delay it behind reruns or fix-forward classification.
     """
     with repository_lock(directory=directory, repository=repository) as path:
-        registration = read_registration(record=load_record(path=path))
+        record = load_record(path=path)
+        if record.get("observer_arm_id") and not record.get("observer_arm_bound"):
+            return ObserverResult(
+                status="incident-owned", reason="pre-merge observer owns repository action"
+            )
+        registration = read_registration(record=record)
         if (
             registration is not None
             and registration.head_sha == head_sha
