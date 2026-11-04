@@ -49,6 +49,13 @@ template:
       # rather than straight to the Kubernetes scheduler.
       kueue.x-k8s.io/queue-name: livespec-runtime-lq
   spec:
+    # Tolerate the factory placement taint (orchestrator bd-ib-plon2p,
+    # ../factory-pressure-placement/README.md): it exists to steer FACTORY
+    # sandbox pods only, so runner pods ignore it and CI placement is unchanged.
+    tolerations:
+      - key: livespec.io/factory-pressure
+        operator: Exists
+        effect: PreferNoSchedule
     securityContext:
       runAsNonRoot: true
       runAsUser: 1000

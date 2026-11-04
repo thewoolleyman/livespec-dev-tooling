@@ -1,0 +1,11 @@
+---
+# factory_pressure_reconciler: the server steers new factory sandbox pods away
+# from a CPU-pressured factory node with a PreferNoSchedule taint (orchestrator
+# bd-ib-plon2p). See ../../../ci-runner/k3s/phase2/factory-pressure-placement/README.md.
+factory_pressure_reconciler_phase2_dir: "{{ role_path }}/../../../ci-runner/k3s/phase2"
+factory_pressure_reconciler_lib_dir: /usr/local/lib/ci-runner-k3s
+factory_pressure_reconciler_unit_dir: /etc/systemd/system
+factory_pressure_reconciler_state_dir: /var/lib/livespec/factory-pressure-placement
+factory_pressure_reconciler_script: reconcile-factory-pressure-taint.sh
+factory_pressure_reconciler_service: reconcile-factory-pressure-taint.service
+factory_pressure_reconciler_timer: reconcile-factory-pressure-taint.timer

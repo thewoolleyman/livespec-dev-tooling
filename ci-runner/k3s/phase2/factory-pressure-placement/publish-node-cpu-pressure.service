@@ -1,0 +1,11 @@
+# Publish this node's CPU pressure as its LivespecCPUPressure node condition
+# (publish-node-cpu-pressure.sh). Installed by the factory_pressure_publisher
+# Ansible role on every FACTORY_NODE=true pool node; the placeholders are
+# rendered from the node's profile, exactly as reapply-node-extended-resource's.
+[Unit]
+Description=Publish this node's CPU pressure as its LivespecCPUPressure condition
+After=K3S_UNIT_PLACEHOLDER
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/lib/ci-runner-k3s/publish-node-cpu-pressure.sh PROFILE_PATH_PLACEHOLDER
