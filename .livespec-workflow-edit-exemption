@@ -1,2 +1,4 @@
-work_item=livespec-dev-tooling-aplxhg
-reason=Fix the release window's job-level if: so release-please.yml parses. #3317 left that expression as a plain YAML scalar containing ': ' ('chore(master): release'), which GitHub rejects, so every Release Please run since 19:49Z failed at workflow parse and releases stopped. Quoting the expression restores the ratified v235 behaviour unchanged.
+work_item=livespec-dev-tooling-5d3cvr
+reason=Wire the new aggregate slug check-delegated-gate-check-suite into ci.yml's check-metadata-batch step so check-ci-matrix-completeness sees it run in CI. The factory run that added the check (01M6HQ6QWE0A, PR #3328) cannot push a workflow edit with the App token. One added line; nothing deleted or modified.
+change=additive
+ci_runtime=no-significant-increase

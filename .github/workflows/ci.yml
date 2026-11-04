@@ -603,6 +603,7 @@ jobs:
           just check-claude-md-coverage || failed="$failed check-claude-md-coverage"
           just check-comment-line-anchors || failed="$failed check-comment-line-anchors"
           just check-commit-pairs-source-and-test || failed="$failed check-commit-pairs-source-and-test"
+          just check-delegated-gate-check-suite || failed="$failed check-delegated-gate-check-suite"
           just check-fabro-image-pin-lockstep || failed="$failed check-fabro-image-pin-lockstep"
           just check-fleet-marketplace-relative-sources || failed="$failed check-fleet-marketplace-relative-sources"
           just check-handoff-dispatch-routing || failed="$failed check-handoff-dispatch-routing"
