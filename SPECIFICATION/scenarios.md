@@ -2673,3 +2673,25 @@ When its Node becomes Ready
 Then the Node MUST carry the taint `homelab-worker.livespec.dev/admission=hold:NoSchedule`
 
 And a pod without a toleration for that taint MUST NOT be scheduled onto it
+
+## Scenario: a staged capacity value change commits on schema validation alone
+
+Given a repository whose committed config-value fast-path list names `.livespec.jsonc` `dispatcher.wip_cap`
+
+When a commit stages only a change of `dispatcher.wip_cap` from 4 to 6
+
+Then the pre-commit hook MUST run schema and parse validation of `.livespec.jsonc` and no test suite, and the commit MUST proceed
+
+And a commit that stages `dispatcher.wip_cap` changed to a value the schema rejects MUST be refused, naming `.livespec.jsonc` and `dispatcher.wip_cap`
+
+And a commit that also stages any other changed line MUST run the normal pre-commit aggregate
+
+## Scenario: changing a committed capacity value to another valid value leaves every test passing
+
+Given a repository whose committed `ci-runner` profile sets `ADMISSION_CAPACITY_C` to 8
+
+When `ADMISSION_CAPACITY_C` is changed to 6, a value its schema accepts
+
+Then every test of the repository MUST pass
+
+And a test that checks the profile MUST assert that the capacity is a non-negative integer and that the profiles sum to the cohort quota, not that it equals 8

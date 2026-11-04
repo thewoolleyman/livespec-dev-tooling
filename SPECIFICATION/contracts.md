@@ -563,6 +563,23 @@ A consuming repository MAY run its pre-commit check aggregate (`just check-pre-c
 - **Telemetry.** Every delegated pre-commit run MUST emit exactly one outcome span, with the outcome words §"Delegated pre-push gate" defines: `passed`, `failed-tree` and `no-verdict`. Emission is best-effort under that section's rules: a telemetry failure never changes the commit's verdict.
 - **Credential use.** Cluster commands go through `with-gates-kubeconfig`, as §"Delegated pre-push gate" states. This delegation adds no credential.
 
+## Config-value fast path at pre-commit
+
+- **The key list.** livespec-dev-tooling MUST ship ONE committed config-value fast-path list. It names each qualifying key by file pattern and key path, and it MUST at least cover `.livespec.jsonc` `dispatcher.wip_cap` and `stall_timeout_seconds`, ansible host_vars `max_concurrent_runs`, and `ci-runner` profile `ADMISSION_CAPACITY_C`. Consumers read the list from the shared tooling. A consumer MAY extend it only through its own committed configuration.
+- **The class.** A staged change is a config-value change when every line it changes is the value of a key on that list, in a file matching the list's pattern for that key. Adding, removing or renaming a listed key, or changing any other line, makes it not a config-value change.
+- **What runs.** For a config-value change, the pre-commit hook MUST run schema and parse validation of every changed file. It MUST run no test suite and no other aggregate member.
+- **Refusal.** A changed value that fails that validation MUST refuse the commit, and the refusal MUST name the file and the key.
+- **Everything else.** Every other staged change MUST take the pre-commit path it takes today.
+- **Pre-push and CI.** The pre-push and CI halves follow livespec core's ratified rule for this class: `non-functional-requirements.md` §"CI as a merge gate (branch protection)", **Config-value fast path.**
+
+## Tests never pin committed configuration values
+
+A test never asserts a committed configuration or capacity VALUE. It asserts shape and derivation, or a value it writes itself.
+
+- A test MUST NOT assert the literal committed value of any key on the config-value fast-path list (§"Config-value fast path at pre-commit"). The same holds for any other capacity, cap, timeout or quota key in a committed configuration file.
+- A test of such a key MUST assert the value's shape (for example, that it is a positive integer) or its derivation (for example, that per-node capacities sum to the cohort quota). Alternatively, it MUST exercise behaviour against a fixture value the test writes itself.
+- Changing any such committed value to another value its schema accepts MUST leave every test of the repository passing.
+
 ## Agent-session gate-command guard
 
 This repository ships a Claude Code `PreToolUse` hook, `python -m livespec_dev_tooling.agent_hooks.pretooluse_background_guard`, which a consuming repository registers for the `Bash` tool. It exists because a gate command run from an agent session can outlast the harness's tool-call ceiling. When the harness kills such a call, it leaves no exit code, no output and no verdict, and that is indistinguishable from a refusal. The guard keeps every hook-running git command, and every backgrounded gate command, that an agent session issues on the detached gate runner, where a run that does not finish reports `DIED_WITHOUT_VERDICT` and can never read as a pass. The guard decides where a gate command runs. It MUST NOT change which gates run or what they verify.

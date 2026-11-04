@@ -2164,5 +2164,37 @@
     "test": "TODO",
     "reason": "Spec-first: a real test at the integration tier or above (the start task run against stubbed host commands, or a host-captured run on a declared Mac host) is owed for this scenario; livespec-dev-tooling-ko26ez owns it.",
     "work_item": "livespec-dev-tooling-ko26ez"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "contracts.md",
+    "heading": "## Config-value fast path at pre-commit",
+    "test": "TODO",
+    "reason": "A real test at the integration tier or above is owed for this heading: the pre-commit hook run over a fixture repository whose staged change touches only a listed key's value, proving schema-only validation, the named refusal on an invalid value, and the normal path otherwise. livespec-dev-tooling-hmztez owns it.",
+    "work_item": "livespec-dev-tooling-hmztez"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "contracts.md",
+    "heading": "## Tests never pin committed configuration values",
+    "test": "TODO",
+    "reason": "A real test at the integration tier or above is owed for this heading: a mutation run that changes each listed committed value to another schema-valid value in a scratch tree and runs the full suite green. livespec-dev-tooling-symfx2 owns it.",
+    "work_item": "livespec-dev-tooling-symfx2"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a staged capacity value change commits on schema validation alone",
+    "test": "TODO",
+    "reason": "A real test at the integration tier or above is owed for this scenario: the pre-commit hook over a fixture repository staging a value-only change of dispatcher.wip_cap, an invalid value, and a mixed change. livespec-dev-tooling-hmztez owns it.",
+    "work_item": "livespec-dev-tooling-hmztez"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: changing a committed capacity value to another valid value leaves every test passing",
+    "test": "TODO",
+    "reason": "A real test at the integration tier or above is owed for this scenario: the full suite run against a scratch tree whose ADMISSION_CAPACITY_C values are changed to other schema-valid values. livespec-dev-tooling-symfx2 owns it.",
+    "work_item": "livespec-dev-tooling-symfx2"
   }
 ]
