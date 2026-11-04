@@ -48,6 +48,7 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 _WARM_CACHE_DIR = _REPO_ROOT / "ci-runner" / "k3s" / "phase2" / "warm-cache"
 _CRONJOB = _WARM_CACHE_DIR / "warm-cache-cronjob.yaml"
 _POPULATOR = _WARM_CACHE_DIR / "warm-cache-populate.sh"
+_README = _WARM_CACHE_DIR / "README.md"
 _SWEEP = (
     _REPO_ROOT
     / "ci-runner"
@@ -86,6 +87,9 @@ _CARGO_BUILD = re.compile(r'(?<!")cargo (?:\+\S+ )?(?:\$\{invocation\}|fuzz buil
 # diagnostic that quotes the command it just ran.
 _NON_INVOCATIONS = ("#", "log ", "printf", "echo ")
 
+_README_BUDGET_SECTION = re.compile(r"^## Budget\n(?P<body>.*?)(?=^## )", re.MULTILINE | re.DOTALL)
+_README_BUDGET_VALUES = re.compile(r"\*\*(?P<bytes>[\d,]+) bytes and (?P<files>[\d,]+) files\*\*")
+
 _KEY_REF = re.compile(
     r"valueFrom:\s*\n\s*configMapKeyRef:\s*\n\s*name:\s*(?P<name>\S+)\s*\n\s*key:\s*(?P<key>\S+)"
 )
@@ -103,6 +107,17 @@ def _budget_from_configmap() -> dict[str, int]:
         entry.group("key"): int(entry.group("value"))
         for entry in _DATA_ENTRY.finditer(matched.group("data"))
     }
+
+
+def _budget_from_readme() -> dict[str, int]:
+    """The two budget numbers as README.md's "Budget" section states them."""
+    section = _README_BUDGET_SECTION.search(_README.read_text(encoding="utf-8"))
+    assert section is not None, f"README.md must carry a `## Budget` section; file={_README}"
+    values = _README_BUDGET_VALUES.search(section.group("body"))
+    assert (
+        values is not None
+    ), "README.md `## Budget` must state the values as `**<bytes> bytes and <files> files**`"
+    return {key: int(values.group(key).replace(",", "")) for key in _BUDGET_KEYS}
 
 
 def _populator_assignments(*, variable: str) -> list[str]:
@@ -184,6 +199,18 @@ def test_the_two_budgets_are_stated_once_and_injected_from_that_one_place() -> N
         f"the sweep's finding); a second copy of a number drifts from the first and the "
         f"two silently disagree about the same tree, one publishing what the other "
         f"reports as over budget; restating={restating}"
+    )
+
+
+def test_the_budget_configmap_equals_the_values_the_readme_budget_section_states() -> None:
+    """The reviewed derivation and the applied ConfigMap cannot drift apart."""
+    configmap = _budget_from_configmap()
+    readme = _budget_from_readme()
+    assert configmap == readme, (
+        f"the `{_BUDGET_CONFIGMAP}` ConfigMap and README.md `## Budget` must state the same "
+        f"bytes and files; a ConfigMap edited without its re-derivation (or the reverse) "
+        f"leaves the tier refusing or admitting against an unreviewed number; "
+        f"configmap={configmap}, readme={readme}"
     )
 
 
