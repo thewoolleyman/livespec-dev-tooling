@@ -15,7 +15,12 @@
 #   5. The named VZ VM is created only when absent, and an existing one is
 #      started in place — never stopped, recreated or deleted. A VM whose
 #      CPUs, memory or disk differ from the declaration is refused, naming
-#      the setting, instead of being rebuilt.
+#      the setting, instead of being rebuilt. A new VM gets an XFS data disk,
+#      <host>-homelab-worker-data, for the worker's containerd store and caches.
+#   6. The VM capability probe (probe-vm-capabilities.sh) runs inside the VM;
+#      any missing capability stops the task, naming each with its remedy,
+#      before the worker container starts. The report is kept beside the
+#      worker's non-secret state.
 #
 # Every declared host runs this same code path; a host's .env carries data
 # only. The script stays bash 3.2-compatible because a worker host is not a
@@ -26,6 +31,8 @@ prog="start-homelab-worker-node-container"
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 hosts_dir="$here/hosts"
 template="$here/lima/worker.yaml"
+probe="$here/probe-vm-capabilities.sh"
+state_dir="${XDG_STATE_HOME:-$HOME/.local/state}/livespec-homelab-worker"
 
 die() {
   printf '%s: %s\n' "$prog" "$*" >&2
@@ -79,15 +86,17 @@ WORKER_HOST_OS=""
 WORKER_VM_CPUS=""
 WORKER_VM_MEMORY_GIB=""
 WORKER_VM_DISK_GIB=""
+WORKER_DATA_DISK_GIB=""
 # shellcheck disable=SC1090  # the declared host's data file
 . "$hosts_dir/$host.env"
-for key in WORKER_HOST_OS WORKER_VM_CPUS WORKER_VM_MEMORY_GIB WORKER_VM_DISK_GIB; do
+for key in WORKER_HOST_OS WORKER_VM_CPUS WORKER_VM_MEMORY_GIB WORKER_VM_DISK_GIB WORKER_DATA_DISK_GIB; do
   eval "val=\${$key}"
   # shellcheck disable=SC2154  # val is assigned by the eval above
   [ -n "$val" ] || die "homelab-worker/hosts/$host.env does not declare $key"
 done
 
 worker="$host-homelab-worker"
+data_disk="$worker-data"
 
 os="$(uname -s)"
 if [ "$os" != "$WORKER_HOST_OS" ]; then
@@ -133,10 +142,31 @@ EOF_LIST
     limactl start --tty=false "$worker"
   fi
 else
+  if limactl disk list --json 2>/dev/null | grep -q "\"name\":\"$data_disk\""; then
+    say "reusing data disk $data_disk"
+  else
+    say "creating data disk $data_disk (${WORKER_DATA_DISK_GIB} GiB)"
+    limactl disk create "$data_disk" --size="${WORKER_DATA_DISK_GIB}GiB" --format=raw
+  fi
   say "creating VM $worker (vz, ${WORKER_VM_CPUS} CPUs, ${WORKER_VM_MEMORY_GIB} GiB memory, ${WORKER_VM_DISK_GIB} GiB disk)"
   limactl create --name="$worker" --vm-type=vz --cpus="$WORKER_VM_CPUS" \
-    --memory="$WORKER_VM_MEMORY_GIB" --disk="$WORKER_VM_DISK_GIB" --tty=false "$template"
+    --memory="$WORKER_VM_MEMORY_GIB" --disk="$WORKER_VM_DISK_GIB" \
+    --set=".additionalDisks=[{\"name\":\"$data_disk\",\"format\":true,\"fsType\":\"xfs\"}]" \
+    --tty=false "$template"
   limactl start --tty=false "$worker"
+fi
+
+mkdir -p "$state_dir/$worker"
+report="$state_dir/$worker/vm-capabilities.txt"
+say "probing VM $worker capabilities"
+if limactl shell --workdir / "$worker" sudo bash -s -- "/mnt/lima-$data_disk" <"$probe" >"$report.tmp" 2>&1; then
+  mv "$report.tmp" "$report"
+  say "VM $worker has every required capability (report: $report)"
+else
+  mv "$report.tmp" "$report"
+  printf '%s: VM %s is missing required capabilities; the worker container was not started:\n' "$prog" "$worker" >&2
+  grep '^MISSING ' "$report" >&2 || cat "$report" >&2
+  exit 1
 fi
 
 say "VM $worker converged for host $host"

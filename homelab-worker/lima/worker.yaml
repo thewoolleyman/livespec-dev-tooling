@@ -12,3 +12,17 @@ mounts: []
 containerd:
   system: false
   user: false
+# The worker container runs under rootful Docker in the VM; AppArmor userspace
+# loads the workload profile. The data disk (<host>-homelab-worker-data, XFS)
+# is attached by the start task and mounted by Lima at /mnt/lima-<disk>.
+provision:
+  - mode: system
+    script: |
+      #!/bin/bash
+      set -eux -o pipefail
+      if ! command -v docker >/dev/null 2>&1; then
+        export DEBIAN_FRONTEND=noninteractive
+        apt-get update
+        apt-get install -y docker.io apparmor apparmor-utils xfsprogs
+      fi
+      systemctl enable --now docker

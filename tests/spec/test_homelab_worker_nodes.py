@@ -51,6 +51,15 @@ case "${1:-}" in
     echo "Stopped 0 0 0" > "$state/instances/$n"
     exit 0 ;;
   start) exit 0 ;;
+  disk)
+    case "${2:-}" in
+      list) for d in "$state"/disks/*; do [ -e "$d" ] && printf '{"name":"%s"}\n' "${d##*/}"; done; exit 0 ;;
+      create) touch "$state/disks/$3"; exit 0 ;;
+    esac ;;
+  shell)
+    cat > "$state/probe-stdin"
+    cat "$state/probe-output"
+    exit "$(cat "$state/probe-exit")" ;;
 esac
 exit 0
 """
@@ -84,6 +93,9 @@ def host(tmp_path: Path) -> _Host:
     state = tmp_path / "state"
     bin_dir.mkdir()
     (state / "instances").mkdir(parents=True)
+    (state / "disks").mkdir()
+    (state / "probe-output").write_text("PRESENT apparmor\n", encoding="utf-8")
+    (state / "probe-exit").write_text("0\n", encoding="utf-8")
     log = tmp_path / "calls.log"
     log.write_text("", encoding="utf-8")
     _write_exec(path=bin_dir / "uname", text='#!/bin/bash\necho "${STUB_UNAME:-Darwin}"\n')
@@ -183,7 +195,7 @@ def test_rerun_starts_the_existing_vm_in_place_and_never_recreates_it(host: _Hos
         status="Stopped",
         cpus=6,
         memory_gib=16,
-        disk_gib=150,
+        disk_gib=60,
     )
     result = _run(host=host, args=["macbook-air"])
     assert result.returncode == 0, result.stderr
@@ -200,7 +212,7 @@ def test_rerun_keeps_a_running_vm_without_starting_or_recreating_it(host: _Host)
         status="Running",
         cpus=6,
         memory_gib=16,
-        disk_gib=150,
+        disk_gib=60,
     )
     result = _run(host=host, args=["macbook-air"])
     assert result.returncode == 0, result.stderr
@@ -219,7 +231,7 @@ def test_a_second_worker_on_the_same_host_is_refused_naming_the_existing_worker(
         status="Running",
         cpus=12,
         memory_gib=64,
-        disk_gib=400,
+        disk_gib=100,
     )
     result = _run(host=host, args=["macbook-air"])
     assert result.returncode != 0
@@ -235,7 +247,7 @@ def test_a_vm_whose_declared_setting_changed_is_refused_naming_the_setting(host:
         status="Stopped",
         cpus=4,
         memory_gib=16,
-        disk_gib=150,
+        disk_gib=60,
     )
     result = _run(host=host, args=["macbook-air"])
     assert result.returncode != 0
@@ -270,4 +282,43 @@ def test_every_declared_host_is_data_for_the_same_code_path() -> None:
             "WORKER_VM_CPUS",
             "WORKER_VM_MEMORY_GIB",
             "WORKER_VM_DISK_GIB",
+            "WORKER_DATA_DISK_GIB",
         }
+
+
+def test_a_new_vm_gets_an_xfs_data_disk_created_once(host: _Host) -> None:
+    _install_lima(host=host, version="2.2.1")
+    result = _run(host=host, args=["macbook-air"])
+    assert result.returncode == 0, result.stderr
+    calls = _calls(host=host)
+    assert [c for c in calls if c.startswith("limactl disk create ")] == [
+        "limactl disk create macbook-air-homelab-worker-data --size=90GiB --format=raw"
+    ]
+    create = next(c for c in calls if c.startswith("limactl create "))
+    assert '"name":"macbook-air-homelab-worker-data"' in create
+    assert '"fsType":"xfs"' in create
+
+
+def test_a_missing_vm_capability_stops_the_task_naming_it_with_its_remedy(host: _Host) -> None:
+    _install_lima(host=host, version="2.2.1")
+    (host.state / "probe-output").write_text(
+        "PRESENT tun\nMISSING apparmor: boot the VM kernel with apparmor=1\n", encoding="utf-8"
+    )
+    (host.state / "probe-exit").write_text("1\n", encoding="utf-8")
+    result = _run(host=host, args=["macbook-air"])
+    assert result.returncode != 0
+    assert "MISSING apparmor: boot the VM kernel with apparmor=1" in result.stderr
+    assert "worker container was not started" in result.stderr
+    assert (host.state / "probe-stdin").read_text(encoding="utf-8") == (
+        _WORKER_DIR / "probe-vm-capabilities.sh"
+    ).read_text(encoding="utf-8")
+
+
+def test_a_passing_probe_is_recorded_beside_the_worker_state(host: _Host) -> None:
+    _install_lima(host=host, version="2.2.1")
+    result = _run(host=host, args=["macbook-air"])
+    assert result.returncode == 0, result.stderr
+    report = (
+        host.state / ".local" / "state" / "livespec-homelab-worker" / "macbook-air-homelab-worker"
+    )
+    assert (report / "vm-capabilities.txt").read_text(encoding="utf-8") == "PRESENT apparmor\n"
