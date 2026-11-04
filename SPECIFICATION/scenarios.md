@@ -2146,6 +2146,48 @@ When the Kueue cohort churn-slot quota is read from the committed manifests
 
 Then it MUST equal the sum of every pool node profile's `ADMISSION_CAPACITY_C`
 
+## Scenario: a runner pod is placed on the node with the lowest churn-slot use, whatever its CPU requests
+
+Given two pool nodes that both carry the `k3s-role=arc-runner-host` label and no CI-closing taint
+And node A has a lower fraction of its declared churn-slot capacity in use than node B, and at least one free churn slot
+And node A's requested CPU fraction from non-runner pods is higher than node B's
+
+When a new CI runner pod is admitted
+
+Then it MUST be placed on node A
+
+## Scenario: a runner pod is never placed on a node with no free churn slot, however low its use would otherwise rank
+
+Given two pool nodes that both carry the `k3s-role=arc-runner-host` label and no CI-closing taint
+And every churn slot node A declares is in use
+And node B has at least one free churn slot
+
+When a new CI runner pod is admitted
+
+Then it MUST be placed on node B
+And it MUST NOT be placed on node A
+
+## Scenario: a node takes runner pods up to its declared churn-slot capacity and no fewer
+
+Given a pool node that carries the `k3s-role=arc-runner-host` label and no CI-closing taint
+And its non-runner pods request most of its CPU
+And it has free churn slots
+And no other node has a lower churn-slot in-use fraction
+
+When CI runner pods are admitted one after another
+
+Then the node MUST take runner pods until all of its declared churn slots are in use
+And no CPU or memory request of a non-runner pod on it MUST stop a runner pod from being placed there while it has a free churn slot
+
+## Scenario: a pod that is not a CI runner pod keeps the default scheduler profile
+
+Given a pool node on which the runner scheduler profile is configured
+
+When a factory sandbox pod, a gate pod or any other pod that is not a CI runner pod is created
+
+Then it MUST be scheduled by the cluster's default scheduler profile
+And its placement MUST NOT depend on the runner scheduler profile
+
 ## Scenario: an unknown CI-facilities posture is refused
 
 Given a pool node profile declaring `CI_NODE_FACILITIES=partial`

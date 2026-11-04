@@ -387,6 +387,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: a node takes runner pods up to its declared churn-slot capacity and no fewer",
+    "work_item": "livespec-dev-tooling-mtvxde",
+    "first_seen": "2026-11-04"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: a per-tick query set larger than the budget constant fails the unit tests",
     "work_item": "livespec-dev-tooling-34bee5",
     "first_seen": "2026-11-02"
@@ -397,6 +404,13 @@
     "heading": "## Scenario: a pipefail script reports a match in a large input as a match",
     "work_item": "livespec-dev-tooling-ftgiu4",
     "first_seen": "2026-11-02"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a pod that is not a CI runner pod keeps the default scheduler profile",
+    "work_item": "livespec-dev-tooling-mtvxde",
+    "first_seen": "2026-11-04"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -460,6 +474,20 @@
     "heading": "## Scenario: a routed job's checkout fetches only the objects its git object seed lacks, and falls back to a full fetch when the seed is missing",
     "work_item": "livespec-dev-tooling-dciyg5",
     "first_seen": "2026-11-03"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a runner pod is never placed on a node with no free churn slot, however low its use would otherwise rank",
+    "work_item": "livespec-dev-tooling-mtvxde",
+    "first_seen": "2026-11-04"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a runner pod is placed on the node with the lowest churn-slot use, whatever its CPU requests",
+    "work_item": "livespec-dev-tooling-mtvxde",
+    "first_seen": "2026-11-04"
   },
   {
     "spec_root": "SPECIFICATION",
