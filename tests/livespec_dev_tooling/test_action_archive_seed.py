@@ -701,7 +701,7 @@ def test_every_values_file_starts_the_runner_through_the_entry_point() -> None:
 
 def test_the_entry_point_travels_in_the_template_configmap() -> None:
     converge = (_PHASE2 / "arc" / "converge-hook-pod-template.sh").read_text(encoding="utf-8")
-    assert '--from-file="action-archive-entry.sh=${ENTRY_SRC}"' in converge
+    assert '"action-archive-entry.sh=${SCRIPT_DIR}/action-archive-entry.sh"' in converge
     role = (_REPO / "ansible" / "roles" / "ci_converge_unit" / "defaults" / "main.yml").read_text(
         encoding="utf-8"
     )

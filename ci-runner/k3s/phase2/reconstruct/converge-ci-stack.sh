@@ -588,13 +588,26 @@ log "7. Install/upgrade all ${#SCALE_SETS[@]} runner scale sets from phase-2 val
 # first helm call rather than eleven times over.
 [ -f "${ARC_SCALE_SET_CHART}" ] \
   || { echo "FATAL: ${ARC_SCALE_SET_CHART} is missing; re-run the ci_converge_unit Ansible role to pull the pinned ARC charts into the artifact tree" >&2; exit 1; }
+# 7a. Publish the hook-template revision BEFORE any scale set names it: each
+# values file mounts the placeholder arc-hook-pod-template-@HOOK_REVISION@,
+# rendered below to the immutable, content-addressed revision published here,
+# so a runner pod can never be created against a revision that does not exist
+# (livespec-dev-tooling-4oeffe). The older revisions are pruned at step 8,
+# AFTER every scale set has moved off them.
+log "7a. Publish the hook-template ConfigMap revision the scale sets will mount"
+"${ARC_DIR}/converge-hook-pod-template.sh" --publish
+hook_revision="$("${ARC_DIR}/converge-hook-pod-template.sh" --name)"
+rendered_values_dir="$(mktemp -d)"
+trap 'rm -rf "${rendered_values_dir}"' EXIT
 for release in $(printf '%s\n' "${!SCALE_SETS[@]}" | sort); do
   values_file="${ARC_DIR}/${SCALE_SETS[$release]}"
   [ -f "$values_file" ] || { echo "FATAL: values file not found: ${values_file}"; exit 1; }
-  log "7.${release}: helm upgrade --install ${release}"
+  rendered_values="${rendered_values_dir}/${SCALE_SETS[$release]}"
+  "${ARC_DIR}/converge-hook-pod-template.sh" --render-values "$values_file" "$rendered_values"
+  log "7.${release}: helm upgrade --install ${release} (hook template ${hook_revision})"
   helm upgrade --install "$release" \
     --namespace "$RUNNERS_NAMESPACE" --create-namespace \
-    -f "$values_file" \
+    -f "$rendered_values" \
     "$ARC_SCALE_SET_CHART"
 done
 
@@ -709,11 +722,13 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-log "8. Converge the arc-hook-pod-template ConfigMap"
-# Reuse the existing idempotent converge (KUBECONFIG-driven, create|apply). It
-# reads its sibling hook-pod-template.yaml, so the installer copies both into
-# ARC_DIR together.
-"${ARC_DIR}/converge-hook-pod-template.sh"
+log "8. Prune hook-template ConfigMap revisions no runner pod still mounts"
+# Step 7a published the current revision and step 7 moved every scale set onto
+# it. An older revision is deleted only when no pod in arc-runners mounts it
+# and no runner set's pod template names it; each one kept is printed with the
+# pods that still mount it, so a pod started before this converge finishes its
+# teardown against the hook files it was started with (livespec-dev-tooling-4oeffe).
+"${ARC_DIR}/converge-hook-pod-template.sh" --prune
 
 # ---------------------------------------------------------------------------
 log "8b. Converge the crates proxy (Namespace, nginx ConfigMap, Deployment, Service)"
