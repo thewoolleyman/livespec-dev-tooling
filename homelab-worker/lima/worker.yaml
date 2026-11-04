@@ -1,0 +1,14 @@
+# Lima VM template for a homelab worker node (one VM per host, named
+# <host>-homelab-worker by start-homelab-worker-node-container.sh, which also
+# supplies vmType, CPUs, memory and disk from the host's declaration).
+#
+# Ubuntu 24.04 arm64 (kernel 6.8): AppArmor, pod user namespaces with idmapped
+# mounts (Linux >= 6.3), cgroup v2. The worker's storage stays on the VM's own
+# disk, so no macOS directory is mounted into the guest.
+images:
+  - location: "https://cloud-images.ubuntu.com/releases/noble/release/ubuntu-24.04-server-cloudimg-arm64.img"
+    arch: "aarch64"
+mounts: []
+containerd:
+  system: false
+  user: false

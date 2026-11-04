@@ -109,6 +109,7 @@ WARM_CACHE_DIR="${ARTIFACT_DIR}/warm-cache"
 REGISTRY_MIRROR_DIR="${ARTIFACT_DIR}/warm-cache/registry-mirror"
 CRATES_PROXY_DIR="${ARTIFACT_DIR}/crates-proxy"
 SCCACHE_DIR="${ARTIFACT_DIR}/sccache"
+RUNNER_SCHEDULER_DIR="${ARTIFACT_DIR}/runner-scheduler"
 if [ -d "${ARTIFACT_DIR}/observability" ]; then
   OBSERVABILITY_DIR="${ARTIFACT_DIR}/observability"          # installed layout
 else
@@ -567,6 +568,17 @@ helm upgrade --install arc \
   "$ARC_CONTROLLER_CHART"
 kubectl -n "$CONTROLLER_NAMESPACE" rollout status deployment \
   -l app.kubernetes.io/name=gha-rs-controller --timeout=120s
+
+# ---------------------------------------------------------------------------
+log "6b. Converge the ci-runner-scheduler (second kube-scheduler for runner pods)"
+# BEFORE the scale sets: a scale set whose runner template names
+# `ci-runner-scheduler` must never start ahead of it (livespec-dev-tooling-mtvxde;
+# ../runner-scheduler/runner-scheduler.yaml). A WARN, never a failure: a
+# scheduler not yet Ready only delays the runners that name it, and must not
+# take the scale sets below down with it.
+if ! "${RUNNER_SCHEDULER_DIR}/converge-runner-scheduler.sh"; then
+  echo "WARN: converge-runner-scheduler.sh failed (see above) — continuing; runner pods that name ci-runner-scheduler wait until it is re-run"
+fi
 
 # ---------------------------------------------------------------------------
 log "7. Install/upgrade all ${#SCALE_SETS[@]} runner scale sets from phase-2 values files"

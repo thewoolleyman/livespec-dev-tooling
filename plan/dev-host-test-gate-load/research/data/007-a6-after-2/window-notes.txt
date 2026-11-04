@@ -1,0 +1,7 @@
+Cluster changes by other seats relevant to A6 after-window 2 (14:24:48Z-~18:45Z), all on k3s nodes, not this dev host:
+- revert PR #3391 merged 13:48:17Z (hook-pod-template parallelism 3, sha 2a20620fde3a; live since the 13:26-13:37Z converge); converge hold released
+- interim churn split PR #3393 merged 14:21:16Z (poweredge 18 / gmktec 18 / hp 8, live since 13:54:33Z)
+- ~15:44Z ci_converge_unit on poweredge-xubuntu from master d3a41cc3: adds ci-runner-scheduler second kube-scheduler (mtvxde), livespec-dev-tooling scale set switched to it as canary; end time pending. node_extended_resource apply (hp 5 / gmktec 21 / poweredge 18) to follow.
+- 16:02:11Z-16:05:18Z node_extended_resource rc 0: churn slots gmktec 21 / hp 5 / poweredge 18 (was 18/8/18). mtvxde converge (started ~15:44Z) still running.
+- 15:57Z coordinator flagged dev-host overload (load 137, PSI60 78); measured 15:59:40-16:05:12Z: idle 9.3%, sys 49.5%; biggest reducible = 39 petri dispatch-dual-r681b.sh launchers (24 waiting, each polling fleet_green + wip-claimed-count/bd list), reported to coordinator 16:1xZ.
+- mtvxde converge ENDED: ansible 15:50:45Z-16:14:25Z rc 0; converge-ci-stack.service 16:12:54Z-16:14:08Z success; ci-runner-scheduler live, used only by livespec-dev-tooling runner pods.

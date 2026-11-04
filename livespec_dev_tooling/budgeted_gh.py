@@ -81,6 +81,7 @@ from returns.unsafe import unsafe_perform_io  # noqa: E402  — vendor-path-awar
 __all__: list[str] = [
     "GhRead",
     "gh_read",
+    "github_api_url",
 ]
 
 # `gh` never ran — the binary is absent, the working directory is gone, or
@@ -171,3 +172,13 @@ def gh_read(
         stdout=invocation.stdout,
         stderr=invocation.stderr,
     )
+
+
+# EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-rqhqnb
+def github_api_url(*, path: str) -> str:
+    """Canonical public REST identity metadata for an already validated relative path.
+
+    The sanctioned boundary owns the fixed API origin. This formatter performs
+    no request and accepts no host from configuration, a request or environment.
+    """
+    return f"https://api.github.com/{path}"

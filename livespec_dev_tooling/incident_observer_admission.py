@@ -26,6 +26,7 @@ from livespec_dev_tooling._incident_observer_types import (
 __all__: list[str] = ["arm_before_merge", "bind_after_merge", "observer_arm_admitted"]
 
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-47ij37
+# EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-wanebl
 
 
 def arm_before_merge(
@@ -59,8 +60,13 @@ def arm_before_merge(
     with repository_lock(directory=directory, repository=arm.repository) as path:
         record = load_record(path=path)
         if record.get("observer_arm_id") == arm_id:
+            invalidated = record.get("observer_arm_invalidated") is not None
             return ObserverResult(
-                status="armed", reason="same durable pre-merge arm", receipt=arm_id
+                status="refused" if invalidated else "armed",
+                reason="pre-merge CI admission invalidated"
+                if invalidated
+                else "same durable pre-merge arm",
+                receipt=None if invalidated else arm_id,
             )
         refusal = _arm_change_refusal(record=record, arm=arm, expected_arm_id=expected_arm_id)
         if refusal is not None:
@@ -69,6 +75,7 @@ def arm_before_merge(
             observer_arm_id=arm_id,
             observer_arm=snapshot,
             observer_arm_bound=False,
+            observer_arm_invalidated=None,
             registration=None,
         )
         save_record(path=path, record=record)
@@ -95,6 +102,7 @@ def observer_arm_admitted(
         if (
             record.get("observer_arm_id") != query.arm_id
             or record.get("observer_arm_bound")
+            or record.get("observer_arm_invalidated") is not None
             or not isinstance(snapshot, dict)
         ):
             return False

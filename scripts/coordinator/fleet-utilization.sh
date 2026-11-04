@@ -196,9 +196,25 @@ def seconds_ago(hhmmss, now):
     return (cur - stamp) % 86400
 
 
+def mtime_or_none(path):
+    """st_mtime, or None when the path vanished after glob (e.g. a .qstamp-<pid>)."""
+    try:
+        return path.stat().st_mtime
+    except FileNotFoundError:
+        return None
+
+
+def read_or_empty(path):
+    """File text, or "" when the path vanished after glob."""
+    try:
+        return path.read_text(errors="replace")
+    except FileNotFoundError:
+        return ""
+
+
 def recent_files(pattern, window_s):
     cutoff = time.time() - window_s
-    return [p for p in CANARY.glob(pattern) if p.stat().st_mtime >= cutoff]
+    return [p for p in CANARY.glob(pattern) if (mtime_or_none(p) or 0) >= cutoff]
 
 
 def read_factory():
@@ -241,7 +257,7 @@ def fleet_lines(now):
     """Every fleet=N [cap=M] line in the window as (age, fleet, cap_or_None, log, kind)."""
     rows = []
     for path in recent_files("seq-*.log", FLEET_WINDOW_S):
-        for line in path.read_text(errors="replace").splitlines():
+        for line in read_or_empty(path).splitlines():
             m = FLEET_RE.match(line)
             if not m:
                 continue
@@ -268,7 +284,7 @@ def recent_launches(now):
     for path in recent_files("*", LAUNCH_WINDOW_S):
         if not path.is_file():
             continue
-        for line in path.read_text(errors="replace").splitlines():
+        for line in read_or_empty(path).splitlines():
             m = re.match(r"(\d\d:\d\d:\d\d) LAUNCH ", line)
             if m and seconds_ago(m.group(1), now) <= LAUNCH_WINDOW_S:
                 launches.append(line[:160])
@@ -330,7 +346,9 @@ def is_ticketed(item_id, queued):
     if any(pat.search(t) for t in queued):
         return True
     cutoff = time.time() - CAPTURE_WINDOW_S
-    return any(p.stat().st_mtime >= cutoff for p in CANARY.glob(f"{item_id}-r*.capture-argv"))
+    return any(
+        (mtime_or_none(p) or 0) >= cutoff for p in CANARY.glob(f"{item_id}-r*.capture-argv")
+    )
 
 
 def fmt_age(seconds):

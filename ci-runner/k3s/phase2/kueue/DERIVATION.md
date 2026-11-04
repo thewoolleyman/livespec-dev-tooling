@@ -952,6 +952,72 @@ apply: `just ansible-apply ansible/ci-pool.yml --tags node_extended_resource`.
 Lowering hp while it runs more than 5 runner pods evicts nothing; the scheduler
 only stops placing new ones there.
 
+## Interim: poweredge capped at 18 (2026-11-04)
+
+Ordered by `legacy-coordinator-agent` under R301 as a reversible stop-the-line,
+until `livespec-dev-tooling-6e5pyj` derives churn slots and per-job test
+parallelism together. At 13:39Z `poweredge-xubuntu` read PSI60 75.9 with 37
+arc-runners pods, while `gmktec-xubuntu` read PSI60 0.4 (71 % idle) and
+`hp-xubuntu` PSI60 9.2 (68 % idle). Runner pods request no CPU, so the scheduler
+kept filling poweredge's free slots.
+
+| node | cores-derived | interim |
+|---|---:|---:|
+| `poweredge-xubuntu` | 27 | **18** |
+| `gmktec-xubuntu` | 12 | **18** |
+| `hp-xubuntu` | 5 | **8** |
+| **cohort total C** | **44** | **44** |
+
+The total stays 44, because "Admission capacity sums to the cohort quota"
+requires the profiles to sum to the ten ClusterQueue quotas. Cutting poweredge
+alone would let Kueue admit runner pods no node can hold. The 9 slots moved to
+the two idle nodes. Test parallelism stays at 3 per job.
+
+**Revert** to 27 / 12 / 5, with the same `node_extended_resource` apply, if
+gmktec or hp exceeds PSI60 about 30 under load, or if Kueue-gated runners pile up
+while poweredge PSI60 is under about 25.
+
+### Second interim step: hp back to 5, gmktec 21 (2026-11-04 ~15:45Z)
+
+Ordered by `legacy-coordinator-agent` under R301/R493 on `ci-runtime-and-cost`'s
+15:36Z read. `hp-xubuntu` ran at 15.64 of 16 cores with 5 runners. Their workflow
+pods used 6.17, 2.68, 2.66 and 1.96 cores each, even at 3 test workers per job,
+because `just check` runs its non-pytest targets beside the pytest lane. So 8
+slots oversubscribe its 14.5 allocatable CPU. hp returns to its cores-derived
+5. The 3 slots go to `gmktec-xubuntu`, the idlest node all afternoon (PSI60
+0.1-0.4, 45-71 % idle). `poweredge-xubuntu` keeps 18 so the `ci-runner-scheduler`
+canary (`livespec-dev-tooling-mtvxde`) can show its placement.
+
+| node | first interim | second interim |
+|---|---:|---:|
+| `poweredge-xubuntu` | 18 | 18 |
+| `gmktec-xubuntu` | 18 | **21** |
+| `hp-xubuntu` | 8 | **5** |
+| **cohort total C** | **44** | **44** |
+
+**Revert** to 18 / 18 / 8 if gmktec's idle falls below about 5 % AND its
+BestEffort CI-slice `cpu.pressure` avg60 goes above about 30. That is the
+saturation signal ruled on 2026-11-04 and recorded on
+`livespec-dev-tooling-6e5pyj`; host PSI is not the signal. Watch too that
+gmktec's factory sandboxes keep their headroom, since gmktec carries the petri
+factory.
+
+### Third interim step: gmktec back to 18, poweredge 21 (2026-11-04 ~17:15Z)
+
+Ordered by `legacy-coordinator-agent` (factory yield on gmktec is P1). At 17:09Z
+`gmktec-xubuntu` read 4.3 % idle (5-second sample), load 48 on 32 threads,
+BestEffort CI-slice `cpu.pressure` avg60 23.8 (avg10 11.0, full avg60 11.2), with 5
+factory sandboxes (one 70 % CFS-throttled) and 5 CI runners, while
+`poweredge-xubuntu` sat about 42 % idle. gmktec's 21 slots let CI take CPU its
+factory sandboxes need. Three slots move back to poweredge.
+
+| node | second interim | third interim |
+|---|---:|---:|
+| `poweredge-xubuntu` | 18 | **21** |
+| `gmktec-xubuntu` | 21 | **18** |
+| `hp-xubuntu` | 5 | 5 |
+| **cohort total C** | **44** | **44** |
+
 ## The master-push slice for livespec-dev-tooling (2026-11-03)
 
 Work-item `livespec-dev-tooling-lzkzwb`, plan `ci-runtime-and-cost` (epic

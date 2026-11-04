@@ -1,0 +1,14 @@
+dolt-server 2026-10-15 venue-refs=0 sha=41d8817e38b4
+hetzner-xubuntu-info 2026-11-01 venue-refs=0 sha=5e84f965e50e
+livespec-console-beads-fabro 2026-09-06 venue-refs=0 sha=41d8817e38b4
+livespec-dev-tooling 2026-11-04 venue-refs=16 sha=f16d03464a8b
+livespec 2026-09-06 venue-refs=0 sha=41d8817e38b4
+livespec-driver-claude 2026-08-17 venue-refs=0 sha=0848682ced2c
+livespec-driver-codex 2026-11-02 venue-refs=13 sha=5eb955bcceaf
+livespec-driver-pi 2026-08-19 venue-refs=0 sha=0848682ced2c
+livespec-orchestrator-beads-fabro 2026-09-09 venue-refs=0 sha=41d8817e38b4
+livespec-orchestrator-git-jsonl 2026-10-08 venue-refs=0 sha=41d8817e38b4
+livespec-overseer 2026-09-11 venue-refs=0 sha=41d8817e38b4
+livespec-runtime 2026-09-07 venue-refs=0 sha=41d8817e38b4
+livespec-tdd-proof 2026-10-14 venue-refs=0 sha=41d8817e38b4
+package v1.172.0 livespec_dev_tooling/worktree_pack/gate-run.sh sha=f16d03464a8b venue-refs=16

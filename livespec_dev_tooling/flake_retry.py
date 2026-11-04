@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING, cast
 
 import pytest
 
-from livespec_dev_tooling.gate_remote_invocation import Failure, default_gate_command_runner
+from livespec_dev_tooling.flake_retry_changes import change_paths, withheld_reason
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -39,6 +39,7 @@ RETRY_ATTEMPTS = 3
 RETRY_DELAY_SECONDS = 60
 _UNSAFE_NAMES = {"pyproject.toml", "uv.lock", "justfile", "conftest.py"}
 _RESULTS: dict[str, RetryResult] = {}
+_WITHHELD: list[str] = []
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -48,61 +49,6 @@ class RetryResult:
     nodeid: str
     attempts: int
     outcome: str
-
-
-def _run_git(*, root: Path, args: list[str]) -> set[Path] | None:
-    """Read one newline-delimited git path query, or report an unknown result."""
-    invoked = default_gate_command_runner(argv=["git", *args], cwd=root)
-    if isinstance(invoked, Failure):
-        return None
-    completed = invoked.unwrap()
-    if completed.returncode != 0:
-        return None
-    return {Path(line) for line in completed.stdout.splitlines() if line}
-
-
-def _default_branch_ref(*, repo_root: Path) -> str | None:
-    """Name the remote default branch, or report that it cannot be known.
-
-    `origin/HEAD` is the authority when it is set. A CI checkout usually does
-    not set it, so the conventional `origin/main` and `origin/master` are tried
-    next, and a repository with neither has no computable change set.
-    """
-    default = _run_git(root=repo_root, args=["symbolic-ref", "--short", "refs/remotes/origin/HEAD"])
-    if default is not None and len(default) == 1:
-        return next(iter(default)).as_posix()
-    for candidate in ("origin/main", "origin/master"):
-        if (
-            _run_git(root=repo_root, args=["rev-parse", "--verify", "--quiet", candidate])
-            is not None
-        ):
-            return candidate
-    return None
-
-
-def change_paths(*, repo_root: Path) -> set[Path] | None:
-    """Return committed, index, working-tree, and untracked changes."""
-    remote = _default_branch_ref(repo_root=repo_root)
-    if remote is None:
-        return None
-    base = _run_git(root=repo_root, args=["merge-base", "HEAD", remote])
-    head = _run_git(root=repo_root, args=["rev-parse", "HEAD"])
-    if base is None or head is None or len(base) != 1 or len(head) != 1:
-        return None
-    comparison = "HEAD^" if base == head else next(iter(base)).as_posix()
-    queries: tuple[list[str], ...] = (
-        ["diff", "--name-only", comparison, "HEAD"],
-        ["diff", "--name-only", "--cached"],
-        ["diff", "--name-only"],
-        ["ls-files", "--others", "--exclude-standard"],
-    )
-    changed: set[Path] = set()
-    for query in queries:
-        result = _run_git(root=repo_root, args=query)
-        if result is None:
-            return None
-        changed.update(result)
-    return changed
 
 
 def _module_path(*, repo_root: Path, module: str) -> Path | None:
@@ -202,7 +148,9 @@ def retry_marker_for(
     return {"reruns": RETRY_ATTEMPTS, "reruns_delay": RETRY_DELAY_SECONDS}
 
 
-def mark_untouched_tests(*, root: Path, items: list[pytest.Item], can_retry: bool = True) -> None:
+def mark_untouched_tests(
+    *, root: Path, items: list[pytest.Item], can_retry: bool = True
+) -> str | None:
     """Mark only tests proven untouched by this session's complete change set.
 
     `flaky` is pytest-rerunfailures' marker. A consumer can load this plugin
@@ -212,16 +160,17 @@ def mark_untouched_tests(*, root: Path, items: list[pytest.Item], can_retry: boo
     is marked: an untouched failure then simply stands, unretried.
     """
     if not can_retry:
-        return
+        return None
     paths = change_paths(repo_root=root)
     if paths is None:
-        return
+        return withheld_reason()
     for item in items:
         marker = retry_marker_for(
             repo_root=root, test_path=Path(str(item.path)), change_paths=paths
         )
         if marker is not None:
             item.add_marker(pytest.mark.flaky(**marker))
+    return None
 
 
 def record_report(*, report: pytest.TestReport) -> None:
@@ -259,8 +208,16 @@ def retry_summary(*, results: Iterable[RetryResult]) -> str:
     return "FLAKE-RETRIED\n" + "\n".join(rows)
 
 
-def announce_retries(*, terminalreporter: TerminalReporter, root: Path) -> None:
+def announce_retries(
+    *, terminalreporter: TerminalReporter, root: Path, withheld: str | None = None
+) -> None:
     """Persist and announce retry evidence without changing pytest's final verdict."""
+    annotate = os.environ.get("GITHUB_ACTIONS") == "true"
+    if withheld is not None:
+        _ = terminalreporter.write_sep("=", "FLAKE-RETRY-WITHHELD")
+        _ = terminalreporter.write_line(f"no failing test is retried this session: {withheld}")
+        if annotate:
+            _ = terminalreporter.write_line(f"::warning::FLAKE-RETRY-WITHHELD {withheld}")
     results = list(_RESULTS.values())
     if not results:
         return
@@ -268,7 +225,7 @@ def announce_retries(*, terminalreporter: TerminalReporter, root: Path) -> None:
     _ = terminalreporter.write_sep("=", "FLAKE-RETRIED")
     for line in retry_summary(results=results).splitlines()[1:]:
         _ = terminalreporter.write_line(line)
-    if os.environ.get("GITHUB_ACTIONS") == "true":
+    if annotate:
         for result in results:
             _ = terminalreporter.write_line(f"::warning::FLAKE-RETRIED {result.nodeid}")
 
@@ -283,11 +240,12 @@ class _CollectionHook:
     def __call__(
         self, session: pytest.Session, config: pytest.Config, items: list[pytest.Item]
     ) -> None:
-        mark_untouched_tests(
+        withheld = mark_untouched_tests(
             root=Path(str(session.config.rootpath)),
             items=items,
             can_retry=config.pluginmanager.hasplugin("rerunfailures"),
         )
+        _WITHHELD[:] = [] if withheld is None else [withheld]
 
 
 class _ReportHook:
@@ -300,7 +258,11 @@ class _SummaryHook:
         self, terminalreporter: TerminalReporter, exitstatus: int, config: pytest.Config
     ) -> None:
         del exitstatus
-        announce_retries(terminalreporter=terminalreporter, root=Path(str(config.rootpath)))
+        announce_retries(
+            terminalreporter=terminalreporter,
+            root=Path(str(config.rootpath)),
+            withheld=_WITHHELD[0] if _WITHHELD else None,
+        )
 
 
 pytest_collection_modifyitems = _CollectionHook().__call__

@@ -860,7 +860,7 @@ And the tag that was present before the warm first kept its record MUST still be
 
 Given a consumer repository whose `[tool.livespec_dev_tooling]` table sets `delegated_gate = true`
 
-And a pushing host where the pushing user cannot read the gates kubeconfig
+And a Linux pushing host where the pushing user cannot read the gates kubeconfig
 
 When a git push of a tree that has no green token runs the pre-push gate
 
@@ -2525,3 +2525,151 @@ And enablement requires serving-version evidence for gate readers, templates, dr
 And consumer closure retains normal factory proof over the cumulative incident scope and all deferred spec and verification obligations.
 And the operator can inspect attempts, skip reasons, focused evidence, CI runs, rollback and final factory proof through the incident item identity.
 ```
+
+## Scenario: a macOS developer host reads the ledger tenant through the loopback forward
+
+Given a macOS developer host that runs no Dolt server
+
+And a per-user LaunchAgent forwarding local `127.0.0.1:3307` to the server host's `127.0.0.1:3307` over SSH
+
+And the checkout's committed `.beads/config.yaml` unchanged
+
+When `/usr/local/bin/with-livespec-env.sh -- bd show <id>` runs from that checkout for an item of this repository's tenant
+
+Then the item MUST be read from the tenant on the server host
+
+And no local beads store, including an `embeddeddolt/` directory, MUST be created on the host
+
+## Scenario: bootstrap names a missing ledger pointer instead of reporting success
+
+Given a checkout of this repository whose `.beads/config.yaml` is present and whose `.beads/metadata.json` is absent
+
+And a developer host that supplies every host toolchain prerequisite
+
+When `just bootstrap` runs in that checkout
+
+Then its output MUST name `.beads/metadata.json` as an unmet ledger pointer
+
+And it MUST exit non-zero
+
+And it MUST NOT report success
+
+## Scenario: bootstrap names a bare python3 that does not satisfy requires-python
+
+Given a developer host whose first `python3` on `PATH` is older than the version `pyproject.toml`'s `requires-python` requires
+
+When `just bootstrap` runs in a checkout of this repository
+
+Then its output MUST name `python3` and the version `requires-python` requires
+
+And it MUST exit non-zero
+
+And it MUST NOT install or replace any interpreter on the host
+
+## Scenario: an opted-in push from an unenrolled macOS host is refused instead of gating locally
+
+Given a consumer repository whose `[tool.livespec_dev_tooling]` table sets `delegated_gate = true`
+
+And a macOS pushing host where the pushing user cannot read the gates kubeconfig
+
+When a git push of a tree that has no green token runs the pre-push gate
+
+Then the push MUST be refused
+
+And the refusal MUST name the missing gates-client enrollment
+
+And the local `just check` fall-through MUST NOT run
+
+And a gate Job MUST NOT be submitted to the `gates` namespace
+
+## Scenario: a gate pytest session that stops making progress ends without a pass
+
+Given a gate run whose pytest session, running pytest-xdist workers, has printed no new output for longer than its stall window
+
+When the stall window elapses
+
+Then the session's whole process group, pytest-xdist workers included, MUST be ended
+
+And the gate MUST end with a verdict or an explicit no-verdict state
+
+And the gate MUST NOT report a pass
+
+## Scenario: a delegated pre-push wait interrupted by host sleep never reports a pass
+
+Given a consumer repository whose `[tool.livespec_dev_tooling]` table sets `delegated_gate = true`
+
+And a pushing host where the pushing user can read the gates kubeconfig
+
+And a push whose gate Job has been submitted for its tree
+
+When the host sleeps while the gate client waits on that gate Job, and then wakes
+
+Then the push MUST complete only on a green verdict that same gate Job reports for that tree
+
+And when the client obtains no verdict from that gate Job, the push MUST be refused and the outcome event MUST be `no-verdict`
+
+## Scenario: the start task refuses an undeclared host before any host change
+
+Given a host argument that the committed homelab-worker host list does not declare
+
+When `just start-homelab-worker-node-container <host>` runs
+
+Then it MUST exit non-zero naming the argument and the declared hosts
+
+And it MUST NOT install a package, create or start a VM, or start a worker container
+
+## Scenario: a VM missing a required capability stops the start task before the worker starts
+
+Given a declared host whose Lima VM does not enforce AppArmor
+
+When `just start-homelab-worker-node-container <host>` runs
+
+Then it MUST exit non-zero
+
+And its output MUST name the AppArmor capability with an actionable remedy
+
+And it MUST NOT start the worker container or submit an enrollment request
+
+## Scenario: rerunning the start task reuses Lima and keeps the VM
+
+Given a declared host with an installed Lima at or above the task's minimum version
+
+And that host's named Lima VM already exists with a persisted worker identity
+
+When `just start-homelab-worker-node-container <host>` runs again
+
+Then it MUST NOT install or upgrade Lima
+
+And it MUST NOT stop, recreate or delete the VM
+
+And the worker MUST keep the persisted identity it had before the rerun
+
+## Scenario: a second worker on the same host is refused
+
+Given a host already bound to the worker `<host-a>-homelab-worker`
+
+When `just start-homelab-worker-node-container <host-b>` runs on that host for a different declared host `<host-b>`
+
+Then it MUST exit non-zero naming the existing worker `<host-a>-homelab-worker`
+
+And it MUST NOT create a second VM or worker container
+
+## Scenario: the start task leaves the host's own tailnet identity unchanged
+
+Given a declared host logged in to the tailnet under its own host name
+
+When `just start-homelab-worker-node-container <host>` runs
+
+Then the task MUST NOT invoke a Tailscale login, logout or settings change on the host
+
+And the worker MUST enroll in the tailnet under the hostname `<host>-homelab-worker`
+
+## Scenario: a newly joined worker carries the admission hold
+
+Given a worker that completes standard TLS bootstrap into the fleet as `<host>-homelab-worker`
+
+When its Node becomes Ready
+
+Then the Node MUST carry the taint `homelab-worker.livespec.dev/admission=hold:NoSchedule`
+
+And a pod without a toleration for that taint MUST NOT be scheduled onto it

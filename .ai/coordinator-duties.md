@@ -19,13 +19,21 @@ cost fixes by the work they remove (rule F).
 Measured 2026-10-31: the item ranked a top burn fix (bd-ib-qbtf7s, inline scripts) was worth about $0.35 per run,
 about 5% of a $6.68 factory run. The unworked top sink was long-lived local seats, about $4,000 per 7 days.
 
-## 2. A flaky test gets an in-place retry and a root fix, never a whole-job rerun
+## 2. A flaky test gets an in-place retry and a root fix; a whole-job rerun only in one bounded case
 
 A test the run did not touch is retried up to 3 times, 60 seconds apart, on its own and never as a whole-job rerun,
 and every retried failure gets a root-fix item at once. The retry is the flake-retry pytest plugin's, inside the
 same pytest session (non-functional-requirements.md §"Testing approach", maintainer rulings on
 livespec-dev-tooling-6tgd2z, 2026-11-02 18:38:21Z and 18:39:54Z). A test the run touched, or one whose closure
 cannot be read, is never retried. No seat re-runs a CI job, a suite or a factory run to get past a flake.
+
+**One bounded job-level retry (maintainer ruling 2026-11-04 ~16:4xZ, recorded on epic `livespec-dev-tooling-6tgd2z`).**
+Where the in-place test retry cannot reach (runner teardown or container faults, OOM kills, failures outside
+pytest), the factory's merge-poll does ONE automatic "re-run failed jobs", and only when a classifier marks the
+failure as infrastructure, timeout or load. Every such rerun files a flake item and still requires a root fix. A
+test the PR itself touched is never retried at any level, because its failure can be the PR's own bug. The
+maintainer, pasting the coordinator's proposal: "OK, do these as priority". It amends the 2026-11-02 rulings for
+this case only; until the merge-poll retry ships, no seat reruns a job by hand to get past a test failure.
 
 A check that fails intermittently is still a defect. Find the commit that introduced the flaky bound
 (`git log -1 -- <test file>`), and route the root fix to that commit's owner as top priority. Tell every waiting
@@ -106,12 +114,32 @@ maintainer to press `close-duplicate`, which `drive` does not support for any in
 ~16:1xZ, recorded on epic `livespec-dev-tooling-6tgd2z`: "Okay, add \"close duplicate\" as an action you're allowed. You
 are allowed any actions. Make this change permanent as a rule." The separate limits in §12 still apply.
 
+**A refused valve is repaired by the coordinator in the same turn.** When `approve:` or `accept:` refuses on a
+ledger-record defect, such as a prose line inside `## Definition of Done` or a References line missing the governing
+heading the judgement returned, the coordinator does three things itself. It reads the whole refusal
+(`drive.py ... --json`, the full `summary`), applies every named remedy to the record with `bd update <id> --body-file`,
+and re-presses the valve. It then records the basis on the item and tells the owning seat it is done. It never sends the
+fix back to a seat and waits. A seat is asked only when the remedy needs that seat's own scope or product judgement. The
+maintainer, 2026-11-04 ~14:0xZ, recorded on epic `livespec-dev-tooling-6tgd2z`: "Why dicd you block on that?" Measured
+that day: livespec-dev-tooling-wanebl's approve was refused twice, first on its DoD layout and then on a missing
+`## Expedited incident execution` reference. The coordinator first handed the fix to a Codex seat with no watcher, then
+made both edits itself in about two minutes and approved it green.
+
 **Reversible host mutations are authorized.** The coordinator, and seats acting on its direction, may perform a
 reversible host mutation without a maintainer ask. An example is a committed, revertible ansible or converge apply with
 a kill switch or a revert path. Irreversible host mutations, and secrets and credential creation, stay the
 maintainer's. The maintainer, 2026-11-04 ~05:4xZ, recorded on epic `livespec-dev-tooling-6tgd2z` at 05:50:57Z: "host
 mutations are authorized as long as they are reversible". Measured 2026-11-04: a combined poweredge-xubuntu apply sat
 blocked for hours because two seats refused to act on coordinator authority alone.
+
+**Destructive actions on Hetzner infrastructure are pre-authorized while nothing live runs there.** Any wipe, reinstall,
+rescue boot, reset, reformat or re-provision of the hetzner-xubuntu hosts and their Hetzner Robot or Cloud resources is
+taken without asking, then reported. This covers Hetzner infrastructure only. It does not cover destructive acts on
+other fleet hosts, or secrets and credential creation elsewhere; the AWS owner-deployment and shared-credentials applies
+stay on the maintainer's direct ruling. It ends the moment anything live or production runs on Hetzner, and from then on
+the irreversible-act limit applies again. The maintainer, 2026-11-04 ~15:0xZ, recorded on epic
+`livespec-dev-tooling-6tgd2z`: "DO NOT BLOCK ON ANY AUTHORIZATION TO WIPE OR DO DESTRUCTIVE ACTIONS ON HETZNER INFRA.
+NOTHING LIVE OR PROD IS RUNNING THERE YET".
 
 Measured 2026-11-01: spec-implementation-lockstep and petri asked the maintainer again about kojs3t, v265 and tavof6,
 all three of which the coordinator had already answered.
@@ -196,6 +224,18 @@ Before you put any credential, host or approval gate to the maintainer, do two t
 Measured 2026-10-31: the coordinator held three "maintainer decisions". One was a routine regroom cut. Another was a
 replay credential that a re-capture against the current release avoids entirely. The maintainer asked why each needed
 them.
+
+**A hand-landed carrier closes through the valves that exist today, never through a future factory feature.** An item
+implemented and merged outside the factory, for example under a local-only expedited exception, is closed by the
+coordinator with the existing valves: `accept:<id>` for an item in `acceptance`, `dispatcher.py reconcile-merged` for
+one with its own merged PR, or the admin out-of-band closure. The basis is recorded on the item. It is never parked
+waiting for a factory proof record that an unreleased feature would one day write, and it never goes to the maintainer
+as a blocker. A stalled, idle or wedged Codex seat is fixed by the coordinator directly, with a nudge, a hand wrap-up
+or a restart, and is never listed as a maintainer item. The maintainer, 2026-11-04 ~13:0xZ, recorded on epic
+`livespec-dev-tooling-6tgd2z`: "WHY ARE YOU BLOCKING THIS: ... GET IT DONE SOMEHOW. ... Just manually fix the codex
+seats, no justification to block. restart it or whatever". Measured that day: ten P1 carriers of
+expedited-incident-response-flag sat for about ten hours waiting on the proof-only resume chain (bd-ib-a7zpxy), while
+`accept:` closed the six in `acceptance` at once, all green.
 
 ## 6. Never block: no pickers, ever
 

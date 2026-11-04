@@ -23,7 +23,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "livespec-dev-tooling"
-version = "1.170.0"
+version = "1.172.0"
 description = "Shared enforcement-suite library for livespec-governed projects: ruff/pyright/coverage gates, AST checks, CI-alignment checks, red-green-replay discipline. Python package plus composite Actions and reusable workflows."
 requires-python = ">=3.10.16"
 authors = [
@@ -465,6 +465,13 @@ supervisor_entry_files = [
     ".claude/hooks/livespec_footgun_guard.py",
     "livespec_dev_tooling/agent_hooks/pretooluse_background_guard.py",
     "livespec_dev_tooling/agent_hooks/subagent_stop_guard.py",
+    # This fixed recovery-journal process owns schema-1 JSON stdout replies
+    # and startup refusals, so it needs the documented no_write_direct role.
+    # All four exemptions were considered: there is no broad Exception catch;
+    # the SystemExit main guard is already tolerated in this flat library;
+    # and the typed journal API remains separate from main's CLI exit status.
+    # This is one supervisor artifact, not an I/O-tree or check exclusion.
+    "livespec_dev_tooling/incident_recovery_journal_service.py",
     "livespec_dev_tooling/canonical_checks.py",
     "livespec_dev_tooling/cross_repo/ci_yaml_canonical_reconcile.py",
     "livespec_dev_tooling/cross_repo/codex_acp_pin_rewrite.py",
@@ -709,6 +716,15 @@ subprocess_spawn_allowlist = [
     # atomic ref transactions and receipt recovery; the fixture scrubs coverage
     # startup and inherited Git hook variables before every child invocation.
     "tests/livespec_dev_tooling/test_incident_inverse.py",
+    # livespec-dev-tooling-dln3ac: two recovery-journal properties exist only
+    # across real process boundaries. The service test proves the journal CLI
+    # imports under `python -I -S` with no site-packages (the dependency-free
+    # runtime contract), which an already-imported pytest process cannot
+    # observe. The fence test proves a child keeps its borrowed lock OFD after
+    # the owning process dies with os._exit(17). Both scrub
+    # COVERAGE_PROCESS_START + COV_CORE_* from the child env.
+    "tests/livespec_dev_tooling/test_incident_recovery_journal_service.py",
+    "tests/livespec_dev_tooling/test_incident_repository_fence.py",
     "tests/consumer/test_delegated_gate_check_suite.py",
     # Incident transport requires a fresh interpreter for vendor bootstrap and
     # real child environment propagation. These properties cannot be observed

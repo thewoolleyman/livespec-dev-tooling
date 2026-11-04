@@ -1,0 +1,53 @@
+{
+  "name": "CI runner host: Kueue webhook no ready endpoints — poweredge-xubuntu ci_kueue.webhook_ready_endpoints < 1",
+  "description": "Fires when MIN(livespec.ci_kueue.webhook_ready_endpoints) for host.name=poweredge-xubuntu over the trailing 10 min is below 1: the Kueue admission webhook (kueue-webhook-service, ns kueue-system) had ZERO ready endpoints in a probe, so NO runner pod is admitted. Window is two probe intervals: a 5-min MAX window matched the drifting OnUnitActiveSec=5min timer, went empty on 6-min gaps and fired as 0 with every sample at 2 (10-31 20:12Z, 11-04 05:12Z and 13:37Z; livespec-dev-tooling-7jmpyz). A silent probe is the CI runner host dead-man's job. Emitter: ci-runner/observability/ci-kueue-webhook-probe.sh. Receiver: the poweredge-xubuntu otel-collector (thewoolleyman/otel-collector config.ci-runner-host.yaml) -> env livespec. Runbook: ssh poweredge-xubuntu; sudo kubectl -n kueue-system get endpoints kueue-webhook-service -o wide.",
+  "query": {
+    "calculations": [
+      {
+        "op": "MIN",
+        "column": "livespec.ci_kueue.webhook_ready_endpoints"
+      }
+    ],
+    "filters": [
+      {
+        "column": "host.name",
+        "op": "=",
+        "value": "poweredge-xubuntu"
+      }
+    ],
+    "time_range": 600
+  },
+  "threshold": {
+    "value": 1,
+    "op": "<",
+    "exceeded_limit": 1
+  },
+  "frequency": 300,
+  "alert_type": "on_change",
+  "recipients": [
+    {
+      "id": "jKw2EyfLJ3W"
+    },
+    {
+      "id": "fort2EXXuVy"
+    }
+  ],
+  "tags": [
+    {
+      "key": "host",
+      "value": "poweredge-xubuntu"
+    },
+    {
+      "key": "service",
+      "value": "ci-runner-liveness"
+    },
+    {
+      "key": "kind",
+      "value": "value"
+    },
+    {
+      "key": "component",
+      "value": "kueue-webhook"
+    }
+  ]
+}

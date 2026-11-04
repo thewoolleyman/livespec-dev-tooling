@@ -258,6 +258,16 @@
 #    claim the runner found every action in the tree -- that is read from the
 #    job's Set up job log ("Action archive cache usage") by the host-captured
 #    proof.
+#
+# 9. RUNNER-ONLY uv SOURCE (livespec-dev-tooling-n622ze). hp-xubuntu cannot
+#    seed a warm tree by definition, so the `$job` wrapper below changes only
+#    the temporary input to its `uv sync`: locked wheel URLs are swapped to the
+#    read-only PyPI files proxy and restored before the command returns. The
+#    wrapper probes first; an unavailable source leaves the lock unchanged and
+#    lets uv use public PyPI. The ConfigMap is mounted read-only, and the proxy
+#    permits GET and HEAD only, so a workflow job has no write path to pool
+#    state. This is intentionally scoped to hp; full-facilities nodes retain
+#    their seeded cache, and the source costs hp no local component or budget.
 apiVersion: v1
 kind: PodTemplate
 spec:
@@ -274,6 +284,10 @@ spec:
       type: Localhost
       localhostProfile: ci-runner-workflow
   volumes:
+    - name: pypi-proxy-uv-wrapper
+      configMap:
+        name: pypi-proxy-uv-wrapper
+        defaultMode: 0555
     - name: ci-runner-bin
       hostPath:
         # The pool-provided binaries (today: sccache, from
@@ -285,6 +299,14 @@ spec:
   containers:
     - name: $job
       env:
+        # The current pinned sandbox image resolves `uv` from this mise install.
+        # Keep the real location explicit after the wrapper's path prefix so a
+        # wrapper can delegate without recursing. The image-bump procedure must
+        # update this path alongside the image's pinned uv release.
+        - name: PATH
+          value: /opt/ci-runner/uv-proxy:/root/.local/share/mise/installs/uv/0.9.26/uv-x86_64-unknown-linux-musl:/root/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+        - name: PYPI_FILES_PROXY
+          value: http://pypi-proxy.ci-warm-cache.svc.cluster.local:8081
         # The work volume's reflink-seeded warm uv cache (header item 2):
         # this volume's own inodes, so uv's default link mode into the
         # .venv is private and UV_LINK_MODE is not set. The path exists only
@@ -342,8 +364,11 @@ spec:
         # n=25 vs n=5), and that step is on the master-CI critical path. So it
         # is 6 (legacy-coordinator-agent, R301, 2026-11-04 ~11:00Z), which
         # still bounds a full poweredge to about 27 x 6 = 162 workers (2.25x
-        # its 72 cores, against 6.75x before). Revert to 3 if poweredge PSI60
-        # returns above about 30 under load, or if a test-timeout red recurs.
+        # its 72 cores, against 6.75x before). REVERTED to 3 at 2026-11-04
+        # ~13:20Z under that rule's own trigger: at 13:16:33Z poweredge read
+        # PSI60 55.1, load 192.5 on 72 cores, 0.24% idle, with 24 CI jobs (within
+        # its 27 churn slots) and 9 factory pods. Raise it again only with a
+        # measurement that shows PSI60 staying under about 30 at full load.
         # Honoured by the justfile or
         # test-nprocs script of livespec, livespec-dev-tooling,
         # livespec-orchestrator-beads-fabro, -git-jsonl, livespec-overseer
@@ -357,12 +382,15 @@ spec:
         # set 12) still wins over the pod env. Revert: delete these three
         # entries and run the CI stack converge.
         - name: LIVESPEC_TEST_PARALLELISM
-          value: "6"
+          value: "3"
         - name: NEXTEST_TEST_THREADS
           value: "3"
         - name: CARGO_BUILD_JOBS
           value: "3"
       volumeMounts:
+        - name: pypi-proxy-uv-wrapper
+          mountPath: /opt/ci-runner/uv-proxy
+          readOnly: true
         - name: ci-runner-bin
           mountPath: /opt/ci-runner/bin
           readOnly: true

@@ -1,0 +1,428 @@
+diff --git a/.github/actions/run-check/action.yml b/.github/actions/run-check/action.yml
+--- a/.github/actions/run-check/action.yml
++++ b/.github/actions/run-check/action.yml
+@@ -37,10 +37,110 @@
+     required: false
+     default: ""
+ 
++  incident-session:
++    description: Exact protected CI session; never a caller-created plan or receipt.
++    required: false
++    default: ""
++
++  incident-observer-url:
++    description: Protected observer URL for job-local admission; required for an incident
++      session.
++    required: false
++    default: ''
++  incident-observer-query-token:
++    description: Query-only token; never creates a session or grants lifecycle authority.
++    required: false
++    default: ''
++
+ runs:
+   using: composite
+   steps:
++    - name: Install pinned uv for independent release bootstrap
++      id: incident-uv
++      if: inputs.incident-session != ''
++      uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e
++      with:
++        version: 0.9.26
++        enable-cache: 'false'
++    - name: Bootstrap independently approved CI release
++      id: incident-bootstrap
++      if: inputs.incident-session != ''
++      env:
++        GH_TOKEN: ${{ github.token }}
++        APPROVED_TAG: ${{ vars.LIVESPEC_INCIDENT_CI_APPROVED_TAG }}
++        APPROVED_REVISION: ${{ vars.LIVESPEC_INCIDENT_CI_APPROVED_REVISION }}
++        APPROVED_UV: ${{ steps.incident-uv.outputs.uv-path }}
++        LIVESPEC_INCIDENT_SESSION: ${{ inputs.incident-session }}
++      shell: bash
++      run: |
++        set -euo pipefail
++        : "${APPROVED_TAG:?an approved published release tag is required}"
++        : "${APPROVED_REVISION:?an independently approved immutable Git commit is required}"
++        : "${APPROVED_UV:?the pinned setup-uv step must supply its exact uv-path output}"
++        case "$APPROVED_UV" in /*) ;; *) exit 78 ;; esac
++        bootstrap_root="$(/usr/bin/mktemp -d "${RUNNER_TEMP}/livespec-incident-ci.XXXXXXXX")"
++        /usr/bin/mkdir "$bootstrap_root/home" "$bootstrap_root/tmp"
++        # This sanitizes child tool configuration. It cannot repair a compromised runner
++        # or shell startup: protected job ordering/toolchain trust remains mandatory.
++        /usr/bin/env -i \
++          PATH=/usr/bin:/bin HOME="$bootstrap_root/home" TMPDIR="$bootstrap_root/tmp" \
++          GH_TOKEN="${GH_TOKEN:-}" APPROVED_TAG="$APPROVED_TAG" \
++          APPROVED_REVISION="$APPROVED_REVISION" APPROVED_UV="$APPROVED_UV" \
++          BOOTSTRAP_ROOT="$bootstrap_root" GITHUB_OUTPUT="$GITHUB_OUTPUT" \
++          GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null \
++          GIT_TERMINAL_PROMPT=0 GIT_ATTR_NOSYSTEM=1 \
++          /usr/bin/bash --noprofile --norc -euo pipefail <<'CONTROLLED_BOOTSTRAP'
++        /usr/bin/python3 -I -c 'import os,re; assert re.fullmatch(r"v[0-9]+[.][0-9]+[.][0-9]+", os.environ["APPROVED_TAG"]); assert re.fullmatch(r"[0-9a-f]{40}", os.environ["APPROVED_REVISION"])'
++        /usr/bin/gh release view "$APPROVED_TAG" --repo thewoolleyman/livespec-dev-tooling --json tagName,isDraft,isPrerelease > "$BOOTSTRAP_ROOT/release.json"
++        /usr/bin/python3 -I -c 'import json,os; d=json.load(open(os.environ["BOOTSTRAP_ROOT"]+"/release.json")); assert d["tagName"]==os.environ["APPROVED_TAG"] and d["isDraft"] is False and d["isPrerelease"] is False'
++        release_source="$BOOTSTRAP_ROOT/release"
++        source_url='https://github.com/thewoolleyman/livespec-dev-tooling.git'
++        /usr/bin/git init --template= --quiet "$release_source"
++        /usr/bin/git -C "$release_source" remote add origin "$source_url"
++        /usr/bin/git -C "$release_source" fetch --quiet --no-tags --depth=1 origin "refs/tags/$APPROVED_TAG:refs/tags/$APPROVED_TAG"
++        resolved="$(/usr/bin/git -C "$release_source" rev-parse "refs/tags/$APPROVED_TAG^{commit}")"
++        test "$resolved" = "$APPROVED_REVISION"
++        tag_object="$(/usr/bin/git -C "$release_source" rev-parse "refs/tags/$APPROVED_TAG")"
++        verify_published_tag() {
++          remote_tag="$(/usr/bin/git ls-remote --exit-code "$source_url" "refs/tags/$APPROVED_TAG" | /usr/bin/cut -f1)"
++          test "$remote_tag" = "$tag_object"
++        }
++        verify_published_tag
++        /usr/bin/git -C "$release_source" checkout --quiet --detach "$APPROVED_REVISION"
++        test -f "$release_source/uv.lock"
++        # Only the pinned action's exact binary runs, with fresh HOME/TMPDIR and no
++        # inherited UV_*, Python startup or Git configuration. Lock/source remain exact.
++        UV_PROJECT_ENVIRONMENT="$BOOTSTRAP_ROOT/venv" "$APPROVED_UV" sync --frozen --no-dev --no-editable --project "$release_source"
++        verify_published_tag
++        "$BOOTSTRAP_ROOT/venv/bin/python" -I -c 'import importlib.metadata,os; assert importlib.metadata.version("livespec-dev-tooling")==os.environ["APPROVED_TAG"][1:]'
++        printf 'python=%s\n' "$BOOTSTRAP_ROOT/venv/bin/python" >> "$GITHUB_OUTPUT"
++        CONTROLLED_BOOTSTRAP
++    - name: Run an incident member through protected session accounting
++      if: inputs.incident-session != ''
++      shell: bash
++      env:
++        CI_SESSION: ${{ inputs.incident-session }}
++        INCIDENT_PYTHON: ${{ steps.incident-bootstrap.outputs.python }}
++        APPROVED_TAG: ${{ vars.LIVESPEC_INCIDENT_CI_APPROVED_TAG }}
++        APPROVED_REVISION: ${{ vars.LIVESPEC_INCIDENT_CI_APPROVED_REVISION }}
++        CHECK_NAME: ${{ inputs.check-name }}
++        CHECK_DIRECTORY: ${{ inputs.working-directory }}
++        EXTRA_ARGS: ${{ inputs.extra-args }}
++        LIVESPEC_INCIDENT_OBSERVER_URL: ${{ inputs.incident-observer-url }}
++        LIVESPEC_INCIDENT_OBSERVER_QUERY_TOKEN: ${{ inputs.incident-observer-query-token }}
++        GITHUB_REPOSITORY: ${{ github.repository }}
++        GITHUB_PR_NUMBER: ${{ github.event.pull_request.number }}
++        GITHUB_PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
++        GITHUB_PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
++        GITHUB_RUN_ID: ${{ github.run_id }}
++        GITHUB_RUN_ATTEMPT: ${{ github.run_attempt }}
++      run: |
++        set -euo pipefail
++        # Until structured extra argv has a reviewed contract, refuse it.
++        test -z "$EXTRA_ARGS"
++        "${INCIDENT_PYTHON:?job-local approved release is required}" -I -m livespec_dev_tooling.incident_ci_session direct --session "$CI_SESSION" --check-name "$CHECK_NAME" --working-directory "$CHECK_DIRECTORY"
+     - name: uv run python -m livespec_dev_tooling.checks.${{ inputs.check-name }}
++      if: inputs.incident-session == ''
+       shell: bash
+       working-directory: ${{ inputs.working-directory }}
+       run: |
+diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml
+--- a/.github/workflows/ci.yml
++++ b/.github/workflows/ci.yml
+@@ -95,11 +95,133 @@
+ # WITH hosted routing only if a merge queue is adopted.
+ on:
+   pull_request:
++    types: [opened, synchronize, reopened, labeled, unlabeled, edited]
+   push:
+     branches: [master]
+ 
++concurrency:
++  group: ci-${{ github.repository_id }}-${{ github.run_id }}
++  cancel-in-progress: false
++
+ jobs:
++  incident-ci-mode-fence:
++    name: incident-ci-mode-fence
++    runs-on: ubuntu-latest
++    permissions:
++      contents: read
++      actions: read
++      pull-requests: read
++      id-token: write
++    outputs:
++      incident: ${{ steps.mode.outputs.incident }}
++      session: ${{ steps.session.outputs.session }}
++    steps:
++      - name: Resolve normal/master before incident bootstrap or credentials
++        id: mode
++        env:
++          EVENT_NAME: ${{ github.event_name }}
++          INCIDENT_HINT: ${{ contains(github.event.pull_request.labels.*.name, 'expedited-incident-response') || github.event.label.name == 'expedited-incident-response' || contains(github.event.pull_request.body, '<!-- livespec-incident-ci') }}
++        shell: bash
++        run: |
++          set -euo pipefail
++          unset EXPEDITED_INCIDENT_RESPONSE EXPEDITED_INCIDENT_RESPONSE_REVERT LIVESPEC_INCIDENT_CONTEXT
++          if [ "$EVENT_NAME" = push ] || [ "$INCIDENT_HINT" != true ]; then
++            echo 'incident=false' >> "$GITHUB_OUTPUT"
++          else
++            echo 'incident=true' >> "$GITHUB_OUTPUT"
++          fi
++      - name: Install pinned uv for independent release bootstrap
++        id: incident-uv
++        if: steps.mode.outputs.incident == 'true'
++        uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
++        with:
++          version: "0.9.26"
++          enable-cache: false
++      - name: Bootstrap independently approved CI release
++        id: incident-bootstrap
++        if: steps.mode.outputs.incident == 'true'
++        env:
++          GH_TOKEN: ${{ github.token }}
++          APPROVED_TAG: ${{ vars.LIVESPEC_INCIDENT_CI_APPROVED_TAG }}
++          APPROVED_REVISION: ${{ vars.LIVESPEC_INCIDENT_CI_APPROVED_REVISION }}
++          APPROVED_UV: ${{ steps.incident-uv.outputs.uv-path }}
++        shell: bash
++        run: |
++          set -euo pipefail
++          : "${APPROVED_TAG:?an approved published release tag is required}"
++          : "${APPROVED_REVISION:?an independently approved immutable Git commit is required}"
++          : "${APPROVED_UV:?the pinned setup-uv step must supply its exact uv-path output}"
++          case "$APPROVED_UV" in /*) ;; *) exit 78 ;; esac
++          bootstrap_root="$(/usr/bin/mktemp -d "${RUNNER_TEMP}/livespec-incident-ci.XXXXXXXX")"
++          /usr/bin/mkdir "$bootstrap_root/home" "$bootstrap_root/tmp"
++          # This sanitizes child tool configuration. It cannot repair a compromised runner
++          # or shell startup: protected job ordering/toolchain trust remains mandatory.
++          /usr/bin/env -i \
++            PATH=/usr/bin:/bin HOME="$bootstrap_root/home" TMPDIR="$bootstrap_root/tmp" \
++            GH_TOKEN="${GH_TOKEN:-}" APPROVED_TAG="$APPROVED_TAG" \
++            APPROVED_REVISION="$APPROVED_REVISION" APPROVED_UV="$APPROVED_UV" \
++            BOOTSTRAP_ROOT="$bootstrap_root" GITHUB_OUTPUT="$GITHUB_OUTPUT" \
++            GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null \
++            GIT_TERMINAL_PROMPT=0 GIT_ATTR_NOSYSTEM=1 \
++            /usr/bin/bash --noprofile --norc -euo pipefail <<'CONTROLLED_BOOTSTRAP'
++          /usr/bin/python3 -I -c 'import os,re; assert re.fullmatch(r"v[0-9]+[.][0-9]+[.][0-9]+", os.environ["APPROVED_TAG"]); assert re.fullmatch(r"[0-9a-f]{40}", os.environ["APPROVED_REVISION"])'
++          /usr/bin/gh release view "$APPROVED_TAG" --repo thewoolleyman/livespec-dev-tooling --json tagName,isDraft,isPrerelease > "$BOOTSTRAP_ROOT/release.json"
++          /usr/bin/python3 -I -c 'import json,os; d=json.load(open(os.environ["BOOTSTRAP_ROOT"]+"/release.json")); assert d["tagName"]==os.environ["APPROVED_TAG"] and d["isDraft"] is False and d["isPrerelease"] is False'
++          release_source="$BOOTSTRAP_ROOT/release"
++          source_url='https://github.com/thewoolleyman/livespec-dev-tooling.git'
++          /usr/bin/git init --template= --quiet "$release_source"
++          /usr/bin/git -C "$release_source" remote add origin "$source_url"
++          /usr/bin/git -C "$release_source" fetch --quiet --no-tags --depth=1 origin "refs/tags/$APPROVED_TAG:refs/tags/$APPROVED_TAG"
++          resolved="$(/usr/bin/git -C "$release_source" rev-parse "refs/tags/$APPROVED_TAG^{commit}")"
++          test "$resolved" = "$APPROVED_REVISION"
++          tag_object="$(/usr/bin/git -C "$release_source" rev-parse "refs/tags/$APPROVED_TAG")"
++          verify_published_tag() {
++            remote_tag="$(/usr/bin/git ls-remote --exit-code "$source_url" "refs/tags/$APPROVED_TAG" | /usr/bin/cut -f1)"
++            test "$remote_tag" = "$tag_object"
++          }
++          verify_published_tag
++          /usr/bin/git -C "$release_source" checkout --quiet --detach "$APPROVED_REVISION"
++          test -f "$release_source/uv.lock"
++          # Only the pinned action's exact binary runs, with fresh HOME/TMPDIR and no
++          # inherited UV_*, Python startup or Git configuration. Lock/source remain exact.
++          UV_PROJECT_ENVIRONMENT="$BOOTSTRAP_ROOT/venv" "$APPROVED_UV" sync --frozen --no-dev --no-editable --project "$release_source"
++          verify_published_tag
++          "$BOOTSTRAP_ROOT/venv/bin/python" -I -c 'import importlib.metadata,os; assert importlib.metadata.version("livespec-dev-tooling")==os.environ["APPROVED_TAG"][1:]'
++          printf 'python=%s\n' "$BOOTSTRAP_ROOT/venv/bin/python" >> "$GITHUB_OUTPUT"
++          CONTROLLED_BOOTSTRAP
++      - name: Require protected mode epoch and authenticated execution session
++        id: session
++        if: steps.mode.outputs.incident == 'true'
++        env:
++          INCIDENT_PYTHON: ${{ steps.incident-bootstrap.outputs.python }}
++          LIVESPEC_INCIDENT_OBSERVER_URL: ${{ vars.LIVESPEC_INCIDENT_OBSERVER_URL }}
++          LIVESPEC_INCIDENT_OBSERVER_QUERY_TOKEN: ${{ secrets.LIVESPEC_INCIDENT_OBSERVER_QUERY_TOKEN }}
++          GITHUB_REPOSITORY: ${{ github.repository }}
++          GITHUB_PR_NUMBER: ${{ github.event.pull_request.number }}
++          GITHUB_PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
++          GITHUB_PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
++          GITHUB_RUN_ID: ${{ github.run_id }}
++          GITHUB_RUN_ATTEMPT: ${{ github.run_attempt }}
++          GITHUB_EVENT_ACTION: ${{ github.event.action }}
++        shell: bash
++        run: |
++          set -euo pipefail
++          # REQUIRED CAPABILITY, NOT SHIPPED: this released client must require
++          # /ci/session's protected mode-epoch fence and forge-backed accounting.
++          # An older release has no module and exits nonzero. No source fallback.
++          "${INCIDENT_PYTHON:?job-local approved release is required}" -I -m livespec_dev_tooling.incident_ci_session preflight
++
++      - name: Require explicit protected session transport
++        if: steps.mode.outputs.incident == 'true'
++        env:
++          CI_SESSION: ${{ steps.session.outputs.session }}
++        shell: bash
++        run: |
++          set -euo pipefail
++          : "${CI_SESSION:?protected preflight omitted its session output}"
++
+   check-python:
++    needs: [incident-ci-mode-fence]
+     name: ${{ matrix.target }}
+     # The variable holds exactly one complete hosted or self-hosted label
+     # set. GitHub does not fall back when a self-hosted label set has no match.
+@@ -179,7 +301,11 @@
+           # never a hardcoded image path — ahead of the shim on PATH. Harmless
+           # for the non-npm targets.
+           shims_dir="$(dirname "$(command -v npm)")"
+-          node_bin="$(cd "$shims_dir/../installs/node/latest/bin" 2>/dev/null && pwd || ls -d "$shims_dir/../installs/node"/*/bin 2>/dev/null | head -1)"
++          if node_bin="$(cd "$shims_dir/../installs/node/latest/bin" 2>/dev/null && pwd)"; then
++            :
++          else
++            node_bin="$(find "$shims_dir/../installs/node" -mindepth 2 -maxdepth 2 -type d -name bin -print 2>/dev/null | sort | head -n 1)"
++          fi
+           [ -n "$node_bin" ] && export PATH="$node_bin:$PATH"
+           just ${{ matrix.target }}
+ 
+@@ -191,6 +317,7 @@
+   # locally (scripts/just/check-coverage.sh), now effective in CI where the
+   # two jobs used to run the full suite independently on separate runners.
+   check-per-file-coverage:
++    needs: [incident-ci-mode-fence]
+     name: check-per-file-coverage
+     runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
+     container:
+@@ -232,7 +359,11 @@
+           # absence here failed the suite with FileNotFoundError: 'node'
+           # on the first post-#1504 master run.
+           shims_dir="$(dirname "$(command -v npm)")"
+-          node_bin="$(cd "$shims_dir/../installs/node/latest/bin" 2>/dev/null && pwd || ls -d "$shims_dir/../installs/node"/*/bin 2>/dev/null | head -1)"
++          if node_bin="$(cd "$shims_dir/../installs/node/latest/bin" 2>/dev/null && pwd)"; then
++            :
++          else
++            node_bin="$(find "$shims_dir/../installs/node" -mindepth 2 -maxdepth 2 -type d -name bin -print 2>/dev/null | sort | head -n 1)"
++          fi
+           [ -n "$node_bin" ] && export PATH="$node_bin:$PATH"
+           just check-per-file-coverage
+ 
+@@ -260,7 +391,7 @@
+   # the clean suite standalone — slower, never wrong.
+   check-coverage:
+     name: ${{ matrix.target }}
+-    needs: [check-per-file-coverage]
++    needs: [incident-ci-mode-fence, check-per-file-coverage]
+     runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
+     container:
+       image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.169.0
+@@ -307,7 +438,11 @@
+           # anything, but a missing artifact falls back to the full suite,
+           # which spawns `node` in some tests (see the producer job).
+           shims_dir="$(dirname "$(command -v npm)")"
+-          node_bin="$(cd "$shims_dir/../installs/node/latest/bin" 2>/dev/null && pwd || ls -d "$shims_dir/../installs/node"/*/bin 2>/dev/null | head -1)"
++          if node_bin="$(cd "$shims_dir/../installs/node/latest/bin" 2>/dev/null && pwd)"; then
++            :
++          else
++            node_bin="$(find "$shims_dir/../installs/node" -mindepth 2 -maxdepth 2 -type d -name bin -print 2>/dev/null | sort | head -n 1)"
++          fi
+           [ -n "$node_bin" ] && export PATH="$node_bin:$PATH"
+           just ${{ matrix.target }}
+ 
+@@ -320,6 +455,7 @@
+   # slug to this job, and the job runs `just` so assertion (b) requires it
+   # in ci-green.needs. The wall-time-dominant targets stay in check-python.
+   check-python-batch:
++    needs: [incident-ci-mode-fence]
+     name: check-python-batch
+     runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
+     container:
+@@ -397,6 +533,7 @@
+   # `hook_gate=1`, and scripts/just/check.sh's `hook_gate_skips` names
+   # it), and no CI workflow runs it.
+   check-fleet-conformance:
++    needs: [incident-ci-mode-fence]
+     name: check-fleet-conformance
+     runs-on: ubuntu-latest
+     steps:
+@@ -471,6 +608,7 @@
+   # PRs the range carries no product .py and trivially passes; on
+   # master pushes the range is empty.
+   check-metadata:
++    needs: [incident-ci-mode-fence]
+     name: ${{ matrix.target }}
+     # The same single variable routes every ordinary gating target.
+     runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
+@@ -558,6 +696,7 @@
+   # check-shell-quality both live in this batch (see the vacuous-pass record
+   # of livespec-dev-tooling-9ywf for why the pack must be materialized).
+   check-metadata-batch:
++    needs: [incident-ci-mode-fence]
+     name: check-metadata-batch
+     runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
+     container:
+@@ -693,10 +832,10 @@
+   # gate, so it is intentionally absent from `needs:`.
+   ci-green:
+     name: ci-green
+-    needs: [check-python, check-per-file-coverage, check-coverage, check-python-batch, check-fleet-conformance, check-metadata, check-metadata-batch]
++    needs: [incident-ci-mode-fence, check-python, check-per-file-coverage, check-coverage, check-python-batch, check-fleet-conformance, check-metadata, check-metadata-batch]
+     if: always()
+     runs-on: ubuntu-latest
+     steps:
+       - name: All required checks passed
+-        if: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}
++        if: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') || contains(needs.*.result, 'skipped') }}
+         run: exit 1
+diff --git a/.github/workflows/reusable-check-matrix.yml b/.github/workflows/reusable-check-matrix.yml
+--- a/.github/workflows/reusable-check-matrix.yml
++++ b/.github/workflows/reusable-check-matrix.yml
+@@ -30,16 +30,36 @@
+         description: JSON-array string of check slugs to run.
+         required: true
+         type: string
++      incident-session:
++        description: Exact protected session from the approved bootstrap and mode fence.
++        required: false
++        type: string
++        default: ""
++      incident-observer-url:
++        description: Protected observer URL for job-local session admission.
++        required: false
++        type: string
++        default: ""
+       ref:
+         description: livespec-dev-tooling git ref to consume Actions from.
+         required: false
+         type: string
+         default: master
+ 
++    secrets:
++      incident-observer-query-token:
++        description: Query-only token for protected session admission in this job.
++        required: false
++
+ jobs:
+   check:
+     name: ${{ matrix.check }}
+     runs-on: ubuntu-latest
++    permissions:
++      contents: read
++      actions: read
++      pull-requests: read
++      id-token: write
+     strategy:
+       fail-fast: false
+       matrix:
+@@ -56,9 +76,13 @@
+           path: .livespec-dev-tooling-actions
+ 
+       - name: Setup toolchain
++        if: inputs.incident-session == ''
+         uses: ./.livespec-dev-tooling-actions/.github/actions/setup
+ 
+       - name: Run check
+         uses: ./.livespec-dev-tooling-actions/.github/actions/run-check
+         with:
+           check-name: ${{ matrix.check }}
++          incident-session: ${{ inputs.incident-session }}
++          incident-observer-url: ${{ inputs.incident-observer-url }}
++          incident-observer-query-token: ${{ secrets.incident-observer-query-token }}
+diff --git a/livespec_dev_tooling/data/incident-ci-inventory.json b/livespec_dev_tooling/data/incident-ci-inventory.json
+--- a/livespec_dev_tooling/data/incident-ci-inventory.json
++++ b/livespec_dev_tooling/data/incident-ci-inventory.json
+@@ -576,5 +576,5 @@
+       "produces": []
+     }
+   ],
+-  "workflow_sha256": "002056119a0d22870c45bb75300c6dff72e0bc0ffca80c53129128d3c9166c41"
++  "workflow_sha256": "9294fe8dc081a776f74eb01fa2aeaebdc8254de97b4dbe6b7147853b4ec5741a"
+ }
+diff --git a/livespec_dev_tooling/incident_ci_inventory.py b/livespec_dev_tooling/incident_ci_inventory.py
+--- a/livespec_dev_tooling/incident_ci_inventory.py
++++ b/livespec_dev_tooling/incident_ci_inventory.py
+@@ -16,7 +16,7 @@
+ __all__: list[str] = ["decode_inventory", "load_inventory", "render_inventory"]
+ # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-egy3ri
+ _PATH = Path(__file__).parent / "data/incident-ci-inventory.json"
+-_SHA256 = "15892d0739b4fbd1a5bf41da7b0f678f289f1478441d7d9aac363605ada0662b"
++_SHA256 = "9a50d125ec7e6a3f35edaf84832e2b8c32c9c8c3341fe572e43c95b1203eaa7e"
+ _FAST = {"check-lint", "check-format"}
+ _TEXT = re.compile(r"[a-z][a-z0-9-]*")
+ 

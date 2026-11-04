@@ -44,7 +44,8 @@ must differ from the serving controller's effective uid.
 
 The protected released-installation manifest has exactly `release`, `revision`,
 `package_sha256`, `reader`, `reader_release`, `principal`, `files` and
-`required_jobs`. The provisioner must attest the normally released tag, its exact
+`required_jobs`, with the optional protected `ci_identity_policy` descriptor described
+in [Protected CI invocation identity](incident-ci-identity.md). The provisioner must attest the normally released tag, its exact
 Git revision and the installed artifact fingerprint before enabling the service.
 `release` must also equal `v` plus the installed distribution version. A source
 hash alone does not authenticate a release. `revision` is the approved forty
@@ -102,6 +103,27 @@ The existing repository lock continues to serialize actual durable effects.
   It copies identity and authority from the retained arm and authenticates the
   exact merged PR and normal master run through `MergedRunVerifier`. It needs
   independently provisioned read-only forge access, not the tenant wrapper.
+- `POST /invalidate-ci` requires the control credential and the exact retained
+  arm's `repository`, `arm_id`, `incident_item_id`, `attempt_id`, `generation`,
+  `owner`, `phase`, `pr_number`, `base_sha`, `head_sha`, `receipt_digest` and
+  `incident_operation_id`, plus a separate immutable invalidation `operation_id`.
+  It verifies canonical current authority outside the repository action lock,
+  then rechecks the same unbound arm under that lock before fsyncing revocation
+  and its receipt. Queries and same-arm rearming then refuse across restarts.
+  A changed host manifest cannot rearm the same generation. A canonical newer
+  generation may replace it while retaining every earlier invalidation receipt.
+  Exact retries recover the original receipt without another canonical read;
+  changed bytes under that operation id refuse. The reply explicitly has
+  `authorizes_current_effects: false`, including when recovered after replacement.
+  The query credential cannot call this route.
+  Revocation concerns CI and new merge admission: it preserves the retained
+  grant's exact authenticated `/bind` fulfillment and subsequent failure
+  recovery. A PR can already have merged before its bind arrives, so a local
+  unbound bit cannot justify dropping that obligation. Already bound arms
+  refuse invalidation. This primitive does not install an all-writer mode epoch,
+  change forge labels, authenticate CI jobs or establish a real premerge fence.
+  Every mode writer and actual merge authority still need that integration
+  before the incident feature can be enabled.
 - `POST /callback` verifies GitHub's raw-body HMAC with the existing verifier,
   requires the configured repository, then uses the existing observer endpoint.
   The first registered failing required leaf records immutable intent and calls

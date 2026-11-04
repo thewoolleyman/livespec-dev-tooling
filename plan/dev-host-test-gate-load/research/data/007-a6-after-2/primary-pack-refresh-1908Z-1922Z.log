@@ -1,0 +1,220 @@
+=== dolt-server 19:08:27Z
+before d9d458f4a1541c6b262019cb86aa3c8cc368c2e3766a733e384ada6a769a6ad1  dev-tooling/branch-protection.just
+before 1b181788896edae8a1755989b96c725925c471c0e451d8cfc72fbcc9024a45e3  dev-tooling/branch-protection.sh
+before cc99770c477f6f23e7207d2cd939d475f8588d5781b330b986285660e5f10703  dev-tooling/check-no-workflow-edits.sh
+before 41d8817e38b4c00395cc0271311808a7463eba556a497b636d1d8a8ec05cebe7  dev-tooling/gate-run.sh
+before 5018f4486675d2628079927de85113b83d85bfa95a00ed1be9d14b025a0e7c36  dev-tooling/worktree-hydrate.sh
+before a88a935137d6de84817aedf1bae0cadb6fa1e99617cc9ff3bea0a076df819606  dev-tooling/worktree.just
+before 7af5f1bb1f4ce1f367400f0dde7adce7cec616193100bec7e779a9d297a36f57  dev-tooling/worktree-lib.sh
+{"file": "worktree-lib.sh", "executable": true, "changed": "body", "path": "/data/projects/dolt-server/dev-tooling/worktree-lib.sh", "event": "installed canonical worktree-pack file", "level": "info",
+{"file": "gate-run.sh", "executable": true, "changed": "body", "path": "/data/projects/dolt-server/dev-tooling/gate-run.sh", "event": "installed canonical worktree-pack file", "level": "info", "timest
+rc=0
+after  d9d458f4a1541c6b262019cb86aa3c8cc368c2e3766a733e384ada6a769a6ad1  dev-tooling/branch-protection.just
+after  1b181788896edae8a1755989b96c725925c471c0e451d8cfc72fbcc9024a45e3  dev-tooling/branch-protection.sh
+after  cc99770c477f6f23e7207d2cd939d475f8588d5781b330b986285660e5f10703  dev-tooling/check-no-workflow-edits.sh
+after  5eb955bcceafb42c34112aa56e3ca798d36b81ce3dd19b20c93343718f01c6fc  dev-tooling/gate-run.sh
+after  5018f4486675d2628079927de85113b83d85bfa95a00ed1be9d14b025a0e7c36  dev-tooling/worktree-hydrate.sh
+after  a88a935137d6de84817aedf1bae0cadb6fa1e99617cc9ff3bea0a076df819606  dev-tooling/worktree.just
+after  1b5dabc57ffbfce304bb7ed5fd92557c3b76c624346ad54a3764084e962586f9  dev-tooling/worktree-lib.sh
+gate-run.sh venue-refs=13
+=== hetzner-xubuntu-info 19:09:53Z
+before d9d458f4a1541c6b262019cb86aa3c8cc368c2e3766a733e384ada6a769a6ad1  dev-tooling/branch-protection.just
+before 1b181788896edae8a1755989b96c725925c471c0e451d8cfc72fbcc9024a45e3  dev-tooling/branch-protection.sh
+before cc99770c477f6f23e7207d2cd939d475f8588d5781b330b986285660e5f10703  dev-tooling/check-no-workflow-edits.sh
+before 5e84f965e50e3267431b43192327724c8089520e055a058cf20ff9b7423982bd  dev-tooling/gate-run.sh
+before a88a935137d6de84817aedf1bae0cadb6fa1e99617cc9ff3bea0a076df819606  dev-tooling/worktree.just
+before 1b5dabc57ffbfce304bb7ed5fd92557c3b76c624346ad54a3764084e962586f9  dev-tooling/worktree-lib.sh
+rc=0
+after  d9d458f4a1541c6b262019cb86aa3c8cc368c2e3766a733e384ada6a769a6ad1  dev-tooling/branch-protection.just
+after  1b181788896edae8a1755989b96c725925c471c0e451d8cfc72fbcc9024a45e3  dev-tooling/branch-protection.sh
+after  cc99770c477f6f23e7207d2cd939d475f8588d5781b330b986285660e5f10703  dev-tooling/check-no-workflow-edits.sh
+after  5e84f965e50e3267431b43192327724c8089520e055a058cf20ff9b7423982bd  dev-tooling/gate-run.sh
+after  a88a935137d6de84817aedf1bae0cadb6fa1e99617cc9ff3bea0a076df819606  dev-tooling/worktree.just
+after  1b5dabc57ffbfce304bb7ed5fd92557c3b76c624346ad54a3764084e962586f9  dev-tooling/worktree-lib.sh
+gate-run.sh venue-refs=0
+=== livespec-console-beads-fabro 19:11:41Z
+before d9d458f4a1541c6b262019cb86aa3c8cc368c2e3766a733e384ada6a769a6ad1  dev-tooling/branch-protection.just
+before 1b181788896edae8a1755989b96c725925c471c0e451d8cfc72fbcc9024a45e3  dev-tooling/branch-protection.sh
+before 84e7c6643a55cd00190843e008b4281e77caa36040327c2e0ec0f41dbe662ae2  dev-tooling/check-docs-only-ci.py
+before cc99770c477f6f23e7207d2cd939d475f8588d5781b330b986285660e5f10703  dev-tooling/check-no-workflow-edits.sh
+before ed3ca6a9d9331894440879d04a521646d3bbc34dcf848d67fff1fe01ae672f1e  dev-tooling/check-spec-governance-default-block.py
+before 34f92667ad0ba6d0cfb8e9eaafeb5df347929440fee3710c549e0d720947e2ae  dev-tooling/coverage-gate.py
+before e0e47be3a44bf05a8ec53dd149b9b421c5272f692431ab957ab9a9bb4dd363e5  dev-tooling/docs_only_ci_repo.py
+before 0296310c1a71601a080b492b8e04f421548260750fc5a4a7e379d0c2e73cebd5  dev-tooling/docs_only_ci_workflow.py
+before 23b2ad1d5e8af90f2bbbd42a3c5da50ce35b2eab004ca801a232cf7a511eb005  dev-tooling/ensure-rust-quality-tools.sh
+before 41d8817e38b4c00395cc0271311808a7463eba556a497b636d1d8a8ec05cebe7  dev-tooling/gate-run.sh
+before a3369ab5052cbe52d6ad919cc59c07e92878c4b7e9c6f2f6291d908568d37851  dev-tooling/worktree-hydrate.sh
+before a88a935137d6de84817aedf1bae0cadb6fa1e99617cc9ff3bea0a076df819606  dev-tooling/worktree.just
+before 1b5dabc57ffbfce304bb7ed5fd92557c3b76c624346ad54a3764084e962586f9  dev-tooling/worktree-lib.sh
+{"file": "gate-run.sh", "executable": true, "changed": "body", "path": "/data/projects/livespec-console-beads-fabro/dev-tooling/gate-run.sh", "event": "installed canonical worktree-pack file", "level"
+rc=0
+after  d9d458f4a1541c6b262019cb86aa3c8cc368c2e3766a733e384ada6a769a6ad1  dev-tooling/branch-protection.just
+after  1b181788896edae8a1755989b96c725925c471c0e451d8cfc72fbcc9024a45e3  dev-tooling/branch-protection.sh
+after  84e7c6643a55cd00190843e008b4281e77caa36040327c2e0ec0f41dbe662ae2  dev-tooling/check-docs-only-ci.py
+after  cc99770c477f6f23e7207d2cd939d475f8588d5781b330b986285660e5f10703  dev-tooling/check-no-workflow-edits.sh
+after  ed3ca6a9d9331894440879d04a521646d3bbc34dcf848d67fff1fe01ae672f1e  dev-tooling/check-spec-governance-default-block.py
+after  34f92667ad0ba6d0cfb8e9eaafeb5df347929440fee3710c549e0d720947e2ae  dev-tooling/coverage-gate.py
+after  e0e47be3a44bf05a8ec53dd149b9b421c5272f692431ab957ab9a9bb4dd363e5  dev-tooling/docs_only_ci_repo.py
+after  0296310c1a71601a080b492b8e04f421548260750fc5a4a7e379d0c2e73cebd5  dev-tooling/docs_only_ci_workflow.py
+after  23b2ad1d5e8af90f2bbbd42a3c5da50ce35b2eab004ca801a232cf7a511eb005  dev-tooling/ensure-rust-quality-tools.sh
+after  5e84f965e50e3267431b43192327724c8089520e055a058cf20ff9b7423982bd  dev-tooling/gate-run.sh
+after  a3369ab5052cbe52d6ad919cc59c07e92878c4b7e9c6f2f6291d908568d37851  dev-tooling/worktree-hydrate.sh
+after  a88a935137d6de84817aedf1bae0cadb6fa1e99617cc9ff3bea0a076df819606  dev-tooling/worktree.just
+after  1b5dabc57ffbfce304bb7ed5fd92557c3b76c624346ad54a3764084e962586f9  dev-tooling/worktree-lib.sh
+gate-run.sh venue-refs=0
+=== livespec 19:13:02Z
+before d9d458f4a1541c6b262019cb86aa3c8cc368c2e3766a733e384ada6a769a6ad1  dev-tooling/branch-protection.just
+before 1b181788896edae8a1755989b96c725925c471c0e451d8cfc72fbcc9024a45e3  dev-tooling/branch-protection.sh
+before 9f8c7706cac8b3b04396dd488f98f8327aeaef785c9ecbdc046ca59f7ee60f37  dev-tooling/check-no-workflow-edits.sh
+before 26f44f4b546861f80dfa68c85f8c062b55d9596253e22fe6efeab5b1758acaf9  dev-tooling/check-pre-commit-gated-tree.sh
+before 92215160ff58f96855b2b1e884917b1387a1b9d98b2e429a72a44352730a96f5  dev-tooling/check-pre-commit.sh
+{"file": "worktree-lib.sh", "executable": true, "changed": "body", "path": "/data/projects/livespec/dev-tooling/worktree-lib.sh", "event": "installed canonical worktree-pack file", "level": "info", "t
+{"file": "gate-run.sh", "executable": true, "changed": "body", "path": "/data/projects/livespec/dev-tooling/gate-run.sh", "event": "installed canonical worktree-pack file", "level": "info", "timestamp
+{"file": "check-no-workflow-edits.sh", "executable": true, "changed": "body", "path": "/data/projects/livespec/dev-tooling/check-no-workflow-edits.sh", "event": "installed canonical worktree-pack file
+rc=0
+after  d9d458f4a1541c6b262019cb86aa3c8cc368c2e3766a733e384ada6a769a6ad1  dev-tooling/branch-protection.just
+after  1b181788896edae8a1755989b96c725925c471c0e451d8cfc72fbcc9024a45e3  dev-tooling/branch-protection.sh
+after  f5654d2b94c19af137349549228265bf2ed6f884553aebabd8c4bb16e5602ffc  dev-tooling/check-no-workflow-edits.sh
+after  26f44f4b546861f80dfa68c85f8c062b55d9596253e22fe6efeab5b1758acaf9  dev-tooling/check-pre-commit-gated-tree.sh
+after  92215160ff58f96855b2b1e884917b1387a1b9d98b2e429a72a44352730a96f5  dev-tooling/check-pre-commit.sh
+gate-run.sh venue-refs=16
+=== livespec-driver-claude 19:14:34Z
+{"file": "worktree-lib.sh", "executable": true, "changed": "body", "path": "/data/projects/livespec-driver-claude/dev-tooling/worktree-lib.sh", "event": "installed canonical worktree-pack file", "leve
+{"file": "gate-run.sh", "executable": true, "changed": "body", "path": "/data/projects/livespec-driver-claude/dev-tooling/gate-run.sh", "event": "installed canonical worktree-pack file", "level": "inf
+{"file": "check-no-workflow-edits.sh", "executable": true, "changed": "body", "path": "/data/projects/livespec-driver-claude/dev-tooling/check-no-workflow-edits.sh", "event": "installed canonical work
+{"file": ".gitignore", "executable": false, "changed": "body", "path": "/data/projects/livespec-driver-claude/dev-tooling/.gitignore", "event": "installed canonical worktree-pack file", "level": "info
+rc=0
+gate-run.sh venue-refs=16
+=== livespec-driver-pi 19:16:29Z
+before d9d458f4a1541c6b262019cb86aa3c8cc368c2e3766a733e384ada6a769a6ad1  dev-tooling/branch-protection.just
+before 1b181788896edae8a1755989b96c725925c471c0e451d8cfc72fbcc9024a45e3  dev-tooling/branch-protection.sh
+before 95528851b89d2f9a928b46d1d9384ef3ab9e45f2258ab0f1612123411b2f418d  dev-tooling/check-aggregate.sh
+before 022de9a75c6b616edffa153036ce3c5c556f04b5ddee00b0be7bde1353b3d3ab  dev-tooling/check-doctor-static.sh
+before 597834e4d195ac11d6af11d2b6a0776e2bbb2473192988fdd8d2ac5f25e00180  dev-tooling/check-extension-quality.sh
+before 6ba6284f4d062f518484488d3e0ea4a9e51942d3c5efae0773874151e2915cff  dev-tooling/check-pi-drive-output
+before bfae100c49c571f9c15bcaff09fc1417f02d15ab10ccbe8f6e190080feee1823  dev-tooling/check-pi-package-structure
+before 9e692c7ea8df89d64ce521ad466d8b46dd6bfcefc730f84f850876fc646c6d42  dev-tooling/check-pre-push.sh
+before d2c7e3872bc7a585c9a426073bfbbd2e4d335df317ea89a8b48b63c7a0a2ada9  dev-tooling/check-spec-governance-default-block
+before 0848682ced2cda311c67f3e9fc2a87adac01ae556b96ceed2054d21d164558cb  dev-tooling/gate-run.sh
+before 51c856372908a9d66fe617acb6f7e07b24bcdbd68a3859c5ba6a36a63fb77cff  dev-tooling/lint-autofix-staged.sh
+{"file": "worktree-lib.sh", "executable": true, "changed": "body", "path": "/data/projects/livespec-driver-pi/dev-tooling/worktree-lib.sh", "event": "installed canonical worktree-pack file", "level": 
+{"file": "gate-run.sh", "executable": true, "changed": "body", "path": "/data/projects/livespec-driver-pi/dev-tooling/gate-run.sh", "event": "installed canonical worktree-pack file", "level": "info", 
+{"file": "check-no-workflow-edits.sh", "executable": true, "changed": "body", "path": "/data/projects/livespec-driver-pi/dev-tooling/check-no-workflow-edits.sh", "event": "installed canonical worktree
+{"file": ".gitignore", "executable": false, "changed": "body", "path": "/data/projects/livespec-driver-pi/dev-tooling/.gitignore", "event": "installed canonical worktree-pack file", "level": "info", "
+rc=0
+after  d9d458f4a1541c6b262019cb86aa3c8cc368c2e3766a733e384ada6a769a6ad1  dev-tooling/branch-protection.just
+after  1b181788896edae8a1755989b96c725925c471c0e451d8cfc72fbcc9024a45e3  dev-tooling/branch-protection.sh
+after  95528851b89d2f9a928b46d1d9384ef3ab9e45f2258ab0f1612123411b2f418d  dev-tooling/check-aggregate.sh
+after  022de9a75c6b616edffa153036ce3c5c556f04b5ddee00b0be7bde1353b3d3ab  dev-tooling/check-doctor-static.sh
+after  597834e4d195ac11d6af11d2b6a0776e2bbb2473192988fdd8d2ac5f25e00180  dev-tooling/check-extension-quality.sh
+after  f5654d2b94c19af137349549228265bf2ed6f884553aebabd8c4bb16e5602ffc  dev-tooling/check-no-workflow-edits.sh
+after  6ba6284f4d062f518484488d3e0ea4a9e51942d3c5efae0773874151e2915cff  dev-tooling/check-pi-drive-output
+after  bfae100c49c571f9c15bcaff09fc1417f02d15ab10ccbe8f6e190080feee1823  dev-tooling/check-pi-package-structure
+after  9e692c7ea8df89d64ce521ad466d8b46dd6bfcefc730f84f850876fc646c6d42  dev-tooling/check-pre-push.sh
+after  d2c7e3872bc7a585c9a426073bfbbd2e4d335df317ea89a8b48b63c7a0a2ada9  dev-tooling/check-spec-governance-default-block
+after  f16d03464a8b3f365678c57f27dce90ee5bd6bf31b52e1cf3805f2d348ad1440  dev-tooling/gate-run.sh
+after  51c856372908a9d66fe617acb6f7e07b24bcdbd68a3859c5ba6a36a63fb77cff  dev-tooling/lint-autofix-staged.sh
+gate-run.sh venue-refs=16
+=== livespec-orchestrator-git-jsonl 19:18:15Z
+before d9d458f4a1541c6b262019cb86aa3c8cc368c2e3766a733e384ada6a769a6ad1  dev-tooling/branch-protection.just
+before 1b181788896edae8a1755989b96c725925c471c0e451d8cfc72fbcc9024a45e3  dev-tooling/branch-protection.sh
+before cc99770c477f6f23e7207d2cd939d475f8588d5781b330b986285660e5f10703  dev-tooling/check-no-workflow-edits.sh
+before 2f56b791182b7c68ea28b9e28fff1cd94898e1248e79060e4029c4263b731d32  dev-tooling/check_spec_governance_default_block.py
+before 4cdc0f4baf999b7af8432e0e774fd3a476378e798e88dda0949977b41d50c07a  dev-tooling/CLAUDE.md
+before 41d8817e38b4c00395cc0271311808a7463eba556a497b636d1d8a8ec05cebe7  dev-tooling/gate-run.sh
+before 5a3cd30f8de156abaa5974f216e5d72f75a8bac08ee59080fc8dfb323268a006  dev-tooling/just-bootstrap.sh
+before 4a44f155e2f393e581ab6cee7bcbfa83ba276d096fcf1a12233613944b6fd7b5  dev-tooling/just-changed-files.sh
+before 5b0c19a08c5579ba6f8c46bdf30541e6d6878686f92cc8529abb07655ef94a86  dev-tooling/just-check-changed.sh
+before a21b200b9560f1e0508bfb1fd000457c95180ae99a795f457da203c06a62452d  dev-tooling/just-check-coverage.sh
+before d3ff80e6c414e07a149cf613095fef7edb9914a73810c96ee8f22d97a04d31c4  dev-tooling/just-check-doctor-static.sh
+before 2ad88b27986f70d493f02d7072bcebffe0172175a61fffd36e8f21ed9b7d2e65  dev-tooling/just-check-pre-commit-doc-only.sh
+before 5987ec42d762d74afdec2478bda2f230fd71b64ed8c04f66b81dc04c399c2cdd  dev-tooling/just-check-pre-commit.sh
+before f4052ace7f89aa669aefead8fe13dc39f373ca6d3e103b27d044f424a4a7d540  dev-tooling/just-check-pre-push.sh
+before 258d865909db7912e47765a7a831314503ae310c6c3afa907c447e1b86fb1492  dev-tooling/just-check.sh
+before 61187472f7704605736418713e37fe06fd321d8fb19e3c1ee7d787e87c5c8d1b  dev-tooling/just-check-static.sh
+before 70d727568a632f35b20e06ae17a49b11d458685bf18393231cfd88727f773262  dev-tooling/just-ensure-codex-plugins.sh
+before dc8f5457302f914407a6abe65b1a478399c19d5254f84e423e641255df5e1e9b  dev-tooling/just-lint-autofix-staged.sh
+before ccf173afe86a07f2a158a50bebe9fea3e6f1f92f34b1993620222138534febf4  dev-tooling/just-migrate-beads.sh
+before 418fd5c65200f727b3fe8e1591d1bffabcffc82746ad3c92907bd3b9d11e4af1  dev-tooling/just-test-nprocs.sh
+before 7f73bc297ae5567dd27379eae2a26c4889b98f7695653de49a4f47f6163dd8c0  dev-tooling/worktree-hydrate.sh
+before a88a935137d6de84817aedf1bae0cadb6fa1e99617cc9ff3bea0a076df819606  dev-tooling/worktree.just
+before 7af5f1bb1f4ce1f367400f0dde7adce7cec616193100bec7e779a9d297a36f57  dev-tooling/worktree-lib.sh
+{"file": "worktree-lib.sh", "executable": true, "changed": "body", "path": "/data/projects/livespec-orchestrator-git-jsonl/dev-tooling/worktree-lib.sh", "event": "installed canonical worktree-pack fil
+{"file": "gate-run.sh", "executable": true, "changed": "body", "path": "/data/projects/livespec-orchestrator-git-jsonl/dev-tooling/gate-run.sh", "event": "installed canonical worktree-pack file", "lev
+{"file": "check-no-workflow-edits.sh", "executable": true, "changed": "body", "path": "/data/projects/livespec-orchestrator-git-jsonl/dev-tooling/check-no-workflow-edits.sh", "event": "installed canon
+rc=0
+after  d9d458f4a1541c6b262019cb86aa3c8cc368c2e3766a733e384ada6a769a6ad1  dev-tooling/branch-protection.just
+after  1b181788896edae8a1755989b96c725925c471c0e451d8cfc72fbcc9024a45e3  dev-tooling/branch-protection.sh
+after  f5654d2b94c19af137349549228265bf2ed6f884553aebabd8c4bb16e5602ffc  dev-tooling/check-no-workflow-edits.sh
+after  2f56b791182b7c68ea28b9e28fff1cd94898e1248e79060e4029c4263b731d32  dev-tooling/check_spec_governance_default_block.py
+after  4cdc0f4baf999b7af8432e0e774fd3a476378e798e88dda0949977b41d50c07a  dev-tooling/CLAUDE.md
+after  f16d03464a8b3f365678c57f27dce90ee5bd6bf31b52e1cf3805f2d348ad1440  dev-tooling/gate-run.sh
+after  5a3cd30f8de156abaa5974f216e5d72f75a8bac08ee59080fc8dfb323268a006  dev-tooling/just-bootstrap.sh
+after  4a44f155e2f393e581ab6cee7bcbfa83ba276d096fcf1a12233613944b6fd7b5  dev-tooling/just-changed-files.sh
+after  5b0c19a08c5579ba6f8c46bdf30541e6d6878686f92cc8529abb07655ef94a86  dev-tooling/just-check-changed.sh
+after  a21b200b9560f1e0508bfb1fd000457c95180ae99a795f457da203c06a62452d  dev-tooling/just-check-coverage.sh
+after  d3ff80e6c414e07a149cf613095fef7edb9914a73810c96ee8f22d97a04d31c4  dev-tooling/just-check-doctor-static.sh
+after  2ad88b27986f70d493f02d7072bcebffe0172175a61fffd36e8f21ed9b7d2e65  dev-tooling/just-check-pre-commit-doc-only.sh
+after  5987ec42d762d74afdec2478bda2f230fd71b64ed8c04f66b81dc04c399c2cdd  dev-tooling/just-check-pre-commit.sh
+after  f4052ace7f89aa669aefead8fe13dc39f373ca6d3e103b27d044f424a4a7d540  dev-tooling/just-check-pre-push.sh
+after  258d865909db7912e47765a7a831314503ae310c6c3afa907c447e1b86fb1492  dev-tooling/just-check.sh
+after  61187472f7704605736418713e37fe06fd321d8fb19e3c1ee7d787e87c5c8d1b  dev-tooling/just-check-static.sh
+after  70d727568a632f35b20e06ae17a49b11d458685bf18393231cfd88727f773262  dev-tooling/just-ensure-codex-plugins.sh
+after  dc8f5457302f914407a6abe65b1a478399c19d5254f84e423e641255df5e1e9b  dev-tooling/just-lint-autofix-staged.sh
+after  ccf173afe86a07f2a158a50bebe9fea3e6f1f92f34b1993620222138534febf4  dev-tooling/just-migrate-beads.sh
+after  418fd5c65200f727b3fe8e1591d1bffabcffc82746ad3c92907bd3b9d11e4af1  dev-tooling/just-test-nprocs.sh
+after  7f73bc297ae5567dd27379eae2a26c4889b98f7695653de49a4f47f6163dd8c0  dev-tooling/worktree-hydrate.sh
+after  a88a935137d6de84817aedf1bae0cadb6fa1e99617cc9ff3bea0a076df819606  dev-tooling/worktree.just
+after  41ef7478759deb6d45a1aaa734c6471ef349234982e8d4f2fc610182850efafd  dev-tooling/worktree-lib.sh
+gate-run.sh venue-refs=16
+=== livespec-overseer 19:19:26Z
+before d9d458f4a1541c6b262019cb86aa3c8cc368c2e3766a733e384ada6a769a6ad1  dev-tooling/branch-protection.just
+before 1b181788896edae8a1755989b96c725925c471c0e451d8cfc72fbcc9024a45e3  dev-tooling/branch-protection.sh
+before cc99770c477f6f23e7207d2cd939d475f8588d5781b330b986285660e5f10703  dev-tooling/check-no-workflow-edits.sh
+before 41d8817e38b4c00395cc0271311808a7463eba556a497b636d1d8a8ec05cebe7  dev-tooling/gate-run.sh
+before a88a935137d6de84817aedf1bae0cadb6fa1e99617cc9ff3bea0a076df819606  dev-tooling/worktree.just
+before 1b5dabc57ffbfce304bb7ed5fd92557c3b76c624346ad54a3764084e962586f9  dev-tooling/worktree-lib.sh
+{"file": "worktree-lib.sh", "executable": true, "changed": "body", "path": "/data/projects/livespec-overseer/dev-tooling/worktree-lib.sh", "event": "installed canonical worktree-pack file", "level": "
+{"file": "gate-run.sh", "executable": true, "changed": "body", "path": "/data/projects/livespec-overseer/dev-tooling/gate-run.sh", "event": "installed canonical worktree-pack file", "level": "info", "
+{"file": "check-no-workflow-edits.sh", "executable": true, "changed": "body", "path": "/data/projects/livespec-overseer/dev-tooling/check-no-workflow-edits.sh", "event": "installed canonical worktree-
+rc=0
+after  d9d458f4a1541c6b262019cb86aa3c8cc368c2e3766a733e384ada6a769a6ad1  dev-tooling/branch-protection.just
+after  1b181788896edae8a1755989b96c725925c471c0e451d8cfc72fbcc9024a45e3  dev-tooling/branch-protection.sh
+after  f5654d2b94c19af137349549228265bf2ed6f884553aebabd8c4bb16e5602ffc  dev-tooling/check-no-workflow-edits.sh
+after  f16d03464a8b3f365678c57f27dce90ee5bd6bf31b52e1cf3805f2d348ad1440  dev-tooling/gate-run.sh
+after  a88a935137d6de84817aedf1bae0cadb6fa1e99617cc9ff3bea0a076df819606  dev-tooling/worktree.just
+after  41ef7478759deb6d45a1aaa734c6471ef349234982e8d4f2fc610182850efafd  dev-tooling/worktree-lib.sh
+gate-run.sh venue-refs=16
+=== livespec-runtime 19:21:05Z
+before d9d458f4a1541c6b262019cb86aa3c8cc368c2e3766a733e384ada6a769a6ad1  dev-tooling/branch-protection.just
+before 1b181788896edae8a1755989b96c725925c471c0e451d8cfc72fbcc9024a45e3  dev-tooling/branch-protection.sh
+before 9f8c7706cac8b3b04396dd488f98f8327aeaef785c9ecbdc046ca59f7ee60f37  dev-tooling/check-no-workflow-edits.sh
+before 41d8817e38b4c00395cc0271311808a7463eba556a497b636d1d8a8ec05cebe7  dev-tooling/gate-run.sh
+before a88a935137d6de84817aedf1bae0cadb6fa1e99617cc9ff3bea0a076df819606  dev-tooling/worktree.just
+before 7af5f1bb1f4ce1f367400f0dde7adce7cec616193100bec7e779a9d297a36f57  dev-tooling/worktree-lib.sh
+{"file": "worktree-lib.sh", "executable": true, "changed": "body", "path": "/data/projects/livespec-runtime/dev-tooling/worktree-lib.sh", "event": "installed canonical worktree-pack file", "level": "i
+{"file": "check-no-workflow-edits.sh", "executable": true, "changed": "body", "path": "/data/projects/livespec-runtime/dev-tooling/check-no-workflow-edits.sh", "event": "installed canonical worktree-p
+rc=0
+after  d9d458f4a1541c6b262019cb86aa3c8cc368c2e3766a733e384ada6a769a6ad1  dev-tooling/branch-protection.just
+after  1b181788896edae8a1755989b96c725925c471c0e451d8cfc72fbcc9024a45e3  dev-tooling/branch-protection.sh
+after  cc99770c477f6f23e7207d2cd939d475f8588d5781b330b986285660e5f10703  dev-tooling/check-no-workflow-edits.sh
+after  41d8817e38b4c00395cc0271311808a7463eba556a497b636d1d8a8ec05cebe7  dev-tooling/gate-run.sh
+after  a88a935137d6de84817aedf1bae0cadb6fa1e99617cc9ff3bea0a076df819606  dev-tooling/worktree.just
+after  1b5dabc57ffbfce304bb7ed5fd92557c3b76c624346ad54a3764084e962586f9  dev-tooling/worktree-lib.sh
+gate-run.sh venue-refs=0
+=== livespec-tdd-proof 19:22:14Z
+before d9d458f4a1541c6b262019cb86aa3c8cc368c2e3766a733e384ada6a769a6ad1  dev-tooling/branch-protection.just
+before 1b181788896edae8a1755989b96c725925c471c0e451d8cfc72fbcc9024a45e3  dev-tooling/branch-protection.sh
+before cc99770c477f6f23e7207d2cd939d475f8588d5781b330b986285660e5f10703  dev-tooling/check-no-workflow-edits.sh
+before 41d8817e38b4c00395cc0271311808a7463eba556a497b636d1d8a8ec05cebe7  dev-tooling/gate-run.sh
+before a88a935137d6de84817aedf1bae0cadb6fa1e99617cc9ff3bea0a076df819606  dev-tooling/worktree.just
+before 7af5f1bb1f4ce1f367400f0dde7adce7cec616193100bec7e779a9d297a36f57  dev-tooling/worktree-lib.sh
+rc=0
+after  d9d458f4a1541c6b262019cb86aa3c8cc368c2e3766a733e384ada6a769a6ad1  dev-tooling/branch-protection.just
+after  1b181788896edae8a1755989b96c725925c471c0e451d8cfc72fbcc9024a45e3  dev-tooling/branch-protection.sh
+after  cc99770c477f6f23e7207d2cd939d475f8588d5781b330b986285660e5f10703  dev-tooling/check-no-workflow-edits.sh
+after  41d8817e38b4c00395cc0271311808a7463eba556a497b636d1d8a8ec05cebe7  dev-tooling/gate-run.sh
+after  a88a935137d6de84817aedf1bae0cadb6fa1e99617cc9ff3bea0a076df819606  dev-tooling/worktree.just
+after  7af5f1bb1f4ce1f367400f0dde7adce7cec616193100bec7e779a9d297a36f57  dev-tooling/worktree-lib.sh
+gate-run.sh venue-refs=0
+?? err.txt

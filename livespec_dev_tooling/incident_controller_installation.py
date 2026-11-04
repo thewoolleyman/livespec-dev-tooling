@@ -17,6 +17,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
 
+from livespec_dev_tooling.incident_ci_identity_policy import (
+    CiIdentityPolicy,
+    load_identity_policy,
+)
+
 __all__: list[str] = ["ControllerInstallation"]
 
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-47ij37
@@ -42,6 +47,7 @@ class ControllerInstallation:
     control_secret: bytes
     query_secret: bytes
     port: int
+    ci_identity_policy: CiIdentityPolicy | None = None
 
     @classmethod
     def load(cls, *, config: Path) -> ControllerInstallation | None:
@@ -67,7 +73,7 @@ class ControllerInstallation:
             ):
                 return None
             manifest = _record(path=Path(data["manifest"]))
-            if manifest is None or set(manifest) != {
+            if manifest is None or set(manifest) - {"ci_identity_policy"} != {
                 "release",
                 "revision",
                 "package_sha256",
@@ -114,6 +120,9 @@ class ControllerInstallation:
                 control_secret=control,
                 query_secret=query,
                 port=data["port"],
+                ci_identity_policy=load_identity_policy(
+                    descriptor=manifest.get("ci_identity_policy"), repository=data["repository"]
+                ),
             )
         except (OSError, ValueError, TypeError, KeyError, importlib.metadata.PackageNotFoundError):
             return None

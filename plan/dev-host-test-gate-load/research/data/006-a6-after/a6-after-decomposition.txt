@@ -1,0 +1,12 @@
+window hours 4.33
+  commit-pre-commit-aggregate    class 0.017  (top-list coverage 0.001)
+  commit-red-green-replay        class 0.008  (top-list coverage 0.004)
+  pre-push                       class 0.303  (top-list coverage 0.271)
+  janitor-post-merge             class 0.030  (top-list coverage 0.005)
+  adhoc-gate-start               class 0.732  (top-list coverage 0.617)
+  adhoc-pytest-or-check          class 0.181  (top-list coverage 0.071)
+  coverage-tree                  class 0.000  (top-list coverage 0.000)
+TEST/GATE TOTAL (same method) 1.272 cores
+adhoc-gate-start Rust compile (rustc/clippy/cargo/link) from top-lists: 0.569 cores
+pre-push from this seat's void 4k7262 capture worktree (proof-4k7262-capture-20261104): 0.221 cores
+total less those two: 0.482 cores (lower bound on removal; top-lists do not cover every process)

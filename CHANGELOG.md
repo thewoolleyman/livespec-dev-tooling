@@ -58,6 +58,47 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.172.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.171.0...v1.172.0) (2026-11-04)
+
+
+### Features
+
+* **ci-runner:** ci-runner-scheduler places runner pods by churn-slot use (livespec-dev-tooling-mtvxde) ([fd3a9bb](https://github.com/thewoolleyman/livespec-dev-tooling/commit/fd3a9bbeb47c2762ade9f463c71f1250f0e86565))
+* **incident:** revoke CI admission while retaining merged recovery (livespec-dev-tooling-wanebl) ([9a7ec04](https://github.com/thewoolleyman/livespec-dev-tooling/commit/9a7ec04523217a2e6759577f962957fcbbfc7f8a))
+* **incident:** revoke exact pre-merge CI arms durably (livespec-dev-tooling-47ij37) ([bf46b55](https://github.com/thewoolleyman/livespec-dev-tooling/commit/bf46b55a0225efae6ad040ee45ad331ac193e805))
+* select incident hooks before ordinary prechecks (livespec-dev-tooling-cerkbn) ([c7712f3](https://github.com/thewoolleyman/livespec-dev-tooling/commit/c7712f377d3ec36ed0140c1ccbcb6bbb751cff57))
+
+
+### Bug Fixes
+
+* flake-retry computes the change set of a depth-1 master push checkout (livespec-dev-tooling-bejgoo) ([89fc169](https://github.com/thewoolleyman/livespec-dev-tooling/commit/89fc169cb27833755e649aafe5b1c38fe5971068))
+* flake-retry computes the change set of a depth-1 pull-request checkout (livespec-dev-tooling-bejgoo) ([7be8e63](https://github.com/thewoolleyman/livespec-dev-tooling/commit/7be8e63a44f40dca3ca5f8441ff2ba3c620abbe3))
+* flake-retry names a withheld retry and the failed git query in the terminal summary (livespec-dev-tooling-bejgoo) ([e958512](https://github.com/thewoolleyman/livespec-dev-tooling/commit/e958512868adc78d80b96b99b4f01fd742c0dc08))
+* **incident:** recover hook receipts before repeating local gates (livespec-dev-tooling-cerkbn) ([bb896d4](https://github.com/thewoolleyman/livespec-dev-tooling/commit/bb896d48503f4e30c795cddae59af474f38a2f68))
+
+
+### Reverts
+
+* **ci-runner:** CI workflow pod pytest workers back from 6 to 3 ([77e3660](https://github.com/thewoolleyman/livespec-dev-tooling/commit/77e36602505e4648db5833dee13fe6ba2afabec6))
+
+## [1.171.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.170.0...v1.171.0) (2026-11-04)
+
+
+### Features
+
+* **incident:** connect CI execution to current incident policy (livespec-dev-tooling-egy3ri) ([f59a0d1](https://github.com/thewoolleyman/livespec-dev-tooling/commit/f59a0d1dd877be2eaa46a85cc17e3ac6c93bfd06))
+* **incident:** fence hosted CI through read-only current queries (livespec-dev-tooling-47ij37) ([0d76fe7](https://github.com/thewoolleyman/livespec-dev-tooling/commit/0d76fe7991b03da7a9319ce71b4c48a865d0a002))
+* **incident:** serve the independent observer from a protected installation (livespec-dev-tooling-47ij37) ([0ed6729](https://github.com/thewoolleyman/livespec-dev-tooling/commit/0ed6729f907e08f22186b64431ff90d8fdb8b17e))
+* preserve later work in complete incident inverses (livespec-dev-tooling-lgfo3v) ([e0d7f11](https://github.com/thewoolleyman/livespec-dev-tooling/commit/e0d7f11a2385338573c234e0ba3ab8f38917e918))
+* retain incident release and consumer recovery receipts (livespec-dev-tooling-vg36aq) ([be2ba52](https://github.com/thewoolleyman/livespec-dev-tooling/commit/be2ba526b111ff9ae503483dd9bb1ddaf1dce0c9))
+
+
+### Bug Fixes
+
+* guard app-token push before aggregate ([35b68a2](https://github.com/thewoolleyman/livespec-dev-tooling/commit/35b68a20ef7ada42fdfa1d6da4fc7cbac88e3a83))
+* guard app-token push only before the local pre-push aggregate ([c6cdc80](https://github.com/thewoolleyman/livespec-dev-tooling/commit/c6cdc80cf852d1fde032bdca413b56e36e3851d5))
+* **incident:** isolate inverse patch identity from source diff settings (livespec-dev-tooling-lgfo3v) ([20e7c22](https://github.com/thewoolleyman/livespec-dev-tooling/commit/20e7c227a182a5e79c498bb38609e43f39fcac9d))
+
 ## [1.170.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.169.0...v1.170.0) (2026-11-04)
 
 
