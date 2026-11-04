@@ -21,7 +21,7 @@ from livespec_dev_tooling import incident_controller_installation as installatio
 def host(tmp_path, monkeypatch):
     for name in ("state", "repo"):
         (tmp_path / name).mkdir(mode=0o700)
-    for name, body in (("webhook", b"a" * 32), ("control", b"b" * 32)):
+    for name, body in (("webhook", b"a" * 32), ("control", b"b" * 32), ("query", b"c" * 32)):
         (tmp_path / name).write_bytes(body)
         (tmp_path / name).chmod(0o600)
     executable = str(Path(sys.executable).resolve())
@@ -53,6 +53,7 @@ def host(tmp_path, monkeypatch):
         "state": str(tmp_path / "state"),
         "webhook_secret": str(tmp_path / "webhook"),
         "control_secret": str(tmp_path / "control"),
+        "query_secret": str(tmp_path / "query"),
         "port": 8765,
     }
     monkeypatch.setattr(installation.importlib.metadata, "version", lambda _: "1.0.0")
@@ -110,6 +111,10 @@ def test_protected_manifest_selects_exact_installed_controller_and_commands(host
         "job-duplicate",
         "secret-short",
         "secret-same",
+        "query-short",
+        "query-control",
+        "query-webhook",
+        "query-mode",
         "secret-mode",
         "bad-port",
         "bool-port",
@@ -150,6 +155,10 @@ def test_invalid_installation_never_returns_serving_settings(host, change):
         "job-duplicate": lambda: manifest.update(required_jobs=["unit", "unit"]),
         "secret-short": lambda: (root / "webhook").write_bytes(b"short"),
         "secret-same": lambda: config.update(control_secret=config["webhook_secret"]),
+        "query-short": lambda: (root / "query").write_bytes(b"short"),
+        "query-control": lambda: config.update(query_secret=config["control_secret"]),
+        "query-webhook": lambda: config.update(query_secret=config["webhook_secret"]),
+        "query-mode": lambda: (root / "query").chmod(0o644),
         "secret-mode": lambda: (root / "control").chmod(0o644),
         "bad-port": lambda: config.update(port=65536),
         "bool-port": lambda: config.update(port=True),

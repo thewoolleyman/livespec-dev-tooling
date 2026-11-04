@@ -34,6 +34,7 @@ def controller(tmp_path, monkeypatch):
         jobs=("coverage",),
         webhook_secret=b"webhook" * 8,
         control_secret=b"control" * 8,
+        query_secret=b"query" * 8,
         port=8765,
     )
     attempt = {
@@ -93,7 +94,12 @@ def _request(*, application, path, payload, **changes):
         "REQUEST_METHOD": "POST",
         "CONTENT_LENGTH": str(len(body)),
         "wsgi.input": io.BytesIO(body),
-        "HTTP_AUTHORIZATION": "Bearer " + application.installation.control_secret.decode(),
+        "HTTP_AUTHORIZATION": "Bearer "
+        + (
+            application.installation.query_secret
+            if path in {"/current", "/admitted"}
+            else application.installation.control_secret
+        ).decode(),
     }
     environ.update(changes)
     responses = []
@@ -329,3 +335,14 @@ def test_dispatch_uses_public_protocol_and_always_closes_request(monkeypatch):
     with pytest.raises(OSError, match="client disconnected"):
         dispatch(request, "client")
     assert calls[-1] == "closed"
+
+
+@pytest.mark.parametrize("path", ["/current", "/admitted", "/unknown"])
+def test_control_adapter_refuses_queries_and_unknown_operations(controller, path):
+    application, payload, calls, effects, _ = controller
+    result = control.ObserverControl(installation=application.installation).execute(
+        path=path, payload=payload
+    )
+    assert result["status"] == "refused"
+    assert calls == []
+    assert effects == []

@@ -26,6 +26,7 @@ from livespec_dev_tooling.incident_controller_installation import ControllerInst
 from livespec_dev_tooling.incident_observer_control import ObserverControl
 from livespec_dev_tooling.incident_observer_endpoint import _read_request, observer_endpoint
 from livespec_dev_tooling.incident_observer_events import verify_leaf_completion
+from livespec_dev_tooling.incident_observer_query import ObserverQuery
 
 __all__: list[str] = ["ControllerService"]
 
@@ -61,9 +62,15 @@ class ControllerService:
         """Authenticate control calls separately from GitHub's signed callback."""
         if environ.get("PATH_INFO") == "/callback":
             return self._callback(environ=environ, start_response=start_response)
-        authorized = hmac.compare_digest(
+        path = str(environ.get("PATH_INFO", ""))
+        secret = (
+            self.installation.query_secret
+            if path in {"/current", "/admitted"}
+            else self.installation.control_secret
+        )
+        authorized = path in {"/current", "/admitted", "/arm", "/bind"} and hmac.compare_digest(
             str(environ.get("HTTP_AUTHORIZATION", "")).encode(),
-            b"Bearer " + self.installation.control_secret,
+            b"Bearer " + secret,
         )
         body = _read_request(environ=environ) if authorized else None
         try:
@@ -81,9 +88,12 @@ class ControllerService:
                         "reason": "protected control authentication and repository required",
                     },
                 )
-            result = ObserverControl(installation=self.installation).execute(
-                path=str(environ.get("PATH_INFO", "")), payload=payload
+            handler = (
+                ObserverQuery(installation=self.installation)
+                if path in {"/current", "/admitted"}
+                else ObserverControl(installation=self.installation)
             )
+            result = handler.execute(path=path, payload=payload)
             return _reply(
                 start_response=start_response,
                 status="403 Forbidden" if result.get("status") == "refused" else "202 Accepted",
@@ -128,7 +138,9 @@ class ControllerService:
 
 
 def _reply(*, start_response: _StartResponse, status: str, result: dict[str, Any]) -> list[bytes]:
-    _ = start_response(status, [("Content-Type", "application/json")])
+    _ = start_response(
+        status, [("Content-Type", "application/json"), ("Cache-Control", "no-store")]
+    )
     return [json.dumps(result).encode()]
 
 
