@@ -63,6 +63,28 @@ def test_gates_cluster_queue_has_a_quota_lane_for_each_gate_node() -> None:
     }
 
 
+def test_every_gates_flavor_admits_by_topology_so_tas_is_implied() -> None:
+    """Every gates-cq flavor names the hostname Topology, so unannotated gates get TAS."""
+    documents = _documents(_GATES_QUEUE)
+    topology = _named_document(documents, kind="Topology", name="gates-hostname")
+    assert topology["spec"]["levels"] == [{"nodeLabel": "kubernetes.io/hostname"}]
+    queue = _named_document(documents, kind="ClusterQueue", name="gates-cq")
+    queue_flavors = [
+        flavor["name"]
+        for group in cast(list[dict[str, Any]], queue["spec"]["resourceGroups"])
+        for flavor in group["flavors"]
+    ]
+    topologies = {
+        name: _named_document(documents, kind="ResourceFlavor", name=name)["spec"].get(
+            "topologyName"
+        )
+        for name in queue_flavors
+    }
+    assert topologies == {"gates-flavor": "gates-hostname", "gates-hp-flavor": "gates-hostname"}
+    kinds = [document["kind"] for document in documents]
+    assert kinds.index("Topology") < kinds.index("ResourceFlavor")
+
+
 def test_hp_warm_uv_publisher_uses_its_runner_volume_root() -> None:
     """A gate admitted to hp receives the local-path UV seed instead of a cold volume."""
     daemon_set = _named_document(
