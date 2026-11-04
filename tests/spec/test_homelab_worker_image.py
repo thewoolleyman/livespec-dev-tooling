@@ -81,3 +81,13 @@ def test_the_kubelet_registers_under_the_admission_hold_taint() -> None:
     unit = (_IMAGE / "systemd" / "kubelet.service").read_text(encoding="utf-8")
     assert "--register-with-taints=homelab-worker.livespec.dev/admission=hold:NoSchedule" in unit
     assert "--bootstrap-kubeconfig=" in unit
+
+
+def test_the_worker_enrolls_on_the_tailnet_untagged_with_no_auth_key() -> None:
+    # tailscale-admin retired tags fleet-wide (maintainer ruling 2026-08-17): every persistent
+    # machine is an untagged autogroup:member enrolled by interactive login, never by an auth key.
+    unit = (_IMAGE / "systemd" / "tailscaled.service").read_text(encoding="utf-8")
+    assert "--state=/var/lib/tailscale/" in unit
+    for forbidden in ("advertise-tags", "auth-key", "authkey", "TS_TAGS"):
+        assert forbidden not in unit, forbidden
+    assert " up " not in unit
