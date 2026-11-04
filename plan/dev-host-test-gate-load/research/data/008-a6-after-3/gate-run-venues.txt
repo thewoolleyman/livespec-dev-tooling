@@ -1,0 +1,16 @@
+runs by repo / venue / reason (count, wall-minutes):
+   47   648.2m  livespec-dev-tooling                     host_local   command outside full-suite set
+   20   328.1m  livespec-orchestrator-beads-fabro        (none)       
+   11   138.1m  livespec-orchestrator-beads-fabro        host_local   command outside full-suite set
+    5    86.0m  livespec-orchestrator-beads-fabro        host_local   --local
+    1    66.6m  livespec-orchestrator-beads-fabro        cluster_job  eligible full-suite command
+    5    24.1m  livespec                                 host_local   command outside full-suite set
+    2    18.5m  livespec-console-beads-fabro             host_local   command outside full-suite set
+    2    11.0m  livespec-runtime                         (none)       
+    3     7.8m  livespec-driver-claude                   host_local   command outside full-suite set
+    2     7.1m  livespec-driver-codex                    host_local   command outside full-suite set
+    2     0.0m  dolt-server                              (none)       
+    1     0.0m  livespec-orchestrator-git-jsonl          host_local   command outside full-suite set
+    1     0.0m  livespec-overseer                        host_local   command outside full-suite set
+    1     0.0m  livespec-driver-pi                       host_local   command outside full-suite set
+longest host_local or unrouted runs:
