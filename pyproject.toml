@@ -706,6 +706,11 @@ scenario_tiers = ["tests.consumer"]
 # child env so the child does not self-instrument.
 subprocess_spawn_allowlist = [
     "tests/consumer/test_delegated_gate_check_suite.py",
+    # Incident transport requires a fresh interpreter for vendor bootstrap and
+    # real child environment propagation. These properties cannot be observed
+    # in pytest's already-imported process; the exact test file scrubs coverage
+    # startup variables before every child launch.
+    "tests/integration/test_incident_execution_boundary.py",
     "tests/consumer/test_package_consumption.py",
     "tests/consumer/test_self_application_regression.py",
     "tests/consumer/test_semver_and_bump_shape.py",

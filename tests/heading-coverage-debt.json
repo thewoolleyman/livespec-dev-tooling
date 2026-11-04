@@ -625,13 +625,6 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario: an incident invocation resolves mode before ordinary gate selection",
-    "work_item": "livespec-dev-tooling-sh3vz3",
-    "first_seen": "2026-11-03"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
     "heading": "## Scenario: an incident revert preserves later changes without waiting for CI",
     "work_item": "livespec-dev-tooling-lgfo3v",
     "first_seen": "2026-11-03"
