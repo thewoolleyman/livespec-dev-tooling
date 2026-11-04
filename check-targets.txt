@@ -89,8 +89,11 @@ check-ansible-hostname-free  # purity: tree-pure
 # `ansible/inventory/group_vars/dev_hosts.yml` and nothing else, so the same
 # tree always yields the same verdict.
 check-dev-host-fabro-client-bins-declared  # purity: tree-pure
-check-lint  # purity: tree-pure
-check-format  # purity: tree-pure
+# Local incident timing is independent of purity. These existing full recipes
+# measured 1.93 s and 1.57 s on 2026-11-03; the executor still enforces 60 s.
+# Missing declarations remain explicit deferrals, never guessed fast checks.
+check-lint  # purity: tree-pure # incident-timing: fast
+check-format  # purity: tree-pure # incident-timing: fast
 check-types  # purity: tree-pure
 check-coverage  # purity: tree-pure
 # Fetches `.livespec-fleet-manifest.jsonc` from livespec master and sweeps ~35
