@@ -49,6 +49,8 @@ BULK_DUMP_DIR=${LIVESPEC_DEV_HOST_BULK_DUMP_DIR:-/var/tmp/livespec-dumps}
 BULK_DUMP_CAP_BYTES=${LIVESPEC_DEV_HOST_BULK_DUMP_CAP_BYTES:-21474836480}
 RETENTION_USER=${LIVESPEC_DEV_HOST_RETENTION_USER:-root}
 UV_BIN=${LIVESPEC_DEV_HOST_RETENTION_UV_BIN:-uv}
+UV_OWNERSHIP_BUDGET_SECONDS=${LIVESPEC_DEV_HOST_UV_OWNERSHIP_BUDGET_SECONDS:-300}
+RETENTION_STATE_DIR=${LIVESPEC_DEV_HOST_RETENTION_STATE_DIR:-/var/lib/livespec-dev-host-retention}
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
 
 log() {
@@ -92,8 +94,55 @@ unremovable_paths() {
     printf '%s\n' "$1" | grep -oE '(/[A-Za-z0-9._@+-]+)+' | sort -u
 }
 
+restore_uv_cache_ownership() {
+    local cache_dir=$1 owner_uid=$2 owner_gid=$3 stamp
+    local -a walk=(find "$cache_dir" -xdev ! -user "$owner_uid")
+    stamp="$RETENTION_STATE_DIR/uv-cache-ownership.stamp"
+    if ! mkdir -p "$RETENTION_STATE_DIR"; then
+        log "WARNING: could not create retention state directory $RETENTION_STATE_DIR; restoring all foreign uv-cache paths"
+        stamp=
+    fi
+    if [[ -n $stamp && -e $stamp ]]; then
+        if ! find "$cache_dir" -xdev -newer "$stamp" -print -quit | grep -q .; then
+            return 0
+        fi
+        walk=(find "$cache_dir" -xdev -newer "$stamp" ! -user "$owner_uid")
+    fi
+    if timeout --kill-after=5s "$UV_OWNERSHIP_BUDGET_SECONDS" \
+        "${walk[@]}" -exec chown -h "$owner_uid:$owner_gid" {} + 2>/dev/null; then
+        [[ -z $stamp ]] || touch "$stamp"
+        return 0
+    fi
+    log "WARNING: uv-cache ownership walk exceeded its ${UV_OWNERSHIP_BUDGET_SECONDS}s budget; pruning continues"
+}
+
+uv_cache_is_in_use() {
+    local cache_dir=$1 lock_file="$1/.lock"
+    [[ -e $lock_file ]] || return 1
+    ! flock --exclusive --nonblock "$lock_file" true 2>/dev/null
+}
+
+run_uv_cache_prune() {
+    local cache_home=$1 force=$2 output status
+    local args=(cache prune)
+    [[ $force == true ]] && args+=(--force)
+    if [[ $RETENTION_USER == root || $RETENTION_USER == 0 ]]; then
+        output=$("$UV_BIN" "${args[@]}" 2>&1)
+        status=$?
+    else
+        output=$(runuser -u "$RETENTION_USER" -- env "HOME=$cache_home" "$UV_BIN" "${args[@]}" 2>&1)
+        status=$?
+    fi
+    printf '%s' "$output"
+    return "$status"
+}
+
+uv_lock_timeout() {
+    [[ $1 == *"Timeout"* && $1 == *"waiting for lock"* ]]
+}
+
 prune_uv_cache() {
-    local output path cache_home cache_dir owner_uid owner_gid
+    local output path cache_home cache_dir owner_uid owner_gid force=false
     if [[ $UV_BIN == */* && ! -x $UV_BIN ]]; then
         log "configured uv executable is not executable: $UV_BIN; no cache prune attempted"
         return 0
@@ -108,24 +157,29 @@ prune_uv_cache() {
         owner_uid=$(id -u "$RETENTION_USER" 2>/dev/null) || owner_uid=
         owner_gid=$(id -g "$RETENTION_USER" 2>/dev/null) || owner_gid=
         if [[ -n $owner_uid && -n $owner_gid ]]; then
-            find "$cache_dir" -xdev ! -user "$owner_uid" -exec chown -h "$owner_uid:$owner_gid" {} + 2>/dev/null || \
-                log "WARNING: could not restore all $RETENTION_USER ownership under $cache_dir"
+            restore_uv_cache_ownership "$cache_dir" "$owner_uid" "$owner_gid"
         fi
+        uv_cache_is_in_use "$cache_dir" && force=true
     fi
-    if [[ $RETENTION_USER == root || $RETENTION_USER == 0 ]]; then
-        output=$("$UV_BIN" cache prune 2>&1)
-    else
-        output=$(runuser -u "$RETENTION_USER" -- env "HOME=$cache_home" "$UV_BIN" cache prune 2>&1)
-    fi
+    output=$(run_uv_cache_prune "$cache_home" "$force")
     if [[ $? -eq 0 ]]; then
         log "uv cache prune: ${output//$'\n'/; }"
         return 0
     fi
+    if [[ $force == false ]] && uv_lock_timeout "$output"; then
+        output=$(run_uv_cache_prune "$cache_home" true)
+        if [[ $? -eq 0 ]]; then
+            log "uv cache prune: ${output//$'\n'/; }"
+            return 0
+        fi
+    fi
     log "WARNING: the uv cache prune did not complete: ${output//$'\n'/; }"
-    while IFS= read -r path; do
-        [[ -n $path ]] || continue
-        log "uv cache prune could not remove $path; continuing with the remaining steps"
-    done < <(unremovable_paths "$output")
+    if ! uv_lock_timeout "$output"; then
+        while IFS= read -r path; do
+            [[ -n $path ]] || continue
+            log "uv cache prune could not remove $path; continuing with the remaining steps"
+        done < <(unremovable_paths "$output")
+    fi
 }
 
 # The scratch and bulk legs are separate because their liveness and ordering
