@@ -14,7 +14,13 @@ _GITHUB_ACTIONS_APP = 15368
 _PAGE_SIZE = 100
 _MAX_JOBS = 1000
 
-__all__: list[str] = ["CiJobIdentity", "CiJobVerifier"]
+__all__: list[str] = [
+    "CiJobIdentity",
+    "CiJobVerifier",
+    "attempt_jobs",
+    "forge_object",
+    "forge_record",
+]
 
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-rqhqnb
 
@@ -43,19 +49,22 @@ class CiJobVerifier:
         suite = self._initial(root=root, run_path=run_path)
         if suite is None:
             return None
-        jobs = _jobs(path=f"{run_path}/attempts/{identity.run_attempt}/jobs")
+        jobs = attempt_jobs(path=f"{run_path}/attempts/{identity.run_attempt}/jobs")
         if jobs is None:
             return None
         url = github_api_url(path=f"{root}/check-runs/{identity.check_run_id}")
         matched = [v for v in jobs if v.get("check_run_url") == url]
-        check = _record(path=f"{root}/check-runs/{identity.check_run_id}")
+        check = forge_record(path=f"{root}/check-runs/{identity.check_run_id}")
         if (
             len(matched) != 1
             or not self._job(job=matched[0])
             or not self._check(check=check, suite=suite)
         ):
             return None
-        latest, final_pr = _record(path=run_path), _record(path=f"{root}/pulls/{query.pr_number}")
+        latest, final_pr = (
+            forge_record(path=run_path),
+            forge_record(path=f"{root}/pulls/{query.pr_number}"),
+        )
         if (
             not self._run(run=latest)
             or type(latest.get("check_suite_id")) is not int
@@ -67,10 +76,10 @@ class CiJobVerifier:
 
     def _initial(self, *, root: str, run_path: str) -> int | None:
         identity = self.identity
-        run = _record(path=run_path)
-        attempt = _record(path=f"{run_path}/attempts/{identity.run_attempt}")
-        pr = _record(path=f"{root}/pulls/{self.query.pr_number}")
-        merge = _record(path=f"{root}/git/commits/{identity.merge_sha}")
+        run = forge_record(path=run_path)
+        attempt = forge_record(path=f"{run_path}/attempts/{identity.run_attempt}")
+        pr = forge_record(path=f"{root}/pulls/{self.query.pr_number}")
+        merge = forge_record(path=f"{root}/git/commits/{identity.merge_sha}")
         suite = run.get("check_suite_id")
         parents = _objects(value=merge.get("parents"))
         valid = (
@@ -88,8 +97,8 @@ class CiJobVerifier:
 
     def _repo(self, *, value: Any) -> bool:
         identity = self.identity
-        repo = _object(value=value)
-        owner = _object(value=repo.get("owner"))
+        repo = forge_object(value=value)
+        owner = forge_object(value=repo.get("owner"))
         return (
             repo.get("full_name") == identity.repository
             and type(repo.get("id")) is int
@@ -116,7 +125,7 @@ class CiJobVerifier:
         )
 
     def _pr(self, *, pr: dict[str, Any]) -> bool:
-        base, head = _object(value=pr.get("base")), _object(value=pr.get("head"))
+        base, head = forge_object(value=pr.get("base")), forge_object(value=pr.get("head"))
         return (
             type(pr.get("number")) is int
             and pr.get("number") == self.query.pr_number
@@ -139,7 +148,10 @@ class CiJobVerifier:
         )
 
     def _check(self, *, check: dict[str, Any], suite: int) -> bool:
-        app, observed = _object(value=check.get("app")), _object(value=check.get("check_suite"))
+        app, observed = (
+            forge_object(value=check.get("app")),
+            forge_object(value=check.get("check_suite")),
+        )
         return (
             type(check.get("id")) is int
             and check.get("id") == self.identity.check_run_id
@@ -156,7 +168,8 @@ def _positive(*, value: Any) -> bool:
     return type(value) is int and value > 0
 
 
-def _record(*, path: str) -> dict[str, Any]:
+def forge_record(*, path: str) -> dict[str, Any]:
+    """One budgeted controller-account read; any failure is an empty observation."""
     try:
         result = gh_read(args=["api", path], timeout=10)
         return (
@@ -168,11 +181,12 @@ def _record(*, path: str) -> dict[str, Any]:
         return {}
 
 
-def _jobs(*, path: str) -> list[dict[str, Any]] | None:
+def attempt_jobs(*, path: str) -> list[dict[str, Any]] | None:
+    """Complete bounded pages of one exact attempt, or unavailable."""
     result: list[dict[str, Any]] = []
     total: int | None = None
     for page in range(1, 11):
-        data = _record(path=f"{path}?per_page=100&page={page}")
+        data = forge_record(path=f"{path}?per_page=100&page={page}")
         count, rows = data.get("total_count"), _objects(value=data.get("jobs"))
         if not _positive(value=count):
             return None
@@ -195,7 +209,7 @@ def _jobs(*, path: str) -> list[dict[str, Any]] | None:
         or len(set(ids)) != len(ids)
     ):
         return None
-    final = _record(path=f"{path}?per_page=100&page=1")
+    final = forge_record(path=f"{path}?per_page=100&page=1")
     return (
         result
         if type(final.get("total_count")) is int and final.get("total_count") == total
@@ -203,7 +217,8 @@ def _jobs(*, path: str) -> list[dict[str, Any]] | None:
     )
 
 
-def _object(*, value: Any) -> dict[str, Any]:
+def forge_object(*, value: Any) -> dict[str, Any]:
+    """A JSON object, or empty for any other shape."""
     return cast("dict[str, Any]", value) if isinstance(value, dict) else {}
 
 
