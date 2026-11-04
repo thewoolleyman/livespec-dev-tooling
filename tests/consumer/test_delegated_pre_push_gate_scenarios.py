@@ -287,6 +287,8 @@ def _run_pre_push(
             "GREEN_TOKEN_EXIT": "1",
             "SWITCH_EXIT": switch_exit,
             "GATE_RUN_EXIT": gate_run_exit,
+            "GIT_CONFIG_GLOBAL": os.devnull,
+            "GIT_CONFIG_NOSYSTEM": "1",
         }
     )
     completed = subprocess.run(
@@ -299,6 +301,19 @@ def _run_pre_push(
     )
     invoked = log.read_text(encoding="utf-8").splitlines() if log.is_file() else []
     return completed.returncode, invoked
+
+
+_FLEET_CREDENTIAL_HELPER = "!/home/ubuntu/.local/bin/livespec-agent-github-credential-helper"
+
+
+def _a_clone_using_the_fleet_credential_helper(*, repo: Path) -> None:
+    """Initialise `repo` with the per-clone helper that mints a short-lived App token."""
+    repo.mkdir(parents=True)
+    for argv in (
+        ["git", "init", "--quiet"],
+        ["git", "config", "credential.https://github.com.helper", _FLEET_CREDENTIAL_HELPER],
+    ):
+        _ = subprocess.run(argv, cwd=str(repo), check=True, capture_output=True, text=True)
 
 
 # --- the contract section --------------------------------------------------
@@ -380,39 +395,80 @@ def test_an_opted_in_push_from_a_host_without_the_credential_gates_locally(
     assert not [line for line in invoked if "gate_remote_delegate run" in line]
 
 
-def test_a_fleet_app_helper_refuses_before_an_unmemoized_pre_push_aggregate(
+def test_a_fleet_app_token_push_is_refused_before_the_local_aggregate_starts(
     *, tmp_path: Path
 ) -> None:
-    """A token Git already fetched cannot outlive an unbounded hook gate.
+    """A token git fetched before the hook cannot be refreshed by a long local aggregate.
 
-    Git opens its authenticated remote before it invokes ``pre-push``.  The
-    fleet helper mints an installation token with an approximately one-hour
-    lifetime, while the full aggregate can take longer under host load.  A
-    fresh local aggregate writes the green token before Git connects; the
-    subsequent hook then skips the long tree-pure leg with a fresh credential.
+    git obtains the push credential BEFORE it runs `pre-push`. The fleet helper
+    mints a GitHub App installation token that lasts about an hour, while the
+    local aggregate has been measured at 3927 s under host load; the pack is then
+    sent with an expired token and the push ends in `HTTP 401` after a passing
+    gate. With no green token and no delegation to carry the gate, the hook
+    refuses BEFORE the aggregate, naming the lifetime and the remedy.
     """
     push = tmp_path / "push"
-    push.mkdir()
-    _ = subprocess.run(
-        ["git", "init", "--quiet"], cwd=str(push), check=True, capture_output=True, text=True
-    )
-    _ = subprocess.run(
-        [
-            "git",
-            "config",
-            "credential.https://github.com.helper",
-            "!/home/ubuntu/.local/bin/livespec-agent-github-credential-helper",
-        ],
-        cwd=str(push),
-        check=True,
-        capture_output=True,
-        text=True,
-    )
+    _a_clone_using_the_fleet_credential_helper(repo=push)
 
     code, invoked = _run_pre_push(tmp_path=push, switch_exit="1")
 
     assert code == 78
-    assert invoked == ["uv run python -m livespec_dev_tooling.green_token check"]
+    assert invoked == [
+        "uv run python -m livespec_dev_tooling.green_token check",
+        "uv run python -m livespec_dev_tooling.gate_remote_delegate enabled",
+    ]
+
+
+def test_a_fleet_app_token_refusal_names_the_credential_lifetime_and_the_remedy(
+    *, tmp_path: Path
+) -> None:
+    """The refusal is actionable: it states the token lifetime and the way forward."""
+    push = tmp_path / "push"
+    _a_clone_using_the_fleet_credential_helper(repo=push)
+    stub_dir = tmp_path / "stubs"
+    stub_dir.mkdir()
+    for name, body in (("uv", _UV_STUB), ("just", _JUST_STUB)):
+        _ = (stub_dir / name).write_text(body, encoding="utf-8")
+        (stub_dir / name).chmod(0o755)
+    env = {k: v for k, v in os.environ.items() if not k.startswith(("COVERAGE_", "COV_CORE_"))}
+    env.update(
+        {
+            "PATH": f"{stub_dir}{os.pathsep}{env['PATH']}",
+            "STUB_LOG": str(tmp_path / "log"),
+            "GREEN_TOKEN_EXIT": "1",
+            "SWITCH_EXIT": "1",
+            "GATE_RUN_EXIT": "0",
+            "GIT_CONFIG_GLOBAL": os.devnull,
+            "GIT_CONFIG_NOSYSTEM": "1",
+        }
+    )
+
+    completed = subprocess.run(
+        ["bash", str(_PRE_PUSH)],
+        cwd=str(push),
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert completed.returncode == 78
+    assert "one-hour" in completed.stderr
+    assert "just gate-start --local -- just check" in completed.stderr
+    assert "HTTP 401" in completed.stderr
+
+
+def test_a_fleet_app_token_push_that_delegates_to_the_cluster_is_not_refused(
+    *, tmp_path: Path
+) -> None:
+    """Only the local aggregate is guarded; a delegated verdict still gates the push."""
+    push = tmp_path / "push"
+    _a_clone_using_the_fleet_credential_helper(repo=push)
+
+    code, invoked = _run_pre_push(tmp_path=push, switch_exit="0")
+
+    assert code == 0
+    assert "uv run python -m livespec_dev_tooling.gate_remote_delegate run" in invoked
 
 
 def test_the_gate_pods_own_check_pre_push_gates_locally_instead_of_delegating_again(
