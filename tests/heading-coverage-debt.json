@@ -107,6 +107,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "non-functional-requirements.md",
+    "heading": "## Radar admission function",
+    "work_item": "livespec-dev-tooling-hvfc6c",
+    "first_seen": "2026-11-04"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "non-functional-requirements.md",
     "heading": "## Runner-pool node telemetry",
     "work_item": "livespec-dev-tooling-uftb4o",
     "first_seen": "2026-10-24"
@@ -394,6 +401,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: a lower-ordered target does not backfill an execution target a higher-ordered waiting target could use",
+    "work_item": "livespec-dev-tooling-hvfc6c",
+    "first_seen": "2026-11-04"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: a macOS developer host reads the ledger tenant through the loopback forward",
     "work_item": "livespec-dev-tooling-ko26ez",
     "first_seen": "2026-11-04"
@@ -439,6 +453,13 @@
     "heading": "## Scenario: a move to or from full still needs an empty-storage rehearsal",
     "work_item": "livespec-dev-tooling-zreev4",
     "first_seen": "2026-11-03"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a new execution target is admissible from one inventory entry",
+    "work_item": "livespec-dev-tooling-hvfc6c",
+    "first_seen": "2026-11-04"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -691,6 +712,13 @@
     "heading": "## Scenario: an apply refuses a plugin binary whose digest differs from an instance pin, and drift compares live pins to the installed binary",
     "work_item": "livespec-dev-tooling-rnsfgg",
     "first_seen": "2026-11-03"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: an execution target stays closed until its reading falls back past the exit threshold",
+    "work_item": "livespec-dev-tooling-hvfc6c",
+    "first_seen": "2026-11-04"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -950,6 +978,20 @@
     "heading": "## Scenario: the first required master leaf failure fences incident recovery",
     "work_item": "livespec-dev-tooling-47ij37",
     "first_seen": "2026-11-03"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: the highest-ordered ready target is admitted to any execution target with headroom for its cost",
+    "work_item": "livespec-dev-tooling-hvfc6c",
+    "first_seen": "2026-11-04"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: the radar admission function decides every ready target identically on identical inputs",
+    "work_item": "livespec-dev-tooling-hvfc6c",
+    "first_seen": "2026-11-04"
   },
   {
     "spec_root": "SPECIFICATION",
