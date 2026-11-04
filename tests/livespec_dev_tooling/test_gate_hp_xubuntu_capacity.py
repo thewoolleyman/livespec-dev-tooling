@@ -58,7 +58,7 @@ def test_gates_cluster_queue_has_a_quota_lane_for_each_gate_node() -> None:
         for flavor in resource_group["flavors"]
     }
     assert quotas == {
-        "gates-flavor": {"cpu": 15, "memory": "24Gi"},
+        "gates-flavor": {"cpu": 5, "memory": "8Gi"},
         "gates-hp-flavor": {"cpu": 5, "memory": "8Gi"},
     }
 

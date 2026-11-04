@@ -130,10 +130,17 @@ spec:
             # available to pods on this node without evicting the LLM model
             # from its 64 GiB iGPU carveout. Derivation in full: DERIVATION.md
             # "The gates quota on gmktec-xubuntu (2026-09-08)".
+            #
+            # INTERIM (2026-11-04, livespec-dev-tooling-cikd6m): cut to ONE
+            # gate. Six 4-CPU factory sandboxes that Kueue cannot see hold 24
+            # of gmktec's 32 CPU, so 15 admitted gates the scheduler could not
+            # place. 32 - 24 - 1 system = 7 free, which fits one 5-CPU gate.
+            # Revert this one commit when cikd6m makes Kueue see the factory.
+            # DERIVATION.md "INTERIM gmktec cut to 5 cpu and 8 Gi".
             - name: "cpu"
-              nominalQuota: 15
+              nominalQuota: 5
             - name: "memory"
-              nominalQuota: 24Gi
+              nominalQuota: 8Gi
         - name: gates-hp-flavor
           resources:
             # hp-xubuntu has 14500m CPU / 27.2 GiB allocatable, but currently

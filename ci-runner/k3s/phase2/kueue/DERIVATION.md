@@ -1136,7 +1136,7 @@ node delivers it without evicting anything. `gate-priority` (value 1000) then
 orders gates AMONG THEMSELVES — which of four queued gates takes the slot that
 frees — and orders nothing against a runner.
 
-### The gmktec numbers: 15 cpu and 24 Gi
+### The gmktec numbers: 15 cpu and 24 Gi (suspended by the interim cut below)
 
 **Envelope.** The plan's research/001 section 3 item 5 found about **50 GiB**
 available to pods on gmktec-xubuntu without evicting the local LLM model from
@@ -1174,6 +1174,40 @@ and RSS, whether three concurrent gates are what the node can absorb without
 the iowait signature the PowerEdge taught this fleet to watch for, and whether
 `cpu` remains the right binding term. Revise both numbers here when it does,
 and record the measurement rather than replacing one estimate with another.
+
+### INTERIM gmktec cut to 5 cpu and 8 Gi (2026-11-04, livespec-dev-tooling-cikd6m)
+
+**The 15 cpu / 24 Gi table above is SUSPENDED, not retracted.** On
+2026-11-04 at 01:35Z, gmktec-xubuntu had 32 allocatable CPU and 30 requested
+(93%). Six factory `petri-*` sandbox pods requested 4 CPU each, 24 CPU in all,
+and none of it is visible to Kueue. The rest was 1 CPU of system pods (the
+warm-uv populator and the kueue controller, 0.5 each) and one running 5-CPU
+gate. Kueue admitted gate Jobs against the 15-CPU quota that kube-scheduler
+could not place. `job-gate-livespec-dev-tooling-4pk86-7eff7` was admitted in
+0 s, then its pod sat Pending ("Insufficient cpu") for 30 minutes until Kueue
+evicted it with `PodsReadyTimeout` and requeued it. Another gate waited
+18.1 minutes from creation to pod start.
+
+| term | arithmetic | value |
+|---|---|---|
+| cpu free beside the factory | 32 allocatable - 24 (6 sandboxes x 4) - 1 system | 7 |
+| gates that fit | floor(7 / 5) | 1 |
+| cpu, as set | 1 gate x 5 cpu | **5** |
+| memory, as set | 1 gate x 6 Gi + 2 Gi headroom, matching hp | **8 Gi** |
+
+This changes capacity routing only. Every gate still runs every check. A gate
+that does not fit on gmktec now waits in Kueue's queue, or spills to
+`gates-hp-flavor` through the flavor order. Before, it was admitted to a node
+that could not run it. The cut is one commit, so reverting that commit restores
+15 / 24 exactly.
+
+**The root fix is livespec-dev-tooling-cikd6m:** Kueue must see the factory's
+CPU. When it lands, recompute this section from that accounting and retire the
+interim. Ruled by legacy-coordinator-agent on 2026-11-04 (R301): the factory is
+not capped on gmktec. The `bd-ib-plon2p` placement reconciler, owned by
+kubernetes-sandbox-backend, reads this quota live as a reserve and never
+prefers a node that cannot hold one more sandbox beside the unused part of
+it.
 
 ### The hp numbers: 5 cpu and 8 Gi
 
