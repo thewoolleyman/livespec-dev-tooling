@@ -56,6 +56,7 @@ Node registration alone satisfies none of the assertions: assertions 3, 4, 6 and
 - [002-portable-container-worker-nodes-2026-11-03.md](002-portable-container-worker-nodes-2026-11-03.md) — the portable-worker design report (image contents, standard bootstrap, Tailscale networking, lifecycle contract, cache audit, telemetry, publishing, acceptance table). Formerly `docs/research/2026-11-03-portable-container-worker-nodes.md`.
 - [003-cloud-burst-capacity-2026-11-02.md](003-cloud-burst-capacity-2026-11-02.md) — background comparison of provisioned cloud workers and their economics; a separate subject, not implementation authority. Formerly `docs/research/2026-11-02-homelab-burst-worker-node.md`.
 - [004-two-host-phases-2026-11-04.md](004-two-host-phases-2026-11-04.md) — the two-host revision: M4 Max and MacBook Air workers, host-change discipline through the info repositories, phases A-F and the current Definition of Done.
+- [005-worker-implementation-brief-2026-11-04.md](005-worker-implementation-brief-2026-11-04.md) — measured fleet facts (Flannel VXLAN, CIDRs, egress selector in `agent` mode, kube-router policy, bootstrap RBAC absent), pinned arm64 worker components, the enrollment and underlay options, and the slice order behind the Phase C children.
 
 The rulings in this note govern where the reports differ: Mac first rather than Linux amd64 first, Homebrew/Lima/VZ inside the start task rather than Docker Desktop or Colima, one worker per host, and CI first with factory afterward.
 
