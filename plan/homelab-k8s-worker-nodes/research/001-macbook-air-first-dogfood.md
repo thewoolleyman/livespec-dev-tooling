@@ -17,6 +17,15 @@ One representative CI job, with factory workloads afterward (Recommended)
 - The existing telemetry route attributes the worker's health and workload cache/build spans to macbook-air-homelab-worker.
 - Restarting the worker preserves its identity and permits a subsequent representative CI job to complete.
 - After the CI dogfood milestone, the worker completes a representative factory sandbox task through the established factory backend.
+- The macbook-air-homelab-worker image is built from livespec-dev-tooling sources as a native arm64 OCI image running upstream kubelet and containerd, and is published to GHCR under the repository's existing image publication conventions.
+- The worker joins the existing K3s cluster through standard Kubernetes TLS bootstrap with no K3s agent inside the image, and the control plane streams the worker's pod logs and exec sessions and reads its kubelet stats.
+- Pods on macbook-air-homelab-worker reach pods on the existing nodes, ClusterIP Services and cluster DNS across the mixed LAN and tailnet route, and a NetworkPolicy denies traffic to such a pod that an allow policy otherwise admits.
+- Before admitting any workload, the start task's probe of the Lima VM reports enforced AppArmor, pod user namespaces with idmapped mounts, TUN, delegated cgroups, mount propagation, nested containerd and reflink-capable local storage, and it stops with an actionable diagnosis when any of them is missing.
+- Rerunning the start task for macbook-air reuses the installed Lima without upgrading it, keeps the named VM's disk, the worker's identity and its caches, and refuses to create a second worker on the same host.
+- The MacBook Air keeps its existing macbook-air Tailscale identity while the worker runs under its own separate macbook-air-homelab-worker tailnet identity.
+- The representative CI job's workload and support images run natively as arm64 on the worker without CPU emulation.
+- From the Mac checkout, the guarded bd CLI reads and writes this repository's shared ledger tenant through an approved connection, with no local beads store created.
+- Every production cluster network or control-plane change the worker needs is applied through a reviewed change that carries a recorded rollback.
 
 # MacBook Air first dogfood: feasibility and implementation direction
 
@@ -26,13 +35,32 @@ The maintainer named the 2026 MacBook Air as the first dogfood and local herdr a
 
 Creation records the maintainer's supplied objective and CI-first confirmation above. The remaining assertions are the session's concrete derivation of that objective and the already requested bootstrap, cache, telemetry and lifecycle requirements; they do not claim any runtime proof has occurred.
 
-Background: [portable-worker research](../../../docs/research/2026-11-03-portable-container-worker-nodes.md) and [cloud-burst comparison](../../../docs/research/2026-11-02-homelab-burst-worker-node.md). The newer maintainer rulings in this note govern first-host selection, naming and installation behavior.
+Assertions 1-7 were derived at creation (2026-11-04, epic `livespec-dev-tooling-ko26ez`, then slug `portable-container-worker-macbook-air`). Assertions 8-16 were added on 2026-11-04 when the plan was renamed to `homelab-k8s-worker-nodes`; each restates one decision of the maintainer's restart brief quoted verbatim below. Assertions 1-7 are unchanged.
+
+### The maintainer's restart-brief decisions (verbatim, 2026-11-04)
+
+> 1. A custom portable OCI Kubernetes worker owned and published by livespec-dev-tooling, using upstream kubelet/containerd and standard Kubernetes bootstrap. Existing K3s first; Talos support later. Keep the existing GHCR publication conventions.
+> 2. Exactly ONE worker container per physical host or declared cloud execution target. Multiple pods run inside that worker. The command takes the HOST/target name and derives <host>-homelab-worker for the container, Kubernetes Node and separate worker Tailscale identity. Preserve the physical host's existing identity.
+> 3. First dogfood: the new 2026 MacBook Air, Mac17,4, Apple M5, 10 CPU cores (4 Super + 6 Efficiency), 32 GB RAM, approximately 878 GB free of a 995 GB disk. Tailscale DNS was macbook-air.perch-rudd.ts.net, observed online; verify current state. Target argument macbook-air; worker name macbook-air-homelab-worker.
+> 4. Implement and build locally in the Mac's local herdr, because the VPS is overloaded. Bootstrap only the needed native development tooling, authorized credentials and shared-ledger access. The existing credential wrapper supports Darwin/Keychain; the ledger's committed loopback address needs an approved tunnel/config. Do not create a substitute local ledger or run bd init.
+> 5. Lima setup AND installation belong inside the idempotent just start-homelab-worker-node-container macbook-air task. Preferred: Homebrew native ARM Lima package, installing only if missing and reusing a compatible installation; Apple's native VZ backend; a named, reproducible Ubuntu arm64 VM with rootful Docker. Preserve VM disk, worker identity and caches on reruns; surface unavoidable first-run Homebrew/admin interaction. Avoid unconditional upgrades or a self-bundled Lima distribution.
+> 6. The user explicitly selected ONE REPRESENTATIVE CI JOB as the first dogfood milestone, with FACTORY WORKLOADS AFTERWARD. Factory dogfood remains a later phase of this plan. Talos/cloud/autoscaling/runtime parity are explicit later scopes.
+> 7. Prove the real VM's AppArmor, pod user namespaces/idmapped mounts, TUN, cgroups/mount propagation, nested runtime and local reflink-capable storage. Build native ARM workload/support images. Prove existing-cluster bootstrap, kubelet streaming/stats, CNI/Services/DNS, NetworkPolicy and mixed LAN/tailnet routing. Retain existing security and reviewed cluster-change boundaries. Caches and telemetry must work on the new host, with private writable job state and useful warm runs. Node registration alone is not dogfood success.
+
+Node registration alone satisfies none of the assertions: assertions 3, 4, 6 and 7 each require a real job or task to complete on the worker.
+
+## Research in this plan
+
+- [002-portable-container-worker-nodes-2026-11-03.md](002-portable-container-worker-nodes-2026-11-03.md) — the portable-worker design report (image contents, standard bootstrap, Tailscale networking, lifecycle contract, cache audit, telemetry, publishing, acceptance table). Formerly `docs/research/2026-11-03-portable-container-worker-nodes.md`.
+- [003-cloud-burst-capacity-2026-11-02.md](003-cloud-burst-capacity-2026-11-02.md) — background comparison of provisioned cloud workers and their economics; a separate subject, not implementation authority. Formerly `docs/research/2026-11-02-homelab-burst-worker-node.md`.
+
+The rulings in this note govern where the reports differ: Mac first rather than Linux amd64 first, Homebrew/Lima/VZ inside the start task rather than Docker Desktop or Colima, one worker per host, and CI first with factory afterward.
 
 ## Hardware and observed access
 
 Supplied hardware: MacBook Air, Mac17,4, model Z1LY000KFLL/A, Apple M5, 10 CPU cores (4 Super and 6 Efficiency), 32 GB memory. Supplied local storage: 994.61 GB capacity and 878.33 GB free. These are the maintainer's measurements, not independent local probes.
 
-On 2026-11-04, read-only Tailscale status reported MacBook Air online with DNS name macbook-air.perch-rudd.ts.net. Use macbook-air as the canonical target and macbook-air-homelab-worker as the container, Kubernetes Node and worker tailnet name. The physical host keeps its existing tailnet identity. This VPS's herdr reported no saved SSH machines; no remote shell login or Mac installation was attempted.
+On 2026-11-04, read-only Tailscale status reported MacBook Air online with DNS name macbook-air.perch-rudd.ts.net; re-checked at 01:40Z the same day from the VPS, it was online (`active; direct`, tailnet address 100.70.51.124, OS macOS). Use macbook-air as the canonical target and macbook-air-homelab-worker as the container, Kubernetes Node and worker tailnet name. The physical host keeps its existing tailnet identity. This VPS's herdr reported no saved SSH machines; no remote shell login or Mac installation was attempted.
 
 The machine is a credible native ARM development and first-worker host. Memory and disk are sufficient for a bounded Linux builder/worker VM; real interactive impact, thermal behavior, sustained throughput and safe admission still need measurement. Mixed CPU cores are not equivalent to ten identical server cores. Start with one representative job; no pod or churn-slot count is derived from this hardware listing.
 
@@ -60,16 +88,19 @@ The installed 1Password environment wrapper already contains an explicit Darwin 
 
 Current pre-commit/pre-push configuration delegates gates to the existing cluster. Moving implementation to the Mac moves editing/build/probe CPU off the VPS; it does not automatically relocate every central review gate. Keep those gates unless a separately governed change moves them.
 
-## Implementation sequence
+## Implementation stages
 
-1. Establish the local herdr checkout, native toolchain, scoped credentials and shared-ledger reachability, with a reproducible bootstrap path.
-2. Build the Lima/Ubuntu capability probe and idempotent host-to-VM setup; prove the existing pod security/filesystem requirements on the actual Air before constructing the full node integration.
-3. Build the custom arm64 worker image and the selected ARM CI/support image chain, converting hardcoded amd64 assets where needed. Validate in an isolated matching K3s fixture and reuse the established GHCR build/release model.
-4. Prove standard Kubernetes bootstrap, serving certificates, CNI, Service/DNS, NetworkPolicy and control-plane-to-kubelet paths. Any K3s egress-selector or existing-node routing change needs the normal controlled production change and rollback, not an automatic laptop bootstrap side effect.
-5. Join macbook-air-homelab-worker with an initial admission hold, run a representative real CI job, then repeat it warm and after restart. Verify node-local uv/reflink behavior, architecture-correct compilation caches, job isolation and attributed telemetry. Record queue-to-result and interactive-host impact before expanding admission.
-6. After the CI milestone, add the factory backend placement/credential/cache/telemetry adaptation and complete one real factory sandbox task. Keep resource requests and verdict integrity; interrupted jobs must remain identifiable.
+Each stage names the plan assertions it moves toward proof. No stage's completion discharges an assertion; the plan-level proof does.
 
-Mac-local implementation is the maintainer's stated venue. It does not require turning the Mac into a Fabro server first. Later work-item routing must explicitly preserve that venue for Mac host integration/proofs, rather than dispatching the Mac-specific proof onto an unrelated Linux factory and calling it done. Portable code and normal repository review gates still use their established governance.
+1. **Stage 0 — Mac development bootstrap (local herdr).** Clone the repository on the Mac, install the pinned toolchain, record the Mac's own primary path, install the credential wrapper's Darwin/Keychain path, and reach the shared ledger tenant through an approved tunnel. Prove a worktree → commit → push round trip from the Mac. Assertions 1 and 15.
+2. **Stage 1 — Mac capability probe and the idempotent start task.** Write the Homebrew/Lima/VZ install-or-reuse step and the named Ubuntu arm64 VM with rootful Docker, then probe the real VM for AppArmor, pod user namespaces with idmapped mounts, TUN, cgroup delegation, mount propagation, nested containerd and reflink storage. Measure first; if the guest lacks a capability, choose a compatible pinned guest rather than weaken policy. Assertions 2, 11, 12 and 13.
+3. **Stage 2 — worker image and existing-cluster integration.** Build the arm64 worker image (upstream kubelet/containerd, CNI agent) through the GHCR conventions; prove standard bootstrap, serving certificates, kubelet streaming/stats, Flannel/Services/DNS and NetworkPolicy against an isolated matching K3s fixture first, then against production with an admission hold. Any K3s egress-selector or underlay change goes through a reviewed change with rollback. Assertions 8, 9, 10 and 16.
+4. **Stage 3 — native ARM CI dogfood.** Convert the Python-lane workload and support image chain to `TARGETARCH`, route one representative CI job to the worker with the real hook/AppArmor/userns posture, then run it warm and after a worker restart. Verify node-local uv/reflink caches, private writable job state and telemetry attribution. Assertions 3, 4, 5, 6 and 14.
+5. **Stage 4 — factory dogfood.** After Stage 3, adapt factory placement, credentials, caches and telemetry, and complete one real factory sandbox task on the worker. Assertion 7.
+
+Stage 0 and Stage 1 run on the Mac before any implementation child is filed. Their measurements decide how stages 2-4 are sliced. The portable worker has no governing heading in `SPECIFICATION/` yet, and a child's Definition of Done must reference one. So before filing the first children, propose the worker's scenarios through `/livespec:propose-change`, and revise them in.
+
+Mac-local implementation is the maintainer's stated venue. It does not require turning the Mac into a Fabro server first. Children whose proof needs the Mac host are recorded as factory-ineligible, with the Mac-local session as their route. Portable code may still take the factory route. Later work-item routing must explicitly preserve that venue for Mac host integration/proofs, rather than dispatching the Mac-specific proof onto an unrelated Linux factory and calling it done. Portable code and normal repository review gates still use their established governance.
 
 ## Initial feasibility proof and stop conditions
 
