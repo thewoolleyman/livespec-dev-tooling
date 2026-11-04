@@ -811,7 +811,10 @@ at zero runs and the fleet instance in a cancel-and-redispatch window, so until
 each restarts it still serves its earlier build. On 2026-11-04 all three move
 again, to `8764f1d`: `95a2e5b` plus `thewoolleyman/fabro#15`, `#18` and `#19`
 (livespec-orchestrator-beads-fabro `bd-ib-6r3yax`, `bd-ib-bpucez` and
-`bd-ib-ljw2xg`), rolled out the same way. The rollback target is named in `host_vars` beside the pin and never
+`bd-ib-ljw2xg`), rolled out the same way. Later on 2026-11-04 all three move to
+`c39bdbd`: `8764f1d` plus `thewoolleyman/fabro#22`, `#21` and `#23`
+(livespec-orchestrator-beads-fabro `bd-ib-gmuxd4` and `bd-ib-xoh477`), rolled out
+the same way. The rollback target is named in `host_vars` beside the pin and never
 here, because that is the file an operator rolling back edits.
 
 `fabro_server_host_checkout_remote` is declared because the host had no
