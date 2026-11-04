@@ -154,24 +154,22 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
 
-      # Hosted routing keeps the baked container but checks out as runner uid
-      # 1001 while steps run git as ROOT → "dubious ownership" (exit 128). Trust
-      # the workspace globally (HOME survives config.py's GIT_* scrub). No-op self-hosted.
-      - name: Trust workspace for git (hosted container root-vs-checkout uid)
-        run: git config --global --add safe.directory '*'
-
-      # Tools are baked into the image; `mise install` is a near-no-op that just
-      # confirms the pinned versions. A fresh container does not TRUST the repo
-      # .mise.toml, so `mise trust` is required for the shims to resolve.
-      # (Replaces the GitHub-hosted mise-action install + the actions/cache uv
-      # restore — the local runner's persistent ~/.cache/uv is the cache now.)
-      - name: mise trust + install (baked tools — install is a near-no-op)
+      # ONE step, not three: every step of a k3s job pays about 1 s of
+      # container-hook launch (livespec-dev-tooling-ix4jjq, measured over all
+      # 8,584 k3s jobs of 2026-11-03). Same commands, same order, and the
+      # step shell is `-e`, so the first failing command still fails the step.
+      # - git trust: hosted routing checks out as runner uid 1001 while steps
+      #   run git as ROOT ("dubious ownership", exit 128); trust the workspace
+      #   globally (HOME survives config.py's GIT_* scrub). No-op self-hosted.
+      # - mise: tools are baked into the image, so `mise install` is a
+      #   near-no-op; a fresh container does not TRUST the repo .mise.toml,
+      #   so `mise trust` is required for the shims to resolve.
+      - name: Prepare workspace (git trust, mise trust + install, uv sync)
         run: |
+          git config --global --add safe.directory '*'
           mise trust
           mise install
-
-      - name: Install Python dev deps via uv
-        run: uv sync --all-groups
+          uv sync --all-groups
 
       - name: just ${{ matrix.target }}
         run: |
@@ -207,16 +205,22 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
 
-      - name: Trust workspace for git (hosted container root-vs-checkout uid)
-        run: git config --global --add safe.directory '*'
-
-      - name: mise trust + install (baked tools — install is a near-no-op)
+      # ONE step, not three: every step of a k3s job pays about 1 s of
+      # container-hook launch (livespec-dev-tooling-ix4jjq, measured over all
+      # 8,584 k3s jobs of 2026-11-03). Same commands, same order, and the
+      # step shell is `-e`, so the first failing command still fails the step.
+      # - git trust: hosted routing checks out as runner uid 1001 while steps
+      #   run git as ROOT ("dubious ownership", exit 128); trust the workspace
+      #   globally (HOME survives config.py's GIT_* scrub). No-op self-hosted.
+      # - mise: tools are baked into the image, so `mise install` is a
+      #   near-no-op; a fresh container does not TRUST the repo .mise.toml,
+      #   so `mise trust` is required for the shims to resolve.
+      - name: Prepare workspace (git trust, mise trust + install, uv sync)
         run: |
+          git config --global --add safe.directory '*'
           mise trust
           mise install
-
-      - name: Install Python dev deps via uv
-        run: uv sync --all-groups
+          uv sync --all-groups
 
       - name: just check-per-file-coverage
         run: |
@@ -274,16 +278,22 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
 
-      - name: Trust workspace for git (hosted container root-vs-checkout uid)
-        run: git config --global --add safe.directory '*'
-
-      - name: mise trust + install (baked tools — install is a near-no-op)
+      # ONE step, not three: every step of a k3s job pays about 1 s of
+      # container-hook launch (livespec-dev-tooling-ix4jjq, measured over all
+      # 8,584 k3s jobs of 2026-11-03). Same commands, same order, and the
+      # step shell is `-e`, so the first failing command still fails the step.
+      # - git trust: hosted routing checks out as runner uid 1001 while steps
+      #   run git as ROOT ("dubious ownership", exit 128); trust the workspace
+      #   globally (HOME survives config.py's GIT_* scrub). No-op self-hosted.
+      # - mise: tools are baked into the image, so `mise install` is a
+      #   near-no-op; a fresh container does not TRUST the repo .mise.toml,
+      #   so `mise trust` is required for the shims to resolve.
+      - name: Prepare workspace (git trust, mise trust + install, uv sync)
         run: |
+          git config --global --add safe.directory '*'
           mise trust
           mise install
-
-      - name: Install Python dev deps via uv
-        run: uv sync --all-groups
+          uv sync --all-groups
 
       - name: Download the producer's .coverage
         uses: actions/download-artifact@v4
@@ -324,16 +334,22 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
 
-      - name: Trust workspace for git (hosted container root-vs-checkout uid)
-        run: git config --global --add safe.directory '*'
-
-      - name: mise trust + install (baked tools — install is a near-no-op)
+      # ONE step, not three: every step of a k3s job pays about 1 s of
+      # container-hook launch (livespec-dev-tooling-ix4jjq, measured over all
+      # 8,584 k3s jobs of 2026-11-03). Same commands, same order, and the
+      # step shell is `-e`, so the first failing command still fails the step.
+      # - git trust: hosted routing checks out as runner uid 1001 while steps
+      #   run git as ROOT ("dubious ownership", exit 128); trust the workspace
+      #   globally (HOME survives config.py's GIT_* scrub). No-op self-hosted.
+      # - mise: tools are baked into the image, so `mise install` is a
+      #   near-no-op; a fresh container does not TRUST the repo .mise.toml,
+      #   so `mise trust` is required for the shims to resolve.
+      - name: Prepare workspace (git trust, mise trust + install, uv sync)
         run: |
+          git config --global --add safe.directory '*'
           mise trust
           mise install
-
-      - name: Install Python dev deps via uv
-        run: uv sync --all-groups
+          uv sync --all-groups
 
       - name: Run the batched python checks
         run: |
@@ -489,25 +505,22 @@ jobs:
           # the other metadata entries.
           fetch-depth: 0
 
-      # Hosted routing keeps the baked container but checks out as runner uid
-      # 1001 while steps run git as ROOT → "dubious ownership" (exit 128). Trust
-      # the workspace globally (HOME survives config.py's GIT_* scrub). No-op self-hosted.
-      - name: Trust workspace for git (hosted container root-vs-checkout uid)
-        run: git config --global --add safe.directory '*'
-
-
-      # Tools are baked into the image; `mise install` is a near-no-op. A fresh
-      # container does not TRUST the repo .mise.toml, so `mise trust` is required
-      # for the shims to resolve. (Replaces the mise-action install + the
-      # actions/cache uv restore — the runner's persistent ~/.cache/uv is the
-      # cache now.)
-      - name: mise trust + install (baked tools — install is a near-no-op)
+      # ONE step, not three: every step of a k3s job pays about 1 s of
+      # container-hook launch (livespec-dev-tooling-ix4jjq, measured over all
+      # 8,584 k3s jobs of 2026-11-03). Same commands, same order, and the
+      # step shell is `-e`, so the first failing command still fails the step.
+      # - git trust: hosted routing checks out as runner uid 1001 while steps
+      #   run git as ROOT ("dubious ownership", exit 128); trust the workspace
+      #   globally (HOME survives config.py's GIT_* scrub). No-op self-hosted.
+      # - mise: tools are baked into the image, so `mise install` is a
+      #   near-no-op; a fresh container does not TRUST the repo .mise.toml,
+      #   so `mise trust` is required for the shims to resolve.
+      - name: Prepare workspace (git trust, mise trust + install, uv sync)
         run: |
+          git config --global --add safe.directory '*'
           mise trust
           mise install
-
-      - name: Install Python dev deps via uv
-        run: uv sync --all-groups
+          uv sync --all-groups
 
       - name: just ${{ matrix.target }}
         env:
@@ -563,22 +576,21 @@ jobs:
           # or read git metadata; cheap for this repo.
           fetch-depth: 0
 
-      - name: Trust workspace for git (hosted container root-vs-checkout uid)
-        run: git config --global --add safe.directory '*'
-
-      - name: Install canonical commit-refuse hook (satisfy invariant)
-        run: python3 -m livespec_dev_tooling.install_commit_refuse_hooks
-
-      - name: Install canonical worktree pack (satisfy invariant)
-        run: python3 -m livespec_dev_tooling.install_worktree_pack
-
-      - name: mise trust + install (baked tools — install is a near-no-op)
+      # ONE step for the whole preparation (livespec-dev-tooling-ix4jjq): every
+      # k3s step pays about 1 s of container-hook launch. Same commands in the
+      # same order; the step shell is `-e`, so the first failure fails it. The
+      # canonical commit-refuse hook and worktree pack are installed
+      # unconditionally, before any check runs, to satisfy the invariants
+      # check-primary-checkout-commit-refuse-hook-installed and
+      # check-shell-quality read.
+      - name: Prepare workspace (git trust, canonical hook + pack, mise trust + install, uv sync)
         run: |
+          git config --global --add safe.directory '*'
+          python3 -m livespec_dev_tooling.install_commit_refuse_hooks
+          python3 -m livespec_dev_tooling.install_worktree_pack
           mise trust
           mise install
-
-      - name: Install Python dev deps via uv
-        run: uv sync --all-groups
+          uv sync --all-groups
 
       - name: Run the batched metadata checks
         env:

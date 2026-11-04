@@ -1,4 +1,2 @@
-work_item=livespec-dev-tooling-5d3cvr
-reason=Wire the new aggregate slug check-delegated-gate-check-suite into ci.yml's check-metadata-batch step so check-ci-matrix-completeness sees it run in CI. The factory run that added the check (01M6HQ6QWE0A, PR #3328) cannot push a workflow edit with the App token. One added line; nothing deleted or modified.
-change=additive
-ci_runtime=no-significant-increase
+work_item=livespec-dev-tooling-ix4jjq
+reason=Fold each k3s CI job's near-no-op setup steps (git safe.directory trust, mise trust + install, and in check-metadata-batch the canonical hook and pack installers) into the uv sync step, so each job pays two to four fewer container-hook launches (about 1 s each). Same commands in the same order; nothing removed from any check or coverage leg. approval:workflow-edit set by legacy-coordinator-agent under the maintainer's standing ruling on 6tgd2z (2026-11-03T15:00:49Z).
