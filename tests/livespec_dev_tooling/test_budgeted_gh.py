@@ -657,3 +657,15 @@ def test_the_budget_client_reads_with_no_public_runtime_installed(tmp_path: Path
         "stdout": _FAKE_GH_STDOUT,
     }
     assert [row["argv"] for row in _signal_rows(path=signal)] == [_FAKE_GH_READ_ARGV]
+
+
+# EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-rqhqnb
+def test_canonical_api_identity_metadata_ignores_environment_and_makes_no_request(monkeypatch):
+    monkeypatch.setenv("GH_HOST", "attacker.invalid")
+    monkeypatch.setenv("GITHUB_API_URL", "https://attacker.invalid")
+
+    monkeypatch.setattr(subprocess, "run", None)
+    assert (
+        budgeted_gh.github_api_url(path="repos/owner/repo/check-runs/913")
+        == "https://api.github.com/repos/owner/repo/check-runs/913"
+    )
