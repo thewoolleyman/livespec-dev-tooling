@@ -2,6 +2,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "contracts.md",
+    "heading": "## Config-value fast path at pre-commit",
+    "work_item": "livespec-dev-tooling-hmztez",
+    "first_seen": "2026-11-04"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "contracts.md",
     "heading": "## Delegated commit-time replay test runs",
     "work_item": "livespec-dev-tooling-sewnfp",
     "first_seen": "2026-11-01"
@@ -40,6 +47,13 @@
     "heading": "## Suite-green replay leg",
     "work_item": "livespec-dev-tooling-z5fwwn",
     "first_seen": "2026-11-02"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "contracts.md",
+    "heading": "## Tests never pin committed configuration values",
+    "work_item": "livespec-dev-tooling-symfx2",
+    "first_seen": "2026-11-04"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -597,6 +611,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: a staged capacity value change commits on schema validation alone",
+    "work_item": "livespec-dev-tooling-hmztez",
+    "first_seen": "2026-11-04"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: a stalled or contested fix-forward releases the held revert",
     "work_item": "livespec-dev-tooling-joqff6",
     "first_seen": "2026-10-22"
@@ -802,6 +823,13 @@
     "spec_file": "scenarios.md",
     "heading": "## Scenario: bootstrap names a missing ledger pointer instead of reporting success",
     "work_item": "livespec-dev-tooling-ko26ez",
+    "first_seen": "2026-11-04"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: changing a committed capacity value to another valid value leaves every test passing",
+    "work_item": "livespec-dev-tooling-symfx2",
     "first_seen": "2026-11-04"
   },
   {
