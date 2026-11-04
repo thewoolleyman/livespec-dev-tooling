@@ -123,6 +123,7 @@ def test_real_fast_gate_and_failure_are_persisted_without_slow_or_normal_evidenc
     capsys: pytest.CaptureFixture[str],
     failure: int,
 ) -> None:
+    monkeypatch.setenv("GIT_DIR", str(tmp_path / "foreign.git"))
     _reading, receipts = _wired(root=tmp_path, monkeypatch=monkeypatch, failure=failure)
     assert module.main(argv=["pre-commit"]) == failure
     assert len(receipts) == 1
