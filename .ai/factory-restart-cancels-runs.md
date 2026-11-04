@@ -53,15 +53,57 @@ export (livespec-orchestrator-beads-fabro `AGENTS.md`, "Export, then reap").
 
 1. List the instance's active runs: `fabro ps --server <instance>`.
 2. Record each run's work-item id; you will re-dispatch exactly that set.
-3. Cancel each run through `POST /api/v1/runs/{id}/cancel`.
-4. Confirm `fabro ps --server <instance>` shows none active.
-5. Do the step — the restart, the upgrade, the chain step — through its normal
-   path, with the role's restart flag where it applies.
-6. On a Kubernetes-backed instance, reap the cancelled runs' sandbox pods
+3. Read each run's CURRENT STAGE before cancelling anything. A run in
+   `publish_draft` or `pr_refresh` has passed janitor and is pushing or
+   refreshing its green commit; never cancel it blind. Either let it finish
+   its publish step, or first preserve its green commit to a
+   `needs-human/<item>-<date>` ref on the target repository's origin, then
+   cancel it.
+4. Cancel each run through `POST /api/v1/runs/{id}/cancel`.
+5. Confirm `fabro ps --server <instance>` shows none active.
+6. Do the step — the restart, the upgrade, the chain step — through its normal
+   path, with the role's restart flag where it applies. Keep the window
+   between the cancel and the re-dispatch short; see "Keep the restart play
+   short" below.
+7. On a Kubernetes-backed instance, reap the cancelled runs' sandbox pods
    BEFORE you re-dispatch anything. Run the next step after every
    cancel-to-idle restart on gmktec, of either instance.
-7. Re-dispatch every cancelled item at once, or route it to another factory.
+8. Re-dispatch every cancelled item at once, or route it to another factory.
    Read each item's ledger state before re-dispatching it.
+
+What it cost: on 2026-11-04 the main gmktec instance (`:32276`) was cancelled
+to idle at 09:56:18–09:56:35Z for the c39bdbd engine restart (plan
+`fabro-currency`, epic `bd-ib-6tcjfx`, session `claude:fabro-currency`).
+Thirteen runs were cancelled without reading their stages. One of them,
+`bd-ib-uq2ocd` run `01M6JSNVH32S8`, had passed janitor and was mid-push in
+`publish_draft`. Its green commit was lost: the run record shows no diff, and
+its sandbox pod was gone after the cancel. The ruling to read stages first is
+`legacy-coordinator-agent`'s, given the same day.
+
+## Keep the restart play short
+
+The restart play converges far more than the restart. In the same 2026-11-04
+window,
+
+```text
+just ansible-apply ansible/fabro-hosts.yml --limit gmktec-xubuntu \
+  -e '{"fabro_server_target_units": ["fabro-server"]}' \
+  -e fabro_server_restart_allowed=true
+```
+
+converged every gmktec role in order before the `fabro_server` restart handler
+fired, so the factory sat cancelled but not restarted for many minutes.
+`fabro_server_target_units` narrows only the `fabro_server` loop, not the roles
+ahead of it.
+
+There is no tag to narrow the play to the restart: `fabro_server` is reached
+through an untagged `include_role` task in `ansible/fabro-hosts.yml`, and the
+role itself carries no tags (checked 2026-11-04). Until one exists, start the
+restart play BEFORE cancelling, and cancel when its output reaches the last
+role ahead of the include (`fabro_server_cpu_weight`). The role's busy probe
+refuses the restart if any run is still active when it fires, so the cancel
+must be confirmed (step 5) before the play reaches the include. The missing tag
+is a gap: a tag on that include task would let `--tags` run the restart alone.
 
 ## Reap the abandoned sandbox pods before re-dispatching
 
