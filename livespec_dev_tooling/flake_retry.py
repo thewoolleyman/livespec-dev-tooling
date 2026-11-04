@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING, cast
 
 import pytest
 
-from livespec_dev_tooling.gate_remote_invocation import Failure, default_gate_command_runner
+from livespec_dev_tooling.flake_retry_changes import change_paths
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -48,61 +48,6 @@ class RetryResult:
     nodeid: str
     attempts: int
     outcome: str
-
-
-def _run_git(*, root: Path, args: list[str]) -> set[Path] | None:
-    """Read one newline-delimited git path query, or report an unknown result."""
-    invoked = default_gate_command_runner(argv=["git", *args], cwd=root)
-    if isinstance(invoked, Failure):
-        return None
-    completed = invoked.unwrap()
-    if completed.returncode != 0:
-        return None
-    return {Path(line) for line in completed.stdout.splitlines() if line}
-
-
-def _default_branch_ref(*, repo_root: Path) -> str | None:
-    """Name the remote default branch, or report that it cannot be known.
-
-    `origin/HEAD` is the authority when it is set. A CI checkout usually does
-    not set it, so the conventional `origin/main` and `origin/master` are tried
-    next, and a repository with neither has no computable change set.
-    """
-    default = _run_git(root=repo_root, args=["symbolic-ref", "--short", "refs/remotes/origin/HEAD"])
-    if default is not None and len(default) == 1:
-        return next(iter(default)).as_posix()
-    for candidate in ("origin/main", "origin/master"):
-        if (
-            _run_git(root=repo_root, args=["rev-parse", "--verify", "--quiet", candidate])
-            is not None
-        ):
-            return candidate
-    return None
-
-
-def change_paths(*, repo_root: Path) -> set[Path] | None:
-    """Return committed, index, working-tree, and untracked changes."""
-    remote = _default_branch_ref(repo_root=repo_root)
-    if remote is None:
-        return None
-    base = _run_git(root=repo_root, args=["merge-base", "HEAD", remote])
-    head = _run_git(root=repo_root, args=["rev-parse", "HEAD"])
-    if base is None or head is None or len(base) != 1 or len(head) != 1:
-        return None
-    comparison = "HEAD^" if base == head else next(iter(base)).as_posix()
-    queries: tuple[list[str], ...] = (
-        ["diff", "--name-only", comparison, "HEAD"],
-        ["diff", "--name-only", "--cached"],
-        ["diff", "--name-only"],
-        ["ls-files", "--others", "--exclude-standard"],
-    )
-    changed: set[Path] = set()
-    for query in queries:
-        result = _run_git(root=repo_root, args=query)
-        if result is None:
-            return None
-        changed.update(result)
-    return changed
 
 
 def _module_path(*, repo_root: Path, module: str) -> Path | None:
