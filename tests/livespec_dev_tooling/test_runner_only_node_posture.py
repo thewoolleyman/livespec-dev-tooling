@@ -188,13 +188,14 @@ def _cohort_quota_total() -> int:
     )
 
 
-def test_the_rebalance_moves_eight_slots_from_poweredge_to_hp_and_keeps_the_total_at_44() -> None:
-    """hp's 8 churn slots came from poweredge, so the cohort total and its quotas did not move.
+def test_every_pool_profile_declares_a_positive_capacity_and_they_sum_to_the_cohort_quota() -> None:
+    """The node split is an operating value; only its SHAPE and its derivation are pinned.
 
-    The 450-point JIT startup budget caps a cold start at about 45 mint pairs and
-    nothing else in the pool caps it, so opening hp could not ADD capacity
-    (DERIVATION.md "The rebalance at C = 44 — hp-xubuntu opened runner-only
-    (2026-11-03)").
+    Each pool node's `ADMISSION_CAPACITY_C` is moved by measured load (DERIVATION.md
+    records each step), so no literal per-node value is asserted here: a test that
+    pins a live capacity turns an operator dial into a red build (maintainer
+    direction 2026-11-04, epic livespec-dev-tooling-6tgd2z). What MUST hold whatever
+    the values are is the spec's equality: the profiles sum to the cohort quota.
     """
     capacities = {
         profile.stem: int(
@@ -202,16 +203,12 @@ def test_the_rebalance_moves_eight_slots_from_poweredge_to_hp_and_keeps_the_tota
         )
         for profile in sorted(_PROFILES.glob("*.env"))
     }
-    assert capacities == {
-        "gmktec-xubuntu": 18,
-        "hp-xubuntu": 5,
-        "poweredge-xubuntu": 21,
-    }, (
-        f'the cores-derived split is poweredge 27, gmktec 12, hp 5 (DERIVATION.md "Per-node '
-        f'churn slots derived from cores (2026-11-04)"); got {capacities}'
-    )
-    assert sum(capacities.values()) == 44 == _cohort_quota_total(), (
-        f"the profiles must still sum to 44 and equal the ten cohort quotas; "
+    assert capacities, "at least one pool node profile must declare ADMISSION_CAPACITY_C"
+    assert all(
+        value > 0 for value in capacities.values()
+    ), f"every open pool node advertises a positive churn-slot capacity; got {capacities}"
+    assert sum(capacities.values()) == _cohort_quota_total(), (
+        f"the profiles must sum to the cohort quotas; "
         f"profiles={sum(capacities.values())} quotas={_cohort_quota_total()}"
     )
     assert (
