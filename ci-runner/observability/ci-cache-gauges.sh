@@ -19,8 +19,6 @@
 #                                  column the cache dead-man trigger counts.
 #   generation_age_s {tier=uv}     seconds since the current warm-uv
 #   generation_bytes {tier=uv}     generation was published, and its size.
-#   generation_age_s {tier=git}    the git object seed's OLDEST per-repository
-#   generation_bytes {tier=git}    generation age and its LARGEST size.
 #   registry.up                    whether the crates proxy's stub_status
 #   registry.requests_5m           answered, and requests it served since
 #                                  the last tick. (No store-size gauge: nginx
@@ -119,27 +117,6 @@ if target="$(readlink -f "${WARM_ROOT}/uv" 2>/dev/null)" && [ -d "${target}" ]; 
   put uv_generation_bytes "$(du -sb "${target}" | cut -f1)"
 else
   log "warm root ${WARM_ROOT}/uv has no current generation; omitting the uv tier" >&2
-  failed=1
-fi
-
-# ---- git object seed tier ------------------------------------------------------
-# One generation per routed repository (the populator's "THE GIT OBJECT SEED");
-# the tier reports its OLDEST generation and its LARGEST, the two a trigger
-# judges against the populate interval and the per-repository budget.
-git_age=""; git_bytes=""
-for git_link in "${WARM_ROOT}"/git/*; do
-  [ -L "${git_link}" ] || continue
-  git_gen="$(readlink -f "${git_link}" 2>/dev/null)" && [ -d "${git_gen}" ] || continue
-  one_age="$(( now - $(stat -c %Y "${git_gen}") ))"
-  one_bytes="$(du -sb "${git_gen}" | cut -f1)"
-  if [ -z "${git_age}" ] || [ "${one_age}" -gt "${git_age}" ]; then git_age="${one_age}"; fi
-  if [ -z "${git_bytes}" ] || [ "${one_bytes}" -gt "${git_bytes}" ]; then git_bytes="${one_bytes}"; fi
-done
-if [ -n "${git_age}" ]; then
-  put git_generation_age_s "${git_age}"
-  put git_generation_bytes "${git_bytes}"
-else
-  log "warm root ${WARM_ROOT}/git has no current generation; omitting the git tier" >&2
   failed=1
 fi
 
@@ -262,8 +239,6 @@ spec = [
   ("kill_switch", "kill_switch", "1", "1 when CI_CACHE_KILL_SWITCH is set in the hook pod template (every tier off for every job)", None, False),
   ("generation_age_s", "uv_generation_age_s", "s", "Seconds since the current warm-cache generation was published", {"tier": "uv"}, False),
   ("generation_bytes", "uv_generation_bytes", "By", "Size of the current warm-cache generation", {"tier": "uv"}, False),
-  ("generation_age_s", "git_generation_age_s", "s", "Age of the oldest per-repository git object seed generation", {"tier": "git"}, False),
-  ("generation_bytes", "git_generation_bytes", "By", "Size of the largest per-repository git object seed generation", {"tier": "git"}, False),
   ("registry.up", "registry_up", "1", "1 when the crates proxy's stub_status answered over loopback", None, False),
   ("registry.requests_total", "registry_requests_total", "{requests}", "Requests the crates proxy has served since it started (cumulative)", None, False),
   ("registry.requests_5m", "registry_requests_5m", "{requests}", "Requests the crates proxy served since the previous tick", None, False),

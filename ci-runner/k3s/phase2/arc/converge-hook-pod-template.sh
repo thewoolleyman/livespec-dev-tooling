@@ -24,10 +24,6 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TEMPLATE_SRC="${SCRIPT_DIR}/hook-pod-template.yaml"
-# The runner's container hook entry point (header item 8 of the template). It
-# rides in the SAME ConfigMap, so every scale set's runner pod, which already
-# mounts the whole ConfigMap at /home/runner/hook-template, finds it there.
-HOOK_SRC="${SCRIPT_DIR}/git-seed-hook.js"
 CONFIGMAP_NAME="arc-hook-pod-template"
 RUNNERS_NAMESPACE="arc-runners"
 
@@ -51,13 +47,12 @@ fi
 # create-or-update form; a bare `kubectl create configmap` fails on the second
 # run. It is unrelated to this script's --dry-run, which suppresses the apply.
 if [ "${DRY_RUN}" -eq 1 ]; then
-  printf '  would run: kubectl create configmap %s --namespace %s --from-file=hook-pod-template.yaml=%s --from-file=git-seed-hook.js=%s --dry-run=client -o yaml | kubectl apply -f -\n' \
-    "${CONFIGMAP_NAME}" "${RUNNERS_NAMESPACE}" "${TEMPLATE_SRC}" "${HOOK_SRC}"
+  printf '  would run: kubectl create configmap %s --namespace %s --from-file=hook-pod-template.yaml=%s --dry-run=client -o yaml | kubectl apply -f -\n' \
+    "${CONFIGMAP_NAME}" "${RUNNERS_NAMESPACE}" "${TEMPLATE_SRC}"
   echo "DRY RUN: nothing was applied."
   exit 0
 fi
 kubectl create configmap "${CONFIGMAP_NAME}" \
   --namespace "${RUNNERS_NAMESPACE}" \
   --from-file="hook-pod-template.yaml=${TEMPLATE_SRC}" \
-  --from-file="git-seed-hook.js=${HOOK_SRC}" \
   --dry-run=client -o yaml | kubectl apply -f -
