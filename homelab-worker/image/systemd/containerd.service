@@ -1,0 +1,21 @@
+# containerd for the homelab worker's pods (upstream containerd 2.x; the
+# fleet's systemd cgroup driver). Its store lives on the worker's data volume.
+[Unit]
+Description=containerd container runtime (homelab worker)
+After=network.target local-fs.target
+
+[Service]
+ExecStartPre=-/sbin/modprobe overlay
+ExecStart=/usr/local/bin/containerd
+Type=notify
+Delegate=yes
+KillMode=process
+Restart=always
+RestartSec=5
+LimitNPROC=infinity
+LimitCORE=infinity
+TasksMax=infinity
+OOMScoreAdjust=-999
+
+[Install]
+WantedBy=multi-user.target
