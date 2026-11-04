@@ -495,6 +495,14 @@
         "implement": 14400,
         "janitor": 3600,
         "fix": 3600,
+        // TEMPORARY DIAL (legacy-coordinator-agent ruling 2026-11-04, measured by
+        // plan sandbox-commit-gate-ceiling): publish_draft raised from the 1800 s
+        // default because a refresh rebase re-runs the full pre-push aggregate
+        // (26-28 min typical under load), and 6 green dev-tooling runs were lost
+        // in 12 h to hook-over-limit at 1800 s. END CONDITION: when
+        // bd-ib-fvgkw4 is released and pinned in this repository, delete this
+        // key so publish_draft returns to the 1800 s default.
+        "publish_draft": 3600,
         "review_fix": 7200,
         "proof_capture": 2900,
         "proof_grade": 600,
