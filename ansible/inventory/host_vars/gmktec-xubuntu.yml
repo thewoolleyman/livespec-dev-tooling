@@ -258,8 +258,15 @@ fabro_server_instances:
     # the carrier-candidate-registered-20261023 tip. ROLLBACK: v0393-da6c8015a/fabro
     # and cd66859f873aa97b614e6812217b24dca7aa0f50aef661c2cb79b45d2083bb59,
     # still staged on vps.
-    binary_source: /home/ubuntu/.local/state/fabro-web-prod/v0393-0a867ce16/fabro
-    binary_sha256: f201971b1035c47b43fcccd569bf5895562c417c5fd6ff4f1b0d9c74a56a3dcc
+    # 2026-11-05: 85af3547e = 0a867ce16 plus thewoolleyman/fabro#26
+    # (bd-ib-m7lxgn: one sandbox plugin supervisor per provider configuration
+    # for the server's life, so server-side sandbox cp, ssh and describe no
+    # longer fail with "plugin response transport closed"), proved GREEN on the
+    # candidate at 0 runs on 2026-11-04 (probe run 01M6MFJV4CA2). ROLLBACK:
+    # v0393-0a867ce16/fabro and
+    # f201971b1035c47b43fcccd569bf5895562c417c5fd6ff4f1b0d9c74a56a3dcc.
+    binary_source: /home/ubuntu/.local/state/fabro-web-prod/v0393-85af3547e/fabro
+    binary_sha256: d6fcfafab6da1bfd32c3b96b4153f93367fe8a5b4fc18b0efecacad80b1e5711
     # The tag the orchestrator workflow pins today
     # (.claude-plugin/.fabro/workflows/implement-work-item/workflow.toml,
     # python-agent-v1.136.2). On this engine the catalog, not the workflow
@@ -640,8 +647,15 @@ fabro_server_instances:
     # the carrier-candidate-registered-20261023 tip. ROLLBACK: v0393-da6c8015a/fabro
     # and cd66859f873aa97b614e6812217b24dca7aa0f50aef661c2cb79b45d2083bb59,
     # still staged on vps.
-    binary_source: /home/ubuntu/.local/state/fabro-web-prod/v0393-0a867ce16/fabro
-    binary_sha256: f201971b1035c47b43fcccd569bf5895562c417c5fd6ff4f1b0d9c74a56a3dcc
+    # 2026-11-05: 85af3547e = 0a867ce16 plus thewoolleyman/fabro#26
+    # (bd-ib-m7lxgn: one sandbox plugin supervisor per provider configuration
+    # for the server's life, so server-side sandbox cp, ssh and describe no
+    # longer fail with "plugin response transport closed"), proved GREEN on the
+    # candidate at 0 runs on 2026-11-04 (probe run 01M6MFJV4CA2). ROLLBACK:
+    # v0393-0a867ce16/fabro and
+    # f201971b1035c47b43fcccd569bf5895562c417c5fd6ff4f1b0d9c74a56a3dcc.
+    binary_source: /home/ubuntu/.local/state/fabro-web-prod/v0393-85af3547e/fabro
+    binary_sha256: d6fcfafab6da1bfd32c3b96b4153f93367fe8a5b4fc18b0efecacad80b1e5711
     # The tag FOLLOWS homelab's own workflow pin
     # (.fabro/workflows/implement-work-item/workflow.toml in mi-homelab/homelab,
     # python-agent-v1.126.0), not the orchestrator's; bump the two together.
