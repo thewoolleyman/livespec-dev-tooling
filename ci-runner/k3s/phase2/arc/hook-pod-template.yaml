@@ -342,8 +342,11 @@ spec:
         # n=25 vs n=5), and that step is on the master-CI critical path. So it
         # is 6 (legacy-coordinator-agent, R301, 2026-11-04 ~11:00Z), which
         # still bounds a full poweredge to about 27 x 6 = 162 workers (2.25x
-        # its 72 cores, against 6.75x before). Revert to 3 if poweredge PSI60
-        # returns above about 30 under load, or if a test-timeout red recurs.
+        # its 72 cores, against 6.75x before). REVERTED to 3 at 2026-11-04
+        # ~13:20Z under that rule's own trigger: at 13:16:33Z poweredge read
+        # PSI60 55.1, load 192.5 on 72 cores, 0.24% idle, with 24 CI jobs (within
+        # its 27 churn slots) and 9 factory pods. Raise it again only with a
+        # measurement that shows PSI60 staying under about 30 at full load.
         # Honoured by the justfile or
         # test-nprocs script of livespec, livespec-dev-tooling,
         # livespec-orchestrator-beads-fabro, -git-jsonl, livespec-overseer
@@ -357,7 +360,7 @@ spec:
         # set 12) still wins over the pod env. Revert: delete these three
         # entries and run the CI stack converge.
         - name: LIVESPEC_TEST_PARALLELISM
-          value: "6"
+          value: "3"
         - name: NEXTEST_TEST_THREADS
           value: "3"
         - name: CARGO_BUILD_JOBS
