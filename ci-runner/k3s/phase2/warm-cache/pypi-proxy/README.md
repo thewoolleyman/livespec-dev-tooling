@@ -6,15 +6,18 @@ The host-served cache of `files.pythonhosted.org` that
 Where `../../crates-proxy/` fronts crates.io for every job, this proxy fronts
 PyPI's file host for the populator, which rebuilds the warm uv cache from empty
 on every lock change and would otherwise re-download ~105 MB from PyPI each
-time (48 rebuilds a day at the CronJob cadence is 5 GB/day direct), and for
-delegated gate Jobs. Gate Jobs start with the seeded generation, route any
-locked artifact the proxy serves through `/packages/`, fall through to direct
-PyPI for a miss or unreachable service, and use the rewritten `/simple/` API
-for `uvx` tool environments. The gate applies that index only to `uvx` and
-retries direct PyPI if proxy resolution fails, rather than setting a global
-`UV_DEFAULT_INDEX` that could make locked `uv run` unsatisfiable. Workflow pods
-otherwise do not use it: their locks remain untouched and they read the seeded
-generation.
+time (48 rebuilds a day at the CronJob cadence is 5 GB/day direct), delegated
+gate Jobs, and runner-only hp-xubuntu workflow jobs. Gate Jobs start with the
+seeded generation, route any locked artifact the proxy serves through
+`/packages/`, fall through to direct PyPI for a miss or unreachable service,
+and use the rewritten `/simple/` API for `uvx` tool environments. The gate
+applies that index only to `uvx` and retries direct PyPI if proxy resolution
+fails, rather than setting a global `UV_DEFAULT_INDEX` that could make locked
+`uv run` unsatisfiable. hp workflow pods receive a read-only `uv` wrapper from
+the hook pod template. It probes the proxy before it temporarily rewrites only
+the locked file-host prefix for `uv sync`; an unavailable proxy leaves the lock
+unchanged and runs uv against public PyPI. Full-facilities nodes retain their
+seeded generation and do not use the wrapper's proxy route.
 
 | Path | Role |
 |---|---|
