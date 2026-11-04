@@ -1,0 +1,106 @@
+# Homelab worker node image: ghcr.io/<owner>/livespec-worker-node.
+#
+# Governed by SPECIFICATION/non-functional-requirements.md, "Homelab worker
+# nodes": "Worker image" — published to GHCR under the repository's existing
+# image publication conventions, which this workflow copies from
+# fabro-sandbox-image.yml: a pull request builds and pushes to an ephemeral
+# localhost:5000 registry and never to GHCR; a push to master publishes
+# `sha-<short>` tags; a published release publishes `v<X.Y.Z>` tags; there is
+# no mutable `latest`; provenance is off; the build cache is GHA-scoped.
+#
+# The image is native linux/arm64 (the first workers are Apple Silicon Macs),
+# so it builds on GitHub's hosted arm64 runner rather than under emulation.
+# Its resolved digest is printed in the job summary for the start task's
+# host manifest. Plan homelab-k8s-worker-nodes, work item
+# livespec-dev-tooling-uka5gk.
+name: Homelab worker image
+
+on:
+  pull_request:
+    paths:
+      - "homelab-worker/image/**"
+      - ".github/workflows/homelab-worker-image.yml"
+  push:
+    branches: [master]
+    paths:
+      - "homelab-worker/image/**"
+      - ".github/workflows/homelab-worker-image.yml"
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: homelab-worker-image-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  build:
+    name: build-homelab-worker-image
+    runs-on: ubuntu-24.04-arm
+    services:
+      registry:
+        image: registry:2
+        ports:
+          - 5000:5000
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+        with:
+          driver-opts: network=host
+
+      - name: Log in to GHCR
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Resolve target registry image
+        id: target
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            echo "image=localhost:5000/livespec-worker-node" >> "$GITHUB_OUTPUT"
+          else
+            echo "image=ghcr.io/${{ github.repository_owner }}/livespec-worker-node" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Compute tags
+        id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ steps.target.outputs.image }}
+          flavor: latest=false
+          tags: |
+            type=sha,prefix=sha-
+            type=semver,pattern=v{{version}}
+
+      - name: Build + push
+        id: build
+        uses: docker/build-push-action@v7
+        with:
+          context: homelab-worker/image
+          file: homelab-worker/image/Dockerfile
+          platforms: linux/arm64
+          push: true
+          provenance: false
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=homelab-worker
+          cache-to: type=gha,scope=homelab-worker,mode=max
+
+      - name: Record the resolved digest
+        run: |
+          {
+            echo "### livespec-worker-node"
+            echo
+            echo "- image: \`${{ steps.target.outputs.image }}\`"
+            echo "- digest: \`${{ steps.build.outputs.digest }}\`"
+            echo "- tags: \`${{ steps.meta.outputs.tags }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"

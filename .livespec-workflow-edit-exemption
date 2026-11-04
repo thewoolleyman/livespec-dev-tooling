@@ -1,4 +1,4 @@
-work_item=livespec-dev-tooling-yhacv6
-reason=Wire the new aggregate slug check-codex-hook-reconcilable into ci.yml's check-metadata-batch step so check-ci-matrix-completeness sees it run in CI. The factory run that added the check (01M6JHPKW1CW, PR #3365) cannot push a workflow edit with the App token. One added line; nothing deleted or modified. approval:workflow-edit-additive set under legacy-coordinator-agent's section-12 delegation (2026-11-04).
+work_item=livespec-dev-tooling-uka5gk
+reason=Add a new workflow file, homelab-worker-image.yml, that builds the native linux/arm64 homelab worker node image on GitHub's hosted ubuntu-24.04-arm runner and publishes it to GHCR (sha- and semver tags, no latest; pull requests push only to an ephemeral localhost:5000 registry). It triggers only on changes under homelab-worker/image/ or to itself, so existing CI is unchanged. No existing workflow line is deleted or modified. approval:workflow-edit-additive set under the maintainer's direct in-session authorization (2026-11-04).
 change=additive
 ci_runtime=no-significant-increase
