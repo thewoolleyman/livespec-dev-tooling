@@ -30,6 +30,8 @@ _TASKS = _ROLE / "tasks" / "main.yml"
 _DEFAULTS = _ROLE / "defaults" / "main.yml"
 _PLUGIN_TEMPLATE = _ROLE / "templates" / "plugin-config.toml.j2"
 _CLI_TEMPLATE = _ROLE / "templates" / "cli-config.toml.j2"
+_HOST_VARS_DOC = _ROLE / "HOST_VARS.md"
+_LIVE_PIN_DRIFT_TASKS = _ROLE / "tasks" / "report_live_pin_drift.yml"
 
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 
@@ -111,6 +113,59 @@ def test_the_pinned_plugin_knows_the_topology_spread_field() -> None:
         f"the rendered config carries topology_spread, which plugin {version} rejects as an "
         f"unknown field: it would fail to start every sandbox. Pin v0.5.0 or later"
     )
+
+
+def test_the_role_refuses_every_conflicting_declared_provider_pin_before_downloading() -> None:
+    """One host binary cannot replace a digest any local Fabro instance pins.
+
+    The guard reads the documented ``sandbox_providers`` instance key, collects
+    every provider whose path is the plugin path and whose pin conflicts, then
+    raises one refusal before the first ``get_url`` can download or move bytes.
+    A single assertion after the loop is deliberate: its diagnostic identifies
+    every affected instance rather than stopping at the first one.
+    """
+    tasks = _read(path=_TASKS)
+    install = tasks.find("- name: Install the pinned binaries")
+    guard = tasks.find("- name: Refuse a plugin digest that conflicts with a Fabro instance pin")
+    assert guard >= 0, "the role must refuse a binary digest that conflicts with an instance pin"
+    assert (
+        guard < install
+    ), "the pin refusal must run before any get_url download or destination move"
+    assert "fabro_server_instances" in tasks
+    assert "sandbox_providers" in tasks
+    assert "sandbox_driver_kubernetes_pin_conflicts" in tasks
+    assert "unit_name" in tasks
+    assert "sandbox_driver_kubernetes_sha256" in tasks
+
+
+def test_matching_or_absent_instance_pins_leave_the_plugin_install_available() -> None:
+    """Only a pin for this binary path can refuse its normal installation."""
+    tasks = _read(path=_TASKS)
+    collector = _read(path=_TASKS.parent / "collect_pin_conflicts.yml")
+    documentation = _read(path=_HOST_VARS_DOC)
+    assert "fabro_server_instances | default([])" in tasks
+    assert "sandbox_providers" in collector
+    assert "item.value.path" in collector
+    assert "item.value.sha256" in collector
+    assert "sandbox_driver_kubernetes_pin_conflicts | length == 0" in tasks
+    assert "fabro_server_instances[].sandbox_providers" in documentation
+    assert "path" in documentation and "sha256" in documentation
+
+
+def test_drift_reports_each_live_provider_pin_against_its_installed_binary() -> None:
+    """Check mode reads live settings and binary bytes without changing either."""
+    tasks = _read(path=_TASKS)
+    drift = _read(path=_LIVE_PIN_DRIFT_TASKS)
+    assert (
+        "- name: Report each live Fabro sandbox-provider pin against its installed binary" in tasks
+    )
+    assert "ansible.builtin.stat" in drift
+    assert "checksum_algorithm: sha256" in drift
+    assert "ansible.builtin.slurp" in drift
+    assert "settings.toml" in drift
+    assert "live pin" in drift
+    assert "DRIFT" in drift
+    assert "changed_when" in drift
 
 
 def test_no_machine_is_named() -> None:

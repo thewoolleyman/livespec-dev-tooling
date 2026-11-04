@@ -1,0 +1,56 @@
+---
+# This include is intentionally read-only. `just ansible-drift` runs the role
+# with --check, but stat and slurp still let the report compare the pin Fabro is
+# actually using with the bytes at the provider's configured path.
+
+- name: Stat this Fabro instance's live settings.toml
+  ansible.builtin.stat:
+    path: "{{ sandbox_driver_kubernetes_drift_instance.home_dir }}/settings.toml"
+  become: true
+  register: sandbox_driver_kubernetes_live_settings_file
+
+- name: Read this Fabro instance's live settings.toml
+  ansible.builtin.slurp:
+    src: "{{ sandbox_driver_kubernetes_drift_instance.home_dir }}/settings.toml"
+  become: true
+  register: sandbox_driver_kubernetes_live_settings
+  when: sandbox_driver_kubernetes_live_settings_file.stat.exists
+
+- name: Stat each installed sandbox-provider binary
+  ansible.builtin.stat:
+    path: "{{ item.value.path }}"
+    checksum_algorithm: sha256
+  become: true
+  register: sandbox_driver_kubernetes_provider_binaries
+  loop: "{{ sandbox_driver_kubernetes_drift_instance.sandbox_providers | default({}) | dict2items }}"
+  loop_control:
+    label: "{{ item.key }}"
+
+- name: Report this live sandbox-provider pin as equal or DRIFT
+  ansible.builtin.debug:
+    msg: >-
+      Fabro instance {{ sandbox_driver_kubernetes_drift_instance.unit_name }}
+      provider {{ item.key }} has live pin
+      {{ sandbox_driver_kubernetes_live_pin }} and installed binary sha256
+      {{ sandbox_driver_kubernetes_installed_sha256 }}: {{
+      'equal' if sandbox_driver_kubernetes_live_pin == sandbox_driver_kubernetes_installed_sha256
+      else 'DRIFT' }}
+  changed_when: >-
+    sandbox_driver_kubernetes_live_pin != sandbox_driver_kubernetes_installed_sha256
+  vars:
+    sandbox_driver_kubernetes_live_settings_text: >-
+      {{ sandbox_driver_kubernetes_live_settings.content | default('') | b64decode }}
+    sandbox_driver_kubernetes_live_pin: >-
+      {{ sandbox_driver_kubernetes_live_settings_text
+         | regex_findall(
+             '(?ms)^\\[server\\.sandbox\\.providers\\.' ~ (item.key | regex_escape)
+             ~ '\\]\\n.*?^sha256\\s*=\\s*"([0-9a-f]{64})"\\s*$'
+           )
+         | first | default('missing') }}
+    sandbox_driver_kubernetes_installed_sha256: >-
+      {{ sandbox_driver_kubernetes_provider_binaries.results[provider_index].stat.checksum
+         | default('missing') }}
+  loop: "{{ sandbox_driver_kubernetes_drift_instance.sandbox_providers | default({}) | dict2items }}"
+  loop_control:
+    index_var: provider_index
+    label: "{{ item.key }}"

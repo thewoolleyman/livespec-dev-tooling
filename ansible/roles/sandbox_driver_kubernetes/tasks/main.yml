@@ -3,6 +3,37 @@
 # their configuration for every HOME a launcher runs under. See
 # defaults/main.yml for what each value is and where it comes from.
 
+- name: Initialise the conflicting Fabro sandbox-provider pins
+  # `fabro_server_instances[].sandbox_providers.<kind>.{path,sha256}` is the
+  # one declared pin surface. Gather all conflicts before asserting so an
+  # operator sees every server that would reject the shared plugin binary.
+  ansible.builtin.set_fact:
+    sandbox_driver_kubernetes_pin_conflicts: []
+
+- name: Collect Fabro sandbox-provider pins that conflict with this plugin
+  ansible.builtin.include_tasks: collect_pin_conflicts.yml
+  loop: "{{ fabro_server_instances | default([]) }}"
+  loop_control:
+    loop_var: sandbox_driver_kubernetes_pin_instance
+    label: "{{ sandbox_driver_kubernetes_pin_instance.unit_name | default('unnamed instance') }}"
+
+- name: Refuse a plugin digest that conflicts with a Fabro instance pin
+  ansible.builtin.assert:
+    that:
+      - sandbox_driver_kubernetes_pin_conflicts | length == 0
+    fail_msg: >-
+      Refusing to install sandbox-driver-kubernetes sha256
+      {{ sandbox_driver_kubernetes_sha256 }} at
+      {{ sandbox_driver_kubernetes_bin_dir }}/sandbox-driver-kubernetes: it
+      disagrees with Fabro instance pins:
+      {% for conflict in sandbox_driver_kubernetes_pin_conflicts %}
+      {{ conflict.instance }} (provider {{ conflict.provider }}) pins
+      {{ conflict.declared_sha256 }}; installed digest would be
+      {{ sandbox_driver_kubernetes_sha256 }}.
+      {% endfor %}
+      No binary was downloaded, moved, or replaced.
+    success_msg: every Fabro instance pin for this plugin path matches the installed digest
+
 - name: Install the pinned binaries
   # get_url verifies the committed digest before it moves the file into place,
   # so a mismatched download never lands at the destination.
@@ -58,3 +89,12 @@
     mode: "0644"
   become: true
   loop: "{{ sandbox_driver_kubernetes_config_homes }}"
+
+- name: Report each live Fabro sandbox-provider pin against its installed binary
+  # This read-only include runs under --check, which makes ansible-drift show a
+  # live settings.toml pin that no longer agrees with the binary it launches.
+  ansible.builtin.include_tasks: report_live_pin_drift.yml
+  loop: "{{ fabro_server_instances | default([]) }}"
+  loop_control:
+    loop_var: sandbox_driver_kubernetes_drift_instance
+    label: "{{ sandbox_driver_kubernetes_drift_instance.unit_name | default('unnamed instance') }}"

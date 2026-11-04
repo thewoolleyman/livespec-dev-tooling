@@ -15,6 +15,25 @@ defaults, and every cluster fact from the factory delivery, which is the same on
 every sandbox host. A host whose Fabro instance runs the plugin under a
 different HOME sets `sandbox_driver_kubernetes_config_homes`.
 
+## Fabro sandbox-provider pins
+
+The shared pin declaration is
+`fabro_server_instances[].sandbox_providers.<provider>`. Each provider mapping
+that launches a plugin carries its absolute `path` and a 64-hex `sha256`.
+Before this role downloads or replaces
+`<sandbox_driver_kubernetes_bin_dir>/sandbox-driver-kubernetes`, it compares
+`sandbox_driver_kubernetes_sha256` with every provider's `sha256` whose `path`
+is that binary. A disagreement refuses the apply and names every instance,
+provider, declared digest, and proposed digest. Providers at other paths do not
+participate, so a host that declares no provider at this path installs the
+plugin normally.
+
+`just ansible-drift ansible/fabro-hosts.yml` reads each instance's live
+`settings.toml` and sha256 of every declared provider's installed binary. It
+reports `equal` when the two digests agree and `DRIFT` (an Ansible changed
+result) when a live pin or binary is missing or they differ; the drift read
+does not change either file.
+
 ## Variables
 
 | variable | default | meaning |
