@@ -1331,3 +1331,12 @@ lint-fix:
 [positional-arguments]
 tdd-commit *args:
     uv run python -m livespec_dev_tooling.tdd_commit "$@"
+
+# Provision and start the one homelab worker node of a declared host:
+# `just start-homelab-worker-node-container macbook-m4-max`. The host must be
+# declared in homelab-worker/hosts/; the task installs or reuses Lima and
+# converges the VM named <host>-homelab-worker (SPECIFICATION/
+# non-functional-requirements.md, "Homelab worker nodes").
+[positional-arguments]
+start-homelab-worker-node-container host:
+    homelab-worker/start-homelab-worker-node-container.sh "$1"
