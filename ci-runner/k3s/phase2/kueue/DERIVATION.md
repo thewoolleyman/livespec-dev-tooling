@@ -952,6 +952,31 @@ apply: `just ansible-apply ansible/ci-pool.yml --tags node_extended_resource`.
 Lowering hp while it runs more than 5 runner pods evicts nothing; the scheduler
 only stops placing new ones there.
 
+## Interim: poweredge capped at 18 (2026-11-04)
+
+Ordered by `legacy-coordinator-agent` under R301 as a reversible stop-the-line,
+until `livespec-dev-tooling-6e5pyj` derives churn slots and per-job test
+parallelism together. At 13:39Z `poweredge-xubuntu` read PSI60 75.9 with 37
+arc-runners pods, while `gmktec-xubuntu` read PSI60 0.4 (71 % idle) and
+`hp-xubuntu` PSI60 9.2 (68 % idle). Runner pods request no CPU, so the scheduler
+kept filling poweredge's free slots.
+
+| node | cores-derived | interim |
+|---|---:|---:|
+| `poweredge-xubuntu` | 27 | **18** |
+| `gmktec-xubuntu` | 12 | **18** |
+| `hp-xubuntu` | 5 | **8** |
+| **cohort total C** | **44** | **44** |
+
+The total stays 44, because "Admission capacity sums to the cohort quota"
+requires the profiles to sum to the ten ClusterQueue quotas. Cutting poweredge
+alone would let Kueue admit runner pods no node can hold. The 9 slots moved to
+the two idle nodes. Test parallelism stays at 3 per job.
+
+**Revert** to 27 / 12 / 5, with the same `node_extended_resource` apply, if
+gmktec or hp exceeds PSI60 about 30 under load, or if Kueue-gated runners pile up
+while poweredge PSI60 is under about 25.
+
 ## The master-push slice for livespec-dev-tooling (2026-11-03)
 
 Work-item `livespec-dev-tooling-lzkzwb`, plan `ci-runtime-and-cost` (epic
