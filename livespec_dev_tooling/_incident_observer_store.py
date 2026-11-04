@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import fcntl
 import hashlib
 import json
 import os
@@ -14,8 +13,19 @@ from pathlib import Path
 from typing import cast
 
 from livespec_dev_tooling._incident_observer_types import ObserverArm, ObserverRegistration
+from livespec_dev_tooling.incident_repository_fence import (
+    REPOSITORY_FENCE_FD_ENV,
+    RepositoryFence,
+    borrow_repository_fence,
+    current_repository_fence,
+    hold_repository_fence,
+)
 
 __all__: list[str] = [
+    "REPOSITORY_FENCE_FD_ENV",
+    "RepositoryFence",
+    "borrow_repository_fence",
+    "current_repository_fence",
     "load_record",
     "read_observer_arm",
     "read_registration",
@@ -25,6 +35,7 @@ __all__: list[str] = [
 ]
 
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-47ij37
+# EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-dln3ac
 _INVALID_RECORD = "invalid incident controller record"
 _INVALID_REGISTRATION = "invalid stored observer registration"
 _INVALID_RECEIPT = "invalid stored observer receipt"
@@ -32,22 +43,14 @@ _INVALID_ARM = "invalid stored pre-merge observer arm"
 
 
 @contextmanager
-def repository_lock(*, directory: Path, repository: str) -> Iterator[Path]:
-    """Serialize ALL controller and ordinary-reconciler mutations per repo.
-
-    Production must provision this directory on the independent controller,
-    inaccessible to candidate trees. A filesystem error propagates as refusal;
-    there is no unlocked, tenant-backed, or wrapper-backed fallback.
-    """
-    directory.mkdir(mode=0o700, parents=True, exist_ok=True)
-    key = hashlib.sha256(repository.encode()).hexdigest()
-    path = directory / (key + ".json")
-    with (directory / (key + ".lock")).open("a+b") as lock:
-        fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
-        try:
-            yield path
-        finally:
-            fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
+def repository_lock(
+    *, directory: Path, repository: str, existing_only: bool = False
+) -> Iterator[Path]:
+    """Serialize controller and reconciler writes using the same transferable fence."""
+    with hold_repository_fence(
+        directory=directory, repository=repository, existing_only=existing_only
+    ):
+        yield directory / (hashlib.sha256(repository.encode()).hexdigest() + ".json")
 
 
 def load_record(*, path: Path) -> dict[str, object]:

@@ -9,6 +9,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import os
 import subprocess
 from dataclasses import asdict, dataclass
 from typing import cast
@@ -19,9 +20,14 @@ from livespec_dev_tooling._incident_inverse_types import (
     InversePublishResult,
     LandedIncident,
 )
+from livespec_dev_tooling._incident_observer_store import (
+    REPOSITORY_FENCE_FD_ENV,
+    current_repository_fence,
+)
 from livespec_dev_tooling._incident_observer_types import RecoveryIntent
 
 __all__: list[str] = ["ProcessInverseForge"]
+# EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-dln3ac
 _MAX_TIMEOUT_SECONDS = 60
 _LOOKUP_REFUSAL = "exact action receipt is unobservable or reserved; publication refused"
 
@@ -135,6 +141,14 @@ class ProcessInverseForge:
             ).hexdigest()
         }
         body = {"schema": 1, "operation": operation, "binding": binding, **payload}
+        environment = {
+            key: value for key, value in os.environ.items() if key != REPOSITORY_FENCE_FD_ENV
+        }
+        fence = current_repository_fence(repository=_repository(payload=payload))
+        descriptors: tuple[int, ...] = ()
+        if fence is not None:
+            descriptors = (fence.descriptor,)
+            environment[REPOSITORY_FENCE_FD_ENV] = str(fence.descriptor)
         try:
             result = subprocess.run(  # noqa: S603 — controller-owned provisioned argv; no shell or candidate command.
                 [*self.command],
@@ -142,6 +156,8 @@ class ProcessInverseForge:
                 capture_output=True,
                 check=False,
                 timeout=self.timeout_seconds,
+                env=environment,
+                pass_fds=descriptors,
             )
             response: object = json.loads(result.stdout) if result.returncode == 0 else None
         except (OSError, subprocess.TimeoutExpired, ValueError):
@@ -173,3 +189,22 @@ def _text_list(*, value: object) -> bool:
 
 def _bytes(*, value: bytes) -> str:
     return base64.b64encode(value).decode("ascii")
+
+
+def _repository(*, payload: dict[str, object]) -> str:
+    direct = payload.get("repository")
+    if isinstance(direct, str):
+        return direct
+    value = payload.get("request", payload)
+    if not isinstance(value, dict):
+        return ""
+    intent = cast("dict[str, object]", value).get("intent")
+    registration = (
+        cast("dict[str, object]", intent).get("registration") if isinstance(intent, dict) else None
+    )
+    repository = (
+        cast("dict[str, object]", registration).get("repository")
+        if isinstance(registration, dict)
+        else None
+    )
+    return repository if isinstance(repository, str) else ""
