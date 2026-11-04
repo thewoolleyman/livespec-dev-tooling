@@ -430,6 +430,22 @@ And a job whose `uses:` action is absent from the cache, or whose cache is unrea
 
 And under the fleet kill switch every job MUST download its actions as it would without the tier
 
+## Scenario: a routed job's checkout fetches only the objects its git object seed lacks, and falls back to a full fetch when the seed is missing
+
+Given the pool's git object seed holds the default-branch and tag objects of every routed repository
+
+When a routed job whose repository's seed is present in its work volume runs `actions/checkout` with `fetch-depth: 0`
+
+Then the job container MUST name that repository's seeded object directory in `GIT_ALTERNATE_OBJECT_DIRECTORIES`, set by the pool's runner container hook
+
+And the checkout MUST transfer from the forge only objects absent from the seed, and MUST produce the same work tree and refs as a checkout without the seed
+
+And a job whose seed is missing or unreadable MUST fetch from the forge as it would without the tier and run to its own outcome
+
+And a routed job on a `runner-only` node MUST fetch from the forge and run to its own outcome
+
+And under the fleet kill switch every job MUST fetch from the forge as it would without the tier
+
 ## Scenario: a stale warm-cache generation fires the trigger
 
 Given the populator has not published a generation for longer than twice its schedule interval

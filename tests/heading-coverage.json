@@ -2014,5 +2014,13 @@
     "test": "TODO",
     "reason": "Spec-first: a real test at the integration tier or above (a host-captured end-to-end run) is owed for this scenario, running a routed job on the k3s pool with the action-archive cache populated, absent and kill-switched and reading each job's Set up job log; livespec-dev-tooling-a35sa4 owns it, and its Definition of Done asserts this behaviour.",
     "work_item": "livespec-dev-tooling-a35sa4"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a routed job's checkout fetches only the objects its git object seed lacks, and falls back to a full fetch when the seed is missing",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above (a host-captured end-to-end run) is owed for this scenario, running a routed job on the k3s pool with the git object seed present, absent and kill-switched and reading each job's checkout transfer and refs; livespec-dev-tooling-dciyg5 owns it, and its Definition of Done asserts this behaviour.",
+    "work_item": "livespec-dev-tooling-dciyg5"
   }
 ]

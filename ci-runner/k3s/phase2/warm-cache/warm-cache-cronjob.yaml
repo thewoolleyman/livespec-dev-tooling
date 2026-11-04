@@ -420,3 +420,99 @@ spec:
         - name: config
           configMap:
             name: warm-cache-repos
+# hp-xubuntu is runner-only, so its local-path root is deliberately not the
+# ci-workvols mount used by the generic DaemonSet above. Gate Jobs still use a
+# generic ephemeral local-path PVC there; this publisher writes its UV-only
+# generation beside that exact root, preserving the same private reflink seed
+# that gates receive on the tiered nodes without placing any cache-tier
+# singleton on hp.
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: warm-uv-cache-populate-hp
+  namespace: ci-warm-cache
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: warm-uv-cache-populate-hp
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: warm-uv-cache-populate-hp
+        ci-runner.io/warm-uv-cache: "true"
+    spec:
+      automountServiceAccountToken: false
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: kubernetes.io/hostname
+                    operator: In
+                    values: ["hp-xubuntu"]
+      containers:
+        - name: populate
+          image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-rust-fuzz-v1.46.0
+          imagePullPolicy: IfNotPresent
+          command:
+            - bash
+            - -c
+            - |
+              while true; do
+                /scripts/warm-cache-populate.sh || true
+                sleep 1800
+              done
+          env:
+            - name: WARM_ROOT
+              value: /warm
+            - name: REPOS_FILE
+              value: /config/repos.txt
+            - name: KEEP_GENERATIONS
+              value: "2"
+            - name: WARM_CACHE_UV_ONLY
+              value: "true"
+            - name: WARM_BUDGET_BYTES
+              valueFrom:
+                configMapKeyRef:
+                  name: warm-cache-budget
+                  key: bytes
+            - name: WARM_BUDGET_FILES
+              valueFrom:
+                configMapKeyRef:
+                  name: warm-cache-budget
+                  key: files
+            - name: PYPI_FILES_PROXY
+              value: http://pypi-proxy.ci-warm-cache.svc.cluster.local:8081
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "512Mi"
+            limits:
+              cpu: "2"
+              memory: "2Gi"
+          volumeMounts:
+            - name: warm
+              mountPath: /warm
+            - name: scripts
+              mountPath: /scripts
+              readOnly: true
+            - name: config
+              mountPath: /config
+              readOnly: true
+      volumes:
+        - name: warm
+          hostPath:
+            path: /srv/sandbox-storage/runner-workvols/.warm
+            type: DirectoryOrCreate
+        - name: scripts
+          configMap:
+            name: warm-cache-populate
+            defaultMode: 0555
+        - name: config
+          configMap:
+            name: warm-cache-repos

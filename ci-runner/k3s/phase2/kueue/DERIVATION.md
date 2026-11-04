@@ -1087,15 +1087,17 @@ The specification clause this bounds — livespec-dev-tooling
 ceiling" — is amended by the proposed change
 `scale-set-ceiling-bounded-to-fair-share` filed the same day.
 
-## The gates quota on gmktec-xubuntu (2026-09-08)
+## The gates quota on gmktec-xubuntu and hp-xubuntu (2026-11-03)
 
 **This section derives a quota that is NOT part of the apportionment above,
 and the ten repositories' churn-slot sum is unchanged by it.** It covers
-`cluster-queue-gates.yaml` — the `gates-flavor` ResourceFlavor, the `gates-cq`
-ClusterQueue, the `gate-priority` WorkloadPriorityClass and the `gates-lq`
-LocalQueue that give GATE Jobs (the `just check` aggregate, offloaded to the
-fleet's second pool node) somewhere to be admitted. Filed under the livespec
-plan `k3s-on-gmktec-for-vps-usage`, epic `livespec-sab5gn`, R4 slice 3.
+`cluster-queue-gates.yaml` — the gmktec `gates-flavor` and hp
+`gates-hp-flavor` ResourceFlavors, the `gates-cq` ClusterQueue, the
+`gate-priority` WorkloadPriorityClass and the `gates-lq` LocalQueue that give
+GATE Jobs (the `just check` aggregate, offloaded to the fleet's gate-capable
+pool nodes) somewhere to be admitted. The gmktec lane was filed under the
+livespec plan `k3s-on-gmktec-for-vps-usage`, epic `livespec-sab5gn`, R4 slice
+3; the hp lane is livespec-dev-tooling-ytk6bp.
 
 ### It is quota'd on cpu/memory, not on `ci-runner.io/churn-slot`
 
@@ -1134,7 +1136,7 @@ node delivers it without evicting anything. `gate-priority` (value 1000) then
 orders gates AMONG THEMSELVES — which of four queued gates takes the slot that
 frees — and orders nothing against a runner.
 
-### The two numbers: 15 cpu and 24 Gi
+### The gmktec numbers: 15 cpu and 24 Gi
 
 **Envelope.** The plan's research/001 section 3 item 5 found about **50 GiB**
 available to pods on gmktec-xubuntu without evicting the local LLM model from
@@ -1173,12 +1175,32 @@ the iowait signature the PowerEdge taught this fleet to watch for, and whether
 `cpu` remains the right binding term. Revise both numbers here when it does,
 and record the measurement rather than replacing one estimate with another.
 
-**Admission is not scheduling.** gmktec-xubuntu still carries
-`node-role/ci=pending:NoSchedule` from its profile's `NODE_TAINTS`, and
-`gates-flavor` deliberately declares no `tolerations`. Nothing this quota
-admits can be SCHEDULED until a later item of the same plan opens the node —
-the distinction "The physical cap is the scheduler, not Kueue" draws, applied
-here on purpose so admission capacity can land ahead of the node opening.
+### The hp numbers: 5 cpu and 8 Gi
+
+**Envelope.** hp-xubuntu advertises 14500m CPU and 27.2 GiB allocatable. It is
+runner-only with eight churn slots and no taint, but three existing factory
+sandboxes can still account for 12 CPU / 22890 MiB while they drain. The host
+now declares `FACTORY_NODE=false`, so no new factory placement can refill that
+contention.
+
+**Concurrency target.** One gate. A gate requests 5 CPU and 6 GiB; the hp
+lane sets 5 CPU / 8 GiB so CPU admits exactly one and memory leaves two GiB of
+headroom. That gate fits once the drain leaves at most two of the existing
+4-CPU sandboxes. A second gate would not fit within the node's allocatable CPU
+beside that bounded residual load, so no second hp quota is declared.
+
+**Warm UV.** hp carries no `ci-workvols` tier, so the generic warm-UV DaemonSet
+cannot use its `/var/lib/rancher/k3s/storage/.warm` hostPath. The hp-specific
+UV-only DaemonSet instead writes
+`/srv/sandbox-storage/runner-workvols/.warm`, the sibling of the runner-only
+profile's `RUNNER_WORKVOL_DIR`. The local-path provisioner consequently seeds
+an hp-admitted gate's generic ephemeral PVC from a verified generation, rather
+than running it cold; the cache-tier singleton remains pinned elsewhere.
+
+**This is a first estimate to confirm by soak.** The host-captured acceptance
+window for livespec-dev-tooling-ytk6bp measures normal fleet activity for at
+least two hours and requires no gate admission wait over 15 minutes. It decides
+whether one hp lane is sufficient and records any later quota revision.
 
 ## Recomputing at another C
 
