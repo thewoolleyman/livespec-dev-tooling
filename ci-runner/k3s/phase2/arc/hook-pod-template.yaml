@@ -263,10 +263,11 @@
 #    seed a warm tree by definition, so the `$job` wrapper below changes only
 #    the temporary input to its `uv sync`: locked wheel URLs are swapped to the
 #    read-only PyPI files proxy and restored before the command returns. The
-#    ConfigMap is mounted read-only, and the proxy permits GET and HEAD only,
-#    so a workflow job has no write path to pool state. This is intentionally
-#    scoped to hp; full-facilities nodes retain their seeded cache, and the
-#    source costs hp no local component or budget.
+#    wrapper probes first; an unavailable source leaves the lock unchanged and
+#    lets uv use public PyPI. The ConfigMap is mounted read-only, and the proxy
+#    permits GET and HEAD only, so a workflow job has no write path to pool
+#    state. This is intentionally scoped to hp; full-facilities nodes retain
+#    their seeded cache, and the source costs hp no local component or budget.
 apiVersion: v1
 kind: PodTemplate
 spec:

@@ -183,7 +183,8 @@ metadata:
   # The wrapper is deliberately inert off hp-xubuntu: full-facilities nodes
   # retain their private seeded uv generation, while runner-only hp reads this
   # host-served source over the pool network. It changes a checkout's lock only
-  # while `uv sync` runs, restoring it even when uv fails.
+  # while `uv sync` runs, restoring it even when uv fails. A failed /health
+  # probe leaves the lock untouched and runs uv against public PyPI.
   name: pypi-proxy-uv-wrapper
   namespace: ci-warm-cache
 data:
@@ -206,8 +207,8 @@ data:
     fi
 
     if ! command -v curl >/dev/null 2>&1 || ! curl --silent --fail --max-time 2 "${proxy}/health" >/dev/null 2>&1; then
-      printf '%s\n' "ci-runner: PyPI files proxy unavailable" >&2
-      exit 69
+      printf '%s\n' "ci-runner: PyPI files proxy unavailable; installing from public PyPI" >&2
+      direct "$@"
     fi
 
     original="$(mktemp "${PWD}/.uv.lock.pypi-proxy.XXXXXX")" || direct "$@"
