@@ -66,6 +66,19 @@ herdr agent list            # read it IN FULL: blocked, idle, new and closed sea
 herdr pane read <pane_id>   # read the question
 ```
 
+**`done` is a turn state, never a plan state.** herdr's `agent_status: done` means the seat's last TURN ended. A seat at
+a decision picker, or one that has just asked the maintainer for something, can read `done` (or `idle`). Every tick, run
+`herdr pane read <pane_id> --source recent-unwrapped` for EVERY seat whose plan is on the priorities record, whatever
+its agent_status, and take the status word from that pane and the ledger, never from agent_status. Any ask in a pane
+addressed to the maintainer goes under FOR THE MAINTAINER that same tick (§7). Never write "seat done" as a status. The
+maintainer, 2026-11-04 ~18:3xZ, recorded on epic `livespec-dev-tooling-6tgd2z`: "Why are these marked as \"seat done\"
+and why aren't you moving them along?" and "Hetzner is clearly waiting on me, the maintainer, and you still reported
+\"Maintainer \"none\" in your last tick. FAIL." Measured that day: the coordinator filtered `herdr agent list` to
+statuses other than working and done, so it never read radar-and-deterministic-admission (P7), which sat at a decision
+picker, or bootstrap-credentials-and-onboarding (P8), which was waiting on the maintainer to sign in to the AWS console
+as account 360879159888 to enable CloudWatch billing alerts. It reported both as "seat done" and FOR THE MAINTAINER as
+"none".
+
 Resolve a DECISION picker yourself under ruling R301 with `herdr pane send-keys <pane_id> <keys>`. Then SendMessage
 the explicit answer, so the seat has it in words and knows the coordinator chose under delegated authority. Never
 answer tool-permission or billing prompts.
@@ -264,7 +277,8 @@ Never carry stale information to the maintainer (R490). Every tick, rebuild the 
 entry from live state: `herdr agent list` in full, plus ledger reads.
 
 - Keep an ask only if it is re-verified as still open AND inside a maintainer priority. Asks outside the priorities are
-  not raised.
+  not raised. An ask a seat has put to the maintainer in its own pane counts as open until the pane or ledger shows it
+  answered (§3).
 - A peer report is evidence of what was true when it was sent, never of what is true now.
 - Name seats and work to the maintainer by plan name, workspace and tab, never by pane id or repository name (R483).
 - Never name a work item by its bare id in anything the maintainer reads. Write its title, then its id: `beads-web
