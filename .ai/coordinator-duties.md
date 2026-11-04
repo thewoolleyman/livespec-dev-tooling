@@ -339,6 +339,22 @@ outright at ~14:5xZ: "we need to just remove the override concept. Overrides wil
 order. Anything else will just result in the override being a catch-all bucket that nothing ever leaves and gets
 constantly yak-shaved."
 
+**A report never claims a routing it has not sent.** A tick report says a finding was routed only once the message to
+the owning seat has actually been sent, and it names that seat. A routing that is intended but not sent is reported as
+the action still owed. Measured 2026-11-04 ~20:0xZ: a STRUCTURAL line said the run-tree preservation consolidation was
+"routed as the design point for adcaa6's shared helper", and no such message had been sent to any seat.
+
+**An architectural or design change is the maintainer's, never folded into an implementation item.** When a tick
+surfaces a change of design or architecture, the coordinator lists it under `FOR THE MAINTAINER (non-blocking)`. It
+does not route it as a design point into an implementation item, and it does not choose the direction itself. When the
+maintainer takes it up, it gets a dedicated maintainer-driven plan and a seat of its own name (§8): the seat prepares
+options and a recommendation, the maintainer decides the direction, and the item stays under `FOR THE MAINTAINER` every
+tick until the maintainer has chosen. The maintainer, 2026-11-04 ~20:0xZ, recorded on epic
+`livespec-dev-tooling-6tgd2z` at 20:01:34Z: "This looks like a important design and archivectural change that needs
+my input and attention. And probably a dedicated planb. Where did you route it and why?" The maintainer then directed
+a dedicated plan, factory-run-work-preservation, opened in livespec-orchestrator-beads-fabro and "flag[ged] as a
+maintainer item for me to drive and decide direction."
+
 **Deprioritizing never cancels in-flight work.** A started item runs to completion, including its wrap-up (rework,
 acceptance, proofs). Cancel only runaway work, or work whose output will not be used. An infrastructure restart's
 cancel-and-immediately-re-dispatch is a resume, not a cancellation. Maintainer ruling 2026-11-02 ~14:5xZ, recorded on
@@ -477,6 +493,19 @@ making the [Opus] change on the most important and highly loaded repo was a horr
 unverified model. Eight items died at implement from 18:15Z to 19:19Z on a Claude Code 2.1.170 HTTP 400, until #4396
 (998e45933) reverted it.
 
+**Preserve before any cancel.** No seat cancels, removes or abandons a factory run until that run's committed tree is
+on a ref on origin, verified with `git ls-remote`. A diff pointer, a run id or a resume pointer is not a preserved
+tree. While the factory cannot preserve a run itself, the mechanism is the node-copy preserve script that
+kubernetes-sandbox-backend runs: legacy-dispatcher-agent asks for it when a run crosses 330 minutes of its 360-minute
+wall budget, and again before any other cancel. This holds for wall-budget cancels, infrastructure restarts (§9's
+cancel-and-re-dispatch included) and runaway kills alike. The rule stands until bd-ib-ds4yrm and bd-ib-xdhe5z land; the
+plan factory-run-work-preservation (bd-ib-nckst7, maintainer-driven, §9) owns the mechanism. The maintainer,
+2026-11-04 ~20:0xZ, recorded on epic `livespec-dev-tooling-6tgd2z` at 20:01:34Z: "WTF is this, 6 hours of work lost on
+critical path? WHY? HOW CAN WE GET THIS DONE ASAP??????" and, ~20:1xZ at 20:03:15Z: "open a work item to prevent this
+from ever fucking happening again to lose hours of work: 'It never pushed the run's tree to a ref.'" Measured that
+day: bd-ib-yuwftp's run 01M6KBH30NJA lost about 6 h of work at its wall-budget cancel (19:28Z), because only a 78-byte
+diff pointer was kept before `fabro rm -f`.
+
 ## 11. Reading host capacity
 
 Read `.ai/ci-node-capacity-reads.md` before any throttle, cap or launch gate. A cap is derived from throughput, not
@@ -499,6 +528,19 @@ on an idle percentage alone.
   - **Additive means LOGICALLY additive: the edit runs the same or more, never less.** Adding jobs, steps or checks, and adding OR MODIFYING `runs-on` routing, is additive. The coordinator authorizes such an edit itself under the delegation when it is also not significantly slower (`approval:workflow-edit-additive`). Only an edit that runs less (removing or reducing tests, coverage or quality gates) or is significantly slower goes to the maintainer, and that ask says which of the two it is and why. A line-diff count is NOT the test. The maintainer, 2026-11-03 ~13:4xZ, recorded on epic `livespec-dev-tooling-6tgd2z` at 13:28:58Z: "Additive means LOGICALLY ADDITIVE. E.g., ADDS MORE STUFF TO RUN, NOT RUNS LESS STUFF. Adding OR MODIFYING a runs on is absolutitely ADDITIVE." The guard check-no-workflow-edits.sh still measures a line diff until its fix lands, and that fix is routed to ci-runtime-and-cost.
   - **actionlint first.** Before the coordinator sets `approval:workflow-edit-additive`, the exact edited workflow file must pass `actionlint` clean, and that output is recorded on the item. Measured 2026-11-03: #3317 merged a release-please.yml whose unquoted `if:` contained `: `. It was invalid YAML, every local gate and the PR CI passed it, and dev-tooling releases were blocked from 19:49Z to 21:45Z. The maintainer, 2026-11-03 ~22:0xZ: "Yes, approve actionlint. You should not have asked me this, it's additive and presumably not slow."
   - **Never ask the maintainer to acknowledge an additive edit.** An additive, not-significantly-slower workflow edit, or a rule change of that kind, is decided and reported, never listed under FOR THE MAINTAINER. Only a removal or reduction of coverage or gates, or a significant runtime increase, goes to the maintainer. The maintainer, 2026-11-03: "You should only ask for non-additive or large impact." The classification is logical, never the label a guard forces. When the line-diff guard (check-no-workflow-edits.sh, until livespec-dev-tooling-hz4dkk lands) refuses `approval:workflow-edit-additive` and the coordinator applies the maintainer-tier `approval:workflow-edit` instead, a logically additive edit is still reported, never listed under FOR THE MAINTAINER. The maintainer, 2026-11-04 ~19:4xZ, recorded on epic `livespec-dev-tooling-6tgd2z`: "why are you still insisting on asking me for approval on additive workflow labels? What happened to the rule I gave you on this?" Measured that day: bd-ib-idvp26, an optional runner_labels workflow_dispatch input with an empty default, was listed for acknowledgement in three tick reports because the guard forced the maintainer-tier label.
+- **Capacity and config values change without a test suite, and no test pins a committed value.** The maintainer,
+  2026-11-04 ~18:4xZ, recorded on epic `livespec-dev-tooling-6tgd2z` at 18:41:47Z: "Do all of those suggestions, now.
+  ... Even if the file is committed, it should be a short circuit, no-tests change to change the wip or cap values. NO
+  TEST SHOIULD BE TIED TO CONFIG VALUE ACTUAL VALUES." The coordinator reads it three ways:
+  - Collapse the factory concurrency knobs to one source of truth. One queue gets one number (§10).
+  - A commit, push and CI fast path for value-only edits of declared capacity or config keys (schema-validate only,
+    no suites) is maintainer-authorized. For that class only, it overrides the limit above that a reduction of gates
+    goes to the maintainer.
+  - A test asserting a real committed config or capacity VALUE, rather than a fixture it writes, is a defect to fix.
+
+  The fast path itself is still being built: dev-tooling proposals #3423 and #3432 (v132) and livespec #3100 (v237).
+  Until it lands, a value-only edit still runs the normal gates. Measured the same day: another seat could not find this
+  ruling anywhere in the repository, because it lived only in the epic's comments, which is why it is ported here.
 - **Times are UTC.** The host clock is CET, so take timestamps with `date -u` and never label local time `Z`. On
   2026-11-01 two seats did, writing times an hour late into the ledger.
 - **Secrets.** Never `env | cut` to list variable names: on 2026-10-31 it leaked a private key's lines. List names with
