@@ -14,6 +14,7 @@ from typing import Any
 from livespec_dev_tooling.incident_execution import (
     EXPEDITED_INCIDENT_RESPONSE,
     EXPEDITED_INCIDENT_RESPONSE_REVERT,
+    ExecutionContext,
     parse_incident_truth_value,
 )
 from livespec_dev_tooling.incident_gate_inventory import inventory_gates
@@ -26,6 +27,7 @@ from livespec_dev_tooling.incident_hook_process import (
     parse_query,
     resolve_current,
 )
+from livespec_dev_tooling.incident_hook_receipt import recover_receipt
 from livespec_dev_tooling.incident_hook_scope import HookCall, validate_scope
 from livespec_dev_tooling.incident_local_gates import GateResult, route_resolved_gates
 from livespec_dev_tooling.incident_transport import normal_child_environment
@@ -89,6 +91,30 @@ def _persist(
         raise HookRefusalError(message)
 
 
+def _finish(
+    *,
+    repo: Path,
+    query: dict[str, Any],
+    reading: dict[str, Any],
+    receipt: dict[str, Any],
+    context: ExecutionContext,
+    recovered: bool = False,
+) -> int:
+    if recovered:
+        current = invoke_authority(repo=repo, query=query, action="read-current")
+        if current != reading:
+            message = "current authority changed before hook receipt recovery"
+            raise HookRefusalError(message)
+    else:
+        _persist(repo=repo, query=query, reading=reading, receipt=receipt)
+    if exact_tree(repo=repo, context=context, hook=receipt["hook"]) != receipt["tree"]:
+        return _refuse(reason="local tree changed during incident gates; partial receipt retained")
+    _ = sys.stdout.write(
+        canonical(value=dict(schema=1, receipt=receipt, normal_factory_proof=False)) + "\n"
+    )
+    return receipt["exit_status"]
+
+
 @impure_safe
 def _run(*, hook: str, extra: list[str], actual_index: str = "") -> int:
     if not _active():
@@ -119,6 +145,29 @@ def _run(*, hook: str, extra: list[str], actual_index: str = "") -> int:
         tree=tree,
         call=HookCall(hook=hook, extra=tuple(extra), stdin=stdin or ""),
     )
+    receipt_id = hashlib.sha256(
+        canonical(
+            value=[
+                local_operation,
+                reading["committed_token_id"],
+                reading["current_token_id"],
+                hook,
+                tree,
+                scope,
+            ]
+        ).encode()
+    ).hexdigest()
+    prior = recover_receipt(
+        repo=repo,
+        query=query,
+        reading=reading,
+        identity=dict(receipt_id=receipt_id, hook=hook, tree=tree, mode=context.mode),
+        invoke=invoke_authority,
+    )
+    if prior is not None:
+        return _finish(
+            repo=repo, query=query, reading=reading, receipt=prior, context=context, recovered=True
+        )
     inventory = inventory_gates(inventory=(repo / "check-targets.txt").read_text())
     child = normal_child_environment(environ=os.environ)
     _ = child.pop(QUERY_ENV, None)
@@ -144,26 +193,8 @@ def _run(*, hook: str, extra: list[str], actual_index: str = "") -> int:
         )
     )
     report = replace(report, results=(scope_result, *report.results, *empty))
-    receipt_id = hashlib.sha256(
-        canonical(
-            value=[
-                local_operation,
-                reading["committed_token_id"],
-                reading["current_token_id"],
-                hook,
-                tree,
-                scope,
-            ]
-        ).encode()
-    ).hexdigest()
     receipt = dict(receipt_id=receipt_id, hook=hook, tree=tree, mode=context.mode, **asdict(report))
-    _persist(repo=repo, query=query, reading=reading, receipt=receipt)
-    if exact_tree(repo=repo, context=context, hook=hook) != tree:
-        return _refuse(reason="local tree changed during incident gates; partial receipt retained")
-    _ = sys.stdout.write(
-        canonical(value=dict(schema=1, receipt=receipt, normal_factory_proof=False)) + "\n"
-    )
-    return report.exit_status
+    return _finish(repo=repo, query=query, reading=reading, receipt=receipt, context=context)
 
 
 def main(*, argv: list[str] | None = None) -> int:

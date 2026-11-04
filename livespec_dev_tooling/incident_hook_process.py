@@ -84,7 +84,12 @@ def _governed_root(*, repo: Path) -> Path:
 
 
 def invoke_authority(
-    *, repo: Path, query: dict[str, Any], action: str, receipt: str | None = None
+    *,
+    repo: Path,
+    query: dict[str, Any],
+    action: str,
+    receipt: str | None = None,
+    receipt_id: str | None = None,
 ) -> dict[str, Any]:
     governed = _governed_root(repo=repo)
     plugin = registered_plugin_root(
@@ -103,6 +108,8 @@ def invoke_authority(
         command.extend(["--" + name, str(value)])
     if receipt is not None:
         command.extend(["--receipt-json", receipt])
+    if receipt_id is not None:
+        command.extend(["--receipt-id", receipt_id])
     done = subprocess.run(  # noqa: S603 — fixed registered executable; structured query argv.
         command, cwd=repo, text=True, capture_output=True, timeout=_TIMEOUT, check=False
     )

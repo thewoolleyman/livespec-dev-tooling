@@ -89,6 +89,15 @@ def _wired(
         assert kwargs["query"] == query
         if kwargs["action"] == "read-current":
             return reading
+        if kwargs["action"] == "read-local-gates":
+            return dict(
+                status="absent",
+                receipt_id=kwargs["receipt_id"],
+                receipt=None,
+                checksum=None,
+                committed_token_id=reading["committed_token_id"],
+                current_token_id=reading["current_token_id"],
+            )
         receipt = json.loads(kwargs["receipt"])
         assert receipt["tree"] == tree
         receipts.append(receipt)
