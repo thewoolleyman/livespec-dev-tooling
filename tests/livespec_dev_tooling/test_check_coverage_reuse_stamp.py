@@ -55,11 +55,11 @@ set -euo pipefail
 printf '%s\\n' "$*" >> "$UV_LOG"
 case "$1 $2" in
     "run coverage")
-        printf 'TOTAL %s 0 100%%\\n' "$(cat .coverage)"
+        printf 'TOTAL %s 0 100%%\\n' "$(cat "${COVERAGE_FILE:-.coverage}")"
         exit "${FAKE_REPORT_STATUS:-0}"
         ;;
     "run pytest")
-        printf '%s\\n' "${FAKE_PYTEST_TOTAL:-1000}" > .coverage
+        printf '%s\\n' "${FAKE_PYTEST_TOTAL:-1000}" > "${LIVESPEC_COVERAGE_DATA_FILE:-.coverage}"
         printf 'TOTAL %s 0 100%%\\n' "${FAKE_PYTEST_TOTAL:-1000}"
         exit "${FAKE_PYTEST_STATUS:-0}"
         ;;
@@ -217,17 +217,16 @@ def test_marker_is_invalidated_by_a_tracked_tree_change(*, tmp_path: Path) -> No
     assert not (tmp_path / _REUSE_STAMP).exists()
 
 
-def test_github_actions_consumer_trusts_the_run_scoped_artifact(*, tmp_path: Path) -> None:
-    """The consumer job downloads the producer job's artifact; no marker crosses that boundary."""
+def test_github_actions_consumer_rejects_unstamped_partial_artifact(*, tmp_path: Path) -> None:
+    """Runner location cannot promote an unproven focused artifact to full proof."""
     _install_harness(tmp_path=tmp_path, git_tree=True)
     _ = (tmp_path / ".coverage").write_text("4242\n", encoding="utf-8")
 
     result = _run(tmp_path=tmp_path, script="check-coverage.sh", extra={"GITHUB_ACTIONS": "true"})
 
     assert result.returncode == 0, result.stderr
-    assert _reported_total(output=result.stdout) == "4242"
-    assert _uv_log(tmp_path=tmp_path) == [_REPORT_LINE]
-    assert not (tmp_path / ".coverage").exists()
+    assert _reported_total(output=result.stdout) == "1000"
+    assert _uv_log(tmp_path=tmp_path) == [_PYTEST_LINE]
 
 
 def test_producer_outside_a_git_tree_leaves_no_marker(*, tmp_path: Path) -> None:
@@ -257,3 +256,49 @@ def test_env_strips_the_host_inputs_the_scripts_read(
     assert "COV_CORE_SOURCE" not in env
     assert "COVERAGE_FILE" not in env
     assert "LIVESPEC_COVERAGE_DATA_FILE" not in env
+
+
+# EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-xluwqj
+@pytest.mark.parametrize("on_ci", [False, True])
+def test_partial_overwrite_cannot_reuse_a_normal_stamp(*, tmp_path: Path, on_ci: bool) -> None:
+    """A focused measurement replacing normal data invalidates its old receipt."""
+    _install_harness(tmp_path=tmp_path, git_tree=True)
+    producer = _run(tmp_path=tmp_path, script="check-per-file-coverage.sh", extra={})
+    assert producer.returncode == 0, producer.stderr
+    (tmp_path / ".coverage").write_text("partial-incident-data\n")
+    consumer = _run(
+        tmp_path=tmp_path,
+        script="check-coverage.sh",
+        extra={"GITHUB_ACTIONS": "true"} if on_ci else {},
+    )
+    assert consumer.returncode == 0, consumer.stderr
+    assert _uv_log(tmp_path=tmp_path)[-1] == _PYTEST_LINE
+    assert _reported_total(output=consumer.stdout) == "1000"
+
+
+@pytest.mark.parametrize("on_ci", [False, True])
+@pytest.mark.parametrize("partial", [False, True])
+def test_namespaced_receipt_binds_selected_data_only(
+    *, tmp_path: Path, on_ci: bool, partial: bool
+) -> None:
+    """The namespace's receipt tracks its bytes and never consumes root data."""
+    _install_harness(tmp_path=tmp_path, git_tree=True)
+    namespace = tmp_path / "aggregate-run"
+    namespace.mkdir()
+    data = namespace / ".coverage"
+    root_data = tmp_path / ".coverage"
+    root_data.write_text("foreign-root-data\n")
+    env = {"COVERAGE_FILE": str(data), "FAKE_PYTEST_TOTAL": "3333"}
+    if on_ci:
+        env["GITHUB_ACTIONS"] = "true"
+    producer = _run(tmp_path=tmp_path, script="check-per-file-coverage.sh", extra=env)
+    assert producer.returncode == 0, producer.stderr
+    assert (namespace / _REUSE_STAMP).is_file()
+    if partial:
+        data.write_text("partial-incident-data\n")
+    consumer = _run(tmp_path=tmp_path, script="check-coverage.sh", extra=env)
+    assert consumer.returncode == 0, consumer.stderr
+    assert _reported_total(output=consumer.stdout) == "3333"
+    assert _uv_log(tmp_path=tmp_path)[-1] == (_PYTEST_LINE if partial else _REPORT_LINE)
+    assert root_data.read_text() == "foreign-root-data\n"
+    assert not (namespace / _REUSE_STAMP).exists()

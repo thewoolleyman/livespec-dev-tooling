@@ -25,22 +25,16 @@ set -euo pipefail
 # that killed a Green amend in a consuming repo (fabro run
 # 01KZBJNKGQXM6XWZ06EC7T8KQR) — or, when the narrow set happens to be fully
 # covered, a vacuous 100% pass. The file is reused only when:
-#   - it carries the producer's marker and that marker equals the id this
-#     run resolves for the same tracked tree (scripts/just/coverage-reuse-id.sh),
-#     which is the local `just check` aggregate case; or
-#   - this is a GitHub Actions job: the consumer job downloads the producer
-#     job's artifact, and an actions artifact is scoped to the workflow run
-#     that published it, so the file is this run's producer output by
-#     construction (no marker crosses the job boundary today).
-# Anything else is discarded, with its marker, and the clean suite runs here
-# exactly as it does when no file is present at all.
+#   - it carries the full-suite producer's mode/scope/tree/data receipt;
+#   - that receipt matches both the current tracked tree and selected data bytes.
+# EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-xluwqj
+# GITHUB_ACTIONS alone is not provenance: focused artifacts can exist there too.
+# A downloaded artifact without its receipt falls back to normal measurement.
 coverage_file="${COVERAGE_FILE:-.coverage}"
 reuse_stamp="$(dirname "$coverage_file")/.livespec-coverage-reuse-token"
 reuse_reason=""
 if [[ -f "$coverage_file" ]]; then
-    if [[ -n "${GITHUB_ACTIONS:-}" ]]; then
-        reuse_reason="this workflow run's producer artifact"
-    elif [[ -f "$reuse_stamp" ]] \
+    if [[ -f "$reuse_stamp" ]] \
         && reuse_id="$(scripts/just/coverage-reuse-id.sh)" \
         && [[ "$(cat "$reuse_stamp")" == "$reuse_id" ]]; then
         reuse_reason="check-per-file-coverage's clean run, provenance marker matches the current tracked tree"

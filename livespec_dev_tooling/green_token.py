@@ -62,7 +62,6 @@ import json
 import subprocess
 import sys
 from pathlib import Path
-from typing import cast
 
 _VENDOR_DIR = Path(__file__).resolve().parent / "_vendor"
 if str(_VENDOR_DIR) not in sys.path:
@@ -74,7 +73,11 @@ from returns.unsafe import unsafe_perform_io  # noqa: E402  — vendor-path-awar
 
 from livespec_dev_tooling import check_purity  # noqa: E402  — vendor-path-aware import.
 from livespec_dev_tooling._green_token_evidence import (  # noqa: E402
+    NORMAL_VALIDATION,
     PreCommitAggregateEvidence,
+    ValidationScope,
+    is_normal_validation,
+    load_tree_hash,
     persist_pre_commit_evidence,
     read_evidence,
 )
@@ -135,54 +138,31 @@ def _token_path(*, cwd: Path) -> Path:
 
 
 def _load_stored_tree_hash(*, cwd: Path, log: structlog.stdlib.BoundLogger) -> str | None:
-    """Read and validate the stored tree hash from the token file.
-
-    Returns the stored tree-hash string on success, or None when the
-    token is absent, unreadable, or malformed (each case is logged).
-    """
-    try:
-        path = _token_path(cwd=cwd)
-        raw = path.read_text(encoding="utf-8")
-        token: object = json.loads(raw)
-    except FileNotFoundError:
-        log.info(
-            "green token check: no token found (cold path); running full aggregate",
-        )
-        return None
-    except (
-        OSError,
-        UnicodeDecodeError,
-        json.JSONDecodeError,
-        subprocess.CalledProcessError,
-    ) as exc:
-        log.info(
-            "green token check: token unreadable; running full aggregate",
-            error=str(exc),
-        )
-        return None
-    # A token whose JSON root is not an object is malformed rather than
-    # unreadable, so it joins the missing-field case below on one report path.
-    stored: object = None
-    if isinstance(token, dict):
-        stored = cast("dict[str, object]", token).get("tree_hash")
-    if not isinstance(stored, str):
-        log.info(
-            "green token check: invalid token format; running full aggregate",
-        )
-        return None
-    return stored
+    """Read the normal token through the shared evidence serializer."""
+    return load_tree_hash(token_path=lambda: _token_path(cwd=cwd), log=log)
 
 
-def write_token(*, cwd: Path, log: structlog.stdlib.BoundLogger) -> int:
+def write_token(
+    *,
+    cwd: Path,
+    log: structlog.stdlib.BoundLogger,
+    validation: ValidationScope = NORMAL_VALIDATION,
+) -> int:
     """Write a green token for the current HEAD tree to the git dir.
 
     Returns 0 on success and also on any error — a failed write must
     never abort a successful check aggregate (strictly advisory-local).
     """
+    if not is_normal_validation(mode=validation.mode, scope=validation.scope):
+        log.warning("green token write refused: normal full-suite evidence required")
+        return 1
     try:
         tree_hash = _head_tree_hash(cwd=cwd)
         path = _token_path(cwd=cwd)
-        _ = path.write_text(json.dumps({"tree_hash": tree_hash}), encoding="utf-8")
+        _ = path.write_text(
+            json.dumps({"tree_hash": tree_hash, "mode": "normal", "scope": "full-suite"}),
+            encoding="utf-8",
+        )
         log.info("green token written", tree_hash=tree_hash, path=str(path))
     except (OSError, subprocess.CalledProcessError) as exc:  # pragma: no cover
         log.warning("green token write failed; non-blocking", error=str(exc))
@@ -196,12 +176,16 @@ def write_pre_commit_evidence(
     run_id: str,
     output_checksum: str,
     tree_hash: str | None = None,
+    validation: ValidationScope = NORMAL_VALIDATION,
 ) -> int:
     """Record a passed full pre-commit aggregate against the tree it judged.
 
     The tree defaults to the current index tree; a delegated verdict passes the
     tree its gate Job judged, so the evidence is keyed to that verdict.
     """
+    if not is_normal_validation(mode=validation.mode, scope=validation.scope):
+        log.warning("pre-commit evidence refused: normal full-suite evidence required")
+        return 1
     try:
         tree_hash = tree_hash or _index_tree_hash(cwd=cwd)
     except (OSError, subprocess.CalledProcessError) as exc:  # pragma: no cover
@@ -213,6 +197,7 @@ def write_pre_commit_evidence(
         log=log,
         run_id=run_id,
         output_checksum=output_checksum,
+        validation=validation,
     )
 
 
