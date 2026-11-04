@@ -227,8 +227,12 @@ fabro_server_instances:
     # delete batches (thewoolleyman/fabro#16, livespec-orchestrator-beads-fabro
     # bd-ib-h7kbco: a run DELETE on the 102 GB main store held the SQLite write
     # lock past the 5 s busy timeout and failed concurrent runs' appends).
-    binary_source: /home/ubuntu/.local/state/fabro-web-prod/v0393-95a2e5b80/fabro
-    binary_sha256: 996d4e23dd327df4bf225f78302233d31ee925e9da5083074aa4c29e2240b072
+    # 2026-11-04: 8764f1de8 = 95a2e5b80 plus thewoolleyman/fabro#15 (bd-ib-6r3yax),
+    # #18 (bd-ib-bpucez) and #19 (bd-ib-ljw2xg), the
+    # carrier-candidate-registered-20261023 tip; petri pinned at e92b191 by
+    # Cargo.lock. BUILD_INFO beside the binary records the provenance.
+    binary_source: /home/ubuntu/.local/state/fabro-web-prod/v0393-8764f1de8/fabro
+    binary_sha256: bfc64b281771643833944b9a82cd1db2b9c84766a7bf00e267c4ecff4f8319d5
     # The tag the orchestrator workflow pins today
     # (.claude-plugin/.fabro/workflows/implement-work-item/workflow.toml,
     # python-agent-v1.136.2). On this engine the catalog, not the workflow
@@ -429,8 +433,12 @@ fabro_server_instances:
     # delete batches (thewoolleyman/fabro#16, livespec-orchestrator-beads-fabro
     # bd-ib-h7kbco: a run DELETE on the 102 GB main store held the SQLite write
     # lock past the 5 s busy timeout and failed concurrent runs' appends).
-    binary_source: /home/ubuntu/.local/state/fabro-web-prod/v0393-95a2e5b80/fabro
-    binary_sha256: 996d4e23dd327df4bf225f78302233d31ee925e9da5083074aa4c29e2240b072
+    # 2026-11-04: 8764f1de8 = 95a2e5b80 plus thewoolleyman/fabro#15 (bd-ib-6r3yax),
+    # #18 (bd-ib-bpucez) and #19 (bd-ib-ljw2xg), the
+    # carrier-candidate-registered-20261023 tip; petri pinned at e92b191 by
+    # Cargo.lock. BUILD_INFO beside the binary records the provenance.
+    binary_source: /home/ubuntu/.local/state/fabro-web-prod/v0393-8764f1de8/fabro
+    binary_sha256: bfc64b281771643833944b9a82cd1db2b9c84766a7bf00e267c4ecff4f8319d5
     # The fleet instance's catalog, entry for entry; the reasons for each
     # entry are given there. Bump the images together with it.
     environments:
@@ -553,8 +561,12 @@ fabro_server_instances:
     # delete batches (thewoolleyman/fabro#16, livespec-orchestrator-beads-fabro
     # bd-ib-h7kbco: a run DELETE on the 102 GB main store held the SQLite write
     # lock past the 5 s busy timeout and failed concurrent runs' appends).
-    binary_source: /home/ubuntu/.local/state/fabro-web-prod/v0393-95a2e5b80/fabro
-    binary_sha256: 996d4e23dd327df4bf225f78302233d31ee925e9da5083074aa4c29e2240b072
+    # 2026-11-04: 8764f1de8 = 95a2e5b80 plus thewoolleyman/fabro#15 (bd-ib-6r3yax),
+    # #18 (bd-ib-bpucez) and #19 (bd-ib-ljw2xg), the
+    # carrier-candidate-registered-20261023 tip; petri pinned at e92b191 by
+    # Cargo.lock. BUILD_INFO beside the binary records the provenance.
+    binary_source: /home/ubuntu/.local/state/fabro-web-prod/v0393-8764f1de8/fabro
+    binary_sha256: bfc64b281771643833944b9a82cd1db2b9c84766a7bf00e267c4ecff4f8319d5
     # The tag FOLLOWS homelab's own workflow pin
     # (.fabro/workflows/implement-work-item/workflow.toml in mi-homelab/homelab,
     # python-agent-v1.126.0), not the orchestrator's; bump the two together.
