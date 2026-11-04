@@ -24,6 +24,10 @@
 #      Otherwise (no gap, no fit, any reading unknown, no quota read ever) it
 #      removes the taint from every factory node, so placement falls back to the
 #      sandbox pods' own hostname topology spread.
+#      A gates flavor that sets .spec.topologyName reserves at most
+#      FACTORY_PRESSURE_GATES_RESERVE_CAP_MILLICPU (default 5000m, committed in
+#      the .service unit); one without keeps the uncapped unused quota. Each
+#      cycle logs a RESERVE line naming the branch it took.
 #   4. Annotates each factory sandbox pod that lacks it with
 #      livespec.io/placement-pressure: the readings, fit and taint state of the
 #      cycle that first saw it.
@@ -62,6 +66,7 @@ export KUBECONFIG="${KUBECONFIG:-/etc/rancher/k3s/k3s.yaml}"
 STATE_DIR="${FACTORY_PRESSURE_STATE_DIR:-/var/lib/livespec/factory-pressure-placement}"
 export FACTORY_PRESSURE_GAP="${FACTORY_PRESSURE_GAP:-20}"
 export FACTORY_PRESSURE_SANDBOX_MILLICPU="${FACTORY_PRESSURE_SANDBOX_MILLICPU:-4000}"
+export FACTORY_PRESSURE_GATES_RESERVE_CAP_MILLICPU="${FACTORY_PRESSURE_GATES_RESERVE_CAP_MILLICPU:-5000}"
 export FACTORY_PRESSURE_STALE_SECONDS="${FACTORY_PRESSURE_STALE_SECONDS:-90}"
 export FACTORY_PRESSURE_NOW="${FACTORY_PRESSURE_NOW:-$(date -u +%s)}"
 TAINT_KEY=livespec.io/factory-pressure
@@ -88,6 +93,7 @@ from datetime import datetime, timezone
 work, state_dir = sys.argv[1], sys.argv[2]
 gap = float(os.environ["FACTORY_PRESSURE_GAP"])
 need = int(os.environ["FACTORY_PRESSURE_SANDBOX_MILLICPU"])
+reserve_cap = int(os.environ["FACTORY_PRESSURE_GATES_RESERVE_CAP_MILLICPU"])
 stale = int(os.environ["FACTORY_PRESSURE_STALE_SECONDS"])
 now = int(os.environ["FACTORY_PRESSURE_NOW"])
 quota_ok = os.environ["FACTORY_PRESSURE_QUOTA_OK"] == "1"
@@ -140,10 +146,14 @@ for n in nodes:
 # The gates reserve per node, from a live read or the cached last good read.
 cache = os.path.join(state_dir, "gates-quota.json")
 quota = None        # node -> nominal millicpu
+topology = {}       # node -> True when its gates flavor sets .spec.topologyName
 quota_source = "none"
 if quota_ok:
+    flavor_items = load("flavors.json")["items"]
     flavors = {f["metadata"]["name"]: (f.get("spec", {}).get("nodeLabels") or {})
-               for f in load("flavors.json")["items"]}
+               for f in flavor_items}
+    flavor_topology = {f["metadata"]["name"]: bool(f.get("spec", {}).get("topologyName"))
+                       for f in flavor_items}
     quota = {}
     groups = load("cq.json").get("spec", {}).get("resourceGroups", [])
     for fl in (groups[0].get("flavors", []) if groups else []):
@@ -157,25 +167,47 @@ if quota_ok:
             nl = n["metadata"].get("labels", {})
             if all(nl.get(k) == v for k, v in labels.items()):
                 quota[n["metadata"]["name"]] = quota.get(n["metadata"]["name"], 0) + millicpu(cpu[0]["nominalQuota"])
+                if flavor_topology.get(fl.get("name")):
+                    topology[n["metadata"]["name"]] = True
     quota_source = "live"
     with open(cache + ".tmp", "w") as f:
-        json.dump({"quota": quota, "at": now}, f)
+        json.dump({"quota": quota, "topology": topology, "at": now}, f)
     os.replace(cache + ".tmp", cache)
 elif os.path.exists(cache):
     with open(cache) as f:
-        quota = json.load(f)["quota"]
+        cached = json.load(f)
+    quota = cached["quota"]
+    topology = cached.get("topology", {})
     quota_source = "cached"
 
 
+reserve_log = []
+
+
 def gates_reserve(node):
+    # THE CAP (agreed with dev-host-test-gate-load, owner of cikd6m): a gates
+    # flavor that sets .spec.topologyName reserves at most
+    # FACTORY_PRESSURE_GATES_RESERVE_CAP_MILLICPU; a flavor without one keeps
+    # the uncapped unused quota. The cached fail-safe reserves the FULL nominal
+    # quota, under the same cap rule.
     nominal = (quota or {}).get(node, 0)
     if quota_source != "live":
-        return nominal  # the cached FULL nominal quota: the fail-safe ladder
-    used = sum(pod_cpu(p) for p in pods
-               if p.get("spec", {}).get("nodeName") == node
-               and p["metadata"].get("namespace") == "gates"
-               and p["metadata"].get("labels", {}).get(GATE_LABEL[0]) == GATE_LABEL[1])
-    return max(0, nominal - used)
+        unused = nominal  # the cached FULL nominal quota: the fail-safe ladder
+    else:
+        used = sum(pod_cpu(p) for p in pods
+                   if p.get("spec", {}).get("nodeName") == node
+                   and p["metadata"].get("namespace") == "gates"
+                   and p["metadata"].get("labels", {}).get(GATE_LABEL[0]) == GATE_LABEL[1])
+        unused = max(0, nominal - used)
+    if topology.get(node):
+        reserve = min(unused, reserve_cap)
+        branch = "capped-topology"
+    else:
+        reserve = unused
+        branch = "uncapped"
+    reserve_log.append(f"RESERVE {node} branch={branch} source={quota_source} "
+                       f"nominal={nominal}m unused={unused}m cap={reserve_cap}m reserve={reserve}m")
+    return reserve
 
 
 def fit(node):
@@ -209,6 +241,8 @@ else:
         reason = f"steer-to:{low}:fit={fit_low}m"
 
 summary = " ".join(f"{k}={'unknown' if v is None else v}" for k, v in sorted(readings.items()))
+for line in reserve_log:
+    print(line)
 print(f"DECISION {reason} readings[{summary}] quota={quota_source} taint={','.join(sorted(want)) or 'none'}")
 for n in sorted(want - tainted_now):
     print(f"TAINT {n}")
@@ -226,8 +260,8 @@ for p in pods:
     print(f"ANNOTATE {md['namespace']} {md['name']} {annotation}")
 PY
 
-grep '^DECISION' "$work/decision" | sed "s/^/${SCRIPT_NAME}: /"
-[ "$DRY_RUN" = 0 ] || { grep -v '^DECISION' "$work/decision" | sed "s/^/${SCRIPT_NAME}: dry-run: /"; exit 0; }
+grep -E '^(RESERVE|DECISION)' "$work/decision" | sed "s/^/${SCRIPT_NAME}: /"
+[ "$DRY_RUN" = 0 ] || { grep -vE '^(RESERVE|DECISION)' "$work/decision" | sed "s/^/${SCRIPT_NAME}: dry-run: /"; exit 0; }
 
 status=0
 while read -r verb a b rest; do

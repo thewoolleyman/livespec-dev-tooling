@@ -8,4 +8,7 @@ After=k3s.service
 [Service]
 Type=oneshot
 Environment=KUBECONFIG=/etc/rancher/k3s/k3s.yaml
+# The gates reserve cap for a gates flavor that sets .spec.topologyName
+# (agreed with dev-host-test-gate-load, owner of livespec-dev-tooling-cikd6m).
+Environment=FACTORY_PRESSURE_GATES_RESERVE_CAP_MILLICPU=5000
 ExecStart=/usr/local/lib/ci-runner-k3s/reconcile-factory-pressure-taint.sh
