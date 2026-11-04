@@ -86,7 +86,9 @@ _FLEET_COMMIT = "0a867ce"
 # node name on run_turn spans (thewoolleyman/fabro#14). The maintainer ruled it
 # onto the candidate and fabro-server-mi-homelab on 2026-11-02 (plan
 # fabro-currency), ahead of the fleet instance.
-_CANDIDATE_COMMIT = "0a867ce"
+# 2026-11-04: the candidate alone runs 85af354 (thewoolleyman/fabro#26) for its
+# 0-run proof, ahead of the fleet instance.
+_CANDIDATE_COMMIT = "85af354"
 _PINNED_COMMIT = {"fabro-server": _FLEET_COMMIT, "fabro-server-candidate": _CANDIDATE_COMMIT}
 _SUPERSEDED_CARRIER = "adeefec"
 _SUPERSEDED_BUILD_REFERENCE = "#1048"
