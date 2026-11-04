@@ -204,9 +204,12 @@ def test_the_rebalance_moves_eight_slots_from_poweredge_to_hp_and_keeps_the_tota
     }
     assert capacities == {
         "gmktec-xubuntu": 12,
-        "hp-xubuntu": 8,
-        "poweredge-xubuntu": 24,
-    }, f"the rebalance is poweredge 32 -> 24 and hp 0 -> 8 with gmktec unchanged; got {capacities}"
+        "hp-xubuntu": 5,
+        "poweredge-xubuntu": 27,
+    }, (
+        f'the cores-derived split is poweredge 27, gmktec 12, hp 5 (DERIVATION.md "Per-node '
+        f'churn slots derived from cores (2026-11-04)"); got {capacities}'
+    )
     assert sum(capacities.values()) == 44 == _cohort_quota_total(), (
         f"the profiles must still sum to 44 and equal the ten cohort quotas; "
         f"profiles={sum(capacities.values())} quotas={_cohort_quota_total()}"
