@@ -313,8 +313,11 @@ spec:
         # SKIP rather than a POST into a refused address.
         # The cold canary stays a plain value: one job in N (deterministic on
         # the pod name) runs every tier cold by construction and says so.
+        # TEMPORARY 2026-11-04 07:30-09:30Z: 1-in-5 cold canary for the 7zozck
+        # seeded-vs-cold fetch comparison (~20 cold controls); restore to "20"
+        # at 09:30Z by the reverse commit.
         - name: CI_CACHE_CANARY_N
-          value: "20"
+          value: "5"
         # Build-phase telemetry (header item 7): where the sandbox image's baked
         # cargo shim (livespec_dev_tooling.otel_cargo_phase) posts this job's
         # build.cargo-* spans — the SAME keyless listener as the cache spans.
