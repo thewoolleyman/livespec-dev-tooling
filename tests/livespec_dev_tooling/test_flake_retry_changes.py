@@ -120,3 +120,43 @@ def test_a_depth_one_pull_request_checkout_retries_only_tests_outside_the_pull_r
     markers = cast(list[pytest.MarkDecorator], added["test_untouched.py"])
     assert [marker.kwargs for marker in markers] == [_RETRY]
     assert added["test_touched.py"] == []
+
+
+@pytest.mark.integration
+def test_a_withheld_retry_is_named_in_the_terminal_summary_with_the_failed_git_query(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A change set that cannot be computed retries nothing, and the log says why."""
+    plugin = importlib.import_module("livespec_dev_tooling.flake_retry")
+    origin = _origin(root=tmp_path)
+    pushed = _commit(repo=origin, files={"NOTES.md": "docs\n"}, message="push")
+    work = _depth_one_checkout(
+        root=tmp_path, origin=origin, sha=pushed, ref="refs/remotes/origin/master"
+    )
+    _git(repo=work, args=["remote", "set-url", "origin", (tmp_path / "gone").as_uri()])
+    monkeypatch.setattr(plugin, "_WITHHELD", [], raising=False)
+    added: dict[str, list[object]] = {}
+    session = SimpleNamespace(config=SimpleNamespace(rootpath=work))
+    config = SimpleNamespace(pluginmanager=SimpleNamespace(hasplugin=lambda _name: True))
+
+    plugin.pytest_collection_modifyitems(session, config, _items(root=work, added=added))
+
+    assert added == {"test_touched.py": [], "test_untouched.py": []}
+
+    written: list[str] = []
+
+    def write_sep(*args: str, **_: object) -> None:
+        written.append(args[1])
+
+    reporter = SimpleNamespace(write_sep=write_sep, write_line=written.append)
+    monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
+    plugin.pytest_terminal_summary(reporter, 0, SimpleNamespace(rootpath=work))
+    summary = "\n".join(written)
+    assert "FLAKE-RETRY-WITHHELD" in summary
+    assert "git diff --name-only HEAD^ HEAD" in summary
+    assert "::warning::" not in summary
+
+    written.clear()
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    plugin.pytest_terminal_summary(reporter, 0, SimpleNamespace(rootpath=work))
+    assert any(line.startswith("::warning::FLAKE-RETRY-WITHHELD") for line in written)
