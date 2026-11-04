@@ -224,6 +224,37 @@
 # step failed, or the verifier rejected the new generation; 2 a preflight
 # failed (nothing built); 3 the new generation was over budget and refused.
 # last-run.json is written on every path but 2.
+#
+# THE ACTION ARCHIVE SEED (livespec-dev-tooling-a35sa4; plan ci-cache-optimization;
+# SPECIFICATION "Runner-pool build cache tiers" action-archive cache): every
+# `uses: owner/repo[/path]@ref` step line in the `.github/workflows/*.y{,a}ml` of
+# each fetched repository's DEFAULT BRANCH (the shallow clone of step 1; never a
+# pull-request ref) names an action the stock runner downloads from codeload at
+# Set up job, once per job, all from the node's one egress address. This step
+# resolves each such ref to a commit SHA by asking the FORGE (`git ls-remote`:
+# the peeled tag, else the tag, else the branch; a 40-hex ref is its own SHA),
+# fetches the forge's tarball for THAT SHA, and publishes a generation:
+#   ${WARM_ROOT}/actions-generations/<stamp>/archives/<owner>_<repo>/<sha>.tar.gz
+#   ${WARM_ROOT}/actions-generations/<stamp>/.actions-seed-manifest.json
+#   ${WARM_ROOT}/actions -> actions-generations/<stamp>
+# which is the layout the runner's ACTIONS_RUNNER_ACTION_ARCHIVE_CACHE reads
+# (runner 2.336.0: the directory <owner>_<repo>/<resolved sha>.tar.gz). An entry
+# is addressed by owner, repository and SHA, never by a tag or branch name, so a
+# tag that moves can never serve a different tree under an old key (an archive
+# is IMMUTABLE once written; a changed set reuses unchanged files by hardlink
+# inside this populator-only tree and downloads only new keys). Every archive
+# is verified before publish: it must be a readable gzip tar whose embedded
+# commit id (`git get-tar-commit-id`) is the SHA it is filed under. Nothing is
+# published over budget: WARM_ACTIONS_BUDGET_BYTES / WARM_ACTIONS_BUDGET_FILES
+# (the `warm-cache-budget` ConfigMap's actions-bytes / actions-files) cap the
+# whole tree, which every work volume receives as a reflink copy (the
+# provisioner; a job holds no path into a generation). A ref that cannot be
+# resolved or fetched is named in `failed` and its archive is absent from the
+# seed, so a job downloads that one action as it would without the tier; the
+# rest still publish. A set equal to the live generation's, younger than
+# WARM_FORCE_REBUILD_SECONDS, builds nothing. The run's outcome is
+# $WARM_ROOT/actions-seed-last-run.json. Composite actions' inner `uses:` lines
+# live inside the downloaded action, not in a workflow file, and are not seeded.
 set -uo pipefail
 
 WARM_ROOT="${WARM_ROOT:-/warm}"
@@ -245,6 +276,16 @@ PROXY_STORE="${PROXY_STORE:-/proxy-store}"
 # warm-cache-budget ConfigMap).
 WARM_BUDGET_BYTES="${WARM_BUDGET_BYTES:-}"
 WARM_BUDGET_FILES="${WARM_BUDGET_FILES:-}"
+# The action archive seed's budget (header, "THE ACTION ARCHIVE SEED") and the two
+# forge endpoints it reads: git over HTTPS for ref resolution, codeload for the
+# tarball. Tests point both at a local directory.
+WARM_ACTIONS_BUDGET_BYTES="${WARM_ACTIONS_BUDGET_BYTES:-}"
+WARM_ACTIONS_BUDGET_FILES="${WARM_ACTIONS_BUDGET_FILES:-}"
+ACTIONS_GIT_BASE="${ACTIONS_GIT_BASE:-https://github.com}"
+ACTIONS_ARCHIVE_BASE="${ACTIONS_ARCHIVE_BASE:-https://codeload.github.com}"
+# A superseded action archive generation is pruned only after this many seconds,
+# so a provisioner copy that resolved it just before a publish still finds it.
+WARM_ACTIONS_RETAIN_SECONDS="${WARM_ACTIONS_RETAIN_SECONDS:-21600}"
 # A published generation older than this is rebuilt even when no lock changed.
 WARM_FORCE_REBUILD_SECONDS="${WARM_FORCE_REBUILD_SECONDS:-86400}"
 # NEGATIVE-TEST HOOK: a uv project directory (pyproject.toml + uv.lock) synced
@@ -386,6 +427,13 @@ if ! PYTHONPATH="${PY_DEPS_DIR}" python3 -c 'import returns.io' 2>/dev/null; the
 fi
 PYTHONPATH="${PY_DEPS_DIR}" python3 -c 'import returns.io' 2>/dev/null \
   || { log "FATAL: returns is not importable from ${PY_DEPS_DIR} after installing ${RETURNS_SPEC}; the verifier cannot run"; exit 2; }
+if [ "${WARM_CACHE_UV_ONLY}" = false ]; then
+  for v in WARM_ACTIONS_BUDGET_BYTES WARM_ACTIONS_BUDGET_FILES WARM_ACTIONS_RETAIN_SECONDS; do
+    [[ "${!v}" =~ ^[0-9]+$ ]] || { log "FATAL: ${v} must be a non-negative integer, got '${!v}' (the warm-cache-budget ConfigMap injects the action archive seed budget)"; exit 2; }
+  done
+  [ "${WARM_ACTIONS_BUDGET_BYTES}" -gt 0 ] && [ "${WARM_ACTIONS_BUDGET_FILES}" -gt 0 ] || { log "FATAL: WARM_ACTIONS_BUDGET_BYTES and WARM_ACTIONS_BUDGET_FILES must be positive"; exit 2; }
+  command -v curl >/dev/null || { log "FATAL: curl not on PATH (the action archive seed fetches tarballs with it)"; exit 2; }
+fi
 [ -f "${REPOS_FILE}" ] || { log "FATAL: repos file ${REPOS_FILE} not found"; exit 2; }
 [ -d "${WARM_ROOT}" ] || { log "FATAL: WARM_ROOT ${WARM_ROOT} is not a directory"; exit 2; }
 for v in WARM_BUDGET_BYTES WARM_BUDGET_FILES WARM_FORCE_REBUILD_SECONDS KEEP_GENERATIONS; do
@@ -1032,7 +1080,191 @@ else
   log "uv-only mode: carrier-only cargo, sccache and target-cache writes skipped"
 fi
 
-log "run summary: uv generation $(basename "${published_gen:-none}") (rebuilt=${rebuilt} refused=${refused} verified=${verified}, ${synced} repositories synced), ${cargo_warmed} pre-warmed for cargo, sccache builds: ${sccache_built} built / ${sccache_skipped} skipped / ${sccache_skipped_busy} skipped-busy, target generations: ${target_built} built / ${target_skipped} skipped / ${target_skipped_busy} skipped-busy"
+# ---------------------------------------------------------------------------
+# 4b. ACTION ARCHIVE SEED — one generation for the whole pool (header, "THE
+#     ACTION ARCHIVE SEED"). Independent of every other step; a ref it cannot
+#     fetch is named in `failed` and the others still publish.
+ACTIONS_GEN_ROOT="${WARM_ROOT}/actions-generations"
+ACTIONS_LINK="${WARM_ROOT}/actions"
+ACTIONS_LAST_RUN="${WARM_ROOT}/actions-seed-last-run.json"
+actions_outcome=skipped
+actions_started="$(date +%s)"
+actions_refused=0
+
+# actions_low ARGS... — a command at the populator's low priority.
+actions_low() { nice -n 19 ionice -c 3 "$@"; }
+
+# actions_resolve OWNER/REPO REF — prints the commit SHA the forge resolves REF to.
+actions_resolve() {
+  local nr="$1" ref="$2" out sha
+  if [[ "${ref}" =~ ^[0-9a-f]{40}$ ]]; then printf '%s\n' "${ref}"; return 0; fi
+  out="$(GIT_TERMINAL_PROMPT=0 git ls-remote "${ACTIONS_GIT_BASE}/${nr}.git" "refs/tags/${ref}" "refs/tags/${ref}^{}" "refs/heads/${ref}" 2>/dev/null)" || return 1
+  # awk prints every match (no early exit, so no SIGPIPE under pipefail); the
+  # first line is the one wanted.
+  sha="$(printf '%s\n' "${out}" | awk -v r="refs/tags/${ref}^{}" '$2 == r { print $1 }')"
+  [ -n "${sha}" ] || sha="$(printf '%s\n' "${out}" | awk -v r="refs/tags/${ref}" '$2 == r { print $1 }')"
+  [ -n "${sha}" ] || sha="$(printf '%s\n' "${out}" | awk -v r="refs/heads/${ref}" '$2 == r { print $1 }')"
+  sha="${sha%%$'\n'*}"
+  [[ "${sha}" =~ ^[0-9a-f]{40}$ ]] || return 1
+  printf '%s\n' "${sha}"
+}
+
+# actions_archive_ok FILE SHA — 0 only for a readable gzip tar that records SHA as its commit.
+actions_archive_ok() {
+  local file="$1" sha="$2"
+  gzip -t "${file}" 2>/dev/null || return 1
+  [ "$(gzip -dc "${file}" 2>/dev/null | git get-tar-commit-id 2>/dev/null)" = "${sha}" ]
+}
+
+if [ "${WARM_CACHE_UV_ONLY}" = false ]; then
+mkdir -p "${ACTIONS_GEN_ROOT}"
+actions_refs="${SCRATCH}/actions-refs.tsv"
+actions_keys="${SCRATCH}/actions-keys.tsv"
+: > "${actions_keys}"
+python3 - "${SRC_DIR}" "${actions_refs}" "${fetched[@]}" <<'PY'
+import os, re, sys
+src, out, names = sys.argv[1], sys.argv[2], sys.argv[3:]
+USES = re.compile(r"""^\s*(?:-\s+)?uses:\s*["']?([^\s"'#]+)""")
+SAFE = re.compile(r"^[A-Za-z0-9_.-]+$")
+SAFE_REF = re.compile(r"^[A-Za-z0-9_./-]+$")
+found = set()
+for name in names:
+    wf = os.path.join(src, name, ".github", "workflows")
+    if not os.path.isdir(wf):
+        continue
+    for fn in sorted(os.listdir(wf)):
+        if not fn.endswith((".yml", ".yaml")):
+            continue
+        with open(os.path.join(wf, fn), encoding="utf-8", errors="replace") as fh:
+            for line in fh:
+                m = USES.match(line)
+                if not m or "@" not in m.group(1):
+                    continue
+                spec, ref = m.group(1).rsplit("@", 1)
+                if spec.startswith(("./", "docker://")):
+                    continue
+                parts = spec.split("/")
+                if len(parts) < 2 or not SAFE.match(parts[0]) or not SAFE.match(parts[1]) or not SAFE_REF.match(ref):
+                    continue
+                if parts[2:4] == [".github", "workflows"]:
+                    continue
+                found.add((parts[0] + "/" + parts[1], ref))
+with open(out, "w") as fh:
+    for nr, ref in sorted(found):
+        fh.write(f"{nr}\t{ref}\n")
+PY
+actions_ref_count="$(grep -c . "${actions_refs}" || true)"
+log "-- action archive seed: ${actions_ref_count} pinned action refs across ${#fetched[@]} repositories"
+while IFS=$'\t' read -r nr ref; do
+  [ -n "${nr}" ] || continue
+  if sha="$(actions_resolve "${nr}" "${ref}")"; then
+    printf '%s\t%s\t%s\n' "${nr}" "${sha}" "${ref}" >> "${actions_keys}"
+  else
+    log "   cannot resolve ${nr}@${ref} from the forge; it stays a download"
+    failed+=("actions:${nr}@${ref}:resolve")
+  fi
+done < "${actions_refs}"
+sort -u -k1,2 "${actions_keys}" -o "${actions_keys}"
+actions_set_sha="$(cut -f1,2 "${actions_keys}" | sha256sum | cut -d' ' -f1)"
+actions_cur="$(readlink -f "${ACTIONS_LINK}" 2>/dev/null || true)"
+actions_now="$(date +%s)"
+if [ ! -s "${actions_keys}" ]; then
+  log "   no resolvable action refs; no action archive generation published"
+elif [ -n "${actions_cur}" ] && [ -r "${actions_cur}/.actions-seed-manifest.json" ] \
+     && [ "$(manifest_field "${actions_cur}/.actions-seed-manifest.json" set_sha256 || true)" = "${actions_set_sha}" ] \
+     && [ $(( actions_now - $(manifest_field "${actions_cur}/.actions-seed-manifest.json" built_at_epoch || echo 0) )) -lt "${WARM_FORCE_REBUILD_SECONDS}" ]; then
+  log "   unchanged action set; reusing $(basename "${actions_cur}")"
+  actions_outcome=unchanged
+else
+  actions_stamp="$(date -u +%Y%m%dT%H%M%SZ)"
+  # A generation directory is never reused: the live one may carry this name.
+  while [ -e "${ACTIONS_GEN_ROOT}/${actions_stamp}" ] || [ -e "${ACTIONS_GEN_ROOT}/${actions_stamp}.refused" ]; do
+    sleep 1; actions_stamp="$(date -u +%Y%m%dT%H%M%SZ)"
+  done
+  actions_new="${ACTIONS_GEN_ROOT}/${actions_stamp}"
+  mkdir -p "${actions_new}/archives"
+  actions_t0="$(date +%s)"
+  while IFS=$'\t' read -r nr sha ref; do
+    dir="${nr//\//_}"
+    rel="${dir}/${sha}.tar.gz"
+    mkdir -p "${actions_new}/archives/${dir}"
+    if [ -n "${actions_cur}" ] && [ -f "${actions_cur}/archives/${rel}" ] && actions_archive_ok "${actions_cur}/archives/${rel}" "${sha}"; then
+      ln "${actions_cur}/archives/${rel}" "${actions_new}/archives/${rel}" 2>/dev/null \
+        || cp "${actions_cur}/archives/${rel}" "${actions_new}/archives/${rel}"
+      continue
+    fi
+    tmp="${actions_new}/archives/${rel}.part"
+    if actions_low curl --silent --show-error --fail --location --retry 5 --retry-delay 5 --retry-all-errors --max-time 300 \
+         --output "${tmp}" "${ACTIONS_ARCHIVE_BASE}/${nr}/tar.gz/${sha}" \
+       && actions_archive_ok "${tmp}" "${sha}"; then
+      mv "${tmp}" "${actions_new}/archives/${rel}"
+    else
+      rm -f "${tmp}"
+      log "   cannot fetch a verified archive for ${nr}@${ref} (${sha}); it stays a download"
+      failed+=("actions:${nr}@${ref}:fetch")
+    fi
+  done < "${actions_keys}"
+  find "${actions_new}/archives" -mindepth 1 -type d -empty -delete
+  if [ -z "$(find "${actions_new}/archives" -type f -name '*.tar.gz' -print -quit)" ]; then
+    log "   no archive could be fetched; the previous generation stays live"
+    rm -rf "${actions_new}"
+  else
+    ab="$(gen_bytes "${actions_new}/archives")"; af="$(gen_files "${actions_new}/archives")"; asecs=$(( $(date +%s) - actions_t0 ))
+    if [ "${ab}" -gt "${WARM_ACTIONS_BUDGET_BYTES}" ] || [ "${af}" -gt "${WARM_ACTIONS_BUDGET_FILES}" ]; then
+      log "   REFUSED over budget: ${ab} bytes / ${af} files against ${WARM_ACTIONS_BUDGET_BYTES} / ${WARM_ACTIONS_BUDGET_FILES}; previous generation stays live"
+      mv "${actions_new}" "${ACTIONS_GEN_ROOT}/${actions_stamp}.refused"
+      actions_refused=1; actions_outcome=refused; failed+=("actions:over-budget")
+    else
+      python3 - "${actions_new}/.actions-seed-manifest.json" "${actions_stamp}" "${actions_set_sha}" "${ab}" "${af}" "${asecs}" "${WARM_ACTIONS_BUDGET_BYTES}" "${WARM_ACTIONS_BUDGET_FILES}" "${actions_keys}" <<'PY' || log "WARN: action archive manifest not written"
+import json, os, sys, time
+path, actions_stamp, set_sha, nbytes, nfiles, secs, bb, bf, keys = sys.argv[1:10]
+now = int(time.time())
+entries = [dict(zip(("repository", "sha", "ref"), line.rstrip("\n").split("\t"))) for line in open(keys)]
+doc = {"generation": actions_stamp, "set_sha256": set_sha, "archives_dir": "archives", "entries": entries,
+       "built_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now)), "built_at_epoch": now,
+       "build_seconds": int(secs), "generation_bytes": int(nbytes), "generation_files": int(nfiles),
+       "budget_bytes": int(bb), "budget_files": int(bf)}
+tmp = path + ".tmp"
+with open(tmp, "w") as f: json.dump(doc, f, indent=1)
+os.replace(tmp, path)
+PY
+      ln -sfn "actions-generations/${actions_stamp}" "${ACTIONS_LINK}.tmp"
+      mv -T "${ACTIONS_LINK}.tmp" "${ACTIONS_LINK}"
+      actions_outcome=built
+      log "   published ${actions_stamp} (${ab} bytes, ${af} files, ${asecs} s)"
+      live="$(readlink -f "${ACTIONS_LINK}" 2>/dev/null || true)"
+      mapfile -t agens < <(find "${ACTIONS_GEN_ROOT}" -mindepth 1 -maxdepth 1 -type d -name '[0-9]*Z' -printf '%f\n' | sort)
+      if [ "${#agens[@]}" -gt "${KEEP_GENERATIONS}" ]; then
+        for old in "${agens[@]:0:$(( ${#agens[@]} - KEEP_GENERATIONS ))}"; do
+          [ "${ACTIONS_GEN_ROOT}/${old}" = "${live}" ] && continue
+          if [ $(( $(date +%s) - $(stat -c %Y "${ACTIONS_GEN_ROOT}/${old}") )) -lt "${WARM_ACTIONS_RETAIN_SECONDS}" ]; then continue; fi
+          log "   pruning action archive generation ${old}"
+          rm -rf "${ACTIONS_GEN_ROOT:?}/${old}"
+        done
+      fi
+    fi
+  fi
+fi
+while IFS= read -r rejected; do
+  [ -n "${rejected}" ] || continue
+  case "${rejected}" in "${actions_stamp:-none}".*) continue ;; esac
+  rm -rf "${ACTIONS_GEN_ROOT:?}/${rejected}"
+done < <(find "${ACTIONS_GEN_ROOT}" -mindepth 1 -maxdepth 1 -type d -name '*.refused' -printf '%f\n' | sort)
+python3 - "${ACTIONS_LAST_RUN}" "${actions_started}" "${actions_outcome}" "${actions_refused}" "${WARM_ACTIONS_BUDGET_BYTES}" "${WARM_ACTIONS_BUDGET_FILES}" "${generation}" "$(basename "$(readlink -f "${ACTIONS_LINK}" 2>/dev/null || echo none)")" <<'PY' || log "WARN: actions-seed-last-run.json not written"
+import json, os, sys, time
+path, started, outcome, refused, bb, bf, run_id, live = sys.argv[1:9]
+now = int(time.time())
+doc = {"run_id": run_id, "finished_at_epoch": now,
+       "finished_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now)),
+       "duration_s": now - int(started), "outcome": outcome, "refused": int(refused),
+       "live_generation": live, "budget_bytes": int(bb), "budget_files": int(bf)}
+tmp = path + ".tmp"
+with open(tmp, "w") as f: json.dump(doc, f, indent=1)
+os.replace(tmp, path)
+PY
+fi
+
+log "run summary: uv generation $(basename "${published_gen:-none}") (rebuilt=${rebuilt} refused=${refused} verified=${verified}, ${synced} repositories synced), ${cargo_warmed} pre-warmed for cargo, sccache builds: ${sccache_built} built / ${sccache_skipped} skipped / ${sccache_skipped_busy} skipped-busy, target generations: ${target_built} built / ${target_skipped} skipped / ${target_skipped_busy} skipped-busy, action archive seed: ${actions_outcome}"
 
 # MANIFEST: what this run did, for the host gauges (ci-runner/observability/
 # ci-cache-gauges.sh reads it every 5 min into livespec.ci_cache.populate.*

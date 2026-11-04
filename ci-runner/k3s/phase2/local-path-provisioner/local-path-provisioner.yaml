@@ -16,10 +16,11 @@
 #
 # CONTENT: byte-for-byte the k3s v1.36.2+k3s1 bundled manifest (image
 # rancher/local-path-provisioner:v0.0.36, path /var/lib/rancher/k3s/storage,
-# default StorageClass `local-path`, WaitForFirstConsumer) plus FOUR additions
+# default StorageClass `local-path`, WaitForFirstConsumer) plus FIVE additions
 # — the container `args:`, the warm-cache seed in the ConfigMap's `setup`
-# script, the externals seed at the end of that same script, and one
-# `nodePathMap` entry per runner-only node (below). Keep the image
+# script, the externals seed at the end of that same script, the action
+# archive seed between the two, and one `nodePathMap` entry per runner-only
+# node (below). Keep the image
 # pin in lockstep with the k3s version in
 # ../../provision-k3s.sh: a k3s upgrade that bumps the bundled provisioner is
 # the moment to re-diff this file against the new bundled copy.
@@ -150,6 +151,20 @@
 # Cost is not separately measured; at the ~70 us per file the warm seed's
 # measurement implies, 9,028 files is well under a second, against the ~12 s
 # per job start it removes.
+#
+# THE ACTION ARCHIVE SEED (livespec-dev-tooling-a35sa4; plan ci-cache-optimization):
+# every runner work volume is also born with `_warm/actions/archives`, the whole
+# pool's tree of action tarballs (`<owner>_<repo>/<resolved sha>.tar.gz`, built
+# by ../warm-cache/warm-cache-populate.sh step 4b from the actions the routed
+# repositories' default branches pin), as the same kind of REFLINK COPY and for
+# the same reason. The RUNNER (not the job container) reads it: the runner pod
+# mounts the work volume at /home/runner/_work, and ../arc/action-archive-entry.sh
+# exports ACTIONS_RUNNER_ACTION_ARCHIVE_CACHE=/home/runner/_work/_warm/actions/archives
+# for it, so Set up job unpacks each pinned action from the volume instead of
+# fetching it from codeload. It is NOT per repository: an entry is addressed by
+# owner, repository and resolved SHA, so it is the same bytes for every reader
+# and the spec lets it be shared. A volume without the seed, or an action
+# without an entry, makes the runner download as before.
 #
 # THE TUNING (measured 2026-09-01, research/001 and research/002 of the plan
 # above), against k3s's bundled defaults of 4 workers / QPS 5 / burst 10:
@@ -388,6 +403,27 @@ data:
           rm -rf "${dest}"
         fi
       done
+    fi
+    # Seed the ACTION ARCHIVE cache (file header, "THE ACTION ARCHIVE SEED"): the
+    # whole pool's one tree of action tarballs, reflink-copied to
+    # <volume>/_warm/actions/archives -- the directory the runner's
+    # ACTIONS_RUNNER_ACTION_ARCHIVE_CACHE names (../arc/action-archive-entry.sh,
+    # which sets it only when this tier is on and the directory exists). The
+    # source is the relative symlink ${warm}/actions the populator publishes by
+    # atomic rename, resolved once. A missing link or generation, or any failure,
+    # leaves NO seed (`_warm/actions` removed) and the runner downloads.
+    if [ -L "${warm}/actions" ]; then
+      src="$(readlink -f "${warm}/actions")"
+      dest="${VOL_DIR}/_warm/actions"
+      if [ -d "${src}/archives" ]; then
+        if ( mkdir -m 0777 -p "${VOL_DIR}/_warm" && mkdir -p "${dest}" \
+             && cp -a --reflink=always "${src}/archives" "${dest}/archives" ); then
+          printf '%s\n' "${src##*/}" > "${dest}/.generation" 2>/dev/null || true
+        else
+          echo "action archive seed from ${src} failed; leaving none" >&2
+          rm -rf "${VOL_DIR}/_warm/actions"
+        fi
+      fi
     fi
     # Seed the pinned runner image's externals into ${VOL_DIR}/externals — the
     # exact path the ARC container hook would otherwise copy 595 MB into on

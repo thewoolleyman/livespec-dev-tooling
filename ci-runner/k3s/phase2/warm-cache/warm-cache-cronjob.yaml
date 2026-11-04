@@ -122,6 +122,15 @@ metadata:
 data:
   bytes: "1000000000"
   files: "20000"
+  # The action archive seed's budget (the populator's header, "THE ACTION
+  # ARCHIVE SEED"): the WHOLE tree, since every work volume receives all of it.
+  # One tarball per distinct (action repository, resolved SHA) the routed
+  # repositories pin: a few dozen files of 0.1-5 MB each. 256 MiB / 512 files
+  # is a bound that shape cannot reach without something having gone wrong, and
+  # a reflink copy of a few dozen files costs milliseconds. A tree over either
+  # number is not published (previous generation stays live).
+  actions-bytes: "268435456"
+  actions-files: "512"
 ---
 apiVersion: batch/v1
 kind: CronJob
@@ -191,6 +200,17 @@ spec:
                     configMapKeyRef:
                       name: warm-cache-budget
                       key: files
+                # The action archive seed's budget (same ConfigMap, actions- keys).
+                - name: WARM_ACTIONS_BUDGET_BYTES
+                  valueFrom:
+                    configMapKeyRef:
+                      name: warm-cache-budget
+                      key: actions-bytes
+                - name: WARM_ACTIONS_BUDGET_FILES
+                  valueFrom:
+                    configMapKeyRef:
+                      name: warm-cache-budget
+                      key: actions-files
                 # The PyPI files proxy (./pypi-proxy/) every rebuild fetches
                 # through; probed at /health, a miss degrades to a direct build.
                 - name: PYPI_FILES_PROXY

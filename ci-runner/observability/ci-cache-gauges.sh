@@ -19,6 +19,8 @@
 #                                  column the cache dead-man trigger counts.
 #   generation_age_s {tier=uv}     seconds since the current warm-uv
 #   generation_bytes {tier=uv}     generation was published, and its size.
+#   generation_age_s {tier=actions} the action archive seed's single generation
+#   generation_bytes {tier=actions} age and size.
 #   registry.up                    whether the crates proxy's stub_status
 #   registry.requests_5m           answered, and requests it served since
 #                                  the last tick. (No store-size gauge: nginx
@@ -117,6 +119,17 @@ if target="$(readlink -f "${WARM_ROOT}/uv" 2>/dev/null)" && [ -d "${target}" ]; 
   put uv_generation_bytes "$(du -sb "${target}" | cut -f1)"
 else
   log "warm root ${WARM_ROOT}/uv has no current generation; omitting the uv tier" >&2
+  failed=1
+fi
+
+# ---- action archive seed tier --------------------------------------------------
+# One generation for the whole pool (the populator's "THE ACTION ARCHIVE SEED").
+actions_gen="$(readlink -f "${WARM_ROOT}/actions" 2>/dev/null || true)"
+if [ -n "${actions_gen}" ] && [ -d "${actions_gen}" ]; then
+  put actions_generation_age_s "$(( now - $(stat -c %Y "${actions_gen}") ))"
+  put actions_generation_bytes "$(du -sb "${actions_gen}" | cut -f1)"
+else
+  log "warm root ${WARM_ROOT}/actions has no current generation; omitting the actions tier" >&2
   failed=1
 fi
 
@@ -239,6 +252,8 @@ spec = [
   ("kill_switch", "kill_switch", "1", "1 when CI_CACHE_KILL_SWITCH is set in the hook pod template (every tier off for every job)", None, False),
   ("generation_age_s", "uv_generation_age_s", "s", "Seconds since the current warm-cache generation was published", {"tier": "uv"}, False),
   ("generation_bytes", "uv_generation_bytes", "By", "Size of the current warm-cache generation", {"tier": "uv"}, False),
+  ("generation_age_s", "actions_generation_age_s", "s", "Age of the current action archive seed generation", {"tier": "actions"}, False),
+  ("generation_bytes", "actions_generation_bytes", "By", "Size of the current action archive seed generation", {"tier": "actions"}, False),
   ("registry.up", "registry_up", "1", "1 when the crates proxy's stub_status answered over loopback", None, False),
   ("registry.requests_total", "registry_requests_total", "{requests}", "Requests the crates proxy has served since it started (cumulative)", None, False),
   ("registry.requests_5m", "registry_requests_5m", "{requests}", "Requests the crates proxy served since the previous tick", None, False),

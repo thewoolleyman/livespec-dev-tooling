@@ -106,7 +106,14 @@ template:
         # version and move with it, in every one of these files at once
         # (../container-hook/README.md "Runner-image bump procedure").
         image: ghcr.io/actions/actions-runner:2.336.0@sha256:0cfdcc701ce933c6d243c6b0b2da767366dc9f2e99961d4c3754b0b78084cdda
-        command: ["/home/runner/run.sh"]
+        # The pool's entry point (action-archive-entry.sh, converged into the
+        # hook-template ConfigMap mounted below): it names the work volume's
+        # seeded action archive tree to the runner -- unless the fleet kill
+        # switch or the cold canary is on -- then execs /home/runner/run.sh
+        # unchanged. The ConfigMap MUST be converged before this file is applied
+        # (converge-hook-pod-template.sh): a runner pod started against a
+        # ConfigMap without the script cannot start.
+        command: ["/bin/bash", "/home/runner/hook-template/action-archive-entry.sh"]
         env:
           - name: ACTIONS_RUNNER_REQUIRE_JOB_CONTAINER
             value: "false"
