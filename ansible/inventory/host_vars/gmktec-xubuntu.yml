@@ -204,7 +204,15 @@ fabro_server_instances:
     # ~2.6G anon per sandbox the 36G-high / 40G-max slice holds all twelve if
     # every run chose it. Was EIGHT (R259), sized to the slice while every run
     # was Docker.
-    max_concurrent_runs: 16
+    #
+    # TWENTY since 2026-11-04 ~18:05Z (legacy-coordinator-agent, R493): the
+    # factory sat at 16/16 with 34 queued while poweredge-xubuntu was 48% idle;
+    # the `factory-runs` quota was raised to 84 cpu / 42 pods first
+    # (ci-runner/k3s/phase2/factory/DERIVATION.md "Twenty runs, the extra four
+    # on poweredge") and the launcher fleet cap to 20 (legacy-dispatcher-agent).
+    # Revert to 16 with the quota if poweredge saturates (idle < ~5% AND
+    # BestEffort CI-slice cpu.pressure avg60 > ~30).
+    max_concurrent_runs: 20
     github_app_id: "3668528"
     otel_dropin: present
     # The registered-provider carrier, proven on the canary instance below
