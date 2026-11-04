@@ -58,6 +58,23 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.173.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.172.0...v1.173.0) (2026-11-04)
+
+
+### Features
+
+* **homelab-worker:** start-homelab-worker-node-container task with Lima install-or-reuse (livespec-dev-tooling-ko26ez) ([6710823](https://github.com/thewoolleyman/livespec-dev-tooling/commit/67108239e179369e2b9e4b0b7941f26a264cfb2a))
+* **incident:** authenticate protected CI invocation identity (livespec-dev-tooling-rqhqnb) ([76c3702](https://github.com/thewoolleyman/livespec-dev-tooling/commit/76c37024efbd7595e342a1c85896963893be3e7f))
+* **incident:** retain protected recovery journal receipts (livespec-dev-tooling-dln3ac) ([73aa35b](https://github.com/thewoolleyman/livespec-dev-tooling/commit/73aa35b8f0a9af1419b4e6417e49b39cbf7f2488))
+* preserve uv public-index fallback ([980da68](https://github.com/thewoolleyman/livespec-dev-tooling/commit/980da686c47e5ca20ae4a70e7379464af9be0c0e))
+* specify runner-only uv proxy routing ([f50651a](https://github.com/thewoolleyman/livespec-dev-tooling/commit/f50651acf4703fd4deec810c17cc005e21dee0aa))
+
+
+### Bug Fixes
+
+* **coordinator:** tolerate canary files vanishing between glob and stat ([f51a0da](https://github.com/thewoolleyman/livespec-dev-tooling/commit/f51a0da61127763abbb6bc0c8988609fac6fc3bc))
+* **fabro-sandbox:** bake claude-agent-acp 0.91.0 so claude-acp nodes run Claude Code 2.1.280+ ([36112ee](https://github.com/thewoolleyman/livespec-dev-tooling/commit/36112ee8e22d28352ab456dfa0263412926d3fd8))
+
 ## [1.172.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.171.0...v1.172.0) (2026-11-04)
 
 
