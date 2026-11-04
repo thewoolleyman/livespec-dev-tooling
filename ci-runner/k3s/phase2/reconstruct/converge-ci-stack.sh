@@ -508,11 +508,14 @@ kubectl -n kueue-system rollout status deployment/kueue-controller-manager --tim
 # Established before applying instances, so a fast boot cannot race them.
 # workloadpriorityclasses joined the list 2026-09-08 with ../kueue/cluster-queue-gates.yaml,
 # whose gate-priority object is the first instance of that kind this converge applies.
+# topologies joined 2026-11-04 with the same file's gates-hostname Topology
+# (livespec-dev-tooling-cikd6m).
 kubectl wait --for=condition=established --timeout=60s \
   crd/resourceflavors.kueue.x-k8s.io \
   crd/clusterqueues.kueue.x-k8s.io \
   crd/localqueues.kueue.x-k8s.io \
-  crd/workloadpriorityclasses.kueue.x-k8s.io
+  crd/workloadpriorityclasses.kueue.x-k8s.io \
+  crd/topologies.kueue.x-k8s.io
 # The mutating webhook's Service must have a READY endpoint before any step
 # creates a pod outside kube-system/kueue-system, or that create fails
 # `no endpoints available for service "kueue-webhook-service"` (seen live

@@ -1202,6 +1202,85 @@ window for livespec-dev-tooling-ytk6bp measures normal fleet activity for at
 least two hours and requires no gate admission wait over 15 minutes. It decides
 whether one hp lane is sufficient and records any later quota revision.
 
+### Topology-aware admission on the gates flavors (2026-11-04, livespec-dev-tooling-cikd6m)
+
+**What was wrong.** Quota is not capacity. On 2026-11-04 at 01:35Z,
+gmktec-xubuntu had 32 allocatable CPU and 30 requested. Six factory `petri-*`
+sandbox pods requested 4 CPU each, 24 CPU in all. Kueue does not manage those
+pods, so they did not count against `gates-cq`. Kueue admitted
+`job-gate-livespec-dev-tooling-4pk86-7eff7` in 0 s against the 15-CPU
+`gates-flavor` quota. Its pod then sat Pending ("Insufficient cpu") for 30
+minutes until Kueue evicted it with `PodsReadyTimeout` and requeued it. It was
+finally admitted on hp 43 minutes after creation. A static quota cut cannot
+fix this, because the factory's footprint on gmktec moves: 6 sandboxes at
+01:35Z, 4 at 02:07Z. legacy-coordinator-agent ruled the static cut out under
+R301.
+
+**What changed.** A `gates-hostname` Topology with the single level
+`kubernetes.io/hostname`, and `topologyName: gates-hostname` on both
+`gates-flavor` and `gates-hp-flavor`. Kueue v0.19.1's Topology-Aware
+Scheduling (TAS) is beta and on by default. It admits a gate on a flavor only
+when that flavor's node has FREE capacity for it:
+
+- the node's allocatable,
+- minus the container requests of every pod Kueue does not manage (the
+  factory sandboxes, DaemonSets, system pods),
+- minus admitted TAS usage.
+
+That is the scheduler's own view of the node, read live, so nothing here is
+static. The 15 / 5 nominal quotas stay as UPPER bounds on concurrent gates
+per node.
+
+- **Implicit.** When every flavor of a ClusterQueue has a topology, v0.19.1
+  applies TAS to unannotated PodSets (`isTASImplied` in
+  `pkg/scheduler/flavorassigner/tas_flavorassigner.go`). The gate Job template
+  therefore carries no TAS annotation, and no consumer pin had to move. A
+  THIRD flavor added to `gates-cq` without a topology would silently turn TAS
+  off for unannotated gates, so give any new gates flavor the same
+  `topologyName`.
+- **Spill.** A gate that cannot be placed on gmktec falls through to hp, under
+  v0.19.1's `PreserveFlavorScanProgress`, which is on by default.
+- **Trade-off, accepted under R301.** The factory now takes gmktec's CPU first,
+  and a gate that does not fit waits in Kueue or spills to hp. It no longer
+  waits as an admitted pod that cannot start. The `bd-ib-plon2p` placement
+  reconciler (kubernetes-sandbox-backend) keeps one gate lane open on a TAS
+  node by reserving min(unused gates quota on that node, CAP). CAP is that
+  reconciler's committed setting and defaults to 5 CPU, one gate. It switches
+  to the capped reserve when it sees `.spec.topologyName` set on the node's
+  gates flavor.
+
+**Proof before apply.** This ran on a throwaway kind cluster: two 18-CPU
+workers, and Kueue installed from `core/` in this directory. Gate-shaped,
+unannotated Jobs were used, with plain Pods standing in for the factory. The
+record is on livespec-dev-tooling-cikd6m, 2026-11-04 02:25-02:31Z.
+
+- A gate was HELD, with no pod, while both nodes lacked 5 free CPU, even though
+  `gates-flavor` had 10 CPU of unused quota.
+- A gate SPILLED to the hp stand-in while the gmktec stand-in was full.
+- A held gate was admitted on gmktec once it freed.
+- An in-place apply onto the pre-TAS flavors, with an admitted gate present,
+  was accepted, and the gate kept running.
+
+**Revert recipe. `topologyName` is IMMUTABLE once set.** An in-place apply of
+a manifest without it is refused: `topologyName is immutable when
+topologyName is set`. Rehearsed on the throwaway cluster:
+
+1. Wait for a window with NO admitted gate Workloads. Check that
+   `kubectl get clusterqueue gates-cq -o jsonpath='{.status.admittedWorkloads}'`
+   reads 0. Queued, unadmitted gates are fine: they requeue against the
+   recreated queue.
+2. `kubectl delete clusterqueue gates-cq`, then
+   `kubectl delete resourceflavor gates-flavor gates-hp-flavor`, then
+   `kubectl delete topology gates-hostname`.
+3. Revert this commit in git and converge as usual. Step 5 of
+   `../reconstruct/converge-ci-stack.sh` re-applies the pre-TAS file. On the
+   throwaway cluster the queue was Active again in about 6 s, and a gate
+   admitted.
+
+Steps 1-2 are deletions of live objects. Run them only as part of that
+reverted converge, through the committed apply path, never as a standalone
+hand edit.
+
 ## Recomputing at another C
 
 The derivation is parameterized so a capacity change is mechanical:

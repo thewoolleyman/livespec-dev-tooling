@@ -2,10 +2,24 @@
 # `just check` aggregate runs offloaded to the gate-capable pool nodes,
 # gmktec-xubuntu and hp-xubuntu.
 #
-# It carries SIX objects, applied in this file's own document order because
-# each depends on the one before it: the `gates` Namespace, the gmktec and hp
-# ResourceFlavors, the `gates-cq` ClusterQueue, the `gate-priority`
-# WorkloadPriorityClass, and the `gates-lq` LocalQueue.
+# It carries SEVEN objects, applied in this file's own document order because
+# each depends on the one before it: the `gates` Namespace, the
+# `gates-hostname` Topology, the gmktec and hp ResourceFlavors, the `gates-cq`
+# ClusterQueue, the `gate-priority` WorkloadPriorityClass, and the `gates-lq`
+# LocalQueue.
+#
+# TOPOLOGY-AWARE ADMISSION (livespec-dev-tooling-cikd6m, 2026-11-04). Both
+# flavors name the `gates-hostname` Topology, so Kueue admits a gate only when
+# the flavor's node has FREE capacity for it: allocatable minus the requests of
+# every pod Kueue does not manage (the factory sandboxes above all) minus
+# admitted gate usage. Quota alone is not enough. Before this, Kueue admitted
+# gates against quota that six factory sandboxes already held on gmktec. The
+# pods sat Pending until PodsReadyTimeout evicted them. Because EVERY flavor of
+# gates-cq has a topology, Kueue v0.19.1 applies TAS to gate Jobs implicitly,
+# so the gate Job template carries no TAS annotation. A gate that cannot be
+# placed on gmktec spills to hp. topologyName is IMMUTABLE once set: read the
+# revert recipe in DERIVATION.md "Topology-aware admission on the gates
+# flavors" before removing it, because an in-place apply cannot.
 #
 # WHY THE FILE IS NAMED `cluster-queue-*`: ../../reconstruct/converge-ci-stack.sh
 # step 5 and ../../reconstruct/install-converge-unit.sh both loop
@@ -49,6 +63,17 @@ metadata:
 # runs under `set -e` on every boot of a tmpfs datastore. Re-declaring it in a
 # sibling gates manifest is harmless — `apply` is idempotent.
 ---
+# One level, the node. A gate pod is one PodSet of one pod, so the only
+# placement question is "which node has room", and the hostname level answers
+# it while injecting the node selector the scheduler then honours.
+apiVersion: kueue.x-k8s.io/v1beta2
+kind: Topology
+metadata:
+  name: gates-hostname
+spec:
+  levels:
+    - nodeLabel: kubernetes.io/hostname
+---
 apiVersion: kueue.x-k8s.io/v1beta2
 kind: ResourceFlavor
 metadata:
@@ -63,6 +88,7 @@ spec:
     # ../../phase0-bare-metal/profiles/gmktec-xubuntu.env (NODE_NAME), and it
     # selects that node alone.
     kubernetes.io/hostname: gmktec-xubuntu
+  topologyName: gates-hostname
 # NO TOLERATION NEEDED HERE ANY MORE: R5 (livespec-dev-tooling-xa6o) opens
 # gmktec-xubuntu for general CI churn — it empties the profile's NODE_TAINTS and
 # the maintainer removes the live `node-role/ci=pending:NoSchedule` with a
@@ -88,6 +114,7 @@ spec:
     # independently-sized gate lane rather than merely admitting a fourth gate
     # to gmktec.
     kubernetes.io/hostname: hp-xubuntu
+  topologyName: gates-hostname
 ---
 apiVersion: kueue.x-k8s.io/v1beta2
 kind: ClusterQueue
