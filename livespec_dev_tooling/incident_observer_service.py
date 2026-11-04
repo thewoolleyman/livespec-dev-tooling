@@ -19,9 +19,11 @@ from threading import Thread
 from typing import Any, cast
 from wsgiref.simple_server import make_server
 
+from livespec_dev_tooling._incident_ci_identity_json import identity_json
 from livespec_dev_tooling._incident_observer_types import (
     RecoveryIntent,
 )
+from livespec_dev_tooling.incident_ci_identity import CiIdentityVerifier
 from livespec_dev_tooling.incident_controller_installation import ControllerInstallation
 from livespec_dev_tooling.incident_observer_control import ObserverControl
 from livespec_dev_tooling.incident_observer_endpoint import _read_request, observer_endpoint
@@ -63,6 +65,8 @@ class ControllerService:
         """Authenticate control calls separately from GitHub's signed callback."""
         if environ.get("PATH_INFO") == "/callback":
             return self._callback(environ=environ, start_response=start_response)
+        if environ.get("PATH_INFO") == "/ci/identity":
+            return self._identity(environ=environ, start_response=start_response)
         path = str(environ.get("PATH_INFO", ""))
         secret = (
             self.installation.query_secret
@@ -115,6 +119,27 @@ class ControllerService:
                     "reason": "invalid control request or unavailable protected state",
                 },
             )
+
+    def _identity(
+        self, *, environ: dict[str, Any], start_response: _StartResponse
+    ) -> Iterable[bytes]:
+        result = {"schema": 1, "status": "refused", "reason": "protected CI identity unavailable"}
+        if (
+            environ.get("REQUEST_METHOD") == "POST"
+            and getattr(self.installation, "ci_identity_policy", None) is not None
+        ):
+            try:
+                payload = identity_json(raw=_read_request(environ=environ) or b"")
+                result = CiIdentityVerifier(installation=self.installation).execute(
+                    authorization=str(environ.get("HTTP_AUTHORIZATION", "")), payload=payload
+                )
+            except (OSError, ValueError, TypeError, RecursionError):
+                pass
+        return _reply(
+            start_response=start_response,
+            status="202 Accepted" if result.get("status") == "authenticated" else "403 Forbidden",
+            result=result,
+        )
 
     def _callback(
         self, *, environ: dict[str, Any], start_response: _StartResponse

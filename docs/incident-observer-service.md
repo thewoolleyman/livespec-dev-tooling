@@ -44,7 +44,8 @@ must differ from the serving controller's effective uid.
 
 The protected released-installation manifest has exactly `release`, `revision`,
 `package_sha256`, `reader`, `reader_release`, `principal`, `files` and
-`required_jobs`. The provisioner must attest the normally released tag, its exact
+`required_jobs`, with the optional protected `ci_identity_policy` descriptor described
+in [Protected CI invocation identity](incident-ci-identity.md). The provisioner must attest the normally released tag, its exact
 Git revision and the installed artifact fingerprint before enabling the service.
 `release` must also equal `v` plus the installed distribution version. A source
 hash alone does not authenticate a release. `revision` is the approved forty
