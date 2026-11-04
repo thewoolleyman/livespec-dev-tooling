@@ -500,6 +500,72 @@ def test_a_cluster_just_check_uses_the_declared_bootstrap_before_the_aggregate(
     assert captured["check_suite"] == ("install-pack", "install-hooks", "check")
 
 
+def _passing_cluster_gate(*, root: Path, monkeypatch: pytest.MonkeyPatch) -> object:
+    """Wire a delegated gate whose Job passes and return the module under test."""
+    from returns.result import Success
+
+    from livespec_dev_tooling.gate_remote_client import GateRunRequest
+    from livespec_dev_tooling.gate_remote_verdict import GATE_PASSED, GateVerdict
+
+    module = importlib.import_module("livespec_dev_tooling.gate_runner_delegate")
+    request = GateRunRequest(
+        repo_root=root, mirror_url="mirror", manifest="manifest", gate_ref="ref"
+    )
+    monkeypatch.setattr(module, "_working_tree_source", lambda **_kwargs: ("tree", "commit"))
+    monkeypatch.setattr(module, "resolve_renderer", lambda **_kwargs: Path("renderer"))
+    monkeypatch.setattr(module, "gate_remote_request", lambda **_kwargs: Success(request))
+    monkeypatch.setattr(
+        module,
+        "run_gated_push",
+        lambda **_kwargs: GateVerdict(state=GATE_PASSED, detail="green", token_written=False),
+    )
+    return module
+
+
+def test_a_refused_host_authority_member_after_a_passing_job_exits_1(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An evaluated host-authority refusal is a failed verdict, never a lost one."""
+    from livespec_dev_tooling._gate_host_authority import HostAuthorityRun
+
+    root, _ = _init_repo(tmp_path=tmp_path)
+    module = _passing_cluster_gate(root=root, monkeypatch=monkeypatch)
+    monkeypatch.setattr(
+        module,
+        "run_host_authority_members",
+        lambda **_kwargs: (
+            HostAuthorityRun(
+                member="check-fleet-conformance-admin",
+                tree_hash="tree",
+                returncode=1,
+                detail="owner unresolvable",
+            ),
+        ),
+    )
+
+    outcome = module.run_cluster_gate(repo_root=root, command=("just", "check"))
+
+    assert outcome.exit_status == 1
+    assert "check-fleet-conformance-admin" in outcome.detail
+
+
+def test_a_cluster_pytest_gate_does_not_run_host_authority_members(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Host authority members belong to dispatched just recipes, not to pytest gates."""
+    root, _ = _init_repo(tmp_path=tmp_path)
+    module = _passing_cluster_gate(root=root, monkeypatch=monkeypatch)
+    invoked: list[object] = []
+    monkeypatch.setattr(
+        module, "run_host_authority_members", lambda **kwargs: invoked.append(kwargs) or ()
+    )
+
+    outcome = module.run_cluster_gate(repo_root=root, command=("pytest", "tests"))
+
+    assert outcome.exit_status == 0
+    assert invoked == []
+
+
 def test_a_cluster_gate_without_a_verdict_exits_75_without_a_local_retry(
     *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

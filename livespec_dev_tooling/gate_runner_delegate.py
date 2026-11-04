@@ -10,6 +10,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 
 from livespec_dev_tooling._gate_host_authority import (
+    GATE_HOST_AUTHORITY_REFUSED,
     host_authority_decision,
     run_host_authority_members,
 )
@@ -207,7 +208,7 @@ def run_cluster_gate(*, repo_root: Path, command: tuple[str, ...]) -> ClusterGat
         capture_output=False,
     )
     verdict = run_gated_push(request=request, runner=default_gate_command_runner)
-    if verdict.state == GATE_PASSED:
+    if verdict.state == GATE_PASSED and pytest_argv is None:
         verdict = host_authority_decision(
             verdict=verdict,
             ran=run_host_authority_members(
@@ -216,7 +217,8 @@ def run_cluster_gate(*, repo_root: Path, command: tuple[str, ...]) -> ClusterGat
                 runner=default_gate_command_runner,
             ),
         )
-    status = 0 if verdict.state == GATE_PASSED else 1 if verdict.state == GATE_FAILED else 75
+    refused = verdict.state in {GATE_FAILED, GATE_HOST_AUTHORITY_REFUSED}
+    status = 0 if verdict.state == GATE_PASSED else 1 if refused else 75
     return ClusterGateResult(
         exit_status=status,
         tree_hash=tree_hash,
