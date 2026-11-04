@@ -19,6 +19,22 @@ ci_converge_unit_pool_profiles: "{{ groups['ci_pool'] | default([]) | sort }}"
 ci_converge_unit_lib_dir: /usr/local/lib/ci-runner-k3s
 ci_converge_unit_unit_dir: /etc/systemd/system
 ci_converge_unit_service: converge-ci-stack.service
+# The ONE unit this role ever enables for boot. A host-captured proof may point
+# the role at a scratch oneshot by overriding ci_converge_unit_service (the
+# un3zhi negative control, 2026-11-04, captured "the apply fails naming the
+# unit's result and journal tail" without touching the live converge). Such a
+# scratch unit is installed and started but NEVER enabled, so it leaves no boot
+# hook behind it.
+ci_converge_unit_production_service: converge-ci-stack.service
+# Scratch units and directories an earlier capture left on the host, removed by
+# every apply until they are gone. The first entry is the un3zhi negative
+# control's unit, which the role enabled before the guard above existed;
+# fleet_host_guard rightly refuses removing it by hand. Keep an entry until
+# every server has applied it, then delete it in a later change.
+ci_converge_unit_retired_scratch_units:
+  - un3zhi-negative-20261103t233754z.service
+ci_converge_unit_retired_scratch_dirs:
+  - /var/tmp/un3zhi-negative-20261103t233754z
 # Every directory install-converge-unit.sh creates, all 0755. Listed rather than
 # left to the copies, because --check cannot see past a missing parent.
 ci_converge_unit_directories:

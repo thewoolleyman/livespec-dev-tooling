@@ -105,3 +105,30 @@ def test_converge_still_running_at_the_wait_bound_fails_the_apply() -> None:
     assert (
         "['inactive', 'failed']" in tasks[end:]
     ), "the assertion must require a terminal ActiveState as well as Result=success"
+
+
+def test_only_the_production_converge_is_enabled_for_boot() -> None:
+    """A scratch unit a host-captured proof points the role at never runs at boot."""
+    tasks = _tasks_text()
+    enable = tasks.index("- name: Enable the converge unit for the next boot")
+    gate = tasks[enable : tasks.index("register: ci_converge_unit_enabled", enable)]
+    assert "ci_converge_unit_service == ci_converge_unit_production_service" in gate, (
+        "the role must enable only the production converge unit, so a scratch oneshot "
+        "installed for a negative-control capture leaves no boot hook behind it"
+    )
+
+
+def test_retired_scratch_units_and_dirs_are_removed_by_the_apply() -> None:
+    """A capture's leftover scratch unit is removed by the committed apply, not by hand."""
+    tasks = _tasks_text()
+    defaults = (_TASKS.parents[1] / "defaults" / "main.yml").read_text(encoding="utf-8")
+    assert "un3zhi-negative-20261103t233754z.service" in defaults, (
+        "the un3zhi negative control's scratch unit must be listed for removal, since "
+        "fleet_host_guard refuses removing it by hand"
+    )
+    for name in (
+        "Stop and disable each retired scratch unit",
+        "Remove each retired scratch unit file",
+        "Remove each retired scratch directory",
+    ):
+        assert name in tasks, f"the role must carry the task {name!r}"
