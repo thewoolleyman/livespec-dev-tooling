@@ -822,10 +822,12 @@ here, because that is the file an operator rolling back edits.
 `fabro_server_host_checkout_remote` is declared because the host had no
 checkout, and `fabro_server_manage_settings` is true because a fresh instance
 has no settings.toml to preserve. The fleet instance's `max_concurrent_runs` is
-16, committed as server headroom (coordinator ruling R71, 2026-10-26) and applied
-at the next restart that happens anyway; the binding bound is the 48-cpu
-`factory-runs` quota and the launcher caps at 12 until the soak justifies more.
-It was 12 (coordinator ruling R50, 2026-10-26, on the maintainer's direction to
+20 (legacy-coordinator-agent under R493, 2026-11-04). The `factory-runs` quota
+was raised first to 84 cpu / 42 pods
+(`ci-runner/k3s/phase2/factory/DERIVATION.md` "Twenty runs, the extra four on
+poweredge"). Fabro reads this value only at startup, so a change takes effect at
+the instance's next restart. It was 16, committed as server headroom
+(coordinator ruling R71, 2026-10-26). Before that it was 12 (coordinator ruling R50, 2026-10-26, on the maintainer's direction to
 max out the Kubernetes capacity). Its environments run as Kubernetes pods, so the
 bound that moves with this number is now the `factory-runs` ResourceQuota
 (`ci-runner/k3s/phase2/factory/DERIVATION.md` "The quota, raised to twelve
