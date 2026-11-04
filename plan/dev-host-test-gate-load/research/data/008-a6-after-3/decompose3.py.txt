@@ -1,0 +1,22 @@
+"""Decompose a sample3 window's test/gate classes by process (from per-interval top lists)."""
+import json, sys, collections, re
+rows=[json.loads(l) for l in open(sys.argv[1])]
+TG={"commit-pre-commit-aggregate","commit-red-green-replay","pre-push","janitor-post-merge","adhoc-gate-start","adhoc-pytest-or-check","coverage-tree"}
+secs=sum(r["interval"] for r in rows); hz=rows[0]["hz"]
+proc=collections.Counter(); repo=collections.Counter(); rust=0.0
+for r in rows:
+    for k,v in r["top"].items():
+        cls,_,cmd=k.partition(" :: ")
+        if cls not in TG: continue
+        c=v/hz/secs; proc[(cls,cmd[:130])]+=c
+        if re.search(r"rustc|clippy-driver|rust-lld|cargo", cmd): rust+=c
+        m=re.search(r"(?:WT\[|/data/projects/|\.worktrees/)([A-Za-z0-9_.-]+)", cmd)
+        repo[(cls, m.group(1) if m else "?")]+=c
+print(f"top-list coverage of test/gate classes (lower bound; top lists are truncated): {sum(proc.values()):.3f} cores")
+print(f"Rust compile (rustc/clippy/lld/cargo) inside test/gate classes: {rust:.3f}")
+print("by class and repository:")
+for (cls,rp),c in sorted(repo.items(), key=lambda x:-x[1])[:20]:
+    if c>=0.005: print(f"  {c:.3f} {cls:28} {rp}")
+print("top test/gate processes:")
+for (cls,cmd),c in proc.most_common(20):
+    print(f"  {c:.3f} {cls:28} {cmd}")

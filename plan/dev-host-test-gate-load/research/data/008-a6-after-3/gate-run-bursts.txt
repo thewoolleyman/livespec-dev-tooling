@@ -1,0 +1,10 @@
+Gate runs behind the window's two adhoc-gate-start bursts (from the livespec-orchestrator-beads-fabro PRIMARY
+checkout's tmp/gate-runs; venue file absent = the stale 41d8817e38b4 gate-run.sh, no venue routing):
+2026-11-04T18:46:05Z -> 19:58:14Z  venue=(none)  .../4e76af44-.../scratchpad/engine-build-0a867.sh
+2026-11-04T20:51:44Z -> 21:18:46Z  venue=(none)  .../4e76af44-.../scratchpad/engine-build-85af.sh
+2026-11-04T21:42:32Z -> 22:15:36Z  venue=(none)  .../4e76af44-.../scratchpad/rollout-0a867.sh
+That primary's gate-run.sh sha at 2026-11-05T00:0xZ: 41d8817e38b4 (unrefreshed; it had live gates at 19:08Z).
+
+The 22:25Z-22:45Z adhoc-pytest-or-check burst (4.2-6.6 cores) is xdist workers under
+~/.worktrees/livespec-dev-tooling/feat/si6uu7-ci-job-attachment/.venv, a pytest started directly (no gate-run record
+in that window names that worktree after its 22:18-22:22Z commit gate).

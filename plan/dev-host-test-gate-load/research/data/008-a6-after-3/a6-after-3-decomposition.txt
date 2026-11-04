@@ -1,0 +1,30 @@
+top-list coverage of test/gate classes (lower bound; top lists are truncated): 1.430 cores
+Rust compile (rustc/clippy/lld/cargo) inside test/gate classes: 0.561
+by class and repository:
+  0.657 adhoc-gate-start             ?
+  0.377 adhoc-pytest-or-check        livespec-dev-tooling
+  0.253 adhoc-gate-start             livespec-orchestrator-beads-fabro
+  0.076 adhoc-pytest-or-check        ?
+  0.032 commit-pre-commit-aggregate  ?
+  0.021 pre-push                     ?
+top test/gate processes:
+  0.473 adhoc-gate-start             /home/ubuntu/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/bin/rustc --crate-name fabro --edition=2021 lib/apps/fa
+  0.342 adhoc-pytest-or-check        /home/ubuntu/.worktrees/livespec-dev-tooling/feat/si6uu7-ci-job-attachment/.venv/bin/python3 -u -c import sys;exec(eval(
+  0.219 adhoc-gate-start             /home/ubuntu/.worktrees/livespec-orchestrator-beads-fabro/feat/bd-ib-yuwftp/.venv/bin/python -u -c import sys;exec(eval(
+  0.034 adhoc-gate-start             bash /data/projects/livespec-orchestrator-beads-fabro/dev-tooling/gate-run.sh __child /data/projects/livespec-orchestrat
+  0.030 adhoc-gate-start             /home/ubuntu/.cache/uv/archive-v0/gH0wJ-17WEBH3Mf8KjXZA/bin/python /home/ubuntu/.cache/uv/archive-v0/gH0wJ-17WEBH3Mf8KjX
+  0.029 adhoc-gate-start             /home/ubuntu/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/bin/rustc --crate-name fabro_server --edition=2021 lib/
+  0.022 adhoc-gate-start             sleep
+  0.017 adhoc-pytest-or-check        /home/ubuntu/.worktrees/livespec-dev-tooling/feat/si6uu7-ci-job-attachment/.venv/bin/python3 -m pytest -p no:cacheprovid
+  0.014 adhoc-pytest-or-check        /home/ubuntu/.worktrees/livespec-dev-tooling/feat/livespec-dev-tooling-4oeffe-versioned-hook-configmap/.venv/bin/python 
+  0.012 adhoc-pytest-or-check        HeapHelper
+  0.012 commit-pre-commit-aggregate  shellcheck -x --source-path=SCRIPTDIR scripts/assert-listeners.sh scripts/backup-alert.sh scripts/backup-restore.sh scri
+  0.011 adhoc-gate-start             /home/ubuntu/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/bin/rustc --crate-name fabro_petri --edition=2021 lib/c
+  0.010 pre-push                     shellcheck -x --source-path=SCRIPTDIR scripts/assert-listeners.sh scripts/backup-alert.sh scripts/backup-restore.sh scri
+  0.008 adhoc-gate-start             bash
+  0.008 pre-push                     python3 .claude-plugin/scripts/bin/dispatcher.py ledger-normalize --project-root . --gate 
+  0.007 commit-pre-commit-aggregate  rustc
+  0.007 adhoc-pytest-or-check        shellcheck -x --source-path=SCRIPTDIR scripts/assert-listeners.sh scripts/backup-alert.sh scripts/backup-restore.sh scri
+  0.006 adhoc-pytest-or-check        claude
+  0.005 adhoc-pytest-or-check        ruff
+  0.005 adhoc-pytest-or-check        claude plugin install livespec-orchestrator-beads-fabro@livespec-orchestrator-beads-fabro -s project 

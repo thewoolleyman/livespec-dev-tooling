@@ -1,0 +1,73 @@
+window 2026-11-04 19:31:00Z -> 23:57:06Z  intervals=1560  hours=4.33
+attributed runtime 12.93 cores of 18;  /proc/stat accounted 13.36 of 18 wall cores (busy 9.31, sys 3.42, idle 3.75, iowait 0.30)
+intervals attributing more than wall capacity: 0
+class                              cores   share   sys%
+other                               3.52   27.3%    55%
+agent-sessions                      3.30   25.5%    38%
+factory-dispatch-supervision        2.29   17.7%    30%
+adhoc-gate-start                    1.11    8.6%    28%
+dolt                                0.86    6.7%    16%
+adhoc-pytest-or-check               0.59    4.6%    22%
+op-bd-wrapper                       0.57    4.4%    53%
+herdr                               0.38    2.9%    57%
+gh-cli                              0.09    0.7%    52%
+commit-pre-commit-aggregate         0.05    0.4%    30%
+pre-push                            0.04    0.3%    38%
+sampler                             0.04    0.3%    38%
+k3s-docker                          0.04    0.3%    53%
+agent-hooks                         0.01    0.1%    35%
+janitor-post-merge                  0.01    0.1%    44%
+commit-red-green-replay             0.01    0.0%    41%
+TEST/GATE TOTAL 1.82 cores = 14.0% of attributed runtime
+19:31Z tg= 2.59 commit-pre-commit-aggregate=0.08 pre-push=0.19 adhoc-gate-start=2.18 adhoc-pytest-or-check=0.08
+19:36Z tg= 2.96 adhoc-gate-start=2.75 adhoc-pytest-or-check=0.16
+19:41Z tg= 2.87 adhoc-gate-start=2.71 adhoc-pytest-or-check=0.15
+19:46Z tg= 3.12 adhoc-gate-start=2.70 adhoc-pytest-or-check=0.35
+19:51Z tg= 3.29 commit-pre-commit-aggregate=0.18 pre-push=0.09 adhoc-gate-start=2.67 adhoc-pytest-or-check=0.34
+19:57Z tg= 1.30 commit-pre-commit-aggregate=0.11 pre-push=0.06 adhoc-gate-start=0.57 adhoc-pytest-or-check=0.57
+20:02Z tg= 0.76 commit-pre-commit-aggregate=0.11 pre-push=0.18 adhoc-gate-start=0.36 adhoc-pytest-or-check=0.11
+20:07Z tg= 0.58 pre-push=0.08 adhoc-gate-start=0.20 adhoc-pytest-or-check=0.28
+20:12Z tg= 0.53 pre-push=0.08 adhoc-gate-start=0.28 adhoc-pytest-or-check=0.13
+20:17Z tg= 0.44 adhoc-gate-start=0.24 adhoc-pytest-or-check=0.11
+20:22Z tg= 0.39 adhoc-gate-start=0.21 adhoc-pytest-or-check=0.13
+20:27Z tg= 0.30 adhoc-gate-start=0.20 adhoc-pytest-or-check=0.10
+20:32Z tg= 0.51 commit-pre-commit-aggregate=0.06 adhoc-gate-start=0.25 adhoc-pytest-or-check=0.19
+20:37Z tg= 1.77 commit-pre-commit-aggregate=1.40 adhoc-gate-start=0.26 adhoc-pytest-or-check=0.12
+20:42Z tg= 0.94 commit-pre-commit-aggregate=0.10 pre-push=0.39 adhoc-gate-start=0.33 adhoc-pytest-or-check=0.12
+20:48Z tg= 1.34 commit-pre-commit-aggregate=0.16 pre-push=0.16 adhoc-gate-start=0.74 adhoc-pytest-or-check=0.28
+20:53Z tg= 3.45 pre-push=0.09 adhoc-gate-start=3.24 adhoc-pytest-or-check=0.12
+20:58Z tg= 3.24 adhoc-gate-start=3.05 adhoc-pytest-or-check=0.14
+21:03Z tg= 3.90 adhoc-gate-start=3.74 adhoc-pytest-or-check=0.13
+21:08Z tg= 4.14 pre-push=0.05 adhoc-gate-start=3.86 adhoc-pytest-or-check=0.22
+21:13Z tg= 4.27 adhoc-gate-start=4.12 adhoc-pytest-or-check=0.11
+21:18Z tg= 5.30 adhoc-gate-start=5.05 adhoc-pytest-or-check=0.19
+21:23Z tg= 6.41 pre-push=0.11 adhoc-gate-start=5.96 adhoc-pytest-or-check=0.31
+21:28Z tg= 4.35 adhoc-gate-start=3.92 adhoc-pytest-or-check=0.37
+21:34Z tg= 0.72 adhoc-gate-start=0.50 adhoc-pytest-or-check=0.22
+21:39Z tg= 0.74 adhoc-gate-start=0.39 adhoc-pytest-or-check=0.34
+21:44Z tg= 0.93 adhoc-gate-start=0.63 adhoc-pytest-or-check=0.22
+21:49Z tg= 0.84 adhoc-gate-start=0.60 adhoc-pytest-or-check=0.15
+21:54Z tg= 0.82 adhoc-gate-start=0.43 adhoc-pytest-or-check=0.34
+21:59Z tg= 0.64 adhoc-gate-start=0.43 adhoc-pytest-or-check=0.13
+22:04Z tg= 0.71 pre-push=0.06 adhoc-gate-start=0.45 adhoc-pytest-or-check=0.15
+22:09Z tg= 0.62 adhoc-gate-start=0.53 adhoc-pytest-or-check=0.07
+22:15Z tg= 0.56 adhoc-gate-start=0.30 adhoc-pytest-or-check=0.20
+22:20Z tg= 0.72 adhoc-gate-start=0.25 adhoc-pytest-or-check=0.35
+22:25Z tg= 4.49 adhoc-gate-start=0.24 adhoc-pytest-or-check=4.20
+22:30Z tg= 6.49 janitor-post-merge=0.12 adhoc-gate-start=0.19 adhoc-pytest-or-check=6.15
+22:35Z tg= 6.98 janitor-post-merge=0.05 adhoc-gate-start=0.26 adhoc-pytest-or-check=6.64
+22:40Z tg= 2.52 adhoc-gate-start=0.22 adhoc-pytest-or-check=2.26
+22:45Z tg= 0.99 adhoc-gate-start=0.27 adhoc-pytest-or-check=0.72
+22:50Z tg= 0.40 adhoc-gate-start=0.23 adhoc-pytest-or-check=0.17
+22:55Z tg= 0.47 adhoc-gate-start=0.22 adhoc-pytest-or-check=0.20
+23:01Z tg= 0.42 adhoc-gate-start=0.28 adhoc-pytest-or-check=0.14
+23:06Z tg= 0.45 adhoc-gate-start=0.21 adhoc-pytest-or-check=0.23
+23:11Z tg= 0.41 janitor-post-merge=0.08 adhoc-gate-start=0.13 adhoc-pytest-or-check=0.20
+23:16Z tg= 1.48 adhoc-gate-start=0.07 adhoc-pytest-or-check=1.39
+23:21Z tg= 0.46 adhoc-gate-start=0.22 adhoc-pytest-or-check=0.19
+23:26Z tg= 0.51 adhoc-gate-start=0.25 adhoc-pytest-or-check=0.26
+23:31Z tg= 0.56 commit-pre-commit-aggregate=0.05 adhoc-gate-start=0.30 adhoc-pytest-or-check=0.21
+23:36Z tg= 0.56 adhoc-gate-start=0.24 adhoc-pytest-or-check=0.24
+23:41Z tg= 0.45 commit-red-green-replay=0.16 pre-push=0.06 adhoc-pytest-or-check=0.19
+23:47Z tg= 0.50 adhoc-gate-start=0.23 adhoc-pytest-or-check=0.23
+23:52Z tg= 0.21 adhoc-pytest-or-check=0.19
