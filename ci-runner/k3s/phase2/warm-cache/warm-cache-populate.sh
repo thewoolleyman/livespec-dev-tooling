@@ -224,33 +224,6 @@
 # step failed, or the verifier rejected the new generation; 2 a preflight
 # failed (nothing built); 3 the new generation was over budget and refused.
 # last-run.json is written on every path but 2.
-# THE GIT OBJECT SEED (livespec-dev-tooling-dciyg5; plan ci-cache-optimization
-# lever 2; SPECIFICATION "Runner-pool build cache tiers" git object seed): for
-# every fetched repository this script keeps a bare mirror of ONLY its default
-# branch and its tags under $WARM_ROOT/git-src/<repo>.git -- never a
-# refs/pull/* ref, so no object reachable only from a pull request can enter --
-# and publishes, as a per-repository generation, a fresh `git clone --mirror`
-# of that mirror repacked to one pack:
-#   ${WARM_ROOT}/git-generations/<repo>/<stamp>/objects     the seed
-#   ${WARM_ROOT}/git-generations/<repo>/<stamp>/.git-seed-manifest.json
-#   ${WARM_ROOT}/git/<repo> -> ../git-generations/<repo>/<stamp>
-# Nothing is published unverified: every ref of the new generation must be the
-# default branch or a tag, and the set of objects in the store must equal the
-# set reachable from those refs (an object reachable from nothing, which is what
-# a pull-request-only object would be, fails the publish). Nothing is published
-# over budget either: WARM_GIT_BUDGET_BYTES / WARM_GIT_BUDGET_FILES (the
-# `warm-cache-budget` ConfigMap's git-bytes / git-files) cap ONE repository's
-# store, which is what one work volume is seeded with (the provisioner seeds a
-# volume with its own repository's store only). A generation over either is
-# renamed <stamp>.refused, the previous one stays live, and the repository is
-# reported as failed. A repository whose default branch tip and tag set are
-# unchanged, with a generation younger than WARM_FORCE_REBUILD_SECONDS, builds
-# nothing. The provisioner copies a generation by reflink into the volume, so a
-# job never holds a path into it; the prune still keeps every generation younger
-# than WARM_GIT_RETAIN_SECONDS (default 6 h, far beyond the provisioner's 120 s
-# helper-pod ceiling) beside the newest KEEP_GENERATIONS, so one still being
-# seeded is never pulled away. Git work runs under `nice -n 19 ionice -c 3` with
-# one pack thread. The run's outcome is $WARM_ROOT/git-seed-last-run.json.
 set -uo pipefail
 
 WARM_ROOT="${WARM_ROOT:-/warm}"
@@ -272,11 +245,6 @@ PROXY_STORE="${PROXY_STORE:-/proxy-store}"
 # warm-cache-budget ConfigMap).
 WARM_BUDGET_BYTES="${WARM_BUDGET_BYTES:-}"
 WARM_BUDGET_FILES="${WARM_BUDGET_FILES:-}"
-# The git object seed's budget: one repository's store (header, "THE GIT
-# OBJECT SEED"). Required unless this is the uv-only writer.
-WARM_GIT_BUDGET_BYTES="${WARM_GIT_BUDGET_BYTES:-}"
-WARM_GIT_BUDGET_FILES="${WARM_GIT_BUDGET_FILES:-}"
-WARM_GIT_RETAIN_SECONDS="${WARM_GIT_RETAIN_SECONDS:-21600}"
 # A published generation older than this is rebuilt even when no lock changed.
 WARM_FORCE_REBUILD_SECONDS="${WARM_FORCE_REBUILD_SECONDS:-86400}"
 # NEGATIVE-TEST HOOK: a uv project directory (pyproject.toml + uv.lock) synced
@@ -423,12 +391,6 @@ PYTHONPATH="${PY_DEPS_DIR}" python3 -c 'import returns.io' 2>/dev/null \
 for v in WARM_BUDGET_BYTES WARM_BUDGET_FILES WARM_FORCE_REBUILD_SECONDS KEEP_GENERATIONS; do
   [[ "${!v}" =~ ^[0-9]+$ ]] || { log "FATAL: ${v} must be a non-negative integer, got '${!v}' (the warm-cache-budget ConfigMap injects the budget)"; exit 2; }
 done
-if [ "${WARM_CACHE_UV_ONLY}" = false ]; then
-  for v in WARM_GIT_BUDGET_BYTES WARM_GIT_BUDGET_FILES WARM_GIT_RETAIN_SECONDS; do
-    [[ "${!v}" =~ ^[0-9]+$ ]] || { log "FATAL: ${v} must be a non-negative integer, got '${!v}' (the warm-cache-budget ConfigMap injects the git seed budget)"; exit 2; }
-  done
-  [ "${WARM_GIT_BUDGET_BYTES}" -gt 0 ] && [ "${WARM_GIT_BUDGET_FILES}" -gt 0 ] || { log "FATAL: WARM_GIT_BUDGET_BYTES and WARM_GIT_BUDGET_FILES must be positive"; exit 2; }
-fi
 [ "${WARM_BUDGET_BYTES}" -gt 0 ] && [ "${WARM_BUDGET_FILES}" -gt 0 ] || { log "FATAL: WARM_BUDGET_BYTES and WARM_BUDGET_FILES must be positive"; exit 2; }
 if [ -n "${WARM_INJECT_TEST}" ] && { [ ! -f "${WARM_INJECT_TEST}/pyproject.toml" ] || [ ! -f "${WARM_INJECT_TEST}/uv.lock" ]; }; then
   log "FATAL: WARM_INJECT_TEST=${WARM_INJECT_TEST} is set but holds no pyproject.toml + uv.lock; a negative test that injects nothing would pass falsely"
@@ -524,11 +486,9 @@ failed=()
 fetched=()
 uv_repos=()
 declare -A lock_sha
-declare -A repo_url
 while IFS= read -r url || [ -n "${url}" ]; do
   case "${url}" in ''|'#'*) continue ;; esac
   name="$(basename "${url}" .git)"
-  repo_url["${name}"]="${url}"
   src="${SRC_DIR}/${name}"
   log "-- ${name}: ${url}"
   if [ -d "${src}/.git" ]; then
@@ -1072,168 +1032,7 @@ else
   log "uv-only mode: carrier-only cargo, sccache and target-cache writes skipped"
 fi
 
-# ---------------------------------------------------------------------------
-# 5. GIT OBJECT SEED — one generation per routed repository (header, "THE GIT
-#    OBJECT SEED"). Independent of the uv, cargo and target steps above: a
-#    repository whose git step fails is named in `failed` and the others still
-#    publish.
-GIT_SRC_ROOT="${WARM_ROOT}/git-src"
-GIT_GEN_ROOT="${WARM_ROOT}/git-generations"
-GIT_LINK_ROOT="${WARM_ROOT}/git"
-GIT_LAST_RUN="${WARM_ROOT}/git-seed-last-run.json"
-git_built=0
-git_skipped=0
-git_refused=0
-git_started="$(date +%s)"
-git_rows="${SCRATCH}/git-seed-rows.tsv"
-: > "${git_rows}"
-
-# git_low ARGS... — git at the populator's low priority, one pack thread.
-git_low() { nice -n 19 ionice -c 3 git -c pack.threads=1 "$@"; }
-
-# git_verify_store REPO_GIT_DIR BRANCH — 0 only when every ref is the default
-# branch or a tag, and every object in the store is reachable from those refs.
-git_verify_store() {
-  local dir="$1" branch="$2" extra
-  extra="$(git --git-dir="${dir}" for-each-ref --format='%(refname)' \
-    | grep -vxF -e "refs/heads/${branch}" | grep -v '^refs/tags/' || true)"
-  if [ -n "${extra}" ]; then
-    log "   verify: refs outside the default branch and tags: $(printf '%s' "${extra}" | tr '\n' ' ')"
-    return 1
-  fi
-  git --git-dir="${dir}" cat-file --batch-all-objects --batch-check='%(objectname)' | sort > "${SCRATCH}/git-all-objects" || return 1
-  git --git-dir="${dir}" rev-list --objects --all | cut -d' ' -f1 | sort -u > "${SCRATCH}/git-reachable-objects" || return 1
-  comm -23 "${SCRATCH}/git-all-objects" "${SCRATCH}/git-reachable-objects" > "${SCRATCH}/git-unreachable-objects" || return 1
-  if [ -s "${SCRATCH}/git-unreachable-objects" ]; then
-    log "   verify: the store holds objects reachable from no default-branch or tag ref"
-    return 1
-  fi
-  return 0
-}
-
-if [ "${WARM_CACHE_UV_ONLY}" = false ]; then
-mkdir -p "${GIT_SRC_ROOT}" "${GIT_GEN_ROOT}" "${GIT_LINK_ROOT}"
-for name in "${fetched[@]}"; do
-  url="${repo_url[${name}]}"
-  mirror="${GIT_SRC_ROOT}/${name}.git"
-  gen_dir="${GIT_GEN_ROOT}/${name}"
-  link="${GIT_LINK_ROOT}/${name}"
-  log "-- ${name}: git object seed"
-  branch="$(git ls-remote --symref "${url}" HEAD 2>/dev/null | awk '$1 == "ref:" && !found { sub("^refs/heads/", "", $2); print $2; found = 1 }')"
-  if [ -z "${branch}" ]; then
-    log "   cannot resolve the default branch from the forge; skipping"
-    failed+=("${name}:git-default-branch"); continue
-  fi
-  [ -d "${mirror}" ] || git init --quiet --bare "${mirror}"
-  # ONLY the default branch and tags; a pull request's refs/pull/* never named.
-  if ! git_low -C "${mirror}" fetch --quiet --force --prune --no-tags "${url}" \
-       "+refs/heads/${branch}:refs/heads/${branch}" "+refs/tags/*:refs/tags/*"; then
-    log "   fetch of the default branch and tags failed; skipping"
-    failed+=("${name}:git-fetch"); continue
-  fi
-  git -C "${mirror}" symbolic-ref HEAD "refs/heads/${branch}"
-  # A renamed default branch must not leave its old name's history behind.
-  git -C "${mirror}" for-each-ref --format='%(refname)' refs/heads | grep -vxF -e "refs/heads/${branch}" \
-    | while IFS= read -r stale; do git -C "${mirror}" update-ref -d "${stale}"; done
-  tip="$(git -C "${mirror}" rev-parse "refs/heads/${branch}")"
-  refs_sha="$(git -C "${mirror}" for-each-ref --format='%(objectname) %(refname)' | sha256sum | cut -d' ' -f1)"
-  cur=""
-  if [ -L "${link}" ]; then cur="$(readlink -f "${link}" || true)"; [ -d "${cur}" ] || cur=""; fi
-  now_epoch="$(date +%s)"
-  if [ -n "${cur}" ] && [ -r "${cur}/.git-seed-manifest.json" ] \
-     && [ "$(manifest_field "${cur}/.git-seed-manifest.json" refs_sha256 || true)" = "${refs_sha}" ] \
-     && [ "$(manifest_field "${cur}/.git-seed-manifest.json" default_branch || true)" = "${branch}" ] \
-     && [ $(( now_epoch - $(manifest_field "${cur}/.git-seed-manifest.json" built_at_epoch || echo 0) )) -lt "${WARM_FORCE_REBUILD_SECONDS}" ]; then
-    log "   generation $(basename "${cur}") already holds ${tip:0:8} and this tag set; no build"
-    touch "${cur}"
-    git_skipped=$((git_skipped + 1))
-    printf '%s\tunchanged\t%s\t%s\t%s\t%s\n' "${name}" "$(basename "${cur}")" "${branch}" "$(manifest_field "${cur}/.git-seed-manifest.json" generation_bytes || echo 0)" "$(manifest_field "${cur}/.git-seed-manifest.json" generation_files || echo 0)" >> "${git_rows}"
-    continue
-  fi
-  stamp="$(date -u +%Y%m%dT%H%M%SZ)"
-  new="${gen_dir}/${stamp}"
-  rm -rf "${new}"; mkdir -p "${new}"
-  t0="$(date +%s)"
-  if ! git_low clone --quiet --mirror --no-local "${mirror}" "${new}/repo.git" \
-     || ! git_low --git-dir="${new}/repo.git" repack -a -d --quiet \
-     || ! git --git-dir="${new}/repo.git" prune-packed; then
-    log "   building the store failed; discarded"
-    rm -rf "${new}"; failed+=("${name}:git-build"); continue
-  fi
-  rm -f "${new}/repo.git/objects/info/alternates"
-  if ! git_verify_store "${new}/repo.git" "${branch}"; then
-    log "   store failed verification; kept as ${stamp}.unverified for one cycle, the live generation is untouched"
-    mv "${new}" "${gen_dir}/${stamp}.unverified"; failed+=("${name}:git-unverified"); continue
-  fi
-  git --git-dir="${new}/repo.git" for-each-ref --format='%(objectname) %(refname)' > "${new}/refs.txt"
-  mv "${new}/repo.git/objects" "${new}/objects"
-  rm -rf "${new}/repo.git"
-  gb="$(gen_bytes "${new}/objects")"; gf="$(gen_files "${new}/objects")"
-  secs=$(( $(date +%s) - t0 ))
-  if [ "${gb}" -gt "${WARM_GIT_BUDGET_BYTES}" ] || [ "${gf}" -gt "${WARM_GIT_BUDGET_FILES}" ]; then
-    log "   REFUSED over budget: ${gb} bytes / ${gf} files against ${WARM_GIT_BUDGET_BYTES} / ${WARM_GIT_BUDGET_FILES}; previous generation stays live"
-    mv "${new}" "${gen_dir}/${stamp}.refused"
-    git_refused=$((git_refused + 1)); failed+=("${name}:git-over-budget")
-    printf '%s\trefused\t%s\t%s\t%s\t%s\n' "${name}" "${stamp}" "${branch}" "${gb}" "${gf}" >> "${git_rows}"
-    continue
-  fi
-  python3 - "${new}/.git-seed-manifest.json" "${stamp}" "${name}" "${branch}" "${tip}" "${refs_sha}" "${gb}" "${gf}" "${secs}" "${WARM_GIT_BUDGET_BYTES}" "${WARM_GIT_BUDGET_FILES}" <<'PY' || log "WARN: git seed manifest not written"
-import json, os, sys, time
-path, gen, repo, branch, tip, refs_sha, nbytes, nfiles, secs, bb, bf = sys.argv[1:12]
-now = int(time.time())
-doc = {"generation": gen, "repo": repo, "default_branch": branch, "default_tip": tip,
-       "refs_sha256": refs_sha, "objects_dir": "objects",
-       "built_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now)), "built_at_epoch": now,
-       "build_seconds": int(secs), "generation_bytes": int(nbytes), "generation_files": int(nfiles),
-       "budget_bytes": int(bb), "budget_files": int(bf)}
-tmp = path + ".tmp"
-with open(tmp, "w") as f: json.dump(doc, f, indent=1)
-os.replace(tmp, path)
-PY
-  ln -sfn "../git-generations/${name}/${stamp}" "${link}.tmp"
-  mv -T "${link}.tmp" "${link}"
-  git_built=$((git_built + 1))
-  printf '%s\tbuilt\t%s\t%s\t%s\t%s\n' "${name}" "${stamp}" "${branch}" "${gb}" "${gf}" >> "${git_rows}"
-  log "   published ${stamp} (${gb} bytes, ${gf} files, ${secs} s)"
-  # PRUNE: the newest KEEP_GENERATIONS, the live one, and anything young enough
-  # to still be mid-seed (header). Refused / unverified directories of an
-  # EARLIER run go; this run's stay one cycle to be inspected.
-  live="$(readlink -f "${link}" 2>/dev/null || true)"
-  mapfile -t ggens < <(find "${gen_dir}" -mindepth 1 -maxdepth 1 -type d -name '[0-9]*Z' -printf '%f\n' | sort)
-  if [ "${#ggens[@]}" -gt "${KEEP_GENERATIONS}" ]; then
-    for old in "${ggens[@]:0:$(( ${#ggens[@]} - KEEP_GENERATIONS ))}"; do
-      [ "${gen_dir}/${old}" = "${live}" ] && continue
-      if [ $(( $(date +%s) - $(stat -c %Y "${gen_dir}/${old}") )) -lt "${WARM_GIT_RETAIN_SECONDS}" ]; then continue; fi
-      log "   pruning git generation ${old}"
-      rm -rf "${gen_dir:?}/${old}"
-    done
-  fi
-  while IFS= read -r rejected; do
-    [ -n "${rejected}" ] || continue
-    case "${rejected}" in "${stamp}".*) continue ;; esac
-    rm -rf "${gen_dir:?}/${rejected}"
-  done < <(find "${gen_dir}" -mindepth 1 -maxdepth 1 -type d \( -name '*.refused' -o -name '*.unverified' \) -printf '%f\n' | sort)
-done
-python3 - "${GIT_LAST_RUN}" "${git_rows}" "${git_started}" "${git_built}" "${git_skipped}" "${git_refused}" "${WARM_GIT_BUDGET_BYTES}" "${WARM_GIT_BUDGET_FILES}" "${generation}" <<'PY' || log "WARN: git-seed-last-run.json not written"
-import json, os, sys, time
-path, rows_path, started, built, skipped, refused, bb, bf, run_id = sys.argv[1:10]
-repos = {}
-for line in open(rows_path):
-    name, outcome, gen, branch, nbytes, nfiles = line.rstrip("\n").split("\t")
-    repos[name] = {"outcome": outcome, "generation": gen, "default_branch": branch,
-                   "generation_bytes": int(nbytes or 0), "generation_files": int(nfiles or 0)}
-now = int(time.time())
-doc = {"run_id": run_id, "finished_at_epoch": now,
-       "finished_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now)),
-       "duration_s": now - int(started), "built": int(built), "unchanged": int(skipped), "refused": int(refused),
-       "budget_bytes": int(bb), "budget_files": int(bf), "repos": repos}
-tmp = path + ".tmp"
-with open(tmp, "w") as f: json.dump(doc, f, indent=1)
-os.replace(tmp, path)
-PY
-fi
-
-log "run summary: uv generation $(basename "${published_gen:-none}") (rebuilt=${rebuilt} refused=${refused} verified=${verified}, ${synced} repositories synced), ${cargo_warmed} pre-warmed for cargo, sccache builds: ${sccache_built} built / ${sccache_skipped} skipped / ${sccache_skipped_busy} skipped-busy, target generations: ${target_built} built / ${target_skipped} skipped / ${target_skipped_busy} skipped-busy, git object seeds: ${git_built} built / ${git_skipped} unchanged / ${git_refused} refused"
+log "run summary: uv generation $(basename "${published_gen:-none}") (rebuilt=${rebuilt} refused=${refused} verified=${verified}, ${synced} repositories synced), ${cargo_warmed} pre-warmed for cargo, sccache builds: ${sccache_built} built / ${sccache_skipped} skipped / ${sccache_skipped_busy} skipped-busy, target generations: ${target_built} built / ${target_skipped} skipped / ${target_skipped_busy} skipped-busy"
 
 # MANIFEST: what this run did, for the host gauges (ci-runner/observability/
 # ci-cache-gauges.sh reads it every 5 min into livespec.ci_cache.populate.*

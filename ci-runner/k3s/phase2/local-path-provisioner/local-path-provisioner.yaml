@@ -16,11 +16,10 @@
 #
 # CONTENT: byte-for-byte the k3s v1.36.2+k3s1 bundled manifest (image
 # rancher/local-path-provisioner:v0.0.36, path /var/lib/rancher/k3s/storage,
-# default StorageClass `local-path`, WaitForFirstConsumer) plus FIVE additions
+# default StorageClass `local-path`, WaitForFirstConsumer) plus FOUR additions
 # — the container `args:`, the warm-cache seed in the ConfigMap's `setup`
-# script, the externals seed at the end of that same script, the git object
-# seed between the two, and one `nodePathMap` entry per runner-only node
-# (below). Keep the image
+# script, the externals seed at the end of that same script, and one
+# `nodePathMap` entry per runner-only node (below). Keep the image
 # pin in lockstep with the k3s version in
 # ../../provision-k3s.sh: a k3s upgrade that bumps the bundled provisioner is
 # the moment to re-diff this file against the new bundled copy.
@@ -151,52 +150,6 @@
 # Cost is not separately measured; at the ~70 us per file the warm seed's
 # measurement implies, 9,028 files is well under a second, against the ~12 s
 # per job start it removes.
-#
-# THE GIT OBJECT SEED (livespec-dev-tooling-dciyg5; plan ci-cache-optimization,
-# lever 2, research/004 and research/005): every runner work volume is born
-# with `_warm/git/<repo>/objects` holding the git objects reachable from its
-# OWN repository's default branch and tags, as the same kind of REFLINK COPY
-# (`cp -a --reflink=always`) and for the same reason. The job container then
-# names that directory in GIT_ALTERNATE_OBJECT_DIRECTORIES -- set by
-# ../arc/git-seed-hook.js, the runner's container hook entry point, only when
-# the directory exists -- so `actions/checkout` fetches from the forge only
-# the objects the seed lacks (a `fetch-depth: 0` fetch of the largest
-# repository falls from 6.5-7.7 s to about 1 s on the loaded node, research/005).
-# Facts this seed rests on, beyond the warm seed's above:
-#   - OWN REPOSITORY ONLY (decision recorded on livespec-dev-tooling-dciyg5,
-#     taking the open question of the ratification review): a volume carries
-#     the seed of the one repository its runner serves, never the whole
-#     fleet's. That is the stricter reading of "Trust by construction"
-#     per-repository namespacing -- a job cannot read, by path, an object
-#     populated for another repository -- and it keeps the per-start seed at one
-#     repository's store (tens of MB, a handful of files) instead of the sum of
-#     nine, which the one byte budget and one file budget (the
-#     `warm-cache-budget` ConfigMap's git-bytes and git-files) judge per
-#     repository.
-#   - THE REPOSITORY COMES FROM THE CLAIM NAME. The script gets VOL_DIR and
-#     nothing about the claim, but the directory is
-#     `pvc-<uid>_<namespace>_<claim>` and the claim is
-#     `<runner pod>-work`, whose pod name begins with the scale set's name
-#     (ARC names the pod `<scale set>-<hash>-runner-<hash>`; README.md of the
-#     phase2 tree quotes `...-runner-52xz9-work`). The `case` below maps each
-#     scale set's name, from ../arc/values-*.yaml, to the repository that
-#     scale set serves; it is typed here, not rendered, because this file is
-#     applied byte-for-byte, and
-#     tests/livespec_dev_tooling/test_git_object_seed.py fails the moment the
-#     table and the values files disagree. A claim the table does not name
-#     gets no git seed (cold), never somebody else's.
-#   - The source is ${VOL_DIR%/*}/.warm/git/<repo>, a relative symlink the
-#     populator (../warm-cache/warm-cache-populate.sh) publishes by atomic
-#     rename to the repository's current generation; it is resolved ONCE, and
-#     the populator does not prune a generation young enough to be mid-copy.
-#     Only `objects/` is copied: the job's repository takes nothing from the
-#     seed but its objects, and the seed stays in the volume, at the same
-#     path, for the job's whole life, because the job's .git/objects then
-#     references it rather than holding copies.
-#   - Nothing is ever added to the seed, so no 0777 directory pass: the
-#     generation's modes ride along and the job only reads.
-#   - A missing link, a missing generation or any failure leaves NO git seed
-#     (`_warm/git` removed), and the hook then does not name it.
 #
 # THE TUNING (measured 2026-09-01, research/001 and research/002 of the plan
 # above), against k3s's bundled defaults of 4 workers / QPS 5 / burst 10:
@@ -435,39 +388,6 @@ data:
           rm -rf "${dest}"
         fi
       done
-    fi
-    # Seed THIS volume's own repository's git object store (file header, "THE
-    # GIT OBJECT SEED"): the claim name <runner pod>-work begins with the scale
-    # set's name, which names the one repository its runner serves. A claim this
-    # table does not name gets no git seed.
-    claim="${VOL_DIR##*/}"
-    claim="${claim#*_}"
-    claim="${claim#*_}"
-    case "${claim}" in
-      livespec-dev-tooling-k3s-*|livespec-dev-master-k3s-*|poweredge-xubuntu-k3s-*) repo=livespec-dev-tooling ;;
-      livespec-local-ci-k3s-*) repo=livespec ;;
-      livespec-orchestrator-k3s-*) repo=livespec-orchestrator-beads-fabro ;;
-      livespec-orchestrator-git-k3s-*) repo=livespec-orchestrator-git-jsonl ;;
-      livespec-console-beads-k3s-*) repo=livespec-console-beads-fabro ;;
-      livespec-driver-claude-k3s-*) repo=livespec-driver-claude ;;
-      livespec-driver-codex-k3s-*) repo=livespec-driver-codex ;;
-      livespec-driver-pi-k3s-*) repo=livespec-driver-pi ;;
-      livespec-overseer-k3s-*) repo=livespec-overseer ;;
-      livespec-runtime-k3s-*) repo=livespec-runtime ;;
-      *) repo= ;;
-    esac
-    if [ -n "${repo}" ] && [ -L "${warm}/git/${repo}" ]; then
-      src="$(readlink -f "${warm}/git/${repo}")"
-      dest="${VOL_DIR}/_warm/git/${repo}"
-      if [ -d "${src}/objects" ]; then
-        if ( mkdir -m 0777 -p "${VOL_DIR}/_warm" && mkdir -p "${dest}" \
-             && cp -a --reflink=always "${src}/objects" "${dest}/objects" ); then
-          printf '%s\n' "${src##*/}" > "${dest}/.generation" 2>/dev/null || true
-        else
-          echo "git object seed ${repo} from ${src} failed; leaving none" >&2
-          rm -rf "${VOL_DIR}/_warm/git"
-        fi
-      fi
     fi
     # Seed the pinned runner image's externals into ${VOL_DIR}/externals — the
     # exact path the ARC container hook would otherwise copy 595 MB into on

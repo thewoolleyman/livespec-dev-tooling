@@ -242,24 +242,6 @@
 #    does not avoid the bind question at all: its endpoint address is still a
 #    real node address, so the receiver would still have to bind something
 #    wider than the cni0 gateway — the widening this design exists to refuse.
-# 8. The GIT OBJECT SEED (livespec-dev-tooling-dciyg5; plan ci-cache-optimization
-#    lever 2; ../local-path-provisioner/ "THE GIT OBJECT SEED"). The work
-#    volume is born with this repository's default-branch and tag objects at
-#    /__w/_warm/git/<repo>/objects, and the job container names that directory
-#    in GIT_ALTERNATE_OBJECT_DIRECTORIES so `actions/checkout` fetches only
-#    what the seed lacks. THIS TEMPLATE DOES NOT SET THE VARIABLE, and cannot:
-#    its env is static, and the variable must be absent when the seed is
-#    absent (git prints an error per command for a named directory that does
-#    not exist), under the kill switch (item 4) and for the canary (item 6).
-#    ./git-seed-hook.js, the runner's container hook entry point
-#    (ACTIONS_RUNNER_CONTAINER_HOOKS in every values-*.yaml), adds it to the
-#    job container's env at prepare time, reading CI_CACHE_KILL_SWITCH and
-#    CI_CACHE_CANARY_N from THIS file by the rule postStart applies, then runs
-#    the fleet-patched hook unchanged. postStart below only RECORDS the tier:
-#    hit = the variable is set and names a directory that exists in this
-#    container; the generation is `_warm/git/<repo>/.generation`, written by the
-#    provisioner's seed. Under the switch or the canary it also removes the
-#    seed, as it does the uv seed.
 apiVersion: v1
 kind: PodTemplate
 spec:
@@ -369,9 +351,6 @@ spec:
                 # target row reported hit=false with no generation
                 # (livespec-dev-tooling-c5byjh).
                 target_gen=$(cat /__w/_warm/target/*/*/.generation 2>/dev/null | head -n 1 || true)
-                # The git object seed's stamp (header item 8): one repository's
-                # seed per volume, so at most one .generation matches.
-                git_gen=$(cat /__w/_warm/git/*/.generation 2>/dev/null | head -n 1 || true)
                 switch="${CI_CACHE_KILL_SWITCH:-}"
                 case "${CI_CACHE_CANARY_N:-}" in
                   ''|*[!0-9]*|0) ;;
@@ -387,11 +366,10 @@ spec:
                   # own inodes; the generation is untouched) and the cargo/
                   # compilation tiers off by writing nothing. Each tier still
                   # reports, so a cold job is a measured cold job.
-                  rm -rf /__w/_warm/uv /__w/_warm/target /__w/_warm/git 2>/dev/null
+                  rm -rf /__w/_warm/uv /__w/_warm/target 2>/dev/null
                   rec uv false "$uv_gen" "$(ms)" 0 reflink-seed "off:$switch"
                   rec registry false "" "$(ms)" 0 served "off:$switch"
                   rec target false "$target_gen" "$(ms)" 0 reflink-seed "off:$switch"
-                  rec git false "$git_gen" "$(ms)" 0 reflink-seed "off:$switch"
                   exit 0
                 fi
                 registry_hit=false
@@ -452,17 +430,6 @@ spec:
                 # into place itself, so "hit" here means the seed is present.
                 target_hit=false; [ -n "$target_gen" ] && target_hit=true
                 rec target "$target_hit" "$target_gen" "$(ms)" 0 reflink-seed ""
-                # The git object seed (header item 8): a hit is the variable
-                # git-seed-hook.js set, naming a directory that is here. A seed
-                # on disk with no variable is a hook that did not name it, which
-                # is a different fault from a seed that was never made.
-                git_hit=false; git_err=git-seed-absent
-                if [ -n "${GIT_ALTERNATE_OBJECT_DIRECTORIES:-}" ] && [ -d "${GIT_ALTERNATE_OBJECT_DIRECTORIES%%:*}" ]; then
-                  git_hit=true; git_err=
-                elif [ -d /__w/_warm/git ]; then
-                  git_err=alternates-not-set
-                fi
-                rec git "$git_hit" "$git_gen" "$(ms)" 0 reflink-seed "$git_err"
                 exit 0
         # Header item 6: at pod deletion after the job — the per-tier
         # warm-copy spans postStart recorded (replayed with their own

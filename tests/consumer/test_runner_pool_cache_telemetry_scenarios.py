@@ -93,8 +93,8 @@ _STALE_TRIGGER = _OBSERVABILITY / "triggers" / "ci-cache-warm-generation-stale.j
 _APPLY_TRIGGERS = _OBSERVABILITY / "triggers" / "apply-triggers.sh"
 
 _POOL_BIN = "/opt/ci-runner/bin"
-_CACHE_TIERS = ("uv", "registry", "target", "git")
-_SEEDED_TIERS = ("uv", "target", "git")
+_CACHE_TIERS = ("uv", "registry", "target")
+_SEEDED_TIERS = ("uv", "target")
 _ROW_COLUMNS = (
     "at_ns",
     "tier",
@@ -107,7 +107,6 @@ _ROW_COLUMNS = (
 )
 _UV_GENERATION = "20260911T000000Z"
 _TARGET_GENERATION = "20260911T001500Z"
-_GIT_GENERATION = "20260911T003000Z"
 _HOOK_TIMEOUT_S = 60
 
 # A population of pod names the canary rule is exercised over, and the one of
@@ -231,9 +230,6 @@ def _run_post_start(
         stamp = work / "_warm" / "target" / "console" / "asan"
         stamp.mkdir(parents=True)
         (stamp / ".generation").write_text(f"{_TARGET_GENERATION}\n", encoding="utf-8")
-        git_seed = work / "_warm" / "git" / "console"
-        (git_seed / "objects" / "pack").mkdir(parents=True)
-        (git_seed / ".generation").write_text(f"{_GIT_GENERATION}\n", encoding="utf-8")
     (stub / "curl").write_text(f"#!/bin/sh\nexit {0 if proxy_answers else 7}\n", encoding="utf-8")
     (stub / "curl").chmod(0o755)
     script = _lifecycle_script(
@@ -255,16 +251,6 @@ def _run_post_start(
         env={
             "PATH": f"{stub}{os.pathsep}{os.environ.get('PATH', '/usr/bin:/bin')}",
             "HOSTNAME": "runner-abc-default",
-            # What git-seed-hook.js sets on a job whose volume holds the seed.
-            **(
-                {
-                    "GIT_ALTERNATE_OBJECT_DIRECTORIES": str(
-                        work / "_warm" / "git" / "console" / "objects"
-                    )
-                }
-                if seeded
-                else {}
-            ),
             **env,
         },
     )

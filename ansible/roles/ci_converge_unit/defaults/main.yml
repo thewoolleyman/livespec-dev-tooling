@@ -96,11 +96,6 @@ ci_converge_unit_files:
   - src: arc/hook-pod-template.yaml
     dest: arc/hook-pod-template.yaml
     mode: "0644"
-  # The runner's container hook entry point, converged into the same
-  # ConfigMap as the template (arc/converge-hook-pod-template.sh).
-  - src: arc/git-seed-hook.js
-    dest: arc/git-seed-hook.js
-    mode: "0644"
   - src: kueue/resource-flavor.yaml
     dest: kueue/resource-flavor.yaml
     mode: "0644"
