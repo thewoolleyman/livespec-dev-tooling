@@ -123,6 +123,32 @@ request's checkpoint and keeps its branch. A plain dispatch starts over, and
 on 3buhph that would have repeated four review-fix rounds on an 814-line
 draft.
 
+## Never rebase a factory PR you may need to resume
+
+Measured 2026-11-04 on `bd-ib-sif27g` (PR #4339) and `bd-ib-busjvz`
+(PR #4353).
+
+Orchestrator master had gone green again after an inherited CI-environment
+red. To get fresh CI, a session ran `gh pr update-branch --rebase` on both
+factory PRs. Both then failed on real defects and needed a rework resume.
+
+`dispatcher.py resume --item` compares the pull request's head with the SHA
+the run's latest record names. The rebase had moved the head, so at 08:29:08Z
+the resume refused with rc=3: "pull request #4339 is now at b8fb8ea61… while
+its latest record names 1dcf3390b…; proof verified on one tree is not proof
+of another, so dispatch it plainly instead, which reclaims the branch". A
+plain dispatch starts fresh and redoes the item.
+
+The recovery used, a legacy-coordinator-agent ruling under R301: push the
+rebase head to `refs/heads/preserved/<item>-rebase-<UTC>`, then force-move
+the branch back to the recorded SHA with a lease against exactly the rebase
+commit (done through the GitHub refs API). Record that on the item, then
+re-ticket the resume.
+
+**How to apply:** to get fresh CI on a factory PR after an inherited master
+red, ask the dispatcher for the resume or rework path. The factory merges the
+base itself. Do not rebase the PR yourself.
+
 ## A run that looks fresh may have been resumed by the server
 
 Measured 2026-11-03 on `livespec-dev-tooling-lndv2l`.
