@@ -58,6 +58,20 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.168.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.167.2...v1.168.0) (2026-11-04)
+
+
+### Features
+
+* **ci-runner:** admit gates onto hp-xubuntu ([504ddfb](https://github.com/thewoolleyman/livespec-dev-tooling/commit/504ddfb6084950269451d4f5590223637d3d9695))
+* root-fix items carry a Definition of Done naming the retried node id (livespec-dev-tooling-t5rjdr) ([9f69c9c](https://github.com/thewoolleyman/livespec-dev-tooling/commit/9f69c9c3f695dfc1ab1fa6da7d4c511696d3bfd7))
+* route each filed flake root-fix item through intake Definition-of-Ready (livespec-dev-tooling-t5rjdr) ([2eb3939](https://github.com/thewoolleyman/livespec-dev-tooling/commit/2eb39390cf37516addf0e676b8a3e623433fec6c))
+
+
+### Bug Fixes
+
+* **ansible:** never enable a scratch converge unit, and remove the un3zhi negative-control leftover ([62ee4ae](https://github.com/thewoolleyman/livespec-dev-tooling/commit/62ee4ae48ed282157d4ab687f4377ee683da86df))
+
 ## [1.167.2](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.167.1...v1.167.2) (2026-11-03)
 
 
