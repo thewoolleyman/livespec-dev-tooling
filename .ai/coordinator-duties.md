@@ -124,6 +124,15 @@ maintainer's. The maintainer, 2026-11-04 ~05:4xZ, recorded on epic `livespec-dev
 mutations are authorized as long as they are reversible". Measured 2026-11-04: a combined poweredge-xubuntu apply sat
 blocked for hours because two seats refused to act on coordinator authority alone.
 
+**Destructive actions on Hetzner infrastructure are pre-authorized while nothing live runs there.** Any wipe, reinstall,
+rescue boot, reset, reformat or re-provision of the hetzner-xubuntu hosts and their Hetzner Robot or Cloud resources is
+taken without asking, then reported. This covers Hetzner infrastructure only. It does not cover destructive acts on
+other fleet hosts, or secrets and credential creation elsewhere; the AWS owner-deployment and shared-credentials applies
+stay on the maintainer's direct ruling. It ends the moment anything live or production runs on Hetzner, and from then on
+the irreversible-act limit applies again. The maintainer, 2026-11-04 ~15:0xZ, recorded on epic
+`livespec-dev-tooling-6tgd2z`: "DO NOT BLOCK ON ANY AUTHORIZATION TO WIPE OR DO DESTRUCTIVE ACTIONS ON HETZNER INFRA.
+NOTHING LIVE OR PROD IS RUNNING THERE YET".
+
 Measured 2026-11-01: spec-implementation-lockstep and petri asked the maintainer again about kojs3t, v265 and tavof6,
 all three of which the coordinator had already answered.
 
