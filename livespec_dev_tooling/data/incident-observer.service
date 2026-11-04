@@ -1,0 +1,25 @@
+[Unit]
+Description=Independent released incident observer
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=livespec-incident
+Group=livespec-incident
+WorkingDirectory=/var/lib/livespec-incident
+ExecStart=/opt/livespec-incident/venv/bin/python -I -m livespec_dev_tooling.incident_observer_service --config /etc/livespec-incident/controller.json
+Environment=PATH=/opt/livespec-incident/venv/bin:/usr/local/bin:/usr/bin:/bin
+UnsetEnvironment=PYTHONPATH PYTHONHOME GIT_CONFIG GIT_CONFIG_COUNT GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_ALTERNATE_OBJECT_DIRECTORIES EXPEDITED_INCIDENT_RESPONSE EXPEDITED_INCIDENT_RESPONSE_REVERT LIVESPEC_INCIDENT_CONTEXT
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadOnlyPaths=/opt/livespec-incident /etc/livespec-incident
+ReadWritePaths=/var/lib/livespec-incident
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target
