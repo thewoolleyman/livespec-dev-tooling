@@ -313,6 +313,44 @@ practice: 38 pods (with mi-homelab's 4) at about 0.6 G is about 23 G.
 `max_concurrent_runs` stay at 16. This headroom is for admission during
 termination, not a seventeenth concurrent run.
 
+## Twenty runs, the extra four on poweredge (2026-11-04)
+
+Ordered by `legacy-coordinator-agent` under R493 (reversible), at about 17:5xZ.
+At 17:44Z the factory sat at 16/16 runs with 34 queued and `requests.cpu` 64/68.
+`poweredge-xubuntu` was 48 % idle (about 34 free cores) while carrying 10 factory
+sandboxes and 14 CI runners. The fleet cap rises from 16 to 20
+(`legacy-dispatcher-agent`), and this quota rises first so a raised cap never
+meets an exhausted quota.
+
+**Throughput derivation** (`.ai/ci-node-capacity-reads.md`: throughput, not a
+tidy CPU number). A sandbox uses about 3.8 cores and is limit-bound at 4: the
+2026-11-04 12:44-13:43Z sampler read per-pod P50 3.82 and P75 3.99 over 1611
+samples (orchestrator `bd-ib-plon2p`). Four more sandboxes add about 15 busy
+cores and leave poweredge about 27 % idle at the 17:44Z CI mix. Six would leave
+about 15 % and saturate once CI fills its 21 slots.
+
+**Where they land.** The four extra sandboxes can only fit on poweredge.
+`gmktec-xubuntu` is already over-requested (the bd-ib-plon2p reconciler reads
+fit -3000m) and `hp-xubuntu` carries no factory label.
+
+The per-run terms are the same as the sixteen-run section above (4 cpu,
+8192Mi/8704Mi per run in the quota, one sandbox of termination headroom):
+
+| term | arithmetic | value |
+|---|---|---|
+| `requests.cpu` | 20 × 4 + 4 | **84** |
+| `requests.memory` | 20 × 8192Mi + 7630Mi | **171470Mi** |
+| `limits.cpu` | 20 × 4 + 4 | **84** |
+| `limits.memory` | 20 × 8704Mi + 7630Mi | **181710Mi** |
+| `pods` | 2 × 20 + 2 | **42** |
+
+**Revert** to the sixteen-run values (and the fleet cap to 16) if poweredge
+reads saturated under the 2026-11-04 signal: idle below about 5 % AND the
+BestEffort CI-slice `cpu.pressure` avg60 above about 30 (host PSI is not the
+signal; see livespec-dev-tooling-6e5pyj). If orchestrator bd-ib-zl3qcz shows
+6-CPU sandboxes beat more 4-CPU ones, this same CPU is re-spent as fewer, larger
+sandboxes.
+
 ## The egress targets
 
 The policy default-denies ingress (`podSelector: {}`, `ingress: []`) and allows
