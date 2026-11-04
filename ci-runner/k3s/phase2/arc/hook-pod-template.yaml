@@ -334,10 +334,17 @@ spec:
         # self-hosted test-nprocs rule takes nproc/4 of the NODE's cores,
         # because the workflow pod has no cgroup CPU quota and nproc reads
         # the affinity mask: 18 workers per job on poweredge's 72 cores,
-        # times 27 churn slots, drove load 206 / PSI60 52 at 08:04Z. 3 is
-        # the pool's per-slot CPU budget (about 2.73 CPUs per churn slot,
-        # ../kueue/DERIVATION.md "Per-node churn slots derived from cores
-        # (2026-11-04)"), rounded up. Honoured by the justfile or
+        # times 27 churn slots, drove load 206 / PSI60 52 at 08:04Z. It was
+        # first set to 3, the pool's per-slot CPU budget (about 2.73 CPUs per
+        # churn slot, ../kueue/DERIVATION.md "Per-node churn slots derived
+        # from cores (2026-11-04)"), rounded up. That cost +48% on the
+        # orchestrator check-per-file-coverage step median (15.1 -> 22.4 min,
+        # n=25 vs n=5), and that step is on the master-CI critical path. So it
+        # is 6 (legacy-coordinator-agent, R301, 2026-11-04 ~11:00Z), which
+        # still bounds a full poweredge to about 27 x 6 = 162 workers (2.25x
+        # its 72 cores, against 6.75x before). Revert to 3 if poweredge PSI60
+        # returns above about 30 under load, or if a test-timeout red recurs.
+        # Honoured by the justfile or
         # test-nprocs script of livespec, livespec-dev-tooling,
         # livespec-orchestrator-beads-fabro, -git-jsonl, livespec-overseer
         # and livespec-runtime on the `local` lane. The hosted lane ignores
@@ -345,12 +352,12 @@ spec:
         # livespec-console-beads-fabro's cargo nextest and cargo builds do not
         # read it. Its own config already caps them at 4 (.cargo/config.toml
         # build.jobs, .config/nextest.toml test-threads), and these two env
-        # vars override that config to the same budget of 3 (same ruling).
+        # vars override that config to 3 (same ruling; they stay at 3).
         # A step that sets CARGO_BUILD_JOBS itself (its ci.yml compile steps
         # set 12) still wins over the pod env. Revert: delete these three
         # entries and run the CI stack converge.
         - name: LIVESPEC_TEST_PARALLELISM
-          value: "3"
+          value: "6"
         - name: NEXTEST_TEST_THREADS
           value: "3"
         - name: CARGO_BUILD_JOBS
