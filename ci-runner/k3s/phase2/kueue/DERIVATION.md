@@ -1002,6 +1002,22 @@ saturation signal ruled on 2026-11-04 and recorded on
 gmktec's factory sandboxes keep their headroom, since gmktec carries the petri
 factory.
 
+### Third interim step: gmktec back to 18, poweredge 21 (2026-11-04 ~17:15Z)
+
+Ordered by `legacy-coordinator-agent` (factory yield on gmktec is P1). At 17:09Z
+`gmktec-xubuntu` read 4.3 % idle (5-second sample), load 48 on 32 threads,
+BestEffort CI-slice `cpu.pressure` avg60 23.8 (avg10 11.0, full avg60 11.2), with 5
+factory sandboxes (one 70 % CFS-throttled) and 5 CI runners, while
+`poweredge-xubuntu` sat about 42 % idle. gmktec's 21 slots let CI take CPU its
+factory sandboxes need. Three slots move back to poweredge.
+
+| node | second interim | third interim |
+|---|---:|---:|
+| `poweredge-xubuntu` | 18 | **21** |
+| `gmktec-xubuntu` | 21 | **18** |
+| `hp-xubuntu` | 5 | 5 |
+| **cohort total C** | **44** | **44** |
+
 ## The master-push slice for livespec-dev-tooling (2026-11-03)
 
 Work-item `livespec-dev-tooling-lzkzwb`, plan `ci-runtime-and-cost` (epic
