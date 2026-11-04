@@ -95,7 +95,7 @@ unremovable_paths() {
 }
 
 restore_uv_cache_ownership() {
-    local cache_dir=$1 owner_uid=$2 owner_gid=$3 stamp
+    local cache_dir=$1 owner_uid=$2 owner_gid=$3 stamp newer_path
     local -a walk=(find "$cache_dir" -xdev ! -user "$owner_uid")
     stamp="$RETENTION_STATE_DIR/uv-cache-ownership.stamp"
     if ! mkdir -p "$RETENTION_STATE_DIR"; then
@@ -103,7 +103,8 @@ restore_uv_cache_ownership() {
         stamp=
     fi
     if [[ -n $stamp && -e $stamp ]]; then
-        if ! find "$cache_dir" -xdev -newer "$stamp" -print -quit | grep -q .; then
+        newer_path=$(find "$cache_dir" -xdev -newer "$stamp" -print -quit)
+        if [[ -z $newer_path ]]; then
             return 0
         fi
         walk=(find "$cache_dir" -xdev -newer "$stamp" ! -user "$owner_uid")
