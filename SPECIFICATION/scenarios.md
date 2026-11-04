@@ -2146,6 +2146,48 @@ When the Kueue cohort churn-slot quota is read from the committed manifests
 
 Then it MUST equal the sum of every pool node profile's `ADMISSION_CAPACITY_C`
 
+## Scenario: a runner pod is placed on the node with the lowest churn-slot use, whatever its CPU and memory requests
+
+Given two pool nodes that both carry the `k3s-role=arc-runner-host` label and no CI-closing taint
+And node A has a lower fraction of its declared churn-slot capacity in use than node B, and at least one free churn slot
+And node A's requested CPU and memory fractions from non-runner pods are both higher than node B's
+
+When a new CI runner pod is admitted
+
+Then it MUST be placed on node A
+
+## Scenario: a runner pod is never placed on a node with no free churn slot
+
+Given two pool nodes that both carry the `k3s-role=arc-runner-host` label and no CI-closing taint
+And every churn slot node A declares is in use
+And node B has at least one free churn slot
+
+When a new CI runner pod is admitted
+
+Then it MUST be placed on node B
+
+## Scenario: a node takes runner pods up to its declared churn-slot capacity and no fewer
+
+Given a pool node that carries the `k3s-role=arc-runner-host` label and no CI-closing taint
+And its non-runner pods request most of its CPU and most of its memory
+And it has free churn slots
+And no other pool node has a free churn slot
+
+When CI runner pods are admitted one after another
+
+Then the node MUST take runner pods until all of its declared churn slots are in use
+And a CPU or memory request of a non-runner pod on it MUST NOT stop a runner pod from being placed there while it has a free churn slot
+
+## Scenario: runner pods select the committed runner scheduler profile and every other pod keeps the default profile
+
+Given the CI stack converge has applied the committed runner scheduler profile to the cluster
+
+When a CI runner pod, a factory sandbox pod and a gate pod are created
+
+Then the CI runner pod MUST name the committed runner scheduler profile as its scheduler
+And the factory sandbox pod and the gate pod MUST be scheduled by the cluster's default scheduler profile
+And the cluster's default scheduler profile MUST carry the same plugin configuration it carried before the converge
+
 ## Scenario: an unknown CI-facilities posture is refused
 
 Given a pool node profile declaring `CI_NODE_FACILITIES=partial`
