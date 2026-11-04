@@ -81,7 +81,9 @@ _DEPLOYED_COMMIT = "9f6c38f"
 # instances this module reads are pinned to DIFFERENT builds by design.
 # 2026-11-04: every gmktec instance is pinned to 0a867ce, the carrier tip after
 # da6c801 (thewoolleyman/fabro#25), so both units read the same.
-_FLEET_COMMIT = "0a867ce"
+# 2026-11-05: after the candidate's 0-run proof of 85af354 (thewoolleyman/fabro#26),
+# the fleet instance is pinned to it too.
+_FLEET_COMMIT = "85af354"
 # The candidate's build: the carrier tip on that branch, the fleet build plus the
 # node name on run_turn spans (thewoolleyman/fabro#14). The maintainer ruled it
 # onto the candidate and fabro-server-mi-homelab on 2026-11-02 (plan
