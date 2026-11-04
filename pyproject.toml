@@ -705,6 +705,10 @@ scenario_tiers = ["tests.consumer"]
 # behavior) stay AND must scrub COVERAGE_PROCESS_START + COV_CORE_* from the
 # child env so the child does not self-instrument.
 subprocess_spawn_allowlist = [
+    # Complete inverse semantics require real Git indexes, binary/mode changes,
+    # atomic ref transactions and receipt recovery; the fixture scrubs coverage
+    # startup and inherited Git hook variables before every child invocation.
+    "tests/livespec_dev_tooling/test_incident_inverse.py",
     "tests/consumer/test_delegated_gate_check_suite.py",
     # Incident transport requires a fresh interpreter for vendor bootstrap and
     # real child environment propagation. These properties cannot be observed
