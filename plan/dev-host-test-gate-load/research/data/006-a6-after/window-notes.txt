@@ -1,0 +1,6 @@
+Cluster changes by other seats during the A6 after-window (09:54:16Z-~14:14Z), all on poweredge/hp k3s nodes, not on this dev host:
+- 09:35:48Z-09:50:04Z converge (hook-pod-template parallelism=3, master 01a9364d)
+- 11:27:08Z-11:38:19Z converge (LIVESPEC_TEST_PARALLELISM=6, master b97f118e)
+- 11:41:34Z-11:42:47Z churn-slot re-stamp (hp 5 / poweredge 27 / gmktec 12)
+- 13:26:12Z-13:37:16Z revert converge (LIVESPEC_TEST_PARALLELISM=3, d99e22c7)
+This session's own dev-host test/gate load in the window: one local pre-push aggregate 11:17Z-11:37Z (a void 4k7262 capture on v1.170.0, killed at 20 min); short guard-path pushes at 12:58Z, 13:13Z and 13:25Z; a delegated gate Job at 13:25Z-13:33Z (cluster).
