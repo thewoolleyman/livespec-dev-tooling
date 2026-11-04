@@ -2020,5 +2020,37 @@
     "test": "TODO",
     "reason": "Spec-first: a real test at the integration tier or above (a host-captured end-to-end run) is owed for this scenario, running a routed job on the k3s pool with the git object seed present, absent and kill-switched and reading each job's checkout transfer and refs; livespec-dev-tooling-dciyg5 owns it, and its Definition of Done asserts this behaviour.",
     "work_item": "livespec-dev-tooling-dciyg5"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a runner pod is placed on the node with the lowest churn-slot use, whatever its CPU and memory requests",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above (a host-captured placement run on the k3s pool) is owed for this scenario, reading which node a new runner pod lands on while the nodes' churn-slot use and non-runner CPU requests point in opposite directions; livespec-dev-tooling-mtvxde owns it, and its Definition of Done asserts this behaviour.",
+    "work_item": "livespec-dev-tooling-mtvxde"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a runner pod is never placed on a node with no free churn slot",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above (a host-captured placement run on the k3s pool) is owed for this scenario, filling one node's churn slots and reading that the next runner pod lands on the other node; livespec-dev-tooling-mtvxde owns it.",
+    "work_item": "livespec-dev-tooling-mtvxde"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a node takes runner pods up to its declared churn-slot capacity and no fewer",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above (a host-captured placement run on the k3s pool) is owed for this scenario, admitting runner pods onto a node whose CPU is mostly requested by non-runner pods and reading that it fills to its declared churn-slot capacity; livespec-dev-tooling-mtvxde owns it.",
+    "work_item": "livespec-dev-tooling-mtvxde"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: runner pods select the committed runner scheduler profile and every other pod keeps the default profile",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above (a host-captured run on the k3s pool after the CI stack converge) is owed for this scenario, reading the schedulerName of a runner pod, a factory sandbox pod and a gate pod; livespec-dev-tooling-mtvxde owns it.",
+    "work_item": "livespec-dev-tooling-mtvxde"
   }
 ]
