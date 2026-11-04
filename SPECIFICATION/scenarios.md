@@ -2607,3 +2607,69 @@ When the host sleeps while the gate client waits on that gate Job, and then wake
 Then the push MUST complete only on a green verdict that same gate Job reports for that tree
 
 And when the client obtains no verdict from that gate Job, the push MUST be refused and the outcome event MUST be `no-verdict`
+
+## Scenario: the start task refuses an undeclared host before any host change
+
+Given a host argument that the committed homelab-worker host list does not declare
+
+When `just start-homelab-worker-node-container <host>` runs
+
+Then it MUST exit non-zero naming the argument and the declared hosts
+
+And it MUST NOT install a package, create or start a VM, or start a worker container
+
+## Scenario: a VM missing a required capability stops the start task before the worker starts
+
+Given a declared host whose Lima VM does not enforce AppArmor
+
+When `just start-homelab-worker-node-container <host>` runs
+
+Then it MUST exit non-zero
+
+And its output MUST name the AppArmor capability with an actionable remedy
+
+And it MUST NOT start the worker container or submit an enrollment request
+
+## Scenario: rerunning the start task reuses Lima and keeps the VM
+
+Given a declared host with an installed Lima at or above the task's minimum version
+
+And that host's named Lima VM already exists with a persisted worker identity
+
+When `just start-homelab-worker-node-container <host>` runs again
+
+Then it MUST NOT install or upgrade Lima
+
+And it MUST NOT stop, recreate or delete the VM
+
+And the worker MUST keep the persisted identity it had before the rerun
+
+## Scenario: a second worker on the same host is refused
+
+Given a host already bound to the worker `<host-a>-homelab-worker`
+
+When `just start-homelab-worker-node-container <host-b>` runs on that host for a different declared host `<host-b>`
+
+Then it MUST exit non-zero naming the existing worker `<host-a>-homelab-worker`
+
+And it MUST NOT create a second VM or worker container
+
+## Scenario: the start task leaves the host's own tailnet identity unchanged
+
+Given a declared host logged in to the tailnet under its own host name
+
+When `just start-homelab-worker-node-container <host>` runs
+
+Then the task MUST NOT invoke a Tailscale login, logout or settings change on the host
+
+And the worker MUST enroll in the tailnet under the hostname `<host>-homelab-worker`
+
+## Scenario: a newly joined worker carries the admission hold
+
+Given a worker that completes standard TLS bootstrap into the fleet as `<host>-homelab-worker`
+
+When its Node becomes Ready
+
+Then the Node MUST carry the taint `homelab-worker.livespec.dev/admission=hold:NoSchedule`
+
+And a pod without a toleration for that taint MUST NOT be scheduled onto it
