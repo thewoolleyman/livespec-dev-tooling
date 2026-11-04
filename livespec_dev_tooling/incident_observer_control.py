@@ -12,12 +12,11 @@ from livespec_dev_tooling._incident_observer_store import (
     read_observer_arm,
     repository_lock,
 )
-from livespec_dev_tooling._incident_observer_types import ObserverArmQuery, ObserverRegistration
+from livespec_dev_tooling._incident_observer_types import ObserverRegistration
 from livespec_dev_tooling.incident_controller_installation import ControllerInstallation
 from livespec_dev_tooling.incident_observer_admission import (
     arm_before_merge,
     bind_after_merge,
-    observer_arm_admitted,
 )
 from livespec_dev_tooling.incident_observer_authority import CurrentAuthorityReader
 from livespec_dev_tooling.incident_observer_forge import MergedRunVerifier
@@ -73,21 +72,6 @@ class ObserverControl:
                     verify_merged_run=MergedRunVerifier(),
                 )
             )
-        if path == "/admitted" and set(payload) == {
-            "repository",
-            "arm_id",
-            "pr_number",
-            "base_sha",
-            "head_sha",
-            "receipt_digest",
-        }:
-            admitted = observer_arm_admitted(
-                directory=settings.state, query=ObserverArmQuery(**payload)
-            )
-            return {
-                "status": "admitted" if admitted else "refused",
-                "reason": "protected exact pre-merge observer receipt",
-            }
         return {"status": "refused", "reason": "unknown or malformed control operation"}
 
     def _arm(self, *, payload: dict[str, Any]) -> dict[str, Any]:

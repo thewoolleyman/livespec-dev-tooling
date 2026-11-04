@@ -29,12 +29,15 @@ provisioned host facts:
   "state": "/var/lib/livespec-incident/receipts",
   "webhook_secret": "/etc/livespec-incident/webhook-secret",
   "control_secret": "/etc/livespec-incident/control-secret",
+  "query_secret": "/etc/livespec-incident/query-secret",
   "port": 8765
 }
 ```
 
-Both configuration files and the two distinct secret files require mode 0600 or
-stricter. Secrets must each contain at least 32 bytes. This change creates no
+Both configuration files and the three distinct secret files require mode 0600 or
+stricter. Secrets must each contain at least 32 bytes. The query secret is separate from
+both control and webhook secrets. Only its read-only credential reaches hosted
+CI; it cannot arm or bind an incident. This change creates no
 account, secret, principal, webhook subscription or branch-protection exemption.
 The account id above is an example; it must name the real candidate account and
 must differ from the serving controller's effective uid.
@@ -86,8 +89,15 @@ The existing repository lock continues to serialize actual durable effects.
   verify every identity and the exact receipt bytes before the arm is stored.
   `authority_receipt` uses the existing protected-store hexadecimal encoding;
   `expected_arm_id` is the optional existing compare-and-swap id.
-- `POST /admitted` uses the same control authentication and existing
-  `ObserverArmQuery` fields to read the protected exact pre-merge arm.
+- `POST /admitted` requires the read-only query credential and exact six
+  `ObserverArmQuery` fields to read the protected pre-merge arm.
+- `POST /current` uses the same query credential and exact query. It performs a
+  fresh installed canonical-reader call against the retained arm outside the
+  repository lock, then rechecks the unchanged unbound arm under that lock. An
+  unavailable reader, stale generation or changed/bound arm refuses. Both query
+  replies use schema 1, echo the exact query and disallow HTTP caching. A reply
+  observes current authority at that call; consumers recheck each admission
+  entrance instead of treating a prior reply as a durable mutation grant.
 - `POST /bind` accepts only repository, landed `head_sha` and positive `run_id`.
   It copies identity and authority from the retained arm and authenticates the
   exact merged PR and normal master run through `MergedRunVerifier`. It needs

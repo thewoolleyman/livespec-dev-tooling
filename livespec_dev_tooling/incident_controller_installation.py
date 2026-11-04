@@ -40,6 +40,7 @@ class ControllerInstallation:
     jobs: tuple[str, ...]
     webhook_secret: bytes
     control_secret: bytes
+    query_secret: bytes
     port: int
 
     @classmethod
@@ -58,6 +59,7 @@ class ControllerInstallation:
                     "state",
                     "webhook_secret",
                     "control_secret",
+                    "query_secret",
                     "port",
                 }
                 or type(data["candidate_uid"]) is not int
@@ -87,10 +89,13 @@ class ControllerInstallation:
             jobs = manifest["required_jobs"]
             webhook = _secret(path=Path(data["webhook_secret"]))
             control = _secret(path=Path(data["control_secret"]))
+            query = _secret(path=Path(data["query_secret"]))
             if (
                 webhook is None
                 or control is None
+                or query is None
                 or webhook == control
+                or query in {webhook, control}
                 or type(data["port"]) is not int
                 or not 0 < data["port"] < _PORT_LIMIT
             ):
@@ -107,6 +112,7 @@ class ControllerInstallation:
                 jobs=tuple(jobs),
                 webhook_secret=webhook,
                 control_secret=control,
+                query_secret=query,
                 port=data["port"],
             )
         except (OSError, ValueError, TypeError, KeyError, importlib.metadata.PackageNotFoundError):
