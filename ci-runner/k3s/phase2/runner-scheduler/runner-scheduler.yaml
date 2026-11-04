@@ -1,0 +1,234 @@
+# runner-scheduler.yaml — a second kube-scheduler, `ci-runner-scheduler`, that
+# places ARC runner pods by the fraction of each node's
+# `ci-runner.io/churn-slot` capacity already in use
+# (livespec-dev-tooling-mtvxde; SPECIFICATION/non-functional-requirements.md
+# §"Runner-pool node rebuild recipe" → **Runner placement follows admission
+# capacity**, ratified v129).
+#
+# WHY A SECOND SCHEDULER AND NOT A PROFILE ON THE EMBEDDED ONE. k3s runs the
+# default kube-scheduler inside its own process; adding a profile there means a
+# `kube-scheduler-arg` in ../k3s-config/config.yaml, which takes effect only at
+# the next k3s start — and a k3s restart kills every running CI job on the pool
+# (see that file). A separate scheduler needs no restart, and it leaves the
+# cluster's default scheduler and its profile untouched BY CONSTRUCTION: every
+# pod that does not name `ci-runner-scheduler` (factory sandboxes, gate Jobs,
+# cache singletons, the workflow pods the ARC hook pins with nodeName) is placed
+# exactly as before.
+#
+# WHAT IT SCORES ON. The default scheduler's NodeResourcesFit scores
+# LeastAllocated over cpu and memory REQUESTS. Runner pods request only one
+# churn slot, so they inherited each node's NON-CI requests as their ranking:
+# measured 2026-11-04, gmktec-xubuntu (94% of its CPU requested by factory
+# sandboxes, ~55% idle) got zero runners all morning while 16-core hp-xubuntu
+# filled ahead of 72-core poweredge-xubuntu. This profile scores
+# LeastAllocated over `ci-runner.io/churn-slot` ONLY, i.e. by the fraction of
+# the node's declared slots in use; "in use" is the sum of churn-slot requests
+# of the pods the scheduler has bound to the node (its own node accounting —
+# a bound-but-not-yet-Running runner counts, a Succeeded one does not), never
+# Kueue's admitted usage, which is cohort-wide and carries no node. The fit
+# FILTER is unchanged, so a node with no free churn slot is never a candidate
+# and the declared capacity stays the only per-node limit. The two default
+# score plugins that read cpu/memory or image presence
+# (NodeResourcesBalancedAllocation, ImageLocality) are disabled in this profile
+# so they cannot re-introduce the CPU-request ranking.
+#
+# IMAGE. registry.k8s.io/kube-scheduler pinned by multi-arch index DIGEST at the
+# cluster's own version (k3s v1.36.2+k3s1 → upstream v1.36.2). Bump it with the
+# k3s version, digest and tag together.
+#
+# AVAILABILITY. Two replicas with leader election on their own Lease
+# (`ci-runner-scheduler` in kube-system), spread across nodes. A runner pod
+# that names this scheduler while it has no ready replica is never bound; the
+# fail-open reconciler (livespec-dev-tooling-mtvxde PR 2) is what returns the
+# runner templates to the default scheduler in that case. Until it is live,
+# only ONE canary scale set names this scheduler (legacy-coordinator-agent,
+# R301, 2026-11-04).
+#
+# REVERT. Remove `schedulerName` from the runner templates
+# (../arc/values-*.yaml) and converge; this Deployment can stay or be deleted.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: ci-runner-scheduler
+  namespace: kube-system
+---
+# The stock scheduler permissions, the same ClusterRoles the in-tree
+# kube-scheduler is bound to.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: ci-runner-scheduler-as-kube-scheduler
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: system:kube-scheduler
+subjects:
+  - kind: ServiceAccount
+    name: ci-runner-scheduler
+    namespace: kube-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: ci-runner-scheduler-as-volume-scheduler
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: system:volume-scheduler
+subjects:
+  - kind: ServiceAccount
+    name: ci-runner-scheduler
+    namespace: kube-system
+---
+# Delegated authentication for its secure serving port (healthz).
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: ci-runner-scheduler-extension-apiserver-authentication-reader
+  namespace: kube-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: extension-apiserver-authentication-reader
+subjects:
+  - kind: ServiceAccount
+    name: ci-runner-scheduler
+    namespace: kube-system
+---
+# system:kube-scheduler grants get/update on leases only for the resourceName
+# `kube-scheduler`; this scheduler's own lease needs its own grant.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: ci-runner-scheduler-lease
+  namespace: kube-system
+rules:
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    resourceNames: ["ci-runner-scheduler"]
+    verbs: ["get", "update", "patch"]
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    verbs: ["create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: ci-runner-scheduler-lease
+  namespace: kube-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: ci-runner-scheduler-lease
+subjects:
+  - kind: ServiceAccount
+    name: ci-runner-scheduler
+    namespace: kube-system
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ci-runner-scheduler-config
+  namespace: kube-system
+data:
+  config.yaml: |
+    apiVersion: kubescheduler.config.k8s.io/v1
+    kind: KubeSchedulerConfiguration
+    leaderElection:
+      leaderElect: true
+      resourceName: ci-runner-scheduler
+      resourceNamespace: kube-system
+    profiles:
+      - schedulerName: ci-runner-scheduler
+        plugins:
+          score:
+            disabled:
+              - name: NodeResourcesBalancedAllocation
+              - name: ImageLocality
+        pluginConfig:
+          - name: NodeResourcesFit
+            args:
+              scoringStrategy:
+                type: LeastAllocated
+                resources:
+                  - name: ci-runner.io/churn-slot
+                    weight: 1
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ci-runner-scheduler
+  namespace: kube-system
+  labels:
+    app.kubernetes.io/name: ci-runner-scheduler
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: ci-runner-scheduler
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: ci-runner-scheduler
+    spec:
+      serviceAccountName: ci-runner-scheduler
+      priorityClassName: system-cluster-critical
+      # The scheduler must run where runner pods cannot crowd it out; it is
+      # placed by the DEFAULT scheduler like every other non-runner pod.
+      tolerations:
+        - key: livespec.io/factory-pressure
+          operator: Exists
+          effect: PreferNoSchedule
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                topologyKey: kubernetes.io/hostname
+                labelSelector:
+                  matchLabels:
+                    app.kubernetes.io/name: ci-runner-scheduler
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: kube-scheduler
+          image: registry.k8s.io/kube-scheduler:v1.36.2@sha256:94dfc9f285718a06bb873947959b8514ed95dddaa7c74d765cc346fdfa684859
+          command:
+            - kube-scheduler
+            - --config=/etc/ci-runner-scheduler/config.yaml
+            - --v=2
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              memory: 512Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 10259
+              scheme: HTTPS
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 10259
+              scheme: HTTPS
+            periodSeconds: 10
+          volumeMounts:
+            - name: config
+              mountPath: /etc/ci-runner-scheduler
+              readOnly: true
+      volumes:
+        - name: config
+          configMap:
+            name: ci-runner-scheduler-config
