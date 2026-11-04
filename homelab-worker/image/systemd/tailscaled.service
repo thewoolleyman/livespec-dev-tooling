@@ -1,0 +1,19 @@
+# Kernel-mode Tailscale inside the worker's own network namespace, so the
+# worker joins the tailnet as <host>-homelab-worker and the host's own identity
+# is untouched. State persists in /var/lib/tailscale (a volume); the start task
+# supplies the enrollment credential and hostname under /etc/homelab-worker.
+[Unit]
+Description=Tailscale node agent (homelab worker identity)
+After=network-pre.target
+Wants=network-pre.target
+ConditionPathExists=/etc/homelab-worker/tailscale.env
+
+[Service]
+EnvironmentFile=/etc/homelab-worker/tailscale.env
+ExecStart=/usr/local/sbin/tailscaled --state=/var/lib/tailscale/tailscaled.state --socket=/run/tailscale/tailscaled.sock --tun=tailscale0
+ExecStartPost=/usr/local/bin/tailscale --socket=/run/tailscale/tailscaled.sock up --hostname=${TS_HOSTNAME} --auth-key=file:/etc/homelab-worker/tailscale-authkey --advertise-tags=${TS_TAGS}
+RuntimeDirectory=tailscale
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
