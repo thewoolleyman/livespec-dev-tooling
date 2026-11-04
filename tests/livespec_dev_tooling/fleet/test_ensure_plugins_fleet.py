@@ -5,7 +5,10 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from livespec_dev_tooling.fleet._local_context import CommandResult
+from returns.io import IOSuccess
+
+from livespec_dev_tooling.fleet._local_context import CommandOutcome, CommandResult
+from livespec_dev_tooling.fleet._manifest_git import GitReadRefused
 
 __all__: list[str] = []
 
@@ -62,19 +65,14 @@ def test_adoption_runs_each_members_recipe_and_reports_project_scoped_build_pair
     clones_root = tmp_path / "projects"
     alpha = _write_member(clones_root=clones_root, name="alpha")
     beta = _write_member(clones_root=clones_root, name="beta")
-    manifest_path = clones_root / "livespec" / ".livespec-fleet-manifest.jsonc"
-    manifest_path.parent.mkdir()
-    manifest_path.write_text(
-        json.dumps(
-            {
-                "owner": "acme",
-                "fleet": [
-                    {"repo": "alpha", "class": "impl-plugin"},
-                    {"repo": "beta", "class": "impl-plugin"},
-                ],
-            }
-        ),
-        encoding="utf-8",
+    manifest_source = json.dumps(
+        {
+            "owner": "acme",
+            "fleet": [
+                {"repo": "alpha", "class": "impl-plugin"},
+                {"repo": "beta", "class": "impl-plugin"},
+            ],
+        }
     )
     registry_path = tmp_path / "plugins" / "installed_plugins.json"
     _write_registry(registry_path=registry_path, builds={alpha: _BEFORE, beta: _BEFORE})
@@ -94,7 +92,7 @@ def test_adoption_runs_each_members_recipe_and_reports_project_scoped_build_pair
         return CommandResult(returncode=0, stdout="", stderr="")
 
     report = adopt(
-        manifest_path=manifest_path,
+        manifest_source=manifest_source,
         clones_root=clones_root,
         registry_path=registry_path,
         run=run,
@@ -115,20 +113,15 @@ def test_adoption_continues_after_missing_clone_and_failed_recipe(*, tmp_path: P
     clones_root = tmp_path / "projects"
     alpha = _write_member(clones_root=clones_root, name="alpha")
     beta = _write_member(clones_root=clones_root, name="beta")
-    manifest_path = clones_root / "livespec" / ".livespec-fleet-manifest.jsonc"
-    manifest_path.parent.mkdir()
-    manifest_path.write_text(
-        json.dumps(
-            {
-                "owner": "acme",
-                "fleet": [
-                    {"repo": "alpha", "class": "impl-plugin"},
-                    {"repo": "missing", "class": "impl-plugin"},
-                    {"repo": "beta", "class": "impl-plugin"},
-                ],
-            }
-        ),
-        encoding="utf-8",
+    manifest_source = json.dumps(
+        {
+            "owner": "acme",
+            "fleet": [
+                {"repo": "alpha", "class": "impl-plugin"},
+                {"repo": "missing", "class": "impl-plugin"},
+                {"repo": "beta", "class": "impl-plugin"},
+            ],
+        }
     )
     registry_path = tmp_path / "plugins" / "installed_plugins.json"
     _write_registry(registry_path=registry_path, builds={alpha: _BEFORE, beta: _BEFORE})
@@ -140,7 +133,10 @@ def test_adoption_continues_after_missing_clone_and_failed_recipe(*, tmp_path: P
         return CommandResult(returncode=7 if cwd == alpha else 0, stdout="", stderr="refused")
 
     report = adopt(
-        manifest_path=manifest_path, clones_root=clones_root, registry_path=registry_path, run=run
+        manifest_source=manifest_source,
+        clones_root=clones_root,
+        registry_path=registry_path,
+        run=run,
     )
 
     assert calls == [alpha, beta]
@@ -156,19 +152,14 @@ def test_adoption_refuses_split_builds_after_successful_recipes(*, tmp_path: Pat
     clones_root = tmp_path / "projects"
     alpha = _write_member(clones_root=clones_root, name="alpha")
     beta = _write_member(clones_root=clones_root, name="beta")
-    manifest_path = clones_root / "livespec" / ".livespec-fleet-manifest.jsonc"
-    manifest_path.parent.mkdir()
-    manifest_path.write_text(
-        json.dumps(
-            {
-                "owner": "acme",
-                "fleet": [
-                    {"repo": "alpha", "class": "impl-plugin"},
-                    {"repo": "beta", "class": "impl-plugin"},
-                ],
-            }
-        ),
-        encoding="utf-8",
+    manifest_source = json.dumps(
+        {
+            "owner": "acme",
+            "fleet": [
+                {"repo": "alpha", "class": "impl-plugin"},
+                {"repo": "beta", "class": "impl-plugin"},
+            ],
+        }
     )
     registry_path = tmp_path / "plugins" / "installed_plugins.json"
     _write_registry(registry_path=registry_path, builds={alpha: _BEFORE, beta: _BEFORE})
@@ -180,7 +171,10 @@ def test_adoption_refuses_split_builds_after_successful_recipes(*, tmp_path: Pat
         return CommandResult(returncode=0, stdout="", stderr="")
 
     report = adopt(
-        manifest_path=manifest_path, clones_root=clones_root, registry_path=registry_path, run=run
+        manifest_source=manifest_source,
+        clones_root=clones_root,
+        registry_path=registry_path,
+        run=run,
     )
 
     assert report.exit_code == 1
@@ -188,3 +182,39 @@ def test_adoption_refuses_split_builds_after_successful_recipes(*, tmp_path: Pat
         report.lines[-1]
         == f"{_PLUGIN} has split installed builds: {_AFTER}: alpha; {_BEFORE}: beta"
     )
+
+
+def test_membership_is_read_from_livespec_master_over_git_not_a_local_clone() -> None:
+    """The manifest comes from livespec master at run time, as Sibling discovery reads it."""
+    from livespec_dev_tooling.fleet.ensure_plugins_fleet import fetch_master_manifest
+
+    seen: list[list[str]] = []
+
+    def read_git(*, args: list[str], cwd: Path | None = None) -> CommandOutcome:
+        assert cwd is None
+        seen.append(args)
+        stdout = "MANIFEST-BYTES" if "show" in args else ""
+        return IOSuccess(CommandResult(returncode=0, stdout=stdout, stderr=""))
+
+    fetched = fetch_master_manifest(owner="acme", read_git=read_git)
+
+    assert fetched == "MANIFEST-BYTES"
+    assert any(arg == "https://github.com/acme/livespec.git" for arg in seen[0])
+    assert seen[1][-2:] == ["show", "HEAD:.livespec-fleet-manifest.jsonc"]
+
+
+def test_unreadable_master_manifest_is_a_refusal_not_an_empty_member_set() -> None:
+    """A manifest that cannot be fetched yields the refusal, never a silent empty fleet."""
+    from livespec_dev_tooling.fleet.ensure_plugins_fleet import fetch_master_manifest
+
+    def read_git(*, args: list[str], cwd: Path | None = None) -> CommandOutcome:
+        assert args[0] == "git"
+        assert cwd is None
+        return IOSuccess(CommandResult(returncode=128, stdout="", stderr="no access"))
+
+    fetched = fetch_master_manifest(owner="acme", read_git=read_git)
+
+    assert isinstance(fetched, GitReadRefused)
+    assert fetched.returncode == 128
+    assert fetched.detail == "no access"
+    assert not isinstance(fetched, str)
