@@ -436,7 +436,9 @@ Given the pool's git object seed holds the default-branch and tag objects of eve
 
 When a routed job whose repository's seed is present in its work volume runs `actions/checkout` with `fetch-depth: 0`
 
-Then the job container MUST name that repository's seeded object directory in `GIT_ALTERNATE_OBJECT_DIRECTORIES`, set by the pool's runner container hook
+Then the checkout repository's own object store MUST name that repository's seeded object directory as its git alternate, placed by the pool's runner container hook, and the job container's environment MUST NOT name the seed
+
+And a git repository the job creates outside its checkout MUST resolve only its own objects, so a commit it reads by its own ref is the commit it wrote
 
 And the checkout MUST transfer from the forge only objects absent from the seed, and MUST produce the same work tree and refs as a checkout without the seed
 
