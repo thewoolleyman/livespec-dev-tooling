@@ -99,3 +99,27 @@ def test_isolated_inverse_refuses_a_true_binary_overlap(history):
     result = inverse.plan_incident_inverse(repo_root=repo, scope=scope, expected_head=current)
     assert isinstance(result, IOFailure)
     assert unsafe_perform_io(result.failure()).code == "rollback-conflict"
+
+
+# EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-lgfo3v
+@pytest.mark.parametrize(
+    ("setting", "value"),
+    [
+        ("diff.noprefix", "true"),
+        ("diff.srcPrefix", "candidate/"),
+        ("diff.dstPrefix", "candidate/"),
+        ("color.ui", "always"),
+    ],
+)
+def test_source_diff_configuration_cannot_change_authenticated_inverse(history, setting, value):
+    repo, scope, original = history
+    _git(repo, "config", setting, value)
+    result = inverse.plan_incident_inverse(
+        repo_root=repo, scope=scope, expected_head=scope.merge_sha
+    )
+    assert isinstance(
+        result, IOSuccess
+    ), "source diff configuration changed immutable patch identity"
+    plan = unsafe_perform_io(result.unwrap())
+    assert _git(repo, "show", plan.tree_sha + ":shared.txt").decode() == original
+    assert _git(repo, "status", "--porcelain") == b""

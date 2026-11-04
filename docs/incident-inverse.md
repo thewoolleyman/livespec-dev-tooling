@@ -1,5 +1,11 @@
 # Complete incident inverse controller
 
+Scope verification and patch construction read immutable objects through an
+isolated Git administration directory. Source checkout diff settings, color,
+order files, replacement refs and custom attributes cannot change the recorded
+patch identity or select a merge driver. Linked worktrees retain their shared
+object store and object format; the checkout, index and branch stay untouched.
+
 `incident_inverse.plan_incident_inverse` validates a trusted forge scope's complete
 landed commit chain, each landed tree, changed paths and full binary patch digest.
 It reverses that entire patch into a disposable Git index seeded from the exact
