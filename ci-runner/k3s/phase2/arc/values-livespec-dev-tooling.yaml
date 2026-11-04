@@ -50,6 +50,13 @@ template:
       # rather than straight to the Kubernetes scheduler.
       kueue.x-k8s.io/queue-name: livespec-dev-tooling-lq
   spec:
+    # CANARY for livespec-dev-tooling-mtvxde: this scale set's runner pods are
+    # placed by `ci-runner-scheduler` (../runner-scheduler/runner-scheduler.yaml),
+    # which ranks nodes by the fraction of their churn slots in use rather than
+    # by other pods' CPU requests. ONLY this scale set names it until the
+    # fail-open reconciler (mtvxde PR 2) is live (legacy-coordinator-agent,
+    # R301, 2026-11-04). Revert: delete this line and converge.
+    schedulerName: ci-runner-scheduler
     # Tolerate the factory placement taint (orchestrator bd-ib-plon2p,
     # ../factory-pressure-placement/README.md): it exists to steer FACTORY
     # sandbox pods only, so runner pods ignore it and CI placement is unchanged.

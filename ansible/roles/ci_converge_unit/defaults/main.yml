@@ -51,6 +51,7 @@ ci_converge_unit_directories:
   - warm-cache/registry-mirror
   - crates-proxy
   - sccache
+  - runner-scheduler
   - observability
   - gates
   - factory
@@ -136,6 +137,15 @@ ci_converge_unit_files:
     mode: "0755"
   - src: warm-cache/registry-mirror/registry-mirror.yaml
     dest: warm-cache/registry-mirror/registry-mirror.yaml
+    mode: "0644"
+  # The second kube-scheduler for runner pods (livespec-dev-tooling-mtvxde).
+  # converge-ci-stack.sh step 6b calls its converge at boot, so it MUST be
+  # installed here like the registry mirror above.
+  - src: runner-scheduler/converge-runner-scheduler.sh
+    dest: runner-scheduler/converge-runner-scheduler.sh
+    mode: "0755"
+  - src: runner-scheduler/runner-scheduler.yaml
+    dest: runner-scheduler/runner-scheduler.yaml
     mode: "0644"
   - src: crates-proxy/converge-crates-proxy.sh
     dest: crates-proxy/converge-crates-proxy.sh
