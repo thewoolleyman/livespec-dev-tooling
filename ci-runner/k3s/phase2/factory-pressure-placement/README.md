@@ -48,6 +48,14 @@ On each 30 s cycle the reconciler works through these steps:
    already request. **The reconciler owns no CPU.** That rule was agreed with
    dev-host-test-gate-load, owner of `livespec-dev-tooling-cikd6m`, and recorded
    on `bd-ib-plon2p`.
+
+   **The cap.** If that node's gates flavor sets `.spec.topologyName`, the
+   reserve is `min(unused quota, cap)`, where the cap is
+   `FACTORY_PRESSURE_GATES_RESERVE_CAP_MILLICPU` (default `5000`, committed in
+   `reconcile-factory-pressure-taint.service`). A flavor without
+   `topologyName` keeps the uncapped unused quota. The cap was agreed with
+   dev-host-test-gate-load (cikd6m). Each cycle logs a `RESERVE` line naming
+   the branch it took: `capped-topology` or `uncapped`.
 4. **Taint.** If `fit >= 4000m`, every node at least 20 points above the lowest
    gets the taint. Otherwise the taint comes off everywhere, and placement falls
    back to the sandbox pods' own hostname spread.

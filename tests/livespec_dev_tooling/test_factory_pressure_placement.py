@@ -119,7 +119,7 @@ _SANDBOX = {"app.kubernetes.io/managed-by": "sandbox-driver-kubernetes"}
 _GATE = {"app.kubernetes.io/part-of": "livespec-ci-gates"}
 
 
-def _gates_quota(cpu: str) -> tuple[_Json, _Json]:
+def _gates_quota(cpu: str, *, topology: bool = False) -> tuple[_Json, _Json]:
     cq = {
         "spec": {
             "resourceGroups": [
@@ -145,7 +145,10 @@ def _gates_quota(cpu: str) -> tuple[_Json, _Json]:
         "items": [
             {
                 "metadata": {"name": "gates-flavor"},
-                "spec": {"nodeLabels": {"kubernetes.io/hostname": _GMK}},
+                "spec": {
+                    "nodeLabels": {"kubernetes.io/hostname": _GMK},
+                    **({"topologyName": "gates-topology"} if topology else {}),
+                },
             },
             {
                 "metadata": {"name": "gates-hp-flavor"},
@@ -176,13 +179,18 @@ def _scratch(tmp_path: Path) -> tuple[Path, dict[str, str]]:
 
 
 def _reconcile(
-    tmp_path: Path, *, nodes: list[_Json], pods: list[_Json], quota_cpu: str | None = "5"
+    tmp_path: Path,
+    *,
+    nodes: list[_Json],
+    pods: list[_Json],
+    quota_cpu: str | None = "5",
+    topology: bool = False,
 ) -> tuple[subprocess.CompletedProcess[str], list[str]]:
     fake, env = _scratch(tmp_path)
     _ = (fake / "nodes.json").write_text(json.dumps({"items": nodes}), encoding="utf-8")
     _ = (fake / "pods.json").write_text(json.dumps({"items": pods}), encoding="utf-8")
     if quota_cpu is not None:
-        cq, flavors = _gates_quota(quota_cpu)
+        cq, flavors = _gates_quota(quota_cpu, topology=topology)
         _ = (fake / "cq.json").write_text(json.dumps(cq), encoding="utf-8")
         _ = (fake / "flavors.json").write_text(json.dumps(flavors), encoding="utf-8")
     run = subprocess.run(
@@ -334,6 +342,38 @@ def test_new_sandbox_pods_are_annotated_once_with_the_cycle_readings(tmp_path: P
     assert annotated[0].startswith("annotate pod -n factory fresh livespec.io/placement-pressure=")
     assert f"{_PE}=45.0" in annotated[0] and f"{_GMK}=8.0" in annotated[0]
     assert f"taint={_PE}" in annotated[0]
+
+
+def test_a_topology_flavor_caps_the_gates_reserve_at_five_cpu(tmp_path: Path) -> None:
+    # gmktec: 32 allocatable, 5 sandboxes = 20 requested, a 10-CPU gates quota with
+    # nothing running. The flavor sets topologyName, so the reserve is
+    # min(10, cap 5) = 5 and fit = 32 - 20 - 5 = 7 >= 4: steer.
+    run, mutations = _reconcile(
+        tmp_path,
+        nodes=[_node(_PE, avg60=45.0, alloc="72"), _node(_GMK, avg60=8.0)],
+        pods=[_pod(f"sb{i}", node=_GMK, cpu="4", labels=_SANDBOX) for i in range(5)],
+        quota_cpu="10",
+        topology=True,
+    )
+    assert run.returncode == 0, run.stderr
+    assert f"RESERVE {_GMK} branch=capped-topology" in run.stdout, run.stdout
+    assert "reserve=5000m" in run.stdout, run.stdout
+    assert f"taint nodes {_PE} {_TAINT_KEY}=high:PreferNoSchedule --overwrite" in mutations
+
+
+def test_a_flavor_without_topology_keeps_the_full_unused_quota(tmp_path: Path) -> None:
+    # Same numbers without topologyName: the reserve is the full unused 10 CPU and
+    # fit = 32 - 20 - 10 = 2 < 4: no steer.
+    run, mutations = _reconcile(
+        tmp_path,
+        nodes=[_node(_PE, avg60=45.0, alloc="72"), _node(_GMK, avg60=8.0)],
+        pods=[_pod(f"sb{i}", node=_GMK, cpu="4", labels=_SANDBOX) for i in range(5)],
+        quota_cpu="10",
+    )
+    assert run.returncode == 0, run.stderr
+    assert f"RESERVE {_GMK} branch=uncapped" in run.stdout, run.stdout
+    assert "reserve=10000m" in run.stdout, run.stdout
+    assert not any(m.startswith("taint") for m in mutations), mutations
 
 
 def _publish(
