@@ -258,6 +258,15 @@
 #    claim the runner found every action in the tree -- that is read from the
 #    job's Set up job log ("Action archive cache usage") by the host-captured
 #    proof.
+#
+# 9. RUNNER-ONLY uv SOURCE (livespec-dev-tooling-n622ze). hp-xubuntu cannot
+#    seed a warm tree by definition, so the `$job` wrapper below changes only
+#    the temporary input to its `uv sync`: locked wheel URLs are swapped to the
+#    read-only PyPI files proxy and restored before the command returns. The
+#    ConfigMap is mounted read-only, and the proxy permits GET and HEAD only,
+#    so a workflow job has no write path to pool state. This is intentionally
+#    scoped to hp; full-facilities nodes retain their seeded cache, and the
+#    source costs hp no local component or budget.
 apiVersion: v1
 kind: PodTemplate
 spec:
@@ -274,6 +283,10 @@ spec:
       type: Localhost
       localhostProfile: ci-runner-workflow
   volumes:
+    - name: pypi-proxy-uv-wrapper
+      configMap:
+        name: pypi-proxy-uv-wrapper
+        defaultMode: 0555
     - name: ci-runner-bin
       hostPath:
         # The pool-provided binaries (today: sccache, from
@@ -285,6 +298,14 @@ spec:
   containers:
     - name: $job
       env:
+        # The current pinned sandbox image resolves `uv` from this mise install.
+        # Keep the real location explicit after the wrapper's path prefix so a
+        # wrapper can delegate without recursing. The image-bump procedure must
+        # update this path alongside the image's pinned uv release.
+        - name: PATH
+          value: /opt/ci-runner/uv-proxy:/root/.local/share/mise/installs/uv/0.9.26/uv-x86_64-unknown-linux-musl:/root/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+        - name: PYPI_FILES_PROXY
+          value: http://pypi-proxy.ci-warm-cache.svc.cluster.local:8081
         # The work volume's reflink-seeded warm uv cache (header item 2):
         # this volume's own inodes, so uv's default link mode into the
         # .venv is private and UV_LINK_MODE is not set. The path exists only
@@ -366,6 +387,9 @@ spec:
         - name: CARGO_BUILD_JOBS
           value: "3"
       volumeMounts:
+        - name: pypi-proxy-uv-wrapper
+          mountPath: /opt/ci-runner/uv-proxy
+          readOnly: true
         - name: ci-runner-bin
           mountPath: /opt/ci-runner/bin
           readOnly: true
