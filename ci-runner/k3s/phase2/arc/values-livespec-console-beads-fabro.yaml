@@ -106,7 +106,10 @@ template:
       # volume for kubernetes mode, and declaring this one does not displace it.
       - name: hook-pod-template
         configMap:
-          name: arc-hook-pod-template
+          # A placeholder, never applied as written: the CI stack converge renders
+          # it to the immutable revision it just published
+          # (converge-hook-pod-template.sh --render-values; livespec-dev-tooling-4oeffe).
+          name: arc-hook-pod-template-@HOOK_REVISION@
       # The FLEET-PATCHED ARC container hook (../container-hook/), read-only
       # from the node, where ../install-node.sh step 7c installed it. It skips
       # the 595 MB / 9,028-file externals copy its unpatched twin makes on

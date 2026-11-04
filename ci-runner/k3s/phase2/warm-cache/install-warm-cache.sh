@@ -25,13 +25,14 @@
 #   2. Run ONE populate Job immediately and wait for it, so the lower exists
 #      before the first workflow pod looks for it rather than up to a
 #      schedule interval later.
-#   3. Converge the arc-hook-pod-template ConfigMap (../arc/hook-pod-template.yaml
+#   3. Publish the hook-template ConfigMap revision (../arc/hook-pod-template.yaml
 #      carries UV_CACHE_DIR, pointing uv at the seed the local-path
-#      provisioner's setup script makes at volume creation), via the converge
-#      script shared with ../apparmor/install-apparmor-profile.sh. Existing
-#      runner pods keep the previous template until recycled — run
-#      ../arc/recycle-scale-set-runners.sh per scale set afterwards, exactly as
-#      after any values change.
+#      provisioner's setup script makes at volume creation). A revision is
+#      immutable and content-addressed (livespec-dev-tooling-4oeffe), so
+#      publishing it changes no running pod and no scale set: the scale sets
+#      move onto it at the next CI stack converge
+#      (../reconstruct/converge-ci-stack.sh renders it into every values file),
+#      which also prunes the revisions no pod still mounts.
 #
 # The seed itself (the reader side of this tier) lives in
 # ../local-path-provisioner/local-path-provisioner.yaml and is applied by
@@ -71,8 +72,8 @@ fi
 kubectl -n "${NAMESPACE}" logs "job/${job_name}" | tail -5
 
 # ---------------------------------------------------------------------------
-log "3. Converge the arc-hook-pod-template ConfigMap (UV_CACHE_DIR -> the provisioner-made seed)"
-"${SCRIPT_DIR}/../arc/converge-hook-pod-template.sh"
+log "3. Publish the hook-template ConfigMap revision (UV_CACHE_DIR -> the provisioner-made seed)"
+"${SCRIPT_DIR}/../arc/converge-hook-pod-template.sh" --publish
 
-log "Done. Recycle each scale set's idle runners (../arc/recycle-scale-set-runners.sh)"
-log "so new workflow pods are created from the converged template."
+log "Done. Run the CI stack converge (../reconstruct/converge-ci-stack.sh) so every"
+log "scale set mounts the published revision; it prunes the revisions no pod mounts."

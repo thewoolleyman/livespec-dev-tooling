@@ -122,7 +122,7 @@ both cold and must be told apart in the hit-floor trigger's exclusion.
 ```bash
 # on the node, after `just ansible-apply ansible/ci-pool.yml` / a converge:
 ls -l /usr/local/lib/ci-runner-k3s/bin/ci-cache-span
-kubectl -n arc-runners get configmap arc-hook-pod-template -o jsonpath='{.data.hook-pod-template\.yaml}' | grep -c ci-cache-span   # 4
+kubectl -n arc-runners get configmap "$(ci-runner/k3s/phase2/arc/converge-hook-pod-template.sh --name)" -o jsonpath='{.data.hook-pod-template\.yaml}' | grep -c ci-cache-span   # 4
 # the derived endpoint IS the cni0 gateway, and it answers (run on the node):
 ip -4 addr show cni0 | awk '/inet /{print $2}'          # <gateway>/24
 curl -s -o /dev/null -w '%{http_code}\n' -X POST -H 'content-type: application/json' \
