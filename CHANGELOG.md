@@ -58,6 +58,14 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.170.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.169.0...v1.170.0) (2026-11-04)
+
+
+### Features
+
+* arm incident observer before merge and authenticate its master run (livespec-dev-tooling-47ij37) ([8b53d18](https://github.com/thewoolleyman/livespec-dev-tooling/commit/8b53d18a8e57d14bf85235aa6ef4302d582e8007))
+* **incident:** bind CI selection and aggregate policy to current authority (livespec-dev-tooling-egy3ri) ([5bc163a](https://github.com/thewoolleyman/livespec-dev-tooling/commit/5bc163a6c1b8b00c71cafbf016b257b5fed7f3dc))
+
 ## [1.169.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.168.0...v1.169.0) (2026-11-04)
 
 
