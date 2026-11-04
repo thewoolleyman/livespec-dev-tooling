@@ -5,6 +5,15 @@ autofix, pairing, prechecks, caches, factory provenance or delegation. Ordinary
 invocations retain their existing path. Only an explicit ordinary result (75)
 falls through; malformed, unavailable or refused incident requests stop.
 
+Before starting local gates, the hook reads `read-local-gates --receipt-id`
+through the same current canonical authority. A retained receipt recovers its
+exact original results and exit status without executing gates or appending again.
+That includes a failed result and an append whose reply was lost. Current identity
+and the exact local tree are checked again before admission. Only an authoritative
+absent reply permits initial execution; an unavailable, malformed, conflicting or
+stale lookup refuses. Older installed producers that lack this operation refuse
+until the canonical lookup capability is released and adopted.
+
 A host repair supplies the shared incident flag, a canonical JSON query in
 `LIVESPEC_INCIDENT_AUTHORITY_QUERY`, and a distinct invocation identifier in
 `LIVESPEC_INCIDENT_LOCAL_OPERATION`. The query contains `repository`, `item`,
