@@ -107,3 +107,25 @@ tls-san:
 # RUNS on the host; this file is committed config only, so the successor work
 # is named here rather than smuggled in beside a SAN list.
 write-kubeconfig-mode: "0644"
+
+# The API server dials every kubelet DIRECTLY instead of through a K3s agent's
+# reverse tunnel. The default, `agent`, routes kubelet traffic (logs, exec,
+# attach, port-forward) through the remotedialer session each k3s-agent opens,
+# and REFUSES a kubelet dial to a node that has no session:
+# pkg/daemons/control/tunnel.go dialBackend in v1.36.2+k3s1 returns
+# "failed to find Session for client" rather than falling back. A homelab worker
+# node runs upstream kubelet with no K3s agent (SPECIFICATION
+# non-functional-requirements.md "Homelab worker nodes", v131), so under `agent`
+# every exec into it fails — and ARC's kubernetes container mode runs every job
+# step through exec. Plan homelab-k8s-worker-nodes, work item
+# livespec-dev-tooling-y4unt4.
+#
+# The existing agents keep working: measured 2026-11-04 from this node, the
+# kubelet port 10250 on gmktec-xubuntu (192.168.1.156) and hp-xubuntu
+# (192.168.1.4) answers directly over the LAN.
+#
+# TAKES EFFECT AT THE NEXT k3s START — reach it only through
+# ../../../../ansible/k3s-window-drain.yml (pause-arc) and
+# ../../../../ansible/restart-k3s-server.yml, in a window coordinated with the
+# maintainer. Rollback: delete this key and run restart-k3s-server.yml again.
+egress-selector-mode: "disabled"
