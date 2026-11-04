@@ -317,6 +317,14 @@ investigation:
   2026-09-04 resume opened by putting decision 1 back to the maintainer as a
   picker and was told, bluntly, that this was the wrong thing.
 
+## Naming a pull request to the maintainer
+
+Every PR named in a message to the maintainer carries its repository:
+write `livespec-dev-tooling#3426`, never a bare `#3426`. The fleet spans many
+repositories (this one, livespec, the orchestrator plugin, dolt-server, the
+host info repos), so a bare number is ambiguous. The rule holds for PRs another
+session reported to you as well (maintainer direction, 2026-11-04).
+
 ## Ordering — confirm the reader before you write
 
 The decision-authority section above says WHO decides. This one says WHEN a
