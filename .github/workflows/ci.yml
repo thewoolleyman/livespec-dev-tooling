@@ -613,6 +613,7 @@ jobs:
           just check-ci-gate-parity || failed="$failed check-ci-gate-parity"
           just check-ci-matrix-completeness || failed="$failed check-ci-matrix-completeness"
           just check-claude-md-coverage || failed="$failed check-claude-md-coverage"
+          just check-codex-hook-reconcilable || failed="$failed check-codex-hook-reconcilable"
           just check-comment-line-anchors || failed="$failed check-comment-line-anchors"
           just check-commit-pairs-source-and-test || failed="$failed check-commit-pairs-source-and-test"
           just check-delegated-gate-check-suite || failed="$failed check-delegated-gate-check-suite"
