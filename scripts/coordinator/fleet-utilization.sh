@@ -171,7 +171,8 @@ def read_cluster():
         if len(cols) < MIN_POD_COLS:
             continue
         ns, status, node = cols[0], cols[3], cols[7]
-        pods_by[node][ns] += 1
+        if status in ("Running", "Pending"):
+            pods_by[node][ns] += 1
         if status == "Pending":
             pending[ns] += 1
     out["pods"] = {n: dict(v) for n, v in pods_by.items()}
@@ -434,7 +435,7 @@ def render(nodes, cluster, factory, unticketed, flags):
     out(f"FLEET UTILIZATION {datetime.datetime.now(datetime.UTC):%Y-%m-%dT%H:%M:%SZ}")
     out(
         f"{'node':20}{'cores':>6}{"load(1/5/15)":>22}{'PSI10':>7}{'PSI60':>7}"
-        f"{'idle%':>7}{'memGiB':>8}{'swapGiB':>8}  pods(by ns)"
+        f"{'idle%':>7}{'memGiB':>8}{'swapGiB':>8}  live pods(by ns)"
     )
     for n in nodes:
         if not n["reachable"]:
