@@ -2108,5 +2108,61 @@
     "test": "TODO",
     "reason": "Spec-first: a real test at the integration tier or above (a consumer-style check-runner or host-captured run on a macOS developer host) is owed for this scenario; livespec-dev-tooling-ko26ez owns it.",
     "work_item": "livespec-dev-tooling-ko26ez"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "non-functional-requirements.md",
+    "heading": "## Homelab worker nodes",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above (the start-homelab-worker-node-container task run against stubbed brew, limactl and VM probe commands, plus host-captured runs on macbook-m4-max and macbook-air) is owed for this heading; livespec-dev-tooling-ko26ez owns it.",
+    "work_item": "livespec-dev-tooling-ko26ez"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: the start task refuses an undeclared host before any host change",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above (the start task run against stubbed host commands, or a host-captured run on a declared Mac host) is owed for this scenario; livespec-dev-tooling-ko26ez owns it.",
+    "work_item": "livespec-dev-tooling-ko26ez"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a VM missing a required capability stops the start task before the worker starts",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above (the start task run against stubbed host commands, or a host-captured run on a declared Mac host) is owed for this scenario; livespec-dev-tooling-ko26ez owns it.",
+    "work_item": "livespec-dev-tooling-ko26ez"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: rerunning the start task reuses Lima and keeps the VM",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above (the start task run against stubbed host commands, or a host-captured run on a declared Mac host) is owed for this scenario; livespec-dev-tooling-ko26ez owns it.",
+    "work_item": "livespec-dev-tooling-ko26ez"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a second worker on the same host is refused",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above (the start task run against stubbed host commands, or a host-captured run on a declared Mac host) is owed for this scenario; livespec-dev-tooling-ko26ez owns it.",
+    "work_item": "livespec-dev-tooling-ko26ez"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: the start task leaves the host's own tailnet identity unchanged",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above (the start task run against stubbed host commands, or a host-captured run on a declared Mac host) is owed for this scenario; livespec-dev-tooling-ko26ez owns it.",
+    "work_item": "livespec-dev-tooling-ko26ez"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a newly joined worker carries the admission hold",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above (the start task run against stubbed host commands, or a host-captured run on a declared Mac host) is owed for this scenario; livespec-dev-tooling-ko26ez owns it.",
+    "work_item": "livespec-dev-tooling-ko26ez"
   }
 ]
