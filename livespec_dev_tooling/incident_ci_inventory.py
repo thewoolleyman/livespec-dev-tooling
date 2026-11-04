@@ -16,7 +16,7 @@ from livespec_dev_tooling.incident_ci_policy import CiTarget
 __all__: list[str] = ["decode_inventory", "load_inventory", "render_inventory"]
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-egy3ri
 _PATH = Path(__file__).parent / "data/incident-ci-inventory.json"
-_SHA256 = "15892d0739b4fbd1a5bf41da7b0f678f289f1478441d7d9aac363605ada0662b"
+_SHA256 = "e7c992ac3e40e6bbac52310149dd7e22db5081f2c41b30ea096686001cef0510"
 _FAST = {"check-lint", "check-format"}
 _TEXT = re.compile(r"[a-z][a-z0-9-]*")
 
