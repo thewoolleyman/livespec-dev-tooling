@@ -158,7 +158,7 @@ def _record(*, application):
 
 
 def test_invalidation_survives_restart_and_refuses_every_old_admission(provisioned):
-    application, arm, query, payload, _, calls, _ = provisioned
+    application, arm, query, payload, _, calls, effects = provisioned
     before = _record(application=application)
     response, result = _invalidate(application=application, payload=payload)
     assert response[0] == "202 Accepted" and result["status"] == "invalidated"
@@ -200,9 +200,11 @@ def test_invalidation_survives_restart_and_refuses_every_old_admission(provision
             path="/bind",
             payload=dict(repository=arm.repository, head_sha="a" * 40, run_id=91),
         )[1]["status"]
-        == "refused"
+        == "admitted"
     )
-    assert _record(application=application)["registration"] is None
+    assert _record(application=application)["registration"] is not None
+    assert _callback(application=application)["status"] == "completed"
+    assert len(effects) == 1
 
 
 @pytest.mark.parametrize(

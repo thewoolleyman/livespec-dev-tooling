@@ -19,6 +19,7 @@ from livespec_dev_tooling.incident_observer_authority import CurrentAuthorityRea
 __all__: list[str] = ["ObserverQuery"]
 
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-47ij37
+# EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-wanebl
 _QUERY_FIELDS = frozenset(
     {"repository", "arm_id", "pr_number", "base_sha", "head_sha", "receipt_digest"}
 )
@@ -70,6 +71,7 @@ class ObserverQuery:
                 arm is None
                 or record.get("observer_arm_id") != query.arm_id
                 or record.get("observer_arm_bound")
+                or record.get("observer_arm_invalidated") is not None
                 or (arm.repository, arm.pr_number, arm.base_sha, arm.head_sha)
                 != (query.repository, query.pr_number, query.base_sha, query.head_sha)
                 or hashlib.sha256(arm.authority_receipt).hexdigest() != query.receipt_digest
