@@ -34,7 +34,8 @@ _ARC = _PHASE2 / "arc"
 _SCHEDULER = "ci-runner-scheduler"
 # Scale sets that name the runner scheduler before its fail-open reconciler is
 # live: exactly one canary (legacy-coordinator-agent, R301, 2026-11-04).
-_CANARY = {"values-livespec-dev-tooling.yaml"}
+# EMPTY: the canary was reverted (fail-safe path, livespec-dev-tooling-mtvxde).
+_CANARY: set[str] = set()
 
 
 def _docs() -> list[dict]:
