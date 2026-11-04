@@ -106,6 +106,13 @@ maintainer to press `close-duplicate`, which `drive` does not support for any in
 ~16:1xZ, recorded on epic `livespec-dev-tooling-6tgd2z`: "Okay, add \"close duplicate\" as an action you're allowed. You
 are allowed any actions. Make this change permanent as a rule." The separate limits in §12 still apply.
 
+**Reversible host mutations are authorized.** The coordinator, and seats acting on its direction, may perform a
+reversible host mutation without a maintainer ask. An example is a committed, revertible ansible or converge apply with
+a kill switch or a revert path. Irreversible host mutations, and secrets and credential creation, stay the
+maintainer's. The maintainer, 2026-11-04 ~05:4xZ, recorded on epic `livespec-dev-tooling-6tgd2z` at 05:50:57Z: "host
+mutations are authorized as long as they are reversible". Measured 2026-11-04: a combined poweredge-xubuntu apply sat
+blocked for hours because two seats refused to act on coordinator authority alone.
+
 Measured 2026-11-01: spec-implementation-lockstep and petri asked the maintainer again about kojs3t, v265 and tavof6,
 all three of which the coordinator had already answered.
 
@@ -198,8 +205,9 @@ run autonomously, never block."
 - A coordinator or dispatcher seat never calls AskUserQuestion, and never ends a turn waiting for an answer.
 - It decides what it can under R301 and reports the decision.
 - It never does a docs commit, push, rebase or PR wait in its own foreground turn. Each goes to a background subagent with the exact change, so the seat keeps answering peers and alerts. Maintainer correction 2026-11-02 ~18:2xZ: "You blocked yourself."
-- An ask that is genuinely the maintainer's (host mutation, secrets, a values call) goes in the tick report as plain
-  text under `FOR THE MAINTAINER (non-blocking)`, and the seat keeps looping. The item waits; the seat does not.
+- An ask that is genuinely the maintainer's (an irreversible host mutation, secrets or credential creation, a values
+  call) goes in the tick report as plain text under `FOR THE MAINTAINER (non-blocking)`, and the seat keeps looping.
+  The item waits; the seat does not.
 - Never self-wind-down (rule D).
 - **A resume goes straight into the loop.** A session resuming this plan starts the coordinator `/loop` in the same turn. The epic's `next_action` is written as `kind: human`, but that is a pointer for the next session, not a gate. Never ask the maintainer whether to start or resume the loop. Maintainer correction 2026-11-03 ~13:0xZ, after a resumed session asked about fifteen times: "Why did the loop stop? Why would you need to ask me to start it?"
 

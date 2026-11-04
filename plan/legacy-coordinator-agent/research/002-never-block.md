@@ -26,10 +26,10 @@ for the picker, which parks the whole seat. The seat stopped, and nothing it wat
    always keeps running.
 2. **Decide what can be decided.** Anything answerable with a recommendation is decided under R301 and reported
    (see CLAUDE.md "Decision authority").
-3. **Report what is genuinely the maintainer's, without blocking.** That means host mutation on a shared host,
-   secrets, and values calls. Each one goes in the tick report as plain text under `FOR THE MAINTAINER (non-blocking)`.
-   Each entry is written so it can be answered cold: what is needed, why, the options, and a recommendation. The item
-   waits; the seat does not.
+3. **Report what is genuinely the maintainer's, without blocking.** That means irreversible host mutation on a
+   shared host, secrets, and values calls. Each one goes in the tick report as plain text under
+   `FOR THE MAINTAINER (non-blocking)`. Each entry is written so it can be answered cold: what is needed, why, the
+   options, and a recommendation. The item waits; the seat does not.
 4. **Re-surface unanswered asks.** An ask stays in every tick report until it is answered. When the maintainer
    answers, the seat relays the answer verbatim to the owning seat.
 
