@@ -7,6 +7,8 @@ from dataclasses import dataclass
 __all__: list[str] = [
     "JobCallback",
     "LeafCompletion",
+    "ObserverArm",
+    "ObserverArmQuery",
     "ObserverRegistration",
     "ObserverResult",
     "RecoveryIntent",
@@ -26,6 +28,38 @@ class JobCallback:
 
 
 @dataclass(frozen=True, kw_only=True)
+class ObserverArm:
+    """Durable readiness BEFORE a merge, when no master run exists yet."""
+
+    repository: str
+    incident_item_id: str
+    attempt_id: str
+    operation_id: str
+    generation: int
+    owner: str
+    phase: str
+    pr_number: int
+    base_sha: str
+    head_sha: str
+    required_jobs: tuple[str, ...]
+    controller_release: str
+    controller_revision: str
+    authority_receipt: bytes
+
+
+@dataclass(frozen=True, kw_only=True)
+class ObserverArmQuery:
+    """Exact PR and canonical receipt identity queried by the merge entrance."""
+
+    repository: str
+    arm_id: str
+    pr_number: int
+    base_sha: str
+    head_sha: str
+    receipt_digest: str
+
+
+@dataclass(frozen=True, kw_only=True)
 class LeafCompletion:
     """One signature-verified completed job, before workflow completion."""
 
@@ -41,11 +75,13 @@ class LeafCompletion:
 
 @dataclass(frozen=True, kw_only=True)
 class ObserverRegistration:
-    """A canonical-reader-authorized snapshot, never ambient JSON authority.
+    """A trusted exact-master binding, never ambient JSON authority.
 
-    Admission calls the canonical current-authority adapter before persisting
-    this receipt. The independent controller stores it outside the tenant and
-    credential wrapper. Correction must advance its fence before new effects.
+    Standalone admission calls the canonical current reader. A pre-merge arm
+    instead grants exact later merge/run binding without a fresh tenant call;
+    its original canonical receipt and identity stay unchanged. Observed merge
+    data are effect receipts, not a new canonical lifecycle. Correction must
+    advance the independent fence before new effects.
     """
 
     repository: str
@@ -72,6 +108,7 @@ class RecoveryIntent:
     action_id: str
     registration: ObserverRegistration
     completion: LeafCompletion
+    observer_arm: ObserverArm | None = None
 
 
 @dataclass(frozen=True, kw_only=True)
