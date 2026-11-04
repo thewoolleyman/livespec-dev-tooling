@@ -897,6 +897,61 @@ nothing: the scheduler only stops placing new ones there until it drains below.
 **Reverting** is the same two profile edits back: hp to `CI_NODE_FACILITIES=none`,
 capacity 0 and the factory taint, and poweredge to 32.
 
+## Per-node churn slots derived from cores (2026-11-04)
+
+Work-item `livespec-dev-tooling-qt3q`, plan `kubernetes-sandbox-backend`
+(epic `bd-ib-nmuyjc`, livespec-orchestrator-beads-fabro tenant), at the request
+of `legacy-coordinator-agent` (P12). This section replaces the hand-picked 24 / 8
+split of the 2026-11-03 rebalance with a rule.
+
+**What went wrong at 8.** At 06:24Z on 2026-11-04 `hp-xubuntu` (16 cores,
+14500m allocatable CPU, 8 churn slots) ran 6 runner pods plus their 6 workflow
+pods at PSI60 40.7 and 0 % idle, while `poweredge-xubuntu` sat 33 % idle and
+`gmktec-xubuntu` 54 % idle (measured by session `ci-runtime-and-cost`). The
+churn slot counts JOBS. It does not weigh them by CPU, and the workflow pod that
+does a job's work requests nothing, so nothing in scheduling saw that hp's
+jobs were sharing a third as many cores per slot as the other nodes.
+
+**The rule.** Each node's `ADMISSION_CAPACITY_C` is proportional to its CPU
+count at ONE cores-per-slot ratio for the pool. Pool CPUs are poweredge 72 +
+gmktec 32 + hp 16 = 120, and the total stays 44 (see below), so the ratio is
+about 2.73 CPUs per slot:
+
+| node | CPUs | CPUs / 2.73 | before | after |
+|---|---:|---:|---:|---:|
+| `poweredge-xubuntu` | 72 | 26.4 | 24 | **27** |
+| `gmktec-xubuntu` | 32 | 11.7 | 12 | 12 |
+| `hp-xubuntu` | 16 | 5.9 | 8 | **5** |
+| **cohort total C** | **120** | | **44** | **44** |
+
+hp rounds DOWN because its 16 cores also carry its 5-CPU gate lane ("The hp
+numbers: 5 cpu and 8 Gi" below) and whatever factory sandboxes are still
+draining there; poweredge takes the remainder, which keeps the sum at 44.
+Recompute the same way when a node's core count or its co-tenants change.
+
+**Why the total stays 44.** Unchanged from the rebalance section above: the
+450-point JIT startup budget caps the summed capacity at 45, and the ten
+`nominalQuota`s and every `maxRunners` stay at the "Measured job-hours
+re-derivation at C = 44 (2026-10-22)" values. Only per-node placement moves.
+
+**Why not a CPU request on the workflow pod.** The workflow pod's node is not
+a scheduling decision. The fleet's container hook (`../container-hook/`, bundle
+2.336.0, upstream v0.7.0 plus the externals patch) runs without
+`ACTIONS_RUNNER_USE_KUBE_SCHEDULER`, so it copies the runner pod's node into
+the workflow pod's `spec.nodeName`, which bypasses the scheduler, and the pod
+shares the runner's ReadWriteOnce local-path work volume besides. A CPU request
+there therefore cannot move a job to an idle node. On a node whose requests
+are already full the kubelet rejects the pod at admission (`OutOfcpu`) and the
+CI job fails; with the kube scheduler switched on, the hook's required node
+affinity leaves it Pending until the hook's prepare timeout fails the job.
+Either way, contention would turn into red jobs rather than moved ones. The
+runner pod IS the placement decision, and the churn slot is what bounds it.
+
+**Reverting** is the two profile lines back (hp 8, poweredge 24) and the same
+apply: `just ansible-apply ansible/ci-pool.yml --tags node_extended_resource`.
+Lowering hp while it runs more than 5 runner pods evicts nothing; the scheduler
+only stops placing new ones there.
+
 ## The master-push slice for livespec-dev-tooling (2026-11-03)
 
 Work-item `livespec-dev-tooling-lzkzwb`, plan `ci-runtime-and-cost` (epic
