@@ -99,7 +99,14 @@ FROM ${PARENT_IMAGE}
 # single-use runner is minted only for a queued gate-workflow run on a
 # write-access-gated event, so a bump PR (and nothing else) can reach it.
 # ---------------------------------------------------------------
-ARG CLAUDE_AGENT_ACP_VERSION=0.44.0
+#
+# CLAUDE_AGENT_ACP_VERSION floor: its @anthropic-ai/claude-agent-sdk
+# dependency sets the Claude Code the claude-acp adapter runs, and
+# claude-opus-5-5 needs Claude Code 2.1.280 or newer (SDK 0.3.280+). 0.44.0
+# (SDK 0.3.170) failed every Opus 5.5 turn with "API Error: 400 Claude Code
+# 2.1.170 does not support this model" (livespec-dev-tooling-wrlwvk). 0.91.0
+# (2026-10-15) depends on SDK 0.3.300.
+ARG CLAUDE_AGENT_ACP_VERSION=0.91.0
 ARG CODEX_ACP_VERSION=1.10.0
 
 # bubblewrap — required by the codex-acp adapter. The chain's root
