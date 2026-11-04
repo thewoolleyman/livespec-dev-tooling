@@ -231,8 +231,15 @@ fabro_server_instances:
     # #18 (bd-ib-bpucez) and #19 (bd-ib-ljw2xg), the
     # carrier-candidate-registered-20261023 tip; petri pinned at e92b191 by
     # Cargo.lock. BUILD_INFO beside the binary records the provenance.
-    binary_source: /home/ubuntu/.local/state/fabro-web-prod/v0393-8764f1de8/fabro
-    binary_sha256: bfc64b281771643833944b9a82cd1db2b9c84766a7bf00e267c4ecff4f8319d5
+    # 2026-11-04: c39bdbded = 8764f1de8 plus thewoolleyman/fabro#22
+    # (bd-ib-gmuxd4, which also moves petri to d25a6c15), #21 and #23
+    # (bd-ib-xoh477: compressed board reads, ps filtered on the server, and a
+    # 1 KiB goal preview in run-list entries), the
+    # carrier-candidate-registered-20261023 tip. ROLLBACK: v0393-8764f1de8/fabro
+    # and bfc64b281771643833944b9a82cd1db2b9c84766a7bf00e267c4ecff4f8319d5,
+    # still staged on vps.
+    binary_source: /home/ubuntu/.local/state/fabro-web-prod/v0393-c39bdbded/fabro
+    binary_sha256: e93c96b721a356d88b9dc54da009bc4da7c820f37f7146ef888e10c1ca4f6e96
     # The tag the orchestrator workflow pins today
     # (.claude-plugin/.fabro/workflows/implement-work-item/workflow.toml,
     # python-agent-v1.136.2). On this engine the catalog, not the workflow
@@ -437,8 +444,15 @@ fabro_server_instances:
     # #18 (bd-ib-bpucez) and #19 (bd-ib-ljw2xg), the
     # carrier-candidate-registered-20261023 tip; petri pinned at e92b191 by
     # Cargo.lock. BUILD_INFO beside the binary records the provenance.
-    binary_source: /home/ubuntu/.local/state/fabro-web-prod/v0393-8764f1de8/fabro
-    binary_sha256: bfc64b281771643833944b9a82cd1db2b9c84766a7bf00e267c4ecff4f8319d5
+    # 2026-11-04: c39bdbded = 8764f1de8 plus thewoolleyman/fabro#22
+    # (bd-ib-gmuxd4, which also moves petri to d25a6c15), #21 and #23
+    # (bd-ib-xoh477: compressed board reads, ps filtered on the server, and a
+    # 1 KiB goal preview in run-list entries), the
+    # carrier-candidate-registered-20261023 tip. ROLLBACK: v0393-8764f1de8/fabro
+    # and bfc64b281771643833944b9a82cd1db2b9c84766a7bf00e267c4ecff4f8319d5,
+    # still staged on vps.
+    binary_source: /home/ubuntu/.local/state/fabro-web-prod/v0393-c39bdbded/fabro
+    binary_sha256: e93c96b721a356d88b9dc54da009bc4da7c820f37f7146ef888e10c1ca4f6e96
     # The fleet instance's catalog, entry for entry; the reasons for each
     # entry are given there. Bump the images together with it.
     environments:
@@ -565,8 +579,15 @@ fabro_server_instances:
     # #18 (bd-ib-bpucez) and #19 (bd-ib-ljw2xg), the
     # carrier-candidate-registered-20261023 tip; petri pinned at e92b191 by
     # Cargo.lock. BUILD_INFO beside the binary records the provenance.
-    binary_source: /home/ubuntu/.local/state/fabro-web-prod/v0393-8764f1de8/fabro
-    binary_sha256: bfc64b281771643833944b9a82cd1db2b9c84766a7bf00e267c4ecff4f8319d5
+    # 2026-11-04: c39bdbded = 8764f1de8 plus thewoolleyman/fabro#22
+    # (bd-ib-gmuxd4, which also moves petri to d25a6c15), #21 and #23
+    # (bd-ib-xoh477: compressed board reads, ps filtered on the server, and a
+    # 1 KiB goal preview in run-list entries), the
+    # carrier-candidate-registered-20261023 tip. ROLLBACK: v0393-8764f1de8/fabro
+    # and bfc64b281771643833944b9a82cd1db2b9c84766a7bf00e267c4ecff4f8319d5,
+    # still staged on vps.
+    binary_source: /home/ubuntu/.local/state/fabro-web-prod/v0393-c39bdbded/fabro
+    binary_sha256: e93c96b721a356d88b9dc54da009bc4da7c820f37f7146ef888e10c1ca4f6e96
     # The tag FOLLOWS homelab's own workflow pin
     # (.fabro/workflows/implement-work-item/workflow.toml in mi-homelab/homelab,
     # python-agent-v1.126.0), not the orchestrator's; bump the two together.
