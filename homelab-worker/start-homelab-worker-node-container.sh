@@ -16,7 +16,8 @@
 #      started in place — never stopped, recreated or deleted. A VM whose
 #      CPUs, memory or disk differ from the declaration is refused, naming
 #      the setting, instead of being rebuilt. A new VM gets an XFS data disk,
-#      <host>-homelab-worker-data, for the worker's containerd store and caches.
+#      hwdata (Lima labels it lima-hwdata; an XFS label holds at most 12
+#      characters), for the worker's containerd store and caches.
 #   6. The VM capability probe (probe-vm-capabilities.sh) runs inside the VM;
 #      any missing capability stops the task, naming each with its remedy,
 #      before the worker container starts. The report is kept beside the
@@ -96,7 +97,7 @@ for key in WORKER_HOST_OS WORKER_VM_CPUS WORKER_VM_MEMORY_GIB WORKER_VM_DISK_GIB
 done
 
 worker="$host-homelab-worker"
-data_disk="$worker-data"
+data_disk="hwdata"
 
 os="$(uname -s)"
 if [ "$os" != "$WORKER_HOST_OS" ]; then
