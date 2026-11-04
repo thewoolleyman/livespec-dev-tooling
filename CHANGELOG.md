@@ -58,6 +58,29 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.172.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.171.0...v1.172.0) (2026-11-04)
+
+
+### Features
+
+* **ci-runner:** ci-runner-scheduler places runner pods by churn-slot use (livespec-dev-tooling-mtvxde) ([fd3a9bb](https://github.com/thewoolleyman/livespec-dev-tooling/commit/fd3a9bbeb47c2762ade9f463c71f1250f0e86565))
+* **incident:** revoke CI admission while retaining merged recovery (livespec-dev-tooling-wanebl) ([9a7ec04](https://github.com/thewoolleyman/livespec-dev-tooling/commit/9a7ec04523217a2e6759577f962957fcbbfc7f8a))
+* **incident:** revoke exact pre-merge CI arms durably (livespec-dev-tooling-47ij37) ([bf46b55](https://github.com/thewoolleyman/livespec-dev-tooling/commit/bf46b55a0225efae6ad040ee45ad331ac193e805))
+* select incident hooks before ordinary prechecks (livespec-dev-tooling-cerkbn) ([c7712f3](https://github.com/thewoolleyman/livespec-dev-tooling/commit/c7712f377d3ec36ed0140c1ccbcb6bbb751cff57))
+
+
+### Bug Fixes
+
+* flake-retry computes the change set of a depth-1 master push checkout (livespec-dev-tooling-bejgoo) ([89fc169](https://github.com/thewoolleyman/livespec-dev-tooling/commit/89fc169cb27833755e649aafe5b1c38fe5971068))
+* flake-retry computes the change set of a depth-1 pull-request checkout (livespec-dev-tooling-bejgoo) ([7be8e63](https://github.com/thewoolleyman/livespec-dev-tooling/commit/7be8e63a44f40dca3ca5f8441ff2ba3c620abbe3))
+* flake-retry names a withheld retry and the failed git query in the terminal summary (livespec-dev-tooling-bejgoo) ([e958512](https://github.com/thewoolleyman/livespec-dev-tooling/commit/e958512868adc78d80b96b99b4f01fd742c0dc08))
+* **incident:** recover hook receipts before repeating local gates (livespec-dev-tooling-cerkbn) ([bb896d4](https://github.com/thewoolleyman/livespec-dev-tooling/commit/bb896d48503f4e30c795cddae59af474f38a2f68))
+
+
+### Reverts
+
+* **ci-runner:** CI workflow pod pytest workers back from 6 to 3 ([77e3660](https://github.com/thewoolleyman/livespec-dev-tooling/commit/77e36602505e4648db5833dee13fe6ba2afabec6))
+
 ## [1.171.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.170.0...v1.171.0) (2026-11-04)
 
 
