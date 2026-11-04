@@ -106,11 +106,13 @@ data:
 # multiple of the last build: a ratchet is self-referential, and the point is
 # an alarm when the union of the routed locks drifts — re-deriving these is a
 # reviewed commit against the measured union in README.md's cost table.
-# 1,000,000,000 bytes / 20,000 files is ~2.5x the 2026-09-04 nine-lock union
-# (379 MB / 8,070 files); the runaway hardlink-seeded generation that
-# motivated the rebuild was 1,388 MB / 159,409 files, so BOTH axes trip well
-# before that shape recurs. Injected into the populator as WARM_BUDGET_BYTES
-# / WARM_BUDGET_FILES; the populator records the values in effect in every
+# 1,300,000,000 bytes / 40,000 files was re-derived 2026-11-04 from the
+# measured ten-lock union (652 MB / 21,572 files at its largest) plus the
+# git object seed's expected add (README.md "Budget", "Re-derivation"); the
+# runaway hardlink-seeded generation that motivated the rebuild was
+# 1,388 MB / 159,409 files, so BOTH axes trip well before that shape recurs.
+# A test fails when these numbers differ from the ones README.md states.
+# Injected into the populator as WARM_BUDGET_BYTES / WARM_BUDGET_FILES; the populator records the values in effect in every
 # generation's manifest and in last-run.json, which the host sweep emits as
 # livespec.ci_warm.budget_*. A generation over EITHER number is not
 # published (previous generation stays live, exit 3).
@@ -120,8 +122,8 @@ metadata:
   name: warm-cache-budget
   namespace: ci-warm-cache
 data:
-  bytes: "1000000000"
-  files: "20000"
+  bytes: "1300000000"
+  files: "40000"
 ---
 apiVersion: batch/v1
 kind: CronJob

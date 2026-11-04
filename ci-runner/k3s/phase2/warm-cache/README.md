@@ -262,15 +262,62 @@ each be at or under the budget, else the generation is renamed
 with both numbers, and the job exits 3. Fixed numbers, not a multiple of
 the last build: a ratchet is self-referential, and the point is an alarm
 when the union drifts; re-deriving it is a reviewed commit against the
-cost table above. Values: **1,000,000,000 bytes and 20,000 files** (union
-379 MB / 8,070 files; the runaway generation was 1,388 MB / 159,409 files,
-so both axes trip well before that shape recurs). Home: the
+measured union. Values: **1,300,000,000 bytes and 40,000 files** (re-derived
+2026-11-04, below). Home: the
 `warm-cache-budget` ConfigMap (`bytes`, `files`) in
 `warm-cache-cronjob.yaml`, injected as `WARM_BUDGET_BYTES` /
 `WARM_BUDGET_FILES` via `configMapKeyRef`; the populator refuses to start
 without them, records the values in effect in every generation's manifest
 and in `last-run.json`, and the sweep emits them as
-`livespec.ci_warm.budget_*` so a chart can draw the line.
+`livespec.ci_warm.budget_*` so a chart can draw the line. A test
+(`tests/spec/test_runner_pool_cache_tiers.py`) fails when the ConfigMap's
+`bytes` or `files` differ from the bolded values above.
+
+### Re-derivation, 2026-11-04 (livespec-dev-tooling-243dzr)
+
+The 2026-09-04 budget (1,000,000,000 bytes / 20,000 files, ~2.5x the
+nine-lock union of 379 MB / 8,070 files) stopped fitting the fleet: the
+union is now ten locks and oscillates across the file line from one lock
+bump to the next. The populator refused 3 of 6 runs on 2026-11-03
+(`REFUSED (over budget); exit 3`), and each refusal left the symlink on the
+last published generation, so the six repositories whose locks changed
+seeded a generation missing their newest distributions and fetched those
+through the proxy.
+
+| measurement (2026-11-03, `kubernetes-sandbox-backend` lane, populate job logs) | bytes | files |
+|---|---|---|
+| published `20261103T033003Z`, 116 locked `(name, version)` pairs, 350 referenced entries | 580,128,682 | 17,935 |
+| refused `20261103T040003Z`, 117 pairs, 353 entries (the largest measured) | 652,278,889 | 21,572 |
+| the two measured generations' spread, one lock bump | +72 MB | +3,637 |
+| the 2026-09-04 budget | 1,000,000,000 | 20,000 |
+
+The refusal was on the FILE axis only: bytes were at 65 % of budget and the
+populate took about 40 s, so neither bytes, time nor cluster contention was
+the cause.
+
+The git object seed (livespec-dev-tooling-dciyg5) will add to the same
+tree: about 7 repositories at 20-40 MB of packed objects each, a handful
+of files per repository. Expected add: 140-280 MB and under 100 files.
+
+| basis | bytes | files |
+|---|---|---|
+| largest measured union | 652 MB | 21,572 |
+| plus git seed (upper estimate) | + 280 MB | + 100 |
+| expected ceiling | ~932 MB | ~21,700 |
+| **budget** | **1,300,000,000 (~1.4x)** | **40,000 (~1.8x)** |
+
+The bytes number is held under the 1,388 MB runaway generation of
+2026-09-04 and the file number far under its 159,409 files, so both axes
+still trip well before that shape recurs; the file axis carries more
+headroom because it is the axis that tripped and the one that grows with
+every lock bump (about 3.6k files for one pair).
+
+Per-start seed cost: the reflink seed measured 13.3 s for 191k files
+(2026-09-06, XFS on NVMe), about 70 us per file, so a generation at the
+40,000-file ceiling costs about 2.8 s per start (about 1.5 s at the current
+21.6k files), during PVC provisioning and absorbed by the runner pod's
+volume wait; the bytes are not copied (reflink), so the byte axis adds no
+per-start cost.
 
 ## Metrics
 
