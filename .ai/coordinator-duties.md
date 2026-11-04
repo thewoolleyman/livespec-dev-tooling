@@ -106,6 +106,17 @@ maintainer to press `close-duplicate`, which `drive` does not support for any in
 ~16:1xZ, recorded on epic `livespec-dev-tooling-6tgd2z`: "Okay, add \"close duplicate\" as an action you're allowed. You
 are allowed any actions. Make this change permanent as a rule." The separate limits in §12 still apply.
 
+**A refused valve is repaired by the coordinator in the same turn.** When `approve:` or `accept:` refuses on a
+ledger-record defect, such as a prose line inside `## Definition of Done` or a References line missing the governing
+heading the judgement returned, the coordinator does three things itself. It reads the whole refusal
+(`drive.py ... --json`, the full `summary`), applies every named remedy to the record with `bd update <id> --body-file`,
+and re-presses the valve. It then records the basis on the item and tells the owning seat it is done. It never sends the
+fix back to a seat and waits. A seat is asked only when the remedy needs that seat's own scope or product judgement. The
+maintainer, 2026-11-04 ~14:0xZ, recorded on epic `livespec-dev-tooling-6tgd2z`: "Why dicd you block on that?" Measured
+that day: livespec-dev-tooling-wanebl's approve was refused twice, first on its DoD layout and then on a missing
+`## Expedited incident execution` reference. The coordinator first handed the fix to a Codex seat with no watcher, then
+made both edits itself in about two minutes and approved it green.
+
 **Reversible host mutations are authorized.** The coordinator, and seats acting on its direction, may perform a
 reversible host mutation without a maintainer ask. An example is a committed, revertible ansible or converge apply with
 a kill switch or a revert path. Irreversible host mutations, and secrets and credential creation, stay the
