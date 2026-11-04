@@ -33,8 +33,10 @@ ci_converge_unit_production_service: converge-ci-stack.service
 # every server has applied it, then delete it in a later change.
 ci_converge_unit_retired_scratch_units:
   - un3zhi-negative-20261103t233754z.service
+  - un3zhi-replay-20261104t022206z.service
 ci_converge_unit_retired_scratch_dirs:
   - /var/tmp/un3zhi-negative-20261103t233754z
+  - /var/tmp/un3zhi-replay-20261104t022206z
 # Every directory install-converge-unit.sh creates, all 0755. Listed rather than
 # left to the copies, because --check cannot see past a missing parent.
 ci_converge_unit_directories:
