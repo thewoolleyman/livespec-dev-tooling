@@ -324,6 +324,7 @@ Every tick reports, in this order:
      When a slot holds two plans (for example 1a), both nest inside that one block. Every number in scope appears,
      including a plan that is only waiting.
 4. The actions taken this tick.
+4.5. STRUCTURAL: the one pattern behind this tick's routed items, or `none seen` (§10).
 5. `FOR THE MAINTAINER (non-blocking)`, re-derived every tick (§7). It reads `none` if there is nothing to ask.
 
 **There is no slot 0 and no override.** Urgency is expressed only by the order of the list. A stability item that
@@ -392,6 +393,16 @@ the serializer that tick, name its mechanism, and route the fix as a stop-the-li
 hold as the constraint before checking that it binds. Also check every tick that the queue head follows the
 priorities record: an arrival-ordered queue buries top-priority work. Read `.ai/ci-node-capacity-reads.md` before
 any cap, hold or throttle call.
+
+**A change needed in more than one place is the finding.** When one intended change has to be made in more than one
+place, or a fix needs a second follow-up of the same kind, stop and report the duplication itself, with the
+consolidation, in that same tick. Before acting on any cap, limit or hold, name the one that actually binds, measured.
+Every tick report carries a STRUCTURAL line naming the one pattern behind that tick's routed items, or `none seen`. The
+maintainer, 2026-11-04 ~18:5xZ, recorded on epic `livespec-dev-tooling-6tgd2z`: "why can't you see the forest for the
+trees on things like the duplicate config values?" Measured that day: raising factory concurrency from 16 to 20 was
+routed three times, one knob at a time (the launcher `fleet-cap`, then `dispatcher.wip_cap`, then the Fabro server's
+`max_concurrent_runs`), with `FLEET_LAUNCH_GMK_CAP` a fourth copy. The coordinator reported "cap file 20" as progress
+while 16 still bound, and no one asked why one queue had several numbers until the maintainer did.
 
 The maintainer, 2026-11-02 ~16:5xZ: "I am also very disappointed in you that you did not notice the serialization
 bottleneck yourself, resulting in underutilization of the infrastructure. That is one of your main mandates. You are
