@@ -73,6 +73,39 @@ cargo registry caching owned by the ci-runner-cache-tiers plan. A RAM disk
 for work volumes buys nothing: the NVMe work-volume tier already runs at
 1–3 ms with iowait ~0.
 
+## Host CPU pressure counts throttle stall — split it by cgroup
+
+`/proc/pressure/cpu` `some` counts every runnable task that is not running, and
+that includes a task held back by its own cgroup's CFS quota (`cpu.max`). On a
+node that carries Guaranteed, quota-limited factory sandboxes beside the CI
+pool, the host figure therefore rises with sandbox throttling even while cores
+sit idle. Measured 2026-11-04 14:24Z on `poweredge-xubuntu`: host PSI `some`
+avg60 88.7 with 39.3 % idle, about 47 of 72 cores busy (`kubepods.slice` 44.3,
+`system.slice` 2.3). The 4-CPU sandboxes were throttled in 30-84 % of their CFS
+periods (one reached its own `cpu.pressure` avg60 92.3), while the BestEffort CI
+pods' pressure read about 1-1.7. Reading the host figure as saturation cost a
+cap decision that day. The 13:16Z revert of per-job test parallelism was real
+saturation (0.24 % idle); the later readings of 75-91 were mostly throttle
+stall.
+
+So never take host PSI alone as a saturation signal or a revert trigger on a
+mixed node. Read:
+
+- **idle %** from `/proc/stat`, or `top`'s `%Cpu(s)` line, for "is there CPU
+  left";
+- **`usage_usec`** of `kubepods.slice` and `system.slice`, sampled twice a few
+  seconds apart, for who is using it;
+- **`cpu.pressure`** of the BestEffort slice that holds the CI pods
+  (`kubepods.slice/kubepods-besteffort.slice`), for whether CI is actually
+  waiting on CPU;
+- **`cpu.stat` `nr_throttled` / `nr_periods`** per Guaranteed sandbox, for
+  whether a sandbox is limit-bound.
+
+A node is saturated when idle % is under about 5 AND the CI slice's pressure
+avg60 is above about 30 (`legacy-coordinator-agent` ruling, 2026-11-04,
+recorded on `livespec-dev-tooling-6e5pyj`). Sandbox throttling with idle cores
+is a sizing question for the sandbox limit, not a sign the node is full.
+
 ## Two instruments that lied, and one that only looked like it
 
 - **`iostat -dx` column offsets.** In sysstat 12.x the write columns are
