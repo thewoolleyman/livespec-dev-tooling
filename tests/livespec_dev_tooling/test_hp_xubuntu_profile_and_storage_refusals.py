@@ -261,10 +261,10 @@ def test_the_committed_hp_profile_parses_as_a_runner_only_agent_at_capacity_eigh
         f"hp takes CI runner pods without carrying storage tiers, so its posture must be "
         f"`runner-only`; the parser read {parsed['CI_NODE_FACILITIES']!r}"
     )
-    assert parsed["ADMISSION_CAPACITY_C"] == "5", (
-        f"hp advertises 5 churn slots, derived from its 16 cores at the pool's one "
-        f"cores-per-slot ratio so the cohort's quota stays 44 (poweredge 27 + gmktec 12 + "
-        f"hp 5); the parser read {parsed['ADMISSION_CAPACITY_C']!r}"
+    assert parsed["ADMISSION_CAPACITY_C"] == "8", (
+        f"hp advertises 8 churn slots in the interim split that caps poweredge at 18 while "
+        f"keeping the cohort's quota at 44 (poweredge 18 + gmktec 18 + hp 8); the parser "
+        f"read {parsed['ADMISSION_CAPACITY_C']!r}"
     )
     assert "node-role/ci=" not in parsed["NODE_TAINTS"], (
         f"hp must carry no node-role/ci taint: the capacity opens Kueue's admission and only "
