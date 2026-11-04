@@ -23,4 +23,9 @@ digest="$(
         git -C "$root" diff --binary HEAD -- .
     } | sha256sum | awk '{ print $1 }'
 )"
-printf 'git-tree:%s\n' "$digest"
+# EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-xluwqj
+# Bind the receipt to the measured bytes as well as the tree. A focused run
+# can overwrite .coverage without changing any tracked source file.
+coverage_file="${COVERAGE_FILE:-.coverage}"
+coverage_digest="$(sha256sum "$coverage_file" | awk '{ print $1 }')"
+printf 'git-tree:%s:normal:full-suite:coverage:%s\n' "$digest" "$coverage_digest"
