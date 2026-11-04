@@ -7,6 +7,8 @@ import os
 import re
 import subprocess
 import tempfile
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from functools import partial
 from pathlib import Path
 
@@ -50,6 +52,15 @@ def _sha(*, value: str) -> bool:
 
 
 def scope_matches_git(*, root: Path, scope: LandedIncident, expected_head: str) -> bool:
+    """Verify immutable scope using an isolated object view for every Git read."""
+    with _object_view(root=root) as (administration, objects):
+        run = partial(_git, root=root, administration=administration, objects=objects)
+        return _scope_matches_git(root=root, scope=scope, expected_head=expected_head, run=run)
+
+
+def _scope_matches_git(
+    *, root: Path, scope: LandedIncident, expected_head: str, run: Callable[..., bytes]
+) -> bool:
     """Verify full chain, trees and binary patch against authenticated forge scope."""
     hashes = (
         scope.before_sha,
@@ -69,7 +80,7 @@ def scope_matches_git(*, root: Path, scope: LandedIncident, expected_head: str) 
     ):
         return False
     chain = (
-        _git(root=root, args=("rev-list", "--reverse", f"{scope.before_sha}..{scope.merge_sha}"))
+        run(args=("rev-list", "--reverse", f"{scope.before_sha}..{scope.merge_sha}"))
         .decode()
         .splitlines()
     )
@@ -77,18 +88,15 @@ def scope_matches_git(*, root: Path, scope: LandedIncident, expected_head: str) 
         return False
     previous = scope.before_sha
     for commit, tree in zip(scope.landed_commits, scope.landed_trees, strict=True):
-        parents = (
-            _git(root=root, args=("rev-list", "--parents", "-n", "1", commit)).decode().split()
-        )
-        actual_tree = _git(root=root, args=("rev-parse", commit + "^{tree}")).decode().strip()
+        parents = run(args=("rev-list", "--parents", "-n", "1", commit)).decode().split()
+        actual_tree = run(args=("rev-parse", commit + "^{tree}")).decode().strip()
         if parents != [commit, previous] or actual_tree != tree:
             return False
         previous = commit
-    _ = _git(root=root, args=("merge-base", "--is-ancestor", scope.merge_sha, expected_head))
+    _ = run(args=("merge-base", "--is-ancestor", scope.merge_sha, expected_head))
     patch = _patch(root=root, scope=scope)
     paths = (
-        _git(
-            root=root,
+        run(
             args=(
                 "diff",
                 "--no-renames",
@@ -110,29 +118,9 @@ def scope_matches_git(*, root: Path, scope: LandedIncident, expected_head: str) 
     )
 
 
-def _patch(*, root: Path, scope: LandedIncident) -> bytes:
-    return _git(
-        root=root,
-        args=(
-            "diff",
-            "--binary",
-            "--full-index",
-            "--no-ext-diff",
-            "--no-textconv",
-            scope.before_sha,
-            scope.merge_sha,
-            "--",
-        ),
-    )
-
-
-def build_inverse(*, root: Path, scope: LandedIncident, expected_head: str) -> InversePlan:
-    """Apply the entire inverse with three-way merge in an isolated scratch index.
-
-    The original index, checkout, branch and untracked files are untouched.
-    A same-line conflict leaves only disposable index state and raises Git's
-    explicit refusal; there is no fallback to restoring full parent files.
-    """
+@contextmanager
+def _object_view(*, root: Path) -> Iterator[tuple[Path, str]]:
+    """Read immutable objects without the source checkout's configuration or attributes."""
     with tempfile.TemporaryDirectory(prefix="incident-inverse-") as temporary:
         administration = Path(temporary) / "repository.git"
         object_format = _git(root=root, args=("rev-parse", "--show-object-format")).decode().strip()
@@ -153,9 +141,41 @@ def build_inverse(*, root: Path, scope: LandedIncident, expected_head: str) -> I
         )
         (administration / "info").mkdir(exist_ok=True)
         _ = (administration / "info" / "attributes").write_text(
-            "* merge=text -filter -ident -text -eol -working-tree-encoding\n", encoding="utf-8"
+            "* merge=text !diff -filter -ident -text -eol -working-tree-encoding\n",
+            encoding="utf-8",
         )
-        index = str(Path(temporary) / "index")
+        yield administration, objects
+
+
+def _patch(*, root: Path, scope: LandedIncident) -> bytes:
+    # A source-local diff/color setting cannot change the authenticated patch.
+    with _object_view(root=root) as (administration, objects):
+        return _git(
+            root=root,
+            administration=administration,
+            objects=objects,
+            args=(
+                "diff",
+                "--binary",
+                "--full-index",
+                "--no-ext-diff",
+                "--no-textconv",
+                scope.before_sha,
+                scope.merge_sha,
+                "--",
+            ),
+        )
+
+
+def build_inverse(*, root: Path, scope: LandedIncident, expected_head: str) -> InversePlan:
+    """Apply the entire inverse with three-way merge in an isolated scratch index.
+
+    The original index, checkout, branch and untracked files are untouched.
+    A same-line conflict leaves only disposable index state and raises Git's
+    explicit refusal; there is no fallback to restoring full parent files.
+    """
+    with _object_view(root=root) as (administration, objects):
+        index = str(administration.parent / "index")
         run = partial(_git, root=root, administration=administration, objects=objects, index=index)
         _ = run(args=("read-tree", expected_head))
         _ = run(
