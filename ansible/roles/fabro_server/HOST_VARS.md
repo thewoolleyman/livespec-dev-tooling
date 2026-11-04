@@ -818,7 +818,10 @@ the same way. Later still on 2026-11-04 all three move to `da6c801`: `c39bdbd`
 plus `thewoolleyman/fabro#24` (livespec-orchestrator-beads-fabro `bd-ib-uctbct`),
 rolled out the same way. Then all three move to `0a867ce`: `da6c801` plus
 `thewoolleyman/fabro#25` (livespec-orchestrator-beads-fabro `bd-ib-dmjsmd`), the
-candidate and mi-homelab first and the fleet instance in its next cancel-for-restart window. The rollback target is named in `host_vars` beside the pin and never
+candidate and mi-homelab first and the fleet instance in its next cancel-for-restart window. The candidate
+alone then moves to `85af354`: `0a867ce` plus `thewoolleyman/fabro#26`
+(livespec-orchestrator-beads-fabro `bd-ib-m7lxgn`), proved there at 0 runs before
+the other two instances take it. The rollback target is named in `host_vars` beside the pin and never
 here, because that is the file an operator rolling back edits.
 
 `fabro_server_host_checkout_remote` is declared because the host had no
