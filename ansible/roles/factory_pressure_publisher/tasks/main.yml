@@ -1,0 +1,118 @@
+---
+# factory_pressure_publisher: install publish-node-cpu-pressure.sh and its
+# 30-second timer on this factory node (orchestrator bd-ib-plon2p).
+#
+# NO NEW CREDENTIAL. The script writes a status condition through the
+# `nodes/status` subresource. On an agent it authenticates with the scoped
+# node-status kubeconfig that node_status_credential delivers (get+patch on
+# nodes/status for this one node); on the server with k3s's admin kubeconfig.
+# That is why this role runs after node_status_credential in ci-pool.yml.
+#
+# Its own copy of the node's profile, under its own name, so this role owns
+# every file it installs (node_extended_resource owns <node>.env).
+
+- name: Read this node's committed phase0 profile
+  ansible.builtin.set_fact:
+    factory_pressure_publisher_profile_node: >-
+      {{ _fpp_profile_text | regex_findall('^NODE_NAME=(.*)$', multiline=True) | first | default('') }}
+    factory_pressure_publisher_profile_role: >-
+      {{ _fpp_profile_text | regex_findall('^CLUSTER_ROLE=(.*)$', multiline=True) | first | default('') }}
+  vars:
+    _fpp_profile_text: "{{ lookup('ansible.builtin.file', factory_pressure_publisher_profile) }}"
+
+- name: Refuse a profile that does not name this host
+  ansible.builtin.assert:
+    that:
+      - factory_pressure_publisher_profile_node == inventory_hostname
+      - factory_pressure_publisher_profile_role in ['server', 'agent']
+    fail_msg: >-
+      profile {{ factory_pressure_publisher_profile }} must name this host
+      (NODE_NAME={{ factory_pressure_publisher_profile_node }} vs {{ inventory_hostname }})
+      and carry CLUSTER_ROLE server or agent (got '{{ factory_pressure_publisher_profile_role }}')
+
+- name: Select this node's k3s unit and its installed profile copy path
+  ansible.builtin.set_fact:
+    factory_pressure_publisher_k3s_unit: >-
+      {{ 'k3s.service' if factory_pressure_publisher_profile_role == 'server' else 'k3s-agent.service' }}
+    factory_pressure_publisher_installed_profile: >-
+      {{ factory_pressure_publisher_lib_dir }}/{{ inventory_hostname }}.pressure-publisher.env
+
+- name: Create the pool library directory
+  ansible.builtin.file:
+    path: "{{ factory_pressure_publisher_lib_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+
+- name: Install the pressure publisher script
+  ansible.builtin.copy:
+    src: "{{ factory_pressure_publisher_phase2_dir }}/factory-pressure-placement/{{ factory_pressure_publisher_script }}"
+    dest: "{{ factory_pressure_publisher_lib_dir }}/{{ factory_pressure_publisher_script }}"
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+
+- name: Install this node's profile copy for the publisher
+  ansible.builtin.copy:
+    src: "{{ factory_pressure_publisher_profile }}"
+    dest: "{{ factory_pressure_publisher_installed_profile }}"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+
+- name: Check whether the publisher service is already installed
+  ansible.builtin.stat:
+    path: "{{ factory_pressure_publisher_unit_dir }}/{{ factory_pressure_publisher_service }}"
+  register: factory_pressure_publisher_service_present
+  become: true
+
+- name: Render the publisher service from the committed unit
+  ansible.builtin.set_fact:
+    factory_pressure_publisher_rendered_unit: >-
+      {{ lookup('ansible.builtin.file',
+      factory_pressure_publisher_phase2_dir ~ '/factory-pressure-placement/'
+      ~ factory_pressure_publisher_service)
+      | replace('K3S_UNIT_PLACEHOLDER', factory_pressure_publisher_k3s_unit)
+      | replace('PROFILE_PATH_PLACEHOLDER', factory_pressure_publisher_installed_profile) }}
+
+- name: Refuse a rendered unit that still carries a placeholder
+  ansible.builtin.assert:
+    that:
+      - "'_PLACEHOLDER' not in factory_pressure_publisher_rendered_unit"
+    fail_msg: the rendered {{ factory_pressure_publisher_service }} still contains a _PLACEHOLDER token
+
+- name: Install the publisher service
+  ansible.builtin.copy:
+    content: |
+      {{ factory_pressure_publisher_rendered_unit }}
+    dest: "{{ factory_pressure_publisher_unit_dir }}/{{ factory_pressure_publisher_service }}"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+  notify: Reload systemd for the pressure publisher
+
+- name: Install the publisher timer
+  ansible.builtin.copy:
+    src: "{{ factory_pressure_publisher_phase2_dir }}/factory-pressure-placement/{{ factory_pressure_publisher_timer }}"
+    dest: "{{ factory_pressure_publisher_unit_dir }}/{{ factory_pressure_publisher_timer }}"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+  notify: Reload systemd for the pressure publisher
+
+- name: Publish a changed unit before arming it
+  ansible.builtin.meta: flush_handlers
+
+- name: Enable and start the publisher timer
+  ansible.builtin.systemd_service:
+    name: "{{ factory_pressure_publisher_timer }}"
+    enabled: true
+    state: started
+  become: true
+  when: not ansible_check_mode or factory_pressure_publisher_service_present.stat.exists

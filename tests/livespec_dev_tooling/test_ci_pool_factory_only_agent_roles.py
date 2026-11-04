@@ -141,6 +141,10 @@ _POWEREDGE_ROLES = (
     "node_extended_resource",
     "node_taints",
     "node_labels",
+    # Each factory node publishes its CPU pressure (orchestrator bd-ib-plon2p).
+    "factory_pressure_publisher",
+    # And the server steers new sandbox pods off a pressured node.
+    "factory_pressure_reconciler",
     "wedged_runner",
     "runner_pod_lifecycle",
     "arc_log_archive",
@@ -204,6 +208,8 @@ _GMKTEC_ROLES = (
     "node_extended_resource",
     "node_taints",
     "node_labels",
+    # Each factory node publishes its CPU pressure (orchestrator bd-ib-plon2p).
+    "factory_pressure_publisher",
     "wedged_runner",
     "runner_pod_lifecycle",
     "arc_log_archive",

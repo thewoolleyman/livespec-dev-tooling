@@ -267,6 +267,19 @@
     # exactly why the label could not be expressed as "the tainted ones".
     - role: node_labels
       tags: [node_labels]
+    # After the credential and the factory label: each factory node publishes
+    # its own CPU pressure as a node condition, through the node-status
+    # credential node_status_credential delivered (orchestrator bd-ib-plon2p).
+    - role: factory_pressure_publisher
+      tags: [factory_pressure_placement]
+      when: ci_pool_factory_node == 'true'
+    # And the server compares those readings and steers NEW factory sandbox pods
+    # off a pressured node with a PreferNoSchedule taint, reserving the gates
+    # quota (README in phase2/factory-pressure-placement/). Server-only: it runs
+    # under the admin kubeconfig.
+    - role: factory_pressure_reconciler
+      tags: [factory_pressure_placement]
+      when: cluster_role == 'server'
     # 5/10 — wedged-runner sweep; self-gated.
     - role: wedged_runner
       tags: [wedged_runner]

@@ -1,0 +1,56 @@
+---
+# factory_pressure_reconciler: install reconcile-factory-pressure-taint.sh and
+# its 30-second timer on the k3s server (orchestrator bd-ib-plon2p). It runs
+# under k3s's admin kubeconfig, which only the server holds, so ci-pool.yml
+# gates this role on cluster_role == 'server'.
+
+- name: Create the pool library and state directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  loop:
+    - "{{ factory_pressure_reconciler_lib_dir }}"
+    - "{{ factory_pressure_reconciler_state_dir }}"
+  become: true
+
+- name: Install the pressure reconciler script
+  ansible.builtin.copy:
+    src: "{{ factory_pressure_reconciler_phase2_dir }}/factory-pressure-placement/{{ factory_pressure_reconciler_script }}"
+    dest: "{{ factory_pressure_reconciler_lib_dir }}/{{ factory_pressure_reconciler_script }}"
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+
+- name: Check whether the reconciler service is already installed
+  ansible.builtin.stat:
+    path: "{{ factory_pressure_reconciler_unit_dir }}/{{ factory_pressure_reconciler_service }}"
+  register: factory_pressure_reconciler_service_present
+  become: true
+
+- name: Install the reconciler service and timer
+  ansible.builtin.copy:
+    src: "{{ factory_pressure_reconciler_phase2_dir }}/factory-pressure-placement/{{ item }}"
+    dest: "{{ factory_pressure_reconciler_unit_dir }}/{{ item }}"
+    owner: root
+    group: root
+    mode: "0644"
+  loop:
+    - "{{ factory_pressure_reconciler_service }}"
+    - "{{ factory_pressure_reconciler_timer }}"
+  become: true
+  notify: Reload systemd for the pressure reconciler
+
+- name: Publish a changed unit before arming it
+  ansible.builtin.meta: flush_handlers
+
+- name: Enable and start the reconciler timer
+  ansible.builtin.systemd_service:
+    name: "{{ factory_pressure_reconciler_timer }}"
+    enabled: true
+    state: started
+  become: true
+  when: not ansible_check_mode or factory_pressure_reconciler_service_present.stat.exists

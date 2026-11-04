@@ -1,0 +1,12 @@
+---
+# factory_pressure_publisher: each FACTORY_NODE=true pool node publishes its own
+# CPU pressure as the LivespecCPUPressure node condition (orchestrator
+# bd-ib-plon2p). See ../../../ci-runner/k3s/phase2/factory-pressure-placement/README.md.
+factory_pressure_publisher_phase2_dir: "{{ role_path }}/../../../ci-runner/k3s/phase2"
+factory_pressure_publisher_profiles_dir: "{{ role_path }}/../../../ci-runner/k3s/phase0-bare-metal/profiles"
+factory_pressure_publisher_profile: "{{ factory_pressure_publisher_profiles_dir }}/{{ inventory_hostname }}.env"
+factory_pressure_publisher_lib_dir: /usr/local/lib/ci-runner-k3s
+factory_pressure_publisher_unit_dir: /etc/systemd/system
+factory_pressure_publisher_script: publish-node-cpu-pressure.sh
+factory_pressure_publisher_service: publish-node-cpu-pressure.service
+factory_pressure_publisher_timer: publish-node-cpu-pressure.timer

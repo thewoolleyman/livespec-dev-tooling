@@ -1,0 +1,12 @@
+# Every 30 s. The reconciler treats a heartbeat older than 90 s (three
+# periods) as unknown and stops steering, so a dead publisher fails safe.
+[Unit]
+Description=Publish this node's CPU pressure every 30 seconds
+
+[Timer]
+OnBootSec=1min
+OnUnitActiveSec=30s
+AccuracySec=1s
+
+[Install]
+WantedBy=timers.target

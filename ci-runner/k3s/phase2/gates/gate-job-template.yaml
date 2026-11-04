@@ -83,6 +83,12 @@ spec:
           operator: Equal
           value: pending
           effect: NoSchedule
+        # The factory placement taint (orchestrator bd-ib-plon2p,
+        # ../factory-pressure-placement/README.md) steers FACTORY sandbox pods
+        # only; a gate ignores it, so gate placement is unchanged.
+        - key: livespec.io/factory-pressure
+          operator: Exists
+          effect: PreferNoSchedule
       # Requirement 7, half two. PREFERRED rather than required: gates-flavor
       # already selects gmktec by `kubernetes.io/hostname`, so Kueue will not
       # admit this Job against any other node's quota. This affinity expresses

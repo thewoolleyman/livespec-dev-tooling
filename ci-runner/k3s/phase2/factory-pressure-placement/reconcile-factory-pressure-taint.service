@@ -1,0 +1,11 @@
+# Steer new factory sandbox pods away from a CPU-pressured factory node
+# (reconcile-factory-pressure-taint.sh). Server-only: it holds k3s's admin
+# kubeconfig. Installed by the factory_pressure_reconciler Ansible role.
+[Unit]
+Description=Reconcile the livespec.io/factory-pressure PreferNoSchedule taint
+After=k3s.service
+
+[Service]
+Type=oneshot
+Environment=KUBECONFIG=/etc/rancher/k3s/k3s.yaml
+ExecStart=/usr/local/lib/ci-runner-k3s/reconcile-factory-pressure-taint.sh
