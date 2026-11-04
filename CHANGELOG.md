@@ -58,6 +58,31 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.169.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.168.0...v1.169.0) (2026-11-04)
+
+
+### Features
+
+* add bounded local incident gate execution foundation (livespec-dev-tooling-cerkbn) ([0a2190a](https://github.com/thewoolleyman/livespec-dev-tooling/commit/0a2190a0fd2e4fd118340597f1d7ccc44b26d239))
+* add independent incident observer callback and action fence (livespec-dev-tooling-47ij37) ([30725f0](https://github.com/thewoolleyman/livespec-dev-tooling/commit/30725f0ab0a767e5d91f9b9ff796f0325da3713d))
+* **ci-runner:** admit gate Jobs by live node capacity via Kueue TAS (livespec-dev-tooling-cikd6m) ([aa362db](https://github.com/thewoolleyman/livespec-dev-tooling/commit/aa362dbdc081db1e06b34bfa9930a754106382ba))
+* **ci-runner:** cap the gates reserve for a topology gates flavor (bd-ib-plon2p) ([e2cd429](https://github.com/thewoolleyman/livespec-dev-tooling/commit/e2cd429d861c5be4da3a01d54c2343033888faed))
+* **ci-runner:** steer factory sandbox pods off a CPU-pressured node (bd-ib-plon2p) ([dcebfbf](https://github.com/thewoolleyman/livespec-dev-tooling/commit/dcebfbfe36f09f3f19b7328f322c86959ad6a414))
+* cover fleet adoption failures ([8beaba9](https://github.com/thewoolleyman/livespec-dev-tooling/commit/8beaba9155809224054b18cc50d37457ee40028a))
+* cover fleet plugin adoption ([555fb3c](https://github.com/thewoolleyman/livespec-dev-tooling/commit/555fb3c392da88880fba59fea590cac297b2d272))
+* **incident:** resolve trusted execution context and transport (livespec-dev-tooling-sh3vz3) ([f002f85](https://github.com/thewoolleyman/livespec-dev-tooling/commit/f002f85b00b11b438c4f25a8206320ff5831543c))
+* isolate focused incident verification evidence (livespec-dev-tooling-xluwqj) ([34f370e](https://github.com/thewoolleyman/livespec-dev-tooling/commit/34f370e104cd86f2165a99bbecc18e7508b73a05))
+* read canonical historical incident provenance (livespec-dev-tooling-gvylzw) ([0b56233](https://github.com/thewoolleyman/livespec-dev-tooling/commit/0b5623348313de7a4fe5014e3feacde5ca5a2763))
+* refuse pre-commit recipes in gate suite ([b8eb224](https://github.com/thewoolleyman/livespec-dev-tooling/commit/b8eb22434e51b4292b60c6f090c1d003ba18be05))
+* validate Python incident comment carriers (livespec-dev-tooling-gvylzw) ([8aee525](https://github.com/thewoolleyman/livespec-dev-tooling/commit/8aee525f0843ce439995fe818ca3d3e3779e3370))
+
+
+### Bug Fixes
+
+* **coordinator:** count only live pods in fleet-utilization pods(by ns) ([2ff90ea](https://github.com/thewoolleyman/livespec-dev-tooling/commit/2ff90ea349f977a9413236c1b42fe71df9ce7468))
+* read fleet adoption membership from livespec master ([4ef1b65](https://github.com/thewoolleyman/livespec-dev-tooling/commit/4ef1b656524e3dd05636fe7198d12162f6a16504))
+* refuse a pre-commit final entry behind an empty-value assignment ([adbd741](https://github.com/thewoolleyman/livespec-dev-tooling/commit/adbd741ebf254d443e9c5ba3b813ff67a6ee5a6e))
+
 ## [1.168.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.167.2...v1.168.0) (2026-11-04)
 
 
