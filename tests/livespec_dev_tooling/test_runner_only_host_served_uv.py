@@ -43,6 +43,58 @@ def _wrapper_source() -> str:
     return textwrap.dedent(matched.group("body"))
 
 
+def test_a_healthy_hp_source_routes_locked_wheels_without_public_downloads(
+    *, tmp_path: Path
+) -> None:
+    """The hp install sees the pool URL, never the public wheel URL."""
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    lock = workspace / "uv.lock"
+    public_url = "https://files.pythonhosted.org/packages/example/example-1.0.whl"
+    proxy_url = (
+        "http://pypi-proxy.ci-warm-cache.svc.cluster.local:8081/packages/example/example-1.0.whl"
+    )
+    lock.write_text(public_url + "\n", encoding="utf-8")
+
+    wrapper = tmp_path / "uv"
+    wrapper.write_text(_wrapper_source(), encoding="utf-8")
+    wrapper.chmod(0o755)
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    curl = bin_dir / "curl"
+    curl.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    curl.chmod(0o755)
+    real_uv = tmp_path / "real-uv"
+    observed = tmp_path / "observed-lock"
+    real_uv.write_text(
+        '#!/bin/sh\ncat uv.lock > "$UV_OBSERVED_LOCK"\nexit 17\n',
+        encoding="utf-8",
+    )
+    real_uv.chmod(0o755)
+
+    result = subprocess.run(
+        [str(wrapper), "sync", "--all-groups"],
+        cwd=workspace,
+        capture_output=True,
+        check=False,
+        env={
+            **os.environ,
+            "CI_RUNNER_NODE_NAME": "hp-xubuntu",
+            "CI_RUNNER_REAL_UV": str(real_uv),
+            "PYPI_FILES_PROXY": "http://pypi-proxy.ci-warm-cache.svc.cluster.local:8081",
+            "UV_OBSERVED_LOCK": str(observed),
+            "PATH": f"{bin_dir}:/usr/bin:/bin",
+        },
+        text=True,
+    )
+
+    assert result.returncode == 17, result.stderr
+    assert observed.read_text(encoding="utf-8") == proxy_url + "\n"
+    assert public_url not in observed.read_text(encoding="utf-8")
+    assert lock.read_text(encoding="utf-8") == public_url + "\n"
+    assert "locked Python packages through" in result.stderr
+
+
 def test_an_unreachable_hp_source_falls_back_to_public_pypi_and_preserves_uvs_outcome(
     *, tmp_path: Path
 ) -> None:
