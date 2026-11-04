@@ -32,10 +32,10 @@
 # real kubelet restart.
 #
 # THE CAPACITY IS PROFILE DATA, NOT AN ARGUMENT. It is ADMISSION_CAPACITY_C in
-# the node's profile — poweredge 24 (32, its CPU-throughput ceiling, until 8
-# slots moved to hp on 2026-11-03; see ../kueue/DERIVATION.md "The step back to
-# C = 32 on the tiered host (2026-09-06)" and "The rebalance at C = 44 —
-# hp-xubuntu opened runner-only (2026-11-03)"), hp 8, gmktec 12 (a derived first value, plan research/001 §3.5; see
+# the node's profile — poweredge 27, hp 5, gmktec 12 since 2026-11-04, each
+# derived from the node's CPU count (../kueue/DERIVATION.md "Per-node churn
+# slots derived from cores (2026-11-04)"; before that poweredge 24 and hp 8 per
+# "The rebalance at C = 44 — hp-xubuntu opened runner-only (2026-11-03)") (a derived first value, plan research/001 §3.5; see
 # "The derivation at C = 44 — the two-node pool (2026-09-11)"). Reading it from
 # the profile — the same key install-node.sh reads — is what keeps this number
 # and the node's own provisioning from drifting apart, and it is why this script
