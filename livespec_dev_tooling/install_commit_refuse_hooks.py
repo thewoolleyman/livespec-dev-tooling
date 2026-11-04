@@ -170,6 +170,9 @@ CANONICAL_HOOK_BODY = """#!/bin/sh
 # root). Leaving GIT_DIR set also makes lefthook misread the repo as bare and
 # write core.bare=true into the shared .git/config, corrupting every checkout
 # that shares it (root cause li-iroguc).
+# Preserve Git's actual operation index before the shared safety cleanup.
+# An incident path/partial commit must never certify the ordinary index instead.
+incident_git_index_file="${GIT_INDEX_FILE:-}"
 unset GIT_DIR GIT_INDEX_FILE GIT_WORK_TREE GIT_PREFIX
 
 git_dir="$(git rev-parse --git-dir 2>/dev/null || true)"
@@ -237,6 +240,19 @@ fi
 # every hook; BOTH the factory-provenance gate below and the lefthook
 # delegation after it dispatch on it.
 hook_name="$(basename "$0")"
+
+# Resolve incident mode before lefthook autofix, pairing, normal evidence or
+# delegation. Only 75 selects the unchanged ordinary path; an unavailable
+# incident module refuses, never falls back to full ordinary validation.
+if [ -n "${EXPEDITED_INCIDENT_RESPONSE:-}${EXPEDITED_INCIDENT_RESPONSE_REVERT:-}" ] ||
+   [ -n "${LIVESPEC_INCIDENT_CONTEXT:-}${LIVESPEC_INCIDENT_AUTHORITY_QUERY:-}" ]; then
+  incident_status=0
+  mise exec -- uv run --no-sync python -m livespec_dev_tooling.incident_hook_entry \\
+    "$hook_name" --git-index-file "$incident_git_index_file" "$@" || incident_status=$?
+  if [ "$incident_status" -ne 75 ]; then
+    exit "$incident_status"
+  fi
+fi
 
 # FACTORY-PROVENANCE gate (livespec-dev-tooling-pxsr7w). It decides WHO may
 # commit product implementation `.py`; the Red-Green-Replay gate the lefthook
