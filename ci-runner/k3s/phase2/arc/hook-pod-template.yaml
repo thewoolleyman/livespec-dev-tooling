@@ -313,6 +313,23 @@ spec:
           valueFrom:
             fieldRef:
               fieldPath: spec.nodeName
+        # Bounded pytest-xdist workers per job (legacy-coordinator-agent
+        # ruling under R301, 2026-11-04, P12). Without this, each repo's
+        # self-hosted test-nprocs rule takes nproc/4 of the NODE's cores,
+        # because the workflow pod has no cgroup CPU quota and nproc reads
+        # the affinity mask: 18 workers per job on poweredge's 72 cores,
+        # times 27 churn slots, drove load 206 / PSI60 52 at 08:04Z. 3 is
+        # the pool's per-slot CPU budget (about 2.73 CPUs per churn slot,
+        # ../kueue/DERIVATION.md "Per-node churn slots derived from cores
+        # (2026-11-04)"), rounded up. Honoured by the justfile or
+        # test-nprocs script of livespec, livespec-dev-tooling,
+        # livespec-orchestrator-beads-fabro, -git-jsonl, livespec-overseer
+        # and livespec-runtime on the `local` lane. The hosted lane ignores
+        # it by design. The driver repos run pytest serially, and
+        # livespec-console-beads-fabro's cargo nextest does not read it.
+        # Revert: delete this entry and run the CI stack converge.
+        - name: LIVESPEC_TEST_PARALLELISM
+          value: "3"
       volumeMounts:
         - name: ci-runner-bin
           mountPath: /opt/ci-runner/bin
