@@ -558,11 +558,17 @@ per-project.
 
 ## Daily commands
 
-- `just bootstrap` — first-touch setup on a fresh clone; idempotently sets
-  `livespec.primaryPath`, installs the canonical commit-refuse hook at
-  `.git/hooks/pre-commit` + `.git/hooks/pre-push`, installs lefthook hooks,
-  registers `~/.worktrees` in mise's `trusted_config_paths`, and resolves
-  plugin dependencies.
+- `just bootstrap` — first-touch setup on a fresh clone; idempotently installs
+  the canonical commit-refuse hook at `.git/hooks/pre-commit` +
+  `.git/hooks/pre-push`, installs lefthook hooks, registers `~/.worktrees` in
+  mise's `trusted_config_paths`, and resolves plugin dependencies. It does NOT
+  set `livespec.primaryPath`: the hooks detect the primary checkout
+  structurally (`git rev-parse --git-common-dir`), so an empty
+  `git config --get livespec.primaryPath` on a fresh clone is expected, not a
+  bootstrap failure (measured on a macOS clone, 2026-11-04). Bootstrap also
+  does not install host tools: it needs `mise`, a bash 4+ on `PATH` (macOS
+  ships 3.2; the gate runner and check scripts use `mapfile`), the guarded
+  `bd`, and the credential wrapper already present.
 - `just check` — the full enforcement aggregate (lint, types, tests, coverage,
   AST checks). It is the load-bearing safety net; it runs locally, in
   pre-push, and in CI. Dispatch it DETACHED — see
