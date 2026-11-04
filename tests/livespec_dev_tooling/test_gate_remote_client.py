@@ -100,7 +100,10 @@ def _job_status(*, state: str) -> str:
     """
     finished = state in {"Complete", "Failed"}
     return json.dumps(
-        {"status": {"conditions": [{"type": state, "status": str(finished)}]}},
+        {
+            "spec": {"suspend": state == "Suspended"},
+            "status": {"conditions": [{"type": state, "status": str(finished)}]},
+        },
     )
 
 
@@ -542,6 +545,30 @@ def test_the_terminal_state_is_awaited_before_the_logs_are_streamed() -> None:
     assert outcome.unwrap().terminal_state == "Complete"
 
 
+def test_kueue_queue_wait_does_not_spend_the_gate_runtime_poll_budget() -> None:
+    """A Job admitted after the runtime budget still has its full runtime wait."""
+    cluster = _StubCluster(
+        job_states=(
+            "Suspended",
+            "Suspended",
+            "Suspended",
+            "Active",
+            "Active",
+            "Complete",
+        )
+    )
+    assert hasattr(_REQUEST, "admission_timeout_seconds")
+    request = dataclasses.replace(
+        _REQUEST, poll_timeout_seconds=30.0, admission_timeout_seconds=60.0
+    )
+
+    outcome = run_gate(request=request, runner=cluster, sleeper=cluster.sleep)
+
+    assert is_successful(outcome)
+    assert cluster.kinds.count("get-job") == 6
+    assert cluster.naps == [request.poll_interval_seconds] * 5
+
+
 def test_the_logs_are_streamed_rather_than_captured() -> None:
     """Capturing is exactly what would swallow the log the operator is owed.
 
@@ -688,7 +715,9 @@ def test_the_gate_ref_is_deleted_when_a_step_raises() -> None:
 def test_a_gate_that_never_reaches_a_terminal_state_fails_rather_than_polling_forever() -> None:
     """Giving up is a plumbing failure, and it still owns its ref."""
     cluster = _StubCluster(job_states=("Suspended",))
-    request = dataclasses.replace(_REQUEST, poll_timeout_seconds=30.0)
+    request = dataclasses.replace(
+        _REQUEST, poll_timeout_seconds=30.0, admission_timeout_seconds=30.0
+    )
     outcome = run_gate(request=request, runner=cluster, sleeper=cluster.sleep)
     assert isinstance(outcome, Failure)
     assert outcome.failure().step == "await-gate-terminal"
