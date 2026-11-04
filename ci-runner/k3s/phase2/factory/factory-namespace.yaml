@@ -67,11 +67,11 @@ metadata:
     livespec.workitem: f5e6vl
 spec:
   hard:
-    requests.cpu: "68"
-    requests.memory: 138702Mi
-    limits.cpu: "68"
-    limits.memory: 146894Mi
-    pods: "34"
+    requests.cpu: "84"
+    requests.memory: 171470Mi
+    limits.cpu: "84"
+    limits.memory: 181710Mi
+    pods: "42"
 ---
 # ./DERIVATION.md "The egress targets" — default-deny ingress, and egress only
 # to cluster DNS, the tailnet (the beads Dolt tenant and the telemetry
