@@ -12,16 +12,31 @@ from pathlib import Path
 
 from livespec_dev_tooling.gate_remote_invocation import Failure, default_gate_command_runner
 
-__all__: list[str] = ["change_paths"]
+__all__: list[str] = ["change_paths", "withheld_reason"]
+
+_LAST_FAILURE: list[str] = []
+
+
+def withheld_reason() -> str:
+    """Name the last git query that failed during the latest `change_paths` call."""
+    return _LAST_FAILURE[0]
+
+
+def _record_failure(*, args: list[str], detail: str) -> None:
+    _LAST_FAILURE[:] = [f"`git {' '.join(args)}` failed ({detail})"]
 
 
 def _run_git(*, root: Path, args: list[str]) -> set[Path] | None:
     """Read one newline-delimited git path query, or report an unknown result."""
     invoked = default_gate_command_runner(argv=["git", *args], cwd=root)
     if isinstance(invoked, Failure):
+        _record_failure(args=args, detail=invoked.failure().detail)
         return None
     completed = invoked.unwrap()
     if completed.returncode != 0:
+        lines = completed.stderr.strip().splitlines()
+        detail = f"exit {completed.returncode}"
+        _record_failure(args=args, detail=f"{detail}: {lines[0]}" if lines else detail)
         return None
     return {Path(line) for line in completed.stdout.splitlines() if line}
 
@@ -83,6 +98,7 @@ def _comparison(*, repo_root: Path) -> str | None:
 
 def change_paths(*, repo_root: Path) -> set[Path] | None:
     """Return committed, index, working-tree, and untracked changes."""
+    _LAST_FAILURE[:] = ["no git query failed, yet HEAD or its base did not resolve to one commit"]
     comparison = _comparison(repo_root=repo_root)
     if comparison is None:
         return None

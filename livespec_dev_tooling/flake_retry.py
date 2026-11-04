@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING, cast
 
 import pytest
 
-from livespec_dev_tooling.flake_retry_changes import change_paths
+from livespec_dev_tooling.flake_retry_changes import change_paths, withheld_reason
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -39,6 +39,7 @@ RETRY_ATTEMPTS = 3
 RETRY_DELAY_SECONDS = 60
 _UNSAFE_NAMES = {"pyproject.toml", "uv.lock", "justfile", "conftest.py"}
 _RESULTS: dict[str, RetryResult] = {}
+_WITHHELD: list[str] = []
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -147,7 +148,9 @@ def retry_marker_for(
     return {"reruns": RETRY_ATTEMPTS, "reruns_delay": RETRY_DELAY_SECONDS}
 
 
-def mark_untouched_tests(*, root: Path, items: list[pytest.Item], can_retry: bool = True) -> None:
+def mark_untouched_tests(
+    *, root: Path, items: list[pytest.Item], can_retry: bool = True
+) -> str | None:
     """Mark only tests proven untouched by this session's complete change set.
 
     `flaky` is pytest-rerunfailures' marker. A consumer can load this plugin
@@ -155,18 +158,23 @@ def mark_untouched_tests(*, root: Path, items: list[pytest.Item], can_retry: boo
     marker is unregistered and `--strict-markers` kills collection
     (livespec-dev-tooling-he3pf2). With no rerunfailures in the session nothing
     is marked: an untouched failure then simply stands, unretried.
+
+    Returns why every retry was withheld when the change set cannot be computed,
+    so the terminal summary can say so rather than let the run retry nothing in
+    silence (livespec-dev-tooling-bejgoo).
     """
     if not can_retry:
-        return
+        return None
     paths = change_paths(repo_root=root)
     if paths is None:
-        return
+        return withheld_reason()
     for item in items:
         marker = retry_marker_for(
             repo_root=root, test_path=Path(str(item.path)), change_paths=paths
         )
         if marker is not None:
             item.add_marker(pytest.mark.flaky(**marker))
+    return None
 
 
 def record_report(*, report: pytest.TestReport) -> None:
@@ -204,8 +212,16 @@ def retry_summary(*, results: Iterable[RetryResult]) -> str:
     return "FLAKE-RETRIED\n" + "\n".join(rows)
 
 
-def announce_retries(*, terminalreporter: TerminalReporter, root: Path) -> None:
+def announce_retries(
+    *, terminalreporter: TerminalReporter, root: Path, withheld: str | None = None
+) -> None:
     """Persist and announce retry evidence without changing pytest's final verdict."""
+    annotate = os.environ.get("GITHUB_ACTIONS") == "true"
+    if withheld is not None:
+        _ = terminalreporter.write_sep("=", "FLAKE-RETRY-WITHHELD")
+        _ = terminalreporter.write_line(f"no failing test is retried this session: {withheld}")
+        if annotate:
+            _ = terminalreporter.write_line(f"::warning::FLAKE-RETRY-WITHHELD {withheld}")
     results = list(_RESULTS.values())
     if not results:
         return
@@ -213,7 +229,7 @@ def announce_retries(*, terminalreporter: TerminalReporter, root: Path) -> None:
     _ = terminalreporter.write_sep("=", "FLAKE-RETRIED")
     for line in retry_summary(results=results).splitlines()[1:]:
         _ = terminalreporter.write_line(line)
-    if os.environ.get("GITHUB_ACTIONS") == "true":
+    if annotate:
         for result in results:
             _ = terminalreporter.write_line(f"::warning::FLAKE-RETRIED {result.nodeid}")
 
@@ -228,11 +244,12 @@ class _CollectionHook:
     def __call__(
         self, session: pytest.Session, config: pytest.Config, items: list[pytest.Item]
     ) -> None:
-        mark_untouched_tests(
+        withheld = mark_untouched_tests(
             root=Path(str(session.config.rootpath)),
             items=items,
             can_retry=config.pluginmanager.hasplugin("rerunfailures"),
         )
+        _WITHHELD[:] = [] if withheld is None else [withheld]
 
 
 class _ReportHook:
@@ -245,7 +262,11 @@ class _SummaryHook:
         self, terminalreporter: TerminalReporter, exitstatus: int, config: pytest.Config
     ) -> None:
         del exitstatus
-        announce_retries(terminalreporter=terminalreporter, root=Path(str(config.rootpath)))
+        announce_retries(
+            terminalreporter=terminalreporter,
+            root=Path(str(config.rootpath)),
+            withheld=_WITHHELD[0] if _WITHHELD else None,
+        )
 
 
 pytest_collection_modifyitems = _CollectionHook().__call__
