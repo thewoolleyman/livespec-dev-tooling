@@ -1,0 +1,580 @@
+{
+  "schema": 1,
+  "targets": [
+    {
+      "batch": "check-python",
+      "classification": "fast",
+      "consumes": [],
+      "name": "check-format",
+      "needs": [],
+      "produces": []
+    },
+    {
+      "batch": "check-python",
+      "classification": "fast",
+      "consumes": [],
+      "name": "check-lint",
+      "needs": [],
+      "produces": []
+    },
+    {
+      "batch": "check-python",
+      "classification": "unclassified",
+      "consumes": [],
+      "name": "check-types",
+      "needs": [],
+      "produces": []
+    },
+    {
+      "batch": "check-per-file-coverage",
+      "classification": "unclassified",
+      "consumes": [],
+      "name": "check-per-file-coverage",
+      "needs": [],
+      "produces": [
+        "coverage-data"
+      ]
+    },
+    {
+      "batch": "check-coverage",
+      "classification": "unclassified",
+      "consumes": [
+        "coverage-data"
+      ],
+      "name": "check-coverage",
+      "needs": [
+        "check-per-file-coverage"
+      ],
+      "produces": []
+    },
+    {
+      "batch": "check-python-batch",
+      "classification": "unclassified",
+      "consumes": [],
+      "name": "check-all-declared",
+      "needs": [],
+      "produces": []
+    },
+    {
+      "batch": "check-python-batch",
+      "classification": "unclassified",
+      "consumes": [],
+      "name": "check-assert-never-exhaustiveness",
+      "needs": [],
+      "produces": []
+    },
+    {
+      "batch": "check-python-batch",
+      "classification": "unclassified",
+      "consumes": [],
+      "name": "check-check-mutation",
+      "needs": [],
+      "produces": []
+    },
+    {
+      "batch": "check-python-batch",
+      "classification": "unclassified",
+      "consumes": [],
+      "name": "check-file-lloc",
+      "needs": [],
+      "produces": []
+    },
+    {
+      "batch": "check-python-batch",
+      "classification": "unclassified",
+      "consumes": [],
+      "name": "check-global-writes",
+      "needs": [],
+      "produces": []
+    },
+    {
+      "batch": "check-python-batch",
+      "classification": "unclassified",
+      "consumes": [],
+      "name": "check-keyword-only-args",
+      "needs": [],
+      "produces": []
+    },
+    {
+      "batch": "check-python-batch",
+      "classification": "unclassified",
+      "consumes": [],
+      "name": "check-local-memory-drift-audit",
+      "needs": [],
+      "produces": []
+    },
+    {
+      "batch": "check-python-batch",
+      "classification": "unclassified",
+      "consumes": [],
+      "name": "check-main-guard",
+      "needs": [],
+      "produces": []
+    },
+    {
+      "batch": "check-python-batch",
+      "classification": "unclassified",
+      "consumes": [],
+      "name": "check-match-keyword-only",
+      "needs": [],
+      "produces": []
+    },
+    {
+      "batch": "check-python-batch",
+      "classification": "unclassified",
+      "consumes": [],
+      "name": "check-newtype-domain-primitives",
+      "needs": [],
+      "produces": []
+    },
+    {
+      "batch": "check-python-batch",
+      "classification": "unclassified",
+      "consumes": [],
+      "name": "check-no-except-outside-io",
+      "needs": [],
+      "produces": []
+    },
+    {
+      "batch": "check-python-batch",
+      "classification": "unclassified",
+      "consumes": [],
+      "name": "check-no-inheritance",
+      "needs": [],
+      "produces": []
+    },
+    {
+      "batch": "check-python-batch",
+      "classification": "unclassified",
+      "consumes": [],
+      "name": "check-no-lloc-soft-warnings",
+      "needs": [],
+      "produces": []
+    },
+    {
+      "batch": "check-python-batch",
+      "classification": "unclassified",
+      "consumes": [],
+      "name": "check-no-raise-outside-io",
+      "needs": [],
+      "produces": []
+    },
+    {
+      "batch": "check-python-batch",
+      "classification": "unclassified",
+      "consumes": [],
+      "name": "check-no-write-direct",
+      "needs": [],
+      "produces": []
+    },
+    {
+      "batch": "check-python-batch",
+      "classification": "unclassified",
+      "consumes": [],
+      "name": "check-pbt-coverage-pure-modules",
+      "needs": [],
+      "produces": []
+    },
+    {
+      "batch": "check-python-batch",
+      "classification": "unclassified",
+      "consumes": [],
+      "name": "check-private-calls",
+      "needs": [],
+      "produces": []
+    },
+    {
+      "batch": "check-python-batch",
+      "classification": "unclassified",
+      "consumes": [],
+      "name": "check-public-api-result-typed",
+      "needs": [],
+      "produces": []
+    },
+    {
+      "batch": "check-python-batch",
+      "classification": "unclassified",
+      "consumes": [],
+      "name": "check-required-role-keys-declared",
+      "needs": [],
+      "produces": []
+    },
+    {
+      "batch": "check-python-batch",
+      "classification": "unclassified",
+      "consumes": [],
+      "name": "check-rop-pipeline-shape",
+      "needs": [],
+      "produces": []
+    },
+    {
+      "batch": "check-python-batch",
+      "classification": "unclassified",
+      "consumes": [],
+      "name": "check-supervisor-discipline",
+      "needs": [],
+      "produces": []
+    },
+    {
+      "batch": "check-python-batch",
+      "classification": "unclassified",
+      "consumes": [],
+      "name": "check-tests-mirror-pairing",
+      "needs": [],
+      "produces": []
+    },
+    {
+      "batch": "check-python-batch",
+      "classification": "unclassified",
+      "consumes": [],
+      "name": "check-tests-no-subprocess-spawn",
+      "needs": [],
+      "produces": []
+    },
+    {
+      "batch": "check-python-batch",
+      "classification": "unclassified",
+      "consumes": [],
+      "name": "check-wrapper-shape",
+      "needs": [],
+      "produces": []
+    },
+    {
+      "batch": "check-fleet-conformance",
+      "classification": "unclassified",
+      "consumes": [],
+      "name": "check-fleet-conformance",
+      "needs": [],
+      "produces": []
+    },
+    {
+      "batch": "check-metadata",
+      "classification": "unclassified",
+      "consumes": [],
+      "name": "check-check-coverage-incremental",
+      "needs": [],
+      "produces": []
+    },
+    {
+      "batch": "check-metadata",
+      "classification": "unclassified",
+      "consumes": [],
+      "name": "check-red-green-replay",
+      "needs": [],
+      "produces": []
+    },
+    {
+      "batch": "check-metadata-batch",
+      "classification": "unclassified",
+      "consumes": [],
+      "name": "check-agents-ai-references-resolve",
+      "needs": [],
+      "produces": []
+    },
+    {
+      "batch": "check-metadata-batch",
+      "classification": "unclassified",
+      "consumes": [],
+      "name": "check-aggregate-completeness",
+      "needs": [],
+      "produces": []
+    },
+    {
+      "batch": "check-metadata-batch",
+      "classification": "unclassified",
+      "consumes": [],
+      "name": "check-canonical-recipe-fidelity",
+      "needs": [],
+      "produces": []
+    },
+    {
+      "batch": "check-metadata-batch",
+      "classification": "unclassified",
+      "consumes": [],
+      "name": "check-check-tools",
+      "needs": [],
+      "produces": []
+    },
+    {
+      "batch": "check-metadata-batch",
+      "classification": "unclassified",
+      "consumes": [],
+      "name": "check-ci-gate-parity",
+      "needs": [],
+      "produces": []
+    },
+    {
+      "batch": "check-metadata-batch",
+      "classification": "unclassified",
+      "consumes": [],
+      "name": "check-ci-matrix-completeness",
+      "needs": [],
+      "produces": []
+    },
+    {
+      "batch": "check-metadata-batch",
+      "classification": "unclassified",
+      "consumes": [],
+      "name": "check-claude-md-coverage",
+      "needs": [],
+      "produces": []
+    },
+    {
+      "batch": "check-metadata-batch",
+      "classification": "unclassified",
+      "consumes": [],
+      "name": "check-codex-hook-reconcilable",
+      "needs": [],
+      "produces": []
+    },
+    {
+      "batch": "check-metadata-batch",
+      "classification": "unclassified",
+      "consumes": [],
+      "name": "check-comment-line-anchors",
+      "needs": [],
+      "produces": []
+    },
+    {
+      "batch": "check-metadata-batch",
+      "classification": "unclassified",
+      "consumes": [],
+      "name": "check-commit-pairs-source-and-test",
+      "needs": [],
+      "produces": []
+    },
+    {
+      "batch": "check-metadata-batch",
+      "classification": "unclassified",
+      "consumes": [],
+      "name": "check-delegated-gate-check-suite",
+      "needs": [],
+      "produces": []
+    },
+    {
+      "batch": "check-metadata-batch",
+      "classification": "unclassified",
+      "consumes": [],
+      "name": "check-fabro-image-pin-lockstep",
+      "needs": [],
+      "produces": []
+    },
+    {
+      "batch": "check-metadata-batch",
+      "classification": "unclassified",
+      "consumes": [],
+      "name": "check-fleet-marketplace-relative-sources",
+      "needs": [],
+      "produces": []
+    },
+    {
+      "batch": "check-metadata-batch",
+      "classification": "unclassified",
+      "consumes": [],
+      "name": "check-handoff-dispatch-routing",
+      "needs": [],
+      "produces": []
+    },
+    {
+      "batch": "check-metadata-batch",
+      "classification": "unclassified",
+      "consumes": [],
+      "name": "check-heading-coverage",
+      "needs": [],
+      "produces": []
+    },
+    {
+      "batch": "check-metadata-batch",
+      "classification": "unclassified",
+      "consumes": [],
+      "name": "check-heading-coverage-debt-register",
+      "needs": [],
+      "produces": []
+    },
+    {
+      "batch": "check-metadata-batch",
+      "classification": "unclassified",
+      "consumes": [],
+      "name": "check-hook-trees-not-io-exempt",
+      "needs": [],
+      "produces": []
+    },
+    {
+      "batch": "check-metadata-batch",
+      "classification": "unclassified",
+      "consumes": [],
+      "name": "check-marketplace-ref-release-only",
+      "needs": [],
+      "produces": []
+    },
+    {
+      "batch": "check-metadata-batch",
+      "classification": "unclassified",
+      "consumes": [],
+      "name": "check-no-direct-destructive-cli",
+      "needs": [],
+      "produces": []
+    },
+    {
+      "batch": "check-metadata-batch",
+      "classification": "unclassified",
+      "consumes": [],
+      "name": "check-no-direct-github-access",
+      "needs": [],
+      "produces": []
+    },
+    {
+      "batch": "check-metadata-batch",
+      "classification": "unclassified",
+      "consumes": [],
+      "name": "check-no-direct-tool-invocation",
+      "needs": [],
+      "produces": []
+    },
+    {
+      "batch": "check-metadata-batch",
+      "classification": "unclassified",
+      "consumes": [],
+      "name": "check-no-fmt-directives",
+      "needs": [],
+      "produces": []
+    },
+    {
+      "batch": "check-metadata-batch",
+      "classification": "unclassified",
+      "consumes": [],
+      "name": "check-no-shadow-ledger-body-identical",
+      "needs": [],
+      "produces": []
+    },
+    {
+      "batch": "check-metadata-batch",
+      "classification": "unclassified",
+      "consumes": [],
+      "name": "check-no-shadow-ledger-body-typechecks",
+      "needs": [],
+      "produces": []
+    },
+    {
+      "batch": "check-metadata-batch",
+      "classification": "unclassified",
+      "consumes": [],
+      "name": "check-no-todo-registry",
+      "needs": [],
+      "produces": []
+    },
+    {
+      "batch": "check-metadata-batch",
+      "classification": "unclassified",
+      "consumes": [],
+      "name": "check-partition-completeness",
+      "needs": [],
+      "produces": []
+    },
+    {
+      "batch": "check-metadata-batch",
+      "classification": "unclassified",
+      "consumes": [],
+      "name": "check-plan-anchor-declared",
+      "needs": [],
+      "produces": []
+    },
+    {
+      "batch": "check-metadata-batch",
+      "classification": "unclassified",
+      "consumes": [],
+      "name": "check-plan-no-live-handoff-file",
+      "needs": [],
+      "produces": []
+    },
+    {
+      "batch": "check-metadata-batch",
+      "classification": "unclassified",
+      "consumes": [],
+      "name": "check-plan-no-tombstone",
+      "needs": [],
+      "produces": []
+    },
+    {
+      "batch": "check-metadata-batch",
+      "classification": "unclassified",
+      "consumes": [],
+      "name": "check-plugin-resolution",
+      "needs": [],
+      "produces": []
+    },
+    {
+      "batch": "check-metadata-batch",
+      "classification": "unclassified",
+      "consumes": [],
+      "name": "check-primary-checkout-commit-refuse-hook-installed",
+      "needs": [],
+      "produces": []
+    },
+    {
+      "batch": "check-metadata-batch",
+      "classification": "unclassified",
+      "consumes": [],
+      "name": "check-self-hosted-routing",
+      "needs": [],
+      "produces": []
+    },
+    {
+      "batch": "check-metadata-batch",
+      "classification": "unclassified",
+      "consumes": [],
+      "name": "check-self-hosted-uv-lane",
+      "needs": [],
+      "produces": []
+    },
+    {
+      "batch": "check-metadata-batch",
+      "classification": "unclassified",
+      "consumes": [],
+      "name": "check-shell-quality",
+      "needs": [],
+      "produces": []
+    },
+    {
+      "batch": "check-metadata-batch",
+      "classification": "unclassified",
+      "consumes": [],
+      "name": "check-skill-invocation-paths",
+      "needs": [],
+      "produces": []
+    },
+    {
+      "batch": "check-metadata-batch",
+      "classification": "unclassified",
+      "consumes": [],
+      "name": "check-source-trees-scoped-to-consumer",
+      "needs": [],
+      "produces": []
+    },
+    {
+      "batch": "check-metadata-batch",
+      "classification": "unclassified",
+      "consumes": [],
+      "name": "check-tests-host-path-free",
+      "needs": [],
+      "produces": []
+    },
+    {
+      "batch": "check-metadata-batch",
+      "classification": "unclassified",
+      "consumes": [],
+      "name": "check-tool-backed-check-completeness",
+      "needs": [],
+      "produces": []
+    },
+    {
+      "batch": "check-metadata-batch",
+      "classification": "unclassified",
+      "consumes": [],
+      "name": "check-vendor-manifest",
+      "needs": [],
+      "produces": []
+    }
+  ],
+  "workflow_sha256": "002056119a0d22870c45bb75300c6dff72e0bc0ffca80c53129128d3c9166c41"
+}
