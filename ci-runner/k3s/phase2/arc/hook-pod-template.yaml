@@ -325,10 +325,19 @@ spec:
         # test-nprocs script of livespec, livespec-dev-tooling,
         # livespec-orchestrator-beads-fabro, -git-jsonl, livespec-overseer
         # and livespec-runtime on the `local` lane. The hosted lane ignores
-        # it by design. The driver repos run pytest serially, and
-        # livespec-console-beads-fabro's cargo nextest does not read it.
-        # Revert: delete this entry and run the CI stack converge.
+        # it by design. The driver repos run pytest serially.
+        # livespec-console-beads-fabro's cargo nextest and cargo builds do not
+        # read it. Its own config already caps them at 4 (.cargo/config.toml
+        # build.jobs, .config/nextest.toml test-threads), and these two env
+        # vars override that config to the same budget of 3 (same ruling).
+        # A step that sets CARGO_BUILD_JOBS itself (its ci.yml compile steps
+        # set 12) still wins over the pod env. Revert: delete these three
+        # entries and run the CI stack converge.
         - name: LIVESPEC_TEST_PARALLELISM
+          value: "3"
+        - name: NEXTEST_TEST_THREADS
+          value: "3"
+        - name: CARGO_BUILD_JOBS
           value: "3"
       volumeMounts:
         - name: ci-runner-bin
