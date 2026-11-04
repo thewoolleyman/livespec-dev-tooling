@@ -93,3 +93,14 @@ def test_the_pool_uv_shim_routes_only_proxy_held_locked_artifacts(tmp_path: Path
     assert f"https://files.pythonhosted.org{_HELD_PATH}" in lock.read_text(
         encoding="utf-8"
     ), "the shim must restore the repository lock after uv exits"
+
+
+def test_the_pool_uv_shim_falls_back_when_the_files_proxy_is_unreachable(tmp_path: Path) -> None:
+    """An unreachable host-served source leaves uv to resolve from public PyPI."""
+    completed, capture, lock = _run_shim(tmp_path=tmp_path, proxy="http://127.0.0.1:1")
+
+    assert completed.returncode == 0, completed.stderr
+    captured = capture.read_text(encoding="utf-8")
+    assert f"https://files.pythonhosted.org{_HELD_PATH}" in captured
+    assert f"https://files.pythonhosted.org{_MISSING_PATH}" in captured
+    assert lock.read_text(encoding="utf-8") == captured

@@ -42,7 +42,7 @@ fi
 
 if ! curl -fsS --head --max-time 2 "${proxy%/}/health" >/dev/null; then
   echo "WARN: PyPI files proxy ${proxy} is unreachable; resolving directly from PyPI" >&2
-  exit 1
+  exec "${real_uv}" "$@"
 fi
 
 unavailable="$(mktemp)"
