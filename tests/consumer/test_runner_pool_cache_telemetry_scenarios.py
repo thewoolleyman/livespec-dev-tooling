@@ -93,8 +93,8 @@ _STALE_TRIGGER = _OBSERVABILITY / "triggers" / "ci-cache-warm-generation-stale.j
 _APPLY_TRIGGERS = _OBSERVABILITY / "triggers" / "apply-triggers.sh"
 
 _POOL_BIN = "/opt/ci-runner/bin"
-_CACHE_TIERS = ("uv", "registry", "target")
-_SEEDED_TIERS = ("uv", "target")
+_CACHE_TIERS = ("uv", "registry", "target", "actions")
+_SEEDED_TIERS = ("uv", "target", "actions")
 _ROW_COLUMNS = (
     "at_ns",
     "tier",
@@ -107,6 +107,7 @@ _ROW_COLUMNS = (
 )
 _UV_GENERATION = "20260911T000000Z"
 _TARGET_GENERATION = "20260911T001500Z"
+_ACTIONS_GENERATION = "20260911T004500Z"
 _HOOK_TIMEOUT_S = 60
 
 # A population of pod names the canary rule is exercised over, and the one of
@@ -230,6 +231,9 @@ def _run_post_start(
         stamp = work / "_warm" / "target" / "console" / "asan"
         stamp.mkdir(parents=True)
         (stamp / ".generation").write_text(f"{_TARGET_GENERATION}\n", encoding="utf-8")
+        actions_seed = work / "_warm" / "actions"
+        (actions_seed / "archives" / "acme_setup").mkdir(parents=True)
+        (actions_seed / ".generation").write_text(f"{_ACTIONS_GENERATION}\n", encoding="utf-8")
     (stub / "curl").write_text(f"#!/bin/sh\nexit {0 if proxy_answers else 7}\n", encoding="utf-8")
     (stub / "curl").chmod(0o755)
     script = _lifecycle_script(

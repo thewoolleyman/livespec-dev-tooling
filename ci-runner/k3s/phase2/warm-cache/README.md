@@ -1060,6 +1060,75 @@ read-only credential on that node first, the shape
 as a stated limitation rather than left to be discovered as an
 inconsistency.
 
+## Action archive seed: every pinned action's tarball per volume
+
+`livespec-dev-tooling-a35sa4` (plan `ci-cache-optimization`). The runner downloads
+each `uses:` action from codeload at Set up job, once per job; every ARC runner
+shares the node's one egress address, so a start burst spends one per-IP rate
+limit. 2026-11-03 13:19-13:33Z: ten jobs of two repositories died at Set up job on
+`actions/checkout`, nine of them with `429`. The stock runner reads a directory of
+pre-downloaded tarballs named by `ACTIONS_RUNNER_ACTION_ARCHIVE_CACHE` before it
+calls the forge, so no workflow changes and no forked runner are needed.
+
+- **The populator** (`warm-cache-populate.sh`, step 4b) scans the
+  `.github/workflows/*.y{,a}ml` of every fetched repository's default-branch clone
+  for `uses: owner/repo[/path]@ref` lines (not `./local`, `docker://`, or a
+  `.github/workflows/` reusable-workflow call, which the service resolves and the
+  runner never downloads), resolves each ref to a commit SHA from the FORGE
+  (`git ls-remote`: the peeled tag, then the tag, then the branch), fetches the
+  forge's tarball for that SHA and publishes
+  `${WARM_ROOT}/actions-generations/<stamp>/archives/<owner>_<repo>/<sha>.tar.gz`
+  through the relative symlink `${WARM_ROOT}/actions`. Entries are keyed by SHA,
+  never by a tag, so a moved tag cannot serve a different tree under an old key;
+  each archive is verified before publish (readable gzip tar whose embedded commit
+  id, `git get-tar-commit-id`, is the SHA it is filed under). A changed set reuses
+  unchanged files by hardlink and downloads only new keys; an unchanged set builds
+  nothing. A ref that cannot be resolved or fetched is named in `failed`
+  (`actions:<owner>/<repo>@<ref>:resolve|fetch`) and is left out, so that one
+  action downloads as before while the rest still publish. Composite actions'
+  inner `uses:` lines are inside the downloaded action, not in a workflow, and are
+  not seeded.
+- **The budget** is `actions-bytes` / `actions-files` in the `warm-cache-budget`
+  ConfigMap, read as `WARM_ACTIONS_BUDGET_BYTES` / `WARM_ACTIONS_BUDGET_FILES`. It
+  caps the whole tree, which every volume receives. Over either axis the
+  generation is renamed `<stamp>.refused`, the previous one stays live and the run
+  reports `actions:over-budget`.
+- **The provisioner** reflink-copies `archives/` into
+  `<volume>/_warm/actions/archives` for EVERY volume (the tree is content-addressed,
+  so it is not per repository) and stamps `.generation`.
+- **The runner** is the reader, and it reads during Set up job, before any hook or
+  job container exists. So the switch lives in the runner container's command:
+  `arc/action-archive-entry.sh` (in the `arc-hook-pod-template` ConfigMap, mounted
+  in the runner container already) exports
+  `ACTIONS_RUNNER_ACTION_ARCHIVE_CACHE=/home/runner/_work/_warm/actions/archives`
+  and execs `run.sh`, and leaves the variable unset (clearing an inherited one) when
+  `CI_CACHE_KILL_SWITCH` is non-empty, when this runner is the cold canary (the same
+  cksum rule as postStart), when the template is unreadable, or when the tree is
+  missing or unreadable. An action absent from the tree, or an unreadable file in
+  it, makes the runner download that action, so a cache fault leaves a job cold
+  rather than failing it.
+- **Telemetry:** postStart records an `actions` row (hit = the seeded tree is in the
+  volume and the tiers are on), preStop replays it as a `cache.warm-copy` span with
+  `build.cache.tier=actions`; `ci-cache-gauges.sh` emits
+  `livespec.ci_cache.generation_age_s` and `generation_bytes` with `tier=actions`.
+  The row says the tree was offered, not that the runner used it: the proof that a
+  routed job's Set up job log shows `Action archive cache usage` lines and no
+  codeload download is host-captured.
+- **Roll-out order** (the one that matters): converge the populator ConfigMap and
+  the budget, let one populate publish `actions`, converge `arc-hook-pod-template`
+  (now carrying `action-archive-entry.sh`), and only THEN `helm upgrade` each scale
+  set and recycle idle runners. A values file applied BEFORE the ConfigMap names a
+  command the runner pod cannot find, and the pod does not start.
+- **Layout assumption to confirm on the host:** the file name
+  `<owner>_<repo>/<sha>.tar.gz` is the layout the runner's cache directory is read
+  with (`/` in the name-with-owner replaced by `_`, the resolved SHA, `.tar.gz` on
+  Linux). The runner binary's strings confirm the setting and the log lines
+  ("Check if action archive ... already exists in cache directory", "Found action
+  archive", "Action archive cache usage") but not the path composition; the
+  host-captured proof is what confirms it. A mismatch leaves the tier cold, never a
+  failed job.
+- A `runner-only` node runs this tier cold (no warm root).
+
 ## Tiers 2 and 3
 
 The other two tiers from the design record are not here: tier 2, a local

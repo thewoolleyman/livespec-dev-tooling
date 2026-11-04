@@ -24,6 +24,10 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TEMPLATE_SRC="${SCRIPT_DIR}/hook-pod-template.yaml"
+# The runner container's entry point (action-archive-entry.sh): the same
+# ConfigMap, because the runner container already mounts it. It MUST be in the
+# ConfigMap before any values file naming it as the container command is applied.
+ENTRY_SRC="${SCRIPT_DIR}/action-archive-entry.sh"
 CONFIGMAP_NAME="arc-hook-pod-template"
 RUNNERS_NAMESPACE="arc-runners"
 
@@ -47,12 +51,13 @@ fi
 # create-or-update form; a bare `kubectl create configmap` fails on the second
 # run. It is unrelated to this script's --dry-run, which suppresses the apply.
 if [ "${DRY_RUN}" -eq 1 ]; then
-  printf '  would run: kubectl create configmap %s --namespace %s --from-file=hook-pod-template.yaml=%s --dry-run=client -o yaml | kubectl apply -f -\n' \
-    "${CONFIGMAP_NAME}" "${RUNNERS_NAMESPACE}" "${TEMPLATE_SRC}"
+  printf '  would run: kubectl create configmap %s --namespace %s --from-file=hook-pod-template.yaml=%s --from-file=action-archive-entry.sh=%s --dry-run=client -o yaml | kubectl apply -f -\n' \
+    "${CONFIGMAP_NAME}" "${RUNNERS_NAMESPACE}" "${TEMPLATE_SRC}" "${ENTRY_SRC}"
   echo "DRY RUN: nothing was applied."
   exit 0
 fi
 kubectl create configmap "${CONFIGMAP_NAME}" \
   --namespace "${RUNNERS_NAMESPACE}" \
   --from-file="hook-pod-template.yaml=${TEMPLATE_SRC}" \
+  --from-file="action-archive-entry.sh=${ENTRY_SRC}" \
   --dry-run=client -o yaml | kubectl apply -f -

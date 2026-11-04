@@ -242,6 +242,22 @@
 #    does not avoid the bind question at all: its endpoint address is still a
 #    real node address, so the receiver would still have to bind something
 #    wider than the cni0 gateway — the widening this design exists to refuse.
+# 8. The ACTION ARCHIVE SEED (livespec-dev-tooling-a35sa4; plan
+#    ci-cache-optimization; ../local-path-provisioner/ "THE ACTION ARCHIVE
+#    SEED"). The work volume is born with the pool's action tarballs at
+#    /__w/_warm/actions/archives, and the stock RUNNER (not this job container)
+#    reads them through ACTIONS_RUNNER_ACTION_ARCHIVE_CACHE during Set up job,
+#    which precedes this container's existence. THIS TEMPLATE CANNOT STEER THAT
+#    READ: ./action-archive-entry.sh, the runner container's command, exports
+#    the variable before it execs run.sh, reading CI_CACHE_KILL_SWITCH and
+#    CI_CACHE_CANARY_N from THIS file by the rule postStart applies, and leaves it
+#    unset under the switch, the canary, an unreadable template or a missing
+#    tree. postStart below only RECORDS the tier: hit = the seeded tree is here
+#    and the tiers are on for this job; the generation is
+#    `_warm/actions/.generation`, written by the provisioner's seed. It does not
+#    claim the runner found every action in the tree -- that is read from the
+#    job's Set up job log ("Action archive cache usage") by the host-captured
+#    proof.
 apiVersion: v1
 kind: PodTemplate
 spec:
@@ -351,6 +367,8 @@ spec:
                 # target row reported hit=false with no generation
                 # (livespec-dev-tooling-c5byjh).
                 target_gen=$(cat /__w/_warm/target/*/*/.generation 2>/dev/null | head -n 1 || true)
+                # The action archive seed's stamp (header item 8).
+                actions_gen=$(cat /__w/_warm/actions/.generation 2>/dev/null | head -n 1 || true)
                 switch="${CI_CACHE_KILL_SWITCH:-}"
                 case "${CI_CACHE_CANARY_N:-}" in
                   ''|*[!0-9]*|0) ;;
@@ -366,10 +384,11 @@ spec:
                   # own inodes; the generation is untouched) and the cargo/
                   # compilation tiers off by writing nothing. Each tier still
                   # reports, so a cold job is a measured cold job.
-                  rm -rf /__w/_warm/uv /__w/_warm/target 2>/dev/null
+                  rm -rf /__w/_warm/uv /__w/_warm/target /__w/_warm/actions 2>/dev/null
                   rec uv false "$uv_gen" "$(ms)" 0 reflink-seed "off:$switch"
                   rec registry false "" "$(ms)" 0 served "off:$switch"
                   rec target false "$target_gen" "$(ms)" 0 reflink-seed "off:$switch"
+                  rec actions false "$actions_gen" "$(ms)" 0 reflink-seed "off:$switch"
                   exit 0
                 fi
                 registry_hit=false
@@ -430,6 +449,14 @@ spec:
                 # into place itself, so "hit" here means the seed is present.
                 target_hit=false; [ -n "$target_gen" ] && target_hit=true
                 rec target "$target_hit" "$target_gen" "$(ms)" 0 reflink-seed ""
+                # The action archive seed (header item 8): a hit is the seeded tree
+                # being present in a job whose tiers are on, which is the state the
+                # runner's entry point exported the variable for.
+                actions_hit=false; actions_err=actions-seed-absent
+                if [ -n "$actions_gen" ] && [ -d /__w/_warm/actions/archives ]; then
+                  actions_hit=true; actions_err=
+                fi
+                rec actions "$actions_hit" "$actions_gen" "$(ms)" 0 reflink-seed "$actions_err"
                 exit 0
         # Header item 6: at pod deletion after the job — the per-tier
         # warm-copy spans postStart recorded (replayed with their own
