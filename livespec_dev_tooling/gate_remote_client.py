@@ -100,13 +100,11 @@ from livespec_dev_tooling.gate_remote_invocation import (
 )
 from livespec_dev_tooling.gate_remote_job_status import (
     COMPLETE_CONDITION,
-    Terminal,
     created_job_name,
     created_job_tree_hash,
     reported_time,
-    terminal_condition,
-    unreadable,
 )
+from livespec_dev_tooling.gate_remote_wait import GateWaitRequest, await_terminal_state
 
 # `returns` is VENDORED, not installed; a bare import here would resolve only
 # when some earlier import in the process happened to run first.
@@ -114,7 +112,7 @@ _VENDOR_DIR = Path(__file__).resolve().parent / "_vendor"
 if str(_VENDOR_DIR) not in sys.path:
     sys.path.insert(0, str(_VENDOR_DIR))
 
-from returns.result import Failure, Result, Success  # noqa: E402  — vendor-path-aware import.
+from returns.result import Failure, Result  # noqa: E402  — vendor-path-aware import.
 
 __all__: list[str] = [
     "GATE_BASE_REF_SUFFIX",
@@ -153,6 +151,7 @@ _READ_TREE_STEP = "read-tree-hash"
 _PUSH_STEP = "push-gate-ref"
 _SUBMIT_STEP = "submit-gate-job"
 _AWAIT_STEP = "await-gate-terminal"
+_TERMINATION_MESSAGE_JSONPATH = "{.items[*].status.containerStatuses[*].state.terminated.message}"
 _STREAM_STEP = "stream-gate-logs"
 _DELETE_STEP = "delete-gate-ref"
 
@@ -172,7 +171,6 @@ _COMPLETION_TIME = "completionTime"
 # operator has to act on, and the initContainer's own fatal paths already name
 # themselves in the log. The Job object does not carry this — only its pod does
 # — so it is a separate read, taken only when there is a failure to explain.
-_TERMINATION_MESSAGE_JSONPATH = "{.items[*].status.containerStatuses[*].state.terminated.message}"
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -221,6 +219,7 @@ class GateRunRequest:
     private_sibling_secret: str = ""
     namespace: str = GATE_NAMESPACE
     poll_interval_seconds: float = 10.0
+    admission_timeout_seconds: float = 3600.0
     poll_timeout_seconds: float = 3600.0
 
 
@@ -468,8 +467,17 @@ def _gate_a_pushed_tree(
         )
         if isinstance(delivered, Failure):
             return Failure(delivered.failure())
-    terminal = _await_terminal_state(
-        request=request, runner=runner, sleeper=sleeper, job_name=job_name
+    terminal = await_terminal_state(
+        request=GateWaitRequest(
+            kubectl=tuple(_kubectl(request=request)),
+            repo_root=request.repo_root,
+            job_name=job_name,
+            poll_interval_seconds=request.poll_interval_seconds,
+            admission_timeout_seconds=request.admission_timeout_seconds,
+            runtime_timeout_seconds=request.poll_timeout_seconds,
+        ),
+        runner=runner,
+        sleeper=sleeper,
     )
     if isinstance(terminal, Failure):
         return Failure(terminal.failure())
@@ -540,51 +548,4 @@ def _failure_message(*, request: GateRunRequest, runner: GateCommandRunner, job_
         "--output",
         f"jsonpath={_TERMINATION_MESSAGE_JSONPATH}",
     ]
-    read = runner(argv=argv, cwd=request.repo_root)
-    return read.map(lambda ran: ran.stdout.strip()).value_or("")
-
-
-def _poll_budget(*, request: GateRunRequest) -> int:
-    """How many polls the timeout buys at this interval.
-
-    Derived rather than read from a clock, so the client needs no time source
-    beyond the `Sleeper` its tests already substitute. It therefore bounds
-    POLLS, not wall-clock: a slow API server makes each poll longer and the real
-    ceiling correspondingly later. That is the honest cost of one fewer seam,
-    and the bound's job is to stop an unbounded wait, not to time it.
-    """
-    return max(1, int(request.poll_timeout_seconds // request.poll_interval_seconds))
-
-
-def _await_terminal_state(
-    *, request: GateRunRequest, runner: GateCommandRunner, sleeper: Sleeper, job_name: str
-) -> Result[Terminal, GateStepFailed]:
-    """Poll the Job until it reports a terminal condition, or give up.
-
-    A read that could not be MADE is not a gate that has not finished YET, so a
-    refused `get` ends the wait rather than being polled through: continuing
-    would spend the whole budget re-asking a question the cluster has already
-    declined to answer.
-
-    What comes back is the whole terminal STATUS rather than its condition type,
-    because the reply that says a Job finished is also the reply that says when
-    it ran. Reading those two facts out of one answer is not an economy: the Job
-    this wait just watched end is collected after `ttlSecondsAfterFinished`, so
-    a later `get` can legitimately find nothing.
-    """
-    argv = [*_kubectl(request=request), "get", "job", job_name, "--output", "json"]
-    for _ in range(_poll_budget(request=request)):
-        lifted = require_success(
-            step=_AWAIT_STEP, argv=argv, outcome=runner(argv=argv, cwd=request.repo_root)
-        )
-        if isinstance(lifted, Failure):
-            return Failure(lifted.failure())
-        condition = terminal_condition(argv=argv, payload=lifted.unwrap().stdout, step=_AWAIT_STEP)
-        if isinstance(condition, Failure):
-            return Failure(condition.failure())
-        ended = condition.unwrap()
-        if ended is not None:
-            return Success(ended)
-        sleeper(seconds=request.poll_interval_seconds)
-    gave_up = f"{job_name} reached no terminal condition within {request.poll_timeout_seconds:g}s"
-    return Failure(unreadable(step=_AWAIT_STEP, argv=argv, detail=gave_up))
+    return runner(argv=argv, cwd=request.repo_root).map(lambda ran: ran.stdout.strip()).value_or("")

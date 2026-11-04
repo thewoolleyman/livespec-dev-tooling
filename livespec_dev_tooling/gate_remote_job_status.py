@@ -24,6 +24,7 @@ __all__: list[str] = [
     "Terminal",
     "created_job_name",
     "created_job_tree_hash",
+    "job_admitted",
     "reported_time",
     "terminal_condition",
     "unreadable",
@@ -103,6 +104,17 @@ def reported_time(*, status: Mapping[str, object], key: str) -> str:
     """Return a Job clock reading, or an empty string when the Job omitted it."""
     reading = status.get(key)
     return reading if isinstance(reading, str) else ""
+
+
+def job_admitted(*, payload: str) -> bool:
+    """Return whether Kueue has released a submitted Job for execution.
+
+    The caller has already decoded the same payload to check terminal state, so
+    this repeat decode cannot introduce a new failure path. Kueue holds a
+    queued Job at ``spec.suspend: true`` and clears that value on admission.
+    """
+    parsed = cast("_JobPayload", json.loads(payload))
+    return parsed.get("spec", {}).get("suspend") is not True
 
 
 def terminal_condition(
