@@ -23,7 +23,9 @@ from livespec_dev_tooling._incident_ci_identity_json import identity_json
 from livespec_dev_tooling._incident_observer_types import (
     RecoveryIntent,
 )
+from livespec_dev_tooling.incident_ci_attachment import CiJobAttachment
 from livespec_dev_tooling.incident_ci_identity import CiIdentityVerifier
+from livespec_dev_tooling.incident_ci_job_collection import CiJobCollection
 from livespec_dev_tooling.incident_controller_installation import ControllerInstallation
 from livespec_dev_tooling.incident_observer_control import ObserverControl
 from livespec_dev_tooling.incident_observer_endpoint import _read_request, observer_endpoint
@@ -34,6 +36,10 @@ __all__: list[str] = ["ControllerService"]
 
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-47ij37
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-wanebl
+# EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-si6uu7
+_QUERY_PATHS = frozenset({"/current", "/admitted", "/ci/jobs/inspect"})
+_CONTROL_PATHS = frozenset({"/arm", "/bind", "/invalidate-ci", "/ci/jobs/collect"})
+_OIDC_ROUTES = {"/ci/identity": CiIdentityVerifier, "/ci/attach": CiJobAttachment}
 _StartResponse = Callable[[str, list[tuple[str, str]]], object]
 
 
@@ -65,21 +71,15 @@ class ControllerService:
         """Authenticate control calls separately from GitHub's signed callback."""
         if environ.get("PATH_INFO") == "/callback":
             return self._callback(environ=environ, start_response=start_response)
-        if environ.get("PATH_INFO") == "/ci/identity":
-            return self._identity(environ=environ, start_response=start_response)
         path = str(environ.get("PATH_INFO", ""))
+        if path in _OIDC_ROUTES:
+            return self._identity(environ=environ, start_response=start_response, path=path)
         secret = (
             self.installation.query_secret
-            if path in {"/current", "/admitted"}
+            if path in _QUERY_PATHS
             else self.installation.control_secret
         )
-        authorized = path in {
-            "/current",
-            "/admitted",
-            "/arm",
-            "/bind",
-            "/invalidate-ci",
-        } and hmac.compare_digest(
+        authorized = path in _QUERY_PATHS | _CONTROL_PATHS and hmac.compare_digest(
             str(environ.get("HTTP_AUTHORIZATION", "")).encode(),
             b"Bearer " + secret,
         )
@@ -100,8 +100,10 @@ class ControllerService:
                     },
                 )
             handler = (
-                ObserverQuery(installation=self.installation)
-                if path in {"/current", "/admitted"}
+                CiJobCollection(installation=self.installation)
+                if path.startswith("/ci/jobs/")
+                else ObserverQuery(installation=self.installation)
+                if path in _QUERY_PATHS
                 else ObserverControl(installation=self.installation)
             )
             result = handler.execute(path=path, payload=payload)
@@ -121,7 +123,7 @@ class ControllerService:
             )
 
     def _identity(
-        self, *, environ: dict[str, Any], start_response: _StartResponse
+        self, *, environ: dict[str, Any], start_response: _StartResponse, path: str
     ) -> Iterable[bytes]:
         result = {"schema": 1, "status": "refused", "reason": "protected CI identity unavailable"}
         if (
@@ -130,14 +132,16 @@ class ControllerService:
         ):
             try:
                 payload = identity_json(raw=_read_request(environ=environ) or b"")
-                result = CiIdentityVerifier(installation=self.installation).execute(
+                result = _OIDC_ROUTES[path](installation=self.installation).execute(
                     authorization=str(environ.get("HTTP_AUTHORIZATION", "")), payload=payload
                 )
             except (OSError, ValueError, TypeError, RecursionError):
                 pass
         return _reply(
             start_response=start_response,
-            status="202 Accepted" if result.get("status") == "authenticated" else "403 Forbidden",
+            status="202 Accepted"
+            if result.get("status") in {"authenticated", "attached"}
+            else "403 Forbidden",
             result=result,
         )
 

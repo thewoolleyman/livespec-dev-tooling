@@ -11,6 +11,7 @@ from typing import cast
 
 from livespec_dev_tooling._incident_observer_store import (
     load_record,
+    read_observer_arm,
     read_registration,
     registration_record,
     repository_lock,
@@ -23,10 +24,17 @@ from livespec_dev_tooling._incident_observer_types import (
     ObserverResult,
 )
 
-__all__: list[str] = ["arm_before_merge", "bind_after_merge", "observer_arm_admitted"]
+__all__: list[str] = [
+    "arm_before_merge",
+    "arm_record_matches",
+    "bind_after_merge",
+    "observer_arm_admitted",
+    "retained_observer_arm",
+]
 
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-47ij37
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-wanebl
+# EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-si6uu7
 
 
 def arm_before_merge(
@@ -97,30 +105,45 @@ def observer_arm_admitted(
     admission; the released controller owns this read and its protected store.
     """
     with repository_lock(directory=directory, repository=query.repository) as path:
+        return arm_record_matches(record=load_record(path=path), query=query)
+
+
+def arm_record_matches(*, record: dict[str, object], query: ObserverArmQuery) -> bool:
+    """PURE exact unbound, unrevoked arm match for callers already holding the lock."""
+    snapshot = record.get("observer_arm")
+    if (
+        record.get("observer_arm_id") != query.arm_id
+        or record.get("observer_arm_bound")
+        or record.get("observer_arm_invalidated") is not None
+        or not isinstance(snapshot, dict)
+    ):
+        return False
+    snapshot = cast("dict[str, object]", snapshot)
+    receipt = snapshot.get("authority_receipt")
+    if (
+        not isinstance(receipt, str)
+        or hashlib.sha256(bytes.fromhex(receipt)).hexdigest() != query.receipt_digest
+    ):
+        return False
+    return all(
+        snapshot.get(key) == value
+        for key, value in {
+            "repository": query.repository,
+            "pr_number": query.pr_number,
+            "base_sha": query.base_sha,
+            "head_sha": query.head_sha,
+        }.items()
+    )
+
+
+def retained_observer_arm(*, directory: Path, query: ObserverArmQuery) -> ObserverArm | None:
+    """Capture the full digest-verified arm that exactly matches the query."""
+    with repository_lock(directory=directory, repository=query.repository) as path:
         record = load_record(path=path)
-        snapshot = record.get("observer_arm")
-        if (
-            record.get("observer_arm_id") != query.arm_id
-            or record.get("observer_arm_bound")
-            or record.get("observer_arm_invalidated") is not None
-            or not isinstance(snapshot, dict)
-        ):
-            return False
-        snapshot = cast("dict[str, object]", snapshot)
-        receipt = snapshot.get("authority_receipt")
-        if (
-            not isinstance(receipt, str)
-            or hashlib.sha256(bytes.fromhex(receipt)).hexdigest() != query.receipt_digest
-        ):
-            return False
-        return all(
-            snapshot.get(key) == value
-            for key, value in {
-                "repository": query.repository,
-                "pr_number": query.pr_number,
-                "base_sha": query.base_sha,
-                "head_sha": query.head_sha,
-            }.items()
+        return (
+            read_observer_arm(record=record)
+            if arm_record_matches(record=record, query=query)
+            else None
         )
 
 
