@@ -19,13 +19,21 @@ cost fixes by the work they remove (rule F).
 Measured 2026-10-31: the item ranked a top burn fix (bd-ib-qbtf7s, inline scripts) was worth about $0.35 per run,
 about 5% of a $6.68 factory run. The unworked top sink was long-lived local seats, about $4,000 per 7 days.
 
-## 2. A flaky test gets an in-place retry and a root fix, never a whole-job rerun
+## 2. A flaky test gets an in-place retry and a root fix; a whole-job rerun only in one bounded case
 
 A test the run did not touch is retried up to 3 times, 60 seconds apart, on its own and never as a whole-job rerun,
 and every retried failure gets a root-fix item at once. The retry is the flake-retry pytest plugin's, inside the
 same pytest session (non-functional-requirements.md §"Testing approach", maintainer rulings on
 livespec-dev-tooling-6tgd2z, 2026-11-02 18:38:21Z and 18:39:54Z). A test the run touched, or one whose closure
 cannot be read, is never retried. No seat re-runs a CI job, a suite or a factory run to get past a flake.
+
+**One bounded job-level retry (maintainer ruling 2026-11-04 ~16:4xZ, recorded on epic `livespec-dev-tooling-6tgd2z`).**
+Where the in-place test retry cannot reach (runner teardown or container faults, OOM kills, failures outside
+pytest), the factory's merge-poll does ONE automatic "re-run failed jobs", and only when a classifier marks the
+failure as infrastructure, timeout or load. Every such rerun files a flake item and still requires a root fix. A
+test the PR itself touched is never retried at any level, because its failure can be the PR's own bug. The
+maintainer, pasting the coordinator's proposal: "OK, do these as priority". It amends the 2026-11-02 rulings for
+this case only; until the merge-poll retry ships, no seat reruns a job by hand to get past a test failure.
 
 A check that fails intermittently is still a defect. Find the commit that introduced the flaky bound
 (`git log -1 -- <test file>`), and route the root fix to that commit's owner as top priority. Tell every waiting
