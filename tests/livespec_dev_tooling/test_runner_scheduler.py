@@ -4,8 +4,8 @@ Runner pods request only one `ci-runner.io/churn-slot`, so under the default
 scheduler's LeastAllocated scoring on cpu/memory requests they inherited each
 node's NON-CI requests as their ranking: on 2026-11-04 gmktec-xubuntu got zero
 runners while hp-xubuntu filled first. SPECIFICATION/non-functional-requirements.md
-§"Runner-pool node rebuild recipe" → **Runner placement follows admission
-capacity** (v129) requires a scheduler profile the runner pods select by name,
+section "Runner-pool node rebuild recipe", paragraph **Runner placement follows
+admission capacity** (v129) requires a scheduler profile the runner pods select by name,
 committed in this tree and applied by the CI stack converge, with the default
 profile unchanged.
 
