@@ -1,0 +1,15 @@
+TEST/GATE TOTAL (same method) 1.103 cores over 4.33 h
+adhoc-gate-start Rust compile from top-lists: 0.253
+top test/gate processes:
+  0.099 adhoc-pytest-or-check    WT[livespec-overseer/lhjjqm-triage/.venv/bin/python] -u -c import sys;exec(eval(sys.stdin.readline()
+  0.065 adhoc-gate-start         /home/ubuntu/.rustup/toolchains/nightly-2026-04-14-x86_64-unknown-linux-gnu/bin/clippy-driver /home/ubuntu/.rustup/toolc
+  0.052 adhoc-gate-start         /home/ubuntu/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/bin/rustc --crate-name fabro_server --edition=2021 lib/
+  0.023 adhoc-pytest-or-check    WT[livespec-dev-tooling/feat/rqhqnb-ci-invocation-auth/.venv/bin/python] WT[liv]
+  0.022 adhoc-gate-start         bash /data/projects/livespec-orchestrator-beads-fabro/dev-tooling/gate-run.sh __child /data/projects/livespec-orchestrat
+  0.022 adhoc-gate-start         /home/ubuntu/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/bin/rustc --crate-name fabro --edition=2021 lib/apps/fa
+  0.019 adhoc-gate-start         /home/ubuntu/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/bin/rustc --crate-name fabro_petri --edition=2021 lib/c
+  0.013 adhoc-gate-start         WT[livespec-dev-tooling/feat/dln3ac-recovery-journal/.venv/bin/python3] /tmp/dln3ac-coverage-run.py 
+  0.013 commit-pre-commit-aggregate shellcheck -x --source-path=SCRIPTDIR scripts/assert-listeners.sh scripts/backup-alert.sh scripts/backup-restore.sh scri
+  0.012 adhoc-gate-start         /home/ubuntu/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/x86_64-unknown-linux-gnu/bin/rust-lld -flav
+  0.012 adhoc-gate-start         /home/ubuntu/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/bin/rustc --crate-name fabro_api --edition=2021 lib/fou
+  0.010 pre-push                 shellcheck -x --source-path=SCRIPTDIR scripts/assert-listeners.sh scripts/backup-alert.sh scripts/backup-restore.sh scri
