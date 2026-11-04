@@ -20,10 +20,12 @@ from livespec_dev_tooling.incident_observer_admission import (
 )
 from livespec_dev_tooling.incident_observer_authority import CurrentAuthorityReader
 from livespec_dev_tooling.incident_observer_forge import MergedRunVerifier
+from livespec_dev_tooling.incident_observer_invalidation import ObserverCiInvalidation
 
 __all__: list[str] = ["ObserverControl"]
 
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-47ij37
+# EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-wanebl
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -34,6 +36,8 @@ class ObserverControl:
 
     def execute(self, *, path: str, payload: dict[str, Any]) -> dict[str, Any]:
         settings = self.installation
+        if path == "/invalidate-ci":
+            return ObserverCiInvalidation(installation=settings).execute(payload=payload)
         if path == "/arm":
             return self._arm(payload=payload)
         if path == "/bind" and set(payload) == {"repository", "head_sha", "run_id"}:

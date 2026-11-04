@@ -31,6 +31,7 @@ from livespec_dev_tooling.incident_observer_query import ObserverQuery
 __all__: list[str] = ["ControllerService"]
 
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-47ij37
+# EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-wanebl
 _StartResponse = Callable[[str, list[tuple[str, str]]], object]
 
 
@@ -68,7 +69,13 @@ class ControllerService:
             if path in {"/current", "/admitted"}
             else self.installation.control_secret
         )
-        authorized = path in {"/current", "/admitted", "/arm", "/bind"} and hmac.compare_digest(
+        authorized = path in {
+            "/current",
+            "/admitted",
+            "/arm",
+            "/bind",
+            "/invalidate-ci",
+        } and hmac.compare_digest(
             str(environ.get("HTTP_AUTHORIZATION", "")).encode(),
             b"Bearer " + secret,
         )
