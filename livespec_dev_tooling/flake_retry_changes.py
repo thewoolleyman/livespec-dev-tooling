@@ -55,18 +55,37 @@ def _fetch_parent(*, repo_root: Path, head: str) -> None:
         _ = _run_git(root=repo_root, args=["fetch", "--quiet", "--deepen=1", "origin", head])
 
 
-def change_paths(*, repo_root: Path) -> set[Path] | None:
-    """Return committed, index, working-tree, and untracked changes."""
+def _comparison(*, repo_root: Path) -> str | None:
+    """Name the revision the change set is measured from, or report it unknown.
+
+    With a default-branch ref that is the merge-base, or `HEAD`'s parent on the
+    default branch itself. Without one, a pull-request checkout is the merge
+    commit GitHub builds, whose first parent is the base tip; any other lone
+    commit has nothing to be measured against.
+    """
+    head = _run_git(root=repo_root, args=["rev-parse", "HEAD"])
+    if head is None or len(head) != 1:
+        return None
+    sha = next(iter(head)).as_posix()
     remote = _default_branch_ref(repo_root=repo_root)
     if remote is None:
-        return None
+        _fetch_parent(repo_root=repo_root, head=sha)
+        merged = _run_git(root=repo_root, args=["rev-parse", "--verify", "--quiet", "HEAD^2"])
+        return None if merged is None else "HEAD^1"
     base = _run_git(root=repo_root, args=["merge-base", "HEAD", remote])
-    head = _run_git(root=repo_root, args=["rev-parse", "HEAD"])
-    if base is None or head is None or len(base) != 1 or len(head) != 1:
+    if base is None or len(base) != 1:
         return None
-    comparison = "HEAD^" if base == head else next(iter(base)).as_posix()
     if base == head:
-        _fetch_parent(repo_root=repo_root, head=next(iter(head)).as_posix())
+        _fetch_parent(repo_root=repo_root, head=sha)
+        return "HEAD^"
+    return next(iter(base)).as_posix()
+
+
+def change_paths(*, repo_root: Path) -> set[Path] | None:
+    """Return committed, index, working-tree, and untracked changes."""
+    comparison = _comparison(repo_root=repo_root)
+    if comparison is None:
+        return None
     queries: tuple[list[str], ...] = (
         ["diff", "--name-only", comparison, "HEAD"],
         ["diff", "--name-only", "--cached"],

@@ -92,3 +92,31 @@ def test_a_depth_one_master_push_checkout_retries_only_tests_outside_the_commit(
     markers = cast(list[pytest.MarkDecorator], added["test_untouched.py"])
     assert [marker.kwargs for marker in markers] == [_RETRY]
     assert added["test_touched.py"] == []
+
+
+@pytest.mark.integration
+def test_a_depth_one_pull_request_checkout_retries_only_tests_outside_the_pull_request(
+    *, tmp_path: Path
+) -> None:
+    """The merge ref has no default-branch ref beside it; its first parent is the base tip."""
+    plugin = importlib.import_module("livespec_dev_tooling.flake_retry")
+    origin = _origin(root=tmp_path)
+    _git(repo=origin, args=["checkout", "-q", "-b", "feature"])
+    _ = _commit(
+        repo=origin, files={"app.py": "VALUE = 2\n", "NOTES.md": "docs\n"}, message="the pr"
+    )
+    _git(repo=origin, args=["checkout", "-q", "master"])
+    _ = _commit(repo=origin, files={"elsewhere.py": "Y = 1\n"}, message="master moved on")
+    _git(repo=origin, args=["merge", "-q", "--no-ff", "-m", "merge", "feature"])
+    merged = _git(repo=origin, args=["rev-parse", "HEAD"])
+    work = _depth_one_checkout(
+        root=tmp_path, origin=origin, sha=merged, ref="refs/remotes/pull/1/merge"
+    )
+
+    assert plugin.change_paths(repo_root=work) == {Path("app.py"), Path("NOTES.md")}
+
+    added: dict[str, list[object]] = {}
+    plugin.mark_untouched_tests(root=work, items=_items(root=work, added=added))
+    markers = cast(list[pytest.MarkDecorator], added["test_untouched.py"])
+    assert [marker.kwargs for marker in markers] == [_RETRY]
+    assert added["test_touched.py"] == []
