@@ -122,6 +122,17 @@ metadata:
 data:
   bytes: "1000000000"
   files: "20000"
+  # The git object seed's budget (the populator's header, "THE GIT OBJECT
+  # SEED"): ONE repository's store, because a work volume is seeded with its
+  # own repository's store only. The largest routed repository's default
+  # branch and tags repack to roughly 40 MB in a handful of files (plan
+  # ci-cache-optimization research/005: a 40 MB mirror of ALL 775 branches
+  # and 812 tags); 128 MiB / 64 files is a bound the shape cannot reach
+  # without something having gone wrong, on both axes, and a seeded
+  # reflink copy of it costs milliseconds. A store over either number is
+  # not published (previous generation stays live).
+  git-bytes: "134217728"
+  git-files: "64"
 ---
 apiVersion: batch/v1
 kind: CronJob
@@ -191,6 +202,17 @@ spec:
                     configMapKeyRef:
                       name: warm-cache-budget
                       key: files
+                # The git object seed's budget (same ConfigMap, git- keys).
+                - name: WARM_GIT_BUDGET_BYTES
+                  valueFrom:
+                    configMapKeyRef:
+                      name: warm-cache-budget
+                      key: git-bytes
+                - name: WARM_GIT_BUDGET_FILES
+                  valueFrom:
+                    configMapKeyRef:
+                      name: warm-cache-budget
+                      key: git-files
                 # The PyPI files proxy (./pypi-proxy/) every rebuild fetches
                 # through; probed at /health, a miss degrades to a direct build.
                 - name: PYPI_FILES_PROXY

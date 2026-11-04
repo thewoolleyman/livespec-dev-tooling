@@ -120,7 +120,10 @@ template:
           # before it installs anything. See ../container-hook/README.md
           # "Runner-image bump procedure".
           - name: ACTIONS_RUNNER_CONTAINER_HOOKS
-            value: /home/runner/fleet-hook/index.js
+            # The pool's entry point: names the job's own git object seed to the job
+            # container, then runs the fleet-patched hook mounted below, unchanged
+            # (../arc/git-seed-hook.js; hook-pod-template.yaml header item 8).
+            value: /home/runner/hook-template/git-seed-hook.js
           - name: ACTIONS_RUNNER_PRESEEDED_EXTERNALS_VERSION
             value: "2.336.0"
           # THE WORKFLOW-POD FIX -- see values-livespec-overseer.yaml for the
@@ -138,8 +141,8 @@ template:
           - name: hook-pod-template
             mountPath: /home/runner/hook-template
             readOnly: true
-          # The fleet-patched hook, at exactly the path
-          # ACTIONS_RUNNER_CONTAINER_HOOKS names. Read-only: the runner
+          # The fleet-patched hook, at the path git-seed-hook.js runs it from
+          # (its FLEET_REAL_CONTAINER_HOOK default). Read-only: the runner
           # executes it and never writes it.
           - name: fleet-container-hook
             mountPath: /home/runner/fleet-hook/index.js
