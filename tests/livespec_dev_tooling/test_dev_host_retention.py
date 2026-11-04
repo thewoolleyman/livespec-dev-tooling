@@ -141,18 +141,58 @@ _UV_STUB = """#!/usr/bin/env bash
 # A `uv` that records its argv and, when armed, reproduces the 2026-10-21
 # abort: a prune that names one path it was not permitted to remove and exits
 # non-zero having removed everything else.
+#
+# Armed with STUB_UV_CACHE_LOCKED=1 it reproduces the 2026-11-02 dev-host
+# failure: without `--force` the prune waits out uv's lock timeout on a cache
+# other uv processes hold in use and exits non-zero. STUB_UV_CACHE_LOCKED=always
+# keeps failing even with `--force`.
 set -uo pipefail
 printf '%s\\n' "$*" >>"$STUB_UV_LOG"
+printf 'uv %s\\n' "$*" >>"$STUB_EVENT_LOG"
 if [[ ${STUB_UV_PRUNE_FAILS:-0} == 1 ]]; then
     printf 'error: Failed to clear cache\\n' >&2
     printf '  Caused by: failed to remove directory `%s`\\n' "$STUB_UV_BLOCKED_PATH" >&2
     printf '  Caused by: Permission denied (os error 13)\\n' >&2
     exit 2
 fi
+force=0
+for arg in "$@"; do
+    [[ $arg == --force ]] && force=1
+done
+if [[ ${STUB_UV_CACHE_LOCKED:-0} == always || ( ${STUB_UV_CACHE_LOCKED:-0} == 1 && $force == 0 ) ]]; then
+    printf 'Cache is currently in-use, waiting for other uv processes to finish (use --force to override)\\n' >&2
+    printf 'error: Timeout (300s) when waiting for lock on /home/ubuntu/.cache/uv\\n' >&2
+    exit 2
+fi
 printf 'Removed 4096 files\\n'
 """
 
-_STUBS: tuple[tuple[str, str], ...] = (("docker", _DOCKER_STUB), ("uv", _UV_STUB))
+_CHOWN_STUB = """#!/usr/bin/env bash
+# A `chown` that records its argv and changes nothing, so the ownership restore
+# is observable without root. STUB_CHOWN_SLEEP makes it slow, standing in for
+# the 20-minute walk over a multi-gigabyte cache.
+set -uo pipefail
+printf '%s\\n' "$*" >>"$STUB_CHOWN_LOG"
+printf 'chown %s\\n' "$*" >>"$STUB_EVENT_LOG"
+if [[ -n ${STUB_CHOWN_SLEEP:-} ]]; then
+    exec sleep "$STUB_CHOWN_SLEEP" >/dev/null 2>&1
+fi
+"""
+
+_RUNUSER_STUB = """#!/usr/bin/env bash
+# A `runuser -u <user> -- <command...>` that runs the command as the caller, so
+# the retention user's prune is reachable without root.
+set -uo pipefail
+shift 3
+exec "$@"
+"""
+
+_STUBS: tuple[tuple[str, str], ...] = (
+    ("docker", _DOCKER_STUB),
+    ("uv", _UV_STUB),
+    ("chown", _CHOWN_STUB),
+    ("runuser", _RUNUSER_STUB),
+)
 
 
 def _read(*, path: Path) -> str:
@@ -178,8 +218,11 @@ def _install_stubs(*, tmp_path: Path) -> Path:
         _ = stub.write_text(body, encoding="utf-8")
         stub.chmod(0o755)
     (tmp_path / "store").mkdir(exist_ok=True)
+    (tmp_path / "uv-cache").mkdir(exist_ok=True)
     (tmp_path / "docker.log").touch()
     (tmp_path / "uv.log").touch()
+    (tmp_path / "chown.log").touch()
+    (tmp_path / "events.log").touch()
     return stub_dir
 
 
@@ -191,6 +234,9 @@ def _base_env(*, tmp_path: Path) -> dict[str, str]:
         "STUB_STORE": str(tmp_path / "store"),
         "STUB_DOCKER_LOG": str(tmp_path / "docker.log"),
         "STUB_UV_LOG": str(tmp_path / "uv.log"),
+        "STUB_CHOWN_LOG": str(tmp_path / "chown.log"),
+        "STUB_EVENT_LOG": str(tmp_path / "events.log"),
+        "LIVESPEC_DEV_HOST_UV_CACHE_DIR": str(tmp_path / "uv-cache"),
         "LIVESPEC_DEV_HOST_RETENTION_DAYS": str(_RETENTION_DAYS),
         "LIVESPEC_DEV_HOST_RETENTION_CHECKOUT_ROOTS": str(tmp_path / "projects"),
     }
@@ -318,7 +364,7 @@ def test_a_run_with_no_uv_on_path_uses_the_configured_uv_executable(*, tmp_path:
     _ = configured_uv.write_text(_UV_STUB, encoding="utf-8")
     configured_uv.chmod(0o755)
     cache_dir = tmp_path / "uv-cache"
-    cache_dir.mkdir()
+    cache_dir.mkdir(exist_ok=True)
     env |= {
         "PATH": "/usr/bin:/bin",
         "LIVESPEC_DEV_HOST_RETENTION_UV_BIN": str(configured_uv),
@@ -370,6 +416,177 @@ def test_a_uv_path_the_prune_cannot_remove_is_logged_and_the_run_still_finishes(
         f"the 2026-10-21 reclamation stop at ~6G:\n{done.stdout + done.stderr}"
     )
     assert "free space after" in done.stdout, done.stdout
+
+
+@pytest.fixture
+def uv_in_use(*, tmp_path: Path) -> Iterator[subprocess.Popen[bytes]]:
+    """A real process holding the retention user's uv cache in use.
+
+    uv's users take a shared `flock` on `<cache>/.lock` for as long as they run,
+    and its prune wants the exclusive one. Holding the shared lock from a real
+    `flock` child is what makes the cache in use for the run under test.
+    """
+    cache_dir = tmp_path / "uv-cache"
+    cache_dir.mkdir(exist_ok=True)
+    lock = cache_dir / ".lock"
+    lock.touch()
+    holder = subprocess.Popen(["flock", "--shared", str(lock), "sleep", _LIVE_CHILD_SECONDS])
+    deadline = datetime.now(timezone.utc) + timedelta(seconds=30)
+    while (
+        subprocess.run(
+            ["flock", "--exclusive", "--nonblock", str(lock), "true"], check=False
+        ).returncode
+        == 0
+    ):
+        assert datetime.now(timezone.utc) < deadline, "the lock holder never took the lock"
+    try:
+        yield holder
+    finally:
+        holder.terminate()
+        _ = holder.wait(timeout=30)
+
+
+def test_a_run_prunes_the_uv_cache_while_another_uv_process_holds_it_in_use(
+    *, tmp_path: Path, uv_in_use: subprocess.Popen[bytes]
+) -> None:
+    """The 2026-11-02 dev-host failure: two of two converged runs never pruned.
+
+    uv processes (`uv run` gates, `uvx`) hold the cache in use almost
+    continuously there, so a prune that waits for the exclusive lock times out
+    after 300s and reclaims nothing. The run must still log a `uv cache prune:`
+    result line, which needs `--force` once the cache is in use.
+    """
+    assert uv_in_use.poll() is None
+    env = _base_env(tmp_path=tmp_path) | {"STUB_UV_CACHE_LOCKED": "1"}
+
+    done = _retain(env=env)
+
+    assert done.returncode == 0, done.stdout + done.stderr
+    assert "uv cache prune: Removed 4096 files" in done.stdout, done.stdout + done.stderr
+    assert "did not complete" not in done.stdout, done.stdout
+    assert "--force" in (tmp_path / "uv.log").read_text(encoding="utf-8")
+
+
+def test_a_run_forces_the_prune_when_the_cache_turns_out_to_be_in_use(*, tmp_path: Path) -> None:
+    """The lock can be taken between the in-use probe and the prune."""
+    env = _base_env(tmp_path=tmp_path) | {"STUB_UV_CACHE_LOCKED": "1"}
+
+    done = _retain(env=env)
+
+    assert done.returncode == 0, done.stdout + done.stderr
+    assert "uv cache prune: Removed 4096 files" in done.stdout, done.stdout + done.stderr
+    assert "--force" in (tmp_path / "uv.log").read_text(encoding="utf-8")
+
+
+def test_an_idle_uv_cache_is_pruned_without_force(*, tmp_path: Path) -> None:
+    """`--force` skips uv's in-use check, so it is reserved for a cache in use."""
+    env = _base_env(tmp_path=tmp_path)
+    (tmp_path / "uv-cache" / ".lock").touch()
+
+    done = _retain(env=env)
+
+    assert done.returncode == 0, done.stdout + done.stderr
+    assert "uv cache prune: Removed 4096 files" in done.stdout
+    assert "--force" not in (tmp_path / "uv.log").read_text(encoding="utf-8")
+
+
+def test_a_lock_timeout_is_not_logged_as_an_unremovable_path(*, tmp_path: Path) -> None:
+    """The cache and its `.lock` are not paths the prune failed to remove."""
+    env = _base_env(tmp_path=tmp_path) | {"STUB_UV_CACHE_LOCKED": "always"}
+    checkout = _checkout(tmp_path=tmp_path, env=env)
+    aged = _gate_run(checkout=checkout, run_id="aged", age_days=30, exit_code="0", pid=None)
+
+    done = _retain(env=env)
+
+    assert done.returncode == 0, done.stdout + done.stderr
+    assert "the uv cache prune did not complete" in done.stdout, done.stdout
+    assert "could not remove" not in done.stdout, done.stdout
+    assert not aged.exists(), "a prune that cannot lock must not stop the later steps"
+
+
+def _nobody_env(*, tmp_path: Path) -> dict[str, str]:
+    """An environment whose retention user is not the caller, so its files are 'foreign'."""
+    return _base_env(tmp_path=tmp_path) | {"LIVESPEC_DEV_HOST_RETENTION_USER": "nobody"}
+
+
+def test_a_run_restores_the_retention_users_ownership_before_it_prunes(*, tmp_path: Path) -> None:
+    """A root-owned path in the retention user's cache is handed back first.
+
+    Root writers (the ansible become run of uvx-cached ansible-core) leave
+    root-owned paths that the retention user's prune cannot remove. The
+    caller's files here are not `nobody`'s, which is the same shape.
+    """
+    env = _nobody_env(tmp_path=tmp_path)
+    foreign = tmp_path / "uv-cache" / "archive-v0" / "root-written"
+    foreign.parent.mkdir(parents=True)
+    foreign.touch()
+
+    done = _retain(env=env)
+
+    assert done.returncode == 0, done.stdout + done.stderr
+    events = (tmp_path / "events.log").read_text(encoding="utf-8").splitlines()
+    chowns = [index for index, event in enumerate(events) if str(foreign) in event]
+    prunes = [index for index, event in enumerate(events) if event.startswith("uv ")]
+    assert chowns, f"the root-owned path was never handed back:\n{events}"
+    assert "-h 65534:65534" in events[chowns[0]], events[chowns[0]]
+    assert prunes, events
+    assert chowns[0] < prunes[0], f"the prune ran before the ownership restore:\n{events}"
+
+
+def test_an_ownership_walk_over_its_time_budget_is_cut_off_and_the_prune_still_runs(
+    *, tmp_path: Path
+) -> None:
+    """A kill by the unit's start timeout skips the prune and the 'after' log.
+
+    The walk took about 20 minutes of a 30-minute budget on 2026-11-02, so the
+    walk gets a budget of its own and the run goes on past it.
+    """
+    env = _nobody_env(tmp_path=tmp_path) | {
+        "STUB_CHOWN_SLEEP": "30",
+        "LIVESPEC_DEV_HOST_UV_OWNERSHIP_BUDGET_SECONDS": "1",
+    }
+    (tmp_path / "uv-cache" / "root-written").touch()
+
+    done = _retain(env=env)
+
+    assert done.returncode == 0, done.stdout + done.stderr
+    assert "ownership walk exceeded its 1s budget" in done.stdout, done.stdout
+    assert "uv cache prune: Removed 4096 files" in done.stdout, done.stdout
+    assert "free space after" in done.stdout
+
+
+def test_a_later_run_walks_only_what_changed_since_the_last_complete_walk(
+    *, tmp_path: Path
+) -> None:
+    """Root-owned paths enter the cache only when a root writer writes it.
+
+    A path that was handed back by a complete walk, and has not changed since,
+    is not visited again; a path written after that walk is.
+    """
+    state_dir = tmp_path / "state"
+    env = _nobody_env(tmp_path=tmp_path) | {"LIVESPEC_DEV_HOST_RETENTION_STATE_DIR": str(state_dir)}
+    first = tmp_path / "uv-cache" / "first"
+    second = tmp_path / "uv-cache" / "second"
+    first.touch()
+    chown_log = tmp_path / "chown.log"
+
+    assert _retain(env=env).returncode == 0
+    assert chown_log.read_text(encoding="utf-8").count(str(first)) == 1
+    assert _retain(env=env).returncode == 0
+    assert (
+        chown_log.read_text(encoding="utf-8").count(str(first)) == 1
+    ), "a complete walk's stamp must keep an unchanged path from being walked again"
+
+    second.touch()
+    assert _retain(env=env).returncode == 0
+    log = chown_log.read_text(encoding="utf-8")
+    assert log.count(str(second)) == 1, "a path written after the stamp must be handed back"
+    assert log.count(str(first)) == 1
+
+
+def test_the_retention_service_gives_the_script_a_state_directory() -> None:
+    """The stamp needs somewhere durable to live; systemd creates it for the unit."""
+    assert "StateDirectory=livespec-dev-host-retention" in _read(path=_SERVICE_TEMPLATE)
 
 
 def test_a_run_removes_an_aged_terminal_gate_run_and_leaves_an_in_flight_one(
