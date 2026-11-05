@@ -69,6 +69,7 @@ case "$1" in
       echo) echo exec-ok ;;
       wget) [ "$STUB_DNS" = 0 ] && case "$*" in *svc.cluster.local*) exit 1 ;; esac; echo proof-ok ;;
       nslookup) [ "$STUB_DNS" = 0 ] && exit 1; echo 'Address: 10.43.0.1' ;;
+      ping) [ "$STUB_MTU" = 0 ] && exit 1; echo '3 packets received' ;;
     esac ;;
   delete)
     [ "$2" = networkpolicy ] && rm -f "$s/policy" ;;
@@ -97,7 +98,7 @@ def mac(tmp_path: Path) -> _Mac:
 
 
 def _prove(
-    *, mac: _Mac, mode: str, tunnel_only: str, enforced: str = "1", dns: str = "1"
+    *, mac: _Mac, mode: str, tunnel_only: str, enforced: str = "1", dns: str = "1", mtu: str = "1"
 ) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         ["/bin/bash", str(_SCRIPT), "macbook-m4-max", mode],
@@ -109,6 +110,7 @@ def _prove(
             "STUB_TUNNEL_ONLY": tunnel_only,
             "STUB_ENFORCED": enforced,
             "STUB_DNS": dns,
+            "STUB_MTU": mtu,
             "POLICY_SETTLE_SECONDS": "0",
         },
         check=False,
@@ -144,6 +146,9 @@ def test_the_disabled_mode_proof_passes_every_check_on_the_worker(mac: _Mac) -> 
             "port-forward-to-worker",
             "pod-to-pod-worker-to-k3s",
             "pod-to-pod-k3s-to-worker",
+            "large-tcp-worker-to-k3s",
+            "large-tcp-k3s-to-worker",
+            "large-icmp-worker-to-k3s",
             "clusterip-and-dns-from-worker",
             "dns-10.43.0.10-from-worker",
             "networkpolicy-deny-on-worker",
@@ -200,3 +205,9 @@ def test_an_undeclared_host_or_unknown_mode_is_refused_before_any_cluster_call(
     assert result.returncode != 0
     assert message in result.stderr
     assert (mac.state / "calls.log").read_text(encoding="utf-8") == ""
+
+
+def test_the_disabled_mode_proof_fails_when_a_large_packet_does_not_cross(mac: _Mac) -> None:
+    result = _prove(mac=mac, mode="disabled", tunnel_only="0", mtu="0")
+    assert result.returncode != 0
+    assert _proofs(result)["large-icmp-worker-to-k3s"] == "FAIL"
