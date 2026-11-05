@@ -110,11 +110,16 @@ def test_a_run_that_ended_less_than_the_horizon_ago_is_kept() -> None:
     assert "younger than the horizon" in verdict.reason
 
 
-@pytest.mark.parametrize("state", ["running", "starting", "paused", ""])
+@pytest.mark.parametrize("state", ["starting", "paused", ""])
 def test_a_sandbox_that_is_not_stopped_is_kept(*, state: str) -> None:
     [verdict] = _verdicts(sandbox=_sandbox(state=state), run=_run())
     assert verdict.action == "keep"
     assert "not stopped" in verdict.reason
+
+
+def test_an_old_terminal_running_sandbox_is_deleted() -> None:
+    [verdict] = _verdicts(sandbox=_sandbox(state="running"), run=_run())
+    assert verdict.action == "delete", verdict.reason
 
 
 def test_a_run_missing_from_fabro_ps_is_kept_and_called_out() -> None:
