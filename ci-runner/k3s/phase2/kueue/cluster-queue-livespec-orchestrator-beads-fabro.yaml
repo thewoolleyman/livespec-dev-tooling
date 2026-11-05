@@ -32,10 +32,10 @@
 #
 # nominalQuota is this repo's GUARANTEED FLOOR, not its ceiling. Unused quota
 # anywhere in the `fleet-ci-runner-pool` cohort is borrowable automatically,
-# so this repo can burst well above 26 when its peers are idle (except into the
+# so this repo can burst well above 25 when its peers are idle (except into the
 # master-push slice, which lends nothing). The per-repo
 # ceiling is a SEPARATE number — ../arc/values-livespec-orchestrator-beads-fabro.yaml's
-# maxRunners (52). The two are different terms of the same min() and are
+# maxRunners (50). The two are different terms of the same min() and are
 # correctly UNEQUAL; see DERIVATION.md "The four terms and where each one lives".
 #
 # API version confirmed live against the pinned Kueue v0.19.1 install on
@@ -67,7 +67,11 @@ spec:
               # (cluster-queue-livespec-dev-tooling-master.yaml) so the cohort
               # still sums to C = 44. See DERIVATION.md "The master-push slice
               # for livespec-dev-tooling (2026-11-03)".
-              nominalQuota: 26
+              # 26 -> 25 on 2026-11-05: one more slot DONATED, to the fabro
+              # fork's queue (cluster-queue-fabro.yaml), so the cohort still
+              # sums to C = 44. See DERIVATION.md "The fabro fork scale set
+              # (2026-11-05)".
+              nominalQuota: 25
 ---
 apiVersion: kueue.x-k8s.io/v1beta2
 kind: LocalQueue

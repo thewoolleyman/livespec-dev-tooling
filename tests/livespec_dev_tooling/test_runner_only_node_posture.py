@@ -178,13 +178,22 @@ def test_the_sweep_renders_a_storage_root_drop_in_only_when_one_is_given() -> No
 _KUEUE_DIR = _REPO / "ci-runner" / "k3s" / "phase2" / "kueue"
 _DERIVATION = _KUEUE_DIR / "DERIVATION.md"
 _NOMINAL_QUOTA = re.compile(r"^\s+nominalQuota: (?P<quota>\d+)\s*$", re.MULTILINE)
+_COHORT_MEMBER = "cohortName: fleet-ci-runner-pool"
 
 
 def _cohort_quota_total() -> int:
+    """The churn-slot floors of every `fleet-ci-runner-pool` member, whatever its file is named.
+
+    Selected by cohort membership, not by a `cluster-queue-livespec*` name: the
+    fabro fork's queue (`cluster-queue-fabro.yaml`, 2026-11-05) is a member whose
+    name carries no `livespec`, while the gates and phase-1 proof queues are
+    cpu/memory queues in no cohort at all.
+    """
     return sum(
         int(match["quota"])
-        for path in sorted(_KUEUE_DIR.glob("cluster-queue-livespec*.yaml"))
-        for match in _NOMINAL_QUOTA.finditer(path.read_text(encoding="utf-8"))
+        for path in sorted(_KUEUE_DIR.glob("cluster-queue-*.yaml"))
+        if _COHORT_MEMBER in (text := path.read_text(encoding="utf-8"))
+        for match in _NOMINAL_QUOTA.finditer(text)
     )
 
 
@@ -211,7 +220,7 @@ def test_the_rebalance_moves_eight_slots_from_poweredge_to_hp_and_keeps_the_tota
         f'churn slots derived from cores (2026-11-04)"); got {capacities}'
     )
     assert sum(capacities.values()) == 44 == _cohort_quota_total(), (
-        f"the profiles must still sum to 44 and equal the ten cohort quotas; "
+        f"the profiles must still sum to 44 and equal the summed cohort quotas; "
         f"profiles={sum(capacities.values())} quotas={_cohort_quota_total()}"
     )
     assert (

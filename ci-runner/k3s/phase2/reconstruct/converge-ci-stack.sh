@@ -5,7 +5,7 @@
 # installation secret assumed already present — see the fail-closed pre-gate
 # below) to: the fleet-owned local-path provisioner Running, Kueue installed
 # and its admission webhook SERVING, every per-repo queue applied, the ARC
-# controller Running, all ten runner scale-set listeners Running, the
+# controller Running, every runner scale-set listener Running, the
 # hook-pod-template ConfigMap converged, the warm-cache CronJob present, and
 # the Kueue-webhook probe's host credential re-rendered. A second run against
 # an already-converged cluster makes no disruptive change (every operation is
@@ -225,7 +225,10 @@ NODE_STATUS_SA_PREFIX="node-status-patcher-"
 # script for what gets applied; co-maintained with phase2/README.md
 # "Applying a scale set's values" (several names diverge from a plain
 # values-<repo>.yaml, all for reasons recorded there; livespec-dev-master-k3s
-# is livespec-dev-tooling's master-push slice, a second scale set for one repo). Excludes
+# is livespec-dev-tooling's master-push slice, a second scale set for one repo;
+# fabro-k3s serves thewoolleyman/fabro, the fleet's Rust fork, which is not a
+# livespec repository -- see ../kueue/DERIVATION.md "The fabro fork scale set
+# (2026-11-05)"). Excludes
 # arc/values-EXAMPLE-repo.yaml (a template, not a live release). NOTE the
 # phase-1 install-arc.sh step 2 applies `poweredge-xubuntu-k3s` from the
 # phase-1 file arc/values-host-unique.yaml; this converge SUPERSEDES that with
@@ -233,6 +236,7 @@ NODE_STATUS_SA_PREFIX="node-status-patcher-"
 # scale set, so it never touches values-host-unique.yaml and never calls
 # install-arc.sh step 2.
 declare -A SCALE_SETS=(
+  [fabro-k3s]="values-fabro.yaml"
   [livespec-local-ci-k3s]="values-livespec.yaml"
   [livespec-console-beads-k3s]="values-livespec-console-beads-fabro.yaml"
   [livespec-orchestrator-git-k3s]="values-livespec-orchestrator-git-jsonl.yaml"
@@ -539,7 +543,7 @@ done
 # ---------------------------------------------------------------------------
 log "5. Apply all per-repo Kueue resources (ResourceFlavor first, then queues)"
 kubectl apply -f "${KUEUE_DIR}/resource-flavor.yaml"
-# The glob below covers MORE than the ten per-repo queue pairs: any file named
+# The glob below covers MORE than the per-repo cohort queue pairs: any file named
 # cluster-queue-*.yaml in ../kueue/ is applied, which is how the non-cohort
 # cpu/memory queues reach the cluster with no second loop to keep in sync —
 # cluster-queue-phase1-proof.yaml, and since 2026-09-08 cluster-queue-gates.yaml
@@ -582,10 +586,10 @@ fi
 
 # ---------------------------------------------------------------------------
 log "7. Install/upgrade all ${#SCALE_SETS[@]} runner scale sets from phase-2 values files"
-# Asserted ONCE, before the loop: all eleven releases install the SAME chart
+# Asserted ONCE, before the loop: every release installs the SAME chart
 # tarball, so re-checking it per release would say nothing new — and a chart
 # nobody pulled means no runners at all, which is worth failing on before the
-# first helm call rather than eleven times over.
+# first helm call rather than once per release.
 [ -f "${ARC_SCALE_SET_CHART}" ] \
   || { echo "FATAL: ${ARC_SCALE_SET_CHART} is missing; re-run the ci_converge_unit Ansible role to pull the pinned ARC charts into the artifact tree" >&2; exit 1; }
 # 7a. Publish the hook-template revision BEFORE any scale set names it: each

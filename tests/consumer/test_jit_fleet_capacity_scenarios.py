@@ -87,6 +87,12 @@ _CHURN_SLOT = "ci-runner.io/churn-slot"
 _PHYSICAL_CAP = 482
 _CEILING_MULTIPLE = 2
 _CEILING_FLOOR = 6
+# The ceilings DERIVATION.md "Recorded exceptions to the rule" moves off
+# `max(2 x nominalQuota, 6)`, keyed by ClusterQueue — the same table
+# tests/spec/test_jit_admission_budget.py holds to its DERIVATION.md rows. An
+# exception may waive the rule, never the borrowing clause: it must still sit
+# ABOVE the floor it bounds.
+_RECORDED_CEILING_EXCEPTIONS: dict[str, int] = {"fabro-cq": 2}
 
 _DOC_SEPARATOR = re.compile(r"^---$", re.MULTILINE)
 _KIND = re.compile(r"^kind:\s*(?P<kind>\S+)$", re.MULTILINE)
@@ -226,14 +232,17 @@ def _ceilings_without_borrow_headroom(
     """
     wrong: list[str] = []
     for name, (local_queue, ceiling, _) in sorted(routed.items()):
-        member = members.get(targets.get(local_queue, local_queue))
+        cluster_queue = targets.get(local_queue, local_queue)
+        member = members.get(cluster_queue)
         floor = None if member is None else member[0]
         assert floor is not None, (
             f"{name} must route to a cohort member before its logical ceiling can be bounded; "
             f"local_queue={local_queue} targets={targets}"
         )
-        expected = max(_CEILING_MULTIPLE * floor, _CEILING_FLOOR)
-        if ceiling == expected:
+        expected = _RECORDED_CEILING_EXCEPTIONS.get(
+            cluster_queue, max(_CEILING_MULTIPLE * floor, _CEILING_FLOOR)
+        )
+        if ceiling == expected and ceiling > floor:
             continue
         wrong.append(f"{name}: maxRunners={ceiling} floor={floor} expected={expected}")
     return wrong
@@ -329,7 +338,8 @@ def test_fleet_capacity_borrows_fairly_and_the_finite_slot_holds_the_physical_ca
     is instead the recorded bounded multiple `max(2 x nominalQuota, 6)`: it can
     exceed the cohort total for one dominant repository, but the fair-share and
     finite-slot terms still bound admission while this rule bounds pending
-    runner objects.
+    runner objects. A recorded exception (DERIVATION.md "Recorded exceptions to
+    the rule") may replace the rule's value, but must still exceed the share.
 
     WITHOUT EXCEEDING 482: the bound on all that borrowing is the cohort's summed
     nominal quota, and the thing that ENFORCES it is not Kueue — measured live,
@@ -388,6 +398,13 @@ def test_fleet_capacity_borrows_fairly_and_the_finite_slot_holds_the_physical_ca
     ) == [
         "control.yaml: maxRunners=7 floor=1 expected=6"
     ], "the bounded-ceiling reader must still convict a ceiling above the recorded rule"
+    assert _ceilings_without_borrow_headroom(
+        routed={"control.yaml": ("fabro-lq", 2, _CONTROL_VALUES)},
+        targets={"fabro-lq": "fabro-cq"},
+        members={"fabro-cq": (2, None)},
+    ) == [
+        "control.yaml: maxRunners=2 floor=2 expected=2"
+    ], "a recorded exception must still convict a ceiling that leaves no borrowing headroom"
     assert _scale_sets_outside_the_finite_slot(values={"control.yaml": _CONTROL_VALUES}) == [
         "control.yaml: requests=None limits=None"
     ], "the finite-slot reader must still convict a scale set that requests no slot"

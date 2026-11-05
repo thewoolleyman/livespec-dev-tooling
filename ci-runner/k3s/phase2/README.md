@@ -128,7 +128,11 @@ job at a time. Derivation and the ten values: `kueue/DERIVATION.md`
 "Bounding maxRunners to the quota (2026-09-06)". A scale set departs from
 the rule only as a recorded exception with its measurement and acceptance
 check (`kueue/DERIVATION.md` "Recorded exceptions to the rule"; since
-2026-10-19 `livespec-orchestrator-beads-fabro` at 12).
+2026-11-05 `fabro` at 2, the rule's multiple with its floor waived for a
+~100 GiB work volume per job. The first exception,
+`livespec-orchestrator-beads-fabro` at 12 from 2026-10-19, was deleted
+2026-10-22). An exception may leave the rule but never drop to the quota:
+`nominalQuota < maxRunners` holds for every scale set.
 
 Both are still needed. `maxRunners` alone gives no fair sharing;
 `nominalQuota` alone lets Kueue admit workloads ARC's scale set then
@@ -322,8 +326,9 @@ fleet's actual call volume) needs a live-cluster observation —
 | `arc/values-livespec-dev-tooling.yaml`, `arc/values-livespec-driver-claude.yaml`, `arc/values-livespec-driver-codex.yaml`, `arc/values-livespec-orchestrator-git-jsonl.yaml`, `arc/values-livespec-runtime.yaml` | The five remaining per-repo scale sets, captured from their live Helm releases 2026-08-19 (`livespec-s43svm.26`) and wired to the hook pod template (`livespec-s43svm.25`). |
 | `arc/values-livespec-driver-pi.yaml`, `kueue/cluster-queue-livespec-driver-pi.yaml` | The NINTH repository, stood up 2026-08-20 after the eight-repo cutover sequence had closed. Committed in the same change that created the scale set, rather than captured retroactively. Its measured matrix width of 13 (its `maxRunners` until 2026-09-06; now 6, bounded to its quota) is the fleet's first ACTUAL matrix-width measurement rather than a podman-era proxy, and its arrival is what surfaced the `max(1, …)` sum-invariant collision documented in `kueue/DERIVATION.md`. |
 | `arc/values-livespec-orchestrator-beads-fabro.yaml`, `kueue/cluster-queue-livespec-orchestrator-beads-fabro.yaml` | The TENTH repository, stood up 2026-09-04 (livespec plan `ci-runner-pod-lifecycle-reliability`, Carrier G1, `livespec-ifwnqj.1`) after the maintainer settled that its recorded hosted-only caution (the fleet's live golden-master tier lives in a separate workflow on a separate runner) was no reason to keep its ordinary CI off the pool. Committed in the same change that created the scale set. Its `maxRunners` was 42 until 2026-09-06 (now 6, bounded to its quota), twice a MEASURED 21-job matrix (master run 33893048859), the second real measurement after `livespec-driver-pi`'s; its arrival moved exactly one sibling quota (`livespec-driver-codex` 5 → 4) — see `kueue/DERIVATION.md` "Recomputation on the tenth repository". Scale set `livespec-orchestrator-k3s`: the 33-character repo name is truncated at the last hyphen-bounded prefix that fits the 30-character budget, like `livespec-orchestrator-git-k3s`. |
+| `arc/values-fabro.yaml`, `kueue/cluster-queue-fabro.yaml` | `thewoolleyman/fabro`, the fleet's Rust fork of Fabro and the first routed repository that is not a livespec repository (no beads tenant, no spec), stood up 2026-11-05 (`bd-ib-dqxcsh` part (a)) to run the fork's format, clippy and nextest jobs off the dev host. Scale set `fabro-k3s`, the name promised to the fork's owner. Its `nominalQuota` of 1 is a donation from `livespec-orchestrator-beads-fabro` (26 → 25, ceiling 52 → 50), its `maxRunners` of 2 is a recorded exception (the floor of 6 waived), its work volume request is 112Gi from a measured ~92 GiB cold debug build plus the 6.1 GiB release target, and it is the first scale set pinned to a node (`poweredge-xubuntu`). See `kueue/DERIVATION.md` "The fabro fork scale set (2026-11-05)". |
 | `arc/values-poweredge-xubuntu-k3s.yaml` | The surviving PHASE-1 proof scale set, also live and also captured 2026-08-19. Named by scale set rather than by repo because it points at `livespec-dev-tooling`, which already owns a `values-<repo>.yaml`. Not Kueue-gated; see the file's header. Its phase-1 sibling `local-ci-k3s` (`arc/values-local-ci-k3s.yaml`, captured the same day) was retired — Helm release uninstalled 2026-08-23, file deleted — under `livespec-s43svm.28`, because no workflow in any fleet repo routed to it. |
-| `reconstruct/converge-ci-stack.sh` | The one idempotent converge of the ENTIRE CI CLUSTER stack from this repository — ARC controller + all eleven runner scale sets + the `arc-hook-pod-template` ConfigMap + Kueue core + every `ResourceFlavor`/`ClusterQueue`/`LocalQueue` — with zero manual `kubectl`/`helm` steps. One run takes an empty k3s datastore to all listeners `Running` and Kueue admitting — after first asserting (step 1b) that THIS SERVER'S OWN node allocatable `ci-runner.io/churn-slot` equals the capacity its profile declares (the profile the INSTALLED reapply unit names in its ExecStart), and re-running `patch-node-churn-capacity.sh` for that node when it does not (`livespec-kgl3`; scoped to the server's own node by R5, so it never re-stamps the agent's per-node capacity). See "Reconstruct-on-boot" below for the scope boundary and the `install-arc.sh`/`install-kueue.sh` drift it supersedes. |
+| `reconstruct/converge-ci-stack.sh` | The one idempotent converge of the ENTIRE CI CLUSTER stack from this repository — ARC controller + every runner scale set in its `SCALE_SETS` map + the `arc-hook-pod-template` ConfigMap + Kueue core + every `ResourceFlavor`/`ClusterQueue`/`LocalQueue` — with zero manual `kubectl`/`helm` steps. One run takes an empty k3s datastore to all listeners `Running` and Kueue admitting — after first asserting (step 1b) that THIS SERVER'S OWN node allocatable `ci-runner.io/churn-slot` equals the capacity its profile declares (the profile the INSTALLED reapply unit names in its ExecStart), and re-running `patch-node-churn-capacity.sh` for that node when it does not (`livespec-kgl3`; scoped to the server's own node by R5, so it never re-stamps the agent's per-node capacity). See "Reconstruct-on-boot" below for the scope boundary and the `install-arc.sh`/`install-kueue.sh` drift it supersedes. |
 | `reconstruct/converge-ci-stack.service` | Boot-ordered `oneshot` (`After=k3s.service`; `After=`/`Wants=` `reapply-node-extended-resource.service` and `inject-github-app-secret.service`, so a hand-started converge pulls the reapply in too) that runs the converge once per boot. This is what makes the host CATTLE: today none of the cluster stack re-applies on boot, so a datastore wipe loses it. Since 2026-10-12 it also carries `Restart=on-failure` / `RestartSec=30` with a generous but BOUNDED `StartLimitIntervalSec=3600` / `StartLimitBurst=10` in `[Unit]`: with the default `Restart=no`, ONE transient failure at an unattended boot left the whole fleet with no CI until an operator ran `systemctl start` by hand (item `livespec-dev-tooling-tb2az6`). `on-failure` is the only restart mode systemd allows a `oneshot` — a converge that succeeded must stay exited — and the bound keeps a PERMANENT defect a readable failed unit rather than an invisible restart loop. |
 | `reconstruct/install-converge-unit.sh` | **(RETIRED in C5b, 9btv — the `ci_converge_unit` Ansible role installs this now; see `ansible/ci-pool.yml`.)** Copies the converge script AND the `arc/`+`kueue/` artifacts it applies into `/usr/local/lib/ci-runner-k3s/` (the host carries no repo checkout, so the boot unit must be self-contained), installs and enables the unit, then starts it and waits whenever those committed inputs changed. It names the unit result and journal tail on failure; an unchanged second apply does not start the unit. Node-local; re-run after editing any values/queue/template/converge artifact, and on any node rebuild. |
 | `datastore-tmpfs/var-lib-rancher-k3s-server-db.mount` | systemd `.mount` unit backing the k3s kine/SQLite datastore directory (`/var/lib/rancher/k3s/server/db`, ~110 MB live) with tmpfs, so control-plane fsyncs are RAM-speed and never queue behind CI churn on the array (livespec plan `ci-runner-pod-lifecycle-reliability`, research/003: the kine `Slow SQL` stall that dropped Kueue's admission webhook fleet-wide on 2026-09-01). VOLATILE by design — cleared on every reboot, which is exactly what keeps the reconstruct-on-boot path exercised rather than rotting. See "Datastore on tmpfs" below for the two units it depends on, the fail-safe ordering, and the rollback. |
@@ -392,7 +397,7 @@ webhook to have a ready endpoint** → `kueue/resource-flavor.yaml` and every
 chart `0.14.2` from the `arc/charts/` tarball the `ci_converge_unit` role pulled
 at apply time, **not** from the upstream registry — same 2026-10-12 reason as
 the vendored Kueue manifest; the converge fail-closes naming the role when the
-tarball is absent) → all eleven runner scale sets from `arc/values-*.yaml` (each
+tarball is absent) → every runner scale set in its `SCALE_SETS` map, from `arc/values-*.yaml` (each
 `helm upgrade --install`, the same local chart `0.14.2`) → **the listener assertion**
 (every `AutoscalingListener` must reference its scale set's CURRENT
 `EphemeralRunnerSet`; a stale one is deleted so the controller recreates it,
@@ -1232,9 +1237,12 @@ repository's `CI_RUNNER_LABELS` variable (see
 the only sanctioned way to write it) or a literal `runs-on` in a
 non-gating workflow. When the pool grows past one host, binding a set to a
 particular host is a placement concern — node selectors, taints, or a
-per-host set — and MUST be decided then rather than assumed now; nothing
-on this page currently constrains where a set's pods land, because with
-one node there is nowhere else for them to go.
+per-host set — and MUST be decided then rather than assumed now. One set
+is pinned today: `fabro-k3s` selects `kubernetes.io/hostname:
+poweredge-xubuntu`, because its ~100 GiB work volumes need the largest
+`ci-workvols` tier and `local-path` enforces no size
+(`kueue/DERIVATION.md` "The fabro fork scale set (2026-11-05)"). Every other
+set's pods land wherever their churn slot is free.
 
 ## Applying a scale set's values
 
@@ -1292,6 +1300,7 @@ the files themselves:
 
 | Live release | Values file |
 |---|---|
+| `fabro-k3s` | `arc/values-fabro.yaml` |
 | `livespec-local-ci-k3s` | `arc/values-livespec.yaml` |
 | `livespec-console-beads-k3s` | `arc/values-livespec-console-beads-fabro.yaml` |
 | `livespec-orchestrator-git-k3s` | `arc/values-livespec-orchestrator-git-jsonl.yaml` |
@@ -1387,8 +1396,15 @@ decision.
 
 All ten fleet repositories already have both files (the ninth,
 `livespec-driver-pi`, joined 2026-08-20; the tenth,
-`livespec-orchestrator-beads-fabro`, 2026-09-04). These steps are for
-the NEXT repository joining the pool.
+`livespec-orchestrator-beads-fabro`, 2026-09-04), and so does
+`thewoolleyman/fabro`, the Rust fork that joined 2026-11-05 as a ruled
+DONATION rather than a re-derivation, because it had no pool job-hours to
+measure (`kueue/DERIVATION.md` "The fabro fork scale set (2026-11-05)"). These
+steps are for the NEXT repository joining the pool. A repository with a
+`Cargo.lock` also becomes a warm-cache populator target the moment its values
+file exists (`warm-cache/converge-warm-cache.sh` reads every
+`githubConfigUrl`), including an sccache writer build of its default branch:
+size that build before the converge, not after.
 
 1. Establish the new repository's demand weight `w` by measuring its
    actual GitHub Actions matrix job count. Never guess. (Before the podman
