@@ -1224,6 +1224,22 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: an agent session's foreground full-suite pytest on a delegating host is refused and names the gate-start form",
+    "test": "TODO",
+    "reason": "A real test at the integration tier or above is owed for this scenario: the gate-command guard hook run as a subprocess in a real repository and fed a foreground `uv run pytest -n 8` Bash call in a repository with `delegated_gate = true` and a readable gates kubeconfig, asserting the refusal, its own check_id and the named `just gate-start --` form. livespec-dev-tooling-4pchid owns it.",
+    "work_item": "livespec-dev-tooling-4pchid"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: an agent session's targeted pytest or a factory sandbox's full suite is not refused",
+    "test": "TODO",
+    "reason": "A real test at the integration tier or above is owed for this scenario: the gate-command guard hook run as a subprocess in a real repository and fed a targeted foreground pytest on an eligible host and an `-n 8` pytest on a host with no readable gates kubeconfig, asserting neither is refused. livespec-dev-tooling-4pchid owns it.",
+    "work_item": "livespec-dev-tooling-4pchid"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: a staged type error refuses the commit before the full pre-commit aggregate",
     "test": "tests.livespec_dev_tooling.workflow_checks.test_staged_precheck.test_a_staged_type_error_among_ten_files_is_refused_in_seconds_naming_file_line_and_rule",
     "reason": "Integration-tier by the static `pytest.mark.integration` marker: the test drives the shipped `staged_precheck` check end-to-end (real `main()`, a real git repository fixture with a minimal pyproject, and the real ruff and pyright from this venv), so the refusal it reads is the committer's. The pre-check's place ahead of every aggregate member is pinned separately by `test_check_pre_commit_runs_the_precheck_before_any_aggregate_run` (work-item livespec-dev-tooling-nil6v7).",
@@ -1461,6 +1477,14 @@
     "test": "TODO",
     "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, exercising gate-start's default delegation of full-suite gate commands to a gates Job and its recorded venue; livespec-dev-tooling-qgv3tb owns it.",
     "work_item": "livespec-dev-tooling-qgv3tb"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a full suite spelled as python -m pytest runs as a gate Job",
+    "test": "TODO",
+    "reason": "A real test at the integration tier or above is owed for this scenario: `gate-start -- uv run --no-sync python -m pytest --cov=src` in a delegated repository on an eligible host, asserting the run records venue `cluster_job` and not `host_local` with the reason \"command outside full-suite set\". livespec-dev-tooling-4pchid owns it.",
+    "work_item": "livespec-dev-tooling-4pchid"
   },
   {
     "spec_root": "SPECIFICATION",
