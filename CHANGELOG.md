@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.178.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.177.0...v1.178.0) (2026-11-05)
+
+
+### Features
+
+* **incident:** route the remaining direct gate entrances through the shared incident boundary (livespec-dev-tooling-wjmre6) ([ac9e8be](https://github.com/thewoolleyman/livespec-dev-tooling/commit/ac9e8be1e89e165d935dca2772cd8c1e0864c30d))
+
 ## [1.177.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.176.0...v1.177.0) (2026-11-05)
 
 
