@@ -1,0 +1,13 @@
+# {{ ansible_managed }}
+# Installed by livespec-dev-tooling ansible/roles/incident_observer; never hand-edit.
+[Unit]
+Description=Fetch the incident observer's independent reference clone periodically
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec={{ incident_observer_fetch_interval }}
+RandomizedDelaySec=30
+Persistent=true
+
+[Install]
+WantedBy=timers.target

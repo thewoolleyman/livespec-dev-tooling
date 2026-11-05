@@ -326,6 +326,24 @@ that line to the file the message names, not to widen
 `otel_collector_env_from_controller`: the control node carries ingest keys, not
 a node's endpoint choice.
 
+`dev-host.yml`'s `incident_observer` role converges the dev host to the
+independent released incident observer (`docs/incident-observer-service.md`),
+and the `tailscale_serve` role that follows it publishes the loopback listener
+on the tailnet from the host's `tailscale_serve_mappings`. Both run under the
+credential wrapper, because the role writes the observer's three secret files
+from the control node's projected environment and never from this tree:
+
+```bash
+/usr/local/bin/with-livespec-env.sh -- just ansible-drift ansible/dev-host.yml --tags incident_observer,tailscale_serve
+/usr/local/bin/with-livespec-env.sh -- just ansible-apply ansible/dev-host.yml --tags incident_observer,tailscale_serve
+```
+
+`roles/incident_observer/README.md` names the host and why, which URL is
+tailnet-internal and which must be public (the role publishes the one public
+path, `/callback`, through a path-scoped Tailscale Funnel), and the exact
+maintainer-only steps (the secrets in 1Password, the webhook, the repository
+variable and secret) with one reason each.
+
 Roles live one per replaced service, named for the service with hyphens
 becoming underscores. Each carries its own `defaults/main.yml`; values that
 genuinely vary by machine live in `inventory/host_vars/<host>.yml` rather than

@@ -15,7 +15,7 @@ host, and the fleet host guard refuses that to an agent. On 2026-10-18 the first
 `fabro-hosts.yml` converge of `gmktec-xubuntu` brought its Fabro server up on
 loopback port 32276, unreachable at its tailnet URL until a mapping existed.
 
-Declared today on `gmktec-xubuntu` only:
+Declared today on `gmktec-xubuntu`:
 
 ```yaml
 tailscale_serve_mappings:
@@ -23,5 +23,15 @@ tailscale_serve_mappings:
     backend: http://127.0.0.1:32276
 ```
 
-`hp-xubuntu` and `vps` declare nothing: their mappings were made by hand before this
-role existed, and they are left as they are.
+and on `vps`, the tailnet front of the incident observer's loopback listener
+(`roles/incident_observer/README.md`; `dev-host.yml` runs this role right after
+that one):
+
+```yaml
+tailscale_serve_mappings:
+  - https_port: 8765
+    backend: http://127.0.0.1:8765
+```
+
+`hp-xubuntu` declares nothing, and `vps` declares only that one port: their other
+mappings were made by hand before this role existed, and they are left as they are.

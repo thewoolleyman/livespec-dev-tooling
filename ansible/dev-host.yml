@@ -81,3 +81,11 @@
     # alone. See its managed drop-in for the host measurement and rationale.
     - role: dev_host_compaction
       tags: [dev_host_compaction]
+    # The independent released incident observer (livespec-dev-tooling-w7n3ad):
+    # loopback listener first, then the tailnet front that publishes it from
+    # this host's tailscale_serve_mappings. Both run under the credential
+    # wrapper; see roles/incident_observer/README.md.
+    - role: incident_observer
+      tags: [incident_observer]
+    - role: tailscale_serve
+      tags: [tailscale_serve]

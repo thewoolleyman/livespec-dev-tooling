@@ -1,0 +1,21 @@
+# {{ ansible_managed }}
+# Keeps the independent reference clone's objects current for the observer's
+# inverse, as the controller account and nothing more. Installed by
+# livespec-dev-tooling ansible/roles/incident_observer; never hand-edit.
+[Unit]
+Description=Fetch the incident observer's independent reference clone
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User={{ incident_observer_user }}
+Group={{ incident_observer_group }}
+WorkingDirectory={{ incident_observer_reference_dir }}
+ExecStart=/usr/bin/git -C {{ incident_observer_reference_dir }} fetch --quiet --prune --tags origin
+UnsetEnvironment=GIT_CONFIG GIT_CONFIG_COUNT GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_ALTERNATE_OBJECT_DIRECTORIES
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths={{ incident_observer_reference_dir }}

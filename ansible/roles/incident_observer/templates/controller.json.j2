@@ -1,0 +1,11 @@
+{
+  "manifest": {{ incident_observer_manifest_path | to_json }},
+  "candidate_uid": {{ ansible_facts.getent_passwd[incident_observer_candidate_user][1] | int }},
+  "repository": {{ incident_observer_repository | to_json }},
+  "repo": {{ incident_observer_reference_dir | to_json }},
+  "state": {{ incident_observer_state_dir | to_json }},
+  "webhook_secret": {{ (incident_observer_secrets | selectattr('name', 'equalto', 'webhook') | map(attribute='path') | first) | to_json }},
+  "control_secret": {{ (incident_observer_secrets | selectattr('name', 'equalto', 'control') | map(attribute='path') | first) | to_json }},
+  "query_secret": {{ (incident_observer_secrets | selectattr('name', 'equalto', 'query') | map(attribute='path') | first) | to_json }},
+  "port": {{ incident_observer_port | int }}
+}
