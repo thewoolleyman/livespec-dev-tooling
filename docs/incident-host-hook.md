@@ -39,15 +39,25 @@ did not change. Receipts never mint normal tokens or factory proof. A conflictin
 retry using the same local-operation identifier refuses; retained partial records
 remain inspectable on the incident item.
 
-Existing-PR pushes require one exact Git stdin ref update, the approved local SHA,
-the actual canonical destination, a single resolved push URL and an authenticated
-matching PR number, source branch, base and remote old SHA. A commit changes HEAD,
-so its old pre-commit authority must be canonically advanced before push.
+A push reads the carrier state the canonical authority publishes on the current
+attempt (`attempt.carrier.state`, one of `branch-reserved`, `head-published` or
+`pr-bound`, per the orchestrator's "Carrier identity before and after PR
+creation"). Every push requires one exact Git stdin ref update, the approved
+local SHA, the actual canonical destination and a single resolved push URL.
+A `branch-reserved` or `head-published` carrier admits the first pre-PR push
+only to its `target_ref`, with the pushed commit's tree equal to the recorded
+`staged_tree`, its parent equal to the recorded `input_parent`, and the remote
+precondition confirmed absent (`branch-reserved`) or equal to the recorded
+`remote_head` (`head-published`); the forge is not consulted. A `pr-bound`
+carrier requires an authenticated open PR whose number, source branch
+(the carrier's `target_ref`), base and remote old SHA all match. A commit
+changes HEAD, so its old pre-commit authority must be canonically advanced
+before push. An attempt that publishes no carrier state, or an unknown state,
+refuses by naming the carrier state; a missing PR number is never the reason.
 
-This increment deliberately refuses initial pre-PR pushes until canonical carrier
-ref support exists. Workflow publication needs separate scoped authority, and
-emergency inverses need the independently trusted recovery boundary. Unsupported
-marker formats require a legal adjacent Python carrier. Genesis, factory fencing,
+Workflow publication needs separate scoped authority, and emergency inverses
+need the independently trusted recovery boundary. Unsupported marker formats
+require a legal adjacent Python carrier. Genesis, factory fencing,
 focused/manual merge admission, other direct/delegated entrances, CI/templates,
 release and installed fleet adoption remain required plan work. Developing this
 implementation does not activate either incident flag.
