@@ -21,6 +21,7 @@ from livespec_dev_tooling.gate_remote_verdict import (
     GATE_PASSED,
     run_gated_push,
 )
+from livespec_dev_tooling.pytest_invocation import pytest_arguments
 
 _VENDOR_DIR = Path(__file__).resolve().parent / "_vendor"
 if str(_VENDOR_DIR) not in sys.path:
@@ -101,7 +102,7 @@ def _is_full_suite(*, command: tuple[str, ...]) -> bool:
                 and command[_JUST_RECIPE_POSITION] != "check-"
             )
         )
-    return command[:1] == ("pytest",) or command[:3] == ("uv", "run", "pytest")
+    return pytest_arguments(command=command) is not None
 
 
 def _working_tree_source(*, repo_root: Path) -> tuple[str, str] | None:
@@ -164,9 +165,10 @@ def _remote_command(*, command: tuple[str, ...]) -> tuple[tuple[str, ...] | None
     normalized = command[3:] if command[:3] == ("mise", "exec", "--") else command
     if normalized[:1] == ("just",):
         return None, tuple(normalized[1:])
-    if normalized[:1] == ("pytest",):
-        return normalized, ()
-    return ("pytest", *normalized[3:]), ()
+    pytest_args = pytest_arguments(command=normalized)
+    if pytest_args is not None:
+        return ("pytest", *pytest_args), ()
+    return normalized, ()
 
 
 def run_cluster_gate(*, repo_root: Path, command: tuple[str, ...]) -> ClusterGateResult:

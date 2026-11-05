@@ -135,6 +135,33 @@ def test_gate_runner_venue_selection(
     assert selected.reason == reason
 
 
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    "command",
+    [
+        pytest.param(("python", "-m", "pytest"), id="python-module"),
+        pytest.param(
+            ("uv", "run", "--no-sync", "python", "-m", "pytest", "--cov=src"),
+            id="uv-python-module",
+        ),
+        pytest.param((".venv/bin/python", "-m", "pytest"), id="interpreter-path-module"),
+    ],
+)
+def test_python_module_pytest_spellings_select_a_gate_job(*, command: tuple[str, ...]) -> None:
+    """Every spelling that invokes pytest is a full-suite gate command."""
+    module = importlib.import_module("livespec_dev_tooling.gate_runner_delegate")
+
+    selected = module.select_venue(
+        command=command,
+        force_local=False,
+        delegated=True,
+        credential_readable=True,
+    )
+
+    assert selected.venue == "cluster_job"
+    assert selected.reason == "eligible full-suite command"
+
+
 def _environment(*, project_root: Path) -> dict[str, str]:
     environment = dict(os.environ)
     inherited = environment.get("PYTHONPATH")
