@@ -506,6 +506,42 @@ def test_transient_api_failure_retries_and_uses_the_first_answer(
     assert delays == [1.0]
 
 
+def test_rate_limit_retries_and_uses_the_first_answer(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A transient rate limit followed by green retries the same API read."""
+    calls: list[list[str]] = []
+    delays: list[float] = []
+    replies = iter(
+        [
+            _CheckRun(returncode=1, stdout="", stderr="HTTP 429: Too Many Requests"),
+            _CheckRun(
+                returncode=0,
+                stdout=_check_runs_payload(status="completed", conclusion='"success"'),
+                stderr="",
+            ),
+        ]
+    )
+
+    def fake_gh_read(*, args: list[str]) -> _CheckRun:
+        calls.append(args)
+        return next(replies)
+
+    monkeypatch.setattr(_MODULE, "gh_read", fake_gh_read)
+    monkeypatch.setattr(_MODULE.shutil, "which", lambda _name: "gh")
+    monkeypatch.setattr(
+        _MODULE,
+        "time",
+        type("_Time", (), {"sleep": delays.append})(),
+        raising=False,
+    )
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
+
+    assert result.returncode == 0
+    assert calls == [["api", _EXPECTED_ENDPOINT], ["api", _EXPECTED_ENDPOINT]]
+    assert delays == [1.0]
+
+
 def test_exhausted_transient_api_failures_fail_closed_with_last_status(
     *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
