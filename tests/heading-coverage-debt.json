@@ -401,6 +401,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: a hand-edited board or trigger is reported by its applier's drift mode and left unchanged",
+    "work_item": "livespec-dev-tooling-4vopaj",
+    "first_seen": "2026-11-05"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: a host with no pressure file makes the emitter fail rather than report zero",
     "work_item": "livespec-dev-tooling-i7yxpt",
     "first_seen": "2026-11-02"

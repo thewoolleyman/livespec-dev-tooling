@@ -510,6 +510,20 @@ When it reports none for 20 minutes
 
 Then its dead-man trigger MUST fire while the pool nodes' dead-man triggers stay quiet
 
+## Scenario: a hand-edited board or trigger is reported by its applier's drift mode and left unchanged
+
+Given every committed board and trigger definition under `ci-runner/observability/` has been applied to the fleet observability surface
+
+When one live trigger's threshold and one live board's panel are edited by hand, and a committed trigger definition's live counterpart is deleted
+
+Then running `apply-triggers.sh` in its drift mode MUST print the edited trigger's name and its threshold field, MUST report the deleted trigger's definition as missing, and MUST exit non-zero
+
+And running `apply-boards.sh` in its drift mode MUST print the edited board's name and the differing panel, and MUST exit non-zero
+
+And neither run MAY send a create, update or delete request, so the hand edits are still live afterwards
+
+And straight after a normal apply, both drift modes MUST report no difference and exit zero
+
 ## Scenario: a fabro sandbox hits the shared compilation cache
 
 Given the factory sandbox image sets the compiler wrapper and the host compilation-cache endpoint over the docker bridge
