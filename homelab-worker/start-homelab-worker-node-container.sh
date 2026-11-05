@@ -22,6 +22,11 @@
 #      any missing capability stops the task, naming each with its remedy,
 #      before the worker container starts. The report is kept beside the
 #      worker's non-secret state.
+#   7. The worker container is started or reconciled inside the VM from the
+#      digest-pinned image in image/ref (vm/converge-worker-container.sh). It
+#      joins the tailnet as <worker>, printing a login URL for the operator
+#      while one is needed, and starts the kubelet once enrollment has been
+#      delivered.
 #
 # Every declared host runs this same code path; a host's .env carries data
 # only. The script stays bash 3.2-compatible because a worker host is not a
@@ -33,6 +38,7 @@ here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 hosts_dir="$here/hosts"
 template="$here/lima/worker.yaml"
 probe="$here/probe-vm-capabilities.sh"
+converge="$here/vm/converge-worker-container.sh"
 state_dir="${XDG_STATE_HOME:-$HOME/.local/state}/livespec-homelab-worker"
 
 die() {
@@ -170,4 +176,8 @@ else
   exit 1
 fi
 
-say "VM $worker converged for host $host"
+image="$(grep -v '^#' "$here/image/ref" | head -n 1)"
+say "converging worker container $worker in VM $worker"
+limactl shell --workdir / "$worker" sudo bash -s -- "$worker" "$host" "$image" "/mnt/lima-$data_disk/worker" <"$converge"
+
+say "worker $worker converged for host $host"
