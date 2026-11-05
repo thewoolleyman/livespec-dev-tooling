@@ -31,7 +31,12 @@ not that the code has yet to move.
 from __future__ import annotations
 
 import importlib
+import io
+import json
+import sys
 from pathlib import Path
+
+import pytest
 
 __all__: list[str] = []
 
@@ -96,3 +101,27 @@ def test_global_options_and_subcommand_arguments_stay_apart() -> None:
     assert reused.options == ()
     assert reused.subcommand == "commit"
     assert reused.args == ("-C", "HEAD~1")
+
+
+def test_foreground_pytest_full_suite_shape_distinguishes_targets_and_options(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """xdist wins over a path, while pytest option values are not paths themselves."""
+    guard = importlib.import_module(f"{_PACKAGE}.pretooluse_background_guard")
+    _ = (tmp_path / "pyproject.toml").write_text(
+        "[tool.livespec_dev_tooling]\ndelegated_gate = true\n", encoding="utf-8"
+    )
+    credential = tmp_path / "gates.kubeconfig"
+    _ = credential.write_text("apiVersion: v1\nkind: Config\n", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("GATES_KUBECONFIG", str(credential))
+
+    def hook_status(*, command: str) -> int:
+        payload = json.dumps({"tool_name": "Bash", "tool_input": {"command": command}})
+        monkeypatch.setattr(sys, "stdin", io.StringIO(payload))
+        return guard.main()
+
+    assert hook_status(command="'") == 0
+    assert hook_status(command="pytest --numprocesses=4") == 2
+    assert hook_status(command="pytest --cov widget") == 2
+    assert hook_status(command="pytest --cov widget tests/unit.py") == 0
