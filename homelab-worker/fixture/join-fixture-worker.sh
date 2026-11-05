@@ -21,6 +21,10 @@
 #   4. The worker container converges on the fixture network, registers its
 #      Node, and its serving CSR is approved by approve-serving-csr.sh.
 #
+# A rerun for a worker whose Node is already registered mints and delivers
+# nothing: it reconciles the container and approves any pending serving CSR
+# once, without waiting for one.
+#
 # WAIT_SECONDS (default 300) bounds each wait for the Node and its CSR.
 set -euo pipefail
 
@@ -89,12 +93,20 @@ data:
   flannel-iface: eth0
 EOF
 
-in_vm docker exec "$server" cat /var/lib/rancher/k3s/server/tls/server-ca.crt >"$tmp/server-ca.crt"
-"$hw/enrollment/mint-bootstrap-token.sh" "$host" "https://$server:6443" "$tmp/server-ca.crt" "$tmp/enrollment"
-
 converge() {
   in_vm bash -s -- "$worker" "$host" "$image" "$state_root" "$network" <"$hw/vm/converge-worker-container.sh"
 }
+
+if kubectl get node "$worker" >/dev/null 2>&1; then
+  say "Node $worker is already registered; reconciling its container without a new enrollment"
+  converge
+  "$hw/enrollment/approve-serving-csr.sh" "$host"
+  kubectl get nodes -o wide
+  exit 0
+fi
+
+in_vm docker exec "$server" cat /var/lib/rancher/k3s/server/tls/server-ca.crt >"$tmp/server-ca.crt"
+"$hw/enrollment/mint-bootstrap-token.sh" "$host" "https://$server:6443" "$tmp/server-ca.crt" "$tmp/enrollment"
 
 converge
 for f in bootstrap-kubeconfig client-ca.crt; do
