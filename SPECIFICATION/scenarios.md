@@ -1810,6 +1810,18 @@ Then the run MUST end as `DIED_WITHOUT_VERDICT` and `gate-wait` MUST exit `75`
 
 And the runner MUST NOT re-run the command on the dev host
 
+## Scenario: a gate-start whose venue selector cannot be imported refuses by name
+
+Given a checkout whose project environment and `python3` both fail to import `livespec_dev_tooling`
+
+When a seat runs `just gate-start -- true` in that checkout
+
+Then `gate-start` MUST start no gate and write no run record
+
+And it MUST print a refusal naming the venue selector, each interpreter it tried and the remedy
+
+And it MUST exit with a code other than `70`
+
 ## Scenario: an explicit local gate-runner run is recorded as local
 
 Given a repository with `delegated_gate = true`

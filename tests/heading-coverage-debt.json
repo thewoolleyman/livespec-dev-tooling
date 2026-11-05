@@ -394,6 +394,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: a gate-start whose venue selector cannot be imported refuses by name",
+    "work_item": "livespec-dev-tooling-p3mhfh",
+    "first_seen": "2026-11-05"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: a genuine regression opens a held revert of the earliest red commit with a green parent",
     "work_item": "livespec-dev-tooling-zcp5vb",
     "first_seen": "2026-10-22"
