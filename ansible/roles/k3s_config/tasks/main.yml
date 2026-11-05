@@ -425,3 +425,43 @@
     state: absent
   become: true
   when: k3s_config_cluster_role == 'agent'
+
+- name: Read the CoreDNS Deployment's live replica count on the server
+  # `check_mode: false` so the drift report reads the live count; the scale
+  # below is the only write and it skips under --check.
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - -n
+      - kube-system
+      - get
+      - deployment
+      - coredns
+      - "-o"
+      - "jsonpath={.spec.replicas}"
+  become: true
+  environment:
+    KUBECONFIG: "{{ k3s_config_admin_kubeconfig }}"
+  register: k3s_config_coredns_live
+  check_mode: false
+  changed_when: k3s_config_coredns_live.stdout | trim != k3s_config_coredns_replicas | string
+  when: k3s_config_cluster_role == 'server'
+  tags: [k3s_coredns_replicas]
+
+- name: Scale the CoreDNS Deployment to the declared replica count
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - -n
+      - kube-system
+      - scale
+      - deployment/coredns
+      - "--replicas={{ k3s_config_coredns_replicas }}"
+  become: true
+  environment:
+    KUBECONFIG: "{{ k3s_config_admin_kubeconfig }}"
+  changed_when: true
+  when:
+    - k3s_config_cluster_role == 'server'
+    - k3s_config_coredns_live.stdout | trim != k3s_config_coredns_replicas | string
+  tags: [k3s_coredns_replicas]
