@@ -144,13 +144,12 @@ otel_collector_env_from_controller:
 # coordinator ruling R81 (2026-10-27) after the first report-only pass named 49
 # deletes and kept 37 preserved needs-human runs and 12 running sandboxes.
 factory_sandbox_reaper_enabled: true
-# REPORT-ONLY (2026-11-05, legacy-coordinator-agent stop-the-line): every
-# `lithos-sandbox sandbox delete` of a STOPPED sandbox can re-create a 4/4
-# `petri-<run>-l0` pod and hang past the 300 s timeout, stranding it for good
-# (six so far; livespec-dev-tooling-6prge3, -izazkx). Report mode makes no
-# delete, so no pass can strand another pod. Turn back on when 6prge3's apply
-# lands. REVERT: factory_sandbox_reaper_apply: true
-factory_sandbox_reaper_apply: false
+# DELETE MODE restored 2026-11-05 after livespec-dev-tooling-6prge3 (#3520):
+# the reaper's lithos-sandbox now uses the fleet instance's versioned provider
+# pin (v0.8.2, minimal cleanup pod) instead of the shared v0.5.0 binary whose
+# delete of a stopped sandbox re-created a 4/4 pod and hung. It was report-only
+# from #3513 until then. REVERT: factory_sandbox_reaper_apply: false
+factory_sandbox_reaper_apply: true
 
 # --- otel_receiver ---
 # The receiver every Fabro instance on this host exports to on the Docker bridge
