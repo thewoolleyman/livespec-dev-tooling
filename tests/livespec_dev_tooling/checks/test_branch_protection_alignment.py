@@ -895,6 +895,33 @@ def test_required_contexts_retries_transient_failure_before_using_the_answer(
     assert delays == [1.0]
 
 
+def test_required_contexts_retries_server_failure_before_using_the_answer(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A 5xx followed by a response is judged from that response, not the 5xx."""
+    delays: list[float] = []
+    _setup_repo_with_ci_yml(tmp_path=tmp_path, matrix_targets=["check-foo"])
+    fake_path = _install_fake_gh(
+        tmp_path=tmp_path,
+        api_replies=[
+            ("", "HTTP 500: Internal Server Error", 1),
+            (_checks_payload(contexts=["check-foo"]), "", 0),
+        ],
+    )
+    monkeypatch.setattr(
+        _branch_protection_api,
+        "time",
+        type("_Time", (), {"sleep": delays.append})(),
+        raising=False,
+    )
+
+    result = _run_check(cwd=tmp_path, env_path=fake_path, monkeypatch=monkeypatch, capsys=capsys)
+
+    assert result.returncode == 0
+    assert _gh_argv_log(tmp_path=tmp_path).count("required_status_checks") == 2
+    assert delays == [1.0]
+
+
 def test_required_contexts_exhausted_transient_failures_keep_the_graceful_skip(
     *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
