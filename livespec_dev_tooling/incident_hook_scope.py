@@ -1,4 +1,4 @@
-"""Bind repair markers, cumulative paths and the exact existing-PR update."""
+"""Bind repair markers, cumulative paths and the exact canonical carrier push."""
 
 from __future__ import annotations
 
@@ -28,6 +28,12 @@ __all__: list[str] = ["HookCall", "validate_scope"]
 _MAX_STDIN = 16384
 _PUSH_FIELDS = 4
 _PUSH_ARGUMENTS = 2
+# The discriminated carrier states the orchestrator publishes on `attempt.carrier`
+# (livespec-orchestrator-beads-fabro `_incident_carrier.py`; its
+# SPECIFICATION/contracts.md binds carrier identity before and after PR
+# creation). A pre-PR state carries no PR number.
+_PRE_PR_STATES = frozenset(("branch-reserved", "head-published"))
+_CARRIER_STATES = _PRE_PR_STATES | {"pr-bound"}
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -37,6 +43,16 @@ class HookCall:
     hook: str
     extra: tuple[str, ...]
     stdin: str
+
+
+@dataclass(frozen=True, kw_only=True)
+class _RefUpdate:
+    """The single identified branch update Git handed the pre-push hook."""
+
+    local: str
+    head: str
+    remote: str
+    previous: str
 
 
 def _fail(*, detail: str) -> NoReturn:
@@ -55,11 +71,18 @@ def _marker(*, repo: Path, paths: set[str], tree: str, item: str) -> str:
     _fail(detail="no legal Python comment carrier in the cumulative changed scope")
 
 
-def _push(
+def _carrier(*, attempt: dict[str, Any]) -> dict[str, Any]:
+    if "carrier" not in attempt:
+        _fail(detail="current attempt publishes no canonical carrier state")
+    carrier = mapping(value=attempt["carrier"])
+    if carrier.get("state") not in _CARRIER_STATES:
+        _fail(detail="unsupported canonical carrier state")
+    return carrier
+
+
+def _update(
     *, query: dict[str, Any], attempt: dict[str, Any], stdin: str, extra: tuple[str, ...]
-) -> dict[str, str]:
-    if type(attempt.get("pr_number")) is not int or attempt["pr_number"] <= 0:
-        _fail(detail="initial pre-PR push requires canonical carrier-ref support")
+) -> _RefUpdate:
     rows = stdin.splitlines()
     if len(stdin) > _MAX_STDIN or len(rows) != 1 or len(rows[0].split()) != _PUSH_FIELDS:
         _fail(detail="exactly one identified branch update is required")
@@ -75,6 +98,33 @@ def _push(
         or head != attempt["head"]
     ):
         _fail(detail="push does not name the approved origin/head")
+    return _RefUpdate(local=local, head=head, remote=remote, previous=previous)
+
+
+def _reserved(*, repo: Path, carrier: dict[str, Any], tree: str, update: _RefUpdate) -> None:
+    """A pre-PR push lands only on the reserved ref, at its recorded precondition."""
+    absent = set(update.previous) == {"0"}
+    expected_previous = (
+        absent
+        if carrier["state"] == "branch-reserved"
+        else update.previous == carrier.get("remote_head")
+    )
+    if (
+        update.local != carrier.get("target_ref")
+        or update.remote != update.local
+        or tree != carrier.get("staged_tree")
+        or git_text(repo=repo, args=["rev-parse", update.head + "^"]) != carrier.get("input_parent")
+        or not expected_previous
+    ):
+        _fail(detail="push does not match the reserved canonical carrier branch")
+
+
+def _bound(
+    *, query: dict[str, Any], attempt: dict[str, Any], carrier: dict[str, Any], update: _RefUpdate
+) -> None:
+    """A pr-bound push updates exactly the open PR the carrier is bound to."""
+    if type(attempt.get("pr_number")) is not int or attempt["pr_number"] <= 0:
+        _fail(detail="pr-bound carrier requires a positive canonical PR number")
     result = gh_read(
         args=["api", f"repos/{query['repository']}/pulls/{attempt['pr_number']}"], timeout=10
     )
@@ -88,15 +138,38 @@ def _push(
         or type(pr.get("number")) is not int
         or pr.get("number") != attempt["pr_number"]
         or not isinstance(branch, str)
-        or local != "refs/heads/" + branch
-        or remote != local
-        or source.get("sha") != previous
+        or update.local != "refs/heads/" + branch
+        or update.local != carrier.get("target_ref")
+        or update.remote != update.local
+        or source.get("sha") != update.previous
         or base.get("sha") != attempt["base"]
         or mapping(value=source.get("repo")).get("full_name") != query["repository"]
         or mapping(value=base.get("repo")).get("full_name") != query["repository"]
     ):
         _fail(detail="push update does not match the current canonical existing PR")
-    return dict(local_ref=local, local_sha=head, remote_ref=remote, remote_sha=previous)
+
+
+def _push(
+    *,
+    repo: Path,
+    query: dict[str, Any],
+    attempt: dict[str, Any],
+    tree: str,
+    call: HookCall,
+) -> dict[str, str]:
+    carrier = _carrier(attempt=attempt)
+    update = _update(query=query, attempt=attempt, stdin=call.stdin, extra=call.extra)
+    if carrier["state"] in _PRE_PR_STATES:
+        _reserved(repo=repo, carrier=carrier, tree=tree, update=update)
+    else:
+        _bound(query=query, attempt=attempt, carrier=carrier, update=update)
+    return dict(
+        local_ref=update.local,
+        local_sha=update.head,
+        remote_ref=update.remote,
+        remote_sha=update.previous,
+        carrier_state=carrier["state"],
+    )
 
 
 def validate_scope(
@@ -109,7 +182,7 @@ def validate_scope(
     call: HookCall,
 ) -> dict[str, Any]:
     """Refuse unsupported authority scopes before selecting any quality gate."""
-    hook, extra, stdin = call.hook, call.extra, call.stdin
+    hook, extra = call.hook, call.extra
     if context.mode != "expedited-repair" or context.identity is None:
         _fail(detail="host emergency revert requires the separately trusted inverse boundary")
     attempt = mapping(value=reading["attempt"])
@@ -135,7 +208,7 @@ def validate_scope(
         _fail(detail="incident commit requires an audited nonempty Factory-Override trailer")
     marker = _marker(repo=repo, paths=paths, tree=tree, item=context.identity.incident_item_id)
     push = (
-        _push(query=query, attempt=attempt, stdin=stdin, extra=extra)
+        _push(repo=repo, query=query, attempt=attempt, tree=tree, call=call)
         if hook == "pre-push"
         else None
     )
