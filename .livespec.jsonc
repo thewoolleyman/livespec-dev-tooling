@@ -593,13 +593,14 @@
         // mirror of `petri` and plan fabro-currency's dogfood factory (maintainer
         // ruling 2026-11-02T19:22:32Z). It mirrors the orchestrator's candidate
         // block; its address comes from the factory registry. `bin` is the client
-        // of the build it serves (0.393.0-nightly.1 at c39bdbded). It is never the
+        // for the 0.393 build it serves, the declared fabro_client_builds path the
+        // dev-host play stages (carrier-petri-v0.393-613add19c). It is never the
         // default: choose it per dispatch with `--factory candidate`, and count its
         // runs against the shared gmktec fleet cap. Declared for the Opus and
         // sandbox-image canary step 2 (livespec-dev-tooling-zwlrpf).
         "candidate": {
           "registry": true,
-          "bin": "/home/ubuntu/.local/state/fabro-web-prod/v0393-c39bdbded/fabro",
+          "bin": "/home/ubuntu/.local/state/fabro-currency/carrier-petri-v0.393-613add19c/fabro",
           "secret_channel": "native_secrets",
           "environment": "factory-python"
         }
