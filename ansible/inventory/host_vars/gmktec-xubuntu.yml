@@ -371,7 +371,7 @@ fabro_server_instances:
     # legacy-coordinator-agent, R301/R493): at 4 / 4 every busy sandbox was
     # CFS-throttled in 42-91 % of its periods while mean use was about 2.8 cores
     # (ci-runner/k3s/phase2/factory/DERIVATION.md "Request 3, limit 6"). Both
-    # kinds run plugin v0.8.0, which reads SANDBOX_DRIVER_KUBERNETES_CPU_REQUEST_CORES
+    # kinds run plugin v0.8.1, which reads SANDBOX_DRIVER_KUBERNETES_CPU_REQUEST_CORES
     # as the pod's CPU request and keeps cpu_cores as its limit. The limit a pod
     # actually gets is the run's environment `cpu` above (Petri's
     # apply_requested_resources puts the run's size over the process_spec's), so
@@ -380,12 +380,12 @@ fabro_server_instances:
     # with the quota's limits.cpu already at 120.
     sandbox_providers:
       kubernetes:
-        # v0.8.0 at its OWN versioned path (sandbox_driver_kubernetes_versioned_releases
+        # v0.8.1 at its OWN versioned path (sandbox_driver_kubernetes_versioned_releases
         # below), so the candidate and mi-homelab keep v0.5.0 at the shared path.
         # REVERT: path: /usr/local/bin/sandbox-driver-kubernetes
         # REVERT: sha256: d93437f0bcb495e13a3373a4d2578cc0b2dba2c39c1ad5f3fdcf801ce0788b6e
-        path: /usr/local/bin/sandbox-driver-kubernetes-v0.8.0
-        sha256: 66c748ef973c6b076261652c1e7c5583de0e142ac13b5e4b545a2f328141cef5
+        path: /usr/local/bin/sandbox-driver-kubernetes-v0.8.1
+        sha256: ad74f14dc7b4baa5e5765f57b88a96a22d998259508af296ca20c5af0bd2d6d4
         inherit_env:
           - HOME
           - PATH
@@ -401,8 +401,8 @@ fabro_server_instances:
       kubernetes-rust:
         # REVERT: path: /usr/local/bin/sandbox-driver-kubernetes
         # REVERT: sha256: d93437f0bcb495e13a3373a4d2578cc0b2dba2c39c1ad5f3fdcf801ce0788b6e
-        path: /usr/local/bin/sandbox-driver-kubernetes-v0.8.0
-        sha256: 66c748ef973c6b076261652c1e7c5583de0e142ac13b5e4b545a2f328141cef5
+        path: /usr/local/bin/sandbox-driver-kubernetes-v0.8.1
+        sha256: ad74f14dc7b4baa5e5765f57b88a96a22d998259508af296ca20c5af0bd2d6d4
         inherit_env:
           - HOME
           - PATH
@@ -785,16 +785,18 @@ sandbox_driver_kubernetes_config_homes:
 # Plugin releases installed at their OWN versioned paths beside the shared
 # v0.5.0 binary at /usr/local/bin/sandbox-driver-kubernetes, which the candidate
 # and mi-homelab instances keep pinning. The fleet instance (fabro-server, :32276)
-# alone moves to v0.8.0, the first release that can request less CPU than the
-# limit (SANDBOX_DRIVER_KUBERNETES_CPU_REQUEST_CORES; orchestrator bd-ib-zl3qcz).
-# It also carries v0.6.0's K8S_NODE_NAME, v0.7.0's API connect retry and v0.7.1's
-# minimal cleanup pod. Installing a new path changes no live pin. The fleet
+# alone moves to v0.8.1. It carries v0.8.0's CPU request below the limit
+# (SANDBOX_DRIVER_KUBERNETES_CPU_REQUEST_CORES; orchestrator bd-ib-zl3qcz) and
+# v0.8.1's resume of a command's output, exit status and stdin after its exec
+# stream drops (bd-ib-mdern6). It also carries v0.6.0's K8S_NODE_NAME, v0.7.0's
+# API connect retry and v0.7.1's minimal cleanup pod. v0.8.0 is not declared: it
+# was never applied, and no instance pins it. Installing a new path changes no live pin. The fleet
 # instance's pin takes effect at its restart at zero runs. The role refuses an
 # apply whose fleet pin differs from the digest declared here.
 # REVERT: leaving this entry in place is harmless once no instance pins the path.
 sandbox_driver_kubernetes_versioned_releases:
-  - version: v0.8.0
-    sha256: 66c748ef973c6b076261652c1e7c5583de0e142ac13b5e4b545a2f328141cef5
+  - version: v0.8.1
+    sha256: ad74f14dc7b4baa5e5765f57b88a96a22d998259508af296ca20c5af0bd2d6d4
 
 # tailscale_serve: publish the fabro-server instance's loopback port on the
 # tailnet, so the Dispatcher reaches https://gmktec-xubuntu.perch-rudd.ts.net:32276.

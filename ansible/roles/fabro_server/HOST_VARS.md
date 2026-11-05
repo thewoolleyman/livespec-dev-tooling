@@ -858,8 +858,8 @@ of them is pointing that entry, and the rollback is pointing it back.
 `sandbox_providers` on that instance declares the `kubernetes` kind at the
 plugin digest the `sandbox_driver_kubernetes` role pins for that kind's path.
 Since 2026-11-05 that path is the versioned
-`/usr/local/bin/sandbox-driver-kubernetes-v0.8.0`, and the digest is the one
-`sandbox_driver_kubernetes_versioned_releases` declares for v0.8.0. The
+`/usr/local/bin/sandbox-driver-kubernetes-v0.8.1`, and the digest is the one
+`sandbox_driver_kubernetes_versioned_releases` declares for v0.8.1. The
 candidate and `fabro-server-mi-homelab` keep the shared
 `/usr/local/bin/sandbox-driver-kubernetes` at the role's default release. Either
 way the pin and the binary the role stages at that path move together, so the
@@ -868,7 +868,7 @@ instance never launches a plugin binary the role did not put on the host.
 and this instance's `HOME` is `/home/cwoolley`, which
 `sandbox_driver_kubernetes_config_homes` lists.
 
-On v0.8.0 the fleet instance's sandboxes request 3 CPU with a limit of 6
+On v0.8.1 the fleet instance's sandboxes request 3 CPU with a limit of 6
 (orchestrator `bd-ib-zl3qcz`). The request is the provider `env` key
 `SANDBOX_DRIVER_KUBERNETES_CPU_REQUEST_CORES: "3"`. The limit is the
 environment's `cpu: 6`, because a run's environment size replaces the

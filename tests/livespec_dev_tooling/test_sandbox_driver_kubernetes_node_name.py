@@ -12,7 +12,7 @@ reaches an instance only through the per-instance versioned install path
 (`sandbox_driver_kubernetes_versioned_releases`), where each instance's binary
 and pin move together at zero runs. Every pin on a versioned path must equal the
 digest declared for that release (bd-ib-zl3qcz moved the fleet instance alone to
-v0.8.0 this way).
+v0.8.1 this way).
 """
 
 from __future__ import annotations

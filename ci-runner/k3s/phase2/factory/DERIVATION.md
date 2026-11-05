@@ -378,7 +378,8 @@ approval is recorded on epic `livespec-dev-tooling-6tgd2z`:
 
 The request below the limit is the plugin setting
 `SANDBOX_DRIVER_KUBERNETES_CPU_REQUEST_CORES`, which sandbox-driver-kubernetes
-v0.8.0 added. Fabro's `process_spec` carries only `cpu_cores` and `memory_mb`.
+v0.8.0 added. The fleet instance pins v0.8.1, which also resumes a command
+after its exec stream drops (bd-ib-mdern6). Fabro's `process_spec` carries only `cpu_cores` and `memory_mb`.
 
 | term | arithmetic | value |
 |---|---|---|
@@ -399,7 +400,7 @@ CPU nobody has requested.
 **Order of operations.** Apply in the fleet instance's (`:32276`) restart
 window at zero runs. Apply this quota FIRST, because a 6-cpu-limit pod under a
 limits.cpu of 84 is refused once 14 of them exist. Then converge gmktec: install
-the v0.8.0 plugin at its own versioned path, and restart `fabro-server` onto the
+the v0.8.1 plugin at its own versioned path, and restart `fabro-server` onto the
 new pin, the request setting, `cpu_cores` 6 and the catalog's `cpu: 6`.
 
 **Revert.** This is one apply per playbook, in the reverse order:
