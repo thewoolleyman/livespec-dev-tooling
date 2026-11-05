@@ -10,10 +10,10 @@
 #      a kubeconfig usable off the control-plane node;
 #   C. an unknown argument is still refused, so adding --server did not turn the
 #      parser permissive;
-#   D. gates-rbac.yaml's Role grants NOTHING outside create/get/list/watch on
-#      jobs and pods, get on pods/log, and CREATE ALONE on secrets: no `delete`,
-#      no read verb on secrets, no wildcard, and nothing cluster-scoped anywhere
-#      in the manifest;
+#   D. gates-rbac.yaml's Role grants create/delete/get/list/watch on jobs,
+#      create/get/list/watch on pods, get on pods/log, and CREATE ALONE on
+#      secrets: delete is present only on jobs; no read verb on secrets, no
+#      wildcard, and nothing cluster-scoped anywhere in the manifest;
 #   E. the manifest does NOT declare the gates Namespace, which is owned by
 #      ../kueue/cluster-queue-gates.yaml — one live object, one committed source;
 #   F. the manifest declares exactly ONE Secret — the ServiceAccount token it has
@@ -132,11 +132,13 @@ else
   # The verb lines and the resource lines are compared as ORDERED sequences
   # against the whole expected set, so a rule that drifts, is reordered, or is
   # ADDED fails here. `secrets` is last because it was added last, and its one
-  # verb is the narrowest line in the file.
+  # verb is the narrowest line in the file. Jobs alone include delete because an
+  # abandoned Suspended Job never reaches ttlSecondsAfterFinished: that timer
+  # starts only after a Job finishes.
   got_verbs="$(printf '%s\n' "${role_doc}" | grep -E '^\s+verbs:' | sed 's/^[[:space:]]*//' | tr -d ' ')"
-  want_verbs=$'verbs:["create","get","list","watch"]\nverbs:["create","get","list","watch"]\nverbs:["get"]\nverbs:["create"]'
+  want_verbs=$'verbs:["create","delete","get","list","watch"]\nverbs:["create","get","list","watch"]\nverbs:["get"]\nverbs:["create"]'
   if [ "${got_verbs}" = "${want_verbs}" ]; then
-    pass "Role verb set is exactly create/get/list/watch, create/get/list/watch, get, create"
+    pass "Role verb set is exactly create/delete/get/list/watch, create/get/list/watch, get, create"
   else
     fail "Role verb set drifted; got:"$'\n'"${got_verbs}"
   fi
@@ -158,15 +160,30 @@ else
   else
     fail "the secrets rule is not create-only; got: ${secrets_rule:-NONE}"
   fi
+  jobs_rule="$(printf '%s\n' "${role_doc}" \
+    | grep -A2 -F 'resources: ["jobs"]' | grep -E '^\s+verbs:' \
+    | sed 's/^[[:space:]]*//' | tr -d ' ')"
+  if [ "${jobs_rule}" = 'verbs:["create","delete","get","list","watch"]' ]; then
+    pass "the jobs rule grants delete so abandoned Suspended Jobs can be reaped"
+  else
+    fail "the jobs rule is not the exact create/delete/get/list/watch grant; got: ${jobs_rule:-NONE}"
+  fi
+  non_jobs_rules="$(printf '%s\n' "${role_doc}" \
+    | awk '/resources: \["jobs"\]/{skip=1; next} skip && /^    verbs:/{skip=0; next} !skip {print}')"
+  if printf '%s\n' "${non_jobs_rules}" | grep -E '"delete"' >/dev/null; then
+    fail "only jobs may be deleted; another Role resource grants delete"
+  else
+    pass "only jobs may be deleted"
+  fi
   forbidden_found=0
-  for forbidden in delete deletecollection patch update escalate bind impersonate; do
+  for forbidden in deletecollection patch update escalate bind impersonate; do
     if printf '%s\n' "${role_doc}" | grep -E "\"${forbidden}\"" >/dev/null; then
       fail "Role grants the forbidden verb ${forbidden}"
       forbidden_found=1
     fi
   done
   [ "${forbidden_found}" -eq 0 ] &&
-    pass "Role grants no delete/deletecollection/patch/update/escalate/bind/impersonate"
+    pass "Role grants no deletecollection/patch/update/escalate/bind/impersonate"
   if printf '%s\n' "${role_doc}" | grep -E '"\*"' >/dev/null; then
     fail "Role carries a wildcard"
   else

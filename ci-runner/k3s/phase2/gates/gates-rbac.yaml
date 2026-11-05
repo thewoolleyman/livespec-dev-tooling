@@ -21,14 +21,15 @@
 # manifests (step 5) before this one (step 10b), so the namespace always exists
 # by the time these objects are applied.
 #
-# LEAST PRIVILEGE: create, get, list and watch on `jobs` (batch) and `pods` (core),
-# plus get on `pods/log`, plus CREATE AND NOTHING ELSE on `secrets`, in namespace
-# `gates` ONLY. Deliberately absent, and asserted absent by
-# gates-credential-exit-tests.sh: anything cluster-scoped, any `delete`, and any
-# verb on `secrets` other than `create` — a finished Job is reaped by its own
-# ttlSecondsAfterFinished via the Job controller's authority, never by this
-# credential. `pods/log` is the gate's whole output channel, so `get` on it is the
-# one subresource grant.
+# LEAST PRIVILEGE: create, delete, get, list and watch on `jobs` (batch); create,
+# get, list and watch on `pods` (core); get on `pods/log`; and CREATE AND NOTHING
+# ELSE on `secrets`, in namespace `gates` ONLY. Deliberately absent, and asserted
+# absent by gates-credential-exit-tests.sh: anything cluster-scoped, `delete` on
+# anything other than Jobs, and any verb on `secrets` other than `create`. An
+# abandoned Suspended Job is never reaped by ttlSecondsAfterFinished, which starts
+# only when a Job finishes, so this credential may delete Jobs to clean it up.
+# `pods/log` is the gate's whole output channel, so `get` on it is the one
+# subresource grant.
 #
 # WHY `create` ON `secrets`, AND WHY THAT ALONE (work-item
 # livespec-dev-tooling-7kvh2d). A delegated push whose consumer's
@@ -40,11 +41,12 @@
 # OWNER-REFERENCES it to the Job it was minted for.
 #
 # THAT OWNERREFERENCE IS WHY ONE VERB IS ENOUGH. Kubernetes garbage collection
-# removes the Secret when its owning Job goes, so nothing has to delete it and
-# this credential gains no `delete` — the same reasoning that leaves Job reaping
-# to `ttlSecondsAfterFinished`. `get`, `list` and `watch` are likewise absent:
-# the client WRITES a token and never reads one back, and a credential that could
-# read Secrets in this namespace could read every other gate run's token.
+# removes the Secret when its owning Job goes, so nothing has to delete the
+# Secret. This credential may delete the Job when it was abandoned while
+# Suspended, before ttlSecondsAfterFinished can begin; it never receives Secret
+# delete. `get`, `list` and `watch` are likewise absent: the client WRITES a
+# token and never reads one back, and a credential that could read Secrets in
+# this namespace could read every other gate run's token.
 # `update` and `patch` are absent because the Secret is per run and is never
 # edited — a second gate of the same tree gets its own name, keyed on the per-run
 # gate ref's nonce.
@@ -89,7 +91,7 @@ metadata:
 rules:
   - apiGroups: ["batch"]
     resources: ["jobs"]
-    verbs: ["create", "get", "list", "watch"]
+    verbs: ["create", "delete", "get", "list", "watch"]
   - apiGroups: [""]
     resources: ["pods"]
     verbs: ["create", "get", "list", "watch"]
