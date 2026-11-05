@@ -1,0 +1,202 @@
+# Flannel v0.28.4 for the homelab worker class only: the version K3s v1.36.2
+# embeds, with the fleet's VXLAN network (VNI 1, UDP 8472, 10.42.0.0/16), its
+# CNI conflist and its masquerade, as an upstream DaemonSet in kube-subnet-
+# manager mode.
+#
+# Governed by SPECIFICATION/non-functional-requirements.md, "Homelab worker
+# nodes". Design: plan/homelab-k8s-worker-nodes/research/005 §1 "Flannel" and
+# §2 option (a).
+#
+# The nodeSelector matches only nodes labelled homelab-worker.livespec.dev/
+# class=worker, which only the worker kubelet sets. The K3s nodes run flannel
+# embedded and MUST never run this (002: "Do not install a second cluster-wide
+# Flannel DaemonSet"). The flannel CNI plugin binary ships in the worker image;
+# this DaemonSet installs only the conflist. The VXLAN interface comes from
+# ConfigMap homelab-worker-cluster (tailscale0 in production).
+#
+# Apply:    kubectl apply -f homelab-worker/networking/
+# Rollback: kubectl delete ds,cm,sa,clusterrole,clusterrolebinding -A \
+#             -l homelab-worker.livespec.dev/networking=true
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: homelab-worker-flannel
+  namespace: kube-system
+  labels:
+    homelab-worker.livespec.dev/networking: "true"
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: homelab-worker-flannel
+  labels:
+    homelab-worker.livespec.dev/networking: "true"
+rules:
+  - apiGroups: [""]
+    resources: [pods]
+    verbs: [get]
+  - apiGroups: [""]
+    resources: [nodes]
+    verbs: [get, list, watch]
+  - apiGroups: [""]
+    resources: [nodes/status]
+    verbs: [patch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: homelab-worker-flannel
+  labels:
+    homelab-worker.livespec.dev/networking: "true"
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: homelab-worker-flannel
+subjects:
+  - kind: ServiceAccount
+    name: homelab-worker-flannel
+    namespace: kube-system
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: homelab-worker-flannel
+  namespace: kube-system
+  labels:
+    homelab-worker.livespec.dev/networking: "true"
+data:
+  cni-conf.json: |
+    {
+      "name": "cbr0",
+      "cniVersion": "1.0.0",
+      "plugins": [
+        {
+          "type": "flannel",
+          "delegate": {
+            "hairpinMode": true,
+            "forceAddress": true,
+            "isDefaultGateway": true
+          }
+        },
+        {
+          "type": "portmap",
+          "capabilities": {
+            "portMappings": true
+          }
+        },
+        {
+          "type": "bandwidth",
+          "capabilities": {
+            "bandwidth": true
+          }
+        }
+      ]
+    }
+  net-conf.json: |
+    {
+      "Network": "10.42.0.0/16",
+      "EnableIPv6": false,
+      "Backend": {
+        "Type": "vxlan",
+        "VNI": 1,
+        "Port": 8472
+      }
+    }
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: homelab-worker-flannel
+  namespace: kube-system
+  labels:
+    homelab-worker.livespec.dev/networking: "true"
+spec:
+  selector:
+    matchLabels:
+      app: homelab-worker-flannel
+  template:
+    metadata:
+      labels:
+        app: homelab-worker-flannel
+    spec:
+      priorityClassName: system-node-critical
+      serviceAccountName: homelab-worker-flannel
+      hostNetwork: true
+      nodeSelector:
+        homelab-worker.livespec.dev/class: worker
+      tolerations:
+        - operator: Exists
+          effect: NoSchedule
+      initContainers:
+        - name: install-cni
+          image: ghcr.io/flannel-io/flannel:v0.28.4@sha256:cc44a1a8969c4f14b8dd45664546f14abc3fc7682b125399103e555f1ad2528b
+          command: [cp, -f, /etc/kube-flannel/cni-conf.json, /etc/cni/net.d/10-flannel.conflist]
+          volumeMounts:
+            - name: cni
+              mountPath: /etc/cni/net.d
+            - name: flannel-cfg
+              mountPath: /etc/kube-flannel/
+      containers:
+        - name: flannel
+          image: ghcr.io/flannel-io/flannel:v0.28.4@sha256:cc44a1a8969c4f14b8dd45664546f14abc3fc7682b125399103e555f1ad2528b
+          command: [/opt/bin/flanneld]
+          args: [--ip-masq, --kube-subnet-manager]
+          env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            - name: EVENT_QUEUE_DEPTH
+              value: "5000"
+            - name: FLANNELD_IFACE
+              valueFrom:
+                configMapKeyRef:
+                  name: homelab-worker-cluster
+                  key: flannel-iface
+            - name: KUBERNETES_SERVICE_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: homelab-worker-cluster
+                  key: api-server-host
+            - name: KUBERNETES_SERVICE_PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: homelab-worker-cluster
+                  key: api-server-port
+          resources:
+            requests:
+              cpu: 100m
+              memory: 50Mi
+          securityContext:
+            privileged: false
+            capabilities:
+              add: [NET_ADMIN, NET_RAW]
+          volumeMounts:
+            - name: run
+              mountPath: /run/flannel
+            - name: flannel-cfg
+              mountPath: /etc/kube-flannel/
+            - name: xtables-lock
+              mountPath: /run/xtables.lock
+      volumes:
+        - name: run
+          hostPath:
+            path: /run/flannel
+        - name: cni
+          hostPath:
+            path: /etc/cni/net.d
+        - name: flannel-cfg
+          configMap:
+            name: homelab-worker-flannel
+        - name: xtables-lock
+          hostPath:
+            path: /run/xtables.lock
+            type: FileOrCreate

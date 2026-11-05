@@ -1,0 +1,25 @@
+# The one per-cluster value the worker-class networking agents need: where they
+# reach the API server, and which interface flannel's VXLAN underlay uses.
+#
+# Governed by SPECIFICATION/non-functional-requirements.md, "Homelab worker
+# nodes". Design: plan/homelab-k8s-worker-nodes/research/005 §2 "Where
+# flannel, kube-proxy and kube-router run", option (a).
+#
+# The agents cannot use the kubernetes Service (10.43.0.1): kube-proxy is what
+# programs it on the worker, so each agent overrides KUBERNETES_SERVICE_HOST
+# and KUBERNETES_SERVICE_PORT from this ConfigMap, the kubeadm pattern. The
+# host must be a SAN of the API server's serving certificate.
+#
+# These are the production values. The isolated fixture replaces this object
+# with its own server address and interface before applying the agents.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: homelab-worker-cluster
+  namespace: kube-system
+  labels:
+    homelab-worker.livespec.dev/networking: "true"
+data:
+  api-server-host: poweredge-xubuntu.perch-rudd.ts.net
+  api-server-port: "6443"
+  flannel-iface: tailscale0
