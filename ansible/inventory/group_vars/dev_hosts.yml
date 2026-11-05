@@ -134,6 +134,14 @@ fabro_client_builds:
   - path: /home/ubuntu/.local/state/fabro-currency/carrier-petri-v0.393-613add19c/fabro
     source: /home/ubuntu/.local/state/fabro-web-prod/v0393-613add19c/fabro
     sha256: def1dc89890c0481f8e733016ab78481dd2f26d8cab9248eb6b4b1fec5f6a344
+  # fabro 0.393.0-nightly.1 (85af354 2026-11-04), source thewoolleyman/fabro
+  # 85af3547ebbc9c0b7f6947d7959f2d0b892d7432, Petri d25a6c15. Every gmktec
+  # instance serves it since 2026-11-05 (main :32276 from 16:40:11Z); it carries
+  # the dispatch-push retry (bd-ib-uctbct), the tail events read (bd-ib-dmjsmd)
+  # and the board-read compression (bd-ib-xoh477). Plan fabro-currency.
+  - path: /home/ubuntu/.local/state/fabro-currency/carrier-petri-v0.393-85af3547e/fabro
+    source: /home/ubuntu/.local/state/fabro-web-prod/v0393-85af3547e/fabro
+    sha256: d6fcfafab6da1bfd32c3b96b4153f93367fe8a5b4fc18b0efecacad80b1e5711
 
 # --- local_gate_slots ---
 #
