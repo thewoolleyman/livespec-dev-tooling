@@ -41,6 +41,31 @@ replay naming the same build then closed the item.
 So name the owning repository's git release tag, or its default-branch
 commit, and put an image tag or a consumer's commit under `installed_build`.
 
+## The third trap: never mask the checkout's tmp/
+
+A replayer briefed from a livespec PRIMARY checkout must write its own outputs
+(payloads, logs, scripts) OUTSIDE the checkout. livespec-driver-codex's footgun
+guard blocks shell redirects into the primary checkout, even into the ignored
+`tmp/`. But the replayer must NEVER mask, bind-mount over, or redirect the
+checkout's `tmp/`. `post-host-record` drives the acceptance pass
+(`reconcile-merged`), and that pass reads `tmp/fabro-dispatch-journal.jsonl` to
+resolve the merging run id. With `tmp/` masked, the pass reads an empty journal
+and parks the item blind: "proof of done record: NOT OBSERVED — merging run id
+unavailable", NEEDS_ATTENTION.
+
+Measured 2026-11-05 on livespec-orchestrator-beads-fabro item bd-ib-fgjehy. To
+honour a "write nothing in the checkout" brief, the codex replayer bwrap-bound
+an empty directory over the repo's `tmp/`. Its `host_verified` record
+(https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/pull/4237#issuecomment-6650019983)
+was valid, but the pass it triggered parked the item. Re-running
+`dispatcher.py reconcile-merged --item bd-ib-fgjehy` from a normal shell,
+against the real journal, passed and closed the item.
+
+So a brief names an outside directory for outputs AND says explicitly not to
+mask `tmp/`. If a replay's pass reports "merging run id unavailable" while the
+journal plainly holds the item's dispatch rows, re-run `reconcile-merged` from
+a normal shell.
+
 ## How to launch one
 
 Strip the inherited variables so that the replayer resolves its own identity:
