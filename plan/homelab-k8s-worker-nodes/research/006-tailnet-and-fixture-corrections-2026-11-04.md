@@ -1,3 +1,5 @@
+> **Corrected in part, 2026-11-05:** §1's "ACL. No change is needed" was wrong: Tailscale distributes an approved subnet route only to devices the policy lets reach it, so a grant was added (tailscale-admin#42). See [008](008-lan-worker-and-test-strategy-2026-11-05.md) §2. The rest still holds.
+
 # 006 — Tailnet identity and fixture-first corrections (2026-11-04)
 
 Research notes are write-once, so this note corrects 005 rather than editing it. It changes three things: how the worker joins the

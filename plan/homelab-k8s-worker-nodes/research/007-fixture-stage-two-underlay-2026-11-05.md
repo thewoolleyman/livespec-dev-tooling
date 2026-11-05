@@ -1,3 +1,5 @@
+> **Superseded in part, 2026-11-05:** stage two ran and failed every pod-network check, because a K3s node's flannel VXLAN device is bound to its LAN interface. Option A is not the production underlay, §4's "There is no ACL change" was wrong, and §5's production /32 routes are dropped. The M4 Max worker joins as a home-LAN node instead. See [008](008-lan-worker-and-test-strategy-2026-11-05.md) §1-§3.
+
 # 007 — Fixture stage two: the tailnet underlay (2026-11-05)
 
 Stage one is proved. On `hw-fixture` (k3s v1.36.2-k3s1, production flags, M4 Max worker VM), the worker joined through the

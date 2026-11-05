@@ -1,3 +1,5 @@
+> **Superseded in part, 2026-11-05:** [008-lan-worker-and-test-strategy-2026-11-05.md](008-lan-worker-and-test-strategy-2026-11-05.md) now governs the Definition of Done (revision 3) and defers Phase D, the MacBook Air worker. The statement, hosts, phases A-C, E and F and the info-repository discipline below still hold.
+
 ## The maintainer's statement of what done means (revision 2, verbatim, 2026-11-04)
 
 > OK, I want to change this plan some.  I want the worker nodes to be able to run on BOTH the macbook air and my maxbook m4 max (which is at home and always on, whereas the macbook air may be closed sometimes).
