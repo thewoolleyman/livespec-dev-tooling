@@ -416,38 +416,53 @@ throttled-period share at 3 / 6 against the 4 / 4 figures above. If node fit or
 poweredge idle degrades (the "Twenty runs" revert signal: idle below about 5 %
 AND the BestEffort CI-slice `cpu.pressure` avg60 above about 30), revert.
 
-## Room for four stranded sandboxes
+## Room for stranded sandboxes
 
 **What refused.** On 2026-11-05 at 17:34Z, `legacy-coordinator-agent` measured
 `factory-runs` at `limits.cpu` 110 of 120, `requests.memory` 152600Mi of
 171470Mi and `pods` 20 of 42, while the launchers counted 18 of the fleet cap of
-20. Each new sandbox carries `limits.cpu` 6, so the 20th run would need 122 and
-would be refused. The cap of 20 could never be reached.
+20. Each new sandbox carries `limits.cpu` 6, so the 20th run would need more
+than 120 and would be refused. The cap of 20 could never be reached.
 
-**Why 120 was not enough.** Four pods in the namespace are not live runs. They
+**Why 120 was not enough.** Some pods in the namespace are not live runs. They
 are 4 / 4 sandboxes that the factory sandbox reaper re-created and stranded
-while deleting stopped sandboxes of runs that had already ended, and it never
-reaps them, because it deletes only `stopped` sandboxes
+while deleting stopped sandboxes of runs that had already ended. It never reaps
+them, because it deletes only `stopped` sandboxes
 (livespec-dev-tooling-izazkx). They are created by the driver, and the GitOps
-discipline forbids deleting them by hand. Until izazkx's reaper fix removes
-them, they hold 4 x 4 = 16 of `limits.cpu` and 4 x 7630Mi of memory.
+discipline forbids deleting them by hand.
+
+At 17:40Z there were FIVE of them, all on `gmktec-xubuntu` and all created at
+:00–:03 past an hour by the reaper's pass:
+
+| run | pod created |
+|---|---|
+| 01M6HFFYV42V | 11-04 23:00Z |
+| 01M6FD5J40S0 | 11-05 02:03Z |
+| 01M6JH1TXKJD | 11-05 07:03Z |
+| 01M6K1ZE1RWC | 11-05 11:03Z |
+| 01M6K1WBF6KW | 11-05 16:00Z |
+
+New ones keep accruing at about one every 4–5 h, so this quota carries room for
+SIX: the five present plus one more before izazkx lands.
 
 | term | arithmetic | value |
 |---|---|---|
-| `requests.cpu` | unchanged (20 x 3 + 4 x 4 = 76 fits) | **84** |
-| `limits.cpu` | 20 runs x 6 + 4 stranded x 4 | **136** |
-| `requests.memory` | 171470Mi + 4 x 7630Mi | **201990Mi** |
-| `limits.memory` | 181710Mi + 4 x 7630Mi | **212230Mi** |
+| `requests.cpu` | unchanged (20 x 3 + 6 x 4 = 84 fits) | **84** |
+| `limits.cpu` | 20 runs x 6 + 6 stranded x 4 | **144** |
+| `requests.memory` | 171470Mi + 6 x 7630Mi | **217250Mi** |
+| `limits.memory` | 181710Mi + 6 x 7630Mi | **227490Mi** |
 | `pods` | unchanged | **42** |
 
-**What still binds.** The fleet cap of 20 does. Once izazkx reaps the four
+**What still binds.** The fleet cap of 20 does. Once izazkx reaps the stranded
 pods, this quota leaves room for more than 20 runs, but no launcher exceeds the
-cap. Memory is 24 x 7630Mi = 183120Mi at 20 runs plus the four stranded pods.
-That fits 201990Mi, and `poweredge-xubuntu` alone has about 377 GiB allocatable.
+cap. Memory is 26 x 7630Mi = 198380Mi at 20 runs plus six stranded pods. That
+fits 217250Mi, and `poweredge-xubuntu` alone has about 377 GiB allocatable.
+`requests.cpu` 84 binds exactly at 20 runs plus six stranded pods; a seventh
+stranded pod would be refused on requests before limits.
 
 **Revert.** Restore the three `REVERT` values in `./factory-namespace.yaml` and
 apply `ansible/ci-pool.yml --tags ci_factory_quota`. Lowering a quota evicts
-nothing. Revert once izazkx has reaped the four stranded pods.
+nothing. Revert once izazkx has reaped the stranded pods.
 
 ## The egress targets
 
