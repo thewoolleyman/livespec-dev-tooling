@@ -938,7 +938,7 @@ def _foreground_refusal_event(
 def _write_delegated_gate_config(*, repository: Path, delegated: bool) -> None:
     """Declare the fixture repository's gate venue selection explicitly."""
     _ = (repository / "pyproject.toml").write_text(
-        f"[tool.livespec_dev_tooling]\\ndelegated_gate = {str(delegated).lower()}\\n",
+        f"[tool.livespec_dev_tooling]\ndelegated_gate = {str(delegated).lower()}\n",
         encoding="utf-8",
     )
 
