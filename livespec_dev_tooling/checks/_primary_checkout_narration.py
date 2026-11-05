@@ -39,6 +39,7 @@ offenders — the split reporting work it did not do.
 from __future__ import annotations
 
 import sys
+from hashlib import sha256
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -63,6 +64,7 @@ from returns.unsafe import unsafe_perform_io  # noqa: E402  — vendor-path-awar
 from livespec_dev_tooling.checks._primary_checkout_unreadable import (  # noqa: E402
     CheckInputUnreadable,
 )
+from livespec_dev_tooling.install_commit_refuse_hooks import CANONICAL_HOOK_BODY  # noqa: E402
 
 if TYPE_CHECKING:
     from _primary_checkout_git_probes import GitProbeFailed
@@ -101,6 +103,7 @@ _GIT_PROBE_FAILURE_MODE = "git_probe_failed"
 # remedy for a fault never observed.
 _HOOK_READ_FAILURE_MODE = "hook_unreadable"
 _PACK_READ_FAILURE_MODE = "worktree_pack_unreadable"
+_HOOK_BODY_MISMATCH = "body_mismatch"
 
 _HOOK_REMEDY = (
     "run `just install-commit-refuse-hooks` (the from-package installer "
@@ -157,7 +160,7 @@ def _emit_failures(
     log: structlog.stdlib.BoundLogger,
     hooks_dir: Path,
     repo_root: Path,
-    hook_failures: list[tuple[str, str]],
+    hook_failures: list[tuple[str, str, bytes]],
     vendored_copies: list[Path],
     pack_failures: list[tuple[str, str]],
 ) -> None:
@@ -167,7 +170,12 @@ def _emit_failures(
     no-vendored-copy, worktree-pack drift) narrates independently while
     keeping `main`'s cyclomatic complexity within the lint budget.
     """
-    for hook_name, failure_mode in hook_failures:
+    for hook_name, failure_mode, installed_bytes in hook_failures:
+        fields = _hook_failure_fields(
+            hook_path=hooks_dir / hook_name,
+            failure_mode=failure_mode,
+            installed_bytes=installed_bytes,
+        )
         log.error(
             "primary-checkout-commit-refuse-hook-installed: hook failure",
             check_id=_CHECK_ID,
@@ -176,7 +184,7 @@ def _emit_failures(
             failure_mode=failure_mode,
             hooks_dir=str(hooks_dir),
             hint=_HOOK_REMEDY,
-            path="",
+            **fields,
             line=0,
         )
     for copy_path in vendored_copies:
@@ -203,6 +211,35 @@ def _emit_failures(
             path=str(pack_failure_path(repo_root=repo_root, script_name=script_name)),
             line=0,
         )
+
+
+def _hook_failure_fields(
+    *, hook_path: Path, failure_mode: str, installed_bytes: bytes
+) -> dict[str, int | str]:
+    """Return body-comparison diagnostics only for an observed byte mismatch."""
+    if failure_mode != _HOOK_BODY_MISMATCH:
+        return {"path": ""}
+    canonical_bytes = CANONICAL_HOOK_BODY.encode("utf-8")
+    return {
+        "path": str(hook_path),
+        "installed_sha256": sha256(installed_bytes).hexdigest(),
+        "canonical_sha256": sha256(canonical_bytes).hexdigest(),
+        "first_difference_line": _first_difference_line(
+            installed_bytes=installed_bytes,
+            canonical_bytes=canonical_bytes,
+        ),
+    }
+
+
+def _first_difference_line(*, installed_bytes: bytes, canonical_bytes: bytes) -> int:
+    """Return the 1-based line containing the first byte that differs."""
+    shared = min(len(installed_bytes), len(canonical_bytes))
+    first_difference = shared
+    for index in range(shared):
+        if installed_bytes[index] != canonical_bytes[index]:
+            first_difference = index
+            break
+    return installed_bytes[:first_difference].count(b"\n") + 1
 
 
 def _pack_hint(*, failure_mode: str, repo_root: Path) -> str:

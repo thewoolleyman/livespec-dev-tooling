@@ -76,15 +76,18 @@ directly by `test_module_re_import_with_vendor_in_sys_path`.
 from __future__ import annotations
 
 import importlib.util
+import json
 import os
 import stat
 import subprocess
+from hashlib import sha256
 from pathlib import Path
 from types import ModuleType
 from typing import NamedTuple
 
 import pytest
 
+from livespec_dev_tooling.check_failure_digest import failure_digest_lines
 from livespec_dev_tooling.install_commit_refuse_hooks import CANONICAL_HOOK_BODY
 from livespec_dev_tooling.install_worktree_pack import (
     CANONICAL_BRANCH_PROTECTION_BODY,
@@ -1274,3 +1277,44 @@ def test_installer_does_not_create_livespec_jsonc_when_absent(
     assert not (project_root / ".livespec.jsonc").exists()
     # The pack itself still installed.
     assert (project_root / "dev-tooling" / "worktree-lib.sh").is_file()
+
+
+def test_body_mismatch_names_bodies_and_first_difference_in_finding_and_digest(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A stale hook remains diagnosable after the aggregate scrolls off its finding."""
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    _git_init(cwd=project_root)
+    _install_canonical_hooks(repo_root=project_root)
+    stale_body = "!" + CANONICAL_HOOK_BODY[1:]
+    hook_path = _install_hook(
+        repo_root=project_root,
+        hook_name="pre-push",
+        body=stale_body,
+        executable=True,
+    )
+
+    result = _run_check(cwd=project_root, monkeypatch=monkeypatch, capsys=capsys)
+
+    assert result.returncode == 4, result.stderr
+    findings = [
+        json.loads(line)
+        for line in result.stderr.splitlines()
+        if '"failure_mode": "body_mismatch"' in line
+    ]
+    assert len(findings) == 1, result.stderr
+    finding = findings[0]
+    installed_sha256 = sha256(stale_body.encode("utf-8")).hexdigest()
+    canonical_sha256 = sha256(CANONICAL_HOOK_BODY.encode("utf-8")).hexdigest()
+    assert finding["path"] == str(hook_path)
+    assert finding["installed_sha256"] == installed_sha256
+    assert finding["canonical_sha256"] == canonical_sha256
+    assert finding["first_difference_line"] == 1
+
+    digest = failure_digest_lines(
+        failures=[("check-primary-checkout-commit-refuse-hook-installed", result.stderr)]
+    )
+    assert f"      path: {hook_path}" in digest
+    assert f"      installed_sha256: {installed_sha256}" in digest
+    assert f"      canonical_sha256: {canonical_sha256}" in digest
