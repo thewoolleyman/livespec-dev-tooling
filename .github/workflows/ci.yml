@@ -650,6 +650,168 @@ jobs:
             exit 1
           fi
 
+  # The released incident CI entrance (plan expedited-incident-response-flag,
+  # minimum-usable-slice step D; work-item livespec-dev-tooling-yf7gq2).
+  # ADDITIVE: every job above runs on every event exactly as before, and
+  # ci-green requires this job IN ADDITION to them, never instead of any.
+  #
+  # What it does, per docs/incident-ci-entry.md:
+  # - installs the LATEST RELEASED livespec-dev-tooling into its own venv
+  #   BEFORE executing anything, and runs the entrance from THAT interpreter
+  #   with `-I` (so the candidate tree's package in the working directory is
+  #   never importable), never from the candidate tree. The repo's own
+  #   reusable-workflow pin (v1.169.0) predates the entrance, so the latest
+  #   release is the only released source. The candidate's `uv sync` venv is
+  #   used only by the `just` members the released entrance itself spawns.
+  # - reads the PR through an authenticated forge read (never the event
+  #   payload) and looks for the `<!-- livespec-incident-ci` body block;
+  # - with no block, or on a master push, records "selected nothing" and
+  #   exits 0 without executing any check: the complete normal graph above
+  #   is the gate, regardless of labels, retained blocks or variables;
+  # - with the block, runs the released plan/run/aggregate: the entrance
+  #   rechecks the observer's /current and /admitted answers, executes only
+  #   the inventory's fast members, and publishes an aggregate that lists
+  #   every omitted member in the step summary.
+  #
+  # The event/PR distinction is made in the SHELL, not in a job `if:`, so the
+  # job runs identically on pull_request and push (check-ci-gate-parity). No
+  # run line names a canonical check slug literally, so the job contributes
+  # nothing to check-ci-matrix-completeness; the members it runs are chosen
+  # by the released inventory at run time. It receives the read-scoped
+  # Actions token only: no tenant credential and no arm/bind credential. The
+  # observer inputs come from repository configuration, the variable
+  # LIVESPEC_INCIDENT_OBSERVER_URL and the read-only query secret
+  # LIVESPEC_INCIDENT_OBSERVER_QUERY_TOKEN; until both exist an incident PR
+  # is REFUSED with that named cause and a non-incident PR is unaffected.
+  incident-ci:
+    name: incident-ci
+    runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
+    container:
+      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.169.0
+    permissions:
+      contents: read
+      pull-requests: read
+    env:
+      LIVESPEC_CI_LANE: ${{ contains(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]', 'ubuntu') && 'hosted' || 'local' }}
+      MISE_DATA_DIR: /root/.local/share/mise
+      MISE_NOT_FOUND_AUTO_INSTALL: "0"
+      GITHUB_TOKEN: ${{ github.token }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      # Same one-step preparation as the check matrices above; the candidate
+      # venv it creates is what the released entrance's `just` members use.
+      - name: Prepare workspace (git trust, mise trust + install, uv sync)
+        run: |
+          git config --global --add safe.directory '*'
+          mise trust
+          mise install
+          uv sync --all-groups
+
+      # The release is resolved from the forge, never from the candidate
+      # tree, and installed into a venv OUTSIDE the workspace. typing-extensions
+      # is added beside it because the vendored `returns` imports it and the
+      # released package declares no runtime dependency (its consumers carry
+      # it transitively). The final line proves the released module resolves
+      # from that venv, not from the checkout.
+      - name: Install the latest released livespec-dev-tooling (never the candidate tree)
+        id: released
+        shell: bash
+        run: |
+          tag="$(gh api "repos/${GITHUB_REPOSITORY}/releases/latest" --jq .tag_name)"
+          case "$tag" in
+            v[0-9]*.[0-9]*.[0-9]*) ;;
+            *) echo "::error::could not resolve the latest release tag of ${GITHUB_REPOSITORY} (got '${tag}')"; exit 1 ;;
+          esac
+          venv="${RUNNER_TEMP}/released-dev-tooling"
+          uv venv --python "$(cat .python-version)" "$venv"
+          uv pip install --python "${venv}/bin/python" typing-extensions \
+            "livespec-dev-tooling @ git+https://github.com/${GITHUB_REPOSITORY}@${tag}"
+          resolved="$("${venv}/bin/python" -I -c 'import livespec_dev_tooling as m; print(m.__file__)')"
+          case "$resolved" in
+            "${venv}"/*) echo "released livespec-dev-tooling ${tag} resolves from ${resolved}" ;;
+            *) echo "::error::released module resolved from ${resolved}, not from ${venv}"; exit 1 ;;
+          esac
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+          echo "python=${venv}/bin/python" >> "$GITHUB_OUTPUT"
+
+      # An authenticated read of the PR itself (not the event payload) decides
+      # whether there is incident work to select. Everything else, a master
+      # push included, selects nothing and executes no check here.
+      - name: Select incident work from an authenticated PR read
+        id: select
+        shell: bash
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          block=absent
+          if [ "$GITHUB_EVENT_NAME" = "pull_request" ] && [ -n "$PR_NUMBER" ]; then
+            body="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" --jq '.body // ""')"
+            if [[ "$body" == *'<!-- livespec-incident-ci'* ]]; then
+              block=present
+            fi
+          fi
+          if [ "$block" = present ]; then
+            echo "incident-ci: PR #${PR_NUMBER} carries a livespec-incident-ci block; running the released entrance"
+          else
+            reason="no livespec-incident-ci block in the PR body"
+            if [ "$GITHUB_EVENT_NAME" != "pull_request" ]; then
+              reason="${GITHUB_EVENT_NAME} event: the normal complete policy is the gate"
+            fi
+            echo "incident-ci: selected nothing (${reason}); no check executed by this job"
+            printf '## incident-ci\n\nselected nothing (%s); no check executed by this job.\n' "$reason" >> "$GITHUB_STEP_SUMMARY"
+          fi
+          echo "block=${block}" >> "$GITHUB_OUTPUT"
+
+      # Incident PRs only. The entrance's own plan/run/aggregate publishes each
+      # result to the step summary; a refusal names its cause and fails the job.
+      # The `-I` flag is load-bearing: without it `python -m` would import the
+      # candidate tree's package from the working directory.
+      - name: Run the released incident CI entrance (plan, run, aggregate)
+        if: steps.select.outputs.block == 'present'
+        shell: bash
+        env:
+          RELEASED_PYTHON: ${{ steps.released.outputs.python }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          LIVESPEC_INCIDENT_OBSERVER_URL: ${{ vars.LIVESPEC_INCIDENT_OBSERVER_URL }}
+          LIVESPEC_INCIDENT_OBSERVER_QUERY_TOKEN: ${{ secrets.LIVESPEC_INCIDENT_OBSERVER_QUERY_TOKEN }}
+        run: |
+          if [ -z "$LIVESPEC_INCIDENT_OBSERVER_URL" ] || [ -z "$LIVESPEC_INCIDENT_OBSERVER_QUERY_TOKEN" ]; then
+            echo "::error::incident PR refused: the repository configures neither LIVESPEC_INCIDENT_OBSERVER_URL (variable) nor LIVESPEC_INCIDENT_OBSERVER_QUERY_TOKEN (secret) completely; the released entrance cannot recheck /current and /admitted without them"
+            exit 1
+          fi
+          export GITHUB_PR_NUMBER="$PR_NUMBER" GITHUB_PR_HEAD_SHA="$PR_HEAD_SHA"
+          entrance=("$RELEASED_PYTHON" -I -m livespec_dev_tooling.incident_ci_process)
+          if ! plan="$("${entrance[@]}" plan --repo "$PWD")"; then
+            echo "::error::released plan refused: ${plan}"
+            exit 1
+          fi
+          mode="$(printf '%s' "$plan" | "$RELEASED_PYTHON" -I -c 'import json, sys; print(json.load(sys.stdin)["mode"])')"
+          if [ "$mode" != "expedited-repair" ]; then
+            echo "::error::the PR body carries a livespec-incident-ci block but the released plan selected the '${mode}' mode (the expedited-incident-response label is the projected signal); remove the block or label the PR"
+            exit 1
+          fi
+          targets=()
+          while IFS= read -r name; do
+            targets+=(--target "$name")
+          done < <(printf '%s' "$plan" | "$RELEASED_PYTHON" -I -c 'import json, sys; print("\n".join(json.load(sys.stdin)["selected"]))')
+          run_code=0
+          "${entrance[@]}" run --repo "$PWD" --report tmp/incident-ci/outcomes.jsonl "${targets[@]}" || run_code=$?
+          echo "released run exited ${run_code}; publishing the aggregate"
+          "${entrance[@]}" aggregate --repo "$PWD" --reports tmp/incident-ci
+
+      - name: Publish the incident CI outcome records
+        if: ${{ always() && steps.select.outputs.block == 'present' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: incident-ci-outcomes
+          path: tmp/incident-ci
+          if-no-files-found: ignore
+          retention-days: 7
+
   # Closed-loop CI-telemetry export — mirrors the reference landed in
   # livespec CORE (PR #477, commit b1e875d). Runs only on master pushes
   # (never PRs, so it adds no PR-feedback latency; the merge_group arm went
@@ -663,7 +825,7 @@ jobs:
   # when an upstream check failed (so red runs are captured too).
   export-telemetry:
     name: export-telemetry
-    needs: [check-python, check-per-file-coverage, check-coverage, check-python-batch, check-fleet-conformance, check-metadata, check-metadata-batch]
+    needs: [check-python, check-per-file-coverage, check-coverage, check-python-batch, check-fleet-conformance, check-metadata, check-metadata-batch, incident-ci]
     if: ${{ !cancelled() && github.event_name == 'push' }}
     runs-on: ubuntu-latest
     permissions:
@@ -693,7 +855,7 @@ jobs:
   # gate, so it is intentionally absent from `needs:`.
   ci-green:
     name: ci-green
-    needs: [check-python, check-per-file-coverage, check-coverage, check-python-batch, check-fleet-conformance, check-metadata, check-metadata-batch]
+    needs: [check-python, check-per-file-coverage, check-coverage, check-python-batch, check-fleet-conformance, check-metadata, check-metadata-batch, incident-ci]
     if: always()
     runs-on: ubuntu-latest
     steps:
