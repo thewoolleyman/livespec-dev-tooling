@@ -874,7 +874,8 @@ On v0.8.1 the fleet instance's sandboxes request 3 CPU with a limit of 6
 environment's `cpu: 6`, because a run's environment size replaces the
 `process_spec`'s, and `process_spec.cpu_cores` is 6 to match. The `factory-runs`
 quota's `limits.cpu` is 120 for it (`ci-runner/k3s/phase2/factory/DERIVATION.md`
-"Request 3, limit 6"). Every changed value carries its `REVERT` line in
+"Request 3, limit 6"), raised to 136 while four reaper-stranded sandboxes hold
+quota ("Room for four stranded sandboxes"). Every changed value carries its `REVERT` line in
 `host_vars`.
 
 `vault_secrets` declares the App key, from the wrapper's

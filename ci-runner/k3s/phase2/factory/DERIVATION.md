@@ -416,6 +416,39 @@ throttled-period share at 3 / 6 against the 4 / 4 figures above. If node fit or
 poweredge idle degrades (the "Twenty runs" revert signal: idle below about 5 %
 AND the BestEffort CI-slice `cpu.pressure` avg60 above about 30), revert.
 
+## Room for four stranded sandboxes
+
+**What refused.** On 2026-11-05 at 17:34Z, `legacy-coordinator-agent` measured
+`factory-runs` at `limits.cpu` 110 of 120, `requests.memory` 152600Mi of
+171470Mi and `pods` 20 of 42, while the launchers counted 18 of the fleet cap of
+20. Each new sandbox carries `limits.cpu` 6, so the 20th run would need 122 and
+would be refused. The cap of 20 could never be reached.
+
+**Why 120 was not enough.** Four pods in the namespace are not live runs. They
+are 4 / 4 sandboxes that the factory sandbox reaper re-created and stranded
+while deleting stopped sandboxes of runs that had already ended, and it never
+reaps them, because it deletes only `stopped` sandboxes
+(livespec-dev-tooling-izazkx). They are created by the driver, and the GitOps
+discipline forbids deleting them by hand. Until izazkx's reaper fix removes
+them, they hold 4 x 4 = 16 of `limits.cpu` and 4 x 7630Mi of memory.
+
+| term | arithmetic | value |
+|---|---|---|
+| `requests.cpu` | unchanged (20 x 3 + 4 x 4 = 76 fits) | **84** |
+| `limits.cpu` | 20 runs x 6 + 4 stranded x 4 | **136** |
+| `requests.memory` | 171470Mi + 4 x 7630Mi | **201990Mi** |
+| `limits.memory` | 181710Mi + 4 x 7630Mi | **212230Mi** |
+| `pods` | unchanged | **42** |
+
+**What still binds.** The fleet cap of 20 does. Once izazkx reaps the four
+pods, this quota leaves room for more than 20 runs, but no launcher exceeds the
+cap. Memory is 24 x 7630Mi = 183120Mi at 20 runs plus the four stranded pods.
+That fits 201990Mi, and `poweredge-xubuntu` alone has about 377 GiB allocatable.
+
+**Revert.** Restore the three `REVERT` values in `./factory-namespace.yaml` and
+apply `ansible/ci-pool.yml --tags ci_factory_quota`. Lowering a quota evicts
+nothing. Revert once izazkx has reaped the four stranded pods.
+
 ## The egress targets
 
 The policy default-denies ingress (`podSelector: {}`, `ingress: []`) and allows
