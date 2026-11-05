@@ -11,7 +11,9 @@ stub `limactl` that plays the VM, its Docker and the fixture's kubectl, and asse
   eth0, and converges the worker on the fixture network apart from its production state;
 - the enrollment reaches the VM only on stdin, never in an argument;
 - it waits for the Node and refuses to finish until a serving CSR is approved;
-- a rerun for a registered Node reconciles the container and mints and delivers nothing.
+- a rerun for a registered Node reconciles the container and mints and delivers nothing;
+- `tailnet` (stage two) runs the worker off the fixture network under its production tailnet
+  identity, pointed at the server's fixture IP over the advertised /32, with flannel on tailscale0.
 """
 
 from __future__ import annotations
@@ -36,7 +38,12 @@ s="$STUB_STATE"
 printf 'limactl %s\\n' "$*" >> "$s/calls.log"
 shift 5
 case "$1 $2" in
-  "docker inspect") cat "$s/server-running" ;;
+  "docker inspect")
+    case "$4" in
+      *NetworkSettings*) echo 172.18.0.2 ;;
+      *) cat "$s/server-running" ;;
+    esac ;;
+  "sh -c") printf '%s\n' "$3" >> "$s/vm-sh.log" ;;
   "docker exec")
     shift 2
     [ "$1" = "-i" ] && shift
@@ -82,9 +89,11 @@ def mac(tmp_path: Path) -> _Mac:
     return _Mac(state=state, bin_dir=bin_dir)
 
 
-def _run(*, mac: _Mac, host: str = "macbook-m4-max") -> subprocess.CompletedProcess[str]:
+def _run(
+    *, mac: _Mac, host: str = "macbook-m4-max", mode: tuple[str, ...] = ()
+) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
-        ["/bin/bash", str(_SCRIPT), host],
+        ["/bin/bash", str(_SCRIPT), host, *mode],
         capture_output=True,
         text=True,
         env={
@@ -170,3 +179,27 @@ def test_a_rerun_for_a_registered_node_mints_and_delivers_nothing(mac: _Mac) -> 
     assert "bootstrap-token-" not in applied
     assert not list(mac.state.glob("delivered-*"))
     assert len([c for c in _calls(mac=mac) if " bash -s -- " in c]) == 1
+
+
+def test_tailnet_mode_runs_the_worker_in_production_mode_over_the_underlay(mac: _Mac) -> None:
+    result = _run(mac=mac, mode=("tailnet",))
+    assert "no serving CSR" in result.stderr
+    applied = (mac.state / "applied.yaml").read_text(encoding="utf-8")
+    assert "api-server-host: 172.18.0.2" in applied
+    assert "flannel-iface: tailscale0" in applied
+    converges = [c for c in _calls(mac=mac) if " bash -s -- " in c]
+    assert converges
+    assert all(c.endswith(" /mnt/lima-hwdata/fixture-worker") for c in converges)
+    kubeconfig = (mac.state / "delivered-bootstrap-kubeconfig").read_text(encoding="utf-8")
+    assert "server: https://172.18.0.2:6443" in kubeconfig
+    link = (mac.state / "vm-sh.log").read_text(encoding="utf-8")
+    assert (
+        "ln -s /mnt/lima-hwdata/worker/tailscale /mnt/lima-hwdata/fixture-worker/tailscale" in link
+    )
+
+
+def test_an_unknown_join_mode_is_refused_before_any_vm_call(mac: _Mac) -> None:
+    result = _run(mac=mac, mode=("lan",))
+    assert result.returncode != 0
+    assert "is not tailnet" in result.stderr
+    assert _calls(mac=mac) == []
