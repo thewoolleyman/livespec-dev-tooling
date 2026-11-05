@@ -28,6 +28,8 @@ from __future__ import annotations
 
 import os
 import sys
+from dataclasses import dataclass
+from hashlib import sha256
 from pathlib import Path
 
 _VENDOR_DIR = Path(__file__).resolve().parent.parent / "_vendor"
@@ -63,6 +65,7 @@ from livespec_dev_tooling.install_commit_refuse_hooks import (  # noqa: E402
 # split reporting work it did not do. They are converted anyway, because the
 # defect below is real whether or not the count can see it.
 __all__: list[str] = [
+    "HookInspection",
     "_find_foreign_lefthook_wrappers",
     "_find_vendored_hook_copies",
     "_inspect_hook",
@@ -87,7 +90,30 @@ _HOOK_BODY_MISMATCH = "body_mismatch"
 _HOOK_OK = ""
 
 
-def _inspect_hook(*, hook_path: Path) -> IOResult[tuple[bool, str], CheckInputUnreadable]:
+@dataclass(frozen=True, kw_only=True)
+class HookInspection:
+    """The byte-identity verdict and body-mismatch evidence for one hook."""
+
+    ok: bool
+    failure_mode: str
+    installed_sha256: str = ""
+    canonical_sha256: str = ""
+    first_differing_line: int = 0
+
+
+def _first_differing_line(*, installed: bytes, canonical: bytes) -> int:
+    """Return the 1-based first line with unequal raw bytes in two hook bodies."""
+    installed_lines = installed.splitlines(keepends=True)
+    canonical_lines = canonical.splitlines(keepends=True)
+    for number, (installed_line, canonical_line) in enumerate(
+        zip(installed_lines, canonical_lines, strict=False), start=1
+    ):
+        if installed_line != canonical_line:
+            return number
+    return min(len(installed_lines), len(canonical_lines)) + 1
+
+
+def _inspect_hook(*, hook_path: Path) -> IOResult[HookInspection, CheckInputUnreadable]:
     """Return `(ok, failure_mode)` for a single hook path.
 
     `ok` is True only when the hook exists as a regular file, is
@@ -113,16 +139,25 @@ def _inspect_hook(*, hook_path: Path) -> IOResult[tuple[bool, str], CheckInputUn
     CRLF-converted hook compare EQUAL to canonical and pass.
     """
     if not hook_path.is_file():
-        return IOSuccess((False, _HOOK_MISSING))
+        return IOSuccess(HookInspection(ok=False, failure_mode=_HOOK_MISSING))
     if not os.access(hook_path, os.X_OK):
-        return IOSuccess((False, _HOOK_NOT_EXECUTABLE))
+        return IOSuccess(HookInspection(ok=False, failure_mode=_HOOK_NOT_EXECUTABLE))
     try:
         body = hook_path.read_bytes()
     except OSError as unreadable:
         return IOFailure(CheckInputUnreadable(path=str(hook_path), detail=str(unreadable)))
-    if body != CANONICAL_HOOK_BODY.encode("utf-8"):
-        return IOSuccess((False, _HOOK_BODY_MISMATCH))
-    return IOSuccess((True, _HOOK_OK))
+    canonical = CANONICAL_HOOK_BODY.encode("utf-8")
+    if body != canonical:
+        return IOSuccess(
+            HookInspection(
+                ok=False,
+                failure_mode=_HOOK_BODY_MISMATCH,
+                installed_sha256=sha256(body).hexdigest(),
+                canonical_sha256=sha256(canonical).hexdigest(),
+                first_differing_line=_first_differing_line(installed=body, canonical=canonical),
+            )
+        )
+    return IOSuccess(HookInspection(ok=True, failure_mode=_HOOK_OK))
 
 
 def _find_foreign_lefthook_wrappers(

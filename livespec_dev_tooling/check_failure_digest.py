@@ -98,6 +98,8 @@ def _mode_groups(*, output: str) -> list[tuple[str, str, str, int]]:
     groups: dict[tuple[str, str], tuple[str, int]] = {}
     order: list[tuple[str, str]] = []
     for line in output.splitlines():
+        if _body_mismatch_digest_fields(line=line) is not None:
+            continue
         record = _fail_record(line=line)
         if record is None:
             continue
@@ -109,6 +111,51 @@ def _mode_groups(*, output: str) -> list[tuple[str, str, str, int]]:
         example, count = groups[key]
         groups[key] = (example, count + 1)
     return [(mode, hint, groups[(mode, hint)][0], groups[(mode, hint)][1]) for mode, hint in order]
+
+
+def _body_mismatch_digest_fields(*, line: str) -> tuple[str, str, str] | None:
+    """Return path and both hashes when a body-mismatch finding carries its evidence."""
+    try:
+        parsed = json.loads(line.strip())
+    except ValueError:
+        return None
+    if not isinstance(parsed, dict):
+        return None
+    record = cast("dict[str, object]", parsed)
+    if record.get("status") != _FAIL_STATUS or record.get("failure_mode") != "body_mismatch":
+        return None
+    path = record.get("path")
+    installed = record.get("installed_sha256")
+    canonical = record.get("canonical_sha256")
+    if (
+        not isinstance(path, str)
+        or not path
+        or not isinstance(installed, str)
+        or not installed
+        or not isinstance(canonical, str)
+        or not canonical
+    ):
+        return None
+    return (path, installed, canonical)
+
+
+def _body_mismatch_digest_lines(*, target: str, output: str) -> list[str]:
+    """Render every hook body's path and hashes without collapsing them to a count."""
+    lines: list[str] = []
+    for line in output.splitlines():
+        fields = _body_mismatch_digest_fields(line=line)
+        if fields is None:
+            continue
+        path, installed, canonical = fields
+        lines.extend(
+            (
+                f"  {target}: body_mismatch",
+                f"      path: {path}",
+                f"      installed_sha256: {installed}",
+                f"      canonical_sha256: {canonical}",
+            )
+        )
+    return lines
 
 
 def _entry_lines(*, target: str, group: tuple[str, str, str, int]) -> list[str]:
@@ -137,8 +184,10 @@ def failure_digest_lines(*, failures: list[tuple[str, str]]) -> list[str]:
     for target, output in failures:
         groups = _mode_groups(output=output)
         if not groups:
-            lines.append(f"  {target}: {_NO_STRUCTURED_FINDING}")
-            continue
-        for group in groups:
-            lines.extend(_entry_lines(target=target, group=group))
+            if not _body_mismatch_digest_lines(target=target, output=output):
+                lines.append(f"  {target}: {_NO_STRUCTURED_FINDING}")
+        else:
+            for group in groups:
+                lines.extend(_entry_lines(target=target, group=group))
+        lines.extend(_body_mismatch_digest_lines(target=target, output=output))
     return lines
