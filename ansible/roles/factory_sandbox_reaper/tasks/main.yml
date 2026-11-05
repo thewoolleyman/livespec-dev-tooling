@@ -62,6 +62,16 @@
     mode: "0644"
   become: true
 
+- name: Install the factory sandbox reaper retention decisions
+  ansible.builtin.copy:
+    src: factory_sandbox_reaper_decisions.py
+    dest: "{{ factory_sandbox_reaper_bin | dirname }}/factory_sandbox_reaper_decisions.py"
+    owner: root
+    group: root
+    mode: "0644"
+    validate: python3 -c "import ast,sys; ast.parse(open(sys.argv[1]).read())" %s
+  become: true
+
 - name: Check whether the factory sandbox reaper timer unit is already installed
   ansible.builtin.stat:
     path: "{{ factory_sandbox_reaper_unit_dir }}/{{ factory_sandbox_reaper_timer }}"
