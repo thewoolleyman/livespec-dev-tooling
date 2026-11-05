@@ -75,16 +75,19 @@ directly by `test_module_re_import_with_vendor_in_sys_path`.
 
 from __future__ import annotations
 
+import hashlib
 import importlib.util
+import json
 import os
 import stat
 import subprocess
 from pathlib import Path
 from types import ModuleType
-from typing import NamedTuple
+from typing import NamedTuple, cast
 
 import pytest
 
+from livespec_dev_tooling.check_failure_digest import failure_digest_lines
 from livespec_dev_tooling.install_commit_refuse_hooks import CANONICAL_HOOK_BODY
 from livespec_dev_tooling.install_worktree_pack import (
     CANONICAL_BRANCH_PROTECTION_BODY,
@@ -418,6 +421,48 @@ def test_fails_when_canonical_plus_trailing_byte_differs(
     )
     assert "body_mismatch" in result.stderr
     assert "pre-push" in result.stderr
+
+
+@pytest.mark.integration
+def test_stale_pre_push_hook_names_both_bodies_in_the_tail_digest(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A stale hook identifies its bytes and first changed line at the aggregate tail."""
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    _git_init(cwd=project_root)
+    _install_canonical_hooks(repo_root=project_root)
+    canonical_lines = cast("list[str]", CANONICAL_HOOK_BODY.splitlines(keepends=True))
+    canonical_lines[11] = b"# stale installed body\n".decode("utf-8")
+    installed_body = "".join(canonical_lines)
+    hook_path = _install_hook(
+        repo_root=project_root,
+        hook_name="pre-push",
+        body=installed_body,
+        executable=True,
+    )
+
+    result = _run_check(cwd=project_root, monkeypatch=monkeypatch, capsys=capsys)
+
+    assert result.returncode == 4
+    findings = [json.loads(line) for line in result.stderr.splitlines() if line.startswith("{")]
+    finding = next(finding for finding in findings if finding["failure_mode"] == "body_mismatch")
+    assert finding.get("path") == str(hook_path)
+    assert (
+        finding.get("installed_sha256")
+        == hashlib.sha256(installed_body.encode("utf-8")).hexdigest()
+    )
+    assert (
+        finding.get("canonical_sha256")
+        == hashlib.sha256(CANONICAL_HOOK_BODY.encode("utf-8")).hexdigest()
+    )
+    assert finding.get("first_differing_line") == 12
+    digest = failure_digest_lines(
+        failures=[("check-primary-checkout-commit-refuse-hook-installed", result.stderr)]
+    )
+    assert f"      path: {hook_path}" in digest
+    assert f"      installed_sha256: {finding.get('installed_sha256')}" in digest
+    assert f"      canonical_sha256: {finding.get('canonical_sha256')}" in digest
 
 
 def test_fails_when_commit_msg_missing(
