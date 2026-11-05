@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# mint-bootstrap-token.sh <host> <api-server-url> <ca-file> <out-file> — the
+# mint-bootstrap-token.sh <host> <api-server-url> <ca-file> <out-dir> — the
 # operator's controller-side step that lets one homelab worker bootstrap.
 #
 # Governed by SPECIFICATION/non-functional-requirements.md, "Homelab worker
@@ -11,8 +11,10 @@
 # It creates one kube-system bootstrap-token Secret that authenticates only in
 # the group system:bootstrappers:homelab-worker (bound by rbac.yaml) and
 # expires after TOKEN_TTL_MINUTES (default 60); the token cleaner deletes it
-# then. It writes the worker's bootstrap kubeconfig, pinning the API server
-# URL and its CA, to <out-file> with mode 0600. The token secret reaches
+# then. It creates <out-dir> (mode 0700) holding the worker's enrollment:
+# bootstrap-kubeconfig (mode 0600), pinning the API server URL and its CA, and
+# client-ca.crt, the cluster's client CA, which the worker's kubelet needs to
+# authenticate the API server's logs and exec calls. The token secret reaches
 # kubectl on stdin and the kubeconfig on disk, and is printed nowhere.
 #
 # Run it with an admin kubeconfig for the target cluster (KUBECONFIG), from the
@@ -39,7 +41,7 @@ declared_hosts() {
   done
 }
 
-[ "$#" -eq 4 ] || die "usage: $prog <host> <api-server-url> <ca-file> <out-file>; declared hosts: $(declared_hosts)"
+[ "$#" -eq 4 ] || die "usage: $prog <host> <api-server-url> <ca-file> <out-dir>; declared hosts: $(declared_hosts)"
 host="$1"
 server="$2"
 ca_file="$3"
@@ -57,7 +59,7 @@ case "$ttl_minutes" in
   '' | *[!0-9]*) die "TOKEN_TTL_MINUTES '$ttl_minutes' is not a whole number of minutes" ;;
 esac
 [ "$ttl_minutes" -ge 5 ] && [ "$ttl_minutes" -le 1440 ] || die "TOKEN_TTL_MINUTES must be between 5 and 1440"
-[ ! -e "$out" ] || die "$out already exists; refusing to overwrite a bootstrap kubeconfig"
+[ ! -e "$out" ] || die "$out already exists; refusing to overwrite an enrollment"
 
 worker="$host-homelab-worker"
 
@@ -78,6 +80,12 @@ if expiration="$(date -u -d "@$expires_epoch" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null)";
 else
   expiration="$(date -u -r "$expires_epoch" +%Y-%m-%dT%H:%M:%SZ)"
 fi
+
+client_ca="$(kubectl get configmap --namespace kube-system extension-apiserver-authentication -o 'jsonpath={.data.client-ca-file}')"
+case "$client_ca" in
+  "-----BEGIN CERTIFICATE-----"*) ;;
+  *) die "could not read the cluster client CA from kube-system/extension-apiserver-authentication" ;;
+esac
 
 kubectl apply -f - >/dev/null <<EOF
 apiVersion: v1
@@ -100,7 +108,10 @@ EOF
 
 ca_data="$(base64 <"$ca_file" | tr -d '\n')"
 umask 077
-cat >"$out" <<EOF
+mkdir -p "$out"
+chmod 0700 "$out"
+printf '%s\n' "$client_ca" >"$out/client-ca.crt"
+cat >"$out/bootstrap-kubeconfig" <<EOF
 apiVersion: v1
 kind: Config
 clusters:
@@ -119,7 +130,7 @@ contexts:
       user: $worker-bootstrap
 current-context: bootstrap
 EOF
-chmod 0600 "$out"
+chmod 0600 "$out/bootstrap-kubeconfig"
 
-printf '%s: minted bootstrap token %s for %s, expiring %s; bootstrap kubeconfig at %s\n' \
+printf '%s: minted bootstrap token %s for %s, expiring %s; enrollment at %s\n' \
   "$prog" "$token_id" "$worker" "$expiration" "$out"
