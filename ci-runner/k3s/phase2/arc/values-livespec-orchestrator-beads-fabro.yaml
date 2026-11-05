@@ -226,5 +226,10 @@ template:
 # 52 is not expected to bind; the watch item is this repo's pull_request p90
 # job wait for 24 h after the change. See ../kueue/DERIVATION.md "The
 # master-push slice for livespec-dev-tooling (2026-11-03)".
+#
+# 52 -> 50 on 2026-11-05: the ClusterQueue donated one more slot (26 -> 25) to
+# the fabro fork's queue, and the ceiling follows the rule,
+# max(2 x 25, 6) = 50. See ../kueue/DERIVATION.md "The fabro fork scale set
+# (2026-11-05)".
 minRunners: 0
-maxRunners: 52
+maxRunners: 50

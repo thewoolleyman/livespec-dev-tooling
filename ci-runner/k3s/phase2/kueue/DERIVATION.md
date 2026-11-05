@@ -1138,6 +1138,217 @@ and tell the coordinator if it worsens materially before `bd-ib-xufdwx` lands.
 Reverting is deleting `CI_RUNNER_LABELS_MASTER` (pushes return to
 `CI_RUNNER_LABELS` at once), then the reverse of the manifest change.
 
+## The fabro fork scale set (2026-11-05)
+
+Work item `bd-ib-dqxcsh`, part (a) (livespec-orchestrator-beads-fabro tenant),
+routed by `legacy-coordinator-agent`. The cohort gains a TWELFTH member,
+`fabro-cq`, for `thewoolleyman/fabro`: the fleet's Rust fork of Fabro, and the
+first routed repository that is not a livespec repository (no beads tenant, no
+spec). Its format, clippy and nextest jobs (later a release-binary build) move
+here off the dev host. The fork's jobs declare a `container:` image
+(buildpack-deps:noble + musl-tools) and run as root in the workflow pod; no
+Docker daemon is offered, which was accepted.
+
+| object | value |
+|---|---|
+| scale set | `fabro-k3s` (`../arc/values-fabro.yaml`), the name promised to the fork's owner; 9 characters |
+| `githubConfigUrl` / secret | `https://github.com/thewoolleyman/fabro` / `arc-github-app-installation`, the one shared installation |
+| LocalQueue / ClusterQueue | `fabro-lq` / `fabro-cq` (`cluster-queue-fabro.yaml`), cohort `fleet-ci-runner-pool` |
+| `nominalQuota` (churn-slot) | **1**, donated by `livespec-orchestrator-beads-fabro-cq` |
+| `lendingLimit` | not set: lends its whole unused floor, as every member but the master slice |
+| preemption | the API defaults, all `Never`, as every per-repo queue |
+| `minRunners` / `maxRunners` | 0 / **2**, a recorded exception (below) |
+| work volume request | **112Gi**, not enforced (below) |
+| placement | `nodeSelector: kubernetes.io/hostname: poweredge-xubuntu` |
+| cpu / memory requests | none, as every scale set |
+
+**Prerequisite, measured.** The `thewoolleyman-ci-runners` App installation did
+NOT cover `thewoolleyman/fabro` at about 06:5xZ on 2026-11-05; the maintainer is
+adding it. Converge only after it does (order below).
+
+### Why a donation, and why 1
+
+The fork has never run on this pool, so it has no `cache.job-summary`
+job-hours for the measured Hamilton derivation of 2026-10-22 to apportion. It
+joins the way the master-push slice did: a ruled donation that keeps the
+cohort at exactly C = 44. C cannot grow to make room: the 450-point JIT startup
+budget caps the summed node capacity at 45 (`tests/consumer/test_jit_admission_scenarios.py`).
+
+The coordinator asked whether the fork could borrow only, at `nominalQuota` 0.
+The apportionment rule above says no: step 5 gives no repository a floor of
+zero, because with reclaim `Never` a borrow-only queue under a saturated cohort
+waits for a borrower's job to end and can lose that slot again to any queue
+still under its own floor. A floor of 1 means a fork job waits at most for one
+borrower's job to finish. More than 1 would reserve capacity a three-job fork
+cannot use behind a ceiling of 2.
+
+**The donor is `livespec-orchestrator-beads-fabro`**, for the reasons the master
+slice re-ruling recorded: it holds the largest quota (the queue the excess-deduction
+step takes from), and its ceiling did not bind (13 of 58 runners at 11:10Z on
+2026-11-03). `livespec-dev-tooling` is not a donor, because a quota of 5 would
+cut its ceiling from 12 to 10, and that ceiling WAS the binding term in the
+same measurement.
+
+| ClusterQueue | `nominalQuota` before | after | scale set `maxRunners` before | after |
+|---|---:|---:|---:|---:|
+| `livespec-orchestrator-beads-fabro-cq` | 26 | **25** | 52 | **50** |
+| `fabro-cq` | — | **1** | — | **2** |
+| every other member (10 queues) | 18 | 18 | 66 | 66 |
+| **cohort sum** | **44** | **44** | **118** | **118** |
+
+The twelve quotas still sum to C = 44, so the per-node capacities are
+untouched, and the ceilings still total 118, so at a full 44-runner admission at
+most 74 runner objects are gated in the cluster, as before. The orchestrator's
+24-hour watch item from the master slice applies again, for one slot and two
+ceiling.
+
+### Why `maxRunners` is 2, not the routed 1 and not the rule's 6
+
+The routing asked for a maximum of 1. One is not reachable under the
+specification. `SPECIFICATION/non-functional-requirements.md` §"Adaptive JIT
+runner admission budget" requires each ceiling to be "large enough that a
+repository can borrow unused capacity beyond its guaranteed share", and
+`tests/consumer/test_jit_fleet_capacity_scenarios.py` holds that clause. With the
+floor at 1, a ceiling of 1 can never borrow. The only way to keep 1 is
+`nominalQuota` 0, which step 5 forbids, or a ratified change to that clause.
+2 is the smallest ceiling both rules allow.
+
+The rule value is `max(2 x 1, 6)` = 6, and 6 is refused for disk, not CPU. The
+floor of 6 exists so a small-quota repository does not drain a 13–21-job matrix
+one job at a time. The fork's matrix is three jobs, and each needs a work volume
+of about 100 GiB (below). Six concurrent volumes would be about 670 GiB of the
+1.5 TiB `ci-workvols` tier every runner on poweredge shares, and `local-path`
+would not refuse the seventh byte. 2 keeps the rule's multiple and waives only
+its floor. See "Recorded exceptions to the rule" below for the row and its
+acceptance check.
+
+### The work volume: 112Gi requested, nothing enforced
+
+The fork's owner measured on the dev host on 2026-11-05: a cold workspace
+clippy + nextest DEBUG build wrote about 92 GiB of target output, and the
+release target is 6.1 GiB. One job that builds both writes 98.1 GiB. The
+per-volume seeds are capped by committed budgets: uv at or under 1.0 GB and
+action archives at or under 0.27 GB (`../warm-cache/warm-cache-cronjob.yaml`),
+plus the runner externals at about 0.6 GB. The checkout is ASSUMED at about
+1 GB, because it was not measured. That totals about 101 GB. With 10 % headroom
+the request is **112Gi**.
+
+The number is a statement, not a bound. `local-path` is a mkdir-only
+provisioner with no size enforcement and no capacity tracking, so the scheduler
+never compares the request with a node's free space. What bounds the volume is
+the free space of the `ci-workvols` tier on the node the runner lands on,
+shared by every runner volume there, and the volume's deletion with its runner
+pod. The dev-host figure was taken with cargo's default `incremental = true`.
+The pool's job container gets `incremental = false` from the hook template's
+postStart, so the pool figure should be smaller. That is unmeasured.
+
+**Placement.** The runner pod is pinned to `poweredge-xubuntu`, the first scale
+set to carry a pin. The workflow pod follows it: the fleet hook copies the
+runner's node into `spec.nodeName`, and the `WaitForFirstConsumer` volume binds
+there. The tier sizes come from the committed profiles' `LOGICAL_VOLUMES`:
+
+| node | where its runner volumes live | size | why (not) |
+|---|---|---:|---|
+| `poweredge-xubuntu` | `ci-workvols`, XFS on NVMe (`nvmeb`) | 1.5 TiB | the most room; 72 CPUs and 377 GiB RAM for the link step |
+| `gmktec-xubuntu` | `ci-workvols`, XFS (`nvmea`) | 525 GiB | shared by 18 slots; it carries the petri factory, whose yield is P1 |
+| `hp-xubuntu` | `/srv/sandbox-storage/runner-workvols`, ext4 | (3.6 TiB volume) | the same filesystem holds k3s's data directory, so filling it takes k3s down there; 30 GB RAM |
+
+The cost of the pin: while poweredge's churn slots are all taken, an admitted
+fabro runner pod waits Pending for one there, holding its Kueue admission. At
+`maxRunners` 2 that is two pods at most. Measurement owed before routing: the
+free space of poweredge's `ci-workvols` mount (`/var/lib/rancher/k3s/storage`),
+read on the node at converge time. The 1.5 TiB is the volume's size, not its
+free space.
+
+### CPU and memory: the churn slot alone, as for every lane
+
+No cpu or memory request goes on the runner pod or the workflow pod. "Per-node
+churn slots derived from cores (2026-11-04)" above records why a request on the
+workflow pod cannot work here. The hook copies the runner's node into
+`spec.nodeName` and so bypasses the scheduler, which means contention would
+show up as `OutOfcpu` job failures, not as moved jobs. The workflow pod is also
+built from the SHARED `../arc/hook-pod-template.yaml`, which this lane must not
+change. The churn slot is the admission control. The per-job CPU bound is the
+shared template's `CARGO_BUILD_JOBS=3` and `NEXTEST_TEST_THREADS=3`. That is the
+same bound the console's Rust lane runs under, so a fabro job weighs about what
+one churn slot is sized for (about 2.73 CPUs per slot). The fork's workflow must
+not set `CARGO_BUILD_JOBS` itself, because a step-level value wins over the pod
+env.
+
+**Not measured:** no fabro job has run on any pool node, so there is no figure
+for its CPU, its peak memory (rustc at `-j3` plus the link step), or its
+wall-clock time on the pool. No request is proposed, so no number is invented
+for one. The measurement that confirms the choice is the first cold run's
+workflow pod, read from the host collector's `kubeletstats` in Honeycomb:
+`k8s.pod.memory.working_set` and `k8s.pod.cpu.usage` for the
+`fabro-k3s-*-workflow` pod, the job's duration, and `du` of its target
+directory. Poweredge's 377 GiB is the reason a peak of several GiB is not a
+risk there. On hp it would have been.
+
+### sccache: the hook's read path, and the populator's write path
+
+**Reading needs no change.** The hook template's postStart writes the
+`rustc-wrapper` stanza to `/.cargo/config.toml` when the node-local binary
+(`/opt/ci-runner/bin/sccache`) and `sccache-redis` answer. It points at
+`ci-sccache` as the unauthenticated READ_ONLY user, and cargo reads that
+config from the checkout's ancestors whatever the job image is. The fork's
+`container:` image carries `/bin/sh`, which the postStart needs.
+
+**No write mode for this lane, by the specification.** §"Runner-pool build
+cache tiers" **Trust by construction**: a job MUST NOT be able to write any
+shared cache, and the populator is the one writer.
+
+**The populator becomes fabro's writer AUTOMATICALLY, and that is the open
+risk.** `../warm-cache/converge-warm-cache.sh` derives the routed-repository
+list from every `githubConfigUrl` under `../arc/values-*.yaml`. So this values
+file adds `thewoolleyman/fabro` to the next warm-cache converge. The populator
+then does four things for it. It clones the fork. It runs `cargo fetch
+--locked` through the crates proxy. While Kueue's admitted-workload count is at
+or under 16, it builds the default branch as the sccache writer:
+`build --workspace --all-targets --all-features`,
+`test --workspace --all-features --no-run`,
+`check --workspace --all-targets --all-features` and `build --release --workspace`,
+at `/__w/fabro/fabro` on the CronJob pod's own root filesystem on the
+cache-carrier node. That pod has a 6-CPU and 8Gi limit and a 3600 s
+`activeDeadlineSeconds`. Its target output is the ~98 GiB above, written to the
+container layer. Finally it adds the fork's pinned `uses:` actions to the
+action-archive seed. `https://github.com/thewoolleyman/fabro` sorts before
+every `livespec-*` URL, so the fork's writer build runs FIRST in the cargo loop.
+A fork build that outlives the deadline kills the pod before the console's
+writer build and the action-archive refresh run. Any failed step (an
+`--all-features` set that does not build, a toolchain the image lacks, an
+OOM at 8Gi) leaves the marker unset, so the build is retried on every idle
+tick. None of this is measured. It must be decided before the converge. One
+choice accepts it and measures the first populate run. The other keeps the
+fork out of the populator's writer build until that build is sized. The
+populator has no per-repository opt-out today.
+
+Also measure, after the first writer build, whether fabro jobs actually HIT. The
+hook template's own header says sccache hashes every `CARGO_*` environment
+variable into the key. The template has set `CARGO_BUILD_JOBS=3` in every job
+container since 2026-11-04, and the populator's writer environment sets none.
+
+### The order (Ordering — confirm the reader before you write)
+
+1. The App installation's selection covers `thewoolleyman/fabro`, and the
+   fork's fork-pull-request approval tier reads `all_external_contributors`.
+2. poweredge's `ci-workvols` free space is read on the node, and the populator
+   question above is decided.
+3. Converge: `reconstruct/converge-ci-stack.sh` applies `cluster-queue-fabro.yaml`
+   and the donor's lowered quota in step 5, and `fabro-k3s` and the donor's
+   lowered ceiling in step 7.
+4. Confirm the `fabro-k3s` listener has REGISTERED with GitHub, and that
+   `kubectl get clusterqueue` shows `fabro-cq` at 1 with the twelve cohort
+   quotas summing to 44.
+5. Only then let the fork's workflows name `fabro-k3s`. Before that, a job
+   naming it queues forever at GitHub with no listener to take it.
+
+Reverting is the fork's `runs-on` back to its previous runner, then the
+reverse of this manifest change (orchestrator 25 → 26 and 50 → 52, and
+`helm uninstall fabro-k3s -n arc-runners` plus `kubectl delete -f
+cluster-queue-fabro.yaml`, because the converge applies files and never prunes
+a release or queue that has lost its file).
+
 ## Bounding maxRunners to the quota (2026-09-06)
 
 Maintainer decision 2026-09-06 (livespec plan `poweredge-raid-array-maintenance`,
@@ -1207,6 +1418,40 @@ The specification clause this bounds — livespec-dev-tooling
 `SPECIFICATION/non-functional-requirements.md`'s "doubled repository logical
 ceiling" — is amended by the proposed change
 `scale-set-ceiling-bounded-to-fair-share` filed the same day.
+
+### Recorded exceptions to the rule
+
+A scale set MAY carry a `maxRunners` other than `max(2 x nominalQuota, 6)`
+only as a recorded exception: a row in the table below, with the measurement
+that justifies it and the acceptance check that will confirm or revert it. An
+exception is a fact about one repository. It is not a new multiple, and the
+rule still derives every other scale set. It may move a ceiling above the rule
+or below it, but never down to the quota: the specification's ceiling clause
+requires room to borrow beyond the guaranteed share, so `maxRunners >
+nominalQuota` holds for every row. `tests/spec/test_jit_admission_budget.py`
+holds each ceiling to the rule or to its row here, and
+`tests/consumer/test_jit_fleet_capacity_scenarios.py` carries the same table.
+The first exception, `livespec-orchestrator-beads-fabro` at 12 (2026-10-19),
+was deleted on 2026-10-22, when the rule itself exceeded it.
+
+| Repository | `nominalQuota` | Rule value | `maxRunners` | Recorded |
+|---|---|---|---|---|
+| `fabro` | 1 | 6 | **2** | 2026-11-05 |
+
+**`fabro`, 6 to 2 (2026-11-05).** The rule's 2x multiple is kept and its floor
+of 6 is waived. The floor protects a small-quota repository with a 13–21-job
+matrix, and the fork's matrix is three jobs. Each fork job needs about a
+100 GiB work volume that `local-path` does not bound, so six concurrent jobs
+would put about 670 GiB on the `ci-workvols` tier every poweredge runner
+shares. The evidence, the measurement and the arithmetic are in "The fabro fork
+scale set (2026-11-05)" above. The acceptance check is the first cold fabro run
+on the pool. It passes when that job's work volume peaks under its 112Gi
+request, poweredge's `ci-workvols` keeps the free space it had before the run,
+and kine's `Slow SQL` rate does not rise. If the pool's target output proves
+small (well under about 40 GiB per job), the disk reason no longer holds: drop
+this row and take the rule value 6. If a fork push regularly waits on its own
+ceiling while poweredge has free slots and free tier space, raise it here with
+that measurement.
 
 ## The gates quota on gmktec-xubuntu and hp-xubuntu (2026-11-03)
 

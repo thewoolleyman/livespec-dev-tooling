@@ -71,7 +71,23 @@ _CEILING_FLOOR = 6
 # in DERIVATION.md "Recorded exceptions to the rule", carrying the measurement
 # that justifies it and the acceptance check that confirms or reverts it. A
 # ceiling matches its row here or the bound above, never anything else.
-_RECORDED_CEILING_EXCEPTIONS: dict[str, int] = {}
+_RECORDED_CEILING_EXCEPTIONS: dict[str, int] = {
+    # The rule's 2x multiple with its floor of 6 waived: a ~100 GiB work volume
+    # per job (DERIVATION.md "The fabro fork scale set (2026-11-05)").
+    "fabro-cq": 2,
+}
+
+# Each exception's row in DERIVATION.md "Recorded exceptions to the rule":
+# `| `<repository>` | <nominalQuota> | <rule value> | **<maxRunners>** | <date> |`.
+_EXCEPTION_ROW = re.compile(
+    (
+        r"^\| `(?P<repo>[^`]+)` \| (?P<quota>\d+) \| (?P<rule>\d+) \| "
+        r"\*\*(?P<max>\d+)\*\* \| \d{4}-\d{2}-\d{2} \|"
+    ),
+    re.MULTILINE,
+)
+_EXCEPTIONS_HEADING = "### Recorded exceptions to the rule"
+_EXCEPTION_QUEUES = {"fabro": "fabro-cq"}
 
 # The physical invariant, stated in the section itself.
 _PHYSICAL_CAP = 482
@@ -226,7 +242,7 @@ def test_the_fair_shares_sum_to_the_capacity_the_node_profiles_declare() -> None
 def test_measured_job_hours_derive_the_committed_fair_shares() -> None:
     """Seven-day pool job-hours are the dated, auditable source of every quota."""
     expected = {
-        "livespec-orchestrator-beads-fabro-cq": 26,
+        "livespec-orchestrator-beads-fabro-cq": 25,
         "livespec-dev-tooling-cq": 6,
         "livespec-dev-tooling-master-cq": 3,
         "livespec-cq": 2,
@@ -237,6 +253,7 @@ def test_measured_job_hours_derive_the_committed_fair_shares() -> None:
         "livespec-console-beads-fabro-cq": 1,
         "livespec-driver-codex-cq": 1,
         "livespec-runtime-cq": 1,
+        "fabro-cq": 1,
     }
     assert _cohort_quotas() == expected
 
@@ -245,6 +262,7 @@ def test_measured_job_hours_derive_the_committed_fair_shares() -> None:
     assert "SUM(duration_ms) / 3,600,000" in derivation
     assert "deducts one from `livespec-orchestrator-beads-fabro` (30 → 29)" in derivation
     assert "## The master-push slice for livespec-dev-tooling (2026-11-03)" in derivation
+    assert "## The fabro fork scale set (2026-11-05)" in derivation
 
 
 def test_master_push_slice_reserves_its_quota_and_lends_none_of_it() -> None:
@@ -278,13 +296,50 @@ def test_rederived_orchestrator_ceiling_removes_its_recorded_exception() -> None
     rule_value = max(_CEILING_MULTIPLE * quota, _CEILING_FLOOR)
     derivation = _DERIVATION.read_text(encoding="utf-8")
 
-    assert rule_value == 52
+    assert rule_value == 50
     assert rule_value >= 12
-    assert "## Recorded exceptions to the rule" not in derivation
+    # Its DERIVATION.md row is gone with it: every row there must match an
+    # exception here (test_every_recorded_exception_is_a_derivation_row_...).
+    assert orchestrator not in _RECORDED_CEILING_EXCEPTIONS
     assert (
         "The Recorded exceptions to the rule table remains absent because 52 is not below 12."
         in " ".join(derivation.split())
     )
+
+
+def test_every_recorded_exception_is_a_derivation_row_that_still_permits_borrowing() -> None:
+    """Each exception is a DERIVATION.md row, matches the manifests, and keeps maxRunners > quota.
+
+    The row is where the measurement and the acceptance check live, so an
+    exception in this file without one is a number nobody can audit. And an
+    exception may move a ceiling off the rule but never down to the share: the
+    section requires the ceiling to be "large enough that a repository can
+    borrow unused capacity beyond its guaranteed share".
+    """
+    derivation = _DERIVATION.read_text(encoding="utf-8")
+    assert _EXCEPTIONS_HEADING in derivation
+    # Only the exceptions subsection: other tables in the file share the shape.
+    section = derivation.split(_EXCEPTIONS_HEADING, 1)[1].split("\n#", 1)[0]
+    rows = {
+        _EXCEPTION_QUEUES.get(row.group("repo"), row.group("repo")): row
+        for row in _EXCEPTION_ROW.finditer(section)
+    }
+    assert set(rows) == set(_RECORDED_CEILING_EXCEPTIONS), (
+        f"every recorded exception needs exactly one DERIVATION.md row and no row may "
+        f"outlive its exception; rows={sorted(rows)} "
+        f"exceptions={sorted(_RECORDED_CEILING_EXCEPTIONS)}"
+    )
+    quotas = _cohort_quotas()
+    ceilings = _scale_set_ceilings()
+    for cq, ceiling in _RECORDED_CEILING_EXCEPTIONS.items():
+        row = rows[cq]
+        assert int(row.group("quota")) == quotas[cq], (cq, row.group(0))
+        assert int(row.group("rule")) == max(_CEILING_MULTIPLE * quotas[cq], _CEILING_FLOOR)
+        assert int(row.group("max")) == ceiling == ceilings[cq][1], (cq, row.group(0))
+        assert ceiling > quotas[cq], (
+            f"{cq}: an exception may waive the rule but not the borrowing clause; "
+            f"maxRunners={ceiling} nominalQuota={quotas[cq]}"
+        )
 
 
 def test_no_committed_admission_path_reaches_or_doubles_the_physical_cap() -> None:

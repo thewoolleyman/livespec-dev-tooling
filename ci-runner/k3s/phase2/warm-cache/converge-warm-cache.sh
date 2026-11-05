@@ -93,7 +93,17 @@ trap 'rm -f "${repos_file}"' EXIT
 # placeholder); everything else is a live scale set. The host-unique proof
 # set (values-poweredge-xubuntu-k3s.yaml) points at livespec-dev-tooling,
 # which its own per-repo file already names — hence the sort -u.
-grep -h '^githubConfigUrl:' "${VALUES_DIR}"/values-*.yaml \
+#
+# A values file carrying the line `# warm-cache: exclude` is NOT a populator
+# target. values-fabro.yaml opts out (2026-11-05, bd-ib-dqxcsh): its cold
+# Rust workspace build fills ~98 GiB and would run inside the populator's
+# single 3600 s CronJob deadline ahead of the console's sccache refresh, so an
+# overrun would starve every other repository's warm cache. Its own runner
+# volume is the cache that lane relies on.
+for values_file in "${VALUES_DIR}"/values-*.yaml; do
+  grep -q '^# warm-cache: exclude$' "${values_file}" && continue
+  grep -h '^githubConfigUrl:' "${values_file}"
+done \
   | sed -E 's/^githubConfigUrl: *"?([^" ]+)"?.*/\1/' \
   | grep -v '<' \
   | sort -u > "${repos_file}"

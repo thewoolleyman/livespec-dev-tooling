@@ -1,0 +1,272 @@
+# values-fabro.yaml -- the AutoscalingRunnerSet for `thewoolleyman/fabro`, the
+# fleet's Rust FORK of Fabro and the TWELFTH scale set routed into the
+# `fleet-ci-runner-pool` cohort (the thirteenth Helm release, counting the
+# un-queued phase-1 proof set). It is the first member that is NOT a livespec
+# repository: it has no beads tenant and no livespec spec. It runs the fork's
+# Rust format, clippy and nextest jobs (and, later, a release-binary build) on
+# the k3s ARC pool instead of the dev host. Work item bd-ib-dqxcsh, part (a);
+# read ../kueue/DERIVATION.md "The fabro fork scale set (2026-11-05)" before
+# changing ANY number in this file or in ../kueue/cluster-queue-fabro.yaml.
+# Read values-livespec.yaml first for the repository-scoped `githubConfigUrl`,
+# the churn-slot extended resource, and why `maxRunners` and the ClusterQueue's
+# nominalQuota are two enforcement points holding two DIFFERENT numbers.
+#
+# THE NAME. `fabro-k3s` (9 characters) is `<repo>-k3s` exactly, well inside
+# README.md "`runnerScaleSetName` MUST stay <=30 characters", and it is the
+# name already promised to the fork's owner: the fork's workflows select this
+# scale set by it (`runs-on: fabro-k3s`, or a variable carrying it). Do NOT
+# rename it without changing the fork's workflows in the same breath.
+#
+# PREREQUISITES THIS FILE CANNOT EXPRESS -- check them BEFORE the converge:
+#
+#   1. The repo must be in the `thewoolleyman-ci-runners` GitHub App
+#      installation's repository selection, or the ARC controller gets
+#      `403 "Resource not accessible by integration"` on the registration-token
+#      call and the listener never starts (values-livespec-driver-pi.yaml
+#      learned it the hard way). MEASURED 2026-11-05 ~06:5xZ: the installation
+#      does NOT yet cover thewoolleyman/fabro; the maintainer is adding it. A
+#      converge run before that lands still SUCCEEDS -- step 7b only WARNs on a
+#      listener that never appears -- but it spends that step's full 150 s poll
+#      and leaves an AutoscalingRunnerSet the controller keeps failing to
+#      register, so converge AFTER the selection change, not before. The same
+#      installation secret is used deliberately: one installation is one
+#      shared 900-point mint budget (tests/consumer/test_jit_admission_scenarios.py).
+#   2. The fork's fork-pull-request approval tier must be the strictest,
+#      `all_external_contributors`, before ANY of its workflows names this
+#      scale set -- README.md "Step 6 is the security boundary". The fork is
+#      routed by its own `runs-on`, not by `../../set-ci-runner-labels.sh`, so
+#      nothing reads the tier at that write for you: read it by hand
+#      (`gh api repos/thewoolleyman/fabro/actions/permissions/fork-pr-contributor-approval`)
+#      or route it through the guarded writer anyway.
+#
+# WHAT THE FORK'S JOBS GET, AND WHAT THEY DO NOT. Its jobs declare a
+# `container:` image (buildpack-deps:noble + musl-tools) and run as root in the
+# WORKFLOW pod the fleet container hook builds from the SHARED
+# hook-pod-template.yaml. No Docker daemon is offered (kubernetes container
+# mode, no privileged pods); that was accepted for this lane. The shared
+# template sets CARGO_BUILD_JOBS=3 and NEXTEST_TEST_THREADS=3 in every job
+# container, which bounds this lane's CPU the same way it bounds every other
+# lane's; a step that sets CARGO_BUILD_JOBS itself wins over the pod env, so
+# the FORK'S WORKFLOW must not raise it on this pool. The shared template also
+# writes the sccache rustc-wrapper stanza to /.cargo/config.toml when the
+# node-local sccache binary and the ci-sccache redis answer, READ_ONLY, so the
+# fork needs no sccache step of its own. Nothing about this lane changes the
+# shared template.
+# Not a warm-cache populator target: ../warm-cache/converge-warm-cache.sh skips
+# any values file carrying the next line. A cold fabro workspace build fills
+# ~98 GiB and would run inside the populator's one 3600 s CronJob deadline
+# ahead of the console's sccache refresh (bd-ib-dqxcsh, 2026-11-05).
+# warm-cache: exclude
+githubConfigUrl: "https://github.com/thewoolleyman/fabro"
+githubConfigSecret: arc-github-app-installation  # same secret as phase 1 -- see ../../README.md "Credential separation"
+
+runnerScaleSetName: "fabro-k3s"
+
+containerMode:
+  type: "kubernetes"
+  kubernetesModeWorkVolumeClaim:
+    accessModes: ["ReadWriteOnce"]
+    storageClassName: "local-path"
+    resources:
+      requests:
+        # SIZED FROM MEASUREMENT, and still NOT a quota and NOT a reservation.
+        # `local-path` is a mkdir-only provisioner with no size enforcement and
+        # no capacity tracking, so this number neither bounds the volume nor
+        # makes the scheduler check the node's free space. It is the honest
+        # statement of what one fabro job writes, where every sibling carries
+        # the template's 5Gi:
+        #   92 GiB  cold workspace clippy + nextest DEBUG target output
+        #           (measured by the fork's owner on the dev host, 2026-11-05)
+        # + 6.1 GiB the release target (same measurement), if one job builds both
+        # + ~1.9 GB the per-volume seeds, each capped by a committed budget:
+        #           uv <= 1.0 GB and action archives <= 0.27 GB
+        #           (../warm-cache/warm-cache-cronjob.yaml), runner externals
+        #           ~0.6 GB (../container-hook/)
+        # + ~1 GB   the fork's checkout (ASSUMED, not measured)
+        # = ~101 GB, + 10 % headroom = ~111, rounded up to 112Gi.
+        # The dev-host 92 GiB was taken with cargo's default incremental=true;
+        # the pool's job container gets `incremental = false` from the shared
+        # template's postStart (sccache cannot cache incremental compiles), so
+        # the pool figure should be SMALLER. That is unmeasured: the first cold
+        # run's `du -sh /__w/fabro/fabro/target` settles it.
+        # What ACTUALLY bounds the volume is the free space of the ci-workvols
+        # tier on the node the runner lands on, shared by every runner volume
+        # there, and the volume's deletion with its runner pod. That is why the
+        # pod is pinned to poweredge-xubuntu below (1.5 TiB XFS ci-workvols).
+        storage: 112Gi
+
+template:
+  metadata:
+    labels:
+      # Routes this scale set's runner pods through the fork's LocalQueue
+      # rather than straight to the Kubernetes scheduler.
+      kueue.x-k8s.io/queue-name: fabro-lq
+  spec:
+    # NODE PINNING (the first scale set that carries one; phase2/README.md
+    # "Enumerating the pool" left placement to be "decided then", and this is
+    # then). A fabro job's work volume is ~100 GiB, and local-path enforces no
+    # size, so the node it lands on must have the room. The workflow pod
+    # follows: the fleet hook copies the runner pod's node into the workflow
+    # pod's spec.nodeName, and the WaitForFirstConsumer volume binds there too.
+    #   poweredge-xubuntu: ci-workvols 1.5 TiB XFS on NVMe (profile
+    #     LOGICAL_VOLUMES), 72 CPUs, 377 GiB RAM -- the most room for a
+    #     ~100 GiB volume and a heavy link step.
+    #   gmktec-xubuntu: ci-workvols 525 GiB shared by 18 churn slots, and it
+    #     carries the petri factory, whose yield the coordinator ranks P1.
+    #   hp-xubuntu: runner-only, so its work volumes sit on the
+    #     `sandbox-stores` ext4 filesystem BESIDE k3s's own data directory
+    #     (NODE_DATA_DIR=/srv/sandbox-storage/k3s): filling it would take k3s
+    #     on that node down. 16 CPUs and 30 GB RAM shared with factory hosting.
+    # The built-in hostname label, not the tier-carrier label: the reason is
+    # this node's ci-workvols capacity, not its ci-cache tier. Cost: when
+    # poweredge's churn slots are all taken, an admitted fabro runner pod waits
+    # Pending for one there instead of using a free slot elsewhere; at
+    # maxRunners 2 that is at most two pods. Measurement owed BEFORE routing:
+    # free space on poweredge's ci-workvols mount (/var/lib/rancher/k3s/storage),
+    # read on the node at converge time.
+    nodeSelector:
+      kubernetes.io/hostname: poweredge-xubuntu
+    # Tolerate the factory placement taint (orchestrator bd-ib-plon2p,
+    # ../factory-pressure-placement/README.md): it exists to steer FACTORY
+    # sandbox pods only, so runner pods ignore it and CI placement is unchanged.
+    tolerations:
+      - key: livespec.io/factory-pressure
+        operator: Exists
+        effect: PreferNoSchedule
+    securityContext:
+      runAsNonRoot: true
+      runAsUser: 1000
+      runAsGroup: 1000
+      fsGroup: 1000
+      # OnRootMismatch, not the default Always: the work volume is born with
+      # the warm uv cache already in it as ~190k REFLINK COPIES (the
+      # local-path provisioner's setup script, ../local-path-provisioner/;
+      # hardlinks until 2026-09-06), and Always would have the kubelet
+      # chgrp+chmod every one of them on this pod's mount -- a per-start
+      # walk of the whole cache. The setup script leaves the
+      # volume root exactly as Always would (gid 1000, mode 2777), so the
+      # kubelet sees no mismatch and skips the walk (livespec-lvtu).
+      fsGroupChangePolicy: OnRootMismatch
+    volumes:
+      # Carries ../arc/hook-pod-template.yaml into the runner pod so the
+      # container hook can read it. Additive: the chart appends its own `work`
+      # volume for kubernetes mode, and declaring this one does not displace it.
+      - name: hook-pod-template
+        configMap:
+          # A placeholder, never applied as written: the CI stack converge renders
+          # it to the immutable revision it just published
+          # (converge-hook-pod-template.sh --render-values; livespec-dev-tooling-4oeffe).
+          name: arc-hook-pod-template-@HOOK_REVISION@
+      # The FLEET-PATCHED ARC container hook (../container-hook/), read-only
+      # from the node, where ../install-node.sh step 7c installed it. It skips
+      # the 595 MB / 9,028-file externals copy its unpatched twin makes on
+      # EVERY job start, when the work volume was pre-seeded with the matching
+      # runner version (livespec-wm7c, decision livespec-b1c6).
+      # `type: File` on purpose: a node that has not installed this hook fails
+      # the pod loudly instead of mounting an empty directory the runner would
+      # then quietly fall back from.
+      - name: fleet-container-hook
+        hostPath:
+          path: /usr/local/lib/ci-runner-k3s/hooks/2.336.0/index.js
+          type: File
+    containers:
+      - name: runner
+        # Pinned tag + digest (livespec-s43svm handoff finding, 2026-08-25;
+        # was `latest`; see the k3s README's "Pinned versions — nothing floats
+        # `latest`").
+        # The digest is the image the pool was verified on: its container
+        # hook has no fs-init init container and merges the hook template
+        # the way its header documents (see ../hook-pod-template.yaml or
+        # the phase2 copy). Bump BOTH tag and digest together, re-read the
+        # hook's initContainers behaviour, then helm upgrade + recycle.
+        # Since livespec-wm7c a bump is ALSO a hook rebuild, a re-extraction
+        # and a values rewrite: the `fleet-container-hook` hostPath above and
+        # ACTIONS_RUNNER_PRESEEDED_EXTERNALS_VERSION below carry this same
+        # version and move with it, in every one of these files at once
+        # (../container-hook/README.md "Runner-image bump procedure").
+        image: ghcr.io/actions/actions-runner:2.336.0@sha256:0cfdcc701ce933c6d243c6b0b2da767366dc9f2e99961d4c3754b0b78084cdda
+        # The pool's entry point (action-archive-entry.sh, converged into the
+        # hook-template ConfigMap mounted below): it names the work volume's
+        # seeded action archive tree to the runner -- unless the fleet kill
+        # switch or the cold canary is on -- then execs /home/runner/run.sh
+        # unchanged. The ConfigMap MUST be converged before this file is applied
+        # (converge-hook-pod-template.sh): a runner pod started against a
+        # ConfigMap without the script cannot start.
+        command: ["/bin/bash", "/home/runner/hook-template/action-archive-entry.sh"]
+        env:
+          - name: ACTIONS_RUNNER_REQUIRE_JOB_CONTAINER
+            value: "false"
+          # THE EXTERNALS PRE-SEED (livespec-wm7c, decision livespec-b1c6):
+          # run the fleet-patched hook mounted below instead of the image's
+          # own, and tell it which runner version's externals the work volume
+          # was born with. The hook skips its copy ONLY when this names the
+          # version whose marker the seed left in <work volume>/externals;
+          # unset, or naming another version, and the copy runs exactly as
+          # upstream's. The seed itself is the local-path provisioner's setup
+          # script (../local-path-provisioner/), from the `current` pointer
+          # ../container-hook/extract-externals.sh publishes.
+          # THESE TWO, the `fleet-container-hook` hostPath above and the
+          # `image:` pin above are ONE runner version and move together in one
+          # change; there is nowhere to state it once, because each values
+          # file is applied on its own (`helm upgrade -f`). A half-rewritten
+          # set is refused by ../container-hook/install-container-hook.sh
+          # before it installs anything. See ../container-hook/README.md
+          # "Runner-image bump procedure".
+          - name: ACTIONS_RUNNER_CONTAINER_HOOKS
+            value: /home/runner/fleet-hook/index.js
+          - name: ACTIONS_RUNNER_PRESEEDED_EXTERNALS_VERSION
+            value: "2.336.0"
+          # THE WORKFLOW-POD FIX -- see values-livespec-overseer.yaml for the
+          # full root cause. In kubernetes container mode the job's `container:`
+          # image runs in a SEPARATE pod the hook creates, whose securityContext
+          # is empty and which nothing else in this values file reaches. This env
+          # var is the hook's one supported seam for extending that pod's spec;
+          # it pins the pod to the node-loaded `ci-runner-workflow` AppArmor
+          # profile (../apparmor/ci-runner-workflow), which reproduces every
+          # containerd deny rule verbatim and widens ONLY the ptrace/signal peer
+          # expressions so a stacked AppArmor label matches them.
+          - name: ACTIONS_RUNNER_CONTAINER_HOOK_TEMPLATE
+            value: /home/runner/hook-template/hook-pod-template.yaml
+        volumeMounts:
+          - name: hook-pod-template
+            mountPath: /home/runner/hook-template
+            readOnly: true
+          # The fleet-patched hook, at exactly the path
+          # ACTIONS_RUNNER_CONTAINER_HOOKS names. Read-only: the runner
+          # executes it and never writes it.
+          - name: fleet-container-hook
+            mountPath: /home/runner/fleet-hook/index.js
+            readOnly: true
+        securityContext:
+          allowPrivilegeEscalation: false
+          privileged: false
+          capabilities:
+            drop: ["ALL"]
+        resources:
+          # Exactly ONE churn-slot per runner pod -- see values-livespec.yaml.
+          requests:
+            ci-runner.io/churn-slot: "1"
+          limits:
+            ci-runner.io/churn-slot: "1"
+
+# This scale set's ceiling term of the admission formula (`doubled repository
+# logical ceiling`). It is NOT the same number as the `fabro-cq` ClusterQueue's
+# nominalQuota, which is this repo's share of the pool's finite churn-slot
+# capacity -- a different term of the same min(). See README.md "Two
+# enforcement points, two DIFFERENT numbers" and ../kueue/DERIVATION.md; the
+# relation to hold is nominalQuota <= maxRunners, and the specification's
+# ceiling clause makes it STRICT: the ceiling must be "large enough that a
+# repository can borrow unused capacity beyond its guaranteed share".
+#
+# 2 = 2 x nominalQuota 1: the rule's multiple, with the rule's floor of 6
+# WAIVED as a recorded exception (../kueue/DERIVATION.md "Recorded exceptions
+# to the rule"). The floor exists so a small-quota repository does not drain a
+# 13-21-job matrix one job at a time; this fork's matrix is three jobs, and six
+# concurrent ~100 GiB work volumes is 600 GiB of the 1.5 TiB tier every other
+# poweredge runner shares. The routing asked for 1. One is not reachable:
+# nominalQuota cannot be 0 under the apportionment rule's step 5, and a
+# ceiling EQUAL to a quota of 1 breaks the borrowing clause above (and
+# tests/consumer/test_jit_fleet_capacity_scenarios.py). 2 is the smallest
+# ceiling both allow; worst case 2 x 112Gi on the pinned node.
+minRunners: 0
+maxRunners: 2
