@@ -590,17 +590,16 @@ def _await_terminal_state(
         lifted = require_success(
             step=_AWAIT_STEP, argv=argv, outcome=runner(argv=argv, cwd=request.repo_root)
         )
-        if isinstance(lifted, Failure):
-            last_refusal = lifted.failure()
-            if poll + 1 < polls:
-                sleeper(seconds=request.poll_interval_seconds)
-            continue
-        condition = terminal_condition(argv=argv, payload=lifted.unwrap().stdout, step=_AWAIT_STEP)
-        if isinstance(condition, Failure):
-            return Failure(condition.failure())
-        ended = condition.unwrap()
-        if ended is not None:
-            return Success(ended)
+        last_refusal = lifted.failure() if isinstance(lifted, Failure) else None
+        if last_refusal is None:
+            condition = terminal_condition(
+                argv=argv, payload=lifted.unwrap().stdout, step=_AWAIT_STEP
+            )
+            if isinstance(condition, Failure):
+                return Failure(condition.failure())
+            ended = condition.unwrap()
+            if ended is not None:
+                return Success(ended)
         if poll + 1 < polls:
             sleeper(seconds=request.poll_interval_seconds)
     if last_refusal is not None:

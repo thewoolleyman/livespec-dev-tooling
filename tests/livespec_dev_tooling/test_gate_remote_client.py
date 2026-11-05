@@ -738,6 +738,18 @@ def test_a_job_the_cluster_will_not_report_on_is_retried_then_retains_its_ref() 
     assert "delete-ref" not in cluster.kinds
 
 
+def test_an_earlier_refused_read_is_not_reported_once_a_later_read_succeeds() -> None:
+    """A reachable, still-queued Job is reported as unfinished, not as an API failure."""
+    cluster = _StubCluster(refused_gets=1, job_states=("Suspended",))
+    request = dataclasses.replace(_REQUEST, poll_timeout_seconds=30.0)
+    outcome = run_gate(request=request, runner=cluster, sleeper=cluster.sleep)
+    assert isinstance(outcome, Failure)
+    assert outcome.failure().step == "await-gate-terminal"
+    assert "reached no terminal condition" in outcome.failure().detail
+    assert cluster.kinds.count("get-job") == 3
+    assert "delete-ref" not in cluster.kinds
+
+
 def test_an_unreadable_job_status_fails_the_wait_rather_than_being_guessed() -> None:
     """Neither "finished" nor "still running" may be inferred from nonsense."""
     cluster = _StubCluster(job_status_payload="<html>gateway timeout</html>")
