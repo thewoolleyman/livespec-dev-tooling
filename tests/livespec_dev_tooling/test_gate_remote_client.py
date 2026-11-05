@@ -567,6 +567,34 @@ def test_a_suspended_job_keeps_its_full_poll_budget_after_kueue_admits_it() -> N
     assert cluster.naps == [request.poll_interval_seconds] * 5
 
 
+def test_an_unadmitted_job_reports_its_admission_wait_bound() -> None:
+    """The admission bound is a no-verdict result that names this Job."""
+    cluster = _StubCluster(job_states=("Suspended",))
+    request = dataclasses.replace(_REQUEST, admission_timeout_seconds=30.0)
+
+    outcome = run_gate(request=request, runner=cluster, sleeper=cluster.sleep)
+
+    assert isinstance(outcome, Failure)
+    assert outcome.failure().detail == (
+        f"admission wait for {_JOB} exceeded {request.admission_timeout_seconds:g}s without admission"
+    )
+    assert cluster.kinds.count("get-job") == 3
+
+
+def test_an_admitted_job_still_has_its_own_terminal_wait_bound() -> None:
+    """Admission starts, rather than spends, the terminal polling budget."""
+    cluster = _StubCluster(job_states=("Active",))
+    request = dataclasses.replace(_REQUEST, poll_timeout_seconds=30.0)
+
+    outcome = run_gate(request=request, runner=cluster, sleeper=cluster.sleep)
+
+    assert isinstance(outcome, Failure)
+    assert outcome.failure().detail == (
+        f"{_JOB} reached no terminal condition within {request.poll_timeout_seconds:g}s"
+    )
+    assert cluster.kinds.count("get-job") == 4
+
+
 def test_the_logs_are_streamed_rather_than_captured() -> None:
     """Capturing is exactly what would swallow the log the operator is owed.
 
