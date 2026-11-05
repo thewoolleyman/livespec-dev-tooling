@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# join-fixture-worker.sh <host> — enroll <host>'s homelab worker into the
+# join-fixture-worker.sh <host> [tailnet] — enroll <host>'s homelab worker into the
 # isolated K3s fixture (k3s-fixture.sh) running in the same worker VM, through
 # the same RBAC, token mint, networking agents, container step and serving-CSR
 # approval production uses. Run it on the worker's macOS host, from a clone of
@@ -25,6 +25,15 @@
 # nothing: it reconciles the container and approves any pending serving CSR
 # once, without waiting for one.
 #
+# With `tailnet`, fixture stage two (research 007): the fixture's K3s nodes
+# are on the tailnet advertising their own /32 (underlay-fixture.sh up), and
+# the worker runs in production mode instead of on the fixture network. It
+# logs in to the tailnet as <host>-homelab-worker under its production
+# identity (the fixture root's tailscale/ is a link to the production one),
+# accepts the nodes' routes, reaches the API server at the server node's
+# fixture IP, and runs flannel over tailscale0. Start stage two from a fresh
+# fixture (k3s-fixture.sh down, then up), so no stage-one worker remains.
+#
 # WAIT_SECONDS (default 300) bounds each wait for the Node and its CSR.
 set -euo pipefail
 
@@ -46,8 +55,14 @@ say() {
   printf '%s: %s\n' "$prog" "$*"
 }
 
-[ "$#" -eq 1 ] || die "usage: $prog <host>"
+usage="usage: $prog <host> [tailnet]"
+[ "$#" -eq 1 ] || [ "$#" -eq 2 ] || die "$usage"
 host="$1"
+mode="${2:-network}"
+case "$mode" in
+  network | tailnet) ;;
+  *) die "mode '$mode' is not tailnet; $usage" ;;
+esac
 case "$host" in
   *[!a-z0-9-]* | -*) die "host '$host' is not a valid host name" ;;
 esac
@@ -61,6 +76,17 @@ in_vm() {
 
 in_vm docker inspect -f '{{.State.Running}}' "$server" 2>/dev/null | grep -qx true ||
   die "fixture server $server is not running in VM $worker; run k3s-fixture.sh up first"
+
+if [ "$mode" = "tailnet" ]; then
+  api_host="$(in_vm docker inspect -f "{{(index .NetworkSettings.Networks \"$network\").IPAddress}}" "$server")"
+  [ -n "$api_host" ] || die "fixture server $server has no address on network $network"
+  flannel_iface="tailscale0"
+  worker_network=""
+else
+  api_host="$server"
+  flannel_iface="eth0"
+  worker_network="$network"
+fi
 
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
@@ -88,14 +114,22 @@ metadata:
   labels:
     homelab-worker.livespec.dev/networking: "true"
 data:
-  api-server-host: $server
+  api-server-host: $api_host
   api-server-port: "6443"
-  flannel-iface: eth0
+  flannel-iface: $flannel_iface
 EOF
 
 converge() {
-  in_vm bash -s -- "$worker" "$host" "$image" "$state_root" "$network" <"$hw/vm/converge-worker-container.sh"
+  # shellcheck disable=SC2086 # an empty worker_network adds no argument
+  in_vm bash -s -- "$worker" "$host" "$image" "$state_root" $worker_network <"$hw/vm/converge-worker-container.sh"
 }
+
+if [ "$mode" = "tailnet" ]; then
+  # The worker's tailnet identity is the production one; only kubelet,
+  # containerd and enrollment state are the fixture's.
+  in_vm sh -c "mkdir -p /mnt/lima-hwdata/worker/tailscale $state_root && { [ -L $state_root/tailscale ] || { [ ! -e $state_root/tailscale ] && ln -s /mnt/lima-hwdata/worker/tailscale $state_root/tailscale; }; }" ||
+    die "$state_root/tailscale exists and is not the link to the production identity; run k3s-fixture.sh down first"
+fi
 
 if kubectl get node "$worker" >/dev/null 2>&1; then
   say "Node $worker is already registered; reconciling its container without a new enrollment"
@@ -106,7 +140,7 @@ if kubectl get node "$worker" >/dev/null 2>&1; then
 fi
 
 in_vm docker exec "$server" cat /var/lib/rancher/k3s/server/tls/server-ca.crt >"$tmp/server-ca.crt"
-"$hw/enrollment/mint-bootstrap-token.sh" "$host" "https://$server:6443" "$tmp/server-ca.crt" "$tmp/enrollment"
+"$hw/enrollment/mint-bootstrap-token.sh" "$host" "https://$api_host:6443" "$tmp/server-ca.crt" "$tmp/enrollment"
 
 converge
 for f in bootstrap-kubeconfig client-ca.crt; do
