@@ -15,14 +15,14 @@ gha_runner_token_dest: /usr/local/libexec/gha-runner-github-token.sh
 gha_runner_verify_dest: /usr/local/libexec/gha-runner-verify
 
 # PINNED runner release, with the sha256 GitHub publishes in the release body
-# for actions-runner-linux-x64-<version>.tar.gz. 2.336.0 is the SAME version
+# for actions-runner-linux-x64-<version>.tar.gz. 2.338.2 is the SAME version
 # the fleet's ARC scale sets pin (ci-runner/k3s/phase2/arc/values-*.yaml:
-# ghcr.io/actions/actions-runner:2.336.0), so this tier and the ephemeral tier
+# ghcr.io/actions/actions-runner:2.338.2), so this tier and the ephemeral tier
 # run identical runner code. Nothing floats `latest`, and config.sh runs with
 # --disableupdate so the pin is not silently self-upgraded away. Bump BOTH
 # values together, from the release body — never the version alone.
-gha_runner_version: 2.336.0
-gha_runner_tarball_sha256: 04cf0be1aff4c3ec3554466c39124ca250e3effd8873bb7e8d68535aa9505d5d
+gha_runner_version: 2.338.2
+gha_runner_tarball_sha256: baebf204307bac6193480852732f0aba2ae97b6c5597c244f4d5558390147c40
 gha_runner_tarball_url: >-
   https://github.com/actions/runner/releases/download/v{{ gha_runner_version }}/actions-runner-linux-x64-{{ gha_runner_version }}.tar.gz
 
