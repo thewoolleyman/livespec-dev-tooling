@@ -57,6 +57,13 @@ case "${1:-}" in
       create) touch "$state/disks/$3"; exit 0 ;;
     esac ;;
   shell)
+    case "$*" in
+      *" mkdir "*) exit 0 ;;
+      *" install -m 0600 /dev/stdin "*)
+        for dest in "$@"; do :; done
+        cat > "$state/delivered-${dest##*/}"
+        exit 0 ;;
+    esac
     cat > "$state/shell-stdin"
     if grep -q '^# converge-worker-container' "$state/shell-stdin"; then
       mv "$state/shell-stdin" "$state/converge-stdin"
@@ -123,8 +130,11 @@ def _add_instance(
     )
 
 
-def _run(*, host: _Host, args: list[str]) -> subprocess.CompletedProcess[str]:
+def _run(
+    *, host: _Host, args: list[str], extra_env: dict[str, str] | None = None
+) -> subprocess.CompletedProcess[str]:
     env = {
+        **(extra_env or {}),
         "PATH": f"{host.bin_dir}:/usr/bin:/bin",
         "HOME": str(host.state),
         "STUB_LOG": str(host.log),
@@ -373,3 +383,55 @@ def test_a_failed_probe_never_converges_the_worker_container(host: _Host) -> Non
     (host.state / "probe-exit").write_text("1\n", encoding="utf-8")
     assert _run(host=host, args=["macbook-air"]).returncode != 0
     assert not (host.state / "converge-stdin").exists()
+
+
+def _enrollment(*, host: _Host, files: tuple[str, ...]) -> Path:
+    enrollment = host.state / "minted"
+    enrollment.mkdir()
+    for name in files:
+        (enrollment / name).write_text(f"secret-{name}\n", encoding="utf-8")
+    return enrollment
+
+
+def test_a_minted_enrollment_reaches_the_vm_only_on_stdin_before_the_container_step(
+    host: _Host,
+) -> None:
+    _install_lima(host=host, version="2.2.1")
+    enrollment = _enrollment(host=host, files=("bootstrap-kubeconfig", "client-ca.crt"))
+    result = _run(
+        host=host, args=["macbook-air"], extra_env={"HOMELAB_WORKER_ENROLLMENT": str(enrollment)}
+    )
+    assert result.returncode == 0, result.stderr
+    for name in ("bootstrap-kubeconfig", "client-ca.crt"):
+        assert (host.state / f"delivered-{name}").read_text(encoding="utf-8") == (
+            f"secret-{name}\n"
+        )
+    shells = [c for c in _calls(host=host) if c.startswith("limactl shell ")]
+    installs = [i for i, c in enumerate(shells) if " install -m 0600 /dev/stdin " in c]
+    converge = next(
+        i
+        for i, c in enumerate(shells)
+        if "/mnt/lima-hwdata/worker" in c and " -- macbook-air-homelab-worker " in c
+    )
+    assert installs
+    assert max(installs) < converge
+    assert all(
+        c.endswith(f"/mnt/lima-hwdata/worker/enrollment/{n}")
+        for c, n in zip(
+            (shells[i] for i in installs), ("bootstrap-kubeconfig", "client-ca.crt"), strict=True
+        )
+    )
+    log = host.log.read_text(encoding="utf-8")
+    assert "secret-" not in log
+    assert "secret-" not in result.stdout + result.stderr
+
+
+def test_an_incomplete_enrollment_is_refused_before_any_host_change(host: _Host) -> None:
+    _install_lima(host=host, version="2.2.1")
+    enrollment = _enrollment(host=host, files=("bootstrap-kubeconfig",))
+    result = _run(
+        host=host, args=["macbook-air"], extra_env={"HOMELAB_WORKER_ENROLLMENT": str(enrollment)}
+    )
+    assert result.returncode != 0
+    assert "client-ca.crt" in result.stderr
+    assert _calls(host=host) == []
