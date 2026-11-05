@@ -16,8 +16,10 @@
 #             stats on the worker MUST work, logs on the K3s node MUST still
 #             work, and so must pod-to-pod traffic both ways between the
 #             worker and a K3s node, a ClusterIP Service and cluster DNS
-#             (10.43.0.10) from the worker, and a NetworkPolicy deny enforced
-#             on a worker pod (allowed, denied, allowed again).
+#             (10.43.0.10) from the worker, a NetworkPolicy deny enforced on
+#             a worker pod (allowed, denied, allowed again), and 4 MiB TCP
+#             transfers both ways plus a 1400-byte ping across the worker's
+#             smaller tailnet MTU.
 #
 # Proof pods tolerate the worker's admission hold and live in namespace
 # hw-proof, which is deleted at the end unless KEEP=1.
@@ -101,7 +103,7 @@ spec:
 EOF
 }
 
-server_cmd="mkdir -p /www && echo proof-ok > /www/index.html && exec httpd -f -p 8080 -h /www"
+server_cmd="mkdir -p /www && echo proof-ok > /www/index.html && dd if=/dev/zero of=/www/big bs=1024 count=4096 2>/dev/null && exec httpd -f -p 8080 -h /www"
 client_cmd="echo proof-ready && exec sleep 3600"
 {
   printf 'apiVersion: v1\nkind: Namespace\nmetadata:\n  name: %s\n' "$ns"
@@ -142,6 +144,11 @@ else
   ip_k3s="$(kubectl get pod --namespace "$ns" server-k3s -o 'jsonpath={.status.podIP}')"
   expect pod-to-pod-worker-to-k3s ok kubectl exec --namespace "$ns" client-worker -- wget -qO- -T 5 "http://$ip_k3s:8080/"
   expect pod-to-pod-k3s-to-worker ok kubectl exec --namespace "$ns" client-k3s -- wget -qO- -T 5 "http://$ip_worker:8080/"
+  # MTU asymmetry (research 007): over the tailnet underlay the worker's
+  # flannel MTU is 1230 against the nodes' 1450.
+  expect large-tcp-worker-to-k3s ok kubectl exec --namespace "$ns" client-worker -- wget -qO /dev/null -T 30 "http://$ip_k3s:8080/big"
+  expect large-tcp-k3s-to-worker ok kubectl exec --namespace "$ns" client-k3s -- wget -qO /dev/null -T 30 "http://$ip_worker:8080/big"
+  expect large-icmp-worker-to-k3s ok kubectl exec --namespace "$ns" client-worker -- ping -c 3 -W 5 -s 1400 "$ip_k3s"
   expect clusterip-and-dns-from-worker ok kubectl exec --namespace "$ns" client-worker -- wget -qO- -T 5 "http://server-k3s.$ns.svc.cluster.local:8080/"
   expect dns-10.43.0.10-from-worker ok kubectl exec --namespace "$ns" client-worker -- nslookup kubernetes.default.svc.cluster.local 10.43.0.10
   kubectl apply -f - >/dev/null <<EOF
