@@ -109,6 +109,33 @@ _POLL_INTERVAL_S = 0.05
             "eligible full-suite command",
             id="uv-pytest",
         ),
+        pytest.param(
+            ("python", "-m", "pytest", "--cov=widget"),
+            False,
+            True,
+            True,
+            "cluster_job",
+            "eligible full-suite command",
+            id="python-module-pytest",
+        ),
+        pytest.param(
+            ("uv", "run", "--no-sync", "python", "-m", "pytest", "--cov=widget"),
+            False,
+            True,
+            True,
+            "cluster_job",
+            "eligible full-suite command",
+            id="uv-python-module-pytest",
+        ),
+        pytest.param(
+            (".venv/bin/python", "-m", "pytest", "-n", "8"),
+            False,
+            True,
+            True,
+            "cluster_job",
+            "eligible full-suite command",
+            id="interpreter-path-module-pytest",
+        ),
     ],
 )
 def test_gate_runner_venue_selection(
@@ -406,6 +433,57 @@ def test_gate_start_runs_the_cluster_child_in_the_project_environment(*, tmp_pat
     assert any(
         line.startswith("run --no-sync python -m livespec_dev_tooling.gate_runner_delegate run ")
         for line in uv_log.read_text(encoding="utf-8").splitlines()
+    )
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    "command",
+    [
+        pytest.param(("python", "-m", "pytest", "--cov=widget"), id="python-module"),
+        pytest.param(
+            ("uv", "run", "--no-sync", "python", "-m", "pytest", "--cov=widget"),
+            id="uv-python-module",
+        ),
+        pytest.param((".venv/bin/python", "-m", "pytest", "-n", "8"), id="interpreter-path"),
+    ],
+)
+def test_gate_start_records_every_python_module_pytest_spelling_as_a_cluster_job(
+    *, tmp_path: Path, command: tuple[str, ...]
+) -> None:
+    """The shipped gate-start selector routes each ratified spelling to a Job."""
+    root, environment = _init_repo(tmp_path=tmp_path)
+    credential = tmp_path / "gates.kubeconfig"
+    _ = credential.write_text("apiVersion: v1\nkind: Config\n", encoding="utf-8")
+    environment["GATES_KUBECONFIG"] = str(credential)
+    fake_bin = tmp_path / "bin"
+    _ = fake_bin.mkdir()
+    python = fake_bin / "python"
+    _ = python.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    _ = python.chmod(0o755)
+    uv = fake_bin / "uv"
+    _ = uv.write_text(
+        "#!/bin/sh\n"
+        'if [ "$1" = run ] && [ "$2" = --no-sync ] && [ "$3" = python ] && '
+        '[ "$4" = -m ] && [ "$5" = livespec_dev_tooling.gate_runner_delegate ] && '
+        '[ "$6" = run ]; then\n'
+        '  printf "%s\\n" "remote job output"\n'
+        "  exit 0\n"
+        "fi\n"
+        'if [ "$1" = run ]; then shift; fi\n'
+        'if [ "$1" = --no-sync ]; then shift; fi\n'
+        'if [ "$1" = python ]; then shift; fi\n'
+        'exec "' + sys.executable + '" "$@"\n',
+        encoding="utf-8",
+    )
+    _ = uv.chmod(0o755)
+    environment["PATH"] = f"{fake_bin}{os.pathsep}{environment['PATH']}"
+
+    run_dir = _start(root=root, env=environment, args=["--", *command])
+
+    assert (run_dir / "venue").read_text(encoding="utf-8") == "cluster_job\n"
+    assert (run_dir / "venue_reason").read_text(encoding="utf-8") == (
+        "eligible full-suite command\n"
     )
 
 
