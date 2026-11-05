@@ -121,7 +121,7 @@ end-to-end run of the committed procedure. See
 | k3s | `v1.36.2+k3s1` | `provision-k3s.sh` (`INSTALL_K3S_VERSION`) — **held deliberately; see below** |
 | ARC controller chart | `0.14.2` | `install-arc.sh` |
 | ARC runner scale set chart | `0.14.2` | `install-arc.sh` and every `phase2/arc/values-*.yaml` apply |
-| Runner image | `ghcr.io/actions/actions-runner:2.336.0@sha256:0cfdcc70…` | every `values-*.yaml` `template.spec.containers[0].image` |
+| Runner image | `ghcr.io/actions/actions-runner:2.338.2@sha256:759a1d94…` | every `values-*.yaml` `template.spec.containers[0].image` |
 | Kueue | `v0.19.1` | `install-kueue.sh` |
 | helm | `v3.21.4` | `provision-k3s.sh` (`HELM_VERSION`; checksum-verified against the release's `.sha256sum`) — required by `phase2/reconstruct/converge-ci-stack.sh` |
 
