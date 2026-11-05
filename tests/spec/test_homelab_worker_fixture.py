@@ -40,6 +40,7 @@ class _Vm:
     bin_dir: Path
     log: Path
     clusters: Path
+    worker_root: Path
 
 
 def _stub(*, vm: _Vm, name: str, body: str) -> None:
@@ -59,6 +60,7 @@ def vm(tmp_path: Path) -> _Vm:
         bin_dir=bin_dir,
         log=tmp_path / "calls.log",
         clusters=tmp_path / "clusters",
+        worker_root=tmp_path / "fixture-worker",
     )
     made.log.write_text("", encoding="utf-8")
     made.clusters.write_text("", encoding="utf-8")
@@ -86,7 +88,11 @@ def _run(*, vm: _Vm, args: list[str]) -> subprocess.CompletedProcess[str]:
         ["/bin/bash", str(_SCRIPT), *args],
         capture_output=True,
         text=True,
-        env={"PATH": f"{vm.bin_dir}:/usr/bin:/bin", "FIXTURE_ROOT": str(vm.root)},
+        env={
+            "PATH": f"{vm.bin_dir}:/usr/bin:/bin",
+            "FIXTURE_ROOT": str(vm.root),
+            "FIXTURE_WORKER_ROOT": str(vm.worker_root),
+        },
         check=False,
         timeout=60,
     )
@@ -161,3 +167,24 @@ def test_down_deletes_the_fixture_and_its_state(vm: _Vm) -> None:
     assert result.returncode == 0, result.stdout + result.stderr
     assert "k3d cluster delete hw-fixture" in _calls(vm=vm, command="k3d")
     assert not vm.root.exists()
+
+
+@pytest.mark.parametrize(
+    ("mount", "removed"),
+    [
+        ("fixture-worker/enrollment", ["docker rm -f macbook-m4-max-homelab-worker"]),
+        ("worker/enrollment", []),
+    ],
+)
+def test_down_removes_only_the_fixture_worker_container_and_its_state(
+    vm: _Vm, mount: str, removed: list[str]
+) -> None:
+    source = vm.worker_root.parent / mount
+    _stub(vm=vm, name="docker", body=f'[ "$1" = inspect ] && echo "{source}"; exit 0')
+    (vm.worker_root / "enrollment").mkdir(parents=True)
+    assert _run(vm=vm, args=["up", "agent"]).returncode == 0
+    result = _run(vm=vm, args=["down"])
+    assert result.returncode == 0, result.stdout + result.stderr
+    rms = [c for c in _calls(vm=vm, command="docker") if c.startswith("docker rm ")]
+    assert rms == removed
+    assert not vm.worker_root.exists()
