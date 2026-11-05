@@ -22,16 +22,28 @@ set -euo pipefail
 # stamped with the tracked-tree id from scripts/just/coverage-reuse-id.sh so
 # check-coverage can tell THIS data file from one a focused `pytest --cov`
 # run left behind. The marker sits beside the data file it vouches for. The
-# stale marker is removed BEFORE the run and the new one written only AFTER
-# pytest succeeds, so a marker never outlives the data it vouches for;
-# per_file_coverage runs after the stamp so a per-file failure still leaves
-# the consumer a reusable, current file. The per-file read starts only after
-# pytest has exited, so it reads the combined file of writers that are done.
+# stale success or failure receipt is removed BEFORE the run. A successful
+# suite writes its data receipt only after pytest exits zero. A failed suite
+# instead writes a tree-bound failure receipt, allowing check-coverage to
+# preserve the first suite's nonzero verdict without starting another suite.
+# The per-file read starts only after pytest has exited, so it reads the
+# combined file of writers that are done.
 coverage_file="${COVERAGE_FILE:-.coverage}"
 reuse_stamp="$(dirname "$coverage_file")/.livespec-coverage-reuse-token"
-rm -f "$reuse_stamp"
+failure_receipt="$(dirname "$coverage_file")/.livespec-coverage-failure-receipt"
+rm -f "$reuse_stamp" "$failure_receipt"
+status=0
 env -u COVERAGE_FILE LIVESPEC_COVERAGE_DATA_FILE="$coverage_file" \
-    uv run pytest -n "${test_nprocs}" --cov --cov-branch --cov-config=pyproject.toml --cov-report=term-missing --durations=30
+    uv run pytest -n "${test_nprocs}" --cov --cov-branch --cov-config=pyproject.toml --cov-report=term-missing --durations=30 \
+    || status=$?
+if [[ "$status" -ne 0 ]]; then
+    if failure_id="$(scripts/just/coverage-reuse-id.sh failure)"; then
+        printf '%s %s\n' "$failure_id" "$status" > "$failure_receipt"
+    else
+        echo ":: check-per-file-coverage: no failure provenance id (not a git work tree); leaving no failure receipt"
+    fi
+    exit "$status"
+fi
 if reuse_id="$(scripts/just/coverage-reuse-id.sh)"; then
     printf '%s\n' "$reuse_id" > "$reuse_stamp"
 else

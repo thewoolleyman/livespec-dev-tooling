@@ -26,6 +26,7 @@ __all__: list[str] = []
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _SCRIPTS = ("check-coverage.sh", "check-per-file-coverage.sh", "coverage-reuse-id.sh")
 _REUSE_STAMP = ".livespec-coverage-reuse-token"
+_FAILURE_RECEIPT = ".livespec-coverage-failure-receipt"
 # Inputs the scripts read that a host may already export: a GitHub runner
 # sets GITHUB_ACTIONS into every process, which would flip the consumer's
 # venue branch for every test below. Stripped so each test owns them. The
@@ -183,6 +184,29 @@ def test_producer_marker_unlocks_consume_once_reuse(*, tmp_path: Path) -> None:
     assert _uv_log(tmp_path=tmp_path) == [_PYTEST_WITH_DURATIONS_LINE, _PER_FILE_LINE, _REPORT_LINE]
     assert not (tmp_path / ".coverage").exists()
     assert not (tmp_path / _REUSE_STAMP).exists()
+
+
+def test_failed_producer_receipt_stops_consumer_without_a_second_suite(*, tmp_path: Path) -> None:
+    """A failed clean suite gives check-coverage its verdict without another pytest run."""
+    _install_harness(tmp_path=tmp_path, git_tree=True)
+
+    producer = _run(
+        tmp_path=tmp_path,
+        script="check-per-file-coverage.sh",
+        extra={"FAKE_PYTEST_STATUS": "1"},
+    )
+    assert producer.returncode == 1
+    assert (tmp_path / _FAILURE_RECEIPT).is_file()
+
+    consumer = _run(tmp_path=tmp_path, script="check-coverage.sh", extra={})
+
+    assert consumer.returncode == 1
+    assert "check-per-file-coverage's clean suite already failed" in consumer.stdout
+    assert "pytest exit status 1" in consumer.stdout
+    assert _uv_log(tmp_path=tmp_path) == [_PYTEST_WITH_DURATIONS_LINE]
+    assert not (tmp_path / ".coverage").exists()
+    assert not (tmp_path / _REUSE_STAMP).exists()
+    assert not (tmp_path / _FAILURE_RECEIPT).exists()
 
 
 def test_producer_lists_the_thirty_slowest_test_phases(*, tmp_path: Path) -> None:
