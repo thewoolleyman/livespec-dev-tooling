@@ -510,6 +510,25 @@
         // bd-ib-fvgkw4 is released and pinned in this repository, delete this
         // key so publish_draft returns to the 1800 s default.
         "publish_draft": 3600,
+        // TEMPORARY DIAL (sandbox-commit-gate-ceiling ruling 2026-11-05, landed by
+        // plan ci-cache-optimization): pr_refresh raised from the 1800 s default
+        // for the same reason as publish_draft above. Its post-rebase gate runs
+        // the same full pre-push aggregate, and livespec-dev-tooling-243dzr lost
+        // two runs to it (01M6K1MAX0A19, 01M6MVZZSPN0TRVBP0CWFZCPH1), each one
+        // timing out at 1800000 ms after a clean rebase. END CONDITION: when
+        // bd-ib-hap62u is released and pinned in this repository, delete this
+        // key so pr_refresh returns to the 1800 s default.
+        "pr_refresh": 3600,
+        // TEMPORARY DIAL (sandbox-commit-gate-ceiling ruling 2026-11-05, the
+        // dev-tooling counterpart of livespec-orchestrator-beads-fabro PR #4440):
+        // commit_red and commit_green raised from the 1800 s default because the
+        // commit hook's aggregate outran it on 4 of 4 orchestrator runs
+        // (bd-ib-cj23q3). The ruling found the credential freshness requirement
+        // unchanged at 111,600 s with all three dials, because the bounded
+        // credential-use window governs. END CONDITION: lower both once
+        // bd-ib-cj23q3 is released and pinned in this repository.
+        "commit_red": 7200,
+        "commit_green": 7200,
         "review_fix": 7200,
         "proof_capture": 2900,
         "proof_grade": 600,
