@@ -1,0 +1,236 @@
+"""The worker container step of `SPECIFICATION/non-functional-requirements.md`, "Homelab worker nodes".
+
+The start task pipes `homelab-worker/vm/converge-worker-container.sh` into `sudo bash -s` inside
+the worker VM. These run it under the system `/bin/bash` against a stub `docker` that keeps one
+container's image, run state and tailscaled state in files, and assert:
+
+- the container is the systemd-in-container worker on a digest-pinned image, with its state on the
+  data disk and no enrollment material in an argument or environment variable;
+- a rerun keeps a running container, starts a stopped one and replaces one on another image;
+- a worker that needs its tailnet login prints the URL and waits for it, joining untagged as the
+  derived name, and the tailnet IPv4 becomes the node IP;
+- the kubelet starts only once enrollment has been delivered;
+- the fixture's first stage puts the worker on a Docker network with no tailnet login.
+"""
+
+from __future__ import annotations
+
+import stat
+import subprocess
+from dataclasses import dataclass
+from pathlib import Path
+
+import pytest
+
+__all__: list[str] = []
+
+_SCRIPT = (
+    Path(__file__).resolve().parents[2] / "homelab-worker" / "vm" / "converge-worker-container.sh"
+)
+_WORKER = "macbook-m4-max-homelab-worker"
+_IMAGE = "ghcr.io/thewoolleyman/livespec-worker-node@sha256:" + "a" * 64
+_RUNNING = '{\n  "BackendState": "Running",\n  "AuthURL": ""\n}\n'
+_NEEDS_LOGIN = (
+    '{\n  "BackendState": "NeedsLogin",\n  "AuthURL": "https://login.tailscale.com/a/abc123"\n}\n'
+)
+
+_STUB_DOCKER = """#!/bin/bash
+s="$STUB_STATE"
+printf 'docker %s\\n' "$*" >> "$s/calls.log"
+case "$1" in
+  inspect)
+    [ -f "$s/container" ] || exit 1
+    case "$3" in
+      *NetworkSettings*) cat "$s/network-ip" ;;
+      *) cat "$s/container" ;;
+    esac ;;
+  run) for a in "$@"; do last="$a"; done; echo "$last true" > "$s/container" ;;
+  rm) rm -f "$s/container" ;;
+  start) sed -i.bak 's/ false$/ true/' "$s/container" ;;
+  exec)
+    shift
+    [ "$1" = "--detach" ] && shift
+    shift
+    case "$*" in
+      "tailscale status --json") cat "$s/ts-status" ;;
+      "tailscale ip -4") echo "100.101.102.103" ;;
+      "tailscale up "*) if [ -f "$s/ts-after-up" ]; then cp "$s/ts-after-up" "$s/ts-status"; fi ;;
+      "systemctl start kubelet") : ;;
+      *) exit 2 ;;
+    esac ;;
+esac
+"""
+
+
+@dataclass(frozen=True, kw_only=True)
+class _Vm:
+    state: Path
+    bin_dir: Path
+    root: Path
+
+
+@pytest.fixture
+def vm(tmp_path: Path) -> _Vm:
+    state = tmp_path / "stub"
+    state.mkdir()
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    docker = bin_dir / "docker"
+    docker.write_text(_STUB_DOCKER, encoding="utf-8")
+    docker.chmod(docker.stat().st_mode | stat.S_IXUSR)
+    (state / "calls.log").write_text("", encoding="utf-8")
+    (state / "ts-status").write_text(_RUNNING, encoding="utf-8")
+    return _Vm(state=state, bin_dir=bin_dir, root=tmp_path / "hwdata" / "worker")
+
+
+def _run(*, vm: _Vm, extra: tuple[str, ...] = ()) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        ["/bin/bash", str(_SCRIPT), _WORKER, "macbook-m4-max", _IMAGE, str(vm.root), *extra],
+        capture_output=True,
+        text=True,
+        env={
+            "PATH": f"{vm.bin_dir}:/usr/bin:/bin",
+            "STUB_STATE": str(vm.state),
+            "TAILNET_LOGIN_TIMEOUT": "1",
+            "POLL_SECONDS": "1",
+        },
+        check=False,
+        timeout=60,
+    )
+
+
+def _calls(*, vm: _Vm, verb: str) -> list[str]:
+    lines = (vm.state / "calls.log").read_text(encoding="utf-8").splitlines()
+    return [c for c in lines if c.startswith(f"docker {verb} ")]
+
+
+def _enroll(*, vm: _Vm) -> None:
+    (vm.root / "enrollment" / "bootstrap-kubeconfig").write_text("x\n", encoding="utf-8")
+    (vm.root / "enrollment" / "client-ca.crt").write_text("x\n", encoding="utf-8")
+
+
+def test_a_new_worker_runs_systemd_in_a_container_with_its_state_on_the_data_disk(vm: _Vm) -> None:
+    result = _run(vm=vm)
+    assert result.returncode == 0, result.stdout + result.stderr
+    [run] = _calls(vm=vm, verb="run")
+    for flag in (
+        f"--name {_WORKER} --hostname {_WORKER}",
+        "--privileged --cgroupns=private",
+        "--tmpfs /run ",
+        "--tmpfs /tmp ",
+        "--device /dev/net/tun",
+        "--volume /lib/modules:/lib/modules:ro",
+        f"--volume {vm.root}/containerd:/var/lib/containerd",
+        f"--volume {vm.root}/kubelet:/var/lib/kubelet:rshared",
+        f"--volume {vm.root}/tailscale:/var/lib/tailscale",
+        f"--volume {vm.root}/enrollment:/etc/homelab-worker",
+        "--stop-signal SIGRTMIN+3",
+    ):
+        assert flag in run
+    assert run.endswith(f" {_IMAGE}")
+    assert [e for e in run.split("--env ")[1:] if not e.startswith("container=docker")] == []
+    assert stat.S_IMODE((vm.root / "enrollment").stat().st_mode) == 0o700
+
+
+def test_an_image_not_pinned_by_digest_is_refused_before_any_container_change(
+    vm: _Vm, tmp_path: Path
+) -> None:
+    result = subprocess.run(
+        ["/bin/bash", str(_SCRIPT), _WORKER, "macbook-m4-max", "ghcr.io/x/y:latest", str(tmp_path)],
+        capture_output=True,
+        text=True,
+        env={"PATH": f"{vm.bin_dir}:/usr/bin:/bin", "STUB_STATE": str(vm.state)},
+        check=False,
+        timeout=60,
+    )
+    assert result.returncode != 0
+    assert "is not pinned by digest" in result.stderr
+    assert (vm.state / "calls.log").read_text(encoding="utf-8") == ""
+
+
+@pytest.mark.parametrize(
+    ("existing", "verb", "message"),
+    [
+        (f"{_IMAGE} true", None, "already running"),
+        (f"{_IMAGE} false", "start", "starting existing container"),
+        (
+            "ghcr.io/thewoolleyman/livespec-worker-node@sha256:" + "b" * 64 + " true",
+            "rm",
+            "replacing",
+        ),
+    ],
+)
+def test_a_rerun_reconciles_the_existing_container(
+    vm: _Vm, existing: str, verb: str | None, message: str
+) -> None:
+    (vm.state / "container").write_text(f"{existing}\n", encoding="utf-8")
+    result = _run(vm=vm)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert message in result.stdout
+    if verb is None:
+        assert _calls(vm=vm, verb="run") == []
+        assert _calls(vm=vm, verb="rm") == []
+    else:
+        assert len(_calls(vm=vm, verb=verb)) == 1
+    assert (vm.state / "container").read_text(encoding="utf-8") == f"{_IMAGE} true\n"
+
+
+def test_a_worker_needing_its_login_prints_the_url_and_joins_untagged_by_its_name(
+    vm: _Vm,
+) -> None:
+    (vm.state / "ts-status").write_text(_NEEDS_LOGIN, encoding="utf-8")
+    result = _run(vm=vm)
+    assert result.returncode != 0
+    assert (
+        "approve the worker's tailnet login: https://login.tailscale.com/a/abc123" in result.stdout
+    )
+    assert "run the start task again" in result.stderr
+    [up] = [c for c in _calls(vm=vm, verb="exec") if "tailscale up" in c]
+    assert up == f"docker exec --detach {_WORKER} tailscale up --hostname={_WORKER}"
+    assert not (vm.root / "enrollment" / "kubelet.env").exists()
+
+
+def test_an_approved_login_makes_the_tailnet_address_the_node_ip(vm: _Vm) -> None:
+    (vm.state / "ts-status").write_text(_NEEDS_LOGIN, encoding="utf-8")
+    (vm.state / "ts-after-up").write_text(_RUNNING, encoding="utf-8")
+    result = _run(vm=vm)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert (vm.root / "enrollment" / "kubelet.env").read_text(encoding="utf-8") == (
+        f"NODE_NAME={_WORKER}\nNODE_IP=100.101.102.103\nWORKER_HOST=macbook-m4-max\n"
+    )
+    config = (vm.root / "enrollment" / "kubelet-config.yaml").read_text(encoding="utf-8")
+    for line in (
+        "cgroupDriver: systemd",
+        "  - 10.43.0.10",
+        "maxPods: 200",
+        "readOnlyPort: 0",
+        "serverTLSBootstrap: true",
+        "    clientCAFile: /etc/homelab-worker/client-ca.crt",
+    ):
+        assert line in config.splitlines()
+
+
+def test_the_kubelet_starts_only_once_enrollment_is_delivered(vm: _Vm) -> None:
+    first = _run(vm=vm)
+    assert first.returncode == 0, first.stdout + first.stderr
+    assert "awaits enrollment" in first.stdout
+    assert [c for c in _calls(vm=vm, verb="exec") if "kubelet" in c] == []
+    _enroll(vm=vm)
+    second = _run(vm=vm)
+    assert second.returncode == 0, second.stdout + second.stderr
+    assert [c for c in _calls(vm=vm, verb="exec") if "kubelet" in c] == [
+        f"docker exec {_WORKER} systemctl start kubelet"
+    ]
+
+
+def test_the_fixture_stage_joins_a_docker_network_without_a_tailnet_login(vm: _Vm) -> None:
+    (vm.state / "network-ip").write_text("172.18.0.4\n", encoding="utf-8")
+    (vm.state / "ts-status").write_text(_NEEDS_LOGIN, encoding="utf-8")
+    result = _run(vm=vm, extra=("k3d-hw-fixture",))
+    assert result.returncode == 0, result.stdout + result.stderr
+    [run] = _calls(vm=vm, verb="run")
+    assert "--network k3d-hw-fixture" in run
+    assert [c for c in _calls(vm=vm, verb="exec") if "tailscale" in c] == []
+    assert "NODE_IP=172.18.0.4\n" in (vm.root / "enrollment" / "kubelet.env").read_text(
+        encoding="utf-8"
+    )
