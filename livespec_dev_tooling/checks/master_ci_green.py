@@ -98,8 +98,10 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import sys
+import time
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Literal, TypedDict, cast
@@ -110,7 +112,7 @@ if str(_VENDOR_DIR) not in sys.path:
 
 import structlog  # noqa: E402
 
-from livespec_dev_tooling.budgeted_gh import gh_read  # noqa: E402
+from livespec_dev_tooling.budgeted_gh import GhRead, gh_read  # noqa: E402
 from livespec_dev_tooling.checks._gate_context import (  # noqa: E402
     credential_skip_is_failure,
     gate_repository,
@@ -162,6 +164,9 @@ _PENDING_STATUSES: frozenset[str] = frozenset(
 _RED_CONCLUSIONS: frozenset[str] = frozenset(
     {"failure", "cancelled", "timed_out", "action_required", "stale", "startup_failure"},
 )
+_MAX_GH_API_ATTEMPTS = 3
+_INITIAL_GH_API_RETRY_DELAY_SECONDS = 1.0
+_TRANSIENT_HTTP_STATUS_PATTERN = re.compile(r"\bHTTP (?:429|5\d{2})\b")
 
 
 def _check_runs_endpoint(*, env: Mapping[str, str]) -> str:
@@ -212,6 +217,29 @@ def _gh_has_stored_credential() -> bool:
 def _gh_failed_due_to_invalid_credential(*, stderr: str) -> bool:
     """Return True when `gh` reports an HTTP 401 credential rejection."""
     return "HTTP 401" in stderr
+
+
+def _transient_http_status(*, completed: GhRead) -> str | None:
+    """Return a retryable GitHub status reported by this failed read, if any."""
+    match = _TRANSIENT_HTTP_STATUS_PATTERN.search(f"{completed.stdout}\n{completed.stderr}")
+    return None if match is None else match.group(0)
+
+
+def _read_check_runs_with_retry(*, args: list[str]) -> GhRead:
+    """Read check runs, retrying only transient GitHub answers with bounded backoff.
+
+    The budgeted transport deliberately performs one attempt: this caller owns
+    the check's disposition, so it alone can distinguish a retryable outage
+    from a definitive master-CI verdict. A non-transient failure is returned
+    immediately for the existing credential and skip classification.
+    """
+    completed = gh_read(args=args)
+    for attempt in range(_MAX_GH_API_ATTEMPTS - 1):
+        if completed.returncode == 0 or _transient_http_status(completed=completed) is None:
+            return completed
+        time.sleep(_INITIAL_GH_API_RETRY_DELAY_SECONDS * (2**attempt))
+        completed = gh_read(args=args)
+    return completed
 
 
 def _classify_failed_gh_call(
@@ -316,7 +344,7 @@ def _fetch_master_ci_green_check(
             hint="install the gh CLI to arm the master-CI-green gate on this host",
         )
         return "skip"
-    completed = gh_read(args=["api", _check_runs_endpoint(env=os.environ)])
+    completed = _read_check_runs_with_retry(args=["api", _check_runs_endpoint(env=os.environ)])
     if completed.returncode != 0:
         return _classify_failed_gh_call(
             log=log,
