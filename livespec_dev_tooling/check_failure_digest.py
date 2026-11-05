@@ -86,6 +86,18 @@ def _fail_record(*, line: str) -> tuple[str, str, str] | None:
     return (mode, hint if isinstance(hint, str) else "", path if isinstance(path, str) else "")
 
 
+def _body_mismatch_record(*, line: str, record: tuple[str, str, str]) -> tuple[str, str, str, str]:
+    """Return the known body-comparison fields from this check's enriched finding."""
+    body_mismatch = cast("dict[str, str]", json.loads(line.strip()))
+    _, hint, path = record
+    return (
+        path,
+        body_mismatch["installed_sha256"],
+        body_mismatch["canonical_sha256"],
+        hint,
+    )
+
+
 def _mode_groups(*, output: str) -> list[tuple[str, str, str, int]]:
     """Group one target's findings into `(failure_mode, hint, example_path, count)`.
 
@@ -135,10 +147,28 @@ def failure_digest_lines(*, failures: list[tuple[str, str]]) -> list[str]:
         return []
     lines = ["", _DIGEST_HEADER]
     for target, output in failures:
-        groups = _mode_groups(output=output)
-        if not groups:
+        findings = [(line, _fail_record(line=line)) for line in output.splitlines()]
+        mismatch_records = [
+            _body_mismatch_record(line=line, record=record)
+            for line, record in findings
+            if record is not None and record[0] == "body_mismatch"
+        ]
+        ordinary_output = "\n".join(
+            line for line, record in findings if record is None or record[0] != "body_mismatch"
+        )
+        groups = _mode_groups(output=ordinary_output)
+        if not groups and not mismatch_records:
             lines.append(f"  {target}: {_NO_STRUCTURED_FINDING}")
-            continue
         for group in groups:
             lines.extend(_entry_lines(target=target, group=group))
+        for path, installed, canonical, hint in mismatch_records:
+            lines.extend(
+                [
+                    f"  {target}: body_mismatch",
+                    f"      path: {path}",
+                    f"      installed_sha256: {installed}",
+                    f"      canonical_sha256: {canonical}",
+                    f"      remedy: {hint}",
+                ]
+            )
     return lines

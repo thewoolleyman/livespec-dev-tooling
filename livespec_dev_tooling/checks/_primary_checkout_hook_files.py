@@ -87,8 +87,8 @@ _HOOK_BODY_MISMATCH = "body_mismatch"
 _HOOK_OK = ""
 
 
-def _inspect_hook(*, hook_path: Path) -> IOResult[tuple[bool, str], CheckInputUnreadable]:
-    """Return `(ok, failure_mode)` for a single hook path.
+def _inspect_hook(*, hook_path: Path) -> IOResult[tuple[bool, str, bytes], CheckInputUnreadable]:
+    """Return `(ok, failure_mode, installed_bytes)` for a single hook path.
 
     `ok` is True only when the hook exists as a regular file, is
     executable by the current user, and its body is BYTE-IDENTICAL to
@@ -113,16 +113,16 @@ def _inspect_hook(*, hook_path: Path) -> IOResult[tuple[bool, str], CheckInputUn
     CRLF-converted hook compare EQUAL to canonical and pass.
     """
     if not hook_path.is_file():
-        return IOSuccess((False, _HOOK_MISSING))
+        return IOSuccess((False, _HOOK_MISSING, b""))
     if not os.access(hook_path, os.X_OK):
-        return IOSuccess((False, _HOOK_NOT_EXECUTABLE))
+        return IOSuccess((False, _HOOK_NOT_EXECUTABLE, b""))
     try:
         body = hook_path.read_bytes()
     except OSError as unreadable:
         return IOFailure(CheckInputUnreadable(path=str(hook_path), detail=str(unreadable)))
     if body != CANONICAL_HOOK_BODY.encode("utf-8"):
-        return IOSuccess((False, _HOOK_BODY_MISMATCH))
-    return IOSuccess((True, _HOOK_OK))
+        return IOSuccess((False, _HOOK_BODY_MISMATCH, body))
+    return IOSuccess((True, _HOOK_OK, body))
 
 
 def _find_foreign_lefthook_wrappers(
