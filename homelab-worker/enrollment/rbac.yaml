@@ -1,0 +1,66 @@
+# Homelab worker enrollment RBAC: the one-time cluster change that lets a
+# homelab worker's kubelet join through standard TLS bootstrap.
+#
+# Governed by SPECIFICATION/non-functional-requirements.md, "Homelab worker
+# nodes": "Standard bootstrap under an admission hold" and "Reviewed cluster
+# changes". Design: plan/homelab-k8s-worker-nodes/research/005 §3.
+#
+# A bootstrap token minted by mint-bootstrap-token.sh authenticates in the
+# group system:bootstrappers:homelab-worker. That group may only create and
+# read its own CSRs, and its kubelet CLIENT CSR (CN system:node:<worker>,
+# O system:nodes) is auto-approved by the enabled csrapproving controller.
+# Client-certificate renewal is bound per declared worker user rather than to
+# the whole system:nodes group, so no K3s node's permissions change. Serving
+# CSRs are never auto-approved: approve-serving-csr.sh checks each one.
+#
+# Apply: kubectl apply -f homelab-worker/enrollment/rbac.yaml
+# Rollback: kubectl delete -f homelab-worker/enrollment/rbac.yaml
+#   (existing worker certificates keep working until they expire; no new
+#   worker can bootstrap and none can renew. K3s nodes are unaffected.)
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: homelab-worker-bootstrap
+  labels:
+    homelab-worker.livespec.dev/enrollment: "true"
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: system:node-bootstrapper
+subjects:
+  - apiGroup: rbac.authorization.k8s.io
+    kind: Group
+    name: system:bootstrappers:homelab-worker
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: homelab-worker-autoapprove-client
+  labels:
+    homelab-worker.livespec.dev/enrollment: "true"
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: system:certificates.k8s.io:certificatesigningrequests:nodeclient
+subjects:
+  - apiGroup: rbac.authorization.k8s.io
+    kind: Group
+    name: system:bootstrappers:homelab-worker
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: homelab-worker-autorenew-client
+  labels:
+    homelab-worker.livespec.dev/enrollment: "true"
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: system:certificates.k8s.io:certificatesigningrequests:selfnodeclient
+subjects:
+  - apiGroup: rbac.authorization.k8s.io
+    kind: User
+    name: system:node:macbook-m4-max-homelab-worker
+  - apiGroup: rbac.authorization.k8s.io
+    kind: User
+    name: system:node:macbook-air-homelab-worker
