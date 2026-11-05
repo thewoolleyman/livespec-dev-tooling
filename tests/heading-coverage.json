@@ -1976,6 +1976,14 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: a failing test that shares only an ancestor directory name with the change set is retried",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this scenario, driving a pytest session that loads the flake-retry plugin against a fixture repository whose failing test names a ci-runner/k3s/phase2/gates/ file through consecutive literal path segments while the change set touches only ci-runner/k3s/phase2/factory/; livespec-dev-tooling-sdrq5v owns it.",
+    "work_item": "livespec-dev-tooling-sdrq5v"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: a change set that touches the build or the plugin disables every retry",
     "test": "TODO",
     "reason": "Spec-first: a real test at the integration tier or above is owed for this scenario, driving a pytest session that loads the flake-retry plugin against a fixture repository with a controlled change set; livespec-dev-tooling-crxcy4 owns it.",
