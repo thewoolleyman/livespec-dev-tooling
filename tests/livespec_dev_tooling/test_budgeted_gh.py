@@ -82,7 +82,7 @@ _PUBLIC_RUNTIME_PACKAGE = "livespec_runtime"
 _RETROFITTED_SITES: dict[str, int] = {
     "livespec_dev_tooling/checks/branch_protection_alignment.py": 0,
     "livespec_dev_tooling/checks/_branch_protection_api.py": 3,
-    "livespec_dev_tooling/checks/master_ci_green.py": 3,
+    "livespec_dev_tooling/checks/master_ci_green.py": 2,
     "livespec_dev_tooling/agent_hooks/subagent_stop_guard.py": 1,
 }
 _BUDGETED_MODULE = "livespec_dev_tooling.budgeted_gh"
