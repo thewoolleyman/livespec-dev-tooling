@@ -2580,11 +2580,23 @@ And the `FLAKE-RETRIED` block MUST report the test's final outcome as failed
 
 Given a repository that loads livespec-dev-tooling's flake-retry pytest plugin
 
-And a change set that contains a module in a failing test's in-repository import closure, or a fixture file under a directory whose name appears as a string literal in that closure
+And a change set that contains a module in a failing test's in-repository import closure, a path or file name that closure names, or a file inside a directory that closure names
 
 When that test fails
 
 Then the session MUST fail on that first failure, and the plugin MUST NOT re-run the test
+
+## Scenario: a failing test that shares only an ancestor directory name with the change set is retried
+
+Given a repository that loads livespec-dev-tooling's flake-retry pytest plugin
+
+And a failing test whose closure names `ci-runner/k3s/phase2/gates/render-gate-job-exit-tests.sh` through consecutive string-literal path segments
+
+And a change set whose only path under `ci-runner/` is `ci-runner/k3s/phase2/factory/DERIVATION.md`
+
+When that test fails on its first attempt
+
+Then the plugin MUST treat the test as untouched and re-run it on its own, exactly as for any untouched failing test
 
 ## Scenario: a change set that touches the build or the plugin disables every retry
 
