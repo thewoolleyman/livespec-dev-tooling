@@ -12,11 +12,12 @@
 #   agent     the negative control: with the fleet's current egress mode the
 #             API server reaches kubelets only through K3s agent tunnels, so
 #             logs and exec on the worker, which runs no K3s agent, MUST fail.
-#   disabled  the change under proof: logs and exec on the worker MUST work,
-#             and so must pod-to-pod traffic both ways between the worker and
-#             a K3s node, a ClusterIP Service and cluster DNS (10.43.0.10)
-#             from the worker, and a NetworkPolicy deny enforced on a worker
-#             pod (allowed, denied, allowed again).
+#   disabled  the change under proof: logs, exec, port-forward and kubelet
+#             stats on the worker MUST work, logs on the K3s node MUST still
+#             work, and so must pod-to-pod traffic both ways between the
+#             worker and a K3s node, a ClusterIP Service and cluster DNS
+#             (10.43.0.10) from the worker, and a NetworkPolicy deny enforced
+#             on a worker pod (allowed, denied, allowed again).
 #
 # Proof pods tolerate the worker's admission hold and live in namespace
 # hw-proof, which is deleted at the end unless KEEP=1.
@@ -64,6 +65,11 @@ EOF
 chmod 0755 "$tmp/bin/kubectl"
 PATH="$tmp/bin:$PATH"
 export PATH
+
+# in_server <command...>: run a command inside the fixture's server container.
+in_server() {
+  limactl shell --workdir / "$worker" sudo docker exec -i "$server" "$@"
+}
 
 failed=0
 result() {
@@ -129,6 +135,9 @@ if [ "$mode" = "agent" ]; then
 else
   expect logs-on-worker ok kubectl logs --namespace "$ns" client-worker
   expect exec-on-worker ok kubectl exec --namespace "$ns" client-worker -- echo exec-ok
+  expect logs-on-k3s-node ok kubectl logs --namespace "$ns" client-k3s
+  expect kubelet-stats-on-worker ok kubectl get --raw "/api/v1/nodes/$worker/proxy/stats/summary"
+  expect port-forward-to-worker ok in_server sh -c "kubectl port-forward --namespace $ns pod/server-worker 18080:8080 >/dev/null 2>&1 & pf=\$!; sleep 3; (wget -qO- -T 5 http://127.0.0.1:18080/ || curl -fsS -m 5 http://127.0.0.1:18080/); rc=\$?; kill \$pf; exit \$rc"
   ip_worker="$(kubectl get pod --namespace "$ns" server-worker -o 'jsonpath={.status.podIP}')"
   ip_k3s="$(kubectl get pod --namespace "$ns" server-k3s -o 'jsonpath={.status.podIP}')"
   expect pod-to-pod-worker-to-k3s ok kubectl exec --namespace "$ns" client-worker -- wget -qO- -T 5 "http://$ip_k3s:8080/"

@@ -6,8 +6,9 @@ the fixture's egress-selector-mode. These run it under the system `/bin/bash` ag
 agent tunnel and NetworkPolicy enforcement on the worker emulated in files, and assert:
 
 - `agent` is the negative control: it passes only when logs and exec on the worker fail;
-- `disabled` passes only when logs, exec, pod-to-pod both ways, ClusterIP, DNS and a
-  NetworkPolicy deny (allowed, denied, allowed again) all hold on the worker;
+- `disabled` passes only when logs, exec, port-forward and kubelet stats on the worker, logs on
+  the K3s node, pod-to-pod both ways, ClusterIP, DNS and a NetworkPolicy deny (allowed, denied,
+  allowed again) all hold;
 - the proof pods tolerate the admission hold and are pinned to the worker and a K3s node;
 - an undeclared host or an unknown mode is refused before any cluster call.
 """
@@ -38,13 +39,22 @@ case "$1" in
     printf '%s\\n---\\n' "$body" >> "$s/applied.yaml"
     case "$body" in *"kind: NetworkPolicy"*) [ "$STUB_ENFORCED" = 1 ] && touch "$s/policy" ;; esac ;;
   wait) : ;;
+  -c)
+    if [ "$STUB_TUNNEL_ONLY" = 1 ]; then echo 'error upgrading connection' >&2; exit 1; fi
+    echo proof-ok ;;
   get)
+    if [ "$2" = --raw ]; then
+      if [ "$STUB_TUNNEL_ONLY" = 1 ]; then echo 'proxy error 502' >&2; exit 1; fi
+      echo '{"node":{"nodeName":"x"}}'; exit 0
+    fi
     case "$5" in
       server-worker) echo 10.42.5.10 ;;
       *) echo 10.42.1.20 ;;
     esac ;;
   logs)
-    if [ "$STUB_TUNNEL_ONLY" = 1 ]; then echo 'failed to find Session for client' >&2; exit 1; fi
+    if [ "$4" = client-worker ] && [ "$STUB_TUNNEL_ONLY" = 1 ]; then
+      echo 'failed to find Session for client' >&2; exit 1
+    fi
     echo proof-ready ;;
   exec)
     pod="$4"
@@ -129,6 +139,9 @@ def test_the_disabled_mode_proof_passes_every_check_on_the_worker(mac: _Mac) -> 
         (
             "logs-on-worker",
             "exec-on-worker",
+            "logs-on-k3s-node",
+            "kubelet-stats-on-worker",
+            "port-forward-to-worker",
             "pod-to-pod-worker-to-k3s",
             "pod-to-pod-k3s-to-worker",
             "clusterip-and-dns-from-worker",
