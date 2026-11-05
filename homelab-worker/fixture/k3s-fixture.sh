@@ -15,7 +15,9 @@
 #                  egress-selector-mode <mode>; an existing cluster is kept.
 #   egress <mode>  rewrite the server's egress-selector-mode and restart only
 #                  the fixture's server container, as production would.
-#   down           delete the fixture cluster and its state directory.
+#   down           delete the fixture cluster and its state directory, and
+#                  the worker's fixture container and state if
+#                  join-fixture-worker.sh created them.
 #
 # The server runs the fleet's pinned K3s image with the production server
 # flags (--disable traefik --disable servicelb) and the production config.yaml
@@ -24,13 +26,15 @@
 # a parameter. The API listens on 127.0.0.1:6550 inside the VM only.
 #
 # FIXTURE_ROOT (default /var/lib/hw-fixture) holds the server config and the
-# kubeconfig; the commands it runs are found on PATH, so it can be exercised
-# off-host.
+# kubeconfig; FIXTURE_WORKER_ROOT (default /mnt/lima-hwdata/fixture-worker)
+# holds the worker's fixture state. The commands it runs are found on PATH, so
+# it can be exercised off-host.
 set -euo pipefail
 
 prog="k3s-fixture"
 cluster="hw-fixture"
 root="${FIXTURE_ROOT:-/var/lib/hw-fixture}"
+worker_root="${FIXTURE_WORKER_ROOT:-/mnt/lima-hwdata/fixture-worker}"
 k3s_image="rancher/k3s:v1.36.2-k3s1@sha256:6a47cea22c4b834d4ba72c89d291696b79ebe406251f90b446e4dff03513dd87"
 k3d_version="v5.9.0"
 k3d_sha256_arm64="03cde5cf23e6e8e67de5a039ecf26e5b85aca82fba3e5d13dadf904cd218a250"
@@ -135,6 +139,15 @@ case "$action" in
     wait_ready
     ;;
   down)
+    # The worker container is removed only when it is the fixture's: its
+    # enrollment mount is under the fixture worker root, never production's.
+    worker="${vm#lima-}"
+    if docker inspect -f '{{range .Mounts}}{{if eq .Destination "/etc/homelab-worker"}}{{.Source}}{{end}}{{end}}' "$worker" 2>/dev/null |
+      grep -qx "$worker_root/enrollment"; then
+      docker rm -f "$worker" >/dev/null
+      say "removed fixture worker container $worker"
+    fi
+    rm -rf "$worker_root"
     if cluster_exists; then
       k3d cluster delete "$cluster"
     else
