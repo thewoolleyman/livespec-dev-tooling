@@ -390,8 +390,12 @@ fabro_server_instances:
         # below), so the candidate and mi-homelab keep v0.5.0 at the shared path.
         # REVERT: path: /usr/local/bin/sandbox-driver-kubernetes
         # REVERT: sha256: d93437f0bcb495e13a3373a4d2578cc0b2dba2c39c1ad5f3fdcf801ce0788b6e
-        path: /usr/local/bin/sandbox-driver-kubernetes-v0.8.1
-        sha256: ad74f14dc7b4baa5e5765f57b88a96a22d998259508af296ca20c5af0bd2d6d4
+        # v0.8.2 (2026-11-05, orchestrator bd-ib-digmk2): an exec'd command runs
+        # under the sandbox shell's umask (0022), not the driver's private 077.
+        # REVERT to v0.8.1: path: /usr/local/bin/sandbox-driver-kubernetes-v0.8.1
+        # REVERT to v0.8.1: sha256: ad74f14dc7b4baa5e5765f57b88a96a22d998259508af296ca20c5af0bd2d6d4
+        path: /usr/local/bin/sandbox-driver-kubernetes-v0.8.2
+        sha256: cf3cedc8900d2176630f8a700964a094f9db30648955310e930bee07ca6b9ec7
         inherit_env:
           - HOME
           - PATH
@@ -407,8 +411,12 @@ fabro_server_instances:
       kubernetes-rust:
         # REVERT: path: /usr/local/bin/sandbox-driver-kubernetes
         # REVERT: sha256: d93437f0bcb495e13a3373a4d2578cc0b2dba2c39c1ad5f3fdcf801ce0788b6e
-        path: /usr/local/bin/sandbox-driver-kubernetes-v0.8.1
-        sha256: ad74f14dc7b4baa5e5765f57b88a96a22d998259508af296ca20c5af0bd2d6d4
+        # v0.8.2 (2026-11-05, orchestrator bd-ib-digmk2): an exec'd command runs
+        # under the sandbox shell's umask (0022), not the driver's private 077.
+        # REVERT to v0.8.1: path: /usr/local/bin/sandbox-driver-kubernetes-v0.8.1
+        # REVERT to v0.8.1: sha256: ad74f14dc7b4baa5e5765f57b88a96a22d998259508af296ca20c5af0bd2d6d4
+        path: /usr/local/bin/sandbox-driver-kubernetes-v0.8.2
+        sha256: cf3cedc8900d2176630f8a700964a094f9db30648955310e930bee07ca6b9ec7
         inherit_env:
           - HOME
           - PATH
@@ -791,7 +799,7 @@ sandbox_driver_kubernetes_config_homes:
 # Plugin releases installed at their OWN versioned paths beside the shared
 # v0.5.0 binary at /usr/local/bin/sandbox-driver-kubernetes, which the candidate
 # and mi-homelab instances keep pinning. The fleet instance (fabro-server, :32276)
-# alone moves to v0.8.1. It carries v0.8.0's CPU request below the limit
+# alone moves to v0.8.2 (v0.8.1 plus the exec umask fix, bd-ib-digmk2). It carries v0.8.0's CPU request below the limit
 # (SANDBOX_DRIVER_KUBERNETES_CPU_REQUEST_CORES; orchestrator bd-ib-zl3qcz) and
 # v0.8.1's resume of a command's output, exit status and stdin after its exec
 # stream drops (bd-ib-mdern6). It also carries v0.6.0's K8S_NODE_NAME, v0.7.0's
@@ -803,6 +811,10 @@ sandbox_driver_kubernetes_config_homes:
 sandbox_driver_kubernetes_versioned_releases:
   - version: v0.8.1
     sha256: ad74f14dc7b4baa5e5765f57b88a96a22d998259508af296ca20c5af0bd2d6d4
+  # v0.8.2 (bd-ib-digmk2): v0.8.1 plus the exec umask fix. The fleet instance
+  # pins it; v0.8.1 stays installed as the REVERT target.
+  - version: v0.8.2
+    sha256: cf3cedc8900d2176630f8a700964a094f9db30648955310e930bee07ca6b9ec7
 
 # tailscale_serve: publish the fabro-server instance's loopback port on the
 # tailnet, so the Dispatcher reaches https://gmktec-xubuntu.perch-rudd.ts.net:32276.
