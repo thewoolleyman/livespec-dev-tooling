@@ -765,20 +765,6 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario: an agent session's foreground full-suite pytest on a delegating host is refused and names the gate-start form",
-    "work_item": "livespec-dev-tooling-4pchid",
-    "first_seen": "2026-11-05"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: an agent session's targeted pytest or a factory sandbox's full suite is not refused",
-    "work_item": "livespec-dev-tooling-4pchid",
-    "first_seen": "2026-11-05"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
     "heading": "## Scenario: an apply on a host missing a role's out-of-band input fails before the role changes anything",
     "work_item": "livespec-dev-tooling-c763up",
     "first_seen": "2026-11-05"
