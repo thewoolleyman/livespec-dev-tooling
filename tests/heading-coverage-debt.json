@@ -380,13 +380,6 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario: a full suite spelled as python -m pytest runs as a gate Job",
-    "work_item": "livespec-dev-tooling-4pchid",
-    "first_seen": "2026-11-05"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
     "heading": "## Scenario: a gate client that stops waiting on an admitted gate Job deletes it",
     "work_item": "livespec-dev-tooling-f2dgn6",
     "first_seen": "2026-11-05"

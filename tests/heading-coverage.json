@@ -1498,9 +1498,8 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a full suite spelled as python -m pytest runs as a gate Job",
-    "test": "TODO",
-    "reason": "A real test at the integration tier or above is owed for this scenario: `gate-start -- uv run --no-sync python -m pytest --cov=src` in a delegated repository on an eligible host, asserting the run records venue `cluster_job` and not `host_local` with the reason \"command outside full-suite set\". livespec-dev-tooling-4pchid owns it.",
-    "work_item": "livespec-dev-tooling-4pchid"
+    "test": "tests.livespec_dev_tooling.test_gate_runner_delegate.test_gate_start_records_every_python_module_pytest_spelling_as_a_cluster_job",
+    "reason": "Integration-tier: drives the shipped gate-start script with each ratified `python -m pytest` spelling in a delegated repository carrying a readable fixture gates kubeconfig. The real selector records venue `cluster_job` and reason `eligible full-suite command`, rather than the host-local outside-full-suite fallback (livespec-dev-tooling-4pchid)."
   },
   {
     "spec_root": "SPECIFICATION",
