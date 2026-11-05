@@ -2,11 +2,12 @@
 
 The installed commit/push hooks reach incident mode through
 `incident_hook_entry`. Every other independently invocable entrance (the
-`check` aggregate recipes, `check-pre-push`, `check-pre-commit`, the delegated
-gate clients, the detached runner's venue selection and `check-red-green-replay`)
-calls this boundary first. It reuses the hook boundary's shared flag parser and
-its registered-authority trust path, so there is exactly one parser and one
-notion of a trusted incident context.
+`check` aggregate recipes, `check-pre-push`, `check-pre-commit`,
+`lint-autofix-staged`, `check-commit-pairs-source-and-test`, the direct coverage
+recipes, the delegated gate clients, the detached runner's venue selection and
+`check-red-green-replay`) calls this boundary first. It reuses the hook
+boundary's shared flag parser and its registered-authority trust path, so there
+is exactly one parser and one notion of a trusted incident context.
 
 Three outcomes, mirroring the hook entrance:
 
@@ -70,12 +71,16 @@ ENTRANCES = frozenset(
     (
         "check",
         "check-changed",
+        "check-commit-pairs-source-and-test",
+        "check-coverage",
+        "check-per-file-coverage",
         "check-pre-commit",
         "check-pre-push",
         "check-red-green-replay",
         "check-scoped",
         "gate-remote-delegate",
         "gate-runner",
+        "lint-autofix-staged",
         "pre-commit-delegate",
     )
 )

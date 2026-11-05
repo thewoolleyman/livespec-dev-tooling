@@ -41,19 +41,20 @@ their first relevant effect. The last column records what is wired today.
 | --- | --- | --- |
 | Installed `pre-commit`, `commit-msg`, `pre-push` hooks | Lefthook autofix, pairing, normal evidence or delegation. | `incident_hook_entry` (the hook entrance). |
 | `check-pre-commit` | Staged-file prechecks, delegation and doc-only/Red selection. | `incident_gate_entry`, first act of `scripts/just/check-pre-commit.sh`. |
-| `lint-autofix-staged` | Ruff mutation, formatting or adding changed files. | Owed; in normal operation reached only below the hook entrance. |
-| `check-commit-pairs-source-and-test` | Source/test pairing selection. | Owed; in normal operation reached only below the hook entrance. |
+| `lint-autofix-staged` | Ruff mutation, formatting or adding changed files. | `incident_gate_entry`, first act of `scripts/just/lint-autofix-staged.sh`. |
+| `check-commit-pairs-source-and-test` | Source/test pairing selection. | `IncidentEntrance` on `checks/commit_pairs_source_and_test.main`. |
 | `check-pre-push` | Normal token lookup, cluster credential checks or submission. | `incident_gate_entry`, first act of `scripts/just/check-pre-push.sh`. |
 | `check`, `check-scoped`, `check-changed` | Runtime synchronization, member selection, aggregate or evidence execution. | `incident_gate_entry`, first act of each `scripts/just/` body. |
-| Direct coverage entrances | Normal cached coverage lookup or coverage execution. | Owed. |
+| Direct coverage entrances (`check-coverage`, `check-per-file-coverage`) | Normal cached coverage lookup or coverage execution. | `incident_gate_entry`, first act of each `scripts/just/` body. |
 | `pre_commit_delegate` and `gate_remote_delegate` | Configuration routing, credential probing, remote assembly or submission. | `IncidentEntrance` on each `main`. |
 | `check-red-green-replay` | Normal evidence lookup, replay venue selection or suite execution. | `IncidentEntrance` on `checks/red_green_replay.main`. |
 | Detached gate runner | Any independent command selection before a child launch. | `gate_runner_delegate.main` (the venue selection `gate-run.sh` calls before launch). |
 
 ### The direct-entrance boundary
 
-`livespec_dev_tooling/incident_gate_entry.py` (livespec-dev-tooling-6bmta2) is
-the shared boundary for every direct entrance. It reuses the hook entrance's
+`livespec_dev_tooling/incident_gate_entry.py` (livespec-dev-tooling-6bmta2, with
+the last four entrances wired by livespec-dev-tooling-wjmre6) is the shared
+boundary for every direct entrance. It reuses the hook entrance's
 shared truth-value parser and its registered-authority trust path
 (`parse_query`, `invoke_authority` `read-current`, `resolve_current`), so there is
 one parser and one notion of a trusted incident context. Its outcomes:

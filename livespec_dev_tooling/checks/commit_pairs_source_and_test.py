@@ -119,6 +119,7 @@ from livespec_dev_tooling.config import (  # noqa: E402
     is_vendored_path,
     role_path,
 )
+from livespec_dev_tooling.incident_gate_entry import IncidentEntrance  # noqa: E402
 
 __all__: list[str] = []
 
@@ -208,6 +209,7 @@ def _is_docs_only_change(*, path: str, cwd: Path, log: structlog.stdlib.BoundLog
     return unsafe_perform_io(decided.unwrap())
 
 
+@IncidentEntrance(surface="check-commit-pairs-source-and-test")
 def main() -> int:
     structlog.configure(
         processors=[
