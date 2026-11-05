@@ -1,3 +1,5 @@
+> **Superseded in part, 2026-11-05:** [008](008-lan-worker-and-test-strategy-2026-11-05.md) replaces the tailnet underlay this brief recommends: §1's worker values (`--iface=tailscale0`, kubelet `--node-ip=<worker tailnet IPv4>`, serving-CSR SANs carrying the tailnet IPv4), §3's "Mixed LAN/tailnet underlay — Option A (recommended)", §4 slice 7 and risk 1. The M4 Max worker is a home-LAN node through a bridged Lima network. The rest of this brief still holds.
+
 # Homelab worker node: implementation brief (plan homelab-k8s-worker-nodes)
 
 Research date 2026-11-04, read-only. Every cluster fact below was read through
