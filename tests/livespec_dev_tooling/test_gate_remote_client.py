@@ -100,7 +100,10 @@ def _job_status(*, state: str) -> str:
     """
     finished = state in {"Complete", "Failed"}
     return json.dumps(
-        {"status": {"conditions": [{"type": state, "status": str(finished)}]}},
+        {
+            "spec": {"suspend": state == "Suspended"},
+            "status": {"conditions": [{"type": state, "status": str(finished)}]},
+        },
     )
 
 
@@ -542,6 +545,28 @@ def test_the_terminal_state_is_awaited_before_the_logs_are_streamed() -> None:
     assert outcome.unwrap().terminal_state == "Complete"
 
 
+def test_a_suspended_job_keeps_its_full_poll_budget_after_kueue_admits_it() -> None:
+    """Admission polls are distinct from the Job's terminal-state poll budget."""
+    cluster = _StubCluster(
+        job_states=(
+            "Suspended",
+            "Suspended",
+            "Suspended",
+            "Active",
+            "Active",
+            "Active",
+            "Complete",
+        )
+    )
+    request = dataclasses.replace(_REQUEST, poll_timeout_seconds=30.0)
+
+    outcome = run_gate(request=request, runner=cluster, sleeper=cluster.sleep)
+
+    assert is_successful(outcome)
+    assert cluster.kinds.count("get-job") == 7
+    assert cluster.naps == [request.poll_interval_seconds] * 5
+
+
 def test_the_logs_are_streamed_rather_than_captured() -> None:
     """Capturing is exactly what would swallow the log the operator is owed.
 
@@ -693,7 +718,7 @@ def test_a_gate_that_never_reaches_a_terminal_state_fails_rather_than_polling_fo
     assert isinstance(outcome, Failure)
     assert outcome.failure().step == "await-gate-terminal"
     assert outcome.failure().returncode is None
-    assert cluster.kinds.count("get-job") == 3
+    assert cluster.kinds.count("get-job") == 180
     assert cluster.kinds[-1] == "delete-ref"
 
 
