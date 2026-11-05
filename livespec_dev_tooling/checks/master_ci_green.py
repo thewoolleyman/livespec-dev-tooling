@@ -100,6 +100,7 @@ import json
 import os
 import shutil
 import sys
+import time
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Literal, TypedDict, cast
@@ -110,7 +111,7 @@ if str(_VENDOR_DIR) not in sys.path:
 
 import structlog  # noqa: E402
 
-from livespec_dev_tooling.budgeted_gh import gh_read  # noqa: E402
+from livespec_dev_tooling.budgeted_gh import GhRead, gh_read  # noqa: E402
 from livespec_dev_tooling.checks._gate_context import (  # noqa: E402
     credential_skip_is_failure,
     gate_repository,
@@ -162,6 +163,7 @@ _PENDING_STATUSES: frozenset[str] = frozenset(
 _RED_CONCLUSIONS: frozenset[str] = frozenset(
     {"failure", "cancelled", "timed_out", "action_required", "stale", "startup_failure"},
 )
+_TRANSIENT_RETRY_DELAYS_SECONDS: tuple[float, ...] = (1.0, 2.0)
 
 
 def _check_runs_endpoint(*, env: Mapping[str, str]) -> str:
@@ -212,6 +214,24 @@ def _gh_has_stored_credential() -> bool:
 def _gh_failed_due_to_invalid_credential(*, stderr: str) -> bool:
     """Return True when `gh` reports an HTTP 401 credential rejection."""
     return "HTTP 401" in stderr
+
+
+def _is_transient_gh_failure(*, stderr: str) -> bool:
+    """Return whether `gh` reported an HTTP 429 or 5xx response."""
+    return "HTTP 429" in stderr or any(
+        f"HTTP {status_code}" in stderr for status_code in range(500, 600)
+    )
+
+
+def _read_check_runs_with_transient_retry(*, args: list[str]) -> GhRead:
+    """Read check runs up to three times when GitHub gives a transient HTTP answer."""
+    completed = gh_read(args=args)
+    for delay_seconds in _TRANSIENT_RETRY_DELAYS_SECONDS:
+        if completed.returncode == 0 or not _is_transient_gh_failure(stderr=completed.stderr):
+            return completed
+        time.sleep(delay_seconds)
+        completed = gh_read(args=args)
+    return completed
 
 
 def _classify_failed_gh_call(
@@ -316,7 +336,9 @@ def _fetch_master_ci_green_check(
             hint="install the gh CLI to arm the master-CI-green gate on this host",
         )
         return "skip"
-    completed = gh_read(args=["api", _check_runs_endpoint(env=os.environ)])
+    completed = _read_check_runs_with_transient_retry(
+        args=["api", _check_runs_endpoint(env=os.environ)]
+    )
     if completed.returncode != 0:
         return _classify_failed_gh_call(
             log=log,
