@@ -43,9 +43,15 @@ case "$1" in
     [ -f "$s/container" ] || exit 1
     case "$3" in
       *NetworkSettings*) cat "$s/network-ip" ;;
+      *Mounts*) cat "$s/mount" ;;
       *) cat "$s/container" ;;
     esac ;;
-  run) for a in "$@"; do last="$a"; done; echo "$last true" > "$s/container" ;;
+  run)
+    for a in "$@"; do
+      case "$a" in *:/etc/homelab-worker) echo "${a%:/etc/homelab-worker}" > "$s/mount" ;; esac
+      last="$a"
+    done
+    echo "$last true" > "$s/container" ;;
   rm) rm -f "$s/container" ;;
   start) sed -i.bak 's/ false$/ true/' "$s/container" ;;
   exec)
@@ -166,6 +172,7 @@ def test_a_rerun_reconciles_the_existing_container(
     vm: _Vm, existing: str, verb: str | None, message: str
 ) -> None:
     (vm.state / "container").write_text(f"{existing}\n", encoding="utf-8")
+    (vm.state / "mount").write_text(f"{vm.root}/enrollment\n", encoding="utf-8")
     result = _run(vm=vm)
     assert result.returncode == 0, result.stdout + result.stderr
     assert message in result.stdout
@@ -245,3 +252,14 @@ def test_a_worker_already_on_the_tailnet_is_set_to_accept_the_nodes_routes(vm: _
     assert result.returncode == 0, result.stdout + result.stderr
     assert [c for c in _calls(vm=vm, verb="exec") if "tailscale up" in c] == []
     assert f"docker exec {_WORKER} tailscale set --accept-routes=true" in _calls(vm=vm, verb="exec")
+
+
+def test_a_container_of_another_state_root_is_refused_never_adopted(vm: _Vm) -> None:
+    (vm.state / "container").write_text(f"{_IMAGE} true\n", encoding="utf-8")
+    other = vm.root.parent / "fixture-worker" / "enrollment"
+    (vm.state / "mount").write_text(f"{other}\n", encoding="utf-8")
+    result = _run(vm=vm)
+    assert result.returncode != 0
+    assert f"keeps its enrollment at '{other}'" in result.stderr
+    for verb in ("run", "rm", "start", "exec"):
+        assert _calls(vm=vm, verb=verb) == []
