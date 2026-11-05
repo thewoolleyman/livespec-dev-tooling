@@ -21,6 +21,7 @@ from livespec_dev_tooling.gate_remote_verdict import (
     GATE_PASSED,
     run_gated_push,
 )
+from livespec_dev_tooling.incident_gate_entry import entrance_refusal, resolve_entrance
 
 _VENDOR_DIR = Path(__file__).resolve().parent / "_vendor"
 if str(_VENDOR_DIR) not in sys.path:
@@ -238,9 +239,19 @@ def _run_main() -> int:
 
 
 def main() -> int:
-    """Print the selected venue and reason as two newline-delimited fields."""
+    """Print the selected venue and reason as two newline-delimited fields.
+
+    Incident mode resolves first. A cluster submission has no incident mode, so
+    `run` refuses a trusted incident too; venue selection is a launcher, so a
+    trusted incident continues on the LOCAL venue, where the child's own
+    hook entrance resolves again.
+    """
     if len(sys.argv) > 1 and sys.argv[1] == "run":
-        return _run_main()
+        refused = entrance_refusal(surface="gate-runner")
+        return _run_main() if refused is None else refused
+    decision = resolve_entrance(surface="gate-runner", launcher=True)
+    if decision.mode == "refused":
+        return decision.status
     arguments = _arguments()
     command = (
         tuple(arguments.command[1:])
@@ -248,7 +259,9 @@ def main() -> int:
         else tuple(arguments.command)
     )
     selected = select_for_repository(
-        command=command, force_local=arguments.force_local, repo_root=Path.cwd()
+        command=command,
+        force_local=arguments.force_local or decision.mode == "incident",
+        repo_root=Path.cwd(),
     )
     _ = sys.stdout.write(f"{selected.venue}\n{selected.reason}\n")
     return 0

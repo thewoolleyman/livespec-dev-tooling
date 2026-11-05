@@ -2,8 +2,8 @@
 
 `incident_local_gates` and `incident_gate_inventory` provide the local selection
 and execution foundation for `livespec-dev-tooling-cerkbn`. They do not yet enable
-incident commits or pushes. The work item remains open until the actual hook,
-aggregate, delegation and replay entrances use a trusted incident boundary.
+incident commits or pushes by themselves. The hook entrance and the direct gate
+entrances below now resolve incident mode through a trusted shared boundary.
 
 The inventory reader preserves the population and order of `check-targets.txt`.
 Only one exact `incident-timing: fast` annotation selects a target; slow, missing,
@@ -35,19 +35,48 @@ The versioned transport compares an independently trusted context; an ambient
 `LIVESPEC_INCIDENT_CONTEXT` value cannot supply that trust.
 
 These independently invocable surfaces must route through that boundary before
-their first relevant effect:
+their first relevant effect. The last column records what is wired today.
 
-| Surface | Resolve before |
-| --- | --- |
-| `check-pre-commit` | Staged-file prechecks, delegation and doc-only/Red selection. |
-| `lint-autofix-staged` | Ruff mutation, formatting or adding changed files. |
-| `check-commit-pairs-source-and-test` | Source/test pairing selection. |
-| `check-pre-push` | Normal token lookup, cluster credential checks or submission. |
-| `check`, `check-scoped`, `check-changed` | Runtime synchronization, member selection, aggregate or evidence execution. |
-| Direct coverage entrances | Normal cached coverage lookup or coverage execution. |
-| `pre_commit_delegate` and `gate_remote_delegate` | Configuration routing, credential probing, remote assembly or submission. |
-| `check-red-green-replay` | Normal evidence lookup, replay venue selection or suite execution. |
-| Detached gate runner | Any independent command selection before a child launch. |
+| Surface | Resolve before | Wired through |
+| --- | --- | --- |
+| Installed `pre-commit`, `commit-msg`, `pre-push` hooks | Lefthook autofix, pairing, normal evidence or delegation. | `incident_hook_entry` (the hook entrance). |
+| `check-pre-commit` | Staged-file prechecks, delegation and doc-only/Red selection. | `incident_gate_entry`, first act of `scripts/just/check-pre-commit.sh`. |
+| `lint-autofix-staged` | Ruff mutation, formatting or adding changed files. | Owed; in normal operation reached only below the hook entrance. |
+| `check-commit-pairs-source-and-test` | Source/test pairing selection. | Owed; in normal operation reached only below the hook entrance. |
+| `check-pre-push` | Normal token lookup, cluster credential checks or submission. | `incident_gate_entry`, first act of `scripts/just/check-pre-push.sh`. |
+| `check`, `check-scoped`, `check-changed` | Runtime synchronization, member selection, aggregate or evidence execution. | `incident_gate_entry`, first act of each `scripts/just/` body. |
+| Direct coverage entrances | Normal cached coverage lookup or coverage execution. | Owed. |
+| `pre_commit_delegate` and `gate_remote_delegate` | Configuration routing, credential probing, remote assembly or submission. | `IncidentEntrance` on each `main`. |
+| `check-red-green-replay` | Normal evidence lookup, replay venue selection or suite execution. | `IncidentEntrance` on `checks/red_green_replay.main`. |
+| Detached gate runner | Any independent command selection before a child launch. | `gate_runner_delegate.main` (the venue selection `gate-run.sh` calls before launch). |
+
+### The direct-entrance boundary
+
+`livespec_dev_tooling/incident_gate_entry.py` (livespec-dev-tooling-6bmta2) is
+the shared boundary for every direct entrance. It reuses the hook entrance's
+shared truth-value parser and its registered-authority trust path
+(`parse_query`, `invoke_authority` `read-current`, `resolve_current`), so there is
+one parser and one notion of a trusted incident context. Its outcomes:
+
+| Condition | Outcome | Exit (CLI) |
+| --- | --- | --- |
+| Both flags unset or explicitly false | `normal`: the entrance's complete normal body runs unchanged. | 75 |
+| A malformed flag value | `invalid-incident-flag` configuration refusal. | 78 |
+| A flag set without a trusted incident receipt | `untrusted-incident-receipt` refusal; no gate work. | 78 |
+| A trusted incident at a direct entrance | `no-direct-incident-mode` refusal; no gate work. | 78 |
+| A trusted incident at the detached runner | Continue on the LOCAL venue only. | n/a |
+
+Every refusal prints `incident-gate-refused: <surface>: <code>: <detail>` on
+stderr. Incident gates are selected only by the hook entrance, so a direct
+aggregate never runs nested and never falls back to normal mode after an
+incident request. The detached runner is the one launcher: its child is itself a
+hook-mediated operation that resolves again, so it continues a trusted incident,
+locally, and its cluster `run` submission refuses one.
+
+The shell bodies keep the installed hook's presence prefilter: when no incident
+variable is present at all they start no interpreter and run byte-for-byte as
+before. When any is present, only the boundary's 75 continues; every other
+status, including an unavailable boundary, is terminal.
 
 The boundary needs explicit normal-continuation versus terminal incident/refusal
 results, a runtime available before synchronization, and a durable partial-receipt
@@ -62,8 +91,10 @@ or explicit unsets at the child boundary, rather than assuming the wrapper scrub
 
 At publication, the authoritative lifecycle receipt/ownership loader, durable
 receipt sink and released process entry API are still integration prerequisites.
-This foundation installs no shell flag conditionals, alternate receipt parser,
-normal fallback after an incident refusal, hook bypass or production caller.
+The cerkbn foundation installs no shell flag conditionals, alternate receipt
+parser, normal fallback after an incident refusal, hook bypass or production
+caller. The direct-entrance presence prefilters above decide nothing about a
+flag's value; the shared parser does.
 Its focused evidence exercises selection, actual failures, timeout descendant
 termination, inventory parsing and the structural context adapter. Actual hook
 and released fleet incident drills remain owed under the same work item and plan.
