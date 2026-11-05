@@ -166,6 +166,11 @@
     # needs (livespec-ifwnqj.2).
     - role: gha_runner
       tags: [gha_runner]
+    # The RETIRED privileged gate-runner tier (bd-ib-te4h, 2026-11-05): held
+    # absent, because the hand-run provision-gate-runner.sh that installed it
+    # is gone with ci-runner/gate-runner/ and nothing else knows its paths.
+    - role: gate_runner_retired
+      tags: [gate_runner_retired]
     # Which Fabro server instance answers to each logical factory name, as the
     # Dispatcher running natively on this host reads it from
     # /etc/livespec/fabro-factories.json. Reached through this GROUP play rather

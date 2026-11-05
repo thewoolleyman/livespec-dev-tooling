@@ -77,10 +77,17 @@ _STATE_RESTORING_UNITS = (
     _PHASE2 / "node-extended-resource" / "reapply-node-extended-resource.service",
     _CI_RUNNER / "k3s" / "secret-reinjection" / "inject-github-app-secret.service",
 )
-# The long-lived JIT supervisor its service manager may restart, and the
-# single-use ephemeral runner it mints.
-_SUPERVISOR_UNIT = _CI_RUNNER / "gate-runner" / "gate-runner-supervisor.service"
-_EPHEMERAL_RUNNER_UNIT = _CI_RUNNER / "gate-runner" / "gate-runner@.service"
+# Every unit a service manager may restart on the pool's behalf: each committed
+# CI-runner unit, plus the resident Actions runner's unit template. The pool's
+# own JIT minting is ARC's controller (its listeners and EphemeralRunners are
+# pods, not units). The host-side JIT supervisor and its single-use
+# `gate-runner@` runner retired with the privileged gate tier (bd-ib-te4h,
+# 2026-11-05; recoverable at 65335aee), so no committed unit replays a
+# single-use registration any more.
+_RESTARTABLE_UNITS = (
+    *sorted(_CI_RUNNER.rglob("*.service")),
+    _REPO_ROOT / "ansible" / "roles" / "gha_runner" / "templates" / "gha-runner.service.j2",
+)
 
 _COHORT = "fleet-ci-runner-pool"
 _CHURN_SLOT = "ci-runner.io/churn-slot"
@@ -430,12 +437,13 @@ def test_a_restarted_jit_supervisor_recovers_shared_state_without_a_reburst() ->
     moment it starts, BEFORE any recovered circuit or budget state can gate it —
     and again on every subsequent restart, which is the reburst by construction.
 
-    NOR AN INFINITE RESTART LOOP: the minted ephemeral runner's JIT config is
-    single-use, so `Restart=no` is load-bearing — a service manager that respawns
-    it replays a consumed registration that can never succeed, forever. The
-    long-lived supervisor may restart, but its `RestartSec` must be non-zero:
-    systemd's default is 100 ms, which turns a crash-on-start into a tight loop
-    re-polling and re-minting as fast as the host allows.
+    NOR AN INFINITE RESTART LOOP: every unit a service manager may restart on
+    the pool's behalf must state a non-zero `RestartSec` when it restarts at
+    all. systemd's default is 100 ms, which turns a crash-on-start into a tight
+    loop re-polling and re-minting as fast as the host allows. The clause once
+    also held a host-side single-use JIT runner to `Restart=no`; that unit
+    retired with the gate tier, and the pool's single-use runners are ARC
+    EphemeralRunner pods, which ARC itself never restarts.
     """
     restorers = {path.name: path.read_text(encoding="utf-8") for path in _STATE_RESTORING_UNITS}
     gaps = _ordering_gaps(converge=_CONVERGE_UNIT.read_text(encoding="utf-8"), restorers=restorers)
@@ -456,17 +464,16 @@ def test_a_restarted_jit_supervisor_recovers_shared_state_without_a_reburst() ->
         f"bursting={bursting}"
     )
 
-    ephemeral = _EPHEMERAL_RUNNER_UNIT.read_text(encoding="utf-8")
-    supervisor = _SUPERVISOR_UNIT.read_text(encoding="utf-8")
-    unpaced = _restarts_without_pacing(
-        units={_EPHEMERAL_RUNNER_UNIT.name: ephemeral, _SUPERVISOR_UNIT.name: supervisor}
-    )
-    assert _directive(unit=ephemeral, key="Restart") == "no" and not unpaced, (
-        f"the ephemeral runner's JIT config is single-use, so restarting it replays a "
-        f"consumed registration that can never succeed — `Restart=no` is what keeps that "
-        f"from being an infinite loop. A supervisor that DOES restart must state a non-zero "
-        f"`RestartSec`; systemd's default is 100 ms, which re-polls and re-mints as fast as "
-        f"the host allows; unpaced={unpaced}"
+    units = {
+        str(path.relative_to(_REPO_ROOT)): path.read_text(encoding="utf-8")
+        for path in _RESTARTABLE_UNITS
+    }
+    restarting = [name for name, body in units.items() if _directive(unit=body, key="Restart")]
+    unpaced = _restarts_without_pacing(units=units)
+    assert restarting and not unpaced, (
+        f"a unit that restarts on the pool's behalf must state a non-zero `RestartSec`; "
+        f"systemd's default is 100 ms, which re-polls and re-mints as fast as the host "
+        f"allows; restarting={restarting} unpaced={unpaced}"
     )
 
     assert _ordering_gaps(converge=_CONTROL_UNIT, restorers={"control.service": _CONTROL_UNIT}) == [

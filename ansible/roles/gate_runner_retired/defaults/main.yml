@@ -1,0 +1,36 @@
+---
+# gate_runner_retired — what the RETIRED privileged gate-runner tier left on a
+# dev host, every path of which this role holds ABSENT.
+#
+# The tier (ci-runner/gate-runner/, retired by bd-ib-te4h under the
+# coordinator's RETIRE ruling, 2026-11-05) was installed by the hand-run
+# provision-gate-runner.sh, never by a role, so nothing else in this tree knows
+# these paths. The tree is recoverable at 65335aee (the opt-in-expiry commit the
+# ci-pool-provisioning-leftovers item livespec-dev-tooling-6fl7a4 names) and,
+# byte-for-byte as last shipped, at eb976d4e. Every name below is the one that
+# script installed.
+gate_runner_retired_units:
+  - gate-runner-supervisor.service
+  - gate-optin-expiry.timer
+  - gate-optin-expiry.service
+gate_runner_retired_files:
+  - /etc/systemd/system/gate-runner-supervisor.service
+  - /etc/systemd/system/gate-runner@.service
+  - /etc/systemd/system/gate-optin-expiry.service
+  - /etc/systemd/system/gate-optin-expiry.timer
+  - /etc/systemd/system/gate-runner-supervisor.service.d
+  - /etc/systemd/system/multi-user.target.wants/gate-runner-supervisor.service
+  - /etc/systemd/system/timers.target.wants/gate-optin-expiry.timer
+  # The opt-in marker, so a stale one cannot outlive the tier it gated.
+  - /run/livespec-local-ci-enabled
+  # The six supervisor and minting scripts. The directory held nothing else.
+  - /usr/local/lib/ci-runner
+  # The operator-owned runner tree (~780 MB). The resident gha_runner uses its
+  # own /home/ubuntu/gha-runner and is untouched.
+  - /home/ubuntu/gate-runner
+# The narrow polkit bridge that let ci-sup start gate-runner@ instances.
+gate_runner_retired_polkit_rule: /etc/polkit-1/rules.d/50-gate-runner-supervisor.rules
+# The supervisor's system identity. Only the tier used it. The
+# github-ci-runners GROUP it belonged to is KEPT: the operator and
+# with-github-ci-runners-env.sh still read the App key through it.
+gate_runner_retired_user: ci-sup

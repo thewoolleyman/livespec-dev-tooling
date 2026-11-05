@@ -1,0 +1,62 @@
+---
+# gate_runner_retired — remove the retired privileged gate-runner tier
+# (bd-ib-te4h) from a dev host, and keep it removed. See defaults/main.yml for
+# every path and why each one is here.
+#
+# Idempotent: a second apply finds nothing and changes nothing.
+
+- name: Read which retired gate-tier unit files are still installed
+  ansible.builtin.stat:
+    path: "/etc/systemd/system/{{ item }}"
+  loop: "{{ gate_runner_retired_units }}"
+  register: gate_runner_retired_unit_present
+  become: true
+
+- name: Stop and disable each retired gate-tier unit still installed
+  ansible.builtin.systemd_service:
+    name: "{{ item.item }}"
+    state: stopped
+    enabled: false
+  loop: "{{ gate_runner_retired_unit_present.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+  when: item.stat.exists
+  become: true
+
+- name: List any gate-runner@ instance still loaded
+  # A minted ephemeral runner is an instance of the template unit. It is never
+  # enabled, so it can only still exist while it is running.
+  ansible.builtin.command:
+    argv: [systemctl, list-units, --all, --plain, --no-legend, "gate-runner@*"]
+  register: gate_runner_retired_instances
+  changed_when: false
+  become: true
+
+- name: Stop each gate-runner@ instance still loaded
+  ansible.builtin.systemd_service:
+    name: "{{ item.split()[0] }}"
+    state: stopped
+  loop: "{{ gate_runner_retired_instances.stdout_lines }}"
+  become: true
+
+- name: Remove the retired gate tier's files, scripts and runner tree
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop: "{{ gate_runner_retired_files }}"
+  become: true
+  notify: Reload systemd after removing the retired gate-tier units
+
+- name: Remove the retired gate tier's polkit rule
+  ansible.builtin.file:
+    path: "{{ gate_runner_retired_polkit_rule }}"
+    state: absent
+  become: true
+  notify: Restart polkit after removing the retired gate tier's rule
+
+- name: Remove the retired supervisor identity
+  # The github-ci-runners group it belonged to is deliberately kept.
+  ansible.builtin.user:
+    name: "{{ gate_runner_retired_user }}"
+    state: absent
+  become: true

@@ -32,8 +32,9 @@
 #   GITHUB_APP_INSTALLATION_ID_CI_RUNNER -> arc-github-app-installation-id
 #   GITHUB_PRIVATE_KEY_CI_RUNNER (PEM)   -> arc-github-app-private-key
 #
-# (These var names are the exact ones ../../gate-runner/gate-runner-supervisor.sh
-# reads out of that same injected env — reused, not re-derived.)
+# (These var names are the exact ones the retired gate tier's
+# gate-runner-supervisor.sh read out of that same injected env, recoverable at
+# 65335aee — reused, not re-derived.)
 #
 # SECRET DISCIPLINE: no value is ever echoed, logged, or placed on argv. The
 # plaintext flows value -> `systemd-creds encrypt` via STDIN (the `-` input
