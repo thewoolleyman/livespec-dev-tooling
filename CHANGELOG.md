@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.179.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.179.0...v1.179.1) (2026-11-05)
+
+
+### Bug Fixes
+
+* derive the incident CI inventory from the target set, not whole-file digests (livespec-dev-tooling-6n6v35) ([695a1ef](https://github.com/thewoolleyman/livespec-dev-tooling/commit/695a1ef27d29b417f738f2332d9eddb128ccee7c))
+
 ## [1.179.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.178.0...v1.179.0) (2026-11-05)
 
 
