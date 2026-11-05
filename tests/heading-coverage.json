@@ -2313,9 +2313,7 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a stale installed commit-refuse hook names both bodies at the tail of the check output",
-    "test": "TODO",
-    "reason": "A real test at the integration tier or above is owed for this scenario: the check run as a subprocess in a real git repository whose pre-push hook differs from CANONICAL_HOOK_BODY from line 12, asserting the single non_canonical_body finding's path, installed_sha256, canonical_sha256 and first_differing_line, and the failure-mode digest rendered from that output naming the path with both digests. livespec-dev-tooling-oonqhx owns it.",
-    "work_item": "livespec-dev-tooling-oonqhx"
+    "test": "tests.livespec_dev_tooling.checks.test_primary_checkout_commit_refuse_hook_installed.test_stale_pre_push_hook_names_both_bodies_in_the_tail_digest"
   },
   {
     "spec_root": "SPECIFICATION",

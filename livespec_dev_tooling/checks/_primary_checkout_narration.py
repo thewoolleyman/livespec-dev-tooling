@@ -58,6 +58,10 @@ from _primary_checkout_worktree_pack import (  # noqa: E402  — sibling private
 from returns.io import IOFailure  # noqa: E402  — vendor-path-aware import.
 from returns.unsafe import unsafe_perform_io  # noqa: E402  — vendor-path-aware import.
 
+from livespec_dev_tooling.checks._primary_checkout_hook_files import (  # noqa: E402
+    HookInspection,
+)
+
 # ABSOLUTE where the arm imports are bare, so there is exactly ONE
 # `CheckInputUnreadable` class object however this module is reached.
 from livespec_dev_tooling.checks._primary_checkout_unreadable import (  # noqa: E402
@@ -157,7 +161,7 @@ def _emit_failures(
     log: structlog.stdlib.BoundLogger,
     hooks_dir: Path,
     repo_root: Path,
-    hook_failures: list[tuple[str, str]],
+    hook_failures: list[tuple[str, HookInspection]],
     vendored_copies: list[Path],
     pack_failures: list[tuple[str, str]],
 ) -> None:
@@ -167,17 +171,26 @@ def _emit_failures(
     no-vendored-copy, worktree-pack drift) narrates independently while
     keeping `main`'s cyclomatic complexity within the lint budget.
     """
-    for hook_name, failure_mode in hook_failures:
+    for hook_name, inspection in hook_failures:
+        is_body_mismatch = inspection.failure_mode == "body_mismatch"
+        evidence: dict[str, str | int] = {"path": "", "line": 0}
+        if is_body_mismatch:
+            evidence = {
+                "path": str(hooks_dir / hook_name),
+                "line": inspection.first_differing_line,
+                "installed_sha256": inspection.installed_sha256,
+                "canonical_sha256": inspection.canonical_sha256,
+                "first_differing_line": inspection.first_differing_line,
+            }
         log.error(
             "primary-checkout-commit-refuse-hook-installed: hook failure",
             check_id=_CHECK_ID,
             status="fail",
             hook=hook_name,
-            failure_mode=failure_mode,
+            failure_mode=inspection.failure_mode,
             hooks_dir=str(hooks_dir),
             hint=_HOOK_REMEDY,
-            path="",
-            line=0,
+            **evidence,
         )
     for copy_path in vendored_copies:
         log.error(
