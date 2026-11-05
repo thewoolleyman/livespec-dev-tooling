@@ -934,6 +934,13 @@ def _foreground_refusal_event(
     return cast("dict[str, object]", event)
 
 
+def _foreground_allows(*, command: str, cwd: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Assert the hook releases a foreground Bash `command`."""
+    monkeypatch.chdir(cwd)
+    payload = json.dumps({"tool_name": "Bash", "tool_input": {"command": command}})
+    assert _run_main(monkeypatch=monkeypatch, stdin_text=payload) == 0
+
+
 def test_a_dry_run_push_against_an_installed_pre_push_hook_is_refused(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -1341,6 +1348,105 @@ def test_the_background_refusal_names_the_same_one_call_detached_form(
     hint = str(event["hint"])
     assert _one_call_detached_form(command="<the same command>") in hint
     assert "then background" not in hint
+
+
+@pytest.mark.integration
+def test_a_foreground_full_suite_pytest_on_a_delegating_host_is_refused(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A credentialed delegated host routes foreground pytest through gate-start."""
+    repo = _make_hooked_repo(repo=tmp_path / "delegating", hooks=())
+    _ = (repo / "pyproject.toml").write_text(
+        "[tool.livespec_dev_tooling]\ndelegated_gate = true\n", encoding="utf-8"
+    )
+    credential = tmp_path / "gates.kubeconfig"
+    _ = credential.write_text("credential\n", encoding="utf-8")
+    monkeypatch.setenv("GATES_KUBECONFIG", str(credential))
+    command = "uv run --no-sync python -m pytest -n 8"
+
+    event = _foreground_refusal_event(
+        command=command, cwd=repo, monkeypatch=monkeypatch, capsys=capsys
+    )
+
+    assert event["check_id"] == "pretooluse-foreground-pytest-deny"
+    assert f"just gate-start -- {command}" in str(event["hint"])
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    "command",
+    [
+        pytest.param("python -m pytest", id="interpreter-module"),
+        pytest.param(
+            "uv run --no-sync python -m pytest --cov=livespec_dev_tooling",
+            id="uv-interpreter-module",
+        ),
+        pytest.param(
+            ".venv/bin/python -m pytest --numprocesses=8",
+            id="interpreter-path-module",
+        ),
+    ],
+)
+def test_all_python_module_full_suite_spellings_are_refused(
+    command: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Every supported Python-module spelling gets the same gate-start remedy."""
+    repo = _make_hooked_repo(repo=tmp_path / "delegating", hooks=())
+    _ = (repo / "pyproject.toml").write_text(
+        "[tool.livespec_dev_tooling]\ndelegated_gate = true\n", encoding="utf-8"
+    )
+    credential = tmp_path / "gates.kubeconfig"
+    _ = credential.write_text("credential\n", encoding="utf-8")
+    monkeypatch.setenv("GATES_KUBECONFIG", str(credential))
+
+    event = _foreground_refusal_event(
+        command=command, cwd=repo, monkeypatch=monkeypatch, capsys=capsys
+    )
+
+    assert event["check_id"] == "pretooluse-foreground-pytest-deny"
+    assert f"just gate-start -- {command}" in str(event["hint"])
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    ("command", "delegated", "credential"),
+    [
+        pytest.param(
+            "python -m pytest tests/test_feature.py",
+            True,
+            True,
+            id="targeted-pytest",
+        ),
+        pytest.param("pytest", True, False, id="ineligible-host"),
+        pytest.param("uv run pytest -n 8", False, True, id="undelegated-repository"),
+        pytest.param("uv run 'unterminated", True, True, id="unparseable-command"),
+    ],
+)
+def test_targeted_or_ineligible_foreground_pytest_is_not_refused(
+    *,
+    command: str,
+    delegated: bool,
+    credential: bool,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Targeted, sandbox, undelegated and malformed calls stay available."""
+    repo = _make_hooked_repo(repo=tmp_path / "consumer", hooks=())
+    _ = (repo / "pyproject.toml").write_text(
+        "[tool.livespec_dev_tooling]\n" f"delegated_gate = {str(delegated).lower()}\n",
+        encoding="utf-8",
+    )
+    kubeconfig = tmp_path / "gates.kubeconfig"
+    if credential:
+        _ = kubeconfig.write_text("credential\n", encoding="utf-8")
+    monkeypatch.setenv("GATES_KUBECONFIG", str(kubeconfig))
+
+    _foreground_allows(command=command, cwd=repo, monkeypatch=monkeypatch)
 
 
 def test_a_fault_in_the_foreground_decision_fails_open_and_reports_itself(
