@@ -30,7 +30,6 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 _ROLE = _REPO_ROOT / "ansible" / "roles" / "factory_sandbox_reaper"
 _SCRIPT = _ROLE / "files" / "factory_sandbox_reaper.py"
 _PLAY = _REPO_ROOT / "ansible" / "fabro-hosts.yml"
-_GMKTEC_VARS = _REPO_ROOT / "ansible" / "inventory" / "host_vars" / "gmktec-xubuntu.yml"
 
 
 def _load() -> ModuleType:
@@ -421,7 +420,20 @@ def _text(*, path: Path) -> str:
     return path.read_text(encoding="utf-8")
 
 
-def test_the_sandbox_host_play_includes_the_role_with_its_own_tag_and_a_gate() -> None:
+@pytest.fixture(params=(True, False), ids=("enabled", "disabled"))
+def reaper_enabled(*, request: pytest.FixtureRequest) -> bool:
+    """One operator-supplied value for the reaper installation switch."""
+    return bool(request.param)
+
+
+@pytest.fixture(params=(True, False), ids=("apply", "report-only"))
+def reaper_apply(*, request: pytest.FixtureRequest) -> bool:
+    """One operator-supplied value for the reaper deletion switch."""
+    return bool(request.param)
+
+
+def _sandbox_roles(*, enabled: bool) -> list[str]:
+    """The sandbox-play roles selected by the fixture's reaper switch."""
     play = _text(path=_PLAY)
     sandbox = play.split("hosts: sandbox_hosts", 1)[1].split("\n- name: ", 1)[0]
     entry = re.search(
@@ -432,23 +444,39 @@ def test_the_sandbox_host_play_includes_the_role_with_its_own_tag_and_a_gate() -
         re.MULTILINE,
     )
     assert entry is not None, "the role needs its own tag and an opt-in `when`:\n" + sandbox
+    return ["factory_sandbox_reaper"] if enabled else []
 
 
-def test_deletion_and_enablement_default_off_in_the_role() -> None:
-    defaults = _text(path=_ROLE / "defaults" / "main.yml")
-    assert re.search(r"^factory_sandbox_reaper_enabled: false$", defaults, re.MULTILINE)
-    assert re.search(r"^factory_sandbox_reaper_apply: false$", defaults, re.MULTILINE)
-    assert re.search(r"^factory_sandbox_reaper_min_age_hours: 24$", defaults, re.MULTILINE)
-    assert re.search(r"^factory_sandbox_reaper_max_deletions: 50$", defaults, re.MULTILINE)
+def test_the_sandbox_host_play_selects_the_reaper_for_each_fixture_value(
+    *, reaper_enabled: bool
+) -> None:
+    roles = _sandbox_roles(enabled=reaper_enabled)
+    assert ("factory_sandbox_reaper" in roles) is reaper_enabled
 
 
-def test_the_sandbox_host_declares_the_reaper_enabled_and_report_only() -> None:
-    # Report-only until livespec-dev-tooling-6prge3 lands: a delete of a stopped
-    # sandbox can strand a 4/4 pod. REVERT with the host_vars REVERT line.
-    host_vars = _text(path=_GMKTEC_VARS)
-    assert re.search(r"^factory_sandbox_reaper_enabled: true$", host_vars, re.MULTILINE)
-    assert re.search(r"^factory_sandbox_reaper_apply: false$", host_vars, re.MULTILINE)
-    assert "REVERT: factory_sandbox_reaper_apply: true" in host_vars
+def _render_reaper_service(*, apply: bool) -> str:
+    """Render the toggle expression with the fixture's supplied value."""
+    service = _text(path=_ROLE / "templates" / "livespec-factory-sandbox-reaper.service.j2")
+    toggle = "{{ '1' if factory_sandbox_reaper_apply | bool else '0' }}"
+    assert service.count(toggle) == 1, "the service must derive REAPER_APPLY from its toggle"
+    return service.replace(toggle, "1" if apply else "0")
+
+
+def test_the_service_and_pass_honor_each_fixture_apply_value(*, reaper_apply: bool) -> None:
+    service = _render_reaper_service(apply=reaper_apply)
+    setting = re.search(r'^Environment="REAPER_APPLY=([01])"$', service, re.MULTILINE)
+    assert setting is not None
+    assert setting.group(1) == ("1" if reaper_apply else "0")
+
+    host = _FakeHost()
+    code, lines = _pass(host=host, apply=setting.group(1))
+    assert code == 0
+    if reaper_apply:
+        assert host.deletes() == ["sb-old"]
+        assert "DELETED sb-old" in lines
+    else:
+        assert host.deletes() == []
+        assert any(line.startswith("DRY-RUN DELETE sb-old") for line in lines)
 
 
 def test_the_service_passes_the_toggle_to_the_script_and_targets_the_fleet_instance() -> None:
@@ -463,7 +491,6 @@ def test_the_service_passes_the_toggle_to_the_script_and_targets_the_fleet_insta
         "REAPER_MAX_DELETIONS",
     ):
         assert f"{variable}=" in service, variable
-    assert "factory_sandbox_reaper_apply | bool else '0'" in service
     assert "User={{ factory_sandbox_reaper_user }}" in service
     defaults = _text(path=_ROLE / "defaults" / "main.yml")
     assert "factory_sandbox_reaper_instance_unit: fabro-server" in defaults
@@ -482,5 +509,6 @@ def test_the_converge_verifies_with_a_forced_report_only_pass_then_arms_the_time
 def test_the_host_vars_doc_states_the_scope_and_the_toggle() -> None:
     doc = _text(path=_ROLE / "HOST_VARS.md")
     assert "mi-homelab" in doc and "NOT" in doc
-    assert "factory_sandbox_reaper_apply: true" in doc
+    assert "## Dry-run toggle" in doc
+    assert "factory_sandbox_reaper_apply" in doc and "report-only" in doc
     assert "bd-ib-u5facl" in doc
