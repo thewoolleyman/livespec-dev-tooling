@@ -58,6 +58,19 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.179.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.178.0...v1.179.0) (2026-11-05)
+
+
+### Features
+
+* **ansible:** pin reaper CLI profile ([1100412](https://github.com/thewoolleyman/livespec-dev-tooling/commit/11004127ebf9d384326ddbc2ad148a0112df4a29))
+
+
+### Bug Fixes
+
+* preserve declared gate bootstrap ([d05b8a7](https://github.com/thewoolleyman/livespec-dev-tooling/commit/d05b8a7c4f1039cadbc30dbccbb3626dd08a5ba6))
+* preserve gate suite fallback ([469218f](https://github.com/thewoolleyman/livespec-dev-tooling/commit/469218f571590a50a44096acb12a2745116e1245))
+
 ## [1.178.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.177.0...v1.178.0) (2026-11-05)
 
 
