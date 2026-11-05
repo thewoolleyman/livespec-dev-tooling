@@ -29,5 +29,5 @@ onepassword_desktop_unit_path: /etc/systemd/system/1password-desktop.service
 # out any duplicate .list. The role defers to it rather than competing with it.
 onepassword_desktop_vendor_sources: /etc/apt/sources.list.d/1password.sources
 onepassword_desktop_applications_dir: /usr/local/share/applications
-onepassword_desktop_autostart_dir: /home/ubuntu/.config/autostart
-onepassword_desktop_autostart_file: /home/ubuntu/.config/autostart/1password.desktop
+onepassword_desktop_autostart_dir: "{{ onepassword_desktop_home }}/.config/autostart"
+onepassword_desktop_autostart_file: "{{ onepassword_desktop_autostart_dir }}/1password.desktop"

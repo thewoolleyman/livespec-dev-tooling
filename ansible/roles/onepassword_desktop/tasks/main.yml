@@ -146,8 +146,8 @@
   # that one unit and nothing else. `validate` runs visudo BEFORE the file is
   # moved into place, so a malformed drop-in can never reach /etc/sudoers.d and
   # lock the account out of sudo — the shell ran visudo after installing it.
-  ansible.builtin.copy:
-    src: sudoers.d-1password-desktop
+  ansible.builtin.template:
+    src: sudoers.d-1password-desktop.j2
     dest: /etc/sudoers.d/1password-desktop
     owner: root
     group: root
@@ -168,8 +168,8 @@
   register: onepassword_desktop_unit_stat
 
 - name: Install the 1password-desktop unit
-  ansible.builtin.copy:
-    src: 1password-desktop.service
+  ansible.builtin.template:
+    src: 1password-desktop.service.j2
     dest: "{{ onepassword_desktop_unit_path }}"
     owner: root
     group: root
