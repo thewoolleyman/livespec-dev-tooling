@@ -114,28 +114,47 @@ for node in $nodes; do
   pending="$pending $node=$name=$route"
 done
 
+# Every pending node's login URL and route are shown on each poll, so the
+# maintainer can approve them all in one pass rather than node by node.
+shown=""
 waited=0
-for entry in $pending; do
-  node="${entry%%=*}"
-  rest="${entry#*=}"
-  name="${rest%%=*}"
-  route="${rest#*=}"
-  shown_url=""
-  shown_route=""
-  until [ "$(field "$node" BackendState)" = "Running" ] && route_approved "$node" "$route"; do
+while [ -n "$pending" ]; do
+  remaining=""
+  for entry in $pending; do
+    node="${entry%%=*}"
+    rest="${entry#*=}"
+    name="${rest%%=*}"
+    route="${rest#*=}"
+    state="$(field "$node" BackendState)"
+    if [ "$state" = "Running" ] && route_approved "$node" "$route"; then
+      say "$node is on the tailnet as $name with $route approved"
+      continue
+    fi
+    remaining="$remaining $entry"
     url="$(field "$node" AuthURL)"
-    if [ -n "$url" ] && [ "$url" != "$shown_url" ]; then
-      say "approve the tailnet login of $name: $url"
-      shown_url="$url"
+    if [ -n "$url" ]; then
+      case "$shown" in
+        *" $url "*) ;;
+        *)
+          say "approve the tailnet login of $name: $url"
+          shown="$shown $url "
+          ;;
+      esac
     fi
-    if [ "$(field "$node" BackendState)" = "Running" ] && [ -z "$shown_route" ]; then
-      say "approve route $route for device $name in the Tailscale admin console"
-      shown_route="shown"
+    if [ "$state" = "Running" ]; then
+      case "$shown" in
+        *" route:$route "*) ;;
+        *)
+          say "approve route $route for device $name in the Tailscale admin console"
+          shown="$shown route:$route "
+          ;;
+      esac
     fi
-    [ "$waited" -lt "$login_timeout" ] ||
-      die "$name is not on the tailnet with $route approved after ${login_timeout}s; approve it and run '$prog up' again"
-    sleep "$poll"
-    waited=$((waited + poll))
   done
-  say "$node is on the tailnet as $name with $route approved"
+  pending="$remaining"
+  [ -n "$pending" ] || break
+  [ "$waited" -lt "$login_timeout" ] ||
+    die "not every fixture node is on the tailnet with its route approved after ${login_timeout}s ($pending); approve them and run '$prog up' again"
+  sleep "$poll"
+  waited=$((waited + poll))
 done

@@ -170,7 +170,7 @@ def test_a_pending_login_and_route_are_printed_and_waited_for(vm: _Vm) -> None:
         "approve the tailnet login of hw-fixture-server-0: https://login.tailscale.com/a/fx1"
         in result.stdout
     )
-    assert "approve it and run 'underlay-fixture up' again" in result.stderr
+    assert "approve them and run 'underlay-fixture up' again" in result.stderr
 
 
 def test_a_logged_in_node_waiting_on_its_route_names_the_route_to_approve(vm: _Vm) -> None:
@@ -220,3 +220,15 @@ def test_it_refuses_outside_a_worker_vm_or_without_the_fixture(
     assert result.returncode != 0
     assert message in result.stderr
     assert _docker(vm=vm, verb="exec") == []
+
+
+def test_every_pending_login_url_is_shown_in_the_same_pass(vm: _Vm) -> None:
+    for node, code in ((_SERVER, "srv"), (_AGENT, "agt")):
+        (vm.state / f"{node}.after-up").write_text(
+            _status(state="NeedsLogin", url=f"https://login.tailscale.com/a/{code}"),
+            encoding="utf-8",
+        )
+    result = _run(vm=vm, action="up")
+    assert result.returncode != 0
+    assert "hw-fixture-server-0: https://login.tailscale.com/a/srv" in result.stdout
+    assert "hw-fixture-agent-0: https://login.tailscale.com/a/agt" in result.stdout
