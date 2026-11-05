@@ -66,7 +66,26 @@ mask `tmp/`. If a replay's pass reports "merging run id unavailable" while the
 journal plainly holds the item's dispatch rows, re-run `reconcile-merged` from
 a normal shell.
 
+The brief must ALSO say that the no-write rule covers the replayer's OWN
+outputs only, and that the writes `post-host-record` makes under the
+checkout's `tmp/` are expected. Without that sentence a careful replayer reads
+"never write inside the checkout" as forbidding the publish itself. Measured
+2026-11-05 on bd-ib-vnmph2: the codex replayer reproduced both assertions,
+then stopped without publishing, reporting that `post-host-record` would
+write under `tmp/`. Resuming the SAME codex session (`codex exec resume
+<session-id> "<clarification>"`, with the same `env -u ...` prefix) kept its
+identity, and it then published `host_verified`. A fresh session would also
+have a separate identity, but it would publish measurements it did not take.
+
+The replayer can also exit while the acceptance pass its post started is
+still running, and that pass dies with it. Read the item's status. If the item
+has not moved, re-run `reconcile-merged` from a normal shell.
+
 ## How to launch one
+
+Point the replayer at a workflow run other than the one the capture measured,
+where one exists, so the replay re-measures and does not re-read the same
+data.
 
 Strip the inherited variables so that the replayer resolves its own identity:
 
