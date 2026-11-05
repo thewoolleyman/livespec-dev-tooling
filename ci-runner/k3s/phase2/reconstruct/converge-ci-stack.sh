@@ -592,13 +592,18 @@ log "7. Install/upgrade all ${#SCALE_SETS[@]} runner scale sets from phase-2 val
 # first helm call rather than once per release.
 [ -f "${ARC_SCALE_SET_CHART}" ] \
   || { echo "FATAL: ${ARC_SCALE_SET_CHART} is missing; re-run the ci_converge_unit Ansible role to pull the pinned ARC charts into the artifact tree" >&2; exit 1; }
-# 7a. Publish the hook-template revision BEFORE any scale set names it: each
+# 7a. Publish the PyPI wrapper ConfigMap BEFORE the hook template that mounts
+# it: every workflow pod consumes this exact shared definition from
+# arc-runners, while warm-cache applies it into ci-warm-cache below.
+log "7a. Publish the shared PyPI uv wrapper ConfigMap for workflow pods"
+kubectl -n "$RUNNERS_NAMESPACE" apply -f "${WARM_CACHE_DIR}/pypi-proxy/pypi-proxy-uv-wrapper.yaml"
+# 7b. Publish the hook-template revision BEFORE any scale set names it: each
 # values file mounts the placeholder arc-hook-pod-template-@HOOK_REVISION@,
 # rendered below to the immutable, content-addressed revision published here,
 # so a runner pod can never be created against a revision that does not exist
 # (livespec-dev-tooling-4oeffe). The older revisions are pruned at step 8,
 # AFTER every scale set has moved off them.
-log "7a. Publish the hook-template ConfigMap revision the scale sets will mount"
+log "7b. Publish the hook-template ConfigMap revision the scale sets will mount"
 "${ARC_DIR}/converge-hook-pod-template.sh" --publish
 hook_revision="$("${ARC_DIR}/converge-hook-pod-template.sh" --name)"
 rendered_values_dir="$(mktemp -d)"
