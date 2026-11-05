@@ -16,8 +16,9 @@ So the two properties asserted here are properties of the committed
 `.livespec.jsonc` text, read the way the Dispatcher reads it:
 
 - **Registry-backed entries, each named for the instance it addresses.** The
-  table declares exactly `petri`, which declares
-  `"registry": true` and carries NO `server`. `"registry": true` with an address beside it is the shape
+  table declares exactly `petri` and `candidate` (gmktec's fabro-server-candidate,
+  reached only by an explicit per-dispatch `--factory candidate`), each of which
+  declares `"registry": true` and carries NO `server`. `"registry": true` with an address beside it is the shape
   that fails silently in the direction of the defect: the Dispatcher has an
   address to use, so routing works, the registry is never read, and the machine
   stays bound in this file. Asserting the ABSENCE of `server` is therefore
@@ -52,7 +53,7 @@ _IMPL_PLUGIN = "livespec-orchestrator-beads-fabro"
 
 # The factory names this repository declares, each resolved by name from the
 # control node's rendered registry rather than from an address committed here.
-_REGISTRY_FACTORIES = ["petri"]
+_REGISTRY_FACTORIES = ["candidate", "petri"]
 
 # The factory a dispatch naming none takes.
 _DEFAULT_FACTORY = "petri"
@@ -68,7 +69,7 @@ def _dispatcher_block() -> dict[str, object]:
 
 
 def test_every_committed_factory_entry_is_registry_backed_with_no_address() -> None:
-    """`dispatcher.factories` is exactly `petri`, registry-backed, with no address."""
+    """`dispatcher.factories` is exactly `candidate` and `petri`, registry-backed, addressless."""
     factories = cast("dict[str, dict[str, object]]", _dispatcher_block()["factories"])
     assert sorted(factories) == _REGISTRY_FACTORIES, (
         f"`dispatcher.factories` MUST declare exactly {_REGISTRY_FACTORIES}; "
