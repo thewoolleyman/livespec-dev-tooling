@@ -58,6 +58,21 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.176.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.175.0...v1.176.0) (2026-11-05)
+
+
+### Features
+
+* **homelab-worker:** converge the worker container inside the VM ([abdd49b](https://github.com/thewoolleyman/livespec-dev-tooling/commit/abdd49b1fe771d0e8e9518a3b729679c9912d27c))
+* **homelab-worker:** start task converges the worker container after the probe ([95b7afc](https://github.com/thewoolleyman/livespec-dev-tooling/commit/95b7afc135d6f8d100043a998bb06c5260c57194))
+* **homelab-worker:** worker-class flannel, kube-proxy and kube-router DaemonSets ([5ad5797](https://github.com/thewoolleyman/livespec-dev-tooling/commit/5ad57972961c8ec3dc33595dc6cd572c57268476))
+
+
+### Bug Fixes
+
+* **homelab-worker:** flannel's subnet-manager flag is --kube-subnet-mgr ([a909c23](https://github.com/thewoolleyman/livespec-dev-tooling/commit/a909c23a7b083b4a1f9aaab6c92ac812e46f9e09))
+* the suite-green leg counts visible CPUs on macOS too ([5f75795](https://github.com/thewoolleyman/livespec-dev-tooling/commit/5f757955d836a79e10cb842f41719f83f5be337d))
+
 ## [1.175.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.174.0...v1.175.0) (2026-11-05)
 
 
