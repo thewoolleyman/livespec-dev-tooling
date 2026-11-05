@@ -279,11 +279,17 @@ def run_gate(
 ) -> Result[GateRunOutcome, GateStepFailed]:
     """Gate the current HEAD tree on the cluster and report what happened.
 
-    The ref is deleted by the `finally` below on EVERY path out of the gated
-    section, including an exception no `Result` models. A delete that itself
-    fails is reported rather than swallowed — an orphan ref the run knows about
-    is worth more than a clean-looking return — but a failure from the gate
-    itself wins, because it is the one the operator has to act on first.
+    A ref is collected only when no Job was submitted or when the submitted Job
+    reported a terminal condition. A failed or unreadable poll says neither
+    that the Job finished nor that its pod fetched the ref, so collection would
+    turn a transient API failure into a later fetch-tree failure. The mirror's
+    sweep collects that deliberately retained input if the client never learns
+    the Job's outcome.
+
+    A delete that itself fails is reported rather than swallowed — an orphan ref
+    the run knows about is worth more than a clean-looking return — but a failure
+    from the gate itself wins, because it is the one the operator has to act on
+    first.
     """
     tree_hash = request.tree_hash
     if not tree_hash:
@@ -310,16 +316,15 @@ def run_gate(
     # the mirror, and no tree for a gate Job to fetch.
     if isinstance(pushed, Failure):
         return Failure(pushed.failure())
-    try:
-        gated = _gate_a_pushed_tree(
-            request=request, runner=runner, sleeper=sleeper, tree_hash=tree_hash
-        )
-    finally:
+    gated, may_collect = _gate_a_pushed_tree(
+        request=request, runner=runner, sleeper=sleeper, tree_hash=tree_hash
+    )
+    if may_collect:
         deleted = _delete_gate_ref(request=request, runner=runner)
-    if isinstance(gated, Failure):
-        return gated
-    if isinstance(deleted, Failure):
-        return Failure(deleted.failure())
+        if isinstance(gated, Failure):
+            return gated
+        if isinstance(deleted, Failure):
+            return Failure(deleted.failure())
     return gated
 
 
@@ -410,8 +415,8 @@ def _gate_a_pushed_tree(
     runner: GateCommandRunner,
     sleeper: Sleeper,
     tree_hash: str,
-) -> Result[GateRunOutcome, GateStepFailed]:
-    """Submit, wait, stream — the section that owns the pushed ref.
+) -> tuple[Result[GateRunOutcome, GateStepFailed], bool]:
+    """Submit, wait, stream and say whether a ref collection is now safe.
 
     `create` rather than `apply`: `apply` would silently ADOPT an existing
     object, making a re-run a second attempt on the first run's Job. The
@@ -447,10 +452,12 @@ def _gate_a_pushed_tree(
         outcome=runner(argv=submit_argv, cwd=request.repo_root, stdin=request.manifest),
     )
     if isinstance(submitted, Failure):
-        return Failure(submitted.failure())
+        # The create request was refused, so no Job can later fetch this ref.
+        return Failure(submitted.failure()), True
     named = created_job_name(argv=submit_argv, payload=submitted.unwrap().stdout, step=_SUBMIT_STEP)
     if isinstance(named, Failure):
-        return Failure(named.failure())
+        # A malformed create response may still name a Job the server accepted.
+        return Failure(named.failure()), False
     job_name = named.unwrap()
     reported_tree = created_job_tree_hash(payload=submitted.unwrap().stdout)
     # ONLY when a token was actually minted, which is the state of a push whose
@@ -467,12 +474,12 @@ def _gate_a_pushed_tree(
             job_payload=submitted.unwrap().stdout,
         )
         if isinstance(delivered, Failure):
-            return Failure(delivered.failure())
+            return Failure(delivered.failure()), False
     terminal = _await_terminal_state(
         request=request, runner=runner, sleeper=sleeper, job_name=job_name
     )
     if isinstance(terminal, Failure):
-        return Failure(terminal.failure())
+        return Failure(terminal.failure()), False
     ended = terminal.unwrap()
     # Read only when there is a failure to explain. That is a decision about
     # whether to spend an API call, NOT an adjudication: the message is carried
@@ -497,18 +504,21 @@ def _gate_a_pushed_tree(
         argv=logs_argv,
         outcome=runner(argv=logs_argv, cwd=request.repo_root, stream=not request.capture_output),
     )
-    return streamed.map(
-        lambda ran: GateRunOutcome(
-            tree_hash=tree_hash,
-            reported_tree_hash=reported_tree,
-            job_name=job_name,
-            terminal_state=ended.condition,
-            logs_returncode=ran.returncode,
-            failure_message=message,
-            started_at=reported_time(status=ended.status, key=_START_TIME),
-            finished_at=reported_time(status=ended.status, key=_COMPLETION_TIME),
-            output_checksum=_shown_output_checksum(request=request, output=ran.stdout),
-        )
+    return (
+        streamed.map(
+            lambda ran: GateRunOutcome(
+                tree_hash=tree_hash,
+                reported_tree_hash=reported_tree,
+                job_name=job_name,
+                terminal_state=ended.condition,
+                logs_returncode=ran.returncode,
+                failure_message=message,
+                started_at=reported_time(status=ended.status, key=_START_TIME),
+                finished_at=reported_time(status=ended.status, key=_COMPLETION_TIME),
+                output_checksum=_shown_output_checksum(request=request, output=ran.stdout),
+            )
+        ),
+        True,
     )
 
 
@@ -561,10 +571,11 @@ def _await_terminal_state(
 ) -> Result[Terminal, GateStepFailed]:
     """Poll the Job until it reports a terminal condition, or give up.
 
-    A read that could not be MADE is not a gate that has not finished YET, so a
-    refused `get` ends the wait rather than being polled through: continuing
-    would spend the whole budget re-asking a question the cluster has already
-    declined to answer.
+    A refused read is not evidence that the Job stopped. Kubernetes credentials,
+    API availability and the Job's state are independent, so a transient `get`
+    refusal is retried within the existing poll budget. If every read is
+    refused, the final refusal remains the plumbing failure the caller reports;
+    it never authorizes collection of the Job's mirror refs.
 
     What comes back is the whole terminal STATUS rather than its condition type,
     because the reply that says a Job finished is also the reply that says when
@@ -573,18 +584,26 @@ def _await_terminal_state(
     a later `get` can legitimately find nothing.
     """
     argv = [*_kubectl(request=request), "get", "job", job_name, "--output", "json"]
-    for _ in range(_poll_budget(request=request)):
+    last_refusal: GateStepFailed | None = None
+    polls = _poll_budget(request=request)
+    for poll in range(polls):
         lifted = require_success(
             step=_AWAIT_STEP, argv=argv, outcome=runner(argv=argv, cwd=request.repo_root)
         )
         if isinstance(lifted, Failure):
-            return Failure(lifted.failure())
+            last_refusal = lifted.failure()
+            if poll + 1 < polls:
+                sleeper(seconds=request.poll_interval_seconds)
+            continue
         condition = terminal_condition(argv=argv, payload=lifted.unwrap().stdout, step=_AWAIT_STEP)
         if isinstance(condition, Failure):
             return Failure(condition.failure())
         ended = condition.unwrap()
         if ended is not None:
             return Success(ended)
-        sleeper(seconds=request.poll_interval_seconds)
+        if poll + 1 < polls:
+            sleeper(seconds=request.poll_interval_seconds)
+    if last_refusal is not None:
+        return Failure(last_refusal)
     gave_up = f"{job_name} reached no terminal condition within {request.poll_timeout_seconds:g}s"
     return Failure(unreadable(step=_AWAIT_STEP, argv=argv, detail=gave_up))

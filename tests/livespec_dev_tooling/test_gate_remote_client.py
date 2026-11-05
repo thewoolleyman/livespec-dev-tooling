@@ -10,10 +10,9 @@ SILENT.
 
 The first is the ref cleanup. One gated push creates one ref, and nothing in the
 protocol removes it; the mirror's hourly sweep is the SECOND collector precisely
-because a client that dies between the push and the verdict leaves its ref
-behind. So the deletion is asserted on the success path, on a step that failed,
-on a step that RAISED, and on the wait giving up — an orphan ref raises no error
-anywhere and is visible only as unbounded growth weeks later.
+because a client that cannot establish the Job's terminal state leaves its ref
+behind. Collection is safe only after the Job has reported that terminal state:
+an early delete makes a queued Job fail to fetch its input.
 
 The second is that a gate reached FROM a repository's `pre-push` hook — the only
 way it is ever reached — must not start another one. git runs that hook for every
@@ -142,6 +141,7 @@ class _StubCluster:
         fails: Iterable[str] = (),
         never_runs: Iterable[str] = (),
         raises: str | None = None,
+        refused_gets: int = 0,
         job_status_payload: str | None = None,
         created_payload: str | None = None,
         log_output: str = "",
@@ -153,6 +153,7 @@ class _StubCluster:
         self._fails = frozenset(fails)
         self._never_runs = frozenset(never_runs)
         self._raises = raises
+        self._refused_gets = refused_gets
         self._job_status_payload = job_status_payload
         self._created_payload = created_payload
 
@@ -169,6 +170,9 @@ class _StubCluster:
         self.calls.append(_Invocation(kind=kind, argv=tuple(argv), stdin=stdin, stream=stream))
         if kind == self._raises:
             raise RuntimeError("the host went away mid-run")
+        if kind == "get-job" and self._refused_gets:
+            self._refused_gets -= 1
+            return Success(GateCommandResult(returncode=1, stdout="", stderr="get-job refused\n"))
         if kind in self._never_runs:
             return Failure(GateCommandNotRun(argv=tuple(argv), detail=f"{argv[0]} not on PATH"))
         if kind in self._fails:
@@ -491,10 +495,9 @@ def test_a_submit_that_names_no_job_fails_the_run_rather_than_guessing(*, payloa
     assert isinstance(outcome, Failure)
     assert outcome.failure().step == "submit-gate-job"
     assert "get-job" not in cluster.kinds
-    # The refs are still collected: the `finally` runs on this path as on every
-    # other, and a run that cannot find its own Job is exactly the run nobody
-    # else is left to clean up after.
-    assert cluster.kinds.count("delete-ref") == 1
+    # The server may have created the Job despite a malformed reply. Without a
+    # terminal observation, deleting its input would make that Job fail later.
+    assert "delete-ref" not in cluster.kinds
 
 
 def test_every_cluster_command_runs_through_the_credential_wrapper() -> None:
@@ -540,6 +543,32 @@ def test_the_terminal_state_is_awaited_before_the_logs_are_streamed() -> None:
     ]
     assert cluster.naps == [_REQUEST.poll_interval_seconds, _REQUEST.poll_interval_seconds]
     assert outcome.unwrap().terminal_state == "Complete"
+
+
+def test_a_refused_job_read_is_retried_before_its_refs_are_collected() -> None:
+    """A transient API refusal must not abandon the still-queued Job it created.
+
+    The first get is refused, but the second reports completion inside the
+    request's poll budget. The ref delete follows that terminal observation,
+    rather than the refused read: otherwise the Job can later be admitted and
+    fail its fetch-tree init container because its input disappeared.
+    """
+    cluster = _StubCluster(refused_gets=1)
+    request = dataclasses.replace(_REQUEST, poll_timeout_seconds=20.0)
+
+    outcome = run_gate(request=request, runner=cluster, sleeper=cluster.sleep)
+
+    assert is_successful(outcome)
+    assert cluster.kinds == [
+        "read-tree",
+        "push-ref",
+        "submit-job",
+        "get-job",
+        "get-job",
+        "stream-logs",
+        "delete-ref",
+    ]
+    assert cluster.naps == [request.poll_interval_seconds]
 
 
 def test_the_logs_are_streamed_rather_than_captured() -> None:
@@ -677,16 +706,16 @@ def test_the_gate_ref_is_deleted_when_a_step_fails() -> None:
     assert "delete-ref" in cluster.kinds
 
 
-def test_the_gate_ref_is_deleted_when_a_step_raises() -> None:
-    """The path no `Result` covers: a bug, or a host that vanished mid-run."""
+def test_the_gate_ref_is_retained_when_a_get_raises() -> None:
+    """A Job may still run when its terminal state could not be read."""
     cluster = _StubCluster(raises="get-job")
     with pytest.raises(RuntimeError):
         _ = run_gate(request=_REQUEST, runner=cluster, sleeper=cluster.sleep)
-    assert cluster.kinds[-1] == "delete-ref"
+    assert "delete-ref" not in cluster.kinds
 
 
-def test_a_gate_that_never_reaches_a_terminal_state_fails_rather_than_polling_forever() -> None:
-    """Giving up is a plumbing failure, and it still owns its ref."""
+def test_a_gate_that_never_reaches_a_terminal_state_retains_its_ref() -> None:
+    """Giving up is a plumbing failure, not evidence that the Job stopped."""
     cluster = _StubCluster(job_states=("Suspended",))
     request = dataclasses.replace(_REQUEST, poll_timeout_seconds=30.0)
     outcome = run_gate(request=request, runner=cluster, sleeper=cluster.sleep)
@@ -694,16 +723,19 @@ def test_a_gate_that_never_reaches_a_terminal_state_fails_rather_than_polling_fo
     assert outcome.failure().step == "await-gate-terminal"
     assert outcome.failure().returncode is None
     assert cluster.kinds.count("get-job") == 3
-    assert cluster.kinds[-1] == "delete-ref"
+    assert "delete-ref" not in cluster.kinds
 
 
-def test_a_job_the_cluster_will_not_report_on_fails_the_wait() -> None:
-    """A read that cannot be made is not a gate that has not finished yet."""
+def test_a_job_the_cluster_will_not_report_on_is_retried_then_retains_its_ref() -> None:
+    """A read refusal is retried, but never authorizes deleting a live Job's ref."""
     cluster = _StubCluster(fails=("get-job",))
-    outcome = run_gate(request=_REQUEST, runner=cluster, sleeper=cluster.sleep)
+    request = dataclasses.replace(_REQUEST, poll_timeout_seconds=20.0)
+    outcome = run_gate(request=request, runner=cluster, sleeper=cluster.sleep)
     assert isinstance(outcome, Failure)
     assert outcome.failure().step == "await-gate-terminal"
     assert outcome.failure().detail == "get-job refused\n"
+    assert cluster.kinds.count("get-job") == 2
+    assert "delete-ref" not in cluster.kinds
 
 
 def test_an_unreadable_job_status_fails_the_wait_rather_than_being_guessed() -> None:
@@ -713,6 +745,7 @@ def test_an_unreadable_job_status_fails_the_wait_rather_than_being_guessed() -> 
     assert isinstance(outcome, Failure)
     assert outcome.failure().step == "await-gate-terminal"
     assert "unreadable job status" in outcome.failure().detail
+    assert "delete-ref" not in cluster.kinds
 
 
 def test_the_run_fails_when_its_own_ref_cannot_be_deleted() -> None:
