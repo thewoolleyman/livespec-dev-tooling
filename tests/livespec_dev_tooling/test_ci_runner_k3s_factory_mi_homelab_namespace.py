@@ -29,10 +29,12 @@ _BOOT_CONVERGE = _PHASE2 / "reconstruct" / "converge-ci-stack.sh"
 _ROLE_DEFAULTS = _REPO_ROOT / "ansible" / "roles" / "ci_converge_unit" / "defaults" / "main.yml"
 _NAMESPACE = "factory-mi-homelab"
 _CLUSTER_SCOPED = {"Namespace", "ClusterRoleBinding"}
-# The pool check in factory/DERIVATION.md "One sandbox of termination headroom":
-# CI's cpu-requesting queues 17 + factory 76 = 93 of ~104 schedulable cpu. The
-# fleet and homelab quotas together must stay at 76.
-_FACTORY_CPU_TOTAL = 76
+# The requested-cpu total factory/DERIVATION.md last derived: "Twenty runs, the
+# extra four on poweredge" (R493, 2026-11-04) raised the fleet's requests.cpu
+# from 68 to 84, so fleet 84 + homelab 8 = 92. "Request 3, limit 6" (bd-ib-zl3qcz,
+# 2026-11-05) keeps requests.cpu at 84 and raises only limits.cpu. Raising
+# either quota's requests.cpu is a re-derivation, recorded there first.
+_FACTORY_CPU_TOTAL = 92
 _HOMELAB_RUNS = 2
 _RUN_CPU = 4
 
@@ -103,8 +105,8 @@ def test_the_quota_is_a_split_of_the_fleet_total_not_an_addition() -> None:
         f"instance's max_concurrent_runs; found {homelab}"
     )
     assert fleet + homelab == _FACTORY_CPU_TOTAL, (
-        f"fleet {fleet} + homelab {homelab} cpu must stay {_FACTORY_CPU_TOTAL}: the pool check "
-        "(CI cpu 17 + factory 76 = 93 of ~104) was derived for that total"
+        f"fleet {fleet} + homelab {homelab} requested cpu must stay {_FACTORY_CPU_TOTAL}: "
+        "factory/DERIVATION.md derived the pool's requested cpu for that total"
     )
 
 
