@@ -42,7 +42,7 @@ from _red_green_replay_pre_commit import (  # noqa: E402
     staged_tree_hash,
 )
 from _red_green_replay_protocol import RED_GREEN_REPLAY_PROTOCOL  # noqa: E402
-from _red_green_replay_suite_argv import lane_worker_count  # noqa: E402
+from _red_green_replay_suite_argv import lane_worker_count, visible_cpu_count  # noqa: E402
 from _red_green_replay_suite_runner import (  # noqa: E402
     CEILING_ENV,
     DEFAULT_STALL_SECONDS,
@@ -190,7 +190,9 @@ def _suite_argv(*, test_paths: list[str] | None, log: structlog.stdlib.BoundLogg
         environ=os.environ,
         test_paths=test_paths,
         xdist_available=xdist_available,
-        visible_cpus=len(os.sched_getaffinity(0)),
+        visible_cpus=visible_cpu_count(
+            affinity=getattr(os, "sched_getaffinity", None), cpu_count=os.cpu_count()
+        ),
     )
 
 
