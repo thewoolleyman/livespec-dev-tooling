@@ -58,6 +58,20 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.175.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.174.0...v1.175.0) (2026-11-05)
+
+
+### Features
+
+* **homelab-worker:** check-then-approve for a worker's kubelet serving CSR ([2543d51](https://github.com/thewoolleyman/livespec-dev-tooling/commit/2543d5111ba9fdf6ca6d2fbf7b808e58a306a811))
+* **homelab-worker:** enrollment RBAC and a short-lived bootstrap-token mint ([e079285](https://github.com/thewoolleyman/livespec-dev-tooling/commit/e0792850e4b317cbc2c3ff8d011cbb0876e23ae3))
+* **incident:** retain authenticated CI job attachment and historical outcomes (livespec-dev-tooling-si6uu7) ([9544a07](https://github.com/thewoolleyman/livespec-dev-tooling/commit/9544a07c7c5943ed3cf44a3ab50365f81d1f313c))
+
+
+### Bug Fixes
+
+* **homelab-worker:** enroll the worker on the tailnet untagged, with no auth key ([7b8f479](https://github.com/thewoolleyman/livespec-dev-tooling/commit/7b8f479168ff029961fb74eba669c2c0ea9c9c49))
+
 ## [1.174.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.173.0...v1.174.0) (2026-11-05)
 
 
