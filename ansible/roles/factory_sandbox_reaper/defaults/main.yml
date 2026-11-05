@@ -29,6 +29,13 @@ factory_sandbox_reaper_fabro_bin: >-
   {{ factory_sandbox_reaper_instance.binary_path | default(fabro_server_host_home ~ '/.fabro/bin/fabro') }}
 factory_sandbox_reaper_lithos_bin: "{{ sandbox_driver_kubernetes_bin_dir }}/lithos-sandbox"
 factory_sandbox_reaper_provider: kubernetes
+# The reaper must use the fleet instance's provider pin, not the account-wide
+# CLI profile. The latter stays on the shared v0.5.0 binary for the candidate
+# and mi-homelab instances. Its private CLI profile therefore follows the
+# fleet instance's versioned path and digest together.
+factory_sandbox_reaper_provider_path: "{{ factory_sandbox_reaper_instance.sandbox_providers[factory_sandbox_reaper_provider].path }}"
+factory_sandbox_reaper_provider_sha256: "{{ factory_sandbox_reaper_instance.sandbox_providers[factory_sandbox_reaper_provider].sha256 }}"
+factory_sandbox_reaper_lithos_config: /etc/livespec-factory-sandbox-reaper/lithos-sandbox.toml
 
 # Retention. Age-only, because no ledger is reachable from the sandbox host.
 factory_sandbox_reaper_min_age_hours: 24

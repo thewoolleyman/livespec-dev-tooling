@@ -17,13 +17,17 @@
       - factory_sandbox_reaper_fabro_server | string | length > 0
       - factory_sandbox_reaper_lithos_bin | string | length > 0
       - factory_sandbox_reaper_provider | string | length > 0
+      - factory_sandbox_reaper_provider_path | string | length > 0
+      - factory_sandbox_reaper_provider_sha256 is match('^[0-9a-f]{64}$')
+      - factory_sandbox_reaper_lithos_config | string | length > 0
       - factory_sandbox_reaper_user | string | length > 0
       - factory_sandbox_reaper_min_age_hours | int > 0
       - factory_sandbox_reaper_max_deletions | int > 0
       - factory_sandbox_reaper_apply is boolean
     fail_msg: >-
-      Every field of the factory sandbox reaper must carry a value, the age and
-      cap must be positive, and factory_sandbox_reaper_apply must be a boolean.
+      Every field of the factory sandbox reaper must carry a value, its provider
+      digest must be a 64-hex string, the age and cap must be positive, and
+      factory_sandbox_reaper_apply must be a boolean.
     success_msg: every field of the factory sandbox reaper carries a value
 
 - name: Install the factory sandbox reaper
@@ -36,6 +40,26 @@
     group: root
     mode: "0755"
     validate: python3 -c "import ast,sys; ast.parse(open(sys.argv[1]).read())" %s
+  become: true
+
+- name: Create the factory sandbox reaper CLI configuration directory
+  ansible.builtin.file:
+    path: "{{ factory_sandbox_reaper_lithos_config | dirname }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+
+- name: Install the factory sandbox reaper CLI profile
+  # This profile is deliberately separate from the account-wide CLI profile:
+  # its provider pin follows fabro-server's versioned Kubernetes plugin path.
+  ansible.builtin.template:
+    src: lithos-sandbox-reaper.toml.j2
+    dest: "{{ factory_sandbox_reaper_lithos_config }}"
+    owner: root
+    group: root
+    mode: "0644"
   become: true
 
 - name: Check whether the factory sandbox reaper timer unit is already installed

@@ -1,0 +1,11 @@
+# {{ ansible_managed }}
+# The fleet reaper needs the fabro-server provider's versioned plugin pin. The
+# account-wide CLI profile remains on the shared binary for other instances.
+default-provider = "{{ factory_sandbox_reaper_provider }}"
+
+[providers.{{ factory_sandbox_reaper_provider }}]
+type = "plugin"
+kind = "{{ factory_sandbox_reaper_provider }}"
+path = "{{ factory_sandbox_reaper_provider_path }}"
+sha256 = "{{ factory_sandbox_reaper_provider_sha256 }}"
+inherit-env = ["PATH", "HOME", "RUST_LOG"]

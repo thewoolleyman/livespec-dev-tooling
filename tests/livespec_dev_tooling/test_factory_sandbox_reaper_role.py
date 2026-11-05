@@ -469,6 +469,29 @@ def test_the_service_passes_the_toggle_to_the_script_and_targets_the_fleet_insta
     assert "factory_sandbox_reaper_instance_unit: fabro-server" in defaults
 
 
+def test_the_reaper_uses_a_dedicated_cli_profile_for_the_fleet_provider_pin() -> None:
+    """The reaper must not resolve the shared v0.5.0 provider profile."""
+    defaults = _text(path=_ROLE / "defaults" / "main.yml")
+    assert (
+        'factory_sandbox_reaper_provider_path: "{{ '
+        'factory_sandbox_reaper_instance.sandbox_providers[factory_sandbox_reaper_provider].path }}"'
+    ) in defaults
+    assert (
+        'factory_sandbox_reaper_provider_sha256: "{{ '
+        'factory_sandbox_reaper_instance.sandbox_providers[factory_sandbox_reaper_provider].sha256 }}"'
+    ) in defaults
+
+    profile = _text(path=_ROLE / "templates" / "lithos-sandbox-reaper.toml.j2")
+    assert 'path = "{{ factory_sandbox_reaper_provider_path }}"' in profile
+    assert 'sha256 = "{{ factory_sandbox_reaper_provider_sha256 }}"' in profile
+
+    service = _text(path=_ROLE / "templates" / "livespec-factory-sandbox-reaper.service.j2")
+    assert "REAPER_LITHOS_CONFIG={{ factory_sandbox_reaper_lithos_config }}" in service
+
+    tasks = _text(path=_ROLE / "tasks" / "main.yml")
+    assert "src: lithos-sandbox-reaper.toml.j2" in tasks
+
+
 def test_the_converge_verifies_with_a_forced_report_only_pass_then_arms_the_timer() -> None:
     tasks = _text(path=_ROLE / "tasks" / "main.yml")
     verify = tasks.split("- name: Verify the installed reaper", 1)[1].split("- name: Arm", 1)[0]
