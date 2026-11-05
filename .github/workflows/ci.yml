@@ -739,7 +739,14 @@ jobs:
 
       # An authenticated read of the PR itself (not the event payload) decides
       # whether there is incident work to select. Everything else, a master
-      # push included, selects nothing and executes no check here.
+      # push included, selects nothing and executes no check here. The test
+      # is ANCHORED to the block's opening line exactly as
+      # docs/incident-ci-entry.md shows it (the marker alone on a line, then
+      # the JSON object, then `-->`): a PR description that merely MENTIONS
+      # the marker in prose or backticks selects nothing. The first run of
+      # livespec-dev-tooling#3524 proved a bare substring test takes the
+      # incident path on its own PR description. The released entrance does
+      # the real parse; this is only the prefilter.
       - name: Select incident work from an authenticated PR read
         id: select
         shell: bash
@@ -749,7 +756,7 @@ jobs:
           block=absent
           if [ "$GITHUB_EVENT_NAME" = "pull_request" ] && [ -n "$PR_NUMBER" ]; then
             body="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" --jq '.body // ""')"
-            if [[ "$body" == *'<!-- livespec-incident-ci'* ]]; then
+            if grep -qE '^<!-- livespec-incident-ci[[:space:]]*$' <<< "$body"; then
               block=present
             fi
           fi

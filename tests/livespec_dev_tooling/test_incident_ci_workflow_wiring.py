@@ -20,6 +20,7 @@ silently dropped, or an `if:` that makes the job skip on one event.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pytest
@@ -129,3 +130,37 @@ def test_committed_ci_yml_wires_the_incident_job_additively() -> None:
 def test_each_rule_has_a_negative_control(*, old: str, new: str, expected: str) -> None:
     source = _mutated(source=_CI_YML.read_text(encoding="utf-8"), old=old, new=new)
     assert expected in wiring_findings(source=source)
+
+
+# The select step's prefilter, read out of the workflow text: ONE anchored
+# `grep -qE '<pattern>'` whose pattern opens with `^<!-- livespec-incident-ci`.
+# The first run of livespec-dev-tooling#3524 took the incident path because a
+# bare substring test matched the PR DESCRIPTION, which quotes the marker in
+# prose. The shell is not executed here; the pattern is lifted from the file
+# and evaluated with its POSIX class rendered for `re`, so the test pins the
+# committed pattern rather than a copy of it.
+_PREFILTER = re.compile(r"grep -qE '(?P<pattern>\^<!-- livespec-incident-ci[^']*)'")
+
+_BODY_MENTIONING_THE_MARKER = (
+    "With no `<!-- livespec-incident-ci` body block, or on a push, it records\n"
+    '"selected nothing" and exits 0. The marker is <!-- livespec-incident-ci inline.\n'
+)
+_BODY_WITH_A_BLOCK = (
+    "Repair for incident x.\n\n<!-- livespec-incident-ci\n"
+    '{"schema":1,"arm":{},"observer_arm_id":"0"}\n-->\n'
+)
+
+
+def _prefilter_pattern(*, source: str) -> re.Pattern[str]:
+    found = _PREFILTER.findall(source)
+    assert len(found) == 1, found
+    return re.compile(found[0].replace("[[:space:]]", r"\s"), re.MULTILINE)
+
+
+def test_prefilter_is_anchored_to_the_block_line_not_a_substring() -> None:
+    source = _CI_YML.read_text(encoding="utf-8")
+    assert "*'<!-- livespec-incident-ci'*" not in source
+    pattern = _prefilter_pattern(source=source)
+    assert pattern.search(_BODY_MENTIONING_THE_MARKER) is None
+    assert pattern.search(_BODY_WITH_A_BLOCK) is not None
+    assert pattern.search(_BODY_WITH_A_BLOCK.replace("\n", "\r\n")) is not None
