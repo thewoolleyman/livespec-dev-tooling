@@ -9,6 +9,7 @@ container's image, run state and tailscaled state in files, and assert:
 - a rerun keeps a running container, starts a stopped one and replaces one on another image;
 - a worker that needs its tailnet login prints the URL and waits for it, joining untagged as the
   derived name, and the tailnet IPv4 becomes the node IP;
+- a worker on the tailnet always accepts the K3s nodes' advertised /32 routes (research 007);
 - the kubelet starts only once enrollment has been delivered;
 - the fixture's first stage puts the worker on a Docker network with no tailnet login.
 """
@@ -55,6 +56,7 @@ case "$1" in
       "tailscale status --json") cat "$s/ts-status" ;;
       "tailscale ip -4") echo "100.101.102.103" ;;
       "tailscale up "*) if [ -f "$s/ts-after-up" ]; then cp "$s/ts-after-up" "$s/ts-status"; fi ;;
+      "tailscale set "*) : ;;
       "systemctl start kubelet") : ;;
       *) exit 2 ;;
     esac ;;
@@ -186,7 +188,9 @@ def test_a_worker_needing_its_login_prints_the_url_and_joins_untagged_by_its_nam
     )
     assert "run the start task again" in result.stderr
     [up] = [c for c in _calls(vm=vm, verb="exec") if "tailscale up" in c]
-    assert up == f"docker exec --detach {_WORKER} tailscale up --hostname={_WORKER}"
+    assert up == (
+        f"docker exec --detach {_WORKER} tailscale up --hostname={_WORKER} --accept-routes"
+    )
     assert not (vm.root / "enrollment" / "kubelet.env").exists()
 
 
@@ -234,3 +238,10 @@ def test_the_fixture_stage_joins_a_docker_network_without_a_tailnet_login(vm: _V
     assert "NODE_IP=172.18.0.4\n" in (vm.root / "enrollment" / "kubelet.env").read_text(
         encoding="utf-8"
     )
+
+
+def test_a_worker_already_on_the_tailnet_is_set_to_accept_the_nodes_routes(vm: _Vm) -> None:
+    result = _run(vm=vm)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert [c for c in _calls(vm=vm, verb="exec") if "tailscale up" in c] == []
+    assert f"docker exec {_WORKER} tailscale set --accept-routes=true" in _calls(vm=vm, verb="exec")

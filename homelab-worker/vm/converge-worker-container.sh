@@ -17,7 +17,7 @@
 #      on the data disk either way. No enrollment material is passed in an
 #      argument or an environment variable.
 #   3. The worker joins the tailnet as <worker>, untagged, from inside its own
-#      network namespace. While it needs a login, the login URL is printed for
+#      network namespace, accepting the K3s nodes' advertised /32 routes. While it needs a login, the login URL is printed for
 #      the operator to approve, and the run waits TAILNET_LOGIN_TIMEOUT
 #      seconds (default 900) for it; the identity persists in tailscale/.
 #   4. kubelet-config.yaml and kubelet.env (node name, tailnet IPv4, host) are
@@ -119,7 +119,7 @@ else
   state="$(backend_state)"
   if [ "$state" != "Running" ]; then
     say "worker $worker needs its tailnet login (state '${state:-starting}')"
-    docker exec --detach "$worker" tailscale up --hostname="$worker"
+    docker exec --detach "$worker" tailscale up --hostname="$worker" --accept-routes
     shown=""
     waited=0
     while [ "$(backend_state)" != "Running" ]; do
@@ -135,6 +135,9 @@ else
       waited=$((waited + poll))
     done
   fi
+  # Option A's underlay: the K3s nodes advertise their own LAN /32s, and the
+  # worker reaches their VTEPs and the API server only through them.
+  docker exec "$worker" tailscale set --accept-routes=true
   node_ip="$(docker exec "$worker" tailscale ip -4 | head -n 1)"
   [ -n "$node_ip" ] || die "worker $worker has no tailnet IPv4 address"
   say "worker $worker is on the tailnet at $node_ip"
