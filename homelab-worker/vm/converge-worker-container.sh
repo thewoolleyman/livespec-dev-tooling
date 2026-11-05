@@ -14,7 +14,8 @@
 #      private cgroup namespace, tmpfs /run and /tmp, /dev/net/tun, read-only
 #      /lib/modules, stop signal SIGRTMIN+3. An absent container is created, a
 #      stopped one started, and one on another image replaced; its state stays
-#      on the data disk either way. No enrollment material is passed in an
+#      on the data disk either way. A container of the same name whose
+#      enrollment is under another state root is refused, never adopted. No enrollment material is passed in an
 #      argument or an environment variable.
 #   3. The worker joins the tailnet as <worker>, untagged, from inside its own
 #      network namespace. While it needs a login, the login URL is printed for
@@ -83,6 +84,12 @@ run_container() {
 }
 
 if current="$(docker inspect -f '{{.Config.Image}} {{.State.Running}}' "$worker" 2>/dev/null)"; then
+  # A container of this name whose enrollment lives under another state root
+  # (the fixture's, or production's when converging the fixture) is not this
+  # worker's: refuse rather than adopt, replace or start it.
+  mounted="$(docker inspect -f '{{range .Mounts}}{{if eq .Destination "/etc/homelab-worker"}}{{.Source}}{{end}}{{end}}' "$worker")"
+  [ "$mounted" = "$root/enrollment" ] ||
+    die "container $worker keeps its enrollment at '$mounted', not $root/enrollment; remove that worker first (k3s-fixture.sh down removes the fixture's)"
   current_image="${current% *}"
   running="${current##* }"
   if [ "$current_image" != "$image" ]; then
