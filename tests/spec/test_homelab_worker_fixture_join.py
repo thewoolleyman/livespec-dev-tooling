@@ -1,7 +1,7 @@
 """Joining a worker to the isolated fixture of `SPECIFICATION/non-functional-requirements.md`.
 
 "Every production cluster network or control-plane change a worker needs MUST ... be proved
-against an isolated K3s fixture ..." (§"Homelab worker nodes"). `homelab-worker/fixture/
+against an isolated K3s fixture ...", in its homelab worker nodes section. `homelab-worker/fixture/
 join-fixture-worker.sh` enrolls a worker into that fixture through the production RBAC, token
 mint, networking agents and container step. These run it under the system `/bin/bash` against a
 stub `limactl` that plays the VM, its Docker and the fixture's kubectl, and assert:
