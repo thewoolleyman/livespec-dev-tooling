@@ -442,10 +442,13 @@ def test_deletion_and_enablement_default_off_in_the_role() -> None:
     assert re.search(r"^factory_sandbox_reaper_max_deletions: 50$", defaults, re.MULTILINE)
 
 
-def test_the_sandbox_host_declares_the_reaper_enabled_and_deleting() -> None:
+def test_the_sandbox_host_declares_the_reaper_enabled_and_report_only() -> None:
+    # Report-only until livespec-dev-tooling-6prge3 lands: a delete of a stopped
+    # sandbox can strand a 4/4 pod. REVERT with the host_vars REVERT line.
     host_vars = _text(path=_GMKTEC_VARS)
     assert re.search(r"^factory_sandbox_reaper_enabled: true$", host_vars, re.MULTILINE)
-    assert re.search(r"^factory_sandbox_reaper_apply: true$", host_vars, re.MULTILINE)
+    assert re.search(r"^factory_sandbox_reaper_apply: false$", host_vars, re.MULTILINE)
+    assert "REVERT: factory_sandbox_reaper_apply: true" in host_vars
 
 
 def test_the_service_passes_the_toggle_to_the_script_and_targets_the_fleet_instance() -> None:
