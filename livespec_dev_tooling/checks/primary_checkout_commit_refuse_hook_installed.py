@@ -291,21 +291,21 @@ def _inspect_installed_state(*, log: structlog.stdlib.BoundLogger, cwd: Path) ->
 
 def _collect_hook_failures(
     *, hooks_dir: Path
-) -> IOResult[list[tuple[str, str]], CheckInputUnreadable]:
+) -> IOResult[list[tuple[str, str, bytes]], CheckInputUnreadable]:
     """Every hook that is missing, non-executable or byte-different, or the unread one.
 
     Stops at the FIRST unreadable hook rather than collecting around it: a
     partial hook verdict is not a smaller verdict, it is an unsound one, and
     the two remaining hooks would be reported as if all three had been checked.
     """
-    failures: list[tuple[str, str]] = []
+    failures: list[tuple[str, str, bytes]] = []
     for hook_name in _HOOK_NAMES:
         inspected = _inspect_hook(hook_path=hooks_dir / hook_name)
         if isinstance(inspected, IOFailure):
             return inspected
-        ok, failure_mode = unsafe_perform_io(inspected.unwrap())
+        ok, failure_mode, installed_bytes = unsafe_perform_io(inspected.unwrap())
         if not ok:
-            failures.append((hook_name, failure_mode))
+            failures.append((hook_name, failure_mode, installed_bytes))
     return IOSuccess(failures)
 
 
