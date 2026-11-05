@@ -265,8 +265,8 @@ fabro_server_instances:
     # candidate at 0 runs on 2026-11-04 (probe run 01M6MFJV4CA2). ROLLBACK:
     # v0393-0a867ce16/fabro and
     # f201971b1035c47b43fcccd569bf5895562c417c5fd6ff4f1b0d9c74a56a3dcc.
-    binary_source: /home/ubuntu/.local/state/fabro-web-prod/v0393-85af3547e/fabro
-    binary_sha256: d6fcfafab6da1bfd32c3b96b4153f93367fe8a5b4fc18b0efecacad80b1e5711
+    binary_source: /home/ubuntu/.local/state/fabro-web-prod/v0393-c39bdbded/fabro
+    binary_sha256: e93c96b721a356d88b9dc54da009bc4da7c820f37f7146ef888e10c1ca4f6e96
     # The tag the orchestrator workflow pins today
     # (.claude-plugin/.fabro/workflows/implement-work-item/workflow.toml,
     # python-agent-v1.136.2). On this engine the catalog, not the workflow
@@ -288,7 +288,7 @@ fabro_server_instances:
         # REQUEST 3 / LIMIT 6 (bd-ib-zl3qcz): a run's environment cpu replaces the
         # provider process_spec's cpu_cores, so this is the sandbox's CPU LIMIT.
         # REVERT: cpu: 4
-        cpu: 6
+        cpu: 4
         memory: 8GB
         provider: kubernetes
       # Serves repositories whose workflow pins the python-rust-agent layer:
@@ -313,7 +313,7 @@ fabro_server_instances:
         # REQUEST 3 / LIMIT 6 (bd-ib-zl3qcz): a run's environment cpu replaces the
         # provider process_spec's cpu_cores, so this is the sandbox's CPU LIMIT.
         # REVERT: cpu: 4
-        cpu: 6
+        cpu: 4
         memory: 8GB
         provider: kubernetes
       # Rename step 1 (livespec-dev-tooling-s6go5s; spec v090 section "Factory
@@ -332,7 +332,7 @@ fabro_server_instances:
         # REQUEST 3 / LIMIT 6 (bd-ib-zl3qcz): a run's environment cpu replaces the
         # provider process_spec's cpu_cores, so this is the sandbox's CPU LIMIT.
         # REVERT: cpu: 4
-        cpu: 6
+        cpu: 4
         memory: 8GB
         provider: kubernetes
       # The Kubernetes twin of livespec-ci-rust, for livespec-console-beads-fabro
@@ -348,7 +348,7 @@ fabro_server_instances:
         # REQUEST 3 / LIMIT 6 (bd-ib-zl3qcz): a run's environment cpu replaces the
         # provider process_spec's cpu_cores, so this is the sandbox's CPU LIMIT.
         # REVERT: cpu: 4
-        cpu: 6
+        cpu: 4
         memory: 8GB
         provider: kubernetes-rust
     # The plugin the sandbox_driver_kubernetes role installs, at that role's
@@ -384,36 +384,34 @@ fabro_server_instances:
         # below), so the candidate and mi-homelab keep v0.5.0 at the shared path.
         # REVERT: path: /usr/local/bin/sandbox-driver-kubernetes
         # REVERT: sha256: d93437f0bcb495e13a3373a4d2578cc0b2dba2c39c1ad5f3fdcf801ce0788b6e
-        path: /usr/local/bin/sandbox-driver-kubernetes-v0.8.1
-        sha256: ad74f14dc7b4baa5e5765f57b88a96a22d998259508af296ca20c5af0bd2d6d4
+        path: /usr/local/bin/sandbox-driver-kubernetes
+        sha256: d93437f0bcb495e13a3373a4d2578cc0b2dba2c39c1ad5f3fdcf801ce0788b6e
         inherit_env:
           - HOME
           - PATH
         # The CPU REQUEST below the limit (plugin v0.8.0+; an older plugin
         # ignores it). REVERT: drop this env mapping.
         env:
-          SANDBOX_DRIVER_KUBERNETES_CPU_REQUEST_CORES: "3"
         process_spec:
           image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-agent-v1.136.2
           # REVERT: cpu_cores: 4
-          cpu_cores: 6
+          cpu_cores: 4
           memory_mb: 7629
       kubernetes-rust:
         # REVERT: path: /usr/local/bin/sandbox-driver-kubernetes
         # REVERT: sha256: d93437f0bcb495e13a3373a4d2578cc0b2dba2c39c1ad5f3fdcf801ce0788b6e
-        path: /usr/local/bin/sandbox-driver-kubernetes-v0.8.1
-        sha256: ad74f14dc7b4baa5e5765f57b88a96a22d998259508af296ca20c5af0bd2d6d4
+        path: /usr/local/bin/sandbox-driver-kubernetes
+        sha256: d93437f0bcb495e13a3373a4d2578cc0b2dba2c39c1ad5f3fdcf801ce0788b6e
         inherit_env:
           - HOME
           - PATH
         env:
           SANDBOX_DRIVER_KUBERNETES_STATE_DIR: /home/cwoolley/.local/state/sandbox-driver-kubernetes-rust
           # REVERT: drop this line.
-          SANDBOX_DRIVER_KUBERNETES_CPU_REQUEST_CORES: "3"
         process_spec:
           image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-rust-agent-v1.136.2
           # REVERT: cpu_cores: 4
-          cpu_cores: 6
+          cpu_cores: 4
           memory_mb: 7629
     # Created in the instance's vault only when it lacks the name, never
     # overwritten (roles/fabro_server/tasks/vault.yml). The App key comes from
