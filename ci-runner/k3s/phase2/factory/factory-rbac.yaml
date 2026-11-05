@@ -28,8 +28,9 @@
 # sandboxes' whole lifetime, unlike a gate Job which is reaped by the Job
 # controller's own ttlSecondsAfterFinished), `get` on `pods/log` as the output
 # channel, `create` and `get` on `pods/exec` because a sandbox is driven by exec rather
-# than by its command line, the SAME verbs on batch `jobs` the gates Role
-# grants, and the three the lifecycle proofs added — `networkpolicies`,
+# than by its command line, its OWN lifecycle verbs on batch `jobs` (the gates
+# Role's `delete` exception is only for its abandoned suspended Jobs), and the
+# three the lifecycle proofs added — `networkpolicies`,
 # `events` and a cluster-scoped read of `nodes` — each derived in
 # ./DERIVATION.md §"The widening". DELIBERATELY ABSENT: ANY verb on `secrets`,
 # at either scope. The sandbox's own credentials are projected into it by the

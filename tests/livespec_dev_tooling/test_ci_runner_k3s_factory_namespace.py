@@ -28,7 +28,6 @@ __all__: list[str] = []
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _PHASE2 = _REPO_ROOT / "ci-runner" / "k3s" / "phase2"
 _FACTORY_DIR = _PHASE2 / "factory"
-_GATES_RBAC = _PHASE2 / "gates" / "gates-rbac.yaml"
 _BOOT_CONVERGE = _PHASE2 / "reconstruct" / "converge-ci-stack.sh"
 # The role that installs the boot tree onto the host; the boot converge can
 # only apply what this role has already put there.
@@ -63,6 +62,10 @@ _EXPECTED_POD_VERBS: dict[tuple[str, str], frozenset[str]] = {
     ("", "pods/exec"): frozenset({"create", "get"}),
 }
 _JOBS_RULE_KEY = ("batch", "jobs")
+# Factory Jobs are created and observed by the sandbox backend. Unlike the
+# gates submitter, this credential does not own abandoned suspended gate Jobs,
+# so it must not inherit that Role's narrowly justified delete exception.
+_EXPECTED_FACTORY_JOB_VERBS = frozenset({"create", "get", "list", "watch"})
 _CLUSTER_SCOPED_KINDS = frozenset({"ClusterRole", "ClusterRoleBinding"})
 # The grants `livespec-dev-tooling-pvykv7` widened the launcher credential by,
 # each the item's own wording, and each the WHOLE rule rather than a floor: the
@@ -173,10 +176,8 @@ def _flow_list(*, raw: str) -> tuple[str, ...]:
 def _role_rules(*, document: str) -> dict[tuple[str, str], frozenset[str]]:
     """A Role document's rules, keyed by `(apiGroup, resource)`.
 
-    Both this file's Role and `../gates/gates-rbac.yaml`'s are authored in flow
-    style with one resource per rule, which is what lets one pattern read both
-    and makes the gates comparison a read of the real file rather than a
-    restatement of it here.
+    The factory Role is authored in flow style with one resource per rule,
+    which makes each exact capability set independently readable.
     """
     pattern = (
         r"-\s*apiGroups:\s*\[(?P<groups>[^\]]*)\]\s*\n"
@@ -212,20 +213,6 @@ def _binding_subject(*, document: str) -> tuple[str, str, str]:
     )
     kind, name, namespace = subjects[0]
     return (kind, name, namespace)
-
-
-def _gates_role_rules() -> dict[tuple[str, str], frozenset[str]]:
-    """The gates Role's rules, read from the gates manifest itself."""
-    roles = [
-        _role_rules(document=document)
-        for document in _documents(path=_GATES_RBAC)
-        if _top_level(document=document, key="kind") == "Role"
-    ]
-    assert len(roles) == 1, (
-        f"{_GATES_RBAC.name} must declare exactly ONE Role for the factory Role's batch-jobs "
-        f"verbs to be compared against the real file rather than a restatement; found {len(roles)}"
-    )
-    return roles[0]
 
 
 def _objects() -> tuple[tuple[str, str, str], ...]:
@@ -291,7 +278,7 @@ def test_the_factory_manifests_declare_exactly_the_nine_labelled_objects() -> No
     )
 
 
-def test_the_factory_role_grants_the_pod_lifecycle_the_gates_job_verbs_and_no_secrets() -> None:
+def test_the_factory_role_grants_the_pod_lifecycle_its_own_job_verbs_and_no_secrets() -> None:
     by_kind = {kind: document for kind, _, document in _objects()}
     rules = _role_rules(document=by_kind["Role"])
     for key, expected in _EXPECTED_POD_VERBS.items():
@@ -301,11 +288,11 @@ def test_the_factory_role_grants_the_pod_lifecycle_the_gates_job_verbs_and_no_se
             f"{key[1]!r} in apiGroup {key[0]!r}; the sandbox lifecycle needs exactly "
             f"{sorted(expected)}"
         )
-    gates_job_verbs = _gates_role_rules()[_JOBS_RULE_KEY]
-    assert rules.get(_JOBS_RULE_KEY) == gates_job_verbs, (
+    assert rules.get(_JOBS_RULE_KEY) == _EXPECTED_FACTORY_JOB_VERBS, (
         f"the factory Role grants {sorted(rules.get(_JOBS_RULE_KEY) or ())} on batch jobs; it "
-        f"must grant the same verbs the gates Role grants, {sorted(gates_job_verbs)}, read from "
-        f"{_GATES_RBAC.relative_to(_REPO_ROOT)}"
+        f"must grant its sandbox lifecycle verbs, {sorted(_EXPECTED_FACTORY_JOB_VERBS)}. The "
+        "gates Role's delete exception is for cleanup of its own abandoned suspended Jobs and "
+        "must not widen this unrelated ServiceAccount"
     )
     on_secrets = sorted(key for key in rules if key[1].split("/")[0] == "secrets")
     assert not on_secrets, (
