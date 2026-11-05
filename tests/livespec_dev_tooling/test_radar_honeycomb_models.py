@@ -38,3 +38,18 @@ def test_committed_tick_specs_are_frozen_typed_and_within_budget() -> None:
             column_type in {str, float, int, bool} for column_type in spec.expected_columns.values()
         )
         assert spec.staleness_seconds > 0
+
+
+def test_tick_budget_cites_the_steady_state_mcp_key_measurement() -> None:
+    """The committed budget retains its host-captured measurement evidence."""
+    source = (
+        Path(__file__).parents[2] / "livespec_dev_tooling" / "radar_honeycomb_models.py"
+    ).read_text()
+
+    assert "about 36 queries/hour for the other callers" in source
+    assert "40 queries/hour reserved" in source
+    assert "2026-11-03 18:20:26Z to 19:20:29Z UTC" in source
+    assert (
+        "plan/radar-and-deterministic-admission/research/" "002-mcp-key-caller-rate-2026-11-03.md"
+    ) in source
+    assert "plan/token-spend-analysis/research/005" not in source
