@@ -384,8 +384,8 @@ fabro_server_instances:
         # below), so the candidate and mi-homelab keep v0.5.0 at the shared path.
         # REVERT: path: /usr/local/bin/sandbox-driver-kubernetes
         # REVERT: sha256: d93437f0bcb495e13a3373a4d2578cc0b2dba2c39c1ad5f3fdcf801ce0788b6e
-        path: /usr/local/bin/sandbox-driver-kubernetes-v0.8.1
-        sha256: ad74f14dc7b4baa5e5765f57b88a96a22d998259508af296ca20c5af0bd2d6d4
+        path: /usr/local/bin/sandbox-driver-kubernetes-v0.8.0
+        sha256: 66c748ef973c6b076261652c1e7c5583de0e142ac13b5e4b545a2f328141cef5
         inherit_env:
           - HOME
           - PATH
@@ -401,8 +401,8 @@ fabro_server_instances:
       kubernetes-rust:
         # REVERT: path: /usr/local/bin/sandbox-driver-kubernetes
         # REVERT: sha256: d93437f0bcb495e13a3373a4d2578cc0b2dba2c39c1ad5f3fdcf801ce0788b6e
-        path: /usr/local/bin/sandbox-driver-kubernetes-v0.8.1
-        sha256: ad74f14dc7b4baa5e5765f57b88a96a22d998259508af296ca20c5af0bd2d6d4
+        path: /usr/local/bin/sandbox-driver-kubernetes-v0.8.0
+        sha256: 66c748ef973c6b076261652c1e7c5583de0e142ac13b5e4b545a2f328141cef5
         inherit_env:
           - HOME
           - PATH
@@ -797,6 +797,8 @@ sandbox_driver_kubernetes_config_homes:
 sandbox_driver_kubernetes_versioned_releases:
   - version: v0.8.1
     sha256: ad74f14dc7b4baa5e5765f57b88a96a22d998259508af296ca20c5af0bd2d6d4
+  - version: v0.8.0
+    sha256: 66c748ef973c6b076261652c1e7c5583de0e142ac13b5e4b545a2f328141cef5
 
 # tailscale_serve: publish the fabro-server instance's loopback port on the
 # tailnet, so the Dispatcher reaches https://gmktec-xubuntu.perch-rudd.ts.net:32276.
