@@ -58,6 +58,21 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.174.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.173.0...v1.174.0) (2026-11-05)
+
+
+### Features
+
+* **homelab-worker:** isolated K3s fixture for proving worker cluster changes ([2b0552a](https://github.com/thewoolleyman/livespec-dev-tooling/commit/2b0552a14b2e35fa17df6553757d8600e1fe951e))
+* **homelab-worker:** start task runs the VM capability probe on an XFS data disk (livespec-dev-tooling-ko26ez) ([ce2dd42](https://github.com/thewoolleyman/livespec-dev-tooling/commit/ce2dd423993140c8a271998bc6d8e6633194315d))
+* **homelab-worker:** VM capability probe for the worker VM (livespec-dev-tooling-ko26ez) ([9a08d7d](https://github.com/thewoolleyman/livespec-dev-tooling/commit/9a08d7d83a36e693418123db2037a72d5553c0dc))
+
+
+### Bug Fixes
+
+* **ci-runner:** distinguish a cold warm seed from trust boundary ([4d0400a](https://github.com/thewoolleyman/livespec-dev-tooling/commit/4d0400a43310982a8bebee0b3696234b71e31636))
+* **homelab-worker:** name the worker data disk so its XFS label fits 12 characters (livespec-dev-tooling-ko26ez) ([08aa9c9](https://github.com/thewoolleyman/livespec-dev-tooling/commit/08aa9c9cbea87c6fa94e8ddc371789843fc87775))
+
 ## [1.173.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.172.0...v1.173.0) (2026-11-04)
 
 
