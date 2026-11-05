@@ -1,14 +1,17 @@
 # Self-hosted CI runner tooling
 
 Durable, re-runnable artifacts that provision and verify this fleet's
-self-hosted GitHub Actions capacity on `poweredge-xubuntu`, so livespec CI
+self-hosted GitHub Actions capacity, so livespec CI
 can run inside the same baked `fabro-sandbox` images the orchestrator uses —
 without exposing host secrets, the multi-tenant Dolt server, or host root to
 (possibly fork-controlled) workflow code.
 
 Two runner trust tiers live here, and they are genuinely different things:
 
-- The **contained gating tier** — k3s + Actions Runner Controller + Kueue.
+- The **contained gating tier** — k3s + Actions Runner Controller + Kueue,
+  on the `ci_pool` k3s nodes: `poweredge-xubuntu` (the server, which carries
+  the cache tiers) plus the agents `gmktec-xubuntu` and `hp-xubuntu`
+  (`ansible/inventory/legacy.yml`, applied by `ansible/ci-pool.yml`).
   This is what every fleet repository's gating CI runs on. See
   [`k3s/README.md`](k3s/README.md) and
   [`k3s/phase2/README.md`](k3s/phase2/README.md).
@@ -16,7 +19,12 @@ Two runner trust tiers live here, and they are genuinely different things:
   deliberately wider trust boundary, used by
   `livespec-orchestrator-beads-fabro`'s golden-master acceptance gate. It has
   its own provisioning, its own supervisor identity, and its own JIT minter.
-  See [`gate-runner/README.md`](gate-runner/README.md).
+  It is installed on the **VPS** (`vps`, the shared factory and control
+  host), NOT on `poweredge-xubuntu`: `gate-runner-supervisor.service` and
+  `gate-optin-expiry.timer` are enabled there. Whether the tier is kept and
+  moved into an Ansible role or retired is open on
+  `livespec-dev-tooling-6fl7a4`. See
+  [`gate-runner/README.md`](gate-runner/README.md).
 
 ## The rootless-podman pool is gone
 
