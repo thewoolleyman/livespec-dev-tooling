@@ -14,7 +14,8 @@ factory sandbox host, so retention is AGE-ONLY (default 24 h) plus an evidence
 guard. A sandbox is deleted only when ALL of these hold; each failure KEEPS it,
 and every keep names its reason:
 
-  1. its state is `stopped` (never running, starting or anything else);
+  1. its state is `stopped` or `running`; a running record is retried after a
+     timed-out delete of a terminal run;
   2. its Fabro run is found in `fabro ps -a` (an unknown run is kept and shouted);
   3. that run is terminal (succeeded or failed) and its end time is known;
   4. the run ended at least REAPER_MIN_AGE_HOURS ago;
@@ -118,14 +119,19 @@ def classify(
     for sandbox in sandboxes:
         run = runs.get(sandbox.run_id) if sandbox.run_id else None
         ended = run_end(run=run) if run is not None else None
-        if sandbox.state != "stopped":
-            keeps.append(_keep(sandbox=sandbox, reason=f"state is {sandbox.state}, not stopped"))
+        if sandbox.state not in {"stopped", "running"}:
+            keeps.append(
+                _keep(sandbox=sandbox, reason=f"state is {sandbox.state}, not stopped or running")
+            )
         elif run is None:
             keeps.append(
                 _keep(sandbox=sandbox, reason="UNKNOWN RUN: not found in fabro ps -a, kept")
             )
         elif run.kind not in TERMINAL_KINDS:
-            keeps.append(_keep(sandbox=sandbox, reason=f"run is {run.kind}, not terminal"))
+            reason = f"run is {run.kind}, not terminal"
+            if sandbox.state == "running":
+                reason = f"state is running, not stopped; {reason}"
+            keeps.append(_keep(sandbox=sandbox, reason=reason))
         elif ended is None:
             keeps.append(_keep(sandbox=sandbox, reason="run end time unknown, kept"))
         elif now - ended < min_age:
@@ -186,7 +192,7 @@ def finalize(
                     sandbox.sandbox_id,
                     run.run_id,
                     "delete",
-                    "stopped, run ended past the horizon, no preserved ref",
+                    f"{sandbox.state}, run ended past the horizon, no preserved ref",
                 )
             )
     return verdicts
