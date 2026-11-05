@@ -91,3 +91,14 @@ k3s_config_cpu_weight: ""
 k3s_config_cpu_weight_drop_in: 50-cpu-weight.conf
 k3s_config_cpu_weight_unit_drop_in_dir: >-
   /etc/systemd/system/{{ 'k3s-agent' if k3s_config_cluster_role == 'agent' else 'k3s' }}.service.d
+
+# How many CoreDNS replicas the cluster runs. k3s ships its CoreDNS Deployment
+# (the packaged `coredns` addon) with ONE replica, and its manifest sets no
+# `replicas` field, so a count set here is not reset by k3s's own re-apply.
+# Two, because one pod on a CPU-starved poweredge-xubuntu took cluster DNS down
+# for CI on 2026-11-05 (livespec-dev-tooling-s2aqob). The Deployment's own
+# topologySpreadConstraints (kubernetes.io/hostname, maxSkew 1, DoNotSchedule)
+# place the second replica on a different node. Revert: set this to 1 and
+# re-apply.
+k3s_config_coredns_replicas: 2
+k3s_config_admin_kubeconfig: /etc/rancher/k3s/k3s.yaml
