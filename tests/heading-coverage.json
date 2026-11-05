@@ -1096,6 +1096,14 @@
   },
   {
     "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a hand-edited board or trigger is reported by its applier's drift mode and left unchanged",
+    "test": "TODO",
+    "reason": "Spec-first (v136): a real integration-tier test is owed for this heading, driving apply-boards.sh and apply-triggers.sh in their drift mode against a stub Honeycomb API whose live definitions differ from, or lack, the committed ones and asserting the printed differences, the non-zero exit and that no create, update or delete request was sent; the live no-difference read after an apply is host-captured. livespec-dev-tooling-4vopaj owns it.",
+    "work_item": "livespec-dev-tooling-4vopaj"
+  },
+  {
+    "spec_root": "SPECIFICATION",
     "spec_file": "non-functional-requirements.md",
     "heading": "## Local gate concurrency limit",
     "test": "tests.spec.test_local_gate_concurrency_limit.test_the_limit_is_declared_by_a_committed_converge_the_dev_host_play_runs",
