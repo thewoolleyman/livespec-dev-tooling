@@ -173,7 +173,7 @@ def reap(
         else:
             failures += 1
             emit(
-                f"ERROR: delete of {verdict.sandbox_id} failed (rc {done.returncode}): "
+                f"ERROR: stranded-risk: delete of {verdict.sandbox_id} failed (rc {done.returncode}): "
                 f"{done.stderr.strip()}"
             )
     return 1 if failures else 0
