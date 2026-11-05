@@ -2,7 +2,10 @@
 
 This note governs the plan's design and Definition of Done from 2026-11-05 on. It supersedes, in part:
 
+- [002](002-portable-container-worker-nodes-2026-11-03.md): its flannel-over-tailnet underlay (note added there).
 - [004](004-two-host-phases-2026-11-04.md): the Definition of Done (replaced by §6 here) and Phase D (deferred, §3).
+- [005](005-worker-implementation-brief-2026-11-04.md): §1's tailnet node IP and flannel interface, §3's Option A
+  recommendation, §4 slice 7 and risk 1 (banner added there).
 - [006](006-tailnet-and-fixture-corrections-2026-11-04.md) §1 "ACL. No change is needed" (wrong, §2 here).
 - [007](007-fixture-stage-two-underlay-2026-11-05.md): Option A as the production underlay (§1, §3), §4's "There is no ACL
   change" (§2), and §5's production /32 routes (dropped, §3).
@@ -106,15 +109,19 @@ not need them, and with them the macOS route-acceptance risk of 007 §5 goes awa
    a Docker macvlan network on `lima0`, needs a static LAN address outside the router's DHCP pool. Settle this in the
    implementation child with a fixture-free host check.
 3. **Stable node IP.** The node IP must not change under a running node. Lima keeps a stable MAC per instance; a DHCP
-   reservation for that MAC on the home router is a maintainer action. Until it exists, a changed lease is a known failure mode
-   to detect, not to paper over.
+   reservation for that MAC on the home router is a maintainer action, asked with the production prerequisites (§5 item 4).
+   Until it exists, a changed lease is detected, not papered over: the converge step refuses when the VM's LAN address differs
+   from the registered Node's InternalIP (livespec-dev-tooling-ko26ez.2).
 4. **Cluster values.** `homelab-worker/networking/cluster.yaml` changes `flannel-iface` from `tailscale0` to the LAN interface
    and `api-server-host` to poweredge's LAN address, after confirming that address is a SAN of the API server's certificate.
+   The worker stops enabling `--accept-routes` (Option A's route acceptance), and `networking/flannel.yaml`'s "tailscale0 in
+   production" comment is corrected, both under livespec-dev-tooling-ko26ez.2.
 5. **Worker tailnet identity.** The spec still requires the worker's own `<host>-homelab-worker` tailnet identity, persisted
    across restarts. It is no longer the pod-network underlay. After the VM restart for the bridge, the worker's tailscaled
    reported `NeedsLogin`; whether the identity survived a VM restart must be measured before it is relied on (assertion 10).
 6. **The fixture.** Stage one's fixture proof already covers the LAN shape. The fixture's K3s API did not come back after the
-   VM restart; it is rebuilt with `k3s-fixture.sh down` and `up` when a fixture proof is next needed, not now.
+   VM restart; it is rebuilt with `k3s-fixture.sh down` and `up` when a fixture proof is next needed, not now. Its two in-memory
+   tailnet devices are gone; their offline entries in the admin console are for the maintainer to delete.
 
 These consequences change the "macOS VM runtime" and "Host tailnet identity" rules of `SPECIFICATION/non-functional-requirements.md`
 §"Homelab worker nodes" only by addition (the bridged network and its host prerequisites). A propose-change and revise land them
@@ -134,15 +141,20 @@ The maintainer asked for solid, reusable tests that do not rot, without over-eng
     `mint-bootstrap-token.sh`, `converge-worker-container.sh` and `approve-serving-csr.sh`.
   - `homelab-worker/prove-worker.sh <host> --peer-node <node>`: the 14 checks (logs, exec, port-forward, kubelet stats, logs on
     the peer node, pod-to-pod both ways, large TCP both ways, large ICMP, ClusterIP and DNS, DNS 10.43.0.10, NetworkPolicy
-    deny and lift) against whatever cluster the caller's `kubectl` reaches.
+    deny and lift) against whatever cluster the caller's `kubectl` reaches. With `--expect-streaming-failure` it runs the negative
+    control instead: logs and exec on the worker MUST fail, as at `egress-selector-mode: agent`.
   - `join-fixture-worker.sh` and `prove-fixture-worker.sh` shrink to wrappers that supply the fixture's kubectl shim, API
     server and node names. Only `k3s-fixture.sh` and `underlay-fixture.sh` stay fixture-only.
   The production join of each worker, every re-enrollment, and every proof after a cluster change run the same scripts for real,
   which is what keeps them from rotting.
 - **Not doing:** headscale, a privileged CI lane, persisted fixture tailnet state, or a new test framework. The fixture is an
   on-demand rehearsal on the M4, captured on the host.
-- **Heading coverage.** `## Homelab worker nodes` in `tests/heading-coverage.json` is `TODO`. It is retired by the stub tests
-  plus the host-captured production run of `prove-worker.sh` and the start task, as its row already says.
+- **Heading coverage.** Seven rows in `tests/heading-coverage.json` owned by this plan are `TODO`: `## Homelab worker nodes` and
+  its six scenarios (the start task refusing an undeclared host, a VM missing a capability, a rerun reusing Lima, a second
+  worker refused, the host's tailnet identity unchanged, and the admission hold). Each is mapped to its stub test by the child
+  that delivers the behaviour (livespec-dev-tooling-ko26ez.1 and .2, with the start-task and enrollment children for theirs).
+  The H2 row's reason still names host-captured runs on both Macs; it is corrected to the M4 Max start task and production
+  `prove-worker.sh` run when it is mapped.
 
 ## 5. Phases from here
 
@@ -158,7 +170,7 @@ The maintainer asked for solid, reusable tests that do not rot, without over-eng
 
 ## 6. Definition of Done (revision 3)
 
-Assertions 1-6 are unchanged from 004. The Air's worker assertions move to the deferral. New assertions are 20 and 21.
+Assertions 1-6 are unchanged from 004. The Air's worker assertions move to the deferral. New assertions are 14 and 21.
 
 1. The macbook-m4-max host carries only the prerequisites its worker container and its remote operation need, with no livespec development toolchain, ledger access or livespec coding session installed for this plan.
 2. A herdr server runs on macbook-m4-max, and the MacBook Air's local herdr client drives it as a connected remote.
@@ -180,7 +192,7 @@ Assertions 1-6 are unchanged from 004. The Air's worker assertions move to the d
 18. The existing telemetry route attributes the worker's health and workload cache/build spans to macbook-m4-max-homelab-worker.
 19. Restarting the worker preserves its identity and permits a subsequent representative CI job on it to complete.
 20. After the CI dogfood milestone, the worker completes a representative factory sandbox task through the established factory backend.
-21. Every homelab-worker script has fast stub-based tests that run in CI, and the `## Homelab worker nodes` heading-coverage entry maps to tests rather than TODO.
+21. Every homelab-worker script has fast stub-based tests that run in CI, and the `## Homelab worker nodes` heading-coverage entry and its six scenario entries map to tests rather than TODO.
 
 How this maps to 004's 20: 1-6 are unchanged. 7-12 restate 004's 7-12 for the M4 Max on the LAN; the start task still serves
 every declared host through one code path, so the Air needs no new code when it returns. 13 widens 004's 13 to tailnet-policy

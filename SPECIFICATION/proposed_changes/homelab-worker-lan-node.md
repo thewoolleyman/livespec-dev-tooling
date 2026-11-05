@@ -31,4 +31,4 @@ In SPECIFICATION/non-functional-requirements.md, section `## Homelab worker node
 
 2. Insert a new bullet after **Host tailnet identity**: "- **Home-LAN node.** The worker MUST use its VM's bridged home-LAN address as its Kubernetes node IP and as the interface of its pod-network underlay. A worker whose only path to the fleet is the tailnet is out of scope until a later revision of this section; the worker's tailnet identity is not its pod-network underlay."
 
-3. In the **Reviewed cluster changes** bullet, replace "Every production cluster network or control-plane change a worker needs" with "Every production cluster network, control-plane or tailnet-policy change a worker needs".
+3. Append to the **Reviewed cluster changes** bullet: "A tailnet-policy change a worker needs MUST land through a reviewed pull request in the tailnet's policy repository that records its rollback and carries a policy test exercising the change; the isolated K3s fixture does not apply to it."

@@ -1,3 +1,5 @@
+> **Note, 2026-11-05:** the "flannel over tailnet/routed underlay" design below is not what the plan builds. Pod traffic cannot reach a tailnet-only worker while K3s nodes' flannel VXLAN is bound to their LAN interface; see [008](008-lan-worker-and-test-strategy-2026-11-05.md) §1.
+
 # Portable container worker nodes for spare home and cloud compute
 
 Research date: 2026-11-03 UTC. Proposed implementation design; no worker image, bootstrap recipe, host installation, enrollment or cluster change was executed by this research.
