@@ -323,6 +323,20 @@ had to point out the tabs left behind after a shutdown.
 Every tick reports, in this order:
 
 1. The ownership line: `Coordinator owns no work. Owning plans this tick: ...`.
+1.5. METRICS: the three factory stability and throughput metrics, every tick, each with its value and its
+   trailing-window counts. Compute them from the orchestrator repo's `tmp/petri-canary/*-r267.json` dispatch records
+   by file mtime, skipping unreadable in-flight files.
+   - M1 YIELD: green records / finished records over a trailing 6 h, plus the 2 h figure. Owner:
+     sandbox-commit-gate-ceiling (P1).
+   - M2 DELIVERED: green records per hour over a trailing 6 h. This is the outcome M1 and M3 drive.
+   - M3 SLOTS: live factory runs against `tmp/petri-canary/fleet-cap`, naming any pods that hold quota without a live
+     run (stranded). Owner: legacy-dispatcher-agent.
+
+   Also name the time of the last green record. The maintainer directed this on 2026-11-04 ~15:2xZ, recorded in the
+   15:29:44Z priorities-record on epic `livespec-dev-tooling-6tgd2z`: "pick 3 metrics on factory stability and
+   throughput, report those every tick ... AND MOVE THEM". Measured 2026-11-05: the rule lived only in that epic
+   comment, so a coordinator resumed at 19:34Z built its tick from this section and dropped the metrics for two ticks,
+   until the maintainer asked "how did you forget that?"
 2. PRIORITIES: every current maintainer-set priority, one line each, read fresh from the latest
    `priorities-record` scope event on the coordinator's epic. The list has no length cap: print it in full, because its
    length is the maintainer's signal to drop entries. If the record cannot be read, the report says so at the top
