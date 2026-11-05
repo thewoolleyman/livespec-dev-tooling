@@ -2316,5 +2316,29 @@
     "test": "TODO",
     "reason": "A real test at the integration tier or above is owed for this scenario: the check run as a subprocess in a real git repository whose pre-push hook differs from CANONICAL_HOOK_BODY from line 12, asserting the single non_canonical_body finding's path, installed_sha256, canonical_sha256 and first_differing_line, and the failure-mode digest rendered from that output naming the path with both digests. livespec-dev-tooling-oonqhx owns it.",
     "work_item": "livespec-dev-tooling-oonqhx"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: drift reports a Fabro instance whose resolved setting differs from its declaration",
+    "test": "TODO",
+    "reason": "A real test at the integration tier or above is owed for this scenario: the fabro-hosts drift comparison run against a fake settings endpoint whose resolved value for a declared setting differs from the host_vars mapping, asserting the instance, setting and both values are reported as drift, the endpoint is not written, and an unreachable endpoint is reported as unreachable. livespec-dev-tooling-po2nrg owns it.",
+    "work_item": "livespec-dev-tooling-po2nrg"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: an apply on a host missing a role's out-of-band input fails before the role changes anything",
+    "test": "TODO",
+    "reason": "A real test at the integration tier or above is owed for this scenario: a dev-host role converged in check mode against a host whose wrapper does not resolve the role's credential, asserting the run fails at an assert naming the credential before any changing task and that the role's HOST_VARS.md lists its out-of-band steps. livespec-dev-tooling-c763up owns it.",
+    "work_item": "livespec-dev-tooling-c763up"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a held service converges installed and disabled",
+    "test": "TODO",
+    "reason": "A real test at the integration tier or above is owed for this scenario: the held editor-stack role converged with its enable variable at the held value, asserting its units are installed, disabled and inactive, a second converge changes nothing, and a hand-enabled unit reads as drift. livespec-dev-tooling-fmbnyd owns it.",
+    "work_item": "livespec-dev-tooling-fmbnyd"
   }
 ]

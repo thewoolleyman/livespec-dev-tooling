@@ -408,6 +408,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: a held service converges installed and disabled",
+    "work_item": "livespec-dev-tooling-fmbnyd",
+    "first_seen": "2026-11-05"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: a host with no pressure file makes the emitter fail rather than report zero",
     "work_item": "livespec-dev-tooling-i7yxpt",
     "first_seen": "2026-11-02"
@@ -765,6 +772,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: an apply on a host missing a role's out-of-band input fails before the role changes anything",
+    "work_item": "livespec-dev-tooling-c763up",
+    "first_seen": "2026-11-05"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: an apply refuses a plugin binary whose digest differs from an instance pin, and drift compares live pins to the installed binary",
     "work_item": "livespec-dev-tooling-rnsfgg",
     "first_seen": "2026-11-03"
@@ -922,6 +936,13 @@
     "heading": "## Scenario: dev host retention removes a dead session's scratch directory and leaves a live one",
     "work_item": "livespec-dev-tooling-tjldi2",
     "first_seen": "2026-11-01"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: drift reports a Fabro instance whose resolved setting differs from its declaration",
+    "work_item": "livespec-dev-tooling-po2nrg",
+    "first_seen": "2026-11-05"
   },
   {
     "spec_root": "SPECIFICATION",

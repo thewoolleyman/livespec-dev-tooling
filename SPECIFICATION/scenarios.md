@@ -1548,6 +1548,46 @@ And an apply whose plugin sha256 equals every instance's declared pin for that p
 
 And `just ansible-drift ansible/fabro-hosts.yml` MUST report as drift any instance whose live `settings.toml` sha256 for that provider differs from the sha256 of the installed binary
 
+## Scenario: drift reports a Fabro instance whose resolved setting differs from its declaration
+
+Given a Fabro server instance whose host_vars mapping declares a setting with one value
+
+And that instance's `GET /api/v1/settings` resolving the same setting to a different value
+
+When `just ansible-drift ansible/fabro-hosts.yml` runs against the host
+
+Then the report MUST name the instance, the setting, the declared value and the resolved value as drift
+
+And the instance's live settings MUST be unchanged
+
+And an instance whose settings endpoint cannot be reached MUST be reported as unreachable rather than as matching
+
+## Scenario: an apply on a host missing a role's out-of-band input fails before the role changes anything
+
+Given a role in a committed playbook under `ansible/` that reads a credential through an environment wrapper on the target host
+
+And a target host on which that credential does not resolve
+
+When `just ansible-apply` runs that playbook against the host
+
+Then the role MUST fail at an assert that names the missing credential
+
+And no task of that role that can change the host MUST have run
+
+And a post-apply step of that role which no assert can check MUST be listed in the "Out-of-band" section of the role's `HOST_VARS.md`
+
+## Scenario: a held service converges installed and disabled
+
+Given a host service the maintainer holds disabled, installed by a role whose enable variable is at its held value
+
+When `just ansible-apply` converges the role on the host
+
+Then the service's units MUST be installed, disabled and inactive
+
+And a second converge MUST report no change
+
+And `just ansible-drift` MUST report the service as drift after an operator enables it by hand
+
 ## Scenario: a member whose only error findings are stale pins still receives the release dispatch
 
 Given a fleet member whose only error-severity findings in the fan-out preflight are pin-currency staleness findings
