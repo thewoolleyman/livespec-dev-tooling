@@ -101,6 +101,7 @@ from livespec_dev_tooling.gate_remote_invocation import (
 from livespec_dev_tooling.gate_remote_job_status import (
     COMPLETE_CONDITION,
     Terminal,
+    admitted,
     created_job_name,
     created_job_tree_hash,
     reported_time,
@@ -221,6 +222,7 @@ class GateRunRequest:
     private_sibling_secret: str = ""
     namespace: str = GATE_NAMESPACE
     poll_interval_seconds: float = 10.0
+    admission_timeout_seconds: float = 1800.0
     poll_timeout_seconds: float = 3600.0
 
 
@@ -544,7 +546,7 @@ def _failure_message(*, request: GateRunRequest, runner: GateCommandRunner, job_
     return read.map(lambda ran: ran.stdout.strip()).value_or("")
 
 
-def _poll_budget(*, request: GateRunRequest) -> int:
+def _poll_budget(*, request: GateRunRequest, timeout_seconds: float) -> int:
     """How many polls the timeout buys at this interval.
 
     Derived rather than read from a clock, so the client needs no time source
@@ -553,7 +555,7 @@ def _poll_budget(*, request: GateRunRequest) -> int:
     ceiling correspondingly later. That is the honest cost of one fewer seam,
     and the bound's job is to stop an unbounded wait, not to time it.
     """
-    return max(1, int(request.poll_timeout_seconds // request.poll_interval_seconds))
+    return max(1, int(timeout_seconds // request.poll_interval_seconds))
 
 
 def _await_terminal_state(
@@ -573,18 +575,87 @@ def _await_terminal_state(
     a later `get` can legitimately find nothing.
     """
     argv = [*_kubectl(request=request), "get", "job", job_name, "--output", "json"]
-    for _ in range(_poll_budget(request=request)):
-        lifted = require_success(
-            step=_AWAIT_STEP, argv=argv, outcome=runner(argv=argv, cwd=request.repo_root)
-        )
-        if isinstance(lifted, Failure):
-            return Failure(lifted.failure())
-        condition = terminal_condition(argv=argv, payload=lifted.unwrap().stdout, step=_AWAIT_STEP)
-        if isinstance(condition, Failure):
-            return Failure(condition.failure())
-        ended = condition.unwrap()
-        if ended is not None:
-            return Success(ended)
-        sleeper(seconds=request.poll_interval_seconds)
+    admission = _await_admission(
+        request=request,
+        runner=runner,
+        sleeper=sleeper,
+        job_name=job_name,
+        argv=argv,
+    )
+    if isinstance(admission, Failure):
+        return Failure(admission.failure())
+    terminal = admission.unwrap()
+    if terminal is not None:
+        return Success(terminal)
+    return _await_terminal_after_admission(
+        request=request, runner=runner, sleeper=sleeper, job_name=job_name, argv=argv
+    )
+
+
+def _await_admission(
+    *,
+    request: GateRunRequest,
+    runner: GateCommandRunner,
+    sleeper: Sleeper,
+    job_name: str,
+    argv: list[str],
+) -> Result[Terminal | None, GateStepFailed]:
+    """Wait separately for Kueue to admit a Job, preserving terminal reports."""
+    budget = _poll_budget(request=request, timeout_seconds=request.admission_timeout_seconds)
+    for poll in range(budget):
+        read = _read_terminal(request=request, runner=runner, argv=argv)
+        if isinstance(read, Failure):
+            return Failure(read.failure())
+        terminal, payload = read.unwrap()
+        if terminal is not None:
+            return Success(terminal)
+        is_admitted = admitted(argv=argv, payload=payload, step=_AWAIT_STEP)
+        if isinstance(is_admitted, Failure):
+            return Failure(is_admitted.failure())
+        if is_admitted.unwrap():
+            return Success(None)
+        if poll < budget - 1:
+            sleeper(seconds=request.poll_interval_seconds)
+    detail = (
+        f"{job_name} reached no terminal condition within {request.admission_timeout_seconds:g}s"
+    )
+    return Failure(unreadable(step=_AWAIT_STEP, argv=argv, detail=detail))
+
+
+def _await_terminal_after_admission(
+    *,
+    request: GateRunRequest,
+    runner: GateCommandRunner,
+    sleeper: Sleeper,
+    job_name: str,
+    argv: list[str],
+) -> Result[Terminal, GateStepFailed]:
+    """Spend the terminal budget only after Kueue admitted the Job."""
+    budget = _poll_budget(request=request, timeout_seconds=request.poll_timeout_seconds)
+    for poll in range(budget):
+        read = _read_terminal(request=request, runner=runner, argv=argv)
+        if isinstance(read, Failure):
+            return Failure(read.failure())
+        terminal, _ = read.unwrap()
+        if terminal is not None:
+            return Success(terminal)
+        if poll < budget - 1:
+            sleeper(seconds=request.poll_interval_seconds)
     gave_up = f"{job_name} reached no terminal condition within {request.poll_timeout_seconds:g}s"
     return Failure(unreadable(step=_AWAIT_STEP, argv=argv, detail=gave_up))
+
+
+def _read_terminal(
+    *, request: GateRunRequest, runner: GateCommandRunner, argv: list[str]
+) -> Result[tuple[Terminal | None, str], GateStepFailed]:
+    """Read one Job reply, ending the wait immediately when the read is refused."""
+    lifted = require_success(
+        step=_AWAIT_STEP, argv=argv, outcome=runner(argv=argv, cwd=request.repo_root)
+    )
+    if isinstance(lifted, Failure):
+        return Failure(lifted.failure())
+    payload = lifted.unwrap().stdout
+    condition = terminal_condition(argv=argv, payload=payload, step=_AWAIT_STEP)
+    if isinstance(condition, Failure):
+        return Failure(condition.failure())
+    return Success((condition.unwrap(), payload))

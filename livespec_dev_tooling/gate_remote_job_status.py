@@ -22,6 +22,7 @@ from returns.result import Failure, Result, Success  # noqa: E402  — vendor-pa
 __all__: list[str] = [
     "COMPLETE_CONDITION",
     "Terminal",
+    "admitted",
     "created_job_name",
     "created_job_tree_hash",
     "reported_time",
@@ -31,6 +32,7 @@ __all__: list[str] = [
 
 COMPLETE_CONDITION = "Complete"
 _TERMINAL_CONDITION_TYPES = frozenset({COMPLETE_CONDITION, "Failed"})
+_ADMISSION_CONDITION_TYPES = frozenset({"Admitted", "Started"})
 _CONDITION_ASSERTED = "True"
 _TREE_HASH_LABEL = "livespec.gate/tree-hash"
 _JobPayload: TypeAlias = Mapping[str, Mapping[str, object]]
@@ -103,6 +105,24 @@ def reported_time(*, status: Mapping[str, object], key: str) -> str:
     """Return a Job clock reading, or an empty string when the Job omitted it."""
     reading = status.get(key)
     return reading if isinstance(reading, str) else ""
+
+
+def admitted(*, argv: Sequence[str], payload: str, step: str) -> Result[bool, GateStepFailed]:
+    """Whether Kueue has admitted a Job, without guessing from a missing field."""
+    try:
+        parsed = cast("_JobPayload", json.loads(payload))
+    except json.JSONDecodeError as error:
+        return Failure(unreadable(step=step, argv=argv, detail=f"unreadable job status: {error}"))
+    spec = parsed.get("spec", {})
+    status = parsed.get("status", {})
+    conditions = cast("_Conditions", status.get("conditions", ()))
+    has_admission_condition = any(
+        condition.get("status") == _CONDITION_ASSERTED
+        and condition.get("type") in _ADMISSION_CONDITION_TYPES
+        for condition in conditions
+    )
+    started = isinstance(status.get("startTime"), str)
+    return Success(spec.get("suspend") is False or has_admission_condition or started)
 
 
 def terminal_condition(
