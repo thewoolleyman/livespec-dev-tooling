@@ -10,7 +10,8 @@ stub `limactl` that plays the VM, its Docker and the fixture's kubectl, and asse
 - it applies the production RBAC and agents, pointed at the fixture's server and the worker's
   eth0, and converges the worker on the fixture network apart from its production state;
 - the enrollment reaches the VM only on stdin, never in an argument;
-- it waits for the Node and refuses to finish until a serving CSR is approved.
+- it waits for the Node and refuses to finish until a serving CSR is approved;
+- a rerun for a registered Node reconciles the container and mints and delivers nothing.
 """
 
 from __future__ import annotations
@@ -47,11 +48,15 @@ case "$1 $2" in
         case "$1 $2" in
           "apply -f") cat >> "$s/applied.yaml"; printf -- '---\\n' >> "$s/applied.yaml" ;;
           "get configmap") printf '%s' "$STUB_CERT" ;;
-          "get node") echo 172.18.0.4 ;;
+          "get node") [ -f "$s/node-registered" ] || exit 1; echo 172.18.0.4 ;;
           "get csr") : ;;
         esac ;;
     esac ;;
-  "bash -s") cat > "$s/converge-stdin" ;;
+  "bash -s")
+    cat > "$s/converge-stdin"
+    n=$(($(cat "$s/converges" 2>/dev/null || echo 0) + 1))
+    echo "$n" > "$s/converges"
+    if [ "$n" -ge 2 ]; then touch "$s/node-registered"; fi ;;
   "install -m") cat > "$s/delivered-${5##*/}" ;;
 esac
 """
@@ -154,3 +159,14 @@ def test_the_enrollment_reaches_the_vm_only_on_stdin(mac: _Mac) -> None:
     assert (mac.state / "delivered-client-ca.crt").read_text(encoding="utf-8") == f"{_CERT}\n"
     assert all(token.group(1) not in c for c in _calls(mac=mac))
     assert all(token.group(1).split(".")[1] not in c for c in _calls(mac=mac))
+
+
+def test_a_rerun_for_a_registered_node_mints_and_delivers_nothing(mac: _Mac) -> None:
+    (mac.state / "node-registered").write_text("", encoding="utf-8")
+    result = _run(mac=mac)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "already registered" in result.stdout
+    applied = (mac.state / "applied.yaml").read_text(encoding="utf-8")
+    assert "bootstrap-token-" not in applied
+    assert not list(mac.state.glob("delivered-*"))
+    assert len([c for c in _calls(mac=mac) if " bash -s -- " in c]) == 1
