@@ -1192,6 +1192,30 @@ Then the play MUST refuse before writing the registry on any host, naming that f
 
 Examples of <invalid>: a name that is whitespace only; a `host` that is not an inventory host; a `unit_name` that matches no instance on its `host`; a matched instance whose `canonical_host` is whitespace only; a `docker_host` that is whitespace only
 
+## Scenario: the fabro-hosts play renders each registered factory's run cap from its instance's max_concurrent_runs
+
+Given `fabro_factory_registry` maps `petri` to an instance on another host whose `fabro_server_instances` entry declares `max_concurrent_runs: 20`
+
+When `ansible/fabro-hosts.yml` converges and runs the rendering on a `dev_hosts` host
+
+Then that host's fleet-limit directory, `/home/ubuntu/.local/state/livespec/fleet-limits` by default, MUST hold a world-readable file `petri.max_concurrent_runs` whose single line is `20`
+
+And that host's `/etc/livespec/fabro-factories.json` entry for `petri` MUST carry no capacity key
+
+Given that instance's `max_concurrent_runs` is changed to `16` and nothing else is changed
+
+When `ansible/fabro-hosts.yml` converges and runs the rendering on that `dev_hosts` host and the `fabro_server` role converges that instance
+
+Then `petri.max_concurrent_runs` MUST hold the single line `16`
+
+And that instance's rendered `settings.toml` MUST carry `max_concurrent_runs = 16`
+
+Given a `fabro_factory_registry` entry whose resolved instance declares no `max_concurrent_runs`
+
+When `ansible/fabro-hosts.yml` converges and runs the rendering on any host
+
+Then the play MUST refuse before writing the registry or any run-cap file on any host, naming that factory
+
 ## Scenario: the manifest reader accepts an instruction-only adopter and holds it to plugin currency only
 
 Given a `.livespec-fleet-manifest.jsonc` whose `adopters` array holds an entry with `profile` `["instruction-only"]` and `posture` `released`, and another with `profile` `["instruction-only"]` and `posture` `none`
