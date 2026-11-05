@@ -125,6 +125,7 @@ from livespec_dev_tooling.gate_remote_verdict import (
     GateVerdict,
     run_gated_push,
 )
+from livespec_dev_tooling.incident_gate_entry import IncidentEntrance
 
 # `returns` is VENDORED, not installed; a bare import here would resolve only
 # when some earlier import in the process happened to run first.
@@ -195,7 +196,6 @@ GATE_RENDERER_PACKAGED = Path(__file__).resolve().parent / "gates" / "render-gat
 # does not carry it fails at the step with the argv in the report.
 GATE_PRIVATE_SIBLING_TOKEN_HELPER = Path("/usr/local/bin/with-livespec-env.sh")
 
-_READ_TREE_STEP = "read-tree-hash"
 _RENDER_STEP = "render-gate-job"
 _AUTHORITY_SKIP_STEP = "resolve-authority-skip"
 
@@ -449,6 +449,7 @@ def run_delegated_gate(
     return host_authority_decision(verdict=verdict, ran=ran)
 
 
+@IncidentEntrance(surface="gate-remote-delegate")
 def main() -> int:
     """The two answers a repository's `check-pre-push` recipe needs.
 

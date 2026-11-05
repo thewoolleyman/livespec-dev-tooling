@@ -129,6 +129,7 @@ from livespec_dev_tooling.config import (  # noqa: E402
     is_vendored_path,
     load_config,
 )
+from livespec_dev_tooling.incident_gate_entry import IncidentEntrance  # noqa: E402
 
 __all__: list[str] = []
 
@@ -506,6 +507,7 @@ def _dispatch_impl_staged(
     return _handle_suite_green_mode(msg_path=msg_path, log=log, staged_paths=staged_paths)
 
 
+@IncidentEntrance(surface="check-red-green-replay")
 def main() -> int:
     log = _configure_logger()
     # A PRE-FLIGHT load rather than a wrap at the call site, because the

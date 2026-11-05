@@ -22,6 +22,7 @@ from livespec_dev_tooling.gate_remote_verdict import (
     run_gated_push,
 )
 from livespec_dev_tooling.green_token import write_pre_commit_evidence
+from livespec_dev_tooling.incident_gate_entry import IncidentEntrance
 
 __all__: list[str] = ["PreCommitVerdict", "main", "run_pre_commit"]
 
@@ -184,6 +185,7 @@ def _run_remote(
     )
 
 
+@IncidentEntrance(surface="pre-commit-delegate")
 def main() -> int:
     """Run the selected route and report whether the shell must fall back locally."""
     import structlog

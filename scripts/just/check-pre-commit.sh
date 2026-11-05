@@ -1,6 +1,17 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Resolve incident mode before any gate work (livespec-dev-tooling-6bmta2). The
+# presence test is the installed hook's prefilter and decides nothing: unset, the
+# body below runs unchanged; present, the shared boundary
+# (livespec_dev_tooling/incident_gate_entry.py) parses and decides, and only its
+# 75 continues. Every other status, including an unavailable boundary, refuses.
+if [ -n "${EXPEDITED_INCIDENT_RESPONSE:-}${EXPEDITED_INCIDENT_RESPONSE_REVERT:-}${LIVESPEC_INCIDENT_CONTEXT:-}${LIVESPEC_INCIDENT_AUTHORITY_QUERY:-}" ]; then
+    incident_status=0
+    uv run --no-sync python -m livespec_dev_tooling.incident_gate_entry check-pre-commit || incident_status=$?
+    [ "$incident_status" -eq 75 ] || exit $((incident_status == 0 ? 78 : incident_status))
+fi
+
 if [[ -z "$(git diff --cached --name-only)" ]]; then
     echo ":: empty commit detected (nothing staged at all): repo-state gates have nothing to gate; exit 0"
     exit 0
