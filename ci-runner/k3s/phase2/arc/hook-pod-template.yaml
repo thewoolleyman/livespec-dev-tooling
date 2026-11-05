@@ -287,6 +287,8 @@ spec:
     - name: pypi-proxy-uv-wrapper
       configMap:
         name: pypi-proxy-uv-wrapper
+        optional: false
+        defaultMode: 365
         # DECIMAL 365 == octal 0555 (r-xr-xr-x). Never write a leading-zero
         # octal here: the container hook parses this template as YAML 1.2,
         # which reads `0555` as decimal 555, and the API server rejects every
@@ -294,8 +296,6 @@ spec:
         # This ConfigMap is published into arc-runners by the committed CI
         # stack converge, so a missing mount is a deployment error, not a
         # fail-soft fallback to public PyPI.
-        optional: false
-        defaultMode: 365
     - name: ci-runner-bin
       hostPath:
         # The pool-provided binaries (today: sccache, from
