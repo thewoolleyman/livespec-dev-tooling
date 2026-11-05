@@ -86,16 +86,22 @@ def _fail_record(*, line: str) -> tuple[str, str, str] | None:
     return (mode, hint if isinstance(hint, str) else "", path if isinstance(path, str) else "")
 
 
-def _body_mismatch_record(*, line: str, record: tuple[str, str, str]) -> tuple[str, str, str, str]:
-    """Return the known body-comparison fields from this check's enriched finding."""
-    body_mismatch = cast("dict[str, str]", json.loads(line.strip()))
+def _body_mismatch_record(
+    *, line: str, record: tuple[str, str, str]
+) -> tuple[str, str, str, str] | None:
+    """Return the body-comparison fields of this check's enriched finding, else `None`.
+
+    `body_mismatch` is a failure mode several checks emit; only the hook check
+    adds the two sha256 keys. A record without both falls back to ordinary
+    grouping rather than raising while the aggregate tail is built.
+    """
+    body_mismatch = cast("dict[str, object]", json.loads(line.strip()))
+    installed = body_mismatch.get("installed_sha256")
+    canonical = body_mismatch.get("canonical_sha256")
+    if not isinstance(installed, str) or not isinstance(canonical, str):
+        return None
     _, hint, path = record
-    return (
-        path,
-        body_mismatch["installed_sha256"],
-        body_mismatch["canonical_sha256"],
-        hint,
-    )
+    return (path, installed, canonical, hint)
 
 
 def _mode_groups(*, output: str) -> list[tuple[str, str, str, int]]:
@@ -148,14 +154,14 @@ def failure_digest_lines(*, failures: list[tuple[str, str]]) -> list[str]:
     lines = ["", _DIGEST_HEADER]
     for target, output in failures:
         findings = [(line, _fail_record(line=line)) for line in output.splitlines()]
-        mismatch_records = [
-            _body_mismatch_record(line=line, record=record)
+        enriched = [
+            (line, _body_mismatch_record(line=line, record=record))
             for line, record in findings
             if record is not None and record[0] == "body_mismatch"
         ]
-        ordinary_output = "\n".join(
-            line for line, record in findings if record is None or record[0] != "body_mismatch"
-        )
+        mismatch_records = [mismatch for _, mismatch in enriched if mismatch is not None]
+        enriched_lines = {line for line, mismatch in enriched if mismatch is not None}
+        ordinary_output = "\n".join(line for line, _ in findings if line not in enriched_lines)
         groups = _mode_groups(output=ordinary_output)
         if not groups and not mismatch_records:
             lines.append(f"  {target}: {_NO_STRUCTURED_FINDING}")

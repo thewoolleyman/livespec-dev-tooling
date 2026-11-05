@@ -280,3 +280,19 @@ def test_a_failed_target_with_no_structured_finding_is_reported_as_that() -> Non
 
     assert len(tail) == 1, "the target must appear in the digest even with nothing to parse"
     assert tail[0].startswith("  check-types: failed without a structured failure_mode")
+
+
+def test_a_body_mismatch_without_body_hashes_groups_like_any_other_mode() -> None:
+    """Other checks emit `body_mismatch` with no sha256 keys; the digest must not raise on them."""
+    output = (
+        '{"status": "fail", "failure_mode": "body_mismatch", "hint": "resync", "path": "a.md"}\n'
+        '{"status": "fail", "failure_mode": "body_mismatch", "hint": "resync", "path": "b.md"}\n'
+    )
+
+    assert failure_digest_lines(failures=[("check-no-shadow-ledger-body-identical", output)])[
+        2:
+    ] == [
+        "  check-no-shadow-ledger-body-identical: body_mismatch (2 findings)",
+        "      path: a.md",
+        "      remedy: resync",
+    ]
