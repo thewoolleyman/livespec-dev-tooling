@@ -263,6 +263,14 @@ run autonomously, never block."
   The item waits; the seat does not.
 - Never self-wind-down (rule D).
 - **A resume goes straight into the loop.** A session resuming this plan starts the coordinator `/loop` in the same turn. The epic's `next_action` is written as `kind: human`, but that is a pointer for the next session, not a gate. Never ask the maintainer whether to start or resume the loop. Maintainer correction 2026-11-03 ~13:0xZ, after a resumed session asked about fifteen times: "Why did the loop stop? Why would you need to ask me to start it?"
+- **Never hold off an overseer restart.** No standing rule may stop the overseer restarting the coordinator. On a
+  wind-down the coordinator writes its handoff and declares ready. A maintainer remark asking it to hold is situational,
+  and it ends with the situation that prompted it. The maintainer, 2026-11-05 ~17:0xZ, recorded on epic
+  `livespec-dev-tooling-6tgd2z` at 17:01:42Z: "WHY ARE YOU ASKING ME TO RESTART NOW?  THE ONLY TIME I TOLD YOU TO HOLD
+  WAS ONCE WHEN WE NEEDED TO DISCUSS THE REVERT.  REMOVE ANY STANDING RULE YOU HAVE TO AVOID LETTING THE OVERSEER
+  RESTART YOU". Measured that day: a 06:3xZ "stop Restart until I let you", given for the revert discussion, was
+  carried forward through handoffs and the loop prompt, and the coordinator kept itself declared blocked and asked the
+  maintainer for a "restart OK" until 17:01Z.
 
 This is enforced. The user-scope hook `~/.claude/hooks/no-blocking-picker-guard.py` (matcher `AskUserQuestion`) denies
 the tool for the sessions named in its `AUTONOMOUS_SEATS` set. The detail is in
@@ -281,6 +289,9 @@ entry from live state: `herdr agent list` in full, plus ledger reads.
   answered (§3).
 - A peer report is evidence of what was true when it was sent, never of what is true now.
 - Name seats and work to the maintainer by plan name, workspace and tab, never by pane id or repository name (R483).
+  EVERY `FOR THE MAINTAINER` line names both the plan slug (epic id) and the herdr workspace/tab of the seat it
+  concerns, so the maintainer can find it without asking. The maintainer, 2026-11-05 ~17:0xZ, recorded at 17:01:42Z:
+  "YOU NEED TO ALWAYS GIVE ME A TAB NAME AND PLAN SLUG, I HAVE NO IDEA WHERE THIS IS".
 - Never name a work item by its bare id in anything the maintainer reads. Write its title, then its id: `beads-web
   spawns gh api rate_limit once per bead card every 30 s (bd-ib-zm4gpr)`. Name a plan as `plan-slug (epic-id)`. This
   applies to asks, status lines and summaries alike. Maintainer correction 2026-11-02 ~06:4xZ, recorded on epic
@@ -378,6 +389,15 @@ COMPLETED: <plan-slug (epic-id)> archived <ref>, seat closed <UTC> — acknowled
 
 A plan whose children are closed but which still owes its proof, review or archive is NOT complete. It stays on the
 list with its true status word, and its seat stays open.
+
+**A priority whose owner is already CLOSED is dropped without asking.** When the plan or work item that owns a
+priority has already been closed by its owner (a plan completely closed in the sense above, or a single owning work
+item in `closed`), the coordinator drops the priority itself: a `priorities-record` append naming the closure, reported
+once in the tick's actions. It does not ask first, and it prints no `COMPLETED` line for that drop. This is the one drop
+the coordinator makes on its own initiative. A plan the coordinator still has to archive, or whose seat it still has to
+close, keeps the `COMPLETED` acknowledgement line above, and a plan with only its children closed is not closed at all.
+The maintainer, 2026-11-05 ~12:4xZ, recorded on epic `livespec-dev-tooling-6tgd2z` at 12:46:55Z, on dropping a
+priority whose owning item (overseer-uzvcbn.16) was closed: "sure if they are closed move on.  Wghy ask me?"
 
 **"Finished", "done" and "complete" mean completely closed, and nothing less.** Use those words for a plan only when it
 is archived and its seat is closed. Otherwise the status word names what is still owed, for example `carriers closed;
