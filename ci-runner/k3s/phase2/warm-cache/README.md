@@ -273,6 +273,19 @@ and in `last-run.json`, and the sweep emits them as
 (`tests/spec/test_runner_pool_cache_tiers.py`) fails when the ConfigMap's
 `bytes` or `files` differ from the bolded values above.
 
+For a root-scoped audit of this budget, keep both paths explicit: the
+repository-root `README.md` is not this warm-cache document. The commands
+below show the measured basis, per-start cost, and both ConfigMap values
+without relying on an unshown adjacent line.
+
+```sh
+readme=ci-runner/k3s/phase2/warm-cache/README.md
+cronjob=ci-runner/k3s/phase2/warm-cache/warm-cache-cronjob.yaml
+sed -n '/^## Budget/,/^## Metrics/p' "$readme" \
+  | grep -n '[l]argest measured\|[p]lus git seed\|[e]xpected ceiling\|[P]er-start seed cost\|[r]eflink seed measured'
+grep -n -A4 '^  name: warm-cache-budget' "$cronjob"
+```
+
 ### Re-derivation, 2026-11-04 (livespec-dev-tooling-243dzr)
 
 The 2026-09-04 budget (1,000,000,000 bytes / 20,000 files, ~2.5x the
