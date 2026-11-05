@@ -35,6 +35,7 @@ prog="k3s-fixture"
 cluster="hw-fixture"
 root="${FIXTURE_ROOT:-/var/lib/hw-fixture}"
 worker_root="${FIXTURE_WORKER_ROOT:-/mnt/lima-hwdata/fixture-worker}"
+mounts="${PROC_MOUNTS:-/proc/mounts}"
 k3s_image="rancher/k3s:v1.36.2-k3s1@sha256:6a47cea22c4b834d4ba72c89d291696b79ebe406251f90b446e4dff03513dd87"
 k3d_version="v5.9.0"
 k3d_sha256_arm64="03cde5cf23e6e8e67de5a039ecf26e5b85aca82fba3e5d13dadf904cd218a250"
@@ -147,6 +148,14 @@ case "$action" in
       docker rm -f "$worker" >/dev/null
       say "removed fixture worker container $worker"
     fi
+    # The worker's kubelet leaves volume mounts (projected tokens) under its
+    # state root, which mount propagation keeps in the VM after the container
+    # is gone; unmount them, deepest first, before removing the root.
+    awk -v root="$worker_root/" 'index($2, root) == 1 {print $2}' "$mounts" | sort -r |
+      while IFS= read -r mount; do
+        umount "$mount"
+        say "unmounted $mount"
+      done
     rm -rf "$worker_root"
     if cluster_exists; then
       k3d cluster delete "$cluster"
