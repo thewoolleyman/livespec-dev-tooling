@@ -235,6 +235,64 @@ def test_the_section_states_the_fleet_instances_concurrency_and_environment_ids(
         )
 
 
+def _assert_kubernetes_pin_is_staged(*, unit: str) -> None:
+    """One instance's `kubernetes` pin equals the digest the role stages at its path.
+
+    The shared path's digest is the role's default release; a versioned path's is
+    the release `host_vars` declares for that version.
+    """
+    declared = re.search(
+        rf"^      {re.escape(_PROVIDER_KIND)}:\n(?P<body>(?:(?:        .*)?\n)*)",
+        _instance(unit=unit),
+        re.MULTILINE,
+    )
+    assert declared is not None, (
+        f"{_HOST_VARS} must declare the `{_PROVIDER_KIND}` sandbox provider for "
+        f"`{unit}`: the prose below states that it does"
+    )
+    instance_digest = re.search(
+        r"^        sha256: (?P<digest>\S+)$", declared["body"], re.MULTILINE
+    )
+    assert (
+        instance_digest is not None
+    ), f"{_HOST_VARS} must pin a sha256 for `{unit}`'s `{_PROVIDER_KIND}` provider"
+    instance_path = re.search(r"^        path: (?P<path>\S+)$", declared["body"], re.MULTILINE)
+    assert (
+        instance_path is not None
+    ), f"{_HOST_VARS} must name a plugin path for `{unit}`'s `{_PROVIDER_KIND}` provider"
+    versioned = re.fullmatch(
+        r"/usr/local/bin/sandbox-driver-kubernetes-(?P<version>v[0-9.]+)", instance_path["path"]
+    )
+    if versioned is None:
+        # The shared path: the role's default release is what it stages there.
+        pinned = re.search(
+            rf"^{re.escape(_DRIVER_ROLE)}_sha256: (?P<digest>\S+)$",
+            _DRIVER_DEFAULTS.read_text(encoding="utf-8"),
+            re.MULTILINE,
+        )
+        staged_by = f"{_DRIVER_DEFAULTS} `{_DRIVER_ROLE}_sha256`"
+    else:
+        # A versioned path: the release the host declares for that version.
+        pinned = re.search(
+            rf"^  - version: {re.escape(versioned['version'])}\n\s+sha256: (?P<digest>\S+)$",
+            _HOST_VARS.read_text(encoding="utf-8").split(f"{_DRIVER_ROLE}_versioned_releases:", 1)[
+                -1
+            ],
+            re.MULTILINE,
+        )
+        staged_by = f"{_HOST_VARS} `{_DRIVER_ROLE}_versioned_releases`"
+    assert pinned is not None, (
+        f"{staged_by} must pin the digest the role stages at {instance_path['path']}; this "
+        f"arm reads it out of the declaration rather than restating it, so a renamed variable "
+        f"is an arm that has stopped comparing anything"
+    )
+    assert instance_digest["digest"] == pinned["digest"], (
+        f"`{unit}` declares the `{_PROVIDER_KIND}` plugin at "
+        f"{instance_digest['digest']} while {_DRIVER_ROLE} stages {pinned['digest']}, so "
+        f"the instance would launch a binary the role never put on the host"
+    )
+
+
 def test_the_section_states_the_kubernetes_provider_at_the_roles_pinned_digest() -> None:
     """The provider the fleet instance declares, and the digest claim, measured.
 
@@ -245,36 +303,10 @@ def test_the_section_states_the_kubernetes_provider_at_the_roles_pinned_digest()
     the host verifies at every launch and reports as a provider that will not
     start.
     """
-    declared = re.search(
-        rf"^      {re.escape(_PROVIDER_KIND)}:\n(?P<body>(?:(?:        .*)?\n)*)",
-        _instance(unit=_FLEET_UNIT),
-        re.MULTILINE,
-    )
-    assert declared is not None, (
-        f"{_HOST_VARS} must declare the `{_PROVIDER_KIND}` sandbox provider for "
-        f"`{_FLEET_UNIT}`: the prose below states that it does"
-    )
-    instance_digest = re.search(
-        r"^        sha256: (?P<digest>\S+)$", declared["body"], re.MULTILINE
-    )
-    assert (
-        instance_digest is not None
-    ), f"{_HOST_VARS} must pin a sha256 for `{_FLEET_UNIT}`'s `{_PROVIDER_KIND}` provider"
-    pinned = re.search(
-        rf"^{re.escape(_DRIVER_ROLE)}_sha256: (?P<digest>\S+)$",
-        _DRIVER_DEFAULTS.read_text(encoding="utf-8"),
-        re.MULTILINE,
-    )
-    assert pinned is not None, (
-        f"{_DRIVER_DEFAULTS} must still pin the plugin digest under "
-        f"`{_DRIVER_ROLE}_sha256`; this arm reads it out of the role rather than restating "
-        f"it, so a renamed variable is an arm that has stopped comparing anything"
-    )
-    assert instance_digest["digest"] == pinned["digest"], (
-        f"`{_FLEET_UNIT}` declares the `{_PROVIDER_KIND}` plugin at "
-        f"{instance_digest['digest']} while {_DRIVER_ROLE} stages {pinned['digest']}, so "
-        f"the instance would launch a binary the role never put on the host"
-    )
+    # The fleet instance pins a versioned path, the candidate the shared one, so
+    # both ways the role stages a plugin are measured.
+    for unit in (_FLEET_UNIT, _CANDIDATE_UNIT):
+        _assert_kubernetes_pin_is_staged(unit=unit)
     section = _section(title=_HOST_SECTION)
     assert "`sandbox_providers`" in section and f"`{_PROVIDER_KIND}`" in section, (
         f"the {_HOST_SECTION} section must state that `{_FLEET_UNIT}` declares the "

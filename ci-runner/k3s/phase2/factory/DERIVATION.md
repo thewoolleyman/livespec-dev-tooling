@@ -351,6 +351,70 @@ signal; see livespec-dev-tooling-6e5pyj). If orchestrator bd-ib-zl3qcz shows
 6-CPU sandboxes beat more 4-CPU ones, this same CPU is re-spent as fewer, larger
 sandboxes.
 
+## Request 3, limit 6 (2026-11-05)
+
+**Why it moved.** Measured read-only on 2026-11-05 at 04:45Z, from every factory
+sandbox pod's cgroup `cpu.stat`, while each pod was Guaranteed at 4 cpu request =
+limit (orchestrator `bd-ib-zl3qcz`, plan `bd-ib-nmuyjc`, on
+`legacy-coordinator-agent` ruling R301):
+
+- In a 30 s window, 13 of 18 pods were busy. Each busy pod ran at 3.68-4.00 cores
+  and was CFS-throttled in **42-91 %** of its periods.
+- Over each pod's lifetime (15 pods with real work), each was throttled in
+  **24-56 %** of its periods, for 166-3239 s of throttled time. Mean use was
+  2.2-3.4 cores, about **2.8** on average.
+
+So a turn is limit-bound at 4 (a 4-worker pytest lane beside the gate's
+concurrent non-pytest targets, the agent and git), while steady use is near 3.
+A Guaranteed pod's request is its limit, so raising the limit alone would also
+raise what every sandbox reserves.
+
+**The ruling.** `legacy-coordinator-agent` approved it under R301/R493, and the
+approval is recorded on epic `livespec-dev-tooling-6tgd2z`:
+
+- the fleet instance's sandboxes **request 3 cpu with a limit of 6** (Burstable);
+- `limits.cpu` goes from 84 to **120**;
+- `requests.cpu` stays **84**, and every memory term is unchanged.
+
+The request below the limit is the plugin setting
+`SANDBOX_DRIVER_KUBERNETES_CPU_REQUEST_CORES`, which sandbox-driver-kubernetes
+v0.8.0 added. Fabro's `process_spec` carries only `cpu_cores` and `memory_mb`.
+
+| term | arithmetic | value |
+|---|---|---|
+| `requests.cpu` | unchanged (20 x 3 = 60 at the new request, plus the candidate's 4-cpu sandboxes and termination headroom) | **84** |
+| `limits.cpu` | 20 runs x 6 | **120** |
+| `requests.memory`, `limits.memory`, `pods` | unchanged | 171470Mi, 181710Mi, 42 |
+
+**What binds.** `requests.cpu` is what the scheduler and node fit count, and
+it does not grow: 20 sandboxes at 3 reserve 60 of the 84. `limits.cpu` only
+caps the sum of bursts, so it must not refuse a pod the requests admit. 120 is
+20 x 6, so at the fleet cap no pod is refused on limits. The candidate
+instance shares this namespace and keeps 4 / 4. Its sandboxes count inside the
+same fleet cap of 20, so a mix of the two never needs more than 120. Bursts
+compete for the node's idle cores and do not reserve them. On
+`poweredge-xubuntu` the CI pool keeps its own requests, and a burst takes only
+CPU nobody has requested.
+
+**Order of operations.** Apply in the fleet instance's (`:32276`) restart
+window at zero runs. Apply this quota FIRST, because a 6-cpu-limit pod under a
+limits.cpu of 84 is refused once 14 of them exist. Then converge gmktec: install
+the v0.8.0 plugin at its own versioned path, and restart `fabro-server` onto the
+new pin, the request setting, `cpu_cores` 6 and the catalog's `cpu: 6`.
+
+**Revert.** This is one apply per playbook, in the reverse order:
+1. Swap the `REVERT` lines in `ansible/inventory/host_vars/gmktec-xubuntu.yml`
+   back in (or `git revert` this change's commit), and converge gmktec in a
+   zero-run window. Sandboxes go back to 4 / 4 on v0.5.0.
+2. Set `limits.cpu: "84"` (the `REVERT` line in `./factory-namespace.yaml`) and
+   apply the quota. Lowering a quota evicts nothing. It only refuses new pods
+   over it, so the order matters only for new launches.
+
+**What to measure after the change.** Per-stage durations and the
+throttled-period share at 3 / 6 against the 4 / 4 figures above. If node fit or
+poweredge idle degrades (the "Twenty runs" revert signal: idle below about 5 %
+AND the BestEffort CI-slice `cpu.pressure` avg60 above about 30), revert.
+
 ## The egress targets
 
 The policy default-denies ingress (`podSelector: {}`, `ingress: []`) and allows

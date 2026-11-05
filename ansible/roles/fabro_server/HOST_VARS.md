@@ -846,20 +846,36 @@ number together with the quota, and read any sandbox OOM on this host as an
 INFRASTRUCTURE ending (ruling R235).
 
 That instance's catalog declares `livespec-ci`, `livespec-ci-rust` and
-`livespec-ci-k8s`, each 4 CPU and 8GB. `livespec-ci` and `livespec-ci-k8s` run
-on the `kubernetes` provider and so declare no image; `livespec-ci-rust` keeps a
-docker image — the `python-rust-agent` layer, following the pin of the one
-repository that builds Rust rather than the orchestrator's. A dispatch reaches
-an environment only through a factory entry that names it, so a cutover between
-two of them is pointing that entry, and the rollback is pointing it back.
+`livespec-ci-k8s`, each 8GB. The ones on the `kubernetes` providers are 6 CPU
+since 2026-11-05 (see the `sandbox_providers` paragraph below), and
+`livespec-ci-rust` is 4 CPU. `livespec-ci` and `livespec-ci-k8s` run on the
+`kubernetes` provider and so declare no image; `livespec-ci-rust` keeps a docker
+image — the `python-rust-agent` layer, following the pin of the one repository
+that builds Rust rather than the orchestrator's. A dispatch reaches an
+environment only through a factory entry that names it, so a cutover between two
+of them is pointing that entry, and the rollback is pointing it back.
 
 `sandbox_providers` on that instance declares the `kubernetes` kind at the
-plugin digest the `sandbox_driver_kubernetes` role pins — the same `sha256` that
-role stages `/usr/local/bin/sandbox-driver-kubernetes` at, so the two move
-together and the instance never launches a plugin binary the role did not put on
-the host. `inherit_env` passes `HOME` and `PATH` through the cleared plugin
-environment, and this instance's `HOME` is `/home/cwoolley`, which
+plugin digest the `sandbox_driver_kubernetes` role pins for that kind's path.
+Since 2026-11-05 that path is the versioned
+`/usr/local/bin/sandbox-driver-kubernetes-v0.8.0`, and the digest is the one
+`sandbox_driver_kubernetes_versioned_releases` declares for v0.8.0. The
+candidate and `fabro-server-mi-homelab` keep the shared
+`/usr/local/bin/sandbox-driver-kubernetes` at the role's default release. Either
+way the pin and the binary the role stages at that path move together, so the
+instance never launches a plugin binary the role did not put on the host.
+`inherit_env` passes `HOME` and `PATH` through the cleared plugin environment,
+and this instance's `HOME` is `/home/cwoolley`, which
 `sandbox_driver_kubernetes_config_homes` lists.
+
+On v0.8.0 the fleet instance's sandboxes request 3 CPU with a limit of 6
+(orchestrator `bd-ib-zl3qcz`). The request is the provider `env` key
+`SANDBOX_DRIVER_KUBERNETES_CPU_REQUEST_CORES: "3"`. The limit is the
+environment's `cpu: 6`, because a run's environment size replaces the
+`process_spec`'s, and `process_spec.cpu_cores` is 6 to match. The `factory-runs`
+quota's `limits.cpu` is 120 for it (`ci-runner/k3s/phase2/factory/DERIVATION.md`
+"Request 3, limit 6"). Every changed value carries its `REVERT` line in
+`host_vars`.
 
 `vault_secrets` declares the App key, from the wrapper's
 `GITHUB_PRIVATE_KEY`, and the `OPENAI_API_KEY` placeholder an ACP-only graph

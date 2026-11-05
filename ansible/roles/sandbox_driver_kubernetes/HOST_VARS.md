@@ -21,6 +21,7 @@ different HOME sets `sandbox_driver_kubernetes_config_homes`.
 | --- | --- | --- |
 | `sandbox_driver_kubernetes_version` | the pinned release tag | plugin release to install |
 | `sandbox_driver_kubernetes_sha256` | the release asset's digest | the plugin's committed digest, also written into the CLI profile |
+| `sandbox_driver_kubernetes_versioned_releases` | `[]` | further plugin releases, each `{version, sha256}`, installed at `<bin_dir>/sandbox-driver-kubernetes-<version>` beside the shared binary. An instance moves to one by pinning that path and digest in its own `sandbox_providers` at zero runs. The role refuses, before any download, an apply in which a provider pins a versioned path at another digest |
 | `sandbox_driver_kubernetes_cli_rev` | the sandbox-driver revision the plugin pins | the CLI's source revision |
 | `sandbox_driver_kubernetes_cli_sha256` | the release asset's digest | the CLI's committed digest |
 | `sandbox_driver_kubernetes_config_homes` | `[fabro_server_host_home]` | every HOME the plugin is launched under |

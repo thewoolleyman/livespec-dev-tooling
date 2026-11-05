@@ -27,6 +27,14 @@ metadata:
     app.kubernetes.io/managed-by: livespec-ci-runner-factory
     livespec.workitem: f5e6vl
 ---
+# LIMITS.CPU RAISED 2026-11-05 to 120, requests.cpu unchanged at 84:
+# ./DERIVATION.md "Request 3, limit 6" (orchestrator bd-ib-zl3qcz;
+# legacy-coordinator-agent, R301/R493). Fleet sandboxes become request 3 /
+# limit 6 cpu, so requests bind (20 x 3 + headroom <= 84) and limits do not.
+#
+# RAISED 2026-11-04 to twenty runs: ./DERIVATION.md "Twenty runs, the extra four
+# on poweredge" (R493).
+#
 # RAISED 2026-11-03 by ONE sandbox of termination headroom, fleet cap still 16
 # runs: ./DERIVATION.md "One sandbox of termination headroom" (coordinator
 # ruling (b), 2026-11-03: a 17th acquire was refused while an ended run's pod
@@ -69,7 +77,11 @@ spec:
   hard:
     requests.cpu: "84"
     requests.memory: 171470Mi
-    limits.cpu: "84"
+    # REQUEST 3 / LIMIT 6 (2026-11-05, bd-ib-zl3qcz): the fleet's sandboxes
+    # request 3 cpu and may burst to 6, so the limit total is 20 runs x 6 = 120
+    # while requests.cpu stays 84. ./DERIVATION.md "Request 3, limit 6".
+    # REVERT (one apply, with the gmktec host_vars REVERT lines): limits.cpu: "84"
+    limits.cpu: "120"
     limits.memory: 181710Mi
     pods: "42"
 ---

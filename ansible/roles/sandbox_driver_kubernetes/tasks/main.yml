@@ -3,6 +3,42 @@
 # their configuration for every HOME a launcher runs under. See
 # defaults/main.yml for what each value is and where it comes from.
 
+- name: Start the list of pins on a versioned plugin path
+  ansible.builtin.set_fact:
+    sandbox_driver_kubernetes_versioned_pins: []
+
+- name: Collect every Fabro instance's pin on a versioned plugin path
+  ansible.builtin.set_fact:
+    sandbox_driver_kubernetes_versioned_pins: >-
+      {{ sandbox_driver_kubernetes_versioned_pins
+         + (item.sandbox_providers | default({}) | dict2items
+            | map(attribute='value')
+            | selectattr('path', 'defined')
+            | selectattr('path', 'match', sandbox_driver_kubernetes_versioned_path_pattern)
+            | map('combine', {'unit_name': item.unit_name})
+            | list) }}
+  loop: "{{ fabro_server_instances | default([]) }}"
+  loop_control:
+    label: "{{ item.unit_name }}"
+
+- name: Refuse a versioned plugin pin that disagrees with its declared release
+  # Before any download. A provider that points at a versioned install path
+  # must pin exactly the digest the role installs there, or Fabro refuses its
+  # every plugin launch (the 2026-11-03 pin-back, c6791224). The shared
+  # path's pins are guarded by test_sandbox_driver_kubernetes_node_name.py.
+  ansible.builtin.assert:
+    that:
+      - item.sha256 == (sandbox_driver_kubernetes_versioned_digests[item.path] | default(''))
+    fail_msg: >-
+      {{ item.unit_name }} pins {{ item.path }} at {{ item.sha256 }}, but
+      sandbox_driver_kubernetes_versioned_releases installs
+      {{ sandbox_driver_kubernetes_versioned_digests[item.path] | default('no release at that path') }}
+      there. Change the binary and every pin on it together.
+    quiet: true
+  loop: "{{ sandbox_driver_kubernetes_versioned_pins }}"
+  loop_control:
+    label: "{{ item.unit_name }} {{ item.path }}"
+
 - name: Install the pinned binaries
   # get_url verifies the committed digest before it moves the file into place,
   # so a mismatched download never lands at the destination.
@@ -26,6 +62,23 @@
       sha256: "{{ sandbox_driver_kubernetes_cli_sha256 }}"
   loop_control:
     label: "{{ item.name }}"
+
+- name: Install each versioned plugin release at its own path
+  # A new file per version: the shared binary above, and every instance pinned
+  # to it, are untouched.
+  ansible.builtin.get_url:
+    url: >-
+      {{ sandbox_driver_kubernetes_release_base_url }}/{{ item.version
+      }}/sandbox-driver-kubernetes-{{ item.version }}-x86_64-unknown-linux-gnu
+    checksum: "sha256:{{ item.sha256 }}"
+    dest: "{{ sandbox_driver_kubernetes_bin_dir }}/sandbox-driver-kubernetes-{{ item.version }}"
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+  loop: "{{ sandbox_driver_kubernetes_versioned_releases }}"
+  loop_control:
+    label: "sandbox-driver-kubernetes-{{ item.version }}"
 
 - name: Create the configuration directories
   ansible.builtin.file:
