@@ -97,6 +97,7 @@ from __future__ import annotations
 
 import json
 import re
+import shlex
 import sys
 from pathlib import Path
 from typing import cast
@@ -120,6 +121,9 @@ from livespec_dev_tooling.agent_hooks._deny_hint import (  # noqa: E402
 from livespec_dev_tooling.agent_hooks._foreground_gate import (  # noqa: E402
     foreground_refusal,
 )
+from livespec_dev_tooling.gate_command import pytest_command  # noqa: E402
+from livespec_dev_tooling.gate_credential import gates_kubeconfig_readable  # noqa: E402
+from livespec_dev_tooling.gate_remote_delegate import delegated_gate_enabled  # noqa: E402
 
 __all__: list[str] = []
 
@@ -130,6 +134,9 @@ __all__: list[str] = []
 _JUST_GATE_RECIPE_PREFIX = "check"
 _GIT_GATE_SUBCOMMANDS: frozenset[str] = frozenset({"commit", "push"})
 _GH_GATE_SUBCOMMAND = "pr"
+_PYTEST_VALUE_OPTIONS: frozenset[str] = frozenset(
+    {"-c", "--confcutdir", "--cov", "--cov-config", "-k", "-m", "--tb"}
+)
 
 # The sanctioned detached-gate runner. Anchored at the START of the
 # command (tolerating a `mise exec --` wrapper and any path prefix) so
@@ -274,6 +281,17 @@ def _foreground_verdict(
     command = tool_input.get("command")
     if tool_name != "Bash" or not isinstance(command, str) or _SANCTIONED_RUNNER.search(command):
         return 0
+    if _foreground_full_suite_pytest(command=command, cwd=Path.cwd()):
+        log.error(
+            "DENIED: a foreground full-suite pytest on a delegating host — "
+            "dispatch it through the detached runner",
+            check_id="pretooluse-foreground-full-suite-pytest-deny",
+            gate="pytest",
+            command=command,
+            repository=str(Path.cwd()),
+            hint=foreground_deny_hint(cwd=Path.cwd(), command=command),
+        )
+        return 2
     refusal = foreground_refusal(command=command, cwd=Path.cwd())
     if refusal is None:
         return 0
@@ -289,6 +307,38 @@ def _foreground_verdict(
         hint=foreground_deny_hint(cwd=Path.cwd(), command=command),
     )
     return 2
+
+
+def _foreground_full_suite_pytest(*, command: str, cwd: Path) -> bool:
+    """Whether ``command`` is an eligible host's foreground full-suite pytest."""
+    try:
+        pytest_argv = pytest_command(command=tuple(shlex.split(command)))
+    except ValueError:
+        return False
+    return (
+        pytest_argv is not None
+        and _is_full_suite_pytest(pytest_argv=pytest_argv)
+        and delegated_gate_enabled(repo_root=cwd)
+        and gates_kubeconfig_readable()
+    )
+
+
+def _is_full_suite_pytest(*, pytest_argv: tuple[str, ...]) -> bool:
+    """A pytest has no named test path, unless xdist makes it full-suite anyway."""
+    arguments = pytest_argv[1:]
+    if "-n" in arguments or "--numprocesses" in arguments:
+        return True
+    if any(argument.startswith("--numprocesses=") for argument in arguments):
+        return True
+    expect_option_value = False
+    for argument in arguments:
+        if expect_option_value:
+            expect_option_value = False
+        elif argument in _PYTEST_VALUE_OPTIONS:
+            expect_option_value = True
+        elif not argument.startswith("-"):
+            return False
+    return True
 
 
 def main() -> int:
