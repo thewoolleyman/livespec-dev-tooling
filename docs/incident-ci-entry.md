@@ -4,17 +4,21 @@
 `aggregate`. A run names members with repeated `--target check-name` arguments;
 it accepts no caller command or inventory path. The `--repo`, `--report` and
 `--reports` paths are supplied by the trusted workflow entrance. The packaged
-inventory contains the full existing normal workflow's 71 members, their batches
-and the coverage producer/consumer dependency. Its byte digest and source workflow
-digest travel with the code. Regenerate it with
-`incident_ci_inventory.render_inventory(workflow=...)` and update its module's
-digest in the same normally validated release. Only the two already measured fast
-checks, lint and format, are classified fast in this increment.
+inventory contains the full existing normal workflow's members, their batches
+and the coverage producer/consumer dependency. It derives only from the
+workflow's contributed check-target set, never from whole-file bytes: a ci.yml
+edit that leaves that set unchanged, such as a runs-on or step edit, needs no
+inventory change, while a target added, removed or renamed fails the derivation
+test naming the difference until the data file is regenerated with
+`incident_ci_inventory.render_inventory(workflow=...)`. No digest of the
+workflow or of the inventory travels with the code. Only the two already
+measured fast checks, lint and format, are classified fast in this increment.
 
 The workflow must install and invoke an independently approved release before it
-executes candidate code. A digest embedded in source binds its inventory to that
-source; it is not release attestation or protection against candidate-modified
-controller code. This increment does not install that workflow entrance.
+executes candidate code. Packaged-data integrity is the installed release's
+integrity; the inventory is not release attestation or protection against
+candidate-modified controller code. This increment does not install that
+workflow entrance.
 
 A current authenticated PR read determines labels, PR number, repository, base
 and exact head. An incident PR contains one body block:

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
 import re
 from dataclasses import asdict
@@ -16,13 +15,17 @@ from livespec_dev_tooling.incident_ci_policy import CiTarget
 __all__: list[str] = ["decode_inventory", "load_inventory", "render_inventory"]
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-egy3ri
 _PATH = Path(__file__).parent / "data/incident-ci-inventory.json"
-_SHA256 = "e7c992ac3e40e6bbac52310149dd7e22db5081f2c41b30ea096686001cef0510"
 _FAST = {"check-lint", "check-format"}
 _TEXT = re.compile(r"[a-z][a-z0-9-]*")
 
 
 def render_inventory(*, workflow: str) -> str:
-    """Derive every actual normal member through the shared workflow parser."""
+    """Derive every actual normal member through the shared workflow parser.
+
+    The output depends only on the derived target set: a workflow edit that
+    leaves every job's contributed check targets unchanged renders the same
+    bytes, so the packaged inventory never tracks unrelated workflow bytes.
+    """
     targets: list[CiTarget] = []
     for job in parse_ci_jobs(source=workflow):
         for name in sorted(job.contributed_check_slugs):
@@ -38,11 +41,7 @@ def render_inventory(*, workflow: str) -> str:
             )
     return (
         json.dumps(
-            dict(
-                schema=1,
-                workflow_sha256=hashlib.sha256(workflow.encode()).hexdigest(),
-                targets=[asdict(target) for target in targets],
-            ),
+            dict(schema=1, targets=[asdict(target) for target in targets]),
             sort_keys=True,
             indent=2,
         )
@@ -55,11 +54,9 @@ def decode_inventory(*, text: str) -> tuple[CiTarget, ...]:
     value = strict_json(text=text)
     data = cast("dict[str, Any]", value) if isinstance(value, dict) else {}
     if (
-        set(data) != {"schema", "workflow_sha256", "targets"}
+        set(data) != {"schema", "targets"}
         or type(data["schema"]) is not int
         or data["schema"] != 1
-        or not isinstance(data["workflow_sha256"], str)
-        or re.fullmatch(r"[0-9a-f]{64}", data["workflow_sha256"]) is None
         or not isinstance(data["targets"], list)
         or not data["targets"]
     ):
@@ -99,9 +96,9 @@ def decode_inventory(*, text: str) -> tuple[CiTarget, ...]:
 
 
 def load_inventory() -> tuple[CiTarget, ...]:
-    """Read only packaged bytes; callers cannot substitute a candidate inventory."""
-    raw = _PATH.read_bytes()
-    if hashlib.sha256(raw).hexdigest() != _SHA256:
-        message = "released incident CI inventory digest mismatch"
-        raise ValueError(message)
-    return decode_inventory(text=raw.decode())
+    """Read only packaged bytes; callers cannot substitute a candidate inventory.
+
+    Packaged-data integrity is the installed release's integrity, so the bytes
+    pass through decode_inventory's strict validation and no hand-pinned digest.
+    """
+    return decode_inventory(text=_PATH.read_bytes().decode())
