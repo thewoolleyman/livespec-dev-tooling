@@ -2845,3 +2845,15 @@ When `ADMISSION_CAPACITY_C` is changed to 6, a value its schema accepts
 Then every test of the repository MUST pass
 
 And a test that checks the profile MUST assert that the capacity is a non-negative integer and that the profiles sum to the cohort quota, not that it equals 8
+
+## Scenario: a stale installed commit-refuse hook names both bodies at the tail of the check output
+
+Given a primary checkout whose `.git/hooks/pre-push` holds bytes that differ from `CANONICAL_HOOK_BODY` from line 12 onward, and whose `.git/hooks/pre-commit` is byte-identical to `CANONICAL_HOOK_BODY`
+
+When `just check` runs `check-primary-checkout-commit-refuse-hook-installed`
+
+Then the check MUST exit 4 with exactly one `non_canonical_body` finding, whose `path` is the absolute path of `pre-push`, whose `installed_sha256` and `canonical_sha256` are the SHA-256 of the installed bytes and of `CANONICAL_HOOK_BODY`, and whose `first_differing_line` is 12
+
+And the last lines of the `just check` output MUST name that `pre-push` path with both SHA-256 values
+
+And with both hooks byte-identical to `CANONICAL_HOOK_BODY` the check MUST exit 0 with no finding
