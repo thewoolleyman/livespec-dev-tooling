@@ -1,0 +1,3 @@
+# The worker image the start task runs, pinned by digest: the master build of
+# 7b8f4791 (livespec-dev-tooling#3445, untagged tailnet enrollment), tag sha-7b8f479.
+ghcr.io/thewoolleyman/livespec-worker-node@sha256:75b790506f41fe27ffee1e0a9e129631cdcca69d4b1e7144b83352afa5509cae

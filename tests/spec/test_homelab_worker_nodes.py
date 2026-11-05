@@ -57,7 +57,13 @@ case "${1:-}" in
       create) touch "$state/disks/$3"; exit 0 ;;
     esac ;;
   shell)
-    cat > "$state/probe-stdin"
+    cat > "$state/shell-stdin"
+    if grep -q '^# converge-worker-container' "$state/shell-stdin"; then
+      mv "$state/shell-stdin" "$state/converge-stdin"
+      echo "converge-worker-container: worker converged"
+      exit 0
+    fi
+    mv "$state/shell-stdin" "$state/probe-stdin"
     cat "$state/probe-output"
     exit "$(cat "$state/probe-exit")" ;;
 esac
@@ -336,3 +342,34 @@ def test_a_passing_probe_is_recorded_beside_the_worker_state(host: _Host) -> Non
         host.state / ".local" / "state" / "livespec-homelab-worker" / "macbook-air-homelab-worker"
     )
     assert (report / "vm-capabilities.txt").read_text(encoding="utf-8") == "PRESENT apparmor\n"
+
+
+def test_after_a_passing_probe_the_worker_container_converges_from_the_pinned_image(
+    host: _Host,
+) -> None:
+    _install_lima(host=host, version="2.2.1")
+    result = _run(host=host, args=["macbook-air"])
+    assert result.returncode == 0, result.stderr
+    [image] = [
+        line
+        for line in (_WORKER_DIR / "image" / "ref").read_text(encoding="utf-8").splitlines()
+        if not line.startswith("#")
+    ]
+    assert image.startswith("ghcr.io/thewoolleyman/livespec-worker-node@sha256:")
+    shells = [c for c in _calls(host=host) if c.startswith("limactl shell ")]
+    assert shells[-1] == (
+        "limactl shell --workdir / macbook-air-homelab-worker sudo bash -s -- "
+        f"macbook-air-homelab-worker macbook-air {image} /mnt/lima-hwdata/worker"
+    )
+    assert (host.state / "converge-stdin").read_text(encoding="utf-8") == (
+        _WORKER_DIR / "vm" / "converge-worker-container.sh"
+    ).read_text(encoding="utf-8")
+    assert "worker converged" in result.stdout
+
+
+def test_a_failed_probe_never_converges_the_worker_container(host: _Host) -> None:
+    _install_lima(host=host, version="2.2.1")
+    (host.state / "probe-output").write_text("MISSING tun: load the tun module\n", encoding="utf-8")
+    (host.state / "probe-exit").write_text("1\n", encoding="utf-8")
+    assert _run(host=host, args=["macbook-air"]).returncode != 0
+    assert not (host.state / "converge-stdin").exists()
