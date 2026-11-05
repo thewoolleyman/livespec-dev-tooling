@@ -287,7 +287,11 @@ spec:
     - name: pypi-proxy-uv-wrapper
       configMap:
         name: pypi-proxy-uv-wrapper
-        defaultMode: 0555
+        # DECIMAL 365 == octal 0555 (r-xr-xr-x). Never write a leading-zero
+        # octal here: the container hook parses this template as YAML 1.2,
+        # which reads `0555` as decimal 555, and the API server rejects every
+        # workflow pod ("defaultMode: Invalid value: 555"), as on 2026-11-05.
+        defaultMode: 365
     - name: ci-runner-bin
       hostPath:
         # The pool-provided binaries (today: sccache, from
