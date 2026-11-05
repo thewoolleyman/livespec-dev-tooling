@@ -567,6 +567,9 @@ per-project.
 
 ## Daily commands
 
+For macOS host preparation and first-touch failure signatures, read
+[macOS developer-host first touch](docs/macos-developer-host-bootstrap.md).
+
 - `just bootstrap` — first-touch setup on a fresh clone; idempotently installs
   the canonical commit-refuse hook at `.git/hooks/pre-commit` +
   `.git/hooks/pre-push`, installs lefthook hooks, registers `~/.worktrees` in
