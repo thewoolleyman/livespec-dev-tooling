@@ -460,7 +460,9 @@ def test_a_cluster_gate_uses_the_worktree_tree_and_records_its_job(
     assert pushed.source_ref != "HEAD"
     assert pushed.tree_hash == outcome.tree_hash
     assert pushed.capture_output is False
-    assert captured["check_suite"] == ("check",)
+    from livespec_dev_tooling._gate_remote_assembly import GATE_CHECK_SUITE_FALL_THROUGH
+
+    assert captured["check_suite"] == GATE_CHECK_SUITE_FALL_THROUGH
 
 
 def test_a_cluster_just_check_uses_the_declared_bootstrap_before_the_aggregate(
@@ -498,6 +500,49 @@ def test_a_cluster_just_check_uses_the_declared_bootstrap_before_the_aggregate(
     assert module.run_cluster_gate(repo_root=root, command=("just", "check")).exit_status == 0
 
     assert captured["check_suite"] == ("install-pack", "install-hooks", "check")
+
+
+def test_a_cluster_just_check_refuses_when_its_declared_suite_is_unreadable(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A full-suite Job never substitutes bare ``check`` for an unreadable declaration."""
+    from returns.result import Failure, Success
+
+    from livespec_dev_tooling.gate_remote_client import GateRunRequest
+    from livespec_dev_tooling.gate_remote_invocation import GateStepFailed
+    from livespec_dev_tooling.gate_remote_verdict import GATE_PASSED, GateVerdict
+
+    module = importlib.import_module("livespec_dev_tooling.gate_runner_delegate")
+    root, _ = _init_repo(tmp_path=tmp_path)
+    request = GateRunRequest(
+        repo_root=root, mirror_url="mirror", manifest="manifest", gate_ref="ref"
+    )
+    captured: dict[str, object] = {}
+    monkeypatch.setattr(module, "_working_tree_source", lambda **_kwargs: ("tree", "commit"))
+    monkeypatch.setattr(
+        module,
+        "declared_gate_check_suite",
+        lambda **_kwargs: Failure(
+            GateStepFailed(
+                step="read-gate-check-suite", argv=(), returncode=None, detail="unreadable"
+            )
+        ),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        module, "gate_remote_request", lambda **kwargs: captured.update(kwargs) or Success(request)
+    )
+    monkeypatch.setattr(
+        module,
+        "run_gated_push",
+        lambda **_kwargs: GateVerdict(state=GATE_PASSED, detail="green", token_written=False),
+    )
+
+    outcome = module.run_cluster_gate(repo_root=root, command=("just", "check"))
+
+    assert outcome.exit_status == 75
+    assert outcome.detail == "unreadable"
+    assert captured == {}
 
 
 def test_a_cluster_gate_without_a_verdict_exits_75_without_a_local_retry(

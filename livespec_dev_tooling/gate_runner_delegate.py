@@ -13,7 +13,7 @@ from livespec_dev_tooling._gate_host_authority import (
     host_authority_decision,
     run_host_authority_members,
 )
-from livespec_dev_tooling.config import load_gate_check_suite
+from livespec_dev_tooling._gate_remote_assembly import declared_gate_check_suite
 from livespec_dev_tooling.gate_credential import gates_kubeconfig_readable
 from livespec_dev_tooling.gate_remote_delegate import (
     delegated_gate_enabled,
@@ -165,11 +165,14 @@ def _temporary_index_source(*, repo_root: Path) -> tuple[str, str] | None:
     return tree_hash, source_ref
 
 
-def _remote_command(*, command: tuple[str, ...]) -> tuple[tuple[str, ...] | None, tuple[str, ...]]:
+def _remote_command(
+    *, command: tuple[str, ...]
+) -> tuple[tuple[str, ...] | None, tuple[str, ...] | None]:
     """Translate the selector's accepted command spellings for the gate renderer."""
     normalized = command[3:] if command[:3] == ("mise", "exec", "--") else command
     if normalized[:1] == ("just",):
-        return None, tuple(normalized[1:])
+        suite = tuple(normalized[1:])
+        return None, None if suite == ("check",) else suite
     if normalized[:1] == ("pytest",):
         return normalized, ()
     return ("pytest", *normalized[3:]), ()
@@ -182,10 +185,16 @@ def run_cluster_gate(*, repo_root: Path, command: tuple[str, ...]) -> ClusterGat
         return ClusterGateResult(exit_status=75, tree_hash="", job_name="")
     tree_hash, source_ref = source
     pytest_argv, check_suite = _remote_command(command=command)
-    if check_suite == ("check",):
-        declared = load_gate_check_suite(repo_root=repo_root)
-        if declared is not None:
-            check_suite = declared
+    if check_suite is None:
+        declared = declared_gate_check_suite(repo_root=repo_root)
+        if isinstance(declared, Failure):
+            return ClusterGateResult(
+                exit_status=75,
+                tree_hash=tree_hash,
+                job_name="",
+                detail=declared.failure().detail,
+            )
+        check_suite = declared.unwrap()
     built = gate_remote_request(
         repo_root=repo_root,
         renderer=resolve_renderer(repo_root=repo_root),
