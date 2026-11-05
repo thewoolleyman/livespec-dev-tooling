@@ -348,6 +348,7 @@ def test_a_failed_delete_is_reported_and_fails_the_pass() -> None:
     code, lines = _pass(host=host, apply="1")
     assert code == 1
     assert any("delete of sb-old failed (rc 3): boom" in line for line in lines)
+    assert any("stranded-risk" in line and "sb-old" in line for line in lines)
 
 
 def test_an_ls_remote_failure_keeps_every_sandbox_of_that_repository() -> None:
