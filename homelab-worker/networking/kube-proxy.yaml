@@ -1,0 +1,105 @@
+# kube-proxy v1.36.2 for the homelab worker class only, in the fleet's iptables
+# mode with the flag set K3s v1.36.2 runs it with.
+#
+# Governed by SPECIFICATION/non-functional-requirements.md, "Homelab worker
+# nodes". Design: plan/homelab-k8s-worker-nodes/research/005 §1 "kube-proxy"
+# and §2 option (a).
+#
+# The K3s nodes run kube-proxy embedded; the nodeSelector keeps this DaemonSet
+# off them. It reaches the API server through ConfigMap homelab-worker-cluster,
+# because the kubernetes Service it would otherwise use is the one it programs.
+# Its ServiceAccount holds only the built-in system:node-proxier role.
+#
+# Apply:    kubectl apply -f homelab-worker/networking/
+# Rollback: kubectl delete ds,cm,sa,clusterrole,clusterrolebinding -A \
+#             -l homelab-worker.livespec.dev/networking=true
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: homelab-worker-kube-proxy
+  namespace: kube-system
+  labels:
+    homelab-worker.livespec.dev/networking: "true"
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: homelab-worker-kube-proxy
+  labels:
+    homelab-worker.livespec.dev/networking: "true"
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: system:node-proxier
+subjects:
+  - kind: ServiceAccount
+    name: homelab-worker-kube-proxy
+    namespace: kube-system
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: homelab-worker-kube-proxy
+  namespace: kube-system
+  labels:
+    homelab-worker.livespec.dev/networking: "true"
+spec:
+  selector:
+    matchLabels:
+      app: homelab-worker-kube-proxy
+  template:
+    metadata:
+      labels:
+        app: homelab-worker-kube-proxy
+    spec:
+      priorityClassName: system-node-critical
+      serviceAccountName: homelab-worker-kube-proxy
+      hostNetwork: true
+      nodeSelector:
+        homelab-worker.livespec.dev/class: worker
+      tolerations:
+        - operator: Exists
+          effect: NoSchedule
+      containers:
+        - name: kube-proxy
+          image: registry.k8s.io/kube-proxy:v1.36.2@sha256:620a27c742eb5ebf5be8613b7458b7ce7cd31e2804b61b98f6516e328002c4cc
+          command:
+            - /usr/local/bin/kube-proxy
+            - --cluster-cidr=10.42.0.0/16
+            - --conntrack-max-per-core=0
+            - --conntrack-tcp-timeout-close-wait=0s
+            - --conntrack-tcp-timeout-established=0s
+            - --healthz-bind-address=127.0.0.1
+            - --proxy-mode=iptables
+            - --hostname-override=$(NODE_NAME)
+          env:
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            - name: KUBERNETES_SERVICE_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: homelab-worker-cluster
+                  key: api-server-host
+            - name: KUBERNETES_SERVICE_PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: homelab-worker-cluster
+                  key: api-server-port
+          securityContext:
+            privileged: true
+          volumeMounts:
+            - name: lib-modules
+              mountPath: /lib/modules
+              readOnly: true
+            - name: xtables-lock
+              mountPath: /run/xtables.lock
+      volumes:
+        - name: lib-modules
+          hostPath:
+            path: /lib/modules
+        - name: xtables-lock
+          hostPath:
+            path: /run/xtables.lock
+            type: FileOrCreate

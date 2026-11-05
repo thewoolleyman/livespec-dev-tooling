@@ -1,0 +1,121 @@
+# kube-router v2.6.3 in firewall-only mode for the homelab worker class only:
+# the upstream base of the fleet's v2.6.3-k3s1 NetworkPolicy controller.
+#
+# Governed by SPECIFICATION/non-functional-requirements.md, "Homelab worker
+# nodes". Design: plan/homelab-k8s-worker-nodes/research/005 §3 "NetworkPolicy
+# on the new node".
+#
+# K3s's kube-router lives inside each K3s agent and programs only its own
+# node, so without this nothing would enforce NetworkPolicy on the worker. It
+# runs the firewall only: routing stays with flannel and services with
+# kube-proxy. Its ClusterRole is read-only on what policy evaluation needs,
+# plus events.
+#
+# Apply:    kubectl apply -f homelab-worker/networking/
+# Rollback: kubectl delete ds,cm,sa,clusterrole,clusterrolebinding -A \
+#             -l homelab-worker.livespec.dev/networking=true
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: homelab-worker-kube-router
+  namespace: kube-system
+  labels:
+    homelab-worker.livespec.dev/networking: "true"
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: homelab-worker-kube-router
+  labels:
+    homelab-worker.livespec.dev/networking: "true"
+rules:
+  - apiGroups: [""]
+    resources: [namespaces, pods, services, nodes, endpoints]
+    verbs: [get, list, watch]
+  - apiGroups: [discovery.k8s.io]
+    resources: [endpointslices]
+    verbs: [get, list, watch]
+  - apiGroups: [networking.k8s.io]
+    resources: [networkpolicies]
+    verbs: [get, list, watch]
+  - apiGroups: [""]
+    resources: [events]
+    verbs: [create, patch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: homelab-worker-kube-router
+  labels:
+    homelab-worker.livespec.dev/networking: "true"
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: homelab-worker-kube-router
+subjects:
+  - kind: ServiceAccount
+    name: homelab-worker-kube-router
+    namespace: kube-system
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: homelab-worker-kube-router
+  namespace: kube-system
+  labels:
+    homelab-worker.livespec.dev/networking: "true"
+spec:
+  selector:
+    matchLabels:
+      app: homelab-worker-kube-router
+  template:
+    metadata:
+      labels:
+        app: homelab-worker-kube-router
+    spec:
+      priorityClassName: system-node-critical
+      serviceAccountName: homelab-worker-kube-router
+      hostNetwork: true
+      nodeSelector:
+        homelab-worker.livespec.dev/class: worker
+      tolerations:
+        - operator: Exists
+          effect: NoSchedule
+      containers:
+        - name: kube-router
+          image: docker.io/cloudnativelabs/kube-router:v2.6.3@sha256:4f1375aa0b09f41916bc44f705adb38c93308fb562f71bb0e58346e13c9702d1
+          args:
+            - --run-firewall=true
+            - --run-router=false
+            - --run-service-proxy=false
+          env:
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            - name: KUBERNETES_SERVICE_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: homelab-worker-cluster
+                  key: api-server-host
+            - name: KUBERNETES_SERVICE_PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: homelab-worker-cluster
+                  key: api-server-port
+          securityContext:
+            privileged: true
+          volumeMounts:
+            - name: lib-modules
+              mountPath: /lib/modules
+              readOnly: true
+            - name: xtables-lock
+              mountPath: /run/xtables.lock
+      volumes:
+        - name: lib-modules
+          hostPath:
+            path: /lib/modules
+        - name: xtables-lock
+          hostPath:
+            path: /run/xtables.lock
+            type: FileOrCreate
