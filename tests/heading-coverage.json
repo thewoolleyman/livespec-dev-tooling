@@ -1513,6 +1513,14 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: a gate-start whose venue selector cannot be imported refuses by name",
+    "test": "TODO",
+    "reason": "Spec-first (v141): a real test at the integration tier or above is owed for this scenario, driving the shipped gate-start in a checkout whose project environment and python3 both fail to import livespec_dev_tooling and asserting no gate, no run record, the named refusal and a non-70 exit; livespec-dev-tooling-p3mhfh owns it.",
+    "work_item": "livespec-dev-tooling-p3mhfh"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: an explicit local gate-runner run is recorded as local",
     "test": "TODO",
     "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, exercising gate-start's default delegation of full-suite gate commands to a gates Job and its recorded venue; livespec-dev-tooling-qgv3tb owns it.",
