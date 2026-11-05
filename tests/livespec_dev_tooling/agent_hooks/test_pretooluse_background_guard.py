@@ -950,6 +950,9 @@ def _write_delegated_gate_config(*, repository: Path, delegated: bool) -> None:
         pytest.param("python -m pytest --cov=widget", id="python-module"),
         pytest.param("uv run --no-sync python -m pytest --cov=widget", id="uv-python-module"),
         pytest.param(".venv/bin/python -m pytest -n 8", id="interpreter-path"),
+        pytest.param("pytest -n4 tests/test_widget.py", id="attached-numprocesses"),
+        pytest.param("pytest -n=4 tests/test_widget.py", id="equals-numprocesses"),
+        pytest.param("pytest -nauto tests/test_widget.py", id="attached-auto-numprocesses"),
     ],
 )
 def test_an_eligible_delegating_host_refuses_foreground_full_suite_pytest(

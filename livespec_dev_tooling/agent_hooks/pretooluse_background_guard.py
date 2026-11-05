@@ -326,9 +326,7 @@ def _foreground_full_suite_pytest(*, command: str, cwd: Path) -> bool:
 def _is_full_suite_pytest(*, pytest_argv: tuple[str, ...]) -> bool:
     """A pytest has no named test path, unless xdist makes it full-suite anyway."""
     arguments = pytest_argv[1:]
-    if "-n" in arguments or "--numprocesses" in arguments:
-        return True
-    if any(argument.startswith("--numprocesses=") for argument in arguments):
+    if any(_is_numprocesses_option(argument=argument) for argument in arguments):
         return True
     expect_option_value = False
     for argument in arguments:
@@ -339,6 +337,11 @@ def _is_full_suite_pytest(*, pytest_argv: tuple[str, ...]) -> bool:
         elif not argument.startswith("-"):
             return False
     return True
+
+
+def _is_numprocesses_option(*, argument: str) -> bool:
+    """xdist's worker count, spelled `-n 4`, `-n4`, `-n=4` or `--numprocesses[=4]`."""
+    return argument.startswith(("-n", "--numprocesses"))
 
 
 def main() -> int:
