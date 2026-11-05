@@ -58,6 +58,33 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.177.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.176.0...v1.177.0) (2026-11-05)
+
+
+### Features
+
+* **homelab-worker:** bootstrap-token mint writes the worker's whole enrollment ([7df0b8e](https://github.com/thewoolleyman/livespec-dev-tooling/commit/7df0b8eec6f9879736f02b1e32e11ab263732c9d))
+* **homelab-worker:** fixture join's tailnet mode runs the worker over the underlay ([1acdbbf](https://github.com/thewoolleyman/livespec-dev-tooling/commit/1acdbbf33625f4d655457878721fc754b98c6607))
+* **homelab-worker:** fixture proof adds port-forward, kubelet stats and K3s-node logs ([a6762f5](https://github.com/thewoolleyman/livespec-dev-tooling/commit/a6762f5119633c96483c5dd883db0d509ad4efa4))
+* **homelab-worker:** fixture proof checks large packets across the worker's MTU ([ca8fde8](https://github.com/thewoolleyman/livespec-dev-tooling/commit/ca8fde8234cb84ba1d0eaa672b07261c66f21edf))
+* **homelab-worker:** fixture proof for the worker at each egress-selector mode ([a183005](https://github.com/thewoolleyman/livespec-dev-tooling/commit/a18300537c5165a0dc93a9bfb80865bb5a2efc12))
+* **homelab-worker:** fixture stage two puts the K3s nodes on the tailnet ([2f0fd89](https://github.com/thewoolleyman/livespec-dev-tooling/commit/2f0fd895ecf79b08a975033020a9e83374762ed9))
+* **homelab-worker:** fixture teardown removes the worker's fixture container and state ([318212d](https://github.com/thewoolleyman/livespec-dev-tooling/commit/318212d6e65818b20f2f30b762e22f3acfc98720))
+* **homelab-worker:** join a worker to the isolated K3s fixture ([68d29b3](https://github.com/thewoolleyman/livespec-dev-tooling/commit/68d29b3296df592bece95746a2769df016ddb969))
+* **homelab-worker:** the start task delivers a minted enrollment into the VM ([c2d0bf1](https://github.com/thewoolleyman/livespec-dev-tooling/commit/c2d0bf107ef4c2972f15f9cd709bd288c2ab84a5))
+* **incident:** route every direct gate entrance through the shared incident boundary (livespec-dev-tooling-6bmta2) ([d35a590](https://github.com/thewoolleyman/livespec-dev-tooling/commit/d35a590f53e17ed740dad13cf86b76cd5501a272))
+
+
+### Bug Fixes
+
+* **check:** reuse failed coverage suite verdict (livespec-dev-tooling-ifhymw) ([ae72285](https://github.com/thewoolleyman/livespec-dev-tooling/commit/ae72285124d3d1e97137b8c590308ab37c87c55a))
+* cite measured radar tick budget ([508000b](https://github.com/thewoolleyman/livespec-dev-tooling/commit/508000b0a6af121bb25bdc4b93e3354cd5f5c248))
+* **homelab-worker:** a fixture join rerun for a registered worker enrolls nothing new ([505830c](https://github.com/thewoolleyman/livespec-dev-tooling/commit/505830c8ff4102b5a9d91530fea88c127e1a2bf7))
+* **homelab-worker:** converge refuses a worker container of another state root ([d207d8e](https://github.com/thewoolleyman/livespec-dev-tooling/commit/d207d8e2fe0ce42e10e295cf38d5d6bab7d5e061))
+* **homelab-worker:** fixture teardown unmounts the worker's leftover kubelet mounts ([b304524](https://github.com/thewoolleyman/livespec-dev-tooling/commit/b304524370182002c89d695c3e584562a22e2392))
+* **homelab-worker:** the underlay fixture shows every pending login at once ([201ccca](https://github.com/thewoolleyman/livespec-dev-tooling/commit/201ccca10e15f5089f66935f5d2c5d98274ed80e))
+* **onepassword_desktop:** render the session user instead of hardcoding ubuntu ([5a85c76](https://github.com/thewoolleyman/livespec-dev-tooling/commit/5a85c76bcbed72a451e3584a874a91e6e9f26aee))
+
 ## [1.176.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.175.0...v1.176.0) (2026-11-05)
 
 
