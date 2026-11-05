@@ -64,6 +64,7 @@ def vm(tmp_path: Path) -> _Vm:
     )
     made.log.write_text("", encoding="utf-8")
     made.clusters.write_text("", encoding="utf-8")
+    (tmp_path / "mounts").write_text("", encoding="utf-8")
     _stub(vm=made, name="hostname", body='echo "lima-macbook-m4-max-homelab-worker"')
     _stub(vm=made, name="uname", body='echo "aarch64"')
     _stub(
@@ -92,6 +93,7 @@ def _run(*, vm: _Vm, args: list[str]) -> subprocess.CompletedProcess[str]:
             "PATH": f"{vm.bin_dir}:/usr/bin:/bin",
             "FIXTURE_ROOT": str(vm.root),
             "FIXTURE_WORKER_ROOT": str(vm.worker_root),
+            "PROC_MOUNTS": str(vm.root.parent / "mounts"),
         },
         check=False,
         timeout=60,
@@ -188,3 +190,24 @@ def test_down_removes_only_the_fixture_worker_container_and_its_state(
     rms = [c for c in _calls(vm=vm, command="docker") if c.startswith("docker rm ")]
     assert rms == removed
     assert not vm.worker_root.exists()
+
+
+def test_down_unmounts_the_fixture_workers_leftover_mounts_deepest_first(vm: _Vm) -> None:
+    root = vm.worker_root
+    pods = root / "kubelet" / "pods"
+    (vm.root.parent / "mounts").write_text(
+        f"tmpfs {pods}/a/volumes/token tmpfs rw 0 0\n"
+        f"tmpfs {pods}/a/volumes/token/nested tmpfs rw 0 0\n"
+        "tmpfs /mnt/lima-hwdata/worker/kubelet/pods/b tmpfs rw 0 0\n"
+        "/dev/vdb1 /mnt/lima-hwdata xfs rw 0 0\n",
+        encoding="utf-8",
+    )
+    _stub(vm=vm, name="umount", body="exit 0")
+    assert _run(vm=vm, args=["up", "agent"]).returncode == 0
+    result = _run(vm=vm, args=["down"])
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert _calls(vm=vm, command="umount") == [
+        f"umount {pods}/a/volumes/token/nested",
+        f"umount {pods}/a/volumes/token",
+    ]
+    assert not root.exists()
