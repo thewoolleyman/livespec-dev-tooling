@@ -373,6 +373,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: a full suite spelled as python -m pytest runs as a gate Job",
+    "work_item": "livespec-dev-tooling-4pchid",
+    "first_seen": "2026-11-05"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: a gate client that stops waiting on an admitted gate Job deletes it",
     "work_item": "livespec-dev-tooling-f2dgn6",
     "first_seen": "2026-11-05"
@@ -726,6 +733,20 @@
     "heading": "## Scenario: an OOM-killed or unschedulable factory pod is visible with its reason and fires its trigger",
     "work_item": "livespec-dev-tooling-dfdiil",
     "first_seen": "2026-10-24"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: an agent session's foreground full-suite pytest on a delegating host is refused and names the gate-start form",
+    "work_item": "livespec-dev-tooling-4pchid",
+    "first_seen": "2026-11-05"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: an agent session's targeted pytest or a factory sandbox's full suite is not refused",
+    "work_item": "livespec-dev-tooling-4pchid",
+    "first_seen": "2026-11-05"
   },
   {
     "spec_root": "SPECIFICATION",

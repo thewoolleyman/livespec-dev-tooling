@@ -1560,6 +1560,30 @@ When the session issues a `Bash` tool call running `git commit -m "<message>"` i
 
 Then the guard MUST NOT refuse the tool call
 
+## Scenario: an agent session's foreground full-suite pytest on a delegating host is refused and names the gate-start form
+
+Given a repository with `delegated_gate = true`
+
+And an agent session whose user can read the gates kubeconfig
+
+When the session runs `uv run pytest -n 8` in the foreground in that repository
+
+Then the guard MUST refuse the tool call with its full-suite pytest `check_id`
+
+And the refusal MUST name `just gate-start -- uv run pytest -n 8`
+
+## Scenario: an agent session's targeted pytest or a factory sandbox's full suite is not refused
+
+Given a repository with `delegated_gate = true`
+
+When an agent session on a host whose user can read the gates kubeconfig runs `uv run pytest tests/test_one.py` in the foreground
+
+Then the guard MUST NOT refuse the tool call
+
+And when an agent session on a host whose user cannot read the gates kubeconfig runs `uv run pytest -n 8` in the foreground
+
+Then the guard MUST NOT refuse that tool call either
+
 ## Scenario: a staged type error refuses the commit before the full pre-commit aggregate
 
 Given a governed repository whose pre-commit hook runs `just check-pre-commit`
@@ -1685,6 +1709,16 @@ When a seat runs `gate-start -- just check` in a worktree with uncommitted chang
 Then the suite MUST run as a gate Job against a tree that includes those changes
 
 And the run record MUST carry `venue: cluster_job`, the gate Job's name and the tree hash
+
+## Scenario: a full suite spelled as python -m pytest runs as a gate Job
+
+Given a repository with `delegated_gate = true` on an eligible host
+
+When a seat runs `just gate-start -- uv run --no-sync python -m pytest --cov=src`
+
+Then the run MUST record venue `cluster_job`
+
+And it MUST NOT record venue `host_local` with the reason "command outside full-suite set"
 
 ## Scenario: a delegated gate-runner run with no cluster verdict ends without a verdict
 
