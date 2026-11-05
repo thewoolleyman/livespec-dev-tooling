@@ -5,17 +5,62 @@ from __future__ import annotations
 from pathlib import Path
 
 __all__: list[str] = [
+    "is_foreground_full_suite_pytest",
     "is_full_suite_command",
     "pytest_command",
 ]
 
 _JUST_COMMAND_MINIMUM_WORDS = 2
+_PYTEST_VALUE_OPTIONS: frozenset[str] = frozenset(
+    {
+        "-c",
+        "-k",
+        "-m",
+        "-o",
+        "-r",
+        "--basetemp",
+        "--cache-show",
+        "--confcutdir",
+        "--cov",
+        "--cov-config",
+        "--deselect",
+        "--durations",
+        "--durations-min",
+        "--ignore",
+        "--ignore-glob",
+        "--import-mode",
+        "--junitxml",
+        "--log-cli-level",
+        "--log-file",
+        "--log-file-level",
+        "--log-format",
+        "--log-date-format",
+        "--maxfail",
+        "--numprocesses",
+        "--rootdir",
+        "--tb",
+    }
+)
 
 
 def is_full_suite_command(*, command: tuple[str, ...]) -> bool:
     """Whether ``command`` is a delegated full-suite command."""
     normalized = _without_mise(command=command)
     return _is_just_check(command=normalized) or pytest_command(command=normalized) is not None
+
+
+def is_foreground_full_suite_pytest(*, command: tuple[str, ...]) -> bool:
+    """Whether a pytest command has the guard's narrower full-suite shape.
+
+    Gate-start delegates every pytest spelling, including targeted runs.  The
+    foreground agent-session guard is deliberately narrower: an explicit test
+    target without xdist remains a short local check.
+    """
+    normalized = pytest_command(command=command)
+    if normalized is None:
+        return False
+    arguments = normalized[1:]
+    return _uses_xdist(arguments=arguments) or not _names_test_target(arguments=arguments)
 
 
 def pytest_command(*, command: tuple[str, ...]) -> tuple[str, ...] | None:
@@ -42,6 +87,24 @@ def _without_uv_options(*, command: tuple[str, ...]) -> tuple[str, ...]:
     while command[:1] == ("--no-sync",):
         command = command[1:]
     return command
+
+
+def _uses_xdist(*, arguments: tuple[str, ...]) -> bool:
+    """Whether pytest received either of xdist's process-count spellings."""
+    return any(argument.startswith(("-n", "--numprocesses")) for argument in arguments)
+
+
+def _names_test_target(*, arguments: tuple[str, ...]) -> bool:
+    """Whether pytest has an explicit file, directory, or node-id argument."""
+    consumes_next = False
+    for argument in arguments:
+        if consumes_next:
+            consumes_next = False
+        elif argument in _PYTEST_VALUE_OPTIONS:
+            consumes_next = True
+        elif not argument.startswith("-"):
+            return True
+    return False
 
 
 def _is_just_check(*, command: tuple[str, ...]) -> bool:
