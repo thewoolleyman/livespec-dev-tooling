@@ -12,9 +12,9 @@ stub `kubectl` that records its arguments and its stdin:
   and renewal is bound per declared worker, never to every node;
 - the minted token authenticates only in that group and expires, reaches `kubectl` on stdin
   rather than in an argument, and lands only in a mode-0600 kubeconfig pinning the API server
-  and its CA;
-- an undeclared host, a non-https server or an existing output file is refused before any
-  cluster change.
+  and its CA, beside the cluster client CA the kubelet authenticates the API server with;
+- an undeclared host, a non-https server, an existing output or an unreadable client CA is
+  refused before any token is minted.
 """
 
 from __future__ import annotations
@@ -33,6 +33,11 @@ __all__: list[str] = []
 _ENROLLMENT = Path(__file__).resolve().parents[2] / "homelab-worker" / "enrollment"
 _MINT = _ENROLLMENT / "mint-bootstrap-token.sh"
 _GROUP = "system:bootstrappers:homelab-worker"
+_CLIENT_CA = "-----BEGIN CERTIFICATE-----\nclient-ca\n-----END CERTIFICATE-----"
+_GET_CLIENT_CA = (
+    "get configmap --namespace kube-system extension-apiserver-authentication"
+    " -o jsonpath={.data.client-ca-file}"
+)
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -53,7 +58,7 @@ def operator(tmp_path: Path) -> _Operator:
         argv_log=tmp_path / "kubectl-argv.log",
         stdin_log=tmp_path / "kubectl-stdin.log",
         ca=tmp_path / "server-ca.crt",
-        out=tmp_path / "out" / "bootstrap-kubeconfig",
+        out=tmp_path / "out" / "enrollment",
     )
     made.out.parent.mkdir()
     made.ca.write_text(
@@ -61,10 +66,13 @@ def operator(tmp_path: Path) -> _Operator:
     )
     kubectl = bin_dir / "kubectl"
     kubectl.write_text(
-        f'#!/bin/bash\nprintf "%s\\n" "$*" >> "{made.argv_log}"\ncat >> "{made.stdin_log}"\n',
+        f'#!/bin/bash\nprintf "%s\\n" "$*" >> "{made.argv_log}"\n'
+        'if [ "$1" = get ]; then cat "$(dirname "$0")/client-ca"; exit 0; fi\n'
+        f'cat >> "{made.stdin_log}"\n',
         encoding="utf-8",
     )
     kubectl.chmod(kubectl.stat().st_mode | stat.S_IXUSR)
+    (bin_dir / "client-ca").write_text(_CLIENT_CA, encoding="utf-8")
     return made
 
 
@@ -135,14 +143,19 @@ def test_a_minted_token_is_short_lived_scoped_and_kept_out_of_arguments_and_outp
     )
     minutes = (expires - datetime.now(timezone.utc)).total_seconds() / 60
     assert 55 <= minutes <= 61
-    assert operator.argv_log.read_text(encoding="utf-8").splitlines() == ["apply -f -"]
+    assert operator.argv_log.read_text(encoding="utf-8").splitlines() == [
+        _GET_CLIENT_CA,
+        "apply -f -",
+    ]
     assert token_secret.group(1) not in result.stdout + result.stderr
     assert token_id.group(1) in result.stdout
-    kubeconfig = operator.out.read_text(encoding="utf-8")
+    kubeconfig = (operator.out / "bootstrap-kubeconfig").read_text(encoding="utf-8")
     assert f"token: {token_id.group(1)}.{token_secret.group(1)}" in kubeconfig
     assert "server: https://127.0.0.1:6550" in kubeconfig
     assert "certificate-authority-data: " in kubeconfig
-    assert stat.S_IMODE(operator.out.stat().st_mode) == 0o600
+    assert stat.S_IMODE((operator.out / "bootstrap-kubeconfig").stat().st_mode) == 0o600
+    assert stat.S_IMODE(operator.out.stat().st_mode) == 0o700
+    assert (operator.out / "client-ca.crt").read_text(encoding="utf-8") == f"{_CLIENT_CA}\n"
 
 
 @pytest.mark.parametrize(
@@ -162,10 +175,22 @@ def test_an_undeclared_host_or_plain_http_server_is_refused_before_any_cluster_c
     assert not operator.out.exists()
 
 
-def test_an_existing_bootstrap_kubeconfig_is_never_overwritten(operator: _Operator) -> None:
+def test_an_existing_enrollment_is_never_overwritten(operator: _Operator) -> None:
     operator.out.write_text("kept\n", encoding="utf-8")
     result = _mint(operator=operator)
     assert result.returncode != 0
     assert "refusing to overwrite" in result.stderr
     assert operator.out.read_text(encoding="utf-8") == "kept\n"
     assert not operator.argv_log.exists()
+
+
+def test_an_unreadable_client_ca_is_refused_before_any_token_is_minted(
+    operator: _Operator,
+) -> None:
+    (operator.bin_dir / "client-ca").write_text("", encoding="utf-8")
+    result = _mint(operator=operator)
+    assert result.returncode != 0
+    assert "could not read the cluster client CA" in result.stderr
+    assert operator.argv_log.read_text(encoding="utf-8").splitlines() == [_GET_CLIENT_CA]
+    assert not operator.stdin_log.exists()
+    assert not operator.out.exists()
