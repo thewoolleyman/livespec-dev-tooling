@@ -18,8 +18,8 @@ error, never skipped. Nothing here mutates: only cat / mpstat / kubectl get / bd
 
 The UNTICKETED-READY section reads every livespec beads tenant's READY items
 through the credential wrapper and flags any non-epic READY item older than
-30 minutes that has no dispatcher ticket behind it (no seq-<id>.log, no queue
-entry, no capture-argv in the last 6 h). A tenant whose read fails is reported
+30 minutes that has no dispatcher ticket behind it (no seq-<id>.log written in
+the last 30 min, no queue entry, no capture-argv in the last 6 h). A tenant whose read fails is reported
 UNREADABLE, never skipped.
 """
 
@@ -340,7 +340,8 @@ def queue_texts():
 
 
 def is_ticketed(item_id, queued):
-    if (CANARY / f"seq-{item_id}.log").exists():
+    seq = CANARY / f"seq-{item_id}.log"
+    if (mtime_or_none(seq) or 0) >= time.time() - READY_STALE_S:
         return True
     pat = re.compile(r"(?<![\w.-])" + re.escape(item_id) + r"(?![\w.-])")
     if any(pat.search(t) for t in queued):
@@ -485,7 +486,7 @@ def render(nodes, cluster, factory, unticketed, flags):
     for line in factory["launches_30m"][-5:]:
         out(f"  {line}")
     tenants = ", ".join(f"{t['repo']}={t['ready']}" for t in unticketed["tenants"]) or "-"
-    out("\nUNTICKETED-READY (non-epic READY >30m, no seq log / queue entry / 6h capture-argv)")
+    out("\nUNTICKETED-READY (non-epic READY >30m, no fresh (<30m) seq log / queue entry / 6h capture-argv)")
     out(f"  tenants read (ready count): {tenants}")
     for u in unticketed["unreadable"]:
         out(f"  UNREADABLE {u['repo']}: {u['error']}")
