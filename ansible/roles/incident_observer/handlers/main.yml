@@ -1,0 +1,22 @@
+---
+# The restart fence. A converge over a host whose installation, secrets,
+# controller.json, manifest and units already match notifies nothing, so these
+# never run and the observer is left exactly as found — a retained arm and its
+# receipts survive an apply that changed nothing. tasks/main.yml flushes these
+# straight after the unit is written, so a restart starts the NEW unit.
+#
+# Both carry the otel_collector guard: under `--check` on a host this role has
+# never converged, nothing was written, so systemd knows no such unit.
+
+- name: Reload systemd for the incident observer units
+  ansible.builtin.systemd_service:
+    daemon_reload: true
+  become: true
+  when: not ansible_check_mode or incident_observer_unit_stat.stat.exists
+
+- name: Restart the incident observer onto its installation
+  ansible.builtin.systemd_service:
+    name: "{{ incident_observer_unit_name }}"
+    state: restarted
+  become: true
+  when: not ansible_check_mode or incident_observer_unit_stat.stat.exists

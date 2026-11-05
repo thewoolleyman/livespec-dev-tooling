@@ -129,6 +129,11 @@ honeycomb_mcp_checkout: /data/projects/vps-info
 # --- honeycomb_trigger_recipients_check ---
 honeycomb_trigger_recipients_check_checkout: /data/projects/vps-info
 
+# --- incident_observer ---
+# The account this host's candidates run as; controller.json carries its uid as
+# candidate_uid, which the controller refuses to equal its own.
+incident_observer_candidate_user: ubuntu
+
 # --- otel_collector ---
 # The pressure telemetry service posts OTLP directly and reads the collector's
 # managed environment file, so this key must be converged on the dev host just
@@ -159,6 +164,15 @@ storage_reclaim_home: /home/ubuntu
 # because orphan detection differences the on-disk worktrees against the
 # worktrees registered by the clones under these roots.
 storage_reclaim_checkout_roots: /data/projects
+
+# --- tailscale_serve ---
+# The tailnet TLS front of the incident observer's loopback listener
+# (roles/incident_observer/README.md). This host's other mappings (32276,
+# 32277, 8010, 8443) were made by hand and are left as they are: the role is
+# additive and touches only the port declared here.
+tailscale_serve_mappings:
+  - https_port: 8765
+    backend: http://127.0.0.1:8765
 
 # --- vnc_desktop ---
 vnc_desktop_tailscale_ip: 100.89.189.118

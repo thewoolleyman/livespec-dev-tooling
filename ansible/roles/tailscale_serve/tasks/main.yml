@@ -13,8 +13,9 @@
 # no route to it.
 #
 # ADDITIVE ONLY. The role never turns a mapping off and never touches a port
-# it was not given. A host whose mappings were made by hand (hp-xubuntu, vps)
-# declares nothing and is left exactly as it is.
+# it was not given. A host whose mappings were made by hand (hp-xubuntu, and
+# vps for all but the incident observer's port) declares nothing for them and
+# is left exactly as it is.
 #
 # The mapping persists in tailscaled's own state (`--bg`), so there is no unit
 # here: once set it survives tailscaled restarts and reboots.

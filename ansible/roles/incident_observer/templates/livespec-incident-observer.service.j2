@@ -1,0 +1,38 @@
+# {{ ansible_managed }}
+# livespec-incident-observer.service -- the independent released incident
+# observer (livespec-dev-tooling docs/incident-observer-service.md), installed by
+# ansible/roles/incident_observer from the packaged provisioning template
+# livespec_dev_tooling/data/incident-observer.service of the installed release.
+# Every path is a managed one; the service reads no checkout and no candidate
+# tree. Never hand-edit this copy and never restart the unit by hand: change the
+# role and re-run the converge named in the role's README.
+[Unit]
+Description=Independent released incident observer
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User={{ incident_observer_user }}
+Group={{ incident_observer_group }}
+WorkingDirectory={{ incident_observer_home }}
+ExecStart={{ incident_observer_venv }}/bin/python -I -m livespec_dev_tooling.incident_observer_service --config {{ incident_observer_config_path }}
+Environment=PATH={{ incident_observer_venv }}/bin:/usr/local/bin:/usr/bin:/bin
+# The canonical reader's tenant credential (BEADS_DOLT_PASSWORD), written by the
+# converge from the control node's projected environment, mode 0600, read by
+# systemd before the privilege drop: credential projection inside this account,
+# never the sudo wrapper, which NoNewPrivileges= and the loader both refuse.
+EnvironmentFile={{ incident_observer_reader_env_path }}
+UnsetEnvironment=PYTHONPATH PYTHONHOME GIT_CONFIG GIT_CONFIG_COUNT GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_ALTERNATE_OBJECT_DIRECTORIES EXPEDITED_INCIDENT_RESPONSE EXPEDITED_INCIDENT_RESPONSE_REVERT LIVESPEC_INCIDENT_CONTEXT
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadOnlyPaths={{ incident_observer_install_dir }} {{ incident_observer_etc_dir }}
+ReadWritePaths={{ incident_observer_home }}
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

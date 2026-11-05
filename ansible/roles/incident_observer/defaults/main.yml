@@ -1,0 +1,99 @@
+---
+# incident_observer — the independent released incident observer service
+# (docs/incident-observer-service.md), converged onto one dev host behind its
+# tailnet TLS front. livespec-dev-tooling-w7n3ad. See README.md.
+#
+# Every value here is a fleet default. The one value that genuinely varies by
+# machine — which login account is the CANDIDATE account the controller must
+# differ from — lives in host_vars (HOST_VARS.md).
+
+# --- the release the installation serves ------------------------------------
+# The normally released livespec-dev-tooling tag. Installed from the release
+# tag on GitHub into the venv below, never from a checkout on the host; the
+# manifest's `release` must equal `v` + the installed distribution version and
+# `revision` is this tag's commit, read from the reference clone.
+incident_observer_release: v1.178.0
+incident_observer_release_repo: https://github.com/thewoolleyman/livespec-dev-tooling.git
+# The repository the observer serves (controller.json `repository`).
+incident_observer_repository: thewoolleyman/livespec-dev-tooling
+# The required master leaf jobs the manifest names. Measured 2026-11-05: the
+# repository's master protection requires exactly the `ci-green` status check.
+incident_observer_required_jobs:
+  - ci-green
+
+# --- the canonical reader ---------------------------------------------------
+# The orchestrator plugin release whose `incident_authority.py` is the canonical
+# `read-current` reader (docs/incident-observer-service.md). Cloned at this tag,
+# root-owned, next to the venv. Its tenant credential is NOT provisioned here.
+incident_observer_reader_release: v0.290.0
+incident_observer_reader_repo: https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro.git
+incident_observer_reader_script_relative: .claude-plugin/scripts/bin/incident_authority.py
+
+# --- accounts ---------------------------------------------------------------
+# The dedicated controller account, distinct from every candidate and factory
+# account. Owns its configuration, manifest, secrets, state and reference clone.
+incident_observer_user: livespec-incident
+incident_observer_group: livespec-incident
+# The CANDIDATE account (controller.json `candidate_uid` is its uid, read with
+# getent at apply). The loader refuses a candidate uid equal to its own euid.
+# Declared per host: see HOST_VARS.md.
+incident_observer_candidate_user: ""
+
+# --- layout -----------------------------------------------------------------
+incident_observer_python: /usr/bin/python3
+incident_observer_install_dir: /opt/livespec-incident
+incident_observer_venv: /opt/livespec-incident/venv
+incident_observer_bin_dir: /opt/livespec-incident/bin
+incident_observer_reader_dir: /opt/livespec-incident/reader
+incident_observer_etc_dir: /etc/livespec-incident
+incident_observer_config_path: /etc/livespec-incident/controller.json
+incident_observer_manifest_path: /etc/livespec-incident/released-installation.json
+# The three distinct secrets, each >= 32 bytes, mode 0600, owned by the
+# controller account. The role writes each from the CONTROL NODE's environment
+# — the named variable, projected by /usr/local/bin/with-livespec-env.sh from
+# the livespec 1Password environment — and never from a value in this tree.
+incident_observer_secrets:
+  - name: webhook
+    path: /etc/livespec-incident/webhook-secret
+    env: LIVESPEC_INCIDENT_WEBHOOK_SECRET
+  - name: control
+    path: /etc/livespec-incident/control-secret
+    env: LIVESPEC_INCIDENT_CONTROL_SECRET
+  - name: query
+    path: /etc/livespec-incident/query-secret
+    env: LIVESPEC_INCIDENT_QUERY_SECRET
+incident_observer_secret_min_bytes: 32
+# The canonical reader's tenant credential: the SAME BEADS_DOLT_PASSWORD the
+# credential wrapper projects on the control node, written at apply (no_log)
+# as a systemd environment file the unit loads, so the reader runs with
+# credential projection inside the controller's own account — the shape
+# docs/incident-observer-service.md allows under NoNewPrivileges. The tenant's
+# host and port are not written here: the reference clone's committed
+# `.beads/config.yaml` carries them (the dolt-server on this host, loopback).
+incident_observer_reader_env_path: /etc/livespec-incident/reader.env
+incident_observer_reader_env_var: BEADS_DOLT_PASSWORD
+# The controller account's home. The private state directory (0700) and the
+# independent reference clone are siblings beneath it; the loader refuses a
+# state directory inside the clone and a package inside the clone.
+incident_observer_home: /var/lib/livespec-incident
+incident_observer_state_dir: /var/lib/livespec-incident/receipts
+incident_observer_reference_dir: /var/lib/livespec-incident/reference
+# The loopback port the listener binds; the tailnet front proxies to it.
+incident_observer_port: 8765
+# The ONE public route. GitHub's webhook delivery must reach POST /callback,
+# so the role publishes it through a path-scoped Tailscale Funnel on this
+# port: only this path is public; every other route stays tailnet-only on the
+# `tailscale serve` mapping the host declares. Funnel admits ports 443, 8443
+# and 10000 only, and 8443 is already served on the dev host.
+incident_observer_funnel_https_port: 10000
+incident_observer_funnel_path: /callback
+
+# --- units ------------------------------------------------------------------
+incident_observer_unit_name: livespec-incident-observer
+incident_observer_unit_path: /etc/systemd/system/livespec-incident-observer.service
+# A fetch timer keeps the reference clone's objects current for the inverse,
+# running as the controller account; the apply never fetches on its own.
+incident_observer_fetch_unit_name: livespec-incident-reference-fetch
+incident_observer_fetch_service_path: /etc/systemd/system/livespec-incident-reference-fetch.service
+incident_observer_fetch_timer_path: /etc/systemd/system/livespec-incident-reference-fetch.timer
+incident_observer_fetch_interval: 5min
