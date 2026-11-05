@@ -441,7 +441,7 @@ This clause does not change how other images in either store are retained, such 
 
 **Scope.** This section states how this repository publishes, on each host
 where the Dispatcher runs natively, which Fabro server instance answers to each
-logical factory name. The Dispatcher reads that publication to resolve a
+logical factory name, and how many runs that instance admits at once. The Dispatcher reads that publication to resolve a
 factory entry that declares `"registry": true` (livespec-orchestrator-beads-fabro
 `contracts.md` §"Factory addresses resolved from a host registry"). A
 Dispatcher running inside a factory sandbox or a cluster gate Job reads no such
@@ -470,16 +470,35 @@ inventory no longer declares. A run narrowed by `--limit` or `--tags` so that
 it does not run the rendering on a host MUST leave that host's file
 unchanged.
 
+**Run caps rendered beside the registry.** On every host in the `dev_hosts`
+group, `ansible/fabro-hosts.yml` MUST render, for each `fabro_factory_registry`
+name, a file named `<factory>.max_concurrent_runs` that holds exactly one line:
+the decimal `max_concurrent_runs` of the `fabro_server_instances` mapping that
+the factory's `host` and `unit_name` resolve to. The files MUST be written to the
+directory a role variable names, whose default is
+`/home/ubuntu/.local/state/livespec/fleet-limits`, and each file MUST be
+world-readable. The play MUST read the value through `hostvars` from the same
+`fabro_server_instances` entry from which the `fabro_server` role renders that
+instance's `settings.toml`, so that changing that one committed value changes
+both renders, and MUST NOT take the number from any other committed file or
+variable. The run cap is a separate file, not a key of
+`/etc/livespec/fabro-factories.json`, because that file holds only `server` and
+an optional `docker_host`. A run narrowed by `--limit` or `--tags` so that it
+does not run this rendering on a host MUST leave that host's run-cap files
+unchanged.
+
 **Refused before writing.** Every run that runs the rendering on any host MUST
 first validate every `fabro_factory_registry` entry, and MUST refuse, before it
 writes the registry on any host, an entry whose name is not a string non-empty
 after surrounding whitespace is removed, whose `host` is not an inventory host,
 whose `unit_name` matches no mapping in that host's `fabro_server_instances`,
 whose matched instance has no `canonical_host` non-empty after surrounding
-whitespace is removed, or whose `docker_host` is present but is not a string
-non-empty after surrounding whitespace is removed, naming the factory and the
-reason. These are the same emptiness rules the Dispatcher applies when it reads
-the file.
+whitespace is removed, whose matched instance declares no `max_concurrent_runs`,
+or whose `docker_host` is present but is not a string non-empty after
+surrounding whitespace is removed, naming the factory and the reason. The same
+validation MUST pass before any run-cap file is written on any host. The
+emptiness rules for the registry's own fields are the same ones the Dispatcher
+applies when it reads the file.
 
 **Machines are bound only in the inventory.** Moving a factory name from one
 instance to another MUST be a change to `fabro_factory_registry` or to host_vars
