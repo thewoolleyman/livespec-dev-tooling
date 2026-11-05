@@ -1780,6 +1780,44 @@ And the hook output MUST say that it gated locally
 
 And the commit MUST NOT be refused because the cluster returned no verdict
 
+## Scenario: a delegated gate Job's Kueue admission wait does not consume its poll budget
+
+Given a delegating host that submits a gate Job to the `gates` namespace
+
+And the Job stays suspended awaiting Kueue admission for less than the admission bound
+
+When Kueue admits the Job and the Job reaches a verdict within the poll budget measured from admission
+
+Then the gate client MUST report that verdict
+
+And the time the Job spent suspended MUST NOT count toward the poll budget
+
+## Scenario: a delegated gate Job never admitted within the admission bound ends without a verdict and is deleted
+
+Given a delegating host that submits a gate Job to the `gates` namespace
+
+When the Job is still suspended awaiting Kueue admission when the admission bound runs out
+
+Then the gate run MUST have no verdict
+
+And the client's output MUST name the Job and say that it was not admitted
+
+And the client MUST delete the Job before it returns
+
+## Scenario: a gate client that stops waiting on an admitted gate Job deletes it
+
+Given a delegating host whose submitted gate Job was admitted
+
+When the poll budget measured from admission runs out before the Job reaches a verdict
+
+Then the gate run MUST have no verdict
+
+And the client's output MUST name the Job and say that it was admitted
+
+And the client MUST delete the Job before it returns
+
+And a refused delete MUST be reported in the output without changing the absent verdict
+
 ## Scenario: a delegated gate check suite ending in the pre-commit aggregate is refused
 
 Given a consuming repository whose `[tool.livespec_dev_tooling]` sets `delegated_gate = true`
