@@ -42,6 +42,14 @@ This repository revises in `delegated` mode, with `auto-spawn` review and
 - The CLI numbers the new version from `history/`. When another revise PR is
   open, let it merge first, rebase, and build `resulting_files` from the new
   master. Otherwise the two PRs claim the same version.
+- An open-PR search for `history/vNNN` does not prove the version is free. It
+  only sees revises that have already been pushed. A peer's revise can still be
+  inside its local commit gate, which takes about 15 minutes in
+  livespec-orchestrator-beads-fabro. On 2026-11-05 two seats both cut
+  orchestrator v305 that way (#4472 and a peer's revise), and the coordinator
+  had the second seat re-cut as v306. In a repository that several seats
+  revise, tell the coordinator which version you are claiming BEFORE starting
+  the commit gate.
 
 A spec-change-tier dispatch hold does not always need a revise. When the
 dispatch judgement's own rationale says the ratified text already states the
