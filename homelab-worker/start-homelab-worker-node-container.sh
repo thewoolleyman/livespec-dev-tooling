@@ -27,6 +27,11 @@
 #      joins the tailnet as <worker>, printing a login URL for the operator
 #      while one is needed, and starts the kubelet once enrollment has been
 #      delivered.
+#   8. With HOMELAB_WORKER_ENROLLMENT=<dir> (the directory
+#      enrollment/mint-bootstrap-token.sh wrote on the operator's side), its
+#      bootstrap-kubeconfig and client-ca.crt are delivered into the worker's
+#      enrollment state in the VM on stdin, never in an argument, before the
+#      container step. The directory is checked before any host change.
 #
 # Every declared host runs this same code path; a host's .env carries data
 # only. The script stays bash 3.2-compatible because a worker host is not a
@@ -105,6 +110,13 @@ done
 worker="$host-homelab-worker"
 data_disk="hwdata"
 
+enrollment="${HOMELAB_WORKER_ENROLLMENT:-}"
+if [ -n "$enrollment" ]; then
+  for f in bootstrap-kubeconfig client-ca.crt; do
+    [ -s "$enrollment/$f" ] || die "HOMELAB_WORKER_ENROLLMENT '$enrollment' has no $f; mint it with homelab-worker/enrollment/mint-bootstrap-token.sh"
+  done
+fi
+
 os="$(uname -s)"
 if [ "$os" != "$WORKER_HOST_OS" ]; then
   die "host '$host' is declared for $WORKER_HOST_OS but this machine runs $os"
@@ -176,8 +188,17 @@ else
   exit 1
 fi
 
+worker_root="/mnt/lima-$data_disk/worker"
+if [ -n "$enrollment" ]; then
+  limactl shell --workdir / "$worker" sudo mkdir -p -m 0700 "$worker_root/enrollment"
+  for f in bootstrap-kubeconfig client-ca.crt; do
+    limactl shell --workdir / "$worker" sudo install -m 0600 /dev/stdin "$worker_root/enrollment/$f" <"$enrollment/$f"
+  done
+  say "enrollment delivered to $worker_root/enrollment in VM $worker"
+fi
+
 image="$(grep -v '^#' "$here/image/ref" | head -n 1)"
 say "converging worker container $worker in VM $worker"
-limactl shell --workdir / "$worker" sudo bash -s -- "$worker" "$host" "$image" "/mnt/lima-$data_disk/worker" <"$converge"
+limactl shell --workdir / "$worker" sudo bash -s -- "$worker" "$host" "$image" "$worker_root" <"$converge"
 
 say "worker $worker converged for host $host"
