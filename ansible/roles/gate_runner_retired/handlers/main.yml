@@ -1,0 +1,20 @@
+---
+- name: Reload systemd after removing the retired gate-tier units
+  ansible.builtin.systemd_service:
+    daemon_reload: true
+  become: true
+  notify: Clear the failed state of the retired gate-tier units
+
+- name: Clear the failed state of the retired gate-tier units
+  # Drops a removed unit that ended failed from `systemctl --failed`.
+  ansible.builtin.command:
+    argv: "{{ ['systemctl', 'reset-failed'] + gate_runner_retired_units }}"
+  failed_when: false
+  changed_when: false
+  become: true
+
+- name: Restart polkit after removing the retired gate tier's rule
+  ansible.builtin.systemd_service:
+    name: polkit
+    state: restarted
+  become: true

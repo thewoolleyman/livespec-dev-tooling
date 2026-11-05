@@ -38,9 +38,9 @@ are role defaults because they are the same on every host that carries them.
 gha_runner_user: ubuntu
 gha_runner_group: ubuntu
 gha_runner_home: /home/ubuntu
-# A DEDICATED tree — not the operator's home root and not the existing
-# /home/ubuntu/gate-runner (livespec-dev-tooling's separate ephemeral gate
-# tier), so the two runners' _work and _diag never collide.
+# A DEDICATED tree, not the operator's home root. (/home/ubuntu/gate-runner
+# belonged to the retired gate tier, bd-ib-te4h, and the gate_runner_retired
+# role removes it.)
 gha_runner_root: /home/ubuntu/gha-runner
 gha_runner_dir: /home/ubuntu/gha-runner/actions-runner
 gha_runner_work: /home/ubuntu/gha-runner/_work

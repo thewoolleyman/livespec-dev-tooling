@@ -289,7 +289,7 @@ Self-hosted runners for a personal account are always registered
 (`https://github.com/{owner}/{repo}/actions/runners/registration-token`).
 This matches how the existing podman pool has always worked (JIT
 runner registration is per-repo, via `CI_RUNNER_LABELS` and
-`../gate-runner/mint-jitconfig.sh` — never org-wide), and it is why
+`gate-runner/mint-jitconfig.sh` (retired; recoverable at `65335aee`) — never org-wide), and it is why
 phase 1 scoped both of its ARC releases to `livespec-dev-tooling` specifically:
 the phase-1 proof job (`test-job/proof-job.yml`) already lives in this
 repo's own `.github/workflows/`, so a single repo-scoped
@@ -405,7 +405,7 @@ The GitHub App installation token that backs `arc-github-app-installation`
 `install-arc.sh` fails closed if the secret is missing rather than
 creating it — from the same least-privilege, read-scoped source the
 existing podman pool's supervisor already uses
-(`../gate-runner/mint-jitconfig.sh`'s token minting), never a broader
+(`gate-runner/mint-jitconfig.sh` (retired; recoverable at `65335aee`)'s token minting), never a broader
 fleet secret. This matches the existing host-requirements "Credential
 separation" clause: the credential that mints runner registrations is
 seeded from 1Password only by a human maintainer and, at boot, is readable
@@ -461,7 +461,7 @@ Environment, never a broader fleet secret.** `seed-github-app-creds.sh` runs
 UNDER the dedicated `github-ci-runners` 1Password wrapper
 (`/usr/local/bin/with-github-ci-runners-env.sh`) — the SAME wrapper and
 Environment the podman pool's gate supervisor used
-(`../gate-runner/gate-runner-supervisor.sh`). It injects three variables,
+(`gate-runner/gate-runner-supervisor.sh` (retired; recoverable at `65335aee`)). It injects three variables,
 which flow into three credstore credential names and, at boot, onto the
 secret's three data keys:
 
@@ -471,7 +471,7 @@ secret's three data keys:
 | `GITHUB_APP_INSTALLATION_ID_CI_RUNNER` | `arc-github-app-installation-id` | `github_app_installation_id` |
 | `GITHUB_PRIVATE_KEY_CI_RUNNER` (PEM content) | `arc-github-app-private-key` | `github_app_private_key` |
 
-(These var names are the exact ones `../gate-runner/gate-runner-supervisor.sh`
+(These var names are the exact ones `gate-runner/gate-runner-supervisor.sh` (retired; recoverable at `65335aee`)
 reads out of that same injected env; the seed step reuses them.) Seed with:
 
 ```bash
