@@ -22,7 +22,9 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import ModuleType
 
+import jinja2
 import pytest
+import yaml
 
 __all__: list[str] = []
 
@@ -432,34 +434,52 @@ def reaper_apply(*, request: pytest.FixtureRequest) -> bool:
     return bool(request.param)
 
 
-def _sandbox_roles(*, enabled: bool) -> list[str]:
-    """The sandbox-play roles selected by the fixture's reaper switch."""
-    play = _text(path=_PLAY)
-    sandbox = play.split("hosts: sandbox_hosts", 1)[1].split("\n- name: ", 1)[0]
-    entry = re.search(
-        r"^    - role: factory_sandbox_reaper\n"
-        r"      tags: \[factory_sandbox_reaper\]\n"
-        r"      when: factory_sandbox_reaper_enabled \| default\(false\) \| bool$",
-        sandbox,
-        re.MULTILINE,
+def _ansible_environment() -> jinja2.Environment:
+    """A Jinja environment with the one Ansible filter the role's expressions use."""
+    environment = jinja2.Environment(autoescape=False)
+    environment.filters["bool"] = lambda value: (
+        value
+        if isinstance(value, bool)
+        else str(value).strip().lower() in {"1", "true", "yes", "on"}
     )
-    assert entry is not None, "the role needs its own tag and an opt-in `when`:\n" + sandbox
-    return ["factory_sandbox_reaper"] if enabled else []
+    return environment
+
+
+def _sandbox_roles(*, enabled: bool) -> list[str]:
+    """The sandbox-play roles whose `when` selects them for the supplied switch value."""
+    plays = yaml.safe_load(_text(path=_PLAY))
+    sandbox = next(play for play in plays if play.get("hosts") == "sandbox_hosts")
+    environment = _ansible_environment()
+    selected: list[str] = []
+    for entry in sandbox["roles"]:
+        if entry["role"] != "factory_sandbox_reaper":
+            continue
+        assert entry.get("tags") == ["factory_sandbox_reaper"], "the role needs its own tag"
+        assert "when" in entry, "the role needs an opt-in `when`"
+        condition = environment.compile_expression(entry["when"])
+        if condition(factory_sandbox_reaper_enabled=enabled):
+            selected.append(entry["role"])
+    return selected
 
 
 def test_the_sandbox_host_play_selects_the_reaper_for_each_fixture_value(
     *, reaper_enabled: bool
 ) -> None:
     roles = _sandbox_roles(enabled=reaper_enabled)
-    assert ("factory_sandbox_reaper" in roles) is reaper_enabled
+    assert roles == (["factory_sandbox_reaper"] if reaper_enabled else [])
+
+
+def test_the_sandbox_host_play_does_not_select_the_reaper_when_the_switch_is_unset() -> None:
+    plays = yaml.safe_load(_text(path=_PLAY))
+    sandbox = next(play for play in plays if play.get("hosts") == "sandbox_hosts")
+    (entry,) = [item for item in sandbox["roles"] if item["role"] == "factory_sandbox_reaper"]
+    assert _ansible_environment().compile_expression(entry["when"])() is False
 
 
 def _render_reaper_service(*, apply: bool) -> str:
-    """Render the toggle expression with the fixture's supplied value."""
+    """Render the service template with the fixture's supplied apply value."""
     service = _text(path=_ROLE / "templates" / "livespec-factory-sandbox-reaper.service.j2")
-    toggle = "{{ '1' if factory_sandbox_reaper_apply | bool else '0' }}"
-    assert service.count(toggle) == 1, "the service must derive REAPER_APPLY from its toggle"
-    return service.replace(toggle, "1" if apply else "0")
+    return _ansible_environment().from_string(service).render(factory_sandbox_reaper_apply=apply)
 
 
 def test_the_service_and_pass_honor_each_fixture_apply_value(*, reaper_apply: bool) -> None:
