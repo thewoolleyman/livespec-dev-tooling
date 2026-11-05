@@ -34,6 +34,8 @@ __pycache__/
 .coverage.*
 # check-per-file-coverage's provenance marker for check-coverage's consume-once reuse
 .livespec-coverage-reuse-token
+# check-per-file-coverage's failed-suite receipt for check-coverage's consume-once verdict reuse
+.livespec-coverage-failure-receipt
 .ruff_cache/
 .pyright/
 .mutmut-cache/

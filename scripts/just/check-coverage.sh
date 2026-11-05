@@ -32,7 +32,23 @@ set -euo pipefail
 # A downloaded artifact without its receipt falls back to normal measurement.
 coverage_file="${COVERAGE_FILE:-.coverage}"
 reuse_stamp="$(dirname "$coverage_file")/.livespec-coverage-reuse-token"
+failure_receipt="$(dirname "$coverage_file")/.livespec-coverage-failure-receipt"
+failure_status=""
 reuse_reason=""
+if [[ -f "$failure_receipt" ]] \
+    && failure_id="$(scripts/just/coverage-reuse-id.sh failure)"; then
+    IFS=' ' read -r recorded_failure_id recorded_failure_status extra < "$failure_receipt" || true
+    if [[ -z "$extra" ]] \
+        && [[ "$recorded_failure_id" == "$failure_id" ]] \
+        && [[ "$recorded_failure_status" =~ ^[1-9][0-9]*$ ]]; then
+        failure_status="$recorded_failure_status"
+    fi
+fi
+if [[ -n "$failure_status" ]]; then
+    echo ":: check-coverage: check-per-file-coverage's clean suite already failed (pytest exit status ${failure_status}); refusing duplicate suite run"
+    rm -f "$coverage_file" "$reuse_stamp" "$failure_receipt"
+    exit "$failure_status"
+fi
 if [[ -f "$coverage_file" ]]; then
     if [[ -f "$reuse_stamp" ]] \
         && reuse_id="$(scripts/just/coverage-reuse-id.sh)" \
@@ -44,14 +60,15 @@ if [[ -n "$reuse_reason" ]]; then
     echo ":: check-coverage: reading .coverage from ${reuse_reason} (no duplicate suite run)"
     status=0
     COVERAGE_FILE="$coverage_file" uv run coverage report --fail-under=100 || status=$?
-    rm -f "$coverage_file" "$reuse_stamp"
+    rm -f "$coverage_file" "$reuse_stamp" "$failure_receipt"
     exit "$status"
 fi
 if [[ -f "$coverage_file" ]]; then
     echo ":: check-coverage: ignoring existing .coverage without a matching provenance marker (a focused pytest --cov run leaves one behind); running the clean suite"
-    rm -f "$coverage_file" "$reuse_stamp"
+    rm -f "$coverage_file" "$reuse_stamp" "$failure_receipt"
 else
     echo ":: check-coverage: no reusable .coverage data file; running the clean suite"
+    rm -f "$failure_receipt"
 fi
 env -u COVERAGE_FILE LIVESPEC_COVERAGE_DATA_FILE="$coverage_file" \
     uv run pytest -n "${test_nprocs}" --cov --cov-branch --cov-config=pyproject.toml --cov-report=term-missing
