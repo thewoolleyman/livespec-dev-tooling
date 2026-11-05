@@ -98,7 +98,7 @@ def test_flannel_carries_the_fleet_vxlan_network_and_cni_conflist() -> None:
         "isDefaultGateway": True,
     }
     flannel = _container(name="homelab-worker-flannel")
-    assert flannel["args"] == ["--ip-masq", "--kube-subnet-manager"]
+    assert flannel["args"] == ["--ip-masq", "--kube-subnet-mgr"]
     iface = {e["name"]: e for e in flannel["env"]}["FLANNELD_IFACE"]
     assert iface["valueFrom"]["configMapKeyRef"]["key"] == "flannel-iface"
 

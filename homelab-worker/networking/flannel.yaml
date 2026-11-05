@@ -1,7 +1,7 @@
 # Flannel v0.28.4 for the homelab worker class only: the version K3s v1.36.2
 # embeds, with the fleet's VXLAN network (VNI 1, UDP 8472, 10.42.0.0/16), its
-# CNI conflist and its masquerade, as an upstream DaemonSet in kube-subnet-
-# manager mode.
+# CNI conflist and its masquerade, as an upstream DaemonSet in kube-subnet-mgr
+# mode.
 #
 # Governed by SPECIFICATION/non-functional-requirements.md, "Homelab worker
 # nodes". Design: plan/homelab-k8s-worker-nodes/research/005 §1 "Flannel" and
@@ -140,7 +140,7 @@ spec:
         - name: flannel
           image: ghcr.io/flannel-io/flannel:v0.28.4@sha256:cc44a1a8969c4f14b8dd45664546f14abc3fc7682b125399103e555f1ad2528b
           command: [/opt/bin/flanneld]
-          args: [--ip-masq, --kube-subnet-manager]
+          args: [--ip-masq, --kube-subnet-mgr]
           env:
             - name: POD_NAME
               valueFrom:
