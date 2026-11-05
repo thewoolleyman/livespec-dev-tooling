@@ -34,14 +34,39 @@ server-stable `.beads/metadata.json` pointer with owner-only permissions; never
 run `bd init` or create a substitute store.
 
 The canonical credential-wrapper factory uses the login Keychain on Darwin.
-A locked Keychain can return `User interaction is not allowed` even for
-`security show-keychain-info`. Local login/unlock through macOS is then required;
-never guess a password or weaken Keychain policy. Keep credentials out of logs,
-files and process arguments. `security add-generic-password` documents placing
-`-w` last to prompt; a host-side adapter can feed that prompt through a private
-PTY instead of forwarding a token as a child-process argument. Keep the factory
-and generated wrapper bytes unchanged. Verify the installed wrapper through
-presence-only probes and an actual tenant read after unlocking.
+Verify access in the actual terminal audit/security session that will run the
+factory and wrappers: an unlocked desktop session does not establish terminal
+access. If needed, the maintainer can enter the login password at the native
+hidden `security unlock-keychain` prompt in that same terminal. Never collect
+that password in chat, argv or files, guess it, or weaken Keychain policy.
+
+Keep the factory source and generated wrapper bytes unchanged. Adapt only host
+storage, keeping service-account tokens out of child argv, files, history and
+logs. Native `security add-generic-password -w` password entry, including a
+private PTY, is unsuitable for service-account tokens: on a measured host it
+silently stored only 128 bytes of an 852-byte token. Use bounded `security -i`
+stdin commands held in memory, or a suitable native API with equivalent access
+controls. For stdin commands, validate the token alphabet and identifier syntax,
+exclude command-parser quotes/escapes/control characters, and enforce the native
+4096-byte command-line bound including delimiters. Do not feed a token into an
+unlock or authorization prompt.
+
+Creation must grant the generated wrapper's reader alone with
+`-T /usr/bin/security`, never `-A`. Reuse a readable byte-identical existing
+value without writing. Refuse other mismatches unless an explicitly authorized,
+verified repair applies; for example, an existing exactly-128-byte strict prefix
+of the approved full source after confirmed truncation. On such an update use
+`-U` without `-T` to preserve the existing ACL rather than reauthorizing it.
+A nonzero native update may already have changed data: stop and inspect filtered
+readback evidence instead of blindly retrying.
+
+Before production storage, prove the actual writer/reader path with unique
+nonsecret fixtures longer than 128 and 1024 bytes and clean up only those owned
+items. Require full byte-identical readback of every successful stored token;
+a successful write exit alone is insufficient. Then verify the exact provider
+environment operation, unchanged generated-wrapper bytes, presence-only wrapper
+probes and an authenticated tenant read. Publish canonical entry points only
+after the complete validations pass.
 
 ## Reconcile plugins and prove the delegated route
 
