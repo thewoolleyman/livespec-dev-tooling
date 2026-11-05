@@ -111,6 +111,31 @@ def test_the_gate_submitter_may_create_secrets_and_do_nothing_else_with_them() -
     assert '"*"' not in rule
 
 
+def test_the_gate_submitter_may_delete_jobs_and_nothing_else() -> None:
+    """Job deletion reaps an abandoned suspended gate and its owned Secret.
+
+    A Job that has not started cannot reach its TTL terminal state, so the
+    submitter needs the narrow namespaced power to delete that Job. The owned
+    per-run token Secret is then garbage-collected with it; no Secret delete
+    grant is necessary or allowed.
+    """
+    rules = _rules()
+    jobs_rules = [rule for rule in rules if '"jobs"' in rule]
+
+    assert len(jobs_rules) == 1
+    assert 'verbs: ["create", "delete", "get", "list", "watch"]' in jobs_rules[0]
+    for rule in rules:
+        if rule != jobs_rules[0]:
+            assert '"delete"' not in rule
+    declared = _declared_yaml()
+    assert "kind: ClusterRole" not in declared
+    assert "kind: ClusterRoleBinding" not in declared
+
+    suite = _EXIT_TESTS.read_text(encoding="utf-8")
+    assert 'verbs:["create","delete","get","list","watch"]' in suite
+    assert "only jobs may be deleted" in suite
+
+
 def test_the_rbac_manifest_declares_no_secret_holding_a_github_credential() -> None:
     """The per-run token Secret is created at submit time and exists in no source.
 
