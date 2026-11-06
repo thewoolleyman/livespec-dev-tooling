@@ -51,6 +51,16 @@
     mode: "0755"
   become: true
 
+- name: Install the factory sandbox reaper retention decisions
+  ansible.builtin.copy:
+    src: factory_sandbox_reaper_decisions.py
+    dest: "{{ factory_sandbox_reaper_bin | dirname }}/factory_sandbox_reaper_decisions.py"
+    owner: root
+    group: root
+    mode: "0644"
+    validate: python3 -c "import ast,sys; ast.parse(open(sys.argv[1]).read())" %s
+  become: true
+
 - name: Install the factory sandbox reaper CLI profile
   # This profile is deliberately separate from the account-wide CLI profile:
   # its provider pin follows fabro-server's versioned Kubernetes plugin path.

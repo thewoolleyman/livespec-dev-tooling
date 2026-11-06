@@ -14,7 +14,8 @@ factory sandbox host, so retention is AGE-ONLY (default 24 h) plus an evidence
 guard. A sandbox is deleted only when ALL of these hold; each failure KEEPS it,
 and every keep names its reason:
 
-  1. its state is `stopped` (never running, starting or anything else);
+  1. its state is `stopped` or `running`; a running record is retried after a
+     timed-out delete of a terminal run;
   2. its Fabro run is found in `fabro ps -a` (an unknown run is kept and shouted);
   3. that run is terminal (succeeded or failed) and its end time is known;
   4. the run ended at least REAPER_MIN_AGE_HOURS ago;
@@ -39,12 +40,14 @@ import re
 import subprocess
 import sys
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
-__all__: list[str] = []
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-TERMINAL_KINDS = frozenset({"succeeded", "failed"})
+from factory_sandbox_reaper_decisions import Run, Sandbox, Verdict, classify, finalize, run_end
+
+__all__ = ["run_end"]
 _RUN_IN_NAME = re.compile(r"^petri-(?P<run>[0-9A-Za-z]+)-l[0-9]+$")
 _DISPATCH_LABEL = "livespec.dispatch.id"
 _PRESERVED_GLOB = "refs/heads/needs-human/*"
@@ -54,31 +57,6 @@ COMMAND_TIMEOUT_SECONDS = 300
 Runner = Callable[[Sequence[str]], "subprocess.CompletedProcess[str]"]
 
 
-@dataclass(frozen=True)
-class Sandbox:
-    sandbox_id: str
-    state: str
-    run_id: str | None
-
-
-@dataclass(frozen=True)
-class Run:
-    run_id: str
-    kind: str
-    start_time: str | None
-    wall_time_ms: int | None
-    dispatch_id: str | None
-    origin_url: str | None
-
-
-@dataclass(frozen=True)
-class Verdict:
-    sandbox_id: str
-    run_id: str | None
-    action: str  # "delete" or "keep"
-    reason: str
-
-
 def sandbox_run_id(*, record: Mapping[str, object]) -> str | None:
     """The Fabro run a sandbox record belongs to: the petri.run label, else the name."""
     label = (record.get("labels") or {}).get("petri.run")  # type: ignore[attr-defined]
@@ -86,110 +64,6 @@ def sandbox_run_id(*, record: Mapping[str, object]) -> str | None:
         return str(label).upper()
     match = _RUN_IN_NAME.match(str(record.get("name", "")))
     return match["run"].upper() if match else None
-
-
-def run_end(*, run: Run) -> datetime | None:
-    """start_time + wall_time_ms, or None when either is missing or unreadable."""
-    if run.start_time is None or run.wall_time_ms is None:
-        return None
-    try:
-        started = datetime.fromisoformat(run.start_time)
-    except ValueError:
-        return None
-    if started.tzinfo is None:
-        started = started.replace(tzinfo=timezone.utc)
-    return started + timedelta(milliseconds=run.wall_time_ms)
-
-
-def _keep(*, sandbox: Sandbox, reason: str) -> Verdict:
-    return Verdict(sandbox.sandbox_id, sandbox.run_id, "keep", reason)
-
-
-def classify(
-    *,
-    sandboxes: Sequence[Sandbox],
-    runs: Mapping[str, Run],
-    now: datetime,
-    min_age: timedelta,
-) -> tuple[list[Verdict], list[tuple[Sandbox, Run, datetime]]]:
-    """Split sandboxes into immediate keeps and candidates still owing the origin check."""
-    keeps: list[Verdict] = []
-    candidates: list[tuple[Sandbox, Run, datetime]] = []
-    for sandbox in sandboxes:
-        run = runs.get(sandbox.run_id) if sandbox.run_id else None
-        ended = run_end(run=run) if run is not None else None
-        if sandbox.state != "stopped":
-            keeps.append(_keep(sandbox=sandbox, reason=f"state is {sandbox.state}, not stopped"))
-        elif run is None:
-            keeps.append(
-                _keep(sandbox=sandbox, reason="UNKNOWN RUN: not found in fabro ps -a, kept")
-            )
-        elif run.kind not in TERMINAL_KINDS:
-            keeps.append(_keep(sandbox=sandbox, reason=f"run is {run.kind}, not terminal"))
-        elif ended is None:
-            keeps.append(_keep(sandbox=sandbox, reason="run end time unknown, kept"))
-        elif now - ended < min_age:
-            hours = (now - ended).total_seconds() / 3600
-            keeps.append(
-                _keep(
-                    sandbox=sandbox, reason=f"run ended {hours:.1f} h ago, younger than the horizon"
-                )
-            )
-        else:
-            candidates.append((sandbox, run, ended))
-    return keeps, candidates
-
-
-def finalize(
-    *,
-    candidates: Sequence[tuple[Sandbox, Run, datetime]],
-    preserved: Mapping[str, frozenset[str] | None],
-    max_deletions: int,
-) -> list[Verdict]:
-    """Apply the origin evidence guard and the per-pass cap, oldest-ended first."""
-    verdicts: list[Verdict] = []
-    chosen = 0
-    for sandbox, run, _ended in sorted(candidates, key=lambda item: item[2]):
-        refs = preserved.get(run.origin_url) if run.origin_url is not None else None
-        if refs is None:
-            verdicts.append(
-                _keep(
-                    sandbox=sandbox,
-                    reason=(
-                        f"ORIGIN UNOBSERVABLE ({run.origin_url}): "
-                        "no origin or ls-remote failed, kept"
-                    ),
-                )
-            )
-        elif run.dispatch_id is None:
-            verdicts.append(
-                _keep(
-                    sandbox=sandbox,
-                    reason="run has no livespec.dispatch.id label, preserved ref unknowable, kept",
-                )
-            )
-        elif run.dispatch_id in refs:
-            verdicts.append(
-                _keep(sandbox=sandbox, reason=f"origin holds {_PRESERVED_PREFIX}{run.dispatch_id}")
-            )
-        elif chosen >= max_deletions:
-            verdicts.append(
-                _keep(
-                    sandbox=sandbox,
-                    reason=f"per-pass cap of {max_deletions} deletions reached, deferred",
-                )
-            )
-        else:
-            chosen += 1
-            verdicts.append(
-                Verdict(
-                    sandbox.sandbox_id,
-                    run.run_id,
-                    "delete",
-                    "stopped, run ended past the horizon, no preserved ref",
-                )
-            )
-    return verdicts
 
 
 def parse_sandboxes(*, text: str) -> list[Sandbox]:
