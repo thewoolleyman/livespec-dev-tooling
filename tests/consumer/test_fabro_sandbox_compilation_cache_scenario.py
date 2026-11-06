@@ -55,10 +55,12 @@ ZERO and asserting that some number was reported.
 from __future__ import annotations
 
 import http.server
+import io
 import json
 import os
 import re
 import subprocess
+import sys
 import threading
 from dataclasses import dataclass
 from pathlib import Path
@@ -277,8 +279,14 @@ def _emit_span(*, root: Path, endpoint: str, stats: str | None, warm_registry: b
         "LIVESPEC_SANDBOX_OTEL_ENDPOINT": endpoint,
     }
     before = len(_RECEIVED)
+    emitter_stderr = io.StringIO()
     with pytest.MonkeyPatch.context() as patched:
         patched.setattr(os, "environ", environment)
+        # The emitter's 2 s POST bound is the factory's; the in-process receiver
+        # thread can miss it on a loaded, coverage-traced CI run, and the emitter
+        # then fails open and returns 0 (livespec-dev-tooling-vmxwd5).
+        patched.setattr(otel_cargo_phase, "_POST_TIMEOUT_S", _RUN_TIMEOUT_S)
+        patched.setattr(sys, "stderr", emitter_stderr)
         patched.chdir(root)
         if stats is None:
             # The absent arm means "no compilation cache at all": the emitter must
@@ -295,7 +303,7 @@ def _emit_span(*, root: Path, endpoint: str, stats: str | None, warm_registry: b
         assert main() == 0, "the emitter must report a clean emission for a well-formed phase"
     assert len(_RECEIVED) == before + 1, (
         f"exactly one span must reach the receiver per measured cargo phase; "
-        f"received={len(_RECEIVED) - before}"
+        f"received={len(_RECEIVED) - before}; emitter stderr={emitter_stderr.getvalue()!r}"
     )
     arrived = _RECEIVED[-1]["resourceSpans"][0]["scopeSpans"][0]["spans"][0]
     attributes = list(arrived["attributes"])
