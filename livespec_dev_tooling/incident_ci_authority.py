@@ -23,6 +23,12 @@ _MAX_REPLY = 65536
 _MAX_TOKEN = 4096
 _MIN_TOKEN_CHARACTER = 33
 _ACCEPTED = 202
+# The job's read ceiling. The observer answers /current only after its own
+# reader pass, whose ceiling is incident_observer_authority._READER_TIMEOUT_SECONDS
+# (45 s); this stays above that plus the observer's overhead so the job
+# outwaits the pass instead of racing it, and about five such reads happen
+# per incident run (livespec-dev-tooling-ws2idp, 2026-11-06).
+_OBSERVER_READ_TIMEOUT_SECONDS = 60
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -74,7 +80,9 @@ class CiAuthorityBoundary:
                 return False
             # System TLS verification; no redirect handler can forward the token.
             with closing(
-                http.client.HTTPSConnection(parsed.hostname, port=parsed.port, timeout=10)
+                http.client.HTTPSConnection(
+                    parsed.hostname, port=parsed.port, timeout=_OBSERVER_READ_TIMEOUT_SECONDS
+                )
             ) as connection:
                 connection.request(
                     "POST",
