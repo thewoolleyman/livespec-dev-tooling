@@ -1,15 +1,14 @@
-"""The fixture proof of `SPECIFICATION/non-functional-requirements.md`, "Homelab worker nodes".
+"""Fixture proof wrapper, `SPECIFICATION/non-functional-requirements.md`, "Homelab worker nodes".
 
-`homelab-worker/fixture/prove-fixture-worker.sh` proves a worker joined to the isolated fixture at
-the fixture's egress-selector-mode. These run it under the system `/bin/bash` against a stub
-`limactl` that plays the fixture's kubectl, with the API server's reach to a kubelet without a K3s
-agent tunnel and NetworkPolicy enforcement on the worker emulated in files, and assert:
+`homelab-worker/fixture/prove-fixture-worker.sh` runs the production proof, `prove-worker.sh`
+(its checks are tested in `test_homelab_worker_prove.py`), against the isolated fixture. These run
+it under the system `/bin/bash` against a stub `limactl` that plays the fixture's kubectl, and
+assert only what the wrapper adds:
 
+- every kubectl call and the port-forward check run inside the fixture's server container;
+- the peer node is the fixture's K3s agent node;
 - `agent` is the negative control: it passes only when logs and exec on the worker fail;
-- `disabled` passes only when logs, exec, port-forward and kubelet stats on the worker, logs on
-  the K3s node, pod-to-pod both ways, ClusterIP, DNS and a NetworkPolicy deny (allowed, denied,
-  allowed again) all hold;
-- the proof pods tolerate the admission hold and are pinned to the worker and a K3s node;
+- `disabled` runs the full proof and fails when the worker is unreachable;
 - an undeclared host or an unknown mode is refused before any cluster call.
 """
 
@@ -58,6 +57,7 @@ case "$1" in
       if [ "$STUB_TUNNEL_ONLY" = 1 ]; then echo 'proxy error 502' >&2; exit 1; fi
       echo '{"node":{"nodeName":"x"}}'; exit 0
     fi
+    if [ "$2" = service ]; then echo 10.99.0.53; exit 0; fi
     case "$5" in
       server-worker) echo 10.42.5.10 ;;
       *) echo 10.42.1.20 ;;
@@ -146,57 +146,30 @@ def test_the_agent_mode_negative_control_passes_only_when_the_worker_is_unreacha
     assert _proofs(reachable) == {"logs-on-worker": "FAIL", "exec-on-worker": "FAIL"}
 
 
-def test_the_disabled_mode_proof_passes_every_check_on_the_worker(mac: _Mac) -> None:
+def test_the_disabled_mode_runs_the_full_proof_inside_the_fixture(mac: _Mac) -> None:
     result = _prove(mac=mac, mode="disabled", tunnel_only="0")
     assert result.returncode == 0, result.stdout + result.stderr
-    assert _proofs(result) == dict.fromkeys(
-        (
-            "logs-on-worker",
-            "exec-on-worker",
-            "logs-on-k3s-node",
-            "kubelet-stats-on-worker",
-            "port-forward-to-worker",
-            "pod-to-pod-worker-to-k3s",
-            "pod-to-pod-k3s-to-worker",
-            "large-tcp-worker-to-k3s",
-            "large-tcp-k3s-to-worker",
-            "large-icmp-worker-to-k3s",
-            "clusterip-and-dns-from-worker",
-            "dns-10.43.0.10-from-worker",
-            "networkpolicy-deny-on-worker",
-            "networkpolicy-lifted-on-worker",
-        ),
-        "PASS",
+    proofs = _proofs(result)
+    assert len(proofs) > 2
+    assert set(proofs.values()) == {"PASS"}
+    calls = (mac.state / "calls.log").read_text(encoding="utf-8").splitlines()
+    assert calls
+    assert all(
+        c.startswith(
+            f"limactl shell --workdir / {_WORKER} sudo docker exec -i k3d-hw-fixture-server-0 "
+        )
+        for c in calls
     )
-    assert "PASSED" in result.stdout
-
-
-@pytest.mark.parametrize(
-    ("tunnel_only", "enforced", "dns", "failing"),
-    [
-        ("1", "1", "1", "logs-on-worker"),
-        ("0", "0", "1", "networkpolicy-deny-on-worker"),
-        ("0", "1", "0", "dns-10.43.0.10-from-worker"),
-    ],
-)
-def test_the_disabled_mode_proof_fails_when_any_check_fails(
-    mac: _Mac, tunnel_only: str, enforced: str, dns: str, failing: str
-) -> None:
-    result = _prove(mac=mac, mode="disabled", tunnel_only=tunnel_only, enforced=enforced, dns=dns)
-    assert result.returncode != 0
-    assert _proofs(result)[failing] == "FAIL"
-    assert "FAILED" in result.stderr
-
-
-def test_the_proof_pods_tolerate_the_hold_and_are_pinned_to_both_node_kinds(mac: _Mac) -> None:
-    _prove(mac=mac, mode="disabled", tunnel_only="0")
+    assert any(" sh -c kubectl port-forward " in c for c in calls)
     applied = (mac.state / "applied.yaml").read_text(encoding="utf-8")
-    assert applied.count(f"nodeName: {_WORKER}") == 2
     assert applied.count("nodeName: k3d-hw-fixture-agent-0") == 2
-    assert applied.count("key: homelab-worker.livespec.dev/admission") == 4
-    assert "busybox:1.37.0@sha256:" in applied
-    calls = (mac.state / "calls.log").read_text(encoding="utf-8")
-    assert "kubectl delete namespace hw-proof" in calls
+
+
+def test_the_disabled_mode_fails_when_the_worker_is_unreachable(mac: _Mac) -> None:
+    result = _prove(mac=mac, mode="disabled", tunnel_only="1")
+    assert result.returncode != 0
+    assert _proofs(result)["logs-on-worker"] == "FAIL"
+    assert "FAILED" in result.stderr
 
 
 @pytest.mark.parametrize(
@@ -221,9 +194,3 @@ def test_an_undeclared_host_or_unknown_mode_is_refused_before_any_cluster_call(
     assert result.returncode != 0
     assert message in result.stderr
     assert (mac.state / "calls.log").read_text(encoding="utf-8") == ""
-
-
-def test_the_disabled_mode_proof_fails_when_a_large_packet_does_not_cross(mac: _Mac) -> None:
-    result = _prove(mac=mac, mode="disabled", tunnel_only="0", mtu="0")
-    assert result.returncode != 0
-    assert _proofs(result)["large-icmp-worker-to-k3s"] == "FAIL"
