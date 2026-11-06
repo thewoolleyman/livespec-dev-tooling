@@ -71,6 +71,7 @@ case "$1" in
       *) exit 2 ;;
     esac ;;
   restart) : ;;
+  update) : ;;
 esac
 """
 
@@ -350,27 +351,45 @@ def test_a_container_of_another_state_root_is_refused_never_adopted(vm: _Vm) -> 
         assert _calls(vm=vm, verb=verb) == []
 
 
-def test_docker_waits_for_the_state_roots_disk_before_restarting_the_worker(vm: _Vm) -> None:
-    # Lima mounts the data disk from cloud-init, outside systemd, so RequiresMountsFor has no
-    # mount unit to wait for (measured on macbook-m4-max, 2026-11-06): Docker waits, bounded,
-    # until the disk's mountpoint is mounted.
+def test_the_worker_starts_at_boot_only_after_its_data_disk_is_mounted(vm: _Vm) -> None:
+    # Lima mounts the data disk in cloud-final.service, after multi-user.target, so gating
+    # docker.service on it deadlocks boot (measured on macbook-m4-max, 2026-11-06). A unit
+    # ordered after cloud-final, pulled in by cloud-init.target, waits for the mountpoint and
+    # starts only the worker; Docker itself no longer races to restart it.
+    stale = vm.state / "systemd" / "docker.service.d" / "10-homelab-worker-state.conf"
+    stale.parent.mkdir(parents=True)
+    stale.write_text("[Service]\nExecStartPre=/bin/true\n", encoding="utf-8")
     result = _run(vm=vm)
     assert result.returncode == 0, result.stdout + result.stderr
-    [dropin] = list((vm.state / "systemd" / "docker.service.d").glob("*.conf"))
-    lines = dropin.read_text(encoding="utf-8").splitlines()
-    assert lines[0] == "[Service]"
+    assert not stale.exists()
+    unit = (vm.state / "systemd" / "homelab-worker-container.service").read_text(encoding="utf-8")
+    lines = unit.splitlines()
+    assert "After=cloud-final.service docker.service" in lines
+    assert "Requires=docker.service" in lines
+    assert "WantedBy=cloud-init.target" in lines
     [wait] = [line for line in lines if line.startswith("ExecStartPre=")]
     assert "mountpoint -q /mnt/test-data" in wait
-    assert "until " in wait
-    assert not [line for line in lines if line.startswith("RequiresMountsFor=")]
+    assert f"ExecStart=/usr/bin/docker start {_WORKER}" in lines
     calls = (vm.state / "calls.log").read_text(encoding="utf-8").splitlines()
     assert "systemctl daemon-reload" in calls
-    assert calls.index("systemctl daemon-reload") < min(
-        i for i, c in enumerate(calls) if c.startswith("docker ")
-    )
+    assert "systemctl enable homelab-worker-container.service" in calls
 
 
-def test_an_unchanged_docker_mount_ordering_is_not_reloaded(vm: _Vm) -> None:
+def test_the_worker_container_restarts_only_on_failure(vm: _Vm) -> None:
+    assert _run(vm=vm).returncode == 0
+    [run] = _calls(vm=vm, verb="run")
+    assert "--restart on-failure" in run
+    assert "unless-stopped" not in run
+
+
+def test_an_existing_worker_is_moved_to_the_on_failure_restart_policy(vm: _Vm) -> None:
+    (vm.state / "container").write_text(f"{_IMAGE} true\n", encoding="utf-8")
+    (vm.state / "mount").write_text(f"{vm.root}/enrollment\n", encoding="utf-8")
+    assert _run(vm=vm).returncode == 0
+    assert _calls(vm=vm, verb="update") == [f"docker update --restart on-failure {_WORKER}"]
+
+
+def test_an_unchanged_worker_unit_is_not_reloaded(vm: _Vm) -> None:
     assert _run(vm=vm).returncode == 0
     (vm.state / "calls.log").write_text("", encoding="utf-8")
     assert _run(vm=vm).returncode == 0
