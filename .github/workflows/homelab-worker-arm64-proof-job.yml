@@ -1,0 +1,44 @@
+# homelab-worker-arm64-proof-job.yml — proves the M4 Max homelab worker runs a
+# real Actions job natively as arm64 through its host-unique runner scale set
+# (plan homelab-k8s-worker-nodes, research/009; livespec-dev-tooling-ko26ez.3).
+#
+# Manual dispatch only (workflow_dispatch, no push/pull_request trigger) is the
+# non-gating guarantee: nothing routes a PR event to it, so it can never become
+# a required status check, and it is wired into no `needs:` chain. It mirrors
+# k3s-arc-proof-job.yml, addressed to macbook-m4-max-homelab-worker-k3s.
+
+name: homelab-worker-arm64-proof-job (non-gating)
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  proof:
+    runs-on: macbook-m4-max-homelab-worker-k3s
+    steps:
+      - name: prove native arm64 on the homelab worker
+        run: |
+          set -euo pipefail
+          echo "homelab worker arm64 proof job"
+          echo "host: $(hostname)"
+          echo "kernel: $(uname -r)"
+          arch="$(uname -m)"
+          echo "machine: ${arch}"
+          if [ "${arch}" != "aarch64" ]; then
+            echo "FAIL: expected aarch64, got ${arch}; this job did not run natively on the arm64 worker" >&2
+            exit 1
+          fi
+          uid="$(id -u)"
+          if [ "${uid}" -eq 0 ]; then
+            echo "FAIL: running as root in-container; the host-requirements contract forbids a root in-container identity" >&2
+            exit 1
+          fi
+          echo "OK: non-root in-container identity (uid ${uid})"
+          if [ ! -d /var/run/secrets/kubernetes.io/serviceaccount ]; then
+            echo "FAIL: no serviceaccount projection; this job did not run in a Kubernetes pod" >&2
+            exit 1
+          fi
+          echo "OK: native aarch64 Kubernetes pod on the homelab worker's scale set"
