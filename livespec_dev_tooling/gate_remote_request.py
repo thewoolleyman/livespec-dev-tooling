@@ -59,3 +59,7 @@ class GateRunRequest:
     namespace: str = GATE_NAMESPACE
     poll_interval_seconds: float = 10.0
     poll_timeout_seconds: float = 3600.0
+
+    def poll_budget(self) -> int:
+        """Return how many status polls the configured timeout permits."""
+        return max(1, int(self.poll_timeout_seconds // self.poll_interval_seconds))
