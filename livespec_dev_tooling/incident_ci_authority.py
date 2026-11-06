@@ -7,8 +7,12 @@ An older controller without fresh canonical-current support refuses this path.
 from __future__ import annotations
 
 import http.client
+import ipaddress
 import json
+import os
 import re
+import socket
+import ssl
 from contextlib import closing
 from dataclasses import dataclass
 from typing import Any, cast
@@ -29,6 +33,14 @@ _ACCEPTED = 202
 # outwaits the pass instead of racing it, and about five such reads happen
 # per incident run (livespec-dev-tooling-ws2idp, 2026-11-06).
 _OBSERVER_READ_TIMEOUT_SECONDS = 60
+# Where to open the TCP connection when the URL's hostname does not resolve to
+# the observer from the runner. A runner pod resolves the observer's ts.net name
+# through public DNS to Tailscale's Funnel ingress, where the tailnet port is not
+# served, so each read hung to the ceiling (livespec-dev-tooling-ws2idp,
+# 2026-11-06). The value is a validated IPv4 or IPv6 literal; the URL's hostname
+# is still what the certificate is verified against and what the Host header
+# names, so the trust boundary does not move. Unset keeps hostname dialing.
+_CONNECT_ADDRESS_VARIABLE = "LIVESPEC_INCIDENT_OBSERVER_CONNECT_ADDR"
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -78,12 +90,26 @@ class CiAuthorityBoundary:
                 )
             ):
                 return False
+            # An invalid literal raises ValueError here, before any connection exists,
+            # and the handler below turns it into a refusal.
+            connect_to = _connect_address()
             # System TLS verification; no redirect handler can forward the token.
             with closing(
                 http.client.HTTPSConnection(
                     parsed.hostname, port=parsed.port, timeout=_OBSERVER_READ_TIMEOUT_SECONDS
                 )
             ) as connection:
+                if connect_to is not None:
+                    # Dial the literal, verify and name the URL's host: the socket is
+                    # handed to the connection, which then never dials by name.
+                    raw = socket.create_connection(
+                        (connect_to, parsed.port or 443), timeout=_OBSERVER_READ_TIMEOUT_SECONDS
+                    )
+                    # A failing wrap raises into the handler below and refuses; the
+                    # unwrapped socket is released with `raw` when this frame unwinds.
+                    connection.sock = ssl.create_default_context().wrap_socket(
+                        raw, server_hostname=parsed.hostname
+                    )
                 connection.request(
                     "POST",
                     parsed.path.rstrip("/") + "/" + route,
@@ -109,3 +135,11 @@ class CiAuthorityBoundary:
                 )
         except (OSError, ValueError, TypeError, RecursionError, http.client.HTTPException):
             return False
+
+
+def _connect_address() -> str | None:
+    """Return the override literal, or None when unset; an invalid value raises ValueError."""
+    value = os.environ.get(_CONNECT_ADDRESS_VARIABLE)
+    if value is None:
+        return None
+    return str(ipaddress.ip_address(value))
