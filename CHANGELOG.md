@@ -58,6 +58,14 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.183.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.183.0...v1.183.1) (2026-11-06)
+
+
+### Bug Fixes
+
+* declare the vendored returns tree's runtime imports so a clean wheel install imports (livespec-dev-tooling-dpbpfx) ([38296eb](https://github.com/thewoolleyman/livespec-dev-tooling/commit/38296eb2535bcc7e516ded97a75367e7779f0c97))
+* **homelab-worker:** systemd is the worker's only supervisor ([0a4f609](https://github.com/thewoolleyman/livespec-dev-tooling/commit/0a4f609f5754519d8bbe97a70ae3f2aad15709b4))
+
 ## [1.183.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.182.0...v1.183.0) (2026-11-06)
 
 
