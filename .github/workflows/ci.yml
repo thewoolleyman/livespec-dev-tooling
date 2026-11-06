@@ -760,6 +760,9 @@ jobs:
   # - with no block, or on a master push, records "selected nothing" and
   #   exits 0 without executing any check: the complete normal graph above
   #   is the gate, regardless of labels, retained blocks or variables;
+  # - with the block but a released plan whose mode is not expedited-repair
+  #   (no expedited-incident-response label), ignores the retained block the
+  #   same way: a notice, exit 0, no check executed, `omitted` unwritten;
   # - with the block, runs the released plan/run/aggregate: the entrance
   #   rechecks the observer's /current and /admitted answers, executes only
   #   the inventory's fast members, and publishes an aggregate that lists
@@ -885,6 +888,8 @@ jobs:
 
       # Incident PRs only. The entrance's own plan/run/aggregate publishes each
       # result to the step summary; a refusal names its cause and fails the job.
+      # A block on a PR the released plan does not select for expedited repair
+      # is a no-op: the step exits 0 before run/aggregate and writes nothing.
       # The `-I` flag is load-bearing: without it `python -m` would import the
       # candidate tree's package from the working directory.
       - name: Run the released incident CI entrance (plan, run, aggregate)
@@ -910,9 +915,15 @@ jobs:
             exit 1
           fi
           mode="$(printf '%s' "$plan" | "$RELEASED_PYTHON" -I -c 'import json, sys; print(json.load(sys.stdin)["mode"])')"
+          # An unexpedited PR that retains a block (a factory repayment
+          # follow-up, say) is NOT refused: the block is ignored, `omitted`
+          # stays unwritten, and the complete normal graph is the gate, exactly
+          # as on the no-block path (z3wy33 assertion 4, Guardrail 3).
           if [ "$mode" != "expedited-repair" ]; then
-            echo "::error::the PR body carries a livespec-incident-ci block but the released plan selected the '${mode}' mode (the expedited-incident-response label is the projected signal); remove the block or label the PR"
-            exit 1
+            note="PR #${PR_NUMBER} is unexpedited: the released plan selected the '${mode}' mode, so the retained livespec-incident-ci block is ignored, both incident flags are off, and the complete normal policy runs; no check executed by this job"
+            echo "::notice::incident-ci: ${note}"
+            printf '## incident-ci\n\n%s.\n' "$note" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
           fi
           targets=()
           while IFS= read -r name; do
