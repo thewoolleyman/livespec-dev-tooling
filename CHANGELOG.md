@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.185.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.185.0...v1.185.1) (2026-11-06)
+
+
+### Bug Fixes
+
+* **gate:** an opted-in push from an unenrolled macOS host is refused instead of gating locally (livespec-dev-tooling-o6igh6) ([dcade08](https://github.com/thewoolleyman/livespec-dev-tooling/commit/dcade08f0ccfeeb14c70d6f71b8cf0629ac50a3a))
+
 ## [1.185.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.184.2...v1.185.0) (2026-11-06)
 
 
