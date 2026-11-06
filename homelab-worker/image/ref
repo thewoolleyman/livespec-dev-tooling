@@ -1,4 +1,4 @@
 # The worker image the start task runs, pinned by digest: the master build of
-# 24580ffe (livespec-dev-tooling#3574: the kubelet registers the permanent
-# class taint beside the admission hold), tag sha-24580ff.
-ghcr.io/thewoolleyman/livespec-worker-node@sha256:dd5771d2325445f2465394aaf46dc76e2d9e34707d8def8329289c1cabf77fb0
+# e266ab25 (livespec-dev-tooling#3604: the image carries the node's host
+# collector, otelcol-contrib 0.147.0), tag sha-e266ab2.
+ghcr.io/thewoolleyman/livespec-worker-node@sha256:c3191488a9d857ca5fc99a3b37286493e2a0e4eb04738b7765beb206fa7d279c
