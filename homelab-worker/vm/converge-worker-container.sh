@@ -36,7 +36,14 @@
 #   5. br_netfilter is loaded and listed in modules-load.d: flannel and
 #      kube-proxy need the bridge netfilter sysctls, and nothing else in the
 #      VM loads the module at boot (measured on macbook-m4-max, 2026-11-06).
-#   6. kubelet-config.yaml and kubelet.env (node name, node IP, host) are
+#   6. The node paths CI pods use are data-disk binds, because on the worker
+#      they resolve inside the container: ci/storage/ is the local-path
+#      provisioner's default storage (/var/lib/rancher/k3s/storage), so work
+#      volumes outlive the container, and ci/hooks/ is the fleet container
+#      hook tree (/usr/local/lib/ci-runner-k3s/hooks), read-only, which the
+#      start task delivers (research 009). A running worker created without
+#      these binds is replaced; its state on the data disk is kept.
+#   7. kubelet-config.yaml and kubelet.env (node name, node IP, host) are
 #      written to enrollment/. The kubelet starts only once the operator has
 #      delivered client-ca.crt there and either bootstrap-kubeconfig is there
 #      too or the worker already holds its node kubeconfig.
@@ -143,7 +150,8 @@ if [ "$reload" = 1 ]; then
   say "the worker now starts at boot only after the disk holding $root is mounted"
 fi
 
-mkdir -p "$root/containerd" "$root/kubelet" "$root/tailscale" "$root/enrollment"
+mkdir -p "$root/containerd" "$root/kubelet" "$root/tailscale" "$root/enrollment" \
+  "$root/ci/storage" "$root/ci/hooks"
 chmod 0700 "$root/enrollment" "$root/tailscale"
 
 run_container() {
@@ -157,6 +165,8 @@ run_container() {
     --volume "$root/kubelet:/var/lib/kubelet:rshared" \
     --volume "$root/tailscale:/var/lib/tailscale" \
     --volume "$root/enrollment:/etc/homelab-worker" \
+    --volume "$root/ci/storage:/var/lib/rancher/k3s/storage" \
+    --volume "$root/ci/hooks:/usr/local/lib/ci-runner-k3s/hooks:ro" \
     --env container=docker \
     --stop-signal SIGRTMIN+3 \
     --restart no \
@@ -177,8 +187,14 @@ if current="$(docker inspect -f '{{.Config.Image}} {{.State.Running}}' "$worker"
   docker update --restart no "$worker" >/dev/null
   current_image="${current% *}"
   running="${current##* }"
+  destinations="$(docker inspect -f '{{range .Mounts}}{{.Destination}}{{"\n"}}{{end}}' "$worker")"
   if [ "$current_image" != "$image" ]; then
     say "replacing container $worker ($current_image) with $image; its state on the data disk is kept"
+    docker rm -f "$worker" >/dev/null
+    run_container
+  elif ! printf '%s\n' "$destinations" | grep -qx /var/lib/rancher/k3s/storage ||
+    ! printf '%s\n' "$destinations" | grep -qx /usr/local/lib/ci-runner-k3s/hooks; then
+    say "replacing container $worker, created without the CI storage and hook binds; its state on the data disk is kept"
     docker rm -f "$worker" >/dev/null
     run_container
   elif [ "$running" = "true" ]; then
