@@ -71,7 +71,7 @@ case "$1" in
       echo) echo exec-ok ;;
       wget) [ "$STUB_DNS" = 0 ] && case "$*" in *svc.cluster.local*) exit 1 ;; esac; echo proof-ok ;;
       nslookup) [ "$STUB_DNS" = 0 ] && exit 1; [ "$3" = {_DNS} ] || exit 1; echo ok ;;
-      ping) echo '3 packets received' ;;
+      ping) [ "$STUB_MTU" = 0 ] && exit 1; echo '3 packets received' ;;
     esac ;;
   delete)
     [ "$2" = networkpolicy ] && rm -f "$s/policy" ;;
@@ -111,7 +111,13 @@ def env(tmp_path: Path) -> _Env:
 
 
 def _prove(
-    *, env: _Env, args: list[str], tunnel_only: str, enforced: str = "1", dns: str = "1"
+    *,
+    env: _Env,
+    args: list[str],
+    tunnel_only: str,
+    enforced: str = "1",
+    dns: str = "1",
+    mtu: str = "1",
 ) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         ["/bin/bash", str(_SCRIPT), *args],
@@ -125,6 +131,7 @@ def _prove(
             "STUB_TUNNEL_ONLY": tunnel_only,
             "STUB_ENFORCED": enforced,
             "STUB_DNS": dns,
+            "STUB_MTU": mtu,
             "POLICY_SETTLE_SECONDS": "0",
         },
         check=False,
@@ -170,16 +177,17 @@ def test_cluster_dns_is_checked_at_the_kube_dns_service_address(env: _Env) -> No
 
 
 @pytest.mark.parametrize(
-    ("tunnel_only", "enforced", "dns", "failing"),
+    ("tunnel_only", "enforced", "dns", "mtu", "failing"),
     [
-        ("1", "1", "1", "logs-on-worker"),
-        ("1", "1", "1", "port-forward-to-worker"),
-        ("0", "0", "1", "networkpolicy-deny-on-worker"),
-        ("0", "1", "0", "cluster-dns-from-worker"),
+        ("1", "1", "1", "1", "logs-on-worker"),
+        ("1", "1", "1", "1", "port-forward-to-worker"),
+        ("0", "0", "1", "1", "networkpolicy-deny-on-worker"),
+        ("0", "1", "0", "1", "cluster-dns-from-worker"),
+        ("0", "1", "1", "0", "large-icmp-worker-to-peer"),
     ],
 )
 def test_the_proof_fails_naming_any_check_that_fails(
-    env: _Env, tunnel_only: str, enforced: str, dns: str, failing: str
+    env: _Env, tunnel_only: str, enforced: str, dns: str, mtu: str, failing: str
 ) -> None:
     result = _prove(
         env=env,
@@ -187,6 +195,7 @@ def test_the_proof_fails_naming_any_check_that_fails(
         tunnel_only=tunnel_only,
         enforced=enforced,
         dns=dns,
+        mtu=mtu,
     )
     assert result.returncode != 0
     assert _proofs(result)[failing] == "FAIL"
