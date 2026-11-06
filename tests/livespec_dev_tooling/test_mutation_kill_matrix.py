@@ -6,6 +6,8 @@ import importlib
 import json
 from pathlib import Path
 
+import pytest
+
 __all__: list[str] = []
 
 
@@ -54,3 +56,48 @@ def test_report_attributes_each_mutant_to_its_killing_tests_and_writes_json(
             "location": "package/module.py:20",
         },
     ]
+
+
+def test_report_lists_survivors_and_redundancy_candidates() -> None:
+    """A shared-only killer is redundant while a unique killer is retained."""
+    module = importlib.import_module("livespec_dev_tooling.mutation_kill_matrix")
+    report = module.build_report(
+        engine="mutmut",
+        engine_version="3.2.3",
+        source_revision="abc123",
+        mutants=[
+            module.Mutant(identifier="M1", location="package/module.py:10"),
+            module.Mutant(identifier="M2", location="package/module.py:20"),
+            module.Mutant(identifier="M3", location="package/module.py:30"),
+        ],
+        tests=[
+            "tests/test_rule.py::test_a",
+            "tests/test_rule.py::test_b",
+            "tests/test_rule.py::test_c",
+        ],
+        killers_by_mutant={
+            "M1": {"tests/test_rule.py::test_a", "tests/test_rule.py::test_b"},
+            "M2": {"tests/test_rule.py::test_a"},
+        },
+    )
+
+    assert report.to_dict()["surviving_mutants"] == ["M3"]
+    assert report.to_dict()["redundancy_candidates"] == [
+        "tests/test_rule.py::test_b",
+        "tests/test_rule.py::test_c",
+    ]
+
+
+def test_empty_mutant_set_is_refused() -> None:
+    """A report must never present a zero-mutant run as a clean result."""
+    module = importlib.import_module("livespec_dev_tooling.mutation_kill_matrix")
+
+    with pytest.raises(ValueError, match="empty mutant set"):
+        _ = module.build_report(
+            engine="mutmut",
+            engine_version="3.2.3",
+            source_revision="abc123",
+            mutants=[],
+            tests=[],
+            killers_by_mutant={},
+        )

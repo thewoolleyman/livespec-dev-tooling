@@ -14,6 +14,8 @@ from pathlib import Path
 
 __all__: list[str] = ["Mutant", "MutationKillMatrixReport", "build_report", "write_report"]
 
+_EMPTY_MUTANT_SET = "empty mutant set cannot produce a kill-matrix report"
+
 
 @dataclass(frozen=True, kw_only=True)
 class Mutant:
@@ -68,6 +70,8 @@ def build_report(
     killers_by_mutant: dict[str, set[str]],
 ) -> MutationKillMatrixReport:
     """Build a report, identifying tests with no uniquely killed mutant."""
+    if not mutants:
+        raise ValueError(_EMPTY_MUTANT_SET)
     normalized_killers = {
         mutant.identifier: tuple(sorted(killers_by_mutant.get(mutant.identifier, set())))
         for mutant in mutants
