@@ -666,23 +666,6 @@ _STALL_ENV = "LIVESPEC_SUITE_GREEN_STALL_SECONDS"
 _STALL_GRACE_ENV = "GATE_STALL_KILL_GRACE_SECONDS"
 
 
-def _alive(*, pid: int) -> bool:
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return False
-    return True
-
-
-def _gone_within(*, pid: int, timeout_s: float) -> bool:
-    deadline = time.monotonic() + timeout_s
-    while _alive(pid=pid):
-        if time.monotonic() >= deadline:
-            return False
-        time.sleep(_POLL_INTERVAL_S)
-    return True
-
-
 @pytest.mark.integration
 def test_a_gate_pytest_session_that_stops_making_progress_ends_without_a_pass(
     *, tmp_path: Path, fixture_repo: tuple[Path, Path, dict[str, str]]
@@ -710,7 +693,10 @@ def test_a_gate_pytest_session_that_stops_making_progress_ends_without_a_pass(
     assert "FAILED" in waited.stdout
     assert "PASSED" not in waited.stdout
     assert "stall window" in (run_dir / "output.log").read_text(encoding="utf-8")
-    assert _gone_within(pid=int(worker_pid.read_text(encoding="utf-8")), timeout_s=10.0)
+    # The worker was in the gate's process group, which was ended before the
+    # verdict was written, so it no longer exists.
+    with pytest.raises(ProcessLookupError):
+        os.kill(int(worker_pid.read_text(encoding="utf-8")), 0)
 
 
 @pytest.mark.integration
