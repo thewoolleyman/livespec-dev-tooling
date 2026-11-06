@@ -9,7 +9,9 @@ file and assert rules that hold for any host:
 - its runner pods select that host's worker and arm64, and tolerate the permanent class taint but
   not the admission hold, so lifting the hold stays the operator's explicit gate;
 - its listener runs on the fleet's amd64 nodes, never on a worker;
-- the runner image is pinned by digest.
+- the runner image is pinned by digest;
+- jobs run in the fleet's container mode (compared against the fleet's reference set), asking
+  for none of the fleet CI nodes' capacity, with the hook template revision rendered on install.
 
 No assertion restates a production value.
 """
@@ -68,3 +70,41 @@ def test_the_listener_runs_on_the_fleets_amd64_nodes(path: Path) -> None:
     listener = _load(path)["listenerTemplate"]["spec"]
     assert listener["nodeSelector"] == {"kubernetes.io/arch": "amd64"}
     assert not listener.get("tolerations")
+
+
+# The fleet's container-mode reference set: the worker set runs CI jobs the way it does.
+_FLEET = _ROOT / "ci-runner" / "k3s" / "phase2" / "arc" / "values-livespec-dev-tooling.yaml"
+
+
+def _runner(values: dict[str, Any]) -> dict[str, Any]:
+    return next(c for c in values["template"]["spec"]["containers"] if c["name"] == "runner")
+
+
+@pytest.mark.parametrize("path", _VALUES, ids=lambda p: p.name)
+def test_the_set_runs_jobs_in_the_fleets_container_mode(path: Path) -> None:
+    # Jobs run in hook-created workflow pods on a local-path work volume, with the
+    # fleet-patched hook and the fleet hook pod template, exactly as on the fleet's sets.
+    values, fleet = _load(path), _load(_FLEET)
+    assert values["containerMode"] == fleet["containerMode"]
+    assert values["template"]["spec"]["volumes"] == fleet["template"]["spec"]["volumes"]
+    runner, fleet_runner = _runner(values), _runner(fleet)
+    for key in ("image", "command", "env", "volumeMounts", "securityContext"):
+        assert runner[key] == fleet_runner[key], key
+
+
+@pytest.mark.parametrize("path", _VALUES, ids=lambda p: p.name)
+def test_the_set_asks_for_no_fleet_node_capacity(path: Path) -> None:
+    # The churn-slot resource and its scheduler are the fleet CI nodes' admission; a worker
+    # advertises neither, so a runner asking for them would never start.
+    spec = _load(path)["template"]["spec"]
+    assert "schedulerName" not in spec
+    assert "resources" not in _runner(_load(path))
+
+
+def test_install_arc_renders_each_worker_sets_hook_template_revision() -> None:
+    script = (_ROOT / "ci-runner" / "k3s" / "install-arc.sh").read_text(encoding="utf-8")
+    step = script.split('log "2b.', 1)[1].split('log "3.', 1)[0]
+    assert "converge-hook-pod-template.sh" in step
+    assert " --publish" in step
+    assert " --render-values " in step
+    assert '-f "$values"' not in step
