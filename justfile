@@ -141,7 +141,10 @@ import? 'dev-tooling/branch-protection.just'
 # either recipe SKIPs that row). The verb resolves the target checkout
 # worktree-safely via `git rev-parse --git-common-dir`. Dogfoods the verb against
 # its own package — the most direct exercise of the local-reconcile contract.
+# The host's bare python3 is checked against requires-python FIRST, before
+# `uv run` can resolve or download an interpreter (scripts/just/check-host-python3.sh).
 bootstrap:
+    scripts/just/check-host-python3.sh .
     uv run python -m livespec_dev_tooling.fleet.local_reconcile
 
 # Install (or idempotently re-install) the canonical livespec commit-refuse
