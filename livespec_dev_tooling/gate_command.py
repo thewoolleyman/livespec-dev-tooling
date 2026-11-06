@@ -5,17 +5,59 @@ from __future__ import annotations
 from pathlib import Path
 
 __all__: list[str] = [
+    "is_foreground_full_suite_pytest",
     "is_full_suite_command",
     "pytest_command",
 ]
 
 _JUST_COMMAND_MINIMUM_WORDS = 2
+_PYTEST_VALUE_OPTIONS: frozenset[str] = frozenset(
+    {
+        "-c",
+        "-k",
+        "-m",
+        "-o",
+        "-r",
+        "--basetemp",
+        "--confcutdir",
+        "--cov",
+        "--cov-config",
+        "--deselect",
+        "--durations",
+        "--ignore",
+        "--ignore-glob",
+        "--junitxml",
+        "--maxfail",
+        "--numprocesses",
+        "--rootdir",
+        "--tb",
+    }
+)
 
 
 def is_full_suite_command(*, command: tuple[str, ...]) -> bool:
     """Whether ``command`` is a delegated full-suite command."""
     normalized = _without_mise(command=command)
     return _is_just_check(command=normalized) or pytest_command(command=normalized) is not None
+
+
+def is_foreground_full_suite_pytest(*, command: tuple[str, ...]) -> bool:
+    """Whether pytest has the guard's narrower full-suite shape."""
+    normalized = pytest_command(command=command)
+    if normalized is None:
+        return False
+    arguments = normalized[1:]
+    if any(argument.startswith(("-n", "--numprocesses")) for argument in arguments):
+        return True
+    consumes_next = False
+    for argument in arguments:
+        if consumes_next:
+            consumes_next = False
+        elif argument in _PYTEST_VALUE_OPTIONS:
+            consumes_next = True
+        elif not argument.startswith("-"):
+            return False
+    return True
 
 
 def pytest_command(*, command: tuple[str, ...]) -> tuple[str, ...] | None:

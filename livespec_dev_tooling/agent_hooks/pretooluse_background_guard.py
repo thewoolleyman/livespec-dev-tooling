@@ -120,6 +120,9 @@ from livespec_dev_tooling.agent_hooks._deny_hint import (  # noqa: E402
 from livespec_dev_tooling.agent_hooks._foreground_gate import (  # noqa: E402
     foreground_refusal,
 )
+from livespec_dev_tooling.gate_command import is_foreground_full_suite_pytest  # noqa: E402
+from livespec_dev_tooling.gate_credential import gates_kubeconfig_readable  # noqa: E402
+from livespec_dev_tooling.gate_remote_delegate import delegated_gate_enabled  # noqa: E402
 
 __all__: list[str] = []
 
@@ -274,6 +277,17 @@ def _foreground_verdict(
     command = tool_input.get("command")
     if tool_name != "Bash" or not isinstance(command, str) or _SANCTIONED_RUNNER.search(command):
         return 0
+    repository = _foreground_full_suite_pytest_repository(command=command, cwd=Path.cwd())
+    if repository is not None:
+        log.error(
+            "DENIED: a foreground full-suite pytest on a delegating host — dispatch it through the detached runner",
+            check_id="pretooluse-foreground-full-suite-pytest-deny",
+            gate="pytest",
+            command=command,
+            repository=str(repository),
+            hint=foreground_deny_hint(cwd=repository, command=command),
+        )
+        return 2
     refusal = foreground_refusal(command=command, cwd=Path.cwd())
     if refusal is None:
         return 0
@@ -289,6 +303,25 @@ def _foreground_verdict(
         hint=foreground_deny_hint(cwd=Path.cwd(), command=command),
     )
     return 2
+
+
+def _foreground_full_suite_pytest_repository(*, command: str, cwd: Path) -> Path | None:
+    """Return the delegated repository targeted by a foreground full-suite pytest."""
+    repository = cwd
+    for invocation in invocations(command=command):
+        if invocation.binary == "cd" and invocation.subcommand is not None:
+            repository = (repository / invocation.subcommand).resolve()
+            continue
+        argv = (invocation.binary, *invocation.options)
+        if invocation.subcommand is not None:
+            argv = (*argv, invocation.subcommand, *invocation.args)
+        if (
+            is_foreground_full_suite_pytest(command=argv)
+            and delegated_gate_enabled(repo_root=repository)
+            and gates_kubeconfig_readable()
+        ):
+            return repository
+    return None
 
 
 def main() -> int:
