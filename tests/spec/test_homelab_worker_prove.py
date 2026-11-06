@@ -53,7 +53,10 @@ case "$1" in
     case "$*" in *Unschedulable*) [ "$STUB_HOLD" = 0 ] && {{ echo 'timed out waiting for the condition' >&2; exit 1; }} ;; esac ;;
   get)
     if [ "$2" = node ]; then
-      [ "$STUB_HOLD" = 0 ] || echo 'homelab-worker.livespec.dev/admission=hold:NoSchedule'
+      if [ "$STUB_HOLD" != 0 ]; then
+        echo 'homelab-worker.livespec.dev/admission=hold:NoSchedule'
+        sleep "$STUB_TAINT_DELAY"
+      fi
       echo 'homelab-worker.livespec.dev/class=worker:NoSchedule'
       exit 0
     fi
@@ -132,6 +135,7 @@ def _prove(
     dns: str = "1",
     mtu: str = "1",
     hold: str = "1",
+    taint_delay: str = "0",
 ) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         ["/bin/bash", str(_SCRIPT), *args],
@@ -147,6 +151,7 @@ def _prove(
             "STUB_DNS": dns,
             "STUB_MTU": mtu,
             "STUB_HOLD": hold,
+            "STUB_TAINT_DELAY": taint_delay,
             "POLICY_SETTLE_SECONDS": "0",
         },
         check=False,
@@ -264,7 +269,7 @@ _HOLD_CHECKS = ("admission-hold-taint", "untolerated-pod-unscheduled")
 
 def test_a_newly_joined_worker_carries_the_admission_hold(env: _Env) -> None:
     args = [_HOST, "--peer-node", _PEER, "--expect-admission-hold"]
-    result = _prove(env=env, args=args, tunnel_only="0")
+    result = _prove(env=env, args=args, tunnel_only="0", taint_delay="0.2")
     assert result.returncode == 0, result.stdout + result.stderr
     assert _proofs(result) == dict.fromkeys(_ALL_CHECKS + _HOLD_CHECKS, "PASS")
 
