@@ -32,11 +32,12 @@ authors = [
 license = { text = "MIT" }
 readme = "README.md"
 
-# NO [project.dependencies]: livespec-dev-tooling's checks shell out
-# to project-local tools (ruff, pyright, pytest) via subprocess; they
-# do not import third-party packages. The library is intentionally
-# dependency-free at runtime so consumers pay zero transitive-pin
-# cost when adding it to their [dependency-groups].dev table.
+# `returns` is vendored, but its runtime modules import `typing_extensions`
+# directly. Declare that import here so every clean wheel installation receives
+# the dependency; the other third-party imports remain satisfied by `_vendor/`.
+dependencies = [
+    "typing-extensions>=4.0",
+]
 
 # THE HOST-WIDE LOCAL-GATE SLOT LIMIT, delivered as a pytest plugin
 # (SPECIFICATION/non-functional-requirements.md section "Local gate concurrency
