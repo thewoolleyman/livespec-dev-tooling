@@ -67,9 +67,16 @@ case "$1" in
       "tailscale up "*) if [ -f "$s/ts-after-up" ]; then cp "$s/ts-after-up" "$s/ts-status"; fi ;;
       "tailscale set "*) printf '%s\\n' "$*" >> "$s/ts-set.log" ;;
       "systemctl start kubelet") : ;;
+      "stat -c %d /var/lib/tailscale") cat "$s/ctr-dev" ;;
       *) exit 2 ;;
     esac ;;
+  restart) : ;;
 esac
+"""
+
+# stat -c %d <path> on the VM side reports the data disk's device number.
+_STUB_STAT = """#!/bin/bash
+cat "$STUB_STATE/host-dev"
 """
 
 
@@ -118,6 +125,7 @@ def vm(tmp_path: Path) -> _Vm:
         ("systemctl", _STUB_SYSTEMCTL),
         ("modprobe", _STUB_MODPROBE),
         ("findmnt", _STUB_FINDMNT),
+        ("stat", _STUB_STAT),
     ):
         exe = bin_dir / name
         exe.write_text(body, encoding="utf-8")
@@ -125,6 +133,8 @@ def vm(tmp_path: Path) -> _Vm:
     (state / "calls.log").write_text("", encoding="utf-8")
     (state / "ts-status").write_text(_RUNNING, encoding="utf-8")
     (state / "mount-target").write_text("/mnt/test-data\n", encoding="utf-8")
+    (state / "host-dev").write_text("2049\n", encoding="utf-8")
+    (state / "ctr-dev").write_text("2049\n", encoding="utf-8")
     return _Vm(state=state, bin_dir=bin_dir, root=tmp_path / "hwdata" / "worker")
 
 
@@ -411,3 +421,29 @@ def test_a_state_root_on_the_root_filesystem_is_refused_before_any_container_cha
     assert result.returncode != 0
     assert "data disk" in result.stderr
     assert _calls(vm=vm, verb="run") == []
+
+
+def test_a_running_worker_whose_state_is_on_the_data_disk_is_kept(vm: _Vm) -> None:
+    (vm.state / "container").write_text(f"{_IMAGE} true\n", encoding="utf-8")
+    (vm.state / "mount").write_text(f"{vm.root}/enrollment\n", encoding="utf-8")
+    result = _run(vm=vm)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert _calls(vm=vm, verb="restart") == []
+
+
+def test_a_running_worker_bound_to_the_root_disk_is_restarted_before_any_tailnet_step(
+    vm: _Vm,
+) -> None:
+    # A boot race can start the worker before the data disk mounts, binding empty root-disk
+    # directories: its tailnet identity looks lost, and a login would mint a duplicate device.
+    (vm.state / "container").write_text(f"{_IMAGE} true\n", encoding="utf-8")
+    (vm.state / "mount").write_text(f"{vm.root}/enrollment\n", encoding="utf-8")
+    (vm.state / "ctr-dev").write_text("64769\n", encoding="utf-8")
+    result = _run(vm=vm)
+    assert result.returncode == 0, result.stdout + result.stderr
+    calls = (vm.state / "calls.log").read_text(encoding="utf-8").splitlines()
+    restarts = [i for i, c in enumerate(calls) if c.startswith("docker restart ")]
+    assert len(restarts) == 1
+    tailnet = [i for i, c in enumerate(calls) if " tailscale " in c]
+    assert tailnet
+    assert restarts[0] < min(tailnet)

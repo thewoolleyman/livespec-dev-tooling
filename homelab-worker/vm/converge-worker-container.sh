@@ -153,7 +153,15 @@ if current="$(docker inspect -f '{{.Config.Image}} {{.State.Running}}' "$worker"
     docker rm -f "$worker" >/dev/null
     run_container
   elif [ "$running" = "true" ]; then
-    say "container $worker is already running $image; keeping it"
+    # A boot race can start the worker before the data disk mounts, binding
+    # empty root-disk directories; restart it so its binds resolve on the
+    # data disk, before any tailnet step could mint a duplicate device.
+    if [ "$(docker exec "$worker" stat -c %d /var/lib/tailscale 2>/dev/null)" != "$(stat -c %d "$root/tailscale")" ]; then
+      say "container $worker is running with its state off the data disk (a boot race); restarting it"
+      docker restart "$worker" >/dev/null
+    else
+      say "container $worker is already running $image; keeping it"
+    fi
   else
     say "starting existing container $worker"
     docker start "$worker" >/dev/null
