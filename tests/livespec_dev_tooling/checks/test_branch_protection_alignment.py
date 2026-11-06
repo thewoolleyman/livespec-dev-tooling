@@ -42,6 +42,8 @@ from typing import NamedTuple
 
 import pytest
 
+from livespec_dev_tooling.checks import _branch_protection_api
+
 __all__: list[str] = []
 
 
@@ -237,6 +239,7 @@ def _install_fake_gh(
     repo_payload: str | None = None,
     enforce_admins_payload: str = '{"enabled": true}',
     enforce_admins_returncode: int = 0,
+    api_replies: list[tuple[str, str, int]] | None = None,
 ) -> str:
     """Install fake `gh` + `git` shell stubs at tmp_path/bin, return PATH including it.
 
@@ -266,6 +269,11 @@ def _install_fake_gh(
     (`enabled: true`), so every fixture that is not about admin enforcement
     keeps producing exactly the findings it produced before the flag was
     read at all.
+
+    `api_replies`, when supplied, makes each required-status-checks read
+    consume one response in order. This models a transient GitHub response
+    followed by a definitive answer without involving the enforcement
+    sub-endpoint, which keeps its independently configured payload.
     """
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir(parents=True, exist_ok=True)
@@ -289,11 +297,42 @@ def _install_fake_gh(
         ";;\n"
         "esac\n"
     )
+    api_replies_block = ""
+    if api_replies is not None:
+        response_cases = ""
+        for index, (reply_stdout, reply_stderr, reply_returncode) in enumerate(
+            api_replies, start=1
+        ):
+            stderr_block = (
+                ""
+                if not reply_stderr
+                else f"cat >&2 <<'REPLY_ERR_{index}_EOF'\n{reply_stderr}\nREPLY_ERR_{index}_EOF\n"
+            )
+            response_cases += (
+                f"{index})\n"
+                f"cat <<'REPLY_{index}_EOF'\n{reply_stdout}\nREPLY_{index}_EOF\n"
+                f"{stderr_block}"
+                f"exit {reply_returncode}\n"
+                ";;\n"
+            )
+        api_replies_block = (
+            'if [ "$1" = "api" ] && [ "${2##*/}" = "required_status_checks" ]; then\n'
+            f"  count_file='{bin_dir}/gh.required-count'\n"
+            '  count=$(cat "$count_file" 2>/dev/null || echo 0)\n'
+            "  count=$((count + 1))\n"
+            '  printf \'%s\\n\' "$count" > "$count_file"\n'
+            '  case "$count" in\n'
+            f"{response_cases}"
+            "  *) exit 98 ;;\n"
+            "  esac\n"
+            "fi\n"
+        )
     gh_script = (
         "#!/bin/sh\n"
         f"printf '%s\\n' \"$*\" >> '{bin_dir}/gh.argv'\n"
         f"{enforce_admins_block}"
         f"{repo_dispatch_block}"
+        f"{api_replies_block}"
         f"cat <<'STUB_EOF'\n{stdout}\nSTUB_EOF\n"
         f"{gh_stderr_block}"
         f"exit {returncode}\n"
@@ -827,6 +866,88 @@ def test_gh_api_failure_skips_gracefully(
     result = _run_check(cwd=tmp_path, env_path=fake_path, monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == 0
     assert "gh api call failed" in result.stderr
+
+
+def test_required_contexts_retries_transient_failure_before_using_the_answer(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A 429 followed by a response is judged from that response, not the 429."""
+    delays: list[float] = []
+    _setup_repo_with_ci_yml(tmp_path=tmp_path, matrix_targets=["check-foo"])
+    fake_path = _install_fake_gh(
+        tmp_path=tmp_path,
+        api_replies=[
+            ("", "HTTP 429: Too Many Requests", 1),
+            (_checks_payload(contexts=["check-foo"]), "", 0),
+        ],
+    )
+    monkeypatch.setattr(
+        _branch_protection_api,
+        "time",
+        type("_Time", (), {"sleep": delays.append})(),
+        raising=False,
+    )
+
+    result = _run_check(cwd=tmp_path, env_path=fake_path, monkeypatch=monkeypatch, capsys=capsys)
+
+    assert result.returncode == 0
+    assert _gh_argv_log(tmp_path=tmp_path).count("required_status_checks") == 2
+    assert delays == [1.0]
+
+
+def test_required_contexts_retries_server_failure_before_using_the_answer(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A 5xx followed by a response is judged from that response, not the 5xx."""
+    delays: list[float] = []
+    _setup_repo_with_ci_yml(tmp_path=tmp_path, matrix_targets=["check-foo"])
+    fake_path = _install_fake_gh(
+        tmp_path=tmp_path,
+        api_replies=[
+            ("", "HTTP 500: Internal Server Error", 1),
+            (_checks_payload(contexts=["check-foo"]), "", 0),
+        ],
+    )
+    monkeypatch.setattr(
+        _branch_protection_api,
+        "time",
+        type("_Time", (), {"sleep": delays.append})(),
+        raising=False,
+    )
+
+    result = _run_check(cwd=tmp_path, env_path=fake_path, monkeypatch=monkeypatch, capsys=capsys)
+
+    assert result.returncode == 0
+    assert _gh_argv_log(tmp_path=tmp_path).count("required_status_checks") == 2
+    assert delays == [1.0]
+
+
+def test_required_contexts_exhausted_transient_failures_keep_the_graceful_skip(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Three transient branch-protection failures retain the API-read-error skip."""
+    delays: list[float] = []
+    _setup_repo_with_ci_yml(tmp_path=tmp_path, matrix_targets=["check-foo"])
+    fake_path = _install_fake_gh(
+        tmp_path=tmp_path,
+        api_replies=[
+            ("", "HTTP 500: Internal Server Error", 1),
+            ("", "HTTP 502: Bad Gateway", 1),
+            ("", "HTTP 503: Service Unavailable", 1),
+        ],
+    )
+    monkeypatch.setattr(
+        _branch_protection_api,
+        "time",
+        type("_Time", (), {"sleep": delays.append})(),
+        raising=False,
+    )
+
+    result = _run_check(cwd=tmp_path, env_path=fake_path, monkeypatch=monkeypatch, capsys=capsys)
+
+    assert result.returncode == 0
+    assert _gh_argv_log(tmp_path=tmp_path).count("required_status_checks") == 3
+    assert delays == [1.0, 2.0]
 
 
 def test_main_default_branch_resolved_from_git_symref(

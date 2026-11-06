@@ -27,13 +27,14 @@ import json
 import re
 import shutil
 import subprocess
+import time
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import cast
 
 import structlog
 
-from livespec_dev_tooling.budgeted_gh import gh_read
+from livespec_dev_tooling.budgeted_gh import GhRead, gh_read
 from livespec_dev_tooling.checks._gate_context import gate_repository
 
 __all__: list[str] = [
@@ -70,6 +71,7 @@ _ORIGIN_HEAD_PREFIX = "refs/remotes/origin/"
 # (`FleetContext.canonical_ref`): an unresolvable lookup then behaves
 # exactly as the pre-17o hardcoded path did.
 _FALLBACK_BRANCH = "master"
+_TRANSIENT_RETRY_DELAYS_SECONDS: tuple[float, ...] = (1.0, 2.0)
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -115,6 +117,24 @@ class _AdminEnforcement:
     """
 
     enabled: bool
+
+
+def _is_transient_gh_failure(*, stderr: str) -> bool:
+    """Return whether `gh` reported an HTTP 429 or 5xx response."""
+    return "HTTP 429" in stderr or any(
+        f"HTTP {status_code}" in stderr for status_code in range(500, 600)
+    )
+
+
+def _read_required_contexts_with_transient_retry(*, args: list[str]) -> GhRead:
+    """Read required contexts up to three times after transient GitHub responses."""
+    completed = gh_read(args=args)
+    for delay_seconds in _TRANSIENT_RETRY_DELAYS_SECONDS:
+        if completed.returncode == 0 or not _is_transient_gh_failure(stderr=completed.stderr):
+            return completed
+        time.sleep(delay_seconds)
+        completed = gh_read(args=args)
+    return completed
 
 
 def _resolve_owner_repo(*, log: structlog.stdlib.BoundLogger, env: Mapping[str, str]) -> str | None:
@@ -273,7 +293,7 @@ def _fetch_required_contexts(
     # `contexts`: the strict-off assertion needs the `strict` flag, which
     # the /contexts list endpoint does not return.
     api_path = f"repos/{owner_repo}/branches/{branch}/protection/required_status_checks"
-    completed = gh_read(args=["api", api_path])
+    completed = _read_required_contexts_with_transient_retry(args=["api", api_path])
     if completed.returncode != 0:
         combined = f"{completed.stdout}\n{completed.stderr}"
         if _NOT_PROTECTED_MARKER in combined:

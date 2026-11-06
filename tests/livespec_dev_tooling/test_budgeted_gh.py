@@ -76,13 +76,13 @@ _PUBLIC_RUNTIME_PACKAGE = "livespec_runtime"
 # The retrofitted files, each with the number of budgeted reads it is
 # expected to issue. MEASURED from the tree, not projected: the
 # work-item's 2026-08-08 inventory predates both the
-# `_branch_protection_api` split-out and the `enforce_admins`
-# sub-endpoint read (livespec-dev-tooling-65c), so the count there is
-# three rather than the two it names.
+# `_branch_protection_api` split-out, the `enforce_admins` sub-endpoint read
+# (livespec-dev-tooling-65c), and the transient-response retry helpers, so
+# the count follows the current read sites rather than the original inventory.
 _RETROFITTED_SITES: dict[str, int] = {
     "livespec_dev_tooling/checks/branch_protection_alignment.py": 0,
-    "livespec_dev_tooling/checks/_branch_protection_api.py": 3,
-    "livespec_dev_tooling/checks/master_ci_green.py": 2,
+    "livespec_dev_tooling/checks/_branch_protection_api.py": 4,
+    "livespec_dev_tooling/checks/master_ci_green.py": 3,
     "livespec_dev_tooling/agent_hooks/subagent_stop_guard.py": 1,
 }
 _BUDGETED_MODULE = "livespec_dev_tooling.budgeted_gh"
