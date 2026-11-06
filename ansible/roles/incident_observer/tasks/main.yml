@@ -518,6 +518,31 @@
   failed_when: false
   check_mode: false
 
+- name: Read whether the tailnet grants this node the funnel attribute
+  # `tailscale funnel --bg --yes` on a node the tailnet policy has not granted
+  # the `funnel` attribute exits 0 and publishes nothing: measured on vps,
+  # 2026-11-06, where the publish below reported a change on two applies in a
+  # row and tailscaled never received a serve-config write for the port. The
+  # node's own capability map is the fact, so it is read before anything is
+  # published.
+  ansible.builtin.command:
+    argv: [tailscale, status, --json, --peers=false]
+  become: true
+  register: incident_observer_tailscale_status
+  changed_when: false
+  check_mode: false
+
+- name: Name the funnel grant and the callback path's current disposition
+  ansible.builtin.set_fact:
+    incident_observer_funnel_granted: >-
+      {{ 'funnel' in ((incident_observer_tailscale_status.stdout | from_json).Self.CapMap
+                      | default({}, true)) }}
+    incident_observer_funnel_served: >-
+      {{ ((':' ~ incident_observer_funnel_https_port ~ ' (Funnel on)')
+          in (incident_observer_funnel_status.stdout | default('')))
+         and (('proxy http://127.0.0.1:' ~ incident_observer_port ~ incident_observer_funnel_path)
+              in (incident_observer_funnel_status.stdout | default(''))) }}
+
 - name: Name the public callback path's disposition in the run output
   ansible.builtin.debug:
     msg: >-
@@ -525,19 +550,21 @@
       {{ incident_observer_funnel_https_port }}
       {{ 'is already public; nothing to do'
          if incident_observer_funnel_served
-         else 'is not public and will be published' }}
+         else ('is not public and will be published'
+               if incident_observer_funnel_granted
+               else incident_observer_funnel_ungranted_notice) }}
   vars:
-    incident_observer_funnel_served: >-
-      {{ ((':' ~ incident_observer_funnel_https_port ~ ' (Funnel on)')
-          in (incident_observer_funnel_status.stdout | default('')))
-         and (('proxy http://127.0.0.1:' ~ incident_observer_port ~ incident_observer_funnel_path)
-              in (incident_observer_funnel_status.stdout | default(''))) }}
+    incident_observer_funnel_ungranted_notice: >-
+      is NOT public and cannot be published: the tailnet policy does not grant
+      this node the funnel attribute. Granting it is a tailnet-admin step
+      (README.md, maintainer-only step 2); GitHub cannot deliver workflow_job
+      callbacks until it is granted and this apply is run again
 
 - name: Publish only the callback path through a path-scoped funnel
   # Persisted in tailscaled's own state (`--bg`), additive, and scoped to the
-  # one path: a request to any other path on this port is not proxied. A
-  # tailnet whose policy does not grant this node the funnel attribute makes
-  # this task fail naming that policy, which is the maintainer's step.
+  # one path: a request to any other path on this port is not proxied. Withheld
+  # on a node the tailnet does not grant the funnel attribute, where the
+  # command would exit 0 having published nothing.
   ansible.builtin.command:
     argv:
       - tailscale
@@ -548,9 +575,31 @@
       - "--set-path={{ incident_observer_funnel_path }}"
       - "http://127.0.0.1:{{ incident_observer_port }}{{ incident_observer_funnel_path }}"
   become: true
-  when: >-
-    not (((':' ~ incident_observer_funnel_https_port ~ ' (Funnel on)')
-          in (incident_observer_funnel_status.stdout | default('')))
-         and (('proxy http://127.0.0.1:' ~ incident_observer_port ~ incident_observer_funnel_path)
-              in (incident_observer_funnel_status.stdout | default(''))))
+  register: incident_observer_funnel_publish
+  when: incident_observer_funnel_granted and not incident_observer_funnel_served
   changed_when: true
+
+- name: Read the funnel configuration back after publishing
+  ansible.builtin.command:
+    argv: [tailscale, funnel, status]
+  become: true
+  register: incident_observer_funnel_after
+  changed_when: false
+  when: incident_observer_funnel_publish is changed and not ansible_check_mode
+
+- name: Refuse a publish that left the callback path unpublished
+  # The publish command's exit code does not say the path is public, so the
+  # status is the verdict.
+  ansible.builtin.assert:
+    that:
+      - (':' ~ incident_observer_funnel_https_port ~ ' (Funnel on)') in incident_observer_funnel_after.stdout
+      - >-
+        ('proxy http://127.0.0.1:' ~ incident_observer_port ~ incident_observer_funnel_path)
+        in incident_observer_funnel_after.stdout
+    fail_msg: >-
+      tailscale funnel exited 0 but {{ incident_observer_funnel_path }} on port
+      {{ incident_observer_funnel_https_port }} is not in this node's funnel
+      status, so GitHub cannot deliver callbacks. Read `tailscale funnel status`
+      and the tailnet policy's funnel grant for this node.
+    success_msg: the callback path is public on funnel port {{ incident_observer_funnel_https_port }}
+  when: incident_observer_funnel_publish is changed and not ansible_check_mode

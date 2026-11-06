@@ -93,7 +93,13 @@ which rules out every CI node and every sandbox host whatever their TLS posture.
 - a probe that `POST /current` without the query token is refused (403), which
   is also the proof the unit passed its installation check and bound its socket;
 - the path-scoped Funnel for `/callback` (above), published only when the
-  node's funnel status does not already carry it.
+  node's funnel status does not already carry it **and the tailnet grants this
+  node the `funnel` attribute**. The role reads the grant from the node's own
+  capability map first. Without it `tailscale funnel` exits 0 and publishes
+  nothing (measured on `vps`, 2026-11-06), so the role withholds the publish,
+  says in the run output that the path is not public and whose step that is,
+  and still converges the listener and its tailnet front. After a publish it
+  reads the funnel status back and refuses an apply whose path is not there.
 
 A second apply over a converged host reports no change: the install is gated on
 the served version, both clones sit at tags, every file is compared by content,
@@ -141,9 +147,12 @@ knows what to redo.
    `https://vps.perch-rudd.ts.net:10000/callback` with the webhook secret and
    JSON content type. Reason it is maintainer-held: a webhook subscription is a
    repository GitHub setting an agent never writes. The public ingress itself
-   is the role's funnel task; if the tailnet policy does not grant this node
-   the `funnel` attribute, that task fails naming the policy, and granting it
-   is a tailnet-admin step.
+   is the role's funnel task. **Not done as of 2026-11-06 on `vps`: the
+   tailnet policy does not grant this node the `funnel` attribute**, so the
+   role publishes nothing and says so (above), and GitHub's deliveries to that
+   URL fail until it is granted. Granting it (a `nodeAttrs` entry giving this
+   node `funnel` in the tailnet policy file) is a tailnet-admin step an agent
+   never takes; run the apply again afterwards and it publishes the path.
 3. **Done 2026-11-05 — the repository variable `LIVESPEC_INCIDENT_OBSERVER_URL`
    = `https://vps.perch-rudd.ts.net:8765` and the repository secret
    `LIVESPEC_INCIDENT_OBSERVER_QUERY_TOKEN` = the query secret's exact bytes.**
