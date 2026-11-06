@@ -31,6 +31,7 @@ _HW = Path(__file__).resolve().parents[2] / "homelab-worker"
 _SCRIPT = _HW / "join-worker.sh"
 _HOST = "alpha"
 _WORKER = f"{_HOST}-homelab-worker"
+_LAN = "10.99.0.21/24"
 _API = "https://api.cluster.test:7443"
 _CERT = "-----BEGIN CERTIFICATE-----\nstub\n-----END CERTIFICATE-----"
 _CLUSTER_CONFIG = """apiVersion: v1
@@ -89,7 +90,9 @@ def _exe(*, path: Path, body: str) -> None:
 def env(tmp_path: Path) -> _Env:
     state = tmp_path / "stub"
     (state / "hosts").mkdir(parents=True)
-    (state / "hosts" / f"{_HOST}.env").write_text("WORKER_HOST_OS=Darwin\n", encoding="utf-8")
+    (state / "hosts" / f"{_HOST}.env").write_text(
+        f"WORKER_HOST_OS=Darwin\nWORKER_LAN_ADDRESS={_LAN}\n", encoding="utf-8"
+    )
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
     _exe(path=bin_dir / "kubectl", body=_STUB_KUBECTL)
@@ -207,3 +210,23 @@ def test_bad_arguments_are_refused_before_any_cluster_or_vm_call(
     assert result.returncode != 0
     assert message in result.stderr
     assert _calls(env=env) == []
+
+
+def test_without_a_worker_network_the_worker_converges_at_its_declared_lan_address(
+    env: _Env,
+) -> None:
+    _run(env=env, args=_args(env, "--state-root", "/srv/w"))
+    converges = [c for c in _calls(env=env) if " bash -s -- " in c]
+    assert converges
+    lan_ip = _LAN.split("/")[0]
+    assert all(c.endswith(f" /srv/w host:{lan_ip}") for c in converges)
+
+
+def test_a_host_declaring_no_lan_address_converges_without_a_network_argument(
+    env: _Env,
+) -> None:
+    (env.state / "hosts" / f"{_HOST}.env").write_text("WORKER_HOST_OS=Darwin\n", encoding="utf-8")
+    _run(env=env, args=_args(env, "--state-root", "/srv/w"))
+    converges = [c for c in _calls(env=env) if " bash -s -- " in c]
+    assert converges
+    assert all(c.endswith(" /srv/w") for c in converges)
