@@ -31,7 +31,8 @@ _SCRIPT = (
 )
 _HOST = "alpha"
 _WORKER = f"{_HOST}-homelab-worker"
-_IMAGE = "ghcr.io/thewoolleyman/livespec-worker-node@sha256:" + "a" * 64
+_IMAGE = "registry.test/worker@sha256:" + "a" * 64
+_LAN_IP = "10.99.0.21"
 _RUNNING = '{\n  "BackendState": "Running",\n  "AuthURL": ""\n}\n'
 _NEEDS_LOGIN = (
     '{\n  "BackendState": "NeedsLogin",\n  "AuthURL": "https://login.tailscale.com/a/abc123"\n}\n'
@@ -64,11 +65,17 @@ case "$1" in
       "tailscale status --json") cat "$s/ts-status" ;;
       "tailscale ip -4") echo "100.101.102.103" ;;
       "tailscale up "*) if [ -f "$s/ts-after-up" ]; then cp "$s/ts-after-up" "$s/ts-status"; fi ;;
-      "tailscale set "*) : ;;
+      "tailscale set "*) printf '%s\\n' "$*" >> "$s/ts-set.log" ;;
       "systemctl start kubelet") : ;;
       *) exit 2 ;;
     esac ;;
 esac
+"""
+
+
+_STUB_IP = """#!/bin/bash
+printf 'ip %s\\n' "$*" >> "$STUB_STATE/calls.log"
+cat "$STUB_STATE/ip-addrs" 2>/dev/null
 """
 
 
@@ -88,6 +95,9 @@ def vm(tmp_path: Path) -> _Vm:
     docker = bin_dir / "docker"
     docker.write_text(_STUB_DOCKER, encoding="utf-8")
     docker.chmod(docker.stat().st_mode | stat.S_IXUSR)
+    ip = bin_dir / "ip"
+    ip.write_text(_STUB_IP, encoding="utf-8")
+    ip.chmod(ip.stat().st_mode | stat.S_IXUSR)
     (state / "calls.log").write_text("", encoding="utf-8")
     (state / "ts-status").write_text(_RUNNING, encoding="utf-8")
     return _Vm(state=state, bin_dir=bin_dir, root=tmp_path / "hwdata" / "worker")
@@ -197,9 +207,7 @@ def test_a_worker_needing_its_login_prints_the_url_and_joins_untagged_by_its_nam
     )
     assert "run the start task again" in result.stderr
     [up] = [c for c in _calls(vm=vm, verb="exec") if "tailscale up" in c]
-    assert up == (
-        f"docker exec --detach {_WORKER} tailscale up --hostname={_WORKER} --accept-routes"
-    )
+    assert up == f"docker exec --detach {_WORKER} tailscale up --hostname={_WORKER}"
     assert not (vm.root / "enrollment" / "kubelet.env").exists()
 
 
@@ -251,11 +259,40 @@ def test_the_fixture_stage_joins_a_docker_network_without_a_tailnet_login(vm: _V
     )
 
 
-def test_a_worker_already_on_the_tailnet_is_set_to_accept_the_nodes_routes(vm: _Vm) -> None:
-    result = _run(vm=vm)
+def test_the_worker_never_enables_tailnet_route_acceptance(vm: _Vm) -> None:
+    (vm.state / "ip-addrs").write_text(
+        f"2: lima0    inet {_LAN_IP}/24 brd 10.99.0.255 scope global lima0\n", encoding="utf-8"
+    )
+    for extra in ((), (f"host:{_LAN_IP}",)):
+        result = _run(vm=vm, extra=extra)
+        assert result.returncode == 0, result.stdout + result.stderr
+    calls = (vm.state / "calls.log").read_text(encoding="utf-8")
+    assert "accept-routes" not in calls
+
+
+def test_lan_mode_runs_on_the_host_network_with_the_declared_address_as_node_ip(vm: _Vm) -> None:
+    (vm.state / "ip-addrs").write_text(
+        f"2: lima0    inet {_LAN_IP}/24 brd 10.99.0.255 scope global lima0\n", encoding="utf-8"
+    )
+    result = _run(vm=vm, extra=(f"host:{_LAN_IP}",))
     assert result.returncode == 0, result.stdout + result.stderr
-    assert [c for c in _calls(vm=vm, verb="exec") if "tailscale up" in c] == []
-    assert f"docker exec {_WORKER} tailscale set --accept-routes=true" in _calls(vm=vm, verb="exec")
+    [run] = _calls(vm=vm, verb="run")
+    assert "--network host" in run
+    assert (vm.root / "enrollment" / "kubelet.env").read_text(encoding="utf-8") == (
+        f"NODE_NAME={_WORKER}\nNODE_IP={_LAN_IP}\nWORKER_HOST={_HOST}\n"
+    )
+
+
+def test_lan_mode_refuses_a_vm_not_carrying_the_declared_address(vm: _Vm) -> None:
+    (vm.state / "ip-addrs").write_text(
+        "2: lima0    inet 10.99.0.77/24 brd 10.99.0.255 scope global lima0\n", encoding="utf-8"
+    )
+    result = _run(vm=vm, extra=(f"host:{_LAN_IP}",))
+    assert result.returncode != 0
+    assert _LAN_IP in result.stderr
+    assert "10.99.0.77" in result.stderr
+    assert _calls(vm=vm, verb="run") == []
+    assert not (vm.root / "enrollment" / "kubelet.env").exists()
 
 
 def test_a_container_of_another_state_root_is_refused_never_adopted(vm: _Vm) -> None:

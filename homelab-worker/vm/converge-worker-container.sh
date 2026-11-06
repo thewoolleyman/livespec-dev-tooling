@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# converge-worker-container.sh <worker> <host> <image> <state-root> [<docker-network>]
+# converge-worker-container.sh <worker> <host> <image> <state-root> [host:<lan-ip> | <docker-network>]
 # — start or reconcile the one worker container inside a homelab worker VM.
 #
 # Governed by SPECIFICATION/non-functional-requirements.md, "Homelab worker
@@ -17,14 +17,20 @@
 #      on the data disk either way. A container of the same name whose
 #      enrollment is under another state root is refused, never adopted. No enrollment material is passed in an
 #      argument or an environment variable.
-#   3. The worker joins the tailnet as <worker>, untagged, from inside its own
-#      network namespace, accepting the K3s nodes' advertised /32 routes. While it needs a login, the login URL is printed for
+#   3. The worker joins the tailnet as <worker>, untagged. It never accepts
+#      subnet routes: the tailnet is its identity, not its pod-network
+#      underlay (spec v143). While it needs a login, the login URL is printed for
 #      the operator to approve, and the run waits TAILNET_LOGIN_TIMEOUT
 #      seconds (default 900) for it; the identity persists in tailscale/.
-#   4. kubelet-config.yaml and kubelet.env (node name, tailnet IPv4, host) are
+#   4. kubelet-config.yaml and kubelet.env (node name, node IP, host) are
 #      written to enrollment/. The kubelet starts only once the operator has
 #      delivered client-ca.crt there and either bootstrap-kubeconfig is there
 #      too or the worker already holds its node kubeconfig.
+#
+# With host:<lan-ip>, production (research 008 §3): the container runs on the
+# VM's host network, and <lan-ip> — the host's declared static home-LAN
+# address, which the start task set on the VM's bridged lima0 — is the node
+# IP. A VM not carrying <lan-ip> is refused before any container change.
 #
 # With <docker-network>, the isolated fixture's first stage: the container
 # joins that Docker network, its address there is the node IP, and no tailnet
@@ -42,12 +48,22 @@ say() {
   printf '%s: %s\n' "$prog" "$*"
 }
 
-[ "$#" -eq 4 ] || [ "$#" -eq 5 ] || die "usage: $prog <worker> <host> <image> <state-root> [<docker-network>]"
+[ "$#" -eq 4 ] || [ "$#" -eq 5 ] || die "usage: $prog <worker> <host> <image> <state-root> [host:<lan-ip> | <docker-network>]"
 worker="$1"
 host="$2"
 image="$3"
 root="$4"
 network="${5:-}"
+lan_ip=""
+case "$network" in
+  host:*)
+    lan_ip="${network#host:}"
+    network="host"
+    ip -4 -o addr show | grep -qF " inet $lan_ip/" || {
+      carried="$(ip -4 -o addr show | awk '{print $2"="$4}' | tr '\n' ' ')"
+      die "this VM does not carry the declared home-LAN address $lan_ip (it carries: ${carried:-none}); the worker container was not changed"
+    } ;;
+esac
 case "$worker" in
   "$host-homelab-worker") ;;
   *) die "worker '$worker' is not $host-homelab-worker" ;;
@@ -118,7 +134,7 @@ auth_url() {
     sed -n 's/^ *"AuthURL": *"\([^"]*\)".*/\1/p' | head -n 1
 }
 
-if [ -n "$network" ]; then
+if [ -n "$network" ] && [ "$network" != "host" ]; then
   node_ip="$(docker inspect -f "{{(index .NetworkSettings.Networks \"$network\").IPAddress}}" "$worker")"
   [ -n "$node_ip" ] || die "container $worker has no address on network $network"
   say "fixture network $network: node IP $node_ip; no tailnet login"
@@ -126,7 +142,7 @@ else
   state="$(backend_state)"
   if [ "$state" != "Running" ]; then
     say "worker $worker needs its tailnet login (state '${state:-starting}')"
-    docker exec --detach "$worker" tailscale up --hostname="$worker" --accept-routes
+    docker exec --detach "$worker" tailscale up --hostname="$worker"
     shown=""
     waited=0
     while [ "$(backend_state)" != "Running" ]; do
@@ -142,12 +158,14 @@ else
       waited=$((waited + poll))
     done
   fi
-  # Option A's underlay: the K3s nodes advertise their own LAN /32s, and the
-  # worker reaches their VTEPs and the API server only through them.
-  docker exec "$worker" tailscale set --accept-routes=true
-  node_ip="$(docker exec "$worker" tailscale ip -4 | head -n 1)"
-  [ -n "$node_ip" ] || die "worker $worker has no tailnet IPv4 address"
-  say "worker $worker is on the tailnet at $node_ip"
+  if [ -n "$lan_ip" ]; then
+    node_ip="$lan_ip"
+    say "worker $worker is a home-LAN node at $node_ip"
+  else
+    node_ip="$(docker exec "$worker" tailscale ip -4 | head -n 1)"
+    [ -n "$node_ip" ] || die "worker $worker has no tailnet IPv4 address"
+    say "worker $worker is on the tailnet at $node_ip"
+  fi
 fi
 
 # The fleet kubelet configuration (research/005 §1, K3s v1.36.2 defaults),
