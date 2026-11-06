@@ -515,6 +515,8 @@ def test_the_gate_pods_own_check_pre_push_gates_locally_instead_of_delegating_ag
     pod_workspace.mkdir()
     _opt_in(repo_root=pod_workspace)
     absent = _an_ineligible_host(tmp_path=tmp_path, monkeypatch=monkeypatch)
+    # A gate pod is a Linux host, so it keeps the fall-through wherever this runs.
+    monkeypatch.setattr(platform, "system", lambda: "Linux")
 
     assert absent.is_file() is False, "the fixture pod was handed a gates credential"
     assert GATE_CHECK_SUITE_FALL_THROUGH[-1] == "check-pre-push"

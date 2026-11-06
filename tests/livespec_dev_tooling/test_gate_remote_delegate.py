@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import json
 import os
+import platform
 import re
 import shutil
 import subprocess
@@ -1315,6 +1316,8 @@ def test_an_opted_in_repository_on_a_host_without_the_credential_gates_locally(
     it: the push then failed closed on a host with no credential, blocking the
     factory with no statement of why.
     """
+    # A LINUX host keeps the fall-through; a non-Linux one is refused instead.
+    monkeypatch.setattr(platform, "system", lambda: "Linux")
     _write_pyproject(
         repo_root=tmp_path,
         body="[tool.livespec_dev_tooling]\ndelegated_gate = true\n",
@@ -1450,6 +1453,8 @@ def test_a_host_the_group_database_does_not_vouch_for_keeps_its_current_output(
     nothing to repair and nothing new to say. Both keep the `GATED_LOCALLY`
     line and the non-zero exit that IS the local fall-through.
     """
+    # A LINUX host keeps the fall-through; a non-Linux one is refused instead.
+    monkeypatch.setattr(platform, "system", lambda: "Linux")
     _an_opted_in_repo_on_an_unreadable_credential(tmp_path=tmp_path, monkeypatch=monkeypatch)
     monkeypatch.setattr(sys, "argv", ["gate_remote_delegate", "enabled"])
 

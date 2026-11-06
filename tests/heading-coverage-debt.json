@@ -835,13 +835,6 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario: an opted-in push from an unenrolled macOS host is refused instead of gating locally",
-    "work_item": "livespec-dev-tooling-ko26ez",
-    "first_seen": "2026-11-04"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
     "heading": "## Scenario: an unclaimed revert is released as soon as its own CI is green",
     "work_item": "livespec-dev-tooling-zcp5vb",
     "first_seen": "2026-10-22"
