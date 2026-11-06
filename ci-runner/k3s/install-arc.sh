@@ -83,6 +83,23 @@ helm upgrade --install poweredge-xubuntu-k3s \
   oci://ghcr.io/actions/actions-runner-controller-charts/gha-runner-scale-set
 
 # ---------------------------------------------------------------------------
+log "2b. Install/upgrade each homelab worker's host-unique arm64 runner scale set"
+# One release per arc/values-<host>-homelab-worker.yaml (plan
+# homelab-k8s-worker-nodes, research/009): runner pods only on that worker,
+# listener on the fleet's amd64 nodes, minRunners 0. CI reaches the worker only
+# after an operator lifts its admission hold.
+for values in "${SCRIPT_DIR}"/arc/values-*-homelab-worker.yaml; do
+  [ -e "$values" ] || continue
+  release="$(basename "$values" .yaml)"
+  release="${release#values-}-k3s"
+  helm upgrade --install "$release" \
+    --namespace "$RUNNERS_NAMESPACE" --create-namespace \
+    --version "$ARC_CHART_VERSION" \
+    -f "$values" \
+    oci://ghcr.io/actions/actions-runner-controller-charts/gha-runner-scale-set
+done
+
+# ---------------------------------------------------------------------------
 log "3. Verify the scale set is healthy (minRunners: 0 is expected — no idle pods yet)"
 kubectl -n "$RUNNERS_NAMESPACE" get autoscalingrunnersets.actions.github.com
 
