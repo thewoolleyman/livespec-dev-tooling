@@ -1,0 +1,55 @@
+# homelab-worker-arm64-check-job — the homelab worker's representative arm64
+# CI job (plan homelab-k8s-worker-nodes, livespec-dev-tooling-ko26ez.4;
+# research/009 Phase E, DoD assertions 16-18).
+#
+# NON-GATING: it runs only on workflow_dispatch, is not a required check, and
+# moves no existing traffic. It runs one real check from ci.yml's check-python
+# matrix (check-lint) the way ci.yml does — a container-mode job in the fleet
+# sandbox image, with ci.yml's mise and token environment — but on the
+# worker's host-unique set, so the job pod is native arm64 on the worker.
+#
+# The image is the multi-arch sandbox tag published by
+# fabro-sandbox-image.yml's multiarch job; release tags gain their arm64 entry
+# at the first release after that job landed, and this pin moves to the
+# release tag then.
+name: homelab-worker-arm64-check-job (non-gating)
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  check-lint-arm64:
+    runs-on: macbook-m4-max-homelab-worker-k3s
+    container:
+      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-sha-fbecb10
+    env:
+      LIVESPEC_CI_LANE: local
+      MISE_DATA_DIR: /root/.local/share/mise
+      MISE_NOT_FOUND_AUTO_INSTALL: "0"
+      GITHUB_TOKEN: ${{ github.token }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Prove the job container is native arm64
+        run: |
+          arch="$(uname -m)"
+          echo "machine: ${arch}"
+          if [ "${arch}" != "aarch64" ]; then
+            echo "FAIL: expected aarch64, got ${arch}" >&2
+            exit 1
+          fi
+
+      - name: Prepare workspace (git trust, mise trust + install, uv sync)
+        run: |
+          git config --global --add safe.directory '*'
+          mise trust
+          mise install
+          uv sync --all-groups
+
+      - name: just check-lint
+        run: just check-lint
