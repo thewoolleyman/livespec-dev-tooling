@@ -2184,9 +2184,8 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: bootstrap names a bare python3 that does not satisfy requires-python",
-    "test": "TODO",
-    "reason": "Spec-first: a real test at the integration tier or above (a consumer-style check-runner or host-captured run on a macOS developer host) is owed for this scenario; livespec-dev-tooling-ko26ez owns it.",
-    "work_item": "livespec-dev-tooling-ko26ez"
+    "test": "tests.consumer.test_bootstrap_host_python3.test_bootstrap_names_a_bare_python3_that_does_not_satisfy_requires_python",
+    "reason": "Consumer (integration) tier: runs the real scripts/just/check-host-python3.sh (which scripts/just/bootstrap.sh, the bootstrap recipe, runs before uv run) under bash against a stub python3 older than pyproject's requires-python floor and stub uv/mise that log any call; asserts a non-zero exit naming python3 and the floor (read from pyproject, not restated) and that nothing was installed. Siblings cover a passing python3 and the recipe ordering."
   },
   {
     "spec_root": "SPECIFICATION",
