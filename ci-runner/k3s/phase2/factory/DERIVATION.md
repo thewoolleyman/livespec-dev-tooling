@@ -418,6 +418,13 @@ AND the BestEffort CI-slice `cpu.pressure` avg60 above about 30), revert.
 
 ## Room for stranded sandboxes
 
+**REVERTED 2026-11-06.** The reaper fix livespec-dev-tooling-izazkx (PR #3558)
+was applied to gmktec-xubuntu at 08:06Z, and its 09:04:50Z hourly pass deleted
+all five stranded pods. At 09:05:43Z the namespace held 3 pods, all live runs.
+`factory-runs` is back at `limits.cpu` 120, `requests.memory` 171470Mi and
+`limits.memory` 181710Mi. The rest of this section records why the headroom was
+raised.
+
 **What refused.** On 2026-11-05 at 17:34Z, `legacy-coordinator-agent` measured
 `factory-runs` at `limits.cpu` 110 of 120, `requests.memory` 152600Mi of
 171470Mi and `pods` 20 of 42, while the launchers counted 18 of the fleet cap of

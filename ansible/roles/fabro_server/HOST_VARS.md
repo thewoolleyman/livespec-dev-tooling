@@ -874,9 +874,9 @@ On v0.8.1 and later the fleet instance's sandboxes request 3 CPU with a limit of
 environment's `cpu: 6`, because a run's environment size replaces the
 `process_spec`'s, and `process_spec.cpu_cores` is 6 to match. The `factory-runs`
 quota's `limits.cpu` is 120 for it (`ci-runner/k3s/phase2/factory/DERIVATION.md`
-"Request 3, limit 6"), raised to 144 while reaper-stranded sandboxes hold quota
-("Room for stranded sandboxes"). Every changed value carries its `REVERT` line in
-`host_vars`.
+"Request 3, limit 6"). It was raised to 144 while reaper-stranded sandboxes held
+quota and reverted to 120 on 2026-11-06 ("Room for stranded sandboxes"). Every
+changed value carries its `REVERT` line in `host_vars`.
 
 `vault_secrets` declares the App key, from the wrapper's
 `GITHUB_PRIVATE_KEY`, and the `OPENAI_API_KEY` placeholder an ACP-only graph

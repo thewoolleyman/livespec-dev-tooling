@@ -27,10 +27,10 @@ metadata:
     app.kubernetes.io/managed-by: livespec-ci-runner-factory
     livespec.workitem: f5e6vl
 ---
-# RAISED 2026-11-05 for SIX stranded 4/4 sandboxes (limits.cpu 120 -> 144,
-# requests.memory 171470Mi -> 217250Mi, limits.memory 181710Mi -> 227490Mi):
-# ./DERIVATION.md "Room for stranded sandboxes" (legacy-coordinator-agent
-# stop-the-line; orchestrator bd-ib-nmuyjc, reaper fix livespec-dev-tooling-izazkx).
+# STRANDED HEADROOM REVERTED 2026-11-06: limits.cpu 144 -> 120, requests.memory
+# 217250Mi -> 171470Mi, limits.memory 227490Mi -> 181710Mi, once the reaper fix
+# livespec-dev-tooling-izazkx reaped the stranded 4/4 sandboxes.
+# ./DERIVATION.md "Room for stranded sandboxes" (orchestrator bd-ib-nmuyjc).
 #
 # LIMITS.CPU RAISED 2026-11-05 to 120, requests.cpu unchanged at 84:
 # ./DERIVATION.md "Request 3, limit 6" (orchestrator bd-ib-zl3qcz;
@@ -81,19 +81,13 @@ metadata:
 spec:
   hard:
     requests.cpu: "84"
-    # STRANDED HEADROOM (2026-11-05): + 6 x 7630Mi for the reaper-stranded 4/4
-    # pods (livespec-dev-tooling-izazkx). ./DERIVATION.md "Room for four
-    # stranded sandboxes". REVERT: requests.memory: 171470Mi
-    requests.memory: 217250Mi
+    requests.memory: 171470Mi
     # REQUEST 3 / LIMIT 6 (2026-11-05, bd-ib-zl3qcz): the fleet's sandboxes
     # request 3 cpu and may burst to 6, so the limit total is 20 runs x 6 = 120
     # while requests.cpu stays 84. ./DERIVATION.md "Request 3, limit 6".
     # REVERT (one apply, with the gmktec host_vars REVERT lines): limits.cpu: "84"
-    # STRANDED HEADROOM (2026-11-05): 20 x 6 + 6 x 4 = 144, so cap 20 fits beside
-    # up to six stranded pods. REVERT: limits.cpu: "120"
-    limits.cpu: "144"
-    # STRANDED HEADROOM (2026-11-05): + 6 x 7630Mi. REVERT: limits.memory: 181710Mi
-    limits.memory: 227490Mi
+    limits.cpu: "120"
+    limits.memory: 181710Mi
     pods: "42"
 ---
 # ./DERIVATION.md "The egress targets" — default-deny ingress, and egress only
