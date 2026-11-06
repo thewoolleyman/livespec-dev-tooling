@@ -179,8 +179,8 @@ EOF
 fi
 
 if [ "$hold" = 1 ]; then
-  if kubectl get node "$worker" -o 'jsonpath={range .spec.taints[*]}{.key}={.value}:{.effect}{"\n"}{end}' |
-    grep -qx 'homelab-worker.livespec.dev/admission=hold:NoSchedule'; then
+  if taints="$(kubectl get node "$worker" -o 'jsonpath={range .spec.taints[*]}{.key}={.value}:{.effect}{"\n"}{end}')" &&
+    grep -qx 'homelab-worker.livespec.dev/admission=hold:NoSchedule' <<<"$taints"; then
     result admission-hold-taint PASS "node $worker carries the admission hold"
   else
     result admission-hold-taint FAIL "node $worker does not carry homelab-worker.livespec.dev/admission=hold:NoSchedule"
