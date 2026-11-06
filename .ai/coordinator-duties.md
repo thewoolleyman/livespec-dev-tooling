@@ -87,6 +87,13 @@ picker, or bootstrap-credentials-and-onboarding (P8), which was waiting on the m
 as account 360879159888 to enable CloudWatch billing alerts. It reported both as "seat done" and FOR THE MAINTAINER as
 "none".
 
+**A composer line is not an ask.** Text on a seat pane's `❯` composer line (as read by `herdr pane read`) can be Claude
+Code's own greyed prompt suggestion rather than text the maintainer typed and left unsent. Never report it as an unsent
+maintainer message or carry it under FOR THE MAINTAINER; treat a pane as waiting on the maintainer only when the seat's
+own output says so. The maintainer, 2026-11-06 ~16:0xZ, on an item the coordinator had carried for many ticks ("go
+ahead with the startup fix" in development-bootstrap's composer on chads-macbook-pro): "You are wrong, that is a prompt
+suggestion from claude."
+
 Resolve a DECISION picker yourself under ruling R301 with `herdr pane send-keys <pane_id> <keys>`. Then SendMessage
 the explicit answer, so the seat has it in words and knows the coordinator chose under delegated authority. Never
 answer tool-permission or billing prompts.
@@ -364,6 +371,13 @@ entry from live state: `herdr agent list` in full, plus ledger reads.
 Measured 2026-11-01: the coordinator copied an ask about a "closed" seat forward, although the maintainer had reopened
 it. It also called a plan by its repository's name.
 
+**Rule J: a "broken since X" claim cites a log from before X and one from after X.** Before telling the maintainer when
+a regression started or what it has cost, read one run log from before the claimed start and one from after it, and
+name both. Measured 2026-11-06 ~05:4xZ-05:57Z: the coordinator told the maintainer the dev-tooling check-coverage
+silent fallback started at 81defbb9 (2026-09-06) and extrapolated ~58,000 runner-minutes; logs either side showed the
+real break was 34f370e1 (2026-11-04T02:39:51Z), about 2,000 runner-minutes, and the figure had to be retracted.
+Adopted by the maintainer 2026-11-06 ~16:0xZ, verbatim: "Ok, go with rules J and G, I approve them".
+
 ## 8. One plan, one correctly named seat
 
 A session and tab named for plan X works only plan X. When a plan is created, split out or has no live seat, open a
@@ -538,6 +552,13 @@ trees on things like the duplicate config values?" Measured that day: raising fa
 routed three times, one knob at a time (the launcher `fleet-cap`, then `dispatcher.wip_cap`, then the Fabro server's
 `max_concurrent_runs`), with `FLEET_LAUNCH_GMK_CAP` a fourth copy. The coordinator reported "cap file 20" as progress
 while 16 still bound, and no one asked why one queue had several numbers until the maintainer did.
+
+**Rule G: when a fleet-class defect is fixed in one repository, sweep the fleet for it the same day.** A defect whose
+shape can exist in other fleet repositories (a shared check, recipe, workflow or reuse path) gets a same-day sweep of
+every fleet repo when it is fixed in one, and each hit is fixed or filed that day. Measured 2026-11-06: the
+orchestrator had already fixed the silent coverage-reuse fallback (bd-ib-xevgsx), but no sweep followed, so
+dev-tooling kept re-running its full suite in check-coverage until livespec-dev-tooling-jerpfe. Adopted by the
+maintainer 2026-11-06 ~16:0xZ, verbatim, with rule J (§7): "Ok, go with rules J and G, I approve them".
 
 The maintainer, 2026-11-02 ~16:5xZ: "I am also very disappointed in you that you did not notice the serialization
 bottleneck yourself, resulting in underutilization of the infrastructure. That is one of your main mandates. You are
