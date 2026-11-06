@@ -48,3 +48,12 @@ otel_collector_unit_after: network-online.target k3s.service otel-collector-iden
 otel_collector_unit_wants: network-online.target otel-collector-identity.service
 otel_collector_env_from_controller:
   - HONEYCOMB_INGEST_KEY_LIVESPEC
+
+# --- k3s_config ---
+# system.slice's root-level CPU share against kubepods.slice (2813 on this
+# 72-CPU node), so the k3s server is not starved when the node saturates
+# (livespec-dev-tooling-cetudy; measured 2026-11-05: datastore p99 7 s at
+# 72.98/72 CPUs with system.slice at 100). 1000 entitles system.slice to about
+# 17.9 CPUs under full contention. Applied by a daemon-reload, no k3s restart;
+# revert by setting it to "" and re-applying --tags k3s_system_slice_cpu_weight.
+k3s_config_system_slice_cpu_weight: 1000

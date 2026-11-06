@@ -39,13 +39,32 @@ peaks at load 120 averages down to 48 in its bucket; when the maintainer says
 120 % of one core is 1.7 % of a 72-thread box, spread across ~20 goroutine
 threads at 3–6 % each: the API server fanning watches to 11 ARC listeners,
 Kueue, the provisioner and the ARC controller; the kubelet's cgroup stats and
-pod churn; scheduler, kine, networking. Do NOT reach for `CPUWeight`,
-`--kube-reserved`, `--system-reserved`, or `--reserved-cpus`:
+pod churn; scheduler, kine, networking. That is k3s's AVERAGE draw, and it is
+not the risk. The risk is the SHARE k3s keeps when the node saturates. Never
+reach for `--reserved-cpus` (a cpuset pin), and do not use `--kube-reserved` or
+`--system-reserved` as the lever: each needs a k3s restart and only trims
+allocatable.
 
-- At the cgroup root the pod slice (`/sys/fs/cgroup/kubepods`) and
-  `system.slice` are peers at `cpu.weight` 100, so under full contention the
-  host side may take half the machine; k3s wants 1.7 %. Load 96 produced
-  0 `Slow SQL`. It is already protected.
+- At the cgroup root the pod slice and `system.slice` are NOT peers at weight
+  100. Under the systemd cgroup driver, kubelet weights `kubepods.slice` from
+  allocatable CPU: on 72-CPU `poweredge-xubuntu`, 72000m becomes 73728 shares
+  and `cpu.weight` 2813, against `system.slice` at 100 (measured 2026-11-05
+  23:52Z; `/sys/fs/cgroup/kubepods` does not exist there). At full contention
+  all of `system.slice` (k3s with its embedded containerd and kubelet, plus
+  every other unit) was therefore entitled to about 100/3113 x 72, or 2.3 CPUs.
+  From 20:25Z to 21:25Z that day the node sat at 72.98 of 72 CPUs with load1 up
+  to 231, and the API server's datastore p99 reached 7 s with 463 kine
+  `Slow SQL` lines in that hour, while kine itself stayed healthy (WAL
+  constant, checkpoints running; orchestrator item `bd-ib-yqmnvi`). The earlier
+  "load 96 produced 0 `Slow SQL`" reading predates the pool packing this many
+  pods onto the server.
+- The committed protection is `k3s_config_system_slice_cpu_weight` (role
+  `k3s_config`, HOST_VARS.md "system.slice CPU weight",
+  `livespec-dev-tooling-cetudy`). `poweredge-xubuntu` declares 1000, which
+  entitles `system.slice` to about 1000/4013 x 72, or 17.9 CPUs, under full
+  contention. A daemon-reload applies it with no k3s restart, and an empty
+  value removes it. `k3s_config_cpu_weight` cannot do this, because a unit's
+  weight only orders units inside `system.slice`.
 - CFS weights and kubelet reservations are SHARES: they only decide who wins
   when demand exceeds cores and never hold a core idle. The maintainer's
   worry ("cores kept idle because they are allocated to kube") applies only

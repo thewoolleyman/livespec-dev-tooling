@@ -40,10 +40,12 @@ def _tasks(text: str) -> list[str]:
 
 
 def _k3s_cpu_weight_tasks() -> list[str]:
+    # The k3s UNIT's weight tasks only. The system.slice weight tasks
+    # (livespec-dev-tooling-cetudy) are graded by test_k3s_system_slice_cpu_weight.py.
     return [
         task
         for task in _tasks(_read(_K3S / "tasks" / "main.yml"))
-        if "CPU weight" in task.split("\n", 1)[0]
+        if "CPU weight" in (name := task.split("\n", 1)[0]) and "system.slice" not in name
     ]
 
 

@@ -92,6 +92,19 @@ k3s_config_cpu_weight_drop_in: 50-cpu-weight.conf
 k3s_config_cpu_weight_unit_drop_in_dir: >-
   /etc/systemd/system/{{ 'k3s-agent' if k3s_config_cluster_role == 'agent' else 'k3s' }}.service.d
 
+# The systemd CPUWeight= (1 to 10000) of system.slice ITSELF on this node: the
+# share system.slice holds at the cgroup root against kubepods.slice, which
+# kubelet's systemd cgroup driver weights from allocatable CPU (2813 on a
+# 72-CPU node). k3s_config_cpu_weight above cannot move that share, because a
+# unit's weight only orders units inside system.slice. Empty, the default,
+# manages no weight and removes a drop-in an earlier converge wrote, so the
+# slice falls back to systemd's default of 100. Set per host in host_vars; see
+# HOST_VARS.md, "system.slice CPU weight" (livespec-dev-tooling-cetudy).
+# Applied by a daemon-reload, never a restart.
+k3s_config_system_slice_cpu_weight: ""
+k3s_config_system_slice_cpu_weight_drop_in: 50-cpu-weight.conf
+k3s_config_system_slice_drop_in_dir: /etc/systemd/system/system.slice.d
+
 # How many CoreDNS replicas the cluster runs. k3s ships its CoreDNS Deployment
 # (the packaged `coredns` addon) with ONE replica, and its manifest sets no
 # `replicas` field, so a count set here is not reset by k3s's own re-apply.

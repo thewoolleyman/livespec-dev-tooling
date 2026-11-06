@@ -136,4 +136,36 @@ just ansible-apply ansible/ci-pool.yml --limit <host> --tags k3s_cpu_weight
 ```
 
 A unit's weight divides CPU among its siblings inside `system.slice`; it does
-not change `system.slice`'s own share against `kubepods.slice`.
+not change `system.slice`'s own share against `kubepods.slice`. That is what the next section is for.
+
+## system.slice CPU weight
+
+`k3s_config_system_slice_cpu_weight` (default `""`) is the systemd `CPUWeight=`
+(1 to 10000) of `system.slice` itself, which is the share `system.slice` holds at
+the cgroup ROOT against `kubepods.slice`. The role writes it as
+`/etc/systemd/system/system.slice.d/50-cpu-weight.conf` (a `[Slice]` section) and
+runs one `systemctl daemon-reload` when the drop-in changed, which applies the
+weight to the running slice. It never restarts k3s, and it pins no CPU: like
+every CFS weight it is a share that only decides who wins when demand exceeds
+cores. Empty removes a drop-in an earlier converge wrote, which is the revert.
+
+`poweredge-xubuntu` declares `1000` (work-item `livespec-dev-tooling-cetudy`).
+Measured there on 2026-11-05: the k3s server runs in `/system.slice/k3s.service`,
+and `system.slice` sat at `cpu.weight` 100 against `kubepods.slice` at 2813, the
+weight kubelet's systemd cgroup driver derives from 72 allocatable CPUs (72000m
+to 73728 shares to 2813). With `user.slice` and `init.scope` at 100 each, all of
+`system.slice` was entitled to about 100/3113 x 72, or 2.3 CPUs, at full
+contention. From 20:25Z to 21:25Z that day the node sat at 72.98 of 72 CPUs, and
+the API server's datastore request latency p99 reached 7 s. At `1000` the
+entitlement is about 1000/4013 x 72, or 17.9 CPUs, against a measured k3s draw of
+about 1.3 CPUs on an unsaturated node. Apply it alone, and revert it by setting
+the value to `""` and running the same two commands:
+
+```bash
+just ansible-drift ansible/ci-pool.yml --limit poweredge-xubuntu --tags k3s_system_slice_cpu_weight
+just ansible-apply ansible/ci-pool.yml --limit poweredge-xubuntu --tags k3s_system_slice_cpu_weight
+```
+
+Moving k3s into a slice of its own, or `--kube-reserved` / `--system-reserved`,
+would each need a k3s restart; this drop-in does not. `--reserved-cpus` (a cpuset
+pin) is ruled out.
