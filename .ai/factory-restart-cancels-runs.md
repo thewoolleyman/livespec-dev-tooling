@@ -130,3 +130,33 @@ hold. The engine defect behind this is being filed under `bd-ib-nmuyjc` by the
 What it cost: the `#2803` restart left two such pods (the `rpw6` and `wt7fv4`
 runs). They held the fleet namespace's quota, and the next dispatch,
 `livespec-dev-tooling-c62xtb`, was refused with a 403 until they were reaped.
+
+## A k3s server restart cancels only runs on sandbox driver v0.8.1 or older
+
+A k3s SERVER restart (`ansible/restart-k3s-server.yml`) takes the cluster API
+away for tens of seconds while every pod keeps running. A factory run survives
+that outage when its sandbox driver resumes a dropped exec stream, which
+sandbox-driver-kubernetes v0.8.2 does. Coordinator ruling (legacy-coordinator-agent
+R301, 2026-11-06):
+
+- Cancel, preserve and re-dispatch ONLY the runs whose sandbox driver is v0.8.1
+  or older. Runs on v0.8.2 or later ride the restart.
+- Preserve before cancel still applies to every run you do cancel
+  (`.ai/coordinator-duties.md` §10).
+- If a v0.8.2-or-later run dies across a window, the full cancel-to-idle drain
+  returns for every later window until that death is explained.
+
+To tell which driver a run uses: a run's worker reads the provider pin when it
+STARTS, so a run whose sandbox pod was created after the `fabro-server` journal
+line `Server config reloaded` that followed the v0.8.2 pin is on v0.8.2. A run
+already in flight at that reload keeps its older driver.
+
+What established it: the poweredge-xubuntu k3s server restart for #3430
+(egress-selector-mode disabled) on 2026-11-06. k3s restarted at about 00:55:50Z.
+Run `01M6PVK9BE27` (bd-ib-weawfe) was on v0.8.2: its pod was created
+2026-11-05T21:59:48Z, after the 21:33:05Z reload. It was left running with one
+exec in flight across the outage, an orchestrator full suite started at 00:35Z.
+The run advanced past it at 01:05:05Z and went on to merge
+livespec-orchestrator-beads-fabro#4495 at 02:53:19Z, with its post-merge janitor
+green at 03:05:27Z. The three runs that window cancelled were on v0.8.1
+(izazkx, q4zynn, 4pchid); they were preserved first and re-dispatched seeded.
