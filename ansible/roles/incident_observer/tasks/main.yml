@@ -179,7 +179,9 @@
 - name: Install the released distribution from its tag, never from a checkout
   # Only when the venv does not already serve this release: pip rebuilds a
   # git requirement on every call, so a bare pip task would report a change on
-  # every apply.
+  # every apply. The release is installed WITH the runtime dependencies it
+  # declares: its vendored `returns` imports typing_extensions and anyio, and
+  # the distribution names both, so nothing is installed beside it.
   ansible.builtin.command:
     argv:
       - "{{ incident_observer_venv }}/bin/python"
@@ -188,7 +190,6 @@
       - pip
       - install
       - --quiet
-      - --no-deps
       - --no-cache-dir
       - "livespec-dev-tooling @ git+{{ incident_observer_release_repo }}@{{ incident_observer_release }}"
   become: true
@@ -197,44 +198,6 @@
     or (incident_observer_installed_version.rc | default(1)) != 0
     or ('v' ~ (incident_observer_installed_version.stdout | default('') | trim))
        != incident_observer_release
-  changed_when: true
-  notify: Restart the incident observer onto its installation
-
-- name: Read whether the serving interpreter has the vendored runtime's outside import
-  # The released distribution vendors its runtime and declares no dependency,
-  # yet its vendored `returns` imports typing_extensions. The release above is
-  # installed with --no-deps, so that one module is installed beside it, the
-  # same way the incident CI job does (.github/workflows/ci.yml). Without it
-  # the unit exits at import: measured on the first apply, 2026-11-06.
-  ansible.builtin.command:
-    argv:
-      - "{{ incident_observer_venv }}/bin/python"
-      - -I
-      - -c
-      - import typing_extensions
-  become: true
-  register: incident_observer_typing_extensions
-  changed_when: false
-  failed_when: false
-  check_mode: false
-  when: incident_observer_installed
-
-- name: Install typing-extensions beside the release
-  ansible.builtin.command:
-    argv:
-      - "{{ incident_observer_venv }}/bin/python"
-      - -I
-      - -m
-      - pip
-      - install
-      - --quiet
-      - --no-deps
-      - --no-cache-dir
-      - "{{ incident_observer_typing_extensions_requirement }}"
-  become: true
-  when: >-
-    not incident_observer_installed
-    or (incident_observer_typing_extensions.rc | default(1)) != 0
   changed_when: true
   notify: Restart the incident observer onto its installation
 

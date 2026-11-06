@@ -119,11 +119,11 @@ A first apply creates the account, the venv and the release, and only then can
 it render the manifest, load the installation and import the service module.
 The role re-reads "is it installed" after it installs, so all three run on the
 first apply and the unit starts verified; a dry run creates nothing and keeps
-its pre-read answer. Beside the release the role installs `typing-extensions`
-(`incident_observer_typing_extensions_requirement`): the released distribution
-vendors its runtime and declares no dependency, but its vendored `returns`
-imports that one module, and the release itself is installed with `--no-deps`.
-The incident CI job installs it the same way.
+its pre-read answer. The role installs the release and nothing beside it: the
+released distribution declares the two packages its vendored `returns` imports
+from outside itself (`typing-extensions` and `anyio`), so the release is
+installed with its declared dependencies. The incident CI job installs it the
+same way.
 
 ## Maintainer-only steps
 

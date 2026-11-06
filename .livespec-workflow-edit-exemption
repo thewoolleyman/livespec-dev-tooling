@@ -1,4 +1,2 @@
-work_item=livespec-dev-tooling-ko26ez.4
-reason=Add one new NON-GATING workflow, .github/workflows/homelab-worker-arm64-check-job.yml, for the homelab worker's representative arm64 CI job (plan homelab-k8s-worker-nodes, research/009 Phase E): workflow_dispatch only, one job on the worker's host-unique set macbook-m4-max-homelab-worker-k3s, running ci.yml's check-lint target in the multi-arch fleet sandbox image with ci.yml's mise and token environment. No existing workflow file is modified; it is not a required check and runs only when dispatched, so no existing run gains a job.
-change=additive
-ci_runtime=no-significant-increase
+work_item=livespec-dev-tooling-fmbp3a
+reason=Remove one workaround from the incident-ci job in .github/workflows/ci.yml: its released-install step stops naming typing-extensions beside the released livespec-dev-tooling, and the comment above that step is reworded to match. The release declares that dependency itself since v1.183.1 (livespec-dev-tooling-dpbpfx), so the same uv pip install resolves it. No other workflow line changes, no job, step, check or gate is added, removed or reordered, and CI runtime does not change. Maintainer tier (two modified lines); the maintainer pre-approved exactly this edit in the attended plan session, recorded on the item at 2026-11-06T06:14:53Z.

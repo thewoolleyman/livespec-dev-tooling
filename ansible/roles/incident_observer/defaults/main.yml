@@ -11,13 +11,12 @@
 # The normally released livespec-dev-tooling tag. Installed from the release
 # tag on GitHub into the venv below, never from a checkout on the host; the
 # manifest's `release` must equal `v` + the installed distribution version and
-# `revision` is this tag's commit, read from the reference clone.
-incident_observer_release: v1.178.0
+# `revision` is this tag's commit, read from the reference clone. The release
+# declares the packages its vendored runtime imports from outside itself
+# (v1.183.1 is the first that does), so the role installs the release and
+# nothing beside it.
+incident_observer_release: v1.183.1
 incident_observer_release_repo: https://github.com/thewoolleyman/livespec-dev-tooling.git
-# The one module the released distribution's vendored runtime imports from
-# outside itself. Installed beside the release (which is installed --no-deps);
-# the version is the one this repository's own lock resolves.
-incident_observer_typing_extensions_requirement: typing-extensions==4.15.0
 # The repository the observer serves (controller.json `repository`).
 incident_observer_repository: thewoolleyman/livespec-dev-tooling
 # The required master leaf jobs the manifest names. Measured 2026-11-05: the
