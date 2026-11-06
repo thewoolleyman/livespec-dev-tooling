@@ -32,6 +32,18 @@
 #      bootstrap-kubeconfig and client-ca.crt are delivered into the worker's
 #      enrollment state in the VM on stdin, never in an argument, before the
 #      container step. The directory is checked before any host change.
+#   9. Every committed fleet container hook bundle
+#      (ci-runner/k3s/phase2/container-hook/bundle/<version>/) is delivered
+#      into the worker's ci/hooks/<version>/index.js in the VM on stdin and
+#      verified there against its index.js.sha256 before it replaces the
+#      current copy, so CI pods on the worker run the fleet-patched hook
+#      (research 009). A current copy is not delivered again; a bundle
+#      without its checksum is refused before any host change.
+#  10. The fleet AppArmor profile workflow pods run under
+#      (ci-runner/k3s/phase2/apparmor/ci-runner-workflow) is installed into
+#      the VM's /etc/apparmor.d on stdin and (re)loaded with apparmor_parser,
+#      because the VM kernel is the worker's kernel: a workflow pod naming
+#      the profile cannot start on a node that has not loaded it.
 #
 # Every declared host runs this same code path; a host's .env carries data
 # only. The script stays bash 3.2-compatible because a worker host is not a
@@ -45,6 +57,8 @@ template="$here/lima/worker.yaml"
 socket_vmnet="${HOMELAB_WORKER_SOCKET_VMNET:-/opt/socket_vmnet/bin/socket_vmnet}"
 probe="$here/probe-vm-capabilities.sh"
 converge="$here/vm/converge-worker-container.sh"
+hook_bundles="${HOMELAB_WORKER_HOOK_BUNDLE_DIR:-$here/../ci-runner/k3s/phase2/container-hook/bundle}"
+apparmor_profile="${HOMELAB_WORKER_APPARMOR_PROFILE:-$here/../ci-runner/k3s/phase2/apparmor/ci-runner-workflow}"
 state_dir="${XDG_STATE_HOME:-$HOME/.local/state}/livespec-homelab-worker"
 
 die() {
@@ -125,6 +139,18 @@ if [ -n "$enrollment" ]; then
     [ -s "$enrollment/$f" ] || die "HOMELAB_WORKER_ENROLLMENT '$enrollment' has no $f; mint it with homelab-worker/enrollment/mint-bootstrap-token.sh"
   done
 fi
+
+hook_versions=""
+for bundle in "$hook_bundles"/*/; do
+  [ -d "$bundle" ] || continue
+  bundle="${bundle%/}"
+  for f in index.js index.js.sha256; do
+    [ -s "$bundle/$f" ] || die "container hook bundle $bundle has no $f"
+  done
+  hook_versions="$hook_versions ${bundle##*/}"
+done
+[ -n "$hook_versions" ] || die "no container hook bundle under $hook_bundles"
+[ -s "$apparmor_profile" ] || die "the workflow AppArmor profile $apparmor_profile is missing"
 
 os="$(uname -s)"
 if [ "$os" != "$WORKER_HOST_OS" ]; then
@@ -222,6 +248,31 @@ if [ -n "$enrollment" ]; then
   done
   say "enrollment delivered to $worker_root/enrollment in VM $worker"
 fi
+
+# vm_sha256 <path>: the sha256 of a file in the VM, or nothing when it is absent.
+vm_sha256() {
+  limactl shell --workdir / "$worker" sudo sha256sum "$1" 2>/dev/null | cut -d ' ' -f 1 || true
+}
+
+for version in $hook_versions; do
+  want="$(cut -d ' ' -f 1 <"$hook_bundles/$version/index.js.sha256")"
+  dest="$worker_root/ci/hooks/$version/index.js"
+  if [ "$(vm_sha256 "$dest")" = "$want" ]; then
+    say "container hook $version is current in VM $worker"
+    continue
+  fi
+  limactl shell --workdir / "$worker" sudo install -D -m 0644 /dev/stdin "$dest.new" <"$hook_bundles/$version/index.js"
+  [ "$(vm_sha256 "$dest.new")" = "$want" ] ||
+    die "container hook $version delivered to VM $worker does not match its index.js.sha256; the worker container was not converged"
+  limactl shell --workdir / "$worker" sudo mv "$dest.new" "$dest"
+  say "container hook $version delivered to $dest in VM $worker"
+done
+
+profile_dest="/etc/apparmor.d/${apparmor_profile##*/}"
+limactl shell --workdir / "$worker" sudo install -D -m 0644 /dev/stdin "$profile_dest" <"$apparmor_profile"
+limactl shell --workdir / "$worker" sudo apparmor_parser -r "$profile_dest" ||
+  die "AppArmor refused the workflow profile $profile_dest in VM $worker; the worker container was not converged"
+say "workflow AppArmor profile loaded from $profile_dest in VM $worker"
 
 image="$(grep -v '^#' "$here/image/ref" | head -n 1)"
 say "converging worker container $worker in VM $worker"
