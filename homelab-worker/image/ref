@@ -1,3 +1,4 @@
 # The worker image the start task runs, pinned by digest: the master build of
-# 7b8f4791 (livespec-dev-tooling#3445, untagged tailnet enrollment), tag sha-7b8f479.
-ghcr.io/thewoolleyman/livespec-worker-node@sha256:75b790506f41fe27ffee1e0a9e129631cdcca69d4b1e7144b83352afa5509cae
+# 24580ffe (livespec-dev-tooling#3574: the kubelet registers the permanent
+# class taint beside the admission hold), tag sha-24580ff.
+ghcr.io/thewoolleyman/livespec-worker-node@sha256:dd5771d2325445f2465394aaf46dc76e2d9e34707d8def8329289c1cabf77fb0
