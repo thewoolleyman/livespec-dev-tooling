@@ -58,6 +58,23 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.185.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.184.2...v1.185.0) (2026-11-06)
+
+
+### Features
+
+* **homelab-worker:** converge binds the factory workspace root from the data disk (livespec-dev-tooling-ko26ez) ([6c4206c](https://github.com/thewoolleyman/livespec-dev-tooling/commit/6c4206cf878c57cf10275466b577f9224095c83d))
+
+
+### Bug Fixes
+
+* **gate-run:** a gate session that stops making progress ends without a pass (livespec-dev-tooling-o6igh6) ([2711bed](https://github.com/thewoolleyman/livespec-dev-tooling/commit/2711bed5b7c4f46532b19cdde4183826d035c481))
+* **gate-run:** a gate session that stops making progress ends without a pass (livespec-dev-tooling-o6igh6) ([019a67d](https://github.com/thewoolleyman/livespec-dev-tooling/commit/019a67da14e10e6cddfcf3f723fd3e139e179040))
+* **gate-run:** a gate session that stops making progress ends without a pass (livespec-dev-tooling-o6igh6) ([92b71ef](https://github.com/thewoolleyman/livespec-dev-tooling/commit/92b71efc09b079726c85de0e43dbe94f7067f192))
+* **gate-run:** a gate session that stops making progress ends without a pass (livespec-dev-tooling-o6igh6) ([f703a3b](https://github.com/thewoolleyman/livespec-dev-tooling/commit/f703a3bdb952365e294199666d39dc5728549230))
+* **gate-run:** the stall bound signals the whole group and waits for it before KILL (livespec-dev-tooling-o6igh6) ([bf434dc](https://github.com/thewoolleyman/livespec-dev-tooling/commit/bf434dceada3fe1e5dc27879829e574c9c2fd8e3))
+* **incident-ci:** the CI client connects to the observer's tailnet address while verifying its hostname (livespec-dev-tooling-ws2idp) ([04b8ef8](https://github.com/thewoolleyman/livespec-dev-tooling/commit/04b8ef8cdb161e7292eedb571700472080a278d2))
+
 ## [1.184.2](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.184.1...v1.184.2) (2026-11-06)
 
 
