@@ -484,7 +484,7 @@ And the factory OOM-or-crash-loop trigger MUST fire, and the factory pending-pod
 
 Given the `factory-runs` ResourceQuota and every Kueue ClusterQueue are reported by an emitter converged by `ansible/ci-pool.yml`
 
-When the `factory` namespace's pod count stays at or above 90 percent of `factory-runs`' hard value for 15 minutes and a gate ClusterQueue has pending workloads with its CPU usage equal to its nominal quota
+When the `factory` namespace's pod count stays at or above 90 percent of `factory-runs`' hard value for 2 hours and a gate ClusterQueue has pending workloads with its CPU usage equal to its nominal quota
 
 Then the fleet observability surface MUST show `factory-runs` used against hard per resource attributed by `k8s.namespace.name`
 
