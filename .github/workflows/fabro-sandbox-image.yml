@@ -325,6 +325,146 @@ jobs:
   # convention, and a `chore:` commit cuts no release
   # (§"PR commit-message convention").
   # ---------------------------------------------------------------------------
+  # Native arm64 build of the base and python layers, for the homelab worker
+  # on the MacBook M4 Max (plan homelab-k8s-worker-nodes,
+  # livespec-dev-tooling-ko26ez.4). Built on a native arm64 runner, never under
+  # QEMU, and only the two layers CI check jobs run in; the agent, rust and
+  # fuzz layers stay amd64-only. Each layer is pushed under the build job's
+  # tags with an `-arm64` suffix; `multiarch` then publishes every base and
+  # python tag as a two-platform index, so an amd64 host still pulls amd64.
+  build-arm64:
+    name: build-fabro-sandbox-image-arm64
+    runs-on: ubuntu-24.04-arm
+    services:
+      registry:
+        image: registry:2
+        ports:
+          - 5000:5000
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+        with:
+          driver-opts: network=host
+
+      - name: Log in to GHCR
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Resolve target registry image
+        id: target
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            echo "image=localhost:5000/livespec-fabro-sandbox" >> "$GITHUB_OUTPUT"
+          else
+            echo "image=ghcr.io/${{ github.repository_owner }}/livespec-fabro-sandbox" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Compute base tags
+        id: meta_base
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ steps.target.outputs.image }}
+          flavor: |
+            latest=false
+            suffix=-arm64
+          tags: |
+            type=sha,prefix=base-sha-
+            type=semver,pattern=v{{version}},prefix=base-
+
+      - name: Build + push base (arm64)
+        id: build_base
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: docker/fabro-sandbox/base/Dockerfile
+          platforms: linux/arm64
+          secrets: |
+            github_token=${{ secrets.GITHUB_TOKEN }}
+          push: true
+          provenance: false
+          tags: ${{ steps.meta_base.outputs.tags }}
+          labels: ${{ steps.meta_base.outputs.labels }}
+          cache-from: type=gha,scope=base-arm64
+          cache-to: type=gha,scope=base-arm64,mode=max
+
+      - name: Compute python tags
+        id: meta_python
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ steps.target.outputs.image }}
+          flavor: |
+            latest=false
+            suffix=-arm64
+          tags: |
+            type=sha,prefix=python-sha-
+            type=semver,pattern=v{{version}},prefix=python-
+
+      - name: Build + push python (arm64)
+        id: build_python
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: docker/fabro-sandbox/python/Dockerfile
+          platforms: linux/arm64
+          secrets: |
+            github_token=${{ secrets.GITHUB_TOKEN }}
+          push: true
+          provenance: false
+          build-args: |
+            BASE_IMAGE=${{ steps.target.outputs.image }}@${{ steps.build_base.outputs.digest }}
+          tags: ${{ steps.meta_python.outputs.tags }}
+          labels: ${{ steps.meta_python.outputs.labels }}
+          cache-from: type=gha,scope=python-arm64
+          cache-to: type=gha,scope=python-arm64,mode=max
+
+  # Publishes each base and python tag as an amd64 + arm64 index. GHCR only:
+  # on a pull request each job's layers live in its own ephemeral registry.
+  multiarch:
+    name: publish-fabro-sandbox-multiarch
+    if: github.event_name != 'pull_request'
+    needs: [build, build-arm64]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Compute the layer tags to merge
+        id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/livespec-fabro-sandbox
+          flavor: latest=false
+          tags: |
+            type=sha,prefix=base-sha-
+            type=semver,pattern=v{{version}},prefix=base-
+            type=sha,prefix=python-sha-
+            type=semver,pattern=v{{version}},prefix=python-
+
+      - name: Publish each tag as an amd64 + arm64 index
+        env:
+          TAGS: ${{ steps.meta.outputs.tags }}
+        run: |
+          set -euo pipefail
+          while IFS= read -r tag; do
+            [ -n "$tag" ] || continue
+            docker buildx imagetools create -t "$tag" "$tag" "$tag-arm64"
+            docker buildx imagetools inspect "$tag" | grep -E 'Platform: +linux/(amd64|arm64)'
+          done <<< "$TAGS"
+
   self-reconcile-pins:
     name: self-reconcile-pins
     needs: build
