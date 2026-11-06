@@ -58,6 +58,18 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.184.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.184.0...v1.184.1) (2026-11-06)
+
+
+### Bug Fixes
+
+* **bootstrap:** bootstrap names a bare python3 that does not satisfy requires-python (livespec-dev-tooling-o6igh6) ([ce6b13f](https://github.com/thewoolleyman/livespec-dev-tooling/commit/ce6b13fa34af53c0e040a4c1be24c81111ac6043))
+* delete abandoned delegated gate jobs ([74bc77c](https://github.com/thewoolleyman/livespec-dev-tooling/commit/74bc77cc683540cf764ddd7a6f9b548e4ac619c5))
+* delete the submitted gate Job when private-sibling Secret delivery fails ([0965475](https://github.com/thewoolleyman/livespec-dev-tooling/commit/0965475897d32ab27b8643ea738a4a52e0a69533))
+* **fleet:** bootstrap names a missing ledger pointer instead of reporting success (livespec-dev-tooling-o6igh6) ([8f8f785](https://github.com/thewoolleyman/livespec-dev-tooling/commit/8f8f7854d11ba8604435e5a7f67fe57b7be6ccdb))
+* report abandoned gate cleanup failures ([3af46d8](https://github.com/thewoolleyman/livespec-dev-tooling/commit/3af46d80f18bc14e8c79d3a9c4681d956473e2f3))
+* skip proven-current Claude plugin startup commands ([3e3df1b](https://github.com/thewoolleyman/livespec-dev-tooling/commit/3e3df1bb623829f3e5d2682ff3fdf154e11ca457))
+
 ## [1.184.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.183.1...v1.184.0) (2026-11-06)
 
 
