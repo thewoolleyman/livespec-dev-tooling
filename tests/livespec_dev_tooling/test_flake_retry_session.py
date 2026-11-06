@@ -331,6 +331,26 @@ def test_the_summary_hook_is_silent_when_nothing_was_retried(
     assert not (tmp_path / "tmp").exists()
 
 
+@pytest.mark.integration
+def test_xdist_controller_reports_a_reason_workers_withheld_retries(*, tmp_path: Path) -> None:
+    """The controller summary preserves a withholding reason discovered by workers."""
+    repo = tmp_path / "repo"
+    _init_repo(repo=repo)
+    _ = (repo / "test_flaky.py").write_text(
+        "def test_failure() -> None:\n    assert False\n", encoding="utf-8"
+    )
+    _git(repo=repo, args=["add", "test_flaky.py"])
+    _git(repo=repo, args=["commit", "-qm", "failing test"])
+
+    completed = _run_session(repo=repo, extra=("-n", "2"))
+    output = completed.stdout + completed.stderr
+
+    assert completed.returncode == 1, output
+    assert "FLAKE-RETRY-WITHHELD" in output
+    assert "no failing test is retried this session" in output
+    assert "git rev-parse --verify --quiet HEAD^2" in output
+
+
 def _init_repo(*, repo: Path) -> None:
     repo.mkdir()
     _git(repo=repo, args=["init", "-q", "-b", "master", "."])
