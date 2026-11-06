@@ -53,6 +53,7 @@ _DESTINATIONS = (
     "/etc/homelab-worker",
     "/var/lib/rancher/k3s/storage",
     "/usr/local/lib/ci-runner-k3s/hooks",
+    "/sys/kernel/security",
 )
 
 _STUB_DOCKER = """#!/bin/bash
@@ -517,3 +518,23 @@ def test_a_running_worker_without_the_ci_binds_is_replaced_keeping_its_state(vm:
     assert len(_calls(vm=vm, verb="rm")) == 1
     [run] = _calls(vm=vm, verb="run")
     assert ":/var/lib/rancher/k3s/storage " in run
+
+
+def test_the_kubelet_sees_the_vms_apparmor_through_a_securityfs_bind(vm: _Vm) -> None:
+    # The kubelet runs in the container and refuses an AppArmor-confined pod unless it can see
+    # securityfs, which Docker does not mount into a container (measured 2026-11-06).
+    result = _run(vm=vm)
+    assert result.returncode == 0, result.stdout + result.stderr
+    [run] = _calls(vm=vm, verb="run")
+    assert "--volume /sys/kernel/security:/sys/kernel/security:ro " in run
+
+
+def test_a_running_worker_without_the_securityfs_bind_is_replaced(vm: _Vm) -> None:
+    (vm.state / "container").write_text(f"{_IMAGE} true\n", encoding="utf-8")
+    (vm.state / "mount").write_text(f"{vm.root}/enrollment\n", encoding="utf-8")
+    (vm.state / "destinations").write_text("\n".join(_DESTINATIONS[:-1]) + "\n", encoding="utf-8")
+    result = _run(vm=vm)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert len(_calls(vm=vm, verb="rm")) == 1
+    [run] = _calls(vm=vm, verb="run")
+    assert ":/sys/kernel/security:ro " in run
