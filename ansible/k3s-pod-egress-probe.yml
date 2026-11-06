@@ -1,0 +1,280 @@
+---
+# k3s-pod-egress-probe.yml — the ONE sanctioned way to measure, from inside a
+# pod of the CI cluster, the path to the incident observer on the dev host.
+#
+# WHY IT EXISTS (plan expedited-incident-response-flag, epic
+# livespec-dev-tooling-bqnzcm). The incident drill arms through the observer's
+# tailnet listener, and whether a cluster pod can resolve and reach it — by its
+# tailnet name, by the pinned tailnet address, and by the public path — is a
+# fact only a pod can measure. Running a pod by hand is a hand change the
+# Driver's `fleet_host_guard.py` refuses; this play is the committed path, on
+# the model of ansible/container-termination-drill.yml.
+#
+# THE FENCE IS A VARIABLE. Reachable by `just ansible-apply
+# ansible/k3s-pod-egress-probe.yml -e
+# k3s_pod_egress_probe_confirm=<k3s server inventory name>` and by nothing else
+# that matters: without the confirmation it reads nothing, changes nothing and
+# exits 0. Only the k3s server acts, because it holds the admin kubeconfig; the
+# host is identified by `cluster_role`, never by a name spelled here.
+#
+# CONSENT IS NOT SUFFICIENT. Before any cluster write the probe refuses a
+# configured namespace that is a factory namespace or that already exists.
+# Everything it creates lives in its own namespace, deleted in an `always:`.
+# It carries no secret: the observer endpoint it posts to is the public arming
+# URL, and the request body is empty.
+
+- name: Measure a cluster pod's path to the incident observer in a throwaway namespace
+  hosts: ci_pool
+  gather_facts: false
+  # The admin kubeconfig is root-owned on the k3s server.
+  become: true
+  vars:
+    k3s_pod_egress_probe_namespace: k3s-pod-egress-probe
+    k3s_pod_egress_probe_refused_namespaces:
+      - factory
+      - factory-mi-homelab
+    k3s_pod_egress_probe_admin_kubeconfig: /etc/rancher/k3s/k3s.yaml
+    k3s_pod_egress_probe_image: curlimages/curl:8.11.1
+    k3s_pod_egress_probe_pod: egress-probe
+    # The observer's tailnet name, its pinned tailnet address and its port. The
+    # control node's tailnet name is a play value, not an inventory binding: it
+    # is what the pod resolves, not a host the play acts on.
+    k3s_pod_egress_probe_observer_host: vps.perch-rudd.ts.net
+    k3s_pod_egress_probe_observer_tailnet_ip: 100.89.189.118
+    k3s_pod_egress_probe_observer_port: 8765
+    k3s_pod_egress_probe_observer_path: /current
+    k3s_pod_egress_probe_curl_max_time: 20
+    k3s_pod_egress_probe_wait_interval: 5
+    k3s_pod_egress_probe_wait_retries: 36
+    k3s_pod_egress_probe_delete_timeout: 300s
+    # `| bool` on each half is load-bearing: a non-empty string is truthy in
+    # Jinja, so the strings 'True' / 'False' would otherwise both pass.
+    k3s_pod_egress_probe_named: >-
+      {{ k3s_pod_egress_probe_confirm | default('') == inventory_hostname
+         and cluster_role | default('') == 'server' }}
+    k3s_pod_egress_probe_namespace_refused: >-
+      {{ k3s_pod_egress_probe_namespace in k3s_pod_egress_probe_refused_namespaces
+         or k3s_pod_egress_probe_namespace
+         is not match('^[a-z0-9]([-a-z0-9]*[a-z0-9])?$') }}
+    k3s_pod_egress_probe_url: >-
+      https://{{ k3s_pod_egress_probe_observer_host }}:{{ k3s_pod_egress_probe_observer_port
+      }}{{ k3s_pod_egress_probe_observer_path }}
+    k3s_pod_egress_probe_curl_format: >-
+      %{http_code} ssl=%{ssl_verify_result} t=%{time_total}
+    k3s_pod_egress_probe_script: >-
+      nslookup {{ k3s_pod_egress_probe_observer_host }} 2>&1 | head -n 3;
+      curl -s -o /dev/null -w "tailnet-ip {{ k3s_pod_egress_probe_curl_format }}\n"
+      --max-time {{ k3s_pod_egress_probe_curl_max_time }}
+      --resolve {{ k3s_pod_egress_probe_observer_host }}:{{ k3s_pod_egress_probe_observer_port
+      }}:{{ k3s_pod_egress_probe_observer_tailnet_ip }}
+      -X POST {{ k3s_pod_egress_probe_url }} || echo "tailnet-ip curl-exit $?";
+      curl -s -o /dev/null -w "public {{ k3s_pod_egress_probe_curl_format }}\n"
+      --max-time {{ k3s_pod_egress_probe_curl_max_time }}
+      -X POST {{ k3s_pod_egress_probe_url }} || echo "public curl-exit $?"
+    k3s_pod_egress_probe_manifest:
+      apiVersion: v1
+      kind: Pod
+      metadata:
+        name: "{{ k3s_pod_egress_probe_pod }}"
+        namespace: "{{ k3s_pod_egress_probe_namespace }}"
+      spec:
+        restartPolicy: Never
+        terminationGracePeriodSeconds: 0
+        automountServiceAccountToken: false
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 65534
+        containers:
+          - name: probe
+            image: "{{ k3s_pod_egress_probe_image }}"
+            command: ["sh", "-c", "{{ k3s_pod_egress_probe_script }}"]
+            securityContext:
+              allowPrivilegeEscalation: false
+              capabilities:
+                drop: ["ALL"]
+  environment:
+    KUBECONFIG: "{{ k3s_pod_egress_probe_admin_kubeconfig }}"
+  tasks:
+    - name: Report a run that carries no egress-probe confirmation for this host
+      ansible.builtin.debug:
+        msg: >-
+          Not probing from {{ inventory_hostname }}: this run does not carry
+          `k3s_pod_egress_probe_confirm` naming the k3s server (it carries
+          `{{ k3s_pod_egress_probe_confirm | default('<unset>') }}`). Nothing
+          was read and nothing was changed. To run the probe, from the control
+          node: just ansible-apply ansible/k3s-pod-egress-probe.yml -e
+          k3s_pod_egress_probe_confirm=<k3s server inventory name>
+      when: not (k3s_pod_egress_probe_named | bool)
+
+    - name: Refuse a probe namespace that is a factory namespace or not a valid name
+      ansible.builtin.fail:
+        msg: >-
+          Refusing the pod egress probe: namespace
+          `{{ k3s_pod_egress_probe_namespace }}` is one of
+          {{ k3s_pod_egress_probe_refused_namespaces | join(', ') }} or is not a
+          valid namespace name. Nothing was read and nothing was changed.
+      when:
+        - k3s_pod_egress_probe_named | bool
+        - k3s_pod_egress_probe_namespace_refused | bool
+
+    - name: Read whether the probe namespace already exists
+      ansible.builtin.command:
+        argv:
+          - kubectl
+          - get
+          - namespace
+          - "{{ k3s_pod_egress_probe_namespace }}"
+          - --ignore-not-found
+          - --output
+          - name
+      register: k3s_pod_egress_probe_existing
+      # A read, so it runs under `--check` too. It fails closed: a read that
+      # errored is not evidence that the namespace is absent.
+      check_mode: false
+      changed_when: false
+      when: k3s_pod_egress_probe_named | bool
+
+    - name: Refuse a probe namespace that already exists
+      ansible.builtin.fail:
+        msg: >-
+          Refusing the pod egress probe: namespace
+          `{{ k3s_pod_egress_probe_namespace }}` already exists, and the probe
+          deletes its namespace when it ends. Nothing was created and nothing
+          was deleted.
+      when:
+        - k3s_pod_egress_probe_named | bool
+        - k3s_pod_egress_probe_existing.stdout | trim != ''
+
+    - name: Note that a check-mode run issues no cluster write
+      ansible.builtin.debug:
+        msg: >-
+          Check mode: the probe would create namespace
+          `{{ k3s_pod_egress_probe_namespace }}`, run one curl pod in it
+          against {{ k3s_pod_egress_probe_url }}, print its log, and delete
+          the namespace. Nothing was created.
+      when:
+        - k3s_pod_egress_probe_named | bool
+        - ansible_check_mode
+
+    - name: Run the probe pod in its own namespace and delete the namespace afterwards
+      when:
+        - k3s_pod_egress_probe_named | bool
+        - not ansible_check_mode
+      block:
+        - name: Read the probe's start time
+          ansible.builtin.command:
+            argv: [date, -u, +%Y-%m-%dT%H:%M:%SZ]
+          register: k3s_pod_egress_probe_start
+          changed_when: false
+
+        - name: Create the probe namespace
+          ansible.builtin.command:
+            argv:
+              - kubectl
+              - create
+              - namespace
+              - "{{ k3s_pod_egress_probe_namespace }}"
+          register: k3s_pod_egress_probe_create
+          changed_when: true
+
+        - name: Create the probe pod in the probe namespace
+          ansible.builtin.command:
+            argv:
+              - kubectl
+              - apply
+              - --namespace
+              - "{{ k3s_pod_egress_probe_namespace }}"
+              - --filename
+              - "-"
+            stdin: "{{ k3s_pod_egress_probe_manifest | to_json }}"
+          changed_when: true
+
+        - name: Wait until the probe pod has completed
+          ansible.builtin.command:
+            argv:
+              - kubectl
+              - get
+              - pod
+              - "{{ k3s_pod_egress_probe_pod }}"
+              - --namespace
+              - "{{ k3s_pod_egress_probe_namespace }}"
+              - --output
+              - jsonpath={.status.phase}
+          register: k3s_pod_egress_probe_phase
+          changed_when: false
+          retries: "{{ k3s_pod_egress_probe_wait_retries }}"
+          delay: "{{ k3s_pod_egress_probe_wait_interval }}"
+          until: >-
+            k3s_pod_egress_probe_phase.rc == 0
+            and k3s_pod_egress_probe_phase.stdout in ['Succeeded', 'Failed']
+          failed_when: >-
+            k3s_pod_egress_probe_phase.rc != 0
+            or k3s_pod_egress_probe_phase.stdout not in ['Succeeded', 'Failed']
+
+        - name: Read the probe pod's log
+          ansible.builtin.command:
+            argv:
+              - kubectl
+              - logs
+              - "{{ k3s_pod_egress_probe_pod }}"
+              - --namespace
+              - "{{ k3s_pod_egress_probe_namespace }}"
+          register: k3s_pod_egress_probe_log
+          changed_when: false
+
+        - name: Report what the pod measured
+          ansible.builtin.debug:
+            msg: >-
+              Pod {{ k3s_pod_egress_probe_pod }} in namespace
+              {{ k3s_pod_egress_probe_namespace }} ended
+              {{ k3s_pod_egress_probe_phase.stdout }}; its log:
+              {{ k3s_pod_egress_probe_log.stdout_lines }}
+      always:
+        - name: Delete the probe namespace
+          ansible.builtin.command:
+            argv:
+              - kubectl
+              - delete
+              - namespace
+              - "{{ k3s_pod_egress_probe_namespace }}"
+              - --ignore-not-found
+              - --wait=true
+              - "--timeout={{ k3s_pod_egress_probe_delete_timeout }}"
+          changed_when: true
+          # Only a namespace THIS run created: a run that never reached the
+          # create must not delete a namespace it does not own.
+          when: >-
+            k3s_pod_egress_probe_create is defined
+            and k3s_pod_egress_probe_create.rc | default(1) == 0
+
+        - name: Read whether the probe namespace is gone
+          ansible.builtin.command:
+            argv:
+              - kubectl
+              - get
+              - namespace
+              - "{{ k3s_pod_egress_probe_namespace }}"
+              - --ignore-not-found
+              - --output
+              - name
+          register: k3s_pod_egress_probe_after
+          changed_when: false
+          retries: "{{ k3s_pod_egress_probe_wait_retries }}"
+          delay: "{{ k3s_pod_egress_probe_wait_interval }}"
+          until: k3s_pod_egress_probe_after.rc == 0 and k3s_pod_egress_probe_after.stdout | trim == ''
+          when: >-
+            k3s_pod_egress_probe_create is defined
+            and k3s_pod_egress_probe_create.rc | default(1) == 0
+
+        - name: Read the probe's end time
+          ansible.builtin.command:
+            argv: [date, -u, +%Y-%m-%dT%H:%M:%SZ]
+          register: k3s_pod_egress_probe_end
+          changed_when: false
+
+        - name: Report the probe's start and end UTC times and its namespace
+          ansible.builtin.debug:
+            msg: >-
+              Pod egress probe namespace {{ k3s_pod_egress_probe_namespace }}
+              started at {{ k3s_pod_egress_probe_start.stdout | default('unobserved') }}
+              ended at {{ k3s_pod_egress_probe_end.stdout }}

@@ -91,6 +91,7 @@ source of truth for how the tool is invoked.
 | `k3s-window-drain.yml` | `ci_pool`, acting once on the SERVER, only for the action its confirmation names | nothing — no committed artifact could pause runner intake or cordon a pool node |
 | `container-termination-drill.yml` | `ci_pool`, and only the k3s SERVER its confirmation names | nothing — no committed artifact could produce a crash-looping or OOM-killed container |
 | `claim-token-race-drill.yml` | `ci_pool`, and only the host its confirmation names, raced against the control node | nothing — no second fleet host could act as a ledger claim writer |
+| `k3s-pod-egress-probe.yml` | `ci_pool`, and only the k3s SERVER its confirmation names | nothing — no committed artifact could measure a pod's path to the incident observer |
 
 `container-termination-drill.yml` is the ONE sanctioned way to make the cluster
 produce a `CrashLoopBackOff` container and an `OOMKilled` container, the
@@ -135,6 +136,22 @@ coordinated stopped-writers window of the orchestrator tenant. See
 `tests/livespec_dev_tooling/test_claim_token_race_drill_playbook.py`, which
 races the real probe as two processes against a file-locked stand-in for the
 package.
+`k3s-pod-egress-probe.yml` is the ONE sanctioned way to measure, from inside a
+pod of the CI cluster, the path to the incident observer on the dev host (plan
+`expedited-incident-response-flag`, epic `livespec-dev-tooling-bqnzcm`). It is
+`just ansible-apply ansible/k3s-pod-egress-probe.yml -e
+k3s_pod_egress_probe_confirm=<k3s server inventory name>`; without that
+confirmation it reads nothing and changes nothing. It exits non-zero before any
+cluster write when the configured namespace (`k3s_pod_egress_probe_namespace`)
+is `factory`, `factory-mi-homelab` or already exists, creates that namespace
+and one non-root `curlimages/curl` pod in it whose log carries, in order, the
+first three lines of `nslookup` for the observer's tailnet name, a POST to the
+observer's arming URL pinned to its tailnet address (`tailnet-ip <http_code>
+ssl=<verify> t=<seconds>`), and the same POST on the public path (`public …`);
+waits for the pod to complete, prints its log and its start and end UTC times,
+and deletes the namespace in an `always:`. The name, address, port and path
+are play variables with defaults. No secret is involved. See
+`tests/livespec_dev_tooling/test_k3s_pod_egress_probe_playbook.py`.
 
 `reboot-ci-server.yml` is the ONE sanctioned way to reboot the k3s server, and
 the only play here that reboots a host. It is an ordinary
