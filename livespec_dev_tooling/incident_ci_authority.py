@@ -7,8 +7,13 @@ An older controller without fresh canonical-current support refuses this path.
 from __future__ import annotations
 
 import http.client
+import ipaddress
 import json
+import os
 import re
+import socket
+import ssl
+import sys
 from contextlib import closing
 from dataclasses import dataclass
 from typing import Any, cast
@@ -29,6 +34,14 @@ _ACCEPTED = 202
 # outwaits the pass instead of racing it, and about five such reads happen
 # per incident run (livespec-dev-tooling-ws2idp, 2026-11-06).
 _OBSERVER_READ_TIMEOUT_SECONDS = 60
+# A k3s runner pod resolves the observer's hostname through cluster DNS to
+# Tailscale's public Funnel ingress, where the observer's port is not served,
+# so every read hung to the ceiling above (livespec-dev-tooling-ws2idp,
+# 2026-11-06). When the workflow supplies this IPv4 or IPv6 literal the TCP
+# connection is opened to it instead, while SNI, certificate verification and
+# the Host header keep the URL's hostname: a wrong address fails TLS.
+_CONNECT_ADDRESS_VARIABLE = "LIVESPEC_INCIDENT_OBSERVER_CONNECT_ADDR"
+_REFUSAL_PREFIX = "incident-ci: observer read refused: "
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -49,9 +62,11 @@ class CiAuthorityBoundary:
     def _query(self, *, route: str, query: dict[str, Any]) -> bool:
         try:
             parsed = urlsplit(self.observer_url)
+            host = parsed.hostname or ""
+            port = parsed.port or http.client.HTTPS_PORT
             if (
                 parsed.scheme != "https"
-                or not parsed.hostname
+                or not host
                 or parsed.username
                 or parsed.password
                 or parsed.query
@@ -78,12 +93,33 @@ class CiAuthorityBoundary:
                 )
             ):
                 return False
+        except (OSError, ValueError, TypeError, RecursionError, http.client.HTTPException):
+            return False
+        address = _connect_address()
+        if address is None:
+            return _refuse(
+                detail=_CONNECT_ADDRESS_VARIABLE
+                + " is not an IPv4 or IPv6 address literal; no connection was attempted"
+            )
+        try:
             # System TLS verification; no redirect handler can forward the token.
             with closing(
                 http.client.HTTPSConnection(
-                    parsed.hostname, port=parsed.port, timeout=_OBSERVER_READ_TIMEOUT_SECONDS
+                    host, port=parsed.port, timeout=_OBSERVER_READ_TIMEOUT_SECONDS
                 )
             ) as connection:
+                if address:
+                    # Dial the supplied address; SNI, the verified certificate name
+                    # and the Host header stay the URL's hostname. wrap_socket takes
+                    # over the descriptor, so closing the raw socket is a no-op.
+                    with closing(
+                        socket.create_connection(
+                            (address, port), timeout=_OBSERVER_READ_TIMEOUT_SECONDS
+                        )
+                    ) as raw_socket:
+                        connection.sock = ssl.create_default_context().wrap_socket(
+                            raw_socket, server_hostname=host
+                        )
                 connection.request(
                     "POST",
                     parsed.path.rstrip("/") + "/" + route,
@@ -107,5 +143,33 @@ class CiAuthorityBoundary:
                     and json.dumps(reply.get("query"), sort_keys=True)
                     == json.dumps(query, sort_keys=True)
                 )
-        except (OSError, ValueError, TypeError, RecursionError, http.client.HTTPException):
-            return False
+        except (OSError, ValueError, TypeError, RecursionError, http.client.HTTPException) as error:
+            return _refuse(
+                detail=type(error).__name__
+                + " while reading /"
+                + route
+                + " from "
+                + (address or host)
+                + ":"
+                + str(port)
+                + " as "
+                + host
+            )
+
+
+def _connect_address() -> str | None:
+    """The validated override literal, "" when the variable is unset, None when invalid."""
+    value = os.environ.get(_CONNECT_ADDRESS_VARIABLE, "")
+    if not value:
+        return ""
+    try:
+        _ = ipaddress.ip_address(value)
+    except ValueError:
+        return None
+    return value
+
+
+def _refuse(*, detail: str) -> bool:
+    """Name the refusal on stderr; the token never appears in the detail."""
+    _ = sys.stderr.write(_REFUSAL_PREFIX + detail + "\n")
+    return False
