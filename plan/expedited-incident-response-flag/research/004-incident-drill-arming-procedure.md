@@ -438,3 +438,34 @@ The drill therefore proves the ledger and observer path, not those two obligatio
 **Q6. No producer command exists** for the genesis request, the successor, the `/arm` body or the PR block. The helper
 beside this note (`004-incident-arm-helper.py.txt`) fills that gap for the drill; a replayer needs the same formulas (they are all in section 2 and
 step 7).
+
+---
+
+## 7. Measured on the first run (2026-11-06, item livespec-dev-tooling-ws2idp, PR livespec-dev-tooling#3624)
+
+Three findings that change the procedure above; each cost one `/arm` attempt or would have cost the drill PR.
+
+**R2 was real: the reference clone had no `.beads/metadata.json`.** The observer's reader ran `bd show` as the
+`livespec-incident` account against `/var/lib/livespec-incident/reference`, whose `.beads/` held only the committed
+`config.yaml`; `bd` resolves its workspace and the Dolt port from the gitignored `metadata.json`, so the reader exited 78
+in 1.2 s with `no beads database found` and `/arm` answered 403 `canonical pre-merge authority unavailable`. The
+`incident_observer` role now renders the pointer (livespec-dev-tooling#3628); without `dolt_server_port` as a JSON
+integer, `bd` dials port 0. Step 1 gains a precondition: run the observer's exact reader argv as the service account
+once (`sudo -u livespec-incident` with the unit's environment) and require exit 0 before the first `/arm`.
+
+**R1 was real: the 10 s reader ceiling is shorter than a generation-2 pass under load.** After the pointer fix the same
+reader pass took 9.2 s at load 16, and `/arm` was refused at exactly 10.16 s, the `subprocess.run(timeout=10)` kill in
+`incident_observer_authority.py`. Seven `bd` calls cost 1.2–1.8 s each on this host at load 16–33, not the 1.1 s
+measured at load 12. The ceilings are being raised (reader 45 s, CI client 60 s) under the same item; until the
+observer serves that release, an arm on this host is a coin flip and every `/current` the CI job makes is another.
+
+**Auto-merge re-arms on every PR event.** `.github/workflows/auto-enable-merge.yml` enables rebase auto-merge on
+`opened`, `reopened`, `ready_for_review`, `synchronize` and `unlabeled` for any non-draft PR by the maintainer that does
+not carry `do-not-merge`; `gh pr merge --disable-auto` does not hold. Step 8's close/reopen would therefore re-enable it,
+and with the arm standing `ci-green` passes on reduced checks, so the drill PR would merge. Add the `do-not-merge` label
+BEFORE step 8 (a `labeled` event does not trigger the workflow); the incident entrance tests only membership of
+`expedited-incident-response` (`incident_ci_policy.py:116`) and never reads draft state, so either opt-out is admissible.
+
+Also measured: the two `/current` 403s the journal showed at 17:10Z and 17:12Z with no arm came from master-push CI runs
+(the omission-aware jobs consult the observer on every run), not from a probe. A journal line's source address is always
+`127.0.0.1` behind the tailscale front, so it never identifies the caller; the CI run timestamps do.
