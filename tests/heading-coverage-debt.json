@@ -282,13 +282,6 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario: a delegated pre-push wait interrupted by host sleep never reports a pass",
-    "work_item": "livespec-dev-tooling-ko26ez",
-    "first_seen": "2026-11-04"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
     "heading": "## Scenario: a delegated replay leg with no verdict falls back to a local run",
     "work_item": "livespec-dev-tooling-sewnfp",
     "first_seen": "2026-11-01"
