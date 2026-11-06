@@ -1,0 +1,210 @@
+#!/usr/bin/env python3
+"""Pure, stdlib-only builders for the incident arming drill. Writes NOTHING, calls NOTHING.
+
+Every subcommand reads JSON/arguments and prints JSON or text on stdout. The operator
+pipes the output into the real commands named in 004-incident-drill-arming-procedure.md.
+
+  genesis-request   canonical --genesis-json for `incident_authority.py publish-genesis`
+  successor         canonical --successor-json (pr-bound, generation+1) for `commit-transition`
+  arm               from a `read-current` reply: the POST /arm body, the arm id the observer
+                    will compute, the six-field /current + /admitted query, the PR-body block,
+                    and the POST /invalidate-ci body
+
+Sources (released bytes):
+  orchestrator v0.295.1  _incident_genesis.py:121-142, _incident_authority_payload.py:144-195,
+                         _incident_carrier.py:97-145, effects/_incident_authority_transition.py:60-73
+  dev-tooling  v1.183.1  incident_observer_control.py:81-124, incident_observer_admission.py:65-67,
+                         incident_ci_payload.py:39-78, incident_ci_event.py:15-17,
+                         incident_observer_invalidation.py:30-46
+"""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import sys
+
+
+def canonical(value: object) -> str:
+    """Sorted keys, compact separators: the orchestrator's canonical record bytes."""
+    return json.dumps(value, sort_keys=True, separators=(",", ":"))
+
+
+def genesis_request(args: argparse.Namespace) -> int:
+    attempt = {
+        "repository": args.repository,
+        "item_id": args.item,
+        "attempt_id": args.attempt,
+        "phase": "repair",
+        "operation_id": args.operation,
+        "generation": 1,
+        "owner": args.owner,
+        "base": args.input_parent,
+        "head": args.input_parent,
+        "pr_number": 0,
+        "landed_commits": [],
+        "landed_trees": [],
+        "original_paths": args.path,
+        "deferred_work": args.deferred,
+        "repayment_required": True,
+        "carrier": {
+            "state": "branch-reserved",
+            "target_ref": args.target_ref,
+            "input_parent": args.input_parent,
+            "staged_tree": args.staged_tree,
+        },
+    }
+    request = {
+        "schema": 1,
+        "principal": args.principal,
+        "expected_claim": args.expected_claim,
+        "attempt": attempt,
+    }
+    sys.stdout.write(canonical(request) + "\n")
+    return 0
+
+
+def successor(args: argparse.Namespace) -> int:
+    reply = json.load(sys.stdin)
+    before = reply["result"]["attempt"]
+    carrier = before["carrier"]
+    after = dict(before)
+    after.update(
+        generation=before["generation"] + 1,
+        operation_id=args.operation,
+        base=args.base_sha,
+        head=args.head_sha,
+        pr_number=args.pr_number,
+        carrier={
+            "state": "pr-bound",
+            "target_ref": carrier["target_ref"],
+            "input_parent": carrier["input_parent"],
+            "staged_tree": carrier["staged_tree"],
+            "remote_head": args.head_sha,
+        },
+    )
+    sys.stdout.write(canonical(after) + "\n")
+    return 0
+
+
+def arm(args: argparse.Namespace) -> int:
+    reply = json.load(sys.stdin)
+    if not (
+        reply.get("schema") == 1
+        and reply.get("status") == "verified"
+        and reply.get("authorizes_current_effects") is True
+        and reply["result"].get("is_current") is True
+    ):
+        sys.stderr.write("refused: not a verified, current read-current reply\n")
+        return 2
+    attempt = reply["result"]["attempt"]
+    receipt = canonical(attempt).encode()
+    request = {
+        "repository": attempt["repository"],
+        "incident_item_id": attempt["item_id"],
+        "attempt_id": attempt["attempt_id"],
+        "operation_id": attempt["operation_id"],
+        "generation": attempt["generation"],
+        "owner": attempt["owner"],
+        "phase": attempt["phase"],
+        "pr_number": attempt["pr_number"],
+        "base_sha": attempt["base"],
+        "head_sha": attempt["head"],
+        "authority_receipt": receipt.hex(),
+    }
+    snapshot = dict(request)
+    snapshot.update(
+        controller_release=args.controller_release,
+        controller_revision=args.controller_revision,
+        required_jobs=args.required_job,
+    )
+    # NOT the canonical form: the observer uses json.dumps(snapshot, sort_keys=True)
+    # with DEFAULT separators (", " and ": ").
+    arm_id = hashlib.sha256(json.dumps(snapshot, sort_keys=True).encode()).hexdigest()
+    digest = hashlib.sha256(receipt).hexdigest()
+    query = {
+        "repository": snapshot["repository"],
+        "arm_id": arm_id,
+        "pr_number": snapshot["pr_number"],
+        "base_sha": snapshot["base_sha"],
+        "head_sha": snapshot["head_sha"],
+        "receipt_digest": digest,
+    }
+    if args.expected_arm_id:
+        request["expected_arm_id"] = args.expected_arm_id
+    block = (
+        "<!-- livespec-incident-ci\n"
+        + json.dumps({"schema": 1, "arm": snapshot, "observer_arm_id": arm_id}, sort_keys=True)
+        + "\n-->"
+    )
+    invalidate = {
+        "repository": snapshot["repository"],
+        "arm_id": arm_id,
+        "incident_item_id": snapshot["incident_item_id"],
+        "attempt_id": snapshot["attempt_id"],
+        "generation": snapshot["generation"],
+        "owner": snapshot["owner"],
+        "phase": snapshot["phase"],
+        "incident_operation_id": snapshot["operation_id"],
+        "pr_number": snapshot["pr_number"],
+        "base_sha": snapshot["base_sha"],
+        "head_sha": snapshot["head_sha"],
+        "receipt_digest": digest,
+        "operation_id": args.invalidation_operation,
+    }
+    out = {
+        "arm_request": request,
+        "expected_arm_id": arm_id,
+        "receipt_digest": digest,
+        "query": query,
+        "pr_body_block": block,
+        "invalidate_ci_request": invalidate,
+    }
+    sys.stdout.write(json.dumps(out, indent=2, sort_keys=True) + "\n")
+    return 0
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    sub = parser.add_subparsers(dest="command", required=True)
+
+    g = sub.add_parser("genesis-request")
+    for name in (
+        "repository",
+        "item",
+        "attempt",
+        "operation",
+        "owner",
+        "principal",
+        "expected-claim",
+        "target-ref",
+        "input-parent",
+        "staged-tree",
+    ):
+        g.add_argument("--" + name, required=True)
+    g.add_argument("--path", action="append", required=True)
+    g.add_argument("--deferred", action="append", default=[])
+    g.set_defaults(run=genesis_request)
+
+    s = sub.add_parser("successor")
+    s.add_argument("--operation", required=True)
+    s.add_argument("--pr-number", required=True, type=int)
+    s.add_argument("--base-sha", required=True)
+    s.add_argument("--head-sha", required=True)
+    s.set_defaults(run=successor)
+
+    a = sub.add_parser("arm")
+    a.add_argument("--controller-release", required=True)
+    a.add_argument("--controller-revision", required=True)
+    a.add_argument("--required-job", action="append", required=True)
+    a.add_argument("--expected-arm-id", default=None)
+    a.add_argument("--invalidation-operation", default="drill-invalidate-1")
+    a.set_defaults(run=arm)
+
+    args = parser.parse_args()
+    return args.run(args)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
