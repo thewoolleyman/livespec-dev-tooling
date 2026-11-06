@@ -184,7 +184,7 @@ def test_a_serving_csr_that_does_not_match_the_worker_is_refused_by_name(
 def test_csrs_from_another_requester_another_signer_or_already_decided_are_left_alone(
     cluster: _Cluster,
 ) -> None:
-    _add_csr(cluster=cluster, name="csr-other-node", username="system:node:gmktec-xubuntu")
+    _add_csr(cluster=cluster, name="csr-other-node", username="system:node:peer-node-1")
     _add_csr(
         cluster=cluster, name="csr-client", signer="kubernetes.io/kube-apiserver-client-kubelet"
     )
