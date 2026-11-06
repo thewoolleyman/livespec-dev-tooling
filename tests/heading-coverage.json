@@ -2259,9 +2259,8 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a newly joined worker carries the admission hold",
-    "test": "TODO",
-    "reason": "A real test at the integration tier or above is owed for this scenario: a worker joined to a cluster (the isolated K3s fixture via join-fixture-worker.sh, or a host-captured production join) whose Node carries homelab-worker.livespec.dev/admission=hold:NoSchedule and on which an untolerating pod stays unscheduled. Observed host-captured in production on 2026-11-06 (livespec-dev-tooling-p4gsn5) and guarded at unit tier by tests.spec.test_homelab_worker_image.test_the_kubelet_registers_under_the_admission_hold_and_the_permanent_class_taint; livespec-dev-tooling-ko26ez owns it.",
-    "work_item": "livespec-dev-tooling-ko26ez"
+    "test": "tests.spec.test_homelab_worker_prove.test_a_newly_joined_worker_carries_the_admission_hold",
+    "reason": "Integration-tier: runs the real prove-worker.sh with --expect-admission-hold against a stub kubectl and asserts the Node carries homelab-worker.livespec.dev/admission=hold:NoSchedule and that a probe pod placed through the scheduler, tolerating the class taint but not the hold, stays Unschedulable; host-captured 2026-11-06: macbook-m4-max-homelab-worker joined production carrying the hold (livespec-dev-tooling-p4gsn5)."
   },
   {
     "spec_root": "SPECIFICATION",

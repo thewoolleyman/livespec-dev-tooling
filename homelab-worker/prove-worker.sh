@@ -18,6 +18,13 @@
 # and exec on the worker MUST fail, as they do while the API server reaches
 # kubelets only through K3s agent tunnels.
 #
+# With --expect-admission-hold, used at join time before an operator lifts
+# the hold, it also proves the scenario "a newly joined worker carries the
+# admission hold": the Node carries homelab-worker.livespec.dev/admission=
+# hold:NoSchedule, and a probe pod placed through the scheduler (by hostname
+# label, not nodeName, which would bypass every NoSchedule taint) that
+# tolerates the permanent class taint but not the hold stays unschedulable.
+#
 # PORT_FORWARD_SHELL (default `bash -c`) runs the port-forward check, so a
 # caller whose kubectl runs elsewhere can run the check where kubectl runs.
 # Proof pods tolerate the worker's admission hold and live in namespace
@@ -35,12 +42,13 @@ die() {
   exit 1
 }
 
-usage="usage: $prog <host> --peer-node <node> [--expect-streaming-failure]"
+usage="usage: $prog <host> --peer-node <node> [--expect-streaming-failure] [--expect-admission-hold]"
 [ "$#" -ge 1 ] || die "$usage"
 host="$1"
 shift
 peer=""
 negative=0
+hold=0
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --peer-node)
@@ -50,6 +58,10 @@ while [ "$#" -gt 0 ]; do
       ;;
     --expect-streaming-failure)
       negative=1
+      shift
+      ;;
+    --expect-admission-hold)
+      hold=1
       shift
       ;;
     *) die "unknown argument '$1'; $usage" ;;
@@ -164,6 +176,35 @@ EOF
   kubectl delete networkpolicy --namespace "$ns" deny-to-server-worker >/dev/null
   sleep "${POLICY_SETTLE_SECONDS:-10}"
   expect networkpolicy-lifted-on-worker ok kubectl exec --namespace "$ns" client-peer -- wget -qO- -T 5 "http://$ip_worker:8080/"
+fi
+
+if [ "$hold" = 1 ]; then
+  if kubectl get node "$worker" -o 'jsonpath={range .spec.taints[*]}{.key}={.value}:{.effect}{"\n"}{end}' |
+    grep -qx 'homelab-worker.livespec.dev/admission=hold:NoSchedule'; then
+    result admission-hold-taint PASS "node $worker carries the admission hold"
+  else
+    result admission-hold-taint FAIL "node $worker does not carry homelab-worker.livespec.dev/admission=hold:NoSchedule"
+  fi
+  cat <<EOF | kubectl apply -f - >/dev/null
+apiVersion: v1
+kind: Pod
+metadata:
+  name: untolerated
+  namespace: $ns
+spec:
+  nodeSelector:
+    kubernetes.io/hostname: $worker
+  tolerations:
+    - key: homelab-worker.livespec.dev/class
+      operator: Exists
+      effect: NoSchedule
+  containers:
+    - name: main
+      image: $busybox
+      command: [sh, -c, "exec sleep 3600"]
+EOF
+  expect untolerated-pod-unscheduled ok kubectl wait --namespace "$ns" pod/untolerated \
+    --for='jsonpath={.status.conditions[?(@.type=="PodScheduled")].reason}=Unschedulable' --timeout=60s
 fi
 
 if [ "$negative" = 1 ]; then label="the streaming negative control"; else label="the worker proof"; fi
