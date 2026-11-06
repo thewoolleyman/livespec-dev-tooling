@@ -65,13 +65,6 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "non-functional-requirements.md",
-    "heading": "## Developer host platforms",
-    "work_item": "livespec-dev-tooling-ko26ez",
-    "first_seen": "2026-11-04"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "non-functional-requirements.md",
     "heading": "## Docker engine install guard",
     "work_item": "livespec-dev-tooling-ubpufs",
     "first_seen": "2026-10-15"
