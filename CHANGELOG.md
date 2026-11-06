@@ -58,6 +58,19 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.181.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.180.0...v1.181.0) (2026-11-06)
+
+
+### Features
+
+* **ansible:** system.slice holds a host-declared root-level CPU share on the k3s server ([366fe93](https://github.com/thewoolleyman/livespec-dev-tooling/commit/366fe93f74d94c83dbdf35847a91340451fbe192))
+
+
+### Bug Fixes
+
+* **ansible:** keep the incident observer's reference clone owner-writable only (livespec-dev-tooling-w7n3ad) ([ae8f14e](https://github.com/thewoolleyman/livespec-dev-tooling/commit/ae8f14e7a90c430232d83f993cc7b4b77d250ec6))
+* **ansible:** start the incident observer verified on a first apply (livespec-dev-tooling-w7n3ad) ([a00fc10](https://github.com/thewoolleyman/livespec-dev-tooling/commit/a00fc1060d099dc595f2e43204bc8296be47481e))
+
 ## [1.180.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.179.3...v1.180.0) (2026-11-06)
 
 
