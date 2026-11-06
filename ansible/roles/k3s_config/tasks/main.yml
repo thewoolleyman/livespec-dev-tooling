@@ -385,6 +385,74 @@
     or (k3s_config_cpu_weight_removed.changed | default(false))
   tags: [k3s_cpu_weight]
 
+# system.slice's ROOT-LEVEL CPU SHARE (livespec-dev-tooling-cetudy). Measured on
+# poweredge-xubuntu 2026-11-05: the k3s server runs in /system.slice/k3s.service,
+# and system.slice sat at cpu.weight 100 against kubepods.slice at 2813, so at
+# full contention all of system.slice was entitled to about 2.5 of 72 CPUs and
+# the API server's datastore p99 reached 7 s. These five tasks carry the tag
+# k3s_system_slice_cpu_weight of their own, so an apply narrowed to it touches
+# nothing else this role manages. systemd re-applies a changed CPUWeight= to the
+# running slice on the daemon-reload below. NOTHING HERE RESTARTS k3s — no task
+# notifies the handler chain, and the reload has no `state:`.
+
+- name: Refuse a system.slice CPU weight systemd would not accept
+  ansible.builtin.assert:
+    that:
+      - k3s_config_system_slice_cpu_weight | string | regex_search('^[0-9]+$') is not none
+      - k3s_config_system_slice_cpu_weight | int >= 1
+      - k3s_config_system_slice_cpu_weight | int <= 10000
+    fail_msg: >-
+      k3s_config_system_slice_cpu_weight is
+      {{ k3s_config_system_slice_cpu_weight | to_json }}; it must be an integer
+      from 1 to 10000 (systemd's CPUWeight= range), or empty to manage no weight.
+    success_msg: the system.slice CPU weight is one systemd accepts
+  when: k3s_config_system_slice_cpu_weight | string | length > 0
+  tags: [k3s_system_slice_cpu_weight]
+
+- name: Create the drop-in directory for the system.slice CPU weight
+  ansible.builtin.file:
+    path: "{{ k3s_config_system_slice_drop_in_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+  when: k3s_config_system_slice_cpu_weight | string | length > 0
+  tags: [k3s_system_slice_cpu_weight]
+
+- name: Write the system.slice CPU weight drop-in
+  ansible.builtin.template:
+    src: system-slice-cpu-weight.conf.j2
+    dest: "{{ k3s_config_system_slice_drop_in_dir }}/{{ k3s_config_system_slice_cpu_weight_drop_in }}"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+  register: k3s_config_system_slice_cpu_weight_written
+  when: k3s_config_system_slice_cpu_weight | string | length > 0
+  tags: [k3s_system_slice_cpu_weight]
+
+- name: Remove the system.slice CPU weight drop-in when none is declared
+  ansible.builtin.file:
+    path: "{{ k3s_config_system_slice_drop_in_dir }}/{{ k3s_config_system_slice_cpu_weight_drop_in }}"
+    state: absent
+  become: true
+  register: k3s_config_system_slice_cpu_weight_removed
+  when: k3s_config_system_slice_cpu_weight | string | length == 0
+  tags: [k3s_system_slice_cpu_weight]
+
+- name: Make systemd apply the changed system.slice CPU weight to the running slice
+  # daemon_reload ONLY. No `state:` — a k3s restart kills every CI job on the
+  # node and is a human-gated window. Reached only when this pass changed the
+  # drop-in, so a converged node reloads nothing.
+  ansible.builtin.systemd_service:
+    daemon_reload: true
+  become: true
+  when: >-
+    (k3s_config_system_slice_cpu_weight_written.changed | default(false))
+    or (k3s_config_system_slice_cpu_weight_removed.changed | default(false))
+  tags: [k3s_system_slice_cpu_weight]
+
 - name: Create the packaged-manifest directory on the server
   # 0700 as the shell installed it. This is under /var/lib/rancher/k3s/server/
   # on disk, NOT the tmpfs datastore, so the marker below is reboot-durable.
