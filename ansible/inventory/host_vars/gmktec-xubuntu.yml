@@ -270,16 +270,8 @@ fabro_server_instances:
     # candidate at 0 runs on 2026-11-04 (probe run 01M6MFJV4CA2). ROLLBACK:
     # v0393-0a867ce16/fabro and
     # f201971b1035c47b43fcccd569bf5895562c417c5fd6ff4f1b0d9c74a56a3dcc.
-    # 2026-11-06: bbe693847 = 85af3547e plus thewoolleyman/fabro#31-#35. The only
-    # runtime change is #33, which pins Petri c6bfd5e3 (thewoolleyman/petri#4,
-    # bd-ib-aqcgxz): the post-exit output drain no longer reads a stalled log
-    # consumer as silence, so a command or process step under load keeps its
-    # output's tail. #31, #32 and #35 are test-only; #34 is nextest config.
-    # Built on fabro-k3s by carrier-build run 42231707109. ROLLBACK:
-    # v0393-85af3547e/fabro and
-    # d6fcfafab6da1bfd32c3b96b4153f93367fe8a5b4fc18b0efecacad80b1e5711.
-    binary_source: /home/ubuntu/.local/state/fabro-web-prod/v0393-bbe693847/fabro
-    binary_sha256: 1529aa9f86b5bf346ae20a731bdf1cb433bc678825c8a43d0c21f513dac0ab1f
+    binary_source: /home/ubuntu/.local/state/fabro-web-prod/v0393-85af3547e/fabro
+    binary_sha256: d6fcfafab6da1bfd32c3b96b4153f93367fe8a5b4fc18b0efecacad80b1e5711
     # The tag the orchestrator workflow pins today
     # (.claude-plugin/.fabro/workflows/implement-work-item/workflow.toml,
     # python-agent-v1.136.2). On this engine the catalog, not the workflow
@@ -556,16 +548,8 @@ fabro_server_instances:
     # to prove it at 0 runs before the fleet instance takes it. ROLLBACK:
     # v0393-0a867ce16/fabro and
     # f201971b1035c47b43fcccd569bf5895562c417c5fd6ff4f1b0d9c74a56a3dcc.
-    # 2026-11-06: bbe693847 = 85af3547e plus thewoolleyman/fabro#31-#35. The only
-    # runtime change is #33, which pins Petri c6bfd5e3 (thewoolleyman/petri#4,
-    # bd-ib-aqcgxz): the post-exit output drain no longer reads a stalled log
-    # consumer as silence, so a command or process step under load keeps its
-    # output's tail. #31, #32 and #35 are test-only; #34 is nextest config.
-    # Built on fabro-k3s by carrier-build run 42231707109. ROLLBACK:
-    # v0393-85af3547e/fabro and
-    # d6fcfafab6da1bfd32c3b96b4153f93367fe8a5b4fc18b0efecacad80b1e5711.
-    binary_source: /home/ubuntu/.local/state/fabro-web-prod/v0393-bbe693847/fabro
-    binary_sha256: 1529aa9f86b5bf346ae20a731bdf1cb433bc678825c8a43d0c21f513dac0ab1f
+    binary_source: /home/ubuntu/.local/state/fabro-web-prod/v0393-85af3547e/fabro
+    binary_sha256: d6fcfafab6da1bfd32c3b96b4153f93367fe8a5b4fc18b0efecacad80b1e5711
     # The fleet instance's catalog, entry for entry; the reasons for each
     # entry are given there. Bump the images together with it.
     environments:
@@ -721,16 +705,8 @@ fabro_server_instances:
     # candidate at 0 runs on 2026-11-04 (probe run 01M6MFJV4CA2). ROLLBACK:
     # v0393-0a867ce16/fabro and
     # f201971b1035c47b43fcccd569bf5895562c417c5fd6ff4f1b0d9c74a56a3dcc.
-    # 2026-11-06: bbe693847 = 85af3547e plus thewoolleyman/fabro#31-#35. The only
-    # runtime change is #33, which pins Petri c6bfd5e3 (thewoolleyman/petri#4,
-    # bd-ib-aqcgxz): the post-exit output drain no longer reads a stalled log
-    # consumer as silence, so a command or process step under load keeps its
-    # output's tail. #31, #32 and #35 are test-only; #34 is nextest config.
-    # Built on fabro-k3s by carrier-build run 42231707109. ROLLBACK:
-    # v0393-85af3547e/fabro and
-    # d6fcfafab6da1bfd32c3b96b4153f93367fe8a5b4fc18b0efecacad80b1e5711.
-    binary_source: /home/ubuntu/.local/state/fabro-web-prod/v0393-bbe693847/fabro
-    binary_sha256: 1529aa9f86b5bf346ae20a731bdf1cb433bc678825c8a43d0c21f513dac0ab1f
+    binary_source: /home/ubuntu/.local/state/fabro-web-prod/v0393-85af3547e/fabro
+    binary_sha256: d6fcfafab6da1bfd32c3b96b4153f93367fe8a5b4fc18b0efecacad80b1e5711
     # The tag FOLLOWS homelab's own workflow pin
     # (.fabro/workflows/implement-work-item/workflow.toml in mi-homelab/homelab,
     # python-agent-v1.126.0), not the orchestrator's; bump the two together.
