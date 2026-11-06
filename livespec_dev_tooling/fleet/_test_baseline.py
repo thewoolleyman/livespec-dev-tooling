@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import platform
 import re
 import socket
@@ -38,6 +39,8 @@ _PYTEST_COUNT_COMMAND = (
 )
 _PYTEST_TEST_COMMAND = ("pytest", "-q")
 _MISE_UV = ("mise", "exec", "--", "uv", "run")
+_NEXTEST_LIST_COMMAND = ("cargo", "nextest", "list", "--message-format", "json")
+_NEXTEST_TEST_COMMAND = ("cargo", "nextest", "run", "--workspace", "--all-features")
 _PYTEST_COUNT = re.compile(r"(\d+) tests? collected")
 
 
@@ -79,9 +82,73 @@ def _python_row(*, path: Path, runner: Runner) -> RepositoryRow:
     }
 
 
+def _nextest_count(*, output: str) -> int:
+    """Count nextest's one-JSON-object-per-test-list-entry output."""
+    return sum(
+        1
+        for line in output.splitlines()
+        if isinstance(json.loads(line), dict) and json.loads(line).get("type") == "test"
+    )
+
+
+def _rust_row(*, path: Path, runner: Runner) -> RepositoryRow:
+    """Measure a Rust workspace with cargo nextest."""
+    collected = runner(command=_NEXTEST_LIST_COMMAND, cwd=path)
+    started = time.perf_counter()
+    _ = runner(command=_NEXTEST_TEST_COMMAND, cwd=path)
+    runtime_seconds = time.perf_counter() - started
+    cargo_version = runner(command=("cargo", "--version"), cwd=path)
+    return {
+        "name": path.name,
+        "path": str(path),
+        "ecosystem": "rust",
+        "test_count": _nextest_count(output=collected.stdout),
+        "count_command": _command_text(command=_NEXTEST_LIST_COMMAND),
+        "test_command": _command_text(command=_NEXTEST_TEST_COMMAND),
+        "runtime_seconds": runtime_seconds,
+        "toolchain_versions": {"cargo": cargo_version.stdout.strip()},
+    }
+
+
+def _shell_scripts(*, path: Path) -> tuple[Path, ...]:
+    """Return every shell test the shell-only repository will execute."""
+    return tuple(sorted(path.rglob("*.test.sh")))
+
+
+def _shell_row(*, path: Path, runner: Runner) -> RepositoryRow:
+    """Measure a shell-tested repository one executable script at a time."""
+    scripts = _shell_scripts(path=path)
+    started = time.perf_counter()
+    for script in scripts:
+        _ = runner(command=("bash", str(script.relative_to(path))), cwd=path)
+    runtime_seconds = time.perf_counter() - started
+    bash_version = runner(command=("env", "bash", "--version"), cwd=path)
+    return {
+        "name": path.name,
+        "path": str(path),
+        "ecosystem": "shell",
+        "test_count": len(scripts),
+        "count_command": "one per executed *.test.sh script",
+        "test_command": " && ".join(
+            _command_text(command=("bash", str(script.relative_to(path)))) for script in scripts
+        ),
+        "runtime_seconds": runtime_seconds,
+        "toolchain_versions": {"bash": bash_version.stdout.splitlines()[0]},
+    }
+
+
+def _repository_row(*, path: Path, runner: Runner) -> RepositoryRow:
+    """Select the stated counting method from a repository's test layout."""
+    if path.joinpath("Cargo.toml").is_file():
+        return _rust_row(path=path, runner=runner)
+    if _shell_scripts(path=path):
+        return _shell_row(path=path, runner=runner)
+    return _python_row(path=path, runner=runner)
+
+
 def measure_repositories(*, paths: tuple[Path, ...], runner: Runner) -> dict[str, object]:
-    """Measure Python repository baselines and return a JSON-ready fleet report."""
-    rows = [_python_row(path=path, runner=runner) for path in paths]
+    """Measure fleet repository baselines and return a JSON-ready report."""
+    rows = [_repository_row(path=path, runner=runner) for path in paths]
     return {
         "host": {"hostname": socket.gethostname(), "platform": platform.platform()},
         "timing_method": "time.perf_counter around each repository test-only command",
