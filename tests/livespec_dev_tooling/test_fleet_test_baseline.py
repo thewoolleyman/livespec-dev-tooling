@@ -63,6 +63,79 @@ def test_python_repository_reports_exact_collection_and_test_only_timing(
     assert row["toolchain_versions"]["pytest"] == "pytest 8.3.4"
 
 
+def test_rust_and_shell_repositories_join_python_in_one_fleet_total(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Rust nextest and shell scripts use their stated counting methods."""
+    python_repository = tmp_path / "pytest-suite"
+    rust_repository = tmp_path / "rust-suite"
+    shell_repository = tmp_path / "shell-suite"
+    python_repository.mkdir()
+    rust_repository.mkdir()
+    shell_repository.mkdir()
+    _ = rust_repository.joinpath("Cargo.toml").write_text("[workspace]\n", encoding="utf-8")
+    for name in ("first.test.sh", "second.test.sh"):
+        _ = shell_repository.joinpath(name).write_text("#!/usr/bin/env bash\n", encoding="utf-8")
+    module = _baseline()
+
+    def fake_run(*, command: tuple[str, ...], cwd: Path) -> subprocess.CompletedProcess[str]:
+        assert cwd in {python_repository, rust_repository, shell_repository}
+        if command[:3] == ("cargo", "nextest", "list"):
+            return subprocess.CompletedProcess(
+                args=command,
+                returncode=0,
+                stdout=(
+                    '{"type":"test","test_name":"one"}\n'
+                    '{"type":"test","test_name":"two"}\n'
+                    '{"type":"test","test_name":"three"}\n'
+                ),
+                stderr="",
+            )
+        if command[:3] == ("cargo", "nextest", "run"):
+            return subprocess.CompletedProcess(args=command, returncode=0, stdout="", stderr="")
+        if command[0] == "bash":
+            return subprocess.CompletedProcess(args=command, returncode=0, stdout="", stderr="")
+        if "--collect-only" in command:
+            return subprocess.CompletedProcess(
+                args=command,
+                returncode=0,
+                stdout="5 tests collected in 0.01s\n",
+                stderr="",
+            )
+        if "--version" in command:
+            versions = {
+                "cargo": "cargo 1.82.0",
+                "bash": "GNU bash, version 5.2.37",
+                "pytest": "pytest 8.3.4",
+                "python": "Python 3.12.7",
+            }
+            return subprocess.CompletedProcess(
+                args=command,
+                returncode=0,
+                stdout=f"{versions[command[-2] if command[-1] == '--version' else command[0]]}\n",
+                stderr="",
+            )
+        return subprocess.CompletedProcess(args=command, returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(module, "_run", fake_run)
+
+    report = module.measure_repositories(
+        paths=(python_repository, rust_repository, shell_repository)
+    )
+
+    rows = {row["name"]: row for row in report["repositories"]}
+    assert rows["pytest-suite"]["test_count"] == 5
+    assert rows["rust-suite"]["test_count"] == 3
+    assert rows["rust-suite"]["count_command"] == "cargo nextest list --message-format json"
+    assert rows["rust-suite"]["test_command"] == "cargo nextest run --workspace --all-features"
+    assert rows["shell-suite"]["test_count"] == 2
+    assert rows["shell-suite"]["count_command"] == "one per executed *.test.sh script"
+    assert report["fleet_totals"]["test_count"] == 10
+    assert report["fleet_totals"]["runtime_seconds"] == sum(
+        row["runtime_seconds"] for row in report["repositories"]
+    )
+
+
 def test_repository_runner_executes_the_declared_command(
     *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
