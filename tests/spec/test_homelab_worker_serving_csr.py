@@ -62,7 +62,12 @@ def cluster(tmp_path: Path) -> _Cluster:
         "#!/bin/bash\n"
         f'root="{root}"\n'
         'case "$1 $2" in\n'
-        '  "get node") [ -f "$root/node-ips" ] || exit 1; cat "$root/node-ips" ;;\n'
+        '  "get node")\n'
+        '    if [ -f "$root/lookup-error" ]; then cat "$root/lookup-error" >&2; exit 1; fi\n'
+        '    if [ ! -f "$root/node-ips" ]; then\n'
+        '      echo "Error from server (NotFound): nodes \\"$3\\" not found" >&2; exit 1\n'
+        "    fi\n"
+        '    cat "$root/node-ips" ;;\n'
         '  "get csr")\n'
         '    if [ "$3" = "-o" ]; then cat "$root/list"\n'
         '    elif [ "$5" = "jsonpath={.spec.request}" ]; then cat "$root/$3.request"\n'
@@ -196,4 +201,18 @@ def test_no_csr_is_approved_for_a_worker_whose_node_is_not_registered(cluster: _
     result = _approve(cluster=cluster)
     assert result.returncode != 0
     assert "is not registered" in result.stderr
+    assert _approved(cluster=cluster) == []
+
+
+def test_a_failed_node_lookup_is_reported_as_the_error_not_as_an_absent_node(
+    cluster: _Cluster,
+) -> None:
+    (cluster.root / "lookup-error").write_text(
+        "error: error parsing jsonpath: unclosed action\n", encoding="utf-8"
+    )
+    _add_csr(cluster=cluster, name="csr-good")
+    result = _approve(cluster=cluster)
+    assert result.returncode != 0
+    assert "is not registered" not in result.stderr
+    assert "error parsing jsonpath" in result.stderr
     assert _approved(cluster=cluster) == []
