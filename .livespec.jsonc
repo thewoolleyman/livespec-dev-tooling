@@ -218,6 +218,19 @@
       // petri cancels on 2026-11-04 were false kills). 21600 s leaves a silent run to
       // the whole-run wall budget. REVERT this key once bd-ib-snq7o6 is released.
       "stall_timeout_seconds": 21600,
+      // CUTOVER (2026-11-06, livespec-dev-tooling-truk55). With this key true every
+      // claim writer of this tenant (every Dispatcher, intake, the human valves and
+      // reconciliation) changes an item's status, `fabro` assignee or run stamp only
+      // after winning the item's current claim token, and names the successor in that
+      // one write (orchestrator contracts.md, "Dispatcher policy settings", the Claim
+      // tokens bullet). It was committed only after `migrate_claim_tokens.py` named an
+      // open token on every non-closed item of this tenant with every claim writer
+      // stopped, and a survey then exited 0. Committed-configuration only: the drive
+      // configuration API cannot set it. A tenant that runs with it false again needs
+      // that migration pass re-run, with writers stopped, before it returns to true.
+      // Incident genesis for an item of this tenant (`incident_authority.py
+      // publish-genesis`) refuses until this key is true.
+      "claim_tokens": true,
       // Committed maintainer delegation of the human valves (orchestrator spec
       // v282, contracts.md journal invoker attribution, "Delegated valve
       // authority"). A press `--invoker delegate:legacy-coordinator-agent
