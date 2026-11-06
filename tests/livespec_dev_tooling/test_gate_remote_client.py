@@ -735,6 +735,21 @@ def test_a_gate_that_never_reaches_a_terminal_state_deletes_its_job() -> None:
     assert "delete-ref" not in cluster.kinds
 
 
+def test_failed_abandoned_job_cleanup_is_reported_without_changing_no_verdict(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A cleanup fault is visible but does not invent a gate verdict."""
+    cluster = _StubCluster(job_states=("Suspended",), fails=("delete-job",))
+    request = dataclasses.replace(_REQUEST, poll_timeout_seconds=10.0)
+    outcome = run_gate(request=request, runner=cluster, sleeper=cluster.sleep)
+    assert isinstance(outcome, Failure)
+    assert outcome.failure().step == "await-gate-terminal"
+    assert (
+        capsys.readouterr().err
+        == f"could not delete abandoned gate Job {_JOB}: delete-job refused\n"
+    )
+
+
 def test_a_job_the_cluster_will_not_report_on_is_retried_then_retains_its_ref() -> None:
     """A read refusal is retried, but never authorizes deleting a live Job's ref."""
     cluster = _StubCluster(fails=("get-job",))
