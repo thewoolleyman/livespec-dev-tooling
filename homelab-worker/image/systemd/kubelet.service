@@ -11,7 +11,7 @@ ConditionPathExists=/etc/homelab-worker/kubelet.env
 
 [Service]
 EnvironmentFile=/etc/homelab-worker/kubelet.env
-ExecStart=/usr/local/bin/kubelet --config=/etc/homelab-worker/kubelet-config.yaml --bootstrap-kubeconfig=/etc/homelab-worker/bootstrap-kubeconfig --kubeconfig=/var/lib/kubelet/kubeconfig --container-runtime-endpoint=unix:///run/containerd/containerd.sock --node-ip=${NODE_IP} --hostname-override=${NODE_NAME} --register-with-taints=homelab-worker.livespec.dev/admission=hold:NoSchedule --node-labels=homelab-worker.livespec.dev/class=worker,homelab-worker.livespec.dev/host=${WORKER_HOST}
+ExecStart=/usr/local/bin/kubelet --config=/etc/homelab-worker/kubelet-config.yaml --bootstrap-kubeconfig=/etc/homelab-worker/bootstrap-kubeconfig --kubeconfig=/var/lib/kubelet/kubeconfig --container-runtime-endpoint=unix:///run/containerd/containerd.sock --node-ip=${NODE_IP} --hostname-override=${NODE_NAME} --register-with-taints=homelab-worker.livespec.dev/admission=hold:NoSchedule,homelab-worker.livespec.dev/class=worker:NoSchedule --node-labels=homelab-worker.livespec.dev/class=worker,homelab-worker.livespec.dev/host=${WORKER_HOST}
 Restart=always
 RestartSec=10
 

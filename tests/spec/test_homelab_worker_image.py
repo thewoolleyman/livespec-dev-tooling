@@ -92,9 +92,15 @@ def test_systemd_is_pid_1_and_the_runtime_uses_the_systemd_cgroup_driver() -> No
     assert "SystemdCgroup = true" in (_IMAGE / "containerd-config.toml").read_text(encoding="utf-8")
 
 
-def test_the_kubelet_registers_under_the_admission_hold_taint() -> None:
+def test_the_kubelet_registers_under_the_admission_hold_and_the_permanent_class_taint() -> None:
+    # research/009: the hold is lifted for admitted work, the class taint never is, so lifting
+    # the hold cannot draw the fleet's amd64-only pods onto the arm64 worker.
     unit = (_IMAGE / "systemd" / "kubelet.service").read_text(encoding="utf-8")
-    assert "--register-with-taints=homelab-worker.livespec.dev/admission=hold:NoSchedule" in unit
+    [flag] = re.findall(r"--register-with-taints=(\S+)", unit)
+    assert set(flag.split(",")) == {
+        "homelab-worker.livespec.dev/admission=hold:NoSchedule",
+        "homelab-worker.livespec.dev/class=worker:NoSchedule",
+    }
     assert "--bootstrap-kubeconfig=" in unit
 
 
