@@ -50,6 +50,10 @@ from livespec_dev_tooling.fleet._plugin_settings import (  # noqa: E402
     split_enablement,
     vacuity_findings,
 )
+from livespec_dev_tooling.fleet._plugin_startup import (  # noqa: E402
+    _logged_runner,
+    _startup_currency,
+)
 
 __all__: list[str] = [
     "ArtifactReader",
@@ -236,7 +240,7 @@ def _run_commands(
     return tuple(findings)
 
 
-def ensure(
+def ensure(  # noqa: PLR0913 — preserve existing I/O seams while adding proven skip sets.
     *,
     settings_text: str,
     project_root: str,
@@ -244,6 +248,8 @@ def ensure(
     read_registry: RegistryReader,
     read_artifact: ArtifactReader = plugin_artifact_findings,
     remove_cache_dir: CacheDirRemover = remove_plugin_cache_dir,
+    current_plugins: frozenset[str] = frozenset(),
+    registered_marketplaces: frozenset[str] = frozenset(),
 ) -> tuple[str, ...]:
     """Provision from settings, then confirm it landed. Empty means provisioned.
 
@@ -254,7 +260,16 @@ def ensure(
     if pre:
         return pre
     commands = planned_commands(settings_text=settings_text)
-    command_findings = _run_commands(commands=commands, runner=runner)
+    needed = tuple(
+        command
+        for command in commands
+        if (
+            command[4] not in registered_marketplaces
+            if command[2] == "marketplace"
+            else command[3] not in current_plugins
+        )
+    )
+    command_findings = _run_commands(commands=needed, runner=runner)
     if command_findings:
         return command_findings
     registry_text = read_registry()
@@ -290,6 +305,14 @@ def _read_installed_registry() -> str | None:  # pragma: no cover
     return path.read_text(encoding="utf-8") if path.is_file() else None
 
 
+def _read_marketplace_registry() -> str | None:  # pragma: no cover
+    path = Path.home() / ".claude/plugins/known_marketplaces.json"
+    try:
+        return path.read_text(encoding="utf-8")
+    except OSError:
+        return None
+
+
 def main() -> int:  # pragma: no cover
     """CLI entry point for `python -m livespec_dev_tooling.fleet.ensure_plugins`.
 
@@ -305,11 +328,19 @@ def main() -> int:  # pragma: no cover
         _ = sys.stderr.write(f"ensure_plugins: {finding}\n")
     if precondition:
         return 3
+    current, registered = _startup_currency(
+        settings_text=settings_text,
+        project_root=str(root),
+        registry_text=_read_installed_registry(),
+        marketplaces_text=_read_marketplace_registry(),
+    )
     findings = ensure(
         settings_text=settings_text,
         project_root=str(root),
-        runner=subprocess_runner,
+        runner=_logged_runner,
         read_registry=_read_installed_registry,
+        current_plugins=current,
+        registered_marketplaces=registered,
     )
     for finding in findings:
         _ = sys.stderr.write(f"ensure_plugins: {finding}\n")
