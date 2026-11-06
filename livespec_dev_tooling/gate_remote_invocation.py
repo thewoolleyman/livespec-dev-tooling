@@ -30,6 +30,7 @@ exclusive by construction.
 
 from __future__ import annotations
 
+import logging
 import shutil
 import subprocess
 import sys
@@ -57,6 +58,7 @@ __all__: list[str] = [
     "StepOutcome",
     "default_gate_command_runner",
     "default_sleeper",
+    "report_gate_cleanup_failure",
     "require_invocation",
     "require_success",
 ]
@@ -213,5 +215,25 @@ def require_success(*, step: str, argv: Sequence[str], outcome: GateCommandOutco
     return Failure(
         GateStepFailed(
             step=step, argv=tuple(argv), returncode=result.returncode, detail=result.stderr
+        )
+    )
+
+
+def report_gate_cleanup_failure(*, job_name: str, outcome: StepOutcome) -> None:
+    """Emit a failed cleanup without altering the caller's result track."""
+    if not isinstance(outcome, Failure):
+        return
+    handler = logging.StreamHandler()
+    handler.terminator = ""
+    handler.setFormatter(logging.Formatter("%(message)s"))
+    _ = handler.handle(
+        logging.LogRecord(
+            name=__name__,
+            level=logging.ERROR,
+            pathname=__file__,
+            lineno=0,
+            msg=f"could not delete abandoned gate Job {job_name}: {outcome.failure().detail}",
+            args=(),
+            exc_info=None,
         )
     )

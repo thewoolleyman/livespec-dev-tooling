@@ -24,8 +24,10 @@ from returns.result import Failure, Success
 from livespec_dev_tooling.gate_remote_invocation import (
     GateCommandNotRun,
     GateCommandResult,
+    GateStepFailed,
     default_gate_command_runner,
     default_sleeper,
+    report_gate_cleanup_failure,
     require_invocation,
     require_success,
 )
@@ -124,6 +126,32 @@ def test_a_streaming_invocation_captures_nothing_so_the_child_owns_the_terminal(
     outcome = default_gate_command_runner(argv=_ARGV, cwd=Path("/repo"), stream=True)
     assert seen["capture_output"] is False
     assert outcome == Success(GateCommandResult(returncode=0, stdout="", stderr=""))
+
+
+def test_a_gate_cleanup_failure_is_reported_but_a_success_stays_silent(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Reporting cleanup trouble must not turn it into another result track."""
+    report_gate_cleanup_failure(
+        job_name="gate-widget-abcde",
+        outcome=Success(GateCommandResult(returncode=0, stdout="", stderr="")),
+    )
+    report_gate_cleanup_failure(
+        job_name="gate-widget-abcde",
+        outcome=Failure(
+            GateStepFailed(
+                step="delete-abandoned-gate-job",
+                argv=("kubectl", "delete", "job"),
+                returncode=1,
+                detail="delete-job refused\n",
+            )
+        ),
+    )
+
+    assert (
+        capsys.readouterr().err
+        == "could not delete abandoned gate Job gate-widget-abcde: delete-job refused\n"
+    )
 
 
 def test_the_default_sleeper_sleeps_for_the_interval_it_is_given(

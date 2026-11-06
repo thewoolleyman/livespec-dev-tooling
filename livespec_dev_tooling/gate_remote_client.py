@@ -95,6 +95,7 @@ from livespec_dev_tooling.gate_remote_invocation import (
     StepOutcome,
     default_gate_command_runner,
     default_sleeper,
+    report_gate_cleanup_failure,
     require_invocation,
     require_success,
 )
@@ -441,7 +442,7 @@ def _gate_a_pushed_tree(
     )
     if isinstance(terminal, Failure):
         deleted = _delete_abandoned_gate_job(request=request, runner=runner, job_name=job_name)
-        _ = deleted
+        report_gate_cleanup_failure(job_name=job_name, outcome=deleted)
         # A delete acknowledgement does not prove the Job has ceased using its
         # mirror input, so the existing mirror sweep remains the collector for
         # this no-verdict path.
@@ -520,18 +521,6 @@ def _failure_message(*, request: GateRunRequest, runner: GateCommandRunner, job_
     return read.map(lambda ran: ran.stdout.strip()).value_or("")
 
 
-def _poll_budget(*, request: GateRunRequest) -> int:
-    """How many polls the timeout buys at this interval.
-
-    Derived rather than read from a clock, so the client needs no time source
-    beyond the `Sleeper` its tests already substitute. It therefore bounds
-    POLLS, not wall-clock: a slow API server makes each poll longer and the real
-    ceiling correspondingly later. That is the honest cost of one fewer seam,
-    and the bound's job is to stop an unbounded wait, not to time it.
-    """
-    return max(1, int(request.poll_timeout_seconds // request.poll_interval_seconds))
-
-
 def _await_terminal_state(
     *, request: GateRunRequest, runner: GateCommandRunner, sleeper: Sleeper, job_name: str
 ) -> Result[Terminal, GateStepFailed]:
@@ -551,7 +540,7 @@ def _await_terminal_state(
     """
     argv = [*_kubectl(request=request), "get", "job", job_name, "--output", "json"]
     last_refusal: GateStepFailed | None = None
-    polls = _poll_budget(request=request)
+    polls = request.poll_budget()
     for poll in range(polls):
         lifted = require_success(
             step=_AWAIT_STEP, argv=argv, outcome=runner(argv=argv, cwd=request.repo_root)
