@@ -678,8 +678,12 @@ def test_a_gate_pytest_session_that_stops_making_progress_ends_without_a_pass(
     FAILED verdict that names the stall window, and never a pass.
     """
     primary, worktree, env = fixture_repo
-    worker_pid = tmp_path / "worker.pid"
-    stalled = f"sleep 300 & echo $! > {worker_pid}; echo collected; exec sleep 300"
+    # The worker records the signal that ends it, which proves the whole group
+    # was signalled; a process-table probe cannot, because a container's PID 1
+    # may never reap the orphaned worker, leaving a zombie that still answers.
+    ended = tmp_path / "worker.ended"
+    worker = f'( trap "echo TERM > {ended}; exit 0" TERM; sleep 300 & wait )'
+    stalled = f"{worker} & echo collected; exec sleep 300"
     run_id = _start(
         cwd=worktree,
         env={**env, _STALL_ENV: "2", _STALL_GRACE_ENV: "1"},
@@ -693,10 +697,7 @@ def test_a_gate_pytest_session_that_stops_making_progress_ends_without_a_pass(
     assert "FAILED" in waited.stdout
     assert "PASSED" not in waited.stdout
     assert "stall window" in (run_dir / "output.log").read_text(encoding="utf-8")
-    # The worker was in the gate's process group, which was ended before the
-    # verdict was written, so it no longer exists.
-    with pytest.raises(ProcessLookupError):
-        os.kill(int(worker_pid.read_text(encoding="utf-8")), 0)
+    assert ended.read_text(encoding="utf-8").strip() == "TERM"
 
 
 @pytest.mark.integration

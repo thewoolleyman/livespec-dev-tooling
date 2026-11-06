@@ -253,7 +253,9 @@ run_gate_with_stall_bound() {
                 "$stall" >>"$dir/output.log"
             kill -TERM -- "-$gate_pid" 2>/dev/null || true
             ended=$SECONDS
-            while kill -0 "$gate_pid" 2>/dev/null && (( SECONDS - ended < grace )); do
+            # Wait for the whole GROUP, not just its leader: a worker's TERM
+            # handler gets its grace period even after the leader has gone.
+            while kill -0 -- "-$gate_pid" 2>/dev/null && (( SECONDS - ended < grace )); do
                 idle_sleep 1
             done
             kill -KILL -- "-$gate_pid" 2>/dev/null || true
