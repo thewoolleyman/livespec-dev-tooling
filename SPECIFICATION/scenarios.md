@@ -2912,6 +2912,36 @@ Then the Node MUST carry the taint `homelab-worker.livespec.dev/admission=hold:N
 
 And a pod without a toleration for that taint MUST NOT be scheduled onto it
 
+## Scenario: a missing bridged-network prerequisite stops the start task before the VM starts
+
+Given a declared macOS host on which Lima's `socket_vmnet` is absent from its root-owned location
+
+When `just start-homelab-worker-node-container <host>` runs
+
+Then it MUST exit non-zero naming `socket_vmnet` with a remedy
+
+And it MUST NOT create or start a VM, or install or modify `socket_vmnet` or the sudoers entry
+
+## Scenario: the worker's node IP is its declared home-LAN address
+
+Given a declared host whose declaration carries a static home-LAN address outside the DHCP pool
+
+When `just start-homelab-worker-node-container <host>` converges its worker
+
+Then the VM's bridged interface MUST carry that address
+
+And the worker's Kubernetes node IP and its pod-network underlay interface address MUST be that address
+
+## Scenario: a host declaring no home-LAN address is refused before the VM starts
+
+Given a declared host whose declaration carries no static home-LAN address
+
+When `just start-homelab-worker-node-container <host>` runs
+
+Then it MUST exit non-zero naming the missing declaration
+
+And it MUST NOT create or start a VM
+
 ## Scenario: a staged capacity value change commits on schema validation alone
 
 Given a repository whose committed config-value fast-path list names `.livespec.jsonc` `dispatcher.wip_cap`
