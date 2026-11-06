@@ -318,3 +318,44 @@ def test_cached_arm_digest_mismatch_is_not_authority(tmp_path, arm):
     record["observer_arm"]["head_sha"] = "f" * 40
     with pytest.raises(ValueError, match="invalid"):
         read_observer_arm(record=record)
+
+
+def _invalidated_record(*, directory):
+    path = next(directory.glob("*.json"))
+    record = json.loads(path.read_bytes())
+    record["observer_arm_invalidated"] = {"operation_id": "invalidation-1", "receipt": "0" * 64}
+    path.write_text(json.dumps(record))
+
+
+def test_arm_for_a_different_incident_is_admitted_whatever_the_retained_generation(tmp_path, arm):
+    # livespec-dev-tooling-ua2scz: the generation floor is per incident, not per repository.
+    drill = _arm(directory=tmp_path, arm=replace(arm, generation=2))
+    assert drill.status == "armed"
+    _invalidated_record(directory=tmp_path)
+    real = replace(
+        arm,
+        incident_item_id="incident-2",
+        attempt_id="repair-2",
+        operation_id="operation-2",
+        generation=2,
+        pr_number=56,
+        head_sha="d" * 40,
+    )
+    assert _arm(directory=tmp_path, arm=real).status == "refused"
+    admitted = _arm(directory=tmp_path, arm=real, expected=drill.receipt)
+    assert admitted.status == "armed"
+    assert _admitted(directory=tmp_path, arm=real, receipt=admitted.receipt)
+    lower = replace(real, incident_item_id="incident-3", operation_id="operation-3", generation=1)
+    assert _arm(directory=tmp_path, arm=lower, expected=admitted.receipt).status == "armed"
+
+
+@pytest.mark.parametrize("generation", [1, 2])
+def test_same_incident_rearm_needs_a_strictly_greater_generation(tmp_path, arm, generation):
+    retained = _arm(directory=tmp_path, arm=replace(arm, generation=2))
+    stale = replace(arm, generation=generation, operation_id="operation-2", head_sha="d" * 40)
+    refused = _arm(directory=tmp_path, arm=stale, expected=retained.receipt)
+    assert refused.status == "refused"
+    assert "2" in refused.reason
+    assert _admitted(directory=tmp_path, arm=replace(arm, generation=2), receipt=retained.receipt)
+    newer = replace(stale, generation=3)
+    assert _arm(directory=tmp_path, arm=newer, expected=retained.receipt).status == "armed"
