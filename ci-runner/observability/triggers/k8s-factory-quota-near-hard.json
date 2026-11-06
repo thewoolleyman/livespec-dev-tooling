@@ -1,6 +1,6 @@
 {
-  "name": "k8s factory — a ResourceQuota stays at or above 90% of hard in factory or factory-mi-homelab for 15 min",
-  "description": "Fires, per namespace and constrained resource, when the LOWEST k8s.resource_quota.used / k8s.resource_quota.hard_limit ratio in the trailing 15 min is at or above 0.90: usage stayed at 90% the whole window. Covers pods, requests/limits CPU and memory of factory-runs and factory-mi-homelab-runs. Emitter: k8s_cluster on the poweredge-xubuntu collector (thewoolleyman/otel-collector config.ci-runner-host.yaml, item livespec-dev-tooling-ec2rkp). Receiver: the poweredge-xubuntu otel-collector (thewoolleyman/otel-collector config.ci-runner-host.yaml) -> Honeycomb env livespec. Runbook: open the 'Kubernetes workloads and control plane' board; kubectl get pods -n <namespace> -o wide; kubectl describe pod -n <namespace> <pod>; kubectl get events -n <namespace> --sort-by=.lastTimestamp. kubectl get pods -n <namespace> --sort-by=.metadata.creationTimestamp; kubectl describe resourcequota -n <namespace>. Plan kubernetes-node-observability (livespec-dev-tooling-dfdiil), item livespec-dev-tooling-t6om4l.",
+  "name": "k8s factory — a ResourceQuota stays at or above 90% of hard in factory or factory-mi-homelab for 2 hours",
+  "description": "Fires, per namespace and constrained resource, when the LOWEST used/hard ratio over the trailing 2 h is at or above 0.90: the quota stayed nearly full for two hours. The Dispatcher admits to quota by design, so a shorter window fires on normal operation. Measured 2026-11-04 over 72 h: factory requests.cpu was at or above 0.9 in 20% of 15-min buckets, the longest stretch was 75 min, and the Pending-pod trigger never fired (plan address-honeycomb-alerts, epic bd-ib-xkwdap). Two hours at quota means a leak (pods or cleanup pods holding quota with no runs) or a wedged drain. Emitter: k8s_cluster on the poweredge-xubuntu collector (thewoolleyman/otel-collector config.ci-runner-host.yaml). Receiver: that collector -> Honeycomb env livespec. Runbook: kubectl describe resourcequota -n <ns>; kubectl get pods -n <ns> -o wide --sort-by=.metadata.creationTimestamp. Spec v131 §\"Runner-pool workload and control-plane telemetry\"; item livespec-dev-tooling-t6om4l.",
   "query": {
     "calculated_fields": [
       {
@@ -39,14 +39,14 @@
       "k8s.namespace.name",
       "resource"
     ],
-    "time_range": 900
+    "time_range": 7200
   },
   "threshold": {
     "op": ">=",
     "value": 0.9,
     "exceeded_limit": 1
   },
-  "frequency": 300,
+  "frequency": 1800,
   "alert_type": "on_change",
   "recipients": [
     {

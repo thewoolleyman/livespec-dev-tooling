@@ -45,9 +45,9 @@ Value and dead-man triggers, one `*.json` per trigger, converged by name:
 Each definition may name a `dataset`; absent, it defaults to `metrics`.
 
 The `k8s-node-*.json` triggers realize `SPECIFICATION/non-functional-requirements.md`
-§"Runner-pool node telemetry": CPU saturation (idle share under 10% for 15 min,
-per `host.name`), MemoryPressure and memory working set over 90% of capacity
-(per `k8s.node.name`), and one dead-man per cluster node, ungrouped and
+§"Runner-pool node telemetry": MemoryPressure and memory working set over 90% of capacity
+(per `k8s.node.name`) — CPU idle share is board-only and carries no value trigger,
+because the pool is packed to capacity by design (spec v131), and one dead-man per cluster node, ungrouped and
 filtered to that node. A node's dead-man is committed only once that node
 reports, so that arming it cannot page for a node that was never wired; a new
 pool node gets its own `k8s-node-silent-<node>.json` (plan
@@ -64,7 +64,7 @@ calculation:
 |---|---|---|
 | `k8s-factory-container-oom-crashloop` | `k8s.container.status.reason` in OOMKilled, CrashLoopBackOff, namespaces `factory`, `factory-mi-homelab` | 10 min |
 | `k8s-factory-pod-pending` | more than 20 `k8s.pod.phase = 1` samples per pod (30 s scrape) | 15 min |
-| `k8s-factory-quota-near-hard` | MIN of `k8s.resource_quota.used / hard_limit` at or above 0.90 | 15 min |
+| `k8s-factory-quota-near-hard` | MIN of `k8s.resource_quota.used / hard_limit` at or above 0.90 | 2 h |
 | `k8s-api-server-readiness-failing` | MAX `livespec.ci_k3s.readiness_check` below 1, per check | 3 min |
 | `k8s-datastore-etcd-check-failing` | MIN of the `etcd` / `etcd-readiness` checks below 1 (single probe, as the spec states) | 2 min |
 | `k8s-datastore-filesystem-used` | MAX `datastore_used_bytes / datastore_total_bytes` at or above 0.80 | 10 min |

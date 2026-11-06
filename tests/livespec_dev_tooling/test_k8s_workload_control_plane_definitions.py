@@ -144,7 +144,7 @@ def test_thresholds_match_the_specification_windows() -> None:
 
     assert window("k8s-factory-pod-pending") == 900
     assert threshold("k8s-factory-pod-pending")["value"] == 20
-    assert window("k8s-factory-quota-near-hard") == 900
+    assert window("k8s-factory-quota-near-hard") == 7200
     assert threshold("k8s-factory-quota-near-hard") == {
         "op": ">=",
         "value": 0.9,
