@@ -59,3 +59,69 @@ def test_an_existing_reference_clone_is_repaired_before_the_installation_loads()
     assert mode["when"] == "incident_observer_account_ready"
     assert _position(tasks=tasks, name=_CLONE) < _position(tasks=tasks, name=_MODE)
     assert _position(tasks=tasks, name=_MODE) < _position(tasks=tasks, name=_LOAD)
+
+
+# The first `POST /arm` (vps, 2026-11-06 16:27Z) refused `canonical pre-merge
+# authority unavailable`: run as the controller account against the reference
+# clone, the reader's first `bd show` answered `no beads database found`,
+# because the clone carried the committed `.beads/config.yaml` and not the
+# gitignored `.beads/metadata.json` pointer `bd` resolves its workspace from.
+_CONNECTION = "Read the reference clone's committed tenant connection"
+_LEDGER_DIR = "Hold the reference clone's ledger directory to its owner alone"
+_POINTER = "Write the reference clone's ledger pointer for the canonical reader"
+_POINTER_KEYS = (
+    "dolt_mode",
+    "dolt_server_host",
+    "dolt_server_port",
+    "dolt_server_user",
+    "dolt_database",
+    "project_id",
+)
+
+
+def test_the_reference_clone_gets_a_ledger_pointer_before_the_installation_loads() -> None:
+    tasks = _tasks()
+    connection = tasks[_position(tasks=tasks, name=_CONNECTION)]
+    ledger_dir = tasks[_position(tasks=tasks, name=_LEDGER_DIR)]
+    pointer = tasks[_position(tasks=tasks, name=_POINTER)]
+
+    assert connection["ansible.builtin.slurp"]["src"] == f"{_REFERENCE}/.beads/config.yaml"
+    assert connection["register"] == "incident_observer_beads_config"
+    assert ledger_dir["ansible.builtin.file"] == {
+        "path": f"{_REFERENCE}/.beads",
+        "state": "directory",
+        "owner": "{{ incident_observer_user }}",
+        "group": "{{ incident_observer_group }}",
+        "mode": "0700",
+    }
+    copy = pointer["ansible.builtin.copy"]
+    assert copy["dest"] == f"{_REFERENCE}/.beads/metadata.json"
+    assert (copy["owner"], copy["group"], copy["mode"]) == (
+        "{{ incident_observer_user }}",
+        "{{ incident_observer_group }}",
+        "0600",
+    )
+    # One expression renders the whole pointer, so the port stays a JSON
+    # integer: `bd` dials port 0 without `dolt_server_port`, and a per-key
+    # `vars:` template would have written it as a string.
+    content = copy["content"]
+    assert content.count("{{") == 1
+    assert "to_nice_json" in content
+    assert all(f"'{key}'" in content for key in _POINTER_KEYS)
+    assert "'dolt.server-port'] | int" in content
+    for task in (connection, ledger_dir, pointer):
+        assert task["when"] == "incident_observer_account_ready"
+    assert (
+        _position(tasks=tasks, name=_MODE)
+        < _position(tasks=tasks, name=_CONNECTION)
+        < _position(tasks=tasks, name=_LEDGER_DIR)
+        < _position(tasks=tasks, name=_POINTER)
+        < _position(tasks=tasks, name=_LOAD)
+    )
+
+
+def test_the_pointer_project_id_is_declared_as_a_default() -> None:
+    defaults = yaml.safe_load((_ROLE / "defaults" / "main.yml").read_text(encoding="utf-8"))
+
+    assert isinstance(defaults, dict)
+    assert defaults["incident_observer_tenant_project_id"] == "c8dcb5d9-1d1c-47d9-a1e5-f856e60b9544"

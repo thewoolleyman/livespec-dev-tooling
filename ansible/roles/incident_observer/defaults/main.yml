@@ -71,10 +71,18 @@ incident_observer_secret_min_bytes: 32
 # as a systemd environment file the unit loads, so the reader runs with
 # credential projection inside the controller's own account — the shape
 # docs/incident-observer-service.md allows under NoNewPrivileges. The tenant's
-# host and port are not written here: the reference clone's committed
-# `.beads/config.yaml` carries them (the dolt-server on this host, loopback).
+# host and port are not declared here: the reference clone's committed
+# `.beads/config.yaml` carries them (the dolt-server on this host, loopback),
+# and the role renders the clone's gitignored `.beads/metadata.json` pointer
+# from that file, because `bd` resolves its workspace from the pointer and
+# answers `no beads database found` to a clone that has only `config.yaml`
+# (the first `POST /arm`, 2026-11-06). The pointer's `project_id` is the
+# tenant's server-stable id, the one every fleet clone's pointer carries and
+# the one `bd init --server` regenerates (AGENTS.md §"Beads runtime
+# prerequisites"); it names no secret.
 incident_observer_reader_env_path: /etc/livespec-incident/reader.env
 incident_observer_reader_env_var: BEADS_DOLT_PASSWORD
+incident_observer_tenant_project_id: c8dcb5d9-1d1c-47d9-a1e5-f856e60b9544
 # The controller account's home. The private state directory (0700) and the
 # independent reference clone are siblings beneath it; the loader refuses a
 # state directory inside the clone and a package inside the clone.

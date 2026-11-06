@@ -318,6 +318,66 @@
     incident_observer_account_ready: true
   when: not ansible_check_mode
 
+- name: Read the reference clone's committed tenant connection
+  # `.beads/config.yaml` is committed and carries the tenant's host, port, user
+  # and database and no credential; the pointer below is rendered from it, so
+  # the reference clone names the same tenant as every other clone of the
+  # repository without a second copy of the connection in this role.
+  ansible.builtin.slurp:
+    src: "{{ incident_observer_reference_dir }}/.beads/config.yaml"
+  become: true
+  register: incident_observer_beads_config
+  when: incident_observer_account_ready
+
+- name: Hold the reference clone's ledger directory to its owner alone
+  # `bd` writes its port file, local version and touch marker beside the
+  # pointer on every read, so the controller account must own the directory;
+  # 0700 is the mode `bd` itself recommends (it warns at the clone's 0775).
+  ansible.builtin.file:
+    path: "{{ incident_observer_reference_dir }}/.beads"
+    state: directory
+    owner: "{{ incident_observer_user }}"
+    group: "{{ incident_observer_group }}"
+    mode: "0700"
+  become: true
+  when: incident_observer_account_ready
+
+- name: Write the reference clone's ledger pointer for the canonical reader
+  # `.beads/metadata.json` is the gitignored, regenerable pointer `bd` resolves
+  # its workspace from (AGENTS.md §"Beads runtime prerequisites"); a clone that
+  # carries only the committed `config.yaml` answers `Error: no beads database
+  # found` to every read. The first `POST /arm` (2026-11-06, 16:27Z) refused
+  # `canonical pre-merge authority unavailable` for exactly that reason, run
+  # as the controller account against this clone. The port is load-bearing:
+  # without `dolt_server_port` `bd` dials port 0 (config.yaml's port is not
+  # consulted), so the pointer carries the committed port as an integer. `bd`
+  # reads the file and never rewrites it, so a converge that changed nothing
+  # reports this task unchanged.
+  # The pointer is built and serialized inside ONE expression so the port stays
+  # a JSON integer; a `vars:` mapping of per-key templates would render it as
+  # the string "3307".
+  ansible.builtin.copy:
+    content: >-
+      {{ {
+        'database': 'dolt',
+        'backend': 'dolt',
+        'dolt_mode': incident_observer_beads_connection['dolt.mode'],
+        'dolt_server_host': incident_observer_beads_connection['dolt.server-host'],
+        'dolt_server_port': incident_observer_beads_connection['dolt.server-port'] | int,
+        'dolt_server_user': incident_observer_beads_connection['dolt.server-user'],
+        'dolt_database': incident_observer_beads_connection['dolt.database'],
+        'project_id': incident_observer_tenant_project_id,
+      } | to_nice_json(indent=2) }}
+
+    dest: "{{ incident_observer_reference_dir }}/.beads/metadata.json"
+    owner: "{{ incident_observer_user }}"
+    group: "{{ incident_observer_group }}"
+    mode: "0600"
+  vars:
+    incident_observer_beads_connection: "{{ incident_observer_beads_config.content | b64decode | from_yaml }}"
+  become: true
+  when: incident_observer_account_ready
+
 - name: Read the released tag's commit from the reference clone
   ansible.builtin.command:
     argv:
