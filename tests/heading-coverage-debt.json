@@ -912,13 +912,6 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario: bootstrap names a missing ledger pointer instead of reporting success",
-    "work_item": "livespec-dev-tooling-ko26ez",
-    "first_seen": "2026-11-04"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
     "heading": "## Scenario: changing a committed capacity value to another valid value leaves every test passing",
     "work_item": "livespec-dev-tooling-symfx2",
     "first_seen": "2026-11-04"

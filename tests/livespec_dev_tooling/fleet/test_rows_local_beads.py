@@ -178,11 +178,13 @@ def test_metadata_passes_when_present(*, tmp_path: Path) -> None:
     assert isinstance(reconcile_beads_metadata_present(ctx=_ctx(checkout=beads)), RowPass)
 
 
-def test_metadata_absent_is_warning_finding(*, tmp_path: Path) -> None:
+def test_metadata_absent_is_an_unmet_ledger_pointer(*, tmp_path: Path) -> None:
     ctx = _ctx(checkout=_with_beads(tmp_path=tmp_path))
     outcome = reconcile_beads_metadata_present(ctx=ctx)
     assert isinstance(outcome, RowFinding)
-    assert outcome.severity == "warning"
+    # An absent pointer leaves `bd` with no tenant to reach, so bootstrap must not
+    # report success over it (scenario "bootstrap names a missing ledger pointer").
+    assert outcome.severity == "error"
     assert "metadata.json" in outcome.message
 
 

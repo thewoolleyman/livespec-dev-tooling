@@ -231,10 +231,14 @@ def reconcile_beads_metadata_present(*, ctx: LocalContext) -> RowOutcome:
         return RowSkip(reason=f".beads/metadata.json not evaluable ({not_read.kind})")
     if unsafe_perform_io(present.unwrap()):
         return RowPass(note=".beads/metadata.json present")
+    # An ERROR, not detect-and-guide guidance: without the pointer `bd` reaches no
+    # tenant, so a bootstrap that reported success over it would hand the operator
+    # a checkout whose ledger commands all fail (scenario "bootstrap names a
+    # missing ledger pointer instead of reporting success").
     return RowFinding(
-        severity="warning",
+        severity="error",
         message=(
-            "regenerable pointer .beads/metadata.json absent: regenerate it by running "
+            "unmet ledger pointer: .beads/metadata.json is absent: regenerate it by running "
             "`bd init --server` in a /tmp scratch dir with this repo's .beads/config.yaml "
             f"(project_id is server-stable) and copying its metadata.json in — see {_PREREQ_DOC}"
         ),

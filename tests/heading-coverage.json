@@ -2177,9 +2177,8 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: bootstrap names a missing ledger pointer instead of reporting success",
-    "test": "TODO",
-    "reason": "Spec-first: a real test at the integration tier or above (a consumer-style check-runner or host-captured run on a macOS developer host) is owed for this scenario; livespec-dev-tooling-ko26ez owns it.",
-    "work_item": "livespec-dev-tooling-ko26ez"
+    "test": "tests.consumer.test_developer_host_platforms.test_bootstrap_names_a_missing_ledger_pointer_instead_of_reporting_success",
+    "reason": "Consumer (integration) tier: runs the real local_reconcile main (what just bootstrap runs) against a real git checkout whose committed .beads/config.yaml is present and .beads/metadata.json absent, with every other obligation row standing in as satisfied (the scenario's Given); asserts a non-zero exit, .beads/metadata.json named, and no success line."
   },
   {
     "spec_root": "SPECIFICATION",
