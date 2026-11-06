@@ -2176,9 +2176,8 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a macOS developer host reads the ledger tenant through the loopback forward",
-    "test": "TODO",
-    "reason": "Spec-first: a real test at the integration tier or above (a consumer-style check-runner or host-captured run on a macOS developer host) is owed for this scenario; livespec-dev-tooling-ko26ez owns it.",
-    "work_item": "livespec-dev-tooling-ko26ez"
+    "test": "tests.consumer.test_developer_host_platforms.test_the_committed_ledger_pointer_reaches_the_tenant_only_through_the_loopback_forward",
+    "reason": "Consumer (integration) tier: asserts the committed .beads/config.yaml names the server over TCP at the loopback host and port the bootstrap verb's ledger rows declare (no socket, no embedded store), and runs the real local_reconcile main over a git checkout carrying exactly that pointer, finding no embeddeddolt directory created. Host-captured on a real macOS host: the MacBook Air read an item of this tenant through its LaunchAgent SSH forward with the committed config unchanged and no local store created before or after (macbook-air-info 146efff, 2026-11-06)."
   },
   {
     "spec_root": "SPECIFICATION",
