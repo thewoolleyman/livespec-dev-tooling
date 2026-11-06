@@ -9,6 +9,11 @@ images:
   - location: "https://cloud-images.ubuntu.com/releases/noble/release/ubuntu-24.04-server-cloudimg-arm64.img"
     arch: "aarch64"
 mounts: []
+# The worker is a home-LAN node: Lima's bridged network (socket_vmnet, a
+# documented host prerequisite) puts lima0 on the host's LAN, and the start
+# task sets the host's declared static address on it (spec v143).
+networks:
+  - lima: bridged
 containerd:
   system: false
   user: false
