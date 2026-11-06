@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, Any
 
 import pytest
 
+from livespec_dev_tooling import otel_cargo_phase
 from livespec_dev_tooling.checks._public_api_consumption import repo_local_public_names
 from livespec_dev_tooling.checks.public_api_result_typed import _find_offenders
 from livespec_dev_tooling.otel_cargo_phase import (
@@ -671,6 +672,23 @@ def test_post_span_reports_non_200_loudly(
     monkeypatch.setattr("urllib.request.urlopen", lambda *_a, **_k: _FakeResponse())
     assert post_span(endpoint="http://recv:4318", payload={}) is False
     assert "HTTP 429" in capsys.readouterr().err
+
+
+def test_post_span_reads_its_timeout_at_call_time(monkeypatch: pytest.MonkeyPatch) -> None:
+    # The emitter's 2 s timeout is the shipped bound; a scenario test that drives `main()`
+    # against an in-process receiver must be able to widen it, so it is read when the span
+    # is posted rather than frozen into a default at import time.
+    seen: dict[str, object] = {}
+
+    def _refusing_urlopen(request: Any, *, timeout: float) -> object:
+        del request
+        seen["timeout"] = timeout
+        raise OSError("refused")
+
+    monkeypatch.setattr("urllib.request.urlopen", _refusing_urlopen)
+    monkeypatch.setattr(otel_cargo_phase, "_POST_TIMEOUT_S", 37.0)
+    assert post_span(endpoint="http://recv:4318", payload={}) is False
+    assert seen["timeout"] == 37.0
 
 
 def test_post_span_reports_unreachable_loudly(capsys: pytest.CaptureFixture[str]) -> None:

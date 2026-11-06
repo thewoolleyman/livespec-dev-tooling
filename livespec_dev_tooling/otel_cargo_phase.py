@@ -405,7 +405,7 @@ def post_span(
     *,
     endpoint: str,
     payload: dict[str, object],
-    timeout: float = _POST_TIMEOUT_S,
+    timeout: float | None = None,
 ) -> bool:
     """POST the OTLP payload to ``<endpoint>/v1/traces``; return whether it landed.
 
@@ -413,6 +413,10 @@ def post_span(
     reported LOUDLY to ``stderr`` so it surfaces in the fabro run log. It still
     never RAISES — the shim owns the exit code — so the expected network/URL
     failures are suppressed and reported as a ``False`` return, not an exception.
+
+    ``timeout`` defaults to ``_POST_TIMEOUT_S`` read at CALL time, not frozen into
+    the signature, so a caller that drives ``main()`` (whose ``run`` binds this
+    function as its emitter) can still widen the bound.
     """
     request = urllib.request.Request(  # noqa: S310  — fixed http(s) receiver URL.
         url=f"{endpoint}/v1/traces",
@@ -421,7 +425,7 @@ def post_span(
         method="POST",
     )
     with contextlib.suppress(urllib.error.URLError, OSError, ValueError):
-        with urllib.request.urlopen(request, timeout=timeout) as response:  # noqa: S310
+        with urllib.request.urlopen(request, timeout=timeout or _POST_TIMEOUT_S) as response:  # noqa: S310
             status = getattr(response, "status", 200)
             _ = response.read()
         if status == _HTTP_OK:
