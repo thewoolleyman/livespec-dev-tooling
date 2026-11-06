@@ -72,9 +72,14 @@ ARG LEFTHOOK_VERSION=1.13.6
 ARG SHELLCHECK_VERSION=0.11.0
 ARG NODE_VERSION=26.3.0
 ARG GH_VERSION=2.102.0
-# sha256 of gh_${GH_VERSION}_linux_amd64.tar.gz, from that release's
-# gh_${GH_VERSION}_checksums.txt. Bump it WITH GH_VERSION.
-ARG GH_SHA256=bb766f710eef8ede859c18578c72c327597cd4c8a85b06001b1f3843c6019386
+# sha256 of gh_${GH_VERSION}_linux_<arch>.tar.gz for each architecture the
+# image builds for, from that release's gh_${GH_VERSION}_checksums.txt. Bump
+# them WITH GH_VERSION. BuildKit sets TARGETARCH; the arm64 pin lets the
+# sandbox run natively on an arm64 homelab worker (plan
+# homelab-k8s-worker-nodes, livespec-dev-tooling-ko26ez.4).
+ARG TARGETARCH
+ARG GH_SHA256_amd64=bb766f710eef8ede859c18578c72c327597cd4c8a85b06001b1f3843c6019386
+ARG GH_SHA256_arm64=7862c86c72f43df3a2d93ddde6f473285b4e2af61b494849846827e513ef6484
 
 # libatomic1 — node's binary dynamically links libatomic.so.1. Full
 # buildpack-deps shipped it as a side effect of its gcc stack; `-scm`
@@ -128,7 +133,9 @@ RUN apt-get -o Acquire::Retries=5 update \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* \
     && set -eux \
-    && asset="gh_${GH_VERSION}_linux_amd64" \
+    && GH_SHA256="$(eval "echo \${GH_SHA256_${TARGETARCH:?TARGETARCH is unset}:-}")" \
+    && test -n "${GH_SHA256}" \
+    && asset="gh_${GH_VERSION}_linux_${TARGETARCH}" \
     && curl -fsSL --retry 5 --retry-all-errors --retry-connrefused \
         -o /tmp/gh.tgz \
         "https://github.com/cli/cli/releases/download/v${GH_VERSION}/${asset}.tar.gz" \
