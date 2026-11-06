@@ -41,7 +41,11 @@
 #      provisioner's default storage (/var/lib/rancher/k3s/storage), so work
 #      volumes outlive the container, and ci/hooks/ is the fleet container
 #      hook tree (/usr/local/lib/ci-runner-k3s/hooks), read-only, which the
-#      start task delivers (research 009). The VM's securityfs is bound
+#      start task delivers (research 009). ci/bin/ is the pool binaries
+#      directory (/usr/local/lib/ci-runner-k3s/bin), read-only: workflow pods
+#      mount it idmapped (hostUsers: false), which the container's overlayfs
+#      root refuses and the data disk's XFS accepts (measured on
+#      macbook-m4-max, 2026-11-06). The VM's securityfs is bound
 #      read-write at /sys/kernel/security: the kubelet decides AppArmor
 #      support from it, Docker does not mount it into a container, and
 #      without it the kubelet refuses every workflow pod confined by the
@@ -165,7 +169,7 @@ if [ "$reload" = 1 ]; then
 fi
 
 mkdir -p "$root/containerd" "$root/kubelet" "$root/tailscale" "$root/enrollment" \
-  "$root/ci/storage" "$root/ci/hooks" "$root/telemetry"
+  "$root/ci/storage" "$root/ci/hooks" "$root/ci/bin" "$root/telemetry"
 chmod 0700 "$root/enrollment" "$root/tailscale" "$root/telemetry"
 
 run_container() {
@@ -181,6 +185,7 @@ run_container() {
     --volume "$root/enrollment:/etc/homelab-worker" \
     --volume "$root/ci/storage:/var/lib/rancher/k3s/storage" \
     --volume "$root/ci/hooks:/usr/local/lib/ci-runner-k3s/hooks:ro" \
+    --volume "$root/ci/bin:/usr/local/lib/ci-runner-k3s/bin:ro" \
     --volume /sys/kernel/security:/sys/kernel/security \
     --volume "$root/telemetry:/etc/otel-collector" \
     --env container=docker \
@@ -211,9 +216,10 @@ if current="$(docker inspect -f '{{.Config.Image}} {{.State.Running}}' "$worker"
     run_container
   elif ! printf '%s\n' "$mounts" | grep -qx '/var/lib/rancher/k3s/storage true' ||
     ! printf '%s\n' "$mounts" | grep -qx '/usr/local/lib/ci-runner-k3s/hooks false' ||
+    ! printf '%s\n' "$mounts" | grep -qx '/usr/local/lib/ci-runner-k3s/bin false' ||
     ! printf '%s\n' "$mounts" | grep -qx '/sys/kernel/security true' ||
     ! printf '%s\n' "$mounts" | grep -qx '/etc/otel-collector true'; then
-    say "replacing container $worker, created without the current CI storage, hook, securityfs or telemetry binds; its state on the data disk is kept"
+    say "replacing container $worker, created without the current CI storage, hook, pool binaries, securityfs or telemetry binds; its state on the data disk is kept"
     docker rm -f "$worker" >/dev/null
     run_container
   elif [ "$running" = "true" ]; then
