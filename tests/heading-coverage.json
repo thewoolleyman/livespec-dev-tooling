@@ -2169,9 +2169,8 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "non-functional-requirements.md",
     "heading": "## Developer host platforms",
-    "test": "TODO",
-    "reason": "Spec-first: a real test at the integration tier or above (a consumer-style run of this repository's bootstrap and pre-push gate against a fixture host profile for macOS) is owed for this heading; livespec-dev-tooling-ko26ez owns it.",
-    "work_item": "livespec-dev-tooling-ko26ez"
+    "test": "tests.consumer.test_delegated_pre_push_gate_scenarios.test_an_opted_in_push_from_an_unenrolled_macos_host_is_refused_instead_of_gating_locally",
+    "reason": "Consumer (integration) tier: runs this repository's real pre-push gate (gate_remote_delegate enabled plus scripts/just/check-pre-push.sh against stub uv/just) on a fixture macOS host profile whose user cannot read the gates kubeconfig, proving the heading's non-Linux gate rule (refused, naming the missing gates-client enrollment, no local fall-through). The heading's other rules are covered by its scenario rows: bootstrap's ledger pointer and python3 checks (tests.consumer.test_developer_host_platforms, tests.consumer.test_bootstrap_host_python3), the gate stall bound and the host-sleep wait (worktree_pack.test_gate_run, test_delegated_pre_push_gate_scenarios), and ledger reach host-captured on the MacBook Air (macbook-air-info 146efff)."
   },
   {
     "spec_root": "SPECIFICATION",
