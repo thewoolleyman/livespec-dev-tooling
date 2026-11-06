@@ -1,0 +1,648 @@
+---
+# claim-token-race-drill.yml — the ONE sanctioned way to race two claim writers
+# on two hosts for one claim token of the orchestrator ledger tenant.
+#
+# WHY IT EXISTS (orchestrator work item bd-ib-4eeefv, Definition of Done bullet
+# 3, host-captured; plan expedited-incident-response-flag, epic
+# livespec-dev-tooling-bqnzcm). The claim-token protocol (orchestrator
+# `SPECIFICATION/contracts.md`, "Dispatcher policy settings" -> "Stranded claim
+# release" -> "Claim tokens"; Scenario 263) promises that of two claim writers
+# on DIFFERENT HOSTS, sharing only the Beads server, exactly one changes a
+# dispatch claim and the other stands down. No second fleet host is a claim
+# writer today, and standing one up by hand is a host change the Driver's
+# `fleet_host_guard.py` refuses. This play is the committed path: for the length
+# of ONE run it gives one `ci_pool` host a throwaway copy of the released
+# orchestrator plugin, the pinned `bd`, and a loopback-only tunnel to the Dolt
+# server, races it against the control node on one probe item, reads the token
+# chain back from the server, and removes everything it made.
+#
+# THE FENCE IS A VARIABLE. Reachable by `/usr/local/bin/with-livespec-env.sh --
+# just ansible-apply ansible/claim-token-race-drill.yml -e
+# claim_token_race_drill_confirm=<pool host inventory name>` and by nothing
+# else that matters: without the confirmation it reads nothing, changes nothing
+# and exits 0, on an apply and under `--check` alike. The credential wrapper is
+# part of the command because the tenant password reaches the play ONLY as the
+# environment that wrapper projects on the control node; a bare apply refuses at
+# the preflight, naming the wrapper.
+#
+# CONSENT IS NOT SUFFICIENT. Before any write the play refuses: a control node
+# without the projected credential, the pinned `bd` or an orchestrator checkout
+# that names the tenant; a target that is not x86-64 (the pinned `bd` release
+# is linux_amd64), whose `python3` is older than the package's 3.10 floor, or
+# that already has a listener on the Dolt port, since the tunnel's listener must
+# be the only one and must be gone afterwards.
+#
+# THE SECRET NEVER TOUCHES A COMMAND LINE, A FILE, AN EXTRA-VAR OR A PRINTED
+# REGISTER. This is a DELIBERATE DEVIATION from the coordinator's condition as
+# worded ("through the play's process environment for that one task"), accepted
+# by the plan owner 2026-11-06: Ansible's `environment:` keyword is NOT used for
+# it, because measured on the control node that day it renders `NAME=value` into
+# the argv of the `/bin/sh -c` that runs the module, readable in
+# `/proc/<pid>/cmdline` by every local user for the task's duration (three
+# processes carried a needle fed that way; none carried one fed as module
+# stdin). The remote writer instead reads the
+# password from a FIFO in its throwaway directory, fed by a pipelined
+# `command` task's `stdin:` under `no_log: true` (ansible.cfg pins
+# `pipelining = True`, so the module and its arguments travel over the ssh
+# channel and never land in a remote temp file); the probe sets it in its own
+# process environment, which is where the package's `bd` children read it. The
+# control node's writer inherits the wrapper's environment. The `always:` block
+# then counts — never prints — files under each throwaway directory, the remote
+# user's shell history files and every live process command line that contain
+# the value, feeding the pattern on stdin, and fails unless that count is 0.
+#
+# THE TUNNEL BINDS THE REMOTE LOOPBACK ONLY AND DIES WITH THE PLAY. It is one
+# `ssh -N -R 127.0.0.1:<port>:127.0.0.1:<port>` from the control node (the
+# direction ansible itself already connects), `ExitOnForwardFailure=yes`, held
+# by a pid file in the control node's throwaway directory. After it is up the
+# play reads the remote listener table and refuses unless every listener on the
+# port is loopback; the `always:` kills it and fails unless the remote host shows
+# no listener on the port afterwards.
+#
+# WHAT IT CREATES AND REMOVES. On each host, one throwaway directory holding the
+# plugin clone at the released tag, the probe, a private HOME for `bd`, the
+# FIFOs, the writers' reports and logs (on the target host also the downloaded
+# `bd` tarball, the verified binary and the lifecycle guard in front of it);
+# both directories are removed in the `always:`. On the ledger it creates ONE
+# probe item of the orchestrator tenant (status `active`, assignee
+# `claim-token-race-drill`, naming its first token through the package's own
+# creation seam) and the claim tokens the protocol mints while the writers race.
+# Those stay durable, as every protocol write does: the item is closed in the
+# `always:` with a reason naming this drill, after one last token hold, and
+# token records are labelled `claim-token` and excluded from every work-item
+# surface. If the final hold is refused the item is left `active` and its id is
+# printed, so an operator can dispose of it inside the same window.
+
+- name: Race two claim writers on two hosts for one claim token of the orchestrator tenant
+  hosts: ci_pool
+  gather_facts: false
+  become: false
+  vars:
+    claim_token_race_drill_plugin_repository: https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro.git
+    # The released orchestrator build the writers run. v0.295.1 is the first
+    # release carrying the claim-token writers; a later tag may be passed.
+    claim_token_race_drill_plugin_ref: v0.295.1
+    claim_token_race_drill_tenant: livespec-orch-beads-fabro
+    # The control node's orchestrator checkout supplies the gitignored
+    # `.beads/metadata.json` a clone lacks (its project_id is server-stable,
+    # so a copy equals a regeneration) and is read for nothing else.
+    claim_token_race_drill_control_checkout: /data/projects/livespec-orchestrator-beads-fabro
+    # The fleet's pinned `bd` on the control node: the lifecycle guard in front
+    # of `bd-real`. The target gets the same release behind the same guard.
+    claim_token_race_drill_control_bd: /usr/local/bin/bd
+    claim_token_race_drill_bd_version: 1.2.2
+    # The pinned release is the linux_amd64 tarball, so the target must be this.
+    claim_token_race_drill_bd_arch: x86_64
+    claim_token_race_drill_bd_release_base: https://github.com/gastownhall/beads/releases/download
+    claim_token_race_drill_bd_tarball_url: >-
+      {{ claim_token_race_drill_bd_release_base }}/v{{ claim_token_race_drill_bd_version
+      }}/beads_{{ claim_token_race_drill_bd_version }}_linux_amd64.tar.gz
+    # Both pins are the orchestrator image's (`orchestrator-image/Dockerfile`,
+    # BD_TARBALL_SHA256 / BD_BINARY_SHA256); the binary pin equals the control
+    # node's installed `bd-real`, measured 2026-11-06.
+    claim_token_race_drill_bd_tarball_sha256: 8140098a51d3b81d5548d1c5e6db1a2d9930e5d141efe2a4bff7d079c4d321e8
+    claim_token_race_drill_bd_binary_sha256: 54fc0e0581ce4c5487a5b242f0a4f34af1ef09cf056e164a1af63a6ec7aa1e0e
+    claim_token_race_drill_dolt_port: 3307
+    claim_token_race_drill_python: python3
+    # Where each host's throwaway directory is made; empty means the host's
+    # default temporary directory.
+    claim_token_race_drill_tmp_root: ""
+    claim_token_race_drill_secret_env: BEADS_DOLT_PASSWORD
+    claim_token_race_drill_wrapper: /usr/local/bin/with-livespec-env.sh
+    # Seconds between the play naming the race instant and the instant itself:
+    # both writers are already blocked at their compare-and-swap, so this only
+    # has to cover two FIFO writes.
+    claim_token_race_drill_barrier_lead_seconds: 10
+    claim_token_race_drill_feed_timeout_seconds: 120
+    claim_token_race_drill_probe_timeout_seconds: 600
+    claim_token_race_drill_wait_interval: 2
+    claim_token_race_drill_wait_retries: 30
+    claim_token_race_drill_control_writer: claim-token-race-drill/control-node
+    claim_token_race_drill_remote_writer: "claim-token-race-drill/{{ inventory_hostname }}"
+    claim_token_race_drill_cases:
+      # Overlapping: both writers decide on one read, both create successors,
+      # and both close the contested token at one named instant.
+      - name: overlapping
+        control_barrier_point: close
+        remote_barrier_point: close
+      # Sequential: both decide on one read; the control node writes first and
+      # the target is released only once that write has finished.
+      - name: sequential
+        control_barrier_point: start
+        remote_barrier_point: start
+    # `| bool` on each half is load-bearing: a non-empty string is truthy in
+    # Jinja, so the strings 'True' / 'False' would otherwise both pass.
+    claim_token_race_drill_named: >-
+      {{ claim_token_race_drill_confirm | default('') == inventory_hostname }}
+    claim_token_race_drill_secret_length: >-
+      {{ lookup('ansible.builtin.env', claim_token_race_drill_secret_env) | length }}
+  tasks:
+    - name: Report a run that carries no claim-token race confirmation for this host
+      ansible.builtin.debug:
+        msg: >-
+          Not drilling {{ inventory_hostname }}: this run does not carry
+          `claim_token_race_drill_confirm` naming this host (it carries
+          `{{ claim_token_race_drill_confirm | default('<unset>') }}`). Nothing
+          was read and nothing was changed. To run the drill, from the control
+          node: {{ claim_token_race_drill_wrapper }} -- just ansible-apply
+          ansible/claim-token-race-drill.yml -e
+          claim_token_race_drill_confirm=<pool host inventory name>
+      when: not (claim_token_race_drill_named | bool)
+
+    - name: Refuse a control node whose environment carries no tenant credential
+      ansible.builtin.fail:
+        msg: >-
+          Refusing the claim-token race drill: `{{ claim_token_race_drill_secret_env }}`
+          is not set in the control node's environment. Run the apply under the
+          credential wrapper: {{ claim_token_race_drill_wrapper }} -- just
+          ansible-apply ansible/claim-token-race-drill.yml -e
+          claim_token_race_drill_confirm={{ inventory_hostname }}. Nothing was
+          read and nothing was changed.
+      when:
+        - claim_token_race_drill_named | bool
+        - claim_token_race_drill_secret_length | int == 0
+
+    - name: Read the control node's orchestrator checkout and pinned bd
+      ansible.builtin.stat:
+        path: "{{ item }}"
+      loop:
+        - "{{ claim_token_race_drill_control_checkout }}/.beads/metadata.json"
+        - "{{ claim_token_race_drill_control_bd }}"
+      register: claim_token_race_drill_control_files
+      delegate_to: localhost
+      check_mode: false
+      when: claim_token_race_drill_named | bool
+
+    - name: Read whether the control checkout's ledger pointer names the tenant
+      ansible.builtin.command:
+        argv:
+          - grep
+          - --count
+          - "^dolt.database: {{ claim_token_race_drill_tenant }}$"
+          - "{{ claim_token_race_drill_control_checkout }}/.beads/config.yaml"
+      register: claim_token_race_drill_tenant_read
+      delegate_to: localhost
+      check_mode: false
+      changed_when: false
+      failed_when: false
+      when: claim_token_race_drill_named | bool
+
+    - name: Refuse a control node that cannot stage the tenant for the target
+      ansible.builtin.fail:
+        msg: >-
+          Refusing the claim-token race drill: the control node needs
+          `{{ claim_token_race_drill_control_checkout }}/.beads/config.yaml`
+          naming `dolt.database: {{ claim_token_race_drill_tenant }}`, a
+          `.beads/metadata.json` beside it, and an executable
+          `{{ claim_token_race_drill_control_bd }}`. Nothing was changed.
+      when:
+        - claim_token_race_drill_named | bool
+        - >-
+          claim_token_race_drill_tenant_read.stdout | default('0') | trim != '1'
+          or not (claim_token_race_drill_control_files.results[0].stat.exists | default(false))
+          or not (claim_token_race_drill_control_files.results[1].stat.executable | default(false))
+
+    - name: Read the target's architecture, interpreter floor, tools and Dolt-port listeners
+      ansible.builtin.command:
+        argv:
+          - sh
+          - -c
+          - >-
+            uname -m;
+            "$1" -c 'import sys; print(int(sys.version_info >= (3, 10)))' 2>/dev/null || echo 0;
+            for tool in git tar mkfifo ss; do command -v "$tool" >/dev/null 2>&1 || echo "missing:$tool"; done;
+            ss -ltnH "sport = :$2" | wc -l
+          - sh
+          - "{{ claim_token_race_drill_python }}"
+          - "{{ claim_token_race_drill_dolt_port }}"
+      register: claim_token_race_drill_target_read
+      check_mode: false
+      changed_when: false
+      when: claim_token_race_drill_named | bool
+
+    - name: Refuse a target that cannot run the pinned bd and the released package in isolation
+      ansible.builtin.fail:
+        msg: >-
+          Refusing the claim-token race drill on {{ inventory_hostname }}: it
+          must be {{ claim_token_race_drill_bd_arch }} (the pinned bd release
+          is linux_amd64), its
+          `{{ claim_token_race_drill_python }}` must be 3.10 or newer, it must
+          carry git, tar, mkfifo and ss, and nothing may listen on port
+          {{ claim_token_race_drill_dolt_port }} before the tunnel opens. It
+          read: {{ claim_token_race_drill_target_read.stdout_lines }}. Nothing
+          was changed.
+      when:
+        - claim_token_race_drill_named | bool
+        - >-
+          claim_token_race_drill_target_read.stdout_lines[0] | default('') != claim_token_race_drill_bd_arch
+          or claim_token_race_drill_target_read.stdout_lines[1] | default('0') != '1'
+          or claim_token_race_drill_target_read.stdout_lines | select('match', '^missing:') | list | length > 0
+          or claim_token_race_drill_target_read.stdout_lines[-1] | default('1') | trim != '0'
+
+    - name: Note that a check-mode run opens no tunnel and writes no ledger record
+      ansible.builtin.debug:
+        msg: >-
+          Check mode: the drill would stage the released plugin and bd on
+          {{ inventory_hostname }}, open the loopback tunnel, create one probe
+          item of tenant {{ claim_token_race_drill_tenant }}, race the two
+          writers in the {{ claim_token_race_drill_cases | map(attribute='name') | join(' and ') }}
+          cases, read the token chain back, and remove everything. Nothing was
+          created.
+      when:
+        - claim_token_race_drill_named | bool
+        - ansible_check_mode
+
+    - name: Stage both hosts, race the writers, read the chain back, and remove everything
+      when:
+        - claim_token_race_drill_named | bool
+        - not ansible_check_mode
+      block:
+        - name: Read the drill's start time
+          ansible.builtin.command:
+            argv: [date, -u, +%Y-%m-%dT%H:%M:%SZ]
+          register: claim_token_race_drill_start
+          delegate_to: localhost
+          changed_when: false
+
+        - name: Create the target's throwaway directory
+          ansible.builtin.tempfile:
+            state: directory
+            prefix: claim-token-race-drill.
+            path: "{{ claim_token_race_drill_tmp_root | default('', true) or omit }}"
+          register: claim_token_race_drill_remote_dir
+
+        - name: Create the control node's throwaway directory
+          ansible.builtin.tempfile:
+            state: directory
+            prefix: claim-token-race-drill.
+            path: "{{ claim_token_race_drill_tmp_root | default('', true) or omit }}"
+          register: claim_token_race_drill_control_dir
+          delegate_to: localhost
+
+        - name: Clone the released plugin on the target
+          ansible.builtin.git:
+            repo: "{{ claim_token_race_drill_plugin_repository }}"
+            dest: "{{ claim_token_race_drill_remote_dir.path }}/plugin"
+            version: "{{ claim_token_race_drill_plugin_ref }}"
+            depth: 1
+
+        - name: Clone the released plugin on the control node
+          ansible.builtin.git:
+            repo: "{{ claim_token_race_drill_plugin_repository }}"
+            dest: "{{ claim_token_race_drill_control_dir.path }}/plugin"
+            version: "{{ claim_token_race_drill_plugin_ref }}"
+            depth: 1
+          delegate_to: localhost
+
+        - name: Give the target's clone the ledger pointer and the target the probe
+          ansible.builtin.copy:
+            src: "{{ item.src }}"
+            dest: "{{ item.dest }}"
+            mode: "{{ item.mode }}"
+          loop:
+            - src: "{{ claim_token_race_drill_control_checkout }}/.beads/metadata.json"
+              dest: "{{ claim_token_race_drill_remote_dir.path }}/plugin/.beads/metadata.json"
+              mode: "0600"
+            - src: claim_token_race_drill_probe.py
+              dest: "{{ claim_token_race_drill_remote_dir.path }}/probe.py"
+              mode: "0600"
+            - src: claim_token_race_drill_barrier.py
+              dest: "{{ claim_token_race_drill_remote_dir.path }}/claim_token_race_drill_barrier.py"
+              mode: "0600"
+            - src: claim_token_race_drill_ledger.py
+              dest: "{{ claim_token_race_drill_remote_dir.path }}/claim_token_race_drill_ledger.py"
+              mode: "0600"
+          loop_control:
+            label: "{{ item.dest }}"
+
+        - name: Give the control node's clone the ledger pointer and the probe
+          ansible.builtin.copy:
+            src: "{{ item.src }}"
+            dest: "{{ item.dest }}"
+            mode: "{{ item.mode }}"
+          loop:
+            - src: "{{ claim_token_race_drill_control_checkout }}/.beads/metadata.json"
+              dest: "{{ claim_token_race_drill_control_dir.path }}/plugin/.beads/metadata.json"
+              mode: "0600"
+            - src: claim_token_race_drill_probe.py
+              dest: "{{ claim_token_race_drill_control_dir.path }}/probe.py"
+              mode: "0600"
+            - src: claim_token_race_drill_barrier.py
+              dest: "{{ claim_token_race_drill_control_dir.path }}/claim_token_race_drill_barrier.py"
+              mode: "0600"
+            - src: claim_token_race_drill_ledger.py
+              dest: "{{ claim_token_race_drill_control_dir.path }}/claim_token_race_drill_ledger.py"
+              mode: "0600"
+          loop_control:
+            label: "{{ item.dest }}"
+          delegate_to: localhost
+
+        - name: Create the target's private HOME and bin directories
+          ansible.builtin.file:
+            path: "{{ claim_token_race_drill_remote_dir.path }}/{{ item }}"
+            state: directory
+            mode: "0700"
+          loop: [home, bin]
+
+        - name: Create the control node's private HOME directory
+          ansible.builtin.file:
+            path: "{{ claim_token_race_drill_control_dir.path }}/home"
+            state: directory
+            mode: "0700"
+          delegate_to: localhost
+
+        - name: Download the pinned bd release tarball on the target
+          ansible.builtin.get_url:
+            url: "{{ claim_token_race_drill_bd_tarball_url }}"
+            dest: "{{ claim_token_race_drill_remote_dir.path }}/beads.tar.gz"
+            checksum: "sha256:{{ claim_token_race_drill_bd_tarball_sha256 }}"
+            mode: "0600"
+
+        - name: Unpack the bd release into the target's bin directory
+          ansible.builtin.unarchive:
+            src: "{{ claim_token_race_drill_remote_dir.path }}/beads.tar.gz"
+            dest: "{{ claim_token_race_drill_remote_dir.path }}/bin"
+            remote_src: true
+            include: [bd]
+
+        - name: Read the unpacked bd binary's digest
+          ansible.builtin.stat:
+            path: "{{ claim_token_race_drill_remote_dir.path }}/bin/bd"
+            checksum_algorithm: sha256
+          register: claim_token_race_drill_bd_stat
+
+        - name: Refuse an unpacked bd whose digest is not the pinned binary
+          ansible.builtin.fail:
+            msg: >-
+              Refusing the claim-token race drill: the bd binary unpacked on
+              {{ inventory_hostname }} has sha256
+              {{ claim_token_race_drill_bd_stat.stat.checksum | default('<absent>') }},
+              not the pinned {{ claim_token_race_drill_bd_binary_sha256 }}.
+          when: >-
+            claim_token_race_drill_bd_stat.stat.checksum | default('')
+            != claim_token_race_drill_bd_binary_sha256
+
+        - name: Put the released lifecycle guard in front of the target's bd
+          ansible.builtin.copy:
+            src: "{{ item.src }}"
+            dest: "{{ item.dest }}"
+            remote_src: true
+            mode: "0700"
+          loop:
+            - src: "{{ claim_token_race_drill_remote_dir.path }}/bin/bd"
+              dest: "{{ claim_token_race_drill_remote_dir.path }}/bin/bd-real"
+            - src: "{{ claim_token_race_drill_remote_dir.path }}/plugin/bd-guard/bd-guard-emit.py"
+              dest: "{{ claim_token_race_drill_remote_dir.path }}/bin/bd-guard-emit.py"
+            - src: "{{ claim_token_race_drill_remote_dir.path }}/plugin/bd-guard/bd-guard.sh"
+              dest: "{{ claim_token_race_drill_remote_dir.path }}/bin/bd"
+          loop_control:
+            label: "{{ item.dest }}"
+
+        - name: Open the loopback-only reverse tunnel from the control node to the target
+          # `&` plus the redirects are why this is `shell`: the tunnel has to
+          # outlive the task and leave its pid behind for the `always:`. The
+          # target's connection values are read through `hostvars`, because a
+          # delegated task's own `ansible_host` / `ansible_user` are the
+          # delegate's.
+          vars:
+            claim_token_race_drill_target: "{{ hostvars[inventory_hostname] }}"
+            claim_token_race_drill_target_port: >-
+              {{ claim_token_race_drill_target.ansible_port | default('') }}
+            claim_token_race_drill_target_key: >-
+              {{ claim_token_race_drill_target.ansible_ssh_private_key_file | default('') }}
+            claim_token_race_drill_target_login: >-
+              {{ claim_token_race_drill_target.ansible_user
+                 | default(lookup('ansible.builtin.env', 'USER')) }}@{{
+                 claim_token_race_drill_target.ansible_host | default(inventory_hostname) }}
+          ansible.builtin.shell:
+            cmd: >-
+              setsid ssh -N
+              -o BatchMode=yes -o ExitOnForwardFailure=yes -o StrictHostKeyChecking=no
+              -o ServerAliveInterval=15 -o ServerAliveCountMax=2
+              {% if claim_token_race_drill_target_port != '' %}-p {{ claim_token_race_drill_target_port }}{% endif %}
+              {% if claim_token_race_drill_target_key != '' %}-i {{ claim_token_race_drill_target_key }}{% endif %}
+              -R 127.0.0.1:{{ claim_token_race_drill_dolt_port }}:127.0.0.1:{{ claim_token_race_drill_dolt_port }}
+              {{ claim_token_race_drill_target_login }}
+              > {{ claim_token_race_drill_control_dir.path }}/tunnel.log 2>&1 < /dev/null &
+              echo $! > {{ claim_token_race_drill_control_dir.path }}/tunnel.pid
+          register: claim_token_race_drill_tunnel
+          delegate_to: localhost
+          changed_when: true
+
+        - name: Wait until the target shows the tunnel's listener on the Dolt port
+          ansible.builtin.command:
+            argv: [ss, -ltnH, "sport = :{{ claim_token_race_drill_dolt_port }}"]
+          register: claim_token_race_drill_listeners
+          changed_when: false
+          retries: "{{ claim_token_race_drill_wait_retries }}"
+          delay: "{{ claim_token_race_drill_wait_interval }}"
+          until: claim_token_race_drill_listeners.stdout | trim != ''
+
+        - name: Refuse a tunnel listener that is not bound to the target's loopback alone
+          ansible.builtin.fail:
+            msg: >-
+              Refusing the claim-token race drill: the listener on port
+              {{ claim_token_race_drill_dolt_port }} of {{ inventory_hostname }}
+              is not loopback-only: {{ claim_token_race_drill_listeners.stdout_lines }}.
+          when: >-
+            claim_token_race_drill_listeners.stdout_lines
+            | reject('search', '\\s(127\\.0\\.0\\.1|\\[::1\\]):' ~ claim_token_race_drill_dolt_port ~ '\\s')
+            | list | length > 0
+
+        - name: Create the probe item as an active claim of the tenant
+          ansible.builtin.command:
+            argv:
+              - env
+              - "HOME={{ claim_token_race_drill_control_dir.path }}/home"
+              - "{{ claim_token_race_drill_python }}"
+              - -I
+              - -S
+              - "{{ claim_token_race_drill_control_dir.path }}/probe.py"
+              - --scripts-root
+              - "{{ claim_token_race_drill_control_dir.path }}/plugin/.claude-plugin/scripts"
+              - --repo-root
+              - "{{ claim_token_race_drill_control_dir.path }}/plugin"
+              - --bd-path
+              - "{{ claim_token_race_drill_control_bd }}"
+              - create
+              - --title
+              - "claim-token race drill probe item ({{ inventory_hostname }} vs control node)"
+              - --description
+              - >-
+                Probe item of ansible/claim-token-race-drill.yml (livespec-dev-tooling)
+                for bd-ib-4eeefv's host-captured race. Never a work item; closed by
+                the drill that created it.
+          register: claim_token_race_drill_created
+          delegate_to: localhost
+          changed_when: true
+
+        - name: Record the probe item and its first token
+          ansible.builtin.set_fact:
+            claim_token_race_drill_item: "{{ (claim_token_race_drill_created.stdout | from_json).item_id }}"
+            claim_token_race_drill_first_token: "{{ (claim_token_race_drill_created.stdout | from_json).token_id }}"
+
+        - name: Race the writers in each case
+          ansible.builtin.include_tasks: tasks/claim-token-race-drill-case.yml
+          loop: "{{ claim_token_race_drill_cases }}"
+          loop_control:
+            loop_var: claim_token_race_drill_case
+            label: "{{ claim_token_race_drill_case.name }}"
+
+      always:
+        - name: Stop any writer still running on either host
+          ansible.builtin.shell:
+            cmd: >-
+              for pid in "{{ item.dir }}"/*/writer.pid; do
+              [ -f "$pid" ] && kill "$(cat "$pid")" 2>/dev/null; done; true
+          loop:
+            - dir: "{{ claim_token_race_drill_remote_dir.path | default('') }}"
+              host: "{{ inventory_hostname }}"
+            - dir: "{{ claim_token_race_drill_control_dir.path | default('') }}"
+              host: localhost
+          loop_control:
+            label: "{{ item.dir }}"
+          delegate_to: "{{ item.host }}"
+          changed_when: false
+          when: item.dir != ''
+
+        - name: Count — never print — what carries the credential on the target
+          # The pattern is the module's stdin, so no argument and no file holds
+          # it; `-D skip` keeps the FIFOs from blocking the read. The count
+          # covers the throwaway directory, the target user's shell history
+          # files and every live process command line.
+          ansible.builtin.command:
+            argv:
+              - sh
+              - -c
+              - >-
+                { grep -rFl -D skip -f /dev/stdin -- "$1" "$HOME/.bash_history" "$HOME/.zsh_history"
+                "$HOME/.local/share/fish/fish_history" /proc/[0-9]*/cmdline 2>/dev/null || true; } | wc -l
+              - sh
+              - "{{ claim_token_race_drill_remote_dir.path | default('') }}"
+            stdin: "{{ lookup('ansible.builtin.env', claim_token_race_drill_secret_env) }}"
+            stdin_add_newline: false
+          register: claim_token_race_drill_remote_residue
+          no_log: true
+          changed_when: false
+          when:
+            - claim_token_race_drill_remote_dir.path is defined
+            - claim_token_race_drill_secret_length | int > 0
+
+        - name: Count — never print — what carries the credential in the control node's throwaway directory
+          ansible.builtin.command:
+            argv:
+              - sh
+              - -c
+              - '{ grep -rFl -D skip -f /dev/stdin -- "$1" 2>/dev/null || true; } | wc -l'
+              - sh
+              - "{{ claim_token_race_drill_control_dir.path | default('') }}"
+            stdin: "{{ lookup('ansible.builtin.env', claim_token_race_drill_secret_env) }}"
+            stdin_add_newline: false
+          register: claim_token_race_drill_control_residue
+          delegate_to: localhost
+          no_log: true
+          changed_when: false
+          when:
+            - claim_token_race_drill_control_dir.path is defined
+            - claim_token_race_drill_secret_length | int > 0
+
+        - name: Remove the target's throwaway directory
+          ansible.builtin.file:
+            path: "{{ claim_token_race_drill_remote_dir.path }}"
+            state: absent
+          when: claim_token_race_drill_remote_dir.path is defined
+
+        - name: Close the tunnel
+          ansible.builtin.shell:
+            cmd: >-
+              [ -f "{{ claim_token_race_drill_control_dir.path }}/tunnel.pid" ]
+              && kill "$(cat "{{ claim_token_race_drill_control_dir.path }}/tunnel.pid")" 2>/dev/null; true
+          delegate_to: localhost
+          changed_when: true
+          when: claim_token_race_drill_tunnel is defined
+
+        - name: Wait until the target shows no listener on the Dolt port
+          ansible.builtin.command:
+            argv: [ss, -ltnH, "sport = :{{ claim_token_race_drill_dolt_port }}"]
+          register: claim_token_race_drill_listeners_after
+          changed_when: false
+          retries: "{{ claim_token_race_drill_wait_retries }}"
+          delay: "{{ claim_token_race_drill_wait_interval }}"
+          until: claim_token_race_drill_listeners_after.stdout | trim == ''
+          when: claim_token_race_drill_tunnel is defined
+
+        - name: Dispose of the probe item with one last token hold
+          ansible.builtin.command:
+            argv:
+              - env
+              - "HOME={{ claim_token_race_drill_control_dir.path }}/home"
+              - "{{ claim_token_race_drill_python }}"
+              - -I
+              - -S
+              - "{{ claim_token_race_drill_control_dir.path }}/probe.py"
+              - --scripts-root
+              - "{{ claim_token_race_drill_control_dir.path }}/plugin/.claude-plugin/scripts"
+              - --repo-root
+              - "{{ claim_token_race_drill_control_dir.path }}/plugin"
+              - --bd-path
+              - "{{ claim_token_race_drill_control_bd }}"
+              - dispose
+              - --item
+              - "{{ claim_token_race_drill_item }}"
+              - --writer
+              - "{{ claim_token_race_drill_control_writer }}"
+              - --reason
+              - >-
+                claim-token race drill finished ({{ inventory_hostname }} vs control
+                node); probe item of ansible/claim-token-race-drill.yml, never a work item.
+          register: claim_token_race_drill_disposed
+          delegate_to: localhost
+          changed_when: true
+          failed_when: false
+          when: claim_token_race_drill_item is defined
+
+        - name: Remove the control node's throwaway directory
+          ansible.builtin.file:
+            path: "{{ claim_token_race_drill_control_dir.path }}"
+            state: absent
+          delegate_to: localhost
+          when: claim_token_race_drill_control_dir.path is defined
+
+        - name: Read the drill's end time
+          ansible.builtin.command:
+            argv: [date, -u, +%Y-%m-%dT%H:%M:%SZ]
+          register: claim_token_race_drill_end
+          delegate_to: localhost
+          changed_when: false
+
+        - name: Report the drill's start and end UTC times, its probe item and its token chain
+          ansible.builtin.debug:
+            msg: >-
+              Claim-token race drill on {{ inventory_hostname }}
+              started at {{ claim_token_race_drill_start.stdout | default('unobserved') }}
+              ended at {{ claim_token_race_drill_end.stdout }};
+              probe item {{ claim_token_race_drill_item | default('not created') }}
+              first token {{ claim_token_race_drill_first_token | default('none') }}
+              disposal {{ claim_token_race_drill_disposed.stdout | default('not attempted') }};
+              verdicts {{ claim_token_race_drill_verdicts | default({}) | to_json }}
+
+        - name: Fail unless the credential left no trace and the tunnel left no listener
+          ansible.builtin.assert:
+            that:
+              - claim_token_race_drill_remote_residue.stdout | default('0') | trim == '0'
+              - claim_token_race_drill_control_residue.stdout | default('0') | trim == '0'
+              - claim_token_race_drill_listeners_after.stdout | default('') | trim == ''
+              - >-
+                claim_token_race_drill_item is not defined
+                or (claim_token_race_drill_disposed.stdout | default('{}') | from_json).closed | default(false)
+            fail_msg: >-
+              The drill left something behind on {{ inventory_hostname }}: files or
+              command lines carrying the credential on the target
+              ({{ claim_token_race_drill_remote_residue.stdout | default('0') | trim }}),
+              in the control node's throwaway directory
+              ({{ claim_token_race_drill_control_residue.stdout | default('0') | trim }}),
+              a listener on port {{ claim_token_race_drill_dolt_port }}
+              ({{ claim_token_race_drill_listeners_after.stdout | default('') | trim }}),
+              or an undisposed probe item
+              {{ claim_token_race_drill_item | default('none') }}
+              ({{ claim_token_race_drill_disposed.stdout | default('not attempted') }}).

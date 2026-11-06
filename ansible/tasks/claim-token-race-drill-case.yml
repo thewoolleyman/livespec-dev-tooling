@@ -1,0 +1,246 @@
+---
+# One case of ansible/claim-token-race-drill.yml, included once per entry of
+# `claim_token_race_drill_cases` with `claim_token_race_drill_case` bound. Both
+# writers are launched DETACHED with their report paths, decide on the item as
+# it stands, and block on their go FIFO; the play then releases them in the
+# order the case prescribes and reads the token chain back from the server.
+#
+# The credential reaches the target writer through its credential FIFO, fed by
+# the one `no_log` task below from the control node's environment, over a
+# pipelined channel. Nothing else here carries it: the launch lines name paths,
+# the writer's name, the case and a run id.
+
+- name: Create the case directories on both hosts
+  ansible.builtin.file:
+    path: "{{ item.dir }}/{{ claim_token_race_drill_case.name }}"
+    state: directory
+    mode: "0700"
+  loop:
+    - dir: "{{ claim_token_race_drill_remote_dir.path }}"
+      host: "{{ inventory_hostname }}"
+    - dir: "{{ claim_token_race_drill_control_dir.path }}"
+      host: localhost
+  loop_control:
+    label: "{{ item.dir }}/{{ claim_token_race_drill_case.name }}"
+  delegate_to: "{{ item.host }}"
+
+- name: Create the credential and go FIFOs
+  ansible.builtin.command:
+    argv: [mkfifo, -m, "0600", "{{ item.fifo }}"]
+  loop:
+    - fifo: "{{ claim_token_race_drill_remote_dir.path }}/{{ claim_token_race_drill_case.name }}/cred.fifo"
+      host: "{{ inventory_hostname }}"
+    - fifo: "{{ claim_token_race_drill_remote_dir.path }}/{{ claim_token_race_drill_case.name }}/go.fifo"
+      host: "{{ inventory_hostname }}"
+    - fifo: "{{ claim_token_race_drill_control_dir.path }}/{{ claim_token_race_drill_case.name }}/go.fifo"
+      host: localhost
+  loop_control:
+    label: "{{ item.fifo }}"
+  delegate_to: "{{ item.host }}"
+  changed_when: true
+
+- name: Launch the target's writer, detached, reading its credential from the FIFO
+  # `&` plus the redirects are why this is `shell`: the writer blocks on its
+  # FIFOs across several tasks and is reaped by pid in the play's `always:`.
+  ansible.builtin.shell:
+    cmd: >-
+      setsid env
+      HOME={{ claim_token_race_drill_remote_dir.path }}/home
+      LIVESPEC_BD_REAL={{ claim_token_race_drill_remote_dir.path }}/bin/bd-real
+      {{ claim_token_race_drill_python }} -I -S {{ claim_token_race_drill_remote_dir.path }}/probe.py
+      --scripts-root {{ claim_token_race_drill_remote_dir.path }}/plugin/.claude-plugin/scripts
+      --repo-root {{ claim_token_race_drill_remote_dir.path }}/plugin
+      --bd-path {{ claim_token_race_drill_remote_dir.path }}/bin/bd
+      --credential-fifo {{ claim_token_race_drill_remote_dir.path }}/{{ claim_token_race_drill_case.name }}/cred.fifo
+      writer --item {{ claim_token_race_drill_item }}
+      --writer {{ claim_token_race_drill_remote_writer }}
+      --case {{ claim_token_race_drill_case.name }}
+      --run-id drill-{{ claim_token_race_drill_case.name }}-{{ inventory_hostname }}
+      --go-fifo {{ claim_token_race_drill_remote_dir.path }}/{{ claim_token_race_drill_case.name }}/go.fifo
+      --barrier-point {{ claim_token_race_drill_case.remote_barrier_point }}
+      --decided {{ claim_token_race_drill_remote_dir.path }}/{{ claim_token_race_drill_case.name }}/decided.json
+      --report {{ claim_token_race_drill_remote_dir.path }}/{{ claim_token_race_drill_case.name }}/report.json
+      > {{ claim_token_race_drill_remote_dir.path }}/{{ claim_token_race_drill_case.name }}/writer.log 2>&1 < /dev/null &
+      echo $! > {{ claim_token_race_drill_remote_dir.path }}/{{ claim_token_race_drill_case.name }}/writer.pid
+  changed_when: true
+
+- name: Launch the control node's writer, detached, inheriting the wrapper's environment
+  ansible.builtin.shell:
+    cmd: >-
+      setsid env
+      HOME={{ claim_token_race_drill_control_dir.path }}/home
+      {{ claim_token_race_drill_python }} -I -S {{ claim_token_race_drill_control_dir.path }}/probe.py
+      --scripts-root {{ claim_token_race_drill_control_dir.path }}/plugin/.claude-plugin/scripts
+      --repo-root {{ claim_token_race_drill_control_dir.path }}/plugin
+      --bd-path {{ claim_token_race_drill_control_bd }}
+      writer --item {{ claim_token_race_drill_item }}
+      --writer {{ claim_token_race_drill_control_writer }}
+      --case {{ claim_token_race_drill_case.name }}
+      --run-id drill-{{ claim_token_race_drill_case.name }}-control-node
+      --go-fifo {{ claim_token_race_drill_control_dir.path }}/{{ claim_token_race_drill_case.name }}/go.fifo
+      --barrier-point {{ claim_token_race_drill_case.control_barrier_point }}
+      --decided {{ claim_token_race_drill_control_dir.path }}/{{ claim_token_race_drill_case.name }}/decided.json
+      --report {{ claim_token_race_drill_control_dir.path }}/{{ claim_token_race_drill_case.name }}/report.json
+      > {{ claim_token_race_drill_control_dir.path }}/{{ claim_token_race_drill_case.name }}/writer.log 2>&1 < /dev/null &
+      echo $! > {{ claim_token_race_drill_control_dir.path }}/{{ claim_token_race_drill_case.name }}/writer.pid
+  delegate_to: localhost
+  changed_when: true
+
+- name: Feed the target writer its credential through the FIFO
+  # The ONLY task that carries the value, as the module's stdin over the
+  # pipelined channel: no argument, no file, no register, no log.
+  ansible.builtin.command:
+    argv:
+      - timeout
+      - "{{ claim_token_race_drill_feed_timeout_seconds }}"
+      - sh
+      - -c
+      - 'cat > "$1"'
+      - sh
+      - "{{ claim_token_race_drill_remote_dir.path }}/{{ claim_token_race_drill_case.name }}/cred.fifo"
+    stdin: "{{ lookup('ansible.builtin.env', claim_token_race_drill_secret_env) }}"
+    stdin_add_newline: false
+  no_log: true
+  changed_when: true
+
+- name: Wait until both writers have decided on the item as it stands
+  ansible.builtin.wait_for:
+    path: "{{ item.dir }}/{{ claim_token_race_drill_case.name }}/decided.json"
+    timeout: "{{ claim_token_race_drill_feed_timeout_seconds }}"
+  loop:
+    - dir: "{{ claim_token_race_drill_remote_dir.path }}"
+      host: "{{ inventory_hostname }}"
+    - dir: "{{ claim_token_race_drill_control_dir.path }}"
+      host: localhost
+  loop_control:
+    label: "{{ item.dir }}/{{ claim_token_race_drill_case.name }}/decided.json"
+  delegate_to: "{{ item.host }}"
+
+- name: Name the instant at which both writers close the contested token
+  ansible.builtin.command:
+    argv: [date, -u, +%s]
+  register: claim_token_race_drill_now
+  delegate_to: localhost
+  changed_when: false
+  when: claim_token_race_drill_case.name == 'overlapping'
+
+- name: Release both writers at that one instant
+  ansible.builtin.command:
+    argv:
+      - timeout
+      - "{{ claim_token_race_drill_feed_timeout_seconds }}"
+      - sh
+      - -c
+      - 'printf "%s\n" "$1" > "$2"'
+      - sh
+      - "at {{ claim_token_race_drill_now.stdout | int + claim_token_race_drill_barrier_lead_seconds | int }}"
+      - "{{ item.dir }}/{{ claim_token_race_drill_case.name }}/go.fifo"
+  loop:
+    - dir: "{{ claim_token_race_drill_remote_dir.path }}"
+      host: "{{ inventory_hostname }}"
+    - dir: "{{ claim_token_race_drill_control_dir.path }}"
+      host: localhost
+  loop_control:
+    label: "{{ item.dir }}/{{ claim_token_race_drill_case.name }}/go.fifo"
+  delegate_to: "{{ item.host }}"
+  changed_when: true
+  when: claim_token_race_drill_case.name == 'overlapping'
+
+- name: Release the control node's writer first
+  ansible.builtin.command:
+    argv:
+      - timeout
+      - "{{ claim_token_race_drill_feed_timeout_seconds }}"
+      - sh
+      - -c
+      - 'printf "%s\n" "$1" > "$2"'
+      - sh
+      - now
+      - "{{ claim_token_race_drill_control_dir.path }}/{{ claim_token_race_drill_case.name }}/go.fifo"
+  delegate_to: localhost
+  changed_when: true
+  when: claim_token_race_drill_case.name == 'sequential'
+
+- name: Wait until the control node's writer has finished
+  ansible.builtin.wait_for:
+    path: "{{ claim_token_race_drill_control_dir.path }}/{{ claim_token_race_drill_case.name }}/report.json"
+    timeout: "{{ claim_token_race_drill_probe_timeout_seconds }}"
+  delegate_to: localhost
+
+- name: Release the target's writer only now that the first write is finished
+  ansible.builtin.command:
+    argv:
+      - timeout
+      - "{{ claim_token_race_drill_feed_timeout_seconds }}"
+      - sh
+      - -c
+      - 'printf "%s\n" "$1" > "$2"'
+      - sh
+      - now
+      - "{{ claim_token_race_drill_remote_dir.path }}/{{ claim_token_race_drill_case.name }}/go.fifo"
+  changed_when: true
+  when: claim_token_race_drill_case.name == 'sequential'
+
+- name: Wait until the target's writer has finished
+  ansible.builtin.wait_for:
+    path: "{{ claim_token_race_drill_remote_dir.path }}/{{ claim_token_race_drill_case.name }}/report.json"
+    timeout: "{{ claim_token_race_drill_probe_timeout_seconds }}"
+
+- name: Bring the target's report to the control node
+  ansible.builtin.fetch:
+    src: "{{ claim_token_race_drill_remote_dir.path }}/{{ claim_token_race_drill_case.name }}/report.json"
+    dest: "{{ claim_token_race_drill_control_dir.path }}/{{ claim_token_race_drill_case.name }}/remote-report.json"
+    flat: true
+
+- name: Read the control node's decision, which names the token this case contested
+  ansible.builtin.slurp:
+    src: "{{ claim_token_race_drill_control_dir.path }}/{{ claim_token_race_drill_case.name }}/decided.json"
+  register: claim_token_race_drill_decided
+  delegate_to: localhost
+
+- name: Read the token chain back from the server and grade the case
+  ansible.builtin.command:
+    argv:
+      - env
+      - "HOME={{ claim_token_race_drill_control_dir.path }}/home"
+      - "{{ claim_token_race_drill_python }}"
+      - -I
+      - -S
+      - "{{ claim_token_race_drill_control_dir.path }}/probe.py"
+      - --scripts-root
+      - "{{ claim_token_race_drill_control_dir.path }}/plugin/.claude-plugin/scripts"
+      - --repo-root
+      - "{{ claim_token_race_drill_control_dir.path }}/plugin"
+      - --bd-path
+      - "{{ claim_token_race_drill_control_bd }}"
+      - inspect
+      - --item
+      - "{{ claim_token_race_drill_item }}"
+      - --token
+      - "{{ (claim_token_race_drill_decided.content | b64decode | from_json).token }}"
+      - --reports
+      - "{{ claim_token_race_drill_control_dir.path }}/{{ claim_token_race_drill_case.name }}/report.json"
+      - "{{ claim_token_race_drill_control_dir.path }}/{{ claim_token_race_drill_case.name }}/remote-report.json"
+  register: claim_token_race_drill_inspected
+  delegate_to: localhost
+  changed_when: false
+
+- name: Keep this case's verdict for the final report
+  ansible.builtin.set_fact:
+    claim_token_race_drill_verdicts: >-
+      {{ claim_token_race_drill_verdicts | default({})
+         | combine({claim_token_race_drill_case.name: claim_token_race_drill_inspected.stdout | from_json}) }}
+
+- name: Report what the server holds after the case
+  ansible.builtin.debug:
+    msg: >-
+      Case {{ claim_token_race_drill_case.name }} on item {{ claim_token_race_drill_item }}:
+      {{ claim_token_race_drill_verdicts[claim_token_race_drill_case.name] | to_json }}
+
+- name: Fail unless exactly one writer won the token and wrote the item
+  ansible.builtin.assert:
+    that:
+      - claim_token_race_drill_verdicts[claim_token_race_drill_case.name].ok | bool
+    fail_msg: >-
+      Case {{ claim_token_race_drill_case.name }} did not prove the bullet:
+      {{ claim_token_race_drill_verdicts[claim_token_race_drill_case.name].checks }}
