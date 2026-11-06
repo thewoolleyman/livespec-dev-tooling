@@ -44,6 +44,15 @@
 #      the VM's /etc/apparmor.d on stdin and (re)loaded with apparmor_parser,
 #      because the VM kernel is the worker's kernel: a workflow pod naming
 #      the profile cannot start on a node that has not loaded it.
+#  11. The node's host collector configuration — the otel-collector
+#      repository's file at the commit pinned in telemetry/collector.ref — is
+#      fetched, delivered into the worker's telemetry/config.yaml in the VM on
+#      stdin and verified there against the pinned sha256 before it replaces
+#      the current copy (DoD assertion 18). When the task's environment
+#      carries HONEYCOMB_INGEST_KEY_LIVESPEC (run it under
+#      with-livespec-env.sh), the key is delivered into telemetry/.env on
+#      stdin, never in an argument; without it the worker still converges and
+#      its collector stays off.
 #
 # Every declared host runs this same code path; a host's .env carries data
 # only. The script stays bash 3.2-compatible because a worker host is not a
@@ -59,6 +68,8 @@ probe="$here/probe-vm-capabilities.sh"
 converge="$here/vm/converge-worker-container.sh"
 hook_bundles="${HOMELAB_WORKER_HOOK_BUNDLE_DIR:-$here/../ci-runner/k3s/phase2/container-hook/bundle}"
 apparmor_profile="${HOMELAB_WORKER_APPARMOR_PROFILE:-$here/../ci-runner/k3s/phase2/apparmor/ci-runner-workflow}"
+collector_ref="${HOMELAB_WORKER_COLLECTOR_REF:-$here/telemetry/collector.ref}"
+collector_base_url="${HOMELAB_WORKER_COLLECTOR_BASE_URL:-https://raw.githubusercontent.com/thewoolleyman/otel-collector}"
 state_dir="${XDG_STATE_HOME:-$HOME/.local/state}/livespec-homelab-worker"
 
 die() {
@@ -151,6 +162,16 @@ for bundle in "$hook_bundles"/*/; do
 done
 [ -n "$hook_versions" ] || die "no container hook bundle under $hook_bundles"
 [ -s "$apparmor_profile" ] || die "the workflow AppArmor profile $apparmor_profile is missing"
+
+# ref_value <key>: one key=value line of the collector pin.
+ref_value() {
+  sed -n "s/^$1=//p" "$collector_ref" | head -n 1
+}
+collector_commit="$(ref_value commit)"
+collector_file="$(ref_value file)"
+collector_sha="$(ref_value sha256)"
+[ -n "$collector_commit" ] && [ -n "$collector_file" ] && [ -n "$collector_sha" ] ||
+  die "the collector pin $collector_ref does not declare commit, file and sha256"
 
 os="$(uname -s)"
 if [ "$os" != "$WORKER_HOST_OS" ]; then
@@ -273,6 +294,28 @@ limactl shell --workdir / "$worker" sudo install -D -m 0644 /dev/stdin "$profile
 limactl shell --workdir / "$worker" sudo apparmor_parser -r "$profile_dest" ||
   die "AppArmor refused the workflow profile $profile_dest in VM $worker; the worker container was not converged"
 say "workflow AppArmor profile loaded from $profile_dest in VM $worker"
+
+collector_tmp="$(mktemp)"
+trap 'rm -f "$collector_tmp"' EXIT
+curl -fsSL -o "$collector_tmp" "$collector_base_url/$collector_commit/$collector_file" ||
+  die "could not fetch the collector configuration $collector_file at $collector_commit"
+collector_dest="$worker_root/telemetry/config.yaml"
+if [ "$(vm_sha256 "$collector_dest")" = "$collector_sha" ]; then
+  say "collector configuration $collector_commit is current in VM $worker"
+else
+  limactl shell --workdir / "$worker" sudo install -D -m 0644 /dev/stdin "$collector_dest.new" <"$collector_tmp"
+  [ "$(vm_sha256 "$collector_dest.new")" = "$collector_sha" ] ||
+    die "the collector configuration delivered to VM $worker does not match the sha256 pinned in $collector_ref; the worker container was not converged"
+  limactl shell --workdir / "$worker" sudo mv "$collector_dest.new" "$collector_dest"
+  say "collector configuration $collector_commit delivered to $collector_dest in VM $worker"
+fi
+if [ -n "${HONEYCOMB_INGEST_KEY_LIVESPEC:-}" ]; then
+  printf 'HONEYCOMB_INGEST_KEY_LIVESPEC=%s\n' "$HONEYCOMB_INGEST_KEY_LIVESPEC" |
+    limactl shell --workdir / "$worker" sudo install -D -m 0600 /dev/stdin "$worker_root/telemetry/.env"
+  say "collector ingest key delivered to $worker_root/telemetry/.env in VM $worker"
+else
+  say "no HONEYCOMB_INGEST_KEY_LIVESPEC in the environment; the worker's collector stays off (run this task under with-livespec-env.sh to deliver it)"
+fi
 
 image="$(grep -v '^#' "$here/image/ref" | head -n 1)"
 say "converging worker container $worker in VM $worker"
