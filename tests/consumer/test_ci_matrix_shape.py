@@ -19,7 +19,12 @@ consumer in a different way:
   `target:` list is a static literal, no gating job carries a job-level `if:`
   that could skip it on one event and not another, and the workflow triggers
   on `pull_request` and on `push` to `master` alike. Together those mean the
-  same required-check names appear on a PR as on master. The mechanism that
+  same required-check names appear on a PR as on master. The one job-level
+  `if:` a gating job may carry is built ONLY from run-status terms
+  (`_RUN_STATUS_ONLY_JOB_IFS`): it reads no event, ref, label or variable, so
+  it cannot tell a pull request from a push. It exists because a job that
+  `needs:` another is SKIPPED when that one fails, which would itself drop
+  matrix entries; `!cancelled()` keeps the job running. The mechanism that
   used to break this — a `detect-py-changes` job whose `py_changed` output
   gated the python jobs, letting a doc-only PR run FEWER checks than master —
   is asserted absent by name, along with the path filters that would subset
@@ -70,6 +75,20 @@ _JOB_HEADER = re.compile(r"^  (?P<job>[a-z0-9-]+):$", re.MULTILINE)
 # Job-level keys sit at four spaces; `needs:` is written as a flow sequence.
 _NEEDS_LIST = re.compile(r"^    needs: \[(?P<members>[^\]]*)\]", re.MULTILINE)
 _JOB_LEVEL_IF = re.compile(r"^    if:\s*(?P<expression>.+?)\s*$", re.MULTILINE)
+
+# The only job-level `if:` expressions a gating job may carry: run-status terms
+# and nothing else. Neither reads the event, a ref, a label or a variable, so
+# neither can skip a job on one event and run it on another. They are listed
+# verbatim, not matched by shape, so a new expression must be added here by
+# name. The four jobs that read the `incident-ci` job's `omitted` output carry
+# one of them (work-item livespec-dev-tooling-z3wy33): without it a failed or
+# refused `incident-ci` would skip them, and they must then run in full.
+_RUN_STATUS_ONLY_JOB_IFS = frozenset(
+    {
+        "${{ !cancelled() }}",
+        "${{ !cancelled() && needs.check-per-file-coverage.result == 'success' }}",
+    }
+)
 
 # A matrix `target:` list and its entries, at their fixed indents.
 _MATRIX_TARGETS = re.compile(r"^        target:\n(?P<body>(?:^          .*\n)*)", re.MULTILINE)
@@ -129,6 +148,33 @@ def _gating_job_names(*, text: str) -> list[str]:
     return [member.strip() for member in needs.group("members").split(",")]
 
 
+def _event_capable_job_ifs(*, blocks: dict[str, str], gating: list[str]) -> dict[str, list[str]]:
+    """Each gating job mapped to its job-level `if:` expressions that are not run-status-only."""
+    found = {
+        name: sorted(
+            expression
+            for expression in _JOB_LEVEL_IF.findall(blocks[name])
+            if expression not in _RUN_STATUS_ONLY_JOB_IFS
+        )
+        for name in gating
+    }
+    return {name: expressions for name, expressions in found.items() if expressions}
+
+
+def test_a_job_level_if_is_admitted_only_when_it_reads_run_status_alone() -> None:
+    """The run-status allowance admits nothing that could tell one event from another."""
+    blocks = {
+        "status-only": "    needs: [incident-ci]\n    if: ${{ !cancelled() }}\n",
+        "event": "    if: ${{ !cancelled() && github.event_name == 'push' }}\n",
+        "variable": "    if: ${{ vars.SKIP_COVERAGE != 'true' }}\n",
+        "unconditioned": "    runs-on: ubuntu-latest\n",
+    }
+    assert _event_capable_job_ifs(blocks=blocks, gating=sorted(blocks)) == {
+        "event": ["${{ !cancelled() && github.event_name == 'push' }}"],
+        "variable": ["${{ vars.SKIP_COVERAGE != 'true' }}"],
+    }
+
+
 def test_the_shipped_reusable_workflows_stay_on_github_hosted_capacity() -> None:
     """No workflow this library ships requires a self-hosted label set."""
     workflows = _reusable_workflows()
@@ -176,11 +222,7 @@ def test_the_gating_matrix_entry_set_is_identical_on_every_gated_event() -> None
     unknown = sorted(name for name in gating if name not in blocks)
     assert not unknown, f"`ci-green` names a job the workflow does not declare; unknown={unknown}"
 
-    conditioned = {
-        name: sorted(_JOB_LEVEL_IF.findall(blocks[name]))
-        for name in gating
-        if _JOB_LEVEL_IF.search(blocks[name]) is not None
-    }
+    conditioned = _event_capable_job_ifs(blocks=blocks, gating=gating)
     assert not conditioned, (
         f"a gating job carrying a job-level `if:` can be skipped on one event and run "
         f"on another, which drops its matrix entries from a consumer's required-check "

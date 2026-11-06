@@ -144,7 +144,7 @@
     "spec_file": "constraints.md",
     "heading": "## CI matrix shape",
     "test": "tests.consumer.test_ci_matrix_shape.test_the_gating_matrix_entry_set_is_identical_on_every_gated_event",
-    "reason": "Consumer-tier: the constraint's own reason is that a consumer's branch protection names individual matrix entries as required checks, so the entry set is asserted event-independent — the workflow triggers on `pull_request` and on `push` to master alike, the retired zero-`.py` subsetting mechanism and the trigger-level path filters that would subset the same way are absent, no job in `ci-green`'s `needs:` set carries a job-level `if:`, and every matrix target is a literal `check-<slug>` (plan fleet-heading-coverage-convergence P2 burn-down, livespec-dev-tooling-hhp4og)."
+    "reason": "Consumer-tier: the constraint's own reason is that a consumer's branch protection names individual matrix entries as required checks, so the entry set is asserted event-independent — the workflow triggers on `pull_request` and on `push` to master alike, the retired zero-`.py` subsetting mechanism and the trigger-level path filters that would subset the same way are absent, no job in `ci-green`'s `needs:` set carries a job-level `if:` other than a run-status-only one (`!cancelled()`, which reads no event), and every matrix target is a literal `check-<slug>` (plan fleet-heading-coverage-convergence P2 burn-down, livespec-dev-tooling-hhp4og)."
   },
   {
     "spec_root": "SPECIFICATION",
