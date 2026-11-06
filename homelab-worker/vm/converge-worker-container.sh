@@ -41,8 +41,13 @@
 #      provisioner's default storage (/var/lib/rancher/k3s/storage), so work
 #      volumes outlive the container, and ci/hooks/ is the fleet container
 #      hook tree (/usr/local/lib/ci-runner-k3s/hooks), read-only, which the
-#      start task delivers (research 009). A running worker created without
-#      these binds is replaced; its state on the data disk is kept.
+#      start task delivers (research 009). The VM's securityfs is bound
+#      read-only at /sys/kernel/security: the kubelet decides AppArmor support
+#      from it, Docker does not mount it into a container, and without it the
+#      kubelet refuses every workflow pod confined by the fleet's AppArmor
+#      profile (measured on macbook-m4-max, 2026-11-06). A running worker
+#      created without these binds is replaced; its state on the data disk is
+#      kept.
 #   7. kubelet-config.yaml and kubelet.env (node name, node IP, host) are
 #      written to enrollment/. The kubelet starts only once the operator has
 #      delivered client-ca.crt there and either bootstrap-kubeconfig is there
@@ -167,6 +172,7 @@ run_container() {
     --volume "$root/enrollment:/etc/homelab-worker" \
     --volume "$root/ci/storage:/var/lib/rancher/k3s/storage" \
     --volume "$root/ci/hooks:/usr/local/lib/ci-runner-k3s/hooks:ro" \
+    --volume /sys/kernel/security:/sys/kernel/security:ro \
     --env container=docker \
     --stop-signal SIGRTMIN+3 \
     --restart no \
@@ -193,8 +199,9 @@ if current="$(docker inspect -f '{{.Config.Image}} {{.State.Running}}' "$worker"
     docker rm -f "$worker" >/dev/null
     run_container
   elif ! printf '%s\n' "$destinations" | grep -qx /var/lib/rancher/k3s/storage ||
-    ! printf '%s\n' "$destinations" | grep -qx /usr/local/lib/ci-runner-k3s/hooks; then
-    say "replacing container $worker, created without the CI storage and hook binds; its state on the data disk is kept"
+    ! printf '%s\n' "$destinations" | grep -qx /usr/local/lib/ci-runner-k3s/hooks ||
+    ! printf '%s\n' "$destinations" | grep -qx /sys/kernel/security; then
+    say "replacing container $worker, created without the CI storage, hook or securityfs binds; its state on the data disk is kept"
     docker rm -f "$worker" >/dev/null
     run_container
   elif [ "$running" = "true" ]; then
