@@ -11,7 +11,9 @@ container's image, run state and tailscaled state in files, and assert:
   derived name, and the tailnet IPv4 becomes the node IP;
 - a worker on the tailnet always accepts the K3s nodes' advertised /32 routes (research 007);
 - the kubelet starts only once enrollment has been delivered;
-- the fixture's first stage puts the worker on a Docker network with no tailnet login.
+- the fixture's first stage puts the worker on a Docker network with no tailnet login;
+- the CI work-volume storage and the fleet container hooks are data-disk binds, and a running
+  worker without them is replaced with its state kept.
 """
 
 from __future__ import annotations
@@ -42,6 +44,17 @@ _NEEDS_LOGIN = (
     '{\n  "BackendState": "NeedsLogin",\n  "AuthURL": "https://login.tailscale.com/a/abc123"\n}\n'
 )
 
+# Every container path the worker binds from the VM, as a current worker reports them.
+_DESTINATIONS = (
+    "/lib/modules",
+    "/var/lib/containerd",
+    "/var/lib/kubelet",
+    "/var/lib/tailscale",
+    "/etc/homelab-worker",
+    "/var/lib/rancher/k3s/storage",
+    "/usr/local/lib/ci-runner-k3s/hooks",
+)
+
 _STUB_DOCKER = """#!/bin/bash
 s="$STUB_STATE"
 printf 'docker %s\\n' "$*" >> "$s/calls.log"
@@ -50,12 +63,17 @@ case "$1" in
     [ -f "$s/container" ] || exit 1
     case "$3" in
       *NetworkSettings*) cat "$s/network-ip" ;;
-      *Mounts*) cat "$s/mount" ;;
+      *'"/etc/homelab-worker"'*) cat "$s/mount" ;;
+      *Mounts*) cat "$s/destinations" ;;
       *) cat "$s/container" ;;
     esac ;;
   run)
+    : > "$s/destinations"
+    prev=""
     for a in "$@"; do
       case "$a" in *:/etc/homelab-worker) echo "${a%:/etc/homelab-worker}" > "$s/mount" ;; esac
+      if [ "$prev" = --volume ]; then d="${a#*:}"; echo "${d%%:*}" >> "$s/destinations"; fi
+      prev="$a"
       last="$a"
     done
     echo "$last true" > "$s/container" ;;
@@ -140,6 +158,7 @@ def vm(tmp_path: Path) -> _Vm:
     (state / "mount-target").write_text("/mnt/test-data\n", encoding="utf-8")
     (state / "host-dev").write_text("2049\n", encoding="utf-8")
     (state / "ctr-dev").write_text("2049\n", encoding="utf-8")
+    (state / "destinations").write_text("\n".join(_DESTINATIONS) + "\n", encoding="utf-8")
     return _Vm(state=state, bin_dir=bin_dir, root=tmp_path / "hwdata" / "worker")
 
 
@@ -474,3 +493,27 @@ def test_a_running_worker_bound_to_the_root_disk_is_restarted_before_any_tailnet
     tailnet = [i for i, c in enumerate(calls) if " tailscale " in c]
     assert tailnet
     assert restarts[0] < min(tailnet)
+
+
+def test_the_ci_storage_and_container_hooks_are_bound_from_the_data_disk(vm: _Vm) -> None:
+    # The local-path work volumes and the fleet container hook are node paths: on the worker
+    # they resolve inside the container, so both must be data-disk binds (research 009).
+    result = _run(vm=vm)
+    assert result.returncode == 0, result.stdout + result.stderr
+    [run] = _calls(vm=vm, verb="run")
+    assert f"--volume {vm.root}/ci/storage:/var/lib/rancher/k3s/storage " in run
+    assert f"--volume {vm.root}/ci/hooks:/usr/local/lib/ci-runner-k3s/hooks:ro " in run
+    assert (vm.root / "ci" / "storage").is_dir()
+    assert (vm.root / "ci" / "hooks").is_dir()
+
+
+def test_a_running_worker_without_the_ci_binds_is_replaced_keeping_its_state(vm: _Vm) -> None:
+    (vm.state / "container").write_text(f"{_IMAGE} true\n", encoding="utf-8")
+    (vm.state / "mount").write_text(f"{vm.root}/enrollment\n", encoding="utf-8")
+    (vm.state / "destinations").write_text("\n".join(_DESTINATIONS[:5]) + "\n", encoding="utf-8")
+    result = _run(vm=vm)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "replacing" in result.stdout
+    assert len(_calls(vm=vm, verb="rm")) == 1
+    [run] = _calls(vm=vm, verb="run")
+    assert ":/var/lib/rancher/k3s/storage " in run
