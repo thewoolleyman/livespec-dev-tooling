@@ -109,10 +109,13 @@
     claim_token_race_drill_tmp_root: ""
     claim_token_race_drill_secret_env: BEADS_DOLT_PASSWORD
     claim_token_race_drill_wrapper: /usr/local/bin/with-livespec-env.sh
-    # Seconds between the play naming the race instant and the instant itself:
-    # both writers are already blocked at their compare-and-swap, so this only
-    # has to cover two FIFO writes.
-    claim_token_race_drill_barrier_lead_seconds: 10
+    # Seconds between the play naming the race instant and the instant itself.
+    # The instant is named only once both writers have written their
+    # `at-barrier.json` marker, so it has to cover two FIFO writes and the
+    # hosts' clock skew, not the writers' ledger round trips; a writer that
+    # reads an instant more than 5 s past reports `barrier-missed` with its own
+    # clock readings.
+    claim_token_race_drill_barrier_lead_seconds: 30
     claim_token_race_drill_feed_timeout_seconds: 120
     claim_token_race_drill_probe_timeout_seconds: 600
     claim_token_race_drill_wait_interval: 2

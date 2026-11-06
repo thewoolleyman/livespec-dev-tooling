@@ -172,15 +172,17 @@ def test_now_releases_at_once_and_an_instant_is_waited_for(*, tmp_path: Path) ->
 
     later = tmp_path / "later"
     later.write_text("at 100.0\n")
-    ticks = iter([99.0, 99.99, 100.01, 100.01])
+    ticks = iter([98.0, 99.0, 99.99, 100.01, 100.01])
     assert barrier.wait_for_go(fifo=later, clock=lambda: next(ticks)) == 100.01
 
 
 def test_an_instant_already_past_is_a_missed_barrier(*, tmp_path: Path) -> None:
     past = tmp_path / "go"
     past.write_text("at 5\n")
-    with pytest.raises(barrier.BarrierMissedError, match="already"):
+    with pytest.raises(barrier.BarrierMissedError, match="clock read 20.000") as raised:
         barrier.wait_for_go(fifo=past, clock=lambda: 20.0)
+    assert "named instant 5.000" in str(raised.value)
+    assert "gave up at 20.000" in str(raised.value)
 
 
 def test_the_barrier_client_delegates_and_pauses_once_at_the_first_close(*, client: Any) -> None:
@@ -289,7 +291,10 @@ def test_a_writer_whose_close_barrier_is_already_past_reports_barrier_missed(
     report = probe.run_writer(args=args, plugin=plugin, client=client)
 
     assert report["outcome"] == "barrier-missed"
-    assert "already" in report["detail"]
+    assert "clock read" in report["detail"]
+    marker = json.loads(args.go_fifo.with_name("at-barrier.json").read_text())
+    assert marker["writer"] == _CONTROL
+    assert marker["clock"] == report["trace"]["barrier_reached_at"]
     assert report["trace"]["closes"] == []
     assert len(report["trace"]["successors_created"]) == 1
     assert client.show_issue(issue_id=created["token_id"])["status"] != "closed"

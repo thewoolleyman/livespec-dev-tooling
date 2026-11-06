@@ -134,6 +134,10 @@ def grade(
         "item": item.get("id"),
         "contested_token": token.get("id"),
         "release_skew_seconds": max(released) - min(released) if released else None,
+        "barrier_reached_at": {
+            r["writer"]: r.get("trace", {}).get("barrier_reached_at") for r in reports
+        },
+        "barrier_detail": {r["writer"]: r.get("detail") for r in reports},
         "token_close_reason": reason or token.get("close_reason"),
         "item_names": named,
         "item_run_id": run_id_of(record=item),

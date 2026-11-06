@@ -18,7 +18,7 @@ if TYPE_CHECKING:
 
 __all__: list[str] = ["BarrierClient", "BarrierMissedError", "wait_for_go"]
 
-_BARRIER_TOLERANCE_SECONDS = 2.0
+_BARRIER_TOLERANCE_SECONDS = 5.0
 
 
 class BarrierMissedError(Exception):
@@ -26,13 +26,25 @@ class BarrierMissedError(Exception):
 
 
 def wait_for_go(*, fifo: Path, clock: Callable[[], float] = time.time) -> float:
-    """Block on the go FIFO; return once its instant arrives on this host's clock."""
+    """Block on the go FIFO; return once its instant arrives on this host's clock.
+
+    The instant is compared on THIS host's clock, so a miss names three
+    readings a second run can be diagnosed from: the instant the play named,
+    this host's clock when the signal arrived, and the clock when it gave up.
+    """
+    opened_at = clock()
     signal = fifo.read_text(encoding="utf-8").strip()
+    arrived_at = clock()
     if signal == "now":
-        return clock()
+        return arrived_at
     at = float(signal.split()[1])
-    if clock() - at > _BARRIER_TOLERANCE_SECONDS:
-        msg = f"go signal named {at}, already {clock() - at:.1f}s past"
+    if arrived_at - at > _BARRIER_TOLERANCE_SECONDS:
+        msg = (
+            f"go signal named instant {at:.3f}; this host's clock read {arrived_at:.3f} when it "
+            f"arrived ({arrived_at - at:.1f}s past the instant, tolerance "
+            f"{_BARRIER_TOLERANCE_SECONDS:.0f}s); the FIFO was opened at {opened_at:.3f}; "
+            f"gave up at {clock():.3f}"
+        )
         raise BarrierMissedError(msg)
     while (remaining := at - clock()) > 0:
         time.sleep(min(remaining, 0.05))

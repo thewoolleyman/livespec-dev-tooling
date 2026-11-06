@@ -284,6 +284,7 @@ def _run_playbook(
     tunnel_bind: str = "loopback",
     hang_intent: str = "",
     probe_timeout: int = 120,
+    barrier_lead: int = 6,
 ) -> tuple[int, str]:
     """Run the committed playbook; return its exit code and its callback output."""
     # The throwaway root is passed as the play's own variable, never as TMPDIR:
@@ -328,7 +329,7 @@ def _run_playbook(
         "claim_token_race_drill_bd_arch": os.uname().machine,
         "claim_token_race_drill_python": sys.executable,
         "claim_token_race_drill_tmp_root": str(scratch.tmp_dir),
-        "claim_token_race_drill_barrier_lead_seconds": 6,
+        "claim_token_race_drill_barrier_lead_seconds": barrier_lead,
         "claim_token_race_drill_feed_timeout_seconds": 60,
         "claim_token_race_drill_probe_timeout_seconds": probe_timeout,
         "claim_token_race_drill_wait_interval": 1,
@@ -522,3 +523,16 @@ def test_a_writer_that_never_finishes_is_killed_and_the_probe_item_still_dispose
     (item,) = items.values()
     assert item["status"] == "closed", "the always block disposes of the probe item"
     assert _REPORT.search(output) is not None, "times are printed even when a case fails"
+
+
+def test_a_release_instant_already_past_is_a_diagnosable_miss_and_still_cleaned_up(
+    *, scratch: _Scratch
+) -> None:
+    code, output = _run_playbook(scratch=scratch, confirm=_TARGET, barrier_lead=-60)
+
+    assert code != 0, output
+    assert output.count("barrier-missed") >= 2, output
+    assert "clock read" in output and "named instant" in output, output
+    _assert_everything_removed(scratch=scratch, output=output)
+    (item,) = _items(scratch=scratch).values()
+    assert item["status"] == "closed", "the always block disposes of the probe item"

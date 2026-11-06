@@ -116,6 +116,25 @@
     label: "{{ item.dir }}/{{ claim_token_race_drill_case.name }}/decided.json"
   delegate_to: "{{ item.host }}"
 
+- name: Wait until both writers stand at their barrier
+  # Each writer writes this marker, with its own clock, the moment it opens
+  # its go FIFO: after its decision read, its successor's creation and every
+  # ledger call before the close. The instant is named only now, so the lead
+  # covers two FIFO writes and never the writers' own ledger round trips (the
+  # first real run named it after `decided.json` and both writers missed it).
+  ansible.builtin.wait_for:
+    path: "{{ item.dir }}/{{ claim_token_race_drill_case.name }}/at-barrier.json"
+    timeout: "{{ claim_token_race_drill_probe_timeout_seconds }}"
+  loop:
+    - dir: "{{ claim_token_race_drill_remote_dir.path }}"
+      host: "{{ inventory_hostname }}"
+    - dir: "{{ claim_token_race_drill_control_dir.path }}"
+      host: localhost
+  loop_control:
+    label: "{{ item.dir }}/{{ claim_token_race_drill_case.name }}/at-barrier.json"
+  delegate_to: "{{ item.host }}"
+  when: claim_token_race_drill_case.name == 'overlapping'
+
 - name: Name the instant at which both writers close the contested token
   ansible.builtin.command:
     argv: [date, -u, +%s]
