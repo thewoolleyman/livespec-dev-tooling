@@ -58,6 +58,18 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.180.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.179.3...v1.180.0) (2026-11-06)
+
+
+### Features
+
+* **ansible:** converge the independent incident observer service (livespec-dev-tooling-w7n3ad) ([ff92e71](https://github.com/thewoolleyman/livespec-dev-tooling/commit/ff92e71ec9338d1668d2a7da13455d71a7ed3807))
+
+
+### Bug Fixes
+
+* stop a loaded runner reading as a wrong incident CI signature (livespec-dev-tooling-jfp2w5) ([0c2c2c8](https://github.com/thewoolleyman/livespec-dev-tooling/commit/0c2c2c84f4e4caca426d01637eee997c5abf3bfd))
+
 ## [1.179.3](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.179.2...v1.179.3) (2026-11-06)
 
 
