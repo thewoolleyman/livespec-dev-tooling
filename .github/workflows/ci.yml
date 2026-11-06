@@ -274,6 +274,7 @@ jobs:
       # logs "ignoring existing .coverage without a matching provenance marker"
       # and re-runs the whole suite. Ship the receipt beside the data file.
       - name: Publish the provenance receipt for the check-coverage consumer
+        if: ${{ !(needs.incident-ci.result == 'success' && contains(fromJSON(needs.incident-ci.outputs.omitted || '[]'), 'check-per-file-coverage')) }}
         uses: actions/upload-artifact@v4
         with:
           name: coverage-reuse-token
@@ -352,6 +353,7 @@ jobs:
       # beside .coverage so check-coverage takes its consume-once branch (read,
       # report --fail-under=100, delete) instead of re-running the suite.
       - name: Download the producer's provenance receipt
+        if: ${{ !(needs.incident-ci.result == 'success' && contains(fromJSON(needs.incident-ci.outputs.omitted || '[]'), matrix.target)) }}
         uses: actions/download-artifact@v4
         with:
           name: coverage-reuse-token
