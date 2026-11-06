@@ -56,6 +56,7 @@ _DESTINATIONS = (
     "/usr/local/lib/ci-runner-k3s/hooks",
     "/sys/kernel/security",
     "/etc/otel-collector",
+    "/usr/local/lib/ci-runner-k3s/bin",
 )
 
 _STUB_DOCKER = """#!/bin/bash
@@ -136,7 +137,9 @@ cat "$STUB_STATE/ip-addrs" 2>/dev/null
 """
 
 
-_READ_ONLY = frozenset({"/lib/modules", "/usr/local/lib/ci-runner-k3s/hooks"})
+_READ_ONLY = frozenset(
+    {"/lib/modules", "/usr/local/lib/ci-runner-k3s/hooks", "/usr/local/lib/ci-runner-k3s/bin"}
+)
 
 
 def _mounts(destinations: tuple[str, ...], *, read_only: frozenset[str] = _READ_ONLY) -> str:
@@ -550,7 +553,9 @@ def test_the_kubelet_sees_the_vms_apparmor_through_a_securityfs_bind(vm: _Vm) ->
 def test_a_running_worker_without_the_securityfs_bind_is_replaced(vm: _Vm) -> None:
     (vm.state / "container").write_text(f"{_IMAGE} true\n", encoding="utf-8")
     (vm.state / "mount").write_text(f"{vm.root}/enrollment\n", encoding="utf-8")
-    (vm.state / "destinations").write_text(_mounts(_DESTINATIONS[:-1]), encoding="utf-8")
+    (vm.state / "destinations").write_text(
+        _mounts(tuple(d for d in _DESTINATIONS if d != "/sys/kernel/security")), encoding="utf-8"
+    )
     result = _run(vm=vm)
     assert result.returncode == 0, result.stdout + result.stderr
     assert len(_calls(vm=vm, verb="rm")) == 1
@@ -611,3 +616,22 @@ def test_the_collector_stays_off_without_its_key_or_the_bridge(
     assert not (vm.state / "collector.log").exists()
     assert not (vm.root / "telemetry" / "node.env").exists()
     assert "collector" in result.stdout
+
+
+def test_the_pool_binaries_are_bound_read_only_from_the_data_disk(vm: _Vm) -> None:
+    # A workflow pod mounts this node path idmapped (hostUsers: false); the container's overlayfs
+    # root cannot take an idmapped mount, the data disk's XFS can (measured 2026-11-06).
+    result = _run(vm=vm)
+    assert result.returncode == 0, result.stdout + result.stderr
+    [run] = _calls(vm=vm, verb="run")
+    assert f"--volume {vm.root}/ci/bin:/usr/local/lib/ci-runner-k3s/bin:ro " in run
+    assert (vm.root / "ci" / "bin").is_dir()
+
+
+def test_a_running_worker_without_the_pool_binaries_bind_is_replaced(vm: _Vm) -> None:
+    (vm.state / "container").write_text(f"{_IMAGE} true\n", encoding="utf-8")
+    (vm.state / "mount").write_text(f"{vm.root}/enrollment\n", encoding="utf-8")
+    (vm.state / "destinations").write_text(_mounts(_DESTINATIONS[:-1]), encoding="utf-8")
+    result = _run(vm=vm)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert len(_calls(vm=vm, verb="rm")) == 1
