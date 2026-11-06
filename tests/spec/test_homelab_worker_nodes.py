@@ -9,12 +9,14 @@ VM recreation, no second worker — is an assertion about that log.
 
 from __future__ import annotations
 
+import re
 import stat
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
+import yaml
 
 __all__: list[str] = []
 
@@ -24,11 +26,14 @@ _SCRIPT = _WORKER_DIR / "start-homelab-worker-node-container.sh"
 _GIB = 1024 * 1024 * 1024
 # Mocked host declarations: the tests never read the committed hosts/ values.
 _HOSTS = {
-    "alpha": {"cpus": 3, "memory_gib": 5, "disk_gib": 7, "data_gib": 11},
-    "beta": {"cpus": 13, "memory_gib": 17, "disk_gib": 19, "data_gib": 23},
+    "alpha": {"cpus": 3, "memory_gib": 5, "disk_gib": 7, "data_gib": 11, "lan": "10.99.0.21/24"},
+    "beta": {"cpus": 13, "memory_gib": 17, "disk_gib": 19, "data_gib": 23, "lan": "10.99.0.22/24"},
+    "delta": {"cpus": 2, "memory_gib": 3, "disk_gib": 5, "data_gib": 7},
 }
 _A = "alpha"
 _B = "beta"
+_NO_LAN = "delta"
+_OPTIONAL_HOST_KEYS = {"WORKER_LAN_ADDRESS"}
 _REQUIRED_HOST_KEYS = {
     "WORKER_HOST_OS",
     "WORKER_VM_CPUS",
@@ -43,6 +48,7 @@ printf 'limactl %s\\n' "$*" >> "$STUB_LOG"
 state="$STUB_STATE"
 case "${1:-}" in
   --version) cat "$state/lima-version"; exit 0 ;;
+  sudoers) exit "$(cat "$state/sudoers-exit" 2>/dev/null || echo 0)" ;;
   list)
     shift
     fmt=""
@@ -50,6 +56,7 @@ case "${1:-}" in
     while [ "$#" -gt 0 ]; do
       case "$1" in
         --format) fmt="$2"; shift 2 ;;
+        --json) fmt=json; shift ;;
         *) name="$1"; shift ;;
       esac
     done
@@ -57,12 +64,16 @@ case "${1:-}" in
       [ -e "$f" ] || continue
       n="${f##*/}"
       if [ -n "$name" ] && [ "$n" != "$name" ]; then continue; fi
-      if [ "$fmt" = "{{.Name}}" ]; then echo "$n"; else cat "$f"; fi
+      case "$n" in *.json) continue ;; esac
+      if [ "$fmt" = "{{.Name}}" ]; then echo "$n"
+      elif [ "$fmt" = json ]; then cat "$f.json"
+      else cat "$f"; fi
     done
     exit 0 ;;
   create)
     for a in "$@"; do case "$a" in --name=*) n="${a#--name=}" ;; esac; done
     echo "Stopped 0 0 0" > "$state/instances/$n"
+    echo '{"config":{"networks":[{"lima":"bridged"}]}}' > "$state/instances/$n.json"
     exit 0 ;;
   start) exit 0 ;;
   disk)
@@ -79,6 +90,10 @@ case "${1:-}" in
         exit 0 ;;
     esac
     cat > "$state/shell-stdin"
+    if grep -q '^# converge-lan-address' "$state/shell-stdin"; then
+      mv "$state/shell-stdin" "$state/lan-stdin"
+      exit "$(cat "$state/lan-exit" 2>/dev/null || echo 0)"
+    fi
     if grep -q '^# converge-worker-container' "$state/shell-stdin"; then
       mv "$state/shell-stdin" "$state/converge-stdin"
       echo "converge-worker-container: worker converged"
@@ -136,9 +151,11 @@ def host(tmp_path: Path) -> _Host:
             f"WORKER_VM_CPUS={v['cpus']}\n"
             f"WORKER_VM_MEMORY_GIB={v['memory_gib']}\n"
             f"WORKER_VM_DISK_GIB={v['disk_gib']}\n"
-            f"WORKER_DATA_DISK_GIB={v['data_gib']}\n",
+            f"WORKER_DATA_DISK_GIB={v['data_gib']}\n"
+            + (f"WORKER_LAN_ADDRESS={v['lan']}\n" if "lan" in v else ""),
             encoding="utf-8",
         )
+    _write_exec(path=bin_dir / "socket_vmnet", text="#!/bin/bash\nexit 0\n")
     return _Host(bin_dir=bin_dir, state=state, log=log)
 
 
@@ -148,10 +165,21 @@ def _install_lima(*, host: _Host, version: str) -> None:
 
 
 def _add_instance(
-    *, host: _Host, name: str, status: str, cpus: int, memory_gib: int, disk_gib: int
+    *,
+    host: _Host,
+    name: str,
+    status: str,
+    cpus: int,
+    memory_gib: int,
+    disk_gib: int,
+    bridged: bool = True,
 ) -> None:
     (host.state / "instances" / name).write_text(
         f"{status} {cpus} {memory_gib * _GIB} {disk_gib * _GIB}\n", encoding="utf-8"
+    )
+    networks = '[{"lima":"bridged"}]' if bridged else "[]"
+    (host.state / "instances" / f"{name}.json").write_text(
+        f'{{"config":{{"networks":{networks}}}}}\n', encoding="utf-8"
     )
 
 
@@ -159,13 +187,14 @@ def _run(
     *, host: _Host, args: list[str], extra_env: dict[str, str] | None = None
 ) -> subprocess.CompletedProcess[str]:
     env = {
-        **(extra_env or {}),
         "PATH": f"{host.bin_dir}:/usr/bin:/bin",
         "HOME": str(host.state),
         "STUB_LOG": str(host.log),
         "STUB_STATE": str(host.state),
         "STUB_BIN": str(host.bin_dir),
         "HOMELAB_WORKER_HOSTS_DIR": str(host.state / "hosts"),
+        "HOMELAB_WORKER_SOCKET_VMNET": str(host.bin_dir / "socket_vmnet"),
+        **(extra_env or {}),
     }
     return subprocess.run(
         ["/bin/bash", str(_SCRIPT), *args],
@@ -319,7 +348,7 @@ def test_every_committed_host_declaration_is_data_for_the_same_code_path() -> No
             .splitlines()
             if line and not line.startswith("#")
         }
-        assert keys == _REQUIRED_HOST_KEYS
+        assert _REQUIRED_HOST_KEYS <= keys <= _REQUIRED_HOST_KEYS | _OPTIONAL_HOST_KEYS
 
 
 def test_a_new_vm_gets_an_xfs_data_disk_created_once(host: _Host) -> None:
@@ -382,11 +411,12 @@ def test_after_a_passing_probe_the_worker_container_converges_from_the_pinned_im
         for line in (_WORKER_DIR / "image" / "ref").read_text(encoding="utf-8").splitlines()
         if not line.startswith("#")
     ]
-    assert image.startswith("ghcr.io/thewoolleyman/livespec-worker-node@sha256:")
+    assert re.fullmatch(r"\S+@sha256:[0-9a-f]{64}", image)
     shells = [c for c in _calls(host=host) if c.startswith("limactl shell ")]
     assert shells[-1] == (
         f"limactl shell --workdir / {_A}-homelab-worker sudo bash -s -- "
-        f"{_A}-homelab-worker {_A} {image} /mnt/lima-hwdata/worker"
+        f"{_A}-homelab-worker {_A} {image} /mnt/lima-hwdata/worker "
+        f"host:{_HOSTS[_A]['lan'].split('/')[0]}"
     )
     assert (host.state / "converge-stdin").read_text(encoding="utf-8") == (
         _WORKER_DIR / "vm" / "converge-worker-container.sh"
@@ -448,3 +478,79 @@ def test_an_incomplete_enrollment_is_refused_before_any_host_change(host: _Host)
     assert result.returncode != 0
     assert "client-ca.crt" in result.stderr
     assert _calls(host=host) == []
+
+
+def test_a_host_declaring_no_lan_address_is_refused_before_any_vm_call(host: _Host) -> None:
+    _install_lima(host=host, version="2.2.1")
+    result = _run(host=host, args=[_NO_LAN])
+    assert result.returncode != 0
+    assert "WORKER_LAN_ADDRESS" in result.stderr
+    assert [c for c in _calls(host=host) if c.split()[1] in {"create", "start", "shell"}] == []
+
+
+def test_a_missing_socket_vmnet_stops_the_task_before_the_vm_starts(host: _Host) -> None:
+    _install_lima(host=host, version="2.2.1")
+    result = _run(
+        host=host,
+        args=[_A],
+        extra_env={"HOMELAB_WORKER_SOCKET_VMNET": str(host.state / "absent")},
+    )
+    assert result.returncode != 0
+    assert "socket_vmnet" in result.stderr
+    calls = _calls(host=host)
+    assert [c for c in calls if c.split()[1] in {"create", "start", "shell"}] == []
+    assert [c for c in calls if c.startswith("brew ")] == []
+
+
+def test_a_failing_sudoers_check_stops_the_task_before_the_vm_starts(host: _Host) -> None:
+    _install_lima(host=host, version="2.2.1")
+    (host.state / "sudoers-exit").write_text("1\n", encoding="utf-8")
+    result = _run(host=host, args=[_A])
+    assert result.returncode != 0
+    assert "limactl sudoers" in result.stderr
+    assert [c for c in _calls(host=host) if c.split()[1] in {"create", "start", "shell"}] == []
+
+
+def test_the_vm_template_declares_a_bridged_network() -> None:
+    template = yaml.safe_load((_WORKER_DIR / "lima" / "worker.yaml").read_text(encoding="utf-8"))
+    assert {"lima": "bridged"} in template["networks"]
+
+
+def test_an_existing_vm_without_the_bridged_network_is_refused_naming_it(host: _Host) -> None:
+    _install_lima(host=host, version="2.2.1")
+    _add_instance(
+        host=host,
+        name=f"{_A}-homelab-worker",
+        status="Stopped",
+        cpus=_HOSTS[_A]["cpus"],
+        memory_gib=_HOSTS[_A]["memory_gib"],
+        disk_gib=_HOSTS[_A]["disk_gib"],
+        bridged=False,
+    )
+    result = _run(host=host, args=[_A])
+    assert result.returncode != 0
+    assert "bridged" in result.stderr
+    assert [c for c in _calls(host=host) if c.split()[1] in {"create", "delete", "start"}] == []
+
+
+def test_the_declared_lan_address_is_set_on_the_bridged_interface_before_converging(
+    host: _Host,
+) -> None:
+    _install_lima(host=host, version="2.2.1")
+    result = _run(host=host, args=[_A])
+    assert result.returncode == 0, result.stderr
+    shells = [c for c in _calls(host=host) if c.startswith("limactl shell ")]
+    lan = f"limactl shell --workdir / {_A}-homelab-worker sudo bash -s -- lima0 {_HOSTS[_A]['lan']}"
+    assert lan in shells
+    assert shells.index(lan) < len(shells) - 1
+    assert (host.state / "lan-stdin").read_text(encoding="utf-8") == (
+        _WORKER_DIR / "vm" / "converge-lan-address.sh"
+    ).read_text(encoding="utf-8")
+
+
+def test_a_failed_lan_address_step_never_converges_the_worker_container(host: _Host) -> None:
+    _install_lima(host=host, version="2.2.1")
+    (host.state / "lan-exit").write_text("1\n", encoding="utf-8")
+    result = _run(host=host, args=[_A])
+    assert result.returncode != 0
+    assert not (host.state / "converge-stdin").exists()

@@ -42,6 +42,7 @@ prog="start-homelab-worker-node-container"
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 hosts_dir="${HOMELAB_WORKER_HOSTS_DIR:-$here/hosts}"
 template="$here/lima/worker.yaml"
+socket_vmnet="${HOMELAB_WORKER_SOCKET_VMNET:-/opt/socket_vmnet/bin/socket_vmnet}"
 probe="$here/probe-vm-capabilities.sh"
 converge="$here/vm/converge-worker-container.sh"
 state_dir="${XDG_STATE_HOME:-$HOME/.local/state}/livespec-homelab-worker"
@@ -99,6 +100,7 @@ WORKER_VM_CPUS=""
 WORKER_VM_MEMORY_GIB=""
 WORKER_VM_DISK_GIB=""
 WORKER_DATA_DISK_GIB=""
+WORKER_LAN_ADDRESS=""
 # shellcheck disable=SC1090  # the declared host's data file
 . "$hosts_dir/$host.env"
 for key in WORKER_HOST_OS WORKER_VM_CPUS WORKER_VM_MEMORY_GIB WORKER_VM_DISK_GIB WORKER_DATA_DISK_GIB; do
@@ -106,6 +108,13 @@ for key in WORKER_HOST_OS WORKER_VM_CPUS WORKER_VM_MEMORY_GIB WORKER_VM_DISK_GIB
   # shellcheck disable=SC2154  # val is assigned by the eval above
   [ -n "$val" ] || die "homelab-worker/hosts/$host.env does not declare $key"
 done
+
+case "$WORKER_LAN_ADDRESS" in
+  "") die "homelab-worker/hosts/$host.env does not declare WORKER_LAN_ADDRESS, the worker's static home-LAN address in address/prefix form (declare one outside the home network's DHCP pool)" ;;
+  [0-9]*.[0-9]*.[0-9]*.[0-9]*/[0-9]*) ;;
+  *) die "homelab-worker/hosts/$host.env declares WORKER_LAN_ADDRESS=$WORKER_LAN_ADDRESS, which is not an IPv4 address/prefix" ;;
+esac
+lan_ip="${WORKER_LAN_ADDRESS%/*}"
 
 worker="$host-homelab-worker"
 data_disk="hwdata"
@@ -137,6 +146,17 @@ if ! version_ge "$lima_version" "$min_version"; then
 fi
 say "reusing Lima $lima_version (minimum $min_version)"
 
+# The bridged network's host prerequisites are documented host changes; the
+# task checks them and never installs or modifies them.
+missing=""
+[ -x "$socket_vmnet" ] ||
+  missing="$missing
+  socket_vmnet is absent at $socket_vmnet: install Lima's socket_vmnet root-owned there (see Lima's network docs) as a documented host change"
+limactl sudoers --check >/dev/null 2>&1 ||
+  missing="$missing
+  limactl sudoers --check fails: write the sudoers entry with 'limactl sudoers | sudo tee /etc/sudoers.d/lima' as a documented host change"
+[ -z "$missing" ] || die "the bridged network's host prerequisites are missing; the VM was not created or started:$missing"
+
 instances="$(limactl list --format '{{.Name}}' 2>/dev/null || true)"
 other="$(printf '%s\n' "$instances" | grep -- '-homelab-worker$' | grep -vx -- "$worker" | head -n 1 || true)"
 if [ -n "$other" ]; then
@@ -152,6 +172,8 @@ EOF_LIST
     die "VM $worker has cpus=$cpus but homelab-worker/hosts/$host.env declares WORKER_VM_CPUS=$WORKER_VM_CPUS; refusing to rebuild the VM — change it with 'limactl edit $worker' or revert the declaration"
   [ "$memory" = "$((WORKER_VM_MEMORY_GIB * gib))" ] ||
     die "VM $worker has memory=$memory bytes but homelab-worker/hosts/$host.env declares WORKER_VM_MEMORY_GIB=$WORKER_VM_MEMORY_GIB; refusing to rebuild the VM — change it with 'limactl edit $worker' or revert the declaration"
+  limactl list --json "$worker" | grep -q '"lima":"bridged"' ||
+    die "VM $worker has no Lima bridged network (networks: [{lima: bridged}]); refusing to rebuild the VM — add it with 'limactl edit $worker' as a documented host change"
   [ "$disk" = "$((WORKER_VM_DISK_GIB * gib))" ] ||
     die "VM $worker has disk=$disk bytes but homelab-worker/hosts/$host.env declares WORKER_VM_DISK_GIB=$WORKER_VM_DISK_GIB; refusing to rebuild the VM — revert the declaration"
   if [ "$status" = "Running" ]; then
@@ -188,6 +210,10 @@ else
   exit 1
 fi
 
+say "setting the declared home-LAN address $WORKER_LAN_ADDRESS on lima0 in VM $worker"
+limactl shell --workdir / "$worker" sudo bash -s -- lima0 "$WORKER_LAN_ADDRESS" <"$here/vm/converge-lan-address.sh" ||
+  die "the home-LAN address step failed in VM $worker; the worker container was not converged"
+
 worker_root="/mnt/lima-$data_disk/worker"
 if [ -n "$enrollment" ]; then
   limactl shell --workdir / "$worker" sudo mkdir -p -m 0700 "$worker_root/enrollment"
@@ -199,6 +225,6 @@ fi
 
 image="$(grep -v '^#' "$here/image/ref" | head -n 1)"
 say "converging worker container $worker in VM $worker"
-limactl shell --workdir / "$worker" sudo bash -s -- "$worker" "$host" "$image" "$worker_root" <"$converge"
+limactl shell --workdir / "$worker" sudo bash -s -- "$worker" "$host" "$image" "$worker_root" "host:$lan_ip" <"$converge"
 
 say "worker $worker converged for host $host"
