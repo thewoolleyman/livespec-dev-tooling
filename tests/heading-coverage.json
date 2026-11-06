@@ -2399,5 +2399,13 @@
     "test": "TODO",
     "reason": "A real test at the integration tier or above is owed for this scenario: the keep-out guard run over a fixture justfile whose check aggregate reaches mutation-kill-matrix, asserting a finding naming the recipe and the aggregate. livespec-dev-tooling-wou75w owns it.",
     "work_item": "livespec-dev-tooling-wou75w"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: the fleet test baseline reports per-repository counts and fleet totals",
+    "test": "TODO",
+    "reason": "A real test at the integration tier or above is owed for this scenario: `just fleet-test-baseline` over three fixture clones (a five-test pytest repo, a three-test nextest workspace, two *.test.sh scripts), asserting per-repository counts of 5, 3 and 2, a fleet total of 10, a total wall-clock equal to the sum, and the timing method, host identity and toolchain versions. livespec-dev-tooling-phakbp owns it.",
+    "work_item": "livespec-dev-tooling-phakbp"
   }
 ]

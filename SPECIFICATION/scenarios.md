@@ -3017,3 +3017,15 @@ Given a repository whose `just check` aggregate does not reach `mutation-kill-ma
 When a change adds `mutation-kill-matrix` to the `just check` aggregate
 
 Then the keep-out guard check MUST fail with a finding naming `mutation-kill-matrix` and the `just check` aggregate
+
+## Scenario: the fleet test baseline reports per-repository counts and fleet totals
+
+Given a Python repository whose pytest suite collects 5 tests, a Rust workspace whose `cargo nextest list --message-format json` reports 3 tests, and a repository with 2 `*.test.sh` scripts
+
+When `just fleet-test-baseline` runs over those three clones
+
+Then the JSON document MUST report test counts of 5, 3 and 2 for those repositories, each with its counting command, its timed test command and its wall-clock
+
+And the document MUST report a fleet total test count of 10 and a fleet total wall-clock equal to the sum of the three wall-clocks
+
+And the document MUST name the timing method, the host identity and the toolchain versions
