@@ -597,6 +597,15 @@ from ever fucking happening again to lose hours of work: 'It never pushed the ru
 day: bd-ib-yuwftp's run 01M6KBH30NJA lost about 6 h of work at its wall-budget cancel (19:28Z), because only a 78-byte
 diff pointer was kept before `fabro rm -f`.
 
+**A preserve check reads the dispatch id, never only the run id.** A factory run's `needs-human/<id>` branch is named
+by the DISPATCH id (the run label `livespec.dispatch.id`), not by the Fabro run id or the work-item id, and the run
+journal's `preserved-tree-skipped` row means only that no failed engine checkpoint existed. To check that a run's tree
+is on origin, read the item's `livespec-needs-human-cause` comment, which names the ref, and confirm it with
+`git ls-remote origin refs/heads/needs-human/<dispatch-id>`. Measured 2026-11-06 04:3xZ: legacy-dispatcher-agent
+reported bd-ib-5nkxfz's run 01M6Q7M6057J as having no needs-human branch after grepping `ls-remote` for the run id and
+the item id; the branch was on origin as `needs-human/7c779a2f7c3b4cfda0b8b26de00babe4` (b2c03cdf). A false absence
+there can send a cancel or a relaunch decision the wrong way.
+
 **An infrastructure restart is CANCEL-TO-IDLE, never wait-for-drain.** A k3s, Fabro server or engine restart that
 needs idle runs follows `.ai/factory-restart-cancels-runs.md`: set the caps to 0, preserve, cancel the live runs,
 restart, verify, restore the caps and re-dispatch the cancelled items seeded at once. Never hold a restart while
