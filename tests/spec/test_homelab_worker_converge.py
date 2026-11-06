@@ -369,24 +369,28 @@ def test_the_worker_starts_at_boot_only_after_its_data_disk_is_mounted(vm: _Vm) 
     assert "WantedBy=cloud-init.target" in lines
     [wait] = [line for line in lines if line.startswith("ExecStartPre=")]
     assert "mountpoint -q /mnt/test-data" in wait
-    assert f"ExecStart=/usr/bin/docker start {_WORKER}" in lines
+    # systemd is the worker's only supervisor: Docker restoring it at daemon start raced the
+    # data-disk mount even with --restart on-failure (macbook-m4-max, 2026-11-06).
+    assert "Type=simple" in lines
+    assert f"ExecStart=/usr/bin/docker start -a {_WORKER}" in lines
+    assert f"ExecStop=/usr/bin/docker stop {_WORKER}" in lines
+    assert "Restart=on-failure" in lines
     calls = (vm.state / "calls.log").read_text(encoding="utf-8").splitlines()
     assert "systemctl daemon-reload" in calls
     assert "systemctl enable homelab-worker-container.service" in calls
 
 
-def test_the_worker_container_restarts_only_on_failure(vm: _Vm) -> None:
+def test_docker_never_restarts_the_worker_itself(vm: _Vm) -> None:
     assert _run(vm=vm).returncode == 0
     [run] = _calls(vm=vm, verb="run")
-    assert "--restart on-failure" in run
-    assert "unless-stopped" not in run
+    assert "--restart no" in run
 
 
-def test_an_existing_worker_is_moved_to_the_on_failure_restart_policy(vm: _Vm) -> None:
+def test_an_existing_worker_is_moved_to_the_no_restart_policy(vm: _Vm) -> None:
     (vm.state / "container").write_text(f"{_IMAGE} true\n", encoding="utf-8")
     (vm.state / "mount").write_text(f"{vm.root}/enrollment\n", encoding="utf-8")
     assert _run(vm=vm).returncode == 0
-    assert _calls(vm=vm, verb="update") == [f"docker update --restart on-failure {_WORKER}"]
+    assert _calls(vm=vm, verb="update") == [f"docker update --restart no {_WORKER}"]
 
 
 def test_an_unchanged_worker_unit_is_not_reloaded(vm: _Vm) -> None:

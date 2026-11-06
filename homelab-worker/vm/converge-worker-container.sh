@@ -29,8 +29,10 @@
 #      multi-user.target, so gating docker.service on it deadlocks boot.
 #      Instead homelab-worker-container.service, ordered after cloud-final and
 #      docker and pulled in by cloud-init.target, waits for the mountpoint and
-#      starts the worker, and the container restarts only on failure, so
-#      Docker never races to restart it at boot.
+#      supervises the worker (docker start -a, Restart=on-failure); the
+#      container itself runs with --restart no, because dockerd restores even
+#      an on-failure container at daemon start, before the disk is mounted
+#      (measured on macbook-m4-max, 2026-11-06).
 #   5. br_netfilter is loaded and listed in modules-load.d: flannel and
 #      kube-proxy need the bridge netfilter sysctls, and nothing else in the
 #      VM loads the module at boot (measured on macbook-m4-max, 2026-11-06).
@@ -121,10 +123,12 @@ After=cloud-final.service docker.service
 Requires=docker.service
 
 [Service]
-Type=oneshot
-RemainAfterExit=yes
+Type=simple
 ExecStartPre=/bin/sh -c 'i=0; until mountpoint -q $disk_mount; do i=\$\$((i + 1)); [ \$\$i -ge 600 ] && exit 1; sleep 1; done'
-ExecStart=/usr/bin/docker start $worker
+ExecStart=/usr/bin/docker start -a $worker
+ExecStop=/usr/bin/docker stop $worker
+Restart=on-failure
+RestartSec=5
 
 [Install]
 WantedBy=cloud-init.target"
@@ -155,7 +159,7 @@ run_container() {
     --volume "$root/enrollment:/etc/homelab-worker" \
     --env container=docker \
     --stop-signal SIGRTMIN+3 \
-    --restart on-failure \
+    --restart no \
     --label "homelab-worker.livespec.dev/worker=$worker"
   if [ -n "$network" ]; then
     set -- "$@" --network "$network"
@@ -170,7 +174,7 @@ if current="$(docker inspect -f '{{.Config.Image}} {{.State.Running}}' "$worker"
   mounted="$(docker inspect -f '{{range .Mounts}}{{if eq .Destination "/etc/homelab-worker"}}{{.Source}}{{end}}{{end}}' "$worker")"
   [ "$mounted" = "$root/enrollment" ] ||
     die "container $worker keeps its enrollment at '$mounted', not $root/enrollment; remove that worker first (k3s-fixture.sh down removes the fixture's)"
-  docker update --restart on-failure "$worker" >/dev/null
+  docker update --restart no "$worker" >/dev/null
   current_image="${current% *}"
   running="${current##* }"
   if [ "$current_image" != "$image" ]; then
