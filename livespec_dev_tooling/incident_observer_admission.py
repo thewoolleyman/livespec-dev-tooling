@@ -230,8 +230,14 @@ def _arm_change_refusal(
     if record.get("observer_arm_id") != expected_arm_id:
         return "pre-merge observer arm compare-and-swap failed"
     previous = record.get("observer_arm")
-    if isinstance(previous, dict) and arm.generation <= cast("int", previous["generation"]):
-        return "pre-merge observer generation moved backwards"
+    if isinstance(previous, dict):
+        retained_arm = cast("dict[str, object]", previous)
+        retained = cast("int", retained_arm["generation"])
+        if retained_arm["incident_item_id"] == arm.incident_item_id and arm.generation <= retained:
+            return (
+                f"pre-merge observer generation {arm.generation} is not past the"
+                f" retained generation {retained} of the same incident"
+            )
     actions = cast("dict[str, dict[str, object]]", record.get("actions", {}))
     if any(action.get("status") == "pending" for action in actions.values()):
         return "prior recovery effect requires exact receipt before correction"
