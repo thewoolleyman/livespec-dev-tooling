@@ -42,12 +42,14 @@
 #      volumes outlive the container, and ci/hooks/ is the fleet container
 #      hook tree (/usr/local/lib/ci-runner-k3s/hooks), read-only, which the
 #      start task delivers (research 009). The VM's securityfs is bound
-#      read-only at /sys/kernel/security: the kubelet decides AppArmor support
-#      from it, Docker does not mount it into a container, and without it the
-#      kubelet refuses every workflow pod confined by the fleet's AppArmor
-#      profile (measured on macbook-m4-max, 2026-11-06). A running worker
-#      created without these binds is replaced; its state on the data disk is
-#      kept.
+#      read-write at /sys/kernel/security: the kubelet decides AppArmor
+#      support from it, Docker does not mount it into a container, and
+#      without it the kubelet refuses every workflow pod confined by the
+#      fleet's AppArmor profile; once it is visible, containerd loads its own
+#      default profile through it, so a read-only bind fails every container
+#      start (both measured on macbook-m4-max, 2026-11-06). A running worker
+#      created without these binds, or with securityfs read-only, is
+#      replaced; its state on the data disk is kept.
 #   7. kubelet-config.yaml and kubelet.env (node name, node IP, host) are
 #      written to enrollment/. The kubelet starts only once the operator has
 #      delivered client-ca.crt there and either bootstrap-kubeconfig is there
@@ -172,7 +174,7 @@ run_container() {
     --volume "$root/enrollment:/etc/homelab-worker" \
     --volume "$root/ci/storage:/var/lib/rancher/k3s/storage" \
     --volume "$root/ci/hooks:/usr/local/lib/ci-runner-k3s/hooks:ro" \
-    --volume /sys/kernel/security:/sys/kernel/security:ro \
+    --volume /sys/kernel/security:/sys/kernel/security \
     --env container=docker \
     --stop-signal SIGRTMIN+3 \
     --restart no \
@@ -193,15 +195,16 @@ if current="$(docker inspect -f '{{.Config.Image}} {{.State.Running}}' "$worker"
   docker update --restart no "$worker" >/dev/null
   current_image="${current% *}"
   running="${current##* }"
-  destinations="$(docker inspect -f '{{range .Mounts}}{{.Destination}}{{"\n"}}{{end}}' "$worker")"
+  # Each bind as "<destination> <read-write>".
+  mounts="$(docker inspect -f '{{range .Mounts}}{{.Destination}} {{.RW}}{{"\n"}}{{end}}' "$worker")"
   if [ "$current_image" != "$image" ]; then
     say "replacing container $worker ($current_image) with $image; its state on the data disk is kept"
     docker rm -f "$worker" >/dev/null
     run_container
-  elif ! printf '%s\n' "$destinations" | grep -qx /var/lib/rancher/k3s/storage ||
-    ! printf '%s\n' "$destinations" | grep -qx /usr/local/lib/ci-runner-k3s/hooks ||
-    ! printf '%s\n' "$destinations" | grep -qx /sys/kernel/security; then
-    say "replacing container $worker, created without the CI storage, hook or securityfs binds; its state on the data disk is kept"
+  elif ! printf '%s\n' "$mounts" | grep -qx '/var/lib/rancher/k3s/storage true' ||
+    ! printf '%s\n' "$mounts" | grep -qx '/usr/local/lib/ci-runner-k3s/hooks false' ||
+    ! printf '%s\n' "$mounts" | grep -qx '/sys/kernel/security true'; then
+    say "replacing container $worker, created without the current CI storage, hook or securityfs binds; its state on the data disk is kept"
     docker rm -f "$worker" >/dev/null
     run_container
   elif [ "$running" = "true" ]; then

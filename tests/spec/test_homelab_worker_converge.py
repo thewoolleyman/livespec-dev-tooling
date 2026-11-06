@@ -44,7 +44,8 @@ _NEEDS_LOGIN = (
     '{\n  "BackendState": "NeedsLogin",\n  "AuthURL": "https://login.tailscale.com/a/abc123"\n}\n'
 )
 
-# Every container path the worker binds from the VM, as a current worker reports them.
+# Every container path the worker binds from the VM, as a current worker reports them; the
+# stub reports each with its read-write flag.
 _DESTINATIONS = (
     "/lib/modules",
     "/var/lib/containerd",
@@ -73,7 +74,11 @@ case "$1" in
     prev=""
     for a in "$@"; do
       case "$a" in *:/etc/homelab-worker) echo "${a%:/etc/homelab-worker}" > "$s/mount" ;; esac
-      if [ "$prev" = --volume ]; then d="${a#*:}"; echo "${d%%:*}" >> "$s/destinations"; fi
+      if [ "$prev" = --volume ]; then
+        d="${a#*:}"; rw=true
+        case "$d" in *:ro) rw=false ;; esac
+        echo "${d%%:*} $rw" >> "$s/destinations"
+      fi
       prev="$a"
       last="$a"
     done
@@ -128,6 +133,13 @@ cat "$STUB_STATE/ip-addrs" 2>/dev/null
 """
 
 
+_READ_ONLY = frozenset({"/lib/modules", "/usr/local/lib/ci-runner-k3s/hooks"})
+
+
+def _mounts(destinations: tuple[str, ...], *, read_only: frozenset[str] = _READ_ONLY) -> str:
+    return "".join(f"{d} {str(d not in read_only).lower()}\n" for d in destinations)
+
+
 @dataclass(frozen=True, kw_only=True)
 class _Vm:
     state: Path
@@ -159,7 +171,7 @@ def vm(tmp_path: Path) -> _Vm:
     (state / "mount-target").write_text("/mnt/test-data\n", encoding="utf-8")
     (state / "host-dev").write_text("2049\n", encoding="utf-8")
     (state / "ctr-dev").write_text("2049\n", encoding="utf-8")
-    (state / "destinations").write_text("\n".join(_DESTINATIONS) + "\n", encoding="utf-8")
+    (state / "destinations").write_text(_mounts(_DESTINATIONS), encoding="utf-8")
     return _Vm(state=state, bin_dir=bin_dir, root=tmp_path / "hwdata" / "worker")
 
 
@@ -511,7 +523,7 @@ def test_the_ci_storage_and_container_hooks_are_bound_from_the_data_disk(vm: _Vm
 def test_a_running_worker_without_the_ci_binds_is_replaced_keeping_its_state(vm: _Vm) -> None:
     (vm.state / "container").write_text(f"{_IMAGE} true\n", encoding="utf-8")
     (vm.state / "mount").write_text(f"{vm.root}/enrollment\n", encoding="utf-8")
-    (vm.state / "destinations").write_text("\n".join(_DESTINATIONS[:5]) + "\n", encoding="utf-8")
+    (vm.state / "destinations").write_text(_mounts(_DESTINATIONS[:5]), encoding="utf-8")
     result = _run(vm=vm)
     assert result.returncode == 0, result.stdout + result.stderr
     assert "replacing" in result.stdout
@@ -522,19 +534,33 @@ def test_a_running_worker_without_the_ci_binds_is_replaced_keeping_its_state(vm:
 
 def test_the_kubelet_sees_the_vms_apparmor_through_a_securityfs_bind(vm: _Vm) -> None:
     # The kubelet runs in the container and refuses an AppArmor-confined pod unless it can see
-    # securityfs, which Docker does not mount into a container (measured 2026-11-06).
+    # securityfs, which Docker does not mount into a container; once it is visible, containerd
+    # loads its default profile through it, so the bind is writable (measured 2026-11-06: a
+    # read-only bind failed every container start with exit 226).
     result = _run(vm=vm)
     assert result.returncode == 0, result.stdout + result.stderr
     [run] = _calls(vm=vm, verb="run")
-    assert "--volume /sys/kernel/security:/sys/kernel/security:ro " in run
+    assert "--volume /sys/kernel/security:/sys/kernel/security " in run
+    assert "/sys/kernel/security:ro" not in run
 
 
 def test_a_running_worker_without_the_securityfs_bind_is_replaced(vm: _Vm) -> None:
     (vm.state / "container").write_text(f"{_IMAGE} true\n", encoding="utf-8")
     (vm.state / "mount").write_text(f"{vm.root}/enrollment\n", encoding="utf-8")
-    (vm.state / "destinations").write_text("\n".join(_DESTINATIONS[:-1]) + "\n", encoding="utf-8")
+    (vm.state / "destinations").write_text(_mounts(_DESTINATIONS[:-1]), encoding="utf-8")
     result = _run(vm=vm)
     assert result.returncode == 0, result.stdout + result.stderr
     assert len(_calls(vm=vm, verb="rm")) == 1
     [run] = _calls(vm=vm, verb="run")
-    assert ":/sys/kernel/security:ro " in run
+    assert ":/sys/kernel/security " in run
+
+
+def test_a_running_worker_with_a_read_only_securityfs_bind_is_replaced(vm: _Vm) -> None:
+    (vm.state / "container").write_text(f"{_IMAGE} true\n", encoding="utf-8")
+    (vm.state / "mount").write_text(f"{vm.root}/enrollment\n", encoding="utf-8")
+    (vm.state / "destinations").write_text(
+        _mounts(_DESTINATIONS, read_only=_READ_ONLY | {"/sys/kernel/security"}), encoding="utf-8"
+    )
+    result = _run(vm=vm)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert len(_calls(vm=vm, verb="rm")) == 1
