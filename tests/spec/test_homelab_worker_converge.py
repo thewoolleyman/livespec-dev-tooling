@@ -55,6 +55,7 @@ _DESTINATIONS = (
     "/var/lib/rancher/k3s/storage",
     "/usr/local/lib/ci-runner-k3s/hooks",
     "/sys/kernel/security",
+    "/etc/otel-collector",
 )
 
 _STUB_DOCKER = """#!/bin/bash
@@ -96,6 +97,8 @@ case "$1" in
       "tailscale set "*) printf '%s\\n' "$*" >> "$s/ts-set.log" ;;
       "systemctl start kubelet") : ;;
       "stat -c %d /var/lib/tailscale") cat "$s/ctr-dev" ;;
+      "ip -4 -o addr show dev cni0") cat "$s/cni0" 2>/dev/null ;;
+      "systemctl restart otel-collector") printf 'restart otel-collector\\n' >> "$s/collector.log" ;;
       *) exit 2 ;;
     esac ;;
   restart) : ;;
@@ -564,3 +567,47 @@ def test_a_running_worker_with_a_read_only_securityfs_bind_is_replaced(vm: _Vm) 
     result = _run(vm=vm)
     assert result.returncode == 0, result.stdout + result.stderr
     assert len(_calls(vm=vm, verb="rm")) == 1
+
+
+def _deliver_telemetry(*, vm: _Vm, key: bool = True) -> None:
+    telemetry = vm.root / "telemetry"
+    telemetry.mkdir(parents=True, exist_ok=True)
+    (telemetry / "config.yaml").write_text("# mocked collector configuration\n", encoding="utf-8")
+    if key:
+        (telemetry / ".env").write_text("HONEYCOMB_INGEST_KEY_LIVESPEC=x\n", encoding="utf-8")
+
+
+def test_the_host_collector_reads_its_state_from_the_data_disk(vm: _Vm) -> None:
+    result = _run(vm=vm)
+    assert result.returncode == 0, result.stdout + result.stderr
+    [run] = _calls(vm=vm, verb="run")
+    assert f"--volume {vm.root}/telemetry:/etc/otel-collector " in run
+    assert stat.S_IMODE((vm.root / "telemetry").stat().st_mode) == 0o700
+
+
+def test_a_delivered_collector_gets_its_node_values_and_is_restarted(vm: _Vm) -> None:
+    _deliver_telemetry(vm=vm)
+    (vm.state / "cni0").write_text(
+        "5: cni0    inet 10.99.7.1/24 brd 10.99.7.255 scope global cni0\n", encoding="utf-8"
+    )
+    result = _run(vm=vm)
+    assert result.returncode == 0, result.stdout + result.stderr
+    node_env = (vm.root / "telemetry" / "node.env").read_text(encoding="utf-8")
+    assert node_env == f"WORKER_NODE_NAME={_WORKER}\nOTLP_PODS_ENDPOINT=10.99.7.1:4319\n"
+    assert (vm.state / "collector.log").read_text(encoding="utf-8") == "restart otel-collector\n"
+
+
+@pytest.mark.parametrize(("key", "bridge"), [(False, True), (True, False)])
+def test_the_collector_stays_off_without_its_key_or_the_bridge(
+    vm: _Vm, *, key: bool, bridge: bool
+) -> None:
+    _deliver_telemetry(vm=vm, key=key)
+    if bridge:
+        (vm.state / "cni0").write_text(
+            "5: cni0    inet 10.99.7.1/24 brd 10.99.7.255 scope global cni0\n", encoding="utf-8"
+        )
+    result = _run(vm=vm)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert not (vm.state / "collector.log").exists()
+    assert not (vm.root / "telemetry" / "node.env").exists()
+    assert "collector" in result.stdout
