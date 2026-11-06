@@ -12,7 +12,8 @@
 # embedded and MUST never run this (002: "Do not install a second cluster-wide
 # Flannel DaemonSet"). The flannel CNI plugin binary ships in the worker image;
 # this DaemonSet installs only the conflist. The VXLAN interface comes from
-# ConfigMap homelab-worker-cluster (tailscale0 in production).
+# ConfigMap homelab-worker-cluster (lima0, the VM's bridged home-LAN
+# interface, in production).
 #
 # Apply:    kubectl apply -f homelab-worker/networking/
 # Rollback: kubectl delete ds,cm,sa,clusterrole,clusterrolebinding -A \
