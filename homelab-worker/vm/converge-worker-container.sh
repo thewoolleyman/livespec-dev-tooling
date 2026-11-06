@@ -26,7 +26,9 @@
 #      Docker's restart policy restarts the worker before the data disk is
 #      mounted, binds empty directories from the root disk, and the worker
 #      loses its tailnet identity and enrollment (measured on macbook-m4-max,
-#      2026-11-06). A drop-in for docker.service carries RequiresMountsFor.
+#      2026-11-06). Lima mounts the disk from cloud-init, outside systemd, so
+#      there is no mount unit to order against: a docker.service drop-in's
+#      ExecStartPre waits, bounded, until the disk's mountpoint is mounted.
 #   5. br_netfilter is loaded and listed in modules-load.d: flannel and
 #      kube-proxy need the bridge netfilter sysctls, and nothing else in the
 #      VM loads the module at boot (measured on macbook-m4-max, 2026-11-06).
@@ -94,9 +96,18 @@ modprobe br_netfilter || true
 [ -e "$bridge_sysctl" ] ||
   die "br_netfilter is not loaded ($bridge_sysctl is absent) and modprobe br_netfilter failed; the worker container was not changed"
 
+# The mountpoint of the disk holding <state-root>, read from its nearest
+# existing ancestor; a state root on the root filesystem is refused.
+probe_path="$root"
+while [ ! -e "$probe_path" ]; do probe_path="$(dirname "$probe_path")"; done
+disk_mount="$(findmnt -n -o TARGET -T "$probe_path" | head -n 1)"
+case "$disk_mount" in
+  "" | /) die "state root $root is not on the worker's data disk (it resolves to the root filesystem); the worker container was not changed" ;;
+esac
 dropin="$unit_dir/docker.service.d/10-homelab-worker-state.conf"
-ordering="[Unit]
-RequiresMountsFor=$root"
+# $$ escapes systemd's own variable expansion in the unit file.
+ordering="[Service]
+ExecStartPre=/bin/sh -c 'i=0; until mountpoint -q $disk_mount; do i=\$\$((i + 1)); [ \$\$i -ge 300 ] && exit 1; sleep 1; done'"
 if [ "$(cat "$dropin" 2>/dev/null || true)" != "$ordering" ]; then
   mkdir -p "${dropin%/*}"
   printf '%s\n' "$ordering" >"$dropin"
