@@ -1310,6 +1310,9 @@ lint-autofix-staged:
 # Mutating targets (opt-in; not run in CI).
 # ---------------------------------------------------------------
 
+mutation-kill-matrix:
+    uv run python -m livespec_dev_tooling.mutation_kill_matrix
+
 fmt:
     uv run ruff format .
 

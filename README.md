@@ -42,6 +42,12 @@ Invoke any check via:
 uv run python -m livespec_dev_tooling.checks.<slug>
 ```
 
+### Rule-26 mutation kill matrix
+
+Run `just mutation-kill-matrix` on demand. It writes the portable report to
+`reports/mutation-kill-matrix.json`, including per-mutant killers, survivors,
+and redundancy candidates; it is intentionally not a `just check` member.
+
 ### As composite Actions / reusable workflows in CI
 
 ```yaml

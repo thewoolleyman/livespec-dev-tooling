@@ -7,13 +7,25 @@ the same document.
 
 from __future__ import annotations
 
+import argparse
 import json
+import os
+import subprocess
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-__all__: list[str] = ["Mutant", "MutationKillMatrixReport", "build_report", "write_report"]
+__all__: list[str] = [
+    "Mutant",
+    "MutationKillMatrixReport",
+    "build_report",
+    "run_kill_matrix",
+    "write_report",
+]
 
 _EMPTY_MUTANT_SET = "empty mutant set cannot produce a kill-matrix report"
+_MUTMUT_FAILURE = "mutmut failed while generating the kill matrix"
+_PYTEST_COLLECTION_FAILURE = "pytest did not collect tests for the kill matrix"
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -94,3 +106,105 @@ def write_report(*, report: MutationKillMatrixReport, path: Path) -> None:
     _ = path.write_text(
         json.dumps(report.to_dict(), indent=2, sort_keys=True) + "\n", encoding="utf-8"
     )
+
+
+def run_command(
+    *, args: list[str], cwd: Path, env: dict[str, str] | None = None
+) -> subprocess.CompletedProcess[str]:
+    """Run one mutmut or pytest command with captured text output."""
+    return subprocess.run(
+        args=args, capture_output=True, check=False, cwd=str(cwd), env=env, text=True
+    )
+
+
+def _mutants_from_results(*, output: str) -> list[Mutant]:
+    """Translate mutmut's public results rows into portable mutant records."""
+    statuses = {
+        "check was interrupted by user",
+        "killed",
+        "no tests",
+        "not checked",
+        "skipped",
+        "survived",
+        "suspicious",
+        "timeout",
+    }
+    mutants: list[Mutant] = []
+    for line in output.splitlines():
+        identifier, separator, status = line.strip().rpartition(": ")
+        if separator and status in statuses:
+            mutants.append(Mutant(identifier=identifier, location=f"mutmut:{identifier}"))
+    return mutants
+
+
+def _pytest_node_ids(*, output: str) -> list[str]:
+    """Return collected pytest node ids while excluding summary prose."""
+    return sorted(
+        line.strip()
+        for line in output.splitlines()
+        if line.strip().startswith("tests/") and "::" in line
+    )
+
+
+def run_kill_matrix(
+    *, repo_root: Path, report_path: Path, source_revision: str
+) -> MutationKillMatrixReport:
+    """Run every collected pytest test against every generated mutmut mutant."""
+    generated = run_command(args=[sys.executable, "-m", "mutmut", "run"], cwd=repo_root)
+    if generated.returncode not in (0, 1):
+        raise ValueError(_MUTMUT_FAILURE)
+    results = run_command(
+        args=[sys.executable, "-m", "mutmut", "results", "--all", "True"], cwd=repo_root
+    )
+    mutants = _mutants_from_results(output=results.stdout)
+    if not mutants:
+        raise ValueError(_EMPTY_MUTANT_SET)
+    mutants_root = repo_root / "mutants"
+    collected = run_command(
+        args=[sys.executable, "-m", "pytest", "--collect-only", "-q"], cwd=mutants_root
+    )
+    tests = _pytest_node_ids(output=collected.stdout)
+    if collected.returncode != 0 or not tests:
+        raise ValueError(_PYTEST_COLLECTION_FAILURE)
+    killers_by_mutant: dict[str, set[str]] = {}
+    for mutant in mutants:
+        killers: set[str] = set()
+        for test in tests:
+            environment = dict(os.environ)
+            environment["MUTANT_UNDER_TEST"] = mutant.identifier
+            environment["PY_IGNORE_IMPORTMISMATCH"] = "1"
+            result = run_command(
+                args=[sys.executable, "-m", "pytest", "-q", test], cwd=mutants_root, env=environment
+            )
+            if result.returncode != 0:
+                killers.add(test)
+        killers_by_mutant[mutant.identifier] = killers
+    report = build_report(
+        engine="mutmut",
+        engine_version="3.2.3",
+        source_revision=source_revision,
+        mutants=mutants,
+        tests=tests,
+        killers_by_mutant=killers_by_mutant,
+    )
+    write_report(report=report, path=report_path)
+    return report
+
+
+def main() -> int:
+    """Generate the documented Rule-26 report for the current repository."""
+    parser = argparse.ArgumentParser(description="Generate a Rule-26 mutation kill-matrix report.")
+    _ = parser.add_argument(
+        "--report", type=Path, default=Path("reports/mutation-kill-matrix.json")
+    )
+    arguments = parser.parse_args()
+    root = Path.cwd()
+    revision = run_command(args=["git", "rev-parse", "HEAD"], cwd=root).stdout.strip()
+    _ = run_kill_matrix(
+        repo_root=root, report_path=root / arguments.report, source_revision=revision
+    )
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
