@@ -731,8 +731,27 @@ This repository's justfile MUST ship an operator-invoked recipe, `just ensure-pl
 - **Per-member adoption.** For each member, the recipe MUST run that member's OWN `ensure-plugins` recipe in that member's local clone, with the clone as the working directory. It MUST NOT reimplement a member's plugin reconcile.
 - **Before and after builds.** For every member and every plugin that member's committed `.claude/settings.json` enables, the recipe MUST print the installed build before and after the member's `ensure-plugins` run. It MUST read both from `installed_plugins.json`, using the install record whose project path is that member's clone.
 - **Failure isolation.** When a member's clone is missing, or its `ensure-plugins` recipe exits non-zero, the recipe MUST still run every remaining member. It MUST name each failed member with its cause, and it MUST exit non-zero.
-- **Build convergence.** After every member has run, when one enabled plugin is installed at different builds across the members' project scopes, the recipe MUST exit non-zero. It MUST name that plugin, each build and the members holding it, even when every member's `ensure-plugins` succeeded.
-- **Success.** The recipe MUST exit 0 only when every member's `ensure-plugins` succeeded and every enabled plugin is installed at a single build across the members that enable it.
+- **Build convergence.** After every member has run, when one enabled plugin is installed at different builds across the members' project scopes, the recipe MUST exit non-zero. It MUST name that plugin, each build and the members holding it, even when every member's `ensure-plugins` succeeded. The one exception is a divergence an unreleased orchestrator roll hold fully explains (below): the recipe MUST NOT exit non-zero for it, and MUST instead print one `HELD` line naming the plugin, `held_from_version`, and the members on each side. A divergence is fully explained when the only members on a build at or above `held_from_version` are the launch-clone exemption and members that already had that build before the run, and every other member enabling the plugin is on one build below it.
+- **Success.** The recipe MUST exit 0 only when every member's `ensure-plugins` succeeded and every enabled plugin is installed at a single build across the members that enable it, or its only divergence is one an unreleased roll hold fully explains.
+
+#### Orchestrator roll hold
+
+A member's `ensure-plugins` recipe is the reconcile that every fleet clone's SessionStart hook runs, and it is also the path through which `just bootstrap`'s local reconcile and `just ensure-plugins-fleet` adopt plugin builds. Any recipe or verb in this library that adopts a plugin build in a member MUST do so through that member's `ensure-plugins` recipe, so the roll hold binds every such path.
+
+- **Hold record.** livespec-dev-tooling's master branch MAY carry one committed roll-hold record at `fleet/orchestrator-roll-hold.json`. Each member's `ensure-plugins` MUST fetch it from livespec-dev-tooling master at run time, the way §"Sibling discovery" fetches the fleet manifest. The record is a JSON object with exactly these keys:
+  - `plugin`: the held plugin's install key, `livespec-orchestrator-beads-fabro@livespec-orchestrator-beads-fabro`.
+  - `held_from_version`: a semver string.
+  - `implement_graph_blob`: the git blob id of `implement-work-item/workflow.fabro` in the held build.
+  - `canaries`: an array of objects, each carrying `item`, `criteria` and `verdict`, where `verdict` is one of `pending`, `passed` or `failed`.
+  - `matrix`: an object with the keys `fresh`, `seeded` and `non_orchestrator`, each a passing factory run id or `null`.
+  - `recorded_on`: the ledger id of the plan epic where each condition's evidence is recorded.
+
+  A hold is UNRELEASED while any canary verdict is not `passed` or any `matrix` value is `null`.
+- **Held install.** While an unreleased hold names a plugin that a member enables, and the marketplace offers that plugin at a version at or above `held_from_version`, the member's `ensure-plugins` MUST leave that member's installed build of that plugin unchanged. It MUST print one line naming the plugin, the offered build, `held_from_version`, and each unmet release condition. It MUST still reconcile every other enabled plugin, and the held plugin MUST NOT make the recipe exit non-zero.
+- **No downgrade.** When a member already has a build at or above `held_from_version` installed, `ensure-plugins` MUST leave it installed and MUST NOT downgrade it.
+- **Launch-clone exemption.** The member whose repository is the held plugin's own source repository, livespec-orchestrator-beads-fabro, MUST be exempt from the held-install rule, so canary and proof-matrix runs can launch on the held build.
+- **Unreadable hold.** When the roll-hold record exists but cannot be fetched or does not parse against the shape above, `ensure-plugins` MUST leave the held plugin's installed build unchanged, MUST print one line naming the read failure, and MUST reconcile every other plugin. An ABSENT record, which the fetch MUST distinguish from an unreadable one, MUST leave behaviour exactly as it is without a hold.
+- **Released hold.** When every canary verdict is `passed` and every `matrix` value names a run, `ensure-plugins` MUST install the offered build exactly as it does when no hold exists.
 
 ### Reusable workflow inventory
 

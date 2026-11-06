@@ -2538,6 +2538,28 @@ And when one member's clone is missing, the recipe MUST still run every other me
 
 And when every member's `ensure-plugins` succeeds but the orchestrator plugin is left installed at two different builds across the members, the recipe MUST exit non-zero, naming the plugin, both builds and the members holding each
 
+
+## Scenario: a fleet clone's ensure-plugins keeps its orchestrator build while an orchestrator roll hold is unreleased
+
+Given livespec-dev-tooling master carries `fleet/orchestrator-roll-hold.json` naming the orchestrator plugin with `held_from_version` 0.295.2, one canary whose verdict is `pending`, and a `matrix` whose `seeded` value is `null`
+
+And a fleet member other than livespec-orchestrator-beads-fabro has orchestrator build 0.295.1 installed while the marketplace offers 0.295.2
+
+When that member's `just ensure-plugins` runs, as its SessionStart hook runs it
+
+Then the member's `installed_plugins.json` orchestrator record MUST still name the 0.295.1 build
+
+And the recipe MUST print one line naming the plugin, the offered 0.295.2 build, `held_from_version` 0.295.2, the pending canary and the missing seeded run
+
+And the recipe MUST still reconcile every other enabled plugin and MUST exit 0
+
+And when the same recipe runs in livespec-orchestrator-beads-fabro's clone, it MUST install the offered 0.295.2 build
+
+And when the record's canary verdict is `passed` and every `matrix` value names a run, the member's recipe MUST install the offered 0.295.2 build
+
+And when the record cannot be fetched, the member's orchestrator build MUST stay unchanged and the recipe MUST print one line naming the read failure
+
+And when `just ensure-plugins-fleet` then runs while the hold is unreleased, it MUST print one `HELD` line naming the plugin, `held_from_version` and the members on each side, and MUST NOT exit non-zero for that divergence
 ## Scenario: a default-branch push routes to the master runner target and a pull request does not
 
 Given this repository's `ci.yml` gating jobs read `CI_RUNNER_LABELS_MASTER` ahead of `CI_RUNNER_LABELS` for `push` events, with the hosted literal as the last term

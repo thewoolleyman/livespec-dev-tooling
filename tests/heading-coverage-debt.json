@@ -359,6 +359,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: a fleet clone's ensure-plugins keeps its orchestrator build while an orchestrator roll hold is unreleased",
+    "work_item": "livespec-dev-tooling-7upzav",
+    "first_seen": "2026-11-06"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: a fleet member whose master-health shim is missing or drifted fails conformance",
     "work_item": "livespec-dev-tooling-reslr6",
     "first_seen": "2026-10-22"
