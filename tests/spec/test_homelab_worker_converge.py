@@ -81,6 +81,12 @@ printf 'modprobe %s\\n' "$*" >> "$STUB_STATE/calls.log"
 exit 0
 """
 
+# findmnt -n -o TARGET -T <path> answers with the stub's data-disk mountpoint.
+_STUB_FINDMNT = """#!/bin/bash
+printf 'findmnt %s\\n' "$*" >> "$STUB_STATE/calls.log"
+cat "$STUB_STATE/mount-target"
+"""
+
 _STUB_SYSTEMCTL = """#!/bin/bash
 printf 'systemctl %s\\n' "$*" >> "$STUB_STATE/calls.log"
 """
@@ -111,12 +117,14 @@ def vm(tmp_path: Path) -> _Vm:
         ("ip", _STUB_IP),
         ("systemctl", _STUB_SYSTEMCTL),
         ("modprobe", _STUB_MODPROBE),
+        ("findmnt", _STUB_FINDMNT),
     ):
         exe = bin_dir / name
         exe.write_text(body, encoding="utf-8")
         exe.chmod(exe.stat().st_mode | stat.S_IXUSR)
     (state / "calls.log").write_text("", encoding="utf-8")
     (state / "ts-status").write_text(_RUNNING, encoding="utf-8")
+    (state / "mount-target").write_text("/mnt/test-data\n", encoding="utf-8")
     return _Vm(state=state, bin_dir=bin_dir, root=tmp_path / "hwdata" / "worker")
 
 
@@ -333,13 +341,18 @@ def test_a_container_of_another_state_root_is_refused_never_adopted(vm: _Vm) -> 
 
 
 def test_docker_waits_for_the_state_roots_disk_before_restarting_the_worker(vm: _Vm) -> None:
+    # Lima mounts the data disk from cloud-init, outside systemd, so RequiresMountsFor has no
+    # mount unit to wait for (measured on macbook-m4-max, 2026-11-06): Docker waits, bounded,
+    # until the disk's mountpoint is mounted.
     result = _run(vm=vm)
     assert result.returncode == 0, result.stdout + result.stderr
     [dropin] = list((vm.state / "systemd" / "docker.service.d").glob("*.conf"))
-    assert dropin.read_text(encoding="utf-8").splitlines() == [
-        "[Unit]",
-        f"RequiresMountsFor={vm.root}",
-    ]
+    lines = dropin.read_text(encoding="utf-8").splitlines()
+    assert lines[0] == "[Service]"
+    [wait] = [line for line in lines if line.startswith("ExecStartPre=")]
+    assert "mountpoint -q /mnt/test-data" in wait
+    assert "until " in wait
+    assert not [line for line in lines if line.startswith("RequiresMountsFor=")]
     calls = (vm.state / "calls.log").read_text(encoding="utf-8").splitlines()
     assert "systemctl daemon-reload" in calls
     assert calls.index("systemctl daemon-reload") < min(
@@ -387,4 +400,14 @@ def test_a_kernel_without_bridge_netfilter_is_refused_before_any_container_chang
     )
     assert result.returncode != 0
     assert "br_netfilter" in result.stderr
+    assert _calls(vm=vm, verb="run") == []
+
+
+def test_a_state_root_on_the_root_filesystem_is_refused_before_any_container_change(
+    vm: _Vm,
+) -> None:
+    (vm.state / "mount-target").write_text("/\n", encoding="utf-8")
+    result = _run(vm=vm)
+    assert result.returncode != 0
+    assert "data disk" in result.stderr
     assert _calls(vm=vm, verb="run") == []
