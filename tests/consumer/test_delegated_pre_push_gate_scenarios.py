@@ -35,6 +35,7 @@ from __future__ import annotations
 
 import json
 import os
+import platform
 import subprocess
 import sys
 from collections.abc import Callable
@@ -384,6 +385,8 @@ def test_an_opted_in_push_from_a_host_without_the_credential_gates_locally(
     repo.mkdir()
     _opt_in(repo_root=repo)
     _ = _an_ineligible_host(tmp_path=tmp_path, monkeypatch=monkeypatch)
+    # A LINUX host keeps the fall-through; a macOS one is refused instead (below).
+    monkeypatch.setattr(platform, "system", lambda: "Linux")
     monkeypatch.chdir(repo)
     monkeypatch.setattr(sys, "argv", ["gate_remote_delegate", "enabled"])
 
@@ -831,3 +834,40 @@ def test_a_push_whose_host_slept_past_every_read_is_refused_as_no_verdict(
     assert not cluster.issued(needle="write")
     assert len(cluster.issued(needle="create")) == 1
     assert [event["outcome"] for event in events] == [GATE_OUTCOME_NO_VERDICT]
+
+
+# --- scenario: an unenrolled macOS host is refused, not gated locally -----
+
+
+def test_an_opted_in_push_from_an_unenrolled_macos_host_is_refused_instead_of_gating_locally(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Scenario: an opted-in push from an unenrolled macOS host is refused instead of gating locally.
+
+    The Linux-only members of the suites cannot produce a verdict on macOS, so
+    the local aggregate is no fallback there: the DECISION arm refuses, naming
+    the missing gates-client enrollment and the kubeconfig the user cannot read,
+    and the RECIPE arm runs neither the local `just check` nor a delegated run,
+    so no gate Job is submitted.
+    """
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _opt_in(repo_root=repo)
+    kubeconfig = _an_ineligible_host(tmp_path=tmp_path, monkeypatch=monkeypatch)
+    monkeypatch.setattr(platform, "system", lambda: "Darwin")
+    monkeypatch.chdir(repo)
+    monkeypatch.setattr(sys, "argv", ["gate_remote_delegate", "enabled"])
+
+    decided = main()
+    printed = capsys.readouterr().err
+
+    assert decided not in (0, 1)
+    assert "gates-client enrollment" in printed
+    assert str(kubeconfig) in printed
+    assert "gating locally" not in printed
+
+    code, invoked = _run_pre_push(tmp_path=tmp_path / "push", switch_exit=str(decided))
+
+    assert code != 0
+    assert not [line for line in invoked if line.startswith("just ")]
+    assert not [line for line in invoked if "gate_remote_delegate run" in line]
