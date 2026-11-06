@@ -58,6 +58,33 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.183.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.182.0...v1.183.0) (2026-11-06)
+
+
+### Features
+
+* **ci-runner:** a host-unique arm64 runner scale set for the M4 Max homelab worker ([49155ee](https://github.com/thewoolleyman/livespec-dev-tooling/commit/49155eeac44fe97f2ace8e22766ec42ed1c9fd86))
+* **fabro-image-pin-lockstep:** accept gh checksums pinned per target architecture ([ff46dd2](https://github.com/thewoolleyman/livespec-dev-tooling/commit/ff46dd204130f9c417cbd80b79989e3aac02fc94))
+* **homelab-worker:** remote-kubectl.sh runs the API node's kubectl over tailscale ssh ([91e5b0f](https://github.com/thewoolleyman/livespec-dev-tooling/commit/91e5b0f282817ea01ae515878901417edc297f62))
+* **homelab-worker:** the VM capability probe checks bridge netfilter ([773d4de](https://github.com/thewoolleyman/livespec-dev-tooling/commit/773d4de402251a14cb91f91bf3e4678baeafc902))
+* **homelab-worker:** the worker registers with a permanent class taint ([a178229](https://github.com/thewoolleyman/livespec-dev-tooling/commit/a1782295dea4b7d8784276cfdf8cfe051c09af58))
+
+
+### Bug Fixes
+
+* **check:** stamp the coverage reuse receipt after the per-file check's vanished-source rewrite (livespec-dev-tooling-x3lvve) ([775ca47](https://github.com/thewoolleyman/livespec-dev-tooling/commit/775ca47c3c867f13d3cdbc0a9c5d4c2975355b37))
+* **homelab-worker:** approve-serving-csr.sh reports a failed Node lookup as itself ([61db729](https://github.com/thewoolleyman/livespec-dev-tooling/commit/61db7292b1efdbaf1ba5f19237d0daf4a3da967e))
+* **homelab-worker:** converge loads and persists br_netfilter before the worker starts ([b2381fd](https://github.com/thewoolleyman/livespec-dev-tooling/commit/b2381fd10ddb6857b137bb4b0975e7e9cdc4219b))
+* **homelab-worker:** converge restarts a worker bound to the root disk before any tailnet step ([958afa0](https://github.com/thewoolleyman/livespec-dev-tooling/commit/958afa0791895fc476c10f248aa66fbd6bec2083))
+* **homelab-worker:** converge turns tailnet route acceptance off explicitly ([2f71f60](https://github.com/thewoolleyman/livespec-dev-tooling/commit/2f71f60f8755f21a799d7006860e316a45c46d3a))
+* **homelab-worker:** Docker waits for the data disk's mountpoint, not a mount unit ([c1d6867](https://github.com/thewoolleyman/livespec-dev-tooling/commit/c1d686709ec132b9e4e19f10af997f00ca353faa))
+* **homelab-worker:** join-worker.sh converges at the host's declared LAN address ([0e4b41c](https://github.com/thewoolleyman/livespec-dev-tooling/commit/0e4b41cd942616506d9774241a166b3e60386582))
+* **homelab-worker:** start the worker after its data disk mounts, without deadlocking boot ([5803975](https://github.com/thewoolleyman/livespec-dev-tooling/commit/5803975a1c4e45735e0f92ced3e3f52a57fc4cd5))
+* **homelab-worker:** the home-LAN address step waits for networkd and applies once ([ff5040a](https://github.com/thewoolleyman/livespec-dev-tooling/commit/ff5040af6e58114c98c8851837195665b5effc37))
+* log stranded sandbox delete risk ([289865f](https://github.com/thewoolleyman/livespec-dev-tooling/commit/289865f0014e3a677d8897fc3d4573f07b6647a8))
+* retry terminal running sandbox reaping ([87eb1a2](https://github.com/thewoolleyman/livespec-dev-tooling/commit/87eb1a24ad4f6a54ad365681ea67bde11c4a5c59))
+* the hostname-free role scan skips binary role artifacts (livespec-dev-tooling-izazkx) ([6b73ecc](https://github.com/thewoolleyman/livespec-dev-tooling/commit/6b73ecc12e3e84365b5b49f5d0bc9640503d9682))
+
 ## [1.182.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.181.0...v1.182.0) (2026-11-06)
 
 
