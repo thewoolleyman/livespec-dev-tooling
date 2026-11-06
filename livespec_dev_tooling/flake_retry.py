@@ -123,10 +123,17 @@ def _closure(*, repo_root: Path, test_path: Path) -> tuple[set[Path], set[str]] 
 
 
 def _changed_names(*, paths: set[Path]) -> set[str]:
-    """Produce literal spellings that can identify changed code or data paths."""
+    """Produce whole literal spellings that can identify changed code or data paths.
+
+    A literal may name the changed file, its filename, or an entire directory
+    prefix. Individual directory components are deliberately not candidates:
+    a common name such as ``livespec_dev_tooling`` is not a path to every
+    directory that happens to contain that segment.
+    """
     names: set[str] = set()
     for path in paths:
-        names.update((path.as_posix(), path.name, *path.parts))
+        names.update((path.as_posix(), path.name))
+        names.update(parent.as_posix() for parent in path.parents if parent != Path())
         if path.suffix == ".py":
             names.add(".".join(path.with_suffix("").parts))
     return names

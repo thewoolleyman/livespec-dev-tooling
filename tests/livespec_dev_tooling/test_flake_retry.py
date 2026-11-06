@@ -56,6 +56,26 @@ def test_an_untouched_test_is_marked_for_a_bounded_single_test_retry(*, tmp_path
 
 
 @pytest.mark.integration
+def test_a_changed_path_does_not_match_a_bare_ancestor_directory_literal(*, tmp_path: Path) -> None:
+    """A closure literal must name the changed path, not merely one of its segments."""
+    tests = tmp_path / "tests"
+    tests.mkdir()
+    _ = (tests / "conftest.py").write_text('_vendor = "livespec_dev_tooling"\n', encoding="utf-8")
+    test_path = tests / "test_example.py"
+    _ = test_path.write_text("assert True\n", encoding="utf-8")
+
+    plugin = importlib.import_module("livespec_dev_tooling.flake_retry")
+
+    marker = plugin.retry_marker_for(
+        repo_root=tmp_path,
+        test_path=test_path,
+        change_paths={Path("tests/livespec_dev_tooling/changed.py")},
+    )
+
+    assert marker == {"reruns": 3, "reruns_delay": 60}
+
+
+@pytest.mark.integration
 @pytest.mark.parametrize(
     ("changed", "source"),
     [
