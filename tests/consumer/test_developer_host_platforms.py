@@ -7,7 +7,11 @@ These run the real first-touch reconcile verb that `just bootstrap` runs
 temporary directory:
 
 - bootstrap names a missing ledger pointer (`.beads/metadata.json`) instead of
-  reporting success, and exits non-zero.
+  reporting success, and exits non-zero;
+- the committed ledger pointer reaches the tenant only at the loopback address
+  the macOS forward serves, over TCP, and bootstrap's ledger rows create no
+  local beads store (the host-captured half of that scenario is recorded in
+  macbook-air-info 146efff).
 
 The scenario's Given, "a developer host that supplies every host toolchain
 prerequisite", is modelled by standing in a passing row for every obligation
@@ -29,10 +33,13 @@ from livespec_dev_tooling.fleet._contract_local_rows import (
     LocalObligationRow,
 )
 from livespec_dev_tooling.fleet._local_context import LocalContext
+from livespec_dev_tooling.fleet._rows_local_beads import DOLT_SERVER_HOST, DOLT_SERVER_PORT
 
 __all__: list[str] = []
 
 pytestmark = pytest.mark.consumer
+
+_REPO_ROOT = Path(__file__).resolve().parents[2]
 
 # The two ledger-pointer rows the scenario is about; every other row is the
 # Given's satisfied prerequisite.
@@ -87,3 +94,43 @@ def test_bootstrap_names_a_missing_ledger_pointer_instead_of_reporting_success(
     assert code != 0
     assert ".beads/metadata.json" in err
     assert "reconcile complete" not in err
+
+
+def _committed_ledger_settings() -> dict[str, str]:
+    text = (_REPO_ROOT / ".beads" / "config.yaml").read_text(encoding="utf-8")
+    pairs = (line.split(": ", 1) for line in text.splitlines() if ": " in line)
+    return {key: value for key, value in pairs if not key.lstrip().startswith("#")}
+
+
+def test_the_committed_ledger_pointer_reaches_the_tenant_only_through_the_loopback_forward(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Scenario: a macOS developer host reads the ledger tenant through the loopback forward.
+
+    The committed pointer names the server over TCP at the loopback address the
+    per-user forward serves, and nothing else: no socket, no embedded store. And
+    bootstrap's ledger rows, run over a checkout carrying exactly that pointer,
+    create no local beads store.
+    """
+    settings = _committed_ledger_settings()
+    assert settings["dolt.mode"] == "server"
+    assert settings["dolt.server-host"] == DOLT_SERVER_HOST
+    assert int(settings["dolt.server-port"]) == DOLT_SERVER_PORT
+    assert [key for key in settings if "socket" in key] == []
+
+    checkout = tmp_path / "checkout"
+    (checkout / ".beads").mkdir(parents=True)
+    _ = (checkout / ".beads" / "config.yaml").write_text(
+        (_REPO_ROOT / ".beads" / "config.yaml").read_text(encoding="utf-8"), encoding="utf-8"
+    )
+    _ = (checkout / ".beads" / "metadata.json").write_text("{}\n", encoding="utf-8")
+    _git("init", "-q", cwd=checkout)
+    _git("add", ".beads/config.yaml", cwd=checkout)
+    _git("commit", "-q", "-m", "fixture", cwd=checkout)
+    _a_host_supplying_every_prerequisite(monkeypatch=monkeypatch)
+    monkeypatch.setattr(sys, "argv", ["local-reconcile", "--checkout", str(checkout)])
+
+    code = local_reconcile.main()
+
+    assert code == 0, capsys.readouterr().err
+    assert [path for path in checkout.rglob("embeddeddolt")] == []

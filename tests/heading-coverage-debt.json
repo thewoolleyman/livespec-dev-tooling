@@ -443,13 +443,6 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario: a macOS developer host reads the ledger tenant through the loopback forward",
-    "work_item": "livespec-dev-tooling-ko26ez",
-    "first_seen": "2026-11-04"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
     "heading": "## Scenario: a master red past the threshold with no revert in flight raises needs-attention",
     "work_item": "livespec-dev-tooling-4xrhck",
     "first_seen": "2026-10-22"
