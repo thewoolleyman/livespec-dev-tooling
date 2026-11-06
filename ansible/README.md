@@ -90,6 +90,7 @@ source of truth for how the tool is invoked.
 | `restart-k3s-server.yml` | `ci_pool`, and only the SERVER host its confirmation names | nothing — no committed artifact could restart the pool server's k3s unit without rebooting the host |
 | `k3s-window-drain.yml` | `ci_pool`, acting once on the SERVER, only for the action its confirmation names | nothing — no committed artifact could pause runner intake or cordon a pool node |
 | `container-termination-drill.yml` | `ci_pool`, and only the k3s SERVER its confirmation names | nothing — no committed artifact could produce a crash-looping or OOM-killed container |
+| `claim-token-race-drill.yml` | `ci_pool`, and only the host its confirmation names, raced against the control node | nothing — no second fleet host could act as a ledger claim writer |
 
 `container-termination-drill.yml` is the ONE sanctioned way to make the cluster
 produce a `CrashLoopBackOff` container and an `OOMKilled` container, the
@@ -103,6 +104,37 @@ cluster write when the configured namespace
 already exists, creates that namespace and two pods in it, waits for the API
 server to report both conditions, prints its start and end UTC times and the
 namespace's name, and deletes the namespace in an `always:`.
+
+`claim-token-race-drill.yml` is the ONE sanctioned way to race two ledger
+claim writers on two hosts for one claim token of the orchestrator tenant — the
+host-captured proof orchestrator work item `bd-ib-4eeefv` owes for its
+claim-token protocol (plan `expedited-incident-response-flag`, epic
+`livespec-dev-tooling-bqnzcm`). It is
+`/usr/local/bin/with-livespec-env.sh -- just ansible-apply
+ansible/claim-token-race-drill.yml -e
+claim_token_race_drill_confirm=<pool host inventory name>`; without that
+confirmation it reads nothing and changes nothing, and without the wrapper's
+projected `BEADS_DOLT_PASSWORD` it refuses at the preflight, naming the wrapper.
+For one run it gives the named host a throwaway directory holding the released
+orchestrator plugin (`claim_token_race_drill_plugin_ref`, v0.295.1 by default),
+the pinned `bd` 1.2.2 release behind the released lifecycle guard, and a
+loopback-only `ssh -R` tunnel from the control node to the Dolt port; creates
+ONE probe item of the tenant as an `active` claim; runs the same probe
+(`files/claim_token_race_drill_probe.py`, the package's own `change_claim`) on
+both hosts in two cases — OVERLAPPING, both writers closing the token at one
+named instant, and SEQUENTIAL, the second writer released only after the first
+finished — and reads the token chain back from the server, failing unless
+exactly one close reason is on the contested token and exactly one writer's
+write is on the item. The credential reaches the target writer only through a
+FIFO fed by a pipelined `no_log` task (never `environment:`, which lands on a
+command line), and the `always:` counts — never prints — any file, history
+entry or process command line still carrying it, kills the tunnel, verifies no
+listener is left on the port, disposes of the probe item with one last token
+hold, and removes both throwaway directories. It must be run inside a
+coordinated stopped-writers window of the orchestrator tenant. See
+`tests/livespec_dev_tooling/test_claim_token_race_drill_playbook.py`, which
+races the real probe as two processes against a file-locked stand-in for the
+package.
 
 `reboot-ci-server.yml` is the ONE sanctioned way to reboot the k3s server, and
 the only play here that reboots a host. It is an ordinary

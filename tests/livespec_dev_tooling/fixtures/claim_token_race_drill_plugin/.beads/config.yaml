@@ -1,0 +1,6 @@
+dolt.mode: server
+dolt.server-host: 127.0.0.1
+dolt.server-port: 3307
+dolt.server-user: livespec-orch-beads-fabro
+dolt.database: livespec-orch-beads-fabro
+dolt.prefix: bd-ib
