@@ -73,6 +73,14 @@ esac
 """
 
 
+# modprobe "loads" br_netfilter by creating the bridge sysctl the kernel would expose.
+_STUB_MODPROBE = """#!/bin/bash
+printf 'modprobe %s\\n' "$*" >> "$STUB_STATE/calls.log"
+[ "${STUB_MODPROBE_FAILS:-0}" = 1 ] && exit 1
+[ "$1" = br_netfilter ] && mkdir -p "$STUB_STATE/proc-bridge" && touch "$STUB_STATE/proc-bridge/bridge-nf-call-iptables"
+exit 0
+"""
+
 _STUB_SYSTEMCTL = """#!/bin/bash
 printf 'systemctl %s\\n' "$*" >> "$STUB_STATE/calls.log"
 """
@@ -99,7 +107,11 @@ def vm(tmp_path: Path) -> _Vm:
     docker = bin_dir / "docker"
     docker.write_text(_STUB_DOCKER, encoding="utf-8")
     docker.chmod(docker.stat().st_mode | stat.S_IXUSR)
-    for name, body in (("ip", _STUB_IP), ("systemctl", _STUB_SYSTEMCTL)):
+    for name, body in (
+        ("ip", _STUB_IP),
+        ("systemctl", _STUB_SYSTEMCTL),
+        ("modprobe", _STUB_MODPROBE),
+    ):
         exe = bin_dir / name
         exe.write_text(body, encoding="utf-8")
         exe.chmod(exe.stat().st_mode | stat.S_IXUSR)
@@ -117,6 +129,8 @@ def _run(*, vm: _Vm, extra: tuple[str, ...] = ()) -> subprocess.CompletedProcess
             "PATH": f"{vm.bin_dir}:/usr/bin:/bin",
             "STUB_STATE": str(vm.state),
             "SYSTEMD_UNIT_DIR": str(vm.state / "systemd"),
+            "MODULES_LOAD_DIR": str(vm.state / "modules-load.d"),
+            "BRIDGE_NF_SYSCTL": str(vm.state / "proc-bridge" / "bridge-nf-call-iptables"),
             "TAILNET_LOGIN_TIMEOUT": "1",
             "POLL_SECONDS": "1",
         },
@@ -332,3 +346,39 @@ def test_an_unchanged_docker_mount_ordering_is_not_reloaded(vm: _Vm) -> None:
     (vm.state / "calls.log").write_text("", encoding="utf-8")
     assert _run(vm=vm).returncode == 0
     assert "systemctl daemon-reload" not in (vm.state / "calls.log").read_text(encoding="utf-8")
+
+
+def test_br_netfilter_is_loaded_and_persisted_before_the_worker_starts(vm: _Vm) -> None:
+    result = _run(vm=vm)
+    assert result.returncode == 0, result.stdout + result.stderr
+    [conf] = list((vm.state / "modules-load.d").glob("*.conf"))
+    assert "br_netfilter" in conf.read_text(encoding="utf-8").splitlines()
+    calls = (vm.state / "calls.log").read_text(encoding="utf-8").splitlines()
+    assert calls.index("modprobe br_netfilter") < min(
+        i for i, c in enumerate(calls) if c.startswith("docker run ")
+    )
+
+
+def test_a_kernel_without_bridge_netfilter_is_refused_before_any_container_change(
+    vm: _Vm,
+) -> None:
+    result = subprocess.run(
+        ["/bin/bash", str(_SCRIPT), _WORKER, _HOST, _IMAGE, str(vm.root)],
+        capture_output=True,
+        text=True,
+        env={
+            "PATH": f"{vm.bin_dir}:/usr/bin:/bin",
+            "STUB_STATE": str(vm.state),
+            "STUB_MODPROBE_FAILS": "1",
+            "SYSTEMD_UNIT_DIR": str(vm.state / "systemd"),
+            "MODULES_LOAD_DIR": str(vm.state / "modules-load.d"),
+            "BRIDGE_NF_SYSCTL": str(vm.state / "proc-bridge" / "bridge-nf-call-iptables"),
+            "TAILNET_LOGIN_TIMEOUT": "1",
+            "POLL_SECONDS": "1",
+        },
+        check=False,
+        timeout=60,
+    )
+    assert result.returncode != 0
+    assert "br_netfilter" in result.stderr
+    assert _calls(vm=vm, verb="run") == []

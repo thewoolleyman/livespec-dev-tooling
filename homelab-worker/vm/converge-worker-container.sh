@@ -27,7 +27,10 @@
 #      mounted, binds empty directories from the root disk, and the worker
 #      loses its tailnet identity and enrollment (measured on macbook-m4-max,
 #      2026-11-06). A drop-in for docker.service carries RequiresMountsFor.
-#   5. kubelet-config.yaml and kubelet.env (node name, node IP, host) are
+#   5. br_netfilter is loaded and listed in modules-load.d: flannel and
+#      kube-proxy need the bridge netfilter sysctls, and nothing else in the
+#      VM loads the module at boot (measured on macbook-m4-max, 2026-11-06).
+#   6. kubelet-config.yaml and kubelet.env (node name, node IP, host) are
 #      written to enrollment/. The kubelet starts only once the operator has
 #      delivered client-ca.crt there and either bootstrap-kubeconfig is there
 #      too or the worker already holds its node kubeconfig.
@@ -78,8 +81,18 @@ case "$image" in
   *) die "image '$image' is not pinned by digest" ;;
 esac
 unit_dir="${SYSTEMD_UNIT_DIR:-/etc/systemd/system}"
+modules_dir="${MODULES_LOAD_DIR:-/etc/modules-load.d}"
+bridge_sysctl="${BRIDGE_NF_SYSCTL:-/proc/sys/net/bridge/bridge-nf-call-iptables}"
 login_timeout="${TAILNET_LOGIN_TIMEOUT:-900}"
 poll="${POLL_SECONDS:-5}"
+
+if [ "$(cat "$modules_dir/homelab-worker.conf" 2>/dev/null || true)" != "br_netfilter" ]; then
+  mkdir -p "$modules_dir"
+  printf 'br_netfilter\n' >"$modules_dir/homelab-worker.conf"
+fi
+modprobe br_netfilter || true
+[ -e "$bridge_sysctl" ] ||
+  die "br_netfilter is not loaded ($bridge_sysctl is absent) and modprobe br_netfilter failed; the worker container was not changed"
 
 dropin="$unit_dir/docker.service.d/10-homelab-worker-state.conf"
 ordering="[Unit]
