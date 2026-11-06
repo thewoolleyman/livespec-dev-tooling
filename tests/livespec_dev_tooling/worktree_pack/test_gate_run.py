@@ -23,6 +23,7 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
+import sys
 import time
 from pathlib import Path
 
@@ -363,6 +364,10 @@ def test_the_run_record_names_the_worktree_and_the_command_line(
 
 
 @pytest.mark.integration
+@pytest.mark.skipif(
+    not sys.platform.startswith("linux"),
+    reason="writer attribution reads /proc, which only Linux has; elsewhere the runner reports it unavailable",
+)
 def test_a_config_flip_during_the_gate_marks_the_run_and_names_the_writer(
     *, tmp_path: Path, fixture_repo: tuple[Path, Path, dict[str, str]]
 ) -> None:
