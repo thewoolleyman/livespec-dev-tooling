@@ -73,6 +73,10 @@ esac
 """
 
 
+_STUB_SYSTEMCTL = """#!/bin/bash
+printf 'systemctl %s\\n' "$*" >> "$STUB_STATE/calls.log"
+"""
+
 _STUB_IP = """#!/bin/bash
 printf 'ip %s\\n' "$*" >> "$STUB_STATE/calls.log"
 cat "$STUB_STATE/ip-addrs" 2>/dev/null
@@ -95,9 +99,10 @@ def vm(tmp_path: Path) -> _Vm:
     docker = bin_dir / "docker"
     docker.write_text(_STUB_DOCKER, encoding="utf-8")
     docker.chmod(docker.stat().st_mode | stat.S_IXUSR)
-    ip = bin_dir / "ip"
-    ip.write_text(_STUB_IP, encoding="utf-8")
-    ip.chmod(ip.stat().st_mode | stat.S_IXUSR)
+    for name, body in (("ip", _STUB_IP), ("systemctl", _STUB_SYSTEMCTL)):
+        exe = bin_dir / name
+        exe.write_text(body, encoding="utf-8")
+        exe.chmod(exe.stat().st_mode | stat.S_IXUSR)
     (state / "calls.log").write_text("", encoding="utf-8")
     (state / "ts-status").write_text(_RUNNING, encoding="utf-8")
     return _Vm(state=state, bin_dir=bin_dir, root=tmp_path / "hwdata" / "worker")
@@ -111,6 +116,7 @@ def _run(*, vm: _Vm, extra: tuple[str, ...] = ()) -> subprocess.CompletedProcess
         env={
             "PATH": f"{vm.bin_dir}:/usr/bin:/bin",
             "STUB_STATE": str(vm.state),
+            "SYSTEMD_UNIT_DIR": str(vm.state / "systemd"),
             "TAILNET_LOGIN_TIMEOUT": "1",
             "POLL_SECONDS": "1",
         },
@@ -304,3 +310,25 @@ def test_a_container_of_another_state_root_is_refused_never_adopted(vm: _Vm) -> 
     assert f"keeps its enrollment at '{other}'" in result.stderr
     for verb in ("run", "rm", "start", "exec"):
         assert _calls(vm=vm, verb=verb) == []
+
+
+def test_docker_waits_for_the_state_roots_disk_before_restarting_the_worker(vm: _Vm) -> None:
+    result = _run(vm=vm)
+    assert result.returncode == 0, result.stdout + result.stderr
+    [dropin] = list((vm.state / "systemd" / "docker.service.d").glob("*.conf"))
+    assert dropin.read_text(encoding="utf-8").splitlines() == [
+        "[Unit]",
+        f"RequiresMountsFor={vm.root}",
+    ]
+    calls = (vm.state / "calls.log").read_text(encoding="utf-8").splitlines()
+    assert "systemctl daemon-reload" in calls
+    assert calls.index("systemctl daemon-reload") < min(
+        i for i, c in enumerate(calls) if c.startswith("docker ")
+    )
+
+
+def test_an_unchanged_docker_mount_ordering_is_not_reloaded(vm: _Vm) -> None:
+    assert _run(vm=vm).returncode == 0
+    (vm.state / "calls.log").write_text("", encoding="utf-8")
+    assert _run(vm=vm).returncode == 0
+    assert "systemctl daemon-reload" not in (vm.state / "calls.log").read_text(encoding="utf-8")

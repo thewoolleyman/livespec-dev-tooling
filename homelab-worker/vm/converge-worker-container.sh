@@ -22,7 +22,12 @@
 #      underlay (spec v143). While it needs a login, the login URL is printed for
 #      the operator to approve, and the run waits TAILNET_LOGIN_TIMEOUT
 #      seconds (default 900) for it; the identity persists in tailscale/.
-#   4. kubelet-config.yaml and kubelet.env (node name, node IP, host) are
+#   4. Docker waits for the disk holding <state-root> at boot. Without that,
+#      Docker's restart policy restarts the worker before the data disk is
+#      mounted, binds empty directories from the root disk, and the worker
+#      loses its tailnet identity and enrollment (measured on macbook-m4-max,
+#      2026-11-06). A drop-in for docker.service carries RequiresMountsFor.
+#   5. kubelet-config.yaml and kubelet.env (node name, node IP, host) are
 #      written to enrollment/. The kubelet starts only once the operator has
 #      delivered client-ca.crt there and either bootstrap-kubeconfig is there
 #      too or the worker already holds its node kubeconfig.
@@ -72,8 +77,19 @@ case "$image" in
   *@sha256:*) ;;
   *) die "image '$image' is not pinned by digest" ;;
 esac
+unit_dir="${SYSTEMD_UNIT_DIR:-/etc/systemd/system}"
 login_timeout="${TAILNET_LOGIN_TIMEOUT:-900}"
 poll="${POLL_SECONDS:-5}"
+
+dropin="$unit_dir/docker.service.d/10-homelab-worker-state.conf"
+ordering="[Unit]
+RequiresMountsFor=$root"
+if [ "$(cat "$dropin" 2>/dev/null || true)" != "$ordering" ]; then
+  mkdir -p "${dropin%/*}"
+  printf '%s\n' "$ordering" >"$dropin"
+  systemctl daemon-reload
+  say "docker.service now waits at boot for the disk holding $root"
+fi
 
 mkdir -p "$root/containerd" "$root/kubelet" "$root/tailscale" "$root/enrollment"
 chmod 0700 "$root/enrollment" "$root/tailscale"
