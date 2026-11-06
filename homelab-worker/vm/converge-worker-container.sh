@@ -50,7 +50,14 @@
 #      start (both measured on macbook-m4-max, 2026-11-06). A running worker
 #      created without these binds, or with securityfs read-only, is
 #      replaced; its state on the data disk is kept.
-#   7. kubelet-config.yaml and kubelet.env (node name, node IP, host) are
+#   7. The node's host collector (DoD assertion 18) reads <state-root>/telemetry,
+#      bound at /etc/otel-collector: the start task delivers its config.yaml
+#      and, when it has the ingest key, .env; converge writes node.env with
+#      WORKER_NODE_NAME and OTLP_PODS_ENDPOINT, the worker's cni0 bridge
+#      address and port 4319 (the address the cluster's flannel gave this
+#      node, read live), and restarts the collector. Without the key, or
+#      before the bridge exists, the collector stays off and converge says so.
+#   8. kubelet-config.yaml and kubelet.env (node name, node IP, host) are
 #      written to enrollment/. The kubelet starts only once the operator has
 #      delivered client-ca.crt there and either bootstrap-kubeconfig is there
 #      too or the worker already holds its node kubeconfig.
@@ -158,8 +165,8 @@ if [ "$reload" = 1 ]; then
 fi
 
 mkdir -p "$root/containerd" "$root/kubelet" "$root/tailscale" "$root/enrollment" \
-  "$root/ci/storage" "$root/ci/hooks"
-chmod 0700 "$root/enrollment" "$root/tailscale"
+  "$root/ci/storage" "$root/ci/hooks" "$root/telemetry"
+chmod 0700 "$root/enrollment" "$root/tailscale" "$root/telemetry"
 
 run_container() {
   set -- --detach --name "$worker" --hostname "$worker" \
@@ -175,6 +182,7 @@ run_container() {
     --volume "$root/ci/storage:/var/lib/rancher/k3s/storage" \
     --volume "$root/ci/hooks:/usr/local/lib/ci-runner-k3s/hooks:ro" \
     --volume /sys/kernel/security:/sys/kernel/security \
+    --volume "$root/telemetry:/etc/otel-collector" \
     --env container=docker \
     --stop-signal SIGRTMIN+3 \
     --restart no \
@@ -203,8 +211,9 @@ if current="$(docker inspect -f '{{.Config.Image}} {{.State.Running}}' "$worker"
     run_container
   elif ! printf '%s\n' "$mounts" | grep -qx '/var/lib/rancher/k3s/storage true' ||
     ! printf '%s\n' "$mounts" | grep -qx '/usr/local/lib/ci-runner-k3s/hooks false' ||
-    ! printf '%s\n' "$mounts" | grep -qx '/sys/kernel/security true'; then
-    say "replacing container $worker, created without the current CI storage, hook or securityfs binds; its state on the data disk is kept"
+    ! printf '%s\n' "$mounts" | grep -qx '/sys/kernel/security true' ||
+    ! printf '%s\n' "$mounts" | grep -qx '/etc/otel-collector true'; then
+    say "replacing container $worker, created without the current CI storage, hook, securityfs or telemetry binds; its state on the data disk is kept"
     docker rm -f "$worker" >/dev/null
     run_container
   elif [ "$running" = "true" ]; then
@@ -314,4 +323,17 @@ if [ -s "$root/enrollment/client-ca.crt" ] &&
   say "kubelet started on $worker"
 else
   say "worker $worker awaits enrollment: the operator delivers bootstrap-kubeconfig and client-ca.crt to $root/enrollment"
+fi
+
+if [ -s "$root/telemetry/config.yaml" ] && [ -s "$root/telemetry/.env" ]; then
+  bridge="$(docker exec "$worker" ip -4 -o addr show dev cni0 2>/dev/null | awk '{print $4}' | cut -d / -f 1 | head -n 1 || true)"
+  if [ -n "$bridge" ]; then
+    printf 'WORKER_NODE_NAME=%s\nOTLP_PODS_ENDPOINT=%s:4319\n' "$worker" "$bridge" >"$root/telemetry/node.env"
+    docker exec "$worker" systemctl restart otel-collector
+    say "host collector started on $worker (host.name $worker, pod spans on $bridge:4319)"
+  else
+    say "worker $worker has no cni0 bridge yet; its host collector starts on the next run once the node runs a pod"
+  fi
+else
+  say "worker $worker's host collector stays off: the start task delivers its config.yaml and, with the ingest key, .env to $root/telemetry"
 fi
