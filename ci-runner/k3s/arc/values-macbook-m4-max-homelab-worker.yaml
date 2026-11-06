@@ -15,12 +15,33 @@
 #     gate for any CI landing on the worker.
 #   - the listener stays on the fleet's amd64 nodes.
 #
+# Container mode: jobs run exactly as on the fleet's sets
+# (../phase2/arc/values-livespec-dev-tooling.yaml is the reference the tests
+# compare against) — hook-created workflow pods on a local-path work volume,
+# the fleet-patched container hook and the fleet hook pod template. The hook
+# binds each workflow pod to its runner's node by nodeName, so the workflow
+# pod needs no class toleration. The worker provides the node paths: the start
+# task delivers the hook and loads the workflow AppArmor profile, and converge
+# binds the hook tree and the local-path storage from the data disk. The
+# `@HOOK_REVISION@` placeholder is rendered by install-arc.sh step 2b. Unlike
+# the fleet sets it asks for no churn slot and no ci-runner-scheduler: those
+# are the fleet CI nodes' admission, which a worker does not advertise.
+#
 # REPOSITORY-scoped, like the other sets — see ../README.md "GitHub
 # registration scope".
 githubConfigUrl: "https://github.com/thewoolleyman/livespec-dev-tooling"
 githubConfigSecret: arc-github-app-installation  # same secret as the other sets — see README.md
 
 runnerScaleSetName: "macbook-m4-max-homelab-worker-k3s"
+
+containerMode:
+  type: "kubernetes"
+  kubernetesModeWorkVolumeClaim:
+    accessModes: ["ReadWriteOnce"]
+    storageClassName: "local-path"
+    resources:
+      requests:
+        storage: 5Gi
 
 listenerTemplate:
   spec:
@@ -44,11 +65,35 @@ template:
       runAsGroup: 1000
       fsGroup: 1000
       fsGroupChangePolicy: OnRootMismatch
+    volumes:
+      - name: hook-pod-template
+        configMap:
+          name: arc-hook-pod-template-@HOOK_REVISION@
+      - name: fleet-container-hook
+        hostPath:
+          path: /usr/local/lib/ci-runner-k3s/hooks/2.338.2/index.js
+          type: File
     containers:
       - name: runner
         # Multi-arch index; its arm64 variant runs natively on the worker.
         image: ghcr.io/actions/actions-runner:2.338.2@sha256:759a1d94a15b05941aba5196974ff43fe15b4cbba29b694b35cbc32a1166b232
-        command: ["/home/runner/run.sh"]
+        command: ["/bin/bash", "/home/runner/hook-template/action-archive-entry.sh"]
+        env:
+          - name: ACTIONS_RUNNER_REQUIRE_JOB_CONTAINER
+            value: "false"
+          - name: ACTIONS_RUNNER_CONTAINER_HOOKS
+            value: /home/runner/fleet-hook/index.js
+          - name: ACTIONS_RUNNER_PRESEEDED_EXTERNALS_VERSION
+            value: "2.338.2"
+          - name: ACTIONS_RUNNER_CONTAINER_HOOK_TEMPLATE
+            value: /home/runner/hook-template/hook-pod-template.yaml
+        volumeMounts:
+          - name: hook-pod-template
+            mountPath: /home/runner/hook-template
+            readOnly: true
+          - name: fleet-container-hook
+            mountPath: /home/runner/fleet-hook/index.js
+            readOnly: true
         securityContext:
           allowPrivilegeEscalation: false
           privileged: false
