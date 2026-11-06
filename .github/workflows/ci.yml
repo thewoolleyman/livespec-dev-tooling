@@ -896,6 +896,7 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number }}
           PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           LIVESPEC_INCIDENT_OBSERVER_URL: ${{ vars.LIVESPEC_INCIDENT_OBSERVER_URL }}
+          LIVESPEC_INCIDENT_OBSERVER_CONNECT_ADDR: ${{ vars.LIVESPEC_INCIDENT_OBSERVER_CONNECT_ADDR }}
           LIVESPEC_INCIDENT_OBSERVER_QUERY_TOKEN: ${{ secrets.LIVESPEC_INCIDENT_OBSERVER_QUERY_TOKEN }}
         run: |
           if [ -z "$LIVESPEC_INCIDENT_OBSERVER_URL" ] || [ -z "$LIVESPEC_INCIDENT_OBSERVER_QUERY_TOKEN" ]; then
