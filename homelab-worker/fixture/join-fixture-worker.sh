@@ -112,7 +112,8 @@ if [ "$mode" = "tailnet" ]; then
 fi
 
 in_vm docker exec "$server" cat /var/lib/rancher/k3s/server/tls/server-ca.crt >"$tmp/server-ca.crt"
-set -- "$host" --api-server "https://$api_host:6443" --server-ca "$tmp/server-ca.crt" \
-  --cluster-config "$tmp/cluster.yaml" --state-root "$state_root"
-[ -z "$worker_network" ] || set -- "$@" --worker-network "$worker_network"
-"$hw/join-worker.sh" "$@"
+# Always explicit: an empty --worker-network is the fixture's tailnet mode, so
+# join-worker.sh never falls back to the host's production LAN address.
+"$hw/join-worker.sh" "$host" --api-server "https://$api_host:6443" \
+  --server-ca "$tmp/server-ca.crt" --cluster-config "$tmp/cluster.yaml" \
+  --state-root "$state_root" --worker-network "$worker_network"

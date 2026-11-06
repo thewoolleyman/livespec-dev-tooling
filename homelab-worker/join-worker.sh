@@ -15,7 +15,8 @@
 #      --server-ca, and the enrollment is delivered into the VM on stdin,
 #      never in an argument, under --state-root (default
 #      /mnt/lima-hwdata/worker).
-#   3. The worker container converges (on --worker-network when given),
+#   3. The worker container converges (on --worker-network when given, else
+#      as a home-LAN node at the host's declared WORKER_LAN_ADDRESS),
 #      registers its Node, and its serving CSR is approved by
 #      approve-serving-csr.sh.
 #
@@ -50,6 +51,7 @@ server_ca=""
 cluster_config="$hw/networking/cluster.yaml"
 state_root="/mnt/lima-hwdata/worker"
 worker_network=""
+worker_network_given=0
 while [ "$#" -gt 0 ]; do
   [ "$#" -ge 2 ] || die "$1 needs a value; $usage"
   case "$1" in
@@ -57,7 +59,10 @@ while [ "$#" -gt 0 ]; do
     --server-ca) server_ca="$2" ;;
     --cluster-config) cluster_config="$2" ;;
     --state-root) state_root="$2" ;;
-    --worker-network) worker_network="$2" ;;
+    --worker-network)
+      worker_network="$2"
+      worker_network_given=1
+      ;;
     *) die "unknown argument '$1'; $usage" ;;
   esac
   shift 2
@@ -70,6 +75,12 @@ esac
 [ -n "$server_ca" ] || die "--server-ca is required; $usage"
 [ -f "$server_ca" ] || die "server CA '$server_ca' is not a file"
 [ -f "$cluster_config" ] || die "cluster config '$cluster_config' is not a file"
+# Without --worker-network the worker converges as a home-LAN node at its
+# host's declared static address, as the start task does (spec v143).
+if [ "$worker_network_given" = 0 ]; then
+  lan="$(sed -n 's/^WORKER_LAN_ADDRESS=//p' "$hosts_dir/$host.env" | tail -n 1)"
+  [ -z "$lan" ] || worker_network="host:${lan%/*}"
+fi
 worker="$host-homelab-worker"
 image="$(grep -v '^#' "$hw/image/ref" | head -n 1)"
 
