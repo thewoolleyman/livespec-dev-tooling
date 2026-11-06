@@ -55,9 +55,21 @@ if [[ "$status" -ne 0 ]]; then
     fi
     exit "$status"
 fi
+# The per-file check runs BEFORE the receipt is stamped (work-item
+# livespec-dev-tooling-x3lvve): its vanished-source rewrite
+# (livespec-dev-tooling-5xh8) erases and rewrites the data file whenever a
+# measured file has no source at report time, and the receipt binds the data
+# bytes (livespec-dev-tooling-xluwqj). Stamped first, the receipt went stale
+# on every such run and check-coverage re-ran the whole suite. The rewrite is
+# this producer's own sanitisation of its own full-suite data, so the receipt
+# still vouches for a clean full-suite run; it is written whatever the
+# per-file verdict, as before, and the per-file status is the script's exit.
+per_file_status=0
+COVERAGE_FILE="$coverage_file" uv run python -m livespec_dev_tooling.checks.per_file_coverage \
+    || per_file_status=$?
 if reuse_id="$(scripts/just/coverage-reuse-id.sh)"; then
     printf '%s\n' "$reuse_id" > "$reuse_stamp"
 else
     echo ":: check-per-file-coverage: no coverage provenance id (not a git work tree); leaving no reuse marker"
 fi
-COVERAGE_FILE="$coverage_file" uv run python -m livespec_dev_tooling.checks.per_file_coverage
+exit "$per_file_status"

@@ -65,7 +65,10 @@ case "$1 $2" in
         exit "${FAKE_PYTEST_STATUS:-0}"
         ;;
     "run python")
-        exit 0
+        if [[ -n "${FAKE_PER_FILE_REWRITE:-}" ]]; then
+            printf '%s\\n' "$FAKE_PER_FILE_REWRITE" > "${COVERAGE_FILE:-.coverage}"
+        fi
+        exit "${FAKE_PER_FILE_STATUS:-0}"
         ;;
 esac
 exit 99
@@ -184,6 +187,45 @@ def test_producer_marker_unlocks_consume_once_reuse(*, tmp_path: Path) -> None:
     assert _uv_log(tmp_path=tmp_path) == [_PYTEST_WITH_DURATIONS_LINE, _PER_FILE_LINE, _REPORT_LINE]
     assert not (tmp_path / ".coverage").exists()
     assert not (tmp_path / _REUSE_STAMP).exists()
+
+
+def test_receipt_survives_the_per_file_vanished_source_rewrite(*, tmp_path: Path) -> None:
+    """The x3lvve shape: the per-file check rewrites the data after pytest exits.
+
+    The receipt binds the data bytes, so a receipt stamped before that rewrite
+    is stale by the time check-coverage reads it, and the consumer re-ran the
+    whole suite on every run whose tests left a vanished measured file.
+    """
+    _install_harness(tmp_path=tmp_path, git_tree=True)
+
+    producer = _run(
+        tmp_path=tmp_path,
+        script="check-per-file-coverage.sh",
+        extra={"FAKE_PYTEST_TOTAL": "1111", "FAKE_PER_FILE_REWRITE": "4242"},
+    )
+    assert producer.returncode == 0, producer.stderr
+    consumer = _run(tmp_path=tmp_path, script="check-coverage.sh", extra={})
+
+    facts = [
+        consumer.returncode == 0,
+        "provenance marker matches the current tracked tree" in consumer.stdout,
+        _reported_total(output=consumer.stdout) == "4242",
+        _uv_log(tmp_path=tmp_path) == [_PYTEST_WITH_DURATIONS_LINE, _PER_FILE_LINE, _REPORT_LINE],
+    ]
+    assert all(facts), (consumer.stdout, consumer.stderr, _uv_log(tmp_path=tmp_path))
+
+
+def test_per_file_failure_still_stamps_and_keeps_its_exit_status(*, tmp_path: Path) -> None:
+    _install_harness(tmp_path=tmp_path, git_tree=True)
+
+    producer = _run(
+        tmp_path=tmp_path,
+        script="check-per-file-coverage.sh",
+        extra={"FAKE_PER_FILE_STATUS": "3"},
+    )
+
+    assert producer.returncode == 3
+    assert (tmp_path / _REUSE_STAMP).read_text(encoding="utf-8").startswith("git-tree:")
 
 
 def test_failed_producer_receipt_stops_consumer_without_a_second_suite(*, tmp_path: Path) -> None:
