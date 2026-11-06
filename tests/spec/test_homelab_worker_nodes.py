@@ -9,6 +9,7 @@ VM recreation, no second worker — is an assertion about that log.
 
 from __future__ import annotations
 
+import hashlib
 import re
 import stat
 import subprocess
@@ -34,6 +35,9 @@ _HOSTS = {
     "beta": {"cpus": 13, "memory_gib": 17, "disk_gib": 19, "data_gib": 23, "lan": "10.99.0.22/24"},
     "delta": {"cpus": 2, "memory_gib": 3, "disk_gib": 5, "data_gib": 7},
 }
+# A mocked container-hook bundle: the tests never deliver the committed one.
+_HOOK_VERSION = "9.9.9"
+_HOOK_BYTES = b"// mocked fleet container hook\n"
 _A = "alpha"
 _B = "beta"
 _NO_LAN = "delta"
@@ -86,7 +90,25 @@ case "${1:-}" in
       create) touch "$state/disks/$3"; exit 0 ;;
     esac ;;
   shell)
+    # The VM's filesystem is modelled under $state/vm.
     case "$*" in
+      *" sha256sum "*)
+        for p in "$@"; do :; done
+        [ -f "$state/vm$p" ] || exit 1
+        { sha256sum "$state/vm$p" 2>/dev/null || shasum -a 256 "$state/vm$p"; }
+        exit 0 ;;
+      *" install -D -m 0644 /dev/stdin "*)
+        for dest in "$@"; do :; done
+        mkdir -p "$(dirname "$state/vm$dest")"
+        cat > "$state/vm$dest"
+        [ -f "$state/corrupt-delivery" ] && echo corrupted >> "$state/vm$dest"
+        exit 0 ;;
+      *" mv "*)
+        src=""; dst=""
+        for a in "$@"; do src="$dst"; dst="$a"; done
+        mv "$state/vm$src" "$state/vm$dst"
+        exit 0 ;;
+      *" apparmor_parser "*) exit "$(cat "$state/apparmor-exit" 2>/dev/null || echo 0)" ;;
       *" mkdir "*) exit 0 ;;
       *" install -m 0600 /dev/stdin "*)
         for dest in "$@"; do :; done
@@ -160,6 +182,13 @@ def host(tmp_path: Path) -> _Host:
             encoding="utf-8",
         )
     _write_exec(path=bin_dir / "socket_vmnet", text="#!/bin/bash\nexit 0\n")
+    bundle = state / "hook-bundle" / _HOOK_VERSION
+    bundle.mkdir(parents=True)
+    (bundle / "index.js").write_bytes(_HOOK_BYTES)
+    (bundle / "index.js.sha256").write_text(
+        f"{hashlib.sha256(_HOOK_BYTES).hexdigest()}  index.js\n", encoding="utf-8"
+    )
+    (state / "workflow-profile").write_text("# mocked workflow profile\n", encoding="utf-8")
     return _Host(bin_dir=bin_dir, state=state, log=log)
 
 
@@ -198,6 +227,8 @@ def _run(
         "STUB_BIN": str(host.bin_dir),
         "HOMELAB_WORKER_HOSTS_DIR": str(host.state / "hosts"),
         "HOMELAB_WORKER_SOCKET_VMNET": str(host.bin_dir / "socket_vmnet"),
+        "HOMELAB_WORKER_HOOK_BUNDLE_DIR": str(host.state / "hook-bundle"),
+        "HOMELAB_WORKER_APPARMOR_PROFILE": str(host.state / "workflow-profile"),
         **(extra_env or {}),
     }
     return subprocess.run(
@@ -557,6 +588,95 @@ def test_a_failed_lan_address_step_never_converges_the_worker_container(host: _H
     (host.state / "lan-exit").write_text("1\n", encoding="utf-8")
     result = _run(host=host, args=[_A])
     assert result.returncode != 0
+    assert not (host.state / "converge-stdin").exists()
+
+
+_HOOK_DEST = f"/mnt/lima-hwdata/worker/ci/hooks/{_HOOK_VERSION}/index.js"
+
+
+def _shells(*, host: _Host) -> list[str]:
+    return [c for c in _calls(host=host) if c.startswith("limactl shell ")]
+
+
+def _converge_index(shells: list[str]) -> int:
+    return next(
+        i
+        for i, c in enumerate(shells)
+        if "/mnt/lima-hwdata/worker" in c and f" -- {_A}-homelab-worker " in c
+    )
+
+
+def test_the_container_hook_reaches_the_data_disk_verified_before_the_container_step(
+    host: _Host,
+) -> None:
+    _install_lima(host=host, version="2.2.1")
+    result = _run(host=host, args=[_A])
+    assert result.returncode == 0, result.stderr
+    assert (host.state / f"vm{_HOOK_DEST}").read_bytes() == _HOOK_BYTES
+    assert not (host.state / f"vm{_HOOK_DEST}.new").exists()
+    shells = _shells(host=host)
+    moved = next(
+        i for i, c in enumerate(shells) if c.endswith(f" mv {_HOOK_DEST}.new {_HOOK_DEST}")
+    )
+    assert moved < _converge_index(shells)
+
+
+def test_a_current_container_hook_is_not_delivered_again(host: _Host) -> None:
+    _install_lima(host=host, version="2.2.1")
+    (host.state / f"vm{_HOOK_DEST}").parent.mkdir(parents=True)
+    (host.state / f"vm{_HOOK_DEST}").write_bytes(_HOOK_BYTES)
+    result = _run(host=host, args=[_A])
+    assert result.returncode == 0, result.stderr
+    assert [c for c in _shells(host=host) if " install -D " in c and "/ci/hooks/" in c] == []
+
+
+def test_a_container_hook_not_matching_its_checksum_never_converges_the_worker(
+    host: _Host,
+) -> None:
+    _install_lima(host=host, version="2.2.1")
+    (host.state / "corrupt-delivery").write_text("", encoding="utf-8")
+    result = _run(host=host, args=[_A])
+    assert result.returncode != 0
+    assert "index.js.sha256" in result.stderr
+    assert not (host.state / f"vm{_HOOK_DEST}").exists()
+    assert not (host.state / "converge-stdin").exists()
+
+
+def test_a_hook_bundle_without_its_checksum_is_refused_before_any_host_change(
+    host: _Host,
+) -> None:
+    _install_lima(host=host, version="2.2.1")
+    (host.state / "hook-bundle" / _HOOK_VERSION / "index.js.sha256").unlink()
+    result = _run(host=host, args=[_A])
+    assert result.returncode != 0
+    assert "index.js.sha256" in result.stderr
+    assert [c for c in _calls(host=host) if c.startswith(("limactl create", "limactl start"))] == []
+
+
+def test_the_workflow_apparmor_profile_is_loaded_in_the_vm_before_the_container_step(
+    host: _Host,
+) -> None:
+    _install_lima(host=host, version="2.2.1")
+    result = _run(host=host, args=[_A])
+    assert result.returncode == 0, result.stderr
+    # The stub models the VM's filesystem under state/vm.
+    installed = host.state / "vm" / "etc" / "apparmor.d" / "workflow-profile"
+    assert installed.read_text(encoding="utf-8") == "# mocked workflow profile\n"
+    shells = _shells(host=host)
+    loaded = next(
+        i
+        for i, c in enumerate(shells)
+        if c.endswith(" apparmor_parser -r " + "/etc/apparmor.d/workflow-profile")
+    )
+    assert loaded < _converge_index(shells)
+
+
+def test_a_profile_apparmor_refuses_never_converges_the_worker(host: _Host) -> None:
+    _install_lima(host=host, version="2.2.1")
+    (host.state / "apparmor-exit").write_text("1\n", encoding="utf-8")
+    result = _run(host=host, args=[_A])
+    assert result.returncode != 0
+    assert "AppArmor refused" in result.stderr
     assert not (host.state / "converge-stdin").exists()
 
 
