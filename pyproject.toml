@@ -459,6 +459,9 @@ single_meaning_variants = [
 #   - agent_hooks/pretooluse_background_guard.py  main() → sole fail-open hook boundary
 #   - agent_hooks/subagent_stop_guard.py          main() → sole fail-open hook boundary
 supervisor_entry_files = [
+    # `just mutation-kill-matrix` invokes this on-demand process to generate
+    # the portable Rule-26 report; its main returns the process exit status.
+    "livespec_dev_tooling/mutation_kill_matrix.py",
     # The two PreToolUse guard hooks are supervisor entry artifacts: each
     # `main()` carries the ONE fail-open boundary catch livespec
     # non-functional-requirements.md line 114 grants a hook, and each file owns
@@ -1056,6 +1059,9 @@ reportPrivateUsage = "none"
 # ---------------------------------------------------------------------------
 # Pytest — pytest-cov + pytest-icdiff wiring.
 # ---------------------------------------------------------------------------
+
+[tool.mutmut]
+paths_to_mutate = ["livespec_dev_tooling"]
 
 [tool.pytest.ini_options]
 minversion = "8.0"
