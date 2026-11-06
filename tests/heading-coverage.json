@@ -108,8 +108,8 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "constraints.md",
     "heading": "## Dependencies",
-    "test": "tests.consumer.test_zero_runtime_dependencies.test_the_library_declares_no_runtime_dependencies",
-    "reason": "Consumer-tier: `[project]` carries no `dependencies` key AND the installed distribution's Requires-Dist (a separate artifact, which a build-backend or dynamic-metadata dependency would reach without touching the config) is empty; the vendored `returns` / `structlog` imports every check makes resolve from `livespec_dev_tooling/_vendor/`, which is what makes the zero-dependency claim honest; and ruff, pyright and pytest carry exact `==` pins under `[dependency-groups].dev` (plan fleet-heading-coverage-convergence P2 burn-down, livespec-dev-tooling-hhp4og)."
+    "test": "tests.consumer.test_zero_runtime_dependencies.test_vendored_returns_runtime_dependency_is_declared",
+    "reason": "Consumer-tier: `[project]` and the installed distribution's Requires-Dist both declare `typing-extensions`, which vendored `returns` imports at runtime; `returns` and `structlog` resolve from `livespec_dev_tooling/_vendor/`; and ruff, pyright and pytest carry exact `==` pins under `[dependency-groups].dev` (plan fleet-heading-coverage-convergence P2 burn-down, livespec-dev-tooling-hhp4og)."
   },
   {
     "spec_root": "SPECIFICATION",
