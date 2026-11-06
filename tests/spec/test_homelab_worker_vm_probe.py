@@ -25,6 +25,7 @@ _CAPABILITIES = (
     "apparmor",
     "userns-idmap",
     "tun",
+    "br-netfilter",
     "cgroup-v2",
     "mount-propagation",
     "nested-containerd",
@@ -76,6 +77,7 @@ def vm(tmp_path: Path) -> _Vm:
     _write(path=root / "sys/fs/cgroup/cgroup.subtree_control", text="cpuset cpu io memory pids\n")
     (root / _DATA_MOUNT.lstrip("/")).mkdir(parents=True)
     _stub(vm=made, name="uname", body='echo "6.8.0-88-generic"')
+    _stub(vm=made, name="modinfo", body='[ "$1" = br_netfilter ] && echo "filename: stub"')
     _stub(vm=made, name="findmnt", body="echo shared")
     _stub(vm=made, name="docker", body="exit 0")
     _stub(vm=made, name="mount", body="exit 0")
@@ -176,6 +178,23 @@ def test_the_probe_changes_nothing_to_make_itself_pass(vm: _Vm) -> None:
     _run(vm=vm)
     calls = vm.log.read_text(encoding="utf-8").splitlines()
     commands = {line.split()[0] for line in calls}
-    assert commands <= {"uname", "findmnt", "docker", "mount", "umount", "cp"}
+    assert commands <= {"uname", "findmnt", "docker", "mount", "umount", "cp", "modinfo"}
     assert [c for c in calls if c.startswith("docker ") and " run " not in f" {c} "] == []
     assert (vm.root / "sys/module/apparmor/parameters/enabled").read_text(encoding="utf-8") == "N\n"
+
+
+def test_a_kernel_that_cannot_load_br_netfilter_is_named_missing(vm: _Vm) -> None:
+    _stub(vm=vm, name="modinfo", body="exit 1")
+    result = _run(vm=vm)
+    assert result.returncode != 0
+    assert any(
+        line.startswith("MISSING br-netfilter: ") and "br_netfilter" in line
+        for line in _lines(result=result)
+    )
+
+
+def test_a_loaded_br_netfilter_is_present_even_without_modinfo(vm: _Vm) -> None:
+    _stub(vm=vm, name="modinfo", body="exit 1")
+    _write(path=vm.root / "proc/sys/net/bridge/bridge-nf-call-iptables", text="1\n")
+    result = _run(vm=vm)
+    assert "PRESENT br-netfilter" in _lines(result=result)
