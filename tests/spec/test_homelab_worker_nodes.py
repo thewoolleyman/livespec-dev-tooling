@@ -305,7 +305,9 @@ def test_installed_lima_older_than_the_minimum_is_refused_by_version(host: _Host
     result = _run(host=host, args=[_A])
     assert result.returncode != 0
     assert "1.2.0" in result.stderr
-    assert "2.0.0" in result.stderr
+    # The refusal names whatever minimum the task declares, not a restated value.
+    minimum = (_WORKER_DIR / "lima" / "min-version").read_text(encoding="utf-8").strip()
+    assert minimum in result.stderr
     calls = _calls(host=host)
     assert [c for c in calls if c.startswith("brew ")] == []
     assert [c for c in calls if c.startswith("limactl create")] == []
@@ -425,9 +427,10 @@ def test_the_data_disk_filesystem_label_fits_the_xfs_limit() -> None:
     # boot.Linux/05-lima-disks.sh), and an XFS label holds at most 12 characters. A longer
     # name leaves the disk unformatted and unmounted, measured on a real host 2026-11-04.
     script = _SCRIPT.read_text(encoding="utf-8")
-    declared = [line for line in script.splitlines() if line.startswith("data_disk=")]
-    assert declared == ['data_disk="hwdata"']
-    assert len("lima-hwdata") <= 12
+    [declared] = [line for line in script.splitlines() if line.startswith("data_disk=")]
+    match = re.fullmatch(r'data_disk="([a-z0-9-]+)"', declared)
+    assert match, declared
+    assert len(f"lima-{match.group(1)}") <= 12
 
 
 def test_a_missing_vm_capability_stops_the_task_naming_it_with_its_remedy(host: _Host) -> None:
