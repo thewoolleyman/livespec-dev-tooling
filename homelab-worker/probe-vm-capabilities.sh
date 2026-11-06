@@ -70,6 +70,14 @@ else
   absent tun "/dev/net/tun is absent; load the tun module in the guest (modprobe tun) through its image configuration"
 fi
 
+# 3b. Bridge netfilter for flannel and kube-proxy: loaded, or loadable (the
+#     worker's converge step loads and persists it before the worker starts).
+if [ -e "$root/proc/sys/net/bridge/bridge-nf-call-iptables" ] || modinfo br_netfilter >/dev/null 2>&1; then
+  present br-netfilter
+else
+  absent br-netfilter "the kernel module br_netfilter is neither loaded nor available; install the guest's linux-modules-extra package or use a guest kernel that ships br_netfilter"
+fi
+
 # 4. cgroup v2 with the kubelet's controllers delegated.
 controllers="$(cat "$root/sys/fs/cgroup/cgroup.controllers" 2>/dev/null || true)"
 subtree="$(cat "$root/sys/fs/cgroup/cgroup.subtree_control" 2>/dev/null || true)"
