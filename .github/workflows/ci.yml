@@ -823,11 +823,10 @@ jobs:
           uv sync --all-groups
 
       # The release is resolved from the forge, never from the candidate
-      # tree, and installed into a venv OUTSIDE the workspace. typing-extensions
-      # is added beside it because the vendored `returns` imports it and the
-      # released package declares no runtime dependency (its consumers carry
-      # it transitively). The final line proves the released module resolves
-      # from that venv, not from the checkout.
+      # tree, and installed into a venv OUTSIDE the workspace, with the
+      # runtime dependencies the release itself declares and nothing else.
+      # The final line proves the released module resolves from that venv,
+      # not from the checkout.
       - name: Install the latest released livespec-dev-tooling (never the candidate tree)
         id: released
         shell: bash
@@ -839,7 +838,7 @@ jobs:
           esac
           venv="${RUNNER_TEMP}/released-dev-tooling"
           uv venv --python "$(cat .python-version)" "$venv"
-          uv pip install --python "${venv}/bin/python" typing-extensions \
+          uv pip install --python "${venv}/bin/python" \
             "livespec-dev-tooling @ git+https://github.com/${GITHUB_REPOSITORY}@${tag}"
           resolved="$("${venv}/bin/python" -I -c 'import livespec_dev_tooling as m; print(m.__file__)')"
           case "$resolved" in
