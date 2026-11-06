@@ -1017,13 +1017,6 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario: the fleet test baseline reports per-repository counts and fleet totals",
-    "work_item": "livespec-dev-tooling-phakbp",
-    "first_seen": "2026-11-06"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
     "heading": "## Scenario: the highest-ordered ready target is admitted to any execution target with headroom for its cost",
     "work_item": "livespec-dev-tooling-hvfc6c",
     "first_seen": "2026-11-04"

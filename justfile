@@ -216,6 +216,12 @@ plugin-build-currency:
 ensure-codex-plugins:
     scripts/just/ensure-codex-plugins.sh
 
+# On-demand only: measures supplied sibling clones and emits per-repository and
+# fleet-total JSON. It is deliberately absent from `check` and hook recipes.
+[positional-arguments]
+fleet-test-baseline *paths:
+    scripts/just/fleet-test-baseline.sh "$@"
+
 # ---------------------------------------------------------------
 # Aggregate check — wires EVERY canonical check slug emitted by
 # `python -m livespec_dev_tooling.canonical_checks --json`, in
