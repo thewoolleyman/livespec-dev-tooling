@@ -171,11 +171,20 @@ readonly WATCH_DRAIN_CEILING_S=120
 # live gate (livespec-dev-tooling-ycahud). Empty when the host's bash
 # cannot do a fractional `read -t`, in which case `idle_sleep` degrades to
 # `sleep` rather than spinning.
+#
+# A named FIFO opened read-write, then unlinked: the open holds both ends, so
+# nothing ever reaches EOF and every read waits its full timeout. It replaced
+# `exec {fd}<> <(:)`, which on macOS DUPLICATES the pipe's read end (its
+# /dev/fd is a dup, not a reopen), so the descriptor hit EOF as soon as `:`
+# exited — a race the open's own probe could win or lose, leaving either a
+# silent busy loop or a `sleep` fallback. Two spawns per open, none per tick.
 IDLE_FD=""
 
 open_idle_fd() {
-    local fd=""
-    if { exec {fd}<> <(:); } 2>/dev/null; then
+    local fd="" fifo
+    fifo="${TMPDIR:-/tmp}/gate-run-idle.$$.$RANDOM"
+    if mkfifo "$fifo" 2>/dev/null && { exec {fd}<>"$fifo"; } 2>/dev/null; then
+        rm -f "$fifo"
         # A bash that rejects a fractional timeout returns at once with a
         # status below the 128+ timeout range; using it would busy-loop.
         local status=0
@@ -184,7 +193,9 @@ open_idle_fd() {
             IDLE_FD="$fd"
             return 0
         fi
+        exec {fd}>&- || true
     fi
+    rm -f "$fifo" 2>/dev/null || true
     IDLE_FD=""
 }
 
@@ -201,6 +212,59 @@ idle_sleep() {
     else
         sleep "$1"
     fi
+}
+
+# THE STALL BOUND. A gate always ends with a verdict or an explicit
+# no-verdict state, and never hangs (SPECIFICATION/non-functional-requirements.md,
+# "Developer host platforms": "A gate always ends with a verdict"). A local gate
+# runs as its OWN process group, and the child watches its output: when nothing
+# new reaches output.log for the stall window, the whole group is ended — a
+# pytest session and its pytest-xdist workers alike, such as rerunfailures
+# re-runs deadlocked with every worker idle — a line naming the window is
+# appended, and the run records STALL_EXIT_CODE, a FAILED verdict, never a pass.
+# The window, its default and its override are the commit-time replay leg's
+# (LIVESPEC_SUITE_GREEN_STALL_SECONDS, 900 s). TERM first, KILL after
+# GATE_STALL_KILL_GRACE_SECONDS. Builtins only per tick (`kill -0`, `-nt`, a
+# `: >` redirect, `$SECONDS`, `idle_sleep`), so an idle gate spawns nothing.
+# The cluster venue is excluded: its client waits silently through admission
+# and bounds that wait itself.
+readonly STALL_EXIT_CODE=124
+
+run_gate_with_stall_bound() {
+    local dir="$1"
+    shift
+    local stall="${LIVESPEC_SUITE_GREEN_STALL_SECONDS:-900}"
+    local grace="${GATE_STALL_KILL_GRACE_SECONDS:-30}"
+    local stamp="$dir/progress.stamp"
+    : >"$stamp"
+    set -m
+    "$@" >>"$dir/output.log" 2>&1 &
+    local gate_pid=$!
+    set +m
+    # Opened after the gate launches, so the gate inherits nothing of ours.
+    open_idle_fd || true
+    local quiet_since=$SECONDS ended
+    while kill -0 "$gate_pid" 2>/dev/null; do
+        if [[ "$dir/output.log" -nt "$stamp" ]]; then
+            : >"$stamp"
+            quiet_since=$SECONDS
+        elif (( SECONDS - quiet_since >= stall )); then
+            printf '\ngate-run: no output for %ss, the stall window (LIVESPEC_SUITE_GREEN_STALL_SECONDS); ending the gate'"'"'s whole process group, workers included — not a pass\n' \
+                "$stall" >>"$dir/output.log"
+            kill -TERM -- "-$gate_pid" 2>/dev/null || true
+            ended=$SECONDS
+            while kill -0 "$gate_pid" 2>/dev/null && (( SECONDS - ended < grace )); do
+                idle_sleep 1
+            done
+            kill -KILL -- "-$gate_pid" 2>/dev/null || true
+            wait "$gate_pid" 2>/dev/null || true
+            close_idle_fd || true
+            return "$STALL_EXIT_CODE"
+        fi
+        idle_sleep 1
+    done
+    close_idle_fd || true
+    wait "$gate_pid"
 }
 
 repo_root() {
@@ -877,7 +941,7 @@ cmd_child() {
         uv run --no-sync python -m livespec_dev_tooling.gate_runner_delegate run --run-dir "$dir" -- "$@" \
             >>"$dir/output.log" 2>&1
     else
-        "$@" >>"$dir/output.log" 2>&1
+        run_gate_with_stall_bound "$dir" "$@"
     fi
     local code=$?
     set -e

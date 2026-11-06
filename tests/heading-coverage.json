@@ -2199,9 +2199,8 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a gate pytest session that stops making progress ends without a pass",
-    "test": "TODO",
-    "reason": "Spec-first: a real test at the integration tier or above (a consumer-style check-runner or host-captured run on a macOS developer host) is owed for this scenario; livespec-dev-tooling-ko26ez owns it.",
-    "work_item": "livespec-dev-tooling-ko26ez"
+    "test": "tests.livespec_dev_tooling.worktree_pack.test_gate_run.test_a_gate_pytest_session_that_stops_making_progress_ends_without_a_pass",
+    "reason": "Integration tier: starts the real detached gate runner (dev-tooling/gate-run.sh) on a gate that prints once and then goes silent with a background worker, with LIVESPEC_SUITE_GREEN_STALL_SECONDS=2; asserts the run ends FAILED (not a pass, not 75), output.log names the stall window, and the worker is gone (the whole process group was ended). Its sibling shows output resets the window so a slow live gate keeps its verdict."
   },
   {
     "spec_root": "SPECIFICATION",

@@ -581,7 +581,13 @@ def test_an_idle_detached_gate_run_and_an_idle_waiter_spawn_no_per_tick_process(
     runner_log = tmp_path / "runner-spawns.log"
     waiter_log = tmp_path / "waiter-spawns.log"
     ready = tmp_path / "gate-is-idle"
-    idle_gate = f"touch {ready}; exec 3<> <(:); read -t {_IDLE_GATE_S} -u 3; exit {_GATE_EXIT_CODE}"
+    # A FIFO opened read-write holds both ends, so the read waits its whole
+    # timeout on every host; `<(:)` on macOS dups the pipe's read end and can
+    # hit EOF at once, ending the "idle" gate inside the measured window.
+    idle_gate = (
+        f'tick="$(mktemp -u)"; mkfifo "$tick"; exec 3<>"$tick"; rm -f "$tick"; touch {ready}; '
+        f"read -t {_IDLE_GATE_S} -u 3; exit {_GATE_EXIT_CODE}"
+    )
     run_id = _start(
         cwd=worktree,
         env=_shimmed_env(env=env, shims=shims, log=runner_log),
