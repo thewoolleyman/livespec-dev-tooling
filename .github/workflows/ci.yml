@@ -266,6 +266,22 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
+      # livespec-dev-tooling-jerpfe: scripts/just/check-coverage.sh reuses the
+      # downloaded .coverage only when check-per-file-coverage's provenance
+      # receipt .livespec-coverage-reuse-token sits beside it and matches the
+      # tree and data bytes (livespec-dev-tooling-sc0z). The coverage-data
+      # artifact above ships .coverage alone, so without this step the consumer
+      # logs "ignoring existing .coverage without a matching provenance marker"
+      # and re-runs the whole suite. Ship the receipt beside the data file.
+      - name: Publish the provenance receipt for the check-coverage consumer
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-reuse-token
+          path: .livespec-coverage-reuse-token
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 1
+
   # Coverage-pair consumer. Kept as a single-entry matrix (NOT a plain job)
   # because check-coverage is a tool-backed slug and
   # check-tool-backed-check-completeness requires every tool-backed slug to
@@ -331,6 +347,14 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: coverage-data
+
+      # livespec-dev-tooling-jerpfe: restore the producer's provenance receipt
+      # beside .coverage so check-coverage takes its consume-once branch (read,
+      # report --fail-under=100, delete) instead of re-running the suite.
+      - name: Download the producer's provenance receipt
+        uses: actions/download-artifact@v4
+        with:
+          name: coverage-reuse-token
 
       - name: just ${{ matrix.target }}
         if: ${{ !(needs.incident-ci.result == 'success' && contains(fromJSON(needs.incident-ci.outputs.omitted || '[]'), matrix.target)) }}
