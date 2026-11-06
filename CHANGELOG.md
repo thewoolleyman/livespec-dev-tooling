@@ -58,6 +58,14 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.184.2](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.184.1...v1.184.2) (2026-11-06)
+
+
+### Bug Fixes
+
+* **incident-observer:** the observer's generation floor is per incident, not per repository (livespec-dev-tooling-ua2scz) ([93f6952](https://github.com/thewoolleyman/livespec-dev-tooling/commit/93f69528d0dc70ce356c7e879e449873ff106299))
+* **incident-observer:** the reader and CI read ceilings outwait a generation-2 pass under host load (livespec-dev-tooling-ws2idp) ([5d11848](https://github.com/thewoolleyman/livespec-dev-tooling/commit/5d11848fb04f1d909c814abf9a6fea223905d91e))
+
 ## [1.184.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.184.0...v1.184.1) (2026-11-06)
 
 
