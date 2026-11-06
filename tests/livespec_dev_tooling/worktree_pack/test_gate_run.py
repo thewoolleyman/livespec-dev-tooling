@@ -647,3 +647,75 @@ def test_a_run_whose_process_died_without_a_verdict_exits_75_and_is_not_a_pass(
         assert result.returncode == 75, subcommand
         assert "DIED_WITHOUT_VERDICT" in result.stdout, subcommand
         assert "PASSED" not in result.stdout, subcommand
+
+
+# --- scenario: a gate pytest session that stops making progress ------------
+
+_STALL_ENV = "LIVESPEC_SUITE_GREEN_STALL_SECONDS"
+_STALL_GRACE_ENV = "GATE_STALL_KILL_GRACE_SECONDS"
+
+
+def _alive(*, pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    return True
+
+
+def _gone_within(*, pid: int, timeout_s: float) -> bool:
+    deadline = time.monotonic() + timeout_s
+    while _alive(pid=pid):
+        if time.monotonic() >= deadline:
+            return False
+        time.sleep(_POLL_INTERVAL_S)
+    return True
+
+
+@pytest.mark.integration
+def test_a_gate_pytest_session_that_stops_making_progress_ends_without_a_pass(
+    *, tmp_path: Path, fixture_repo: tuple[Path, Path, dict[str, str]]
+) -> None:
+    """Scenario: a gate pytest session that stops making progress ends without a pass.
+
+    The gate prints once and then goes silent with a background worker, the way
+    a pytest-xdist session whose workers deadlocked does. Past the stall window
+    the runner ends the gate's whole process group, worker included, records a
+    FAILED verdict that names the stall window, and never a pass.
+    """
+    primary, worktree, env = fixture_repo
+    worker_pid = tmp_path / "worker.pid"
+    stalled = f"sleep 300 & echo $! > {worker_pid}; echo collected; exec sleep 300"
+    run_id = _start(
+        cwd=worktree,
+        env={**env, _STALL_ENV: "2", _STALL_GRACE_ENV: "1"},
+        command=["bash", "-c", stalled],
+    )
+
+    run_dir = _await_verdict(primary=primary, run_id=run_id)
+    waited = _gate(cwd=primary, env=env, args=["wait", run_id])
+
+    assert waited.returncode not in (0, 75)
+    assert "FAILED" in waited.stdout
+    assert "PASSED" not in waited.stdout
+    assert "stall window" in (run_dir / "output.log").read_text(encoding="utf-8")
+    assert _gone_within(pid=int(worker_pid.read_text(encoding="utf-8")), timeout_s=10.0)
+
+
+@pytest.mark.integration
+def test_a_gate_that_keeps_making_progress_is_not_ended_by_the_stall_window(
+    *, fixture_repo: tuple[Path, Path, dict[str, str]]
+) -> None:
+    """Output resets the stall window, so a slow but live gate keeps its verdict."""
+    primary, worktree, env = fixture_repo
+    steady = "for i in 1 2 3 4 5; do echo tick $i; sleep 1; done; exit 0"
+    run_id = _start(
+        cwd=worktree,
+        env={**env, _STALL_ENV: "3", _STALL_GRACE_ENV: "1"},
+        command=["bash", "-c", steady],
+    )
+
+    run_dir = _await_verdict(primary=primary, run_id=run_id)
+
+    assert (run_dir / "exit_code").read_text(encoding="utf-8").strip() == "0"
+    assert "stall window" not in (run_dir / "output.log").read_text(encoding="utf-8")
