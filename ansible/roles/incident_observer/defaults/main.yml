@@ -28,7 +28,7 @@ incident_observer_required_jobs:
 # The orchestrator plugin release whose `incident_authority.py` is the canonical
 # `read-current` reader (docs/incident-observer-service.md). Cloned at this tag,
 # root-owned, next to the venv. Its tenant credential is NOT provisioned here.
-incident_observer_reader_release: v0.290.0
+incident_observer_reader_release: v0.295.1
 incident_observer_reader_repo: https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro.git
 incident_observer_reader_script_relative: .claude-plugin/scripts/bin/incident_authority.py
 
