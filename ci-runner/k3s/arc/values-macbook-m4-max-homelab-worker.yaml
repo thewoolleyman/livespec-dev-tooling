@@ -1,0 +1,59 @@
+# values-macbook-m4-max-homelab-worker.yaml — Helm values for the
+# gha-runner-scale-set chart release `macbook-m4-max-homelab-worker-k3s`: the
+# host-unique runner scale set of the homelab worker on the MacBook M4 Max
+# (plan homelab-k8s-worker-nodes, research/009), installed by
+# ../install-arc.sh.
+#
+# Like poweredge-xubuntu-k3s (values-host-unique.yaml) it exists so a workflow
+# can address THIS host by name — here, to run native arm64 CI on the fleet's
+# only arm64 node — and it idles at zero runners, so no existing traffic moves.
+#
+# Placement (research/009):
+#   - runner pods select the worker by its host label and arm64, and tolerate
+#     the worker's permanent class taint. They do NOT tolerate the admission
+#     hold: the hold is lifted by an explicit operator action, which is the
+#     gate for any CI landing on the worker.
+#   - the listener stays on the fleet's amd64 nodes.
+#
+# REPOSITORY-scoped, like the other sets — see ../README.md "GitHub
+# registration scope".
+githubConfigUrl: "https://github.com/thewoolleyman/livespec-dev-tooling"
+githubConfigSecret: arc-github-app-installation  # same secret as the other sets — see README.md
+
+runnerScaleSetName: "macbook-m4-max-homelab-worker-k3s"
+
+listenerTemplate:
+  spec:
+    nodeSelector:
+      kubernetes.io/arch: amd64
+    containers:
+      - name: listener
+
+template:
+  spec:
+    nodeSelector:
+      homelab-worker.livespec.dev/host: macbook-m4-max
+      kubernetes.io/arch: arm64
+    tolerations:
+      - key: homelab-worker.livespec.dev/class
+        operator: Exists
+        effect: NoSchedule
+    securityContext:
+      runAsNonRoot: true
+      runAsUser: 1000
+      runAsGroup: 1000
+      fsGroup: 1000
+      fsGroupChangePolicy: OnRootMismatch
+    containers:
+      - name: runner
+        # Multi-arch index; its arm64 variant runs natively on the worker.
+        image: ghcr.io/actions/actions-runner:2.338.2@sha256:759a1d94a15b05941aba5196974ff43fe15b4cbba29b694b35cbc32a1166b232
+        command: ["/home/runner/run.sh"]
+        securityContext:
+          allowPrivilegeEscalation: false
+          privileged: false
+          capabilities:
+            drop: ["ALL"]
+
+minRunners: 0
+maxRunners: 1
