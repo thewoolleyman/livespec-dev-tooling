@@ -557,3 +557,52 @@ def test_a_refused_secret_create_refuses_the_push(*, tmp_path: Path) -> None:
 
     assert verdict.state == GATE_NO_VERDICT
     assert DELIVER_STEP in verdict.detail
+
+
+def _delete_job_argvs(*, world: _World) -> list[tuple[str, ...]]:
+    """Every `kubectl delete job` the run issued."""
+    return [argv for argv in world.argvs if "delete" in argv and "job" in argv]
+
+
+def test_a_refused_secret_create_deletes_the_submitted_job(*, tmp_path: Path) -> None:
+    """A Job the client abandons because its token Secret was refused must not run later."""
+    world = _World(
+        minted=json.dumps({"private_siblings": [_PRIVATE], "token": _TOKEN}),
+        refuse_secret=True,
+    )
+    events, emit = _recorder()
+
+    verdict = run_delegated_gate(
+        repo_root=_a_repository(root=tmp_path / "widget", config=_SIBLINGS),
+        renderer=_RENDERER,
+        runner=world,
+        sleeper=_no_sleep,
+        emit=emit,
+    )
+
+    assert verdict.state == GATE_NO_VERDICT
+    deletes = _delete_job_argvs(world=world)
+    assert len(deletes) == 1
+    assert deletes[0][-1] == _JOB
+
+
+def test_a_job_without_a_uid_is_deleted_rather_than_left_queued(*, tmp_path: Path) -> None:
+    """The Job is named even when its UID is missing, so abandoning it deletes it."""
+    world = _World(
+        minted=json.dumps({"private_siblings": [_PRIVATE], "token": _TOKEN}),
+        created=_CREATED_WITHOUT_UID,
+    )
+    events, emit = _recorder()
+
+    verdict = run_delegated_gate(
+        repo_root=_a_repository(root=tmp_path / "widget", config=_SIBLINGS),
+        renderer=_RENDERER,
+        runner=world,
+        sleeper=_no_sleep,
+        emit=emit,
+    )
+
+    assert verdict.state == GATE_NO_VERDICT
+    deletes = _delete_job_argvs(world=world)
+    assert len(deletes) == 1
+    assert deletes[0][-1] == _JOB
