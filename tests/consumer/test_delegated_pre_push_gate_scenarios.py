@@ -37,6 +37,7 @@ import json
 import os
 import subprocess
 import sys
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -47,6 +48,10 @@ from returns.unsafe import unsafe_perform_io
 from livespec_dev_tooling._gate_remote_assembly import GATE_CHECK_SUITE_FALL_THROUGH
 from livespec_dev_tooling.check_authority import repository_authority_members
 from livespec_dev_tooling.gate_credential import GATES_KUBECONFIG_ENV, GATES_WRAPPER
+from livespec_dev_tooling.gate_outcome_telemetry import (
+    GATE_OUTCOME_NO_VERDICT,
+    GATE_OUTCOME_PASSED,
+)
 from livespec_dev_tooling.gate_remote_delegate import (
     delegated_gate_enabled,
     delegated_gate_selected,
@@ -723,3 +728,106 @@ def test_an_authority_reading_member_runs_on_the_pushing_host_and_joins_the_verd
     assert _DECLARING_MEMBER in refused.detail
     assert "on the pushing host" in refused.detail
     assert "no approval label on the work item" in refused.detail
+
+
+# --- scenario: a delegated pre-push wait interrupted by host sleep --------
+
+# What the API server's reads look like from a host that just slept: the gate
+# client's connection is gone, so every read fails until the host is back.
+_ASLEEP = "Unable to connect to the server: net/http: TLS handshake timeout"
+
+
+class _SleepingHostCluster(_CannedCluster):
+    """A cluster whose Job reads fail while the pushing host sleeps.
+
+    The submit has already happened before the host sleeps, so it succeeds; the
+    next `asleep_polls` reads of that Job fail as they do from a sleeping host,
+    and every read after that is the ordinary admitted-then-complete sequence.
+    With `asleep_polls` past the client's poll budget the host never wakes in
+    time, and no read ever succeeds.
+    """
+
+    def __init__(self, *, asleep_polls: int) -> None:
+        super().__init__()
+        self._asleep_polls = asleep_polls
+
+    def _cluster(self, *, polling: bool, submitting: bool = False) -> GateCommandOutcome:
+        if polling and not submitting and self._asleep_polls > 0:
+            self._asleep_polls -= 1
+            return Success(GateCommandResult(returncode=1, stdout="", stderr=_ASLEEP))
+        return super()._cluster(polling=polling, submitting=submitting)
+
+
+def _recorded_outcomes(*, events: list[dict[str, object]]) -> Callable[..., None]:
+    def record(**kwargs: object) -> None:
+        events.append(kwargs)
+
+    return record
+
+
+def test_a_push_whose_host_slept_completes_only_on_that_same_jobs_green_verdict(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Scenario: a delegated pre-push wait interrupted by host sleep never reports a pass.
+
+    The host sleeps after the Job is submitted, so the client's reads of it fail
+    until the host wakes. The push completes on the green verdict of THAT Job for
+    THAT tree: no second Job is submitted for the push, every read names the one
+    Job, and the outcome event records a pass for it.
+    """
+    repo = tmp_path / "widget"
+    repo.mkdir()
+    _opt_in(repo_root=repo)
+    _ = _an_eligible_host(tmp_path=tmp_path, monkeypatch=monkeypatch)
+    cluster = _SleepingHostCluster(asleep_polls=3)
+    events: list[dict[str, object]] = []
+
+    verdict = run_delegated_gate(
+        repo_root=repo,
+        renderer=_RENDERER,
+        runner=cluster,
+        sleeper=_no_sleep,
+        emit=_recorded_outcomes(events=events),
+    )
+
+    assert verdict.state == GATE_PASSED
+    assert verdict.refuses_push is False
+    assert len(cluster.issued(needle="create")) == 1
+    reads = [argv for argv in cluster.issued(needle="get") if "job" in argv]
+    assert len(reads) > 3
+    assert all(_JOB in argv for argv in reads)
+    assert _TREE in cluster.issued(needle="--tree-hash")[0]
+    assert [event["outcome"] for event in events] == [GATE_OUTCOME_PASSED]
+    assert events[0]["job_name"] == _JOB
+
+
+def test_a_push_whose_host_slept_past_every_read_is_refused_as_no_verdict(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Scenario: a delegated pre-push wait interrupted by host sleep never reports a pass.
+
+    When the client obtains no verdict from the Job at all, the push is refused,
+    no green token is written, no second Job stands in for the first, and the
+    outcome event is `no-verdict`.
+    """
+    repo = tmp_path / "widget"
+    repo.mkdir()
+    _opt_in(repo_root=repo)
+    _ = _an_eligible_host(tmp_path=tmp_path, monkeypatch=monkeypatch)
+    cluster = _SleepingHostCluster(asleep_polls=1_000_000)
+    events: list[dict[str, object]] = []
+
+    verdict = run_delegated_gate(
+        repo_root=repo,
+        renderer=_RENDERER,
+        runner=cluster,
+        sleeper=_no_sleep,
+        emit=_recorded_outcomes(events=events),
+    )
+
+    assert verdict.state == GATE_NO_VERDICT
+    assert verdict.refuses_push is True
+    assert verdict.token_written is False
+    assert not cluster.issued(needle="write")
+    assert len(cluster.issued(needle="create")) == 1
+    assert [event["outcome"] for event in events] == [GATE_OUTCOME_NO_VERDICT]

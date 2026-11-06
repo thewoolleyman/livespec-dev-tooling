@@ -2209,9 +2209,8 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a delegated pre-push wait interrupted by host sleep never reports a pass",
-    "test": "TODO",
-    "reason": "Spec-first: a real test at the integration tier or above (a consumer-style check-runner or host-captured run on a macOS developer host) is owed for this scenario; livespec-dev-tooling-ko26ez owns it.",
-    "work_item": "livespec-dev-tooling-ko26ez"
+    "test": "tests.consumer.test_delegated_pre_push_gate_scenarios.test_a_push_whose_host_slept_completes_only_on_that_same_jobs_green_verdict",
+    "reason": "Consumer (integration) tier: runs the real run_delegated_gate against a canned cluster whose reads of the submitted Job fail while the host sleeps, then complete; the push passes only on that same Job's green verdict for that tree (one submit, every read names the Job, outcome passed). Its sibling test_a_push_whose_host_slept_past_every_read_is_refused_as_no_verdict covers the no-verdict half (refused, no token, outcome no-verdict)."
   },
   {
     "spec_root": "SPECIFICATION",
