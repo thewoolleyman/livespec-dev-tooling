@@ -101,7 +101,7 @@ _FACTORY_REACH_PIN_PATH = (
 _CI_WORKFLOW_PATH = Path(".github") / "workflows" / "ci.yml"
 _FACTORY_REACH_PIN_KEY = "FACTORY_REACH_SANDBOX_IMAGE"
 
-_ARG_LINE = re.compile(r"^ARG\s+([A-Z0-9_]+)=(\S+)\s*$")
+_ARG_LINE = re.compile(r"^ARG\s+([A-Za-z0-9_]+)=(\S+)\s*$")
 _FACTORY_REACH_PIN_LINE = re.compile(rf"^[ \t]*{_FACTORY_REACH_PIN_KEY}=(\S+)[ \t]*$", re.MULTILINE)
 # An `image:` that is the FIRST field of a job's `container:` block — the one
 # surface the release fan-out's `fabro_sandbox_docker_image` rewrite touches in
@@ -322,8 +322,16 @@ def _gh_install_issues(*, dockerfile_source: str, dockerfile_args: dict[str, str
             f"{_GH_RELEASE_URL!r} (cli.github.com's apt repo only serves the "
             "current version, so an exact apt pin rots)"
         )
-    if not dockerfile_args.get(_GH_SHA256_ARG):
-        issues.append(f"GH_VERSION: the image must pin {_GH_SHA256_ARG} for the gh release tarball")
+    per_arch_pins = [
+        value
+        for name, value in dockerfile_args.items()
+        if name.startswith(f"{_GH_SHA256_ARG}_") and value
+    ]
+    if not dockerfile_args.get(_GH_SHA256_ARG) and not per_arch_pins:
+        issues.append(
+            f"GH_VERSION: the image must pin {_GH_SHA256_ARG} (or one "
+            f"{_GH_SHA256_ARG}_<arch> per target architecture) for the gh release tarball"
+        )
     if _GH_CHECKSUM_VERIFY not in dockerfile_source:
         issues.append(f"GH_VERSION: the gh install must verify {_GH_CHECKSUM_VERIFY!r}")
     if _GH_MISE_PIN in dockerfile_source:

@@ -528,6 +528,35 @@ def test_rejects_gh_without_pinned_sha256_arg(
     )
 
 
+def test_accepts_gh_pinned_per_target_architecture(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A multi-arch image pins one gh checksum per TARGETARCH and selects it at build time."""
+    base_per_arch = _LOCKSTEP_BASE_DOCKERFILE.replace(
+        "ARG GH_SHA256=bb766f710eef8ede859c18578c72c327597cd4c8a85b06001b1f3843c6019386\n",
+        "ARG TARGETARCH\n"
+        "ARG GH_SHA256_amd64=" + "a" * 64 + "\n"
+        "ARG GH_SHA256_arm64=" + "b" * 64 + "\n",
+    ).replace(
+        "RUN curl -fsSL -o /tmp/gh.tgz",
+        'RUN GH_SHA256="$(eval "echo \\${GH_SHA256_${TARGETARCH}}")" \\\n'
+        "    && curl -fsSL -o /tmp/gh.tgz",
+    )
+    _write_fixture(
+        root=tmp_path,
+        layers={**_LOCKSTEP_LAYERS, "base": base_per_arch},
+        mise_toml=_LOCKSTEP_MISE_TOML,
+        python_version=_LOCKSTEP_PYTHON_VERSION,
+    )
+
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
+
+    assert result.returncode == 0, (
+        f"per-architecture gh checksum pins should pass; got returncode={result.returncode} "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+
+
 def test_rejects_gh_install_without_checksum_verification(
     *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
