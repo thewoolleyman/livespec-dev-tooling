@@ -107,6 +107,7 @@ from livespec_dev_tooling.gate_remote_job_status import (
     terminal_condition,
     unreadable,
 )
+from livespec_dev_tooling.gate_remote_request import GATE_NAMESPACE, GateRunRequest
 
 # `returns` is VENDORED, not installed; a bare import here would resolve only
 # when some earlier import in the process happened to run first.
@@ -124,10 +125,6 @@ __all__: list[str] = [
     "GateRunRequest",
     "run_gate",
 ]
-
-# The namespace R4.S2 builds and the gate Job template already declares. Named
-# here rather than passed by every caller, and still overridable per request.
-GATE_NAMESPACE = "gates"
 
 # The local ref whose commit becomes the gate's diff base. The same literal the
 # checks themselves resolve — `red_green_replay`, `check_coverage_incremental`
@@ -155,6 +152,7 @@ _SUBMIT_STEP = "submit-gate-job"
 _AWAIT_STEP = "await-gate-terminal"
 _STREAM_STEP = "stream-gate-logs"
 _DELETE_STEP = "delete-gate-ref"
+_DELETE_ABANDONED_JOB_STEP = "delete-abandoned-gate-job"
 
 # The two Job conditions that mean the gate is OVER. Kubernetes reports every
 # condition it has ever set, negative ones included, so the type alone does not
@@ -173,55 +171,6 @@ _COMPLETION_TIME = "completionTime"
 # themselves in the log. The Job object does not carry this — only its pod does
 # — so it is a separate read, taken only when there is a failure to explain.
 _TERMINATION_MESSAGE_JSONPATH = "{.items[*].status.containerStatuses[*].state.terminated.message}"
-
-
-@dataclass(frozen=True, kw_only=True)
-class GateRunRequest:
-    """Everything one delegated gate run needs to know about the world.
-
-    Bundled rather than spread across `run_gate`'s parameters so the seams
-    (the runner and the sleeper) stay the only other arguments — what the run
-    NEEDS and how it REACHES the world are different kinds of thing.
-
-    `manifest` arrives already rendered, by `render-gate-job.sh` from the gated
-    repository's own workflow. There is NO job name here: the manifest asks for
-    a `metadata.generateName`, so the name is assigned by the API server at
-    submit and read back off that submit's own answer.
-
-    `gate_ref` is the mirror ref THIS RUN owns, and it is passed in rather than
-    derived here for one reason: the pod fetches whatever the manifest was
-    rendered with, so the ref this client pushes to and the ref the Job looks
-    for have to be ONE value decided in ONE place. The caller mints it per run
-    (`gate_remote_delegate`) because this client deletes the refs it created on
-    its way out, and a name shared with a concurrent gate of the same tree is a
-    name one run can delete while the other still needs it.
-
-    `private_sibling_token` and `private_sibling_secret` are the ONE credential
-    this request may carry, and they are deliberately separate values: the
-    SECRET NAME is already inside `manifest` and is safe to print, while the
-    TOKEN appears nowhere in it. Both default to empty, which is the request of
-    every push whose repository names no private sibling — the overwhelming
-    majority — so the token-bearing path is entered only when a mint actually
-    happened rather than on every run.
-    """
-
-    repo_root: Path
-    mirror_url: str
-    manifest: str
-    gate_ref: str
-    # A commit-time replay may gate the index before it is committed.  Its
-    # temporary commit is the object pushed to the mirror, while this is the
-    # tree identity the manifest and verdict must retain.
-    source_ref: str = "HEAD"
-    # A commit-time replay owes the caller evidence of the Job's output, so it
-    # reads the log instead of streaming it past this process.
-    capture_output: bool = False
-    tree_hash: str = ""
-    private_sibling_token: str = ""
-    private_sibling_secret: str = ""
-    namespace: str = GATE_NAMESPACE
-    poll_interval_seconds: float = 10.0
-    poll_timeout_seconds: float = 3600.0
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -409,6 +358,18 @@ def _delete_gate_ref(*, request: GateRunRequest, runner: GateCommandRunner) -> S
     )
 
 
+def _delete_abandoned_gate_job(
+    *, request: GateRunRequest, runner: GateCommandRunner, job_name: str
+) -> StepOutcome:
+    """Delete the known Job when the client stops waiting for its verdict."""
+    argv = [*_kubectl(request=request), "delete", "job", job_name]
+    return require_success(
+        step=_DELETE_ABANDONED_JOB_STEP,
+        argv=argv,
+        outcome=runner(argv=argv, cwd=request.repo_root),
+    )
+
+
 def _gate_a_pushed_tree(
     *,
     request: GateRunRequest,
@@ -479,6 +440,11 @@ def _gate_a_pushed_tree(
         request=request, runner=runner, sleeper=sleeper, job_name=job_name
     )
     if isinstance(terminal, Failure):
+        deleted = _delete_abandoned_gate_job(request=request, runner=runner, job_name=job_name)
+        _ = deleted
+        # A delete acknowledgement does not prove the Job has ceased using its
+        # mirror input, so the existing mirror sweep remains the collector for
+        # this no-verdict path.
         return Failure(terminal.failure()), False
     ended = terminal.unwrap()
     # Read only when there is a failure to explain. That is a decision about
