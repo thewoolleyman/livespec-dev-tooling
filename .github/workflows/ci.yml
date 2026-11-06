@@ -192,6 +192,11 @@ jobs:
   # two jobs used to run the full suite independently on separate runners.
   check-per-file-coverage:
     name: check-per-file-coverage
+    # `needs:` only to read incident-ci's `omitted` output. `!cancelled()` keeps
+    # this job running IN FULL when incident-ci failed or refused: only its
+    # passed aggregate can omit work here.
+    needs: [incident-ci]
+    if: ${{ !cancelled() }}
     runs-on: ${{ fromJSON(vars.CI_COVERAGE_RUNNER_LABELS || vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
     container:
       image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.182.0
@@ -222,7 +227,18 @@ jobs:
           mise install
           uv sync --all-groups
 
+      # Expedited incident PRs only (see the incident-ci job): the released
+      # controller's PASSED aggregate deferred this member, so the job says so
+      # explicitly instead of running it. Never a silent skip.
+      - name: omitted-by-incident-policy (per the released incident CI aggregate)
+        if: ${{ needs.incident-ci.result == 'success' && contains(fromJSON(needs.incident-ci.outputs.omitted || '[]'), 'check-per-file-coverage') }}
+        env:
+          MEMBER: check-per-file-coverage
+        run: |
+          echo "omitted-by-incident-policy: ${MEMBER} was not executed. The released incident controller's passed aggregate (job incident-ci) defers it for this pull request head." | tee -a "$GITHUB_STEP_SUMMARY"
+
       - name: just check-per-file-coverage
+        if: ${{ !(needs.incident-ci.result == 'success' && contains(fromJSON(needs.incident-ci.outputs.omitted || '[]'), 'check-per-file-coverage')) }}
         run: |
           # The full suite spawns `node` in some tests; under the
           # container-hooks HOME the mise node/npm shims busy-loop or miss
@@ -241,6 +257,7 @@ jobs:
       # silently ships nothing and the consumer falls back to a full
       # duplicate suite run.
       - name: Publish .coverage for the check-coverage consumer
+        if: ${{ !(needs.incident-ci.result == 'success' && contains(fromJSON(needs.incident-ci.outputs.omitted || '[]'), 'check-per-file-coverage')) }}
         uses: actions/upload-artifact@v4
         with:
           name: coverage-data
@@ -260,7 +277,11 @@ jobs:
   # the clean suite standalone — slower, never wrong.
   check-coverage:
     name: ${{ matrix.target }}
-    needs: [check-per-file-coverage]
+    # incident-ci is needed only to read its `omitted` output. `!cancelled()`
+    # keeps this job running IN FULL when incident-ci failed or refused, and
+    # the producer term keeps today's rule: no consumer without a producer.
+    needs: [check-per-file-coverage, incident-ci]
+    if: ${{ !cancelled() && needs.check-per-file-coverage.result == 'success' }}
     runs-on: ${{ fromJSON(vars.CI_COVERAGE_RUNNER_LABELS || vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
     container:
       image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.182.0
@@ -295,12 +316,24 @@ jobs:
           mise install
           uv sync --all-groups
 
+      # Expedited incident PRs only (see the incident-ci job): the released
+      # controller's PASSED aggregate deferred this member, so the job says so
+      # explicitly instead of running it. Never a silent skip.
+      - name: omitted-by-incident-policy (per the released incident CI aggregate)
+        if: ${{ needs.incident-ci.result == 'success' && contains(fromJSON(needs.incident-ci.outputs.omitted || '[]'), matrix.target) }}
+        env:
+          MEMBER: ${{ matrix.target }}
+        run: |
+          echo "omitted-by-incident-policy: ${MEMBER} was not executed. The released incident controller's passed aggregate (job incident-ci) defers it for this pull request head." | tee -a "$GITHUB_STEP_SUMMARY"
+
       - name: Download the producer's .coverage
+        if: ${{ !(needs.incident-ci.result == 'success' && contains(fromJSON(needs.incident-ci.outputs.omitted || '[]'), matrix.target)) }}
         uses: actions/download-artifact@v4
         with:
           name: coverage-data
 
       - name: just ${{ matrix.target }}
+        if: ${{ !(needs.incident-ci.result == 'success' && contains(fromJSON(needs.incident-ci.outputs.omitted || '[]'), matrix.target)) }}
         run: |
           # Node-PATH shim for the standalone-fallback branch only: the
           # normal path reads the downloaded .coverage without spawning
@@ -472,6 +505,11 @@ jobs:
   # master pushes the range is empty.
   check-metadata:
     name: ${{ matrix.target }}
+    # `needs:` only to read incident-ci's `omitted` output. `!cancelled()` keeps
+    # this job running IN FULL when incident-ci failed or refused: only its
+    # passed aggregate can omit work here.
+    needs: [incident-ci]
+    if: ${{ !cancelled() }}
     # The same single variable routes every ordinary gating target.
     runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
     container:
@@ -522,7 +560,18 @@ jobs:
           mise install
           uv sync --all-groups
 
+      # Expedited incident PRs only (see the incident-ci job): the released
+      # controller's PASSED aggregate deferred this member, so the job says so
+      # explicitly instead of running it. Never a silent skip.
+      - name: omitted-by-incident-policy (per the released incident CI aggregate)
+        if: ${{ needs.incident-ci.result == 'success' && contains(fromJSON(needs.incident-ci.outputs.omitted || '[]'), matrix.target) }}
+        env:
+          MEMBER: ${{ matrix.target }}
+        run: |
+          echo "omitted-by-incident-policy: ${MEMBER} was not executed. The released incident controller's passed aggregate (job incident-ci) defers it for this pull request head." | tee -a "$GITHUB_STEP_SUMMARY"
+
       - name: just ${{ matrix.target }}
+        if: ${{ !(needs.incident-ci.result == 'success' && contains(fromJSON(needs.incident-ci.outputs.omitted || '[]'), matrix.target)) }}
         env:
           # Arm the CI-matrix drift guard (epic livespec-cf4bcu slice 5):
           # now that this repo's matrices + ci-green are complete, flip
@@ -559,6 +608,11 @@ jobs:
   # of livespec-dev-tooling-9ywf for why the pack must be materialized).
   check-metadata-batch:
     name: check-metadata-batch
+    # `needs:` only to read incident-ci's `omitted` output. `!cancelled()` keeps
+    # this job running IN FULL when incident-ci failed or refused: only its
+    # passed aggregate can omit work here.
+    needs: [incident-ci]
+    if: ${{ !cancelled() }}
     runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
     container:
       image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.182.0
@@ -604,7 +658,19 @@ jobs:
           # (exit 0) to FAIL (exit 4), so any future gating job that
           # re-introduces a `py_changed`-conditioned skip reddens this leg.
           LIVESPEC_FAIL_IF_CI_GATE_PARITY_GAPS_EXIST: "true"
+          # The members the released incident controller's PASSED aggregate
+          # deferred (see the incident-ci job); empty on every other run.
+          OMITTED_BY_INCIDENT_POLICY: ${{ needs.incident-ci.result == 'success' && needs.incident-ci.outputs.omitted || '' }}
         run: |
+          # Expedited incident PRs only: a member in that list is reported
+          # explicitly instead of run. Every other member, and every member on
+          # every other run, executes exactly as before.
+          omitted_by_incident_policy() {
+            case "$OMITTED_BY_INCIDENT_POLICY" in
+              *"\"$1\""*) echo "omitted-by-incident-policy: $1 was not executed. The released incident controller's passed aggregate (job incident-ci) defers it for this pull request head." | tee -a "$GITHUB_STEP_SUMMARY" ;;
+              *) return 1 ;;
+            esac
+          }
           failed=""
           just check-aggregate-completeness || failed="$failed check-aggregate-completeness"
           just check-agents-ai-references-resolve || failed="$failed check-agents-ai-references-resolve"
@@ -620,8 +686,8 @@ jobs:
           just check-fabro-image-pin-lockstep || failed="$failed check-fabro-image-pin-lockstep"
           just check-fleet-marketplace-relative-sources || failed="$failed check-fleet-marketplace-relative-sources"
           just check-handoff-dispatch-routing || failed="$failed check-handoff-dispatch-routing"
-          just check-heading-coverage || failed="$failed check-heading-coverage"
-          just check-heading-coverage-debt-register || failed="$failed check-heading-coverage-debt-register"
+          omitted_by_incident_policy check-heading-coverage || just check-heading-coverage || failed="$failed check-heading-coverage"
+          omitted_by_incident_policy check-heading-coverage-debt-register || just check-heading-coverage-debt-register || failed="$failed check-heading-coverage-debt-register"
           just check-hook-trees-not-io-exempt || failed="$failed check-hook-trees-not-io-exempt"
           just check-marketplace-ref-release-only || failed="$failed check-marketplace-ref-release-only"
           just check-no-direct-destructive-cli || failed="$failed check-no-direct-destructive-cli"
@@ -630,7 +696,7 @@ jobs:
           just check-no-fmt-directives || failed="$failed check-no-fmt-directives"
           just check-no-shadow-ledger-body-identical || failed="$failed check-no-shadow-ledger-body-identical"
           just check-no-shadow-ledger-body-typechecks || failed="$failed check-no-shadow-ledger-body-typechecks"
-          just check-no-todo-registry || failed="$failed check-no-todo-registry"
+          omitted_by_incident_policy check-no-todo-registry || just check-no-todo-registry || failed="$failed check-no-todo-registry"
           just check-partition-completeness || failed="$failed check-partition-completeness"
           just check-plan-anchor-declared || failed="$failed check-plan-anchor-declared"
           just check-plan-no-live-handoff-file || failed="$failed check-plan-no-live-handoff-file"
@@ -673,6 +739,22 @@ jobs:
   #   the inventory's fast members, and publishes an aggregate that lists
   #   every omitted member in the step summary.
   #
+  # Omission (work-item livespec-dev-tooling-z3wy33; maintainer ruling of
+  # 2026-11-05 on epic livespec-dev-tooling-bqnzcm). This job's `omitted`
+  # output is the ONLY thing that makes another job omit work. The entrance
+  # step writes it after the released `aggregate` has PASSED, from that
+  # aggregate's own JSON: the members it defers for the coverage or spec
+  # policy reason. So it exists only for a PR whose body carries a valid
+  # block AND whose current authority the released controller confirmed from
+  # the observer's /current and /admitted answers, re-read at publication.
+  # No label, repository variable or environment value writes it, and a push
+  # never reaches the step that does. The four jobs holding those members
+  # `needs:` this job and still run on every event; `!cancelled()` keeps them
+  # running IN FULL when this job failed or refused. A member in the list is
+  # reported by an explicit `omitted-by-incident-policy` step instead of being
+  # run, never skipped silently. Every other member runs as before. ci-green
+  # requires the same jobs as before and repeats the list.
+  #
   # The event/PR distinction is made in the SHELL, not in a job `if:`, so the
   # job runs identically on pull_request and push (check-ci-gate-parity). No
   # run line names a canonical check slug literally, so the job contributes
@@ -691,6 +773,10 @@ jobs:
     permissions:
       contents: read
       pull-requests: read
+    # `omitted` is the ONLY value that can make another job omit work. See the
+    # last lines of the entrance step for the one place it is written.
+    outputs:
+      omitted: ${{ steps.entrance.outputs.omitted }}
     env:
       LIVESPEC_CI_LANE: ${{ contains(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]', 'ubuntu') && 'hosted' || 'local' }}
       MISE_DATA_DIR: /root/.local/share/mise
@@ -777,6 +863,7 @@ jobs:
       # The `-I` flag is load-bearing: without it `python -m` would import the
       # candidate tree's package from the working directory.
       - name: Run the released incident CI entrance (plan, run, aggregate)
+        id: entrance
         if: steps.select.outputs.block == 'present'
         shell: bash
         env:
@@ -808,7 +895,16 @@ jobs:
           run_code=0
           "${entrance[@]}" run --repo "$PWD" --report tmp/incident-ci/outcomes.jsonl "${targets[@]}" || run_code=$?
           echo "released run exited ${run_code}; publishing the aggregate"
-          "${entrance[@]}" aggregate --repo "$PWD" --reports tmp/incident-ci
+          if ! aggregate="$("${entrance[@]}" aggregate --repo "$PWD" --reports tmp/incident-ci)"; then
+            echo "::error::released aggregate did not pass: ${aggregate}"
+            exit 1
+          fi
+          echo "$aggregate"
+          # Reached only when the released aggregate PASSED. The omission list
+          # is read out of that aggregate's own JSON: the members it defers for
+          # the coverage or spec policy reason. Nothing else writes `omitted`.
+          omitted="$(printf '%s' "$aggregate" | "$RELEASED_PYTHON" -I -c 'import json, sys; print(json.dumps(sorted(d["name"] for d in json.load(sys.stdin)["deferred"] if d["reason"] in ("incident-policy:coverage", "incident-policy:spec"))))')"
+          echo "omitted=${omitted}" >> "$GITHUB_OUTPUT"
 
       - name: Publish the incident CI outcome records
         if: ${{ always() && steps.select.outputs.block == 'present' }}
@@ -866,6 +962,16 @@ jobs:
     if: always()
     runs-on: ubuntu-latest
     steps:
+      # The required aggregate names every member an expedited incident PR
+      # omitted, as the released incident controller's passed aggregate
+      # published them. Silent on every other run.
+      - name: Report members omitted-by-incident-policy
+        if: ${{ needs.incident-ci.result == 'success' && needs.incident-ci.outputs.omitted != '' }}
+        env:
+          OMITTED: ${{ needs.incident-ci.outputs.omitted }}
+        run: |
+          echo "ci-green: omitted-by-incident-policy ${OMITTED}. These members were not executed; the released incident controller's passed aggregate (job incident-ci) defers them for this pull request head. Every other required job ran in full." | tee -a "$GITHUB_STEP_SUMMARY"
+
       - name: All required checks passed
         if: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}
         run: exit 1
