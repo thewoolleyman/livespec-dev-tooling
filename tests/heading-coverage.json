@@ -2271,6 +2271,30 @@
   },
   {
     "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a missing bridged-network prerequisite stops the start task before the VM starts",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above (the start task run against stubbed host commands with a mocked host declaration, plus a host-captured run on macbook-m4-max) is owed for this scenario; livespec-dev-tooling-ko26ez.2 owns it.",
+    "work_item": "livespec-dev-tooling-ko26ez.2"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: the worker's node IP is its declared home-LAN address",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above (the start task run against stubbed host commands with a mocked host declaration, plus a host-captured run on macbook-m4-max) is owed for this scenario; livespec-dev-tooling-ko26ez.2 owns it.",
+    "work_item": "livespec-dev-tooling-ko26ez.2"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a host declaring no home-LAN address is refused before the VM starts",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above (the start task run against stubbed host commands with a mocked host declaration, plus a host-captured run on macbook-m4-max) is owed for this scenario; livespec-dev-tooling-ko26ez.2 owns it.",
+    "work_item": "livespec-dev-tooling-ko26ez.2"
+  },
+  {
+    "spec_root": "SPECIFICATION",
     "spec_file": "contracts.md",
     "heading": "## Config-value fast path at pre-commit",
     "test": "TODO",
