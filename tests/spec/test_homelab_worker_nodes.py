@@ -22,6 +22,20 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 _WORKER_DIR = _REPO_ROOT / "homelab-worker"
 _SCRIPT = _WORKER_DIR / "start-homelab-worker-node-container.sh"
 _GIB = 1024 * 1024 * 1024
+# Mocked host declarations: the tests never read the committed hosts/ values.
+_HOSTS = {
+    "alpha": {"cpus": 3, "memory_gib": 5, "disk_gib": 7, "data_gib": 11},
+    "beta": {"cpus": 13, "memory_gib": 17, "disk_gib": 19, "data_gib": 23},
+}
+_A = "alpha"
+_B = "beta"
+_REQUIRED_HOST_KEYS = {
+    "WORKER_HOST_OS",
+    "WORKER_VM_CPUS",
+    "WORKER_VM_MEMORY_GIB",
+    "WORKER_VM_DISK_GIB",
+    "WORKER_DATA_DISK_GIB",
+}
 
 _STUB_LIMACTL = """#!/bin/bash
 set -eu
@@ -114,6 +128,17 @@ def host(tmp_path: Path) -> _Host:
     _write_exec(path=bin_dir / "uname", text='#!/bin/bash\necho "${STUB_UNAME:-Darwin}"\n')
     _write_exec(path=bin_dir / "brew", text=_STUB_BREW)
     (state / "limactl.stub").write_text(_STUB_LIMACTL, encoding="utf-8")
+    hosts = state / "hosts"
+    hosts.mkdir()
+    for name, v in _HOSTS.items():
+        (hosts / f"{name}.env").write_text(
+            "WORKER_HOST_OS=Darwin\n"
+            f"WORKER_VM_CPUS={v['cpus']}\n"
+            f"WORKER_VM_MEMORY_GIB={v['memory_gib']}\n"
+            f"WORKER_VM_DISK_GIB={v['disk_gib']}\n"
+            f"WORKER_DATA_DISK_GIB={v['data_gib']}\n",
+            encoding="utf-8",
+        )
     return _Host(bin_dir=bin_dir, state=state, log=log)
 
 
@@ -140,6 +165,7 @@ def _run(
         "STUB_LOG": str(host.log),
         "STUB_STATE": str(host.state),
         "STUB_BIN": str(host.bin_dir),
+        "HOMELAB_WORKER_HOSTS_DIR": str(host.state / "hosts"),
     }
     return subprocess.run(
         ["/bin/bash", str(_SCRIPT), *args],
@@ -162,31 +188,31 @@ def test_undeclared_host_is_refused_naming_the_declared_hosts_before_any_host_ch
     result = _run(host=host, args=["spare-pc"])
     assert result.returncode != 0
     assert "spare-pc" in result.stderr
-    assert "macbook-m4-max" in result.stderr
-    assert "macbook-air" in result.stderr
+    assert _B in result.stderr
+    assert _A in result.stderr
     assert _calls(host=host) == []
 
 
 def test_absent_lima_is_installed_through_homebrew_and_the_named_vz_vm_is_created(
     host: _Host,
 ) -> None:
-    result = _run(host=host, args=["macbook-m4-max"])
+    result = _run(host=host, args=[_B])
     assert result.returncode == 0, result.stderr
     calls = _calls(host=host)
     assert "brew install lima" in calls
     creates = [c for c in calls if c.startswith("limactl create ")]
     assert len(creates) == 1
-    assert "--name=macbook-m4-max-homelab-worker" in creates[0]
+    assert f"--name={_B}-homelab-worker" in creates[0]
     assert "--vm-type=vz" in creates[0]
-    assert "--cpus=12" in creates[0]
-    assert "limactl start --tty=false macbook-m4-max-homelab-worker" in calls
+    assert f"--cpus={_HOSTS[_B]['cpus']}" in creates[0]
+    assert f"limactl start --tty=false {_B}-homelab-worker" in calls
 
 
 def test_installed_lima_at_or_above_the_minimum_is_reused_without_install_or_upgrade(
     host: _Host,
 ) -> None:
     _install_lima(host=host, version="2.2.1")
-    result = _run(host=host, args=["macbook-air"])
+    result = _run(host=host, args=[_A])
     assert result.returncode == 0, result.stderr
     assert [c for c in _calls(host=host) if c.startswith("brew ")] == []
     assert "reusing Lima 2.2.1" in result.stdout
@@ -194,7 +220,7 @@ def test_installed_lima_at_or_above_the_minimum_is_reused_without_install_or_upg
 
 def test_installed_lima_older_than_the_minimum_is_refused_by_version(host: _Host) -> None:
     _install_lima(host=host, version="1.2.0")
-    result = _run(host=host, args=["macbook-air"])
+    result = _run(host=host, args=[_A])
     assert result.returncode != 0
     assert "1.2.0" in result.stderr
     assert "2.0.0" in result.stderr
@@ -207,16 +233,16 @@ def test_rerun_starts_the_existing_vm_in_place_and_never_recreates_it(host: _Hos
     _install_lima(host=host, version="2.2.1")
     _add_instance(
         host=host,
-        name="macbook-air-homelab-worker",
+        name=f"{_A}-homelab-worker",
         status="Stopped",
-        cpus=6,
-        memory_gib=16,
-        disk_gib=60,
+        cpus=_HOSTS[_A]["cpus"],
+        memory_gib=_HOSTS[_A]["memory_gib"],
+        disk_gib=_HOSTS[_A]["disk_gib"],
     )
-    result = _run(host=host, args=["macbook-air"])
+    result = _run(host=host, args=[_A])
     assert result.returncode == 0, result.stderr
     calls = _calls(host=host)
-    assert "limactl start --tty=false macbook-air-homelab-worker" in calls
+    assert f"limactl start --tty=false {_A}-homelab-worker" in calls
     assert [c for c in calls if c.split()[1] in {"create", "delete", "stop", "factory-reset"}] == []
 
 
@@ -224,13 +250,13 @@ def test_rerun_keeps_a_running_vm_without_starting_or_recreating_it(host: _Host)
     _install_lima(host=host, version="2.2.1")
     _add_instance(
         host=host,
-        name="macbook-air-homelab-worker",
+        name=f"{_A}-homelab-worker",
         status="Running",
-        cpus=6,
-        memory_gib=16,
-        disk_gib=60,
+        cpus=_HOSTS[_A]["cpus"],
+        memory_gib=_HOSTS[_A]["memory_gib"],
+        disk_gib=_HOSTS[_A]["disk_gib"],
     )
-    result = _run(host=host, args=["macbook-air"])
+    result = _run(host=host, args=[_A])
     assert result.returncode == 0, result.stderr
     assert [
         c for c in _calls(host=host) if c.split()[1] in {"create", "delete", "stop", "start"}
@@ -243,15 +269,15 @@ def test_a_second_worker_on_the_same_host_is_refused_naming_the_existing_worker(
     _install_lima(host=host, version="2.2.1")
     _add_instance(
         host=host,
-        name="macbook-m4-max-homelab-worker",
+        name=f"{_B}-homelab-worker",
         status="Running",
-        cpus=12,
-        memory_gib=64,
-        disk_gib=100,
+        cpus=_HOSTS[_B]["cpus"],
+        memory_gib=_HOSTS[_B]["memory_gib"],
+        disk_gib=_HOSTS[_B]["disk_gib"],
     )
-    result = _run(host=host, args=["macbook-air"])
+    result = _run(host=host, args=[_A])
     assert result.returncode != 0
-    assert "macbook-m4-max-homelab-worker" in result.stderr
+    assert f"{_B}-homelab-worker" in result.stderr
     assert [c for c in _calls(host=host) if c.startswith("limactl create")] == []
 
 
@@ -259,13 +285,13 @@ def test_a_vm_whose_declared_setting_changed_is_refused_naming_the_setting(host:
     _install_lima(host=host, version="2.2.1")
     _add_instance(
         host=host,
-        name="macbook-air-homelab-worker",
+        name=f"{_A}-homelab-worker",
         status="Stopped",
-        cpus=4,
-        memory_gib=16,
-        disk_gib=60,
+        cpus=_HOSTS[_A]["cpus"] + 1,
+        memory_gib=_HOSTS[_A]["memory_gib"],
+        disk_gib=_HOSTS[_A]["disk_gib"],
     )
-    result = _run(host=host, args=["macbook-air"])
+    result = _run(host=host, args=[_A])
     assert result.returncode != 0
     assert "WORKER_VM_CPUS" in result.stderr
     assert [c for c in _calls(host=host) if c.split()[1] in {"create", "delete", "start"}] == []
@@ -274,15 +300,15 @@ def test_a_vm_whose_declared_setting_changed_is_refused_naming_the_setting(host:
 def test_a_host_declared_for_another_platform_is_refused(host: _Host) -> None:
     _install_lima(host=host, version="2.2.1")
     (host.bin_dir / "uname").write_text("#!/bin/bash\necho Linux\n", encoding="utf-8")
-    result = _run(host=host, args=["macbook-air"])
+    result = _run(host=host, args=[_A])
     assert result.returncode != 0
     assert "Darwin" in result.stderr
     assert _calls(host=host) == []
 
 
-def test_every_declared_host_is_data_for_the_same_code_path() -> None:
+def test_every_committed_host_declaration_is_data_for_the_same_code_path() -> None:
     hosts = sorted(p.stem for p in (_WORKER_DIR / "hosts").glob("*.env"))
-    assert hosts == ["macbook-air", "macbook-m4-max"]
+    assert hosts
     script = _SCRIPT.read_text(encoding="utf-8")
     for name in hosts:
         assert name not in script
@@ -293,36 +319,29 @@ def test_every_declared_host_is_data_for_the_same_code_path() -> None:
             .splitlines()
             if line and not line.startswith("#")
         }
-        assert keys == {
-            "WORKER_HOST_OS",
-            "WORKER_VM_CPUS",
-            "WORKER_VM_MEMORY_GIB",
-            "WORKER_VM_DISK_GIB",
-            "WORKER_DATA_DISK_GIB",
-        }
+        assert keys == _REQUIRED_HOST_KEYS
 
 
 def test_a_new_vm_gets_an_xfs_data_disk_created_once(host: _Host) -> None:
     _install_lima(host=host, version="2.2.1")
-    result = _run(host=host, args=["macbook-air"])
+    result = _run(host=host, args=[_A])
     assert result.returncode == 0, result.stderr
     calls = _calls(host=host)
     assert [c for c in calls if c.startswith("limactl disk create ")] == [
-        "limactl disk create hwdata --size=90GiB --format=raw"
+        f"limactl disk create hwdata --size={_HOSTS[_A]['data_gib']}GiB --format=raw"
     ]
     create = next(c for c in calls if c.startswith("limactl create "))
     assert '"name":"hwdata"' in create
     assert '"fsType":"xfs"' in create
     assert (
-        "limactl shell --workdir / macbook-air-homelab-worker sudo bash -s -- /mnt/lima-hwdata"
-        in calls
+        f"limactl shell --workdir / {_A}-homelab-worker sudo bash -s -- /mnt/lima-hwdata" in calls
     )
 
 
 def test_the_data_disk_filesystem_label_fits_the_xfs_limit() -> None:
     # Lima formats an additional disk with `mkfs.<fs> -L lima-<disk name>` (v2.2.1
     # boot.Linux/05-lima-disks.sh), and an XFS label holds at most 12 characters. A longer
-    # name leaves the disk unformatted and unmounted, measured on macbook-m4-max 2026-11-04.
+    # name leaves the disk unformatted and unmounted, measured on a real host 2026-11-04.
     script = _SCRIPT.read_text(encoding="utf-8")
     declared = [line for line in script.splitlines() if line.startswith("data_disk=")]
     assert declared == ['data_disk="hwdata"']
@@ -335,7 +354,7 @@ def test_a_missing_vm_capability_stops_the_task_naming_it_with_its_remedy(host: 
         "PRESENT tun\nMISSING apparmor: boot the VM kernel with apparmor=1\n", encoding="utf-8"
     )
     (host.state / "probe-exit").write_text("1\n", encoding="utf-8")
-    result = _run(host=host, args=["macbook-air"])
+    result = _run(host=host, args=[_A])
     assert result.returncode != 0
     assert "MISSING apparmor: boot the VM kernel with apparmor=1" in result.stderr
     assert "worker container was not started" in result.stderr
@@ -346,11 +365,9 @@ def test_a_missing_vm_capability_stops_the_task_naming_it_with_its_remedy(host: 
 
 def test_a_passing_probe_is_recorded_beside_the_worker_state(host: _Host) -> None:
     _install_lima(host=host, version="2.2.1")
-    result = _run(host=host, args=["macbook-air"])
+    result = _run(host=host, args=[_A])
     assert result.returncode == 0, result.stderr
-    report = (
-        host.state / ".local" / "state" / "livespec-homelab-worker" / "macbook-air-homelab-worker"
-    )
+    report = host.state / ".local" / "state" / "livespec-homelab-worker" / f"{_A}-homelab-worker"
     assert (report / "vm-capabilities.txt").read_text(encoding="utf-8") == "PRESENT apparmor\n"
 
 
@@ -358,7 +375,7 @@ def test_after_a_passing_probe_the_worker_container_converges_from_the_pinned_im
     host: _Host,
 ) -> None:
     _install_lima(host=host, version="2.2.1")
-    result = _run(host=host, args=["macbook-air"])
+    result = _run(host=host, args=[_A])
     assert result.returncode == 0, result.stderr
     [image] = [
         line
@@ -368,8 +385,8 @@ def test_after_a_passing_probe_the_worker_container_converges_from_the_pinned_im
     assert image.startswith("ghcr.io/thewoolleyman/livespec-worker-node@sha256:")
     shells = [c for c in _calls(host=host) if c.startswith("limactl shell ")]
     assert shells[-1] == (
-        "limactl shell --workdir / macbook-air-homelab-worker sudo bash -s -- "
-        f"macbook-air-homelab-worker macbook-air {image} /mnt/lima-hwdata/worker"
+        f"limactl shell --workdir / {_A}-homelab-worker sudo bash -s -- "
+        f"{_A}-homelab-worker {_A} {image} /mnt/lima-hwdata/worker"
     )
     assert (host.state / "converge-stdin").read_text(encoding="utf-8") == (
         _WORKER_DIR / "vm" / "converge-worker-container.sh"
@@ -381,7 +398,7 @@ def test_a_failed_probe_never_converges_the_worker_container(host: _Host) -> Non
     _install_lima(host=host, version="2.2.1")
     (host.state / "probe-output").write_text("MISSING tun: load the tun module\n", encoding="utf-8")
     (host.state / "probe-exit").write_text("1\n", encoding="utf-8")
-    assert _run(host=host, args=["macbook-air"]).returncode != 0
+    assert _run(host=host, args=[_A]).returncode != 0
     assert not (host.state / "converge-stdin").exists()
 
 
@@ -398,9 +415,7 @@ def test_a_minted_enrollment_reaches_the_vm_only_on_stdin_before_the_container_s
 ) -> None:
     _install_lima(host=host, version="2.2.1")
     enrollment = _enrollment(host=host, files=("bootstrap-kubeconfig", "client-ca.crt"))
-    result = _run(
-        host=host, args=["macbook-air"], extra_env={"HOMELAB_WORKER_ENROLLMENT": str(enrollment)}
-    )
+    result = _run(host=host, args=[_A], extra_env={"HOMELAB_WORKER_ENROLLMENT": str(enrollment)})
     assert result.returncode == 0, result.stderr
     for name in ("bootstrap-kubeconfig", "client-ca.crt"):
         assert (host.state / f"delivered-{name}").read_text(encoding="utf-8") == (
@@ -411,7 +426,7 @@ def test_a_minted_enrollment_reaches_the_vm_only_on_stdin_before_the_container_s
     converge = next(
         i
         for i, c in enumerate(shells)
-        if "/mnt/lima-hwdata/worker" in c and " -- macbook-air-homelab-worker " in c
+        if "/mnt/lima-hwdata/worker" in c and f" -- {_A}-homelab-worker " in c
     )
     assert installs
     assert max(installs) < converge
@@ -429,9 +444,7 @@ def test_a_minted_enrollment_reaches_the_vm_only_on_stdin_before_the_container_s
 def test_an_incomplete_enrollment_is_refused_before_any_host_change(host: _Host) -> None:
     _install_lima(host=host, version="2.2.1")
     enrollment = _enrollment(host=host, files=("bootstrap-kubeconfig",))
-    result = _run(
-        host=host, args=["macbook-air"], extra_env={"HOMELAB_WORKER_ENROLLMENT": str(enrollment)}
-    )
+    result = _run(host=host, args=[_A], extra_env={"HOMELAB_WORKER_ENROLLMENT": str(enrollment)})
     assert result.returncode != 0
     assert "client-ca.crt" in result.stderr
     assert _calls(host=host) == []

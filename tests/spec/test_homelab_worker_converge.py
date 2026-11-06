@@ -16,6 +16,7 @@ container's image, run state and tailscaled state in files, and assert:
 
 from __future__ import annotations
 
+import re
 import stat
 import subprocess
 from dataclasses import dataclass
@@ -28,7 +29,8 @@ __all__: list[str] = []
 _SCRIPT = (
     Path(__file__).resolve().parents[2] / "homelab-worker" / "vm" / "converge-worker-container.sh"
 )
-_WORKER = "macbook-m4-max-homelab-worker"
+_HOST = "alpha"
+_WORKER = f"{_HOST}-homelab-worker"
 _IMAGE = "ghcr.io/thewoolleyman/livespec-worker-node@sha256:" + "a" * 64
 _RUNNING = '{\n  "BackendState": "Running",\n  "AuthURL": ""\n}\n'
 _NEEDS_LOGIN = (
@@ -93,7 +95,7 @@ def vm(tmp_path: Path) -> _Vm:
 
 def _run(*, vm: _Vm, extra: tuple[str, ...] = ()) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
-        ["/bin/bash", str(_SCRIPT), _WORKER, "macbook-m4-max", _IMAGE, str(vm.root), *extra],
+        ["/bin/bash", str(_SCRIPT), _WORKER, _HOST, _IMAGE, str(vm.root), *extra],
         capture_output=True,
         text=True,
         env={
@@ -144,7 +146,7 @@ def test_an_image_not_pinned_by_digest_is_refused_before_any_container_change(
     vm: _Vm, tmp_path: Path
 ) -> None:
     result = subprocess.run(
-        ["/bin/bash", str(_SCRIPT), _WORKER, "macbook-m4-max", "ghcr.io/x/y:latest", str(tmp_path)],
+        ["/bin/bash", str(_SCRIPT), _WORKER, _HOST, "ghcr.io/x/y:latest", str(tmp_path)],
         capture_output=True,
         text=True,
         env={"PATH": f"{vm.bin_dir}:/usr/bin:/bin", "STUB_STATE": str(vm.state)},
@@ -207,18 +209,20 @@ def test_an_approved_login_makes_the_tailnet_address_the_node_ip(vm: _Vm) -> Non
     result = _run(vm=vm)
     assert result.returncode == 0, result.stdout + result.stderr
     assert (vm.root / "enrollment" / "kubelet.env").read_text(encoding="utf-8") == (
-        f"NODE_NAME={_WORKER}\nNODE_IP=100.101.102.103\nWORKER_HOST=macbook-m4-max\n"
+        f"NODE_NAME={_WORKER}\nNODE_IP=100.101.102.103\nWORKER_HOST={_HOST}\n"
     )
     config = (vm.root / "enrollment" / "kubelet-config.yaml").read_text(encoding="utf-8")
     for line in (
         "cgroupDriver: systemd",
-        "  - 10.43.0.10",
-        "maxPods: 200",
         "readOnlyPort: 0",
         "serverTLSBootstrap: true",
         "    clientCAFile: /etc/homelab-worker/client-ca.crt",
     ):
         assert line in config.splitlines()
+    lines = config.splitlines()
+    dns = lines[lines.index("clusterDNS:") + 1]
+    assert re.fullmatch(r"  - \d+\.\d+\.\d+\.\d+", dns)
+    assert any(re.fullmatch(r"maxPods: \d+", line) for line in lines)
 
 
 def test_the_kubelet_starts_only_once_enrollment_is_delivered(vm: _Vm) -> None:

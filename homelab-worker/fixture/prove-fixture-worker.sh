@@ -28,6 +28,7 @@ set -euo pipefail
 prog="prove-fixture-worker"
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 hw="$here/.."
+hosts_dir="${HOMELAB_WORKER_HOSTS_DIR:-$hw/hosts}"
 server="k3d-hw-fixture-server-0"
 k3s_node="k3d-hw-fixture-agent-0"
 ns="hw-proof"
@@ -44,7 +45,7 @@ mode="$2"
 case "$host" in
   *[!a-z0-9-]* | -*) die "host '$host' is not a valid host name" ;;
 esac
-[ -f "$hw/hosts/$host.env" ] || die "host '$host' is not declared in homelab-worker/hosts/"
+[ -f "$hosts_dir/$host.env" ] || die "host '$host' is not declared in homelab-worker/hosts/"
 case "$mode" in
   agent | disabled) ;;
   *) die "egress-selector-mode '$mode' is not agent or disabled" ;;

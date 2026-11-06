@@ -40,6 +40,7 @@ set -euo pipefail
 prog="join-fixture-worker"
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 hw="$here/.."
+hosts_dir="${HOMELAB_WORKER_HOSTS_DIR:-$hw/hosts}"
 network="k3d-hw-fixture"
 server="k3d-hw-fixture-server-0"
 state_root="/mnt/lima-hwdata/fixture-worker"
@@ -66,7 +67,7 @@ esac
 case "$host" in
   *[!a-z0-9-]* | -*) die "host '$host' is not a valid host name" ;;
 esac
-[ -f "$hw/hosts/$host.env" ] || die "host '$host' is not declared in homelab-worker/hosts/"
+[ -f "$hosts_dir/$host.env" ] || die "host '$host' is not declared in homelab-worker/hosts/"
 worker="$host-homelab-worker"
 image="$(grep -v '^#' "$hw/image/ref" | head -n 1)"
 

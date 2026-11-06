@@ -15,6 +15,7 @@ and `docker` executables, with each node's tailscaled state in files, and assert
 
 from __future__ import annotations
 
+import re
 import stat
 import subprocess
 from dataclasses import dataclass
@@ -69,10 +70,22 @@ case "$1" in
 esac
 """
 
-_STUB_TAR = """#!/bin/bash
+
+def _script_var(name: str) -> str:
+    """A value the script pins, read from the script rather than restated here."""
+    [value] = re.findall(
+        rf'^{name}="([^"]+)"$', _SCRIPT.read_text(encoding="utf-8"), flags=re.MULTILINE
+    )
+    return value
+
+
+_TS_VERSION = _script_var("ts_version")
+_TS_SHA256 = _script_var("ts_sha256_arm64")
+
+_STUB_TAR = f"""#!/bin/bash
 dir="$2"
-mkdir -p "$dir/tailscale_1.104.4_arm64"
-touch "$dir/tailscale_1.104.4_arm64/tailscale" "$dir/tailscale_1.104.4_arm64/tailscaled"
+mkdir -p "$dir/tailscale_{_TS_VERSION}_arm64"
+touch "$dir/tailscale_{_TS_VERSION}_arm64/tailscale" "$dir/tailscale_{_TS_VERSION}_arm64/tailscaled"
 """
 
 
@@ -95,7 +108,7 @@ def vm(tmp_path: Path) -> _Vm:
     bin_dir.mkdir()
     _exe(path=bin_dir / "docker", body=_STUB_DOCKER)
     _exe(path=bin_dir / "tar", body=_STUB_TAR)
-    _exe(path=bin_dir / "hostname", body="#!/bin/bash\necho lima-macbook-m4-max-homelab-worker\n")
+    _exe(path=bin_dir / "hostname", body="#!/bin/bash\necho lima-alpha-homelab-worker\n")
     _exe(path=bin_dir / "uname", body="#!/bin/bash\necho aarch64\n")
     _exe(
         path=bin_dir / "curl",
@@ -142,10 +155,10 @@ def test_each_node_joins_ephemerally_advertising_only_its_own_slash_32(vm: _Vm) 
     _approved(vm=vm)
     result = _run(vm=vm, action="up")
     assert result.returncode == 0, result.stdout + result.stderr
-    assert "tailscale_1.104.4_arm64.tgz" in (vm.state / "calls.log").read_text(encoding="utf-8")
-    assert "a1c249ce6bdebef62e1ae3b997595555bce2ae4709bf95a718e9ca7a129dad7e" in (
-        vm.state / "sha.log"
-    ).read_text(encoding="utf-8")
+    assert f"tailscale_{_TS_VERSION}_arm64.tgz" in (vm.state / "calls.log").read_text(
+        encoding="utf-8"
+    )
+    assert _TS_SHA256 in (vm.state / "sha.log").read_text(encoding="utf-8")
     execs = _docker(vm=vm, verb="exec")
     for node, ip in _IPS.items():
         name = "hw-fixture-" + node.removeprefix("k3d-hw-fixture-")
@@ -207,8 +220,8 @@ def test_down_stops_each_nodes_tailscaled(vm: _Vm) -> None:
 @pytest.mark.parametrize(
     ("hostname", "running", "message"),
     [
-        ("macbook-air", "true", "not a homelab worker VM"),
-        ("lima-macbook-m4-max-homelab-worker", "false", "run k3s-fixture.sh up first"),
+        ("some-other-host", "true", "not a homelab worker VM"),
+        ("lima-alpha-homelab-worker", "false", "run k3s-fixture.sh up first"),
     ],
 )
 def test_it_refuses_outside_a_worker_vm_or_without_the_fixture(

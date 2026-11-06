@@ -30,6 +30,16 @@ import pytest
 
 __all__: list[str] = []
 
+
+def _mock_hosts(root: Path, *names: str) -> Path:
+    """A hosts directory declaring only the made-up hosts the test names."""
+    hosts = root / "hosts"
+    hosts.mkdir(parents=True, exist_ok=True)
+    for name in names:
+        (hosts / f"{name}.env").write_text("WORKER_HOST_OS=Darwin\n", encoding="utf-8")
+    return hosts
+
+
 _ENROLLMENT = Path(__file__).resolve().parents[2] / "homelab-worker" / "enrollment"
 _MINT = _ENROLLMENT / "mint-bootstrap-token.sh"
 _GROUP = "system:bootstrappers:homelab-worker"
@@ -77,13 +87,16 @@ def operator(tmp_path: Path) -> _Operator:
 
 
 def _mint(
-    *, operator: _Operator, host: str = "macbook-m4-max", server: str = "https://127.0.0.1:6550"
+    *, operator: _Operator, host: str = "alpha", server: str = "https://127.0.0.1:6550"
 ) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         ["/bin/bash", str(_MINT), host, server, str(operator.ca), str(operator.out)],
         capture_output=True,
         text=True,
-        env={"PATH": f"{operator.bin_dir}:/usr/bin:/bin"},
+        env={
+            "PATH": f"{operator.bin_dir}:/usr/bin:/bin",
+            "HOMELAB_WORKER_HOSTS_DIR": str(_mock_hosts(operator.bin_dir.parent, "alpha")),
+        },
         check=False,
         timeout=60,
     )
@@ -111,10 +124,10 @@ def test_the_bootstrap_group_may_only_request_csrs_and_have_its_client_csr_auto_
     renew_role, renew_subjects = bound["homelab-worker-autorenew-client"]
     assert renew_role.endswith(":selfnodeclient")
     assert "system:nodes" not in renew_subjects
-    assert re.findall(r"name: (\S+)", renew_subjects) == [
-        "system:node:macbook-m4-max-homelab-worker",
-        "system:node:macbook-air-homelab-worker",
-    ]
+    declared = sorted(p.stem for p in (_ENROLLMENT.parent / "hosts").glob("*.env"))
+    assert sorted(re.findall(r"name: (\S+)", renew_subjects)) == sorted(
+        f"system:node:{h}-homelab-worker" for h in declared
+    )
     assert (
         "serving"
         not in (_ENROLLMENT / "rbac.yaml").read_text(encoding="utf-8").split("apiVersion")[1]
@@ -161,8 +174,8 @@ def test_a_minted_token_is_short_lived_scoped_and_kept_out_of_arguments_and_outp
 @pytest.mark.parametrize(
     ("host", "server", "message"),
     [
-        ("macbook-pro", "https://127.0.0.1:6550", "is not declared"),
-        ("macbook-m4-max", "http://127.0.0.1:6550", "is not an https:// URL"),
+        ("gamma", "https://127.0.0.1:6550", "is not declared"),
+        ("alpha", "http://127.0.0.1:6550", "is not an https:// URL"),
     ],
 )
 def test_an_undeclared_host_or_plain_http_server_is_refused_before_any_cluster_change(

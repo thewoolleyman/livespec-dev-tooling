@@ -25,12 +25,24 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
+import yaml
 
 __all__: list[str] = []
 
+
+def _mock_hosts(root: Path, *names: str) -> Path:
+    """A hosts directory declaring only the made-up hosts the test names."""
+    hosts = root / "hosts"
+    hosts.mkdir(parents=True, exist_ok=True)
+    for name in names:
+        (hosts / f"{name}.env").write_text("WORKER_HOST_OS=Darwin\n", encoding="utf-8")
+    return hosts
+
+
 _HW = Path(__file__).resolve().parents[2] / "homelab-worker"
 _SCRIPT = _HW / "fixture" / "join-fixture-worker.sh"
-_WORKER = "macbook-m4-max-homelab-worker"
+_HOST = "alpha"
+_WORKER = f"{_HOST}-homelab-worker"
 _CERT = "-----BEGIN CERTIFICATE-----\nfixture\n-----END CERTIFICATE-----"
 
 _STUB_LIMACTL = """#!/bin/bash
@@ -90,7 +102,7 @@ def mac(tmp_path: Path) -> _Mac:
 
 
 def _run(
-    *, mac: _Mac, host: str = "macbook-m4-max", mode: tuple[str, ...] = ()
+    *, mac: _Mac, host: str = _HOST, mode: tuple[str, ...] = ()
 ) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         ["/bin/bash", str(_SCRIPT), host, *mode],
@@ -98,6 +110,7 @@ def _run(
         text=True,
         env={
             "PATH": f"{mac.bin_dir}:/usr/bin:/bin",
+            "HOMELAB_WORKER_HOSTS_DIR": str(_mock_hosts(mac.state, _HOST)),
             "STUB_STATE": str(mac.state),
             "STUB_CERT": _CERT,
             "WAIT_SECONDS": "0",
@@ -113,7 +126,7 @@ def _calls(*, mac: _Mac) -> list[str]:
 
 
 def test_an_undeclared_host_is_refused_before_any_vm_call(mac: _Mac) -> None:
-    result = _run(mac=mac, host="macbook-pro")
+    result = _run(mac=mac, host="gamma")
     assert result.returncode != 0
     assert "is not declared" in result.stderr
     assert _calls(mac=mac) == []
@@ -143,12 +156,17 @@ def test_the_worker_joins_the_fixture_through_the_production_path(mac: _Mac) -> 
         assert f"name: {name}" in applied
     assert "api-server-host: k3d-hw-fixture-server-0" in applied
     assert "flannel-iface: eth0" in applied
-    assert "api-server-host: poweredge" not in applied
+    production = yaml.safe_load(
+        (
+            Path(__file__).resolve().parents[2] / "homelab-worker" / "networking" / "cluster.yaml"
+        ).read_text(encoding="utf-8")
+    )["data"]["api-server-host"]
+    assert f"api-server-host: {production}" not in applied
     converges = [c for c in _calls(mac=mac) if " bash -s -- " in c]
     assert (
         converges
         == [
-            f"limactl shell --workdir / {_WORKER} sudo bash -s -- {_WORKER} macbook-m4-max "
+            f"limactl shell --workdir / {_WORKER} sudo bash -s -- {_WORKER} {_HOST} "
             + (_HW / "image" / "ref").read_text(encoding="utf-8").splitlines()[-1]
             + " /mnt/lima-hwdata/fixture-worker k3d-hw-fixture"
         ]

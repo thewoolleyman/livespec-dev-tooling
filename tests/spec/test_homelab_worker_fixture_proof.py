@@ -24,10 +24,21 @@ import pytest
 
 __all__: list[str] = []
 
+
+def _mock_hosts(root: Path, *names: str) -> Path:
+    """A hosts directory declaring only the made-up hosts the test names."""
+    hosts = root / "hosts"
+    hosts.mkdir(parents=True, exist_ok=True)
+    for name in names:
+        (hosts / f"{name}.env").write_text("WORKER_HOST_OS=Darwin\n", encoding="utf-8")
+    return hosts
+
+
 _SCRIPT = (
     Path(__file__).resolve().parents[2] / "homelab-worker" / "fixture" / "prove-fixture-worker.sh"
 )
-_WORKER = "macbook-m4-max-homelab-worker"
+_HOST = "alpha"
+_WORKER = f"{_HOST}-homelab-worker"
 
 _STUB_LIMACTL = """#!/bin/bash
 s="$STUB_STATE"
@@ -101,12 +112,13 @@ def _prove(
     *, mac: _Mac, mode: str, tunnel_only: str, enforced: str = "1", dns: str = "1", mtu: str = "1"
 ) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
-        ["/bin/bash", str(_SCRIPT), "macbook-m4-max", mode],
+        ["/bin/bash", str(_SCRIPT), _HOST, mode],
         capture_output=True,
         text=True,
         env={
             "PATH": f"{mac.bin_dir}:/usr/bin:/bin",
             "STUB_STATE": str(mac.state),
+            "HOMELAB_WORKER_HOSTS_DIR": str(_mock_hosts(mac.state, _HOST)),
             "STUB_TUNNEL_ONLY": tunnel_only,
             "STUB_ENFORCED": enforced,
             "STUB_DNS": dns,
@@ -189,7 +201,7 @@ def test_the_proof_pods_tolerate_the_hold_and_are_pinned_to_both_node_kinds(mac:
 
 @pytest.mark.parametrize(
     ("args", "message"),
-    [(["macbook-pro", "agent"], "is not declared"), (["macbook-m4-max", "cluster"], "is not")],
+    [(["gamma", "agent"], "is not declared"), ([_HOST, "cluster"], "is not")],
 )
 def test_an_undeclared_host_or_unknown_mode_is_refused_before_any_cluster_call(
     mac: _Mac, args: list[str], message: str
@@ -198,7 +210,11 @@ def test_an_undeclared_host_or_unknown_mode_is_refused_before_any_cluster_call(
         ["/bin/bash", str(_SCRIPT), *args],
         capture_output=True,
         text=True,
-        env={"PATH": f"{mac.bin_dir}:/usr/bin:/bin", "STUB_STATE": str(mac.state)},
+        env={
+            "PATH": f"{mac.bin_dir}:/usr/bin:/bin",
+            "STUB_STATE": str(mac.state),
+            "HOMELAB_WORKER_HOSTS_DIR": str(_mock_hosts(mac.state, _HOST)),
+        },
         check=False,
         timeout=60,
     )
