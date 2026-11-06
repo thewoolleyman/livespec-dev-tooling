@@ -101,6 +101,13 @@ Measured 2026-11-02 ~23:1x-23:3xZ: three seats (dolt-connection-exhaustion, disp
 fabro-currency earlier) recorded the coordinator's keypresses as the maintainer's own answers, and two of them then
 had to post attribution corrections.
 
+**Never ask the maintainer to relay a message.** The coordinator never asks the maintainer to carry a message to any
+seat. For a seat this session cannot SendMessage, such as one on another machine or a Codex seat, reply as a ledger
+comment on the work item concerned or on its plan epic. Also send it through `herdr --machine <label>` where a saved
+herdr machine reaches that seat (chads-macbook-pro is saved). The maintainer, 2026-11-06, relayed verbatim through the
+homelab-k8s-worker-nodes session, recorded on epic `livespec-dev-tooling-6tgd2z` at 05:57:05Z: "asking the maintainer
+to paste your reply to me is unacceptable".
+
 **Codex hook-trust prompts are the coordinator's to answer.** A Codex review prompt such as "N hooks need review before
 they can run" (`t trust all`) may always be answered with trust, to unblock a Codex pane, without asking the maintainer.
 The maintainer, 2026-11-02: "you can always take this action to unblok codex panes, claude doens't even ask this so
@@ -190,6 +197,20 @@ track, sat READY and unticketed from about 14:31Z to 16:2xZ. Its Codex owner had
 on bd-ib-voozdp. The maintainer: "Ensure there is a permanent fix for this", recorded on epic
 `livespec-dev-tooling-6tgd2z`.
 
+**Seats on other machines are read like local ones.** Every tick, run `herdr --machine chads-macbook-pro agent list`,
+then `herdr --machine chads-macbook-pro pane read <pane> --source recent-unwrapped` for each of these seats:
+
+- fleet-mutation-testing-rule-26 (plan `livespec-dev-tooling-oi2two`), workspace w3, tab w3:t2;
+- development-bootstrap (an ad-hoc docs plan in the macbook-pro-info repo, with no livespec tooling), workspace w3,
+  tab w3:t1.
+
+They get the standard §3 seat duties. A design or direction call on the maintainer-driven plan goes to the maintainer
+(§9), never decided by the coordinator. Their CI and factory traffic counts in the tick, and any factory launch they
+request is subject to the dispatch freeze (§9). The maintainer, 2026-11-06 ~06:0xZ, recorded on epic
+`livespec-dev-tooling-6tgd2z` at 06:05:46Z: "OK, add fleet-mutation-testing-rule-26 under the chads-macbook-pro
+machine/workspace to your monitored list of plans. They are executing on that machine, but may send stuff to CI
+and/or the factory."
+
 **Audit every child of a top-3 plan, every tick.** A seat that is busy on one child hides the rest of its plan, so its
 pane and its own report are never evidence that the plan is moving. For each owning plan of priorities 1-3:
 
@@ -211,7 +232,11 @@ pane and its own report are never evidence that the plan is moving. For each own
    just in its new repo. You need to look in the right ledger." Measured that day: plan
    bootstrap-credentials-and-onboarding lived in `/data/projects/hetzner-xubuntu-info` (tenant `hetzner-xubuntu-info`,
    prefix `hxi`), where `bd` reported "no beads database found", and the coordinator had reported the Hetzner priority
-   as having no plan.
+   as having no plan. A dependency between items in different ledger tenants is recorded in prose on both items,
+   NEVER as a `blocks` edge. Measured 2026-11-06 ~06:2xZ: three cross-tenant `blocks` edges on
+   livespec-dev-tooling-truk55 were orphans in this tenant. The pre-dispatch no-orphan-dependency check therefore
+   refused EVERY livespec-dev-tooling dispatch (livespec-dev-tooling-dpbpfx failed at 06:19Z), and `bd show` did not
+   display the edges.
 
 Measured 2026-11-02: priority 3, dev-host-test-gate-load, had its two main carriers (qgv3tb, 3buhph) at
 `pending-approval` from 21:30Z on Definition-of-Done findings that went stale when spec v108 merged at 23:45Z. The seat
@@ -434,6 +459,17 @@ allowlist only when it serves the P1 plan; the dispatcher backs the file up befo
 serving it (don't can cel in progress work, just don't dispatch anything else until it's plan is completely done and
 proven)". Measured 2026-11-06 00:12Z: the allowlist held bd-ib-weawfe and livespec-dev-tooling-4gc3ss.
 
+The maintainer has named two exceptions to the freeze, and each one ends with the freeze:
+
+- Early release of bd-ib-veyxvz, bd-ib-csbito and bd-ib-mr7673. The maintainer, 2026-11-06 ~05:3xZ, recorded on epic
+  `livespec-dev-tooling-6tgd2z` at 05:34:33Z: "3. Approved to release".
+- Carriers of bootstrap-credentials-and-onboarding (hetzner-xubuntu-info, epic `hxi-vxsmdv`) launch when they do not
+  impact expedited-incident-response-flag: no overlap with a P1 critical-path file, no bd-ib tenant writes during the
+  S5 window, and no slowing of a P1 run. The coordinator rules this per item. The maintainer, 2026-11-06 ~06:1xZ,
+  recorded on epic `livespec-dev-tooling-6tgd2z` at 06:10:32Z: "ok can you keep that one moving as long as it doens't
+  impact the expedited track, it's important. We need to get work off the vps still, and there's a lot of work left on
+  it."
+
 The coordinator never reorders, adds or drops a priority on its own initiative. It reports evidence for a change as a
 finding with a recommendation.
 
@@ -641,6 +677,12 @@ on an idle percentage alone.
   - **Additive means LOGICALLY additive: the edit runs the same or more, never less.** Adding jobs, steps or checks, and adding OR MODIFYING `runs-on` routing, is additive. The coordinator authorizes such an edit itself under the delegation when it is also not significantly slower (`approval:workflow-edit-additive`). Only an edit that runs less (removing or reducing tests, coverage or quality gates) or is significantly slower goes to the maintainer, and that ask says which of the two it is and why. A line-diff count is NOT the test. The maintainer, 2026-11-03 ~13:4xZ, recorded on epic `livespec-dev-tooling-6tgd2z` at 13:28:58Z: "Additive means LOGICALLY ADDITIVE. E.g., ADDS MORE STUFF TO RUN, NOT RUNS LESS STUFF. Adding OR MODIFYING a runs on is absolutitely ADDITIVE." The guard check-no-workflow-edits.sh still measures a line diff until its fix lands, and that fix is routed to ci-runtime-and-cost.
   - **actionlint first.** Before the coordinator sets `approval:workflow-edit-additive`, the exact edited workflow file must pass `actionlint` clean, and that output is recorded on the item. Measured 2026-11-03: #3317 merged a release-please.yml whose unquoted `if:` contained `: `. It was invalid YAML, every local gate and the PR CI passed it, and dev-tooling releases were blocked from 19:49Z to 21:45Z. The maintainer, 2026-11-03 ~22:0xZ: "Yes, approve actionlint. You should not have asked me this, it's additive and presumably not slow."
   - **Never ask the maintainer to acknowledge an additive edit.** An additive, not-significantly-slower workflow edit, or a rule change of that kind, is decided and reported, never listed under FOR THE MAINTAINER. Only a removal or reduction of coverage or gates, or a significant runtime increase, goes to the maintainer. The maintainer, 2026-11-03: "You should only ask for non-additive or large impact." The classification is logical, never the label a guard forces. When the line-diff guard (check-no-workflow-edits.sh, until livespec-dev-tooling-hz4dkk lands) refuses `approval:workflow-edit-additive` and the coordinator applies the maintainer-tier `approval:workflow-edit` instead, a logically additive edit is still reported, never listed under FOR THE MAINTAINER. The maintainer, 2026-11-04 ~19:4xZ, recorded on epic `livespec-dev-tooling-6tgd2z`: "why are you still insisting on asking me for approval on additive workflow labels? What happened to the rule I gave you on this?" Measured that day: bd-ib-idvp26, an optional runner_labels workflow_dispatch input with an empty default, was listed for acknowledgement in three tick reports because the guard forced the maintainer-tier label.
+  - **The maintainer approves; an agent applies the label.** For a maintainer-tier edit, the maintainer's approval of
+    that specific edit is what the tier needs, not their keystrokes. Once they approve it in the session, or a recorded
+    ruling of theirs covers that exact edit, an agent sets `approval:workflow-edit` and records on the item who
+    approved, when, and their words. Never hand the maintainer a `bd label add` command to type. The maintainer,
+    2026-11-06, on livespec-dev-tooling-z3wy33, as recorded in livespec-dev-tooling#3573: "The rule doesn't mean you
+    make me manually type commands, it means you ask for my approval."
 - **Capacity and config values change without a test suite, and no test pins a committed value.** The maintainer,
   2026-11-04 ~18:4xZ, recorded on epic `livespec-dev-tooling-6tgd2z` at 18:41:47Z: "Do all of those suggestions, now.
   ... Even if the file is committed, it should be a short circuit, no-tests change to change the wip or cap values. NO
