@@ -53,7 +53,15 @@ which rules out every CI node and every sandbox host whatever their TLS posture.
   held at mode 0750 (the loader refuses a group- or other-writable repository,
   and the account's own umask would leave the clone 0775), with
   a `livespec-incident-reference-fetch.timer` (every 5 min) keeping its objects
-  current for the inverse;
+  current for the inverse. Its `.beads/` directory is held at 0700 and carries
+  the gitignored `.beads/metadata.json` ledger pointer, rendered by the role
+  from the clone's committed `.beads/config.yaml` plus the tenant's
+  server-stable `project_id` (`incident_observer_tenant_project_id`): `bd`
+  resolves its workspace from that pointer, not from `config.yaml`, and the
+  first `POST /arm` (2026-11-06, 16:27Z) refused `canonical pre-merge authority
+  unavailable` because the clone had no pointer and the reader's first `bd
+  show` answered `no beads database found`. The port is written as a JSON
+  integer: without it `bd` dials port 0;
 - `/var/lib/livespec-incident/receipts` (mode 0700, outside the clone) with the
   recovery journal directories beneath it;
 - the three secret files (`/etc/livespec-incident/{webhook,control,query}-secret`,
