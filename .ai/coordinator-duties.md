@@ -19,6 +19,14 @@ cost fixes by the work they remove (rule F).
 Measured 2026-10-31: the item ranked a top burn fix (bd-ib-qbtf7s, inline scripts) was worth about $0.35 per run,
 about 5% of a $6.68 factory run. The unworked top sink was long-lived local seats, about $4,000 per 7 days.
 
+**Stop the tokens lost to failures and rework.** While the fleet stabilizes, the burn of seats and models is accepted,
+and the coordinator raises no further seat-count or model ask. Its standing spend duty is to cut the tokens that
+failed runs and rework throw away: rank those classes from `token-spend-analysis` numbers and put their fixes first.
+The maintainer, 2026-11-05 ~20:4xZ, recorded on epic `livespec-dev-tooling-6tgd2z` at 20:42:06Z: "Well, we are trying
+to get stable, i accept the burn, your job is to stop wasting tokens on failures and rework". Measured 2026-11-05, 24 h
+to 23:30Z: the umask-077 failure class cost about $240 (22% of factory spend) and wall-budget cancels about $227 (21%),
+so their fixes (bd-ib-veyxvz, bd-ib-mr7673) launch first when the dispatch freeze lifts (§9).
+
 ## 2. A flaky test gets an in-place retry and a root fix; a whole-job rerun only in one bounded case
 
 A test the run did not touch is retried up to 3 times, 60 seconds apart, on its own and never as a whole-job rerun,
@@ -197,6 +205,13 @@ pane and its own report are never evidence that the plan is moving. For each own
 3. Compare the plan's typed `next_action` with that audit. A plan awaiting one item while other children are held is a
    stall. Route it to the owning seat at once, not at the seat's next tick.
 4. DEPENDENCIES lists every non-closed child with its hold reason, never the subset a seat is working.
+5. A plan may live in another repository with its own ledger tenant. Audit it there. While that tenant is
+   unreachable, report `plan-slug (repo), ledger not yet onboarded`, never "no plan". The maintainer, 2026-11-02
+   ~20:0xZ, recorded on epic `livespec-dev-tooling-6tgd2z` at 20:04:20Z: "On Hetzner it absolutely has a plan. It's
+   just in its new repo. You need to look in the right ledger." Measured that day: plan
+   bootstrap-credentials-and-onboarding lived in `/data/projects/hetzner-xubuntu-info` (tenant `hetzner-xubuntu-info`,
+   prefix `hxi`), where `bd` reported "no beads database found", and the coordinator had reported the Hetzner priority
+   as having no plan.
 
 Measured 2026-11-02: priority 3, dev-host-test-gate-load, had its two main carriers (qgv3tb, 3buhph) at
 `pending-approval` from 21:30Z on Definition-of-Done findings that went stale when spec v108 merged at 23:45Z. The seat
@@ -238,6 +253,22 @@ Measured 2026-10-31: the coordinator held three "maintainer decisions". One was 
 replay credential that a re-capture against the current release avoids entirely. The maintainer asked why each needed
 them.
 
+**The P1 critical path is hand-landed, in any repository.** The maintainer's local-only expedited exception
+(`maintainer-local-only-expedited-exception-20261103T2142`, recorded on epic `livespec-dev-tooling-bqnzcm`) first
+covered dev-tooling's expedited-incident-response-flag children. The maintainer extended it to EVERY carrier on that
+plan's critical path, in any repository: a local worktree, a normal PR and the normal gates, with no flag and no
+factory run needed. The maintainer, 2026-11-05 ~20:5xZ, recorded on epic `livespec-dev-tooling-6tgd2z` at 20:42:06Z,
+answering the coordinator's recommendation to hand-land the critical path: "OK do all this.  Make it the top priority
+to get the expedited plan done." The exception ends when that plan is archived with its Proof of Done verified.
+
+**The release window is waived for P1 carriers only.** As each expedited-incident-response-flag slice PR merges, the
+owning seat (or the coordinator) dispatches Release Please at once
+(`gh workflow run release-please.yml -R thewoolleyman/livespec-dev-tooling`, and the orchestrator's when its release
+is windowed) instead of waiting for the 4-hourly cron. No other plan or repository gets the waiver. Maintainer ruling
+2026-11-05 ~21:27Z, recorded on epic `livespec-dev-tooling-bqnzcm` at 21:26:06Z. Its purpose was to move the first
+usable incident fix from about 05:00-09:00Z to about 01:00-02:00Z on 2026-11-06. Measured 2026-11-05: the coordinator
+dispatched one at 22:37:55Z (run 42123120124).
+
 **A hand-landed carrier closes through the valves that exist today, never through a future factory feature.** An item
 implemented and merged outside the factory, for example under a local-only expedited exception, is closed by the
 coordinator with the existing valves: `accept:<id>` for an item in `acceptance`, `dispatcher.py reconcile-merged` for
@@ -249,6 +280,12 @@ or a restart, and is never listed as a maintainer item. The maintainer, 2026-11-
 seats, no justification to block. restart it or whatever". Measured that day: ten P1 carriers of
 expedited-incident-response-flag sat for about ten hours waiting on the proof-only resume chain (bd-ib-a7zpxy), while
 `accept:` closed the six in `acceptance` at once, all green.
+
+The coordinator presses those valves itself. When a seat hand-lands a carrier, it posts its Definition-of-Done
+reproduction on the item and asks; the coordinator runs `reconcile-merged`, then `accept:`, and records the basis. It
+never waits for the seat, or the maintainer, to press them. Measured 2026-11-05: livespec-3lwk4n (livespec#3110)
+was accepted ~21:5xZ on its seat's reproduction comment, and bd-ib-5guqmt and bd-ib-fvgkw4 were closed out-of-band
+under this section.
 
 ## 6. Never block: no pickers, ever
 
@@ -384,6 +421,18 @@ maintainer item for me to drive and decide direction."
 acceptance, proofs). Cancel only runaway work, or work whose output will not be used. An infrastructure restart's
 cancel-and-immediately-re-dispatch is a resume, not a cancellation. Maintainer ruling 2026-11-02 ~14:5xZ, recorded on
 epic `livespec-dev-tooling-6tgd2z`.
+
+**A dispatch freeze stops launches, never runs.** While the P1 plan is not archived with its Proof of Done verified,
+nothing launches except P1 carriers and the items listed in `tmp/petri-canary/freeze-allowlist` in the orchestrator
+repo (the dispatcher's `hold-gmktec` names the freeze). No new dispatch, seeded relaunch or resume of anything else.
+In-flight runs finish and nothing is cancelled. A run that has already ended is not relaunched until the freeze
+lifts. An infrastructure restart's cancel-and-re-dispatch still proceeds, because it is a resume. An item joins the
+allowlist only when it serves the P1 plan; the dispatcher backs the file up before each change
+(`freeze-allowlist.pre-<item>-<UTC>`). Only the coordinator lifts the freeze, and the post-freeze launch order is the
+`priorities-record`. Live runs below the cap under a freeze are intended, not a stall (§10). The maintainer,
+2026-11-05 ~20:5xZ, recorded on epic `livespec-dev-tooling-6tgd2z` at 20:42:06Z: "Stop all other work that is not
+serving it (don't can cel in progress work, just don't dispatch anything else until it's plan is completely done and
+proven)". Measured 2026-11-06 00:12Z: the allowlist held bd-ib-weawfe and livespec-dev-tooling-4gc3ss.
 
 The coordinator never reorders, adds or drops a priority on its own initiative. It reports evidence for a change as a
 finding with a recommendation.
@@ -527,6 +576,14 @@ making the [Opus] change on the most important and highly loaded repo was a horr
 unverified model. Eight items died at implement from 18:15Z to 19:19Z on a Claude Code 2.1.170 HTTP 400, until #4396
 (998e45933) reverted it.
 
+**A sandbox driver bump's canary checks environment parity.** Before a new sandbox driver or image widens, its
+canary run compares the exec environment against the previous driver's: umask, environment variables and resource
+limits. A suite green on the old driver and red on the new one is the driver's fault until shown otherwise. Measured
+2026-11-05: sandbox-driver-kubernetes v0.8.1 (59f60a4, bd-ib-mdern6) ran every exec'd command under umask 077, so
+`test_gap_closure` failed in 9 of 9 post-window orchestrator full suites (0 of 12 before). The class cost about
+$240, 22% of 24 h of factory spend, before bd-ib-2fpn5m fixed it. At the freeze lift, the v0.8.2 canary takes an
+explicit umask check before other launches follow (legacy-dispatcher-agent ruling 12).
+
 **Preserve before any cancel.** No seat cancels, removes or abandons a factory run until that run's committed tree is
 on a ref on origin, verified with `git ls-remote`. A diff pointer, a run id or a resume pointer is not a preserved
 tree. While the factory cannot preserve a run itself, the mechanism is the node-copy preserve script that
@@ -539,6 +596,19 @@ critical path? WHY? HOW CAN WE GET THIS DONE ASAP??????" and, ~20:1xZ at 20:03:1
 from ever fucking happening again to lose hours of work: 'It never pushed the run's tree to a ref.'" Measured that
 day: bd-ib-yuwftp's run 01M6KBH30NJA lost about 6 h of work at its wall-budget cancel (19:28Z), because only a 78-byte
 diff pointer was kept before `fabro rm -f`.
+
+**An infrastructure restart is CANCEL-TO-IDLE, never wait-for-drain.** A k3s, Fabro server or engine restart that
+needs idle runs follows `.ai/factory-restart-cancels-runs.md`: set the caps to 0, preserve, cancel the live runs,
+restart, verify, restore the caps and re-dispatch the cancelled items seeded at once. Never hold a restart while
+runs drain on their own. Measured 2026-11-05 22:1xZ to 2026-11-06 00:0xZ: the coordinator held the poweredge-xubuntu
+k3s server restart for livespec-dev-tooling#3430 waiting for drain, which was wrong. The maintainer asked ~00:0xZ for
+it to be done now as a cancel-to-idle, and kubernetes-sandbox-backend set the caps to 0 at 00:09:55Z.
+
+**A runaway call starts with the run's seed tree.** Before calling a run runaway and giving a cancel GO, read what its
+seed tree already contains (the preserved or seeded ref it started from, and any rider) and compare that with what
+the run is doing. Work that is already in the seed is not a reason to cancel, and a rider for a commit the seed
+already has is not added. Measured 2026-11-05 ~23:40Z: bd-ib-uq2ocd was cancelled on a mistaken runaway GO; its tree
+was preserved at cc9568cc, and it relaunches seeded, with no rider, after the freeze.
 
 ## 11. Reading host capacity
 
