@@ -1,28 +1,24 @@
 """Consumer-tier: the dependencies invariant of `SPECIFICATION/constraints.md`.
 
-The constraint states the library MUST declare NO runtime dependencies, and
-that tool versions are pinned by each consuming repo's own `[dependency-
-groups].dev` rather than by this library. The point of the invariant is stated
-in the packaging config itself: a consumer adding this library to its dev group
-pays ZERO transitive-pin cost. So each half is read where a consumer meets it:
+The library vendors `returns` and `structlog`, but vendored `returns` imports
+`typing_extensions` at runtime, and its `primitives.asserts` imports `anyio`
+when asked to run an awaitable container. A released wheel must therefore
+declare both so a clean `uv` git-source installation supplies them. Tool versions
+remain pinned by each consuming repo's own `[dependency-groups].dev` table.
+The consumer-facing contract is read from these surfaces:
 
-- **The declaration, in the packaging config.** `[project]` carries no
-  `dependencies` key at all. This is the source a `uv` git-source consumer
-  builds from, so it is where the promise is authored.
+- **The declaration, in the packaging config.** `[project].dependencies`
+  declares the dependency a `uv` git-source consumer installs.
 - **The declaration, in the INSTALLED distribution.** `Requires-Dist` is what
   the consumer's RESOLVER reads, and it is a separate artifact from the
   config above — a dependency introduced through a build-backend default, a
   plugin, or a dynamic-metadata hook would appear here and nowhere in the
   `[project]` table. Asserting only the config would leave that gap open.
-- **The mechanism that makes zero declared dependencies HONEST.** Every check
-  imports `returns` (the ROP railway) and `structlog` (its diagnostics) at
-  module import, so a library declaring no dependency on either is only
-  truthful because both are VENDORED under `livespec_dev_tooling/_vendor/`.
-  Each is asserted to resolve from that subtree rather than from site-
-  packages: were the vendor path to stop governing, the imports would silently
-  start resolving against whatever the developer's environment happened to
-  carry, and the zero-dependency claim would hold on paper while every
-  consumer without those packages met an ImportError.
+- **The vendored mechanism.** `returns` and `structlog` resolve from
+  `livespec_dev_tooling/_vendor/`; `typing_extensions` and `anyio` resolve from
+  the package's declared runtime dependency set. This makes the absolute imports
+  in the vendored `returns` tree work for consumers that installed no
+  unrelated packages.
 - **Where tool versions ARE pinned.** The three tools the constraint names —
   `ruff`, `pyright`, `pytest` — each carry an EXACT `==` pin under
   `[dependency-groups].dev`. That table is the sanctioned home for them, so a
@@ -57,7 +53,9 @@ _DISTRIBUTION = "livespec-dev-tooling"
 # The `[project]` table's body — everything up to the next top-level table
 # header. A `dependencies` key anywhere in it is a declared runtime dependency.
 _PROJECT_TABLE = re.compile(r"^\[project\]\n(?P<body>.*?)(?=^\[)", re.MULTILINE | re.DOTALL)
-_DEPENDENCIES_KEY = re.compile(r"^dependencies\s*=", re.MULTILINE)
+_DEPENDENCIES_KEY = re.compile(
+    r"^dependencies\s*=\s*\[\n(?P<body>.*?)^\]", re.MULTILINE | re.DOTALL
+)
 
 # The `[dependency-groups].dev` array's body — the sanctioned home for the tool
 # pins, one `"<name>==<version>"` entry per line.
@@ -67,6 +65,7 @@ _DEV_GROUP = re.compile(r"^dev = \[\n(?P<body>.*?)^\]", re.MULTILINE | re.DOTALL
 # the current shelled-out set, each of which must carry an exact pin in the dev
 # group rather than a runtime dependency.
 _PINNED_TOOLS = ("ruff", "pyright", "pytest")
+_RUNTIME_DEPENDENCIES = ["anyio>=3.0", "typing-extensions>=4.0"]
 
 
 def _project_table_body() -> str:
@@ -83,19 +82,25 @@ def _dev_pin_entries() -> list[str]:
     return [line.strip().strip(",").strip('"') for line in matched.group("body").splitlines()]
 
 
-def test_the_library_declares_no_runtime_dependencies() -> None:
-    """No runtime dependency is declared, vendored imports resolve, tools are dev-pinned."""
+def test_vendored_returns_runtime_dependency_is_declared() -> None:
+    """Clean wheel consumers receive `typing_extensions` and `anyio` with vendored `returns`."""
     declared = _DEPENDENCIES_KEY.search(_project_table_body())
-    assert declared is None, (
-        "`[project]` must declare no `dependencies` key — a runtime dependency here "
-        "becomes a transitive pin for every consumer that adds this library to its "
-        'dev group (constraints.md §"Dependencies")'
+    assert declared is not None, (
+        "`[project]` must declare typing-extensions and anyio because the vendored "
+        "returns runtime imports them in a clean consumer environment"
+    )
+    declared_dependencies = [
+        line.strip().strip(",").strip('"') for line in declared.group("body").splitlines()
+    ]
+    assert declared_dependencies == _RUNTIME_DEPENDENCIES, (
+        "the only declared runtime dependencies must be the third-party imports "
+        f"of vendored returns; declared={declared_dependencies}"
     )
 
     requires = importlib.metadata.requires(_DISTRIBUTION) or []
-    assert not requires, (
+    assert sorted(requires) == _RUNTIME_DEPENDENCIES, (
         f"the INSTALLED distribution's Requires-Dist is what a consumer's resolver "
-        f"reads, and it must be empty; declared={sorted(requires)}"
+        f"reads, and it must declare typing-extensions and anyio; declared={sorted(requires)}"
     )
 
     resolved = {"returns": str(returns.__file__), "structlog": str(structlog.__file__)}
@@ -103,10 +108,8 @@ def test_the_library_declares_no_runtime_dependencies() -> None:
         name for name, location in resolved.items() if not location.startswith(str(_VENDOR_DIR))
     )
     assert not external, (
-        f"every third-party package the shipped modules import at module scope must "
-        f"resolve from `livespec_dev_tooling/_vendor/`, which is what makes the "
-        f"zero-runtime-dependency declaration honest; resolved elsewhere={external} "
-        f"({resolved})"
+        f"the vendored libraries must resolve from `livespec_dev_tooling/_vendor/`; "
+        f"resolved elsewhere={external} ({resolved})"
     )
 
     entries = _dev_pin_entries()
