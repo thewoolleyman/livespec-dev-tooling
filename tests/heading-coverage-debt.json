@@ -44,6 +44,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "contracts.md",
+    "heading": "## Rule-26 mutation kill matrix",
+    "work_item": "livespec-dev-tooling-wou75w",
+    "first_seen": "2026-11-06"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "contracts.md",
     "heading": "## Suite-green replay leg",
     "work_item": "livespec-dev-tooling-z5fwwn",
     "first_seen": "2026-11-02"
@@ -625,6 +632,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: a rule-26 kill-matrix run reports survivors and redundancy candidates",
+    "work_item": "livespec-dev-tooling-wou75w",
+    "first_seen": "2026-11-06"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: a runner pod is never placed on a node with no free churn slot",
     "work_item": "livespec-dev-tooling-mtvxde",
     "first_seen": "2026-11-04"
@@ -1138,6 +1152,13 @@
     "spec_file": "scenarios.md",
     "heading": "## Scenario: the worker's node IP is its declared home-LAN address",
     "work_item": "livespec-dev-tooling-ko26ez.2",
+    "first_seen": "2026-11-06"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: wiring the kill-matrix recipe into the check aggregate is refused",
+    "work_item": "livespec-dev-tooling-wou75w",
     "first_seen": "2026-11-06"
   }
 ]
