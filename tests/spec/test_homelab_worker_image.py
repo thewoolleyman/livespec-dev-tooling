@@ -7,7 +7,7 @@ fleet's Kubernetes minor version." These read `homelab-worker/image/` the way a 
 - every downloaded asset is pinned by version AND by a per-architecture SHA-256, selected by
   `TARGETARCH`, so a build for an architecture with no declared checksum fails instead of
   installing an unverified binary;
-- the kubelet is the upstream v1.36 line (the fleet runs v1.36.2+k3s1, and a kubelet may not
+- the kubelet's minor version equals kube-proxy's and the fixture K3s's (a kubelet may not
   be newer than its API server) and nothing in the image is a K3s binary;
 - the kubelet registers with the admission-hold taint, which only a separate operator action
   lifts.
@@ -49,9 +49,24 @@ def test_every_download_is_verified_against_its_pinned_checksum_by_target_archit
         assert "x86_64" not in url
 
 
-def test_the_kubelet_is_the_upstream_v1_36_line_and_containerd_is_2_x() -> None:
+def _minor(version: str) -> str:
+    match = re.search(r"v?(\d+\.\d+)\.\d+", version)
+    assert match, version
+    return match.group(1)
+
+
+def test_the_kubelet_matches_the_fleet_minor_and_containerd_is_2_x() -> None:
     args = _args()
-    assert re.fullmatch(r"v1\.36\.\d+", args["KUBERNETES_VERSION"])
+    worker = _IMAGE.parent
+    [proxy] = re.findall(
+        r"registry\.k8s\.io/kube-proxy:(v[\d.]+)@",
+        (worker / "networking" / "kube-proxy.yaml").read_text(encoding="utf-8"),
+    )
+    [k3s] = re.findall(
+        r"rancher/k3s:(v[\d.]+)-k3s",
+        (worker / "fixture" / "k3s-fixture.sh").read_text(encoding="utf-8"),
+    )
+    assert _minor(args["KUBERNETES_VERSION"]) == _minor(proxy) == _minor(k3s)
     assert args["CONTAINERD_VERSION"].startswith("2.")
     assert (
         "dl.k8s.io/release/${KUBERNETES_VERSION}/bin/linux/${TARGETARCH}/kubelet"

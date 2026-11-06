@@ -40,7 +40,7 @@ set -euo pipefail
 
 prog="start-homelab-worker-node-container"
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-hosts_dir="$here/hosts"
+hosts_dir="${HOMELAB_WORKER_HOSTS_DIR:-$here/hosts}"
 template="$here/lima/worker.yaml"
 probe="$here/probe-vm-capabilities.sh"
 converge="$here/vm/converge-worker-container.sh"

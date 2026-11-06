@@ -14,6 +14,7 @@ fixture inside a worker VM. These run it under the system `/bin/bash` with stub 
 
 from __future__ import annotations
 
+import re
 import stat
 import subprocess
 from dataclasses import dataclass
@@ -65,7 +66,7 @@ def vm(tmp_path: Path) -> _Vm:
     made.log.write_text("", encoding="utf-8")
     made.clusters.write_text("", encoding="utf-8")
     (tmp_path / "mounts").write_text("", encoding="utf-8")
-    _stub(vm=made, name="hostname", body='echo "lima-macbook-m4-max-homelab-worker"')
+    _stub(vm=made, name="hostname", body='echo "lima-alpha-homelab-worker"')
     _stub(vm=made, name="uname", body='echo "aarch64"')
     _stub(
         vm=made,
@@ -107,7 +108,7 @@ def _calls(*, vm: _Vm, command: str) -> list[str]:
 
 
 def test_the_fixture_refuses_to_run_outside_a_homelab_worker_vm(vm: _Vm) -> None:
-    _stub(vm=vm, name="hostname", body='echo "macbook-air"')
+    _stub(vm=vm, name="hostname", body='echo "some-other-host"')
     result = _run(vm=vm, args=["up", "agent"])
     assert result.returncode != 0
     assert "not a homelab worker VM" in result.stderr
@@ -127,7 +128,7 @@ def test_up_builds_the_fleet_version_with_production_flags_at_the_requested_egre
     result = _run(vm=vm, args=["up", "agent"])
     assert result.returncode == 0, result.stdout + result.stderr
     [create] = [c for c in _calls(vm=vm, command="k3d") if c.startswith("k3d cluster create ")]
-    assert "--image rancher/k3s:v1.36.2-k3s1@sha256:" in create
+    assert re.search(r"--image rancher/k3s:\S+@sha256:[0-9a-f]{64}(\s|$)", create)
     assert "--servers 1 --agents 1" in create
     assert "--disable=traefik@server:0" in create
     assert "--disable=servicelb@server:0" in create
@@ -174,7 +175,7 @@ def test_down_deletes_the_fixture_and_its_state(vm: _Vm) -> None:
 @pytest.mark.parametrize(
     ("mount", "removed"),
     [
-        ("fixture-worker/enrollment", ["docker rm -f macbook-m4-max-homelab-worker"]),
+        ("fixture-worker/enrollment", ["docker rm -f alpha-homelab-worker"]),
         ("worker/enrollment", []),
     ],
 )

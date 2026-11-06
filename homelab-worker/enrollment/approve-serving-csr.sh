@@ -25,7 +25,7 @@ set -euo pipefail
 
 prog="approve-serving-csr"
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-hosts_dir="$here/../hosts"
+hosts_dir="${HOMELAB_WORKER_HOSTS_DIR:-$here/../hosts}"
 domain="${TAILNET_DOMAIN:-perch-rudd.ts.net}"
 
 die() {

@@ -20,10 +20,22 @@ import pytest
 
 __all__: list[str] = []
 
+
+def _mock_hosts(root: Path, *names: str) -> Path:
+    """A hosts directory declaring only the made-up hosts the test names."""
+    hosts = root / "hosts"
+    hosts.mkdir(parents=True, exist_ok=True)
+    for name in names:
+        (hosts / f"{name}.env").write_text("WORKER_HOST_OS=Darwin\n", encoding="utf-8")
+    return hosts
+
+
 _APPROVE = (
     Path(__file__).resolve().parents[2] / "homelab-worker" / "enrollment" / "approve-serving-csr.sh"
 )
-_WORKER = "macbook-m4-max-homelab-worker"
+_HOST = "alpha"
+_DOMAIN = "tailnet.test"
+_WORKER = f"{_HOST}-homelab-worker"
 _USER = f"system:node:{_WORKER}"
 _NODE_IP = "100.101.102.103"
 _GOOD_USAGES = ("digital signature", "key encipherment", "server auth")
@@ -107,10 +119,14 @@ def _add_csr(
 
 def _approve(*, cluster: _Cluster) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
-        ["/bin/bash", str(_APPROVE), "macbook-m4-max"],
+        ["/bin/bash", str(_APPROVE), _HOST],
         capture_output=True,
         text=True,
-        env={"PATH": f"{cluster.bin_dir}:/usr/bin:/bin:/opt/homebrew/bin"},
+        env={
+            "PATH": f"{cluster.bin_dir}:/usr/bin:/bin:/opt/homebrew/bin",
+            "HOMELAB_WORKER_HOSTS_DIR": str(_mock_hosts(cluster.root, _HOST)),
+            "TAILNET_DOMAIN": _DOMAIN,
+        },
         check=False,
         timeout=60,
     )
@@ -126,7 +142,7 @@ def test_a_matching_serving_csr_is_approved(cluster: _Cluster) -> None:
     _add_csr(
         cluster=cluster,
         name="csr-good",
-        sans=f"DNS:{_WORKER},DNS:{_WORKER}.perch-rudd.ts.net,IP:{_NODE_IP}",
+        sans=f"DNS:{_WORKER},DNS:{_WORKER}.{_DOMAIN},IP:{_NODE_IP}",
     )
     result = _approve(cluster=cluster)
     assert result.returncode == 0, result.stdout + result.stderr

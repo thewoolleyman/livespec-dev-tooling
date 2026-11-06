@@ -24,7 +24,7 @@ set -euo pipefail
 
 prog="mint-bootstrap-token"
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-hosts_dir="$here/../hosts"
+hosts_dir="${HOMELAB_WORKER_HOSTS_DIR:-$here/../hosts}"
 ttl_minutes="${TOKEN_TTL_MINUTES:-60}"
 
 die() {

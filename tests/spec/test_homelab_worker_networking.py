@@ -6,9 +6,13 @@ K3s embeds (flannel, kube-proxy and kube-router) run on it as DaemonSets from
 
 - every DaemonSet selects only the worker class, runs on the host network and tolerates the
   admission hold, so it never doubles an embedded agent on a K3s node;
-- each image is the fleet-matched upstream version, pinned by digest;
-- flannel carries the fleet's VXLAN network and CNI conflist, kube-proxy the fleet's K3s flag set,
-  and kube-router the firewall alone;
+- each image is pinned by digest;
+- flannel's pod network is the one kube-proxy treats as the cluster CIDR, flannel's interface comes
+  from the per-cluster ConfigMap, kube-proxy names its node by NODE_NAME, and kube-router runs the
+  firewall alone;
+
+No assertion restates a fleet value (versions, addresses, CIDRs, interfaces): those are
+configuration, and a test pinning them breaks on every legitimate change.
 - each agent reaches the API server through one per-cluster ConfigMap, never the kubernetes
   Service it would otherwise depend on, and no agent may read Secrets;
 - every object carries the one rollback label.
@@ -17,6 +21,7 @@ K3s embeds (flannel, kube-proxy and kube-router) run on it as DaemonSets from
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Any
 
@@ -27,11 +32,8 @@ __all__: list[str] = []
 
 _NETWORKING = Path(__file__).resolve().parents[2] / "homelab-worker" / "networking"
 _ROLLBACK_LABEL = "homelab-worker.livespec.dev/networking"
-_IMAGES = {
-    "homelab-worker-flannel": "ghcr.io/flannel-io/flannel:v0.28.4@sha256:",
-    "homelab-worker-kube-proxy": "registry.k8s.io/kube-proxy:v1.36.2@sha256:",
-    "homelab-worker-kube-router": "docker.io/cloudnativelabs/kube-router:v2.6.3@sha256:",
-}
+_AGENTS = ("homelab-worker-flannel", "homelab-worker-kube-proxy", "homelab-worker-kube-router")
+_DIGEST = re.compile(r"^[^@\s]+:[^@\s]+@sha256:[0-9a-f]{64}$")
 
 
 def _objects() -> list[dict[str, Any]]:
@@ -51,7 +53,7 @@ def _container(*, name: str) -> dict[str, Any]:
     return pod["containers"][0]
 
 
-@pytest.mark.parametrize("name", sorted(_IMAGES))
+@pytest.mark.parametrize("name", _AGENTS)
 def test_each_agent_runs_only_on_the_worker_class_on_the_host_network(name: str) -> None:
     pod = _one(kind="DaemonSet", name=name)["spec"]["template"]["spec"]
     assert pod["nodeSelector"] == {"homelab-worker.livespec.dev/class": "worker"}
@@ -59,11 +61,10 @@ def test_each_agent_runs_only_on_the_worker_class_on_the_host_network(name: str)
     assert {"operator": "Exists", "effect": "NoSchedule"} in pod["tolerations"]
     assert pod["serviceAccountName"] == name
     for container in pod.get("initContainers", []) + pod["containers"]:
-        assert container["image"].startswith(_IMAGES[name])
-        assert len(container["image"].split("@sha256:")[1]) == 64
+        assert _DIGEST.match(container["image"]), container["image"]
 
 
-@pytest.mark.parametrize("name", sorted(_IMAGES))
+@pytest.mark.parametrize("name", _AGENTS)
 def test_each_agent_reaches_the_api_server_through_the_cluster_configmap(name: str) -> None:
     env = {e["name"]: e for e in _container(name=name)["env"]}
     for var, key in (
@@ -75,45 +76,40 @@ def test_each_agent_reaches_the_api_server_through_the_cluster_configmap(name: s
             "key": key,
         }
     cluster = _one(kind="ConfigMap", name="homelab-worker-cluster")["data"]
-    assert cluster == {
-        "api-server-host": "poweredge-xubuntu.perch-rudd.ts.net",
-        "api-server-port": "6443",
-        "flannel-iface": "tailscale0",
-    }
+    assert set(cluster) == {"api-server-host", "api-server-port", "flannel-iface"}
+    assert all(isinstance(v, str) and v for v in cluster.values())
+    assert cluster["api-server-port"].isdigit()
 
 
-def test_flannel_carries_the_fleet_vxlan_network_and_cni_conflist() -> None:
-    data = _one(kind="ConfigMap", name="homelab-worker-flannel")["data"]
-    assert json.loads(data["net-conf.json"]) == {
-        "Network": "10.42.0.0/16",
-        "EnableIPv6": False,
-        "Backend": {"Type": "vxlan", "VNI": 1, "Port": 8472},
-    }
-    cni = json.loads(data["cni-conf.json"])
-    assert (cni["name"], cni["cniVersion"]) == ("cbr0", "1.0.0")
-    assert [p["type"] for p in cni["plugins"]] == ["flannel", "portmap", "bandwidth"]
-    assert cni["plugins"][0]["delegate"] == {
-        "hairpinMode": True,
-        "forceAddress": True,
-        "isDefaultGateway": True,
-    }
-    flannel = _container(name="homelab-worker-flannel")
-    assert flannel["args"] == ["--ip-masq", "--kube-subnet-mgr"]
-    iface = {e["name"]: e for e in flannel["env"]}["FLANNELD_IFACE"]
-    assert iface["valueFrom"]["configMapKeyRef"]["key"] == "flannel-iface"
-
-
-def test_kube_proxy_runs_the_fleet_k3s_flag_set_in_iptables_mode() -> None:
-    assert _container(name="homelab-worker-kube-proxy")["command"] == [
-        "/usr/local/bin/kube-proxy",
-        "--cluster-cidr=10.42.0.0/16",
-        "--conntrack-max-per-core=0",
-        "--conntrack-tcp-timeout-close-wait=0s",
-        "--conntrack-tcp-timeout-established=0s",
-        "--healthz-bind-address=127.0.0.1",
-        "--proxy-mode=iptables",
-        "--hostname-override=$(NODE_NAME)",
+def _cluster_cidr() -> str:
+    [flag] = [
+        a
+        for a in _container(name="homelab-worker-kube-proxy")["command"]
+        if a.startswith("--cluster-cidr=")
     ]
+    return flag.removeprefix("--cluster-cidr=")
+
+
+def test_flannel_pod_network_is_kube_proxys_cluster_cidr() -> None:
+    data = _one(kind="ConfigMap", name="homelab-worker-flannel")["data"]
+    net = json.loads(data["net-conf.json"])
+    assert net["Network"] == _cluster_cidr()
+    assert net["Backend"]["Type"] == "vxlan"
+    cni = json.loads(data["cni-conf.json"])
+    assert cni["plugins"][0]["type"] == "flannel"
+    flannel = _container(name="homelab-worker-flannel")
+    assert "--kube-subnet-mgr" in flannel["args"]
+    iface = {e["name"]: e for e in flannel["env"]}["FLANNELD_IFACE"]
+    assert iface["valueFrom"]["configMapKeyRef"] == {
+        "name": "homelab-worker-cluster",
+        "key": "flannel-iface",
+    }
+
+
+def test_kube_proxy_names_its_node_by_node_name_with_an_explicit_proxy_mode() -> None:
+    command = _container(name="homelab-worker-kube-proxy")["command"]
+    assert "--hostname-override=$(NODE_NAME)" in command
+    assert any(a.startswith("--proxy-mode=") for a in command)
     binding = _one(kind="ClusterRoleBinding", name="homelab-worker-kube-proxy")
     assert binding["roleRef"]["name"] == "system:node-proxier"
 
@@ -138,6 +134,6 @@ def test_no_agent_may_read_secrets_or_write_beyond_its_own_node_status_and_event
 
 def test_every_object_carries_the_one_rollback_label() -> None:
     objects = _objects()
-    assert len(objects) == 13
+    assert objects
     for obj in objects:
         assert obj["metadata"]["labels"][_ROLLBACK_LABEL] == "true"
