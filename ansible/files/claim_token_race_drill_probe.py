@@ -176,6 +176,15 @@ def run_writer(*, args: argparse.Namespace, plugin: Plugin, client: Any) -> dict
     trace: dict[str, Any] = {}
 
     def go() -> float:
+        # The play waits for this marker on both hosts before it names the
+        # release instant, so the instant is measured from writers that are
+        # already standing at the barrier, never from their launch.
+        reached = time.time()
+        trace["barrier_reached_at"] = reached
+        write_json(
+            path=args.go_fifo.with_name("at-barrier.json"),
+            payload={"writer": args.writer, "clock": reached},
+        )
         return wait_for_go(fifo=args.go_fifo)
 
     if args.barrier_point == "start":
