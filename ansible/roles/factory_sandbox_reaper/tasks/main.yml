@@ -30,6 +30,18 @@
       factory_sandbox_reaper_apply must be a boolean.
     success_msg: every field of the factory sandbox reaper carries a value
 
+- name: Install the factory sandbox reaper retention decisions
+  # Installed before the executable so a timer firing mid-apply never imports a
+  # decisions module that is not yet on disk.
+  ansible.builtin.copy:
+    src: factory_sandbox_reaper_decisions.py
+    dest: "{{ factory_sandbox_reaper_bin | dirname }}/factory_sandbox_reaper_decisions.py"
+    owner: root
+    group: root
+    mode: "0644"
+    validate: python3 -c "import ast,sys; ast.parse(open(sys.argv[1]).read())" %s
+  become: true
+
 - name: Install the factory sandbox reaper
   # `validate` runs Python's own parser over the staged copy, so a script that
   # cannot be parsed is refused here and not discovered as a failed timer unit.
@@ -49,16 +61,6 @@
     owner: root
     group: root
     mode: "0755"
-  become: true
-
-- name: Install the factory sandbox reaper retention decisions
-  ansible.builtin.copy:
-    src: factory_sandbox_reaper_decisions.py
-    dest: "{{ factory_sandbox_reaper_bin | dirname }}/factory_sandbox_reaper_decisions.py"
-    owner: root
-    group: root
-    mode: "0644"
-    validate: python3 -c "import ast,sys; ast.parse(open(sys.argv[1]).read())" %s
   become: true
 
 - name: Install the factory sandbox reaper CLI profile
