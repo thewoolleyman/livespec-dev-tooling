@@ -2217,81 +2217,72 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "non-functional-requirements.md",
     "heading": "## Homelab worker nodes",
-    "test": "TODO",
-    "reason": "Spec-first: a real test at the integration tier or above (the start-homelab-worker-node-container task run against stubbed brew, limactl and VM probe commands, plus host-captured runs on macbook-m4-max and macbook-air) is owed for this heading; livespec-dev-tooling-ko26ez owns it.",
-    "work_item": "livespec-dev-tooling-ko26ez"
+    "test": "tests.spec.test_homelab_worker_nodes.test_every_committed_host_declaration_is_data_for_the_same_code_path",
+    "reason": "Integration-tier: the section's one-code-path rule asserted over every committed host declaration (no host name in the start script; each declaration is data with the required keys); the section's behaviours are covered by its scenario rows below and were host-captured on macbook-m4-max and in production on 2026-11-06 (join and 14-check proof on livespec-dev-tooling-p4gsn5)."
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: the start task refuses an undeclared host before any host change",
-    "test": "TODO",
-    "reason": "Spec-first: a real test at the integration tier or above (the start task run against stubbed host commands, or a host-captured run on a declared Mac host) is owed for this scenario; livespec-dev-tooling-ko26ez owns it.",
-    "work_item": "livespec-dev-tooling-ko26ez"
+    "test": "tests.spec.test_homelab_worker_nodes.test_undeclared_host_is_refused_naming_the_declared_hosts_before_any_host_change",
+    "reason": "Integration-tier: runs the real start-homelab-worker-node-container script under /bin/bash against stub brew, limactl and VM-probe executables and a mocked host declaration (no production value), as this row's owed test named; host-captured on macbook-m4-max 2026-11-06 (livespec-dev-tooling-ko26ez epic). Asserts the refusal names the argument and the declared hosts and that no package, VM or container step ran."
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a VM missing a required capability stops the start task before the worker starts",
-    "test": "TODO",
-    "reason": "Spec-first: a real test at the integration tier or above (the start task run against stubbed host commands, or a host-captured run on a declared Mac host) is owed for this scenario; livespec-dev-tooling-ko26ez owns it.",
-    "work_item": "livespec-dev-tooling-ko26ez"
+    "test": "tests.spec.test_homelab_worker_nodes.test_a_missing_vm_capability_stops_the_task_naming_it_with_its_remedy",
+    "reason": "Integration-tier: runs the real start-homelab-worker-node-container script under /bin/bash against stub brew, limactl and VM-probe executables and a mocked host declaration (no production value), as this row's owed test named; host-captured on macbook-m4-max 2026-11-06 (livespec-dev-tooling-ko26ez epic). Asserts the missing capability is named with its remedy and no worker container or enrollment step ran."
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: rerunning the start task reuses Lima and keeps the VM",
-    "test": "TODO",
-    "reason": "Spec-first: a real test at the integration tier or above (the start task run against stubbed host commands, or a host-captured run on a declared Mac host) is owed for this scenario; livespec-dev-tooling-ko26ez owns it.",
-    "work_item": "livespec-dev-tooling-ko26ez"
+    "test": "tests.spec.test_homelab_worker_nodes.test_rerun_starts_the_existing_vm_in_place_and_never_recreates_it",
+    "reason": "Integration-tier: runs the real start-homelab-worker-node-container script under /bin/bash against stub brew, limactl and VM-probe executables and a mocked host declaration (no production value), as this row's owed test named; host-captured on macbook-m4-max 2026-11-06 (livespec-dev-tooling-ko26ez epic). Asserts Lima is neither installed nor upgraded and the VM is started in place, never deleted or recreated."
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a second worker on the same host is refused",
-    "test": "TODO",
-    "reason": "Spec-first: a real test at the integration tier or above (the start task run against stubbed host commands, or a host-captured run on a declared Mac host) is owed for this scenario; livespec-dev-tooling-ko26ez owns it.",
-    "work_item": "livespec-dev-tooling-ko26ez"
+    "test": "tests.spec.test_homelab_worker_nodes.test_a_second_worker_on_the_same_host_is_refused_naming_the_existing_worker",
+    "reason": "Integration-tier: runs the real start-homelab-worker-node-container script under /bin/bash against stub brew, limactl and VM-probe executables and a mocked host declaration (no production value), as this row's owed test named; host-captured on macbook-m4-max 2026-11-06 (livespec-dev-tooling-ko26ez epic). Asserts the refusal names the existing worker and no second VM or container is created."
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: the start task leaves the host's own tailnet identity unchanged",
-    "test": "TODO",
-    "reason": "Spec-first: a real test at the integration tier or above (the start task run against stubbed host commands, or a host-captured run on a declared Mac host) is owed for this scenario; livespec-dev-tooling-ko26ez owns it.",
-    "work_item": "livespec-dev-tooling-ko26ez"
+    "test": "tests.spec.test_homelab_worker_nodes.test_the_start_task_never_touches_the_hosts_own_tailnet",
+    "reason": "Integration-tier: runs the real start-homelab-worker-node-container script under /bin/bash against stub brew, limactl and VM-probe executables and a mocked host declaration (no production value), as this row's owed test named; host-captured on macbook-m4-max 2026-11-06 (livespec-dev-tooling-ko26ez epic). Asserts a full start-task run invokes no tailscale command on the host; the worker's own enrollment under <host>-homelab-worker is converge's (test_homelab_worker_converge)."
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a newly joined worker carries the admission hold",
     "test": "TODO",
-    "reason": "Spec-first: a real test at the integration tier or above (the start task run against stubbed host commands, or a host-captured run on a declared Mac host) is owed for this scenario; livespec-dev-tooling-ko26ez owns it.",
+    "reason": "A real test at the integration tier or above is owed for this scenario: a worker joined to a cluster (the isolated K3s fixture via join-fixture-worker.sh, or a host-captured production join) whose Node carries homelab-worker.livespec.dev/admission=hold:NoSchedule and on which an untolerating pod stays unscheduled. Observed host-captured in production on 2026-11-06 (livespec-dev-tooling-p4gsn5) and guarded at unit tier by tests.spec.test_homelab_worker_image.test_the_kubelet_registers_under_the_admission_hold_and_the_permanent_class_taint; livespec-dev-tooling-ko26ez owns it.",
     "work_item": "livespec-dev-tooling-ko26ez"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a missing bridged-network prerequisite stops the start task before the VM starts",
-    "test": "TODO",
-    "reason": "Spec-first: a real test at the integration tier or above (the start task run against stubbed host commands with a mocked host declaration, plus a host-captured run on macbook-m4-max) is owed for this scenario; livespec-dev-tooling-ko26ez.2 owns it.",
-    "work_item": "livespec-dev-tooling-ko26ez.2"
+    "test": "tests.spec.test_homelab_worker_nodes.test_a_missing_socket_vmnet_stops_the_task_before_the_vm_starts",
+    "reason": "Integration-tier: runs the real start-homelab-worker-node-container script under /bin/bash against stub brew, limactl and VM-probe executables and a mocked host declaration (no production value), as this row's owed test named; host-captured on macbook-m4-max 2026-11-06 (livespec-dev-tooling-ko26ez epic). Asserts socket_vmnet is named and no VM is created or started and no install runs."
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: the worker's node IP is its declared home-LAN address",
-    "test": "TODO",
-    "reason": "Spec-first: a real test at the integration tier or above (the start task run against stubbed host commands with a mocked host declaration, plus a host-captured run on macbook-m4-max) is owed for this scenario; livespec-dev-tooling-ko26ez.2 owns it.",
-    "work_item": "livespec-dev-tooling-ko26ez.2"
+    "test": "tests.spec.test_homelab_worker_converge.test_lan_mode_runs_on_the_host_network_with_the_declared_address_as_node_ip",
+    "reason": "Integration-tier: runs the real converge-worker-container script against stub docker and ip and asserts host-network mode with the declared address as NODE_IP; host-captured 2026-11-06: macbook-m4-max-homelab-worker registered in production with InternalIP 192.168.1.201 on lima0 (livespec-dev-tooling-p4gsn5)."
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a host declaring no home-LAN address is refused before the VM starts",
-    "test": "TODO",
-    "reason": "Spec-first: a real test at the integration tier or above (the start task run against stubbed host commands with a mocked host declaration, plus a host-captured run on macbook-m4-max) is owed for this scenario; livespec-dev-tooling-ko26ez.2 owns it.",
-    "work_item": "livespec-dev-tooling-ko26ez.2"
+    "test": "tests.spec.test_homelab_worker_nodes.test_a_host_declaring_no_lan_address_is_refused_before_any_vm_call",
+    "reason": "Integration-tier: runs the real start-homelab-worker-node-container script under /bin/bash against stub brew, limactl and VM-probe executables and a mocked host declaration (no production value), as this row's owed test named; host-captured on macbook-m4-max 2026-11-06 (livespec-dev-tooling-ko26ez epic). Asserts WORKER_LAN_ADDRESS is named and no create, start or shell step ran."
   },
   {
     "spec_root": "SPECIFICATION",

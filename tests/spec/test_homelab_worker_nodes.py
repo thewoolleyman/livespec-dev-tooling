@@ -20,6 +20,10 @@ import yaml
 
 __all__: list[str] = []
 
+# Integration tier: each test runs the real script under /bin/bash against stub executables
+# and mocked config, so the script's whole control flow is exercised.
+pytestmark = pytest.mark.integration
+
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _WORKER_DIR = _REPO_ROOT / "homelab-worker"
 _SCRIPT = _WORKER_DIR / "start-homelab-worker-node-container.sh"
@@ -554,3 +558,16 @@ def test_a_failed_lan_address_step_never_converges_the_worker_container(host: _H
     result = _run(host=host, args=[_A])
     assert result.returncode != 0
     assert not (host.state / "converge-stdin").exists()
+
+
+def test_the_start_task_never_touches_the_hosts_own_tailnet(host: _Host) -> None:
+    # The worker joins the tailnet from inside its own network namespace (converge); the host's
+    # own Tailscale identity, login and settings are never touched by the start task.
+    _install_lima(host=host, version="2.2.1")
+    _write_exec(
+        path=host.bin_dir / "tailscale",
+        text='#!/bin/bash\nprintf "tailscale %s\\n" "$*" >> "$STUB_LOG"\n',
+    )
+    result = _run(host=host, args=[_A])
+    assert result.returncode == 0, result.stderr
+    assert [c for c in _calls(host=host) if c.startswith("tailscale ")] == []
