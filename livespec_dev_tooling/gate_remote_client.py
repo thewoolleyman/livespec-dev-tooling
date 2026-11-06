@@ -436,6 +436,8 @@ def _gate_a_pushed_tree(
             job_payload=submitted.unwrap().stdout,
         )
         if isinstance(delivered, Failure):
+            deleted = _delete_abandoned_gate_job(request=request, runner=runner, job_name=job_name)
+            report_gate_cleanup_failure(job_name=job_name, outcome=deleted)
             return Failure(delivered.failure()), False
     terminal = _await_terminal_state(
         request=request, runner=runner, sleeper=sleeper, job_name=job_name

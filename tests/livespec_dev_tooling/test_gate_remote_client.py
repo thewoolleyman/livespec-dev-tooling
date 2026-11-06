@@ -750,6 +750,39 @@ def test_failed_abandoned_job_cleanup_is_reported_without_changing_no_verdict(
     )
 
 
+def test_a_refused_private_sibling_secret_deletes_the_submitted_job() -> None:
+    """A Job left unmountable by a failed Secret delivery is abandoned, so it is deleted."""
+    cluster = _StubCluster(
+        created_payload=json.dumps({"kind": "Job", "metadata": {"name": _JOB, "uid": "uid-1"}})
+    )
+    request = dataclasses.replace(
+        _REQUEST,
+        private_sibling_token="ghs_token",  # noqa: S106 — public fixture token.
+        private_sibling_secret="gate-secret",  # noqa: S106 — public fixture secret name.
+    )
+
+    def runner(
+        *, argv: list[str], cwd: Path, stdin: str | None = None, stream: bool = False
+    ) -> GateCommandOutcome:
+        if stdin is not None and '"kind": "Secret"' in stdin:
+            return Success(GateCommandResult(returncode=1, stdout="", stderr="secret refused\n"))
+        return cluster(argv=argv, cwd=cwd, stdin=stdin, stream=stream)
+
+    outcome = run_gate(request=request, runner=runner, sleeper=cluster.sleep)
+    assert isinstance(outcome, Failure)
+    assert outcome.failure().step == "create-private-sibling-token-secret"
+    assert cluster.only(kind="delete-job").argv == (
+        GATES_WRAPPER,
+        "kubectl",
+        "--namespace",
+        "gates",
+        "delete",
+        "job",
+        _JOB,
+    )
+    assert "get-job" not in cluster.kinds
+
+
 def test_a_job_the_cluster_will_not_report_on_is_retried_then_retains_its_ref() -> None:
     """A read refusal is retried, but never authorizes deleting a live Job's ref."""
     cluster = _StubCluster(fails=("get-job",))
