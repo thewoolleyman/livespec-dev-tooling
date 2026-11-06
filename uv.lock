@@ -431,7 +431,7 @@ wheels = [
 
 [[package]]
 name = "livespec-dev-tooling"
-version = "1.185.0"
+version = "1.185.1"
 source = { editable = "." }
 dependencies = [
     { name = "anyio" },
