@@ -58,6 +58,24 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.184.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.183.1...v1.184.0) (2026-11-06)
+
+
+### Features
+
+* **ci-runner:** the homelab worker runner set runs jobs in the fleet's container mode (livespec-dev-tooling-ko26ez.4) ([b3e7b1a](https://github.com/thewoolleyman/livespec-dev-tooling/commit/b3e7b1ae578dd4c45efd43905e32ab07c1627242))
+* **homelab-worker:** converge binds the collector's state and starts it with the node's values (livespec-dev-tooling-ko26ez.4) ([1309d52](https://github.com/thewoolleyman/livespec-dev-tooling/commit/1309d52b610974257200eb39da89ab8dd99423b6))
+* **homelab-worker:** prove-worker proves a newly joined worker carries the admission hold (livespec-dev-tooling-ko26ez.1) ([34f0126](https://github.com/thewoolleyman/livespec-dev-tooling/commit/34f012689f97179e30a31d40964f79fdb3630290))
+* **homelab-worker:** the start task delivers the pinned collector configuration and the ingest key to the worker (livespec-dev-tooling-ko26ez.4) ([a1b9140](https://github.com/thewoolleyman/livespec-dev-tooling/commit/a1b9140bda756eae75b889d554e83ad36e23902b))
+* **homelab-worker:** the worker image carries the node's host collector (livespec-dev-tooling-ko26ez.4) ([e266ab2](https://github.com/thewoolleyman/livespec-dev-tooling/commit/e266ab25be6e0eed15dc8678e2f5dbfecee20b98))
+
+
+### Bug Fixes
+
+* **homelab-worker:** converge binds the pool binaries from the data disk so workflow pods can mount them idmapped (livespec-dev-tooling-ko26ez.4) ([0dd8a7e](https://github.com/thewoolleyman/livespec-dev-tooling/commit/0dd8a7e79fb69aa0afa45d6797ca680501a4f792))
+* **homelab-worker:** the securityfs bind is writable so the worker's containerd can load its default AppArmor profile (livespec-dev-tooling-ko26ez.4) ([a313542](https://github.com/thewoolleyman/livespec-dev-tooling/commit/a3135425a4f46b0c90f3531139b1204584a4acd6))
+* **homelab-worker:** the worker's kubelet sees the VM's AppArmor through a read-only securityfs bind (livespec-dev-tooling-ko26ez.4) ([804288d](https://github.com/thewoolleyman/livespec-dev-tooling/commit/804288d02f82e144eabed96da308ade09ec5e87a))
+
 ## [1.183.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.183.0...v1.183.1) (2026-11-06)
 
 
