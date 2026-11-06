@@ -83,14 +83,17 @@ _DEPLOYED_COMMIT = "9f6c38f"
 # da6c801 (thewoolleyman/fabro#25), so both units read the same.
 # 2026-11-05: after the candidate's 0-run proof of 85af354 (thewoolleyman/fabro#26),
 # the fleet instance is pinned to it too.
-_FLEET_COMMIT = "85af354"
+# 2026-11-06: every gmktec instance is pinned to bbe6938, 85af354 plus the
+# Petri c6bfd5e3 output-drain fix (thewoolleyman/fabro#33).
+_FLEET_COMMIT = "bbe6938"
 # The candidate's build: the carrier tip on that branch, the fleet build plus the
 # node name on run_turn spans (thewoolleyman/fabro#14). The maintainer ruled it
 # onto the candidate and fabro-server-mi-homelab on 2026-11-02 (plan
 # fabro-currency), ahead of the fleet instance.
 # 2026-11-04: the candidate alone runs 85af354 (thewoolleyman/fabro#26) for its
 # 0-run proof, ahead of the fleet instance.
-_CANDIDATE_COMMIT = "85af354"
+# 2026-11-06: bbe6938 with the fleet instance (thewoolleyman/fabro#33).
+_CANDIDATE_COMMIT = "bbe6938"
 _PINNED_COMMIT = {"fabro-server": _FLEET_COMMIT, "fabro-server-candidate": _CANDIDATE_COMMIT}
 _SUPERSEDED_CARRIER = "adeefec"
 _SUPERSEDED_BUILD_REFERENCE = "#1048"
