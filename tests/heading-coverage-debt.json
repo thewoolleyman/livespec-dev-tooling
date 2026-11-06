@@ -387,13 +387,6 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario: a gate pytest session that stops making progress ends without a pass",
-    "work_item": "livespec-dev-tooling-ko26ez",
-    "first_seen": "2026-11-04"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
     "heading": "## Scenario: a gate-start whose venue selector cannot be imported refuses by name",
     "work_item": "livespec-dev-tooling-p3mhfh",
     "first_seen": "2026-11-05"
