@@ -49,7 +49,9 @@ which rules out every CI node and every sandbox host whatever their TLS posture.
   (`incident_observer_reader_release`), whose `incident_authority.py` is the
   canonical `read-current` reader the manifest names;
 - `/var/lib/livespec-incident/reference`: the independent reference clone of the
-  observed repository at the released tag, owned by the controller account, with
+  observed repository at the released tag, owned by the controller account and
+  held at mode 0750 (the loader refuses a group- or other-writable repository,
+  and the account's own umask would leave the clone 0775), with
   a `livespec-incident-reference-fetch.timer` (every 5 min) keeping its objects
   current for the inverse;
 - `/var/lib/livespec-incident/receipts` (mode 0700, outside the clone) with the

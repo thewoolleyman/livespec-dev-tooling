@@ -257,9 +257,26 @@
     repo: "{{ incident_observer_release_repo }}"
     dest: "{{ incident_observer_reference_dir }}"
     version: "{{ incident_observer_release }}"
+    umask: "0022"
   become: true
   become_user: "{{ incident_observer_user }}"
   when: incident_observer_account_ready
+
+- name: Keep the reference clone writable by its owner alone
+  # The loader refuses a repository whose own directory is group- or
+  # other-writable, and the controller account's umask is 0002, so a clone made
+  # as that account landed 0775 and the isolated load below refused for that one
+  # reason: measured on the second apply, 2026-11-06. The clone's `umask` keeps
+  # a fresh clone tight; this repairs one already made.
+  ansible.builtin.file:
+    path: "{{ incident_observer_reference_dir }}"
+    state: directory
+    owner: "{{ incident_observer_user }}"
+    group: "{{ incident_observer_group }}"
+    mode: "0750"
+  become: true
+  when: incident_observer_account_ready
+  notify: Restart the incident observer onto its installation
 
 - name: Install the reference fetch service and timer
   ansible.builtin.template:
