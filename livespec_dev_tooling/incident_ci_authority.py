@@ -13,6 +13,7 @@ import os
 import re
 import socket
 import ssl
+import sys
 from contextlib import closing
 from dataclasses import dataclass
 from typing import Any, cast
@@ -41,6 +42,12 @@ _OBSERVER_READ_TIMEOUT_SECONDS = 60
 # is still what the certificate is verified against and what the Host header
 # names, so the trust boundary does not move. Unset keeps hostname dialing.
 _CONNECT_ADDRESS_VARIABLE = "LIVESPEC_INCIDENT_OBSERVER_CONNECT_ADDR"
+# A read that fails on the wire says why on stderr. The drill's refusals carried
+# no trace of the host the client had dialed or how the dial failed, because
+# every error became a bare False (livespec-dev-tooling-ws2idp, 2026-11-06).
+# The detail names the error class, the route, the dialed address:port and the
+# verified hostname, never the token or the reply.
+_REFUSAL_PREFIX = "incident-ci: observer read refused: "
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -61,9 +68,11 @@ class CiAuthorityBoundary:
     def _query(self, *, route: str, query: dict[str, Any]) -> bool:
         try:
             parsed = urlsplit(self.observer_url)
+            host = parsed.hostname or ""
+            port = parsed.port or http.client.HTTPS_PORT
             if (
                 parsed.scheme != "https"
-                or not parsed.hostname
+                or not host
                 or parsed.username
                 or parsed.password
                 or parsed.query
@@ -90,25 +99,33 @@ class CiAuthorityBoundary:
                 )
             ):
                 return False
-            # An invalid literal raises ValueError here, before any connection exists,
-            # and the handler below turns it into a refusal.
+        except (OSError, ValueError, TypeError, RecursionError, http.client.HTTPException):
+            # The caller's own inputs; a bad URL, token or query says nothing.
+            return False
+        try:
             connect_to = _connect_address()
+        except ValueError:
+            return _refuse(
+                detail=_CONNECT_ADDRESS_VARIABLE
+                + " is not an IPv4 or IPv6 address literal; no connection was attempted"
+            )
+        try:
             # System TLS verification; no redirect handler can forward the token.
             with closing(
                 http.client.HTTPSConnection(
-                    parsed.hostname, port=parsed.port, timeout=_OBSERVER_READ_TIMEOUT_SECONDS
+                    host, port=parsed.port, timeout=_OBSERVER_READ_TIMEOUT_SECONDS
                 )
             ) as connection:
                 if connect_to is not None:
                     # Dial the literal, verify and name the URL's host: the socket is
                     # handed to the connection, which then never dials by name.
                     raw = socket.create_connection(
-                        (connect_to, parsed.port or 443), timeout=_OBSERVER_READ_TIMEOUT_SECONDS
+                        (connect_to, port), timeout=_OBSERVER_READ_TIMEOUT_SECONDS
                     )
                     # A failing wrap raises into the handler below and refuses; the
                     # unwrapped socket is released with `raw` when this frame unwinds.
                     connection.sock = ssl.create_default_context().wrap_socket(
-                        raw, server_hostname=parsed.hostname
+                        raw, server_hostname=host
                     )
                 connection.request(
                     "POST",
@@ -133,8 +150,24 @@ class CiAuthorityBoundary:
                     and json.dumps(reply.get("query"), sort_keys=True)
                     == json.dumps(query, sort_keys=True)
                 )
-        except (OSError, ValueError, TypeError, RecursionError, http.client.HTTPException):
-            return False
+        except (OSError, ValueError, TypeError, RecursionError, http.client.HTTPException) as error:
+            return _refuse(
+                detail=type(error).__name__
+                + " while reading /"
+                + route
+                + " from "
+                + (connect_to or host)
+                + ":"
+                + str(port)
+                + " as "
+                + host
+            )
+
+
+def _refuse(*, detail: str) -> bool:
+    """Name the refusal on stderr; the token never appears in the detail."""
+    _ = sys.stderr.write(_REFUSAL_PREFIX + detail + "\n")
+    return False
 
 
 def _connect_address() -> str | None:
