@@ -200,6 +200,44 @@
   changed_when: true
   notify: Restart the incident observer onto its installation
 
+- name: Read whether the serving interpreter has the vendored runtime's outside import
+  # The released distribution vendors its runtime and declares no dependency,
+  # yet its vendored `returns` imports typing_extensions. The release above is
+  # installed with --no-deps, so that one module is installed beside it, the
+  # same way the incident CI job does (.github/workflows/ci.yml). Without it
+  # the unit exits at import: measured on the first apply, 2026-11-06.
+  ansible.builtin.command:
+    argv:
+      - "{{ incident_observer_venv }}/bin/python"
+      - -I
+      - -c
+      - import typing_extensions
+  become: true
+  register: incident_observer_typing_extensions
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  when: incident_observer_installed
+
+- name: Install typing-extensions beside the release
+  ansible.builtin.command:
+    argv:
+      - "{{ incident_observer_venv }}/bin/python"
+      - -I
+      - -m
+      - pip
+      - install
+      - --quiet
+      - --no-deps
+      - --no-cache-dir
+      - "{{ incident_observer_typing_extensions_requirement }}"
+  become: true
+  when: >-
+    not incident_observer_installed
+    or (incident_observer_typing_extensions.rc | default(1)) != 0
+  changed_when: true
+  notify: Restart the incident observer onto its installation
+
 - name: Clone the canonical reader at its released tag
   # Root-owned beside the venv: the loader requires every argv file and every
   # ancestor to be owned by root or the controller and writable by neither
@@ -288,6 +326,18 @@
     mode: "0755"
   become: true
 
+- name: Name the installation and the account this apply has just created
+  # Both facts were read before this run wrote anything, so on a FIRST apply
+  # they are still false here although the venv, the release and the account
+  # now exist. Without this refresh a first apply skips the manifest, the load
+  # and the import below and starts a unit nothing verified: measured on the
+  # first apply, 2026-11-06. A dry run creates nothing, so it keeps the
+  # pre-read answers.
+  ansible.builtin.set_fact:
+    incident_observer_installed: true
+    incident_observer_account_ready: true
+  when: not ansible_check_mode
+
 - name: Read the released tag's commit from the reference clone
   ansible.builtin.command:
     argv:
@@ -351,6 +401,23 @@
         from livespec_dev_tooling.incident_controller_installation import ControllerInstallation;
         sys.exit(0 if ControllerInstallation.load(config=Path(sys.argv[1])) is not None else 1)
       - "{{ incident_observer_config_path }}"
+  become: true
+  become_user: "{{ incident_observer_user }}"
+  changed_when: false
+  check_mode: false
+  when: incident_observer_installed and not ansible_check_mode
+
+- name: Import the service module as the controller account before serving it
+  # The loader above authenticates the installation; this proves the module the
+  # unit executes imports under the same isolated interpreter and euid, so a
+  # missing import refuses the apply here instead of leaving a unit that
+  # restarts in a loop.
+  ansible.builtin.command:
+    argv:
+      - "{{ incident_observer_venv }}/bin/python"
+      - -I
+      - -c
+      - import livespec_dev_tooling.incident_observer_service
   become: true
   become_user: "{{ incident_observer_user }}"
   changed_when: false
