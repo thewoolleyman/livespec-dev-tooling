@@ -35,6 +35,12 @@ _HOSTS = {
     "beta": {"cpus": 13, "memory_gib": 17, "disk_gib": 19, "data_gib": 23, "lan": "10.99.0.22/24"},
     "delta": {"cpus": 2, "memory_gib": 3, "disk_gib": 5, "data_gib": 7},
 }
+# A mocked collector configuration and pin: the tests never fetch the real one.
+_COLLECTOR_COMMIT = "c" * 40
+_COLLECTOR_FILE = "config.homelab-worker.yaml"
+_COLLECTOR_BYTES = b"# mocked collector configuration\n"
+_INGEST_KEY = "mocked-ingest-key-value"
+
 # A mocked container-hook bundle: the tests never deliver the committed one.
 _HOOK_VERSION = "9.9.9"
 _HOOK_BYTES = b"// mocked fleet container hook\n"
@@ -97,7 +103,7 @@ case "${1:-}" in
         [ -f "$state/vm$p" ] || exit 1
         { sha256sum "$state/vm$p" 2>/dev/null || shasum -a 256 "$state/vm$p"; }
         exit 0 ;;
-      *" install -D -m 0644 /dev/stdin "*)
+      *" install -D -m "*" /dev/stdin "*)
         for dest in "$@"; do :; done
         mkdir -p "$(dirname "$state/vm$dest")"
         cat > "$state/vm$dest"
@@ -189,6 +195,16 @@ def host(tmp_path: Path) -> _Host:
         f"{hashlib.sha256(_HOOK_BYTES).hexdigest()}  index.js\n", encoding="utf-8"
     )
     (state / "workflow-profile").write_text("# mocked workflow profile\n", encoding="utf-8")
+    repo = state / "collector-repo" / _COLLECTOR_COMMIT
+    repo.mkdir(parents=True)
+    (repo / _COLLECTOR_FILE).write_bytes(_COLLECTOR_BYTES)
+    (state / "collector.ref").write_text(
+        "# mocked pin\n"
+        f"commit={_COLLECTOR_COMMIT}\n"
+        f"file={_COLLECTOR_FILE}\n"
+        f"sha256={hashlib.sha256(_COLLECTOR_BYTES).hexdigest()}\n",
+        encoding="utf-8",
+    )
     return _Host(bin_dir=bin_dir, state=state, log=log)
 
 
@@ -229,6 +245,8 @@ def _run(
         "HOMELAB_WORKER_SOCKET_VMNET": str(host.bin_dir / "socket_vmnet"),
         "HOMELAB_WORKER_HOOK_BUNDLE_DIR": str(host.state / "hook-bundle"),
         "HOMELAB_WORKER_APPARMOR_PROFILE": str(host.state / "workflow-profile"),
+        "HOMELAB_WORKER_COLLECTOR_REF": str(host.state / "collector.ref"),
+        "HOMELAB_WORKER_COLLECTOR_BASE_URL": f"file://{host.state / 'collector-repo'}",
         **(extra_env or {}),
     }
     return subprocess.run(
@@ -691,3 +709,54 @@ def test_the_start_task_never_touches_the_hosts_own_tailnet(host: _Host) -> None
     result = _run(host=host, args=[_A])
     assert result.returncode == 0, result.stderr
     assert [c for c in _calls(host=host) if c.startswith("tailscale ")] == []
+
+
+def _vm_telemetry(*, host: _Host, name: str) -> Path:
+    # The stub models the VM's filesystem under state/vm.
+    return host.state / "vm" / "mnt" / "lima-hwdata" / "worker" / "telemetry" / name
+
+
+def test_the_pinned_collector_configuration_reaches_the_vm_verified_before_the_container_step(
+    host: _Host,
+) -> None:
+    _install_lima(host=host, version="2.2.1")
+    result = _run(host=host, args=[_A])
+    assert result.returncode == 0, result.stderr
+    assert _vm_telemetry(host=host, name="config.yaml").read_bytes() == _COLLECTOR_BYTES
+    shells = _shells(host=host)
+    moved = next(i for i, c in enumerate(shells) if c.endswith("/telemetry/config.yaml"))
+    assert moved < _converge_index(shells)
+
+
+def test_a_collector_configuration_not_matching_its_pin_never_converges_the_worker(
+    host: _Host,
+) -> None:
+    _install_lima(host=host, version="2.2.1")
+    repo = host.state / "collector-repo" / _COLLECTOR_COMMIT
+    (repo / _COLLECTOR_FILE).write_bytes(b"# tampered\n")
+    result = _run(host=host, args=[_A])
+    assert result.returncode != 0
+    assert "collector" in result.stderr
+    assert not _vm_telemetry(host=host, name="config.yaml").exists()
+    assert not (host.state / "converge-stdin").exists()
+
+
+def test_the_ingest_key_reaches_the_vm_only_on_stdin(host: _Host) -> None:
+    _install_lima(host=host, version="2.2.1")
+    result = _run(host=host, args=[_A], extra_env={"HONEYCOMB_INGEST_KEY_LIVESPEC": _INGEST_KEY})
+    assert result.returncode == 0, result.stderr
+    env = _vm_telemetry(host=host, name=".env").read_text(encoding="utf-8")
+    assert env == f"HONEYCOMB_INGEST_KEY_LIVESPEC={_INGEST_KEY}\n"
+    assert _INGEST_KEY not in host.log.read_text(encoding="utf-8")
+    assert _INGEST_KEY not in result.stdout + result.stderr
+
+
+def test_without_an_ingest_key_the_worker_still_converges_with_its_collector_off(
+    host: _Host,
+) -> None:
+    _install_lima(host=host, version="2.2.1")
+    result = _run(host=host, args=[_A])
+    assert result.returncode == 0, result.stderr
+    assert not _vm_telemetry(host=host, name=".env").exists()
+    assert "HONEYCOMB_INGEST_KEY_LIVESPEC" in result.stdout
+    assert (host.state / "converge-stdin").exists()

@@ -1,0 +1,8 @@
+# The homelab worker node's host collector configuration (plan
+# homelab-k8s-worker-nodes, DoD assertion 18): the otel-collector
+# repository's homelab-worker shape at a pinned commit, and the sha256 the
+# start task verifies the delivered copy against in the worker VM. Bump all
+# three together when the shape changes (thewoolleyman/otel-collector#21).
+commit=9ee521307a4618206e140ad03b1d0adba38551cf
+file=config.homelab-worker.yaml
+sha256=9e306071da92559fdabb408d028ec8b66a6c0daf270ed5f7d80d9383c9013170
