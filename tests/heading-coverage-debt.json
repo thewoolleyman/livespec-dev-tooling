@@ -93,13 +93,6 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "non-functional-requirements.md",
-    "heading": "## Homelab worker nodes",
-    "work_item": "livespec-dev-tooling-ko26ez",
-    "first_seen": "2026-11-04"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "non-functional-requirements.md",
     "heading": "## Host provisioning tree",
     "work_item": "livespec-dev-tooling-k5q54n",
     "first_seen": "2026-10-19"
@@ -201,13 +194,6 @@
     "heading": "## Scenario: a Honeycomb query spec whose result lacks an expected column fails its contract test",
     "work_item": "livespec-dev-tooling-k3dpo2",
     "first_seen": "2026-11-02"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a VM missing a required capability stops the start task before the worker starts",
-    "work_item": "livespec-dev-tooling-ko26ez",
-    "first_seen": "2026-11-04"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -436,13 +422,6 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario: a host declaring no home-LAN address is refused before the VM starts",
-    "work_item": "livespec-dev-tooling-ko26ez.2",
-    "first_seen": "2026-11-06"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
     "heading": "## Scenario: a host with no pressure file makes the emitter fail rather than report zero",
     "work_item": "livespec-dev-tooling-i7yxpt",
     "first_seen": "2026-11-02"
@@ -509,13 +488,6 @@
     "heading": "## Scenario: a merged runner-pool change reaches the live cluster through one committed apply",
     "work_item": "livespec-dev-tooling-un3zhi",
     "first_seen": "2026-11-03"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a missing bridged-network prerequisite stops the start task before the VM starts",
-    "work_item": "livespec-dev-tooling-ko26ez.2",
-    "first_seen": "2026-11-06"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -698,13 +670,6 @@
     "heading": "## Scenario: a seat's gate-runner full suite runs as a gate Job by default",
     "work_item": "livespec-dev-tooling-qgv3tb",
     "first_seen": "2026-11-01"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a second worker on the same host is refused",
-    "work_item": "livespec-dev-tooling-ko26ez",
-    "first_seen": "2026-11-04"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -1045,13 +1010,6 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario: rerunning the start task reuses Lima and keeps the VM",
-    "work_item": "livespec-dev-tooling-ko26ez",
-    "first_seen": "2026-11-04"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
     "heading": "## Scenario: runner pods select the committed runner scheduler profile and every other pod keeps the default profile",
     "work_item": "livespec-dev-tooling-mtvxde",
     "first_seen": "2026-11-04"
@@ -1129,30 +1087,9 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario: the start task leaves the host's own tailnet identity unchanged",
-    "work_item": "livespec-dev-tooling-ko26ez",
-    "first_seen": "2026-11-04"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: the start task refuses an undeclared host before any host change",
-    "work_item": "livespec-dev-tooling-ko26ez",
-    "first_seen": "2026-11-04"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
     "heading": "## Scenario: the whole-suite coverage run prints its thirty slowest test phases",
     "work_item": "livespec-dev-tooling-tt4w7h",
     "first_seen": "2026-11-01"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: the worker's node IP is its declared home-LAN address",
-    "work_item": "livespec-dev-tooling-ko26ez.2",
-    "first_seen": "2026-11-06"
   },
   {
     "spec_root": "SPECIFICATION",

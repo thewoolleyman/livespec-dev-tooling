@@ -26,6 +26,10 @@ import pytest
 
 __all__: list[str] = []
 
+# Integration tier: each test runs the real script under /bin/bash against stub executables
+# and mocked config, so the script's whole control flow is exercised.
+pytestmark = pytest.mark.integration
+
 _SCRIPT = (
     Path(__file__).resolve().parents[2] / "homelab-worker" / "vm" / "converge-worker-container.sh"
 )
