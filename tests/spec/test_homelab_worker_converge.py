@@ -57,6 +57,7 @@ _DESTINATIONS = (
     "/sys/kernel/security",
     "/etc/otel-collector",
     "/usr/local/lib/ci-runner-k3s/bin",
+    "/srv/factory-workspaces",
 )
 
 _STUB_DOCKER = """#!/bin/bash
@@ -631,7 +632,32 @@ def test_the_pool_binaries_are_bound_read_only_from_the_data_disk(vm: _Vm) -> No
 def test_a_running_worker_without_the_pool_binaries_bind_is_replaced(vm: _Vm) -> None:
     (vm.state / "container").write_text(f"{_IMAGE} true\n", encoding="utf-8")
     (vm.state / "mount").write_text(f"{vm.root}/enrollment\n", encoding="utf-8")
-    (vm.state / "destinations").write_text(_mounts(_DESTINATIONS[:-1]), encoding="utf-8")
+    (vm.state / "destinations").write_text(
+        _mounts(tuple(d for d in _DESTINATIONS if d != "/usr/local/lib/ci-runner-k3s/bin")),
+        encoding="utf-8",
+    )
+    result = _run(vm=vm)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert len(_calls(vm=vm, verb="rm")) == 1
+
+
+def test_the_factory_workspace_root_is_bound_from_the_data_disk(vm: _Vm) -> None:
+    # The factory sandbox backend keeps each sandbox's workspace under one node path; on the
+    # worker that path resolves inside the container, so it must be a data-disk bind.
+    result = _run(vm=vm)
+    assert result.returncode == 0, result.stdout + result.stderr
+    [run] = _calls(vm=vm, verb="run")
+    assert f"--volume {vm.root}/factory/workspaces:/srv/factory-workspaces " in run
+    assert (vm.root / "factory" / "workspaces").is_dir()
+
+
+def test_a_running_worker_without_the_factory_workspace_bind_is_replaced(vm: _Vm) -> None:
+    (vm.state / "container").write_text(f"{_IMAGE} true\n", encoding="utf-8")
+    (vm.state / "mount").write_text(f"{vm.root}/enrollment\n", encoding="utf-8")
+    (vm.state / "destinations").write_text(
+        _mounts(tuple(d for d in _DESTINATIONS if d != "/srv/factory-workspaces")),
+        encoding="utf-8",
+    )
     result = _run(vm=vm)
     assert result.returncode == 0, result.stdout + result.stderr
     assert len(_calls(vm=vm, verb="rm")) == 1
