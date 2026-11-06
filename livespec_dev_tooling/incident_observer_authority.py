@@ -14,7 +14,13 @@ from livespec_dev_tooling._incident_observer_types import ObserverArm, ObserverR
 __all__: list[str] = ["CurrentAuthorityReader"]
 
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-47ij37
-_READER_TIMEOUT_SECONDS = 10
+# The reader ceiling. One read-current pass over a fenced generation-2 chain
+# makes seven bd calls and measured 7.4 s at load average 12, 9.2 s at load 16
+# and a kill at 10.16 s at load 20 on the dev host (livespec-dev-tooling-ws2idp,
+# 2026-11-06), so 10 s refused a current, verified chain. The CI client's
+# ceiling in incident_ci_authority is longer than this plus the observer's own
+# overhead, so a job read outwaits the reader rather than racing it.
+_READER_TIMEOUT_SECONDS = 45
 
 
 @dataclass(frozen=True, kw_only=True)
