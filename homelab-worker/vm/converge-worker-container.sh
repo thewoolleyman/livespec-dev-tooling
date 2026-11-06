@@ -174,6 +174,10 @@ else
       waited=$((waited + poll))
     done
   fi
+  # The tailnet is the worker's identity, not its underlay: a saved
+  # RouteAll preference from an earlier enrollment survives `tailscale up`,
+  # so turn route acceptance off explicitly every run.
+  docker exec "$worker" tailscale set --accept-routes=false
   if [ -n "$lan_ip" ]; then
     node_ip="$lan_ip"
     say "worker $worker is a home-LAN node at $node_ip"

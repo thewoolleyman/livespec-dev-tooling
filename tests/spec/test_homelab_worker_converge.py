@@ -265,15 +265,21 @@ def test_the_fixture_stage_joins_a_docker_network_without_a_tailnet_login(vm: _V
     )
 
 
-def test_the_worker_never_enables_tailnet_route_acceptance(vm: _Vm) -> None:
+def test_the_worker_explicitly_refuses_tailnet_route_acceptance(vm: _Vm) -> None:
+    # A saved preference (RouteAll: true from an earlier enrollment) survives `tailscale up`
+    # without the flag, so converge turns route acceptance off explicitly on every run.
     (vm.state / "ip-addrs").write_text(
         f"2: lima0    inet {_LAN_IP}/24 brd 10.99.0.255 scope global lima0\n", encoding="utf-8"
     )
     for extra in ((), (f"host:{_LAN_IP}",)):
+        (vm.state / "ts-set.log").unlink(missing_ok=True)
         result = _run(vm=vm, extra=extra)
         assert result.returncode == 0, result.stdout + result.stderr
+        assert (vm.state / "ts-set.log").read_text(encoding="utf-8").splitlines() == [
+            "tailscale set --accept-routes=false"
+        ]
     calls = (vm.state / "calls.log").read_text(encoding="utf-8")
-    assert "accept-routes" not in calls
+    assert "--accept-routes=true" not in calls
 
 
 def test_lan_mode_runs_on_the_host_network_with_the_declared_address_as_node_ip(vm: _Vm) -> None:
