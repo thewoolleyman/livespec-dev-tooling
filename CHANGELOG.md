@@ -58,6 +58,28 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.182.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.181.0...v1.182.0) (2026-11-06)
+
+
+### Features
+
+* **homelab-worker:** converge runs the worker as a home-LAN node ([d13508a](https://github.com/thewoolleyman/livespec-dev-tooling/commit/d13508a7486349dcfa3f542dea80f45302f09acf))
+* **homelab-worker:** join-worker.sh enrolls a worker into any cluster ([043073d](https://github.com/thewoolleyman/livespec-dev-tooling/commit/043073dc395883e00301f09c523d68daaddbda01))
+* **homelab-worker:** prove-worker.sh proves a joined worker on any cluster ([665f34d](https://github.com/thewoolleyman/livespec-dev-tooling/commit/665f34d03972612fa6a729f17f534f7a46d5b993))
+* **homelab-worker:** the start task puts the worker VM on the home LAN ([d979869](https://github.com/thewoolleyman/livespec-dev-tooling/commit/d979869bfdad4d47ebfaf7669e1419c75bafbc15))
+
+
+### Bug Fixes
+
+* **ansible:** never claim an incident callback funnel the tailnet does not grant (livespec-dev-tooling-w7n3ad) ([060ba69](https://github.com/thewoolleyman/livespec-dev-tooling/commit/060ba691a1bb8dec9e652a611d04f4441551a828))
+* **homelab-worker:** Docker waits for the worker's data disk at boot ([1d1db8e](https://github.com/thewoolleyman/livespec-dev-tooling/commit/1d1db8efbc4a03207430e0d92aaddbf80d9c2a7e))
+
+
+### Refactoring
+
+* **homelab-worker:** join-fixture-worker.sh wraps join-worker.sh ([17d258d](https://github.com/thewoolleyman/livespec-dev-tooling/commit/17d258d6b1e92c6cdd428411800f840ee4f09604))
+* **homelab-worker:** prove-fixture-worker.sh wraps prove-worker.sh ([483dede](https://github.com/thewoolleyman/livespec-dev-tooling/commit/483dedea55f275ccfa3022ba722f089e950368d9))
+
 ## [1.181.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.180.0...v1.181.0) (2026-11-06)
 
 
