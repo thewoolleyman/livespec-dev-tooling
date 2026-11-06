@@ -10,7 +10,11 @@
 # systemd is PID 1 (the kind node pattern), so kubelet and containerd use the
 # fleet's systemd cgroup driver. Flannel, kube-proxy and kube-router run as
 # DaemonSets selected onto homelab workers, so the image carries only the node
-# agent, its runtime, CNI plugins, Tailscale and AppArmor userspace.
+# agent, its runtime, CNI plugins, Tailscale and AppArmor userspace, plus the
+# node's host collector (otelcol-contrib, the fleet's pinned release; DoD
+# assertion 18), which starts only once converge and the start task have
+# delivered its configuration, node values and ingest key under
+# /etc/otel-collector.
 #
 # Every downloaded asset is pinned by version AND per-architecture SHA-256 and
 # selected by TARGETARCH. Only arm64 checksums are declared so far; building
@@ -34,6 +38,8 @@ ARG CRICTL_VERSION=v1.36.0
 ARG CRICTL_SHA256_arm64=68328594ccf780a80ae2b092d9f6ce484eec7cf540c275242e8fd954bfd95332
 ARG TAILSCALE_VERSION=1.104.4
 ARG TAILSCALE_SHA256_arm64=a1c249ce6bdebef62e1ae3b997595555bce2ae4709bf95a718e9ca7a129dad7e
+ARG OTELCOL_VERSION=0.147.0
+ARG OTELCOL_SHA256_arm64=1ab4a5b12327466b7395582eb6ea0732810acb2b5e4ea9b464bd336527e85e38
 
 ENV container=docker
 STOPSIGNAL SIGRTMIN+3
@@ -63,7 +69,7 @@ EOF
 RUN chmod 0755 /usr/local/bin/pinned-sha256
 
 RUN export KUBELET_SHA256_arm64 CONTAINERD_SHA256_arm64 RUNC_SHA256_arm64 CNI_PLUGINS_SHA256_arm64 \
-      FLANNEL_CNI_SHA256_arm64 CRICTL_SHA256_arm64 TAILSCALE_SHA256_arm64 \
+      FLANNEL_CNI_SHA256_arm64 CRICTL_SHA256_arm64 TAILSCALE_SHA256_arm64 OTELCOL_SHA256_arm64 \
  && cd /tmp \
  && curl -fsSLo kubelet "https://dl.k8s.io/release/${KUBERNETES_VERSION}/bin/linux/${TARGETARCH}/kubelet" \
  && echo "$(pinned-sha256 KUBELET)  kubelet" | sha256sum -c - \
@@ -90,14 +96,18 @@ RUN export KUBELET_SHA256_arm64 CONTAINERD_SHA256_arm64 RUNC_SHA256_arm64 CNI_PL
  && tar -xzf tailscale.tgz \
  && install -m 0755 "tailscale_${TAILSCALE_VERSION}_${TARGETARCH}/tailscale" /usr/local/bin/tailscale \
  && install -m 0755 "tailscale_${TAILSCALE_VERSION}_${TARGETARCH}/tailscaled" /usr/local/sbin/tailscaled \
+ && curl -fsSLo otelcol.tgz "https://github.com/open-telemetry/opentelemetry-collector-releases/releases/download/v${OTELCOL_VERSION}/otelcol-contrib_${OTELCOL_VERSION}_linux_${TARGETARCH}.tar.gz" \
+ && echo "$(pinned-sha256 OTELCOL)  otelcol.tgz" | sha256sum -c - \
+ && tar -xzf otelcol.tgz otelcol-contrib \
+ && install -m 0755 otelcol-contrib /usr/local/bin/otelcol-contrib \
  && rm -rf /tmp/*
 
 COPY systemd/ /etc/systemd/system/
 COPY containerd-config.toml /etc/containerd/config.toml
 COPY crictl.yaml /etc/crictl.yaml
 
-RUN systemctl enable containerd.service tailscaled.service kubelet.service \
- && mkdir -p /var/lib/kubelet /var/lib/containerd /var/lib/tailscale /etc/homelab-worker
+RUN systemctl enable containerd.service tailscaled.service kubelet.service otel-collector.service \
+ && mkdir -p /var/lib/kubelet /var/lib/containerd /var/lib/tailscale /etc/homelab-worker /etc/otel-collector
 
 LABEL org.opencontainers.image.source="https://github.com/thewoolleyman/livespec-dev-tooling" \
       org.opencontainers.image.description="livespec homelab worker node: upstream kubelet and containerd, no K3s agent"

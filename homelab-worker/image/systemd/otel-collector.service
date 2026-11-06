@@ -1,0 +1,23 @@
+# The node's host collector (plan homelab-k8s-worker-nodes, DoD assertion 18):
+# host metrics and the keyless pod-span receiver, into the livespec Honeycomb
+# environment with host.name = the node name. Its configuration is the
+# otel-collector repository's config.homelab-worker.yaml, delivered by the
+# start task at a pinned commit; node.env (WORKER_NODE_NAME,
+# OTLP_PODS_ENDPOINT) is written by converge; .env carries the ingest key,
+# delivered on stdin. It starts only once all three are there.
+[Unit]
+Description=OpenTelemetry Collector (homelab worker host metrics and pod spans)
+After=network-online.target kubelet.service
+ConditionPathExists=/etc/otel-collector/config.yaml
+ConditionPathExists=/etc/otel-collector/node.env
+ConditionPathExists=/etc/otel-collector/.env
+
+[Service]
+EnvironmentFile=/etc/otel-collector/node.env
+EnvironmentFile=/etc/otel-collector/.env
+ExecStart=/usr/local/bin/otelcol-contrib --config=/etc/otel-collector/config.yaml
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

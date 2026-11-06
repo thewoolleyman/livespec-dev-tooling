@@ -10,7 +10,9 @@ fleet's Kubernetes minor version." These read `homelab-worker/image/` the way a 
 - the kubelet's minor version equals kube-proxy's and the fixture K3s's (a kubelet may not
   be newer than its API server) and nothing in the image is a K3s binary;
 - the kubelet registers with the admission-hold taint, which only a separate operator action
-  lifts.
+  lifts;
+- the node's host collector (DoD assertion 18) is enabled but starts only once its
+  configuration, its node values and its ingest key have been delivered.
 """
 
 from __future__ import annotations
@@ -22,7 +24,16 @@ __all__: list[str] = []
 
 _IMAGE = Path(__file__).resolve().parents[2] / "homelab-worker" / "image"
 _DOCKERFILE = _IMAGE / "Dockerfile"
-_ASSETS = ("KUBELET", "CONTAINERD", "RUNC", "CNI_PLUGINS", "FLANNEL_CNI", "CRICTL", "TAILSCALE")
+_ASSETS = (
+    "KUBELET",
+    "CONTAINERD",
+    "RUNC",
+    "CNI_PLUGINS",
+    "FLANNEL_CNI",
+    "CRICTL",
+    "TAILSCALE",
+    "OTELCOL",
+)
 
 
 def _args() -> dict[str, str]:
@@ -112,3 +123,18 @@ def test_the_worker_enrolls_on_the_tailnet_untagged_with_no_auth_key() -> None:
     for forbidden in ("advertise-tags", "auth-key", "authkey", "TS_TAGS"):
         assert forbidden not in unit, forbidden
     assert " up " not in unit
+
+
+def test_the_host_collector_starts_only_once_its_configuration_and_key_are_delivered() -> None:
+    # The worker's telemetry route (research 009, assertion 18): otelcol-contrib as a unit beside
+    # the kubelet, reading the delivered config, the converge-written node values and the key.
+    unit = (_IMAGE / "systemd" / "otel-collector.service").read_text(encoding="utf-8")
+    for path in ("config.yaml", "node.env", ".env"):
+        assert f"ConditionPathExists=/etc/otel-collector/{path}" in unit, path
+    assert "EnvironmentFile=/etc/otel-collector/node.env" in unit
+    assert "EnvironmentFile=/etc/otel-collector/.env" in unit
+    assert "--config=/etc/otel-collector/config.yaml" in unit
+    text = _DOCKERFILE.read_text(encoding="utf-8")
+    [enable] = re.findall(r"systemctl enable ([^\\\n]+)", text)
+    assert "otel-collector.service" in enable.split()
+    assert "/etc/otel-collector" in text
