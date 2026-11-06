@@ -2380,5 +2380,29 @@
     "test": "TODO",
     "reason": "A real test at the integration tier or above is owed for this scenario: the held editor-stack role converged with its enable variable at the held value, asserting its units are installed, disabled and inactive, a second converge changes nothing, and a hand-enabled unit reads as drift. livespec-dev-tooling-fmbnyd owns it.",
     "work_item": "livespec-dev-tooling-fmbnyd"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "contracts.md",
+    "heading": "## Rule-26 mutation kill matrix",
+    "test": "TODO",
+    "reason": "A real test at the integration tier or above is owed for this heading: the kill-matrix engine run over a fixture Python package, asserting per-mutant killer lists, surviving mutants, redundancy candidates and the zero-mutant refusal, plus the keep-out guard refusing an aggregate that reaches mutation-kill-matrix. livespec-dev-tooling-wou75w owns it.",
+    "work_item": "livespec-dev-tooling-wou75w"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a rule-26 kill-matrix run reports survivors and redundancy candidates",
+    "test": "TODO",
+    "reason": "A real test at the integration tier or above is owed for this scenario: `just mutation-kill-matrix` over a three-test fixture package, asserting the killers of M1 and M2, M3 as a survivor, and B but not A as a redundancy candidate. livespec-dev-tooling-wou75w owns it.",
+    "work_item": "livespec-dev-tooling-wou75w"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: wiring the kill-matrix recipe into the check aggregate is refused",
+    "test": "TODO",
+    "reason": "A real test at the integration tier or above is owed for this scenario: the keep-out guard run over a fixture justfile whose check aggregate reaches mutation-kill-matrix, asserting a finding naming the recipe and the aggregate. livespec-dev-tooling-wou75w owns it.",
+    "work_item": "livespec-dev-tooling-wou75w"
   }
 ]

@@ -2975,3 +2975,23 @@ Then the check MUST exit 4 with exactly one `non_canonical_body` finding, whose 
 And the last lines of the `just check` output MUST name that `pre-push` path with both SHA-256 values
 
 And with both hooks byte-identical to `CANONICAL_HOOK_BODY` the check MUST exit 0 with no finding
+
+## Scenario: a rule-26 kill-matrix run reports survivors and redundancy candidates
+
+Given a Python package whose suite has three tests, where tests A and B both kill mutant M1, only test A kills mutant M2, and no test kills mutant M3
+
+When `just mutation-kill-matrix` runs over that package
+
+Then the report MUST list A and B as the killers of M1 and A as the only killer of M2
+
+And the report MUST list M3 as a surviving mutant
+
+And the report MUST list B as a redundancy candidate and MUST NOT list A as one
+
+## Scenario: wiring the kill-matrix recipe into the check aggregate is refused
+
+Given a repository whose `just check` aggregate does not reach `mutation-kill-matrix`
+
+When a change adds `mutation-kill-matrix` to the `just check` aggregate
+
+Then the keep-out guard check MUST fail with a finding naming `mutation-kill-matrix` and the `just check` aggregate
