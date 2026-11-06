@@ -22,13 +22,15 @@
 #      underlay (spec v143). While it needs a login, the login URL is printed for
 #      the operator to approve, and the run waits TAILNET_LOGIN_TIMEOUT
 #      seconds (default 900) for it; the identity persists in tailscale/.
-#   4. Docker waits for the disk holding <state-root> at boot. Without that,
-#      Docker's restart policy restarts the worker before the data disk is
-#      mounted, binds empty directories from the root disk, and the worker
-#      loses its tailnet identity and enrollment (measured on macbook-m4-max,
-#      2026-11-06). Lima mounts the disk from cloud-init, outside systemd, so
-#      there is no mount unit to order against: a docker.service drop-in's
-#      ExecStartPre waits, bounded, until the disk's mountpoint is mounted.
+#   4. At boot the worker starts only after the disk holding <state-root> is
+#      mounted. Started earlier it binds empty root-disk directories and loses
+#      its tailnet identity and enrollment (measured on macbook-m4-max,
+#      2026-11-06). Lima mounts the disk in cloud-final.service, after
+#      multi-user.target, so gating docker.service on it deadlocks boot.
+#      Instead homelab-worker-container.service, ordered after cloud-final and
+#      docker and pulled in by cloud-init.target, waits for the mountpoint and
+#      starts the worker, and the container restarts only on failure, so
+#      Docker never races to restart it at boot.
 #   5. br_netfilter is loaded and listed in modules-load.d: flannel and
 #      kube-proxy need the bridge netfilter sysctls, and nothing else in the
 #      VM loads the module at boot (measured on macbook-m4-max, 2026-11-06).
@@ -104,15 +106,37 @@ disk_mount="$(findmnt -n -o TARGET -T "$probe_path" | head -n 1)"
 case "$disk_mount" in
   "" | /) die "state root $root is not on the worker's data disk (it resolves to the root filesystem); the worker container was not changed" ;;
 esac
-dropin="$unit_dir/docker.service.d/10-homelab-worker-state.conf"
+# The earlier docker.service drop-in deadlocked boot; it must not remain.
+stale_dropin="$unit_dir/docker.service.d/10-homelab-worker-state.conf"
+reload=0
+if [ -e "$stale_dropin" ]; then
+  rm -f "$stale_dropin"
+  reload=1
+fi
+worker_unit="$unit_dir/homelab-worker-container.service"
 # $$ escapes systemd's own variable expansion in the unit file.
-ordering="[Service]
-ExecStartPre=/bin/sh -c 'i=0; until mountpoint -q $disk_mount; do i=\$\$((i + 1)); [ \$\$i -ge 300 ] && exit 1; sleep 1; done'"
-if [ "$(cat "$dropin" 2>/dev/null || true)" != "$ordering" ]; then
-  mkdir -p "${dropin%/*}"
-  printf '%s\n' "$ordering" >"$dropin"
+unit_text="[Unit]
+Description=homelab worker $worker, started once its data disk is mounted
+After=cloud-final.service docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStartPre=/bin/sh -c 'i=0; until mountpoint -q $disk_mount; do i=\$\$((i + 1)); [ \$\$i -ge 600 ] && exit 1; sleep 1; done'
+ExecStart=/usr/bin/docker start $worker
+
+[Install]
+WantedBy=cloud-init.target"
+if [ "$(cat "$worker_unit" 2>/dev/null || true)" != "$unit_text" ]; then
+  mkdir -p "$unit_dir"
+  printf '%s\n' "$unit_text" >"$worker_unit"
+  reload=1
+fi
+if [ "$reload" = 1 ]; then
   systemctl daemon-reload
-  say "docker.service now waits at boot for the disk holding $root"
+  systemctl enable homelab-worker-container.service
+  say "the worker now starts at boot only after the disk holding $root is mounted"
 fi
 
 mkdir -p "$root/containerd" "$root/kubelet" "$root/tailscale" "$root/enrollment"
@@ -131,7 +155,7 @@ run_container() {
     --volume "$root/enrollment:/etc/homelab-worker" \
     --env container=docker \
     --stop-signal SIGRTMIN+3 \
-    --restart unless-stopped \
+    --restart on-failure \
     --label "homelab-worker.livespec.dev/worker=$worker"
   if [ -n "$network" ]; then
     set -- "$@" --network "$network"
@@ -146,6 +170,7 @@ if current="$(docker inspect -f '{{.Config.Image}} {{.State.Running}}' "$worker"
   mounted="$(docker inspect -f '{{range .Mounts}}{{if eq .Destination "/etc/homelab-worker"}}{{.Source}}{{end}}{{end}}' "$worker")"
   [ "$mounted" = "$root/enrollment" ] ||
     die "container $worker keeps its enrollment at '$mounted', not $root/enrollment; remove that worker first (k3s-fixture.sh down removes the fixture's)"
+  docker update --restart on-failure "$worker" >/dev/null
   current_image="${current% *}"
   running="${current##* }"
   if [ "$current_image" != "$image" ]; then
