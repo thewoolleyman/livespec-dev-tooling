@@ -21,6 +21,10 @@ delegated gate's outcome-event endpoint at a closed port for the whole suite —
 see that fixture for why a default would export this suite's canned gate runs
 into the fleet's real observability surface.
 
+Also hosts `_signature_verification_is_not_bounded_by_host_load`, which removes
+the incident CI signature verifier's production wall-clock bound for the whole
+suite — see that fixture for the master run a loaded runner turned red.
+
 Also hosts `z_rendering_git`, the GIT-VERSION double described on that fixture:
 a shim that makes any test observe the `%cI` rendering git 2.51 introduced,
 whatever git the host happens to carry.
@@ -57,6 +61,26 @@ def _reset_structlog_global_config() -> Iterator[None]:
 # produces. The same closed-port technique `test_otel_step_timer` uses to drive
 # the real poster without a receiver.
 _CLOSED_RECEIVER = "http://127.0.0.1:1"
+
+
+@pytest.fixture(autouse=True)
+def _signature_verification_is_not_bounded_by_host_load(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Remove the incident CI signature verifier's production wall-clock bound.
+
+    `incident_ci_jws.verify_ci_signature` runs the system crypto as a subprocess
+    bounded by `VERIFY_TIMEOUT_SECONDS` and fails closed on expiry. Fixtures such
+    as `trusted` and `correlated` run that real crypto. Under the production
+    bound a loaded runner's slow fork is reported as a wrong signature: master
+    run 42134512261 failed one fixture setup that took 6.19 seconds while 7707
+    other tests, many through the same fixture, passed
+    (livespec-dev-tooling-jfp2w5).
+
+    `None` means no bound, so no wall clock decides a test's outcome however
+    slow the host is. The expiry branch needs no clock either: tests raise
+    `TimeoutExpired` from a replaced `subprocess.run`. A test that wants a
+    particular bound sets its own after this fixture runs.
+    """
+    monkeypatch.setattr("livespec_dev_tooling.incident_ci_jws.VERIFY_TIMEOUT_SECONDS", None)
 
 
 @pytest.fixture(autouse=True)

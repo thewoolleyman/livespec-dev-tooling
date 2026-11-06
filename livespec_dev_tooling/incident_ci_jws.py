@@ -14,7 +14,14 @@ from livespec_dev_tooling.incident_ci_identity_policy import (
 
 _DER_SHORT_LIMIT = 128
 
-__all__: list[str] = ["verify_ci_signature"]
+__all__: list[str] = ["VERIFY_TIMEOUT_SECONDS", "verify_ci_signature"]
+
+# The verifier's wall-clock bound. It protects a serving observer from a hung
+# crypto process and fails closed when it expires; it is not evidence about the
+# signature. It is a module value, read at call time, so a test suite can remove
+# it (None: no bound) instead of reporting a loaded host as a wrong signature;
+# see tests/conftest.py.
+VERIFY_TIMEOUT_SECONDS: float | None = 5.0
 
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-rqhqnb
 
@@ -70,7 +77,7 @@ def verify_ci_signature(
                 env={"PATH": "/usr/bin:/bin", "HOME": name, "OPENSSL_CONF": "/dev/null"},
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
-                timeout=5,
+                timeout=VERIFY_TIMEOUT_SECONDS,
                 check=False,
             )
             return done.returncode == 0 and identity_policy_intact(policy=policy)
