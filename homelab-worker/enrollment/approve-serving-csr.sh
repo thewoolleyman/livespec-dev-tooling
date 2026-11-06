@@ -46,8 +46,14 @@ esac
 worker="$host-homelab-worker"
 user="system:node:$worker"
 
-node_ips="$(kubectl get node "$worker" -o jsonpath='{range .status.addresses[?(@.type=="InternalIP")]}{.address}{"\n"}{end}')" ||
-  die "Node $worker is not registered; a serving CSR is approved only for a registered Node"
+lookup_err="$(mktemp)"
+trap 'rm -f "$lookup_err"' EXIT
+if ! node_ips="$(kubectl get node "$worker" -o jsonpath='{range .status.addresses[?(@.type=="InternalIP")]}{.address}{"\n"}{end}' 2>"$lookup_err")"; then
+  if grep -q 'NotFound' "$lookup_err"; then
+    die "Node $worker is not registered; a serving CSR is approved only for a registered Node"
+  fi
+  die "could not read Node $worker: $(tr '\n' ' ' <"$lookup_err")"
+fi
 [ -n "$node_ips" ] || die "Node $worker reports no InternalIP"
 
 # in_list <item> <newline-separated list>
