@@ -47,7 +47,7 @@ Each definition may name a `dataset`; absent, it defaults to `metrics`.
 The `k8s-node-*.json` triggers realize `SPECIFICATION/non-functional-requirements.md`
 §"Runner-pool node telemetry": MemoryPressure and memory working set over 90% of capacity
 (per `k8s.node.name`) — CPU idle share is board-only and carries no value trigger,
-because the pool is packed to capacity by design (spec v131), and one dead-man per cluster node, ungrouped and
+because the pool is packed to capacity by design (spec v144), and one dead-man per cluster node, ungrouped and
 filtered to that node. A node's dead-man is committed only once that node
 reports, so that arming it cannot page for a node that was never wired; a new
 pool node gets its own `k8s-node-silent-<node>.json` (plan
