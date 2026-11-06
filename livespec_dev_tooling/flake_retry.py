@@ -40,6 +40,7 @@ RETRY_DELAY_SECONDS = 60
 _UNSAFE_NAMES = {"pyproject.toml", "uv.lock", "justfile", "conftest.py"}
 _RESULTS: dict[str, RetryResult] = {}
 _WITHHELD: list[str] = []
+_WORKER_WITHHELD_KEY = "livespec_flake_retry_withheld"
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -237,6 +238,18 @@ def announce_retries(
             _ = terminalreporter.write_line(f"::warning::FLAKE-RETRIED {result.nodeid}")
 
 
+def _workeroutput(*, holder: object) -> dict[str, object] | None:
+    """Return xdist's optional worker-output mapping without importing xdist."""
+    candidate = cast(object, vars(holder).get("workeroutput"))
+    return cast(dict[str, object], candidate) if isinstance(candidate, dict) else None
+
+
+def _record_withheld(*, withheld: str | None) -> None:
+    """Keep one withholding reason for the controller's terminal summary."""
+    if withheld is not None and withheld not in _WITHHELD:
+        _WITHHELD.append(withheld)
+
+
 # PYTEST CALLS ITS HOOKS POSITIONALLY. pluggy reads a hook's argument names off
 # its signature and passes them by position, so a keyword-only hook receives
 # nothing, and a `*args` hook receives nothing either (that shape INTERNALERRORed
@@ -252,7 +265,27 @@ class _CollectionHook:
             items=items,
             can_retry=config.pluginmanager.hasplugin("rerunfailures"),
         )
-        _WITHHELD[:] = [] if withheld is None else [withheld]
+        _WITHHELD[:] = []
+        _record_withheld(withheld=withheld)
+
+
+class _SessionFinishHook:
+    def __call__(self, session: pytest.Session, exitstatus: int) -> None:
+        """Send a worker's withholding reason to xdist's controller."""
+        del exitstatus
+        workeroutput = _workeroutput(holder=session.config)
+        if workeroutput is not None and _WITHHELD:
+            workeroutput[_WORKER_WITHHELD_KEY] = _WITHHELD[0]
+
+
+class _NodeDownHook:
+    @pytest.hookimpl(optionalhook=True)
+    def __call__(self, node: object, error: object | None) -> None:
+        """Collect the worker withholding reason before the controller summarizes."""
+        del error
+        workeroutput = _workeroutput(holder=node)
+        withheld = None if workeroutput is None else workeroutput.get(_WORKER_WITHHELD_KEY)
+        _record_withheld(withheld=withheld if isinstance(withheld, str) else None)
 
 
 class _ReportHook:
@@ -273,5 +306,7 @@ class _SummaryHook:
 
 
 pytest_collection_modifyitems = _CollectionHook().__call__
+pytest_sessionfinish = _SessionFinishHook().__call__
+pytest_testnodedown = _NodeDownHook().__call__
 pytest_runtest_logreport = _ReportHook().__call__
 pytest_terminal_summary = _SummaryHook().__call__
