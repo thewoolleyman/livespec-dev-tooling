@@ -11,7 +11,10 @@ enforcement in files, and assert:
 - cluster DNS is checked at the address the cluster's kube-dns Service reports;
 - the proof pods tolerate the admission hold, are pinned to the worker and the peer, and use an
   image pinned by digest, and the proof namespace is deleted;
-- an undeclared host, a missing peer or an unknown argument is refused before any cluster call.
+- an undeclared host, a missing peer or an unknown argument is refused before any cluster call;
+- `--expect-admission-hold` proves the scenario "a newly joined worker carries the admission
+  hold": the Node carries the hold taint, and a pod that tolerates everything else but the hold
+  and is placed through the scheduler stays unschedulable.
 
 Every value here is the stub's own; none is a production value.
 """
@@ -28,6 +31,10 @@ import pytest
 
 __all__: list[str] = []
 
+# Integration tier: each test runs the real script under /bin/bash against a stub kubectl and
+# mocked config, so the script's whole control flow is exercised.
+pytestmark = pytest.mark.integration
+
 _SCRIPT = Path(__file__).resolve().parents[2] / "homelab-worker" / "prove-worker.sh"
 _HOST = "alpha"
 _WORKER = f"{_HOST}-homelab-worker"
@@ -42,8 +49,14 @@ case "$1" in
     body="$(cat)"
     printf '%s\\n---\\n' "$body" >> "$s/applied.yaml"
     case "$body" in *"kind: NetworkPolicy"*) [ "$STUB_ENFORCED" = 1 ] && touch "$s/policy" ;; esac ;;
-  wait) : ;;
+  wait)
+    case "$*" in *Unschedulable*) [ "$STUB_HOLD" = 0 ] && {{ echo 'timed out waiting for the condition' >&2; exit 1; }} ;; esac ;;
   get)
+    if [ "$2" = node ]; then
+      [ "$STUB_HOLD" = 0 ] || echo 'homelab-worker.livespec.dev/admission=hold:NoSchedule'
+      echo 'homelab-worker.livespec.dev/class=worker:NoSchedule'
+      exit 0
+    fi
     if [ "$2" = --raw ]; then
       if [ "$STUB_TUNNEL_ONLY" = 1 ]; then echo 'proxy error 502' >&2; exit 1; fi
       echo '{{"node":{{"nodeName":"x"}}}}'; exit 0
@@ -118,6 +131,7 @@ def _prove(
     enforced: str = "1",
     dns: str = "1",
     mtu: str = "1",
+    hold: str = "1",
 ) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         ["/bin/bash", str(_SCRIPT), *args],
@@ -132,6 +146,7 @@ def _prove(
             "STUB_ENFORCED": enforced,
             "STUB_DNS": dns,
             "STUB_MTU": mtu,
+            "STUB_HOLD": hold,
             "POLICY_SETTLE_SECONDS": "0",
         },
         check=False,
@@ -242,3 +257,41 @@ def test_bad_arguments_are_refused_before_any_cluster_call(
     assert result.returncode != 0
     assert message in result.stderr
     assert (env.state / "calls.log").read_text(encoding="utf-8") == ""
+
+
+_HOLD_CHECKS = ("admission-hold-taint", "untolerated-pod-unscheduled")
+
+
+def test_a_newly_joined_worker_carries_the_admission_hold(env: _Env) -> None:
+    args = [_HOST, "--peer-node", _PEER, "--expect-admission-hold"]
+    result = _prove(env=env, args=args, tunnel_only="0")
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert _proofs(result) == dict.fromkeys(_ALL_CHECKS + _HOLD_CHECKS, "PASS")
+
+
+def test_a_worker_without_the_hold_fails_both_hold_checks(env: _Env) -> None:
+    args = [_HOST, "--peer-node", _PEER, "--expect-admission-hold"]
+    result = _prove(env=env, args=args, tunnel_only="0", hold="0")
+    assert result.returncode != 0
+    proofs = _proofs(result)
+    assert [proofs[c] for c in _HOLD_CHECKS] == ["FAIL", "FAIL"]
+
+
+def test_the_hold_probe_goes_through_the_scheduler_tolerating_all_but_the_hold(env: _Env) -> None:
+    # nodeName would bypass the scheduler, and with it every NoSchedule taint, so the probe selects
+    # the worker by its hostname label; it tolerates the permanent class taint, so only the hold
+    # can keep it off the worker.
+    args = [_HOST, "--peer-node", _PEER, "--expect-admission-hold"]
+    _prove(env=env, args=args, tunnel_only="0")
+    applied = (env.state / "applied.yaml").read_text(encoding="utf-8")
+    [probe] = [d for d in applied.split("\n---\n") if "name: untolerated" in d]
+    assert "nodeName:" not in probe
+    assert f"kubernetes.io/hostname: {_WORKER}" in probe
+    assert "key: homelab-worker.livespec.dev/class" in probe
+    assert "homelab-worker.livespec.dev/admission" not in probe
+
+
+def test_without_the_flag_no_hold_check_runs(env: _Env) -> None:
+    result = _prove(env=env, args=[_HOST, "--peer-node", _PEER], tunnel_only="0", hold="0")
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert not set(_HOLD_CHECKS) & set(_proofs(result))
