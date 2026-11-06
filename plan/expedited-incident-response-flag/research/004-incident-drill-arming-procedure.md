@@ -453,11 +453,15 @@ in 1.2 s with `no beads database found` and `/arm` answered 403 `canonical pre-m
 integer, `bd` dials port 0. Step 1 gains a precondition: run the observer's exact reader argv as the service account
 once (`sudo -u livespec-incident` with the unit's environment) and require exit 0 before the first `/arm`.
 
-**R1 was real: the 10 s reader ceiling is shorter than a generation-2 pass under load.** After the pointer fix the same
-reader pass took 9.2 s at load 16, and `/arm` was refused at exactly 10.16 s, the `subprocess.run(timeout=10)` kill in
-`incident_observer_authority.py`. Seven `bd` calls cost 1.2–1.8 s each on this host at load 16–33, not the 1.1 s
-measured at load 12. The ceilings are being raised (reader 45 s, CI client 60 s) under the same item; until the
-observer serves that release, an arm on this host is a coin flip and every `/current` the CI job makes is another.
+**R1 was real: the 10 s reader ceiling is below the reader's own per-call floor, at any load.** After the pointer fix
+the same reader pass took 9.2 s, and `/arm` was refused at exactly 10.16 s, the `subprocess.run(timeout=10)` kill in
+`incident_observer_authority.py`. The cause is NOT host load: the coordinator measured a single wrapper+`bd show` at
+1.31 s, 1.36 s and 1.60 s with 70–76 % CPU idle and no memory or IO pressure (17:44Z), against the same 1.2–1.8 s seen
+at load 16–33; `bd --version` alone costs 0.25 s. Each `bd` call costs about 1.3 s whatever the load, so the seven
+calls of a generation-2 pass come to about 9 s always, and the ceiling was sized below that floor. The ceilings are
+being raised (reader 45 s, CI client 60 s) under the same item. The durable fix is a follow-up outside this plan's
+critical path: the reader should read the chain in one or two `bd` calls (one query, or `bd show` of several ids)
+instead of seven, so arm and `/current` latency sit well under the ceiling.
 
 **Auto-merge re-arms on every PR event.** `.github/workflows/auto-enable-merge.yml` enables rebase auto-merge on
 `opened`, `reopened`, `ready_for_review`, `synchronize` and `unlabeled` for any non-draft PR by the maintainer that does
