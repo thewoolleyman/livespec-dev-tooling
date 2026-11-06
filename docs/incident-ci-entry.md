@@ -17,8 +17,10 @@ measured fast checks, lint and format, are classified fast in this increment.
 The workflow must install and invoke an independently approved release before it
 executes candidate code. Packaged-data integrity is the installed release's
 integrity; the inventory is not release attestation or protection against
-candidate-modified controller code. This increment does not install that
-workflow entrance.
+candidate-modified controller code. The `incident-ci` job of
+`.github/workflows/ci.yml` is that installed workflow entrance: it installs the
+released `livespec-dev-tooling` package and invokes it over the candidate
+checkout.
 
 A current authenticated PR read determines labels, PR number, repository, base
 and exact head. An incident PR contains one body block:
@@ -31,8 +33,9 @@ and exact head. An incident PR contains one body block:
 
 The root keys are exact. The existing canonical observer-arm codec validates the
 arm; its id must equal SHA256 over `json.dumps(arm, sort_keys=True)` with the
-arm's authority receipt encoded as hex. This consistency packet is not authority.
-No producer for this new packet is claimed by this increment.
+arm's authority receipt encoded as hex. This consistency packet is not authority;
+it is what the `incident-ci` job reads from the pull-request body before it asks
+the observer. No command in this repository produces the packet yet.
 
 The trusted workflow supplies `LIVESPEC_INCIDENT_OBSERVER_URL` and the read-only
 `LIVESPEC_INCIDENT_OBSERVER_QUERY_TOKEN`. Hosted CI receives neither a tenant
