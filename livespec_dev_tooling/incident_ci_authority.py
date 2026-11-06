@@ -109,6 +109,8 @@ class CiAuthorityBoundary:
                 detail=_CONNECT_ADDRESS_VARIABLE
                 + " is not an IPv4 or IPv6 address literal; no connection was attempted"
             )
+        where = " while reading /" + route + " from " + (connect_to or host) + ":" + str(port)
+        where += " as " + host
         try:
             # System TLS verification; no redirect handler can forward the token.
             with closing(
@@ -137,31 +139,32 @@ class CiAuthorityBoundary:
                     },
                 )
                 response = connection.getresponse()
-                raw = response.read(_MAX_REPLY + 1)
-                if response.status != _ACCEPTED or len(raw) > _MAX_REPLY:
-                    return False
-                value = strict_json(text=raw.decode())
-                reply = cast("dict[str, Any]", value) if isinstance(value, dict) else {}
-                return (
-                    set(reply) == {"schema", "status", "query"}
-                    and type(reply.get("schema")) is int
-                    and reply.get("schema") == 1
-                    and reply.get("status") == route
-                    and json.dumps(reply.get("query"), sort_keys=True)
-                    == json.dumps(query, sort_keys=True)
+                return _accepts(
+                    status=response.status,
+                    raw=response.read(_MAX_REPLY + 1),
+                    route=route,
+                    query=query,
+                    where=where,
                 )
         except (OSError, ValueError, TypeError, RecursionError, http.client.HTTPException) as error:
-            return _refuse(
-                detail=type(error).__name__
-                + " while reading /"
-                + route
-                + " from "
-                + (connect_to or host)
-                + ":"
-                + str(port)
-                + " as "
-                + host
-            )
+            return _refuse(detail=type(error).__name__ + where)
+
+
+def _accepts(*, status: int, raw: bytes, route: str, query: dict[str, Any], where: str) -> bool:
+    """Accept only an exact bounded 202 reply; a non-202 status is named, never the body."""
+    if status != _ACCEPTED:
+        return _refuse(detail="HTTP " + str(status) + where)
+    if len(raw) > _MAX_REPLY:
+        return False
+    value = strict_json(text=raw.decode())
+    reply = cast("dict[str, Any]", value) if isinstance(value, dict) else {}
+    return (
+        set(reply) == {"schema", "status", "query"}
+        and type(reply.get("schema")) is int
+        and reply.get("schema") == 1
+        and reply.get("status") == route
+        and json.dumps(reply.get("query"), sort_keys=True) == json.dumps(query, sort_keys=True)
+    )
 
 
 def _refuse(*, detail: str) -> bool:
