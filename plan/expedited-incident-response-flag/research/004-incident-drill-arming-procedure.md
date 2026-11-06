@@ -473,3 +473,11 @@ BEFORE step 8 (a `labeled` event does not trigger the workflow); the incident en
 Also measured: the two `/current` 403s the journal showed at 17:10Z and 17:12Z with no arm came from master-push CI runs
 (the omission-aware jobs consult the observer on every run), not from a probe. A journal line's source address is always
 `127.0.0.1` behind the tailscale front, so it never identifies the caller; the CI run timestamps do.
+
+**Q3 answered: close and reopen MOVES `.base.sha` to the base branch's current tip.** The drill's first reopen at
+18:10Z re-resolved #3624's base from `1585993b` to the master tip `00c3841a`, while the arm bound `1585993b`; the
+entrance reads base, head and body from the event payload (`incident_ci_event.py:33-34,68`), so that run could only
+refuse. Recovery: transition the chain to the next generation with the moved base (same PR, same head), re-arm with
+`expected_arm_id` set to the standing arm, replace the body block, and reopen ONCE while nothing merges into the base
+branch (the coordinator held every auto-merge on the repository for the window). So step 8 must run with the base
+branch frozen, or step 5 must bind the base only after a first reopen has settled it.
