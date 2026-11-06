@@ -16,6 +16,13 @@ __all__: list[str] = []
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
+def test_runner_exposes_the_mutmut_kill_matrix_operation() -> None:
+    """The portable reporter provides the executable Python adapter."""
+    module = importlib.import_module("livespec_dev_tooling.mutation_kill_matrix")
+
+    assert callable(module.run_kill_matrix)
+
+
 def test_runner_executes_every_test_against_every_generated_mutant(
     *, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
