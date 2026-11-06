@@ -2199,9 +2199,8 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: an opted-in push from an unenrolled macOS host is refused instead of gating locally",
-    "test": "TODO",
-    "reason": "Spec-first: a real test at the integration tier or above (a consumer-style check-runner or host-captured run on a macOS developer host) is owed for this scenario; livespec-dev-tooling-ko26ez owns it.",
-    "work_item": "livespec-dev-tooling-ko26ez"
+    "test": "tests.consumer.test_delegated_pre_push_gate_scenarios.test_an_opted_in_push_from_an_unenrolled_macos_host_is_refused_instead_of_gating_locally",
+    "reason": "Consumer (integration) tier: on a simulated Darwin host whose user cannot read the gates kubeconfig, the real gate_remote_delegate enabled refuses (78) naming the missing gates-client enrollment and the kubeconfig, and the real check-pre-push.sh run against stub uv/just then runs neither the local just check nor a delegated run, so no gate Job is submitted."
   },
   {
     "spec_root": "SPECIFICATION",

@@ -122,9 +122,19 @@ fi
 # that reaches no verdict REFUSES the push rather than falling through to the
 # aggregate below, because "we could not gate this" must never quietly become
 # "we gated it some other way".
-if uv run python -m livespec_dev_tooling.gate_remote_delegate enabled; then
+#
+# One answer is neither: 78 is an opted-in push from a non-Linux host (macOS)
+# whose user cannot read the gates kubeconfig. The Linux-only suite members give
+# no verdict there, so the probe has already printed the missing gates-client
+# enrollment and the push is REFUSED — it neither delegates nor falls through.
+switch_status=0
+uv run python -m livespec_dev_tooling.gate_remote_delegate enabled || switch_status=$?
+if [ "$switch_status" -eq 0 ]; then
     echo ":: pre-push: delegated gate is enabled for this repo; gating on the cluster"
     exec uv run python -m livespec_dev_tooling.gate_remote_delegate run
+fi
+if [ "$switch_status" -eq 78 ]; then
+    exit 78
 fi
 
 # THE FLEET APP-TOKEN GUARD (work-item livespec-dev-tooling-4k7262). Git connects

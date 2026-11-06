@@ -80,6 +80,7 @@ from pathlib import Path
 
 from livespec_dev_tooling import _gate_remote_request_inputs as request_inputs
 from livespec_dev_tooling._gate_authority_skip import authority_skip_resolution
+from livespec_dev_tooling._gate_enabled_answer import GATED_LOCALLY, enabled_answer
 from livespec_dev_tooling._gate_host_authority import (
     host_authority_decision,
     run_host_authority_members,
@@ -94,13 +95,10 @@ from livespec_dev_tooling._gate_remote_assembly import (
 from livespec_dev_tooling._gate_remote_verdict_fields import verdict_job_fields
 from livespec_dev_tooling.config import ConfigParseError, load_delegated_gate
 from livespec_dev_tooling.gate_credential import (
-    gates_kubeconfig_path,
     gates_kubeconfig_readable,
     with_wrapper_notices,
 )
 from livespec_dev_tooling.gate_group_repair import (
-    GATE_RUNS_UNDER_GROUP,
-    group_repair_group,
     group_repair_status,
 )
 from livespec_dev_tooling.gate_outcome_telemetry import (
@@ -213,10 +211,6 @@ _GATE_OUTCOMES = {GATE_PASSED: GATE_OUTCOME_PASSED, GATE_FAILED: GATE_OUTCOME_FA
 # repository that quietly gates somewhere else is the one shape an operator
 # cannot tell apart afterwards: a locally-gated push and a cluster-gated one look
 # identical once they have completed.
-GATED_LOCALLY = (
-    "delegated gate is switched on for this repository, but this host cannot read the "
-    "gates kubeconfig, so this push is gating locally on the full just check aggregate"
-)
 
 
 def delegated_gate_enabled(*, repo_root: Path) -> bool:
@@ -490,16 +484,9 @@ def main() -> int:
     repo_root = Path.cwd()
 
     if parsed.command == "enabled":
-        if delegated_gate_selected(repo_root=repo_root):
-            return 0
-        opted_in = delegated_gate_enabled(repo_root=repo_root)
-        group = group_repair_group(opted_in=opted_in)
-        if group is not None:
-            log.warning(GATE_RUNS_UNDER_GROUP, group=group)
-            return 0
-        if opted_in:
-            log.warning(GATED_LOCALLY, kubeconfig=str(gates_kubeconfig_path()))
-        return 1
+        selected = delegated_gate_selected(repo_root=repo_root)
+        opted_in = selected or delegated_gate_enabled(repo_root=repo_root)
+        return enabled_answer(selected=selected, opted_in=opted_in, log=log)
 
     decided = group_repair_status(opted_in=delegated_gate_enabled(repo_root=repo_root))
     if decided is not None:
