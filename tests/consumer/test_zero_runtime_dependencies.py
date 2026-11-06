@@ -1,8 +1,9 @@
 """Consumer-tier: the dependencies invariant of `SPECIFICATION/constraints.md`.
 
 The library vendors `returns` and `structlog`, but vendored `returns` imports
-`typing_extensions` at runtime. A released wheel must therefore declare that
-dependency so a clean `uv` git-source installation supplies it. Tool versions
+`typing_extensions` at runtime, and its `primitives.asserts` imports `anyio`
+when asked to run an awaitable container. A released wheel must therefore
+declare both so a clean `uv` git-source installation supplies them. Tool versions
 remain pinned by each consuming repo's own `[dependency-groups].dev` table.
 The consumer-facing contract is read from these surfaces:
 
@@ -14,8 +15,8 @@ The consumer-facing contract is read from these surfaces:
   plugin, or a dynamic-metadata hook would appear here and nowhere in the
   `[project]` table. Asserting only the config would leave that gap open.
 - **The vendored mechanism.** `returns` and `structlog` resolve from
-  `livespec_dev_tooling/_vendor/`; `typing_extensions` resolves from the
-  package's declared runtime dependency set. This makes the absolute imports
+  `livespec_dev_tooling/_vendor/`; `typing_extensions` and `anyio` resolve from
+  the package's declared runtime dependency set. This makes the absolute imports
   in the vendored `returns` tree work for consumers that installed no
   unrelated packages.
 - **Where tool versions ARE pinned.** The three tools the constraint names —
@@ -64,7 +65,7 @@ _DEV_GROUP = re.compile(r"^dev = \[\n(?P<body>.*?)^\]", re.MULTILINE | re.DOTALL
 # the current shelled-out set, each of which must carry an exact pin in the dev
 # group rather than a runtime dependency.
 _PINNED_TOOLS = ("ruff", "pyright", "pytest")
-_RUNTIME_DEPENDENCY = "typing-extensions>=4.0"
+_RUNTIME_DEPENDENCIES = ["anyio>=3.0", "typing-extensions>=4.0"]
 
 
 def _project_table_body() -> str:
@@ -82,24 +83,24 @@ def _dev_pin_entries() -> list[str]:
 
 
 def test_vendored_returns_runtime_dependency_is_declared() -> None:
-    """Clean wheel consumers receive `typing_extensions` with vendored `returns`."""
+    """Clean wheel consumers receive `typing_extensions` and `anyio` with vendored `returns`."""
     declared = _DEPENDENCIES_KEY.search(_project_table_body())
     assert declared is not None, (
-        "`[project]` must declare typing-extensions because the vendored returns "
-        "runtime imports it in a clean consumer environment"
+        "`[project]` must declare typing-extensions and anyio because the vendored "
+        "returns runtime imports them in a clean consumer environment"
     )
     declared_dependencies = [
         line.strip().strip(",").strip('"') for line in declared.group("body").splitlines()
     ]
-    assert declared_dependencies == [_RUNTIME_DEPENDENCY], (
-        "the only declared runtime dependency must be the typing-extensions "
-        f"required by vendored returns; declared={declared_dependencies}"
+    assert declared_dependencies == _RUNTIME_DEPENDENCIES, (
+        "the only declared runtime dependencies must be the third-party imports "
+        f"of vendored returns; declared={declared_dependencies}"
     )
 
     requires = importlib.metadata.requires(_DISTRIBUTION) or []
-    assert requires == [_RUNTIME_DEPENDENCY], (
+    assert sorted(requires) == _RUNTIME_DEPENDENCIES, (
         f"the INSTALLED distribution's Requires-Dist is what a consumer's resolver "
-        f"reads, and it must declare typing-extensions; declared={sorted(requires)}"
+        f"reads, and it must declare typing-extensions and anyio; declared={sorted(requires)}"
     )
 
     resolved = {"returns": str(returns.__file__), "structlog": str(structlog.__file__)}

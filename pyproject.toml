@@ -32,10 +32,14 @@ authors = [
 license = { text = "MIT" }
 readme = "README.md"
 
-# `returns` is vendored, but its runtime modules import `typing_extensions`
-# directly. Declare that import here so every clean wheel installation receives
-# the dependency; the other third-party imports remain satisfied by `_vendor/`.
+# `returns` is vendored, but two of its runtime modules import third-party
+# packages that are not vendored: `typing_extensions` (io, functions, future,
+# ...) and `anyio` (primitives/asserts, imported function-locally). Declare both
+# here so every clean wheel installation receives them. The only other external
+# imports sit in `returns/contrib/` (hypothesis, pytest, mypy plugins), which no
+# shipped check loads.
 dependencies = [
+    "anyio>=3.0",
     "typing-extensions>=4.0",
 ]
 

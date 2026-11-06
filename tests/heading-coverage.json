@@ -109,7 +109,7 @@
     "spec_file": "constraints.md",
     "heading": "## Dependencies",
     "test": "tests.consumer.test_zero_runtime_dependencies.test_vendored_returns_runtime_dependency_is_declared",
-    "reason": "Consumer-tier: `[project]` and the installed distribution's Requires-Dist both declare `typing-extensions`, which vendored `returns` imports at runtime; `returns` and `structlog` resolve from `livespec_dev_tooling/_vendor/`; and ruff, pyright and pytest carry exact `==` pins under `[dependency-groups].dev` (plan fleet-heading-coverage-convergence P2 burn-down, livespec-dev-tooling-hhp4og)."
+    "reason": "Consumer-tier: `[project]` and the installed distribution's Requires-Dist both declare `typing-extensions` and `anyio`, which vendored `returns` imports at runtime; `returns` and `structlog` resolve from `livespec_dev_tooling/_vendor/`; and ruff, pyright and pytest carry exact `==` pins under `[dependency-groups].dev` (plan fleet-heading-coverage-convergence P2 burn-down, livespec-dev-tooling-hhp4og)."
   },
   {
     "spec_root": "SPECIFICATION",
