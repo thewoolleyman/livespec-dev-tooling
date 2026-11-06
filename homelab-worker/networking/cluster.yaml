@@ -10,7 +10,9 @@
 # and KUBERNETES_SERVICE_PORT from this ConfigMap, the kubeadm pattern. The
 # host must be a SAN of the API server's serving certificate.
 #
-# These are the production values. The isolated fixture replaces this object
+# These are the production values for a home-LAN worker (spec v143, research
+# 008 §3): the API server at poweredge's LAN address, which its serving
+# certificate carries as a SAN, and flannel's VXLAN on the VM's bridged lima0. The isolated fixture replaces this object
 # with its own server address and interface before applying the agents.
 apiVersion: v1
 kind: ConfigMap
@@ -20,6 +22,6 @@ metadata:
   labels:
     homelab-worker.livespec.dev/networking: "true"
 data:
-  api-server-host: poweredge-xubuntu.perch-rudd.ts.net
+  api-server-host: 192.168.1.200
   api-server-port: "6443"
-  flannel-iface: tailscale0
+  flannel-iface: lima0
