@@ -48,3 +48,18 @@ def test_report_attributes_every_mutant_to_its_killing_tests(*, tmp_path: Path) 
             "location": "package/module.py:20",
         },
     ]
+
+
+def test_report_lists_every_mutant_no_test_kills_as_a_survivor() -> None:
+    """A mutant with no killer is retained in the portable survivor list."""
+    module = importlib.import_module("livespec_dev_tooling.mutation_kill_matrix")
+    report = module.build_report(
+        engine_name="mutmut",
+        engine_version="3.2.3",
+        source_revision="abc123",
+        mutants=[module.Mutant(identifier="M3", location="package/module.py:30")],
+        tests=["tests/test_rule.py::test_a"],
+        killers_by_mutant={},
+    )
+
+    assert report.to_dict().get("surviving_mutants") == ["M3"]
