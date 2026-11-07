@@ -72,7 +72,7 @@ case "$vm" in
 esac
 
 ensure_k3d() {
-  if command -v k3d >/dev/null 2>&1 && k3d version | grep -q "k3d version $k3d_version\$"; then
+  if command -v k3d >/dev/null 2>&1 && k3d version | grep "k3d version $k3d_version\$" >/dev/null; then
     return 0
   fi
   [ "$(uname -m)" = "aarch64" ] || die "no pinned k3d checksum for architecture $(uname -m)"
@@ -101,7 +101,7 @@ EOF
 }
 
 cluster_exists() {
-  k3d cluster list --no-headers 2>/dev/null | awk '{print $1}' | grep -qx "$cluster"
+  k3d cluster list --no-headers 2>/dev/null | awk '{print $1}' | grep -x "$cluster" >/dev/null
 }
 
 wait_ready() {
@@ -144,7 +144,7 @@ case "$action" in
     # enrollment mount is under the fixture worker root, never production's.
     worker="${vm#lima-}"
     if docker inspect -f '{{range .Mounts}}{{if eq .Destination "/etc/homelab-worker"}}{{.Source}}{{end}}{{end}}' "$worker" 2>/dev/null |
-      grep -qx "$worker_root/enrollment"; then
+      grep -x "$worker_root/enrollment" >/dev/null; then
       docker rm -f "$worker" >/dev/null
       say "removed fixture worker container $worker"
     fi

@@ -165,7 +165,7 @@ done
 
 # ref_value <key>: one key=value line of the collector pin.
 ref_value() {
-  sed -n "s/^$1=//p" "$collector_ref" | head -n 1
+  sed -n "s/^$1=//p" "$collector_ref" | sed -n 1p
 }
 collector_commit="$(ref_value commit)"
 collector_file="$(ref_value file)"
@@ -205,12 +205,12 @@ limactl sudoers --check >/dev/null 2>&1 ||
 [ -z "$missing" ] || die "the bridged network's host prerequisites are missing; the VM was not created or started:$missing"
 
 instances="$(limactl list --format '{{.Name}}' 2>/dev/null || true)"
-other="$(printf '%s\n' "$instances" | grep -- '-homelab-worker$' | grep -vx -- "$worker" | head -n 1 || true)"
+other="$(printf '%s\n' "$instances" | grep -- '-homelab-worker$' | grep -vx -- "$worker" | sed -n 1p || true)"
 if [ -n "$other" ]; then
   die "this host is already bound to worker $other; refusing to create a second worker $worker"
 fi
 
-if printf '%s\n' "$instances" | grep -qx -- "$worker"; then
+if grep -qx -- "$worker" <<<"$instances"; then
   read -r status cpus memory disk <<EOF_LIST
 $(limactl list --format '{{.Status}} {{.CPUs}} {{.Memory}} {{.Disk}}' "$worker")
 EOF_LIST
@@ -219,7 +219,7 @@ EOF_LIST
     die "VM $worker has cpus=$cpus but homelab-worker/hosts/$host.env declares WORKER_VM_CPUS=$WORKER_VM_CPUS; refusing to rebuild the VM — change it with 'limactl edit $worker' or revert the declaration"
   [ "$memory" = "$((WORKER_VM_MEMORY_GIB * gib))" ] ||
     die "VM $worker has memory=$memory bytes but homelab-worker/hosts/$host.env declares WORKER_VM_MEMORY_GIB=$WORKER_VM_MEMORY_GIB; refusing to rebuild the VM — change it with 'limactl edit $worker' or revert the declaration"
-  limactl list --json "$worker" | grep -q '"lima":"bridged"' ||
+  limactl list --json "$worker" | grep '"lima":"bridged"' >/dev/null ||
     die "VM $worker has no Lima bridged network (networks: [{lima: bridged}]); refusing to rebuild the VM — add it with 'limactl edit $worker' as a documented host change"
   [ "$disk" = "$((WORKER_VM_DISK_GIB * gib))" ] ||
     die "VM $worker has disk=$disk bytes but homelab-worker/hosts/$host.env declares WORKER_VM_DISK_GIB=$WORKER_VM_DISK_GIB; refusing to rebuild the VM — revert the declaration"
@@ -230,7 +230,7 @@ EOF_LIST
     limactl start --tty=false "$worker"
   fi
 else
-  if limactl disk list --json 2>/dev/null | grep -q "\"name\":\"$data_disk\""; then
+  if limactl disk list --json 2>/dev/null | grep "\"name\":\"$data_disk\"" >/dev/null; then
     say "reusing data disk $data_disk"
   else
     say "creating data disk $data_disk (${WORKER_DATA_DISK_GIB} GiB)"
@@ -317,7 +317,7 @@ else
   say "no HONEYCOMB_INGEST_KEY_LIVESPEC in the environment; the worker's collector stays off (run this task under with-livespec-env.sh to deliver it)"
 fi
 
-image="$(grep -v '^#' "$here/image/ref" | head -n 1)"
+image="$(grep -v '^#' "$here/image/ref" | sed -n 1p)"
 say "converging worker container $worker in VM $worker"
 limactl shell --workdir / "$worker" sudo bash -s -- "$worker" "$host" "$image" "$worker_root" "host:$lan_ip" <"$converge"
 

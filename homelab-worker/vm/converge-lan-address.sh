@@ -53,7 +53,7 @@ if ! cmp -s "$want" "$plan"; then
 fi
 
 waited=0
-until ip -4 -o addr show dev "$iface" | grep -qF " $cidr "; do
+until ip -4 -o addr show dev "$iface" | grep -F " $cidr " >/dev/null; do
   [ "$waited" -lt "$wait_seconds" ] ||
     die "$iface does not carry $cidr ${wait_seconds}s after netplan apply"
   sleep "$poll"

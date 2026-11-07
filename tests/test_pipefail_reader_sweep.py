@@ -7,7 +7,6 @@ import subprocess
 from pathlib import Path
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
-_SHELL_TREES = ("ansible/", "ci-runner/", "dev-tooling/", "scripts/")
 _EARLY_READER = re.compile(
     r"""\|\s*(?:
         grep\b(?:\s+-[^\s'\"]*)*?\s+(?:-[A-Za-z]*q[A-Za-z]*\b|--quiet\b|-m\s*1\b|-m1\b)
@@ -19,23 +18,32 @@ _EARLY_READER = re.compile(
 
 
 def _tracked_shell_paths() -> tuple[Path, ...]:
+    """Every tracked shell script, wherever it lives.
+
+    A directory allowlist let homelab-worker/ escape the sweep, and its
+    approve-serving-csr.sh then reddened master with the very race this guards.
+    """
     completed = subprocess.run(
-        ["git", "ls-files", "ansible", "ci-runner", "dev-tooling", "scripts"],
+        ["git", "ls-files"],
         cwd=_REPO_ROOT,
         check=True,
         capture_output=True,
         text=True,
     )
-    paths: list[Path] = []
-    for raw_path in completed.stdout.splitlines():
-        path = _REPO_ROOT / raw_path
-        if (
-            raw_path.startswith(_SHELL_TREES)
-            and path.is_file()
-            and (path.suffix == ".sh" or path.read_text(encoding="utf-8").startswith("#!"))
-        ):
-            paths.append(path)
-    return tuple(paths)
+    return tuple(
+        path
+        for path in (_REPO_ROOT / raw_path for raw_path in completed.stdout.splitlines())
+        if path.is_file() and not path.is_symlink() and _is_shell_script(path=path)
+    )
+
+
+def _is_shell_script(*, path: Path) -> bool:
+    """A `.sh` file, or a text file whose first line is a shell shebang."""
+    if path.suffix == ".sh":
+        return True
+    with path.open("rb") as handle:
+        first = handle.readline(256)
+    return first.startswith(b"#!") and b"sh" in first
 
 
 def _run_reader_form(*, form: str, matched: bool, large: bool) -> int:

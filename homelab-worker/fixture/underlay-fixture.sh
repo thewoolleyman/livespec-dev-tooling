@@ -57,7 +57,7 @@ case "$vm" in
 esac
 
 for node in $nodes; do
-  docker inspect -f '{{.State.Running}}' "$node" 2>/dev/null | grep -qx true ||
+  docker inspect -f '{{.State.Running}}' "$node" 2>/dev/null | grep -x true >/dev/null ||
     die "fixture node $node is not running; run k3s-fixture.sh up first"
 done
 
@@ -68,11 +68,11 @@ ts() {
 # field <node> <JSON key>: the first string value of that key in the node's
 # `tailscale status --json`, or "".
 field() {
-  ts "$1" status --json 2>/dev/null | sed -n "s/^ *\"$2\": *\"\\([^\"]*\\)\".*/\\1/p" | head -n 1
+  ts "$1" status --json 2>/dev/null | sed -n "s/^ *\"$2\": *\"\\([^\"]*\\)\".*/\\1/p" | sed -n 1p
 }
 
 route_approved() {
-  ts "$1" status --json 2>/dev/null | tr -d ' \n' | grep -q "\"PrimaryRoutes\":\\[\"$2\""
+  ts "$1" status --json 2>/dev/null | tr -d ' \n' | grep "\"PrimaryRoutes\":\\[\"$2\"" >/dev/null
 }
 
 if [ "$action" = "down" ]; then
