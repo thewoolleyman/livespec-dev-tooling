@@ -1,0 +1,371 @@
+# Plan Proof of Done exercise: capture and independent replay of the 14 assertions
+
+Research note for epic livespec-dev-tooling-bqnzcm. Written 2026-11-07 about 01:00Z to 02:00Z, read-only. No ledger,
+forge, host or service was written. This is the procedure; nothing in it has been run.
+
+Marking: **VERIFIED** means read in released code, the ledger or the forge (the source is given). **INFERRED** means
+derived from verified facts and not exercised.
+
+Sources: the epic description (14 bullets, no `### Human-attested` sub-heading, so all 14 are `host_captured`); the
+plan operation prose at orchestrator build 812c6bb59d02 (v0.298.0), Step 5; that build's `_plan_record_post.py`,
+`_plan_proof_leg.py`, `_plan_release_repository.py`, `_dispatcher_host_record_payload.py`; notes 001, 004 (with
+section 7) and 005 (sections 9 and 10); the epic's comments, including the last carrier-map event (2026-11-05T21:29:23Z) and
+the scope events of 21:31:58Z and 23:56:37Z; livespec-dev-tooling at v1.185.2 (f0fc3025) and v1.184.2;
+livespec-orchestrator-beads-fabro at v0.295.1 and v0.298.0; `gh run view` for runs 42296591999 and 42316488005.
+
+---
+
+## 0. Summary
+
+1. **No current evidence can go into the archive-grade record as it stands.** The archive gate grades ONE standing
+   `verified` replay. It must cover all 14 assertions, postdate the latest `captured` record and the last carrier-map
+   event, and name a release tag the release repository carries (section 1). Last night's evidence ran on entrance
+   v1.185.1, orchestrator v0.296.1/v0.297.0 and reader v0.295.1. It also belongs to an item that can take no second
+   genesis (ws2idp). It is a rehearsal and a guide to the expected observables, not reusable proof. One fragment is
+   already valid on v1.185.2: master run 42316488005 (section 3, A6).
+2. **Eight of the fourteen assertions need a live expedited merge to master:** A1, A6 (in its strong form), A7, A8,
+   A9, A10, A11 and A12. A14 is read off the same live incident. A2 to A5 and A13 are observed along that incident's
+   path. All 14 therefore come from ONE live incident on ONE new item.
+3. **Five pieces of released code have no operator-reachable entrance today** (section 2). These are blockers.
+   Without them the live sequence cannot produce A3, A7, A8, A9, A10 or A11, however carefully it is run. The
+   largest is A7: no live recovery principal is provisioned, and the observer's job universe names only the
+   aggregate `ci-green`, so a revert could fire only after the whole master run ends. That contradicts "first failing
+   required master job".
+4. The minimal live sequence is **three expedited attempts on one incident item** (section 4):
+   - attempt 1 carries a planted deferred-spec defect, fails a required master leaf, and is reverted by the observer
+     (A7, A8);
+   - attempt 2 is corrected from the completed run's full failure set and goes green on master;
+   - a draft probe PR then shows a related regression, which reopens the incident and reverts attempt 2 (A11);
+   - attempt 3 is corrected and goes green;
+   - one normal factory repayment PR removes the marker and repairs a planted DoD-only defect inside that PR (A9,
+     A10);
+   - closure attempts are refused until the repayment's normal master CI is green (A12), and restarts are injected
+     at four points.
+5. The estimate is **9 to 14 h** after the prerequisites, of which the live sequence is 5.5 to 9.75 h. The prerequisites take
+   **4 to 8 h** of parallel hand lanes plus maintainer provisioning time that cannot be estimated (section 6).
+
+---
+
+## 1. What the archive gate will grade (VERIFIED, orchestrator v0.298.0)
+
+These constraints shape the whole procedure:
+
+- **One standing replay covers everything.** `_plan_proof_leg._standing_replay` takes the LATEST `verified` or
+  `not_reproduced` record. It must be `verified` and must postdate the latest `captured` record. `_covered` then asks
+  that one record whether each non-attested assertion reproduced. Consequences:
+  - per-assertion or per-phase replays defeat each other, the same trap the accept valve set on bd-ib-4eeefv
+    (note 005 §9.4.2);
+  - the final capture and the final replay must each carry all 14 assertions;
+  - partial captures published early are harmless but useless, because the last capture supersedes them.
+- **The record postdates the last carrier-map event.** That is 2026-11-05T21:29:23Z today. Section 2 adds carriers,
+  so a new carrier-map event follows. The capture must come after it, and so must the replay.
+- **Release rule.** The release repository is named by the first word of the record's first installed build
+  identifier. Its first `release_tag` must be a tag that repository carries on the forge
+  (`_plan_release_repository.py`, `_release_rejection`). Name `livespec-dev-tooling vX.Y.Z` first, with
+  `release_tag` set to the dev-tooling release that every dev-tooling part ran: the observer package, the CI
+  entrance (which installs "latest"), the local hooks and the role. List the orchestrator release second, for the
+  reader and the dispatcher; the gate does not check the second entry.
+- **Independence.** `post-plan-record` computes the publishing identity. It refuses a `verified` post whose identity
+  equals that of the capture it replays. The archive gate rejects such a record again however it was posted. A
+  replayer launched from the capturing shell inherits `CLAUDE_CODE_SESSION_ID` and is refused
+  (`.ai/independent-host-replay-identity.md`). Launch it from a different seat. The leg-2 completeness reviewer may
+  be that replayer.
+- **Payload shape.** The payload is `{"build": {"release_tag", "installed_build", "commit"}, "assertions": [{"text":
+  <exact DoD bullet>, "steps": [...], "proof": "...", "reproduced": true}]}`. `text` must equal a DoD bullet byte for
+  byte, or the post is refused as undeclared (`_dispatcher_host_record_payload.read_evidence`). A capture's
+  `reproduced` field is dropped. Only the replay's `reproduced` field counts.
+
+**Replay strategy.** The incident's revert, merges and factory run happen once and cannot be re-run without a second
+incident. The replay is therefore an independent re-execution of every re-executable step, plus an independent re-read
+of the immutable record the one-time events left. Re-executable steps:
+
+- `gh run rerun` of the retained expedited and probe PR runs on their unchanged heads, as fleet-flaky-tests did for
+  w7n3ad;
+- `read-current` and `read-history` on the incident chain;
+- authenticated `/current` and `/admitted` reads while an arm stands;
+- `git` verification that the revert tree equals the exact inverse of the landed patch;
+- re-running focused tests and touched-file coverage at the recorded heads.
+
+The immutable record is the forge job and commit timestamps, the observer action receipts, the webhook delivery log and
+the ledger comments. State this strategy in the capture's steps so the replayer grades re-observation, not a second
+incident. Its weakness: a strict replayer may grade a one-time event as not reproducible. The alternative is a second
+full incident driven by the replayer, which roughly doubles sections 4 and 6. That is not recommended.
+
+---
+
+## 2. Reachability audit: blockers before any live step
+
+Each row is code that shipped but that no released surface calls, or capability the plan has not provisioned. VERIFIED
+by grep over livespec-dev-tooling v1.185.2 (`livespec_dev_tooling/`, `scripts/`, `.github/`, `ansible/`) and
+orchestrator v0.298.0 (`.claude-plugin/scripts/`), excluding tests.
+
+| # | Gap | Assertions blocked | Evidence | Recommendation |
+|---|---|---|---|---|
+| P0-1 | **No live recovery principal.** The manifest's principal is `incident_recovery_journal_service.py`. It "reserves and journals effects; it grants no forge capability". On a registered master leaf failure, `handle_job_callback` records a `pending` action and calls `recover`. No revert reaches master. Master enforces admins, requires `ci-green` and has no rulesets (measured 2026-11-04), so nothing can merge an inverse without checks. | A7, A8, A11 | `ansible/roles/incident_observer/README.md` ("A live recovery principal with branch-protection authority is a separate provisioning the plan still owes"); `docs/incident-inverse.md:74-80`; `docs/incident-recovery-journal.md:9-14`; epic 11-04 12:47Z | File a dev-tooling carrier: a principal process that implements the six-operation protocol (`landed`, `authorize`, `head`, `lookup`, `publish`, `conflict`) against the forge under a dedicated GitHub App. The maintainer then provisions that App, its key in 1Password, and a master ruleset whose bypass list names only that App ([GO-1]). The charter's chosen design is "a dedicated recovery-controller identity" (note 001, "Speed, risk and policy decisions"). No open child carries this today. |
+| P0-2 | **The observer's job universe is the aggregate only.** The manifest names `required_jobs: ["ci-green"]`. `ci-green` `needs:` every job with `if: always()`, so it fails only after the whole run. `_matches_leaf` acts only on a job named in that list, which means the revert fires at the end of the run, not at the first failing leaf. | A7 (as worded), A8 | `ansible/roles/incident_observer/defaults/main.yml:24-25`; `.github/workflows/ci.yml:996-1014`; `incident_observer.py:245-253` | Set `incident_observer_required_jobs` to every leaf job and matrix-leg name that `ci-green` needs, spelled as the `workflow_job` event names them. Release, then re-apply the role ([GO-2]). Read the names from a real master run's job list (run 42316488005 lists `check-lint`, `check-format`, `check-types`, `check-python-batch`, `check-metadata-batch`, `check-per-file-coverage`, ...). |
+| P0-3 | **No repayment, regression or correction entrance.** `enter_repayment`, `advance_repayment`, `reopen_for_regression`, `record_deferred_finding` and the correction planner (`_incident_recovery_correction`) are library functions. No CLI verb, dispatcher path or drive action calls them. `incident_authority.py` exposes only `commit-transition`, `record-local-gates`, `read-local-gates`, `publish-genesis`, `file-incident`, `read-current` and `read-history`. Only `scrub_incident_flags` is wired, in `_dispatcher_run_checks.py:243`. | A8, A9, A10, A11 | orchestrator v0.298.0 `commands/incident_authority.py:65-81`; `docs/incident-authority.md` §"Normal repayment" ("models and validates the state only") | File an orchestrator carrier that adds the `incident_authority.py` actions `enter-repayment`, `advance-repayment`, `reopen-regression`, `record-deferred-finding` and `correct-attempt`, each a thin adapter over the released function. A driver script calling the functions directly (the note-004 helper precedent) is faster, but it is not an operator surface. A replayer can fairly grade "a successful master run CAUSES a new factory PR" as not reproduced on it. Decided: the carrier. The shape of A9's proof is then: `enter-repayment` refuses with `incident-repayment-master-ci-outstanding` while the master run is incomplete, and succeeds after it is green. That makes the master result the causal gate. |
+| P0-4 | **No focused-evidence recorder.** `incident_focused_evidence` (the tests, touched-file coverage and `ManualReproduction` record of xluwqj) has no caller. The hook path records local gate receipts only (`incident_hook_entry.py:73`, `record-local-gates`). | A3 | grep: no importer outside the module and its `_incident_focused_*` helpers | File a dev-tooling carrier for a `python -m livespec_dev_tooling.incident_focused_evidence` entrance, or a `just incident-evidence` recipe. It runs the selected tests and touched-file coverage, takes the manual reproduction outcome and its note, and publishes the record to the incident item before merge. |
+| P0-5 | **No failure-collection entrance outside the observer.** `incident_run_collector` (kobmka) has no caller. The observer's `/ci/jobs/collect` and `/ci/jobs/inspect` routes exist (`incident_observer_service.py:40-41`), and their payload has not been read for this note. | A8 | grep | Before the run, read `incident_ci_job_collection.py` and decide whether `/ci/jobs/collect` on the original run id is the collection surface. If it is, no carrier is needed; if not, fold a collector entrance into P0-4's carrier. INFERRED. |
+| P0-6 | **No route from a PR-surface regression to the principal.** The observer reverts only on a callback for the registered master run (`_matches_leaf` requires `run_id == registration.run_id`). After `reopen-regression` puts the item in phase `reverting`, nothing tells the principal to revert attempt 2. | A11 | `incident_observer.py:89-166, 245-253` | Two options. (a) Add a control route `POST /recover` that takes a reopened-chain receipt and calls the same `recover`. (b) The operator runs the `EXPEDITED_INCIDENT_RESPONSE_REVERT` local path (all gates deferred, `docs/incident-local-gates.md`) and the principal merges that inverse. Recommended: (a), inside P0-1's carrier, because it keeps "one trusted controller performs every revert". |
+
+Also needed, already in flight or cheap:
+
+- **P0-7, orchestrator rollout.** bd-ib-mnny4v merged, released, installed in this project (`ensure-plugins`), and the
+  gmktec dispatcher for dev-tooling rolled to that release and its loop restarted. A running loop keeps its build
+  until restarted (`.ai/factory-span-receiver.md`). Without mnny4v, the A12 premature-closure probes would succeed
+  and close the item. That is why [GO-11] waits for it.
+- **P0-8, observer roll.** The observer serves dev-tooling v1.184.2 (role default; commit 00c3841a) with reader v0.295.1.
+  Re-apply the role at the capture release with `incident_observer_reader_release` set to the orchestrator release
+  that carries k5teti and mnny4v. Two reasons:
+  1. One dev-tooling tag can then name every dev-tooling part.
+  2. Between v0.295.1 and v0.298.0 the reader's `_incident_authority_reader.py` changed 85 lines and the transition
+     module 33. A chain carrying a k5teti reopen carrier change may not validate under the old reader, and if it
+     does not, attempt 3's `/arm` is refused. INFERRED, not tested.
+- **P0-9, carrier-map event.** Record one scope event with `carriers:` that adds the P0-1, P0-3 and P0-4 children:
+  P0-1 under A7, A8 and A11; P0-3 under A8 to A11; P0-4 under A3. Every later record must postdate it.
+- **P0-10, release.** Cut one dev-tooling release after P0-1, P0-2 and P0-4 merge, and one orchestrator release after
+  P0-3 and mnny4v. Every step in section 4 runs against those two tags. Call them `DT` and `ORCH` below.
+
+**Correction to the brief: the generation floor is per incident.** The served observer v1.184.2 contains
+livespec-dev-tooling-ua2scz (93f69528). `_arm_change_refusal` compares generations only when the retained arm names
+the SAME incident item (`git show v1.184.2:livespec_dev_tooling/incident_observer_admission.py`, lines 224-236).
+VERIFIED in code; the role default says v1.184.2 is served, so re-read the manifest's `release` before arming. A new
+item therefore arms at generation 2 with `expected_arm_id` set to the retained (invalidated) gen-5 arm,
+`638a230285074729605d44f5608686868c7f2ba693d37b93b9f8cbe02913b8f2`. The floor of 5 binds only ws2idp, which cannot
+take a second genesis in any case. Two constraints still hold: one item, one genesis (note 004 §4), and one arm per
+repository, so no other incident may arm during the sequence.
+
+---
+
+## 3. Per assertion: observable, reuse, steps, dependencies
+
+The verdict "re-run" in column (b) means the evidence exercised an older build. It can still guide the run, but it
+cannot be cited in the record. The steps (c) refer to section 4.
+
+| # | (a) Observable on a real surface | (b) Tonight's evidence | (c) Steps | (d) Depends on |
+|---|---|---|---|---|
+| A1 | The new item carries a genesis comment. The expedited PR (label `expedited-incident-response` and an incident body block) is merged from a local worktree. No Fabro run exists for the item before repayment. Attempt 2 is committed and pushed while master's latest completed run is red: attempt 1's run failed and the revert run is in flight. The hook admits it in repair mode, where a normal commit would refuse on red master. | Re-run: #3624 never merged; drill entrance v1.185.1 | 3.1-3.6, 4.4, 5.2 | P0-1, P0-10 |
+| A2 | The hook output and the `record-local-gates` receipt on the item, for the commit and the push of each attempt: report `expedited-local-partial`; `check-lint` and `check-format` executed, each well under 60 s; every other target `deferred`. No gate-runner record of a `just check` aggregate, and no remote delegated job, in `tmp/gate-runs/` or the cluster for that window. | Re-run (no expedited local commit was part of the drill) | 3.3, 4.4, 6.4 | P0-10 |
+| A3 | Before each merge, a focused-evidence record on the item: the selected changed or related tests and their results, per-file coverage for touched product files only, and one manual reproduction with its outcome. | Re-run; no recorder exists (P0-4) | 3.4, 4.5, 6.5 | P0-4 |
+| A4 | Expedited PR run: `incident-ci` succeeds; `check-per-file-coverage`, `check-coverage` and the spec members (`check-heading-coverage`, `check-doctor`, `check-spec-*`, `check-no-todo-registry`) print `omitted-by-incident-policy`; `check-lint` and `check-format` and every non-omitted job run in full; the `ci-green` summary lists the omissions. | Re-run: run 42296591999 used entrance v1.185.1 | 3.7, 4.6, 6.6 | P0-10 |
+| A5 | `git show` of each attempt's landed commits contains `# EXPEDITED_INCIDENT_RESPONSE flag: <item>` next to a changed line. The hook's marker scope (`incident_hook_scope.py` with `incident_markers`) admitted it. | Re-run | 3.2, 4.4, 6.4 | none |
+| A6 | Master push run of each expedited merge commit: `incident-ci` logs `selected nothing (push event: the normal complete policy is the gate)`; every job runs; nothing is omitted, although the merged PR carried the label and block and the commit carries the marker. Variables and the ambient environment are unchanged. | Partial: master run 42316488005 (f0fc3025, entrance v1.185.2, 00:09:32Z to 00:21:58Z) shows the normal policy on v1.185.2, but on a merge with no marker, label or block. Re-run on the incident merges. | 3.9, 4.7, 6.8, 7.4 | P0-10 |
+| A7 | Attempt 1's master run: the first failing required leaf (`check-metadata-batch`, about 1.5 min into the run) has a `completed_at`. The observer journal shows the callback and the action. A revert commit by the principal identity lands on master: its tree equals master minus the exact landed patch, and its time is minutes after the leaf failure. No local gate run, factory run or PR CI precedes it. | Not exercised tonight (no merge, no principal) | 3.10-3.11 | P0-1, P0-2 |
+| A8 | Attempt 1's run is NOT cancelled. It reaches `completed` with all job conclusions, including legs that finished after the revert. The collected failure set lists every failed member, not only the first. Attempt 2 is a new attempt on the SAME item and chain. Its diff fixes every member in that set and keeps the marker. Its master run is green. | Not exercised | 3.12, 4.1-4.8 | P0-1, P0-3, P0-5 |
+| A9 | `enter-repayment` refuses `incident-repayment-master-ci-outstanding` before the green master run completes, and records `repayment-admission` after it. A normal factory run through the petri seat produces a NEW PR on the same item. Neither incident flag is present: there is no label or block, and the dispatch environment is scrubbed. The PR removes the marker. Its normal CI runs full per-file coverage and spec members over the cumulative original paths. | Not exercised | 7.1-7.7 | P0-3, P0-7 |
+| A10 | The repayment PR carries the fix and a test for the planted DoD-only defect. `record-deferred-finding` recorded `deferred-finding:<run>` debt and it shows repaid. No revert of attempt 3 exists on master; an attempt to reopen on that finding is refused `incident-finding-deferred-proof-only`. | Not exercised | 7.5-7.6 | P0-3 |
+| A11 | Probe PR CI fails on a test that exercises attempt 2's landed change. The attribution names the failing job, the test and the landed commit. `reopen-regression` records phase `reverting` with `repayment_required: true` and a `livespec-incident-recovery-v1` comment. The principal reverts attempt 2. Attempt 3 is a corrected expedited attempt on the same item. Repayment is then re-entered, not skipped. | Not exercised | 5.1-5.6, 6.x | P0-1, P0-3, P0-6 |
+| A12 | Four restarts, each followed by exactly one action and no duplicate: (i) observer restart after arm, before merge; (ii) observer restart after bind, before the leaf failure; (iii) webhook redelivery of the failing job delivery answering `existing immutable action; no duplicate effect`; (iv) gmktec dispatcher loop restart mid-repayment. Before the repayment PR merges, and again before its master CI is green, `close`, the `accept:` valve and `reconcile-merged` each refuse and name the open obligation. After green, closure succeeds. | Not exercised; mnny4v not released | 3.8, 3.10, 3.11, 7.3, 7.8-7.9 | P0-7 |
+| A13 | Four observations on the same run: incident context crosses the hook (receipt), the credential wrapper (`with-livespec-env.sh` scrubs the caller environment, so context must arrive through the trusted transport), the detached gate runner (`gate_runner_delegate`) and the PR event boundary (`incident-ci` reads the block from an authenticated PR read). The repayment PR's per-file coverage executes in full (about 10 min or more, not a cache hit). A normal `just check` started in the attempt-3 worktree after the expedited commit does not accept the `expedited-local-partial` report as a pass. | Re-run | 3.3, 6.4, 7.6, 7.10 | P0-10 |
+| A14 | One `read-history` plus `context livespec-dev-tooling-<item>` shows all attempts, the PR, merge and revert SHAs, the master run ids, the omitted members, the focused evidence, the deferred spec debt, the deferred finding and the repayment PR with its proof, keyed by the item id alone. | Not exercised | 8.1 | all |
+
+The charter's longer exercise list (note 001, "Proof and completion requirements") also names multi-commit rebase
+merges, overlapping incidents, release fan-out and others. Those are not plan assertions, so the archive gate does not
+grade them. The children's factory-captured tests carry them. This note does not add live steps for them.
+
+---
+
+## 4. The minimal live sequence
+
+Conventions:
+
+- `ITEM` is the new incident item. `DT` and `ORCH` are the releases from P0-10.
+- `IA` is `incident_authority.py` of the registered build; resolve it with `registered_plugin_root.py --repo $REPO`.
+- Every ledger call goes through `/usr/local/bin/with-livespec-env.sh --`.
+- Arming follows note 004 steps 2 to 8 with its §7 corrections:
+  - add `do-not-merge` before any reopen;
+  - GET the pull until `merge_commit_sha` sits on the base, THEN reopen;
+  - reopen once, with the base frozen under a coordinator master hold.
+- `[GO-n]` marks a step that needs the coordinator's GO or maintainer consent first (section 5).
+
+### Phase P: pre-flight (no live effect)
+
+- P.1 Verify P0-1 to P0-10 are done. Each serving version must be read from the serving component, not from git.
+  Read the observer manifest `release`, `reader_release` and `required_jobs` with `sudo` read-only. Run
+  `registered_plugin_currency.py` here. Read the gmktec dispatcher's build from its own loop record.
+- P.2 Run the observer's exact reader argv once as `livespec-incident` and require exit 0 (note 004 §7).
+- P.3 Prove the plant once without touching master. Open a DRAFT, unlabelled PR carrying only attempt 1's planted
+  defect. Require the full normal CI to fail exactly the intended spec member in `check-metadata-batch`, and nothing
+  else. Close it.
+- P.4 Time 7 `bd show` calls (note 004 R1). The chain will grow to about 12 to 16 generations by attempt 3. At about
+  1.07 s per generation beyond 2, a reader pass reaches roughly 20 to 25 s. That is under the 45 s reader ceiling
+  and the 60 s CI client ceiling, but it adds about 2 min per expedited PR run (about 5 `/current` calls).
+  INFERRED.
+- P.5 Confirm the repository webhook subscribes `workflow_job` to the Funnel `/callback`, and that recent deliveries
+  answer 202 or 403 (note 004 §5).
+
+### Phase 3: attempt 1, planted master failure, revert (A1-A8, A12 i-iii)
+
+- 3.1 File ITEM with `IA file-incident` or the capture operation: a real small incident with two behavioural DoD
+  bullets, B1 and B2. B2 is the A10 plant in 7.5. The item must name an open claim token; the tenant has been cut
+  over since truk55.
+- 3.2 Worktree; minimal fix for B1 with the marker comment beside it. Planted deferred-spec defect: the fix adds a
+  `## ` heading to a governed spec file without its `tests/heading-coverage.json` row. Deferred spec work is allowed
+  by the policy. `check-heading-coverage` is an `incident-policy:spec` member, so it is omitted on the PR, deferred
+  locally (not annotated fast), and fails on master in `check-metadata-batch`.
+  - Alternative if P.3 shows the heading change also trips another member in a way that confuses the evidence: an
+    uncovered branch in the touched file, which fails `check-per-file-coverage` about 10 min into the run. This
+    alternative gives less margin before the run ends.
+- 3.3 Genesis (note 004 step 3), then the expedited commit and push with the incident context. Capture the hook
+  output and the `record-local-gates` receipt (A2, A13 hook and wrapper).
+- 3.4 Focused evidence through P0-4's entrance: tests for B1, touched-file coverage, manual reproduction (A3).
+- 3.5 Open the PR from a branch of this repository, then bind it to generation 2 (note 004 step 5).
+- 3.6 [GO-3] Master hold. Arm (note 004 steps 6 and 7) with `expected_arm_id = 638a2302…`. Add the label, the block
+  and `do-not-merge`. GET until `merge_commit_sha` sits on the frozen base, then reopen once.
+- 3.7 Expedited PR run: record A4.
+- 3.8 [GO-8] Restart the observer unit. Repeat the authenticated `/admitted` read: still 202 (A12 i).
+- 3.9 [GO-4] Remove `do-not-merge` and release the hold. Rebase-merge the expedited PR; `ci-green` passes through
+  omission. Within seconds of the push run's creation, a scripted POST `/bind` sends the master head SHA and run id.
+  Poll `gh run list --branch master --commit <sha>` every 2 s and bind on first sight. Do not do this by hand: the
+  planted leaf fails about 90 s into the run, and a callback that arrives before the bind is ignored as "outside the
+  registered incident master leaf universe" (`incident_observer.py:131-138`).
+- 3.10 [GO-8] Between the bind and the leaf failure (or as soon as possible after the bind), restart the observer
+  unit, so the bound registration must come back from the state file (A12 ii).
+- 3.11 [GO-5] The leaf fails, the callback arrives, and the principal publishes the inverse to master (A7). Then
+  [GO-9] redeliver that webhook delivery through the hook deliveries API and require the reply
+  `existing immutable action; no duplicate effect` with no second revert (A12 iii).
+- 3.12 Do NOT cancel attempt 1's run. Wait for `completed`, then collect every job conclusion (P0-5) (A8). Master is
+  red until the revert's own run is green, about 12 min.
+
+### Phase 4: attempt 2, corrected from complete evidence (A1 red-master half, A8)
+
+- 4.1 Transition the chain to the corrected attempt through P0-3's `correct-attempt`. The attempt id is new; the item
+  is the same.
+- 4.2 Fix every failed member in the collected set: add the heading-coverage row, register its debt, or move the spec
+  change into a recorded deferred-spec debt, whichever the failure set demands. Keep the marker.
+- 4.3 If the revert run has not yet gone green, take 4.4 while master's latest completed run is still red (A1).
+- 4.4 Expedited commit and push: hook receipt (A2, A5).
+- 4.5 Focused evidence (A3).
+- 4.6 [GO-3] Bind the new PR, then arm with `expected_arm_id` set to attempt 1's arm id. Expedited PR run (A4).
+- 4.7 [GO-6] Merge and bind as in 3.9. The master run is green (A6). The chain moves to `master-observation`.
+- 4.8 `enter-repayment` BEFORE the run completes: refused `incident-repayment-master-ci-outstanding` (A9 refusal half).
+  Do not enter repayment after green yet; Phase 5 needs the attempt-2 reading.
+
+### Phase 5: related regression on another PR (A11)
+
+- 5.1 Open a DRAFT probe PR labelled `do-not-merge`. It adds one test that exercises attempt 2's changed behaviour on
+  an input the expedited tests did not cover, and that input breaks on attempt 2. Its normal CI fails on that test.
+  This stands in for "another PR's CI caught it" without putting anything red on master.
+- 5.2 Enter repayment on attempt 2's green run (`repayment-admission`). This puts the item where k5teti's reopen
+  applies (`REOPEN_FROM` = the repayment phases or `closed`).
+- 5.3 Record the attribution: probe PR number, run id, failing job and test, and attempt 2's landed commit.
+  `reopen-regression` records phase `reverting` with `repayment_required: true` (A11).
+- 5.4 [GO-5] The principal reverts attempt 2's landed patch, through P0-6's route.
+- 5.5 Show that the superseded repayment is fenced: `require_repayment_current` refuses `incident-repayment-superseded`
+  on a proof or closure probe (A12, k5teti).
+- 5.6 Close the probe PR unmerged, or keep its test for attempt 3; that test is the regression's evidence.
+
+### Phase 6: attempt 3, corrected expedited attempt (A11 corrected half)
+
+- 6.1 `correct-attempt` on the same item. The fix makes the probe test pass. Include that test.
+- 6.2 to 6.8 Repeat 4.4 to 4.7: hook receipt, focused evidence, [GO-3] arm, expedited PR run, [GO-6] merge, bind,
+  green master run (A2 to A6 a third time).
+
+### Phase 7: normal factory repayment, deferred-proof defect, closure (A9, A10, A12, A13)
+
+- 7.1 `enter-repayment` on attempt 3's completed green run, which records `repayment-admission` (A9 causal half).
+- 7.2 [GO-10] Dispatch the repayment through the `petri-factory-on-gmktec` seat. Do not use a direct `drive impl:`
+  call (`.ai/fabro-dispatch-diagnosis.md`). Confirm the dispatch environment carries neither flag.
+- 7.3 [GO-8] Restart the gmktec dispatcher loop while the run is active. The run and its claim survive, and no second
+  dispatch appears (A12 iv).
+- 7.4 Premature-closure probes while only expedited merges exist: `close`, the `accept:` valve and
+  `reconcile-merged --pr <attempt 3 PR>`. Each must refuse and name the outstanding repayment ([GO-11]; only after
+  P0-7 is verified serving).
+- 7.5 The A10 plant is DoD bullet B2. The expedited attempts left an edge case of B2 wrong. Every line is covered and
+  no existing test fails, so neither the expedited PR nor master catches it. The repayment brief carries the
+  cumulative original scope and the DoD, so the factory implementer must add a Red test for B2 and fix it inside the
+  repayment PR.
+  - Risk: the worker may miss it. Then acceptance grades the cumulative DoD (mnny4v) and sends rework into the same
+    PR. That still satisfies "fixed within that follow-up PR".
+  - Do not pre-record the finding. It must be found by the follow-up.
+- 7.6 When the run reports the B2 finding, record it with `record-deferred-finding`. Try a reopen on it and require
+  the refusal `incident-finding-deferred-proof-only`. The repayment PR's normal CI runs per-file coverage in full and
+  runs the spec members (A10, A13 cache half).
+- 7.7 The repayment PR merges on full checks. The marker for ITEM is gone (`git grep` on master).
+- 7.8 Before the repayment's master run completes, run `close` again: refused (A12).
+- 7.9 After that run is green: closure succeeds (A12).
+- 7.10 Normal-validation probe: in a clean worktree at attempt 3's head, `just check` re-runs every member. It reuses
+  no expedited report (A13).
+
+### Phase 8: capture, replay, review, archive
+
+- 8.1 The capturing session runs `read-history` and `context ITEM` (A14). It assembles one payload with all 14
+  bullets, the build `livespec-dev-tooling DT` (orchestrator `ORCH` second) and the steps and proof above. Post it
+  with `dispatcher.py post-plan-record --verdict captured`.
+- 8.2 A different seat, launched outside this shell, replays every re-executable step (section 1) and re-reads the
+  immutable record. It posts ONE `verified` record covering all 14.
+- 8.3 A fresh reviewer records the completeness review with `record_completeness_review_evidence` from its own
+  session. Before the archive PR: sweep for references to `plan/expedited-incident-response-flag/` outside `plan/`,
+  and give osyzv6 its disposition, since leg 1 requires every child closed.
+
+---
+
+## 5. Steps that need GO before they run
+
+| GO | Step | Why it is outward-facing or destructive | Who |
+|---|---|---|---|
+| GO-1 | Provision the recovery principal: GitHub App, key in 1Password, master ruleset whose bypass names only that App | Grants a principal unchecked writes to master; maintainer tier (`.ai/fleet-and-secrets.md`) | maintainer |
+| GO-2 | Role change (`required_jobs` leaf list, reader release), release, `ansible` apply on vps | Host mutation; restarts the observer; changes the arm identity | coordinator GO; maintainer if the role touches secrets |
+| GO-3 | Master hold for each arm (3 times, about 4 min each; disarms auto-merge on about 10 PRs) | Holds other people's merges | coordinator |
+| GO-4 | Merge attempt 1 knowing it will fail a required master job | A DELIBERATE RED MASTER for about 12 to 15 min, until the revert's run is green | coordinator GO plus maintainer consent |
+| GO-5 | Automatic reverts on master, after attempt 1 and after attempt 2 | Unchecked writes to master by the principal | coordinator (covered by the GO-1 consent) |
+| GO-6 | Merge attempts 2 and 3 on reduced PR checks | Merges with coverage and spec omitted, as the incident policy intends | coordinator |
+| GO-8 | Restart the observer unit (twice) and the gmktec dispatcher loop | Host and factory mutation during live work | coordinator |
+| GO-9 | Webhook redelivery | Re-sends a signed event to our own observer; low risk | coordinator |
+| GO-10 | Factory dispatch of the repayment | Spends factory capacity and budget | coordinator, through the petri seat |
+| GO-11 | Premature-closure probes | Would CLOSE the item if mnny4v were not serving; run only after P.1 confirms it | plan owner, after P.1 |
+
+Draft probe PR 5.1 and pre-flight PR P.3 are drafts carrying `do-not-merge`. They need no GO.
+
+---
+
+## 6. Wall-time estimate (from measured durations)
+
+Measured inputs:
+
+- Expedited PR run: about 4.3 min of job time (42296591999 attempt 2, 21:46:14Z to 21:50:28Z), plus about 2 min for
+  the longer reader (P.4).
+- Master run: 12.4 min (42316488005).
+- Normal PR per-file coverage: 10 to 46 min (note 005 §9.7).
+- Dev-tooling gates: median 3.2 min; orchestrator gates: median 13.4 min (§9.7).
+- Arm with a frozen base: about 20 min, against tonight's 3 h 18 m with four failure classes that §7 now prevents.
+- Factory runs on plan carriers: about 3.3 h average and 0 of 7 green (note 005 §1). This is the largest risk.
+
+| Phase | Work | Estimate |
+|---|---|---|
+| P0 | P0-1 and P0-6 principal carrier (code; the maintainer provisioning time is not estimable); P0-3 verbs (orchestrator, about 8 gates); P0-4 recorder; P0-2 and P0-8 role and release; P0-7 rollout; P0-9 scope event. All run in parallel. | 4 to 8 h, plus maintainer time |
+| P | Pre-flight, including the P.3 plant PR (full PR CI) | 0.5 to 1 h |
+| 3 | Attempt 1: file, genesis, commit, evidence, arm, PR run, merge, bind, revert, original run to completion | 1 to 1.25 h |
+| 4 | Attempt 2 | 0.75 to 1 h |
+| 5 | Probe PR (full PR CI 15 to 45 min), attribution, reopen, revert | 0.5 to 1 h |
+| 6 | Attempt 3 | 0.75 to 1 h |
+| 7 | Repayment: factory run 1.5 to 4 h, normal PR CI 0.3 to 0.8 h, master 0.2 h, probes | 2.5 to 5.5 h |
+| 8 | Capture 0.5 h; independent replay including PR reruns 1 to 1.5 h; completeness review about 1 h; archive PR 0.5 h | 3 to 3.5 h |
+| **Total** | after P0: phases P to 8 | **9 to 14 h** |
+| | of which the live sequence (phases 3 to 7) | **5.5 to 9.75 h** |
+
+Wall time is dominated by the factory run in phase 7, then P0-1's provisioning wait. Phases 3 to 6 are about 3 to
+4 h of attended work under four short master holds.
+
+---
+
+## 7. Open questions and risks
+
+1. **P0-1 is real new capability.** It means new code plus a maintainer-provisioned App and ruleset. The alternative
+   is a carrier-map event that re-words or human-attests A7, A8 and A11. That is a change to the maintainer's own
+   assertions and is theirs alone to make; note 001 §"Speed, risk and policy decisions" chose the scoped principal.
+   Not recommended.
+2. **Bind race (3.9).** The released design binds after the merge. A leaf that fails before the bind is ignored. The
+   scripted bind plus the about 90 s margin of `check-metadata-batch` should hold. If P.3 shows that leg finishing
+   faster, use the per-file-coverage plant.
+3. **A10 depends on factory behaviour.** A worker that never notices B2 sends the item to acceptance rework. That is
+   still inside the follow-up PR, but it adds a factory run.
+4. **Replay of one-time events** (section 1). If the replayer refuses re-observation, a second incident run by the
+   replayer roughly doubles phases 3 to 7.
+5. **Reader validation of the reopen carrier under v0.295.1** (P0-8). INFERRED; rolling the reader removes the
+   question.
+6. Side observation, not blocking: master carries `EXPEDITED_INCIDENT_RESPONSE flag:` markers for closed items, for
+   example `livespec_dev_tooling/_incident_ci_plan.py:3` (egy3ri), `_incident_observer_store.py:37-38` (47ij37,
+   dln3ac) and `_green_token_evidence.py:50,207` (xluwqj). Closure rule 8 of note 001 says "all markers removed". The
+   A9 marker check is scoped to ITEM, so this does not affect the sequence. The completeness reviewer will likely
+   ask about it.
