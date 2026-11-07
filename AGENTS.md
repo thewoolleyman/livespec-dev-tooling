@@ -609,14 +609,19 @@ heading, and drop entries for removed headings. `check-heading-coverage` is the
 gate that catches a pass that forgot.
 
 A new entry may be a spec-first `"test": "TODO"` row, but pre-commit holds it to
-two more rules, and each one refuses the commit (both measured on the v097
-revise, 2026-10-26):
+three more rules, and each one refuses the commit (the first and third measured
+on the v097 revise, 2026-10-26):
 
 - **The `reason` must name the tier the owed test runs at**, plus the work item
   that owns it. For example: "A real test at the integration tier or above is
   owed for this heading: … livespec-dev-tooling-7enfyd owns it." Without the
   tier, the refusal reads `does-not-acknowledge-an-owed-test` with
   `missing: tier`.
+- **Name the owner in a `work_item` key.** Naming the item in the `reason` does
+  not satisfy this one: the row also needs `"work_item": "<id>"` naming the open
+  item that owes the test. Without the key, `check-no-todo-registry` refuses with
+  `heading-coverage.json entry has test: "TODO" with no owning work_item`
+  (refused v151's first commit, 2026-11-07).
 - **Register the row in the debt register.** Run
   `just generate-heading-coverage-debt-register` and stage
   `tests/heading-coverage-debt.json`. The register is generated, so never edit it
