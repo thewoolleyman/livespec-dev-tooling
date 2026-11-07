@@ -433,6 +433,7 @@ jobs:
           just check-public-api-result-typed || failed="$failed check-public-api-result-typed"
           just check-required-role-keys-declared || failed="$failed check-required-role-keys-declared"
           just check-rop-pipeline-shape || failed="$failed check-rop-pipeline-shape"
+          just check-rule-26-keep-out || failed="$failed check-rule-26-keep-out"
           just check-supervisor-discipline || failed="$failed check-supervisor-discipline"
           just check-tests-mirror-pairing || failed="$failed check-tests-mirror-pairing"
           just check-tests-no-subprocess-spawn || failed="$failed check-tests-no-subprocess-spawn"
