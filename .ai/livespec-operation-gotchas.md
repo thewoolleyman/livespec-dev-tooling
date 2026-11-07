@@ -121,6 +121,28 @@ see correction C6 in `.ai/supervisor-protocol.md`. This section is the
 host-wide subset, kept here because the trap hits ANY role on this host and
 `.ai/supervisor-protocol.md` is loaded only by supervisor handoffs.
 
+## A Clean Filing Display Is Not Evidence Of Admissibility
+
+`filing_display` can print `definition-of-done findings: none` for an item whose
+pre-dispatch screen then refuses it on a governing heading. Measured 2026-11-07
+on homelab item `hl-sj74nd`. It displayed no findings, and its screen at
+16:08:19Z failed with "the Definition of Done reference line does not name
+'## Constraints', which the spec-stated judgement returned as a clause governing
+this item's assertions". After that heading was added to the `References:` line,
+the 16:15Z screen was clean.
+
+An earlier handoff recorded this gap as closed in code, because both builds
+default `filing_display` to `host_governing_heading_reader`. That was wrong: the
+display and the screen still disagreed on one unchanged item. The cause is not
+established. `bd-ib-e3vbbo` owns the fix, and the earlier refusals of this shape
+are `bejgoo`, `n6vnhp`, `sts554` and `rhivsm`.
+
+How to apply: until `bd-ib-e3vbbo` closes, an item is admissible only once its
+pre-dispatch screen has passed. Read that verdict rather than the display. When
+the screen refuses on a heading, add the heading it names to the `References:`
+line, written with its literal `## ` marker, beside the scenario heading, and ask
+the dispatcher seat to screen it again.
+
 ## bd Resolves The Tenant From The Working Directory
 
 `bd` auto-discovers its tenant from the nearest `.beads/` config, so the SAME
