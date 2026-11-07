@@ -89,6 +89,10 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TEMPLATE="${GATE_JOB_TEMPLATE:-${SCRIPT_DIR}/gate-job-template.yaml}"
+# The one declared per-class architecture list (livespec-dev-tooling-ko26ez.6).
+# In this repository it sits one level above gates/; the wheel force-includes it
+# at the same relative place beside the packaged renderer.
+WORKLOAD_ARCH_CONF="${WORKLOAD_ARCH_CONF:-${SCRIPT_DIR}/../workload-arch.conf}"
 
 repo_root=""; tree_hash=""; repo=""; source_url=""; gated_repository=""
 cpu="5"; memory="6Gi"; parallelism="4"; ttl_seconds="3600"; gate_ref=""
@@ -672,6 +676,12 @@ substitute GATED_REPOSITORY  "${gated_repository}"
 substitute TREE_HASH         "${tree_hash}"
 substitute IMAGE             "${image}"
 substitute SOURCE_URL        "${source_url}"
+gate_arches="$(awk '$1 == "gate" && $2 == "gate" { print $3; exit }' "${WORKLOAD_ARCH_CONF}" 2>/dev/null || true)"
+[ -n "${gate_arches}" ] || {
+  echo "FATAL: the gate class declares no architecture in ${WORKLOAD_ARCH_CONF}; a gate with no declared architecture would be placed anywhere" >&2
+  exit 2
+}
+substitute GATE_ARCHES       "${gate_arches//,/, }"
 substitute CPU               "${cpu}"
 substitute MEMORY            "${memory}"
 substitute PARALLELISM       "${parallelism}"

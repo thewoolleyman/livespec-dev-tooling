@@ -88,6 +88,7 @@ packages = ["livespec_dev_tooling"]
 "ci-runner/k3s/phase2/gates/render-gate-job.sh" = "livespec_dev_tooling/gates/render-gate-job.sh"
 "ci-runner/k3s/phase2/gates/gate-job-template.yaml" = "livespec_dev_tooling/gates/gate-job-template.yaml"
 "ci-runner/k3s/phase2/gates/mint-private-sibling-token.sh" = "livespec_dev_tooling/gates/mint-private-sibling-token.sh"
+"ci-runner/k3s/phase2/workload-arch.conf" = "livespec_dev_tooling/workload-arch.conf"
 
 [dependency-groups]
 # Every Python dev tool is uv-managed via this table (resolved into

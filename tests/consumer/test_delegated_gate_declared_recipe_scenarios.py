@@ -37,6 +37,7 @@ from itertools import takewhile
 from pathlib import Path
 
 import pytest
+import yaml
 from returns.result import Success
 
 from livespec_dev_tooling.gate_remote_delegate import (
@@ -1621,3 +1622,43 @@ def test_a_red_verdict_names_the_members_of_the_last_summary_in_either_shape(
         assert member in verdict_line, verdict_line
     for member in not_named:
         assert member not in verdict_line, verdict_line
+
+
+def test_the_gate_job_requires_an_architecture_its_image_publishes(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The gate Job carries a REQUIRED arch affinity read from the declared list.
+
+    The list is mocked, so the assertion is the rule (the Job admits exactly the
+    gate class's declared architectures), never a committed architecture value
+    (livespec-dev-tooling-ko26ez.6).
+    """
+    conf = tmp_path / "workload-arch.conf"
+    conf.write_text("# mocked\ngate gate amd64,arm64 none\n", encoding="utf-8")
+    monkeypatch.setenv("WORKLOAD_ARCH_CONF", str(conf))
+    manifest = yaml.safe_load(
+        _rendered_for(repo_root=_a_consumer_repository(root=tmp_path / "repo", declaration=""))
+    )
+    affinity = manifest["spec"]["template"]["spec"]["affinity"]["nodeAffinity"]
+    [term] = affinity["requiredDuringSchedulingIgnoredDuringExecution"]["nodeSelectorTerms"]
+    [expr] = term["matchExpressions"]
+    assert (expr["key"], expr["operator"], expr["values"]) == (
+        "kubernetes.io/arch",
+        "In",
+        ["amd64", "arm64"],
+    )
+
+
+def test_a_gate_class_with_no_declared_architecture_is_not_rendered(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """No declared gate architecture means no Job, never a Job placed anywhere."""
+    conf = tmp_path / "workload-arch.conf"
+    conf.write_text("release some-k3s amd64 x\n", encoding="utf-8")
+    monkeypatch.setenv("WORKLOAD_ARCH_CONF", str(conf))
+    built = gate_remote_request(
+        repo_root=_a_consumer_repository(root=tmp_path / "repo", declaration=""),
+        renderer=_RENDERER,
+        runner=_CannedWorldRealRenderer(),
+    )
+    assert not isinstance(built, Success)

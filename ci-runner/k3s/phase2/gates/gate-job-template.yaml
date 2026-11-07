@@ -96,6 +96,17 @@ spec:
       # future flavor change does not leave an unschedulable Job behind.
       affinity:
         nodeAffinity:
+          # REQUIRED: the gate image is the gated repository's CI container pin,
+          # so the Job may only run on an architecture that image publishes,
+          # read from the one declared per-class list (workload-arch.conf, the
+          # `gate` line; livespec-dev-tooling-ko26ez.6). An arm64 container
+          # worker never receives a gate whose image is amd64-only.
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: kubernetes.io/arch
+                    operator: In
+                    values: [@@GATE_ARCHES@@]
           preferredDuringSchedulingIgnoredDuringExecution:
             - weight: 100
               preference:
