@@ -127,9 +127,18 @@ class _Authority:
 
 @pytest.fixture
 def wired(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path, _Authority]:
-    for key in tuple(os.environ):
-        if key.startswith(("GIT_", "EXPEDITED_", "LIVESPEC_INCIDENT_")):
-            monkeypatch.delenv(key, raising=False)
+    # The set is never empty, so the scrub runs on a host whose environment
+    # carries none of these names (CI) as well as on one that does.
+    stale = {
+        "EXPEDITED_INCIDENT_RESPONSE_REVERT",
+        *(
+            key
+            for key in os.environ
+            if key.startswith(("GIT_", "EXPEDITED_", "LIVESPEC_INCIDENT_"))
+        ),
+    }
+    for key in stale:
+        monkeypatch.delenv(key, raising=False)
     base, head = _repository(tmp_path)
     query = {
         "repository": "owner/repo",
