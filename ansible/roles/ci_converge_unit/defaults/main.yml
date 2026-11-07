@@ -94,6 +94,15 @@ ci_converge_unit_files:
   - src: arc/converge-hook-pod-template.sh
     dest: arc/converge-hook-pod-template.sh
     mode: "0755"
+  # The per-class architecture list and its renderer: converge-ci-stack.sh
+  # step 7 gives every scale set a required arch affinity from them
+  # (livespec-dev-tooling-ko26ez.6).
+  - src: arc/render-arch-overlay.sh
+    dest: arc/render-arch-overlay.sh
+    mode: "0755"
+  - src: workload-arch.conf
+    dest: workload-arch.conf
+    mode: "0644"
   - src: arc/hook-pod-template.yaml
     dest: arc/hook-pod-template.yaml
     mode: "0644"

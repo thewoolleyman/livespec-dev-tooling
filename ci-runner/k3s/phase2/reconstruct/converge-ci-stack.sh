@@ -608,10 +608,16 @@ for release in $(printf '%s\n' "${!SCALE_SETS[@]}" | sort); do
   [ -f "$values_file" ] || { echo "FATAL: values file not found: ${values_file}"; exit 1; }
   rendered_values="${rendered_values_dir}/${SCALE_SETS[$release]}"
   "${ARC_DIR}/converge-hook-pod-template.sh" --render-values "$values_file" "$rendered_values"
+  # The runner pod's architecture selection comes from the one declared
+  # per-class list, never from the values file (livespec-dev-tooling-ko26ez.6),
+  # so no amd64-only job image is scheduled onto an arm64 worker.
+  arch_overlay="${rendered_values_dir}/${release}.arch.yaml"
+  "${ARC_DIR}/render-arch-overlay.sh" release "$release" "$arch_overlay"
   log "7.${release}: helm upgrade --install ${release} (hook template ${hook_revision})"
   helm upgrade --install "$release" \
     --namespace "$RUNNERS_NAMESPACE" --create-namespace \
     -f "$rendered_values" \
+    -f "$arch_overlay" \
     "$ARC_SCALE_SET_CHART"
 done
 
