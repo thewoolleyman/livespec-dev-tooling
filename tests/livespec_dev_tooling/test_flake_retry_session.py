@@ -463,6 +463,59 @@ def test_a_closure_module_that_cannot_be_parsed_means_touched(*, tmp_path: Path)
     )
 
 
+def test_a_segmented_path_literal_matches_only_its_full_named_directory(*, tmp_path: Path) -> None:
+    """A shared ancestor alone does not touch a path assembled segment by segment."""
+    plugin = importlib.import_module("livespec_dev_tooling.flake_retry")
+    test_path = tmp_path / "test_gate.py"
+    _ = test_path.write_text(
+        "from pathlib import Path\n"
+        "_ROOT = Path(__file__).resolve().parents[2]\n"
+        "_GATE_SCRIPT = (\n"
+        "    _ROOT\n"
+        "    / 'ci-runner'\n"
+        "    / 'k3s'\n"
+        "    / 'phase2'\n"
+        "    / 'gates'\n"
+        "    / 'render-gate-job-exit-tests.sh'\n"
+        ")\n",
+        encoding="utf-8",
+    )
+
+    def marker(changed: str) -> object:
+        return plugin.retry_marker_for(
+            repo_root=tmp_path, test_path=test_path, change_paths={Path(changed)}
+        )
+
+    assert marker("ci-runner/k3s/phase2/factory/DERIVATION.md") == {
+        "reruns": 3,
+        "reruns_delay": 60,
+    }
+    assert marker("ci-runner/k3s/phase2/gates/render-gate-job-exit-tests.sh") is None
+    assert marker("ci-runner/k3s/phase2/gates/other.sh") is None
+
+
+def test_a_partly_dynamic_path_expression_means_touched(*, tmp_path: Path) -> None:
+    """A path expression with a dynamic segment cannot safely receive a retry."""
+    plugin = importlib.import_module("livespec_dev_tooling.flake_retry")
+    test_path = tmp_path / "test_dynamic.py"
+    _ = test_path.write_text(
+        "from pathlib import Path\n"
+        "_ROOT = Path(__file__).resolve().parents[2]\n"
+        "segment = 'gates'\n"
+        "_TARGET = _ROOT / 'ci-runner' / segment\n",
+        encoding="utf-8",
+    )
+
+    assert (
+        plugin.retry_marker_for(
+            repo_root=tmp_path,
+            test_path=test_path,
+            change_paths={Path("README.md")},
+        )
+        is None
+    )
+
+
 def test_a_change_to_the_plugin_itself_disables_every_retry(*, tmp_path: Path) -> None:
     """Touching the flake-retry plugin turns retries off for the whole session."""
     plugin = importlib.import_module("livespec_dev_tooling.flake_retry")
