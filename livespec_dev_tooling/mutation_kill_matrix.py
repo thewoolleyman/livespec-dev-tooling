@@ -37,6 +37,7 @@ class MutationKillMatrixReport:
     source_revision: str
     mutants: tuple[Mutant, ...]
     killers_by_mutant: dict[str, tuple[str, ...]]
+    redundancy_candidates: tuple[str, ...]
 
     def to_dict(self) -> dict[str, object]:
         """Return the stable JSON-compatible report representation."""
@@ -58,6 +59,7 @@ class MutationKillMatrixReport:
                 for mutant in self.mutants
                 if not self.killers_by_mutant[mutant.identifier]
             ],
+            "redundancy_candidates": list(self.redundancy_candidates),
         }
 
 
@@ -71,10 +73,12 @@ def build_report(
     killers_by_mutant: dict[str, set[str]],
 ) -> MutationKillMatrixReport:
     """Build a report that attributes each mutant to its killing tests."""
-    _ = tests
     normalized_killers = {
         mutant.identifier: tuple(sorted(killers_by_mutant.get(mutant.identifier, set())))
         for mutant in mutants
+    }
+    unique_killers = {
+        killer for killers in normalized_killers.values() if len(killers) == 1 for killer in killers
     }
     return MutationKillMatrixReport(
         engine_name=engine_name,
@@ -82,6 +86,7 @@ def build_report(
         source_revision=source_revision,
         mutants=tuple(mutants),
         killers_by_mutant=normalized_killers,
+        redundancy_candidates=tuple(sorted(set(tests) - unique_killers)),
     )
 
 
