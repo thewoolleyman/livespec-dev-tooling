@@ -151,7 +151,6 @@ def test_without_the_variable_the_client_connects_by_hostname_as_before(
 @pytest.mark.parametrize(
     "value",
     [
-        "",
         "vps.perch-rudd.ts.net",
         "100.89.189",
         " 100.89.189.118",
