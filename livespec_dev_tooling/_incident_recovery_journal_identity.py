@@ -14,9 +14,13 @@ from livespec_dev_tooling._incident_inverse_types import (
 )
 from livespec_dev_tooling._incident_observer_store import read_observer_arm, read_registration
 from livespec_dev_tooling._incident_observer_types import (
-    LeafCompletion,
     ObserverRegistration,
     RecoveryIntent,
+)
+from livespec_dev_tooling._incident_recovery_journal_cause import (
+    decode_completion,
+    decode_regression,
+    has_one_cause,
 )
 from livespec_dev_tooling._incident_recovery_journal_types import RetainedAction
 from livespec_dev_tooling._incident_recovery_journal_values import JournalValues
@@ -24,7 +28,6 @@ from livespec_dev_tooling._incident_recovery_journal_values import JournalValues
 __all__: list[str] = ["JournalCodec"]
 
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-dln3ac
-_FAILURES = frozenset({"failure", "timed_out", "action_required", "startup_failure", "stale"})
 
 
 def _registration(*, raw: Any) -> Any:
@@ -60,30 +63,6 @@ def _arm(*, raw: Any) -> Any:
     data["authority_receipt"] = JournalValues.bytes(value=data.get("authority_receipt")).hex()
     arm_id = hashlib.sha256(json.dumps(data, sort_keys=True).encode()).hexdigest()
     return read_observer_arm(record={"observer_arm": data, "observer_arm_id": arm_id})
-
-
-def _completion(*, raw: Any) -> LeafCompletion:
-    data = JournalValues.object(value=raw)
-    fields = {
-        "delivery_id",
-        "repository",
-        "head_sha",
-        "branch",
-        "run_id",
-        "job_id",
-        "job_name",
-        "conclusion",
-    }
-    if not (
-        set(data) == fields
-        and all(JournalValues.positive(value=data[key]) for key in ("run_id", "job_id"))
-        and all(JournalValues.text(value=data[key]) for key in fields - {"run_id", "job_id"})
-        and JournalValues.sha(value=data["head_sha"])
-        and data["conclusion"] in _FAILURES
-    ):
-        message = "invalid recovery completion"
-        raise ValueError(message)
-    return LeafCompletion(**data)
 
 
 def _matching_arm(*, intent: RecoveryIntent) -> bool:
@@ -161,36 +140,29 @@ class JournalCodec:
     @staticmethod
     def intent(*, raw: Any) -> RecoveryIntent:
         data = JournalValues.object(value=raw)
-        if set(data) != {
-            "action_id",
-            "registration",
-            "completion",
-            "observer_arm",
-        } or not JournalValues.digest(value=data.get("action_id")):
+        keys = {"action_id", "registration", "completion", "observer_arm", "regression"}
+        if not (
+            set(data) <= keys and keys - set(data) <= {"regression"}
+        ) or not JournalValues.digest(value=data.get("action_id")):
             message = "invalid recovery intent"
             raise ValueError(message)
         registration = _registration(raw=data["registration"])
         intent = RecoveryIntent(
             action_id=data["action_id"],
             registration=registration,
-            completion=_completion(raw=data["completion"]),
+            completion=None
+            if data["completion"] is None
+            else decode_completion(raw=data["completion"]),
             observer_arm=_arm(raw=data["observer_arm"]),
+            regression=decode_regression(raw=data.get("regression")),
         )
-        completion = intent.completion
         action_key = (
             f"{registration.repository}:"
             f"{registration.operation_id}:{registration.generation}:recover"
         )
         if not (
             intent.action_id == hashlib.sha256(action_key.encode()).hexdigest()
-            and (completion.repository, completion.head_sha, completion.branch, completion.run_id)
-            == (
-                registration.repository,
-                registration.head_sha,
-                registration.branch,
-                registration.run_id,
-            )
-            and completion.job_name in registration.required_jobs
+            and has_one_cause(intent=intent)
             and _matching_arm(intent=intent)
         ):
             message = "recovery intent does not match retained grant"
@@ -208,11 +180,13 @@ class JournalCodec:
         if registration is None:
             message = "retained action registration missing"
             raise ValueError(message)
+        completion = action.get("completion")
         restored = RecoveryIntent(
             action_id=intent.action_id,
             registration=registration,
-            completion=_completion(raw=action.get("completion")),
+            completion=None if completion is None else decode_completion(raw=completion),
             observer_arm=arm,
+            regression=decode_regression(raw=action.get("regression")),
         )
         raw = JournalCodec.wire(value=asdict(restored))
         _ = JournalCodec.intent(raw=raw)
