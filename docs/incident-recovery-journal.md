@@ -6,7 +6,12 @@ immutable `actions[action_id]` snapshot, including the original registration,
 completion and arm. A newer top-level arm does not erase an older owed action.
 The observer record is never changed by this journal.
 
-The journal is a precursor to the independent recovery principal. It supplies
+The journal is the effect store of the independent recovery principal
+(`docs/incident-recovery-principal.md`). That principal authenticates every
+operation through `RecoveryJournal.lookup`, keeps its own per-action publication
+record beside the journal, and writes the protected conflict context below after
+proving a genuine overlap. This journal process, kept for compatibility, is no
+longer the principal the manifest names. It supplies
 no forge authorization, successful inverse publication or canonical lifecycle
 transition. In particular, journal absence is an observation about one effect
 store; it is not permission to publish. Actual scope authentication, signing,
