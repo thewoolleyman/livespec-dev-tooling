@@ -145,6 +145,8 @@ _POWEREDGE_ROLES = (
     "factory_pressure_publisher",
     # And the server steers new sandbox pods off a pressured node.
     "factory_pressure_reconciler",
+    # And it fails runner pods open while ci-runner-scheduler is down.
+    "runner_scheduler_fail_open",
     "wedged_runner",
     "runner_pod_lifecycle",
     "arc_log_archive",

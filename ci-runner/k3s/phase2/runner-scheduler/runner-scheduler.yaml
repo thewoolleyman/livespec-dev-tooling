@@ -38,11 +38,10 @@
 #
 # AVAILABILITY. Two replicas with leader election on their own Lease
 # (`ci-runner-scheduler` in kube-system), spread across nodes. A runner pod
-# that names this scheduler while it has no ready replica is never bound; the
-# fail-open reconciler (livespec-dev-tooling-mtvxde PR 2) is what returns the
-# runner templates to the default scheduler in that case. Until it is live,
-# only ONE canary scale set names this scheduler (legacy-coordinator-agent,
-# R301, 2026-11-04).
+# that names this scheduler while it has no ready replica is never bound;
+# reconcile-runner-scheduler-fail-open.sh hands such a pod to the default
+# scheduler, runner by runner. Until it is live, only ONE canary scale set names
+# this scheduler (legacy-coordinator-agent, R301, 2026-11-04).
 #
 # REVERT. Remove `schedulerName` from the runner templates
 # (../arc/values-*.yaml) and converge; this Deployment can stay or be deleted.

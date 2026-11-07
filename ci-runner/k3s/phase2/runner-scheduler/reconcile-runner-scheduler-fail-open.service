@@ -1,0 +1,12 @@
+# Hand a runner pod stranded by a down ci-runner-scheduler to the default scheduler
+# (reconcile-runner-scheduler-fail-open.sh, livespec-dev-tooling-mtvxde). Server-only:
+# it holds k3s's admin kubeconfig. Installed by the runner_scheduler_fail_open
+# Ansible role.
+[Unit]
+Description=Fail runner pods open to the default scheduler while ci-runner-scheduler is down
+After=k3s.service
+
+[Service]
+Type=oneshot
+Environment=KUBECONFIG=/etc/rancher/k3s/k3s.yaml
+ExecStart=/usr/local/lib/ci-runner-k3s/reconcile-runner-scheduler-fail-open.sh

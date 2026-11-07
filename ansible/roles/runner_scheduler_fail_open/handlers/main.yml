@@ -1,0 +1,5 @@
+---
+- name: Reload systemd for the runner scheduler fail-open reconciler
+  ansible.builtin.systemd_service:
+    daemon_reload: true
+  become: true

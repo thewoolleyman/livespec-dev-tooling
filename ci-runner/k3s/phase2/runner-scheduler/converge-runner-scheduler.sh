@@ -6,8 +6,8 @@
 # livespec-dev-tooling-mtvxde.
 #
 # FAIL-SOFT by design: a scheduler that is not Ready yet is a WARN, never a
-# failure of the stack converge. The fail-open reconciler (mtvxde PR 2) returns
-# runner templates to the default scheduler while it has no ready replica.
+# failure of the stack converge. reconcile-runner-scheduler-fail-open.sh hands
+# stranded runner pods to the default scheduler while it has no ready replica.
 #
 # --dry-run prints every kubectl call and touches nothing (the test suite runs
 # it without a cluster).

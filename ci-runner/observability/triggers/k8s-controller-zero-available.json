@@ -1,6 +1,6 @@
 {
   "name": "k8s controllers — ARC, Kueue, CoreDNS or local-path-provisioner has zero available replicas for 5 min",
-  "description": "Fires, per Deployment, when MAX(k8s.deployment.available) over the trailing 5 min is below 1 for arc-gha-rs-controller (arc-systems), kueue-controller-manager (kueue-system), coredns or local-path-provisioner (kube-system). No job is admitted, no name resolves and no work volume is provisioned while one is at zero. Emitter: k8s_cluster on the poweredge-xubuntu collector (thewoolleyman/otel-collector config.ci-runner-host.yaml, item livespec-dev-tooling-ec2rkp). Receiver: the poweredge-xubuntu otel-collector (thewoolleyman/otel-collector config.ci-runner-host.yaml) -> Honeycomb env livespec. Runbook: open the 'Kubernetes workloads and control plane' board; kubectl get deploy -A; kubectl -n <namespace> describe deploy <name>; kubectl -n <namespace> get events --sort-by=.lastTimestamp. Plan kubernetes-node-observability (livespec-dev-tooling-dfdiil), item livespec-dev-tooling-t6om4l.",
+  "description": "Fires, per Deployment, when MAX(k8s.deployment.available) over the trailing 5 min is below 1 for arc-gha-rs-controller (arc-systems), kueue-controller-manager (kueue-system), coredns, local-path-provisioner or ci-runner-scheduler (kube-system). No job is admitted, no name resolves and no work volume is provisioned while one of the first four is at zero; at zero ci-runner-scheduler, runner pods fail open to the default scheduler. Emitter: k8s_cluster on the poweredge-xubuntu collector (thewoolleyman/otel-collector config.ci-runner-host.yaml, item livespec-dev-tooling-ec2rkp). Receiver: the poweredge-xubuntu otel-collector (thewoolleyman/otel-collector config.ci-runner-host.yaml) -> Honeycomb env livespec. Runbook: open the 'Kubernetes workloads and control plane' board; kubectl get deploy -A; kubectl -n <namespace> describe deploy <name>; kubectl -n <namespace> get events --sort-by=.lastTimestamp. Plan kubernetes-node-observability (livespec-dev-tooling-dfdiil), item livespec-dev-tooling-t6om4l.",
   "query": {
     "calculations": [
       {
@@ -16,7 +16,8 @@
           "arc-gha-rs-controller",
           "kueue-controller-manager",
           "coredns",
-          "local-path-provisioner"
+          "local-path-provisioner",
+          "ci-runner-scheduler"
         ]
       }
     ],

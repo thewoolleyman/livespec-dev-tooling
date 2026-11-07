@@ -69,7 +69,7 @@ calculation:
 | `k8s-datastore-etcd-check-failing` | MIN of the `etcd` / `etcd-readiness` checks below 1 (single probe, as the spec states) | 2 min |
 | `k8s-datastore-filesystem-used` | MAX `datastore_used_bytes / datastore_total_bytes` at or above 0.80 | 10 min |
 | `k8s-datastore-request-latency-p99` | P99 `etcd_request_duration_seconds` above 1 s | 5 min |
-| `k8s-controller-zero-available` | MAX `k8s.deployment.available` below 1 for ARC controller, Kueue controller-manager, CoreDNS, local-path-provisioner | 5 min |
+| `k8s-controller-zero-available` | MAX `k8s.deployment.available` below 1 for ARC controller, Kueue controller-manager, CoreDNS, local-path-provisioner, ci-runner-scheduler | 5 min |
 | `k8s-arc-listener-not-ready` | MAX `k8s.container.ready` below 1 for `*-listener` pods in `arc-systems` (a listener is a Pod, not a Deployment) | 5 min |
 | `k8s-cluster-state-silent` | no `k8s.pod.phase` datapoints, ungrouped | 20 min |
 | `k8s-control-plane-silent` | no `livespec.ci_k3s.readiness_check` datapoints, ungrouped | 20 min |
