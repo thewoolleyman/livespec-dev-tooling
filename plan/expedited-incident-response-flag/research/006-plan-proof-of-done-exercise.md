@@ -41,7 +41,8 @@ livespec-orchestrator-beads-fabro at v0.295.1 and v0.298.0; `gh run view` for ru
      A10);
    - closure attempts are refused until the repayment's normal master CI is green (A12), and restarts are injected
      at four points.
-5. The estimate is **9 to 14 h** after the prerequisites, of which the live sequence is 5.5 to 9.75 h. The prerequisites take
+5. The estimate is **9 to 14 h** after the prerequisites, of which the live sequence is 5.5 to 9.75 h. Phase 7 also
+   waits on two factory canaries held by legacy-dispatcher-agent (P0-11); each canary is one factory run of 1.5 to 4 h. The prerequisites take
    **4 to 8 h** of parallel hand lanes plus maintainer provisioning time that cannot be estimated (section 6).
 
 ---
@@ -123,6 +124,17 @@ Also needed, already in flight or cheap:
      does not, attempt 3's `/arm` is refused. INFERRED, not tested.
 - **P0-9, carrier-map event.** Record one scope event with `carriers:` that adds the P0-1, P0-3 and P0-4 children:
   P0-1 under A7, A8 and A11; P0-3 under A8 to A11; P0-4 under A3. Every later record must postdate it.
+- **P0-11, factory canaries (relayed by the plan owner from gmktec-factory-placement, 2026-11-07).** The dev-tooling
+  factory registration is v0.298.0 (812c6bb59d02), recorded on livespec-dev-tooling-me5aqz at 00:28:13Z.
+  legacy-dispatcher-agent HOLDS every dev-tooling factory launch until a canary dispatch is green and its parity check
+  passes. The canary is livespec-dev-tooling-wou75w, or xpuv6h if wou75w cannot run. Picking up `ORCH` (mnny4v plus
+  P0-3) needs a second canary step on the new registration. The phase-7 repayment dispatch therefore waits on:
+  - canary 1 green with parity passed, on v0.298.0;
+  - `ORCH` released and registered for dev-tooling;
+  - canary 2 green with parity passed, on `ORCH`.
+
+  Canary 1 can run now, in parallel with P0. Canary 2 is on the critical path after `ORCH` is cut (section 6).
+  Both are owned by legacy-dispatcher-agent. This note asks for no ordering change.
 - **P0-10, release.** Cut one dev-tooling release after P0-1, P0-2 and P0-4 merge, and one orchestrator release after
   P0-3 and mnny4v. Every step in section 4 runs against those two tags. Call them `DT` and `ORCH` below.
 
@@ -263,6 +275,9 @@ Conventions:
 
 ### Phase 7: normal factory repayment, deferred-proof defect, closure (A9, A10, A12, A13)
 
+- 7.0 Gate: canary 2 (P0-11) is green, its parity check passed on the `ORCH` registration, and legacy-dispatcher-agent
+  has lifted its dev-tooling launch hold. Read this from the canary item and the dispatcher's own record. A handoff
+  saying so does not count. Until then, phase 7 waits; the wait is not a maintainer question.
 - 7.1 `enter-repayment` on attempt 3's completed green run, which records `repayment-admission` (A9 causal half).
 - 7.2 [GO-10] Dispatch the repayment through the `petri-factory-on-gmktec` seat. Do not use a direct `drive impl:`
   call (`.ai/fabro-dispatch-diagnosis.md`). Confirm the dispatch environment carries neither flag.
@@ -307,7 +322,7 @@ Conventions:
 | GO-1 | Provision the recovery principal: GitHub App, key in 1Password, master ruleset whose bypass names only that App | Grants a principal unchecked writes to master; maintainer tier (`.ai/fleet-and-secrets.md`) | maintainer |
 | GO-2 | Role change (`required_jobs` leaf list, reader release), release, `ansible` apply on vps | Host mutation; restarts the observer; changes the arm identity | coordinator GO; maintainer if the role touches secrets |
 | GO-3 | Master hold for each arm (3 times, about 4 min each; disarms auto-merge on about 10 PRs) | Holds other people's merges | coordinator |
-| GO-4 | Merge attempt 1 knowing it will fail a required master job | A DELIBERATE RED MASTER for about 12 to 15 min, until the revert's run is green | coordinator GO plus maintainer consent |
+| GO-4 | Merge attempt 1 knowing it will fail a required master job | A DELIBERATE RED MASTER. If the revert fires, master HEAD never shows a red `ci-green`; see section 7.3. If it does not fire, master is red from about T+12 min until the manual rollback lands. | coordinator GO plus maintainer consent |
 | GO-5 | Automatic reverts on master, after attempt 1 and after attempt 2 | Unchecked writes to master by the principal | coordinator (covered by the GO-1 consent) |
 | GO-6 | Merge attempts 2 and 3 on reduced PR checks | Merges with coverage and spec omitted, as the incident policy intends | coordinator |
 | GO-8 | Restart the observer unit (twice) and the gmktec dispatcher loop | Host and factory mutation during live work | coordinator |
@@ -334,6 +349,8 @@ Measured inputs:
 | Phase | Work | Estimate |
 |---|---|---|
 | P0 | P0-1 and P0-6 principal carrier (code; the maintainer provisioning time is not estimable); P0-3 verbs (orchestrator, about 8 gates); P0-4 recorder; P0-2 and P0-8 role and release; P0-7 rollout; P0-9 scope event. All run in parallel. | 4 to 8 h, plus maintainer time |
+| C1 | Canary 1 on v0.298.0 (wou75w or xpuv6h) plus the parity check; runs in parallel with P0 | 1.5 to 4 h (one factory run) |
+| C2 | After `ORCH` is cut: registration, then canary 2 plus parity; runs in parallel with phases P to 6 | 1.5 to 4 h (one factory run) |
 | P | Pre-flight, including the P.3 plant PR (full PR CI) | 0.5 to 1 h |
 | 3 | Attempt 1: file, genesis, commit, evidence, arm, PR run, merge, bind, revert, original run to completion | 1 to 1.25 h |
 | 4 | Attempt 2 | 0.75 to 1 h |
@@ -344,12 +361,138 @@ Measured inputs:
 | **Total** | after P0: phases P to 8 | **9 to 14 h** |
 | | of which the live sequence (phases 3 to 7) | **5.5 to 9.75 h** |
 
-Wall time is dominated by the factory run in phase 7, then P0-1's provisioning wait. Phases 3 to 6 are about 3 to
-4 h of attended work under four short master holds.
+Wall time is dominated by factory runs (C2, then phase 7), then P0-1's provisioning wait. Phases 3 to 6 are about 3
+to 4 h of attended work under four short master holds.
+
+The critical path into phase 7 is:
+
+`P0-3 merged` → `ORCH` cut → C2 green → phase 7
+
+That runs in parallel with:
+
+phases P to 6 (about 3.5 to 5 h)
+
+Phase 7 starts at whichever of the two finishes later. With C2 at 1.5 to 4 h, the two branches are about the same
+length. A red canary adds a full factory run (another 1.5 to 4 h), and so would a failed repayment run. On note 005's
+record of 0 green in 7 plan-carrier runs, the upper bound is the honest planning figure.
 
 ---
 
-## 7. Open questions and risks
+## 7. Window, holds, affected repositories and rollback (for the coordinator's ruling)
+
+### 7.1 Proposed window
+
+T0 is the first hour after all of the following hold:
+
+- P0 has merged and been released;
+- P.1 to P.5 pass;
+- the maintainer has given GO-1 and GO-4 and is reachable. GO-4's rollback (7.4) needs nobody else, but a maintainer
+  should be able to see the red if it happens.
+
+If P0 lands by about 11:00Z, the proposal is **T0 = 2026-11-07 12:00Z**. Otherwise, the first top of the hour after
+the conditions hold.
+
+| Phase | Start | Duration | Holds inside it |
+|---|---|---|---|
+| C1 (canary 1) | now, independent of T0 | 1.5 to 4 h | none |
+| P | T0 | 0.5 to 1 h | none |
+| 3, attempt 1 | T0 + 1 h | 1 to 1.25 h | H1, about 40 min: arm, PR run, merge, bind, revert, then attempt 1's run and the revert run to completion |
+| 4, attempt 2 | T0 + 2 h 15 m | 0.75 to 1 h | H2, about 25 min: arm to green master |
+| 5, probe and revert | T0 + 3 h 15 m | 0.5 to 1 h | H3, about 20 min: revert of attempt 2 and its master run |
+| 6, attempt 3 | T0 + 4 h 15 m | 0.75 to 1 h | H4, about 25 min |
+| C2 (canary 2) | when `ORCH` is cut, before T0 if possible | 1.5 to 4 h | none |
+| 7, repayment | the later of T0 + 5 h 15 m and C2 green | 2.5 to 5.5 h | none: the repayment merges through normal checks |
+| 8, capture, replay, review | after 7 | 3 to 3.5 h | none |
+
+Holds total about 1 h 50 m, spread over about 4 h 15 m, so between holds master is open for ordinary merges. A
+**release freeze** runs from the cut of `DT` until the 8.2 replay is posted (7.3).
+
+### 7.2 Master hold and auto-merge disarm
+
+A hold does two jobs:
+
+- it freezes the base from arm to CI run (note 004 §7: a reopen moves `.base.sha`);
+- it keeps unrelated merges out of the window in which an incident patch lands and may be inverted, so the inverse
+  applies to a quiet master and nobody rebases onto a commit about to be reverted.
+
+**Which PRs.** Every open, non-draft PR whose auto-merge is enabled at the moment the hold starts. Re-read the list at
+each hold start with `gh pr list --state open --json number,isDraft,autoMergeRequest`. At 01:50Z it was nine PRs:
+livespec-dev-tooling#3660, #3478, #3421, #3288, #2315, #2307, #1399, #1373 and #1299. Three of those are factory-bot
+pin bumps (#3478, #2315, #2307). PRs that open during the window count too. Draft factory PRs (#3658, #3516, #3299,
+#3285) cannot merge and are left alone. The release-please PR is held for the whole freeze, not per hold.
+
+**How.** Order matters:
+
+1. Add the `do-not-merge` label to each PR. `auto-enable-merge.yml` re-enables auto-merge on `opened`, `reopened`,
+   `ready_for_review`, `synchronize` and `unlabeled` events, and `--disable-auto` alone does not hold (note 004 §7).
+2. Then run `gh pr merge <n> --disable-auto` on each.
+3. Record the list.
+
+Restore: for the recorded PRs only, remove the label, then run `gh pr merge <n> --auto --rebase`.
+
+**Who.** The coordinator (legacy-coordinator-agent) disarms and restores, as it did for the four holds on 2026-11-06
+(9 to 11 PRs each, coordinator 18:14:39Z, 18:25:35Z, 21:07:59Z, 21:11:31Z). The plan owner's part:
+
+- request each hold by message, with its purpose and planned length;
+- send "hold released" when the hold's last master run is green.
+
+**Ceiling: 45 min per hold.** At the ceiling, the coordinator restores without waiting. The plan owner then restarts
+that attempt from re-arm (note 004 step 5 onward, next generation), which writes nothing destructive.
+
+### 7.3 Every repository affected
+
+- **livespec-dev-tooling (master).** It receives the three expedited merges, two observer reverts, the four holds and
+  the release freeze. The push-gate question:
+  - `check-master-ci-green` reads the `ci-green` check run on master's HEAD commit. It treats `queued`, `in_progress`
+    and `pending` as non-blocking (`livespec_dev_tooling/checks/master_ci_green.py:81,160-161,401-403`), and refuses
+    only a concluded failure on HEAD. VERIFIED in code.
+  - **If the revert fires as designed:** HEAD is attempt 1's commit, with `ci-green` pending, for about 1.5 to 3 min.
+    Then HEAD is the revert commit, pending for about 12 min, then green. Attempt 1's red `ci-green` concludes on a
+    commit that is no longer HEAD. **No other seat's push gate refuses at any point.** INFERRED from that code.
+    Confirm it in P.1 by reading which commit the check queries.
+  - **If the revert does NOT fire:** attempt 1's `ci-green` concludes failure on HEAD at about T(merge) + 12.4 min.
+    From then until a rollback commit becomes HEAD, every dev-tooling seat's pre-push refuses, factory janitor pushes
+    included. The rollback in 7.4 is timed to land before T(merge) + 12 min, so that window should not open.
+  - Phase 5's revert of attempt 2 follows a green run, so it is a pending period only, with no red. Attempts 2 and 3
+    are expected green.
+- **Release freeze (same repository).** The `incident-ci` job installs the LATEST dev-tooling release. A release cut
+  mid-sequence would do two things. It would make later PR runs exercise a tag other than `DT`, which breaks the
+  record's single build identity. And if cut between attempt 1's merge and its revert, it would ship the planted
+  defect. `release-dispatch.yml` fans out `sibling-released` to every `livespec-sibling` repository, which opens
+  pin-bump PRs across the fleet.
+
+  So, from the cut of `DT` until the 8.2 replay is posted, the release-please PR carries `do-not-merge`, and the
+  coordinator keeps it disarmed. The freeze covers the repayment merge too; release once the replay is posted.
+- **livespec-orchestrator-beads-fabro.** It ships P0-3, mnny4v and the `ORCH` release, all ordinary normal-gate work.
+  The live sequence has no master effect there. While dev-tooling is frozen there is no dev-tooling pin bump PR.
+- **Sibling repositories** (the `livespec-sibling` topic, including livespec, livespec-overseer and
+  livespec-driver-codex). They are affected only through a dev-tooling release. The freeze prevents that.
+- **gmktec factory.** C1, C2, the repayment run and one dispatcher loop restart. Ordinary dev-tooling dispatch stays
+  under legacy-dispatcher-agent's existing canary hold; this note asks for nothing beyond it.
+- **vps.** One role apply (GO-2) and two observer restarts (GO-8).
+- **livespec-dev-tooling repository settings.** The recovery App installation and the master ruleset (GO-1).
+
+### 7.4 Rollback for each outward-facing step
+
+| Step | Failure it guards against | Rollback | Who | When |
+|---|---|---|---|---|
+| GO-1 App and ruleset | The ruleset blocks ordinary merges, or the bypass is wider than one App | Delete the ruleset, or remove the bypass entry; suspend the App installation. Classic protection (required `ci-green`, admins enforced) is untouched throughout, so deleting the ruleset restores the prior state exactly. | maintainer | immediately on any ordinary merge refused by the ruleset |
+| GO-2 role apply | Observer fails to start or refuses its installation | Re-apply the role with the previous values (`v1.184.2`, reader `v0.295.1`, `required_jobs: [ci-green]`). The state file under `/var/lib/livespec-incident/` persists across applies. | plan owner (`ansible`) | before any arm; no live incident depends on it yet |
+| GO-3 holds | A hold outlives its purpose, or the plan session dies mid-hold | Coordinator restores the recorded PRs (7.2) | coordinator | at the 45 min ceiling, or at once on "hold released" |
+| GO-4 attempt 1 merge, **revert does not fire** | Principal down, callback missed, bind race lost (risk 2), or the action stuck `pending` | Server-side revert of attempt 1's COMPLETE landed patch through the forge (the GitHub revert of the merged PR, which is web-flow signed). Admin-merge it: the coordinator switches `enforce_admins` off and on, as at 17:47Z and 22:03Z on 2026-11-06. The red-green-replay range gate admits a web-flow-signed revert that restores the parent bytes (`docs/server-side-revert-exemption.md`); never use a skip variable. | plan owner opens the revert; coordinator merges it | trigger at the leaf failure + 5 min with no principal revert commit on master and no `completed` observer action. Target: merged before T(merge) + 12 min, so HEAD never shows a red `ci-green`. |
+| GO-4, revert does not fire (consequence) | A7 is not proved | Stop the sequence. File the cause. Re-run phase 3 on a NEW item: this item's chain has a merged, failed attempt the observer did not act on. | plan owner | after rollback |
+| GO-5 automatic revert | The inverse touches more than the incident patch (an expected-head compare-and-swap miss) | Diff the revert against the exact inverse of the landed patch. Restore any unrelated change through a normal PR cherry-pick. Never force-push master. | plan owner | at once, during the same hold |
+| GO-6 attempts 2 and 3 merges | Their master run fails unexpectedly | The observer reverts them as for attempt 1. If it does not, use the GO-4 manual rollback, with the same trigger and the same owners. | as GO-4 | as GO-4 |
+| GO-8 observer restart | The unit does not come back, or comes back without the bound registration | `systemctl start`. If the registration is gone, treat any following leaf failure with the GO-4 manual rollback. A12 is then not proved. | plan owner (`sudo` on vps) | within 1 min of the restart |
+| GO-8 dispatcher restart | The repayment run is orphaned or double-dispatched | Cancel the duplicate through the server API (`POST /api/v1/runs/{id}/cancel`, `.ai/factory-restart-cancels-runs.md`) and keep the original | gmktec factory seat | on detection |
+| GO-9 redelivery | It produces a second effect | No rollback is needed for the observer, because the action id is immutable. If a second revert commit appeared, revert that revert by a normal PR, and A12 fails. | plan owner | on detection |
+| GO-10 repayment dispatch | A run fails, or produces a PR that does not merge | The ordinary failed-run decision (the drain-backlog skill). The item stays in repayment phases, and master is unaffected, because the repayment merges only on full checks. | factory seat and plan owner | normal cadence |
+| GO-11 premature-closure probe | A probe CLOSES the item (mnny4v not serving) | Reopen the item through the ledger to its prior lifecycle status. Record the finding. Stop phase 7: A12 is unproved, so roll out mnny4v properly first. | plan owner | at once |
+| Release freeze | A release slips out mid-sequence | Close or disarm each sibling's `bump-pin` PR for that tag. If attempt 1's defect shipped, cut a corrective release after the revert. Phases already run against `DT` stay valid, but re-run any later PR run that installed the new tag. | coordinator and plan owner | on detection |
+
+---
+
+## 8. Open questions and risks
 
 1. **P0-1 is real new capability.** It means new code plus a maintainer-provisioned App and ruleset. The alternative
    is a carrier-map event that re-words or human-attests A7, A8 and A11. That is a change to the maintainer's own
