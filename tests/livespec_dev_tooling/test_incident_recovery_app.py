@@ -8,9 +8,10 @@ import json
 import subprocess
 import urllib.error
 from pathlib import Path
+from unittest.mock import Mock
 
 import pytest
-from livespec_runtime_budget.github_budget import GithubBudgetResponse
+from livespec_runtime_budget.github_budget import GithubBudgetedClient, GithubBudgetResponse
 
 from livespec_dev_tooling import incident_recovery_app as app
 from livespec_dev_tooling.incident_recovery_app import (
@@ -223,6 +224,76 @@ def _request():
     return app.GithubBudgetRequest(
         method="POST", resource="repos/owner/repo/git/trees", headers={"A": "b"}, value={"k": 1}
     )
+
+
+def test_connect_mints_a_contents_read_token_when_asked():
+    forge = Forge(
+        **{
+            _INSTALLATION: (200, {"id": 7}),
+            _TOKENS: (201, {"token": "ghs_r", "permissions": {"contents": "read"}}),
+        }
+    )
+    connected = RecoveryForge.connect(
+        repository="owner/repo",
+        credential=_CREDENTIAL,
+        transport=forge,
+        clock=lambda: 1_000_000.0,
+        signer=lambda **_: b"sig",
+        access="read",
+    )
+    assert isinstance(connected, RecoveryForge)
+    assert forge.requests[1].value["permissions"] == {"contents": "read"}
+
+
+@pytest.mark.parametrize(
+    ("access", "granted"),
+    [
+        ("read", {"contents": "write"}),
+        ("read", {"contents": "write", "metadata": "read"}),
+        ("read", {"contents": "read", "actions": "read"}),
+        ("write", {"contents": "read"}),
+    ],
+)
+def test_a_token_reporting_another_grant_is_refused(access, granted):
+    forge = Forge(
+        **{
+            _INSTALLATION: (200, {"id": 7}),
+            _TOKENS: (201, {"token": "ghs_x", "permissions": granted}),
+        }
+    )
+    refusal = RecoveryForge.connect(
+        repository="owner/repo",
+        credential=_CREDENTIAL,
+        transport=forge,
+        clock=lambda: 1_000_000.0,
+        signer=lambda **_: b"sig",
+        access=access,
+    )
+    assert isinstance(refusal, AppRefusal)
+    assert refusal.code == "recovery-app-token-refused"
+    assert f"contents-{access}" in refusal.detail
+
+
+def test_a_revalidated_read_is_the_retained_body_at_status_200():
+    answers = iter(
+        [
+            GithubBudgetResponse(
+                status_code=200, headers={"ETag": "x"}, value={"id": 1}, primary_budget_spent=1
+            ),
+            GithubBudgetResponse(status_code=304, headers={}, value=None, primary_budget_spent=1),
+        ]
+    )
+    client = GithubBudgetedClient(transport=lambda **_: next(answers), max_attempts=1)
+    forge = RecoveryForge(repository="owner/repo", token="t", client=client)  # noqa: S106
+    assert forge.request(method="GET", path="pulls/1") == (200, {"id": 1})
+    assert forge.request(method="GET", path="pulls/1") == (200, {"id": 1})
+
+
+def test_signing_that_outlives_its_ceiling_answers_no_signature(monkeypatch):
+    monkeypatch.setattr(
+        app.subprocess, "run", Mock(side_effect=subprocess.TimeoutExpired("openssl", 10))
+    )
+    assert app.openssl_sign(message=b"m", private_key="PEM\n") == b""
 
 
 def test_transport_posts_json_to_the_fixed_origin(monkeypatch):

@@ -4,16 +4,15 @@ from __future__ import annotations
 
 import io
 import json
-import subprocess
 import threading
 import time
 
 import pytest
 
 from livespec_dev_tooling import incident_ci_job_collection as collection_module
-from livespec_dev_tooling import incident_ci_job_identity as forge
 from livespec_dev_tooling.incident_ci_job_collection import CiJobCollection
 from livespec_dev_tooling.incident_ci_payload import decode_authority
+from livespec_dev_tooling.incident_forge_reads import ForgeReads
 from livespec_dev_tooling.incident_observer_service import ControllerService
 from tests.livespec_dev_tooling import test_incident_ci_attachment_edges as edge_tests
 from tests.livespec_dev_tooling import test_incident_ci_job_history as history_tests
@@ -123,9 +122,7 @@ def test_history_preserves_pending_terminal_and_late_unavailable(attached, monke
     assert collect(attached, "c1")[1]["observation"]["status"] == "pending"
     conclude(records)
     assert collect(attached, "c2")[1]["observation"]["status"] == "successful"
-    monkeypatch.setattr(
-        forge, "gh_read", lambda *, args, **_: subprocess.CompletedProcess(args, 1, "", "")
-    )
+    monkeypatch.setattr(ForgeReads, "installed", classmethod(lambda _cls, **_: lambda _path: None))
     assert collect(attached, "c3")[1]["observation"]["status"] == "unavailable"
     conclude(records, job=("in_progress", None), check=("in_progress", None))
     history = inspect(attached)[1]["observations"]
@@ -193,15 +190,15 @@ def test_malformed_subtree_refuses_collection_and_inspection(attached):
 def blocked(attached, monkeypatch):
     conclude(attached.records)
     gate, entered = threading.Event(), threading.Semaphore(0)
-    original = forge.gh_read
+    original = attached.read
 
-    def slow(**kwargs):
-        if kwargs["args"][1] == history_tests.CHECK:
+    def slow(path):
+        if path == history_tests.CHECK:
             entered.release()
             assert gate.wait(timeout=30)
-        return original(**kwargs)
+        return original(path)
 
-    monkeypatch.setattr(forge, "gh_read", slow)
+    monkeypatch.setattr(ForgeReads, "installed", classmethod(lambda _cls, **_: slow))
     return attached, gate, entered
 
 

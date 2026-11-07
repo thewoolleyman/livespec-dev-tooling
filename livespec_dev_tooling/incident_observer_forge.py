@@ -2,18 +2,17 @@
 
 from __future__ import annotations
 
-import json
 import re
 from dataclasses import dataclass
 from typing import cast
 
 from livespec_dev_tooling._incident_observer_types import ObserverArm, ObserverRegistration
-from livespec_dev_tooling.budgeted_gh import gh_read
+from livespec_dev_tooling.incident_forge_reads import ForgeRead
 
 __all__: list[str] = ["MergedRunVerifier"]
 
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-47ij37
-_FORGE_TIMEOUT_SECONDS = 10
+# EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-x3wwwc
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -25,6 +24,7 @@ class MergedRunVerifier:
     this verifier does not claim the terminal SHA is the whole rollback unit.
     """
 
+    read: ForgeRead
     workflow_path: str = ".github/workflows/ci.yml"
     target_branch: str = "master"
 
@@ -35,8 +35,9 @@ class MergedRunVerifier:
             return False
         if registration.run_id <= 0 or registration.branch != self.target_branch:
             return False
-        pr = _api_record(path=f"repos/{arm.repository}/pulls/{arm.pr_number}")
+        pr = _api_record(read=self.read, path=f"repos/{arm.repository}/pulls/{arm.pr_number}")
         run = _api_record(
+            read=self.read,
             path=f"repos/{arm.repository}/actions/runs/{registration.run_id}",
         )
         if pr is None or run is None:
@@ -50,12 +51,8 @@ class MergedRunVerifier:
         )
 
 
-def _api_record(*, path: str) -> dict[str, object] | None:
-    try:
-        result = gh_read(args=["api", path], timeout=_FORGE_TIMEOUT_SECONDS)
-        record: object = json.loads(result.stdout) if result.returncode == 0 else None
-    except json.JSONDecodeError:
-        return None
+def _api_record(*, read: ForgeRead, path: str) -> dict[str, object] | None:
+    record = read(path)
     return cast("dict[str, object]", record) if isinstance(record, dict) else None
 
 

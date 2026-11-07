@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 import copy
-import json
-import subprocess
 from dataclasses import replace
 
 import pytest
@@ -12,6 +10,7 @@ import pytest
 from livespec_dev_tooling import incident_ci_job_identity as forge
 from livespec_dev_tooling._incident_observer_types import ObserverArmQuery
 from livespec_dev_tooling.incident_ci_oidc import verify_oidc
+from livespec_dev_tooling.incident_forge_reads import ForgeReads
 from tests.livespec_dev_tooling import test_incident_ci_identity_policy as policy_tests
 
 trusted = policy_tests.trusted
@@ -83,12 +82,12 @@ def correlated(trusted, monkeypatch):
     )
     records, calls = observations(query), []
 
-    def read(*, args, **_kwargs):
-        calls.append(args[1])
-        return subprocess.CompletedProcess(args, 0, json.dumps(records.get(args[1], {})), "")
+    def read(path):
+        calls.append(path)
+        return copy.deepcopy(records.get(path, {}))
 
-    monkeypatch.setattr(forge, "gh_read", read)
-    return forge.CiJobVerifier(identity=identity, query=query), records, calls
+    monkeypatch.setattr(ForgeReads, "installed", classmethod(lambda _cls, **_: read))
+    return forge.CiJobVerifier(identity=identity, query=query, read=read), records, calls
 
 
 def test_exact_attempt_job_resolves_check_without_equal_job_id_or_pr_arrays(correlated):
@@ -186,7 +185,7 @@ def test_bounded_multiple_pages_and_consistent_final_observation(correlated):
 
 
 @pytest.mark.parametrize("target", ["latest", "pr", "jobs"])
-def test_final_rerun_pr_or_pagination_change_refuses(correlated, monkeypatch, target):
+def test_final_rerun_pr_or_pagination_change_refuses(correlated, target):
     verifier, records, calls = correlated
     selected = {
         "latest": "repos/owner/repo/actions/runs/812",
@@ -194,33 +193,21 @@ def test_final_rerun_pr_or_pagination_change_refuses(correlated, monkeypatch, ta
         "jobs": "repos/owner/repo/actions/runs/812/attempts/2/jobs?per_page=100&page=1",
     }[target]
 
-    def read(*, args, **_kwargs):
-        path = args[1]
+    def read(path):
         calls.append(path)
         data = copy.deepcopy(records.get(path, {}))
         if path == selected and calls.count(path) > 1:
             data.update({"run_attempt": 3, "state": "closed", "total_count": 2})
-        return subprocess.CompletedProcess(args, 0, json.dumps(data), "")
+        return data
 
-    monkeypatch.setattr(forge, "gh_read", read)
-    assert verifier.verify() is None
+    assert replace(verifier, read=read).verify() is None
 
 
-def test_mismatched_arm_and_unavailable_forge_refuse(correlated, monkeypatch):
+def test_mismatched_arm_and_unavailable_forge_refuse(correlated):
     verifier, _, _ = correlated
     assert replace(verifier, query=replace(verifier.query, pr_number=56)).verify() is None
-    for result in (
-        subprocess.CompletedProcess([], 1, "", "private"),
-        subprocess.CompletedProcess([], 0, "not-json", ""),
-    ):
-        monkeypatch.setattr(forge, "gh_read", lambda result=result, **_: result)
-        assert verifier.verify() is None
-
-    def unavailable(**_kwargs):
-        raise OSError("controlled unavailable")
-
-    monkeypatch.setattr(forge, "gh_read", unavailable)
-    assert verifier.verify() is None
+    for answer in (None, [], "not-an-object"):
+        assert replace(verifier, read=lambda _path, answer=answer: answer).verify() is None
 
 
 def test_pagination_bound_rejects_truncated_attempt_and_invalid_job_ids(correlated):
@@ -234,19 +221,18 @@ def test_pagination_bound_rejects_truncated_attempt_and_invalid_job_ids(correlat
     assert verifier.verify() is None
 
 
-def test_final_suite_boolean_cannot_equal_a_valid_integer_suite(correlated, monkeypatch):
+def test_final_suite_boolean_cannot_equal_a_valid_integer_suite(correlated):
     verifier, records, calls = correlated
     path = "repos/owner/repo/actions/runs/812"
     records[path]["check_suite_id"] = 1
     records[path + "/attempts/2"]["check_suite_id"] = 1
     records["repos/owner/repo/check-runs/913"]["check_suite"]["id"] = 1
 
-    def read(*, args, **_kwargs):
-        calls.append(args[1])
-        data = copy.deepcopy(records.get(args[1], {}))
-        if args[1] == path and calls.count(path) > 1:
+    def read(requested):
+        calls.append(requested)
+        data = copy.deepcopy(records.get(requested, {}))
+        if requested == path and calls.count(path) > 1:
             data["check_suite_id"] = True
-        return subprocess.CompletedProcess(args, 0, json.dumps(data), "")
+        return data
 
-    monkeypatch.setattr(forge, "gh_read", read)
-    assert verifier.verify() is None
+    assert replace(verifier, read=read).verify() is None

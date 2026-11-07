@@ -7,6 +7,7 @@ from typing import Any
 from livespec_dev_tooling._incident_ci_attachment_store import raw_fact
 from livespec_dev_tooling.budgeted_gh import github_api_url
 from livespec_dev_tooling.incident_ci_job_identity import attempt_jobs, forge_object, forge_record
+from livespec_dev_tooling.incident_forge_reads import ForgeRead
 
 __all__: list[str] = ["classify_snapshot", "observe_retained_job"]
 
@@ -23,14 +24,14 @@ _TERMINAL = {
 }
 
 
-def observe_retained_job(*, binding: dict[str, Any]) -> tuple[str, dict[str, Any]]:
+def observe_retained_job(*, binding: dict[str, Any], read: ForgeRead) -> tuple[str, dict[str, Any]]:
     """Read the exact retained attempt, job and check through the budgeted forge."""
     root = f"repos/{binding['repository']}"
     attempt_path = f"{root}/actions/runs/{binding['run_id']}/attempts/{binding['run_attempt']}"
     check_path = f"{root}/check-runs/{binding['check_run_id']}"
-    attempt = forge_record(path=attempt_path)
-    jobs = attempt_jobs(path=f"{attempt_path}/jobs")
-    check = forge_record(path=check_path)
+    attempt = forge_record(read=read, path=attempt_path)
+    jobs = attempt_jobs(read=read, path=f"{attempt_path}/jobs")
+    check = forge_record(read=read, path=check_path)
     if not attempt or jobs is None or not check:
         return _facts(status="unavailable", reason="retained forge observation unavailable")
     matched = [v for v in jobs if v.get("id") == binding["job_id"]]

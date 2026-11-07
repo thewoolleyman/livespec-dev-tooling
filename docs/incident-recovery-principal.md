@@ -31,6 +31,10 @@ The incident_observer role writes it at apply, under `no_log`, from
 wrapper projects those two values on the control node. The key is never stored in
 this repository or in an environment variable of the observer or its reader.
 
+The observer process reads the same file for its own forge reads
+(`incident_forge_reads`), and mints a `contents: read` token for one operation. Only
+the principal asks for `contents: write`. The canonical reader never holds the key.
+
 The credential is read lazily. `lookup` and `conflict` still answer for an
 action with no open publication while the App is unprovisioned. Every operation
 that needs the forge refuses by name instead:
@@ -42,7 +46,7 @@ that needs the forge refuses by name instead:
 | `recovery-app-credential-malformed` | The file does not hold exactly a numeric `app_id` and a PEM `private_key`. |
 | `recovery-app-signing-unavailable` | `/usr/bin/openssl` could not sign the App JWT. |
 | `recovery-app-not-installed` | The App's installation does not cover the observed repository. |
-| `recovery-app-token-refused` | GitHub minted no token on that one repository whose grant is `contents: write`, alone or with the `metadata: read` GitHub adds to every App token. Any other read or write is refused. |
+| `recovery-app-token-refused` | GitHub minted no token on that one repository whose grant is the requested `contents` access (`write` here), alone or with the `metadata: read` GitHub adds to every App token. Any other read or write is refused. |
 
 Each process mints one installation token. The token is scoped to the observed
 repository with `contents: write` only and is never written to a reply, record

@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 import copy
-import json
-import subprocess
 from dataclasses import replace
 
 import pytest
@@ -16,7 +14,7 @@ from livespec_dev_tooling.incident_observer_forge import MergedRunVerifier
 
 
 @pytest.fixture
-def setup(monkeypatch):
+def setup():
     arm = ObserverArm(
         repository="owner/repo",
         incident_item_id="incident-1",
@@ -71,34 +69,24 @@ def setup(monkeypatch):
     }
     calls = []
 
-    def run(argv, **kwargs):
-        calls.append((argv, kwargs))
-        key = argv[-1].removeprefix("repos/owner/repo/")
-        record = records.get(key)
-        if isinstance(record, Exception):
-            raise record
-        return subprocess.CompletedProcess(argv, 0, json.dumps(record), "")
+    def read(path):
+        calls.append(path)
+        return copy.deepcopy(records.get(path.removeprefix("repos/owner/repo/")))
 
-    monkeypatch.setattr(subprocess, "run", run)
-    return arm, registration, records, calls
+    return arm, registration, records, calls, MergedRunVerifier(read=read)
 
 
 def test_exact_merged_pr_and_running_master_push_bind_without_waiting_for_completion(setup):
-    arm, registration, _, calls = setup
-    assert MergedRunVerifier()(arm, registration)
-    assert [call[0][-1] for call in calls] == [
-        "repos/owner/repo/pulls/55",
-        "repos/owner/repo/actions/runs/91",
-    ]
-    assert all(call[0][:2] == ["gh", "api"] for call in calls)
-    assert all(call[1]["timeout"] == 10 for call in calls)
+    arm, registration, _, calls, verifier = setup
+    assert verifier(arm, registration)
+    assert calls == ["repos/owner/repo/pulls/55", "repos/owner/repo/actions/runs/91"]
 
 
 def test_malformed_repository_or_nonmaster_run_is_refused_before_api(setup):
-    arm, registration, _, calls = setup
-    assert not MergedRunVerifier()(replace(arm, repository="invalid"), registration)
-    assert not MergedRunVerifier()(arm, replace(registration, branch="feature"))
-    assert not MergedRunVerifier()(arm, replace(registration, run_id=0))
+    arm, registration, _, calls, verifier = setup
+    assert not verifier(replace(arm, repository="invalid"), registration)
+    assert not verifier(arm, replace(registration, branch="feature"))
+    assert not verifier(arm, replace(registration, run_id=0))
     assert not calls
 
 
@@ -119,9 +107,9 @@ def test_malformed_repository_or_nonmaster_run_is_refused_before_api(setup):
     ],
 )
 def test_unmerged_or_different_pr_identity_is_refused(setup, key, value):
-    arm, registration, records, _ = setup
+    arm, registration, records, _, verifier = setup
     records["pulls/55"][key] = copy.deepcopy(value)
-    assert not MergedRunVerifier()(arm, registration)
+    assert not verifier(arm, registration)
 
 
 @pytest.mark.parametrize(
@@ -140,28 +128,13 @@ def test_unmerged_or_different_pr_identity_is_refused(setup, key, value):
     ],
 )
 def test_arbitrary_pr_fork_or_nongating_run_is_refused(setup, key, value):
-    arm, registration, records, _ = setup
+    arm, registration, records, _, verifier = setup
     records["actions/runs/91"][key] = copy.deepcopy(value)
-    assert not MergedRunVerifier()(arm, registration)
+    assert not verifier(arm, registration)
 
 
-@pytest.mark.parametrize(
-    "error", [OSError("forge unavailable"), subprocess.TimeoutExpired("gh", 10), []]
-)
-def test_forge_dependency_failure_or_unreadable_record_cannot_bind(setup, error):
-    arm, registration, records, _ = setup
-    records["actions/runs/91"] = error
-    assert not MergedRunVerifier()(arm, registration)
-
-
-@pytest.mark.parametrize(
-    "result",
-    [
-        subprocess.CompletedProcess([], 1, "", "refused"),
-        subprocess.CompletedProcess([], 0, "not-json", ""),
-    ],
-)
-def test_failed_api_or_bad_json_cannot_bind(setup, monkeypatch, result):
-    arm, registration, _, _ = setup
-    monkeypatch.setattr(subprocess, "run", lambda *_args, **_kwargs: result)
-    assert not MergedRunVerifier()(arm, registration)
+@pytest.mark.parametrize("answer", [None, [], "not-an-object"])
+def test_unavailable_or_unreadable_record_cannot_bind(setup, answer):
+    arm, registration, records, _, verifier = setup
+    records["actions/runs/91"] = answer
+    assert not verifier(arm, registration)

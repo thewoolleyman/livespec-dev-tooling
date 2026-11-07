@@ -5,10 +5,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, cast
 
-from livespec_dev_tooling._incident_ci_identity_json import identity_json
 from livespec_dev_tooling._incident_observer_types import ObserverArmQuery
-from livespec_dev_tooling.budgeted_gh import gh_read, github_api_url
+from livespec_dev_tooling.budgeted_gh import github_api_url
 from livespec_dev_tooling.incident_ci_oidc import OidcIdentity
+from livespec_dev_tooling.incident_forge_reads import ForgeRead
 
 _GITHUB_ACTIONS_APP = 15368
 _PAGE_SIZE = 100
@@ -23,6 +23,7 @@ __all__: list[str] = [
 ]
 
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-rqhqnb
+# EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-x3wwwc
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -39,6 +40,7 @@ class CiJobVerifier:
 
     identity: OidcIdentity
     query: ObserverArmQuery
+    read: ForgeRead
 
     def verify(self) -> CiJobIdentity | None:
         identity, query = self.identity, self.query
@@ -49,12 +51,13 @@ class CiJobVerifier:
         suite = self._initial(root=root, run_path=run_path)
         if suite is None:
             return None
-        jobs = attempt_jobs(path=f"{run_path}/attempts/{identity.run_attempt}/jobs")
+        read = self.read
+        jobs = attempt_jobs(read=read, path=f"{run_path}/attempts/{identity.run_attempt}/jobs")
         if jobs is None:
             return None
         url = github_api_url(path=f"{root}/check-runs/{identity.check_run_id}")
         matched = [v for v in jobs if v.get("check_run_url") == url]
-        check = forge_record(path=f"{root}/check-runs/{identity.check_run_id}")
+        check = forge_record(read=read, path=f"{root}/check-runs/{identity.check_run_id}")
         if (
             len(matched) != 1
             or not self._job(job=matched[0])
@@ -62,8 +65,8 @@ class CiJobVerifier:
         ):
             return None
         latest, final_pr = (
-            forge_record(path=run_path),
-            forge_record(path=f"{root}/pulls/{query.pr_number}"),
+            forge_record(read=read, path=run_path),
+            forge_record(read=read, path=f"{root}/pulls/{query.pr_number}"),
         )
         if (
             not self._run(run=latest)
@@ -75,11 +78,11 @@ class CiJobVerifier:
         return CiJobIdentity(job_id=matched[0]["id"], check_suite_id=suite)
 
     def _initial(self, *, root: str, run_path: str) -> int | None:
-        identity = self.identity
-        run = forge_record(path=run_path)
-        attempt = forge_record(path=f"{run_path}/attempts/{identity.run_attempt}")
-        pr = forge_record(path=f"{root}/pulls/{self.query.pr_number}")
-        merge = forge_record(path=f"{root}/git/commits/{identity.merge_sha}")
+        identity, read = self.identity, self.read
+        run = forge_record(read=read, path=run_path)
+        attempt = forge_record(read=read, path=f"{run_path}/attempts/{identity.run_attempt}")
+        pr = forge_record(read=read, path=f"{root}/pulls/{self.query.pr_number}")
+        merge = forge_record(read=read, path=f"{root}/git/commits/{identity.merge_sha}")
         suite = run.get("check_suite_id")
         parents = _objects(value=merge.get("parents"))
         valid = (
@@ -168,25 +171,17 @@ def _positive(*, value: Any) -> bool:
     return type(value) is int and value > 0
 
 
-def forge_record(*, path: str) -> dict[str, Any]:
+def forge_record(*, read: ForgeRead, path: str) -> dict[str, Any]:
     """One budgeted controller-account read; any failure is an empty observation."""
-    try:
-        result = gh_read(args=["api", path], timeout=10)
-        return (
-            identity_json(raw=result.stdout.encode(), limit=1048576)
-            if result.returncode == 0
-            else {}
-        )
-    except (OSError, ValueError, TypeError, UnicodeError, RecursionError):
-        return {}
+    return forge_object(value=read(path))
 
 
-def attempt_jobs(*, path: str) -> list[dict[str, Any]] | None:
+def attempt_jobs(*, read: ForgeRead, path: str) -> list[dict[str, Any]] | None:
     """Complete bounded pages of one exact attempt, or unavailable."""
     result: list[dict[str, Any]] = []
     total: int | None = None
     for page in range(1, 11):
-        data = forge_record(path=f"{path}?per_page=100&page={page}")
+        data = forge_record(read=read, path=f"{path}?per_page=100&page={page}")
         count, rows = data.get("total_count"), _objects(value=data.get("jobs"))
         if not _positive(value=count):
             return None
@@ -209,7 +204,7 @@ def attempt_jobs(*, path: str) -> list[dict[str, Any]] | None:
         or len(set(ids)) != len(ids)
     ):
         return None
-    final = forge_record(path=f"{path}?per_page=100&page=1")
+    final = forge_record(read=read, path=f"{path}?per_page=100&page=1")
     return (
         result
         if type(final.get("total_count")) is int and final.get("total_count") == total

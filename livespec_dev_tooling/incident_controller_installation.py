@@ -47,6 +47,7 @@ class ControllerInstallation:
     control_secret: bytes
     query_secret: bytes
     port: int
+    config: Path
     ci_identity_policy: CiIdentityPolicy | None = None
 
     @classmethod
@@ -120,6 +121,7 @@ class ControllerInstallation:
                 control_secret=control,
                 query_secret=query,
                 port=data["port"],
+                config=config,
                 ci_identity_policy=load_identity_policy(
                     descriptor=manifest.get("ci_identity_policy"), repository=data["repository"]
                 ),

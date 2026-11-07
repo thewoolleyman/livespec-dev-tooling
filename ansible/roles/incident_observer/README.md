@@ -129,7 +129,9 @@ when the control node's wrapper projects both `LIVESPEC_RECOVERY_APP_ID` and
 `LIVESPEC_RECOVERY_APP_PRIVATE_KEY`. When either is missing, the role writes
 nothing and says so in the run output. The principal then refuses every forge
 operation as `recovery-app-credential-absent`, while `lookup` and `conflict`
-still answer. The observer process and the canonical reader never hold the key.
+still answer. The observer process reads the same file for its own forge reads
+and mints only a `contents: read` token (`docs/incident-observer-service.md`). The
+canonical reader never holds the key.
 
 ## What a first apply does that later applies do not
 

@@ -152,6 +152,7 @@ def protected(tmp_path):
         control_secret=b"unused-control-fixture",
         query_secret=b"unused-query-fixture",
         port=8765,
+        config=state.parent / "controller.json",
     )
     return RecoveryJournal(installation=installation), installation, intent, path
 

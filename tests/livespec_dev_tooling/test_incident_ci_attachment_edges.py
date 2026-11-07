@@ -23,6 +23,7 @@ from livespec_dev_tooling._incident_observer_store import (
 from livespec_dev_tooling._incident_observer_types import ObserverRegistration
 from livespec_dev_tooling.incident_ci_identity_policy import load_identity_policy
 from livespec_dev_tooling.incident_ci_payload import decode_authority
+from livespec_dev_tooling.incident_forge_reads import ForgeReads
 from livespec_dev_tooling.incident_observer_admission import arm_before_merge, bind_after_merge
 from livespec_dev_tooling.incident_observer_invalidation import ObserverCiInvalidation
 from tests.livespec_dev_tooling import test_incident_ci_attachment as red_tests
@@ -52,6 +53,7 @@ def attached(authenticated):
         calls=calls,
         effects=effects,
         receipt=receipt,
+        read=ForgeReads.installed(installation=application.installation),
     )
 
 
