@@ -65,6 +65,20 @@ def genesis_request(args: argparse.Namespace) -> int:
     return 0
 
 
+def head_advance(args: argparse.Namespace) -> int:
+    """After the hook-admitted commit: the same reserved carrier, naming the new head."""
+    reply = json.load(sys.stdin)
+    before = reply["result"]["attempt"]
+    after = dict(before)
+    after.update(
+        generation=before["generation"] + 1,
+        operation_id=args.operation,
+        head=args.head_sha,
+    )
+    sys.stdout.write(canonical(after) + "\n")
+    return 0
+
+
 def successor(args: argparse.Namespace) -> int:
     reply = json.load(sys.stdin)
     before = reply["result"]["attempt"]
@@ -193,6 +207,11 @@ def main() -> int:
     s.add_argument("--base-sha", required=True)
     s.add_argument("--head-sha", required=True)
     s.set_defaults(run=successor)
+
+    h = sub.add_parser("head-advance")
+    h.add_argument("--operation", required=True)
+    h.add_argument("--head-sha", required=True)
+    h.set_defaults(run=head_advance)
 
     a = sub.add_parser("arm")
     a.add_argument("--controller-release", required=True)
