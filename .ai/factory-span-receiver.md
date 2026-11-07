@@ -3,7 +3,9 @@
 Read this before diagnosing a factory `build.cargo-*` span in Honeycomb that
 is missing an attribute the sandbox shim is known to attach, before treating
 such an absence as a shim defect, and before naming "the sandbox pin" as the
-gate for any factory-telemetry evidence.
+gate for any factory-telemetry evidence. Read it also before running
+`mise exec -- just ensure-plugins` or `claude plugin update <plugin> --scope
+project` in a shared fleet project (see the last section).
 
 ## The mechanism
 
@@ -54,3 +56,19 @@ Two facts follow, and both were paid for on 2026-09-07:
 Update the plugin IN THE DISPATCHING PROJECT, restart that project's
 dispatcher loop, THEN dispatch. A dispatch before the restart produces
 scrubbed spans and looks exactly like a shim that attached nothing.
+
+## A project-scope update is not session-only
+
+`mise exec -- just ensure-plugins` and `claude plugin update <plugin> --scope
+project` move the project's install, and the factory launcher resolves that
+same install. Running either in a shared fleet project therefore also moves
+that project's FACTORY dispatch registration, not just your session's build.
+
+Measured 2026-11-07 ~00:30Z: the expedited-incident-response-flag plan-owner
+session ran `ensure-plugins` in livespec-dev-tooling to get orchestrator
+v0.298.0 (`c681f61e16f9` -> `812c6bb59d02`) for a Proof of Done capture. That
+took gmktec-factory-placement's roll step (b) out of turn, and
+legacy-coordinator-agent had to absorb it as the parity canary.
+
+Before running either in a shared project, ask legacy-coordinator-agent
+whether a build canary or roll is pending for that project.
