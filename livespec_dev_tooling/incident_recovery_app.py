@@ -66,6 +66,10 @@ _JWT_LIFETIME_SECONDS = 540
 _MAX_CREDENTIAL_BYTES = 16384
 _HTTP_OK = 200
 _HTTP_CREATED = 201
+# GitHub reports every App installation token's grant with `metadata: read` beside
+# what was requested, because no App can drop that permission (measured on the live
+# recovery App, 2026-11-07). Those two grants pass; any other read or write fails.
+_SCOPED_GRANTS = ({"contents": "write"}, {"contents": "write", "metadata": "read"})
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -265,7 +269,7 @@ class RecoveryForge:
             status != _HTTP_CREATED
             or not isinstance(token, str)
             or not token
-            or granted != {"contents": "write"}
+            or granted not in _SCOPED_GRANTS
         ):
             return AppRefusal(
                 code="recovery-app-token-refused",
