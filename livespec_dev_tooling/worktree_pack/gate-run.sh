@@ -773,12 +773,7 @@ maybe_write_flip_marker() {
 # first keeps that cost off every run where the pack is already present.
 ensure_worktree_pack() {
     local root="$1"
-    local pack_dir="$root/dev-tooling"
-    local f
-    for f in worktree-lib.sh branch-protection.sh worktree.just branch-protection.just; do
-        [[ -f "$pack_dir/$f" ]] && return 0
-    done
-    printf ':: dev-tooling/ worktree pack absent — running `just install-worktree-pack`\n' >&2
+    printf ':: dev-tooling/ worktree pack refresh — running `just install-worktree-pack`\n' >&2
     ( cd "$root" && just install-worktree-pack ) >&2 || true
 }
 
