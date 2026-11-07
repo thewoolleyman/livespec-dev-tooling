@@ -34,8 +34,12 @@ _DOCKERFILE = _LAYER_DIR / "agent" / "Dockerfile"
 _HERDR_VERSION = "0.9.3"
 _HERDR_SHA256 = "18a8dc65f1c2fa485884344356dea1cfd911c6f06cf46fa78e193f4087f4dba7"
 _HERDR_ASSET = "herdr-linux-x86_64"
+# Measured the same way on 2026-11-07: the same release's `herdr-linux-aarch64`,
+# 27,606,640 bytes, for the python-agent layer built natively on arm64.
+_HERDR_SHA256_ARM64 = "4de7aa3e25678812e92960de64f7c2aaa1bca1f0f80a3c5e559837e231e1f5c0"
+_HERDR_ASSET_ARM64 = "herdr-linux-aarch64"
 _HERDR_RELEASE_URL = (
-    "https://github.com/herdrdev/herdr/releases/download/v${HERDR_VERSION}/" + _HERDR_ASSET
+    "https://github.com/herdrdev/herdr/releases/download/v${HERDR_VERSION}/${herdr_asset}"
 )
 # `/usr/local/bin` is on the default PATH of a non-root shell, which is the
 # requirement: a sandbox user has to find the binary without sourcing anything.
@@ -43,6 +47,7 @@ _HERDR_BIN = "/usr/local/bin/herdr"
 
 _VERSION_ARG_LINE = re.compile(r"^ARG HERDR_VERSION=(?P<version>\S+)$", re.MULTILINE)
 _SHA256_ARG_LINE = re.compile(r"^ARG HERDR_SHA256=(?P<digest>\S+)$", re.MULTILINE)
+_SHA256_ARM64_ARG_LINE = re.compile(r"^ARG HERDR_SHA256_arm64=(?P<digest>\S+)$", re.MULTILINE)
 
 # The one fragment that appears in the smoke step and nowhere else, so
 # `_step_containing` resolves that step unambiguously.
@@ -100,6 +105,10 @@ def test_herdr_is_pinned_by_agent_layer_args_and_verified_before_it_becomes_exec
     assert digests == [
         _HERDR_SHA256
     ], f"expected exactly one ARG HERDR_SHA256={_HERDR_SHA256}, found {digests}"
+    arm64_digests = _SHA256_ARM64_ARG_LINE.findall(text)
+    assert arm64_digests == [
+        _HERDR_SHA256_ARM64
+    ], f"expected exactly one ARG HERDR_SHA256_arm64={_HERDR_SHA256_ARM64}, found {arm64_digests}"
     siblings = sorted(p for p in _LAYER_DIR.glob("*/Dockerfile") if p != _DOCKERFILE)
     assert (
         siblings
@@ -118,8 +127,16 @@ def test_herdr_is_pinned_by_agent_layer_args_and_verified_before_it_becomes_exec
     assert (
         "--retry 5 --retry-all-errors --retry-connrefused" in step
     ), "the herdr download retries a transient CDN failure like every other fetch in this layer"
-    verify = 'echo "${HERDR_SHA256}  /tmp/' + _HERDR_ASSET + '" | sha256sum -c -'
-    make_executable = f"install -m 0755 /tmp/{_HERDR_ASSET} {_HERDR_BIN}"
+    for selected in (
+        f"herdr_asset={_HERDR_ASSET};",
+        'herdr_sha256="${HERDR_SHA256}";',
+        'if [ "${TARGETARCH:-}" = "arm64" ]; then',
+        f"herdr_asset={_HERDR_ASSET_ARM64};",
+        'herdr_sha256="${HERDR_SHA256_arm64}";',
+    ):
+        assert selected in step, f"the step must select asset and digest together: {selected}"
+    verify = 'echo "${herdr_sha256}  /tmp/${herdr_asset}" | sha256sum -c -'
+    make_executable = 'install -m 0755 "/tmp/${herdr_asset}" ' + _HERDR_BIN
     assert verify in step, "the download must be checked against the pinned digest ARG"
     assert (
         make_executable in step

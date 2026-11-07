@@ -76,6 +76,14 @@
 ARG PARENT_IMAGE=livespec-fabro-sandbox:python-dev
 FROM ${PARENT_IMAGE}
 
+# BuildKit sets TARGETARCH. Every asset this layer fetches by a fixed URL is
+# selected by it and held to that architecture's own committed digest, so the
+# python-agent layer also builds natively for an arm64 homelab worker
+# (.github/workflows/fabro-sandbox-image.yml, job build-arm64; plan
+# homelab-k8s-worker-nodes, the factory sandbox task on the worker). Anything
+# other than arm64 takes the amd64 asset and digest it always did.
+ARG TARGETARCH
+
 # ---------------------------------------------------------------
 # Adapter pins — ARG form so `just check-fabro-image-pin-lockstep` can
 # parse them mechanically across the layer Dockerfiles.
@@ -180,14 +188,20 @@ RUN npm install -g --prefix /opt/livespec/codex-acp --fetch-retries=5 \
 # install-sccache-binary.sh) — bump both together.
 ARG SCCACHE_VERSION=0.17.0
 ARG SCCACHE_SHA256=67c4a96dd237c1f518f6b36083f270f9976d516f1e57fce891755ea782e50006
+ARG SCCACHE_SHA256_arm64=821a86343191aa1cbab74bd42f9e93c9a63bf85e4742945f40d3ae84193c1c77
 ARG SCCACHE_REDIS_ENDPOINT=redis://172.17.0.1:6379
 COPY --chmod=0755 docker/fabro-sandbox/agent/sccache-or-rustc.sh /usr/local/bin/sccache-or-rustc
 RUN set -eux; \
     asset="sccache-v${SCCACHE_VERSION}-x86_64-unknown-linux-musl"; \
+    asset_sha256="${SCCACHE_SHA256}"; \
+    if [ "${TARGETARCH:-}" = "arm64" ]; then \
+        asset="sccache-v${SCCACHE_VERSION}-aarch64-unknown-linux-musl"; \
+        asset_sha256="${SCCACHE_SHA256_arm64}"; \
+    fi; \
     curl -fsSL --retry 5 --retry-all-errors --retry-connrefused \
         -o /tmp/sccache.tgz \
         "https://github.com/mozilla/sccache/releases/download/v${SCCACHE_VERSION}/${asset}.tar.gz"; \
-    echo "${SCCACHE_SHA256}  /tmp/sccache.tgz" | sha256sum -c -; \
+    echo "${asset_sha256}  /tmp/sccache.tgz" | sha256sum -c -; \
     tar -xzf /tmp/sccache.tgz -C /tmp "${asset}/sccache"; \
     install -m 0755 "/tmp/${asset}/sccache" /usr/local/bin/sccache; \
     rm -rf /tmp/sccache.tgz "/tmp/${asset}"; \
@@ -345,14 +359,21 @@ RUN set -eux; \
 # ---------------------------------------------------------------
 ARG HERDR_VERSION=0.9.3
 ARG HERDR_SHA256=18a8dc65f1c2fa485884344356dea1cfd911c6f06cf46fa78e193f4087f4dba7
+ARG HERDR_SHA256_arm64=4de7aa3e25678812e92960de64f7c2aaa1bca1f0f80a3c5e559837e231e1f5c0
 
 RUN set -eux; \
+    herdr_asset=herdr-linux-x86_64; \
+    herdr_sha256="${HERDR_SHA256}"; \
+    if [ "${TARGETARCH:-}" = "arm64" ]; then \
+        herdr_asset=herdr-linux-aarch64; \
+        herdr_sha256="${HERDR_SHA256_arm64}"; \
+    fi; \
     curl -fsSL --retry 5 --retry-all-errors --retry-connrefused \
-        -o /tmp/herdr-linux-x86_64 \
-        "https://github.com/herdrdev/herdr/releases/download/v${HERDR_VERSION}/herdr-linux-x86_64"; \
-    echo "${HERDR_SHA256}  /tmp/herdr-linux-x86_64" | sha256sum -c -; \
-    install -m 0755 /tmp/herdr-linux-x86_64 /usr/local/bin/herdr; \
-    rm -f /tmp/herdr-linux-x86_64; \
+        -o "/tmp/${herdr_asset}" \
+        "https://github.com/herdrdev/herdr/releases/download/v${HERDR_VERSION}/${herdr_asset}"; \
+    echo "${herdr_sha256}  /tmp/${herdr_asset}" | sha256sum -c -; \
+    install -m 0755 "/tmp/${herdr_asset}" /usr/local/bin/herdr; \
+    rm -f "/tmp/${herdr_asset}"; \
     test "$(herdr --version | awk '{print $NF}')" = "${HERDR_VERSION}"; \
     herdr --version
 
