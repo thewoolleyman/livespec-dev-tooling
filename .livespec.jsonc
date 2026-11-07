@@ -514,6 +514,17 @@
       // raise (commit 04df2dc9): watch proof_capture timeouts on these runs.
       "node_timeouts": {
         "implement": 14400,
+        // INTERIM DIAL (plan bd-ib-qy5wol; legacy-coordinator-agent R301,
+        // 2026-11-07). The workflow declares 3900 s for the three settle nodes
+        // and their script waits up to 3600 s, but the Dispatcher renders a node
+        // no table names at the 1800 s default, so the engine killed the script
+        // before its failure handling: livespec-dev-tooling-4pchid run
+        // 01M6V7EPQRHA, fix_commit_settle@1, "Script timed out after 1800000ms".
+        // END CONDITION: delete all three once bd-ib-2eyiwy is released and
+        // pinned here, because the Dispatcher then honours the declared value.
+        "implement_commit_settle": 3900,
+        "fix_commit_settle": 3900,
+        "review_fix_commit_settle": 3900,
         "janitor": 3600,
         "fix": 3600,
         // TEMPORARY DIAL (sandbox-commit-gate-ceiling ruling 2026-11-05, landed by
