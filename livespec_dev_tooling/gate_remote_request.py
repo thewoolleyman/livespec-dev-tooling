@@ -58,7 +58,7 @@ class GateRunRequest:
     private_sibling_secret: str = ""
     namespace: str = GATE_NAMESPACE
     poll_interval_seconds: float = 10.0
-    admission_timeout_seconds: float = 3600.0
+    admission_timeout_seconds: float = 1800.0
     poll_timeout_seconds: float = 3600.0
 
     def poll_budget(self) -> int:

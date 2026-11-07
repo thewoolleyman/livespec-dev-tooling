@@ -440,11 +440,12 @@ def _gate_a_pushed_tree(
         request=request, runner=runner, sleeper=sleeper, job_name=job_name
     )
     if isinstance(terminal, Failure):
-        deleted = _delete_abandoned_gate_job(request=request, runner=runner, job_name=job_name)
-        report_gate_cleanup_failure(job_name=job_name, outcome=deleted)
-        # A delete acknowledgement does not prove the Job has ceased using its
-        # mirror input, so the existing mirror sweep remains the collector for
-        # this no-verdict path.
+        if terminal.failure().returncode is None:
+            deleted = _delete_abandoned_gate_job(request=request, runner=runner, job_name=job_name)
+            report_gate_cleanup_failure(job_name=job_name, outcome=deleted)
+        # A refused read cannot establish that the Job is abandoned. Even a
+        # no-verdict delete acknowledgement does not prove it stopped using
+        # its mirror input, so the mirror sweep remains the collector here.
         return Failure(terminal.failure()), False
     ended = terminal.unwrap()
     # Read only when there is a failure to explain. That is a decision about

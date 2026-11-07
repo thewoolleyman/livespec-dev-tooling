@@ -51,7 +51,6 @@ from livespec_dev_tooling.check_authority import repository_authority_members
 from livespec_dev_tooling.gate_credential import GATES_KUBECONFIG_ENV, GATES_WRAPPER
 from livespec_dev_tooling.gate_outcome_telemetry import (
     GATE_OUTCOME_NO_VERDICT,
-    GATE_OUTCOME_PASSED,
 )
 from livespec_dev_tooling.gate_remote_delegate import (
     delegated_gate_enabled,
@@ -770,15 +769,15 @@ def _recorded_outcomes(*, events: list[dict[str, object]]) -> Callable[..., None
     return record
 
 
-def test_a_push_whose_host_slept_completes_only_on_that_same_jobs_green_verdict(
+def test_a_push_whose_host_slept_ends_on_its_first_refused_job_read(
     *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Scenario: a delegated pre-push wait interrupted by host sleep never reports a pass.
 
-    The host sleeps after the Job is submitted, so the client's reads of it fail
-    until the host wakes. The push completes on the green verdict of THAT Job for
-    THAT tree: no second Job is submitted for the push, every read names the one
-    Job, and the outcome event records a pass for it.
+    The host sleeps after the Job is submitted, so its first Job read is refused.
+    The client cannot establish the Job's state and ends the wait as no-verdict:
+    it must not retry until the host wakes and mistake a later verdict for one it
+    observed continuously.
     """
     repo = tmp_path / "widget"
     repo.mkdir()
@@ -795,15 +794,16 @@ def test_a_push_whose_host_slept_completes_only_on_that_same_jobs_green_verdict(
         emit=_recorded_outcomes(events=events),
     )
 
-    assert verdict.state == GATE_PASSED
-    assert verdict.refuses_push is False
+    assert verdict.state == GATE_NO_VERDICT
+    assert verdict.refuses_push is True
+    assert verdict.token_written is False
     assert len(cluster.issued(needle="create")) == 1
     reads = [argv for argv in cluster.issued(needle="get") if "job" in argv]
-    assert len(reads) > 3
+    assert len(reads) == 1
     assert all(_JOB in argv for argv in reads)
     assert _TREE in cluster.issued(needle="--tree-hash")[0]
-    assert [event["outcome"] for event in events] == [GATE_OUTCOME_PASSED]
-    assert events[0]["job_name"] == _JOB
+    assert [event["outcome"] for event in events] == [GATE_OUTCOME_NO_VERDICT]
+    assert events[0]["job_name"] is None
 
 
 def test_a_push_whose_host_slept_past_every_read_is_refused_as_no_verdict(
