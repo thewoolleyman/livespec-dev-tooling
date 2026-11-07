@@ -31,6 +31,7 @@ from livespec_dev_tooling.incident_observer_control import ObserverControl
 from livespec_dev_tooling.incident_observer_endpoint import _read_request, observer_endpoint
 from livespec_dev_tooling.incident_observer_events import verify_leaf_completion
 from livespec_dev_tooling.incident_observer_query import ObserverQuery
+from livespec_dev_tooling.incident_observer_reconcile import ObserverReconcile
 from livespec_dev_tooling.incident_observer_recovery import ObserverRecovery
 
 __all__: list[str] = ["ControllerService"]
@@ -38,8 +39,11 @@ __all__: list[str] = ["ControllerService"]
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-47ij37
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-wanebl
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-si6uu7
+# EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-gho3w4
 _QUERY_PATHS = frozenset({"/current", "/admitted", "/ci/jobs/inspect"})
-_CONTROL_PATHS = frozenset({"/arm", "/bind", "/invalidate-ci", "/recover", "/ci/jobs/collect"})
+_CONTROL_PATHS = frozenset(
+    {"/arm", "/bind", "/invalidate-ci", "/recover", "/reconcile", "/ci/jobs/collect"}
+)
 _OIDC_ROUTES = {"/ci/identity": CiIdentityVerifier, "/ci/attach": CiJobAttachment}
 _StartResponse = Callable[[str, list[tuple[str, str]]], object]
 
@@ -122,9 +126,13 @@ class ControllerService:
                 },
             )
 
-    def _handler(self, *, path: str) -> CiJobCollection | ObserverQuery | ObserverControl:
+    def _handler(
+        self, *, path: str
+    ) -> CiJobCollection | ObserverQuery | ObserverReconcile | ObserverControl:
         if path.startswith("/ci/jobs/"):
             return CiJobCollection(installation=self.installation)
+        if path == "/reconcile":
+            return ObserverReconcile(installation=self.installation)
         if path in _QUERY_PATHS:
             return ObserverQuery(installation=self.installation)
         return ObserverControl(installation=self.installation)

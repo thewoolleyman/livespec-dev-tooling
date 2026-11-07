@@ -40,7 +40,9 @@ Every repository mutation shares one OS-backed lock. An immutable recovery inten
 is fsynced before the effect, and its registered generation is checked again
 immediately before recovery. Duplicate delivery of another failing leaf shares
 the same action id. An unknown outcome remains pending across process restarts;
-it cannot issue another effect or admit a replacement generation. The recovery
+it cannot issue another effect or admit a replacement generation until an operator
+clears or retries it through the authenticated `POST /reconcile`
+(`incident-observer-service.md`). The recovery
 adapter must use that exact action id for the forge effect and its lookup.
 Its `RecoveryIntent` carries the original typed `ObserverArm` when admission
 used that protocol. The recovery callback already holds the repository lock
@@ -48,8 +50,8 @@ and must not acquire it again. The complete landed multicommit change and its
 inverse must still be resolved at the authenticated recovery boundary; the
 terminal merged SHA alone is not a rollback unit.
 
-`reconcile_action_receipt` reads the exact external effect receipt after a timeout
-and publishes it with the original authority bytes when the canonical tenant
+`reconcile_action_receipt`, the core of `POST /reconcile`, reads the exact external
+effect receipt after a timeout and publishes it with the original authority bytes when the canonical tenant
 returns. A newer registration never rebinds an older action's receipt to a newer
 attempt. A completed reconciliation is retained to avoid duplicate publication.
 Corrupt or inaccessible controller state fails rather than selecting normal mode
