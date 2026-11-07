@@ -15,7 +15,7 @@
 # declares the packages its vendored runtime imports from outside itself
 # (v1.183.1 is the first that does), so the role installs the release and
 # nothing beside it.
-incident_observer_release: v1.186.2
+incident_observer_release: v1.187.0
 incident_observer_release_repo: https://github.com/thewoolleyman/livespec-dev-tooling.git
 # The repository the observer serves (controller.json `repository`).
 incident_observer_repository: thewoolleyman/livespec-dev-tooling
@@ -49,7 +49,7 @@ incident_observer_required_jobs:
 # The orchestrator plugin release whose `incident_authority.py` is the canonical
 # `read-current` reader (docs/incident-observer-service.md). Cloned at this tag,
 # root-owned, next to the venv. Its tenant credential is NOT provisioned here.
-incident_observer_reader_release: v0.295.1
+incident_observer_reader_release: v0.300.0
 incident_observer_reader_repo: https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro.git
 incident_observer_reader_script_relative: .claude-plugin/scripts/bin/incident_authority.py
 
