@@ -300,6 +300,7 @@ check:
         check-red-green-replay
         check-required-role-keys-declared
         check-rop-pipeline-shape
+        check-rule-26-keep-out
         check-self-hosted-routing
         check-self-hosted-uv-lane
         check-shell-quality
@@ -1147,6 +1148,9 @@ check-shipped-path-release-guard *args:
 
 check-rop-pipeline-shape:
     uv run python -m livespec_dev_tooling.checks.rop_pipeline_shape
+
+check-rule-26-keep-out:
+    uv run python -m livespec_dev_tooling.checks.rule_26_keep_out
 
 # Self-hosted CI runner routing guard (security). Reading a repo's OWN
 # .github/workflows/*.yml|*.yaml, fails when any workflow whose `on:` set

@@ -1041,12 +1041,5 @@
     "heading": "## Scenario: the whole-suite coverage run prints its thirty slowest test phases",
     "work_item": "livespec-dev-tooling-tt4w7h",
     "first_seen": "2026-11-01"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: wiring the kill-matrix recipe into the check aggregate is refused",
-    "work_item": "livespec-dev-tooling-wou75w",
-    "first_seen": "2026-11-06"
   }
 ]
