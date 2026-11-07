@@ -110,8 +110,18 @@ sandbox_driver_kubernetes_refresh_command:
   - "{{ factory_kubeconfig_bin_dir | default('/usr/local/bin') }}/refresh-factory-kubeconfig"
 sandbox_driver_kubernetes_namespace: factory
 sandbox_driver_kubernetes_service_account: sandbox-launcher
+# The factory class's architecture, read from the one declared per-class list
+# (ci-runner/k3s/phase2/workload-arch.conf, the `factory python-agent` line;
+# livespec-dev-tooling-ko26ez.6): this provider's python-agent image publishes
+# that architecture only, so no sandbox lands on a node of another. A
+# per-architecture instance (an arm64 worker's) sets its own value.
+sandbox_driver_kubernetes_workload_arch_conf: "{{ role_path }}/../../../ci-runner/k3s/phase2/workload-arch.conf"
+sandbox_driver_kubernetes_arch: >-
+  {{ (lookup('ansible.builtin.file', sandbox_driver_kubernetes_workload_arch_conf).splitlines()
+      | select('match', 'factory python-agent ') | first).split()[2] }}
 sandbox_driver_kubernetes_node_selector:
   ci-runner.io/factory: "true"
+  kubernetes.io/arch: "{{ sandbox_driver_kubernetes_arch }}"
 # A factory node may carry node-role/ci=factory:NoSchedule; on an untainted
 # node the toleration is harmless.
 #
