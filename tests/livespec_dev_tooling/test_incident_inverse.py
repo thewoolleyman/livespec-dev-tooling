@@ -6,6 +6,7 @@ import hashlib
 import os
 import subprocess
 from dataclasses import replace
+from unittest.mock import Mock
 
 import pytest
 from returns.io import IOFailure, IOSuccess
@@ -394,3 +395,19 @@ def test_observer_callback_returns_receipt_only_after_exact_effect(history):
     forge.receipt = None
     forge.authorized = False
     assert callback(_intent(scope)) is None
+
+
+def test_only_an_explicit_resume_passes_the_refusal_an_unresolved_lookup_raises(history):
+    repo, scope, text = history
+    forge = Forge(repo=repo, scope=scope)
+    intent = _intent(scope)
+    forge.read_exact_receipt = Mock(side_effect=[OSError("reserved"), "exact-receipt"])
+    refused = inverse.recover_incident_inverse(repo_root=repo, intent=intent, forge=forge)
+    assert isinstance(refused, IOFailure)
+    assert forge.requests == []
+    callback = inverse.observer_inverse_callback(
+        repo_root=repo, forge=forge, resume_unresolved=True
+    )
+    assert callback(intent) == "exact-receipt"
+    assert len(forge.requests) == 1
+    assert _git(repo, "show", "master:shared.txt").decode() == text

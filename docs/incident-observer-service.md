@@ -142,6 +142,22 @@ The existing repository lock continues to serialize actual durable effects.
   failure and a reopen of one landed attempt share one action and one revert.
   A repeated receipt answers its retained action from protected state without a
   canonical read, including after a restart or during a tenant outage.
+- `POST /reconcile` requires the control credential and exactly `repository`,
+  the 64-hex `action_id` and a boolean `retry_publish`. It is the operator's way
+  out of an unknown recovery outcome: a timed-out principal leaves the action
+  `pending`, and a pending action refuses every later `/arm`. The route asks the
+  principal's `lookup` for the action's exact receipt, using the intent retained
+  in protected state, and on a receipt marks the action `completed` so a later
+  `/arm` can proceed. It takes no receipt from the caller. While no receipt is
+  available the action stays `pending`, and the reply says so. With `retry_publish:
+  true` it then runs that retained intent through the principal under the
+  repository lock, past the refusal an unresolved lookup raises, and refuses if the
+  current registration is no longer the action's. The principal's own ledger makes
+  this safe: it settles any open attempt from forge facts, re-sends the one recorded
+  commit when master has not moved, and starts one new attempt only when no earlier
+  attempt can have landed. A repeat after completion answers the retained receipt
+  with no principal call. A completed action's receipt still has to be recorded in
+  the chain with the orchestrator's `record-revert-receipt`.
 - `POST /callback` verifies GitHub's raw-body HMAC with the existing verifier,
   requires the configured repository, then uses the existing observer endpoint.
   The first registered failing required leaf records immutable intent and calls

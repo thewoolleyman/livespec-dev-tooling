@@ -83,7 +83,11 @@ def plan_incident_inverse(
 
 
 def recover_incident_inverse(
-    *, repo_root: Path, intent: RecoveryIntent, forge: InverseForge
+    *,
+    repo_root: Path,
+    intent: RecoveryIntent,
+    forge: InverseForge,
+    resume_unresolved: bool = False,
 ) -> IOResult[RecoveryOutcome, InverseRefusal]:
     """Resolve prior effects then execute under the caller-held observer lock.
 
@@ -92,9 +96,15 @@ def recover_incident_inverse(
     Observer persists the immutable intent before calling this function. A lost
     or unknown publication response is NEVER retried here. Only an explicit
     no-effect head-moved CAS result permits recomputation with the SAME action.
+
+    ``resume_unresolved`` is the one exception, and only an operator's explicit
+    `/reconcile` request sets it. It skips the refusal an unresolved lookup raises,
+    so the same action reaches the principal's `publish`, which settles the open
+    attempt from forge facts and re-sends its one recorded commit. Exactly-one is
+    the principal's ledger's rule, so a caller cannot mint a second revert this way.
     """
     try:
-        prior = forge.read_exact_receipt(intent=intent)
+        prior = None if resume_unresolved else forge.read_exact_receipt(intent=intent)
         if prior:
             return IOSuccess(
                 RecoveryOutcome(
@@ -237,12 +247,14 @@ def _conflict(
 
 
 def observer_inverse_callback(
-    *, repo_root: Path, forge: InverseForge
+    *, repo_root: Path, forge: InverseForge, resume_unresolved: bool = False
 ) -> Callable[[RecoveryIntent], str | None]:
     """Adapt to receipt-or-pending without reacquiring the observer's OS lock."""
 
     def callback(*, intent: RecoveryIntent) -> str | None:
-        result = recover_incident_inverse(repo_root=repo_root, intent=intent, forge=forge)
+        result = recover_incident_inverse(
+            repo_root=repo_root, intent=intent, forge=forge, resume_unresolved=resume_unresolved
+        )
         return unsafe_perform_io(result.unwrap()).receipt if is_successful(result) else None
 
     return lambda intent: callback(intent=intent)

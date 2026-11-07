@@ -35,7 +35,9 @@ service, not treated as a single-commit rollback unit.
 Publication uses an expected-master-head CAS. Only the explicit `head-moved`
 result certifies no effect and permits recomputation, with the same immutable
 action id, up to three attempts. A timeout, malformed response, unknown outcome or
-missing exact effect receipt stays pending. No local validation, factory job,
+missing exact effect receipt stays pending, and only an operator's explicit
+`POST /reconcile` with `retry_publish` takes it further, through the principal's own
+exactly-one ledger. No local validation, factory job,
 pre-merge CI wait, retry of a flaky job or cancellation of the failed master run
 is part of this path. Ordinary actors retain their normal protection policy.
 
