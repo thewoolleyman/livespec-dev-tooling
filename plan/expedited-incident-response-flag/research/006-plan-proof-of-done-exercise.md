@@ -514,3 +514,13 @@ that attempt from re-arm (note 004 step 5 onward, next generation), which writes
    dln3ac) and `_green_token_evidence.py:50,207` (xluwqj). Closure rule 8 of note 001 says "all markers removed". The
    A9 marker check is scoped to ITEM, so this does not affect the sequence. The completeness reviewer will likely
    ask about it.
+7. **The recovery principal's 15 s call timeout** (phase 3). The observer calls the installed principal through
+   `ProcessInverseForge` (`livespec_dev_tooling/incident_inverse_service.py`, `timeout_seconds: int = 15`), so a
+   slow inverse merge can time out while the forge operation is still in flight, and the observer cannot tell a late
+   success from a failure. The principal makes a repeated `publish` safe: it resolves the recorded commit rather than
+   minting a second revert (`incident_recovery_principal.py`, "EXACTLY ONE REVERT PER ACTION"). Phase-3 runbook line:
+
+   "On a publish timeout, re-send publish with the same recorded commit and wait; a timeout is UNKNOWN, not a failed revert. Do not escalate it."
+
+   Mitigation: attempt 1's planted defect stays small, so its inverse is a minimal revert well under the 15 s budget
+   (coordinator ruling 2026-11-07 ~03:06Z).
