@@ -137,6 +137,12 @@ Also needed, already in flight or cheap:
 
   Canary 1 can run now, in parallel with P0. Canary 2 is on the critical path after `ORCH` is cut (section 6).
   Both are owned by legacy-dispatcher-agent. This note asks for no ordering change.
+- **P0-12, range gate and correction order (found 2026-11-07, before the first arm).** `check-red-green-replay` refused
+  every expedited product commit until livespec-dev-tooling-zbzls2 made it read recorded provenance through the
+  observer's `/provenance` route, and no corrected attempt could get a hook-admitted commit until
+  livespec-dev-tooling-se537s. Both ship in the one release that supersedes `DT` v1.187.0, and the P checks that
+  version touches are re-run. Their fix PR's workflow edit gives the `check-red-green-replay` leg the read-only query
+  token, on same-repository `pull_request` events only.
 - **P0-10, release.** Cut one dev-tooling release after P0-1, P0-2 and P0-4 merge, and one orchestrator release after
   P0-3 and mnny4v. Every step in section 4 runs against those two tags. Call them `DT` and `ORCH` below.
 
@@ -161,7 +167,7 @@ cannot be cited in the record. The steps (c) refer to section 4.
 | A1 | The new item carries a genesis comment. The expedited PR (label `expedited-incident-response` and an incident body block) is merged from a local worktree. No Fabro run exists for the item before repayment. Attempt 2 is committed and pushed while master's latest completed run is red: attempt 1's run failed and the revert run is in flight. The hook admits it in repair mode, where a normal commit would refuse on red master. | Re-run: #3624 never merged; drill entrance v1.185.1 | 3.1-3.6, 4.4, 5.2 | P0-1, P0-10 |
 | A2 | The hook output and the `record-local-gates` receipt on the item, for the commit and the push of each attempt: report `expedited-local-partial`; `check-lint` and `check-format` executed, each well under 60 s; every other target `deferred`. No gate-runner record of a `just check` aggregate, and no remote delegated job, in `tmp/gate-runs/` or the cluster for that window. | Re-run (no expedited local commit was part of the drill) | 3.3, 4.4, 6.4 | P0-10 |
 | A3 | Before each merge, a focused-evidence record on the item: the selected changed or related tests and their results, per-file coverage for touched product files only, and one manual reproduction with its outcome. | Re-run; no recorder exists (P0-4) | 3.4, 4.5, 6.5 | P0-4 |
-| A4 | Expedited PR run: `incident-ci` succeeds; `check-per-file-coverage`, `check-coverage` and the spec members (`check-heading-coverage`, `check-doctor`, `check-spec-*`, `check-no-todo-registry`) print `omitted-by-incident-policy`; `check-lint` and `check-format` and every non-omitted job run in full; the `ci-green` summary lists the omissions. | Re-run: run 42296591999 used entrance v1.185.1 | 3.7, 4.6, 6.6 | P0-10 |
+| A4 | Expedited PR run: `incident-ci` succeeds; exactly `check-per-file-coverage`, `check-coverage`, `check-check-coverage-incremental`, `check-heading-coverage`, `check-heading-coverage-debt-register` and `check-no-todo-registry` print `omitted-by-incident-policy` (corrected 2026-11-07; `check-doctor` and `check-spec-*` name no real member); `check-lint` and `check-format` and every non-omitted job run in full; the `ci-green` summary lists the omissions. | Re-run: run 42296591999 used entrance v1.185.1 | 3.7, 4.6, 6.6 | P0-10 |
 | A5 | `git show` of each attempt's landed commits contains `# EXPEDITED_INCIDENT_RESPONSE flag: <item>` next to a changed line. The hook's marker scope (`incident_hook_scope.py` with `incident_markers`) admitted it. | Re-run | 3.2, 4.4, 6.4 | none |
 | A6 | Master push run of each expedited merge commit: `incident-ci` logs `selected nothing (push event: the normal complete policy is the gate)`; every job runs; nothing is omitted, although the merged PR carried the label and block and the commit carries the marker. Variables and the ambient environment are unchanged. | Partial: master run 42316488005 (f0fc3025, entrance v1.185.2, 00:09:32Z to 00:21:58Z) shows the normal policy on v1.185.2, but on a merge with no marker, label or block. Re-run on the incident merges. | 3.9, 4.7, 6.8, 7.4 | P0-10 |
 | A7 | Attempt 1's master run: the first failing required leaf (`check-metadata-batch`, about 1.5 min into the run) has a `completed_at`. The observer journal shows the callback and the action. A revert commit by the principal identity lands on master: its tree equals master minus the exact landed patch, and its time is minutes after the leaf failure. No local gate run, factory run or PR CI precedes it. | Not exercised tonight (no merge, no principal) | 3.10-3.11 | P0-1, P0-2 |
@@ -170,7 +176,7 @@ cannot be cited in the record. The steps (c) refer to section 4.
 | A10 | The repayment PR carries the fix and a test for the planted DoD-only defect. `record-deferred-finding` recorded `deferred-finding:<run>` debt and it shows repaid. No revert of attempt 3 exists on master; an attempt to reopen on that finding is refused `incident-finding-deferred-proof-only`. | Not exercised | 7.5-7.6 | P0-3 |
 | A11 | Probe PR CI fails on a test that exercises attempt 2's landed change. The attribution names the failing job, the test and the landed commit. `reopen-regression` records phase `reverting` with `repayment_required: true` and a `livespec-incident-recovery-v1` comment. The principal reverts attempt 2. Attempt 3 is a corrected expedited attempt on the same item. Repayment is then re-entered, not skipped. | Not exercised | 5.1-5.6, 6.x | P0-1, P0-3, P0-6 |
 | A12 | Four restarts, each followed by exactly one action and no duplicate: (i) observer restart after arm, before merge; (ii) observer restart after bind, before the leaf failure; (iii) webhook redelivery of the failing job delivery answering `existing immutable action; no duplicate effect`; (iv) gmktec dispatcher loop restart mid-repayment. Before the repayment PR merges, and again before its master CI is green, `close`, the `accept:` valve and `reconcile-merged` each refuse and name the open obligation. After green, closure succeeds. | Not exercised; mnny4v not released | 3.8, 3.10, 3.11, 7.3, 7.8-7.9 | P0-7 |
-| A13 | Four observations on the same run: incident context crosses the hook (receipt), the credential wrapper (`with-livespec-env.sh` scrubs the caller environment, so context must arrive through the trusted transport), the detached gate runner (`gate_runner_delegate`) and the PR event boundary (`incident-ci` reads the block from an authenticated PR read). The repayment PR's per-file coverage executes in full (about 10 min or more, not a cache hit). A normal `just check` started in the attempt-3 worktree after the expedited commit does not accept the `expedited-local-partial` report as a pass. | Re-run | 3.3, 6.4, 7.6, 7.10 | P0-10 |
+| A13 | Four observations on the same run: incident context crosses the hook (receipt), the credential wrapper (corrected 2026-11-07, measured: the wrapper PASSES `EXPEDITED_INCIDENT_RESPONSE` and `LIVESPEC_INCIDENT_LOCAL_OPERATION` through, so the normal half of this assertion must start with both unset), the detached gate runner (`gate_runner_delegate`) and the PR event boundary (`incident-ci` reads the block from an authenticated PR read). The repayment PR's per-file coverage executes in full (about 10 min or more, not a cache hit). A normal `just check` started in the attempt-3 worktree after the expedited commit does not accept the `expedited-local-partial` report as a pass. | Re-run | 3.3, 6.4, 7.6, 7.10 | P0-10 |
 | A14 | One `read-history` plus `context livespec-dev-tooling-<item>` shows all attempts, the PR, merge and revert SHAs, the master run ids, the omitted members, the focused evidence, the deferred spec debt, the deferred finding and the repayment PR with its proof, keyed by the item id alone. | Not exercised | 8.1 | all |
 
 The charter's longer exercise list (note 001, "Proof and completion requirements") also names multi-commit rebase
@@ -231,7 +237,14 @@ Conventions:
 - 3.3 Genesis (note 004 step 3), then the expedited commit and push with the incident context. Capture the hook
   output and the `record-local-gates` receipt (A2, A13 hook and wrapper).
 - 3.4 Focused evidence through P0-4's entrance: tests for B1, touched-file coverage, manual reproduction (A3).
-- 3.5 Open the PR from a branch of this repository, then bind it to generation 2 (note 004 step 5).
+- 3.5 Open the PR AS A DRAFT from a branch of this repository, then bind it to generation 2 (note 004 step 5).
+  Corrected 2026-11-07: `auto-enable-merge.yml` fires on `opened`, and a later `do-not-merge` label may not clear
+  auto-merge once set (inferred, not measured), so a non-draft open could merge at 3.7 and skip 3.8 and GO-4 with an
+  unbound callback. Assert `autoMergeRequest == null` before the reopen. Add `do-not-merge` before marking ready,
+  because `ready_for_review` also fires the workflow. The same holds for 4.6 and 6.x. Genesis at 3.3 declares every
+  path the three attempts will touch, in `original_paths`, including `tests/heading-coverage.json`, its debt register
+  and the probe test, because a correction cannot widen that list (`incident_hook_scope.py`). Those paths enter the
+  repayment's scope.
 - 3.6 [GO-3] Master hold. Arm (note 004 steps 6 and 7) with `expected_arm_id = 638a2302…`. Add the label, the block
   and `do-not-merge`. GET until `merge_commit_sha` sits on the frozen base, then reopen once.
 - 3.7 Expedited PR run: record A4.
@@ -266,6 +279,11 @@ Conventions:
 
 ### Phase 4: attempt 2, corrected from complete evidence (A1 red-master half, A8)
 
+- Order corrected 2026-11-07 (livespec-dev-tooling-se537s). The hook refuses a commit while the chain reads
+  `collecting-failures`, so the repair cannot be committed first. Stage the repair (4.2), `git write-tree`, take 4.1
+  with `--next-head-sha <base> --staged-tree <tree>`, then 4.4 commits under the hook, and `commit-transition` advances
+  the attempt's head before the push, exactly as after genesis. Never `--resolved` for a repair, and never `git
+  commit-tree`.
 - 4.1 Transition the chain to the corrected attempt through P0-3's `correct-attempt`. The attempt id is new; the item
   is the same.
   - Enter it through the P0-5 entrance's `propose-correction` (see 3.12), which hands the correction to the canonical
@@ -513,7 +531,7 @@ that attempt from re-arm (note 004 step 5 onward, next generation), which writes
 
 | Step | Failure it guards against | Rollback | Who | When |
 |---|---|---|---|---|
-| GO-1 App and ruleset | The ruleset blocks ordinary merges, or the bypass is wider than one App | Delete the ruleset, or remove the bypass entry; suspend the App installation. Classic protection (required `ci-green`, admins enforced) is untouched throughout, so deleting the ruleset restores the prior state exactly. | maintainer | immediately on any ordinary merge refused by the ruleset |
+| GO-1 App and ruleset | The ruleset blocks ordinary merges, or the bypass is wider than one App | Corrected 2026-11-07: `ci-green` is held by ruleset 26758787 since the 17:19:41Z classic flip. First restore the classic requirement (PATCH `required_status_checks` contexts `['ci-green']`), then delete the ruleset or remove the bypass entry, and suspend the App installation. Deleting the ruleset alone leaves master with no required check. | maintainer | immediately on any ordinary merge refused by the ruleset |
 | GO-2 role apply | Observer fails to start or refuses its installation | Re-apply the role with the previous values (`v1.184.2`, reader `v0.295.1`, `required_jobs: [ci-green]`). The state file under `/var/lib/livespec-incident/` persists across applies. | plan owner (`ansible`) | before any arm; no live incident depends on it yet |
 | GO-3 holds | A hold outlives its purpose, or the plan session dies mid-hold | Coordinator restores the recorded PRs (7.2) | coordinator | at the 45 min ceiling, or at once on "hold released" |
 | GO-4 attempt 1 merge, **revert does not fire** | Principal down, callback missed, bind race lost (risk 2), or the action stuck `pending` | Server-side revert of attempt 1's COMPLETE landed patch through the forge (the GitHub revert of the merged PR, which is web-flow signed). Admin-merge it: the coordinator switches `enforce_admins` off and on, as at 17:47Z and 22:03Z on 2026-11-06. The red-green-replay range gate admits a web-flow-signed revert that restores the parent bytes (`docs/server-side-revert-exemption.md`); never use a skip variable. | plan owner opens the revert; coordinator merges it | trigger at the leaf failure + 5 min with no principal revert commit on master and no `completed` observer action. Target: merged before T(merge) + 12 min, so HEAD never shows a red `ci-green`. |
