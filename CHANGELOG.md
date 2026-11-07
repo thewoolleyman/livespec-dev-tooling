@@ -58,6 +58,15 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.185.2](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.185.1...v1.185.2) (2026-11-07)
+
+
+### Bug Fixes
+
+* **incident-ci:** a refused observer read names its error class and the host:port it tried (livespec-dev-tooling-ws2idp) ([fa5c184](https://github.com/thewoolleyman/livespec-dev-tooling/commit/fa5c1846e202c03efaf996fce5cbf721708fba15))
+* **incident-ci:** a refused observer read names the non-202 status it was answered with (livespec-dev-tooling-upb4k5) ([ac2d72d](https://github.com/thewoolleyman/livespec-dev-tooling/commit/ac2d72dfd1b62f7784bf91a5a6063dbae642008b))
+* reproduce admission hold pipefail race ([f9a9892](https://github.com/thewoolleyman/livespec-dev-tooling/commit/f9a98920a770e7e3bf884087a16a433d379eb8d5))
+
 ## [1.185.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.185.0...v1.185.1) (2026-11-06)
 
 
