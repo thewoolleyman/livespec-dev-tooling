@@ -60,6 +60,7 @@ def test_collect_then_propose_through_the_entrance(
         "--base-ref",
         "master",
     ]
+    correct += ["--current-attempt", "recovery-1", "--current-owner", "incident-principal"]
     relanded, reland = invoke(world, capsys, *correct, "--next-head-sha", world.shas["reland"])
     proposed, repair = invoke(
         world, capsys, *correct, "--next-head-sha", world.shas["repair"], "--resolved", "test=r1"
@@ -85,6 +86,7 @@ def test_entrance_refuses_an_unreadable_graph_or_resolution_by_name(
     bad, malformed = invoke(world, capsys, *gather, "--expected-graph", graph_file(world, {}))
     correct = ["propose-correction", *common(world), "--evidence-digest", "d"]
     correct += ["--target-ref", "r", "--current-generation", "3"]
+    correct += ["--current-attempt", "recovery-1", "--current-owner", "incident-principal"]
     correct += ["--next-head-sha", world.shas["repair"]]
     loose, resolution = invoke(world, capsys, *correct, "--resolved", "test")
     absent, unretained = invoke(world, capsys, *correct)
@@ -190,6 +192,7 @@ def test_main_reads_process_arguments_and_binds_registered_ports(
     argv = ["incident-original-run", "propose-correction", "--state-dir", str(tmp_path)]
     argv += ["--repository", REPOSITORY, "--repo", str(tmp_path), "--evidence-digest", "d"]
     argv += ["--target-ref", "r", "--current-generation", "3", "--next-head-sha", "h"]
+    argv += ["--current-attempt", "recovery-1", "--current-owner", "incident-principal"]
     monkeypatch.setattr(entry.sys, "argv", argv)
     bind = Mock(wraps=entry.registered_ports)
     monkeypatch.setattr(entry, "registered_ports", bind)

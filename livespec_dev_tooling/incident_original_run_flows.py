@@ -90,6 +90,8 @@ class Correction:
     evidence_digest: str
     next_head_sha: str
     target_ref: str
+    current_attempt: str
+    current_owner: str
     current_generation: int
     resolved_jobs: tuple[tuple[str, str], ...] = ()
     base_ref: str = "origin/master"
@@ -235,11 +237,22 @@ def _measure(*, git: GitPort, original: OriginalRun, request: Correction) -> tup
     return base, tree, "" if unchanged else hashlib.sha256(proposed).hexdigest()
 
 
-def _current_query(*, registration: ObserverRegistration, generation: int) -> dict[str, object]:
-    """The attempt a recorded revert receipt moved to `collecting-failures`."""
-    query = authority_query(registration=registration)
-    operation = f"{registration.attempt_id}#{_CORRECTED_FROM}"
-    return {**query, "phase": _CORRECTED_FROM, "operation": operation, "generation": generation}
+def _current_query(*, registration: ObserverRegistration, request: Correction) -> dict[str, object]:
+    """The attempt a recorded revert receipt moved to `collecting-failures`.
+
+    `reopen-regression` records a new `recovery-<digest>` attempt under the
+    incident principal, so the current attempt and owner differ from the
+    original registration's and are named by the operator.
+    """
+    return {
+        "repository": registration.repository,
+        "item": registration.incident_item_id,
+        "attempt": request.current_attempt,
+        "phase": _CORRECTED_FROM,
+        "operation": f"{request.current_attempt}#{_CORRECTED_FROM}",
+        "generation": request.current_generation,
+        "owner": request.current_owner,
+    }
 
 
 def propose(*, request: Correction, ports: EntryPorts) -> str | EvidenceRefusal:
@@ -262,7 +275,7 @@ def propose(*, request: Correction, ports: EntryPorts) -> str | EvidenceRefusal:
         return _refuse(code="local-revision", detail="corrected head does not build on the revert")
     base, tree, repair = unsafe_perform_io(measured.unwrap())
     target = CorrectionTarget(
-        query=_current_query(registration=registration, generation=request.current_generation),
+        query=_current_query(registration=registration, request=request),
         base=base,
         staged_tree=tree,
         target_ref=request.target_ref,
