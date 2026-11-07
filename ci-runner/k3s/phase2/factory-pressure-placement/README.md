@@ -56,8 +56,10 @@ On each 30 s cycle the reconciler works through these steps:
    `topologyName` keeps the uncapped unused quota. The cap was agreed with
    dev-host-test-gate-load (cikd6m). Each cycle logs a `RESERVE` line naming
    the branch it took: `capped-topology` or `uncapped`.
-4. **Taint.** If `fit >= 4000m`, every node at least 20 points above the lowest
-   gets the taint. Otherwise the taint comes off everywhere, and placement falls
+4. **Taint.** If the lowest node fits one more sandbox, every node at least
+   `FACTORY_PRESSURE_GAP` points above the lowest gets the taint. The script
+   defaults to 20; the committed unit sets 10 (2026-11-07), because at 20 the
+   taint flapped on gmktec while it ran at avg60 15-30 against an idle poweredge. Otherwise the taint comes off everywhere, and placement falls
    back to the sandbox pods' own hostname spread.
 5. **Quota fail-safe ladder.** Every successful `gates-cq` read is cached in
    `/var/lib/livespec/factory-pressure-placement/gates-quota.json`. If a read
