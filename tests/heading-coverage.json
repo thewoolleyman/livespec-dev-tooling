@@ -2431,6 +2431,14 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: a coverage-guided kill-matrix run skips tests that do not execute a mutant",
+    "test": "TODO",
+    "reason": "A real test at the integration tier or above is owed for this scenario: the kill-matrix engine run over a fixture package where T1 executes only F and T2 executes only G, asserting each F mutant runs against T1 and not T2, each G mutant against T2 and not T1, and that the report names its test-selection method. livespec-dev-tooling-tcmw34 owns it.",
+    "work_item": "livespec-dev-tooling-tcmw34"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: branch protection alignment accepts a required gate held by a ruleset whose only bypass is a GitHub App",
     "test": "TODO",
     "reason": "Spec-first: a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) is owed for this scenario, driving `branch_protection_alignment` against a classic protection with no required check plus an active ruleset holding the all-green gate with only a GitHub App bypass, and the role-bypass, strict and unreadable-ruleset refusals. livespec-dev-tooling-7536jf owns it (plan expedited-incident-response-flag); the implementation PR that ships the effective-set read replaces this row.",
