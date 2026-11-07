@@ -114,7 +114,7 @@ def run_kill_matrix(
         raise RuntimeError(_NO_MUTANTS)
     collected = _checked_command(
         execute=execute,
-        args=[sys.executable, "-m", "pytest", "--collect-only", "-q"],
+        args=[sys.executable, "-m", "pytest", "--ignore=mutants", "--collect-only", "-q"],
         target=target,
         failure="pytest collection failed for the kill matrix",
     )

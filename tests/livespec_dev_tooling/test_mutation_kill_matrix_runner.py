@@ -136,13 +136,11 @@ def test_main_refuses_a_target_that_is_not_a_package_directory(
         _ = module.main()
 
 
-def test_recipe_interpolates_its_positional_target_argument() -> None:
-    """The on-demand recipe passes Just's declared target to the adapter."""
+def test_recipe_passes_its_positional_target_argument_without_interpolation() -> None:
+    """The on-demand recipe delegates the positional target through the shell."""
     recipe = (_REPO_ROOT / "justfile").read_text(encoding="utf-8")
 
-    assert (
-        'uv run python -m livespec_dev_tooling.mutation_kill_matrix_runner "{{target}}"' in recipe
-    )
+    assert 'uv run python -m livespec_dev_tooling.mutation_kill_matrix_runner "$1"' in recipe
 
 
 def test_subprocess_executor_and_source_revision_handle_a_non_git_fixture(
