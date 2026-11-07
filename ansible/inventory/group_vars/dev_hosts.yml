@@ -142,6 +142,16 @@ fabro_client_builds:
   - path: /home/ubuntu/.local/state/fabro-currency/carrier-petri-v0.393-85af3547e/fabro
     source: /home/ubuntu/.local/state/fabro-web-prod/v0393-85af3547e/fabro
     sha256: d6fcfafab6da1bfd32c3b96b4153f93367fe8a5b4fc18b0efecacad80b1e5711
+  # fabro 0.393.0-nightly.1 (bbe6938 2026-11-06), source thewoolleyman/fabro
+  # bbe693847, Petri c6bfd5e3 (the post-exit output drain that waits out a
+  # stalled consumer, bd-ib-aqcgxz). Every gmktec instance serves it since
+  # 2026-11-07 (main :32276 from 03:43Z, candidate and mi-homelab from 14:33Z).
+  # Its only runtime difference from 85af3547e is that server-side step change,
+  # so the 85af3547e entry above stays for the repositories that still name it.
+  # Plan fabro-currency.
+  - path: /home/ubuntu/.local/state/fabro-currency/carrier-petri-v0.393-bbe693847/fabro
+    source: /home/ubuntu/.local/state/fabro-web-prod/v0393-bbe693847/fabro
+    sha256: 1529aa9f86b5bf346ae20a731bdf1cb433bc678825c8a43d0c21f513dac0ab1f
 
 # --- local_gate_slots ---
 #

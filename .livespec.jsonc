@@ -611,7 +611,7 @@
       "factories": {
         "petri": {
           "registry": true,
-          "bin": "/home/ubuntu/.local/state/fabro-currency/carrier-petri-v0.393-85af3547e/fabro",
+          "bin": "/home/ubuntu/.local/state/fabro-currency/carrier-petri-v0.393-bbe693847/fabro",
           "secret_channel": "native_secrets",
           "environment": "factory-python"
         },
