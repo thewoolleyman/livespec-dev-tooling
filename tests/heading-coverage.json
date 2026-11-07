@@ -1938,15 +1938,15 @@
     "spec_file": "scenarios.md",
     "heading": "## Scenario: one fleet-wide command adopts the current plugin builds in every fleet member and refuses a split adoption",
     "test": "TODO",
-    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading. It runs `just ensure-plugins-fleet` against fixture member clones and a fixture installed_plugins.json, and asserts the per-member before and after builds, the run continuing past a missing clone with a non-zero exit, and the refusal of a split build. livespec-dev-tooling-jzwgjw owns it.",
-    "work_item": "livespec-dev-tooling-jzwgjw"
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading. It runs `just ensure-plugins-fleet <build>` against fixture member clones, a stub `claude` and a fixture installed_plugins.json, and asserts the per-member before and after builds, the refusal of a commit that is not the marketplace tip with no member run, the run continuing past a missing clone or a failed adopt step with a non-zero exit, the refusal of a split build, the adopter report line, and clone resolution from a linked worktree. livespec-dev-tooling-7upzav owns it.",
+    "work_item": "livespec-dev-tooling-7upzav"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a fleet clone's ensure-plugins keeps its orchestrator build while an orchestrator roll hold is unreleased",
     "test": "TODO",
-    "reason": "Spec-first: a real test at the integration tier or above is owed for this scenario. It runs a member's `ensure-plugins` against a fixture fleet/plugin-build-record.json and a fixture installed_plugins.json, and asserts: the launch clone adopts only `launch_version` and keeps it when a newer build is offered on a compact or headless session; another member keeps `fleet_version` and prints the unmet release conditions; a value-only release installs the new build; fleet_version equal to launch_version with unreleased evidence reads as unreadable and changes nothing; an absent record is named as absent; a core entry with empty canaries and null matrix keeps the record readable; an absent install prints NOT RECORDED; and `just ensure-plugins-fleet` prints RECORDED without exiting non-zero for the orchestrator plugin. livespec-dev-tooling-7upzav owns it.",
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this scenario. With a stub `claude`, a fixture HOME and fixture clones, it asserts: `ensure-plugins` leaves an installed orchestrator record unchanged whichever build is offered and prints the held-build line; it installs when no record exists for the project path, including a linked worktree and after a failed marketplace fetch; it repairs only on an answered artifact failure of that build, and an unanswered probe is a finding with a non-zero exit; `just adopt-orchestrator-build` refuses a named commit that is not the marketplace tip, a missing clone and a clone not enabling the plugin, and exits non-zero when the install record's gitCommitSha afterwards is not the named commit; and a scan finds no project-scope plugin update or install outside the three named paths and no enabled automatic update. livespec-dev-tooling-7upzav owns it.",
     "work_item": "livespec-dev-tooling-7upzav"
   },
   {
@@ -1954,7 +1954,7 @@
     "spec_file": "scenarios.md",
     "heading": "## Scenario: an orchestrator build adopted outside ensure-plugins is reported and never downgraded",
     "test": "TODO",
-    "reason": "Spec-first: a real test at the integration tier or above is owed for this scenario. It runs a member's `ensure-plugins` against a fixture record and a fixture installed_plugins.json whose orchestrator build is above its recorded version, and asserts: the build is kept and not downgraded; one OUTSIDE RECORD line names the installed, recorded and lastUpdated values; `just ensure-plugins-fleet` exits non-zero for that member only once the recorded-version check is armed and prints it without exiting non-zero before; and a scan of the library's recipes, hooks, verbs and skills and of fleet members' committed .claude/settings.json finds no plugin update or install call outside ensure-plugins and no enabled automatic plugin update. livespec-dev-tooling-7upzav owns it.",
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this scenario. With a stub `claude` and a fixture installed_plugins.json whose orchestrator build is above the offered build, it asserts that `ensure-plugins` keeps the build, does not downgrade it, prints the plugin, installed build and lastUpdated value, and exits 0. livespec-dev-tooling-7upzav owns it.",
     "work_item": "livespec-dev-tooling-7upzav"
   },
   {
