@@ -12,6 +12,7 @@ import json
 from typing import TYPE_CHECKING
 
 from _gh_railway import lift_gh
+from _protection_fixtures import no_ruleset_answer
 
 from livespec_dev_tooling.fleet._context import (
     FleetContext,
@@ -149,7 +150,11 @@ def make_context(
     def run(*, args: list[str], stdin: str | None = None) -> GhResult:
         key = tuple(args)
         calls.append((key, stdin))
-        return table.get(key, GhResult(returncode=1, stdout="", stderr="no canned"))
+        return (
+            table.get(key)
+            or no_ruleset_answer(args=args)
+            or GhResult(returncode=1, stdout="", stderr="no canned")
+        )
 
     runner: GhRunner = run
     return FleetContext(owner="acme", run_gh=lift_gh(runner))

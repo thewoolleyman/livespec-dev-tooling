@@ -34,7 +34,11 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
 from _gh_railway import lift_gh
-from _protection_fixtures import aligned_merge_settings_payload, aligned_protection_payload
+from _protection_fixtures import (
+    aligned_merge_settings_payload,
+    aligned_protection_payload,
+    no_ruleset_answer,
+)
 from returns.io import IOFailure, IOSuccess
 from returns.result import Failure
 from returns.unsafe import unsafe_perform_io
@@ -218,7 +222,11 @@ def make_runner(*, table: dict[tuple[str, ...], GhResult]) -> GhRunner:
         key = tuple(args)
         if key == _PROBE_KEY and key not in table:
             return _PROBE_OK
-        return table.get(key, GhResult(returncode=1, stdout="", stderr="no canned"))
+        return (
+            table.get(key)
+            or no_ruleset_answer(args=args)
+            or GhResult(returncode=1, stdout="", stderr="no canned")
+        )
 
     return lift_gh(run)
 

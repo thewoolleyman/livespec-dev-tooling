@@ -12,6 +12,7 @@ import textwrap
 from typing import TYPE_CHECKING
 
 from _gh_railway import lift_gh
+from _protection_fixtures import no_ruleset_answer
 from returns.io import IOFailure, IOSuccess
 from returns.unsafe import unsafe_perform_io
 
@@ -113,7 +114,11 @@ def make_context(*, table: dict[tuple[str, ...], GhResult]) -> FleetContext:
 
     def run(*, args: list[str], stdin: str | None = None) -> GhResult:
         del stdin
-        return table.get(tuple(args), GhResult(returncode=1, stdout="", stderr="no canned"))
+        return (
+            table.get(tuple(args))
+            or no_ruleset_answer(args=args)
+            or GhResult(returncode=1, stdout="", stderr="no canned")
+        )
 
     runner: GhRunner = run
     return FleetContext(owner="acme", run_gh=lift_gh(runner))

@@ -17,12 +17,14 @@ files, never the reverse, so a helper module that lives only under
 
 from __future__ import annotations
 
+from livespec_dev_tooling.fleet._context import GhResult
 from livespec_dev_tooling.fleet._rows_github import REQUIRED_MERGE_SETTINGS
 
 __all__: list[str] = [
     "ALIGNED_PROTECTION_STRICT",
     "aligned_merge_settings_payload",
     "aligned_protection_payload",
+    "no_ruleset_answer",
 ]
 
 
@@ -64,3 +66,19 @@ def aligned_merge_settings_payload() -> dict[str, object]:
     payload = dict(REQUIRED_MERGE_SETTINGS)
     payload["delete_branch_on_merge"] = True
     return payload
+
+
+def no_ruleset_answer(*, args: list[str]) -> GhResult | None:
+    """The answer for a member with NO ruleset, when `args` is the paginated rules read.
+
+    The `branch-protection` row and its reconcile read the member's active ruleset
+    rules on its default branch as the ruleset half of the effective
+    required-check set (the fleet paragraph of the `branch_protection_alignment`
+    check contract in SPECIFICATION/contracts.md, v149). A canned runner that has
+    no explicit entry for that read falls back to this one empty page, so every
+    fixture not about rulesets keeps the meaning it had before rulesets were read.
+    Any other call answers None, leaving the runner's own fallback in charge.
+    """
+    if args[:3] == ["api", "--paginate", "--slurp"] and "/rules/branches/" in args[-1]:
+        return GhResult(returncode=0, stdout="[[]]", stderr="")
+    return None
