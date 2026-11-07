@@ -53,6 +53,11 @@ class MutationKillMatrixReport:
             "source_revision": self.source_revision,
             "mutants_generated": len(self.mutants),
             "mutants": mutant_rows,
+            "surviving_mutants": [
+                mutant.identifier
+                for mutant in self.mutants
+                if not self.killers_by_mutant[mutant.identifier]
+            ],
         }
 
 
