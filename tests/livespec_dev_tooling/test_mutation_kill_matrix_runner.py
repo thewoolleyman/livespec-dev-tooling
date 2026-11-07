@@ -61,6 +61,9 @@ def test_runner_applies_each_mutant_and_runs_every_collected_test(*, tmp_path: P
     assert source.read_text(encoding="utf-8") == "VALUE = 'original'\n"
     assert calls.count((sys.executable, "-m", "mutmut", "apply", "M1")) == 1
     assert calls.count((sys.executable, "-m", "mutmut", "apply", "M2")) == 1
+    assert any(
+        args[-2:] == ("--collect-only", "-q") and "--ignore=mutants" in args for args in calls
+    )
     assert (tmp_path / "reports" / "mutation-kill-matrix.json").is_file()
 
 
@@ -131,6 +134,15 @@ def test_main_refuses_a_target_that_is_not_a_package_directory(
 
     with pytest.raises(SystemExit):
         _ = module.main()
+
+
+def test_recipe_interpolates_its_positional_target_argument() -> None:
+    """The on-demand recipe passes Just's declared target to the adapter."""
+    recipe = (_REPO_ROOT / "justfile").read_text(encoding="utf-8")
+
+    assert (
+        'uv run python -m livespec_dev_tooling.mutation_kill_matrix_runner "{{target}}"' in recipe
+    )
 
 
 def test_subprocess_executor_and_source_revision_handle_a_non_git_fixture(
