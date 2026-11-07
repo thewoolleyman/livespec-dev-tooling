@@ -1,0 +1,56 @@
+---
+# runner_scheduler_fail_open: install reconcile-runner-scheduler-fail-open.sh and
+# its 30-second timer on the k3s server (livespec-dev-tooling-mtvxde). It runs
+# under k3s's admin kubeconfig, which only the server holds, so ci-pool.yml gates
+# this role on cluster_role == 'server'.
+
+- name: Create the pool library and state directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  loop:
+    - "{{ runner_scheduler_fail_open_lib_dir }}"
+    - "{{ runner_scheduler_fail_open_state_dir }}"
+  become: true
+
+- name: Install the fail-open reconciler script
+  ansible.builtin.copy:
+    src: "{{ runner_scheduler_fail_open_phase2_dir }}/runner-scheduler/{{ runner_scheduler_fail_open_script }}"
+    dest: "{{ runner_scheduler_fail_open_lib_dir }}/{{ runner_scheduler_fail_open_script }}"
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+
+- name: Check whether the fail-open reconciler service is already installed
+  ansible.builtin.stat:
+    path: "{{ runner_scheduler_fail_open_unit_dir }}/{{ runner_scheduler_fail_open_service }}"
+  register: runner_scheduler_fail_open_service_present
+  become: true
+
+- name: Install the fail-open reconciler service and timer
+  ansible.builtin.copy:
+    src: "{{ runner_scheduler_fail_open_phase2_dir }}/runner-scheduler/{{ item }}"
+    dest: "{{ runner_scheduler_fail_open_unit_dir }}/{{ item }}"
+    owner: root
+    group: root
+    mode: "0644"
+  loop:
+    - "{{ runner_scheduler_fail_open_service }}"
+    - "{{ runner_scheduler_fail_open_timer }}"
+  become: true
+  notify: Reload systemd for the runner scheduler fail-open reconciler
+
+- name: Publish a changed unit before arming it
+  ansible.builtin.meta: flush_handlers
+
+- name: Enable and start the fail-open reconciler timer
+  ansible.builtin.systemd_service:
+    name: "{{ runner_scheduler_fail_open_timer }}"
+    enabled: true
+    state: started
+  become: true
+  when: not ansible_check_mode or runner_scheduler_fail_open_service_present.stat.exists

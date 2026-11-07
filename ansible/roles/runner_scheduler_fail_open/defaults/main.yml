@@ -1,0 +1,10 @@
+---
+# runner_scheduler_fail_open: the server hands a runner pod stranded by a down
+# ci-runner-scheduler to the default scheduler (livespec-dev-tooling-mtvxde).
+runner_scheduler_fail_open_phase2_dir: "{{ role_path }}/../../../ci-runner/k3s/phase2"
+runner_scheduler_fail_open_lib_dir: /usr/local/lib/ci-runner-k3s
+runner_scheduler_fail_open_unit_dir: /etc/systemd/system
+runner_scheduler_fail_open_state_dir: /var/lib/livespec/runner-scheduler-fail-open
+runner_scheduler_fail_open_script: reconcile-runner-scheduler-fail-open.sh
+runner_scheduler_fail_open_service: reconcile-runner-scheduler-fail-open.service
+runner_scheduler_fail_open_timer: reconcile-runner-scheduler-fail-open.timer
