@@ -64,7 +64,7 @@ in_vm() {
   limactl shell --workdir / "$worker" sudo "$@"
 }
 
-in_vm docker inspect -f '{{.State.Running}}' "$server" 2>/dev/null | grep -qx true ||
+in_vm docker inspect -f '{{.State.Running}}' "$server" 2>/dev/null | grep -x true >/dev/null ||
   die "fixture server $server is not running in VM $worker; run k3s-fixture.sh up first"
 
 if [ "$mode" = "tailnet" ]; then

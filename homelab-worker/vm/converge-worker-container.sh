@@ -102,7 +102,7 @@ case "$network" in
   host:*)
     lan_ip="${network#host:}"
     network="host"
-    ip -4 -o addr show | grep -qF " inet $lan_ip/" || {
+    ip -4 -o addr show | grep -F " inet $lan_ip/" >/dev/null || {
       carried="$(ip -4 -o addr show | awk '{print $2"="$4}' | tr '\n' ' ')"
       die "this VM does not carry the declared home-LAN address $lan_ip (it carries: ${carried:-none}); the worker container was not changed"
     } ;;
@@ -133,7 +133,7 @@ modprobe br_netfilter || true
 # existing ancestor; a state root on the root filesystem is refused.
 probe_path="$root"
 while [ ! -e "$probe_path" ]; do probe_path="$(dirname "$probe_path")"; done
-disk_mount="$(findmnt -n -o TARGET -T "$probe_path" | head -n 1)"
+disk_mount="$(findmnt -n -o TARGET -T "$probe_path" | sed -n 1p)"
 case "$disk_mount" in
   "" | /) die "state root $root is not on the worker's data disk (it resolves to the root filesystem); the worker container was not changed" ;;
 esac
@@ -220,12 +220,12 @@ if current="$(docker inspect -f '{{.Config.Image}} {{.State.Running}}' "$worker"
     say "replacing container $worker ($current_image) with $image; its state on the data disk is kept"
     docker rm -f "$worker" >/dev/null
     run_container
-  elif ! printf '%s\n' "$mounts" | grep -qx '/var/lib/rancher/k3s/storage true' ||
-    ! printf '%s\n' "$mounts" | grep -qx '/usr/local/lib/ci-runner-k3s/hooks false' ||
-    ! printf '%s\n' "$mounts" | grep -qx '/usr/local/lib/ci-runner-k3s/bin false' ||
-    ! printf '%s\n' "$mounts" | grep -qx '/srv/factory-workspaces true' ||
-    ! printf '%s\n' "$mounts" | grep -qx '/sys/kernel/security true' ||
-    ! printf '%s\n' "$mounts" | grep -qx '/etc/otel-collector true'; then
+  elif ! grep -qx '/var/lib/rancher/k3s/storage true' <<<"$mounts" ||
+    ! grep -qx '/usr/local/lib/ci-runner-k3s/hooks false' <<<"$mounts" ||
+    ! grep -qx '/usr/local/lib/ci-runner-k3s/bin false' <<<"$mounts" ||
+    ! grep -qx '/srv/factory-workspaces true' <<<"$mounts" ||
+    ! grep -qx '/sys/kernel/security true' <<<"$mounts" ||
+    ! grep -qx '/etc/otel-collector true' <<<"$mounts"; then
     say "replacing container $worker, created without the current CI storage, hook, pool binaries, securityfs, telemetry or factory workspace binds; its state on the data disk is kept"
     docker rm -f "$worker" >/dev/null
     run_container
@@ -251,12 +251,12 @@ fi
 # backend_state: the worker's tailscaled BackendState, or "" while it is not up.
 backend_state() {
   docker exec "$worker" tailscale status --json 2>/dev/null |
-    sed -n 's/^ *"BackendState": *"\([A-Za-z]*\)".*/\1/p' | head -n 1
+    sed -n 's/^ *"BackendState": *"\([A-Za-z]*\)".*/\1/p' | sed -n 1p
 }
 
 auth_url() {
   docker exec "$worker" tailscale status --json 2>/dev/null |
-    sed -n 's/^ *"AuthURL": *"\([^"]*\)".*/\1/p' | head -n 1
+    sed -n 's/^ *"AuthURL": *"\([^"]*\)".*/\1/p' | sed -n 1p
 }
 
 if [ -n "$network" ] && [ "$network" != "host" ]; then
@@ -291,7 +291,7 @@ else
     node_ip="$lan_ip"
     say "worker $worker is a home-LAN node at $node_ip"
   else
-    node_ip="$(docker exec "$worker" tailscale ip -4 | head -n 1)"
+    node_ip="$(docker exec "$worker" tailscale ip -4 | sed -n 1p)"
     [ -n "$node_ip" ] || die "worker $worker has no tailnet IPv4 address"
     say "worker $worker is on the tailnet at $node_ip"
   fi
@@ -339,7 +339,7 @@ else
 fi
 
 if [ -s "$root/telemetry/config.yaml" ] && [ -s "$root/telemetry/.env" ]; then
-  bridge="$(docker exec "$worker" ip -4 -o addr show dev cni0 2>/dev/null | awk '{print $4}' | cut -d / -f 1 | head -n 1 || true)"
+  bridge="$(docker exec "$worker" ip -4 -o addr show dev cni0 2>/dev/null | awk '{print $4}' | cut -d / -f 1 | sed -n 1p || true)"
   if [ -n "$bridge" ]; then
     printf 'WORKER_NODE_NAME=%s\nOTLP_PODS_ENDPOINT=%s:4319\n' "$worker" "$bridge" >"$root/telemetry/node.env"
     docker exec "$worker" systemctl restart otel-collector

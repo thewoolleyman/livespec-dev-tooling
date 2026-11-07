@@ -82,7 +82,7 @@ if [ "$worker_network_given" = 0 ]; then
   [ -z "$lan" ] || worker_network="host:${lan%/*}"
 fi
 worker="$host-homelab-worker"
-image="$(grep -v '^#' "$hw/image/ref" | head -n 1)"
+image="$(grep -v '^#' "$hw/image/ref" | sed -n 1p)"
 
 in_vm() {
   limactl shell --workdir / "$worker" sudo "$@"
@@ -130,7 +130,7 @@ done
 say "Node $worker registered"
 
 waited=0
-until "$hw/enrollment/approve-serving-csr.sh" "$host" | grep -q '^approve-serving-csr: approved '; do
+until "$hw/enrollment/approve-serving-csr.sh" "$host" | grep '^approve-serving-csr: approved ' >/dev/null; do
   [ "$waited" -lt "$wait_seconds" ] || die "no serving CSR from $worker was approved within ${wait_seconds}s"
   sleep "$poll"
   waited=$((waited + poll))

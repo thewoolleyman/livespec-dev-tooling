@@ -58,7 +58,7 @@ fi
 
 # in_list <item> <newline-separated list>
 in_list() {
-  printf '%s\n' "$2" | grep -qxF -- "$1"
+  grep -qxF -- "$1" <<<"$2"
 }
 
 pending="$(kubectl get csr -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.spec.signerName}{"\t"}{.spec.username}{"\t"}{.status.conditions[*].type}{"\n"}{end}' |
