@@ -136,7 +136,6 @@ def test_an_invalid_override_literal_refuses_without_connecting(monkeypatch) -> 
     for value in (
         "vps.perch-rudd.ts.net",
         "100.89.189",
-        "",
         " 100.89.189.118",
         "100.89.189.118:8765",
     ):

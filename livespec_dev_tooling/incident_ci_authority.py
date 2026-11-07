@@ -194,8 +194,12 @@ def _refuse(*, detail: str) -> bool:
 
 
 def _connect_address() -> str | None:
-    """Return the override literal, or None when unset; an invalid value raises ValueError."""
+    """Return the override literal, or None when unset; an invalid value raises ValueError.
+
+    Empty means unset: a workflow expression cannot leave a variable out, so a false
+    condition or an undefined repository variable renders as the empty string.
+    """
     value = os.environ.get(_CONNECT_ADDRESS_VARIABLE)
-    if value is None:
+    if not value:
         return None
     return str(ipaddress.ip_address(value))
