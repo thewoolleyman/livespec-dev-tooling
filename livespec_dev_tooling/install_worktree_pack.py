@@ -109,6 +109,7 @@ from __future__ import annotations
 import stat
 import subprocess
 import sys
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -353,11 +354,37 @@ def _apply_mode(*, path: Path, pack_file: PackFile) -> bool:
     return True
 
 
+def _replacement_mode(*, path: Path, pack_file: PackFile) -> int:
+    """Return the mode a newly-written replacement must carry before its rename."""
+    current_mode = stat.S_IMODE(path.stat().st_mode) if path.is_file() else 0o644
+    if not pack_file.executable:
+        return current_mode
+    return current_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH
+
+
+def _replace_file(*, path: Path, pack_file: PackFile) -> None:
+    """Write a sibling then rename it over ``path`` so active readers retain old bytes."""
+    with tempfile.NamedTemporaryFile(
+        mode="w",
+        encoding="utf-8",
+        dir=path.parent,
+        prefix=f".{path.name}.",
+        suffix=".tmp",
+        delete=False,
+    ) as temporary_file:
+        temporary_path = Path(temporary_file.name)
+        _ = temporary_file.write(pack_file.body)
+    try:
+        temporary_path.chmod(_replacement_mode(path=path, pack_file=pack_file))
+        _ = temporary_path.replace(path)
+    finally:
+        temporary_path.unlink(missing_ok=True)
+
+
 def _install_pack_file(*, path: Path, pack_file: PackFile) -> str:
     """Bring one pack member to its canonical body and mode; say what changed."""
     if not _installed_matches(path=path, body=pack_file.body):
-        _ = path.write_text(pack_file.body, encoding="utf-8")
-        _ = _apply_mode(path=path, pack_file=pack_file)
+        _replace_file(path=path, pack_file=pack_file)
         return _CHANGED_BODY
     if _apply_mode(path=path, pack_file=pack_file):
         return _CHANGED_MODE

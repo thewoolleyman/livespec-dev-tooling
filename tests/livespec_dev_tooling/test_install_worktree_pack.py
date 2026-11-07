@@ -442,6 +442,41 @@ def test_main_is_idempotent(*, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) 
     assert first == second == CANONICAL_WORKTREE_LIB_BODY
 
 
+def test_main_atomically_replaces_a_drifted_pack_file(
+    *,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A refresh leaves an executing runner on its original inode and names the repair."""
+    _scrub_git_env(monkeypatch=monkeypatch)
+    primary = tmp_path / "project"
+    _init_repo(repo=primary)
+    monkeypatch.chdir(primary)
+    assert main() == 0
+
+    target = primary / "dev-tooling" / "gate-run.sh"
+    _ = target.write_text("#!/usr/bin/env bash\n# stale gate runner\n", encoding="utf-8")
+    stale_inode = target.stat().st_ino
+    _ = capsys.readouterr()
+
+    assert main() == 0
+
+    assert target.stat().st_ino != stale_inode
+    assert target.read_text(encoding="utf-8") == CANONICAL_GATE_RUN_BODY
+    events = [
+        json.loads(line)
+        for line in capsys.readouterr().err.splitlines()
+        if line.strip().startswith("{")
+    ]
+    refreshed = [
+        event
+        for event in events
+        if event.get("file") == "gate-run.sh" and event.get("changed") == "body"
+    ]
+    assert len(refreshed) == 1
+
+
 def test_main_gitignores_every_installed_pack_file(
     *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
