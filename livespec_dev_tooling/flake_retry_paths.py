@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import ast
-from pathlib import Path
 
 __all__: list[str] = ["path_literals"]
 
@@ -21,10 +20,11 @@ def _division_operands(*, expression: ast.expr) -> tuple[ast.expr, ...]:
 def path_literals(*, tree: ast.AST) -> tuple[set[str], bool]:
     """Return named literal paths and whether a path segment cannot be resolved.
 
-    A dynamic root before literal components is normal (for example, ``_ROOT /
-    "ci-runner"``). A dynamic component after one of those components leaves
-    the repository path uncertain, so callers must treat that closure as
-    touched.
+    A dynamic first operand is a root (for example, ``_ROOT / "ci-runner"``).
+    A dynamic operand at any later position may be a repository path component,
+    so callers must treat that closure as touched. A terminal component may be
+    a file even without a suffix, so every multi-segment path also names its
+    own parent directory.
     """
     nested_divisions = {
         id(child)
@@ -41,15 +41,13 @@ def path_literals(*, tree: ast.AST) -> tuple[set[str], bool]:
         if id(node) in nested_divisions:
             continue
         segments: list[str] = []
-        saw_literal = False
-        for operand in _division_operands(expression=node):
+        for position, operand in enumerate(_division_operands(expression=node)):
             if isinstance(operand, ast.Constant) and isinstance(operand.value, str):
-                saw_literal = True
                 segments.append(operand.value)
-            elif saw_literal:
+            elif position > 0:
                 undeterminable = True
         for named_path in filter(None, ("/".join(segments),)):
             paths.add(named_path)
-            if Path(named_path).suffix and "/" in named_path:
+            if "/" in named_path:
                 paths.add(named_path.rsplit("/", maxsplit=1)[0])
     return paths, undeterminable

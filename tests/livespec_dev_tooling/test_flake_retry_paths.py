@@ -28,3 +28,31 @@ def test_the_path_analyzer_joins_consecutive_literal_segments() -> None:
 
     assert paths == {"ci-runner/k3s/phase2/gates", "ci-runner/k3s/phase2/gates/gate.sh"}
     assert not undeterminable
+
+
+def test_a_dynamic_operand_after_the_first_operand_and_before_a_literal_is_undeterminable() -> None:
+    """Only the first operand may be a dynamic root; a later one hides path components."""
+    analyzer = importlib.import_module("livespec_dev_tooling.flake_retry_paths")
+
+    _, undeterminable = analyzer.path_literals(tree=ast.parse("_ROOT / segment / 'gates'"))
+
+    assert undeterminable
+
+
+def test_a_dynamic_first_operand_is_a_root_and_stays_determinable() -> None:
+    """A dynamic root before the literal components is the normal repository-root shape."""
+    analyzer = importlib.import_module("livespec_dev_tooling.flake_retry_paths")
+
+    _, undeterminable = analyzer.path_literals(tree=ast.parse("_ROOT / 'ci-runner' / 'gates'"))
+
+    assert not undeterminable
+
+
+def test_a_suffixless_terminal_component_names_its_own_directory() -> None:
+    """A terminal such as Makefile may be a file, so it names its directory too."""
+    analyzer = importlib.import_module("livespec_dev_tooling.flake_retry_paths")
+
+    paths, _ = analyzer.path_literals(tree=ast.parse("_ROOT / 'ci-runner' / 'gates' / 'Makefile'"))
+
+    assert "ci-runner/gates" in paths
+    assert "ci-runner/gates/Makefile" in paths
