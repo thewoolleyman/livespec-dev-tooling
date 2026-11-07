@@ -1018,7 +1018,7 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: one fleet-wide command adopts the current plugin builds in every fleet member and refuses a split adoption",
-    "work_item": "livespec-dev-tooling-jzwgjw",
+    "work_item": "livespec-dev-tooling-7upzav",
     "first_seen": "2026-11-03"
   },
   {
