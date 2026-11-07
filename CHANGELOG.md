@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.186.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.186.0...v1.186.1) (2026-11-07)
+
+
+### Bug Fixes
+
+* pass a canonical incident refusal through by its own code (livespec-dev-tooling-zvntys) ([fa76884](https://github.com/thewoolleyman/livespec-dev-tooling/commit/fa76884e6e84b3f684af91ed0d009a34cc45f8dd))
+
 ## [1.186.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.185.2...v1.186.0) (2026-11-07)
 
 
