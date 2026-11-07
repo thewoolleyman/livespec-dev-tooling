@@ -77,11 +77,13 @@ _PUBLIC_RUNTIME_PACKAGE = "livespec_runtime"
 # expected to issue. MEASURED from the tree, not projected: the
 # work-item's 2026-08-08 inventory predates both the
 # `_branch_protection_api` split-out, the `enforce_admins` sub-endpoint read
-# (livespec-dev-tooling-65c), and the transient-response retry helpers, so
+# (livespec-dev-tooling-65c), the transient-response retry helpers, and the
+# ruleset reads of the effective required-check set (contracts.md v149), so
 # the count follows the current read sites rather than the original inventory.
 _RETROFITTED_SITES: dict[str, int] = {
     "livespec_dev_tooling/checks/branch_protection_alignment.py": 0,
     "livespec_dev_tooling/checks/_branch_protection_api.py": 4,
+    "livespec_dev_tooling/checks/_branch_protection_rulesets.py": 2,
     "livespec_dev_tooling/checks/master_ci_green.py": 3,
     "livespec_dev_tooling/agent_hooks/subagent_stop_guard.py": 1,
 }

@@ -126,7 +126,7 @@ def _invocations(*, root: Path) -> str:
 def _install_fake_gh(*, root: Path) -> str:
     """Install a fake `gh` under `root/bin` and return a PATH that finds it first.
 
-    It answers ONLY the four addresses that name `_GATED_REPOSITORY` and refuses
+    It answers ONLY the five addresses that name `_GATED_REPOSITORY` and refuses
     everything else the way the real API does (a JSON body on stdout, a rendered
     line on stderr, non-zero exit). That refusal is what makes the negative
     controls meaningful: a check that resolved the wrong repository does not
@@ -157,10 +157,20 @@ def _install_fake_gh(*, root: Path) -> str:
         f"if [ \"$2\" = \"{path}\" ]; then\n  printf '%s\\n' '{payload}'\n  exit 0\nfi\n"
         for path, payload in answers.items()
     )
+    # The fifth address is the paginated ruleset read of the effective
+    # required-check set (contracts.md v149): its path is the FOURTH argument,
+    # after `--paginate --slurp`. One empty page models a repository with no
+    # ruleset, so classic `ci-green` alone keeps the check aligned.
+    rules = f"repos/{_GATED_REPOSITORY}/rules/branches/master?per_page=100"
+    rules_dispatch = (
+        f'if [ "$2" = "--paginate" ] && [ "$4" = "{rules}" ]; then\n'
+        "  printf '%s\\n' '[[]]'\n  exit 0\nfi\n"
+    )
     script = (
         "#!/bin/sh\n"
         'if [ "$1" = "auth" ]; then\n  exit 0\nfi\n'
         f"printf '%s\\n' \"$*\" >> '{bin_dir}/gh.argv'\n"
+        f"{rules_dispatch}"
         f"{dispatch}"
         "printf '%s\\n' '{\"message\": \"Not Found\"}'\n"
         "echo 'gh: Not Found (HTTP 404)' >&2\n"

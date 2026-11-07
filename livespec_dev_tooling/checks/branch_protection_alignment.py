@@ -55,6 +55,19 @@ nonexistent `master`; livespec-dev-tooling-17o):
      export-telemetry, ci-green) are still never flagged as
      should-be-required.
 
+   The "required-checks list" every rule above compares is the EFFECTIVE
+   set (the `branch_protection_alignment` check contract in SPECIFICATION/contracts.md,
+   as revised in v149): classic protection's contexts UNION every active ruleset's
+   `required_status_checks` rule on the default branch, every page read.
+   A ruleset that contributes is held to the classic standard: its rule
+   must keep strict off (`strict_enabled`, one finding per ruleset), and
+   every bypass actor must be a GitHub App (`ruleset_bypass_not_app`) —
+   a role or person bypass is `enforce_admins` off by another name. An
+   unreadable contribution fails (`ruleset_unreadable`) rather than
+   skipping, because the classic read before it proved admin scope; and
+   a classic read answering "Required status checks not enabled" on a
+   protected branch is an EMPTY classic contribution, not a skip.
+
 External state: the script shells out to `gh api` to fetch the
 required-checks list (and, once that succeeds, the branch's
 `enforce_admins` flag from its own sub-endpoint). The three outcomes
@@ -99,7 +112,9 @@ Exit codes:
   required check has no matching ci.yml job (`failure_mode`
   `required_check_missing_from_ci`), or a ci.yml matrix leg is not
   required while NO required aggregate gate covers it (`failure_mode`
-  `unrequired_leg_without_aggregate_gate`).
+  `unrequired_leg_without_aggregate_gate`), or a contributing ruleset
+  lists a non-App bypass actor (`failure_mode` `ruleset_bypass_not_app`)
+  or could not be read (`failure_mode` `ruleset_unreadable`).
 
 Output discipline matches sibling checks: structlog JSON to stderr;
 no `print`, no `sys.stderr.write`.
@@ -123,6 +138,12 @@ from livespec_dev_tooling.checks._branch_protection_api import (  # noqa: E402
     _fetch_admin_enforcement,
     _fetch_required_contexts,
     _ProtectionAbsent,
+    _RequiredContexts,
+)
+from livespec_dev_tooling.checks._branch_protection_rulesets import (  # noqa: E402
+    _fetch_ruleset_requirements,
+    _RulesetRequirements,
+    _RulesetsUnreadable,
 )
 from livespec_dev_tooling.checks._ci_job_names import (  # noqa: E402
     parse_ci_matrix,
@@ -275,6 +296,71 @@ def _enforce_admins_exit_code(
     return 0
 
 
+def _ruleset_exit_code(
+    *,
+    log: structlog.stdlib.BoundLogger,
+    rulesets: _RulesetRequirements | _RulesetsUnreadable,
+) -> int:
+    """The exit code owed by the ruleset half of the effective set: `4` or `0`.
+
+    A ruleset that holds a required check is held to the classic standard
+    (the `branch_protection_alignment` check contract in SPECIFICATION/contracts.md, v149):
+    strict off, and no bypass actor other than a GitHub App — a role or person
+    bypass is `enforce_admins` off by another name. An unreadable contribution
+    fails rather than skips, because the classic read before it proved scope.
+    """
+    if isinstance(rulesets, _RulesetsUnreadable):
+        log.error(
+            "could not read the ruleset contribution to the default branch's "
+            "required checks; refusing to report a merge gate this run did not verify",
+            failure_mode="ruleset_unreadable",
+            detail=rulesets.detail,
+        )
+        return 4
+    for ruleset_id in rulesets.strict_ruleset_ids:
+        log.error(
+            "a ruleset requiring a check on the default branch enables strict; strict MUST be OFF",
+            failure_mode="strict_enabled",
+            ruleset_id=ruleset_id,
+        )
+    for ruleset_id in rulesets.non_app_bypass_ruleset_ids:
+        log.error(
+            "a ruleset requiring a check on the default branch lets a non-App actor "
+            "bypass it; only GitHub App bypass actors are allowed",
+            failure_mode="ruleset_bypass_not_app",
+            ruleset_id=ruleset_id,
+        )
+    return 4 if rulesets.strict_ruleset_ids or rulesets.non_app_bypass_ruleset_ids else 0
+
+
+def _effective_set_exit_code(
+    *,
+    log: structlog.stdlib.BoundLogger,
+    classic: _RequiredContexts,
+    matrix_targets: set[str],
+    job_names: set[str],
+) -> int:
+    """Read the ruleset contribution, then align the EFFECTIVE set against ci.yml.
+
+    The effective set is classic protection's required checks UNION every
+    active ruleset's (the `branch_protection_alignment` check contract in
+    SPECIFICATION/contracts.md, v149). An unreadable ruleset contribution
+    stops here: aligning the classic half alone would certify a set this run
+    never saw whole.
+    """
+    rulesets = _fetch_ruleset_requirements(protection=classic)
+    ruleset_code = _ruleset_exit_code(log=log, rulesets=rulesets)
+    if isinstance(rulesets, _RulesetsUnreadable):
+        return ruleset_code
+    alignment_code = _run_alignment_gate(
+        log=log,
+        required=classic.contexts | rulesets.contexts,
+        matrix_targets=matrix_targets,
+        job_names=job_names,
+    )
+    return max(alignment_code, ruleset_code)
+
+
 def _unreadable_protection_exit_code(
     *,
     log: structlog.stdlib.BoundLogger,
@@ -374,15 +460,12 @@ def main() -> int:
             ),
         )
         return 4
-    alignment_code = _run_alignment_gate(
-        log=log,
-        required=fetched.contexts,
-        matrix_targets=matrix_targets,
-        job_names=job_names,
+    effective_code = _effective_set_exit_code(
+        log=log, classic=fetched, matrix_targets=matrix_targets, job_names=job_names
     )
-    # Both gates answer in the same two values (`4` or `0`) and both have
-    # already emitted their findings, so the larger is the check's verdict.
-    return max(alignment_code, admins_code)
+    # Every gate answers in the same two values (`4` or `0`) and each has
+    # already emitted its findings, so the larger is the check's verdict.
+    return max(effective_code, admins_code)
 
 
 if __name__ == "__main__":

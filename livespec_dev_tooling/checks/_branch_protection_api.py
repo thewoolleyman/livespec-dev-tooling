@@ -62,6 +62,12 @@ _REMOTE_URL_PATTERN = re.compile(
 # "Resource not accessible by integration" instead, so the presence of
 # this literal phrase is the definitive "absent" disambiguator.
 _NOT_PROTECTED_MARKER = "Branch not protected"
+# GitHub answers the classic `required_status_checks` read with this 404 message
+# when the branch IS protected but its classic protection carries no
+# required-status-checks object. Per the `branch_protection_alignment` check
+# contract in SPECIFICATION/contracts.md (v149) that is an EMPTY classic
+# contribution to the effective required-check set, never the can't-read skip.
+_STATUS_CHECKS_NOT_ENABLED_MARKER = "Required status checks not enabled"
 # `git symbolic-ref refs/remotes/origin/HEAD` answers with a ref of this
 # shape when the clone recorded origin's default branch; the branch name
 # is the remainder after the prefix.
@@ -257,6 +263,41 @@ def _resolve_default_branch(*, log: structlog.stdlib.BoundLogger, owner_repo: st
     return _FALLBACK_BRANCH
 
 
+def _classic_read_failure(
+    *, log: structlog.stdlib.BoundLogger, completed: GhRead, owner_repo: str, branch: str
+) -> _RequiredContexts | _ProtectionAbsent | None:
+    """What a FAILED classic required-status-checks read means.
+
+    Extracted to keep `_fetch_required_contexts` under the six-return cap the
+    empty-classic-contribution arm pushed it past. Three answers: the canonical
+    "Branch not protected" 404 is definitive absence; "Required status checks
+    not enabled" is a protected branch with an EMPTY classic contribution (the
+    ruleset read decides the rest, per contracts.md v149); anything else is
+    the can't-read skip.
+    """
+    combined = f"{completed.stdout}\n{completed.stderr}"
+    if _NOT_PROTECTED_MARKER in combined:
+        # Definitive "absent": an admin-scoped token read the default branch
+        # and GitHub answered with the canonical "Branch not protected" 404.
+        # This is the fail-trigger, NOT a can't-read skip.
+        return _ProtectionAbsent()
+    if _STATUS_CHECKS_NOT_ENABLED_MARKER in combined:
+        return _RequiredContexts(
+            contexts=frozenset(), strict=False, owner_repo=owner_repo, branch=branch
+        )
+    log.warning(
+        "gh api call failed for a non-definitive reason; "
+        "cannot distinguish absent protection from missing read access; "
+        "skipping branch-protection alignment check",
+        stderr=completed.stderr.strip()[:200],
+        hint=(
+            "check gh auth status; the default Actions GITHUB_TOKEN "
+            "lacks the admin scope needed to read branch protection"
+        ),
+    )
+    return None
+
+
 def _fetch_required_contexts(
     *, log: structlog.stdlib.BoundLogger, env: Mapping[str, str]
 ) -> _RequiredContexts | _ProtectionAbsent | None:
@@ -295,24 +336,9 @@ def _fetch_required_contexts(
     api_path = f"repos/{owner_repo}/branches/{branch}/protection/required_status_checks"
     completed = _read_required_contexts_with_transient_retry(args=["api", api_path])
     if completed.returncode != 0:
-        combined = f"{completed.stdout}\n{completed.stderr}"
-        if _NOT_PROTECTED_MARKER in combined:
-            # Definitive "absent": an admin-scoped token read the default
-            # branch and GitHub answered with the canonical "Branch not
-            # protected" 404. This is the fail-trigger, NOT a can't-read
-            # skip.
-            return _ProtectionAbsent()
-        log.warning(
-            "gh api call failed for a non-definitive reason; "
-            "cannot distinguish absent protection from missing read access; "
-            "skipping branch-protection alignment check",
-            stderr=completed.stderr.strip()[:200],
-            hint=(
-                "check gh auth status; the default Actions GITHUB_TOKEN "
-                "lacks the admin scope needed to read branch protection"
-            ),
+        return _classic_read_failure(
+            log=log, completed=completed, owner_repo=owner_repo, branch=branch
         )
-        return None
     parsed = json.loads(completed.stdout)
     if not isinstance(parsed, dict):
         log.error("unexpected gh api response shape", payload_type=type(parsed).__name__)

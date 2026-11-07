@@ -240,6 +240,10 @@ def _install_fake_gh(
     enforce_admins_payload: str = '{"enabled": true}',
     enforce_admins_returncode: int = 0,
     api_replies: list[tuple[str, str, int]] | None = None,
+    rules_payload: str = "[[]]",
+    rules_returncode: int = 0,
+    ruleset_payload: str = '{"bypass_actors": []}',
+    ruleset_returncode: int = 0,
 ) -> str:
     """Install fake `gh` + `git` shell stubs at tmp_path/bin, return PATH including it.
 
@@ -274,6 +278,15 @@ def _install_fake_gh(
     consume one response in order. This models a transient GitHub response
     followed by a definitive answer without involving the enforcement
     sub-endpoint, which keeps its independently configured payload.
+
+    The two RULESET reads are dispatched separately too, because the
+    effective required-check set is classic protection's list UNION every
+    active ruleset's required checks (the `branch_protection_alignment` check contract in SPECIFICATION/contracts.md,
+    v149). `rules_payload` answers the paginated, slurped
+    `rules/branches/<branch>` read (a list of pages); `ruleset_payload` answers
+    every `rulesets/<id>` body read. The defaults model a repository with no
+    ruleset — one empty page — so every fixture not about rulesets keeps
+    producing exactly the findings it produced before rulesets were read.
     """
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir(parents=True, exist_ok=True)
@@ -294,6 +307,18 @@ def _install_fake_gh(
         "*/protection/enforce_admins)\n"
         f"cat <<'ADMINS_EOF'\n{enforce_admins_payload}\nADMINS_EOF\n"
         f"exit {enforce_admins_returncode}\n"
+        ";;\n"
+        "esac\n"
+    )
+    rulesets_block = (
+        'if [ "$1" = "api" ] && [ "$2" = "--paginate" ]; then\n'
+        f"cat <<'RULES_EOF'\n{rules_payload}\nRULES_EOF\n"
+        f"exit {rules_returncode}\n"
+        "fi\n"
+        'case "$2" in\n'
+        "*/rulesets/*)\n"
+        f"cat <<'RULESET_EOF'\n{ruleset_payload}\nRULESET_EOF\n"
+        f"exit {ruleset_returncode}\n"
         ";;\n"
         "esac\n"
     )
@@ -331,6 +356,7 @@ def _install_fake_gh(
         "#!/bin/sh\n"
         f"printf '%s\\n' \"$*\" >> '{bin_dir}/gh.argv'\n"
         f"{enforce_admins_block}"
+        f"{rulesets_block}"
         f"{repo_dispatch_block}"
         f"{api_replies_block}"
         f"cat <<'STUB_EOF'\n{stdout}\nSTUB_EOF\n"
@@ -1215,3 +1241,223 @@ def test_module_re_import_with_vendor_in_sys_path() -> None:
             sys.modules.pop(name2, None)
     finally:
         sys.modules.pop(name1, None)
+
+
+# ---------------------------------------------------------------------------
+# The effective required-check set: classic protection UNION active rulesets
+# (the `branch_protection_alignment` check contract in SPECIFICATION/contracts.md, v149).
+# ---------------------------------------------------------------------------
+
+
+def _status_rule(
+    *, ruleset_id: object, contexts: list[str], strict: bool = False
+) -> dict[str, object]:
+    """One `required_status_checks` rule as `rules/branches/<branch>` reports it."""
+    return {
+        "type": "required_status_checks",
+        "ruleset_id": ruleset_id,
+        "parameters": {
+            "strict_required_status_checks_policy": strict,
+            "required_status_checks": [{"context": c, "integration_id": 15368} for c in contexts],
+        },
+    }
+
+
+_APP_BYPASS = json.dumps(
+    {"bypass_actors": [{"actor_id": 5656677, "actor_type": "Integration", "bypass_mode": "always"}]}
+)
+_ROLE_BYPASS = json.dumps(
+    {
+        "bypass_actors": [
+            {"actor_id": 5656677, "actor_type": "Integration", "bypass_mode": "always"},
+            {"actor_id": 5, "actor_type": "RepositoryRole", "bypass_mode": "always"},
+        ]
+    }
+)
+_GATE_IN_RULESET = json.dumps([[_status_rule(ruleset_id=26758787, contexts=["ci-green"])]])
+
+
+def _ruleset_run(
+    *,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    **fake: object,
+) -> _CheckRun:
+    """Single-gate ci.yml, classic protection with NO required check, rulesets as given."""
+    _setup_repo_with_gate_and_matrix(tmp_path=tmp_path)
+    defaults: dict[str, object] = {
+        "stdout": _checks_payload(contexts=[]),
+        "rules_payload": _GATE_IN_RULESET,
+        "ruleset_payload": _APP_BYPASS,
+    }
+    fake_path = _install_fake_gh(tmp_path=tmp_path, **{**defaults, **fake})  # type: ignore[arg-type]
+    return _run_check(cwd=tmp_path, env_path=fake_path, monkeypatch=monkeypatch, capsys=capsys)
+
+
+def test_a_gate_held_only_by_a_ruleset_with_an_app_bypass_is_aligned(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Classic requires nothing; an active ruleset requires ci-green and only an App bypasses it."""
+    result = _ruleset_run(tmp_path=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
+    assert result.returncode == 0, f"stderr={result.stderr!r}"
+    assert "unrequired_leg_without_aggregate_gate" not in result.stderr
+    argv_log = _gh_argv_log(tmp_path=tmp_path)
+    assert (
+        "--paginate --slurp repos/test-owner/test-repo/rules/branches/master?per_page=100"
+        in argv_log
+    )
+    assert "repos/test-owner/test-repo/rulesets/26758787" in argv_log
+
+
+def test_an_absent_classic_status_check_object_is_an_empty_contribution_not_a_skip(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """GitHub's 404 'Required status checks not enabled' on a protected branch reads as empty."""
+    missing = '{"message":"Required status checks not enabled","status":"404"}'
+    aligned = _ruleset_run(
+        tmp_path=tmp_path / "aligned",
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+        stdout=missing,
+        stderr="gh: Required status checks not enabled (HTTP 404)",
+        returncode=1,
+    )
+    uncovered = _ruleset_run(
+        tmp_path=tmp_path / "uncovered",
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+        stdout=missing,
+        stderr="gh: Required status checks not enabled (HTTP 404)",
+        returncode=1,
+        rules_payload="[[]]",
+    )
+    assert (aligned.returncode, uncovered.returncode) == (0, 4), (aligned, uncovered)
+    assert "unrequired_leg_without_aggregate_gate" in uncovered.stderr
+
+
+def test_a_non_app_bypass_on_a_contributing_ruleset_fails(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A repository-role bypass is enforce_admins off by another name."""
+    result = _ruleset_run(
+        tmp_path=tmp_path, monkeypatch=monkeypatch, capsys=capsys, ruleset_payload=_ROLE_BYPASS
+    )
+    assert result.returncode == 4, f"stderr={result.stderr!r}"
+    assert result.stderr.count("ruleset_bypass_not_app") == 1
+
+
+def test_a_non_object_bypass_actor_counts_as_non_app(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    result = _ruleset_run(
+        tmp_path=tmp_path,
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+        ruleset_payload='{"bypass_actors": ["Integration"]}',
+    )
+    assert result.returncode == 4
+    assert "ruleset_bypass_not_app" in result.stderr
+
+
+def test_a_strict_ruleset_rule_fails_once_per_offending_ruleset(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    rules = json.dumps(
+        [
+            [_status_rule(ruleset_id=1, contexts=["ci-green"], strict=True)],
+            [_status_rule(ruleset_id=2, contexts=["ci-green"])],
+        ]
+    )
+    result = _ruleset_run(
+        tmp_path=tmp_path, monkeypatch=monkeypatch, capsys=capsys, rules_payload=rules
+    )
+    assert result.returncode == 4, f"stderr={result.stderr!r}"
+    assert result.stderr.count("strict_enabled") == 1
+    assert '"ruleset_id": 1' in result.stderr
+
+
+@pytest.mark.parametrize(
+    ("fake", "detail"),
+    [
+        ({"rules_returncode": 1}, "rules read failed"),
+        ({"rules_payload": '{"not": "pages"}'}, "not a list of rule pages"),
+        ({"rules_payload": '[{"not": "a page"}]'}, "not a list of rule pages"),
+        (
+            {"rules_payload": json.dumps([[_status_rule(ruleset_id="7", contexts=["ci-green"])]])},
+            "not a list of rule pages",
+        ),
+        (
+            {"rules_payload": '[[{"type": "required_status_checks", "ruleset_id": 7}]]'},
+            "not a list of rule pages",
+        ),
+        ({"ruleset_returncode": 1}, "has no readable bypass list"),
+        ({"ruleset_payload": "[]"}, "has no readable bypass list"),
+        ({"ruleset_payload": '{"name": "x"}'}, "has no readable bypass list"),
+    ],
+)
+def test_an_unreadable_ruleset_contribution_fails_and_never_skips(
+    *,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    fake: dict[str, object],
+    detail: str,
+) -> None:
+    result = _ruleset_run(tmp_path=tmp_path, monkeypatch=monkeypatch, capsys=capsys, **fake)
+    assert result.returncode == 4, f"stderr={result.stderr!r}"
+    assert "ruleset_unreadable" in result.stderr
+    assert detail in result.stderr
+
+
+def test_rules_that_hold_no_status_check_contribute_nothing(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Deletion rules, non-object rows and malformed entries add no required context."""
+    rules = json.dumps(
+        [
+            [
+                {"type": "deletion", "ruleset_id": 9},
+                "not-a-rule",
+                {
+                    "type": "required_status_checks",
+                    "ruleset_id": 9,
+                    "parameters": {"required_status_checks": ["ci-green", {"context": 5}]},
+                },
+                {
+                    "type": "required_status_checks",
+                    "ruleset_id": 9,
+                    "parameters": {"required_status_checks": "ci-green"},
+                },
+            ]
+        ]
+    )
+    result = _ruleset_run(
+        tmp_path=tmp_path, monkeypatch=monkeypatch, capsys=capsys, rules_payload=rules
+    )
+    assert result.returncode == 4, f"stderr={result.stderr!r}"
+    assert "unrequired_leg_without_aggregate_gate" in result.stderr
+
+
+def test_ruleset_contexts_merge_with_classic_contexts(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A phantom held only by a ruleset is still a required check with no ci.yml job."""
+    rules = json.dumps(
+        [
+            [
+                _status_rule(ruleset_id=3, contexts=["ci-green"]),
+                _status_rule(ruleset_id=3, contexts=["check-phantom"]),
+            ]
+        ]
+    )
+    result = _ruleset_run(
+        tmp_path=tmp_path,
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+        stdout=_checks_payload(contexts=["ci-green"]),
+        rules_payload=rules,
+    )
+    assert result.returncode == 4, f"stderr={result.stderr!r}"
+    assert result.stderr.count("required_check_missing_from_ci") == 1
+    assert "check-phantom" in result.stderr
