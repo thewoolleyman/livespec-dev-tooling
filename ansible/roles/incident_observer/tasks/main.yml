@@ -287,6 +287,39 @@
   no_log: true
   notify: Restart the incident observer onto its installation
 
+- name: Write the recovery App credential the principal reads beside controller.json
+  # JSON `{"app_id", "private_key"}`; the single-line projected PEM is rewrapped
+  # by the principal, not here. Written only when the wrapper projects both
+  # variables, so an apply before the maintainer provisions the App (GO-1)
+  # still converges and the principal refuses forge work by name.
+  ansible.builtin.copy:
+    content: >-
+      {{ {'app_id': lookup('ansible.builtin.env', incident_observer_recovery_app_id_env),
+          'private_key': lookup('ansible.builtin.env', incident_observer_recovery_app_key_env)}
+         | to_json }}
+    dest: "{{ incident_observer_recovery_app_path }}"
+    owner: "{{ incident_observer_user }}"
+    group: "{{ incident_observer_group }}"
+    mode: "0600"
+  become: true
+  no_log: true
+  when:
+    - lookup('ansible.builtin.env', incident_observer_recovery_app_id_env) | length > 0
+    - lookup('ansible.builtin.env', incident_observer_recovery_app_key_env) | length > 0
+
+- name: Say when the recovery App credential is not projected
+  ansible.builtin.debug:
+    msg: >-
+      {{ incident_observer_recovery_app_id_env }} and
+      {{ incident_observer_recovery_app_key_env }} are not both projected, so
+      {{ incident_observer_recovery_app_path }} is not written and the recovery
+      principal refuses every forge operation as recovery-app-credential-absent.
+      Provisioning the recovery App, its 1Password key and the master ruleset
+      bypass is the maintainer's step (role README, maintainer step 4).
+  when: >-
+    lookup('ansible.builtin.env', incident_observer_recovery_app_id_env) | length == 0
+    or lookup('ansible.builtin.env', incident_observer_recovery_app_key_env) | length == 0
+
 - name: Install controller.json from host facts
   ansible.builtin.template:
     src: controller.json.j2
