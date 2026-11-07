@@ -41,7 +41,7 @@ that needs the forge refuses by name instead:
 | `recovery-app-credential-malformed` | The file does not hold exactly a numeric `app_id` and a PEM `private_key`. |
 | `recovery-app-signing-unavailable` | `/usr/bin/openssl` could not sign the App JWT. |
 | `recovery-app-not-installed` | The App's installation does not cover the observed repository. |
-| `recovery-app-token-refused` | GitHub minted no token with exactly `contents: write` on that one repository. |
+| `recovery-app-token-refused` | GitHub minted no token on that one repository whose grant is `contents: write`, alone or with the `metadata: read` GitHub adds to every App token. Any other read or write is refused. |
 
 Each process mints one installation token. The token is scoped to the observed
 repository with `contents: write` only and is never written to a reply, record
