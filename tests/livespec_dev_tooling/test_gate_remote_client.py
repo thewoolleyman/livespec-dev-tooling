@@ -45,6 +45,7 @@ from __future__ import annotations
 
 import dataclasses
 import hashlib
+import importlib
 import json
 from dataclasses import dataclass
 from pathlib import Path
@@ -579,6 +580,15 @@ def test_a_suspended_job_keeps_its_full_poll_budget_after_kueue_admits_it() -> N
     assert cluster.naps == [request.poll_interval_seconds] * 5
 
 
+def test_the_admission_waiter_is_a_cohesive_module() -> None:
+    """The polling concern is extracted from the client that submits and streams Jobs."""
+    module_path = Path(__file__).parents[2] / "livespec_dev_tooling/gate_remote_admission.py"
+
+    assert module_path.is_file()
+    module = importlib.import_module("livespec_dev_tooling.gate_remote_admission")
+    assert callable(module.await_terminal_state)
+
+
 @pytest.mark.parametrize(
     "status",
     [
@@ -869,6 +879,45 @@ def test_a_job_the_cluster_will_not_report_on_is_retried_then_retains_its_ref() 
     assert outcome.failure().detail == "get-job refused\n"
     assert cluster.kinds.count("get-job") == 2
     assert "delete-ref" not in cluster.kinds
+
+
+def test_a_refused_post_admission_read_exhausts_the_terminal_budget() -> None:
+    """A refusal after admission remains the terminal wait's no-verdict result."""
+    cluster = _StubCluster(job_states=("Active",))
+    request = dataclasses.replace(_REQUEST, poll_timeout_seconds=20.0)
+    read_count = 0
+
+    def runner(
+        *, argv: list[str], cwd: Path, stdin: str | None = None, stream: bool = False
+    ) -> GateCommandOutcome:
+        nonlocal read_count
+        if _kind_of(argv=argv) == "get-job":
+            read_count += 1
+            if read_count == 2:
+                return Success(
+                    GateCommandResult(returncode=1, stdout="", stderr="get-job refused\n")
+                )
+        return cluster(argv=argv, cwd=cwd, stdin=stdin, stream=stream)
+
+    outcome = run_gate(request=request, runner=runner, sleeper=cluster.sleep)
+
+    assert isinstance(outcome, Failure)
+    assert outcome.failure().detail == "get-job refused\n"
+
+
+def test_an_unreadable_post_admission_status_ends_the_terminal_wait() -> None:
+    """Admission does not let a malformed later Job status be guessed."""
+    cluster = _StubCluster(
+        job_status_payloads=(
+            _job_status(state="Active"),
+            "<html>gateway timeout</html>",
+        )
+    )
+
+    outcome = run_gate(request=_REQUEST, runner=cluster, sleeper=cluster.sleep)
+
+    assert isinstance(outcome, Failure)
+    assert "unreadable job status" in outcome.failure().detail
 
 
 def test_an_unreadable_job_status_fails_the_wait_rather_than_being_guessed() -> None:
