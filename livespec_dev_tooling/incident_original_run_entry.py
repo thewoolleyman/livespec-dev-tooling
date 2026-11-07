@@ -1,16 +1,22 @@
 """Operator entrance: collect a reverted incident's original run, then propose its correction.
 
-Run it as the independent controller account, so the evidence lands in the
-observer's private state directory beside the registration it reads. `--repo`
-is the governed primary checkout; the incident item is reached through the
-credential wrapper and the project's registered orchestrator build:
+Run it as the independent controller account with the installation's isolated
+interpreter, so the evidence lands in the observer's private state directory beside
+the registration it reads. `--config` is the protected `controller.json`; everything
+else comes from the installation it verifies: the state directory, the repository,
+the reference clone and the manifest's canonical reader. The tenant credential is
+`reader.env` beside it, and forge reads use the recovery App's read-only token from
+`recovery-app.json` beside it. That account has no plugin registry, no credential
+wrapper and no `gh`, and needs none of them:
 
-    python -m livespec_dev_tooling.incident_original_run_entry collect \\
-        --state-dir DIR --repository OWNER/REPO --repo PRIMARY \\
+    sudo -u livespec-incident -H /opt/livespec-incident/venv/bin/python -I \\
+        -m livespec_dev_tooling.incident_original_run_entry collect \\
+        --config /etc/livespec-incident/controller.json \\
         --revert-sha SHA --expected-graph GRAPH.json
 
-    python -m livespec_dev_tooling.incident_original_run_entry propose-correction \\
-        --state-dir DIR --repository OWNER/REPO --repo PRIMARY \\
+    sudo -u livespec-incident -H /opt/livespec-incident/venv/bin/python -I \\
+        -m livespec_dev_tooling.incident_original_run_entry propose-correction \\
+        --config /etc/livespec-incident/controller.json \\
         --evidence-digest DIGEST --next-head-sha SHA --target-ref REF \\
         --current-attempt ID --current-owner PRINCIPAL --current-generation N \\
         [--staged-tree TREE] [--resolved JOB=RECEIPT ...]
@@ -30,21 +36,19 @@ from __future__ import annotations
 
 import argparse
 import json
-import subprocess
+import os
 import sys
-from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Any, cast
+from typing import cast
 
-from livespec_dev_tooling._incident_original_run_canonical import CanonicalPorts
+from livespec_dev_tooling._incident_original_run_ports import installed_ports, refresh_reference
 from livespec_dev_tooling._incident_run_types import (
-    CanonicalRefusalError,
     EvidenceRefusal,
     ExpectedJob,
     RunEvidence,
 )
-from livespec_dev_tooling.flake_retry_filer import registered_plugin_root
+from livespec_dev_tooling.incident_controller_installation import ControllerInstallation
 from livespec_dev_tooling.incident_original_run_flows import (
     Collection,
     Correction,
@@ -53,7 +57,6 @@ from livespec_dev_tooling.incident_original_run_flows import (
     propose,
 )
 from livespec_dev_tooling.incident_run_evidence import evidence_digest
-from livespec_dev_tooling.incident_run_forge import ForgeRunReader
 
 _VENDOR_DIR = Path(__file__).resolve().parent / "_vendor"
 if str(_VENDOR_DIR) not in sys.path:
@@ -62,88 +65,16 @@ from returns.io import impure_safe  # noqa: E402
 from returns.pipeline import is_successful  # noqa: E402
 from returns.unsafe import unsafe_perform_io  # noqa: E402
 
-__all__: list[str] = ["main", "parse_graph", "registered_ports"]
+__all__: list[str] = ["installed_ports", "main", "parse_graph"]
 
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-zvntys
-_WRAPPER = "/usr/local/bin/with-livespec-env.sh"
+# EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-jvfb7x
 _REFUSED = 78
-_TIMEOUT = 120
-_UNVERIFIED = "registered incident authority refused or returned an invalid reply"
 _INVALID_GRAPH = "expected graph must list jobs as {name, needs}"
-
-
-def _run(
-    *, argv: Sequence[str], cwd: Path, stdin: bytes = b"", check: bool = True
-) -> subprocess.CompletedProcess[bytes]:
-    return subprocess.run(  # noqa: S603 -- fixed git, bd and registered authority argv.
-        list(argv), cwd=cwd, input=stdin, capture_output=True, timeout=_TIMEOUT, check=check
-    )
-
-
-def _flags(*, values: Mapping[str, object]) -> list[str]:
-    return [part for name, value in values.items() for part in ("--" + name, str(value))]
-
-
-@dataclass(frozen=True, kw_only=True)
-class _Git:
-    repo: Path
-
-    def __call__(self, args: Sequence[str], stdin: bytes) -> bytes:
-        return _run(argv=["git", *args], cwd=self.repo, stdin=stdin).stdout
-
-
-@dataclass(frozen=True, kw_only=True)
-class _Ledger:
-    """`bd` through the credential wrapper, so the incident item is reachable."""
-
-    repo: Path
-
-    def __call__(self, args: Sequence[str]) -> str:
-        return _run(argv=[_WRAPPER, "--", "bd", *args], cwd=self.repo).stdout.decode()
-
-
-@dataclass(frozen=True, kw_only=True)
-class _Authority:
-    """The project's registered orchestrator `incident_authority.py`, never caller JSON."""
-
-    repo: Path
-
-    def __call__(
-        self, action: str, query: Mapping[str, object], payload: Mapping[str, str]
-    ) -> dict[str, Any]:
-        plugin = registered_plugin_root(
-            repo_root=self.repo, registry=Path.home() / ".claude/plugins/installed_plugins.json"
-        )
-        script = str(plugin / "scripts/bin/incident_authority.py")
-        argv = [_WRAPPER, "--", "python3", script, action, "--repo", str(self.repo)]
-        argv += _flags(values={**query, **payload})
-        done = _run(argv=argv, cwd=self.repo, check=False)
-        reply = cast("object", json.loads(done.stdout))
-        body = cast("dict[str, Any]", reply) if isinstance(reply, dict) else {}
-        result = body.get("result")
-        if body.get("status") == "refused" and isinstance(result, dict):
-            refusal = cast("dict[str, object]", result)
-            code = refusal.get("code")
-            if isinstance(code, str) and code:
-                raise CanonicalRefusalError(code=code, detail=str(refusal.get("detail", "")))
-        if (
-            done.returncode != 0
-            or body.get("schema") != 1
-            or body.get("status") != "verified"
-            or body.get("normal_factory_proof") is not False
-            or not isinstance(result, dict)
-        ):
-            raise ValueError(_UNVERIFIED)
-        return cast("dict[str, Any]", result)
-
-
-def registered_ports(*, repo: Path) -> EntryPorts:
-    """Git in the primary, bd through the wrapper, and the registered authority."""
-    return EntryPorts(
-        canonical=CanonicalPorts(authority=_Authority(repo=repo), ledger=_Ledger(repo=repo)),
-        git=_Git(repo=repo),
-        read=ForgeRunReader(),
-    )
+_NO_INSTALLATION = (
+    "the configuration is not a protected installation for this account: run as the"
+    " controller account with the installation's interpreter under -I"
+)
 
 
 def _parse(*, argv: Sequence[str]) -> argparse.Namespace:
@@ -152,9 +83,7 @@ def _parse(*, argv: Sequence[str]) -> argparse.Namespace:
     gather = actions.add_parser("collect")
     correct = actions.add_parser("propose-correction")
     for sub in (gather, correct):
-        _ = sub.add_argument("--state-dir", required=True, type=Path)
-        _ = sub.add_argument("--repository", required=True)
-        _ = sub.add_argument("--repo", required=True, type=Path)
+        _ = sub.add_argument("--config", required=True, type=Path)
     _ = gather.add_argument("--revert-sha", required=True)
     _ = gather.add_argument("--expected-graph", required=True, type=Path)
     _ = gather.add_argument("--run-attempt", type=int, default=1)
@@ -220,7 +149,9 @@ def _graph(*, path: Path) -> tuple[ExpectedJob, ...]:
     return parse_graph(value=json.loads(path.read_text()))
 
 
-def _collect(*, args: argparse.Namespace, ports: EntryPorts) -> int:
+def _collect(
+    *, args: argparse.Namespace, ports: EntryPorts, installation: ControllerInstallation
+) -> int:
     graph = _graph(path=args.expected_graph)
     if not is_successful(graph):
         return _refused(
@@ -231,8 +162,8 @@ def _collect(*, args: argparse.Namespace, ports: EntryPorts) -> int:
     expected = unsafe_perform_io(graph.unwrap())
     result = collect(
         request=Collection(
-            state_dir=args.state_dir,
-            repository=args.repository,
+            state_dir=installation.state,
+            repository=installation.repository,
             revert_sha=args.revert_sha,
             expected=expected,
             run_attempt=args.run_attempt,
@@ -245,7 +176,9 @@ def _collect(*, args: argparse.Namespace, ports: EntryPorts) -> int:
     return _collected(evidence=result)
 
 
-def _propose(*, args: argparse.Namespace, ports: EntryPorts) -> int:
+def _propose(
+    *, args: argparse.Namespace, ports: EntryPorts, installation: ControllerInstallation
+) -> int:
     pairs = [cast("str", text).partition("=") for text in args.resolved]
     if any(not job or not sep or not receipt for job, sep, receipt in pairs):
         return _refused(
@@ -255,8 +188,8 @@ def _propose(*, args: argparse.Namespace, ports: EntryPorts) -> int:
         )
     result = propose(
         request=Correction(
-            state_dir=args.state_dir,
-            repository=args.repository,
+            state_dir=installation.state,
+            repository=installation.repository,
             evidence_digest=args.evidence_digest,
             next_head_sha=args.next_head_sha,
             target_ref=args.target_ref,
@@ -274,13 +207,34 @@ def _propose(*, args: argparse.Namespace, ports: EntryPorts) -> int:
     return _reply(body={"status": "proposed", "receipt": result})
 
 
+def _bound(*, installation: ControllerInstallation) -> EntryPorts | None:
+    """The installed ports with a current reference clone, or None without the credential."""
+    try:
+        ports = installed_ports(installation=installation)
+    except OSError:
+        return None
+    refresh_reference(installation=installation)
+    return ports
+
+
 def main(*, argv: Sequence[str] | None = None, ports: EntryPorts | None = None) -> int:
     """Collect or propose for one registered original run; refusals exit 78."""
     args = _parse(argv=sys.argv[1:] if argv is None else argv)
-    bound = registered_ports(repo=args.repo) if ports is None else ports
+    # The service unit's UMask: this writes the same private state the observer reads.
+    _ = os.umask(0o077)
+    installation = ControllerInstallation.load(config=args.config)
+    bound = ports
+    if installation is not None and bound is None:
+        bound = _bound(installation=installation)
+    if installation is None or bound is None:
+        return _refused(
+            refusal=EvidenceRefusal(
+                code="incident-original-run-installation-unavailable", detail=_NO_INSTALLATION
+            )
+        )
     if args.action == "collect":
-        return _collect(args=args, ports=bound)
-    return _propose(args=args, ports=bound)
+        return _collect(args=args, ports=bound, installation=installation)
+    return _propose(args=args, ports=bound, installation=installation)
 
 
 if __name__ == "__main__":

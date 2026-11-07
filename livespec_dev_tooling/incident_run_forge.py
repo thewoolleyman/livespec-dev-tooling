@@ -4,8 +4,6 @@ from __future__ import annotations
 
 import base64
 import hashlib
-import json
-import subprocess
 import sys
 import time
 from dataclasses import dataclass
@@ -18,7 +16,7 @@ from livespec_dev_tooling._incident_run_types import (
     OriginalRun,
     RunSnapshot,
 )
-from livespec_dev_tooling.budgeted_gh import gh_read
+from livespec_dev_tooling.incident_forge_reads import ForgeRead
 
 _VENDOR_DIR = Path(__file__).resolve().parent / "_vendor"
 if str(_VENDOR_DIR) not in sys.path:
@@ -28,31 +26,10 @@ from returns.pipeline import is_successful  # noqa: E402
 from returns.unsafe import unsafe_perform_io  # noqa: E402
 
 __all__: list[str] = ["ForgeRunReader"]
-_MAX_RESPONSE_BYTES = 4_000_000
-_RESPONSE_TOO_LARGE = "original-run response exceeds collection budget"
 _MISSING_SOURCE = "original workflow source missing"
-_READ_FAILED = "authenticated original-run request failed"
 
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-kobmka
-
-
-@impure_safe
-def _request(*, command: tuple[str, ...] | None, endpoint: str, timeout: float) -> object:
-    if command is None:
-        result = gh_read(args=["api", endpoint], timeout=timeout)
-        if result.returncode != 0:
-            raise RuntimeError(_READ_FAILED)
-    else:
-        result = subprocess.run(  # noqa: S603 -- provisioned local provider, never candidate argv.
-            [*command, endpoint],
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-            check=True,
-        )
-    if len(result.stdout) > _MAX_RESPONSE_BYTES:
-        raise ValueError(_RESPONSE_TOO_LARGE)
-    return cast(object, json.loads(result.stdout))
+# EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-jvfb7x
 
 
 def _object(*, value: object) -> dict[str, object]:
@@ -93,19 +70,20 @@ def _job(*, value: object) -> ObservedJob | None:
 
 @dataclass(frozen=True, kw_only=True)
 class ForgeRunReader:
-    """Provision with an approved read credential, never candidate-supplied argv.
+    """Reads through the controller's forge access, never candidate-supplied argv.
 
-    The provider performs GETs only. It cannot cancel, rerun, delete or replace
-    the original run. The original attempt endpoint excludes later job reruns.
+    The provider performs GETs only, with a read-only token. It cannot cancel,
+    rerun, delete or replace the original run. The original attempt endpoint
+    excludes later job reruns.
     The graph digest is checked against actual workflow bytes at the original SHA.
     """
 
-    command: tuple[str, ...] | None = None
+    read: ForgeRead
     budget_seconds: float = 45
     max_pages: int = 20
 
     def __call__(self, original: OriginalRun) -> RunSnapshot | EvidenceRefusal:
-        if self.command == () or self.budget_seconds <= 0 or self.max_pages <= 0:
+        if self.budget_seconds <= 0 or self.max_pages <= 0:
             return _refuse(detail="invalid provisioned forge collection budget")
         deadline = time.monotonic() + self.budget_seconds
         base = (
@@ -158,10 +136,10 @@ class ForgeRunReader:
         remaining = deadline - time.monotonic()
         if remaining <= 0:
             return _refuse(detail="original-run collection budget exhausted; no complete listing")
-        read = _request(command=self.command, endpoint=endpoint, timeout=min(10, remaining))
-        if not is_successful(read):
+        value = self.read(endpoint)
+        if value is None:
             return _refuse(detail="authenticated original-run request failed; no complete listing")
-        return unsafe_perform_io(read.unwrap())
+        return value
 
     def _jobs(self, *, base: str, deadline: float) -> tuple[ObservedJob, ...] | EvidenceRefusal:
         jobs: list[ObservedJob] = []

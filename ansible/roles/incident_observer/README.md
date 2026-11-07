@@ -133,6 +133,20 @@ still answer. The observer process reads the same file for its own forge reads
 and mints only a `contents: read` token (`docs/incident-observer-service.md`). The
 canonical reader never holds the key.
 
+## Running the operator entrance on this host
+
+`incident_original_run_entry` needs no extra provisioning. It runs as the controller
+account from the installed venv, and reads everything from the protected files this
+role already writes: `controller.json`, the manifest's reader, `reader.env` and
+`recovery-app.json`.
+
+```bash
+sudo -u livespec-incident -H /opt/livespec-incident/venv/bin/python -I \\
+  -m livespec_dev_tooling.incident_original_run_entry collect \\
+  --config /etc/livespec-incident/controller.json \\
+  --revert-sha SHA --expected-graph /path/readable/by/that/account.json
+```
+
 ## What a first apply does that later applies do not
 
 A first apply creates the account, the venv and the release, and only then can

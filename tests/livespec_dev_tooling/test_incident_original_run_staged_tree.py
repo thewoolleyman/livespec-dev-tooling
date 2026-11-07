@@ -14,11 +14,13 @@ from livespec_dev_tooling import incident_original_run_entry as entry
 from livespec_dev_tooling._incident_run_types import RunEvidence
 from livespec_dev_tooling.incident_original_run_flows import EvidenceRefusal
 from livespec_dev_tooling.incident_run_evidence import evidence_digest
+from tests.livespec_dev_tooling import test_incident_original_run_entry as entry_tests
 from tests.livespec_dev_tooling import test_incident_original_run_flows as flows
-from tests.livespec_dev_tooling.test_incident_original_run_flows import REPOSITORY, World, git
+from tests.livespec_dev_tooling.test_incident_original_run_flows import World, git
 
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-se537s
 world = flows.world
+installation = entry_tests.installation
 
 
 def _digest(world: World) -> str:
@@ -73,8 +75,8 @@ def test_the_entrance_passes_the_staged_tree_through(
 ) -> None:
     tree = _tree(world, "repair")
     digest = _digest(world)
-    argv = ["propose-correction", "--state-dir", str(world.state), "--repository", REPOSITORY]
-    argv += ["--repo", str(world.repo), "--evidence-digest", digest, "--base-ref", "master"]
+    argv = ["propose-correction", *entry_tests.common(world)]
+    argv += ["--evidence-digest", digest, "--base-ref", "master"]
     argv += ["--next-head-sha", world.shas["later"], "--target-ref", "refs/heads/r"]
     argv += ["--current-attempt", "recovery-1", "--current-owner", "incident-principal"]
     argv += ["--current-generation", "3", "--staged-tree", tree]

@@ -3,6 +3,7 @@
 import json
 import subprocess
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import Mock
 
@@ -18,8 +19,23 @@ from tests.livespec_dev_tooling.test_incident_original_run_flows import REPOSITO
 world = flows.world
 
 
+@pytest.fixture(autouse=True)
+def installation(world: World, monkeypatch: pytest.MonkeyPatch) -> SimpleNamespace:
+    """The verified installation, whose file checks need the provisioned host."""
+    settings = SimpleNamespace(
+        repository=REPOSITORY,
+        repo=world.repo,
+        state=world.state,
+        reader=("/opt/venv/bin/python", "/opt/reader/incident_authority.py"),
+        config=world.state.parent / "controller.json",
+    )
+    monkeypatch.setattr(entry.ControllerInstallation, "load", Mock(return_value=settings))
+    monkeypatch.setattr(entry.os, "umask", Mock(return_value=0o022))
+    return settings
+
+
 def common(world: World) -> list[str]:
-    return ["--state-dir", str(world.state), "--repository", REPOSITORY, "--repo", str(world.repo)]
+    return ["--config", str(world.state.parent / "controller.json")]
 
 
 def graph_file(world: World, rows: object) -> str:
@@ -121,8 +137,8 @@ def completed(stdout: bytes) -> subprocess.CompletedProcess[bytes]:
     return subprocess.CompletedProcess(args=[], returncode=0, stdout=stdout)
 
 
-def test_registered_ports_reach_git_bd_and_the_registered_authority(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+def test_installed_ports_reach_git_bd_and_the_manifest_reader(
+    monkeypatch: pytest.MonkeyPatch, installation: SimpleNamespace, tmp_path: Path
 ) -> None:
     replies = [
         completed(b"tree\n"),
@@ -149,9 +165,11 @@ def test_registered_ports_reach_git_bd_and_the_registered_authority(
         ),
     ]
     spawn = Mock(side_effect=replies)
-    monkeypatch.setattr(entry.subprocess, "run", spawn)
-    monkeypatch.setattr(entry, "registered_plugin_root", Mock(return_value=tmp_path / "plugin"))
-    ports = entry.registered_ports(repo=tmp_path)
+    monkeypatch.setattr(subprocess, "run", spawn)
+    monkeypatch.setenv("PYTHONPATH", "/candidate")
+    installation.config = tmp_path / "controller.json"
+    (tmp_path / "reader.env").write_text("BEADS_DOLT_PASSWORD=tenant=secret\n\n")
+    ports = entry.installed_ports(installation=installation)
     tree = ports.git(["rev-parse", "HEAD^{tree}"], b"in")
     listing = ports.canonical.ledger(["comments", "incident-1", "--json"])
     reading = ports.canonical.authority(
@@ -160,42 +178,68 @@ def test_registered_ports_reach_git_bd_and_the_registered_authority(
     for _ in range(2):
         with pytest.raises(ValueError, match="invalid reply"):
             _ = ports.canonical.authority("correct-attempt", {}, {})
-    argv = [call.args[0] for call in spawn.call_args_list]
+    calls = spawn.call_args_list
+    argv = [call.args[0] for call in calls]
     assert (tree, listing, reading) == (b"tree\n", "[]", {"attempt": {}})
     assert argv[0] == ["git", "rev-parse", "HEAD^{tree}"]
-    assert spawn.call_args_list[0].kwargs["input"] == b"in"
-    assert argv[1] == [
-        "/usr/local/bin/with-livespec-env.sh",
-        "--",
-        "bd",
-        "comments",
-        "incident-1",
-        "--json",
-    ]
-    assert argv[2][2:] == [
-        "python3",
-        str(tmp_path / "plugin/scripts/bin/incident_authority.py"),
+    assert calls[0].kwargs["input"] == b"in"
+    assert argv[1] == ["bd", "comments", "incident-1", "--json"]
+    assert argv[2] == [
+        "/opt/venv/bin/python",
+        "/opt/reader/incident_authority.py",
         "read-history",
         "--repo",
-        str(tmp_path),
+        str(installation.repo),
         "--item",
         "incident-1",
         "--correction-json",
         "{}",
     ]
+    assert all(call.kwargs["cwd"] == installation.repo for call in calls)
+    assert set(calls[0].kwargs["env"]) == {"PATH", "HOME"}
+    for call in calls[1:]:
+        assert set(call.kwargs["env"]) == {"PATH", "HOME", "BEADS_DOLT_PASSWORD"}
+        assert call.kwargs["env"]["BEADS_DOLT_PASSWORD"] == "tenant=secret"
+    assert "/usr/local/bin" in calls[1].kwargs["env"]["PATH"].split(":")
     assert isinstance(ports.read, ForgeRunReader)
 
 
-def test_main_reads_process_arguments_and_binds_registered_ports(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    argv = ["incident-original-run", "propose-correction", "--state-dir", str(tmp_path)]
-    argv += ["--repository", REPOSITORY, "--repo", str(tmp_path), "--evidence-digest", "d"]
+def _missing_argv(*, config: Path) -> list[str]:
+    argv = ["propose-correction", "--config", str(config), "--evidence-digest", "d"]
     argv += ["--target-ref", "r", "--current-generation", "3", "--next-head-sha", "h"]
-    argv += ["--current-attempt", "recovery-1", "--current-owner", "incident-principal"]
+    return [*argv, "--current-attempt", "recovery-1", "--current-owner", "incident-principal"]
+
+
+def test_main_binds_installed_ports_and_refreshes_the_reference_clone(
+    monkeypatch: pytest.MonkeyPatch,
+    installation: SimpleNamespace,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    installation.config = tmp_path / "controller.json"
+    (tmp_path / "reader.env").write_text("BEADS_DOLT_PASSWORD=x\n")
+    argv = ["incident-original-run", *_missing_argv(config=installation.config)]
     monkeypatch.setattr(entry.sys, "argv", argv)
-    bind = Mock(wraps=entry.registered_ports)
-    monkeypatch.setattr(entry, "registered_ports", bind)
+    fetch = Mock(side_effect=subprocess.TimeoutExpired("git", 120))
+    monkeypatch.setattr(subprocess, "run", fetch)
     assert entry.main() == 78
-    assert json.loads(capsys.readouterr().out)["code"] == "incident-original-run-unregistered"
-    assert bind.call_args.kwargs == {"repo": tmp_path}
+    assert json.loads(capsys.readouterr().out)["code"] == "incident-original-run-evidence-missing"
+    assert fetch.call_args.args[0][:2] == ["git", "fetch"]
+    entry.os.umask.assert_called_once_with(0o077)
+
+
+def test_main_refuses_by_name_without_an_installation_or_its_credential(
+    monkeypatch: pytest.MonkeyPatch,
+    installation: SimpleNamespace,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    installation.config = tmp_path / "controller.json"
+    argv = _missing_argv(config=installation.config)
+    assert entry.main(argv=argv) == 78
+    missing = json.loads(capsys.readouterr().out)
+    monkeypatch.setattr(entry.ControllerInstallation, "load", Mock(return_value=None))
+    assert entry.main(argv=argv) == 78
+    unloaded = json.loads(capsys.readouterr().out)
+    code = "incident-original-run-installation-unavailable"
+    assert missing["code"] == unloaded["code"] == code
