@@ -1,0 +1,32 @@
+---
+proposal: fleet-orchestrator-build-record.md
+decision: modify
+revised_at: 2026-11-07T14:56:26Z
+author_human: Chad Woolley <thewoolleyman@gmail.com>
+author_llm: claude-opus-5-5
+---
+
+## Decision and Rationale
+
+Modified, in delegated mode (revise_decision_mode: delegated, ratification_review: auto-spawn). The decision is legacy-coordinator-agent's (session a37283d5, ~14:2xZ 2026-11-07), made under R301 and the maintainer's delegation: 'Why C? Why not D, applied to every repository? If there's a good reason not to go with D, just explain it, then go with C', and at ~14:1xZ 'go with D and fix it everywhere'. The ruling is recorded as a priorities-record scope event on livespec-dev-tooling-6tgd2z at 14:04:11Z. Its text: ACCEPT, WITH MODIFICATIONS M1-M4. The delegated decider applying it is claude:gmktec-factory-placement (plan epic livespec-dev-tooling-me5aqz). Why: v147's roll hold bound members only while a hold was unreleased, and it exempted the launch clone outright. Every SessionStart source runs `ensure-plugins`, so the launch clone's orchestrator build, the build the factory dispatches orchestrator work on, moved three times on 2026-11-07 with no roll step: 01:29Z compact, ~03:20Z startup, and 14:01:45Z from a headless `claude -p` started by a dispatcher screen. All three went through `ensure-plugins`, so a rule enforced there binds every session kind. One committed record, keyed per plugin, makes the fleet's build of a covered plugin a reviewed fact that only a value change moves. No design record is cited by contracts.md §"Fleet-wide plugin adoption" and none is contradicted. This revise departs from v147 by replacing its roll hold, which was never implemented: fleet/orchestrator-roll-hold.json does not exist on master. An independent read-only sonnet reviewer found two BLOCKERS on the first bytes (14:20:40Z): the Success bullet contradicted Adoption before arming, and an entry with nothing under roll read as unreleased. Both are fixed. It then found NO BLOCKERS at 14:22:50Z, after the rebase onto v149 NO BLOCKERS at 14:51:35Z, and NO BLOCKERS on these exact bytes at 14:55:55Z, after the first scenario's heading was restored to the v147 heading (see Modifications). Non-blocking notes left for a later propose-change: launch_version below fleet_version, a schema parse failure, the first-record read-back and the no-launch-clone case have no dedicated scenario; a parenthetical could distinguish the member recipe's exit 0 from the fleet recipe's non-zero exit on an unreadable record. livespec-dev-tooling-7upzav carries the implementation. livespec-dev-tooling-vsj5h6 measures core and Driver drift to decide whether their entries are populated. In the revise commit, tests/heading-coverage.json updates the kept scenario's integration-tier TODO row and adds one for the new scenario, both owned by 7upzav.
+
+## Modifications
+
+Coordinator modifications applied to the proposal as filed. (M1) The record is keyed PER PLUGIN at fleet/plugin-build-record.json: a `plugins` map of install key to {fleet_version, launch_version, implement_graph_blob, canaries, matrix}, plus a top-level `recorded_on`. Only the orchestrator entry is populated now, and bringing livespec core or a Driver under it is a value edit. The subsection is renamed '#### Fleet plugin build record' and its rules speak of covered plugins. A plugin's launch clone is the member whose repository is that plugin's own source repository. To make an entry with nothing under roll valid, `matrix` MAY be null when `implement_graph_blob` is null, and RELEASED evidence means every canary passed (an empty array has none outstanding) and the matrix is null or fully named. (M2) Adoption before arming. The first record is written from a read-back and committing it MUST NOT make any member adopt a build; a roll in progress appears as launch_version above fleet_version. The non-zero exit for a recorded-version mismatch is armed only by a later change after a read-back shows every member at its recorded version, and Success is qualified to match. The coordinator's premise that every member ran v0.300.0 was corrected from the 14:2xZ read-back (11 clones on v0.290.0), and the coordinator accepted the correction; the first record's concrete values belong to 7upzav's Definition of Done. (M3) The config-value fast path is not yet live. Until it exists, a roll PR is an ordinary PR that runs the normal gates, and a roll MUST NOT wait for it. (M4) Record validity is reworded so a cold reader sees the forbidden state: naming a build whose evidence is unreleased, and therefore still under test, as the version every member runs. An unreadable record moves nothing. Also: an absent or unreadable record always makes `just ensure-plugins-fleet` exit non-zero. The existing scenario 'one fleet-wide command adopts the current plugin builds in every fleet member and refuses a split adoption' now uses the livespec core plugin, which the record does not cover, as its split-build example. Scenario 1 gains lines for an absent record, a core entry with nothing under roll, and the NOT RECORDED install. The second scenario gains the arming-order lines. Unchanged as filed: caller-agnostic adoption only through ensure-plugins, OUTSIDE RECORD with no downgrade, v147 as the launch_version > fleet_version case, the RECORDED convergence line, and the scenario swap. Heading continuity: the first rewritten scenario keeps the v147 heading 'a fleet clone's ensure-plugins keeps its orchestrator build while an orchestrator roll hold is unreleased' instead of the filed 'a fleet clone adopts an orchestrator build only when the committed fleet orchestrator build record names it'. Its body is the v150 form of an unreleased roll: launch_version above fleet_version with a pending canary. Removing that heading would have barred the heading-coverage debt register from growing for the new heading in the same change, and the commit gate refused on register_grew. Only 'an orchestrator build adopted outside ensure-plugins is reported and never downgraded' is a new H2.
+
+## Resulting Changes
+
+- contracts.md
+- scenarios.md
+
+## Ratification Review
+
+ratification_review: auto-spawn
+reviewer_model: sonnet
+reviewer_identity: sonnet
+separate_reviewer: True
+read_only: True
+reviewed_at: 2026-11-07T14:55:55Z
+verdict: NO BLOCKERS
+proposal_stem: fleet-orchestrator-build-record
+content_digest: d8a0fba2f8a997b340bf9458d02d1aff98086371cfd2de4c621b2240db5d4c8e

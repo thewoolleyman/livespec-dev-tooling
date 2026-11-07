@@ -2528,7 +2528,7 @@ And it MUST emit an `info` event with `manifests_checked` `0` and `commands_chec
 
 ## Scenario: one fleet-wide command adopts the current plugin builds in every fleet member and refuses a split adoption
 
-Given livespec core's fleet manifest lists the members whose local clones are on this host, and each member's committed `.claude/settings.json` enables the orchestrator plugin
+Given livespec core's fleet manifest lists the members whose local clones are on this host, and each member's committed `.claude/settings.json` enables the orchestrator plugin and the livespec core plugin, and the fleet plugin build record covers only the orchestrator plugin
 
 When the operator runs `just ensure-plugins-fleet` in livespec-dev-tooling
 
@@ -2536,30 +2536,53 @@ Then the recipe MUST run each member's own `ensure-plugins` recipe in that membe
 
 And when one member's clone is missing, the recipe MUST still run every other member, MUST name the missing member and its cause, and MUST exit non-zero
 
-And when every member's `ensure-plugins` succeeds but the orchestrator plugin is left installed at two different builds across the members, the recipe MUST exit non-zero, naming the plugin, both builds and the members holding each
+And when every member's `ensure-plugins` succeeds but the livespec core plugin, which the record does not cover, is left installed at two different builds across the members, the recipe MUST exit non-zero, naming the plugin, both builds and the members holding each
 
 
 ## Scenario: a fleet clone's ensure-plugins keeps its orchestrator build while an orchestrator roll hold is unreleased
 
-Given livespec-dev-tooling master carries `fleet/orchestrator-roll-hold.json` naming the orchestrator plugin with `held_from_version` 0.295.2, one canary whose verdict is `pending`, and a `matrix` whose `seeded` value is `null`
+Given livespec-dev-tooling master carries `fleet/plugin-build-record.json` whose orchestrator plugin entry has `fleet_version` 0.299.0 and `launch_version` 0.300.0, one canary whose verdict is `pending`, and a `matrix` whose `seeded` value is `null`
 
-And a fleet member other than livespec-orchestrator-beads-fabro has orchestrator build 0.295.1 installed while the marketplace offers 0.295.2
+And livespec-orchestrator-beads-fabro's clone has orchestrator build 0.299.0 installed, and another fleet member has 0.299.0 installed
 
-When that member's `just ensure-plugins` runs, as its SessionStart hook runs it
+When the marketplace offers 0.300.0 and a Claude Code session starts in each clone, so each SessionStart hook runs `just ensure-plugins`
 
-Then the member's `installed_plugins.json` orchestrator record MUST still name the 0.295.1 build
+Then the livespec-orchestrator-beads-fabro clone's `installed_plugins.json` orchestrator record MUST name 0.300.0
 
-And the recipe MUST print one line naming the plugin, the offered 0.295.2 build, `held_from_version` 0.295.2, the pending canary and the missing seeded run
+And the other member's orchestrator record MUST still name 0.299.0, and its recipe MUST print one line naming the plugin, the installed 0.299.0, the offered 0.300.0, the recorded 0.299.0, the pending canary and the missing seeded run, and MUST exit 0
 
-And the recipe MUST still reconcile every other enabled plugin and MUST exit 0
+And when the marketplace then offers 0.301.0 and a session in the livespec-orchestrator-beads-fabro clone compacts, or a headless `claude -p` session starts there, that clone's orchestrator record MUST still name 0.300.0, and its recipe MUST print one line naming the installed 0.300.0, the offered 0.301.0 and the recorded 0.300.0
 
-And when the same recipe runs in livespec-orchestrator-beads-fabro's clone, it MUST install the offered 0.295.2 build
+And when a value-only change sets the canary verdict to `passed`, names a seeded run, and sets the orchestrator entry's `fleet_version` and `launch_version` to 0.301.0, the next SessionStart run in each clone MUST install 0.301.0
 
-And when the record's canary verdict is `passed` and every `matrix` value names a run, the member's recipe MUST install the offered 0.295.2 build
+And when the record instead sets the orchestrator entry's `fleet_version` equal to its `launch_version` while a canary verdict is `pending`, every member's orchestrator build MUST stay unchanged and each recipe MUST print one line naming the record as unreadable
 
-And when the record cannot be fetched, the member's orchestrator build MUST stay unchanged and the recipe MUST print one line naming the read failure
+And when the record is absent from livespec-dev-tooling master, every member's orchestrator build MUST stay unchanged and each recipe MUST print one line naming the record as absent, not as unreadable
 
-And when `just ensure-plugins-fleet` then runs while the hold is unreleased, it MUST print one `HELD` line naming the plugin, `held_from_version` and the members on each side, and MUST NOT exit non-zero for that divergence
+And when the record also carries a livespec core entry whose `fleet_version` equals its `launch_version`, with an empty `canaries` array, a `null` `implement_graph_blob` and a `null` `matrix`, the record MUST stay readable and the orchestrator outcomes above MUST be unchanged
+
+And when a fleet member that enables the orchestrator plugin but has no build of it installed runs its recipe while the marketplace offers 0.300.0 and its recorded version is 0.299.0, it MUST install 0.300.0 and MUST print one `NOT RECORDED` line naming the plugin, the installed 0.300.0 and the recorded 0.299.0
+
+And when `just ensure-plugins-fleet` runs while the launch clone is on `launch_version` and every other member is on `fleet_version`, it MUST print one `RECORDED` line naming both versions and the members on each, and MUST NOT exit non-zero for the orchestrator plugin
+
+## Scenario: an orchestrator build adopted outside ensure-plugins is reported and never downgraded
+
+Given livespec-dev-tooling master carries `fleet/plugin-build-record.json` whose orchestrator plugin entry has `fleet_version` and `launch_version` both 0.299.0 and a released roll
+
+And a fleet member's orchestrator build was moved to 0.300.0 by a path other than its `ensure-plugins` recipe
+
+When that member's SessionStart hook runs `just ensure-plugins`
+
+Then the member's orchestrator record MUST still name 0.300.0
+
+And the recipe MUST print one `OUTSIDE RECORD` line naming the plugin, the installed 0.300.0, the recorded 0.299.0 and the install record's `lastUpdated` value
+
+And when `just ensure-plugins-fleet` then runs after the change that arms its recorded-version check, it MUST exit non-zero, naming that member, its installed 0.300.0 and its recorded 0.299.0
+
+And when it runs before that change, it MUST print the same member, installed version and recorded version and MUST NOT exit non-zero for that mismatch alone
+
+And a scan of this library's recipes, hooks, verbs and skills, and of every fleet member's committed `.claude/settings.json`, MUST find no `claude plugin update` or `claude plugin install` call outside `ensure-plugins` and no enabled automatic plugin update
+
 ## Scenario: a default-branch push routes to the master runner target and a pull request does not
 
 Given this repository's `ci.yml` gating jobs read `CI_RUNNER_LABELS_MASTER` ahead of `CI_RUNNER_LABELS` for `push` events, with the hosted literal as the last term
