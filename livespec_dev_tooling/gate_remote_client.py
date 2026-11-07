@@ -84,6 +84,7 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+from livespec_dev_tooling._gate_wait_progress import reporting_sleeper
 from livespec_dev_tooling.gate_credential import with_gates_kubeconfig
 from livespec_dev_tooling.gate_private_sibling_token import (
     create_private_sibling_token_secret,
@@ -543,14 +544,15 @@ def _await_terminal_state(
     argv = [*_kubectl(request=request), "get", "job", job_name, "--output", "json"]
     last_refusal: GateStepFailed | None = None
     polls = request.poll_budget()
+    nap = reporting_sleeper(sleeper=sleeper, job_name=job_name)
     for poll in range(polls):
+        if poll:
+            nap(seconds=request.poll_interval_seconds)
         lifted = require_success(
             step=_AWAIT_STEP, argv=argv, outcome=runner(argv=argv, cwd=request.repo_root)
         )
         if isinstance(lifted, Failure):
             last_refusal = lifted.failure()
-            if poll + 1 < polls:
-                sleeper(seconds=request.poll_interval_seconds)
             continue
         condition = terminal_condition(argv=argv, payload=lifted.unwrap().stdout, step=_AWAIT_STEP)
         if isinstance(condition, Failure):
@@ -558,8 +560,6 @@ def _await_terminal_state(
         ended = condition.unwrap()
         if ended is not None:
             return Success(ended)
-        if poll + 1 < polls:
-            sleeper(seconds=request.poll_interval_seconds)
     if last_refusal is not None:
         return Failure(last_refusal)
     gave_up = f"{job_name} reached no terminal condition within {request.poll_timeout_seconds:g}s"

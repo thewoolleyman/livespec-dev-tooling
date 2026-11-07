@@ -830,3 +830,23 @@ def test_a_tree_hash_that_cannot_be_read_stops_before_the_mirror_is_touched() ->
     assert outcome.failure().step == "read-tree-hash"
     assert outcome.failure().returncode is None
     assert cluster.kinds == ["read-tree"]
+
+
+def test_a_long_quiet_wait_reports_progress_often_enough_to_outlive_the_stall_bound(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A Job queued for admission still says it is alive at least once a minute.
+
+    The detached gate runner ends a gate that prints nothing for its stall window
+    (900 s by default), so a delegated gate waiting in the Kueue queue on a busy
+    fleet was killed with no verdict (livespec-dev-tooling-2f3yy). Each progress
+    line names the Job and the seconds waited; the gaps between them stay under a
+    minute of the wait the sleeper measures.
+    """
+    cluster = _StubCluster(job_states=(*(("Suspended",) * 20), "Complete"))
+    request = dataclasses.replace(_REQUEST, poll_interval_seconds=10.0, poll_timeout_seconds=3600.0)
+    outcome = run_gate(request=request, runner=cluster, sleeper=cluster.sleep)
+    assert is_successful(outcome)
+    lines = [line for line in capsys.readouterr().err.splitlines() if _JOB in line]
+    waited = [int(line.split("waited ")[1].split("s")[0]) for line in lines]
+    assert waited == [60, 120, 180], lines
