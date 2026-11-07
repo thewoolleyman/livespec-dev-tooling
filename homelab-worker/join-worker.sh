@@ -19,6 +19,10 @@
 #      as a home-LAN node at the host's declared WORKER_LAN_ADDRESS),
 #      registers its Node, and its serving CSR is approved by
 #      approve-serving-csr.sh.
+#   4. The worker is enrolled in every workload class whose images publish its
+#      architecture, by enroll-workload-classes.sh (livespec-dev-tooling-ko26ez.7);
+#      a class that does not is named. It takes effect once the admission hold
+#      is lifted, because the hold keeps every workload off the node until then.
 #
 # A rerun for a worker whose Node is already registered mints and delivers
 # nothing: it reconciles the container and approves any pending serving CSR
@@ -32,6 +36,7 @@ hw="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 hosts_dir="${HOMELAB_WORKER_HOSTS_DIR:-$hw/hosts}"
 wait_seconds="${WAIT_SECONDS:-300}"
 poll="${POLL_SECONDS:-5}"
+enroll="${HOMELAB_WORKER_ENROLL:-$hw/enroll-workload-classes.sh}"
 
 die() {
   printf '%s: %s\n' "$prog" "$*" >&2
@@ -108,6 +113,7 @@ if kubectl get node "$worker" >/dev/null 2>&1; then
   say "Node $worker is already registered; reconciling its container without a new enrollment"
   converge
   "$hw/enrollment/approve-serving-csr.sh" "$host"
+  "$enroll" "$worker"
   kubectl get nodes -o wide
   exit 0
 fi
@@ -136,4 +142,5 @@ until "$hw/enrollment/approve-serving-csr.sh" "$host" | grep '^approve-serving-c
   waited=$((waited + poll))
 done
 say "serving certificate approved for $worker"
+"$enroll" "$worker"
 kubectl get nodes -o wide

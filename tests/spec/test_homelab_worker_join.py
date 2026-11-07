@@ -96,6 +96,10 @@ def env(tmp_path: Path) -> _Env:
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
     _exe(path=bin_dir / "kubectl", body=_STUB_KUBECTL)
+    _exe(
+        path=bin_dir / "enroll",
+        body='#!/bin/bash\nprintf "enroll %s\\n" "$*" >> "$STUB_STATE/calls.log"\n',
+    )
     _exe(path=bin_dir / "limactl", body=_STUB_LIMACTL)
     (state / "calls.log").write_text("", encoding="utf-8")
     ca = tmp_path / "server-ca.crt"
@@ -130,6 +134,7 @@ def _run(*, env: _Env, args: list[str]) -> subprocess.CompletedProcess[str]:
             "STUB_CERT": _CERT,
             "WAIT_SECONDS": "0",
             "POLL_SECONDS": "1",
+            "HOMELAB_WORKER_ENROLL": str(env.bin_dir / "enroll"),
         },
         check=False,
         timeout=120,
@@ -230,3 +235,10 @@ def test_a_host_declaring_no_lan_address_converges_without_a_network_argument(
     converges = [c for c in _calls(env=env) if " bash -s -- " in c]
     assert converges
     assert all(c.endswith(" /srv/w") for c in converges)
+
+
+def test_a_rerun_for_a_registered_node_still_converges_its_enrollment(env: _Env) -> None:
+    (env.state / "node-registered").touch()
+    result = _run(env=env, args=_args(env))
+    assert result.returncode == 0, result.stderr
+    assert "enroll alpha-homelab-worker" in _calls(env=env)
