@@ -211,6 +211,14 @@
       "batch": "check-python-batch",
       "classification": "unclassified",
       "consumes": [],
+      "name": "check-rule-26-keep-out",
+      "needs": [],
+      "produces": []
+    },
+    {
+      "batch": "check-python-batch",
+      "classification": "unclassified",
+      "consumes": [],
       "name": "check-supervisor-discipline",
       "needs": [],
       "produces": []
