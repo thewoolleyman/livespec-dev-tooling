@@ -493,6 +493,50 @@ def test_a_containerd_warm_pulls_every_process_spec_image_through_the_cri(
     )
 
 
+_ARM64_REFERENCE = "ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-agent-sha-abc1234-arm64"
+_ARM64_HOST_VARS = f"""
+fabro_server_instances:
+  - unit_name: fabro-server-worker
+    sandbox_providers:
+      kubernetes:
+        process_spec:
+          image: {_ARM64_REFERENCE}
+"""
+
+
+def test_an_amd64_node_never_pulls_a_worker_instances_arm64_only_tag(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("LIVESPEC_SANDBOX_IMAGE_WARM_NODE_ARCH", "x86_64")
+    done = _containerd_warm(
+        tmp_path=tmp_path,
+        specs={"factory-a.yml": _SPEC_HOST_VARS, "factory-b.yml": _ARM64_HOST_VARS},
+    )
+    assert done.returncode == 0, done.stdout + done.stderr
+    assert _docker_log(tmp_path=tmp_path) == [
+        f"crictl-pull-start {_SPEC_REFERENCE}",
+        f"crictl-pull-end {_SPEC_REFERENCE}",
+        f"crictl-pull-start {_SPEC_RUST_REFERENCE}",
+        f"crictl-pull-end {_SPEC_RUST_REFERENCE}",
+    ], (
+        "every factory node reads the same committed host_vars, and another architecture "
+        "cannot pull an arm64-only tag, so the failed pull would fail the whole warm: "
+        f"{done.stdout + done.stderr}"
+    )
+
+
+def test_an_arm64_node_pulls_a_worker_instances_arm64_only_tag(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("LIVESPEC_SANDBOX_IMAGE_WARM_NODE_ARCH", "aarch64")
+    done = _containerd_warm(tmp_path=tmp_path, specs={"factory-b.yml": _ARM64_HOST_VARS})
+    assert done.returncode == 0, done.stdout + done.stderr
+    assert _docker_log(tmp_path=tmp_path) == [
+        f"crictl-pull-start {_ARM64_REFERENCE}",
+        f"crictl-pull-end {_ARM64_REFERENCE}",
+    ]
+
+
 def test_a_process_spec_image_the_node_already_holds_is_never_pulled(*, tmp_path: Path) -> None:
     store = tmp_path / "store"
     store.mkdir()

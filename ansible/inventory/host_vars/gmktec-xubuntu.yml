@@ -715,6 +715,68 @@ fabro_server_instances:
         value: placeholder-not-a-real-key
     service_state: running
 
+  # The arm64 homelab workers' Fabro server (plan homelab-k8s-worker-nodes,
+  # livespec-dev-tooling-a3brdf; coordinator GO under R301, recorded on orchestrator
+  # epic bd-ib-nmuyjc). One instance per ARCHITECTURE, so a worker that joins needs
+  # no entry here. It keeps the toolchain id `factory-python`, because the provider,
+  # not the id, says where a sandbox runs (SPECIFICATION
+  # non-functional-requirements.md "Factory sandbox environment naming"). The
+  # Dispatcher selects an environment through the factory it dispatches to, so the
+  # workers take an instance rather than an environment beside the others. Its HOME
+  # holds the plugin config that selects them
+  # (sandbox_driver_kubernetes_worker_config_homes below).
+  #
+  # max_concurrent_runs 1 is the server's own limit. The fleet launchers' count reads
+  # only the :32276 and :32277 boards, so the launcher fleet-cap does NOT see a run
+  # here unless it is accounted for by hand; the factory-runs quota in the shared
+  # `factory` namespace does count its pod.
+  #
+  # REVERT: remove this entry, its registry and tailscale_serve entries and its
+  # sandbox_driver_kubernetes_worker_config_homes entry, then stop the unit.
+  - unit_name: fabro-server-homelab-worker-arm64
+    home_dir: /home/cwoolley/.fabro-homelab-worker-arm64
+    port: 32279
+    canonical_host: gmktec-xubuntu.perch-rudd.ts.net:32279
+    cli_target_url: http://127.0.0.1:32279
+    max_concurrent_runs: 1
+    github_app_id: "3668528"
+    otel_dropin: present
+    binary_path: /home/cwoolley/.fabro-homelab-worker-arm64/bin/fabro
+    home_env: /home/cwoolley/.fabro-homelab-worker-arm64
+    binary_source: /home/ubuntu/.local/state/fabro-web-prod/v0393-bbe693847/fabro
+    binary_sha256: 1529aa9f86b5bf346ae20a731bdf1cb433bc678825c8a43d0c21f513dac0ab1f
+    environments:
+      - id: factory-python
+        cpu: 4
+        memory: 8GB
+        provider: kubernetes
+    sandbox_providers:
+      kubernetes:
+        path: /usr/local/bin/sandbox-driver-kubernetes-v0.8.2
+        sha256: cf3cedc8900d2176630f8a700964a094f9db30648955310e930bee07ca6b9ec7
+        inherit_env:
+          - HOME
+          - PATH
+        env:
+          SANDBOX_DRIVER_KUBERNETES_CPU_REQUEST_CORES: "3"
+          SANDBOX_DRIVER_KUBERNETES_STATE_DIR: /home/cwoolley/.fabro-homelab-worker-arm64/.local/state/sandbox-driver-kubernetes
+        process_spec:
+          # OWED BEFORE PUSH: the python-agent-sha-<short>-arm64 tag the image pull
+          # request publishes (livespec-dev-tooling-a3brdf).
+          image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-agent-sha-PENDING-arm64
+          cpu_cores: 6
+          memory_mb: 7629
+    vault_secrets:
+      - name: GITHUB_APP_PRIVATE_KEY
+        type: file
+        description: GitHub App 3668528 private key
+        from_controller_env: GITHUB_PRIVATE_KEY
+      - name: OPENAI_API_KEY
+        type: token
+        description: placeholder so ACP-only graphs pass fabro.model.no_ready_provider admission; not a real key
+        value: placeholder-not-a-real-key
+    service_state: running
+
   # The mi-homelab organisation's own Fabro server (work-item bd-ib-tavof6 in
   # the livespec-orchestrator-beads-fabro tenant; coordinator rulings R668 and
   # R669(1)). homelab keeps its isolation off the shared fleet instance: its own
@@ -871,6 +933,15 @@ factory_kubeconfig_extra_credentials:
 sandbox_driver_kubernetes_config_homes:
   - /home/cwoolley
   - /home/cwoolley/.fabro-candidate
+# Each worker architecture's Fabro instance above, one entry per ARCHITECTURE. A
+# worker that joins needs nothing here: the instance selects the class label and the
+# architecture, never a host. An amd64 worker takes no factory sandbox until an
+# amd64 entry and instance exist, because the fleet's instances do not tolerate the
+# class taint.
+sandbox_driver_kubernetes_worker_config_homes:
+  - name: homelab-worker-arm64
+    home: /home/cwoolley/.fabro-homelab-worker-arm64
+    arch: arm64
 
 # Plugin releases installed at their OWN versioned paths beside the shared
 # v0.5.0 binary at /usr/local/bin/sandbox-driver-kubernetes, which the candidate
@@ -904,6 +975,9 @@ tailscale_serve_mappings:
   # The mi-homelab organisation's instance above.
   - https_port: 32277
     backend: http://127.0.0.1:32277
+  # The arm64 homelab workers' instance above.
+  - https_port: 32279
+    backend: http://127.0.0.1:32279
 
 # --- factory_budget_reconciler ---
 # This node may hold 6 factory sandbox pods: the TEMPORARY fixed factory-vs-CI CPU

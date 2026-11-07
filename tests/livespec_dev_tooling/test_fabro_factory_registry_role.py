@@ -197,6 +197,11 @@ _COMMITTED_FACTORIES: Mapping[str, Mapping[str, str]] = {
     # fabro-currency's dogfood factory (maintainer ruling 2026-11-02). It is a
     # third instance on the same host, so it too is told apart only by unit_name.
     _CANDIDATE_FACTORY: {"host": "gmktec-xubuntu", "unit_name": _CANDIDATE_UNIT},
+    # A homelab worker's own instance, on the same host and told apart the same way.
+    "homelab-worker-arm64": {
+        "host": "gmktec-xubuntu",
+        "unit_name": "fabro-server-homelab-worker-arm64",
+    },
 }
 
 
