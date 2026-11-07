@@ -95,6 +95,13 @@ class Correction:
     current_generation: int
     resolved_jobs: tuple[tuple[str, str], ...] = ()
     base_ref: str = "origin/master"
+    # The repair's tree before its commit exists. The expedited hook admits a
+    # commit only once the attempt is back in repair, so a real repair is measured
+    # here and committed after the correction, as a genesis attempt is.
+    staged_tree: str = ""
+
+
+_STAGED_TREE_NEEDS_BASE = "a staged tree is measured from the base, so the next head must be it"
 
 
 def _refuse(*, code: str, detail: str) -> EvidenceRefusal:
@@ -231,8 +238,11 @@ def _measure(*, git: GitPort, original: OriginalRun, request: Correction) -> tup
     head = request.next_head_sha
     base = _text(git=git, args=["merge-base", request.base_ref, head])
     _ = git(["merge-base", "--is-ancestor", original.revert_sha, base], b"")
-    tree = _text(git=git, args=["rev-parse", "--verify", head + "^{tree}"])
-    proposed = git(["diff", "--binary", base, head], b"")
+    if request.staged_tree and head != base:
+        raise ValueError(_STAGED_TREE_NEEDS_BASE)
+    end = request.staged_tree or head
+    tree = _text(git=git, args=["rev-parse", "--verify", end + "^{tree}"])
+    proposed = git(["diff", "--binary", base, end], b"")
     reverted = git(["diff", "--binary", original.revert_sha, original.revert_sha + "^"], b"")
     unchanged = not proposed.strip() or _patch_id(git=git, diff=proposed) == _patch_id(
         git=git, diff=reverted

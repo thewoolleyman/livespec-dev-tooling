@@ -13,7 +13,7 @@ credential wrapper and the project's registered orchestrator build:
         --state-dir DIR --repository OWNER/REPO --repo PRIMARY \\
         --evidence-digest DIGEST --next-head-sha SHA --target-ref REF \\
         --current-attempt ID --current-owner PRINCIPAL --current-generation N \\
-        [--resolved JOB=RECEIPT ...]
+        [--staged-tree TREE] [--resolved JOB=RECEIPT ...]
 
 `collect` refuses until the registered original master run has completed.
 `propose-correction` hands a correction to the canonical `correct-attempt`
@@ -169,6 +169,7 @@ def _parse(*, argv: Sequence[str]) -> argparse.Namespace:
     _ = correct.add_argument("--current-generation", required=True, type=int)
     _ = correct.add_argument("--resolved", action="append", default=[])
     _ = correct.add_argument("--base-ref", default="origin/master")
+    _ = correct.add_argument("--staged-tree", default="")
     return parser.parse_args(list(argv))
 
 
@@ -263,6 +264,7 @@ def _propose(*, args: argparse.Namespace, ports: EntryPorts) -> int:
             current_generation=args.current_generation,
             resolved_jobs=tuple((job, receipt) for job, _sep, receipt in pairs),
             base_ref=args.base_ref,
+            staged_tree=args.staged_tree,
         ),
         ports=ports,
     )
