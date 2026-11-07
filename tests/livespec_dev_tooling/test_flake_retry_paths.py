@@ -56,3 +56,21 @@ def test_a_suffixless_terminal_component_names_its_own_directory() -> None:
 
     assert "ci-runner/gates" in paths
     assert "ci-runner/gates/Makefile" in paths
+
+
+def test_a_suffixless_terminal_component_is_also_a_file_name_literal() -> None:
+    """A terminal such as Makefile touches a changed file of that name anywhere."""
+    analyzer = importlib.import_module("livespec_dev_tooling.flake_retry_paths")
+
+    paths, _ = analyzer.path_literals(tree=ast.parse("_ROOT / 'ci-runner' / 'gates' / 'Makefile'"))
+
+    assert "Makefile" in paths
+
+
+def test_a_dynamic_terminal_operand_adds_no_file_name_literal() -> None:
+    """Only a literal final operand can be a file name."""
+    analyzer = importlib.import_module("livespec_dev_tooling.flake_retry_paths")
+
+    paths, _ = analyzer.path_literals(tree=ast.parse("_ROOT / 'ci-runner' / 'gates' / name"))
+
+    assert "gates" not in paths

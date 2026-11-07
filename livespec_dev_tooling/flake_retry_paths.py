@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+from pathlib import PurePosixPath
 
 __all__: list[str] = ["path_literals"]
 
@@ -24,7 +25,8 @@ def path_literals(*, tree: ast.AST) -> tuple[set[str], bool]:
     A dynamic operand at any later position may be a repository path component,
     so callers must treat that closure as touched. A terminal component may be
     a file even without a suffix, so every multi-segment path also names its
-    own parent directory.
+    own parent directory, and a suffixless literal terminal is also a file-name
+    literal (suffixed ones are already kept by the closure's literal scan).
     """
     nested_divisions = {
         id(child)
@@ -41,7 +43,8 @@ def path_literals(*, tree: ast.AST) -> tuple[set[str], bool]:
         if id(node) in nested_divisions:
             continue
         segments: list[str] = []
-        for position, operand in enumerate(_division_operands(expression=node)):
+        operands = _division_operands(expression=node)
+        for position, operand in enumerate(operands):
             if isinstance(operand, ast.Constant) and isinstance(operand.value, str):
                 segments.append(operand.value)
             elif position > 0:
@@ -50,4 +53,11 @@ def path_literals(*, tree: ast.AST) -> tuple[set[str], bool]:
             paths.add(named_path)
             if "/" in named_path:
                 paths.add(named_path.rsplit("/", maxsplit=1)[0])
+                final = operands[-1]
+                if (
+                    isinstance(final, ast.Constant)
+                    and isinstance(final.value, str)
+                    and not PurePosixPath(final.value).suffix
+                ):
+                    paths.add(final.value)
     return paths, undeterminable
