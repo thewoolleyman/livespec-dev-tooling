@@ -56,8 +56,10 @@ def test_python_repository_reports_exact_collection_and_test_only_timing(
 
     row = report["repositories"][0]
     assert row["test_count"] == 5
-    assert row["count_command"] == "pytest --collect-only -q -p no:cacheprovider"
-    assert row["test_command"] == "uv run pytest -q"
+    assert (
+        row["count_command"] == "mise exec -- uv run pytest --collect-only -q -p no:cacheprovider"
+    )
+    assert row["test_command"] == "mise exec -- uv run pytest -q"
     assert row["runtime_seconds"] >= 0
     assert report["timing_method"] == "time.perf_counter around each repository test-only command"
     assert row["toolchain_versions"]["pytest"] == "pytest 8.3.4"
