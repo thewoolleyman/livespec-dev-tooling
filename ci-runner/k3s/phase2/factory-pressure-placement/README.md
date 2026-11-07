@@ -59,7 +59,10 @@ On each 30 s cycle the reconciler works through these steps:
 4. **Taint.** If the lowest node fits one more sandbox, every node at least
    `FACTORY_PRESSURE_GAP` points above the lowest gets the taint. The script
    defaults to 20; the committed unit sets 10 (2026-11-07), because at 20 the
-   taint flapped on gmktec while it ran at avg60 15-30 against an idle poweredge. Otherwise the taint comes off everywhere, and placement falls
+   taint flapped on gmktec while it ran at avg60 15-30 against an idle poweredge.
+   A node that is ALREADY tainted keeps the taint while its gap stays at or above
+   `FACTORY_PRESSURE_RELEASE_GAP` (defaults to the gap; the committed unit sets 5),
+   so the taint does not flap around a single threshold. Otherwise the taint comes off everywhere, and placement falls
    back to the sandbox pods' own hostname spread.
 5. **Quota fail-safe ladder.** Every successful `gates-cq` read is cached in
    `/var/lib/livespec/factory-pressure-placement/gates-quota.json`. If a read

@@ -19,4 +19,7 @@ Environment=FACTORY_PRESSURE_GATES_RESERVE_CAP_MILLICPU=5000
 # spread pulled new pods back to gmktec. The fit check still lifts the taint
 # when the lowest node cannot fit one more sandbox. Revert: delete this line.
 Environment=FACTORY_PRESSURE_GAP=10
+# Hysteresis: a tainted node keeps the taint until its gap falls below 5, so the
+# taint holds through the dips that made it flap at one threshold. Revert: delete.
+Environment=FACTORY_PRESSURE_RELEASE_GAP=5
 ExecStart=/usr/local/lib/ci-runner-k3s/reconcile-factory-pressure-taint.sh
