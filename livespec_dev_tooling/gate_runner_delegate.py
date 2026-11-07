@@ -22,7 +22,7 @@ from livespec_dev_tooling.gate_remote_delegate import (
 )
 from livespec_dev_tooling.gate_remote_invocation import default_gate_command_runner
 from livespec_dev_tooling.gate_remote_verdict import (
-    GATE_FAILED,
+    GATE_NO_VERDICT,
     GATE_PASSED,
     run_gated_push,
 )
@@ -226,7 +226,7 @@ def run_cluster_gate(*, repo_root: Path, command: tuple[str, ...]) -> ClusterGat
                 runner=default_gate_command_runner,
             ),
         )
-    status = 0 if verdict.state == GATE_PASSED else 1 if verdict.state == GATE_FAILED else 75
+    status = 0 if verdict.state == GATE_PASSED else 75 if verdict.state == GATE_NO_VERDICT else 1
     return ClusterGateResult(
         exit_status=status,
         tree_hash=tree_hash,
