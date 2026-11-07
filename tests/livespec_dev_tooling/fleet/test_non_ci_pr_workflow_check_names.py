@@ -31,6 +31,7 @@ from __future__ import annotations
 import json
 
 from _gh_railway import lift_gh
+from _protection_fixtures import no_ruleset_answer
 
 from livespec_dev_tooling.checks._ci_job_names import workflow_triggers_pull_request
 from livespec_dev_tooling.fleet._ci_workflow_source import _extra_workflow_paths
@@ -106,7 +107,11 @@ def _context(
 
     def run(*, args: list[str], stdin: str | None = None) -> GhResult:
         del stdin
-        return table.get(tuple(args), GhResult(returncode=1, stdout="", stderr="no canned"))
+        return (
+            table.get(tuple(args))
+            or no_ruleset_answer(args=args)
+            or GhResult(returncode=1, stdout="", stderr="no canned")
+        )
 
     runner: GhRunner = run
     return FleetContext(owner="acme", run_gh=lift_gh(runner))

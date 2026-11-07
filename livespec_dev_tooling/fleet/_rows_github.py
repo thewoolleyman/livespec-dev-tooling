@@ -46,6 +46,10 @@ from livespec_dev_tooling.fleet._context import (  # noqa: E402
 from livespec_dev_tooling.fleet._invocation_failure import (  # noqa: E402
     InvocationNotPerformed,
 )
+from livespec_dev_tooling.fleet._rows_rulesets import (  # noqa: E402
+    member_ruleset_requirements,
+    ruleset_problems,
+)
 
 __all__: list[str] = [
     "REQUIRED_MERGE_SETTINGS",
@@ -167,8 +171,17 @@ def assert_app_installation(*, ctx: FleetContext, member: FleetMember) -> RowOut
     return RowFinding(message=f"{member.repo}: GitHub App installation does not cover this repo")
 
 
+_STATUS_CHECKS_ABSENT = "required_status_checks is absent"
+_REQUIRED_SET_EMPTY = "required-check set is empty"
+_SET_SIZE_PROBLEMS = frozenset({_STATUS_CHECKS_ABSENT, _REQUIRED_SET_EMPTY})
+
+
 def _protection_problems(
-    *, ctx: FleetContext, member: FleetMember, payload: dict[str, object]
+    *,
+    ctx: FleetContext,
+    member: FleetMember,
+    payload: dict[str, object],
+    held: frozenset[str],
 ) -> tuple[list[str], str | None]:
     """Misalignment messages, plus why the phantom-check comparison did not run.
 
@@ -181,6 +194,13 @@ def _protection_problems(
     a member whose required checks can never report, and whose every merge
     would therefore deadlock, was certified ALIGNED because a read failed.
     A can't-read SKIPS; it does not pass (livespec-dev-tooling-6ge).
+
+    `held` is the ruleset half of the EFFECTIVE required-check set: the
+    checks active rulesets require on the default branch, unioned with
+    classic protection's own (the fleet paragraph of the
+    `branch_protection_alignment` check contract in SPECIFICATION/contracts.md,
+    v149). When it is non-empty an absent classic `required_status_checks`
+    object is an empty classic contribution, not a problem.
     """
     problems: list[str] = []
     enforce = payload.get("enforce_admins")
@@ -197,10 +217,10 @@ def _protection_problems(
     if not (isinstance(linear, dict) and cast("dict[str, object]", linear).get("enabled")):
         problems.append("required_linear_history is not enabled")
     checks = payload.get("required_status_checks")
-    if not isinstance(checks, dict):
-        problems.append("required_status_checks is absent")
+    if not isinstance(checks, dict) and not held:
+        problems.append(_STATUS_CHECKS_ABSENT)
         return problems, None
-    checks_map = cast("dict[str, object]", checks)
+    checks_map = cast("dict[str, object]", checks) if isinstance(checks, dict) else {}
     if checks_map.get("strict"):
         problems.append(
             "required_status_checks.strict is enabled but must be OFF "
@@ -211,9 +231,9 @@ def _protection_problems(
         {entry for entry in cast("list[object]", contexts_raw) if isinstance(entry, str)}
         if isinstance(contexts_raw, list)
         else set()
-    )
+    ) | held
     if not contexts:
-        problems.append("required-check set is empty")
+        problems.append(_REQUIRED_SET_EMPTY)
         return problems, None
     names = member_ci_check_names(ctx=ctx, member=member)
     if isinstance(names, IOFailure):
@@ -288,7 +308,16 @@ def assert_branch_protection(*, ctx: FleetContext, member: FleetMember) -> RowOu
     payload = _protection_payload(stdout=result.stdout)
     if payload is None:
         return RowSkip(reason=f"{member.repo}: branch protection payload unparseable or unexpected")
-    problems, unverified = _protection_problems(ctx=ctx, member=member, payload=payload)
+    rulesets = member_ruleset_requirements(ctx=ctx, repo=member.repo, ref=ref)
+    held: frozenset[str] = frozenset() if isinstance(rulesets, str) else rulesets.contexts
+    problems, unverified = _protection_problems(ctx=ctx, member=member, payload=payload, held=held)
+    if isinstance(rulesets, str):
+        # The required set cannot be called empty or absent when its ruleset
+        # half went unread; every OTHER problem is definitive and still reported.
+        problems = [p for p in problems if p not in _SET_SIZE_PROBLEMS]
+        unverified = unverified or rulesets
+    else:
+        problems.extend(ruleset_problems(rulesets=rulesets))
     return _protection_verdict(member=member, problems=problems, unverified=unverified)
 
 

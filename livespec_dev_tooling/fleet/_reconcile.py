@@ -47,6 +47,9 @@ from livespec_dev_tooling.fleet._rows_github import (  # noqa: E402
     SIBLING_TOPIC,
     member_matrix_targets,
 )
+from livespec_dev_tooling.fleet._rows_rulesets import (  # noqa: E402
+    member_ruleset_requirements,
+)
 
 __all__: list[str] = [
     "reconcile_branch_protection",
@@ -203,9 +206,20 @@ def reconcile_branch_protection(*, ctx: FleetContext, member: FleetMember) -> Ro
     # silently, since nothing errors and the operator reads "branch
     # protection set" (measured 2026-10-14: livespec-overseer FALSE while
     # its three siblings read TRUE).
+    # A check an active ruleset already requires is never written into classic
+    # protection, and when a ruleset holds any required check the classic list
+    # stays empty so the member's checks live in one place (the fleet paragraph
+    # of the `branch_protection_alignment` check contract in
+    # SPECIFICATION/contracts.md, v149). Unread rulesets mean no write at all.
+    rulesets = member_ruleset_requirements(
+        ctx=ctx, repo=member.repo, ref=ctx.canonical_ref(repo=member.repo)
+    )
+    if isinstance(rulesets, str):
+        return RowSkip(reason=f"{rulesets}; branch protection not written")
+    contexts = [] if rulesets.contexts else sorted(matrix)
     body = json.dumps(
         {
-            "required_status_checks": {"strict": False, "contexts": sorted(matrix)},
+            "required_status_checks": {"strict": False, "contexts": contexts},
             "enforce_admins": True,
             "required_linear_history": True,
             "required_pull_request_reviews": None,
