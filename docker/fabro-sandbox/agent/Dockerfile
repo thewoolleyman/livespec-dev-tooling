@@ -107,7 +107,7 @@ FROM ${PARENT_IMAGE}
 # 2.1.170 does not support this model" (livespec-dev-tooling-wrlwvk). 0.91.0
 # (2026-10-15) depends on SDK 0.3.300.
 ARG CLAUDE_AGENT_ACP_VERSION=0.91.0
-ARG CODEX_ACP_VERSION=1.10.0
+ARG CODEX_ACP_VERSION=2.5.0
 
 # bubblewrap — required by the codex-acp adapter. The chain's root
 # (buildpack-deps:noble-scm) is Debian/Ubuntu, so apt is correct; clean
