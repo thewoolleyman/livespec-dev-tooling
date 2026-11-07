@@ -15,7 +15,7 @@
 # declares the packages its vendored runtime imports from outside itself
 # (v1.183.1 is the first that does), so the role installs the release and
 # nothing beside it.
-incident_observer_release: v1.186.0
+incident_observer_release: v1.186.1
 incident_observer_release_repo: https://github.com/thewoolleyman/livespec-dev-tooling.git
 # The repository the observer serves (controller.json `repository`).
 incident_observer_repository: thewoolleyman/livespec-dev-tooling
