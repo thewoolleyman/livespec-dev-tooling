@@ -85,10 +85,14 @@ which rules out every CI node and every sandbox host whatever their TLS posture.
   package digest over every installed `.py` in the loader's own order, the
   released tag and its commit (read from the reference clone), the reader and
   principal argv, the SHA256 of every executable they name plus the resolved
-  interpreter, and the required master leaf jobs (`ci-green`, the only status
-  check master's protection requires, measured 2026-11-05). The repository's
+  interpreter, and the required master leaf jobs: every leaf job and matrix leg
+  `ci-green` needs, spelled as the `workflow_job` event reports it, then
+  `ci-green` itself (`incident_observer_required_jobs`; the revert fires at the
+  first failing leaf, not when the aggregate concludes). The repository's
   `tests/livespec_dev_tooling/test_incident_observer_role.py` holds the renderer
-  to the loader's algorithm;
+  to the loader's algorithm, and
+  `tests/livespec_dev_tooling/test_incident_observer_job_universe.py` holds the
+  job list to `ci-green`'s `needs:`;
 - an isolated `ControllerInstallation.load` of the whole installation **as the
   controller account** before the unit is written, so a refusal names the apply
   rather than a unit exiting 2;

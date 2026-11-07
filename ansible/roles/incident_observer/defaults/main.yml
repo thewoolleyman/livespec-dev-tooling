@@ -19,9 +19,30 @@ incident_observer_release: v1.184.2
 incident_observer_release_repo: https://github.com/thewoolleyman/livespec-dev-tooling.git
 # The repository the observer serves (controller.json `repository`).
 incident_observer_repository: thewoolleyman/livespec-dev-tooling
-# The required master leaf jobs the manifest names. Measured 2026-11-05: the
-# repository's master protection requires exactly the `ci-green` status check.
+# The required master leaf jobs the manifest names: the observer acts on the
+# first FAILING `workflow_job` callback whose name is in this list. It is every
+# leaf job and matrix leg `ci-green` needs in `.github/workflows/ci.yml`, spelled
+# as the `workflow_job` event reports it (a job's `name:`, or one entry per
+# `matrix.target` leg for a job named `${{ matrix.target }}`; measured on master
+# run 42316488005, 2026-11-06), so the revert fires at the first failing leaf
+# instead of when the aggregate concludes after the whole run
+# (livespec-dev-tooling-hudte3). `ci-green` itself, the one status check
+# master's protection requires, stays last as the backstop for a run the
+# aggregate fails through a conclusion no leaf callback acts on (a cancelled
+# leg). `tests/livespec_dev_tooling/test_incident_observer_job_universe.py`
+# fails and names the job when this list and `ci-green`'s `needs:` drift.
 incident_observer_required_jobs:
+  - check-types
+  - check-lint
+  - check-format
+  - check-per-file-coverage
+  - check-coverage
+  - check-python-batch
+  - check-fleet-conformance
+  - check-red-green-replay
+  - check-check-coverage-incremental
+  - check-metadata-batch
+  - incident-ci
   - ci-green
 
 # --- the canonical reader ---------------------------------------------------
