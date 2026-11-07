@@ -17,7 +17,11 @@
 #      CPUs, memory or disk differ from the declaration is refused, naming
 #      the setting, instead of being rebuilt. A new VM gets an XFS data disk,
 #      hwdata (Lima labels it lima-hwdata; an XFS label holds at most 12
-#      characters), for the worker's containerd store and caches.
+#      characters), for the worker's containerd store and caches. The VM is
+#      registered with `limactl autostart enable`, so it starts again at the
+#      host user's next login and the worker rejoins after a host reboot with
+#      no operator step (livespec-dev-tooling-ko26ez.8); the worker container
+#      inside it restarts on its own.
 #   6. The VM capability probe (probe-vm-capabilities.sh) runs inside the VM;
 #      any missing capability stops the task, naming each with its remedy,
 #      before the worker container starts. The report is kept beside the
@@ -255,6 +259,9 @@ else
     --tty=false "$template"
   limactl start --tty=false "$worker"
 fi
+limactl autostart enable --tty=false "$worker" ||
+  die "limactl could not register VM $worker to start at login; without it the worker does not rejoin after a host reboot"
+say "VM $worker is registered to start at login"
 
 mkdir -p "$state_dir/$worker"
 report="$state_dir/$worker/vm-capabilities.txt"

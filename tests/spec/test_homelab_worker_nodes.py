@@ -410,6 +410,34 @@ def test_every_committed_host_declaration_is_data_for_the_same_code_path() -> No
         assert _REQUIRED_HOST_KEYS <= keys <= _REQUIRED_HOST_KEYS | _OPTIONAL_HOST_KEYS
 
 
+def test_the_vm_is_registered_to_start_at_login_so_the_worker_rejoins_after_a_reboot(
+    host: _Host,
+) -> None:
+    _install_lima(host=host, version="2.2.1")
+    result = _run(host=host, args=[_A])
+    assert result.returncode == 0, result.stderr
+    calls = _calls(host=host)
+    registered = calls.index(f"limactl autostart enable --tty=false {_A}-homelab-worker")
+    started = max(i for i, c in enumerate(calls) if c.startswith("limactl start "))
+    assert registered > started
+
+
+def test_a_rerun_on_a_running_vm_still_registers_it_to_start_at_login(host: _Host) -> None:
+    _install_lima(host=host, version="2.2.1")
+    v = _HOSTS[_A]
+    _add_instance(
+        host=host,
+        name=f"{_A}-homelab-worker",
+        status="Running",
+        cpus=int(v["cpus"]),
+        memory_gib=int(v["memory_gib"]),
+        disk_gib=int(v["disk_gib"]),
+    )
+    result = _run(host=host, args=[_A])
+    assert result.returncode == 0, result.stderr
+    assert f"limactl autostart enable --tty=false {_A}-homelab-worker" in _calls(host=host)
+
+
 def test_a_new_vm_gets_an_xfs_data_disk_created_once(host: _Host) -> None:
     _install_lima(host=host, version="2.2.1")
     result = _run(host=host, args=[_A])
