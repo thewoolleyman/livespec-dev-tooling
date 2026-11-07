@@ -58,6 +58,28 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.186.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.185.2...v1.186.0) (2026-11-07)
+
+
+### Features
+
+* add an observer /recover route for a reopened incident attempt ([726131b](https://github.com/thewoolleyman/livespec-dev-tooling/commit/726131bfb5c62733cd736c60f764399d9b7d01e7))
+* add fleet baseline Python test ([cede502](https://github.com/thewoolleyman/livespec-dev-tooling/commit/cede502dd19feb46cf262ed90c5c3ad0a14bb1fb))
+* add the original-run collection operator entrance (livespec-dev-tooling-zvntys) ([6ffddef](https://github.com/thewoolleyman/livespec-dev-tooling/commit/6ffddefa5cbd513dce622417985de76caed17920))
+* an operator entrance records focused incident evidence on the incident item before merge (livespec-dev-tooling-fdbpik) ([cbe9217](https://github.com/thewoolleyman/livespec-dev-tooling/commit/cbe921720eea09c2a7c735ac19456b8ba00dfa7e))
+* **ansible:** install the live recovery principal in the incident observer manifest (livespec-dev-tooling-7536jf) ([b721214](https://github.com/thewoolleyman/livespec-dev-tooling/commit/b721214dda6d11862c1ca7591be1c7f9f266c8a5))
+* collect a reverted incident's original run and gate its correction (livespec-dev-tooling-zvntys) ([0be2c8f](https://github.com/thewoolleyman/livespec-dev-tooling/commit/0be2c8f32439046dc8cd62208b6e793c2a4a7175))
+* cover fleet baseline ecosystems ([b20477c](https://github.com/thewoolleyman/livespec-dev-tooling/commit/b20477ca919710691709fd2b415ac46593458685))
+* merge the exact incident inverse as the live recovery principal (livespec-dev-tooling-7536jf) ([cd7ee69](https://github.com/thewoolleyman/livespec-dev-tooling/commit/cd7ee69978f4de7ef1d427f281d8d1d69d602d3e))
+* read the incident recovery App credential and mint its scoped token (livespec-dev-tooling-7536jf) ([57ba88d](https://github.com/thewoolleyman/livespec-dev-tooling/commit/57ba88dec87e4727a6cf994d524eee5180d6dbed))
+* register the incident observer on every ci-green leaf job ([19e8607](https://github.com/thewoolleyman/livespec-dev-tooling/commit/19e8607ce8db614bc278963e1f98c461726269b2))
+
+
+### Bug Fixes
+
+* name the reopened attempt and its principal in correct-attempt (livespec-dev-tooling-zvntys) ([f597248](https://github.com/thewoolleyman/livespec-dev-tooling/commit/f5972489e492aaffe3cf2ae442c12b9d93761e08))
+* report the full executed pytest commands in the fleet baseline ([528ca79](https://github.com/thewoolleyman/livespec-dev-tooling/commit/528ca790bb249b9fc455311a3f30d74df7e07075))
+
 ## [1.185.2](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.185.1...v1.185.2) (2026-11-07)
 
 
