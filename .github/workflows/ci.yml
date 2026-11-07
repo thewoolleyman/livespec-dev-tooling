@@ -252,6 +252,19 @@ jobs:
           [ -n "$node_bin" ] && export PATH="$node_bin:$PATH"
           just check-per-file-coverage
 
+      # livespec-dev-tooling-h77qmw: a retry record dies with the runner unless
+      # uploaded. The host-side reader files one root-fix item per node id from
+      # this artifact. It runs on failure too, and a run with no retry has
+      # nothing to upload.
+      - name: Publish the flake-retry records for the host-side reader
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: flake-retries
+          path: tmp/flake-retries/
+          if-no-files-found: ignore
+          retention-days: 7
+
       # include-hidden-files is REQUIRED: upload-artifact@v4 excludes
       # dotfiles by default and .coverage is one; without it the upload
       # silently ships nothing and the consumer falls back to a full
