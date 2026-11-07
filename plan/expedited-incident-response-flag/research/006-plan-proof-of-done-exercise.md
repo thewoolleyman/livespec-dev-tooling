@@ -184,8 +184,16 @@ grade them. The children's factory-captured tests carry them. This note does not
 Conventions:
 
 - `ITEM` is the new incident item. `DT` and `ORCH` are the releases from P0-10.
+  - Serving as of 2026-11-07 ~04:00Z: DT v1.186.0 (the observer was rolled to it at 03:41Z, evidence on
+    livespec-dev-tooling-7536jf) and ORCH v0.299.0. Two follow-up releases are pending: the ORCH release
+    livespec-orchestrator-beads-fabro#4584 (0.300.0, carries P0-7) and a DT release carrying
+    livespec-dev-tooling#3673 (canonical refusal-code pass-through). Re-read the serving versions at P.1.
 - `IA` is `incident_authority.py` of the registered build; resolve it with `registered_plugin_root.py --repo $REPO`.
 - Every ledger call goes through `/usr/local/bin/with-livespec-env.sh --`.
+- Every `IA` action takes CANONICAL JSON: build each JSON argument with `jq -cS`. Two actions take more than JSON
+  (bd-ib-nabx3u, livespec-orchestrator-beads-fabro#4579):
+  - `enter-repayment` takes `--master-run <id>` and reads that run from the forge itself, so it needs `gh` auth.
+  - `reopen-regression` takes `--principal` and `--attributed-json`.
 - Arming follows note 004 steps 2 to 8 with its §7 corrections:
   - add `do-not-merge` before any reopen;
   - GET the pull until `merge_commit_sha` sits on the base, THEN reopen;
@@ -233,6 +241,9 @@ Conventions:
   Poll `gh run list --branch master --commit <sha>` every 2 s and bind on first sight. Do not do this by hand: the
   planted leaf fails about 90 s into the run, and a callback that arrives before the bind is ignored as "outside the
   registered incident master leaf universe" (`incident_observer.py:131-138`).
+  - The observer acts only on a `workflow_job` delivery whose action is `completed`. It answers `queued` and
+    `in_progress` deliveries with 403 by design (repository hook 707919835), so a 403 in the delivery log is not a
+    fault.
 - 3.10 [GO-8] Between the bind and the leaf failure (or as soon as possible after the bind), restart the observer
   unit, so the bound registration must come back from the state file (A12 ii).
 - 3.11 [GO-5] The leaf fails, the callback arrives, and the principal publishes the inverse to master (A7). Then
@@ -240,11 +251,27 @@ Conventions:
   `existing immutable action; no duplicate effect` with no second revert (A12 iii).
 - 3.12 Do NOT cancel attempt 1's run. Wait for `completed`, then collect every job conclusion (P0-5) (A8). Master is
   red until the revert's own run is green, about 12 min.
+  - The P0-5 entrance is `python -m livespec_dev_tooling.incident_original_run_entry collect|propose-correction`
+    (livespec-dev-tooling-zvntys, livespec-dev-tooling#3666 and livespec-dev-tooling#3668). Run it as the controller
+    account (`livespec-incident`) with `--state-dir` set to the observer's state directory, so the evidence lands
+    beside the registration it reads. Each subcommand prints one schema-1 JSON reply. A refusal exits 78 and names
+    its reason.
+  - The operator supplies the EXPECTED JOB GRAPH as a JSON file (`--expected-graph`) covering every job the
+    registration watched. Matrix leg names cannot be derived statically, so write the graph by hand from the
+    registration's job list.
+  - Order: `IA reopen-regression` (records the `recovery-<digest>` attempt) → `IA record-revert-receipt` (moves that
+    attempt to `collecting-failures`) → `collect --revert-sha <sha>` (refuses until the original run has completed)
+    → `propose-correction` in 4.1.
+  - The evidence record is a ledger comment carrying the marker `livespec-incident-original-run-evidence-v1`.
 
 ### Phase 4: attempt 2, corrected from complete evidence (A1 red-master half, A8)
 
 - 4.1 Transition the chain to the corrected attempt through P0-3's `correct-attempt`. The attempt id is new; the item
   is the same.
+  - Enter it through the P0-5 entrance's `propose-correction` (see 3.12), which hands the correction to the canonical
+    `correct-attempt` action. Pass `--evidence-digest` from the `collect` reply, `--current-attempt
+    recovery-<digest>`, `--current-owner <principal>` and `--current-generation <N>`, plus `--next-head-sha` and
+    `--target-ref` (the corrected attempt's reserved branch).
 - 4.2 Fix every failed member in the collected set: add the heading-coverage row, register its debt, or move the spec
   change into a recorded deferred-spec debt, whichever the failure set demands. Keep the marker.
 - 4.3 If the revert run has not yet gone green, take 4.4 while master's latest completed run is still red (A1).
@@ -301,6 +328,9 @@ Conventions:
 - 7.7 The repayment PR merges on full checks. The marker for ITEM is gone (`git grep` on master).
 - 7.8 Before the repayment's master run completes, run `close` again: refused (A12).
 - 7.9 After that run is green: closure succeeds (A12).
+  - Coordinator ruling: run `IA bind-repayment-acceptance --pr <n>` BY HAND first, then `IA complete-incident
+    --master-run <id>` with the manual-outcome and debt flags. Keep this manual order until the post-freeze
+    Dispatcher binding lands (bd-ib-pqz3nw, livespec-orchestrator-beads-fabro#4583).
 - 7.10 Normal-validation probe: in a clean worktree at attempt 3's head, `just check` re-runs every member. It reuses
   no expedited report (A13).
 
