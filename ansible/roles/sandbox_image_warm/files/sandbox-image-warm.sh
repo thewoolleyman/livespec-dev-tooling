@@ -90,6 +90,7 @@ LOCK_TIMEOUT_SECONDS=${LIVESPEC_SANDBOX_IMAGE_WARM_LOCK_TIMEOUT_SECONDS:-1800}
 STORE=${LIVESPEC_SANDBOX_IMAGE_WARM_STORE:-docker}
 CRICTL=${LIVESPEC_SANDBOX_IMAGE_WARM_CRICTL:-k3s crictl}
 PROCESS_SPEC_URLS=${LIVESPEC_SANDBOX_IMAGE_WARM_PROCESS_SPEC_URLS:-}
+NODE_ARCH=${LIVESPEC_SANDBOX_IMAGE_WARM_NODE_ARCH:-$(uname -m)}
 # The record directory matches the role's unit name: the docker warm is
 # livespec-sandbox-image-warm, every other store's carries a -<store> suffix.
 if [[ $STORE == docker ]]; then _record_default=/var/lib/livespec-sandbox-image-warm; else _record_default=/var/lib/livespec-sandbox-image-warm-$STORE; fi
@@ -153,6 +154,17 @@ process_spec_images() {
     '
 }
 
+# A tag suffixed `-arm64` names an arm64-only image, which a homelab worker's own
+# Fabro instance pins. Every factory node reads that same committed file, and
+# another architecture's node cannot pull it: the failed pull would fail the whole
+# warm, so its real pins would stop being warmed. So only an arm64 node keeps one.
+without_foreign_arch_tags() {
+    case "$NODE_ARCH" in
+    aarch64 | arm64) cat ;;
+    *) awk '!/-arm64$/' ;;
+    esac
+}
+
 # Every reference a containerd warm pulls: the process_spec images of every
 # named file, inside IMAGE, de-duplicated. ANY file that cannot be read fails
 # the whole read, because a partial read can silently omit the very pin that
@@ -170,6 +182,7 @@ process_spec_references() {
     # "no process_spec image" refusal instead of reading as a failed fetch.
     printf '%s' "$found" |
         awk -v image="$IMAGE" 'index($0, image ":") == 1 || index($0, image "@") == 1' |
+        without_foreign_arch_tags |
         sort -u
 }
 

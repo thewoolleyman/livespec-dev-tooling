@@ -63,6 +63,12 @@ fabro_factory_registry:
   candidate:
     host: gmktec-xubuntu
     unit_name: fabro-server-candidate
+  # The arm64 homelab workers' instance: its sandboxes run only on workers of
+  # that architecture. Nothing selects it by default; a repository opts in with one committed
+  # dispatcher.factories entry and names it per dispatch with --factory.
+  homelab-worker-arm64:
+    host: gmktec-xubuntu
+    unit_name: fabro-server-homelab-worker-arm64
 
 # --- fabro_client ---
 #

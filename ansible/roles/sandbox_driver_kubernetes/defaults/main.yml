@@ -97,6 +97,11 @@ sandbox_driver_kubernetes_user: "{{ fabro_server_host_user }}"
 sandbox_driver_kubernetes_group: "{{ fabro_server_host_group }}"
 sandbox_driver_kubernetes_config_homes:
   - "{{ fabro_server_host_home }}"
+# One entry per homelab worker architecture whose Fabro instance runs on this host,
+# each `{name, home, arch}`: the instance's factory name, its HOME and the
+# architecture it selects. No entry names a worker, so one that joins needs none.
+# Empty renders exactly what every host rendered before.
+sandbox_driver_kubernetes_worker_config_homes: []
 
 # The cluster facts, from the factory delivery of plan factory-worker-nodes-gitops
 # (livespec-sqvj7p): the namespace and credential of livespec-dev-tooling-sqobqv,

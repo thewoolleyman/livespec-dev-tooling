@@ -102,6 +102,53 @@
   become: true
   loop: "{{ sandbox_driver_kubernetes_config_homes }}"
 
+- name: Create each homelab worker instance's plugin configuration directory
+  ansible.builtin.file:
+    path: "{{ item.home }}/.config/sandbox-driver-kubernetes"
+    state: directory
+    owner: "{{ sandbox_driver_kubernetes_user }}"
+    group: "{{ sandbox_driver_kubernetes_group }}"
+    mode: "0755"
+  become: true
+  loop: "{{ sandbox_driver_kubernetes_worker_config_homes }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+- name: Render each homelab worker instance's plugin configuration
+  # The same template as every other HOME, with only placement overridden. The
+  # plugin reads tolerations from this file alone (no environment override), so a
+  # worker instance needs a HOME of its own. Its sandboxes select the worker class
+  # label and the architecture, name no host, and tolerate the class taint but not
+  # the admission hold, so a joined worker takes them once its hold is lifted. No
+  # other HOME's file carries the toleration, so no other instance's sandbox can
+  # land on a worker.
+  ansible.builtin.template:
+    src: plugin-config.toml.j2
+    dest: "{{ item.home }}/.config/sandbox-driver-kubernetes/config.toml"
+    owner: "{{ sandbox_driver_kubernetes_user }}"
+    group: "{{ sandbox_driver_kubernetes_group }}"
+    mode: "0644"
+  become: true
+  vars:
+    sandbox_driver_kubernetes_factory: "{{ item.name }}"
+    sandbox_driver_kubernetes_node_selector: >-
+      {{ {'homelab-worker.livespec.dev/class': 'worker', 'kubernetes.io/arch': item.arch} }}
+    sandbox_driver_kubernetes_tolerations:
+      - key: homelab-worker.livespec.dev/class
+        operator: Equal
+        value: worker
+        effect: NoSchedule
+      - key: node.kubernetes.io/not-ready
+        operator: Exists
+        effect: NoExecute
+      - key: node.kubernetes.io/unreachable
+        operator: Exists
+        effect: NoExecute
+    sandbox_driver_kubernetes_topology_spread: []
+  loop: "{{ sandbox_driver_kubernetes_worker_config_homes }}"
+  loop_control:
+    label: "{{ item.name }}"
+
 - name: Render the CLI's Kubernetes profile
   ansible.builtin.template:
     src: cli-config.toml.j2
