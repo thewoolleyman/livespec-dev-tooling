@@ -3005,6 +3005,48 @@ Then the VM's bridged interface MUST carry that address
 
 And the worker's Kubernetes node IP and its pod-network underlay interface address MUST be that address
 
+## Scenario: a joined worker is enrolled in every workload class its architecture can run
+
+Given an arm64 container worker joined through the production join path, a CI class whose job image publishes arm64, and a factory class whose sandbox image publishes only amd64
+
+When the join completes and the admission hold is lifted
+
+Then the worker MUST carry the CI class's node label and churn-slot capacity derived from its allocatable CPU, and the CI class's scale sets MUST tolerate the worker class taint
+
+And the factory class MUST NOT be able to schedule onto the worker, and the join output MUST name the factory class and the arm64 image it lacks
+
+And no per-host values file, profile or inventory entry MUST have changed
+
+## Scenario: a workload is never scheduled onto a node whose architecture its image does not publish
+
+Given a cluster with amd64 nodes and an arm64 worker enrolled in every class whose images publish arm64
+
+When a CI job, a gate job and a factory sandbox whose images publish only amd64 are each admitted
+
+Then each MUST be placed on an amd64 node
+
+And none MUST be placed on the arm64 worker
+
+## Scenario: a worker's per-class capacity is derived from its allocatable resources
+
+Given a joined worker whose node reports its allocatable CPU and memory, and no measured split
+
+When enrollment derives its per-class capacity
+
+Then each eligible class MUST receive one third of the allocatable CPU, rounded down and at least one unit
+
+And the CI share MUST be expressed in churn slots by the fleet's churn-slot sizing rule
+
+## Scenario: a worker that leaves mid-run loses no work and rejoins on its own
+
+Given an enrolled worker running a CI job, a gate job and a factory run
+
+When the worker leaves the cluster without warning and its host later returns
+
+Then the CI job and the gate job MUST be retried or re-queued onto another node, and the factory run MUST resume or be re-dispatched with its work preserved
+
+And the worker MUST rejoin and re-enroll in the same classes with no operator step
+
 ## Scenario: a host declaring no home-LAN address is refused before the VM starts
 
 Given a declared host whose declaration carries no static home-LAN address
