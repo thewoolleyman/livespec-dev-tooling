@@ -124,6 +124,24 @@ The existing repository lock continues to serialize actual durable effects.
   change forge labels, authenticate CI jobs or establish a real premerge fence.
   Every mode writer and actual merge authority still need that integration
   before the incident feature can be enabled.
+- `POST /recover` requires the control credential and the reopened-chain
+  receipt the orchestrator's regression reopen committed: `repository`,
+  `incident_item_id`, `attempt_id`, `phase`, `operation_id`, `generation`,
+  `owner` and hexadecimal `authority_receipt` of the `reverting` generation.
+  It is the route from a related regression seen on another PR or on master to
+  the trusted controller, which otherwise reverts only on a failing leaf of the
+  registered master run. A phase other than `reverting`, a generation not after
+  the registered landed attempt, another incident, or an unbound later arm
+  refuses by name before any read. The installed canonical reader must then
+  verify the generation as current, the exact receipt bytes, and that the
+  attempt's `landed_commits` and `head` are the registered landed attempt's;
+  a stale or unavailable chain refuses and records nothing. The route persists
+  the registration's action under the repository lock and calls the SAME
+  `recover` callback a failing leaf uses, with a `RegressionReopen` cause in
+  place of a leaf completion. Its action id is the registration's, so a leaf
+  failure and a reopen of one landed attempt share one action and one revert.
+  A repeated receipt answers its retained action from protected state without a
+  canonical read, including after a restart or during a tenant outage.
 - `POST /callback` verifies GitHub's raw-body HMAC with the existing verifier,
   requires the configured repository, then uses the existing observer endpoint.
   The first registered failing required leaf records immutable intent and calls

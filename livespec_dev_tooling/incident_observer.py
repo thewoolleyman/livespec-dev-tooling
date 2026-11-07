@@ -29,6 +29,7 @@ __all__: list[str] = [
     "admit_observer",
     "handle_job_callback",
     "reconcile_action_receipt",
+    "recovery_action_id",
     "route_ordinary_action",
 ]
 
@@ -120,7 +121,7 @@ def handle_job_callback(
                 status="ignored",
                 reason="job is outside the registered incident master leaf universe",
             )
-        action_id = _action_id(registration=registration)
+        action_id = recovery_action_id(registration=registration)
         actions = _actions(record=record)
         if action_id in actions:
             return ObserverResult(
@@ -253,7 +254,8 @@ def _matches_leaf(*, registration: ObserverRegistration, completion: LeafComplet
     )
 
 
-def _action_id(*, registration: ObserverRegistration) -> str:
+def recovery_action_id(*, registration: ObserverRegistration) -> str:
+    """The one immutable revert action of a registered landed attempt, whatever its cause."""
     identity = (
         f"{registration.repository}:{registration.operation_id}:{registration.generation}:recover"
     )

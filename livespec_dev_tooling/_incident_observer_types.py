@@ -12,6 +12,7 @@ __all__: list[str] = [
     "ObserverRegistration",
     "ObserverResult",
     "RecoveryIntent",
+    "RegressionReopen",
 ]
 
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-47ij37
@@ -102,13 +103,36 @@ class ObserverRegistration:
 
 
 @dataclass(frozen=True, kw_only=True)
+class RegressionReopen:
+    """The canonically verified `reverting` generation that reopened a landed attempt.
+
+    An authenticated `/recover` retains this instead of a leaf completion: a
+    related regression seen on another PR or on master reopened the same
+    incident, and the current reader confirmed the generation and its exact
+    receipt bytes (`receipt_digest`) before the observer persisted the action.
+    """
+
+    attempt_id: str
+    operation_id: str
+    generation: int
+    owner: str
+    receipt_digest: str
+
+
+@dataclass(frozen=True, kw_only=True)
 class RecoveryIntent:
-    """Immutable action identity persisted before recovery authority is called."""
+    """Immutable action identity persisted before recovery authority is called.
+
+    Exactly one cause is set: the failing registered master leaf
+    (``completion``) or a verified regression reopen (``regression``). Both
+    key the same registration action id, so one landed attempt has one revert.
+    """
 
     action_id: str
     registration: ObserverRegistration
-    completion: LeafCompletion
+    completion: LeafCompletion | None = None
     observer_arm: ObserverArm | None = None
+    regression: RegressionReopen | None = None
 
 
 @dataclass(frozen=True, kw_only=True)
