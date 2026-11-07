@@ -71,9 +71,11 @@ establishes that no effect occurred. The observer independently prevents a
 pending callback from being replayed. Receipt reconciliation retains the original
 canonical authority bytes and does not mint a replacement lifecycle generation.
 
-This source adapter does not provision or claim a live recovery principal,
-branch-protection authorization, independently hosted service, release adoption or
-controller installation. Those are normal rollout prerequisites. A process
+The live recovery principal that answers this protocol is
+`incident_recovery_principal_service.py` (`docs/incident-recovery-principal.md`).
+It acts only as the dedicated recovery App. This adapter does not provision
+that App's credential, the ruleset bypass, an independently hosted service,
+release adoption or the controller installation. Those are normal rollout prerequisites. A process
 fixture or real local Git CAS demonstrates mechanics, not deployed capability.
 Live source recovery must remain disabled until those prerequisites and the
 released-controller host proof are verified. The plan remains open for recovery

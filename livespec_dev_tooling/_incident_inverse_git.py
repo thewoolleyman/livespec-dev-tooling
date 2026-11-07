@@ -14,7 +14,7 @@ from pathlib import Path
 
 from livespec_dev_tooling._incident_inverse_types import InversePlan, LandedIncident
 
-__all__: list[str] = ["build_inverse", "scope_matches_git"]
+__all__: list[str] = ["IsolatedGit", "build_inverse", "scope_matches_git"]
 
 _GIT_TIMEOUT = 15
 
@@ -149,6 +149,10 @@ def _object_view(*, root: Path) -> Iterator[tuple[Path, str]]:
 
 def _patch(*, root: Path, scope: LandedIncident) -> bytes:
     # A source-local diff/color setting cannot change the authenticated patch.
+    return _patch_between(root=root, before=scope.before_sha, merge=scope.merge_sha)
+
+
+def _patch_between(*, root: Path, before: str, merge: str) -> bytes:
     with _object_view(root=root) as (administration, objects):
         return _git(
             root=root,
@@ -160,8 +164,8 @@ def _patch(*, root: Path, scope: LandedIncident) -> bytes:
                 "--full-index",
                 "--no-ext-diff",
                 "--no-textconv",
-                scope.before_sha,
-                scope.merge_sha,
+                before,
+                merge,
                 "--",
             ),
         )
@@ -196,3 +200,16 @@ def build_inverse(*, root: Path, scope: LandedIncident, expected_head: str) -> I
             ),
         )
     return InversePlan(scope=scope, expected_head=expected_head, tree_sha=tree, inverse_patch=patch)
+
+
+class IsolatedGit:
+    """The hardened plumbing above, for the recovery principal's own scope reads.
+
+    The recovery principal derives landed scope and inverse tree entries from
+    the same isolated object view that verifies and builds the inverse, so a
+    source checkout's configuration or attributes cannot change either answer.
+    """
+
+    run = staticmethod(_git)
+    view = staticmethod(_object_view)
+    patch = staticmethod(_patch_between)

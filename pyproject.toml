@@ -477,6 +477,12 @@ supervisor_entry_files = [
     # and the typed journal API remains separate from main's CLI exit status.
     # This is one supervisor artifact, not an I/O-tree or check exclusion.
     "livespec_dev_tooling/incident_recovery_journal_service.py",
+    # The live recovery principal process (livespec-dev-tooling-7536jf) owns
+    # the same schema-1 JSON stdout reply and startup refusal contract as the
+    # journal process above, for the same reasons: no broad Exception catch,
+    # the tolerated SystemExit main guard, and a typed principal API kept
+    # separate from main's CLI exit status.
+    "livespec_dev_tooling/incident_recovery_principal_service.py",
     "livespec_dev_tooling/canonical_checks.py",
     "livespec_dev_tooling/cross_repo/ci_yaml_canonical_reconcile.py",
     "livespec_dev_tooling/cross_repo/codex_acp_pin_rewrite.py",
