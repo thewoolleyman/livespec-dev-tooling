@@ -147,3 +147,54 @@ def test_redirect_oversize_and_malformed_replies_fail_closed(monkeypatch, raw, s
 def test_network_and_protocol_failure_is_refusal(monkeypatch, error):
     wire(monkeypatch, error=error)
     assert boundary().current(query=query()) is False
+
+
+def provenance_query():
+    return dict(
+        repository="owner/repo",
+        item_id="incident-1",
+        attempt_id="attempt-1",
+        phase="repair",
+        operation_id="operation-2",
+        generation=2,
+        owner="operator",
+        base="a" * 40,
+        head="b" * 40,
+        pr_number=7,
+        commit_sha="b" * 40,
+        tree_sha="c" * 40,
+    )
+
+
+def test_provenance_accepts_only_the_exact_echoed_reply(monkeypatch):
+    # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-zbzls2
+    sent = provenance_query()
+    raw = json.dumps({"schema": 1, "status": "provenance", "query": sent}).encode()
+    wire(monkeypatch, raw=raw)
+    assert boundary().provenance(query=sent) is True
+    wire(monkeypatch, raw=json.dumps({"schema": 1, "status": "current", "query": sent}).encode())
+    assert boundary().provenance(query=sent) is False
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"generation": 0},
+        {"generation": "2"},
+        {"pr_number": True},
+        {"head": "short"},
+        {"commit_sha": "B" * 40},
+        {"phase": 1},
+        {"repository": "not a repository"},
+    ],
+)
+def test_a_malformed_provenance_query_is_refused_before_any_connection(monkeypatch, changes):
+    calls = wire(monkeypatch, raw=b"{}")
+    assert boundary().provenance(query=provenance_query() | changes) is False
+    assert calls == []
+
+
+def test_a_provenance_query_with_an_extra_field_is_refused(monkeypatch):
+    calls = wire(monkeypatch, raw=b"{}")
+    assert boundary().provenance(query=provenance_query() | {"extra": "x"}) is False
+    assert calls == []

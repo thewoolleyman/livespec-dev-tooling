@@ -10,7 +10,7 @@ from livespec_dev_tooling.budgeted_gh import gh_read
 from livespec_dev_tooling.incident_ci_payload import strict_json
 from livespec_dev_tooling.incident_ci_policy import CiEvent
 
-__all__: list[str] = ["observe_event"]
+__all__: list[str] = ["incident_block", "observe_event"]
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-egy3ri
 _BEGIN = "<!-- livespec-incident-ci\n"
 _END = "\n-->"
@@ -62,21 +62,25 @@ def _pull_request(
     ), data
 
 
+def incident_block(*, body: str) -> str | None:
+    """The body's one bounded `livespec-incident-ci` payload, or None. A locator, not authority."""
+    if body.count(_BEGIN) != 1 or body.count(_END) != 1:
+        return None
+    payload = body.split(_BEGIN, maxsplit=1)[1].split(_END, maxsplit=1)[0]
+    return payload if len(payload.encode("utf-8", "surrogatepass")) <= _MAX_PAYLOAD else None
+
+
 def _incident_payload(*, event: CiEvent, data: dict[str, Any]) -> tuple[CiEvent, str] | None:
     if "expedited-incident-response" not in event.labels:
         return event, ""
     body = data.get("body")
+    payload = incident_block(body=body) if isinstance(body, str) else None
     if (
-        not isinstance(body, str)
-        or body.count(_BEGIN) != 1
-        or body.count(_END) != 1
+        payload is None
         or _map(value=_map(value=data.get("head")).get("repo")).get("full_name") != event.repository
     ):
         return None
-    payload = body.split(_BEGIN, maxsplit=1)[1].split(_END, maxsplit=1)[0]
-    return (
-        (event, payload) if len(payload.encode("utf-8", "surrogatepass")) <= _MAX_PAYLOAD else None
-    )
+    return event, payload
 
 
 def _observe(*, environ: Mapping[str, str]) -> tuple[CiEvent, str] | None:

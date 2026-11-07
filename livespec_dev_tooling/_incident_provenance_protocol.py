@@ -118,10 +118,14 @@ def _verified(
         or len(commits) != len(trees)
     ):
         return _invalid()
-    if (query.commit_sha, query.tree_sha) not in tuple(zip(commits, trees, strict=True)):
+    # The identity check above already proved `query.head` is the recorded head.
+    # An unmerged expedited PR has no landed pair yet, and its head is the record.
+    if query.commit_sha != query.head and (query.commit_sha, query.tree_sha) not in tuple(
+        zip(commits, trees, strict=True)
+    ):
         return _refuse(
             code="incident-provenance-identity-mismatch",
-            detail="commit and tree are not a recorded landed pair for this incident attempt",
+            detail="commit is neither the recorded head nor a recorded landed pair of this attempt",
         )
     return Success(
         HistoricalIncidentProof(
