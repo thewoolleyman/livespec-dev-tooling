@@ -2008,6 +2008,22 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: a version-only release change leaves an untouched failing test retried",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this scenario, driving a pytest session of the flake-retry plugin whose change set is a version-only pyproject.toml and uv.lock change and asserting that an untouched failing test re-runs and no FLAKE-RETRY-WITHHELD block prints. livespec-dev-tooling-lbinx7 owns it.",
+    "work_item": "livespec-dev-tooling-lbinx7"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a version-only release change still touches a test that names the changed file",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this scenario, driving a pytest session of the flake-retry plugin whose change set is a version-only pyproject.toml change and whose failing test names pyproject.toml through a string literal, asserting that the test fails at once with no re-run. livespec-dev-tooling-lbinx7 owns it.",
+    "work_item": "livespec-dev-tooling-lbinx7"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: every retried failure files one root-fix work item",
     "test": "TODO",
     "reason": "Spec-first: a real test at the integration tier or above is owed for this scenario, driving a pytest session that loads the flake-retry plugin against a fixture repository with a controlled change set; livespec-dev-tooling-crxcy4 owns it.",
