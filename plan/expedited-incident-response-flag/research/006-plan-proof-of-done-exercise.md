@@ -236,6 +236,12 @@ Conventions:
     alternative gives less margin before the run ends.
 - 3.3 Genesis (note 004 step 3), then the expedited commit and push with the incident context. Capture the hook
   output and the `record-local-gates` receipt (A2, A13 hook and wrapper).
+  Corrected 2026-11-07. Pre-commit requires HEAD to equal the attempt's head, which is the parent, while pre-push
+  requires it to equal the new commit. So between the two, `commit-transition` writes a successor with the SAME
+  `branch-reserved` carrier and `head` set to the commit: the helper's `head-advance` builds it (the validator accepts
+  it, checked offline). The commit message must carry a `Factory-Override` trailer, written exactly as
+  `Factory-Override: EXPEDITED_INCIDENT_RESPONSE flag: <ITEM>`, which the range gate also requires. The same step
+  follows every corrected commit in phases 4 and 6.
 - 3.4 Focused evidence through P0-4's entrance: tests for B1, touched-file coverage, manual reproduction (A3).
 - 3.5 Open the PR AS A DRAFT from a branch of this repository, then bind it to generation 2 (note 004 step 5).
   Corrected 2026-11-07: `auto-enable-merge.yml` fires on `opened`, and a later `do-not-merge` label may not clear
@@ -574,6 +580,14 @@ that attempt from re-arm (note 004 step 5 onward, next generation), which writes
    minting a second revert (`incident_recovery_principal.py`, "EXACTLY ONE REVERT PER ACTION"). Phase-3 runbook line:
 
    "On a publish timeout, re-send publish with the same recorded commit and wait; a timeout is UNKNOWN, not a failed revert. Do not escalate it."
+
+   Corrected 2026-11-07: that re-send does NOT clear the observer's own record. A timed-out recovery leaves the action
+   `pending`, and `/arm` and registration then refuse until it has an exact receipt, while `reconcile_action_receipt`
+   has no entrance (`incident_observer.py`, `incident_observer_admission.py`). So after a timeout: check master for
+   the principal's revert. If it did not land by leaf failure + 5 min, use the GO-4 manual rollback. Either way, run
+   `reconcile_action_receipt` by hand as `livespec-incident` before attempt 2. A token mint measured 0.4 to 0.7 s on
+   2026-11-07, against the 15 s limit per operation, so a timeout is unlikely. Filing an entrance for that function is
+   owed after attempt 3.
 
    Mitigation: attempt 1's planted defect stays small, so its inverse is a minimal revert well under the 15 s budget
    (coordinator ruling 2026-11-07 ~03:06Z).
