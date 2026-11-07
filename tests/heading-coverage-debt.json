@@ -730,6 +730,20 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: a version-only release change leaves an untouched failing test retried",
+    "work_item": "livespec-dev-tooling-lbinx7",
+    "first_seen": "2026-11-07"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a version-only release change still touches a test that names the changed file",
+    "work_item": "livespec-dev-tooling-lbinx7",
+    "first_seen": "2026-11-07"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: an OOM-killed or unschedulable factory pod is visible with its reason and fires its trigger",
     "work_item": "livespec-dev-tooling-dfdiil",
     "first_seen": "2026-10-24"

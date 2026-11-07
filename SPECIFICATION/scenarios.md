@@ -2647,11 +2647,39 @@ Then the plugin MUST treat the test as untouched and re-run it on its own, exact
 
 Given a repository that loads livespec-dev-tooling's flake-retry pytest plugin
 
-And a change set that contains `pyproject.toml`, `uv.lock`, `justfile`, a `conftest.py` or the plugin itself, or a change set that cannot be computed, or a failing test whose closure holds a module that cannot be parsed
+And a change set that contains `pyproject.toml` or `uv.lock` other than as a version-only release change, `justfile`, a `conftest.py` or the plugin itself, or a change set that cannot be computed, or a failing test whose closure holds a module that cannot be parsed
 
 When any test in the session fails
 
 Then the plugin MUST NOT re-run any test in that session
+
+And the terminal summary MUST print a `FLAKE-RETRY-WITHHELD` block naming the reason, and under GitHub Actions the plugin MUST emit a `::warning` annotation naming it
+
+## Scenario: a version-only release change leaves an untouched failing test retried
+
+Given a repository that loads livespec-dev-tooling's flake-retry pytest plugin
+
+And a change set in which `pyproject.toml` differs from its base only in the `[project]` `version` value and `uv.lock` differs from its base only in the `version` value of the repository's own package entry, as a release-please release commit makes
+
+And a failing test whose closure names neither file
+
+When that test fails on its first attempt
+
+Then the plugin MUST re-run it on its own, exactly as for any untouched failing test
+
+And the terminal summary MUST NOT print a `FLAKE-RETRY-WITHHELD` block
+
+## Scenario: a version-only release change still touches a test that names the changed file
+
+Given a repository that loads livespec-dev-tooling's flake-retry pytest plugin
+
+And a change set in which `pyproject.toml` differs from its base only in the `[project]` `version` value
+
+And a failing test whose closure names `pyproject.toml` through a string literal
+
+When that test fails
+
+Then the session MUST fail on that first failure, and the plugin MUST NOT re-run the test
 
 ## Scenario: every retried failure files one root-fix work item
 
