@@ -11,4 +11,12 @@ Environment=KUBECONFIG=/etc/rancher/k3s/k3s.yaml
 # The gates reserve cap for a gates flavor that sets .spec.topologyName
 # (agreed with dev-host-test-gate-load, owner of livespec-dev-tooling-cikd6m).
 Environment=FACTORY_PRESSURE_GATES_RESERVE_CAP_MILLICPU=5000
+# The PSI gap (cpu.some avg60 points above the lowest factory node) that taints a
+# node. 10, not the script's default 20 (2026-11-07, legacy-coordinator-agent):
+# at 20 the taint flapped on gmktec, the 32-core node that also hosts the three
+# Fabro servers, while gmktec sat at avg60 15-30 and poweredge (72 cores) at
+# 0.2-3.4; each time the taint lifted, the sandbox pods' count-based hostname
+# spread pulled new pods back to gmktec. The fit check still lifts the taint
+# when the lowest node cannot fit one more sandbox. Revert: delete this line.
+Environment=FACTORY_PRESSURE_GAP=10
 ExecStart=/usr/local/lib/ci-runner-k3s/reconcile-factory-pressure-taint.sh
