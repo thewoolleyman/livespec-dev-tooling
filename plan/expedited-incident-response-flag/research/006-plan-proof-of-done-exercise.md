@@ -184,10 +184,10 @@ grade them. The children's factory-captured tests carry them. This note does not
 Conventions:
 
 - `ITEM` is the new incident item. `DT` and `ORCH` are the releases from P0-10.
-  - Serving as of 2026-11-07 ~04:00Z: DT v1.186.0 (the observer was rolled to it at 03:41Z, evidence on
-    livespec-dev-tooling-7536jf) and ORCH v0.299.0. Two follow-up releases are pending: the ORCH release
-    livespec-orchestrator-beads-fabro#4584 (0.300.0, carries P0-7) and a DT release carrying
-    livespec-dev-tooling#3673 (canonical refusal-code pass-through). Re-read the serving versions at P.1.
+  - Serving as of 2026-11-07 ~04:15Z: ORCH v0.299.0, and DT v1.186.0 (the observer was rolled to it at 03:41Z,
+    evidence on livespec-dev-tooling-7536jf). DT v1.186.1, which adds livespec-dev-tooling#3673 (canonical
+    refusal-code pass-through), is being rolled onto the observer next. The ORCH release
+    livespec-orchestrator-beads-fabro#4584 (0.300.0, carries P0-7) is pending. Re-read the serving versions at P.1.
 - `IA` is `incident_authority.py` of the registered build; resolve it with `registered_plugin_root.py --repo $REPO`.
 - Every ledger call goes through `/usr/local/bin/with-livespec-env.sh --`.
 - Every `IA` action takes CANONICAL JSON: build each JSON argument with `jq -cS`. Two actions take more than JSON
@@ -331,6 +331,11 @@ Conventions:
   - Coordinator ruling: run `IA bind-repayment-acceptance --pr <n>` BY HAND first, then `IA complete-incident
     --master-run <id>` with the manual-outcome and debt flags. Keep this manual order until the post-freeze
     Dispatcher binding lands (bd-ib-pqz3nw, livespec-orchestrator-beads-fabro#4583).
+  - Name the REPAYMENT attempt in both calls, not attempt 3. `enter-repayment` creates a new attempt
+    `repayment-<24hex>` owned by `fabro`. Pass that attempt id with owner `fabro` to both actions:
+    `bind-repayment-acceptance` at its repayment-active generation (for example gen 6, which records gen 7), and
+    `complete-incident` at the repayment-acceptance generation (which records gen 8, closed). Measured by the
+    real-chain test in livespec-orchestrator-beads-fabro#4585 (bd-ib-pqz3nw).
 - 7.10 Normal-validation probe: in a clean worktree at attempt 3's head, `just check` re-runs every member. It reuses
   no expedited report (A13).
 
