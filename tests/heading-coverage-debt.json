@@ -821,6 +821,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: an orchestrator build adopted outside ensure-plugins is reported and never downgraded",
+    "work_item": "livespec-dev-tooling-7upzav",
+    "first_seen": "2026-11-07"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: an unclaimed revert is released as soon as its own CI is green",
     "work_item": "livespec-dev-tooling-zcp5vb",
     "first_seen": "2026-10-22"

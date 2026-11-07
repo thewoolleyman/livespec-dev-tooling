@@ -1946,7 +1946,15 @@
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a fleet clone's ensure-plugins keeps its orchestrator build while an orchestrator roll hold is unreleased",
     "test": "TODO",
-    "reason": "Spec-first: a real test at the integration tier or above is owed for this scenario. It runs a member's `ensure-plugins` against a fixture roll-hold record (fleet/orchestrator-roll-hold.json) and a fixture installed_plugins.json, and asserts: a held member keeps its build and prints the unmet conditions; the livespec-orchestrator-beads-fabro clone installs the held build; a released hold installs it; an unreadable record leaves the build unchanged; and `just ensure-plugins-fleet` prints HELD without exiting non-zero for the explained divergence. livespec-dev-tooling-7upzav owns it.",
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this scenario. It runs a member's `ensure-plugins` against a fixture fleet/plugin-build-record.json and a fixture installed_plugins.json, and asserts: the launch clone adopts only `launch_version` and keeps it when a newer build is offered on a compact or headless session; another member keeps `fleet_version` and prints the unmet release conditions; a value-only release installs the new build; fleet_version equal to launch_version with unreleased evidence reads as unreadable and changes nothing; an absent record is named as absent; a core entry with empty canaries and null matrix keeps the record readable; an absent install prints NOT RECORDED; and `just ensure-plugins-fleet` prints RECORDED without exiting non-zero for the orchestrator plugin. livespec-dev-tooling-7upzav owns it.",
+    "work_item": "livespec-dev-tooling-7upzav"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: an orchestrator build adopted outside ensure-plugins is reported and never downgraded",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this scenario. It runs a member's `ensure-plugins` against a fixture record and a fixture installed_plugins.json whose orchestrator build is above its recorded version, and asserts: the build is kept and not downgraded; one OUTSIDE RECORD line names the installed, recorded and lastUpdated values; `just ensure-plugins-fleet` exits non-zero for that member only once the recorded-version check is armed and prints it without exiting non-zero before; and a scan of the library's recipes, hooks, verbs and skills and of fleet members' committed .claude/settings.json finds no plugin update or install call outside ensure-plugins and no enabled automatic plugin update. livespec-dev-tooling-7upzav owns it.",
     "work_item": "livespec-dev-tooling-7upzav"
   },
   {
