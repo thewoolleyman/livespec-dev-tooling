@@ -10,7 +10,6 @@ both through, for the attempt-history read, the collector's authorize step and
 
 import json
 import subprocess
-from pathlib import Path
 from typing import Any
 from unittest.mock import Mock
 
@@ -27,10 +26,12 @@ from livespec_dev_tooling.incident_original_run_flows import (
     propose,
 )
 from livespec_dev_tooling.incident_run_evidence import evidence_digest
+from tests.livespec_dev_tooling import test_incident_original_run_entry as entry_tests
 from tests.livespec_dev_tooling import test_incident_original_run_flows as flows
 from tests.livespec_dev_tooling.test_incident_original_run_flows import REPOSITORY, World
 
 world = flows.world
+installation = entry_tests.installation
 # The patch below replaces the shared `subprocess.run`; the fixture's real Git keeps it.
 REAL_RUN = subprocess.run
 
@@ -59,21 +60,23 @@ class Authority:
     def spawn(self, argv: list[str], **kwargs: Any) -> subprocess.CompletedProcess[bytes]:
         if argv[0] == "git":
             return REAL_RUN(argv, **kwargs)
-        code, body = self.script[argv[4]].pop(0)
+        code, body = self.script[argv[2]].pop(0)
         stdout = body if isinstance(body, bytes) else json.dumps(body).encode()
         return subprocess.CompletedProcess(args=argv, returncode=code, stdout=stdout)
 
 
 @pytest.fixture
-def authority(world: World, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Authority:
+def authority(world: World, monkeypatch: pytest.MonkeyPatch) -> Authority:
     fake = Authority(world)
-    monkeypatch.setattr(entry.subprocess, "run", Mock(side_effect=fake.spawn))
-    monkeypatch.setattr(entry, "registered_plugin_root", Mock(return_value=tmp_path / "plugin"))
+    monkeypatch.setattr(subprocess, "run", Mock(side_effect=fake.spawn))
+    (world.state.parent / "reader.env").write_text("BEADS_DOLT_PASSWORD=tenant\n")
     return fake
 
 
 def ports(world: World) -> EntryPorts:
-    registered = entry.registered_ports(repo=world.repo).canonical.authority
+    settings = entry.ControllerInstallation.load(config=world.state.parent / "controller.json")
+    assert settings is not None
+    registered = entry.installed_ports(installation=settings).canonical.authority
     local = world.ports()
     return EntryPorts(
         canonical=CanonicalPorts(authority=registered, ledger=world.ledger),
@@ -127,8 +130,8 @@ def test_canonical_refusals_pass_through_by_code(
     ]
     missing = correct(world, digest)
     transport = correct(world, digest)
-    argv = ["propose-correction", "--state-dir", str(world.state), "--repository", REPOSITORY]
-    argv += ["--repo", str(world.repo), "--evidence-digest", digest, "--base-ref", "master"]
+    argv = ["propose-correction", *entry_tests.common(world)]
+    argv += ["--evidence-digest", digest, "--base-ref", "master"]
     argv += ["--next-head-sha", world.shas["repair"], "--target-ref", "refs/heads/r"]
     argv += ["--current-attempt", "recovery-1", "--current-owner", "p", "--current-generation", "4"]
     code = entry.main(argv=argv, ports=ports(world))

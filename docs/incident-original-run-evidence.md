@@ -51,3 +51,15 @@ released serving adoption and end-to-end incident proof remain on carrier
 livespec-dev-tooling-kobmka. At this source revision, the normal master workflow
 already has no cancellation-on-new-push policy and its matrices retain
 `fail-fast: false`; generated adopters still require their own verification.
+
+## Running the entrance
+
+`python -I -m livespec_dev_tooling.incident_original_run_entry` runs as the controller
+account from the installed venv and takes `--config`, the protected `controller.json`.
+It reads the state directory, repository, reference clone and canonical reader from
+that verified installation, the tenant credential from `reader.env` beside it, and
+reads the forge with the recovery App's read-only token. It needs no plugin registry,
+credential wrapper or `gh`. A configuration that does not load as a protected
+installation refuses as `incident-original-run-installation-unavailable`. It refreshes
+the reference clone first, so a revert or corrected head already on the forge resolves.
+The exact commands are in the module's docstring.
