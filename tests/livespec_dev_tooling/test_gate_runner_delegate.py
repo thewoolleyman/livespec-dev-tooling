@@ -465,6 +465,55 @@ def test_a_cluster_gate_uses_the_worktree_tree_and_records_its_job(
     assert captured["check_suite"] == GATE_CHECK_SUITE_FALL_THROUGH
 
 
+def test_a_cluster_gate_reports_a_host_authority_refusal_as_a_failed_verdict(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A green Job plus a red host member is a refusal, never a missing verdict."""
+    from returns.result import Success
+
+    from livespec_dev_tooling._gate_host_authority import HostAuthorityRun
+    from livespec_dev_tooling.gate_remote_client import GateRunRequest
+    from livespec_dev_tooling.gate_remote_verdict import GATE_PASSED, GateVerdict
+
+    module = importlib.import_module("livespec_dev_tooling.gate_runner_delegate")
+    root, _ = _init_repo(tmp_path=tmp_path)
+    request = GateRunRequest(
+        repo_root=root, mirror_url="mirror", manifest="manifest", gate_ref="ref"
+    )
+    monkeypatch.setattr(module, "_working_tree_source", lambda **_kwargs: ("tree", "commit"))
+    monkeypatch.setattr(module, "resolve_renderer", lambda **_kwargs: Path("renderer"))
+    monkeypatch.setattr(module, "gate_remote_request", lambda **_kwargs: Success(request))
+    monkeypatch.setattr(
+        module,
+        "run_gated_push",
+        lambda **_kwargs: GateVerdict(
+            state=GATE_PASSED,
+            detail="the Job passed",
+            token_written=True,
+            job_name="gate-widget-1",
+        ),
+    )
+    monkeypatch.setattr(
+        module,
+        "run_host_authority_members",
+        lambda **_kwargs: (
+            HostAuthorityRun(
+                member="check-widget-approval",
+                tree_hash="tree",
+                returncode=1,
+                detail="approval label is absent",
+            ),
+        ),
+    )
+
+    outcome = module.run_cluster_gate(repo_root=root, command=("just", "check"))
+
+    assert outcome.exit_status == 1
+    assert outcome.job_name == "gate-widget-1"
+    assert "check-widget-approval" in outcome.detail
+    assert "tree" in outcome.detail
+
+
 def test_a_cluster_just_check_uses_the_declared_bootstrap_before_the_aggregate(
     *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
