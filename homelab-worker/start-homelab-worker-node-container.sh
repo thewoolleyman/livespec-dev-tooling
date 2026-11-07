@@ -53,6 +53,16 @@
 #      with-livespec-env.sh), the key is delivered into telemetry/.env on
 #      stdin, never in an argument; without it the worker still converges and
 #      its collector stays off.
+#  12. The fleet cache-span emitter
+#      (ci-runner/k3s/phase2/cache-telemetry/ci-cache-span.sh) is delivered
+#      into the worker's ci/bin/ci-cache-span in the VM on stdin and verified
+#      there against the committed file's sha256 before it replaces the
+#      current copy. ci/bin is the pool binaries directory CI pods mount at
+#      /opt/ci-runner/bin, and the hook pod template calls the emitter from
+#      postStart and preStop: without it a job on the worker publishes no
+#      collector endpoint and emits no cache.job-summary or build spans (DoD
+#      assertion 18). On the pool nodes the cache_telemetry Ansible role
+#      installs the same file; a current copy is not delivered again.
 #
 # Every declared host runs this same code path; a host's .env carries data
 # only. The script stays bash 3.2-compatible because a worker host is not a
@@ -68,6 +78,7 @@ probe="$here/probe-vm-capabilities.sh"
 converge="$here/vm/converge-worker-container.sh"
 hook_bundles="${HOMELAB_WORKER_HOOK_BUNDLE_DIR:-$here/../ci-runner/k3s/phase2/container-hook/bundle}"
 apparmor_profile="${HOMELAB_WORKER_APPARMOR_PROFILE:-$here/../ci-runner/k3s/phase2/apparmor/ci-runner-workflow}"
+cache_span="${HOMELAB_WORKER_CACHE_SPAN:-$here/../ci-runner/k3s/phase2/cache-telemetry/ci-cache-span.sh}"
 collector_ref="${HOMELAB_WORKER_COLLECTOR_REF:-$here/telemetry/collector.ref}"
 collector_base_url="${HOMELAB_WORKER_COLLECTOR_BASE_URL:-https://raw.githubusercontent.com/thewoolleyman/otel-collector}"
 state_dir="${XDG_STATE_HOME:-$HOME/.local/state}/livespec-homelab-worker"
@@ -162,6 +173,7 @@ for bundle in "$hook_bundles"/*/; do
 done
 [ -n "$hook_versions" ] || die "no container hook bundle under $hook_bundles"
 [ -s "$apparmor_profile" ] || die "the workflow AppArmor profile $apparmor_profile is missing"
+[ -s "$cache_span" ] || die "the cache-span emitter $cache_span is missing"
 
 # ref_value <key>: one key=value line of the collector pin.
 ref_value() {
@@ -288,6 +300,18 @@ for version in $hook_versions; do
   limactl shell --workdir / "$worker" sudo mv "$dest.new" "$dest"
   say "container hook $version delivered to $dest in VM $worker"
 done
+
+span_want="$({ sha256sum "$cache_span" 2>/dev/null || shasum -a 256 "$cache_span"; } | cut -d ' ' -f 1)"
+span_dest="$worker_root/ci/bin/ci-cache-span"
+if [ "$(vm_sha256 "$span_dest")" = "$span_want" ]; then
+  say "cache-span emitter is current in VM $worker"
+else
+  limactl shell --workdir / "$worker" sudo install -D -m 0755 /dev/stdin "$span_dest.new" <"$cache_span"
+  [ "$(vm_sha256 "$span_dest.new")" = "$span_want" ] ||
+    die "the cache-span emitter delivered to VM $worker does not match $cache_span; the worker container was not converged"
+  limactl shell --workdir / "$worker" sudo mv "$span_dest.new" "$span_dest"
+  say "cache-span emitter delivered to $span_dest in VM $worker"
+fi
 
 profile_dest="/etc/apparmor.d/${apparmor_profile##*/}"
 limactl shell --workdir / "$worker" sudo install -D -m 0644 /dev/stdin "$profile_dest" <"$apparmor_profile"

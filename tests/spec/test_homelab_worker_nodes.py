@@ -44,6 +44,8 @@ _INGEST_KEY = "mocked-ingest-key-value"
 # A mocked container-hook bundle: the tests never deliver the committed one.
 _HOOK_VERSION = "9.9.9"
 _HOOK_BYTES = b"// mocked fleet container hook\n"
+# A mocked cache-span emitter: the tests never deliver the committed one.
+_SPAN_BYTES = b"#!/bin/sh\n# mocked cache-span emitter\n"
 _A = "alpha"
 _B = "beta"
 _NO_LAN = "delta"
@@ -195,6 +197,7 @@ def host(tmp_path: Path) -> _Host:
         f"{hashlib.sha256(_HOOK_BYTES).hexdigest()}  index.js\n", encoding="utf-8"
     )
     (state / "workflow-profile").write_text("# mocked workflow profile\n", encoding="utf-8")
+    (state / "cache-span").write_bytes(_SPAN_BYTES)
     repo = state / "collector-repo" / _COLLECTOR_COMMIT
     repo.mkdir(parents=True)
     (repo / _COLLECTOR_FILE).write_bytes(_COLLECTOR_BYTES)
@@ -245,6 +248,7 @@ def _run(
         "HOMELAB_WORKER_SOCKET_VMNET": str(host.bin_dir / "socket_vmnet"),
         "HOMELAB_WORKER_HOOK_BUNDLE_DIR": str(host.state / "hook-bundle"),
         "HOMELAB_WORKER_APPARMOR_PROFILE": str(host.state / "workflow-profile"),
+        "HOMELAB_WORKER_CACHE_SPAN": str(host.state / "cache-span"),
         "HOMELAB_WORKER_COLLECTOR_REF": str(host.state / "collector.ref"),
         "HOMELAB_WORKER_COLLECTOR_BASE_URL": f"file://{host.state / 'collector-repo'}",
         **(extra_env or {}),
@@ -671,6 +675,42 @@ def test_a_hook_bundle_without_its_checksum_is_refused_before_any_host_change(
     result = _run(host=host, args=[_A])
     assert result.returncode != 0
     assert "index.js.sha256" in result.stderr
+    assert [c for c in _calls(host=host) if c.startswith(("limactl create", "limactl start"))] == []
+
+
+_SPAN_DEST = "/mnt/lima-hwdata/worker/ci/bin/ci-cache-span"
+
+
+def test_the_cache_span_emitter_reaches_the_pool_bin_verified_before_the_container_step(
+    host: _Host,
+) -> None:
+    _install_lima(host=host, version="2.2.1")
+    result = _run(host=host, args=[_A])
+    assert result.returncode == 0, result.stderr
+    assert (host.state / f"vm{_SPAN_DEST}").read_bytes() == _SPAN_BYTES
+    shells = _shells(host=host)
+    assert any(f" install -D -m 0755 /dev/stdin {_SPAN_DEST}.new" in c for c in shells)
+    moved = next(
+        i for i, c in enumerate(shells) if c.endswith(f" mv {_SPAN_DEST}.new {_SPAN_DEST}")
+    )
+    assert moved < _converge_index(shells)
+
+
+def test_a_current_cache_span_emitter_is_not_delivered_again(host: _Host) -> None:
+    _install_lima(host=host, version="2.2.1")
+    (host.state / f"vm{_SPAN_DEST}").parent.mkdir(parents=True)
+    (host.state / f"vm{_SPAN_DEST}").write_bytes(_SPAN_BYTES)
+    result = _run(host=host, args=[_A])
+    assert result.returncode == 0, result.stderr
+    assert [c for c in _shells(host=host) if f"{_SPAN_DEST}.new" in c] == []
+
+
+def test_a_missing_cache_span_emitter_is_refused_before_any_host_change(host: _Host) -> None:
+    _install_lima(host=host, version="2.2.1")
+    (host.state / "cache-span").unlink()
+    result = _run(host=host, args=[_A])
+    assert result.returncode != 0
+    assert "cache-span emitter" in result.stderr
     assert [c for c in _calls(host=host) if c.startswith(("limactl create", "limactl start"))] == []
 
 
