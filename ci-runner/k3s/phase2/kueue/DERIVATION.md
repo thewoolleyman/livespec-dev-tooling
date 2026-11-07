@@ -1018,6 +1018,29 @@ factory sandboxes need. Three slots move back to poweredge.
 | `hp-xubuntu` | 5 | 5 |
 | **cohort total C** | **44** | **44** |
 
+
+### Back to the cores-derived split: gmktec 12, poweredge 27 (2026-11-07 ~21:00Z)
+
+Ordered by `legacy-coordinator-agent` as immediate relief, ahead of the joint
+derivation (`livespec-dev-tooling-6e5pyj`). Measured 20:55-20:58Z, with factory runs
+and CI both live: `gmktec-xubuntu` 0.13 idle, CI slice `cpu.pressure` avg60 46.31,
+node CPU PSI60 53.78, 23 runner and workflow pods beside 5 factory sandboxes;
+`poweredge-xubuntu` 25.13 idle, node PSI60 3.90, 16 such pods beside 9 sandboxes;
+`hp-xubuntu` 66.56 idle, PSI60 0.43. gmktec's 18 was a hand value against a
+cores-derived 12. The ratio this restores is the rule above, about 2.73 CPUs per slot.
+
+| node | third interim | this step |
+|---|---:|---:|
+| `poweredge-xubuntu` | 21 | **27** |
+| `gmktec-xubuntu` | 18 | **12** |
+| `hp-xubuntu` | 5 | 5 |
+| **cohort total C** | **44** | **44** |
+
+This is a placement move at `LIVESPEC_TEST_PARALLELISM` 3, not the joint derivation:
+it does not yet establish that slots times workers plus sandbox and gate requests fit
+each node's budget. At 6 workers per job, 27 slots on poweredge already read PSI60
+55.1 on 2026-11-04. REVERT: restore 18 and 21 and re-apply the role.
+
 ## The master-push slice for livespec-dev-tooling (2026-11-03)
 
 Work-item `livespec-dev-tooling-lzkzwb`, plan `ci-runtime-and-cost` (epic
