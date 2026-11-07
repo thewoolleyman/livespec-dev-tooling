@@ -107,6 +107,10 @@ The files:
   the receiver that scrubs those spans is the DISPATCHING PROJECT's installed
   orchestrator plugin build, installs are per project, and a running
   dispatcher loop keeps its build until restarted (paid for 2026-09-07).
+  Read it also before running `ensure-plugins` or a project-scope plugin
+  update in a shared project: it moves that project's FACTORY dispatch build
+  too, so ask legacy-coordinator-agent first whether a canary or roll is
+  pending (a session took a roll step out of turn, 2026-11-07).
 - Read `.ai/honeycomb-query-credential.md` before running a Honeycomb query
   from a script or timer, or before concluding that no credential can run
   queries — `HONEYCOMB_CONFIG_KEY_LIVESPEC` reports `queries: false`, but
