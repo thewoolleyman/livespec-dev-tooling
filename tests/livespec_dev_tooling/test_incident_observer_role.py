@@ -124,7 +124,7 @@ def test_rendered_manifest_loads_as_the_protected_installation(host) -> None:
     assert loaded.principal == (
         sys.executable,
         "-I",
-        str(_PACKAGE_ROOT / "incident_recovery_journal_service.py"),
+        str(_PACKAGE_ROOT / "incident_recovery_principal_service.py"),
         str(config_path),
     )
     assert loaded.release == "v1.2.3"

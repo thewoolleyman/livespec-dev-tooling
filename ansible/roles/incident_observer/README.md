@@ -120,10 +120,16 @@ and every restart lives in a handler. A `--check` on a host the role has never
 reached writes nothing and says which steps an apply would perform.
 
 The principal the manifest names is the packaged
-`incident_recovery_journal_service.py`, the only schema-1 principal process this
-release ships. It reserves and journals effects; it grants no forge capability.
-A live recovery principal with branch-protection authority is a separate
-provisioning the plan still owes, as `docs/incident-inverse.md` records.
+`incident_recovery_principal_service.py`, the live recovery principal
+(`docs/incident-recovery-principal.md`, work item `livespec-dev-tooling-7536jf`).
+It acts on the forge only as the dedicated recovery GitHub App, and it reads that
+App's credential from `/etc/livespec-incident/recovery-app.json` (mode 0600, owned
+by the controller account). The role writes that file at apply, under `no_log`,
+when the control node's wrapper projects both `LIVESPEC_RECOVERY_APP_ID` and
+`LIVESPEC_RECOVERY_APP_PRIVATE_KEY`. When either is missing, the role writes
+nothing and says so in the run output. The principal then refuses every forge
+operation as `recovery-app-credential-absent`, while `lookup` and `conflict`
+still answer. The observer process and the canonical reader never hold the key.
 
 ## What a first apply does that later applies do not
 
@@ -171,6 +177,19 @@ knows what to redo.
    Reason: the trusted workflow supplies both to the incident CI job
    (`docs/incident-ci-entry.md`), and repository variables and secrets are
    maintainer-held GitHub settings this repository's tooling never writes.
+
+4. **Not done — provision the recovery GitHub App (plan note 006, GO-1).**
+   Create a GitHub App used only for incident recovery, never the
+   factory/publishing bot. Give it `contents: write` on
+   `thewoolleyman/livespec-dev-tooling` and install it there. Put its numeric id
+   and private key in the livespec 1Password environment as
+   `LIVESPEC_RECOVERY_APP_ID` and `LIVESPEC_RECOVERY_APP_PRIVATE_KEY`. Add a
+   master ruleset whose bypass list names only that App, then run the apply
+   again. Reason it is maintainer-held: it grants a principal unchecked writes
+   to master, and App, secret and ruleset settings are GitHub and 1Password
+   state that this repository never writes. Rollback: delete the ruleset or its
+   bypass entry, or suspend the installation. Classic protection is untouched
+   throughout.
 
 No separate step remains for the canonical reader's credential: the role
 projects it at apply (`reader.env` above). Until step 1's apply has run, the

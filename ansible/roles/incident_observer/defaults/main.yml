@@ -101,6 +101,17 @@ incident_observer_secret_min_bytes: 32
 # tenant's server-stable id, the one every fleet clone's pointer carries and
 # the one `bd init --server` regenerates (AGENTS.md §"Beads runtime
 # prerequisites"); it names no secret.
+# The recovery principal's GitHub App credential: a DEDICATED recovery App,
+# distinct from the factory/publishing bot (GITHUB_APP_ID / GITHUB_PRIVATE_KEY),
+# whose installation is the only bypass actor on master's ruleset (GO-1 in the
+# plan's note 006). The principal reads it from this file beside controller.json
+# (incident_recovery_principal_service.py); the observer process and its reader
+# never hold it. Written at apply, under no_log, only when the credential
+# wrapper projects BOTH variables on the control node; until then the principal
+# refuses every forge operation as `recovery-app-credential-absent`.
+incident_observer_recovery_app_path: /etc/livespec-incident/recovery-app.json
+incident_observer_recovery_app_id_env: LIVESPEC_RECOVERY_APP_ID
+incident_observer_recovery_app_key_env: LIVESPEC_RECOVERY_APP_PRIVATE_KEY
 incident_observer_reader_env_path: /etc/livespec-incident/reader.env
 incident_observer_reader_env_var: BEADS_DOLT_PASSWORD
 incident_observer_tenant_project_id: c8dcb5d9-1d1c-47d9-a1e5-f856e60b9544

@@ -31,10 +31,12 @@ The argv it renders:
              directory on sys.path (`from _bootstrap import bootstrap`), so it
              is deliberately NOT given -I; the unit clears PYTHONPATH and every
              other injection variable instead.
-  principal  [<interpreter>, -I, <installed incident_recovery_journal_service.py>,
-             <controller.json>] -- the packaged schema-1 recovery journal, the
-             only principal process this release ships. It grants no forge
-             capability; a live recovery principal is a separate provisioning.
+  principal  [<interpreter>, -I, <installed incident_recovery_principal_service.py>,
+             <controller.json>] -- the live recovery principal
+             (docs/incident-recovery-principal.md). It acts on the forge only
+             as the dedicated recovery App, whose credential it reads from the
+             protected `recovery-app.json` beside controller.json; without that
+             file every forge operation refuses by name.
 """
 
 from __future__ import annotations
@@ -50,7 +52,7 @@ from pathlib import Path
 
 __all__: list[str] = ["ManifestInputs", "package_digest", "render_manifest"]
 
-_PRINCIPAL_MODULE = "incident_recovery_journal_service.py"
+_PRINCIPAL_MODULE = "incident_recovery_principal_service.py"
 _ARGV_SEPARATORS = frozenset({"-I", "--"})
 
 
