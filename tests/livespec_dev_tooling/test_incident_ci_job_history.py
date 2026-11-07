@@ -2,11 +2,8 @@
 
 from __future__ import annotations
 
-import subprocess
-
 import pytest
 
-from livespec_dev_tooling import incident_ci_job_identity as forge
 from livespec_dev_tooling.incident_ci_job_history import classify_snapshot, observe_retained_job
 from tests.livespec_dev_tooling import test_incident_ci_attachment_edges as edge_tests
 
@@ -45,7 +42,7 @@ def conclude(records, *, job=("completed", "success"), check=("completed", "succ
 )
 def test_snapshot_requires_coherent_completed_success(attached, job, check, expected):
     conclude(attached.records, job=job, check=check)
-    status, facts = observe_retained_job(binding=attached.receipt["binding"])
+    status, facts = observe_retained_job(binding=attached.receipt["binding"], read=attached.read)
     assert status == expected == facts["snapshot_status"]
     if expected != "unavailable" or job[1] != "Success!":
         assert (facts["job_status"], facts["check_conclusion"]) == (job[0], check[1])
@@ -67,7 +64,10 @@ def test_history_ignores_closed_pr_later_attempt_and_expired_token(attached, mon
     attached.application.installation.ci_identity_policy = None
     monkeypatch.setattr(time, "time", lambda: 1800000000)
     before = len(attached.calls)
-    assert observe_retained_job(binding=attached.receipt["binding"])[0] == "successful"
+    assert (
+        observe_retained_job(binding=attached.receipt["binding"], read=attached.read)[0]
+        == "successful"
+    )
     read = attached.calls[before:]
     assert "repos/owner/repo/pulls/55" not in read
     assert "repos/owner/repo/actions/runs/812" not in read
@@ -91,7 +91,7 @@ def test_history_ignores_closed_pr_later_attempt_and_expired_token(attached, mon
 def test_contradicting_forge_identity_is_conflict(attached, path, field, value):
     conclude(attached.records)
     attached.records[path][field] = value
-    status, facts = observe_retained_job(binding=attached.receipt["binding"])
+    status, facts = observe_retained_job(binding=attached.receipt["binding"], read=attached.read)
     assert status == "conflict" and facts["job_conclusion"] is None
 
 
@@ -115,7 +115,7 @@ def test_exact_job_and_canonical_check_url_required(attached, change):
         job["head_sha"] = "d" * 40
     else:
         job["run_id"] = True
-    status, _ = observe_retained_job(binding=attached.receipt["binding"])
+    status, _ = observe_retained_job(binding=attached.receipt["binding"], read=attached.read)
     assert status in {"conflict", "unavailable"} and status != "successful"
 
 
@@ -127,18 +127,22 @@ def test_complete_pagination_finds_retained_job_on_later_page(attached):
         "jobs": [{"id": 3000 + i, "check_run_url": "other"} for i in range(100)],
     }
     attached.records[_JOBS[: -len("1")] + "2"] = {"total_count": 101, "jobs": [actual]}
-    assert observe_retained_job(binding=attached.receipt["binding"])[0] == "successful"
+    assert (
+        observe_retained_job(binding=attached.receipt["binding"], read=attached.read)[0]
+        == "successful"
+    )
 
 
 @pytest.mark.parametrize("missing", [_ATTEMPT, CHECK, _JOBS])
-def test_unavailable_forge_is_unavailable_not_success(attached, monkeypatch, missing):
+def test_unavailable_forge_is_unavailable_not_success(attached, missing):
     conclude(attached.records)
     del attached.records[missing]
-    assert observe_retained_job(binding=attached.receipt["binding"])[0] == "unavailable"
+    assert (
+        observe_retained_job(binding=attached.receipt["binding"], read=attached.read)[0]
+        == "unavailable"
+    )
 
-    def down(*, args, **_kwargs):
-        return subprocess.CompletedProcess(args, 1, "", "private")
-
-    monkeypatch.setattr(forge, "gh_read", down)
-    status, facts = observe_retained_job(binding=attached.receipt["binding"])
-    assert status == "unavailable" and "private" not in facts["reason"]
+    status, facts = observe_retained_job(
+        binding=attached.receipt["binding"], read=lambda _path: None
+    )
+    assert status == "unavailable" and facts["reason"] == "retained forge observation unavailable"

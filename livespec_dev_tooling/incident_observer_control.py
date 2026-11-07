@@ -14,6 +14,7 @@ from livespec_dev_tooling._incident_observer_store import (
 )
 from livespec_dev_tooling._incident_observer_types import ObserverRegistration
 from livespec_dev_tooling.incident_controller_installation import ControllerInstallation
+from livespec_dev_tooling.incident_forge_reads import ForgeReads
 from livespec_dev_tooling.incident_observer_admission import (
     arm_before_merge,
     bind_after_merge,
@@ -73,7 +74,9 @@ class ObserverControl:
                     directory=settings.state,
                     arm=arm,
                     registration=registration,
-                    verify_merged_run=MergedRunVerifier(),
+                    verify_merged_run=MergedRunVerifier(
+                        read=ForgeReads.installed(installation=settings)
+                    ),
                 )
             )
         return {"status": "refused", "reason": "unknown or malformed control operation"}

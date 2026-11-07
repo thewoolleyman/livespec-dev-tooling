@@ -14,6 +14,7 @@ from livespec_dev_tooling.incident_ci_identity_policy import (
 )
 from livespec_dev_tooling.incident_ci_job_identity import CiJobIdentity, CiJobVerifier
 from livespec_dev_tooling.incident_ci_oidc import OidcIdentity, oidc_current, verify_oidc
+from livespec_dev_tooling.incident_forge_reads import ForgeReads
 from livespec_dev_tooling.incident_observer_admission import (
     observer_arm_admitted,
     retained_observer_arm,
@@ -72,7 +73,9 @@ def verify_ci_invocation(
     arm = retained_observer_arm(directory=installation.state, query=query)
     if arm is None:
         return None
-    job = CiJobVerifier(identity=identity, query=query).verify()
+    job = CiJobVerifier(
+        identity=identity, query=query, read=ForgeReads.installed(installation=installation)
+    ).verify()
     if (
         job is None
         or not oidc_current(identity=identity, now=time.time())

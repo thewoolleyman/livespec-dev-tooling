@@ -10,15 +10,16 @@ THE CREDENTIAL IS A PROJECTED FILE, NEVER A REPOSITORY VALUE OR AN AMBIENT
 VARIABLE. The incident_observer role writes `recovery-app.json` beside the
 protected controller configuration at apply, under `no_log`, from the
 `LIVESPEC_RECOVERY_APP_ID` and `LIVESPEC_RECOVERY_APP_PRIVATE_KEY` values the
-credential wrapper projects on the control node. The observer process and its
-canonical reader never hold the key: only the principal process reads the file.
-A missing, unprotected or malformed file is a NAMED refusal and the principal
-fails closed; nothing falls back to another identity.
+credential wrapper projects on the control node. The canonical reader never holds
+the key. Only the principal process mints a `contents: write` token; the observer
+and the operator entrance mint `contents: read` for their forge reads
+(`incident_forge_reads`). A missing, unprotected or malformed file is a NAMED
+refusal and every caller fails closed; nothing falls back to another identity.
 
 Every request travels through the budgeted client with the fixed API origin the
 sanctioned boundary owns (`budgeted_gh.github_api_url`). The installation token
-is minted per process, scoped to the one observed repository with
-`contents: write`, and never written to a reply, a record or a log.
+is minted per operation or process, scoped to the one observed repository, and
+never written to a reply, a record or a log.
 """
 
 from __future__ import annotations
@@ -36,7 +37,7 @@ import urllib.request
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import cast
+from typing import Literal, cast
 
 _VENDOR_DIR = Path(__file__).resolve().parent / "_vendor"
 if str(_VENDOR_DIR) not in sys.path:
@@ -66,10 +67,18 @@ _JWT_LIFETIME_SECONDS = 540
 _MAX_CREDENTIAL_BYTES = 16384
 _HTTP_OK = 200
 _HTTP_CREATED = 201
-# GitHub reports every App installation token's grant with `metadata: read` beside
-# what was requested, because no App can drop that permission (measured on the live
-# recovery App, 2026-11-07). Those two grants pass; any other read or write fails.
-_SCOPED_GRANTS = ({"contents": "write"}, {"contents": "write", "metadata": "read"})
+_HTTP_NOT_MODIFIED = 304
+ForgeAccess = Literal["read", "write"]
+
+
+def _scoped_grants(*, access: ForgeAccess) -> tuple[dict[str, str], dict[str, str]]:
+    """The grants a minted token may report; any other read or write fails.
+
+    GitHub reports every App installation token's grant with `metadata: read` beside
+    what was requested, because no App can drop that permission (measured on the live
+    recovery App for both accesses, 2026-11-07).
+    """
+    return {"contents": access}, {"contents": access, "metadata": "read"}
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -159,14 +168,17 @@ def openssl_sign(*, message: bytes, private_key: str) -> bytes:
         descriptor = os.open(key, os.O_CREAT | os.O_WRONLY | os.O_EXCL, 0o600)
         with os.fdopen(descriptor, "w", encoding="ascii") as stream:
             _ = stream.write(private_key)
-        done = subprocess.run(  # noqa: S603 — fixed system crypto argv; no shell or caller input.
-            [_OPENSSL, "dgst", "-sha256", "-sign", str(key), "-binary"],
-            input=message,
-            capture_output=True,
-            check=False,
-            env={"PATH": "/usr/bin:/bin", "HOME": name, "OPENSSL_CONF": "/dev/null"},
-            timeout=_TIMEOUT_SECONDS,
-        )
+        try:
+            done = subprocess.run(  # noqa: S603 — fixed system crypto argv; no shell or caller input.
+                [_OPENSSL, "dgst", "-sha256", "-sign", str(key), "-binary"],
+                input=message,
+                capture_output=True,
+                check=False,
+                env={"PATH": "/usr/bin:/bin", "HOME": name, "OPENSSL_CONF": "/dev/null"},
+                timeout=_TIMEOUT_SECONDS,
+            )
+        except subprocess.TimeoutExpired:
+            return b""
     return done.stdout if done.returncode == 0 else b""
 
 
@@ -222,8 +234,9 @@ class RecoveryForge:
         transport: Callable[..., GithubBudgetResponse] = urllib_transport,
         clock: Callable[[], float] = time.time,
         signer: Callable[..., bytes] = openssl_sign,
+        access: ForgeAccess = "write",
     ) -> RecoveryForge | AppRefusal:
-        """Mint the installation token scoped to `repository` with contents write only."""
+        """Mint the installation token scoped to `repository` with exactly `access` on contents."""
         client = GithubBudgetedClient(transport=transport, max_attempts=1)
         now = int(clock())
         claims = {
@@ -260,7 +273,7 @@ class RecoveryForge:
             headers=jwt,
             value={
                 "repositories": [repository.split("/", 1)[1]],
-                "permissions": {"contents": "write"},
+                "permissions": {"contents": access},
             },
         )
         grant = cast("dict[str, object]", minted) if isinstance(minted, dict) else {}
@@ -269,11 +282,11 @@ class RecoveryForge:
             status != _HTTP_CREATED
             or not isinstance(token, str)
             or not token
-            or granted not in _SCOPED_GRANTS
+            or granted not in _scoped_grants(access=access)
         ):
             return AppRefusal(
                 code="recovery-app-token-refused",
-                detail=f"no contents-write installation token was minted for {repository}",
+                detail=f"no contents-{access} installation token was minted for {repository}",
             )
         return cls(repository=repository, token=token, client=client)
 
@@ -300,4 +313,7 @@ def _call(
     if isinstance(outcome, IOFailure):
         return 0, None
     response = outcome.unwrap()
-    return response.status_code, response.value
+    # A revalidated read answers 304 with the retained body: to a caller that is the
+    # resource as it stands, so it reads as an ordinary 200 (measured live, 2026-11-07).
+    status = _HTTP_OK if response.status_code == _HTTP_NOT_MODIFIED else response.status_code
+    return status, response.value

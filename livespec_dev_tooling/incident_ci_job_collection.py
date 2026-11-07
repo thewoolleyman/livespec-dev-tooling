@@ -20,6 +20,7 @@ from livespec_dev_tooling._incident_observer_store import (
     save_record,
 )
 from livespec_dev_tooling.incident_ci_job_history import observe_retained_job
+from livespec_dev_tooling.incident_forge_reads import ForgeReads
 
 if TYPE_CHECKING:
     from livespec_dev_tooling.incident_controller_installation import ControllerInstallation
@@ -69,7 +70,9 @@ class CiJobCollection:
         if previous is not None or entry is None:
             return previous or _refused(reason="retained CI job attachment unavailable")
         # Forge I/O runs outside the effect lock so recovery and other writers progress.
-        status, facts = observe_retained_job(binding=entry["binding"])
+        status, facts = observe_retained_job(
+            binding=entry["binding"], read=ForgeReads.installed(installation=settings)
+        )
         with repository_lock(directory=settings.state, repository=settings.repository) as path:
             record = load_record(path=path)
             tree = attachment_tree(record=record)

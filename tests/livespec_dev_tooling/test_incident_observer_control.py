@@ -36,6 +36,7 @@ def controller(tmp_path, monkeypatch):
         control_secret=b"control" * 8,
         query_secret=b"query" * 8,
         port=8765,
+        config=tmp_path / "controller.json",
     )
     attempt = {
         "repository": "owner/repo",

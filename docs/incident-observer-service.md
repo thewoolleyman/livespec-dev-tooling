@@ -101,8 +101,13 @@ The existing repository lock continues to serialize actual durable effects.
   entrance instead of treating a prior reply as a durable mutation grant.
 - `POST /bind` accepts only repository, landed `head_sha` and positive `run_id`.
   It copies identity and authority from the retained arm and authenticates the
-  exact merged PR and normal master run through `MergedRunVerifier`. It needs
-  independently provisioned read-only forge access, not the tenant wrapper.
+  exact merged PR and normal master run through `MergedRunVerifier`. Its forge
+  reads, and those of `/ci/identity`, `/ci/attach` and `/ci/jobs/collect`, go
+  through `incident_forge_reads`: a `contents: read` installation token of the
+  recovery App, minted for one operation from the protected `recovery-app.json`
+  beside `controller.json`. The account holds no `gh` credential, and this needs
+  neither `gh` nor the tenant wrapper. A missing, unprotected or malformed
+  credential makes those reads unavailable, so the route refuses.
 - `POST /invalidate-ci` requires the control credential and the exact retained
   arm's `repository`, `arm_id`, `incident_item_id`, `attempt_id`, `generation`,
   `owner`, `phase`, `pr_number`, `base_sha`, `head_sha`, `receipt_digest` and
