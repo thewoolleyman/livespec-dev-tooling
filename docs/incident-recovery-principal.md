@@ -17,10 +17,11 @@ does so only as a **dedicated recovery GitHub App**. Work item
 The recovery App is separate from the fleet factory and publishing bot
 (`GITHUB_APP_ID` / `GITHUB_PRIVATE_KEY`). Master's ruleset names only this App
 as a bypass actor. That bypass is the whole capability: it lets the exact
-inverse reach `master` without waiting for required checks. Classic protection,
-which requires `ci-green` and enforces admins, stays unchanged for every other
-actor. The principal never switches protection off and never fakes a green
-check.
+inverse reach `master` without waiting for required checks. A bypass exempts an
+actor only from the ruleset that grants it, so `ci-green` is required by that
+ruleset and no longer by classic protection, which still enforces admins. Every
+other actor is judged as before. The principal never switches protection off and
+never fakes a green check.
 
 The principal reads the credential from `recovery-app.json`, which sits next to
 the protected `controller.json`. The file holds `{"app_id": "<digits>",
