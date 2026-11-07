@@ -1316,6 +1316,14 @@ lint-autofix-staged:
 # Mutating targets (opt-in; not run in CI).
 # ---------------------------------------------------------------
 
+# Rule-26 is deliberately on demand: it executes every collected pytest node
+# against every mutmut mutant, so it must never become a member of `just check`.
+# The target package owns the portable report at
+# <target>/reports/mutation-kill-matrix.json.
+[positional-arguments]
+mutation-kill-matrix target:
+    uv run python -m livespec_dev_tooling.mutation_kill_matrix_runner "$target"
+
 fmt:
     uv run ruff format .
 
