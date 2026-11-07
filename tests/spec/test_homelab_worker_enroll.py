@@ -39,6 +39,9 @@ def _run(
     stub = bin_dir / "kubectl"
     stub.write_text(_STUB, encoding="utf-8")
     stub.chmod(stub.stat().st_mode | stat.S_IXUSR)
+    queues = bin_dir / "worker-queues"
+    queues.write_text('#!/bin/bash\nprintf "worker-queues\\n" >> "$STUB_LOG"\n', encoding="utf-8")
+    queues.chmod(queues.stat().st_mode | stat.S_IXUSR)
     (tmp_path / "list.conf").write_text(conf, encoding="utf-8")
     log = tmp_path / "calls.log"
     log.write_text("", encoding="utf-8")
@@ -50,6 +53,7 @@ def _run(
             "PATH": f"{bin_dir}:/usr/bin:/bin",
             "STUB_LOG": str(log),
             "WORKLOAD_ARCH_CONF": str(tmp_path / "list.conf"),
+            "WORKER_QUEUES_CONVERGE": str(bin_dir / "worker-queues"),
             "NODE_ARCH": arch,
             "NODE_CPU": cpu,
             "NODE_CLASS": node_class,
@@ -116,3 +120,18 @@ def test_a_non_cpu_allocatable_value_is_refused_untouched(tmp_path: Path) -> Non
     result, calls = _run(tmp_path=tmp_path, conf=_ARM64_TOO, cpu="lots")
     assert result.returncode != 0
     assert not [c for c in calls if " label " in c or " patch " in c]
+
+
+def test_enrolling_reconciles_the_worker_queues_after_the_ci_capacity_is_written(
+    tmp_path: Path,
+) -> None:
+    result, calls = _run(tmp_path=tmp_path, conf=_ARM64_TOO)
+    assert result.returncode == 0, result.stderr
+    patched = next(i for i, c in enumerate(calls) if "churn-slot" in c)
+    assert calls.index("worker-queues") > patched
+
+
+def test_un_enrolling_also_reconciles_the_worker_queues(tmp_path: Path) -> None:
+    result, calls = _run(tmp_path=tmp_path, conf=_AMD64_ONLY)
+    assert result.returncode == 0, result.stderr
+    assert "worker-queues" in calls

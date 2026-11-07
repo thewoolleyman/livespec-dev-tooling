@@ -85,10 +85,18 @@ _PREEMPTION_POLICY = re.compile(
 
 
 def _cohort_documents() -> list[str]:
-    """Every YAML document across the committed ClusterQueue manifests."""
+    """Every YAML document across the committed ClusterQueue manifests.
+
+    The container-worker queue templates (kueue/worker/) are cohort members too:
+    only their quota is rendered at converge time, from the enrolled workers'
+    churn slots (livespec-dev-tooling-ko26ez.7).
+    """
     return [
         document
-        for path in sorted(_KUEUE_DIR.glob("cluster-queue-*.yaml"))
+        for path in (
+            *sorted(_KUEUE_DIR.glob("cluster-queue-*.yaml")),
+            *sorted((_KUEUE_DIR / "worker").glob("cluster-queue-*.yaml")),
+        )
         for document in _DOC_SEPARATOR.split(path.read_text(encoding="utf-8"))
     ]
 
