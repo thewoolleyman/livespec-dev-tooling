@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.186.2](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.186.1...v1.186.2) (2026-11-07)
+
+
+### Bug Fixes
+
+* **incident:** accept GitHub's mandatory metadata read in the recovery token grant (livespec-dev-tooling-7536jf) ([27377b5](https://github.com/thewoolleyman/livespec-dev-tooling/commit/27377b5927a48e424f19148c37b2c455018714d5))
+
 ## [1.186.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.186.0...v1.186.1) (2026-11-07)
 
 
