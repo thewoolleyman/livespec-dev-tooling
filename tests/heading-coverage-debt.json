@@ -884,6 +884,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: branch protection alignment accepts a required gate held by a ruleset whose only bypass is a GitHub App",
+    "work_item": "livespec-dev-tooling-7536jf",
+    "first_seen": "2026-11-07"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: changing a committed capacity value to another valid value leaves every test passing",
     "work_item": "livespec-dev-tooling-symfx2",
     "first_seen": "2026-11-04"

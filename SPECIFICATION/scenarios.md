@@ -3029,3 +3029,15 @@ Then the JSON document MUST report test counts of 5, 3 and 2 for those repositor
 And the document MUST report a fleet total test count of 10 and a fleet total wall-clock equal to the sum of the three wall-clocks
 
 And the document MUST name the timing method, the host identity and the toolchain versions
+
+## Scenario: branch protection alignment accepts a required gate held by a ruleset whose only bypass is a GitHub App
+
+```gherkin
+Given a repository whose classic protection on the default branch enforces admins, keeps strict off and requires no status check
+And an active repository ruleset on that branch requires the all-green gate job with strict off and names only a GitHub App as a bypass actor
+When branch_protection_alignment runs with an admin-scoped token
+Then the effective required-check set contains the all-green gate and the check exits 0.
+And the same configuration with a repository-role bypass actor added to that ruleset fails with failure_mode ruleset_bypass_not_app.
+And the same configuration with the ruleset's strict policy enabled fails with failure_mode strict_enabled.
+And a ruleset read that fails fails with failure_mode ruleset_unreadable rather than skipping.
+```
