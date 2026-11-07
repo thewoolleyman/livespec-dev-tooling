@@ -94,6 +94,7 @@ def _await_admission(
         if isinstance(read, Failure):
             last_refusal = read.failure()
         else:
+            last_refusal = None
             terminal = terminal_condition(
                 argv=argv,
                 payload=read.unwrap().stdout,

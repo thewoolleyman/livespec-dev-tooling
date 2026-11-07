@@ -627,6 +627,19 @@ def test_an_unadmitted_job_reports_its_admission_wait_bound() -> None:
     assert cluster.kinds.count("get-job") == 3
 
 
+def test_a_stale_refused_read_does_not_replace_the_admission_wait_bound() -> None:
+    """A later successful read showing the Job still suspended supersedes an earlier refusal."""
+    cluster = _StubCluster(job_states=("Suspended",), refused_gets=1)
+    request = dataclasses.replace(_REQUEST, admission_timeout_seconds=30.0)
+
+    outcome = run_gate(request=request, runner=cluster, sleeper=cluster.sleep)
+
+    assert isinstance(outcome, Failure)
+    assert outcome.failure().detail == (
+        f"admission wait for {_JOB} exceeded {request.admission_timeout_seconds:g}s without admission"
+    )
+
+
 def test_a_refused_job_read_is_retried_before_its_refs_are_collected() -> None:
     """A transient API refusal must not abandon the still-queued Job it created.
 
