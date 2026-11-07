@@ -2304,6 +2304,38 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: a joined worker is enrolled in every workload class its architecture can run",
+    "test": "TODO",
+    "reason": "A real test at the integration tier or above is owed for this heading: it exercises the production join's per-class enrollment against a mocked cluster and mocked node resources, and a host-captured rejoin. livespec-dev-tooling-ko26ez.7 owns it.",
+    "work_item": "livespec-dev-tooling-ko26ez.7"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a workload is never scheduled onto a node whose architecture its image does not publish",
+    "test": "TODO",
+    "reason": "A real test at the integration tier or above is owed for this heading: it exercises the per-class architecture selection rendered for every scale set, the gate job template and the factory provider against mocked image and node data. livespec-dev-tooling-ko26ez.6 owns it.",
+    "work_item": "livespec-dev-tooling-ko26ez.6"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a worker's per-class capacity is derived from its allocatable resources",
+    "test": "TODO",
+    "reason": "A real test at the integration tier or above is owed for this heading: it exercises the capacity derivation and cohort-quota reconciliation against mocked node resources. livespec-dev-tooling-ko26ez.7 owns it.",
+    "work_item": "livespec-dev-tooling-ko26ez.7"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a worker that leaves mid-run loses no work and rejoins on its own",
+    "test": "TODO",
+    "reason": "A real test at the integration tier or above is owed for this heading: it exercises a measured departure of the real worker during live load, plus a stub test of the rejoin path. livespec-dev-tooling-ko26ez.8 owns it.",
+    "work_item": "livespec-dev-tooling-ko26ez.8"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: a host declaring no home-LAN address is refused before the VM starts",
     "test": "tests.spec.test_homelab_worker_nodes.test_a_host_declaring_no_lan_address_is_refused_before_any_vm_call",
     "reason": "Integration-tier: runs the real start-homelab-worker-node-container script under /bin/bash against stub brew, limactl and VM-probe executables and a mocked host declaration (no production value), as this row's owed test named; host-captured on macbook-m4-max 2026-11-06 (livespec-dev-tooling-ko26ez epic). Asserts WORKER_LAN_ADDRESS is named and no create, start or shell step ran."

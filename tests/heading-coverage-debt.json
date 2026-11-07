@@ -429,6 +429,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: a joined worker is enrolled in every workload class its architecture can run",
+    "work_item": "livespec-dev-tooling-ko26ez.7",
+    "first_seen": "2026-11-07"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: a later master commit touching a culprit path blocks the revert",
     "work_item": "livespec-dev-tooling-joqff6",
     "first_seen": "2026-10-22"
@@ -746,6 +753,27 @@
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a version-only release change still touches a test that names the changed file",
     "work_item": "livespec-dev-tooling-lbinx7",
+    "first_seen": "2026-11-07"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a worker that leaves mid-run loses no work and rejoins on its own",
+    "work_item": "livespec-dev-tooling-ko26ez.8",
+    "first_seen": "2026-11-07"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a worker's per-class capacity is derived from its allocatable resources",
+    "work_item": "livespec-dev-tooling-ko26ez.7",
+    "first_seen": "2026-11-07"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a workload is never scheduled onto a node whose architecture its image does not publish",
+    "work_item": "livespec-dev-tooling-ko26ez.6",
     "first_seen": "2026-11-07"
   },
   {
