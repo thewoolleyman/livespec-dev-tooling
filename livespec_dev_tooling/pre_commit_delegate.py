@@ -150,6 +150,7 @@ def _run_remote(
                 "the gate Job did not return a verdict for the staged tree, so the aggregate "
                 "gates locally"
             ),
+            job_name=remote.job_name,
             tree_hash=tree_hash,
         )
     if remote.state == GATE_PASSED:
@@ -181,6 +182,7 @@ def _run_remote(
         reason=(
             "the gate Job reached no verdict for the staged tree, so the aggregate gates locally"
         ),
+        job_name=remote.job_name,
         tree_hash=tree_hash,
     )
 
@@ -205,7 +207,12 @@ def main() -> int:
     log = structlog.get_logger("pre_commit_delegate")
     if verdict.local:
         if verdict.reason != "delegated_pre_commit is not enabled":
-            log.warning("GATED_LOCALLY", reason=verdict.reason, tree_hash=verdict.tree_hash)
+            log.warning(
+                "GATED_LOCALLY",
+                reason=verdict.reason,
+                job_name=verdict.job_name,
+                tree_hash=verdict.tree_hash,
+            )
         return _LOCAL_FALLBACK
     log.info(
         "delegated pre-commit aggregate completed",

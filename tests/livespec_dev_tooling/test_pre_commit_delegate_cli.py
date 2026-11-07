@@ -219,6 +219,64 @@ def test_a_matching_failed_job_refuses_the_commit(
 
 
 @pytest.mark.parametrize(
+    ("state", "returned_tree"),
+    [("NO_VERDICT", "a" * 40), ("PASSED", "b" * 40)],
+)
+def test_a_submitted_job_that_falls_back_locally_names_the_job_and_staged_tree(
+    *,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    state: str,
+    returned_tree: str,
+) -> None:
+    """A local fallback after submission identifies the Job that supplied no usable verdict."""
+    from returns.result import Success
+
+    from livespec_dev_tooling.gate_remote_client import GateRunRequest
+    from livespec_dev_tooling.gate_remote_verdict import GateVerdict
+
+    module = _module()
+    _enabled_repo(root=tmp_path)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(module, "gates_kubeconfig_readable", lambda: True)
+    monkeypatch.setattr(module, "_staged_tree_hash", lambda **_kwargs: "a" * 40)
+    monkeypatch.setattr(module, "_staged_commit", lambda **_kwargs: "b" * 40)
+    monkeypatch.setattr(module, "resolve_renderer", lambda **_kwargs: Path("renderer"))
+    monkeypatch.setattr(
+        module,
+        "gate_remote_request",
+        lambda **_kwargs: Success(
+            GateRunRequest(
+                repo_root=tmp_path,
+                mirror_url="mirror",
+                manifest="manifest",
+                gate_ref="refs/gates/tree",
+            )
+        ),
+    )
+    monkeypatch.setattr(
+        module,
+        "run_gated_push",
+        lambda **_kwargs: GateVerdict(
+            state=state,
+            detail="the cluster supplied no usable staged-tree verdict",
+            token_written=False,
+            job_name="gate-pre-commit-1",
+            tree_hash=returned_tree,
+        ),
+    )
+    monkeypatch.setattr("sys.argv", ["pre_commit_delegate.py", "run"])
+
+    assert module.main() == 75
+
+    output = capsys.readouterr().err
+    assert "GATED_LOCALLY" in output
+    assert "gate-pre-commit-1" in output
+    assert "a" * 40 in output
+
+
+@pytest.mark.parametrize(
     ("verdict", "expected", "expected_reason"),
     [
         ("local", 75, None),
