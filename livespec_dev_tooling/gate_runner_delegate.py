@@ -14,6 +14,7 @@ from livespec_dev_tooling._gate_host_authority import (
     run_host_authority_members,
 )
 from livespec_dev_tooling._gate_remote_assembly import declared_gate_check_suite
+from livespec_dev_tooling.gate_command import is_full_suite_command, pytest_command
 from livespec_dev_tooling.gate_credential import gates_kubeconfig_readable
 from livespec_dev_tooling.gate_remote_delegate import (
     delegated_gate_enabled,
@@ -41,9 +42,6 @@ __all__: list[str] = [
     "select_for_repository",
     "select_venue",
 ]
-
-_JUST_RECIPE_POSITION = 1
-_JUST_COMMAND_MINIMUM_WORDS = 2
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -97,17 +95,7 @@ def select_for_repository(
 
 def _is_full_suite(*, command: tuple[str, ...]) -> bool:
     """Recognise the ratified direct and ``mise exec`` full-suite spellings."""
-    if command[:3] == ("mise", "exec", "--"):
-        command = command[3:]
-    if command[:1] == ("just",):
-        return len(command) >= _JUST_COMMAND_MINIMUM_WORDS and (
-            command[_JUST_RECIPE_POSITION] == "check"
-            or (
-                command[_JUST_RECIPE_POSITION].startswith("check-")
-                and command[_JUST_RECIPE_POSITION] != "check-"
-            )
-        )
-    return command[:1] == ("pytest",) or command[:3] == ("uv", "run", "pytest")
+    return is_full_suite_command(command=command)
 
 
 def _working_tree_source(*, repo_root: Path) -> tuple[str, str] | None:
@@ -173,9 +161,7 @@ def _remote_command(
     if normalized[:1] == ("just",):
         suite = tuple(normalized[1:])
         return None, None if suite == ("check",) else suite
-    if normalized[:1] == ("pytest",):
-        return normalized, ()
-    return ("pytest", *normalized[3:]), ()
+    return pytest_command(command=normalized), ()
 
 
 def run_cluster_gate(*, repo_root: Path, command: tuple[str, ...]) -> ClusterGateResult:
