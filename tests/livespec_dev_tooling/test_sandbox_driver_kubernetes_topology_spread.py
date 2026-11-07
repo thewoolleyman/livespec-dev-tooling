@@ -36,6 +36,7 @@ _JUSTFILE = _REPO_ROOT / "justfile"
 _ROLE = _REPO_ROOT / "ansible" / "roles" / "sandbox_driver_kubernetes"
 _DEFAULTS = _ROLE / "defaults" / "main.yml"
 _TEMPLATE = _ROLE / "templates" / "plugin-config.toml.j2"
+_WORKLOAD_ARCH_CONF = _REPO_ROOT / "ci-runner" / "k3s" / "phase2" / "workload-arch.conf"
 _ANSIBLE_CORE_PIN = re.compile(r"ansible-core==[0-9][0-9A-Za-z.]*")
 _RENDERED = re.compile(r'^\s*"msg": (?P<msg>"RENDERED=.*")$', re.MULTILINE)
 _PLAYBOOK_TIMEOUT_SECONDS = 600
@@ -53,7 +54,9 @@ def _ansible_core_pin() -> str:
     return pin[0]
 
 
-def _render_plugin_config(*, tmp_path: Path) -> dict[str, object]:
+def _render_plugin_config(
+    *, tmp_path: Path, arch_conf: Path = _WORKLOAD_ARCH_CONF
+) -> dict[str, object]:
     """Render the plugin config through the pinned ansible-core and parse it."""
     inventory = tmp_path / "inventory.ini"
     inventory.write_text("localhost ansible_connection=local\n", encoding="utf-8")
@@ -94,6 +97,8 @@ def _render_plugin_config(*, tmp_path: Path) -> dict[str, object]:
             "ansible-playbook",
             "-i",
             str(inventory),
+            "-e",
+            f"sandbox_driver_kubernetes_workload_arch_conf={arch_conf}",
             str(playbook),
         ],
         cwd=tmp_path,
@@ -130,4 +135,24 @@ def test_the_rendered_plugin_config_spreads_first_pods_by_hostname(*, tmp_path: 
         "rendering the spread must leave the three tolerations in place; "
         f"rendered={tolerations!r}"
     )
-    assert config.get("node_selector") == {"ci-runner.io/factory": "true"}
+    node_selector = config.get("node_selector")
+    assert isinstance(node_selector, dict) and node_selector.get("ci-runner.io/factory") == "true"
+
+
+def test_the_rendered_node_selector_carries_the_factory_class_architecture(
+    *, tmp_path: Path
+) -> None:
+    """The provider selects the architecture its image publishes, read from the list.
+
+    The list is mocked, so the assertion is the rule, never a committed value
+    (livespec-dev-tooling-ko26ez.6).
+    """
+    conf = tmp_path / "workload-arch.conf"
+    conf.write_text(
+        "# mocked\nfactory python-agent riscv64 other arches lack it\n", encoding="utf-8"
+    )
+    config = _render_plugin_config(tmp_path=tmp_path, arch_conf=conf)
+    assert config.get("node_selector") == {
+        "ci-runner.io/factory": "true",
+        "kubernetes.io/arch": "riscv64",
+    }
