@@ -6,6 +6,7 @@ tree, names the base as the next head, and commits under the hook afterwards,
 exactly as a genesis attempt does.
 """
 
+import hashlib
 import json
 
 import pytest
@@ -36,8 +37,10 @@ def test_a_staged_repair_is_recorded_with_its_tree_and_the_base_as_head(world: W
     result = flows.correction(world, _digest(world), "later", staged_tree=tree)
     action, _query, payload = world.authority.call_args.args
     correct = json.loads(payload["correction-json"])
+    staged_change = git(world.repo, "diff", "--binary", world.shas["later"], tree)
     facts = [
         result == "correction-2",
+        correct["evidence_id"] == hashlib.sha256(staged_change).hexdigest(),
         action == "correct-attempt",
         correct["kind"] == "repair",
         correct["head"] == world.shas["later"],
