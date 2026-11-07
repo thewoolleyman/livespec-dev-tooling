@@ -123,6 +123,13 @@ _GUARD = (
 _BATCH_ENV = (
     "${{ needs.incident-ci.result == 'success' && needs.incident-ci.outputs.omitted || '' }}"
 )
+# The one artifact step that must also run after a failed step, because a retry record matters most
+# when the job fails. It keeps the guard, so an omitted member still moves no artifact. No other step
+# gets this form: a failed job publishing `.coverage` would hand check-coverage partial data.
+_RUNS_AFTER_FAILURE = (
+    "check-per-file-coverage",
+    "Publish the flake-retry records for the host-side reader",
+)
 _RUN_STATUS_ONLY = (
     "${{ !cancelled() }}",
     "${{ !cancelled() && needs.check-per-file-coverage.result == 'success' }}",
@@ -310,15 +317,18 @@ def _single_member_findings(*, name: str, job: dict[str, Any], member: str) -> l
     """The member's steps carry the guard; one explicit report carries its inverse."""
     guard = _GUARD.format(member=member)
     run_if, report_if = "${{ !(" + guard + ") }}", "${{ " + guard + " }}"
-    # A step that must also run after a failed step, such as the flake-retry upload, needs
-    # !cancelled(). It still carries the same guard, so an omitted member moves no artifact.
     run_after_failure_if = "${{ !cancelled() && !(" + guard + ") }}"
     findings: list[str] = []
     reports = 0
     for step in job["steps"]:
         condition = step.get("if")
         if _does_member_work(step=step):
-            if condition not in (run_if, run_after_failure_if):
+            accepted = (
+                (run_if, run_after_failure_if)
+                if (name, step["name"]) == _RUNS_AFTER_FAILURE
+                else (run_if,)
+            )
+            if condition not in accepted:
                 findings.append(
                     f"job {name}: step {step['name']!r} does the member's work "
                     f"without the released-aggregate guard"
@@ -396,6 +406,7 @@ def test_the_guarded_members_are_the_ones_the_controller_defers_for_coverage_or_
 
 
 _GUARD_OF_PER_FILE_COVERAGE = _GUARD.format(member="'check-per-file-coverage'")
+_GUARD_OF_MATRIX_TARGET = _GUARD.format(member="matrix.target")
 
 
 @pytest.mark.parametrize(
@@ -480,6 +491,21 @@ _GUARD_OF_PER_FILE_COVERAGE = _GUARD.format(member="'check-per-file-coverage'")
             "        if: ${{ !cancelled() }}\n",
             "job check-per-file-coverage: step 'Publish the flake-retry records for the "
             "host-side reader' does the member's work without the released-aggregate guard",
+        ),
+        (
+            "      - name: Publish .coverage for the check-coverage consumer\n"
+            "        if: ${{ !(" + _GUARD_OF_PER_FILE_COVERAGE + ") }}\n",
+            "      - name: Publish .coverage for the check-coverage consumer\n"
+            "        if: ${{ !cancelled() && !(" + _GUARD_OF_PER_FILE_COVERAGE + ") }}\n",
+            "job check-per-file-coverage: step 'Publish .coverage for the check-coverage "
+            "consumer' does the member's work without the released-aggregate guard",
+        ),
+        (
+            "      - name: Download the producer's .coverage\n"
+            "        if: ${{ !(" + _GUARD_OF_MATRIX_TARGET + ") }}\n",
+            "      - name: Download the producer's .coverage\n        if: ${{ !cancelled() }}\n",
+            "job check-coverage: step \"Download the producer's .coverage\" does the member's "
+            "work without the released-aggregate guard",
         ),
         (
             "      - name: Checkout\n        uses: actions/checkout@v5\n        with:\n"
