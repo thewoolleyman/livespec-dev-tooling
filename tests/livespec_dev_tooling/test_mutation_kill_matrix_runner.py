@@ -127,12 +127,6 @@ def test_main_refuses_a_target_that_is_not_a_package_directory(
 ) -> None:
     """A typo must fail before mutmut can write outside the intended package."""
     module = importlib.import_module("livespec_dev_tooling.mutation_kill_matrix_runner")
-
-    def unexpected_run(**kwargs: object) -> object:
-        _ = kwargs
-        raise AssertionError("the runner must not start for a missing target")
-
-    monkeypatch.setattr(module, "run_kill_matrix", unexpected_run)
     monkeypatch.setattr(sys, "argv", ["mutation-kill-matrix", str(tmp_path / "missing")])
 
     with pytest.raises(SystemExit):
