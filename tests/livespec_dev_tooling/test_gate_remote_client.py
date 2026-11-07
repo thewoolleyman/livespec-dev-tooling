@@ -627,43 +627,34 @@ def test_an_unadmitted_job_reports_its_admission_wait_bound() -> None:
     assert cluster.kinds.count("get-job") == 3
 
 
-def test_a_stale_refused_read_does_not_replace_the_admission_wait_bound() -> None:
-    """A later successful read showing the Job still suspended supersedes an earlier refusal."""
+def test_a_refused_admission_read_ends_the_wait() -> None:
+    """A refused admission read is not retried as though it were queueing."""
     cluster = _StubCluster(job_states=("Suspended",), refused_gets=1)
     request = dataclasses.replace(_REQUEST, admission_timeout_seconds=30.0)
 
     outcome = run_gate(request=request, runner=cluster, sleeper=cluster.sleep)
 
     assert isinstance(outcome, Failure)
-    assert outcome.failure().detail == (
-        f"admission wait for {_JOB} exceeded {request.admission_timeout_seconds:g}s without admission"
-    )
+    assert outcome.failure().detail == "get-job refused\n"
+    assert cluster.kinds.count("get-job") == 1
 
 
-def test_a_refused_job_read_is_retried_before_its_refs_are_collected() -> None:
-    """A transient API refusal must not abandon the still-queued Job it created.
-
-    The first get is refused, but the second reports completion inside the
-    request's poll budget. The ref delete follows that terminal observation,
-    rather than the refused read: otherwise the Job can later be admitted and
-    fail its fetch-tree init container because its input disappeared.
-    """
+def test_a_refused_job_read_ends_the_wait_before_refs_are_collected() -> None:
+    """A refused read ends the wait without deleting a Job whose state is unknown."""
     cluster = _StubCluster(refused_gets=1)
     request = dataclasses.replace(_REQUEST, poll_timeout_seconds=20.0)
 
     outcome = run_gate(request=request, runner=cluster, sleeper=cluster.sleep)
 
-    assert is_successful(outcome)
+    assert isinstance(outcome, Failure)
+    assert outcome.failure().detail == "get-job refused\n"
     assert cluster.kinds == [
         "read-tree",
         "push-ref",
         "submit-job",
         "get-job",
-        "get-job",
-        "stream-logs",
-        "delete-ref",
     ]
-    assert cluster.naps == [request.poll_interval_seconds]
+    assert cluster.naps == []
 
 
 def test_the_logs_are_streamed_rather_than_captured() -> None:
@@ -880,8 +871,8 @@ def test_a_refused_private_sibling_secret_deletes_the_submitted_job() -> None:
     assert "get-job" not in cluster.kinds
 
 
-def test_a_job_the_cluster_will_not_report_on_is_retried_then_retains_its_ref() -> None:
-    """A read refusal is retried, but never authorizes deleting a live Job's ref."""
+def test_a_job_the_cluster_will_not_report_on_ends_the_wait_and_retains_its_ref() -> None:
+    """A read refusal ends the wait but never authorizes deleting a live Job's ref."""
     cluster = _StubCluster(fails=("get-job",))
     request = dataclasses.replace(
         _REQUEST, admission_timeout_seconds=20.0, poll_timeout_seconds=20.0
@@ -890,7 +881,7 @@ def test_a_job_the_cluster_will_not_report_on_is_retried_then_retains_its_ref() 
     assert isinstance(outcome, Failure)
     assert outcome.failure().step == "await-gate-terminal"
     assert outcome.failure().detail == "get-job refused\n"
-    assert cluster.kinds.count("get-job") == 2
+    assert cluster.kinds.count("get-job") == 1
     assert "delete-ref" not in cluster.kinds
 
 
