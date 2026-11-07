@@ -183,6 +183,25 @@ just fmt         # ruff format (mutating)
 just lint-fix    # ruff check --fix (mutating)
 ```
 
+## Rule-26 mutation kill matrix
+
+Run the deliberately on-demand Rule-26 measurement against a small target
+package with its own `pyproject.toml` and pytest suite:
+
+```
+just mutation-kill-matrix path/to/package
+```
+
+It writes `path/to/package/reports/mutation-kill-matrix.json`. The portable
+JSON format is independent of mutmut: `engine`, `source_revision`, and the
+complete `mutants` array identify the run; every mutant row has `identifier`,
+`location`, and `killed_by`; `surviving_mutants` lists mutants with no killers;
+and `redundancy_candidates` lists every test that has no unique mutant kill.
+The adapter uses mutmut 3.2.3 today, while cargo-mutants and shell or
+TypeScript adapters can produce the same report shape later. This command is
+intentionally not part of `just check`, since it runs every collected test
+against every generated mutant.
+
 ## Repo layout
 
 | Path | Purpose |
