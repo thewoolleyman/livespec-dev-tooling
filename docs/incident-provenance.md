@@ -24,8 +24,20 @@ proof. The returned attribution does not select an execution mode, create TDD or
 coverage evidence, authorize a workflow edit or close the incident. Scoped host
 workflow authorization remains a separate required input.
 
-This delivers a process consumer, not live policy reductions. Commit/range/replay
-and host-authority entrances still require integration with the released,
-installed canonical producer and their own mode-specific evidence rules. Until
-that producer is available, the consumer refuses; fixture protocol proofs do
-not claim live incident authorization or fleet adoption.
+An attempt's recorded head is provenance too, so an unmerged expedited PR's commit
+is admitted before any landed pair exists.
+
+## The range gate
+
+Hosted CI holds no tenant credential, so `check-red-green-replay` cannot run this
+reader itself. The observer runs it on its host behind the query-only
+`POST /provenance` route (`incident_observer_provenance`), and
+`checks/_red_green_replay_incident` asks that route last, for a commit that still
+lacks TDD evidence. The PR's `livespec-incident-ci` block only locates the attempt,
+and the commit's `Factory-Override: EXPEDITED_INCIDENT_RESPONSE flag: <item>` trailer
+must name that item, but neither grants anything: a commit passes only when the
+chain records the PR's exact base and head and the commit is in that head's history.
+Labels and incident flags are never read. Every other answer keeps the commit
+convicted, and a PR with no block makes no request.
+
+Host-authority entrances still need their own integration.

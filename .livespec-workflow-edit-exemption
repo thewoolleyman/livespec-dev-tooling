@@ -1,4 +1,4 @@
-work_item=livespec-dev-tooling-mngdtf
+work_item=livespec-dev-tooling-zbzls2
+reason=Add env lines to the just step of the check-metadata job in .github/workflows/ci.yml, so the check-red-green-replay leg alone, on same-repository pull_request events, can ask the observer's read-only /provenance route whether the incident chain records an expedited commit. Contract line 1035 requires the range reader to verify that provenance, and CI holds no tenant credential. No new secret: it reuses LIVESPEC_INCIDENT_OBSERVER_QUERY_TOKEN.
 change=additive
 ci_runtime=no-significant-increase
-reason=Add one uses: step to job check-per-file-coverage of .github/workflows/ci.yml, uploading tmp/flake-retries/ as artifact flake-retries with if-no-files-found ignore and 7-day retention, so a flake-retry record survives the runner for the host-side reader of livespec-dev-tooling-h77qmw. 14 lines added, 0 removed. The step has no run block, carries the incident omission guard beside !cancelled() as test_incident_ci_omission_wiring requires, and removes no check; the required-check set is unchanged. approval:workflow-edit-additive was set by legacy-coordinator-agent under the maintainer's 2026-11-02 delegation.

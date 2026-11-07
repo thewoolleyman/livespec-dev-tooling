@@ -635,6 +635,14 @@ jobs:
           # OTHER repo stays warn-only until it arms this lever in its own
           # PR. Harmless for the other metadata legs — they do not read it.
           LIVESPEC_FAIL_IF_FMT_DIRECTIVES_EXIST: "true"
+          # The range gate asks the observer whether the incident chain records an
+          # expedited commit (work-item livespec-dev-tooling-zbzls2). ONLY the
+          # check-red-green-replay leg, on a same-repository pull_request event,
+          # gets these; every other case sees empty values and fails closed. The
+          # query token reads and cannot arm, bind or revert.
+          LIVESPEC_INCIDENT_OBSERVER_URL: ${{ (matrix.target == 'check-red-green-replay' && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) && vars.LIVESPEC_INCIDENT_OBSERVER_URL || '' }}
+          LIVESPEC_INCIDENT_OBSERVER_CONNECT_ADDR: ${{ (matrix.target == 'check-red-green-replay' && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) && vars.LIVESPEC_INCIDENT_OBSERVER_CONNECT_ADDR || '' }}
+          LIVESPEC_INCIDENT_OBSERVER_QUERY_TOKEN: ${{ (matrix.target == 'check-red-green-replay' && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) && secrets.LIVESPEC_INCIDENT_OBSERVER_QUERY_TOKEN || '' }}
         run: just ${{ matrix.target }}
 
   # Batched cheap repo-metadata checks (work-item livespec-dev-tooling-yilyxr.2):

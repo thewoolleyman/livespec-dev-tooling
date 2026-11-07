@@ -92,6 +92,10 @@ The existing repository lock continues to serialize actual durable effects.
   `expected_arm_id` is the optional existing compare-and-swap id.
 - `POST /admitted` requires the read-only query credential and exact six
   `ObserverArmQuery` fields to read the protected pre-merge arm.
+- `POST /provenance` uses the same query credential with the exact twelve
+  `IncidentCommitQuery` fields, in the `repair` phase only. It answers from the
+  installed canonical `read-history` process alone, so it needs no retained arm and
+  still answers after one is bound or invalidated. It grants no current effect.
 - `POST /current` uses the same query credential and exact query. It performs a
   fresh installed canonical-reader call against the retained arm outside the
   repository lock, then rechecks the unchanged unbound arm under that lock. An

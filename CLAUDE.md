@@ -770,7 +770,9 @@ reverted commit's parent at every product impl `.py` path it touches. Both
 halves are required; the exemption is keyed on evidence an agent cannot
 fabricate, NEVER on a subject line, and it transfers evidence (the restored
 bytes already earned trailers on the commit that introduced them) rather than
-waiving it. It is the only exemption, and it does not reopen the lever this
+waiving it. The only other admission is an expedited commit the incident chain
+records (`docs/incident-provenance.md`), which is also keyed on evidence no trailer
+supplies. Neither reopens the lever this
 protocol and `ci-gate-discipline.md` both forbid.
 
 ⛔ Do NOT "fix" a refused revert by exempting a subject prefix, by exempting the
