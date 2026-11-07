@@ -209,6 +209,8 @@ def correction(world: World, digest: str, head: str, **changes: Any) -> str | Ev
         evidence_digest=digest,
         next_head_sha=world.shas[head],
         target_ref="refs/heads/incident-1-attempt-2",
+        current_attempt="recovery-1",
+        current_owner="incident-principal",
         current_generation=3,
         base_ref="master",
     )
@@ -327,7 +329,7 @@ def test_unchanged_reland_is_refused_before_any_canonical_attempt(world: World) 
     assert (action, payload["target-ref"]) == ("correct-attempt", "refs/heads/incident-1-attempt-2")
     assert (query["phase"], query["operation"], query["generation"]) == (
         "collecting-failures",
-        "attempt-1#collecting-failures",
+        "recovery-1#collecting-failures",
         3,
     )
     assert sorted(correct) == ["base", "evidence_id", "head", "kind", "staged_tree"]

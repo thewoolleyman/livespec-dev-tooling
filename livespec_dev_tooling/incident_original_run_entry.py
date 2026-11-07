@@ -12,13 +12,15 @@ credential wrapper and the project's registered orchestrator build:
     python -m livespec_dev_tooling.incident_original_run_entry propose-correction \\
         --state-dir DIR --repository OWNER/REPO --repo PRIMARY \\
         --evidence-digest DIGEST --next-head-sha SHA --target-ref REF \\
-        --current-generation N [--resolved JOB=RECEIPT ...]
+        --current-attempt ID --current-owner PRINCIPAL --current-generation N \\
+        [--resolved JOB=RECEIPT ...]
 
 `collect` refuses until the registered original master run has completed.
 `propose-correction` hands a correction to the canonical `correct-attempt`
 action against the attempt a recorded revert receipt moved to
-`collecting-failures`; N is that attempt's generation and REF the corrected
-attempt's reserved branch.
+`collecting-failures`: the `recovery-<digest>` attempt reopen-regression
+recorded, owned by the incident principal, at generation N. REF is the
+corrected attempt's reserved branch.
 
 Each prints one schema-1 JSON reply. A refusal exits 78 and names its reason.
 """
@@ -142,7 +144,13 @@ def _parse(*, argv: Sequence[str]) -> argparse.Namespace:
     _ = gather.add_argument("--expected-graph", required=True, type=Path)
     _ = gather.add_argument("--run-attempt", type=int, default=1)
     _ = gather.add_argument("--workflow", default=".github/workflows/ci.yml")
-    for name in ("--evidence-digest", "--next-head-sha", "--target-ref"):
+    for name in (
+        "--evidence-digest",
+        "--next-head-sha",
+        "--target-ref",
+        "--current-attempt",
+        "--current-owner",
+    ):
         _ = correct.add_argument(name, required=True)
     _ = correct.add_argument("--current-generation", required=True, type=int)
     _ = correct.add_argument("--resolved", action="append", default=[])
@@ -236,6 +244,8 @@ def _propose(*, args: argparse.Namespace, ports: EntryPorts) -> int:
             evidence_digest=args.evidence_digest,
             next_head_sha=args.next_head_sha,
             target_ref=args.target_ref,
+            current_attempt=args.current_attempt,
+            current_owner=args.current_owner,
             current_generation=args.current_generation,
             resolved_jobs=tuple((job, receipt) for job, _sep, receipt in pairs),
             base_ref=args.base_ref,
