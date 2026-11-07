@@ -184,10 +184,10 @@ grade them. The children's factory-captured tests carry them. This note does not
 Conventions:
 
 - `ITEM` is the new incident item. `DT` and `ORCH` are the releases from P0-10.
-  - Serving as of 2026-11-07 ~04:15Z: ORCH v0.299.0, and DT v1.186.0 (the observer was rolled to it at 03:41Z,
-    evidence on livespec-dev-tooling-7536jf). DT v1.186.1, which adds livespec-dev-tooling#3673 (canonical
-    refusal-code pass-through), is being rolled onto the observer next. The ORCH release
-    livespec-orchestrator-beads-fabro#4584 (0.300.0, carries P0-7) is pending. Re-read the serving versions at P.1.
+  - Released as of 2026-11-07 ~04:40Z: DT v1.186.1, which carries livespec-dev-tooling#3673 (the observer was
+    rolled to it at 04:35Z, evidence on livespec-dev-tooling-7536jf), and ORCH v0.300.0, which carries P0-7
+    (livespec-orchestrator-beads-fabro#4584). Neither follow-up release is pending. Re-read the serving versions at
+    P.1.
 - `IA` is `incident_authority.py` of the registered build; resolve it with `registered_plugin_root.py --repo $REPO`.
 - Every ledger call goes through `/usr/local/bin/with-livespec-env.sh --`.
 - Every `IA` action takes CANONICAL JSON: build each JSON argument with `jq -cS`. Two actions take more than JSON
