@@ -58,6 +58,26 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.187.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.186.2...v1.187.0) (2026-11-07)
+
+
+### Features
+
+* add red kill-matrix attribution test ([942c1ea](https://github.com/thewoolleyman/livespec-dev-tooling/commit/942c1ea35f8af9a095a2dffb05e5007d5971499e))
+* add red kill-matrix survivor test ([014b877](https://github.com/thewoolleyman/livespec-dev-tooling/commit/014b877f0163f63d5b1e7591b90f8c3c22afe730))
+* add red mutmut kill-matrix runner test ([28d7512](https://github.com/thewoolleyman/livespec-dev-tooling/commit/28d7512a8c49dc0b0fb8cd0859365a5605b24383))
+* add red redundancy candidate test ([3f673f5](https://github.com/thewoolleyman/livespec-dev-tooling/commit/3f673f504cec9bdc231729a05c491bab2dcd851f))
+* add red target-path guard test ([5310fc4](https://github.com/thewoolleyman/livespec-dev-tooling/commit/5310fc45a4778dd1dab740dcdf614fc8462b1567))
+* refine red target-path guard test ([a40fd85](https://github.com/thewoolleyman/livespec-dev-tooling/commit/a40fd85a2c1f84d8a2355aee915374ab52cededc))
+
+
+### Bug Fixes
+
+* **checks:** branch_protection_alignment reads the effective classic ∪ ruleset required-check set (livespec-dev-tooling-7536jf) ([2e66aeb](https://github.com/thewoolleyman/livespec-dev-tooling/commit/2e66aeb0a202e9b0ec83accdb5d60a67f08b7d17))
+* drain the homelab-worker pipefail readers that SIGPIPE a match into a miss (livespec-dev-tooling-y53wpo) ([e826119](https://github.com/thewoolleyman/livespec-dev-tooling/commit/e82611900ad7a277b486de2c0d2115cb9f959c49))
+* **fleet:** the branch-protection row and reconcile read the effective classic ∪ ruleset required-check set (livespec-dev-tooling-7536jf) ([536ecab](https://github.com/thewoolleyman/livespec-dev-tooling/commit/536ecab74e433a08059be366883b4ba0be50c0a2))
+* **homelab-worker:** the start task delivers the cache-span emitter into the worker's pool binaries (livespec-dev-tooling-ko26ez.4) ([41f2404](https://github.com/thewoolleyman/livespec-dev-tooling/commit/41f240449b0707590ef7ee24c84c111bb6123de1))
+
 ## [1.186.2](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.186.1...v1.186.2) (2026-11-07)
 
 
