@@ -123,6 +123,7 @@
       "SPECIFICATION/non-functional-requirements.md §\"Cross-repo coordination — pin-and-bump\"",
       "SPECIFICATION/contracts.md §\"Doctor cross-boundary invariants\"",
       "SPECIFICATION/contracts.md §\"Driver-shipped hooks\"",
+      "SPECIFICATION/contracts.md §\"Expedited incident response policy\"",
       "SPECIFICATION/contracts.md §\"Plugin versioning\"",
       "SPECIFICATION/constraints.md §\"Vendored-library discipline\"",
       "SPECIFICATION/contracts.md §\"`primary-checkout-commit-refuse-hook-installed`\"",

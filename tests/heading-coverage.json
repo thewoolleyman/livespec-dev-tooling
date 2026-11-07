@@ -2403,5 +2403,13 @@
     "test": "tests.consumer.test_fleet_test_baseline_scenario.test_fleet_test_baseline_reports_all_ecosystems_and_fleet_totals",
     "reason": "Consumer-tier coverage runs `just fleet-test-baseline` over Python, Rust and shell fixture clones, asserting per-repository counts, fleet totals, timing method, host identity and toolchain versions.",
     "work_item": "livespec-dev-tooling-phakbp"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: branch protection alignment accepts a required gate held by a ruleset whose only bypass is a GitHub App",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) is owed for this scenario, driving `branch_protection_alignment` against a classic protection with no required check plus an active ruleset holding the all-green gate with only a GitHub App bypass, and the role-bypass, strict and unreadable-ruleset refusals. livespec-dev-tooling-7536jf owns it (plan expedited-incident-response-flag); the implementation PR that ships the effective-set read replaces this row.",
+    "work_item": "livespec-dev-tooling-7536jf"
   }
 ]
