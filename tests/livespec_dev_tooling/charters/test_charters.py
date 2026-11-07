@@ -70,6 +70,7 @@ EXPECTED_CANONICAL_SLUGS: tuple[str, ...] = (
     "check-red-green-replay",
     "check-required-role-keys-declared",
     "check-rop-pipeline-shape",
+    "check-rule-26-keep-out",
     "check-self-hosted-routing",
     "check-self-hosted-uv-lane",
     "check-shell-quality",
