@@ -143,6 +143,19 @@ the screen refuses on a heading, add the heading it names to the `References:`
 line, written with its literal `## ` marker, beside the scenario heading, and ask
 the dispatcher seat to screen it again.
 
+## A Definition Of Done Rewrite Owed After A Revise: Warn Before The Valve
+
+When an item's Definition of Done must be rewritten once a revise lands, tell
+legacy-coordinator-agent that the rewrite is pending as soon as the item is known
+to be waiting on that revise. A note in a plan handoff does not reach the
+coordinator, who can press `approve` the moment the item is judged.
+
+Measured 2026-11-07 on `lbinx7`: v151 (livespec-dev-tooling#3695) merged at
+17:24:13Z and the coordinator pressed approve at 17:26:08Z on the old text. The
+owning seat rewrote it at 17:31Z, so the 17:25:45Z pre-admission judgement no
+longer described the item. The coordinator accepted the new text and asked for
+this warning (their word, 2026-11-07).
+
 ## bd Resolves The Tenant From The Working Directory
 
 `bd` auto-discovers its tenant from the nearest `.beads/` config, so the SAME
