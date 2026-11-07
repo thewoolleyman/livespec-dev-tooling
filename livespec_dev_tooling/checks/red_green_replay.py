@@ -97,6 +97,9 @@ import structlog  # noqa: E402  — vendor-path-aware import after sys.path inse
 # (cycle 4c LLOC reduction). The leading underscore in the module
 # name marks it as a private helper rather than a check entry
 # point.
+from _red_green_replay_incident import (  # noqa: E402  — sibling private import
+    admitted_by_recorded_incident,
+)
 from _red_green_replay_modes import (  # noqa: E402  — sibling private import
     RED_GREEN_REPLAY_PROTOCOL,
     _handle_green_mode,
@@ -395,7 +398,10 @@ def _commit_violates(*, sha: str) -> bool:
             detail=unavailable.detail,
         )
         return True
-    return not unsafe_perform_io(exemption.unwrap())
+    # An expedited commit deferred its replay. Only the canonical incident chain,
+    # never the commit's own trailer, can say so (work-item livespec-dev-tooling-zbzls2).
+    forge_authored = unsafe_perform_io(exemption.unwrap())
+    return not (forge_authored or admitted_by_recorded_incident(sha=sha, message=message))
 
 
 def _validate_range() -> int:

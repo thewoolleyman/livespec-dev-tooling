@@ -24,6 +24,7 @@ from livespec_dev_tooling.incident_ci_payload import strict_json
 __all__: list[str] = ["CiAuthorityBoundary"]
 
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-egy3ri
+# EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-zbzls2
 _MAX_REPLY = 65536
 _MAX_TOKEN = 4096
 _MIN_TOKEN_CHARACTER = 33
@@ -48,6 +49,19 @@ _CONNECT_ADDRESS_VARIABLE = "LIVESPEC_INCIDENT_OBSERVER_CONNECT_ADDR"
 # The detail names the error class, the route, the dialed address:port and the
 # verified hostname, never the token or the reply.
 _REFUSAL_PREFIX = "incident-ci: observer read refused: "
+_ARM_FIELDS: dict[str, frozenset[str]] = {
+    "text": frozenset({"repository"}),
+    "int": frozenset({"pr_number"}),
+    "digest": frozenset({"arm_id", "receipt_digest"}),
+    "sha": frozenset({"base_sha", "head_sha"}),
+}
+_PROVENANCE_FIELDS: dict[str, frozenset[str]] = {
+    "text": frozenset({"repository", "item_id", "attempt_id", "phase", "operation_id", "owner"}),
+    "int": frozenset({"generation", "pr_number"}),
+    "digest": frozenset(),
+    "sha": frozenset({"base", "head", "commit_sha", "tree_sha"}),
+}
+_FIELDS = {"current": _ARM_FIELDS, "admitted": _ARM_FIELDS, "provenance": _PROVENANCE_FIELDS}
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -65,6 +79,10 @@ class CiAuthorityBoundary:
         """Require the protected exact premerge arm before omitting work."""
         return self._query(route="admitted", query=query)
 
+    def provenance(self, *, query: dict[str, Any]) -> bool:
+        """Require the host's canonical history to record this exact attempt and commit."""
+        return self._query(route="provenance", query=query)
+
     def _query(self, *, route: str, query: dict[str, Any]) -> bool:
         try:
             parsed = urlsplit(self.observer_url)
@@ -81,21 +99,23 @@ class CiAuthorityBoundary:
                 or self.observer_token.strip() != self.observer_token
                 or any(ord(c) < _MIN_TOKEN_CHARACTER for c in self.observer_token)
                 or len(self.observer_token) > _MAX_TOKEN
-                or set(query)
-                != {"repository", "arm_id", "pr_number", "base_sha", "head_sha", "receipt_digest"}
-                or type(query["pr_number"]) is not int
-                or query["pr_number"] <= 0
+                or set(query) != set[str]().union(*_FIELDS[route].values())
+                or any(
+                    type(query[key]) is not int or query[key] <= 0 for key in _FIELDS[route]["int"]
+                )
                 or not all(
-                    isinstance(value, str) for key, value in query.items() if key != "pr_number"
+                    isinstance(value, str)
+                    for key, value in query.items()
+                    if key not in _FIELDS[route]["int"]
                 )
                 or re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", query["repository"]) is None
                 or any(
                     re.fullmatch(r"[0-9a-f]{64}", query[key]) is None
-                    for key in ("arm_id", "receipt_digest")
+                    for key in _FIELDS[route]["digest"]
                 )
                 or any(
                     re.fullmatch(r"[0-9a-f]{40}", query[key]) is None
-                    for key in ("base_sha", "head_sha")
+                    for key in _FIELDS[route]["sha"]
                 )
             ):
                 return False
