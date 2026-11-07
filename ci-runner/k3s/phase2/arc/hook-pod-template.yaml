@@ -386,6 +386,13 @@ spec:
         # PSI60 55.1, load 192.5 on 72 cores, 0.24% idle, with 24 CI jobs (within
         # its 27 churn slots) and 9 factory pods. Raise it again only with a
         # measurement that shows PSI60 staying under about 30 at full load.
+        # RAISED to 6 at 2026-11-07 for the factory-pause window only, by
+        # legacy-coordinator-agent under R301: not a standing raise. Measured the
+        # same day: dev-tooling check-per-file-coverage ran 3 workers (job log) for
+        # 65 min at 3.0 cores per job while all three nodes had idle CPU. A factory
+        # lift re-decides it, by PSI60 against 30 at full load. REVERT: this one
+        # value back to 3 and the CI stack converge. NEXTEST_TEST_THREADS and
+        # CARGO_BUILD_JOBS below stay 3: nothing has measured them binding.
         # Honoured by the justfile or
         # test-nprocs script of livespec, livespec-dev-tooling,
         # livespec-orchestrator-beads-fabro, -git-jsonl, livespec-overseer
@@ -399,7 +406,7 @@ spec:
         # set 12) still wins over the pod env. Revert: delete these three
         # entries and run the CI stack converge.
         - name: LIVESPEC_TEST_PARALLELISM
-          value: "3"
+          value: "6"
         - name: NEXTEST_TEST_THREADS
           value: "3"
         - name: CARGO_BUILD_JOBS
