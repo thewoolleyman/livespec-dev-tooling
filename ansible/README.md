@@ -92,6 +92,7 @@ source of truth for how the tool is invoked.
 | `container-termination-drill.yml` | `ci_pool`, and only the k3s SERVER its confirmation names | nothing — no committed artifact could produce a crash-looping or OOM-killed container |
 | `claim-token-race-drill.yml` | `ci_pool`, and only the host its confirmation names, raced against the control node | nothing — no second fleet host could act as a ledger claim writer |
 | `k3s-pod-egress-probe.yml` | `ci_pool`, and only the k3s SERVER its confirmation names | nothing — no committed artifact could measure a pod's path to the incident observer |
+| `runner-scheduler-fail-open-drill.yml` | `ci_pool`, and only the k3s SERVER its confirmation names | nothing — no committed artifact could hold `ci-runner-scheduler` at zero replicas |
 
 `container-termination-drill.yml` is the ONE sanctioned way to make the cluster
 produce a `CrashLoopBackOff` container and an `OOMKilled` container, the
@@ -136,6 +137,16 @@ coordinated stopped-writers window of the orchestrator tenant. See
 `tests/livespec_dev_tooling/test_claim_token_race_drill_playbook.py`, which
 races the real probe as two processes against a file-locked stand-in for the
 package.
+`runner-scheduler-fail-open-drill.yml` is the ONE sanctioned way to hold
+`ci-runner-scheduler` at zero replicas, to prove its fail-open reconciler on the
+live cluster (`livespec-dev-tooling-mtvxde`). It is `just ansible-apply
+ansible/runner-scheduler-fail-open-drill.yml -e
+runner_scheduler_fail_open_drill_confirm=<k3s server inventory name>`; without
+that confirmation it reads nothing and changes nothing. It alerts the
+zero-available trigger's real recipients, so tell them first, and run it through
+`just gate-start`, because it can hold for up to 20 minutes. The script restores
+the scheduler on every exit. Exit 3 means no runner pod was rescued, which is no
+evidence, not a pass.
 `k3s-pod-egress-probe.yml` is the ONE sanctioned way to measure, from inside a
 pod of the CI cluster, the path to the incident observer on the dev host (plan
 `expedited-incident-response-flag`, epic `livespec-dev-tooling-bqnzcm`). It is
