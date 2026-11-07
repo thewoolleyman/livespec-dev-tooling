@@ -15,7 +15,8 @@ credential wrapper and the project's registered orchestrator build:
         --current-attempt ID --current-owner PRINCIPAL --current-generation N \\
         [--staged-tree TREE] [--resolved JOB=RECEIPT ...]
 
-`collect` refuses until the registered original master run has completed.
+`collect` refuses until the registered original master run has completed and
+the canonical chain records the merge, through its `record-merge` action.
 `propose-correction` hands a correction to the canonical `correct-attempt`
 action against the attempt a recorded revert receipt moved to
 `collecting-failures`: the `recovery-<digest>` attempt reopen-regression

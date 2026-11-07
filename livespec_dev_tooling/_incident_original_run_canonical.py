@@ -30,8 +30,10 @@ __all__: list[str] = [
 ]
 
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-zvntys
+# EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-3rsnqb
 EVIDENCE_MARKER = "livespec-incident-original-run-evidence-v1"
 _CONFLICT = "the incident item already records other evidence for this original run"
+_MERGED_PHASE = "master-observation"
 
 AuthorityPort = Callable[[str, Mapping[str, object], Mapping[str, str]], dict[str, Any]]
 LedgerPort = Callable[[Sequence[str]], str]
@@ -94,19 +96,39 @@ def recorded_digests(*, ports: CanonicalPorts, original: OriginalRun) -> tuple[s
     return tuple(digests)
 
 
+def _merge_query(*, registration: ObserverRegistration) -> dict[str, object]:
+    """The generation that records this attempt's merge, next after its arm.
+
+    A pre-merge arm grants its later binding without a fresh canonical read, so a
+    registration keeps the arm's generation and the chain records landed commits
+    one generation on, through the canonical `record-merge` action.
+    """
+    return {
+        **authority_query(registration=registration),
+        "phase": _MERGED_PHASE,
+        "operation": f"{registration.attempt_id}#{_MERGED_PHASE}",
+        "generation": registration.generation + 1,
+    }
+
+
+def _landed(*, record: dict[str, object], merge_sha: str) -> bool:
+    landed = record.get("landed_commits")
+    return isinstance(landed, list) and merge_sha in cast("list[object]", landed)
+
+
 @dataclass(frozen=True, kw_only=True)
 class _Authorize:
     ports: CanonicalPorts
     registration: ObserverRegistration
 
+    def _attempt(self, *, query: Mapping[str, object]) -> dict[str, object] | None:
+        attempt = self.ports.authority("read-history", query, {}).get("attempt")
+        return cast("dict[str, object]", attempt) if isinstance(attempt, dict) else None
+
     def __call__(self, original: OriginalRun) -> bool:
-        query = authority_query(registration=self.registration)
-        result = self.ports.authority("read-history", query, {})
-        attempt = result.get("attempt")
-        if not isinstance(attempt, dict):
+        record = self._attempt(query=authority_query(registration=self.registration))
+        if record is None:
             return False
-        record = cast("dict[str, object]", attempt)
-        landed = record.get("landed_commits")
         expected = {
             "repository": original.repository,
             "item_id": original.item_id,
@@ -116,10 +138,18 @@ class _Authorize:
             "owner": original.owner,
             "pr_number": original.pr_number,
         }
+        if not all(record.get(name) == value for name, value in expected.items()):
+            return False
+        if _landed(record=record, merge_sha=original.merge_sha):
+            return True
+        merged = self._attempt(query=_merge_query(registration=self.registration))
         return (
-            all(record.get(name) == value for name, value in expected.items())
-            and isinstance(landed, list)
-            and original.merge_sha in cast("list[object]", landed)
+            merged is not None
+            and all(
+                merged.get(name) == record.get(name)
+                for name in ("repository", "item_id", "attempt_id", "owner", "pr_number", "head")
+            )
+            and _landed(record=merged, merge_sha=original.merge_sha)
         )
 
 
