@@ -424,6 +424,39 @@ jobs:
           cache-from: type=gha,scope=python-arm64
           cache-to: type=gha,scope=python-arm64,mode=max
 
+      # The python-agent layer too, FROM the arm64 python digest just built: a
+      # factory sandbox on an arm64 homelab worker needs both ACP adapters and
+      # bubblewrap, which only this layer carries. It is pushed under its
+      # `-arm64` suffixed tags ONLY. `multiarch` below merges base and python
+      # tags alone, so every amd64 python-agent tag stays the single-platform
+      # image it was, and a worker's provider names the suffixed tag outright.
+      - name: Compute python-agent tags
+        id: meta_python_agent
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ steps.target.outputs.image }}
+          flavor: |
+            latest=false
+            suffix=-arm64
+          tags: |
+            type=sha,prefix=python-agent-sha-
+            type=semver,pattern=v{{version}},prefix=python-agent-
+
+      - name: Build + push python-agent (arm64)
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: docker/fabro-sandbox/agent/Dockerfile
+          platforms: linux/arm64
+          push: true
+          provenance: false
+          build-args: |
+            PARENT_IMAGE=${{ steps.target.outputs.image }}@${{ steps.build_python.outputs.digest }}
+          tags: ${{ steps.meta_python_agent.outputs.tags }}
+          labels: ${{ steps.meta_python_agent.outputs.labels }}
+          cache-from: type=gha,scope=python-agent-arm64
+          cache-to: type=gha,scope=python-agent-arm64,mode=max
+
   # Publishes each base and python tag as an amd64 + arm64 index. GHCR only:
   # on a pull request each job's layers live in its own ephemeral registry.
   multiarch:
