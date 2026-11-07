@@ -3092,3 +3092,15 @@ And the same configuration with a repository-role bypass actor added to that rul
 And the same configuration with the ruleset's strict policy enabled fails with failure_mode strict_enabled.
 And a ruleset read that fails fails with failure_mode ruleset_unreadable rather than skipping.
 ```
+
+## Scenario: a coverage-guided kill-matrix run skips tests that do not execute a mutant
+
+Given a Python package with functions F and G, where test T1 executes only F and test T2 executes only G
+
+When `just mutation-kill-matrix` runs over that package
+
+Then each mutant of F MUST be run against T1 and MUST NOT be run against T2
+
+And each mutant of G MUST be run against T2 and MUST NOT be run against T1
+
+And the report MUST name the test-selection method it used

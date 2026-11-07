@@ -233,6 +233,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: a coverage-guided kill-matrix run skips tests that do not execute a mutant",
+    "work_item": "livespec-dev-tooling-tcmw34",
+    "first_seen": "2026-11-07"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: a default-branch push routes to the master runner target and a pull request does not",
     "work_item": "livespec-dev-tooling-lzkzwb",
     "first_seen": "2026-11-03"
