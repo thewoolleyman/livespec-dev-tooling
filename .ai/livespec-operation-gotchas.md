@@ -59,6 +59,18 @@ next dispatch retakes the classification. `dispatcher.py classify-tier` only
 reports the standing record, so it cannot preview that (bd-ib-nesy77,
 2026-11-03).
 
+### Run the LLM doctor phases before merging a revise
+
+Run the doctor's LLM phases on the drafted bytes BEFORE merge, and make them walk
+the text through live state: a real install record, a real roll, the code that
+would read the new rule. The independent ratification review checks consistency,
+and it passed v150. On 2026-11-07, after v150 merged, those phases returned 14
+findings showing the contract could not work. The first correction draft then
+failed its own pre-merge pass with new high-severity findings.
+
+12 of 117 revise sessions show the phase ran (livespec-wy3blz records this), so
+the post-step alone cannot be relied on to happen.
+
 ## Heading-Coverage Co-Edits
 
 Any change that adds, renames, or removes a live `## ` H2 heading in
@@ -73,6 +85,11 @@ they also change the H2 set.
 `test: "TODO"` is acceptable only as a transition state with a clear reason.
 Release-tag CI rejects TODO registry entries, so replace TODOs with real test
 node IDs before release.
+
+A change that removes an H2 heading from a spec file bars the debt register from
+growing in that same change: the v150 commit gate refused with `register_grew`.
+When a scenario's behaviour is being replaced, keep its heading and rewrite the
+body.
 
 ## Commit Prefix Selection
 
@@ -155,6 +172,15 @@ Measured 2026-11-07 on `lbinx7`: v151 (livespec-dev-tooling#3695) merged at
 owning seat rewrote it at 17:31Z, so the 17:25:45Z pre-admission judgement no
 longer described the item. The coordinator accepted the new text and asked for
 this warning (their word, 2026-11-07).
+
+## A Plan Epic's Status Is Not A Freeze Signal
+
+A plan epic rests at `backlog` by design, so its status says nothing about whether
+that plan's freeze or pause is on. On 2026-11-07 a seat read
+livespec-dev-tooling-bqnzcm's `backlog` as "the dispatch freeze still holds" for
+hours after it lifted at 13:58Z, and repeated that in a handoff. Read the gate
+files instead: `tmp/petri-canary/hold-gmktec`, `fleet-cap` and `freeze-allowlist`
+in the orchestrator repo's checkout, and the coordinator's latest priorities record.
 
 ## bd Resolves The Tenant From The Working Directory
 
