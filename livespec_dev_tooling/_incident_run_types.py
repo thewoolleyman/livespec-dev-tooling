@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 __all__: list[str] = [
+    "CanonicalRefusalError",
     "CorrectedAttempt",
     "EvidenceDebt",
     "EvidenceRefusal",
@@ -17,6 +18,16 @@ __all__: list[str] = [
 ]
 
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-kobmka
+# EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-zvntys
+
+
+class CanonicalRefusalError(Exception):
+    """The canonical incident authority refused by name; the operator sees its code."""
+
+    def __init__(self, *, code: str, detail: str) -> None:
+        super().__init__(f"{code}: {detail}")
+        self.code = code
+        self.detail = detail
 
 
 @dataclass(frozen=True, kw_only=True)
