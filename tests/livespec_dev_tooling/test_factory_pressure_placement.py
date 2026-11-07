@@ -476,3 +476,51 @@ def test_every_ci_pod_template_tolerates_the_factory_pressure_taint() -> None:
         f"the factory pressure taint must steer FACTORY pods only, so every CI pod "
         f"template tolerates it; missing in {missing}"
     )
+
+
+def test_a_tainted_node_keeps_the_taint_until_its_gap_falls_below_the_release_point(
+    tmp_path: Path,
+) -> None:
+    tainted = _node(_GMK, avg60=9.0, tainted=True)
+    held, held_mutations = _reconcile_with_env(
+        tmp_path / "held",
+        nodes=[_node(_PE, avg60=2.0, alloc="72"), tainted],
+        env={"FACTORY_PRESSURE_GAP": "10", "FACTORY_PRESSURE_RELEASE_GAP": "5"},
+    )
+    assert held.returncode == 0, held.stderr
+    assert not any(
+        m.startswith(f"taint nodes {_GMK} {_TAINT_KEY}:PreferNoSchedule-") for m in held_mutations
+    )
+    assert f"steer-to:{_PE}" in held.stdout
+    released = _node(_GMK, avg60=6.0, tainted=True)
+    gone, gone_mutations = _reconcile_with_env(
+        tmp_path / "gone",
+        nodes=[_node(_PE, avg60=2.0, alloc="72"), released],
+        env={"FACTORY_PRESSURE_GAP": "10", "FACTORY_PRESSURE_RELEASE_GAP": "5"},
+    )
+    assert gone.returncode == 0, gone.stderr
+    assert f"taint nodes {_GMK} {_TAINT_KEY}:PreferNoSchedule-" in gone_mutations, gone_mutations
+    fresh, fresh_mutations = _reconcile_with_env(
+        tmp_path / "fresh",
+        nodes=[_node(_PE, avg60=2.0, alloc="72"), _node(_GMK, avg60=9.0)],
+        env={"FACTORY_PRESSURE_GAP": "10", "FACTORY_PRESSURE_RELEASE_GAP": "5"},
+    )
+    assert fresh.returncode == 0, fresh.stderr
+    assert fresh_mutations == [], fresh_mutations
+
+
+def _reconcile_with_env(
+    tmp_path: Path, *, nodes: list[_Json], env: dict[str, str]
+) -> tuple[subprocess.CompletedProcess[str], list[str]]:
+    tmp_path.mkdir(parents=True)
+    fake, base = _scratch(tmp_path)
+    _ = (fake / "nodes.json").write_text(json.dumps({"items": nodes}), encoding="utf-8")
+    _ = (fake / "pods.json").write_text(json.dumps({"items": []}), encoding="utf-8")
+    cq, flavors = _gates_quota("5", topology=False)
+    _ = (fake / "cq.json").write_text(json.dumps(cq), encoding="utf-8")
+    _ = (fake / "flavors.json").write_text(json.dumps(flavors), encoding="utf-8")
+    run = subprocess.run(
+        ["bash", str(_RECONCILE)], env={**base, **env}, capture_output=True, text=True, check=False
+    )
+    log = (fake / "argv.log").read_text(encoding="utf-8").splitlines()
+    return run, [line for line in log if not line.startswith("get ")]

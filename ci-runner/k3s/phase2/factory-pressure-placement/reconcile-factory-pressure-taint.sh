@@ -65,6 +65,10 @@ esac
 export KUBECONFIG="${KUBECONFIG:-/etc/rancher/k3s/k3s.yaml}"
 STATE_DIR="${FACTORY_PRESSURE_STATE_DIR:-/var/lib/livespec/factory-pressure-placement}"
 export FACTORY_PRESSURE_GAP="${FACTORY_PRESSURE_GAP:-20}"
+# Hysteresis: a node ALREADY tainted keeps the taint while its gap stays at or above
+# this lower release point, so the taint does not flap around one threshold. It
+# defaults to FACTORY_PRESSURE_GAP, which is the old taint-and-lift-at-one-value rule.
+export FACTORY_PRESSURE_RELEASE_GAP="${FACTORY_PRESSURE_RELEASE_GAP:-$FACTORY_PRESSURE_GAP}"
 export FACTORY_PRESSURE_SANDBOX_MILLICPU="${FACTORY_PRESSURE_SANDBOX_MILLICPU:-4000}"
 export FACTORY_PRESSURE_GATES_RESERVE_CAP_MILLICPU="${FACTORY_PRESSURE_GATES_RESERVE_CAP_MILLICPU:-5000}"
 export FACTORY_PRESSURE_STALE_SECONDS="${FACTORY_PRESSURE_STALE_SECONDS:-90}"
@@ -92,6 +96,7 @@ from datetime import datetime, timezone
 
 work, state_dir = sys.argv[1], sys.argv[2]
 gap = float(os.environ["FACTORY_PRESSURE_GAP"])
+release = float(os.environ["FACTORY_PRESSURE_RELEASE_GAP"])
 need = int(os.environ["FACTORY_PRESSURE_SANDBOX_MILLICPU"])
 reserve_cap = int(os.environ["FACTORY_PRESSURE_GATES_RESERVE_CAP_MILLICPU"])
 stale = int(os.environ["FACTORY_PRESSURE_STALE_SECONDS"])
@@ -231,7 +236,8 @@ elif quota is None:
 else:
     low = min(readings, key=lambda k: readings[k])
     fit_low = fit(low)
-    high = {k for k, v in readings.items() if v - readings[low] >= gap}
+    high = {k for k, v in readings.items() if k != low and (
+        v - readings[low] >= gap or (k in tainted_now and v - readings[low] >= release))}
     if not high:
         reason = f"no-gap:lowest={low}"
     elif fit_low < need:
