@@ -96,6 +96,11 @@ def mac(tmp_path: Path) -> _Mac:
     limactl = bin_dir / "limactl"
     limactl.write_text(_STUB_LIMACTL, encoding="utf-8")
     limactl.chmod(limactl.stat().st_mode | stat.S_IXUSR)
+    enroll = bin_dir / "enroll"
+    enroll.write_text(
+        '#!/bin/bash\nprintf "enroll %s\\n" "$*" >> "$STUB_STATE/calls.log"\n', encoding="utf-8"
+    )
+    enroll.chmod(enroll.stat().st_mode | stat.S_IXUSR)
     (state / "calls.log").write_text("", encoding="utf-8")
     (state / "server-running").write_text("true\n", encoding="utf-8")
     return _Mac(state=state, bin_dir=bin_dir)
@@ -115,6 +120,7 @@ def _run(
             "STUB_CERT": _CERT,
             "WAIT_SECONDS": "0",
             "POLL_SECONDS": "1",
+            "HOMELAB_WORKER_ENROLL": str(mac.bin_dir / "enroll"),
         },
         check=False,
         timeout=120,
