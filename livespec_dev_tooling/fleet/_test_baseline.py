@@ -50,7 +50,7 @@ def run_command(*, command: tuple[str, ...], cwd: Path) -> subprocess.CompletedP
 
 
 def _command_text(*, command: tuple[str, ...]) -> str:
-    """Render a report command without its repository toolchain launcher."""
+    """Render a report command exactly as the collector executes it."""
     return " ".join(command)
 
 
@@ -72,8 +72,8 @@ def _python_row(*, path: Path, runner: Runner) -> RepositoryRow:
         "path": str(path),
         "ecosystem": "python",
         "test_count": _pytest_count(output=collected.stdout),
-        "count_command": _command_text(command=_PYTEST_COUNT_COMMAND),
-        "test_command": _command_text(command=("uv", "run", *_PYTEST_TEST_COMMAND)),
+        "count_command": _command_text(command=(*_MISE_UV, *_PYTEST_COUNT_COMMAND)),
+        "test_command": _command_text(command=(*_MISE_UV, *_PYTEST_TEST_COMMAND)),
         "runtime_seconds": runtime_seconds,
         "toolchain_versions": {
             "pytest": pytest_version.stdout.strip(),
