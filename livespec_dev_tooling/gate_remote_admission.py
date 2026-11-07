@@ -83,7 +83,6 @@ def _await_admission(
     job_name: str,
 ) -> Result[Terminal | None, GateStepFailed]:
     """Wait for an admission signal, retaining a terminal state read during it."""
-    last_refusal: GateStepFailed | None = None
     polls = request.admission_poll_budget()
     for poll in range(polls):
         read = require_success(
@@ -92,9 +91,8 @@ def _await_admission(
             outcome=runner(argv=argv, cwd=request.repo_root),
         )
         if isinstance(read, Failure):
-            last_refusal = read.failure()
+            return Failure(read.failure())
         else:
-            last_refusal = None
             terminal = terminal_condition(
                 argv=argv,
                 payload=read.unwrap().stdout,
@@ -109,8 +107,6 @@ def _await_admission(
                 return Success(None)
         if poll + 1 < polls:
             sleeper(seconds=request.poll_interval_seconds)
-    if last_refusal is not None:
-        return Failure(last_refusal)
     return Failure(
         unreadable(
             step=_AWAIT_STEP,
@@ -132,7 +128,6 @@ def _await_terminal(
     job_name: str,
 ) -> Result[Terminal, GateStepFailed]:
     """Poll an admitted Job until it reports a terminal condition, or give up."""
-    last_refusal: GateStepFailed | None = None
     polls = request.poll_budget()
     for poll in range(polls):
         read = require_success(
@@ -141,7 +136,7 @@ def _await_terminal(
             outcome=runner(argv=argv, cwd=request.repo_root),
         )
         if isinstance(read, Failure):
-            last_refusal = read.failure()
+            return Failure(read.failure())
         else:
             terminal = terminal_condition(
                 argv=argv,
@@ -155,8 +150,6 @@ def _await_terminal(
                 return Success(ended)
         if poll + 1 < polls:
             sleeper(seconds=request.poll_interval_seconds)
-    if last_refusal is not None:
-        return Failure(last_refusal)
     gave_up = f"{job_name} reached no terminal condition within {request.poll_timeout_seconds:g}s"
     return Failure(unreadable(step=_AWAIT_STEP, argv=argv, detail=gave_up))
 
