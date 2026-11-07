@@ -255,9 +255,10 @@ jobs:
       # livespec-dev-tooling-h77qmw: a retry record dies with the runner unless
       # uploaded. The host-side reader files one root-fix item per node id from
       # this artifact. It runs on failure too, and a run with no retry has
-      # nothing to upload.
+      # nothing to upload. It keeps the incident guard because it moves an
+      # artifact, and !cancelled() is what makes it run after a failed step.
       - name: Publish the flake-retry records for the host-side reader
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && !(needs.incident-ci.result == 'success' && contains(fromJSON(needs.incident-ci.outputs.omitted || '[]'), 'check-per-file-coverage')) }}
         uses: actions/upload-artifact@v4
         with:
           name: flake-retries

@@ -310,12 +310,15 @@ def _single_member_findings(*, name: str, job: dict[str, Any], member: str) -> l
     """The member's steps carry the guard; one explicit report carries its inverse."""
     guard = _GUARD.format(member=member)
     run_if, report_if = "${{ !(" + guard + ") }}", "${{ " + guard + " }}"
+    # A step that must also run after a failed step, such as the flake-retry upload, needs
+    # !cancelled(). It still carries the same guard, so an omitted member moves no artifact.
+    run_after_failure_if = "${{ !cancelled() && !(" + guard + ") }}"
     findings: list[str] = []
     reports = 0
     for step in job["steps"]:
         condition = step.get("if")
         if _does_member_work(step=step):
-            if condition != run_if:
+            if condition not in (run_if, run_after_failure_if):
                 findings.append(
                     f"job {name}: step {step['name']!r} does the member's work "
                     f"without the released-aggregate guard"
@@ -469,6 +472,14 @@ _GUARD_OF_PER_FILE_COVERAGE = _GUARD.format(member="'check-per-file-coverage'")
             "'expedited-incident-response') }}\n",
             "job check-per-file-coverage: step 'Publish .coverage for the check-coverage "
             "consumer' does the member's work without the released-aggregate guard",
+        ),
+        (
+            "      - name: Publish the flake-retry records for the host-side reader\n"
+            "        if: ${{ !cancelled() && !(" + _GUARD_OF_PER_FILE_COVERAGE + ") }}\n",
+            "      - name: Publish the flake-retry records for the host-side reader\n"
+            "        if: ${{ !cancelled() }}\n",
+            "job check-per-file-coverage: step 'Publish the flake-retry records for the "
+            "host-side reader' does the member's work without the released-aggregate guard",
         ),
         (
             "      - name: Checkout\n        uses: actions/checkout@v5\n        with:\n"
