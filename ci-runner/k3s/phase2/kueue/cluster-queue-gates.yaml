@@ -1,12 +1,18 @@
 # cluster-queue-gates.yaml — the Kueue admission home for GATE Jobs: the
-# `just check` aggregate runs offloaded to the gate-capable pool nodes,
-# gmktec-xubuntu and hp-xubuntu.
+# `just check` aggregate runs offloaded to the pool nodes: hp-xubuntu,
+# poweredge-xubuntu and gmktec-xubuntu, tried in that order.
 #
-# It carries SEVEN objects, applied in this file's own document order because
+# It carries EIGHT objects, applied in this file's own document order because
 # each depends on the one before it: the `gates` Namespace, the
-# `gates-hostname` Topology, the gmktec and hp ResourceFlavors, the `gates-cq`
-# ClusterQueue, the `gate-priority` WorkloadPriorityClass, and the `gates-lq`
-# LocalQueue.
+# `gates-hostname` Topology, the gmktec, hp and poweredge ResourceFlavors, the
+# `gates-cq` ClusterQueue, the `gate-priority` WorkloadPriorityClass, and the
+# `gates-lq` LocalQueue.
+#
+# EVERY ci_pool NODE HAS A LANE (2026-11-07). The gates test reads the
+# committed inventory's ci_pool group and requires exactly one gates flavor per
+# member, so a node that joins the pool later gets its gate posture decided in
+# the same change that adds it. Read DERIVATION.md "The PowerEdge lane and the
+# flavor order (2026-11-07)" before changing the order or a lane's size.
 #
 # TOPOLOGY-AWARE ADMISSION (livespec-dev-tooling-cikd6m, 2026-11-04). Both
 # flavors name the `gates-hostname` Topology, so Kueue admits a gate only when
@@ -80,11 +86,13 @@ metadata:
   name: gates-flavor
 spec:
   nodeLabels:
-    # `kubernetes.io/hostname`, NOT `k3s-role: arc-runner-host`: BOTH pool
-    # nodes carry the k3s-role label (../../provision-k3s.sh applies it from
-    # every profile), so selecting on it would let a gate land on the
-    # PowerEdge — the host whose contention this plan exists to relieve. The
-    # hostname is the node's own name from
+    # `kubernetes.io/hostname`, NOT `k3s-role: arc-runner-host`: every pool
+    # node carries the k3s-role label (../../provision-k3s.sh applies it from
+    # every profile), so selecting on it would merge every node into one lane
+    # with no order between them. (The 2026-09 reason given here, keeping gates
+    # off a contended PowerEdge, no longer holds as a blanket rule: on
+    # 2026-11-07 the PowerEdge gained its own lane below.) The hostname is the
+    # node's own name from
     # ../../phase0-bare-metal/profiles/gmktec-xubuntu.env (NODE_NAME), and it
     # selects that node alone.
     kubernetes.io/hostname: gmktec-xubuntu
@@ -117,6 +125,19 @@ spec:
   topologyName: gates-hostname
 ---
 apiVersion: kueue.x-k8s.io/v1beta2
+kind: ResourceFlavor
+metadata:
+  name: gates-poweredge-flavor
+spec:
+  nodeLabels:
+    # poweredge-xubuntu is the cache-tier carrier, so the generic warm-UV
+    # publisher's generation sits beside its local-path root and a gate's
+    # ephemeral PVC is reflink-seeded there exactly as a runner's work volume
+    # is. It also hosts the gates mirror and the PyPI proxy the gate reads.
+    kubernetes.io/hostname: poweredge-xubuntu
+  topologyName: gates-hostname
+---
+apiVersion: kueue.x-k8s.io/v1beta2
 kind: ClusterQueue
 metadata:
   name: gates-cq
@@ -146,7 +167,40 @@ spec:
     withinClusterQueue: Never
   resourceGroups:
     - coveredResources: ["cpu", "memory"]
+      # FLAVOR ORDER IS PLACEMENT PREFERENCE. Kueue tries these flavors in
+      # list order and admits on the first whose node has room, so the first
+      # entry receives most gates. Admission sees REQUESTS only, and CI runner
+      # pods request no CPU, so a node saturated by runners still reads as
+      # free. The order therefore rests on a measured read, recorded in
+      # DERIVATION.md "The PowerEdge lane and the flavor order (2026-11-07)":
+      # at 21:38-21:40Z hp-xubuntu used 7.5-11.7 of 16 cores, poweredge-xubuntu
+      # was 0.4% idle with CI-slice CPU pressure avg60 23, and gmktec-xubuntu
+      # was 0.2% idle with that pressure at 50, saturated. The order is static,
+      # so it does not follow load as it moves (livespec-dev-tooling-gvo7fa).
       flavors:
+        - name: gates-hp-flavor
+          resources:
+            # Two concurrent gates. hp-xubuntu has 14500m CPU / 27.2 GiB
+            # allocatable and, since FACTORY_NODE=false drained its factory
+            # sandboxes, carried 5.7 cpu of requests with one gate running at
+            # 21:09Z. Two 5-cpu gates fit beside its five churn slots; 16 Gi
+            # gives two 6 Gi requests two Gi of headroom each.
+            - name: "cpu"
+              nominalQuota: 10
+            - name: "memory"
+              nominalQuota: 16Gi
+        - name: gates-poweredge-flavor
+          resources:
+            # Two concurrent gates at 5 cpu / 6 Gi each. The node has 72 cpu
+            # and about 378 Gi allocatable, but it read 0.4% idle with CI-slice
+            # pressure 23 at 21:38Z, close to the saturation rule, and each
+            # gate's 5-cpu request takes about that much from best-effort
+            # runners. So the lane starts at two, a first estimate to confirm by
+            # soak.
+            - name: "cpu"
+              nominalQuota: 10
+            - name: "memory"
+              nominalQuota: 16Gi
         - name: gates-flavor
           resources:
             # Three concurrent gates at roughly 5 cpu / 6 Gi each. cpu is the
@@ -161,20 +215,6 @@ spec:
               nominalQuota: 15
             - name: "memory"
               nominalQuota: 24Gi
-        - name: gates-hp-flavor
-          resources:
-            # hp-xubuntu has 14500m CPU / 27.2 GiB allocatable, but currently
-            # carries up to three 4-CPU factory sandboxes while their existing
-            # work drains. One 5-CPU gate is therefore the only safe additional
-            # lane: it schedules as soon as hp has at most two such sandboxes,
-            # and FACTORY_NODE=false prevents new sandboxes from refilling that
-            # contention. 8 Gi gives the gate's 6 Gi request two Gi of measured
-            # headroom without admitting a second gate. DERIVATION.md records
-            # the full arithmetic and the required post-change soak.
-            - name: "cpu"
-              nominalQuota: 5
-            - name: "memory"
-              nominalQuota: 8Gi
 ---
 apiVersion: kueue.x-k8s.io/v1beta2
 kind: WorkloadPriorityClass

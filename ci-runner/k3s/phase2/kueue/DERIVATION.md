@@ -1568,6 +1568,54 @@ window for livespec-dev-tooling-ytk6bp measures normal fleet activity for at
 least two hours and requires no gate admission wait over 15 minutes. It decides
 whether one hp lane is sufficient and records any later quota revision.
 
+### The PowerEdge lane and the flavor order (2026-11-07)
+
+**What was wrong.** `gates-cq` admitted at most four gates: three on gmktec,
+tried first, and one on hp. On 2026-11-07 at 21:09Z gmktec-xubuntu was 0% idle
+with CI-slice CPU pressure avg60 52, which is saturation by the 2026-11-04
+ruling recorded in `.ai/ci-node-capacity-reads.md`. poweredge-xubuntu was
+18.6% idle, with that pressure at 0.06 and 31 of 72 CPU requested, and it had
+no gate flavor. Twelve gate Jobs were queued, the oldest Suspended for 19
+minutes. A hand commit or push waits silently on its Job, because lefthook
+holds hook output until the hook ends, so queue wait plus run time crossed
+gate-start's 900 s stall window, and the killed client's Job stayed queued
+while the retry added another.
+
+**Why admission did not see it.** Topology-aware admission (next section)
+subtracts the REQUESTS of pods Kueue does not manage. CI runner pods request no
+CPU, only `ci-runner.io/churn-slot`, so a node that runners saturate still
+reads as free, and a gate's 5-CPU request then takes CPU from them by CFS
+weight. Nothing in admission reads real CPU use on any node.
+
+**What changed.**
+
+- The hp lane rises to 10 cpu / 16 Gi, two gates, and is tried FIRST. Its
+  factory sandboxes have drained under `FACTORY_NODE=false`. At 21:38-21:40Z it
+  used 7.5-11.7 of its 16 cores.
+- A new `gates-poweredge-flavor` lane of 10 cpu / 16 Gi, two gates, tried
+  second. The node is the cache-tier carrier, so a gate's ephemeral PVC is
+  reflink-seeded from the warm-UV generation there, and the gates mirror and
+  PyPI proxy are local. It was 18.6% idle with CI-slice pressure 0.06 at
+  21:09Z, but 0.4% idle with pressure 23 at 21:38Z. That is near the saturation
+  rule, so the lane starts at two gates, not three.
+- gmktec's lane is unchanged at three gates, but it is tried LAST. It read 0.2%
+  idle with CI-slice pressure 50 at 21:38Z. Flavor order is placement
+  preference, because Kueue admits on the first flavor whose node has room.
+- The gates test requires one gates flavor per `ci_pool` inventory host, so a
+  node that joins the pool later cannot be left out of the gate queue by
+  omission. It asserts the lanes' shape, not their sizes, as
+  `SPECIFICATION/contracts.md` §"Tests never pin committed configuration
+  values" requires.
+
+**What this does not fix.** The order is static and rests on one read, and
+between 21:09Z and 21:38Z the PowerEdge moved from 18.6% to 0.4% idle. Admission
+that follows real CPU use is tracked as livespec-dev-tooling-gvo7fa.
+
+**First estimates to confirm by soak.** Ruled by legacy-coordinator-agent under
+R301 at 21:15Z, recorded on `livespec-dev-tooling-6tgd2z`. That ruling
+supersedes the 2026-09 line that kept gates off the PowerEdge, whose premise
+had inverted.
+
 ### Topology-aware admission on the gates flavors (2026-11-04, livespec-dev-tooling-cikd6m)
 
 **What was wrong.** Quota is not capacity. On 2026-11-04 at 01:35Z,
