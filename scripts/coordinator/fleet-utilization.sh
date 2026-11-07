@@ -14,19 +14,30 @@ then FLAGS an idle node beside a saturated one. Saturation is judged from CPU
 PSI and mpstat idle, never from load average (see
 .ai/ci-node-capacity-reads.md). Every ssh has a ConnectTimeout and an overall
 timeout; a host that fails every candidate user is reported UNREACHABLE with the
-error, never skipped. Nothing here mutates: only cat / mpstat / kubectl get / bd list.
+error, never skipped. Nothing here mutates: only cat / mpstat / kubectl get / bd list /
+bd sql SELECT.
+
+Launcher log lines carry a bare UTC clock (HH:MM:SS). Each is dated by walking its
+log from the `=== ... at <ISO>` header of its ticket section, so a line from an
+earlier day cannot read as recent after midnight or after the log is rewritten.
 
 The UNTICKETED-READY section reads every livespec beads tenant's READY items
 through the credential wrapper and flags any non-epic READY item older than
 30 minutes that has no dispatcher ticket behind it (no seq-<id>.log written in
 the last 30 min, no queue entry, no capture-argv in the last 6 h). A tenant whose read fails is reported
-UNREADABLE, never skipped.
+UNREADABLE, never skipped. Each flagged row then carries its cause when it has one:
+`HELD spec-change <topic> <reason>` from the newest livespec-spec-change-tier comment
+(the same three reasons as the orchestrator's _spec_change_tier_hold, ratification read
+from this host's checkout of the tenant's SPECIFICATION/history), or `BLOCKED by <id>`
+for a `blocks` dependency that is not closed. Causes share the section's time budget;
+rows the budget did not reach are counted as skipped, never shown as having no cause.
 """
 
 import argparse
 import collections
 import concurrent.futures
 import datetime
+import glob
 import json
 import pathlib
 import re
@@ -54,6 +65,11 @@ IDLE_PCT_MIN = 40.0
 PSI_SATURATED_MIN = 30.0
 FLEET_WINDOW_S = 20 * 60
 LAUNCH_WINDOW_S = 30 * 60
+DAY_S = 24 * 3600
+# A launcher log can interleave slightly out of order; a larger backward step is midnight.
+CLOCK_BACKSTEP_S = 5 * 60
+# Launchers log a fleet= line about every 20 s, so a family this far behind is not current.
+FLEET_STALE_AFTER_S = 2 * 60
 MIN_POD_COLS = 8
 QUOTA_COLS = 3
 SSH_BIN = shutil.which("ssh") or "ssh"
@@ -63,6 +79,15 @@ READY_SECTION_TIMEOUT_S = 60
 READY_STALE_S = 30 * 60
 CAPTURE_WINDOW_S = 6 * 3600
 TITLE_MAX = 80
+CAUSE_CHUNK = 100
+CAUSE_WORKERS = 4
+TIER_HEAD_CHARS = 4000
+SPEC_TIER_MARKER = "livespec-spec-change-tier"
+SPEC_CHANGE_TIER = "spec-change"
+RATIFYING_DECISIONS = ("accept", "modify")
+UNNAMED_TOPIC = "(none linked)"
+ABSENT_VALUE = "(none)"
+SAFE_NAME_RE = re.compile(r"[\w.-]+")
 
 
 def out(text=""):
@@ -188,12 +213,71 @@ def read_cluster():
     return out
 
 
-def seconds_ago(hhmmss, now):
-    """Seconds between a bare HH:MM:SS (UTC) stamp and now, midnight-safe."""
-    h, m, s = (int(x) for x in hhmmss.split(":"))
-    stamp = h * 3600 + m * 60 + s
-    cur = now.hour * 3600 + now.minute * 60 + now.second
-    return (cur - stamp) % 86400
+CLOCK_RE = re.compile(r"(\d\d):(\d\d):(\d\d) ")
+SECTION_HEADER_RE = re.compile(r"=== .*?(\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d)Z")
+
+
+def header_epoch(line):
+    """Epoch of a dated `=== ...` ticket-section header, or None for any other line."""
+    m = SECTION_HEADER_RE.match(line)
+    if not m:
+        return None
+    try:
+        stamp = datetime.datetime.fromisoformat(m.group(1))
+    except ValueError:
+        return None
+    return stamp.replace(tzinfo=datetime.UTC).timestamp()
+
+
+def clock_of(epoch):
+    return int(epoch) % DAY_S
+
+
+def walk_forward(anchor, clock):
+    """(line epoch, next anchor) for a clock read forward from anchor, across midnight."""
+    delta = (clock - clock_of(anchor)) % DAY_S
+    if delta > DAY_S - CLOCK_BACKSTEP_S:
+        return anchor - (DAY_S - delta), anchor
+    return anchor + delta, anchor + delta
+
+
+def walk_backward(anchor, clock):
+    """(line epoch, next anchor) for a clock read backward from anchor, across midnight."""
+    delta = (clock_of(anchor) - clock) % DAY_S
+    if delta > DAY_S - CLOCK_BACKSTEP_S:
+        return anchor + (DAY_S - delta), anchor
+    return anchor - delta, anchor - delta
+
+
+def dated_lines(text, mtime):
+    """Every clock-stamped line of one launcher log as (epoch, line), in file order.
+
+    A line after a dated section header is walked forward from that header. A line
+    before the first header is walked backward from it, or from the file's mtime when
+    the log has no header at all. The header is what survives a rewrite: a rewrite
+    moves the mtime but not the date a section started.
+    """
+    lines = text.splitlines()
+    first_header = next((i for i, ln in enumerate(lines) if header_epoch(ln) is not None), None)
+    dated = {}
+    anchor = mtime if first_header is None else header_epoch(lines[first_header])
+    stop = len(lines) if first_header is None else first_header
+    for i in range(stop - 1, -1, -1):
+        m = CLOCK_RE.match(lines[i])
+        if m:
+            h, mi, s = (int(x) for x in m.groups())
+            dated[i], anchor = walk_backward(anchor, h * 3600 + mi * 60 + s)
+    anchor = None
+    for i in range(stop, len(lines)):
+        stamp = header_epoch(lines[i])
+        if stamp is not None:
+            anchor = stamp
+            continue
+        m = CLOCK_RE.match(lines[i])
+        if m:
+            h, mi, s = (int(x) for x in m.groups())
+            dated[i], anchor = walk_forward(anchor, h * 3600 + mi * 60 + s)
+    return [(dated[i], lines[i]) for i in sorted(dated)]
 
 
 def mtime_or_none(path):
@@ -218,7 +302,7 @@ def recent_files(pattern, window_s):
 
 
 def read_factory():
-    now = datetime.datetime.now(datetime.UTC)
+    now = time.time()
     fac = {
         "fleet": None,
         "cap": None,
@@ -235,13 +319,10 @@ def read_factory():
     except (OSError, ValueError):
         fac["fleet_cap_file"] = None
     rows = fleet_lines(now)
-    petri, fac["other_families"] = split_families(rows, fac["fleet_cap_file"])
-    if petri:
-        fac["fleet_line_age_s"], fac["fleet"], _cap, fac["fleet_log"] = petri[0]
-        fac["cap"] = fac["fleet_cap_file"]
-    elif rows:
-        fac["fleet_line_age_s"], fac["fleet"], fac["cap"], fac["fleet_log"] = rows[0]
-        fac["cap_mismatch"] = True
+    chosen, fac["cap_mismatch"], fac["other_families"] = pick_fleet(rows, fac["fleet_cap_file"])
+    if chosen:
+        fac["fleet_line_age_s"], fac["fleet"], cap, fac["fleet_log"] = chosen
+        fac["cap"] = cap if fac["cap_mismatch"] else fac["fleet_cap_file"]
     try:
         fac["queue_depth"] = sum(1 for p in QUEUE_DIR.iterdir() if p.is_file())
     except OSError:
@@ -250,45 +331,61 @@ def read_factory():
     return fac
 
 
-FLEET_RE = re.compile(r"(\d\d:\d\d:\d\d) .*?fleet=(\d+)(?: cap=(\d+))?")
+FLEET_RE = re.compile(r"\d\d:\d\d:\d\d .*?fleet=(\d+)(?: cap=(\d+))?")
 
 
 def fleet_lines(now):
-    """Every fleet=N [cap=M] line in the window as (age, fleet, cap_or_None, log, kind)."""
+    """Every fleet=N [cap=M] line in the window as (age, fleet, cap_or_None, log), freshest first."""
     rows = []
     for path in recent_files("seq-*.log", FLEET_WINDOW_S):
-        for line in read_or_empty(path).splitlines():
+        for epoch, line in dated_lines(read_or_empty(path), mtime_or_none(path) or now):
             m = FLEET_RE.match(line)
             if not m:
                 continue
-            age = seconds_ago(m.group(1), now)
+            age = int(now - epoch)
             if age <= FLEET_WINDOW_S:
-                cap = int(m.group(3)) if m.group(3) else None
-                rows.append((age, int(m.group(2)), cap, path.name))
+                cap = int(m.group(2)) if m.group(2) else None
+                rows.append((max(age, 0), int(m.group(1)), cap, path.name))
     return sorted(rows, key=lambda r: r[0])
 
 
-def split_families(rows, cap_file):
-    """Petri gmktec fleet = lines whose cap equals the fleet-cap file (or a green line
-    with no cap); every other cap is a different launcher family."""
-    petri = [r for r in rows if r[2] is None or r[2] == cap_file]
+def pick_fleet(rows, cap_file):
+    """The fleet line to report, whether it disagrees with the fleet-cap file, and the rest.
+
+    A line whose cap equals the fleet-cap file (or a green line with no cap) is the petri
+    gmktec family, and any other cap is a different family. The petri family is reported
+    only while it is current beside the freshest line; otherwise the freshest line is
+    reported and the mismatch flagged, so an old family's value can never stand in for
+    what launchers are logging now. Every other family is listed with its age, and marked
+    stale once it is that far behind the reported line.
+    """
+    if not rows:
+        return None, False, {}
+
+    def family(row):
+        return None if row[2] == cap_file else row[2]
+
+    petri = [r for r in rows if family(r) is None]
+    current = bool(petri) and petri[0][0] - rows[0][0] <= FLEET_STALE_AFTER_S
+    chosen = petri[0] if current else rows[0]
     others = {}
     for r in rows:
-        if r not in petri and r[3] not in others:
-            others[r[3]] = {"age_s": r[0], "fleet": r[1], "cap": r[2]}
-    return petri, others
+        if family(r) != family(chosen) and r[3] not in others:
+            stale = r[0] - chosen[0] > FLEET_STALE_AFTER_S
+            others[r[3]] = {"age_s": r[0], "fleet": r[1], "cap": r[2], "stale": stale}
+    return chosen, not current, others
 
 
 def recent_launches(now):
-    launches = []
+    """LAUNCH lines truly inside the trailing window, oldest first."""
+    launches = set()
     for path in recent_files("*", LAUNCH_WINDOW_S):
         if not path.is_file():
             continue
-        for line in read_or_empty(path).splitlines():
-            m = re.match(r"(\d\d:\d\d:\d\d) LAUNCH ", line)
-            if m and seconds_ago(m.group(1), now) <= LAUNCH_WINDOW_S:
-                launches.append(line[:160])
-    return sorted(set(launches), key=lambda ln: -seconds_ago(ln[:8], now))
+        for epoch, line in dated_lines(read_or_empty(path), mtime_or_none(path) or now):
+            if line[9:16] == "LAUNCH " and now - epoch <= LAUNCH_WINDOW_S:
+                launches.add((epoch, line[:160]))
+    return [line for _epoch, line in sorted(launches)]
 
 
 def ready_tenants():
@@ -303,9 +400,9 @@ def first_error_line(text):
     return ((real or lines or ["no output"])[0])[:200]
 
 
-def read_ready(repo, timeout_s):
-    """READY items of one tenant via the wrapper (`bd ready` is dead here; see CLAUDE.md)."""
-    argv = [ENV_WRAPPER, "--", "bd", "list", "--status", "ready", "--limit", "0", "--json"]
+def bd_json(repo, bd_args, timeout_s):
+    """A bd read through the wrapper, as (list_of_records, None) or (None, error)."""
+    argv = [ENV_WRAPPER, "--", "bd", *bd_args]
     try:
         proc = subprocess.run(  # noqa: S603
             argv, cwd=repo, capture_output=True, text=True, timeout=timeout_s, check=False
@@ -320,9 +417,16 @@ def read_ready(repo, timeout_s):
         items = json.loads(proc.stdout or "[]")
     except ValueError as exc:
         return None, f"unparseable JSON: {exc}"
+    if items is None:
+        return [], None
     if not isinstance(items, list):
         return None, "unexpected JSON shape (not a list)"
     return items, None
+
+
+def read_ready(repo, timeout_s):
+    """READY items of one tenant via the wrapper (`bd ready` is dead here; see CLAUDE.md)."""
+    return bd_json(repo, ["list", "--status", "ready", "--limit", "0", "--json"], timeout_s)
 
 
 def queue_texts():
@@ -362,6 +466,150 @@ def fmt_age(seconds):
     return f"{h // 24}d{h % 24:02d}h"
 
 
+def sql_id_list(ids):
+    return ", ".join(f"'{i}'" for i in ids)
+
+
+def open_blockers(item):
+    """Ids of the item's `blocks` dependencies (`bd list` spells these depends_on_id + type)."""
+    return [
+        d["depends_on_id"]
+        for d in item.get("dependencies") or []
+        if d.get("type") == "blocks" and SAFE_NAME_RE.fullmatch(d.get("depends_on_id") or "")
+    ]
+
+
+def newest_tier_fields(rows):
+    """item id -> `key: value` fields of its newest tier record, marker checked exactly."""
+    newest = {}
+    for row in sorted(rows, key=lambda r: (r.get("created_at") or "", r.get("id") or "")):
+        body = (row.get("head") or "").strip()
+        if body.splitlines()[:1] == [SPEC_TIER_MARKER]:
+            newest[row.get("issue_id")] = body
+    fields = {}
+    for item_id, body in newest.items():
+        parts = (raw.strip().partition(": ") for raw in body.splitlines())
+        fields[item_id] = {key: value for key, sep, value in parts if sep}
+    return fields
+
+
+def topic_is_ratified(repo, topic):
+    """Whether this host's checkout of the tenant's spec history ratified the topic."""
+    if not SAFE_NAME_RE.fullmatch(topic):
+        return False
+    history = repo / "SPECIFICATION" / "history"
+    pattern = f"v*/proposed_changes/{glob.escape(topic)}-revision.md"
+    for path in history.glob(pattern):
+        lines = read_or_empty(path).splitlines()
+        front = lines[1:lines.index("---", 1)] if lines[:1] == ["---"] and "---" in lines[1:] else []
+        for line in front:
+            if line.startswith("decision:") and line[9:].strip() in RATIFYING_DECISIONS:
+                return True
+    return False
+
+
+def hold_cause(fields, repo, ratified):
+    """`HELD ...` for a recorded spec-change tier, or None when the record admits the item."""
+    required = ("tier", "spec-version", "behaviour-digest")
+    if fields is None or any(k not in fields for k in required):
+        return None
+    if fields["tier"] != SPEC_CHANGE_TIER:
+        return None
+    topic = fields.get("linked-proposal-topic", ABSENT_VALUE)
+    if topic == ABSENT_VALUE:
+        return f"HELD spec-change {UNNAMED_TOPIC} no-linked-topic"
+    if (repo, topic) not in ratified:
+        ratified[(repo, topic)] = topic_is_ratified(repo, topic)
+    reason = "awaiting-rejudgement" if ratified[(repo, topic)] else "unratified-topic"
+    return f"HELD spec-change {topic} {reason}"
+
+
+def read_cause_chunk(repo, rows, blockers_of, deadline):
+    """Tier records and blocker statuses of one chunk, as (tier_rows, statuses, error)."""
+    ids = [r["id"] for r in rows if SAFE_NAME_RE.fullmatch(r["id"])]
+    query = (
+        f"SELECT issue_id, id, created_at, LEFT(text, {TIER_HEAD_CHARS}) AS head FROM comments"
+        f" WHERE issue_id IN ({sql_id_list(ids)}) AND text LIKE '{SPEC_TIER_MARKER}%'"
+    )
+    remaining = deadline - time.monotonic()
+    if remaining < 1:
+        return None, None, f"section budget {READY_SECTION_TIMEOUT_S}s spent"
+    tier_rows, err = bd_json(repo, ["sql", "--json", query], remaining)
+    if err is not None:
+        return None, None, err
+    wanted = sorted({b for r in rows for b in blockers_of.get(r["id"], [])})
+    if not wanted:
+        return tier_rows, {}, None
+    query = f"SELECT id, status FROM issues WHERE id IN ({sql_id_list(wanted)})"
+    remaining = deadline - time.monotonic()
+    if remaining < 1:
+        return None, None, f"section budget {READY_SECTION_TIMEOUT_S}s spent"
+    status_rows, err = bd_json(repo, ["sql", "--json", query], remaining)
+    if err is not None:
+        return None, None, err
+    return tier_rows, {r.get("id"): r.get("status") for r in status_rows}, None
+
+
+def apply_chunk_causes(rows, repo, outcome, blockers_of, ratified):
+    tier_rows, statuses, _err = outcome
+    tiers = newest_tier_fields(tier_rows)
+    for row in rows:
+        causes = []
+        hold = hold_cause(tiers.get(row["id"]), repo, ratified)
+        if hold:
+            causes.append(hold)
+        for blocker in blockers_of.get(row["id"], []):
+            if blocker not in statuses:
+                causes.append(f"BLOCKED by {blocker} (not in this tenant)")
+            elif statuses[blocker] != "closed":
+                causes.append(f"BLOCKED by {blocker}")
+        row["cause"] = "; ".join(causes) or None
+        row["cause_read"] = True
+
+
+def read_causes(result, repos, blockers_of, deadline):
+    """Fill the cause of as many flagged rows as the section budget reaches, newest first."""
+    by_repo = collections.defaultdict(list)
+    for row in sorted(result["items"], key=lambda r: r["age_s"]):
+        row["cause"], row["cause_read"] = None, False
+        by_repo[row["repo"]].append(row)
+    chunks = [
+        (name, rows[i : i + CAUSE_CHUNK])
+        for name, rows in by_repo.items()
+        for i in range(0, len(rows), CAUSE_CHUNK)
+    ]
+    errors, ratified = [], {}
+    if chunks:
+        pool = concurrent.futures.ThreadPoolExecutor(max_workers=CAUSE_WORKERS)
+        futures = {
+            pool.submit(read_cause_chunk, repos[name], rows, blockers_of.get(name, {}), deadline): (
+                name,
+                rows,
+            )
+            for name, rows in chunks
+        }
+        done, _pending = concurrent.futures.wait(futures, timeout=max(0.1, deadline - time.monotonic()))
+        pool.shutdown(wait=False, cancel_futures=True)
+        for fut in done:
+            name, rows = futures[fut]
+            outcome = fut.result()
+            if outcome[2] is not None:
+                errors.append(f"{name}: {outcome[2]}")
+                continue
+            apply_chunk_causes(rows, repos[name], outcome, blockers_of.get(name, {}), ratified)
+    items = result["items"]
+    read = [r for r in items if r.get("cause_read")]
+    result["causes"] = {
+        "flagged": len(items),
+        "read": len(read),
+        "held": sum(1 for r in read if "HELD " in (r["cause"] or "")),
+        "blocked": sum(1 for r in read if "BLOCKED " in (r["cause"] or "")),
+        "no_recorded_cause": sum(1 for r in read if not r["cause"]),
+        "skipped": len(items) - len(read),
+        "errors": errors,
+    }
+
+
 def read_unticketed_ready():
     """Flag non-epic READY items >30m old with no ticket, across every tenant, in ~60s total."""
     result = {"tenants": [], "unreadable": [], "items": []}
@@ -379,6 +627,7 @@ def read_unticketed_ready():
             reads[repo] = (None, f"section timeout after {READY_SECTION_TIMEOUT_S}s")
     pool.shutdown(wait=False, cancel_futures=True)
     queued = queue_texts()
+    blockers_of = collections.defaultdict(dict)
     for repo in tenants:
         items, err = reads[repo]
         if err is not None:
@@ -396,6 +645,7 @@ def read_unticketed_ready():
             age = (now - updated).total_seconds()
             if age <= READY_STALE_S or is_ticketed(it["id"], queued):
                 continue
+            blockers_of[repo.name][it["id"]] = open_blockers(it)
             result["items"].append(
                 {
                     "repo": repo.name,
@@ -406,6 +656,7 @@ def read_unticketed_ready():
                     "title": (it.get("title") or "")[:TITLE_MAX],
                 }
             )
+    read_causes(result, {r.name: r for r in tenants}, blockers_of, deadline)
     result["items"].sort(key=lambda r: (r["repo"], -r["age_s"]))
     return result
 
@@ -481,7 +732,8 @@ def render(nodes, cluster, factory, unticketed, flags):
         f"queue-depth={factory['queue_depth']}"
     )
     for log, o in sorted(factory["other_families"].items()):
-        out(f"  other launcher family {log}: fleet={o['fleet']} cap={o['cap']} (age {o['age_s']}s)")
+        label = "stale, age" if o["stale"] else "age"
+        out(f"  other launcher family {log}: fleet={o['fleet']} cap={o['cap']} ({label} {o['age_s']}s)")
     out(f"LAUNCH lines, last 30 min: {len(factory['launches_30m'])}")
     for line in factory["launches_30m"][-5:]:
         out(f"  {line}")
@@ -491,9 +743,19 @@ def render(nodes, cluster, factory, unticketed, flags):
     for u in unticketed["unreadable"]:
         out(f"  UNREADABLE {u['repo']}: {u['error']}")
     for it in unticketed["items"]:
-        out(f"  {it['repo']:34} {it['id']:40} {it['age']:>8}  {it['title']}")
+        cause = f"  | {it['cause']}" if it.get("cause") else ""
+        out(f"  {it['repo']:34} {it['id']:40} {it['age']:>8}  {it['title']}{cause}")
     if not unticketed["items"]:
         out("  none")
+    else:
+        c = unticketed["causes"]
+        out(
+            f"  causes read for {c['read']} of {c['flagged']} flagged: {c['held']} HELD, "
+            f"{c['blocked']} BLOCKED, {c['no_recorded_cause']} no recorded cause"
+        )
+        if c["skipped"]:
+            why = c["errors"][0] if c["errors"] else f"section budget {READY_SECTION_TIMEOUT_S}s"
+            out(f"  causes SKIPPED for {c['skipped']} flagged row(s), unread, not uncaused: {why}")
     out("\nFLAGS")
     for flag in flags or ["none"]:
         out(f"  {flag}")

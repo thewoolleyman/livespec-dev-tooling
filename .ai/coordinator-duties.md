@@ -65,6 +65,14 @@ to get a fresh run for a 429. The no-rerun rule above applies to genuine test fa
 times after a incremental backoff wait if it happens mutiple times) should be a no brainer. Why would you uselessly
 rebase and do more unnecwessary work?"
 
+**One maintainer-ordered rerun set no precedent.** The maintainer, 2026-11-07 ~15:5xZ, on livespec-dev-tooling master
+red at c48dfc52, recorded on epic `livespec-dev-tooling-6tgd2z` at 15:55:31Z: "Roll forward or revert, whatever is
+faster." "DO NOT LET THIS BLOCK THE EXPEDITED PLAN" and, after the coordinator put the options, "rerun it". It was a
+ONE-OFF exception for run 42384603843 attempt 2, rerun 15:53:16Z. The root cause was already known and its fix drafted
+(livespec-dev-tooling-y53wpo), and the rerun's purpose was to open `check-master-ci-green` so that fix and the
+expedited plan's own fix could commit. This section stands: another rerun of that kind needs the maintainer's word
+again.
+
 ## 3. Unblock blocked seats every tick
 
 A seat sitting at a picker produces no reports, so waiting on its report waits forever. Every tick:
@@ -121,6 +129,11 @@ The maintainer, 2026-11-02: "you can always take this action to unblok codex pan
 it's ot a security issue". This reverses the earlier limit. Measured that day: our own orchestrator release 0.274.0
 changed two plugin SessionStart hooks, and every Codex seat stopped running them until they were trusted.
 
+**A hold lifts on its own stated condition and its owner's word (coordinator's reading).** Before ruling any hold
+lifted, read the condition the hold file itself names and get its owner's confirmation. Measured 2026-11-07 14:3xZ:
+the coordinator ruled `hold-repo-livespec-dev-tooling` lifted although the file named a canary condition. It was
+restored at 14:43:59Z, and six runs had launched in the gap, none of which merged.
+
 **fabro-currency's pickers are answered like any seat's.** The maintainer, 2026-11-02 ~22:26Z: "WHY THGE FUCK ARE YOU
 LETTING IT B LOCK???" A ruling at 18:57Z had recorded "I'll talk to it myself" as "the coordinator does not direct
 fabro-currency until the maintainer hands it back". Handoffs and the loop prompt copied it forward, and a priority-3
@@ -160,12 +173,22 @@ that day: livespec-dev-tooling-wanebl's approve was refused twice, first on its 
 `## Expedited incident execution` reference. The coordinator first handed the fix to a Codex seat with no watcher, then
 made both edits itself in about two minutes and approved it green.
 
+**Read an item's spec-change hold before pressing `approve:` (coordinator's reading).** The approve valve did not read
+that hold. Measured 2026-11-07 ~20:03Z by radar-and-deterministic-admission: 31 of 306 ready items were held with no
+proposal on master. The door fix is bd-ib-bomy33, and this lesson ends when it ships.
+
 **Reversible host mutations are authorized.** The coordinator, and seats acting on its direction, may perform a
 reversible host mutation without a maintainer ask. An example is a committed, revertible ansible or converge apply with
 a kill switch or a revert path. Irreversible host mutations, and secrets and credential creation, stay the
 maintainer's. The maintainer, 2026-11-04 ~05:4xZ, recorded on epic `livespec-dev-tooling-6tgd2z` at 05:50:57Z: "host
 mutations are authorized as long as they are reversible". Measured 2026-11-04: a combined poweredge-xubuntu apply sat
 blocked for hours because two seats refused to act on coordinator authority alone.
+
+**Never order a hand write to a live host (coordinator's reading).** "Authorized" above covers a committed, revertible
+route, not a hand change, which livespec `.ai/gitops-deployment-discipline.md` rule 2 forbids. Priority work goes
+through committed routes, and a seat that refuses a hand-write order is right. Measured 2026-11-07 ~17:1xZ: the
+coordinator ordered a by-hand CPU boost for one job of expedited-incident-response-flag, kubernetes-sandbox-backend
+refused, and the order was withdrawn at 17:20:01Z. No cgroup was written.
 
 **Destructive actions on Hetzner infrastructure are pre-authorized while nothing live runs there.** Any wipe, reinstall,
 rescue boot, reset, reformat or re-provision of the hetzner-xubuntu hosts and their Hetzner Robot or Cloud resources is
@@ -186,12 +209,19 @@ action to the seat that owns it. Its own plan's records and this guidance file a
 Measured 2026-11-01: a coordinator ran three `release-spec-tier` actions and started a docs worktree itself, and the
 maintainer corrected it. The 2026-11-03 rule above supersedes that correction for valve and ledger actions.
 
+**A spec-change tier governs what is built, not whether it must be built (coordinator's reading).** A coordinator may
+close an item whose condition no longer occurs with `bd close`, a resolution label, the measured basis and a reopen
+condition, whatever tier its record names. Measured 2026-11-07: bd-ib-3y5iyr and bd-ib-2uuewv.
+
 **Watch for stalls in the launcher log, not the ledger.** Every tick, for each top-priority carrier, read the
 dispatcher's launcher log (`tmp/petri-canary/seq-<id>.log` in the orchestrator repo) as well as its ledger status. An
 item at `ready` with no run behind it is a stall, and the ledger will not say so. `tail -F` re-prints old lines when a
 file is rewritten, so read the last lines before acting on one.
 
 Measured 2026-11-01: j6piwg and 7u4tii sat refused as spec-change tier for 4 h while the ledger showed both as `ready`.
+
+**A zero-byte `tmp/petri-canary/*-r267.json` marks a launch in flight, not an ending (coordinator's
+reading).** A watch must ignore empty status files. Measured 2026-11-07, session e61db277.
 
 **Sweep for unticketed READY work every tick, and read Codex seats directly.** A READY item with no ticket behind it is
 a stall, however it got there. Every tick, read the UNTICKETED-READY section of
@@ -203,6 +233,10 @@ a request to the dispatcher. Measured 2026-11-03: livespec-dev-tooling-xllgai, t
 track, sat READY and unticketed from about 14:31Z to 16:2xZ. Its Codex owner had posted its pickup requests as comments
 on bd-ib-voozdp. The maintainer: "Ensure there is a permanent fix for this", recorded on epic
 `livespec-dev-tooling-6tgd2z`.
+
+**A Mac or Codex seat's ask can live only in a ledger comment (coordinator's reading).** Neither kind of seat can
+SendMessage this seat, so read the comments on the items such a seat owns as well as its pane. Measured 2026-11-07:
+livespec-dev-tooling-xpuv6h, owned by fleet-mutation-testing-rule-26 on chads-macbook-pro, waited 48 minutes on one.
 
 **Seats on other machines are read like local ones.** Every tick, run `herdr --machine chads-macbook-pro agent list`,
 then `herdr --machine chads-macbook-pro pane read <pane> --source recent-unwrapped` for each of these seats:
@@ -217,6 +251,12 @@ request is subject to the dispatch freeze (§9). The maintainer, 2026-11-06 ~06:
 `livespec-dev-tooling-6tgd2z` at 06:05:46Z: "OK, add fleet-mutation-testing-rule-26 under the chads-macbook-pro
 machine/workspace to your monitored list of plans. They are executing on that machine, but may send stuff to CI
 and/or the factory."
+
+**A flagged row's cause is on the row (coordinator's reading).** The UNTICKETED-READY section prints `HELD spec-change
+<topic> <reason>` or `BLOCKED by <id>` on a flagged row that has one. Such a row names why it waits, so it is checked
+against its cause, not routed as a stall. A row with no cause still is one. `causes SKIPPED` means the section's
+budget or a failed read left those rows unread, which is not the same as having no cause. Measured 2026-11-07 ~20:45Z:
+of 283 flagged rows, 37 were HELD, 42 BLOCKED (one row both) and 205 carried no recorded cause.
 
 **Audit every child of a top-3 plan, every tick.** A seat that is busy on one child hides the rest of its plan, so its
 pane and its own report are never evidence that the plan is moving. For each owning plan of priorities 1-3:
@@ -261,6 +301,10 @@ Plans are independent; only the coordinator coordinates across plans.
 
 Measured 2026-10-31: a coordinator forwarded "plan bd-ib-raqyki has two deferred assertions" to the maintainer, with no
 context and no attempt by the owner to decide.
+
+**A GO names a surface someone has read (coordinator's reading).** Before giving a GO, name the flag, file or route it
+rests on and confirm a seat has read it. Measured 2026-11-07: the GO-candidate for homelab-k8s-worker-nodes rested on
+a per-dispatch environment flag that does not exist, and a fresh GO replaced it at ~17:1xZ.
 
 ## 5. Never bring a split to the maintainer, or a gate with an obvious way round it
 
@@ -319,6 +363,17 @@ never waits for the seat, or the maintainer, to press them. Measured 2026-11-05:
 was accepted ~21:5xZ on its seat's reproduction comment, and bd-ib-5guqmt and bd-ib-fvgkw4 were closed out-of-band
 under this section.
 
+**Grade a hand-landed carrier yourself before `accept:` (coordinator's reading).** A hand-land parks at 0 graded
+assertions, so a press with no grading closes it unproven. Read the test as well as the reproduction, and say in the
+grade what you did not re-run. Measured 2026-11-07: livespec-dev-tooling-se537s's test asserted no repair digest
+although its Definition of Done required one. Also that day: gvylzw closed through the coordinator's `accept:` at
+13:01:55Z on 2026-11-04 in a batch of ten, with 0 assertions graded (as measured by expedited-incident-response-flag's
+seat). The 19:30Z handoff's audit found eight of the ten gapped or partly wired, and two wired but never run live.
+
+**The release waiver permits, it does not oblige (coordinator's reading).** On 2026-11-07 ~19:4xZ, at
+expedited-incident-response-flag's request, Release Please was not dispatched per merge, so its final fix set rides
+one release.
+
 ## 6. Never block: no pickers, ever
 
 The maintainer, 2026-11-01: "You should be forbidden from presenting blocking pickers. You are only ever supposed to
@@ -367,6 +422,17 @@ entry from live state: `herdr agent list` in full, plus ledger reads.
   `livespec-dev-tooling-6tgd2z`, after an attestation ask named only `bd-ib-zm4gpr`.
 - Name hosts by their real hostname, never "dev host". The dev VPS is `vmi3006760.contaboserver.net`. The maintainer,
   2026-11-03: "Use a real freaking hostname".
+
+**"P1" is coordinator shorthand, never a word to the maintainer.** Write the plan's name:
+expedited-incident-response-flag (livespec-dev-tooling-bqnzcm). P1 means only that plan. The maintainer, 2026-11-07
+~17:15Z, recorded on epic `livespec-dev-tooling-6tgd2z` at 17:17:32Z: "And when are you calling P1? I never gave you
+that name. Is P1 a whole category of things? Is it only the expedited plan? Be fucking clear."
+
+**A role-bound service is found through its role, not a hostname.** The maintainer, 2026-11-07 ~16:2xZ, given in the
+bootstrap-credentials-and-onboarding seat and recorded on epic `livespec-dev-tooling-6tgd2z` at 16:44:48Z: "There is a
+machine ROLE that runs caam. Currently the VPS is this role. It may move in the future. Do NOT hardcode hostnames."
+The coordinator reads it as covering every provisioning surface for role-bound seats and the
+central-credential-service host. Naming a host to the maintainer still follows the real-hostname rule above.
 
 Measured 2026-11-01: the coordinator copied an ask about a "closed" seat forward, although the maintainer had reopened
 it. It also called a plan by its repository's name.
@@ -456,6 +522,11 @@ my input and attention. And probably a dedicated planb. Where did you route it a
 a dedicated plan, factory-run-work-preservation, opened in livespec-orchestrator-beads-fabro and "flag[ged] as a
 maintainer item for me to drive and decide direction."
 
+**Changing the priority of one job is not a design change.** The rule above does not apply to it, and no limit is
+placed on it as if it did. The maintainer, 2026-11-07 ~17:15Z, recorded on epic `livespec-dev-tooling-6tgd2z` at
+17:17:32Z: "What the fuck do you mean changing the priority for a single job is a design change?" Measured that day:
+the coordinator's 17:09Z limit on raising CPU for one job of expedited-incident-response-flag was rescinded.
+
 **Deprioritizing never cancels in-flight work.** A started item runs to completion, including its wrap-up (rework,
 acceptance, proofs). Cancel only runaway work, or work whose output will not be used. An infrastructure restart's
 cancel-and-immediately-re-dispatch is a resume, not a cancellation. Maintainer ruling 2026-11-02 ~14:5xZ, recorded on
@@ -483,6 +554,23 @@ The maintainer has named two exceptions to the freeze, and each one ends with th
   recorded on epic `livespec-dev-tooling-6tgd2z` at 06:10:32Z: "ok can you keep that one moving as long as it doens't
   impact the expedited track, it's important. We need to get work off the vps still, and there's a lot of work left on
   it."
+
+**The 2026-11-05 freeze is LIFTED, with a standing guard.** The maintainer, 2026-11-07 ~13:5xZ, recorded on epic
+`livespec-dev-tooling-6tgd2z` at 13:58:23Z: "Sure resume the factory, just make sure it stays availalble for immediate
+response on whatever the expedited track needs." That record reads the guard as: expedited-incident-response-flag's
+work launches at once, ahead of every queued ticket, with factory capacity held free for it; no factory merge collides
+with that plan's master hold; the v0.8.2 environment-parity canary still precedes widening. The two paragraphs above
+stay as the shape of any later freeze. The coordinator reads a launch pause set since then as a hold, not a freeze: it
+names its own lift, and §3's rule on a hold's stated condition applies.
+
+**A launch pause and CI priority for that plan fall under the maintainer's existing order.** Do not frame them as a
+decision awaiting the maintainer. The coordinator's 17:47Z handoff of 2026-11-07 records the maintainer confirming
+this ~17:2xZ, with no verbatim words recorded.
+
+**Announce a load-cut lift to every seat it bound (coordinator's reading).** A cut reaches seats by message, and its
+end does not reach them by itself. Measured 2026-11-07: the freeze's load cut ended at 13:59Z,
+spec-implementation-lockstep asked whether it still held at ~16:4xZ, and dev-host-disk-retention still believed it in
+force until told ~17:4xZ.
 
 The coordinator never reorders, adds or drops a priority on its own initiative. It reports evidence for a change as a
 finding with a recommendation.
@@ -631,6 +719,14 @@ unauthenticated, the ask becomes "fix connector X", with the exact symptom. Main
   `auto-predump.sh` filled it.
 - **Seats.** Read `herdr agent list` (§3, §7).
 
+**Every container node enrolls in the factory automatically.** The maintainer, 2026-11-07 19:22:26Z, on plan
+homelab-k8s-worker-nodes (epic `livespec-dev-tooling-ko26ez`), recorded on epic `livespec-dev-tooling-6tgd2z` at
+19:22:33Z: "COmmunicate all of this to that plan, and tell it to update it's plan and definition of done so that node
+(and all other container nodes like this) are automatically enrolled in the factory with whatever the default
+taints/routing/load is (or make up some sensible default if one doesn't exist, e.g. a split of gate/factory/ci load.
+Prioritize gettting its plan actually done, with DoD that it is running cluster load live in prod." That plan owns the
+mechanism; the coordinator holds the Definition of Done to it.
+
 **Prove a model or routing change in one factory pod before widening it.** Any model, adapter or routing change
 goes out in three steps, and the coordinator holds every seat to them:
 
@@ -688,6 +784,15 @@ the run is doing. Work that is already in the seed is not a reason to cancel, an
 already has is not added. Measured 2026-11-05 ~23:40Z: bd-ib-uq2ocd was cancelled on a mistaken runaway GO; its tree
 was preserved at cc9568cc, and it relaunches seeded, with no rider, after the freeze.
 
+**Before a cancel GO, re-read the run's current head (coordinator's reading).** A seed or an earlier diff count is not
+the run's state. Measured 2026-11-07: overseer-mldt32's "diff 0 files" was stale, its head was on current master with
+the pin bump, and the cancel was withdrawn.
+
+**A route row is not evidence a ruling was honoured (coordinator's reading).** Until bd-ib-ltlg4i ships, a ruled seed
+does not reach `route_recovery`, so read a seeded relaunch's route before its ticket. Measured 2026-11-07 ~20:13Z, in
+code at 1895a0ddbe37 and run with the real functions by publish-draft-green-work-loss. This lesson ends when
+bd-ib-ltlg4i ships.
+
 ## 11. Reading host capacity
 
 Read `.ai/ci-node-capacity-reads.md` before any throttle, cap or launch gate. A cap is derived from throughput, not
@@ -697,6 +802,16 @@ Load average is not CPU busy. On the dev VPS the hypervisor hides steal: `/proc/
 time per vCPU, so an `mpstat` idle figure is a share of the accounted part only. That was measured 2026-11-01 by
 dev-host-test-gate-load (`plan/dev-host-test-gate-load/research/002-baseline-and-method.md` §3). Do not gate launches
 on an idle percentage alone.
+
+**A capacity ruling cites a job read (coordinator's reading).** A values file, a variable or a limit is not evidence
+of what a job did. Measured 2026-11-07 ~17:1x-17:4xZ: three capacity conclusions in one hour rested on those, and two
+reversed on the first job read. The hp-xubuntu 6 / gmktec-xubuntu 17 GO was withdrawn on the reason that the caps do
+not reach master runs, and a job then showed that master jobs do run on the PR scale set.
+
+**Read a launch-hold figure over ssh on that node (coordinator's reading).** Read a node's idle and CI-slice pressure
+on the node itself, not on the dispatching host: `ssh <host> cat
+/sys/fs/cgroup/kubepods.slice/kubepods-besteffort.slice/cpu.pressure`. Measured 2026-11-07: legacy-dispatcher-agent
+reported vmi3006760.contaboserver.net's figures as gmktec-xubuntu's until 20:02Z.
 
 ## 12. Hygiene
 
@@ -709,6 +824,8 @@ on an idle percentage alone.
   - The mechanism is in `.ai/fleet-and-secrets.md`, which another agent is updating.
   - **Additive means LOGICALLY additive: the edit runs the same or more, never less.** Adding jobs, steps or checks, and adding OR MODIFYING `runs-on` routing, is additive. The coordinator authorizes such an edit itself under the delegation when it is also not significantly slower (`approval:workflow-edit-additive`). Only an edit that runs less (removing or reducing tests, coverage or quality gates) or is significantly slower goes to the maintainer, and that ask says which of the two it is and why. A line-diff count is NOT the test. The maintainer, 2026-11-03 ~13:4xZ, recorded on epic `livespec-dev-tooling-6tgd2z` at 13:28:58Z: "Additive means LOGICALLY ADDITIVE. E.g., ADDS MORE STUFF TO RUN, NOT RUNS LESS STUFF. Adding OR MODIFYING a runs on is absolutitely ADDITIVE." The guard check-no-workflow-edits.sh still measures a line diff until its fix lands, and that fix is routed to ci-runtime-and-cost.
   - **actionlint first.** Before the coordinator sets `approval:workflow-edit-additive`, the exact edited workflow file must pass `actionlint` clean, and that output is recorded on the item. Measured 2026-11-03: #3317 merged a release-please.yml whose unquoted `if:` contained `: `. It was invalid YAML, every local gate and the PR CI passed it, and dev-tooling releases were blocked from 19:49Z to 21:45Z. The maintainer, 2026-11-03 ~22:0xZ: "Yes, approve actionlint. You should not have asked me this, it's additive and presumably not slow."
+  - **What "clean" means here (coordinator's reading).** No NEW finding against master, plus exit 0 with
+    `-shellcheck=`. It was reported to the maintainer for objection, with no reply seen at 19:30Z. Measured 2026-11-07: master carries six pre-existing info findings.
   - **Never ask the maintainer to acknowledge an additive edit.** An additive, not-significantly-slower workflow edit, or a rule change of that kind, is decided and reported, never listed under FOR THE MAINTAINER. Only a removal or reduction of coverage or gates, or a significant runtime increase, goes to the maintainer. The maintainer, 2026-11-03: "You should only ask for non-additive or large impact." The classification is logical, never the label a guard forces. When the line-diff guard (check-no-workflow-edits.sh, until livespec-dev-tooling-hz4dkk lands) refuses `approval:workflow-edit-additive` and the coordinator applies the maintainer-tier `approval:workflow-edit` instead, a logically additive edit is still reported, never listed under FOR THE MAINTAINER. The maintainer, 2026-11-04 ~19:4xZ, recorded on epic `livespec-dev-tooling-6tgd2z`: "why are you still insisting on asking me for approval on additive workflow labels? What happened to the rule I gave you on this?" Measured that day: bd-ib-idvp26, an optional runner_labels workflow_dispatch input with an empty default, was listed for acknowledgement in three tick reports because the guard forced the maintainer-tier label.
   - **The maintainer approves; an agent applies the label.** For a maintainer-tier edit, the maintainer's approval of
     that specific edit is what the tier needs, not their keystrokes. Once they approve it in the session, or a recorded
@@ -733,6 +850,9 @@ on an idle percentage alone.
   2026-11-01 two seats did, writing times an hour late into the ledger.
 - **Secrets.** Never `env | cut` to list variable names: on 2026-10-31 it leaked a private key's lines. List names with
   `python3 -c 'import os; print(sorted(os.environ))'`, and probe a secret only with `printenv NAME | wc -c`.
+- **In zsh, brace a variable before a colon.** Write `"resolve-blocked:${i}:ready"`. A bare `$i:ready` applies zsh's
+  `:r` modifier: `i=bd-ib-abc.1` yields `resolve-blocked:bd-ib-abceady`, an action that names no item. Measured
+  2026-11-07 in this seat's shell.
 - **Look before you delete.** `/data/projects/livespec-dev-tooling/.overseer-state` at the repo root can be ANOTHER
   session's state marker. Read a file before removing it.
 - **Relays.** Peers keep messaging a retired seat's name. That seat forwards what it receives to the current
@@ -752,6 +872,11 @@ or an inherited loop prompt is only a pointer to them, never an authority.
 - A restriction recorded from a situational maintainer remark must name the condition that ends it.
 - A restriction that conflicts with §6 (never block) or with answering decision pickers under R301 is a finding to
   raise with the maintainer at once, never an instruction to follow silently.
+
+**A coordinator's cancels go in its handoff (coordinator's reading).** A cancelled run is invisible to whoever
+inherits the seat, and to the seat whose run it was. Measured 2026-11-07: session 348c3d09's `gh run cancel` calls
+(16:06:58Z, 16:20:20Z) were missing from its handoff, and fleet-flaky-tests then had to ask who cancelled four master
+runs.
 
 The maintainer, 2026-11-02: "Why are you paying attention to your handoffs rather than the directives encoded in your
 plan and in your loop?"
