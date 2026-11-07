@@ -74,3 +74,22 @@ def test_a_dynamic_terminal_operand_adds_no_file_name_literal() -> None:
     paths, _ = analyzer.path_literals(tree=ast.parse("_ROOT / 'ci-runner' / 'gates' / name"))
 
     assert "gates" not in paths
+
+
+def test_ordinary_arithmetic_division_is_not_an_undeterminable_path() -> None:
+    """A division with no string-literal operand is arithmetic, not a path expression."""
+    analyzer = importlib.import_module("livespec_dev_tooling.flake_retry_paths")
+
+    paths, undeterminable = analyzer.path_literals(tree=ast.parse("elapsed.total_seconds() / 60"))
+
+    assert not undeterminable
+    assert paths == set()
+
+
+def test_a_fully_dynamic_division_chain_is_not_an_undeterminable_path() -> None:
+    """Without any string literal operand a chain cannot be identified as a path."""
+    analyzer = importlib.import_module("livespec_dev_tooling.flake_retry_paths")
+
+    _, undeterminable = analyzer.path_literals(tree=ast.parse("total / count / 2"))
+
+    assert not undeterminable
