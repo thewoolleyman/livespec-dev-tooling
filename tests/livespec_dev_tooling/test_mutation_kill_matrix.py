@@ -63,3 +63,31 @@ def test_report_lists_every_mutant_no_test_kills_as_a_survivor() -> None:
     )
 
     assert report.to_dict().get("surviving_mutants") == ["M3"]
+
+
+def test_report_lists_tests_without_unique_kills_as_redundancy_candidates() -> None:
+    """Tests that add no exclusive mutant kill are Rule-26 candidates."""
+    module = importlib.import_module("livespec_dev_tooling.mutation_kill_matrix")
+    report = module.build_report(
+        engine_name="mutmut",
+        engine_version="3.2.3",
+        source_revision="abc123",
+        mutants=[
+            module.Mutant(identifier="M1", location="package/module.py:10"),
+            module.Mutant(identifier="M2", location="package/module.py:20"),
+        ],
+        tests=[
+            "tests/test_rule.py::test_a",
+            "tests/test_rule.py::test_b",
+            "tests/test_rule.py::test_c",
+        ],
+        killers_by_mutant={
+            "M1": {"tests/test_rule.py::test_a", "tests/test_rule.py::test_b"},
+            "M2": {"tests/test_rule.py::test_a"},
+        },
+    )
+
+    assert report.to_dict().get("redundancy_candidates") == [
+        "tests/test_rule.py::test_b",
+        "tests/test_rule.py::test_c",
+    ]
