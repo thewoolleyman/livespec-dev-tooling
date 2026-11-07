@@ -1,0 +1,87 @@
+---
+# runner-scheduler-fail-open-drill.yml — the ONE sanctioned way to hold the
+# ci-runner-scheduler at zero replicas to prove its fail-open reconciler
+# (livespec-dev-tooling-mtvxde). Scaling it by hand is a hand change the Driver's
+# `fleet_host_guard.py` refuses; this play is the committed path, on the model of
+# ansible/k3s-pod-egress-probe.yml.
+#
+# THE FENCE IS A VARIABLE. Reachable by `just ansible-apply
+# ansible/runner-scheduler-fail-open-drill.yml -e
+# runner_scheduler_fail_open_drill_confirm=<k3s server inventory name>` and by
+# nothing else that matters: without the confirmation it reads nothing, changes
+# nothing and exits 0, on an apply and under `--check` alike. Only the k3s server
+# acts, because it holds the admin kubeconfig; the host is identified by
+# `cluster_role`, never by a name spelled here.
+#
+# IT HAS A LIVE EFFECT. For up to 20 minutes runner pods on every set that names
+# the scheduler are placed by the default scheduler, and the zero-available trigger
+# alerts its real recipients. Run it detached, through `just gate-start`, because it
+# can outlast a tool call. The script restores the scheduler on every exit.
+
+- name: Hold ci-runner-scheduler at zero and observe its fail-open reconciler
+  hosts: ci_pool
+  gather_facts: false
+  # The admin kubeconfig is root-owned on the k3s server.
+  become: true
+  vars:
+    runner_scheduler_fail_open_drill_admin_kubeconfig: /etc/rancher/k3s/k3s.yaml
+    runner_scheduler_fail_open_drill_script: >-
+      {{ playbook_dir }}/../ci-runner/k3s/phase2/runner-scheduler/drill-runner-scheduler-fail-open.sh
+    # `| bool` at each use is load-bearing: a non-empty string is truthy in Jinja,
+    # so the strings 'True' / 'False' would otherwise both pass.
+    runner_scheduler_fail_open_drill_named: >-
+      {{ runner_scheduler_fail_open_drill_confirm | default('') == inventory_hostname
+         and cluster_role | default('') == 'server' }}
+  environment:
+    KUBECONFIG: "{{ runner_scheduler_fail_open_drill_admin_kubeconfig }}"
+  tasks:
+    - name: Report a run that carries no drill confirmation for this host
+      ansible.builtin.debug:
+        msg: >-
+          Not drilling from {{ inventory_hostname }}: this run does not carry
+          `runner_scheduler_fail_open_drill_confirm` naming the k3s server (it
+          carries `{{ runner_scheduler_fail_open_drill_confirm | default('<unset>') }}`).
+          Nothing was read and nothing was changed.
+      when: not (runner_scheduler_fail_open_drill_named | bool)
+
+    - name: Run the drill from a throwaway directory
+      when:
+        - runner_scheduler_fail_open_drill_named | bool
+        - not ansible_check_mode
+      block:
+        - name: Create the throwaway directory
+          ansible.builtin.tempfile:
+            state: directory
+            prefix: runner-scheduler-drill-
+          register: runner_scheduler_fail_open_drill_dir
+
+        - name: Copy the drill script
+          ansible.builtin.copy:
+            src: "{{ runner_scheduler_fail_open_drill_script }}"
+            dest: "{{ runner_scheduler_fail_open_drill_dir.path }}/drill.sh"
+            owner: root
+            group: root
+            mode: "0755"
+
+        - name: Run the drill
+          ansible.builtin.command:
+            argv:
+              - "{{ runner_scheduler_fail_open_drill_dir.path }}/drill.sh"
+          register: runner_scheduler_fail_open_drill_run
+          changed_when: true
+          failed_when: false
+
+        - name: Print the drill's record
+          ansible.builtin.debug:
+            msg: "{{ runner_scheduler_fail_open_drill_run.stdout_lines + runner_scheduler_fail_open_drill_run.stderr_lines }}"
+
+        - name: Fail a drill that did not prove the rescue
+          ansible.builtin.fail:
+            msg: "The drill exited {{ runner_scheduler_fail_open_drill_run.rc }}: 1 is failed or refused, 3 is no evidence."
+          when: runner_scheduler_fail_open_drill_run.rc != 0
+      always:
+        - name: Remove the throwaway directory
+          ansible.builtin.file:
+            path: "{{ runner_scheduler_fail_open_drill_dir.path }}"
+            state: absent
+          when: runner_scheduler_fail_open_drill_dir.path is defined
