@@ -71,7 +71,11 @@ spec:
               # fork's queue (cluster-queue-fabro.yaml), so the cohort still
               # sums to C = 44. See DERIVATION.md "The fabro fork scale set
               # (2026-11-05)".
-              nominalQuota: 25
+              # 25 -> 17 on 2026-11-07: the cohort drops 44 -> 36 with gmktec-xubuntu's
+              # churn slots 12 -> 4, and all 8 come from this queue, which held exactly
+              # 17 admitted and 0 borrowed when ci-runtime-and-cost decided it. See
+              # DERIVATION.md "gmktec to 4, cohort to 36 (2026-11-07)".
+              nominalQuota: 17
 ---
 apiVersion: kueue.x-k8s.io/v1beta2
 kind: LocalQueue

@@ -231,5 +231,9 @@ template:
 # the fabro fork's queue, and the ceiling follows the rule,
 # max(2 x 25, 6) = 50. See ../kueue/DERIVATION.md "The fabro fork scale set
 # (2026-11-05)".
+#
+# 50 -> 34 on 2026-11-07: the ClusterQueue drops 25 -> 17 and the ceiling follows
+# the rule, max(2 x 17, 6) = 34. See ../kueue/DERIVATION.md "gmktec to 4, cohort
+# to 36 (2026-11-07)".
 minRunners: 0
-maxRunners: 50
+maxRunners: 34

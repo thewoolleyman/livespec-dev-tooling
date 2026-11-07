@@ -1041,6 +1041,33 @@ it does not yet establish that slots times workers plus sandbox and gate request
 each node's budget. At 6 workers per job, 27 slots on poweredge already read PSI60
 55.1 on 2026-11-04. REVERT: restore 18 and 21 and re-apply the role.
 
+
+### gmktec to 4, cohort to 36 (2026-11-07)
+
+Stop-the-line, routed by `legacy-coordinator-agent`; the fairness call is
+`ci-runtime-and-cost`'s, which decided it. Measured ~21:40-21:45Z: dev-tooling's coverage
+jobs ran 21, 38, 56, 81 and 116 minutes against about 7 clean, and `gmktec-xubuntu` read
+0.04 % idle, load 110 on 32 cores, CI-slice pressure about 49. Its Burstable pods requested
+27.0 CPUs (factory 4 pods 12.0, gates 3 pods 15.0), leaving about 5 for CI. Under the
+throughput rule a slot past saturation adds no throughput, so the node's capacity comes
+down to 4. The other nodes have no room to take the 8 slots, so the cohort drops 44 -> 36,
+and all 8 come from `livespec-orchestrator-beads-fabro-cq` (25 -> 17), which held exactly 17
+admitted and 0 borrowed at the decision. Its scale-set ceiling follows the rule,
+max(2 x 17, 6) = 34. Node capacity and quotas change in ONE apply, so the quota-sum test
+and the cluster never see them out of step.
+
+| node | before | after |
+|---|---:|---:|
+| `poweredge-xubuntu` | 27 | 27 |
+| `gmktec-xubuntu` | 12 | **4** |
+| `hp-xubuntu` | 5 | 5 |
+| **cohort total C** | **44** | **36** |
+
+This is a step inside `livespec-dev-tooling-6e5pyj`, not its joint derivation: poweredge's
+own subtraction waits on the gate-placement read. ACCEPTANCE READ: the orchestrator
+check-per-file-coverage median after the apply against before, and dev-tooling's against the
+figures above. REVERT: restore 12, 25 and 50 and re-apply both roles together.
+
 ## The master-push slice for livespec-dev-tooling (2026-11-03)
 
 Work-item `livespec-dev-tooling-lzkzwb`, plan `ci-runtime-and-cost` (epic
