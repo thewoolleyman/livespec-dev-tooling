@@ -41,7 +41,7 @@ from livespec_dev_tooling._incident_run_types import (
     RunEvidence,
     RunSnapshot,
 )
-from livespec_dev_tooling.incident_run_collector import OriginalRunCollector
+from livespec_dev_tooling.incident_run_collector import OriginalRunCollector, canonical_refusal
 from livespec_dev_tooling.incident_run_evidence import evidence_digest
 
 _VENDOR_DIR = Path(__file__).resolve().parent / "_vendor"
@@ -182,7 +182,10 @@ def collect(*, request: Collection, ports: EntryPorts) -> RunEvidence | Evidence
         return _refuse(code="graph-invalid", detail="expected graph omits " + ", ".join(missing))
     number = _pr_number(ports=ports, registration=registration)
     if not is_successful(number):
-        return _refuse(code="authority-refused", detail="canonical attempt history unavailable")
+        unavailable = _refuse(
+            code="authority-refused", detail="canonical attempt history unavailable"
+        )
+        return canonical_refusal(error=unsafe_perform_io(number.failure()), fallback=unavailable)
     original = _original(
         request=request,
         registration=registration,

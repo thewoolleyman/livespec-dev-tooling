@@ -37,7 +37,12 @@ from pathlib import Path
 from typing import Any, cast
 
 from livespec_dev_tooling._incident_original_run_canonical import CanonicalPorts
-from livespec_dev_tooling._incident_run_types import EvidenceRefusal, ExpectedJob, RunEvidence
+from livespec_dev_tooling._incident_run_types import (
+    CanonicalRefusalError,
+    EvidenceRefusal,
+    ExpectedJob,
+    RunEvidence,
+)
 from livespec_dev_tooling.flake_retry_filer import registered_plugin_root
 from livespec_dev_tooling.incident_original_run_flows import (
     Collection,
@@ -66,10 +71,12 @@ _UNVERIFIED = "registered incident authority refused or returned an invalid repl
 _INVALID_GRAPH = "expected graph must list jobs as {name, needs}"
 
 
-def _run(*, argv: Sequence[str], cwd: Path, stdin: bytes = b"") -> bytes:
+def _run(
+    *, argv: Sequence[str], cwd: Path, stdin: bytes = b"", check: bool = True
+) -> subprocess.CompletedProcess[bytes]:
     return subprocess.run(  # noqa: S603 -- fixed git, bd and registered authority argv.
-        list(argv), cwd=cwd, input=stdin, capture_output=True, timeout=_TIMEOUT, check=True
-    ).stdout
+        list(argv), cwd=cwd, input=stdin, capture_output=True, timeout=_TIMEOUT, check=check
+    )
 
 
 def _flags(*, values: Mapping[str, object]) -> list[str]:
@@ -81,7 +88,7 @@ class _Git:
     repo: Path
 
     def __call__(self, args: Sequence[str], stdin: bytes) -> bytes:
-        return _run(argv=["git", *args], cwd=self.repo, stdin=stdin)
+        return _run(argv=["git", *args], cwd=self.repo, stdin=stdin).stdout
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -91,7 +98,7 @@ class _Ledger:
     repo: Path
 
     def __call__(self, args: Sequence[str]) -> str:
-        return _run(argv=[_WRAPPER, "--", "bd", *args], cwd=self.repo).decode()
+        return _run(argv=[_WRAPPER, "--", "bd", *args], cwd=self.repo).stdout.decode()
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -109,11 +116,18 @@ class _Authority:
         script = str(plugin / "scripts/bin/incident_authority.py")
         argv = [_WRAPPER, "--", "python3", script, action, "--repo", str(self.repo)]
         argv += _flags(values={**query, **payload})
-        reply = cast("object", json.loads(_run(argv=argv, cwd=self.repo)))
+        done = _run(argv=argv, cwd=self.repo, check=False)
+        reply = cast("object", json.loads(done.stdout))
         body = cast("dict[str, Any]", reply) if isinstance(reply, dict) else {}
         result = body.get("result")
+        if body.get("status") == "refused" and isinstance(result, dict):
+            refusal = cast("dict[str, object]", result)
+            code = refusal.get("code")
+            if isinstance(code, str) and code:
+                raise CanonicalRefusalError(code=code, detail=str(refusal.get("detail", "")))
         if (
-            body.get("schema") != 1
+            done.returncode != 0
+            or body.get("schema") != 1
             or body.get("status") != "verified"
             or body.get("normal_factory_proof") is not False
             or not isinstance(result, dict)

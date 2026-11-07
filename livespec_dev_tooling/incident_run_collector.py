@@ -15,6 +15,7 @@ from livespec_dev_tooling._incident_observer_store import (
     save_record,
 )
 from livespec_dev_tooling._incident_run_types import (
+    CanonicalRefusalError,
     CorrectedAttempt,
     EvidenceRefusal,
     OriginalRun,
@@ -34,7 +35,7 @@ from returns.io import impure_safe  # noqa: E402
 from returns.pipeline import is_successful  # noqa: E402
 from returns.unsafe import unsafe_perform_io  # noqa: E402
 
-__all__: list[str] = ["CanonicalRunAdapter", "OriginalRunCollector"]
+__all__: list[str] = ["CanonicalRunAdapter", "OriginalRunCollector", "canonical_refusal"]
 _INVALID_RECEIPTS = "invalid controller evidence receipts"
 _CONFLICTING_EVIDENCE = "conflicting immutable original-run evidence"
 
@@ -60,6 +61,17 @@ def _refuse(*, detail: str) -> EvidenceRefusal:
     return EvidenceRefusal(code="incident-original-run-refused", detail=detail)
 
 
+def canonical_refusal(*, error: object, fallback: EvidenceRefusal) -> EvidenceRefusal:
+    """The canonical authority's own named refusal, or the fallback for any other failure.
+
+    An operator must tell a canonical refusal (for example
+    incident-correction-failures-missing) apart from a transport failure.
+    """
+    if isinstance(error, CanonicalRefusalError):
+        return EvidenceRefusal(code=error.code, detail=error.detail)
+    return fallback
+
+
 @impure_safe
 def _call(*, function: Callable[[], object]) -> object:
     return function()
@@ -82,8 +94,12 @@ class OriginalRunCollector:
         self, *, original: OriginalRun, continuation_id: str
     ) -> RunEvidence | EvidenceRefusal:
         authorized = _call(function=lambda: self.canonical.authorize(original))
-        if not is_successful(authorized) or unsafe_perform_io(authorized.unwrap()) is not True:
-            return _refuse(detail="retained original-run authority unavailable")
+        unavailable = _refuse(detail="retained original-run authority unavailable")
+        if not is_successful(authorized):
+            error = unsafe_perform_io(authorized.failure())
+            return canonical_refusal(error=error, fallback=unavailable)
+        if unsafe_perform_io(authorized.unwrap()) is not True:
+            return unavailable
         read = _call(function=lambda: self.read(original))
         if not is_successful(read):
             return _refuse(detail="original-run provider unavailable; original receipts retained")
@@ -145,7 +161,11 @@ class OriginalRunCollector:
             function=lambda: self.canonical.correct(validated, proposal.evidence_digest)
         )
         if not is_successful(published):
-            return _refuse(detail="canonical correction unavailable; no local attempt created")
+            unavailable = _refuse(
+                detail="canonical correction unavailable; no local attempt created"
+            )
+            error = unsafe_perform_io(published.failure())
+            return canonical_refusal(error=error, fallback=unavailable)
         receipt = unsafe_perform_io(published.unwrap())
         if not isinstance(receipt, str) or not receipt:
             return _refuse(detail="canonical writer supplied no correction receipt")
