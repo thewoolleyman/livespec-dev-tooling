@@ -112,7 +112,9 @@ orchestrator v0.298.0 (`.claude-plugin/scripts/`), excluding tests.
 Also needed, already in flight or cheap:
 
 - **P0-7, orchestrator rollout.** bd-ib-mnny4v merged, released, installed in this project (`ensure-plugins`), and the
-  gmktec dispatcher for dev-tooling rolled to that release and its loop restarted. A running loop keeps its build
+  gmktec dispatcher for dev-tooling rolled to that release and its loop restarted. A project-scope `ensure-plugins`
+  here also moves this project's FACTORY dispatch build. So the install step is not the plan owner's to take: ask
+  legacy-coordinator-agent first, and it sequences the step with canary 2 (P0-11, CLAUDE.md rule of 2026-11-07). A running loop keeps its build
   until restarted (`.ai/factory-span-receiver.md`). Without mnny4v, the A12 premature-closure probes would succeed
   and close the item. That is why [GO-11] waits for it.
 - **P0-8, observer roll.** The observer serves dev-tooling v1.184.2 (role default; commit 00c3841a) with reader v0.295.1.
