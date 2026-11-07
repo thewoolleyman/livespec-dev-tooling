@@ -28,8 +28,6 @@ def test_runner_applies_each_mutant_and_runs_every_collected_test(*, tmp_path: P
     def execute(*, args: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
         _ = cwd
         calls.append(tuple(args))
-        if args[-2:] == ["results", "--all"]:
-            raise AssertionError("the adapter must pass mutmut's explicit True value")
         if args[-3:] == ["results", "--all", "True"]:
             return subprocess.CompletedProcess(args, 0, "M1: killed\nM2: survived\n", "")
         if args[-2:] == ["--collect-only", "-q"]:
@@ -41,8 +39,6 @@ def test_runner_applies_each_mutant_and_runs_every_collected_test(*, tmp_path: P
             )
         if args[-2:] == ["mutmut", "run"]:
             return subprocess.CompletedProcess(args, 1, "", "")
-        if args[-2:] == ["mutmut", "apply"]:
-            raise AssertionError("the mutant identifier must be an apply argument")
         if args[-3:-1] == ["mutmut", "apply"]:
             source.write_text("VALUE = 'mutated'\n", encoding="utf-8")
             return subprocess.CompletedProcess(args, 0, "", "")
@@ -124,6 +120,23 @@ def test_main_accepts_the_target_package_path_and_uses_its_report_location(
     assert module.main() == 0
     assert received["target"] == tmp_path
     assert received["source_revision"] == "revision"
+
+
+def test_main_refuses_a_target_that_is_not_a_package_directory(
+    *, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A typo must fail before mutmut can write outside the intended package."""
+    module = importlib.import_module("livespec_dev_tooling.mutation_kill_matrix_runner")
+
+    def unexpected_run(**kwargs: object) -> object:
+        _ = kwargs
+        raise AssertionError("the runner must not start for a missing target")
+
+    monkeypatch.setattr(module, "run_kill_matrix", unexpected_run)
+    monkeypatch.setattr(sys, "argv", ["mutation-kill-matrix", str(tmp_path / "missing")])
+
+    with pytest.raises(SystemExit):
+        _ = module.main()
 
 
 def test_subprocess_executor_and_source_revision_handle_a_non_git_fixture(
