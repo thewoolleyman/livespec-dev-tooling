@@ -560,6 +560,18 @@ orchestrator had already fixed the silent coverage-reuse fallback (bd-ib-xevgsx)
 dev-tooling kept re-running its full suite in check-coverage until livespec-dev-tooling-jerpfe. Adopted by the
 maintainer 2026-11-06 ~16:0xZ, verbatim, with rule J (§7): "Ok, go with rules J and G, I approve them".
 
+**Rule K: fleet scope is checked BEFORE a fix or design reaches anyone.** Before the coordinator endorses, relays,
+decides or routes any fix, design option or recommendation, it asks one question: can this defect class exist in another
+fleet repository or member? If it can, the fleet-wide scope is the default, and a narrower scope must carry a stated,
+measured reason next to it. Every routing message for a fix carries a FLEET SCOPE line naming what else the fix must
+cover, and a recommendation a seat scoped to one repository is not endorsed until that line exists. Rule G sweeps the
+fleet after a fix lands; rule K moves the same check to before the fix is chosen. The maintainer, 2026-11-07 ~14:1xZ,
+recorded on epic `livespec-dev-tooling-6tgd2z` at 14:05:35Z: "\"not fixing things on all repos that should have it\" is
+a classic fuckup in this livespec ecosystem. ... Think on how you can ensure you alwyas do that." Measured that day: for
+five ticks the coordinator relayed gmktec-factory-placement's launch-clone-only option C as "I agree with C", until the
+maintainer asked "Why not D, applied to every repository?". The member drift D covers had been measured on 2026-11-06,
+and CLAUDE.md already said a member's installed orchestrator build is its factory dispatch build.
+
 The maintainer, 2026-11-02 ~16:5xZ: "I am also very disappointed in you that you did not notice the serialization
 bottleneck yourself, resulting in underutilization of the infrastructure. That is one of your main mandates. You are
 supposed to be looking at it." Measured that day: one gmk launcher FIFO ran one model-backed preflight at a time,
