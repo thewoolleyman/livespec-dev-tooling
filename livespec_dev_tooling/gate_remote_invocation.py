@@ -31,6 +31,7 @@ exclusive by construction.
 from __future__ import annotations
 
 import logging
+import os
 import shutil
 import subprocess
 import sys
@@ -136,6 +137,7 @@ class Sleeper(Protocol):
 def default_sleeper(*, seconds: float) -> None:
     """Sleep for `seconds` — the production `Sleeper`."""
     time.sleep(seconds)
+    Path(os.environ.get("LIVESPEC_GATE_RUN_PROGRESS_STAMP", os.devnull)).touch()
 
 
 def default_gate_command_runner(

@@ -13,6 +13,7 @@ it as an answer.
 
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -162,6 +163,23 @@ def test_the_default_sleeper_sleeps_for_the_interval_it_is_given(
     monkeypatch.setattr("livespec_dev_tooling.gate_remote_invocation.time.sleep", naps.append)
     default_sleeper(seconds=1.5)
     assert naps == [1.5]
+
+
+def test_the_default_sleeper_reports_a_completed_poll_to_an_outer_gate(
+    *, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A completed poll refreshes the optional outer-run liveness stamp."""
+    stamp = tmp_path / "progress.stamp"
+    _ = stamp.write_text("", encoding="utf-8")
+    os.utime(stamp, ns=(1, 1))
+    monkeypatch.setenv("LIVESPEC_GATE_RUN_PROGRESS_STAMP", str(stamp))
+    monkeypatch.setattr(
+        "livespec_dev_tooling.gate_remote_invocation.time.sleep", lambda _seconds: None
+    )
+
+    default_sleeper(seconds=1.5)
+
+    assert stamp.stat().st_mtime_ns > 1
 
 
 def test_require_invocation_passes_a_non_zero_exit_straight_through() -> None:
