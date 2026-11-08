@@ -248,6 +248,14 @@ def _write_ci_yml(*, cwd: Path, jobs: list[str], trailer: str = "") -> Path:
     return path
 
 
+def _write_severity_lever_source(*, cwd: Path, levers: list[str]) -> Path:
+    """Write the committed source that the aggregate loads before its checks."""
+    source = cwd / "scripts" / "just" / "gate-surface-severity-levers.sh"
+    source.parent.mkdir(parents=True, exist_ok=True)
+    _ = source.write_text("".join(f"export {lever}=true\n" for lever in levers), encoding="utf-8")
+    return source
+
+
 def _parse_findings(*, stderr: str) -> list[dict[str, object]]:
     """Parse structlog JSON-per-line findings from the check's stderr."""
     return [json.loads(line) for line in stderr.splitlines() if line.strip().startswith("{")]
@@ -279,6 +287,64 @@ def test_fully_wired_repo_passes(
     assert (
         result.returncode == 0
     ), f"expected exit 0 for a fully-wired repo; got {result.returncode}, stderr={result.stderr!r}"
+
+
+@pytest.mark.parametrize(
+    ("ci_levers", "source_levers", "failure_mode", "lever"),
+    [
+        (
+            ["LIVESPEC_FAIL_IF_CI_MATRIX_GAPS_EXIST"],
+            [],
+            "ci-severity-lever-missing-from-source",
+            "LIVESPEC_FAIL_IF_CI_MATRIX_GAPS_EXIST",
+        ),
+        (
+            [],
+            ["LIVESPEC_FAIL_IF_FMT_DIRECTIVES_EXIST"],
+            "source-severity-lever-missing-from-ci",
+            "LIVESPEC_FAIL_IF_FMT_DIRECTIVES_EXIST",
+        ),
+    ],
+)
+def test_ci_severity_levers_and_the_committed_source_must_match(
+    *,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    ci_levers: list[str],
+    source_levers: list[str],
+    failure_mode: str,
+    lever: str,
+) -> None:
+    """Either side of the CI/source parity gap fails and names its lever."""
+    _ = _write_canonical_json(cwd=tmp_path, slugs=[])
+    _ = _write_justfile(cwd=tmp_path, body=_justfile_with_targets(targets=[]))
+    _ = _write_severity_lever_source(cwd=tmp_path, levers=source_levers)
+    env = "\n".join(f"      {name}: true" for name in ci_levers)
+    _ = _write_ci_yml(
+        cwd=tmp_path,
+        jobs=[
+            "  metadata:\n"
+            "    runs-on: ubuntu-latest\n"
+            "    env:\n"
+            f"{env}\n"
+            "    steps:\n"
+            "      - run: true\n",
+            _ci_green_job(needs="[]"),
+        ],
+    )
+    result = _run_check(
+        cwd=tmp_path,
+        extra_argv=["--canonical-from", "canonical.json"],
+        env={"LIVESPEC_FAIL_IF_CI_MATRIX_GAPS_EXIST": "1"},
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+    )
+    assert result.returncode == 4, result.stderr
+    findings = _parse_findings(stderr=result.stderr)
+    parity = [item for item in findings if item.get("failure_mode") == failure_mode]
+    assert len(parity) == 1, parity
+    assert parity[0].get("lever") == lever
 
 
 def test_target_inventory_supplies_aggregate_for_ci_scan(
