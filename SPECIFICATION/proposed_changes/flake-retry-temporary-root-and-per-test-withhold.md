@@ -99,3 +99,56 @@ And the terminal summary MUST print a `FLAKE-RETRY-WITHHELD` block naming the te
 ```
 
 The revise MUST add a `tests/heading-coverage.json` entry for the new scenario heading, as a spec-first `"test": "TODO"` row owned by livespec-dev-tooling-ln77b6 at the integration tier, registered in `tests/heading-coverage-debt.json`.
+
+## Proposal: A config-value-only change of .livespec.jsonc touches only the tests that name a changed key
+
+### Target specification files
+
+- SPECIFICATION/non-functional-requirements.md
+- SPECIFICATION/scenarios.md
+
+### Summary
+
+Add a config-value carve-out to the Untouched-test retry rule. When the change set changes `.livespec.jsonc` only in the values of keys on the committed config-value fast-path list, and in its comments, the file touches a test only if the test's closure names a changed key. Today any edit of `.livespec.jsonc` touches every test whose closure names the file. In a repository whose root conftest reads it, that is every test. Add two scenarios: a listed value-only change leaves an unrelated test retried, and an unlisted or structural change still touches it.
+
+### Motivation
+
+On 2026-11-08, livespec-orchestrator-beads-fabro#4676 (head a1084bfef) changed only `.livespec.jsonc`: it raised a janitor `node_timeout` from 4340 to 4800 and added comment lines explaining why. CI run 42483121951, job 128739154446, failed two known flaky tests, and neither was retried. Replaying the plugin's `retry_marker_for` on that commit showed every test treated as touched. The cause is the orchestrator's root `tests/conftest.py` line 616, which reads `_REPO_ROOT / ".livespec.jsonc"`, so every test's closure names the file. The current text makes that correct: any path a closure names touches the test, and the only carve-out is the version-only release change of `pyproject.toml` and `uv.lock`. The maintainer asked at about 14:4xZ why the retry rule did not cover #4676. The ratified `## Config-value fast path at pre-commit` already says no test may assert a listed key's committed value (the maintainer's 2026-11-04 direction: "NO TEST SHOULD BE TIED TO CONFIG VALUE ACTUAL VALUES"), so a listed value-only change cannot be a test's cause unless the test names that key. legacy-coordinator-agent ruled under R301 to carve it out. The implementation item is livespec-dev-tooling-n3dr3z (plan fleet-flaky-tests), which waits on this revise and on livespec-dev-tooling-hmztez, which ships the key list.
+
+### Proposed Changes
+
+In `SPECIFICATION/non-functional-requirements.md`, in the **Untouched-test retry** bullet of `## Testing approach`, immediately after the sentence "The exception applies to this whole-session rule alone: a test whose closure names `pyproject.toml` or `uv.lock` is still touched by a change to that file.", insert:
+
+> A config-value-only change of `.livespec.jsonc` MUST NOT by itself touch a test whose closure names `.livespec.jsonc`. The change is config-value-only when the file's working-tree text and its text at the change set's base, each parsed as JSONC with comments ignored, hold the same set of key paths and differ only in the values of keys on the committed config-value fast-path list (§"Config-value fast path at pre-commit"). Under such a change, the file touches a test only when the test's closure names, as a string literal, the dotted path of a changed key or that path's final segment. A change that adds, removes or renames a key, or changes the value of a key not on that list, is not config-value-only, and the file then touches every test whose closure names it. A pair of texts that cannot be parsed or compared is not config-value-only: undeterminable means touched.
+
+No other sentence of the bullet changes.
+
+In `SPECIFICATION/scenarios.md`, immediately after `## Scenario: a version-only release change still touches a test that names the changed file`, add:
+
+```
+## Scenario: a config-value-only change of .livespec.jsonc leaves a test that names no changed key retried
+
+Given a repository that loads livespec-dev-tooling's flake-retry pytest plugin
+
+And a change set in which `.livespec.jsonc` differs from its base only in the value of a key on the committed config-value fast-path list and in its comments
+
+And a failing test whose closure names `.livespec.jsonc` but neither that key's dotted path nor its final segment
+
+When that test fails on its first attempt
+
+Then the plugin MUST re-run it on its own, exactly as for any untouched failing test
+
+## Scenario: a structural or unlisted change of .livespec.jsonc still touches every test that names the file
+
+Given a repository that loads livespec-dev-tooling's flake-retry pytest plugin
+
+And a change set in which `.livespec.jsonc` adds a key, or changes the value of a key that is not on the committed config-value fast-path list
+
+And a failing test whose closure names `.livespec.jsonc`
+
+When that test fails
+
+Then the session MUST fail on that first failure, and the plugin MUST NOT re-run the test
+```
+
+The revise MUST add a `tests/heading-coverage.json` entry for each of the two new scenario headings, as spec-first `"test": "TODO"` rows owned by livespec-dev-tooling-n3dr3z at the integration tier, registered in `tests/heading-coverage-debt.json`.
