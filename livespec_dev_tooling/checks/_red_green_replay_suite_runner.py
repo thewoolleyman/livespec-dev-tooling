@@ -102,9 +102,10 @@ def kill_reason(
 
 def test_completion_summary(*, output: str) -> str:
     """Describe whether pytest output records a completed test before a timeout."""
+    plain = re.sub(r"\x1b\[[0-9;]*[A-Za-z]", "", output)
     completed = re.search(
         r"(?:\[gw\d+\].*\b(?:PASSED|FAILED|SKIPPED|ERROR)\b|(?:^|[\r\n])[.FEsxXR]+(?:\s|$))",
-        output,
+        plain,
     )
     return "at least one test had completed" if completed else "no test had completed"
 
