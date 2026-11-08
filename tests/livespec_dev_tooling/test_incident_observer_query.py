@@ -132,6 +132,22 @@ def test_hosted_current_query_uses_fresh_reader_and_exact_echo(provisioned):
     assert len(calls) == 1
 
 
+def test_an_unbound_premerge_arm_owns_the_matching_ordinary_reconciler_action(provisioned):
+    """The ordinary reconciler must leave a pre-merge observer arm alone."""
+    application, _, _, _ = provisioned
+    query = {"repository": "owner/repo", "head_sha": "e" * 40, "run_id": 1}
+
+    response, result = _request(application=application, path="/ordinary-action", payload=query)
+
+    assert response[0] == "202 Accepted"
+    assert result == {
+        "schema": 1,
+        "status": "incident-owned",
+        "reason": "pre-merge observer owns repository action",
+        "query": query,
+    }
+
+
 @pytest.mark.parametrize("path", ["/arm", "/bind"])
 def test_query_credential_cannot_mutate_retained_arm(provisioned, path):
     application, query, _, calls = provisioned

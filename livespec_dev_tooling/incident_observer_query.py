@@ -14,6 +14,7 @@ from livespec_dev_tooling._incident_observer_store import (
 )
 from livespec_dev_tooling._incident_observer_types import ObserverArm, ObserverArmQuery
 from livespec_dev_tooling.incident_controller_installation import ControllerInstallation
+from livespec_dev_tooling.incident_observer import route_ordinary_action
 from livespec_dev_tooling.incident_observer_authority import CurrentAuthorityReader
 
 __all__: list[str] = ["ObserverQuery"]
@@ -23,6 +24,7 @@ __all__: list[str] = ["ObserverQuery"]
 _QUERY_FIELDS = frozenset(
     {"repository", "arm_id", "pr_number", "base_sha", "head_sha", "receipt_digest"}
 )
+_ORDINARY_ACTION_FIELDS = frozenset({"repository", "head_sha", "run_id"})
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -33,6 +35,8 @@ class ObserverQuery:
 
     def execute(self, *, path: str, payload: dict[str, Any]) -> dict[str, Any]:
         settings = self.installation
+        if path == "/ordinary-action":
+            return self._ordinary_action(payload=payload)
         if (
             path not in {"/admitted", "/current"}
             or not _valid_query(payload=payload)
@@ -58,6 +62,36 @@ class ObserverQuery:
             "schema": 1,
             "status": "current" if path == "/current" else "admitted",
             "query": asdict(query),
+        }
+
+    def _ordinary_action(self, *, payload: dict[str, Any]) -> dict[str, Any]:
+        """Report whether the observer owns this exact ordinary action.
+
+        The controller consults its existing lock-backed ownership router. The
+        workflow runs ordinary policy only after an ``ordinary`` answer, while
+        an unreadable answer fails closed at that workflow boundary.
+        """
+        settings = self.installation
+        if (
+            frozenset(payload) != _ORDINARY_ACTION_FIELDS
+            or payload.get("repository") != settings.repository
+            or not isinstance(payload.get("head_sha"), str)
+            or type(payload.get("run_id")) is not int
+            or payload["run_id"] <= 0
+        ):
+            return _refused(reason="invalid ordinary action ownership query")
+        result = route_ordinary_action(
+            directory=settings.state,
+            repository=payload["repository"],
+            head_sha=payload["head_sha"],
+            run_id=payload["run_id"],
+            perform=lambda: "ordinary action remains with reconciler",
+        )
+        return {
+            "schema": 1,
+            "status": result.status,
+            "reason": result.reason,
+            "query": payload,
         }
 
     def _snapshot(self, *, query: ObserverArmQuery) -> ObserverArm | None:
