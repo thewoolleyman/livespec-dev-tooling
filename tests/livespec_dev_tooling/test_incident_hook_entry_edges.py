@@ -9,6 +9,7 @@ import runpy
 import subprocess
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -370,3 +371,25 @@ def test_actual_default_index_matches_exact_stage_and_malformed_index_option_ref
     )
     assert module.main(argv=["pre-commit", "--git-index-file", str(tmp_path / ".git/index")]) == 0
     assert len(receipts) == 1
+
+
+def test_a_slow_receipt_lookup_never_counts_toward_the_scope_gate_duration(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # livespec-dev-tooling-e62ss6 attempt 3: a 62 s read-local-gates at generation 15 made
+    # the scope row a "passed" row of 60 s or more, which the authority refuses.
+    _reading, receipts = _wired(root=tmp_path, monkeypatch=monkeypatch)
+    invoke = module.invoke_authority
+    now = [1000.0]
+
+    def slow_lookup(**kwargs: Any) -> dict[str, Any]:
+        if kwargs["action"] == "read-local-gates":
+            now[0] += 61.0
+        return invoke(**kwargs)
+
+    monkeypatch.setattr(module, "invoke_authority", slow_lookup)
+    monkeypatch.setattr(module, "time", SimpleNamespace(monotonic=lambda: now[0]))
+    assert module.main(argv=["pre-commit"]) == 0
+    scope = receipts[0]["results"][0]
+    assert (scope["name"], scope["status"]) == ("incident-carrier-scope", "passed")
+    assert scope["duration_seconds"] < 60

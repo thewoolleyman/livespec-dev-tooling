@@ -145,6 +145,9 @@ def _run(*, hook: str, extra: list[str], actual_index: str = "") -> int:
         tree=tree,
         call=HookCall(hook=hook, extra=tuple(extra), stdin=stdin or ""),
     )
+    # The scope row times the scope check alone: the receipt lookup below is an authority
+    # read whose latency grows with the chain, and a "passed" row must stay under 60 s.
+    scope_seconds = time.monotonic() - started
     receipt_id = hashlib.sha256(
         canonical(
             value=[
@@ -177,7 +180,7 @@ def _run(*, hook: str, extra: list[str], actual_index: str = "") -> int:
         status="passed",
         reason="exact canonical repair carrier verified",
         returncode=0,
-        duration_seconds=time.monotonic() - started,
+        duration_seconds=scope_seconds,
         output=canonical(value=scope),
     )
     report = route_resolved_gates(context=context, gates=inventory, cwd=repo, environment=child)
