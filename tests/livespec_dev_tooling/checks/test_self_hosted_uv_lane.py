@@ -320,6 +320,61 @@ def test_references_variable() -> None:
     assert references_variable(value="ubuntu-latest", variable=_ROUTING) is False
 
 
+# The spec v121 master-push routing form (constraints.md, the CI matrix shape rule):
+# `vars.CI_RUNNER_LABELS_MASTER` begins with the text `vars.CI_RUNNER_LABELS`,
+# so a raw-substring anchor reads the master variable as the routing one and
+# finds no fallback after it (livespec-dev-tooling-sdampl).
+_MASTER_RUNS_ON = (
+    "${{ fromJSON(github.event_name == 'push' && vars.CI_RUNNER_LABELS_MASTER "
+    "|| vars.CI_RUNNER_LABELS || '[\"ubuntu-latest\"]') }}"
+)
+
+
+def _master_routed_workflow(*, env_lines: str) -> str:
+    """A routed uv workflow whose runs-on uses the master-push routing form."""
+    return _routed_workflow(env_lines=env_lines).replace(_RUNS_ON, _MASTER_RUNS_ON)
+
+
+def test_master_routing_runs_on_with_matching_env_passes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _ = _write_workflow(
+        tmp_path=tmp_path, name="ci.yml", body=_master_routed_workflow(env_lines=_CORRECT_ENV)
+    )
+    assert _run(tmp_path=tmp_path, monkeypatch=monkeypatch) == 0
+
+
+def test_master_routing_runs_on_with_stale_env_fallback_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    stale = (
+        "${{ contains(vars.CI_RUNNER_LABELS || '[\"ubuntu-24.04\"]', 'ubuntu') " "&& '50' || '4' }}"
+    )
+    _ = _write_workflow(
+        tmp_path=tmp_path,
+        name="ci.yml",
+        body=_master_routed_workflow(
+            env_lines=f"  UV_CONCURRENT_DOWNLOADS: {stale}\n  UV_HTTP_TIMEOUT: {_UV_TIMEOUT}"
+        ),
+    )
+    assert _run(tmp_path=tmp_path, monkeypatch=monkeypatch) == 1
+
+
+def test_master_variable_is_never_read_as_the_routing_variable() -> None:
+    master_only = "${{ fromJSON(vars.CI_RUNNER_LABELS_MASTER || '[\"x\"]') }}"
+    master_only_env = (
+        "${{ contains(vars.CI_RUNNER_LABELS_MASTER || '[\"x\"]', 'ubuntu') && '50' || '4' }}"
+    )
+    assert references_variable(value=master_only, variable=_ROUTING) is False
+    assert references_variable(value=master_only_env, variable=_ROUTING) is False
+    assert variable_fallback_literal(value=master_only, variable=_ROUTING) is None
+    assert variable_fallback_literal(value=master_only_env, variable=_ROUTING) is None
+    assert (
+        variable_fallback_literal(value=_MASTER_RUNS_ON, variable=_ROUTING) == '["ubuntu-latest"]'
+    )
+    assert references_variable(value=_MASTER_RUNS_ON, variable=_ROUTING) is True
+
+
 def test_uses_uv_markers() -> None:
     assert uses_uv(stripped="  - run: uv sync --locked") is True
     assert uses_uv(stripped="  - run: uv run pytest") is True
