@@ -2700,6 +2700,22 @@ When the host-side flake reader runs
 
 Then it MUST file exactly one root-fix work item, for the node id that had none
 
+## Scenario: a re-run test's record reaches the host-side reader as a CI artifact
+
+Given the coverage job of this repository, livespec, livespec-overseer or livespec-orchestrator-beads-fabro, whose pytest session re-runs a test
+
+When the job's pytest step finishes, whether it passed or failed
+
+Then the workflow run MUST carry an artifact named `flake-retries` or `flake-retries-<suffix>` holding that job's `tmp/flake-retries/` records
+
+## Scenario: a CI job that re-ran no test publishes no flake-retry artifact
+
+Given the coverage job of one of those repositories, whose pytest session re-runs no test
+
+When the job's publishing step runs
+
+Then the workflow run MUST carry no artifact from that job named `flake-retries` or `flake-retries-<suffix>`, and that step MUST NOT fail the job
+
 ## Scenario: the replay legs never retry the Red test and never accept a final failure
 
 Given a repository that loads livespec-dev-tooling's flake-retry pytest plugin

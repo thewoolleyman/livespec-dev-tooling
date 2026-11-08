@@ -2032,6 +2032,22 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: a re-run test's record reaches the host-side reader as a CI artifact",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this scenario, exercising a CI coverage job whose pytest session re-runs a test and reading the workflow run's flake-retries artifact; livespec-dev-tooling-mngdtf owns it.",
+    "work_item": "livespec-dev-tooling-mngdtf"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a CI job that re-ran no test publishes no flake-retry artifact",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this scenario, exercising a consumer CI coverage job whose pytest session re-runs no test and confirming the run carries no flake-retries artifact; livespec-dev-tooling-ljea46 owns it.",
+    "work_item": "livespec-dev-tooling-ljea46"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: the replay legs never retry the Red test and never accept a final failure",
     "test": "TODO",
     "reason": "Spec-first: a real test at the integration tier or above is owed for this scenario, driving a pytest session that loads the flake-retry plugin against a fixture repository with a controlled change set; livespec-dev-tooling-crxcy4 owns it.",
