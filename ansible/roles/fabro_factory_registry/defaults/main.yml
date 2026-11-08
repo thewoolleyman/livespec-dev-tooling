@@ -50,3 +50,9 @@ fabro_factory_registry_dest: /etc/livespec/fabro-factories.json
 # Keeping the directory overridable lets the committed dev-host play be run in
 # an isolated test inventory without touching the workstation's state tree.
 fabro_factory_registry_limits_dir: /home/ubuntu/.local/state/livespec/fleet-limits
+
+# The owner and group of everything this role writes. The defaults are the
+# production ones; they are variables only so that a test can run the committed
+# tasks for real as a non-root user, whose chown to root would otherwise fail.
+fabro_factory_registry_owner: root
+fabro_factory_registry_group: root

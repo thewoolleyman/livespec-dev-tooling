@@ -163,8 +163,8 @@
   ansible.builtin.file:
     path: "{{ fabro_factory_registry_dest | dirname }}"
     state: directory
-    owner: root
-    group: root
+    owner: "{{ fabro_factory_registry_owner }}"
+    group: "{{ fabro_factory_registry_group }}"
     mode: "0755"
   become: true
 
@@ -180,8 +180,8 @@
   ansible.builtin.copy:
     content: "{{ fabro_factory_registry_resolved | to_nice_json }}\n"
     dest: "{{ fabro_factory_registry_dest }}"
-    owner: root
-    group: root
+    owner: "{{ fabro_factory_registry_owner }}"
+    group: "{{ fabro_factory_registry_group }}"
     mode: "0644"
   become: true
 
@@ -189,8 +189,8 @@
   ansible.builtin.file:
     path: "{{ fabro_factory_registry_limits_dir }}"
     state: directory
-    owner: root
-    group: root
+    owner: "{{ fabro_factory_registry_owner }}"
+    group: "{{ fabro_factory_registry_group }}"
     mode: "0755"
   become: true
 
@@ -198,8 +198,8 @@
   ansible.builtin.template:
     src: max_concurrent_runs.j2
     dest: "{{ fabro_factory_registry_limits_dir }}/{{ item.key }}.max_concurrent_runs"
-    owner: root
-    group: root
+    owner: "{{ fabro_factory_registry_owner }}"
+    group: "{{ fabro_factory_registry_group }}"
     mode: "0644"
   become: true
   loop: "{{ fabro_factory_registry_entries }}"
