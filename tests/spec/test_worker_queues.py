@@ -99,7 +99,7 @@ def test_every_committed_worker_template_carries_the_quota_placeholder() -> None
     assert all("@WORKER_CHURN_SLOTS@" in t.read_text(encoding="utf-8") for t in templates)
 
 
-def test_no_committed_worker_template_borrows_from_the_cohort() -> None:
+def test_no_committed_worker_template_borrows_from_or_lends_to_the_cohort() -> None:
     """A worker queue never borrows another architecture's churn slots.
 
     Its runners schedule only on its own architecture's workers, so a slot
@@ -122,3 +122,6 @@ def test_no_committed_worker_template_borrows_from_the_cohort() -> None:
             assert all(
                 resource.get("borrowingLimit") == 0 for resource in resources
             ), f"{template.name}: every resource must carry borrowingLimit 0"
+            assert all(
+                resource.get("lendingLimit") == 0 for resource in resources
+            ), f"{template.name}: every resource must carry lendingLimit 0"

@@ -15,6 +15,11 @@
 # by a pod that can never start, starving the x86 queues that lent it. With no
 # arm64 worker enrolled (quota 0) the queue admits nothing, which is the
 # intended fail-closed state (coordinator ruling, 2026-11-08, R301).
+#
+# lendingLimit 0: the mirror image. This queue never lends its arm64 slots to
+# the cohort's x86 queues, because an x86 runner pod admitted against a lent
+# arm64 slot holds that quota while it cannot schedule on the arm64 node
+# (observed as a gap by kubernetes-sandbox-backend, 2026-11-08 06:11Z).
 apiVersion: kueue.x-k8s.io/v1beta2
 kind: ClusterQueue
 metadata:
@@ -32,6 +37,7 @@ spec:
             - name: "ci-runner.io/churn-slot"
               nominalQuota: @WORKER_CHURN_SLOTS@
               borrowingLimit: 0
+              lendingLimit: 0
 ---
 apiVersion: kueue.x-k8s.io/v1beta2
 kind: LocalQueue
