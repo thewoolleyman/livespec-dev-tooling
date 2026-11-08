@@ -22,7 +22,7 @@ def preserve_finalizers(*, config: pytest.Config) -> None:
     for hookimpl in config.pluginmanager.hook.pytest_runtest_teardown.get_hookimpls():
         if hookimpl.plugin is rerunfailures:
             object.__setattr__(hookimpl, "function", _keep_setup_state)
-    rerunfailures._remove_failed_setup_state_from_session = _keep_setup_state  # noqa: SLF001
+    object.__setattr__(rerunfailures, "_remove_failed_setup_state_from_session", _keep_setup_state)
 
 
 class RetryFinalizerPreserver:
