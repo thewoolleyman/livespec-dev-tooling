@@ -54,6 +54,7 @@ _NO_STRUCTURED_FINDING = (
 )
 _FAIL_STATUS = "fail"
 _PER_FILE_COVERAGE_TARGET = "check-per-file-coverage"
+_COVERAGE_ERROR_EVENT = "file below 100% coverage"
 _PYTEST_FAILED_NODE_ID = re.compile(r"^FAILED (?P<node_id>\S+)(?:\s+-|$)", re.MULTILINE)
 
 
@@ -142,14 +143,30 @@ def _failed_test_lines(*, target: str, node_ids: list[str]) -> list[str]:
 def _coverage_entry_lines(*, target: str, output: str) -> list[str]:
     """Render coverage findings with every affected file, rather than a count."""
     paths_by_hint: dict[str, list[str]] = {}
-    records = filter(None, (_fail_record(line=line) for line in output.splitlines()))
-    for _, hint, path in records:
-        paths_by_hint.setdefault(hint, []).append(path)
+    for line in output.splitlines():
+        record = _fail_record(line=line)
+        if record is not None and record[0] == "coverage":
+            _, hint, path = record
+            paths_by_hint.setdefault(hint, []).append(path)
+            continue
+        try:
+            parsed = json.loads(line.strip())
+        except ValueError:
+            continue
+        if not isinstance(parsed, dict):
+            continue
+        record = cast("dict[str, object]", parsed)
+        if record.get("event") != _COVERAGE_ERROR_EVENT:
+            continue
+        path = record.get("file")
+        if isinstance(path, str):
+            paths_by_hint.setdefault("", []).append(path)
     lines: list[str] = []
     for hint, paths in paths_by_hint.items():
         lines.append(f"  {target}: coverage")
         lines.extend(f"      path: {path}" for path in paths)
-        lines.append(f"      remedy: {hint}")
+        if hint:
+            lines.append(f"      remedy: {hint}")
     return lines
 
 
@@ -166,16 +183,24 @@ def failure_digest_lines(*, failures: list[tuple[str, str]]) -> list[str]:
     lines = ["", _DIGEST_HEADER]
     for target, output in failures:
         failed_test_node_ids = _pytest_failed_test_node_ids(output=output)
+        coverage_lines = (
+            _coverage_entry_lines(target=target, output=output)
+            if target == _PER_FILE_COVERAGE_TARGET
+            else []
+        )
         if target == _PER_FILE_COVERAGE_TARGET and failed_test_node_ids:
             lines.extend(_failed_test_lines(target=target, node_ids=failed_test_node_ids))
+        lines.extend(coverage_lines)
         groups = _mode_groups(output=output)
         if not groups:
-            if target == _PER_FILE_COVERAGE_TARGET and failed_test_node_ids:
+            if target == _PER_FILE_COVERAGE_TARGET and (failed_test_node_ids or coverage_lines):
                 continue
             lines.append(f"  {target}: {_NO_STRUCTURED_FINDING}")
             continue
-        if target == _PER_FILE_COVERAGE_TARGET and all(group[0] == "coverage" for group in groups):
-            lines.extend(_coverage_entry_lines(target=target, output=output))
+        if target == _PER_FILE_COVERAGE_TARGET and coverage_lines:
+            for group in groups:
+                if group[0] != "coverage":
+                    lines.extend(_entry_lines(target=target, group=group))
             continue
         for group in groups:
             lines.extend(_entry_lines(target=target, group=group))
