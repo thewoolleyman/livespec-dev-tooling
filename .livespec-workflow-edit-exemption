@@ -1,4 +1,4 @@
-work_item=livespec-dev-tooling-zbzls2
-reason=Add env lines to the just step of the check-metadata job in .github/workflows/ci.yml, so the check-red-green-replay leg alone, on same-repository pull_request events, can ask the observer's read-only /provenance route whether the incident chain records an expedited commit. Contract line 1035 requires the range reader to verify that provenance, and CI holds no tenant credential. No new secret: it reuses LIVESPEC_INCIDENT_OBSERVER_QUERY_TOKEN.
+work_item=livespec-dev-tooling-u6jztk
 change=additive
 ci_runtime=no-significant-increase
+reason=Add a job-level timeout-minutes to the seven self-hosted job definitions of .github/workflows/ci.yml (check-per-file-coverage 180, check-coverage 60, check-python, check-python-batch, check-metadata, check-metadata-batch and incident-ci 90), each above that job's 7-day starved maximum (measured 2026-11-08T02:20Z over 398 runs), so a hung test is cancelled instead of holding a self-hosted runner and a churn slot for GitHub's 360-minute default. 7 lines added, 0 removed or modified; no job, step or check is removed, and a job that finishes within its limit is unaffected. approval:workflow-edit-additive is set by legacy-coordinator-agent under the maintainer's 2026-11-02 delegation.

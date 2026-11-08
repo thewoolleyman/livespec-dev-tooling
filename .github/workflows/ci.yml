@@ -100,6 +100,7 @@ on:
 
 jobs:
   check-python:
+    timeout-minutes: 90  # 7-day max 63 min on a starved node (livespec-dev-tooling-u6jztk)
     name: ${{ matrix.target }}
     # The variable holds exactly one complete hosted or self-hosted label
     # set. GitHub does not fall back when a self-hosted label set has no match.
@@ -191,6 +192,7 @@ jobs:
   # locally (scripts/just/check-coverage.sh), now effective in CI where the
   # two jobs used to run the full suite independently on separate runners.
   check-per-file-coverage:
+    timeout-minutes: 180  # 7-day p95 68, max 141 min on a starved node (livespec-dev-tooling-u6jztk)
     name: check-per-file-coverage
     # `needs:` only to read incident-ci's `omitted` output. `!cancelled()` keeps
     # this job running IN FULL when incident-ci failed or refused: only its
@@ -307,6 +309,7 @@ jobs:
   # mount. If the download ever regresses, the script's fallback branch runs
   # the clean suite standalone — slower, never wrong.
   check-coverage:
+    timeout-minutes: 60  # 7-day p95 22, max 35 min (livespec-dev-tooling-u6jztk)
     name: ${{ matrix.target }}
     # incident-ci is needed only to read its `omitted` output. `!cancelled()`
     # keeps this job running IN FULL when incident-ci failed or refused, and
@@ -393,6 +396,7 @@ jobs:
   # slug to this job, and the job runs `just` so assertion (b) requires it
   # in ci-green.needs. The wall-time-dominant targets stay in check-python.
   check-python-batch:
+    timeout-minutes: 90  # 7-day max 38 min (livespec-dev-tooling-u6jztk)
     name: check-python-batch
     runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
     container:
@@ -545,6 +549,7 @@ jobs:
   # PRs the range carries no product .py and trivially passes; on
   # master pushes the range is empty.
   check-metadata:
+    timeout-minutes: 90  # 7-day max 36 min (livespec-dev-tooling-u6jztk)
     name: ${{ matrix.target }}
     # `needs:` only to read incident-ci's `omitted` output. `!cancelled()` keeps
     # this job running IN FULL when incident-ci failed or refused: only its
@@ -656,6 +661,7 @@ jobs:
   # check-shell-quality both live in this batch (see the vacuous-pass record
   # of livespec-dev-tooling-9ywf for why the pack must be materialized).
   check-metadata-batch:
+    timeout-minutes: 90  # 7-day max 36 min (livespec-dev-tooling-u6jztk)
     name: check-metadata-batch
     # `needs:` only to read incident-ci's `omitted` output. `!cancelled()` keeps
     # this job running IN FULL when incident-ci failed or refused: only its
@@ -818,6 +824,7 @@ jobs:
   # LIVESPEC_INCIDENT_OBSERVER_QUERY_TOKEN; until both exist an incident PR
   # is REFUSED with that named cause and a non-incident PR is unaffected.
   incident-ci:
+    timeout-minutes: 90  # 7-day max 58 min (livespec-dev-tooling-u6jztk)
     name: incident-ci
     runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
     container:
