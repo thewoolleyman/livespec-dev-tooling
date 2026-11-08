@@ -224,6 +224,36 @@ def test_real_check_recipe_is_legacy_readable_exact_inventory_mirror() -> None:
     ) == ("check-alpha",)
 
 
+def test_check_recipe_loads_the_committed_ci_severity_levers_before_dispatch() -> None:
+    """Every local, delegated, and factory aggregate run shares these strict exports."""
+    source = _REPO_ROOT / "scripts" / "just" / "gate-surface-severity-levers.sh"
+    assert source.is_file(), "the shared gate entry point needs a committed severity-lever source"
+
+    loaded = subprocess.run(
+        ["bash", "-c", 'source "$1"; env', "bash", str(source)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert loaded.returncode == 0, loaded.stderr
+    exported = {
+        line.split("=", 1)[0]
+        for line in loaded.stdout.splitlines()
+        if line.startswith("LIVESPEC_FAIL_IF_")
+    }
+    assert exported == {
+        "LIVESPEC_FAIL_IF_CI_GATE_PARITY_GAPS_EXIST",
+        "LIVESPEC_FAIL_IF_CI_MATRIX_GAPS_EXIST",
+        "LIVESPEC_FAIL_IF_FMT_DIRECTIVES_EXIST",
+    }
+
+    recipe = _REPO_ROOT / "justfile"
+    body = recipe.read_text(encoding="utf-8")
+    source_line = "source scripts/just/gate-surface-severity-levers.sh"
+    assert source_line in body
+    assert body.index(source_line) < body.index('scripts/just/check.sh "${targets[@]}"')
+
+
 def test_check_script_rejects_mirror_drift_before_dispatch(*, tmp_path: Path) -> None:
     """A stale literal mirror fails closed before sync or aggregate dispatch."""
     script = tmp_path / "scripts" / "just" / "check.sh"
