@@ -39,11 +39,20 @@ say() { printf '%s: %s\n' "$prog" "$*"; }
 node="$1"
 [ -s "$conf" ] || die "the workload architecture list $conf is missing"
 
-class="$(kubectl get node "$node" -o jsonpath='{.metadata.labels.homelab-worker\.livespec\.dev/class}')"
+# node_field <jsonpath>: one field of the Node, or die naming the read. A bare
+# `$(kubectl ...)` under set -e exits silently when kubectl fails (measured
+# 2026-11-08: a dropped tailscale ssh hop ended the first live run with no
+# message), so every read goes through here.
+node_field() {
+  kubectl get node "$node" -o "jsonpath=$1" ||
+    die "could not read $1 of Node $node through kubectl; the cluster was not reached, nothing was changed"
+}
+
+class="$(node_field '{.metadata.labels.homelab-worker\.livespec\.dev/class}')"
 [ "$class" = worker ] || die "Node $node is not a container worker (no homelab-worker.livespec.dev/class=worker label); refusing to change its enrollment"
-arch="$(kubectl get node "$node" -o jsonpath='{.metadata.labels.kubernetes\.io/arch}')"
+arch="$(node_field '{.metadata.labels.kubernetes\.io/arch}')"
 [ -n "$arch" ] || die "Node $node reports no kubernetes.io/arch label"
-cpu="$(kubectl get node "$node" -o jsonpath='{.status.allocatable.cpu}')"
+cpu="$(node_field '{.status.allocatable.cpu}')"
 case "$cpu" in
   *m) millicores="${cpu%m}" ;;
   '' | *[!0-9]*) die "Node $node reports allocatable cpu '$cpu', which is not a CPU quantity" ;;
