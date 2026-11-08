@@ -58,6 +58,41 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.188.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.187.0...v1.188.0) (2026-11-08)
+
+
+### Features
+
+* add Rule-26 keep-out guard coverage ([1b29e3d](https://github.com/thewoolleyman/livespec-dev-tooling/commit/1b29e3d2311dc6bd37cbe761b8b0255edb21a97f))
+* **ansible:** the factory sandbox provider selects the architecture its agent image publishes, from the declared list (livespec-dev-tooling-ko26ez.6) ([c4126d3](https://github.com/thewoolleyman/livespec-dev-tooling/commit/c4126d3ff17c80453be68b0d99bcf4e3c730844e))
+* **ci-runner:** every fleet scale set selects nodes by an architecture its job images publish, from one declared list (livespec-dev-tooling-ko26ez.6) ([38f7594](https://github.com/thewoolleyman/livespec-dev-tooling/commit/38f7594ef449182a661e8edc0651ab30f75ce092))
+* **ci-runner:** livespec-dev-tooling gets an arm64 scale set whose Kueue quota is the enrolled workers' derived churn slots (livespec-dev-tooling-ko26ez.7) ([a60a4ac](https://github.com/thewoolleyman/livespec-dev-tooling/commit/a60a4ac5995a641fd1ce428db161f4757bfc6c7f))
+* **gates:** a delegated gate Job requires an architecture its image publishes, from the declared list (livespec-dev-tooling-ko26ez.6) ([e76ee28](https://github.com/thewoolleyman/livespec-dev-tooling/commit/e76ee2890eafe0f38720b3d9140e57f62e8a0648))
+* **homelab-worker:** the production join enrolls a container worker in every workload class its architecture can run (livespec-dev-tooling-ko26ez.7) ([d8b2541](https://github.com/thewoolleyman/livespec-dev-tooling/commit/d8b2541ac42ab940d093df5da9fbe443feec744f))
+* **homelab-worker:** the start task registers the worker VM to start at login, so a worker rejoins after a host reboot with no operator step (livespec-dev-tooling-ko26ez.8) ([1e948b8](https://github.com/thewoolleyman/livespec-dev-tooling/commit/1e948b8ee20a6f69d9afad1d36ba8b2e2f5a0963))
+
+
+### Bug Fixes
+
+* a corrected incident attempt is measured from its staged tree (livespec-dev-tooling-se537s) ([a448d21](https://github.com/thewoolleyman/livespec-dev-tooling/commit/a448d212b04cfdc794b41624f12c44c03a2a001d))
+* an empty observer connect address means unset (livespec-dev-tooling-zbzls2) ([cc86acf](https://github.com/thewoolleyman/livespec-dev-tooling/commit/cc86acf3fe2cacc363e4bf8877d9f33798e92e50))
+* an unknown recovery outcome can be cleared or retried through /reconcile (livespec-dev-tooling-gho3w4) ([1726be3](https://github.com/thewoolleyman/livespec-dev-tooling/commit/1726be3e50110fb6a089e643d982c99a532bb541))
+* **checks:** read vars.CI_RUNNER_LABELS only as a whole variable name (livespec-dev-tooling-sdampl) ([b56731a](https://github.com/thewoolleyman/livespec-dev-tooling/commit/b56731a6887ad003233c6eb5aa5fd10fe548716b))
+* **ci-runner:** order gate lanes by measured load, add a PowerEdge lane, and keep every pool node in the gate queue ([3367170](https://github.com/thewoolleyman/livespec-dev-tooling/commit/33671709916b1d58f52e0149ddf767993a1a9d20))
+* collect authenticates an armed merge on the generation that records it (livespec-dev-tooling-3rsnqb) ([d2b8073](https://github.com/thewoolleyman/livespec-dev-tooling/commit/d2b80733143afbfd13dc7abe0c889cf86038eada))
+* flake-retry workers no longer race on git's shallow lock (livespec-dev-tooling-xfe2po) ([993d248](https://github.com/thewoolleyman/livespec-dev-tooling/commit/993d248ca7d51b4f8808c2a3dd3a539135ff9b52))
+* **gate:** a delegated gate waiting for admission reports progress so the stall bound never ends it (livespec-dev-tooling-2f3yy) ([faae727](https://github.com/thewoolleyman/livespec-dev-tooling/commit/faae727516bcf93282eae64bc03ae51a355519a2))
+* name delegated pre-commit fallback job ([4e154e4](https://github.com/thewoolleyman/livespec-dev-tooling/commit/4e154e4935b68d5af75413508e97590ac741b19d))
+* observer forge reads authenticate as the recovery App (livespec-dev-tooling-x3wwwc) ([ee1836c](https://github.com/thewoolleyman/livespec-dev-tooling/commit/ee1836c1c6edf220817aa2905eb254c464916fb9))
+* the original-run entrance runs as the controller account (livespec-dev-tooling-jvfb7x) ([f422dfc](https://github.com/thewoolleyman/livespec-dev-tooling/commit/f422dfc4e33b30299f80823ecf58e5cc6fae7afa))
+* the range gate admits an expedited commit on recorded incident provenance (livespec-dev-tooling-zbzls2) ([0f0c60f](https://github.com/thewoolleyman/livespec-dev-tooling/commit/0f0c60f3d83d047b548744b7aeebeca45503b521))
+
+
+### Reverts
+
+* restore 18 and 21 and re-apply node_extended_resource. ([065afc1](https://github.com/thewoolleyman/livespec-dev-tooling/commit/065afc16b0016ca779c8b8444f296953f65f1b9c))
+* this value back to 3, then the CI stack converge. ([82b4b73](https://github.com/thewoolleyman/livespec-dev-tooling/commit/82b4b73407da72366af6197f29528b73fca3b41e))
+
 ## [1.187.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.186.2...v1.187.0) (2026-11-07)
 
 
