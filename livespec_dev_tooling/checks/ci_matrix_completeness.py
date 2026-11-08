@@ -113,6 +113,9 @@ from livespec_dev_tooling.checks._ci_matrix_parse import (  # noqa: E402
     load_canonical,
     parse_ci_jobs,
 )
+from livespec_dev_tooling.checks._ci_severity_lever_parity import (  # noqa: E402
+    ci_severity_lever_findings,
+)
 from livespec_dev_tooling.config import (  # noqa: E402  — vendor-path-aware.
     load_repo_local_ci_skips,
 )
@@ -125,6 +128,7 @@ CHECK_PURITY = "tree-pure"
 _JUSTFILE_NAME = "justfile"
 _TARGET_INVENTORY_NAME = "check-targets.txt"
 _CI_YML_PATH = Path(".github") / "workflows" / "ci.yml"
+_SEVERITY_LEVERS_SOURCE = Path("scripts") / "just" / "gate-surface-severity-levers.sh"
 _FAIL_ENV_VAR = "LIVESPEC_FAIL_IF_CI_MATRIX_GAPS_EXIST"
 _CHECK_ID = "ci_matrix_completeness"
 _EXIT_VIOLATIONS = 4
@@ -202,14 +206,24 @@ def _collect_findings(
                 path=ci_yml_path,
             )
         ]
-    jobs = parse_ci_jobs(source=ci_yml_path.read_text(encoding="utf-8"))
-    return evaluate(
+    ci_yml = ci_yml_path.read_text(encoding="utf-8")
+    jobs = parse_ci_jobs(source=ci_yml)
+    findings = evaluate(
         canonical=canonical,
         world_gates=world_gates,
         justfile_targets=justfile_targets,
         jobs=jobs,
         repo_local_skips=load_repo_local_ci_skips(repo_root=cwd) or (),
     )
+    source = cwd / _SEVERITY_LEVERS_SOURCE
+    if source.is_file():
+        findings.extend(
+            ci_severity_lever_findings(
+                ci_yml=ci_yml,
+                source=source.read_text(encoding="utf-8"),
+            )
+        )
+    return findings
 
 
 def _inventory_targets(*, cwd: Path) -> list[str] | None:
