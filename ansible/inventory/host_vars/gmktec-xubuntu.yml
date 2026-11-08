@@ -575,8 +575,22 @@ fabro_server_instances:
     # Built on fabro-k3s by carrier-build run 42231707109. ROLLBACK:
     # v0393-85af3547e/fabro and
     # d6fcfafab6da1bfd32c3b96b4153f93367fe8a5b4fc18b0efecacad80b1e5711.
-    binary_source: /home/ubuntu/.local/state/fabro-web-prod/v0393-bbe693847/fabro
-    binary_sha256: 1529aa9f86b5bf346ae20a731bdf1cb433bc678825c8a43d0c21f513dac0ab1f
+    # 2026-11-08: the CANDIDATE alone moves to 85071c828 (fabro 0.408.0-nightly.0),
+    # thewoolleyman/fabro carrier-v0.408.0-nightly.0-20261108. That is the 36
+    # carrier-candidate-registered-20261023 carries rebased onto the EXACT
+    # upstream tag v0.408.0-nightly.0 (08ef6b429, published 2026-11-05), plus
+    # fork PR #36's authored run_prepare tests and three fixes the new base
+    # needed. Petri is thewoolleyman/petri fabro-integration-f30a12df-20261108
+    # (ac0b9fb3), the seven fork carries on the f30a12df that v0.408 locks
+    # (livespec-orchestrator-beads-fabro bd-ib-qx45e6, plan fabro-currency).
+    # This base REFUSES [run.prepare] (Petri a04dae73), so only a workflow
+    # migrated to authored setup nodes (bd-ib-dpsiwz) runs here. The fleet
+    # instance and mi-homelab stay on bbe693847 until that migration is live.
+    # Fork gates run 42457891271 green; built on fabro-k3s by carrier-build run
+    # 42461605229. ROLLBACK: v0393-bbe693847/fabro and
+    # 1529aa9f86b5bf346ae20a731bdf1cb433bc678825c8a43d0c21f513dac0ab1f.
+    binary_source: /home/ubuntu/.local/state/fabro-web-prod/v0408-85071c828/fabro
+    binary_sha256: e5c98af4bd1db97253cb7a51bef0a61f3a37e0d05341183a07bcdaeeb5d04d04
     # The fleet instance's catalog, entry for entry; the reasons for each
     # entry are given there. Bump the images together with it.
     # The three python entries on the `kubernetes` provider take the fleet's
