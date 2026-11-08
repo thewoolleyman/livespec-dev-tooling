@@ -832,7 +832,3 @@ When no execution target can admit a target, its decision MUST be `refuse` namin
 **Execution targets are inventory entries.** The committed inventory file MUST hold one entry per execution target, naming its `host.name` and the run classes it accepts. Adding an execution target MUST need only a new inventory entry, plus that target's thresholds-file values; it MUST NOT need a change to the function's code.
 
 **Shadow mode.** The function's caller MUST append every decision the function returns to a decision log on the host that ran it, stamping each record with the tick's UTC time, which the caller reads. Each log record MUST carry that time, the radar index, the target as `<tenant>:<id>`, the run class, the decision, the execution target when admitted, the rule id, the numbers compared, and whether the inputs were `honeycomb` or `fallback`. A launcher MUST NOT start, hold or cancel a launch on the function's output until this specification names that launcher as a consumer of the function.
-
-## Check aggregate wall-time table
-
-The check aggregate's per-target wall-time table MUST show each wall time in the unit a reader compares it in: seconds with one decimal below a minute, minutes and two-digit seconds from a minute, and hours, two-digit minutes and two-digit seconds from an hour. The `::: just <target> [status, wall: Ns]` lines and the structured `wall_s` field keep raw seconds, because tools read them.
