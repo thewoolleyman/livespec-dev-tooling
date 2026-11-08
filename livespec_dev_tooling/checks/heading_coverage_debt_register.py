@@ -20,7 +20,7 @@ Three directions, all read from the repository's own committed files:
   Fires when a row is resolved to a real test (or deleted) and its register
   entry is left behind, which would silently bank a shrink that never
   happened and leave room for a future `TODO` to slip in unchallenged.
-- `register_grew` — a register key absent from `HEAD`'s register. The
+- `register_grew` — a register key absent from every parent's register. The
   shrink-only rule itself, now carrying the ONE bounded exception v067 ratified
   (see "SPEC-FIRST ADMISSION" below).
 
@@ -159,6 +159,7 @@ from livespec_dev_tooling.heading_coverage_debt import (  # noqa: E402
     REGISTER_PATH,
     head_rows,
     load_rows,
+    parent_rows,
     register_key,
     register_row_is_complete,
     todo_rows,
@@ -183,7 +184,7 @@ _MESSAGES = {
         "shrink in lockstep with real resolutions"
     ),
     "register_grew": (
-        "heading-coverage-debt.json entry is absent from HEAD's register — the register "
+        "heading-coverage-debt.json entry is absent from every parent's register — the register "
         "GREW. It may only shrink toward empty, with the ONE bounded exception for debt "
         "whose exact H2 heading this same change introduces into the governed live "
         "specification: the coverage row must name an owner the register entry matches "
@@ -303,7 +304,7 @@ def _ratchet_findings(
 def _growth_findings(
     *, register_rows: list[dict[str, object]], baseline_rows: list[dict[str, object]]
 ) -> list[_Finding]:
-    """Register keys `HEAD` does not carry — the shrink-only direction."""
+    """Register keys no pending-commit parent carries — the shrink-only direction."""
     baseline = set(_keyed(rows=baseline_rows))
     return [
         _Finding(code="register_grew", key=key)
@@ -396,17 +397,20 @@ def main() -> int:
     # `HEAD` register there is no grown key whose admission either of them could
     # concern.
     reported: list[SpecFirstFinding] = []
-    baseline_scan = head_rows(cwd=cwd, path=REGISTER_PATH)
+    baseline_scan = parent_rows(cwd=cwd, path=REGISTER_PATH)
     if isinstance(baseline_scan, IOFailure):
         emit.warning(
-            "HEAD carries no comparable heading-coverage debt register — the shrink-only "
-            "direction is UNJUDGED for this run (adoption, or a tree with no history)",
+            "a pending-commit parent carries no comparable heading-coverage debt register — "
+            "the shrink-only direction is UNJUDGED for this run (adoption, or a tree with no "
+            "history)",
             **asdict(unsafe_perform_io(baseline_scan.failure())),
             baseline_unreadable=True,
             failing=False,
         )
     else:
-        baseline_rows = unsafe_perform_io(baseline_scan.unwrap())
+        baseline_rows = [
+            row for parent_copy in unsafe_perform_io(baseline_scan.unwrap()) for row in parent_copy
+        ]
         grown = _growth_findings(register_rows=register_rows, baseline_rows=baseline_rows)
         # The bounded v067 exception is applied HERE rather than inside
         # `_growth_findings` so the shrink-only rule stays stated whole: growth is

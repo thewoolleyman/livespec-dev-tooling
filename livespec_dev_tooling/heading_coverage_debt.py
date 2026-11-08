@@ -160,6 +160,7 @@ __all__: list[str] = [
     "live_todo_keys",
     "load_rows",
     "main",
+    "parent_rows",
     "register_key",
     "register_row_is_complete",
     "render_register",
@@ -335,6 +336,41 @@ def head_rows(*, cwd: Path, path: Path) -> IOResult[list[dict[str, object]], Hea
             )
         )
     return IOSuccess(rows)
+
+
+def parent_rows(
+    *, cwd: Path, path: Path
+) -> IOResult[list[list[dict[str, object]]], HeadCopyIncomparable]:
+    """The comparable copies of `path` from every parent of the pending commit.
+
+    Outside a merge, the pending commit has only `HEAD` as its parent. During a
+    merge hook, `MERGE_HEAD` names each additional parent whose already-owned
+    register rows the merge must inherit rather than convict as new growth.
+    Every parent must be comparable: a missing or malformed copy leaves the
+    shrink-only direction unjudged, matching `head_rows`' existing baseline
+    policy rather than treating unreadable evidence as an empty register.
+    """
+    parent_copies: list[list[dict[str, object]]] = []
+    head = head_rows(cwd=cwd, path=path)
+    if isinstance(head, IOFailure):
+        return head
+    parent_copies.append(unsafe_perform_io(head.unwrap()))
+    merge_head_file = (
+        cwd / _git_stdout(cwd=cwd, args=["rev-parse", "--git-path", "MERGE_HEAD"]).strip()
+    )
+    if not merge_head_file.is_file():
+        return IOSuccess(parent_copies)
+    for parent in merge_head_file.read_text(encoding="utf-8").split():
+        text = _git_stdout(cwd=cwd, args=["show", f"{parent}:{path.as_posix()}"])
+        rows = _rows_from_text(text=text)
+        if rows is None:
+            return IOFailure(
+                HeadCopyIncomparable(
+                    reason="head-copy-not-an-array", revision=f"{parent}:{path.as_posix()}"
+                )
+            )
+        parent_copies.append(rows)
+    return IOSuccess(parent_copies)
 
 
 def _utc_calendar_date(*, committed_at: str) -> str:

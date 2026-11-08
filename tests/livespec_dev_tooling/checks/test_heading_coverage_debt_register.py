@@ -338,6 +338,19 @@ def _head_tree_sha(*, cwd: Path) -> str:
     return completed.stdout.strip()
 
 
+def _head_sha(*, cwd: Path) -> str:
+    """The commit SHA at `HEAD`, for fixtures that name a merge parent directly."""
+    completed = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=str(cwd),
+        capture_output=True,
+        text=True,
+        check=True,
+        env={"HOME": str(cwd), "GIT_CONFIG_GLOBAL": "/dev/null", "PATH": "/usr/bin:/bin"},
+    )
+    return completed.stdout.strip()
+
+
 def _module_docstring(*, path: Path) -> str:
     """The module docstring of the Python source at `path`, whitespace-normalized.
 
@@ -669,6 +682,130 @@ def test_a_register_that_grew_fails(
     )
     assert "register_grew" in result.combined
     assert "## Grown" in result.combined
+
+
+def test_a_merge_does_not_report_a_default_branch_register_row_as_growth(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A merge inherits default-branch debt instead of authoring register growth.
+
+    The check runs before Git writes the merge commit, so this fixture keeps the
+    merge in progress.  Its `HEAD` is the stale feature branch and `MERGE_HEAD`
+    is the default branch that already owns the incoming row.
+    """
+    _seed_repo(
+        tmp_path=tmp_path,
+        registry=[_todo(heading="## Existing")],
+        register=[_entry(heading="## Existing")],
+    )
+    _git(cwd=tmp_path, args=["checkout", "-q", "-b", "feature"])
+    _git(cwd=tmp_path, args=["checkout", "-q", "master"])
+    _stage(
+        tmp_path=tmp_path,
+        registry=[_todo(heading="## Existing"), _todo(heading="## From master")],
+        register=[_entry(heading="## Existing"), _entry(heading="## From master")],
+    )
+    _commit_staged(
+        tmp_path=tmp_path,
+        committed_at=_LANDING_AT,
+        message="add default-branch debt",
+    )
+    _git(cwd=tmp_path, args=["checkout", "-q", "feature"])
+    _git(cwd=tmp_path, args=["merge", "-q", "--no-ff", "--no-commit", "master"])
+
+    result = _run_check(cwd=tmp_path, scope="true", monkeypatch=monkeypatch, capsys=capsys)
+
+    assert result.returncode == 0, (
+        f"a clean default-branch merge must not be convicted for inherited debt; "
+        f"got returncode={result.returncode} output={result.combined!r}"
+    )
+    assert "register_grew" not in result.combined
+
+
+def test_a_merge_with_an_unreadable_parent_register_leaves_growth_unjudged(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """An unreadable parent is not evidence that its register was empty."""
+    _seed_repo(
+        tmp_path=tmp_path,
+        registry=[_todo(heading="## Existing")],
+        register=[_entry(heading="## Existing")],
+    )
+    _git(cwd=tmp_path, args=["checkout", "-q", "-b", "malformed-parent"])
+    _stage(
+        tmp_path=tmp_path,
+        registry=[_todo(heading="## Existing"), _todo(heading="## From parent")],
+        register="not an array",
+    )
+    _commit_staged(
+        tmp_path=tmp_path,
+        committed_at=_LANDING_AT,
+        message="make the parent register unreadable",
+    )
+    parent = _head_sha(cwd=tmp_path)
+    _git(cwd=tmp_path, args=["checkout", "-q", "master"])
+    _stage(
+        tmp_path=tmp_path,
+        registry=[_todo(heading="## Existing"), _todo(heading="## From parent")],
+        register=[_entry(heading="## Existing"), _entry(heading="## From parent")],
+    )
+    merge_head = tmp_path / ".git" / "MERGE_HEAD"
+    _ = merge_head.write_text(f"{parent}\n", encoding="utf-8")
+
+    result = _run_check(cwd=tmp_path, scope="true", monkeypatch=monkeypatch, capsys=capsys)
+
+    assert result.returncode == 0, (
+        f"an unreadable merge parent must leave growth unjudged; "
+        f"got returncode={result.returncode} output={result.combined!r}"
+    )
+    assert "baseline_unreadable" in result.combined
+
+
+def test_a_merge_still_reports_a_row_authored_in_neither_parent(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Only the row introduced while resolving the merge remains register growth."""
+    _seed_repo(
+        tmp_path=tmp_path,
+        registry=[_todo(heading="## Existing")],
+        register=[_entry(heading="## Existing")],
+    )
+    _git(cwd=tmp_path, args=["checkout", "-q", "-b", "feature"])
+    _git(cwd=tmp_path, args=["checkout", "-q", "master"])
+    _stage(
+        tmp_path=tmp_path,
+        registry=[_todo(heading="## Existing"), _todo(heading="## From master")],
+        register=[_entry(heading="## Existing"), _entry(heading="## From master")],
+    )
+    _commit_staged(
+        tmp_path=tmp_path,
+        committed_at=_LANDING_AT,
+        message="add default-branch debt",
+    )
+    _git(cwd=tmp_path, args=["checkout", "-q", "feature"])
+    _git(cwd=tmp_path, args=["merge", "-q", "--no-ff", "--no-commit", "master"])
+    _stage(
+        tmp_path=tmp_path,
+        registry=[
+            _todo(heading="## Existing"),
+            _todo(heading="## From master"),
+            _todo(heading="## From merge resolution"),
+        ],
+        register=[
+            _entry(heading="## Existing"),
+            _entry(heading="## From master"),
+            _entry(heading="## From merge resolution"),
+        ],
+    )
+
+    result = _run_check(cwd=tmp_path, scope="true", monkeypatch=monkeypatch, capsys=capsys)
+
+    assert result.returncode != 0, (
+        f"a row authored by neither parent must remain growth; "
+        f"got returncode={result.returncode} output={result.combined!r}"
+    )
+    assert '"heading": "## From merge resolution", "finding": "register_grew"' in result.combined
+    assert '"heading": "## From master", "finding": "register_grew"' not in result.combined
 
 
 def test_resolving_a_row_and_removing_its_register_entry_passes(
