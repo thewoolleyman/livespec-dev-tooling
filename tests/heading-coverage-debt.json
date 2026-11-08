@@ -2,6 +2,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "contracts.md",
+    "heading": "## CI priority record",
+    "work_item": "livespec-dev-tooling-5wewi2",
+    "first_seen": "2026-11-08"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "contracts.md",
     "heading": "## Check aggregate tail digest",
     "work_item": "livespec-dev-tooling-nvh3dl",
     "first_seen": "2026-11-08"
@@ -75,6 +82,13 @@
     "heading": "## Tests never pin committed configuration values",
     "work_item": "livespec-dev-tooling-symfx2",
     "first_seen": "2026-11-04"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "non-functional-requirements.md",
+    "heading": "## CI lane priority from the maintainer radar",
+    "work_item": "livespec-dev-tooling-5wewi2",
+    "first_seen": "2026-11-08"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -394,6 +408,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: a failed route job or an unusable record leaves gating jobs on their existing routing",
+    "work_item": "livespec-dev-tooling-5wewi2",
+    "first_seen": "2026-11-08"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: a failing test that shares only an ancestor directory name with the change set is retried",
     "work_item": "livespec-dev-tooling-sdrq5v",
     "first_seen": "2026-11-05"
@@ -530,6 +551,13 @@
     "heading": "## Scenario: a lower-ordered target does not backfill an execution target a higher-ordered waiting target could use",
     "work_item": "livespec-dev-tooling-hvfc6c",
     "first_seen": "2026-11-04"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a master push carrying a high-band work item's commit runs on the master lane's priority set",
+    "work_item": "livespec-dev-tooling-5wewi2",
+    "first_seen": "2026-11-08"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -691,6 +719,20 @@
     "heading": "## Scenario: a rule-26 kill-matrix run reports survivors and redundancy candidates",
     "work_item": "livespec-dev-tooling-wou75w",
     "first_seen": "2026-11-06"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a run naming no high-band item keeps the lane's existing routing",
+    "work_item": "livespec-dev-tooling-5wewi2",
+    "first_seen": "2026-11-08"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a run of a high-band work item on an opted-in lane is admitted ahead of earlier pending normal runs",
+    "work_item": "livespec-dev-tooling-5wewi2",
+    "first_seen": "2026-11-08"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -1209,6 +1251,13 @@
     "heading": "## Scenario: runner pods select the committed runner scheduler profile and every other pod keeps the default profile",
     "work_item": "livespec-dev-tooling-mtvxde",
     "first_seen": "2026-11-04"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: the CI priority producer is idempotent and its dry-run writes nothing",
+    "work_item": "livespec-dev-tooling-5wewi2",
+    "first_seen": "2026-11-08"
   },
   {
     "spec_root": "SPECIFICATION",

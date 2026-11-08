@@ -3429,3 +3429,59 @@ Given two values files in `ci-runner/k3s/phase2/arc` or `ci-runner/k3s/arc` pin 
 When `just check` runs
 
 Then it MUST fail
+
+## Scenario: a run of a high-band work item on an opted-in lane is admitted ahead of earlier pending normal runs
+
+Given `CI_PRIORITY_RECORD` bands work item W `high`
+
+And the repository's pull-request lane sets `CI_RUNNER_LABELS_PRIORITY` and is at its churn-slot quota with normal workloads pending
+
+When a pull request whose head branch names W starts its CI run
+
+Then its gating jobs MUST run on the lane's priority runner set
+
+And each of their pending workloads MUST be admitted before every earlier-created pending normal workload in that ClusterQueue
+
+And admitting them MUST NOT evict any running workload
+
+## Scenario: a run naming no high-band item keeps the lane's existing routing
+
+Given `CI_PRIORITY_RECORD` names work item V `medium` and does not name work item U
+
+When a pull request whose head branch names V, and another whose head branch names U, start their CI runs
+
+Then both runs' gating jobs MUST run on the lane's existing routing
+
+And a high-band run on a lane that does not set `CI_RUNNER_LABELS_PRIORITY` MUST also run on the lane's existing routing
+
+## Scenario: a failed route job or an unusable record leaves gating jobs on their existing routing
+
+Given `CI_PRIORITY_RECORD` is missing, does not parse, or carries a `generated_at` more than 72 hours old, or the route job fails
+
+When a pull request starts its CI run
+
+Then its gating jobs MUST run on the lane's existing routing and reach their own outcome
+
+And the route job's summary MUST state why no priority was applied, when the route job ran
+
+## Scenario: a master push carrying a high-band work item's commit runs on the master lane's priority set
+
+Given `CI_PRIORITY_RECORD` bands work item W `high`
+
+And the repository sets `CI_RUNNER_LABELS_MASTER_PRIORITY`
+
+When a push to master carries a commit whose subject names W
+
+Then the push run's gating jobs MUST run on the master lane's priority runner set
+
+And a push whose commit subjects name no high-band item MUST run on the master lane's existing routing
+
+## Scenario: the CI priority producer is idempotent and its dry-run writes nothing
+
+Given the maintainer radar and the ledger are unchanged between two producer runs
+
+When the producer runs twice, and then runs once with its dry-run flag
+
+Then every fleet repository's `CI_PRIORITY_RECORD` after the second run MUST be byte-identical to its value after the first
+
+And the dry-run MUST print each repository's value and MUST leave every `CI_PRIORITY_RECORD` unchanged

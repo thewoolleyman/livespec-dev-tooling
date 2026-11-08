@@ -2713,5 +2713,61 @@
     "test": "TODO",
     "reason": "Spec-first: a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) is owed for this scenario, running the check over two values files pinning different actions/runner versions and asserting it fails. livespec-dev-tooling-jkwzwv owns it (plan ci-runtime-and-cost); the implementation PR that ships it replaces this row.",
     "work_item": "livespec-dev-tooling-jkwzwv"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "non-functional-requirements.md",
+    "heading": "## CI lane priority from the maintainer radar",
+    "test": "TODO",
+    "reason": "A real test at the integration tier or above is owed for this heading: running the CI priority producer against a fixture radar and ledger and asserting the bands it derives, its idempotence and its dry-run, and rendering a lane's priority runner set to assert it shares the normal set's queues at a higher WorkloadPriorityClass. livespec-dev-tooling-5wewi2 owns it (plan ci-runtime-and-cost, phase 1 of CI lane priority); the implementation PR that ships it replaces this row.",
+    "work_item": "livespec-dev-tooling-5wewi2"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "contracts.md",
+    "heading": "## CI priority record",
+    "test": "TODO",
+    "reason": "A real test at the integration tier or above is owed for this heading: feeding the shipped route Action valid, unparseable, wrong-schema, key-missing and over-72-hour CI_PRIORITY_RECORD values and asserting the band it outputs for each. livespec-dev-tooling-5wewi2 owns it (plan ci-runtime-and-cost, phase 1 of CI lane priority); the implementation PR that ships it replaces this row.",
+    "work_item": "livespec-dev-tooling-5wewi2"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a run of a high-band work item on an opted-in lane is admitted ahead of earlier pending normal runs",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) is owed for this scenario, rendering a pull-request run naming a high-band item on a lane that sets CI_RUNNER_LABELS_PRIORITY and asserting its gating jobs route to the priority set, are admitted ahead of earlier pending normal workloads and evict nothing. livespec-dev-tooling-5wewi2 owns it (plan ci-runtime-and-cost); the implementation PR that ships it replaces this row.",
+    "work_item": "livespec-dev-tooling-5wewi2"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a run naming no high-band item keeps the lane's existing routing",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) is owed for this scenario, rendering runs naming a medium-band item, an unnamed item, and a high-band item on a lane without the priority variable, and asserting each keeps the lane's existing routing. livespec-dev-tooling-5wewi2 owns it (plan ci-runtime-and-cost); the implementation PR that ships it replaces this row.",
+    "work_item": "livespec-dev-tooling-5wewi2"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a failed route job or an unusable record leaves gating jobs on their existing routing",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) is owed for this scenario, running the route with a missing, unparseable and stale record and with a failing route job, and asserting gating jobs keep their existing routing and the summary names why. livespec-dev-tooling-5wewi2 owns it (plan ci-runtime-and-cost); the implementation PR that ships it replaces this row.",
+    "work_item": "livespec-dev-tooling-5wewi2"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a master push carrying a high-band work item's commit runs on the master lane's priority set",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) is owed for this scenario, rendering a master push whose commit subject names a high-band item with CI_RUNNER_LABELS_MASTER_PRIORITY set, and one naming none, and asserting their routing. livespec-dev-tooling-5wewi2 owns it (plan ci-runtime-and-cost); the implementation PR that ships it replaces this row.",
+    "work_item": "livespec-dev-tooling-5wewi2"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: the CI priority producer is idempotent and its dry-run writes nothing",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) is owed for this scenario, running the producer twice against an unchanged radar and ledger and once with its dry-run flag, and asserting byte-identical values and no write. livespec-dev-tooling-5wewi2 owns it (plan ci-runtime-and-cost); the implementation PR that ships it replaces this row.",
+    "work_item": "livespec-dev-tooling-5wewi2"
   }
 ]
