@@ -145,6 +145,9 @@ _POWEREDGE_ROLES = (
     "factory_pressure_publisher",
     # And the server steers new sandbox pods off a pressured node.
     "factory_pressure_reconciler",
+    # And it holds each factory node to its factory_pod_budget (the TEMPORARY
+    # fixed factory-vs-CI CPU share, maintainer ruling 2026-11-08).
+    "factory_budget_reconciler",
     # And it fails runner pods open while ci-runner-scheduler is down.
     "runner_scheduler_fail_open",
     "wedged_runner",

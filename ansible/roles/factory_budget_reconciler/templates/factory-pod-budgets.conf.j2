@@ -1,0 +1,9 @@
+# Managed by the livespec-dev-tooling factory_budget_reconciler role. Do not edit by hand.
+# One `<node> <factory_pod_budget>` per ci_pool host that declares a budget, read
+# from ansible/inventory/host_vars/<node>.yml (the one source of truth). A factory
+# node with no line gets budget 0. TEMPORARY fixed factory-vs-CI CPU share.
+{% for host in groups[factory_budget_reconciler_group] | sort %}
+{% if hostvars[host].factory_pod_budget is defined %}
+{{ host }} {{ hostvars[host].factory_pod_budget | int }}
+{% endif %}
+{% endfor %}

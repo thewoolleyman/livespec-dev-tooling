@@ -280,6 +280,14 @@
     - role: factory_pressure_reconciler
       tags: [factory_pressure_placement]
       when: cluster_role == 'server'
+    # And it holds each factory node to its committed `factory_pod_budget` with
+    # the ci-runner.io/factory-admit label, which the sandbox driver selects: the
+    # TEMPORARY fixed factory-vs-CI CPU share (README in
+    # phase2/factory-budget-admission/). Server-only: it runs under the admin
+    # kubeconfig. Apply it BEFORE fabro-hosts.yml renders the selector entry.
+    - role: factory_budget_reconciler
+      tags: [factory_budget_admission]
+      when: cluster_role == 'server'
     # And it hands a runner pod stranded by a down ci-runner-scheduler to the
     # default scheduler (livespec-dev-tooling-mtvxde). Server-only: it runs under
     # the admin kubeconfig.

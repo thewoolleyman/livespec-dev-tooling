@@ -155,4 +155,5 @@ def test_the_rendered_node_selector_carries_the_factory_class_architecture(
     assert config.get("node_selector") == {
         "ci-runner.io/factory": "true",
         "kubernetes.io/arch": "riscv64",
+        "ci-runner.io/factory-admit": "true",
     }

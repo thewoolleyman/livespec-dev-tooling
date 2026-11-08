@@ -1,0 +1,17 @@
+# Hold each factory node to its committed factory_pod_budget by labelling it
+# ci-runner.io/factory-admit=true|false (reconcile-factory-budget-admit.sh).
+# TEMPORARY fixed factory-vs-CI CPU share (maintainer ruling 2026-11-08; plan
+# gmktec-factory-placement, note 003). Server-only: it holds k3s's admin
+# kubeconfig. Installed by the factory_budget_reconciler Ansible role.
+[Unit]
+Description=Reconcile the ci-runner.io/factory-admit node label against the factory pod budgets
+After=k3s.service
+
+[Service]
+Type=oneshot
+Environment=KUBECONFIG=/etc/rancher/k3s/k3s.yaml
+Environment=FACTORY_BUDGET_FILE=/etc/livespec/factory-pod-budgets.conf
+# KILL SWITCH: set to off and apply the factory_budget_admission tag. Every
+# factory node is then admitted on the next cycle, with no Fabro restart.
+Environment=FACTORY_BUDGET_GATE=on
+ExecStart=/usr/local/lib/ci-runner-k3s/reconcile-factory-budget-admit.sh

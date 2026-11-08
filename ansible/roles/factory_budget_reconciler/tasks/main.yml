@@ -1,0 +1,77 @@
+---
+# factory_budget_reconciler: install reconcile-factory-budget-admit.sh, the
+# rendered budget file and the 30-second timer on the k3s server. It runs under
+# k3s's admin kubeconfig, which only the server holds, so ci-pool.yml gates this
+# role on cluster_role == 'server'.
+
+- name: Refuse a factory_pod_budget that is not a non-negative integer
+  ansible.builtin.assert:
+    that:
+      - (hostvars[item].factory_pod_budget | string) is match('^[0-9]+$')
+    fail_msg: >-
+      {{ item }} declares factory_pod_budget={{ hostvars[item].factory_pod_budget }};
+      it must be a non-negative integer (README in
+      ci-runner/k3s/phase2/factory-budget-admission/).
+    quiet: true
+  loop: "{{ groups[factory_budget_reconciler_group] | sort }}"
+  when: hostvars[item].factory_pod_budget is defined
+
+- name: Create the pool library and configuration directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  loop:
+    - "{{ factory_budget_reconciler_lib_dir }}"
+    - "{{ factory_budget_reconciler_conf_dir }}"
+  become: true
+
+- name: Render the per-node factory pod budgets
+  ansible.builtin.template:
+    src: factory-pod-budgets.conf.j2
+    dest: "{{ factory_budget_reconciler_budget_file }}"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+
+- name: Install the budget reconciler script
+  ansible.builtin.copy:
+    src: "{{ factory_budget_reconciler_phase2_dir }}/factory-budget-admission/{{ factory_budget_reconciler_script }}"
+    dest: "{{ factory_budget_reconciler_lib_dir }}/{{ factory_budget_reconciler_script }}"
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+
+- name: Check whether the budget reconciler service is already installed
+  ansible.builtin.stat:
+    path: "{{ factory_budget_reconciler_unit_dir }}/{{ factory_budget_reconciler_service }}"
+  register: factory_budget_reconciler_service_present
+  become: true
+
+- name: Install the budget reconciler service and timer
+  ansible.builtin.copy:
+    src: "{{ factory_budget_reconciler_phase2_dir }}/factory-budget-admission/{{ item }}"
+    dest: "{{ factory_budget_reconciler_unit_dir }}/{{ item }}"
+    owner: root
+    group: root
+    mode: "0644"
+  loop:
+    - "{{ factory_budget_reconciler_service }}"
+    - "{{ factory_budget_reconciler_timer }}"
+  become: true
+  notify: Reload systemd for the budget reconciler
+
+- name: Publish a changed unit before arming it
+  ansible.builtin.meta: flush_handlers
+
+- name: Enable and start the budget reconciler timer
+  ansible.builtin.systemd_service:
+    name: "{{ factory_budget_reconciler_timer }}"
+    enabled: true
+    state: started
+  become: true
+  when: not ansible_check_mode or factory_budget_reconciler_service_present.stat.exists
