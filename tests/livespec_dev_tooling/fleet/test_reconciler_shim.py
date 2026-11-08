@@ -227,6 +227,22 @@ def test_the_shim_grants_every_permission_the_reusable_workflow_requires() -> No
     assert _workflow_permissions(body=reconciler_shim_content(owner=_OWNER)) == required
 
 
+def test_the_reusable_reconciler_fences_observer_owned_master_actions() -> None:
+    """The workflow asks the independent observer before any policy decision.
+
+    The `master_health_*` modules remain pure, so this transport must live in
+    the reusable workflow.  An unavailable configured observer must fail the
+    run before the policy can rerun, classify, or change a revert.
+    """
+    body = _reusable_workflow_body()
+
+    assert "LIVESPEC_INCIDENT_OBSERVER_URL" in body
+    assert "LIVESPEC_INCIDENT_OBSERVER_QUERY_TOKEN" in body
+    assert "livespec_dev_tooling.master_health_observer" in body
+    assert "incident-owned" in body
+    assert body.index("master_health_observer") < body.index("master_health_step")
+
+
 def _put_args(*, path: str) -> tuple[str, ...]:
     return ("api", f"repos/acme/widget/contents/{path}", "--method", "PUT", "--input", "-")
 
