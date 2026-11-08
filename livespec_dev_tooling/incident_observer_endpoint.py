@@ -6,10 +6,14 @@ import json
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from pathlib import Path
+from threading import Thread
 from typing import Any
 
 from livespec_dev_tooling._incident_observer_types import JobCallback, RecoveryIntent
-from livespec_dev_tooling.incident_observer import handle_job_callback
+from livespec_dev_tooling.incident_observer import (
+    record_job_callback,
+    recover_recorded_job_callback,
+)
 
 __all__: list[str] = ["observer_endpoint"]
 
@@ -51,14 +55,19 @@ class _ObserverEndpoint:
             event=str(environ.get("HTTP_X_GITHUB_EVENT", "")),
             delivery_id=str(environ.get("HTTP_X_GITHUB_DELIVERY", "")),
         )
-        result = handle_job_callback(
+        result, intent = record_job_callback(
             directory=self.directory,
             delivery=delivery,
             webhook_secret=self.webhook_secret,
-            recover=self.recover,
         )
         status = "403 Forbidden" if result.status == "refused" else "202 Accepted"
         _ = start_response(status, [("Content-Type", "application/json")])
+        if intent is not None:
+            Thread(
+                target=recover_recorded_job_callback,
+                kwargs={"directory": self.directory, "intent": intent, "recover": self.recover},
+                daemon=True,
+            ).start()
         return [
             json.dumps(
                 {"status": result.status, "reason": result.reason, "action_id": result.action_id}
