@@ -1103,11 +1103,10 @@ if wait_for_stand_in_proxy "${uvx_proxy_port}"; then
   elif [ "$(grep -c '^uvx index=' "${SCRATCH}/stub.log")" -ne 1 ]; then
     fail "a failing tool through the uvx proxy shim was retried: $(cat "${SCRATCH}/stub.log")"
   elif grep -qF 'PLAY RECAP' "${SCRATCH}/gate.out" && \
-       grep -qF 'tool diagnostic on stderr' "${SCRATCH}/gate.err" && \
-       ! grep -qF 'tool diagnostic on stderr' "${SCRATCH}/gate.out"; then
-    pass "a failing tool run through the uvx proxy shim fails the gate without a retry, its streams kept apart"
+       grep -qF 'tool diagnostic on stderr' "${SCRATCH}/gate.out"; then
+    pass "a failing tool run through the uvx proxy shim fails the gate without a retry, through its ordered capture"
   else
-    fail "the uvx proxy shim moved a failing tool's output between streams: out=$(cat "${SCRATCH}/gate.out") err=$(cat "${SCRATCH}/gate.err")"
+    fail "the uvx proxy shim did not retain a failing tool's output in its ordered capture: out=$(cat "${SCRATCH}/gate.out") err=$(cat "${SCRATCH}/gate.err")"
   fi
 fi
 kill "${uvx_proxy_pid}" 2>/dev/null || true
