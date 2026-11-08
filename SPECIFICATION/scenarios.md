@@ -2632,6 +2632,18 @@ Then the plugin MUST re-run it exactly 3 times, 60 seconds apart, and the sessio
 
 And the `FLAKE-RETRIED` block MUST report the test's final outcome as failed
 
+## Scenario: a re-run test's record and summary carry each failed attempt's failure text
+
+Given a repository that loads livespec-dev-tooling's flake-retry pytest plugin
+
+And a failing test the run's change set does not touch, whose first attempt fails with a failure text longer than 4000 characters and whose second attempt passes
+
+When the session ends
+
+Then the test's JSON line under `tmp/flake-retries/` MUST carry a `failures` list with exactly one entry, holding the first 4000 characters of that attempt's failure text, marked as cut
+
+And the `FLAKE-RETRIED` block MUST show, beneath the test's node id, the first non-empty line of that attempt's failure text
+
 ## Scenario: a failing test the run touched fails at once with no retry
 
 Given a repository that loads livespec-dev-tooling's flake-retry pytest plugin

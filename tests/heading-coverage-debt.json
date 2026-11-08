@@ -576,6 +576,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: a re-run test's record and summary carry each failed attempt's failure text",
+    "work_item": "livespec-dev-tooling-b7l6it",
+    "first_seen": "2026-11-08"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: a re-run test's record reaches the host-side reader as a CI artifact",
     "work_item": "livespec-dev-tooling-mngdtf",
     "first_seen": "2026-11-08"
