@@ -80,3 +80,10 @@ def test_preserve_finalizers_does_nothing_without_rerunfailures() -> None:
     finalizers.preserve_finalizers(config=config)
 
     config.pluginmanager.get_plugin.assert_called_once_with("rerunfailures")
+
+
+def test_the_finalizer_module_satisfies_lint_without_suppression_comments() -> None:
+    """The retry-plugin patch must pass the private-access check, not silence it."""
+    module_path = _REPO_ROOT / "livespec_dev_tooling" / "flake_retry_finalizers.py"
+
+    assert "noqa" not in module_path.read_text(encoding="utf-8")
