@@ -317,3 +317,46 @@ def test_per_file_coverage_reports_each_file_below_its_threshold() -> None:
         "      path: livespec_dev_tooling/second.py",
         "      remedy: cover every branch",
     ]
+
+
+def test_per_file_coverage_reports_files_from_its_real_structlog_errors() -> None:
+    """The target's ordinary error records identify every low-coverage file."""
+    output = "\n".join(
+        (
+            '{"event": "file below 100% coverage", "file": "livespec_dev_tooling/first.py", '
+            '"level": "error"}',
+            '{"event": "file below 100% coverage", "file": "livespec_dev_tooling/second.py", '
+            '"level": "error"}',
+        )
+    )
+
+    tail = failure_digest_lines(failures=[("check-per-file-coverage", output)])[2:]
+
+    assert tail == [
+        "  check-per-file-coverage: coverage",
+        "      path: livespec_dev_tooling/first.py",
+        "      path: livespec_dev_tooling/second.py",
+    ]
+
+
+def test_per_file_coverage_ignores_invalid_json_records_and_keeps_other_modes() -> None:
+    """Only real coverage-error files join coverage beside other structured modes."""
+    output = "\n".join(
+        (
+            '["not", "an object"]',
+            '{"event": "some other error", "file": "ignored.py"}',
+            '{"event": "file below 100% coverage", "file": 42}',
+            '{"event": "file below 100% coverage", "file": "livespec_dev_tooling/covered.py"}',
+            '{"status": "fail", "failure_mode": "another", "hint": "fix it", "path": "other.py"}',
+        )
+    )
+
+    tail = failure_digest_lines(failures=[("check-per-file-coverage", output)])[2:]
+
+    assert tail == [
+        "  check-per-file-coverage: coverage",
+        "      path: livespec_dev_tooling/covered.py",
+        "  check-per-file-coverage: another",
+        "      path: other.py",
+        "      remedy: fix it",
+    ]
