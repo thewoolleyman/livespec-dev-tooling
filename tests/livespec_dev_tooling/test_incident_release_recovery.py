@@ -236,3 +236,29 @@ def test_queued_dispatch_checks_shared_fence_immediately_before_effect(tmp_path)
         == "fenced"
     )
     assert len(calls) == 1
+
+
+def test_named_release_and_pin_dispatches_refuse_retained_recovery(tmp_path):
+    registration = _registration()
+    _seed(tmp_path, registration)
+    controller = _controller(tmp_path)
+    intent = _intent(registration)
+    with repository_lock(directory=tmp_path, repository=registration.repository) as path:
+        record = load_record(path=path)
+        record["actions"] = {
+            intent.action_id: {
+                "registration": registration_record(registration=registration),
+                "status": "pending",
+                "receipt": "",
+            }
+        }
+        save_record(path=path, record=record)
+    for dispatch in (controller.release_dispatch, controller.pin_dispatch):
+        assert (
+            dispatch(
+                registration=registration,
+                attribution=_attribution(),
+                publish=lambda *_: "must-not-publish",
+            ).status
+            == "fenced"
+        )
