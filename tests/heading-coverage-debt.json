@@ -149,6 +149,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: a CI job that re-ran no test publishes no flake-retry artifact",
+    "work_item": "livespec-dev-tooling-ljea46",
+    "first_seen": "2026-11-08"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: a Codex plugin hook command that mentions CLAUDE_PLUGIN_ROOT without a braced plugin-root path fails the producing repository's gate",
     "work_item": "livespec-dev-tooling-yhacv6",
     "first_seen": "2026-11-03"
@@ -537,6 +544,13 @@
     "heading": "## Scenario: a radar that lists the same target twice fails just check",
     "work_item": "livespec-dev-tooling-xhbgdg",
     "first_seen": "2026-11-02"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a re-run test's record reaches the host-side reader as a CI artifact",
+    "work_item": "livespec-dev-tooling-mngdtf",
+    "first_seen": "2026-11-08"
   },
   {
     "spec_root": "SPECIFICATION",
