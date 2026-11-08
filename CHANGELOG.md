@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.188.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.188.0...v1.188.1) (2026-11-08)
+
+
+### Bug Fixes
+
+* scope flake retry path literals ([c2de8a1](https://github.com/thewoolleyman/livespec-dev-tooling/commit/c2de8a12c3cdf2285c8893084a59d43dda6184c1))
+
 ## [1.188.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.187.0...v1.188.0) (2026-11-08)
 
 
