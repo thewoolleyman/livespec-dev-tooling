@@ -1,7 +1,7 @@
 ---
 topic: ci-lane-priority-from-plan-rank
 author: claude-opus-5-5
-created_at: 2026-11-08T15:15:07Z
+created_at: 2026-11-08T15:19:18Z
 ---
 
 ## Proposal: CI lane priority follows the maintainer radar through an opt-in priority runner set chosen at runs-on
@@ -60,7 +60,11 @@ The band for a run is computed as follows:
 - A push run's band is the best band of the ids named in the subjects of the commits the push carries.
 - An id the record does not name takes the record's `default`.
 
-The priority variables, the band output and the existing variables together, with the inline fallback, are the entire routing contract. In the paragraph that begins "Both reverts are MANUAL", the sentence "deleting both returns every gating job to the inline hosted literal" MUST be amended to read "deleting both, and every priority variable, returns every gating job to the inline hosted literal", because a set priority variable keeps high-band runs on self-hosted capacity.
+The priority variables, the band output and the existing variables together, with the inline fallback, are the entire routing contract.
+
+### 2b. `SPECIFICATION/constraints.md`, §"CI matrix shape": amend the revert paragraph
+
+In the paragraph that begins "Both reverts are MANUAL", replace "deleting both returns every gating job to the inline hosted literal" with "deleting both, and every priority variable, returns every gating job to the inline hosted literal". A set priority variable keeps high-band runs on self-hosted capacity, so the existing sentence would no longer hold.
 
 ### 3. `SPECIFICATION/contracts.md`: add a section at the end of the file
 
