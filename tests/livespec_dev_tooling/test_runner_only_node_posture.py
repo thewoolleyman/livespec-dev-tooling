@@ -212,9 +212,9 @@ def test_the_rebalance_moves_eight_slots_from_poweredge_to_hp_and_keeps_the_tota
         for profile in sorted(_PROFILES.glob("*.env"))
     }
     assert capacities == {
-        "gmktec-xubuntu": 4,
+        "gmktec-xubuntu": 8,
         "hp-xubuntu": 5,
-        "poweredge-xubuntu": 27,
+        "poweredge-xubuntu": 23,
     }, (
         f'the cores-derived split is poweredge 27, gmktec 12, hp 5 (DERIVATION.md "Per-node '
         f'churn slots derived from cores (2026-11-04)"); got {capacities}'

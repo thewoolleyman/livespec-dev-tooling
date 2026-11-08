@@ -1958,3 +1958,27 @@ far above the quota is itself the defect (122 gated runner objects, 11 Slow
 SQL in ten minutes at C = 32), and every scale set was BOUNDED to
 `max(2 x nominalQuota, 6)`. See "
 Bounding maxRunners to the quota (2026-09-06)". The podman-era numbers are gone from every values file.
+
+## Rebalance within 36: gmktec 8, poweredge 23 (2026-11-08)
+
+Step 3 of livespec-dev-tooling-6e5pyj. ci-runtime-and-cost made this fairness call on 2026-11-08 at 02:0xZ, and the coordinator authorized it under R301.
+
+Thirty minutes after step 2, the load had moved rather than eased. Each node was read by idle %, the BestEffort CI slice's cpu.pressure and the usage_usec split, not by host PSI alone:
+
+| Node | Idle | CI slice pressure (avg60) | CPU split | Reading |
+| --- | --- | --- | --- | --- |
+| poweredge-xubuntu | 0.3 % | 32.1 | BestEffort CI 42, Burstable factory 27, system 2, on 72 cores | SATURATED by the 2026-11-04 rule (idle under 5 and CI pressure over 30) |
+| gmktec-xubuntu | 48.7 % | 1.8 | CI 4, factory 11, on 32 cores | about 15 cores free |
+
+Four churn slots move from poweredge to gmktec, and the total stays the same: poweredge 27 -> 23, gmktec 4 -> 8, hp 5, total 36.
+
+- Because the total is unchanged, no ClusterQueue quota and no `maxRunners` value changes, and the quota sum still balances.
+- CI measured about 1.6 CPU per slot on poweredge (42 / 27), so the move takes about 6 CPUs off poweredge and puts about 6 onto gmktec's free cores.
+
+Risk: at its 21:4xZ peak, gmktec's factory used 20 Burstable CPUs, and 8 slots would put gmktec near 32. Because CI is BestEffort, it slows there rather than starving the factory.
+
+Step-back: read both nodes about 30 minutes after the apply, and again under a factory peak. If gmktec reads saturated by the same rule, go to gmktec 6 and poweredge 25.
+
+Revert: gmktec 4 and poweredge 27, with a node_extended_resource apply.
+
+Still open under 6e5pyj: deriving poweredge's real CI budget, about 43 CPUs or about 17 slots, which would lower the total.
