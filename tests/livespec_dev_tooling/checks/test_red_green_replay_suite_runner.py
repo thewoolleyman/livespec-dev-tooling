@@ -3,11 +3,15 @@
 from __future__ import annotations
 
 import contextlib
+import errno
 import importlib.util
+import inspect
 import sys
 import time
 import uuid
 from pathlib import Path
+
+import pytest
 
 __all__: list[str] = []
 
@@ -98,6 +102,63 @@ def test_run_suite_captures_output_and_returncode() -> None:
     assert run.kill_reason is None
     assert "out" in run.output
     assert "err" in run.output
+
+
+def test_interactive_collection_and_worker_startup_output_renews_the_stall_window() -> None:
+    """A terminal-aware pytest session reports work before any test completes."""
+    mod = _load()
+    run = mod.run_suite(
+        argv=[
+            sys.executable,
+            "-c",
+            "import sys, time; "
+            "assert sys.stdout.isatty(); "
+            "print('collecting tests', flush=True); "
+            "time.sleep(1.25); "
+            "print('bringing up xdist workers', flush=True); "
+            "time.sleep(1.25); "
+            "print('.', flush=True)",
+        ],
+        bound=mod.SuiteBound(stall_seconds=2, ceiling_seconds=None),
+    )
+
+    assert run.returncode == 0
+    assert run.timed_out is False
+    assert "collecting tests" in run.output
+    assert "bringing up xdist workers" in run.output
+
+
+def test_terminal_reader_completes_when_an_empty_read_ends_its_stream(
+    *, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The pseudo-terminal reader treats ordinary EOF as a clean stream close."""
+    mod = _load()
+    assert "fd" in inspect.signature(mod._drain).parameters  # noqa: SLF001
+    reads = iter((b"collection\n", b""))
+    monkeypatch.setattr(mod.os, "read", lambda _fd, _size: next(reads))
+    progress = mod.SuiteProgress(clock=time.monotonic)
+
+    mod._drain(fd=42, progress=progress)  # noqa: SLF001
+
+    assert progress.output == "collection\n"
+
+
+def test_terminal_reader_propagates_non_terminal_read_failures(
+    *, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Only the terminal's EIO end-of-stream signal is handled as a clean close."""
+    mod = _load()
+    assert "fd" in inspect.signature(mod._drain).parameters  # noqa: SLF001
+
+    def read_failure(_fd: int, _size: int) -> bytes:
+        raise OSError(errno.EBADF, "bad file descriptor")
+
+    monkeypatch.setattr(mod.os, "read", read_failure)
+    progress = mod.SuiteProgress(clock=time.monotonic)
+
+    with pytest.raises(OSError, match="bad file descriptor") as raised:
+        mod._drain(fd=42, progress=progress)  # noqa: SLF001
+    assert raised.value.errno == errno.EBADF
 
 
 def _live_processes_carrying(token: str) -> list[str]:
