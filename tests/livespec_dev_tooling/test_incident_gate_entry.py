@@ -20,6 +20,7 @@ from livespec_dev_tooling import (
     pre_commit_delegate,
 )
 from livespec_dev_tooling.gate_runner_delegate import GateVenue
+from livespec_dev_tooling.incident_execution import Invocation
 
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-6bmta2
 _REPO = Path(__file__).resolve().parents[2]
@@ -245,3 +246,24 @@ def test_the_boundary_cli_distinguishes_normal_unknown_and_reverting_refusals(
         stderr.count("unknown-entrance") == 2,
     ]
     assert all(facts), facts
+
+
+@pytest.mark.parametrize(
+    "invocation",
+    [
+        Invocation.NORMAL_MASTER,
+        Invocation.NORMAL_FACTORY_FOLLOW_UP,
+    ],
+)
+def test_trusted_normal_gate_entrances_ignore_malformed_inherited_flags(
+    *, invocation: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Trusted normal callers reach their complete normal body before flag parsing."""
+    _clear(monkeypatch=monkeypatch)
+    monkeypatch.setenv(_FLAG, "malformed")
+    monkeypatch.setenv(_REVERT, "also-malformed")
+
+    decision = incident_gate_entry.resolve_entrance(surface="check", invocation=invocation)
+
+    assert decision.mode == "normal"
+    assert decision.status == incident_gate_entry.NORMAL
