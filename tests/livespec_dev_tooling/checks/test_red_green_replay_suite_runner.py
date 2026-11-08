@@ -175,6 +175,21 @@ def test_completion_summary_distinguishes_pre_test_output_from_completed_tests()
     )
 
 
+def test_completion_summary_sees_completed_tests_through_pseudo_terminal_colour() -> None:
+    """Colour escapes pytest writes on a terminal do not hide a completed test."""
+    mod = _load()
+
+    assert mod.test_completion_summary(output="\x1b[32m.\x1b[0m\x1b[32m.\x1b[0m") == (
+        "at least one test had completed"
+    )
+    assert mod.test_completion_summary(
+        output="[gw0] \x1b[32mPASSED\x1b[0m tests/test_x.py::t\n"
+    ) == ("at least one test had completed")
+    assert mod.test_completion_summary(output="\x1b[1m\rbringing up nodes...\x1b[0m") == (
+        "no test had completed"
+    )
+
+
 def _live_processes_carrying(token: str) -> list[str]:
     """Pids of non-zombie processes whose command line carries `token`."""
     live: list[str] = []
