@@ -344,6 +344,50 @@ def test_suite_green_uses_job_evidence_and_falls_back_when_it_has_no_verdict(
     ]
 
 
+def test_silent_suite_green_stall_names_the_window_and_missing_test_completion(
+    *, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A pre-test stall reports both the configured window and what never happened."""
+    from livespec_dev_tooling.commit_replay_delegate import ReplayVerdict
+
+    mod = _load()
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(mod, "read_pre_commit_evidence", lambda **_kwargs: None)
+    monkeypatch.setattr(mod, "staged_tree_hash", lambda **_kwargs: "staged-tree")
+    monkeypatch.setattr(
+        mod,
+        "run_replay",
+        lambda **_kwargs: ReplayVerdict(local=True, reason="gates kubeconfig is not readable"),
+    )
+    monkeypatch.setattr(mod, "xdist_importable", lambda: False)
+    monkeypatch.setattr(
+        mod,
+        "run_suite",
+        lambda **_kwargs: mod.SuiteRun(
+            returncode=None,
+            output="collecting tests\n",
+            timed_out=True,
+            kill_reason="stalled",
+        ),
+    )
+    message = tmp_path / "COMMIT_EDITMSG"
+    message.write_text("chore: suite green\n", encoding="utf-8")
+    log = _RecordingLog()
+
+    assert (
+        mod._handle_suite_green_mode(  # noqa: SLF001
+            msg_path=message,
+            log=log,
+            staged_paths=["livespec_dev_tooling/example.py"],
+        )
+        == 1
+    )
+    _level, event, fields = log.records[-1]
+    assert fields["stall_seconds"] == 900
+    assert "900s" in event
+    assert "no test had completed" in event
+
+
 class _RecordingLog:
     """Minimal structured logger for suite-green route assertions."""
 
@@ -355,3 +399,6 @@ class _RecordingLog:
 
     def warning(self, event: str, **kwargs: object) -> None:
         self.records.append(("warning", event, kwargs))
+
+    def error(self, event: str, **kwargs: object) -> None:
+        self.records.append(("error", event, kwargs))
