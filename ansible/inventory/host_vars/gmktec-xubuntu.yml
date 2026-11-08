@@ -404,7 +404,8 @@ fabro_server_instances:
     sandbox_providers:
       kubernetes:
         # v0.8.1 at its OWN versioned path (sandbox_driver_kubernetes_versioned_releases
-        # below), so the candidate and mi-homelab keep v0.5.0 at the shared path.
+        # below), so mi-homelab keeps v0.5.0 at the shared path. The candidate's
+        # `kubernetes` provider runs this same v0.8.2 (wrlwvk parity canary).
         # REVERT: path: /usr/local/bin/sandbox-driver-kubernetes
         # REVERT: sha256: d93437f0bcb495e13a3373a4d2578cc0b2dba2c39c1ad5f3fdcf801ce0788b6e
         # v0.8.2 (2026-11-05, orchestrator bd-ib-digmk2): an exec'd command runs
@@ -578,9 +579,13 @@ fabro_server_instances:
     binary_sha256: 1529aa9f86b5bf346ae20a731bdf1cb433bc678825c8a43d0c21f513dac0ab1f
     # The fleet instance's catalog, entry for entry; the reasons for each
     # entry are given there. Bump the images together with it.
+    # The three python entries on the `kubernetes` provider take the fleet's
+    # LIMIT 6 (a run's environment cpu replaces the process_spec's cpu_cores),
+    # so the wrlwvk parity canary differs from the fleet's pods in the image
+    # alone. REVERT: cpu: 4 on livespec-ci, livespec-ci-k8s and factory-python.
     environments:
       - id: livespec-ci
-        cpu: 4
+        cpu: 6
         memory: 8GB
         provider: kubernetes
       - id: livespec-ci-rust
@@ -588,11 +593,11 @@ fabro_server_instances:
         cpu: 4
         memory: 8GB
       - id: livespec-ci-k8s
-        cpu: 4
+        cpu: 6
         memory: 8GB
         provider: kubernetes
       - id: factory-python
-        cpu: 4
+        cpu: 6
         memory: 8GB
         provider: kubernetes
       - id: factory-python-rust
@@ -615,19 +620,29 @@ fabro_server_instances:
     # explicit /home/cwoolley/.local/state/sandbox-driver-kubernetes-rust,
     # which would be that same collision, so it names one under this
     # instance's root. Bump both sha256 together with the fleet instance's.
-    # The digest here equals the role default (v0.5.0, d93437f0), the binary the
-    # role installs at /usr/local/bin. Fabro verifies it against this pin at
-    # EVERY plugin launch, so the pin and the binary must always be equal; see
-    # the role's defaults/main.yml.
+    # The `kubernetes-rust` digest equals the role default (v0.5.0, d93437f0), the
+    # binary the role installs at /usr/local/bin; `kubernetes` pins the fleet's
+    # versioned v0.8.2. Fabro verifies each against its pin at EVERY plugin
+    # launch, so the pin and the binary must always be equal; see the role's
+    # defaults/main.yml.
     sandbox_providers:
       kubernetes:
-        path: /usr/local/bin/sandbox-driver-kubernetes
-        sha256: d93437f0bcb495e13a3373a4d2578cc0b2dba2c39c1ad5f3fdcf801ce0788b6e
+        # The fleet instance's driver, CPU request and CPU limit, so the candidate's
+        # canary differs from the fleet's pods in the IMAGE alone (coordinator
+        # condition for the wrlwvk parity proof, 2026-11-08): v0.8.2 runs an exec'd
+        # command under the sandbox shell's umask 0022 (v0.5.0 used a private 077)
+        # and honours the CPU request (plugin v0.8.0+).
+        # REVERT: path: /usr/local/bin/sandbox-driver-kubernetes
+        # REVERT: sha256: d93437f0bcb495e13a3373a4d2578cc0b2dba2c39c1ad5f3fdcf801ce0788b6e
+        # REVERT: drop SANDBOX_DRIVER_KUBERNETES_CPU_REQUEST_CORES; cpu_cores: 4
+        path: /usr/local/bin/sandbox-driver-kubernetes-v0.8.2
+        sha256: cf3cedc8900d2176630f8a700964a094f9db30648955310e930bee07ca6b9ec7
         inherit_env:
           - HOME
           - PATH
         env:
           SANDBOX_DRIVER_KUBERNETES_STATE_DIR: /home/cwoolley/.fabro-candidate/.local/state/sandbox-driver-kubernetes
+          SANDBOX_DRIVER_KUBERNETES_CPU_REQUEST_CORES: "3"
         process_spec:
           # The CANDIDATE alone runs python-agent-v1.188.1, the release the orchestrator
           # workflow pins today. It carries claude-agent-acp 0.91.0 (Claude Code 2.1.300;
@@ -636,7 +651,7 @@ fabro_server_instances:
           # is taken here before the fleet instance moves off v1.136.2.
           # ROLLBACK: python-agent-v1.173.0.
           image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-agent-v1.188.1
-          cpu_cores: 4
+          cpu_cores: 6
           memory_mb: 7629
       kubernetes-rust:
         path: /usr/local/bin/sandbox-driver-kubernetes
