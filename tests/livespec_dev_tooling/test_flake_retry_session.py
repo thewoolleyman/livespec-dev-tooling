@@ -59,41 +59,41 @@ def _flaky_repository(*, root: Path, touch_test: bool) -> Path:
     return repo
 
 
-def _fixture_finalizer_repository(*, root: Path, scope: str, after_retry: bool = False) -> Path:
-    """Create an untouched flaky test after the fixture's only user has run."""
+def _fixture_finalizer_repository(
+    *, root: Path, scope: str, after_retry: bool = False, same_module: bool = False
+) -> Path:
+    """Create a fixture whose only user runs before the flaky test, in this or an earlier module."""
     repo = root / "repo"
     repo.mkdir()
     _git(repo=repo, args=["init", "-q", "-b", "master", "."])
     _ = (repo / "conftest.py").write_text(
-        "import livespec_dev_tooling.flake_retry as flake_retry\n"
-        "\n"
-        "flake_retry.RETRY_DELAY_SECONDS = 0\n",
-        encoding="utf-8",
-    )
-    _ = (repo / "test_before.py").write_text(
         "from pathlib import Path\n"
         "\n"
         "import pytest\n"
         "\n"
+        "import livespec_dev_tooling.flake_retry as flake_retry\n"
+        "\n"
+        "flake_retry.RETRY_DELAY_SECONDS = 0\n"
+        "\n"
+        "\n"
         f"@pytest.fixture(scope={scope!r})\n"
         "def resource():\n"
         "    yield\n"
-        "    Path('resource-finalized').write_text('yes')\n"
-        "\n"
-        "\n"
-        "def test_uses_the_resource(resource) -> None:\n"
-        "    assert resource is None\n"
-        "\n"
-        "\n"
-        + _FLAKY_TEST
-        + (
-            "\n\n" "def test_after_the_retry() -> None:\n" "    assert True\n"
-            if after_retry
-            else ""
-        ),
+        "    with Path('finalizer-log').open('a') as log:\n"
+        "        log.write('finalized\\n')\n",
         encoding="utf-8",
     )
-    _ = (repo / ".gitignore").write_text("seen\ntmp/\n", encoding="utf-8")
+    user = "def test_uses_the_resource(resource) -> None:\n    assert resource is None\n"
+    if same_module:
+        _ = (repo / "test_early.py").write_text(user + "\n\n" + _FLAKY_TEST, encoding="utf-8")
+    else:
+        _ = (repo / "test_early.py").write_text(user, encoding="utf-8")
+        _ = (repo / "test_later.py").write_text(_FLAKY_TEST, encoding="utf-8")
+    if after_retry:
+        _ = (repo / "test_last.py").write_text(
+            "def test_after_the_retry() -> None:\n    assert True\n", encoding="utf-8"
+        )
+    _ = (repo / ".gitignore").write_text("seen\ntmp/\nfinalizer-log\n", encoding="utf-8")
     _git(repo=repo, args=["add", "-A"])
     _git(repo=repo, args=["commit", "-qm", "base"])
     _git(repo=repo, args=["update-ref", "refs/remotes/origin/master", "HEAD"])
@@ -135,10 +135,25 @@ def test_a_rerun_keeps_a_session_fixture_finalizer_until_session_finish(*, tmp_p
     """A retry after a fixture's final user still tears that resource down once."""
     repo = _fixture_finalizer_repository(root=tmp_path, scope="session")
 
-    completed = _run_session(repo=repo, test_paths=("test_before.py",))
+    completed = _run_session(repo=repo, test_paths=(".",))
 
     assert completed.returncode == 0, completed.stdout + completed.stderr
-    assert (repo / "resource-finalized").read_text(encoding="utf-8") == "yes"
+    assert "rerun" in completed.stdout
+    assert (repo / "finalizer-log").read_text(encoding="utf-8") == "finalized\n"
+
+
+@pytest.mark.integration
+def test_a_rerun_keeps_a_module_fixture_finalizer_when_its_last_user_ran_before_the_retry(
+    *, tmp_path: Path
+) -> None:
+    """A retry later in the fixture's own module still tears that resource down once."""
+    repo = _fixture_finalizer_repository(root=tmp_path, scope="module", same_module=True)
+
+    completed = _run_session(repo=repo, test_paths=(".",))
+
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    assert "rerun" in completed.stdout
+    assert (repo / "finalizer-log").read_text(encoding="utf-8") == "finalized\n"
 
 
 @pytest.mark.integration
@@ -148,10 +163,11 @@ def test_a_rerun_keeps_an_earlier_module_fixture_finalizer_until_session_finish(
     """A retry after another module's final user still tears that resource down once."""
     repo = _fixture_finalizer_repository(root=tmp_path, scope="module")
 
-    completed = _run_session(repo=repo, test_paths=("test_before.py",))
+    completed = _run_session(repo=repo, test_paths=(".",))
 
     assert completed.returncode == 0, completed.stdout + completed.stderr
-    assert (repo / "resource-finalized").read_text(encoding="utf-8") == "yes"
+    assert "rerun" in completed.stdout
+    assert (repo / "finalizer-log").read_text(encoding="utf-8") == "finalized\n"
 
 
 @pytest.mark.integration
@@ -159,10 +175,11 @@ def test_a_rerun_keeps_fixture_finalizers_when_a_test_follows_the_retry(*, tmp_p
     """A later test must not replace finalizers saved for the retry's fixture scope."""
     repo = _fixture_finalizer_repository(root=tmp_path, scope="session", after_retry=True)
 
-    completed = _run_session(repo=repo, test_paths=("test_before.py",))
+    completed = _run_session(repo=repo, test_paths=(".",))
 
     assert completed.returncode == 0, completed.stdout + completed.stderr
-    assert (repo / "resource-finalized").read_text(encoding="utf-8") == "yes"
+    assert "rerun" in completed.stdout
+    assert (repo / "finalizer-log").read_text(encoding="utf-8") == "finalized\n"
 
 
 @pytest.mark.integration
