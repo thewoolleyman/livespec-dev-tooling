@@ -222,6 +222,21 @@ Conventions:
 - P.5 Confirm the repository webhook subscribes `workflow_job` to the Funnel `/callback`, and that recent deliveries
   answer 202 or 403 (note 004 §5).
 
+- P.6 Name one build and one branch scheme before the first arm (added 2026-11-08).
+  - The plan record names one build: dev-tooling `v1.188.1` and orchestrator `v0.304.0`. Release PR #3764 merged
+    at 06:47Z even though it carried `do-not-merge`. Auto-merge had been armed at 04:43Z, before the label went on,
+    and nothing in `.github` enforces that label.
+  - `incident-ci` installs `releases/latest`, so the observer is pinned to the same tag (#3766). `v1.188.1` differs
+    from `v1.188.0` only in `flake_retry.py` and `flake_retry_paths.py`. Every incident module is byte-identical.
+  - The release freeze is enforced as two things together: a draft release PR AND auto-merge disabled. The
+    coordinator's monitor applies both every 2 min until "release freeze lifted". The label alone is no freeze.
+  - Each expedited attempt reserves its own branch, `refs/heads/incident/<ITEM>-attempt-<N>`. Never use
+    `feat/<ITEM>`. That is the branch the factory publishes the repayment on.
+  - `enter-repayment --target-ref refs/heads/feat/<ITEM>` refuses with `incident-transition-invalid-successor` when
+    the target equals the attempt's own ref. `bind-repayment-acceptance` refuses a PR whose head is not the
+    carrier's ref (`incident-repayment-carrier-mismatch`). Both refusals were measured by the orchestrator's
+    lifecycle walk test (bd-ib-oxx6eo).
+
 ### Phase 3: attempt 1, planted master failure, revert (A1-A8, A12 i-iii)
 
 - 3.1 File ITEM with `IA file-incident` or the capture operation: a real small incident with two behavioural DoD
@@ -343,7 +358,16 @@ Conventions:
 - 7.0 Gate: canary 2 (P0-11) is green, its parity check passed on the `ORCH` registration, and legacy-dispatcher-agent
   has lifted its dev-tooling launch hold. Read this from the canary item and the dispatcher's own record. A handoff
   saying so does not count. Until then, phase 7 waits; the wait is not a maintainer question.
-- 7.1 `enter-repayment` on attempt 3's completed green run, which records `repayment-admission` (A9 causal half).
+- 7.1 `enter-repayment` on attempt 3's completed green run, which records `repayment-admission` (A9 causal half):
+  `IA enter-repayment --master-run <attempt-3 green run> --target-ref refs/heads/feat/<ITEM>` (P.6).
+  - Then come two hand verbs, because `advance_repayment` has no dispatcher caller.
+  - `IA advance-repayment --to-phase repayment-ready --admission-complete` runs once admission leaves the item at
+    `ready`.
+  - `--to-phase repayment-active` runs once the factory claim leaves it `active` with assignee `fabro`.
+  - At 7.9, run `IA bind-repayment-acceptance --pr <n>` with the item at `acceptance`. Then run
+    `IA complete-incident --master-run <repayment master run> --completion-json <attestation>`, which records
+    `closed`.
+  - Both actions name the `repayment-<24hex>` attempt with owner `fabro`.
 - 7.2 [GO-10] Dispatch the repayment through the `petri-factory-on-gmktec` seat. Do not use a direct `drive impl:`
   call (`.ai/fabro-dispatch-diagnosis.md`). Confirm the dispatch environment carries neither flag.
 - 7.3 [GO-8] Restart the gmktec dispatcher loop while the run is active. The run and its claim survive, and no second
