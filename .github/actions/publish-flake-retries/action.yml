@@ -1,0 +1,53 @@
+# publish-flake-retries composite Action — publishes a job's flake-retry
+# records as a workflow artifact for the host-side reader.
+#
+# Authority: SPECIFICATION/constraints.md §"Testing approach" ("Flake-retry
+# record delivery", v156) and SPECIFICATION/scenarios.md "a re-run test's
+# record reaches the host-side reader as a CI artifact" and "a CI job that
+# re-ran no test publishes no flake-retry artifact". Owning work item:
+# livespec-dev-tooling-ljea46.
+#
+# Performs: uploads `tmp/flake-retries/` (the records the untouched-test
+# retry writes, one JSON line per re-run node id) as an artifact with 7-day
+# retention. A job that re-ran no test has no records, so the upload ships
+# nothing and does not fail the job (`if-no-files-found: ignore`).
+#
+# The CALLER's step MUST carry the not-cancelled condition, and any
+# expedited-incident omission guard its job uses, for example:
+#
+#   - name: Publish the flake-retry records for the host-side reader
+#     if: ${{ !cancelled() }}
+#     uses: thewoolleyman/livespec-dev-tooling/.github/actions/publish-flake-retries@vX.Y.Z
+#
+# A composite step cannot read the caller's `needs` context, and the
+# caller's own status check decides whether this Action runs at all, so
+# neither condition can live in here. Placing the step after the pytest
+# step with `!cancelled()` is what makes it publish whether that step
+# passed or failed.
+#
+# Inputs:
+#   suffix (optional, default `""`) — names the artifact
+#     `flake-retries-<suffix>` instead of `flake-retries`. Required for a job
+#     that runs more than once in one CI run (a matrix or a shard), because
+#     upload-artifact@v4 refuses a repeated artifact name within one run.
+#     Pass a value unique to the job instance, such as the shard index.
+
+name: publish-flake-retries
+description: Publish this job's tmp/flake-retries/ records as the flake-retries artifact for the host-side reader.
+
+inputs:
+  suffix:
+    description: Artifact name suffix (`flake-retries-<suffix>`) for a job that runs more than once per CI run; empty means `flake-retries`.
+    required: false
+    default: ""
+
+runs:
+  using: composite
+  steps:
+      - name: Upload tmp/flake-retries/
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.suffix == '' && 'flake-retries' || format('flake-retries-{0}', inputs.suffix) }}
+          path: tmp/flake-retries/
+          if-no-files-found: ignore
+          retention-days: 7
