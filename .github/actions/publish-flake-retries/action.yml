@@ -1,8 +1,8 @@
 # publish-flake-retries composite Action — publishes a job's flake-retry
 # records as a workflow artifact for the host-side reader.
 #
-# Authority: SPECIFICATION/constraints.md §"Testing approach" ("Flake-retry
-# record delivery", v156) and SPECIFICATION/scenarios.md "a re-run test's
+# Authority: the flake-retry record delivery rule of the testing approach in
+# SPECIFICATION/constraints.md (v156), and SPECIFICATION/scenarios.md "a re-run test's
 # record reaches the host-side reader as a CI artifact" and "a CI job that
 # re-ran no test publishes no flake-retry artifact". Owning work item:
 # livespec-dev-tooling-ljea46.

@@ -1,9 +1,10 @@
 """Static contract test for the `publish-flake-retries` composite Action.
 
-Per `SPECIFICATION/constraints.md` §"Testing approach" ("Flake-retry record
-delivery", v156) and `SPECIFICATION/scenarios.md` "a re-run test's record
-reaches the host-side reader as a CI artifact" / "a CI job that re-ran no
-test publishes no flake-retry artifact", each consumer's coverage job
+Per the flake-retry record delivery rule of the testing approach in
+`SPECIFICATION/constraints.md` (v156), and the `SPECIFICATION/scenarios.md`
+scenarios "a re-run test's record reaches the host-side reader as a CI
+artifact" and "a CI job that re-ran no test publishes no flake-retry
+artifact", each consumer's coverage job
 publishes `tmp/flake-retries/` through this repository's shared
 `.github/actions/publish-flake-retries` composite Action at a released tag,
 so the artifact contract lives in one place.
