@@ -227,20 +227,20 @@ def test_the_shim_grants_every_permission_the_reusable_workflow_requires() -> No
     assert _workflow_permissions(body=reconciler_shim_content(owner=_OWNER)) == required
 
 
-def test_the_reusable_reconciler_fences_observer_owned_master_actions() -> None:
-    """The workflow asks the independent observer before any policy decision.
+def test_the_host_workflow_has_a_dedicated_observer_ownership_transport() -> None:
+    """The factory ships the transport; the attended host wires the workflow.
 
-    The `master_health_*` modules remain pure, so this transport must live in
-    the reusable workflow.  An unavailable configured observer must fail the
-    run before the policy can rerun, classify, or change a revert.
+    `master_health_*` is mechanically network-free, while factory branches may
+    not alter `.github/workflows/`.  Keeping the HTTPS call in this separate
+    executable lets the attended workflow edit use the same protected client
+    without smuggling a network import into the decision layer.
     """
-    body = _reusable_workflow_body()
+    transport = _REPO_ROOT / "livespec_dev_tooling" / "master_health_observer.py"
+    source = transport.read_text(encoding="utf-8")
 
-    assert "LIVESPEC_INCIDENT_OBSERVER_URL" in body
-    assert "LIVESPEC_INCIDENT_OBSERVER_QUERY_TOKEN" in body
-    assert "livespec_dev_tooling.master_health_observer" in body
-    assert "incident-owned" in body
-    assert body.index("master_health_observer") < body.index("master_health_step")
+    assert "CiAuthorityBoundary" in source
+    assert "ordinary_action" in source
+    assert "LIVESPEC_INCIDENT_OBSERVER_QUERY_TOKEN" in source
 
 
 def _put_args(*, path: str) -> tuple[str, ...]:
