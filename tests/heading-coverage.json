@@ -1361,6 +1361,30 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: a stalled suite-green run names the tests that were still running",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this scenario, running a suite-green leg whose pytest run has one completed test and one that outlasts a short stall window, then reading the refusal event; livespec-dev-tooling-h2i4u2 owns it.",
+    "work_item": "livespec-dev-tooling-h2i4u2"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a suite-green run that stalls after its last test is reported as a post-last-test stall",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this scenario, running a suite-green leg whose pytest run completes every collected test and then stays silent past a short stall window, then reading the refusal event; livespec-dev-tooling-h2i4u2 owns it.",
+    "work_item": "livespec-dev-tooling-h2i4u2"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a suite-green run ended before any test completed says that no test had completed",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this scenario, running a suite-green leg whose pytest run completes no test within a short stall window during collection or worker start-up, then reading the refusal event; livespec-dev-tooling-6o3m6m owns it.",
+    "work_item": "livespec-dev-tooling-6o3m6m"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: a long suite-green run that keeps printing output is not ended",
     "test": "TODO",
     "reason": "Spec-first: a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) or an integration-marked test is owed for this heading, driving the suite-green leg against a long run that keeps printing output and comparing its output checksum with a fast run; livespec-dev-tooling-t4rx4t owns it.",

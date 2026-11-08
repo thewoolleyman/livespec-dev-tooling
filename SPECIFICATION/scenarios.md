@@ -2060,6 +2060,50 @@ And the commit MUST be refused with an event naming the 60-second stall window a
 
 And no `TDD-Suite-Green-*` trailer MUST be recorded
 
+## Scenario: a stalled suite-green run names the tests that were still running
+
+Given `LIVESPEC_SUITE_GREEN_STALL_SECONDS` is `60` and `LIVESPEC_SUITE_GREEN_TIMEOUT_SECONDS` is unset
+
+And the suite-green leg's pytest run collects three tests, one of which completes, and another keeps running past 60 seconds without printing output
+
+When the commit-msg `red_green_replay` check ends the run for stalling
+
+Then the refusal event MUST name the seconds elapsed since the run started and that 1 of 3 collected tests had completed
+
+And the refusal event MUST name the node id of the completed test and the instant it completed
+
+And the refusal event MUST name the still-running test, how long it had run and the pytest-xdist worker that ran it
+
+And the refusal event MUST say that the run stalled mid-suite
+
+And the refusal event MUST carry the output the leg had received from the run
+
+## Scenario: a suite-green run that stalls after its last test is reported as a post-last-test stall
+
+Given `LIVESPEC_SUITE_GREEN_STALL_SECONDS` is `60` and `LIVESPEC_SUITE_GREEN_TIMEOUT_SECONDS` is unset
+
+And every test the suite-green leg's pytest run collected has completed, and the run then prints no output for 60 seconds before it exits
+
+When the commit-msg `red_green_replay` check ends the run for stalling
+
+Then the refusal event MUST say that the run stalled after its last test rather than mid-suite
+
+And the refusal event MUST name the node id of the last test the run reported complete and that all of its collected tests had completed
+
+## Scenario: a suite-green run ended before any test completed says that no test had completed
+
+Given `LIVESPEC_SUITE_GREEN_STALL_SECONDS` is `60` and `LIVESPEC_SUITE_GREEN_TIMEOUT_SECONDS` is unset
+
+And the suite-green leg's pytest run completes no test for 60 seconds, because its collection or worker start-up has not finished
+
+When the commit-msg `red_green_replay` check ends the run for stalling
+
+Then the commit MUST be refused with a failed verdict naming the 60-second stall window
+
+And the refusal event MUST say that no test had completed, in place of a last completed test
+
+And no `TDD-Suite-Green-*` trailer MUST be recorded
+
 ## Scenario: a long suite-green run that keeps printing output is not ended
 
 Given `LIVESPEC_SUITE_GREEN_STALL_SECONDS` and `LIVESPEC_SUITE_GREEN_TIMEOUT_SECONDS` are unset
