@@ -250,9 +250,10 @@ def _install_key(*, key: str) -> str:
     found = re.search(rf"^    {re.escape(key)}: (?P<value>\S.*)$", _install_task(), re.MULTILINE)
     assert found is not None, f"the {_INSTALL_TASK!r} task must declare `{key}:`"
     value = found["value"].strip()
-    if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
-        return value[1:-1].replace("\\n", "\n").replace('\\"', '"')
-    return value
+    assert (
+        len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'"
+    ), f"the {_INSTALL_TASK!r} task must quote `{key}:`, got {value!r}"
+    return value[1:-1].replace("\\n", "\n").replace('\\"', '"')
 
 
 # --- running the committed role -------------------------------------------
