@@ -236,17 +236,19 @@ run_gate_with_stall_bound() {
     local stall="${LIVESPEC_SUITE_GREEN_STALL_SECONDS:-900}"
     local grace="${GATE_STALL_KILL_GRACE_SECONDS:-30}"
     local stamp="$dir/progress.stamp"
+    local observed="$dir/progress.observed"
     : >"$stamp"
+    : >"$observed"
     set -m
-    "$@" >>"$dir/output.log" 2>&1 &
+    LIVESPEC_GATE_RUN_PROGRESS_STAMP="$stamp" "$@" >>"$dir/output.log" 2>&1 &
     local gate_pid=$!
     set +m
     # Opened after the gate launches, so the gate inherits nothing of ours.
     open_idle_fd || true
     local quiet_since=$SECONDS ended
     while kill -0 "$gate_pid" 2>/dev/null; do
-        if [[ "$dir/output.log" -nt "$stamp" ]]; then
-            : >"$stamp"
+        if [[ "$dir/output.log" -nt "$observed" || "$stamp" -nt "$observed" ]]; then
+            : >"$observed"
             quiet_since=$SECONDS
         elif (( SECONDS - quiet_since >= stall )); then
             printf '\ngate-run: no output for %ss, the stall window (LIVESPEC_SUITE_GREEN_STALL_SECONDS); ending the gate'"'"'s whole process group, workers included — not a pass\n' \
