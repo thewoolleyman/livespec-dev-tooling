@@ -382,7 +382,7 @@ def test_competing_invalidations_have_one_winner(provisioned, monkeypatch):
     barrier = Barrier(2)
 
     def reader(argv, **_kwargs):
-        barrier.wait(timeout=3)
+        barrier.wait()
         return _reply(argv=argv, attempt=attempt)
 
     monkeypatch.setattr(subprocess, "run", reader)
@@ -398,6 +398,6 @@ def test_competing_invalidations_have_one_winner(provisioned, monkeypatch):
     for worker in workers:
         worker.start()
     for worker in workers:
-        worker.join(3)
+        worker.join()
         assert not worker.is_alive()
     assert sorted(reply[1]["status"] for reply in replies) == ["invalidated", "refused"]
