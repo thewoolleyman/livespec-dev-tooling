@@ -1055,3 +1055,16 @@ Original failed master CI MUST be retained through all terminal results across r
 Source-to-release-tag, image, pin-carrier and installed-consumer attribution MUST survive rollback. Recovery MUST fence queued stale adoption and assign already-adopted consumers corrective rollout. Irreversible-state changes require a recorded existing safe compensation for unattended rollback eligibility. Source green alone does not prove deployed recovery.
 
 The fleet audit MUST expand core's committed manifest and inventory all 37 published surface rows, custom workflows, alternate stores, templates and runtime drivers with explicit implemented, deliberately-normal or not-applicable dispositions and serving-version evidence. Core owns inherited guidance; owning repos carry their implementations. Ship contract/readers normally, release, adopt, prove recovery capability and only then enable use. Plan completion requires released installed-fleet proof, captured/replayed scenario evidence, independent completeness review and existing archive gates; this feature rollout itself MUST remain normal and unexpedited.
+
+## CI priority record
+
+`CI_PRIORITY_RECORD` is a repository variable whose value MUST be one JSON object with these keys:
+- `schema`: the integer `1`.
+- `generated_at`: an ISO-8601 UTC timestamp.
+- `radar_commit`: the commit of `livespec_dev_tooling/radar/radar.py` the record was derived from.
+- `items`: an object mapping a work item id to `high` or `medium`.
+- `default`: `low`.
+
+The producer MUST omit from `items` every item whose band equals `default`. A reader MUST treat as MISSING a value that does not parse, has another `schema`, lacks a key, or carries a `generated_at` more than 72 hours old. A missing record MUST band every run `default`.
+
+This library MUST ship the route job as a reusable composite Action whose only inputs are `CI_PRIORITY_RECORD` and the run's event, and whose one output is the run's band, computed as constraints.md §"CI matrix shape" states. Another fleet repository takes lane priority only by adopting that Action, and its own priority variables, under its own specification. This repository's lanes adopt it under constraints.md §"CI matrix shape".

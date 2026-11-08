@@ -389,6 +389,26 @@ The parser MUST refuse a profile whose capacity or taint contradicts its posture
 
 **Facts in the host record, the procedure here.** The per-host information repository for a node MUST carry the node's hardware facts and its profile's values and MUST NOT carry the procedure or any copy of it; this tree MUST NOT carry a host's hardware facts beyond what its profile consumes. A backup-and-restore artifact for a node MAY be kept beside the procedure for data recovery and MUST NOT be documented or used as the way the node's configuration is reproduced.
 
+## CI lane priority from the maintainer radar
+
+A fleet repository's CI runs MUST take lane priority from the maintainer radar's order (§"Maintainer radar"), and a plan slug, plan epic id or work item id MUST NOT be used as a routing, band or priority input in CI workflow code, route code or runner configuration. Plan identity MUST enter routing only through `CI_PRIORITY_RECORD` (contracts.md §"CI priority record"), which the route reads as data.
+
+**Producer.** The record MUST be produced by one committed producer in this repository. The producer MUST derive the record from the radar that the radar load entry point returns, never from any other ordering. Band assignment works as follows:
+- A `plan` entry bands every open child of its plan. The children are computed as §"Maintainer radar" computes them: the union of dotted-id descendants and `parent-child` edges.
+- An `item` entry bands that item directly.
+- An entry's band comes from its radar index under the thresholds committed in `.livespec.jsonc` at `ci.priority_bands`, an object mapping `high` and `medium` to the largest radar index each covers.
+- When one item falls under several entries, its best band holds, in the order `high` > `medium` > `low`.
+
+The producer MUST write the same value to every fleet repository's `CI_PRIORITY_RECORD`, and a second run on an unchanged radar and ledger MUST leave every value byte-identical. It MUST offer a dry-run that prints each repository's value and writes nothing. It MUST refuse to write a value larger than the platform's repository-variable limit, naming the size. The coordinator runs the producer, and SHOULD run it after every change to the radar.
+
+**Runner sets.** A lane that opts in carries a priority runner set beside its normal set.
+- The priority set MUST use the same LocalQueue and ClusterQueue as the normal set, so it adds no churn-slot capacity.
+- Its runner pods MUST be identical to the normal set's pods except for the scale-set name and a Kueue WorkloadPriorityClass higher than the normal set's.
+- In particular, its pods MUST use the same scheduler profile that the "Runner placement follows admission capacity" paragraph of §"Runner-pool node rebuild recipe" relies on.
+- The sum of a lane's normal and priority `maxRunners` MUST stay within the bound that DERIVATION.md "Bounding maxRunners to the quota" derives for that lane.
+
+While a lane's ClusterQueue has pending workloads, a pending high-band workload MUST be admitted before every earlier-created pending normal workload. This section changes admission ORDER only: admitting a high-band workload MUST NOT evict a running workload.
+
 ## Consent-gated pool-node disruption
 
 **Scope.** This section covers deliberately disrupting a runner-pool node, such as rebooting the control-plane node or taking an agent node's k3s agent down to exercise node loss, and deliberately terminating containers on the cluster to exercise termination telemetry. That is a host action, and this section states how this repository performs it. Rebuilding a node from empty storage is governed by §"Runner-pool node rebuild recipe", not by this section.
