@@ -317,20 +317,6 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario: a delegated gate Job never admitted within the admission bound ends without a verdict and is deleted",
-    "work_item": "livespec-dev-tooling-f2dgn6",
-    "first_seen": "2026-11-05"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a delegated gate Job's Kueue admission wait does not consume its poll budget",
-    "work_item": "livespec-dev-tooling-t5ct2q",
-    "first_seen": "2026-11-05"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
     "heading": "## Scenario: a delegated gate-runner run with no cluster verdict ends without a verdict",
     "work_item": "livespec-dev-tooling-qgv3tb",
     "first_seen": "2026-11-01"

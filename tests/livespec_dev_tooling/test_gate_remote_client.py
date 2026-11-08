@@ -45,6 +45,7 @@ from __future__ import annotations
 
 import dataclasses
 import hashlib
+import importlib
 import json
 from dataclasses import dataclass
 from pathlib import Path
@@ -99,7 +100,10 @@ def _job_status(*, state: str) -> str:
     """
     finished = state in {"Complete", "Failed"}
     return json.dumps(
-        {"status": {"conditions": [{"type": state, "status": str(finished)}]}},
+        {
+            "spec": {"suspend": state == "Suspended"},
+            "status": {"conditions": [{"type": state, "status": str(finished)}]},
+        },
     )
 
 
@@ -143,6 +147,7 @@ class _StubCluster:
         raises: str | None = None,
         refused_gets: int = 0,
         job_status_payload: str | None = None,
+        job_status_payloads: Iterable[str] = (),
         created_payload: str | None = None,
         log_output: str = "",
     ) -> None:
@@ -155,6 +160,7 @@ class _StubCluster:
         self._raises = raises
         self._refused_gets = refused_gets
         self._job_status_payload = job_status_payload
+        self._job_status_payloads = list(job_status_payloads)
         self._created_payload = created_payload
 
     def __call__(
@@ -195,6 +201,8 @@ class _StubCluster:
         if kind == "read-tree":
             return f"{_TREE}\n"
         if kind == "get-job":
+            if self._job_status_payloads:
+                return self._next_status_payload()
             return self._job_status_payload or _job_status(state=self._next_state())
         if kind == "submit-job":
             return self._created_payload if self._created_payload is not None else _CREATED
@@ -206,6 +214,11 @@ class _StubCluster:
         if len(self._states) > 1:
             return self._states.pop(0)
         return self._states[0]
+
+    def _next_status_payload(self) -> str:
+        if len(self._job_status_payloads) > 1:
+            return self._job_status_payloads.pop(0)
+        return self._job_status_payloads[0]
 
 
 # How many times the emulated hook below may re-enter the gate. The real thing is
@@ -545,6 +558,88 @@ def test_the_terminal_state_is_awaited_before_the_logs_are_streamed() -> None:
     assert outcome.unwrap().terminal_state == "Complete"
 
 
+def test_a_suspended_job_keeps_its_full_poll_budget_after_kueue_admits_it() -> None:
+    """Admission polls are distinct from the Job's terminal-state poll budget."""
+    cluster = _StubCluster(
+        job_states=(
+            "Suspended",
+            "Suspended",
+            "Suspended",
+            "Active",
+            "Active",
+            "Active",
+            "Complete",
+        )
+    )
+    request = dataclasses.replace(_REQUEST, poll_timeout_seconds=30.0)
+
+    outcome = run_gate(request=request, runner=cluster, sleeper=cluster.sleep)
+
+    assert is_successful(outcome)
+    assert cluster.kinds.count("get-job") == 7
+    assert cluster.naps == [request.poll_interval_seconds] * 5
+
+
+def test_the_admission_waiter_is_a_cohesive_module() -> None:
+    """The polling concern is extracted from the client that submits and streams Jobs."""
+    module_path = Path(__file__).parents[2] / "livespec_dev_tooling/gate_remote_admission.py"
+
+    assert module_path.is_file()
+    module = importlib.import_module("livespec_dev_tooling.gate_remote_admission")
+    assert callable(module.await_terminal_state)
+
+
+@pytest.mark.parametrize(
+    "status",
+    [
+        {"spec": {"suspend": False}, "status": {}},
+        {
+            "spec": {"suspend": True},
+            "status": {"conditions": [{"type": "Admitted", "status": "True"}]},
+        },
+        {"spec": {"suspend": True}, "status": {"startTime": "2026-11-07T15:00:00Z"}},
+    ],
+)
+def test_kueue_admission_signals_start_the_terminal_poll_budget(
+    *, status: dict[str, object]
+) -> None:
+    """Unsuspension, Kueue admission and a start time all release the terminal wait."""
+    cluster = _StubCluster(job_status_payloads=(json.dumps(status), _job_status(state="Complete")))
+    request = dataclasses.replace(_REQUEST, poll_timeout_seconds=10.0)
+
+    outcome = run_gate(request=request, runner=cluster, sleeper=cluster.sleep)
+
+    assert is_successful(outcome)
+    assert cluster.kinds.count("get-job") == 2
+
+
+def test_an_unadmitted_job_reports_its_admission_wait_bound() -> None:
+    """The admission bound is a no-verdict result that names this Job."""
+    cluster = _StubCluster(job_states=("Suspended",))
+    request = dataclasses.replace(_REQUEST, admission_timeout_seconds=30.0)
+
+    outcome = run_gate(request=request, runner=cluster, sleeper=cluster.sleep)
+
+    assert isinstance(outcome, Failure)
+    assert outcome.failure().detail == (
+        f"admission wait for {_JOB} exceeded {request.admission_timeout_seconds:g}s: {_JOB} was not admitted"
+    )
+    assert cluster.kinds.count("get-job") == 3
+
+
+def test_a_stale_refused_read_does_not_replace_the_admission_wait_bound() -> None:
+    """A later successful read showing the Job still suspended supersedes an earlier refusal."""
+    cluster = _StubCluster(job_states=("Suspended",), refused_gets=1)
+    request = dataclasses.replace(_REQUEST, admission_timeout_seconds=30.0)
+
+    outcome = run_gate(request=request, runner=cluster, sleeper=cluster.sleep)
+
+    assert isinstance(outcome, Failure)
+    assert outcome.failure().detail == (
+        f"admission wait for {_JOB} exceeded {request.admission_timeout_seconds:g}s: {_JOB} was not admitted"
+    )
+
+
 def test_a_refused_job_read_is_retried_before_its_refs_are_collected() -> None:
     """A transient API refusal must not abandon the still-queued Job it created.
 
@@ -717,7 +812,9 @@ def test_the_gate_ref_is_retained_when_a_get_raises() -> None:
 def test_a_gate_that_never_reaches_a_terminal_state_deletes_its_job() -> None:
     """Giving up deletes the submitted Job before returning no verdict."""
     cluster = _StubCluster(job_states=("Suspended",))
-    request = dataclasses.replace(_REQUEST, poll_timeout_seconds=30.0)
+    request = dataclasses.replace(
+        _REQUEST, admission_timeout_seconds=30.0, poll_timeout_seconds=30.0
+    )
     outcome = run_gate(request=request, runner=cluster, sleeper=cluster.sleep)
     assert isinstance(outcome, Failure)
     assert outcome.failure().step == "await-gate-terminal"
@@ -740,7 +837,9 @@ def test_failed_abandoned_job_cleanup_is_reported_without_changing_no_verdict(
 ) -> None:
     """A cleanup fault is visible but does not invent a gate verdict."""
     cluster = _StubCluster(job_states=("Suspended",), fails=("delete-job",))
-    request = dataclasses.replace(_REQUEST, poll_timeout_seconds=10.0)
+    request = dataclasses.replace(
+        _REQUEST, admission_timeout_seconds=10.0, poll_timeout_seconds=10.0
+    )
     outcome = run_gate(request=request, runner=cluster, sleeper=cluster.sleep)
     assert isinstance(outcome, Failure)
     assert outcome.failure().step == "await-gate-terminal"
@@ -786,13 +885,54 @@ def test_a_refused_private_sibling_secret_deletes_the_submitted_job() -> None:
 def test_a_job_the_cluster_will_not_report_on_is_retried_then_retains_its_ref() -> None:
     """A read refusal is retried, but never authorizes deleting a live Job's ref."""
     cluster = _StubCluster(fails=("get-job",))
-    request = dataclasses.replace(_REQUEST, poll_timeout_seconds=20.0)
+    request = dataclasses.replace(
+        _REQUEST, admission_timeout_seconds=20.0, poll_timeout_seconds=20.0
+    )
     outcome = run_gate(request=request, runner=cluster, sleeper=cluster.sleep)
     assert isinstance(outcome, Failure)
     assert outcome.failure().step == "await-gate-terminal"
     assert outcome.failure().detail == "get-job refused\n"
     assert cluster.kinds.count("get-job") == 2
     assert "delete-ref" not in cluster.kinds
+
+
+def test_a_refused_post_admission_read_exhausts_the_terminal_budget() -> None:
+    """A refusal after admission remains the terminal wait's no-verdict result."""
+    cluster = _StubCluster(job_states=("Active",))
+    request = dataclasses.replace(_REQUEST, poll_timeout_seconds=20.0)
+    read_count = 0
+
+    def runner(
+        *, argv: list[str], cwd: Path, stdin: str | None = None, stream: bool = False
+    ) -> GateCommandOutcome:
+        nonlocal read_count
+        if _kind_of(argv=argv) == "get-job":
+            read_count += 1
+            if read_count == 2:
+                return Success(
+                    GateCommandResult(returncode=1, stdout="", stderr="get-job refused\n")
+                )
+        return cluster(argv=argv, cwd=cwd, stdin=stdin, stream=stream)
+
+    outcome = run_gate(request=request, runner=runner, sleeper=cluster.sleep)
+
+    assert isinstance(outcome, Failure)
+    assert outcome.failure().detail == "get-job refused\n"
+
+
+def test_an_unreadable_post_admission_status_ends_the_terminal_wait() -> None:
+    """Admission does not let a malformed later Job status be guessed."""
+    cluster = _StubCluster(
+        job_status_payloads=(
+            _job_status(state="Active"),
+            "<html>gateway timeout</html>",
+        )
+    )
+
+    outcome = run_gate(request=_REQUEST, runner=cluster, sleeper=cluster.sleep)
+
+    assert isinstance(outcome, Failure)
+    assert "unreadable job status" in outcome.failure().detail
 
 
 def test_an_unreadable_job_status_fails_the_wait_rather_than_being_guessed() -> None:
