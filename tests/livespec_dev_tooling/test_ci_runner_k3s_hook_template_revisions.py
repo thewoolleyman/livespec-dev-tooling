@@ -137,7 +137,7 @@ def test_publish_leaves_an_already_published_revision_untouched(tmp_path: Path) 
 def test_every_scale_set_values_file_renders_to_the_published_revision(tmp_path: Path) -> None:
     stub_dir = _stub(tmp_path)
     values_files = sorted(_ARC.glob("values-*.yaml"))
-    assert len(values_files) == 14
+    assert len(values_files) == 15
     for values in values_files:
         text = values.read_text(encoding="utf-8")
         assert f"name: {_PLACEHOLDER}\n" in text, values.name

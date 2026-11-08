@@ -65,6 +65,18 @@ _CI_RUNNER = _REPO_ROOT / "ci-runner"
 _PHASE2 = _CI_RUNNER / "k3s" / "phase2"
 _ARC_DIR = _PHASE2 / "arc"
 _KUEUE_DIR = _PHASE2 / "kueue"
+# The container-worker queues (kueue/worker/) carry a quota DERIVED at converge
+# time from the enrolled workers' churn-slot capacity (SPECIFICATION/
+# non-functional-requirements.md, "Homelab worker nodes"), so no committed
+# number bounds their sets' ceilings; their LocalQueues are read here only to be
+# left out of the bounded-multiple arithmetic below.
+_WORKER_LOCAL_QUEUES = frozenset(
+    name
+    for path in sorted((_KUEUE_DIR / "worker").glob("cluster-queue-*.yaml"))
+    for document in path.read_text(encoding="utf-8").split("\n---\n")
+    if "kind: LocalQueue" in document
+    for name in [document.split("\n  name: ", 1)[1].split("\n", 1)[0].strip()]
+)
 
 # The unit that applies the queues, the ARC controller and every scale set — the
 # moment the pool becomes able to admit demand again after a restart.
@@ -239,6 +251,8 @@ def _ceilings_without_borrow_headroom(
     """
     wrong: list[str] = []
     for name, (local_queue, ceiling, _) in sorted(routed.items()):
+        if local_queue in _WORKER_LOCAL_QUEUES:
+            continue
         cluster_queue = targets.get(local_queue, local_queue)
         member = members.get(cluster_queue)
         floor = None if member is None else member[0]
