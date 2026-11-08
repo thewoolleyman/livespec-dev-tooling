@@ -237,4 +237,5 @@ template:
 # to 36 (2026-11-07)".
 minRunners: 0
 # 34 -> 24 on 2026-11-08: the ClusterQueue drops 17 -> 12, max(2 x 12, 6) = 24.
-maxRunners: 24
+# 24 -> 18 on 2026-11-08: the ClusterQueue drops 12 -> 9, max(2 x 9, 6) = 18.
+maxRunners: 18
