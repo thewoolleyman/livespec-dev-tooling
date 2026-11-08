@@ -531,7 +531,7 @@
         "implement_commit_settle": 3900,
         "fix_commit_settle": 3900,
         "review_fix_commit_settle": 3900,
-        "janitor": 3600,
+        "janitor": 4800,
         "fix": 3600,
         // TEMPORARY DIAL (sandbox-commit-gate-ceiling ruling 2026-11-05, landed by
         // plan ci-cache-optimization): pr_refresh raised from the 1800 s default
