@@ -4,8 +4,11 @@ Per-test coverage is measured once, with pytest-cov's per-test contexts, and
 each mutmut mutant is located at the function body it mutates.  A mutant then
 runs only against the tests whose coverage executes that body.  Every case the
 measurement cannot vouch for falls back to running every test: a test absent
-from the coverage data, a mutant whose function cannot be located, and a
-function body executed outside any test (at import or collection time).
+from the coverage data the caller passes, a mutant whose function cannot be
+located, and a function body executed outside any test (at import or
+collection time).  The runner passes only the mutated source files' coverage,
+so a test that executes none of their lines, such as one that reaches the
+source only through an unmeasured subprocess, counts as absent.
 """
 
 from __future__ import annotations
@@ -32,8 +35,9 @@ __all__: list[str] = [
 
 COVERAGE_GUIDED_METHOD = (
     "coverage-guided: each mutant runs against the tests whose pytest-cov per-test context "
-    "executes its mutated function body; tests absent from the coverage data, mutants whose "
-    "function cannot be located, and bodies executed outside any test run against every test"
+    "executes its mutated function body; tests that execute no line of a mutated source file, "
+    "mutants whose function cannot be located, and bodies executed outside any test run "
+    "against every test"
 )
 FULL_MATRIX_METHOD = (
     "full-matrix: per-test coverage could not be measured, so every collected test runs "
