@@ -18,6 +18,7 @@ import pytest
 
 from livespec_dev_tooling._flake_retry_closure import conftest_chain, module_imports
 from livespec_dev_tooling.flake_retry_changes import change_paths, withheld_reason
+from livespec_dev_tooling.flake_retry_finalizers import protocol_hook, teardown_hook
 from livespec_dev_tooling.flake_retry_paths import path_literals
 
 if TYPE_CHECKING:
@@ -314,6 +315,8 @@ class _SummaryHook:
 
 
 pytest_collection_modifyitems = _CollectionHook().__call__
+pytest_runtest_teardown = teardown_hook
+pytest_runtest_protocol = protocol_hook
 pytest_sessionfinish = _SessionFinishHook().__call__
 pytest_testnodedown = _NodeDownHook().__call__
 pytest_runtest_logreport = _ReportHook().__call__
