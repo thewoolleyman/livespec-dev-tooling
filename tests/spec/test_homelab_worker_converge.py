@@ -91,8 +91,12 @@ case "$1" in
   exec)
     shift
     [ "$1" = "--detach" ] && shift
+    [ "$1" = "-i" ] && shift
     shift
     case "$*" in
+      "sh -c mkdir -p /etc/systemd/system/system.slice.d && cat >/etc/systemd/system/system.slice.d/50-cpu-weight.conf") cat > "$s/system-slice-drop-in" ;;
+      "systemctl daemon-reload") printf 'daemon-reload\\n' >> "$s/container-reloads" ;;
+      "cat /etc/systemd/system/system.slice.d/50-cpu-weight.conf") cat "$s/system-slice-drop-in" 2>/dev/null || exit 1 ;;
       "tailscale status --json") cat "$s/ts-status" ;;
       "tailscale ip -4") echo "100.101.102.103" ;;
       "tailscale up "*) if [ -f "$s/ts-after-up" ]; then cp "$s/ts-after-up" "$s/ts-status"; fi ;;
@@ -661,3 +665,25 @@ def test_a_running_worker_without_the_factory_workspace_bind_is_replaced(vm: _Vm
     result = _run(vm=vm)
     assert result.returncode == 0, result.stdout + result.stderr
     assert len(_calls(vm=vm, verb="rm")) == 1
+
+
+def test_the_worker_gives_its_node_agents_the_fleet_system_slice_cpu_weight(vm: _Vm) -> None:
+    assert _run(vm=vm).returncode == 0
+    (vm.state / "system-slice-drop-in").unlink()
+    _enroll(vm=vm)
+    result = _run(vm=vm)
+    assert result.returncode == 0, result.stdout + result.stderr
+    drop_in = (vm.state / "system-slice-drop-in").read_text(encoding="utf-8")
+    assert drop_in.splitlines() == ["[Slice]", "CPUWeight=1000"]
+    calls = _calls(vm=vm, verb="exec")
+    reload_at = calls.index(f"docker exec {_WORKER} systemctl daemon-reload")
+    assert reload_at < calls.index(f"docker exec {_WORKER} systemctl start kubelet")
+
+
+def test_a_current_system_slice_weight_is_not_rewritten_or_reloaded(vm: _Vm) -> None:
+    assert _run(vm=vm).returncode == 0
+    (vm.state / "calls.log").write_text("", encoding="utf-8")
+    assert _run(vm=vm).returncode == 0
+    assert [
+        c for c in _calls(vm=vm, verb="exec") if "daemon-reload" in c or "50-cpu-weight.conf'" in c
+    ] == []
