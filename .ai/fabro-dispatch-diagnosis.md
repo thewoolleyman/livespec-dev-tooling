@@ -193,6 +193,15 @@ queue, a lane stop-the-line or a fleet outage, say it as a wait, for example
 "waiting in petri's dev-tooling lane (session-headroom-shortfall)". Reserve
 "hold", "held" and "HOLD" for an owner hold you mean the dispatcher to honour.
 
+**Check before you post, never after.** Ordinary verbs carry the same letters:
+"still holds" and "WHAT 1cb14958 HOLDS" were both posted on 2026-11-08 by a
+plan seat. In each case the word check ran in the same command as the post, so
+it reported the match only after the comment had landed. `bd comments` has only
+`add`, with no edit or delete, so a slipped word stays on the item. The only
+remedy is to warn the dispatcher seat that a refusal on it is false. Write the
+comment to a file, run `grep -ci "hold\|held" <file>`, and post only when it
+prints 0. Write "contains", "keeps" or "is still true" instead.
+
 ## `fabro create` plus `fabro dump` shows what a run actually resolved
 
 Used 2026-09-04 to settle the fleet-wide factory setup outage.
