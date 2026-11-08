@@ -102,15 +102,18 @@ restart, because the selector stays as it is and every node then matches it.
    because every factory node is amd64.
 
 **No Fabro restart is needed.** Each run's worker spawns its own plugin process,
-which reads `config.toml` when it launches. A run launched after the step 2 render
-therefore places with the gate, and a run already placed keeps its node. This was
+and that process creates the run's pod, so the pod is placed with the `config.toml`
+read when the run launched. The server's own long-lived plugin child does not place
+pods. A run launched after the step 2 render therefore places with the gate, and a
+run already placed keeps its node. This was
 measured on the first apply, on 2026-11-08 by kubernetes-sandbox-backend. The
 fleet server had run unrestarted since 2026-11-07T03:42Z, and its `config.toml`
 was written at 18:47:31Z. Run `01M6Y7RX3E0S`'s plugin launched at 18:47:16Z, before
 the write, and its pod carried no `factory-admit` selector. Run `01M6Y7W275A3`'s
 plugin launched at 18:48:59Z, and its pod was created on poweredge at 18:49:00Z
 carrying the selector. The plugin does load its configuration once per process
-(`main.rs`), but the process lives for one run, not for the Fabro server.
+(`main.rs`). What matters is which process creates the pod: the run's own one,
+not the long-lived child the server keeps.
 
 Revert in reverse order: drop the selector entry and apply step 2's tag again, so
 runs launched after that render place without the gate, then remove the role.
