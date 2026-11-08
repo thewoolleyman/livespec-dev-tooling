@@ -97,3 +97,28 @@ def test_every_committed_worker_template_carries_the_quota_placeholder() -> None
     templates = sorted((_KUEUE / "worker").glob("cluster-queue-*.yaml"))
     assert templates
     assert all("@WORKER_CHURN_SLOTS@" in t.read_text(encoding="utf-8") for t in templates)
+
+
+def test_no_committed_worker_template_borrows_from_the_cohort() -> None:
+    """A worker queue never borrows another architecture's churn slots.
+
+    Its runners schedule only on its own architecture's workers, so a slot
+    borrowed from the cohort would be held by a pod that cannot start.
+    """
+    templates = sorted((_KUEUE / "worker").glob("cluster-queue-*.yaml"))
+    assert templates
+    for template in templates:
+        text = template.read_text(encoding="utf-8").replace("@WORKER_CHURN_SLOTS@", "0")
+        queues = [d for d in yaml.safe_load_all(text) if d and d.get("kind") == "ClusterQueue"]
+        assert queues, template.name
+        for queue in queues:
+            resources = [
+                resource
+                for group in queue["spec"]["resourceGroups"]
+                for flavor in group["flavors"]
+                for resource in flavor["resources"]
+            ]
+            assert resources, template.name
+            assert all(
+                resource.get("borrowingLimit") == 0 for resource in resources
+            ), f"{template.name}: every resource must carry borrowingLimit 0"

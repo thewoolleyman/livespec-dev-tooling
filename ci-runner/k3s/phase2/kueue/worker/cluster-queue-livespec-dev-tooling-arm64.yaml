@@ -9,6 +9,12 @@
 # churn-slot capacity counts in the cohort quota, and enrolling or removing a
 # worker reconciles it). It joins the same cohort, so the committed
 # profile-sum quotas stay exactly as they are.
+#
+# borrowingLimit 0: this queue never borrows the cohort's x86 churn slots. An
+# arm64 runner cannot schedule on an x86 node, so a borrowed slot would be held
+# by a pod that can never start, starving the x86 queues that lent it. With no
+# arm64 worker enrolled (quota 0) the queue admits nothing, which is the
+# intended fail-closed state (coordinator ruling, 2026-11-08, R301).
 apiVersion: kueue.x-k8s.io/v1beta2
 kind: ClusterQueue
 metadata:
@@ -25,6 +31,7 @@ spec:
           resources:
             - name: "ci-runner.io/churn-slot"
               nominalQuota: @WORKER_CHURN_SLOTS@
+              borrowingLimit: 0
 ---
 apiVersion: kueue.x-k8s.io/v1beta2
 kind: LocalQueue
