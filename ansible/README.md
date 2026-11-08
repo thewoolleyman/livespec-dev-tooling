@@ -93,6 +93,7 @@ source of truth for how the tool is invoked.
 | `claim-token-race-drill.yml` | `ci_pool`, and only the host its confirmation names, raced against the control node | nothing — no second fleet host could act as a ledger claim writer |
 | `k3s-pod-egress-probe.yml` | `ci_pool`, and only the k3s SERVER its confirmation names | nothing — no committed artifact could measure a pod's path to the incident observer |
 | `runner-scheduler-fail-open-drill.yml` | `ci_pool`, and only the k3s SERVER its confirmation names | nothing — no committed artifact could hold `ci-runner-scheduler` at zero replicas |
+| `ci-node-unloaded-baseline.yml` | `ci_pool`, and only the k3s SERVER its confirmation names, measuring only the nodes the run names | nothing — no committed artifact could run a pinned benchmark Job on a CI node |
 
 `container-termination-drill.yml` is the ONE sanctioned way to make the cluster
 produce a `CrashLoopBackOff` container and an `OOMKilled` container, the
@@ -137,6 +138,21 @@ coordinated stopped-writers window of the orchestrator tenant. See
 `tests/livespec_dev_tooling/test_claim_token_race_drill_playbook.py`, which
 races the real probe as two processes against a file-locked stand-in for the
 package.
+`ci-node-unloaded-baseline.yml` is the ONE sanctioned way to measure each CI
+node's unloaded CPU benchmark, the normalizer of the hardware-normalized
+starvation ratio (`livespec-dev-tooling-6e5pyj`, plan `ci-runtime-and-cost`
+Stage B). It is `just ansible-apply ansible/ci-node-unloaded-baseline.yml -e
+ci_node_unloaded_baseline_confirm=<k3s server inventory name> -e
+'{"ci_node_unloaded_baseline_nodes": ["<node>", ...]}'`; without the
+confirmation it reads nothing and changes nothing, and the nodes have no
+default. Each named node gets one Job, admitted through
+`livespec-dev-tooling-lq` for one churn slot, running about two minutes of
+`sysbench cpu`; no cordon and no cap change. A node with more than two runner
+pods or two factory pods, or under CPU pressure, is skipped. It measures
+compute only, so it validates as a normalizer only for the nodes whose
+coverage-job baselines it agrees with. Run it through `just gate-start` in a
+quiet window. Exit 3 means some named node has no unloaded baseline, which is a
+record to repeat, not a pass.
 `runner-scheduler-fail-open-drill.yml` is the ONE sanctioned way to hold
 `ci-runner-scheduler` at zero replicas, to prove its fail-open reconciler on the
 live cluster (`livespec-dev-tooling-mtvxde`). It is `just ansible-apply

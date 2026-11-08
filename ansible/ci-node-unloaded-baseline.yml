@@ -1,0 +1,107 @@
+---
+# ci-node-unloaded-baseline.yml — the ONE sanctioned way to measure each CI
+# node's unloaded CPU benchmark, the normalizer of livespec-dev-tooling-6e5pyj's
+# hardware-normalized starvation ratio (plan ci-runtime-and-cost, Stage B phase
+# 1). Running a Job by hand is a hand change the Driver's `fleet_host_guard.py`
+# refuses; this play is the committed path, on the model of
+# ansible/runner-scheduler-fail-open-drill.yml.
+#
+# THE FENCE IS A VARIABLE. Reachable by `just ansible-apply
+# ansible/ci-node-unloaded-baseline.yml -e
+# ci_node_unloaded_baseline_confirm=<k3s server inventory name> -e
+# '{"ci_node_unloaded_baseline_nodes": ["<node>", ...]}'` and by nothing else
+# that matters: without the confirmation it reads nothing, changes nothing and
+# exits 0, on an apply and under `--check` alike. The nodes have NO default, so
+# a node is measured only when the run names it. Only the k3s server acts,
+# because it holds the admin kubeconfig; the host is identified by
+# `cluster_role`, never by a name spelled here.
+#
+# IT HAS A LIVE EFFECT, ONE CHURN SLOT PER NODE. For each named node one Job,
+# admitted through livespec-dev-tooling-lq like a runner pod, runs about two
+# minutes of `sysbench cpu`. No cordon, no cap change. A busy node is skipped.
+# Run it detached through `just gate-start`, in a quiet window, and only after
+# the coordinator's start gates are recorded on 6e5pyj. The script deletes its
+# Jobs on every exit. Exit 3 means some named node has no unloaded baseline,
+# which is a record to repeat, not a pass.
+
+- name: Measure each named CI node's unloaded CPU benchmark
+  hosts: ci_pool
+  gather_facts: false
+  # The admin kubeconfig is root-owned on the k3s server.
+  become: true
+  vars:
+    ci_node_unloaded_baseline_admin_kubeconfig: /etc/rancher/k3s/k3s.yaml
+    ci_node_unloaded_baseline_script: >-
+      {{ playbook_dir }}/../ci-runner/k3s/phase2/kueue/drill-ci-node-unloaded-baseline.sh
+    # `| bool` at each use is load-bearing: a non-empty string is truthy in Jinja,
+    # so the strings 'True' / 'False' would otherwise both pass.
+    ci_node_unloaded_baseline_named: >-
+      {{ ci_node_unloaded_baseline_confirm | default('') == inventory_hostname
+         and cluster_role | default('') == 'server' }}
+  environment:
+    KUBECONFIG: "{{ ci_node_unloaded_baseline_admin_kubeconfig }}"
+  tasks:
+    - name: Report a run that carries no baseline confirmation for this host
+      ansible.builtin.debug:
+        msg: >-
+          Not measuring from {{ inventory_hostname }}: this run does not carry
+          `ci_node_unloaded_baseline_confirm` naming the k3s server (it carries
+          `{{ ci_node_unloaded_baseline_confirm | default('<unset>') }}`).
+          Nothing was read and nothing was changed.
+      when: not (ci_node_unloaded_baseline_named | bool)
+
+    - name: Refuse a confirmed run that names no node to measure
+      ansible.builtin.fail:
+        msg: >-
+          Refusing the baseline drill: `ci_node_unloaded_baseline_nodes` must be a
+          non-empty list of node names. There is no default, so that a node is
+          measured only when the run names it. Nothing was read and nothing was
+          changed.
+      when:
+        - ci_node_unloaded_baseline_named | bool
+        - (ci_node_unloaded_baseline_nodes | default([])) is string
+          or (ci_node_unloaded_baseline_nodes | default([]) | length) == 0
+
+    - name: Run the drill from a throwaway directory
+      when:
+        - ci_node_unloaded_baseline_named | bool
+        - not ansible_check_mode
+      block:
+        - name: Create the throwaway directory
+          ansible.builtin.tempfile:
+            state: directory
+            prefix: ci-node-unloaded-baseline-
+          register: ci_node_unloaded_baseline_dir
+
+        - name: Copy the drill script
+          ansible.builtin.copy:
+            src: "{{ ci_node_unloaded_baseline_script }}"
+            dest: "{{ ci_node_unloaded_baseline_dir.path }}/drill.sh"
+            owner: root
+            group: root
+            mode: "0755"
+
+        - name: Run the drill
+          ansible.builtin.command:
+            argv: "{{ [ci_node_unloaded_baseline_dir.path ~ '/drill.sh'] + ci_node_unloaded_baseline_nodes }}"
+          register: ci_node_unloaded_baseline_run
+          changed_when: true
+          failed_when: false
+
+        - name: Print the drill's record
+          ansible.builtin.debug:
+            msg: "{{ ci_node_unloaded_baseline_run.stdout_lines + ci_node_unloaded_baseline_run.stderr_lines }}"
+
+        - name: Fail a drill that did not yield every named baseline
+          ansible.builtin.fail:
+            msg: >-
+              The drill exited {{ ci_node_unloaded_baseline_run.rc }}: 1 is failed or
+              refused, 3 is at least one node aborted or loaded (repeat it in the
+              next quiet window).
+          when: ci_node_unloaded_baseline_run.rc != 0
+      always:
+        - name: Remove the throwaway directory
+          ansible.builtin.file:
+            path: "{{ ci_node_unloaded_baseline_dir.path }}"
+            state: absent
+          when: ci_node_unloaded_baseline_dir.path is defined
