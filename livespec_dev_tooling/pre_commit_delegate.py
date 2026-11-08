@@ -85,10 +85,11 @@ def _staged_tree_selects_full_aggregate(*, repo_root: Path, tree_hash: str) -> b
     """Say whether the hook ran the FULL aggregate for the gated tree, else False.
 
     A Job's exit status is the same for a full pass and for the doc-only or Red-leg
-    subset, so the host classifies the staged tree itself, as every consumer's
-    pre-commit hook does: no staged `.py` selects the doc-only subset, and exactly one
-    staged `.py` under `tests/` selects the Red leg. Anything unreadable answers False,
-    because evidence must never be claimed for a run that cannot be shown to be full.
+    subset, so the host classifies the staged tree itself: no staged `.py` selects the
+    doc-only subset, and exactly one staged `tests/*.py` with no staged
+    `livespec_dev_tooling/*.py` selects the Red leg, whatever other `.py` files are
+    staged. Anything unreadable answers False, because evidence must never be claimed
+    for a run that cannot be shown to be full.
     """
     from returns.result import Failure
 
@@ -101,7 +102,9 @@ def _staged_tree_selects_full_aggregate(*, repo_root: Path, tree_hash: str) -> b
     staged_py = [name for name in listed.unwrap().stdout.split("\0") if name.endswith(".py")]
     if not staged_py:
         return False
-    return not (len(staged_py) == 1 and staged_py[0].startswith("tests/"))
+    staged_tests = [name for name in staged_py if name.startswith("tests/")]
+    staged_impl = [name for name in staged_py if name.startswith("livespec_dev_tooling/")]
+    return not (len(staged_tests) == 1 and not staged_impl)
 
 
 def _staged_commit(*, repo_root: Path, tree_hash: str) -> str:

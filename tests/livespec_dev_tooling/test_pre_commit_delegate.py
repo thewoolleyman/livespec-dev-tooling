@@ -534,7 +534,9 @@ def _stage_repo(*, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, files: dict[
         ({"tests/test_new.py": "x = 1\n"}, False),
         ({"RENAME-keep.py": ""}, False),
         ({"pkg/impl.py": "x = 1\n"}, True),
-        ({"tests/test_new.py": "x = 1\n", "pkg/impl.py": "x = 1\n"}, True),
+        ({"tests/test_new.py": "x = 1\n", "pkg/impl.py": "x = 1\n"}, False),
+        ({"tests/test_new.py": "x = 1\n", "ansible/files/foo.py": "x = 1\n"}, False),
+        ({"tests/test_new.py": "x = 1\n", "livespec_dev_tooling/impl.py": "x = 1\n"}, True),
         ({"tests/test_a.py": "x = 1\n", "tests/test_b.py": "x = 1\n"}, True),
     ],
 )
