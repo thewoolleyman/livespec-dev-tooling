@@ -95,3 +95,22 @@ if git diff --cached --name-only |
 else
     just check-heading-coverage-debt-register
 fi
+
+# Workflow and script wiring (work-item livespec-dev-tooling-cj5dg5,
+# post-mortem livespec-dev-tooling-npysxq candidate I). A commit staging a
+# change under .github/workflows/ or scripts/just/ with no .py lands in this
+# doc-only subset, which ran no pytest at all, so a broken workflow or script
+# wiring reached CI first: jerpfe's guard collision failed there (job
+# 127749278476) after a green commit. The tests that read
+# .github/workflows/ci.yml are the ones that judge that wiring, so they run
+# here and refuse the commit when one fails. They are enumerated from the tree
+# on every run, never listed by hand, so a new reader joins the selection the
+# commit it is added in. This is a commit-time subset only; pre-push and CI
+# still run the full aggregate.
+if git diff --cached --name-only | grep -E '^(\.github/workflows/|scripts/just/)' >/dev/null; then
+    mapfile -t ci_yml_readers < <(grep -rlE 'ci\.yml' tests --include='test_*.py' | sort)
+    if [[ "${#ci_yml_readers[@]}" -gt 0 ]]; then
+        echo ":: staged changeset edits a workflow or a just script — running the ${#ci_yml_readers[@]} test files that read .github/workflows/ci.yml"
+        uv run pytest -q -p no:cacheprovider -n "${test_nprocs:-1}" "${ci_yml_readers[@]}"
+    fi
+fi
