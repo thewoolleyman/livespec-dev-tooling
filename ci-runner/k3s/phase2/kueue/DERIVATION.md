@@ -2027,3 +2027,18 @@ At +60 minutes it rules KEEP or REVERT. A node read at about +45 minutes (idle %
 If 6e5pyj's host assertion 1 cannot hold at the throughput-optimal cap, the remedy is a Definition-of-Done amendment, not a lower cap.
 
 Kill switch: restore poweredge 23, orchestrator-cq 17, livespec-cq 2 and maxRunners 34 (the step-3 values), applying node_extended_resource and ci_converge_unit together.
+
+## Orchestrator to 9, dev-tooling to 9, within 30 (2026-11-08)
+
+The step-4 trial above closed with a KEEP at 17/30/12/1. ci-runtime-and-cost ruled it on 2026-11-08 at 07:00:56Z, and the numbers are on livespec-dev-tooling-6e5pyj. Fleet completions fell 170 -> 123, but jobs created fell with them, so that was a demand drop. On the queues holding waiting work, completions rose 112 -> 123. Fleet p95 fell 47.7 -> 46.3 minutes, and the orchestrator's fell 53.0 -> 48.8. At window end only livespec-dev-tooling held waiting jobs.
+
+legacy-coordinator-agent then ruled (R301) to move 3 slots from the orchestrator to dev-tooling, keeping the cohort at 30. dev-tooling CI is what the next incident-response arm waits on.
+
+| Queue | Change | maxRunners |
+| --- | --- | --- |
+| livespec-orchestrator-beads-fabro-cq | 12 -> 9 | max(2 x 9, 6) = 18 |
+| livespec-dev-tooling-cq | 6 -> 9 | max(2 x 9, 6) = 18 |
+
+Every other queue and every node profile is unchanged. The quotas still sum to 30, equal to poweredge 17 + gmktec 8 + hp 5.
+
+ci-runtime-and-cost re-measures 60 minutes after the apply, from the apply time this change's applier reports. Kill switch: restore orchestrator-cq 12 with maxRunners 24, and dev-tooling-cq 6 with maxRunners 12, by applying ci_converge_unit.

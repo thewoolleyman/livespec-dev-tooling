@@ -77,7 +77,10 @@ spec:
               # DERIVATION.md "gmktec to 4, cohort to 36 (2026-11-07)".
               # 17 -> 12 on 2026-11-08 (6e5pyj step 4): poweredge 23 -> 17 drops the cohort
               # 36 -> 30; this queue gives 5 and livespec-cq 1. See DERIVATION.md.
-              nominalQuota: 12
+              # 12 -> 9 on 2026-11-08 (R301, after the 6e5pyj step-4 KEEP): 3 slots move to
+              # livespec-dev-tooling-cq, the only queue holding waiting jobs at window end;
+              # the cohort stays 30. See DERIVATION.md.
+              nominalQuota: 9
 ---
 apiVersion: kueue.x-k8s.io/v1beta2
 kind: LocalQueue

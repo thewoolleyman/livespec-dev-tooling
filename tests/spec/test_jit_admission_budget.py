@@ -242,8 +242,8 @@ def test_the_fair_shares_sum_to_the_capacity_the_node_profiles_declare() -> None
 def test_measured_job_hours_derive_the_committed_fair_shares() -> None:
     """Seven-day pool job-hours are the dated, auditable source of every quota."""
     expected = {
-        "livespec-orchestrator-beads-fabro-cq": 12,
-        "livespec-dev-tooling-cq": 6,
+        "livespec-orchestrator-beads-fabro-cq": 9,
+        "livespec-dev-tooling-cq": 9,
         "livespec-dev-tooling-master-cq": 3,
         "livespec-cq": 1,
         "livespec-overseer-cq": 1,
@@ -296,7 +296,7 @@ def test_rederived_orchestrator_ceiling_removes_its_recorded_exception() -> None
     rule_value = max(_CEILING_MULTIPLE * quota, _CEILING_FLOOR)
     derivation = _DERIVATION.read_text(encoding="utf-8")
 
-    assert rule_value == 24
+    assert rule_value == 18
     assert rule_value >= 12
     # Its DERIVATION.md row is gone with it: every row there must match an
     # exception here (test_every_recorded_exception_is_a_derivation_row_...).
