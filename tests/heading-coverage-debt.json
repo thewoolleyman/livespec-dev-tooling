@@ -737,6 +737,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: a stalled suite-green run names the tests that were still running",
+    "work_item": "livespec-dev-tooling-h2i4u2",
+    "first_seen": "2026-11-08"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: a suite-green leg reuses a passing full pre-commit aggregate on the same tree",
     "work_item": "livespec-dev-tooling-z5fwwn",
     "first_seen": "2026-11-02"
@@ -747,6 +754,20 @@
     "heading": "## Scenario: a suite-green leg runs the full suite when the pre-commit aggregate judged a different tree or ran partially",
     "work_item": "livespec-dev-tooling-z5fwwn",
     "first_seen": "2026-11-02"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a suite-green run ended before any test completed says that no test had completed",
+    "work_item": "livespec-dev-tooling-6o3m6m",
+    "first_seen": "2026-11-08"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a suite-green run that stalls after its last test is reported as a post-last-test stall",
+    "work_item": "livespec-dev-tooling-h2i4u2",
+    "first_seen": "2026-11-08"
   },
   {
     "spec_root": "SPECIFICATION",
