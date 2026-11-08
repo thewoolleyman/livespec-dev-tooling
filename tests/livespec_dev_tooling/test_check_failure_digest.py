@@ -296,3 +296,24 @@ FAILED tests/livespec_dev_tooling/test_gate_runner_delegate.py::test_second - As
         "      test: tests/livespec_dev_tooling/test_gate_runner_delegate.py::test_first",
         "      test: tests/livespec_dev_tooling/test_gate_runner_delegate.py::test_second",
     ]
+
+
+def test_per_file_coverage_reports_each_file_below_its_threshold() -> None:
+    """Coverage findings retain every below-threshold file rather than a count."""
+    output = "\n".join(
+        (
+            '{"status": "fail", "failure_mode": "coverage", "hint": "cover every branch", '
+            '"path": "livespec_dev_tooling/first.py"}',
+            '{"status": "fail", "failure_mode": "coverage", "hint": "cover every branch", '
+            '"path": "livespec_dev_tooling/second.py"}',
+        )
+    )
+
+    tail = failure_digest_lines(failures=[("check-per-file-coverage", output)])[2:]
+
+    assert tail == [
+        "  check-per-file-coverage: coverage",
+        "      path: livespec_dev_tooling/first.py",
+        "      path: livespec_dev_tooling/second.py",
+        "      remedy: cover every branch",
+    ]
