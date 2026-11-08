@@ -1249,7 +1249,7 @@
     "spec_file": "scenarios.md",
     "heading": "## Scenario: an agent session's targeted pytest or a factory sandbox's full suite is not refused",
     "test": "tests.livespec_dev_tooling.agent_hooks.test_pretooluse_background_guard.test_targeted_or_ineligible_foreground_pytest_is_not_refused",
-    "reason": "Unit-tier: a real repository fixture proves a named test path stays allowed on an eligible delegated host, and full suites stay allowed when either the gates kubeconfig is unreadable (the factory-sandbox shape) or the repository did not opt in (livespec-dev-tooling-4pchid)."
+    "reason": "Integration-tier: a real repository fixture proves a named test path stays allowed on an eligible delegated host, and full suites stay allowed when either the gates kubeconfig is unreadable (the factory-sandbox shape) or the repository did not opt in (livespec-dev-tooling-4pchid)."
   },
   {
     "spec_root": "SPECIFICATION",
