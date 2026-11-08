@@ -472,3 +472,43 @@ def test_recovery_of_a_vanished_action_is_refused_without_effect(tmp_path, regis
         recover=lambda _: pytest.fail("vanished action recovered"),
     )
     assert (result.status, result.reason) == ("refused", "unknown immutable recovery action")
+
+
+def test_a_redelivery_during_a_running_principal_is_answered_without_waiting(
+    tmp_path, registration
+):
+    intent = _recorded_intent(directory=tmp_path, registration=registration)
+    started, release = Event(), Event()
+
+    def principal(_):
+        started.set()
+        assert release.wait(timeout=10)
+        return "revert-sha"
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        running = pool.submit(
+            recover_recorded_job_callback,
+            directory=tmp_path,
+            intent=intent,
+            recover=principal,
+        )
+        try:
+            assert started.wait(timeout=5)
+            answered = pool.submit(
+                record_job_callback,
+                directory=tmp_path,
+                delivery=_delivery(registration=registration),
+                webhook_secret=_SECRET,
+            )
+            again, no_intent = answered.result(timeout=2)
+        finally:
+            release.set()
+        settled = running.result(timeout=10)
+    assert (again.status, again.reason) == (
+        "pending",
+        "existing immutable action; no duplicate effect",
+    )
+    assert no_intent is None
+    assert (settled.status, settled.receipt) == ("completed", "revert-sha")
+    record = json.loads(next(tmp_path.glob("*.json")).read_bytes())
+    assert record["actions"][intent.action_id]["receipt"] == "revert-sha"

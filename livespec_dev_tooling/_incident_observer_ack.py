@@ -113,8 +113,14 @@ def record_job_callback(
 def recover_recorded_job_callback(
     *, directory: Path, intent: RecoveryIntent, recover: Callable[[RecoveryIntent], str | None]
 ) -> ObserverResult:
-    """Run the principal for an already durable immutable callback action."""
-    with repository_lock(directory=directory, repository=intent.registration.repository) as path:
+    """Run the principal for an already durable immutable callback action.
+
+    The repository fence is held only for the pre-effect fence re-read and the final
+    receipt write, never across the principal, so a redelivery meanwhile is answered
+    from the already durable pending action instead of queueing behind the principal.
+    """
+    repository = intent.registration.repository
+    with repository_lock(directory=directory, repository=repository) as path:
         record = load_record(path=path)
         # Re-read the SAME independent fence immediately before the side effect,
         # under the lock shared by admission, recovery and ordinary reconciliation.
@@ -135,16 +141,18 @@ def recover_recorded_job_callback(
                 action_id=intent.action_id,
                 receipt=recorded_receipt if isinstance(recorded_receipt, str) else None,
             )
-        receipt = recover(intent)
-        if receipt:
-            action.update(status="completed", receipt=receipt)
+    receipt = recover(intent)
+    if receipt:
+        with repository_lock(directory=directory, repository=repository) as path:
+            record = load_record(path=path)
+            _actions(record=record)[intent.action_id].update(status="completed", receipt=receipt)
             save_record(path=path, record=record)
-        return ObserverResult(
-            status="completed" if receipt else "pending",
-            reason="first failing required leaf emitted recovery",
-            action_id=intent.action_id,
-            receipt=receipt,
-        )
+    return ObserverResult(
+        status="completed" if receipt else "pending",
+        reason="first failing required leaf emitted recovery",
+        action_id=intent.action_id,
+        receipt=receipt,
+    )
 
 
 def _matches_leaf(*, registration: ObserverRegistration, completion: LeafCompletion) -> bool:
