@@ -80,7 +80,10 @@ spec:
               # 12 -> 9 on 2026-11-08 (R301, after the 6e5pyj step-4 KEEP): 3 slots move to
               # livespec-dev-tooling-cq, the only queue holding waiting jobs at window end;
               # the cohort stays 30. See DERIVATION.md.
-              nominalQuota: 9
+              # 9 -> 7 on 2026-11-08 (R301 gmktec step-back): gmktec 8 -> 6 drops the cohort
+              # 30 -> 28, and the posture tests require the quotas to sum to the profiles;
+              # dev-tooling-cq (the bound queue) and the master lane keep theirs. See DERIVATION.md.
+              nominalQuota: 7
 ---
 apiVersion: kueue.x-k8s.io/v1beta2
 kind: LocalQueue

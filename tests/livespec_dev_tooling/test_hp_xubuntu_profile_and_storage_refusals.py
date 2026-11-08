@@ -263,7 +263,7 @@ def test_the_committed_hp_profile_parses_as_a_runner_only_agent_at_capacity_eigh
     )
     assert parsed["ADMISSION_CAPACITY_C"] == "5", (
         f"hp advertises its cores-derived 5 churn slots in the split (poweredge 17 "
-        f"+ gmktec 8 + hp 5 = 30): its jobs measured 2-6 cores each on 14.5 allocatable "
+        f"+ gmktec 6 + hp 5 = 28): its jobs measured 2-6 cores each on 14.5 allocatable "
         f"CPU; the parser read {parsed['ADMISSION_CAPACITY_C']!r}"
     )
     assert "node-role/ci=" not in parsed["NODE_TAINTS"], (

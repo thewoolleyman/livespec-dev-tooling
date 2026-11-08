@@ -2042,3 +2042,27 @@ legacy-coordinator-agent then ruled (R301) to move 3 slots from the orchestrator
 Every other queue and every node profile is unchanged. The quotas still sum to 30, equal to poweredge 17 + gmktec 8 + hp 5.
 
 ci-runtime-and-cost re-measures 60 minutes after the apply, from the apply time this change's applier reports. Kill switch: restore orchestrator-cq 12 with maxRunners 24, and dev-tooling-cq 6 with maxRunners 12, by applying ci_converge_unit.
+
+## gmktec step-back to 6 slots, cohort 28 (2026-11-08)
+
+legacy-coordinator-agent adopted this under R301 at about 08:5xZ, on ci-runtime-and-cost's read. gmktec-xubuntu was saturated at 08:5xZ:
+- idle about 0.1 %
+- load 91.8 on 32 cores
+- CI (BestEffort) slice cpu.pressure some avg60 45.66
+- 8 runners plus 7 factory pods
+
+dev-tooling check-per-file-coverage ran over 2 hours there, against a 34-45 minute norm. That is the starvation the amended 6e5pyj assertion 1 grades.
+
+gmktec moves 8 -> 6, and the cohort drops 30 -> 28 (poweredge 17 + gmktec 6 + hp 5). The cohort's guaranteed floors must sum to exactly the profiles, which the posture tests assert. So "out of borrowing" alone cannot carry the 2 slots, and one queue's nominal quota gives them up:
+
+| Queue | Change | maxRunners |
+| --- | --- | --- |
+| livespec-orchestrator-beads-fabro-cq | 9 -> 7 | max(2 x 7, 6) = 14 |
+
+ci-runtime-and-cost chose this queue among the three that hold more than 1 slot:
+- livespec-dev-tooling-cq stays at 9. It is the bound queue: 27.0-minute median wait with 18 waiting, against the orchestrator's 4.9.
+- livespec-dev-tooling-master-cq stays at 3. The master lane was already full while master CI ran 3-4 hours behind.
+
+The orchestrator revert watch carries over: an orchestrator median wait over 10 minutes, or an oldest wait over 20 minutes, means REVERT.
+
+Kill switch: gmktec 8, cohort 30, orchestrator-cq 9 with maxRunners 18, applying node_extended_resource and ci_converge_unit together.
