@@ -32,6 +32,7 @@ __all__: list[str] = [
 _REPORT_PATH = Path("reports/mutation-kill-matrix.json")
 _MUTMUT_RUN_FAILED = "mutmut run failed while generating the kill matrix"
 _NO_MUTANTS = "mutmut generated no mutants for the kill matrix"
+_FULL_MATRIX = "full-matrix: every collected test runs against every mutant"
 
 
 class CommandExecutor(Protocol):
@@ -142,6 +143,7 @@ def run_kill_matrix(
         engine_name="mutmut",
         engine_version="3.2.3",
         source_revision=source_revision,
+        test_selection_method=_FULL_MATRIX,
         mutants=mutants,
         tests=tests,
         killers_by_mutant=killers_by_mutant,
