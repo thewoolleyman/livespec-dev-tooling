@@ -1984,6 +1984,14 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: a re-run test's record and summary carry each failed attempt's failure text",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this scenario, running a pytest session in which an untouched test's first attempt fails with a failure text over 4000 characters and its second passes, then reading its tmp/flake-retries/ record and FLAKE-RETRIED block; livespec-dev-tooling-b7l6it owns it.",
+    "work_item": "livespec-dev-tooling-b7l6it"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: a failing test the run touched fails at once with no retry",
     "test": "TODO",
     "reason": "Spec-first: a real test at the integration tier or above is owed for this scenario, driving a pytest session that loads the flake-retry plugin against a fixture repository with a controlled change set; livespec-dev-tooling-crxcy4 owns it.",
