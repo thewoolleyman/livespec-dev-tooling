@@ -149,7 +149,9 @@ def _run(
     identically.
     """
     _init_repo_with_files(tmp_path=cwd)
-    if promote:
+    if not promote:
+        monkeypatch.delenv(_PROMOTE_ENV_VAR, raising=False)
+    else:
         monkeypatch.setenv(_PROMOTE_ENV_VAR, "true")
     monkeypatch.chdir(cwd)
     rc = _MODULE.main()

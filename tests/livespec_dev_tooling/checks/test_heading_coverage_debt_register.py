@@ -505,15 +505,20 @@ def _run_check(
     *,
     cwd: Path,
     scope: str | None,
+    release_lever: str | None = None,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> _CheckRun:
-    """Invoke `main()` in-process under `cwd`; `scope=None` removes the lever."""
+    """Invoke `main()` in-process under `cwd` with only the named levers set."""
     monkeypatch.chdir(cwd)
     if scope is None:
         monkeypatch.delenv(_SCOPE_VAR, raising=False)
     else:
         monkeypatch.setenv(_SCOPE_VAR, scope)
+    if release_lever is None:
+        monkeypatch.delenv(_FAIL_VAR, raising=False)
+    else:
+        monkeypatch.setenv(_FAIL_VAR, release_lever)
     rc = _MODULE.main()
     captured = capsys.readouterr()
     return _CheckRun(returncode=rc, combined=captured.out + captured.err)
@@ -1097,12 +1102,13 @@ def test_a_committed_first_seen_later_than_the_earliest_todo_commit_fails_on_a_z
         committed_at="2026-05-10T00:00:00+00:00",
         message="record the register with an inflated first-seen date",
     )
-    if release_lever is None:
-        monkeypatch.delenv(_FAIL_VAR, raising=False)
-    else:
-        monkeypatch.setenv(_FAIL_VAR, release_lever)
-
-    result = _run_check(cwd=tmp_path, scope=None, monkeypatch=monkeypatch, capsys=capsys)
+    result = _run_check(
+        cwd=tmp_path,
+        scope=None,
+        release_lever=release_lever,
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+    )
 
     assert result.returncode != 0, (
         f"a committed first-seen date later than the earliest TODO commit must be "

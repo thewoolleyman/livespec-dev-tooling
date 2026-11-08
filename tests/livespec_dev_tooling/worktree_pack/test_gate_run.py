@@ -159,7 +159,7 @@ def _run_status(*, repo: Path, run_id: str = _RUN_ID) -> subprocess.CompletedPro
 
 def _child_env(*, home: Path) -> dict[str, str]:
     env = dict(os.environ)
-    for name in (*_GIT_ENV_VARS, "COVERAGE_PROCESS_START"):
+    for name in (*_GIT_ENV_VARS, "COVERAGE_PROCESS_START", "LIVESPEC_SUITE_GREEN_STALL_SECONDS"):
         _ = env.pop(name, None)
     for name in [key for key in env if key.startswith("COV_CORE_")]:
         _ = env.pop(name, None)

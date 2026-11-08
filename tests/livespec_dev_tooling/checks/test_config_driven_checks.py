@@ -83,6 +83,10 @@ __all__: list[str] = []
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _CHECKS_DIR = _REPO_ROOT / "livespec_dev_tooling" / "checks"
+_AMBIENT_SEVERITY_VARS = (
+    "LIVESPEC_FAIL_IF_DOMAIN_ERROR_RAISES_EXIST",
+    "LIVESPEC_FAIL_IF_LLOC_SOFT_WARNINGS_EXIST",
+)
 
 
 def _git(*, cwd: Path, args: list[str]) -> None:
@@ -163,6 +167,9 @@ def _run_check(
     _git(cwd=cwd, args=["init", "-q"])
     _git(cwd=cwd, args=["add", "-A"])
     with monkeypatch.context() as scoped:
+        for var in _AMBIENT_SEVERITY_VARS:
+            if env is None or var not in env:
+                scoped.delenv(var, raising=False)
         for key, value in (env or {}).items():
             scoped.setenv(key, value)
         scoped.chdir(cwd)
