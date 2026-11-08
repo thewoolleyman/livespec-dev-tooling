@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING, cast
 
 import pytest
 
+from livespec_dev_tooling._flake_retry_closure import conftest_chain, module_imports
 from livespec_dev_tooling.flake_retry_changes import change_paths, withheld_reason
 from livespec_dev_tooling.flake_retry_paths import path_literals
 
@@ -53,57 +54,53 @@ class RetryResult:
     outcome: str
 
 
-def _module_path(*, repo_root: Path, module: str) -> Path | None:
-    """Resolve an in-repository dotted module without importing user code."""
-    stem = Path(*module.split("."))
-    for candidate in (repo_root / stem.with_suffix(".py"), repo_root / stem / "__init__.py"):
-        if candidate.is_file():
-            return candidate
-    return None
+@dataclass(frozen=True, kw_only=True)
+class _ModuleFacts:
+    """What one parsed source module contributes to any closure that reaches it."""
+
+    imports: frozenset[Path]
+    literals: frozenset[str]
+    undeterminable_paths: bool
 
 
-def _imports(*, tree: ast.AST, path: Path, repo_root: Path) -> set[Path]:
-    """Resolve direct static imports in one source module conservatively."""
-    found: set[Path] = set()
-    package = path.relative_to(repo_root).parent.parts
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Import):
-            for alias in node.names:
-                candidate = _module_path(repo_root=repo_root, module=alias.name)
-                if candidate is not None:
-                    found.add(candidate)
-        elif isinstance(node, ast.ImportFrom):
-            prefix = package[: max(0, len(package) - node.level + 1)] if node.level else ()
-            module = ".".join((*prefix, *(node.module or "").split("."))).strip(".")
-            if module:
-                candidate = _module_path(repo_root=repo_root, module=module)
-                if candidate is not None:
-                    found.add(candidate)
-            for alias in node.names:
-                candidate = _module_path(
-                    repo_root=repo_root, module=".".join((module, alias.name)).strip(".")
-                )
-                if candidate is not None:
-                    found.add(candidate)
-    return found
+def _module_facts(*, repo_root: Path, path: Path) -> _ModuleFacts | None:
+    """Parse one module once and keep its imports and path-bearing literals."""
+    try:
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    except (OSError, SyntaxError, UnicodeError):
+        return None
+    path_component_nodes = {
+        id(component)
+        for node in ast.walk(tree)
+        if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Div)
+        for component in ast.walk(node)
+        if isinstance(component, ast.Constant) and isinstance(component.value, str)
+    }
+    literals = {
+        node.value
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Constant) and isinstance(node.value, str)
+        if id(node) not in path_component_nodes or Path(node.value).suffix
+    }
+    path_names, path_is_undeterminable = path_literals(tree=tree, repo_root=repo_root)
+    return _ModuleFacts(
+        imports=frozenset(module_imports(repo_root=repo_root, path=path, tree=tree)),
+        literals=frozenset(literals | path_names),
+        undeterminable_paths=path_is_undeterminable,
+    )
 
 
-def _conftest_chain(*, repo_root: Path, test_path: Path) -> list[Path]:
-    """Every `conftest.py` from the test's directory up to the repository root."""
-    chain: list[Path] = []
-    current = test_path.parent
-    while True:
-        conftest = current / "conftest.py"
-        if conftest.is_file():
-            chain.append(conftest)
-        if current in (repo_root, current.parent):
-            return chain
-        current = current.parent
+def _closure(
+    *, repo_root: Path, test_path: Path, memo: dict[Path, _ModuleFacts | None] | None = None
+) -> tuple[set[Path], set[str], bool] | None:
+    """Read imports and string literals without executing the test tree.
 
-
-def _closure(*, repo_root: Path, test_path: Path) -> tuple[set[Path], set[str], bool] | None:
-    """Read imports and string literals without executing the test tree."""
-    pending = [test_path, *_conftest_chain(repo_root=repo_root, test_path=test_path)]
+    `memo` holds each module's parsed facts for the caller's whole collection
+    pass, so a module many tests import is parsed once rather than once per
+    collected item (livespec-dev-tooling-pprfq2).
+    """
+    facts_by_path = {} if memo is None else memo
+    pending = [test_path, *conftest_chain(repo_root=repo_root, test_path=test_path)]
     modules: set[Path] = set()
     literals: set[str] = set()
     undeterminable_paths = False
@@ -111,28 +108,15 @@ def _closure(*, repo_root: Path, test_path: Path) -> tuple[set[Path], set[str], 
         path = pending.pop()
         if path in modules:
             continue
-        try:
-            tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-        except (OSError, SyntaxError, UnicodeError):
+        if path not in facts_by_path:
+            facts_by_path[path] = _module_facts(repo_root=repo_root, path=path)
+        facts = facts_by_path[path]
+        if facts is None:
             return None
         modules.add(path)
-        path_component_nodes = {
-            id(component)
-            for node in ast.walk(tree)
-            if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Div)
-            for component in ast.walk(node)
-            if isinstance(component, ast.Constant) and isinstance(component.value, str)
-        }
-        literals.update(
-            node.value
-            for node in ast.walk(tree)
-            if isinstance(node, ast.Constant) and isinstance(node.value, str)
-            if id(node) not in path_component_nodes or Path(node.value).suffix
-        )
-        path_names, path_is_undeterminable = path_literals(tree=tree, repo_root=repo_root)
-        literals.update(path_names)
-        undeterminable_paths = undeterminable_paths or path_is_undeterminable
-        pending.extend(_imports(repo_root=repo_root, path=path, tree=tree) - modules)
+        literals.update(facts.literals)
+        undeterminable_paths = undeterminable_paths or facts.undeterminable_paths
+        pending.extend(facts.imports - modules)
     return modules, literals, undeterminable_paths
 
 
@@ -154,12 +138,16 @@ def _changed_names(*, paths: set[Path]) -> set[str]:
 
 
 def retry_marker_for(
-    *, repo_root: Path, test_path: Path, change_paths: set[Path]
+    *,
+    repo_root: Path,
+    test_path: Path,
+    change_paths: set[Path],
+    memo: dict[Path, _ModuleFacts | None] | None = None,
 ) -> dict[str, int] | None:
     """Return a rerun marker only when no changed path touches the closure."""
     if any(path.name in _UNSAFE_NAMES or path.name == Path(__file__).name for path in change_paths):
         return None
-    analyzed = _closure(repo_root=repo_root, test_path=test_path)
+    analyzed = _closure(repo_root=repo_root, test_path=test_path, memo=memo)
     if analyzed is None:
         return None
     modules, literals, undeterminable_paths = analyzed
@@ -187,10 +175,15 @@ def mark_untouched_tests(
     paths = change_paths(repo_root=root)
     if paths is None:
         return withheld_reason()
+    memo: dict[Path, _ModuleFacts | None] = {}
+    markers: dict[Path, dict[str, int] | None] = {}
     for item in items:
-        marker = retry_marker_for(
-            repo_root=root, test_path=Path(str(item.path)), change_paths=paths
-        )
+        test_path = Path(str(item.path))
+        if test_path not in markers:
+            markers[test_path] = retry_marker_for(
+                repo_root=root, test_path=test_path, change_paths=paths, memo=memo
+            )
+        marker = markers[test_path]
         if marker is not None:
             item.add_marker(pytest.mark.flaky(**marker))
     return None
