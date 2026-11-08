@@ -3,14 +3,16 @@
 from __future__ import annotations
 
 import codecs
+import errno
 import os
+import pty
+import re
 import signal
 import subprocess
 import threading
 import time
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
-from typing import IO, cast
 
 __all__: list[str] = [
     "CEILING_ENV",
@@ -22,6 +24,7 @@ __all__: list[str] = [
     "kill_reason",
     "run_suite",
     "suite_bound",
+    "test_completion_summary",
 ]
 
 DEFAULT_STALL_SECONDS: int = 900
@@ -97,10 +100,27 @@ def kill_reason(
     return None
 
 
-def _drain(*, stream: IO[bytes], progress: SuiteProgress) -> None:
-    """Record every output chunk until the combined stdout/stderr pipe closes."""
+def test_completion_summary(*, output: str) -> str:
+    """Describe whether pytest output records a completed test before a timeout."""
+    completed = re.search(
+        r"(?:\[gw\d+\].*\b(?:PASSED|FAILED|SKIPPED|ERROR)\b|(?:^|[\r\n])[.FEsxXR]+(?:\s|$))",
+        output,
+    )
+    return "at least one test had completed" if completed else "no test had completed"
+
+
+def _drain(*, fd: int, progress: SuiteProgress) -> None:
+    """Record every output chunk until the suite's terminal stream closes."""
     decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
-    for chunk in iter(lambda: os.read(stream.fileno(), _READ_BYTES), b""):
+    while True:
+        try:
+            chunk = os.read(fd, _READ_BYTES)
+        except OSError as error:
+            if error.errno == errno.EIO:
+                break
+            raise
+        if not chunk:
+            break
         progress.saw(chunk=decoder.decode(chunk))
     progress.saw(chunk=decoder.decode(b"", final=True))
 
@@ -108,20 +128,29 @@ def _drain(*, stream: IO[bytes], progress: SuiteProgress) -> None:
 def run_suite(
     *, argv: list[str], bound: SuiteBound, clock: Callable[[], float] = time.monotonic
 ) -> SuiteRun:
-    """Run in a process group and kill it only for a stall or configured ceiling."""
-    with subprocess.Popen(
-        argv,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        env={**os.environ, "PYTHONUNBUFFERED": "1"},
-        start_new_session=True,
-    ) as proc:
+    """Run in a process group and kill it only for a stall or configured ceiling.
+
+    Pytest emits collection and xdist-startup status only when its output is a
+    terminal. Giving it a pseudo-terminal makes those lifecycle updates
+    visible before the first completed test renews the stall window.
+    """
+    master_fd, slave_fd = pty.openpty()
+    try:
+        proc = subprocess.Popen(
+            argv,
+            stdout=slave_fd,
+            stderr=slave_fd,
+            env={**os.environ, "PYTHONUNBUFFERED": "1"},
+            start_new_session=True,
+        )
+    finally:
+        os.close(slave_fd)
+    try:
         progress = SuiteProgress(clock=clock)
         started = progress.last
-        stream = cast("IO[bytes]", proc.stdout)
         reader = threading.Thread(
             target=_drain,
-            kwargs={"stream": stream, "progress": progress},
+            kwargs={"fd": master_fd, "progress": progress},
             daemon=True,
         )
         reader.start()
@@ -146,3 +175,5 @@ def run_suite(
             timed_out=reason is not None,
             kill_reason=reason,
         )
+    finally:
+        os.close(master_fd)
