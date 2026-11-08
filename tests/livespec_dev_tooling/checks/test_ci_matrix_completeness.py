@@ -347,6 +347,43 @@ def test_ci_severity_levers_and_the_committed_source_must_match(
     assert parity[0].get("lever") == lever
 
 
+def test_missing_committed_lever_source_names_each_ci_armed_lever(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """An absent committed lever source fails closed, naming every lever ci.yml arms."""
+    _ = _write_canonical_json(cwd=tmp_path, slugs=[])
+    _ = _write_justfile(cwd=tmp_path, body=_justfile_with_targets(targets=[]))
+    armed = ["LIVESPEC_FAIL_IF_CI_MATRIX_GAPS_EXIST", "LIVESPEC_FAIL_IF_FMT_DIRECTIVES_EXIST"]
+    env = "\n".join(f"      {name}: true" for name in armed)
+    _ = _write_ci_yml(
+        cwd=tmp_path,
+        jobs=[
+            "  metadata:\n"
+            "    runs-on: ubuntu-latest\n"
+            "    env:\n"
+            f"{env}\n"
+            "    steps:\n"
+            "      - run: true\n",
+            _ci_green_job(needs="[]"),
+        ],
+    )
+    result = _run_check(
+        cwd=tmp_path,
+        extra_argv=["--canonical-from", "canonical.json"],
+        env={"LIVESPEC_FAIL_IF_CI_MATRIX_GAPS_EXIST": "1"},
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+    )
+    assert result.returncode == 4, result.stderr
+    findings = _parse_findings(stderr=result.stderr)
+    named = sorted(
+        str(item.get("lever"))
+        for item in findings
+        if item.get("failure_mode") == "ci-severity-lever-missing-from-source"
+    )
+    assert named == armed
+
+
 def test_target_inventory_supplies_aggregate_for_ci_scan(
     *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
