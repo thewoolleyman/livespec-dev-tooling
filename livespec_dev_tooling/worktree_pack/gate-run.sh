@@ -771,11 +771,21 @@ maybe_write_flip_marker() {
 # `check-primary-checkout-commit-refuse-hook-installed`, deep inside the
 # full aggregate — so a forgotten `just bootstrap` used to burn a whole
 # ~25-30 minute `just check` run to fail on one cheap, fast-to-fix
-# target. Materializing the pack costs a few seconds; checking for it
-# first keeps that cost off every run where the pack is already present.
+# target. An absent pack needs the recipe because its `uv run` may still
+# synchronize an unprepared environment. Once any member is present, refresh
+# directly from the installed package without asking `just` to run locally.
 ensure_worktree_pack() {
     local root="$1"
-    printf ':: dev-tooling/ worktree pack refresh — running `just install-worktree-pack`\n' >&2
+    local pack_dir="$root/dev-tooling"
+    local f
+    for f in worktree-lib.sh branch-protection.sh gate-run.sh check-no-workflow-edits.sh worktree.just branch-protection.just .gitignore; do
+        if [[ -f "$pack_dir/$f" ]]; then
+            printf ':: dev-tooling/ worktree pack present — refreshing from installed package\n' >&2
+            ( cd "$root" && uv run --no-sync python -m livespec_dev_tooling.install_worktree_pack ) >&2 || true
+            return 0
+        fi
+    done
+    printf ':: dev-tooling/ worktree pack absent — running `just install-worktree-pack`\n' >&2
     ( cd "$root" && just install-worktree-pack ) >&2 || true
 }
 
