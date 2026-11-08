@@ -34,3 +34,22 @@ Before you report that a surface is absent, also grep the plugin's own repo
 source and its spec for the surface. A ratified heading with a closed
 implementing item means the surface exists somewhere. Then find out which
 build has it.
+
+## A partial read fakes absence too, even on the right build
+
+On 2026-11-09 (00:0xZ) the ci-runtime-and-cost seat told the coordinator that
+"no drive valve moves an item from active to ready". It had grepped `drive`'s
+SKILL.md for reject, rework and ready-transition phrases. That prose lists only
+the acceptance valves (`reject:<id>:rework|regroom`). The seat proposed a hand
+`bd update --status ready` instead. The build was the installed one, and
+the generic `move:<id>:backlog|ready|blocked` valve was in it. The coordinator
+moved livespec-dev-tooling-jd4qle from active to ready with
+`move:livespec-dev-tooling-jd4qle:ready`, and that valve also cleared the fabro
+assignee that a hand write would have left behind.
+
+So before reporting that a `drive` action is missing, read the installed build's
+own list of accepted forms. It is `_UNSUPPORTED_ACTION_SUMMARY` in
+`scripts/livespec_orchestrator_beads_fabro/commands/drive.py`, which is also the
+error text an unknown action prints; the parse itself is in
+`_drive_valve_grammar.py`. Do not rely on the SKILL.md summary. Prefer
+`move:<id>:<status>` to a hand status write.
