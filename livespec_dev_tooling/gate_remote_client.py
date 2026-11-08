@@ -80,7 +80,6 @@ namespace growth weeks later.
 from __future__ import annotations
 
 import hashlib
-import signal
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -154,11 +153,9 @@ _NO_HOOKS_PATH = "/dev/null"
 _READ_TREE_STEP = "read-tree-hash"
 _PUSH_STEP = "push-gate-ref"
 _SUBMIT_STEP = "submit-gate-job"
-_AWAIT_STEP = "await-gate-terminal"
 _STREAM_STEP = "stream-gate-logs"
 _DELETE_STEP = "delete-gate-ref"
 _DELETE_ABANDONED_JOB_STEP = "delete-abandoned-gate-job"
-
 
 # The two Job conditions that mean the gate is OVER. Kubernetes reports every
 # condition it has ever set, negative ones included, so the type alone does not
@@ -446,11 +443,7 @@ def _gate_a_pushed_tree(
             return Failure(delivered.failure()), False
 
     def cleanup_interrupted_wait() -> None:
-        deleted_job = _delete_abandoned_gate_job(
-            request=request,
-            runner=runner,
-            job_name=job_name,
-        )
+        deleted_job = _delete_abandoned_gate_job(request=request, runner=runner, job_name=job_name)
         report_gate_cleanup_failure(job_name=job_name, outcome=deleted_job)
         deleted_refs = _delete_gate_ref(request=request, runner=runner)
         report_gate_cleanup_failure(job_name=job_name, outcome=deleted_refs)
@@ -465,9 +458,6 @@ def _gate_a_pushed_tree(
                 poll_argv=[*_kubectl(request=request), "get", "job", job_name, "--output", "json"],
             ),
             cleanup=cleanup_interrupted_wait,
-            signal_install=signal.signal,
-            term_signal=signal.SIGTERM,
-            int_signal=signal.SIGINT,
         )
     except GateWaitInterruptedError as interrupted:
         return Failure(interrupted_wait_failure(interrupted=interrupted)), False

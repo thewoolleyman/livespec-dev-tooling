@@ -46,9 +46,9 @@ from __future__ import annotations
 import dataclasses
 import hashlib
 import json
+import signal
 from dataclasses import dataclass
 from pathlib import Path
-from types import SimpleNamespace
 from typing import TYPE_CHECKING
 
 import pytest
@@ -64,7 +64,7 @@ from livespec_dev_tooling.gate_remote_invocation import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterable, Sequence
+    from collections.abc import Iterable, Sequence
 
 __all__: list[str] = []
 
@@ -736,32 +736,18 @@ def test_a_gate_that_never_reaches_a_terminal_state_deletes_its_job() -> None:
     assert "delete-ref" not in cluster.kinds
 
 
-@pytest.mark.parametrize("interruption", ["SIGTERM", "SIGINT"])
+@pytest.mark.parametrize("interruption", [signal.SIGTERM, signal.SIGINT])
 def test_an_interrupted_wait_deletes_its_job_and_published_refs(
-    *,
-    interruption: str,
-    monkeypatch: pytest.MonkeyPatch,
+    *, interruption: signal.Signals
 ) -> None:
     """TERM and INT leave no queued Job or mirror input behind."""
-    import livespec_dev_tooling.gate_remote_client as client
-
-    handlers: dict[int, Callable[[int, object], None]] = {}
-    fake_signal = SimpleNamespace(SIGTERM=15, SIGINT=2)
-
-    def install(number: int, handler: Callable[[int, object], None]) -> object:
-        previous: object = handlers.get(number, 0)
-        handlers[number] = handler
-        return previous
-
-    fake_signal.signal = install
-    monkeypatch.setattr(client, "signal", fake_signal, raising=False)
     cluster = _StubCluster(job_states=("Suspended",))
+    previous = signal.getsignal(interruption)
 
     def interrupted_sleep(*, seconds: float) -> None:
         _ = seconds
-        number = getattr(fake_signal, interruption)
-        assert number in handlers, f"no {interruption} handler is installed during the wait"
-        handlers[number](number, None)
+        assert signal.getsignal(interruption) is not previous, "no handler during the wait"
+        signal.raise_signal(interruption)
 
     request = dataclasses.replace(_REQUEST, poll_timeout_seconds=30.0)
     outcome = run_gate(request=request, runner=cluster, sleeper=interrupted_sleep)
@@ -769,9 +755,10 @@ def test_an_interrupted_wait_deletes_its_job_and_published_refs(
     assert isinstance(outcome, Failure)
     assert outcome.failure().step == "await-gate-terminal"
     assert _JOB in outcome.failure().detail
-    assert f"terminated by {interruption}" in outcome.failure().detail
+    assert f"terminated by {interruption.name}" in outcome.failure().detail
     assert cluster.kinds.count("delete-job") == 1
     assert cluster.kinds.count("delete-ref") == 1
+    assert signal.getsignal(interruption) is previous
 
 
 def test_failed_abandoned_job_cleanup_is_reported_without_changing_no_verdict(
