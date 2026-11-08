@@ -165,3 +165,62 @@ def test_repository_runner_executes_the_declared_command(
         "check": True,
         "text": True,
     }
+
+
+def _red_fleet(*, root: Path) -> tuple[Path, Path, Path]:
+    """Create a pytest, a Rust and a three-script shell fixture repository."""
+    python_repository = root / "red-pytest-suite"
+    rust_repository = root / "rust-suite"
+    shell_repository = root / "red-shell-suite"
+    for repository in (python_repository, rust_repository, shell_repository):
+        repository.mkdir()
+    _ = rust_repository.joinpath("Cargo.toml").write_text("[workspace]\n", encoding="utf-8")
+    for name in ("first.test.sh", "second.test.sh", "third.test.sh"):
+        _ = shell_repository.joinpath(name).write_text("#!/usr/bin/env bash\n", encoding="utf-8")
+    return python_repository, rust_repository, shell_repository
+
+
+def test_a_red_test_command_is_measured_and_the_fleet_run_continues(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A non-zero test command is timed, its exit status kept, and every repository reported."""
+    paths = _red_fleet(root=tmp_path)
+    module = _baseline()
+    executed_scripts: list[str] = []
+
+    def fake_run(*, command: tuple[str, ...], cwd: Path) -> subprocess.CompletedProcess[str]:
+        assert cwd in paths
+        if command[:3] == ("cargo", "nextest", "list"):
+            return subprocess.CompletedProcess(
+                args=command, returncode=0, stdout='{"type":"test"}\n', stderr=""
+            )
+        if command[0] == "bash":
+            executed_scripts.append(command[1])
+            if command[1] == "second.test.sh":
+                raise subprocess.CalledProcessError(returncode=3, cmd=command)
+            return subprocess.CompletedProcess(args=command, returncode=0, stdout="", stderr="")
+        if "--collect-only" in command:
+            return subprocess.CompletedProcess(
+                args=command, returncode=0, stdout="7 tests collected in 0.01s\n", stderr=""
+            )
+        if command[-2:] == ("pytest", "-q"):
+            raise subprocess.CalledProcessError(returncode=1, cmd=command)
+        return subprocess.CompletedProcess(args=command, returncode=0, stdout="v 1\n", stderr="")
+
+    monkeypatch.setattr(module, "_run", fake_run)
+
+    report = module.measure_repositories(paths=paths)
+
+    rows = {row["name"]: row for row in report["repositories"]}
+    assert set(rows) == {"red-pytest-suite", "rust-suite", "red-shell-suite"}
+    assert rows["red-pytest-suite"]["test_count"] == 7
+    assert rows["red-pytest-suite"]["test_exit_status"] == 1
+    assert rows["red-pytest-suite"]["runtime_seconds"] >= 0
+    assert rows["rust-suite"]["test_exit_status"] == 0
+    assert executed_scripts == ["first.test.sh", "second.test.sh", "third.test.sh"]
+    assert rows["red-shell-suite"]["test_count"] == 3
+    assert rows["red-shell-suite"]["test_exit_status"] == 3
+    assert report["fleet_totals"]["test_count"] == 7 + 1 + 3
+    assert report["fleet_totals"]["runtime_seconds"] == sum(
+        row["runtime_seconds"] for row in report["repositories"]
+    )

@@ -25,6 +25,7 @@ class RepositoryRow(TypedDict):
     count_command: str
     test_command: str
     runtime_seconds: float
+    test_exit_status: int
     toolchain_versions: dict[str, str]
 
 
@@ -49,6 +50,14 @@ def run_command(*, command: tuple[str, ...], cwd: Path) -> subprocess.CompletedP
     return subprocess.run(command, cwd=cwd, capture_output=True, check=True, text=True)
 
 
+def _test_exit_status(*, command: tuple[str, ...], cwd: Path, runner: Runner) -> int:
+    """Run one test-only command and return its exit status, keeping a red suite measurable."""
+    try:
+        return runner(command=command, cwd=cwd).returncode
+    except subprocess.CalledProcessError as failed:
+        return failed.returncode
+
+
 def _command_text(*, command: tuple[str, ...]) -> str:
     """Render a report command exactly as the collector executes it."""
     return " ".join(command)
@@ -63,7 +72,9 @@ def _python_row(*, path: Path, runner: Runner) -> RepositoryRow:
     """Measure one Python repository using its pinned uv environment."""
     collected = runner(command=(*_MISE_UV, *_PYTEST_COUNT_COMMAND), cwd=path)
     started = time.perf_counter()
-    _ = runner(command=(*_MISE_UV, *_PYTEST_TEST_COMMAND), cwd=path)
+    exit_status = _test_exit_status(
+        command=(*_MISE_UV, *_PYTEST_TEST_COMMAND), cwd=path, runner=runner
+    )
     runtime_seconds = time.perf_counter() - started
     pytest_version = runner(command=(*_MISE_UV, "pytest", "--version"), cwd=path)
     python_version = runner(command=(*_MISE_UV, "python", "--version"), cwd=path)
@@ -75,6 +86,7 @@ def _python_row(*, path: Path, runner: Runner) -> RepositoryRow:
         "count_command": _command_text(command=(*_MISE_UV, *_PYTEST_COUNT_COMMAND)),
         "test_command": _command_text(command=(*_MISE_UV, *_PYTEST_TEST_COMMAND)),
         "runtime_seconds": runtime_seconds,
+        "test_exit_status": exit_status,
         "toolchain_versions": {
             "pytest": pytest_version.stdout.strip(),
             "python": python_version.stdout.strip(),
@@ -95,7 +107,7 @@ def _rust_row(*, path: Path, runner: Runner) -> RepositoryRow:
     """Measure a Rust workspace with cargo nextest."""
     collected = runner(command=_NEXTEST_LIST_COMMAND, cwd=path)
     started = time.perf_counter()
-    _ = runner(command=_NEXTEST_TEST_COMMAND, cwd=path)
+    exit_status = _test_exit_status(command=_NEXTEST_TEST_COMMAND, cwd=path, runner=runner)
     runtime_seconds = time.perf_counter() - started
     cargo_version = runner(command=("cargo", "--version"), cwd=path)
     return {
@@ -106,6 +118,7 @@ def _rust_row(*, path: Path, runner: Runner) -> RepositoryRow:
         "count_command": _command_text(command=_NEXTEST_LIST_COMMAND),
         "test_command": _command_text(command=_NEXTEST_TEST_COMMAND),
         "runtime_seconds": runtime_seconds,
+        "test_exit_status": exit_status,
         "toolchain_versions": {"cargo": cargo_version.stdout.strip()},
     }
 
@@ -116,11 +129,16 @@ def _shell_scripts(*, path: Path) -> tuple[Path, ...]:
 
 
 def _shell_row(*, path: Path, runner: Runner) -> RepositoryRow:
-    """Measure a shell-tested repository one executable script at a time."""
+    """Measure a shell-tested repository one executable script at a time.
+
+    Every script runs even after one fails; the row's exit status is the first non-zero one.
+    """
     scripts = _shell_scripts(path=path)
     started = time.perf_counter()
-    for script in scripts:
-        _ = runner(command=("bash", str(script.relative_to(path))), cwd=path)
+    statuses = [
+        _test_exit_status(command=("bash", str(script.relative_to(path))), cwd=path, runner=runner)
+        for script in scripts
+    ]
     runtime_seconds = time.perf_counter() - started
     bash_version = runner(command=("env", "bash", "--version"), cwd=path)
     return {
@@ -129,10 +147,11 @@ def _shell_row(*, path: Path, runner: Runner) -> RepositoryRow:
         "ecosystem": "shell",
         "test_count": len(scripts),
         "count_command": "one per executed *.test.sh script",
-        "test_command": " && ".join(
+        "test_command": "; ".join(
             _command_text(command=("bash", str(script.relative_to(path)))) for script in scripts
         ),
         "runtime_seconds": runtime_seconds,
+        "test_exit_status": next((status for status in statuses if status), 0),
         "toolchain_versions": {"bash": bash_version.stdout.splitlines()[0]},
     }
 
