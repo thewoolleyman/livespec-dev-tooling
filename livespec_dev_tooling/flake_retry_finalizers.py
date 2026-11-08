@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Generator
+from collections.abc import Callable, Generator
 from typing import cast
 
 import pytest
@@ -10,19 +10,74 @@ import pytest
 __all__: list[str] = ["RetryFinalizerPreserver", "preserve_finalizers"]
 
 
-def _keep_setup_state(*_: object) -> None:
-    """Let pytest's normal teardown keep scope finalizers until their owner closes."""
+_SETUP_STATE_CLEANUP = "_remove_failed_setup_state_from_session"
+
+
+def _setup_stack(*, item: pytest.Item) -> dict[object, object] | None:
+    """Return pytest's current setup-state stack without depending on its private types."""
+    session_attributes = cast(dict[str, object], vars(item.session))
+    setup_state = session_attributes.get("_setupstate")
+    if setup_state is None:
+        return None
+    stack = cast(dict[str, object], vars(setup_state)).get("stack")
+    return cast(dict[object, object], stack) if isinstance(stack, dict) else None
+
+
+def _unfailed_prefix(*, stack: dict[object, object]) -> dict[object, object]:
+    """Keep the leading nodes whose setup did not fail, the only ones a retry may reuse."""
+    kept: dict[object, object] = {}
+    for node, entry in stack.items():
+        if cast(tuple[object, object], entry)[1] is not None:
+            break
+        kept[node] = entry
+    return kept
+
+
+class _KeepScopeFinalizers:
+    """Run an upstream rerunfailures hook, then put back the scope finalizers it dropped."""
+
+    def __init__(
+        self,
+        *,
+        upstream: Callable[..., object],
+        select: Callable[[dict[object, object]], dict[object, object]],
+    ) -> None:
+        self._upstream = upstream
+        self._select = select
+
+    def __call__(self, item: pytest.Item, *rest: object) -> None:
+        stack = _setup_stack(item=item)
+        saved = {} if stack is None else dict(stack)
+        _ = self._upstream(item, *rest)
+        current = _setup_stack(item=item)
+        if current is not None:
+            current.clear()
+            current.update(self._select(saved))
 
 
 def preserve_finalizers(*, config: pytest.Config) -> None:
-    """Prevent rerunfailures from dropping higher-scope finalizers for a retry."""
+    """Keep rerunfailures' retry cleanup, but not its loss of higher-scope finalizers."""
     rerunfailures = config.pluginmanager.get_plugin("rerunfailures")
     if rerunfailures is None:
         return
     for hookimpl in config.pluginmanager.hook.pytest_runtest_teardown.get_hookimpls():
         if hookimpl.plugin is rerunfailures:
-            object.__setattr__(hookimpl, "function", _keep_setup_state)
-    object.__setattr__(rerunfailures, "_remove_failed_setup_state_from_session", _keep_setup_state)
+            object.__setattr__(
+                hookimpl,
+                "function",
+                _KeepScopeFinalizers(upstream=hookimpl.function, select=dict),
+            )
+    cleanup = cast(dict[str, Callable[..., object] | None], vars(rerunfailures)).get(
+        _SETUP_STATE_CLEANUP
+    )
+    if cleanup is not None:
+        object.__setattr__(
+            rerunfailures,
+            _SETUP_STATE_CLEANUP,
+            _KeepScopeFinalizers(
+                upstream=cleanup, select=lambda stack: _unfailed_prefix(stack=stack)
+            ),
+        )
 
 
 class RetryFinalizerPreserver:
