@@ -139,6 +139,20 @@ def _failed_test_lines(*, target: str, node_ids: list[str]) -> list[str]:
     ]
 
 
+def _coverage_entry_lines(*, target: str, output: str) -> list[str]:
+    """Render coverage findings with every affected file, rather than a count."""
+    paths_by_hint: dict[str, list[str]] = {}
+    records = filter(None, (_fail_record(line=line) for line in output.splitlines()))
+    for _, hint, path in records:
+        paths_by_hint.setdefault(hint, []).append(path)
+    lines: list[str] = []
+    for hint, paths in paths_by_hint.items():
+        lines.append(f"  {target}: coverage")
+        lines.extend(f"      path: {path}" for path in paths)
+        lines.append(f"      remedy: {hint}")
+    return lines
+
+
 def failure_digest_lines(*, failures: list[tuple[str, str]]) -> list[str]:
     """Render the tail-of-output digest for the failed targets of one aggregate run.
 
@@ -159,6 +173,9 @@ def failure_digest_lines(*, failures: list[tuple[str, str]]) -> list[str]:
             if target == _PER_FILE_COVERAGE_TARGET and failed_test_node_ids:
                 continue
             lines.append(f"  {target}: {_NO_STRUCTURED_FINDING}")
+            continue
+        if target == _PER_FILE_COVERAGE_TARGET and all(group[0] == "coverage" for group in groups):
+            lines.extend(_coverage_entry_lines(target=target, output=output))
             continue
         for group in groups:
             lines.extend(_entry_lines(target=target, group=group))
