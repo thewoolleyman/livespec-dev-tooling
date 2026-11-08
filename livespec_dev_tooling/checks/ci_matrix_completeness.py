@@ -216,13 +216,12 @@ def _collect_findings(
         repo_local_skips=load_repo_local_ci_skips(repo_root=cwd) or (),
     )
     source = cwd / _SEVERITY_LEVERS_SOURCE
-    if source.is_file():
-        findings.extend(
-            ci_severity_lever_findings(
-                ci_yml=ci_yml,
-                source=source.read_text(encoding="utf-8"),
-            )
+    findings.extend(
+        ci_severity_lever_findings(
+            ci_yml=ci_yml,
+            source=source.read_text(encoding="utf-8") if source.is_file() else "",
         )
+    )
     return findings
 
 
