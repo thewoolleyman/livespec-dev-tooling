@@ -717,3 +717,32 @@ def test_a_gate_that_keeps_making_progress_is_not_ended_by_the_stall_window(
 
     assert (run_dir / "exit_code").read_text(encoding="utf-8").strip() == "0"
     assert "stall window" not in (run_dir / "output.log").read_text(encoding="utf-8")
+
+
+@pytest.mark.integration
+def test_a_silent_delegate_that_refreshes_the_progress_stamp_keeps_its_verdict(
+    *, fixture_repo: tuple[Path, Path, dict[str, str]]
+) -> None:
+    """A delegated client may be live even while lefthook buffers its output."""
+    primary, worktree, env = fixture_repo
+    delegated_wait = (
+        "for _ in 1 2 3 4 5; do "
+        'if [ -n "${LIVESPEC_GATE_RUN_PROGRESS_STAMP:-}" ]; then '
+        'touch "$LIVESPEC_GATE_RUN_PROGRESS_STAMP"; '
+        "fi; sleep 1; done"
+    )
+    run_id = _start(
+        cwd=worktree,
+        env={
+            **env,
+            _STALL_ENV: "3",
+            _STALL_GRACE_ENV: "1",
+            "LIVESPEC_GATE_RUN_PROGRESS_STAMP": "",
+        },
+        command=["bash", "-c", delegated_wait],
+    )
+
+    run_dir = _await_verdict(primary=primary, run_id=run_id)
+
+    assert (run_dir / "exit_code").read_text(encoding="utf-8").strip() == "0"
+    assert "stall window" not in (run_dir / "output.log").read_text(encoding="utf-8")
