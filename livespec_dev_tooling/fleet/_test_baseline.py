@@ -105,12 +105,8 @@ def _python_row(*, path: Path, runner: Runner) -> RepositoryRow:
 
 
 def _nextest_count(*, output: str) -> int:
-    """Count nextest's one-JSON-object-per-test-list-entry output."""
-    return sum(
-        1
-        for line in output.splitlines()
-        if isinstance(json.loads(line), dict) and json.loads(line).get("type") == "test"
-    )
+    """Read the `test-count` total from nextest's single JSON list document."""
+    return int(json.loads(output)["test-count"])
 
 
 def _rust_row(*, path: Path, runner: Runner) -> RepositoryRow:
