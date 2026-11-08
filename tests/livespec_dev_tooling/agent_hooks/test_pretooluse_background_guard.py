@@ -938,7 +938,7 @@ def _foreground_refusal_event(
 def _write_delegated_gate_config(*, repository: Path, delegated: bool) -> None:
     """Declare the fixture repository's gate venue selection explicitly."""
     _ = (repository / "pyproject.toml").write_text(
-        f"[tool.livespec_dev_tooling]\\ndelegated_gate = {str(delegated).lower()}\\n",
+        f"[tool.livespec_dev_tooling]\ndelegated_gate = {str(delegated).lower()}\n",
         encoding="utf-8",
     )
 
@@ -965,7 +965,7 @@ def test_an_eligible_delegating_host_refuses_foreground_full_suite_pytest(
     repository = _make_hooked_repo(repo=tmp_path / "delegating", hooks=())
     _write_delegated_gate_config(repository=repository, delegated=True)
     credential = tmp_path / "gates.kubeconfig"
-    _ = credential.write_text("apiVersion: v1\\nkind: Config\\n", encoding="utf-8")
+    _ = credential.write_text("apiVersion: v1\nkind: Config\n", encoding="utf-8")
     monkeypatch.setenv("GATES_KUBECONFIG", str(credential))
 
     event = _foreground_refusal_event(
@@ -999,7 +999,7 @@ def test_targeted_or_ineligible_foreground_pytest_is_not_refused(
     monkeypatch.chdir(repository)
     credential = tmp_path / "gates.kubeconfig"
     if credential_readable:
-        _ = credential.write_text("apiVersion: v1\\nkind: Config\\n", encoding="utf-8")
+        _ = credential.write_text("apiVersion: v1\nkind: Config\n", encoding="utf-8")
     monkeypatch.setenv("GATES_KUBECONFIG", str(credential))
     payload = json.dumps({"tool_name": "Bash", "tool_input": {"command": command}})
 
