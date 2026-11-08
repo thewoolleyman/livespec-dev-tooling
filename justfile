@@ -1326,7 +1326,7 @@ lint-autofix-staged:
 # <target>/reports/mutation-kill-matrix.json.
 [positional-arguments]
 mutation-kill-matrix target:
-    uv run python -m livespec_dev_tooling.mutation_kill_matrix_runner "$target"
+    uv run python -m livespec_dev_tooling.mutation_kill_matrix_runner "$1"
 
 fmt:
     uv run ruff format .
