@@ -546,7 +546,7 @@ def test_gate_wait_polls_well_inside_its_five_second_return_budget() -> None:
 
 def test_gate_start_refreshes_the_worktree_pack_before_selecting_a_venue() -> None:
     """A primary checkout cannot launch a stale runner after its package pin changes."""
-    assert "worktree pack refresh — running `just install-worktree-pack`" in CANONICAL_GATE_RUN_BODY
+    assert "worktree pack present — refreshing from installed package" in CANONICAL_GATE_RUN_BODY
 
 
 def _shim_dir(*, root: Path) -> Path:
