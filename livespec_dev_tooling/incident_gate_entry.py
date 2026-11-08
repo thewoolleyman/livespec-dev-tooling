@@ -36,7 +36,9 @@ from pathlib import Path
 from livespec_dev_tooling.incident_execution import (
     EXPEDITED_INCIDENT_RESPONSE,
     EXPEDITED_INCIDENT_RESPONSE_REVERT,
+    Invocation,
     parse_incident_truth_value,
+    resolve_execution_context,
 )
 from livespec_dev_tooling.incident_hook_entry import LOCAL_OPERATION_ENV, QUERY_ENV
 from livespec_dev_tooling.incident_hook_process import (
@@ -112,10 +114,19 @@ def _trust_current() -> None:
     _ = resolve_current(reading=reading, query=query)
 
 
-def resolve_entrance(*, surface: str, launcher: bool = False) -> EntranceDecision:
-    """Decide one entrance's mode before its first selection, probe or submission."""
-    if surface not in ENTRANCES:
-        return _refused(surface=surface, code="unknown-entrance", detail="not a gate entrance")
+def _trusted_normal_decision(*, surface: str, invocation: str) -> EntranceDecision | None:
+    """Resolve an explicit trusted-normal caller before ambient flags are inspected."""
+    if invocation == Invocation.ORDINARY:
+        return None
+    resolved = resolve_execution_context(environ=os.environ, invocation=invocation, identity=None)
+    if not resolved.is_successful:
+        refusal = resolved.failure()
+        return _refused(surface=surface, code=refusal.code, detail=refusal.detail)
+    return EntranceDecision(mode="normal", status=NORMAL)
+
+
+def _ambient_decision(*, surface: str, launcher: bool) -> EntranceDecision:
+    """Resolve ordinary ambient flags after the trusted-origin boundary has run."""
     flags = [
         parse_incident_truth_value(name=name, value=os.environ.get(name))
         for name in (EXPEDITED_INCIDENT_RESPONSE, EXPEDITED_INCIDENT_RESPONSE_REVERT)
@@ -136,6 +147,18 @@ def resolve_entrance(*, surface: str, launcher: bool = False) -> EntranceDecisio
             detail="incident gates run only through the installed commit/push hook entrance",
         )
     return EntranceDecision(mode="incident", status=NORMAL)
+
+
+def resolve_entrance(
+    *, surface: str, launcher: bool = False, invocation: str = Invocation.ORDINARY
+) -> EntranceDecision:
+    """Decide one entrance's mode before its first selection, probe or submission."""
+    if surface not in ENTRANCES:
+        return _refused(surface=surface, code="unknown-entrance", detail="not a gate entrance")
+    trusted_normal = _trusted_normal_decision(surface=surface, invocation=invocation)
+    if trusted_normal is not None:
+        return trusted_normal
+    return _ambient_decision(surface=surface, launcher=launcher)
 
 
 def entrance_refusal(*, surface: str) -> int | None:
