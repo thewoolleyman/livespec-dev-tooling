@@ -499,3 +499,19 @@ def test_configured_nondefault_test_scope_is_supported(project: tuple[Path, str]
     )
     assert evidence["outcome"] == "passed"
     assert evidence["selection"]["tests"] == ["checks/test_widget.py"]
+
+
+def test_a_large_touched_module_keeps_its_record_under_the_argument_limit(
+    project: tuple[Path, str],
+) -> None:
+    # livespec-dev-tooling-l6u6cd: per-line coverage contexts made a 193 KB record that no
+    # single argv string (128 KiB) could carry to the authority.
+    root, base = project
+    body = "".join(f"    x{n} = {n}\n" for n in range(6000))
+    (root / "src/widget.py").write_text(f"def answer():\n{body}    return 43\n")
+    _git(root, "add", ".")
+    evidence = _collect(root, base)
+    row = evidence["coverage"]["src/widget.py"]
+    assert evidence["outcome"] == "passed"
+    assert set(row) == {"summary", "missing_lines", "missing_branches"}
+    assert len(json.dumps(evidence, sort_keys=True, separators=(",", ":"))) < 131072

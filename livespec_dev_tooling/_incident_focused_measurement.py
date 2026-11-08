@@ -108,5 +108,17 @@ def measure(
             if report_path.is_file()
             else {"files": {}}
         )
-        coverage = {name: raw["files"].get(name, {}) for name in executable}
+        coverage = {name: _declared(row=raw["files"].get(name, {})) for name in executable}
     return tests, report, coverage
+
+
+def _declared(*, row: CoverageFile) -> CoverageFile:
+    """Keep only the declared fields: per-line contexts would outgrow one argv string."""
+    declared: CoverageFile = {}
+    if "summary" in row:
+        declared["summary"] = row["summary"]
+    if "missing_lines" in row:
+        declared["missing_lines"] = row["missing_lines"]
+    if "missing_branches" in row:
+        declared["missing_branches"] = row["missing_branches"]
+    return declared
