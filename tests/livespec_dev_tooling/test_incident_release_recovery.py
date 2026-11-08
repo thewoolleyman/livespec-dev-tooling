@@ -147,10 +147,12 @@ def test_recovery_fences_stale_adoption_and_owns_installed_consumers(tmp_path):
     assert controller.recover(intent=intent).status == "reconciled"
 
 
-def test_irreversible_adoption_requires_preexisting_compensation(tmp_path):
+def test_irreversible_adoption_refuses_an_unverified_compensation_string(tmp_path):
     registration = _registration()
     _seed(tmp_path, registration)
     controller = _controller(tmp_path)
+    published = []
+    attribution = _attribution(irreversible=True, compensation_receipt="safe:existing")
     assert (
         controller.acknowledge_adoption(
             registration=registration, attribution=_attribution(irreversible=True)
@@ -160,10 +162,19 @@ def test_irreversible_adoption_requires_preexisting_compensation(tmp_path):
     assert (
         controller.acknowledge_adoption(
             registration=registration,
-            attribution=_attribution(irreversible=True, compensation_receipt="safe:existing"),
+            attribution=attribution,
         ).status
-        == "acknowledged"
+        == "refused"
     )
+    assert (
+        controller.run_queued_adoption(
+            registration=registration,
+            attribution=attribution,
+            publish=lambda *args: published.append(args) or "published",
+        ).status
+        == "refused"
+    )
+    assert published == []
 
 
 def test_late_regression_reopens_canonical_chain_and_fences_cleanup(tmp_path):

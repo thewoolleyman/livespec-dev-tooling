@@ -67,6 +67,7 @@ class IncidentReleaseRecovery:
     reopen_canonical: Callable[[ObserverRegistration, str, str, str], str]
     lookup_effect: Callable[[str, str], ReleaseLookup] | None = None
     verify_queued: Callable[[ObserverRegistration, ReleaseAttribution], bool] | None = None
+    verify_compensation: Callable[[ObserverRegistration, ReleaseAttribution], bool] | None = None
 
     def run_queued_adoption(
         self,
@@ -81,6 +82,8 @@ class IncidentReleaseRecovery:
         repeated identity recovers its exact result after timeout. It must not
         invoke this controller recursively while the repository lock is held.
         """
+        if not self._compensation_verified(registration=registration, attribution=attribution):
+            return ReleaseResult(status="refused")
         return release_result(
             function=lambda: QueuedAdoption(
                 directory=self.directory,
@@ -107,9 +110,11 @@ class IncidentReleaseRecovery:
     def _acknowledge(
         self, *, registration: ObserverRegistration, attribution: ReleaseAttribution
     ) -> ReleaseResult:
-        if not _valid(
-            registration=registration, attribution=attribution
-        ) or not self.verify_attribution(registration, attribution):
+        if (
+            not self._compensation_verified(registration=registration, attribution=attribution)
+            or not _valid(registration=registration, attribution=attribution)
+            or not self.verify_attribution(registration, attribution)
+        ):
             return ReleaseResult(status="refused")
         current = self.authorize_current(registration)
         identity = _digest(value=(_registration(registration=registration), asdict(attribution)))
@@ -156,6 +161,15 @@ class IncidentReleaseRecovery:
             _object(value=entry)["receipt"] = receipt
             save_record(path=path, record=record)
         return ReleaseResult(status="fenced" if fenced else "acknowledged", receipt=receipt)
+
+    def _compensation_verified(
+        self, *, registration: ObserverRegistration, attribution: ReleaseAttribution
+    ) -> bool:
+        """Require a provisioned verifier for irreversible release compensation."""
+        return not attribution.irreversible or (
+            self.verify_compensation is not None
+            and self.verify_compensation(registration, attribution)
+        )
 
     def recover(self, *, intent: RecoveryIntent) -> ReleaseResult:
         """Reconcile consumers after observer's exact inverse receipt, outside its lock.
