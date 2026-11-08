@@ -56,7 +56,8 @@ spec:
           resources:
             - name: "ci-runner.io/churn-slot"
               # Measured-job-hours re-derivation, 2026-10-22: see DERIVATION.md.
-              nominalQuota: 2
+              # 2 -> 1 on 2026-11-08 (6e5pyj step 4): its jobs are short (7-day max 13 min).
+              nominalQuota: 1
 ---
 apiVersion: kueue.x-k8s.io/v1beta2
 kind: LocalQueue
