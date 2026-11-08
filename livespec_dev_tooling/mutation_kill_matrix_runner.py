@@ -144,6 +144,16 @@ def run_kill_matrix(
         else mutant
         for mutant in generated_mutants
     ]
+    # Judge "measured" only on the files that hold mutants: tests sit inside
+    # the measured tree, so every test's own body would otherwise give it a
+    # context, and a test that reaches the source only where coverage cannot
+    # follow (a bare subprocess) would never run against any mutant.
+    source_paths = {span.path for span in spans.values() if span is not None}
+    source_coverage = (
+        None
+        if coverage is None
+        else {path: lines for path, lines in coverage.items() if path in source_paths}
+    )
     snapshot = _source_snapshot(target=target)
     killers_by_mutant: dict[str, set[str]] = {}
     try:
@@ -158,7 +168,7 @@ def run_kill_matrix(
             killers_by_mutant[mutant.identifier] = {
                 test
                 for test in select_tests(
-                    span=spans[mutant.identifier], coverage=coverage, tests=tests
+                    span=spans[mutant.identifier], coverage=source_coverage, tests=tests
                 )
                 if execute(args=[*_PYTHON, "-m", "pytest", "-q", test], cwd=target).returncode != 0
             }

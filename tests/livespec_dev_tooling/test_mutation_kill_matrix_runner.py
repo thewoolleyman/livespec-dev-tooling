@@ -167,9 +167,12 @@ def _guided_executor(
     """Fake mutmut and pytest over a two-function package, recording each mutant's test runs.
 
     `contexts` maps a test node id to the source lines its coverage context
-    executes; None writes no coverage data at all.
+    executes; None writes no coverage data at all. As in a real layout whose
+    tests sit inside the measured tree, every collected test's context also
+    executes its own body in the test file.
     """
     source = target / "pkg" / "core.py"
+    test_file = target / "tests" / "test_two.py"
     applied: list[str] = []
 
     def execute(*, args: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
@@ -186,9 +189,11 @@ def _guided_executor(
             rcfile = next(arg for arg in args if arg.startswith("--cov-config=")).partition("=")[2]
             data_file = Path(rcfile).read_text(encoding="utf-8").split("data_file = ")[1].strip()
             data = CoverageData(basename=data_file)
-            for test, lines in contexts.items():
+            for body_line, test in enumerate((_T1, _T2, _T3), start=2):
                 data.set_context(f"{test}|run")
-                data.add_lines({str(source): lines})
+                data.add_lines({str(test_file): [body_line]})
+                if test in contexts:
+                    data.add_lines({str(source): contexts[test]})
             data.write()
         if args[-3:-1] == ["mutmut", "apply"]:
             applied.append(args[-1])
