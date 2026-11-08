@@ -2491,5 +2491,45 @@
     "test": "TODO",
     "reason": "Spec-first: a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) is owed for this scenario, driving `branch_protection_alignment` against a classic protection with no required check plus an active ruleset holding the all-green gate with only a GitHub App bypass, and the role-bypass, strict and unreadable-ruleset refusals. livespec-dev-tooling-7536jf owns it (plan expedited-incident-response-flag); the implementation PR that ships the effective-set read replaces this row.",
     "work_item": "livespec-dev-tooling-7536jf"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "contracts.md",
+    "heading": "## Gate-surface severity levers",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading: a just check run on a tree carrying a finding of a warn-default check whose lever CI arms, with no LIVESPEC_FAIL_IF_* variable set, failing on each gate surface with CI's check and failure_mode, plus the lever parity check refusing a lever armed in ci.yml but missing from the committed lever source. livespec-dev-tooling-nxeg32 owns it (plan dev-host-test-gate-load); its implementation PR replaces this row.",
+    "work_item": "livespec-dev-tooling-nxeg32"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "contracts.md",
+    "heading": "## Check aggregate tail digest",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading: the tail failure-mode digest over a failed target whose output carries a pytest summary with failed tests, reporting failure_mode failing_tests with each node id, over a check-per-file-coverage refusal with every test passing, reporting coverage_below_threshold with each file, and over an unstructured failure, still reported without a structured failure_mode. livespec-dev-tooling-nvh3dl owns it (plan dev-host-test-gate-load); its implementation PR replaces this row.",
+    "work_item": "livespec-dev-tooling-nvh3dl"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a warn-default finding whose lever CI arms fails a just check run that sets no lever",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this scenario, running just check with no LIVESPEC_FAIL_IF_* variable set on a tree carrying a finding of a warn-default check whose lever CI arms, and asserting it fails with CI's check and failure_mode. livespec-dev-tooling-nxeg32 owns it (plan dev-host-test-gate-load); its implementation PR replaces this row.",
+    "work_item": "livespec-dev-tooling-nxeg32"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a lever armed by CI but missing from the committed lever source fails the parity check",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this scenario, driving the lever parity check against a ci.yml that arms a LIVESPEC_FAIL_IF_* lever the committed lever source does not name, and asserting the check fails naming that lever. livespec-dev-tooling-nxeg32 owns it (plan dev-host-test-gate-load); its implementation PR replaces this row.",
+    "work_item": "livespec-dev-tooling-nxeg32"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a coverage target that fails on failing tests is reported as failing tests in the tail digest",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this scenario, feeding the tail digest a check-per-file-coverage output on which three tests fail and asserting failure_mode failing_tests with all three node ids and no unstructured-failure line. livespec-dev-tooling-nvh3dl owns it (plan dev-host-test-gate-load); its implementation PR replaces this row.",
+    "work_item": "livespec-dev-tooling-nvh3dl"
   }
 ]

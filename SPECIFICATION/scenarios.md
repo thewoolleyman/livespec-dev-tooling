@@ -3173,3 +3173,33 @@ Then each mutant of F MUST be run against T1 and MUST NOT be run against T2
 And each mutant of G MUST be run against T2 and MUST NOT be run against T1
 
 And the report MUST name the test-selection method it used
+
+## Scenario: a warn-default finding whose lever CI arms fails a just check run that sets no lever
+
+```gherkin
+Given a tree carrying a finding of a warn-default check whose severity lever the CI workflow arms
+And an environment that sets no LIVESPEC_FAIL_IF_* variable
+When just check runs on that tree on a developer host, in a delegated gate Job, or in a factory sandbox
+Then the run MUST fail
+And it MUST name the same check and the same failure_mode that the CI job reports for that tree
+```
+
+## Scenario: a lever armed by CI but missing from the committed lever source fails the parity check
+
+```gherkin
+Given the CI workflow arms a LIVESPEC_FAIL_IF_* lever
+And the committed lever source does not name that lever
+When just check runs
+Then the lever parity check MUST fail
+And its finding MUST name that lever
+```
+
+## Scenario: a coverage target that fails on failing tests is reported as failing tests in the tail digest
+
+```gherkin
+Given a tree on which three tests fail when check-per-file-coverage runs the suite
+When just check runs on that tree
+Then the tail failure-mode digest MUST report check-per-file-coverage with failure_mode failing_tests
+And it MUST name the node id of each of the three failing tests
+And it MUST NOT report that target as having failed without a structured failure_mode
+```

@@ -2,6 +2,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "contracts.md",
+    "heading": "## Check aggregate tail digest",
+    "work_item": "livespec-dev-tooling-nvh3dl",
+    "first_seen": "2026-11-08"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "contracts.md",
     "heading": "## Config-value fast path at pre-commit",
     "work_item": "livespec-dev-tooling-hmztez",
     "first_seen": "2026-11-04"
@@ -33,6 +40,13 @@
     "heading": "## Expedited incident execution",
     "work_item": "livespec-dev-tooling-sh3vz3",
     "first_seen": "2026-11-03"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "contracts.md",
+    "heading": "## Gate-surface severity levers",
+    "work_item": "livespec-dev-tooling-nxeg32",
+    "first_seen": "2026-11-08"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -236,6 +250,13 @@
     "heading": "## Scenario: a commit from a host without the gates credential runs its replay tests locally and says so",
     "work_item": "livespec-dev-tooling-sewnfp",
     "first_seen": "2026-11-01"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a coverage target that fails on failing tests is reported as failing tests in the tail digest",
+    "work_item": "livespec-dev-tooling-nvh3dl",
+    "first_seen": "2026-11-08"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -446,6 +467,13 @@
     "heading": "## Scenario: a later master commit touching a culprit path blocks the revert",
     "work_item": "livespec-dev-tooling-joqff6",
     "first_seen": "2026-10-22"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a lever armed by CI but missing from the committed lever source fails the parity check",
+    "work_item": "livespec-dev-tooling-nxeg32",
+    "first_seen": "2026-11-08"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -768,6 +796,13 @@
     "heading": "## Scenario: a version-only release change still touches a test that names the changed file",
     "work_item": "livespec-dev-tooling-lbinx7",
     "first_seen": "2026-11-07"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a warn-default finding whose lever CI arms fails a just check run that sets no lever",
+    "work_item": "livespec-dev-tooling-nxeg32",
+    "first_seen": "2026-11-08"
   },
   {
     "spec_root": "SPECIFICATION",

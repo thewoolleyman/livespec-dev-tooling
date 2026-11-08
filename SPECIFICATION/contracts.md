@@ -624,6 +624,24 @@ In a repository with `delegated_gate = true`, on a host that is eligible under �
 - **Venue selector unavailable.** Before it chooses a venue, `gate-start` imports the venue selector shipped in `livespec_dev_tooling`, first through the checkout's project environment and then through `python3`. When neither interpreter can import it, `gate-start` MUST refuse before starting any gate and MUST write no run record. The refusal MUST name the venue selector and each interpreter it tried. It MUST name the remedy: sync or bootstrap that checkout's project environment, or refresh the worktree pack with `just install-worktree-pack` when the installed pack is older than the pinned package. It MUST exit with a code other than `70`, so a caller can tell a missing selector from a runner fault. When the selector runs but does not return a venue and a reason, the error MUST carry the selector's own standard error and MUST NOT discard it.
 - **Not converted.** A `git commit` or `git push` dispatched through `gate-start` MUST keep running its own hooks on the dev host. Those hooks carry their own delegation under §"Delegated pre-push gate", §"Delegated commit-time replay test runs" and §"Delegated pre-commit aggregate".
 
+## Gate-surface severity levers
+
+A warn-default check in the `just check` aggregate reports its findings as warnings unless its `LIVESPEC_FAIL_IF_*` severity lever is set, and this repository's CI workflow arms some of those levers. This section keeps every other gate surface judging those checks the way CI does.
+
+- **One committed source.** This repository MUST carry exactly one committed source that names the set of `LIVESPEC_FAIL_IF_*` levers its CI workflow arms for warn-default checks of the `just check` aggregate.
+- **Every gate surface arms the set.** A `just check` run MUST run each warn-default check whose lever is in that set with the lever armed, on every gate surface: a run on a developer host, a run in a delegated gate Job, and a run in a factory sandbox. This MUST hold whether or not the calling environment sets the lever. A finding of such a check MUST therefore fail each of those surfaces with the same check and the same `failure_mode` that CI reports.
+- **Parity with CI.** A check in the `just check` aggregate MUST fail, naming each lever, when the CI workflow arms a `LIVESPEC_FAIL_IF_*` lever that the committed source does not name, or the committed source names a lever that the CI workflow does not arm.
+- **The workflow file.** The CI workflow MAY keep its own lever lines rather than read the committed source; the parity check keeps the two equal.
+
+## Check aggregate tail digest
+
+The `just check` aggregate restates each failed target's failure at the tail of its output, because the target's own findings scroll off. This section states what that digest reports for a target whose failure is failing tests.
+
+- **Failing tests are named.** When a target of the aggregate fails and its captured output carries a pytest test summary naming failed tests, the tail digest MUST report that target's failure with `failure_mode` `failing_tests` and MUST name each failing test's node id.
+- **Coverage is named.** When `check-per-file-coverage` fails with every test passing because one or more files are below their coverage threshold, the tail digest MUST report that target's failure with `failure_mode` `coverage_below_threshold` and MUST name each such file.
+- **Order.** When a target's output carries both failed tests and files below threshold, the tail digest MUST report the `failing_tests` finding first.
+- **No invented cause.** A failed target whose output carries neither a structured finding nor a pytest test summary MUST still be reported as having failed without a structured `failure_mode`. The digest MUST NOT change any target's verdict, and every name it prints MUST come from that target's own output.
+
 ## Rule-26 mutation kill matrix
 
 livespec-dev-tooling ships a shared rule-26 mutation kill-matrix engine and report format that every fleet repository adopts through a thin per-repository recipe. Rule 26 (impatientprogramming.org/rules/#rule-26) keeps a test only if it catches something no other test catches. This contract governs the artefact that makes that judgement visible. It is distinct from `check_mutation`, which reports a kill rate and is unchanged by this section.
