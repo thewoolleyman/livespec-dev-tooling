@@ -1,0 +1,10 @@
+# {{ ansible_managed }}
+[Unit]
+Description=Report stale flake-retry reader passes
+
+[Service]
+Type=oneshot
+User={{ flake_retry_filer_user }}
+Group={{ flake_retry_filer_group }}
+WorkingDirectory={{ flake_retry_filer_repo_root }}
+ExecStart=/usr/local/bin/with-livespec-env.sh -- {{ flake_retry_filer_python }} -m livespec_dev_tooling.flake_retry_filer --state-dir {{ flake_retry_filer_state_dir }} --interval-seconds {{ flake_retry_filer_interval_seconds }} --check-staleness

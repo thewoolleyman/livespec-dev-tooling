@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import time
 from collections.abc import Sequence
 from pathlib import Path
 from typing import cast
@@ -35,6 +36,10 @@ _ROOT_FIX_PREFIX = "root-fix: "
 _DEFINITION_OF_DONE_REFERENCE = "## Testing approach"
 _PLUGIN_NAME = "livespec-orchestrator-beads-fabro"
 _PLUGIN_REGISTRY = Path(".claude") / "plugins" / "installed_plugins.json"
+_READER_NAME = "flake-retry-filer"
+_DEFAULT_STATE_DIR = Path("/var/lib/livespec/flake-retry-filer")
+_DEFAULT_INTERVAL_SECONDS = 900
+_COMPLETION_MARKER = "last-successful-pass"
 # Runs inside the registered orchestrator build so the filer calls the one shared
 # intake Definition-of-Ready primitive instead of copying its routing rules. Every
 # gate answer is true: a root fix is one coherent, test-verified, repo-targeted fix.
@@ -219,11 +224,41 @@ def _logger() -> structlog.stdlib.BoundLogger:
     return structlog.get_logger("flake_retry_filer")
 
 
+def _last_successful_pass(*, state_dir: Path) -> Path:
+    """Return the durable completion marker for the host-side reader."""
+    return state_dir / _COMPLETION_MARKER
+
+
+def _mark_successful_pass(*, state_dir: Path) -> None:
+    """Record a completed pass only after every required filing action succeeds."""
+    _ = state_dir.mkdir(parents=True, exist_ok=True)
+    _ = _last_successful_pass(state_dir=state_dir).touch()
+
+
+def _last_pass_age_seconds(*, state_dir: Path) -> int:
+    """Return the age of the last completed pass for the operator health check."""
+    completed_at = _last_successful_pass(state_dir=state_dir).stat().st_mtime
+    return max(0, int(time.time() - completed_at))
+
+
 def main(*, argv: Sequence[str] | None = None) -> int:
     """File missing root fixes from retry records below the selected repository root."""
     parser = argparse.ArgumentParser()
     _ = parser.add_argument("--repo-root", type=Path, default=Path.cwd())
+    _ = parser.add_argument("--state-dir", type=Path, default=_DEFAULT_STATE_DIR)
+    _ = parser.add_argument("--interval-seconds", type=int, default=_DEFAULT_INTERVAL_SECONDS)
+    _ = parser.add_argument("--check-staleness", action="store_true")
     arguments = parser.parse_args(argv)
+    if arguments.check_staleness:
+        age_seconds = _last_pass_age_seconds(state_dir=arguments.state_dir)
+        stale = age_seconds > arguments.interval_seconds
+        _ = _logger().warning(
+            "flake retry filer staleness",
+            reader=_READER_NAME,
+            age_seconds=age_seconds,
+            stale=stale,
+        )
+        return int(stale)
     plugin_root = registered_plugin_root(
         repo_root=arguments.repo_root, registry=Path.home() / _PLUGIN_REGISTRY
     )
@@ -232,6 +267,7 @@ def main(*, argv: Sequence[str] | None = None) -> int:
         runner=default_gate_command_runner,
         plugin_root=plugin_root,
     )
+    _mark_successful_pass(state_dir=arguments.state_dir)
     _ = _logger().info("filed flake root fixes", nodeids=filed, count=len(filed))
     return 0
 

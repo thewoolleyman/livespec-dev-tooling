@@ -81,6 +81,11 @@
     # alone. See its managed drop-in for the host measurement and rationale.
     - role: dev_host_compaction
       tags: [dev_host_compaction]
+    # The flake-retry filer consumes retry records under the governed checkout
+    # using the existing host credential wrapper. Its sibling timer makes a
+    # reader that stops completing visible rather than silently stale.
+    - role: flake_retry_filer
+      tags: [flake_retry_filer]
     # The independent released incident observer (livespec-dev-tooling-w7n3ad):
     # loopback listener first, then the tailnet front that publishes it from
     # this host's tailscale_serve_mappings. Both run under the credential

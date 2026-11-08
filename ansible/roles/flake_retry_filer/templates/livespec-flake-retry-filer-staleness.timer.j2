@@ -1,0 +1,12 @@
+# {{ ansible_managed }}
+[Unit]
+Description=Check the flake-retry reader completion age
+
+[Timer]
+OnBootSec=3min
+OnUnitActiveSec=5min
+Persistent=true
+Unit={{ flake_retry_filer_staleness_service }}
+
+[Install]
+WantedBy=timers.target

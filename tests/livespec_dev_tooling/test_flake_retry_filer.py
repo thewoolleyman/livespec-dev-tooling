@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -235,6 +236,65 @@ def test_the_host_cli_reports_the_nodeids_it_files(*, monkeypatch: pytest.Monkey
     monkeypatch.setattr(filer, "registered_plugin_root", _fixed_plugin_root)
 
     assert filer.main(argv=["--repo-root", "/tmp/retry-reader"]) == 0
+
+
+def test_the_host_cli_marks_a_completed_reader_pass(
+    *, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A timer invocation leaves durable evidence that the reader completed."""
+    filer = importlib.import_module("livespec_dev_tooling.flake_retry_filer")
+    monkeypatch.setattr(filer, "file_root_fixes", _one_filed_nodeid)
+    monkeypatch.setattr(filer, "registered_plugin_root", _fixed_plugin_root)
+    state_dir = tmp_path / "reader-state"
+
+    assert (
+        filer.main(argv=["--repo-root", str(tmp_path / "repo"), "--state-dir", str(state_dir)]) == 0
+    )
+    assert (state_dir / "last-successful-pass").is_file()
+
+
+def test_the_host_cli_names_the_reader_and_age_when_its_pass_is_stale(
+    *, capsys: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
+    """A separate health invocation makes a dead reader visible to operators."""
+    filer = importlib.import_module("livespec_dev_tooling.flake_retry_filer")
+    state_dir = tmp_path / "reader-state"
+    _ = state_dir.mkdir()
+    marker = state_dir / "last-successful-pass"
+    _ = marker.touch()
+    os.utime(marker, (0, 0))
+
+    assert (
+        filer.main(
+            argv=[
+                "--state-dir",
+                str(state_dir),
+                "--interval-seconds",
+                "60",
+                "--check-staleness",
+            ]
+        )
+        == 1
+    )
+    output = capsys.readouterr().err
+    assert "flake-retry-filer" in output
+    assert "age_seconds" in output
+
+
+def test_the_dev_host_role_arms_the_reader_and_its_staleness_signal() -> None:
+    """The reader is an unattended host service, never a remembered manual command."""
+    role = _REPO_ROOT / "ansible" / "roles" / "flake_retry_filer"
+    tasks = (role / "tasks" / "main.yml").read_text(encoding="utf-8")
+    reader_service = (role / "templates" / "livespec-flake-retry-filer.service.j2").read_text(
+        encoding="utf-8"
+    )
+    staleness_service = (
+        role / "templates" / "livespec-flake-retry-filer-staleness.service.j2"
+    ).read_text(encoding="utf-8")
+
+    assert "Enable and start the flake-retry filer timers" in tasks
+    assert "/usr/local/bin/with-livespec-env.sh" in reader_service
+    assert "--check-staleness" in staleness_service
 
 
 def test_each_filed_root_fix_is_routed_through_intake_by_its_own_id(*, tmp_path: Path) -> None:
