@@ -22,6 +22,11 @@ def query():
     )
 
 
+def ordinary_action_query():
+    """The exact failed master run whose next action needs an owner."""
+    return dict(repository="owner/repo", head_sha="b" * 40, run_id=19)
+
+
 def boundary(**changes):
     return module.CiAuthorityBoundary(
         **(
@@ -198,3 +203,25 @@ def test_a_provenance_query_with_an_extra_field_is_refused(monkeypatch):
     calls = wire(monkeypatch, raw=b"{}")
     assert boundary().provenance(query=provenance_query() | {"extra": "x"}) is False
     assert calls == []
+
+
+@pytest.mark.parametrize("status", ["ordinary", "incident-owned"])
+def test_ordinary_action_returns_only_an_exact_owner_answer(monkeypatch, status):
+    """The reconciler may act only after the observer echoes this exact run."""
+    sent = ordinary_action_query()
+    wire(
+        monkeypatch,
+        raw=json.dumps(
+            {
+                "schema": 1,
+                "status": status,
+                "reason": "controlled fixture reason",
+                "query": sent,
+            }
+        ).encode(),
+    )
+
+    result = boundary().ordinary_action(query=sent)
+
+    assert result.status == status
+    assert result.reason == "controlled fixture reason"
