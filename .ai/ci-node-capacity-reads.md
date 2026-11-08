@@ -62,7 +62,13 @@ allocatable.
   `k3s_config`, HOST_VARS.md "system.slice CPU weight",
   `livespec-dev-tooling-cetudy`). `poweredge-xubuntu` declares 1000, which
   entitles `system.slice` to about 1000/4013 x 72, or 17.9 CPUs, under full
-  contention. A daemon-reload applies it with no k3s restart, and an empty
+  contention. The agents `gmktec-xubuntu` and `hp-xubuntu` declare 1000 too: on
+  2026-11-08 their `system.slice` read 100 against `kubepods.slice` 1250 (32
+  CPUs) and 567 (16 CPUs), about 2 CPUs each, and on gmktec 17 fabro run
+  clients lost their event stream at 08:25Z while the Fabro servers, tailscaled
+  and k3s-agent starved in it. The shape is general: any node whose kubelet
+  uses the systemd driver weights `kubepods.slice` from allocatable CPU, so
+  read both weights before reasoning about a node's daemons. A daemon-reload applies it with no k3s restart, and an empty
   value removes it. `k3s_config_cpu_weight` cannot do this, because a unit's
   weight only orders units inside `system.slice`.
 - CFS weights and kubelet reservations are SHARES: they only decide who wins
