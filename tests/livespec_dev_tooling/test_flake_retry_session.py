@@ -463,6 +463,91 @@ def test_a_closure_module_that_cannot_be_parsed_means_touched(*, tmp_path: Path)
     )
 
 
+def test_a_segmented_path_literal_matches_only_its_full_named_directory(*, tmp_path: Path) -> None:
+    """A shared ancestor alone does not touch a path assembled segment by segment."""
+    plugin = importlib.import_module("livespec_dev_tooling.flake_retry")
+    test_path = tmp_path / "test_gate.py"
+    _ = test_path.write_text(
+        "from pathlib import Path\n"
+        "_ROOT = Path(__file__).resolve().parents[2]\n"
+        "_GATE_SCRIPT = (\n"
+        "    _ROOT\n"
+        "    / 'ci-runner'\n"
+        "    / 'k3s'\n"
+        "    / 'phase2'\n"
+        "    / 'gates'\n"
+        "    / 'render-gate-job-exit-tests.sh'\n"
+        ")\n",
+        encoding="utf-8",
+    )
+
+    def marker(changed: str) -> object:
+        return plugin.retry_marker_for(
+            repo_root=tmp_path, test_path=test_path, change_paths={Path(changed)}
+        )
+
+    assert marker("ci-runner/k3s/phase2/factory/DERIVATION.md") == {
+        "reruns": 3,
+        "reruns_delay": 60,
+    }
+    assert marker("ci-runner/k3s/phase2/gates/render-gate-job-exit-tests.sh") is None
+    assert marker("ci-runner/k3s/phase2/gates/other.sh") is None
+
+
+def test_an_existing_segmented_directory_does_not_name_its_parent(*, tmp_path: Path) -> None:
+    """The root conftest's vendor directory does not withhold unrelated retries."""
+    plugin = importlib.import_module("livespec_dev_tooling.flake_retry")
+    vendor = tmp_path / "livespec_dev_tooling" / "_vendor" / "structlog"
+    vendor.mkdir(parents=True)
+    _ = (vendor / "__init__.py").write_text("", encoding="utf-8")
+    _ = (tmp_path / "conftest.py").write_text(
+        "from pathlib import Path\n"
+        "_VENDOR_DIR = (\n"
+        "    Path(__file__).resolve().parent.parent\n"
+        "    / 'livespec_dev_tooling'\n"
+        "    / '_vendor'\n"
+        ")\n",
+        encoding="utf-8",
+    )
+    tests = tmp_path / "tests"
+    tests.mkdir()
+    test_path = tests / "test_target.py"
+    _ = test_path.write_text("VALUE = 1\n", encoding="utf-8")
+
+    def marker(changed: str) -> object:
+        return plugin.retry_marker_for(
+            repo_root=tmp_path, test_path=test_path, change_paths={Path(changed)}
+        )
+
+    assert marker("livespec_dev_tooling/pre_commit_delegate.py") == {
+        "reruns": 3,
+        "reruns_delay": 60,
+    }
+    assert marker("livespec_dev_tooling/_vendor/structlog/__init__.py") is None
+
+
+def test_a_partly_dynamic_path_expression_means_touched(*, tmp_path: Path) -> None:
+    """A path expression with a dynamic segment cannot safely receive a retry."""
+    plugin = importlib.import_module("livespec_dev_tooling.flake_retry")
+    test_path = tmp_path / "test_dynamic.py"
+    _ = test_path.write_text(
+        "from pathlib import Path\n"
+        "_ROOT = Path(__file__).resolve().parents[2]\n"
+        "segment = 'gates'\n"
+        "_TARGET = _ROOT / 'ci-runner' / segment\n",
+        encoding="utf-8",
+    )
+
+    assert (
+        plugin.retry_marker_for(
+            repo_root=tmp_path,
+            test_path=test_path,
+            change_paths={Path("README.md")},
+        )
+        is None
+    )
+
+
 def test_a_change_to_the_plugin_itself_disables_every_retry(*, tmp_path: Path) -> None:
     """Touching the flake-retry plugin turns retries off for the whole session."""
     plugin = importlib.import_module("livespec_dev_tooling.flake_retry")
