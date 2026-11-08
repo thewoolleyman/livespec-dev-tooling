@@ -15,8 +15,10 @@
 #     allocatable CPU: one third of it, at about 2.73 CPUs per slot (the fleet's
 #     sizing rule, ci-runner/k3s/phase2/kueue/DERIVATION.md), at least one.
 #   - factory: when the factory class declares it, ci-runner.io/factory=true.
-#   - gate: when the gate class declares it, the class label the gates worker
-#     flavor selects is already on every worker; eligibility is reported.
+#   - gate: when any gate line declares it (the default or a repository's own),
+#     the node gets homelab-worker.livespec.dev/gate-share-millicores, its
+#     one-third CPU share; ci-runner/k3s/phase2/kueue/converge-worker-queues.sh
+#     turns that into whole gates on the worker flavor it adds to gates-cq.
 # A class that does not declare the node's architecture is NOT enrolled, its
 # enrollment is removed if present, and it is named with what it lacks.
 # Only a node carrying homelab-worker.livespec.dev/class=worker is touched.
@@ -84,8 +86,16 @@ else
   say "CI: NOT enrolled: no scale set in $(basename "$conf") declares $arch"
 fi
 
-# The worker queues' quota is the enrolled workers' churn slots, so enrolling
-# or un-enrolling reconciles it in the same operation (v154).
+if declares gate; then
+  kubectl label node "$node" "homelab-worker.livespec.dev/gate-share-millicores=$share" --overwrite >/dev/null
+  say "gate: enrolled (share ${share}m CPU)"
+else
+  kubectl label node "$node" homelab-worker.livespec.dev/gate-share-millicores- >/dev/null 2>&1 || true
+  say "gate: NOT enrolled: $(lacks gate gate)"
+fi
+
+# The worker queues' quota is the enrolled workers' churn slots and gate shares,
+# so enrolling or un-enrolling reconciles it in the same operation (v154).
 "$worker_queues"
 
 if declares factory python-agent; then
@@ -94,10 +104,4 @@ if declares factory python-agent; then
 else
   kubectl label node "$node" ci-runner.io/factory- >/dev/null 2>&1 || true
   say "factory: NOT enrolled: $(lacks factory python-agent)"
-fi
-
-if declares gate gate; then
-  say "gate: eligible (share ${share}m CPU)"
-else
-  say "gate: NOT enrolled: $(lacks gate gate)"
 fi

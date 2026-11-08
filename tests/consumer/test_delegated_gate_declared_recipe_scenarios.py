@@ -1649,6 +1649,35 @@ def test_the_gate_job_requires_an_architecture_its_image_publishes(
     )
 
 
+def _required_gate_arches(*, manifest: str) -> list[str]:
+    affinity = yaml.safe_load(manifest)["spec"]["template"]["spec"]["affinity"]["nodeAffinity"]
+    [term] = affinity["requiredDuringSchedulingIgnoredDuringExecution"]["nodeSelectorTerms"]
+    [expr] = term["matchExpressions"]
+    return list(expr["values"])
+
+
+def test_a_repositorys_own_gate_line_decides_its_gates_and_no_other_repositorys(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A gate's image is the GATED repository's pin, so its own line wins.
+
+    The list is mocked. The control arm declares a line for ANOTHER repository
+    only, and the repository under test still takes the `gate gate` default, so
+    the lookup is proved keyed on the gated repository rather than on whichever
+    gate line comes first (livespec-dev-tooling-ko26ez.7).
+    """
+    repo = _a_consumer_repository(root=tmp_path / "repo", declaration="")
+    conf = tmp_path / "workload-arch.conf"
+    monkeypatch.setenv("WORKLOAD_ARCH_CONF", str(conf))
+    name = _ORIGIN.rsplit("/", 1)[-1].removesuffix(".git")
+
+    conf.write_text(f"gate gate amd64 lacks\ngate not-{name} amd64,arm64 none\n", encoding="utf-8")
+    assert _required_gate_arches(manifest=_rendered_for(repo_root=repo)) == ["amd64"]
+
+    conf.write_text(f"gate {name} amd64,arm64 none\ngate gate amd64 lacks\n", encoding="utf-8")
+    assert _required_gate_arches(manifest=_rendered_for(repo_root=repo)) == ["amd64", "arm64"]
+
+
 def test_a_gate_class_with_no_declared_architecture_is_not_rendered(
     *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

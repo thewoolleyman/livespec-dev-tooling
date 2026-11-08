@@ -676,7 +676,14 @@ substitute GATED_REPOSITORY  "${gated_repository}"
 substitute TREE_HASH         "${tree_hash}"
 substitute IMAGE             "${image}"
 substitute SOURCE_URL        "${source_url}"
-gate_arches="$(awk '$1 == "gate" && $2 == "gate" { print $3; exit }' "${WORKLOAD_ARCH_CONF}" 2>/dev/null || true)"
+# The gate image is the GATED repository's own pin, so its line is looked up by
+# that repository's name first (workload-arch.conf `gate <repository>`), then the
+# `gate gate` default every repository without its own line takes.
+gate_class_name="${gated_repository##*/}"
+[ -n "${gate_class_name}" ] || gate_class_name="${repo}"
+gate_arches="$(awk -v n="${gate_class_name}" '$1 == "gate" && $2 == n && n != "gate" { print $3; exit }' "${WORKLOAD_ARCH_CONF}" 2>/dev/null || true)"
+[ -n "${gate_arches}" ] ||
+  gate_arches="$(awk '$1 == "gate" && $2 == "gate" { print $3; exit }' "${WORKLOAD_ARCH_CONF}" 2>/dev/null || true)"
 [ -n "${gate_arches}" ] || {
   echo "FATAL: the gate class declares no architecture in ${WORKLOAD_ARCH_CONF}; a gate with no declared architecture would be placed anywhere" >&2
   exit 2

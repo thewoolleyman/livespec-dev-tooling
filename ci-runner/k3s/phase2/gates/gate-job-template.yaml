@@ -98,9 +98,11 @@ spec:
         nodeAffinity:
           # REQUIRED: the gate image is the gated repository's CI container pin,
           # so the Job may only run on an architecture that image publishes,
-          # read from the one declared per-class list (workload-arch.conf, the
-          # `gate` line; livespec-dev-tooling-ko26ez.6). An arm64 container
-          # worker never receives a gate whose image is amd64-only.
+          # read from the one declared per-class list (workload-arch.conf: the
+          # gated repository's own `gate <repository>` line, else `gate gate`;
+          # livespec-dev-tooling-ko26ez.6/.7). An arm64 container worker never
+          # receives a gate whose image is amd64-only, and gets the others only
+          # as overflow through gates-cq's last flavor (kueue/worker/).
           requiredDuringSchedulingIgnoredDuringExecution:
             nodeSelectorTerms:
               - matchExpressions:
