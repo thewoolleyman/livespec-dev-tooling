@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib
+import json
 import subprocess
 from collections.abc import Callable
 from pathlib import Path
@@ -15,6 +16,27 @@ __all__: list[str] = []
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _MODULE_PATH = _REPO_ROOT / "livespec_dev_tooling" / "fleet_test_baseline.py"
+
+# `cargo nextest list --message-format json` prints ONE JSON document whose
+# `test-count` is nextest's own total (shape read from cargo-nextest 0.9.151).
+_NEXTEST_LIST_DOCUMENT = (
+    json.dumps(
+        {
+            "rust-build-meta": {},
+            "rust-suites": {
+                "crate-a": {
+                    "testcases": {
+                        "one": {"kind": "test", "ignored": False},
+                        "two": {"kind": "test", "ignored": False},
+                        "slow": {"kind": "test", "ignored": True},
+                    }
+                }
+            },
+            "test-count": 3,
+        }
+    )
+    + "\n"
+)
 
 
 def _baseline() -> ModuleType:
@@ -85,14 +107,7 @@ def test_rust_and_shell_repositories_join_python_in_one_fleet_total(
         assert cwd in {python_repository, rust_repository, shell_repository}
         if command[:3] == ("cargo", "nextest", "list"):
             return subprocess.CompletedProcess(
-                args=command,
-                returncode=0,
-                stdout=(
-                    '{"type":"test","test_name":"one"}\n'
-                    '{"type":"test","test_name":"two"}\n'
-                    '{"type":"test","test_name":"three"}\n'
-                ),
-                stderr="",
+                args=command, returncode=0, stdout=_NEXTEST_LIST_DOCUMENT, stderr=""
             )
         if command[:3] == ("cargo", "nextest", "run"):
             return subprocess.CompletedProcess(args=command, returncode=0, stdout="", stderr="")
@@ -193,7 +208,7 @@ def test_a_red_test_command_is_measured_and_the_fleet_run_continues(
         assert cwd in paths
         if command[:3] == ("cargo", "nextest", "list"):
             return subprocess.CompletedProcess(
-                args=command, returncode=0, stdout='{"type":"test"}\n', stderr=""
+                args=command, returncode=0, stdout=_NEXTEST_LIST_DOCUMENT, stderr=""
             )
         if command[0] == "bash":
             executed_scripts.append(command[1])
@@ -221,7 +236,7 @@ def test_a_red_test_command_is_measured_and_the_fleet_run_continues(
     assert executed_scripts == ["first.test.sh", "second.test.sh", "third.test.sh"]
     assert rows["red-shell-suite"]["test_count"] == 3
     assert rows["red-shell-suite"]["test_exit_status"] == 3
-    assert report["fleet_totals"]["test_count"] == 7 + 1 + 3
+    assert report["fleet_totals"]["test_count"] == 7 + 3 + 3
     assert report["fleet_totals"]["runtime_seconds"] == sum(
         row["runtime_seconds"] for row in report["repositories"]
     )

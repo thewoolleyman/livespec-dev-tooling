@@ -2563,5 +2563,157 @@
     "test": "TODO",
     "reason": "Spec-first: a real test at the integration tier or above is owed for this scenario, feeding the tail digest a check-per-file-coverage output on which three tests fail and asserting failure_mode failing_tests with all three node ids and no unstructured-failure line. livespec-dev-tooling-nvh3dl owns it (plan dev-host-test-gate-load); its implementation PR replaces this row.",
     "work_item": "livespec-dev-tooling-nvh3dl"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a runner pod that requests no churn slot is placed by the default scheduler",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) is owed for this scenario, rendering the scale-set values of a set whose runner pods request no churn slot and asserting the pod names the default scheduler and no node's churn-slot use changes. livespec-dev-tooling-mtvxde owns it (plan ci-runtime-and-cost); the implementation PR that ships it replaces this row.",
+    "work_item": "livespec-dev-tooling-mtvxde"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a runner pod stranded by a down runner scheduler is handed to the default scheduler",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) is owed for this scenario, driving the fail-open reconciler with a zero-ready runner scheduler past its grace and a Pending ungated runner pod, and asserting the runner is re-pointed at the default scheduler, the pod deleted and the scale-set template untouched. livespec-dev-tooling-mtvxde owns it (plan ci-runtime-and-cost); the implementation PR that ships it replaces this row.",
+    "work_item": "livespec-dev-tooling-mtvxde"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a runner pod still gated by Kueue is left alone during a scheduler outage",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) is owed for this scenario, driving the fail-open reconciler with a zero-ready runner scheduler and a runner pod that still carries a scheduling gate, and asserting it is not recreated. livespec-dev-tooling-mtvxde owns it (plan ci-runtime-and-cost); the implementation PR that ships it replaces this row.",
+    "work_item": "livespec-dev-tooling-mtvxde"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a failed read of the runner scheduler changes nothing",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) is owed for this scenario, driving the fail-open reconciler with a failing Deployment read and asserting no runner or pod changes and the run exits non-zero. livespec-dev-tooling-mtvxde owns it (plan ci-runtime-and-cost); the implementation PR that ships it replaces this row.",
+    "work_item": "livespec-dev-tooling-mtvxde"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a CI coverage consumer with no usable receipt fails by name and starts no test run",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) is owed for this scenario, running scripts/just/check-coverage.sh as the GitHub Actions consumer with a missing, data-mismatched and tree-mismatched receipt and asserting a named non-zero exit with no pytest process. livespec-dev-tooling-s2esff owns it (plan ci-runtime-and-cost); the implementation PR that ships it replaces this row.",
+    "work_item": "livespec-dev-tooling-s2esff"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a CI coverage consumer with a matching receipt judges the producer's data",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) is owed for this scenario, running scripts/just/check-coverage.sh as the GitHub Actions consumer with a matching receipt and asserting it judges the producer's data at 100 percent with no pytest process. livespec-dev-tooling-s2esff owns it (plan ci-runtime-and-cost); the implementation PR that ships it replaces this row.",
+    "work_item": "livespec-dev-tooling-s2esff"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a local coverage run with no reusable data still measures",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) is owed for this scenario, running just check-coverage outside GitHub Actions with no reusable data and asserting it measures the clean suite. livespec-dev-tooling-s2esff owns it (plan ci-runtime-and-cost); the implementation PR that ships it replaces this row.",
+    "work_item": "livespec-dev-tooling-s2esff"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a commit that changes only a workflow runs the tests that read ci.yml",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) is owed for this scenario, staging a workflow-only change against a failing ci.yml-reading test and asserting the pre-commit gate runs those tests and refuses the commit. livespec-dev-tooling-cj5dg5 owns it (plan ci-runtime-and-cost); the implementation PR that ships it replaces this row.",
+    "work_item": "livespec-dev-tooling-cj5dg5"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: the coverage receipt is stamped over the final rewritten data",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) is owed for this scenario, running the real per-file coverage report over a fixture that measures a deleted source file and asserting the receipt equals coverage-reuse-id.sh over the final .coverage. livespec-dev-tooling-cj5dg5 owns it (plan ci-runtime-and-cost); the implementation PR that ships it replaces this row.",
+    "work_item": "livespec-dev-tooling-cj5dg5"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a coverage consumer that did not reuse reaches the maintainer",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) is owed for this scenario, feeding the scheduled detector a mandatory coverage consumer outcome other than reused and asserting a maintainer notification naming repository, run, job and outcome. livespec-dev-tooling-akljpy owns it (plan ci-runtime-and-cost); the implementation PR that ships it replaces this row.",
+    "work_item": "livespec-dev-tooling-akljpy"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a coverage consumer with no recorded outcome reaches the maintainer",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) is owed for this scenario, feeding the scheduled detector a master run whose mandatory coverage consumer job recorded no outcome and asserting a notification naming repository and job. livespec-dev-tooling-akljpy owns it (plan ci-runtime-and-cost); the implementation PR that ships it replaces this row.",
+    "work_item": "livespec-dev-tooling-akljpy"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a CI duration step change reaches the maintainer, and a runner-lane move does not",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) is owed for this scenario, feeding the scheduled detector a same-label duration step change and a label-change-only move and asserting only the first notifies. livespec-dev-tooling-akljpy owns it (plan ci-runtime-and-cost); the implementation PR that ships it replaces this row.",
+    "work_item": "livespec-dev-tooling-akljpy"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a stale detector reaches the maintainer",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) is owed for this scenario, evaluating staleness with the detector's last success older than twice its interval and asserting a notification naming it. livespec-dev-tooling-akljpy owns it (plan ci-runtime-and-cost); the implementation PR that ships it replaces this row.",
+    "work_item": "livespec-dev-tooling-akljpy"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a workflow declaring two container images fails its own CI",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) is owed for this scenario, running the shared check over a ci.yml declaring two distinct job container images and asserting it fails naming each image and line. livespec-dev-tooling-kzhduc owns it (plan ci-runtime-and-cost); the implementation PR that ships it replaces this row.",
+    "work_item": "livespec-dev-tooling-kzhduc"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a workflow declaring one container image passes",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) is owed for this scenario, running the shared check over a ci.yml whose job container images are one reference and asserting it passes. livespec-dev-tooling-kzhduc owns it (plan ci-runtime-and-cost); the implementation PR that ships it replaces this row.",
+    "work_item": "livespec-dev-tooling-kzhduc"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a workflow GitHub cannot parse is refused at every gate",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) is owed for this scenario, staging and pushing an unparseable workflow file and asserting the pre-commit and pre-push gates and the CI check each refuse naming the file and line. livespec-dev-tooling-f3q7r7 owns it (plan ci-runtime-and-cost); the implementation PR that ships it replaces this row.",
+    "work_item": "livespec-dev-tooling-f3q7r7"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a new runner release opens one bump across every scale set",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) is owed for this scenario, running the pin-freshness surface against a newer actions/runner release and asserting one pull request moves every scale-set values file together. livespec-dev-tooling-jkwzwv owns it (plan ci-runtime-and-cost); the implementation PR that ships it replaces this row.",
+    "work_item": "livespec-dev-tooling-jkwzwv"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: an aged runner pin raises a trigger",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) is owed for this scenario, evaluating the fleet trigger with a pin superseded for more than 14 days and asserting it fires naming both versions and the age. livespec-dev-tooling-jkwzwv owns it (plan ci-runtime-and-cost); the implementation PR that ships it replaces this row.",
+    "work_item": "livespec-dev-tooling-jkwzwv"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: two scale sets pinning different runner versions fail the check",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) is owed for this scenario, running the check over two values files pinning different actions/runner versions and asserting it fails. livespec-dev-tooling-jkwzwv owns it (plan ci-runtime-and-cost); the implementation PR that ships it replaces this row.",
+    "work_item": "livespec-dev-tooling-jkwzwv"
   }
 ]

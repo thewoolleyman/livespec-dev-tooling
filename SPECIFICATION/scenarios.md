@@ -2448,13 +2448,52 @@ When CI runner pods are admitted one after another
 Then the node MUST take runner pods until all of its declared churn slots are in use
 And a CPU or memory request of a non-runner pod on it MUST NOT stop a runner pod from being placed there while it has a free churn slot
 
+## Scenario: a runner pod that requests no churn slot is placed by the default scheduler
+
+Given a runner scale set whose runner pods request no `ci-runner.io/churn-slot`
+
+When one of its runner pods is created
+
+Then the pod MUST name the default scheduler
+And no node's churn-slot use MUST change
+
+## Scenario: a runner pod stranded by a down runner scheduler is handed to the default scheduler
+
+Given the runner scheduler has had no ready replica for 60 seconds
+And a runner pod that names it is Pending with no node and no scheduling gate
+
+When the fail-open reconciler next runs
+
+Then the pod's runner MUST be re-pointed at the default scheduler and the pod deleted
+And the runner controller MUST recreate the pod under the same runner name, naming the default scheduler
+And it MUST be placed on a node with a free churn slot
+And the scale set's own template MUST stay unchanged
+
+## Scenario: a runner pod still gated by Kueue is left alone during a scheduler outage
+
+Given the runner scheduler has had no ready replica for 60 seconds
+And a runner pod that names it still carries a scheduling gate
+
+When the fail-open reconciler runs
+
+Then that pod MUST NOT be recreated
+
+## Scenario: a failed read of the runner scheduler changes nothing
+
+Given the runner scheduler's Deployment cannot be read because the API call failed
+
+When the fail-open reconciler runs
+
+Then no runner and no runner pod MUST change
+And the run MUST exit non-zero
+
 ## Scenario: runner pods select the committed runner scheduler profile and every other pod keeps the default profile
 
 Given the CI stack converge has applied the committed runner scheduler profile to the cluster
 
-When a CI runner pod, a factory sandbox pod and a gate pod are created
+When a CI runner pod that requests a `ci-runner.io/churn-slot`, a factory sandbox pod and a gate pod are created
 
-Then the CI runner pod MUST name the committed runner scheduler profile as its scheduler
+Then that CI runner pod MUST name the committed runner scheduler profile as its scheduler
 And the factory sandbox pod and the gate pod MUST be scheduled by the cluster's default scheduler profile
 And the cluster's default scheduler profile MUST carry the same plugin configuration it carried before the converge
 
@@ -3259,3 +3298,134 @@ Then the tail failure-mode digest MUST report check-per-file-coverage with failu
 And it MUST name the node id of each of the three failing tests
 And it MUST NOT report that target as having failed without a structured failure_mode
 ```
+
+## Scenario: a CI coverage consumer with no usable receipt fails by name and starts no test run
+
+Given the GitHub Actions coverage consumer is running
+And the receipt is missing, or its data digest or tree digest does not match
+
+When `scripts/just/check-coverage.sh` runs
+
+Then it MUST exit non-zero with a message naming the cause
+And it MUST NOT start a pytest process
+
+## Scenario: a CI coverage consumer with a matching receipt judges the producer's data
+
+Given the GitHub Actions coverage consumer is running
+And the receipt matches the downloaded data and the checkout
+
+When `scripts/just/check-coverage.sh` runs
+
+Then it MUST read the producer's data without starting a pytest process
+And it MUST exit zero at a 100 percent total and non-zero below it
+
+## Scenario: a local coverage run with no reusable data still measures
+
+Given `just check-coverage` runs outside GitHub Actions
+And no reusable coverage data is present
+
+When it runs
+
+Then it MUST run and measure the clean suite
+
+## Scenario: a commit that changes only a workflow runs the tests that read ci.yml
+
+Given a commit stages a change under `.github/workflows/` or `scripts/just/` and no `.py` file
+And a test that reads `.github/workflows/ci.yml` fails on the staged tree
+
+When the pre-commit gate runs
+
+Then it MUST run the test files that read `.github/workflows/ci.yml`
+And it MUST refuse the commit
+
+## Scenario: the coverage receipt is stamped over the final rewritten data
+
+Given a coverage fixture that measures a source file deleted before report time
+
+When the per-file coverage report runs over it
+
+Then the stamped receipt MUST equal `scripts/just/coverage-reuse-id.sh` over the final rewritten `.coverage`
+
+## Scenario: a coverage consumer that did not reuse reaches the maintainer
+
+Given a fleet CI run whose mandatory coverage consumer job recorded an outcome other than `reused`
+
+When the scheduled detector runs
+
+Then it MUST raise a maintainer notification naming the repository, run, job and outcome within 30 minutes of that job's completion
+
+## Scenario: a coverage consumer with no recorded outcome reaches the maintainer
+
+Given a repository whose master CI runs of the last 24 hours include a mandatory coverage consumer job with no recorded reuse outcome
+
+When the scheduled detector runs
+
+Then it MUST raise a maintainer notification naming the repository and the job
+
+## Scenario: a CI duration step change reaches the maintainer, and a runner-lane move does not
+
+Given a fleet CI job whose 90th-percentile duration over the last 24 hours exceeds its 90th-percentile duration over the preceding 7 days by more than a factor of 2 and by more than 5 minutes, for the same job name and runner label
+
+When the scheduled detector runs
+
+Then it MUST raise a maintainer notification naming the job and both figures
+And a job whose duration changed only because its runner label changed MUST NOT raise one
+
+## Scenario: a stale detector reaches the maintainer
+
+Given the detector's last successful run is older than twice its schedule interval
+
+When staleness is evaluated
+
+Then a maintainer notification MUST name the stale detector
+
+## Scenario: a workflow declaring two container images fails its own CI
+
+Given a pull request whose merge with the default branch makes `.github/workflows/ci.yml` declare two distinct job `container:` images
+
+When its CI runs
+
+Then the check MUST fail, naming each distinct image and its line
+And the required all-green aggregate job MUST fail
+
+## Scenario: a workflow declaring one container image passes
+
+Given every job `container:` image in `.github/workflows/ci.yml` is the same reference
+
+When the check runs
+
+Then it MUST pass
+
+## Scenario: a workflow GitHub cannot parse is refused at every gate
+
+Given a `.github/workflows/*.yml` file that actionlint reports as unparseable
+
+When it is committed, pushed, or carried by a pull request
+
+Then the pre-commit gate MUST refuse the commit, naming the file, the line and the syntax-check message
+And the pre-push gate MUST refuse the push, naming the file and the line
+And a gating CI job MUST fail, naming the file and the line
+
+## Scenario: a new runner release opens one bump across every scale set
+
+Given a newer actions/runner release than the pinned version is published
+
+When the pin-freshness surface runs
+
+Then it MUST open one pull request moving every scale-set values file's runner image, and, where the file carries them, its container-hook path and preseeded-externals version, together
+
+## Scenario: an aged runner pin raises a trigger
+
+Given the pinned actions/runner version has been superseded for longer than 14 days
+
+When the fleet trigger evaluates
+
+Then it MUST fire naming the pinned version, the newest release and the age
+
+## Scenario: two scale sets pinning different runner versions fail the check
+
+Given two values files in `ci-runner/k3s/phase2/arc` or `ci-runner/k3s/arc` pin different actions/runner versions
+
+When `just check` runs
+
+Then it MUST fail

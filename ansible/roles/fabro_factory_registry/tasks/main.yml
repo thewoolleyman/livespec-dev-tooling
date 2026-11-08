@@ -102,6 +102,23 @@
       loop_control:
         label: "{{ item.key }}"
 
+    - name: Refuse a Fabro factory whose resolved instance declares no concurrency limit
+      ansible.builtin.assert:
+        that:
+          - >-
+            ((hostvars[item.value.host].fabro_server_instances
+              | selectattr('unit_name', 'equalto', item.value.unit_name)
+              | first).max_concurrent_runs) is defined
+        fail_msg: >-
+          the factory {{ item.key }} resolves to the unit {{ item.value.unit_name }}
+          on {{ item.value.host }}, whose fabro_server_instances mapping declares
+          no max_concurrent_runs. The fleet launcher limit must be rendered from
+          the same declared value that the Fabro server settings use.
+        success_msg: the factory {{ item.key }} resolves to a declared concurrency limit
+      loop: "{{ fabro_factory_registry_entries }}"
+      loop_control:
+        label: "{{ item.key }}"
+
     - name: Refuse a Fabro factory whose docker_host is blank
       ansible.builtin.assert:
         that:
@@ -146,8 +163,8 @@
   ansible.builtin.file:
     path: "{{ fabro_factory_registry_dest | dirname }}"
     state: directory
-    owner: root
-    group: root
+    owner: "{{ fabro_factory_registry_owner }}"
+    group: "{{ fabro_factory_registry_group }}"
     mode: "0755"
   become: true
 
@@ -163,7 +180,28 @@
   ansible.builtin.copy:
     content: "{{ fabro_factory_registry_resolved | to_nice_json }}\n"
     dest: "{{ fabro_factory_registry_dest }}"
-    owner: root
-    group: root
+    owner: "{{ fabro_factory_registry_owner }}"
+    group: "{{ fabro_factory_registry_group }}"
     mode: "0644"
   become: true
+
+- name: Create the directory this host's Fabro fleet limits live in
+  ansible.builtin.file:
+    path: "{{ fabro_factory_registry_limits_dir }}"
+    state: directory
+    owner: "{{ fabro_factory_registry_owner }}"
+    group: "{{ fabro_factory_registry_group }}"
+    mode: "0755"
+  become: true
+
+- name: Install each Fabro factory's fleet limit
+  ansible.builtin.template:
+    src: max_concurrent_runs.j2
+    dest: "{{ fabro_factory_registry_limits_dir }}/{{ item.key }}.max_concurrent_runs"
+    owner: "{{ fabro_factory_registry_owner }}"
+    group: "{{ fabro_factory_registry_group }}"
+    mode: "0644"
+  become: true
+  loop: "{{ fabro_factory_registry_entries }}"
+  loop_control:
+    label: "{{ item.key }}"

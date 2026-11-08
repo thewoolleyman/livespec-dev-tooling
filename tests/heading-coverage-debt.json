@@ -156,6 +156,27 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: a CI coverage consumer with a matching receipt judges the producer's data",
+    "work_item": "livespec-dev-tooling-s2esff",
+    "first_seen": "2026-11-08"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a CI coverage consumer with no usable receipt fails by name and starts no test run",
+    "work_item": "livespec-dev-tooling-s2esff",
+    "first_seen": "2026-11-08"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a CI duration step change reaches the maintainer, and a runner-lane move does not",
+    "work_item": "livespec-dev-tooling-akljpy",
+    "first_seen": "2026-11-08"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: a CI job killed at Set up job by an action-download 429 is re-run with backoff",
     "work_item": "livespec-dev-tooling-cetyrq",
     "first_seen": "2026-11-03"
@@ -254,6 +275,27 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: a commit that changes only a workflow runs the tests that read ci.yml",
+    "work_item": "livespec-dev-tooling-cj5dg5",
+    "first_seen": "2026-11-08"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a coverage consumer that did not reuse reaches the maintainer",
+    "work_item": "livespec-dev-tooling-akljpy",
+    "first_seen": "2026-11-08"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a coverage consumer with no recorded outcome reaches the maintainer",
+    "work_item": "livespec-dev-tooling-akljpy",
+    "first_seen": "2026-11-08"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: a coverage target that fails on failing tests is reported as failing tests in the tail digest",
     "work_item": "livespec-dev-tooling-nvh3dl",
     "first_seen": "2026-11-08"
@@ -348,6 +390,13 @@
     "heading": "## Scenario: a factory node keeps its factory label across a control-plane reboot",
     "work_item": "livespec-dev-tooling-izlx4g",
     "first_seen": "2026-10-16"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a failed read of the runner scheduler changes nothing",
+    "work_item": "livespec-dev-tooling-mtvxde",
+    "first_seen": "2026-11-08"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -478,6 +527,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: a local coverage run with no reusable data still measures",
+    "work_item": "livespec-dev-tooling-s2esff",
+    "first_seen": "2026-11-08"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: a long suite-green run that keeps printing output is not ended",
     "work_item": "livespec-dev-tooling-t4rx4t",
     "first_seen": "2026-11-02"
@@ -537,6 +593,13 @@
     "heading": "## Scenario: a new execution target is admissible from one inventory entry",
     "work_item": "livespec-dev-tooling-hvfc6c",
     "first_seen": "2026-11-04"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a new runner release opens one bump across every scale set",
+    "work_item": "livespec-dev-tooling-jkwzwv",
+    "first_seen": "2026-11-08"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -660,6 +723,27 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: a runner pod still gated by Kueue is left alone during a scheduler outage",
+    "work_item": "livespec-dev-tooling-mtvxde",
+    "first_seen": "2026-11-08"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a runner pod stranded by a down runner scheduler is handed to the default scheduler",
+    "work_item": "livespec-dev-tooling-mtvxde",
+    "first_seen": "2026-11-08"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a runner pod that requests no churn slot is placed by the default scheduler",
+    "work_item": "livespec-dev-tooling-mtvxde",
+    "first_seen": "2026-11-08"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: a runner work volume on a runner-only node is provisioned under the profile's directory and starts unseeded",
     "work_item": "livespec-dev-tooling-zreev4",
     "first_seen": "2026-11-03"
@@ -719,6 +803,13 @@
     "heading": "## Scenario: a staged capacity value change commits on schema validation alone",
     "work_item": "livespec-dev-tooling-hmztez",
     "first_seen": "2026-11-04"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a stale detector reaches the maintainer",
+    "work_item": "livespec-dev-tooling-akljpy",
+    "first_seen": "2026-11-08"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -849,6 +940,27 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: a workflow GitHub cannot parse is refused at every gate",
+    "work_item": "livespec-dev-tooling-f3q7r7",
+    "first_seen": "2026-11-08"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a workflow declaring one container image passes",
+    "work_item": "livespec-dev-tooling-kzhduc",
+    "first_seen": "2026-11-08"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a workflow declaring two container images fails its own CI",
+    "work_item": "livespec-dev-tooling-kzhduc",
+    "first_seen": "2026-11-08"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: a workload is never scheduled onto a node whose architecture its image does not publish",
     "work_item": "livespec-dev-tooling-ko26ez.6",
     "first_seen": "2026-11-07"
@@ -859,6 +971,13 @@
     "heading": "## Scenario: an OOM-killed or unschedulable factory pod is visible with its reason and fires its trigger",
     "work_item": "livespec-dev-tooling-dfdiil",
     "first_seen": "2026-10-24"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: an aged runner pin raises a trigger",
+    "work_item": "livespec-dev-tooling-jkwzwv",
+    "first_seen": "2026-11-08"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -1115,6 +1234,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: the coverage receipt is stamped over the final rewritten data",
+    "work_item": "livespec-dev-tooling-cj5dg5",
+    "first_seen": "2026-11-08"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: the dev host capacity check alerts when /tmp passes its threshold",
     "work_item": "livespec-dev-tooling-tjldi2",
     "first_seen": "2026-11-01"
@@ -1181,5 +1307,12 @@
     "heading": "## Scenario: the whole-suite coverage run prints its thirty slowest test phases",
     "work_item": "livespec-dev-tooling-tt4w7h",
     "first_seen": "2026-11-01"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: two scale sets pinning different runner versions fail the check",
+    "work_item": "livespec-dev-tooling-jkwzwv",
+    "first_seen": "2026-11-08"
   }
 ]

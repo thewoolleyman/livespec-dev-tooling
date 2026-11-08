@@ -89,6 +89,10 @@ _ROLE_DOC = _ROLE / "HOST_VARS.md"
 
 _DEFAULT_REGISTRY_PATH = "/etc/livespec/fabro-factories.json"
 _DEST_VAR = "fabro_factory_registry_dest"
+_EXECUTING_USER_OWNERSHIP = {
+    "fabro_factory_registry_owner": str(os.getuid()),
+    "fabro_factory_registry_group": str(os.getgid()),
+}
 _INSTALL_TASK = "Install this host's Fabro factory registry"
 _RESOLVED_FACT = "fabro_factory_registry_resolved"
 _TIMEOUT_SECONDS = 600
@@ -111,15 +115,35 @@ _REGISTRY_KEY = re.compile(r"^    (?P<key>[^\s:]+): (?P<value>\S.*)$", re.MULTIL
 _DEV_HOSTS = ("dev-one", "dev-two")
 _INSTANCES: Mapping[str, list[dict[str, str]]] = {
     "factory-one": [
-        {"unit_name": "fabro-server", "canonical_host": "factory-one.tailnet.example:32276"},
-        {"unit_name": "fabro-server-org", "canonical_host": "factory-one.tailnet.example:32277"},
+        {
+            "unit_name": "fabro-server",
+            "canonical_host": "factory-one.tailnet.example:32276",
+            "max_concurrent_runs": "17",
+        },
+        {
+            "unit_name": "fabro-server-org",
+            "canonical_host": "factory-one.tailnet.example:32277",
+            "max_concurrent_runs": "9",
+        },
     ],
     "factory-two": [
-        {"unit_name": "fabro-server", "canonical_host": "factory-two.tailnet.example:32276"},
+        {
+            "unit_name": "fabro-server",
+            "canonical_host": "factory-two.tailnet.example:32276",
+            "max_concurrent_runs": "23",
+        },
     ],
     "factory-three": [
-        {"unit_name": "fabro-server", "canonical_host": "factory-three.tailnet.example:32276"},
-        {"unit_name": "fabro-server-blank", "canonical_host": "   "},
+        {
+            "unit_name": "fabro-server",
+            "canonical_host": "factory-three.tailnet.example:32276",
+            "max_concurrent_runs": "5",
+        },
+        {
+            "unit_name": "fabro-server-blank",
+            "canonical_host": "   ",
+            "max_concurrent_runs": "3",
+        },
     ],
 }
 _DOCKER_HOST = "ssh://operator@factory-one.tailnet.example"
@@ -226,9 +250,10 @@ def _install_key(*, key: str) -> str:
     found = re.search(rf"^    {re.escape(key)}: (?P<value>\S.*)$", _install_task(), re.MULTILINE)
     assert found is not None, f"the {_INSTALL_TASK!r} task must declare `{key}:`"
     value = found["value"].strip()
-    if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
-        return value[1:-1].replace("\\n", "\n").replace('\\"', '"')
-    return value
+    assert (
+        len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'"
+    ), f"the {_INSTALL_TASK!r} task must quote `{key}:`, got {value!r}"
+    return value[1:-1].replace("\\n", "\n").replace('\\"', '"')
 
 
 # --- running the committed role -------------------------------------------
@@ -526,8 +551,11 @@ def test_no_converge_in_this_module_names_the_registry_the_host_may_already_hold
 
 
 def test_the_rendered_file_is_root_owned_and_world_readable() -> None:
-    assert _install_key(key="owner") == "root"
-    assert _install_key(key="group") == "root"
+    defaults = _DEFAULTS.read_text(encoding="utf-8")
+    assert _install_key(key="owner") == "{{ fabro_factory_registry_owner }}"
+    assert _install_key(key="group") == "{{ fabro_factory_registry_group }}"
+    assert re.search(r"^fabro_factory_registry_owner: root$", defaults, re.MULTILINE)
+    assert re.search(r"^fabro_factory_registry_group: root$", defaults, re.MULTILINE)
     assert _install_key(key="mode") == "0644", "the Dispatcher reads this file as its own user"
     assert "become: true" in _install_task(), "a root-owned file needs the privilege to write it"
     body = _install_task()
@@ -601,6 +629,146 @@ def test_the_dev_host_play_runs_the_rendering_and_a_narrowed_run_does_not() -> N
         "a run narrowed by --tags past the rendering must run no rendering task, which is "
         "what leaves an existing registry file unchanged"
     )
+
+
+def test_the_dev_host_play_renders_each_factorys_declared_capacity(*, tmp_path: Path) -> None:
+    """The same instance mapping drives the server setting and the launch limit.
+
+    This runs the committed dev-host play, not a transcription of its role: a factory
+    lives on a different inventory host from the Dispatcher, so only the play's Jinja
+    resolution through hostvars can prove the rendered one-line file carries that
+    instance's declared max_concurrent_runs value.
+    """
+    root = tmp_path / "fleet-limits"
+    hosts = _write_fixture(root=root, registry=_DECLARED)
+    capacities = {
+        "factory-one": {"fabro-server": 17, "fabro-server-org": 9},
+        "factory-two": {"fabro-server": 23},
+        "factory-three": {"fabro-server": 5, "fabro-server-blank": 3},
+    }
+    for host, values in capacities.items():
+        path = root / "inventory" / "host_vars" / f"{host}.json"
+        instances = json.loads(path.read_text(encoding="utf-8"))["fabro_server_instances"]
+        for instance in instances:
+            instance["max_concurrent_runs"] = values[instance["unit_name"]]
+        path.write_text(json.dumps({"fabro_server_instances": instances}), encoding="utf-8")
+
+    limits_dir = root / "rendered-limits"
+    registry_dest = root / "rendered-registry" / "fabro-factories.json"
+    registry_dest.parent.mkdir(parents=True)
+    done = _ansible(
+        cwd=root,
+        argv=[
+            "-i",
+            str(hosts),
+            "--limit",
+            "dev_hosts",
+            "--tags",
+            _ROLE_NAME,
+            "-e",
+            json.dumps(
+                {
+                    "ansible_become": False,
+                    _DEST_VAR: str(registry_dest),
+                    "fabro_factory_registry_limits_dir": str(limits_dir),
+                    **_EXECUTING_USER_OWNERSHIP,
+                }
+            ),
+            str(_PLAYBOOK),
+        ],
+    )
+    output = done.stdout + done.stderr
+    assert done.returncode == 0, output
+    expected = {"legacy": "17\n", "petri": "23\n"}
+    for name, value in expected.items():
+        path = limits_dir / f"{name}.max_concurrent_runs"
+        assert path.is_file(), output
+        assert path.read_text(encoding="utf-8") == value, output
+        assert path.stat().st_mode & 0o777 == 0o644, output
+
+
+def test_a_changed_declared_capacity_rewrites_the_factories_one_line_limit(
+    *, tmp_path: Path
+) -> None:
+    root = tmp_path / "changed-capacity"
+    hosts = _write_fixture(root=root, registry=_DECLARED)
+    limits_dir = root / "rendered-limits"
+    registry_dest = root / "rendered-registry" / "fabro-factories.json"
+    registry_dest.parent.mkdir(parents=True)
+    extra_vars = {
+        "ansible_become": False,
+        _DEST_VAR: str(registry_dest),
+        "fabro_factory_registry_limits_dir": str(limits_dir),
+        **_EXECUTING_USER_OWNERSHIP,
+    }
+    args = [
+        "-i",
+        str(hosts),
+        "--limit",
+        "dev_hosts",
+        "--tags",
+        _ROLE_NAME,
+        "-e",
+        json.dumps(extra_vars),
+        str(_PLAYBOOK),
+    ]
+
+    first = _ansible(cwd=root, argv=args)
+    first_output = first.stdout + first.stderr
+    assert first.returncode == 0, first_output
+    legacy_limit = limits_dir / "legacy.max_concurrent_runs"
+    assert legacy_limit.read_text(encoding="utf-8") == "17\n", first_output
+
+    factory_one = root / "inventory" / "host_vars" / "factory-one.json"
+    instances = json.loads(factory_one.read_text(encoding="utf-8"))["fabro_server_instances"]
+    instances[0]["max_concurrent_runs"] = "31"
+    factory_one.write_text(json.dumps({"fabro_server_instances": instances}), encoding="utf-8")
+
+    second = _ansible(cwd=root, argv=args)
+    second_output = second.stdout + second.stderr
+    assert second.returncode == 0, second_output
+    assert legacy_limit.read_text(encoding="utf-8") == "31\n", second_output
+
+
+def test_a_factory_without_a_declared_capacity_refuses_before_any_limit_write(
+    *, tmp_path: Path
+) -> None:
+    root = tmp_path / "missing-capacity"
+    hosts = _write_fixture(root=root, registry=_DECLARED)
+    factory_one = root / "inventory" / "host_vars" / "factory-one.json"
+    instances = json.loads(factory_one.read_text(encoding="utf-8"))["fabro_server_instances"]
+    del instances[0]["max_concurrent_runs"]
+    factory_one.write_text(json.dumps({"fabro_server_instances": instances}), encoding="utf-8")
+    limits_dir = root / "rendered-limits"
+    registry_dest = root / "rendered-registry" / "fabro-factories.json"
+    registry_dest.parent.mkdir(parents=True)
+
+    done = _ansible(
+        cwd=root,
+        argv=[
+            "-i",
+            str(hosts),
+            "--limit",
+            "dev_hosts",
+            "--tags",
+            _ROLE_NAME,
+            "-e",
+            json.dumps(
+                {
+                    "ansible_become": False,
+                    _DEST_VAR: str(registry_dest),
+                    "fabro_factory_registry_limits_dir": str(limits_dir),
+                }
+            ),
+            str(_PLAYBOOK),
+        ],
+    )
+    output = done.stdout + done.stderr
+    assert done.returncode != 0, output
+    assert "factory legacy" in output, output
+    assert "max_concurrent_runs" in output, output
+    assert not limits_dir.exists(), output
+    assert not registry_dest.exists(), output
 
 
 def _committed_registry() -> dict[str, dict[str, str]]:

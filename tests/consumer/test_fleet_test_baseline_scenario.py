@@ -58,7 +58,7 @@ def test_fleet_test_baseline_reports_all_ecosystems_and_fleet_totals(*, tmp_path
         body=(
             "#!/usr/bin/env bash\n"
             "if [ \"$1 $2 $3\" = 'nextest list --message-format' ]; then\n"
-            '  printf \'%s\\n\' \'{"type":"test"}\' \'{"type":"test"}\' \'{"type":"test"}\'\n'
+            '  echo \'{"rust-build-meta":{},"rust-suites":{},"test-count":3}\'\n'
             'elif [ "$1 $2" = "nextest --version" ]; then\n'
             "  echo 'cargo-nextest 0.9.82'\n"
             'elif [ "$1" = --version ]; then\n'

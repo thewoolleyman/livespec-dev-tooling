@@ -43,3 +43,16 @@ fabro_factory_registry_entries: "{{ fabro_factory_registry | default({}) | dict2
 # file — stayed green (work-item livespec-dev-tooling-7qfnh6). Both tasks below
 # derive from this one variable, so overriding it moves the directory too.
 fabro_factory_registry_dest: /etc/livespec/fabro-factories.json
+
+# The native Dispatcher's fleet launchers read each factory's limit from a
+# one-line file.  It is rendered here, beside the registry, from the same
+# inventory instance mapping that fabro_server renders into settings.toml.
+# Keeping the directory overridable lets the committed dev-host play be run in
+# an isolated test inventory without touching the workstation's state tree.
+fabro_factory_registry_limits_dir: /home/ubuntu/.local/state/livespec/fleet-limits
+
+# The owner and group of everything this role writes. The defaults are the
+# production ones; they are variables only so that a test can run the committed
+# tasks for real as a non-root user, whose chown to root would otherwise fail.
+fabro_factory_registry_owner: root
+fabro_factory_registry_group: root
