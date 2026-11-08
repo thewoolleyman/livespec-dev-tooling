@@ -32,8 +32,11 @@
 # are the same environment (livespec plan/fabro-ci-image-factoring). Their
 # runs-on resolves from the repo variable CI_RUNNER_LABELS, defaulting inline
 # to ubuntu-latest when it is unset, per SPECIFICATION/constraints.md
-# §"CI matrix shape". setup, check-fleet-conformance, export-telemetry and
-# ci-green stay ubuntu-latest — see each job for why.
+# §"CI matrix shape". A push event reads CI_RUNNER_LABELS_MASTER first, so
+# master CI runs on its own reserved scale set (livespec-dev-master-k3s,
+# livespec-dev-tooling-lzkzwb); unset, a push routes exactly as a PR does.
+# setup, check-fleet-conformance, export-telemetry and ci-green stay
+# ubuntu-latest — see each job for why.
 #
 # The fallback literal is repeated inline at each runs-on rather than resolved
 # once into a job output, because check-self-hosted-routing parses runs-on
@@ -104,7 +107,7 @@ jobs:
     name: ${{ matrix.target }}
     # The variable holds exactly one complete hosted or self-hosted label
     # set. GitHub does not fall back when a self-hosted label set has no match.
-    runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
+    runs-on: ${{ fromJSON(github.event_name == 'push' && vars.CI_RUNNER_LABELS_MASTER || vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
     container:
       image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.183.0
     env:
@@ -199,7 +202,7 @@ jobs:
     # passed aggregate can omit work here.
     needs: [incident-ci]
     if: ${{ !cancelled() }}
-    runs-on: ${{ fromJSON(vars.CI_COVERAGE_RUNNER_LABELS || vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
+    runs-on: ${{ fromJSON(github.event_name == 'push' && vars.CI_RUNNER_LABELS_MASTER || vars.CI_COVERAGE_RUNNER_LABELS || vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
     container:
       image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.183.0
     env:
@@ -316,7 +319,7 @@ jobs:
     # the producer term keeps today's rule: no consumer without a producer.
     needs: [check-per-file-coverage, incident-ci]
     if: ${{ !cancelled() && needs.check-per-file-coverage.result == 'success' }}
-    runs-on: ${{ fromJSON(vars.CI_COVERAGE_RUNNER_LABELS || vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
+    runs-on: ${{ fromJSON(github.event_name == 'push' && vars.CI_RUNNER_LABELS_MASTER || vars.CI_COVERAGE_RUNNER_LABELS || vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
     container:
       image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.183.0
     env:
@@ -398,7 +401,7 @@ jobs:
   check-python-batch:
     timeout-minutes: 90  # 7-day max 38 min (livespec-dev-tooling-u6jztk)
     name: check-python-batch
-    runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
+    runs-on: ${{ fromJSON(github.event_name == 'push' && vars.CI_RUNNER_LABELS_MASTER || vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
     container:
       image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.183.0
     env:
@@ -557,7 +560,7 @@ jobs:
     needs: [incident-ci]
     if: ${{ !cancelled() }}
     # The same single variable routes every ordinary gating target.
-    runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
+    runs-on: ${{ fromJSON(github.event_name == 'push' && vars.CI_RUNNER_LABELS_MASTER || vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
     container:
       image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.183.0
     env:
@@ -668,7 +671,7 @@ jobs:
     # passed aggregate can omit work here.
     needs: [incident-ci]
     if: ${{ !cancelled() }}
-    runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
+    runs-on: ${{ fromJSON(github.event_name == 'push' && vars.CI_RUNNER_LABELS_MASTER || vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
     container:
       image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.183.0
     env:
@@ -826,7 +829,7 @@ jobs:
   incident-ci:
     timeout-minutes: 90  # 7-day max 58 min (livespec-dev-tooling-u6jztk)
     name: incident-ci
-    runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
+    runs-on: ${{ fromJSON(github.event_name == 'push' && vars.CI_RUNNER_LABELS_MASTER || vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
     container:
       image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.183.0
     permissions:

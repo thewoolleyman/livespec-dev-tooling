@@ -13,7 +13,10 @@ from livespec_dev_tooling import incident_ci_inventory as module
 _ROOT = Path(__file__).resolve().parents[2]
 _WORKFLOW = _ROOT / ".github/workflows/ci.yml"
 _PACKAGED = _ROOT / "livespec_dev_tooling/data/incident-ci-inventory.json"
-_HOSTED_RUNS_ON = "    runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '[\"ubuntu-latest\"]') }}\n"
+_HOSTED_RUNS_ON = (
+    "    runs-on: ${{ fromJSON(github.event_name == 'push' && vars.CI_RUNNER_LABELS_MASTER"
+    " || vars.CI_RUNNER_LABELS || '[\"ubuntu-latest\"]') }}\n"
+)
 
 
 def data():
