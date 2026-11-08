@@ -209,5 +209,6 @@ template:
 # Recompute whenever C or this repo's quota changes. See ../kueue/DERIVATION.md
 # "Bounding maxRunners to the quota (2026-09-06)".
 # RE-DERIVED 2026-10-22 from measured job-hours: quota 6, rule ceiling 12.
+# 12 -> 18 on 2026-11-08: the ClusterQueue rises 6 -> 9, max(2 x 9, 6) = 18.
 minRunners: 0
-maxRunners: 12
+maxRunners: 18

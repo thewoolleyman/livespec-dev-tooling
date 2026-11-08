@@ -60,7 +60,9 @@ spec:
               # master pushes moved to livespec-dev-tooling-master-cq, whose 3
               # slots came from the orchestrator, not from here (DERIVATION.md
               # "The master-push slice for livespec-dev-tooling (2026-11-03)").
-              nominalQuota: 6
+              # 6 -> 9 on 2026-11-08 (R301, after the 6e5pyj step-4 KEEP): 3 slots from
+              # livespec-orchestrator-beads-fabro-cq; the cohort stays 30. See DERIVATION.md.
+              nominalQuota: 9
 ---
 apiVersion: kueue.x-k8s.io/v1beta2
 kind: LocalQueue
