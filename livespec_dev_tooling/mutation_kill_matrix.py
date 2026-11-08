@@ -35,6 +35,7 @@ class MutationKillMatrixReport:
     engine_name: str
     engine_version: str
     source_revision: str
+    test_selection_method: str
     mutants: tuple[Mutant, ...]
     killers_by_mutant: dict[str, tuple[str, ...]]
     redundancy_candidates: tuple[str, ...]
@@ -52,6 +53,7 @@ class MutationKillMatrixReport:
         return {
             "engine": {"name": self.engine_name, "version": self.engine_version},
             "source_revision": self.source_revision,
+            "test_selection_method": self.test_selection_method,
             "mutants_generated": len(self.mutants),
             "mutants": mutant_rows,
             "surviving_mutants": [
@@ -63,11 +65,12 @@ class MutationKillMatrixReport:
         }
 
 
-def build_report(
+def build_report(  # noqa: PLR0913 — one keyword per field the spec v152 report carries.
     *,
     engine_name: str,
     engine_version: str,
     source_revision: str,
+    test_selection_method: str,
     mutants: list[Mutant],
     tests: list[str],
     killers_by_mutant: dict[str, set[str]],
@@ -84,6 +87,7 @@ def build_report(
         engine_name=engine_name,
         engine_version=engine_version,
         source_revision=source_revision,
+        test_selection_method=test_selection_method,
         mutants=tuple(mutants),
         killers_by_mutant=normalized_killers,
         redundancy_candidates=tuple(sorted(set(tests) - unique_killers)),

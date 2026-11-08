@@ -22,6 +22,7 @@ def test_report_attributes_every_mutant_to_its_killing_tests(*, tmp_path: Path) 
         engine_name="mutmut",
         engine_version="3.2.3",
         source_revision="abc123",
+        test_selection_method="full-matrix",
         mutants=[
             module.Mutant(identifier="M1", location="package/module.py:10"),
             module.Mutant(identifier="M2", location="package/module.py:20"),
@@ -57,6 +58,7 @@ def test_report_lists_every_mutant_no_test_kills_as_a_survivor() -> None:
         engine_name="mutmut",
         engine_version="3.2.3",
         source_revision="abc123",
+        test_selection_method="full-matrix",
         mutants=[module.Mutant(identifier="M3", location="package/module.py:30")],
         tests=["tests/test_rule.py::test_a"],
         killers_by_mutant={},
@@ -72,6 +74,7 @@ def test_report_lists_tests_without_unique_kills_as_redundancy_candidates() -> N
         engine_name="mutmut",
         engine_version="3.2.3",
         source_revision="abc123",
+        test_selection_method="full-matrix",
         mutants=[
             module.Mutant(identifier="M1", location="package/module.py:10"),
             module.Mutant(identifier="M2", location="package/module.py:20"),
@@ -91,3 +94,21 @@ def test_report_lists_tests_without_unique_kills_as_redundancy_candidates() -> N
         "tests/test_rule.py::test_b",
         "tests/test_rule.py::test_c",
     ]
+
+
+def test_report_names_the_test_selection_method_the_run_used() -> None:
+    """The report states how tests were paired with mutants."""
+    module = importlib.import_module("livespec_dev_tooling.mutation_kill_matrix")
+    report = module.build_report(
+        engine_name="mutmut",
+        engine_version="3.2.3",
+        source_revision="abc123",
+        test_selection_method="coverage-guided: per-test pytest-cov contexts",
+        mutants=[module.Mutant(identifier="M1", location="package/module.py:10-12")],
+        tests=["tests/test_rule.py::test_a"],
+        killers_by_mutant={"M1": {"tests/test_rule.py::test_a"}},
+    )
+
+    assert report.to_dict()["test_selection_method"] == (
+        "coverage-guided: per-test pytest-cov contexts"
+    )
