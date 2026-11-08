@@ -254,6 +254,38 @@ def test_check_recipe_loads_the_committed_ci_severity_levers_before_dispatch() -
     assert body.index(source_line) < body.index('scripts/just/check.sh "${targets[@]}"')
 
 
+def test_check_recipe_fails_closed_when_the_severity_lever_source_is_missing(
+    *, tmp_path: Path
+) -> None:
+    """The real `check` recipe stops before dispatch when the lever source cannot be loaded."""
+    script = tmp_path / "scripts" / "just" / "check.sh"
+    script.parent.mkdir(parents=True)
+    dispatched = tmp_path / "dispatched"
+    _ = script.write_text(
+        f'#!/usr/bin/env bash\nprintf dispatched > "{dispatched}"\n',
+        encoding="utf-8",
+    )
+    script.chmod(0o755)
+    result = subprocess.run(
+        [
+            "just",
+            "--justfile",
+            str(_REPO_ROOT / "justfile"),
+            "--working-directory",
+            str(tmp_path),
+            "check",
+        ],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode != 0, result.stdout + result.stderr
+    assert not dispatched.exists(), "the aggregate dispatched with no severity levers armed"
+    assert "gate-surface-severity-levers.sh" in result.stderr
+
+
 def test_check_script_rejects_mirror_drift_before_dispatch(*, tmp_path: Path) -> None:
     """A stale literal mirror fails closed before sync or aggregate dispatch."""
     script = tmp_path / "scripts" / "just" / "check.sh"
