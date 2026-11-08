@@ -222,6 +222,21 @@ Conventions:
 - P.5 Confirm the repository webhook subscribes `workflow_job` to the Funnel `/callback`, and that recent deliveries
   answer 202 or 403 (note 004 §5).
 
+- P.6 Name one build and one branch scheme before the first arm (added 2026-11-08).
+  - The plan record names one build: dev-tooling `v1.188.1` and orchestrator `v0.304.0`. Release PR #3764 merged
+    at 06:47Z even though it carried `do-not-merge`. Auto-merge had been armed at 04:43Z, before the label went on,
+    and nothing in `.github` enforces that label.
+  - `incident-ci` installs `releases/latest`, so the observer is pinned to the same tag (#3766). `v1.188.1` differs
+    from `v1.188.0` only in `flake_retry.py` and `flake_retry_paths.py`. Every incident module is byte-identical.
+  - The release freeze is enforced as two things together: a draft release PR AND auto-merge disabled. The
+    coordinator's monitor applies both every 2 min until "release freeze lifted". The label alone is no freeze.
+  - Each expedited attempt reserves its own branch, `refs/heads/incident/<ITEM>-attempt-<N>`. Never use
+    `feat/<ITEM>`. That is the branch the factory publishes the repayment on.
+  - `enter-repayment --target-ref refs/heads/feat/<ITEM>` refuses with `incident-transition-invalid-successor` when
+    the target equals the attempt's own ref. `bind-repayment-acceptance` refuses a PR whose head is not the
+    carrier's ref (`incident-repayment-carrier-mismatch`). Both refusals were measured by the orchestrator's
+    lifecycle walk test (bd-ib-oxx6eo).
+
 ### Phase 3: attempt 1, planted master failure, revert (A1-A8, A12 i-iii)
 
 - 3.1 File ITEM with `IA file-incident` or the capture operation: a real small incident with two behavioural DoD
@@ -263,6 +278,13 @@ Conventions:
   - The observer acts only on a `workflow_job` delivery whose action is `completed`. It answers `queued` and
     `in_progress` deliveries with 403 by design (repository hook 707919835), so a 403 in the delivery log is not a
     fault.
+  - Added 2026-11-08 (bd-ib-7i2bta, orchestrator #4616): right after the bind, the same script runs `IA
+    record-merge` with the attempt's identity arguments only. It reads the merged PR and the merge commit, and writes
+    the next generation in phase `master-observation` with the landed commits and trees. Nothing else writes that
+    phase. `reopen-regression`, `collect` and `enter-repayment` all need it: before it, `collect` refuses with
+    `incident-authority-identity-mismatch`. It reads the merge commit, not master's tip, so it records correctly even
+    after the revert has landed. An exact retry recovers the same generation. The same step follows every expedited
+    merge in phases 4 and 6.
 - 3.10 [GO-8] Between the bind and the leaf failure (or as soon as possible after the bind), restart the observer
   unit, so the bound registration must come back from the state file (A12 ii).
 - 3.11 [GO-5] The leaf fails, the callback arrives, and the principal publishes the inverse to master (A7). Then
@@ -271,14 +293,19 @@ Conventions:
 - 3.12 Do NOT cancel attempt 1's run. Wait for `completed`, then collect every job conclusion (P0-5) (A8). Master is
   red until the revert's own run is green, about 12 min.
   - The P0-5 entrance is `python -m livespec_dev_tooling.incident_original_run_entry collect|propose-correction`
-    (livespec-dev-tooling-zvntys, livespec-dev-tooling#3666 and livespec-dev-tooling#3668). Run it as the controller
-    account (`livespec-incident`) with `--state-dir` set to the observer's state directory, so the evidence lands
-    beside the registration it reads. Each subcommand prints one schema-1 JSON reply. A refusal exits 78 and names
-    its reason.
+    (livespec-dev-tooling-zvntys, livespec-dev-tooling#3666 and livespec-dev-tooling#3668). Corrected 2026-11-08
+    (livespec-dev-tooling-jvfb7x, #3744, in v1.188.0): run it as the controller account with the installation, not
+    with `--state-dir`, `--repository` or `--repo`:
+    `sudo -u livespec-incident -H /opt/livespec-incident/venv/bin/python -I -m
+    livespec_dev_tooling.incident_original_run_entry collect --config /etc/livespec-incident/controller.json ...`.
+    It reads the reader, the state directory and the forge credential from the verified installation. Each
+    subcommand prints one schema-1 JSON reply. A refusal exits 78 and names its reason.
   - The operator supplies the EXPECTED JOB GRAPH as a JSON file (`--expected-graph`) covering every job the
     registration watched. Matrix leg names cannot be derived statically, so write the graph by hand from the
     registration's job list.
-  - Order: `IA reopen-regression` (records the `recovery-<digest>` attempt) → `IA record-revert-receipt` (moves that
+  - Order: `IA record-merge` (3.9, already done by the merge script) → `IA reopen-regression` from
+    `master-observation` (allowed since bd-ib-7i2bta; records the `recovery-<digest>` attempt) → `IA
+    record-revert-receipt` (moves that
     attempt to `collecting-failures`) → `collect --revert-sha <sha>` (refuses until the original run has completed)
     → `propose-correction` in 4.1.
   - The evidence record is a ledger comment carrying the marker `livespec-incident-original-run-evidence-v1`.
@@ -331,7 +358,16 @@ Conventions:
 - 7.0 Gate: canary 2 (P0-11) is green, its parity check passed on the `ORCH` registration, and legacy-dispatcher-agent
   has lifted its dev-tooling launch hold. Read this from the canary item and the dispatcher's own record. A handoff
   saying so does not count. Until then, phase 7 waits; the wait is not a maintainer question.
-- 7.1 `enter-repayment` on attempt 3's completed green run, which records `repayment-admission` (A9 causal half).
+- 7.1 `enter-repayment` on attempt 3's completed green run, which records `repayment-admission` (A9 causal half):
+  `IA enter-repayment --master-run <attempt-3 green run> --target-ref refs/heads/feat/<ITEM>` (P.6).
+  - Then come two hand verbs, because `advance_repayment` has no dispatcher caller.
+  - `IA advance-repayment --to-phase repayment-ready --admission-complete` runs once admission leaves the item at
+    `ready`.
+  - `--to-phase repayment-active` runs once the factory claim leaves it `active` with assignee `fabro`.
+  - At 7.9, run `IA bind-repayment-acceptance --pr <n>` with the item at `acceptance`. Then run
+    `IA complete-incident --master-run <repayment master run> --completion-json <attestation>`, which records
+    `closed`.
+  - Both actions name the `repayment-<24hex>` attempt with owner `fabro`.
 - 7.2 [GO-10] Dispatch the repayment through the `petri-factory-on-gmktec` seat. Do not use a direct `drive impl:`
   call (`.ai/fabro-dispatch-diagnosis.md`). Confirm the dispatch environment carries neither flag.
 - 7.3 [GO-8] Restart the gmktec dispatcher loop while the run is active. The run and its claim survive, and no second
@@ -586,8 +622,13 @@ that attempt from re-arm (note 004 step 5 onward, next generation), which writes
    has no entrance (`incident_observer.py`, `incident_observer_admission.py`). So after a timeout: check master for
    the principal's revert. If it did not land by leaf failure + 5 min, use the GO-4 manual rollback. Either way, run
    `reconcile_action_receipt` by hand as `livespec-incident` before attempt 2. A token mint measured 0.4 to 0.7 s on
-   2026-11-07, against the 15 s limit per operation, so a timeout is unlikely. Filing an entrance for that function is
-   owed after attempt 3.
+   2026-11-07, against the 15 s limit per operation, so a timeout is unlikely.
+
+   Superseded 2026-11-08 (livespec-dev-tooling-gho3w4, #3729, in v1.188.0): the entrance exists. `POST /reconcile`
+   with the control credential and exactly `{repository, action_id, retry_publish}` asks the principal for the
+   action's exact receipt and marks the action completed, which frees `/arm`. With `retry_publish: true` it retries
+   the retained intent through the principal under the repository lock; the principal still lands at most one revert.
+   It does not write the chain: the operator still runs `IA record-revert-receipt`.
 
    Mitigation: attempt 1's planted defect stays small, so its inverse is a minimal revert well under the 15 s budget
    (coordinator ruling 2026-11-07 ~03:06Z).
