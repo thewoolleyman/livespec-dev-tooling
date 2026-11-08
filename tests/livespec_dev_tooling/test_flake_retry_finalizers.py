@@ -63,3 +63,20 @@ def test_the_finalizer_preserver_ignores_an_item_without_pytest_setup_state() ->
     next(teardown)
     with pytest.raises(StopIteration):
         next(teardown)
+
+
+def test_the_finalizer_preserver_declines_unrecognized_retry_state() -> None:
+    """Private rerun state absent from an item must not be treated as retryable."""
+    finalizers = importlib.import_module("livespec_dev_tooling.flake_retry_finalizers")
+
+    assert not finalizers.RetryFinalizerPreserver._retry_is_pending(item=Mock())  # noqa: SLF001
+
+
+def test_preserve_finalizers_does_nothing_without_rerunfailures() -> None:
+    """A consumer without pytest-rerunfailures keeps its native fixture lifecycle."""
+    finalizers = importlib.import_module("livespec_dev_tooling.flake_retry_finalizers")
+    config = SimpleNamespace(pluginmanager=SimpleNamespace(get_plugin=Mock(return_value=None)))
+
+    finalizers.preserve_finalizers(config=config)
+
+    config.pluginmanager.get_plugin.assert_called_once_with("rerunfailures")
