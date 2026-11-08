@@ -46,6 +46,35 @@ budgeted explicitly, and how?
     of saturation lands on CI job duration rather than on factory turns.
 - **The factory-vs-CI share is set implicitly today.** Under contention, the factory always wins.
 
+## Not evidence: the 2026-11-08 dev-tooling janitor timeouts
+
+legacy-coordinator-agent asked for these numbers to be added here. They do NOT support making the share explicit,
+and are recorded so that no later reading cites them as if they did.
+
+- **What was seen.** ci-runtime-and-cost's read on livespec-dev-tooling-6e5pyj (13:14:13Z) found 5 dev-tooling
+  janitor visits that ran into the 3600 s timeout, all between 10:02Z and 13:07Z on 2026-11-08. Three of them were
+  no-merge visits, where the earlier maximum was 1680 s.
+- **Where they ran.** All 5 ran on poweredge-xubuntu. Each run stayed in one pod (`petri-<run>-l0`) on one node,
+  read from Honeycomb kubeletstats. The runs are h5sifx `01M6X5HVCGAB` (visits 1-3), 4pchid `01M6X4NQE2CC`
+  (visit 3) and o5xpdy `01M6XAFZHHTM` (visit 1).
+- **The control: same node, same window.** nxeg32 `01M6X82Q8VMC` finished in 943 s and 1273 s. pstquv
+  `01M6X5R38914` finished in 1059 s, 977 s and 1047 s.
+- **Node load.** poweredge used about 71.5 of its 72 CPUs from 04:00Z to 13:15Z, with no change at 10:02Z.
+- **The timed-out pods** used a flat 4.0 cores (their limit is 6) for every visit. Their suites were busy, not
+  starved.
+- **Reading.** The cause is specific to those runs. It is not host saturation, cetudy's system.slice weight (which
+  does not apply to poweredge), the #3777 step-back or its revert, or CI load.
+- **Baseline for any dial or share decision.** Over 7 days (66 visits across 68 runs, from fabro events on the petri
+  server), uncensored dev-tooling janitor suite times were:
+
+  | Node | n | Median | Max |
+  |---|---|---|---|
+  | poweredge | 29 | 1752 s | 3543 s |
+  | gmktec | 22 | 1350 s | 3223 s |
+
+- **The factory yield of 1 green in 19** over the same window is not separated here into these run-specific
+  timeouts and other failures. Do not read it as a CPU-share signal until that split exists.
+
 ## Options
 
 ### 1. A per-node factory slot budget, derived together with `C` (RECOMMENDED)
