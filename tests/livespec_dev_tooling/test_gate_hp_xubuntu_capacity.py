@@ -38,17 +38,8 @@ def _documents(path: Path) -> list[dict[str, Any]]:
 def _ci_pool_hosts() -> set[str]:
     """Return the ci_pool group's hosts from the committed Ansible inventory."""
     inventory = cast(dict[str, Any], yaml.safe_load(_INVENTORY.read_text(encoding="utf-8")))
-    pending: list[dict[str, Any]] = [inventory]
-    while pending:
-        node = pending.pop()
-        for name, child in node.items():
-            if not isinstance(child, dict):
-                continue
-            child_map = cast(dict[str, Any], child)
-            if name == "ci_pool":
-                return set(cast(dict[str, Any], child_map.get("hosts") or {}))
-            pending.append(child_map)
-    raise AssertionError("the committed inventory declares no ci_pool group")
+    ci_pool = cast(dict[str, Any], inventory["all"]["children"]["legacy"]["children"]["ci_pool"])
+    return set(cast(dict[str, Any], ci_pool["hosts"]))
 
 
 def test_gates_cluster_queue_has_a_quota_lane_for_each_pool_node() -> None:
