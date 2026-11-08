@@ -86,8 +86,6 @@ from livespec_dev_tooling.check_failure_digest import (  # noqa: E402
 
 __all__: list[str] = []
 
-_SECONDS_PER_MINUTE = 60
-
 # Coverage-namespace assignment (work-item livespec-dev-tooling-cmn).
 # Each coverage-touching target is mapped to a namespace key. The
 # dispatcher mints ONE unique temp dir per distinct key and exports it
@@ -297,21 +295,12 @@ def _emit_result(*, result: TargetResult, log: structlog.stdlib.BoundLogger) -> 
     )
 
 
-def _human_wall(*, seconds: float) -> str:
-    """One wall time as a reader compares it: seconds below a minute, else minutes."""
-    # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-e62ss6
-    if seconds < _SECONDS_PER_MINUTE:
-        return f"{seconds:.1f}s"
-    minutes, rest = divmod(round(seconds), _SECONDS_PER_MINUTE)
-    return f"{minutes}m {rest:02d}s"
-
-
 def _write_timing_table(*, results: list[TargetResult]) -> None:
     """Write the per-target wall-time table (longest first) for e60 observability."""
     _write(text="\nper-target wall times (longest first):\n")
     for r in sorted(results, key=lambda x: x.wall_time_s, reverse=True):
         if not r.skipped:
-            _write(text=f"  {_human_wall(seconds=r.wall_time_s):>11}  {r.name}\n")
+            _write(text=f"  {r.wall_time_s:6.1f}s  {r.name}\n")
 
 
 def _write_failure_digest(*, failed: list[TargetResult]) -> None:
