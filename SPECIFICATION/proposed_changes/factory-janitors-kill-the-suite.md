@@ -87,4 +87,4 @@ And no `TDD-Suite-Green-*` trailer MUST be recorded
 
 The existing scenario "a suite-green run that stops printing output for the stall window is ended" MUST keep its heading and text.
 
-The revise pass adds all three new scenario headings to `tests/heading-coverage.json` in the revise commit. Each is a spec-first TODO row whose reason names the integration tier or above and whose `work_item` is livespec-dev-tooling-h2i4u2. The pass then regenerates `tests/heading-coverage-debt.json`.
+The revise pass adds all three new scenario headings to `tests/heading-coverage.json` in the revise commit. Each is a spec-first TODO row whose reason names the integration tier or above. The first two rows have `work_item` livespec-dev-tooling-h2i4u2. The third, "a suite-green run ended before any test completed says that no test had completed", has `work_item` livespec-dev-tooling-6o3m6m, which owns that behaviour (legacy-coordinator-agent, 2026-11-08: one behaviour lives in one item). The pass then regenerates `tests/heading-coverage-debt.json`.
