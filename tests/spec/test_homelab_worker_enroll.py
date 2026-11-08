@@ -22,6 +22,7 @@ _NODE = "alpha-homelab-worker"
 
 _STUB = """#!/bin/bash
 printf 'kubectl %s\\n' "$*" >> "$STUB_LOG"
+[ -z "$KUBECTL_FAILS" ] || { echo "Connection closed" >&2; exit 255; }
 case "$*" in
   *"homelab-worker\\.livespec\\.dev/class"*) printf '%s' "$NODE_CLASS" ;;
   *"kubernetes\\.io/arch"*) printf '%s' "$NODE_ARCH" ;;
@@ -32,7 +33,13 @@ exit 0
 
 
 def _run(
-    *, tmp_path: Path, conf: str, arch: str = "arm64", cpu: str = "30", node_class: str = "worker"
+    *,
+    tmp_path: Path,
+    conf: str,
+    arch: str = "arm64",
+    cpu: str = "30",
+    node_class: str = "worker",
+    kubectl_fails: bool = False,
 ) -> tuple[subprocess.CompletedProcess[str], list[str]]:
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir(exist_ok=True)
@@ -57,6 +64,7 @@ def _run(
             "NODE_ARCH": arch,
             "NODE_CPU": cpu,
             "NODE_CLASS": node_class,
+            "KUBECTL_FAILS": "1" if kubectl_fails else "",
         },
         check=False,
         timeout=30,
@@ -135,3 +143,10 @@ def test_un_enrolling_also_reconciles_the_worker_queues(tmp_path: Path) -> None:
     result, calls = _run(tmp_path=tmp_path, conf=_AMD64_ONLY)
     assert result.returncode == 0, result.stderr
     assert "worker-queues" in calls
+
+
+def test_an_unreachable_cluster_is_named_rather_than_exiting_silently(tmp_path: Path) -> None:
+    result, calls = _run(tmp_path=tmp_path, conf=_ARM64_TOO, kubectl_fails=True)
+    assert result.returncode != 0
+    assert "could not read" in result.stderr and "nothing was changed" in result.stderr
+    assert not [c for c in calls if " label " in c or " patch " in c]
