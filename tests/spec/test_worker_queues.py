@@ -122,3 +122,28 @@ def test_no_committed_worker_template_borrows_from_the_cohort() -> None:
             assert all(
                 resource.get("borrowingLimit") == 0 for resource in resources
             ), f"{template.name}: every resource must carry borrowingLimit 0"
+
+
+def test_no_committed_worker_template_lends_to_the_cohort() -> None:
+    """A worker queue never lends its churn slots to another architecture.
+
+    A slot lent to an x86 queue would be held by an x86 runner pod that cannot
+    schedule on the arm64 worker that advertises it.
+    """
+    templates = sorted((_KUEUE / "worker").glob("cluster-queue-*.yaml"))
+    assert templates
+    for template in templates:
+        text = template.read_text(encoding="utf-8").replace("@WORKER_CHURN_SLOTS@", "0")
+        queues = [d for d in yaml.safe_load_all(text) if d and d.get("kind") == "ClusterQueue"]
+        assert queues, template.name
+        for queue in queues:
+            resources = [
+                resource
+                for group in queue["spec"]["resourceGroups"]
+                for flavor in group["flavors"]
+                for resource in flavor["resources"]
+            ]
+            assert resources, template.name
+            assert all(
+                resource.get("lendingLimit") == 0 for resource in resources
+            ), f"{template.name}: every resource must carry lendingLimit 0"
