@@ -109,3 +109,8 @@ sccache_redis_state: absent
 # RETIRED on this host 2026-11-02 (livespec-dev-tooling-j53hzi), through
 # ansible/former-sandbox-hosts.yml. This host carries no interactive worktrees.
 storage_reclaim_state: absent
+
+# --- factory_budget_reconciler ---
+# No factory sandbox pods: FACTORY_NODE=false since 2026-11-03. Declared so the
+# intent can be read here (role HOST_VARS.md).
+factory_pod_budget: 0

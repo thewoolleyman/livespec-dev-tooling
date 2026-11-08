@@ -1,0 +1,18 @@
+---
+# factory_budget_reconciler: hold each factory node to its committed
+# `factory_pod_budget` by labelling it ci-runner.io/factory-admit=true|false.
+# TEMPORARY fixed factory-vs-CI CPU share (maintainer ruling 2026-11-08; plan
+# gmktec-factory-placement, note 003). End condition: replaced by the better
+# solution, a maintainer design item. See
+# ../../../ci-runner/k3s/phase2/factory-budget-admission/README.md.
+factory_budget_reconciler_phase2_dir: "{{ role_path }}/../../../ci-runner/k3s/phase2"
+factory_budget_reconciler_lib_dir: /usr/local/lib/ci-runner-k3s
+factory_budget_reconciler_unit_dir: /etc/systemd/system
+factory_budget_reconciler_conf_dir: /etc/livespec
+factory_budget_reconciler_budget_file: /etc/livespec/factory-pod-budgets.conf
+factory_budget_reconciler_script: reconcile-factory-budget-admit.sh
+factory_budget_reconciler_service: reconcile-factory-budget-admit.service
+factory_budget_reconciler_timer: reconcile-factory-budget-admit.timer
+# The inventory group whose hosts' `factory_pod_budget` values are rendered. A
+# host that declares none renders no line, and the reconciler gives it 0.
+factory_budget_reconciler_group: ci_pool

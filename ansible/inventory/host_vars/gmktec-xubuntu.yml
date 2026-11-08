@@ -851,3 +851,9 @@ tailscale_serve_mappings:
   # The mi-homelab organisation's instance above.
   - https_port: 32277
     backend: http://127.0.0.1:32277
+
+# --- factory_budget_reconciler ---
+# This node may hold 6 factory sandbox pods: the TEMPORARY fixed factory-vs-CI CPU
+# share (maintainer ruling 2026-11-08). Derived from CI p95 by concurrent factory
+# sandboxes (role HOST_VARS.md). Revert: raise it, or use the reconciler's kill switch.
+factory_pod_budget: 6

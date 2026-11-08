@@ -122,6 +122,15 @@ sandbox_driver_kubernetes_arch: >-
 sandbox_driver_kubernetes_node_selector:
   ci-runner.io/factory: "true"
   kubernetes.io/arch: "{{ sandbox_driver_kubernetes_arch }}"
+  # The TEMPORARY fixed factory-vs-CI CPU share (maintainer ruling 2026-11-08): a
+  # new sandbox goes only to a node whose factory_pod_budget has room. The
+  # factory_budget_reconciler on the k3s server sets this label. ORDER: apply
+  # ci-pool.yml --tags factory_budget_admission and confirm that every factory node
+  # carries the label BEFORE this file renders it. The plugin reads its config once
+  # per process, so each Fabro instance needs a zero-run restart to pick it up
+  # (ci-runner/k3s/phase2/factory-budget-admission/README.md). REVERT: delete
+  # this entry and restart each instance.
+  ci-runner.io/factory-admit: "true"
 # A factory node may carry node-role/ci=factory:NoSchedule; on an untainted
 # node the toleration is harmless.
 #

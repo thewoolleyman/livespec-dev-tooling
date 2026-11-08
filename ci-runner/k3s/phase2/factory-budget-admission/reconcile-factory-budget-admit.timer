@@ -1,0 +1,10 @@
+[Unit]
+Description=Reconcile the factory admit label every 30 seconds
+
+[Timer]
+OnBootSec=1min
+OnUnitActiveSec=30s
+AccuracySec=1s
+
+[Install]
+WantedBy=timers.target
