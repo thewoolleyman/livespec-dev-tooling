@@ -25,6 +25,7 @@ set -euo pipefail
 prog="enroll-workload-classes"
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 conf="${WORKLOAD_ARCH_CONF:-$here/../ci-runner/k3s/phase2/workload-arch.conf}"
+worker_queues="${WORKER_QUEUES_CONVERGE:-$here/../ci-runner/k3s/phase2/kueue/converge-worker-queues.sh}"
 # The fleet sizes one churn slot at about 2.73 CPUs (DERIVATION.md); millicores.
 slot_millicores=2730
 
@@ -73,6 +74,10 @@ else
   kubectl label node "$node" k3s-role- >/dev/null 2>&1 || true
   say "CI: NOT enrolled: no scale set in $(basename "$conf") declares $arch"
 fi
+
+# The worker queues' quota is the enrolled workers' churn slots, so enrolling
+# or un-enrolling reconciles it in the same operation (v154).
+"$worker_queues"
 
 if declares factory python-agent; then
   kubectl label node "$node" ci-runner.io/factory=true --overwrite >/dev/null

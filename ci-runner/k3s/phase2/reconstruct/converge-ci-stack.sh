@@ -243,6 +243,7 @@ declare -A SCALE_SETS=(
   [livespec-orchestrator-k3s]="values-livespec-orchestrator-beads-fabro.yaml"
   [livespec-dev-tooling-k3s]="values-livespec-dev-tooling.yaml"
   [livespec-dev-master-k3s]="values-livespec-dev-tooling-master.yaml"
+  [livespec-dev-tooling-arm64-k3s]="values-livespec-dev-tooling-arm64.yaml"
   [livespec-driver-claude-k3s]="values-livespec-driver-claude.yaml"
   [livespec-driver-codex-k3s]="values-livespec-driver-codex.yaml"
   [livespec-driver-pi-k3s]="values-livespec-driver-pi.yaml"
@@ -553,6 +554,9 @@ for f in "${KUEUE_DIR}"/cluster-queue-*.yaml; do
   [ -e "$f" ] || { echo "FATAL: no cluster-queue-*.yaml found in ${KUEUE_DIR}"; exit 1; }
   kubectl apply -f "$f"
 done
+# The container-worker queues, whose quota is the enrolled workers' derived
+# churn slots read from the Nodes (livespec-dev-tooling-ko26ez.7).
+"${KUEUE_DIR}/converge-worker-queues.sh"
 
 # ---------------------------------------------------------------------------
 log "6. Install/upgrade the ARC controller (idempotent via helm upgrade --install)"
