@@ -280,3 +280,19 @@ def test_a_failed_target_with_no_structured_finding_is_reported_as_that() -> Non
 
     assert len(tail) == 1, "the target must appear in the digest even with nothing to parse"
     assert tail[0].startswith("  check-types: failed without a structured failure_mode")
+
+
+def test_per_file_coverage_reports_each_failed_pytest_node_id() -> None:
+    """The coverage target restates pytest failures that emit no structlog finding."""
+    output = """============================= short test summary info =============================
+FAILED tests/livespec_dev_tooling/test_gate_runner_delegate.py::test_first - AssertionError
+FAILED tests/livespec_dev_tooling/test_gate_runner_delegate.py::test_second - AssertionError
+============================== 2 failed in 1.23s ==============================="""
+
+    tail = failure_digest_lines(failures=[("check-per-file-coverage", output)])[2:]
+
+    assert tail == [
+        "  check-per-file-coverage: failing tests",
+        "      test: tests/livespec_dev_tooling/test_gate_runner_delegate.py::test_first",
+        "      test: tests/livespec_dev_tooling/test_gate_runner_delegate.py::test_second",
+    ]
