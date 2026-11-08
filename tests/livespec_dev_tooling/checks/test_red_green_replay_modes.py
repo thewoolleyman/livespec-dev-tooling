@@ -284,6 +284,7 @@ def test_suite_green_passes_n_from_test_nprocs_and_writes_unchanged_trailers(
 ) -> None:
     run = _suite_run_cls()(returncode=0, output="5 passed in 1.00s\n", timed_out=False)
     monkeypatch.setenv("test_nprocs", "4")
+    monkeypatch.delenv("LIVESPEC_SUITE_GREEN_STALL_SECONDS", raising=False)
     monkeypatch.delenv("LIVESPEC_SUITE_GREEN_TIMEOUT_SECONDS", raising=False)
     rc, log, message, seen, _ = _run_suite_leg(monkeypatch, tmp_path, suite_run=run)
     assert rc == 0

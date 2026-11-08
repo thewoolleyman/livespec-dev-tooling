@@ -230,6 +230,8 @@ def test_suite_green_without_a_gates_credential_runs_locally_and_says_so(
 
     mod = _load()
     assert hasattr(mod, "run_replay")
+    monkeypatch.delenv("LIVESPEC_SUITE_GREEN_STALL_SECONDS", raising=False)
+    monkeypatch.delenv("LIVESPEC_SUITE_GREEN_TIMEOUT_SECONDS", raising=False)
     monkeypatch.chdir(tmp_path)
     local_runs: list[list[str]] = []
     message = tmp_path / "COMMIT_EDITMSG"
@@ -278,6 +280,8 @@ def test_suite_green_uses_job_evidence_and_falls_back_when_it_has_no_verdict(
     from livespec_dev_tooling.commit_replay_delegate import ReplayVerdict
 
     mod = _load()
+    monkeypatch.delenv("LIVESPEC_SUITE_GREEN_STALL_SECONDS", raising=False)
+    monkeypatch.delenv("LIVESPEC_SUITE_GREEN_TIMEOUT_SECONDS", raising=False)
     monkeypatch.chdir(tmp_path)
     message = tmp_path / "COMMIT_EDITMSG"
     message.write_text("chore: suite green\n", encoding="utf-8")
