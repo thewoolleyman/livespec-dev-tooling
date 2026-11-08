@@ -59,10 +59,12 @@ otel_collector_env_from_controller:
 k3s_config_system_slice_cpu_weight: 1000
 
 # --- factory_budget_reconciler ---
-# This node may hold 6 factory sandbox pods: the TEMPORARY fixed factory-vs-CI
-# CPU share (maintainer ruling 2026-11-08). The canary-phase value was 15. Its
-# TRIPWIRE fired at 2026-11-08T18:59:34Z: CI BestEffort cpu.pressure avg60 was 30.53,
-# with 30 CI pods. So this is the method's value (5-6). The dispatcher's fleet cap
-# was lowered to 9 FIRST. The sum is now 12, matching fleet 9 + candidate 1 +
-# mi-homelab 2 (role HOST_VARS.md).
-factory_pod_budget: 6
+# This node may hold 9 factory sandbox pods: the TEMPORARY fixed factory-vs-CI
+# CPU share (maintainer ruling 2026-11-08). The value is MEASURED from the
+# 2026-11-08 CI burst. With 29-30 CI pods on the node, 11 sandboxes put CI
+# BestEffort cpu.pressure avg60 at 30.53 (18:59:34Z, the tripwire), and 10 put it
+# at 17.75 (19:16Z). 9 is one notch below the only measured-safe point. The sum
+# is 15, matching fleet 12 + candidate 1 + mi-homelab 2. The budget was raised
+# first and the cap after. TRIPWIRE: if avg60 passes 30 at any read, lower the
+# fleet cap to 9 FIRST, then set this to 6 (role HOST_VARS.md).
+factory_pod_budget: 9
