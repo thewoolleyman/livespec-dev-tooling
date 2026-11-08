@@ -46,6 +46,50 @@ budgeted explicitly, and how?
     of saturation lands on CI job duration rather than on factory turns.
 - **The factory-vs-CI share is set implicitly today.** Under contention, the factory always wins.
 
+## Evidence: where CI actually waits (2026-11-08, about 13:40-14:05Z)
+
+The coordinator asked for these numbers here. They come from a live read using `.ai/ci-node-capacity-reads.md` and the
+coordinator's 2026-11-04 saturation rule: a node is saturated when idle is under 5 % AND the CI BestEffort slice
+`cpu.pressure` avg60 is above 30. Core counts come from `usage_usec` sampled 16 s apart.
+
+| Node | Idle | CI slice avg60 | Factory cores | CI cores | system.slice | Sandboxes at their limit |
+|---|---|---|---|---|---|---|
+| poweredge (72) | 3.66 % | 16.5 (not saturated) | 41.9 | 24.5 | 3.2 | 3 of 11, in-pod concurrent aggregates |
+| gmktec (32) | 0.23 % | 37.5 (SATURATED) | 25.4 | 5.4 | 0.8 | 0 of 8 |
+
+- The 39 % host PSI quoted for poweredge at 13:33Z includes sandbox throttle stall, so it is not CI waiting.
+- poweredge is limited by in-run concurrency inside each pod's 6-core quota, and the run-side fixes own that.
+- The coordinator ruled there is no poweredge factory-cap drop.
+
+**CI p95 by concurrent factory sandboxes on gmktec.** These are ci-runtime-and-cost's Stage A per-job rows,
+2026-11-04T14:00Z to 2026-11-08T11:35Z, with its exclusions applied and successful jobs only. Each job is joined to the
+time-weighted count of factory sandboxes on gmktec over its span. That count is a 15-minute `COUNT_DISTINCT` of
+`petri-*` pods, which slightly overcounts. Durations are minutes; each cell is the median, then p95.
+
+| gmktec factory sandboxes | Orchestrator coverage shard (n) | Orchestrator median / p95 | dev-tooling coverage (n) | dev-tooling median / p95 |
+|---|---|---|---|---|
+| 1-3 | 73 | 5.5 / 21.9 | 99 | 14.9 / 47.7 |
+| 4-5 | 32 | 5.9 / 32.0 | 116 | 16.4 / 48.4 |
+| 6-7 | 52 | 8.6 / 36.7 | 141 | 20.2 / 45.3 |
+| 8-9 | 19 | 15.1 / 33.7 | 26 | 17.1 / 49.8 |
+
+- The orchestrator shard median bends upward past 5 sandboxes: 2.6x from the 4-5 band to the 8-9 band.
+- Its p95 grows sublinearly and then levels off. dev-tooling coverage stays flat.
+- On the factory side, implement on gmktec slows at 8 or more sandboxes: a P50 of 73.1 min (n=10) against 37.5 min
+  below 8, from the 11:0xZ read.
+- Taken together, the data puts a CANDIDATE gmktec factory budget at about 6 for option 1's first node. That is a
+  number for the derivation to confirm, not a derived cap:
+  - the 8-9 band is thin;
+  - the bands correlate with time of day and job mix;
+  - it was not derived jointly with `C`.
+- **The coordinator's ruling** (successor a6ed462d, about 14:0xZ):
+  - It accepts about 6 as a CANDIDATE only, with no cap change made off it.
+  - The number reaches the maintainer through this option sheet.
+  - cetudy's system.slice weight stays as applied.
+- **The live case behind it, at 13:5xZ.** gmktec ran 8 factory pods at about 27 of its 32 cores. expedited's master
+  `check-per-file-coverage` pods got 0.38 and 0.59 cores. The only lever available was a whole-fleet launch pause
+  (`hold-gmktec`, 13:53:22Z). That is the per-node gap option 1 closes.
+
 ## Not evidence: the 2026-11-08 dev-tooling janitor timeouts
 
 legacy-coordinator-agent asked for these numbers to be added here. They do NOT support making the share explicit,
