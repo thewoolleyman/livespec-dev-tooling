@@ -1,68 +1,122 @@
 ---
 topic: ci-lane-priority-from-plan-rank
 author: claude-opus-5-5
-created_at: 2026-11-08T15:03:51Z
+created_at: 2026-11-08T15:11:38Z
 ---
 
-## Proposal: CI lane priority follows plan rank through a pre-joined priorities record chosen at runs-on
+## Proposal: CI lane priority follows the maintainer radar through an opt-in priority runner set chosen at runs-on
 
 ### Target specification files
 
 - SPECIFICATION/non-functional-requirements.md
+- SPECIFICATION/constraints.md
+- SPECIFICATION/contracts.md
 - SPECIFICATION/scenarios.md
 
 ### Summary
 
-Add a section stating how a fleet repository's CI runs take lane priority from the coordinator's plan ranking without naming any plan in code. A CI_PRIORITY_RECORD repository variable carries a pre-joined map from open work item to priority band. A route step chooses each pull-request or master-push run's runs-on target from the work item ids that run names, sending high-band runs to a priority runner set that shares its lane's LocalQueue and ClusterQueue and carries a higher Kueue WorkloadPriorityClass. A missing record or an unmapped run falls back to the normal set and never blocks. The dispatcher's ticket order reads the same record. Two scenarios state the routing and the fail-safe.
+Let a fleet repository's CI runs take lane priority from the maintainer radar's order without naming any plan in code. A producer derives a CI_PRIORITY_RECORD repository variable from the radar load entry point; its wire format is a contract. A hosted, non-required route job bands each run from the work item ids it names. A lane opts in through a CI_RUNNER_LABELS_PRIORITY variable that sends high-band runs to a priority runner set sharing the lane's LocalQueue and ClusterQueue at a higher Kueue WorkloadPriorityClass. Admission order changes; nothing is evicted. Every missing, stale, unreadable or unmapped case, and every lane that has not opted in, keeps today's routing. Four scenarios state routing, fallback and the producer.
 
 ### Motivation
 
-On 2026-11-08 between 14:51Z and 14:56Z, three jobs of livespec-dev-tooling#3796 sat queued for 220 s behind first-in-first-out admission in livespec-dev-tooling-cq. That PR was the incident hook fix on the expedited incident track's critical path. Priority was enforced only by hand-cancelling factory draft runs from a 60-second watcher. The maintainer directed that the fix be generic and driven by priority, not hard-coded plan names. legacy-coordinator-agent ruled the mechanism (2026-11-08, about 15:2xZ) and split preemption of running workloads into a separate phase held for a maintainer ruling. A pod-level priority alone cannot work: ARC creates a runner pod before GitHub assigns it a job, so nothing at admission says which run the pod will serve (ci-runner/k3s/phase2/kueue/DERIVATION.md, "Why a WorkloadPriorityClass cannot fix it"). Priority is therefore chosen at runs-on. Work item: livespec-dev-tooling-5wewi2 (phase 1). Phase 2 (preemption and automatic re-run) is livespec-dev-tooling-samgg2 and is out of scope here.
+Measured on 2026-11-08 between 14:51Z and 14:56Z: three jobs of livespec-dev-tooling#3796, the incident hook fix on the expedited incident track's critical path, sat queued for 220 s behind first-in-first-out admission in livespec-dev-tooling-cq. Priority was enforced only by hand-cancelling factory draft runs from a 60-second watcher. The maintainer directed a generic, priority-driven fix with no hard-coded plan names. legacy-coordinator-agent ruled the mechanism and held preemption of running workloads for a separate maintainer ruling (livespec-dev-tooling-samgg2). ARC creates a runner pod before GitHub assigns it a job (ci-runner/k3s/phase2/kueue/DERIVATION.md, "Why a WorkloadPriorityClass cannot fix it"), so priority must be chosen at runs-on. The priority order already lives in the maintainer radar (§"Maintainer radar"), so the record is derived from it and is not a second ordering. This revision of the proposal applies the post-step LLM doctor findings: the routing contract in constraints.md is amended rather than contradicted; the priority set is an explicit opt-in, so an unprovisioned lane never strands a run; the record derives from the radar; the route job is hosted and non-blocking; and the record schema is placed in contracts.md. Work item: livespec-dev-tooling-5wewi2 (phase 1).
 
 ### Proposed Changes
 
-In `SPECIFICATION/non-functional-requirements.md`, add a new section immediately after "## Runner-pool node rebuild recipe":
+### 1. `SPECIFICATION/non-functional-requirements.md`: add a section immediately after "## Runner-pool node rebuild recipe"
 
-## CI lane priority from plan rank
+## CI lane priority from the maintainer radar
 
-A fleet repository's CI runs MUST take lane priority from the coordinator's ranking of plans, and no plan slug or plan epic id MAY appear in CI workflow code, route code or runner configuration.
+A fleet repository's CI runs MUST take lane priority from the maintainer radar's order (§"Maintainer radar"), and a plan slug, plan epic id or work item id MUST NOT be written into CI workflow code, route code or runner configuration. Plan identity MUST enter CI only through `CI_PRIORITY_RECORD` (contracts.md §"CI priority record").
 
-**Record.** Every fleet repository MUST carry a repository variable `CI_PRIORITY_RECORD` whose value is one JSON object with `schema`, `generated_at`, `source` (the priorities-record comment it was derived from), `plan_rank` (plan epic id to rank), `items` (open work item id to band: `high`, `medium` or `low`) and `default` (the band of anything unmapped). The `items` map MUST be pre-joined by its producer: open work item, then its owning plan epic through the parent edge, then that epic's rank, then the band under the thresholds committed in livespec-dev-tooling's configuration. CI therefore needs no ledger credential to read it. The producer MUST write the same value to every fleet repository, MUST be idempotent, and MUST offer a dry-run that prints each repository's value and writes nothing. The coordinator owns the record's content and runs the producer on each priorities-record append.
+**Producer.** The record MUST be produced by one committed producer in this repository. The producer MUST derive the record from the radar that the radar load entry point returns, never from any other ordering. Band assignment works as follows:
+- A `plan` entry bands every open child of its plan. The children are computed as §"Maintainer radar" computes them: the union of dotted-id descendants and `parent-child` edges.
+- An `item` entry bands that item directly.
+- An entry's band comes from its radar index under the thresholds committed in `.livespec.jsonc` at `ci.priority_bands`, an object mapping `high` and `medium` to the largest radar index each covers.
+- When one item falls under several entries, its best band holds, in the order `high` > `medium` > `low`.
 
-**Route.** Each pull-request and master-push CI run MUST choose its gating jobs' `runs-on` target in a route step that reads `CI_PRIORITY_RECORD` and the work item ids the run names: in its head branch and pull-request title, or, on a master push, in its merged commit's subject. A run whose best band is `high` MUST go to the repository's priority runner set for its lane, and every other run MUST go to the lane's normal runner set. The route step is a pure function of the record and the run's event: it MUST NOT probe runner capacity or runner labels.
+The producer MUST write the same value to every fleet repository's `CI_PRIORITY_RECORD`, and a second run on an unchanged radar and ledger MUST leave every value byte-identical. It MUST offer a dry-run that prints each repository's value and writes nothing. It MUST refuse to write a value larger than the platform's repository-variable limit, naming the size. The producer SHOULD be run on every radar change; when it runs is the coordinator's call.
 
-**Runner sets.** A lane's priority runner set MUST use the same LocalQueue and ClusterQueue as the lane's normal set, so it adds no churn-slot capacity. Its runner pods MUST carry a Kueue WorkloadPriorityClass higher than the normal set's, so that while the lane's ClusterQueue has pending workloads, a pending high-band workload is admitted before every earlier-created pending normal workload. This section states admission ORDER only: a high-band workload MUST NOT evict a running workload under this section.
+**Runner sets.** A lane that opts in carries a priority runner set beside its normal set.
+- The priority set MUST use the same LocalQueue and ClusterQueue as the normal set, so it adds no churn-slot capacity.
+- Its runner pods MUST be identical to the normal set's pods except for the scale-set name and a Kueue WorkloadPriorityClass higher than the normal set's.
+- In particular, its pods MUST use the same scheduler profile that §"Runner placement follows admission capacity" relies on.
+- The sum of a lane's normal and priority `maxRunners` MUST stay within the bound that DERIVATION.md "Bounding maxRunners to the quota" derives for that lane.
 
-**Fail-safe.** A missing, unreadable or schema-invalid `CI_PRIORITY_RECORD`, a route-step error, or a run that names no work item in the record MUST send the run to the normal runner set, MUST write the reason to the run's job summary, and MUST NOT block or fail the run.
+While a lane's ClusterQueue has pending workloads, a pending high-band workload MUST be admitted before every earlier-created pending normal workload. This section changes admission ORDER only: admitting a high-band workload MUST NOT evict a running workload.
 
-**One source.** The orchestrator dispatcher's ticket order SHOULD read the same `CI_PRIORITY_RECORD`, so that queue order and CI priority cannot disagree.
+### 2. `SPECIFICATION/constraints.md`, §"CI matrix shape": insert after the paragraph introducing `CI_RUNNER_LABELS_MASTER`
 
-**Rollout.** The priority runner set MUST be rolled out canary-first: livespec-dev-tooling's pull-request lane first, measured, then every fleet repository's pull-request lane and the livespec-dev-tooling master lane.
+A gating job MAY additionally route through the lane's opt-in priority variable, `CI_RUNNER_LABELS_PRIORITY` for pull-request events and `CI_RUNNER_LABELS_MASTER_PRIORITY` for push events. The priority variable is read only when the run's band, taken from the route job's output (non-functional-requirements.md §"CI lane priority from the maintainer radar"), is `high`. It is read at the same `runs-on`, ahead of the existing terms, and the inline hosted literal stays the LAST term. An unset priority variable MUST leave the job on the lane's existing routing. A `merge_group` event MUST NOT read a priority variable.
 
-In `SPECIFICATION/scenarios.md`, at the end of the file, add:
+The route job MUST meet all of the following:
+- It MUST run on GitHub-hosted capacity and MUST NOT be a required check.
+- It MUST be a pure function of `CI_PRIORITY_RECORD` and the run's event, and it MUST NOT probe runner capacity, runner labels or runner health.
+- A gating job that reads its output MUST still run when the route job fails or is skipped.
+- A gating job MUST read an empty or missing band as not `high`.
 
-## Scenario: a run of a high-band work item is admitted ahead of earlier pending normal runs
+The band for a run is computed as follows:
+- A pull-request run's band is the best band of the work item ids named in its head branch and title.
+- A push run's band is the best band of the ids named in the subjects of the commits the push carries.
+- An id the record does not name takes the record's `default`.
 
-Given `CI_PRIORITY_RECORD` bands work item W `high` because W's plan epic holds a top rank
+The priority variables, the band output and the existing variables together, with the inline fallback, are the entire routing contract.
 
-And the repository's pull-request lane is at its churn-slot quota with normal workloads pending
+### 3. `SPECIFICATION/contracts.md`: add a section
+
+## CI priority record
+
+`CI_PRIORITY_RECORD` is a repository variable whose value MUST be one JSON object with these keys:
+- `schema`: the integer `1`.
+- `generated_at`: an ISO-8601 UTC timestamp.
+- `radar_commit`: the commit of `livespec_dev_tooling/radar/radar.py` the record was derived from.
+- `items`: an object mapping a work item id to `high` or `medium`.
+- `default`: `low`.
+
+The producer MUST omit from `items` every item whose band equals `default`. A reader MUST treat as MISSING a value that does not parse, has another `schema`, lacks a key, or carries a `generated_at` more than 72 hours old. A missing record MUST band every run `default`.
+
+### 4. `SPECIFICATION/scenarios.md`: add at the end of the file
+
+## Scenario: a run of a high-band work item on an opted-in lane is admitted ahead of earlier pending normal runs
+
+Given `CI_PRIORITY_RECORD` bands work item W `high`
+
+And the repository's pull-request lane sets `CI_RUNNER_LABELS_PRIORITY` and is at its churn-slot quota with normal workloads pending
 
 When a pull request whose head branch names W starts its CI run
 
-Then the route step MUST send the run's gating jobs to the lane's priority runner set
+Then its gating jobs MUST run on the lane's priority runner set
 
-And each of those jobs' pending workloads MUST be admitted before every earlier-created pending normal workload in that ClusterQueue
+And each of their pending workloads MUST be admitted before every earlier-created pending normal workload in that ClusterQueue
 
 And admitting them MUST NOT evict any running workload
 
-## Scenario: a run with no usable priority record runs on the normal runner set
+## Scenario: a run naming no high-band item keeps the lane's existing routing
 
-Given `CI_PRIORITY_RECORD` is missing from the repository, or does not parse as the record schema
+Given `CI_PRIORITY_RECORD` names work item V `medium` and does not name work item U
+
+When a pull request whose head branch names V, and another whose head branch names U, start their CI runs
+
+Then both runs' gating jobs MUST run on the lane's existing routing
+
+And a high-band run on a lane that does not set `CI_RUNNER_LABELS_PRIORITY` MUST also run on the lane's existing routing
+
+## Scenario: a failed route job or an unusable record leaves gating jobs on their existing routing
+
+Given `CI_PRIORITY_RECORD` is missing, does not parse, or carries a `generated_at` more than 72 hours old, or the route job fails
 
 When a pull request starts its CI run
 
-Then the route step MUST send the run's gating jobs to the lane's normal runner set
+Then its gating jobs MUST run on the lane's existing routing and reach their own outcome
 
-And the run's job summary MUST state why no priority was applied
+And the route job's summary MUST state why no priority was applied, when the route job ran
 
-And the run's gating jobs MUST proceed as they would with no route step
+## Scenario: the CI priority producer is idempotent and its dry-run writes nothing
+
+Given the maintainer radar and the ledger are unchanged between two producer runs
+
+When the producer runs twice, and then runs once with its dry-run flag
+
+Then every fleet repository's `CI_PRIORITY_RECORD` after the second run MUST be byte-identical to its value after the first
+
+And the dry-run MUST print each repository's value and MUST leave every `CI_PRIORITY_RECORD` unchanged
