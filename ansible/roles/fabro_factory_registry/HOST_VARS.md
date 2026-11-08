@@ -4,6 +4,7 @@
 | --- | --- | --- |
 | `fabro_factory_registry` | `{}` | Which Fabro server instance answers to each logical factory name. A mapping from the factory name to an object carrying `host`, `unit_name` and optionally `docker_host`. |
 | `fabro_factory_registry_dest` | `/etc/livespec/fabro-factories.json` | The absolute path this role renders the registry to. The directory it names is created too. |
+| `fabro_factory_registry_limits_dir` | `/home/ubuntu/.local/state/livespec/fleet-limits` | The directory holding one world-readable `<factory>.max_concurrent_runs` file per declared factory. |
 
 `fabro_factory_registry` is declared ONCE, and only in
 `ansible/inventory/group_vars/dev_hosts.yml` — not in
@@ -23,6 +24,15 @@ runs it on, as a JSON object holding one entry per factory name whose `server` i
 `docker_host` exactly when the mapping declares it. The default `{}` renders the
 empty object rather than skipping the file, so a Dispatcher never reads a registry
 an earlier converge left behind.
+
+The same converge also renders one line per factory under
+`fabro_factory_registry_limits_dir`. Each `<factory>.max_concurrent_runs` file
+contains the `max_concurrent_runs` from the resolved host's matching
+`fabro_server_instances` mapping — the exact inventory value the `fabro_server`
+role renders into that instance's `settings.toml`. A factory whose resolved
+instance does not declare that value is refused before either the registry or a
+limit file is written. The files are world-readable because the native
+Dispatcher launchers read them as their service user.
 
 `fabro_factory_registry_dest` defaults to `/etc/livespec/fabro-factories.json`,
 the path the Dispatcher reads

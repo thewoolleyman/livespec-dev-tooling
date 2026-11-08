@@ -1,0 +1,2 @@
+{{ (hostvars[item.value.host].fabro_server_instances | selectattr('unit_name', 'equalto', item.value.unit_name) | first).max_concurrent_runs }}
+{# This comment keeps the preceding rendered line's terminal newline. #}
