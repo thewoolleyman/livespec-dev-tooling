@@ -629,10 +629,13 @@ fabro_server_instances:
         env:
           SANDBOX_DRIVER_KUBERNETES_STATE_DIR: /home/cwoolley/.fabro-candidate/.local/state/sandbox-driver-kubernetes
         process_spec:
-          # The CANDIDATE alone runs python-agent-v1.173.0, the first release that bakes
-          # claude-agent-acp 0.91.0 (Claude Code 2.1.300; livespec-dev-tooling-wrlwvk, #3424),
-          # so its in-pod proof is taken here before the fleet instance moves off v1.136.2.
-          image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-agent-v1.173.0
+          # The CANDIDATE alone runs python-agent-v1.188.1, the release the orchestrator
+          # workflow pins today. It carries claude-agent-acp 0.91.0 (Claude Code 2.1.300;
+          # livespec-dev-tooling-wrlwvk, #3424), first proven in-pod here on v1.173.0
+          # (run 01M6MQBBRZ7A). Its environment-parity proof against the fleet's v1.136.2
+          # is taken here before the fleet instance moves off v1.136.2.
+          # ROLLBACK: python-agent-v1.173.0.
+          image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-agent-v1.188.1
           cpu_cores: 4
           memory_mb: 7629
       kubernetes-rust:
