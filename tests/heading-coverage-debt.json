@@ -268,13 +268,6 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario: a default-branch push routes to the master runner target and a pull request does not",
-    "work_item": "livespec-dev-tooling-lzkzwb",
-    "first_seen": "2026-11-03"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
     "heading": "## Scenario: a delegated gate Job never admitted within the admission bound ends without a verdict and is deleted",
     "work_item": "livespec-dev-tooling-f2dgn6",
     "first_seen": "2026-11-05"

@@ -1961,8 +1961,8 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a default-branch push routes to the master runner target and a pull request does not",
-    "test": "TODO",
-    "reason": "Spec-first: a real test at the consumer tier is owed for this heading. It reads `.github/workflows/ci.yml` and asserts that every gating job's `runs-on` expression reads `CI_RUNNER_LABELS_MASTER` for push events ahead of `CI_RUNNER_LABELS`, with a GitHub-hosted literal as the last term. A host-captured observation of a live push run landing on the master scale set while a concurrent pull-request run lands on the shared one completes it. livespec-dev-tooling-lzkzwb owns it.",
+    "test": "tests.consumer.test_master_runner_target_routing_scenario.test_a_push_runs_every_gating_job_on_the_master_target",
+    "reason": "Consumer-tier coverage reads `.github/workflows/ci.yml` and evaluates every gating job's `runs-on` expression: a push resolves to `CI_RUNNER_LABELS_MASTER`, a concurrent pull request to `CI_RUNNER_LABELS`, a push with the master variable deleted to `CI_RUNNER_LABELS`, and no variable at all to the GitHub-hosted literal that ends every expression. The live push run on the master scale set is host-recorded on livespec-dev-tooling-lzkzwb.",
     "work_item": "livespec-dev-tooling-lzkzwb"
   },
   {
