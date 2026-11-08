@@ -95,19 +95,25 @@ restart, because the selector stays as it is and every node then matches it.
 1. Apply the `factory_budget_admission` tag of `ansible/ci-pool.yml`. Confirm that
    every `ci-runner.io/factory=true` node carries `ci-runner.io/factory-admit`:
    `kubectl get nodes -L ci-runner.io/factory,ci-runner.io/factory-admit`.
-   Until step 3 the label steers nothing.
+   Until step 2 the label steers nothing.
 2. Apply the `sandbox_driver_kubernetes` tag of `ansible/fabro-hosts.yml`. It
    renders the selector entry into every config home. The deployed file predates
    the role's `kubernetes.io/arch` entry, so that entry lands too. It is harmless,
    because every factory node is amd64.
-3. Restart EACH Fabro instance at zero runs: fleet, candidate and mi-homelab. The
-   plugin loads its configuration once per process (`main.rs`), so an instance that
-   is not restarted keeps placing without the gate. kubernetes-sandbox-backend
-   executes the restarts as a preserve, cancel, restart and re-dispatch window
-   (`.ai/factory-restart-cancels-runs.md`), announced to the coordinator first and
-   kept outside expedited's quiet windows.
 
-Revert in reverse order: drop the selector entry and restart, then remove the role.
+**No Fabro restart is needed.** Each run's worker spawns its own plugin process,
+which reads `config.toml` when it launches. A run launched after the step 2 render
+therefore places with the gate, and a run already placed keeps its node. This was
+measured on the first apply, on 2026-11-08 by kubernetes-sandbox-backend. The
+fleet server had run unrestarted since 2026-11-07T03:42Z, and its `config.toml`
+was written at 18:47:31Z. Run `01M6Y7RX3E0S`'s plugin launched at 18:47:16Z, before
+the write, and its pod carried no `factory-admit` selector. Run `01M6Y7W275A3`'s
+plugin launched at 18:48:59Z, and its pod was created on poweredge at 18:49:00Z
+carrying the selector. The plugin does load its configuration once per process
+(`main.rs`), but the process lives for one run, not for the Fabro server.
+
+Revert in reverse order: drop the selector entry and apply step 2's tag again, so
+runs launched after that render place without the gate, then remove the role.
 For an immediate stop, use the kill switch.
 
 ## Files
