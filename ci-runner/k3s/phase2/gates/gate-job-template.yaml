@@ -601,10 +601,11 @@ spec:
               # the verdict said it could not. Both shapes are read, from
               # either stream, and the LAST summary printed wins.
               #
-              # STDERR IS COPIED INTO THE CAPTURE, NOT MERGED INTO STDOUT: each
-              # stream still reaches the Job log on its own descriptor, so what
-              # an operator reads is unchanged. Both tees append to the one
-              # capture file so the awk below sees the summaries in print order.
+              # STDERR AND STDOUT ARE MERGED BEFORE THE CAPTURE: the aggregate
+              # writes both descriptors to one pipe, so one tee appends them in
+              # the order the aggregate printed them. Two independently
+              # scheduled tees can append a stale stderr summary after a newer
+              # stdout summary, which makes arrival order decide the verdict.
               gate_failing_members() {
                 awk '
                   { sub(/\r$/, "") }
@@ -629,12 +630,9 @@ spec:
               set +e
               : > "${recipe_log}"
               {
-                {
-                  set -e
-                  @@GATE_RECIPES@@
-                } 2>&1 1>&3 | tee -a "${recipe_log}" >&2
-                exit "${PIPESTATUS[0]}"
-              } 3>&1 | tee -a "${recipe_log}"
+                set -e
+                @@GATE_RECIPES@@
+              } 2>&1 | tee -a "${recipe_log}"
               recipe_status="${PIPESTATUS[0]}"
               set -e
               if [ "${recipe_status}" -eq 0 ]; then
