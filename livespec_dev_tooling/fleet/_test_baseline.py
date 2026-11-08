@@ -43,6 +43,9 @@ _MISE_UV = ("mise", "exec", "--", "uv", "run")
 _NEXTEST_LIST_COMMAND = ("cargo", "nextest", "list", "--message-format", "json")
 _NEXTEST_TEST_COMMAND = ("cargo", "nextest", "run", "--workspace", "--all-features")
 _PYTEST_COUNT = re.compile(r"(\d+) tests? collected")
+# A repository whose addopts already carries `-q` makes the collector doubly
+# quiet: it prints one `path: count` line per test file and no summary line.
+_PYTEST_FILE_COUNT = re.compile(r"^\S+\.py: (\d+)$", re.MULTILINE)
 
 
 def run_command(*, command: tuple[str, ...], cwd: Path) -> subprocess.CompletedProcess[str]:
@@ -65,7 +68,14 @@ def _command_text(*, command: tuple[str, ...]) -> str:
 
 def _pytest_count(*, output: str) -> int:
     """Read pytest's exact collection total from its quiet collector output."""
-    return int(_PYTEST_COUNT.findall(output)[0])
+    summary = _PYTEST_COUNT.findall(output)
+    if summary:
+        return int(summary[0])
+    per_file = _PYTEST_FILE_COUNT.findall(output)
+    if not per_file:
+        msg = "pytest --collect-only printed no test count, neither a summary nor per-file totals"
+        raise ValueError(msg)
+    return sum(int(count) for count in per_file)
 
 
 def _python_row(*, path: Path, runner: Runner) -> RepositoryRow:
