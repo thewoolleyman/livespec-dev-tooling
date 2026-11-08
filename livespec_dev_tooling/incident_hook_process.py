@@ -22,6 +22,7 @@ from livespec_dev_tooling.incident_execution import (
 from livespec_dev_tooling.incident_transport import CONTEXT_ENV, decode_execution_context
 
 __all__: list[str] = [
+    "AUTHORITY_CALL_CEILING_SECONDS",
     "HookRefusalError",
     "canonical",
     "exact_tree",
@@ -36,6 +37,11 @@ _QUERY_KEYS = frozenset(
     ("repository", "item", "attempt", "phase", "operation", "generation", "owner")
 )
 _TIMEOUT = 30
+# A hang guard for one canonical authority call, never a verdict. Measured on the
+# dev host 2026-11-08 (livespec-dev-tooling-yaprm4): read-local-gates took 21-39 s
+# and grows with the chain's generation, so a 30 s bound refused live expedited
+# commits. Ten minutes stops a hung wrapper or ledger without deciding a slow one.
+AUTHORITY_CALL_CEILING_SECONDS = 600
 _MAX_QUERY = 16384
 
 
@@ -110,9 +116,20 @@ def invoke_authority(
         command.extend(["--receipt-json", receipt])
     if receipt_id is not None:
         command.extend(["--receipt-id", receipt_id])
-    done = subprocess.run(  # noqa: S603 — fixed registered executable; structured query argv.
-        command, cwd=repo, text=True, capture_output=True, timeout=_TIMEOUT, check=False
-    )
+    try:
+        done = subprocess.run(  # noqa: S603 — fixed registered executable; structured query argv.
+            command,
+            cwd=repo,
+            text=True,
+            capture_output=True,
+            timeout=AUTHORITY_CALL_CEILING_SECONDS,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        _fail(
+            detail=f"registered canonical incident process {action} exceeded its"
+            f" {AUTHORITY_CALL_CEILING_SECONDS} s liveness ceiling"
+        )
     response = mapping(value=json.loads(done.stdout))
     if (
         done.returncode
