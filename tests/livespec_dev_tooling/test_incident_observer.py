@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import importlib
 import json
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
+from pathlib import Path
 from threading import Event
 
 import pytest
@@ -22,6 +24,13 @@ from livespec_dev_tooling.incident_observer import (
 
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-47ij37
 _SECRET = b"observer-controller-fixture"
+
+
+def test_callback_lifecycle_is_extracted_to_its_own_module():
+    callback_module = Path(controller.__file__).with_name("incident_observer_callbacks.py")
+    assert callback_module.is_file()
+    callbacks = importlib.import_module("livespec_dev_tooling.incident_observer_callbacks")
+    assert callbacks.record_job_callback is controller.record_job_callback
 
 
 @pytest.fixture
