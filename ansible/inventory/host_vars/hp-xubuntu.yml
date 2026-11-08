@@ -114,3 +114,14 @@ storage_reclaim_state: absent
 # No factory sandbox pods: FACTORY_NODE=false since 2026-11-03. Declared so the
 # intent can be read here (role HOST_VARS.md).
 factory_pod_budget: 0
+
+# --- k3s_config ---
+# system.slice's root-level CPU share against kubepods.slice (567 on this 16-CPU
+# node, which carries the factory-worker kubelet reservation budget), so
+# k3s-agent, containerd and tailscaled are not starved when the node saturates
+# (livespec-dev-tooling-cetudy; coordinator ruling 2026-11-08T09:51:16Z, fleet
+# scope rule K). Measured 2026-11-08 ~10:05Z: system.slice at 100 was entitled to
+# about 1.8 CPUs under full contention. 1000 entitles it to about 9.1 CPUs.
+# Applied by a daemon-reload, no k3s restart; revert by removing this key and
+# re-applying --tags k3s_system_slice_cpu_weight.
+k3s_config_system_slice_cpu_weight: 1000
