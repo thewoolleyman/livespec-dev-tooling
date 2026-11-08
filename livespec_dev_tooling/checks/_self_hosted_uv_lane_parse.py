@@ -68,9 +68,20 @@ _TOP_ENV_LINE = re.compile(r"^(?P<q>[\"']?)env(?P=q):\s*$")
 _ENV_ENTRY_LINE = re.compile(r"^(?P<indent>[ \t]+)(?P<key>[A-Za-z_][\w-]*)\s*:(?P<value>.*)$")
 
 
+def _reference_pattern(*, variable: str) -> re.Pattern[str]:
+    """Match `vars.<variable>` only as a WHOLE variable name.
+
+    A raw substring test reads `vars.CI_RUNNER_LABELS_MASTER` as a reference to
+    `vars.CI_RUNNER_LABELS`, because the one name is the prefix of the other
+    (livespec-dev-tooling-sdampl). The lookahead refuses a match that an
+    identifier character would continue.
+    """
+    return re.compile(re.escape(f"{_VARS_PREFIX}{variable}") + r"(?![A-Za-z0-9_])")
+
+
 def references_variable(*, value: str, variable: str) -> bool:
     """Return whether `value` references the repo variable `variable`."""
-    return f"{_VARS_PREFIX}{variable}" in value
+    return _reference_pattern(variable=variable).search(value) is not None
 
 
 def uses_uv(*, stripped: str) -> bool:
@@ -117,11 +128,10 @@ def variable_fallback_literal(*, value: str, variable: str) -> str | None:
     `||` alternative -- which on the `env` shape is the uv value, not a routing
     literal at all.
     """
-    reference = f"{_VARS_PREFIX}{variable}"
-    if reference not in value:
+    match = _reference_pattern(variable=variable).search(value)
+    if match is None:
         return None
-    _, _, remainder = value.partition(reference)
-    remainder = remainder.lstrip()
+    remainder = value[match.end() :].lstrip()
     if not remainder.startswith(_OR_OPERATOR):
         return None
     return _leading_quoted_literal(text=remainder[len(_OR_OPERATOR) :].lstrip())
