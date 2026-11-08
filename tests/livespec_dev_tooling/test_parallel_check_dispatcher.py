@@ -78,24 +78,78 @@ _MODULE = _REPO_ROOT / "livespec_dev_tooling" / "parallel_check_dispatcher.py"
 # ---------------------------------------------------------------------------
 
 
-def test_cap_workers_uses_default_when_not_requested() -> None:
-    """_cap_workers(requested=None) returns a positive value bounded by cpu_count."""
-    result = _cap_workers(requested=None)
-    assert result >= 1
-    assert result <= (os.cpu_count() or 1)
+def test_cap_workers_default_follows_allowed_cpus_capped_at_eight() -> None:
+    """With no --workers the count is the allowed CPUs, capped at 8."""
+    assert _cap_workers(requested=None, allowed=6) == 6
+    assert _cap_workers(requested=None, allowed=4) == 4
+    assert _cap_workers(requested=None, allowed=32) == 8
 
 
-def test_cap_workers_respects_explicit_request_when_below_cpu_count() -> None:
-    """_cap_workers(requested=1) returns 1 regardless of cpu_count."""
-    result = _cap_workers(requested=1)
-    assert result == 1
+def test_cap_workers_explicit_request_is_bounded_by_allowed_cpus() -> None:
+    """--workers N yields the smaller of N and the allowed CPUs."""
+    assert _cap_workers(requested=1, allowed=6) == 1
+    assert _cap_workers(requested=999, allowed=6) == 6
+    assert _cap_workers(requested=12, allowed=32) == 12
 
 
-def test_cap_workers_caps_at_cpu_count_when_request_exceeds_it() -> None:
-    """_cap_workers(requested=999) is capped at cpu_count (never exceeds real cores)."""
-    cpu = os.cpu_count() or 1
-    result = _cap_workers(requested=999)
-    assert result <= cpu
+def _max_concurrent_targets(*, log: Path) -> int:
+    running = peak = 0
+    for line in log.read_text(encoding="utf-8").splitlines():
+        running += 1 if line.startswith("start") else -1
+        peak = max(peak, running)
+    return peak
+
+
+def _write_sleeping_targets(*, tmp_path: Path, log: Path, count: int) -> list[str]:
+    names = [f"check-t{i}" for i in range(count)]
+    content = "".join(
+        f"{n}:\n    echo start >> {log}\n    sleep 0.6\n    echo end >> {log}\n\n" for n in names
+    )
+    _write_justfile(tmp_path=tmp_path, content=content)
+    return names
+
+
+def test_main_default_workers_run_at_most_the_allowed_cpus_at_once(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A process allowed 2 CPUs on a larger host runs at most 2 targets at once."""
+    monkeypatch.setattr(mod, "current_allowed_cpu_count", lambda: 2)
+    log = tmp_path / "concurrency.log"
+    names = _write_sleeping_targets(tmp_path=tmp_path, log=log, count=5)
+    result = _run_dispatcher(
+        tmp_path=tmp_path, args=["--", *names], monkeypatch=monkeypatch, capsys=capsys
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert _max_concurrent_targets(log=log) == 2
+
+
+def test_main_explicit_workers_never_exceed_the_allowed_cpus(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """--workers 5 in a process allowed 2 CPUs still runs at most 2 targets at once."""
+    monkeypatch.setattr(mod, "current_allowed_cpu_count", lambda: 2)
+    log = tmp_path / "concurrency.log"
+    names = _write_sleeping_targets(tmp_path=tmp_path, log=log, count=5)
+    result = _run_dispatcher(
+        tmp_path=tmp_path,
+        args=["--workers", "5", "--", *names],
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert _max_concurrent_targets(log=log) == 2
+
+
+def test_help_text_states_the_default_worker_derivation(
+    *, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """--help says the default is derived from the CPUs the process may use, capped at 8."""
+    monkeypatch.setattr(sys, "argv", ["parallel-check-dispatcher", "--help"])
+    with pytest.raises(SystemExit):
+        mod.main()
+    flat = " ".join(capsys.readouterr().out.split())
+    assert "CPUs the process may use" in flat
+    assert "capped at 8" in flat
 
 
 # ---------------------------------------------------------------------------

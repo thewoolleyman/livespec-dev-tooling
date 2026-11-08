@@ -47,8 +47,10 @@ CLI:
     python -m livespec_dev_tooling.parallel_check_dispatcher
         [--workers N] [--skip SPACE_SEP_LIST] [--] TARGET ...
 
-    --workers N       Max concurrent just-target subprocesses.
-                      Default: min(cpu_count, 8).
+    --workers N       Max concurrent just-target subprocesses, bounded by
+                      the CPUs the process may use. Default: the CPUs the
+                      process may use (cgroup cpu.max quota, else affinity
+                      mask), capped at 8.
     --skip LIST       Space-separated list of targets to skip.
     TARGET ...        Ordered target list (positional, after optional --).
 
@@ -62,7 +64,6 @@ Output:
 
 from __future__ import annotations
 
-import argparse
 import os
 import shutil
 import subprocess
@@ -80,9 +81,11 @@ if str(_VENDOR_DIR) not in sys.path:
 import structlog  # noqa: E402  — vendor-path-aware import after sys.path insert.
 
 from livespec_dev_tooling._pyright_warmup import warm_locked_pyright  # noqa: E402
+from livespec_dev_tooling.allowed_cpus import current_allowed_cpu_count  # noqa: E402
 from livespec_dev_tooling.check_failure_digest import (  # noqa: E402
     failure_digest_lines,
 )
+from livespec_dev_tooling.parallel_check_dispatcher_cli import parse_args  # noqa: E402
 
 __all__: list[str] = []
 
@@ -145,6 +148,9 @@ class TargetResult:
         self.output = output
 
 
+_DEFAULT_MAX_WORKERS = 8
+
+
 def _configure_logger() -> structlog.stdlib.BoundLogger:
     structlog.configure(
         processors=[
@@ -157,10 +163,10 @@ def _configure_logger() -> structlog.stdlib.BoundLogger:
     return structlog.get_logger("parallel_check_dispatcher")
 
 
-def _cap_workers(*, requested: int | None) -> int:
-    """Return the effective worker count: min(cpu_count, requested or DEFAULT)."""
-    cap = requested if requested is not None else 8
-    return max(1, min(os.cpu_count() or 1, cap))
+def _cap_workers(*, requested: int | None, allowed: int) -> int:
+    """Return the effective worker count: min(allowed CPUs, requested or DEFAULT)."""
+    cap = requested if requested is not None else _DEFAULT_MAX_WORKERS
+    return max(1, min(allowed, cap))
 
 
 def _build_namespace_dirs(
@@ -415,22 +421,14 @@ def _run_all(
     return results
 
 
-def _parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        description="Parallel just-check dispatcher with core-budget cap."
-    )
-    _ = parser.add_argument("--workers", type=int, default=None, help="Max concurrent targets.")
-    _ = parser.add_argument("--skip", type=str, default="", help="Space-separated skip list.")
-    _ = parser.add_argument("targets", nargs="*", help="Ordered target list.")
-    return parser.parse_args()
-
-
 def main() -> int:
     log = _configure_logger()
-    args = _parse_args()
+    args = parse_args()
     skip_str: str = cast(str, args.skip)
     skip_set: frozenset[str] = frozenset(skip_str.split())
-    max_workers = _cap_workers(requested=cast(int | None, args.workers))
+    max_workers = _cap_workers(
+        requested=cast(int | None, args.workers), allowed=current_allowed_cpu_count()
+    )
     cwd = Path.cwd()
     already_warmed = os.environ.pop("LIVESPEC_PYRIGHT_WARMED", None) == "1"
     log.info(
