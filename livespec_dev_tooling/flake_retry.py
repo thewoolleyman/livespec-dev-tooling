@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING, cast
 import pytest
 
 from livespec_dev_tooling.flake_retry_changes import change_paths, withheld_reason
+from livespec_dev_tooling.flake_retry_paths import path_literals
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -100,11 +101,12 @@ def _conftest_chain(*, repo_root: Path, test_path: Path) -> list[Path]:
         current = current.parent
 
 
-def _closure(*, repo_root: Path, test_path: Path) -> tuple[set[Path], set[str]] | None:
+def _closure(*, repo_root: Path, test_path: Path) -> tuple[set[Path], set[str], bool] | None:
     """Read imports and string literals without executing the test tree."""
     pending = [test_path, *_conftest_chain(repo_root=repo_root, test_path=test_path)]
     modules: set[Path] = set()
     literals: set[str] = set()
+    undeterminable_paths = False
     while pending:
         path = pending.pop()
         if path in modules:
@@ -114,13 +116,24 @@ def _closure(*, repo_root: Path, test_path: Path) -> tuple[set[Path], set[str]] 
         except (OSError, SyntaxError, UnicodeError):
             return None
         modules.add(path)
+        path_component_nodes = {
+            id(component)
+            for node in ast.walk(tree)
+            if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Div)
+            for component in ast.walk(node)
+            if isinstance(component, ast.Constant) and isinstance(component.value, str)
+        }
         literals.update(
             node.value
             for node in ast.walk(tree)
             if isinstance(node, ast.Constant) and isinstance(node.value, str)
+            if id(node) not in path_component_nodes or Path(node.value).suffix
         )
+        path_names, path_is_undeterminable = path_literals(tree=tree, repo_root=repo_root)
+        literals.update(path_names)
+        undeterminable_paths = undeterminable_paths or path_is_undeterminable
         pending.extend(_imports(repo_root=repo_root, path=path, tree=tree) - modules)
-    return modules, literals
+    return modules, literals, undeterminable_paths
 
 
 def _changed_names(*, paths: set[Path]) -> set[str]:
@@ -149,7 +162,9 @@ def retry_marker_for(
     analyzed = _closure(repo_root=repo_root, test_path=test_path)
     if analyzed is None:
         return None
-    modules, literals = analyzed
+    modules, literals, undeterminable_paths = analyzed
+    if undeterminable_paths:
+        return None
     relative_modules = {path.relative_to(repo_root) for path in modules}
     if relative_modules & change_paths or literals & _changed_names(paths=change_paths):
         return None
