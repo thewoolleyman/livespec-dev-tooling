@@ -675,6 +675,90 @@ def test_the_dev_host_play_renders_each_factorys_declared_capacity(*, tmp_path: 
         path = limits_dir / f"{name}.max_concurrent_runs"
         assert path.is_file(), output
         assert path.read_text(encoding="utf-8") == value, output
+        assert path.stat().st_mode & 0o777 == 0o644, output
+
+
+def test_a_changed_declared_capacity_rewrites_the_factories_one_line_limit(
+    *, tmp_path: Path
+) -> None:
+    root = tmp_path / "changed-capacity"
+    hosts = _write_fixture(root=root, registry=_DECLARED)
+    limits_dir = root / "rendered-limits"
+    registry_dest = root / "rendered-registry" / "fabro-factories.json"
+    registry_dest.parent.mkdir(parents=True)
+    extra_vars = {
+        "ansible_become": False,
+        _DEST_VAR: str(registry_dest),
+        "fabro_factory_registry_limits_dir": str(limits_dir),
+    }
+    args = [
+        "-i",
+        str(hosts),
+        "--limit",
+        "dev_hosts",
+        "--tags",
+        _ROLE_NAME,
+        "-e",
+        json.dumps(extra_vars),
+        str(_PLAYBOOK),
+    ]
+
+    first = _ansible(cwd=root, argv=args)
+    first_output = first.stdout + first.stderr
+    assert first.returncode == 0, first_output
+    legacy_limit = limits_dir / "legacy.max_concurrent_runs"
+    assert legacy_limit.read_text(encoding="utf-8") == "17\n", first_output
+
+    factory_one = root / "inventory" / "host_vars" / "factory-one.json"
+    instances = json.loads(factory_one.read_text(encoding="utf-8"))["fabro_server_instances"]
+    instances[0]["max_concurrent_runs"] = "31"
+    factory_one.write_text(json.dumps({"fabro_server_instances": instances}), encoding="utf-8")
+
+    second = _ansible(cwd=root, argv=args)
+    second_output = second.stdout + second.stderr
+    assert second.returncode == 0, second_output
+    assert legacy_limit.read_text(encoding="utf-8") == "31\n", second_output
+
+
+def test_a_factory_without_a_declared_capacity_refuses_before_any_limit_write(
+    *, tmp_path: Path
+) -> None:
+    root = tmp_path / "missing-capacity"
+    hosts = _write_fixture(root=root, registry=_DECLARED)
+    factory_one = root / "inventory" / "host_vars" / "factory-one.json"
+    instances = json.loads(factory_one.read_text(encoding="utf-8"))["fabro_server_instances"]
+    del instances[0]["max_concurrent_runs"]
+    factory_one.write_text(json.dumps({"fabro_server_instances": instances}), encoding="utf-8")
+    limits_dir = root / "rendered-limits"
+    registry_dest = root / "rendered-registry" / "fabro-factories.json"
+    registry_dest.parent.mkdir(parents=True)
+
+    done = _ansible(
+        cwd=root,
+        argv=[
+            "-i",
+            str(hosts),
+            "--limit",
+            "dev_hosts",
+            "--tags",
+            _ROLE_NAME,
+            "-e",
+            json.dumps(
+                {
+                    "ansible_become": False,
+                    _DEST_VAR: str(registry_dest),
+                    "fabro_factory_registry_limits_dir": str(limits_dir),
+                }
+            ),
+            str(_PLAYBOOK),
+        ],
+    )
+    output = done.stdout + done.stderr
+    assert done.returncode != 0, output
+    assert "factory legacy" in output, output
+    assert "max_concurrent_runs" in output, output
+    assert not limits_dir.exists(), output
+    assert not registry_dest.exists(), output
 
 
 def _committed_registry() -> dict[str, dict[str, str]]:
