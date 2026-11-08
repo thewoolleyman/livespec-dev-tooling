@@ -330,6 +330,23 @@ serverTLSBootstrap: true
 EOF_KUBELET
 printf 'NODE_NAME=%s\nNODE_IP=%s\nWORKER_HOST=%s\n' "$worker" "$node_ip" "$host" >"$root/enrollment/kubelet.env"
 
+# system.slice's CPU share inside the worker (gmktec-factory-placement's
+# measurement request, epic livespec-dev-tooling-ko26ez, 2026-11-08): the kubelet
+# and containerd run in the worker container's system.slice at systemd's default
+# cpu.weight 100 against kubepods.slice's weight derived from allocatable CPU
+# (469 at 12 CPUs), so under saturation the node agents starve. The same drop-in
+# the fleet nodes carry (ansible k3s_config, k3s_config_system_slice_cpu_weight:
+# 1000, livespec-dev-tooling-cetudy) is written on every converge; systemd
+# re-applies it to the running slice on the daemon-reload, restarting nothing.
+slice_drop_in='[Slice]
+CPUWeight=1000'
+if [ "$(docker exec "$worker" cat /etc/systemd/system/system.slice.d/50-cpu-weight.conf 2>/dev/null || true)" != "$slice_drop_in" ]; then
+  printf '%s\n' "$slice_drop_in" |
+    docker exec -i "$worker" sh -c 'mkdir -p /etc/systemd/system/system.slice.d && cat >/etc/systemd/system/system.slice.d/50-cpu-weight.conf'
+  docker exec "$worker" systemctl daemon-reload
+  say "system.slice CPUWeight=1000 set in $worker"
+fi
+
 if [ -s "$root/enrollment/client-ca.crt" ] &&
   { [ -s "$root/kubelet/kubeconfig" ] || [ -s "$root/enrollment/bootstrap-kubeconfig" ]; }; then
   docker exec "$worker" systemctl start kubelet
