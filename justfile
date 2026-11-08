@@ -243,7 +243,7 @@ fleet-test-baseline *paths:
 check:
     #!/usr/bin/env bash
     set -uo pipefail
-    source scripts/just/gate-surface-severity-levers.sh
+    source scripts/just/gate-surface-severity-levers.sh || exit 1
     targets=(
         check-agents-ai-references-resolve
         check-aggregate-completeness
