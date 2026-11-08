@@ -80,11 +80,17 @@ namespace growth weeks later.
 from __future__ import annotations
 
 import hashlib
+import signal
 import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-from livespec_dev_tooling._gate_wait_progress import reporting_sleeper
+from livespec_dev_tooling._gate_wait_progress import (
+    GateWaitContext,
+    GateWaitInterruptedError,
+    await_terminal_state_with_interrupt_cleanup,
+    interrupted_wait_failure,
+)
 from livespec_dev_tooling.gate_credential import with_gates_kubeconfig
 from livespec_dev_tooling.gate_private_sibling_token import (
     create_private_sibling_token_secret,
@@ -102,12 +108,9 @@ from livespec_dev_tooling.gate_remote_invocation import (
 )
 from livespec_dev_tooling.gate_remote_job_status import (
     COMPLETE_CONDITION,
-    Terminal,
     created_job_name,
     created_job_tree_hash,
     reported_time,
-    terminal_condition,
-    unreadable,
 )
 from livespec_dev_tooling.gate_remote_request import GATE_NAMESPACE, GateRunRequest
 
@@ -117,7 +120,7 @@ _VENDOR_DIR = Path(__file__).resolve().parent / "_vendor"
 if str(_VENDOR_DIR) not in sys.path:
     sys.path.insert(0, str(_VENDOR_DIR))
 
-from returns.result import Failure, Result, Success  # noqa: E402  — vendor-path-aware import.
+from returns.result import Failure, Result  # noqa: E402  — vendor-path-aware import.
 
 __all__: list[str] = [
     "GATE_BASE_REF_SUFFIX",
@@ -155,6 +158,7 @@ _AWAIT_STEP = "await-gate-terminal"
 _STREAM_STEP = "stream-gate-logs"
 _DELETE_STEP = "delete-gate-ref"
 _DELETE_ABANDONED_JOB_STEP = "delete-abandoned-gate-job"
+
 
 # The two Job conditions that mean the gate is OVER. Kubernetes reports every
 # condition it has ever set, negative ones included, so the type alone does not
@@ -440,9 +444,33 @@ def _gate_a_pushed_tree(
             deleted = _delete_abandoned_gate_job(request=request, runner=runner, job_name=job_name)
             report_gate_cleanup_failure(job_name=job_name, outcome=deleted)
             return Failure(delivered.failure()), False
-    terminal = _await_terminal_state(
-        request=request, runner=runner, sleeper=sleeper, job_name=job_name
-    )
+
+    def cleanup_interrupted_wait() -> None:
+        deleted_job = _delete_abandoned_gate_job(
+            request=request,
+            runner=runner,
+            job_name=job_name,
+        )
+        report_gate_cleanup_failure(job_name=job_name, outcome=deleted_job)
+        deleted_refs = _delete_gate_ref(request=request, runner=runner)
+        report_gate_cleanup_failure(job_name=job_name, outcome=deleted_refs)
+
+    try:
+        terminal = await_terminal_state_with_interrupt_cleanup(
+            context=GateWaitContext(
+                request=request,
+                runner=runner,
+                sleeper=sleeper,
+                job_name=job_name,
+                poll_argv=[*_kubectl(request=request), "get", "job", job_name, "--output", "json"],
+            ),
+            cleanup=cleanup_interrupted_wait,
+            signal_install=signal.signal,
+            term_signal=signal.SIGTERM,
+            int_signal=signal.SIGINT,
+        )
+    except GateWaitInterruptedError as interrupted:
+        return Failure(interrupted_wait_failure(interrupted=interrupted)), False
     if isinstance(terminal, Failure):
         deleted = _delete_abandoned_gate_job(request=request, runner=runner, job_name=job_name)
         report_gate_cleanup_failure(job_name=job_name, outcome=deleted)
@@ -522,45 +550,3 @@ def _failure_message(*, request: GateRunRequest, runner: GateCommandRunner, job_
     ]
     read = runner(argv=argv, cwd=request.repo_root)
     return read.map(lambda ran: ran.stdout.strip()).value_or("")
-
-
-def _await_terminal_state(
-    *, request: GateRunRequest, runner: GateCommandRunner, sleeper: Sleeper, job_name: str
-) -> Result[Terminal, GateStepFailed]:
-    """Poll the Job until it reports a terminal condition, or give up.
-
-    A refused read is not evidence that the Job stopped. Kubernetes credentials,
-    API availability and the Job's state are independent, so a transient `get`
-    refusal is retried within the existing poll budget. If every read is
-    refused, the final refusal remains the plumbing failure the caller reports;
-    it never authorizes collection of the Job's mirror refs.
-
-    What comes back is the whole terminal STATUS rather than its condition type,
-    because the reply that says a Job finished is also the reply that says when
-    it ran. Reading those two facts out of one answer is not an economy: the Job
-    this wait just watched end is collected after `ttlSecondsAfterFinished`, so
-    a later `get` can legitimately find nothing.
-    """
-    argv = [*_kubectl(request=request), "get", "job", job_name, "--output", "json"]
-    last_refusal: GateStepFailed | None = None
-    polls = request.poll_budget()
-    nap = reporting_sleeper(sleeper=sleeper, job_name=job_name)
-    for poll in range(polls):
-        if poll:
-            nap(seconds=request.poll_interval_seconds)
-        lifted = require_success(
-            step=_AWAIT_STEP, argv=argv, outcome=runner(argv=argv, cwd=request.repo_root)
-        )
-        if isinstance(lifted, Failure):
-            last_refusal = lifted.failure()
-            continue
-        condition = terminal_condition(argv=argv, payload=lifted.unwrap().stdout, step=_AWAIT_STEP)
-        if isinstance(condition, Failure):
-            return Failure(condition.failure())
-        ended = condition.unwrap()
-        if ended is not None:
-            return Success(ended)
-    if last_refusal is not None:
-        return Failure(last_refusal)
-    gave_up = f"{job_name} reached no terminal condition within {request.poll_timeout_seconds:g}s"
-    return Failure(unreadable(step=_AWAIT_STEP, argv=argv, detail=gave_up))

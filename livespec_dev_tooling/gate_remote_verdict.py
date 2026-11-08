@@ -181,16 +181,18 @@ def run_gated_push(
     """
     gated = run_gate(request=request, runner=runner, sleeper=sleeper)
     if isinstance(gated, Failure):
-        return _no_verdict(failure=gated.failure())
+        return _no_verdict(failure=gated.failure(), request=request)
     return _adjudicate(outcome=gated.unwrap(), request=request, runner=runner)
 
 
-def _no_verdict(*, failure: GateStepFailed) -> GateVerdict:
+def _no_verdict(*, failure: GateStepFailed, request: GateRunRequest) -> GateVerdict:
     """Every plumbing fault, under one word: nothing was decided."""
     return GateVerdict(
         state=GATE_NO_VERDICT,
         detail=f"{failure.step} did not complete, so the gate reached no verdict: {failure.detail}",
         token_written=False,
+        job_name=failure.job_name,
+        namespace=request.namespace if failure.job_name else None,
     )
 
 
