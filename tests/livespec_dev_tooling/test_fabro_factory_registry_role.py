@@ -89,6 +89,10 @@ _ROLE_DOC = _ROLE / "HOST_VARS.md"
 
 _DEFAULT_REGISTRY_PATH = "/etc/livespec/fabro-factories.json"
 _DEST_VAR = "fabro_factory_registry_dest"
+_EXECUTING_USER_OWNERSHIP = {
+    "fabro_factory_registry_owner": str(os.getuid()),
+    "fabro_factory_registry_group": str(os.getgid()),
+}
 _INSTALL_TASK = "Install this host's Fabro factory registry"
 _RESOLVED_FACT = "fabro_factory_registry_resolved"
 _TIMEOUT_SECONDS = 600
@@ -546,8 +550,11 @@ def test_no_converge_in_this_module_names_the_registry_the_host_may_already_hold
 
 
 def test_the_rendered_file_is_root_owned_and_world_readable() -> None:
-    assert _install_key(key="owner") == "root"
-    assert _install_key(key="group") == "root"
+    defaults = _DEFAULTS.read_text(encoding="utf-8")
+    assert _install_key(key="owner") == "{{ fabro_factory_registry_owner }}"
+    assert _install_key(key="group") == "{{ fabro_factory_registry_group }}"
+    assert re.search(r"^fabro_factory_registry_owner: root$", defaults, re.MULTILINE)
+    assert re.search(r"^fabro_factory_registry_group: root$", defaults, re.MULTILINE)
     assert _install_key(key="mode") == "0644", "the Dispatcher reads this file as its own user"
     assert "become: true" in _install_task(), "a root-owned file needs the privilege to write it"
     body = _install_task()
@@ -663,6 +670,7 @@ def test_the_dev_host_play_renders_each_factorys_declared_capacity(*, tmp_path: 
                     "ansible_become": False,
                     _DEST_VAR: str(registry_dest),
                     "fabro_factory_registry_limits_dir": str(limits_dir),
+                    **_EXECUTING_USER_OWNERSHIP,
                 }
             ),
             str(_PLAYBOOK),
@@ -690,6 +698,7 @@ def test_a_changed_declared_capacity_rewrites_the_factories_one_line_limit(
         "ansible_become": False,
         _DEST_VAR: str(registry_dest),
         "fabro_factory_registry_limits_dir": str(limits_dir),
+        **_EXECUTING_USER_OWNERSHIP,
     }
     args = [
         "-i",

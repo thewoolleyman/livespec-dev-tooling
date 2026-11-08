@@ -5,6 +5,8 @@
 | `fabro_factory_registry` | `{}` | Which Fabro server instance answers to each logical factory name. A mapping from the factory name to an object carrying `host`, `unit_name` and optionally `docker_host`. |
 | `fabro_factory_registry_dest` | `/etc/livespec/fabro-factories.json` | The absolute path this role renders the registry to. The directory it names is created too. |
 | `fabro_factory_registry_limits_dir` | `/home/ubuntu/.local/state/livespec/fleet-limits` | The directory holding one world-readable `<factory>.max_concurrent_runs` file per declared factory. |
+| `fabro_factory_registry_owner` | `root` | The owner of every file and directory this role writes. A variable only so a test can run the committed tasks as a non-root user. |
+| `fabro_factory_registry_group` | `root` | The group of every file and directory this role writes. |
 
 `fabro_factory_registry` is declared ONCE, and only in
 `ansible/inventory/group_vars/dev_hosts.yml` — not in
