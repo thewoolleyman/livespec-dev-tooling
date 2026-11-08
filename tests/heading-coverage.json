@@ -1759,6 +1759,13 @@
   },
   {
     "spec_root": "SPECIFICATION",
+    "spec_file": "non-functional-requirements.md",
+    "heading": "## Check aggregate wall-time table",
+    "test": "tests.livespec_dev_tooling.test_parallel_check_dispatcher_wall_times.test_a_wall_time_of_a_minute_or_more_shows_minutes_and_seconds",
+    "reason": "Unit-tier: the per-target wall-time table renders a wall time of a minute or more as minutes and two-digit seconds through _write_timing_table. Added by expedited incident livespec-dev-tooling-e62ss6 (attempt 2); the hour and unit-boundary halves of the section are owed by that incident's normal repayment."
+  },
+  {
+    "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: an execution target's pressure stall readings are queryable in livespec by host",
     "test": "TODO",
