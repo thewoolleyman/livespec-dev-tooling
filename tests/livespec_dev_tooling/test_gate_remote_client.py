@@ -48,6 +48,7 @@ import hashlib
 import json
 from dataclasses import dataclass
 from pathlib import Path
+from types import SimpleNamespace
 from typing import TYPE_CHECKING
 
 import pytest
@@ -733,6 +734,42 @@ def test_a_gate_that_never_reaches_a_terminal_state_deletes_its_job() -> None:
         _JOB,
     )
     assert "delete-ref" not in cluster.kinds
+
+
+@pytest.mark.parametrize("interruption", ["SIGTERM", "SIGINT"])
+def test_an_interrupted_wait_deletes_its_job_and_published_refs(
+    *,
+    interruption: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """TERM and INT leave no queued Job or mirror input behind."""
+    import livespec_dev_tooling.gate_remote_client as client
+
+    handlers: dict[int, object] = {}
+    fake_signal = SimpleNamespace(SIGTERM=15, SIGINT=2)
+
+    def install(number: int, handler: object) -> object:
+        previous = handlers.get(number, object())
+        handlers[number] = handler
+        return previous
+
+    fake_signal.signal = install
+    monkeypatch.setattr(client, "signal", fake_signal, raising=False)
+    cluster = _StubCluster(job_states=("Suspended",))
+
+    def interrupted_sleep(*, seconds: float) -> None:
+        _ = seconds
+        handler = handlers[getattr(fake_signal, interruption)]
+        handler(getattr(fake_signal, interruption), None)
+
+    request = dataclasses.replace(_REQUEST, poll_timeout_seconds=30.0)
+    outcome = run_gate(request=request, runner=cluster, sleeper=interrupted_sleep)
+
+    assert isinstance(outcome, Failure)
+    assert outcome.failure().step == "await-gate-terminal"
+    assert _JOB in outcome.failure().detail
+    assert cluster.kinds.count("delete-job") == 1
+    assert cluster.kinds.count("delete-ref") == 1
 
 
 def test_failed_abandoned_job_cleanup_is_reported_without_changing_no_verdict(
