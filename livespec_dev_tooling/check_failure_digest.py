@@ -43,6 +43,7 @@ Output discipline: this module computes lines; the dispatcher writes them.
 from __future__ import annotations
 
 import json
+import re
 from typing import cast
 
 __all__: list[str] = ["failure_digest_lines"]
@@ -52,6 +53,8 @@ _NO_STRUCTURED_FINDING = (
     "failed without a structured failure_mode — read this target's captured output above"
 )
 _FAIL_STATUS = "fail"
+_PER_FILE_COVERAGE_TARGET = "check-per-file-coverage"
+_PYTEST_FAILED_NODE_ID = re.compile(r"^FAILED (?P<node_id>\S+)(?:\s+-|$)", re.MULTILINE)
 
 
 def _fail_record(*, line: str) -> tuple[str, str, str] | None:
@@ -123,6 +126,19 @@ def _entry_lines(*, target: str, group: tuple[str, str, str, int]) -> list[str]:
     return lines
 
 
+def _pytest_failed_test_node_ids(*, output: str) -> list[str]:
+    """Return node ids listed by pytest's short test summary, in output order."""
+    return [match.group("node_id") for match in _PYTEST_FAILED_NODE_ID.finditer(output)]
+
+
+def _failed_test_lines(*, target: str, node_ids: list[str]) -> list[str]:
+    """Render a coverage target's pytest failures at the digest tail."""
+    return [
+        f"  {target}: failing tests",
+        *(f"      test: {node_id}" for node_id in node_ids),
+    ]
+
+
 def failure_digest_lines(*, failures: list[tuple[str, str]]) -> list[str]:
     """Render the tail-of-output digest for the failed targets of one aggregate run.
 
@@ -135,8 +151,13 @@ def failure_digest_lines(*, failures: list[tuple[str, str]]) -> list[str]:
         return []
     lines = ["", _DIGEST_HEADER]
     for target, output in failures:
+        failed_test_node_ids = _pytest_failed_test_node_ids(output=output)
+        if target == _PER_FILE_COVERAGE_TARGET and failed_test_node_ids:
+            lines.extend(_failed_test_lines(target=target, node_ids=failed_test_node_ids))
         groups = _mode_groups(output=output)
         if not groups:
+            if target == _PER_FILE_COVERAGE_TARGET and failed_test_node_ids:
+                continue
             lines.append(f"  {target}: {_NO_STRUCTURED_FINDING}")
             continue
         for group in groups:
