@@ -1,0 +1,80 @@
+---
+# A successful timer firing is not evidence that the reader is still alive.
+# The companion staleness unit reads the reader's completion marker and becomes
+# failed with the reader name and age when no completed pass reaches the bound.
+
+- name: Refuse an incomplete flake-retry filer configuration
+  ansible.builtin.assert:
+    that:
+      - flake_retry_filer_repo_root | string | length > 0
+      - flake_retry_filer_python | string | length > 0
+      - flake_retry_filer_wrapper | string | length > 0
+      - flake_retry_filer_user | string | length > 0
+      - flake_retry_filer_group | string | length > 0
+      - flake_retry_filer_state_dir | string | length > 0
+      - flake_retry_filer_interval | string | length > 0
+      - flake_retry_filer_interval_seconds | int > 0
+    fail_msg: flake-retry filer paths, account and interval must all be declared.
+    success_msg: flake-retry filer configuration is complete
+
+- name: Check that the installed reader interpreter exists
+  ansible.builtin.stat:
+    path: "{{ flake_retry_filer_python }}"
+  register: flake_retry_filer_python_stat
+  become: true
+  check_mode: false
+
+- name: Refuse to arm a reader without its installed interpreter
+  ansible.builtin.assert:
+    that: flake_retry_filer_python_stat.stat.executable
+    fail_msg: >-
+      {{ flake_retry_filer_python }} is not executable; converge the
+      livespec-dev-tooling checkout before arming its flake-retry reader.
+    success_msg: the flake-retry reader interpreter is executable
+
+- name: Create the flake-retry filer state directory
+  ansible.builtin.file:
+    path: "{{ flake_retry_filer_state_dir }}"
+    state: directory
+    owner: "{{ flake_retry_filer_user }}"
+    group: "{{ flake_retry_filer_group }}"
+    mode: "0750"
+  become: true
+
+- name: Seed the flake-retry filer completion marker on a new host
+  ansible.builtin.command:
+    argv: [touch, "{{ flake_retry_filer_state_dir }}/last-successful-pass"]
+    creates: "{{ flake_retry_filer_state_dir }}/last-successful-pass"
+  become: true
+  become_user: "{{ flake_retry_filer_user }}"
+
+- name: Install the flake-retry filer units
+  ansible.builtin.template:
+    src: "{{ item.src }}"
+    dest: "{{ flake_retry_filer_unit_dir }}/{{ item.dest }}"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+  loop:
+    - src: livespec-flake-retry-filer.service.j2
+      dest: "{{ flake_retry_filer_service }}"
+    - src: livespec-flake-retry-filer.timer.j2
+      dest: "{{ flake_retry_filer_timer }}"
+    - src: livespec-flake-retry-filer-staleness.service.j2
+      dest: "{{ flake_retry_filer_staleness_service }}"
+    - src: livespec-flake-retry-filer-staleness.timer.j2
+      dest: "{{ flake_retry_filer_staleness_timer }}"
+  loop_control:
+    label: "{{ item.dest }}"
+
+- name: Enable and start the flake-retry filer timers
+  ansible.builtin.systemd_service:
+    name: "{{ item }}"
+    enabled: true
+    state: started
+    daemon_reload: true
+  become: true
+  loop:
+    - "{{ flake_retry_filer_timer }}"
+    - "{{ flake_retry_filer_staleness_timer }}"
