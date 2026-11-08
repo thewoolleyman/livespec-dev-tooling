@@ -1982,3 +1982,48 @@ Step-back: read both nodes about 30 minutes after the apply, and again under a f
 Revert: gmktec 4 and poweredge 27, with a node_extended_resource apply.
 
 Still open under 6e5pyj: deriving poweredge's real CI budget, about 43 CPUs or about 17 slots, which would lower the total.
+
+## poweredge to its CI budget: 17 slots, cohort 30 (2026-11-08)
+
+Step 4 of livespec-dev-tooling-6e5pyj. ci-runtime-and-cost made this call on 2026-11-08 at about 05:4xZ, applying the decision rule it set before the read.
+
+The 05:33Z split read on poweredge-xubuntu was taken with 22 of 23 churn slots in use, 14 churn pods pending, and the factory at 17 of its cap of 18:
+
+- idle was 0.16 % over 10 s
+- the CI (BestEffort) slice's cpu.pressure avg60 was 37.1
+- the factory (Burstable) slice's avg60 was 2.4
+- CPU use was CI 29.8, factory 39.4 and system 2.6 CPUs, on 72 cores
+- the factory pods were throttled in only 2.7-5.3 % of periods
+
+That is real CI saturation (idle under 5 and CI pressure over 30), not sandbox throttle stall. So poweredge moves to its derived CI budget of about 43 CPUs, about 17 slots: 23 -> 17. The 6 freed slots leave the cohort, which drops from 36 to 30. They are NOT shifted to gmktec (8, 4 % idle at 02:56Z) or hp (5).
+
+Quota split, summing to 30:
+
+| Queue | Change | maxRunners |
+| --- | --- | --- |
+| livespec-orchestrator-beads-fabro-cq | 17 -> 12 | max(2 x 12, 6) = 24 |
+| livespec-cq | 2 -> 1 | max(2, 6) = 6, unchanged |
+
+- **Kept unchanged:**
+  - livespec-dev-tooling-cq stays at 6, because it already shows the queue-wait cost.
+  - livespec-dev-tooling-master-cq stays at 3, because it is the reserved, non-lendable master lane.
+  - The 1-slot queues stay at 1, because they cannot go lower.
+- **The two cuts:**
+  - livespec's jobs are short (7-day max 13 min), so 1 slot serves it.
+  - The orchestrator is the largest consumer, and 12 keeps it about twice dev-tooling.
+
+IT IS A 60-MINUTE THROUGHPUT TRIAL, not a pressure fix. A coordinator ruling (ci-node-capacity-reads.md, "Utilization is not the target; throughput is") holds that host PSI is never a cap trigger by itself.
+
+- **Trial window:** from apply-complete (the moment poweredge's allocatable churn-slot reads 17) to 60 minutes after it.
+- **Baseline:** the 60 minutes before the apply, at 23 slots.
+- **What ci-runtime-and-cost measures**, from GitHub job records:
+  - k3s-routed jobs completed per hour, per queue and fleet-wide
+  - p95 job duration, per queue and fleet-wide
+  - the orchestrator coverage median
+  - dev-tooling queue wait
+
+At +60 minutes it rules KEEP or REVERT. A node read at about +45 minutes (idle %, CI-slice avg60, host PSI) is context only and does not decide the trial.
+
+If 6e5pyj's host assertion 1 cannot hold at the throughput-optimal cap, the remedy is a Definition-of-Done amendment, not a lower cap.
+
+Kill switch: restore poweredge 23, orchestrator-cq 17, livespec-cq 2 and maxRunners 34 (the step-3 values), applying node_extended_resource and ci_converge_unit together.

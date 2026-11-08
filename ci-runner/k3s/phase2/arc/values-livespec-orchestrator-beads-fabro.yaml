@@ -236,4 +236,5 @@ template:
 # the rule, max(2 x 17, 6) = 34. See ../kueue/DERIVATION.md "gmktec to 4, cohort
 # to 36 (2026-11-07)".
 minRunners: 0
-maxRunners: 34
+# 34 -> 24 on 2026-11-08: the ClusterQueue drops 17 -> 12, max(2 x 12, 6) = 24.
+maxRunners: 24
