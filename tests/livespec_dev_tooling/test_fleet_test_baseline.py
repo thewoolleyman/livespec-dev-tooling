@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib
 import subprocess
+from collections.abc import Callable
 from pathlib import Path
 from types import ModuleType
 
@@ -224,3 +225,47 @@ def test_a_red_test_command_is_measured_and_the_fleet_run_continues(
     assert report["fleet_totals"]["runtime_seconds"] == sum(
         row["runtime_seconds"] for row in report["repositories"]
     )
+
+
+def _collect_only_runner(*, collected: str) -> Callable[..., subprocess.CompletedProcess[str]]:
+    """Fake every repository command, answering collection with the given output."""
+
+    def fake_run(*, command: tuple[str, ...], cwd: Path) -> subprocess.CompletedProcess[str]:
+        _ = cwd
+        stdout = collected if "--collect-only" in command else "v 1\n"
+        return subprocess.CompletedProcess(args=command, returncode=0, stdout=stdout, stderr="")
+
+    return fake_run
+
+
+def test_a_doubly_quiet_collection_is_counted_from_its_per_file_totals(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A repository whose addopts adds `-q` prints per-file counts and no summary line."""
+    repository = tmp_path / "addopts-quiet-suite"
+    repository.mkdir()
+    module = _baseline()
+    monkeypatch.setattr(
+        module,
+        "_run",
+        _collect_only_runner(
+            collected="tests/test_a.py: 3\ntests/sub/test_b.py: 2\nother/test_c.py: 7\n"
+        ),
+    )
+
+    report = module.measure_repositories(paths=(repository,))
+
+    assert report["repositories"][0]["test_count"] == 12
+
+
+def test_a_collection_that_prints_no_count_is_named(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Output carrying neither count form fails with a finding, not a bare IndexError."""
+    repository = tmp_path / "silent-suite"
+    repository.mkdir()
+    module = _baseline()
+    monkeypatch.setattr(module, "_run", _collect_only_runner(collected="no tests ran\n"))
+
+    with pytest.raises(ValueError, match="no test count"):
+        _ = module.measure_repositories(paths=(repository,))
