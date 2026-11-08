@@ -107,9 +107,14 @@ jobs:
     name: ${{ matrix.target }}
     # The variable holds exactly one complete hosted or self-hosted label
     # set. GitHub does not fall back when a self-hosted label set has no match.
-    runs-on: ${{ fromJSON(github.event_name == 'push' && vars.CI_RUNNER_LABELS_MASTER || vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
+    # A pull request reads CI_PYTHON_RUNNER_LABELS before CI_RUNNER_LABELS:
+    # this job's image is the multi-arch python tag, so it may run on the
+    # arm64 homelab worker set (livespec-dev-tooling-arm64-k3s,
+    # livespec-dev-tooling-ko26ez.7) while jobs whose images are amd64-only
+    # keep CI_RUNNER_LABELS. Unset, it routes exactly as before.
+    runs-on: ${{ fromJSON(github.event_name == 'push' && vars.CI_RUNNER_LABELS_MASTER || vars.CI_PYTHON_RUNNER_LABELS || vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
     container:
-      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.183.0
+      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.183.1
     env:
       # RUNNER_ENVIRONMENT does not propagate into container jobs. Keep the
       # parallelism policy derived from the same variable the routing reads.
@@ -204,7 +209,7 @@ jobs:
     if: ${{ !cancelled() }}
     runs-on: ${{ fromJSON(github.event_name == 'push' && vars.CI_RUNNER_LABELS_MASTER || vars.CI_COVERAGE_RUNNER_LABELS || vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
     container:
-      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.183.0
+      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.183.1
     env:
       LIVESPEC_CI_LANE: ${{ contains(vars.CI_COVERAGE_RUNNER_LABELS || vars.CI_RUNNER_LABELS || '["ubuntu-latest"]', 'ubuntu') && 'hosted' || 'local' }}
       MISE_DATA_DIR: /root/.local/share/mise
@@ -321,7 +326,7 @@ jobs:
     if: ${{ !cancelled() && needs.check-per-file-coverage.result == 'success' }}
     runs-on: ${{ fromJSON(github.event_name == 'push' && vars.CI_RUNNER_LABELS_MASTER || vars.CI_COVERAGE_RUNNER_LABELS || vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
     container:
-      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.183.0
+      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.183.1
     env:
       LIVESPEC_CI_LANE: ${{ contains(vars.CI_COVERAGE_RUNNER_LABELS || vars.CI_RUNNER_LABELS || '["ubuntu-latest"]', 'ubuntu') && 'hosted' || 'local' }}
       MISE_DATA_DIR: /root/.local/share/mise
@@ -403,7 +408,7 @@ jobs:
     name: check-python-batch
     runs-on: ${{ fromJSON(github.event_name == 'push' && vars.CI_RUNNER_LABELS_MASTER || vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
     container:
-      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.183.0
+      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.183.1
     env:
       LIVESPEC_CI_LANE: ${{ contains(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]', 'ubuntu') && 'hosted' || 'local' }}
       MISE_DATA_DIR: /root/.local/share/mise
@@ -562,7 +567,7 @@ jobs:
     # The same single variable routes every ordinary gating target.
     runs-on: ${{ fromJSON(github.event_name == 'push' && vars.CI_RUNNER_LABELS_MASTER || vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
     container:
-      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.183.0
+      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.183.1
     env:
       LIVESPEC_CI_LANE: ${{ contains(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]', 'ubuntu') && 'hosted' || 'local' }}
       MISE_DATA_DIR: /root/.local/share/mise
@@ -673,7 +678,7 @@ jobs:
     if: ${{ !cancelled() }}
     runs-on: ${{ fromJSON(github.event_name == 'push' && vars.CI_RUNNER_LABELS_MASTER || vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
     container:
-      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.183.0
+      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.183.1
     env:
       LIVESPEC_CI_LANE: ${{ contains(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]', 'ubuntu') && 'hosted' || 'local' }}
       MISE_DATA_DIR: /root/.local/share/mise
@@ -831,7 +836,7 @@ jobs:
     name: incident-ci
     runs-on: ${{ fromJSON(github.event_name == 'push' && vars.CI_RUNNER_LABELS_MASTER || vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
     container:
-      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.183.0
+      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.183.1
     permissions:
       contents: read
       pull-requests: read
