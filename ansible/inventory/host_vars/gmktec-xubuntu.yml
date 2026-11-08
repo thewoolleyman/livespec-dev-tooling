@@ -184,6 +184,16 @@ fabro_server_manage_settings: true
 # weight of 100. Applied by a daemon-reload; neither apply restarts anything.
 fabro_server_cpu_weight_value: 2000
 k3s_config_cpu_weight: 2000
+# system.slice's own root-level CPU share against kubepods.slice (1250 on this
+# 32-CPU node), so the units above are not starved when the node saturates
+# (livespec-dev-tooling-cetudy, coordinator ruling 2026-11-08T09:51:16Z). The
+# unit weights above only order units INSIDE system.slice. Measured 2026-11-08:
+# system.slice at 100 was entitled to about 2.1 CPUs under full contention, and
+# at 08:24:57-08:25:18Z 17 fabro run clients lost their event stream while
+# fabro-server, tailscaled and k3s-agent starved in it. 1000 entitles
+# system.slice to about 13.1 CPUs. Applied by a daemon-reload, no k3s restart;
+# revert by removing this key and re-applying --tags k3s_system_slice_cpu_weight.
+k3s_config_system_slice_cpu_weight: 1000
 fabro_server_instances:
   - unit_name: fabro-server
     home_dir: /home/cwoolley/.fabro

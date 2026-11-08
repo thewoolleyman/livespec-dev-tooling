@@ -166,6 +166,20 @@ just ansible-drift ansible/ci-pool.yml --limit poweredge-xubuntu --tags k3s_syst
 just ansible-apply ansible/ci-pool.yml --limit poweredge-xubuntu --tags k3s_system_slice_cpu_weight
 ```
 
+`gmktec-xubuntu` and `hp-xubuntu` declare `1000` too (coordinator ruling on
+`livespec-dev-tooling-cetudy`, 2026-11-08T09:51:16Z, fleet scope rule K). On
+these agents `system.slice` holds `k3s-agent` (kubelet and containerd),
+`tailscaled` and, on gmktec, the Fabro servers. Read 2026-11-08 at about 10:05Z,
+`system.slice` sat at 100 against `kubepods.slice` at 1250 on 32-CPU gmktec and
+567 on 16-CPU hp, about 2.1 and 1.8 CPUs under full contention. At 08:25Z that
+day, 17 fabro run clients on gmktec lost their event stream while those units
+starved. At `1000` the entitlement is about 1000/2450 x 32, or 13.1 CPUs, on
+gmktec and 1000/1767 x 16, or 9.1 CPUs, on hp. `k3s_config_cpu_weight` on gmktec
+(above) does not substitute for this: it orders units inside the slice. The
+other k3s node, `macbook-m4-max-homelab-worker`, nests its kubelet inside a
+container in a Lima VM, is not in `ci_pool`, and is owned by plan
+`homelab-k8s-worker-nodes`.
+
 Moving k3s into a slice of its own, or `--kube-reserved` / `--system-reserved`,
 would each need a k3s restart; this drop-in does not. `--reserved-cpus` (a cpuset
 pin) is ruled out.
