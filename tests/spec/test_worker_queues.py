@@ -7,6 +7,7 @@ sum rule, never as a committed number.
 
 from __future__ import annotations
 
+import json
 import stat
 import subprocess
 from pathlib import Path
@@ -122,3 +123,143 @@ def test_no_committed_worker_template_borrows_from_the_cohort() -> None:
             assert all(
                 resource.get("borrowingLimit") == 0 for resource in resources
             ), f"{template.name}: every resource must carry borrowingLimit 0"
+
+
+_GATES_STUB = """#!/bin/bash
+printf 'kubectl %s\\n' "$*" >> "$STUB_LOG"
+case "$*" in
+  *"gate-share-millicores"*) printf '%b' "$GATE_SHARES" ;;
+  *"get clusterqueue gates-cq"*) [ -n "$NO_GATES_CQ" ] && exit 1; printf '%s' "$GATES_CQ" ;;
+esac
+"""
+
+_FLEET_GATES_CQ = {
+    "spec": {
+        "resourceGroups": [
+            {
+                "coveredResources": ["cpu", "memory"],
+                "flavors": [
+                    {"name": "gates-hp-flavor", "resources": []},
+                    {"name": "gates-worker-arm64-flavor", "resources": []},
+                    {"name": "gates-flavor", "resources": []},
+                ],
+            }
+        ]
+    }
+}
+
+
+def _render_gates(
+    *, tmp_path: Path, shares: str, no_gates_cq: bool = False
+) -> tuple[subprocess.CompletedProcess[str], list[str]]:
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    stub = bin_dir / "kubectl"
+    stub.write_text(_GATES_STUB, encoding="utf-8")
+    stub.chmod(stub.stat().st_mode | stat.S_IXUSR)
+    worker = tmp_path / "worker"
+    worker.mkdir()
+    template = (_KUEUE / "worker" / "gates-worker-flavor.yaml").read_text(encoding="utf-8")
+    (worker / "gates-worker-flavor.yaml").write_text(template, encoding="utf-8")
+    log = tmp_path / "calls.log"
+    log.write_text("", encoding="utf-8")
+    result = subprocess.run(
+        ["/bin/bash", str(_SCRIPT), "--dry-run"],
+        capture_output=True,
+        text=True,
+        env={
+            "PATH": f"{bin_dir}:/usr/bin:/bin",
+            "STUB_LOG": str(log),
+            "WORKER_QUEUE_DIR": str(worker),
+            "GATE_SHARES": shares,
+            "GATES_CQ": json.dumps(_FLEET_GATES_CQ),
+            "NO_GATES_CQ": "1" if no_gates_cq else "",
+        },
+        check=False,
+        timeout=30,
+    )
+    return result, log.read_text(encoding="utf-8").splitlines()
+
+
+def _gates_patch(*, stdout: str) -> list[dict[str, object]]:
+    [line] = [ln for ln in stdout.splitlines() if ln.startswith('[{"op"')]
+    [op] = json.loads(line)
+    assert op["op"] == "replace"
+    assert op["path"] == "/spec/resourceGroups/0/flavors"
+    return list(op["value"])
+
+
+@pytest.mark.parametrize(
+    ("shares", "gates"),
+    [("arm64 4000\\n", 1), ("arm64 10000\\n", 2), ("arm64 4000\\narm64 15000\\n", 4)],
+)
+def test_the_worker_gate_quota_is_whole_gates_of_the_enrolled_shares(
+    tmp_path: Path, shares: str, gates: int
+) -> None:
+    result, _ = _render_gates(tmp_path=tmp_path, shares=shares)
+    assert result.returncode == 0, result.stderr
+    worker = [
+        f for f in _gates_patch(stdout=result.stdout) if f["name"] == "gates-worker-arm64-flavor"
+    ]
+    assert worker == [
+        {
+            "name": "gates-worker-arm64-flavor",
+            "resources": [
+                {"name": "cpu", "nominalQuota": gates * 5},
+                {"name": "memory", "nominalQuota": f"{gates * 8}Gi"},
+            ],
+        }
+    ]
+
+
+def test_the_fleet_gate_flavors_keep_their_order_and_the_worker_flavors_come_last(
+    tmp_path: Path,
+) -> None:
+    result, _ = _render_gates(tmp_path=tmp_path, shares="arm64 4000\n")
+    assert result.returncode == 0, result.stderr
+    names = [f["name"] for f in _gates_patch(stdout=result.stdout)]
+    assert names == ["gates-hp-flavor", "gates-flavor", "gates-worker-arm64-flavor"]
+
+
+def test_a_worker_no_longer_enrolled_drops_out_of_gates_cq(tmp_path: Path) -> None:
+    result, _ = _render_gates(tmp_path=tmp_path, shares="")
+    assert result.returncode == 0, result.stderr
+    names = [f["name"] for f in _gates_patch(stdout=result.stdout)]
+    assert names == ["gates-hp-flavor", "gates-flavor"]
+
+
+def test_the_worker_gate_flavor_selects_its_architecture_and_tolerates_the_class_taint(
+    tmp_path: Path,
+) -> None:
+    result, _ = _render_gates(tmp_path=tmp_path, shares="arm64 4000\n")
+    assert result.returncode == 0, result.stderr
+    manifests = "\n".join(
+        line
+        for line in result.stdout.splitlines()
+        if not line.startswith(("converge-worker-queues:", '[{"op"'))
+    )
+    [flavor] = [doc for doc in yaml.safe_load_all(manifests) if doc]
+    assert flavor["kind"] == "ResourceFlavor"
+    assert flavor["metadata"]["name"] == "gates-worker-arm64-flavor"
+    assert flavor["spec"]["nodeLabels"] == {
+        "homelab-worker.livespec.dev/class": "worker",
+        "kubernetes.io/arch": "arm64",
+    }
+    assert {
+        "key": "homelab-worker.livespec.dev/class",
+        "operator": "Equal",
+        "value": "worker",
+        "effect": "NoSchedule",
+    } in flavor["spec"]["tolerations"]
+
+
+def test_a_dry_run_patches_and_applies_nothing(tmp_path: Path) -> None:
+    _, calls = _render_gates(tmp_path=tmp_path, shares="arm64 4000\n")
+    assert not [c for c in calls if " apply " in c or " patch " in c]
+
+
+def test_a_cluster_without_gates_cq_is_left_alone(tmp_path: Path) -> None:
+    result, calls = _render_gates(tmp_path=tmp_path, shares="arm64 4000\n", no_gates_cq=True)
+    assert result.returncode == 0, result.stderr
+    assert "gates-cq is not present" in result.stderr
+    assert not [c for c in calls if " patch " in c]

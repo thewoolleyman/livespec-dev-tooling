@@ -93,6 +93,8 @@ def test_a_class_without_the_nodes_architecture_is_not_enrolled_and_is_named(
     assert "CI: NOT enrolled" in result.stdout
     assert "factory: NOT enrolled: arm64: agent layer amd64-only" in result.stdout
     assert "gate: NOT enrolled: arm64: gate image amd64-only" in result.stdout
+    assert f"kubectl label node {_NODE} homelab-worker.livespec.dev/gate-share-millicores-" in calls
+    assert not [c for c in calls if "gate-share-millicores=" in c]
 
 
 def test_every_class_declaring_the_nodes_architecture_is_enrolled(tmp_path: Path) -> None:
@@ -102,7 +104,11 @@ def test_every_class_declaring_the_nodes_architecture_is_enrolled(tmp_path: Path
     assert f"kubectl label node {_NODE} ci-runner.io/factory=true --overwrite" in calls
     [patch] = [c for c in calls if "churn-slot" in c]
     assert "--subresource=status" in patch
-    assert "gate: eligible" in result.stdout
+    assert (
+        f"kubectl label node {_NODE} homelab-worker.livespec.dev/gate-share-millicores=10000 --overwrite"
+        in calls
+    )
+    assert "gate: enrolled" in result.stdout
 
 
 @pytest.mark.parametrize(("cpu", "slots"), [("30", 3), ("12", 1), ("11500m", 1), ("2", 1)])
@@ -150,3 +156,23 @@ def test_an_unreachable_cluster_is_named_rather_than_exiting_silently(tmp_path: 
     assert result.returncode != 0
     assert "could not read" in result.stderr and "nothing was changed" in result.stderr
     assert not [c for c in calls if " label " in c or " patch " in c]
+
+
+def test_a_repositorys_own_arm64_gate_line_enrolls_the_gate_class(tmp_path: Path) -> None:
+    """The gate default may stay amd64 while one repository's own line runs on arm64."""
+    conf = (
+        "release some-arm64-k3s arm64 x\ngate gate amd64 lacks\ngate some-repo amd64,arm64 none\n"
+    )
+    result, calls = _run(tmp_path=tmp_path, conf=conf, cpu="12")
+    assert result.returncode == 0, result.stderr
+    assert (
+        f"kubectl label node {_NODE} homelab-worker.livespec.dev/gate-share-millicores=4000 --overwrite"
+        in calls
+    )
+
+
+def test_the_gate_share_is_written_before_the_worker_queues_reconcile(tmp_path: Path) -> None:
+    result, calls = _run(tmp_path=tmp_path, conf=_ARM64_TOO)
+    assert result.returncode == 0, result.stderr
+    labelled = next(i for i, c in enumerate(calls) if "gate-share-millicores=" in c)
+    assert calls.index("worker-queues") > labelled

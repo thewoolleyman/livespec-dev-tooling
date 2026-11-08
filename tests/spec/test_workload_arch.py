@@ -100,3 +100,44 @@ def test_the_converge_passes_each_release_its_arch_overlay() -> None:
     converge = _CONVERGE.read_text(encoding="utf-8")
     assert 'render-arch-overlay.sh" release "$release" "$arch_overlay"' in converge
     assert '-f "$arch_overlay"' in converge
+
+
+# The fabro sandbox python image has been published as a multi-arch index
+# (linux/amd64 + linux/arm64) since python-v1.183.1; every earlier python tag is
+# an amd64-only manifest (GHCR read 2026-11-08, livespec-dev-tooling-ko26ez.7).
+_FIRST_MULTI_ARCH_PYTHON_TAG = (1, 183, 1)
+_SANDBOX_PYTHON_PIN = re.compile(
+    r"ghcr\.io/thewoolleyman/livespec-fabro-sandbox:python-v(\d+)\.(\d+)\.(\d+)\s*$"
+)
+
+
+def _publishes_arm64(*, image: str) -> bool:
+    match = _SANDBOX_PYTHON_PIN.search(image)
+    return bool(match) and tuple(int(g) for g in match.groups()) >= _FIRST_MULTI_ARCH_PYTHON_TAG
+
+
+def test_the_multi_arch_rule_reads_the_tag_not_the_image_name() -> None:
+    base = "ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v"
+    assert _publishes_arm64(image=f"{base}1.183.1")
+    assert _publishes_arm64(image=f"{base}1.200.0")
+    assert not _publishes_arm64(image=f"{base}1.183.0")
+    assert not _publishes_arm64(image="ghcr.io/thewoolleyman/livespec-fabro-sandbox:sandbox-v9.9.9")
+
+
+def test_this_repositorys_arm64_gate_line_holds_only_while_its_ci_pin_publishes_arm64() -> None:
+    """A gate runs the gated repository's own CI pin, so an arm64 gate line is a claim about it.
+
+    If this repository's line lists arm64, every container image its ci.yml pins
+    must publish arm64; a pin moved back to an amd64-only tag must take arm64 off
+    the line in the same change, or an amd64-only gate image lands on an arm64
+    worker. Value-independent: with no arm64 line the rule holds vacuously.
+    """
+    claims_arm64 = any(
+        "arm64" in line.split()[2].split(",")
+        for line in _CONF.read_text(encoding="utf-8").splitlines()
+        if line.startswith("gate livespec-dev-tooling ")
+    )
+    workflow = (_REPO_ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    images = sorted(set(re.findall(r"^\s*image:\s*(\S+)\s*$", workflow, flags=re.MULTILINE)))
+    assert images, "ci.yml pins no container image"
+    assert not claims_arm64 or all(_publishes_arm64(image=image) for image in images), images

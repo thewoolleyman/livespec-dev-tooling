@@ -1,0 +1,26 @@
+# gates-worker-flavor.yaml — the gates-cq ResourceFlavor for the container
+# workers of ONE architecture (livespec-dev-tooling-ko26ez.7), rendered per
+# architecture by ../converge-worker-queues.sh, which appends it LAST to
+# gates-cq's flavors with a quota of whole gates summed over the enrolled
+# workers' gate shares. Last means a worker takes only the gates the fleet's
+# own nodes have no quota left for.
+#
+# nodeLabels select the class and the architecture, so Kueue never assigns this
+# flavor to a gate whose required kubernetes.io/arch affinity (the gated
+# repository's line in ../../workload-arch.conf) excludes @ARCH@, and it injects
+# them as the admitted pod's node selector. The toleration is the one each
+# enrolled class owes the permanent worker class taint (v154). No host is named.
+apiVersion: kueue.x-k8s.io/v1beta2
+kind: ResourceFlavor
+metadata:
+  name: gates-worker-@ARCH@-flavor
+spec:
+  nodeLabels:
+    homelab-worker.livespec.dev/class: worker
+    kubernetes.io/arch: @ARCH@
+  tolerations:
+    - key: homelab-worker.livespec.dev/class
+      operator: Equal
+      value: worker
+      effect: NoSchedule
+  topologyName: gates-hostname
