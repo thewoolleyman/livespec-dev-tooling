@@ -40,6 +40,7 @@ class PreCommitVerdict:
     tree_hash: str | None = None
     exit_status: int | None = None
     output_checksum: str | None = None
+    full_aggregate: bool = False
 
 
 def run_pre_commit(*, repo_root: Path) -> PreCommitVerdict:
@@ -78,6 +79,29 @@ def _staged_tree_hash(*, repo_root: Path) -> str:
     if isinstance(written, Failure):
         return ""
     return written.unwrap().stdout.strip()
+
+
+def _staged_tree_selects_full_aggregate(*, repo_root: Path, tree_hash: str) -> bool:
+    """Say whether the hook ran the FULL aggregate for the gated tree, else False.
+
+    A Job's exit status is the same for a full pass and for the doc-only or Red-leg
+    subset, so the host classifies the staged tree itself, as every consumer's
+    pre-commit hook does: no staged `.py` selects the doc-only subset, and exactly one
+    staged `.py` under `tests/` selects the Red leg. Anything unreadable answers False,
+    because evidence must never be claimed for a run that cannot be shown to be full.
+    """
+    from returns.result import Failure
+
+    listed = default_gate_command_runner(
+        argv=["git", "diff", "-z", "--name-only", "--diff-filter=AM", "HEAD", tree_hash],
+        cwd=repo_root,
+    )
+    if isinstance(listed, Failure) or listed.unwrap().returncode != 0:
+        return False
+    staged_py = [name for name in listed.unwrap().stdout.split("\0") if name.endswith(".py")]
+    if not staged_py:
+        return False
+    return not (len(staged_py) == 1 and staged_py[0].startswith("tests/"))
 
 
 def _staged_commit(*, repo_root: Path, tree_hash: str) -> str:
@@ -167,6 +191,9 @@ def _run_remote(
             tree_hash=tree_hash,
             exit_status=0 if joined.state == GATE_PASSED else 1,
             output_checksum=joined.output_checksum,
+            full_aggregate=_staged_tree_selects_full_aggregate(
+                repo_root=repo_root, tree_hash=tree_hash
+            ),
         )
     if remote.state == GATE_FAILED:
         return PreCommitVerdict(
