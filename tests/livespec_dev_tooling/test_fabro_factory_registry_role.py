@@ -111,15 +111,35 @@ _REGISTRY_KEY = re.compile(r"^    (?P<key>[^\s:]+): (?P<value>\S.*)$", re.MULTIL
 _DEV_HOSTS = ("dev-one", "dev-two")
 _INSTANCES: Mapping[str, list[dict[str, str]]] = {
     "factory-one": [
-        {"unit_name": "fabro-server", "canonical_host": "factory-one.tailnet.example:32276"},
-        {"unit_name": "fabro-server-org", "canonical_host": "factory-one.tailnet.example:32277"},
+        {
+            "unit_name": "fabro-server",
+            "canonical_host": "factory-one.tailnet.example:32276",
+            "max_concurrent_runs": "17",
+        },
+        {
+            "unit_name": "fabro-server-org",
+            "canonical_host": "factory-one.tailnet.example:32277",
+            "max_concurrent_runs": "9",
+        },
     ],
     "factory-two": [
-        {"unit_name": "fabro-server", "canonical_host": "factory-two.tailnet.example:32276"},
+        {
+            "unit_name": "fabro-server",
+            "canonical_host": "factory-two.tailnet.example:32276",
+            "max_concurrent_runs": "23",
+        },
     ],
     "factory-three": [
-        {"unit_name": "fabro-server", "canonical_host": "factory-three.tailnet.example:32276"},
-        {"unit_name": "fabro-server-blank", "canonical_host": "   "},
+        {
+            "unit_name": "fabro-server",
+            "canonical_host": "factory-three.tailnet.example:32276",
+            "max_concurrent_runs": "5",
+        },
+        {
+            "unit_name": "fabro-server-blank",
+            "canonical_host": "   ",
+            "max_concurrent_runs": "3",
+        },
     ],
 }
 _DOCKER_HOST = "ssh://operator@factory-one.tailnet.example"
@@ -601,6 +621,60 @@ def test_the_dev_host_play_runs_the_rendering_and_a_narrowed_run_does_not() -> N
         "a run narrowed by --tags past the rendering must run no rendering task, which is "
         "what leaves an existing registry file unchanged"
     )
+
+
+def test_the_dev_host_play_renders_each_factorys_declared_capacity(*, tmp_path: Path) -> None:
+    """The same instance mapping drives the server setting and the launch limit.
+
+    This runs the committed dev-host play, not a transcription of its role: a factory
+    lives on a different inventory host from the Dispatcher, so only the play's Jinja
+    resolution through hostvars can prove the rendered one-line file carries that
+    instance's declared max_concurrent_runs value.
+    """
+    root = tmp_path / "fleet-limits"
+    hosts = _write_fixture(root=root, registry=_DECLARED)
+    capacities = {
+        "factory-one": {"fabro-server": 17, "fabro-server-org": 9},
+        "factory-two": {"fabro-server": 23},
+        "factory-three": {"fabro-server": 5, "fabro-server-blank": 3},
+    }
+    for host, values in capacities.items():
+        path = root / "inventory" / "host_vars" / f"{host}.json"
+        instances = json.loads(path.read_text(encoding="utf-8"))["fabro_server_instances"]
+        for instance in instances:
+            instance["max_concurrent_runs"] = values[instance["unit_name"]]
+        path.write_text(json.dumps({"fabro_server_instances": instances}), encoding="utf-8")
+
+    limits_dir = root / "rendered-limits"
+    registry_dest = root / "rendered-registry" / "fabro-factories.json"
+    registry_dest.parent.mkdir(parents=True)
+    done = _ansible(
+        cwd=root,
+        argv=[
+            "-i",
+            str(hosts),
+            "--limit",
+            "dev_hosts",
+            "--tags",
+            _ROLE_NAME,
+            "-e",
+            json.dumps(
+                {
+                    "ansible_become": False,
+                    _DEST_VAR: str(registry_dest),
+                    "fabro_factory_registry_limits_dir": str(limits_dir),
+                }
+            ),
+            str(_PLAYBOOK),
+        ],
+    )
+    output = done.stdout + done.stderr
+    assert done.returncode == 0, output
+    expected = {"legacy": "17\n", "petri": "23\n"}
+    for name, value in expected.items():
+        path = limits_dir / f"{name}.max_concurrent_runs"
+        assert path.is_file(), output
+        assert path.read_text(encoding="utf-8") == value, output
 
 
 def _committed_registry() -> dict[str, dict[str, str]]:
