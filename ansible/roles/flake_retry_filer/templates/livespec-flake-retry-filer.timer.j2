@@ -1,0 +1,12 @@
+# {{ ansible_managed }}
+[Unit]
+Description=Run the flake-retry root-fix reader every {{ flake_retry_filer_interval }}
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec={{ flake_retry_filer_interval }}
+Persistent=true
+Unit={{ flake_retry_filer_service }}
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,15 @@
+---
+# The one unattended reader covers every retry record delivered to the dev host.
+flake_retry_filer_repo_root: /data/projects/livespec-dev-tooling
+flake_retry_filer_python: "{{ flake_retry_filer_repo_root }}/.venv/bin/python"
+flake_retry_filer_wrapper: /usr/local/bin/with-livespec-env.sh
+flake_retry_filer_user: ubuntu
+flake_retry_filer_group: ubuntu
+flake_retry_filer_state_dir: /var/lib/livespec/flake-retry-filer
+flake_retry_filer_unit_dir: /etc/systemd/system
+flake_retry_filer_service: livespec-flake-retry-filer.service
+flake_retry_filer_timer: livespec-flake-retry-filer.timer
+flake_retry_filer_staleness_service: livespec-flake-retry-filer-staleness.service
+flake_retry_filer_staleness_timer: livespec-flake-retry-filer-staleness.timer
+flake_retry_filer_interval: 15min
+flake_retry_filer_interval_seconds: 900
