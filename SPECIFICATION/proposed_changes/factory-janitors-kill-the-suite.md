@@ -13,15 +13,19 @@ created_at: 2026-11-08T01:17:10Z
 
 ### Summary
 
-When the suite-green leg ends a run for stalling, its refusal event MUST also name every test still running, with its elapsed time and pytest-xdist worker, and the instant the most recent test finished, so a stall can be diagnosed before anyone changes the bound.
+When the suite-green leg ends a run for stalling, its refusal event MUST say how far the run got and what held it: the seconds elapsed since the run started, how many tests had completed out of how many were collected, the last test the run reported complete and when, every test still running with its elapsed time and pytest-xdist worker, and whether the run stalled mid-suite or after its last collected test had completed. A run that completes no test for the window MUST still be ended with the same failed verdict. A stall can then be diagnosed before anyone changes the bound.
 
 ### Motivation
 
-A stall kill today says only that the window passed. On 2026-11-07 the gmktec factory's janitor killed the suite-green leg twice within ten minutes, both times on trees whose suites pass: bd-ib-ivm24w (run 01M6VRFX0CKFS6P47XXYHFRN42, janitor@2, killed 23:24:31Z) and bd-ib-t3bnab (run 01M6VRMWZM6SDYMJ746S4PKZJB, janitor@2, killed 23:16:03Z). Both ran `pytest --tb=line -q -n 4` over the full suite, chosen because the janitor's refresh merge staged default-branch product files. Neither refusal can say whether a test hung, all four workers were inside long tests, the sandbox was starved of CPU, or tests finished while their output did not reach the runner. The runner already sets PYTHONUNBUFFERED=1, so Python output buffering is not the cause; the rest is unknown.
+A stall kill today says only that the window passed. On 2026-11-07 the gmktec factory's janitor killed the suite-green leg twice within ten minutes, both times on trees whose suites pass: bd-ib-ivm24w (run 01M6VRFX0CKFS6P47XXYHFRN42, janitor@2, killed 23:24:31Z) and bd-ib-t3bnab (run 01M6VRMWZM6SDYMJ746S4PKZJB, janitor@2, killed 23:16:03Z). Both ran `pytest --tb=line -q -n 4` over the full suite, chosen because the janitor's refresh merge staged default-branch product files.
 
-Raising the window would hide the cause, so livespec-dev-tooling-h2i4u2 (owner plan fleet-flaky-tests, epic livespec-dev-tooling-zwveqp) makes the next kill diagnose itself first. The instant the most recent test finished is what separates "no test progressed" from "tests progressed but the output did not arrive". The running tests and their workers point at a hung or long test. The leg can learn both from a pytest hook that records each test's start and finish, which this library already loads as a plugin wherever the leg runs.
+The two stage logs carry no pytest output at all. On a kill, the leg logs its refusal event without the output it drained from the run, so every captured line is discarded. Each kill came about 902.4 seconds after the run was spawned (23:09:28.876Z to 23:24:31.416Z, and 23:01:00.645Z to 23:16:03.023Z). The stall window is 900 seconds, measured from the latest chunk received. So the last chunk either run delivered arrived at most about 2.5 seconds after spawn, and no test-completion character reached the runner afterwards. That is arithmetic over the window, not an observation of the run.
 
-FLEET SCOPE: the leg ships in livespec-dev-tooling, so every consumer repository's commit hooks and factory janitor at a pin carrying livespec-dev-tooling-t4rx4t's progress bound get the richer refusal through a release and the consumer pin sweep, with no per-repository edit.
+Output buffering does not explain it. The runner already sets PYTHONUNBUFFERED=1. Plan seat dev-host-test-gate-load measured on the dev host, 2026-11-08 at about 01:20Z, that "pytest -q run through a pipe the way suite_pytest_argv runs it delivers one '.' per completed test as that test completes, serial and under -n 2. So a stall kill means the session completed no test for 15 minutes." That leaves one long test, every xdist worker making no progress (collection or worker bring-up included), or a silent tail after the last test (teardown and the summary) outrunning the window. Today's refusal cannot tell these apart. Under `-q` a passing test prints no node id, so the refusal cannot name the test either.
+
+Raising the window would hide the cause, so livespec-dev-tooling-h2i4u2 (owner plan fleet-flaky-tests, epic livespec-dev-tooling-zwveqp) makes the next kill diagnose itself first. The completed count and the last completed test separate "no test ever completed" from "the run stopped part-way". The running tests and their workers point at a hung or long test, and the post-last-test report isolates a stalled teardown or summary. The leg can learn all of this from a pytest hook that records each test's collection, start and finish. This library already loads such a plugin wherever the leg runs. This proposal also carries the three assertions of livespec-dev-tooling-3tzncf, which legacy-coordinator-agent closed on 2026-11-08 as a duplicate of h2i4u2. The cause fix stays a deferral in plan dev-host-test-gate-load.
+
+FLEET SCOPE: the leg ships in livespec-dev-tooling (`_red_green_replay_suite_runner.py` and `_red_green_replay_suite.py`). Every consumer repository's commit hooks and factory janitor at a pin carrying livespec-dev-tooling-t4rx4t's progress bound get the richer refusal through a release and the consumer pin sweep, with no per-repository edit.
 
 ### Proposed Changes
 
@@ -29,26 +33,42 @@ In `SPECIFICATION/contracts.md`, "## Suite-green replay leg", in the "Progress b
 
 It MUST refuse the commit with an event that names the stall window and the variable that sets it, and it MUST NOT record any `TDD-Suite-Green-*` trailer.
 
-with this sentence:
+with these sentences:
 
-It MUST refuse the commit with an event that names the stall window and the variable that sets it, every test that was still running when the run was ended with how long it had run and which pytest-xdist worker ran it, and the instant the most recent test finished (or that none had finished), and it MUST NOT record any `TDD-Suite-Green-*` trailer.
+It MUST refuse the commit with a failed verdict whose event names the stall window and the variable that sets it, the seconds elapsed since the run started, how many tests had completed out of how many were collected, the node id of the last test the run reported complete and the instant it completed (or that no test had completed), and every test that was still running when the run was ended, with how long it had run and which pytest-xdist worker ran it. When every collected test had completed before the run was ended, the event MUST say that the run stalled after its last test rather than mid-suite. A run that completes no test within the window MUST be ended with that same failed verdict. The leg MUST NOT record any `TDD-Suite-Green-*` trailer.
 
-No other sentence of the bullet changes. The stall window, its default of 900 seconds, its variable, and the optional total ceiling are unchanged; this proposal changes only what a stall refusal reports.
+No other sentence of the bullet changes. The stall window, its default of 900 seconds, its variable, and the optional total ceiling are unchanged. This proposal changes only what a stall refusal reports.
 
-In `SPECIFICATION/scenarios.md`, add this scenario directly after "## Scenario: a suite-green run that stops printing output for the stall window is ended":
+In `SPECIFICATION/scenarios.md`, add these two scenarios directly after "## Scenario: a suite-green run that stops printing output for the stall window is ended", in this order:
 
 ## Scenario: a stalled suite-green run names the tests that were still running
 
 Given `LIVESPEC_SUITE_GREEN_STALL_SECONDS` is `60` and `LIVESPEC_SUITE_GREEN_TIMEOUT_SECONDS` is unset
 
-And the suite-green leg's pytest run has one test that keeps running past 60 seconds without printing output, after another test has finished
+And the suite-green leg's pytest run collects three tests, one of which completes, and another keeps running past 60 seconds without printing output
 
 When the commit-msg `red_green_replay` check ends the run for stalling
 
-Then the refusal event MUST name the still-running test, how long it had run and the pytest-xdist worker that ran it
+Then the refusal event MUST name the seconds elapsed since the run started and that 1 of 3 collected tests had completed
 
-And the refusal event MUST name the instant the most recent test finished
+And the refusal event MUST name the node id of the completed test and the instant it completed
 
-The existing scenario "a suite-green run that stops printing output for the stall window is ended" MUST keep its heading and text.
+And the refusal event MUST name the still-running test, how long it had run and the pytest-xdist worker that ran it
 
-The revise pass adds the new scenario heading to `tests/heading-coverage.json` in the revise commit, as a spec-first TODO row at the integration tier whose `work_item` is livespec-dev-tooling-h2i4u2, and regenerates `tests/heading-coverage-debt.json`.
+And the refusal event MUST say that the run stalled mid-suite
+
+## Scenario: a suite-green run that stalls after its last test is reported as a post-last-test stall
+
+Given `LIVESPEC_SUITE_GREEN_STALL_SECONDS` is `60` and `LIVESPEC_SUITE_GREEN_TIMEOUT_SECONDS` is unset
+
+And every test the suite-green leg's pytest run collected has completed, and the run then prints no output for 60 seconds before it exits
+
+When the commit-msg `red_green_replay` check ends the run for stalling
+
+Then the refusal event MUST say that the run stalled after its last test rather than mid-suite
+
+And the refusal event MUST name the node id of the last test the run reported complete and that all of its collected tests had completed
+
+The existing scenario "a suite-green run that stops printing output for the stall window is ended" MUST keep its heading and text. A run that completes no test within the window is ended with the failed verdict that scenario already states, and the contract sentence above makes that explicit.
+
+The revise pass adds both new scenario headings to `tests/heading-coverage.json` in the revise commit. Each is a spec-first TODO row whose reason names the integration tier or above and whose `work_item` is livespec-dev-tooling-h2i4u2. The pass then regenerates `tests/heading-coverage-debt.json`.
