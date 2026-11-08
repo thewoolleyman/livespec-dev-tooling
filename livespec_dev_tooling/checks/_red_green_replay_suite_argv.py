@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 
+from livespec_dev_tooling.allowed_cpus import allowed_cpu_count
+
 __all__: list[str] = ["lane_worker_count", "visible_cpu_count"]
 
 _LANE_ENV: str = "LIVESPEC_CI_LANE"
@@ -27,6 +29,4 @@ def visible_cpu_count(*, affinity: Callable[[int], set[int]] | None, cpu_count: 
     (macOS) the count falls back to `os.cpu_count()`, and to 1 when that is
     unknown.
     """
-    if affinity is not None:
-        return len(affinity(0))
-    return cpu_count or 1
+    return allowed_cpu_count(cpu_max=None, affinity=affinity, cpu_count=cpu_count)
