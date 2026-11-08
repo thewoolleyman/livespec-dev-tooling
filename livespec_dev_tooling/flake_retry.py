@@ -18,7 +18,7 @@ import pytest
 
 from livespec_dev_tooling._flake_retry_closure import conftest_chain, module_imports
 from livespec_dev_tooling.flake_retry_changes import change_paths, withheld_reason
-from livespec_dev_tooling.flake_retry_finalizers import protocol_hook, teardown_hook
+from livespec_dev_tooling.flake_retry_finalizers import preserve_finalizers
 from livespec_dev_tooling.flake_retry_paths import path_literals
 
 if TYPE_CHECKING:
@@ -278,6 +278,12 @@ class _CollectionHook:
         _record_withheld(withheld=withheld)
 
 
+class _ConfigureHook:
+    def __call__(self, config: pytest.Config) -> None:
+        """Adapt pytest's positional hook call to the keyword-only setup helper."""
+        preserve_finalizers(config=config)
+
+
 class _SessionFinishHook:
     def __call__(self, session: pytest.Session, exitstatus: int) -> None:
         """Send a worker's withholding reason to xdist's controller."""
@@ -315,8 +321,7 @@ class _SummaryHook:
 
 
 pytest_collection_modifyitems = _CollectionHook().__call__
-pytest_runtest_teardown = teardown_hook
-pytest_runtest_protocol = protocol_hook
+pytest_configure = _ConfigureHook().__call__
 pytest_sessionfinish = _SessionFinishHook().__call__
 pytest_testnodedown = _NodeDownHook().__call__
 pytest_runtest_logreport = _ReportHook().__call__

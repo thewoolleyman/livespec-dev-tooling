@@ -7,14 +7,26 @@ from typing import cast
 
 import pytest
 
-__all__: list[str] = ["RetryFinalizerPreserver", "protocol_hook", "teardown_hook"]
+__all__: list[str] = ["RetryFinalizerPreserver", "preserve_finalizers"]
+
+
+def _keep_setup_state(*_: object) -> None:
+    """Let pytest's normal teardown keep scope finalizers until their owner closes."""
+
+
+def preserve_finalizers(*, config: pytest.Config) -> None:
+    """Prevent rerunfailures from dropping higher-scope finalizers for a retry."""
+    rerunfailures = config.pluginmanager.get_plugin("rerunfailures")
+    if rerunfailures is None:
+        return
+    for hookimpl in config.pluginmanager.hook.pytest_runtest_teardown.get_hookimpls():
+        if hookimpl.plugin is rerunfailures:
+            object.__setattr__(hookimpl, "function", _keep_setup_state)
+    rerunfailures._remove_failed_setup_state_from_session = _keep_setup_state  # noqa: SLF001
 
 
 class RetryFinalizerPreserver:
     """Keep finalizer-owning setup nodes alive across rerunfailures' teardown."""
-
-    def __init__(self) -> None:
-        self._preserved_stacks: dict[pytest.Item, dict[object, object]] = {}
 
     @staticmethod
     def _setup_stack(*, item: pytest.Item) -> dict[object, object] | None:
@@ -50,55 +62,28 @@ class RetryFinalizerPreserver:
     def teardown(
         self, *, item: pytest.Item, nextitem: pytest.Item | None
     ) -> Generator[None, None, None]:
-        """Save higher-scope fixture finalizers before a retry clears their stack."""
+        """Restore finalizer-owning nodes before pytest chooses the following item."""
         del nextitem
         stack = self._setup_stack(item=item)
         saved_stack = None if stack is None else stack.copy()
         yield
         if stack is None or saved_stack is None or not self._retry_is_pending(item=item):
             return
-        preserved_stack = {key: value for key, value in saved_stack.items() if key is not item}
-        _ = self._preserved_stacks.setdefault(item, preserved_stack)
+        restored_stack = {key: value for key, value in saved_stack.items() if key is not item}
+        restored_stack.update(stack)
+        stack.clear()
+        stack.update(restored_stack)
 
     @pytest.hookimpl(hookwrapper=True, tryfirst=True)
     def protocol(
         self, *, item: pytest.Item, nextitem: pytest.Item | None
     ) -> Generator[None, None, None]:
-        """Restore finalizer ownership after rerunfailures clears the setup stack."""
-        del nextitem
+        """Remain a wrapper so existing plugin ordering stays stable."""
+        del item, nextitem
         yield
-        preserved_stack = self._preserved_stacks.pop(item, None)
-        stack = self._setup_stack(item=item)
-        if preserved_stack is None or stack is None:
-            return
-        restored_stack = preserved_stack.copy()
-        restored_stack.update(stack)
-        stack.clear()
-        stack.update(restored_stack)
 
 
 # PYTEST CALLS ITS HOOKS POSITIONALLY. pluggy reads a hook's argument names off
 # its signature and passes them by position, so a keyword-only hook receives
 # nothing, and a `*args` hook receives nothing either. These adapters preserve
 # the public hook convention while the preserver itself stays keyword-only.
-_PRESERVER = RetryFinalizerPreserver()
-
-
-class _TeardownHook:
-    @pytest.hookimpl(hookwrapper=True, tryfirst=True)
-    def __call__(
-        self, item: pytest.Item, nextitem: pytest.Item | None
-    ) -> Generator[None, None, None]:
-        yield from _PRESERVER.teardown(item=item, nextitem=nextitem)
-
-
-class _ProtocolHook:
-    @pytest.hookimpl(hookwrapper=True, tryfirst=True)
-    def __call__(
-        self, item: pytest.Item, nextitem: pytest.Item | None
-    ) -> Generator[None, None, None]:
-        yield from _PRESERVER.protocol(item=item, nextitem=nextitem)
-
-
-teardown_hook = _TeardownHook().__call__
-protocol_hook = _ProtocolHook().__call__
