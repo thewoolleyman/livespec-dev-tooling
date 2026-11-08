@@ -32,3 +32,14 @@ def test_a_wall_time_of_a_minute_or_more_shows_minutes_and_seconds(
     *, capsys: pytest.CaptureFixture[str]
 ) -> None:
     assert _table_line(wall_time_s=125.4, capsys=capsys).split() == ["2m", "05s", "check-target"]
+
+
+def test_a_wall_time_of_an_hour_or_more_shows_hours_minutes_and_seconds(
+    *, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert _table_line(wall_time_s=10195.4, capsys=capsys).split() == [
+        "2h",
+        "49m",
+        "55s",
+        "check-target",
+    ]
