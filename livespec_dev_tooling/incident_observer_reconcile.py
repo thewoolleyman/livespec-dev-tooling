@@ -22,6 +22,7 @@ import re
 from dataclasses import asdict, dataclass
 from typing import Any, cast
 
+from livespec_dev_tooling._incident_observer_ack import recovery_action_id
 from livespec_dev_tooling._incident_observer_store import (
     load_record,
     read_observer_arm,
@@ -37,7 +38,7 @@ from livespec_dev_tooling._incident_recovery_journal_cause import (
 from livespec_dev_tooling.incident_controller_installation import ControllerInstallation
 from livespec_dev_tooling.incident_inverse import observer_inverse_callback
 from livespec_dev_tooling.incident_inverse_service import ProcessInverseForge
-from livespec_dev_tooling.incident_observer import reconcile_action_receipt, recovery_action_id
+from livespec_dev_tooling.incident_observer import reconcile_action_receipt
 
 __all__: list[str] = ["ObserverReconcile"]
 

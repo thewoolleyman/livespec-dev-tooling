@@ -12,6 +12,10 @@ from threading import Event
 import pytest
 
 import livespec_dev_tooling.incident_observer as controller
+from livespec_dev_tooling._incident_observer_ack import (
+    record_job_callback,
+    recover_recorded_job_callback,
+)
 from livespec_dev_tooling._incident_observer_types import JobCallback, ObserverRegistration
 from livespec_dev_tooling.incident_observer import (
     admit_observer,
@@ -375,7 +379,7 @@ def test_noncooperating_generation_change_is_rechecked_immediately_before_effect
             record["registration"]["generation"] = 2
         return record
 
-    monkeypatch.setattr(controller, "load_record", changed)
+    monkeypatch.setattr("livespec_dev_tooling._incident_observer_ack.load_record", changed)
     result = _handle(
         directory=tmp_path,
         registration=registration,
@@ -401,3 +405,70 @@ def test_reconciliation_never_substitutes_current_authority_for_missing_action_r
         publish_receipt=lambda *_: pytest.fail("wrong publication"),
     )
     assert result.status == "refused"
+
+
+def _recorded_intent(*, directory, registration):
+    _admit(directory=directory, registration=registration)
+    result, intent = record_job_callback(
+        directory=directory,
+        delivery=_delivery(registration=registration),
+        webhook_secret=_SECRET,
+    )
+    assert result.status == "pending" and intent is not None
+    return intent
+
+
+def test_recording_a_callback_runs_no_principal_and_redelivery_adds_no_effect(
+    tmp_path, registration
+):
+    intent = _recorded_intent(directory=tmp_path, registration=registration)
+    again, no_intent = record_job_callback(
+        directory=tmp_path,
+        delivery=_delivery(registration=registration),
+        webhook_secret=_SECRET,
+    )
+    assert (again.status, again.reason) == (
+        "pending",
+        "existing immutable action; no duplicate effect",
+    )
+    assert no_intent is None
+    effects: list[str] = []
+    result = recover_recorded_job_callback(
+        directory=tmp_path,
+        intent=intent,
+        recover=lambda recorded: effects.append(recorded.action_id) or "revert-sha",
+    )
+    assert (result.status, result.receipt) == ("completed", "revert-sha")
+    assert effects == [intent.action_id]
+
+
+@pytest.mark.parametrize("receipt", ["revert-sha", None])
+def test_recovery_of_an_already_settled_action_has_no_second_effect(
+    tmp_path, registration, receipt
+):
+    intent = _recorded_intent(directory=tmp_path, registration=registration)
+    path = next(tmp_path.glob("*.json"))
+    record = json.loads(path.read_bytes())
+    record["actions"][intent.action_id].update(status="completed", receipt=receipt)
+    path.write_text(json.dumps(record))
+    result = recover_recorded_job_callback(
+        directory=tmp_path,
+        intent=intent,
+        recover=lambda _: pytest.fail("settled action recovered twice"),
+    )
+    assert (result.status, result.receipt) == ("completed", receipt)
+    assert result.reason == "existing immutable action; no duplicate effect"
+
+
+def test_recovery_of_a_vanished_action_is_refused_without_effect(tmp_path, registration):
+    intent = _recorded_intent(directory=tmp_path, registration=registration)
+    path = next(tmp_path.glob("*.json"))
+    record = json.loads(path.read_bytes())
+    record["actions"] = {}
+    path.write_text(json.dumps(record))
+    result = recover_recorded_job_callback(
+        directory=tmp_path,
+        intent=intent,
+        recover=lambda _: pytest.fail("vanished action recovered"),
+    )
+    assert (result.status, result.reason) == ("refused", "unknown immutable recovery action")
