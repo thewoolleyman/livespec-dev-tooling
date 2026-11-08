@@ -459,6 +459,7 @@ def test_a_passing_delegated_aggregate_records_reusable_same_tree_evidence(
         tree_hash="a" * 40,
         exit_status=0,
         output_checksum="sha256:job-output",
+        full_aggregate=True,
     )
 
     assert status == 0
@@ -475,14 +476,25 @@ def test_a_failed_or_unattributable_delegated_aggregate_records_no_evidence(
 ) -> None:
     """Only a passed verdict naming its tree, Job, and output may stand in for the suite."""
     cases: list[dict[str, object]] = [
-        {"exit_status": 1, "output_checksum": "sha256:job-output", "job_name": "gate-1"},
-        {"exit_status": 0, "output_checksum": None, "job_name": "gate-1"},
-        {"exit_status": 0, "output_checksum": "sha256:job-output", "job_name": None},
+        {
+            "exit_status": 1,
+            "output_checksum": "sha256:job-output",
+            "job_name": "gate-1",
+            "full_aggregate": True,
+        },
+        {"exit_status": 0, "output_checksum": None, "job_name": "gate-1", "full_aggregate": True},
+        {
+            "exit_status": 0,
+            "output_checksum": "sha256:job-output",
+            "job_name": None,
+            "full_aggregate": True,
+        },
         {
             "exit_status": 0,
             "output_checksum": "sha256:job-output",
             "job_name": "gate-1",
             "tree_hash": None,
+            "full_aggregate": True,
         },
     ]
     for index, case in enumerate(cases):
@@ -573,3 +585,27 @@ def test_a_delegated_pass_claims_the_full_aggregate_only_when_the_staged_tree_se
 
     assert verdict.exit_status == 0
     assert getattr(verdict, "full_aggregate", None) is ran_full_aggregate
+
+
+def test_a_delegated_pass_on_a_non_full_subset_records_no_evidence_and_says_so(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A doc-only pass must leave no token the pre-push gate could memoize the suite on."""
+    status, token = _run_main_with_delegated_verdict(
+        tmp_path=tmp_path,
+        monkeypatch=monkeypatch,
+        local=False,
+        reason="the Job passed",
+        job_name="gate-pre-commit-1",
+        tree_hash="a" * 40,
+        exit_status=0,
+        output_checksum="sha256:job-output",
+        full_aggregate=False,
+    )
+
+    assert status == 0
+    assert token == {}
+    output = capsys.readouterr().err
+    assert "no pre-commit aggregate evidence recorded" in output
+    assert "a" * 40 in output
+    assert "gate-pre-commit-1" in output

@@ -249,7 +249,15 @@ def main() -> int:
         output_checksum=verdict.output_checksum,
         reason=verdict.reason,
     )
-    if (
+    if verdict.exit_status == 0 and not verdict.full_aggregate:
+        log.info(
+            "no pre-commit aggregate evidence recorded: the gate Job ran the doc-only or "
+            "Red-leg subset for the staged tree, so the pre-push gate still runs every "
+            "tree-pure member",
+            job_name=verdict.job_name,
+            tree_hash=verdict.tree_hash,
+        )
+    elif (
         verdict.exit_status == 0
         and verdict.tree_hash
         and verdict.job_name
