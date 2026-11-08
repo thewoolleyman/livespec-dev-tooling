@@ -51,6 +51,7 @@ from _red_green_replay_suite_runner import (  # noqa: E402
     SuiteRun,
     run_suite,
     suite_bound,
+    test_completion_summary,
 )
 from _red_green_replay_trailers import write_trailers  # noqa: E402
 
@@ -280,6 +281,7 @@ def _handle_suite_green_mode(
             f"suite-green-timeout: the suite-green leg was killed ({suite_result.kill_reason}): "
             f"its stall window is {bound.stall_seconds}s with no new output ({STALL_ENV}) "
             f"and its total ceiling is {bound.ceiling_seconds or 'unset'} ({CEILING_ENV}); "
+            f"{test_completion_summary(output=suite_result.output)}; "
             "the pytest process group was killed"
         )
         log.error(
