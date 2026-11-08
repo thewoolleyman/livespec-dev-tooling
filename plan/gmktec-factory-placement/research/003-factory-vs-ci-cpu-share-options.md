@@ -62,8 +62,21 @@ and are recorded so that no later reading cites them as if they did.
 - **Node load.** poweredge used about 71.5 of its 72 CPUs from 04:00Z to 13:15Z, with no change at 10:02Z.
 - **The timed-out pods** used a flat 4.0 cores (their limit is 6) for every visit. Their suites were busy, not
   starved.
-- **Reading.** The cause is specific to those runs. It is not host saturation, cetudy's system.slice weight (which
-  does not apply to poweredge), the #3777 step-back or its revert, or CI load.
+- **Live pod sample** (kubernetes-sandbox-backend, 13:33Z, read-only). Every pod has a 3 CPU request, a 6 CPU limit
+  (`cpu.max 600000/100000`) and affinity 0-71. The aggregate runs `pytest -n 4`.
+  - 4pchid ran TWO full aggregates at once inside its pod: the janitor's check, plus a pre-commit check left alive
+    from an earlier commit. The pod used 6.10 cores and was throttled in 101 of 101 periods.
+  - h5sifx ran one aggregate, at 4.06 cores, throttled in 0 of 101 periods. Its flat 4 cores is the 4-worker
+    ceiling, so throttling does not explain its 64-minute aggregate.
+  - nxeg32 later ran three proof-capture aggregates at once and was throttled in 100 of 101 periods.
+  - poweredge's load average was about 108 on 72 CPUs, with CPU PSI "some" at 39 over 10 s and 32 over 300 s.
+  - `parallel_check_dispatcher` defaults to `min(os.cpu_count(), 8)`, which gives 8 workers on a 6-core quota; it
+    does not size itself to the pod's quota.
+- **Reading.** The cause is specific to those runs and to what runs inside their pods: aggregates running
+  concurrently within one pod's quota (4pchid), and an aggregate that stays slow while unthrottled (h5sifx, not yet
+  explained). The node is oversubscribed, but the same-window controls finished in about 1000 s. Neither cetudy's
+  system.slice weight (which does not apply to poweredge), nor the #3777 step-back or its revert, nor CI load is the
+  binding cause. A factory-vs-CI share would not remove an in-pod aggregate that should not be running.
 - **Baseline for any dial or share decision.** Over 7 days (66 visits across 68 runs, from fabro events on the petri
   server), uncensored dev-tooling janitor suite times were:
 
