@@ -82,6 +82,32 @@ The same applies in every fleet repo carrying the pack, `livespec`
 included — the fragment is shipped by `livespec_dev_tooling`, not by the
 consuming repo.
 
+### The detached gate has NO stdin: pass a commit message as a file
+
+`gate-start` detaches the gate with `setsid ... </dev/null`
+(`dev-tooling/gate-run.sh`), so the gated command reads an empty stdin.
+`git commit -F -` and `git commit -F /dev/stdin` therefore read an
+EMPTY message. Git runs the `pre-commit` hook, and with it the full
+aggregate, before it checks the message. So the whole gate cycle is
+spent before the commit fails or comes out wrong. On a product `.py`
+Red commit, the hook's TDD trailers become the whole message, and the
+Green amend then crashes. Either way a full gate cycle is lost.
+
+```bash
+# wrong: the heredoc never reaches the detached git
+mise exec -- just gate-start -- mise exec -- git commit -F - <<'EOF' ...
+# right: write the message to a file, then pass its path
+mise exec -- just gate-start -- mise exec -- git commit -F /path/to/msg.txt
+```
+
+This has cost real time twice. On 2026-10-25, a Red commit in the
+orchestrator repository landed with only its TDD trailers as the
+message, and the Green amend crashed with `IsADirectoryError`. On
+2026-11-08, the first commit gate for livespec-dev-tooling#3799 was
+launched with `-F /dev/stdin`. Plan `gmktec-factory-placement` (epic
+`livespec-dev-tooling-me5aqz`) caught it mid-run, and the gate was
+stopped and relaunched with a message file.
+
 ### What this does NOT change
 
 **Nothing is weakened.** The same command runs, with the same hooks,
