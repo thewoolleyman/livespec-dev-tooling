@@ -43,3 +43,10 @@ fabro_factory_registry_entries: "{{ fabro_factory_registry | default({}) | dict2
 # file — stayed green (work-item livespec-dev-tooling-7qfnh6). Both tasks below
 # derive from this one variable, so overriding it moves the directory too.
 fabro_factory_registry_dest: /etc/livespec/fabro-factories.json
+
+# The native Dispatcher's fleet launchers read each factory's limit from a
+# one-line file.  It is rendered here, beside the registry, from the same
+# inventory instance mapping that fabro_server renders into settings.toml.
+# Keeping the directory overridable lets the committed dev-host play be run in
+# an isolated test inventory without touching the workstation's state tree.
+fabro_factory_registry_limits_dir: /home/ubuntu/.local/state/livespec/fleet-limits
