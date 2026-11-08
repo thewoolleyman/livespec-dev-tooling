@@ -717,3 +717,4 @@ def test_a_gate_that_keeps_making_progress_is_not_ended_by_the_stall_window(
 
     assert (run_dir / "exit_code").read_text(encoding="utf-8").strip() == "0"
     assert "stall window" not in (run_dir / "output.log").read_text(encoding="utf-8")
+
