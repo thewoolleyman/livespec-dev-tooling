@@ -211,6 +211,61 @@ def test_an_absent_or_wrong_tree_cluster_outcome_gates_locally(
     assert verdict.tree_hash == "a" * 40
 
 
+def test_a_terminated_pre_commit_wait_reports_the_termination_naming_the_deleted_job(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A wait ended by a signal says so, naming the Job it deleted (livespec-dev-tooling-4rliwe)."""
+    from returns.result import Success
+
+    from livespec_dev_tooling._gate_wait_interrupt import (
+        GateWaitInterruptedError,
+        interrupted_wait_failure,
+    )
+    from livespec_dev_tooling.gate_remote_client import GateRunRequest
+    from livespec_dev_tooling.gate_remote_verdict import GATE_NO_VERDICT, GateVerdict
+
+    job = "gate-livespec-dev-tooling-x1y2z"
+    terminated = interrupted_wait_failure(
+        interrupted=GateWaitInterruptedError(job_name=job, signal_name="SIGHUP")
+    )
+    module = _module()
+    _ = (tmp_path / "pyproject.toml").write_text(
+        "[tool.livespec_dev_tooling]\ndelegated_pre_commit = true\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(module, "gates_kubeconfig_readable", lambda: True)
+    monkeypatch.setattr(module, "_staged_tree_hash", lambda **_kwargs: "a" * 40)
+    monkeypatch.setattr(module, "_staged_commit", lambda **_kwargs: "b" * 40)
+    monkeypatch.setattr(module, "resolve_renderer", lambda **_kwargs: Path("renderer"))
+    monkeypatch.setattr(
+        module,
+        "gate_remote_request",
+        lambda **_kwargs: Success(
+            GateRunRequest(
+                repo_root=tmp_path,
+                mirror_url="mirror",
+                manifest="manifest",
+                gate_ref="refs/gates/tree",
+            )
+        ),
+    )
+    monkeypatch.setattr(
+        module,
+        "run_gated_push",
+        lambda **_kwargs: GateVerdict(
+            state=GATE_NO_VERDICT,
+            detail=f"{terminated.step} did not complete: {terminated.detail}",
+            token_written=False,
+        ),
+    )
+
+    verdict = module.run_pre_commit(repo_root=tmp_path)
+
+    assert verdict.local is True
+    assert "terminated by SIGHUP" in verdict.reason
+    assert job in verdict.reason
+
+
 @pytest.mark.parametrize(
     ("returncode", "expected_status"),
     [(0, 0), (1, 1), (None, 1)],

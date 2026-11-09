@@ -173,9 +173,11 @@ def _run_remote(
     if remote.tree_hash != tree_hash:
         return PreCommitVerdict(
             local=True,
+            # The client's own detail is carried, not replaced: a wait ended by a
+            # signal says there that it was terminated and names the Job it deleted.
             reason=(
                 "the gate Job did not return a verdict for the staged tree, so the aggregate "
-                "gates locally"
+                f"gates locally: {remote.detail}"
             ),
             job_name=remote.job_name,
             tree_hash=tree_hash,
