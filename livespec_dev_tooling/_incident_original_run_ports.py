@@ -126,7 +126,10 @@ def _account_environment() -> dict[str, str]:
 def _tenant_credential(*, config: Path) -> dict[str, str]:
     lines = (config.parent / _READER_ENV).read_text(encoding="utf-8").splitlines()
     pairs = [line.partition("=") for line in lines]
-    return {name: value for name, sep, value in pairs if sep and name == _CREDENTIAL_KEY}
+    credential = {name: value for name, sep, value in pairs if sep and name == _CREDENTIAL_KEY}
+    if not credential:
+        raise FileNotFoundError(_CREDENTIAL_KEY)
+    return credential
 
 
 def installed_ports(*, installation: ControllerInstallation) -> EntryPorts:
