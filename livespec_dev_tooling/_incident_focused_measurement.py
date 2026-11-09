@@ -12,9 +12,9 @@ from contextlib import suppress
 from pathlib import Path
 from typing import cast
 
+from livespec_dev_tooling._coverage_measure_omitted import measuring_config
 from livespec_dev_tooling._incident_focused_types import CoverageDocument, CoverageFile
 from livespec_dev_tooling._isolated_coverage import (
-    COVERAGE_CONFIG,
     isolated_environment,
     pytest_coverage_arguments,
 )
@@ -68,13 +68,14 @@ def measure(
     with tempfile.TemporaryDirectory(prefix="livespec-incident-focused-") as temp:
         folder = Path(temp)
         env = isolated_environment(environ=ambient, data_file=str(folder / "coverage.dat"))
+        config = measuring_config(repo_root=repo_root, names=executable, folder=folder)
         tests = _run(
             argv=[
                 sys.executable,
                 "-m",
                 "pytest",
                 "-q",
-                *pytest_coverage_arguments(tests=sorted(selected)),
+                *pytest_coverage_arguments(tests=sorted(selected), config=config),
             ],
             root=repo_root,
             env=env,
@@ -87,7 +88,7 @@ def measure(
                 "-m",
                 "coverage",
                 "json",
-                f"--rcfile={COVERAGE_CONFIG}",
+                f"--rcfile={config}",
                 "--fail-under=0",
                 "-o",
                 str(report_path),

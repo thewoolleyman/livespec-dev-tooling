@@ -575,3 +575,22 @@ def test_focused_tests_see_no_incident_variable(project, monkeypatch) -> None:
     _git(root, "add", ".")
     evidence = _collect(root, base)
     assert evidence["outcome"] == "passed", evidence["tests"]["output"]
+
+
+def test_touched_module_under_the_omit_list_is_measured_not_zero(
+    project: tuple[Path, str],
+) -> None:
+    root, base = project
+    (root / "pyproject.toml").write_text(
+        '[tool.livespec_dev_tooling]\nsource_trees = ["src"]\n'
+        '[tool.coverage.run]\nbranch = true\nomit = ["*/vendored/*", "*/never_touched/*"]\n'
+    )
+    (root / "src/vendored").mkdir()
+    (root / "src/vendored/thing.py").write_text("def thing():\n    return 1\n")
+    (root / "tests/test_thing.py").write_text(
+        "from src.vendored.thing import thing\ndef test_thing():\n    assert thing() == 1\n"
+    )
+    _git(root, "add", ".")
+    evidence = _collect(root, base)
+    assert evidence["coverage"]["src/vendored/thing.py"]["summary"]["percent_covered"] == 100
+    assert evidence["outcome"] == "passed"

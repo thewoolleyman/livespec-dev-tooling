@@ -30,7 +30,7 @@ def isolated_environment(*, environ: Mapping[str, str], data_file: str) -> dict[
     return env
 
 
-def pytest_coverage_arguments(*, tests: Iterable[str]) -> list[str]:
+def pytest_coverage_arguments(*, tests: Iterable[str], config: str = COVERAGE_CONFIG) -> list[str]:
     """Return the pytest arguments that measure `tests` with branch coverage, unreported.
 
     The threshold is left to the caller's own report step, so the nested pytest
@@ -39,7 +39,7 @@ def pytest_coverage_arguments(*, tests: Iterable[str]) -> list[str]:
     return [
         "--cov",
         "--cov-branch",
-        f"--cov-config={COVERAGE_CONFIG}",
+        f"--cov-config={config}",
         "--cov-report=",
         "--cov-fail-under=0",
         *tests,
