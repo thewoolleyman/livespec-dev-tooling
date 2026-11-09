@@ -594,3 +594,20 @@ def test_touched_module_under_the_omit_list_is_measured_not_zero(
     evidence = _collect(root, base)
     assert evidence["coverage"]["src/vendored/thing.py"]["summary"]["percent_covered"] == 100
     assert evidence["outcome"] == "passed"
+
+
+@pytest.mark.parametrize(
+    ("name", "value"),
+    [
+        ("PYTEST_PLUGINS", "a_plugin_the_staged_tree_does_not_have"),
+        ("PYTEST_DISABLE_PLUGIN_AUTOLOAD", "1"),
+    ],
+)
+def test_ambient_pytest_plugin_variables_do_not_leak_in(
+    project: tuple[Path, str], monkeypatch: pytest.MonkeyPatch, name: str, value: str
+) -> None:
+    root, base = project
+    monkeypatch.setenv(name, value)
+    evidence = _collect(root, base)
+    assert evidence["tests"]["returncode"] == 0
+    assert evidence["outcome"] == "passed"

@@ -22,9 +22,17 @@ from livespec_dev_tooling.incident_transport import gate_child_environment
 
 __all__: list[str] = ["measure"]
 
-# A caller's shell could otherwise re-point the measurement or add pytest options
-# (a `-k` or `--deselect`) the staged tree does not carry; the data file is set below.
-_AMBIENT_OVERRIDES = ("COVERAGE_PROCESS_START", "COVERAGE_RCFILE", "PYTEST_ADDOPTS")
+# A caller's shell could otherwise re-point the measurement, add pytest options
+# (a `-k` or `--deselect`) the staged tree does not carry, or change which plugins
+# load (autoload off unloads pytest-cov, so `--cov` becomes a usage error); the
+# data file is set below.
+_AMBIENT_OVERRIDES = (
+    "COVERAGE_PROCESS_START",
+    "COVERAGE_RCFILE",
+    "PYTEST_ADDOPTS",
+    "PYTEST_DISABLE_PLUGIN_AUTOLOAD",
+    "PYTEST_PLUGINS",
+)
 
 
 def _run(*, argv: list[str], root: Path, env: dict[str, str], timeout: float) -> dict[str, object]:
