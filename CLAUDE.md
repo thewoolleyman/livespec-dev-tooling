@@ -168,7 +168,12 @@ The files:
   build, never an image tag, or the replay is silently not counted (jxepvj).
   The same file holds the three-push capture recipe for a delegated-gate
   carrier, and why a replayer's PID is no sign it has finished (r6qc2o,
-  2026-10-28).
+  2026-10-28). Read it also before capturing any proof that signals a
+  hook-run gate client: lefthook gives each hook its own session, so the
+  client hears SIGHUP, not the group TERM (4rliwe, 2026-11-09). And read it
+  before trusting a red host-local `just check` in the primary, before
+  briefing a replay that pins the auto-pulled primary to a tag, and before
+  asking a codex replayer to wait out a long gate.
 - Read `.ai/claude-transcript-usage-dedupe.md` before summing tokens or cost
   out of Claude Code transcripts (`~/.claude/projects/**/*.jsonl`). One
   response is written as several records that repeat the same `usage`, so a
