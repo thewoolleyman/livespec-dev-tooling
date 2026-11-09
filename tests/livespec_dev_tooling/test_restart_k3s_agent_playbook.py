@@ -736,6 +736,90 @@ def test_an_idle_node_is_restarted_after_the_pod_read_and_waited_for(*, scratch:
     )
 
 
+# A cluster add-on's controller replica, as the play's read renders it: the
+# measured kueue-controller-manager replica on gmktec-xubuntu, a pod its
+# Deployment's ReplicaSet owns in the `kueue-system` namespace the playbook's
+# `restart_k3s_agent_addon_namespaces` lists (bd-ib-y6v7b6).
+_ADDON_REPLICA_POD = "kueue-system/kueue-controller-manager-665f45584f-qmtdv"
+# The two shapes the add-on exemption must NOT reach: a BARE pod in the listed
+# namespace, and a ReplicaSet-owned pod in a namespace the list does not name.
+_ADDON_NAMESPACE_BARE_POD = "kueue-system/kueue-debug-shell"
+_UNLISTED_REPLICA_POD = "default/hello-web-5d9c7b6f8-x2k4p"
+_ADDON_REPLICA_READ = f"{_ADDON_REPLICA_POD}=Running=owners:ReplicaSet\n"
+
+
+def test_a_node_whose_only_workload_is_an_addon_controller_replica_is_restarted(
+    *, scratch: _Scratch
+) -> None:
+    """bd-ib-y6v7b6's first assertion: a kueue-controller-manager replica does not hold a restart.
+
+    The node carries the DaemonSet-owned and finished pods every node has PLUS a
+    kueue-controller-manager replica — gmktec-xubuntu's measured shape with no
+    run on it. The gate must let the restart through, because a kubelet restart
+    only pauses an add-on controller replica its Deployment keeps; counting it
+    as workload refused that node permanently, which is how bd-ib-3kdjct's
+    kubelet drop-in stayed unloaded there. The replica must not be named as
+    holding anything either.
+    """
+    scratch.pods.write_text(_IDLE_POD_READ + _ADDON_REPLICA_READ, encoding="utf-8")
+
+    exit_code, output = _run_playbook(scratch=scratch, confirm=_FACTORY_AGENT)
+
+    assert exit_code == 0, (
+        f"a node whose only non-DaemonSet pod is an add-on controller replica in "
+        f"a listed namespace carries no workload, so the restart must succeed:\n{output}"
+    )
+    statuses = _task_statuses(output=output, host=_FACTORY_AGENT)
+    assert _status_of(statuses=statuses, task=_BUSY_REFUSAL_TASK) == "skipping"
+    assert _status_of(statuses=statuses, task=_RESTART_TASK) == "changed"
+    assert (
+        _first_index(commands=_commands(scratch=scratch), needle=f"systemctl restart {_AGENT_UNIT}")
+        >= 0
+    ), f"the agent unit must be restarted:\n{output}"
+
+
+@pytest.mark.parametrize(
+    "workload",
+    [
+        f"{_SANDBOX_POD}=Running=owners:",
+        f"{_RUNNER_POD}=Running=owners:Job",
+        f"{_ADDON_NAMESPACE_BARE_POD}=Running=owners:",
+        f"{_UNLISTED_REPLICA_POD}=Running=owners:ReplicaSet",
+    ],
+    ids=["factory-sandbox", "runner-job", "bare-pod-in-addon-namespace", "replica-outside-list"],
+)
+def test_an_addon_controller_replica_never_excuses_other_workload(
+    *, scratch: _Scratch, workload: str
+) -> None:
+    """bd-ib-y6v7b6's second assertion: the add-on exemption is narrow.
+
+    Beside the exempt kueue replica, each of these still refuses the restart and
+    is named in the refusal: a factory sandbox (bare pod), a runner or gate Job
+    pod, a BARE pod inside the add-on namespace itself, and a ReplicaSet pod in
+    a namespace the list does not name. The service manager is never reached,
+    and the kueue replica is never blamed.
+    """
+    scratch.pods.write_text(
+        _IDLE_POD_READ + _ADDON_REPLICA_READ + workload + "\n", encoding="utf-8"
+    )
+
+    exit_code, output = _run_playbook(scratch=scratch, confirm=_FACTORY_AGENT)
+
+    assert exit_code != 0, f"`{workload}` is workload, so the restart must be refused:\n{output}"
+    statuses = _task_statuses(output=output, host=_FACTORY_AGENT)
+    assert _status_of(statuses=statuses, task=_BUSY_REFUSAL_TASK) == "fatal"
+    assert _RESTART_TASK not in statuses, f"the restart must never be reached:\n{output}"
+    named = workload.split("=", 1)[0]
+    assert named in output, f"the refusal must name `{named}`:\n{output}"
+    assert (
+        _ADDON_REPLICA_POD not in output
+    ), f"the add-on controller replica must never be named as holding a restart:\n{output}"
+    for command in _commands(scratch=scratch):
+        assert command.startswith(
+            "kubectl get pods "
+        ), f"a refused run must never reach the service manager; it issued `{command}`"
+
+
 def test_a_check_run_reads_the_targets_pods_and_withholds_the_restart(*, scratch: _Scratch) -> None:
     """The `--check` half of the first Definition-of-Done assertion, for the named host.
 

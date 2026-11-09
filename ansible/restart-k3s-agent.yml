@@ -85,6 +85,19 @@
 # including a BARE pod no controller owns, which is exactly what a Fabro sandbox
 # is, and which must therefore never be mistaken for noise.
 #
+# NOR IS A CLUSTER ADD-ON'S CONTROLLER REPLICA (bd-ib-y6v7b6). A pod a
+# ReplicaSet owns in one of `restart_k3s_agent_addon_namespaces` is a replica of
+# a cluster add-on's controller, not a job this node is running: a kubelet
+# restart only pauses it, its Deployment keeps or recreates it, and its other
+# replicas keep serving. kueue-controller-manager is the measured case: one of
+# its two replicas runs on gmktec-xubuntu, so a gate that counted it as workload
+# refused that node PERMANENTLY, even with no run on it, and the kubelet drop-in
+# of bd-ib-3kdjct (singleProcessOOMKill) stayed unloaded there while three
+# factory runs died to whole-container OOM kills (2026-11-08/09). The exemption
+# is deliberately NARROW: only a ReplicaSet-owned pod, and only in a namespace
+# the list names. A bare pod in such a namespace, a ReplicaSet pod in any other
+# namespace, and every factory sandbox, runner and gate pod still refuse.
+#
 # NOTHING HERE CORDONS, DRAINS, EVICTS OR DELETES ANYTHING, and nothing else on
 # the host is touched: the only change this play makes is one `systemctl restart`
 # of the agent unit on a node the gate found carrying no workload. The node's own
@@ -137,6 +150,11 @@
     # of the first run, so 30 means 31 attempts.
     restart_k3s_agent_status_interval: 10
     restart_k3s_agent_status_retries: 30
+    # The cluster add-ons whose controller replicas are not workload: in these
+    # namespaces a ReplicaSet-owned pod does not hold a restart. See the
+    # header's "NOR IS A CLUSTER ADD-ON'S CONTROLLER REPLICA".
+    restart_k3s_agent_addon_namespaces:
+      - kueue-system
     # THE TWO HALVES OF THE GATE, kept apart because they mean different things
     # to an operator. `named` is consent: this run is about THIS host. `refused`
     # is policy: this host is not one of the pool's agents and may never be
@@ -244,6 +262,13 @@
               pod_template+='{.metadata.namespace}/{.metadata.name}={.status.phase}'
               pod_template+='=owners:{.metadata.ownerReferences[*].kind}'
               pod_template+='{"\n"}{end}'
+              # A ReplicaSet-owned pod in a listed add-on namespace is not
+              # workload. An empty list renders `^()/`, which no
+              # `<namespace>/` line matches, so the gate is then unchanged.
+              # Unescaped on purpose: a namespace is a DNS-1123 label
+              # (`[a-z0-9-]`), every character of which is literal in an ERE.
+              addon_namespaces='{{ restart_k3s_agent_addon_namespaces | join("|") }}'
+              addon_replica="^(${addon_namespaces})/[^=/]+=[A-Za-z]+=owners:ReplicaSet\$"
               node_pods() {
                 local pods
                 pods="$(kubectl get pods \
@@ -251,7 +276,8 @@
                   --field-selector 'spec.nodeName={{ inventory_hostname }}' \
                   --output "jsonpath=${pod_template}")"
                 printf '%s\n' "${pods}" \
-                  | { grep -v -E '^$|=(Succeeded|Failed|Completed)=owners:|=owners:DaemonSet$' || true; }
+                  | { grep -v -E '^$|=(Succeeded|Failed|Completed)=owners:|=owners:DaemonSet$' || true; } \
+                  | { grep -v -E "${addon_replica}" || true; }
               }
               node_pods
           delegate_to: "{{ restart_k3s_agent_server_host }}"
