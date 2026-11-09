@@ -28,9 +28,7 @@ import base64
 import json
 import os
 import stat
-import subprocess
 import sys
-import tempfile
 import time
 import urllib.error
 import urllib.request
@@ -50,6 +48,7 @@ from livespec_runtime_budget.github_budget import (  # noqa: E402 — vendor-pat
 )
 from returns.io import IOFailure  # noqa: E402
 
+from livespec_dev_tooling._incident_recovery_signing import openssl_sign  # noqa: E402
 from livespec_dev_tooling.budgeted_gh import github_api_url  # noqa: E402
 
 __all__: list[str] = [
@@ -60,7 +59,6 @@ __all__: list[str] = [
 ]
 
 RECOVERY_APP_CREDENTIAL = "recovery-app.json"
-_OPENSSL = "/usr/bin/openssl"
 _TIMEOUT_SECONDS = 10.0
 _JWT_BACKDATE_SECONDS = 60
 _JWT_LIFETIME_SECONDS = 540
@@ -155,31 +153,6 @@ def _pem(*, key: str) -> str | None:
         return None
     wrapped = "\n".join(body[index : index + 64] for index in range(0, len(body), 64))
     return f"-----BEGIN {label}-----\n{wrapped}\n-----END {label}-----\n"
-
-
-def openssl_sign(*, message: bytes, private_key: str) -> bytes:
-    """RS256 over `message` with the installed system crypto; empty bytes on refusal.
-
-    The rewrapped key exists only inside a private temporary directory for the
-    one signing call, the shape the fleet's installation-token minter uses.
-    """
-    with tempfile.TemporaryDirectory(prefix="livespec-recovery-app-") as name:
-        key = Path(name) / "key.pem"
-        descriptor = os.open(key, os.O_CREAT | os.O_WRONLY | os.O_EXCL, 0o600)
-        with os.fdopen(descriptor, "w", encoding="ascii") as stream:
-            _ = stream.write(private_key)
-        try:
-            done = subprocess.run(  # noqa: S603 — fixed system crypto argv; no shell or caller input.
-                [_OPENSSL, "dgst", "-sha256", "-sign", str(key), "-binary"],
-                input=message,
-                capture_output=True,
-                check=False,
-                env={"PATH": "/usr/bin:/bin", "HOME": name, "OPENSSL_CONF": "/dev/null"},
-                timeout=_TIMEOUT_SECONDS,
-            )
-        except subprocess.TimeoutExpired:
-            return b""
-    return done.stdout if done.returncode == 0 else b""
 
 
 def _segment(*, value: bytes) -> str:

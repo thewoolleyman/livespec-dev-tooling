@@ -62,7 +62,10 @@ def _installation(*, root: Path) -> Any:
     return cast(
         "Any",
         SimpleNamespace(
-            repository=_REPOSITORY, state=root / "state", config=root / "controller.json"
+            repository=_REPOSITORY,
+            state=root / "state",
+            config=root / "controller.json",
+            ci_identity_policy=None,
         ),
     )
 

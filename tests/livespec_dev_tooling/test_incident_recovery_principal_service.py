@@ -12,6 +12,7 @@ import pytest
 
 from livespec_dev_tooling import incident_recovery_principal_service as service
 from livespec_dev_tooling._incident_observer_store import repository_lock
+from livespec_dev_tooling._incident_recovery_signing import openssl_sign
 from tests.livespec_dev_tooling.test_incident_recovery_principal import (
     plan_for,
     publish_request,
@@ -120,8 +121,9 @@ def test_main_reads_the_app_credential_beside_the_config_and_borrows_the_fence(
     connected = world.connect()
     request = {"request": asdict(publish_request(world, plan_for(world)))}
 
-    def connect(*, repository, credential):
+    def connect(*, repository, credential, signer):
         assert (repository, credential.app_id, credential.private_key) == ("owner/repo", "42", pem)
+        assert signer is openssl_sign
         return connected
 
     monkeypatch.setattr(service.RecoveryForge, "connect", connect)

@@ -37,6 +37,7 @@ from livespec_dev_tooling._incident_observer_store import (
     current_repository_fence,
 )
 from livespec_dev_tooling._incident_recovery_journal_identity import JournalCodec
+from livespec_dev_tooling._incident_recovery_signing import pinned_signer
 from livespec_dev_tooling.incident_controller_installation import ControllerInstallation
 from livespec_dev_tooling.incident_git import IncidentGitError
 from livespec_dev_tooling.incident_recovery_app import (
@@ -120,7 +121,11 @@ def _connector(
         credential = RecoveryAppCredential.load(path=config.parent / RECOVERY_APP_CREDENTIAL)
         if isinstance(credential, AppRefusal):
             return credential
-        return RecoveryForge.connect(repository=installation.repository, credential=credential)
+        return RecoveryForge.connect(
+            repository=installation.repository,
+            credential=credential,
+            signer=pinned_signer(policy=installation.ci_identity_policy),
+        )
 
     return connect
 

@@ -16,6 +16,7 @@ __all__: list[str] = [
     "CiIdentityPolicy",
     "identity_policy_intact",
     "load_identity_policy",
+    "pinned_crypto_intact",
     "protected_identity_path",
 ]
 
@@ -83,6 +84,23 @@ def protected_identity_path(*, path: Path) -> bool:
         return True
 
 
+def pinned_crypto_intact(*, path: Path, sha256: str) -> bool:
+    """Whether `path` is a protected, executable file whose bytes still hash to `sha256`.
+
+    The one check on the pinned crypto program, shared by CI signature verification and
+    by the recovery App's signer, so neither can run a program the other would refuse.
+    """
+    try:
+        return (
+            protected_identity_path(path=path)
+            and path.is_file()
+            and os.access(path, os.X_OK)
+            and hashlib.sha256(path.read_bytes()).hexdigest() == sha256
+        )
+    except OSError:
+        return False
+
+
 def identity_policy_intact(*, policy: CiIdentityPolicy) -> bool:
     """Recheck optional data and crypto without adding either to mandatory files."""
     try:
@@ -92,10 +110,7 @@ def identity_policy_intact(*, policy: CiIdentityPolicy) -> bool:
             and not stat.S_IMODE(policy.path.stat().st_mode) & 0o077
             and policy.path.stat().st_size <= _MAX_POLICY
             and hashlib.sha256(policy.path.read_bytes()).hexdigest() == policy.digest
-            and protected_identity_path(path=policy.crypto_path)
-            and policy.crypto_path.is_file()
-            and os.access(policy.crypto_path, os.X_OK)
-            and hashlib.sha256(policy.crypto_path.read_bytes()).hexdigest() == policy.crypto_sha256
+            and pinned_crypto_intact(path=policy.crypto_path, sha256=policy.crypto_sha256)
         )
     except OSError:
         return False

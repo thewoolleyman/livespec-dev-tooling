@@ -209,3 +209,17 @@ def test_optional_loader_and_integrity_io_errors_are_unavailable(trusted, monkey
 
     monkeypatch.setattr(Path, "read_bytes", unavailable)
     assert not policy_module.identity_policy_intact(policy=policy)
+
+
+def test_a_pinned_program_that_cannot_be_read_is_not_intact(tmp_path, monkeypatch):
+    program = tmp_path / "program"
+    program.write_bytes(b"pinned")
+    program.chmod(0o700)
+    digest = hashlib.sha256(b"pinned").hexdigest()
+    assert policy_module.pinned_crypto_intact(path=program, sha256=digest)
+
+    def unreadable(_self):
+        raise OSError("controlled unreadable")
+
+    monkeypatch.setattr(Path, "read_bytes", unreadable)
+    assert not policy_module.pinned_crypto_intact(path=program, sha256=digest)

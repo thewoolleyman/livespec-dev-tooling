@@ -20,6 +20,7 @@ from dataclasses import dataclass
 from functools import cache
 from typing import TYPE_CHECKING
 
+from livespec_dev_tooling._incident_recovery_signing import pinned_signer
 from livespec_dev_tooling.incident_recovery_app import (
     RECOVERY_APP_CREDENTIAL,
     AppRefusal,
@@ -55,7 +56,10 @@ class ForgeReads:
             if isinstance(credential, AppRefusal):
                 return credential
             return RecoveryForge.connect(
-                repository=installation.repository, credential=credential, access="read"
+                repository=installation.repository,
+                credential=credential,
+                access="read",
+                signer=pinned_signer(policy=installation.ci_identity_policy),
             )
 
         return cls(connect=cache(connect))

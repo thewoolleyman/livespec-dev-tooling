@@ -18,7 +18,12 @@ _PEM = "-----BEGIN RSA PRIVATE KEY----- QUJD -----END RSA PRIVATE KEY-----"
 
 
 def _installation(*, root: Path) -> Any:
-    return cast("Any", SimpleNamespace(config=root / "controller.json", repository="owner/repo"))
+    return cast(
+        "Any",
+        SimpleNamespace(
+            config=root / "controller.json", repository="owner/repo", ci_identity_policy=None
+        ),
+    )
 
 
 def _forge(*answers: tuple[int, object]) -> Mock:
