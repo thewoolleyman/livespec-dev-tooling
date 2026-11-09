@@ -4,7 +4,9 @@ Shared by `check_coverage_incremental` and the expedited incident's focused
 evidence, so the two cannot disagree about what a covered line is. Both run a
 nested pytest whose coverage data must land in a private file rather than in the
 normal `.coverage`, and both measure under `pyproject.toml` — its `omit` and
-`exclude_also` and its pytest `addopts` — exactly as the full-tree gates do.
+`exclude_also` and its pytest `addopts`. They differ from the full-tree gates in
+one way: those run with `COVERAGE_FILE` unset (`check-per-file-coverage.sh`),
+while these set it to the private data file.
 """
 
 from __future__ import annotations
@@ -30,7 +32,7 @@ def isolated_environment(*, environ: Mapping[str, str], data_file: str) -> dict[
     return env
 
 
-def pytest_coverage_arguments(*, tests: Iterable[str]) -> list[str]:
+def pytest_coverage_arguments(*, tests: Iterable[str], config: str = COVERAGE_CONFIG) -> list[str]:
     """Return the pytest arguments that measure `tests` with branch coverage, unreported.
 
     The threshold is left to the caller's own report step, so the nested pytest
@@ -39,7 +41,7 @@ def pytest_coverage_arguments(*, tests: Iterable[str]) -> list[str]:
     return [
         "--cov",
         "--cov-branch",
-        f"--cov-config={COVERAGE_CONFIG}",
+        f"--cov-config={config}",
         "--cov-report=",
         "--cov-fail-under=0",
         *tests,
