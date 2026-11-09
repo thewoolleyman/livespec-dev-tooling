@@ -3245,7 +3245,9 @@ Given a joined worker whose node reports its allocatable CPU and memory, and no 
 
 When enrollment derives its per-class capacity
 
-Then each eligible class MUST receive one third of the allocatable CPU, rounded down and at least one unit
+Then each class the worker is enrolled in MUST receive an equal share of the allocatable CPU, rounded down and at least one unit
+
+And a class the worker is not enrolled in MUST receive no share, its share being divided among the enrolled classes
 
 And the CI share MUST be expressed in churn slots by the fleet's churn-slot sizing rule
 
