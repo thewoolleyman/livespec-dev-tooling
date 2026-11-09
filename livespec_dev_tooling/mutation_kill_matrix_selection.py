@@ -14,6 +14,7 @@ source only through an unmeasured subprocess, counts as absent.
 from __future__ import annotations
 
 import ast
+import hashlib
 import sys
 import tempfile
 from collections.abc import Callable
@@ -30,6 +31,7 @@ __all__: list[str] = [
     "locate_mutant",
     "measure_per_test_coverage",
     "select_tests",
+    "text_digest",
 ]
 
 
@@ -60,6 +62,7 @@ class MutantSpan:
     path: str
     first_line: int
     last_line: int
+    function_digest: str | None = None
 
     def location(self) -> str:
         """Render the span as the report's portable mutant location."""
@@ -109,14 +112,21 @@ def locate_mutant(*, target: Path, identifier: str) -> MutantSpan | None:
     source = _module_files(target=target).get(module)
     if not names or source is None:
         return None
-    function = _find_function(body=ast.parse(source.read_text(encoding="utf-8")).body, names=names)
+    text = source.read_text(encoding="utf-8")
+    function = _find_function(body=ast.parse(text).body, names=names)
     if not isinstance(function, ast.FunctionDef | ast.AsyncFunctionDef):
         return None
     return MutantSpan(
         path=source.relative_to(target).as_posix(),
         first_line=function.body[0].lineno,
         last_line=function.end_lineno or function.body[-1].lineno,
+        function_digest=text_digest(text=ast.get_source_segment(text, function) or ""),
     )
+
+
+def text_digest(*, text: str) -> str:
+    """Return the stable digest the report and the result cache use for source text."""
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
 def _test_name(*, context: str) -> str:
@@ -143,13 +153,21 @@ def _read_coverage(*, data_file: Path, target: Path) -> PerTestCoverage | None:
     return coverage or None
 
 
-def measure_per_test_coverage(*, target: Path, execute: Executor) -> PerTestCoverage | None:
+def measure_per_test_coverage(
+    *,
+    target: Path,
+    execute: Executor,
+    environment: tuple[str, ...] = (),
+    plugin_args: tuple[str, ...] = (),
+) -> PerTestCoverage | None:
     """Run the target's suite once under per-test contexts and return its line coverage.
 
     The suite's own exit status is not consulted: a failing test still has a
     coverage context.  No data at all means coverage could not be measured.
     `COVERAGE_FILE` is set explicitly because an inherited one outranks the
     rcfile, and would send this run's data into the caller's own data file.
+    `environment` and `plugin_args` let the caller record each test's outcome
+    on the unmutated source from this same run.
     """
     with tempfile.TemporaryDirectory(prefix="kill-matrix-coverage-") as workdir:
         data_file = Path(workdir) / ".coverage"
@@ -159,6 +177,7 @@ def measure_per_test_coverage(*, target: Path, execute: Executor) -> PerTestCove
             args=[
                 "env",
                 f"COVERAGE_FILE={data_file}",
+                *environment,
                 sys.executable,
                 "-B",
                 "-m",
@@ -170,6 +189,7 @@ def measure_per_test_coverage(*, target: Path, execute: Executor) -> PerTestCove
                 f"--cov-config={rcfile}",
                 "--cov-context=test",
                 "--cov-report=",
+                *plugin_args,
             ],
             cwd=target,
         )

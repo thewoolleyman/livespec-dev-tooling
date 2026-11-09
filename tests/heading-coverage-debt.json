@@ -268,30 +268,9 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario: a cached killer that is no longer a test is dropped and its mutant re-tested",
-    "work_item": "livespec-dev-tooling-dkgwsm",
-    "first_seen": "2026-11-09"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
     "heading": "## Scenario: a change set that touches the build or the plugin disables every retry",
     "work_item": "livespec-dev-tooling-crxcy4",
     "first_seen": "2026-11-03"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a change to a data file a test reads re-tests the mutants that test covers",
-    "work_item": "livespec-dev-tooling-dkgwsm",
-    "first_seen": "2026-11-09"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a changed function's mutants are re-tested on an incremental run",
-    "work_item": "livespec-dev-tooling-dkgwsm",
-    "first_seen": "2026-11-09"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -576,27 +555,6 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario: a kill-matrix run in which no mutant applies exits non-zero",
-    "work_item": "livespec-dev-tooling-dkgwsm",
-    "first_seen": "2026-11-09"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a kill-matrix run reports newly redundant tests since the previous report",
-    "work_item": "livespec-dev-tooling-dkgwsm",
-    "first_seen": "2026-11-09"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a kill-matrix run reports newly surviving mutants since the previous report",
-    "work_item": "livespec-dev-tooling-dkgwsm",
-    "first_seen": "2026-11-09"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
     "heading": "## Scenario: a later master commit touching a culprit path blocks the revert",
     "work_item": "livespec-dev-tooling-joqff6",
     "first_seen": "2026-10-22"
@@ -688,13 +646,6 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario: a mutant the engine cannot apply is recorded and the run continues",
-    "work_item": "livespec-dev-tooling-dkgwsm",
-    "first_seen": "2026-11-09"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
     "heading": "## Scenario: a new execution target is admissible from one inventory entry",
     "work_item": "livespec-dev-tooling-hvfc6c",
     "first_seen": "2026-11-04"
@@ -712,13 +663,6 @@
     "heading": "## Scenario: a node takes runner pods up to its declared churn-slot capacity and no fewer",
     "work_item": "livespec-dev-tooling-mtvxde",
     "first_seen": "2026-11-04"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a parallel kill-matrix run reports the same matrix as a single-worker run",
-    "work_item": "livespec-dev-tooling-dkgwsm",
-    "first_seen": "2026-11-09"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -912,13 +856,6 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario: a scheduled kill-matrix run writes its report without gating anything",
-    "work_item": "livespec-dev-tooling-dkgwsm",
-    "first_seen": "2026-11-09"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
     "heading": "## Scenario: a seat's gate-runner full suite runs as a gate Job by default",
     "work_item": "livespec-dev-tooling-qgv3tb",
     "first_seen": "2026-11-01"
@@ -999,34 +936,6 @@
     "heading": "## Scenario: a suite-green run that stops printing output for the stall window is ended",
     "work_item": "livespec-dev-tooling-t4rx4t",
     "first_seen": "2026-11-02"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a surviving mutant whose function changed is flagged in the what-changed summary",
-    "work_item": "livespec-dev-tooling-dkgwsm",
-    "first_seen": "2026-11-09"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a test that exceeds the per-test timeout against a mutant kills it",
-    "work_item": "livespec-dev-tooling-dkgwsm",
-    "first_seen": "2026-11-09"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a test that fails against the unmutated source is excluded from attribution",
-    "work_item": "livespec-dev-tooling-dkgwsm",
-    "first_seen": "2026-11-09"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a test whose shared process dies is re-run alone",
-    "work_item": "livespec-dev-tooling-dkgwsm",
-    "first_seen": "2026-11-09"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -1234,13 +1143,6 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario: an unchanged package is not re-tested on a second kill-matrix run",
-    "work_item": "livespec-dev-tooling-dkgwsm",
-    "first_seen": "2026-11-09"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
     "heading": "## Scenario: an unclaimed revert is released as soon as its own CI is green",
     "work_item": "livespec-dev-tooling-zcp5vb",
     "first_seen": "2026-10-22"
@@ -1398,13 +1300,6 @@
     "heading": "## Scenario: runner pods select the committed runner scheduler profile and every other pod keeps the default profile",
     "work_item": "livespec-dev-tooling-mtvxde",
     "first_seen": "2026-11-04"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: tests sharing one process each keep their own kill outcome",
-    "work_item": "livespec-dev-tooling-dkgwsm",
-    "first_seen": "2026-11-09"
   },
   {
     "spec_root": "SPECIFICATION",

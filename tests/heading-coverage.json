@@ -2594,120 +2594,120 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a parallel kill-matrix run reports the same matrix as a single-worker run",
-    "test": "TODO",
-    "reason": "Spec-first: a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) is owed for this scenario: the kill-matrix engine run over a fixture package that sets up exactly the scenario's Given steps and asserts each of its Then steps. livespec-dev-tooling-dkgwsm owns it (plan fleet-mutation-testing-rule-26); the implementation PR that ships it replaces this row.",
+    "test": "tests.consumer.test_mutation_kill_matrix_engine_scenarios.test_a_parallel_kill_matrix_run_reports_the_same_matrix_as_a_single_worker_run",
+    "reason": "Consumer-tier: runs the kill-matrix engine as a consumer does, over a fixture package that sets up exactly this scenario's Given steps with outbound network access refused, and asserts each Then step against the written report, what-changed summary or exit status (livespec-dev-tooling-dkgwsm).",
     "work_item": "livespec-dev-tooling-dkgwsm"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: tests sharing one process each keep their own kill outcome",
-    "test": "TODO",
-    "reason": "Spec-first: a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) is owed for this scenario: the kill-matrix engine run over a fixture package that sets up exactly the scenario's Given steps and asserts each of its Then steps. livespec-dev-tooling-dkgwsm owns it (plan fleet-mutation-testing-rule-26); the implementation PR that ships it replaces this row.",
+    "test": "tests.consumer.test_mutation_kill_matrix_engine_scenarios.test_tests_sharing_one_process_each_keep_their_own_kill_outcome",
+    "reason": "Consumer-tier: runs the kill-matrix engine as a consumer does, over a fixture package that sets up exactly this scenario's Given steps with outbound network access refused, and asserts each Then step against the written report, what-changed summary or exit status (livespec-dev-tooling-dkgwsm).",
     "work_item": "livespec-dev-tooling-dkgwsm"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a test whose shared process dies is re-run alone",
-    "test": "TODO",
-    "reason": "Spec-first: a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) is owed for this scenario: the kill-matrix engine run over a fixture package that sets up exactly the scenario's Given steps and asserts each of its Then steps. livespec-dev-tooling-dkgwsm owns it (plan fleet-mutation-testing-rule-26); the implementation PR that ships it replaces this row.",
+    "test": "tests.consumer.test_mutation_kill_matrix_engine_scenarios.test_a_test_whose_shared_process_dies_is_re_run_alone",
+    "reason": "Consumer-tier: runs the kill-matrix engine as a consumer does, over a fixture package that sets up exactly this scenario's Given steps with outbound network access refused, and asserts each Then step against the written report, what-changed summary or exit status (livespec-dev-tooling-dkgwsm).",
     "work_item": "livespec-dev-tooling-dkgwsm"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a test that exceeds the per-test timeout against a mutant kills it",
-    "test": "TODO",
-    "reason": "Spec-first: a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) is owed for this scenario: the kill-matrix engine run over a fixture package that sets up exactly the scenario's Given steps and asserts each of its Then steps. livespec-dev-tooling-dkgwsm owns it (plan fleet-mutation-testing-rule-26); the implementation PR that ships it replaces this row.",
+    "test": "tests.consumer.test_mutation_kill_matrix_engine_scenarios.test_a_test_that_exceeds_the_per_test_timeout_against_a_mutant_kills_it",
+    "reason": "Consumer-tier: runs the kill-matrix engine as a consumer does, over a fixture package that sets up exactly this scenario's Given steps with outbound network access refused, and asserts each Then step against the written report, what-changed summary or exit status (livespec-dev-tooling-dkgwsm).",
     "work_item": "livespec-dev-tooling-dkgwsm"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a test that fails against the unmutated source is excluded from attribution",
-    "test": "TODO",
-    "reason": "Spec-first: a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) is owed for this scenario: the kill-matrix engine run over a fixture package that sets up exactly the scenario's Given steps and asserts each of its Then steps. livespec-dev-tooling-dkgwsm owns it (plan fleet-mutation-testing-rule-26); the implementation PR that ships it replaces this row.",
+    "test": "tests.consumer.test_mutation_kill_matrix_engine_scenarios.test_a_test_that_fails_against_the_unmutated_source_is_excluded_from_attribution",
+    "reason": "Consumer-tier: runs the kill-matrix engine as a consumer does, over a fixture package that sets up exactly this scenario's Given steps with outbound network access refused, and asserts each Then step against the written report, what-changed summary or exit status (livespec-dev-tooling-dkgwsm).",
     "work_item": "livespec-dev-tooling-dkgwsm"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a mutant the engine cannot apply is recorded and the run continues",
-    "test": "TODO",
-    "reason": "Spec-first: a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) is owed for this scenario: the kill-matrix engine run over a fixture package that sets up exactly the scenario's Given steps and asserts each of its Then steps. livespec-dev-tooling-dkgwsm owns it (plan fleet-mutation-testing-rule-26); the implementation PR that ships it replaces this row.",
+    "test": "tests.consumer.test_mutation_kill_matrix_engine_scenarios.test_a_mutant_the_engine_cannot_apply_is_recorded_and_the_run_continues",
+    "reason": "Consumer-tier: runs the kill-matrix engine as a consumer does, over a fixture package that sets up exactly this scenario's Given steps with outbound network access refused, and asserts each Then step against the written report, what-changed summary or exit status (livespec-dev-tooling-dkgwsm).",
     "work_item": "livespec-dev-tooling-dkgwsm"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a kill-matrix run in which no mutant applies exits non-zero",
-    "test": "TODO",
-    "reason": "Spec-first: a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) is owed for this scenario: the kill-matrix engine run over a fixture package that sets up exactly the scenario's Given steps and asserts each of its Then steps. livespec-dev-tooling-dkgwsm owns it (plan fleet-mutation-testing-rule-26); the implementation PR that ships it replaces this row.",
+    "test": "tests.consumer.test_mutation_kill_matrix_engine_scenarios.test_a_kill_matrix_run_in_which_no_mutant_applies_exits_non_zero",
+    "reason": "Consumer-tier: runs the kill-matrix engine as a consumer does, over a fixture package that sets up exactly this scenario's Given steps with outbound network access refused, and asserts each Then step against the written report, what-changed summary or exit status (livespec-dev-tooling-dkgwsm).",
     "work_item": "livespec-dev-tooling-dkgwsm"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: an unchanged package is not re-tested on a second kill-matrix run",
-    "test": "TODO",
-    "reason": "Spec-first: a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) is owed for this scenario: the kill-matrix engine run over a fixture package that sets up exactly the scenario's Given steps and asserts each of its Then steps. livespec-dev-tooling-dkgwsm owns it (plan fleet-mutation-testing-rule-26); the implementation PR that ships it replaces this row.",
+    "test": "tests.consumer.test_mutation_kill_matrix_engine_scenarios.test_an_unchanged_package_is_not_re_tested_on_a_second_kill_matrix_run",
+    "reason": "Consumer-tier: runs the kill-matrix engine as a consumer does, over a fixture package that sets up exactly this scenario's Given steps with outbound network access refused, and asserts each Then step against the written report, what-changed summary or exit status (livespec-dev-tooling-dkgwsm).",
     "work_item": "livespec-dev-tooling-dkgwsm"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a changed function's mutants are re-tested on an incremental run",
-    "test": "TODO",
-    "reason": "Spec-first: a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) is owed for this scenario: the kill-matrix engine run over a fixture package that sets up exactly the scenario's Given steps and asserts each of its Then steps. livespec-dev-tooling-dkgwsm owns it (plan fleet-mutation-testing-rule-26); the implementation PR that ships it replaces this row.",
+    "test": "tests.consumer.test_mutation_kill_matrix_engine_scenarios.test_a_changed_functions_mutants_are_re_tested_on_an_incremental_run",
+    "reason": "Consumer-tier: runs the kill-matrix engine as a consumer does, over a fixture package that sets up exactly this scenario's Given steps with outbound network access refused, and asserts each Then step against the written report, what-changed summary or exit status (livespec-dev-tooling-dkgwsm).",
     "work_item": "livespec-dev-tooling-dkgwsm"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a change to a data file a test reads re-tests the mutants that test covers",
-    "test": "TODO",
-    "reason": "Spec-first: a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) is owed for this scenario: the kill-matrix engine run over a fixture package that sets up exactly the scenario's Given steps and asserts each of its Then steps. livespec-dev-tooling-dkgwsm owns it (plan fleet-mutation-testing-rule-26); the implementation PR that ships it replaces this row.",
+    "test": "tests.consumer.test_mutation_kill_matrix_engine_scenarios.test_a_change_to_a_data_file_a_test_reads_re_tests_the_mutants_that_test_covers",
+    "reason": "Consumer-tier: runs the kill-matrix engine as a consumer does, over a fixture package that sets up exactly this scenario's Given steps with outbound network access refused, and asserts each Then step against the written report, what-changed summary or exit status (livespec-dev-tooling-dkgwsm).",
     "work_item": "livespec-dev-tooling-dkgwsm"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a cached killer that is no longer a test is dropped and its mutant re-tested",
-    "test": "TODO",
-    "reason": "Spec-first: a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) is owed for this scenario: the kill-matrix engine run over a fixture package that sets up exactly the scenario's Given steps and asserts each of its Then steps. livespec-dev-tooling-dkgwsm owns it (plan fleet-mutation-testing-rule-26); the implementation PR that ships it replaces this row.",
+    "test": "tests.consumer.test_mutation_kill_matrix_engine_scenarios.test_a_cached_killer_that_is_no_longer_a_test_is_dropped_and_its_mutant_re_tested",
+    "reason": "Consumer-tier: runs the kill-matrix engine as a consumer does, over a fixture package that sets up exactly this scenario's Given steps with outbound network access refused, and asserts each Then step against the written report, what-changed summary or exit status (livespec-dev-tooling-dkgwsm).",
     "work_item": "livespec-dev-tooling-dkgwsm"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a kill-matrix run reports newly redundant tests since the previous report",
-    "test": "TODO",
-    "reason": "Spec-first: a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) is owed for this scenario: the kill-matrix engine run over a fixture package that sets up exactly the scenario's Given steps and asserts each of its Then steps. livespec-dev-tooling-dkgwsm owns it (plan fleet-mutation-testing-rule-26); the implementation PR that ships it replaces this row.",
+    "test": "tests.consumer.test_mutation_kill_matrix_engine_scenarios.test_a_kill_matrix_run_reports_newly_redundant_tests_since_the_previous_report",
+    "reason": "Consumer-tier: runs the kill-matrix engine as a consumer does, over a fixture package that sets up exactly this scenario's Given steps with outbound network access refused, and asserts each Then step against the written report, what-changed summary or exit status (livespec-dev-tooling-dkgwsm).",
     "work_item": "livespec-dev-tooling-dkgwsm"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a kill-matrix run reports newly surviving mutants since the previous report",
-    "test": "TODO",
-    "reason": "Spec-first: a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) is owed for this scenario: the kill-matrix engine run over a fixture package that sets up exactly the scenario's Given steps and asserts each of its Then steps. livespec-dev-tooling-dkgwsm owns it (plan fleet-mutation-testing-rule-26); the implementation PR that ships it replaces this row.",
+    "test": "tests.consumer.test_mutation_kill_matrix_engine_scenarios.test_a_kill_matrix_run_reports_newly_surviving_mutants_since_the_previous_report",
+    "reason": "Consumer-tier: runs the kill-matrix engine as a consumer does, over a fixture package that sets up exactly this scenario's Given steps with outbound network access refused, and asserts each Then step against the written report, what-changed summary or exit status (livespec-dev-tooling-dkgwsm).",
     "work_item": "livespec-dev-tooling-dkgwsm"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a surviving mutant whose function changed is flagged in the what-changed summary",
-    "test": "TODO",
-    "reason": "Spec-first: a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) is owed for this scenario: the kill-matrix engine run over a fixture package that sets up exactly the scenario's Given steps and asserts each of its Then steps. livespec-dev-tooling-dkgwsm owns it (plan fleet-mutation-testing-rule-26); the implementation PR that ships it replaces this row.",
+    "test": "tests.consumer.test_mutation_kill_matrix_engine_scenarios.test_a_surviving_mutant_whose_function_changed_is_flagged_in_the_what_changed_summary",
+    "reason": "Consumer-tier: runs the kill-matrix engine as a consumer does, over a fixture package that sets up exactly this scenario's Given steps with outbound network access refused, and asserts each Then step against the written report, what-changed summary or exit status (livespec-dev-tooling-dkgwsm).",
     "work_item": "livespec-dev-tooling-dkgwsm"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a scheduled kill-matrix run writes its report without gating anything",
-    "test": "TODO",
-    "reason": "Spec-first: a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) is owed for this scenario: the kill-matrix engine run over a fixture package that sets up exactly the scenario's Given steps and asserts each of its Then steps. livespec-dev-tooling-dkgwsm owns it (plan fleet-mutation-testing-rule-26); the implementation PR that ships it replaces this row.",
+    "test": "tests.consumer.test_mutation_kill_matrix_engine_scenarios.test_a_scheduled_kill_matrix_run_writes_its_report_without_gating_anything",
+    "reason": "Consumer-tier: runs the kill-matrix engine as a consumer does, over a fixture package that sets up exactly this scenario's Given steps with outbound network access refused, and asserts each Then step against the written report, what-changed summary or exit status (livespec-dev-tooling-dkgwsm).",
     "work_item": "livespec-dev-tooling-dkgwsm"
   },
   {

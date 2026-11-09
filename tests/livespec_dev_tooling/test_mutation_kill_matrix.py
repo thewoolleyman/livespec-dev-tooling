@@ -112,3 +112,54 @@ def test_report_names_the_test_selection_method_the_run_used() -> None:
     assert report.to_dict()["test_selection_method"] == (
         "coverage-guided: per-test pytest-cov contexts"
     )
+
+
+def test_report_separates_unapplied_mutants_baseline_failures_and_their_tests() -> None:
+    """Unapplied mutants and baseline failures leave attribution; each test lands in one list."""
+    module = importlib.import_module("livespec_dev_tooling.mutation_kill_matrix")
+    report = module.build_report(
+        engine_name="mutmut",
+        engine_version="3.2.3",
+        source_revision="abc123",
+        test_selection_method="coverage-guided",
+        mutants=[
+            module.Mutant(identifier="M1", location="pkg.py:2-2", function_digest="d1"),
+            module.Mutant(identifier="M2", location="pkg.py:6-6"),
+            module.Mutant(identifier="M3", location="pkg.py:9-9"),
+        ],
+        tests=["t::unique", "t::shared", "t::unapplied_only", "t::broken"],
+        killers_by_mutant={
+            "M1": {"t::unique", "t::broken"},
+            "M2": {"t::shared"},
+            "M3": {"t::shared"},
+        },
+        unapplied_mutants=frozenset({"M2"}),
+        selected_for_unapplied=frozenset({"t::unapplied_only", "t::unique"}),
+        baseline_failures=frozenset({"t::broken"}),
+        per_test_timeout_seconds=30.0,
+        run=module.RunMetadata(workers=4, incremental=True, reused_mutants=2),
+    )
+
+    document = report.to_dict()
+
+    assert document["mutants"][0] == {
+        "function_digest": "d1",
+        "identifier": "M1",
+        "killed_by": ["t::unique"],
+        "location": "pkg.py:2-2",
+    }
+    assert document["mutants"][1]["killed_by"] == []
+    assert (
+        document["mutants_generated"],
+        document["mutants_applied"],
+        document["mutants_unapplied"],
+    ) == (3, 2, 1)
+    assert document["surviving_mutants"] == []
+    assert document["unapplied_mutants"] == ["M2"]
+    assert document["baseline_failures"] == ["t::broken"]
+    assert document["redundancy_candidates"] == []
+    assert document["unapplied_coverage_tests"] == ["t::unapplied_only"]
+    assert document["per_test_timeout_seconds"] == 30.0
+    assert document["run"] == {"incremental": True, "reused_mutants": 2, "workers": 4}
+    assert "run" not in module.matrix_content(document=document)
+    assert module.matrix_content(document=document)["tests"] == document["tests"]

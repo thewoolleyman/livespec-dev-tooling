@@ -724,6 +724,13 @@ scenario_tiers = ["tests.consumer"]
 # behavior) stay AND must scrub COVERAGE_PROCESS_START + COV_CORE_* from the
 # child env so the child does not self-instrument.
 subprocess_spawn_allowlist = [
+    # livespec-dev-tooling-dkgwsm: the rule-26 kill-matrix scenarios run the
+    # engine as a consumer does, `python -m ...mutation_kill_matrix_runner`, and
+    # the engine itself starts the mutmut stand-in and pytest per mutant; only a
+    # real process tree proves the shared-process, process-death and per-test
+    # timeout behaviour. The fixture scrubs COVERAGE_PROCESS_START + COV_CORE_*
+    # from the child env.
+    "tests/consumer/kill_matrix_fixture.py",
     # Complete inverse semantics require real Git indexes, binary/mode changes,
     # atomic ref transactions and receipt recovery; the fixture scrubs coverage
     # startup and inherited Git hook variables before every child invocation.
