@@ -6,6 +6,12 @@ way never reached its Job deletion, so the Job stayed queued and ran for no one
 while each retry submitted another. The handler installed here runs the caller's
 cleanup in the signal's own frame, then stops the wait with a typed error the
 caller turns into the ordinary no-verdict ending.
+
+HUP is handled for the same reason as TERM. A pre-commit client runs under
+lefthook, which starts each hook command in its own session, so gate-run.sh's
+group TERM reaches lefthook and not the client. The client hears the ending as
+SIGHUP when lefthook exits and its session is hung up, and Python's default HUP
+action exits as abruptly as its default TERM action (livespec-dev-tooling-4rliwe).
 """
 
 from __future__ import annotations
@@ -65,15 +71,17 @@ def wait_with_interrupt_cleanup(
     cleanup: Callable[[], None],
     wait: Callable[[], Result[Terminal, GateStepFailed]],
 ) -> Result[Terminal, GateStepFailed]:
-    """Run `wait` while TERM and INT call `cleanup`, then raise `GateWaitInterruptedError`."""
+    """Run `wait` while TERM, INT and HUP call `cleanup`, then raise `GateWaitInterruptedError`."""
     interrupted = _InterruptCleanup(job_name=job_name, cleanup=cleanup)
     previous_term = signal.signal(signal.SIGTERM, interrupted)
     previous_int = signal.signal(signal.SIGINT, interrupted)
+    previous_hup = signal.signal(signal.SIGHUP, interrupted)
     try:
         return wait()
     finally:
         _ = signal.signal(signal.SIGTERM, previous_term)
         _ = signal.signal(signal.SIGINT, previous_int)
+        _ = signal.signal(signal.SIGHUP, previous_hup)
 
 
 def interrupted_wait_failure(*, interrupted: GateWaitInterruptedError) -> GateStepFailed:
