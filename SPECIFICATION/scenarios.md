@@ -1350,6 +1350,24 @@ And the live session's directory MUST remain in place
 
 And the run's log MUST name the removed directory and the free space of the root filesystem and of `/tmp` before and after
 
+## Scenario: dev host retention removes an aged Codex marketplace backup and leaves the live marketplaces
+
+Given the retention user's `~/.codex/.tmp/marketplaces` holding a `marketplace-backup-*` directory unmodified for longer than the scratch retention period
+
+And a `marketplace-backup-*` directory modified within the scratch retention period
+
+And a live marketplace directory unmodified for longer than the scratch retention period
+
+And no process holding `~/.codex/.tmp/marketplaces/.staging.lock`
+
+When one run of the dev host retention script completes
+
+Then the aged backup directory MUST be removed
+
+And the recent backup directory and the live marketplace directory MUST remain in place
+
+And the run's log MUST name the removed directory
+
 ## Scenario: the dev host capacity check alerts when /tmp passes its threshold
 
 Given `/tmp` on the dev host with a used share at or above its configured threshold
