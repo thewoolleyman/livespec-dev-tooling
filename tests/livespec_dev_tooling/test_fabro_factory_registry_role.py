@@ -863,7 +863,16 @@ def test_the_committed_inventory_declares_a_registry_that_resolves(*, tmp_path: 
             str(_LEGACY_INVENTORY),
             "--check",
             "-e",
-            json.dumps({"ansible_become": False, _DEST_VAR: str(dest)}),
+            # The client logins read each factory's dev token on its own host,
+            # which a gate sandbox cannot reach; they have their own tests
+            # (test_fabro_factory_registry_client_logins.py).
+            json.dumps(
+                {
+                    "ansible_become": False,
+                    _DEST_VAR: str(dest),
+                    "fabro_factory_registry_client_login": False,
+                }
+            ),
             str(play),
         ],
     )
