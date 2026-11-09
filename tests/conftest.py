@@ -21,6 +21,10 @@ delegated gate's outcome-event endpoint at a closed port for the whole suite —
 see that fixture for why a default would export this suite's canned gate runs
 into the fleet's real observability surface.
 
+Also hosts `_caller_gate_variables_never_reach_a_test`, which unsets the
+caller's gate-shaping `LIVESPEC_*` variables for every test, so a gate run under
+a raised stall window cannot turn a default-reading test red.
+
 Also hosts `_signature_verification_is_not_bounded_by_host_load`, which removes
 the incident CI signature verifier's production wall-clock bound for the whole
 suite — see that fixture for the master run a loaded runner turned red.
@@ -105,6 +109,40 @@ def _gate_outcome_receiver_is_never_the_hosts_own(monkeypatch: pytest.MonkeyPatc
     cannot reach a real receiver.
     """
     monkeypatch.setenv("LIVESPEC_GATE_OTLP_ENDPOINT", _CLOSED_RECEIVER)
+
+
+# The gate-shaping variables a caller's environment can carry into the suite.
+# Each one is read by product code a test exercises: the suite-green stall window
+# and timeout ceiling (`_red_green_replay_suite_runner`), the replay's worker
+# count and CI lane (`_red_green_replay_suite_argv`), and the same four in the
+# pack's `gate-run.sh`.
+_CALLER_GATE_VARIABLES = (
+    "LIVESPEC_SUITE_GREEN_STALL_SECONDS",
+    "LIVESPEC_SUITE_GREEN_TIMEOUT_SECONDS",
+    "LIVESPEC_TEST_PARALLELISM",
+    "LIVESPEC_CI_LANE",
+)
+
+
+@pytest.fixture(autouse=True)
+def _caller_gate_variables_never_reach_a_test(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Unset the caller's gate-shaping variables for every test.
+
+    A gate run under a raised stall window (`LIVESPEC_SUITE_GREEN_STALL_SECONDS`
+    of 3600, say) runs this suite with that variable in its environment. A test
+    that reads the default through product code then sees the caller's value
+    and fails, so the same tree passes or fails depending on who ran it
+    (livespec-dev-tooling-ltwdfq). Patching each test that reads one of them
+    did not hold: a suite-green test added in a PR that merged first was left
+    reading the caller's window, and failed `assert 3600 == 900`.
+
+    AUTOUSE RATHER THAN PER-CALL-SITE, because the failure mode is OMISSION,
+    exactly as for the outcome receiver above. A test that needs one of these
+    variables sets it itself after this fixture runs, and a subprocess test that
+    copies `os.environ` inherits the cleaned environment.
+    """
+    for name in _CALLER_GATE_VARIABLES:
+        monkeypatch.delenv(name, raising=False)
 
 
 # Real git does all the work; only the rendering of a full ISO instant's UTC
