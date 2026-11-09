@@ -122,6 +122,7 @@ def _reply(*, argv, attempt):
                 "schema": 1,
                 "status": "verified",
                 "authorizes_current_effects": True,
+                "normal_factory_proof": False,
                 "result": {"is_current": True, "attempt": attempt},
             }
         ),

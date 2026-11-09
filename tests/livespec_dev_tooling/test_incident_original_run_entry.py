@@ -137,32 +137,21 @@ def completed(stdout: bytes) -> subprocess.CompletedProcess[bytes]:
     return subprocess.CompletedProcess(args=[], returncode=0, stdout=stdout)
 
 
+def authority_reply(**fields: object) -> subprocess.CompletedProcess[str]:
+    reply = {"schema": 1, "authorizes_current_effects": False, "normal_factory_proof": False}
+    body = json.dumps(reply | fields)
+    return subprocess.CompletedProcess(args=[], returncode=0, stdout=body, stderr="")
+
+
 def test_installed_ports_reach_git_bd_and_the_manifest_reader(
     monkeypatch: pytest.MonkeyPatch, installation: SimpleNamespace, tmp_path: Path
 ) -> None:
     replies = [
         completed(b"tree\n"),
         completed(b"[]"),
-        completed(
-            json.dumps(
-                {
-                    "schema": 1,
-                    "status": "verified",
-                    "normal_factory_proof": False,
-                    "result": {"attempt": {}},
-                }
-            ).encode()
-        ),
-        completed(
-            json.dumps(
-                {"schema": 1, "status": "refused", "normal_factory_proof": False, "result": {}}
-            ).encode()
-        ),
-        completed(
-            json.dumps(
-                {"schema": 1, "status": "verified", "normal_factory_proof": False, "result": []}
-            ).encode()
-        ),
+        authority_reply(status="verified", result={"attempt": {}}),
+        authority_reply(status="refused", result={}),
+        authority_reply(status="verified", result=[]),
     ]
     spawn = Mock(side_effect=replies)
     monkeypatch.setattr(subprocess, "run", spawn)

@@ -53,6 +53,7 @@ def setup(tmp_path, monkeypatch):
         "schema": 1,
         "status": "verified",
         "authorizes_current_effects": True,
+        "normal_factory_proof": False,
         "result": {"is_current": True, "attempt": attempt},
     }
     outputs = [subprocess.CompletedProcess([], 0, json.dumps(reply), "")]
@@ -109,6 +110,9 @@ def test_reader_outage_or_invalid_reply_cannot_authorize_new_admission(setup, re
     assert not reader(arm)
 
 
+_PROTOCOL = {"schema": 1, "status": "verified", "normal_factory_proof": False}
+
+
 @pytest.mark.parametrize(
     "reply",
     [
@@ -116,17 +120,15 @@ def test_reader_outage_or_invalid_reply_cannot_authorize_new_admission(setup, re
         {"schema": True},
         {"schema": 2},
         {"schema": 1, "status": "refused"},
-        {"schema": 1, "status": "verified", "authorizes_current_effects": False},
-        {"schema": 1, "status": "verified", "authorizes_current_effects": True, "result": []},
+        {**_PROTOCOL, "authorizes_current_effects": False},
+        {**_PROTOCOL, "authorizes_current_effects": True, "result": []},
         {
-            "schema": 1,
-            "status": "verified",
+            **_PROTOCOL,
             "authorizes_current_effects": True,
             "result": {"is_current": False, "attempt": {}},
         },
         {
-            "schema": 1,
-            "status": "verified",
+            **_PROTOCOL,
             "authorizes_current_effects": True,
             "result": {"is_current": True, "attempt": []},
         },
@@ -185,3 +187,20 @@ def test_standalone_postmerge_admission_needs_canonical_landed_membership(setup)
     outputs[0] = subprocess.CompletedProcess([], 0, json.dumps(reply), "")
     assert reader(replace(registration, authority_receipt=payload))
     assert not reader(replace(registration, authority_receipt=payload, candidate_revision="f" * 40))
+
+
+def test_a_reply_without_the_no_normal_proof_flag_is_not_current_authority(setup):
+    arm, reader, reply, outputs, _ = setup
+    del reply["normal_factory_proof"]
+    outputs[0] = subprocess.CompletedProcess([], 0, json.dumps(reply), "")
+    assert not reader(arm)
+    reply["normal_factory_proof"] = True
+    outputs[0] = subprocess.CompletedProcess([], 0, json.dumps(reply), "")
+    assert not reader(arm)
+
+
+def test_a_reply_repeating_a_key_is_not_current_authority(setup):
+    arm, reader, reply, outputs, _ = setup
+    repeated = json.dumps(reply).replace('"schema": 1', '"schema": 1, "schema": 1')
+    outputs[0] = subprocess.CompletedProcess([], 0, repeated, "")
+    assert not reader(arm)

@@ -7,7 +7,6 @@ authority. Historical attribution never selects mode or supplies normal proof.
 
 from __future__ import annotations
 
-import subprocess
 import sys
 from pathlib import Path
 
@@ -19,13 +18,19 @@ from returns.io import IOFailure, IOResult, IOSuccess, impure_safe  # noqa: E402
 from returns.pipeline import is_successful  # noqa: E402
 from returns.unsafe import unsafe_perform_io  # noqa: E402
 
-from livespec_dev_tooling._incident_provenance_protocol import decode_historical_reply  # noqa: E402
+from livespec_dev_tooling._incident_provenance_protocol import (  # noqa: E402
+    decode_historical_result,
+)
 from livespec_dev_tooling._incident_provenance_types import (  # noqa: E402
     HistoricalIncidentProof,
     IncidentCommitQuery,
     IncidentProvenanceRefusal,
 )
 from livespec_dev_tooling.flake_retry_filer import registered_plugin_root  # noqa: E402
+from livespec_dev_tooling.incident_authority_client import (  # noqa: E402
+    call_authority,
+    registered_authority_command,
+)
 
 __all__: list[str] = [
     "HistoricalIncidentProof",
@@ -35,67 +40,51 @@ __all__: list[str] = [
 ]
 
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-gvylzw
-_READER_TIMEOUT = 30
 
 
 @impure_safe
-def _invoke(*, repo_root: Path, query: IncidentCommitQuery) -> subprocess.CompletedProcess[str]:
+def _command(*, repo_root: Path) -> list[str]:
     """A registered code path and credential wrapper establish the producer boundary."""
     plugin_root = registered_plugin_root(
         repo_root=repo_root,
         registry=Path.home() / ".claude" / "plugins" / "installed_plugins.json",
     )
-    argv = [
-        "/usr/local/bin/with-livespec-env.sh",
-        "--",
-        "python3",
-        str(plugin_root / "scripts" / "bin" / "incident_authority.py"),
-        "read-history",
-        "--repo",
-        str(repo_root),
-        "--repository",
-        query.repository,
-        "--item",
-        query.item_id,
-        "--attempt",
-        query.attempt_id,
-        "--phase",
-        query.phase,
-        "--operation",
-        query.operation_id,
-        "--owner",
-        query.owner,
-        "--generation",
-        str(query.generation),
-    ]
-    return subprocess.run(  # noqa: S603 — fixed executable and structured argument vector.
-        argv,
-        cwd=repo_root,
-        capture_output=True,
-        text=True,
-        timeout=_READER_TIMEOUT,
-        check=False,
-    )
+    return registered_authority_command(plugin_root=plugin_root)
 
 
 def read_historical_incident_commit(
     *, repo_root: Path, query: IncidentCommitQuery
 ) -> IOResult[HistoricalIncidentProof, IncidentProvenanceRefusal]:
     """Read one immutable canonical attribution; never fall back to normal admission."""
-    invoked = _invoke(repo_root=repo_root, query=query)
-    if not is_successful(invoked):
-        failure = unsafe_perform_io(invoked.failure())
+    command = _command(repo_root=repo_root)
+    if not is_successful(command):
+        failure = unsafe_perform_io(command.failure())
         return IOFailure(
             IncidentProvenanceRefusal(
-                code="incident-reader-unavailable",
+                code="incident-authority-unavailable",
                 detail=(
                     f"registered canonical history reader unavailable: "
                     f"{type(failure).__name__}: {failure}"
                 ),
             )
         )
-    completed = unsafe_perform_io(invoked.unwrap())
-    decoded = decode_historical_reply(
-        stdout=completed.stdout, returncode=completed.returncode, query=query
+    checked = call_authority(
+        command=unsafe_perform_io(command.unwrap()),
+        action="read-history",
+        flags={
+            "repo": repo_root,
+            "repository": query.repository,
+            "item": query.item_id,
+            "attempt": query.attempt_id,
+            "phase": query.phase,
+            "operation": query.operation_id,
+            "owner": query.owner,
+            "generation": query.generation,
+        },
+        cwd=repo_root,
     )
+    if not is_successful(checked):
+        refusal = checked.failure()
+        return IOFailure(IncidentProvenanceRefusal(code=refusal.code, detail=refusal.detail))
+    decoded = decode_historical_result(result=checked.unwrap(), query=query)
     return IOSuccess(decoded.unwrap()) if is_successful(decoded) else IOFailure(decoded.failure())

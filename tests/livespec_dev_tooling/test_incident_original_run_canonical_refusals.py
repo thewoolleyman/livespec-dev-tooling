@@ -57,12 +57,12 @@ class Authority:
         self.verified = (0, reply("verified", flows.attempt(world)))
         self.script: dict[str, list[tuple[int, object]]] = {}
 
-    def spawn(self, argv: list[str], **kwargs: Any) -> subprocess.CompletedProcess[bytes]:
+    def spawn(self, argv: list[str], **kwargs: Any) -> subprocess.CompletedProcess[Any]:
         if argv[0] == "git":
             return REAL_RUN(argv, **kwargs)
         code, body = self.script[argv[2]].pop(0)
-        stdout = body if isinstance(body, bytes) else json.dumps(body).encode()
-        return subprocess.CompletedProcess(args=argv, returncode=code, stdout=stdout)
+        stdout = body.decode() if isinstance(body, bytes) else json.dumps(body)
+        return subprocess.CompletedProcess(args=argv, returncode=code, stdout=stdout, stderr="")
 
 
 @pytest.fixture

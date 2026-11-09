@@ -76,7 +76,7 @@ def _install(
             args=argv, returncode=returncode, stdout=json.dumps(reply), stderr=""
         )
 
-    monkeypatch.setattr(provenance.subprocess, "run", run)
+    monkeypatch.setattr(subprocess, "run", run)
     return calls
 
 
@@ -157,23 +157,23 @@ def test_landed_commit_and_tree_are_verified_as_one_pair(
 
 
 @pytest.mark.parametrize(
-    ("field", "value"),
+    ("field", "value", "code"),
     [
-        ("schema", True),
-        ("schema", 2),
-        ("status", "normal"),
-        ("authorizes_current_effects", True),
-        ("normal_factory_proof", True),
+        ("schema", True, "incident-authority-schema"),
+        ("schema", 2, "incident-authority-schema"),
+        ("status", "normal", "incident-authority-not-verified"),
+        ("authorizes_current_effects", True, "incident-authority-wrong-kind"),
+        ("normal_factory_proof", True, "incident-authority-proof-flag"),
     ],
 )
 def test_historical_result_never_grants_current_or_normal_authority(
-    monkeypatch: pytest.MonkeyPatch, field: str, value: object
+    monkeypatch: pytest.MonkeyPatch, field: str, value: object, code: str
 ) -> None:
     reply = _reply()
     reply[field] = value
     _ = _install(monkeypatch, reply=reply)
     result = provenance.read_historical_incident_commit(repo_root=Path("/checkout"), query=_query())
-    assert unsafe_perform_io(result.failure()).code == "incident-reader-invalid-response"
+    assert unsafe_perform_io(result.failure()).code == code
 
 
 def test_canonical_refusal_is_preserved(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -193,19 +193,29 @@ def test_missing_registered_reader_has_no_fallback(monkeypatch: pytest.MonkeyPat
 
     monkeypatch.setattr(provenance, "registered_plugin_root", missing)
     result = provenance.read_historical_incident_commit(repo_root=Path("/checkout"), query=_query())
-    assert unsafe_perform_io(result.failure()).code == "incident-reader-unavailable"
+    assert unsafe_perform_io(result.failure()).code == "incident-authority-unavailable"
 
 
-@pytest.mark.parametrize("raw", ["not JSON", "[]", "{}", '{"schema": 1, "schema": 1}'])
-def test_unreadable_process_reply_is_refused(monkeypatch: pytest.MonkeyPatch, raw: str) -> None:
+@pytest.mark.parametrize(
+    ("raw", "code"),
+    [
+        ("not JSON", "incident-authority-malformed-reply"),
+        ("[]", "incident-authority-malformed-reply"),
+        ("{}", "incident-authority-schema"),
+        ('{"schema": 1, "schema": 1}', "incident-authority-duplicate-keys"),
+    ],
+)
+def test_unreadable_process_reply_is_refused(
+    monkeypatch: pytest.MonkeyPatch, raw: str, code: str
+) -> None:
     monkeypatch.setattr(provenance, "registered_plugin_root", _registered)
 
     def raw_run(argv: list[str], **_: object) -> subprocess.CompletedProcess[str]:
         return subprocess.CompletedProcess(args=argv, returncode=0, stdout=raw, stderr="")
 
-    monkeypatch.setattr(provenance.subprocess, "run", raw_run)
+    monkeypatch.setattr(subprocess, "run", raw_run)
     result = provenance.read_historical_incident_commit(repo_root=Path("/checkout"), query=_query())
-    assert unsafe_perform_io(result.failure()).code == "incident-reader-invalid-response"
+    assert unsafe_perform_io(result.failure()).code == code
 
 
 def test_reader_timeout_is_unavailable_instead_of_normal_mode(
@@ -216,9 +226,9 @@ def test_reader_timeout_is_unavailable_instead_of_normal_mode(
     def expired(*_args: object, **_kwargs: object) -> subprocess.CompletedProcess[str]:
         raise subprocess.TimeoutExpired(cmd="canonical reader", timeout=30)
 
-    monkeypatch.setattr(provenance.subprocess, "run", expired)
+    monkeypatch.setattr(subprocess, "run", expired)
     result = provenance.read_historical_incident_commit(repo_root=Path("/checkout"), query=_query())
-    assert unsafe_perform_io(result.failure()).code == "incident-reader-unavailable"
+    assert unsafe_perform_io(result.failure()).code == "incident-authority-timeout"
 
 
 @pytest.mark.parametrize("field", ["attempt", "committed_token_id", "current_token_id"])
@@ -237,7 +247,7 @@ def test_a_crashed_producer_cannot_supply_a_verified_receipt(
 ) -> None:
     _ = _install(monkeypatch, reply=_reply(), returncode=1)
     result = provenance.read_historical_incident_commit(repo_root=Path("/checkout"), query=_query())
-    assert unsafe_perform_io(result.failure()).code == "incident-reader-unavailable"
+    assert unsafe_perform_io(result.failure()).code == "incident-authority-exit"
 
 
 def test_a_later_landed_commit_is_not_reduced_to_the_terminal_sha(
@@ -270,6 +280,6 @@ def test_duplicate_keys_cannot_hide_inside_an_otherwise_verified_reply(
     def raw_run(argv: list[str], **_: object) -> subprocess.CompletedProcess[str]:
         return subprocess.CompletedProcess(args=argv, returncode=0, stdout=raw, stderr="")
 
-    monkeypatch.setattr(provenance.subprocess, "run", raw_run)
+    monkeypatch.setattr(subprocess, "run", raw_run)
     result = provenance.read_historical_incident_commit(repo_root=Path("/checkout"), query=_query())
-    assert unsafe_perform_io(result.failure()).code == "incident-reader-invalid-response"
+    assert unsafe_perform_io(result.failure()).code == "incident-authority-duplicate-keys"

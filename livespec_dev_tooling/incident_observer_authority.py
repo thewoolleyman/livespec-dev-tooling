@@ -3,24 +3,31 @@
 from __future__ import annotations
 
 import json
-import subprocess
+import sys
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 
-from livespec_dev_tooling._incident_observer_types import ObserverArm, ObserverRegistration
+_VENDOR_DIR = Path(__file__).resolve().parent / "_vendor"
+if str(_VENDOR_DIR) not in sys.path:
+    sys.path.insert(0, str(_VENDOR_DIR))
+
+from returns.pipeline import is_successful  # noqa: E402 — vendor-path-aware import.
+from returns.result import Result  # noqa: E402 — vendor-path-aware import.
+
+from livespec_dev_tooling._incident_observer_types import (  # noqa: E402
+    ObserverArm,
+    ObserverRegistration,
+)
+from livespec_dev_tooling.incident_authority_client import (  # noqa: E402
+    AuthorityRefusal,
+    call_authority,
+)
 
 __all__: list[str] = ["CurrentAuthorityReader"]
 
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-47ij37
-# The reader ceiling. One read-current pass over a fenced generation-2 chain
-# makes seven bd calls and measured 7.4 s at load average 12, 9.2 s at load 16
-# and a kill at 10.16 s at load 20 on the dev host (livespec-dev-tooling-ws2idp,
-# 2026-11-06), so 10 s refused a current, verified chain. The CI client's
-# ceiling in incident_ci_authority is longer than this plus the observer's own
-# overhead, so a job read outwaits the reader rather than racing it.
-_READER_TIMEOUT_SECONDS = 45
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -51,13 +58,10 @@ class CurrentAuthorityReader:
             "generation": str(subject.generation),
             "owner": subject.owner,
         }
-        argv = [
-            *self.command,
-            "read-current",
-            *[part for name, value in flags.items() for part in ("--" + name, value)],
-        ]
-        reply = _read_reply(argv=argv, cwd=self.repo)
-        attempt = _current_attempt(reply=reply)
+        checked = call_authority(
+            command=self.command, action="read-current", flags=flags, cwd=self.repo
+        )
+        attempt = _current_attempt(checked=checked)
         if attempt is None:
             return False
         expected = {
@@ -93,33 +97,12 @@ class CurrentAuthorityReader:
         )
 
 
-def _read_reply(*, argv: list[str], cwd: Path) -> object:
-    try:
-        result = subprocess.run(  # noqa: S603 -- approved installed reader argv; no shell or request command.
-            argv,
-            cwd=cwd,
-            capture_output=True,
-            text=True,
-            timeout=_READER_TIMEOUT_SECONDS,
-            check=False,
-        )
-        return json.loads(result.stdout) if result.returncode == 0 else None
-    except (OSError, subprocess.TimeoutExpired, json.JSONDecodeError):
+def _current_attempt(
+    *, checked: Result[dict[str, Any], AuthorityRefusal]
+) -> dict[str, object] | None:
+    if not is_successful(checked):
         return None
-
-
-def _current_attempt(*, reply: object) -> dict[str, object] | None:
-    if not isinstance(reply, dict):
-        return None
-    reply = cast("dict[str, object]", reply)
-    if type(reply.get("schema")) is not int or reply.get("schema") != 1:
-        return None
-    if reply.get("status") != "verified" or reply.get("authorizes_current_effects") is not True:
-        return None
-    result = reply.get("result")
-    if not isinstance(result, dict):
-        return None
-    result = cast("dict[str, object]", result)
+    result = checked.unwrap()
     attempt = result.get("attempt")
     if result.get("is_current") is not True or not isinstance(attempt, dict):
         return None

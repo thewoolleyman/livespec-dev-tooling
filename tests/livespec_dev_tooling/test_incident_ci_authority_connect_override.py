@@ -29,7 +29,7 @@ _VARIABLE = "LIVESPEC_INCIDENT_OBSERVER_CONNECT_ADDR"
 _URL = "https://controller.example:8765/api"
 _HOST = "controller.example"
 _ADDRESS = "100.89.189.118"
-_CEILING = 60
+_CEILING = 630
 
 
 def _query() -> dict[str, object]:

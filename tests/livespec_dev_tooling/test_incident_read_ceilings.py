@@ -1,4 +1,4 @@
-"""The observer's reader ceiling and the CI client's read ceiling outwait a real pass.
+"""The one authority ceiling and the CI client's read ceiling outwait a real pass.
 
 livespec-dev-tooling-ws2idp. The expedited-incident-response-flag drill measured
 a generation-2 `read-current` pass on the dev host at 7.4 s (load 12), 9.2 s
@@ -8,6 +8,8 @@ current, verified chain. The CI job makes about five observer reads per run,
 each through a client whose own socket timeout was the same 10 s. Both
 ceilings are named constants, the client's is longer than the reader's plus
 the observer's overhead, and a reader slower than its ceiling still refuses.
+livespec-dev-tooling-iezdmk: the reader's ceiling is the one every authority call
+shares, so the observer no longer carries a bound of its own.
 """
 
 from __future__ import annotations
@@ -18,10 +20,11 @@ from types import SimpleNamespace
 
 from livespec_dev_tooling import incident_ci_authority, incident_observer_authority
 from livespec_dev_tooling._incident_observer_types import ObserverArm
+from livespec_dev_tooling.incident_authority_client import AUTHORITY_CALL_CEILING_SECONDS
 
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-ws2idp
-_READER_CEILING = 45
-_CLIENT_CEILING = 60
+_READER_CEILING = AUTHORITY_CALL_CEILING_SECONDS
+_CLIENT_CEILING = 630
 
 
 def _attempt() -> dict[str, object]:
@@ -83,14 +86,13 @@ def _query() -> dict[str, object]:
     }
 
 
-def test_the_two_ceilings_are_named_and_the_client_outwaits_the_reader() -> None:
-    reader_ceiling = getattr(incident_observer_authority, "_READER_TIMEOUT_SECONDS", None)
+def test_the_observer_has_no_ceiling_of_its_own_and_the_client_outwaits_the_one_ceiling() -> None:
     client_ceiling = getattr(incident_ci_authority, "_OBSERVER_READ_TIMEOUT_SECONDS", None)
 
-    assert reader_ceiling == _READER_CEILING
+    assert not hasattr(incident_observer_authority, "_READER_TIMEOUT_SECONDS")
     assert client_ceiling == _CLIENT_CEILING
-    assert isinstance(reader_ceiling, int) and isinstance(client_ceiling, int)
-    assert client_ceiling > reader_ceiling
+    assert isinstance(client_ceiling, int)
+    assert client_ceiling > _READER_CEILING
 
 
 def test_the_reader_is_run_under_its_ceiling_and_a_slower_reader_still_refuses(
@@ -100,6 +102,7 @@ def test_the_reader_is_run_under_its_ceiling_and_a_slower_reader_still_refuses(
         "schema": 1,
         "status": "verified",
         "authorizes_current_effects": True,
+        "normal_factory_proof": False,
         "result": {"is_current": True, "attempt": _attempt()},
     }
     outcomes: list[object] = [subprocess.CompletedProcess([], 0, json.dumps(reply), "")]
