@@ -2,8 +2,8 @@
 
 Work-item livespec-dev-tooling-6xyc42 (plan expedited-incident-response-flag,
 epic livespec-dev-tooling-bqnzcm), carrying what livespec-dev-tooling-egy3ri
-left undone. `SPECIFICATION/contracts.md` §"Expedited incident execution"
-requires that "Head and mode changes MUST invalidate stale verdicts", and its
+left undone. `SPECIFICATION/contracts.md`, in its expedited incident execution
+contract, requires that "Head and mode changes MUST invalidate stale verdicts", and its
 scenario requires that "label events reconcile mode before permitting merge".
 The live behaviour is host-captured (a real label event and the runs it starts
 exist only on the forge), so this file holds the workflow SHAPE as rules:
