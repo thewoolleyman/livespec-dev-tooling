@@ -115,6 +115,72 @@ item's status. If you want a completion notice instead, start the same
 `env -u … codex exec …` command as a harness background task, without
 `setsid nohup … &`, and wait for its notification.
 
+## The fourth trap: the primary checkout moves under a replay
+
+Fleet automation fast-forwards the livespec-dev-tooling primary checkout to
+`origin/master` every few minutes, with `pull -q --ff-only` (the reflog showed
+pulls at five times within an hour on 2026-11-09). A brief that requires the
+primary's HEAD to EQUAL the release tag therefore fails at once. On 2026-11-09
+a codex replayer correctly stopped on exactly that and published nothing.
+
+Do not hold the primary still. Require `git merge-base --is-ancestor <tag>
+HEAD`, and record each run's own commit from `tmp/gate-runs/<id>/head` in the
+record's `commit`. Alternatively, run the steps in a worktree made from the tag
+with `just worktree-create <branch> <tag>`. Use a worktree whenever the
+assertion does not need the primary itself.
+
+## A codex replayer cannot wait on a long gate
+
+The codex harness forbids long foreground waits. A codex replayer briefed to
+wait out a 40-minute gate itself either stops without publishing, or hands the
+rest of its work to a detached script. A detached script is acceptable only
+after you read it for the identity it publishes under and for how it grades
+"reproduced".
+
+The clean shape is two turns of ONE codex session, which keeps one identity:
+
+1. Turn 1 launches the gate with `just gate-start`, confirms whatever must hold
+   at launch, writes the run id, and ends without calling `gate-wait`.
+2. The briefing session waits until `tmp/gate-runs/<id>/exit_code` exists.
+   Then it resumes the SAME session with the same `env -u …` prefix:
+   `codex exec resume <session-id> "<turn 2>"`.
+3. In turn 2 the replayer reads the record itself and publishes.
+
+The briefing session only watches for a file to appear; it never reads results
+into the replay. This produced ltwdfq's `host_verified` on 2026-11-09.
+
+## Capturing a TERM-path proof through a git hook
+
+A gate client run from a git hook does NOT receive the process-group TERM that
+gate-run.sh's stall window sends. lefthook starts each hook command in its OWN
+SESSION, so the group TERM to `git commit` reaches only git and lefthook. The
+hook's client receives SIGHUP when lefthook exits and its session is hung up.
+On 2026-11-09 this left a TERMed pre-commit client's Job running for no one,
+even on a build whose handler covered TERM and INT
+(livespec-dev-tooling-4rliwe, fixed in livespec-dev-tooling#3873). A
+signal-cleanup proof for a hook-run client must therefore go through a real
+`git commit`, not a direct client run. Run directly, the client gets the TERM
+itself and passes where the hook path fails.
+
+The stall window now rarely reaches a WAITING client, because the client
+touches the progress stamp after every 10 s poll (livespec-dev-tooling-tmeokc).
+A window under 10 s usually fires before the Job is even submitted. To capture
+"ended while its Job is queued", deliver the TERM by hand:
+
+1. Start the commit in its own process group with `setsid`.
+2. Poll the gates namespace for label `livespec.gate/tree-hash=<staged tree>`.
+3. A few seconds after the Job appears, send `kill -TERM -- -<pgid>`.
+4. Read the Job back afterwards.
+
+lefthook buffers each step's output until the step ends, and it dies with the
+TERM, so the client's own report is lost on the hook path. Read the Job, not
+the log.
+
+Before trusting a RED host-local `just check` in the primary, check for
+untracked or ignored litter there. A stale `mutants/` tree and an untracked
+`livespec_dev_tooling/_vendor/livespec_runtime/` of stale `.pyc` files failed 3
+tests on 2026-11-09 that pass on a clean worktree of the same commit.
+
 ## Capturing a delegated-gate carrier's three pushes
 
 A delegated-gate opt-in carrier usually owes three host-captured assertions:
@@ -129,8 +195,12 @@ push refused when no verdict comes back. Three things made the first capture
   justfile recipe that exits 1 and is appended to the `check` targets, is red
   only in the full aggregate the gate runs. A malformed proposed-change front
   matter is NOT red, because doctor-static does not judge it.
-- **No verdict without delete rights.** The gates kubeconfig cannot delete a
-  Job. Simulate a lost cluster instead. Copy `/etc/ci-runner/gates.kubeconfig`
+- **Simulate a lost cluster for the no-verdict case.** The gates kubeconfig
+  CAN delete a Job: `kubectl --kubeconfig /etc/ci-runner/gates.kubeconfig auth
+  can-i delete jobs.batch -n gates` answered yes on 2026-11-09, which corrects
+  this note's 2026-10-28 claim. But deleting a Job by hand is still refused by
+  the fleet host guard, and it does not exercise the client's own no-verdict
+  path. Copy `/etc/ci-runner/gates.kubeconfig`
   to a mode-600 file (`umask 077` and `command cp`; `install` is aliased to an
   apt wrapper here), rewrite its `server:` to an unreachable address, and pass
   `env GATES_KUBECONFIG=<copy>` to that one push. The host stays eligible,
