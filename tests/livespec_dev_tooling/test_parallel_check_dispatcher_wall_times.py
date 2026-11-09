@@ -14,7 +14,6 @@ __all__: list[str] = []
 
 
 def _table_line(*, wall_time_s: float, capsys: pytest.CaptureFixture[str]) -> str:
-    # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-e62ss6
     result = TargetResult(
         name="check-target", skipped=False, exit_code=0, wall_time_s=wall_time_s, output=""
     )
@@ -41,5 +40,22 @@ def test_a_wall_time_of_an_hour_or_more_shows_hours_minutes_and_seconds(
         "2h",
         "49m",
         "55s",
+        "check-target",
+    ]
+
+
+def test_a_wall_time_that_rounds_up_to_a_minute_shows_as_a_minute(
+    *, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert _table_line(wall_time_s=59.96, capsys=capsys).split() == ["1m", "00s", "check-target"]
+
+
+def test_a_wall_time_that_rounds_up_to_an_hour_shows_as_an_hour(
+    *, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert _table_line(wall_time_s=3599.6, capsys=capsys).split() == [
+        "1h",
+        "00m",
+        "00s",
         "check-target",
     ]

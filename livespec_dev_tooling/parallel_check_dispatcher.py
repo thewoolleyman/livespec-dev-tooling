@@ -182,8 +182,7 @@ def _emit_outcome(*, outcome: TargetOutcome, log: structlog.stdlib.BoundLogger) 
 
 def _human_wall(*, seconds: float) -> str:
     """One wall time as a reader compares it: seconds, then minutes, then hours."""
-    # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-e62ss6
-    if seconds < _SECONDS_PER_MINUTE:
+    if round(seconds, 1) < _SECONDS_PER_MINUTE:
         return f"{seconds:.1f}s"
     minutes, rest = divmod(round(seconds), _SECONDS_PER_MINUTE)
     if minutes < _SECONDS_PER_MINUTE:
