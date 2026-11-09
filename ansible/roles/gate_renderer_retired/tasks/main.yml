@@ -1,0 +1,38 @@
+---
+# gate_renderer_retired — remove what the retired `gate_renderer` role left on a
+# delegating host, and keep it removed. See defaults/main.yml for why.
+#
+# Idempotent: a second apply finds nothing and changes nothing.
+#
+# NEVER on a CI-pool node. `ci_converge_unit` installs the CI pool's own
+# reconstruct tree into this same directory there (prune-gate-refs.sh,
+# gate-job-template.yaml), and the k3s server reads it, so both tasks refuse a
+# host in `ci_pool` rather than relying on the play's host group alone.
+
+- name: Remove the retired gate renderer's orphaned directory
+  ansible.builtin.file:
+    path: "{{ gate_renderer_retired_dir }}"
+    state: absent
+  become: true
+  when: inventory_hostname not in groups['ci_pool']
+
+- name: Look for anything else in the retired renderer's parent directory
+  # The retired role created the parent too, and on a delegating host nothing
+  # else lives in it. It is removed only when empty, so anything another owner
+  # puts there stays.
+  ansible.builtin.find:
+    paths: "{{ gate_renderer_retired_dir | dirname }}"
+    file_type: any
+    hidden: true
+  become: true
+  register: gate_renderer_retired_parent
+  when: inventory_hostname not in groups['ci_pool']
+
+- name: Remove the retired renderer's parent directory once it is empty
+  ansible.builtin.file:
+    path: "{{ gate_renderer_retired_dir | dirname }}"
+    state: absent
+  become: true
+  when:
+    - inventory_hostname not in groups['ci_pool']
+    - gate_renderer_retired_parent.matched | default(1) == 0
