@@ -58,6 +58,7 @@ def test_reads_original_attempt_and_workflow_revision_with_complete_pagination()
             source(),
             {"total_count": 2, "jobs": [raw_job()]},
             {"total_count": 2, "jobs": [raw_job(id=11, name="coverage", conclusion="skipped")]},
+            {"total_count": 2, "jobs": [raw_job()]},
         ],
     )
     result = reader(original(graph_digest=DIGEST))
@@ -68,7 +69,7 @@ def test_reads_original_attempt_and_workflow_revision_with_complete_pagination()
     assert all("/attempts/1/jobs?" in path for path in calls[2:])
 
 
-@pytest.mark.parametrize("options", [{"budget_seconds": 0}, {"max_pages": 0}])
+@pytest.mark.parametrize("options", [{"budget_seconds": 0}])
 def test_invalid_budget_refuses(options: dict[str, Any]) -> None:
     assert isinstance(provider(responses=[], **options)[0](original()), EvidenceRefusal)
 
@@ -114,10 +115,22 @@ def test_unavailable_or_mismatched_source_refuses(responses: list[object]) -> No
         ([{"total_count": 2, "jobs": [raw_job()]}, {"total_count": 3, "jobs": []}], {}),
         ([{"total_count": 1, "jobs": []}], {}),
         ([{"total_count": 0, "jobs": [raw_job()]}], {}),
-        ([{"total_count": 2, "jobs": [raw_job()]}], {"max_pages": 1}),
+        ([{"total_count": 2, "jobs": [raw_job()]}, {"total_count": 2, "jobs": []}], {}),
         ([{"total_count": 1, "jobs": [raw_job(id=False)]}], {}),
-        ([{"total_count": 1, "jobs": [raw_job(conclusion=1)]}], {}),
-        ([{"total_count": 1, "jobs": [raw_job(name="")]}], {}),
+        (
+            [
+                {"total_count": 1, "jobs": [raw_job(conclusion=1)]},
+                {"total_count": 1, "jobs": [raw_job(conclusion=1)]},
+            ],
+            {},
+        ),
+        (
+            [
+                {"total_count": 1, "jobs": [raw_job(name="")]},
+                {"total_count": 1, "jobs": [raw_job(name="")]},
+            ],
+            {},
+        ),
     ],
 )
 def test_incomplete_or_bad_pagination_refuses(pages: list[object], options: dict[str, Any]) -> None:
@@ -138,6 +151,28 @@ def test_provider_budget_is_monotonic_without_sleep_or_retry(
 
 
 def test_zero_job_run_is_a_complete_empty_observation() -> None:
-    reader, _ = provider(responses=[metadata(), source(), {"total_count": 0, "jobs": []}])
+    empty = {"total_count": 0, "jobs": []}
+    reader, _ = provider(responses=[metadata(), source(), empty, empty])
     result = reader(original(graph_digest=DIGEST))
     assert isinstance(result, RunSnapshot) and result.jobs == ()
+
+
+def test_job_listing_is_paged_by_the_one_shared_pager_rules() -> None:
+    """Duplicate ids, the shared page cap and the final total re-read match every other reader."""
+    pages = [{"total_count": 2, "jobs": [raw_job()]}, {"total_count": 2, "jobs": [raw_job()]}]
+    reader, _ = provider(responses=[metadata(), source(), *pages])
+    assert isinstance(reader(original(graph_digest=DIGEST)), EvidenceRefusal)
+
+    many = [{"total_count": 15, "jobs": [raw_job(id=n + 1)]} for n in range(11)]
+    reader, calls = provider(responses=[metadata(), source(), *many])
+    assert isinstance(reader(original(graph_digest=DIGEST)), EvidenceRefusal)
+    assert sum("/jobs?" in path for path in calls) == 10
+
+
+def test_job_listing_total_is_read_again_after_the_last_page() -> None:
+    first = {"total_count": 1, "jobs": [raw_job()]}
+    reader, calls = provider(
+        responses=[metadata(), source(), first, {"total_count": 2, "jobs": [raw_job()]}]
+    )
+    assert isinstance(reader(original(graph_digest=DIGEST)), EvidenceRefusal)
+    assert [path.rsplit("page=", 1)[1] for path in calls[2:]] == ["1", "1"]
