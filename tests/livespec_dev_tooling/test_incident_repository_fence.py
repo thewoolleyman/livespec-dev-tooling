@@ -7,9 +7,11 @@ import hashlib
 import json
 import os
 import selectors
+import stat
 import subprocess
 import sys
 from contextlib import ExitStack
+from pathlib import Path
 from threading import Thread
 
 import pytest
@@ -270,3 +272,70 @@ def test_malformed_transport_payload_cannot_reuse_ambient_fence(tmp_path, monkey
         result = principal.publish_inverse(request=object())
         assert result.status == "unknown"
         assert observed.read_text() == "absent"
+
+
+@pytest.mark.parametrize("existing_only", [False, True])
+@pytest.mark.parametrize("mode", [0o770, 0o707, 0o777])
+def test_writable_lock_directory_is_refused_before_a_lock_file_exists(
+    tmp_path, existing_only, mode
+):
+    state = tmp_path / "state"
+    state.mkdir(mode=0o700)
+    state.chmod(mode)
+    _refuses(repository_lock(directory=state, repository=_REPOSITORY, existing_only=existing_only))
+    assert not _path(state).exists()
+
+
+@pytest.mark.parametrize("existing_only", [False, True])
+def test_writable_non_sticky_ancestor_is_refused_even_for_an_absent_lock_directory(
+    tmp_path, existing_only
+):
+    ancestor = tmp_path / "ancestor"
+    ancestor.mkdir(mode=0o700)
+    state = ancestor / "state"
+    state.mkdir(mode=0o700)
+    ancestor.chmod(0o770)
+    _refuses(repository_lock(directory=state, repository=_REPOSITORY, existing_only=existing_only))
+    assert not _path(state).exists()
+    state.rmdir()
+    if not existing_only:
+        _refuses(repository_lock(directory=state, repository=_REPOSITORY))
+        assert not _path(state).exists()
+
+
+def _owned_by_a_stranger(*, method, owned):
+    """A Path.stat/lstat stand-in reporting `owned` as owned by an unrelated account."""
+    real = getattr(Path, method)
+
+    def report(self, *args, **kwargs):
+        result = real(self, *args, **kwargs)
+        if self != owned:
+            return result
+        fields = list(result)
+        fields[stat.ST_UID] = 54321
+        return os.stat_result(fields)
+
+    return report
+
+
+@pytest.mark.parametrize("existing_only", [False, True])
+@pytest.mark.parametrize("level", ["directory", "ancestor"])
+def test_foreign_owned_lock_directory_or_ancestor_is_refused(
+    tmp_path, monkeypatch, existing_only, level
+):
+    ancestor = tmp_path / "ancestor"
+    state = ancestor / "state"
+    state.mkdir(mode=0o700, parents=True)
+    foreign = state if level == "directory" else ancestor
+    for method in ("stat", "lstat"):
+        monkeypatch.setattr(Path, method, _owned_by_a_stranger(method=method, owned=foreign))
+    _refuses(repository_lock(directory=state, repository=_REPOSITORY, existing_only=existing_only))
+    assert not _path(state).exists()
+
+
+def test_default_path_still_creates_an_absent_directory_private_and_grants_the_lock(tmp_path):
+    state = tmp_path / "parent" / "state"
+    with repository_lock(directory=state, repository=_REPOSITORY) as record:
+        assert record.parent == state
+        _assert_locked(_path(state))
+    assert state.stat().st_mode & 0o777 == 0o700

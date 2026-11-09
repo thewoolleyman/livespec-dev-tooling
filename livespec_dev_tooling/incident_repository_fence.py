@@ -168,10 +168,9 @@ def hold_repository_fence(
     inaccessible to candidate trees. A filesystem error propagates as refusal;
     there is no unlocked, tenant-backed, or wrapper-backed fallback.
     """
-    if existing_only:
-        _protected_directory(directory=directory)
-    else:
+    if not existing_only:
         directory.mkdir(mode=0o700, parents=True, exist_ok=True)
+    _protected_directory(directory=directory)
     current = current_repository_fence(repository=repository, directory=directory)
     if current is not None:
         yield current
