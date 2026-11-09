@@ -1,0 +1,89 @@
+# Incident label events restart CI on the pull request's current head.
+#
+# Work-item livespec-dev-tooling-6xyc42 (plan expedited-incident-response-flag,
+# epic livespec-dev-tooling-bqnzcm). Authority: SPECIFICATION/contracts.md
+# §"Expedited incident execution" ("Head and mode changes MUST invalidate stale
+# verdicts") and its scenario ("label events reconcile mode before permitting
+# merge").
+#
+# ci.yml triggers on a bare `pull_request:` (opened, synchronize, reopened), so
+# adding or removing the `expedited-incident-response` label used to start no
+# run. A PR whose expedited aggregate had already passed kept that verdict on
+# its head after the label came off, and a PR that gained the label kept its
+# complete-policy verdict until its next push.
+#
+# This workflow closes that gap WITHOUT touching ci.yml. On a label event for
+# the incident label ONLY, it re-runs the newest pull_request CI run on the
+# PR's current head. A re-run is a new attempt of the same CI workflow on the
+# same head: every job runs again, its incident-ci job reads the PR's labels
+# afresh through an authenticated forge read (never the event payload), and
+# the new attempt's ci-green replaces the earlier verdict on that head. A CI
+# run still in progress is cancelled first, because its incident-ci job may
+# already have read the old label set.
+#
+# Why not `types: [labeled, unlabeled]` on ci.yml: a run started by ANY label
+# (approval labels, do-not-merge, merge-hold) would either execute the whole
+# matrix again or, if its jobs were skipped, post a skipped-green ci-green that
+# overrides the head's real verdict. Here a non-incident label event skips the
+# only job at the job level, so it allocates no runner and starts no CI run.
+#
+# Fork pull requests are excluded: their token cannot re-run a workflow, and
+# the incident path itself refuses a head repository other than this one.
+name: incident label CI
+
+on:
+  pull_request:
+    types: [labeled, unlabeled]
+
+# A label added and then removed (or the reverse) in quick succession settles
+# on the LAST event: the newer job cancels the older one, then re-reads the head
+# and restarts CI itself.
+concurrency:
+  group: incident-label-ci-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions: {}
+
+jobs:
+  restart-ci-on-head:
+    name: restart CI on the current head
+    if: ${{ github.event.label.name == 'expedited-incident-response' && github.event.pull_request.head.repo.full_name == github.repository }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      actions: write
+      pull-requests: read
+    steps:
+      - name: Re-run the CI workflow on the pull request's current head
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          LABEL_ACTION: ${{ github.event.action }}
+        run: |
+          set -euo pipefail
+          head="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" --jq '.head.sha')"
+          runs="repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs?event=pull_request&head_sha=${head}&per_page=1"
+          run_id="$(gh api "$runs" --jq '.workflow_runs[0].id // empty')"
+          if [ -z "$run_id" ]; then
+            echo "::error::no pull_request CI run exists for head ${head} of PR #${PR_NUMBER}; nothing to restart"
+            exit 1
+          fi
+          status="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}" --jq '.status')"
+          if [ "$status" != "completed" ]; then
+            echo "CI run ${run_id} is ${status}; cancelling it, because it may have read the label set before this event"
+            gh api -X POST "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}/cancel" >/dev/null || true
+            for _ in $(seq 1 60); do
+              status="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}" --jq '.status')"
+              [ "$status" = "completed" ] && break
+              sleep 10
+            done
+            if [ "$status" != "completed" ]; then
+              echo "::error::CI run ${run_id} did not complete within 10 minutes of its cancellation; it cannot be re-run"
+              exit 1
+            fi
+          fi
+          gh api -X POST "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}/rerun" >/dev/null
+          note="label expedited-incident-response ${LABEL_ACTION} on PR #${PR_NUMBER}: re-ran CI run ${run_id} on head ${head}, so ci-green on that head reflects the current label set"
+          echo "::notice::${note}"
+          printf '## incident label CI\n\n%s.\n' "$note" >> "$GITHUB_STEP_SUMMARY"
