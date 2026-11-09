@@ -1,32 +1,29 @@
-"""Incident label events restart CI on the head; reusable-check-matrix honors omission on PRs only.
+"""Incident label events hold ci-green and restart CI on the head; nothing else reacts.
 
 Work-item livespec-dev-tooling-6xyc42 (plan expedited-incident-response-flag,
 epic livespec-dev-tooling-bqnzcm), carrying what livespec-dev-tooling-egy3ri
 left undone. `SPECIFICATION/contracts.md`, in its expedited incident execution
-contract, requires that "Head and mode changes MUST invalidate stale verdicts", and its
-scenario requires that "label events reconcile mode before permitting merge".
-The live behaviour is host-captured (a real label event and the runs it starts
-exist only on the forge), so this file holds the workflow SHAPE as rules:
+contract, requires that "Head and mode changes MUST invalidate stale verdicts",
+and its scenario requires that "label events reconcile mode before permitting
+merge". The live behaviour is host-captured (a real label event and the runs it
+starts exist only on the forge), so this file holds the workflow SHAPE as exact
+rules, because each rule here is a security or merge-safety property:
 
-- **An incident label event restarts CI on the current head.**
-  `.github/workflows/incident-label-ci.yml` triggers on `labeled` and
-  `unlabeled`, reads the PR's current head through an authenticated forge read,
-  picks the newest pull_request run of `ci.yml` on that head, cancels it if it
-  has not finished, and re-runs it. The re-run's `incident-ci` job reads the
-  labels afresh, so its `ci-green` replaces the earlier verdict: the expedited
-  aggregate after the label is added, every member executed after it is
-  removed.
-- **A non-incident label event runs nothing.** Every job of that workflow is
-  skipped at the job level unless the event's label IS the incident label, and
-  `ci.yml` itself still does not trigger on label events. Approval, merge-hold
-  and do-not-merge labels therefore start no CI run and allocate no runner.
-- **reusable-check-matrix omits only on a pull request.** Its optional
-  `incident-omitted` input carries the caller's passed incident aggregate's
-  `omitted` list. A leg whose slug is in that list runs an explicit
-  `omitted-by-incident-policy` step instead of the setup and the check; every
-  other leg runs its check. The one guard expression tests
-  `github.event_name == 'pull_request'` first, so a master push runs every
-  requested check whatever omission input it receives.
+- **Only an incident label event of a same-repository PR acts.** The trigger
+  set, the job set and the job's `if:` are pinned exactly, so a widened
+  condition (`|| true`), a dropped fork guard or an added trigger is a finding.
+- **Only incident label events share a concurrency group.** A non-incident
+  label in the same edit must never cancel an incident restart in flight.
+- **Least privilege, no injection.** The workflow grants nothing; the job holds
+  exactly `actions: write`, `checks: write` and `pull-requests: read`, and no
+  `run:` script interpolates an expression (`${{ ... }}`) of any kind.
+- **The restart holds ci-green before anything else, and again before the
+  re-run.** It selects the newest pull_request CI run of THIS PR (by number) on
+  the current head, stops green when none is listed yet, posts an in-progress
+  `ci-green` check run, cancels and waits for an unfinished run with a real
+  bound, holds again, and re-runs.
+- **auto-enable-merge cannot race the hold.** Its gate skips the unlabeled
+  event of the incident label, and `ci.yml` still does not trigger on labels.
 
 Each rule is exercised twice, as the sibling `test_incident_ci_workflow_wiring`
 does: against the committed workflow (expecting silence) and against a copy
@@ -35,6 +32,7 @@ mutated to break exactly that rule (expecting the finding).
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Any, cast
 
@@ -47,28 +45,38 @@ __all__: list[str] = []
 _WORKFLOWS = Path(__file__).resolve().parents[2] / ".github" / "workflows"
 _LABEL_WORKFLOW = _WORKFLOWS / "incident-label-ci.yml"
 _CI_YML = _WORKFLOWS / "ci.yml"
-_MATRIX = _WORKFLOWS / "reusable-check-matrix.yml"
+_AUTO_MERGE = _WORKFLOWS / "auto-enable-merge.yml"
 
-_INCIDENT_LABEL_TEST = "github.event.label.name == 'expedited-incident-response'"
+_JOB = "restart-ci-on-head"
 _LABEL_TYPES = frozenset({"labeled", "unlabeled"})
+_INCIDENT_LABEL_TEST = "github.event.label.name == 'expedited-incident-response'"
+_FORK_GUARD = "github.event.pull_request.head.repo.full_name == github.repository"
+_JOB_IF = "${{ " + _INCIDENT_LABEL_TEST + " && " + _FORK_GUARD + " }}"
+_GROUP_KEY = "${{ " + _INCIDENT_LABEL_TEST + " && 'incident' || github.run_id }}"
+_CONCURRENCY = {
+    "group": "incident-label-ci-${{ github.event.pull_request.number }}-" + _GROUP_KEY,
+    "cancel-in-progress": "true",
+}
+_JOB_PERMISSIONS = {"actions": "write", "checks": "write", "pull-requests": "read"}
+_EXPRESSION = "${{"
 
-# The forge reads and writes the restart must make, in this order.
-_HEAD_READ = """gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" --jq '.head.sha'"""
-_RUN_ON_HEAD = "actions/workflows/ci.yml/runs?event=pull_request&head_sha=${head}"
+# The forge reads and writes the restart must make.
+_HEAD_READ = """gh api "repos/${repo}/pulls/${PR_NUMBER}" --jq '.head.sha'"""
+_RUNS_ON_HEAD = "actions/workflows/ci.yml/runs?event=pull_request&head_sha=${head}"
+_SELECT_BY_PR = "select(any(.pull_requests[]; .number == (env.PR_NUMBER | tonumber)))"
+_NO_RUN = re.compile(r'if \[ -z "\$run_id" \]; then\n(?P<body>(?:.*\n)*?)[ ]*fi\n')
+_HOLD_POST = '-X POST "repos/${repo}/check-runs"'
+_HOLD_FIELDS = '-f name=ci-green -f head_sha="$head" -f status=in_progress'
+_HOLD_CALL = "\nhold_ci_green\n"
 _CANCEL = '/actions/runs/${run_id}/cancel"'
 _RERUN = '/actions/runs/${run_id}/rerun"'
+_LOOP_HEAD = r"for _ in \$\(seq 1 (?P<bound>\d+)\); do\n"
+_LOOP_TAIL = r'(?P<body>(?:.*\n)*?)[ ]*done\n[ ]*if \[ "\$status" != "completed" \]; then\n'
+_LOOP_AFTER = r"(?P<after>(?:.*\n)*?)[ ]*fi\n"
+_WAIT_LOOP = re.compile(_LOOP_HEAD + _LOOP_TAIL + _LOOP_AFTER)
+_LOOP_BREAK = '[ "$status" = "completed" ] && break'
 
-# The one expression that decides a reusable-matrix omission. The event test
-# comes first: no other event can reach the omission list.
-_OMISSION = (
-    "github.event_name == 'pull_request' && "
-    "contains(fromJSON(inputs.incident-omitted || '[]'), matrix.check)"
-)
-_OMIT_STEP_IF = "${{ " + _OMISSION + " }}"
-_RUN_STEP_IF = "${{ !(" + _OMISSION + ") }}"
-_OMIT_STEP_PREFIX = "omitted-by-incident-policy"
-_OMIT_STEP_NAME_TAIL = "(per the caller's released incident CI aggregate)\n"
-_CHECK_ACTIONS = ("/.github/actions/setup", "/.github/actions/run-check")
+_AUTO_MERGE_SKIP = "&& !(github.event.action == 'unlabeled' && " + _INCIDENT_LABEL_TEST + ")"
 
 
 def _map(*, value: object) -> dict[str, Any]:
@@ -81,7 +89,7 @@ def _seq(*, value: object) -> list[Any]:
 
 def _load(*, source: str) -> dict[str, Any]:
     # BaseLoader keeps every scalar a string, so the bare key `on` stays "on"
-    # rather than becoming the boolean True, and `false` stays "false".
+    # rather than becoming the boolean True, and `true` stays "true".
     return _map(value=yaml.load(source, Loader=yaml.BaseLoader))  # noqa: S506
 
 
@@ -89,39 +97,78 @@ def _triggers(*, workflow: dict[str, Any]) -> dict[str, Any]:
     return _map(value=workflow.get("on"))
 
 
-def label_workflow_findings(*, source: str) -> list[str]:
-    """Every way the label workflow fails to restart CI on an incident label event only."""
-    workflow = _load(source=source)
+def _workflow_findings(*, workflow: dict[str, Any]) -> list[str]:
     findings: list[str] = []
     triggers = _triggers(workflow=workflow)
-    if set(triggers) != {"pull_request"}:
-        findings.append("the label workflow triggers on something other than pull_request")
     types = frozenset(
         str(t) for t in _seq(value=_map(value=triggers.get("pull_request")).get("types"))
     )
-    if types != _LABEL_TYPES:
-        findings.append("the label workflow does not trigger on exactly labeled and unlabeled")
+    if set(triggers) != {"pull_request"} or types != _LABEL_TYPES:
+        findings.append("the label workflow does not trigger on exactly labeled/unlabeled PRs")
     if workflow.get("permissions") != {}:
         findings.append("the label workflow grants workflow-level permissions")
-    jobs = _map(value=workflow.get("jobs"))
-    scripts: list[str] = []
-    for name, raw_job in jobs.items():
-        job = _map(value=raw_job)
-        if _INCIDENT_LABEL_TEST not in str(job.get("if", "")):
-            findings.append(f"job {name} runs on a non-incident label event")
-        scripts.extend(
-            str(_map(value=step).get("run", "")) for step in _seq(value=job.get("steps"))
-        )
-    script = "\n".join(scripts)
+    if workflow.get("concurrency") != _CONCURRENCY:
+        findings.append("the concurrency group is not keyed to incident label events only")
+    return findings
+
+
+def _job_findings(*, jobs: dict[str, Any]) -> list[str]:
+    findings: list[str] = []
+    if set(jobs) != {_JOB}:
+        findings.append(f"the label workflow's jobs are not exactly {_JOB}")
+    job = _map(value=jobs.get(_JOB))
+    if job.get("if") != _JOB_IF:
+        findings.append(f"job {_JOB} is not gated on exactly the incident label and the fork guard")
+    if job.get("permissions") != _JOB_PERMISSIONS:
+        findings.append(f"job {_JOB} holds permissions other than {_JOB_PERMISSIONS}")
+    return findings
+
+
+def _script_findings(*, script: str) -> list[str]:
+    findings: list[str] = []
+    if _EXPRESSION in script:
+        findings.append("a run: script interpolates an expression")
     if _HEAD_READ not in script:
         findings.append("the restart does not read the current head from the forge")
-    if _RUN_ON_HEAD not in script:
-        findings.append("the restart does not select the pull_request CI run on the current head")
-    if _RERUN not in script:
-        findings.append("the restart does not re-run the CI run")
-    elif _CANCEL not in script or script.index(_CANCEL) > script.index(_RERUN):
-        findings.append("the restart does not cancel an unfinished CI run before re-running it")
+    if _RUNS_ON_HEAD not in script or _SELECT_BY_PR not in script:
+        findings.append("the restart does not select THIS PR's pull_request CI run on the head")
+    no_run = _NO_RUN.search(script)
+    if no_run is None or "exit 0" not in no_run.group("body"):
+        findings.append("a PR with no CI run listed yet does not stop green")
+    if _HOLD_POST not in script or _HOLD_FIELDS not in script:
+        findings.append("the hold is not an in-progress ci-green check run on the head")
+    wait = _WAIT_LOOP.search(script)
+    if (
+        wait is None
+        or int(wait.group("bound")) < 1
+        or _LOOP_BREAK not in wait.group("body")
+        or "exit 1" not in wait.group("after")
+    ):
+        findings.append("the restart does not wait, bounded, for an unfinished run to stop")
+    calls = [match.start() for match in re.finditer(re.escape(_HOLD_CALL), script)]
+    if _RERUN not in script or _CANCEL not in script:
+        findings.append("the restart does not cancel and re-run the CI run")
+    elif not calls or calls[0] > script.index(_CANCEL):
+        findings.append("ci-green is not held before the run is touched")
+    elif wait is None or not any(wait.end() < call < script.index(_RERUN) for call in calls):
+        findings.append("ci-green is not held again between the wait and the re-run")
     return findings
+
+
+def label_workflow_findings(*, source: str) -> list[str]:
+    """Every way the label workflow departs from its pinned, merge-safe shape."""
+    workflow = _load(source=source)
+    jobs = _map(value=workflow.get("jobs"))
+    scripts = [
+        str(_map(value=step).get("run", ""))
+        for job in jobs.values()
+        for step in _seq(value=_map(value=job).get("steps"))
+    ]
+    return [
+        *_workflow_findings(workflow=workflow),
+        *_job_findings(jobs=jobs),
+        *_script_findings(script="\n".join(scripts)),
+    ]
 
 
 def ci_label_trigger_findings(*, source: str) -> list[str]:
@@ -133,32 +180,13 @@ def ci_label_trigger_findings(*, source: str) -> list[str]:
     return []
 
 
-def matrix_findings(*, source: str) -> list[str]:
-    """Every way reusable-check-matrix fails the incident omission wiring."""
-    workflow = _load(source=source)
-    findings: list[str] = []
-    call = _map(value=_triggers(workflow=workflow).get("workflow_call"))
-    omitted = _map(value=_map(value=call.get("inputs")).get("incident-omitted"))
-    declared = (omitted.get("required"), omitted.get("type"), omitted.get("default"))
-    if declared != ("false", "string", "[]"):
-        findings.append("the incident-omitted input is not an optional string defaulting to '[]'")
-    check_job = _map(value=_map(value=workflow.get("jobs")).get("check"))
-    steps = [_map(value=step) for step in _seq(value=check_job.get("steps"))]
-    reports = [
-        step
-        for step in steps
-        if str(step.get("name", "")).startswith(_OMIT_STEP_PREFIX)
-        and step.get("if") == _OMIT_STEP_IF
-    ]
-    if len(reports) != 1:
-        findings.append("no single omitted-by-incident-policy step carries the canonical guard")
-    for step in steps:
-        uses = str(step.get("uses", ""))
-        if uses.endswith(_CHECK_ACTIONS) and step.get("if") != _RUN_STEP_IF:
-            findings.append(
-                f"step {step.get('name')} is not guarded by the incident omission guard"
-            )
-    return findings
+def auto_merge_findings(*, source: str) -> list[str]:
+    """auto-enable-merge must not arm on the incident label's unlabeled event."""
+    jobs = _map(value=_load(source=source).get("jobs"))
+    gate = str(_map(value=jobs.get("enable-auto-merge")).get("if", ""))
+    if _AUTO_MERGE_SKIP not in gate:
+        return ["auto-enable-merge arms on the incident label's unlabeled event"]
+    return []
 
 
 def _mutated(*, source: str, old: str, new: str) -> str:
@@ -167,7 +195,7 @@ def _mutated(*, source: str, old: str, new: str) -> str:
     return source.replace(old, new)
 
 
-def test_committed_label_workflow_restarts_ci_on_incident_label_events_only() -> None:
+def test_committed_label_workflow_holds_and_restarts_on_incident_label_events_only() -> None:
     assert label_workflow_findings(source=_LABEL_WORKFLOW.read_text(encoding="utf-8")) == []
 
 
@@ -175,22 +203,23 @@ def test_committed_ci_yml_does_not_trigger_on_label_events() -> None:
     assert ci_label_trigger_findings(source=_CI_YML.read_text(encoding="utf-8")) == []
 
 
-def test_committed_reusable_matrix_omits_only_through_the_guard() -> None:
-    assert matrix_findings(source=_MATRIX.read_text(encoding="utf-8")) == []
+def test_committed_auto_enable_merge_skips_the_incident_unlabeled_event() -> None:
+    assert auto_merge_findings(source=_AUTO_MERGE.read_text(encoding="utf-8")) == []
+
+
+_TRIGGERS = "the label workflow does not trigger on exactly labeled/unlabeled PRs"
+_GATE = f"job {_JOB} is not gated on exactly the incident label and the fork guard"
+_WAIT = "the restart does not wait, bounded, for an unfinished run to stop"
 
 
 @pytest.mark.parametrize(
     ("old", "new", "expected"),
     [
+        ("    types: [labeled, unlabeled]\n", "    types: [labeled]\n", _TRIGGERS),
         (
             "    types: [labeled, unlabeled]\n",
-            "    types: [labeled]\n",
-            "the label workflow does not trigger on exactly labeled and unlabeled",
-        ),
-        (
-            "    types: [labeled, unlabeled]\n",
-            "    types: [labeled, unlabeled]\n  push:\n    branches: [master]\n",
-            "the label workflow triggers on something other than pull_request",
+            "    types: [labeled, unlabeled]\n  pull_request_target:\n",
+            _TRIGGERS,
         ),
         (
             "\npermissions: {}\n",
@@ -198,9 +227,31 @@ def test_committed_reusable_matrix_omits_only_through_the_guard() -> None:
             "the label workflow grants workflow-level permissions",
         ),
         (
-            f"    if: ${{{{ {_INCIDENT_LABEL_TEST} && ",
-            "    if: ${{ ",
-            "job restart-ci-on-head runs on a non-incident label event",
+            "concurrency:\n  group: " + _CONCURRENCY["group"] + "\n  cancel-in-progress: true\n",
+            "",
+            "the concurrency group is not keyed to incident label events only",
+        ),
+        (
+            "-" + _GROUP_KEY + "\n",
+            "\n",
+            "the concurrency group is not keyed to incident label events only",
+        ),
+        (
+            "  restart-ci-on-head:\n",
+            "  restart-ci-on-head:\n    name: x\n  second:\n",
+            f"the label workflow's jobs are not exactly {_JOB}",
+        ),
+        ("== github.repository }}\n", "== github.repository || true }}\n", _GATE),
+        (" && " + _FORK_GUARD + " }}", " }}", _GATE),
+        (
+            "      pull-requests: read\n",
+            "      pull-requests: write\n      contents: write\n",
+            f"job {_JOB} holds permissions other than {_JOB_PERMISSIONS}",
+        ),
+        (
+            "          set -euo pipefail\n",
+            '          set -euo pipefail\n          echo "${{ github.event.pull_request.title }}"\n',
+            "a run: script interpolates an expression",
         ),
         (
             "--jq '.head.sha'",
@@ -208,19 +259,37 @@ def test_committed_reusable_matrix_omits_only_through_the_guard() -> None:
             "the restart does not read the current head from the forge",
         ),
         (
-            "runs?event=pull_request&head_sha=${head}",
-            "runs?head_sha=${head}",
-            "the restart does not select the pull_request CI run on the current head",
+            _SELECT_BY_PR,
+            "select(true)",
+            "the restart does not select THIS PR's pull_request CI run on the head",
         ),
+        (
+            "\n            exit 0\n",
+            "\n            exit 1\n",
+            "a PR with no CI run listed yet does not stop green",
+        ),
+        (
+            "status=in_progress",
+            "status=completed -f conclusion=success",
+            "the hold is not an in-progress ci-green check run on the head",
+        ),
+        ("$(seq 1 60)", "$(seq 1 0)", _WAIT),
+        ('[ "$status" = "completed" ] && break', "true", _WAIT),
+        ('ci-green stays held"\n              exit 1\n', 'ci-green stays held"\n', _WAIT),
         (
             '/rerun"',
             '/rerun-failed-jobs"',
-            "the restart does not re-run the CI run",
+            "the restart does not cancel and re-run the CI run",
         ),
         (
-            '/cancel"',
-            '/approve"',
-            "the restart does not cancel an unfinished CI run before re-running it",
+            "          hold_ci_green\n          status=",
+            "          status=",
+            "ci-green is not held before the run is touched",
+        ),
+        (
+            "          hold_ci_green\n          gh api -X POST",
+            "          gh api -X POST",
+            "ci-green is not held again between the wait and the re-run",
         ),
     ],
 )
@@ -229,6 +298,15 @@ def test_each_label_workflow_rule_has_a_negative_control(
 ) -> None:
     source = _mutated(source=_LABEL_WORKFLOW.read_text(encoding="utf-8"), old=old, new=new)
     assert expected in label_workflow_findings(source=source)
+
+
+def test_a_wait_loop_that_is_gone_entirely_is_a_finding() -> None:
+    source = _LABEL_WORKFLOW.read_text(encoding="utf-8")
+    start = source.index("            for _ in $(seq 1 60); do\n")
+    end = source.index("          hold_ci_green\n          gh api -X POST")
+    findings = label_workflow_findings(source=source[:start] + source[end:])
+    assert _WAIT in findings
+    assert "ci-green is not held again between the wait and the re-run" in findings
 
 
 def test_the_ci_label_trigger_rule_has_a_negative_control() -> None:
@@ -242,31 +320,12 @@ def test_the_ci_label_trigger_rule_has_a_negative_control() -> None:
     ]
 
 
-@pytest.mark.parametrize(
-    ("old", "new", "expected"),
-    [
-        (
-            "        default: '[]'\n",
-            "        default: '[\"check-lint\"]'\n",
-            "the incident-omitted input is not an optional string defaulting to '[]'",
-        ),
-        (
-            _OMIT_STEP_NAME_TAIL + "        if: ${{ github.event_name == 'pull_request' && ",
-            _OMIT_STEP_NAME_TAIL + "        if: ${{ ",
-            "no single omitted-by-incident-policy step carries the canonical guard",
-        ),
-        (
-            "      - name: Run check\n        if: ${{ !(github.event_name == 'pull_request' && ",
-            "      - name: Run check\n        if: ${{ !(",
-            "step Run check is not guarded by the incident omission guard",
-        ),
-        (
-            "      - name: Setup toolchain\n        if: " + _RUN_STEP_IF + "\n",
-            "      - name: Setup toolchain\n",
-            "step Setup toolchain is not guarded by the incident omission guard",
-        ),
-    ],
-)
-def test_each_matrix_rule_has_a_negative_control(*, old: str, new: str, expected: str) -> None:
-    source = _mutated(source=_MATRIX.read_text(encoding="utf-8"), old=old, new=new)
-    assert expected in matrix_findings(source=source)
+def test_the_auto_merge_skip_rule_has_a_negative_control() -> None:
+    source = _mutated(
+        source=_AUTO_MERGE.read_text(encoding="utf-8"),
+        old="      " + _AUTO_MERGE_SKIP + "\n",
+        new="",
+    )
+    assert auto_merge_findings(source=source) == [
+        "auto-enable-merge arms on the incident label's unlabeled event"
+    ]

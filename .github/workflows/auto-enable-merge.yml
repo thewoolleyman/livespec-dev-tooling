@@ -107,9 +107,14 @@ jobs:
     # (author in human allowlist OR the fleet's release-please App on a
     # release-please-- head branch). All continuation lines share one
     # indent so the `>-` fold yields a single-line expression.
+    # The unlabeled event of `expedited-incident-response` is skipped: on it
+    # incident-label-ci.yml holds ci-green and re-runs CI, because the head's
+    # ci-green is the stale expedited verdict. Arming here could race that hold
+    # and merge on the stale green (livespec-dev-tooling-6xyc42).
     if: >-
       github.event.pull_request.draft == false
       && !contains(github.event.pull_request.labels.*.name, 'do-not-merge')
+      && !(github.event.action == 'unlabeled' && github.event.label.name == 'expedited-incident-response')
       && (
       contains(fromJSON('["thewoolleyman"]'), github.event.pull_request.user.login)
       || (github.event.pull_request.user.login == 'thewoolleyman-factory-bot[bot]'
