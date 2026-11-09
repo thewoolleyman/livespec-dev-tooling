@@ -47,6 +47,7 @@ import dataclasses
 import hashlib
 import importlib
 import json
+import signal
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -830,6 +831,31 @@ def test_a_gate_that_never_reaches_a_terminal_state_deletes_its_job() -> None:
         _JOB,
     )
     assert "delete-ref" not in cluster.kinds
+
+
+@pytest.mark.parametrize("interruption", [signal.SIGTERM, signal.SIGINT])
+def test_an_interrupted_wait_deletes_its_job_and_published_refs(
+    *, interruption: signal.Signals
+) -> None:
+    """TERM and INT leave no queued Job or mirror input behind."""
+    cluster = _StubCluster(job_states=("Suspended",))
+    previous = signal.getsignal(interruption)
+
+    def interrupted_sleep(*, seconds: float) -> None:
+        _ = seconds
+        assert signal.getsignal(interruption) is not previous, "no handler during the wait"
+        signal.raise_signal(interruption)
+
+    request = dataclasses.replace(_REQUEST, poll_timeout_seconds=30.0)
+    outcome = run_gate(request=request, runner=cluster, sleeper=interrupted_sleep)
+
+    assert isinstance(outcome, Failure)
+    assert outcome.failure().step == "await-gate-terminal"
+    assert _JOB in outcome.failure().detail
+    assert f"terminated by {interruption.name}" in outcome.failure().detail
+    assert cluster.kinds.count("delete-job") == 1
+    assert cluster.kinds.count("delete-ref") == 1
+    assert signal.getsignal(interruption) is previous
 
 
 def test_failed_abandoned_job_cleanup_is_reported_without_changing_no_verdict(
