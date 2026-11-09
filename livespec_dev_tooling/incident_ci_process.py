@@ -112,8 +112,13 @@ class CiProcess:
 
 
 def _echo(*, text: str) -> None:
-    """Write one member's captured output to the job log."""
+    """Write one member's captured output to the job log, at once.
+
+    Under the workflow's `python -I`, stdout is a pipe and block-buffered, so an
+    unflushed member could reach the log only at exit, or never on a kill.
+    """
     _ = sys.stdout.write(text)
+    _ = sys.stdout.flush()
 
 
 def _emit(*, result: dict[str, Any], code: int) -> int:

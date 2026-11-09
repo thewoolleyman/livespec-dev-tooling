@@ -53,7 +53,9 @@ class _SharedAdmission:
 
     The lock makes concurrent launches wait for ONE read rather than each
     starting their own. One retry absorbs a single transient refusal; two
-    refusals in a row refuse.
+    refusals in a row refuse, and that refusal is STICKY: every later call
+    refuses with no read, so a revocation cannot queue two serialized reads per
+    remaining member into the job timeout.
     """
 
     def __init__(self, *, check: Callable[[], bool], window_seconds: float) -> None:
@@ -61,14 +63,18 @@ class _SharedAdmission:
         self._window_seconds = window_seconds
         self._lock = threading.Lock()
         self._confirmed_at: float | None = None
+        self._refused = False
 
     def __call__(self) -> bool:
         with self._lock:
             confirmed = self._confirmed_at
+            if self._refused:
+                return False
             if confirmed is not None and time.monotonic() - confirmed < self._window_seconds:
                 return True
             admitted = self._check() or self._check()
             self._confirmed_at = time.monotonic() if admitted else None
+            self._refused = not admitted
             return admitted
 
 
