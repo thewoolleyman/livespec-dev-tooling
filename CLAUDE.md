@@ -300,7 +300,12 @@ decide and report, not to escalate.
   operation is the codified mechanism of an adopted workflow — the
   `git commit --amend` of the Red→Green step, for instance — the adoption is the
   authorization. Keep per-instance gating for ad-hoc `--amend`, force-push,
-  `reset --hard`, or `branch -D` on unmerged branches.
+  `reset --hard`, or `branch -D` on unmerged branches. Exception: a local
+  branch, worktree or tmp file whose content is provably already on master
+  (name the master commit that carries it; no remote branch, open PR or
+  worktree depends on it) is cleaned up by the owning seat and reported, never
+  parked as a maintainer ask (maintainer, 2026-11-09: "Just fix and clean up");
+  see `.ai/coordinator-duties.md` §5.
 
 Two rules this repository earned the hard way, from the 2026-08-20 stall
 investigation:
