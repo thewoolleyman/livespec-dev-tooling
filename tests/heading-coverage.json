@@ -3028,5 +3028,45 @@
     "test": "TODO",
     "reason": "Spec-first: a real test at the integration tier or above is owed for this scenario: `no_ambient_environment_loops` run over fixture test trees on a host environment with and without a `GIT_` variable fails a loop over `os.environ` (pragma or `dict(os.environ)` alias included) and passes the single-expression rewrite. livespec-dev-tooling-dpkz32 owns it; the implementation PR that ships it replaces this row.",
     "work_item": "livespec-dev-tooling-dpkz32"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a consumer's local pre-commit aggregate run through the shared entry point is reused by its suite-green leg",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above (`tests.consumer`, this repository's `scenario_tiers`, or an integration-marked test) is owed for this heading, running a consumer's local pre-commit aggregate through the shared local-aggregate entry point on a clean tree and driving the commit-msg suite-green leg on the same tree; livespec-dev-tooling-4scqti owns it.",
+    "work_item": "livespec-dev-tooling-4scqti"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: the local-aggregate entry point writes no evidence for a failed, dirty or changed tree",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above (`tests.consumer`, this repository's `scenario_tiers`, or an integration-marked test) is owed for this heading, running the local-aggregate entry point over a failing aggregate, a dirty worktree and a tree that changes during the run, and asserting its exit status and that no evidence is written; livespec-dev-tooling-4scqti owns it.",
+    "work_item": "livespec-dev-tooling-4scqti"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a suite-green leg run emits one outcome event naming whether it reused evidence",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above (`tests.consumer`, this repository's `scenario_tiers`, or an integration-marked test) is owed for this heading, driving the suite-green leg in reused and ran modes against a recording OTLP receiver and against an unreachable one; livespec-dev-tooling-4scqti owns it.",
+    "work_item": "livespec-dev-tooling-4scqti"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: an in-turn sandbox commit whose affected-tests gate passed on the same tree runs only those tests",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above (`tests.consumer`, this repository's `scenario_tiers`, or an integration-marked test) is owed for this heading, driving the commit-msg suite-green leg in a checkout with livespec.sandboxExempt set after a passing affected-tests record on the same tree; livespec-dev-tooling-svjqbe owns it.",
+    "work_item": "livespec-dev-tooling-svjqbe"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: an affected-tests record outside a sandbox, or for a failed, empty or different run, leaves the full suite in place",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above (`tests.consumer`, this repository's `scenario_tiers`, or an integration-marked test) is owed for this heading, driving the suite-green leg with an affected-tests record outside a sandbox and for a failed, empty and different-tree run; livespec-dev-tooling-svjqbe owns it.",
+    "work_item": "livespec-dev-tooling-svjqbe"
   }
 ]
