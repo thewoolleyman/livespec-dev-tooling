@@ -27,7 +27,7 @@ def _scripted(
 @pytest.mark.parametrize(
     ("outputs", "message"),
     [
-        ([subprocess.CompletedProcess([], 2, "", "")], "mutmut run failed"),
+        ([subprocess.CompletedProcess([], 1, "", "")], "mutmut could not generate"),
         (
             [
                 subprocess.CompletedProcess([], 0, "", ""),
@@ -44,7 +44,7 @@ def _scripted(
         ),
         (
             [
-                subprocess.CompletedProcess([], 1, "", ""),
+                subprocess.CompletedProcess([], 0, "", ""),
                 subprocess.CompletedProcess([], 0, "M1: survived\n", ""),
                 subprocess.CompletedProcess([], 2, "", ""),
             ],
@@ -75,3 +75,34 @@ def test_generation_lists_mutants_and_collected_tests(*, tmp_path: Path) -> None
 
     assert [mutant.identifier for mutant in mutants] == ["pkg.x_f__mutmut_1"]
     assert tests == ["t.py::a"]
+
+
+def test_generation_only_generates_and_never_runs_mutmuts_own_mutation_run(
+    *, tmp_path: Path
+) -> None:
+    """The engine needs mutmut's catalogue, not its run.
+
+    `mutmut run` in 3.2.3 also runs mutmut's own per-test stats pass, a clean
+    test run and a forked run of every mutant, all of which the engine
+    discards.  Generation goes through mutmut's own generation functions.
+    """
+    module = importlib.import_module("livespec_dev_tooling.mutation_kill_matrix_stages")
+    calls: list[list[str]] = []
+    outputs = [
+        subprocess.CompletedProcess([], 0, "", ""),
+        subprocess.CompletedProcess([], 0, "    pkg.x_f__mutmut_1: not checked\n", ""),
+        subprocess.CompletedProcess([], 0, "t.py::a\n", ""),
+    ]
+
+    def execute(
+        *, args: list[str], cwd: Path, timeout: float | None = None
+    ) -> subprocess.CompletedProcess[str]:
+        _ = cwd, timeout
+        calls.append(args)
+        return outputs.pop(0)
+
+    _ = module.generate(execute=execute, target=tmp_path)
+
+    generation = calls[0]
+    assert generation[generation.index("-c") + 1].count("create_mutants()") == 1
+    assert all(call[-1] != "run" for call in calls)

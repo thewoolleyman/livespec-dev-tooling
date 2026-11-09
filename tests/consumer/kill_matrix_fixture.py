@@ -2,7 +2,9 @@
 
 Real mutmut forks a worker per mutant, which crashes on macOS hosts, so the
 engine's `python -m mutmut` resolves to a stand-in placed first on PYTHONPATH.
-The stand-in reads `mutmut-fixture.json` from the directory it runs in:
+The engine generates through mutmut's generation functions, which the stand-in
+provides as no-ops.  As a command line it reads `mutmut-fixture.json` from the
+directory it runs in:
 
 - `results` lists every fixture mutant;
 - `apply <id>` replaces the mutant's `old` text with its `new` text in its
@@ -42,23 +44,41 @@ import os
 import pathlib
 import sys
 
-fixture = json.loads(pathlib.Path("mutmut-fixture.json").read_text(encoding="utf-8"))
-command = sys.argv[1]
-if command == "results":
-    for identifier in fixture:
-        print(f"    {identifier}: killed")
-elif command == "apply":
-    identifier = sys.argv[2]
-    log = os.environ.get("KILL_MATRIX_APPLY_LOG")
-    if log:
-        with open(log, "a", encoding="utf-8") as handle:
-            handle.write(identifier + "\\n")
-    mutant = fixture[identifier]
-    path = pathlib.Path(mutant["path"])
-    text = path.read_text(encoding="utf-8")
-    if mutant["old"] not in text:
-        sys.exit(1)
-    path.write_text(text.replace(mutant["old"], mutant["new"], 1), encoding="utf-8")
+
+def read_config():
+    pass
+
+
+def create_mutants():
+    pass
+
+
+def copy_also_copy_files():
+    pass
+
+
+def _cli():
+    fixture = json.loads(pathlib.Path("mutmut-fixture.json").read_text(encoding="utf-8"))
+    command = sys.argv[1]
+    if command == "results":
+        for identifier in fixture:
+            print(f"    {identifier}: not checked")
+    elif command == "apply":
+        identifier = sys.argv[2]
+        log = os.environ.get("KILL_MATRIX_APPLY_LOG")
+        if log:
+            with open(log, "a", encoding="utf-8") as handle:
+                handle.write(identifier + "\\n")
+        mutant = fixture[identifier]
+        path = pathlib.Path(mutant["path"])
+        text = path.read_text(encoding="utf-8")
+        if mutant["old"] not in text:
+            sys.exit(1)
+        path.write_text(text.replace(mutant["old"], mutant["new"], 1), encoding="utf-8")
+
+
+if __name__ == "__main__":
+    _cli()
 """
 
 _NO_NETWORK = """\

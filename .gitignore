@@ -6,6 +6,15 @@ tmp/
 .codex
 .idea/
 
+# Ansible's per-project scratch directory (`.ansible/`, holding an empty
+# `.lock`), which ansible tooling creates at the working directory when a gate
+# or test runs it. Never durable state. Unignored, a factory engine checkpoint
+# committed it inside the sandbox clone, so the clone differed from the
+# published pull-request head and proof_verify could name no single publish
+# head. proof_grade then failed closed three times (livespec-dev-tooling-h2i4u2,
+# run 01M70ETFK3ZT, 2026-11-09). Unanchored, because the path follows the cwd.
+.ansible/
+
 # Playwright MCP browser-tool scratch (page snapshots, console logs) —
 # per-session, never durable state.
 .playwright-mcp/

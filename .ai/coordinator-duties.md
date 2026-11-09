@@ -64,6 +64,16 @@ re-runs". It extends this section in two ways:
 The no-rerun rule for genuine test failures is unchanged: neither re-run fires on a test failure, and a test the PR
 touched is never retried at any level.
 
+**A job-creation internal server error gets an automatic re-run with incremental backoff.** A run that GitHub failed
+while creating its jobs carries the annotation "Internal server error. Correlation ID: ..." and has zero or only some of
+its jobs, none of them failed. It gets an automatic re-run in the cetyrq/khlrw3 reconciler, with incremental backoff and
+a bounded count, keyed on that annotation and never on a test failure. The maintainer, 2026-11-09 ~19:3xZ, recorded on
+epic `livespec-dev-tooling-6tgd2z`: "Yes, why wouldn't we?   As long as it's an incremental backoff, so we don't spam it
+or waste tokens or unnecessarily hammer github". Until the classifier ships, such a run is re-run by hand once, after
+GitHub resolves the incident, and only for the newest commit with no verdict. Measured 2026-11-09 17:53Z to 18:59Z,
+during the GitHub incident "Actions and Checks API": three orchestrator master runs and two scheduled runs failed this
+way.
+
 A check that fails intermittently is still a defect. Find the commit that introduced the flaky bound
 (`git log -1 -- <test file>`), and route the root fix to that commit's owner as top priority. Tell every waiting
 session to wait for the fix to merge rather than re-run anything.
@@ -179,6 +189,14 @@ comment on the work item concerned or on its plan epic. Also send it through `he
 herdr machine reaches that seat (chads-macbook-pro is saved). The maintainer, 2026-11-06, relayed verbatim through the
 homelab-k8s-worker-nodes session, recorded on epic `livespec-dev-tooling-6tgd2z` at 05:57:05Z: "asking the maintainer
 to paste your reply to me is unacceptable".
+
+**Stopping a seat's own wasteful or contaminated workload is the coordinator's call.** Direct the owning seat to stop
+it, and clean up after it. Never list it under FOR THE MAINTAINER. If the seat's own attempt was blocked, re-order it,
+citing the maintainer's words below. The maintainer, 2026-11-09 ~19:3xZ, recorded on epic `livespec-dev-tooling-6tgd2z`:
+"This is useless and wasteful work. Why are you asking me this? This is a decision you should make. Enforce the seat to
+do. Cite whatever recorded guidance you need to if it argues with you." Measured 2026-11-09: duplicate rule-26
+kill-matrix runners on hp-xubuntu (top_hygiene and work_items) had contaminated their trees from 10:46Z, and the stop
+sat under FOR THE MAINTAINER for two ticks.
 
 **Codex hook-trust prompts are the coordinator's to answer.** A Codex review prompt such as "N hooks need review before
 they can run" (`t trust all`) may always be answered with trust, to unblock a Codex pane, without asking the maintainer.
@@ -549,6 +567,14 @@ resume via `/livespec-orchestrator-beads-fabro:plan <slug>`. Read `.ai/herdr-tab
 Measured 2026-11-01: the coordinator assigned gmktec-factory-placement and a dev-host-disk-retention host apply to the
 gitops-fleet-capacity-monitoring seat. The maintainer: "You're in the wrong named session and tab." The maintainer also
 had to point out the tabs left behind after a shutdown.
+
+**An orphan item joins the closest open plan; otherwise it gets a plan of its own.** When an item's owning plan is
+archived, move the item to an open plan only if the two are extremely closely related; otherwise make a new plan for it.
+The maintainer, 2026-11-09 ~19:3xZ, recorded on epic `livespec-dev-tooling-6tgd2z`, on livespec-driver-codex-d2tp5d
+(release-please concurrency) after its owning plan was archived: "If it's not related to any existing open plan
+extremely closely, then make a new plan.  CI runtime and cost seem like they're turning into a dump truck, but we need
+to rearchitect all this anyway. I guess if that's easier, just get it done." d2tp5d went to ci-runtime-and-cost. That
+plan's scope creep is a known issue, pending the re-architecture the maintainer named.
 
 ## 9. The tick report
 
@@ -928,6 +954,16 @@ or any member that calls the master-health reconciler. Measured 2026-11-09 by ci
 runs waste about 4,110 runner-minutes a day, 48% of master-lane CI, almost all of it in livespec-dev-tooling (about
 2,467 a day) and the orchestrator (about 1,640 a day).
 
+**B' replaces B's mechanism: the running master run finishes, and only the newest pending run is kept.** The maintainer,
+2026-11-09 ~19:3xZ, recorded on epic `livespec-dev-tooling-6tgd2z`, answering whether option B as ruled or B' applies:
+"OK B'". B' keeps B's place in the ruling above and changes how it cancels: a master-only concurrency group with
+`cancel-in-progress: false`, so GitHub lets the in-progress run finish and keeps only the newest pending run.
+`chore(master): release` commits, and commits carrying the EXPEDITED_INCIDENT_RESPONSE Factory-Override trailer, get
+unique groups of their own, so their runs are never dropped. ci-runtime-and-cost re-cuts the proposal as a modify. Until
+it lands, superseded runs are cancelled only by hand, under the guards above. Measured 2026-11-09 by
+ci-runtime-and-cost: B as written (`cancel-in-progress: true`) cancelled release and expedited runs, and starved master
+of any verdict when merges landed faster than CI.
+
 **An OOM kill is not `transient_infra` (coordinator's reading).** A factory run that dies with "WebSocket upgrade 500"
 can be a memory-cgroup OOM kill of the agent: `memory.oom.group` kills the whole container, the kubelet then refuses
 the checkpoint exec, and the API server reports that refusal as a 500. Classify such an ending as resource exhaustion,
@@ -982,6 +1018,16 @@ strict chaining of the four held workflow.fabro items (64n5ct, keg67m, 2eyiwy, q
 does not reach `route_recovery`, so read a seeded relaunch's route before its ticket. Measured 2026-11-07 ~20:13Z, in
 code at 1895a0ddbe37 and run with the real functions by publish-draft-green-work-loss. This lesson ends when
 bd-ib-ltlg4i ships.
+
+**A cost regression gates a launch build only until it is measured (coordinator's reading).** Gate a launch build on a
+plausible cost regression, measure it at once, then rule on the measured number against what the gate holds back.
+Measured 2026-11-09 by token-spend-analysis: orchestrator v0.310.0 (a311c2391) appended the full DoD judgement subject
+to every dispatch goal, a 3.3x goal size over 357 ready items with riders doubled, about $9-16/day (+4-7%). The
+coordinator gated it as a launch build at ~19:0xZ and lifted the gate at ~19:2xZ once measured: the rework fixes the
+gate held back (work preservation, ot4av7) were worth more than $100/day. The fix, bd-ib-tzvtgc, stays at the priority 1
+band. A cost-gate lift is never a release fast-forward: the maintainer's 17:02Z ruling
+(livespec-orchestrator-beads-fabro#4749: a release advances only after canary samples, with canary clones adopting the
+tag) still governs every roll.
 
 ## 11. Reading host capacity
 
@@ -1056,6 +1102,10 @@ CI-capacity routing, and is not used to cut the factory cap. Correction recorded
   session's state marker. Read a file before removing it.
 - **Relays.** Peers keep messaging a retired seat's name. That seat forwards what it receives to the current
   coordinator and tells the sender the new address.
+- **Prices come from the published page, never from a cached copy (coordinator's reading).** Measured 2026-11-09 by
+  token-spend-analysis: all 14 fleet `.livespec.jsonc` catalogs priced claude-sonnet-5-5 cache reads at 0.2 $/MTok,
+  copied from a 2026-10-06 cache, against the page's 0.10. The dispatcher's per-run cost report ran about 31% high,
+  about $76/day; Honeycomb llm-spend was correct. The fix is livespec-dev-tooling-b65s6l, orchestrator source first.
 - **Maintainer-given limits.** These are the only ones:
   - Never choose paid credits.
   - Never change caam rules (rule E), and never second-guess caam account selection (R489).

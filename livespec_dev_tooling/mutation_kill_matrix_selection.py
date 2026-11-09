@@ -189,6 +189,9 @@ def measure_per_test_coverage(
                 f"--cov-config={rcfile}",
                 "--cov-context=test",
                 "--cov-report=",
+                # mutmut copies the tests into mutants/; without `testpaths`
+                # pytest would collect both copies and fail on the duplicates.
+                "--ignore=mutants",
                 *plugin_args,
             ],
             cwd=target,
