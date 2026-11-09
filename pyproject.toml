@@ -724,6 +724,12 @@ scenario_tiers = ["tests.consumer"]
 # behavior) stay AND must scrub COVERAGE_PROCESS_START + COV_CORE_* from the
 # child env so the child does not self-instrument.
 subprocess_spawn_allowlist = [
+    # livespec-dev-tooling-wj45qt: the bare `pytest --cov` spelling fails in
+    # pytest-cov's combine step only when a test subprocess runs with a cwd
+    # that has no pyproject in view, which exists only across a real pytest
+    # process tree. The test scrubs COV_CORE_* and COVERAGE_* (including
+    # COVERAGE_PROCESS_START) from the child env.
+    "tests/livespec_dev_tooling/test_pytest_cov_bare_spelling.py",
     # livespec-dev-tooling-dkgwsm: the rule-26 kill-matrix scenarios run the
     # engine as a consumer does, `python -m ...mutation_kill_matrix_runner`, and
     # the engine itself starts the mutmut stand-in and pytest per mutant; only a
@@ -1086,6 +1092,14 @@ addopts = [
     # across mirror trees without pytest's legacy `prepend` mode
     # triggering same-basename module collisions.
     "--import-mode=importlib",
+    # pytest-cov hands its test subprocesses the coverage config only when
+    # `--cov-config` names an existing file; the default `.coveragerc` does
+    # not exist here. A subprocess with a cwd outside the repo (every
+    # `cwd=tmp_path` test) then measures statements only, and the bare
+    # `pytest --cov=<pkg>` spelling dies combining that with the main
+    # process's branch data (livespec-dev-tooling-wj45qt). Inert without
+    # `--cov`.
+    "--cov-config=pyproject.toml",
 ]
 # `--strict-markers` requires every marker be registered. The `consumer`
 # marker tags the consumer-tier check-runner suite under `tests/consumer/`
