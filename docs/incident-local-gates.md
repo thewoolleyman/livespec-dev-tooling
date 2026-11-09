@@ -79,11 +79,25 @@ one parser and one notion of a trusted incident context. Its outcomes:
 
 | Condition | Outcome | Exit (CLI) |
 | --- | --- | --- |
+| A trusted normal origin: a master-push CI job or a factory sandbox | `normal`: the complete normal body runs with either flag inherited at any value, including a malformed one; the flags are never parsed. | 75 |
 | Both flags unset or explicitly false | `normal`: the entrance's complete normal body runs unchanged. | 75 |
 | A malformed flag value | `invalid-incident-flag` configuration refusal. | 78 |
 | A flag set without a trusted incident receipt | `untrusted-incident-receipt` refusal; no gate work. | 78 |
 | A trusted incident at a direct entrance | `no-direct-incident-mode` refusal; no gate work. | 78 |
 | A trusted incident at the detached runner | Continue on the LOCAL venue only. | n/a |
+
+A trusted normal origin is named by `livespec_dev_tooling/incident_trusted_origin.py`
+(livespec-dev-tooling-wtsntu) before the flags are read: `GITHUB_ACTIONS=true` with
+`GITHUB_EVENT_NAME=push` (this repository's CI triggers a push only on master) is
+`NORMAL_MASTER`, and a checkout whose git config sets `livespec.sandboxExempt` to
+`true` is `NORMAL_FACTORY_FOLLOW_UP`. The sandbox marker is probed only when an
+incident variable is present. Both signals are ambient, which is sound because
+they can only select the COMPLETE normal body: a forged signal makes an entrance
+ignore a flag and apply full policy, and never grants an incident exception. An
+origin outside these two (a pull-request job, a developer host) still parses the
+flags and refuses a malformed one with `invalid-incident-flag` and an unverified
+one with `untrusted-incident-receipt`. The installed hook entrance does not use
+this trust path.
 
 Every refusal prints `incident-gate-refused: <surface>: <code>: <detail>` on
 stderr. Incident gates are selected only by the hook entrance, so a direct
