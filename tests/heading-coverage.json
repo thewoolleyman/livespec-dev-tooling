@@ -2965,5 +2965,13 @@
     "test": "TODO",
     "reason": "Spec-first: a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) is owed for this scenario, running the producer twice against an unchanged radar and ledger and once with its dry-run flag, and asserting byte-identical values and no write. livespec-dev-tooling-5wewi2 owns it (plan ci-runtime-and-cost); the implementation PR that ships it replaces this row.",
     "work_item": "livespec-dev-tooling-5wewi2"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: the range replay refuses a suite-green commit whose added tests fail on its parent",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) is owed for this scenario: check-red-green-replay run over a fixture range holding a suite-green commit whose added test fails on its parent (refused, naming the commit and test) and one whose characterization tests pass on its parent with a TDD-Suite-Green-Parent-Replay trailer (passed). livespec-dev-tooling-5uobsl owns it; the implementation PR that ships it replaces this row.",
+    "work_item": "livespec-dev-tooling-5uobsl"
   }
 ]
