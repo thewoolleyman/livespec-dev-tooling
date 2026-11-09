@@ -17,7 +17,9 @@ workflow text:
   is unchanged.** Each job holding a deferred member still runs, guards the
   member's own steps with the one canonical expression, and carries an
   explicit `omitted-by-incident-policy` report. `ci-green` requires the same
-  jobs as before, keeps its failure gate, and repeats the list.
+  jobs as before, keeps its failure gate, and repeats the list. Any further
+  `ci-green` step (the required-leg reader of livespec-dev-tooling-nofeol) may
+  only add a way to fail: it reads no omission list and cannot be soft-failed.
 - **Every other run executes the complete normal policy.** A job that reads the
   output can be skipped by nothing: its job-level `if:` is run-status-only, so
   a failed or refused `incident-ci` leaves it running in full. The workflow
@@ -283,15 +285,20 @@ def _gate_findings(*, gate: dict[str, Any]) -> list[str]:
     if set(gate.get("needs", [])) != _REQUIRED or gate.get("if") != "always()":
         findings.append(f"{_GATE_JOB} no longer requires exactly the same jobs on every run")
     steps = gate["steps"]
-    if steps[-1] != _GATE_STEP:
+    if _GATE_STEP not in steps:
         findings.append(f"the failure gate of {_GATE_JOB} changed")
     report = steps[0]
-    if (
-        len(steps) != 2
-        or (report.get("if"), report.get("env")) != (_GATE_REPORT_IF, _GATE_REPORT_ENV)
-        or "omitted-by-incident-policy" not in report.get("run", "")
-    ):
+    if (report.get("if"), report.get("env")) != (
+        _GATE_REPORT_IF,
+        _GATE_REPORT_ENV,
+    ) or "omitted-by-incident-policy" not in report.get("run", ""):
         findings.append(f"{_GATE_JOB} does not repeat the released omission list")
+    # Any other step may only ADD a way to fail, as the required-leg reader of
+    # livespec-dev-tooling-nofeol does: it reads no omission list and cannot be
+    # soft-failed, so it can never widen what the omission path passes.
+    extra = [step for step in steps[1:] if step != _GATE_STEP]
+    if any("omitted" in json.dumps(step) or "continue-on-error" in step for step in extra):
+        findings.append(f"{_GATE_JOB} carries a step that reads the omission list or cannot fail")
     return findings
 
 
@@ -467,6 +474,12 @@ _GUARD_OF_MATRIX_TARGET = _GUARD.format(member="matrix.target")
             " || contains(needs.*.result, 'cancelled') }}\n        run: exit 1",
             " }}\n        run: exit 1",
             f"the failure gate of {_GATE_JOB} changed",
+        ),
+        (
+            "      - name: Every required leg was created and concluded success\n        env:\n",
+            "      - name: Every required leg was created and concluded success\n"
+            "        continue-on-error: true\n        env:\n",
+            f"{_GATE_JOB} carries a step that reads the omission list or cannot fail",
         ),
         (
             f"        if: {_GATE_REPORT_IF}\n",
