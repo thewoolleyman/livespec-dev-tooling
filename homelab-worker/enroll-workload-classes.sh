@@ -9,16 +9,20 @@
 # Reads the Node's kubernetes.io/arch label and allocatable CPU with the
 # caller's kubectl, and the one declared per-class architecture list
 # (ci-runner/k3s/phase2/workload-arch.conf; WORKLOAD_ARCH_CONF overrides):
+# Each class the node is enrolled in gets an equal share of its allocatable
+# CPU: one third when all three classes declare its architecture, and a class
+# that does not declare it lends its share to the enrolled ones rather than
+# leaving it idle (one half each for two classes, all of it for one).
 #   - CI: when any scale-set release declares the node's architecture, the node
 #     gets k3s-role=arc-runner-host (the label the churn-slot ResourceFlavor
-#     selects) and a ci-runner.io/churn-slot capacity derived from its
-#     allocatable CPU: one third of it, at about 2.73 CPUs per slot (the fleet's
-#     sizing rule, ci-runner/k3s/phase2/kueue/DERIVATION.md), at least one.
+#     selects) and a ci-runner.io/churn-slot capacity derived from its CI
+#     share at about 2.73 CPUs per slot (the fleet's sizing rule,
+#     ci-runner/k3s/phase2/kueue/DERIVATION.md), at least one.
 #   - factory: when the factory class declares it, ci-runner.io/factory=true.
 #   - gate: when any gate line declares it (the default or a repository's own),
 #     the node gets homelab-worker.livespec.dev/gate-share-millicores, its
-#     one-third CPU share; ci-runner/k3s/phase2/kueue/converge-worker-queues.sh
-#     turns that into whole gates on the worker flavor it adds to gates-cq.
+#     gate share; ci-runner/k3s/phase2/kueue/converge-worker-queues.sh turns
+#     that into whole gates on the worker flavor it adds to gates-cq.
 # A class that does not declare the node's architecture is NOT enrolled, its
 # enrollment is removed if present, and it is named with what it lacks.
 # Only a node carrying homelab-worker.livespec.dev/class=worker is touched.
@@ -72,21 +76,27 @@ lacks() {
   awk -v k="$1" -v n="$2" '$1 == k && $2 == n { $1 = $2 = $3 = ""; sub(/^ +/, ""); print; exit }' "$conf"
 }
 
-share=$((millicores / 3))
+# The enrolled classes, decided before any write so each one's share is known.
+ci=0 gate=0 factory=0
+declares release && ci=1
+declares gate && gate=1
+declares factory python-agent && factory=1
+enrolled=$((ci + gate + factory))
+share=$((millicores / (enrolled > 0 ? enrolled : 1)))
 slots=$((share / slot_millicores))
 [ "$slots" -ge 1 ] || slots=1
 
-if declares release; then
+if [ "$ci" -eq 1 ]; then
   kubectl label node "$node" k3s-role=arc-runner-host --overwrite >/dev/null
   kubectl patch node "$node" --subresource=status --type=merge \
     -p "{\"status\":{\"capacity\":{\"ci-runner.io/churn-slot\":\"$slots\"}}}" >/dev/null
-  say "CI: enrolled with $slots churn slots (one third of ${millicores}m allocatable CPU)"
+  say "CI: enrolled with $slots churn slots (share ${share}m of ${millicores}m allocatable CPU across $enrolled enrolled classes)"
 else
   kubectl label node "$node" k3s-role- >/dev/null 2>&1 || true
   say "CI: NOT enrolled: no scale set in $(basename "$conf") declares $arch"
 fi
 
-if declares gate; then
+if [ "$gate" -eq 1 ]; then
   kubectl label node "$node" "homelab-worker.livespec.dev/gate-share-millicores=$share" --overwrite >/dev/null
   say "gate: enrolled (share ${share}m CPU)"
 else
@@ -98,7 +108,7 @@ fi
 # so enrolling or un-enrolling reconciles it in the same operation (v154).
 "$worker_queues"
 
-if declares factory python-agent; then
+if [ "$factory" -eq 1 ]; then
   kubectl label node "$node" ci-runner.io/factory=true --overwrite >/dev/null
   say "factory: enrolled (share ${share}m CPU)"
 else

@@ -112,7 +112,7 @@ def test_every_class_declaring_the_nodes_architecture_is_enrolled(tmp_path: Path
 
 
 @pytest.mark.parametrize(("cpu", "slots"), [("30", 3), ("12", 1), ("11500m", 1), ("2", 1)])
-def test_the_churn_slot_capacity_is_one_third_of_allocatable_cpu_at_the_fleet_slot_size(
+def test_with_every_class_enrolled_the_churn_slots_are_one_third_of_allocatable_cpu(
     tmp_path: Path, cpu: str, slots: int
 ) -> None:
     millicores = int(cpu[:-1]) if cpu.endswith("m") else int(cpu) * 1000
@@ -166,9 +166,41 @@ def test_a_repositorys_own_arm64_gate_line_enrolls_the_gate_class(tmp_path: Path
     result, calls = _run(tmp_path=tmp_path, conf=conf, cpu="12")
     assert result.returncode == 0, result.stderr
     assert (
-        f"kubectl label node {_NODE} homelab-worker.livespec.dev/gate-share-millicores=4000 --overwrite"
+        f"kubectl label node {_NODE} homelab-worker.livespec.dev/gate-share-millicores=6000 --overwrite"
         in calls
     )
+
+
+_CI_AND_GATE = (
+    "release some-arm64-k3s arm64 x\ngate gate amd64,arm64 none\nfactory python-agent amd64 lacks\n"
+)
+
+
+@pytest.mark.parametrize(("cpu", "share"), [("12", 6000), ("30", 15000), ("11500m", 5750)])
+def test_an_unenrolled_class_lends_its_share_to_the_enrolled_classes(
+    tmp_path: Path, cpu: str, share: int
+) -> None:
+    """Two enrolled classes split the allocatable CPU in halves, leaving none idle."""
+    result, calls = _run(tmp_path=tmp_path, conf=_CI_AND_GATE, cpu=cpu)
+    assert result.returncode == 0, result.stderr
+    assert (
+        f"kubectl label node {_NODE} homelab-worker.livespec.dev/gate-share-millicores={share} --overwrite"
+        in calls
+    )
+    [patch] = [c for c in calls if "churn-slot" in c]
+    assert f'"ci-runner.io/churn-slot":"{max(1, share // 2730)}"' in patch
+    assert "factory: NOT enrolled" in result.stdout
+
+
+def test_a_single_enrolled_class_takes_the_whole_allocatable_cpu(tmp_path: Path) -> None:
+    conf = "release some-k3s amd64 x\ngate gate arm64 none\nfactory python-agent amd64 lacks\n"
+    result, calls = _run(tmp_path=tmp_path, conf=conf, cpu="12")
+    assert result.returncode == 0, result.stderr
+    assert (
+        f"kubectl label node {_NODE} homelab-worker.livespec.dev/gate-share-millicores=12000 --overwrite"
+        in calls
+    )
+    assert not [c for c in calls if "churn-slot" in c]
 
 
 def test_the_gate_share_is_written_before_the_worker_queues_reconcile(tmp_path: Path) -> None:

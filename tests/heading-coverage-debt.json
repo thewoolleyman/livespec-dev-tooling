@@ -1010,13 +1010,6 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario: a worker's per-class capacity is derived from its allocatable resources",
-    "work_item": "livespec-dev-tooling-ko26ez.7",
-    "first_seen": "2026-11-07"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
     "heading": "## Scenario: a workflow GitHub cannot parse is refused at every gate",
     "work_item": "livespec-dev-tooling-f3q7r7",
     "first_seen": "2026-11-08"
