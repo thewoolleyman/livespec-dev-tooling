@@ -63,7 +63,6 @@ Public API:
 from __future__ import annotations
 
 import ast
-import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -73,6 +72,11 @@ if str(_VENDOR_DIR) not in sys.path:
     sys.path.insert(0, str(_VENDOR_DIR))
 
 from returns.io import IOFailure, IOResult, IOSuccess  # noqa: E402  — vendor-path-aware.
+
+from livespec_dev_tooling.check_inventory import (  # noqa: E402
+    annotation_values,
+    inventory_members,
+)
 
 __all__: list[str] = []
 
@@ -88,7 +92,9 @@ _SLUG_PREFIX = "check-"
 # its inventory line. `scripts/just/check.sh` already strips every `#`-comment
 # from that file before mirroring it against the justfile's literal array, so an
 # annotation is invisible to the inventory's existing reader.
-_INVENTORY_DECLARATION = re.compile(r"#\s*purity:\s*(?P<value>\S+)")
+# It is read through `check_inventory`, the one reader of that file's members and
+# annotations.
+_INVENTORY_DECLARATION_KEY = "purity"
 
 # What a `CHECK_PURITY` that is not a static string literal resolves to. It
 # names neither purity, so it reaches the malformed track — a computed
@@ -203,14 +209,10 @@ def _inventory_declarations(*, repo_root: Path) -> dict[str, str]:
     except (OSError, UnicodeDecodeError):
         return {}
     declarations: dict[str, str] = {}
-    for line in raw.splitlines():
-        stripped = line.strip()
-        if not stripped.startswith(_SLUG_PREFIX):
-            continue
-        matched = _INVENTORY_DECLARATION.search(stripped)
-        if matched is None:
-            continue
-        declarations[stripped.split("#", 1)[0].strip()] = matched.group("value")
+    for member in inventory_members(text=raw):
+        values = annotation_values(member=member, key=_INVENTORY_DECLARATION_KEY)
+        if values:
+            declarations[member.name] = values[0]
     return declarations
 
 

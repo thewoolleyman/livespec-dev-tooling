@@ -11,28 +11,34 @@ from typing import Any, cast
 from livespec_dev_tooling.checks._ci_matrix_parse import parse_ci_jobs
 from livespec_dev_tooling.incident_ci_payload import strict_json
 from livespec_dev_tooling.incident_ci_policy import CiTarget
+from livespec_dev_tooling.incident_gate_inventory import timing_classes
 
 __all__: list[str] = ["decode_inventory", "load_inventory", "render_inventory"]
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-egy3ri
 _PATH = Path(__file__).parent / "data/incident-ci-inventory.json"
-_FAST = {"check-lint", "check-format"}
 _TEXT = re.compile(r"[a-z][a-z0-9-]*")
 
 
-def render_inventory(*, workflow: str) -> str:
+def render_inventory(*, workflow: str, inventory: str) -> str:
     """Derive every actual normal member through the shared workflow parser.
 
-    The output depends only on the derived target set: a workflow edit that
-    leaves every job's contributed check targets unchanged renders the same
-    bytes, so the packaged inventory never tracks unrelated workflow bytes.
+    The output depends only on the derived target set and on each member's
+    `incident-timing` class, read from the `check-targets.txt` text in
+    `inventory` through the SAME reader the expedited local hooks use
+    (livespec-dev-tooling-oqpw6t), so one annotation classifies a gate on both
+    expedited paths. A member the inventory does not classify is unclassified.
+    A workflow edit that leaves every job's contributed check targets unchanged
+    renders the same bytes, so the packaged inventory never tracks unrelated
+    workflow bytes.
     """
+    timing = timing_classes(inventory=inventory)
     targets: list[CiTarget] = []
     for job in parse_ci_jobs(source=workflow):
         for name in sorted(job.contributed_check_slugs):
             targets.append(
                 CiTarget(
                     name=name,
-                    classification="fast" if name in _FAST else "unclassified",
+                    classification=timing.get(name, "unclassified"),
                     batch=job.name,
                     needs=("check-per-file-coverage",) if name == "check-coverage" else (),
                     produces=("coverage-data",) if name == "check-per-file-coverage" else (),

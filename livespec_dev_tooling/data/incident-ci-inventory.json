@@ -19,7 +19,7 @@
     },
     {
       "batch": "check-python",
-      "classification": "unclassified",
+      "classification": "slow",
       "consumes": [],
       "name": "check-types",
       "needs": [],
@@ -27,7 +27,7 @@
     },
     {
       "batch": "check-per-file-coverage",
-      "classification": "unclassified",
+      "classification": "slow",
       "consumes": [],
       "name": "check-per-file-coverage",
       "needs": [],
@@ -37,7 +37,7 @@
     },
     {
       "batch": "check-coverage",
-      "classification": "unclassified",
+      "classification": "slow",
       "consumes": [
         "coverage-data"
       ],
@@ -49,7 +49,7 @@
     },
     {
       "batch": "check-python-batch",
-      "classification": "unclassified",
+      "classification": "fast",
       "consumes": [],
       "name": "check-all-declared",
       "needs": [],
@@ -57,7 +57,7 @@
     },
     {
       "batch": "check-python-batch",
-      "classification": "unclassified",
+      "classification": "fast",
       "consumes": [],
       "name": "check-assert-never-exhaustiveness",
       "needs": [],
@@ -65,7 +65,7 @@
     },
     {
       "batch": "check-python-batch",
-      "classification": "unclassified",
+      "classification": "fast",
       "consumes": [],
       "name": "check-check-mutation",
       "needs": [],
@@ -73,7 +73,7 @@
     },
     {
       "batch": "check-python-batch",
-      "classification": "unclassified",
+      "classification": "fast",
       "consumes": [],
       "name": "check-file-lloc",
       "needs": [],
@@ -81,7 +81,7 @@
     },
     {
       "batch": "check-python-batch",
-      "classification": "unclassified",
+      "classification": "fast",
       "consumes": [],
       "name": "check-global-writes",
       "needs": [],
@@ -89,7 +89,7 @@
     },
     {
       "batch": "check-python-batch",
-      "classification": "unclassified",
+      "classification": "fast",
       "consumes": [],
       "name": "check-keyword-only-args",
       "needs": [],
@@ -97,7 +97,7 @@
     },
     {
       "batch": "check-python-batch",
-      "classification": "unclassified",
+      "classification": "fast",
       "consumes": [],
       "name": "check-local-memory-drift-audit",
       "needs": [],
@@ -105,7 +105,7 @@
     },
     {
       "batch": "check-python-batch",
-      "classification": "unclassified",
+      "classification": "fast",
       "consumes": [],
       "name": "check-main-guard",
       "needs": [],
@@ -113,7 +113,7 @@
     },
     {
       "batch": "check-python-batch",
-      "classification": "unclassified",
+      "classification": "fast",
       "consumes": [],
       "name": "check-match-keyword-only",
       "needs": [],
@@ -121,7 +121,7 @@
     },
     {
       "batch": "check-python-batch",
-      "classification": "unclassified",
+      "classification": "fast",
       "consumes": [],
       "name": "check-newtype-domain-primitives",
       "needs": [],
@@ -129,7 +129,7 @@
     },
     {
       "batch": "check-python-batch",
-      "classification": "unclassified",
+      "classification": "slow",
       "consumes": [],
       "name": "check-no-except-outside-io",
       "needs": [],
@@ -137,7 +137,7 @@
     },
     {
       "batch": "check-python-batch",
-      "classification": "unclassified",
+      "classification": "fast",
       "consumes": [],
       "name": "check-no-inheritance",
       "needs": [],
@@ -145,7 +145,7 @@
     },
     {
       "batch": "check-python-batch",
-      "classification": "unclassified",
+      "classification": "fast",
       "consumes": [],
       "name": "check-no-lloc-soft-warnings",
       "needs": [],
@@ -153,7 +153,7 @@
     },
     {
       "batch": "check-python-batch",
-      "classification": "unclassified",
+      "classification": "fast",
       "consumes": [],
       "name": "check-no-raise-outside-io",
       "needs": [],
@@ -161,7 +161,7 @@
     },
     {
       "batch": "check-python-batch",
-      "classification": "unclassified",
+      "classification": "fast",
       "consumes": [],
       "name": "check-no-write-direct",
       "needs": [],
@@ -169,7 +169,7 @@
     },
     {
       "batch": "check-python-batch",
-      "classification": "unclassified",
+      "classification": "fast",
       "consumes": [],
       "name": "check-pbt-coverage-pure-modules",
       "needs": [],
@@ -177,7 +177,7 @@
     },
     {
       "batch": "check-python-batch",
-      "classification": "unclassified",
+      "classification": "fast",
       "consumes": [],
       "name": "check-private-calls",
       "needs": [],
@@ -185,7 +185,7 @@
     },
     {
       "batch": "check-python-batch",
-      "classification": "unclassified",
+      "classification": "fast",
       "consumes": [],
       "name": "check-public-api-result-typed",
       "needs": [],
@@ -193,7 +193,7 @@
     },
     {
       "batch": "check-python-batch",
-      "classification": "unclassified",
+      "classification": "fast",
       "consumes": [],
       "name": "check-required-role-keys-declared",
       "needs": [],
@@ -201,7 +201,7 @@
     },
     {
       "batch": "check-python-batch",
-      "classification": "unclassified",
+      "classification": "fast",
       "consumes": [],
       "name": "check-rop-pipeline-shape",
       "needs": [],
@@ -209,7 +209,7 @@
     },
     {
       "batch": "check-python-batch",
-      "classification": "unclassified",
+      "classification": "fast",
       "consumes": [],
       "name": "check-rule-26-keep-out",
       "needs": [],
@@ -217,7 +217,7 @@
     },
     {
       "batch": "check-python-batch",
-      "classification": "unclassified",
+      "classification": "fast",
       "consumes": [],
       "name": "check-supervisor-discipline",
       "needs": [],
@@ -225,7 +225,7 @@
     },
     {
       "batch": "check-python-batch",
-      "classification": "unclassified",
+      "classification": "fast",
       "consumes": [],
       "name": "check-tests-mirror-pairing",
       "needs": [],
@@ -233,7 +233,7 @@
     },
     {
       "batch": "check-python-batch",
-      "classification": "unclassified",
+      "classification": "fast",
       "consumes": [],
       "name": "check-tests-no-subprocess-spawn",
       "needs": [],
@@ -241,7 +241,7 @@
     },
     {
       "batch": "check-python-batch",
-      "classification": "unclassified",
+      "classification": "fast",
       "consumes": [],
       "name": "check-wrapper-shape",
       "needs": [],
@@ -249,7 +249,7 @@
     },
     {
       "batch": "check-fleet-conformance",
-      "classification": "unclassified",
+      "classification": "fast",
       "consumes": [],
       "name": "check-fleet-conformance",
       "needs": [],
@@ -257,7 +257,7 @@
     },
     {
       "batch": "check-metadata",
-      "classification": "unclassified",
+      "classification": "fast",
       "consumes": [],
       "name": "check-check-coverage-incremental",
       "needs": [],
@@ -265,7 +265,7 @@
     },
     {
       "batch": "check-metadata",
-      "classification": "unclassified",
+      "classification": "fast",
       "consumes": [],
       "name": "check-red-green-replay",
       "needs": [],
@@ -273,7 +273,7 @@
     },
     {
       "batch": "check-metadata-batch",
-      "classification": "unclassified",
+      "classification": "fast",
       "consumes": [],
       "name": "check-agents-ai-references-resolve",
       "needs": [],
@@ -281,7 +281,7 @@
     },
     {
       "batch": "check-metadata-batch",
-      "classification": "unclassified",
+      "classification": "fast",
       "consumes": [],
       "name": "check-aggregate-completeness",
       "needs": [],
@@ -289,7 +289,7 @@
     },
     {
       "batch": "check-metadata-batch",
-      "classification": "unclassified",
+      "classification": "fast",
       "consumes": [],
       "name": "check-canonical-recipe-fidelity",
       "needs": [],
@@ -297,7 +297,7 @@
     },
     {
       "batch": "check-metadata-batch",
-      "classification": "unclassified",
+      "classification": "fast",
       "consumes": [],
       "name": "check-check-tools",
       "needs": [],
@@ -305,7 +305,7 @@
     },
     {
       "batch": "check-metadata-batch",
-      "classification": "unclassified",
+      "classification": "fast",
       "consumes": [],
       "name": "check-ci-gate-parity",
       "needs": [],
@@ -313,7 +313,7 @@
     },
     {
       "batch": "check-metadata-batch",
-      "classification": "unclassified",
+      "classification": "fast",
       "consumes": [],
       "name": "check-ci-matrix-completeness",
       "needs": [],
@@ -321,7 +321,7 @@
     },
     {
       "batch": "check-metadata-batch",
-      "classification": "unclassified",
+      "classification": "fast",
       "consumes": [],
       "name": "check-claude-md-coverage",
       "needs": [],
@@ -329,7 +329,7 @@
     },
     {
       "batch": "check-metadata-batch",
-      "classification": "unclassified",
+      "classification": "fast",
       "consumes": [],
       "name": "check-codex-hook-reconcilable",
       "needs": [],
@@ -337,7 +337,7 @@
     },
     {
       "batch": "check-metadata-batch",
-      "classification": "unclassified",
+      "classification": "fast",
       "consumes": [],
       "name": "check-comment-line-anchors",
       "needs": [],
@@ -345,7 +345,7 @@
     },
     {
       "batch": "check-metadata-batch",
-      "classification": "unclassified",
+      "classification": "fast",
       "consumes": [],
       "name": "check-commit-pairs-source-and-test",
       "needs": [],
@@ -353,7 +353,7 @@
     },
     {
       "batch": "check-metadata-batch",
-      "classification": "unclassified",
+      "classification": "fast",
       "consumes": [],
       "name": "check-delegated-gate-check-suite",
       "needs": [],
@@ -361,7 +361,7 @@
     },
     {
       "batch": "check-metadata-batch",
-      "classification": "unclassified",
+      "classification": "fast",
       "consumes": [],
       "name": "check-fabro-image-pin-lockstep",
       "needs": [],
@@ -369,7 +369,7 @@
     },
     {
       "batch": "check-metadata-batch",
-      "classification": "unclassified",
+      "classification": "fast",
       "consumes": [],
       "name": "check-fleet-marketplace-relative-sources",
       "needs": [],
@@ -377,7 +377,7 @@
     },
     {
       "batch": "check-metadata-batch",
-      "classification": "unclassified",
+      "classification": "fast",
       "consumes": [],
       "name": "check-handoff-dispatch-routing",
       "needs": [],
@@ -385,7 +385,7 @@
     },
     {
       "batch": "check-metadata-batch",
-      "classification": "unclassified",
+      "classification": "fast",
       "consumes": [],
       "name": "check-heading-coverage",
       "needs": [],
@@ -393,7 +393,7 @@
     },
     {
       "batch": "check-metadata-batch",
-      "classification": "unclassified",
+      "classification": "fast",
       "consumes": [],
       "name": "check-heading-coverage-debt-register",
       "needs": [],
@@ -401,7 +401,7 @@
     },
     {
       "batch": "check-metadata-batch",
-      "classification": "unclassified",
+      "classification": "fast",
       "consumes": [],
       "name": "check-hook-trees-not-io-exempt",
       "needs": [],
@@ -409,7 +409,7 @@
     },
     {
       "batch": "check-metadata-batch",
-      "classification": "unclassified",
+      "classification": "fast",
       "consumes": [],
       "name": "check-marketplace-ref-release-only",
       "needs": [],
@@ -417,7 +417,7 @@
     },
     {
       "batch": "check-metadata-batch",
-      "classification": "unclassified",
+      "classification": "fast",
       "consumes": [],
       "name": "check-no-direct-destructive-cli",
       "needs": [],
@@ -425,7 +425,7 @@
     },
     {
       "batch": "check-metadata-batch",
-      "classification": "unclassified",
+      "classification": "fast",
       "consumes": [],
       "name": "check-no-direct-github-access",
       "needs": [],
@@ -433,7 +433,7 @@
     },
     {
       "batch": "check-metadata-batch",
-      "classification": "unclassified",
+      "classification": "fast",
       "consumes": [],
       "name": "check-no-direct-tool-invocation",
       "needs": [],
@@ -441,7 +441,7 @@
     },
     {
       "batch": "check-metadata-batch",
-      "classification": "unclassified",
+      "classification": "fast",
       "consumes": [],
       "name": "check-no-fmt-directives",
       "needs": [],
@@ -449,7 +449,7 @@
     },
     {
       "batch": "check-metadata-batch",
-      "classification": "unclassified",
+      "classification": "fast",
       "consumes": [],
       "name": "check-no-shadow-ledger-body-identical",
       "needs": [],
@@ -457,7 +457,7 @@
     },
     {
       "batch": "check-metadata-batch",
-      "classification": "unclassified",
+      "classification": "fast",
       "consumes": [],
       "name": "check-no-shadow-ledger-body-typechecks",
       "needs": [],
@@ -465,7 +465,7 @@
     },
     {
       "batch": "check-metadata-batch",
-      "classification": "unclassified",
+      "classification": "fast",
       "consumes": [],
       "name": "check-no-todo-registry",
       "needs": [],
@@ -473,7 +473,7 @@
     },
     {
       "batch": "check-metadata-batch",
-      "classification": "unclassified",
+      "classification": "fast",
       "consumes": [],
       "name": "check-partition-completeness",
       "needs": [],
@@ -481,7 +481,7 @@
     },
     {
       "batch": "check-metadata-batch",
-      "classification": "unclassified",
+      "classification": "fast",
       "consumes": [],
       "name": "check-plan-anchor-declared",
       "needs": [],
@@ -489,7 +489,7 @@
     },
     {
       "batch": "check-metadata-batch",
-      "classification": "unclassified",
+      "classification": "fast",
       "consumes": [],
       "name": "check-plan-no-live-handoff-file",
       "needs": [],
@@ -497,7 +497,7 @@
     },
     {
       "batch": "check-metadata-batch",
-      "classification": "unclassified",
+      "classification": "fast",
       "consumes": [],
       "name": "check-plan-no-tombstone",
       "needs": [],
@@ -505,7 +505,7 @@
     },
     {
       "batch": "check-metadata-batch",
-      "classification": "unclassified",
+      "classification": "fast",
       "consumes": [],
       "name": "check-plugin-resolution",
       "needs": [],
@@ -513,7 +513,7 @@
     },
     {
       "batch": "check-metadata-batch",
-      "classification": "unclassified",
+      "classification": "fast",
       "consumes": [],
       "name": "check-primary-checkout-commit-refuse-hook-installed",
       "needs": [],
@@ -521,7 +521,7 @@
     },
     {
       "batch": "check-metadata-batch",
-      "classification": "unclassified",
+      "classification": "fast",
       "consumes": [],
       "name": "check-self-hosted-routing",
       "needs": [],
@@ -529,7 +529,7 @@
     },
     {
       "batch": "check-metadata-batch",
-      "classification": "unclassified",
+      "classification": "fast",
       "consumes": [],
       "name": "check-self-hosted-uv-lane",
       "needs": [],
@@ -537,7 +537,7 @@
     },
     {
       "batch": "check-metadata-batch",
-      "classification": "unclassified",
+      "classification": "slow",
       "consumes": [],
       "name": "check-shell-quality",
       "needs": [],
@@ -545,7 +545,7 @@
     },
     {
       "batch": "check-metadata-batch",
-      "classification": "unclassified",
+      "classification": "fast",
       "consumes": [],
       "name": "check-skill-invocation-paths",
       "needs": [],
@@ -553,7 +553,7 @@
     },
     {
       "batch": "check-metadata-batch",
-      "classification": "unclassified",
+      "classification": "fast",
       "consumes": [],
       "name": "check-source-trees-scoped-to-consumer",
       "needs": [],
@@ -561,7 +561,7 @@
     },
     {
       "batch": "check-metadata-batch",
-      "classification": "unclassified",
+      "classification": "fast",
       "consumes": [],
       "name": "check-tests-host-path-free",
       "needs": [],
@@ -569,7 +569,7 @@
     },
     {
       "batch": "check-metadata-batch",
-      "classification": "unclassified",
+      "classification": "fast",
       "consumes": [],
       "name": "check-tool-backed-check-completeness",
       "needs": [],
@@ -577,7 +577,7 @@
     },
     {
       "batch": "check-metadata-batch",
-      "classification": "unclassified",
+      "classification": "fast",
       "consumes": [],
       "name": "check-vendor-manifest",
       "needs": [],

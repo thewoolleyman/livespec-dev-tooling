@@ -15,7 +15,9 @@ for-loop in the check: justfile recipe. Behavioral tests verify:
   (the surviving producer->consumer data dependency)
 - per-target wall-time timings appear in the aggregate output
 - skip list is respected (skipped targets do not run)
-- core-budget cap is applied (_cap_workers bounds the worker count)
+- core-budget cap is applied (the shared runner's cap_workers bounds the
+  worker count; tests/livespec_dev_tooling/test_check_target_runner.py pins
+  the function itself)
 - failed targets surface in the summary and produce exit 1
 
 Private names are accessed via the imported module object (the
@@ -51,23 +53,29 @@ from __future__ import annotations
 
 import os
 import sys
-from concurrent.futures import Future, ThreadPoolExecutor
 from pathlib import Path
 from typing import NamedTuple
 
 import pytest
 
 import livespec_dev_tooling.parallel_check_dispatcher as mod
+from livespec_dev_tooling._check_target_runner import (
+    BLOCKED,
+    COMPLETED,
+    TargetOutcome,
+    cap_workers,
+)
 from livespec_dev_tooling._dispatcher_coverage_namespaces import (
+    COVERAGE_CONSUMERS,
     COVERAGE_NAMESPACES,
     build_namespace_dirs,
+    isolated_environments,
     target_env,
 )
 from livespec_dev_tooling.parallel_check_dispatcher import (
     TargetResult,
-    _cap_workers,
+    _as_result,
     _configure_logger,
-    _deferred_run,
     _emit_result,
     _emit_summary,
 )
@@ -79,22 +87,22 @@ _MODULE = _REPO_ROOT / "livespec_dev_tooling" / "parallel_check_dispatcher.py"
 
 
 # ---------------------------------------------------------------------------
-# _cap_workers
+# cap_workers (the shared runner's, used by main)
 # ---------------------------------------------------------------------------
 
 
 def test_cap_workers_default_follows_allowed_cpus_capped_at_eight() -> None:
     """With no --workers the count is the allowed CPUs, capped at 8."""
-    assert _cap_workers(requested=None, allowed=6) == 6
-    assert _cap_workers(requested=None, allowed=4) == 4
-    assert _cap_workers(requested=None, allowed=32) == 8
+    assert cap_workers(requested=None, allowed=6) == 6
+    assert cap_workers(requested=None, allowed=4) == 4
+    assert cap_workers(requested=None, allowed=32) == 8
 
 
 def test_cap_workers_explicit_request_is_bounded_by_allowed_cpus() -> None:
     """--workers N yields the smaller of N and the allowed CPUs."""
-    assert _cap_workers(requested=1, allowed=6) == 1
-    assert _cap_workers(requested=999, allowed=6) == 6
-    assert _cap_workers(requested=12, allowed=32) == 12
+    assert cap_workers(requested=1, allowed=6) == 1
+    assert cap_workers(requested=999, allowed=6) == 6
+    assert cap_workers(requested=12, allowed=32) == 12
 
 
 def _max_concurrent_targets(*, log: Path) -> int:
@@ -202,7 +210,7 @@ def test_incremental_collision_edge_retired() -> None:
     serialized after per-file-coverage (it runs fully concurrently in
     its own namespace).
     """
-    consumers = mod._COVERAGE_CONSUMERS  # noqa: SLF001
+    consumers = COVERAGE_CONSUMERS
     assert "check-check-coverage-incremental" not in consumers, (
         "the hand-pinned incremental->per-file-coverage collision edge must be retired; "
         f"got coverage-consumer edges {consumers!r}"
@@ -269,6 +277,27 @@ def test_build_namespace_dirs_shares_within_key_and_isolates_across(*, tmp_path:
         assert (ns_dir / "tmp").is_dir(), f"namespace dir {ns_dir} must carry a tmp/ subdir"
 
 
+def test_isolated_environments_overlay_the_base_and_remove_their_dirs() -> None:
+    """Every runner's isolation: coverage targets overlay `base`, others get `base`.
+
+    With no base, a non-coverage target inherits the caller's environment (None);
+    the minted dirs live outside any repo and are removed on exit.
+    """
+    base = {"PATH": "/bin", "KEPT": "yes"}
+    names = ["check-lint", "check-check-coverage-incremental"]
+    with isolated_environments(names=names, base=base) as given:
+        isolated = given["check-check-coverage-incremental"]
+        assert isolated is not None
+        coverage_dir = Path(isolated["COVERAGE_FILE"]).parent
+        assert coverage_dir.is_dir()
+        assert isolated["KEPT"] == "yes"
+        assert isolated["TMPDIR"] == str(coverage_dir / "tmp")
+        assert given["check-lint"] == base
+    assert not coverage_dir.exists()
+    with isolated_environments(names=["check-lint"], base=None) as inherited:
+        assert inherited == {"check-lint": None}
+
+
 def test_build_namespace_dirs_skips_skipped_targets(*, tmp_path: Path) -> None:
     """A coverage target in the skip set does not get a namespace dir.
 
@@ -284,75 +313,41 @@ def test_build_namespace_dirs_skips_skipped_targets(*, tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# _deferred_run (the surviving producer->consumer data dependency)
+# _as_result (the surviving producer->consumer data dependency's report shape)
 # ---------------------------------------------------------------------------
+#
+# The ordering itself (the consumer waits for its producer, and is blocked
+# when the producer fails) is the shared runner's and is pinned in
+# tests/livespec_dev_tooling/test_check_target_runner.py.
 
 
-def _make_done_future(*, result: TargetResult) -> Future[TargetResult]:
-    """Return an already-completed Future wrapping result."""
-    with ThreadPoolExecutor(max_workers=1) as pool:
-        fut: Future[TargetResult] = pool.submit(lambda: result)
-    return fut
-
-
-def test_deferred_run_skips_dependent_when_prereq_fails() -> None:
-    """_deferred_run marks the dependent skipped when the prereq exited non-zero."""
-    prereq = TargetResult(
-        name="check-per-file-coverage",
-        skipped=False,
-        exit_code=1,
-        wall_time_s=1.0,
-        output="FAIL",
+def test_blocked_consumer_is_reported_skipped_with_exit_one() -> None:
+    """A consumer whose producer failed is skipped, exit 1, naming the producer."""
+    result = _as_result(
+        outcome=TargetOutcome(
+            name="check-coverage",
+            status=BLOCKED,
+            returncode=None,
+            output="BLOCKED: prereq 'check-per-file-coverage' failed (exit 1)",
+        )
     )
-    result = _deferred_run(
-        name="check-coverage",
-        prereq_fut=_make_done_future(result=prereq),
-        cwd=Path(),
-        env=None,
+    assert (result.skipped, result.exit_code) == (True, 1)
+    assert "check-per-file-coverage" in result.output
+
+
+def test_completed_target_keeps_its_exit_code_timing_and_output() -> None:
+    """A completed target is reported with the runner's measured values."""
+    result = _as_result(
+        outcome=TargetOutcome(
+            name="check-lint", status=COMPLETED, returncode=2, wall_time_s=1.5, output="out"
+        )
     )
-    assert (
-        result.skipped is True
-    ), f"expected skipped=True when prereq failed; got skipped={result.skipped!r}"
-    assert (
-        "check-per-file-coverage" in result.output or "prereq" in result.output.lower()
-    ), f"expected prereq name in output; got {result.output!r}"
-
-
-def test_deferred_run_runs_dependent_when_prereq_succeeds(
-    *, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    """_deferred_run calls _run_one for the dependent when the prereq exited 0.
-
-    The isolated env handed to _deferred_run is forwarded to _run_one so
-    the consumer reads the producer's COVERAGE_FILE.
-    """
-    prereq = TargetResult(
-        name="check-per-file-coverage",
-        skipped=False,
-        exit_code=0,
-        wall_time_s=1.0,
-        output="ok",
+    assert (result.skipped, result.exit_code, result.wall_time_s, result.output) == (
+        False,
+        2,
+        1.5,
+        "out",
     )
-    called_with: list[tuple[str, dict[str, str] | None]] = []
-
-    def fake_run_one(*, name: str, cwd: Path, env: dict[str, str] | None) -> TargetResult:
-        _ = cwd
-        called_with.append((name, env))
-        return TargetResult(name=name, skipped=False, exit_code=0, wall_time_s=0.1, output="ran")
-
-    monkeypatch.setattr(mod, "_run_one", fake_run_one)
-
-    forwarded = {"COVERAGE_FILE": "/iso/.coverage"}
-    result = _deferred_run(
-        name="check-coverage",
-        prereq_fut=_make_done_future(result=prereq),
-        cwd=tmp_path,
-        env=forwarded,
-    )
-    assert result.exit_code == 0, f"expected exit_code=0; got {result.exit_code}"
-    assert called_with == [
-        ("check-coverage", forwarded)
-    ], f"expected _run_one called once with the forwarded isolated env; got {called_with}"
 
 
 # ---------------------------------------------------------------------------

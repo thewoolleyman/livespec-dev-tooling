@@ -1,74 +1,74 @@
 # Canonical check inventory for `just check`.
-check-agents-ai-references-resolve
-check-aggregate-completeness
-check-all-declared
-check-assert-never-exhaustiveness
-check-branch-protection-alignment
-check-canonical-recipe-fidelity
-check-check-coverage-incremental
-check-check-mutation
-check-check-tools
-check-ci-gate-parity
-check-ci-matrix-completeness
-check-claude-md-coverage
-check-codex-hook-reconcilable
-check-comment-line-anchors
-check-commit-pairs-source-and-test
-check-delegated-gate-check-suite
-check-file-lloc
-check-fleet-marketplace-relative-sources
-check-global-writes
-check-handoff-dispatch-routing
-check-heading-coverage
-check-heading-coverage-debt-register
-check-hook-trees-not-io-exempt
-check-keyword-only-args
-check-local-memory-drift-audit
-check-main-guard
-check-marketplace-ref-release-only
-check-master-ci-green
-check-match-keyword-only
-check-newtype-domain-primitives
-check-no-direct-destructive-cli
-check-no-direct-tool-invocation
-check-no-except-outside-io
-check-no-fmt-directives
-check-no-inheritance
-check-no-lloc-soft-warnings
-check-no-raise-outside-io
-check-no-shadow-ledger-body-identical
-check-no-shadow-ledger-body-typechecks
-check-no-todo-registry
-check-no-write-direct
-check-partition-completeness
-check-pbt-coverage-pure-modules
-check-per-file-coverage
-check-plan-anchor-declared
-check-plan-epic-parity
-check-plan-no-live-handoff-file
-check-plan-no-tombstone
-check-plan-record-conformance
-check-plugin-resolution
-check-primary-checkout-commit-refuse-hook-installed
-check-private-calls
-check-public-api-result-typed
-check-red-green-replay
-check-required-role-keys-declared
-check-rop-pipeline-shape
-check-rule-26-keep-out
-check-self-hosted-routing
-check-self-hosted-uv-lane
-check-shell-quality
-check-skill-invocation-paths
-check-source-trees-scoped-to-consumer
-check-supervisor-discipline
-check-tests-mirror-pairing
-check-tests-no-subprocess-spawn
-check-tool-backed-check-completeness
-check-vendor-manifest
-check-work-item-interpolation-delimiters
-check-work-item-status-vocabulary
-check-wrapper-shape
+check-agents-ai-references-resolve  # incident-timing: fast
+check-aggregate-completeness  # incident-timing: fast
+check-all-declared  # incident-timing: fast
+check-assert-never-exhaustiveness  # incident-timing: fast
+check-branch-protection-alignment  # incident-timing: fast
+check-canonical-recipe-fidelity  # incident-timing: fast
+check-check-coverage-incremental  # incident-timing: fast
+check-check-mutation  # incident-timing: fast
+check-check-tools  # incident-timing: fast
+check-ci-gate-parity  # incident-timing: fast
+check-ci-matrix-completeness  # incident-timing: fast
+check-claude-md-coverage  # incident-timing: fast
+check-codex-hook-reconcilable  # incident-timing: fast
+check-comment-line-anchors  # incident-timing: fast
+check-commit-pairs-source-and-test  # incident-timing: fast
+check-delegated-gate-check-suite  # incident-timing: fast
+check-file-lloc  # incident-timing: fast
+check-fleet-marketplace-relative-sources  # incident-timing: fast
+check-global-writes  # incident-timing: fast
+check-handoff-dispatch-routing  # incident-timing: fast
+check-heading-coverage  # incident-timing: fast
+check-heading-coverage-debt-register  # incident-timing: fast
+check-hook-trees-not-io-exempt  # incident-timing: fast
+check-keyword-only-args  # incident-timing: fast
+check-local-memory-drift-audit  # incident-timing: fast
+check-main-guard  # incident-timing: fast
+check-marketplace-ref-release-only  # incident-timing: fast
+check-master-ci-green  # incident-timing: fast
+check-match-keyword-only  # incident-timing: fast
+check-newtype-domain-primitives  # incident-timing: fast
+check-no-direct-destructive-cli  # incident-timing: fast
+check-no-direct-tool-invocation  # incident-timing: fast
+check-no-except-outside-io  # incident-timing: slow
+check-no-fmt-directives  # incident-timing: fast
+check-no-inheritance  # incident-timing: fast
+check-no-lloc-soft-warnings  # incident-timing: fast
+check-no-raise-outside-io  # incident-timing: fast
+check-no-shadow-ledger-body-identical  # incident-timing: fast
+check-no-shadow-ledger-body-typechecks  # incident-timing: fast
+check-no-todo-registry  # incident-timing: fast
+check-no-write-direct  # incident-timing: fast
+check-partition-completeness  # incident-timing: fast
+check-pbt-coverage-pure-modules  # incident-timing: fast
+check-per-file-coverage  # incident-timing: slow
+check-plan-anchor-declared  # incident-timing: fast
+check-plan-epic-parity  # incident-timing: fast
+check-plan-no-live-handoff-file  # incident-timing: fast
+check-plan-no-tombstone  # incident-timing: fast
+check-plan-record-conformance  # incident-timing: fast
+check-plugin-resolution  # incident-timing: fast
+check-primary-checkout-commit-refuse-hook-installed  # incident-timing: fast
+check-private-calls  # incident-timing: fast
+check-public-api-result-typed  # incident-timing: fast
+check-red-green-replay  # incident-timing: fast
+check-required-role-keys-declared  # incident-timing: fast
+check-rop-pipeline-shape  # incident-timing: fast
+check-rule-26-keep-out  # incident-timing: fast
+check-self-hosted-routing  # incident-timing: fast
+check-self-hosted-uv-lane  # incident-timing: fast
+check-shell-quality  # incident-timing: slow
+check-skill-invocation-paths  # incident-timing: fast
+check-source-trees-scoped-to-consumer  # incident-timing: fast
+check-supervisor-discipline  # incident-timing: fast
+check-tests-mirror-pairing  # incident-timing: fast
+check-tests-no-subprocess-spawn  # incident-timing: fast
+check-tool-backed-check-completeness  # incident-timing: fast
+check-vendor-manifest  # incident-timing: fast
+check-work-item-interpolation-delimiters  # incident-timing: fast
+check-work-item-status-vocabulary  # incident-timing: fast
+check-wrapper-shape  # incident-timing: fast
 
 # Repo-private block.
 #
@@ -85,28 +85,37 @@ check-wrapper-shape
 # as a `CHECK_PURITY` constant in its own `livespec_dev_tooling/checks/<slug>.py`
 # module, so the declaration travels with the library to every consumer. Only a
 # member that exists ONLY here is declared here.
-check-ansible-lint  # purity: tree-pure
-check-ansible-hostname-free  # purity: tree-pure
+check-ansible-lint  # purity: tree-pure # incident-timing: slow
+check-ansible-hostname-free  # purity: tree-pure # incident-timing: fast
 # Reads this repository's own `.livespec.jsonc` against its own
 # `ansible/inventory/group_vars/dev_hosts.yml` and nothing else, so the same
 # tree always yields the same verdict.
-check-dev-host-fabro-client-bins-declared  # purity: tree-pure
-# Local incident timing is independent of purity. These existing full recipes
-# measured 1.93 s and 1.57 s on 2026-11-03; the executor still enforces 60 s.
-# Missing declarations remain explicit deferrals, never guessed fast checks.
+check-dev-host-fabro-client-bins-declared  # purity: tree-pure # incident-timing: fast
+# Incident timing is independent of purity. Every member above and below
+# carries a MEASURED `incident-timing` class: each recipe was run alone, in
+# sequence, on vmi3006760 at load ~39 on 2026-11-09
+# (livespec-dev-tooling-oqpw6t). 78 finished in under 30 s and are `fast`; the 7
+# that took 76.9 s or hit the 90 s measurement cap are `slow` and stay deferred
+# to master's complete CI. This one annotation classifies a gate on BOTH
+# expedited paths: the local hooks read it here, and the CI entrance reads it
+# from its packaged inventory, regenerated from this file. The local hooks run
+# fast gates in parallel through the normal aggregate's own runner and still
+# enforce 60 s per gate, so a fast member that slows down is recorded as a
+# deferred timeout.
+# A new member needs a measured class; a missing one is an explicit deferral.
 check-lint  # purity: tree-pure # incident-timing: fast
 check-format  # purity: tree-pure # incident-timing: fast
-check-types  # purity: tree-pure
-check-coverage  # purity: tree-pure
+check-types  # purity: tree-pure # incident-timing: slow
+check-coverage  # purity: tree-pure # incident-timing: slow
 # Fetches `.livespec-fleet-manifest.jsonc` from livespec master and sweeps ~35
 # GitHub API reads across the fleet: a verdict about nine OTHER repositories at
 # this instant.
-check-fleet-conformance  # purity: world-reading
+check-fleet-conformance  # purity: world-reading # incident-timing: fast
 # The admin-scoped twin, reading those repositories' live branch-protection
 # state. One sibling's settings already refused a hand push here on 2026-09-06.
-check-fleet-conformance-admin  # purity: world-reading
-check-fabro-image-pin-lockstep  # purity: tree-pure
-check-no-direct-github-access  # purity: tree-pure
+check-fleet-conformance-admin  # purity: world-reading # incident-timing: slow
+check-fabro-image-pin-lockstep  # purity: tree-pure # incident-timing: fast
+check-no-direct-github-access  # purity: tree-pure # incident-timing: fast
 # Scopes itself to the `<base>...HEAD` range plus the staged, unstaged and
 # untracked working set — none of which the committed tree determines.
 #
@@ -119,10 +128,10 @@ check-no-direct-github-access  # purity: tree-pure
 # an authorized tree carrying its label. So a delegated push runs this member on
 # the PUSHING HOST and ANDs its result into the verdict, per the "What the
 # delegated gate runs" bullet of SPECIFICATION/contracts.md (v082).
-check-no-workflow-edits  # purity: world-reading  # authority: ledger
+check-no-workflow-edits  # purity: world-reading  # authority: ledger # incident-timing: fast
 # RANGE mode judges every non-merge commit in `origin/master..HEAD`, each
 # against its OWN message: the commits around the tree, not the tree.
-check-shipped-path-release-guard  # purity: world-reading
+check-shipped-path-release-guard  # purity: world-reading # incident-timing: fast
 # Reads only the committed test modules under tests/.
-check-tests-host-path-free  # purity: tree-pure
-check-uv-lock-version-sync  # purity: tree-pure
+check-tests-host-path-free  # purity: tree-pure # incident-timing: fast
+check-uv-lock-version-sync  # purity: tree-pure # incident-timing: fast
