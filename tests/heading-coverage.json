@@ -2445,9 +2445,8 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a worker's per-class capacity is derived from its allocatable resources",
-    "test": "TODO",
-    "reason": "A real test at the integration tier or above is owed for this heading: it exercises the capacity derivation and cohort-quota reconciliation against mocked node resources. livespec-dev-tooling-ko26ez.7 owns it.",
-    "work_item": "livespec-dev-tooling-ko26ez.7"
+    "test": "tests.spec.test_homelab_worker_enroll.test_an_unenrolled_class_lends_its_share_to_the_enrolled_classes",
+    "reason": "Integration tier: runs the real homelab-worker/enroll-workload-classes.sh under bash against a stub kubectl with mocked allocatable CPU and a mocked architecture list in which two classes are enrolled and the factory class is not. It asserts each enrolled class gets an equal share (the gate-share label) and that the CI share is expressed in churn slots at the fleet's 2.73-CPU slot size, at least one; no committed capacity value is pinned (livespec-dev-tooling-ko26ez.7)."
   },
   {
     "spec_root": "SPECIFICATION",
