@@ -48,6 +48,9 @@ _HTTP_CREATED = 201
 _HTTP_NOT_FOUND = 404
 _HTTP_UNPROCESSABLE = 422
 _SUBMODULE = "160000"
+# GitHub lists at most 250 commits of a pull, one hundred to a page.
+_COMMIT_PAGE_SIZE = 100
+_COMMIT_LISTING_PAGES = 3
 
 
 def _object(*, value: object) -> dict[str, Any]:
@@ -120,17 +123,28 @@ class RecoveryEffects:
         )
 
     def _pull_messages(self, *, number: int) -> tuple[str, ...] | None:
-        """The armed pull's own commit messages; a rebase merge lands each one in order."""
-        status, listed = self.forge.request(
-            method="GET", path=f"pulls/{number}/commits?per_page=100"
-        )
-        rows = cast("list[object]", listed) if isinstance(listed, list) else []
-        messages = tuple(
-            _object(value=_object(value=row).get("commit")).get("message") for row in rows
-        )
-        if status != _HTTP_OK or not all(isinstance(text, str) for text in messages):
-            return None
-        return tuple(cast("str", text).strip() for text in messages)
+        """The armed pull's own commit messages; a rebase merge lands each one in order.
+
+        The listing answers at most one hundred commits a page, so every page is read until
+        a short one. The forge lists no more than `_COMMIT_LISTING_PAGES` pages for a pull;
+        a longer pull reads as incomplete and cannot match its landed chain.
+        """
+        messages: list[str] = []
+        for page in range(1, _COMMIT_LISTING_PAGES + 1):
+            suffix = "" if page == 1 else f"&page={page}"
+            status, listed = self.forge.request(
+                method="GET", path=f"pulls/{number}/commits?per_page={_COMMIT_PAGE_SIZE}{suffix}"
+            )
+            if status != _HTTP_OK or not isinstance(listed, list):
+                return None
+            rows = cast("list[object]", listed)
+            texts = [_object(value=_object(value=row).get("commit")).get("message") for row in rows]
+            if not all(isinstance(text, str) for text in texts):
+                return None
+            messages.extend(cast("str", text).strip() for text in texts)
+            if len(rows) < _COMMIT_PAGE_SIZE:
+                break
+        return tuple(messages)
 
     def landed_on(self, *, commit: str) -> bool | None:
         """Whether `commit` is on master: True, False, or None when unobserved."""
