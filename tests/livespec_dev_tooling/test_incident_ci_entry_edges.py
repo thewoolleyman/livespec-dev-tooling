@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import json
 import os
-import subprocess
 from dataclasses import replace
 
 import pytest
 
 from livespec_dev_tooling import incident_ci_entry as module
+from livespec_dev_tooling._check_target_runner import COMPLETED, LAUNCH_FAILED, TargetOutcome
 from livespec_dev_tooling.incident_ci_policy import CiEvent, CiOutcome, CiTarget
 from tests.livespec_dev_tooling.test_incident_ci_payload import packet
 
@@ -105,9 +105,11 @@ def test_execution_rechecks_before_any_member_and_preserves_failure(tmp_path, mo
     )
     for code in (13, -15):
         monkeypatch.setattr(
-            module.subprocess,
-            "run",
-            lambda *_a, code=code, **_k: subprocess.CompletedProcess([], code),
+            module,
+            "run_targets",
+            lambda *, runs, code=code, **_k: tuple(
+                TargetOutcome(name=run.name, status=COMPLETED, returncode=code) for run in runs
+            ),
         )
         assert value.execute(
             plan=selected,
@@ -117,10 +119,15 @@ def test_execution_rechecks_before_any_member_and_preserves_failure(tmp_path, mo
             environ=dict(os.environ),
         ) == (13 if code == 13 else 143)
 
-    def unavailable(*_a, **_k):
-        raise OSError("missing just")
+    def unavailable(*, runs, **_k):
+        return tuple(
+            TargetOutcome(
+                name=run.name, status=LAUNCH_FAILED, returncode=127, output="missing just"
+            )
+            for run in runs
+        )
 
-    monkeypatch.setattr(module.subprocess, "run", unavailable)
+    monkeypatch.setattr(module, "run_targets", unavailable)
     assert (
         value.execute(
             plan=selected,
@@ -131,6 +138,72 @@ def test_execution_rechecks_before_any_member_and_preserves_failure(tmp_path, mo
         )
         == 127
     )
+
+
+def test_a_recheck_failing_mid_run_records_finished_members_and_refuses(tmp_path, monkeypatch):
+    # One worker, so the second member's launch-time recheck sees the first
+    # member's revocation; nothing after a failed recheck launches.
+    monkeypatch.setattr(module, "current_allowed_cpu_count", lambda: 1)
+    (tmp_path / "justfile").write_text(
+        "check-fast:\n    touch revoked\ncheck-slow:\n    touch slow-ran\n"
+    )
+    value = replace(
+        entry(tmp_path=tmp_path),
+        targets=(
+            CiTarget(name="check-fast", classification="fast"),
+            CiTarget(name="check-slow", classification="fast"),
+        ),
+        current=lambda **_: not (tmp_path / "revoked").exists(),
+    )
+    report = tmp_path / "results.jsonl"
+    assert (
+        value.execute(
+            plan=plan(value=value),
+            names=("check-fast", "check-slow"),
+            report=report,
+            payload=json.dumps(packet()),
+            environ=dict(os.environ),
+        )
+        == 2
+    )
+    rows = [CiOutcome(**json.loads(line)) for line in report.read_text().splitlines()]
+    assert [(row.name, row.outcome) for row in rows] == [("check-fast", "passed")]
+    assert not (tmp_path / "slow-ran").exists()
+
+
+def test_a_consumer_whose_producer_failed_is_recorded_failed_without_running(tmp_path):
+    # Normal mode selects every member, including the coverage pair, so the
+    # normal aggregate's producer/consumer edge applies here too.
+    (tmp_path / "justfile").write_text(
+        "check-per-file-coverage:\n    exit 3\ncheck-coverage:\n    touch consumer-ran\n"
+    )
+    value = module.CiEntry(
+        repo=tmp_path,
+        targets=(
+            CiTarget(name="check-per-file-coverage", classification="fast"),
+            CiTarget(name="check-coverage", classification="fast"),
+        ),
+    )
+    push = CiEvent(kind="push", repository="owner/repo", base_sha="a" * 40, head_sha="b" * 40)
+    selected = value.plan(event=push, payload="", environ=dict(os.environ))
+    assert selected is not None
+    report = tmp_path / "results.jsonl"
+    assert (
+        value.execute(
+            plan=selected,
+            names=("check-per-file-coverage", "check-coverage"),
+            report=report,
+            payload="",
+            environ=dict(os.environ),
+        )
+        == 3
+    )
+    rows = [CiOutcome(**json.loads(line)) for line in report.read_text().splitlines()]
+    assert [(row.name, row.outcome) for row in rows] == [
+        ("check-per-file-coverage", "failed"),
+        ("check-coverage", "failed"),
+    ]
+    assert not (tmp_path / "consumer-ran").exists()
 
 
 @pytest.mark.parametrize("mutation", ["selected", "environment"])

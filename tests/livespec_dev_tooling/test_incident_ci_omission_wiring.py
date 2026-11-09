@@ -393,7 +393,12 @@ def test_committed_ci_yml_omits_only_through_the_released_aggregate() -> None:
 def test_the_guarded_members_are_the_ones_the_controller_defers_for_coverage_or_spec() -> None:
     aggregate = _released_aggregate()
     assert aggregate["status"] == "passed"
-    assert set(aggregate["passed"]) == {"check-format", "check-lint"}
+    # Every member check-targets.txt annotates fast runs in the incident job,
+    # except those the coverage or spec policy defers (livespec-dev-tooling-oqpw6t).
+    deferred_names = {deferral["name"] for deferral in aggregate["deferred"]}
+    fast = {target.name for target in load_inventory() if target.classification == "fast"}
+    assert set(aggregate["passed"]) == fast - deferred_names
+    assert {"check-format", "check-lint", "check-file-lloc"} <= set(aggregate["passed"])
     job_of = {target.name: target.batch for target in load_inventory()}
     deferred: dict[str, set[str]] = {}
     for deferral in aggregate["deferred"]:
@@ -401,7 +406,7 @@ def test_the_guarded_members_are_the_ones_the_controller_defers_for_coverage_or_
             deferred.setdefault(job_of[deferral["name"]], set()).add(deferral["name"])
     assert deferred == _OMITTED_BY_JOB
     assert {deferral["reason"] for deferral in aggregate["deferred"]} == _OMITTING_REASONS | {
-        "incident-policy:unclassified"
+        "incident-policy:slow"
     }
 
 

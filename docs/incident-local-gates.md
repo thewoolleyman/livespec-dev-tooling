@@ -6,18 +6,29 @@ incident commits or pushes by themselves. The hook entrance and the direct gate
 entrances below now resolve incident mode through a trusted shared boundary.
 
 The inventory reader preserves the population and order of `check-targets.txt`.
-Only one exact `incident-timing: fast` annotation selects a target; slow, missing,
-invalid, conflicting and duplicate declarations produce explicit deferrals.
-Purity declarations continue to describe normal memoization independently.
-The two annotated existing recipes, `check-lint` and `check-format`, were measured
-at 1.93 and 1.57 seconds on 2026-11-03. Those measurements are not a portable
-promise: every selected invocation still has its own sixty-second ceiling.
+It reads members through `check_inventory`, the same membership rule the normal
+aggregate applies, so the incident path sees exactly the members `just check`
+runs. Only one exact `incident-timing: fast` annotation selects a target; slow,
+missing, invalid, conflicting and duplicate declarations produce explicit
+deferrals. Purity declarations continue to describe normal memoization
+independently. Every member carries a class measured on 2026-11-09
+(livespec-dev-tooling-oqpw6t): 78 are `fast` and 7 are `slow`. Those
+measurements are not a portable promise: every selected invocation still has its
+own sixty-second ceiling. The CI entrance's packaged inventory takes its timing
+classes from the same annotations through the same reader.
 
-The executor launches selected commands sequentially in separate owned process
-groups. It captures real failure output and exit status. A command that reaches
-the ceiling receives process-group termination and a `deferred-timeout` result,
-without a passing return code. The report is `expedited-local-partial`; it must
-never be written as a normal full-suite, coverage-cache or factory verdict.
+The executor is the normal aggregate's own runner (`_check_target_runner`), the
+one `parallel_check_dispatcher` uses. Selected commands run in parallel under
+the same worker cap, each in its own session with stdin closed and output
+spooled to a temporary file, and each process group is killed when the command
+ends. A coverage-touching gate gets the same isolated `COVERAGE_FILE` and
+`TMPDIR` the normal aggregate gives it, and a coverage consumer waits for its
+producer and is deferred when the producer does not pass. The expedited path
+adds only the per-command deadline: a command that
+reaches the ceiling receives process-group termination and a `deferred-timeout`
+result, without a passing return code. The report is `expedited-local-partial`;
+it must never be written as a normal full-suite, coverage-cache or factory
+verdict.
 
 `route_resolved_gates` accepts the canonical resolver's context structurally.
 Normal mode returns `None`, allowing the caller's existing normal body to

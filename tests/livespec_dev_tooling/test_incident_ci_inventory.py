@@ -13,6 +13,7 @@ from livespec_dev_tooling import incident_ci_inventory as module
 _ROOT = Path(__file__).resolve().parents[2]
 _WORKFLOW = _ROOT / ".github/workflows/ci.yml"
 _PACKAGED = _ROOT / "livespec_dev_tooling/data/incident-ci-inventory.json"
+_INVENTORY = _ROOT / "check-targets.txt"
 _HOSTED_RUNS_ON = (
     "    runs-on: ${{ fromJSON(github.event_name == 'push' && vars.CI_RUNNER_LABELS_MASTER"
     " || vars.CI_RUNNER_LABELS || '[\"ubuntu-latest\"]') }}\n"
@@ -55,14 +56,16 @@ def _workflow(*, jobs: dict[str, list[str]]) -> str:
 def test_packaged_inventory_equals_the_target_set_derived_from_the_live_workflow():
     # A target added, removed or renamed in ci.yml shows up here as a named
     # difference, and regenerating only the packaged data file resolves it.
-    derived = module.decode_inventory(text=module.render_inventory(workflow=_WORKFLOW.read_text()))
+    # A timing annotation changed in check-targets.txt shows up the same way.
+    derived = module.decode_inventory(
+        text=module.render_inventory(
+            workflow=_WORKFLOW.read_text(), inventory=_INVENTORY.read_text()
+        )
+    )
     packaged = module.load_inventory()
     assert {t.name for t in derived} ^ {t.name for t in packaged} == set()
     assert set(derived) == set(packaged)
-    assert {t.name for t in packaged if t.classification == "fast"} == {
-        "check-lint",
-        "check-format",
-    }
+    assert {t.classification for t in packaged} == {"fast", "slow"}
     coverage = next(t for t in packaged if t.name == "check-coverage")
     assert coverage.needs == ("check-per-file-coverage",)
     assert coverage.consumes == ("coverage-data",)
@@ -75,29 +78,60 @@ def test_workflow_edit_that_keeps_the_target_set_renders_the_packaged_bytes():
         _HOSTED_RUNS_ON, "    runs-on: ubuntu-latest\n    timeout-minutes: 9\n"
     )
     assert edited != workflow
-    assert module.render_inventory(workflow=edited) == _PACKAGED.read_text()
-    assert module.render_inventory(workflow=edited) == module.render_inventory(workflow=workflow)
+    inventory = _INVENTORY.read_text()
+    assert module.render_inventory(workflow=edited, inventory=inventory) == _PACKAGED.read_text()
+    assert module.render_inventory(workflow=edited, inventory=inventory) == (
+        module.render_inventory(workflow=workflow, inventory=inventory)
+    )
+
+
+_TIMINGS = "check-lint # incident-timing: fast\ncheck-types # incident-timing: slow\n"
 
 
 def test_rendered_inventory_follows_only_the_contributed_target_set():
     base = _workflow(jobs={"python": ["check-lint", "check-types"], "meta": ["check-shell"]})
-    rendered = module.decode_inventory(text=module.render_inventory(workflow=base))
+    rendered = module.decode_inventory(
+        text=module.render_inventory(workflow=base, inventory=_TIMINGS)
+    )
     assert {(t.name, t.batch, t.classification) for t in rendered} == {
         ("check-lint", "python", "fast"),
-        ("check-types", "python", "unclassified"),
+        ("check-types", "python", "slow"),
         ("check-shell", "meta", "unclassified"),
     }
-    assert module.render_inventory(workflow=base.replace("on: push", "on: [push]")) == (
-        module.render_inventory(workflow=base)
-    )
+    assert module.render_inventory(
+        workflow=base.replace("on: push", "on: [push]"), inventory=_TIMINGS
+    ) == (module.render_inventory(workflow=base, inventory=_TIMINGS))
     renamed = _workflow(jobs={"python": ["check-lint", "check-typing"], "meta": ["check-shell"]})
     assert {
-        t.name for t in module.decode_inventory(text=module.render_inventory(workflow=renamed))
+        t.name
+        for t in module.decode_inventory(
+            text=module.render_inventory(workflow=renamed, inventory=_TIMINGS)
+        )
     } == {
         "check-lint",
         "check-typing",
         "check-shell",
     }
+
+
+def test_a_gate_annotated_fast_in_check_targets_is_classified_fast_in_ci():
+    workflow = _workflow(jobs={"python": ["check-file-lloc", "check-types"]})
+    inventory = (
+        "# canonical inventory\n"
+        "check-file-lloc  # incident-timing: fast\n"
+        "check-types  # purity: tree-pure # incident-timing: slow\n"
+    )
+    rendered = module.decode_inventory(
+        text=module.render_inventory(workflow=workflow, inventory=inventory)
+    )
+    assert {t.name: t.classification for t in rendered} == {
+        "check-file-lloc": "fast",
+        "check-types": "slow",
+    }
+    unannotated = module.decode_inventory(
+        text=module.render_inventory(workflow=workflow, inventory="check-file-lloc\n")
+    )
+    assert {t.classification for t in unannotated} == {"unclassified"}
 
 
 @pytest.mark.parametrize(

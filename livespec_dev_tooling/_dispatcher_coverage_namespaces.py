@@ -1,19 +1,33 @@
-"""Coverage-namespace isolation for the parallel check dispatcher.
+"""Coverage-namespace isolation for every runner of check targets.
 
 Moved out of `parallel_check_dispatcher` unchanged (work-item
 livespec-dev-tooling-cmn's namespace assignment) so that module stays under the
 logical-line ceiling. Each coverage-touching target maps to a namespace key; the
-dispatcher mints one isolated temp dir per distinct key and exports it to the
+runner mints one isolated temp dir per distinct key and exports it to the
 target's `just` subprocess as COVERAGE_FILE and TMPDIR.
+
+The expedited incident paths use the same isolation and the same data
+dependency through `isolated_environments` and `COVERAGE_CONSUMERS`, so a
+coverage-touching target runs alike whichever path selected it
+(livespec-dev-tooling-oqpw6t).
 """
 
 from __future__ import annotations
 
 import os
+import shutil
 import tempfile
+from collections.abc import Iterator, Mapping, Sequence
+from contextlib import contextmanager
 from pathlib import Path
 
-__all__: list[str] = ["COVERAGE_NAMESPACES", "build_namespace_dirs", "target_env"]
+__all__: list[str] = [
+    "COVERAGE_CONSUMERS",
+    "COVERAGE_NAMESPACES",
+    "build_namespace_dirs",
+    "isolated_environments",
+    "target_env",
+]
 
 COVERAGE_NAMESPACES: dict[str, str] = {
     # The full-tree coverage pair shares one data file: per-file-coverage
@@ -27,6 +41,15 @@ COVERAGE_NAMESPACES: dict[str, str] = {
     # pair's `coverage combine`, so it no longer needs to be serialized
     # after per-file-coverage (the retired 7us.6 collision edge).
     "check-check-coverage-incremental": "incremental",
+}
+
+# Genuine read-after-write DATA dependencies (consumer -> producer). The
+# consumer reads the producer's isolated COVERAGE_FILE, so it must start only
+# after the producer has finished writing it. This is the ONLY ordering edge
+# that survives the isolation redesign; it is data flow, not collision
+# avoidance. Both endpoints MUST share a namespace in COVERAGE_NAMESPACES.
+COVERAGE_CONSUMERS: dict[str, str] = {
+    "check-coverage": "check-per-file-coverage",
 }
 
 
@@ -62,11 +85,14 @@ def build_namespace_dirs(
     return dirs
 
 
-def target_env(*, name: str, namespace_dirs: dict[str, Path]) -> dict[str, str] | None:
+def target_env(
+    *, name: str, namespace_dirs: dict[str, Path], base: Mapping[str, str] | None = None
+) -> dict[str, str] | None:
     """Return the isolated env for a coverage-touching target, else None.
 
-    For a target mapped to a coverage namespace, returns a COPY of the
-    process environment with COVERAGE_FILE pointed at `<ns_dir>/.coverage`
+    For a target mapped to a coverage namespace, returns a COPY of `base`
+    (the process environment when None) with COVERAGE_FILE pointed at
+    `<ns_dir>/.coverage`
     and TMPDIR pointed at `<ns_dir>/tmp`. A COVERAGE_PROCESS_START child
     spawned by the target inherits this COVERAGE_FILE, so its data lands
     in the same isolated dir. Returns None for non-coverage targets (the
@@ -82,9 +108,36 @@ def target_env(*, name: str, namespace_dirs: dict[str, Path]) -> dict[str, str] 
     if key is None:
         return None
     ns_dir = namespace_dirs[key]
-    env = dict(os.environ)
+    env = dict(os.environ if base is None else base)
     env["COVERAGE_FILE"] = str(ns_dir / ".coverage")
     env["TMPDIR"] = str(ns_dir / "tmp")
     writers = sorted(target for target, ns in COVERAGE_NAMESPACES.items() if ns in namespace_dirs)
     env["LIVESPEC_COVERAGE_WRITERS"] = ", ".join(writers)
     return env
+
+
+@contextmanager
+def isolated_environments(
+    *, names: Sequence[str], base: Mapping[str, str] | None
+) -> Iterator[dict[str, dict[str, str] | None]]:
+    """Mint the namespace dirs `names` need, yield each name's env, then remove them.
+
+    A coverage-touching target gets its isolated overlay of `base`; any other
+    target gets `base` itself, or None (inherit the caller's environment) when
+    `base` is None. The dirs live in the system temp dir, OUTSIDE the governed
+    repo: pytest's `tmp_path` derives from the per-target TMPDIR, and a TMPDIR
+    inside the repo's git worktree breaks tests that assume `tmp_path` is not in
+    a repo. Removal is best-effort, so a transient failure never masks a result.
+    """
+    namespace_dirs = build_namespace_dirs(
+        targets=list(names), skip_set=frozenset(), root=Path(tempfile.gettempdir())
+    )
+    try:
+        yield {
+            name: target_env(name=name, namespace_dirs=namespace_dirs, base=base)
+            or (None if base is None else dict(base))
+            for name in names
+        }
+    finally:
+        for ns_dir in namespace_dirs.values():
+            shutil.rmtree(ns_dir, ignore_errors=True)

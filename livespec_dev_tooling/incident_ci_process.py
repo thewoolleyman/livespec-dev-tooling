@@ -97,6 +97,7 @@ class CiProcess:
                 report=args.report,
                 payload=payload,
                 environ=environment,
+                echo=_echo,
             )
             return _emit(
                 result={"status": "executed" if code == 0 else "failed", **projection}, code=code
@@ -108,6 +109,11 @@ class CiProcess:
             outcomes=CiProcess.outcomes(directory=args.reports),
         )
         return _emit(result=result, code=0 if result["status"] == "passed" else 1)
+
+
+def _echo(*, text: str) -> None:
+    """Write one member's captured output to the job log."""
+    _ = sys.stdout.write(text)
 
 
 def _emit(*, result: dict[str, Any], code: int) -> int:

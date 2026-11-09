@@ -4,15 +4,25 @@ from __future__ import annotations
 
 import math
 import os
-import signal
-import subprocess
-import tempfile
-import time
 from collections.abc import Mapping
-from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
+
+from livespec_dev_tooling._check_target_runner import (
+    BLOCKED,
+    COMPLETED,
+    TIMED_OUT,
+    TargetOutcome,
+    TargetRun,
+    cap_workers,
+    run_targets,
+)
+from livespec_dev_tooling._dispatcher_coverage_namespaces import (
+    COVERAGE_CONSUMERS,
+    isolated_environments,
+)
+from livespec_dev_tooling.allowed_cpus import current_allowed_cpu_count
 
 __all__: list[str] = [
     "GateReport",
@@ -145,49 +155,32 @@ def select_gates(*, gates: tuple[GateSpec, ...]) -> tuple[GateSelection, ...]:
     )
 
 
-def _kill_group(*, pid: int) -> None:
-    """Reap the owned session's descendants, including children ignoring TERM."""
-    with suppress(ProcessLookupError):
-        os.killpg(pid, signal.SIGKILL)
-
-
-def _run_gate(
-    *, gate: GateSpec, cwd: Path, deadline_seconds: float, environment: Mapping[str, str]
-) -> GateResult:
-    started = time.monotonic()
-    if not gate.command:
+def _gate_result(*, outcome: TargetOutcome) -> GateResult:
+    """Project the shared runner's outcome onto this receipt's result shape."""
+    if outcome.status == TIMED_OUT:
         return GateResult(
-            name=gate.name, status="failed", reason="empty gate command", returncode=127
+            name=outcome.name,
+            status="deferred-timeout",
+            reason="local gate deadline reached",
+            duration_seconds=outcome.wall_time_s,
+            output=outcome.output,
         )
-    with tempfile.TemporaryFile() as output:
-        try:
-            process = subprocess.Popen(  # noqa: S603 — repository-owned argv; never a shell string.
-                gate.command,
-                cwd=cwd,
-                env=dict(environment),
-                stdin=subprocess.DEVNULL,
-                stdout=output,
-                stderr=subprocess.STDOUT,
-                start_new_session=True,
-            )
-        except OSError as error:
-            return GateResult(name=gate.name, status="failed", reason=str(error), returncode=127)
-        try:
-            code = process.wait(timeout=deadline_seconds)
-        except subprocess.TimeoutExpired:
-            code = None
-        finally:
-            _kill_group(pid=process.pid)
-            _ = process.wait()
-        _ = output.seek(0)
-        captured = output.read().decode("utf-8", errors="replace")
+    if outcome.status == BLOCKED:
+        return GateResult(name=outcome.name, status="deferred", reason=outcome.output)
+    if outcome.status != COMPLETED:
+        return GateResult(
+            name=outcome.name,
+            status="failed",
+            reason=outcome.output,
+            returncode=outcome.returncode,
+        )
     return GateResult(
-        name=gate.name,
-        status="deferred-timeout" if code is None else "passed" if code == 0 else "failed",
-        reason="local gate deadline reached" if code is None else "gate completed",
-        returncode=code,
-        duration_seconds=time.monotonic() - started,
-        output=captured,
+        name=outcome.name,
+        status="passed" if outcome.returncode == 0 else "failed",
+        reason="gate completed",
+        returncode=outcome.returncode,
+        duration_seconds=outcome.wall_time_s,
+        output=outcome.output,
     )
 
 
@@ -198,8 +191,12 @@ def execute_plan(
     deadline_seconds: float = MAX_GATE_SECONDS,
     environment: Mapping[str, str] | None = None,
 ) -> GateReport:
-    """Run selected checks sequentially with a hard per-process-group deadline.
+    """Run the selected checks in parallel, each with a hard process-group deadline.
 
+    Execution is the normal aggregate's own runner (`_check_target_runner`):
+    the same worker cap, session, stdin, output and group-kill semantics, the
+    same coverage-namespace isolation and the same producer/consumer ordering.
+    The expedited differences are only the per-gate deadline and the selection.
     No cluster probe, aggregate, cache lookup or normal evidence writer runs here.
     The caller records the report against its already-resolved incident context.
     """
@@ -207,10 +204,26 @@ def execute_plan(
         message = "gate deadline must be positive and at most sixty seconds"
         raise ValueError(message)
     child_env = dict(os.environ if environment is None else environment)
-    results = tuple(
-        _run_gate(
-            gate=entry.gate, cwd=cwd, deadline_seconds=deadline_seconds, environment=child_env
+    selected = [entry.gate for entry in plan if entry.selected]
+    with isolated_environments(names=[gate.name for gate in selected], base=child_env) as envs:
+        outcomes = iter(
+            run_targets(
+                runs=[
+                    TargetRun(
+                        name=gate.name,
+                        argv=gate.command,
+                        env=envs[gate.name],
+                        after=COVERAGE_CONSUMERS.get(gate.name),
+                    )
+                    for gate in selected
+                ],
+                cwd=cwd,
+                max_workers=cap_workers(requested=None, allowed=current_allowed_cpu_count()),
+                deadline_seconds=deadline_seconds,
+            )
         )
+    results = tuple(
+        _gate_result(outcome=next(outcomes))
         if entry.selected
         else GateResult(name=entry.gate.name, status="deferred", reason=entry.reason)
         for entry in plan

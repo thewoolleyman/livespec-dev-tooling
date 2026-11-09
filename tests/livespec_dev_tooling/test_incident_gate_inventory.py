@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from livespec_dev_tooling.incident_gate_inventory import inventory_gates
+from livespec_dev_tooling.incident_gate_inventory import inventory_gates, timing_classes
 from livespec_dev_tooling.incident_local_gates import select_gates
 
 __all__: list[str] = []
@@ -49,3 +49,21 @@ check-with extra-argument # incident-timing: fast
 """
     )
     assert [gate.command for gate in gates] == [("just", "check-good")]
+
+
+def test_timing_classes_are_the_one_reading_both_expedited_paths_use() -> None:
+    assert timing_classes(
+        inventory="""check-fast # incident-timing: fast
+check-slow # purity: tree-pure # incident-timing: slow
+check-upper # incident-timing: FAST
+check-twice # incident-timing: fast
+check-twice # incident-timing: fast
+check-none
+"""
+    ) == {
+        "check-fast": "fast",
+        "check-slow": "slow",
+        "check-upper": "unclassified",
+        "check-twice": "unclassified",
+        "check-none": "unclassified",
+    }

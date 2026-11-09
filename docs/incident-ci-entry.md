@@ -4,15 +4,31 @@
 `aggregate`. A run names members with repeated `--target check-name` arguments;
 it accepts no caller command or inventory path. The `--repo`, `--report` and
 `--reports` paths are supplied by the trusted workflow entrance. The packaged
-inventory contains the full existing normal workflow's members, their batches
-and the coverage producer/consumer dependency. It derives only from the
-workflow's contributed check-target set, never from whole-file bytes: a ci.yml
-edit that leaves that set unchanged, such as a runs-on or step edit, needs no
-inventory change, while a target added, removed or renamed fails the derivation
-test naming the difference until the data file is regenerated with
-`incident_ci_inventory.render_inventory(workflow=...)`. No digest of the
-workflow or of the inventory travels with the code. Only the two already
-measured fast checks, lint and format, are classified fast in this increment.
+inventory contains the full existing normal workflow's members, their batches,
+their timing classes and the coverage producer/consumer dependency. It derives
+only from the workflow's contributed check-target set and from each member's
+`# incident-timing:` annotation in `check-targets.txt`, never from whole-file
+bytes: a ci.yml edit that leaves that set unchanged, such as a runs-on or step
+edit, needs no inventory change, while a target added, removed or renamed, or a
+timing annotation changed, fails the derivation test naming the difference until
+the data file is regenerated with
+`incident_ci_inventory.render_inventory(workflow=..., inventory=...)`. No digest
+of the workflow or of the inventory travels with the code.
+
+The timing class is read by the same reader the local hooks use
+(`incident_gate_inventory.timing_classes`), so one annotation classifies a gate
+on both expedited paths (livespec-dev-tooling-oqpw6t). Because the entrance runs
+the RELEASED package, a changed annotation reaches CI with the next release. The
+coverage and spec prefixes still override the timing class here: they are the
+omission policy that lets the normal jobs skip a member, not a timing class.
+
+`run` executes its selected members through the normal aggregate's own runner
+(`_check_target_runner`): in parallel, under the same worker cap, each in its
+own session with stdin closed, captured output written to the job log, and its
+process group killed when it ends, with the normal aggregate's coverage-namespace
+isolation and producer/consumer ordering. It passes no deadline, because a selected CI
+member is required evidence and the aggregate has no deferral for one cut short;
+the job's timeout bounds it.
 
 The workflow must install and invoke an independently approved release before it
 executes candidate code. Packaged-data integrity is the installed release's

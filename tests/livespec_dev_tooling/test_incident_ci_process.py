@@ -49,7 +49,8 @@ def test_normal_master_process_keeps_slow_member_and_writes_all_actual_outcomes(
     assert planned["selected"] == ["check-fast", "check-slow"]
     assert "mode=normal" in output.read_text() and "planned" in summary.read_text()
     assert module.main(argv=["run", "--target", "check-fast", "--target", "check-slow"]) == 0
-    capsys.readouterr()
+    # Each member's captured output reaches the job log beside the result JSON.
+    assert "::: just check-slow [exit 0]\n" in capsys.readouterr().out
     assert module.main(argv=["aggregate"]) == 0
     assert json.loads(capsys.readouterr().out)["status"] == "passed"
 

@@ -36,12 +36,12 @@ namespace key. Targets that share a key share one isolated dir (a
 producer and the consumer that reads its data file); targets with
 distinct keys are fully isolated and run concurrently with no edge.
 
-`_COVERAGE_CONSUMERS` carries the only ordering that survives: a
+`COVERAGE_CONSUMERS` (in the same module) carries the only ordering that survives: a
 GENUINE read-after-write DATA dependency, where a consumer reads the
 data file a producer wrote into their shared namespace dir. This is NOT
 a collision-avoidance edge (those are retired) — the consumer needs the
 producer's bytes, so it runs only after the producer completes (the
-deferred runner blocks on the producer future).
+shared runner holds the consumer until its producer has exited 0).
 
 CLI:
     python -m livespec_dev_tooling.parallel_check_dispatcher
@@ -56,6 +56,12 @@ CLI:
 
 Exit 0: all non-skipped targets passed. Exit 1: one or more failed.
 
+Every target is launched by the shared runner in `_check_target_runner`, the
+same one the expedited incident paths use (livespec-dev-tooling-oqpw6t): its
+own session, stdin closed, output spooled to a temporary file, and its whole
+process group killed when it ends. This dispatcher passes no deadline, so a
+normal target runs to completion however long it takes.
+
 Output:
     Human-readable per-target headers + captured output on stdout.
     Machine-readable per-target timing events on stderr (structlog JSON)
@@ -65,12 +71,7 @@ Output:
 from __future__ import annotations
 
 import os
-import shutil
-import subprocess
 import sys
-import tempfile
-import time
-from concurrent.futures import Future, ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import cast
 
@@ -80,9 +81,16 @@ if str(_VENDOR_DIR) not in sys.path:
 
 import structlog  # noqa: E402  — vendor-path-aware import after sys.path insert.
 
+from livespec_dev_tooling._check_target_runner import (  # noqa: E402
+    BLOCKED,
+    TargetOutcome,
+    TargetRun,
+    cap_workers,
+    run_targets,
+)
 from livespec_dev_tooling._dispatcher_coverage_namespaces import (  # noqa: E402
-    build_namespace_dirs,
-    target_env,
+    COVERAGE_CONSUMERS,
+    isolated_environments,
 )
 from livespec_dev_tooling._pyright_warmup import warm_locked_pyright  # noqa: E402
 from livespec_dev_tooling.allowed_cpus import current_allowed_cpu_count  # noqa: E402
@@ -92,31 +100,6 @@ from livespec_dev_tooling.check_failure_digest import (  # noqa: E402
 from livespec_dev_tooling.parallel_check_dispatcher_cli import parse_args  # noqa: E402
 
 __all__: list[str] = []
-
-# Coverage-namespace assignment (work-item livespec-dev-tooling-cmn).
-# Each coverage-touching target is mapped to a namespace key. The
-# dispatcher mints ONE unique temp dir per distinct key and exports it
-# to the target's `just` subprocess as both COVERAGE_FILE (so pytest-cov
-# and its COVERAGE_PROCESS_START children write there) and TMPDIR (so
-# any other shared-temp artifact is isolated too). Targets NOT listed
-# here run with the inherited environment unchanged.
-#
-# Targets that share a key share one dir: that is the producer/consumer
-# coverage pair below. Distinct keys are fully isolated — their
-# `coverage combine` can only glob their own dir, so cross-namespace
-# data-file erasure is structurally impossible (no hand-enumerated edge
-# needed). This RETIRES the former collision edge that serialized
-# check-check-coverage-incremental after check-per-file-coverage: the
-# incremental gate now owns its own namespace and runs fully concurrent.
-# Genuine read-after-write DATA dependencies (consumer -> producer).
-# The consumer reads the producer's isolated COVERAGE_FILE, so it must
-# start only after the producer has finished writing it. This is the
-# ONLY ordering edge that survives the isolation redesign; it is data
-# flow, not collision avoidance. Both endpoints MUST share a namespace
-# in COVERAGE_NAMESPACES (they read/write the same file).
-_COVERAGE_CONSUMERS: dict[str, str] = {
-    "check-coverage": "check-per-file-coverage",
-}
 
 
 class TargetResult:
@@ -138,9 +121,6 @@ class TargetResult:
         self.output = output
 
 
-_DEFAULT_MAX_WORKERS = 8
-
-
 def _configure_logger() -> structlog.stdlib.BoundLogger:
     structlog.configure(
         processors=[
@@ -153,59 +133,20 @@ def _configure_logger() -> structlog.stdlib.BoundLogger:
     return structlog.get_logger("parallel_check_dispatcher")
 
 
-def _cap_workers(*, requested: int | None, allowed: int) -> int:
-    """Return the effective worker count: min(allowed CPUs, requested or DEFAULT)."""
-    cap = requested if requested is not None else _DEFAULT_MAX_WORKERS
-    return max(1, min(allowed, cap))
+def _as_result(*, outcome: TargetOutcome) -> TargetResult:
+    """Project the shared runner's outcome onto this dispatcher's result shape.
 
-
-def _run_one(*, name: str, cwd: Path, env: dict[str, str] | None) -> TargetResult:
-    """Invoke `just <name>` and return a TargetResult with timing and output.
-
-    When `env` is provided it fully replaces the subprocess environment
-    (the caller passes a COPY of os.environ with the isolated coverage
-    vars overlaid); when None the subprocess inherits the parent env.
+    A consumer whose data producer failed is reported skipped with exit 1, as
+    before. With no deadline a target always yields a measured return code, so
+    the fallback 1 applies only to the blocked case.
     """
-    start = time.monotonic()
-    completed = subprocess.run(  # noqa: S603
-        ["just", name],  # noqa: S607
-        cwd=str(cwd),
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
-        check=False,
-        env=env,
-    )
-    elapsed = time.monotonic() - start
     return TargetResult(
-        name=name,
-        skipped=False,
-        exit_code=completed.returncode,
-        wall_time_s=elapsed,
-        output=completed.stdout,
+        name=outcome.name,
+        skipped=outcome.status == BLOCKED,
+        exit_code=1 if outcome.returncode is None else outcome.returncode,
+        wall_time_s=outcome.wall_time_s,
+        output=outcome.output,
     )
-
-
-def _deferred_run(
-    *, name: str, prereq_fut: Future[TargetResult], cwd: Path, env: dict[str, str] | None
-) -> TargetResult:
-    """Wait for prereq_fut, then run name — or mark it blocked if prereq failed.
-
-    Used only for a genuine read-after-write DATA dependency (the
-    coverage consumer reading the producer's isolated COVERAGE_FILE): the
-    consumer cannot start until the producer has written the file it
-    reads.
-    """
-    prereq = prereq_fut.result()
-    if prereq.exit_code != 0:
-        return TargetResult(
-            name=name,
-            skipped=True,
-            exit_code=1,
-            wall_time_s=0.0,
-            output=f"BLOCKED: prereq '{prereq.name}' failed (exit {prereq.exit_code})",
-        )
-    return _run_one(name=name, cwd=cwd, env=env)
 
 
 def _write(*, text: str) -> None:
@@ -273,47 +214,6 @@ def _emit_summary(*, results: list[TargetResult], log: structlog.stdlib.BoundLog
     return 0
 
 
-def _collect_ordered_results(
-    *,
-    targets: list[str],
-    skip_set: frozenset[str],
-    futures: dict[str, Future[TargetResult]],
-) -> list[TargetResult]:
-    """Return results in original target order (all futures are done by this point)."""
-    results: list[TargetResult] = []
-    for name in targets:
-        if name in skip_set:
-            results.append(
-                TargetResult(name=name, skipped=True, exit_code=0, wall_time_s=0.0, output="")
-            )
-        else:
-            results.append(futures[name].result())
-    return results
-
-
-def _submit_target(
-    *,
-    name: str,
-    pool: ThreadPoolExecutor,
-    futures: dict[str, Future[TargetResult]],
-    namespace_dirs: dict[str, Path],
-    cwd: Path,
-) -> Future[TargetResult]:
-    """Submit one target, deferring it after its data-producer when one applies.
-
-    A target named in `_COVERAGE_CONSUMERS` whose producer is already
-    submitted is deferred until the producer future resolves (the
-    read-after-write data dependency). Every other target — including
-    every coverage producer and the now-independent incremental gate —
-    runs immediately with its isolated coverage env.
-    """
-    env = target_env(name=name, namespace_dirs=namespace_dirs)
-    producer = _COVERAGE_CONSUMERS.get(name)
-    if producer is not None and producer in futures:
-        return pool.submit(_deferred_run, name=name, prereq_fut=futures[producer], cwd=cwd, env=env)
-    return pool.submit(_run_one, name=name, cwd=cwd, env=env)
-
-
 def _run_all(
     *,
     targets: list[str],
@@ -322,32 +222,34 @@ def _run_all(
     cwd: Path,
     log: structlog.stdlib.BoundLogger,
 ) -> list[TargetResult]:
-    """Submit all targets to the thread pool and collect results as they complete."""
-    # Mint the isolated coverage/TMPDIR dirs in the system temp dir
-    # (OUTSIDE the governed repo), never under cwd: pytest's `tmp_path`
-    # derives from the per-target TMPDIR, and a TMPDIR inside the repo's
-    # git worktree breaks tests that assume `tmp_path` is not in a repo.
-    namespace_dirs = build_namespace_dirs(
-        targets=targets, skip_set=skip_set, root=Path(tempfile.gettempdir())
-    )
-    futures: dict[str, Future[TargetResult]] = {}
-    with ThreadPoolExecutor(max_workers=max_workers) as pool:
-        for name in targets:
-            if name in skip_set:
-                continue
-            futures[name] = _submit_target(
-                name=name, pool=pool, futures=futures, namespace_dirs=namespace_dirs, cwd=cwd
-            )
-        for fut in as_completed(futures.values()):
-            _emit_result(result=fut.result(), log=log)
-    results = _collect_ordered_results(targets=targets, skip_set=skip_set, futures=futures)
-    # All futures are done: the isolated coverage/TMPDIR dirs are no
-    # longer needed (the consumer has already read the producer's data).
-    # Best-effort removal so the system temp dir does not accumulate one
-    # covns-* tree per `just check` run; ignore_errors keeps a transient
-    # removal failure from masking the real check result.
-    for ns_dir in namespace_dirs.values():
-        shutil.rmtree(ns_dir, ignore_errors=True)
+    """Run every target through the shared runner; return results in target order."""
+    # Each coverage namespace gets its own isolated COVERAGE_FILE + TMPDIR, and
+    # a consumer in `COVERAGE_CONSUMERS` waits for its producer (the
+    # read-after-write data dependency); every other target, including every
+    # coverage producer and the independent incremental gate, starts at once.
+    names = [name for name in targets if name not in skip_set]
+    with isolated_environments(names=names, base=None) as environments:
+        outcomes = run_targets(
+            runs=[
+                TargetRun(
+                    name=name,
+                    argv=("just", name),
+                    env=environments[name],
+                    after=COVERAGE_CONSUMERS.get(name),
+                )
+                for name in names
+            ],
+            cwd=cwd,
+            max_workers=max_workers,
+            on_complete=lambda outcome: _emit_result(result=_as_result(outcome=outcome), log=log),
+        )
+    ran = {outcome.name: _as_result(outcome=outcome) for outcome in outcomes}
+    results = [
+        TargetResult(name=name, skipped=True, exit_code=0, wall_time_s=0.0, output="")
+        if name in skip_set
+        else ran[name]
+        for name in targets
+    ]
     return results
 
 
@@ -356,7 +258,7 @@ def main() -> int:
     args = parse_args()
     skip_str: str = cast(str, args.skip)
     skip_set: frozenset[str] = frozenset(skip_str.split())
-    max_workers = _cap_workers(
+    max_workers = cap_workers(
         requested=cast(int | None, args.workers), allowed=current_allowed_cpu_count()
     )
     cwd = Path.cwd()

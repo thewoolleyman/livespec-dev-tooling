@@ -96,6 +96,49 @@ def test_timeout_kills_owned_descendants_and_records_deferral(tmp_path: Path) ->
         os.close(child_fd)
 
 
+def test_coverage_targets_are_isolated_and_ordered_as_in_the_normal_aggregate(
+    tmp_path: Path,
+) -> None:
+    # The normal aggregate's coverage-namespace overlay and producer/consumer
+    # edge apply here too (livespec-dev-tooling-oqpw6t).
+    show = 'echo "$INCIDENT_TEST_TRANSPORT $COVERAGE_FILE"'
+    report = execute_plan(
+        plan=select_gates(
+            gates=(
+                GateSpec(
+                    name="check-check-coverage-incremental",
+                    command=("/bin/sh", "-c", show),
+                    classification="fast",
+                ),
+                GateSpec(
+                    name="check-per-file-coverage",
+                    command=("/bin/sh", "-c", "exit 5"),
+                    classification="fast",
+                ),
+                GateSpec(
+                    name="check-coverage",
+                    command=("/bin/sh", "-c", "touch consumer-ran"),
+                    classification="fast",
+                ),
+            )
+        ),
+        cwd=tmp_path,
+        environment=dict(os.environ, INCIDENT_TEST_TRANSPORT="kept"),
+    )
+    kept, coverage_file = report.results[0].output.split()
+    assert kept == "kept"
+    assert Path(coverage_file).name == ".coverage"
+    assert not Path(coverage_file).parent.exists()
+    assert not Path(coverage_file).is_relative_to(tmp_path)
+    assert [(r.status, r.returncode) for r in report.results[1:]] == [
+        ("failed", 5),
+        ("deferred", None),
+    ]
+    assert "check-per-file-coverage" in report.results[2].reason
+    assert report.exit_status == 5
+    assert not (tmp_path / "consumer-ran").exists()
+
+
 def test_no_executable_is_real_failure(tmp_path: Path) -> None:
     spec = GateSpec(name="missing", command=(str(tmp_path / "missing"),), classification="fast")
     report = execute_plan(plan=select_gates(gates=(spec,)), cwd=tmp_path)
