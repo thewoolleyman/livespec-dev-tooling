@@ -1289,17 +1289,15 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: an agent session's foreground full-suite pytest on a delegating host is refused and names the gate-start form",
-    "test": "TODO",
-    "reason": "A real test at the integration tier or above is owed for this scenario: the gate-command guard hook run as a subprocess in a real repository and fed a foreground `uv run pytest -n 8` Bash call in a repository with `delegated_gate = true` and a readable gates kubeconfig, asserting the refusal, its own check_id and the named `just gate-start --` form. livespec-dev-tooling-4pchid owns it.",
-    "work_item": "livespec-dev-tooling-4pchid"
+    "test": "tests.livespec_dev_tooling.agent_hooks.test_pretooluse_background_guard.test_an_eligible_delegating_host_refuses_foreground_full_suite_pytest",
+    "reason": "Integration-tier: drives the hook's real stdin protocol in a repository that explicitly opts into delegation. With a readable gates kubeconfig seam, each `python -m pytest` spelling is refused under the pytest-specific check id and names its exact `just gate-start --` remedy (livespec-dev-tooling-4pchid)."
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: an agent session's targeted pytest or a factory sandbox's full suite is not refused",
-    "test": "TODO",
-    "reason": "A real test at the integration tier or above is owed for this scenario: the gate-command guard hook run as a subprocess in a real repository and fed a targeted foreground pytest on an eligible host and an `-n 8` pytest on a host with no readable gates kubeconfig, asserting neither is refused. livespec-dev-tooling-4pchid owns it.",
-    "work_item": "livespec-dev-tooling-4pchid"
+    "test": "tests.livespec_dev_tooling.agent_hooks.test_pretooluse_background_guard.test_targeted_or_ineligible_foreground_pytest_is_not_refused",
+    "reason": "Integration-tier: a real repository fixture proves a named test path stays allowed on an eligible delegated host, and full suites stay allowed when either the gates kubeconfig is unreadable (the factory-sandbox shape) or the repository did not opt in (livespec-dev-tooling-4pchid)."
   },
   {
     "spec_root": "SPECIFICATION",
@@ -1570,9 +1568,8 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a full suite spelled as python -m pytest runs as a gate Job",
-    "test": "TODO",
-    "reason": "A real test at the integration tier or above is owed for this scenario: `gate-start -- uv run --no-sync python -m pytest --cov=src` in a delegated repository on an eligible host, asserting the run records venue `cluster_job` and not `host_local` with the reason \"command outside full-suite set\". livespec-dev-tooling-4pchid owns it.",
-    "work_item": "livespec-dev-tooling-4pchid"
+    "test": "tests.livespec_dev_tooling.test_gate_runner_delegate.test_gate_start_records_every_python_module_pytest_spelling_as_a_cluster_job",
+    "reason": "Integration-tier: drives the shipped gate-start script with each ratified `python -m pytest` spelling in a delegated repository carrying a readable fixture gates kubeconfig. The real selector records venue `cluster_job` and reason `eligible full-suite command`, rather than the host-local outside-full-suite fallback (livespec-dev-tooling-4pchid)."
   },
   {
     "spec_root": "SPECIFICATION",

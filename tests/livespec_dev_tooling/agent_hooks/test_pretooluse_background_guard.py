@@ -50,7 +50,7 @@ Private names are imported via from-imports (the package-private
 access model, mirroring `tests/livespec_dev_tooling/fleet/`);
 monkeypatch seams use the string-target form.
 
-THREE TESTS CARRY `pytest.mark.integration`, and the marker is
+FOUR TESTS CARRY `pytest.mark.integration`, and the marker is
 FUNCTION-level rather than module-level on purpose. They are the three
 this repository's heading-coverage registry maps `scenarios.md`
 headings to, and `heading_coverage` direction 4 resolves a scenario's
@@ -890,6 +890,7 @@ def test_should_deny_still_denies_every_bare_backgrounded_gate(command: str, exp
 # and a constant compared against itself cannot show that.
 _FOREGROUND_CHECK_ID = "pretooluse-foreground-gate-deny"
 _BACKGROUND_CHECK_ID = "pretooluse-background-guard-deny"
+_FOREGROUND_PYTEST_CHECK_ID = "pretooluse-foreground-full-suite-pytest-deny"
 
 # A hook body that does nothing: what makes a hook "installed" is that git
 # would RUN it, not what it does when run.
@@ -932,6 +933,98 @@ def _foreground_refusal_event(
     assert _run_main(monkeypatch=monkeypatch, stdin_text=payload) == 2
     event = json.loads(capsys.readouterr().err.strip().splitlines()[-1])
     return cast("dict[str, object]", event)
+
+
+def _write_delegated_gate_config(*, repository: Path, delegated: bool) -> None:
+    """Declare the fixture repository's gate venue selection explicitly."""
+    _ = (repository / "pyproject.toml").write_text(
+        f"[tool.livespec_dev_tooling]\ndelegated_gate = {str(delegated).lower()}\n",
+        encoding="utf-8",
+    )
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    "command",
+    [
+        pytest.param("python -m pytest --cov=widget", id="python-module"),
+        pytest.param("pytest --cov widget", id="separate-option-value"),
+        pytest.param("uv run --no-sync python -m pytest --cov=widget", id="uv-python-module"),
+        pytest.param(".venv/bin/python -m pytest -n 8", id="interpreter-path"),
+        pytest.param("pytest -n4 tests/test_widget.py", id="attached-numprocesses"),
+        pytest.param("pytest -n=4 tests/test_widget.py", id="equals-numprocesses"),
+        pytest.param("pytest -nauto tests/test_widget.py", id="attached-auto-numprocesses"),
+        pytest.param("pytest --maxfail 1", id="maxfail-separate-value"),
+        pytest.param("pytest --maxfail=1", id="maxfail-attached-value"),
+        pytest.param("pytest -p no:cacheprovider", id="plugin-option-value"),
+        pytest.param("pytest --junitxml report.xml -W error", id="report-and-warning-values"),
+        pytest.param("pytest --durations 5 --dist loadfile", id="durations-and-dist-values"),
+        pytest.param("pytest --not-a-known-option 1", id="unknown-option-value"),
+        pytest.param("pytest tests/missing_widget.py", id="path-that-does-not-exist"),
+    ],
+)
+def test_an_eligible_delegating_host_refuses_foreground_full_suite_pytest(
+    command: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The hook names its pytest check id and the exact detached gate-start form."""
+    repository = _make_hooked_repo(repo=tmp_path / "delegating", hooks=())
+    _write_delegated_gate_config(repository=repository, delegated=True)
+    credential = tmp_path / "gates.kubeconfig"
+    _ = credential.write_text("apiVersion: v1\nkind: Config\n", encoding="utf-8")
+    monkeypatch.setenv("GATES_KUBECONFIG", str(credential))
+
+    event = _foreground_refusal_event(
+        command=command, cwd=repository, monkeypatch=monkeypatch, capsys=capsys
+    )
+
+    assert event["check_id"] == _FOREGROUND_PYTEST_CHECK_ID
+    assert _one_call_detached_form(command=command) in str(event.get("hint", ""))
+
+
+@pytest.mark.parametrize(
+    ("command", "delegated", "credential_readable"),
+    [
+        pytest.param("uv run pytest tests/test_widget.py", True, True, id="targeted-pytest"),
+        pytest.param(
+            "pytest --maxfail 1 -p no:cacheprovider tests/test_widget.py",
+            True,
+            True,
+            id="targeted-pytest-after-valued-options",
+        ),
+        pytest.param(
+            "pytest tests/test_widget.py::test_it", True, True, id="targeted-pytest-node-id"
+        ),
+        pytest.param("pytest tests", True, True, id="targeted-pytest-directory"),
+        pytest.param("pytest -n 8", True, False, id="ineligible-host"),
+        pytest.param("python -m pytest", False, True, id="undelegated-repository"),
+        pytest.param('pytest "unterminated', True, True, id="unparseable-command"),
+    ],
+)
+@pytest.mark.integration
+def test_targeted_or_ineligible_foreground_pytest_is_not_refused(
+    command: str,
+    *,
+    delegated: bool,
+    credential_readable: bool,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Only a full suite on an eligible opted-in host earns the pytest refusal."""
+    repository = _make_hooked_repo(repo=tmp_path / "fixture", hooks=())
+    _write_delegated_gate_config(repository=repository, delegated=delegated)
+    _ = (repository / "tests").mkdir()
+    _ = (repository / "tests" / "test_widget.py").write_text("", encoding="utf-8")
+    monkeypatch.chdir(repository)
+    credential = tmp_path / "gates.kubeconfig"
+    if credential_readable:
+        _ = credential.write_text("apiVersion: v1\nkind: Config\n", encoding="utf-8")
+    monkeypatch.setenv("GATES_KUBECONFIG", str(credential))
+    payload = json.dumps({"tool_name": "Bash", "tool_input": {"command": command}})
+
+    assert _run_main(monkeypatch=monkeypatch, stdin_text=payload) == 0
 
 
 def test_a_dry_run_push_against_an_installed_pre_push_hook_is_refused(
