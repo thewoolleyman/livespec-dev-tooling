@@ -30,7 +30,8 @@
 #     instead of running; every other leg runs its check. The list is honored
 #     on a pull_request event ONLY: a master push, or any other event, runs
 #     every requested check whatever labels, markers or omission input it
-#     receives (SPECIFICATION/contracts.md §"Expedited incident execution").
+#     receives (SPECIFICATION/contracts.md, the expedited incident execution
+#     contract).
 
 name: livespec-dev-tooling check matrix
 

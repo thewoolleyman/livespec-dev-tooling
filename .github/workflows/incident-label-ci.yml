@@ -1,8 +1,8 @@
 # Incident label events restart CI on the pull request's current head.
 #
 # Work-item livespec-dev-tooling-6xyc42 (plan expedited-incident-response-flag,
-# epic livespec-dev-tooling-bqnzcm). Authority: SPECIFICATION/contracts.md
-# §"Expedited incident execution" ("Head and mode changes MUST invalidate stale
+# epic livespec-dev-tooling-bqnzcm). Authority: SPECIFICATION/contracts.md, its
+# expedited incident execution contract ("Head and mode changes MUST invalidate stale
 # verdicts") and its scenario ("label events reconcile mode before permitting
 # merge").
 #
