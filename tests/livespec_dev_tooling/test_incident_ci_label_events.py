@@ -79,6 +79,10 @@ _LOOP_TAIL = r'(?P<body>(?:.*\n)*?)[ ]*done\n[ ]*if \[ "\$status" != "completed"
 _LOOP_AFTER = r"(?P<after>(?:.*\n)*?)[ ]*fi\n"
 _WAIT_LOOP = re.compile(_LOOP_HEAD + _LOOP_TAIL + _LOOP_AFTER)
 _LOOP_BREAK = '[ "$status" = "completed" ] && break'
+_RETRY_HEAD = r"for attempt in \$\(seq 1 (?P<bound>\d+)\); do\n"
+_RETRY_CANCEL = r'[ ]*if gh api -X POST "repos/\$\{repo\}/actions/runs/\$\{run_id\}/cancel"'
+_RETRY_BREAK = r" >/dev/null; then\n[ ]*break\n"
+_CANCEL_RETRY = re.compile(_RETRY_HEAD + _RETRY_CANCEL + _RETRY_BREAK)
 
 _AUTO_MERGE_SKIP = "&& !(github.event.action == 'unlabeled' && " + _INCIDENT_LABEL_TEST + ")"
 
@@ -134,6 +138,9 @@ def _stop_findings(*, script: str) -> list[str]:
     completed = _COMPLETED_PATH.search(script)
     if completed is None or _RERUN not in completed.group("body") or _CANCEL not in script:
         findings.append("a completed run is not re-run and stopped, nor an unfinished one stopped")
+    retry = _CANCEL_RETRY.search(script)
+    if retry is None or int(retry.group("bound")) < 1:
+        findings.append("the cancel is not retried until GitHub accepts it")
     wait = _WAIT_LOOP.search(script)
     if (
         wait is None
@@ -315,6 +322,16 @@ _HOLD_LINE = '          hold_id="$(gh api'
             'stops passing"\n            gh api -X POST "repos/${repo}' + _RERUN,
             'stops passing"\n            true',
             "a completed run is not re-run and stopped, nor an unfinished one stopped",
+        ),
+        (
+            "$(seq 1 30)",
+            "$(seq 1 0)",
+            "the cancel is not retried until GitHub accepts it",
+        ),
+        (
+            '/cancel" >/dev/null; then\n              break\n',
+            '/cancel" >/dev/null; then\n              true\n',
+            "the cancel is not retried until GitHub accepts it",
         ),
         (
             '/cancel"',
