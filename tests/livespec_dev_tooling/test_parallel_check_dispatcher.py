@@ -58,6 +58,11 @@ from typing import NamedTuple
 import pytest
 
 import livespec_dev_tooling.parallel_check_dispatcher as mod
+from livespec_dev_tooling._dispatcher_coverage_namespaces import (
+    COVERAGE_NAMESPACES,
+    build_namespace_dirs,
+    target_env,
+)
 from livespec_dev_tooling.parallel_check_dispatcher import (
     TargetResult,
     _cap_workers,
@@ -164,7 +169,7 @@ def test_coverage_pair_shares_one_namespace_key() -> None:
     coverage dir, so the consumer reads the producer's COVERAGE_FILE —
     the explicit producer->consumer data dependency.
     """
-    namespaces = mod._COVERAGE_NAMESPACES  # noqa: SLF001
+    namespaces = COVERAGE_NAMESPACES
     assert namespaces["check-per-file-coverage"] == namespaces["check-coverage"], (
         "the full-tree coverage pair must share one namespace key so the consumer "
         f"reads the producer's isolated COVERAGE_FILE; got {namespaces!r}"
@@ -179,7 +184,7 @@ def test_incremental_isolated_in_its_own_namespace() -> None:
     a concurrent check-per-file-coverage can never erase its data. This
     is the structural fix that retires the hand-pinned collision edge.
     """
-    namespaces = mod._COVERAGE_NAMESPACES  # noqa: SLF001
+    namespaces = COVERAGE_NAMESPACES
     assert (
         namespaces["check-check-coverage-incremental"] != namespaces["check-per-file-coverage"]
     ), (
@@ -219,9 +224,7 @@ def test_target_env_isolates_coverage_file_and_tmpdir(*, tmp_path: Path) -> None
     ns_dir = tmp_path / "covns-full-tree"
     (ns_dir / "tmp").mkdir(parents=True)
     namespace_dirs = {"full-tree": ns_dir}
-    env = mod._target_env(  # noqa: SLF001
-        name="check-per-file-coverage", namespace_dirs=namespace_dirs
-    )
+    env = target_env(name="check-per-file-coverage", namespace_dirs=namespace_dirs)
     assert env is not None, "a coverage-touching target must receive an isolated env"
     assert env["COVERAGE_FILE"] == str(
         ns_dir / ".coverage"
@@ -237,7 +240,7 @@ def test_target_env_returns_none_for_non_coverage_target() -> None:
     A non-coverage target inherits the parent env unchanged (no isolated
     COVERAGE_FILE/TMPDIR overlay), so the dispatcher passes env=None.
     """
-    env = mod._target_env(name="check-lint", namespace_dirs={})  # noqa: SLF001
+    env = target_env(name="check-lint", namespace_dirs={})
     assert env is None, f"non-coverage target must get None (inherit parent env); got {env!r}"
 
 
@@ -254,13 +257,9 @@ def test_build_namespace_dirs_shares_within_key_and_isolates_across(*, tmp_path:
         "check-coverage",
         "check-check-coverage-incremental",
     ]
-    dirs = mod._build_namespace_dirs(  # noqa: SLF001
-        targets=targets, skip_set=frozenset(), root=tmp_path
-    )
-    full_tree_key = mod._COVERAGE_NAMESPACES["check-per-file-coverage"]  # noqa: SLF001
-    incremental_key = mod._COVERAGE_NAMESPACES[  # noqa: SLF001
-        "check-check-coverage-incremental"
-    ]
+    dirs = build_namespace_dirs(targets=targets, skip_set=frozenset(), root=tmp_path)
+    full_tree_key = COVERAGE_NAMESPACES["check-per-file-coverage"]
+    incremental_key = COVERAGE_NAMESPACES["check-check-coverage-incremental"]
     assert full_tree_key in dirs and incremental_key in dirs
     assert (
         dirs[full_tree_key] != dirs[incremental_key]
@@ -276,7 +275,7 @@ def test_build_namespace_dirs_skips_skipped_targets(*, tmp_path: Path) -> None:
     When every coverage target sharing a key is skipped, that key's dir
     is not minted (nothing will use it).
     """
-    dirs = mod._build_namespace_dirs(  # noqa: SLF001
+    dirs = build_namespace_dirs(
         targets=["check-check-coverage-incremental"],
         skip_set=frozenset({"check-check-coverage-incremental"}),
         root=tmp_path,
