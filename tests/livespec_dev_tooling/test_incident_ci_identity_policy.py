@@ -105,11 +105,11 @@ def test_key_and_workflow_duplicates_are_rejected(trusted):
 def test_integrity_modes_symlinks_missing_crypto_and_failed_reads(trusted, tmp_path, monkeypatch):
     descriptor, policy, *_ = trusted
     assert policy_module.identity_policy_intact(policy=policy)
-    assert not policy_module.protected_identity_path(path=Path("relative"))
-    assert not policy_module.protected_identity_path(path=tmp_path / "absent")
+    assert not policy_module.protected_path(path=Path("relative"))
+    assert not policy_module.protected_path(path=tmp_path / "absent")
     link = tmp_path / "policy-link"
     link.symlink_to(policy.path)
-    assert policy_module.protected_identity_path(path=link)
+    assert policy_module.protected_path(path=link)
     policy.path.chmod(0o644)
     assert not policy_module.identity_policy_intact(policy=policy)
     assert (
@@ -132,7 +132,7 @@ def test_integrity_modes_symlinks_missing_crypto_and_failed_reads(trusted, tmp_p
 
     monkeypatch.setattr(Path, "stat", unavailable)
     assert not policy_module.identity_policy_intact(policy=policy)
-    assert not policy_module.protected_identity_path(path=policy.path)
+    assert not policy_module.protected_path(path=policy.path)
 
 
 def test_foreign_symlink_and_writable_ancestor_refuse(trusted, tmp_path, monkeypatch):
@@ -142,7 +142,7 @@ def test_foreign_symlink_and_writable_ancestor_refuse(trusted, tmp_path, monkeyp
     folder.chmod(0o777)
     link = folder / "link"
     link.symlink_to(policy.path)
-    assert not policy_module.protected_identity_path(path=link)
+    assert not policy_module.protected_path(path=link)
     folder.chmod(0o700)
     original = Path.lstat
 
@@ -154,7 +154,7 @@ def test_foreign_symlink_and_writable_ancestor_refuse(trusted, tmp_path, monkeyp
         return os.stat_result(fields)
 
     monkeypatch.setattr(Path, "lstat", foreign)
-    assert not policy_module.protected_identity_path(path=link)
+    assert not policy_module.protected_path(path=link)
 
 
 def test_signature_unknown_key_bad_size_failure_and_timeout(trusted, monkeypatch):
