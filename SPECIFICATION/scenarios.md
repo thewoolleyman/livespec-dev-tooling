@@ -3763,3 +3763,11 @@ Given a commit that changes a product `.py` file, adds characterization tests th
 When `check-red-green-replay` validates a range containing that commit
 
 Then the check MUST pass that commit
+
+## Scenario: a wall time that rounds up into the next unit is shown in that unit
+
+Given the check aggregate has finished targets whose wall times are 59.96 s and 3599.6 s
+When it writes the per-target wall-time table
+Then the 59.96 s target shows as `1m 00s`, not `60.0s`
+And the 3599.6 s target shows as `1h 00m 00s`, not `59m 60s`
+And the `::: just <target>` lines and the structured `wall_s` field still carry raw seconds.
