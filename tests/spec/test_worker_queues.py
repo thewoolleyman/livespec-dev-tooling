@@ -212,13 +212,18 @@ def test_the_worker_gate_quota_is_whole_gates_of_the_enrolled_shares(
     ]
 
 
-def test_the_fleet_gate_flavors_keep_their_order_and_the_worker_flavors_come_last(
+def test_the_worker_flavors_come_first_and_the_fleet_gate_flavors_keep_their_order(
     tmp_path: Path,
 ) -> None:
+    # First, not last: an enrolled worker takes its own share of the gates its
+    # architecture can run, rather than only the gates the fleet's nodes have no
+    # quota left for. A gate whose required kubernetes.io/arch excludes the
+    # worker's is never assigned the worker flavor, so order moves no amd64-only
+    # gate onto an arm64 worker.
     result, _ = _render_gates(tmp_path=tmp_path, shares="arm64 4000\n")
     assert result.returncode == 0, result.stderr
     names = [f["name"] for f in _gates_patch(stdout=result.stdout)]
-    assert names == ["gates-hp-flavor", "gates-flavor", "gates-worker-arm64-flavor"]
+    assert names == ["gates-worker-arm64-flavor", "gates-hp-flavor", "gates-flavor"]
 
 
 def test_a_worker_no_longer_enrolled_drops_out_of_gates_cq(tmp_path: Path) -> None:
