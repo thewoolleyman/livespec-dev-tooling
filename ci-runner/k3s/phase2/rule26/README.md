@@ -38,7 +38,8 @@ plane, `poweredge-xubuntu`):
 just rule26-kill-matrix-apply <orchestrator-sha> <engine-sha> [workers]
 ```
 
-It renders the manifest with `./render-kill-matrix-job.sh` and applies it.
+It runs `./apply-kill-matrix.sh`, which renders the manifest with
+`./render-kill-matrix-job.sh` and applies it.
 `workers` defaults to 12. If the node's CPU pressure (PSI avg60) reads above
 30 twice, re-launch with 8 (legacy-coordinator-agent ruling, 2026-11-09).
 

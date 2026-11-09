@@ -1341,8 +1341,9 @@ mutation-kill-matrix-scheduled target *flags:
 # Launch one full rule-26 kill matrix of livespec-orchestrator-beads-fabro as a
 # cluster Job (ci-runner/k3s/phase2/rule26/README.md). Run it on a host whose
 # kubectl reaches the cluster. Never part of `check`.
+[positional-arguments]
 rule26-kill-matrix-apply orchestrator_sha engine_sha workers="12":
-    ci-runner/k3s/phase2/rule26/render-kill-matrix-job.sh --orchestrator-sha {{orchestrator_sha}} --engine-sha {{engine_sha}} --workers {{workers}} | kubectl apply -f -
+    ci-runner/k3s/phase2/rule26/apply-kill-matrix.sh "$@"
 
 fmt:
     uv run ruff format .
