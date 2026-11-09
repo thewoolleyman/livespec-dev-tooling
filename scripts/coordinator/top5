@@ -1,0 +1,69 @@
+#!/usr/bin/env bash
+# READ-ONLY priority-first tick header for the coordinator seat (rule P1, .ai/coordinator-duties.md §3 and §9).
+# Usage: scripts/coordinator/top5
+# Shell entry point; the logic is embedded Python (stdlib only) so the repo's
+# product-Python AST gates, which govern the package, do not apply to a script.
+set -euo pipefail
+exec python3 -I - "$@" <<'PY'
+"""Priority-first tick header (coordinator 546979bb, 2026-11-09, after the 10.5 h stall of priority 1).
+
+Run FIRST every tick, before any peer message is answered. For priorities 1-5 of the
+latest priorities-record on epic livespec-dev-tooling-6tgd2z it prints the epic status,
+its typed next_action, the age of its last ledger move (STALE past 60 minutes) and the
+newest epic comment, so an ask from a seat that cannot SendMessage (a Mac or Codex
+seat) is seen every tick (rule P3).
+
+TOP mirrors the priorities-record. When the record changes, change TOP in the same
+docs PR; the record wins over this list until then. Nothing here mutates: only
+`bd show` and `bd comments`, through the credential wrapper.
+"""
+import datetime as dt
+import json
+import subprocess
+
+TOP = [
+    ("1 expedited-incident-response-flag", "livespec-dev-tooling-bqnzcm"),
+    ("2 fleet-mutation-testing-rule-26 (Mac w3:t2, ledger-only asks)", "livespec-dev-tooling-oi2two"),
+    ("3 dev-host-test-gate-load", "livespec-dev-tooling-6vuiwe"),
+    ("4 factory yield: sandbox-commit-gate-ceiling", "bd-ib-qy5wol"),
+    ("5 homelab-k8s-worker-nodes", "livespec-dev-tooling-ko26ez"),
+]
+WRAPPER = ["/usr/local/bin/with-livespec-env.sh", "--"]
+STALE_MINUTES = 60
+NOW = dt.datetime.now(dt.timezone.utc)
+
+
+def run(args, cwd):
+    try:
+        out = subprocess.run(WRAPPER + args, cwd=cwd, capture_output=True, text=True, timeout=60).stdout
+        return json.loads(out or "null")
+    except Exception:
+        return None
+
+
+def repo_for(epic):
+    if epic.startswith("bd-ib"):
+        return "/data/projects/livespec-orchestrator-beads-fabro"
+    return "/data/projects/livespec-dev-tooling"
+
+
+for label, epic in TOP:
+    cwd = repo_for(epic)
+    rec = run(["bd", "show", epic, "--json"], cwd)
+    comments = run(["bd", "comments", epic, "--json"], cwd) or []
+    if not rec:
+        print(f"P{label}: LEDGER READ FAILED ({epic})")
+        continue
+    r = rec[0]
+    na = (r.get("metadata") or {}).get("next_action") or {}
+    last = max([r.get("updated_at", "")] + [c.get("created_at", "") for c in comments])
+    age = (NOW - dt.datetime.fromisoformat(last.replace("Z", "+00:00"))).total_seconds() / 60 if last else 1e9
+    flag = ""
+    if age > STALE_MINUTES:
+        flag = "  <<< STALE: name the ONE next action and its holder; if it is the coordinator's, do it NOW"
+    print(f"P{label} ({epic}) [{r['status']}] last ledger move {age:.0f} min ago{flag}")
+    print(f"    next_action({na.get('kind')}): {na.get('text', '')[:220]}")
+    if comments:
+        newest = comments[-1]
+        print(f"    newest comment {newest['created_at']}: {newest['text'][:220].replace(chr(10), ' ')}")
+PY
