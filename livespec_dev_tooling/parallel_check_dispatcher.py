@@ -102,6 +102,8 @@ from livespec_dev_tooling.parallel_check_dispatcher_cli import parse_args  # noq
 
 __all__: list[str] = []
 
+_SECONDS_PER_MINUTE = 60
+
 
 class TargetResult:
     """Result of running (or skipping) a single just-check target."""
@@ -178,12 +180,24 @@ def _emit_outcome(*, outcome: TargetOutcome, log: structlog.stdlib.BoundLogger) 
     _emit_result(result=_as_result(outcome=outcome), log=log)
 
 
+def _human_wall(*, seconds: float) -> str:
+    """One wall time as a reader compares it: seconds, then minutes, then hours."""
+    # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-e62ss6
+    if seconds < _SECONDS_PER_MINUTE:
+        return f"{seconds:.1f}s"
+    minutes, rest = divmod(round(seconds), _SECONDS_PER_MINUTE)
+    if minutes < _SECONDS_PER_MINUTE:
+        return f"{minutes}m {rest:02d}s"
+    hours, minutes = divmod(minutes, _SECONDS_PER_MINUTE)
+    return f"{hours}h {minutes:02d}m {rest:02d}s"
+
+
 def _write_timing_table(*, results: list[TargetResult]) -> None:
     """Write the per-target wall-time table (longest first) for e60 observability."""
     _write(text="\nper-target wall times (longest first):\n")
     for r in sorted(results, key=lambda x: x.wall_time_s, reverse=True):
         if not r.skipped:
-            _write(text=f"  {r.wall_time_s:6.1f}s  {r.name}\n")
+            _write(text=f"  {_human_wall(seconds=r.wall_time_s):>11}  {r.name}\n")
 
 
 def _write_failure_digest(*, failed: list[TargetResult]) -> None:
