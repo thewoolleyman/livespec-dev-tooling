@@ -3359,6 +3359,178 @@ And each mutant of G MUST be run against T2 and MUST NOT be run against T1
 
 And the report MUST name the test-selection method it used
 
+## Scenario: a parallel kill-matrix run reports the same matrix as a single-worker run
+
+Given a fixture package whose tests need no network, at one source revision, where no test's outcome is decided by the per-test timeout
+
+When the kill-matrix engine runs over it once with one worker and once with several workers, with outbound network access disabled
+
+Then both runs MUST complete
+
+And both reports MUST carry the same matrix content: the same mutants, the same killing tests for every mutant, the same surviving mutants and the same redundancy candidates
+
+And each report MUST record the worker count its run used
+
+## Scenario: tests sharing one process each keep their own kill outcome
+
+Given a mutant whose two selected tests run in one shared process, where only the first test fails against that mutant
+
+When the kill-matrix engine runs over the package
+
+Then the report MUST list the first test as killing that mutant
+
+And the report MUST NOT list the second test as killing that mutant
+
+## Scenario: a test whose shared process dies is re-run alone
+
+Given a mutant whose selected tests run in one shared process, where the mutant makes the first test end that process before the second test reports
+
+When the kill-matrix engine runs over the package
+
+Then the engine MUST re-run the second test alone against that mutant
+
+And the report MUST record the second test's own outcome from that re-run
+
+## Scenario: a test that exceeds the per-test timeout against a mutant kills it
+
+Given a mutant that makes a selected test loop forever, where that test passes promptly against the unmutated source
+
+When the kill-matrix engine runs over the package
+
+Then the report MUST list that test as killing that mutant
+
+And the report MUST record the per-test timeout used
+
+## Scenario: a test that fails against the unmutated source is excluded from attribution
+
+Given a fixture package with one test that fails against the unmutated source and a second test that exceeds the per-test timeout against it
+
+When the kill-matrix engine runs over it
+
+Then the report MUST list both tests as baseline failures
+
+And neither test MUST appear as a killer of any mutant
+
+And neither test MUST be listed as a redundancy candidate or an unapplied-coverage test
+
+## Scenario: a mutant the engine cannot apply is recorded and the run continues
+
+Given a fixture package with one mutant that the mutation engine cannot apply, and a test selected only for that mutant
+
+When the kill-matrix engine runs over it
+
+Then the run MUST complete and write its report
+
+And the report MUST list that mutant as unapplied and count it in the unapplied total
+
+And that mutant MUST appear in neither the surviving mutants nor any test's kills
+
+And the test selected only for that mutant MUST be listed as an unapplied-coverage test and MUST NOT be listed as a redundancy candidate
+
+## Scenario: a kill-matrix run in which no mutant applies exits non-zero
+
+Given a fixture package where every generated mutant fails to apply
+
+When the kill-matrix engine runs over it
+
+Then the run MUST exit non-zero with a finding naming the empty applied set
+
+And it MUST NOT write a report that reads as a clean result
+
+## Scenario: an unchanged package is not re-tested on a second kill-matrix run
+
+Given a kill-matrix run over a fixture package that wrote its report and result cache
+
+When the engine runs again over an identical tree, configuration, dependency set and engine version with that cache
+
+Then the second run MUST re-test no mutant
+
+And its report MUST equal the first run's report in every matrix-content field
+
+And the report MUST state that the run was incremental and reused every mutant
+
+## Scenario: a changed function's mutants are re-tested on an incremental run
+
+Given a kill-matrix run over a fixture package that wrote its report and result cache
+
+And one function of the package then changes its behaviour
+
+When the engine runs over the package again with that cache
+
+Then it MUST re-test every mutant located in that function
+
+## Scenario: a change to a data file a test reads re-tests the mutants that test covers
+
+Given a kill-matrix run over a fixture package that wrote its report and result cache, in which test T1 reads a data file and kills mutant M1
+
+And that data file then changes so that T1 no longer fails against M1
+
+When the engine runs over the package again with that cache
+
+Then M1 MUST be re-tested
+
+And the report MUST NOT list T1 as killing M1
+
+## Scenario: a cached killer that is no longer a test is dropped and its mutant re-tested
+
+Given a kill-matrix run over a fixture package that wrote its report and result cache, in which test T1 kills mutant M1
+
+And T1 is then deleted from the suite
+
+When the engine runs over the package again with that cache
+
+Then T1 MUST NOT appear as a killer of M1 or of any other mutant
+
+And M1 MUST be re-tested
+
+## Scenario: a kill-matrix run reports newly redundant tests since the previous report
+
+Given a previous kill-matrix report in which test T1 kills only mutant M1 and is M1's only killer
+
+And a new test T2 that kills M1 and nothing else is then added
+
+When the engine runs again with that previous report's path
+
+Then its what-changed summary MUST list T1 as a newly redundant candidate, marked changed
+
+And it MUST list T2 as a newly redundant candidate, marked new
+
+## Scenario: a kill-matrix run reports newly surviving mutants since the previous report
+
+Given a previous kill-matrix report in which mutant M1 is killed only by test T1
+
+And T1 is then changed so that it no longer fails against M1
+
+And a new function with a mutant M2 that no test kills is then added
+
+When the engine runs again with that previous report's path
+
+Then its what-changed summary MUST list M1 as a newly surviving mutant, marked changed
+
+And it MUST list M2 as a newly surviving mutant, marked new
+
+## Scenario: a surviving mutant whose function changed is flagged in the what-changed summary
+
+Given a previous kill-matrix report that carries a function digest for mutant M1
+
+And M1's function then changes so that M1 survives
+
+When the engine runs again with that previous report's path
+
+Then its what-changed summary MUST list M1 as a newly surviving mutant marked 'function changed'
+
+## Scenario: a scheduled kill-matrix run writes its report without gating anything
+
+Given an adopting repository with a scheduled kill-matrix job and a retained report from its previous scheduled run
+
+When the schedule fires
+
+Then the job MUST write a fresh kill-matrix report and a what-changed summary against the previous run's report
+
+And the job MUST NOT be a required status check on any branch
+
+And when the job is a CI workflow, its only triggers MUST be a schedule and manual dispatch
+
 ## Scenario: a warn-default finding whose lever CI arms fails a just check run that sets no lever
 
 ```gherkin

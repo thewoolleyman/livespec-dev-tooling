@@ -2589,6 +2589,126 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: a parallel kill-matrix run reports the same matrix as a single-worker run",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) is owed for this scenario: the kill-matrix engine run over a fixture package that sets up exactly the scenario's Given steps and asserts each of its Then steps. livespec-dev-tooling-dkgwsm owns it (plan fleet-mutation-testing-rule-26); the implementation PR that ships it replaces this row.",
+    "work_item": "livespec-dev-tooling-dkgwsm"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: tests sharing one process each keep their own kill outcome",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) is owed for this scenario: the kill-matrix engine run over a fixture package that sets up exactly the scenario's Given steps and asserts each of its Then steps. livespec-dev-tooling-dkgwsm owns it (plan fleet-mutation-testing-rule-26); the implementation PR that ships it replaces this row.",
+    "work_item": "livespec-dev-tooling-dkgwsm"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a test whose shared process dies is re-run alone",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) is owed for this scenario: the kill-matrix engine run over a fixture package that sets up exactly the scenario's Given steps and asserts each of its Then steps. livespec-dev-tooling-dkgwsm owns it (plan fleet-mutation-testing-rule-26); the implementation PR that ships it replaces this row.",
+    "work_item": "livespec-dev-tooling-dkgwsm"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a test that exceeds the per-test timeout against a mutant kills it",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) is owed for this scenario: the kill-matrix engine run over a fixture package that sets up exactly the scenario's Given steps and asserts each of its Then steps. livespec-dev-tooling-dkgwsm owns it (plan fleet-mutation-testing-rule-26); the implementation PR that ships it replaces this row.",
+    "work_item": "livespec-dev-tooling-dkgwsm"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a test that fails against the unmutated source is excluded from attribution",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) is owed for this scenario: the kill-matrix engine run over a fixture package that sets up exactly the scenario's Given steps and asserts each of its Then steps. livespec-dev-tooling-dkgwsm owns it (plan fleet-mutation-testing-rule-26); the implementation PR that ships it replaces this row.",
+    "work_item": "livespec-dev-tooling-dkgwsm"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a mutant the engine cannot apply is recorded and the run continues",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) is owed for this scenario: the kill-matrix engine run over a fixture package that sets up exactly the scenario's Given steps and asserts each of its Then steps. livespec-dev-tooling-dkgwsm owns it (plan fleet-mutation-testing-rule-26); the implementation PR that ships it replaces this row.",
+    "work_item": "livespec-dev-tooling-dkgwsm"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a kill-matrix run in which no mutant applies exits non-zero",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) is owed for this scenario: the kill-matrix engine run over a fixture package that sets up exactly the scenario's Given steps and asserts each of its Then steps. livespec-dev-tooling-dkgwsm owns it (plan fleet-mutation-testing-rule-26); the implementation PR that ships it replaces this row.",
+    "work_item": "livespec-dev-tooling-dkgwsm"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: an unchanged package is not re-tested on a second kill-matrix run",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) is owed for this scenario: the kill-matrix engine run over a fixture package that sets up exactly the scenario's Given steps and asserts each of its Then steps. livespec-dev-tooling-dkgwsm owns it (plan fleet-mutation-testing-rule-26); the implementation PR that ships it replaces this row.",
+    "work_item": "livespec-dev-tooling-dkgwsm"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a changed function's mutants are re-tested on an incremental run",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) is owed for this scenario: the kill-matrix engine run over a fixture package that sets up exactly the scenario's Given steps and asserts each of its Then steps. livespec-dev-tooling-dkgwsm owns it (plan fleet-mutation-testing-rule-26); the implementation PR that ships it replaces this row.",
+    "work_item": "livespec-dev-tooling-dkgwsm"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a change to a data file a test reads re-tests the mutants that test covers",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) is owed for this scenario: the kill-matrix engine run over a fixture package that sets up exactly the scenario's Given steps and asserts each of its Then steps. livespec-dev-tooling-dkgwsm owns it (plan fleet-mutation-testing-rule-26); the implementation PR that ships it replaces this row.",
+    "work_item": "livespec-dev-tooling-dkgwsm"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a cached killer that is no longer a test is dropped and its mutant re-tested",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) is owed for this scenario: the kill-matrix engine run over a fixture package that sets up exactly the scenario's Given steps and asserts each of its Then steps. livespec-dev-tooling-dkgwsm owns it (plan fleet-mutation-testing-rule-26); the implementation PR that ships it replaces this row.",
+    "work_item": "livespec-dev-tooling-dkgwsm"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a kill-matrix run reports newly redundant tests since the previous report",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) is owed for this scenario: the kill-matrix engine run over a fixture package that sets up exactly the scenario's Given steps and asserts each of its Then steps. livespec-dev-tooling-dkgwsm owns it (plan fleet-mutation-testing-rule-26); the implementation PR that ships it replaces this row.",
+    "work_item": "livespec-dev-tooling-dkgwsm"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a kill-matrix run reports newly surviving mutants since the previous report",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) is owed for this scenario: the kill-matrix engine run over a fixture package that sets up exactly the scenario's Given steps and asserts each of its Then steps. livespec-dev-tooling-dkgwsm owns it (plan fleet-mutation-testing-rule-26); the implementation PR that ships it replaces this row.",
+    "work_item": "livespec-dev-tooling-dkgwsm"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a surviving mutant whose function changed is flagged in the what-changed summary",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) is owed for this scenario: the kill-matrix engine run over a fixture package that sets up exactly the scenario's Given steps and asserts each of its Then steps. livespec-dev-tooling-dkgwsm owns it (plan fleet-mutation-testing-rule-26); the implementation PR that ships it replaces this row.",
+    "work_item": "livespec-dev-tooling-dkgwsm"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a scheduled kill-matrix run writes its report without gating anything",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) is owed for this scenario: the kill-matrix engine run over a fixture package that sets up exactly the scenario's Given steps and asserts each of its Then steps. livespec-dev-tooling-dkgwsm owns it (plan fleet-mutation-testing-rule-26); the implementation PR that ships it replaces this row.",
+    "work_item": "livespec-dev-tooling-dkgwsm"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: branch protection alignment accepts a required gate held by a ruleset whose only bypass is a GitHub App",
     "test": "TODO",
     "reason": "Spec-first: a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) is owed for this scenario, driving `branch_protection_alignment` against a classic protection with no required check plus an active ruleset holding the all-green gate with only a GitHub App bypass, and the role-bypass, strict and unreadable-ruleset refusals. livespec-dev-tooling-7536jf owns it (plan expedited-incident-response-flag); the implementation PR that ships the effective-set read replaces this row.",
