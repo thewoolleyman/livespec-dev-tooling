@@ -9,6 +9,7 @@ import io
 import json
 import subprocess
 import sys
+import threading
 from types import SimpleNamespace
 
 import pytest
@@ -109,6 +110,12 @@ def _request(*, application, path, payload, **changes):
     return responses[0], json.loads(data)
 
 
+def _recovery_completed(*, effects):
+    recoveries = [t for t in threading.enumerate() if t.name.startswith("incident-recovery-")]
+    _ = [t.join(timeout=5) for t in recoveries]
+    return bool(effects)
+
+
 def test_http_arms_and_queries_canonical_current_authority(controller):
     application, payload, calls, _, _ = controller
     status, result = _request(application=application, path="/arm", payload=payload)
@@ -206,8 +213,8 @@ def test_bound_callback_executes_once_and_keeps_other_original_jobs_running(cont
             HTTP_X_GITHUB_EVENT="workflow_job",
             HTTP_X_GITHUB_DELIVERY="delivery-1",
         )
-        assert status == "202 Accepted" and result["status"] == "completed"
-    assert len(effects) == 1
+        assert status == "202 Accepted" and result["status"] in {"pending", "completed"}
+    assert _recovery_completed(effects=effects) and len(effects) == 1
 
 
 @pytest.mark.parametrize(
