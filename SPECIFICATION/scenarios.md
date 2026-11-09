@@ -536,6 +536,34 @@ Then the fleet observability surface MUST show the failing check by name with th
 
 And the API-server-unready trigger and the datastore trigger MUST both fire
 
+## Scenario: a lease PUT's latency is readable apart from every other API-server request
+
+Given the control-plane emitter is converged on `poweredge-xubuntu`
+
+When 15 minutes pass with the API server serving lease renewals
+
+Then the `livespec` environment's metrics dataset MUST hold `apiserver_request_duration_seconds` rows with `verb` = `PUT`, `resource` = `leases` and `host.name` = `poweredge-xubuntu` within that window
+
+And those rows MUST NOT carry a `subresource`, `scope`, `group`, `version`, `component` or `dry_run` attribute
+
+## Scenario: API-server 504 responses are counted by verb and resource
+
+Given the API server's `/metrics` reports `apiserver_request_total` rows with `code` = `504` for `verb` = `PUT`, `resource` = `leases` under two different `scope` values, beside rows with other codes
+
+When the control-plane emitter runs
+
+Then it MUST send one `apiserver_request_total` data point for `verb` = `PUT`, `resource` = `leases`, `code` = `504` whose value is the sum of those rows
+
+And it MUST NOT send an `apiserver_request_total` data point for any other code
+
+## Scenario: an API server with no 504 responses gets no invented zero
+
+Given the API server's `/metrics` reports no `apiserver_request_total` row with `code` = `504`
+
+When the control-plane emitter runs
+
+Then it MUST NOT send any `apiserver_request_total` data point
+
 ## Scenario: a silent cluster-state emitter fires its dead-man
 
 Given the cluster-state emitter has been reporting pod phase rows
@@ -2333,6 +2361,34 @@ When the pressure emitter runs
 Then the emitter MUST exit non-zero with a log line naming `/proc/pressure/memory`
 
 And no memory pressure datapoint MUST be emitted for that host in that run
+
+## Scenario: a configured cgroup's CPU pressure is queryable in livespec by cgroup and host
+
+Given the pressure emitter is converged on `poweredge-xubuntu` with `system.slice/k3s.service` configured
+
+When 15 minutes pass with the host running
+
+Then the `livespec` environment's metrics dataset MUST hold the metrics `livespec.cgroup.pressure.cpu.{some,full}.{avg10,avg60,avg300}` stamped `cgroup` = `system.slice/k3s.service` and `host.name` = `poweredge-xubuntu` within that window
+
+## Scenario: a configured cgroup with no pressure file makes the emitter fail rather than report zero
+
+Given a host configured with a cgroup whose `cpu.pressure` file does not exist
+
+When the pressure emitter runs
+
+Then the emitter MUST exit non-zero with a log line naming that `cpu.pressure` file
+
+And no datapoint MUST be sent for that host in that run
+
+## Scenario: a host with no configured cgroup emits only host pressure
+
+Given a host whose pressure telemetry configuration sets no cgroup list
+
+When the pressure emitter runs
+
+Then the request it sends MUST hold that host's pressure datapoints
+
+And the request MUST NOT hold any `livespec.cgroup.pressure.cpu.*` datapoint
 
 ## Scenario: the dev host's available memory is queryable in livespec
 

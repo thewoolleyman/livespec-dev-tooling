@@ -163,6 +163,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: API-server 504 responses are counted by verb and resource",
+    "work_item": "livespec-dev-tooling-f5qjzn",
+    "first_seen": "2026-11-09"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: Codex plugin hooks wrapped in shell conditionals with existing plugin-root entrypoints pass",
     "work_item": "livespec-dev-tooling-yhacv6",
     "first_seen": "2026-11-03"
@@ -298,6 +305,20 @@
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a compilation-cache warm build skipped as busy past two populate intervals fires the lag trigger",
     "work_item": "livespec-dev-tooling-uyevam",
+    "first_seen": "2026-11-09"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a configured cgroup with no pressure file makes the emitter fail rather than report zero",
+    "work_item": "livespec-dev-tooling-3gm5rb",
+    "first_seen": "2026-11-09"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a configured cgroup's CPU pressure is queryable in livespec by cgroup and host",
+    "work_item": "livespec-dev-tooling-3gm5rb",
     "first_seen": "2026-11-09"
   },
   {
@@ -513,6 +534,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: a host with no configured cgroup emits only host pressure",
+    "work_item": "livespec-dev-tooling-3gm5rb",
+    "first_seen": "2026-11-09"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: a host with no pressure file makes the emitter fail rather than report zero",
     "work_item": "livespec-dev-tooling-i7yxpt",
     "first_seen": "2026-11-02"
@@ -537,6 +565,13 @@
     "heading": "## Scenario: a later master commit touching a culprit path blocks the revert",
     "work_item": "livespec-dev-tooling-joqff6",
     "first_seen": "2026-10-22"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a lease PUT's latency is readable apart from every other API-server request",
+    "work_item": "livespec-dev-tooling-f5qjzn",
+    "first_seen": "2026-11-09"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -1006,6 +1041,13 @@
     "heading": "## Scenario: a workload is never scheduled onto a node whose architecture its image does not publish",
     "work_item": "livespec-dev-tooling-ko26ez.6",
     "first_seen": "2026-11-07"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: an API server with no 504 responses gets no invented zero",
+    "work_item": "livespec-dev-tooling-f5qjzn",
+    "first_seen": "2026-11-09"
   },
   {
     "spec_root": "SPECIFICATION",
