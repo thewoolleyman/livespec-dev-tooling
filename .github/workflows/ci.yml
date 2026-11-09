@@ -853,12 +853,22 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v5
+        # The released entrance runs check-metadata-batch's fast members, some
+        # of which diff against origin/master: the same full history that job
+        # checks out (livespec-dev-tooling-oqpw6t).
+        with:
+          fetch-depth: 0
 
       # Same one-step preparation as the check matrices above; the candidate
       # venv it creates is what the released entrance's `just` members use.
       - name: Prepare workspace (git trust, mise trust + install, uv sync)
         run: |
           git config --global --add safe.directory '*'
+          # The canonical hook and worktree pack, installed exactly as
+          # check-metadata-batch installs them, because the fast member
+          # check-primary-checkout-commit-refuse-hook-installed reads them.
+          python3 -m livespec_dev_tooling.install_commit_refuse_hooks
+          python3 -m livespec_dev_tooling.install_worktree_pack
           mise trust
           mise install
           uv sync --all-groups
