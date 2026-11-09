@@ -310,6 +310,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: a config-value-only change of .livespec.jsonc leaves a test that names no changed key retried",
+    "work_item": "livespec-dev-tooling-n3dr3z",
+    "first_seen": "2026-11-09"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: a configured cgroup with no pressure file makes the emitter fail rather than report zero",
     "work_item": "livespec-dev-tooling-3gm5rb",
     "first_seen": "2026-11-09"
@@ -450,6 +457,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: a failing test that copies a repository directory into a temporary root is still touched",
+    "work_item": "livespec-dev-tooling-jfy23q",
+    "first_seen": "2026-11-09"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: a failing test that shares only an ancestor directory name with the change set is retried",
     "work_item": "livespec-dev-tooling-sdrq5v",
     "first_seen": "2026-11-05"
@@ -467,6 +481,20 @@
     "heading": "## Scenario: a failing test the run touched fails at once with no retry",
     "work_item": "livespec-dev-tooling-crxcy4",
     "first_seen": "2026-11-03"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a failing test the run touched is named in a withheld-retry block",
+    "work_item": "livespec-dev-tooling-ln77b6",
+    "first_seen": "2026-11-09"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a failing test whose closure names a changed file only under a temporary root is retried",
+    "work_item": "livespec-dev-tooling-jfy23q",
+    "first_seen": "2026-11-09"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -905,6 +933,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: a structural or unlisted change of .livespec.jsonc still touches every test that names the file",
+    "work_item": "livespec-dev-tooling-n3dr3z",
+    "first_seen": "2026-11-09"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: a suite-green leg reuses a passing full pre-commit aggregate on the same tree",
     "work_item": "livespec-dev-tooling-z5fwwn",
     "first_seen": "2026-11-02"
@@ -936,6 +971,13 @@
     "heading": "## Scenario: a suite-green run that stops printing output for the stall window is ended",
     "work_item": "livespec-dev-tooling-t4rx4t",
     "first_seen": "2026-11-02"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a test loop over os.environ fails the ambient-environment check on every host, while a single-expression rewrite passes",
+    "work_item": "livespec-dev-tooling-dpkz32",
+    "first_seen": "2026-11-09"
   },
   {
     "spec_root": "SPECIFICATION",

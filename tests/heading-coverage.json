@@ -2980,5 +2980,53 @@
     "test": "TODO",
     "reason": "Spec-first: a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) is owed for this scenario: the check aggregate's per-target wall-time table rendered for wall times of 59.96 s and 3599.6 s shows `1m 00s` and `1h 00m 00s`, while the `::: just <target>` lines and the structured `wall_s` field keep raw seconds. livespec-dev-tooling-e62ss6 owns it (the incident's normal factory repayment); the implementation PR that ships it replaces this row.",
     "work_item": "livespec-dev-tooling-e62ss6"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a failing test whose closure names a changed file only under a temporary root is retried",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this scenario: the flake-retry plugin, given a failing test whose closure names `.github/workflows/ci.yml` only under a `tmp_path`-rooted path expression and a change set containing that file, re-runs the test on its own. livespec-dev-tooling-jfy23q owns it; the implementation PR that ships it replaces this row.",
+    "work_item": "livespec-dev-tooling-jfy23q"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a failing test that copies a repository directory into a temporary root is still touched",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this scenario: the flake-retry plugin, given a failing test that copies `REPO_ROOT / \"ci-runner\"` into `tmp_path` and a change set containing `ci-runner/k3s/x.sh`, fails the session at once with no re-run. livespec-dev-tooling-jfy23q owns it; the implementation PR that ships it replaces this row.",
+    "work_item": "livespec-dev-tooling-jfy23q"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a failing test the run touched is named in a withheld-retry block",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this scenario: a pytest session whose touched failing test is withheld prints a `FLAKE-RETRY-WITHHELD` block naming the node id and the touching path, emits the `::warning` under GitHub Actions, and carries a worker's withholding to the controller under pytest-xdist. livespec-dev-tooling-ln77b6 owns it; the implementation PR that ships it replaces this row.",
+    "work_item": "livespec-dev-tooling-ln77b6"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a config-value-only change of .livespec.jsonc leaves a test that names no changed key retried",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this scenario: the flake-retry plugin, given a `.livespec.jsonc` change confined to a listed config-value key and comments, re-runs a failing test whose closure names the file but not the changed key. livespec-dev-tooling-n3dr3z owns it; the implementation PR that ships it replaces this row.",
+    "work_item": "livespec-dev-tooling-n3dr3z"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a structural or unlisted change of .livespec.jsonc still touches every test that names the file",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this scenario: the flake-retry plugin, given a `.livespec.jsonc` change that adds a key or changes an unlisted key's value, fails a failing test whose closure names the file at once with no re-run. livespec-dev-tooling-n3dr3z owns it; the implementation PR that ships it replaces this row.",
+    "work_item": "livespec-dev-tooling-n3dr3z"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a test loop over os.environ fails the ambient-environment check on every host, while a single-expression rewrite passes",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this scenario: `no_ambient_environment_loops` run over fixture test trees on a host environment with and without a `GIT_` variable fails a loop over `os.environ` (pragma or `dict(os.environ)` alias included) and passes the single-expression rewrite. livespec-dev-tooling-dpkz32 owns it; the implementation PR that ships it replaces this row.",
+    "work_item": "livespec-dev-tooling-dpkz32"
   }
 ]
