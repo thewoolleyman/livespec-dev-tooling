@@ -13,10 +13,12 @@ import threading
 import time
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
+from pathlib import Path
 
 __all__: list[str] = [
     "CEILING_ENV",
     "DEFAULT_STALL_SECONDS",
+    "PROGRESS_STAMP_ENV",
     "STALL_ENV",
     "SuiteBound",
     "SuiteProgress",
@@ -30,6 +32,9 @@ __all__: list[str] = [
 DEFAULT_STALL_SECONDS: int = 900
 STALL_ENV: str = "LIVESPEC_SUITE_GREEN_STALL_SECONDS"
 CEILING_ENV: str = "LIVESPEC_SUITE_GREEN_TIMEOUT_SECONDS"
+# Exported by gate-run.sh to the gate's process tree; touching it renews the
+# runner's outer stall window.
+PROGRESS_STAMP_ENV: str = "LIVESPEC_GATE_RUN_PROGRESS_STAMP"
 _POLL_SECONDS: float = 1.0
 _KILL_GRACE_SECONDS: int = 30
 _READ_BYTES: int = 65536
@@ -70,9 +75,17 @@ class SuiteProgress:
         return "".join(self.chunks)
 
     def saw(self, *, chunk: str) -> None:
-        """Record received output and renew the stall window."""
+        """Record received output and renew the stall window, and gate-run.sh's too.
+
+        The leg captures pytest's output, so under the detached gate runner its
+        output.log stays silent while the suite works; the runner's progress
+        stamp is the only signal of that work it can see (livespec-dev-tooling-54usvh).
+        """
         self.chunks.append(chunk)
         self.last = self.clock()
+        stamp = os.environ.get(PROGRESS_STAMP_ENV, "")
+        if stamp:
+            Path(stamp).touch()
 
 
 def _positive_seconds(*, raw: str) -> int | None:
