@@ -21,7 +21,7 @@ from urllib.parse import urlsplit
 
 from livespec_dev_tooling.incident_ci_payload import strict_json
 
-__all__: list[str] = ["CiAuthorityBoundary"]
+__all__: list[str] = ["CiAuthorityBoundary", "OrdinaryActionOwnership"]
 
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-egy3ri
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-zbzls2
@@ -61,7 +61,26 @@ _PROVENANCE_FIELDS: dict[str, frozenset[str]] = {
     "digest": frozenset(),
     "sha": frozenset({"base", "head", "commit_sha", "tree_sha"}),
 }
-_FIELDS = {"current": _ARM_FIELDS, "admitted": _ARM_FIELDS, "provenance": _PROVENANCE_FIELDS}
+_ORDINARY_ACTION_FIELDS: dict[str, frozenset[str]] = {
+    "text": frozenset({"repository"}),
+    "int": frozenset({"run_id"}),
+    "digest": frozenset(),
+    "sha": frozenset({"head_sha"}),
+}
+_FIELDS = {
+    "current": _ARM_FIELDS,
+    "admitted": _ARM_FIELDS,
+    "ordinary-action": _ORDINARY_ACTION_FIELDS,
+    "provenance": _PROVENANCE_FIELDS,
+}
+
+
+@dataclass(frozen=True, kw_only=True)
+class OrdinaryActionOwnership:
+    """The observer's exact answer for an ordinary reconciler action."""
+
+    status: str
+    reason: str
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -83,7 +102,23 @@ class CiAuthorityBoundary:
         """Require the host's canonical history to record this exact attempt and commit."""
         return self._query(route="provenance", query=query)
 
+    def ordinary_action(self, *, query: dict[str, Any]) -> OrdinaryActionOwnership | None:
+        """Return the observer's exact owner for one failed master workflow run."""
+        response = self._read(route="ordinary-action", query=query)
+        if response is None:
+            return None
+        status, raw, where = response
+        return _ownership_answer(status=status, raw=raw, query=query, where=where)
+
     def _query(self, *, route: str, query: dict[str, Any]) -> bool:
+        response = self._read(route=route, query=query)
+        if response is None:
+            return False
+        status, raw, where = response
+        return _accepts(status=status, raw=raw, route=route, query=query, where=where)
+
+    def _read(self, *, route: str, query: dict[str, Any]) -> tuple[int, bytes, str] | None:
+        """Send one validated query without following redirects or leaking its token."""
         try:
             parsed = urlsplit(self.observer_url)
             host = parsed.hostname or ""
@@ -118,17 +153,18 @@ class CiAuthorityBoundary:
                     for key in _FIELDS[route]["sha"]
                 )
             ):
-                return False
+                return None
         except (OSError, ValueError, TypeError, RecursionError, http.client.HTTPException):
             # The caller's own inputs; a bad URL, token or query says nothing.
-            return False
+            return None
         try:
             connect_to = _connect_address()
         except ValueError:
-            return _refuse(
+            _ = _refuse(
                 detail=_CONNECT_ADDRESS_VARIABLE
                 + " is not an IPv4 or IPv6 address literal; no connection was attempted"
             )
+            return None
         where = " while reading /" + route + " from " + (connect_to or host) + ":" + str(port)
         where += " as " + host
         try:
@@ -159,15 +195,14 @@ class CiAuthorityBoundary:
                     },
                 )
                 response = connection.getresponse()
-                return _accepts(
-                    status=response.status,
-                    raw=response.read(_MAX_REPLY + 1),
-                    route=route,
-                    query=query,
-                    where=where,
+                return (
+                    response.status,
+                    response.read(_MAX_REPLY + 1),
+                    where,
                 )
         except (OSError, ValueError, TypeError, RecursionError, http.client.HTTPException) as error:
-            return _refuse(detail=type(error).__name__ + where)
+            _ = _refuse(detail=type(error).__name__ + where)
+            return None
 
 
 def _accepts(*, status: int, raw: bytes, route: str, query: dict[str, Any], where: str) -> bool:
@@ -176,7 +211,10 @@ def _accepts(*, status: int, raw: bytes, route: str, query: dict[str, Any], wher
         return _refuse(detail="HTTP " + str(status) + where)
     if len(raw) > _MAX_REPLY:
         return False
-    value = strict_json(text=raw.decode())
+    try:
+        value = strict_json(text=raw.decode())
+    except (UnicodeDecodeError, ValueError):
+        return False
     reply = cast("dict[str, Any]", value) if isinstance(value, dict) else {}
     return (
         set(reply) == {"schema", "status", "query"}
@@ -185,6 +223,37 @@ def _accepts(*, status: int, raw: bytes, route: str, query: dict[str, Any], wher
         and reply.get("status") == route
         and json.dumps(reply.get("query"), sort_keys=True) == json.dumps(query, sort_keys=True)
     )
+
+
+def _ownership_answer(
+    *, status: int, raw: bytes, query: dict[str, Any], where: str
+) -> OrdinaryActionOwnership | None:
+    """Accept only the observer's exact, bounded ordinary-action reply."""
+    if status != _ACCEPTED:
+        _ = _refuse(detail="HTTP " + str(status) + where)
+        return None
+    if len(raw) > _MAX_REPLY:
+        _ = _refuse(detail="oversize response" + where)
+        return None
+    try:
+        value = strict_json(text=raw.decode())
+    except (UnicodeDecodeError, ValueError):
+        _ = _refuse(detail="invalid ordinary-action reply" + where)
+        return None
+    reply = cast("dict[str, Any]", value) if isinstance(value, dict) else {}
+    result = OrdinaryActionOwnership(status=reply.get("status", ""), reason=reply.get("reason", ""))
+    if (
+        set(reply) != {"schema", "status", "reason", "query"}
+        or type(reply.get("schema")) is not int
+        or reply.get("schema") != 1
+        or result.status not in {"ordinary", "incident-owned"}
+        or not isinstance(reply.get("reason"), str)
+        or not result.reason
+        or json.dumps(reply.get("query"), sort_keys=True) != json.dumps(query, sort_keys=True)
+    ):
+        _ = _refuse(detail="invalid ordinary-action reply" + where)
+        return None
+    return result
 
 
 def _refuse(*, detail: str) -> bool:

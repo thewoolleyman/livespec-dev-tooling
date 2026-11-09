@@ -22,6 +22,11 @@ def query():
     )
 
 
+def ordinary_action_query():
+    """The exact failed master run whose next action needs an owner."""
+    return dict(repository="owner/repo", head_sha="b" * 40, run_id=19)
+
+
 def boundary(**changes):
     return module.CiAuthorityBoundary(
         **(
@@ -197,4 +202,85 @@ def test_a_malformed_provenance_query_is_refused_before_any_connection(monkeypat
 def test_a_provenance_query_with_an_extra_field_is_refused(monkeypatch):
     calls = wire(monkeypatch, raw=b"{}")
     assert boundary().provenance(query=provenance_query() | {"extra": "x"}) is False
+    assert calls == []
+
+
+@pytest.mark.parametrize("status", ["ordinary", "incident-owned"])
+def test_ordinary_action_returns_only_an_exact_owner_answer(monkeypatch, status):
+    """The reconciler may act only after the observer echoes this exact run."""
+    sent = ordinary_action_query()
+    wire(
+        monkeypatch,
+        raw=json.dumps(
+            {
+                "schema": 1,
+                "status": status,
+                "reason": "controlled fixture reason",
+                "query": sent,
+            }
+        ).encode(),
+    )
+
+    result = boundary().ordinary_action(query=sent)
+
+    assert result.status == status
+    assert result.reason == "controlled fixture reason"
+
+
+@pytest.mark.parametrize(
+    ("raw", "status"),
+    [
+        (b"{}", 302),
+        (b"x" * 65537, 202),
+        (b"{bad", 202),
+        (b"\xff", 202),
+    ],
+)
+def test_an_unreadable_ordinary_action_reply_names_no_owner(monkeypatch, raw, status):
+    """The reconciler may not guess an owner from a redirect, oversize or broken reply."""
+    wire(monkeypatch, raw=raw, status=status)
+    assert boundary().ordinary_action(query=ordinary_action_query()) is None
+
+
+@pytest.mark.parametrize(
+    "reply",
+    [
+        {"schema": 1, "status": "ordinary", "query": ordinary_action_query()},
+        {"schema": 2, "status": "ordinary", "reason": "r", "query": ordinary_action_query()},
+        {"schema": 1, "status": "refused", "reason": "r", "query": ordinary_action_query()},
+        {"schema": 1, "status": "ordinary", "reason": "", "query": ordinary_action_query()},
+        {
+            "schema": 1,
+            "status": "ordinary",
+            "reason": "r",
+            "query": ordinary_action_query() | {"run_id": 20},
+        },
+        {"schema": 1, "status": "ordinary", "reason": 1, "query": ordinary_action_query()},
+    ],
+)
+def test_an_inexact_ordinary_action_reply_names_no_owner(monkeypatch, reply):
+    """Only the observer's exact echo of this run, with a stated reason, is an answer."""
+    wire(monkeypatch, raw=json.dumps(reply).encode())
+    assert boundary().ordinary_action(query=ordinary_action_query()) is None
+
+
+@pytest.mark.parametrize("error", [OSError("offline"), http.client.HTTPException("bad protocol")])
+def test_an_unreachable_observer_names_no_owner(monkeypatch, error):
+    wire(monkeypatch, error=error)
+    assert boundary().ordinary_action(query=ordinary_action_query()) is None
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [{"run_id": 0}, {"run_id": True}, {"head_sha": "short"}, {"repository": "not a repository"}],
+)
+def test_a_malformed_ordinary_action_query_is_refused_before_any_connection(monkeypatch, changes):
+    calls = wire(monkeypatch, raw=b"{}")
+    assert boundary().ordinary_action(query=ordinary_action_query() | changes) is None
+    assert calls == []
+
+
+def test_an_ordinary_action_query_with_an_extra_field_is_refused(monkeypatch):
+    calls = wire(monkeypatch, raw=b"{}")
+    assert boundary().ordinary_action(query=ordinary_action_query() | {"extra": "x"}) is None
     assert calls == []
