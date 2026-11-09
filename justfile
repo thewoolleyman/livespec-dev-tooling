@@ -201,6 +201,15 @@ ensure-plugins:
 ensure-plugins-fleet:
     mise exec -- uv run --no-sync python -m livespec_dev_tooling.fleet.ensure_plugins_fleet
 
+# The named operator step that moves the orchestrator plugin: `ensure-plugins`
+# (and so every SessionStart hook) never moves an installed orchestrator build.
+# `<clone>` is a fleet or adopter repository name, or an absolute path to a
+# checkout (a linked worktree included); `<build>` is the full commit id the
+# host's marketplace clone names at the ref known_marketplaces.json records.
+[positional-arguments]
+adopt-orchestrator-build clone build:
+    mise exec -- uv run --no-sync python -m livespec_dev_tooling.fleet.adopt_orchestrator_build "$1" "$2"
+
 # Compare each enabled Claude plugin's installed build with the locally
 # resolved origin/<ref> of its committed marketplace pin. This is deliberately
 # a world-state operator probe rather than a member of `check:`: installed
