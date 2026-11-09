@@ -587,7 +587,15 @@ if [ "${1:-}" = "--show" ]; then
   esac
 fi
 if [ "${GATE_RUN_UVX:-}" = 1 ]; then
-  uvx test-tool || exit $?
+  if [ -n "${UVX_STREAM_DIR:-}" ]; then
+    uvx test-tool > "${UVX_STREAM_DIR}/out" 2> "${UVX_STREAM_DIR}/err"
+    uvx_status=$?
+    cat "${UVX_STREAM_DIR}/out"
+    cat "${UVX_STREAM_DIR}/err" >&2
+    [ "${uvx_status}" -eq 0 ] || exit "${uvx_status}"
+  else
+    uvx test-tool || exit $?
+  fi
 fi
 exit 0
 STUB
@@ -650,7 +658,7 @@ run_gate_script() {
     PATH="${STUB_DIR}:${PATH}" STUB_LOG="${SCRATCH}/stub.log" PROVIDED="$2" \
       CLONE_FAILS="${3:-}" PYPI_FILES_PROXY="${GATE_TEST_PROXY:-http://127.0.0.1:9}" \
       UVX_PROXY_FAIL="${UVX_PROXY_FAIL:-}" UVX_TOOL_FAILS="${UVX_TOOL_FAILS:-}" \
-      GATE_RUN_UVX="${GATE_RUN_UVX:-}" \
+      UVX_STREAM_DIR="${UVX_STREAM_DIR:-}" GATE_RUN_UVX="${GATE_RUN_UVX:-}" \
       bash "${SCRATCH}/gate-script.sh" > "${SCRATCH}/gate.out" 2> "${SCRATCH}/gate.err"
   )
 }
@@ -1097,16 +1105,22 @@ if wait_for_stand_in_proxy "${uvx_proxy_port}"; then
   fi
   # A tool that RAN through the proxy and failed is a verdict, not a resolver
   # failure: the shim must hand back its non-zero status and never retry it.
-  if GATE_TEST_PROXY="http://127.0.0.1:${uvx_proxy_port}" UVX_TOOL_FAILS=1 GATE_RUN_UVX=1 \
-       run_gate_script "${declared_out}" "verify publish"; then
+  mkdir -p "${SCRATCH}/uvx-streams"
+  if UVX_STREAM_DIR="${SCRATCH}/uvx-streams" GATE_TEST_PROXY="http://127.0.0.1:${uvx_proxy_port}" \
+       UVX_TOOL_FAILS=1 GATE_RUN_UVX=1 run_gate_script "${declared_out}" "verify publish"; then
     fail "a failing tool run through the uvx proxy shim let the gate pass"
   elif [ "$(grep -c '^uvx index=' "${SCRATCH}/stub.log")" -ne 1 ]; then
     fail "a failing tool through the uvx proxy shim was retried: $(cat "${SCRATCH}/stub.log")"
-  elif grep -qF 'PLAY RECAP' "${SCRATCH}/gate.out" && \
+  elif grep -qF 'PLAY RECAP' "${SCRATCH}/uvx-streams/out" && \
+       ! grep -qF 'tool diagnostic on stderr' "${SCRATCH}/uvx-streams/out" && \
+       grep -qF 'tool diagnostic on stderr' "${SCRATCH}/uvx-streams/err" && \
+       ! grep -qF 'PLAY RECAP' "${SCRATCH}/uvx-streams/err" && \
+       grep -qF 'PLAY RECAP' "${SCRATCH}/gate.out" && \
        grep -qF 'tool diagnostic on stderr' "${SCRATCH}/gate.out"; then
-    pass "a failing tool run through the uvx proxy shim fails the gate without a retry, through its ordered capture"
+    # The shim's own streams are read before the gate merges them into its ordered capture.
+    pass "a failing tool run through the uvx proxy shim fails the gate without a retry, the shim keeping the tool's streams apart"
   else
-    fail "the uvx proxy shim did not retain a failing tool's output in its ordered capture: out=$(cat "${SCRATCH}/gate.out") err=$(cat "${SCRATCH}/gate.err")"
+    fail "the uvx proxy shim moved a failing tool's output between streams: shim-out=$(cat "${SCRATCH}/uvx-streams/out") shim-err=$(cat "${SCRATCH}/uvx-streams/err") gate-out=$(cat "${SCRATCH}/gate.out")"
   fi
 fi
 kill "${uvx_proxy_pid}" 2>/dev/null || true

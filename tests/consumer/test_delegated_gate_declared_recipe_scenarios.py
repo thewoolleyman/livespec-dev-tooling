@@ -956,13 +956,6 @@ def test_a_gate_for_a_repository_missing_its_declared_recipe_is_red_and_names_it
         declaration=f'gate_check_suite = ["{_CONSUMER_RECIPE}"]\n',
     )
     manifest = _rendered_for(repo_root=consumer)
-    script = _executable_script(manifest=manifest, name="gate")
-    capture_writers = [line for line in script if 'tee -a "${recipe_log}"' in line]
-
-    assert capture_writers == ['} 2>&1 | tee -a "${recipe_log}"'], (
-        "the capture must have one merged writer: separate stdout and stderr tees race to append "
-        "their summaries, so their arrival order cannot decide which summary was printed last"
-    )
 
     returncode, _stdout, stderr, invoked = _run_the_pod_script(
         manifest=manifest, root=tmp_path / "pod"
@@ -1610,6 +1603,13 @@ def test_a_red_verdict_names_the_members_of_the_last_summary_in_either_shape(
         declaration=f'gate_check_suite = ["{_CONSUMER_RECIPE}"]\n',
     )
     manifest = _rendered_for(repo_root=consumer)
+    script = _executable_script(manifest=manifest, name="gate")
+    capture_writers = [line for line in script if 'tee -a "${recipe_log}"' in line]
+
+    assert capture_writers == ['} 2>&1 | tee -a "${recipe_log}"'], (
+        "the capture must have one merged writer: separate stdout and stderr tees race to append "
+        "their summaries, so their arrival order cannot decide which summary was printed last"
+    )
 
     returncode, _stdout, stderr, invoked = _run_the_pod_script(
         manifest=manifest,
