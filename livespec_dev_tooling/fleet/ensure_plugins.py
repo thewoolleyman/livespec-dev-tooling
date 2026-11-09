@@ -12,10 +12,10 @@ structural rather than a copied body.
 
 from __future__ import annotations
 
-import json
 import sys
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Protocol, cast
+from typing import Protocol
 
 # `returns` is VENDORED, not installed; this module reads both artifact seams'
 # railway tracks directly, so it establishes the path itself rather than
@@ -28,11 +28,8 @@ from returns.io import IOFailure  # noqa: E402  — vendor-path-aware import.
 from returns.unsafe import unsafe_perform_io  # noqa: E402  — vendor-path-aware import.
 
 from livespec_dev_tooling.fleet._ensure_plugin_artifacts import (  # noqa: E402
-    ArtifactOutcome,
     ArtifactReader,
     CacheDirRemover,
-    artifact_record_findings,
-    artifact_record_repair_paths,
     plugin_artifact_findings,
     remove_plugin_cache_dir,
 )
@@ -45,11 +42,20 @@ from livespec_dev_tooling.fleet._ensure_plugin_commands import (  # noqa: E402
     run_from_settings,
     subprocess_runner,
 )
-from livespec_dev_tooling.fleet._invocation_failure import InvocationNotPerformed  # noqa: E402
-from livespec_dev_tooling.fleet._plugin_settings import (  # noqa: E402
-    split_enablement,
-    vacuity_findings,
+from livespec_dev_tooling.fleet._ensure_plugin_registry import (  # noqa: E402
+    registry_findings,
+    registry_repair_paths,
 )
+from livespec_dev_tooling.fleet._invocation_failure import InvocationNotPerformed  # noqa: E402
+from livespec_dev_tooling.fleet._orchestrator_hold import (  # noqa: E402
+    ORCHESTRATOR_PLUGIN,
+    STATE_HELD,
+    hold_notice,
+    orchestrator_state,
+    repair_notice,
+    without_plugin_commands,
+)
+from livespec_dev_tooling.fleet._plugin_settings import vacuity_findings  # noqa: E402
 from livespec_dev_tooling.fleet._plugin_startup import (  # noqa: E402
     _logged_runner,
     _startup_currency,
@@ -58,11 +64,13 @@ from livespec_dev_tooling.fleet._plugin_startup import (  # noqa: E402
 __all__: list[str] = [
     "ArtifactReader",
     "CacheDirRemover",
+    "EnsureReport",
     "PluginCommandOutcome",
     "PluginCommandResult",
     "PluginCommandRunner",
     "RegistryReader",
     "ensure",
+    "ensure_report",
     "main",
     "planned_commands",
     "plugin_artifact_findings",
@@ -91,117 +99,6 @@ def settings_findings(*, settings_text: str) -> tuple[str, ...]:
     keys; only the file the finding names differs.
     """
     return vacuity_findings(settings_text=settings_text, settings_label=".claude/settings.json")
-
-
-def _records_for(*, registry: object, plugin: str) -> tuple[object, ...]:
-    """Registry entries recorded for one plugin key."""
-    if not isinstance(registry, dict):
-        return ()
-    plugins = cast("dict[str, object]", registry).get("plugins")
-    if not isinstance(plugins, dict):
-        return ()
-    entries = cast("dict[str, object]", plugins).get(plugin)
-    if not isinstance(entries, list):
-        return ()
-    return tuple(cast("list[object]", entries))
-
-
-def _project_records(
-    *, registry: object, plugin: str, project_root: str
-) -> tuple[dict[str, object], ...]:
-    """Install records for one plugin in this project."""
-    return tuple(
-        cast("dict[str, object]", entry)
-        for entry in _records_for(registry=registry, plugin=plugin)
-        if isinstance(entry, dict)
-        and cast("dict[str, object]", entry).get("projectPath") == project_root
-    )
-
-
-def _probe_findings(*, plugin: str, outcome: ArtifactOutcome) -> tuple[str, ...]:
-    """Findings from an artifact probe that ANSWERED, or its failure rendered as one.
-
-    A probe that could not decide is reported to the operator here rather than
-    dropped: `main` turns any non-empty finding set into exit 4, so the
-    unanswered case surfaces as loudly as a broken build while — because the
-    failure never reaches `_registry_repair_paths` as a path — authorizing no
-    deletion of its own.
-    """
-    if isinstance(outcome, IOFailure):
-        return (f"{plugin} {unsafe_perform_io(outcome.failure()).finding}",)
-    return unsafe_perform_io(outcome.unwrap())
-
-
-def registry_findings(
-    *,
-    settings_text: str,
-    project_root: str,
-    registry_text: str | None,
-    read_artifact: ArtifactReader = plugin_artifact_findings,
-) -> tuple[str, ...]:
-    """Findings for enabled-vs-installed, keyed on `projectPath` and artifact content.
-
-    A zero exit from a scoped plugin command does not establish which project's
-    record it touched, so provisioning is confirmed against the record itself.
-    The record is still a proxy for the build it names, so the matching
-    `installPath` must also point at plugin content.
-    """
-    parsed = json.loads(settings_text)
-    if not isinstance(parsed, dict):
-        return (".claude/settings.json must contain a JSON object",)
-    enabled, _, shape = split_enablement(
-        raw=cast("dict[str, object]", parsed).get("enabledPlugins")
-    )
-    if shape is not None:
-        return (shape,)
-    registry = json.loads(registry_text) if registry_text is not None else None
-    findings: list[str] = []
-    for plugin in enabled:
-        records = _project_records(registry=registry, plugin=plugin, project_root=project_root)
-        if not records:
-            findings.append(
-                f"{plugin} is enabled but has no install record for projectPath {project_root}"
-            )
-            continue
-        findings.extend(
-            _probe_findings(
-                plugin=plugin,
-                outcome=artifact_record_findings(
-                    plugin=plugin,
-                    records=records,
-                    read_artifact=read_artifact,
-                ),
-            )
-        )
-    return tuple(findings)
-
-
-def _registry_repair_paths(
-    *,
-    settings_text: str,
-    project_root: str,
-    registry_text: str | None,
-    read_artifact: ArtifactReader,
-) -> tuple[str, ...]:
-    """Failing install paths from enabled plugin records, deduplicated in registry order.
-
-    A plugin whose probe did not answer contributes NOTHING. That is the whole
-    reason the artifact seams carry a failure track: the paths returned here
-    are deleted, and an unanswered probe has not established that there is
-    anything to delete.
-    """
-    parsed = json.loads(settings_text)
-    enabled, _, _ = split_enablement(raw=cast("dict[str, object]", parsed).get("enabledPlugins"))
-    registry = json.loads(registry_text) if registry_text is not None else None
-    paths: dict[str, None] = {}
-    for plugin in enabled:
-        records = _project_records(registry=registry, plugin=plugin, project_root=project_root)
-        outcome = artifact_record_repair_paths(records=records, read_artifact=read_artifact)
-        if isinstance(outcome, IOFailure):
-            continue
-        for install_path in unsafe_perform_io(outcome.unwrap()):
-            paths[install_path] = None
-    return tuple(paths)
 
 
 def _run_commands(
@@ -240,7 +137,15 @@ def _run_commands(
     return tuple(findings)
 
 
-def ensure(  # noqa: PLR0913 — preserve existing I/O seams while adding proven skip sets.
+@dataclass(frozen=True, kw_only=True)
+class EnsureReport:
+    """What one reconcile found (`findings`) and what it tells the operator (`notices`)."""
+
+    findings: tuple[str, ...]
+    notices: tuple[str, ...]
+
+
+def ensure_report(  # noqa: PLR0913 — preserve existing I/O seams while adding proven skip sets.
     *,
     settings_text: str,
     project_root: str,
@@ -250,16 +155,30 @@ def ensure(  # noqa: PLR0913 — preserve existing I/O seams while adding proven
     remove_cache_dir: CacheDirRemover = remove_plugin_cache_dir,
     current_plugins: frozenset[str] = frozenset(),
     registered_marketplaces: frozenset[str] = frozenset(),
-) -> tuple[str, ...]:
-    """Provision from settings, then confirm it landed. Empty means provisioned.
+) -> EnsureReport:
+    """Provision from settings, then confirm it landed.
 
     Gates BEFORE running anything: a vacuous or malformed settings file derives
     zero commands, so running it would exit 0 having done nothing.
+
+    A HELD ORCHESTRATOR BUILD IS DROPPED FROM BOTH COMMAND PASSES. The repair
+    pass re-runs every planned command, so another plugin's finding would
+    otherwise update the held build; repair paths still come only from a
+    plugin whose probe answered with a failure.
     """
     pre = settings_findings(settings_text=settings_text)
     if pre:
-        return pre
+        return EnsureReport(findings=pre, notices=())
+    state = orchestrator_state(
+        settings_text=settings_text,
+        project_root=project_root,
+        read_registry=read_registry,
+        read_artifact=read_artifact,
+    )
+    notices = hold_notice(state=state, project_root=project_root)
     commands = planned_commands(settings_text=settings_text)
+    if state.kind == STATE_HELD:
+        commands = without_plugin_commands(commands=commands, plugin=ORCHESTRATOR_PLUGIN)
     needed = tuple(
         command
         for command in commands
@@ -271,7 +190,7 @@ def ensure(  # noqa: PLR0913 — preserve existing I/O seams while adding proven
     )
     command_findings = _run_commands(commands=needed, runner=runner)
     if command_findings:
-        return command_findings
+        return EnsureReport(findings=command_findings, notices=notices)
     registry_text = read_registry()
     findings = registry_findings(
         settings_text=settings_text,
@@ -279,24 +198,52 @@ def ensure(  # noqa: PLR0913 — preserve existing I/O seams while adding proven
         registry_text=registry_text,
         read_artifact=read_artifact,
     )
-    if not findings:
-        return ()
-    for install_path in _registry_repair_paths(
+    if findings:
+        for install_path in registry_repair_paths(
+            settings_text=settings_text,
+            project_root=project_root,
+            registry_text=registry_text,
+            read_artifact=read_artifact,
+        ):
+            removal = remove_cache_dir(install_path=install_path)
+            if isinstance(removal, IOFailure):
+                return EnsureReport(
+                    findings=(unsafe_perform_io(removal.failure()).finding,), notices=notices
+                )
+        command_findings = _run_commands(commands=commands, runner=runner)
+        registry_text = read_registry()
+        findings = command_findings or registry_findings(
+            settings_text=settings_text,
+            project_root=project_root,
+            registry_text=registry_text,
+            read_artifact=read_artifact,
+        )
+    repaired = repair_notice(state=state, project_root=project_root, registry_text=registry_text)
+    return EnsureReport(findings=findings, notices=(*notices, *repaired))
+
+
+def ensure(  # noqa: PLR0913 — preserve existing I/O seams while adding proven skip sets.
+    *,
+    settings_text: str,
+    project_root: str,
+    runner: PluginCommandRunner,
+    read_registry: RegistryReader,
+    read_artifact: ArtifactReader = plugin_artifact_findings,
+    remove_cache_dir: CacheDirRemover = remove_plugin_cache_dir,
+    current_plugins: frozenset[str] = frozenset(),
+    registered_marketplaces: frozenset[str] = frozenset(),
+) -> tuple[str, ...]:
+    """Provision from settings, then confirm it landed. Empty means provisioned."""
+    return ensure_report(
         settings_text=settings_text,
         project_root=project_root,
-        registry_text=registry_text,
+        runner=runner,
+        read_registry=read_registry,
         read_artifact=read_artifact,
-    ):
-        removal = remove_cache_dir(install_path=install_path)
-        if isinstance(removal, IOFailure):
-            return (unsafe_perform_io(removal.failure()).finding,)
-    command_findings = _run_commands(commands=commands, runner=runner)
-    return command_findings or registry_findings(
-        settings_text=settings_text,
-        project_root=project_root,
-        registry_text=read_registry(),
-        read_artifact=read_artifact,
-    )
+        remove_cache_dir=remove_cache_dir,
+        current_plugins=current_plugins,
+        registered_marketplaces=registered_marketplaces,
+    ).findings
 
 
 def _read_installed_registry() -> str | None:  # pragma: no cover
@@ -334,7 +281,7 @@ def main() -> int:  # pragma: no cover
         registry_text=_read_installed_registry(),
         marketplaces_text=_read_marketplace_registry(),
     )
-    findings = ensure(
+    report = ensure_report(
         settings_text=settings_text,
         project_root=str(root),
         runner=_logged_runner,
@@ -342,9 +289,11 @@ def main() -> int:  # pragma: no cover
         current_plugins=current,
         registered_marketplaces=registered,
     )
-    for finding in findings:
+    for notice in report.notices:
+        _ = sys.stdout.write(f"ensure_plugins: {notice}\n")
+    for finding in report.findings:
         _ = sys.stderr.write(f"ensure_plugins: {finding}\n")
-    return 4 if findings else 0
+    return 4 if report.findings else 0
 
 
 if __name__ == "__main__":
