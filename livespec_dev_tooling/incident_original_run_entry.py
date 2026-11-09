@@ -12,7 +12,7 @@ wrapper and no `gh`, and needs none of them:
     sudo -u livespec-incident -H /opt/livespec-incident/venv/bin/python -I \\
         -m livespec_dev_tooling.incident_original_run_entry collect \\
         --config /etc/livespec-incident/controller.json \\
-        --revert-sha SHA --expected-graph GRAPH.json
+        --revert-sha SHA [--expected-graph GRAPH.json]
 
     sudo -u livespec-incident -H /opt/livespec-incident/venv/bin/python -I \\
         -m livespec_dev_tooling.incident_original_run_entry propose-correction \\
@@ -22,7 +22,11 @@ wrapper and no `gh`, and needs none of them:
         [--staged-tree TREE] [--resolved JOB=RECEIPT ...]
 
 `collect` refuses until the registered original master run has completed and
-the canonical chain records the merge, through its `record-merge` action.
+the canonical chain records the merge, through its `record-merge` action. The
+expected jobs come from the workflow at the merge revision, matrix legs
+expanded; `--expected-graph` is optional and, when given, must agree with that
+workflow or it is refused by name. The running controller also collects by
+itself after a revert lands, so this command is the operator's manual retry.
 `propose-correction` hands a correction to the canonical `correct-attempt`
 action against the attempt a recorded revert receipt moved to
 `collecting-failures`: the `recovery-<digest>` attempt reopen-regression
@@ -85,7 +89,7 @@ def _parse(*, argv: Sequence[str]) -> argparse.Namespace:
     for sub in (gather, correct):
         _ = sub.add_argument("--config", required=True, type=Path)
     _ = gather.add_argument("--revert-sha", required=True)
-    _ = gather.add_argument("--expected-graph", required=True, type=Path)
+    _ = gather.add_argument("--expected-graph", type=Path)
     _ = gather.add_argument("--run-attempt", type=int, default=1)
     _ = gather.add_argument("--workflow", default=".github/workflows/ci.yml")
     for name in (
@@ -152,14 +156,16 @@ def _graph(*, path: Path) -> tuple[ExpectedJob, ...]:
 def _collect(
     *, args: argparse.Namespace, ports: EntryPorts, installation: ControllerInstallation
 ) -> int:
-    graph = _graph(path=args.expected_graph)
-    if not is_successful(graph):
-        return _refused(
-            refusal=EvidenceRefusal(
-                code="incident-original-run-graph-invalid", detail="unreadable expected graph"
+    expected = None
+    if args.expected_graph is not None:
+        graph = _graph(path=args.expected_graph)
+        if not is_successful(graph):
+            return _refused(
+                refusal=EvidenceRefusal(
+                    code="incident-original-run-graph-invalid", detail="unreadable expected graph"
+                )
             )
-        )
-    expected = unsafe_perform_io(graph.unwrap())
+        expected = unsafe_perform_io(graph.unwrap())
     result = collect(
         request=Collection(
             state_dir=installation.state,

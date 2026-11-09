@@ -94,6 +94,21 @@ def test_collect_then_propose_through_the_entrance(
     assert len(world.comments) == 1
 
 
+def test_collect_needs_no_graph_file_because_the_workflow_at_the_merge_declares_it(
+    world: World, capsys: pytest.CaptureFixture[str]
+) -> None:
+    gather = ["collect", *common(world), "--revert-sha", world.shas["revert"]]
+    code, collected = invoke(world, capsys, *gather)
+    assert code == 0
+    assert collected["status"] == "collected"
+    assert [row[0] for row in collected["jobs"]] == [row["name"] for row in GRAPH_ROWS]
+    wrong, mismatch = invoke(
+        world, capsys, *gather, "--expected-graph", graph_file(world, [*GRAPH_ROWS, {"name": "x"}])
+    )
+    assert (wrong, mismatch["code"]) == (78, "incident-original-run-graph-invalid")
+    assert "x" in mismatch["detail"]
+
+
 def test_entrance_refuses_an_unreadable_graph_or_resolution_by_name(
     world: World, capsys: pytest.CaptureFixture[str]
 ) -> None:
