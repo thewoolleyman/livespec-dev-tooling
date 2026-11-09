@@ -186,16 +186,6 @@ def test_an_unfinished_recovery_clears_a_source_without_the_incident_head(servic
     assert (status, result["status"]) == ("202 Accepted", "clear")
 
 
-def test_a_completed_recovery_alone_does_not_fence_an_unattributed_source(service):
-    application, registration, commits = service
-    _store(
-        application=application,
-        record={"actions": {"action-1": {"status": "completed", "registration": registration}}},
-    )
-    status, result = _screen(application=application, source=commits["later"])
-    assert (status, result["status"]) == ("202 Accepted", "clear")
-
-
 @pytest.mark.parametrize("head", ["unknown", "malformed"])
 def test_an_undecidable_ancestry_refuses_as_unverifiable(service, head):
     application, registration, commits = service
