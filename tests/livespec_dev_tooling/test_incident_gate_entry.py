@@ -17,6 +17,7 @@ from livespec_dev_tooling import (
     gate_remote_delegate,
     gate_runner_delegate,
     incident_gate_entry,
+    incident_trusted_origin,
     pre_commit_delegate,
 )
 from livespec_dev_tooling.gate_runner_delegate import GateVenue
@@ -51,6 +52,7 @@ def _scrubbed() -> dict[str, str]:
         key: value
         for key, value in os.environ.items()
         if not key.startswith(("GIT_", "EXPEDITED_", "LIVESPEC_INCIDENT_"))
+        and key not in {"GITHUB_ACTIONS", "GITHUB_EVENT_NAME"}
     }
 
 
@@ -76,7 +78,12 @@ def _stub_bin(*, root: Path) -> Path:
         'touch "$GATE_MARKER"\nexit 0\n'
     )
     work = '#!/bin/sh\ntouch "$GATE_MARKER"\nexit 0\n'
-    for name, body in (("uv", forward), ("just", work), ("git", work), ("mise", work)):
+    probe = (
+        "#!/bin/sh\n"
+        'case "$*" in "config --get livespec.sandboxExempt") exit 1;; esac\n'
+        'touch "$GATE_MARKER"\nexit 0\n'
+    )
+    for name, body in (("uv", forward), ("just", work), ("git", probe), ("mise", work)):
         _ = (binary / name).write_text(body)
         (binary / name).chmod(0o755)
     return binary
@@ -245,3 +252,69 @@ def test_the_boundary_cli_distinguishes_normal_unknown_and_reverting_refusals(
         stderr.count("unknown-entrance") == 2,
     ]
     assert all(facts), facts
+
+
+_TRUSTED_NORMAL_FLAGS = (
+    {_FLAG: "maybe"},
+    {_REVERT: "2"},
+    {_FLAG: "1"},
+    {_REVERT: "1"},
+    {_FLAG: "1", _REVERT: "1"},
+    {_FLAG: "maybe", _REVERT: "also-malformed"},
+)
+_MASTER_PUSH = {"GITHUB_ACTIONS": "true", "GITHUB_EVENT_NAME": "push"}
+
+
+@pytest.mark.parametrize("script", _SCRIPTS)
+@pytest.mark.parametrize("flags", _TRUSTED_NORMAL_FLAGS)
+def test_a_master_push_recipe_runs_its_complete_normal_body_with_any_inherited_flag(
+    *, tmp_path: Path, script: str, flags: dict[str, str]
+) -> None:
+    returncode, stderr, _, logged = _run_script(
+        root=tmp_path, script=script, flags=flags | _MASTER_PUSH
+    )
+    facts = [
+        returncode != incident_gate_entry.REFUSED,
+        "incident-gate-refused" not in stderr,
+        "incident_gate_entry" in logged,
+    ]
+    assert all(facts), (returncode, stderr, logged)
+
+
+@pytest.mark.parametrize("flags", _TRUSTED_NORMAL_FLAGS)
+def test_a_master_push_python_entrance_continues_its_normal_body_with_any_inherited_flag(
+    *, monkeypatch: pytest.MonkeyPatch, flags: dict[str, str]
+) -> None:
+    _clear(monkeypatch=monkeypatch)
+    for name, value in (flags | _MASTER_PUSH).items():
+        monkeypatch.setenv(name, value)
+    facts = [
+        incident_gate_entry.entrance_refusal(surface=surface) is None
+        for surface in sorted(incident_gate_entry.ENTRANCES)
+    ]
+    assert all(facts), facts
+
+
+@pytest.mark.parametrize("flags", _TRUSTED_NORMAL_FLAGS)
+def test_a_factory_follow_up_entrance_continues_its_normal_body_with_any_inherited_flag(
+    *, monkeypatch: pytest.MonkeyPatch, flags: dict[str, str]
+) -> None:
+    _clear(monkeypatch=monkeypatch)
+    monkeypatch.setattr(incident_trusted_origin, "factory_sandbox", lambda **_kwargs: True)
+    for name, value in flags.items():
+        monkeypatch.setenv(name, value)
+    decision = incident_gate_entry.resolve_entrance(surface="check", launcher=True)
+    assert (decision.mode, decision.status) == ("normal", incident_gate_entry.NORMAL)
+
+
+@pytest.mark.parametrize(("flags", "code"), _REFUSALS)
+def test_outside_the_trusted_origins_a_pull_request_job_still_refuses(
+    *, monkeypatch: pytest.MonkeyPatch, flags: dict[str, str], code: str
+) -> None:
+    _clear(monkeypatch=monkeypatch)
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    monkeypatch.setenv("GITHUB_EVENT_NAME", "pull_request")
+    for name, value in flags.items():
+        monkeypatch.setenv(name, value)
+    decision = incident_gate_entry.resolve_entrance(surface="check")
+    assert (decision.status, code in decision.reason) == (incident_gate_entry.REFUSED, True)
