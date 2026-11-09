@@ -101,7 +101,13 @@ class ObserverReconcile:
                     action_id=intent.action_id,
                 )
             action = _actions(record=record).get(intent.action_id)
-            if action is not None and action.get("receipt"):
+            if action is None:
+                return ObserverResult(
+                    status="refused",
+                    reason="retained action missing before the retry",
+                    action_id=intent.action_id,
+                )
+            if action.get("receipt"):
                 return ObserverResult(
                     status="completed",
                     reason="retained action already holds its receipt",
@@ -110,7 +116,6 @@ class ObserverReconcile:
                 )
             receipt = recover(intent)
             if receipt:
-                action = _actions(record=record)[intent.action_id]
                 action.update(status="completed", receipt=receipt)
                 save_record(path=path, record=record)
         return ObserverResult(
