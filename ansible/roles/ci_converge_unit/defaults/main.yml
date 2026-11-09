@@ -123,6 +123,14 @@ ci_converge_unit_files:
   - src: kueue/worker/cluster-queue-livespec-dev-tooling-arm64.yaml
     dest: kueue/worker/cluster-queue-livespec-dev-tooling-arm64.yaml
     mode: "0644"
+  # The gates-cq worker flavor template. converge-worker-queues.sh renders it per
+  # enrolled architecture and places it FIRST in gates-cq, and it exits before
+  # that step when the template is absent. Missing from this list, the
+  # 2026-11-09 12:44Z apply left gates-cq with no worker flavor, and the M4
+  # lost its gate share.
+  - src: kueue/worker/gates-worker-flavor.yaml
+    dest: kueue/worker/gates-worker-flavor.yaml
+    mode: "0644"
   - src: local-path-provisioner/local-path-provisioner.yaml
     dest: local-path-provisioner/local-path-provisioner.yaml
     mode: "0644"
