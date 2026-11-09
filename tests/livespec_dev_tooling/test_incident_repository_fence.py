@@ -9,11 +9,13 @@ import os
 import selectors
 import subprocess
 import sys
+import time
 from contextlib import ExitStack
-from threading import Thread
+from threading import Event, Thread
 
 import pytest
 
+import livespec_dev_tooling._incident_observer_store as store
 import livespec_dev_tooling.incident_inverse_service as inverse_service
 from livespec_dev_tooling._incident_observer_store import (
     REPOSITORY_FENCE_FD_ENV,
@@ -270,3 +272,32 @@ def test_malformed_transport_payload_cannot_reuse_ambient_fence(tmp_path, monkey
         result = principal.publish_inverse(request=object())
         assert result.status == "unknown"
         assert observed.read_text() == "absent"
+
+
+def test_a_bounded_acquisition_waits_for_a_release_and_gives_up_when_none_comes(tmp_path):
+    holding, release = Event(), Event()
+
+    def hold():
+        with repository_lock(directory=tmp_path, repository=_REPOSITORY):
+            holding.set()
+            release.wait(timeout=10)
+
+    holder = Thread(target=hold)
+    holder.start()
+    try:
+        assert holding.wait(timeout=5)
+        with pytest.raises(store.RepositoryFenceBusyError):
+            ExitStack().enter_context(
+                repository_lock(directory=tmp_path, repository=_REPOSITORY, wait_seconds=0.05)
+            )
+        Thread(target=lambda: (time.sleep(0.1), release.set())).start()
+        with repository_lock(directory=tmp_path, repository=_REPOSITORY, wait_seconds=5):
+            assert current_repository_fence(repository=_REPOSITORY, directory=tmp_path)
+    finally:
+        release.set()
+        holder.join(timeout=10)
+
+
+def test_a_bounded_acquisition_of_a_free_fence_succeeds_at_once(tmp_path):
+    with repository_lock(directory=tmp_path, repository=_REPOSITORY, wait_seconds=0):
+        assert current_repository_fence(repository=_REPOSITORY, directory=tmp_path)
