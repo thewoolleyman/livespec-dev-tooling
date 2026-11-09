@@ -109,7 +109,15 @@ jobs:
           else
             echo "CI run ${run_id} is ${status}; stopping it, because it may have read the label set before this event"
           fi
-          gh api -X POST "repos/${repo}/actions/runs/${run_id}/cancel" >/dev/null || true
+          # A run re-run a moment ago refuses cancellation until GitHub has
+          # queued it (HTTP 409), so the cancel is retried until it is accepted.
+          for attempt in $(seq 1 30); do
+            if gh api -X POST "repos/${repo}/actions/runs/${run_id}/cancel" >/dev/null; then
+              break
+            fi
+            echo "cancel of CI run ${run_id} not accepted yet (try ${attempt}); retrying"
+            sleep 5
+          done
           for _ in $(seq 1 60); do
             status="$(gh api "repos/${repo}/actions/runs/${run_id}" --jq '.status')"
             [ "$status" = "completed" ] && break
