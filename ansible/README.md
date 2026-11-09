@@ -229,7 +229,13 @@ What protects a factory host here is the pod gate, not a group refusal: one
 read, field-selected to the target across every namespace, and the play REFUSES
 — naming each pod — if the node is running anything a DaemonSet does not own. A
 finished pod and a DaemonSet's pod are not workload; a bare pod is, which is
-what a Fabro sandbox holding a run looks like. Unlike its two siblings it does
+what a Fabro sandbox holding a run looks like. Neither is a ReplicaSet-owned
+pod in a namespace `restart_k3s_agent_addon_namespaces` lists (today only
+`kueue-system`): that is a cluster add-on's controller replica, which a kubelet
+restart only pauses. Without that exemption the `kueue-controller-manager`
+replica on `gmktec-xubuntu` refused that node permanently (`bd-ib-y6v7b6`). A
+bare pod in such a namespace, and a ReplicaSet pod in any other, still refuse.
+Unlike its two siblings it does
 not wait, because the workload it finds is an operator's decision (drain the
 run, or come back) rather than a CI job that finishes on its own. It then
 restarts the unit, waits for the API to report the node Ready again, and prints
