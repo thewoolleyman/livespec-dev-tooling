@@ -128,7 +128,7 @@ def test_a_non_202_answer_through_the_override_names_the_dialed_address(monkeypa
     monkeypatch.setenv(_VARIABLE, _ADDRESS)
 
     assert _boundary().current(query=_query()) is False
-    assert ("tcp", (_ADDRESS, 8765), 60) in dials
+    assert ("tcp", (_ADDRESS, 8765), 630) in dials
     err = capsys.readouterr().err
     assert "HTTP 503 while reading /current from " + _ADDRESS + ":8765 as " + _HOST in err
     assert _TOKEN not in err

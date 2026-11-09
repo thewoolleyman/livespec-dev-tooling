@@ -14,6 +14,7 @@ from typing import Any
 import pytest
 
 from livespec_dev_tooling import incident_hook_process as module
+from livespec_dev_tooling.incident_authority_client import AUTHORITY_CALL_CEILING_SECONDS
 
 __all__: list[str] = []
 
@@ -47,8 +48,8 @@ def test_an_authority_call_three_times_slower_than_measured_is_not_cut_off(
     with pytest.raises(module.HookRefusalError):
         _ = module.invoke_authority(repo=tmp_path, query=_QUERY, action="read-local-gates")
     # 39 s is the slowest call measured; three times that must still complete.
-    assert bounds == [module.AUTHORITY_CALL_CEILING_SECONDS]
-    assert module.AUTHORITY_CALL_CEILING_SECONDS >= 3 * 39
+    assert bounds == [AUTHORITY_CALL_CEILING_SECONDS]
+    assert AUTHORITY_CALL_CEILING_SECONDS >= 3 * 39
 
 
 def test_a_timed_out_authority_call_names_the_action_and_its_elapsed_seconds(
@@ -63,4 +64,4 @@ def test_a_timed_out_authority_call_names_the_action_and_its_elapsed_seconds(
         _ = module.invoke_authority(repo=tmp_path, query=_QUERY, action="record-local-gates")
     message = str(refused.value)
     assert "record-local-gates" in message
-    assert f"{module.AUTHORITY_CALL_CEILING_SECONDS} s" in message
+    assert f"{AUTHORITY_CALL_CEILING_SECONDS} s" in message

@@ -101,6 +101,7 @@ def chain(monkeypatch, reverting):
             "schema": 1,
             "status": "verified",
             "authorizes_current_effects": True,
+            "normal_factory_proof": False,
             "result": {"is_current": True, "attempt": current["attempt"]},
         }
         return subprocess.CompletedProcess(argv, 0, json.dumps(reply), "")

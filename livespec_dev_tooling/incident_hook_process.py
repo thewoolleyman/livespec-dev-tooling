@@ -9,20 +9,33 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import sys
 from pathlib import Path
 from typing import Any, NoReturn, cast
 
-from livespec_dev_tooling.flake_retry_filer import registered_plugin_root
-from livespec_dev_tooling.incident_execution import (
+_VENDOR_DIR = Path(__file__).resolve().parent / "_vendor"
+if str(_VENDOR_DIR) not in sys.path:
+    sys.path.insert(0, str(_VENDOR_DIR))
+
+from returns.pipeline import is_successful  # noqa: E402 — vendor-path-aware import.
+
+from livespec_dev_tooling.flake_retry_filer import registered_plugin_root  # noqa: E402
+from livespec_dev_tooling.incident_authority_client import (  # noqa: E402
+    call_authority,
+    registered_authority_command,
+)
+from livespec_dev_tooling.incident_execution import (  # noqa: E402
     ExecutionContext,
     Invocation,
     OperationIdentity,
     resolve_execution_context,
 )
-from livespec_dev_tooling.incident_transport import CONTEXT_ENV, decode_execution_context
+from livespec_dev_tooling.incident_transport import (  # noqa: E402
+    CONTEXT_ENV,
+    decode_execution_context,
+)
 
 __all__: list[str] = [
-    "AUTHORITY_CALL_CEILING_SECONDS",
     "HookRefusalError",
     "canonical",
     "exact_tree",
@@ -37,11 +50,6 @@ _QUERY_KEYS = frozenset(
     ("repository", "item", "attempt", "phase", "operation", "generation", "owner")
 )
 _TIMEOUT = 30
-# A hang guard for one canonical authority call, never a verdict. Measured on the
-# dev host 2026-11-08 (livespec-dev-tooling-yaprm4): read-local-gates took 21-39 s
-# and grows with the chain's generation, so a 30 s bound refused live expedited
-# commits. Ten minutes stops a hung wrapper or ledger without deciding a slow one.
-AUTHORITY_CALL_CEILING_SECONDS = 600
 _MAX_QUERY = 16384
 
 
@@ -101,47 +109,23 @@ def invoke_authority(
     plugin = registered_plugin_root(
         repo_root=governed, registry=Path.home() / ".claude/plugins/installed_plugins.json"
     )
-    command = [
-        "/usr/local/bin/with-livespec-env.sh",
-        "--",
-        "python3",
-        str(plugin / "scripts/bin/incident_authority.py"),
-        action,
-        "--repo",
-        str(governed),
-    ]
-    for name, value in query.items():
-        command.extend(["--" + name, str(value)])
+    flags: dict[str, object] = {"repo": governed, **query}
     if receipt is not None:
-        command.extend(["--receipt-json", receipt])
+        flags["receipt-json"] = receipt
     if receipt_id is not None:
-        command.extend(["--receipt-id", receipt_id])
-    try:
-        done = subprocess.run(  # noqa: S603 — fixed registered executable; structured query argv.
-            command,
-            cwd=repo,
-            text=True,
-            capture_output=True,
-            timeout=AUTHORITY_CALL_CEILING_SECONDS,
-            check=False,
-        )
-    except subprocess.TimeoutExpired:
+        flags["receipt-id"] = receipt_id
+    checked = call_authority(
+        command=registered_authority_command(plugin_root=plugin),
+        action=action,
+        flags=flags,
+        cwd=repo,
+    )
+    if not is_successful(checked):
+        refusal = checked.failure()
         _fail(
-            detail=f"registered canonical incident process {action} exceeded its"
-            f" {AUTHORITY_CALL_CEILING_SECONDS} s liveness ceiling"
+            detail=f"registered canonical incident process refused {refusal.code}: {refusal.detail}"
         )
-    response = mapping(value=json.loads(done.stdout))
-    if (
-        done.returncode
-        or response.get("schema") != 1
-        or type(response.get("schema")) is not int
-        or response.get("status") != "verified"
-        or response.get("normal_factory_proof") is not False
-    ):
-        _fail(detail="registered canonical incident process refused or returned invalid proof")
-    if response.get("authorizes_current_effects") is not (action == "read-current"):
-        _fail(detail="registered canonical incident process returned wrong authority kind")
-    return mapping(value=response["result"])
+    return checked.unwrap()
 
 
 def resolve_current(*, reading: dict[str, Any], query: dict[str, Any]) -> ExecutionContext:

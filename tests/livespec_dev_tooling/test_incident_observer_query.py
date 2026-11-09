@@ -86,6 +86,7 @@ def provisioned(tmp_path, monkeypatch):
             "schema": 1,
             "status": "verified",
             "authorizes_current_effects": True,
+            "normal_factory_proof": False,
             "result": {"is_current": True, "attempt": attempt},
         }
         return subprocess.CompletedProcess(argv, 0, json.dumps(reply), "")
@@ -226,6 +227,7 @@ def test_arm_change_during_tenant_read_refuses_without_holding_effect_lock(
             "schema": 1,
             "status": "verified",
             "authorizes_current_effects": True,
+            "normal_factory_proof": False,
             "result": {"is_current": True, "attempt": attempt},
         }
         return subprocess.CompletedProcess(argv, 0, json.dumps(reply), "")
