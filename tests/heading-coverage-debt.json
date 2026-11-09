@@ -198,6 +198,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: a CI job killed at Initialize containers by a registry network error is re-run once",
+    "work_item": "livespec-dev-tooling-khlrw3",
+    "first_seen": "2026-11-09"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: a CI job killed at Set up job by an action-download 429 is re-run with backoff",
     "work_item": "livespec-dev-tooling-cetyrq",
     "first_seen": "2026-11-03"
