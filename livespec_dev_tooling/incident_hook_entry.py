@@ -15,6 +15,8 @@ from livespec_dev_tooling.incident_execution import (
     EXPEDITED_INCIDENT_RESPONSE,
     EXPEDITED_INCIDENT_RESPONSE_REVERT,
     ExecutionContext,
+    ExecutionMode,
+    OperationIdentity,
     parse_incident_truth_value,
 )
 from livespec_dev_tooling.incident_gate_inventory import inventory_gates
@@ -48,6 +50,7 @@ __all__: list[str] = ["main"]
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-cerkbn
 _REFUSED = 78
 _NORMAL = 75
+_HANDED_OFF = 79
 _MAX_STDIN = 16384
 _INDEX_ARGUMENTS = 2
 
@@ -117,6 +120,29 @@ def _finish(
     return receipt["exit_status"]
 
 
+def _hand_off(*, identity: OperationIdentity) -> int:
+    """Name the recorded incident merge and leave the inverse to the recovery boundary.
+
+    An emergency inverse is built against current master and published by the
+    independently provisioned recovery principal (`incident_recovery_principal`),
+    never by a local commit or push. The hook therefore admits no local operation:
+    it reports the resolved identity and returns a terminal non-normal status.
+    """
+    record = dict(
+        schema=1,
+        handoff="trusted-recovery-boundary",
+        mode=ExecutionMode.EMERGENCY_REVERT,
+        repository=identity.repository,
+        incident_item_id=identity.incident_item_id,
+        attempt_id=identity.attempt_id,
+        operation_id=identity.operation_id,
+        recorded_incident_merge_sha=identity.recorded_incident_merge_sha,
+        normal_factory_proof=False,
+    )
+    _ = sys.stdout.write(canonical(value=record) + "\n")
+    return _HANDED_OFF
+
+
 @impure_safe
 def _run(*, hook: str, extra: list[str], actual_index: str = "") -> int:
     if not _active():
@@ -126,17 +152,19 @@ def _run(*, hook: str, extra: list[str], actual_index: str = "") -> int:
         and Path(actual_index).resolve()
         != Path(git_text(repo=Path.cwd(), args=["rev-parse", "--git-path", "index"])).resolve()
     ):
-        return _refuse(reason="alternate Git operation index is unsupported for incident commits")
+        message = "alternate Git operation index is unsupported for incident commits"
+        raise HookRefusalError(message)
     stdin = sys.stdin.read(_MAX_STDIN + 1) if hook == "pre-push" else ""
     query = parse_query(text=os.environ.get(QUERY_ENV, "{}"))
     local_operation = os.environ.get(LOCAL_OPERATION_ENV, "")
     if query is None or not local_operation.strip() or local_operation != local_operation.strip():
-        return _refuse(
-            reason="exact canonical query and distinct local operation identity required"
-        )
+        message = "exact canonical query and distinct local operation identity required"
+        raise HookRefusalError(message)
     repo = Path.cwd()
     reading = invoke_authority(repo=repo, query=query, action="read-current")
     context = resolve_current(reading=reading, query=query)
+    if context.mode == ExecutionMode.EMERGENCY_REVERT and context.identity is not None:
+        return _hand_off(identity=context.identity)
     started = time.monotonic()
     tree = exact_tree(repo=repo, context=context, hook=hook)
     scope = validate_scope(
