@@ -38,10 +38,30 @@ def _without_mise(*, command: tuple[str, ...]) -> tuple[str, ...]:
 
 
 def _without_uv_options(*, command: tuple[str, ...]) -> tuple[str, ...]:
-    """Remove ``uv run`` flags before reading the program it will execute."""
-    while command[:1] == ("--no-sync",):
-        command = command[1:]
-    return command
+    """Remove every ``uv run`` option before reading the program it will execute.
+
+    Which options take a value is not knowable from the words alone, so the
+    scan does not enumerate them: a dashed word is an option, and a bare word
+    straight after one is its value unless it names pytest or an interpreter,
+    which is then the program. That errs toward reading a pytest, never away.
+    """
+    index = 0
+    after_option = False
+    while index < len(command):
+        word = command[index]
+        if word.startswith("-"):
+            after_option = True
+        elif after_option and not _names_pytest_program(word=word):
+            after_option = False
+        else:
+            break
+        index += 1
+    return command[index:]
+
+
+def _names_pytest_program(*, word: str) -> bool:
+    """Whether a word is ``pytest`` or a Python interpreter, the programs read as pytest."""
+    return word == "pytest" or _is_python(command=(word,))
 
 
 def _is_just_check(*, command: tuple[str, ...]) -> bool:

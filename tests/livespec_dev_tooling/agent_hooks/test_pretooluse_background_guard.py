@@ -951,6 +951,16 @@ def _write_delegated_gate_config(*, repository: Path, delegated: bool) -> None:
         pytest.param("pytest --cov widget", id="separate-option-value"),
         pytest.param("uv run --no-sync python -m pytest --cov=widget", id="uv-python-module"),
         pytest.param(".venv/bin/python -m pytest -n 8", id="interpreter-path"),
+        pytest.param("uv run --frozen pytest", id="uv-flag-before-pytest"),
+        pytest.param("uv run --frozen python -m pytest", id="uv-flag-before-python-module"),
+        pytest.param("uv run --with x pytest", id="uv-valued-option-before-pytest"),
+        pytest.param("uv run --python 3.12 pytest", id="uv-python-option-before-pytest"),
+        pytest.param("uv run --no-sync --frozen --offline pytest", id="uv-several-flags"),
+        pytest.param("uv run --with=x pytest", id="uv-attached-option-value"),
+        pytest.param("uv run -- pytest", id="uv-option-terminator"),
+        pytest.param(
+            "uv run --python 3.12 python -m pytest -n 8", id="uv-python-option-before-module"
+        ),
         pytest.param("pytest -n4 tests/test_widget.py", id="attached-numprocesses"),
         pytest.param("pytest -n=4 tests/test_widget.py", id="equals-numprocesses"),
         pytest.param("pytest -nauto tests/test_widget.py", id="attached-auto-numprocesses"),
@@ -1054,6 +1064,32 @@ def test_a_prefixed_or_compound_foreground_pytest_in_the_cwd_is_refused(
 
     assert event["check_id"] == _FOREGROUND_PYTEST_CHECK_ID
     assert event["repository"] == str(delegating)
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    "command",
+    [
+        pytest.param("uv run --frozen ruff check", id="flag-then-other-program"),
+        pytest.param("uv run --with x ruff check", id="valued-option-then-other-program"),
+        pytest.param("uv run --frozen", id="flags-only"),
+        pytest.param("uv run --frozen pytest tests/test_widget.py", id="flag-then-targeted-pytest"),
+        pytest.param(
+            "uv run --with x python -m pytest tests/test_widget.py", id="valued-then-targeted"
+        ),
+    ],
+)
+def test_a_uv_run_with_options_that_is_not_a_full_suite_pytest_proceeds(
+    command: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Skipping `uv run` options widens no refusal beyond a full-suite pytest."""
+    delegating, _ = _two_repositories(tmp_path=tmp_path, monkeypatch=monkeypatch)
+    monkeypatch.chdir(delegating)
+    payload = json.dumps({"tool_name": "Bash", "tool_input": {"command": command}})
+
+    assert _run_main(monkeypatch=monkeypatch, stdin_text=payload) == 0
 
 
 @pytest.mark.integration
