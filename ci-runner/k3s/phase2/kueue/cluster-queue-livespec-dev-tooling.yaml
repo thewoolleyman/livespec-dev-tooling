@@ -62,7 +62,10 @@ spec:
               # "The master-push slice for livespec-dev-tooling (2026-11-03)").
               # 6 -> 9 on 2026-11-08 (R301, after the 6e5pyj step-4 KEEP): 3 slots from
               # livespec-orchestrator-beads-fabro-cq; the cohort stays 30. See DERIVATION.md.
-              nominalQuota: 9
+              # 9 -> 7 on 2026-11-09: hp-xubuntu drops 5 -> 3 churn slots and the
+              # cohort drops 30 -> 28; this queue donates the 2. See DERIVATION.md
+              # "hp to 3 slots, cohort 28 (2026-11-09)".
+              nominalQuota: 7
 ---
 apiVersion: kueue.x-k8s.io/v1beta2
 kind: LocalQueue

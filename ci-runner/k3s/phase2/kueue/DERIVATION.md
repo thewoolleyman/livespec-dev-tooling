@@ -2072,3 +2072,30 @@ legacy-coordinator-agent then ruled (R301) to move 3 slots from the orchestrator
 Every other queue and every node profile is unchanged. The quotas still sum to 30, equal to poweredge 17 + gmktec 8 + hp 5.
 
 ci-runtime-and-cost re-measures 60 minutes after the apply, from the apply time this change's applier reports. Kill switch: restore orchestrator-cq 12 with maxRunners 24, and dev-tooling-cq 6 with maxRunners 12, by applying ci_converge_unit.
+
+## hp to 3 slots, cohort 28 (2026-11-09)
+
+This is the refined hp trigger on livespec-dev-tooling-6e5pyj. ci-runtime-and-cost applied it on 2026-11-09 after the gate-lane reorder. The rule was set before the read: cut hp-xubuntu 5 -> 3 only if hp's job times have NOT fallen against the pre-reorder read AND hp still runs above 3.1x gmktec.
+
+The gate lane put hp LAST at 12:44:41Z (gmktec 15, poweredge 10, hp 10). Nodes were mapped from the arc-runners `Scheduled` events and joined to the GitHub job records of livespec-dev-tooling CI runs created after 12:45Z.
+
+| Job | hp before the reorder | hp after the reorder | gmktec after the reorder | hp / gmktec |
+| --- | --- | --- | --- | --- |
+| check-types | 54 s | 207 s (run 42620973747, job 129172710717) | 37 s (run 42622915919) | 5.6x |
+| check-lint | 105 s and 23 s | 62 s (run 42620973747, job 129172710807) | 15 s (run 42622915919) | 4.1x |
+
+hp's times did not fall: check-types rose and check-lint stayed flat. Both ratios are above 3.1x. At 13:37Z, hp ran only 2 runner pods, with 0 factory and 0 gate pods, and was still about 69 % busy (/proc/stat over 5 s). Those 2 pods ran about 8 pytest workers on its 16 CPUs, so even its pod-quiet state is loaded.
+
+| Item | Change |
+| --- | --- |
+| hp-xubuntu `ADMISSION_CAPACITY_C` | 5 -> 3 |
+| Cohort | 30 -> 28 (poweredge 17 + gmktec 8 + hp 3) |
+| livespec-dev-tooling-cq | 9 -> 7; maxRunners max(2 x 7, 6) = 14 |
+
+Every other queue is unchanged, so the quotas still sum to the node profiles. dev-tooling-cq donates the 2 slots because it took 3 on 2026-11-08 and remains the largest of the small queues. The master lane (livespec-dev-tooling-master-cq, 3) is untouched.
+
+Apply: `just ansible-apply ansible/ci-pool.yml --tags node_extended_resource`, then the ci_converge_unit apply for the queue and maxRunners.
+
+Revert: hp 5, dev-tooling-cq 9 and maxRunners 18, applied the same way.
+
+Re-read hp and dev-tooling queue wait 60 minutes after apply-complete. That is the moment hp's allocatable churn-slot reads 3.

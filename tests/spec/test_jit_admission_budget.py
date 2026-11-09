@@ -243,7 +243,7 @@ def test_measured_job_hours_derive_the_committed_fair_shares() -> None:
     """Seven-day pool job-hours are the dated, auditable source of every quota."""
     expected = {
         "livespec-orchestrator-beads-fabro-cq": 9,
-        "livespec-dev-tooling-cq": 9,
+        "livespec-dev-tooling-cq": 7,
         "livespec-dev-tooling-master-cq": 3,
         "livespec-cq": 1,
         "livespec-overseer-cq": 1,
