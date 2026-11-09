@@ -738,6 +738,10 @@ fabro_server_instances:
     port: 32279
     canonical_host: gmktec-xubuntu.perch-rudd.ts.net:32279
     cli_target_url: http://127.0.0.1:32279
+    # THE BOUND on arm64 factory runs while this is the only arm64 router: the
+    # reconciler's @container-worker budget is per-node pod admission, and its
+    # fail-open overflow re-admits a one-node arm64 group whenever it is full, so
+    # it never bounds that group (gmktec-factory-placement review, 2026-11-09).
     max_concurrent_runs: 1
     github_app_id: "3668528"
     otel_dropin: present
@@ -761,9 +765,11 @@ fabro_server_instances:
           SANDBOX_DRIVER_KUBERNETES_CPU_REQUEST_CORES: "3"
           SANDBOX_DRIVER_KUBERNETES_STATE_DIR: /home/cwoolley/.fabro-homelab-worker-arm64/.local/state/sandbox-driver-kubernetes
         process_spec:
-          # OWED BEFORE PUSH: the python-agent-sha-<short>-arm64 tag the image pull
-          # request publishes (livespec-dev-tooling-a3brdf).
-          image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-agent-sha-PENDING-arm64
+          # The arm64 python-agent layer proven natively on macbook-m4-max-homelab-worker
+          # (homelab-worker/prove-agent-image.sh, 2026-11-09T17:06Z, livespec-dev-tooling-a3brdf):
+          # the 1.189.0 release's -arm64 tag. The fleet instance (:32276) pins its own
+          # amd64 python-agent version; roll this pin with it so the two do not diverge.
+          image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-agent-v1.189.0-arm64
           cpu_cores: 6
           memory_mb: 7629
     vault_secrets:
