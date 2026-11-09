@@ -89,6 +89,9 @@ on:
       APP_PRIVATE_KEY:
         description: GitHub App private key PEM for the bump-PR App.
         required: true
+      LIVESPEC_INCIDENT_OBSERVER_QUERY_TOKEN:
+        description: Read-only query credential of the caller's incident observer (livespec-dev-tooling-wbvbj6); used only when LIVESPEC_INCIDENT_RELEASE_SCREEN_URL is set.
+        required: false
 
 jobs:
   discover-siblings:
@@ -262,6 +265,35 @@ jobs:
 
       - name: Install Python dev deps via uv
         run: uv sync --all-groups
+
+      # Incident release screen (livespec-dev-tooling-wbvbj6; contracts.md
+      # "Expedited incident execution": recovery MUST fence queued stale
+      # adoption). Before any sibling is dispatched, ask the caller's incident
+      # observer whether this release is fenced by a retained recovery action.
+      # A named refusal fails this job, and `dispatch` needs it, so no sibling
+      # receives the release. Inert until the caller sets
+      # LIVESPEC_INCIDENT_RELEASE_SCREEN_URL to an observer route this runner
+      # can reach; with it unset the step is skipped and the fan-out runs as
+      # before.
+      - name: Screen the release against retained incident recovery
+        if: ${{ vars.LIVESPEC_INCIDENT_RELEASE_SCREEN_URL != '' }}
+        env:
+          LIVESPEC_INCIDENT_OBSERVER_URL: ${{ vars.LIVESPEC_INCIDENT_RELEASE_SCREEN_URL }}
+          LIVESPEC_INCIDENT_OBSERVER_QUERY_TOKEN: ${{ secrets.LIVESPEC_INCIDENT_OBSERVER_QUERY_TOKEN }}
+          OBSERVED: ${{ vars.LIVESPEC_INCIDENT_OBSERVED_REPOSITORY || github.repository }}
+          OWNER: ${{ github.repository_owner }}
+          SOURCE_REPO: ${{ inputs.source_repo }}
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          # Prefer the peeled commit of an annotated tag.
+          source_sha=$(git ls-remote "https://github.com/$OWNER/$SOURCE_REPO.git" "refs/tags/$RELEASE_TAG" \
+            | awk '$2 ~ /\^\{\}$/ {peeled=$1} {last=$1} END {print (peeled != "" ? peeled : last)}')
+          uv run python -m livespec_dev_tooling.incident_release_entry \
+            --observed-repository "$OBSERVED" \
+            --repository "$OWNER/$SOURCE_REPO" \
+            --source-sha "$source_sha" \
+            --tag "$RELEASE_TAG"
 
       - name: just await-sandbox-image
         env:

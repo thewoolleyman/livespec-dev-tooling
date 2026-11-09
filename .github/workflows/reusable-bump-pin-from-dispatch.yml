@@ -88,6 +88,9 @@ on:
       APP_PRIVATE_KEY:
         description: GitHub App private key PEM for the bump-PR App.
         required: true
+      LIVESPEC_INCIDENT_OBSERVER_QUERY_TOKEN:
+        description: Read-only query credential of the caller's incident observer (livespec-dev-tooling-wbvbj6); used only when LIVESPEC_INCIDENT_RELEASE_SCREEN_URL is set.
+        required: false
 
 jobs:
   bump-pin:
@@ -157,6 +160,33 @@ jobs:
 
       - name: Install Python deps via uv
         run: uv sync --all-groups
+
+      # Incident pin screen (livespec-dev-tooling-wbvbj6): refuse to bump a
+      # pin to a release that the source's incident observer fences with a
+      # retained recovery action. Inert until this consumer sets
+      # LIVESPEC_INCIDENT_RELEASE_SCREEN_URL (and, when the observer watches
+      # another repository, LIVESPEC_INCIDENT_OBSERVED_REPOSITORY); with it
+      # unset the step is skipped and the bump runs as before.
+      - name: Screen the pinned release against retained incident recovery
+        if: ${{ vars.LIVESPEC_INCIDENT_RELEASE_SCREEN_URL != '' }}
+        env:
+          LIVESPEC_INCIDENT_OBSERVER_URL: ${{ vars.LIVESPEC_INCIDENT_RELEASE_SCREEN_URL }}
+          LIVESPEC_INCIDENT_OBSERVER_QUERY_TOKEN: ${{ secrets.LIVESPEC_INCIDENT_OBSERVER_QUERY_TOKEN }}
+          OBSERVED: ${{ vars.LIVESPEC_INCIDENT_OBSERVED_REPOSITORY || github.repository }}
+          OWNER: ${{ github.repository_owner }}
+          SOURCE_REPO: ${{ inputs.source_repo }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          # Prefer the peeled commit of an annotated tag.
+          source_sha=$(git ls-remote "https://github.com/$OWNER/$SOURCE_REPO.git" "refs/tags/$TAG" \
+            | awk '$2 ~ /\^\{\}$/ {peeled=$1} {last=$1} END {print (peeled != "" ? peeled : last)}')
+          uv run --project .livespec-dev-tooling python -m \
+            livespec_dev_tooling.incident_release_entry \
+            --observed-repository "$OBSERVED" \
+            --repository "$OWNER/$SOURCE_REPO" \
+            --source-sha "$source_sha" \
+            --tag "$TAG"
 
       - name: Run pin-autodiscovery for ${{ inputs.source_repo }}
         id: autodiscover
