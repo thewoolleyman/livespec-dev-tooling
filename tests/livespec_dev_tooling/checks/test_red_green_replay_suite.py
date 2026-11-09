@@ -406,3 +406,49 @@ class _RecordingLog:
 
     def error(self, event: str, **kwargs: object) -> None:
         self.records.append(("error", event, kwargs))
+
+
+def test_a_stalled_suite_green_refusal_carries_the_runs_attribution(
+    *, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The refusal states the runner's attribution and carries the output the leg received."""
+    from livespec_dev_tooling.commit_replay_delegate import ReplayVerdict
+
+    mod = _load()
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(mod, "read_pre_commit_evidence", lambda **_kwargs: None)
+    monkeypatch.setattr(mod, "staged_tree_hash", lambda **_kwargs: "staged-tree")
+    monkeypatch.setattr(
+        mod,
+        "run_replay",
+        lambda **_kwargs: ReplayVerdict(local=True, reason="gates kubeconfig is not readable"),
+    )
+    monkeypatch.setattr(mod, "xdist_importable", lambda: False)
+    attribution = "after 907 seconds, 1 of 3 collected tests had completed, the last was t::one"
+    monkeypatch.setattr(
+        mod,
+        "run_suite",
+        lambda **_kwargs: mod.SuiteRun(
+            returncode=None,
+            output=".\n",
+            timed_out=True,
+            kill_reason="stalled",
+            attribution=attribution,
+        ),
+    )
+    message = tmp_path / "COMMIT_EDITMSG"
+    message.write_text("chore: suite green\n", encoding="utf-8")
+    log = _RecordingLog()
+
+    assert (
+        mod._handle_suite_green_mode(  # noqa: SLF001
+            msg_path=message,
+            log=log,
+            staged_paths=["livespec_dev_tooling/example.py"],
+        )
+        == 1
+    )
+    _level, event, fields = log.records[-1]
+    assert attribution in event
+    assert fields["attribution"] == attribution
+    assert fields["received_output"] == ".\n"

@@ -277,11 +277,12 @@ def _handle_suite_green_mode(
             reason=verdict.reason,
         )
     if suite_result.timed_out:
+        stall = suite_result.attribution or test_completion_summary(output=suite_result.output)
         timeout_message = (
             f"suite-green-timeout: the suite-green leg was killed ({suite_result.kill_reason}): "
             f"its stall window is {bound.stall_seconds}s with no new output ({STALL_ENV}) "
             f"and its total ceiling is {bound.ceiling_seconds or 'unset'} ({CEILING_ENV}); "
-            f"{test_completion_summary(output=suite_result.output)}; "
+            f"{stall}; "
             "the pytest process group was killed"
         )
         log.error(
@@ -293,6 +294,8 @@ def _handle_suite_green_mode(
             ceiling_seconds=bound.ceiling_seconds,
             stall_env_var=STALL_ENV,
             timeout_env_var=CEILING_ENV,
+            attribution=stall,
+            received_output=suite_result.output,
             hint=(
                 "The suite-green leg is bounded by progress: it is killed only after "
                 f"{STALL_ENV} seconds (default {DEFAULT_STALL_SECONDS}) without a byte of "
