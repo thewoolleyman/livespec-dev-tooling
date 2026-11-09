@@ -1080,6 +1080,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: a wall time that rounds up into the next unit is shown in that unit",
+    "work_item": "livespec-dev-tooling-e62ss6",
+    "first_seen": "2026-11-09"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: a warn-default finding whose lever CI arms fails a just check run that sets no lever",
     "work_item": "livespec-dev-tooling-nxeg32",
     "first_seen": "2026-11-08"
@@ -1479,6 +1486,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: the range replay refuses a suite-green commit whose added tests fail on its parent",
+    "work_item": "livespec-dev-tooling-5uobsl",
+    "first_seen": "2026-11-09"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: the replay legs never retry the Red test and never accept a final failure",
     "work_item": "livespec-dev-tooling-crxcy4",
     "first_seen": "2026-11-03"
@@ -1496,12 +1510,5 @@
     "heading": "## Scenario: two scale sets pinning different runner versions fail the check",
     "work_item": "livespec-dev-tooling-jkwzwv",
     "first_seen": "2026-11-08"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: the range replay refuses a suite-green commit whose added tests fail on its parent",
-    "work_item": "livespec-dev-tooling-5uobsl",
-    "first_seen": "2026-11-09"
   }
 ]

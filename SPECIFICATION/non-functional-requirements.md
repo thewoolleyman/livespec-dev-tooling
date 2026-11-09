@@ -877,4 +877,4 @@ When no execution target can admit a target, its decision MUST be `refuse` namin
 
 ## Check aggregate wall-time table
 
-The check aggregate's per-target wall-time table MUST show each wall time in the unit a reader compares it in: seconds with one decimal below a minute, minutes and two-digit seconds from a minute, and hours, two-digit minutes and two-digit seconds from an hour. The `::: just <target> [status, wall: Ns]` lines and the structured `wall_s` field keep raw seconds, because tools read them.
+The check aggregate's per-target wall-time table MUST show each wall time in the unit a reader compares it in: seconds with one decimal below a minute, minutes and two-digit seconds from a minute, and hours, two-digit minutes and two-digit seconds from an hour. The unit MUST be chosen from the value as it will be displayed, after rounding, so a wall time that rounds up into the next unit is shown in that unit and never as `60.0s` or `59m 60s`: 59.96 s shows as `1m 00s`, and 3599.6 s shows as `1h 00m 00s`. The `::: just <target> [status, wall: Ns]` lines and the structured `wall_s` field keep raw seconds, because tools read them.

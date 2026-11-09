@@ -2973,5 +2973,13 @@
     "test": "TODO",
     "reason": "Spec-first: a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) is owed for this scenario: check-red-green-replay run over a fixture range holding a suite-green commit whose added test fails on its parent (refused, naming the commit and test) and one whose characterization tests pass on its parent with a TDD-Suite-Green-Parent-Replay trailer (passed). livespec-dev-tooling-5uobsl owns it; the implementation PR that ships it replaces this row.",
     "work_item": "livespec-dev-tooling-5uobsl"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a wall time that rounds up into the next unit is shown in that unit",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) is owed for this scenario: the check aggregate's per-target wall-time table rendered for wall times of 59.96 s and 3599.6 s shows `1m 00s` and `1h 00m 00s`, while the `::: just <target>` lines and the structured `wall_s` field keep raw seconds. livespec-dev-tooling-e62ss6 owns it (the incident's normal factory repayment); the implementation PR that ships it replaces this row.",
+    "work_item": "livespec-dev-tooling-e62ss6"
   }
 ]
