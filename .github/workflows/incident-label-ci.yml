@@ -17,21 +17,26 @@
 #    on its current head. With none listed yet (a PR opened with the label
 #    already on it), it stops green: the run its open or push event starts
 #    reads the labels itself;
-# 2. HOLDS ci-green at once: it creates a `ci-green` check run, in progress,
-#    on the head. The merge ruleset requires `ci-green` from the GitHub Actions
-#    app, which is the app this job's token creates check runs as, and the
-#    newest check run of that name is the one that counts. So from this moment
-#    the head presents a pending ci-green, never the stale verdict, and nothing
-#    can merge on it, including a PR whose run had already COMPLETED;
-# 3. cancels that run if it has not finished (it may have read the old label
-#    set) and waits for it to complete;
-# 4. holds ci-green again, so the hold is newer than any ci-green the stopping
-#    attempt posted (ci-green runs `if: always()`);
-# 5. re-runs it. The re-run's incident-ci reads the labels afresh through an
-#    authenticated forge read (never the event payload), and the re-run's own
-#    ci-green, created when its needs finish, replaces the hold.
-# A step that fails before the re-run leaves the hold in place: the head stays
-# unmergeable rather than green.
+# 2. HOLDS ci-green at once. It creates a `ci-green` check run, in progress, on
+#    the head, as the GitHub Actions app, which is the app the merge ruleset
+#    requires `ci-green` from. An API-created check run lands in a check suite
+#    of its own, and the ruleset requires the newest `ci-green` of EVERY suite
+#    to pass, so from this moment nothing can merge on the head, including a PR
+#    whose expedited run had already COMPLETED with a passing ci-green;
+# 3. makes the CI run's OWN newest ci-green non-success. An unfinished run is
+#    cancelled (it may have read the old label set). A completed run is re-run
+#    and that attempt cancelled at once. Either way the stopped attempt's
+#    ci-green (`if: always()`) concludes failure in the CI run's check suite;
+# 4. waits for the run to complete and VERIFIES that the newest ci-green of the
+#    CI run's suite is not success;
+# 5. only then RELEASES the hold (completes it as neutral, which a required
+#    check accepts), because a hold left open would block the head forever,
+#    even after the full run passed (measured on livespec-dev-tooling#3911);
+# 6. re-runs the CI run. The re-run's incident-ci reads the labels afresh
+#    through an authenticated forge read (never the event payload), and the
+#    re-run's own ci-green, created when its needs finish, decides the head.
+# A step that fails before the release leaves the hold in place: the head stays
+# unmergeable rather than green, and toggling the label again recovers it.
 #
 # auto-enable-merge.yml also reacts to `unlabeled`, and a `gh pr merge --auto`
 # on a PR that still looks clean merges at once. Its gate therefore skips the
@@ -73,7 +78,7 @@ jobs:
       checks: write
       pull-requests: read
     steps:
-      - name: Hold ci-green and re-run the CI workflow on the pull request's current head
+      - name: Hold ci-green, stop and re-run the CI workflow on the pull request's current head
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -91,29 +96,39 @@ jobs:
             printf '## incident label CI\n\n%s.\n' "$note" >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
-          hold_ci_green() {
-            gh api -X POST "repos/${repo}/check-runs" \
-              -f name=ci-green -f head_sha="$head" -f status=in_progress \
-              -f "output[title]=held: expedited-incident-response ${LABEL_ACTION}" \
-              -f "output[summary]=The incident label changed, so the earlier ci-green on this head is stale. CI run ${run_id} is being re-run on this head; its own ci-green replaces this hold." >/dev/null
-          }
-          hold_ci_green
+          hold_id="$(gh api -X POST "repos/${repo}/check-runs" \
+            -f name=ci-green -f head_sha="$head" -f status=in_progress \
+            -f "output[title]=held: expedited-incident-response ${LABEL_ACTION}" \
+            -f "output[summary]=The incident label changed, so the earlier ci-green on this head is stale. CI run ${run_id} is being stopped and re-run on this head; its own ci-green decides." \
+            --jq '.id')"
+          suite="$(gh api "repos/${repo}/actions/runs/${run_id}" --jq '.check_suite_id')"
           status="$(gh api "repos/${repo}/actions/runs/${run_id}" --jq '.status')"
-          if [ "$status" != "completed" ]; then
-            echo "CI run ${run_id} is ${status}; cancelling it, because it may have read the label set before this event"
-            gh api -X POST "repos/${repo}/actions/runs/${run_id}/cancel" >/dev/null || true
-            for _ in $(seq 1 60); do
-              status="$(gh api "repos/${repo}/actions/runs/${run_id}" --jq '.status')"
-              [ "$status" = "completed" ] && break
-              sleep 10
-            done
-            if [ "$status" != "completed" ]; then
-              echo "::error::CI run ${run_id} did not complete within 10 minutes of its cancellation; it cannot be re-run, and ci-green stays held"
-              exit 1
-            fi
+          if [ "$status" = "completed" ]; then
+            echo "CI run ${run_id} is completed; re-running and stopping it, so its own ci-green stops passing"
+            gh api -X POST "repos/${repo}/actions/runs/${run_id}/rerun" >/dev/null
+          else
+            echo "CI run ${run_id} is ${status}; stopping it, because it may have read the label set before this event"
           fi
-          hold_ci_green
+          gh api -X POST "repos/${repo}/actions/runs/${run_id}/cancel" >/dev/null || true
+          for _ in $(seq 1 60); do
+            status="$(gh api "repos/${repo}/actions/runs/${run_id}" --jq '.status')"
+            [ "$status" = "completed" ] && break
+            sleep 10
+          done
+          if [ "$status" != "completed" ]; then
+            echo "::error::CI run ${run_id} did not complete within 10 minutes of its cancellation; it cannot be re-run, and ci-green stays held"
+            exit 1
+          fi
+          suite_green="$(gh api "repos/${repo}/check-suites/${suite}/check-runs?check_name=ci-green&filter=latest" --jq '.check_runs[0].conclusion // "absent"')"
+          if [ "$suite_green" = "success" ]; then
+            echo "::error::the newest ci-green of CI run ${run_id} still passes after it was stopped; ci-green stays held"
+            exit 1
+          fi
+          gh api -X PATCH "repos/${repo}/check-runs/${hold_id}" \
+            -f status=completed -f conclusion=neutral \
+            -f "output[title]=released: CI run ${run_id} decides" \
+            -f "output[summary]=The CI run's own newest ci-green is ${suite_green}, and CI run ${run_id} is re-run on this head; its ci-green decides." >/dev/null
           gh api -X POST "repos/${repo}/actions/runs/${run_id}/rerun" >/dev/null
-          note="label expedited-incident-response ${LABEL_ACTION} on PR #${PR_NUMBER}: held ci-green and re-ran CI run ${run_id} on head ${head}, so ci-green on that head reflects the current label set"
+          note="label expedited-incident-response ${LABEL_ACTION} on PR #${PR_NUMBER}: stopped CI run ${run_id} (its ci-green: ${suite_green}) and re-ran it on head ${head}, so ci-green on that head reflects the current label set"
           echo "::notice::${note}"
           printf '## incident label CI\n\n%s.\n' "$note" >> "$GITHUB_STEP_SUMMARY"
