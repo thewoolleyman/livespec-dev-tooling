@@ -27,6 +27,7 @@ import tempfile
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
+from typing import cast
 
 import pytest
 
@@ -157,12 +158,14 @@ def test_strict_config_is_derived_from_pyproject_without_layout_keys(
         _ = text
         _ = check
         captured_config.update(json.loads((Path(cwd) / "pyrightconfig.json").read_text()))
-        return subprocess.CompletedProcess(args=args, returncode=0, stdout="{}")
+        captured_config_path.append(Path(cwd) / "pyrightconfig.json")
+        return subprocess.CompletedProcess(args=args, returncode=0, stdout="{}", stderr="")
 
+    captured_config_path: list[Path] = []
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(subprocess, "run", fake_run)
 
-    assert _run_pyright_strict(body="pass\n") == (0, "{}")
+    assert _run_pyright_strict(body="pass\n") == (0, "{}", "", captured_config_path[0])
     assert captured_config == {
         "pythonVersion": "3.11",
         "typeCheckingMode": "strict",
@@ -170,6 +173,70 @@ def test_strict_config_is_derived_from_pyproject_without_layout_keys(
         "reportPrivateUsage": "none",
         "include": ["no_shadow_ledger_body.py"],
     }
+
+
+# --- failure record (_typecheck_body) --------------------------------------
+
+
+def _run_failing_pyright(
+    *,
+    monkeypatch: pytest.MonkeyPatch,
+    stdout: str,
+    stderr: str,
+) -> tuple[int, list[dict[str, object]]]:
+    """Run `_typecheck_body` against a faked non-zero pyright; return (exit, log records)."""
+    import structlog
+    from structlog.testing import capture_logs
+
+    import livespec_dev_tooling.checks.no_shadow_ledger_body_typechecks as module
+
+    def fake_run(
+        args: list[str],
+        *,
+        cwd: str,
+        capture_output: bool,
+        text: bool,
+        check: bool,
+    ) -> subprocess.CompletedProcess[str]:
+        _ = (cwd, capture_output, text, check)
+        return subprocess.CompletedProcess(args=args, returncode=1, stdout=stdout, stderr=stderr)
+
+    monkeypatch.setattr(module, "_pyright_available", lambda: True)
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    with capture_logs() as records:
+        exit_code = _typecheck_body(body="pass\n", log=structlog.get_logger())
+    return exit_code, cast("list[dict[str, object]]", records)
+
+
+def test_failure_record_names_cause_when_pyright_fails_without_json(
+    *, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Non-zero pyright with no JSON diagnostics → the record carries stdout, stderr, config path."""
+    exit_code, records = _run_failing_pyright(
+        monkeypatch=monkeypatch,
+        stdout="",
+        stderr="mise ERROR No version is set for shim: node\n",
+    )
+
+    assert exit_code == 4
+    [record] = records
+    assert record["diagnostics"] == []
+    assert record["pyright_stdout"] == ""
+    assert record["pyright_stderr"] == "mise ERROR No version is set for shim: node\n"
+    config_path = record["pyright_config_path"]
+    assert isinstance(config_path, str)
+    assert config_path.endswith("pyrightconfig.json")
+
+
+def test_failure_record_still_lists_error_diagnostics(*, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Error-severity diagnostics are still listed in the record's `diagnostics`."""
+    exit_code, records = _run_failing_pyright(
+        monkeypatch=monkeypatch, stdout=_BOOTSTRAP_NOISE + _JSON_WITH_ERROR, stderr=""
+    )
+
+    assert exit_code == 4
+    [record] = records
+    assert record["diagnostics"] == ["L4 reportFoo: bad thing"]
 
 
 # --- pyright-unavailable skip ----------------------------------------------

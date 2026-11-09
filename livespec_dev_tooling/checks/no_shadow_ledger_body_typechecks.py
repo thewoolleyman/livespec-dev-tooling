@@ -117,21 +117,25 @@ def _pyright_strict_config(*, repo_root: Path) -> dict[str, object]:
     return {key: value for key, value in pyright.items() if key not in _PYRIGHT_REPO_LAYOUT_KEYS}
 
 
-def _run_pyright_strict(*, body: str) -> tuple[int, str]:
-    """Render `body` + the strict config to a throwaway dir, run pyright, return (rc, stdout).
+def _run_pyright_strict(*, body: str) -> tuple[int, str, str, Path]:
+    """Render `body` + the strict config to a throwaway dir, run pyright, return the run.
 
     The rendered body plus a `pyrightconfig.json` (the strict-parity config,
     scoped to the rendered file only) are written into a `TemporaryDirectory`;
     `python -m pyright --outputjson` runs with that directory as cwd so pyright
     inspects ONLY the rendered body. Returns pyright's exit code (the verdict)
-    and its raw `--outputjson` stdout (the best-effort detail source).
+    its raw `--outputjson` stdout (the best-effort detail source), its stderr,
+    and the path of the `pyrightconfig.json` it used. The stderr and config path
+    let a failure with no JSON diagnostics (pyright dying before it reports,
+    e.g. on a broken `node` shim) still name its cause.
     """
     with tempfile.TemporaryDirectory() as tmp:
         tmp_dir = Path(tmp)
         _ = (tmp_dir / _RENDERED_BODY_FILENAME).write_text(body, encoding="utf-8")
         config = _pyright_strict_config(repo_root=Path.cwd())
         config["include"] = [_RENDERED_BODY_FILENAME]
-        _ = (tmp_dir / "pyrightconfig.json").write_text(json.dumps(config), encoding="utf-8")
+        config_path = tmp_dir / "pyrightconfig.json"
+        _ = config_path.write_text(json.dumps(config), encoding="utf-8")
         # S603/S607: argv is a fixed list (this interpreter + literal `-m
         # pyright` flags); no shell, no caller-supplied input.
         completed = subprocess.run(
@@ -141,7 +145,7 @@ def _run_pyright_strict(*, body: str) -> tuple[int, str]:
             text=True,
             check=False,
         )
-    return completed.returncode, completed.stdout
+    return completed.returncode, completed.stdout, completed.stderr, config_path
 
 
 def _locate_pyright_json(*, stdout: str) -> dict[str, object] | None:
@@ -230,7 +234,7 @@ def _typecheck_body(*, body: str, log: structlog.stdlib.BoundLogger) -> int:
             hint="install the pinned `pyright` dev dependency to enforce this check",
         )
         return 0
-    returncode, stdout = _run_pyright_strict(body=body)
+    returncode, stdout, stderr, config_path = _run_pyright_strict(body=body)
     if returncode == 0:
         return 0
     log.error(
@@ -239,6 +243,9 @@ def _typecheck_body(*, body: str, log: structlog.stdlib.BoundLogger) -> int:
         status="fail",
         pyright_returncode=returncode,
         diagnostics=_diagnostic_detail(stdout=stdout),
+        pyright_stdout=stdout,
+        pyright_stderr=stderr,
+        pyright_config_path=str(config_path),
         hint=_REMEDY,
     )
     return _FAIL_EXIT
