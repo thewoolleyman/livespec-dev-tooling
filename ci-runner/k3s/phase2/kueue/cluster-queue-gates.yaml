@@ -1,6 +1,7 @@
 # cluster-queue-gates.yaml — the Kueue admission home for GATE Jobs: the
-# `just check` aggregate runs offloaded to the pool nodes: hp-xubuntu,
-# poweredge-xubuntu and gmktec-xubuntu, tried in that order.
+# `just check` aggregate runs offloaded to the pool nodes: gmktec-xubuntu,
+# poweredge-xubuntu and hp-xubuntu, tried in that order, after any enrolled
+# container-worker flavor that ./converge-worker-queues.sh places first.
 #
 # It carries EIGHT objects, applied in this file's own document order because
 # each depends on the one before it: the `gates` Namespace, the
@@ -12,7 +13,8 @@
 # committed inventory's ci_pool group and requires exactly one gates flavor per
 # member, so a node that joins the pool later gets its gate posture decided in
 # the same change that adds it. Read DERIVATION.md "The PowerEdge lane and the
-# flavor order (2026-11-07)" before changing the order or a lane's size.
+# flavor order (2026-11-07)" and "Fastest-first flavor order (2026-11-09)"
+# before changing the order or a lane's size.
 #
 # TOPOLOGY-AWARE ADMISSION (livespec-dev-tooling-cikd6m, 2026-11-04). Both
 # flavors name the `gates-hostname` Topology, so Kueue admits a gate only when
@@ -171,36 +173,20 @@ spec:
       # list order and admits on the first whose node has room, so the first
       # entry receives most gates. Admission sees REQUESTS only, and CI runner
       # pods request no CPU, so a node saturated by runners still reads as
-      # free. The order therefore rests on a measured read, recorded in
-      # DERIVATION.md "The PowerEdge lane and the flavor order (2026-11-07)":
-      # at 21:38-21:40Z hp-xubuntu used 7.5-11.7 of 16 cores, poweredge-xubuntu
-      # was 0.4% idle with CI-slice CPU pressure avg60 23, and gmktec-xubuntu
-      # was 0.2% idle with that pressure at 50, saturated. The order is static,
-      # so it does not follow load as it moves (livespec-dev-tooling-gvo7fa).
+      # free. The order is therefore a measured judgement, and it is
+      # FASTEST-FIRST (2026-11-09, legacy-coordinator-agent ruling on
+      # ci-runtime-and-cost's measured hp read): gate jobs on hp-xubuntu ran
+      # 3.2-6.4x their gmktec-xubuntu wall time, hp read 0.14% idle with
+      # CI-slice CPU pressure avg60 33, and its 10 cpu of gate requests took
+      # CPU from hp's own CI slots. So gmktec is tried first, the PowerEdge
+      # second, and hp last. The 2026-11-07 order (hp, PowerEdge, gmktec) and
+      # its read are in DERIVATION.md "The PowerEdge lane and the flavor order
+      # (2026-11-07)". Only the ORDER changed; every lane keeps its size.
+      # REVERT: restore that order (gates-hp-flavor, gates-poweredge-flavor,
+      # gates-flavor), apply this file, then rerun ./converge-worker-queues.sh.
+      # The order is static, so it does not follow load as it moves
+      # (livespec-dev-tooling-gvo7fa).
       flavors:
-        - name: gates-hp-flavor
-          resources:
-            # Two concurrent gates. hp-xubuntu has 14500m CPU / 27.2 GiB
-            # allocatable and, since FACTORY_NODE=false drained its factory
-            # sandboxes, carried 5.7 cpu of requests with one gate running at
-            # 21:09Z. Two 5-cpu gates fit beside its five churn slots; 16 Gi
-            # gives two 6 Gi requests two Gi of headroom each.
-            - name: "cpu"
-              nominalQuota: 10
-            - name: "memory"
-              nominalQuota: 16Gi
-        - name: gates-poweredge-flavor
-          resources:
-            # Two concurrent gates at 5 cpu / 6 Gi each. The node has 72 cpu
-            # and about 378 Gi allocatable, but it read 0.4% idle with CI-slice
-            # pressure 23 at 21:38Z, close to the saturation rule, and each
-            # gate's 5-cpu request takes about that much from best-effort
-            # runners. So the lane starts at two, a first estimate to confirm by
-            # soak.
-            - name: "cpu"
-              nominalQuota: 10
-            - name: "memory"
-              nominalQuota: 16Gi
         - name: gates-flavor
           resources:
             # Three concurrent gates at roughly 5 cpu / 6 Gi each. cpu is the
@@ -215,6 +201,29 @@ spec:
               nominalQuota: 15
             - name: "memory"
               nominalQuota: 24Gi
+        - name: gates-poweredge-flavor
+          resources:
+            # Two concurrent gates at 5 cpu / 6 Gi each. The node has 72 cpu
+            # and about 378 Gi allocatable, but it read 0.4% idle with CI-slice
+            # pressure 23 at 21:38Z, close to the saturation rule, and each
+            # gate's 5-cpu request takes about that much from best-effort
+            # runners. So the lane starts at two, a first estimate to confirm by
+            # soak.
+            - name: "cpu"
+              nominalQuota: 10
+            - name: "memory"
+              nominalQuota: 16Gi
+        - name: gates-hp-flavor
+          resources:
+            # Two concurrent gates. hp-xubuntu has 14500m CPU / 27.2 GiB
+            # allocatable and, since FACTORY_NODE=false drained its factory
+            # sandboxes, carried 5.7 cpu of requests with one gate running at
+            # 21:09Z. Two 5-cpu gates fit beside its five churn slots; 16 Gi
+            # gives two 6 Gi requests two Gi of headroom each.
+            - name: "cpu"
+              nominalQuota: 10
+            - name: "memory"
+              nominalQuota: 16Gi
 ---
 apiVersion: kueue.x-k8s.io/v1beta2
 kind: WorkloadPriorityClass

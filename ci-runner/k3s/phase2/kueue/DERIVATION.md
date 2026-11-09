@@ -1666,6 +1666,36 @@ R301 at 21:15Z, recorded on `livespec-dev-tooling-6tgd2z`. That ruling
 supersedes the 2026-09 line that kept gates off the PowerEdge, whose premise
 had inverted.
 
+### Fastest-first flavor order (2026-11-09)
+
+**What was wrong.** The 2026-11-07 order (above) tried hp-xubuntu first, from a
+single read in which hp had spare cores. By 2026-11-09 hp was the slowest
+gate node: ci-runtime-and-cost measured gate jobs there at 3.2 to 6.4 times
+their gmktec-xubuntu wall time, with hp 0.14% idle and CI-slice CPU pressure
+avg60 33. Because hp was first, it received most gates, and their 10 cpu of
+requests took CPU from hp's own CI slots by CFS weight.
+
+**What changed.** Only the order of `gates-cq`'s fleet flavors. It is now
+fastest-first: `gates-flavor` (gmktec-xubuntu), then `gates-poweredge-flavor`,
+then `gates-hp-flavor` last. Every lane keeps its 2026-11-07 size. An enrolled
+container-worker flavor still comes ahead of all three, because
+`converge-worker-queues.sh` rebuilds the list as worker flavors followed by the
+committed order. Ruled by legacy-coordinator-agent at 11:5xZ, priority 3,
+explicitly as a value-only change and not livespec-dev-tooling-gvo7fa's
+load-following design. The fallback, had it not been applied by 13:00Z, was
+for ci-runtime-and-cost to cut hp's CI slots.
+
+**Revert.** Restore the order `gates-hp-flavor`, `gates-poweredge-flavor`,
+`gates-flavor` in `cluster-queue-gates.yaml`, apply that file on the k3s
+server, then rerun `./converge-worker-queues.sh` so the worker flavor returns
+to first place.
+
+**What this does not fix.** The order is still static. gmktec read saturated
+on 2026-11-07, so this trades one measured read for another. Admission that
+follows real CPU use is still livespec-dev-tooling-gvo7fa. The after-read (one
+gate's wall time, and hp's best-effort pressure) is recorded on the plan epic
+livespec-dev-tooling-6vuiwe.
+
 ### Topology-aware admission on the gates flavors (2026-11-04, livespec-dev-tooling-cikd6m)
 
 **What was wrong.** Quota is not capacity. On 2026-11-04 at 01:35Z,
