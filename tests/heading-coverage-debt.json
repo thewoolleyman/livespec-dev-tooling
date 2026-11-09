@@ -331,6 +331,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: a consumer's local pre-commit aggregate run through the shared entry point is reused by its suite-green leg",
+    "work_item": "livespec-dev-tooling-4scqti",
+    "first_seen": "2026-11-09"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: a coverage consumer that did not reuse reaches the maintainer",
     "work_item": "livespec-dev-tooling-akljpy",
     "first_seen": "2026-11-08"
@@ -947,6 +954,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: a suite-green leg run emits one outcome event naming whether it reused evidence",
+    "work_item": "livespec-dev-tooling-4scqti",
+    "first_seen": "2026-11-09"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: a suite-green leg runs the full suite when the pre-commit aggregate judged a different tree or ran partially",
     "work_item": "livespec-dev-tooling-z5fwwn",
     "first_seen": "2026-11-02"
@@ -1094,6 +1108,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: an affected-tests record outside a sandbox, or for a failed, empty or different run, leaves the full suite in place",
+    "work_item": "livespec-dev-tooling-svjqbe",
+    "first_seen": "2026-11-09"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: an aged runner pin raises a trigger",
     "work_item": "livespec-dev-tooling-jkwzwv",
     "first_seen": "2026-11-08"
@@ -1146,6 +1167,13 @@
     "heading": "## Scenario: an explicit local gate-runner run is recorded as local",
     "work_item": "livespec-dev-tooling-qgv3tb",
     "first_seen": "2026-11-01"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: an in-turn sandbox commit whose affected-tests gate passed on the same tree runs only those tests",
+    "work_item": "livespec-dev-tooling-svjqbe",
+    "first_seen": "2026-11-09"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -1405,6 +1433,13 @@
     "heading": "## Scenario: the highest-ordered ready target is admitted to any execution target with headroom for its cost",
     "work_item": "livespec-dev-tooling-hvfc6c",
     "first_seen": "2026-11-04"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: the local-aggregate entry point writes no evidence for a failed, dirty or changed tree",
+    "work_item": "livespec-dev-tooling-4scqti",
+    "first_seen": "2026-11-09"
   },
   {
     "spec_root": "SPECIFICATION",

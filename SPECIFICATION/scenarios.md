@@ -2214,6 +2214,74 @@ Then it MUST run the full pytest suite against the staged tree
 
 And it MUST record its `TDD-Suite-Green-*` trailers only from that run
 
+## Scenario: a consumer's local pre-commit aggregate run through the shared entry point is reused by its suite-green leg
+
+Given a consumer repository whose `check-pre-commit` recipe runs its local pre-commit aggregate through livespec-dev-tooling's local-aggregate entry point
+
+And a behaviour-preserving commit, one that stages product `.py` with no Red awaiting a Green
+
+And the aggregate exits `0` on tree `T` with no unstaged change and no untracked, non-ignored file, and `git write-tree` names `T` both before and after it
+
+And `git write-tree` names tree `T` for the index when the commit-msg hook runs
+
+When the commit-msg `red_green_replay` check runs its suite-green leg
+
+Then it MUST NOT start a pytest suite run
+
+And it MUST record its `TDD-Suite-Green-*` trailers from that aggregate run, naming that run
+
+## Scenario: the local-aggregate entry point writes no evidence for a failed, dirty or changed tree
+
+Given a consumer's local pre-commit aggregate run through livespec-dev-tooling's local-aggregate entry point for a behaviour-preserving commit, one that stages product `.py` with no Red awaiting a Green
+
+And the aggregate exits non-zero, or the working tree has an unstaged change or an untracked, non-ignored file, or `git write-tree` names a different tree after the aggregate than before it
+
+When the entry point exits
+
+Then it MUST exit with the aggregate's own exit status
+
+And it MUST write no same-tree evidence
+
+And the suite-green leg of that commit MUST run its suite in full
+
+## Scenario: a suite-green leg run emits one outcome event naming whether it reused evidence
+
+Given a commit whose suite-green leg runs, either reusing same-tree pre-commit evidence or starting its own suite run
+
+When the leg finishes, whether green, red or ended
+
+Then it MUST emit exactly one OTLP outcome span naming the repository, the committed tree's hash, the mode `reused` or `ran`, the scope, the outcome and the wall-clock duration
+
+And when the observability receiver cannot be reached, the leg MUST record the same trailers or refusal and exit with the same status
+
+## Scenario: an in-turn sandbox commit whose affected-tests gate passed on the same tree runs only those tests
+
+Given a checkout whose git config sets `livespec.sandboxExempt` to `true`
+
+And a behaviour-preserving commit whose pre-commit hook ran the affected-tests gate through livespec-dev-tooling's affected-tests record entry point, which recorded exit `0`, the selected test paths `tests/test_alpha.py` and `tests/test_beta.py`, and tree `T`
+
+And `git write-tree` names tree `T` for the index when the commit-msg hook runs
+
+When the commit-msg `red_green_replay` check runs its suite-green leg
+
+Then its suite run MUST cover only `tests/test_alpha.py` and `tests/test_beta.py`, and MUST NOT be the full suite
+
+And on pytest exit `0` it MUST record `TDD-Suite-Green-Scope: affected-tests` with trailers naming the recorded gate run
+
+And it MUST NOT record `TDD-Suite-Green-Scope: full-suite`
+
+## Scenario: an affected-tests record outside a sandbox, or for a failed, empty or different run, leaves the full suite in place
+
+Given a behaviour-preserving commit whose pre-commit hook recorded an affected-tests gate run through livespec-dev-tooling's affected-tests record entry point
+
+And at least one of these holds: the checkout's git config does not set `livespec.sandboxExempt` to `true`; the recorded run exited non-zero; the recorded run selected no test path; or the recorded tree differs from the tree `git write-tree` names for the index when the commit-msg hook runs
+
+When the commit-msg `red_green_replay` check runs its suite-green leg
+
+Then it MUST run the full suite
+
+And on pytest exit `0` it MUST record `TDD-Suite-Green-Scope: full-suite`
+
 ## Scenario: a test loop over os.environ fails the ambient-environment check on every host, while a single-expression rewrite passes
 
 Given a Python file under the declared `tests_tree_prefix` containing `for name in [n for n in os.environ if n.startswith("GIT_")]:` with `monkeypatch.delenv(name)` on the next line
