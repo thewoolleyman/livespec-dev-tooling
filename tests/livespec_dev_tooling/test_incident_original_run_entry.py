@@ -253,3 +253,17 @@ def test_installed_ports_pass_only_the_canonical_credential_from_reader_env(
         assert set(env) == {"PATH", "HOME", "BEADS_DOLT_PASSWORD"}
         assert (env["PATH"], env["HOME"]) == (plain["PATH"], plain["HOME"])
         assert env["BEADS_DOLT_PASSWORD"] == "tenant-secret"
+
+
+def test_main_refuses_by_name_when_reader_env_carries_no_credential(
+    monkeypatch: pytest.MonkeyPatch,
+    installation: SimpleNamespace,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    installation.config = tmp_path / "controller.json"
+    (tmp_path / "reader.env").write_text("PYTHONPATH=/overrides\n")
+    monkeypatch.setattr(subprocess, "run", Mock(side_effect=subprocess.TimeoutExpired("git", 1)))
+    assert entry.main(argv=_missing_argv(config=installation.config)) == 78
+    code = "incident-original-run-installation-unavailable"
+    assert json.loads(capsys.readouterr().out)["code"] == code
