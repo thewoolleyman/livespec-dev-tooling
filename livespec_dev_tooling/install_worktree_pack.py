@@ -133,6 +133,7 @@ __all__: list[str] = [
     "PackFile",
     "install_pack",
     "main",
+    "refresh_installed_pack",
 ]
 
 
@@ -424,6 +425,42 @@ def install_pack(*, cwd: Path, log: structlog.stdlib.BoundLogger) -> int:
         )
     _report_undeclared_worktree_discipline(root=root, log=log)
     return 0
+
+
+def refresh_installed_pack(*, cwd: Path) -> tuple[str, ...]:
+    """Bring an INSTALLED pack to canonical; return the names it changed, in pack order.
+
+    The refresh a stale runner already reaches (livespec-dev-tooling-js3cum).
+    `gate-run.sh` refreshes the pack itself only from the copy that carries the
+    refresh, and `gate-start` runs the INSTALLED copy, so a checkout whose runner
+    predates the refresh never refreshes. A primary checkout never commits, so
+    the hook installs never reach it either. Every runner with venue routing,
+    stale or not, calls `gate_runner_delegate` before it runs the gate command,
+    and that module is this package's own code, so it calls this.
+
+    Refreshes only a pack that is there: with no member installed, or outside a
+    git work tree, it changes nothing and returns an empty tuple, because an
+    absent pack is the runner's own first-touch path, not drift. Each rewrite
+    goes through `_replace_file`, a rename over the old path, so a gate already
+    running the previous `gate-run.sh` keeps reading its original bytes.
+    """
+    located = subprocess.run(  # noqa: S603
+        ["git", "rev-parse", "--show-toplevel"],  # noqa: S607
+        cwd=str(cwd),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    pack_dir = Path(located.stdout.strip()) / "dev-tooling"
+    if located.returncode != 0 or not any(
+        (pack_dir / pack_file.name).is_file() for pack_file in WORKTREE_PACK_FILES
+    ):
+        return ()
+    return tuple(
+        pack_file.name
+        for pack_file in WORKTREE_PACK_FILES
+        if _install_pack_file(path=pack_dir / pack_file.name, pack_file=pack_file) != _CHANGED_NONE
+    )
 
 
 def main() -> int:

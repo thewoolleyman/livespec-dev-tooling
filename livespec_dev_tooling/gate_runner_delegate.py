@@ -27,6 +27,7 @@ from livespec_dev_tooling.gate_remote_verdict import (
     run_gated_push,
 )
 from livespec_dev_tooling.incident_gate_entry import entrance_refusal, resolve_entrance
+from livespec_dev_tooling.install_worktree_pack import refresh_installed_pack
 
 _VENDOR_DIR = Path(__file__).resolve().parent / "_vendor"
 if str(_VENDOR_DIR) not in sys.path:
@@ -268,6 +269,13 @@ def _run_main() -> int:
 def main() -> int:
     """Print the selected venue and reason as two newline-delimited fields.
 
+    Venue selection first refreshes the checkout's installed worktree pack from
+    this package (`refresh_installed_pack`), because it is the one step every
+    venue-routing `gate-run.sh` reaches, including a stale installed copy that
+    predates the runner's own refresh (livespec-dev-tooling-js3cum). The runner
+    discards this module's stderr, so the refreshed files are named in the
+    reason field, which the run record keeps as `venue_reason`.
+
     Incident mode resolves first. A cluster submission has no incident mode, so
     `run` refuses a trusted incident too; venue selection is a launcher, so a
     trusted incident continues on the LOCAL venue, where the child's own
@@ -285,12 +293,18 @@ def main() -> int:
         if arguments.command[:1] == ["--"]
         else tuple(arguments.command)
     )
+    refreshed = refresh_installed_pack(cwd=Path.cwd())
     selected = select_for_repository(
         command=command,
         force_local=arguments.force_local or decision.mode == "incident",
         repo_root=Path.cwd(),
     )
-    _ = sys.stdout.write(f"{selected.venue}\n{selected.reason}\n")
+    reason = (
+        f"{selected.reason}; refreshed worktree pack: {', '.join(refreshed)}"
+        if refreshed
+        else selected.reason
+    )
+    _ = sys.stdout.write(f"{selected.venue}\n{reason}\n")
     return 0
 
 
