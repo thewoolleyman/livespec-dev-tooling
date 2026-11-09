@@ -984,6 +984,115 @@ def test_an_eligible_delegating_host_refuses_foreground_full_suite_pytest(
     assert _one_call_detached_form(command=command) in str(event.get("hint", ""))
 
 
+def _two_repositories(*, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path, Path]:
+    """A delegating and an undelegated repository, on a host that can read the kubeconfig."""
+    delegating = _make_hooked_repo(repo=tmp_path / "delegating", hooks=())
+    _write_delegated_gate_config(repository=delegating, delegated=True)
+    undelegated = _make_hooked_repo(repo=tmp_path / "undelegated", hooks=())
+    _write_delegated_gate_config(repository=undelegated, delegated=False)
+    for repository in (delegating, undelegated):
+        _ = (repository / "tests").mkdir()
+        _ = (repository / "tests" / "test_widget.py").write_text("", encoding="utf-8")
+    credential = tmp_path / "gates.kubeconfig"
+    _ = credential.write_text("apiVersion: v1\nkind: Config\n", encoding="utf-8")
+    monkeypatch.setenv("GATES_KUBECONFIG", str(credential))
+    return delegating, undelegated
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    "template",
+    [
+        pytest.param("cd {target} && uv run pytest", id="cd-and"),
+        pytest.param("cd {target}; uv run pytest", id="cd-semicolon"),
+        pytest.param("cd {target} && FOO=1 uv run pytest -n 4", id="cd-env-prefix"),
+        pytest.param("cd {target} && mise exec -- pytest --maxfail 1", id="cd-mise-exec"),
+        pytest.param("bash -c 'cd {target} && uv run pytest'", id="cd-shell-runner"),
+        pytest.param("cd {target} && echo ready && pytest", id="cd-after-other-command"),
+    ],
+)
+def test_a_compound_foreground_pytest_is_judged_against_the_repository_it_cds_into(
+    template: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A `cd <path> &&` prefix names the target repository, from any session cwd."""
+    delegating, undelegated = _two_repositories(tmp_path=tmp_path, monkeypatch=monkeypatch)
+    command = template.format(target=delegating)
+
+    event = _foreground_refusal_event(
+        command=command, cwd=undelegated, monkeypatch=monkeypatch, capsys=capsys
+    )
+
+    assert event["check_id"] == _FOREGROUND_PYTEST_CHECK_ID
+    assert event["repository"] == str(delegating)
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    "command",
+    [
+        pytest.param("FOO=1 uv run pytest -n 4", id="env-prefix"),
+        pytest.param("echo start; uv run pytest", id="after-semicolon"),
+        pytest.param("true && pytest --cov=widget", id="after-and"),
+        pytest.param("nohup python -m pytest > out.log", id="nohup-with-redirect"),
+    ],
+)
+def test_a_prefixed_or_compound_foreground_pytest_in_the_cwd_is_refused(
+    command: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Any other command targets the session's working directory."""
+    delegating, _ = _two_repositories(tmp_path=tmp_path, monkeypatch=monkeypatch)
+
+    event = _foreground_refusal_event(
+        command=command, cwd=delegating, monkeypatch=monkeypatch, capsys=capsys
+    )
+
+    assert event["check_id"] == _FOREGROUND_PYTEST_CHECK_ID
+    assert event["repository"] == str(delegating)
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    ("template", "start", "expected_exit"),
+    [
+        pytest.param(
+            "cd {undelegated} && uv run pytest", "delegating", 0, id="cd-into-undelegated"
+        ),
+        pytest.param(
+            "cd {undelegated}; uv run pytest -n 4", "delegating", 0, id="cd-semicolon-undelegated"
+        ),
+        pytest.param(
+            "cd {delegating} && uv run pytest tests/test_widget.py",
+            "undelegated",
+            0,
+            id="targeted-path-resolved-in-cd-target",
+        ),
+        pytest.param(
+            "uv run pytest && cd {undelegated}", "delegating", 2, id="cd-after-the-pytest"
+        ),
+    ],
+)
+def test_a_compound_foreground_pytest_is_judged_against_its_own_target_repository(
+    template: str,
+    start: str,
+    expected_exit: int,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The cd target decides eligibility and where a named test path must exist."""
+    delegating, undelegated = _two_repositories(tmp_path=tmp_path, monkeypatch=monkeypatch)
+    command = template.format(delegating=delegating, undelegated=undelegated)
+    monkeypatch.chdir(delegating if start == "delegating" else undelegated)
+    payload = json.dumps({"tool_name": "Bash", "tool_input": {"command": command}})
+
+    assert _run_main(monkeypatch=monkeypatch, stdin_text=payload) == expected_exit
+
+
 @pytest.mark.parametrize(
     ("command", "delegated", "credential_readable"),
     [
