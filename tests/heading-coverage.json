@@ -2260,6 +2260,14 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: an incident recovery principal configured for a scratch branch recovers only that branch",
+    "test": "TODO",
+    "reason": "A real test at the integration tier or above is owed for this heading: the fake-forge recovery principal tests must drive a principal configured for a non-master branch through a moved-head overlap; livespec-dev-tooling-thhgeg owns it.",
+    "work_item": "livespec-dev-tooling-thhgeg"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: a reverted incident retains its original CI evidence before another attempt",
     "test": "TODO",
     "reason": "A real test at the integration tier or above is owed for this heading: the normally shipped incident capability must exercise this contract with ordinary-path controls; livespec-dev-tooling-kobmka owns the implementation and scenario evidence under plan livespec-dev-tooling-bqnzcm.",

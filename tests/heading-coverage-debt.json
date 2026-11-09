@@ -1185,6 +1185,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: an incident recovery principal configured for a scratch branch recovers only that branch",
+    "work_item": "livespec-dev-tooling-thhgeg",
+    "first_seen": "2026-11-09"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: an incident revert preserves later changes without waiting for CI",
     "work_item": "livespec-dev-tooling-lgfo3v",
     "first_seen": "2026-11-03"
