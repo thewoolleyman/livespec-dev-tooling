@@ -10,30 +10,13 @@ from typing import Any, cast
 from livespec_dev_tooling._incident_observer_store import read_observer_arm
 from livespec_dev_tooling.incident_ci_policy import CiAuthority, CiOutcome
 from livespec_dev_tooling.incident_execution import ExecutionContext, Invocation, OperationIdentity
+from livespec_dev_tooling.incident_strict_json import IncidentJsonRefusalError, strict_json
 
-__all__: list[str] = ["decode_authority", "decode_outcome", "query_for", "strict_json"]
+__all__: list[str] = ["decode_authority", "decode_outcome", "query_for"]
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-egy3ri
 _SHA = re.compile(r"[0-9a-f]{40}")
 _DIGEST = re.compile(r"[0-9a-f]{64}")
 _OUTCOMES = {"passed", "failed", "cancelled", "skipped", "timed_out"}
-
-
-def _unique(*, pairs: list[tuple[str, Any]]) -> dict[str, Any]:
-    value: dict[str, Any] = {}
-    for key, item in pairs:
-        if key in value:
-            message = "duplicate JSON key"
-            raise ValueError(message)
-        value[key] = item
-    return value
-
-
-def strict_json(*, text: str, limit: int = 65536) -> Any:
-    """Bound and decode a packet, refusing duplicate keys at every level."""
-    if len(text.encode("utf-8", "surrogatepass")) > limit:
-        message = "incident CI packet exceeds its bound"
-        raise ValueError(message)
-    return json.loads(text, object_pairs_hook=lambda pairs: _unique(pairs=pairs))
 
 
 def decode_authority(*, payload: str) -> CiAuthority | None:
@@ -74,7 +57,7 @@ def decode_authority(*, payload: str) -> CiAuthority | None:
             receipt_digest=hashlib.sha256(arm.authority_receipt).hexdigest(),
             observer_arm_id=arm_id,
         )
-    except (ValueError, TypeError, KeyError, RecursionError):
+    except (ValueError, IncidentJsonRefusalError, TypeError, KeyError, RecursionError):
         return None
 
 

@@ -18,6 +18,7 @@ from livespec_dev_tooling._incident_recovery_journal_history import JournalHisto
 from livespec_dev_tooling._incident_recovery_journal_identity import JournalCodec
 from livespec_dev_tooling._incident_recovery_journal_types import JournalResult, RetainedAction
 from livespec_dev_tooling.incident_controller_installation import ControllerInstallation
+from livespec_dev_tooling.incident_strict_json import IncidentJsonRefusalError
 
 __all__: list[str] = ["JournalStore"]
 
@@ -101,7 +102,7 @@ class JournalStore:
                 existing_only=True,
             ):
                 return self._transaction(operation=operation, intent=intent, request=request)
-        except (OSError, ValueError, TypeError, KeyError, RecursionError):
+        except (OSError, ValueError, IncidentJsonRefusalError, TypeError, KeyError, RecursionError):
             return JournalResult(status="unavailable", reason=_UNAVAILABLE)
 
     def _transaction(

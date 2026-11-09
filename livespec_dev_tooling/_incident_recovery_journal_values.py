@@ -10,6 +10,7 @@ from typing import Any, cast
 
 from livespec_dev_tooling._incident_inverse_types import LandedIncident
 from livespec_dev_tooling._incident_observer_types import RecoveryIntent
+from livespec_dev_tooling.incident_strict_json import strict_json
 
 __all__: list[str] = ["JournalValues"]
 
@@ -19,21 +20,6 @@ _DIGEST = re.compile(r"[0-9a-f]{64}")
 _MAX_TEXT = 65536
 _MAX_POSITIVE = 2**63
 _MAX_SCOPE_ITEMS = 4096
-
-
-def _unique_object(*, pairs: list[tuple[str, Any]]) -> dict[str, Any]:
-    result: dict[str, Any] = {}
-    for key, value in pairs:
-        if key in result:
-            message = "duplicate journal object key"
-            raise ValueError(message)
-        result[key] = value
-    return result
-
-
-def _nonfinite(*, value: str) -> Any:
-    message = "nonfinite journal number: " + value
-    raise ValueError(message)
 
 
 def _encoded(*, value: Any) -> str:
@@ -147,17 +133,7 @@ class JournalValues:
     @staticmethod
     def decode(*, raw: bytes, limit: int) -> Any:
         """Decode bounded strict JSON without optional application dependencies."""
-        if len(raw) > limit:
-            message = "journal JSON exceeds byte limit"
-            raise ValueError(message)
-        value: Any = json.loads(
-            raw.decode("utf-8"),
-            object_pairs_hook=lambda pairs: _unique_object(pairs=pairs),
-            parse_constant=lambda value: _nonfinite(value=value),
-        )
-        # JSON's exponent grammar can produce infinity without parse_constant.
-        _ = JournalValues.canonical(value=value)
-        return value
+        return strict_json(text=raw, limit=limit)
 
     @staticmethod
     def canonical(*, value: Any) -> bytes:
@@ -168,4 +144,6 @@ class JournalValues:
 
     @staticmethod
     def wire(*, value: Any) -> dict[str, Any]:
-        return JournalValues.object(value=json.loads(JournalValues.canonical(value=value)))
+        return JournalValues.object(
+            value=strict_json(text=JournalValues.canonical(value=value), limit=None)
+        )

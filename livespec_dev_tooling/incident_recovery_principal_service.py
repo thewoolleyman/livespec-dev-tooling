@@ -45,6 +45,7 @@ from livespec_dev_tooling.incident_recovery_app import (
     RecoveryForge,
 )
 from livespec_dev_tooling.incident_recovery_principal import RecoveryPrincipal
+from livespec_dev_tooling.incident_strict_json import IncidentJsonRefusalError
 
 __all__: list[str] = ["PrincipalService"]
 
@@ -71,7 +72,7 @@ class PrincipalService:
     def execute(self, *, raw: bytes) -> dict[str, Any]:
         try:
             value: Any = JournalCodec.decode(raw=raw, limit=_MAX_REQUEST)
-        except (ValueError, TypeError, RecursionError, UnicodeError):
+        except (ValueError, IncidentJsonRefusalError, TypeError, RecursionError, UnicodeError):
             return _refused(reason="invalid bounded principal packet")
         data = cast("dict[str, Any]", value) if isinstance(value, dict) else {}
         operation, binding = data.get("operation"), data.get("binding")

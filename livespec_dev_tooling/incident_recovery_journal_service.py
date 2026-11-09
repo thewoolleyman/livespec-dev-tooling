@@ -20,6 +20,7 @@ from livespec_dev_tooling._incident_observer_store import (
 from livespec_dev_tooling._incident_recovery_journal_identity import JournalCodec
 from livespec_dev_tooling.incident_controller_installation import ControllerInstallation
 from livespec_dev_tooling.incident_recovery_journal import RecoveryJournal
+from livespec_dev_tooling.incident_strict_json import IncidentJsonRefusalError
 
 __all__: list[str] = ["JournalService"]
 
@@ -43,7 +44,7 @@ class JournalService:
             value: Any = JournalCodec.decode(raw=raw, limit=_MAX_REQUEST)
             data = cast("dict[str, Any]", value) if isinstance(value, dict) else {}
             return self._request(data=data)
-        except (OSError, ValueError, TypeError, KeyError, RecursionError):
+        except (OSError, ValueError, IncidentJsonRefusalError, TypeError, KeyError, RecursionError):
             return _refused(reason="invalid bounded journal packet")
 
     def _request(self, *, data: dict[str, Any]) -> dict[str, Any]:

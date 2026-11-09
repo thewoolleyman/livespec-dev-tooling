@@ -19,7 +19,7 @@ from dataclasses import dataclass
 from typing import Any, cast
 from urllib.parse import urlsplit
 
-from livespec_dev_tooling.incident_ci_payload import strict_json
+from livespec_dev_tooling.incident_strict_json import IncidentJsonRefusalError, strict_json
 
 __all__: list[str] = ["CiAuthorityBoundary"]
 
@@ -166,7 +166,14 @@ class CiAuthorityBoundary:
                     query=query,
                     where=where,
                 )
-        except (OSError, ValueError, TypeError, RecursionError, http.client.HTTPException) as error:
+        except (
+            OSError,
+            ValueError,
+            IncidentJsonRefusalError,
+            TypeError,
+            RecursionError,
+            http.client.HTTPException,
+        ) as error:
             return _refuse(detail=type(error).__name__ + where)
 
 
@@ -176,7 +183,7 @@ def _accepts(*, status: int, raw: bytes, route: str, query: dict[str, Any], wher
         return _refuse(detail="HTTP " + str(status) + where)
     if len(raw) > _MAX_REPLY:
         return False
-    value = strict_json(text=raw.decode())
+    value = strict_json(text=raw.decode(), limit=65536)
     reply = cast("dict[str, Any]", value) if isinstance(value, dict) else {}
     return (
         set(reply) == {"schema", "status", "query"}

@@ -34,6 +34,7 @@ from livespec_dev_tooling.incident_observer_provenance import ObserverProvenance
 from livespec_dev_tooling.incident_observer_query import ObserverQuery
 from livespec_dev_tooling.incident_observer_reconcile import ObserverReconcile
 from livespec_dev_tooling.incident_observer_recovery import ObserverRecovery
+from livespec_dev_tooling.incident_strict_json import IncidentJsonRefusalError, strict_json
 
 __all__: list[str] = ["ControllerService"]
 
@@ -92,7 +93,7 @@ class ControllerService:
         )
         body = _read_request(environ=environ) if authorized else None
         try:
-            raw_payload: object = json.loads(body) if body is not None else None
+            raw_payload: object = strict_json(text=body, limit=None) if body is not None else None
             payload = cast("dict[str, Any]", raw_payload)
             if (
                 not isinstance(raw_payload, dict)
@@ -118,7 +119,7 @@ class ControllerService:
                 status="403 Forbidden" if result.get("status") == "refused" else "202 Accepted",
                 result=result,
             )
-        except (OSError, ValueError, TypeError, KeyError):
+        except (OSError, ValueError, IncidentJsonRefusalError, TypeError, KeyError):
             return _reply(
                 start_response=start_response,
                 status="403 Forbidden",
@@ -154,7 +155,7 @@ class ControllerService:
                 result = _OIDC_ROUTES[path](installation=self.installation).execute(
                     authorization=str(environ.get("HTTP_AUTHORIZATION", "")), payload=payload
                 )
-            except (OSError, ValueError, TypeError, RecursionError):
+            except (OSError, ValueError, IncidentJsonRefusalError, TypeError, RecursionError):
                 pass
         return _reply(
             start_response=start_response,

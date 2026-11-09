@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import cast
 
 from livespec_dev_tooling._incident_observer_types import ObserverArm, ObserverRegistration
+from livespec_dev_tooling.incident_strict_json import IncidentJsonRefusalError, strict_json
 
 __all__: list[str] = ["CurrentAuthorityReader"]
 
@@ -103,8 +104,8 @@ def _read_reply(*, argv: list[str], cwd: Path) -> object:
             timeout=_READER_TIMEOUT_SECONDS,
             check=False,
         )
-        return json.loads(result.stdout) if result.returncode == 0 else None
-    except (OSError, subprocess.TimeoutExpired, json.JSONDecodeError):
+        return strict_json(text=result.stdout, limit=None) if result.returncode == 0 else None
+    except (OSError, subprocess.TimeoutExpired, ValueError, IncidentJsonRefusalError):
         return None
 
 

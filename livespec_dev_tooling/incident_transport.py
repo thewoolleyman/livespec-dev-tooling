@@ -29,6 +29,10 @@ from livespec_dev_tooling.incident_execution import (  # noqa: E402
     Invocation,
     validate_execution_context,
 )
+from livespec_dev_tooling.incident_strict_json import (  # noqa: E402
+    IncidentJsonRefusalError,
+    strict_json,
+)
 
 __all__: list[str] = [
     "CONTEXT_ENV",
@@ -82,17 +86,6 @@ def _transport_refusal(*, detail: str) -> IncidentResolution:
     )
 
 
-def _unique_object(*, pairs: list[tuple[str, object]]) -> dict[str, object]:
-    """Reject duplicate JSON keys instead of trusting the last spelling."""
-    result: dict[str, object] = {}
-    for key, value in pairs:
-        if key in result:
-            message = "duplicate JSON key"
-            raise ValueError(message)
-        result[key] = value
-    return result
-
-
 def decode_execution_context(
     *,
     payload: str,
@@ -118,9 +111,9 @@ def decode_execution_context(
     ):
         return _transport_refusal(detail="context payload must be a bounded JSON string")
     try:
-        received = json.loads(payload, object_pairs_hook=lambda pairs: _unique_object(pairs=pairs))
+        received = strict_json(text=payload, limit=_MAX_PAYLOAD_BYTES)
         canonical = json.dumps(received, sort_keys=True, separators=(",", ":"))
-    except (ValueError, TypeError, RecursionError):
+    except (ValueError, IncidentJsonRefusalError, TypeError, RecursionError):
         return _transport_refusal(detail="context payload is malformed or has duplicate keys")
     if canonical != expected.unwrap():
         return _transport_refusal(detail="transport does not match independently trusted context")

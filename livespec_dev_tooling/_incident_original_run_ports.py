@@ -8,7 +8,6 @@ gets a fixed environment and nothing the operator's shell carried.
 from __future__ import annotations
 
 import contextlib
-import json
 import os
 import pwd
 import subprocess
@@ -24,6 +23,7 @@ from livespec_dev_tooling.incident_controller_installation import ControllerInst
 from livespec_dev_tooling.incident_forge_reads import ForgeReads
 from livespec_dev_tooling.incident_original_run_flows import EntryPorts
 from livespec_dev_tooling.incident_run_forge import ForgeRunReader
+from livespec_dev_tooling.incident_strict_json import strict_json
 
 __all__: list[str] = ["installed_ports", "refresh_reference"]
 
@@ -93,7 +93,7 @@ class _Authority:
         argv = [*self.command, action, "--repo", str(self.repo)]
         argv += _flags(values={**query, **payload})
         done = _run(argv=argv, cwd=self.repo, env=self.env, check=False)
-        reply = cast("object", json.loads(done.stdout))
+        reply = cast("object", strict_json(text=done.stdout, limit=None))
         body = cast("dict[str, Any]", reply) if isinstance(reply, dict) else {}
         result = body.get("result")
         if body.get("status") == "refused" and isinstance(result, dict):

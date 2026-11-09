@@ -7,8 +7,8 @@ from collections.abc import Mapping
 from typing import Any, cast
 
 from livespec_dev_tooling.budgeted_gh import gh_read
-from livespec_dev_tooling.incident_ci_payload import strict_json
 from livespec_dev_tooling.incident_ci_policy import CiEvent
+from livespec_dev_tooling.incident_strict_json import IncidentJsonRefusalError, strict_json
 
 __all__: list[str] = ["incident_block", "observe_event"]
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-egy3ri
@@ -105,7 +105,7 @@ def observe_event(*, environ: Mapping[str, str]) -> tuple[CiEvent, str] | None:
     """Bind a protected event to a fresh forge read, never candidate event JSON."""
     try:
         observed = _observe(environ=environ)
-    except (OSError, ValueError, TypeError, KeyError, RecursionError):
+    except (OSError, ValueError, IncidentJsonRefusalError, TypeError, KeyError, RecursionError):
         return None
     else:
         return observed

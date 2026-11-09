@@ -20,6 +20,7 @@ from livespec_dev_tooling.incident_repository_fence import (
     current_repository_fence,
     hold_repository_fence,
 )
+from livespec_dev_tooling.incident_strict_json import strict_json
 
 __all__: list[str] = [
     "REPOSITORY_FENCE_FD_ENV",
@@ -57,7 +58,7 @@ def load_record(*, path: Path) -> dict[str, object]:
     """Read controller-owned state; corrupt state fails rather than going empty."""
     if not path.exists():
         return {}
-    value: object = json.loads(path.read_bytes())
+    value: object = strict_json(text=path.read_bytes(), limit=None)
     if not isinstance(value, dict):
         raise TypeError(_INVALID_RECORD)
     return cast("dict[str, object]", value)

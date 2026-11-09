@@ -25,6 +25,7 @@ from livespec_dev_tooling._incident_observer_store import (
     current_repository_fence,
 )
 from livespec_dev_tooling._incident_observer_types import RecoveryIntent
+from livespec_dev_tooling.incident_strict_json import IncidentJsonRefusalError, strict_json
 
 __all__: list[str] = ["ProcessInverseForge"]
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-dln3ac
@@ -159,8 +160,10 @@ class ProcessInverseForge:
                 env=environment,
                 pass_fds=descriptors,
             )
-            response: object = json.loads(result.stdout) if result.returncode == 0 else None
-        except (OSError, subprocess.TimeoutExpired, ValueError):
+            response: object = (
+                strict_json(text=result.stdout, limit=None) if result.returncode == 0 else None
+            )
+        except (OSError, subprocess.TimeoutExpired, ValueError, IncidentJsonRefusalError):
             return {}
         if not isinstance(response, dict):
             return {}

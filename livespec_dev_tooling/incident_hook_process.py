@@ -19,6 +19,7 @@ from livespec_dev_tooling.incident_execution import (
     OperationIdentity,
     resolve_execution_context,
 )
+from livespec_dev_tooling.incident_strict_json import IncidentJsonRefusalError, strict_json
 from livespec_dev_tooling.incident_transport import CONTEXT_ENV, decode_execution_context
 
 __all__: list[str] = [
@@ -64,7 +65,10 @@ def _fail(*, detail: str) -> NoReturn:
 def parse_query(*, text: str) -> dict[str, Any] | None:
     if len(text) > _MAX_QUERY:
         return None
-    value = mapping(value=json.loads(text))
+    try:
+        value = mapping(value=strict_json(text=text, limit=None))
+    except IncidentJsonRefusalError:
+        return None
     if frozenset(value) != _QUERY_KEYS or canonical(value=value) != text:
         return None
     if type(value["generation"]) is not int or value["generation"] <= 0:
@@ -130,7 +134,7 @@ def invoke_authority(
             detail=f"registered canonical incident process {action} exceeded its"
             f" {AUTHORITY_CALL_CEILING_SECONDS} s liveness ceiling"
         )
-    response = mapping(value=json.loads(done.stdout))
+    response = mapping(value=strict_json(text=done.stdout, limit=None))
     if (
         done.returncode
         or response.get("schema") != 1

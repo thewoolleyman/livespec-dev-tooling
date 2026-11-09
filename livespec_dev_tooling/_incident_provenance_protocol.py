@@ -6,7 +6,6 @@ validate a token chain, authorize current effects or manufacture normal proof.
 
 from __future__ import annotations
 
-import json
 import sys
 from pathlib import Path
 from typing import cast
@@ -23,6 +22,7 @@ from livespec_dev_tooling._incident_provenance_types import (  # noqa: E402
     IncidentCommitQuery,
     IncidentProvenanceRefusal,
 )
+from livespec_dev_tooling.incident_strict_json import strict_json  # noqa: E402
 
 __all__: list[str] = ["decode_historical_reply"]
 
@@ -42,16 +42,10 @@ _IDENTITY_FIELDS = (
 _REFUSED_EXIT = 78
 
 
-def _object(*, pairs: list[tuple[str, object]]) -> dict[str, object] | None:
-    """Poison duplicate-key objects instead of silently retaining the last value."""
-    value = dict(pairs)
-    return value if len(value) == len(pairs) else None
-
-
 @safe
 def _json(*, text: str) -> object:
     """JSON parsing is a data boundary with an expected failure channel."""
-    return cast(object, json.loads(text, object_pairs_hook=lambda pairs: _object(pairs=pairs)))
+    return cast(object, strict_json(text=text, limit=None))
 
 
 def _mapping(*, value: object) -> dict[str, object]:

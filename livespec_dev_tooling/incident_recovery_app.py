@@ -51,6 +51,10 @@ from livespec_runtime_budget.github_budget import (  # noqa: E402 — vendor-pat
 from returns.io import IOFailure  # noqa: E402
 
 from livespec_dev_tooling.budgeted_gh import github_api_url  # noqa: E402
+from livespec_dev_tooling.incident_strict_json import (  # noqa: E402
+    IncidentJsonRefusalError,
+    strict_json,
+)
 
 __all__: list[str] = [
     "RECOVERY_APP_CREDENTIAL",
@@ -121,8 +125,10 @@ class RecoveryAppCredential:
                     code="recovery-app-credential-unprotected",
                     detail=f"{path} must be a regular 0600 file owned by this account",
                 )
-            data: object = json.loads(path.read_bytes()[: _MAX_CREDENTIAL_BYTES + 1])
-        except (OSError, ValueError):
+            data: object = strict_json(
+                text=path.read_bytes()[: _MAX_CREDENTIAL_BYTES + 1], limit=None
+            )
+        except (OSError, ValueError, IncidentJsonRefusalError):
             data = None
         record = cast("dict[str, object]", data) if isinstance(data, dict) else {}
         app_id, key = record.get("app_id"), record.get("private_key")
@@ -209,8 +215,8 @@ def urllib_transport(*, request: GithubBudgetRequest) -> GithubBudgetResponse:
     except (urllib.error.URLError, OSError, ValueError):
         pass
     try:
-        value: object = json.loads(raw) if raw else None
-    except ValueError:
+        value: object = strict_json(text=raw, limit=None) if raw else None
+    except (ValueError, IncidentJsonRefusalError):
         value = None
     return GithubBudgetResponse(
         status_code=status, headers=headers, value=value, primary_budget_spent=1
