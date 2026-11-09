@@ -12,8 +12,11 @@ repository lock. Exactly one revert per action is the principal's rule, kept by 
 durable publication ledger: an open attempt re-sends its one recorded commit, and a
 new attempt starts only when no earlier one can have landed.
 
-The reply's receipt is not yet canonical. Recording it in the incident's chain is the
-orchestrator's `record-revert-receipt` action, which this route does not call.
+The reply's receipt is not yet canonical. Recording a revert receipt in the incident's
+chain is the orchestrator's `record-revert-receipt` action, which this route does not
+call. A journaled rollback-conflict receipt is different: this route replays it onto the
+chain through `ConflictChain` until the chain accepts it, so a conflict recorded while the
+tenant was unavailable still blocks the incident item once the tenant returns.
 """
 
 from __future__ import annotations
@@ -34,6 +37,7 @@ from livespec_dev_tooling._incident_recovery_journal_cause import (
     decode_completion,
     decode_regression,
 )
+from livespec_dev_tooling.incident_conflict_chain import ConflictChain, is_conflict_receipt
 from livespec_dev_tooling.incident_controller_installation import ControllerInstallation
 from livespec_dev_tooling.incident_inverse import observer_inverse_callback
 from livespec_dev_tooling.incident_inverse_service import ProcessInverseForge
@@ -76,21 +80,27 @@ class ObserverReconcile:
         forge = ProcessInverseForge(
             command=settings.principal, timeout_seconds=_PRINCIPAL_TIMEOUT_SECONDS
         )
+        chain = ConflictChain(command=settings.reader, repo=settings.repo)
         result = reconcile_action_receipt(
             directory=settings.state,
             repository=settings.repository,
             action_id=action_id,
             read_exact_receipt=lambda _action: _exact_receipt(forge=forge, intent=intent),
-            publish_receipt=lambda _authority, _action, _receipt: False,
+            publish_receipt=lambda _authority, _action, receipt: (
+                is_conflict_receipt(receipt=receipt)
+                and chain.record(intent=intent, receipt=receipt)
+            ),
         )
         if result.status == "pending" and retry:
-            result = self._retry(intent=intent, forge=forge)
+            result = self._retry(intent=intent, forge=forge, chain=chain)
         return asdict(result)
 
-    def _retry(self, *, intent: RecoveryIntent, forge: ProcessInverseForge) -> ObserverResult:
+    def _retry(
+        self, *, intent: RecoveryIntent, forge: ProcessInverseForge, chain: ConflictChain
+    ) -> ObserverResult:
         settings = self.installation
         recover = observer_inverse_callback(
-            repo_root=settings.repo, forge=forge, resume_unresolved=True
+            repo_root=settings.repo, forge=forge, resume_unresolved=True, chain=chain
         )
         with repository_lock(directory=settings.state, repository=settings.repository) as path:
             record = load_record(path=path)
