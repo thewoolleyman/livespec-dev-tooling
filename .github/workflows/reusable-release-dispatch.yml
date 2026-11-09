@@ -289,7 +289,9 @@ jobs:
           # Prefer the peeled commit of an annotated tag.
           source_sha=$(git ls-remote "https://github.com/$OWNER/$SOURCE_REPO.git" "refs/tags/$RELEASE_TAG" \
             | awk '$2 ~ /\^\{\}$/ {peeled=$1} {last=$1} END {print (peeled != "" ? peeled : last)}')
-          uv run python -m livespec_dev_tooling.incident_release_entry \
+          # The interpreter `uv sync --all-groups` provisioned above.
+          export PATH="$PWD/.venv/bin:$PATH"
+          python -m livespec_dev_tooling.incident_release_entry \
             --observed-repository "$OBSERVED" \
             --repository "$OWNER/$SOURCE_REPO" \
             --source-sha "$source_sha" \
