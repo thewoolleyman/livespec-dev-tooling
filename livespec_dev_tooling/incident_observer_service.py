@@ -34,6 +34,7 @@ from livespec_dev_tooling.incident_observer_provenance import ObserverProvenance
 from livespec_dev_tooling.incident_observer_query import ObserverQuery
 from livespec_dev_tooling.incident_observer_reconcile import ObserverReconcile
 from livespec_dev_tooling.incident_observer_recovery import ObserverRecovery
+from livespec_dev_tooling.incident_release_screen import RELEASE_SCREEN_PATH, ReleaseScreen
 
 __all__: list[str] = ["ControllerService"]
 
@@ -42,7 +43,9 @@ __all__: list[str] = ["ControllerService"]
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-si6uu7
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-gho3w4
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-zbzls2
-_QUERY_PATHS = frozenset({"/current", "/admitted", "/provenance", "/ci/jobs/inspect"})
+_QUERY_PATHS = frozenset(
+    {"/current", "/admitted", "/provenance", "/ci/jobs/inspect", RELEASE_SCREEN_PATH}
+)
 _CONTROL_PATHS = frozenset(
     {"/arm", "/bind", "/invalidate-ci", "/recover", "/reconcile", "/ci/jobs/collect"}
 )
@@ -130,7 +133,16 @@ class ControllerService:
 
     def _handler(
         self, *, path: str
-    ) -> CiJobCollection | ObserverProvenance | ObserverQuery | ObserverReconcile | ObserverControl:
+    ) -> (
+        CiJobCollection
+        | ObserverProvenance
+        | ObserverQuery
+        | ObserverReconcile
+        | ObserverControl
+        | ReleaseScreen
+    ):
+        if path == RELEASE_SCREEN_PATH:
+            return ReleaseScreen(installation=self.installation)
         if path.startswith("/ci/jobs/"):
             return CiJobCollection(installation=self.installation)
         if path == "/provenance":
