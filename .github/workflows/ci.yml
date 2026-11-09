@@ -1041,11 +1041,32 @@ jobs:
   # pull_request exactly as on a push (the zero-.py skip was retired), so the
   # PR gate equals the master gate by construction. export-telemetry is NOT a
   # gate, so it is intentionally absent from `needs:`.
+  #
+  # livespec-dev-tooling-nofeol: the expression gate alone is NOT enough.
+  # needs.*.result carries one result per needed JOB, never per matrix LEG,
+  # and a leg the forge never created contributes nothing to it. Run
+  # 42673814418 (the 2026-11-09 Actions outage) created check-types but not
+  # check-lint, check-format or either coverage job, and ci-green passed. So
+  # ci-green also reads THIS run's jobs from the Actions API and fails, naming
+  # the leg, when any leg its needs create is absent or did not conclude
+  # success. That reader is this library's own module CLI
+  # (python3 -m livespec_dev_tooling.ci_green_required_legs), not a direct
+  # tool invocation. It only ADDS a way to fail: an expedited incident PR's
+  # omitted members still run their omitted-by-incident-policy step and
+  # conclude success, so that path passes exactly as before.
   ci-green:
     name: ci-green
     needs: [check-python, check-per-file-coverage, check-coverage, check-python-batch, check-fleet-conformance, check-metadata, check-metadata-batch, incident-ci]
     if: always()
     runs-on: ubuntu-latest
+    # The required-leg reader (last two steps) checks the tree out and reads
+    # this run's jobs; nothing else in the job uses the token.
+    permissions:
+      actions: read
+      contents: read
+    # One jobs-API page and a sub-second parse: bound it so a wedged read
+    # fails the gate quickly rather than holding the merge.
+    timeout-minutes: 10
     steps:
       # The required aggregate names every member an expedited incident PR
       # omitted, as the released incident controller's passed aggregate
@@ -1060,3 +1081,28 @@ jobs:
       - name: All required checks passed
         if: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}
         run: exit 1
+
+      # livespec-dev-tooling-nofeol: every leg ci-green's needs create must
+      # EXIST in this run and conclude success; see the comment above the job.
+      - name: Checkout (for the required-leg reader)
+        uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      # The leg set is derived from the checked-out ci.yml (the workflow this
+      # run used), so it can never drift from the matrices. filter=latest
+      # reads each job's latest attempt. An unreadable job list fails closed
+      # after two short retries.
+      - name: Every required leg was created and concluded success
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          jobs_file="${RUNNER_TEMP}/ci-green-run-jobs.jsonl"
+          read_jobs() {
+            gh api --paginate "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/jobs?filter=latest&per_page=100" --jq '.jobs[] | {name, status, conclusion}' > "$jobs_file"
+          }
+          read_jobs || { sleep 5; read_jobs; } || { sleep 15; read_jobs; } || {
+            echo "::error::ci-green: could not read this run's jobs from the Actions API; failing closed"
+            exit 1
+          }
+          python3 -m livespec_dev_tooling.ci_green_required_legs --workflow .github/workflows/ci.yml --gate-job ci-green --jobs "$jobs_file"
