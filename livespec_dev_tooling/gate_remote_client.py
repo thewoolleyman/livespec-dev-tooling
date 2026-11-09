@@ -84,6 +84,11 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+from livespec_dev_tooling._gate_wait_interrupt import (
+    GateWaitInterruptedError,
+    interrupted_wait_failure,
+    wait_with_interrupt_cleanup,
+)
 from livespec_dev_tooling.gate_credential import with_gates_kubeconfig
 from livespec_dev_tooling.gate_private_sibling_token import (
     create_private_sibling_token_secret,
@@ -436,9 +441,23 @@ def _gate_a_pushed_tree(
             deleted = _delete_abandoned_gate_job(request=request, runner=runner, job_name=job_name)
             report_gate_cleanup_failure(job_name=job_name, outcome=deleted)
             return Failure(delivered.failure()), False
-    terminal = await_terminal_state(
-        request=request, runner=runner, sleeper=sleeper, job_name=job_name
-    )
+
+    def cleanup_interrupted_wait() -> None:
+        deleted_job = _delete_abandoned_gate_job(request=request, runner=runner, job_name=job_name)
+        report_gate_cleanup_failure(job_name=job_name, outcome=deleted_job)
+        deleted_refs = _delete_gate_ref(request=request, runner=runner)
+        report_gate_cleanup_failure(job_name=job_name, outcome=deleted_refs)
+
+    try:
+        terminal = wait_with_interrupt_cleanup(
+            job_name=job_name,
+            cleanup=cleanup_interrupted_wait,
+            wait=lambda: await_terminal_state(
+                request=request, runner=runner, sleeper=sleeper, job_name=job_name
+            ),
+        )
+    except GateWaitInterruptedError as interrupted:
+        return Failure(interrupted_wait_failure(interrupted=interrupted)), False
     if isinstance(terminal, Failure):
         deleted = _delete_abandoned_gate_job(request=request, runner=runner, job_name=job_name)
         report_gate_cleanup_failure(job_name=job_name, outcome=deleted)
