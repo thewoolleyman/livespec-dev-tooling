@@ -247,3 +247,24 @@ def test_main_refuses_by_name_without_an_installation_or_its_credential(
     unloaded = json.loads(capsys.readouterr().out)
     code = "incident-original-run-installation-unavailable"
     assert missing["code"] == unloaded["code"] == code
+
+
+def test_installed_ports_pass_only_the_canonical_credential_from_reader_env(
+    monkeypatch: pytest.MonkeyPatch, installation: SimpleNamespace, tmp_path: Path
+) -> None:
+    spawn = Mock(side_effect=[completed(b"tree\n"), completed(b"[]"), completed(b"[]")])
+    monkeypatch.setattr(subprocess, "run", spawn)
+    installation.config = tmp_path / "controller.json"
+    lines = ["PATH=/tmp/evil", "HOME=/tmp/evil", "PYTHONPATH=/overrides", "GIT_DIR=/x"]
+    lines.insert(2, "BEADS_DOLT_PASSWORD=tenant-secret")
+    (tmp_path / "reader.env").write_text("\n".join(lines) + "\n")
+    ports = entry.installed_ports(installation=installation)
+    _ = ports.git(["rev-parse", "HEAD"], b"")
+    _ = ports.canonical.ledger(["comments", "incident-1"])
+    _ = ports.canonical.ledger(["show", "incident-1"])
+    plain = spawn.call_args_list[0].kwargs["env"]
+    for call in spawn.call_args_list[1:]:
+        env = call.kwargs["env"]
+        assert set(env) == {"PATH", "HOME", "BEADS_DOLT_PASSWORD"}
+        assert (env["PATH"], env["HOME"]) == (plain["PATH"], plain["HOME"])
+        assert env["BEADS_DOLT_PASSWORD"] == "tenant-secret"
