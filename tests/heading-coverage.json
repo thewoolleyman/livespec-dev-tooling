@@ -1527,6 +1527,14 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: dev host retention removes an aged Codex marketplace backup and leaves the live marketplaces",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, exercising one run of the committed retention script over a fixture ~/.codex/.tmp/marketplaces tree holding an aged marketplace-backup-* directory, a recent one and an aged live marketplace directory, with no process holding .staging.lock; livespec-dev-tooling-aaveom owns it.",
+    "work_item": "livespec-dev-tooling-aaveom"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: the dev host capacity check alerts when /tmp passes its threshold",
     "test": "TODO",
     "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, exercising the committed capacity-check script against stubbed filesystem usage and a stub ntfy endpoint, run twice inside the repeat interval; livespec-dev-tooling-tjldi2 owns it.",
