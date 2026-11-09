@@ -22,6 +22,7 @@ from collections.abc import Callable
 from dataclasses import asdict, dataclass, replace
 from typing import Any, cast
 
+from livespec_dev_tooling._incident_observer_ack import recovery_action_id
 from livespec_dev_tooling._incident_observer_store import (
     load_record,
     read_observer_arm,
@@ -36,7 +37,6 @@ from livespec_dev_tooling._incident_observer_types import (
     RegressionReopen,
 )
 from livespec_dev_tooling.incident_controller_installation import ControllerInstallation
-from livespec_dev_tooling.incident_observer import recovery_action_id
 from livespec_dev_tooling.incident_observer_authority import CurrentAuthorityReader
 
 __all__: list[str] = ["ObserverRecovery"]

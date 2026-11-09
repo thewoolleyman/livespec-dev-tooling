@@ -5,13 +5,19 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
-from threading import Event
+from threading import Event, Thread
 
 import pytest
 
 import livespec_dev_tooling.incident_observer as controller
+from livespec_dev_tooling._incident_observer_ack import (
+    record_job_callback,
+    recover_recorded_job_callback,
+)
+from livespec_dev_tooling._incident_observer_store import repository_lock
 from livespec_dev_tooling._incident_observer_types import JobCallback, ObserverRegistration
 from livespec_dev_tooling.incident_observer import (
     admit_observer,
@@ -19,6 +25,7 @@ from livespec_dev_tooling.incident_observer import (
     reconcile_action_receipt,
     route_ordinary_action,
 )
+from livespec_dev_tooling.incident_repository_fence import current_repository_fence
 
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-47ij37
 _SECRET = b"observer-controller-fixture"
@@ -82,12 +89,30 @@ def _delivery(*, registration, **job_changes):
     )
 
 
-def _handle(*, directory, registration, recover=lambda _: "revert-sha", **job_changes):
+def _fenced_principal(*, directory, held=None):
+    """A principal that refuses like the installed one unless the observer fence is held.
+
+    The installed principal refuses ``publish`` and ``conflict`` without a borrowed
+    observer repository fence and answers an unknown outcome, which is never retried.
+    """
+
+    def principal(intent):
+        fence = current_repository_fence(
+            repository=intent.registration.repository, directory=directory
+        )
+        if held is not None:
+            held.append(fence is not None)
+        return None if fence is None else "revert-sha"
+
+    return principal
+
+
+def _handle(*, directory, registration, recover=None, **job_changes):
     return handle_job_callback(
         directory=directory,
         delivery=_delivery(registration=registration, **job_changes),
         webhook_secret=_SECRET,
-        recover=recover,
+        recover=recover or _fenced_principal(directory=directory),
     )
 
 
@@ -375,7 +400,7 @@ def test_noncooperating_generation_change_is_rechecked_immediately_before_effect
             record["registration"]["generation"] = 2
         return record
 
-    monkeypatch.setattr(controller, "load_record", changed)
+    monkeypatch.setattr("livespec_dev_tooling._incident_observer_ack.load_record", changed)
     result = _handle(
         directory=tmp_path,
         registration=registration,
@@ -401,3 +426,235 @@ def test_reconciliation_never_substitutes_current_authority_for_missing_action_r
         publish_receipt=lambda *_: pytest.fail("wrong publication"),
     )
     assert result.status == "refused"
+
+
+def _recorded_intent(*, directory, registration):
+    _admit(directory=directory, registration=registration)
+    result, intent = record_job_callback(
+        directory=directory,
+        delivery=_delivery(registration=registration),
+        webhook_secret=_SECRET,
+    )
+    assert result.status == "pending" and intent is not None
+    return intent
+
+
+def test_recording_a_callback_runs_no_principal_and_redelivery_adds_no_effect(
+    tmp_path, registration
+):
+    intent = _recorded_intent(directory=tmp_path, registration=registration)
+    again, no_intent = record_job_callback(
+        directory=tmp_path,
+        delivery=_delivery(registration=registration),
+        webhook_secret=_SECRET,
+    )
+    assert (again.status, again.reason) == (
+        "pending",
+        "existing immutable action; no duplicate effect",
+    )
+    assert no_intent is None
+    effects: list[str] = []
+    result = recover_recorded_job_callback(
+        directory=tmp_path,
+        intent=intent,
+        recover=lambda recorded: effects.append(recorded.action_id) or "revert-sha",
+    )
+    assert (result.status, result.receipt) == ("completed", "revert-sha")
+    assert effects == [intent.action_id]
+
+
+@pytest.mark.parametrize("receipt", ["revert-sha", None])
+def test_recovery_of_an_already_settled_action_has_no_second_effect(
+    tmp_path, registration, receipt
+):
+    intent = _recorded_intent(directory=tmp_path, registration=registration)
+    path = next(tmp_path.glob("*.json"))
+    record = json.loads(path.read_bytes())
+    record["actions"][intent.action_id].update(status="completed", receipt=receipt)
+    path.write_text(json.dumps(record))
+    result = recover_recorded_job_callback(
+        directory=tmp_path,
+        intent=intent,
+        recover=lambda _: pytest.fail("settled action recovered twice"),
+    )
+    assert (result.status, result.receipt) == ("completed", receipt)
+    assert result.reason == "existing immutable action; no duplicate effect"
+
+
+def test_recovery_of_a_vanished_action_is_refused_without_effect(tmp_path, registration):
+    intent = _recorded_intent(directory=tmp_path, registration=registration)
+    path = next(tmp_path.glob("*.json"))
+    record = json.loads(path.read_bytes())
+    record["actions"] = {}
+    path.write_text(json.dumps(record))
+    result = recover_recorded_job_callback(
+        directory=tmp_path,
+        intent=intent,
+        recover=lambda _: pytest.fail("vanished action recovered"),
+    )
+    assert (result.status, result.reason) == ("refused", "unknown immutable recovery action")
+
+
+def test_a_principal_runs_with_the_observer_fence_held_on_both_recovery_paths(
+    tmp_path, registration
+):
+    held: list[bool] = []
+    principal = _fenced_principal(directory=tmp_path, held=held)
+    intent = _recorded_intent(directory=tmp_path, registration=registration)
+    acked = recover_recorded_job_callback(directory=tmp_path, intent=intent, recover=principal)
+    assert (acked.status, acked.receipt) == ("completed", "revert-sha")
+    other = tmp_path / "callback"
+    _admit(directory=other, registration=registration)
+    called = _handle(
+        directory=other,
+        registration=registration,
+        recover=_fenced_principal(directory=other, held=held),
+    )
+    assert (called.status, called.receipt) == ("completed", "revert-sha")
+    assert held == [True, True]
+
+
+@pytest.mark.parametrize(
+    ("principal", "failure"),
+    [
+        (lambda _: None, "recovery principal returned no receipt; outcome unknown"),
+        (lambda _: "", "recovery principal returned no receipt; outcome unknown"),
+    ],
+    ids=["refusal", "empty-receipt"],
+)
+def test_a_refused_or_receiptless_recovery_is_marked_durably_and_never_retried(
+    tmp_path, registration, principal, failure
+):
+    intent = _recorded_intent(directory=tmp_path, registration=registration)
+    result = recover_recorded_job_callback(directory=tmp_path, intent=intent, recover=principal)
+    assert result.status == "pending"
+    assert not result.receipt
+    action = json.loads(next(tmp_path.glob("*.json")).read_bytes())["actions"][intent.action_id]
+    assert (action["status"], action["recovery_failure"]) == ("pending", failure)
+    again = _handle(
+        directory=tmp_path,
+        registration=registration,
+        recover=lambda _: pytest.fail("a settled-unknown action was retried"),
+    )
+    assert (again.status, again.reason) == (
+        "pending",
+        "existing immutable action; no duplicate effect",
+    )
+
+
+def test_a_raising_recovery_is_marked_durably_and_still_raises(tmp_path, registration):
+    intent = _recorded_intent(directory=tmp_path, registration=registration)
+
+    def principal(_):
+        message = "principal transport broke"
+        raise RuntimeError(message)
+
+    with pytest.raises(RuntimeError, match="transport broke"):
+        recover_recorded_job_callback(directory=tmp_path, intent=intent, recover=principal)
+    action = json.loads(next(tmp_path.glob("*.json")).read_bytes())["actions"][intent.action_id]
+    assert (action["status"], action["recovery_failure"]) == (
+        "pending",
+        "recovery principal raised before returning a receipt; outcome unknown",
+    )
+    assert current_repository_fence(repository=registration.repository) is None
+
+
+def _hold_fence_while(*, directory, repository, work):
+    """Run ``work`` on this thread while another thread holds the repository fence."""
+    holding, release = Event(), Event()
+
+    def hold():
+        with repository_lock(directory=directory, repository=repository):
+            holding.set()
+            assert release.wait(timeout=10)
+
+    holder = Thread(target=hold)
+    holder.start()
+    try:
+        assert holding.wait(timeout=5)
+        return work()
+    finally:
+        release.set()
+        holder.join(timeout=10)
+
+
+def test_a_redelivery_while_a_principal_holds_the_fence_is_answered_within_the_bound(
+    tmp_path, registration
+):
+    held: list[bool] = []
+    intent = _recorded_intent(directory=tmp_path, registration=registration)
+    started, release = Event(), Event()
+    fenced = _fenced_principal(directory=tmp_path, held=held)
+
+    def principal(recorded):
+        started.set()
+        assert release.wait(timeout=10)
+        return fenced(recorded)
+
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        running = pool.submit(
+            recover_recorded_job_callback,
+            directory=tmp_path,
+            intent=intent,
+            recover=principal,
+        )
+        try:
+            assert started.wait(timeout=5)
+            begun = time.monotonic()
+            again, no_intent = record_job_callback(
+                directory=tmp_path,
+                delivery=_delivery(registration=registration),
+                webhook_secret=_SECRET,
+                fence_wait_seconds=0.2,
+            )
+            elapsed = time.monotonic() - begun
+        finally:
+            release.set()
+        settled = running.result(timeout=10)
+    assert elapsed < 2
+    assert (again.status, again.reason) == (
+        "pending",
+        "existing immutable action; no duplicate effect",
+    )
+    assert no_intent is None
+    assert held == [True]
+    assert (settled.status, settled.receipt) == ("completed", "revert-sha")
+    record = json.loads(next(tmp_path.glob("*.json")).read_bytes())
+    assert record["actions"][intent.action_id]["receipt"] == "revert-sha"
+
+
+def test_a_new_failure_that_cannot_reach_the_busy_fence_is_unavailable_and_unrecorded(
+    tmp_path, registration
+):
+    _admit(directory=tmp_path, registration=registration)
+    result, intent = _hold_fence_while(
+        directory=tmp_path,
+        repository=registration.repository,
+        work=lambda: record_job_callback(
+            directory=tmp_path,
+            delivery=_delivery(registration=registration),
+            webhook_secret=_SECRET,
+            fence_wait_seconds=0.05,
+        ),
+    )
+    assert (result.status, intent) == ("unavailable", None)
+    assert not json.loads(next(tmp_path.glob("*.json")).read_bytes()).get("actions")
+    redelivered = _handle(directory=tmp_path, registration=registration)
+    assert redelivered.status == "completed"
+
+
+def test_a_delivery_outside_the_leaf_universe_is_ignored_even_while_the_fence_is_busy(
+    tmp_path, registration
+):
+    _admit(directory=tmp_path, registration=registration)
+    result, intent = _hold_fence_while(
+        directory=tmp_path,
+        repository=registration.repository,
+        work=lambda: record_job_callback(
+            directory=tmp_path,
+            delivery=_delivery(registration=registration, name="unrelated"),
+            webhook_secret=_SECRET,
+            fence_wait_seconds=0.05,
+        ),
+    )
+    assert (result.status, intent) == ("ignored", None)
