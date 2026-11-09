@@ -290,23 +290,26 @@ fabro_server_instances:
     # d6fcfafab6da1bfd32c3b96b4153f93367fe8a5b4fc18b0efecacad80b1e5711.
     binary_source: /home/ubuntu/.local/state/fabro-web-prod/v0393-bbe693847/fabro
     binary_sha256: 1529aa9f86b5bf346ae20a731bdf1cb433bc678825c8a43d0c21f513dac0ab1f
-    # The tag the orchestrator workflow pins today
-    # (.claude-plugin/.fabro/workflows/implement-work-item/workflow.toml,
-    # python-agent-v1.136.2). On this engine the catalog, not the workflow
-    # table, decides the image, so the two must be bumped together.
+    # On this engine the catalog, not the workflow table, decides the image.
+    # The orchestrator workflow
+    # (.claude-plugin/.fabro/workflows/implement-work-item/workflow.toml) pins
+    # python-agent-v1.189.0; this instance's kubernetes process_spec below runs
+    # v1.188.1, the newest release proven in-pod on the candidate. A catalog image
+    # moves canary-first (candidate, then here), never by the release fan-out;
+    # the trailing divergence is held by livespec-dev-tooling-wrlwvk.
     environments:
       # gmktec's DEFAULT environment runs on the kubernetes provider (plan
       # kubernetes-sandbox-backend, bd-ib-nmuyjc DoD 5; coordinator ruling on
       # livespec-dev-tooling-dfixhe, 2026-10-24, after the third canary run
       # 01M5NQK36G7K passed its pod bar on sandbox-driver-kubernetes v0.4.1). Like
       # livespec-ci-k8s it declares NO image: its sandboxes are built from the
-      # kubernetes provider's process_spec below, which carries the
-      # python-agent-v1.114.1 image this entry named while it ran Docker. The
+      # kubernetes provider's process_spec below, which carries the image this
+      # entry would name if it ran Docker (python-agent-v1.188.1). The
       # catalog is server-managed, so this converges by a PUT with no restart and
       # a live Docker run keeps its container. ROLLBACK to Docker: set
       # `provider: docker` (dropping it keeps kubernetes, which the role refuses
-      # beside an image) and restore
-      # `image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-agent-v1.136.2`.
+      # beside an image) and restore the process_spec's image here:
+      # `image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-agent-v1.188.1`.
       - id: livespec-ci
         # REQUEST 3 / LIMIT 6 (bd-ib-zl3qcz): a run's environment cpu replaces the
         # provider process_spec's cpu_cores, so this is the sandbox's CPU LIMIT.
@@ -422,7 +425,14 @@ fabro_server_instances:
         env:
           SANDBOX_DRIVER_KUBERNETES_CPU_REQUEST_CORES: "3"
         process_spec:
-          image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-agent-v1.136.2
+          # v1.188.1 (2026-11-09, livespec-dev-tooling-wrlwvk): claude-agent-acp
+          # 0.91.0, so claude-acp nodes run Claude Code 2.1.300 and can serve
+          # claude-opus-5-5 (v1.136.2's 0.44.0 runs 2.1.170, which answers HTTP 400).
+          # Its one-run gate passed on the candidate (run 01M6XWZJ2NF2: in-pod parity
+          # PASS, dod_gate@1 on claude-acp). New pods take it after the server's live
+          # `Server config reloaded`; a pod already running keeps its image.
+          # ROLLBACK: image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-agent-v1.136.2
+          image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-agent-v1.188.1
           # REVERT: cpu_cores: 4
           cpu_cores: 6
           memory_mb: 7629
@@ -658,11 +668,12 @@ fabro_server_instances:
           SANDBOX_DRIVER_KUBERNETES_STATE_DIR: /home/cwoolley/.fabro-candidate/.local/state/sandbox-driver-kubernetes
           SANDBOX_DRIVER_KUBERNETES_CPU_REQUEST_CORES: "3"
         process_spec:
-          # The CANDIDATE alone runs python-agent-v1.188.1, the release the orchestrator
-          # workflow pins today. It carries claude-agent-acp 0.91.0 (Claude Code 2.1.300;
+          # The candidate runs python-agent-v1.188.1, the image the fleet instance
+          # above moved to after this instance proved it. It carries claude-agent-acp 0.91.0 (Claude Code 2.1.300;
           # livespec-dev-tooling-wrlwvk, #3424), first proven in-pod here on v1.173.0
           # (run 01M6MQBBRZ7A). Its environment-parity proof against the fleet's v1.136.2
-          # is taken here before the fleet instance moves off v1.136.2.
+          # was taken here (run 01M6XWZJ2NF2) before the fleet instance moved off it.
+          # The next image, v1.189.0, is proven here first in the same way.
           # ROLLBACK: python-agent-v1.173.0.
           image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-agent-v1.188.1
           cpu_cores: 6
