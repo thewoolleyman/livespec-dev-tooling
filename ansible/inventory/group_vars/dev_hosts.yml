@@ -39,6 +39,10 @@
 # No entry declares a `docker_host`: no repository's committed factory table
 # declares one today, and publishing one would newly turn on the Dispatcher's
 # remote container sweep.
+# The Dispatcher runs here, so its Fabro client is logged in to every factory
+# below by the registry role, never by hand (livespec-dev-tooling-ko26ez.7: a
+# new container-worker factory must be readable the moment it is registered).
+fabro_factory_registry_client_login: true
 fabro_factory_registry:
   # `legacy` (the 0.254 engine on hp-xubuntu) is RETIRED and its name deleted:
   # its instance is stopped and no repository's committed factory table names
