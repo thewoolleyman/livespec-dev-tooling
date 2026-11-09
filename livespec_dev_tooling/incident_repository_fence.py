@@ -7,6 +7,7 @@ import hashlib
 import os
 import stat
 import threading
+import time
 from collections.abc import Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
@@ -18,6 +19,7 @@ from livespec_dev_tooling.incident_protected_path import protected_path
 __all__: list[str] = [
     "REPOSITORY_FENCE_FD_ENV",
     "RepositoryFence",
+    "RepositoryFenceBusyError",
     "borrow_repository_fence",
     "current_repository_fence",
     "hold_repository_fence",
@@ -27,6 +29,12 @@ __all__: list[str] = [
 REPOSITORY_FENCE_FD_ENV = "LIVESPEC_INCIDENT_REPOSITORY_FENCE_FD"
 _FENCE_REFUSAL = "protected live repository fence required"
 _MIN_FENCE_DESCRIPTOR = 3
+_FENCE_BUSY = "repository fence is held by another recovery"
+_POLL_SECONDS = 0.01
+
+
+class RepositoryFenceBusyError(Exception):
+    """A bounded fence acquisition expired while another holder kept the lock."""
 
 
 @dataclass(kw_only=True)
@@ -42,6 +50,23 @@ class RepositoryFence:
 
 
 _FENCES: ContextVar[tuple[RepositoryFence, ...]] = ContextVar("repository_fences", default=())
+
+
+def _acquire(*, descriptor: int, wait_seconds: float | None) -> None:
+    """Block for the flock, or give up with ``RepositoryFenceBusyError`` after ``wait_seconds``."""
+    if wait_seconds is None:
+        fcntl.flock(descriptor, fcntl.LOCK_EX)
+        return
+    deadline = time.monotonic() + wait_seconds
+    while True:
+        try:
+            fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            if time.monotonic() >= deadline:
+                raise RepositoryFenceBusyError(_FENCE_BUSY) from None
+            time.sleep(_POLL_SECONDS)
+        else:
+            return
 
 
 def _protected_directory(*, directory: Path) -> None:
@@ -160,13 +185,21 @@ def borrow_repository_fence(
 
 @contextmanager
 def hold_repository_fence(
-    *, directory: Path, repository: str, existing_only: bool = False
+    *,
+    directory: Path,
+    repository: str,
+    existing_only: bool = False,
+    wait_seconds: float | None = None,
 ) -> Iterator[RepositoryFence]:
     """Serialize ALL controller and ordinary-reconciler mutations per repo.
 
     Production must provision this directory on the independent controller,
     inaccessible to candidate trees. A filesystem error propagates as refusal;
     there is no unlocked, tenant-backed, or wrapper-backed fallback.
+
+    ``wait_seconds`` bounds the acquisition for a caller that must answer within a
+    deadline; ``None`` blocks. A bounded caller that times out raises
+    ``RepositoryFenceBusyError`` and never holds the lock.
     """
     if existing_only:
         _protected_directory(directory=directory)
@@ -192,7 +225,7 @@ def hold_repository_fence(
         info = os.fstat(descriptor)
         if not stat.S_ISREG(info.st_mode) or info.st_uid not in {0, os.geteuid()}:
             raise OSError(_FENCE_REFUSAL)
-        fcntl.flock(descriptor, fcntl.LOCK_EX)
+        _acquire(descriptor=descriptor, wait_seconds=wait_seconds)
         try:
             # Older stores created 0644 empty locks. Converge only the owned
             # inode while holding it; never replace or truncate a live lock.

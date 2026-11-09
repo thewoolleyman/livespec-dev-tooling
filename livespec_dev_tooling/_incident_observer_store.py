@@ -16,6 +16,7 @@ from livespec_dev_tooling._incident_observer_types import ObserverArm, ObserverR
 from livespec_dev_tooling.incident_repository_fence import (
     REPOSITORY_FENCE_FD_ENV,
     RepositoryFence,
+    RepositoryFenceBusyError,
     borrow_repository_fence,
     current_repository_fence,
     hold_repository_fence,
@@ -24,11 +25,13 @@ from livespec_dev_tooling.incident_repository_fence import (
 __all__: list[str] = [
     "REPOSITORY_FENCE_FD_ENV",
     "RepositoryFence",
+    "RepositoryFenceBusyError",
     "borrow_repository_fence",
     "current_repository_fence",
     "load_record",
     "read_observer_arm",
     "read_registration",
+    "record_path",
     "registration_record",
     "repository_lock",
     "save_record",
@@ -42,15 +45,27 @@ _INVALID_RECEIPT = "invalid stored observer receipt"
 _INVALID_ARM = "invalid stored pre-merge observer arm"
 
 
+def record_path(*, directory: Path, repository: str) -> Path:
+    """The one controller record of a repository; ``save_record`` replaces it atomically."""
+    return directory / (hashlib.sha256(repository.encode()).hexdigest() + ".json")
+
+
 @contextmanager
 def repository_lock(
-    *, directory: Path, repository: str, existing_only: bool = False
+    *,
+    directory: Path,
+    repository: str,
+    existing_only: bool = False,
+    wait_seconds: float | None = None,
 ) -> Iterator[Path]:
     """Serialize controller and reconciler writes using the same transferable fence."""
     with hold_repository_fence(
-        directory=directory, repository=repository, existing_only=existing_only
+        directory=directory,
+        repository=repository,
+        existing_only=existing_only,
+        wait_seconds=wait_seconds,
     ):
-        yield directory / (hashlib.sha256(repository.encode()).hexdigest() + ".json")
+        yield record_path(directory=directory, repository=repository)
 
 
 def load_record(*, path: Path) -> dict[str, object]:
