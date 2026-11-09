@@ -653,6 +653,21 @@
           "bin": "/home/ubuntu/.local/state/fabro-currency/carrier-petri-v0.393-613add19c/fabro",
           "secret_channel": "native_secrets",
           "environment": "factory-python"
+        },
+        // `homelab-worker-arm64` is gmktec's fabro-server-homelab-worker-arm64
+        // (:32279): the factory of the arm64 container workers (plan
+        // homelab-k8s-worker-nodes, livespec-dev-tooling#3888), whose sandboxes run
+        // the python-agent-<version>-arm64 image on a worker node. Its address comes
+        // from the factory registry, and its client login from the registry role
+        // (#3912). `bin` is the client for the build it pins, the same 0.393
+        // bbe693847 build as `petri`. It is never the default: legacy-dispatcher-agent
+        // routes to it per dispatch with `--factory homelab-worker-arm64`, counted
+        // inside the shared fleet cap, at max_concurrent_runs 1.
+        "homelab-worker-arm64": {
+          "registry": true,
+          "bin": "/home/ubuntu/.local/state/fabro-currency/carrier-petri-v0.393-bbe693847/fabro",
+          "secret_channel": "native_secrets",
+          "environment": "factory-python"
         }
       }
     }
