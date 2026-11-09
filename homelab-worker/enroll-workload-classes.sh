@@ -18,7 +18,8 @@
 #     selects) and a ci-runner.io/churn-slot capacity derived from its CI
 #     share at about 2.73 CPUs per slot (the fleet's sizing rule,
 #     ci-runner/k3s/phase2/kueue/DERIVATION.md), at least one.
-#   - factory: when the factory class declares it, ci-runner.io/factory=true.
+#   - factory: when any factory line declares it (the python-agent line, or an
+#     architecture's own agent line), ci-runner.io/factory=true.
 #   - gate: when any gate line declares it (the default or a repository's own),
 #     the node gets homelab-worker.livespec.dev/gate-share-millicores, its
 #     gate share; ci-runner/k3s/phase2/kueue/converge-worker-queues.sh turns
@@ -80,7 +81,9 @@ lacks() {
 ci=0 gate=0 factory=0
 declares release && ci=1
 declares gate && gate=1
-declares factory python-agent && factory=1
+# Any factory line declaring the node's architecture: an arm64 agent layer is
+# its own line (python-agent-arm64), served by its own Fabro instance.
+declares factory && factory=1
 enrolled=$((ci + gate + factory))
 share=$((millicores / (enrolled > 0 ? enrolled : 1)))
 slots=$((share / slot_millicores))

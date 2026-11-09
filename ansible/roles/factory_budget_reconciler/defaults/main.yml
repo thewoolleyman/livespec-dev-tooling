@@ -16,3 +16,8 @@ factory_budget_reconciler_timer: reconcile-factory-budget-admit.timer
 # The inventory group whose hosts' `factory_pod_budget` values are rendered. A
 # host that declares none renders no line, and the reconciler gives it 0.
 factory_budget_reconciler_group: ci_pool
+# The factory pod budget of every container worker node with no per-node line:
+# one sandbox, so a departing laptop worker strands at most one run (plan
+# homelab-k8s-worker-nodes, livespec-dev-tooling-ko26ez.7). Counted in the
+# launch-cap sum like any node's budget.
+factory_budget_reconciler_container_worker_pod_budget: 1

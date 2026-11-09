@@ -208,3 +208,18 @@ def test_the_gate_share_is_written_before_the_worker_queues_reconcile(tmp_path: 
     assert result.returncode == 0, result.stderr
     labelled = next(i for i, c in enumerate(calls) if "gate-share-millicores=" in c)
     assert calls.index("worker-queues") > labelled
+
+
+def test_an_architectures_own_factory_line_enrolls_the_factory_class(tmp_path: Path) -> None:
+    """The default agent line may stay amd64 while an arm64 agent layer has its own line."""
+    conf = (
+        "release some-arm64-k3s arm64 x\ngate gate amd64,arm64 none\n"
+        "factory python-agent amd64 lacks\nfactory python-agent-arm64 arm64 none\n"
+    )
+    result, calls = _run(tmp_path=tmp_path, conf=conf, cpu="12")
+    assert result.returncode == 0, result.stderr
+    assert f"kubectl label node {_NODE} ci-runner.io/factory=true --overwrite" in calls
+    assert (
+        f"kubectl label node {_NODE} homelab-worker.livespec.dev/gate-share-millicores=4000 --overwrite"
+        in calls
+    )
