@@ -211,6 +211,14 @@ ensure-plugins-fleet build:
 adopt-orchestrator-build clone build:
     mise exec -- uv run --no-sync python -m livespec_dev_tooling.fleet.adopt_orchestrator_build "$1" "$2"
 
+# Report any project-scope plugin update or install outside `ensure-plugins`,
+# `adopt-orchestrator-build` and `ensure-plugins-fleet` in this checkout's
+# recipes, hooks, verbs and skills, and any enabled automatic plugin update in
+# the committed settings of this checkout and of each fleet member's clone.
+# Operator-invoked; it is not part of `check:`.
+plugin-adoption-path:
+    mise exec -- uv run --no-sync python -m livespec_dev_tooling.fleet.plugin_adoption_path
+
 # Compare each enabled Claude plugin's installed build with the locally
 # resolved origin/<ref> of its committed marketplace pin. This is deliberately
 # a world-state operator probe rather than a member of `check:`: installed
