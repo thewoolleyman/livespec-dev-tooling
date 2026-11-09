@@ -43,6 +43,27 @@ test the PR itself touched is never retried at any level, because its failure ca
 maintainer, pasting the coordinator's proposal: "OK, do these as priority". It amends the 2026-11-02 rulings for
 this case only; until the merge-poll retry ships, no seat reruns a job by hand to get past a test failure.
 
+**Two more automatic re-runs: container-init registry errors now, Kueue preemption in principle.** The maintainer,
+2026-11-09 ~09:1xZ in plan ci-runtime-and-cost's session (epic `livespec-dev-tooling-ib3oe3`), recorded in that epic's
+scope event at 09:00:24Z and copied onto epic `livespec-dev-tooling-6tgd2z` at 09:02:28Z, chose the option labelled
+verbatim "Allow both; samgg2 after 5wewi2", over "build samgg2 now", "khlrw3 only, close samgg2" and "no new automatic
+re-runs". It extends this section in two ways:
+
+- **Container-init registry errors (approved).** A job that failed at "Initialize containers" on a registry network
+  error, before any step ran, gets ONE automatic re-run in every adopting fleet repository
+  (livespec-dev-tooling-khlrw3). It ships in one reusable reconciler workflow together with the Set up job codeload 429
+  re-run of livespec-dev-tooling-cetyrq: cetyrq builds the workflow and khlrw3 adds its classifier. Each re-run records
+  the run id, the job id and the matched error line in the reconciler's summary. No per-occurrence flake item is owed,
+  because the reconciler is itself the root fix for a forge-side registry transient.
+- **Kueue preemption (allowed in principle).** A job whose runner Kueue evicted with reason Preempted, for a high-band
+  workload, may be re-run automatically once per job, keyed on Kueue's eviction record and never on log text. The build,
+  livespec-dev-tooling-samgg2, waits on livespec-dev-tooling-5wewi2 (admission priority, phase 1) plus one week of
+  measured high-band CI queue waits after 5wewi2 ships. samgg2 is built only if those waits stay material, and is
+  closed with the measurement recorded otherwise.
+
+The no-rerun rule for genuine test failures is unchanged: neither re-run fires on a test failure, and a test the PR
+touched is never retried at any level.
+
 A check that fails intermittently is still a defect. Find the commit that introduced the flaky bound
 (`git log -1 -- <test file>`), and route the root fix to that commit's owner as top priority. Tell every waiting
 session to wait for the fix to merge rather than re-run anything.
@@ -422,6 +443,12 @@ run autonomously, never block."
   call) goes in the tick report as plain text under `FOR THE MAINTAINER (non-blocking)`, and the seat keeps looping.
   The item waits; the seat does not.
 - Never self-wind-down (rule D).
+- **A coordinator's background helpers never raise a permission prompt (coordinator's reading).** Every helper brief
+  says to put multi-step shell logic in a script file in the scratchpad and run it with `bash <file>`, never as a
+  compound one-liner with zsh expansion flags, inline env arrays, nested loops or `rm`. If a prompt appears anyway, the
+  helper abandons that step and reports it. Measured 2026-11-09 ~08:3xZ: the coordinator's valve-batch helper ran one
+  long zsh one-liner, the harness could not rule out a dangerous `rm`, and it raised "Do you want to proceed?" to the
+  maintainer despite bypass mode. The maintainer: "Why do you keep popping this up".
 - **A resume goes straight into the loop.** A session resuming this plan starts the coordinator `/loop` in the same turn. The epic's `next_action` is written as `kind: human`, but that is a pointer for the next session, not a gate. Never ask the maintainer whether to start or resume the loop. Maintainer correction 2026-11-03 ~13:0xZ, after a resumed session asked about fifteen times: "Why did the loop stop? Why would you need to ask me to start it?"
 - **Never hold off an overseer restart.** No standing rule may stop the overseer restarting the coordinator. On a
   wind-down the coordinator writes its handoff and declares ready. A maintainer remark asking it to hold is situational,
@@ -850,6 +877,29 @@ restart, verify, restore the caps and re-dispatch the cancelled items seeded at 
 runs drain on their own. Measured 2026-11-05 22:1xZ to 2026-11-06 00:0xZ: the coordinator held the poweredge-xubuntu
 k3s server restart for livespec-dev-tooling#3430 waiting for drain, which was wrong. The maintainer asked ~00:0xZ for
 it to be done now as a cancel-to-idle, and kubernetes-sandbox-backend set the caps to 0 at 00:09:55Z.
+
+**Superseded master runs: option B and the preflight fix now, option A as the end state.** The maintainer, 2026-11-09
+~08:5xZ in plan ci-runtime-and-cost's session (epic `livespec-dev-tooling-ib3oe3`), recorded in that epic's scope event
+at 08:54:08Z, answered research note 007's design choice (livespec-dev-tooling#3847). Chosen: option B plus a dispatcher
+preflight fix now, with option A as the end state, over "A only", "B without A" and "C by hand".
+
+- **B (interim).** livespec-dev-tooling and livespec-orchestrator-beads-fabro master push CI cancels superseded
+  in-progress runs, through a concurrency stanza that cancels only master pushes; pull-request runs are unchanged. A
+  guard refuses that setting in any fleet member that calls the master-health reconciler. B retires when A lands.
+- **Preflight fix (ships with B, not after it).** The orchestrator's dispatch master-CI preflight fallback
+  (`_dispatcher_ci_preflight_ancestors._newest_concluded_run`) returns a CANCELLED run as the newest concluded run, so no
+  green ancestor is found and dispatch waits or defers. Under B that is almost every merge burst. The fix treats a
+  cancelled run as no verdict and walks on to the newest concluded green or red run.
+- **A (end state).** The master-health reconciler resolves a cancelled master commit in a suspect range by re-running
+  its cancelled run before naming a culprit, and never names a culprit from an unverdicted commit. It needs a livespec
+  core propose-change plus a dev-tooling realization, filed after B and the preflight fix are on master. Neither
+  repository adopts the reconciler before A lands unless B's setting is removed first.
+
+Until B lands, the coordinator's standing GO to ci-runtime-and-cost covers cancelling superseded livespec-dev-tooling
+master push runs while a merge gap is open: never the newest head's run, never an expedited run, and never in livespec
+or any member that calls the master-health reconciler. Measured 2026-11-09 by ci-runtime-and-cost: superseded master
+runs waste about 4,110 runner-minutes a day, 48% of master-lane CI, almost all of it in livespec-dev-tooling (about
+2,467 a day) and the orchestrator (about 1,640 a day).
 
 **An OOM kill is not `transient_infra` (coordinator's reading).** A factory run that dies with "WebSocket upgrade 500"
 can be a memory-cgroup OOM kill of the agent: `memory.oom.group` kills the whole container, the kubelet then refuses
