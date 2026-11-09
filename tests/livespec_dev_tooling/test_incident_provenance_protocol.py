@@ -2,12 +2,11 @@
 
 from __future__ import annotations
 
-import json
 from dataclasses import asdict
 
 import pytest
 
-from livespec_dev_tooling._incident_provenance_protocol import decode_historical_reply
+from livespec_dev_tooling._incident_provenance_protocol import decode_historical_result
 from livespec_dev_tooling.incident_provenance import IncidentCommitQuery
 
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-gvylzw
@@ -54,35 +53,8 @@ def test_malformed_landed_scope_is_refused(field: str, value: object) -> None:
         repayment_required=True,
     )
     attempt[field] = value
-    response = {
-        "schema": 1,
-        "status": "verified",
-        "authorizes_current_effects": False,
-        "normal_factory_proof": False,
-        "result": {"attempt": attempt, "committed_token_id": "old", "current_token_id": "current"},
-    }
-    result = decode_historical_reply(stdout=json.dumps(response), returncode=0, query=query)
+    result = decode_historical_result(
+        result={"attempt": attempt, "committed_token_id": "old", "current_token_id": "current"},
+        query=query,
+    )
     assert result.failure().code == "incident-reader-invalid-response"
-
-
-@pytest.mark.parametrize(
-    ("status", "result"),
-    [
-        ("verified", {"code": "canonical-refusal", "detail": "reason"}),
-        ("refused", {}),
-        ("refused", {"code": False, "detail": "reason"}),
-        ("refused", {"code": "canonical-refusal", "detail": []}),
-    ],
-)
-def test_refusal_process_requires_an_actual_named_refusal(
-    status: str, result: dict[str, object]
-) -> None:
-    response = {
-        "schema": 1,
-        "status": status,
-        "result": result,
-        "authorizes_current_effects": False,
-        "normal_factory_proof": False,
-    }
-    decoded = decode_historical_reply(stdout=json.dumps(response), returncode=78, query=_query())
-    assert decoded.failure().code == "incident-reader-invalid-response"

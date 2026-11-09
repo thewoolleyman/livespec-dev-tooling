@@ -82,9 +82,9 @@ def _reader(
     run = (
         Mock(side_effect=subprocess.TimeoutExpired(cmd="reader", timeout=45))
         if error
-        else Mock(return_value=SimpleNamespace(stdout=stdout, returncode=returncode))
+        else Mock(return_value=SimpleNamespace(stdout=stdout, stderr="", returncode=returncode))
     )
-    monkeypatch.setattr(module.subprocess, "run", run)
+    monkeypatch.setattr(subprocess, "run", run)
     return run
 
 
@@ -146,7 +146,7 @@ def test_an_unavailable_reader_fails_closed(
     settings: SimpleNamespace, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _reader(monkeypatch=monkeypatch, error=True)
-    assert _execute(settings=settings, payload=_query())["reason"] == "incident-reader-unavailable"
+    assert _execute(settings=settings, payload=_query())["reason"] == "incident-authority-timeout"
 
 
 @pytest.mark.parametrize(
