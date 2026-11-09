@@ -58,6 +58,73 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.189.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.188.1...v1.189.0) (2026-11-09)
+
+
+### Features
+
+* **actions:** a shared publish-flake-retries composite action delivers flake-retry records from consumer CI (livespec-dev-tooling-ljea46) ([c7c07d3](https://github.com/thewoolleyman/livespec-dev-tooling/commit/c7c07d3936ae4f2ecb093bbaa0d4d8520f1814f4))
+* **ansible:** render factory fleet limits ([1c92693](https://github.com/thewoolleyman/livespec-dev-tooling/commit/1c92693de607c35711815b300fb1b3c6cf975c6c))
+* **ci-runner:** a container worker takes its share of the gates its architecture can run first, not only the fleet's overflow (livespec-dev-tooling-ko26ez.7) ([543f636](https://github.com/thewoolleyman/livespec-dev-tooling/commit/543f63699691e42844b36ada9906c1140ef424f1))
+* **ci-runner:** a container worker takes overflow gate Jobs whose image publishes its architecture (livespec-dev-tooling-ko26ez.7) ([3b39c4d](https://github.com/thewoolleyman/livespec-dev-tooling/commit/3b39c4db9033a555e84068e79002946a37fc5549))
+* coverage-guided test selection for the rule-26 kill matrix (livespec-dev-tooling-tcmw34) ([0e5944b](https://github.com/thewoolleyman/livespec-dev-tooling/commit/0e5944be954cf54e7eb164246697c6b15fe7ba9d))
+* **gate:** add shared gate_command classifier for every pytest spelling ([f36cd11](https://github.com/thewoolleyman/livespec-dev-tooling/commit/f36cd111fdcad4c4c22bf8ff96ab309b5e10e78d))
+* **gate:** gate-start records every pytest spelling as a full-suite cluster job ([ac4f275](https://github.com/thewoolleyman/livespec-dev-tooling/commit/ac4f2756041d01615aba3edbc7c04e0b288fcd29))
+* **gate:** refuse an agent session's foreground full-suite pytest on a delegating host ([b030dd0](https://github.com/thewoolleyman/livespec-dev-tooling/commit/b030dd0021f9c38d33615228bee0b52e5925c11c))
+* name every low-coverage file in digest ([fcf779d](https://github.com/thewoolleyman/livespec-dev-tooling/commit/fcf779d3ca1c56b88dee5e5543f5846767890a21))
+* restate concrete coverage errors in digest ([59163ce](https://github.com/thewoolleyman/livespec-dev-tooling/commit/59163ce4d8f1332a0e593f6384908699fb12716d))
+* restate pytest failures in coverage digest ([da96ce3](https://github.com/thewoolleyman/livespec-dev-tooling/commit/da96ce3d823efd105eb2a9e32598df771e76c0b9))
+* schedule flake retry filing ([fde1504](https://github.com/thewoolleyman/livespec-dev-tooling/commit/fde1504fa0ddd47f9393c2775cad8da8a0bfb30d))
+* the rule-26 kill matrix runs each mutant only against the tests that execute it (livespec-dev-tooling-tcmw34) ([d65da53](https://github.com/thewoolleyman/livespec-dev-tooling/commit/d65da531a03ec5ab62318a7fbe28007e97885616))
+* the rule-26 kill-matrix report names its test-selection method (livespec-dev-tooling-tcmw34) ([fd43867](https://github.com/thewoolleyman/livespec-dev-tooling/commit/fd438671212dcacac6cb93c7bd4acc1f3877a986))
+
+
+### Bug Fixes
+
+* a delegated gate client ended by TERM or INT deletes its gate Job and mirror refs ([082d7df](https://github.com/thewoolleyman/livespec-dev-tooling/commit/082d7df1e93879ab1cd5e88b80216ee44ada5212))
+* a delegated gate Job's Kueue admission wait no longer consumes its poll budget ([2787b25](https://github.com/thewoolleyman/livespec-dev-tooling/commit/2787b2521af31c0ae4bc92fe3843b852ddb6c7b8))
+* a refused CI admission is sticky, a deadline run works without os.waitid, and CI member output is flushed (livespec-dev-tooling-oqpw6t) ([032df6a](https://github.com/thewoolleyman/livespec-dev-tooling/commit/032df6a9f6326aaac299c54a049fd0c8fe5f6ffd))
+* a test the kill matrix cannot measure runs against every mutant (livespec-dev-tooling-tcmw34) ([4b00c82](https://github.com/thewoolleyman/livespec-dev-tooling/commit/4b00c8291ac2b516763463d527d4915ae07dd784))
+* a workflow or just-script commit runs the ci.yml-reading tests at pre-commit, and the coverage handoff is tested end to end (livespec-dev-tooling-cj5dg5) ([5eebd2b](https://github.com/thewoolleyman/livespec-dev-tooling/commit/5eebd2b94705e25fcf508c02ee308c2a9a319dff))
+* account for merge parents in debt baseline ([f1ec143](https://github.com/thewoolleyman/livespec-dev-tooling/commit/f1ec1431819f13042ca73f29f05171273f04e72c))
+* an expedited hook's scope row times only the scope check, so a slow receipt lookup cannot void the receipt (livespec-dev-tooling-qftbbu) ([4b1e2d1](https://github.com/thewoolleyman/livespec-dev-tooling/commit/4b1e2d14e09d9e0ca0a9aa53aa7fdcdbd4b4deff))
+* an incident hook authority call is bounded by a liveness ceiling, not a 30 s wall clock (livespec-dev-tooling-yaprm4) ([60f3eca](https://github.com/thewoolleyman/livespec-dev-tooling/commit/60f3eca5b54fdd2d35b641d1a38a46214ca35734))
+* **ansible:** gmktec and hp hold a root-level system.slice CPU share (livespec-dev-tooling-cetudy) ([b243199](https://github.com/thewoolleyman/livespec-dev-tooling/commit/b243199c67d7c8bb2b786d8ca9b92660a464ffc2))
+* classify host authority gate refusals ([59aed62](https://github.com/thewoolleyman/livespec-dev-tooling/commit/59aed62ceebf19bafee58f33a0616e8d5c8b1fb0))
+* delegated pre-commit records green-token evidence only for a full-aggregate Job run ([31e052a](https://github.com/thewoolleyman/livespec-dev-tooling/commit/31e052aad98ba028c69232d306924fd22efe2cf4))
+* expedited gates defer what an incident commit cannot pass, the normal aggregate keeps its targets in its own process group, and the CI recheck is shared (livespec-dev-tooling-oqpw6t) ([caaec3c](https://github.com/thewoolleyman/livespec-dev-tooling/commit/caaec3c6e078094bf7b0b1bb3b4ec62ec707d76d))
+* fleet-test-baseline counts a doubly quiet pytest collection (livespec-dev-tooling-phakbp) ([9624e80](https://github.com/thewoolleyman/livespec-dev-tooling/commit/9624e802d2a5fcd0ea8ad51cc84bb981dba828c0))
+* fleet-test-baseline measures a red suite instead of aborting the fleet run (livespec-dev-tooling-muw23n) ([8acd449](https://github.com/thewoolleyman/livespec-dev-tooling/commit/8acd44922aa93c73634ee0801ccf8496a5b8baef))
+* fleet-test-baseline reads nextest's own test-count (livespec-dev-tooling-phakbp) ([ae1ba3e](https://github.com/thewoolleyman/livespec-dev-tooling/commit/ae1ba3e132bff89929827717b89ba89bba94c36c))
+* focused incident evidence keeps each touched file's coverage summary and misses, so a large module's record fits one argument (livespec-dev-tooling-l6u6cd) ([c347485](https://github.com/thewoolleyman/livespec-dev-tooling/commit/c347485c8c01ee3240426a6c25816d16f05838fa))
+* focused incident evidence measures under the repository's own coverage and pytest configuration (livespec-dev-tooling-afuy7n) ([62d19de](https://github.com/thewoolleyman/livespec-dev-tooling/commit/62d19deb092bbad0c8b8e3b9a495b02540bbd721))
+* gate-start from a stale installed runner refreshes the worktree pack through venue selection (livespec-dev-tooling-js3cum) ([fcc9995](https://github.com/thewoolleyman/livespec-dev-tooling/commit/fcc9995fd43017db976990dc5adf25e99e5f2ca4))
+* **gate:** refresh the worktree pack before start ([84742ec](https://github.com/thewoolleyman/livespec-dev-tooling/commit/84742ec8636e9da17957cb1fed0b02a9956f8c01))
+* **homelab-worker:** enrollment names a failed Node read instead of exiting silently (livespec-dev-tooling-ko26ez.7) ([dbc1393](https://github.com/thewoolleyman/livespec-dev-tooling/commit/dbc13930129bb34632b1754ac994588f7bedea19))
+* **homelab-worker:** the worker's node agents get the fleet's system.slice CPU weight, so pods cannot starve kubelet and containerd (livespec-dev-tooling-ko26ez.8) ([34babc4](https://github.com/thewoolleyman/livespec-dev-tooling/commit/34babc4ed0196dea7f5b4006cf521f2bfa7a1fd5))
+* just mutation-kill-matrix hands its package path to the engine (livespec-dev-tooling-kdrq2s) ([1dc745e](https://github.com/thewoolleyman/livespec-dev-tooling/commit/1dc745edc92ff27a000b224ccedafc80517d4120))
+* keep delegated gate waits live ([608352e](https://github.com/thewoolleyman/livespec-dev-tooling/commit/608352ee3e7291adc8e2ff90101bfe0d6cda50f6))
+* keep suite-green replay output alive through collection and report pre-test stalls ([fee238e](https://github.com/thewoolleyman/livespec-dev-tooling/commit/fee238ef355b2dc053608fa07860ed176199c725))
+* preserve delegated gate wait liveness ([6f810f0](https://github.com/thewoolleyman/livespec-dev-tooling/commit/6f810f0a95fc6ba50e7900b5d7987ee83452d597))
+* read one allowed-CPU count from the cgroup quota or affinity mask ([5c2d6f8](https://github.com/thewoolleyman/livespec-dev-tooling/commit/5c2d6f8b79ff3558e0ba419a5f3b3d5177949ce8))
+* refresh an installed worktree pack ([1c7cfc2](https://github.com/thewoolleyman/livespec-dev-tooling/commit/1c7cfc2fde8cf390d5b548996e71774f672a8ae2))
+* restart-k3s-agent tolerates a cluster add-on's controller replica (bd-ib-y6v7b6) ([08e5911](https://github.com/thewoolleyman/livespec-dev-tooling/commit/08e591146fc6b418a98786c586f83a9946534d1f))
+* retain session fixture finalizers across retries ([0e16bc2](https://github.com/thewoolleyman/livespec-dev-tooling/commit/0e16bc2dd9bb67b51632a970207679728a15ecfe))
+* satisfy the private-access lint in the finalizer preserver without a suppression ([8da5bc0](https://github.com/thewoolleyman/livespec-dev-tooling/commit/8da5bc0edb80cf603a695b5564a5f9196db2fa87))
+* see completed tests through pseudo-terminal colour in the stall summary ([2ef673f](https://github.com/thewoolleyman/livespec-dev-tooling/commit/2ef673f5cec2b770637093b1f7a663c0431e6677))
+* size dispatcher default workers from the CPUs the process may use ([ad32c68](https://github.com/thewoolleyman/livespec-dev-tooling/commit/ad32c68018e652796e9b0bb286235b3ee670e678))
+* the expedited gates run through the normal aggregate's own runner and read their timing class from check-targets.txt on both paths (livespec-dev-tooling-oqpw6t) ([101358b](https://github.com/thewoolleyman/livespec-dev-tooling/commit/101358bc29c0ca2e8de6241b2659c1b08fbf5f12))
+* the flake-retry plugin parses each module once per pytest process (livespec-dev-tooling-pprfq2) ([a177190](https://github.com/thewoolleyman/livespec-dev-tooling/commit/a177190442f5dae2bd8757f925a9f80d7acc2d3f))
+* the foreground full-suite pytest guard judges each invocation against the repository it cds into (livespec-dev-tooling-4pchid) ([9d1faaa](https://github.com/thewoolleyman/livespec-dev-tooling/commit/9d1faaa66b27b00b2dda747394989b37e9a24280))
+* the per-target wall-time table shows minutes and seconds (livespec-dev-tooling-e62ss6) ([cccd267](https://github.com/thewoolleyman/livespec-dev-tooling/commit/cccd2671dd06ebae7ffe0a88a95980dd35eddd5a))
+* the per-target wall-time table shows minutes and seconds, with its heading covered (livespec-dev-tooling-e62ss6) ([3c261dc](https://github.com/thewoolleyman/livespec-dev-tooling/commit/3c261dc71207eb991cfe759d2a2c79be67f59995))
+* **worktree-pack:** atomically replace refreshed files ([04bcd64](https://github.com/thewoolleyman/livespec-dev-tooling/commit/04bcd64f4034f5ef95fa1858f69670e6333a4171))
+
+
+### Refactoring
+
+* the dispatcher's coverage-namespace map and helpers move to their own module, leaving 33 logical lines of headroom (livespec-dev-tooling-hm27nm) ([3a002b5](https://github.com/thewoolleyman/livespec-dev-tooling/commit/3a002b5e765b746631f08851d7b1274e9d540961))
+
 ## [1.188.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.188.0...v1.188.1) (2026-11-08)
 
 
