@@ -6,6 +6,7 @@ import contextlib
 import errno
 import importlib.util
 import inspect
+import os
 import sys
 import time
 import uuid
@@ -85,6 +86,26 @@ def test_every_chunk_of_output_is_progress() -> None:
     progress.saw(chunk="..F.\n")
     assert progress.last == 1_200.0
     assert progress.output == "......F.\n"
+
+
+def test_every_chunk_of_output_renews_the_gate_runners_progress_stamp(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Suite progress reaches gate-run.sh's outer stall bound (livespec-dev-tooling-54usvh).
+
+    The leg captures pytest's output, so gate-run.sh's output.log stays silent
+    while the suite works; the runner's progress stamp is the only signal left.
+    """
+    mod = _load()
+    stamp = tmp_path / "progress.stamp"
+    stamp.touch()
+    os.utime(stamp, (1_000_000, 1_000_000))
+    monkeypatch.setenv("LIVESPEC_GATE_RUN_PROGRESS_STAMP", str(stamp))
+    progress = mod.SuiteProgress(clock=time.monotonic)
+
+    progress.saw(chunk="....")
+
+    assert stamp.stat().st_mtime > 1_000_000
 
 
 def test_run_suite_captures_output_and_returncode() -> None:
