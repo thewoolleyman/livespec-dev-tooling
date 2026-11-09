@@ -13,7 +13,7 @@ check-ci-matrix-completeness  # incident-timing: fast
 check-claude-md-coverage  # incident-timing: fast
 check-codex-hook-reconcilable  # incident-timing: fast
 check-comment-line-anchors  # incident-timing: fast
-check-commit-pairs-source-and-test  # incident-timing: fast
+check-commit-pairs-source-and-test  # incident-timing: not-applicable # incident-precondition: a-staged-test-beside-each-staged-source-file
 check-delegated-gate-check-suite  # incident-timing: fast
 check-file-lloc  # incident-timing: fast
 check-fleet-marketplace-relative-sources  # incident-timing: fast
@@ -26,7 +26,7 @@ check-keyword-only-args  # incident-timing: fast
 check-local-memory-drift-audit  # incident-timing: fast
 check-main-guard  # incident-timing: fast
 check-marketplace-ref-release-only  # incident-timing: fast
-check-master-ci-green  # incident-timing: fast
+check-master-ci-green  # incident-timing: not-applicable # incident-precondition: green-master-ci
 check-match-keyword-only  # incident-timing: fast
 check-newtype-domain-primitives  # incident-timing: fast
 check-no-direct-destructive-cli  # incident-timing: fast
@@ -52,7 +52,7 @@ check-plugin-resolution  # incident-timing: fast
 check-primary-checkout-commit-refuse-hook-installed  # incident-timing: fast
 check-private-calls  # incident-timing: fast
 check-public-api-result-typed  # incident-timing: fast
-check-red-green-replay  # incident-timing: fast
+check-red-green-replay  # incident-timing: not-applicable # incident-precondition: tdd-trailers-or-pull-request-event-admission
 check-required-role-keys-declared  # incident-timing: fast
 check-rop-pipeline-shape  # incident-timing: fast
 check-rule-26-keep-out  # incident-timing: fast
@@ -92,11 +92,17 @@ check-ansible-hostname-free  # purity: tree-pure # incident-timing: fast
 # tree always yields the same verdict.
 check-dev-host-fabro-client-bins-declared  # purity: tree-pure # incident-timing: fast
 # Incident timing is independent of purity. Every member above and below
-# carries a MEASURED `incident-timing` class: each recipe was run alone, in
-# sequence, on vmi3006760 at load ~39 on 2026-11-09
-# (livespec-dev-tooling-oqpw6t). 78 finished in under 30 s and are `fast`; the 7
-# that took 76.9 s or hit the 90 s measurement cap are `slow` and stay deferred
-# to master's complete CI. This one annotation classifies a gate on BOTH
+# carries an `incident-timing` class. Each recipe was run alone, in sequence, on
+# vmi3006760 at load ~39 on 2026-11-09 (livespec-dev-tooling-oqpw6t): the 7 that
+# took 76.9 s or hit the 90 s measurement cap are `slow` and stay deferred to
+# master's complete CI; the slowest of the rest took 17.9 s. `fast` means fast
+# AND APPLICABLE to an incident commit. A gate that encodes a normal-path
+# precondition an incident commit cannot meet by design (a green master, TDD
+# trailers or PR-event-only admission, a staged test beside each staged source
+# file, which the charter's "changed or directly related tests" minimum waives)
+# could only ever refuse the repair, so it is `not-applicable` and names that
+# precondition in an `incident-precondition` annotation; 3 are, and 75 are
+# `fast`. An audit of all 78 measured-fast gates on 2026-11-09 found no other. This one annotation classifies a gate on BOTH
 # expedited paths: the local hooks read it here, and the CI entrance reads it
 # from its packaged inventory, regenerated from this file. The local hooks run
 # fast gates in parallel through the normal aggregate's own runner and still

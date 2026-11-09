@@ -2,7 +2,10 @@
 
 Work-item livespec-dev-tooling-oqpw6t: the normal aggregate, the expedited
 local hooks and the expedited CI entrance share these process semantics, so
-each rule is pinned here once rather than per caller.
+each rule is pinned here once rather than per caller. A target with a deadline
+is isolated in its own session (`_check_target_isolation`); one without stays
+in the caller's process group. What a SIGKILL of the caller's group does needs
+a real caller process: test_check_target_runner_group_kill.py.
 """
 
 from __future__ import annotations
@@ -14,10 +17,11 @@ import threading
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
+from shutil import which
 
 import pytest
 
-from livespec_dev_tooling import _check_target_runner as runner
+from livespec_dev_tooling import _check_target_isolation as isolation
 from livespec_dev_tooling._check_target_runner import (
     BLOCKED,
     COMPLETED,
@@ -25,7 +29,6 @@ from livespec_dev_tooling._check_target_runner import (
     NOT_ADMITTED,
     NOT_LAUNCHED,
     TIMED_OUT,
-    TargetOutcome,
     TargetRun,
     run_targets,
 )
@@ -129,15 +132,44 @@ def test_deadline_kills_the_whole_group_and_reports_no_return_code(tmp_path: Pat
         assert _holders_dead(reader=reader)
 
 
-def test_a_finished_target_leaves_no_descendant_behind(tmp_path: Path) -> None:
+def test_an_isolated_target_that_finishes_leaves_no_descendant_behind(tmp_path: Path) -> None:
     with _lifetime(tmp_path=tmp_path) as (fifo, reader):
         (outcome,) = run_targets(
             runs=[_sh(name="leaker", script=f'exec 3> "{fifo}"; sleep 30 & exit 0')],
             cwd=tmp_path,
             max_workers=1,
+            deadline_seconds=10.0,
         )
         assert (outcome.status, outcome.returncode) == (COMPLETED, 0)
         assert _holders_dead(reader=reader)
+
+
+def test_the_parent_death_guard_prefixes_only_where_the_host_has_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(isolation.shutil, "which", lambda _name: "/usr/bin/setpriv")
+    guarded = isolation.isolated_argv(argv=("just", "check-lint"))
+    monkeypatch.setattr(isolation.shutil, "which", lambda _name: None)
+    unguarded = isolation.isolated_argv(argv=("just", "check-lint"))
+    assert guarded == ("/usr/bin/setpriv", "--pdeathsig", "KILL", "--", "just", "check-lint")
+    assert unguarded == ("just", "check-lint")
+
+
+@pytest.mark.parametrize("guard", ["host", "absent"])
+def test_an_isolated_missing_executable_still_fails_with_127(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, guard: str
+) -> None:
+    # Under the guard it is setpriv's own exit 127; without it, a launch failure.
+    monkeypatch.setattr(
+        isolation.shutil, "which", lambda name: None if guard == "absent" else which(name)
+    )
+    (outcome,) = run_targets(
+        runs=[TargetRun(name="missing", argv=(str(tmp_path / "missing"),))],
+        cwd=tmp_path,
+        max_workers=1,
+        deadline_seconds=10.0,
+    )
+    assert outcome.returncode == 127
 
 
 def test_a_consumer_waits_for_its_producer_and_is_blocked_when_it_fails(tmp_path: Path) -> None:
@@ -187,8 +219,8 @@ def test_a_refused_admission_stops_later_launches_but_not_running_targets(tmp_pa
     ]
 
 
-def test_an_interrupted_caller_kills_every_live_group(tmp_path: Path) -> None:
-    def interrupt(_outcome: TargetOutcome) -> None:
+def test_an_interrupted_caller_kills_every_live_isolated_group(tmp_path: Path) -> None:
+    def interrupt(**_: object) -> None:
         raise KeyboardInterrupt
 
     with _lifetime(tmp_path=tmp_path) as (fifo, reader):
@@ -200,6 +232,7 @@ def test_an_interrupted_caller_kills_every_live_group(tmp_path: Path) -> None:
                 ],
                 cwd=tmp_path,
                 max_workers=2,
+                deadline_seconds=30.0,
                 on_complete=interrupt,
             )
         assert _holders_dead(reader=reader)
@@ -209,7 +242,7 @@ def test_sigterm_while_waiting_raises_kills_groups_and_restores_handlers(tmp_pat
     assert threading.current_thread() is threading.main_thread()
     before = {sig: signal.getsignal(sig) for sig in (signal.SIGTERM, signal.SIGHUP)}
 
-    def terminate(_outcome: TargetOutcome) -> None:
+    def terminate(**_: object) -> None:
         os.kill(os.getpid(), signal.SIGTERM)
 
     with _lifetime(tmp_path=tmp_path) as (fifo, reader):
@@ -221,6 +254,7 @@ def test_sigterm_while_waiting_raises_kills_groups_and_restores_handlers(tmp_pat
                 ],
                 cwd=tmp_path,
                 max_workers=2,
+                deadline_seconds=30.0,
                 on_complete=terminate,
             )
         assert raised.value.code == 128 + signal.SIGTERM
@@ -232,7 +266,7 @@ def test_off_the_main_thread_the_callers_signal_handling_stands(tmp_path: Path) 
     seen: list[object] = []
 
     def run() -> None:
-        with runner._termination_raises():  # noqa: SLF001
+        with isolation.termination_raises(isolated=True):
             seen.append(signal.getsignal(signal.SIGTERM))
         seen.extend(
             o.status

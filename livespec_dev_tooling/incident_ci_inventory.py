@@ -77,7 +77,8 @@ def decode_inventory(*, text: str) -> tuple[CiTarget, ...]:
             or not row["name"].startswith("check-")
             or _TEXT.fullmatch(row["name"]) is None
             or _TEXT.fullmatch(row["batch"]) is None
-            or row["classification"] not in {"fast", "slow", "unclassified", "spec", "coverage"}
+            or row["classification"]
+            not in {"fast", "slow", "not-applicable", "unclassified", "spec", "coverage"}
             or any(
                 not isinstance(row[key], list)
                 or not all(isinstance(v, str) and _TEXT.fullmatch(v) for v in row[key])

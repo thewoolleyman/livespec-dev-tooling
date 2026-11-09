@@ -265,7 +265,7 @@
     },
     {
       "batch": "check-metadata",
-      "classification": "fast",
+      "classification": "not-applicable",
       "consumes": [],
       "name": "check-red-green-replay",
       "needs": [],
@@ -345,7 +345,7 @@
     },
     {
       "batch": "check-metadata-batch",
-      "classification": "fast",
+      "classification": "not-applicable",
       "consumes": [],
       "name": "check-commit-pairs-source-and-test",
       "needs": [],

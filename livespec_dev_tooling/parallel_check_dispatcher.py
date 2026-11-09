@@ -57,10 +57,10 @@ CLI:
 Exit 0: all non-skipped targets passed. Exit 1: one or more failed.
 
 Every target is launched by the shared runner in `_check_target_runner`, the
-same one the expedited incident paths use (livespec-dev-tooling-oqpw6t): its
-own session, stdin closed, output spooled to a temporary file, and its whole
-process group killed when it ends. This dispatcher passes no deadline, so a
-normal target runs to completion however long it takes.
+same one the expedited incident paths use (livespec-dev-tooling-oqpw6t): stdin
+closed and output spooled to a temporary file. This dispatcher passes no
+deadline, so a target stays in this process's group, a group kill still takes
+it, and it runs to completion however long it takes.
 
 Output:
     Human-readable per-target headers + captured output on stdout.
@@ -70,6 +70,7 @@ Output:
 
 from __future__ import annotations
 
+import functools
 import os
 import sys
 from pathlib import Path
@@ -172,6 +173,11 @@ def _emit_result(*, result: TargetResult, log: structlog.stdlib.BoundLogger) -> 
     )
 
 
+def _emit_outcome(*, outcome: TargetOutcome, log: structlog.stdlib.BoundLogger) -> None:
+    """Emit one target's result as the shared runner reports it complete."""
+    _emit_result(result=_as_result(outcome=outcome), log=log)
+
+
 def _write_timing_table(*, results: list[TargetResult]) -> None:
     """Write the per-target wall-time table (longest first) for e60 observability."""
     _write(text="\nper-target wall times (longest first):\n")
@@ -241,7 +247,7 @@ def _run_all(
             ],
             cwd=cwd,
             max_workers=max_workers,
-            on_complete=lambda outcome: _emit_result(result=_as_result(outcome=outcome), log=log),
+            on_complete=functools.partial(_emit_outcome, log=log),
         )
     ran = {outcome.name: _as_result(outcome=outcome) for outcome in outcomes}
     results = [

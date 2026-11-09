@@ -22,13 +22,20 @@ the RELEASED package, a changed annotation reaches CI with the next release. The
 coverage and spec prefixes still override the timing class here: they are the
 omission policy that lets the normal jobs skip a member, not a timing class.
 
+A member classified `not-applicable` (it encodes a normal-path precondition
+an incident commit cannot meet) is deferred with `incident-policy:not-applicable`
+and is not omitted: its normal job still runs it.
+
 `run` executes its selected members through the normal aggregate's own runner
-(`_check_target_runner`): in parallel, under the same worker cap, each in its
-own session with stdin closed, captured output written to the job log, and its
-process group killed when it ends, with the normal aggregate's coverage-namespace
-isolation and producer/consumer ordering. It passes no deadline, because a selected CI
-member is required evidence and the aggregate has no deferral for one cut short;
-the job's timeout bounds it.
+(`_check_target_runner`): in parallel, under the same worker cap, with stdin
+closed, in the caller's process group, with the normal aggregate's
+coverage-namespace isolation and producer/consumer ordering. Each member's
+captured output is written to the job log as that member completes. It passes
+no deadline, because a selected CI member is required evidence and the
+aggregate has no deferral for one cut short; the job's timeout bounds it. The
+recheck before each launch is shared: one confirmed `/current` and `/admitted`
+read pair serves every launch for 30 seconds, and a single refusal is retried
+once before the run refuses.
 
 The workflow must install and invoke an independently approved release before it
 executes candidate code. Packaged-data integrity is the installed release's

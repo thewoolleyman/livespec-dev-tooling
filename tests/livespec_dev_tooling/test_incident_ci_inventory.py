@@ -65,7 +65,11 @@ def test_packaged_inventory_equals_the_target_set_derived_from_the_live_workflow
     packaged = module.load_inventory()
     assert {t.name for t in derived} ^ {t.name for t in packaged} == set()
     assert set(derived) == set(packaged)
-    assert {t.classification for t in packaged} == {"fast", "slow"}
+    assert {t.classification for t in packaged} == {"fast", "slow", "not-applicable"}
+    assert {t.name for t in packaged if t.classification == "not-applicable"} == {
+        "check-commit-pairs-source-and-test",
+        "check-red-green-replay",
+    }
     coverage = next(t for t in packaged if t.name == "check-coverage")
     assert coverage.needs == ("check-per-file-coverage",)
     assert coverage.consumes == ("coverage-data",)
