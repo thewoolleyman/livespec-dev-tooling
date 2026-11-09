@@ -2170,6 +2170,14 @@
     "reason": "A real test at the integration tier or above is owed for this heading: an integration test of this repository's Set-up-job 429 re-run workflow over recorded job logs, proving a 429 or 'An action could not be found' failure at Set up job is re-run with a growing wait up to three attempts and that a later-step failure is not re-run (proposal a-ci-job-that-fails, v124). livespec-dev-tooling-cetyrq owns it."
   },
   {
+    "heading": "## Scenario: a CI job killed at Initialize containers by a registry network error is re-run once",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "work_item": "livespec-dev-tooling-khlrw3",
+    "reason": "A real test at the integration tier or above is owed for this heading: an integration test of the reusable-ci-infra-rerun.yml reconciler over recorded job logs, proving a job that failed at Initialize containers with a container-registry network error is re-run once within 5 minutes with its run id, job id and matched line in the summary, that a second such failure is not re-run, and that a later-step failure or a registry-free container failure is left for its owner (proposal initialize-containers-registry-rerun, v171). livespec-dev-tooling-khlrw3 owns it."
+  },
+  {
     "heading": "## Scenario: a merged runner-pool change reaches the live cluster through one committed apply",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",

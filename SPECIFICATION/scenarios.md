@@ -3071,6 +3071,24 @@ And a second such failure MUST be re-run after a longer wait, up to three automa
 
 And a job that failed at any later step MUST NOT be re-run, and its failure MUST stay the run's verdict
 
+## Scenario: a CI job killed at Initialize containers by a registry network error is re-run once
+
+Given a gating CI job of a fleet repository whose caller workflow calls `reusable-ci-infra-rerun.yml`
+
+And the job failed at its `Initialize containers` step before any later step started
+
+And that step's log shows the container registry pull failing with `connection reset by peer`
+
+When the job's workflow run completes
+
+Then the reconciler MUST re-run that job once, within 5 minutes
+
+And it MUST write the run id, the job id and the matched error line to its own run summary
+
+And a second failure of the same job at `Initialize containers` MUST NOT be re-run, and its failure MUST stay the run's verdict
+
+And a job that failed at a later step, or at `Initialize containers` with no registry network error, MUST NOT be re-run, and the summary MUST record it as left for its owner
+
 ## Scenario: a merged runner-pool change reaches the live cluster through one committed apply
 
 Given a merged change that adds a runner scale set and its ClusterQueue under `ci-runner/k3s/phase2/`
