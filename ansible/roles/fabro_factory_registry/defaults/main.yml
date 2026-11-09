@@ -56,3 +56,11 @@ fabro_factory_registry_limits_dir: /home/ubuntu/.local/state/livespec/fleet-limi
 # tasks for real as a non-root user, whose chown to root would otherwise fail.
 fabro_factory_registry_owner: root
 fabro_factory_registry_group: root
+# Whether this host's Fabro client is logged in to every registered factory
+# (tasks/main.yml, "THE CLIENT LOGINS"). Off by default: a host that declares
+# registry entries but does not dispatch has no client to log in. The dev host
+# that runs the Dispatcher turns it on in group_vars.
+fabro_factory_registry_client_login: false
+# The login whose ~/.fabro/auth.json the Dispatcher's Fabro client reads.
+fabro_factory_registry_client_user: ubuntu
+fabro_factory_registry_client_home: /home/ubuntu
