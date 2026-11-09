@@ -13,8 +13,18 @@ from pathlib import Path
 from typing import cast
 
 from livespec_dev_tooling._incident_focused_types import CoverageDocument, CoverageFile
+from livespec_dev_tooling._isolated_coverage import (
+    COVERAGE_CONFIG,
+    isolated_environment,
+    pytest_coverage_arguments,
+)
+from livespec_dev_tooling.incident_transport import gate_child_environment
 
 __all__: list[str] = ["measure"]
+
+# A caller's shell could otherwise re-point the measurement or add pytest options
+# (a `-k` or `--deselect`) the staged tree does not carry; the data file is set below.
+_AMBIENT_OVERRIDES = ("COVERAGE_PROCESS_START", "COVERAGE_RCFILE", "PYTEST_ADDOPTS")
 
 
 def _run(*, argv: list[str], root: Path, env: dict[str, str], timeout: float) -> dict[str, object]:
@@ -46,42 +56,25 @@ def _run(*, argv: list[str], root: Path, env: dict[str, str], timeout: float) ->
 def measure(
     *, repo_root: Path, selected: set[str], executable: list[str], timeout: float
 ) -> tuple[dict[str, object], dict[str, object], dict[str, CoverageFile]]:
-    env = {
-        key: value
-        for key, value in os.environ.items()
-        if not key.startswith("COV_CORE_")
-        and key
-        not in {
-            "COVERAGE_FILE",
-            "COVERAGE_PROCESS_START",
-            "COVERAGE_RCFILE",
-            "PYTEST_ADDOPTS",
-            "EXPEDITED_INCIDENT_RESPONSE",
-            "EXPEDITED_INCIDENT_RESPONSE_REVERT",
-        }
-    }
+    """Measure under the repository's own pytest and coverage configuration.
+
+    Only the scope, the private data file, the bound and the process ownership
+    differ from the normal coverage gates. Ambient pytest and coverage overrides
+    are dropped so the evidence reflects the staged tree, not the caller's shell.
+    """
+    ambient = gate_child_environment(environ=os.environ)
+    for name in _AMBIENT_OVERRIDES:
+        _ = ambient.pop(name, None)
     with tempfile.TemporaryDirectory(prefix="livespec-incident-focused-") as temp:
         folder = Path(temp)
-        env["COVERAGE_FILE"] = str(folder / "coverage.dat")
-        config = folder / "coverage.ini"
-        _ = config.write_text(
-            "[run]\nbranch = True\ncontext = expedited-repair:focused\n[report]\nfail_under = 0\n",
-            encoding="utf-8",
-        )
+        env = isolated_environment(environ=ambient, data_file=str(folder / "coverage.dat"))
         tests = _run(
             argv=[
                 sys.executable,
                 "-m",
                 "pytest",
                 "-q",
-                "-o",
-                "addopts=",
-                "--cov",
-                "--cov-branch",
-                f"--cov-config={config}",
-                "--cov-report=",
-                "--cov-fail-under=0",
-                *sorted(selected),
+                *pytest_coverage_arguments(tests=sorted(selected)),
             ],
             root=repo_root,
             env=env,
@@ -94,10 +87,10 @@ def measure(
                 "-m",
                 "coverage",
                 "json",
-                f"--rcfile={config}",
+                f"--rcfile={COVERAGE_CONFIG}",
+                "--fail-under=0",
                 "-o",
                 str(report_path),
-                "--show-contexts",
             ],
             root=repo_root,
             env=env,

@@ -30,7 +30,11 @@ from livespec_dev_tooling.incident_hook_process import (
 from livespec_dev_tooling.incident_hook_receipt import recover_receipt
 from livespec_dev_tooling.incident_hook_scope import HookCall, validate_scope
 from livespec_dev_tooling.incident_local_gates import GateResult, route_resolved_gates
-from livespec_dev_tooling.incident_transport import normal_child_environment
+from livespec_dev_tooling.incident_transport import (
+    LOCAL_OPERATION_ENV,
+    QUERY_ENV,
+    gate_child_environment,
+)
 
 _VENDOR_DIR = Path(__file__).resolve().parent / "_vendor"
 if str(_VENDOR_DIR) not in sys.path:
@@ -42,8 +46,6 @@ from returns.unsafe import unsafe_perform_io  # noqa: E402 — vendor-path-aware
 
 __all__: list[str] = ["main"]
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-cerkbn
-QUERY_ENV = "LIVESPEC_INCIDENT_AUTHORITY_QUERY"
-LOCAL_OPERATION_ENV = "LIVESPEC_INCIDENT_LOCAL_OPERATION"
 _REFUSED = 78
 _NORMAL = 75
 _MAX_STDIN = 16384
@@ -172,9 +174,7 @@ def _run(*, hook: str, extra: list[str], actual_index: str = "") -> int:
             repo=repo, query=query, reading=reading, receipt=prior, context=context, recovered=True
         )
     inventory = inventory_gates(inventory=(repo / "check-targets.txt").read_text())
-    child = normal_child_environment(environ=os.environ)
-    _ = child.pop(QUERY_ENV, None)
-    _ = child.pop(LOCAL_OPERATION_ENV, None)
+    child = gate_child_environment(environ=os.environ)
     scope_result = GateResult(
         name="incident-carrier-scope",
         status="passed",

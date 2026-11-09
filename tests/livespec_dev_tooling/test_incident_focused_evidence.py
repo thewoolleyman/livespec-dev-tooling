@@ -515,3 +515,63 @@ def test_a_large_touched_module_keeps_its_record_under_the_argument_limit(
     assert evidence["outcome"] == "passed"
     assert set(row) == {"summary", "missing_lines", "missing_branches"}
     assert len(json.dumps(evidence, sort_keys=True, separators=(",", ":"))) < 131072
+
+
+def test_repository_coverage_exclusions_apply_to_touched_files(project: tuple[Path, str]) -> None:
+    # livespec-dev-tooling-afuy7n: a private coverage config dropped the repository's
+    # exclude_also, so a vendor sys.path guard read as a missed line and branch.
+    root, base = project
+    (root / "pyproject.toml").write_text(
+        '[tool.livespec_dev_tooling]\nsource_trees = ["src"]\n'
+        '[tool.coverage.report]\nexclude_also = ["sys.path.insert"]\n'
+    )
+    (root / "src/widget.py").write_text(
+        "import sys\n"
+        "if 'never-on-the-path' in sys.path:\n"
+        "    sys.path.insert(0, 'vendor')\n"
+        "def answer():\n    return 43\n"
+    )
+    _git(root, "add", ".")
+    evidence = _collect(root, base)
+    assert evidence["coverage"]["src/widget.py"]["summary"]["percent_covered"] == 100
+    assert evidence["risks"] == []
+    assert evidence["outcome"] == "passed"
+
+
+def test_repository_pytest_options_apply_to_focused_tests(project: tuple[Path, str]) -> None:
+    root, base = project
+    (root / "pyproject.toml").write_text(
+        '[tool.livespec_dev_tooling]\nsource_trees = ["src"]\n'
+        '[tool.pytest.ini_options]\naddopts = ["--strict-markers"]\n'
+    )
+    (root / "tests/test_widget.py").write_text(
+        "from src.widget import answer\n"
+        "def test_answer(pytestconfig):\n"
+        "    assert pytestconfig.getoption('strict_markers')\n"
+        "    assert answer() == 43\n"
+    )
+    _git(root, "add", ".")
+    evidence = _collect(root, base)
+    assert evidence["outcome"] == "passed", evidence["tests"]["output"]
+
+
+def test_focused_tests_see_no_incident_variable(project, monkeypatch) -> None:
+    root, base = project
+    names = (
+        "EXPEDITED_INCIDENT_RESPONSE",
+        "EXPEDITED_INCIDENT_RESPONSE_REVERT",
+        "LIVESPEC_INCIDENT_CONTEXT",
+        "LIVESPEC_INCIDENT_AUTHORITY_QUERY",
+        "LIVESPEC_INCIDENT_LOCAL_OPERATION",
+    )
+    for name in names:
+        monkeypatch.setenv(name, "inherited")
+    (root / "tests/test_widget.py").write_text(
+        "import os\nfrom src.widget import answer\n"
+        "def test_answer():\n"
+        f"    assert [n for n in {names!r} if n in os.environ] == []\n"
+        "    assert answer() == 43\n"
+    )
+    _git(root, "add", ".")
+    evidence = _collect(root, base)
+    assert evidence["outcome"] == "passed", evidence["tests"]["output"]

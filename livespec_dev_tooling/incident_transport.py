@@ -35,11 +35,15 @@ __all__: list[str] = [
     "child_environment",
     "decode_execution_context",
     "encode_execution_context",
+    "gate_child_environment",
     "normal_child_environment",
 ]
 
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-sh3vz3
 CONTEXT_ENV = "LIVESPEC_INCIDENT_CONTEXT"
+# The incident hook entrance's own carriers, which no child it starts may inherit.
+QUERY_ENV = "LIVESPEC_INCIDENT_AUTHORITY_QUERY"
+LOCAL_OPERATION_ENV = "LIVESPEC_INCIDENT_LOCAL_OPERATION"
 _MAX_PAYLOAD_BYTES = 16384
 
 
@@ -127,6 +131,18 @@ def normal_child_environment(*, environ: Mapping[str, str]) -> dict[str, str]:
     """Remove both flags and the context carrier without parsing inherited values."""
     excluded = {EXPEDITED_INCIDENT_RESPONSE, EXPEDITED_INCIDENT_RESPONSE_REVERT, CONTEXT_ENV}
     return {key: value for key, value in environ.items() if key not in excluded}
+
+
+def gate_child_environment(*, environ: Mapping[str, str]) -> dict[str, str]:
+    """Remove every incident variable, the entrance's own carriers included.
+
+    Each gate the incident hook routes, and each focused test the incident
+    evidence runs, sees neither flag, nor the context, nor the authority query
+    or local operation that only the entrance consumes.
+    """
+    excluded = {QUERY_ENV, LOCAL_OPERATION_ENV}
+    child = normal_child_environment(environ=environ)
+    return {key: value for key, value in child.items() if key not in excluded}
 
 
 def child_environment(
