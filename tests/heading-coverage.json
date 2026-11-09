@@ -489,6 +489,30 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: a compilation-cache warm build skipped as busy past two populate intervals fires the lag trigger",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) is owed for this scenario, reading the populator's run record, the host gauge table and the warm-set lag value trigger definition, and asserting that the populate manifest carries the per-repository consecutive skipped-busy count, last-built commit and toolchain as the cache's own record reports them, and lag start time, that the trigger fires per repository past two populate intervals of busy skips and names the repository, the lag and the skipped-busy count, and that the busy-pool guardrail still refuses the build. livespec-dev-tooling-uyevam owns it (plan ci-cache-optimization); the implementation PR that ships it replaces this row.",
+    "work_item": "livespec-dev-tooling-uyevam"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: rebuilding a lagging compilation-cache warm set clears the lag trigger",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) is owed for this scenario, asserting that a populate run which builds the warm set from the current default-branch head and toolchain, or finds that pair already in the cache, resets the consecutive skipped-busy count to zero and records that commit and toolchain, and that the warm-set lag trigger's threshold is then no longer met. livespec-dev-tooling-uyevam owns it (plan ci-cache-optimization); the implementation PR that ships it replaces this row.",
+    "work_item": "livespec-dev-tooling-uyevam"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a failed compilation-cache warm build ends the busy-skip streak but keeps the lag start time",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) is owed for this scenario, asserting that a populate run whose compilation-cache warm build fails, is refused, finds the cache unreachable or cannot read the admitted-job count resets the consecutive skipped-busy count to zero and keeps the lag start time, and that the warm-set lag trigger's threshold is then not met. livespec-dev-tooling-uyevam owns it (plan ci-cache-optimization); the implementation PR that ships it replaces this row.",
+    "work_item": "livespec-dev-tooling-uyevam"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: a fabro sandbox hits the shared compilation cache",
     "test": "tests.consumer.test_fabro_sandbox_compilation_cache_scenario.test_a_fabro_sandbox_hits_the_shared_compilation_cache",
     "reason": "Consumer-tier, and it RUNS two of the three artifacts between the scenario's two ends. No redis answers here and no container starts, but everything between them is committed and executable. THE IMAGE SETS THE WRAPPER AND THE HOST ENDPOINT OVER THE DOCKER BRIDGE: read from `docker/fabro-sandbox/agent/Dockerfile` as four separately-silent facts. The endpoint's HOST is asserted and not merely its presence — `172.17.0.1` is the bridge gateway, which inside a container is the factory host, while a loopback endpoint is the container ITSELF: a private cache per dispatch that answers every lookup with a miss and reports no error anywhere. Both halves must be FILES (sccache's own config, and `rustc-wrapper` in the cargo config) because fabro spawns its ACP nodes under a fail-closed env allowlist, so no `SCCACHE_*` variable can be relied on to reach cargo; and the wrapper the cargo config names must be the committed script, or the path names nothing. THOSE CRATES MUST BE SERVED FROM THE SHARED CACHE: asserted by RUNNING `sccache-or-rustc.sh` with `sccache` and `rustc` as recording stubs and its state directory under `tmp_path`. Reading the script can say it contains an `exec sccache`; only running it says which branch a live backend reaches, that the probe is paid exactly ONCE however many compiles follow (cargo starts several rustc together; a per-compile probe spends the sandbox's four vCPUs on synthetic crates), and that the verdict is remembered. THE SPANS MUST CARRY `build.cache.sccache.hit_ratio` ABOVE ZERO: asserted on the bytes that ARRIVE — the committed emitter is driven through its own `main()` with a stub answering `--show-stats`, and a loopback OTLP receiver stands in for the factory host's. The span's name must match `build.cargo-*` (the scenario names those spans; a phase emitted under another name is absent from the query that would observe this) and the backend must be `redis`, since a ratio above zero against a container-local disk satisfies the arithmetic and not the scenario. THE RECEIVER'S ALLOWLIST: its one consequence in this tree is that every cache attribute the emitter produces sits INSIDE `build.cache.*` — an attribute outside it is stripped in flight, the span still arrives well formed, and the clause above becomes unobservable. CONTROL ARMS, each a run of the same artifact under the opposite condition: a probe that FAILS falls back to plain rustc, records `unusable` and still exits zero; a cache returning NO hits reports exactly 0.0 through the same reader (the difference between asserting a ratio above zero and asserting some number was reported); a container-local backend reports `local-disk`; an absent sccache still emits the phase degraded rather than dropped; and both text readers convict their counter-examples. Verified by mutation: repointing the baked endpoint at loopback, dropping the wrapper's `exec sccache`, and pinning the emitted ratio to 0.0 each fail this test (plan fleet-heading-coverage-convergence P2 burn-down, livespec-dev-tooling-3mis3y).",

@@ -456,6 +456,40 @@ When the host's liveness path emits the generation-age gauge
 
 Then the stale-generation value trigger MUST fire with a runbook naming the populator
 
+## Scenario: a compilation-cache warm build skipped as busy past two populate intervals fires the lag trigger
+
+Given a repository's default-branch head has moved past the commit its compilation-cache warm set was last built from
+
+And the pool's admitted-job count stayed above the populator's threshold, so every populate run for longer than two populate intervals skipped that repository's compilation-cache warm build as busy
+
+When the host's liveness path emits that repository's consecutive skipped-busy count and warm-set lag
+
+Then the populate manifest MUST show that repository's consecutive skipped-busy count, the commit and toolchain its warm set was last built from, and a lag start time no later than the first of those skipped runs
+
+And the warm-set lag value trigger MUST fire for that repository, and its description MUST name the repository, the warm-set lag and the consecutive skipped-busy count as the fields it reports
+
+And the populator MUST NOT have started a build for that repository while the admitted-job count was above the threshold
+
+## Scenario: rebuilding a lagging compilation-cache warm set clears the lag trigger
+
+Given the warm-set lag value trigger is firing for a repository
+
+When a populate run builds that repository's warm set from its current default-branch head and toolchain and records that build in the compilation cache, or finds that commit and toolchain already recorded there
+
+Then the populate manifest MUST show that repository's consecutive skipped-busy count as zero, no lag start time, and its current default-branch head and toolchain as the commit and toolchain its warm set was last built from
+
+And the warm-set lag value trigger MUST stop being met for that repository within one trigger evaluation window of the next emission
+
+## Scenario: a failed compilation-cache warm build ends the busy-skip streak but keeps the lag start time
+
+Given the populate manifest records a lag start time and a positive consecutive skipped-busy count for a repository
+
+When a populate run's compilation-cache warm build for that repository fails
+
+Then the populate manifest MUST show that repository's consecutive skipped-busy count as zero and the same lag start time
+
+And the warm-set lag value trigger MUST stop being met for that repository within one trigger evaluation window of the next emission, and MUST NOT be met again until its consecutive skipped-busy count again reaches the number of populate runs the populator's schedule starts in two populate intervals
+
 ## Scenario: every k3s pool node's load is visible and a silent node fires its dead-man
 
 Given the k3s cluster lists three nodes and each node's collector was converged by `ansible/ci-pool.yml`
