@@ -354,6 +354,13 @@ cross_repo_public_api = [
     { file = "livespec_dev_tooling/checks/shell_quality.py", function = "main", reason = "cross-repo test import: livespec-driver-codex's tests/test_shell_quality_gate.py binds `rc = shell_quality.main()` in-process and asserts on the int exit code; no `is None` guard at the consumption site" },
     { file = "livespec_dev_tooling/checks/skill_invocation_paths.py", function = "main", reason = "cross-repo test import: livespec-orchestrator-git-jsonl's tests/livespec_orchestrator_git_jsonl/test_check_conformance.py (b4d0209d, 2026-09-12) binds `main` as skill_invocation_paths_main and asserts on the int exit code (== 0 clean, == 1 wrapper-path shell-out); no `is None` guard at the site" },
     { file = "livespec_dev_tooling/checks/wrapper_shape.py", function = "main", reason = "cross-repo test import: livespec-orchestrator-beads-fabro's tests/test_phase1_mechanical_coverage.py imports the submodule and asserts `main() == 0` in-process; the `python -m` string assertion in the same file is ABOUT the justfile, not an invocation" },
+    # Surfaced by livespec-dev-tooling-q6eyrr, which moved the webhook endpoint off
+    # `handle_job_callback` (it now acknowledges first and runs recovery in a thread),
+    # so the name lost its only LOCAL importer and the sibling consumer became the
+    # only thing keeping it public. GUARD READ BEFORE DECLARING: the consumer asserts
+    # `result.status == "completed"` on the plain `ObserverResult` return, with no
+    # `is None` guard, so the oracle's Result-vs-None hazard does not apply.
+    { file = "livespec_dev_tooling/incident_observer.py", function = "handle_job_callback", reason = "cross-repo test import: livespec-orchestrator-beads-fabro's tests/integration/test_incident_lifecycle_walk.py drives one workflow_job delivery through handle_job_callback in-process and asserts `result.status == \"completed\"` on the ObserverResult" },
 ]
 # livespec v179 member 2 / SPECIFICATION v037: public `X | None` returns whose
 # `None` models a legitimate ABSENCE rather than a failure. RELAXING-ONLY, so
