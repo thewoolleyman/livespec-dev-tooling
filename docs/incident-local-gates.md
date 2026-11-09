@@ -9,19 +9,26 @@ The inventory reader preserves the population and order of `check-targets.txt`.
 It reads members through `check_inventory`, the same membership rule the normal
 aggregate applies, so the incident path sees exactly the members `just check`
 runs. Only one exact `incident-timing: fast` annotation selects a target; slow,
-missing, invalid, conflicting and duplicate declarations produce explicit
-deferrals. Purity declarations continue to describe normal memoization
-independently. Every member carries a class measured on 2026-11-09
-(livespec-dev-tooling-oqpw6t): 78 are `fast` and 7 are `slow`. Those
-measurements are not a portable promise: every selected invocation still has its
-own sixty-second ceiling. The CI entrance's packaged inventory takes its timing
-classes from the same annotations through the same reader.
+not-applicable, missing, invalid, conflicting and duplicate declarations
+produce explicit deferrals. `fast` means fast AND applicable: a gate that
+encodes a normal-path precondition an incident commit cannot meet by design is
+`not-applicable`, and its `incident-precondition` annotation names that
+precondition in the deferral reason. Purity declarations continue to describe
+normal memoization independently. Every member carries a class from 2026-11-09
+(livespec-dev-tooling-oqpw6t): 75 are `fast`, 7 are `slow` and 3 are
+`not-applicable`. The timings were measured with each gate alone, so they are
+not a portable promise: every selected invocation still has its own
+sixty-second ceiling, and a deferral names the concurrency it ran under. The CI
+entrance's packaged inventory takes its classes from the same annotations
+through the same reader.
 
 The executor is the normal aggregate's own runner (`_check_target_runner`), the
 one `parallel_check_dispatcher` uses. Selected commands run in parallel under
-the same worker cap, each in its own session with stdin closed and output
-spooled to a temporary file, and each process group is killed when the command
-ends. A coverage-touching gate gets the same isolated `COVERAGE_FILE` and
+the same worker cap, with stdin closed and output spooled to a temporary file.
+Because a deadline must be able to kill a command's descendants, each command
+here gets its own session, its process group is killed when it ends, and on
+Linux it runs under a parent-death signal; `_check_target_isolation` states the
+residual risk. A coverage-touching gate gets the same isolated `COVERAGE_FILE` and
 `TMPDIR` the normal aggregate gives it, and a coverage consumer waits for its
 producer and is deferred when the producer does not pass. The expedited path
 adds only the per-command deadline: a command that

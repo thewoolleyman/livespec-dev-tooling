@@ -736,6 +736,11 @@ subprocess_spawn_allowlist = [
     # the owning process dies with os._exit(17). Both scrub
     # COVERAGE_PROCESS_START + COV_CORE_* from the child env.
     "tests/livespec_dev_tooling/test_incident_recovery_journal_service.py",
+    # livespec-dev-tooling-oqpw6t: what a SIGKILL of the caller's whole process
+    # group leaves running exists only across a real caller process, which no
+    # handler in pytest's own process can stand in for. The test scrubs
+    # COVERAGE_PROCESS_START + COV_CORE_* from the child env.
+    "tests/livespec_dev_tooling/test_check_target_runner_group_kill.py",
     "tests/livespec_dev_tooling/test_incident_repository_fence.py",
     "tests/consumer/test_delegated_gate_check_suite.py",
     # Incident transport requires a fresh interpreter for vendor bootstrap and

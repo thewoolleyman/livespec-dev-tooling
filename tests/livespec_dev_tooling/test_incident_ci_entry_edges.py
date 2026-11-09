@@ -154,6 +154,8 @@ def test_a_recheck_failing_mid_run_records_finished_members_and_refuses(tmp_path
             CiTarget(name="check-slow", classification="fast"),
         ),
         current=lambda **_: not (tmp_path / "revoked").exists(),
+        # No shared window, so the second launch reads the revocation itself.
+        admission_window_seconds=0.0,
     )
     report = tmp_path / "results.jsonl"
     assert (

@@ -17,7 +17,11 @@ __all__: list[str] = ["inventory_gates", "timing_classes"]
 # the local hooks through `inventory_gates`, and the CI entrance's packaged
 # inventory through `incident_ci_inventory.render_inventory`.
 _TIMING_KEY = "incident-timing"
-_TIMINGS = frozenset({"fast", "slow"})
+_PRECONDITION_KEY = "incident-precondition"
+# `not-applicable`: the gate encodes a normal-path precondition an incident
+# commit cannot meet by design, so it could only ever refuse the repair; the
+# member's `incident-precondition` annotation names that precondition.
+_CLASSES = frozenset({"fast", "slow", "not-applicable"})
 
 # The one stated difference from the aggregate's membership: a member that is
 # not a bare recipe name is never handed to `just` as an argument. The aggregate
@@ -27,10 +31,10 @@ _RECIPE = re.compile(r"check-[a-z0-9]+(?:-[a-z0-9]+)*")
 
 
 def timing_classes(*, inventory: str) -> dict[str, str]:
-    """Map each inventory member to `fast`, `slow` or `unclassified`, in order.
+    """Map each member to `fast`, `slow`, `not-applicable` or `unclassified`, in order.
 
-    Only a single exact `incident-timing: fast` or `slow` declaration on a
-    member's only line classifies it. A missing, invalid or conflicting
+    Only a single exact `incident-timing:` declaration of one of the first three
+    on a member's only line classifies it. A missing, invalid or conflicting
     declaration, or a member listed twice, is `unclassified`.
     """
     declared: dict[str, list[str]] = {}
@@ -38,7 +42,7 @@ def timing_classes(*, inventory: str) -> dict[str, str]:
         values = annotation_values(member=member, key=_TIMING_KEY)
         declared.setdefault(member.name, []).append(values[0] if len(values) == 1 else "")
     return {
-        name: values[0] if len(values) == 1 and values[0] in _TIMINGS else "unclassified"
+        name: values[0] if len(values) == 1 and values[0] in _CLASSES else "unclassified"
         for name, values in declared.items()
     }
 
@@ -48,8 +52,17 @@ def inventory_gates(*, inventory: str) -> tuple[GateSpec, ...]:
 
     These annotations are comments to the normal aggregate's existing reader.
     """
+    preconditions = {
+        member.name: " ".join(annotation_values(member=member, key=_PRECONDITION_KEY))
+        for member in inventory_members(text=inventory)
+    }
     return tuple(
-        GateSpec(name=name, command=("just", name), classification=timing)
+        GateSpec(
+            name=name,
+            command=("just", name),
+            classification=timing,
+            precondition=preconditions[name],
+        )
         for name, timing in timing_classes(inventory=inventory).items()
         if _RECIPE.fullmatch(name) is not None
     )

@@ -405,8 +405,11 @@ def test_the_guarded_members_are_the_ones_the_controller_defers_for_coverage_or_
         if deferral["reason"] in _OMITTING_REASONS:
             deferred.setdefault(job_of[deferral["name"]], set()).add(deferral["name"])
     assert deferred == _OMITTED_BY_JOB
+    # A not-applicable member is deferred by the incident job but NOT omitted:
+    # its normal job still runs it.
     assert {deferral["reason"] for deferral in aggregate["deferred"]} == _OMITTING_REASONS | {
-        "incident-policy:slow"
+        "incident-policy:slow",
+        "incident-policy:not-applicable",
     }
 
 

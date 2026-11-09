@@ -59,6 +59,7 @@ check-upper # incident-timing: FAST
 check-twice # incident-timing: fast
 check-twice # incident-timing: fast
 check-none
+check-precondition # incident-timing: not-applicable # incident-precondition: green-master-ci
 """
     ) == {
         "check-fast": "fast",
@@ -66,4 +67,5 @@ check-none
         "check-upper": "unclassified",
         "check-twice": "unclassified",
         "check-none": "unclassified",
+        "check-precondition": "not-applicable",
     }

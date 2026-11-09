@@ -44,11 +44,16 @@ MAX_GATE_SECONDS = 60.0
 
 @dataclass(frozen=True, kw_only=True)
 class GateSpec:
-    """One applicable check and its repository-owned timing classification."""
+    """One check and its repository-owned incident classification.
+
+    `precondition` names the normal-path precondition that makes a
+    `not-applicable` gate unable to pass on an incident commit.
+    """
 
     name: str
     command: tuple[str, ...]
     classification: str
+    precondition: str = ""
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -137,31 +142,40 @@ def route_resolved_gates(
     return execute_plan(plan=select_gates(gates=gates), cwd=cwd, environment=environment)
 
 
+def _selection_reason(*, gate: GateSpec) -> str:
+    if gate.classification == "fast":
+        return "declared fast gate"
+    if gate.classification == "slow":
+        return "known slow gate"
+    if gate.classification == "not-applicable":
+        needs = gate.precondition or "a normal-path precondition"
+        return f"not applicable to an incident commit: the gate requires {needs}"
+    return "gate has no fast timing classification"
+
+
 def select_gates(*, gates: tuple[GateSpec, ...]) -> tuple[GateSelection, ...]:
-    """Select declared fast gates; defer unknown classifications conservatively."""
+    """Select declared fast gates; defer every other classification with its reason."""
     return tuple(
         GateSelection(
             gate=gate,
             selected=gate.classification == "fast",
-            reason=(
-                "declared fast gate"
-                if gate.classification == "fast"
-                else "known slow gate"
-                if gate.classification == "slow"
-                else "gate has no fast timing classification"
-            ),
+            reason=_selection_reason(gate=gate),
         )
         for gate in gates
     )
 
 
-def _gate_result(*, outcome: TargetOutcome) -> GateResult:
-    """Project the shared runner's outcome onto this receipt's result shape."""
+def _gate_result(*, outcome: TargetOutcome, concurrency: int) -> GateResult:
+    """Project the shared runner's outcome onto this receipt's result shape.
+
+    The timing classes were measured with each gate run alone, so a deferral
+    names the concurrency it ran under: contention, not the gate, may be why.
+    """
     if outcome.status == TIMED_OUT:
         return GateResult(
             name=outcome.name,
             status="deferred-timeout",
-            reason="local gate deadline reached",
+            reason=f"local gate deadline reached under {concurrency}-way concurrency",
             duration_seconds=outcome.wall_time_s,
             output=outcome.output,
         )
@@ -194,9 +208,10 @@ def execute_plan(
     """Run the selected checks in parallel, each with a hard process-group deadline.
 
     Execution is the normal aggregate's own runner (`_check_target_runner`):
-    the same worker cap, session, stdin, output and group-kill semantics, the
-    same coverage-namespace isolation and the same producer/consumer ordering.
-    The expedited differences are only the per-gate deadline and the selection.
+    the same worker cap, stdin, output, coverage-namespace isolation and
+    producer/consumer ordering. The expedited differences are the selection and
+    the per-gate deadline, which isolates each gate in its own session so the
+    deadline can kill its descendants.
     No cluster probe, aggregate, cache lookup or normal evidence writer runs here.
     The caller records the report against its already-resolved incident context.
     """
@@ -205,6 +220,7 @@ def execute_plan(
         raise ValueError(message)
     child_env = dict(os.environ if environment is None else environment)
     selected = [entry.gate for entry in plan if entry.selected]
+    workers = cap_workers(requested=None, allowed=current_allowed_cpu_count())
     with isolated_environments(names=[gate.name for gate in selected], base=child_env) as envs:
         outcomes = iter(
             run_targets(
@@ -218,12 +234,12 @@ def execute_plan(
                     for gate in selected
                 ],
                 cwd=cwd,
-                max_workers=cap_workers(requested=None, allowed=current_allowed_cpu_count()),
+                max_workers=workers,
                 deadline_seconds=deadline_seconds,
             )
         )
     results = tuple(
-        _gate_result(outcome=next(outcomes))
+        _gate_result(outcome=next(outcomes), concurrency=min(workers, len(selected)))
         if entry.selected
         else GateResult(name=entry.gate.name, status="deferred", reason=entry.reason)
         for entry in plan

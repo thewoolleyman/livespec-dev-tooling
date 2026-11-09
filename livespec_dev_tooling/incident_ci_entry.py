@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import threading
+import time
 from collections.abc import Callable, Mapping
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -37,6 +39,38 @@ from livespec_dev_tooling.incident_transport import normal_child_environment
 
 __all__: list[str] = ["CiEntry"]
 
+# How long one confirmed launch-time recheck is shared by later launches. The
+# bound it buys: one observer read pair (/current and /admitted, each up to a
+# 45 s reader pass) per window instead of one per member, 8 at a time. What it
+# costs is bounded too: a revocation still reaches every launch that starts more
+# than one window after it, and `aggregate` rechecks fresh before publishing, so
+# a revoked incident can never publish a passing aggregate.
+_ADMISSION_WINDOW_SECONDS = 30.0
+
+
+class _SharedAdmission:
+    """A fail-closed launch-time recheck whose confirmed result later launches share.
+
+    The lock makes concurrent launches wait for ONE read rather than each
+    starting their own. One retry absorbs a single transient refusal; two
+    refusals in a row refuse.
+    """
+
+    def __init__(self, *, check: Callable[[], bool], window_seconds: float) -> None:
+        self._check = check
+        self._window_seconds = window_seconds
+        self._lock = threading.Lock()
+        self._confirmed_at: float | None = None
+
+    def __call__(self) -> bool:
+        with self._lock:
+            confirmed = self._confirmed_at
+            if confirmed is not None and time.monotonic() - confirmed < self._window_seconds:
+                return True
+            admitted = self._check() or self._check()
+            self._confirmed_at = time.monotonic() if admitted else None
+            return admitted
+
 
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-egy3ri
 @dataclass(frozen=True, kw_only=True)
@@ -47,6 +81,7 @@ class CiEntry:
     targets: tuple[CiTarget, ...]
     current: Callable[..., bool] | None = None
     observer: Callable[..., bool] | None = None
+    admission_window_seconds: float = _ADMISSION_WINDOW_SECONDS
 
     def plan(self, *, event: CiEvent, payload: str, environ: Mapping[str, str]) -> CiPlan | None:
         # Resolve normal/master BEFORE payload or observer configuration access.
@@ -89,13 +124,15 @@ class CiEntry:
 
         Members run through the normal aggregate's own runner, in parallel and
         under its process semantics, coverage-namespace isolation and
-        producer/consumer ordering. The plan is rechecked once before anything
-        launches and again by `admit` immediately before EACH member launches; a
-        failed recheck launches nothing further and returns 2, after recording
-        the honest outcome of every member that did run. No deadline is
-        passed: a selected CI member is required evidence, and the aggregate has
-        no deferral for one that was cut short, so the job's own timeout bounds it.
-        Each member's captured output is handed to `echo` for the job log.
+        producer/consumer ordering. The plan is rechecked before anything
+        launches and again before each member launches, through one
+        `_SharedAdmission`; a refused recheck launches nothing further and
+        returns 2, after recording the honest outcome of every member that did
+        run. No deadline is passed: a selected CI member is required evidence,
+        and the aggregate has no deferral for one that was cut short, so the
+        job's own timeout bounds it. Each member's captured output is handed to
+        `echo` as that member completes, so a job killed by its timeout still
+        logs every member that finished.
         """
         known = {target.name for target in self.targets}
         if not names or len(set(names)) != len(names) or any(name not in known for name in names):
@@ -108,11 +145,18 @@ class CiEntry:
         }
         report.parent.mkdir(parents=True, exist_ok=True)
 
-        def admit() -> bool:
-            return self.plan(event=plan.event, payload=payload, environ=environ) == plan
-
+        admit = _SharedAdmission(
+            check=lambda: self.plan(event=plan.event, payload=payload, environ=environ) == plan,
+            window_seconds=self.admission_window_seconds,
+        )
         if not admit():
             return 2
+
+        def echo_completed(*, outcome: TargetOutcome) -> None:
+            code = _member_code(outcome=outcome)
+            if echo is not None and code is not None:
+                echo(text=f"::: just {outcome.name} [exit {code}]\n{outcome.output}")
+
         members = [name for name in names if name in selected]
         with isolated_environments(names=members, base=environment) as environments:
             outcomes = run_targets(
@@ -128,6 +172,7 @@ class CiEntry:
                 cwd=self.repo,
                 max_workers=cap_workers(requested=None, allowed=current_allowed_cpu_count()),
                 admit=admit,
+                on_complete=echo_completed,
             )
         failure, stopped = 0, False
         for outcome in outcomes:
@@ -135,8 +180,6 @@ class CiEntry:
             if code is None:
                 stopped = True
                 continue
-            if echo is not None:
-                echo(text=f"::: just {outcome.name} [exit {code}]\n{outcome.output}")
             row = CiOutcome(
                 name=outcome.name,
                 head_sha=plan.event.head_sha,

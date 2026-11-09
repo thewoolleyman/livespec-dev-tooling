@@ -8,40 +8,46 @@ gates (`incident_local_gates.execute_plan`) and the expedited CI entrance
 
 - Targets run in a thread pool whose width `cap_workers` derives from the CPUs
   the process may use, capped at `DEFAULT_MAX_WORKERS` unless a caller asks.
-- Each target runs in its OWN session (`start_new_session`) with stdin closed
-  and its merged stdout/stderr spooled to a temporary file, so a target can
-  neither read the caller's terminal nor block on a full pipe.
-- When a target ends, or reaches its optional deadline, its whole process group
-  is killed with SIGKILL, so no descendant outlives the target that started it.
-  A deadline expiry reports `TIMED_OUT` with no return code.
+- Each target runs with stdin closed and its merged stdout/stderr spooled to a
+  temporary file, so it can neither read the caller's terminal nor block on a
+  full pipe.
 - A target may name an earlier target it must wait `after`: it starts only once
   that one completes with exit 0, and is reported `BLOCKED` otherwise. This is
   for a genuine read-after-write data dependency, not collision avoidance.
 - An optional `admit` callback is asked immediately before each launch. A
   refusal reports that target `NOT_ADMITTED` and stops every later launch;
   targets already running finish and keep their honest outcomes.
-- An interruption of the caller (an exception, Ctrl-C, or SIGTERM / SIGHUP
-  delivered while the main thread is waiting) kills every live target group.
-  The new session moves targets out of the caller's process group, so a signal
-  sent to that group no longer reaches them; this restores that reach.
+
+WITHOUT a deadline (the normal aggregate and the CI entrance) a target stays in
+the caller's process group, exactly as before this runner existed, so a signal
+or a SIGKILL sent to that group (Ctrl-C, `gate-run.sh`'s stall kill, an OOM or
+harness group kill) takes every target with it.
+
+WITH a deadline (the expedited local hooks) the target gets its own session so
+the deadline can kill its descendants; `_check_target_isolation` holds that
+mechanism and states its one residual risk.
 
 Callers keep their own selection, environments, reporting and result shapes.
 """
 
 from __future__ import annotations
 
-import os
-import signal
 import subprocess
 import tempfile
 import threading
 import time
-from collections.abc import Callable, Iterator, Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from concurrent.futures import Future, ThreadPoolExecutor, as_completed
-from contextlib import contextmanager, suppress
 from dataclasses import dataclass
 from pathlib import Path
 from typing import IO
+
+from livespec_dev_tooling._check_target_isolation import (
+    isolated_argv,
+    kill_group,
+    termination_raises,
+    wait_then_kill,
+)
 
 __all__: list[str] = [
     "BLOCKED",
@@ -99,16 +105,11 @@ def cap_workers(*, requested: int | None, allowed: int) -> int:
     return max(1, min(allowed, cap))
 
 
-def _kill_group(*, pid: int) -> None:
-    """Kill a target's whole session, including children that ignore SIGTERM."""
-    with suppress(ProcessLookupError):
-        os.killpg(pid, signal.SIGKILL)
-
-
 class _Groups:
-    """The live target groups of one run; closing it stops launches and may kill all."""
+    """The live isolated groups of one run; closing it stops launches and may kill all."""
 
-    def __init__(self) -> None:
+    def __init__(self, *, isolated: bool) -> None:
+        self.isolated = isolated
         self._lock = threading.Lock()
         self._live: set[int] = set()
         self._closed = False
@@ -120,28 +121,34 @@ class _Groups:
             if self._closed:
                 return None
             process = subprocess.Popen(  # noqa: S603 — caller-owned argv; never a shell string.
-                run.argv,
+                isolated_argv(argv=run.argv) if self.isolated else run.argv,
                 cwd=cwd,
                 env=None if run.env is None else dict(run.env),
                 stdin=subprocess.DEVNULL,
                 stdout=output,
                 stderr=subprocess.STDOUT,
-                start_new_session=True,
+                start_new_session=self.isolated,
             )
-            self._live.add(process.pid)
+            if self.isolated:
+                self._live.add(process.pid)
             return process
 
-    def release(self, *, pid: int) -> None:
-        _kill_group(pid=pid)
+    def wait(self, *, process: subprocess.Popen[bytes], deadline_seconds: float | None) -> bool:
+        """Wait for the target; True when its deadline expired. Never leaves a zombie."""
+        if deadline_seconds is None:
+            _ = process.wait()
+            return False
+        timed_out = wait_then_kill(process=process, deadline_seconds=deadline_seconds)
         with self._lock:
-            self._live.discard(pid)
+            self._live.discard(process.pid)
+        return timed_out
 
     def close(self, *, kill: bool) -> None:
         with self._lock:
             self._closed = True
             live = tuple(self._live)
         for pid in live if kill else ():
-            _kill_group(pid=pid)
+            kill_group(pid=pid)
 
 
 def _run_one(
@@ -167,19 +174,13 @@ def _run_one(
             )
         if process is None:
             return TargetOutcome(name=run.name, status=NOT_LAUNCHED, returncode=None)
-        try:
-            code = process.wait(timeout=deadline_seconds)
-        except subprocess.TimeoutExpired:
-            code = None
-        finally:
-            groups.release(pid=process.pid)
-            _ = process.wait()
+        timed_out = groups.wait(process=process, deadline_seconds=deadline_seconds)
         _ = output.seek(0)
         captured = output.read().decode("utf-8", errors="replace")
     return TargetOutcome(
         name=run.name,
-        status=TIMED_OUT if code is None else COMPLETED,
-        returncode=code,
+        status=TIMED_OUT if timed_out else COMPLETED,
+        returncode=None if timed_out else process.returncode,
         wall_time_s=time.monotonic() - started,
         output=captured,
     )
@@ -209,32 +210,6 @@ def _run_admitted(
     return _run_one(run=run, cwd=cwd, deadline_seconds=deadline_seconds, groups=groups)
 
 
-def _raise_exit(*, signum: int) -> None:
-    raise SystemExit(128 + signum)
-
-
-@contextmanager
-def _termination_raises() -> Iterator[None]:
-    """Turn SIGTERM / SIGHUP into an exception while the main thread waits.
-
-    Only the main thread may install a handler; elsewhere the caller's own
-    handling stands unchanged.
-    """
-    if threading.current_thread() is not threading.main_thread():
-        yield
-        return
-    # The handler adapts Python's positional (signum, frame) handler convention.
-    previous = {
-        sig: signal.signal(sig, lambda signum, _frame: _raise_exit(signum=signum))
-        for sig in (signal.SIGTERM, signal.SIGHUP)
-    }
-    try:
-        yield
-    finally:
-        for sig, handler in previous.items():
-            _ = signal.signal(sig, handler)
-
-
 def run_targets(
     *,
     runs: Sequence[TargetRun],
@@ -242,19 +217,22 @@ def run_targets(
     max_workers: int,
     deadline_seconds: float | None = None,
     admit: Callable[[], bool] | None = None,
-    on_complete: Callable[[TargetOutcome], None] | None = None,
+    on_complete: Callable[..., None] | None = None,
 ) -> tuple[TargetOutcome, ...]:
     """Run every target in parallel and return their outcomes in `runs` order.
 
-    `on_complete` sees each outcome as it lands, for live progress. A target's
+    `on_complete(outcome=...)` sees each outcome as it lands, for live progress. A target's
     `after` is honoured only when an EARLIER run carries that name, so a waiting
     target can never hold a worker its prerequisite still needs.
     """
-    groups = _Groups()
+    groups = _Groups(isolated=deadline_seconds is not None)
     futures: list[Future[TargetOutcome]] = []
     by_name: dict[str, Future[TargetOutcome]] = {}
     finished = False
-    with _termination_raises(), ThreadPoolExecutor(max_workers=max_workers) as pool:
+    with (
+        termination_raises(isolated=groups.isolated),
+        ThreadPoolExecutor(max_workers=max_workers) as pool,
+    ):
         try:
             for run in runs:
                 future = pool.submit(
@@ -270,11 +248,11 @@ def run_targets(
                 _ = by_name.setdefault(run.name, future)
             for future in as_completed(futures):
                 if on_complete is not None:
-                    on_complete(future.result())
+                    on_complete(outcome=future.result())
             finished = True
         finally:
             # Reached unfinished only when the caller was interrupted; the
-            # exception continues once every live group is dead.
+            # exception continues once every live isolated group is dead.
             if not finished:
                 groups.close(kill=True)
                 pool.shutdown(wait=False, cancel_futures=True)
