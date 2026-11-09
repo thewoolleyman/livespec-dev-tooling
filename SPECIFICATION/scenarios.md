@@ -2214,6 +2214,22 @@ Then it MUST run the full pytest suite against the staged tree
 
 And it MUST record its `TDD-Suite-Green-*` trailers only from that run
 
+## Scenario: a test loop over os.environ fails the ambient-environment check on every host, while a single-expression rewrite passes
+
+Given a Python file under the declared `tests_tree_prefix` containing `for name in [n for n in os.environ if n.startswith("GIT_")]:` with `monkeypatch.delenv(name)` on the next line
+
+When `no_ambient_environment_loops` runs, on a host whose environment carries a `GIT_` variable and on a host whose environment carries none
+
+Then the check fails on both hosts, naming the file, the loop's line and a single-expression rewrite
+
+And a `# pragma: no cover` comment on the loop's body line does not change that verdict
+
+And the same loop written over a name bound from `dict(os.environ)` also fails
+
+But given the same filtering written as one simple statement, such as `_ = [monkeypatch.delenv(n) for n in os.environ if n.startswith("GIT_")]`
+
+Then the check passes that file on both hosts
+
 ## Scenario: the whole-suite coverage run prints its thirty slowest test phases
 
 Given a `just check-per-file-coverage` run whose test suite has more than thirty test phases
@@ -2827,6 +2843,20 @@ When that test fails
 
 Then the session MUST fail on that first failure, and the plugin MUST NOT re-run the test
 
+## Scenario: a failing test the run touched is named in a withheld-retry block
+
+Given a repository that loads livespec-dev-tooling's flake-retry pytest plugin
+
+And a change set that contains `.github/workflows/ci.yml`
+
+And a failing test whose closure names `.github/workflows/ci.yml` through a string literal
+
+When that test fails
+
+Then the session MUST fail on that first failure, and the plugin MUST NOT re-run the test
+
+And the terminal summary MUST print a `FLAKE-RETRY-WITHHELD` block naming the test's node id and `.github/workflows/ci.yml`, and under GitHub Actions a `::warning` annotation MUST name `FLAKE-RETRY-WITHHELD` and the node id
+
 ## Scenario: a failing test that shares only an ancestor directory name with the change set is retried
 
 Given a repository that loads livespec-dev-tooling's flake-retry pytest plugin
@@ -2838,6 +2868,30 @@ And a change set whose only path under `ci-runner/` is `ci-runner/k3s/phase2/fac
 When that test fails on its first attempt
 
 Then the plugin MUST treat the test as untouched and re-run it on its own, exactly as for any untouched failing test
+
+## Scenario: a failing test whose closure names a changed file only under a temporary root is retried
+
+Given a repository that loads livespec-dev-tooling's flake-retry pytest plugin
+
+And a failing test whose closure names `.github/workflows/ci.yml` only through `root / ".github" / "workflows" / "ci.yml"`, where `root` is a directory built from `tmp_path`
+
+And a change set that contains `.github/workflows/ci.yml`
+
+When that test fails on its first attempt
+
+Then the plugin MUST treat the test as untouched and re-run it on its own, exactly as for any untouched failing test
+
+## Scenario: a failing test that copies a repository directory into a temporary root is still touched
+
+Given a repository that loads livespec-dev-tooling's flake-retry pytest plugin
+
+And a failing test whose closure copies `REPO_ROOT / "ci-runner"` into `tmp_path / "ci-runner"`, where `REPO_ROOT` is assigned `Path(__file__).resolve().parents[1]`
+
+And a change set that contains `ci-runner/k3s/x.sh`
+
+When that test fails
+
+Then the session MUST fail on that first failure, and the plugin MUST NOT re-run the test
 
 ## Scenario: a change set that touches the build or the plugin disables every retry
 
@@ -2872,6 +2926,30 @@ Given a repository that loads livespec-dev-tooling's flake-retry pytest plugin
 And a change set in which `pyproject.toml` differs from its base only in the `[project]` `version` value
 
 And a failing test whose closure names `pyproject.toml` through a string literal
+
+When that test fails
+
+Then the session MUST fail on that first failure, and the plugin MUST NOT re-run the test
+
+## Scenario: a config-value-only change of .livespec.jsonc leaves a test that names no changed key retried
+
+Given a repository that loads livespec-dev-tooling's flake-retry pytest plugin
+
+And a change set in which `.livespec.jsonc` differs from its base only in the value of a key on the committed config-value fast-path list and in its comments
+
+And a failing test whose closure names `.livespec.jsonc` but neither that key's dotted path nor its final segment
+
+When that test fails on its first attempt
+
+Then the plugin MUST re-run it on its own, exactly as for any untouched failing test
+
+## Scenario: a structural or unlisted change of .livespec.jsonc still touches every test that names the file
+
+Given a repository that loads livespec-dev-tooling's flake-retry pytest plugin
+
+And a change set in which `.livespec.jsonc` adds a key, or changes the value of a key that is not on the committed config-value fast-path list
+
+And a failing test whose closure names `.livespec.jsonc`
 
 When that test fails
 
