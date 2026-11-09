@@ -166,7 +166,8 @@ any_short=0
 for node in "$@"; do
   stamp="$(date -u +%Y%m%dt%H%M%Sz)"
   echo "${SCRIPT_NAME}: NODE ${node} at $(date -u +%FT%TZ)"
-  if ! kubectl get node "$node" -l "$FLAVOR_LABEL" -o name | grep -q .; then
+  flavor_node="$(kubectl get node "$node" -l "$FLAVOR_LABEL" -o name || true)"
+  if [ -z "$flavor_node" ]; then
     echo "ABORT node=${node} reason=no-node-carrying-${FLAVOR_LABEL}"; any_short=1; continue
   fi
   runners="$(count_runner_pods "$node")"
@@ -187,7 +188,8 @@ for node in "$@"; do
   if [ "$state" != complete ]; then
     echo "ABORT node=${node} reason=job-${state}-after-${polls}-polls"; any_short=1; continue
   fi
-  if ! kubectl -n "$NS" logs "job/${job}" | grep -q '^VERDICT unloaded$'; then
+  job_log="$(kubectl -n "$NS" logs "job/${job}" || true)"
+  if ! grep -q '^VERDICT unloaded$' <<<"$job_log"; then
     echo "LOADED node=${node}: recorded, not a baseline"; any_short=1; continue
   fi
   echo "BASELINE node=${node}"
