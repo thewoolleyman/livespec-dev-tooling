@@ -97,7 +97,6 @@ from __future__ import annotations
 
 import json
 import re
-import shlex
 import sys
 from pathlib import Path
 from typing import cast
@@ -121,9 +120,9 @@ from livespec_dev_tooling.agent_hooks._deny_hint import (  # noqa: E402
 from livespec_dev_tooling.agent_hooks._foreground_gate import (  # noqa: E402
     foreground_refusal,
 )
-from livespec_dev_tooling.gate_command import pytest_command  # noqa: E402
-from livespec_dev_tooling.gate_credential import gates_kubeconfig_readable  # noqa: E402
-from livespec_dev_tooling.gate_remote_delegate import delegated_gate_enabled  # noqa: E402
+from livespec_dev_tooling.agent_hooks._foreground_pytest import (  # noqa: E402
+    foreground_full_suite_pytest,
+)
 
 __all__: list[str] = []
 
@@ -134,76 +133,6 @@ __all__: list[str] = []
 _JUST_GATE_RECIPE_PREFIX = "check"
 _GIT_GATE_SUBCOMMANDS: frozenset[str] = frozenset({"commit", "push"})
 _GH_GATE_SUBCOMMAND = "pr"
-# Options that take a separate value argument. The list narrows what is read
-# as a test path; the existing-path test in `_names_test_path` is what decides
-# it, so an option missing here is still not mistaken for a targeted run.
-_PYTEST_VALUE_OPTIONS: frozenset[str] = frozenset(
-    {
-        "-c",
-        "--config-file",
-        "--confcutdir",
-        "--rootdir",
-        "-o",
-        "--override-ini",
-        "-p",
-        "-W",
-        "--pythonwarnings",
-        "-k",
-        "-m",
-        "-r",
-        "--tb",
-        "--maxfail",
-        "--deselect",
-        "--ignore",
-        "--ignore-glob",
-        "--durations",
-        "--durations-min",
-        "--junitxml",
-        "--junit-xml",
-        "--junitprefix",
-        "--junit-prefix",
-        "--basetemp",
-        "--import-mode",
-        "--capture",
-        "--color",
-        "--code-highlight",
-        "--assert",
-        "--show-capture",
-        "--verbosity",
-        "--log-level",
-        "--log-format",
-        "--log-date-format",
-        "--log-file",
-        "--log-file-level",
-        "--log-file-format",
-        "--log-file-date-format",
-        "--log-cli-level",
-        "--log-cli-format",
-        "--log-cli-date-format",
-        "--doctest-glob",
-        "--doctest-report",
-        "--cov",
-        "--cov-config",
-        "--cov-report",
-        "--cov-fail-under",
-        "--cov-context",
-        "--dist",
-        "--tx",
-        "--rsyncdir",
-        "--maxprocesses",
-        "--max-worker-restart",
-        "--timeout",
-        "--timeout-method",
-        "--reruns",
-        "--reruns-delay",
-        "--only-rerun",
-        "--rerun-except",
-        "--randomly-seed",
-        "--hypothesis-seed",
-        "--hypothesis-profile",
-    }
-)
-
 # The sanctioned detached-gate runner. Anchored at the START of the
 # command (tolerating a `mise exec --` wrapper and any path prefix) so
 # the command must BE a runner invocation rather than merely mention
@@ -347,14 +276,15 @@ def _foreground_verdict(
     command = tool_input.get("command")
     if tool_name != "Bash" or not isinstance(command, str) or _SANCTIONED_RUNNER.search(command):
         return 0
-    if _foreground_full_suite_pytest(command=command, cwd=Path.cwd()):
+    pytest_repository = foreground_full_suite_pytest(command=command, cwd=Path.cwd())
+    if pytest_repository is not None:
         log.error(
             "DENIED: a foreground full-suite pytest on a delegating host — "
             "dispatch it through the detached runner",
             check_id="pretooluse-foreground-full-suite-pytest-deny",
             gate="pytest",
             command=command,
-            repository=str(Path.cwd()),
+            repository=str(pytest_repository),
             hint=foreground_deny_hint(cwd=Path.cwd(), command=command),
         )
         return 2
@@ -373,46 +303,6 @@ def _foreground_verdict(
         hint=foreground_deny_hint(cwd=Path.cwd(), command=command),
     )
     return 2
-
-
-def _foreground_full_suite_pytest(*, command: str, cwd: Path) -> bool:
-    """Whether ``command`` is an eligible host's foreground full-suite pytest."""
-    try:
-        pytest_argv = pytest_command(command=tuple(shlex.split(command)))
-    except ValueError:
-        return False
-    return (
-        pytest_argv is not None
-        and _is_full_suite_pytest(pytest_argv=pytest_argv, cwd=cwd)
-        and delegated_gate_enabled(repo_root=cwd)
-        and gates_kubeconfig_readable()
-    )
-
-
-def _is_full_suite_pytest(*, pytest_argv: tuple[str, ...], cwd: Path) -> bool:
-    """A pytest names no test path, unless xdist makes it full-suite anyway."""
-    arguments = pytest_argv[1:]
-    if any(_is_numprocesses_option(argument=argument) for argument in arguments):
-        return True
-    expect_option_value = False
-    for argument in arguments:
-        if expect_option_value:
-            expect_option_value = False
-        elif argument in _PYTEST_VALUE_OPTIONS:
-            expect_option_value = True
-        elif not argument.startswith("-") and _names_test_path(argument=argument, cwd=cwd):
-            return False
-    return True
-
-
-def _names_test_path(*, argument: str, cwd: Path) -> bool:
-    """A positional argument is a test path when it is a node id or exists on disk."""
-    return "::" in argument or (cwd / argument).exists()
-
-
-def _is_numprocesses_option(*, argument: str) -> bool:
-    """xdist's worker count, spelled `-n 4`, `-n4`, `-n=4` or `--numprocesses[=4]`."""
-    return argument.startswith(("-n", "--numprocesses"))
 
 
 def main() -> int:
