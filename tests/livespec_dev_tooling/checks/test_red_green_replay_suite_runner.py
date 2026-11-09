@@ -6,7 +6,9 @@ import contextlib
 import errno
 import importlib.util
 import inspect
+import json
 import os
+import subprocess
 import sys
 import time
 import uuid
@@ -106,6 +108,46 @@ def test_every_chunk_of_output_renews_the_gate_runners_progress_stamp(
     progress.saw(chunk="....")
 
     assert stamp.stat().st_mtime > 1_000_000
+
+
+def test_the_gate_runners_progress_stamp_does_not_change_the_runners_coverage(
+    *, tmp_path: Path
+) -> None:
+    """A caller's progress stamp never reaches a test, so the stamp-unset branch stays covered.
+
+    gate-run.sh exports the stamp to the gated command, and the suite runs under
+    it; without the conftest scrub every test saw it set and the `if stamp:`
+    false branch was never taken, failing check-per-file-coverage on a passing
+    suite (livespec-dev-tooling-khjkyu).
+    """
+    report = tmp_path / "coverage.json"
+    stamp = tmp_path / "progress.stamp"
+    env = {**os.environ, "LIVESPEC_GATE_RUN_PROGRESS_STAMP": str(stamp)}
+    this_file = Path(__file__).resolve()
+    subprocess.run(  # noqa: S603
+        [
+            sys.executable,
+            "-m",
+            "pytest",
+            str(this_file),
+            "--deselect",
+            f"{this_file}::test_the_gate_runners_progress_stamp_does_not_change_the_runners_coverage",
+            "-p",
+            "no:cacheprovider",
+            "-q",
+            f"--cov={_MODULE_PATH.parent}",
+            "--cov-branch",
+            f"--cov-report=json:{report}",
+            "--cov-fail-under=0",
+        ],
+        env=env,
+        cwd=_MODULE_PATH.parents[2],
+        check=False,
+        capture_output=True,
+    )
+    files = json.loads(report.read_text())["files"]
+    summary = next(v for k, v in files.items() if k.endswith(_MODULE_PATH.name))["summary"]
+    assert summary["percent_covered"] == 100.0
 
 
 def test_run_suite_captures_output_and_returncode() -> None:
