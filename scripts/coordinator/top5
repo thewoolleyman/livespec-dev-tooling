@@ -26,7 +26,10 @@ TOP = [
     ("2 fleet-mutation-testing-rule-26 (Mac w3:t2, ledger-only asks)", "livespec-dev-tooling-oi2two"),
     ("3 dev-host-test-gate-load", "livespec-dev-tooling-6vuiwe"),
     ("4 factory yield: sandbox-commit-gate-ceiling", "bd-ib-qy5wol"),
-    ("5 homelab-k8s-worker-nodes", "livespec-dev-tooling-ko26ez"),
+    (
+        "5 homelab-k8s-worker-nodes (VPS seat, workspace livespec-dev-tooling, tab homelab-k8s-worker-nodes)",
+        "livespec-dev-tooling-ko26ez",
+    ),
 ]
 WRAPPER = ["/usr/local/bin/with-livespec-env.sh", "--"]
 STALE_MINUTES = 60
