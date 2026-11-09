@@ -36,7 +36,7 @@ for template in "$dir"/cluster-queue-*.yaml; do
   fi
 done
 
-# --- gates: one worker flavor per architecture, appended LAST to gates-cq ----
+# --- gates: one worker flavor per architecture, placed FIRST in gates-cq ----
 # One gate is the size gates-cq's committed quotas count in: 5 CPU and 8 Gi
 # (../kueue/cluster-queue-gates.yaml: 15 cpu / 24Gi is three gates on gmktec,
 # 10 / 16Gi two on hp and poweredge; the renderer requests 5 cpu per gate). A
@@ -71,8 +71,14 @@ f.append({"name": "gates-worker-%s-flavor" % os.environ["ARCH"], "resources": [
 print(json.dumps(f))')"
 done <<<"$gates"
 
-# Replace ONLY gates-cq's flavor list: every fleet flavor stays as committed, in
-# its order, and the worker flavors follow. A worker no longer enrolled drops out.
+# Replace ONLY gates-cq's flavor list: the worker flavors come FIRST, then every
+# fleet flavor as committed, in its order. First, so an enrolled worker takes its
+# own share of the gates its architecture can run rather than only the overflow
+# the fleet's nodes have no quota left for (maintainer direction 2026-11-09, plan
+# homelab-k8s-worker-nodes: the worker serves live load). Kueue never assigns a
+# worker flavor to a gate whose required kubernetes.io/arch affinity excludes
+# that architecture, so the order moves no amd64-only gate onto an arm64 worker.
+# A worker no longer enrolled drops out.
 if ! queue="$(kubectl get clusterqueue gates-cq -o json)"; then
   echo "converge-worker-queues: gates-cq is not present; no worker gate flavor added" >&2
   exit 0
@@ -86,8 +92,8 @@ index = next(i for i, g in enumerate(groups) if "cpu" in g.get("coveredResources
 kept = [f for f in groups[index]["flavors"]
         if not (f["name"].startswith("gates-worker-") and f["name"].endswith("-flavor"))]
 print(json.dumps([{"op": "replace", "path": "/spec/resourceGroups/%d/flavors" % index,
-                   "value": kept + worker}]))')"
-echo "converge-worker-queues: gates-cq flavors -> fleet flavors, then $(printf '%s' "$flavors_json" | python3 -c 'import json,sys; print(len(json.load(sys.stdin)))') worker flavor(s)"
+                   "value": worker + kept}]))')"
+echo "converge-worker-queues: gates-cq flavors -> $(printf '%s' "$flavors_json" | python3 -c 'import json,sys; print(len(json.load(sys.stdin)))') worker flavor(s), then fleet flavors"
 if [ "$dry_run" -eq 1 ]; then
   printf '%s\n' "$patch"
 else

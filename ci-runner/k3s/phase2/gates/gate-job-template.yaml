@@ -101,8 +101,8 @@ spec:
           # read from the one declared per-class list (workload-arch.conf: the
           # gated repository's own `gate <repository>` line, else `gate gate`;
           # livespec-dev-tooling-ko26ez.6/.7). An arm64 container worker never
-          # receives a gate whose image is amd64-only, and gets the others only
-          # as overflow through gates-cq's last flavor (kueue/worker/).
+          # receives a gate whose image is amd64-only, and takes its share of the
+          # others through gates-cq's first flavor (kueue/worker/).
           requiredDuringSchedulingIgnoredDuringExecution:
             nodeSelectorTerms:
               - matchExpressions:

@@ -1,9 +1,9 @@
 # gates-worker-flavor.yaml — the gates-cq ResourceFlavor for the container
 # workers of ONE architecture (livespec-dev-tooling-ko26ez.7), rendered per
-# architecture by ../converge-worker-queues.sh, which appends it LAST to
+# architecture by ../converge-worker-queues.sh, which places it FIRST in
 # gates-cq's flavors with a quota of whole gates summed over the enrolled
-# workers' gate shares. Last means a worker takes only the gates the fleet's
-# own nodes have no quota left for.
+# workers' gate shares. First means a worker takes its own share of the gates
+# its architecture can run before the fleet's nodes, not only their overflow.
 #
 # nodeLabels select the class and the architecture, so Kueue never assigns this
 # flavor to a gate whose required kubernetes.io/arch affinity (the gated
