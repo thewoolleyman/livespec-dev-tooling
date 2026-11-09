@@ -39,6 +39,7 @@ __all__: list[str] = ["installed_ports", "refresh_reference"]
 # Beside controller.json: the role's incident_observer_reader_env_path, which the
 # service unit reads as its EnvironmentFile. KEY=value, one per line.
 _READER_ENV = "reader.env"
+_CREDENTIAL_KEY = "BEADS_DOLT_PASSWORD"
 _SYSTEM_PATH = "/usr/local/bin:/usr/bin:/bin"
 _TIMEOUT = 120
 _UNVERIFIED = "registered incident authority refused or returned an invalid reply"
@@ -125,7 +126,7 @@ def _account_environment() -> dict[str, str]:
 def _tenant_credential(*, config: Path) -> dict[str, str]:
     lines = (config.parent / _READER_ENV).read_text(encoding="utf-8").splitlines()
     pairs = [line.partition("=") for line in lines]
-    return {name: value for name, sep, value in pairs if sep}
+    return {name: value for name, sep, value in pairs if sep and name == _CREDENTIAL_KEY}
 
 
 def installed_ports(*, installation: ControllerInstallation) -> EntryPorts:
