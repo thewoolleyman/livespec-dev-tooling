@@ -209,11 +209,26 @@ def test_main_binds_installed_ports_and_refreshes_the_reference_clone(
     (tmp_path / "reader.env").write_text("BEADS_DOLT_PASSWORD=x\n")
     argv = ["incident-original-run", *_missing_argv(config=installation.config)]
     monkeypatch.setattr(entry.sys, "argv", argv)
-    fetch = Mock(side_effect=subprocess.TimeoutExpired("git", 120))
+    sequence: list[str] = []
+
+    def fetch_spy(*_args: Any, **_kwargs: Any) -> None:
+        sequence.append("fetch")
+        raise subprocess.TimeoutExpired("git", 120)
+
+    fetch = Mock(side_effect=fetch_spy)
     monkeypatch.setattr(subprocess, "run", fetch)
+    propose = entry.propose
+
+    def propose_spy(**kwargs: Any) -> Any:
+        sequence.append("propose")
+        return propose(**kwargs)
+
+    monkeypatch.setattr(entry, "propose", propose_spy)
     assert entry.main() == 78
     assert json.loads(capsys.readouterr().out)["code"] == "incident-original-run-evidence-missing"
     assert fetch.call_args.args[0][:2] == ["git", "fetch"]
+    # The reference clone is refreshed before the action reads git.
+    assert sequence.index("fetch") < sequence.index("propose")
     entry.os.umask.assert_called_once_with(0o077)
 
 
