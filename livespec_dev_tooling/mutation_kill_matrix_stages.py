@@ -1,7 +1,10 @@
 """The Rule-26 kill matrix's preparation stages: generate, measure and plan.
 
-1. `generate` runs `mutmut run`, lists the mutant catalogue and collects the
-   target's tests.
+1. `generate` writes mutmut's mutant catalogue, lists it and collects the
+   target's tests.  It calls the pinned mutmut 3.2.3's own generation
+   functions rather than `mutmut run`, which would go on to run mutmut's own
+   stats pass, a clean test run and a forked run of every mutant, all of
+   which this engine discards.
 2. `measure` runs the suite once under per-test coverage.  The same run
    records each test's outcome and duration on the unmutated source, so a test
    that fails there, or runs longer than the per-test timeout, is a baseline
@@ -48,7 +51,20 @@ __all__: list[str] = [
 
 
 ENGINE_VERSION = "3.2.3"
-_MUTMUT_RUN_FAILED = "mutmut run failed while generating the kill matrix"
+_GENERATION_FAILED = "mutmut could not generate mutants for the kill matrix"
+# What `mutmut run` does before it starts testing, and nothing after: it sets
+# the same environment marker, reads the [tool.mutmut] configuration, and
+# writes the catalogue under mutants/.
+_GENERATE = (
+    "import os\n"
+    "from pathlib import Path\n"
+    "os.environ['MUTANT_UNDER_TEST'] = 'mutant_generation'\n"
+    "import mutmut.__main__ as mutmut_cli\n"
+    "mutmut_cli.read_config()\n"
+    "Path('mutants').mkdir(exist_ok=True)\n"
+    "mutmut_cli.create_mutants()\n"
+    "mutmut_cli.copy_also_copy_files()\n"
+)
 _NO_MUTANTS = "mutmut generated no mutants for the kill matrix"
 
 
@@ -87,9 +103,9 @@ def _checked_command(
 
 def generate(*, execute: CommandExecutor, target: Path) -> tuple[list[Mutant], list[str]]:
     """Generate and list mutmut's mutants, then collect the target's tests."""
-    generated = execute(args=[*PYTHON, "-m", "mutmut", "run"], cwd=target)
-    if generated.returncode not in (0, 1):
-        raise RuntimeError(_MUTMUT_RUN_FAILED)
+    generated = execute(args=[*PYTHON, "-c", _GENERATE], cwd=target)
+    if generated.returncode != 0:
+        raise RuntimeError(_GENERATION_FAILED)
     results = _checked_command(
         execute=execute,
         args=[*PYTHON, "-m", "mutmut", "results", "--all", "True"],
@@ -101,7 +117,7 @@ def generate(*, execute: CommandExecutor, target: Path) -> tuple[list[Mutant], l
         raise RuntimeError(_NO_MUTANTS)
     collected = _checked_command(
         execute=execute,
-        args=[*PYTHON, "-m", "pytest", "--collect-only", "-q"],
+        args=[*PYTHON, "-m", "pytest", "--collect-only", "-q", "--ignore=mutants"],
         target=target,
         failure="pytest collection failed for the kill matrix",
     )

@@ -23,13 +23,27 @@ _FAKE_MUTMUT = """\
 import pathlib
 import sys
 
-command = sys.argv[1]
-if command == "results":
-    print("    tiny.x_add__mutmut_1: killed")
-elif command == "apply":
-    pathlib.Path("src/tiny/__init__.py").write_text(
-        "def add(a, b):\\n    return a - b\\n", encoding="utf-8"
-    )
+
+def read_config():
+    pass
+
+
+def create_mutants():
+    pass
+
+
+def copy_also_copy_files():
+    pass
+
+
+if __name__ == "__main__":
+    command = sys.argv[1]
+    if command == "results":
+        print("    tiny.x_add__mutmut_1: not checked")
+    elif command == "apply":
+        pathlib.Path("src/tiny/__init__.py").write_text(
+            "def add(a, b):\\n    return a - b\\n", encoding="utf-8"
+        )
 """
 
 _FIXTURE_PYPROJECT = """\

@@ -5,8 +5,9 @@ the same document.  This adapter uses only mutmut's public command-line
 surface and runs no language model and no network service.  One run:
 
 1. generates, measures and plans (see `mutation_kill_matrix_stages`): the
-   mutant catalogue, per-test coverage with the baseline failures it reveals,
-   and each mutant's selected tests and cache key;
+   mutant catalogue (generated only, never `mutmut run`), per-test coverage
+   with the baseline failures it reveals, and each mutant's selected tests
+   and cache key;
 2. reuses every cached outcome whose inputs are unchanged (see
    `mutation_kill_matrix_cache`);
 3. runs every other mutant in a worker's private copy of the target, all of
