@@ -1,0 +1,11 @@
+---
+# gate_renderer_retired — where the retired `gate_renderer` role
+# (livespec-dev-tooling-vurvjl) installed the delegated gate's Job renderer and
+# its template on a delegating host.
+#
+# That role was deleted after stop-the-line R283 (2026-10-20), but deleting a
+# role removes nothing it installed. The copy it left goes stale against git
+# with every gate template change, and nothing reads it: the gate client
+# (`livespec_dev_tooling/gate_remote_delegate.py`) resolves only the in-repo
+# renderer or the one its own wheel ships.
+gate_renderer_retired_dir: /usr/local/lib/ci-runner-k3s/gates
