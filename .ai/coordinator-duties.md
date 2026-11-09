@@ -431,6 +431,11 @@ seat). The 19:30Z handoff's audit found eight of the ten gapped or partly wired,
 expedited-incident-response-flag's request, Release Please was not dispatched per merge, so its final fix set rides
 one release.
 
+**A wedged factory route is a reason to hand-land (coordinator's reading).** When a factory route is wedged, the
+hand-landed close path above applies outside the expedited plan too: the carrier is hand-landed and closed on the
+coordinator's grade, with no replay. Measured 2026-11-09: the factory-yield carriers bd-ib-e6zk4u
+(livespec-orchestrator-beads-fabro#4727, hand-composed) and bd-ib-fkd4ve were routed that way.
+
 ## 6. Never block: no pickers, ever
 
 The maintainer, 2026-11-01: "You should be forbidden from presenting blocking pickers. You are only ever supposed to
@@ -439,6 +444,10 @@ run autonomously, never block."
 - A coordinator or dispatcher seat never calls AskUserQuestion, and never ends a turn waiting for an answer.
 - It decides what it can under R301 and reports the decision.
 - It never does a docs commit, push, rebase or PR wait in its own foreground turn. Each goes to a background subagent with the exact change, so the seat keeps answering peers and alerts. Maintainer correction 2026-11-02 ~18:2xZ: "You blocked yourself."
+- **A background helper must background its gate-wait (coordinator's reading).** A helper subagent that runs
+  `just gate-wait` in its own foreground can exceed its tool-call ceiling and stall. It runs the gate-wait
+  backgrounded (`run_in_background: true`) and reads the VERDICT line from its output. Measured 2026-11-09: this
+  caused two helper stalls.
 - An ask that is genuinely the maintainer's (an irreversible host mutation, secrets or credential creation, a values
   call) goes in the tick report as plain text under `FOR THE MAINTAINER (non-blocking)`, and the seat keeps looping.
   The item waits; the seat does not.
@@ -976,6 +985,11 @@ on the node itself, not on the dispatching host: `ssh <host> cat
 /sys/fs/cgroup/kubepods.slice/kubepods-besteffort.slice/cpu.pressure`. Measured 2026-11-07: legacy-dispatcher-agent
 reported vmi3006760.contaboserver.net's figures as gmktec-xubuntu's until 20:02Z.
 
+**The avg60 tripwire cuts the fleet cap only on a factory-pod node (coordinator's reading).** The fleet-cap cut
+(11 to 9) on the avg60 > 30 tripwire fires only when the reading is on a node that runs factory pods:
+gmktec-xubuntu or poweredge-xubuntu. A reading over 30 twice on hp-xubuntu or the M4 worker is REPORTED for
+CI-capacity routing, and is not used to cut the factory cap. Correction recorded 2026-11-09.
+
 ## 12. Hygiene
 
 - **Workflow edits are tiered.** The maintainer, 2026-11-02: "ADDITIVE workflow edits are allowed with prior
@@ -1009,6 +1023,10 @@ reported vmi3006760.contaboserver.net's figures as gmktec-xubuntu's until 20:02Z
   The fast path itself is still being built: dev-tooling proposals #3423 and #3432 (v132) and livespec #3100 (v237).
   Until it lands, a value-only edit still runs the normal gates. Measured the same day: another seat could not find this
   ruling anywhere in the repository, because it lived only in the epic's comments, which is why it is ported here.
+- **The revise queue is order-based (coordinator's reading).** Each repository's revise queue is an order of seats,
+  and each seat takes the next free version number at the moment it cuts. Numbers are never pre-assigned. Recorded
+  by the coordinator on epic `livespec-dev-tooling-6tgd2z` at 09:40:47Z on 2026-11-09, after two seats collided at
+  v163.
 - **Times are UTC.** The host clock is CET, so take timestamps with `date -u` and never label local time `Z`. On
   2026-11-01 two seats did, writing times an hour late into the ledger.
 - **Secrets.** Never `env | cut` to list variable names: on 2026-10-31 it leaked a private key's lines. List names with
