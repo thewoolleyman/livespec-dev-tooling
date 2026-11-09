@@ -296,6 +296,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: a compilation-cache warm build skipped as busy past two populate intervals fires the lag trigger",
+    "work_item": "livespec-dev-tooling-uyevam",
+    "first_seen": "2026-11-09"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: a coverage consumer that did not reuse reaches the maintainer",
     "work_item": "livespec-dev-tooling-akljpy",
     "first_seen": "2026-11-08"
@@ -390,6 +397,13 @@
     "heading": "## Scenario: a factory node keeps its factory label across a control-plane reboot",
     "work_item": "livespec-dev-tooling-izlx4g",
     "first_seen": "2026-10-16"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a failed compilation-cache warm build ends the busy-skip streak but keeps the lag start time",
+    "work_item": "livespec-dev-tooling-uyevam",
+    "first_seen": "2026-11-09"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -1244,6 +1258,13 @@
     "heading": "## Scenario: one fleet-wide command adopts the current plugin builds in every fleet member and refuses a split adoption",
     "work_item": "livespec-dev-tooling-7upzav",
     "first_seen": "2026-11-03"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: rebuilding a lagging compilation-cache warm set clears the lag trigger",
+    "work_item": "livespec-dev-tooling-uyevam",
+    "first_seen": "2026-11-09"
   },
   {
     "spec_root": "SPECIFICATION",
