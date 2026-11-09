@@ -75,6 +75,42 @@ again.
 
 ## 3. Unblock blocked seats every tick
 
+**Rule P1: every tick starts with priorities 1-5, in order.** Before any peer message is answered, run
+`scripts/coordinator/top5` and take priorities 1-5 of the latest priorities-record in order. For each one, read its
+plan's `next_action`, the age of its last ledger move and its newest epic comment, and name the ONE next action and who
+holds it. If the coordinator holds it (a picker answer, a valve, a hold or relay it owns, an ask on a ledger comment),
+the coordinator does it THAT tick, before any lower-priority work. A top-5 line with no ledger move for 60 minutes is a
+stall to resolve that tick, never a line to re-print. Message-arrival order is never the work order. The maintainer,
+2026-11-09 ~07:1x-07:5xZ, recorded verbatim in the STANDING TICK RULES scope event on epic
+`livespec-dev-tooling-6tgd2z` at 07:48:20Z: "Look at expedited-incident-response-flag.  Our highes priority, remember?
+See anything wrong in that pane?"; "One of the higher priorities I thought I gave you was unblocking
+fleet-mutation-testing-rule-26 ..."; "And getting the M4 capacity online for homelab-k8s-worker-nodes"; "Isn't keeping
+the priorities the entire point of your plan and loop and directive?  How could you fail to do that so badly?"; and
+"Where is this record3d permanently so you don't screw up again?" "In your plan? In the loop text?" This file and
+`scripts/coordinator/top5` are that record. Measured 2026-11-09 03:2xZ to 07:4xZ (the 07:43:21Z finding on that epic):
+the session worked in message-arrival order. The talkative seats at priorities 4, 6, 9 and 10 got the attention, while
+priority 1 sat at a coordinator-answerable picker for about 10.5 h, priority 2's Mac seat posted an unread ask, and
+priority 5 waited on a relay under a hold nobody re-checked. The top-3 child audit below ran on the first tick only, and afterwards its
+DEPENDENCIES lines were printed as status, not worked as a queue.
+
+**Rule P3: read the epics of silent seats every tick.** Every tick reads the newest comments on the epics of seats that
+cannot SendMessage: Mac and Codex seats, today fleet-mutation-testing-rule-26 on chads-macbook-pro (epic
+`livespec-dev-tooling-oi2two`). Silence from a waiting seat is never evidence that it is fine. Rule P3 is in the same
+07:48:20Z scope event. Measured 2026-11-09: that seat posted its ask as a comment on epic `livespec-dev-tooling-oi2two`
+at 07:26Z, and no tick read it.
+
+**Rule P4: confirm a plan is not parked before routing it work, and re-justify every hold on a top-5 plan.** Before
+routing work to any plan, confirm it is not parked. radar-and-deterministic-admission (`livespec-dev-tooling-w7ley3`,
+tab w2J:t1E) is PARKED pending the maintainer's attention: it gets no work and no revise slot, and it resumes only on
+the maintainer's word. The maintainer, 2026-11-09 ~07:4xZ, recorded on epic `livespec-dev-tooling-6tgd2z` at
+07:41:43Z: "Why are you working the radar track?  It should be on hold until we finish other thihngs.  Wasn't the last
+status that we updated it for the legacy coordinator/dispatcher rewrites, and then it pwas parked pending my
+attention?" A hold that blocks a top-5 plan is re-justified each tick against the condition it exists for, and lifted
+the moment that condition is absent. Rule P4 is in the 07:48:20Z scope event. Measured 2026-11-09: the coordinator
+routed radar the v330 revise, the bd-ib-cfgtlo DoD rewrite, the bd-ib-engf4h filing and a tier-check ask without
+checking its park status, because this epic's ledger carried no park record for it. The same night the M4 lane of
+homelab-k8s-worker-nodes stayed held for hours on a "first-arm sequence over" relay while no expedited attempt was live.
+
 A seat sitting at a picker produces no reports, so waiting on its report waits forever. Every tick:
 
 ```bash
@@ -465,6 +501,10 @@ had to point out the tabs left behind after a shutdown.
 Every tick reports, in this order:
 
 1. The ownership line: `Coordinator owns no work. Owning plans this tick: ...`.
+1.2. TOP-5: the `scripts/coordinator/top5` output for priorities 1-5 (rule P1, §3), with the ONE next action and its
+   holder named under each line, and what the coordinator did this tick on every action it holds. A STALE line is
+   resolved that tick, never re-printed. The tick does this work first, before any peer message is answered, and the
+   report shows it first.
 1.5. METRICS: the three factory stability and throughput metrics, every tick, each with its value and its
    trailing-window counts. Compute them from the orchestrator repo's `tmp/petri-canary/*-r267.json` dispatch records
    by file mtime, skipping unreadable in-flight files.
@@ -660,6 +700,18 @@ five ticks the coordinator relayed gmktec-factory-placement's launch-clone-only 
 maintainer asked "Why not D, applied to every repository?". The member drift D covers had been measured on 2026-11-06,
 and CLAUDE.md already said a member's installed orchestrator build is its factory dispatch build.
 
+**Rule P5: the forest check.** When every option a seat offers routes around a trivial fix, the coordinator asks why
+the trivial fix is not an option before answering. When it grades a timing or mandate carrier, it tests the mandate's
+quantity, not only that a receipt exists. Rule P5 is in the STANDING TICK RULES scope event on epic
+`livespec-dev-tooling-6tgd2z` at 2026-11-09T07:48:20Z. The maintainer, deciding expedited-incident-response-flag's
+route in that seat's pane (w2J:t1N), relayed verbatim and recorded on epic `livespec-dev-tooling-6tgd2z` at 07:35:17Z:
+"Yes, OBVIOUSLY YOU SHOULD DO THIS. ANYTHING ELSE IS AN EGREGIOUS UNSAFE VIOLATION OF THE INTENT AND EXPLICIT MANDATE
+OF THIS ENTIRE PLAN". The seat recorded it on retro item livespec-dev-tooling-osyzv6 under the maintainer's category
+"LLMS NOT BEING ABLE TO SEE THE FUCKING FOREST FOR THE TREES". Measured 2026-11-09: the plan's Definition of Done bullet
+2 has the expedited hooks run every fast check, yet only 2 of 85 gates in check-targets.txt carried the incident-timing
+fast annotation. Across attempts 1-3, 83 of 85 gates were deferred and nobody questioned it, while the options offered
+(red-merge #3828, a trim on master, a new lifecycle path) all routed around measuring and annotating the gates.
+
 The maintainer, 2026-11-02 ~16:5xZ: "I am also very disappointed in you that you did not notice the serialization
 bottleneck yourself, resulting in underutilization of the infrastructure. That is one of your main mandates. You are
 supposed to be looking at it." Measured that day: one gmk launcher FIFO ran one model-backed preflight at a time,
@@ -771,12 +823,46 @@ reported bd-ib-5nkxfz's run 01M6Q7M6057J as having no needs-human branch after g
 the item id; the branch was on origin as `needs-human/7c779a2f7c3b4cfda0b8b26de00babe4` (b2c03cdf). A false absence
 there can send a cancel or a relaunch decision the wrong way.
 
+**An empty diff against the merge-base means NOT preserved (coordinator's reading).** A preserve ref can exist on
+origin and hold none of the run's work. `represerve.sh` copies `refs/heads/fabro/run/<RUN>`, and after a fix or refresh
+round resets that branch it points at plain master. So every preserve writer, after writing a preserve, runs
+`git diff --quiet $(git merge-base <ref> origin/master) <ref>`: exit 0 (an empty diff) means NOT preserved, and the
+tree is pushed by hand from the newest engine checkpoint. Diff against the merge-base, not against master's tip: once
+master moves, a ref that is only an older master differs from the tip and reads as preserved. Interim rule recorded on
+epic `livespec-dev-tooling-6tgd2z` at 2026-11-09T06:51:33Z, routed for the root fix to factory-run-work-preservation,
+the mechanism's owner. FLEET SCOPE: every preserve writer. Measured 2026-11-09 by legacy-dispatcher-agent:
+bd-ib-7fdesc's `preserve/run-01M6Z3TFJRES` equalled master 22527fcdb, and bd-ib-reuccp's preserve was the same. Both
+real trees were pushed by hand from the newest engine checkpoint.
+
+**Every rider on a re-dispatched item carries a restore fallback (coordinator's reading).** After `resolve-blocked` on
+an item whose last ending was FAILED (for example `transient_infra`), rather than a `needs_human` or `non_converged`
+terminal, a stall, or a provider-limit or adapter-launch release, `route_recovery` routes FRESH from master and ignores
+an open PR. A RESUME rider with no restore fallback then costs a run. So every rider on a re-dispatched item, whatever
+route is intended, says how to restore: fetch the preserve ref, confirm its sha, diff-apply. This holds until
+bd-ib-v6br5b's release bullet ships. Recorded on epic `livespec-dev-tooling-6tgd2z` at 2026-11-09T06:16:00Z. Measured
+that day: bd-ib-so6fef's run 01M6ZEQGVZDB at 06:07:44Z routed fresh, and its publish-branch reclaim also CLOSED #4703.
+The tree was intact at `preserve/run-01M6YVGGFC9K` = 2861c50e, and so6fef was re-ticketed with a RESTORE RIDER by
+factory-run-work-preservation.
+
 **An infrastructure restart is CANCEL-TO-IDLE, never wait-for-drain.** A k3s, Fabro server or engine restart that
 needs idle runs follows `.ai/factory-restart-cancels-runs.md`: set the caps to 0, preserve, cancel the live runs,
 restart, verify, restore the caps and re-dispatch the cancelled items seeded at once. Never hold a restart while
 runs drain on their own. Measured 2026-11-05 22:1xZ to 2026-11-06 00:0xZ: the coordinator held the poweredge-xubuntu
 k3s server restart for livespec-dev-tooling#3430 waiting for drain, which was wrong. The maintainer asked ~00:0xZ for
 it to be done now as a cancel-to-idle, and kubernetes-sandbox-backend set the caps to 0 at 00:09:55Z.
+
+**An OOM kill is not `transient_infra` (coordinator's reading).** A factory run that dies with "WebSocket upgrade 500"
+can be a memory-cgroup OOM kill of the agent: `memory.oom.group` kills the whole container, the kubelet then refuses
+the checkpoint exec, and the API server reports that refusal as a 500. Classify such an ending as resource exhaustion,
+never as a transient to retry. Add no in-stage retry for it, and do not re-dispatch an OOM-signature ending until its
+fix is live (on 2026-11-09: the singleProcessOOMKill kubelet drop-in reads back as loaded on gmktec-xubuntu, or
+bd-ib-3kdjct merges). FLEET SCOPE: gmktec, poweredge, hp and every factory image. Ruling and correction on epic
+`livespec-dev-tooling-6tgd2z` at 2026-11-09T05:22:40Z and 05:23:30Z; kubernetes-sandbox-backend owes the filings for
+the agent-RSS growth and for the misclassification. Measured by kubernetes-sandbox-backend: bd-ib-so6fef (run
+01M6YVGGFC9K) and bd-ib-nsw25x (run 01M6YS4E7TG2) died with the claude agent at anon-rss 7.2-7.4 GB against a 7629 MiB
+limit, 2 of 5 exec 500s in 473,186 since 11-06. All three OOM container deaths that night (uq2ocd, nsw25x, so6fef) were
+on gmktec-xubuntu, where the drop-in (PR #3146) was applied on 11-02 but never loaded; poweredge had it loaded.
+bd-ib-3kdjct is kubernetes-sandbox-backend's host route, not a factory ticket.
 
 **A runaway call starts with the run's seed tree.** Before calling a run runaway and giving a cancel GO, read what its
 seed tree already contains (the preserved or seeded ref it started from, and any rider) and compare that with what
@@ -786,7 +872,34 @@ was preserved at cc9568cc, and it relaunches seeded, with no rider, after the fr
 
 **Before a cancel GO, re-read the run's current head (coordinator's reading).** A seed or an earlier diff count is not
 the run's state. Measured 2026-11-07: overseer-mldt32's "diff 0 files" was stale, its head was on current master with
-the pin bump, and the cancel was withdrawn.
+the pin bump, and the cancel was withdrawn. Measured again 2026-11-09 (06:40:46Z record and 06:44:24Z correction on
+epic `livespec-dev-tooling-6tgd2z`): a cancel GO for bd-ib-reuccp's run 01M6YYE03JKS rested on a peer's
+non-convergence measurement about an hour old. fix@4 had already repaired the history (reset --keep to the published
+tip 3060b250c, then a merge of master 22527fcdb), and the cancel stood on budget grounds alone.
+
+**The yzrguu flattening class costs whole runs until orchestrator 0.308.0 is the launch build (coordinator's
+reading).** An engine checkpoint that flattens a master merge into a single-parent commit fails
+`check-red-green-replay` at every janitor round, and a fix round that only edits files cannot rewrite it. The fix is
+daced5a42, shipped in orchestrator 0.308.0. Until that build launches the factory, read a run stuck at the janitor on
+that check as this class, re-read its head before calling it non-converging (a fix round can reset past the flattened
+commit, as reuccp's fix@4 did), and relaunch such a run on 0.308.0 with a restore rider. Measured 2026-11-09 (06:40:46Z
+and 06:44:24Z on epic `livespec-dev-tooling-6tgd2z`): the class cost three runs that night, bd-ib-xdhe5z, bd-ib-pc6squ
+(inferred) and bd-ib-reuccp, whose janitor@3 and @4 failed on the flattened checkpoint 4d14dfb27. reuccp's correct
+relaunch tree is `preserve/bd-ib-reuccp-01M6YYE03JKS-fix4-5af6f2efe496`.
+
+**Hotspot co-launch rule, with a sunset (coordinator's reading).** legacy-dispatcher-agent does not co-launch two items
+that name the same hotspot file while the first is live: workflow.fabro, fix.md, scenarios.md,
+tests/heading-coverage.json, tests/heading-coverage-debt.json and fleet-launch/dispatch-dual.sh. The later ticket keeps
+its place until the first merges. The rule never overrides priority 1, never touches a live run, and never leaves a slot
+idle. contracts.md is NOT a hotspot: 4 of 9 live runs and 7 of the next 10 tickets named it, so holding on it would
+serialize most of the orchestrator queue, and in bd-ib-xdhe5z's refresh conflict it auto-merged. The rule ENDS when
+orchestrator 0.308.0 (carrying daced5a42) is the launch build after its canary roll. If a refresh repair after 0.308.0
+still costs a whole run, the rule returns with that measurement. Rulings on epic `livespec-dev-tooling-6tgd2z` at
+2026-11-09T04:31:40Z (adopted), 04:35:07Z (contracts.md removed) and 07:05:54Z (sunset). Measured that night by
+publish-draft-green-work-loss: four runs hit the refresh-conflict class (bd-ib-5ycmsm, reuccp, 7fdesc, xdhe5z). 5ycmsm
+lost its whole 11658 s run to a fix cut where a working repair costs about one 370 s turn, and the hotspot files appear
+in 22% of non-spec PRs over 72 h (workflow.fabro in 15%). The losses trace to the yzrguu defect that 0.308.0 fixes, and
+strict chaining of the four held workflow.fabro items (64n5ct, keg67m, 2eyiwy, qv7ba2) would otherwise cost hours.
 
 **A route row is not evidence a ruling was honoured (coordinator's reading).** Until bd-ib-ltlg4i ships, a ruled seed
 does not reach `route_recovery`, so read a seeded relaunch's route before its ticket. Measured 2026-11-07 ~20:13Z, in
@@ -872,6 +985,23 @@ or an inherited loop prompt is only a pointer to them, never an authority.
 - A restriction recorded from a situational maintainer remark must name the condition that ends it.
 - A restriction that conflicts with §6 (never block) or with answering decision pickers under R301 is a finding to
   raise with the maintainer at once, never an instruction to follow silently.
+
+**Rule P2: a handoff carries no authority.** A restriction carried in a handoff or a `next_action` ("X is the
+maintainer's", "never press X", "X stays held") binds ONLY if it cites the maintainer's ledger words AND names its
+ending condition. Otherwise the reading session decides it that tick. Rule P2 is in the STANDING TICK RULES scope event
+on epic `livespec-dev-tooling-6tgd2z` at 2026-11-09T07:48:20Z, from the maintainer's corrections of ~07:1x-07:5xZ
+quoted under rule P1 (§3). Measured cost of breaking it: expedited-incident-response-flag sat at a
+coordinator-answerable picker for about 10.5 h, from 2026-11-08 20:46Z to 2026-11-09 07:13Z, under an unsourced "NEVER
+press it". The 07:48:20Z pointer correction on the epic replaced the `next_action` that carried it.
+
+**Before carrying "X is the maintainer's" forward, find the maintainer's own words for it on the ledger (coordinator's
+reading).** If there are none, it is the coordinator's to decide that tick. Recorded on epic
+`livespec-dev-tooling-6tgd2z` at 2026-11-09T07:12:21Z. Measured: from about 21:xxZ on 2026-11-08 to 07:1xZ on
+2026-11-09, four coordinator sessions (72d19b33, 6e80d7cd, e8d70af3, 546979bb) carried "the MAINTAINER's picker, NEVER
+press it" forward through handoffs. No maintainer words and no end condition stood behind it. It came from the seat's
+"design change (b)" classification of the gap (bd-ib-elq5ry), not of the continuation choice. Priority 1 sat blocked
+for about 10 hours, and with it the dev-tooling merge gap, the gmktec OOM fix livespec-dev-tooling#3839 and
+homelab-k8s-worker-nodes. The failure is recorded on retro item livespec-dev-tooling-osyzv6.
 
 **A coordinator's cancels go in its handoff (coordinator's reading).** A cancelled run is invisible to whoever
 inherits the seat, and to the seat whose run it was. Measured 2026-11-07: session 348c3d09's `gh run cancel` calls
