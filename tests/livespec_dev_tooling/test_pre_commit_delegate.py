@@ -459,6 +459,7 @@ def test_a_passing_delegated_aggregate_records_reusable_same_tree_evidence(
         tree_hash="a" * 40,
         exit_status=0,
         output_checksum="sha256:job-output",
+        full_aggregate=True,
     )
 
     assert status == 0
@@ -475,14 +476,25 @@ def test_a_failed_or_unattributable_delegated_aggregate_records_no_evidence(
 ) -> None:
     """Only a passed verdict naming its tree, Job, and output may stand in for the suite."""
     cases: list[dict[str, object]] = [
-        {"exit_status": 1, "output_checksum": "sha256:job-output", "job_name": "gate-1"},
-        {"exit_status": 0, "output_checksum": None, "job_name": "gate-1"},
-        {"exit_status": 0, "output_checksum": "sha256:job-output", "job_name": None},
+        {
+            "exit_status": 1,
+            "output_checksum": "sha256:job-output",
+            "job_name": "gate-1",
+            "full_aggregate": True,
+        },
+        {"exit_status": 0, "output_checksum": None, "job_name": "gate-1", "full_aggregate": True},
+        {
+            "exit_status": 0,
+            "output_checksum": "sha256:job-output",
+            "job_name": None,
+            "full_aggregate": True,
+        },
         {
             "exit_status": 0,
             "output_checksum": "sha256:job-output",
             "job_name": "gate-1",
             "tree_hash": None,
+            "full_aggregate": True,
         },
     ]
     for index, case in enumerate(cases):
@@ -491,3 +503,112 @@ def test_a_failed_or_unattributable_delegated_aggregate_records_no_evidence(
         fields: dict[str, object] = {"local": False, "reason": "r", "tree_hash": "a" * 40, **case}
         _, token = _run_main_with_delegated_verdict(tmp_path=sub, monkeypatch=monkeypatch, **fields)
         assert token == {}, case
+
+
+def _stage_repo(*, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, files: dict[str, str]) -> str:
+    """Build a repo with one base commit, stage `files`, and return the staged tree."""
+    monkeypatch.setenv("GIT_LIVESPEC_STRIP_PROBE", "1")
+    for name in [name for name in os.environ if name.startswith("GIT_")]:
+        monkeypatch.delenv(name)
+    _git(cwd=tmp_path, args=["init", "-q", "-b", "main"])
+    _ = (tmp_path / "keep.py").write_text("KEEP = 1\n", encoding="utf-8")
+    _ = (tmp_path / "pyproject.toml").write_text(
+        "[tool.livespec_dev_tooling]\ndelegated_pre_commit = true\n", encoding="utf-8"
+    )
+    _git(cwd=tmp_path, args=["add", "-A"])
+    _git(cwd=tmp_path, args=["commit", "-q", "-m", "base"])
+    for name, body in files.items():
+        if name == "RENAME-keep.py":
+            _git(cwd=tmp_path, args=["mv", "keep.py", "renamed.py"])
+            continue
+        target = tmp_path / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        _ = target.write_text(body, encoding="utf-8")
+        _git(cwd=tmp_path, args=["add", name])
+    return _git(cwd=tmp_path, args=["write-tree"])
+
+
+@pytest.mark.parametrize(
+    ("files", "ran_full_aggregate"),
+    [
+        ({"docs/readme.md": "x\n"}, False),
+        ({"tests/test_new.py": "x = 1\n"}, False),
+        ({"RENAME-keep.py": ""}, False),
+        ({"pkg/impl.py": "x = 1\n"}, True),
+        ({"tests/test_new.py": "x = 1\n", "pkg/impl.py": "x = 1\n"}, False),
+        ({"tests/test_new.py": "x = 1\n", "ansible/files/foo.py": "x = 1\n"}, False),
+        ({"tests/test_new.py": "x = 1\n", "livespec_dev_tooling/impl.py": "x = 1\n"}, True),
+        ({"tests/test_a.py": "x = 1\n", "tests/test_b.py": "x = 1\n"}, True),
+    ],
+)
+def test_a_delegated_pass_claims_the_full_aggregate_only_when_the_staged_tree_selects_it(
+    *,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    files: dict[str, str],
+    ran_full_aggregate: bool,
+) -> None:
+    """A Job that passed on the doc-only or Red-leg subset is not a full-aggregate pass."""
+    from returns.result import Success
+
+    from livespec_dev_tooling.gate_remote_client import GateRunRequest
+    from livespec_dev_tooling.gate_remote_verdict import GATE_PASSED, GateVerdict
+
+    module = _module()
+    tree = _stage_repo(tmp_path=tmp_path, monkeypatch=monkeypatch, files=files)
+    monkeypatch.setattr(module, "gates_kubeconfig_readable", lambda: True)
+    monkeypatch.setattr(module, "_staged_commit", lambda **_kwargs: "b" * 40)
+    monkeypatch.setattr(module, "resolve_renderer", lambda **_kwargs: Path("renderer"))
+    monkeypatch.setattr(module, "run_host_authority_members", lambda **_kwargs: ())
+    monkeypatch.setattr(
+        module,
+        "gate_remote_request",
+        lambda **_kwargs: Success(
+            GateRunRequest(
+                repo_root=tmp_path,
+                mirror_url="mirror",
+                manifest="manifest",
+                gate_ref="refs/gates/tree",
+            )
+        ),
+    )
+    monkeypatch.setattr(
+        module,
+        "run_gated_push",
+        lambda **_kwargs: GateVerdict(
+            state=GATE_PASSED,
+            detail="the Job passed",
+            token_written=True,
+            job_name="gate-pre-commit-1",
+            tree_hash=tree,
+        ),
+    )
+
+    verdict = module.run_pre_commit(repo_root=tmp_path)
+
+    assert verdict.exit_status == 0
+    assert getattr(verdict, "full_aggregate", None) is ran_full_aggregate
+
+
+def test_a_delegated_pass_on_a_non_full_subset_records_no_evidence_and_says_so(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A doc-only pass must leave no token the pre-push gate could memoize the suite on."""
+    status, token = _run_main_with_delegated_verdict(
+        tmp_path=tmp_path,
+        monkeypatch=monkeypatch,
+        local=False,
+        reason="the Job passed",
+        job_name="gate-pre-commit-1",
+        tree_hash="a" * 40,
+        exit_status=0,
+        output_checksum="sha256:job-output",
+        full_aggregate=False,
+    )
+
+    assert status == 0
+    assert token == {}
+    output = capsys.readouterr().err
+    assert "no pre-commit aggregate evidence recorded" in output
+    assert "a" * 40 in output
+    assert "gate-pre-commit-1" in output
