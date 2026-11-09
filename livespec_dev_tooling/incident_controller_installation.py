@@ -29,6 +29,8 @@ __all__: list[str] = ["ControllerInstallation"]
 _PRIVATE_DIRECTORY_MODE = 0o700
 _SECRET_BYTES = 32
 _PORT_LIMIT = 65536
+_DEFAULT_TARGET_BRANCH = "master"
+_BRANCH_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*(/[A-Za-z0-9][A-Za-z0-9._-]*)*")
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -50,6 +52,7 @@ class ControllerInstallation:
     port: int
     config: Path
     ci_identity_policy: CiIdentityPolicy | None = None
+    target_branch: str = _DEFAULT_TARGET_BRANCH
 
     @classmethod
     def load(cls, *, config: Path) -> ControllerInstallation | None:
@@ -58,7 +61,7 @@ class ControllerInstallation:
             data = _record(path=config)
             if (
                 data is None
-                or set(data)
+                or set(data) - {"target_branch"}
                 != {
                     "manifest",
                     "candidate_uid",
@@ -106,6 +109,7 @@ class ControllerInstallation:
                 or query in {webhook, control}
                 or type(data["port"]) is not int
                 or not 0 < data["port"] < _PORT_LIMIT
+                or not _valid_branch(name=data.get("target_branch", _DEFAULT_TARGET_BRANCH))
             ):
                 return None
             return cls(
@@ -126,9 +130,20 @@ class ControllerInstallation:
                 ci_identity_policy=load_identity_policy(
                     descriptor=manifest.get("ci_identity_policy"), repository=data["repository"]
                 ),
+                target_branch=data.get("target_branch", _DEFAULT_TARGET_BRANCH),
             )
         except (OSError, ValueError, TypeError, KeyError, importlib.metadata.PackageNotFoundError):
             return None
+
+
+def _valid_branch(*, name: object) -> bool:
+    """A plain branch name: no option-like lead, no `..`, no `.lock` component, no empty part."""
+    return (
+        isinstance(name, str)
+        and _BRANCH_NAME.fullmatch(name) is not None
+        and ".." not in name
+        and not any(part.endswith(".lock") for part in name.split("/"))
+    )
 
 
 def _valid_build(*, manifest: dict[str, Any]) -> bool:
