@@ -833,11 +833,17 @@ def test_a_gate_that_never_reaches_a_terminal_state_deletes_its_job() -> None:
     assert "delete-ref" not in cluster.kinds
 
 
-@pytest.mark.parametrize("interruption", [signal.SIGTERM, signal.SIGINT])
+@pytest.mark.parametrize("interruption", [signal.SIGTERM, signal.SIGINT, signal.SIGHUP])
 def test_an_interrupted_wait_deletes_its_job_and_published_refs(
     *, interruption: signal.Signals
 ) -> None:
-    """TERM and INT leave no queued Job or mirror input behind."""
+    """TERM, INT and HUP leave no queued Job or mirror input behind.
+
+    HUP is how a pre-commit client actually hears the stall window: lefthook
+    runs each hook command in its own session, so gate-run.sh's group TERM
+    reaches lefthook, not the client, and the client receives SIGHUP when
+    lefthook exits and its session is hung up (livespec-dev-tooling-4rliwe).
+    """
     cluster = _StubCluster(job_states=("Suspended",))
     previous = signal.getsignal(interruption)
 
