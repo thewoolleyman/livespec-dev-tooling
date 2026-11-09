@@ -32,7 +32,7 @@ def observe_retained_job(*, binding: dict[str, Any], read: ForgeRead) -> tuple[s
     attempt = forge_record(read=read, path=attempt_path)
     jobs = attempt_jobs(read=read, path=f"{attempt_path}/jobs")
     check = forge_record(read=read, path=check_path)
-    if not attempt or jobs is None or not check:
+    if not attempt or not jobs or not check:
         return _facts(status="unavailable", reason="retained forge observation unavailable")
     matched = [v for v in jobs if v.get("id") == binding["job_id"]]
     job = matched[0] if len(matched) == 1 else {}
