@@ -31,7 +31,7 @@ glob its OWN namespace dir, so it can never erase another namespace's
 data. `TMPDIR` isolation extends the same guarantee to any other
 shared-temp collision not yet discovered.
 
-`_COVERAGE_NAMESPACES` maps each coverage-touching target to a
+`COVERAGE_NAMESPACES` (in `_dispatcher_coverage_namespaces`) maps each coverage-touching target to a
 namespace key. Targets that share a key share one isolated dir (a
 producer and the consumer that reads its data file); targets with
 distinct keys are fully isolated and run concurrently with no edge.
@@ -80,6 +80,10 @@ if str(_VENDOR_DIR) not in sys.path:
 
 import structlog  # noqa: E402  — vendor-path-aware import after sys.path insert.
 
+from livespec_dev_tooling._dispatcher_coverage_namespaces import (  # noqa: E402
+    build_namespace_dirs,
+    target_env,
+)
 from livespec_dev_tooling._pyright_warmup import warm_locked_pyright  # noqa: E402
 from livespec_dev_tooling.allowed_cpus import current_allowed_cpu_count  # noqa: E402
 from livespec_dev_tooling.check_failure_digest import (  # noqa: E402
@@ -104,26 +108,12 @@ __all__: list[str] = []
 # needed). This RETIRES the former collision edge that serialized
 # check-check-coverage-incremental after check-per-file-coverage: the
 # incremental gate now owns its own namespace and runs fully concurrent.
-_COVERAGE_NAMESPACES: dict[str, str] = {
-    # The full-tree coverage pair shares one data file: per-file-coverage
-    # PRODUCES it (runs `pytest -n auto --cov`), check-coverage CONSUMES
-    # it (runs `coverage report` against the same file). Same namespace ->
-    # same isolated COVERAGE_FILE.
-    "check-per-file-coverage": "full-tree",
-    "check-coverage": "full-tree",
-    # The path-scoped incremental gate runs its OWN coverage-instrumented
-    # pytest. Its own namespace isolates its data file from the full-tree
-    # pair's `coverage combine`, so it no longer needs to be serialized
-    # after per-file-coverage (the retired 7us.6 collision edge).
-    "check-check-coverage-incremental": "incremental",
-}
-
 # Genuine read-after-write DATA dependencies (consumer -> producer).
 # The consumer reads the producer's isolated COVERAGE_FILE, so it must
 # start only after the producer has finished writing it. This is the
 # ONLY ordering edge that survives the isolation redesign; it is data
 # flow, not collision avoidance. Both endpoints MUST share a namespace
-# in _COVERAGE_NAMESPACES (they read/write the same file).
+# in COVERAGE_NAMESPACES (they read/write the same file).
 _COVERAGE_CONSUMERS: dict[str, str] = {
     "check-coverage": "check-per-file-coverage",
 }
@@ -167,66 +157,6 @@ def _cap_workers(*, requested: int | None, allowed: int) -> int:
     """Return the effective worker count: min(allowed CPUs, requested or DEFAULT)."""
     cap = requested if requested is not None else _DEFAULT_MAX_WORKERS
     return max(1, min(allowed, cap))
-
-
-def _build_namespace_dirs(
-    *, targets: list[str], skip_set: frozenset[str], root: Path
-) -> dict[str, Path]:
-    """Mint one isolated coverage dir per distinct namespace key in play.
-
-    Walks the non-skipped targets, collects the distinct namespace keys
-    they map to via `_COVERAGE_NAMESPACES`, and creates one fresh temp
-    directory per key under `root` (each with a `tmp/` subdir for the
-    target's TMPDIR). Returns a key -> dir mapping. Targets that share a
-    key (the producer/consumer coverage pair) resolve to the same dir, so
-    the consumer reads the producer's COVERAGE_FILE; targets with
-    distinct keys get separate dirs and can never erase each other's
-    data via `coverage combine`.
-
-    `root` MUST be OUTSIDE the governed repo (the system temp dir): the
-    per-target TMPDIR points into these dirs, and pytest's `tmp_path`
-    fixture derives from TMPDIR — a TMPDIR inside the repo's git worktree
-    breaks tests that assume `tmp_path` is not within any git repo.
-    """
-    keys = {
-        _COVERAGE_NAMESPACES[name]
-        for name in targets
-        if name not in skip_set and name in _COVERAGE_NAMESPACES
-    }
-    dirs: dict[str, Path] = {}
-    for key in sorted(keys):
-        ns_dir = Path(tempfile.mkdtemp(prefix=f"covns-{key}-", dir=str(root)))
-        (ns_dir / "tmp").mkdir(exist_ok=True)
-        dirs[key] = ns_dir
-    return dirs
-
-
-def _target_env(*, name: str, namespace_dirs: dict[str, Path]) -> dict[str, str] | None:
-    """Return the isolated env for a coverage-touching target, else None.
-
-    For a target mapped to a coverage namespace, returns a COPY of the
-    process environment with COVERAGE_FILE pointed at `<ns_dir>/.coverage`
-    and TMPDIR pointed at `<ns_dir>/tmp`. A COVERAGE_PROCESS_START child
-    spawned by the target inherits this COVERAGE_FILE, so its data lands
-    in the same isolated dir. Returns None for non-coverage targets (the
-    subprocess then inherits the parent env unchanged).
-
-    It also exports LIVESPEC_COVERAGE_WRITERS: every coverage-touching
-    target whose namespace is in play in this aggregate, so
-    per_file_coverage's unreadable-data diagnostic names each process that
-    could have written coverage in the run (work-item
-    livespec-dev-tooling-3wz453).
-    """
-    key = _COVERAGE_NAMESPACES.get(name)
-    if key is None:
-        return None
-    ns_dir = namespace_dirs[key]
-    env = dict(os.environ)
-    env["COVERAGE_FILE"] = str(ns_dir / ".coverage")
-    env["TMPDIR"] = str(ns_dir / "tmp")
-    writers = sorted(target for target, ns in _COVERAGE_NAMESPACES.items() if ns in namespace_dirs)
-    env["LIVESPEC_COVERAGE_WRITERS"] = ", ".join(writers)
-    return env
 
 
 def _run_one(*, name: str, cwd: Path, env: dict[str, str] | None) -> TargetResult:
@@ -377,7 +307,7 @@ def _submit_target(
     every coverage producer and the now-independent incremental gate —
     runs immediately with its isolated coverage env.
     """
-    env = _target_env(name=name, namespace_dirs=namespace_dirs)
+    env = target_env(name=name, namespace_dirs=namespace_dirs)
     producer = _COVERAGE_CONSUMERS.get(name)
     if producer is not None and producer in futures:
         return pool.submit(_deferred_run, name=name, prereq_fut=futures[producer], cwd=cwd, env=env)
@@ -397,7 +327,7 @@ def _run_all(
     # (OUTSIDE the governed repo), never under cwd: pytest's `tmp_path`
     # derives from the per-target TMPDIR, and a TMPDIR inside the repo's
     # git worktree breaks tests that assume `tmp_path` is not in a repo.
-    namespace_dirs = _build_namespace_dirs(
+    namespace_dirs = build_namespace_dirs(
         targets=targets, skip_set=skip_set, root=Path(tempfile.gettempdir())
     )
     futures: dict[str, Future[TargetResult]] = {}
