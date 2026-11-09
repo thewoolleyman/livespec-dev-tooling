@@ -75,39 +75,101 @@ and factory/host proof is not manufactured by fixture callbacks.
 
 ## The release and pin dispatch screen
 
+### The observer route
+
 `POST /release/screen` is a read-only route of the observer, taking the query
 credential (`incident_release_screen.py`). It reads only the controller's own
 record and its independent reference clone. Its body is the exact
-`{repository, source_sha, tag}` of one release, and it answers in one of three
-ways:
+`{repository, source_sha, tag}` of one release.
+
+A **fence** is a recovery action (`actions`) or a regression
+(`release_regressions`) retained against a registration. The route answers
+in one of three ways:
 
 - `refused` with `incident-release-recovery-retained`, in either of two cases:
   - the source commit or the tag is attributed (`release_attribution` or
-    `release_adoption_intents`) to a registration that a retained recovery
-    action or regression fences;
-  - a recovery action that is not yet `completed` has a landed head that is an
-    ancestor of the source.
+    `release_adoption_intents`) to a fenced registration;
+  - a fenced registration's landed head is an ancestor of the source, and no
+    published inverse of it is.
 - `refused` with `incident-release-source-unverifiable`, when the reference
-  clone cannot decide that ancestry.
-- `clear` otherwise. A record with no retained action is always clear.
+  clone cannot decide one of those ancestries.
+- `clear` otherwise. A record with no fence is always clear.
 
-A dispatch step runs the entrance `python -m
-livespec_dev_tooling.incident_release_entry --observed-repository OWNER/REPO
---repository OWNER/SOURCE --source-sha SHA --tag TAG`. It reads
-`LIVESPEC_INCIDENT_OBSERVER_URL` and `LIVESPEC_INCIDENT_OBSERVER_QUERY_TOKEN`.
+Only a `recovery-inverse:<action>:commit:<sha>` receipt proves a published
+inverse, and it clears the head only for a source that contains that merge
+commit. Each of these keeps a source holding the incident head refused:
 
-The entrance exits 0 with a no-op line, and makes no call, in two cases: when
-the URL is unset, and when the source repository is not the observed one. A
-dispatch with no incident observer therefore runs exactly as before.
+- a pending action;
+- a `rollback-conflict:` receipt, which completes the action without
+  reverting anything;
+- any other receipt;
+- an inverse naming another action.
 
-Once configured, the entrance fails closed. A named refusal, an unreachable
-observer, a misconfiguration or a malformed reply each exit 1 and name why.
+A regression is cleared only by a proven inverse recorded for the same
+registration. The spec requires an attributable regression to trigger
+recovery, and until an inverse is published, nothing has recovered it.
 
-Recorded residual: once a revert has completed, an unattributed release cut
-from a pre-revert commit passes the screen, because the inverse receipt is
-opaque to it.
+Because of this rule, a release cut from a commit before the revert stays
+refused after the revert lands: it contains the incident head but not the
+inverse.
 
-The screen is not yet wired into `reusable-release-dispatch.yml` or
-`reusable-bump-pin-from-dispatch.yml`. Both workflow edits, and the
-reachability they need from GitHub-hosted runners, are tracked on
-livespec-dev-tooling-wbvbj6.
+### The dispatch entrance
+
+A dispatch step runs:
+
+```bash
+python -m livespec_dev_tooling.incident_release_entry \
+  --observed-repository OWNER/REPO --repository OWNER/SOURCE \
+  --source-sha SHA --tag TAG
+```
+
+It reads two environment variables:
+
+- `LIVESPEC_INCIDENT_OBSERVER_URL`, the observer's **base** URL. The entrance
+  appends `/release/screen` to its path itself.
+- `LIVESPEC_INCIDENT_OBSERVER_QUERY_TOKEN`, the observer's query credential.
+
+With no URL, the entrance prints a no-op line and exits 0 without any call. It
+does the same for a source repository that is not the observed one. Once a URL
+is set, it fails closed, and each of these exits 1 and names why:
+
+- a named refusal from the observer;
+- an unreachable observer;
+- a malformed reply, or a reply past the 64 KiB bound;
+- a misconfiguration: a URL that already ends in `/release/screen`, a
+  non-https URL, a missing token, or an empty observed repository.
+
+### Workflow wiring and its operator contract
+
+Both reusable dispatch workflows now run the entrance:
+
+- `reusable-release-dispatch.yml` runs it at the end of the
+  `await-sandbox-image` job, AFTER the sandbox-image wait, so the verdict is
+  fresh when `dispatch` fires. A refusal fails the job, and `dispatch` needs
+  that job, so no sibling receives the release.
+- `reusable-bump-pin-from-dispatch.yml` runs it before pin autodiscovery, from
+  the `.livespec-dev-tooling` support checkout's environment. A consumer's own
+  pinned dev-tooling may predate the entrance.
+
+Each step resolves the tag to its peeled commit (`refs/tags/<tag>^{}`) and
+falls back to the plain ref for a lightweight tag. Each step is skipped
+entirely unless the caller sets the variable, so a repository that sets
+nothing runs exactly as before.
+
+| Caller setting | Kind | What it is |
+| --- | --- | --- |
+| `LIVESPEC_INCIDENT_RELEASE_SCREEN_URL` | repository variable | The observer's base URL, reachable from the job's runner. This is NOT the tailnet `LIVESPEC_INCIDENT_OBSERVER_URL` the incident CI job uses, because the dispatch jobs run on GitHub-hosted `ubuntu-latest`. |
+| `LIVESPEC_INCIDENT_OBSERVED_REPOSITORY` | repository variable | The `owner/repo` that observer watches. The release side falls back to the caller's own repository. The pin side has no fallback. |
+| `LIVESPEC_INCIDENT_OBSERVER_QUERY_TOKEN` | repository secret | The observer's query token. It reaches the reusable workflow through the caller shim's `secrets: inherit`. |
+
+Configuring the pin side has a trap. A consumer usually screens a SOURCE that
+another repository's observer watches. If a consumer sets the URL but not
+`LIVESPEC_INCIDENT_OBSERVED_REPOSITORY`, the pin step passes an empty observed
+repository. The entrance refuses that by name. It does not pass in silence,
+which is what it would do if the observed repository defaulted to the
+consumer itself.
+
+Enabling the screen still requires an observer route that GitHub-hosted
+runners can reach. The observer is tailnet-only today, apart from
+`/callback`. Each repository's shim pin must also be bumped to a release that
+carries this wiring. Both steps are tracked on livespec-dev-tooling-wbvbj6.
