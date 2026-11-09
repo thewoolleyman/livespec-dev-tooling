@@ -38,6 +38,7 @@ from livespec_dev_tooling._incident_observer_store import (
 )
 from livespec_dev_tooling._incident_recovery_journal_identity import JournalCodec
 from livespec_dev_tooling.incident_controller_installation import ControllerInstallation
+from livespec_dev_tooling.incident_git import IncidentGitError
 from livespec_dev_tooling.incident_recovery_app import (
     RECOVERY_APP_CREDENTIAL,
     AppRefusal,
@@ -101,7 +102,14 @@ class PrincipalService:
         handler: Callable[..., dict[str, Any]] = getattr(self.principal, operation)
         try:
             return handler(payload=payload)
-        except (OSError, ValueError, TypeError, KeyError, subprocess.SubprocessError) as error:
+        except (
+            OSError,
+            ValueError,
+            TypeError,
+            KeyError,
+            subprocess.SubprocessError,
+            IncidentGitError,
+        ) as error:
             return _refused(reason=f"{operation} unavailable: {type(error).__name__}")
 
 

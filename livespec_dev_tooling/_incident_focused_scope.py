@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import ast
 import os
-import subprocess
 from pathlib import Path
 
 from livespec_dev_tooling._incident_focused_types import FocusedScope, Identity
 from livespec_dev_tooling.config import derive_source_prefixes, is_generated, load_config
+from livespec_dev_tooling.incident_git import git_text
 
 __all__: list[str] = [
     "changed_paths",
@@ -20,16 +20,6 @@ __all__: list[str] = [
 ]
 
 _MAX_SECONDS = 60
-
-
-def _git(*, root: Path, args: tuple[str, ...]) -> str:
-    return subprocess.run(  # noqa: S603 — fixed git executable; argv is never shell evaluated.
-        ["git", *args],  # noqa: S607 — use the configured git on PATH.
-        cwd=root,
-        check=True,
-        capture_output=True,
-        text=True,
-    ).stdout.strip()
 
 
 def scoped_path(*, root: Path, name: str) -> Path | None:
@@ -116,8 +106,8 @@ def preflight(*, repo_root: Path, identity: Identity, scope: FocusedScope) -> st
         return "timeout must be below sixty seconds"
     if not exact_tree(repo_root=repo_root, identity=identity, tree_hash=scope.tree_hash):
         return "worktree differs from exact incident tree"
-    untracked = _git(
-        root=repo_root,
+    untracked = git_text(
+        repo=repo_root,
         args=("ls-files", "--others", "--exclude-standard", "-z"),
     ).split("\0")
     if any(
@@ -129,22 +119,22 @@ def preflight(*, repo_root: Path, identity: Identity, scope: FocusedScope) -> st
 
 def exact_tree(*, repo_root: Path, identity: Identity, tree_hash: str) -> bool:
     return (
-        _git(root=repo_root, args=("write-tree",)) == tree_hash
-        and _git(root=repo_root, args=("rev-parse", "HEAD")) == identity.head_sha
-        and not _git(root=repo_root, args=("diff", "--name-only"))
+        git_text(repo=repo_root, args=("write-tree",)) == tree_hash
+        and git_text(repo=repo_root, args=("rev-parse", "HEAD")) == identity.head_sha
+        and not git_text(repo=repo_root, args=("diff", "--name-only"))
     )
 
 
 def changed_paths(*, repo_root: Path, identity: Identity, scope: FocusedScope) -> set[str]:
     changed = set(
-        _git(
-            root=repo_root,
+        git_text(
+            repo=repo_root,
             args=("diff", "--name-only", "-z", identity.base_sha, scope.tree_hash),
         ).split("\0")
     ) - {""}
     previous = set(
-        _git(
-            root=repo_root,
+        git_text(
+            repo=repo_root,
             args=("diff", "--name-only", "-z", identity.base_sha, identity.head_sha),
         ).split("\0")
     ) - {""}
@@ -179,8 +169,8 @@ def select_tests(
     if not selected or any(not (repo_root / name).is_file() for name in selected):
         return "explicit existing tests required"
     tracked = set(
-        _git(
-            root=repo_root,
+        git_text(
+            repo=repo_root,
             args=("ls-files", "-z"),
         ).split("\0")
     )

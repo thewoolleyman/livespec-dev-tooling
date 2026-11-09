@@ -22,6 +22,7 @@ from livespec_dev_tooling._incident_original_run_canonical import CanonicalPorts
 from livespec_dev_tooling._incident_run_types import CanonicalRefusalError
 from livespec_dev_tooling.incident_controller_installation import ControllerInstallation
 from livespec_dev_tooling.incident_forge_reads import ForgeReads
+from livespec_dev_tooling.incident_git import IncidentGitError, run_git
 from livespec_dev_tooling.incident_original_run_flows import EntryPorts
 from livespec_dev_tooling.incident_run_forge import ForgeRunReader
 
@@ -41,14 +42,13 @@ def _run(
     argv: Sequence[str],
     cwd: Path,
     env: Mapping[str, str],
-    stdin: bytes = b"",
     check: bool = True,
 ) -> subprocess.CompletedProcess[bytes]:
-    return subprocess.run(  # noqa: S603 -- fixed git, bd and manifest reader argv.
+    return subprocess.run(  # noqa: S603 -- fixed bd and manifest reader argv.
         list(argv),
         cwd=cwd,
         env=env,
-        input=stdin,
+        input=b"",
         capture_output=True,
         timeout=_TIMEOUT,
         check=check,
@@ -65,7 +65,7 @@ class _Git:
     env: Mapping[str, str]
 
     def __call__(self, args: Sequence[str], stdin: bytes) -> bytes:
-        return _run(argv=["git", *args], cwd=self.repo, env=self.env, stdin=stdin).stdout
+        return run_git(repo=self.repo, args=args, env=self.env, data=stdin).stdout
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -150,10 +150,10 @@ def refresh_reference(*, installation: ControllerInstallation) -> None:
 
     Best effort: a commit still missing afterward refuses by name at its git read.
     """
-    with contextlib.suppress(OSError, subprocess.SubprocessError):
-        _ = _run(
-            argv=["git", "fetch", "--quiet", "--prune", "--tags", "origin"],
-            cwd=installation.repo,
+    with contextlib.suppress(OSError, IncidentGitError):
+        _ = run_git(
+            repo=installation.repo,
+            args=["fetch", "--quiet", "--prune", "--tags", "origin"],
             env=_account_environment(),
             check=False,
         )

@@ -18,7 +18,6 @@ from __future__ import annotations
 
 import json
 import os
-import subprocess
 import sys
 from collections.abc import Mapping
 from pathlib import Path
@@ -27,6 +26,7 @@ from typing import TYPE_CHECKING, Any, cast
 from livespec_dev_tooling.incident_ci_authority import CiAuthorityBoundary
 from livespec_dev_tooling.incident_ci_event import incident_block
 from livespec_dev_tooling.incident_ci_payload import decode_authority
+from livespec_dev_tooling.incident_git import IncidentGitError, git_text, run_git
 
 if TYPE_CHECKING:
     from livespec_dev_tooling.incident_ci_payload import CiAuthority
@@ -60,15 +60,6 @@ def _pull_request(*, environ: Mapping[str, str]) -> dict[str, Any]:
         return {}
 
 
-def _git(*, args: list[str]) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        ["git", *args],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-
-
 def _unmet(
     *,
     sha: str,
@@ -90,7 +81,15 @@ def _unmet(
     trailer = "Factory-Override: EXPEDITED_INCIDENT_RESPONSE flag: " + identity.incident_item_id
     if trailer not in message.splitlines():
         return "the commit has no audited trailer naming the incident"
-    if _git(args=["merge-base", "--is-ancestor", sha, identity.head_sha]).returncode != 0:
+    try:
+        ancestor = run_git(
+            repo=Path.cwd(),
+            args=["merge-base", "--is-ancestor", sha, identity.head_sha],
+            check=False,
+        )
+    except IncidentGitError as error:
+        return str(error)
+    if ancestor.returncode != 0:
         return "the commit is not in the recorded head's history"
     if not environ.get(_URL) or not environ.get(_TOKEN):
         return "the observer URL or query token is not configured"
@@ -120,6 +119,10 @@ def admitted_by_recorded_incident(
     )
     if unmet is not None:
         return _refuse(sha=sha, reason=unmet)
+    try:
+        tree_sha = git_text(repo=Path.cwd(), args=["rev-parse", identity.head_sha + "^{tree}"])
+    except IncidentGitError as error:
+        return _refuse(sha=sha, reason=str(error))
     recorded = CiAuthorityBoundary(
         observer_url=environ[_URL], observer_token=environ[_TOKEN]
     ).provenance(
@@ -135,7 +138,7 @@ def admitted_by_recorded_incident(
             "head": identity.head_sha,
             "pr_number": authority.pr_number,
             "commit_sha": identity.head_sha,
-            "tree_sha": _git(args=["rev-parse", identity.head_sha + "^{tree}"]).stdout.strip(),
+            "tree_sha": tree_sha,
         }
     )
     return recorded or _refuse(sha=sha, reason="the observer does not record this head")

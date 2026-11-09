@@ -32,6 +32,7 @@ from livespec_dev_tooling._incident_inverse_types import (  # noqa: E402
     RecoveryOutcome,
 )
 from livespec_dev_tooling._incident_observer_types import RecoveryIntent  # noqa: E402
+from livespec_dev_tooling.incident_git import IncidentGitError  # noqa: E402
 
 __all__: list[str] = [
     "InverseForge",
@@ -54,7 +55,7 @@ def plan_incident_inverse(
     """Build the complete reverse patch against current master without checkout."""
     try:
         valid = scope_matches_git(root=repo_root, scope=scope, expected_head=expected_head)
-    except (OSError, subprocess.SubprocessError, UnicodeError) as error:
+    except (OSError, subprocess.SubprocessError, IncidentGitError, UnicodeError) as error:
         return IOFailure(InverseRefusal(code="invalid-incident-scope", detail=str(error)))
     if not valid:
         return IOFailure(
@@ -65,7 +66,7 @@ def plan_incident_inverse(
         )
     try:
         return IOSuccess(build_inverse(root=repo_root, scope=scope, expected_head=expected_head))
-    except subprocess.CalledProcessError as error:
+    except IncidentGitError as error:
         return IOFailure(
             InverseRefusal(
                 code=(
@@ -73,9 +74,7 @@ def plan_incident_inverse(
                     if error.returncode == 1 and "apply" in error.cmd
                     else "inverse-unavailable"
                 ),
-                detail=(error.stderr or b"Git inverse construction failed").decode(
-                    errors="replace"
-                ),
+                detail=error.stderr.decode(errors="replace") or str(error),
             )
         )
     except (OSError, subprocess.SubprocessError, UnicodeError) as error:
@@ -127,7 +126,7 @@ def recover_incident_inverse(
                 )
             )
         return _execute(repo_root=repo_root, intent=intent, scope=scope, forge=forge)
-    except (OSError, subprocess.SubprocessError, ValueError) as error:
+    except (OSError, subprocess.SubprocessError, IncidentGitError, ValueError) as error:
         return IOFailure(InverseRefusal(code="inverse-unavailable", detail=str(error)))
 
 

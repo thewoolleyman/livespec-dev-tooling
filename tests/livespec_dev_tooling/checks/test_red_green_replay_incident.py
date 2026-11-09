@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import subprocess
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock
@@ -75,9 +76,9 @@ def observer(monkeypatch: pytest.MonkeyPatch) -> Mock:
         raising=False,
     )
     monkeypatch.setattr(
-        module.subprocess,
+        subprocess,
         "run",
-        Mock(return_value=SimpleNamespace(returncode=0, stdout="e" * 40 + "\n")),
+        Mock(return_value=SimpleNamespace(returncode=0, stdout=b"e" * 40 + b"\n", stderr=b"")),
     )
     return answer
 
@@ -145,11 +146,49 @@ def test_a_commit_outside_the_recorded_head_is_refused(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     monkeypatch.setattr(
-        module.subprocess, "run", Mock(return_value=SimpleNamespace(returncode=1, stdout=""))
+        subprocess,
+        "run",
+        Mock(return_value=SimpleNamespace(returncode=1, stdout=b"", stderr=b"")),
     )
     environ = _environ(tmp_path=tmp_path)
     assert not module.admitted_by_recorded_incident(sha=_SHA, message=_MESSAGE, environ=environ)
     assert "not in the recorded head's history" in capsys.readouterr().err
+    assert observer.call_count == 0
+
+
+@pytest.mark.parametrize(
+    "failure", [OSError("no git"), subprocess.TimeoutExpired(["git", "merge-base"], 1)]
+)
+def test_a_git_call_that_cannot_run_is_refused_by_name_not_raised(
+    tmp_path: Path,
+    observer: Mock,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    failure: Exception,
+) -> None:
+    monkeypatch.setattr(subprocess, "run", Mock(side_effect=failure))
+    environ = _environ(tmp_path=tmp_path)
+    assert not module.admitted_by_recorded_incident(sha=_SHA, message=_MESSAGE, environ=environ)
+    assert "incident git merge-base " in capsys.readouterr().err
+    assert observer.call_count == 0
+
+
+def test_a_tree_that_cannot_be_read_is_refused_by_name_not_raised(
+    tmp_path: Path,
+    observer: Mock,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    answers = iter(
+        [
+            SimpleNamespace(returncode=0, stdout=b"", stderr=b""),
+            SimpleNamespace(returncode=128, stdout=b"", stderr=b"bad object"),
+        ]
+    )
+    monkeypatch.setattr(subprocess, "run", lambda *_a, **_k: next(answers))
+    environ = _environ(tmp_path=tmp_path)
+    assert not module.admitted_by_recorded_incident(sha=_SHA, message=_MESSAGE, environ=environ)
+    assert "incident git rev-parse exited 128: bad object" in capsys.readouterr().err
     assert observer.call_count == 0
 
 

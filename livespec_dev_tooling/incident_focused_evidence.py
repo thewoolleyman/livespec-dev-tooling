@@ -30,6 +30,7 @@ from livespec_dev_tooling._incident_focused_types import (
     ResolvedContext,
 )
 from livespec_dev_tooling.config import ConfigParseError
+from livespec_dev_tooling.incident_git import IncidentGitError
 
 __all__: list[str] = ["FocusedScope", "ManualReproduction", "collect_focused_evidence"]
 
@@ -165,6 +166,7 @@ def collect_focused_evidence(
         OSError,
         ConfigParseError,
         subprocess.SubprocessError,
+        IncidentGitError,
         SyntaxError,
         ValueError,
         KeyError,

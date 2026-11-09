@@ -16,9 +16,9 @@ from returns.pipeline import is_successful  # noqa: E402 — vendor-path-aware i
 
 from livespec_dev_tooling.budgeted_gh import gh_read  # noqa: E402
 from livespec_dev_tooling.incident_execution import ExecutionContext  # noqa: E402
+from livespec_dev_tooling.incident_git import git_text  # noqa: E402
 from livespec_dev_tooling.incident_hook_process import (  # noqa: E402
     HookRefusalError,
-    git_text,
     mapping,
 )
 from livespec_dev_tooling.incident_markers import validate_python_repair_marker  # noqa: E402

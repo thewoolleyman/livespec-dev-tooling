@@ -18,11 +18,11 @@ from livespec_dev_tooling.incident_execution import (
     parse_incident_truth_value,
 )
 from livespec_dev_tooling.incident_gate_inventory import inventory_gates
+from livespec_dev_tooling.incident_git import git_text
 from livespec_dev_tooling.incident_hook_process import (
     HookRefusalError,
     canonical,
     exact_tree,
-    git_text,
     invoke_authority,
     parse_query,
     resolve_current,

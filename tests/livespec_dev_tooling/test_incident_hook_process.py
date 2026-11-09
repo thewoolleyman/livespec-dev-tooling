@@ -9,6 +9,7 @@ from typing import Any
 
 import pytest
 
+from livespec_dev_tooling import incident_git
 from livespec_dev_tooling import incident_hook_process as module
 from livespec_dev_tooling.incident_execution import (
     EXPEDITED_INCIDENT_RESPONSE,
@@ -184,14 +185,17 @@ def test_resolver_rejects_invalid_phase_or_transport_and_supports_recorded_rever
 def test_git_invocation_is_structured_and_failure_is_not_empty_success(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    def run(argv: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
-        assert (
-            argv == ["git", "write-tree"] and kwargs["cwd"] == tmp_path and kwargs["check"] is True
-        )
-        return subprocess.CompletedProcess(argv, 0, "tree\n", "")
+    def run(argv: list[str], **kwargs: Any) -> subprocess.CompletedProcess[bytes]:
+        assert argv == ["git", "write-tree"] and kwargs["cwd"] == tmp_path
+        return subprocess.CompletedProcess(argv, 0, b"tree\n", b"")
 
-    monkeypatch.setattr(module.subprocess, "run", run)
+    monkeypatch.setattr(subprocess, "run", run)
     assert module.git_text(repo=tmp_path, args=["write-tree"]) == "tree"
+    monkeypatch.setattr(
+        subprocess, "run", lambda argv, **_: subprocess.CompletedProcess(argv, 128, b"", b"bad")
+    )
+    with pytest.raises(incident_git.IncidentGitError, match="incident git write-tree exited 128"):
+        module.git_text(repo=tmp_path, args=["write-tree"])
 
 
 @pytest.mark.parametrize(

@@ -20,6 +20,7 @@ from livespec_dev_tooling._incident_inverse_types import (
     InverseConflictRequest,
     InversePublishRequest,
 )
+from livespec_dev_tooling.incident_git import IncidentGitError
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from test_incident_inverse import Forge, _intent
@@ -62,6 +63,57 @@ def test_build_errors_are_unavailable_not_owned_overlap(history, monkeypatch, fa
     )
     assert isinstance(result, IOFailure)
     assert unsafe_perform_io(result.failure()).code == "inverse-unavailable"
+
+
+@pytest.mark.parametrize(
+    ("failure", "code", "detail"),
+    [
+        (
+            IncidentGitError(
+                reason="incident git apply exited 1: conflict",
+                cmd=("git", "apply", "--3way"),
+                returncode=1,
+                stderr=b"patch does not apply",
+            ),
+            "rollback-conflict",
+            "patch does not apply",
+        ),
+        (
+            IncidentGitError(
+                reason="incident git write-tree exited 128: no index",
+                cmd=("git", "write-tree"),
+                returncode=128,
+                stderr=b"no index",
+            ),
+            "inverse-unavailable",
+            "no index",
+        ),
+        (
+            IncidentGitError(
+                reason="incident git apply exceeded its 120 s ceiling",
+                cmd=("git", "apply"),
+                returncode=None,
+                stderr=b"",
+            ),
+            "inverse-unavailable",
+            "incident git apply exceeded its 120 s ceiling",
+        ),
+    ],
+)
+def test_one_incident_git_failure_is_classified_by_its_exit_and_command(
+    history, monkeypatch, failure, code, detail
+):
+    repo, scope, _ = history
+
+    def fail(**_kwargs):
+        raise failure
+
+    monkeypatch.setattr(inverse, "build_inverse", fail)
+    result = inverse.plan_incident_inverse(
+        repo_root=repo, scope=scope, expected_head=scope.merge_sha
+    )
+    refusal = unsafe_perform_io(result.failure())
+    assert (refusal.code, refusal.detail) == (code, detail)
 
 
 @pytest.mark.parametrize(
