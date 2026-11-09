@@ -65,11 +65,15 @@ _HEAD_READ = """gh api "repos/${repo}/pulls/${PR_NUMBER}" --jq '.head.sha'"""
 _RUNS_ON_HEAD = "actions/workflows/ci.yml/runs?event=pull_request&head_sha=${head}"
 _SELECT_BY_PR = "select(any(.pull_requests[]; .number == (env.PR_NUMBER | tonumber)))"
 _NO_RUN = re.compile(r'if \[ -z "\$run_id" \]; then\n(?P<body>(?:.*\n)*?)[ ]*fi\n')
-_HOLD_POST = '-X POST "repos/${repo}/check-runs"'
+_HOLD_POST = 'hold_id="$(gh api -X POST "repos/${repo}/check-runs"'
 _HOLD_FIELDS = '-f name=ci-green -f head_sha="$head" -f status=in_progress'
-_HOLD_CALL = "\nhold_ci_green\n"
 _CANCEL = '/actions/runs/${run_id}/cancel"'
 _RERUN = '/actions/runs/${run_id}/rerun"'
+_COMPLETED_PATH = re.compile(r'if \[ "\$status" = "completed" \]; then\n(?P<body>(?:.*\n)*?)else\n')
+_VERIFY_READ = "check-suites/${suite}/check-runs?check_name=ci-green&filter=latest"
+_VERIFY = re.compile(r'if \[ "\$suite_green" = "success" \]; then\n(?P<body>(?:.*\n)*?)fi\n')
+_RELEASE = 'gh api -X PATCH "repos/${repo}/check-runs/${hold_id}"'
+_RELEASE_FIELDS = "-f status=completed -f conclusion=neutral"
 _LOOP_HEAD = r"for _ in \$\(seq 1 (?P<bound>\d+)\); do\n"
 _LOOP_TAIL = r'(?P<body>(?:.*\n)*?)[ ]*done\n[ ]*if \[ "\$status" != "completed" \]; then\n'
 _LOOP_AFTER = r"(?P<after>(?:.*\n)*?)[ ]*fi\n"
@@ -124,6 +128,44 @@ def _job_findings(*, jobs: dict[str, Any]) -> list[str]:
     return findings
 
 
+def _stop_findings(*, script: str) -> list[str]:
+    """The run is stopped so its own ci-green fails, and the stop is waited for."""
+    findings: list[str] = []
+    completed = _COMPLETED_PATH.search(script)
+    if completed is None or _RERUN not in completed.group("body") or _CANCEL not in script:
+        findings.append("a completed run is not re-run and stopped, nor an unfinished one stopped")
+    wait = _WAIT_LOOP.search(script)
+    if (
+        wait is None
+        or int(wait.group("bound")) < 1
+        or _LOOP_BREAK not in wait.group("body")
+        or "exit 1" not in wait.group("after")
+    ):
+        findings.append("the restart does not wait, bounded, for an unfinished run to stop")
+    return findings
+
+
+def _hold_findings(*, script: str) -> list[str]:
+    """The hold comes first, and is released only after the verification, before the re-run."""
+    findings: list[str] = []
+    touched = [i for i in (script.find(_CANCEL), script.find(_RERUN)) if i >= 0]
+    if _HOLD_POST not in script or _HOLD_FIELDS not in script:
+        findings.append("the hold is not an in-progress ci-green check run on the head")
+    elif touched and script.index(_HOLD_POST) > min(touched):
+        findings.append("ci-green is not held before the run is touched")
+    verify = _VERIFY.search(script)
+    if _VERIFY_READ not in script or verify is None or "exit 1" not in verify.group("body"):
+        findings.append("the CI run's own ci-green is not verified non-success before the release")
+    if _RELEASE not in script or _RELEASE_FIELDS not in script:
+        findings.append("the hold is never released as neutral, so it would block the head forever")
+        return findings
+    if verify is not None and script.index(_RELEASE) < verify.end():
+        findings.append("the hold is released before the verification")
+    if _RERUN not in script or script.rindex(_RERUN) < script.index(_RELEASE):
+        findings.append("the restart does not re-run the CI run after the release")
+    return findings
+
+
 def _script_findings(*, script: str) -> list[str]:
     findings: list[str] = []
     if _EXPRESSION in script:
@@ -135,24 +177,7 @@ def _script_findings(*, script: str) -> list[str]:
     no_run = _NO_RUN.search(script)
     if no_run is None or "exit 0" not in no_run.group("body"):
         findings.append("a PR with no CI run listed yet does not stop green")
-    if _HOLD_POST not in script or _HOLD_FIELDS not in script:
-        findings.append("the hold is not an in-progress ci-green check run on the head")
-    wait = _WAIT_LOOP.search(script)
-    if (
-        wait is None
-        or int(wait.group("bound")) < 1
-        or _LOOP_BREAK not in wait.group("body")
-        or "exit 1" not in wait.group("after")
-    ):
-        findings.append("the restart does not wait, bounded, for an unfinished run to stop")
-    calls = [match.start() for match in re.finditer(re.escape(_HOLD_CALL), script)]
-    if _RERUN not in script or _CANCEL not in script:
-        findings.append("the restart does not cancel and re-run the CI run")
-    elif not calls or calls[0] > script.index(_CANCEL):
-        findings.append("ci-green is not held before the run is touched")
-    elif wait is None or not any(wait.end() < call < script.index(_RERUN) for call in calls):
-        findings.append("ci-green is not held again between the wait and the re-run")
-    return findings
+    return [*findings, *_stop_findings(script=script), *_hold_findings(script=script)]
 
 
 def label_workflow_findings(*, source: str) -> list[str]:
@@ -210,6 +235,7 @@ def test_committed_auto_enable_merge_skips_the_incident_unlabeled_event() -> Non
 _TRIGGERS = "the label workflow does not trigger on exactly labeled/unlabeled PRs"
 _GATE = f"job {_JOB} is not gated on exactly the incident label and the fork guard"
 _WAIT = "the restart does not wait, bounded, for an unfinished run to stop"
+_HOLD_LINE = '          hold_id="$(gh api'
 
 
 @pytest.mark.parametrize(
@@ -275,21 +301,55 @@ _WAIT = "the restart does not wait, bounded, for an unfinished run to stop"
         ),
         ("$(seq 1 60)", "$(seq 1 0)", _WAIT),
         ('[ "$status" = "completed" ] && break', "true", _WAIT),
-        ('ci-green stays held"\n              exit 1\n', 'ci-green stays held"\n', _WAIT),
         (
-            '/rerun"',
-            '/rerun-failed-jobs"',
-            "the restart does not cancel and re-run the CI run",
+            'it cannot be re-run, and ci-green stays held"\n            exit 1\n',
+            'it cannot be re-run, and ci-green stays held"\n',
+            _WAIT,
         ),
         (
-            "          hold_ci_green\n          status=",
-            "          status=",
+            '/rerun" >/dev/null\n          note=',
+            '/rerun-failed-jobs" >/dev/null\n          note=',
+            "the restart does not re-run the CI run after the release",
+        ),
+        (
+            'stops passing"\n            gh api -X POST "repos/${repo}' + _RERUN,
+            'stops passing"\n            true',
+            "a completed run is not re-run and stopped, nor an unfinished one stopped",
+        ),
+        (
+            '/cancel"',
+            '/approve"',
+            "a completed run is not re-run and stopped, nor an unfinished one stopped",
+        ),
+        (
+            "&filter=latest",
+            "&filter=all",
+            "the CI run's own ci-green is not verified non-success before the release",
+        ),
+        (
+            'still passes after it was stopped; ci-green stays held"\n            exit 1\n',
+            'still passes after it was stopped; ci-green stays held"\n',
+            "the CI run's own ci-green is not verified non-success before the release",
+        ),
+        (
+            "conclusion=neutral",
+            "conclusion=success",
+            "the hold is never released as neutral, so it would block the head forever",
+        ),
+        (
+            "          gh api -X PATCH",
+            "          true -X PATCH",
+            "the hold is never released as neutral, so it would block the head forever",
+        ),
+        (
+            "--jq '.id')\"\n",
+            "--jq '.id')\"\n          " + _RELEASE + " -f status=completed\n",
+            "the hold is released before the verification",
+        ),
+        (
+            _HOLD_LINE,
+            '          gh api -X POST "repos/${repo}' + _CANCEL + "\n" + _HOLD_LINE,
             "ci-green is not held before the run is touched",
-        ),
-        (
-            "          hold_ci_green\n          gh api -X POST",
-            "          gh api -X POST",
-            "ci-green is not held again between the wait and the re-run",
         ),
     ],
 )
@@ -302,11 +362,9 @@ def test_each_label_workflow_rule_has_a_negative_control(
 
 def test_a_wait_loop_that_is_gone_entirely_is_a_finding() -> None:
     source = _LABEL_WORKFLOW.read_text(encoding="utf-8")
-    start = source.index("            for _ in $(seq 1 60); do\n")
-    end = source.index("          hold_ci_green\n          gh api -X POST")
-    findings = label_workflow_findings(source=source[:start] + source[end:])
-    assert _WAIT in findings
-    assert "ci-green is not held again between the wait and the re-run" in findings
+    start = source.index("          for _ in $(seq 1 60); do\n")
+    end = source.index("          suite_green=")
+    assert _WAIT in label_workflow_findings(source=source[:start] + source[end:])
 
 
 def test_the_ci_label_trigger_rule_has_a_negative_control() -> None:
