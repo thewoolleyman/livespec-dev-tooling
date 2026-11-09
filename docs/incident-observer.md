@@ -62,6 +62,26 @@ rerun, classification or fix-forward action. For the registered incident SHA/run
 the independent controller owns the action. Other ordinary runs execute their
 existing policy under the same repository lock.
 
+The reconciler runs on a GitHub runner, so it reaches `route_ordinary_action`
+through the controller's authenticated `POST /ordinary-action` query route. The
+workflow-side transport is `python3 -m livespec_dev_tooling.master_health_observer
+--repository R --head-sha S --run-id N`, which reads `LIVESPEC_INCIDENT_OBSERVER_URL`
+and `LIVESPEC_INCIDENT_OBSERVER_QUERY_TOKEN` and prints one JSON object. It lives
+outside `cross_repo/master_health_*` because those decision modules are kept
+network-free by test. The workflow reads three outcomes:
+
+- `incident-owned` (exit 0): rerun, classification and revert are left to the
+  observer.
+- `ordinary` (exit 0): the existing policy runs unchanged. A repository with no
+  `LIVESPEC_INCIDENT_OBSERVER_URL` also answers `ordinary`.
+- A configured observer that gives no readable answer exits 1, names the cause on
+  stderr and prints nothing, so no rerun, classification or revert action is taken
+  in that pass.
+
+Calling the transport before the reconciler's decide and perform steps is a
+`.github/workflows/` edit, which factory branches cannot make; the attended host
+session carries it.
+
 This source slice supplies controlled callback and action adapters. It does not
 activate a production observer. Activation and child closure still require:
 
