@@ -25,7 +25,7 @@ from livespec_dev_tooling.incident_forge_reads import ForgeReads
 from livespec_dev_tooling.incident_original_run_flows import EntryPorts
 from livespec_dev_tooling.incident_run_forge import ForgeRunReader
 
-__all__: list[str] = ["installed_ports", "refresh_reference"]
+__all__: list[str] = ["bound_ports", "installed_ports", "refresh_reference"]
 
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-jvfb7x
 # Beside controller.json: the role's incident_observer_reader_env_path, which the
@@ -157,3 +157,13 @@ def refresh_reference(*, installation: ControllerInstallation) -> None:
             env=_account_environment(),
             check=False,
         )
+
+
+def bound_ports(*, installation: ControllerInstallation) -> EntryPorts | None:
+    """The installed ports with a current reference clone, or None without the credential."""
+    try:
+        ports = installed_ports(installation=installation)
+    except OSError:
+        return None
+    refresh_reference(installation=installation)
+    return ports

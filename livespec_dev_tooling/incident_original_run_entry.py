@@ -46,7 +46,7 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import cast
 
-from livespec_dev_tooling._incident_original_run_ports import installed_ports, refresh_reference
+from livespec_dev_tooling._incident_original_run_ports import bound_ports, installed_ports
 from livespec_dev_tooling._incident_run_types import (
     EvidenceRefusal,
     ExpectedJob,
@@ -213,16 +213,6 @@ def _propose(
     return _reply(body={"status": "proposed", "receipt": result})
 
 
-def _bound(*, installation: ControllerInstallation) -> EntryPorts | None:
-    """The installed ports with a current reference clone, or None without the credential."""
-    try:
-        ports = installed_ports(installation=installation)
-    except OSError:
-        return None
-    refresh_reference(installation=installation)
-    return ports
-
-
 def main(*, argv: Sequence[str] | None = None, ports: EntryPorts | None = None) -> int:
     """Collect or propose for one registered original run; refusals exit 78."""
     args = _parse(argv=sys.argv[1:] if argv is None else argv)
@@ -231,7 +221,7 @@ def main(*, argv: Sequence[str] | None = None, ports: EntryPorts | None = None) 
     installation = ControllerInstallation.load(config=args.config)
     bound = ports
     if installation is not None and bound is None:
-        bound = _bound(installation=installation)
+        bound = bound_ports(installation=installation)
     if installation is None or bound is None:
         return _refused(
             refusal=EvidenceRefusal(

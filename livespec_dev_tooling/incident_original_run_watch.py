@@ -13,8 +13,12 @@ collection is idempotent by evidence digest, so the incident item keeps one reco
 
 from __future__ import annotations
 
+import contextlib
+import subprocess
 import sys
-from dataclasses import dataclass
+import threading
+from collections.abc import Callable
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import cast
 
@@ -25,7 +29,9 @@ from livespec_dev_tooling._incident_observer_store import (
     save_record,
 )
 from livespec_dev_tooling._incident_observer_types import ObserverRegistration
+from livespec_dev_tooling._incident_original_run_ports import bound_ports
 from livespec_dev_tooling._incident_run_types import EvidenceRefusal, RunEvidence
+from livespec_dev_tooling.incident_controller_installation import ControllerInstallation
 from livespec_dev_tooling.incident_observer import recovery_action_id
 from livespec_dev_tooling.incident_original_run_flows import Collection, EntryPorts, collect
 from livespec_dev_tooling.incident_run_evidence import evidence_digest
@@ -37,7 +43,7 @@ from returns.io import impure_safe  # noqa: E402
 from returns.pipeline import is_successful  # noqa: E402
 from returns.unsafe import unsafe_perform_io  # noqa: E402
 
-__all__: list[str] = ["WatchTick", "watch_once"]
+__all__: list[str] = ["OriginalRunWatcher", "WatchTick", "installed_watcher", "watch_once"]
 
 # The receipt of a rollback the principal could not apply: no revert landed.
 _NO_REVERT_PREFIX = "rollback-conflict:"
@@ -145,4 +151,57 @@ def watch_once(*, state_dir: Path, repository: str, ports: EntryPorts) -> WatchT
         landed=landed,
         revert_sha=unsafe_perform_io(revert.unwrap()),
         ports=ports,
+    )
+
+
+@dataclass(frozen=True, kw_only=True)
+class OriginalRunWatcher:
+    """Ticks the collection on an interval for the life of the controller process.
+
+    The only state is the controller's durable record, so a restarted process resumes
+    exactly where the last one stopped. Ports are built per tick and only when a
+    collection is owed, so an idle controller never fetches the reference clone.
+    """
+
+    state_dir: Path
+    repository: str
+    ports: Callable[[], EntryPorts | None]
+    interval_seconds: float = 60.0
+    stop: threading.Event = field(default_factory=threading.Event)
+
+    def tick(self) -> WatchTick:
+        """Collect if a collection is owed and the tenant credential is available."""
+        owed = _landed(state_dir=self.state_dir, repository=self.repository)
+        landed = unsafe_perform_io(owed.unwrap()) if is_successful(owed) else None
+        if landed is None or landed.collected:
+            return WatchTick(status="idle")
+        ports = self.ports()
+        if ports is None:
+            return WatchTick(status="waiting", detail="the tenant credential is unavailable")
+        return watch_once(state_dir=self.state_dir, repository=self.repository, ports=ports)
+
+    def run(self) -> None:
+        """Tick until stopped; a failed tick is retried at the next interval."""
+        while not self.stop.wait(self.interval_seconds):
+            with contextlib.suppress(OSError, subprocess.SubprocessError, ValueError):
+                _ = self.tick()
+
+    def start(self) -> threading.Thread:
+        """Run the watcher on a daemon thread, so it never outlives the service."""
+        thread = threading.Thread(
+            target=self.run, name="incident-original-run-watcher", daemon=True
+        )
+        thread.start()
+        return thread
+
+
+def installed_watcher(
+    *, installation: ControllerInstallation, interval_seconds: float = 60.0
+) -> OriginalRunWatcher:
+    """The watcher bound to one verified controller installation."""
+    return OriginalRunWatcher(
+        state_dir=installation.state,
+        repository=installation.repository,
+        ports=lambda: bound_ports(installation=installation),
+        interval_seconds=interval_seconds,
     )

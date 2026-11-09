@@ -1,13 +1,19 @@
 """The controller collects a reverted incident's original run with no operator command."""
 
 import json
+import sys
+import time
+from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
-from typing import cast
+from types import SimpleNamespace
+from typing import Any, cast
 from unittest.mock import Mock
 
 import pytest
 
+from livespec_dev_tooling import incident_observer_service as service
+from livespec_dev_tooling import incident_original_run_watch as watch
 from livespec_dev_tooling._incident_observer_store import (
     load_record,
     read_registration,
@@ -15,6 +21,7 @@ from livespec_dev_tooling._incident_observer_store import (
     save_record,
 )
 from livespec_dev_tooling.incident_observer import recovery_action_id
+from livespec_dev_tooling.incident_original_run_flows import EntryPorts
 from livespec_dev_tooling.incident_original_run_watch import WatchTick, watch_once
 from tests.livespec_dev_tooling import test_incident_original_run_flows as flows
 from tests.livespec_dev_tooling.test_incident_original_run_flows import (
@@ -150,3 +157,96 @@ def test_a_restart_during_collection_resumes_it_and_leaves_one_record(world: Wor
     assert (resumed.status, again.status) == ("collected", "done")
     assert len(world.comments) == 1
     assert len(stored(world)) == 2
+
+
+def watcher(world: World, *, ports: object = None) -> Any:
+    factory = ports if ports is not None else world.ports
+    return watch.OriginalRunWatcher(
+        state_dir=world.state,
+        repository=REPOSITORY,
+        ports=cast("Callable[[], EntryPorts | None]", factory),
+        interval_seconds=0.0,
+    )
+
+
+def test_the_watcher_builds_ports_only_when_a_collection_is_owed(world: World) -> None:
+    factory = Mock(side_effect=world.ports)
+    idle = watcher(world, ports=factory).tick()
+    record_action(world, status="completed", receipt="published-revert")
+    _ = land_revert(world)
+    first = watcher(world, ports=factory).tick()
+    done = watcher(world, ports=factory).tick()
+    assert (idle.status, first.status, done.status) == ("idle", "collected", "idle")
+    factory.assert_called_once_with()
+
+
+def test_a_missing_credential_waits_instead_of_collecting(world: World) -> None:
+    record_action(world, status="completed", receipt="published-revert")
+    _ = land_revert(world)
+    result = watcher(world, ports=lambda: None).tick()
+    assert (result.status, "credential" in result.detail) == ("waiting", True)
+    world.read.assert_not_called()
+
+
+def test_the_started_watcher_collects_in_the_background_and_survives_a_failed_tick(
+    world: World,
+) -> None:
+    record_action(world, status="completed", receipt="published-revert")
+    _ = land_revert(world)
+    calls: list[int] = []
+
+    def flaky() -> EntryPorts:
+        calls.append(1)
+        if len(calls) == 1:
+            raise OSError("reference clone unavailable")
+        return world.ports()
+
+    running = watcher(world, ports=flaky)
+    thread = running.start()
+    deadline = time.monotonic() + 30
+    while time.monotonic() < deadline and not world.comments:
+        time.sleep(0.01)
+    running.stop.set()
+    thread.join(timeout=30)
+    assert (thread.daemon, thread.is_alive()) == (True, False)
+    assert len(world.comments) == 1
+    assert len(calls) >= 2
+
+
+def test_the_installed_watcher_binds_the_installation_and_the_service_starts_it(
+    world: World, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    settings = SimpleNamespace(state=world.state, repository=REPOSITORY, repo=world.repo)
+    bound = Mock(return_value=world.ports())
+    monkeypatch.setattr(watch, "bound_ports", bound)
+    installed = watch.installed_watcher(installation=cast("Any", settings))
+    assert (installed.state_dir, installed.repository) == (world.state, REPOSITORY)
+    assert installed.interval_seconds == 60.0
+    record_action(world, status="completed", receipt="published-revert")
+    _ = land_revert(world)
+    assert installed.tick().status == "collected"
+    bound.assert_called_once_with(installation=settings)
+
+    started = Mock()
+    monkeypatch.setattr(service, "installed_watcher", Mock(return_value=started))
+    application = SimpleNamespace(installation=settings)
+    monkeypatch.setattr(sys, "argv", ["observer-service", "--config", str(tmp_path)])
+    monkeypatch.setattr(service.sys, "flags", SimpleNamespace(isolated=1))
+    monkeypatch.setattr(service.ControllerService, "installed", lambda **_: application)
+    order: list[str] = []
+    started.start.side_effect = lambda: order.append("watcher")
+
+    class Server:
+        def __enter__(self) -> "Server":
+            return self
+
+        def __exit__(self, *_: object) -> bool:
+            return False
+
+        def serve_forever(self) -> None:
+            order.append("serve")
+
+    settings.port = 8765
+    monkeypatch.setattr(service, "make_server", lambda *_a, **_k: Server())
+    assert service.main() == 0
+    assert order == ["watcher", "serve"]

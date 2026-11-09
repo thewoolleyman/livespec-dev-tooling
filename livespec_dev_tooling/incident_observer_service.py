@@ -34,6 +34,7 @@ from livespec_dev_tooling.incident_observer_provenance import ObserverProvenance
 from livespec_dev_tooling.incident_observer_query import ObserverQuery
 from livespec_dev_tooling.incident_observer_reconcile import ObserverReconcile
 from livespec_dev_tooling.incident_observer_recovery import ObserverRecovery
+from livespec_dev_tooling.incident_original_run_watch import installed_watcher
 
 __all__: list[str] = ["ControllerService"]
 
@@ -236,6 +237,9 @@ def main() -> int:
             )
         )
         return 2
+    # A reverted incident's original run is collected by the controller itself, so no
+    # operator has to remember to run the entrance; the watcher resumes from the record.
+    _ = installed_watcher(installation=application.installation).start()
     with make_server("127.0.0.1", application.installation.port, application) as server:
         server.process_request = _RequestDispatcher(server=server)
         server.serve_forever()
