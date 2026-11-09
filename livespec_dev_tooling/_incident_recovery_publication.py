@@ -29,6 +29,7 @@ from typing import Any, cast
 
 from livespec_dev_tooling._incident_observer_store import save_record
 from livespec_dev_tooling._incident_recovery_journal_values import JournalValues
+from livespec_dev_tooling.incident_protected_path import protected_path
 
 __all__: list[str] = [
     "Publication",
@@ -147,7 +148,12 @@ def _decode(*, raw: Any, action_id: str) -> Publication:
 def _private(*, path: Path, directory: bool) -> None:
     info = path.lstat()
     kind = stat.S_ISDIR(info.st_mode) if directory else stat.S_ISREG(info.st_mode)
-    if not kind or info.st_uid != os.geteuid() or stat.S_IMODE(info.st_mode) & 0o077:
+    if (
+        not kind
+        or info.st_uid != os.geteuid()
+        or stat.S_IMODE(info.st_mode) & 0o077
+        or not protected_path(path=path)
+    ):
         message = f"unprotected recovery publication path: {path}"
         raise OSError(message)
 

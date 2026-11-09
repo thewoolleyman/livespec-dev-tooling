@@ -25,13 +25,13 @@ def host(tmp_path, monkeypatch):
         (tmp_path / name).write_bytes(body)
         (tmp_path / name).chmod(0o600)
     executable = str(Path(sys.executable).resolve())
-    real_protected = installation._protected
+    real_protected = installation.protected_path
     # Controlled deployment fixture: this developer venv is group-writable, so
     # emulate its separately provisioned executable only; real path tests below
     # still reject every unsafe ancestor rather than changing production policy.
     monkeypatch.setattr(
         installation,
-        "_protected",
+        "protected_path",
         lambda *, path: path in {Path(executable), Path(sys.executable)}
         or real_protected(path=path),
     )
@@ -176,11 +176,11 @@ def test_protected_path_checks_link_target_and_every_ancestor(tmp_path, monkeypa
     program.chmod(0o500)
     link = tmp_path / "link"
     link.symlink_to(program)
-    assert installation._protected(path=link)
-    assert not installation._protected(path=Path("relative"))
-    assert not installation._protected(path=tmp_path / "missing")
+    assert installation.protected_path(path=link)
+    assert not installation.protected_path(path=Path("relative"))
+    assert not installation.protected_path(path=tmp_path / "missing")
     safe.chmod(0o777)
-    assert not installation._protected(path=link)
+    assert not installation.protected_path(path=link)
     safe.chmod(0o700)
     original = Path.lstat
 
@@ -191,7 +191,7 @@ def test_protected_path_checks_link_target_and_every_ancestor(tmp_path, monkeypa
         return os.stat_result(values)
 
     monkeypatch.setattr(Path, "lstat", foreign_link)
-    assert not installation._protected(path=link)
+    assert not installation.protected_path(path=link)
 
 
 def test_record_secret_and_command_boundaries(host):
@@ -253,7 +253,7 @@ def test_unhashed_script_and_foreign_target_are_refused(host, tmp_path, monkeypa
         return os.stat_result(values)
 
     monkeypatch.setattr(Path, "stat", foreign_target)
-    assert not installation._protected(path=link)
+    assert not installation.protected_path(path=link)
 
 
 def test_sudo_credential_wrapper_cannot_be_selected_by_confined_controller(host):
