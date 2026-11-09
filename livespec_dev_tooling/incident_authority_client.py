@@ -14,7 +14,7 @@ import json
 import subprocess
 import sys
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, cast
 
@@ -31,6 +31,7 @@ __all__: list[str] = [
     "call_authority",
     "check_authority_reply",
     "registered_authority_command",
+    "report_authority_refusal",
 ]
 
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-iezdmk
@@ -45,6 +46,7 @@ _CANONICAL_REFUSED_EXIT = 78
 _WRAPPER = "/usr/local/bin/with-livespec-env.sh"
 _SCRIPT = Path("scripts") / "bin" / "incident_authority.py"
 _CURRENT_ACTION = "read-current"
+_STDERR_LIMIT = 2000
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -125,8 +127,7 @@ def _verified(*, action: str, reply: dict[str, Any]) -> _Checked:
     return Success(cast("dict[str, Any]", result))
 
 
-def check_authority_reply(*, action: str, returncode: int, stdout: str) -> _Checked:
-    """The one set of reply checks: exit, strict JSON, schema, proof flag, then kind."""
+def _check_reply(*, action: str, returncode: int, stdout: str) -> _Checked:
     if returncode not in {0, _CANONICAL_REFUSED_EXIT}:
         return _refuse(
             code="incident-authority-exit", detail=f"{action} exited with status {returncode}"
@@ -146,6 +147,23 @@ def check_authority_reply(*, action: str, returncode: int, stdout: str) -> _Chec
     if returncode == _CANONICAL_REFUSED_EXIT:
         return _canonical_refusal(reply=reply)
     return _verified(action=action, reply=reply)
+
+
+def check_authority_reply(*, action: str, returncode: int, stdout: str, stderr: str) -> _Checked:
+    """The one set of reply checks, each refusal carrying the failing call's stderr."""
+    checked = _check_reply(action=action, returncode=returncode, stdout=stdout)
+    if is_successful(checked):
+        return checked
+    refusal = checked.failure()
+    words = stderr.strip()[:_STDERR_LIMIT]
+    if refusal.canonical or not words:
+        return checked
+    return Failure(replace(refusal, detail=f"{refusal.detail}: {words}"))
+
+
+def report_authority_refusal(*, refusal: AuthorityRefusal) -> None:
+    """Name a refusal on stderr for the readers whose own answer is only a bare verdict."""
+    _ = sys.stderr.write(f"incident-authority-refused: {refusal.code}: {refusal.detail}\n")
 
 
 def call_authority(
@@ -181,4 +199,6 @@ def call_authority(
             code="incident-authority-unavailable",
             detail=f"{action} could not run: {type(unavailable).__name__}: {unavailable}",
         )
-    return check_authority_reply(action=action, returncode=done.returncode, stdout=done.stdout)
+    return check_authority_reply(
+        action=action, returncode=done.returncode, stdout=done.stdout, stderr=done.stderr
+    )

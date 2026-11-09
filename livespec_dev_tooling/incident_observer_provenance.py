@@ -25,7 +25,10 @@ from livespec_dev_tooling._incident_provenance_protocol import (  # noqa: E402
     decode_historical_result,
 )
 from livespec_dev_tooling._incident_provenance_types import IncidentCommitQuery  # noqa: E402
-from livespec_dev_tooling.incident_authority_client import call_authority  # noqa: E402
+from livespec_dev_tooling.incident_authority_client import (  # noqa: E402
+    call_authority,
+    report_authority_refusal,
+)
 from livespec_dev_tooling.incident_controller_installation import (  # noqa: E402
     ControllerInstallation,
 )
@@ -66,6 +69,7 @@ class ObserverProvenance:
             command=settings.reader, action="read-history", flags=flags, cwd=settings.repo
         )
         if not is_successful(checked):
+            report_authority_refusal(refusal=checked.failure())
             return _refused(reason=checked.failure().code)
         decoded = decode_historical_result(result=checked.unwrap(), query=query)
         if not is_successful(decoded):

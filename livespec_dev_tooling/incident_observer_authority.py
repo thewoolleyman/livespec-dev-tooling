@@ -23,6 +23,7 @@ from livespec_dev_tooling._incident_observer_types import (  # noqa: E402
 from livespec_dev_tooling.incident_authority_client import (  # noqa: E402
     AuthorityRefusal,
     call_authority,
+    report_authority_refusal,
 )
 
 __all__: list[str] = ["CurrentAuthorityReader"]
@@ -101,6 +102,7 @@ def _current_attempt(
     *, checked: Result[dict[str, Any], AuthorityRefusal]
 ) -> dict[str, object] | None:
     if not is_successful(checked):
+        report_authority_refusal(refusal=checked.failure())
         return None
     result = checked.unwrap()
     attempt = result.get("attempt")
