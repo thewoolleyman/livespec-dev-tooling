@@ -164,22 +164,28 @@ jobs:
       # Incident pin screen (livespec-dev-tooling-wbvbj6): refuse to bump a
       # pin to a release that the source's incident observer fences with a
       # retained recovery action. Inert until this consumer sets
-      # LIVESPEC_INCIDENT_RELEASE_SCREEN_URL (and, when the observer watches
-      # another repository, LIVESPEC_INCIDENT_OBSERVED_REPOSITORY); with it
-      # unset the step is skipped and the bump runs as before.
+      # LIVESPEC_INCIDENT_RELEASE_SCREEN_URL, the BASE URL of the source's
+      # observer (the entrance appends /release/screen). It must then also set
+      # LIVESPEC_INCIDENT_OBSERVED_REPOSITORY to the repository that observer
+      # watches, and pass LIVESPEC_INCIDENT_OBSERVER_QUERY_TOKEN through
+      # `secrets: inherit`. A URL with no observed repository is refused, not
+      # silently passed. With the URL unset the step is skipped and the bump
+      # runs as before.
       - name: Screen the pinned release against retained incident recovery
         if: ${{ vars.LIVESPEC_INCIDENT_RELEASE_SCREEN_URL != '' }}
         env:
           LIVESPEC_INCIDENT_OBSERVER_URL: ${{ vars.LIVESPEC_INCIDENT_RELEASE_SCREEN_URL }}
           LIVESPEC_INCIDENT_OBSERVER_QUERY_TOKEN: ${{ secrets.LIVESPEC_INCIDENT_OBSERVER_QUERY_TOKEN }}
-          OBSERVED: ${{ vars.LIVESPEC_INCIDENT_OBSERVED_REPOSITORY || github.repository }}
+          OBSERVED: ${{ vars.LIVESPEC_INCIDENT_OBSERVED_REPOSITORY }}
           OWNER: ${{ github.repository_owner }}
           SOURCE_REPO: ${{ inputs.source_repo }}
           TAG: ${{ inputs.tag }}
         run: |
           set -euo pipefail
-          # Prefer the peeled commit of an annotated tag.
-          source_sha=$(git ls-remote "https://github.com/$OWNER/$SOURCE_REPO.git" "refs/tags/$TAG" \
+          # Ask for the annotated tag's peeled commit (^{}) explicitly; a
+          # lightweight tag has no peeled line, so fall back to its plain ref.
+          source_sha=$(git ls-remote "https://github.com/$OWNER/$SOURCE_REPO.git" \
+            "refs/tags/$TAG" "refs/tags/$TAG^{}" \
             | awk '$2 ~ /\^\{\}$/ {peeled=$1} {last=$1} END {print (peeled != "" ? peeled : last)}')
           # The consumer's own pinned dev-tooling may predate the entrance, so
           # run it from the support checkout's environment.

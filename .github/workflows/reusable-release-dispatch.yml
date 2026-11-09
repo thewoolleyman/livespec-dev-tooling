@@ -266,15 +266,23 @@ jobs:
       - name: Install Python dev deps via uv
         run: uv sync --all-groups
 
+      - name: just await-sandbox-image
+        env:
+          SOURCE_REPO: ${{ inputs.source_repo }}
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: just await-sandbox-image --source-repo "$SOURCE_REPO" --tag "$RELEASE_TAG"
+
       # Incident release screen (livespec-dev-tooling-wbvbj6; contracts.md
       # "Expedited incident execution": recovery MUST fence queued stale
       # adoption). Before any sibling is dispatched, ask the caller's incident
       # observer whether this release is fenced by a retained recovery action.
-      # A named refusal fails this job, and `dispatch` needs it, so no sibling
-      # receives the release. Inert until the caller sets
-      # LIVESPEC_INCIDENT_RELEASE_SCREEN_URL to an observer route this runner
-      # can reach; with it unset the step is skipped and the fan-out runs as
-      # before.
+      # It runs AFTER the sandbox-image wait, so its verdict is fresh when
+      # `dispatch` fires. A named refusal fails this job, and `dispatch` needs
+      # it, so no sibling receives the release. Inert until the caller sets
+      # LIVESPEC_INCIDENT_RELEASE_SCREEN_URL to the BASE URL of an observer this
+      # runner can reach (the entrance appends /release/screen), and passes
+      # LIVESPEC_INCIDENT_OBSERVER_QUERY_TOKEN through `secrets: inherit`; with
+      # the URL unset the step is skipped and the fan-out runs as before.
       - name: Screen the release against retained incident recovery
         if: ${{ vars.LIVESPEC_INCIDENT_RELEASE_SCREEN_URL != '' }}
         env:
@@ -286,8 +294,10 @@ jobs:
           RELEASE_TAG: ${{ inputs.tag }}
         run: |
           set -euo pipefail
-          # Prefer the peeled commit of an annotated tag.
-          source_sha=$(git ls-remote "https://github.com/$OWNER/$SOURCE_REPO.git" "refs/tags/$RELEASE_TAG" \
+          # Ask for the annotated tag's peeled commit (^{}) explicitly; a
+          # lightweight tag has no peeled line, so fall back to its plain ref.
+          source_sha=$(git ls-remote "https://github.com/$OWNER/$SOURCE_REPO.git" \
+            "refs/tags/$RELEASE_TAG" "refs/tags/$RELEASE_TAG^{}" \
             | awk '$2 ~ /\^\{\}$/ {peeled=$1} {last=$1} END {print (peeled != "" ? peeled : last)}')
           # The interpreter `uv sync --all-groups` provisioned above.
           export PATH="$PWD/.venv/bin:$PATH"
@@ -296,12 +306,6 @@ jobs:
             --repository "$OWNER/$SOURCE_REPO" \
             --source-sha "$source_sha" \
             --tag "$RELEASE_TAG"
-
-      - name: just await-sandbox-image
-        env:
-          SOURCE_REPO: ${{ inputs.source_repo }}
-          RELEASE_TAG: ${{ inputs.tag }}
-        run: just await-sandbox-image --source-repo "$SOURCE_REPO" --tag "$RELEASE_TAG"
 
   dispatch:
     name: dispatch ${{ matrix.sibling.name }}
