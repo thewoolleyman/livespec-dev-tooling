@@ -309,6 +309,12 @@ request is subject to the dispatch freeze (§9). The maintainer, 2026-11-06 ~06:
 machine/workspace to your monitored list of plans. They are executing on that machine, but may send stuff to CI
 and/or the factory."
 
+**A word given to a Mac or Codex seat goes into its PANE at the moment it is given.** Send it with
+`herdr --machine <m> pane send-text <pane> "<text>"`, then `herdr --machine <m> pane send-keys <pane> Enter`, not only
+as a ledger comment, and read every top-5 seat's pane text every tick. overseerd cannot see Mac seats, so the
+coordinator owns their restarts. The maintainer, 2026-11-09 ~15:0xZ, recorded on epic `livespec-dev-tooling-6tgd2z`:
+"why did you let this stall? fleet-mutation-testing-rule-26 . I told overseerd too".
+
 **A flagged row's cause is on the row (coordinator's reading).** The UNTICKETED-READY section prints `HELD spec-change
 <topic> <reason>` or `BLOCKED by <id>` on a flagged row that has one. Such a row names why it waits, so it is checked
 against its cause, not routed as a stall. A row with no cause still is one. `causes SKIPPED` means the section's
@@ -436,6 +442,14 @@ hand-landed close path above applies outside the expedited plan too: the carrier
 coordinator's grade, with no replay. Measured 2026-11-09: the factory-yield carriers bd-ib-e6zk4u
 (livespec-orchestrator-beads-fabro#4727, hand-composed) and bd-ib-fkd4ve were routed that way.
 
+**Cleanup of a provably superseded local artifact is not a maintainer ask.** A branch, worktree or tmp file whose
+content is already on master is looked at first (`git worktree list`, `git ls-remote`, the PR list, a diff against
+master), then deleted by the coordinator or the owning seat and reported. CLAUDE.md "Decision authority" (the
+"Prescribed destructive ops are pre-authorized" bullet) carries the same exception. The maintainer, 2026-11-09 ~17:1xZ,
+recorded on epic `livespec-dev-tooling-6tgd2z`: "Why are you asking me this? It's wrong clearly, right? Just fix and
+clean up". Measured that day: an ask to delete the local branch `spec/revise-v162-a-compilation-cache-warm-build`,
+superseded by v163 (a14f9543), sat under `FOR THE MAINTAINER` for several ticks.
+
 ## 6. Never block: no pickers, ever
 
 The maintainer, 2026-11-01: "You should be forbidden from presenting blocking pickers. You are only ever supposed to
@@ -494,6 +508,10 @@ entry from live state: `herdr agent list` in full, plus ledger reads.
   `livespec-dev-tooling-6tgd2z`, after an attestation ask named only `bd-ib-zm4gpr`.
 - Name hosts by their real hostname, never "dev host". The dev VPS is `vmi3006760.contaboserver.net`. The maintainer,
   2026-11-03: "Use a real freaking hostname".
+
+**Name herdr workspaces and tabs by their LABEL, never their id.** Read the labels from `herdr workspace list`, for
+example livespec-dev-tooling and livespec-overseer, never `w2J` or `t1N`. Maintainer correction 2026-11-09 ~15:3xZ,
+recorded on epic `livespec-dev-tooling-6tgd2z`, verbatim: "u used workspace id".
 
 **"P1" is coordinator shorthand, never a word to the maintainer.** Write the plan's name:
 expedited-incident-response-flag (livespec-dev-tooling-bqnzcm). P1 means only that plan. The maintainer, 2026-11-07
