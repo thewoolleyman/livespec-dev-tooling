@@ -119,3 +119,61 @@ def test_retried_results_are_written_and_rendered_without_hiding_final_failure(
     ]
     assert "FLAKE-RETRIED" in plugin.retry_summary(results=[record])
     assert "failed" in plugin.retry_summary(results=[record])
+
+
+@pytest.mark.integration
+def test_a_test_file_outside_the_repository_root_gets_no_retry_marker(*, tmp_path: Path) -> None:
+    """An outside-root test is unanalysable, so it fails at once rather than crashing collection."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    outside = tmp_path / "scratch"
+    outside.mkdir()
+    test_path = outside / "test_outside.py"
+    _ = test_path.write_text("def test_it():\n    assert True\n", encoding="utf-8")
+
+    plugin = importlib.import_module("livespec_dev_tooling.flake_retry")
+
+    marker = plugin.retry_marker_for(
+        repo_root=repo, test_path=test_path, change_paths={Path("README.md")}
+    )
+
+    assert marker is None
+
+
+@pytest.mark.integration
+def test_an_outside_root_test_does_not_change_the_decision_for_an_inside_root_test(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Collection marks the inside-root test and skips the outside-root one without raising."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    inside = repo / "test_inside.py"
+    _ = inside.write_text("def test_it():\n    assert True\n", encoding="utf-8")
+    outside = tmp_path / "scratch" / "test_outside.py"
+    outside.parent.mkdir()
+    _ = outside.write_text("def test_it():\n    assert True\n", encoding="utf-8")
+
+    plugin = importlib.import_module("livespec_dev_tooling.flake_retry")
+
+    def _change_paths(*, repo_root: Path) -> set[Path]:
+        assert repo_root == repo
+        return {Path("README.md")}
+
+    monkeypatch.setattr(plugin, "change_paths", _change_paths)
+
+    class _Item:
+        def __init__(self, *, path: Path) -> None:
+            self.path = path
+            self.markers: list[object] = []
+
+        def add_marker(self, marker: object) -> None:
+            self.markers.append(marker)
+
+    inside_item = _Item(path=inside)
+    outside_item = _Item(path=outside)
+
+    withheld = plugin.mark_untouched_tests(root=repo, items=[outside_item, inside_item])
+
+    assert withheld is None
+    assert outside_item.markers == []
+    assert len(inside_item.markers) == 1
