@@ -92,14 +92,14 @@ def commit(repo, message):
 class Forge:
     """A bare repository speaking the recovery App's REST subset."""
 
-    def __init__(self, *, bare, pull):
-        self.bare, self.pull, self.calls = bare, pull, []
+    def __init__(self, *, bare, pull, branch="master"):
+        self.bare, self.pull, self.branch, self.calls = bare, pull, branch, []
         self.hooks = {}
         self.lost_patch_reply = self.ref_missing = self.wrong_tree = False
         self.broken = self.compare = None
 
     def master(self):
-        return git(self.bare, "rev-parse", "refs/heads/master")
+        return git(self.bare, "rev-parse", f"refs/heads/{self.branch}")
 
     def __call__(self, *, request):
         method, resource, value = request.method, request.resource, request.value
@@ -124,7 +124,7 @@ class Forge:
                 _CREATED,
                 {"token": "ghs_fixture", "permissions": {"contents": "write"}},
             ),
-            "git/ref/heads/master": self._ref,
+            f"git/ref/heads/{self.branch}": self._ref,
             f"pulls/{number}": lambda: (_OK, self.pull["record"]),
             f"pulls/{number}/commits?per_page=100": lambda: (
                 _OK,
@@ -174,10 +174,10 @@ class Forge:
                 self.bare, "commit-tree", value["tree"], *parents, data=value["message"].encode()
             )
             return _CREATED, {"sha": sha}
-        assert (method, route, value["force"]) == ("PATCH", "git/refs/heads/master", False)
+        assert (method, route, value["force"]) == ("PATCH", f"git/refs/heads/{self.branch}", False)
         if not _ancestor(self.bare, self.master(), value["sha"]):
             return _UNPROCESSABLE, {"message": "Update is not a fast forward"}
-        git(self.bare, "update-ref", "refs/heads/master", value["sha"])
+        git(self.bare, "update-ref", f"refs/heads/{self.branch}", value["sha"])
         return (0, None) if self.lost_patch_reply else (_OK, {"object": {"sha": value["sha"]}})
 
     def _tree(self, *, base, entries):
@@ -205,7 +205,7 @@ def _ancestor(repo, older, newer):
     return True
 
 
-def _intent(*, before, merge, original_head):
+def _intent(*, before, merge, original_head, branch="master"):
     arm = ObserverArm(
         repository=REPOSITORY,
         incident_item_id="incident-1",
@@ -232,6 +232,7 @@ def _intent(*, before, merge, original_head):
         phase=arm.phase,
         head_sha=merge,
         run_id=81,
+        branch=branch,
         required_jobs=arm.required_jobs,
         controller_release=arm.controller_release,
         controller_revision=arm.controller_revision,
@@ -242,7 +243,7 @@ def _intent(*, before, merge, original_head):
         delivery_id="delivery-1",
         repository=REPOSITORY,
         head_sha=merge,
-        branch="master",
+        branch=branch,
         run_id=81,
         job_id=82,
         job_name="ci-green",
@@ -302,10 +303,10 @@ class World(SimpleNamespace):
         return ProcessInverseForge(command=("/fixed/principal",))
 
     def push_later(self, *, path, text, message="later unrelated work"):
-        git(self.author, "pull", "--quiet", "--ff-only", "origin", "master")
+        git(self.author, "pull", "--quiet", "--ff-only", "origin", self.branch)
         (self.author / path).write_text(text)
         sha = commit(self.author, message)
-        git(self.author, "push", "--quiet", "origin", "HEAD:master")
+        git(self.author, "push", "--quiet", "origin", f"HEAD:{self.branch}")
         return sha
 
     def recover(self, monkeypatch, *, connect=None):
@@ -341,7 +342,7 @@ class World(SimpleNamespace):
             return application.execute(raw=raw)
 
     def reverts(self):
-        log = git(self.bare, "log", "--format=%H %s", "refs/heads/master")
+        log = git(self.bare, "log", "--format=%H %s", f"refs/heads/{self.branch}")
         return [line for line in log.splitlines() if "Revert complete incident" in line]
 
 
@@ -370,8 +371,14 @@ def _history(*, tmp_path, bare):
 
 @pytest.fixture
 def world(tmp_path):
+    return build_world(tmp_path=tmp_path)
+
+
+def build_world(*, tmp_path, branch="master"):
     bare = tmp_path / "forge.git"
     author, before, merge = _history(tmp_path=tmp_path, bare=bare)
+    if branch != "master":
+        git(bare, "update-ref", f"refs/heads/{branch}", merge)
     reference = tmp_path / "reference"
     git(tmp_path, "clone", "--quiet", str(bare), str(reference))
     reference.chmod(0o700)
@@ -380,7 +387,7 @@ def world(tmp_path):
     for name in ("recovery-journal", "recovery-journal-contexts"):
         (state / name).mkdir(mode=0o700)
     original_head = "b" * 40
-    intent = _intent(before=before, merge=merge, original_head=original_head)
+    intent = _intent(before=before, merge=merge, original_head=original_head, branch=branch)
     record = state / (hashlib.sha256(REPOSITORY.encode()).hexdigest() + ".json")
     save_record(path=record, record=_observer_record(intent))
     pull = {
@@ -389,7 +396,7 @@ def world(tmp_path):
         "record": {
             "merged": True,
             "merge_commit_sha": merge,
-            "base": {"ref": "master", "sha": before},
+            "base": {"ref": branch, "sha": before},
             "head": {"sha": original_head},
             "commits": 2,
         },
@@ -409,8 +416,10 @@ def world(tmp_path):
         query_secret=b"unused-query-fixture",
         port=8765,
         config=state.parent / "controller.json",
+        target_branch=branch,
     )
     return World(
+        branch=branch,
         bare=bare,
         author=author,
         before=before,
@@ -418,7 +427,7 @@ def world(tmp_path):
         intent=intent,
         installation=installation,
         record=record,
-        forge=Forge(bare=bare, pull=pull),
+        forge=Forge(bare=bare, pull=pull, branch=branch),
         ledger=state / "recovery-journal" / f"{intent.action_id}.publication.json",
     )
 
