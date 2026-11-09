@@ -2292,6 +2292,14 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: the incident fleet audit command refuses enablement for a consumer without verified serving evidence",
+    "test": "TODO",
+    "reason": "A real test at the integration tier or above is owed for this heading: the incident-fleet-audit recipe must be run as a child process against a fixture manifest and fake serving-version readers, and the enablement step must refuse a repository missing from its ready list; livespec-dev-tooling-3wcldx owns it.",
+    "work_item": "livespec-dev-tooling-3wcldx"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: a routed job sets up its actions from the pool's action-archive cache, and falls back to a download when an archive is missing",
     "test": "TODO",
     "reason": "Spec-first: a real test at the integration tier or above (a host-captured end-to-end run) is owed for this scenario, running a routed job on the k3s pool with the action-archive cache populated, absent and kill-switched and reading each job's Set up job log; livespec-dev-tooling-a35sa4 owns it, and its Definition of Done asserts this behaviour.",

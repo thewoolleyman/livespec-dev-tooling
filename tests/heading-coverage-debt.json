@@ -1458,6 +1458,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: the incident fleet audit command refuses enablement for a consumer without verified serving evidence",
+    "work_item": "livespec-dev-tooling-3wcldx",
+    "first_seen": "2026-11-09"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: the local-aggregate entry point writes no evidence for a failed, dirty or changed tree",
     "work_item": "livespec-dev-tooling-4scqti",
     "first_seen": "2026-11-09"
