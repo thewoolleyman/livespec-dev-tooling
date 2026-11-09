@@ -146,3 +146,10 @@ def test_unavailable_forge_is_unavailable_not_success(attached, missing):
         binding=attached.receipt["binding"], read=lambda _path: None
     )
     assert status == "unavailable" and facts["reason"] == "retained forge observation unavailable"
+
+
+def test_zero_total_listing_is_unavailable_not_conflict(attached):
+    conclude(attached.records)
+    attached.records[_JOBS] = {"total_count": 0, "jobs": []}
+    status, facts = observe_retained_job(binding=attached.receipt["binding"], read=attached.read)
+    assert status == "unavailable" and facts["reason"] == "retained forge observation unavailable"
