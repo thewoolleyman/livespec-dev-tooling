@@ -160,6 +160,8 @@ def resolve_current(*, reading: dict[str, Any], query: dict[str, Any]) -> Execut
         for k, v in query.items()
     ):
         _fail(detail="canonical response does not bind current requested identity")
+    recorded = attempt.get("landed_commits")
+    landed = cast("list[str]", recorded) if isinstance(recorded, list) else []
     identity = OperationIdentity(
         incident_item_id=attempt["item_id"],
         attempt_id=attempt["attempt_id"],
@@ -168,15 +170,16 @@ def resolve_current(*, reading: dict[str, Any], query: dict[str, Any]) -> Execut
         base_sha=attempt["base"],
         head_sha=attempt["head"],
         operation_id=attempt["operation_id"],
-        recorded_incident_merge_sha=attempt["landed_commits"][-1]
-        if attempt["phase"] == "reverting" and attempt["landed_commits"]
+        recorded_incident_merge_sha=landed[-1]
+        if attempt["phase"] == "reverting" and landed
         else None,
     )
     resolved = resolve_execution_context(
         environ=os.environ, invocation=Invocation.ORDINARY, identity=identity
     )
     if not resolved.is_successful:
-        _fail(detail=resolved.failure().detail)
+        refusal = resolved.failure()
+        _fail(detail=f"{refusal.code}: {refusal.detail}")
     context = resolved.unwrap()
     if (
         CONTEXT_ENV in os.environ

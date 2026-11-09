@@ -302,3 +302,62 @@ def test_nonstandard_git_administration_never_guesses_registered_authority(
     monkeypatch.setattr(module, "git_text", lambda **_kwargs: str(tmp_path / "custom-git"))
     with pytest.raises(module.HookRefusalError):
         module.invoke_authority(repo=tmp_path, query=query(), action="read-current")
+
+
+def _revert_reading(*, landed: object) -> dict[str, Any]:
+    revert = reading()
+    revert["attempt"].update(phase="reverting")
+    if landed is None:
+        del revert["attempt"]["landed_commits"]
+    else:
+        revert["attempt"]["landed_commits"] = landed
+    return revert
+
+
+@pytest.mark.parametrize("repair", [None, "1"])
+def test_revert_flag_alone_or_with_repair_resolves_the_recorded_incident_merge(
+    monkeypatch: pytest.MonkeyPatch, repair: str | None
+) -> None:
+    monkeypatch.setenv(EXPEDITED_INCIDENT_RESPONSE_REVERT, "1")
+    monkeypatch.delenv(module.CONTEXT_ENV, raising=False)
+    if repair is None:
+        monkeypatch.delenv(EXPEDITED_INCIDENT_RESPONSE, raising=False)
+    else:
+        monkeypatch.setenv(EXPEDITED_INCIDENT_RESPONSE, repair)
+    context = module.resolve_current(
+        reading=_revert_reading(landed=["d" * 40, "c" * 40]), query=query() | {"phase": "reverting"}
+    )
+    assert context.identity is not None
+    assert (context.mode, context.identity.recorded_incident_merge_sha) == (
+        "emergency-revert",
+        "c" * 40,
+    )
+
+
+@pytest.mark.parametrize(
+    ("landed", "code"),
+    [
+        ([], "missing-recorded-incident-merge"),
+        (None, "missing-recorded-incident-merge"),
+        ("not-a-list", "missing-recorded-incident-merge"),
+        (["not-an-object-id"], "invalid-recorded-incident-merge"),
+    ],
+)
+def test_revert_flag_without_a_usable_landed_merge_is_refused_by_name(
+    monkeypatch: pytest.MonkeyPatch, landed: object, code: str
+) -> None:
+    monkeypatch.setenv(EXPEDITED_INCIDENT_RESPONSE_REVERT, "1")
+    monkeypatch.delenv(EXPEDITED_INCIDENT_RESPONSE, raising=False)
+    monkeypatch.delenv(module.CONTEXT_ENV, raising=False)
+    with pytest.raises(module.HookRefusalError, match=code):
+        module.resolve_current(
+            reading=_revert_reading(landed=landed), query=query() | {"phase": "reverting"}
+        )
+
+
+def test_a_malformed_ordinary_flag_is_refused_by_its_code(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv(EXPEDITED_INCIDENT_RESPONSE, "maybe")
+    monkeypatch.delenv(EXPEDITED_INCIDENT_RESPONSE_REVERT, raising=False)
+    monkeypatch.delenv(module.CONTEXT_ENV, raising=False)
+    with pytest.raises(module.HookRefusalError, match="invalid-incident-flag"):
+        module.resolve_current(reading=reading(), query=query())
