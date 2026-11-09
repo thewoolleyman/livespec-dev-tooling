@@ -92,7 +92,10 @@ _FLEET_COMMIT = "bbe6938"
 # 2026-11-04: the candidate alone runs 85af354 (thewoolleyman/fabro#26) for its
 # 0-run proof, ahead of the fleet instance.
 # 2026-11-06: bbe6938 with the fleet instance (thewoolleyman/fabro#33).
-_CANDIDATE_COMMIT = "bbe6938"
+# 2026-11-09: the candidate alone runs 85071c8, Fabro 0.408.0-nightly.0, the carrier
+# rebased onto upstream v0.408.0-nightly.0 (livespec-orchestrator-beads-fabro
+# bd-ib-qx45e6, plan fabro-currency), ahead of the fleet instance.
+_CANDIDATE_COMMIT = "85071c8"
 _PINNED_COMMIT = {"fabro-server": _FLEET_COMMIT, "fabro-server-candidate": _CANDIDATE_COMMIT}
 _SUPERSEDED_CARRIER = "adeefec"
 _SUPERSEDED_BUILD_REFERENCE = "#1048"

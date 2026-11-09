@@ -827,7 +827,11 @@ fleet instance takes it in its next cancel-for-restart window. On 2026-11-06 all
 pinned to `bbe6938`: `85af354` plus `thewoolleyman/fabro#33`, which pins Petri `c6bfd5e3`, whose
 post-exit output drain waits out a stalled log consumer (livespec-orchestrator-beads-fabro
 `bd-ib-aqcgxz`); every other commit between the two builds changes only tests or CI. Each
-instance takes it in a window at 0 live runs, under legacy-coordinator-agent's ruling. The rollback target is named in `host_vars` beside the pin and never
+instance takes it in a window at 0 live runs, under legacy-coordinator-agent's ruling. On 2026-11-09 the candidate alone moves to `85071c8`, Fabro
+`0.408.0-nightly.0`: the carrier rebased onto the exact upstream tag `v0.408.0-nightly.0` with Petri
+`ac0b9fb3` (livespec-orchestrator-beads-fabro `bd-ib-qx45e6`, plan fabro-currency). That base refuses
+`[run.prepare]`, so the fleet instance and mi-homelab stay on `bbe6938` until the workflow migrated to
+authored setup nodes (`bd-ib-dpsiwz`) is live. The rollback target is named in `host_vars` beside the pin and never
 here, because that is the file an operator rolling back edits.
 
 `fabro_server_host_checkout_remote` is declared because the host had no
