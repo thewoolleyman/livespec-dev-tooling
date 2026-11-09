@@ -83,6 +83,10 @@ from returns.io import IOFailure, IOResult, IOSuccess  # noqa: E402  — vendor-
 from returns.pipeline import is_successful  # noqa: E402  — vendor-path-aware import.
 from returns.unsafe import unsafe_perform_io  # noqa: E402  — vendor-path-aware import.
 
+from livespec_dev_tooling._isolated_coverage import (  # noqa: E402
+    isolated_environment,
+    pytest_coverage_arguments,
+)
 from livespec_dev_tooling.checks._branch_diff import (  # noqa: E402
     DiffUnavailable,
     name_only_diff,
@@ -122,16 +126,6 @@ CHECK_PURITY = "world-reading"  # the `origin/master...HEAD` commit range it sco
 #      fresh `mkdtemp` per invocation keeps every (possibly nested) run
 #      isolated. The temp dir is removed after `coverage report`.
 _DATA_DIR_PREFIX: str = "livespec-cov-incremental-"
-# pytest-cov's `.pth` startup hook activates inside ANY subprocess
-# whose env has `COV_CORE_*` set — including the inner pytest the
-# script spawns when invoked under an outer pytest-cov session
-# (this script's own happy-path test). Activating the hook in the
-# inner subprocess would attach the inner coverage measurement to
-# the OUTER session's data file, defeating the per-invocation temp
-# data-file isolation above. Strip those vars from the env handed to
-# the inner pytest invocation so it starts a fresh measurement against
-# the temp data file only.
-_COV_CORE_ENV_PREFIX: str = "COV_CORE_"
 # The range the derive mode diffs, named once so the failure diagnostic and the
 # nothing-to-gate diagnostic cannot disagree about which ref was unreadable.
 _DIFF_RANGE: str = "origin/master...HEAD"
@@ -442,8 +436,9 @@ def main() -> int:
     # nested) invocation. See the `_DATA_DIR_PREFIX` comment above.
     data_dir = tempfile.mkdtemp(prefix=_DATA_DIR_PREFIX)
     data_file = str(Path(data_dir) / "coverage.dat")
-    inner_env = {k: v for k, v in os.environ.items() if not k.startswith(_COV_CORE_ENV_PREFIX)}
-    inner_env["COVERAGE_FILE"] = data_file
+    # The `COV_CORE_*` strip and the measurement flags are shared with the
+    # expedited incident's focused evidence (`_isolated_coverage`).
+    inner_env = isolated_environment(environ=os.environ, data_file=data_file)
 
     # Coverage-threshold policy by invocation mode (epic li-cvaudit, cvnoarg):
     #   - Explicit `--paths` (interactive fast-feedback): enforce the per-file
@@ -467,12 +462,7 @@ def main() -> int:
             "uv",
             "run",
             "pytest",
-            "--cov",
-            "--cov-branch",
-            "--cov-config=pyproject.toml",
-            "--cov-report=",
-            "--cov-fail-under=0",
-            *(str(p) for p in test_paths),
+            *pytest_coverage_arguments(tests=(str(p) for p in test_paths)),
         ],
         env=inner_env,
         check=False,
