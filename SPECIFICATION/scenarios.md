@@ -3245,6 +3245,20 @@ And consumer closure retains normal factory proof over the cumulative incident s
 And the operator can inspect attempts, skip reasons, focused evidence, CI runs, rollback and final factory proof through the incident item identity.
 ```
 
+## Scenario: the incident fleet audit command refuses enablement for a consumer without verified serving evidence
+
+```gherkin
+Given livespec core's committed fleet manifest, authenticated against core's master
+And one manifest consumer whose running independent controller's serving version cannot be read
+When the operator runs `just incident-fleet-audit`
+Then it MUST print one row per incident surface and manifest consumer, each naming the consumer, the surface and a disposition of implemented, deliberately-normal, not-applicable or unclassified
+And that consumer's controller row MUST be unclassified
+And the command MUST exit non-zero, naming the surface and consumer of every unclassified row
+And its ready list MUST NOT include that consumer, and its findings MUST name that consumer and the missing controller serving-version evidence
+And the incident enablement step run for that consumer MUST refuse, exit non-zero and enable nothing, naming the consumer and the missing evidence
+And the same command run against a manifest whose committed identity cannot be authenticated MUST report that finding, list zero ready repositories and exit non-zero.
+```
+
 ## Scenario: a macOS developer host reads the ledger tenant through the loopback forward
 
 Given a macOS developer host that runs no Dolt server
