@@ -145,6 +145,25 @@ def _caller_gate_variables_never_reach_a_test(monkeypatch: pytest.MonkeyPatch) -
         monkeypatch.delenv(name, raising=False)
 
 
+@pytest.fixture(autouse=True)
+def _trusted_origin_is_never_the_hosts_own(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Make every test start from an untrusted, ordinary incident origin.
+
+    The incident gate entrances force normal mode, before parsing any inherited
+    incident flag, in a master-push CI job (`GITHUB_ACTIONS` with
+    `GITHUB_EVENT_NAME=push`) and in a factory sandbox (the
+    `livespec.sandboxExempt` git marker). This suite runs in exactly those two
+    places, so without this fixture a test that asserts an ordinary refusal of an
+    incident flag would pass or fail depending on who ran it. A test that drives
+    the real origin probe overrides this fixture by name.
+    """
+    monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
+    monkeypatch.delenv("GITHUB_EVENT_NAME", raising=False)
+    monkeypatch.setattr(
+        "livespec_dev_tooling.incident_trusted_origin.factory_sandbox", lambda **_kwargs: False
+    )
+
+
 # Real git does all the work; only the rendering of a full ISO instant's UTC
 # offset is rewritten. The anchor on the time-of-day group is what keeps the
 # rewrite to a `%cI`-shaped field rather than to any `+00:00` a blob read
