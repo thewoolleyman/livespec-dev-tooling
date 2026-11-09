@@ -89,6 +89,16 @@ spec:
         - key: livespec.io/factory-pressure
           operator: Exists
           effect: PreferNoSchedule
+        # The container-worker class taint (plan homelab-k8s-worker-nodes). The
+        # worker gate flavors carry it as a Kueue nodeTaint, so only a gate that
+        # tolerates it here can be assigned a worker flavor at all; the required
+        # kubernetes.io/arch affinity below then admits only the architectures
+        # this gate's image publishes. A gate rendered without this toleration
+        # (an older vendored renderer) never reaches a worker.
+        - key: homelab-worker.livespec.dev/class
+          operator: Equal
+          value: worker
+          effect: NoSchedule
       # Requirement 7, half two. PREFERRED rather than required: gates-flavor
       # already selects gmktec by `kubernetes.io/hostname`, so Kueue will not
       # admit this Job against any other node's quota. This affinity expresses

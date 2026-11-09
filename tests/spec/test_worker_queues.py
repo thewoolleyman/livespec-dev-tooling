@@ -8,6 +8,7 @@ sum rule, never as a committed number.
 from __future__ import annotations
 
 import json
+import re
 import stat
 import subprocess
 from pathlib import Path
@@ -199,11 +200,13 @@ def test_the_worker_gate_quota_is_whole_gates_of_the_enrolled_shares(
     result, _ = _render_gates(tmp_path=tmp_path, shares=shares)
     assert result.returncode == 0, result.stderr
     worker = [
-        f for f in _gates_patch(stdout=result.stdout) if f["name"] == "gates-worker-arm64-flavor"
+        f
+        for f in _gates_patch(stdout=result.stdout)
+        if f["name"] == "gates-worker-taint-arm64-flavor"
     ]
     assert worker == [
         {
-            "name": "gates-worker-arm64-flavor",
+            "name": "gates-worker-taint-arm64-flavor",
             "resources": [
                 {"name": "cpu", "nominalQuota": gates * 5},
                 {"name": "memory", "nominalQuota": f"{gates * 8}Gi"},
@@ -223,7 +226,7 @@ def test_the_worker_flavors_come_first_and_the_fleet_gate_flavors_keep_their_ord
     result, _ = _render_gates(tmp_path=tmp_path, shares="arm64 4000\n")
     assert result.returncode == 0, result.stderr
     names = [f["name"] for f in _gates_patch(stdout=result.stdout)]
-    assert names == ["gates-worker-arm64-flavor", "gates-hp-flavor", "gates-flavor"]
+    assert names == ["gates-worker-taint-arm64-flavor", "gates-hp-flavor", "gates-flavor"]
 
 
 def test_a_worker_no_longer_enrolled_drops_out_of_gates_cq(tmp_path: Path) -> None:
@@ -233,7 +236,7 @@ def test_a_worker_no_longer_enrolled_drops_out_of_gates_cq(tmp_path: Path) -> No
     assert names == ["gates-hp-flavor", "gates-flavor"]
 
 
-def test_the_worker_gate_flavor_selects_its_architecture_and_tolerates_the_class_taint(
+def test_the_worker_gate_flavor_selects_its_architecture_and_admits_only_class_tolerating_gates(
     tmp_path: Path,
 ) -> None:
     result, _ = _render_gates(tmp_path=tmp_path, shares="arm64 4000\n")
@@ -245,17 +248,39 @@ def test_the_worker_gate_flavor_selects_its_architecture_and_tolerates_the_class
     )
     [flavor] = [doc for doc in yaml.safe_load_all(manifests) if doc]
     assert flavor["kind"] == "ResourceFlavor"
-    assert flavor["metadata"]["name"] == "gates-worker-arm64-flavor"
+    assert flavor["metadata"]["name"] == "gates-worker-taint-arm64-flavor"
     assert flavor["spec"]["nodeLabels"] == {
         "homelab-worker.livespec.dev/class": "worker",
         "kubernetes.io/arch": "arm64",
     }
-    assert {
-        "key": "homelab-worker.livespec.dev/class",
-        "operator": "Equal",
-        "value": "worker",
-        "effect": "NoSchedule",
-    } in flavor["spec"]["tolerations"]
+    # A nodeTaint, never an injected toleration: Kueue assigns the flavor only to a
+    # gate that already tolerates the class taint, so a gate from an older
+    # vendored renderer (no arch rule) can never be placed on a worker.
+    assert flavor["spec"]["nodeTaints"] == [
+        {"key": "homelab-worker.livespec.dev/class", "value": "worker", "effect": "NoSchedule"}
+    ]
+    assert "tolerations" not in flavor["spec"]
+
+
+def test_the_gate_template_tolerates_the_class_taint_and_requires_its_declared_arches() -> None:
+    """Only the current template's gates tolerate the class taint the worker flavors carry."""
+    template = (
+        Path(__file__).resolve().parents[2]
+        / "ci-runner"
+        / "k3s"
+        / "phase2"
+        / "gates"
+        / "gate-job-template.yaml"
+    ).read_text(encoding="utf-8")
+    toleration = re.search(
+        r"- key: homelab-worker\.livespec\.dev/class\n\s+operator: Equal\n"
+        r"\s+value: worker\n\s+effect: NoSchedule",
+        template,
+    )
+    assert toleration is not None
+    required = template.index("requiredDuringSchedulingIgnoredDuringExecution:")
+    assert "key: kubernetes.io/arch" in template[required : required + 400]
+    assert "values: [@@GATE_ARCHES@@]" in template[required : required + 400]
 
 
 def test_a_dry_run_patches_and_applies_nothing(tmp_path: Path) -> None:

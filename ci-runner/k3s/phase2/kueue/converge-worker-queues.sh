@@ -55,7 +55,7 @@ flavors_json="[]"
 while read -r arch count; do
   [ -n "$arch" ] || continue
   rendered="$(sed "s|@ARCH@|$arch|g" "$gates_template")"
-  echo "converge-worker-queues: gates-worker-$arch-flavor -> $count gates from enrolled $arch workers"
+  echo "converge-worker-queues: gates-worker-taint-$arch-flavor -> $count gates from enrolled $arch workers"
   if [ "$dry_run" -eq 1 ]; then
     printf '%s\n' "$rendered"
   else
@@ -65,7 +65,7 @@ while read -r arch count; do
     MEM="$((count * gate_memory_gi))Gi" python3 -c '
 import json, os, sys
 f = json.load(sys.stdin)
-f.append({"name": "gates-worker-%s-flavor" % os.environ["ARCH"], "resources": [
+f.append({"name": "gates-worker-taint-%s-flavor" % os.environ["ARCH"], "resources": [
     {"name": "cpu", "nominalQuota": int(os.environ["CPU"])},
     {"name": "memory", "nominalQuota": os.environ["MEM"]}]})
 print(json.dumps(f))')"
