@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 import math
 import os
 from collections.abc import Mapping
@@ -36,6 +38,9 @@ __all__: list[str] = [
 ]
 
 MAX_GATE_SECONDS = 60.0
+# The receipt travels as ONE argv element, which Linux caps at 128 KiB, so each
+# gate's text keeps at most this many JSON-escaped characters of its tail.
+_RECEIPT_TEXT_LIMIT = 512
 
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-cerkbn
 # Selection is deliberately separate from mode/receipt parsing. Only the shared
@@ -165,6 +170,20 @@ def select_gates(*, gates: tuple[GateSpec, ...]) -> tuple[GateSelection, ...]:
     )
 
 
+def _receipt_text(*, text: str) -> str:
+    """A gate's text as the receipt carries it: whole when small, else a marked tail."""
+    if len(json.dumps(text)) <= _RECEIPT_TEXT_LIMIT:
+        return text
+    tail = text[-_RECEIPT_TEXT_LIMIT:]
+    while len(json.dumps(tail)) > _RECEIPT_TEXT_LIMIT:
+        tail = tail[1:]
+    digest = hashlib.sha256(text.encode("utf-8", "surrogatepass")).hexdigest()
+    return (
+        f"[receipt keeps the last {len(tail)} of {len(text)} characters;"
+        f" full text sha256:{digest}]\n{tail}"
+    )
+
+
 def _gate_result(*, outcome: TargetOutcome, concurrency: int) -> GateResult:
     """Project the shared runner's outcome onto this receipt's result shape.
 
@@ -177,15 +196,17 @@ def _gate_result(*, outcome: TargetOutcome, concurrency: int) -> GateResult:
             status="deferred-timeout",
             reason=f"local gate deadline reached under {concurrency}-way concurrency",
             duration_seconds=outcome.wall_time_s,
-            output=outcome.output,
+            output=_receipt_text(text=outcome.output),
         )
     if outcome.status == BLOCKED:
-        return GateResult(name=outcome.name, status="deferred", reason=outcome.output)
+        return GateResult(
+            name=outcome.name, status="deferred", reason=_receipt_text(text=outcome.output)
+        )
     if outcome.status != COMPLETED:
         return GateResult(
             name=outcome.name,
             status="failed",
-            reason=outcome.output,
+            reason=_receipt_text(text=outcome.output),
             returncode=outcome.returncode,
         )
     return GateResult(
@@ -194,7 +215,7 @@ def _gate_result(*, outcome: TargetOutcome, concurrency: int) -> GateResult:
         reason="gate completed",
         returncode=outcome.returncode,
         duration_seconds=outcome.wall_time_s,
-        output=outcome.output,
+        output=_receipt_text(text=outcome.output),
     )
 
 
