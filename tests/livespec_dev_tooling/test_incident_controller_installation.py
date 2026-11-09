@@ -80,6 +80,28 @@ def test_protected_manifest_selects_exact_installed_controller_and_commands(host
     assert result.jobs == ("unit", "coverage")
 
 
+def test_configuration_names_the_recovery_target_branch(host):
+    _, config, _, write = host
+    config.update(target_branch="drill/recovery-scratch")
+    result = installation.ControllerInstallation.load(config=write())
+    assert result is not None
+    assert result.target_branch == "drill/recovery-scratch"
+
+
+def test_configuration_naming_no_target_branch_means_master(host):
+    _, _, _, write = host
+    result = installation.ControllerInstallation.load(config=write())
+    assert result is not None
+    assert result.target_branch == "master"
+
+
+@pytest.mark.parametrize("name", ["", 3, "-x", "a..b", "a b", "/lead", "trail/", "x.lock", "a//b"])
+def test_configuration_refuses_a_target_branch_that_is_not_a_plain_branch_name(host, name):
+    _, config, _, write = host
+    config.update(target_branch=name)
+    assert installation.ControllerInstallation.load(config=write()) is None
+
+
 @pytest.mark.parametrize(
     "change",
     [
