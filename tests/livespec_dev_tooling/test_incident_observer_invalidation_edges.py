@@ -14,6 +14,7 @@ from tests.livespec_dev_tooling.test_incident_observer_invalidation import (
     _callback,
     _invalidate,
     _record,
+    _recovery_completed,
     _reply,
     _request,
 )
@@ -214,7 +215,8 @@ def test_invalidation_does_not_destroy_exact_delayed_merge_fulfillment(provision
     assert (
         _request(application=application, path="/bind", payload=binding)[1]["status"] == "admitted"
     )
-    assert _callback(application=application)["status"] == "completed" and len(effects) == 1
+    assert _callback(application=application)["status"] in {"pending", "completed"}
+    assert _recovery_completed(effects=effects) and len(effects) == 1
     assert (
         _request(
             application=application,
