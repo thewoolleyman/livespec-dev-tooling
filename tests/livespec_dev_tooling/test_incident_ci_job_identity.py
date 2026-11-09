@@ -236,3 +236,53 @@ def test_final_suite_boolean_cannot_equal_a_valid_integer_suite(correlated):
         return data
 
     assert replace(verifier, read=read).verify() is None
+
+
+_ATTEMPT_JOBS = "repos/owner/repo/actions/runs/812/attempts/2/jobs"
+
+
+def paged(records):
+    """A read that serves each path's queued answers in order, repeating the last one."""
+    calls = []
+
+    def read(path):
+        calls.append(path)
+        queue = records[path]
+        return copy.deepcopy(queue.pop(0) if len(queue) > 1 else queue[0])
+
+    return read, calls
+
+
+def test_total_that_changes_between_pages_refuses_the_stitched_listing():
+    page_one = {"total_count": 101, "jobs": [{"id": n} for n in range(1, 101)]}
+    page_two = {"total_count": 102, "jobs": [{"id": 101}, {"id": 102}]}
+    read, _ = paged(
+        {
+            _ATTEMPT_JOBS + "?per_page=100&page=1": [page_one, page_two | {"jobs": []}],
+            _ATTEMPT_JOBS + "?per_page=100&page=2": [page_two],
+        }
+    )
+    assert forge.attempt_jobs(read=read, path=_ATTEMPT_JOBS) is None
+
+
+def test_page_of_more_than_one_hundred_rows_refuses():
+    rows = [{"id": n} for n in range(1, 102)]
+    read, _ = paged({_ATTEMPT_JOBS + "?per_page=100&page=1": [{"total_count": 101, "jobs": rows}]})
+    assert forge.attempt_jobs(read=read, path=_ATTEMPT_JOBS) is None
+
+
+def test_a_page_of_exactly_one_hundred_rows_is_complete():
+    rows = [{"id": n} for n in range(1, 101)]
+    read, _ = paged({_ATTEMPT_JOBS + "?per_page=100&page=1": [{"total_count": 100, "jobs": rows}]})
+    assert forge.attempt_jobs(read=read, path=_ATTEMPT_JOBS) == rows
+
+
+def test_zero_total_is_a_complete_empty_listing_for_the_shared_pager():
+    read, _ = paged({_ATTEMPT_JOBS + "?per_page=100&page=1": [{"total_count": 0, "jobs": []}]})
+    assert forge.attempt_jobs(read=read, path=_ATTEMPT_JOBS) == []
+
+
+def test_verifier_with_zero_total_listing_refuses(correlated):
+    verifier, records, _ = correlated
+    records[_ATTEMPT_JOBS + "?per_page=100&page=1"] = {"total_count": 0, "jobs": []}
+    assert verifier.verify() is None

@@ -13,6 +13,7 @@ from livespec_dev_tooling.incident_forge_reads import ForgeRead
 _GITHUB_ACTIONS_APP = 15368
 _PAGE_SIZE = 100
 _MAX_JOBS = 1000
+_MAX_PAGES = _MAX_JOBS // _PAGE_SIZE
 
 __all__: list[str] = [
     "CiJobIdentity",
@@ -177,19 +178,24 @@ def forge_record(*, read: ForgeRead, path: str) -> dict[str, Any]:
 
 
 def attempt_jobs(*, read: ForgeRead, path: str) -> list[dict[str, Any]] | None:
-    """Complete bounded pages of one exact attempt, or unavailable."""
+    """Complete bounded pages of one exact attempt, or unavailable.
+
+    The one pager every reader of a run attempt's jobs shares: one page cap, one
+    empty-listing rule (a total of zero with no rows is a complete empty listing),
+    one duplicate-job-id check and one re-read of the total after the last page.
+    """
     result: list[dict[str, Any]] = []
     total: int | None = None
-    for page in range(1, 11):
+    for page in range(1, _MAX_PAGES + 1):
         data = forge_record(read=read, path=f"{path}?per_page=100&page={page}")
         count, rows = data.get("total_count"), _objects(value=data.get("jobs"))
-        if not _positive(value=count):
+        if type(count) is not int or count < 0:
             return None
-        count = cast("int", count)
         if (
             count > _MAX_JOBS
             or rows is None
-            or not 0 < len(rows) <= _PAGE_SIZE
+            or len(rows) > _PAGE_SIZE
+            or (count > 0 and not rows)
             or (total is not None and count != total)
         ):
             return None
