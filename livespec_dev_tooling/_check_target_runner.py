@@ -46,7 +46,7 @@ from livespec_dev_tooling._check_target_isolation import (
     isolated_argv,
     kill_group,
     termination_raises,
-    wait_then_kill,
+    wait_for_exit,
 )
 
 __all__: list[str] = [
@@ -138,17 +138,20 @@ class _Groups:
         if deadline_seconds is None:
             _ = process.wait()
             return False
-        timed_out = wait_then_kill(process=process, deadline_seconds=deadline_seconds)
+        timed_out = wait_for_exit(process=process, deadline_seconds=deadline_seconds)
+        # Kill the group and leave the live set under the lock, BEFORE the reap:
+        # `close` kills under the same lock, so it can never killpg a reaped pid.
         with self._lock:
+            kill_group(pid=process.pid)
             self._live.discard(process.pid)
+        _ = process.wait()
         return timed_out
 
     def close(self, *, kill: bool) -> None:
         with self._lock:
             self._closed = True
-            live = tuple(self._live)
-        for pid in live if kill else ():
-            kill_group(pid=pid)
+            for pid in tuple(self._live) if kill else ():
+                kill_group(pid=pid)
 
 
 def _run_one(

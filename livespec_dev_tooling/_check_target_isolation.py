@@ -7,6 +7,9 @@ keep that isolation from leaking processes (livespec-dev-tooling-oqpw6t).
 
 - When the target ends or reaches the deadline, its whole group is killed with
   SIGKILL BEFORE the leader is reaped, so the group id cannot have been reused.
+  Where CPython has no `os.waitid` (macOS), the wait polls `Popen.poll()`,
+  which reaps the leader first; there a group id freed by that reap could in
+  principle be reused before the kill, a window of one poll interval.
 - On Linux the target is started under `setpriv --pdeathsig KILL`, so the
   target process dies if the thread that launched it dies, including by
   SIGKILL. RESIDUAL RISK: a parent-death signal reaches only that process, so a
@@ -28,7 +31,7 @@ import time
 from collections.abc import Iterator
 from contextlib import contextmanager, suppress
 
-__all__: list[str] = ["isolated_argv", "kill_group", "termination_raises", "wait_then_kill"]
+__all__: list[str] = ["isolated_argv", "kill_group", "termination_raises", "wait_for_exit"]
 
 _EXIT_POLL_SECONDS = 0.05
 
@@ -45,22 +48,28 @@ def isolated_argv(*, argv: tuple[str, ...]) -> tuple[str, ...]:
     return argv if setpriv is None else (setpriv, "--pdeathsig", "KILL", "--", *argv)
 
 
-def wait_then_kill(*, process: subprocess.Popen[bytes], deadline_seconds: float) -> bool:
-    """Wait up to the deadline, kill the group, then reap; True when it expired.
+def _exited(*, process: subprocess.Popen[bytes]) -> bool:
+    """Whether the leader has exited, leaving it UNREAPED where the host allows.
 
-    WNOWAIT leaves the leader unreaped, so its id stays reserved while the group
-    is killed; only then does `process.wait()` reap it.
+    WNOWAIT keeps the leader's id reserved, so the caller can kill the group
+    before `process.wait()` reaps it.
+    """
+    if not hasattr(os, "waitid"):
+        return process.poll() is not None
+    return os.waitid(os.P_PID, process.pid, os.WEXITED | os.WNOHANG | os.WNOWAIT) is not None
+
+
+def wait_for_exit(*, process: subprocess.Popen[bytes], deadline_seconds: float) -> bool:
+    """Wait up to the deadline for the leader to exit; True when the deadline expired.
+
+    The caller kills the group, then reaps the leader.
     """
     expires = time.monotonic() + deadline_seconds
-    timed_out = False
-    while os.waitid(os.P_PID, process.pid, os.WEXITED | os.WNOHANG | os.WNOWAIT) is None:
+    while not _exited(process=process):
         if time.monotonic() >= expires:
-            timed_out = True
-            break
+            return True
         time.sleep(_EXIT_POLL_SECONDS)
-    kill_group(pid=process.pid)
-    _ = process.wait()
-    return timed_out
+    return False
 
 
 def _raise_exit(*, signum: int) -> None:
