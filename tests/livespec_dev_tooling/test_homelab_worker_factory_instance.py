@@ -88,7 +88,8 @@ def _render(*, tmp_path: Path, overrides: dict[str, Any]) -> dict[str, Any]:
                     + str(_TEMPLATE)
                     + "') | to_json }}"
                 },
-                "vars": overrides,
+                # The role's defaults derive paths from role_path, which a bare play lacks.
+                "vars": {"role_path": str(_ROLE), **overrides},
             }
         ],
     }

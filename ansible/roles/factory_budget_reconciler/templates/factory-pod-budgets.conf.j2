@@ -7,3 +7,7 @@
 {{ host }} {{ hostvars[host].factory_pod_budget | int }}
 {% endif %}
 {% endfor %}
+# Every container worker (homelab-worker.livespec.dev/class=worker) with no line of
+# its own: the class-wide budget. A worker has no host_vars file, so enrolling it
+# needs no change here (plan homelab-k8s-worker-nodes, livespec-dev-tooling-ko26ez.7).
+@container-worker {{ factory_budget_reconciler_container_worker_pod_budget | int }}

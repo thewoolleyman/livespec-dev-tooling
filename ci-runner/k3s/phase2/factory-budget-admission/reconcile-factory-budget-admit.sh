@@ -97,7 +97,13 @@ def cpu_millis(value):
     return int(float(value) * 1000)
 
 
+# A container worker (homelab-worker.livespec.dev/class=worker) has no host_vars
+# file, so it takes the class-wide budget the `@container-worker <n>` line names
+# unless a per-node line names it (plan homelab-k8s-worker-nodes, ko26ez.7).
+WORKER_CLASS = "homelab-worker.livespec.dev/class"
+CLASS_LINE = "@container-worker"
 budgets = {}
+worker_budget = 0
 if gate == "on":
     with open(os.environ["FACTORY_BUDGET_FILE"]) as f:
         for raw in f:
@@ -105,7 +111,10 @@ if gate == "on":
             if not line:
                 continue
             name, value = line.split()
-            budgets[name] = int(value)
+            if name == CLASS_LINE:
+                worker_budget = int(value)
+            else:
+                budgets[name] = int(value)
 
 nodes = load("nodes.json")["items"]
 counts = {n["metadata"]["name"]: 0 for n in nodes}
@@ -122,10 +131,14 @@ for pod in load("pods.json")["items"]:
 rows = []
 for n in nodes:
     name = n["metadata"]["name"]
-    current = (n["metadata"].get("labels") or {}).get(ADMIT)
-    budget = budgets.get(name, 0)
+    node_labels = n["metadata"].get("labels") or {}
+    current = node_labels.get(ADMIT)
+    default = worker_budget if node_labels.get(WORKER_CLASS) == "worker" else 0
+    budget = budgets.get(name, default)
     alloc = cpu_millis(n["status"]["allocatable"]["cpu"])
-    rows.append({"name": name, "count": counts[name], "budget": budget, "alloc": alloc, "current": current})
+    arch = node_labels.get("kubernetes.io/arch", "")
+    rows.append({"name": name, "count": counts[name], "budget": budget, "alloc": alloc,
+                 "current": current, "arch": arch})
 
 if gate == "off":
     for r in rows:
@@ -134,14 +147,18 @@ if gate == "off":
 else:
     for r in rows:
         r["admit"] = "true" if r["count"] < r["budget"] else "false"
-    if rows and all(r["admit"] == "false" for r in rows):
-        best = max(rows, key=lambda r: (r["budget"] - r["count"], r["alloc"], r["name"]))
-        best["admit"] = "true"
-        print(
-            "OVERFLOW every factory node is at or over budget; keeping %s admitted "
-            "(count=%d budget=%d) so no sandbox waits out its start timeout"
-            % (best["name"], best["count"], best["budget"])
-        )
+    # A sandbox selects one architecture, so the fail-open overflow is judged per
+    # architecture: a full amd64 fleet is never relieved by an arm64 worker.
+    for arch in sorted({r["arch"] for r in rows}):
+        group = [r for r in rows if r["arch"] == arch]
+        if all(r["admit"] == "false" for r in group):
+            best = max(group, key=lambda r: (r["budget"] - r["count"], r["alloc"], r["name"]))
+            best["admit"] = "true"
+            print(
+                "OVERFLOW every %s factory node is at or over budget; keeping %s admitted "
+                "(count=%d budget=%d) so no sandbox waits out its start timeout"
+                % (arch or "unlabelled", best["name"], best["count"], best["budget"])
+            )
 
 for r in sorted(rows, key=lambda r: r["name"]):
     print("ADMIT node=%s count=%d budget=%d admit=%s was=%s"

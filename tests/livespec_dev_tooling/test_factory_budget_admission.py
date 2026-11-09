@@ -50,10 +50,21 @@ esac
 """
 
 
-def _node(name: str, *, admit: str | None = None, alloc: str = "32") -> _Json:
+def _node(
+    name: str,
+    *,
+    admit: str | None = None,
+    alloc: str = "32",
+    arch: str | None = None,
+    worker: bool = False,
+) -> _Json:
     labels = {"kubernetes.io/hostname": name, "ci-runner.io/factory": "true"}
     if admit is not None:
         labels[_ADMIT] = admit
+    if arch is not None:
+        labels["kubernetes.io/arch"] = arch
+    if worker:
+        labels["homelab-worker.livespec.dev/class"] = "worker"
     return {"metadata": {"name": name, "labels": labels}, "status": {"allocatable": {"cpu": alloc}}}
 
 
@@ -154,6 +165,64 @@ def test_a_factory_node_with_no_declared_budget_takes_no_sandbox(tmp_path: Path)
     assert run.returncode == 0, run.stderr
     assert _label(newcomer, "false") in labels
     assert _label(_GMK, "true") in labels
+
+
+def test_a_container_worker_takes_the_class_wide_budget(tmp_path: Path) -> None:
+    """A worker has no host_vars file, so the `@container-worker` line budgets it."""
+    worker = "alpha-homelab-worker"
+    budgets = f"{_GMK} 6\n@container-worker 1\n"
+    nodes = [_node(_GMK), _node(worker, worker=True)]
+    run, labels = _run(tmp_path, nodes=nodes, pods=[], budgets=budgets)
+    assert run.returncode == 0, run.stderr
+    assert _label(worker, "true") in labels
+    full = [_sandbox("w0", node=worker)]
+    second = tmp_path / "full"
+    second.mkdir()
+    run, labels = _run(second, nodes=nodes, pods=full, budgets=budgets)
+    assert run.returncode == 0, run.stderr
+    assert _label(worker, "false") in labels
+
+
+def test_the_class_wide_budget_never_applies_to_a_fleet_node(tmp_path: Path) -> None:
+    newcomer = "new-fleet-node"
+    run, labels = _run(
+        tmp_path,
+        nodes=[_node(_GMK), _node(newcomer)],
+        pods=[],
+        budgets=f"{_GMK} 6\n@container-worker 1\n",
+    )
+    assert run.returncode == 0, run.stderr
+    assert _label(newcomer, "false") in labels
+
+
+def test_a_per_node_line_overrides_the_class_wide_budget(tmp_path: Path) -> None:
+    worker = "alpha-homelab-worker"
+    pods = [_sandbox("w0", node=worker)]
+    run, labels = _run(
+        tmp_path,
+        nodes=[_node(_GMK), _node(worker, worker=True)],
+        pods=pods,
+        budgets=f"{_GMK} 6\n@container-worker 1\n{worker} 2\n",
+    )
+    assert run.returncode == 0, run.stderr
+    assert _label(worker, "true") in labels
+
+
+def test_overflow_is_judged_per_architecture(tmp_path: Path) -> None:
+    """A full amd64 fleet is never relieved by admitting an arm64 worker, and vice versa."""
+    worker = "alpha-homelab-worker"
+    pods = [_sandbox(f"g{i}", node=_GMK) for i in range(6)] + [_sandbox("w0", node=worker)]
+    run, labels = _run(
+        tmp_path,
+        nodes=[_node(_GMK, arch="amd64"), _node(worker, arch="arm64", worker=True)],
+        pods=pods,
+        budgets=f"{_GMK} 6\n@container-worker 1\n",
+    )
+    assert run.returncode == 0, run.stderr
+    assert "OVERFLOW every amd64" in run.stdout
+    assert "OVERFLOW every arm64" in run.stdout
+    assert _label(_GMK, "true") in labels
+    assert _label(worker, "true") in labels
 
 
 def test_a_label_already_correct_is_not_rewritten(tmp_path: Path) -> None:
