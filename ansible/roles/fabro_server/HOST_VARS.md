@@ -789,6 +789,18 @@ together. The org-owned
 `fabro-server-mi-homelab` on port 32277 is declared beside them and belongs to a
 different project, not to the fleet factory.
 
+A fourth instance, `fabro-server-homelab-worker-arm64` on port 32279 under
+`/home/cwoolley/.fabro-homelab-worker-arm64`, serves the arm64 container workers
+(plan `homelab-k8s-worker-nodes`, livespec-dev-tooling#3888). It pins the same
+Fabro build as the fleet instance (the `binary_source` beside it in `host_vars`),
+so a fleet roll moves it too (fabro-currency `bd-ib-qx45e6` roll set, since
+2026-11-09). It differs from the fleet instance in its architecture: its
+Kubernetes provider selects `homelab-worker.livespec.dev/class=worker` and
+`kubernetes.io/arch=arm64`, tolerates the worker class taint, and runs the
+`python-agent-<version>-arm64` image. It also differs in its own record store,
+and in `max_concurrent_runs: 1`, which is the real bound on arm64 runs while it
+is the only arm64 router. Nothing routes to it by default.
+
 The registered-provider carrier is Fabro `0.393.0-nightly.1` at commit `9f6c38f`
 — `thewoolleyman/fabro` `carrier-candidate-registered-20261023` with Petri
 `e92b191`, staged on the control node and carried from there by `binary_source`
