@@ -6,21 +6,32 @@ import json
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from pathlib import Path
+from threading import Thread
 from typing import Any
 
+from livespec_dev_tooling._incident_observer_ack import (
+    record_job_callback,
+    recover_recorded_job_callback,
+)
 from livespec_dev_tooling._incident_observer_types import JobCallback, RecoveryIntent
-from livespec_dev_tooling.incident_observer import handle_job_callback
 
 __all__: list[str] = ["observer_endpoint"]
 
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-47ij37
 _MAX_BODY_BYTES = 1_000_000
 _MAX_LENGTH_DIGITS = len(str(_MAX_BODY_BYTES))
+# Strictly inside GitHub's 10-second webhook delivery timeout, leaving the rest for the answer.
+_FENCE_WAIT_SECONDS = 5.0
+_STATUSES = {"refused": "403 Forbidden", "unavailable": "503 Service Unavailable"}
 _StartResponse = Callable[[str, list[tuple[str, str]]], object]
 
 
 def observer_endpoint(
-    *, directory: Path, webhook_secret: bytes, recover: Callable[[RecoveryIntent], str | None]
+    *,
+    directory: Path,
+    webhook_secret: bytes,
+    recover: Callable[[RecoveryIntent], str | None],
+    fence_wait_seconds: float = _FENCE_WAIT_SECONDS,
 ) -> Callable[[dict[str, Any], _StartResponse], Iterable[bytes]]:
     """Build the HTTP callback from independent host configuration only.
 
@@ -29,7 +40,12 @@ def observer_endpoint(
     recovery principal before installing this endpoint on the released controller.
     """
 
-    return _ObserverEndpoint(directory=directory, webhook_secret=webhook_secret, recover=recover)
+    return _ObserverEndpoint(
+        directory=directory,
+        webhook_secret=webhook_secret,
+        recover=recover,
+        fence_wait_seconds=fence_wait_seconds,
+    )
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -39,6 +55,7 @@ class _ObserverEndpoint:
     directory: Path
     webhook_secret: bytes
     recover: Callable[[RecoveryIntent], str | None]
+    fence_wait_seconds: float
 
     def __call__(self, environ: dict[str, Any], start_response: _StartResponse) -> Iterable[bytes]:
         body = _read_request(environ=environ)
@@ -51,14 +68,21 @@ class _ObserverEndpoint:
             event=str(environ.get("HTTP_X_GITHUB_EVENT", "")),
             delivery_id=str(environ.get("HTTP_X_GITHUB_DELIVERY", "")),
         )
-        result = handle_job_callback(
+        result, intent = record_job_callback(
             directory=self.directory,
             delivery=delivery,
             webhook_secret=self.webhook_secret,
-            recover=self.recover,
+            fence_wait_seconds=self.fence_wait_seconds,
         )
-        status = "403 Forbidden" if result.status == "refused" else "202 Accepted"
+        status = _STATUSES.get(result.status, "202 Accepted")
         _ = start_response(status, [("Content-Type", "application/json")])
+        if intent is not None:
+            Thread(
+                target=recover_recorded_job_callback,
+                kwargs={"directory": self.directory, "intent": intent, "recover": self.recover},
+                name=f"incident-recovery-{intent.action_id}",
+                daemon=True,
+            ).start()
         return [
             json.dumps(
                 {"status": result.status, "reason": result.reason, "action_id": result.action_id}
