@@ -21,7 +21,7 @@ from urllib.parse import urlsplit
 
 from livespec_dev_tooling.incident_ci_payload import strict_json
 
-__all__: list[str] = ["CiAuthorityBoundary", "ObserverUnreachable"]
+__all__: list[str] = ["CiAuthorityBoundary", "ObserverUnreachableError"]
 
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-egy3ri
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-zbzls2
@@ -65,7 +65,7 @@ _PROVENANCE_FIELDS: dict[str, frozenset[str]] = {
 _FIELDS = {"current": _ARM_FIELDS, "admitted": _ARM_FIELDS, "provenance": _PROVENANCE_FIELDS}
 
 
-class ObserverUnreachable(Exception):  # noqa: N818 — names the condition, not an error class.
+class ObserverUnreachableError(Exception):
     """The /provenance read failed on the wire, so the observer said nothing at all.
 
     Distinct from an answer that does not confirm the head: a caller reporting
@@ -92,7 +92,7 @@ class CiAuthorityBoundary:
     def provenance(self, *, query: dict[str, Any]) -> bool:
         """Require the host's canonical history to record this exact attempt and commit.
 
-        A transport failure (refused, timed out, TLS) raises ObserverUnreachable
+        A transport failure (refused, timed out, TLS) raises ObserverUnreachableError
         after the usual stderr line; every other refusal returns False.
         """
         return self._query(route="provenance", query=query)
@@ -183,7 +183,7 @@ class CiAuthorityBoundary:
         except (OSError, ValueError, TypeError, RecursionError, http.client.HTTPException) as error:
             refused = _refuse(detail=type(error).__name__ + where)
             if route == "provenance":
-                raise ObserverUnreachable(type(error).__name__ + where) from error
+                raise ObserverUnreachableError(type(error).__name__ + where) from error
             return refused
 
 

@@ -337,3 +337,34 @@ def test_the_range_gate_refuses_a_trailerless_commit_and_names_the_unreachable_o
     err = capsys.readouterr().err
     assert "observer is unreachable" in err
     assert "does not record this head" not in err
+
+
+def test_the_boundary_raises_its_unreachable_condition_under_a_conventional_error_name(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    assert "ObserverUnreachableError" in incident_ci_authority.__all__
+    error_class = getattr(incident_ci_authority, "ObserverUnreachableError", None)
+    assert isinstance(error_class, type)
+    assert issubclass(error_class, Exception)
+    _unreachable(monkeypatch=monkeypatch, error=ConnectionRefusedError("refused"))
+    boundary = incident_ci_authority.CiAuthorityBoundary(
+        observer_url="https://controller.example:8765/api",
+        observer_token="query-token",  # noqa: S106 — a fixture literal, not a credential.
+    )
+    with pytest.raises(error_class):
+        boundary.provenance(
+            query={
+                "repository": "owner/repo",
+                "item_id": "item-1",
+                "attempt_id": "attempt-1",
+                "phase": "land",
+                "operation_id": "op-1",
+                "generation": 1,
+                "owner": "owner",
+                "base": "a" * 40,
+                "head": "b" * 40,
+                "pr_number": 7,
+                "commit_sha": "b" * 40,
+                "tree_sha": "c" * 40,
+            }
+        )
