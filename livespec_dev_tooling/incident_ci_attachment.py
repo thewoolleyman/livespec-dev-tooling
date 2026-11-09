@@ -28,6 +28,7 @@ from livespec_dev_tooling.incident_ci_identity_policy import (
 )
 from livespec_dev_tooling.incident_ci_oidc import OidcIdentity, oidc_current, verify_oidc
 from livespec_dev_tooling.incident_observer_admission import arm_record_matches
+from livespec_dev_tooling.incident_strict_json import IncidentJsonRefusalError
 
 if TYPE_CHECKING:
     from livespec_dev_tooling._incident_observer_types import ObserverArmQuery
@@ -86,7 +87,7 @@ class CiJobAttachment:
             if identity is None:
                 return _refused(reason="CI issuer identity unverifiable or unsupported")
             return self._attach(identity=identity, query=query, policy=policy)
-        except (OSError, ValueError, TypeError, KeyError, RecursionError):
+        except (OSError, ValueError, IncidentJsonRefusalError, TypeError, KeyError, RecursionError):
             return _refused(reason="CI attachment state or observations unavailable")
 
     def _attach(

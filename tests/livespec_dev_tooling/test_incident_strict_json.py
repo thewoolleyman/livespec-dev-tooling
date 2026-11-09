@@ -12,10 +12,18 @@ from typing import Any
 import pytest
 from returns.pipeline import is_successful
 
+from livespec_dev_tooling import incident_ci_attachment as attachment_module
+from livespec_dev_tooling import incident_ci_job_collection as collection_module
 from livespec_dev_tooling._incident_provenance_protocol import decode_historical_reply
 from livespec_dev_tooling.incident_provenance import IncidentCommitQuery
+from tests.livespec_dev_tooling import test_incident_ci_attachment_edges as edge_tests
 
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-utw7u6
+
+trusted = edge_tests.trusted
+correlated = edge_tests.correlated
+authenticated = edge_tests.authenticated
+attached = edge_tests.attached
 
 _PACKAGE = Path(__file__).resolve().parents[2] / "livespec_dev_tooling"
 _MODULE = "livespec_dev_tooling.incident_strict_json"
@@ -154,3 +162,27 @@ def test_no_incident_module_decodes_foreign_json_outside_the_strict_decoder() ->
         for call in _loads_calls(path=path)
     ]
     assert offenders == []
+
+
+def _corrupt_read(**_: Any) -> Any:
+    raise _strict().IncidentJsonRefusalError("incident JSON refused: duplicate key")
+
+
+def test_a_refused_state_read_fails_closed_on_attach(attached, monkeypatch) -> None:
+    handler = attachment_module.CiJobAttachment(installation=attached.application.installation)
+    monkeypatch.setattr(attachment_module, "load_record", _corrupt_read)
+    result = handler.execute(authorization="Bearer " + attached.token, payload=vars(attached.query))
+    assert result["status"] == "refused"
+
+
+def test_a_refused_state_read_fails_closed_on_collect_and_inspect(attached, monkeypatch) -> None:
+    handler = collection_module.CiJobCollection(installation=attached.application.installation)
+    monkeypatch.setattr(collection_module, "load_record", _corrupt_read)
+    collect = {
+        "repository": "owner/repo",
+        "attachment_id": attached.receipt["attachment_id"],
+        "collection_id": "c1",
+    }
+    inspect = {"repository": "owner/repo", "attachment_id": attached.receipt["attachment_id"]}
+    assert handler.execute(path="/ci/jobs/collect", payload=collect)["status"] == "refused"
+    assert handler.execute(path="/ci/jobs/inspect", payload=inspect)["status"] == "refused"
