@@ -36,7 +36,24 @@ from livespec_dev_tooling.incident_original_run_flows import (
 from livespec_dev_tooling.incident_run_evidence import evidence_digest
 
 REPOSITORY = "owner/repo"
-WORKFLOW = b"name: CI\njobs: {}\n"
+WORKFLOW = b"""\
+name: CI
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+  test:
+    runs-on: ubuntu-latest
+  coverage:
+    needs: test
+  legs:
+    name: ${{ matrix.leg }}
+    strategy:
+      fail-fast: false
+      matrix:
+        leg: [slow-leg, late-leg]
+  other:
+    runs-on: ubuntu-latest
+"""
 GRAPH = (
     ExpectedJob(name="lint"),
     ExpectedJob(name="test"),
@@ -408,3 +425,57 @@ def test_correction_refuses_unretained_unrecorded_or_unrelated_heads(world: Worl
         "incident-original-run-refused",
         "incident-original-run-unrecorded",
     ]
+
+
+def rebind(world: World, workflow: str) -> str:
+    """Move the registered merge to a commit whose workflow is `workflow`; return its revert-like successor."""
+    merge = commit(world.repo, {".github/workflows/ci.yml": workflow}, "another workflow")
+    successor = commit(world.repo, {f"after-{merge[:8]}": "x\n"}, "descends from the merge")
+    with repository_lock(directory=world.state, repository=REPOSITORY) as path:
+        record = load_record(path=path)
+        registration = {**cast("dict[str, object]", record["registration"]), "head_sha": merge}
+        save_record(path=path, record={**record, "registration": registration})
+    return successor
+
+
+def test_expected_graph_is_derived_from_the_workflow_at_the_merge_revision(world: World) -> None:
+    derived = gather(world, expected=None)
+    supplied = gather(world)
+    assert isinstance(derived, RunEvidence)
+    assert isinstance(supplied, RunEvidence)
+    assert derived.original.expected == GRAPH
+    assert evidence_digest(evidence=derived) == evidence_digest(evidence=supplied)
+    assert [row.name for row in derived.jobs] == [job.name for job in GRAPH]
+
+
+def test_a_graph_that_differs_from_the_merge_revisions_workflow_is_refused_by_name(
+    world: World,
+) -> None:
+    omitting = gather(world, expected=GRAPH[:5])
+    inventing = gather(world, expected=(*GRAPH, ExpectedJob(name="ghost-a"), ExpectedJob(name="b")))
+    rewired = gather(world, expected=(ExpectedJob(name="lint", needs=("test",)), *GRAPH[1:]))
+    details = [getattr(value, "detail", None) for value in (omitting, inventing, rewired)]
+    assert details == [
+        "expected graph omits other",
+        "expected graph names jobs the merge revision's workflow does not declare: b, ghost-a",
+        "expected graph needs differ from the merge revision's workflow for: lint",
+    ]
+    assert {getattr(value, "code", None) for value in (omitting, inventing, rewired)} == {
+        "incident-original-run-graph-invalid"
+    }
+    assert stored(world) == {"earlier": {"k": 1}}
+
+
+def test_a_workflow_the_controller_cannot_resolve_or_that_lacks_a_watched_job_refuses(
+    world: World,
+) -> None:
+    after = rebind(world, "jobs:\n  a:\n    uses: ./.github/workflows/x.yml\n")
+    unresolvable = gather(world, revert_sha=after, expected=None)
+    after = rebind(world, "jobs:\n  lint:\n    runs-on: x\n  test:\n    runs-on: x\n")
+    undeclared = gather(world, revert_sha=after, expected=None)
+    assert getattr(unresolvable, "code", None) == "incident-original-run-graph-unsupported"
+    assert getattr(undeclared, "code", None) == "incident-original-run-graph-invalid"
+    assert getattr(undeclared, "detail", None) == (
+        "the merge revision's workflow does not declare watched job late-leg"
+    )
+    assert stored(world) == {"earlier": {"k": 1}}

@@ -33,6 +33,8 @@ from livespec_dev_tooling._incident_original_run_canonical import (
     recorded_digests,
 )
 from livespec_dev_tooling._incident_original_run_codec import decode_evidence
+from livespec_dev_tooling._incident_original_run_declared import declared_graph
+from livespec_dev_tooling._incident_original_run_measure import measure_correction
 from livespec_dev_tooling._incident_run_types import (
     CorrectedAttempt,
     EvidenceRefusal,
@@ -55,7 +57,6 @@ __all__: list[str] = ["Collection", "Correction", "EntryPorts", "GitPort", "coll
 
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-zvntys
 _REFUSED = 78
-_NOT_A_REVERT = "the revert does not descend from the original merge"
 _MISMATCHED = "retained evidence names another original run"
 _CORRECTED_FROM = "collecting-failures"
 # The canonical writer derives the corrected attempt's id; this only differs
@@ -78,7 +79,9 @@ class Collection:
     state_dir: Path
     repository: str
     revert_sha: str
-    expected: tuple[ExpectedJob, ...]
+    # None derives the graph from the workflow at the merge revision. A supplied graph
+    # is only checked against that workflow, never trusted in its place.
+    expected: tuple[ExpectedJob, ...] | None = None
     run_attempt: int = 1
     workflow_path: str = ".github/workflows/ci.yml"
 
@@ -99,9 +102,6 @@ class Correction:
     # commit only once the attempt is back in repair, so a real repair is measured
     # here and committed after the correction, as a genesis attempt is.
     staged_tree: str = ""
-
-
-_STAGED_TREE_NEEDS_BASE = "a staged tree is measured from the base, so the next head must be it"
 
 
 def _refuse(*, code: str, detail: str) -> EvidenceRefusal:
@@ -131,19 +131,16 @@ def _pr_number(*, ports: EntryPorts, registration: ObserverRegistration) -> int:
     return number
 
 
-def _text(*, git: GitPort, args: Sequence[str]) -> str:
-    return git(args, b"").decode().strip()
-
-
-@impure_safe
 def _original(
-    *, request: Collection, registration: ObserverRegistration, pr_number: int, git: GitPort
+    *,
+    request: Collection,
+    registration: ObserverRegistration,
+    pr_number: int,
+    git: GitPort,
+    source: bytes,
+    expected: tuple[ExpectedJob, ...],
 ) -> OriginalRun:
     merge = registration.head_sha
-    if request.revert_sha == merge:
-        raise ValueError(_NOT_A_REVERT)
-    _ = git(["merge-base", "--is-ancestor", merge, request.revert_sha], b"")
-    source = git(["cat-file", "blob", f"{merge}:{request.workflow_path}"], b"")
     return OriginalRun(
         repository=registration.repository,
         item_id=registration.incident_item_id,
@@ -153,14 +150,14 @@ def _original(
         owner=registration.owner,
         pr_number=pr_number,
         merge_sha=merge,
-        tree_sha=_text(git=git, args=["rev-parse", "--verify", merge + "^{tree}"]),
+        tree_sha=git(["rev-parse", "--verify", merge + "^{tree}"], b"").decode().strip(),
         revert_sha=request.revert_sha,
         run_id=registration.run_id,
         run_attempt=request.run_attempt,
         workflow_path=request.workflow_path,
         graph_revision=merge,
         graph_digest=hashlib.sha256(source).hexdigest(),
-        expected=request.expected,
+        expected=expected,
     )
 
 
@@ -184,9 +181,16 @@ def collect(*, request: Collection, ports: EntryPorts) -> RunEvidence | Evidence
     if not is_successful(found):
         return _refuse(code="unregistered", detail="no retained original-run registration")
     registration = unsafe_perform_io(found.unwrap())
-    missing = sorted(set(registration.required_jobs) - {job.name for job in request.expected})
-    if missing:
-        return _refuse(code="graph-invalid", detail="expected graph omits " + ", ".join(missing))
+    declared = declared_graph(
+        registration=registration,
+        revert_sha=request.revert_sha,
+        workflow_path=request.workflow_path,
+        supplied=request.expected,
+        git=ports.git,
+    )
+    if isinstance(declared, EvidenceRefusal):
+        return declared
+    source, graph = declared
     number = _pr_number(ports=ports, registration=registration)
     if not is_successful(number):
         unavailable = _refuse(
@@ -198,16 +202,16 @@ def collect(*, request: Collection, ports: EntryPorts) -> RunEvidence | Evidence
         registration=registration,
         pr_number=unsafe_perform_io(number.unwrap()),
         git=ports.git,
+        source=source,
+        expected=graph,
     )
-    if not is_successful(original):
-        return _refuse(code="local-revision", detail="merge, revert or workflow does not resolve")
     collector = OriginalRunCollector(
         directory=request.state_dir,
         read=_CompletedOnly(read=ports.read),
         canonical=canonical_adapter(ports=ports.canonical, registration=registration),
     )
     return collector.collect(
-        original=unsafe_perform_io(original.unwrap()),
+        original=original,
         continuation_id=f"original-run:{registration.run_id}:{request.run_attempt}",
     )
 
@@ -226,28 +230,6 @@ def _retained(*, request: Correction, registration: ObserverRegistration) -> Run
     ) != (registration.incident_item_id, registration.attempt_id, registration.run_id):
         raise ValueError(_MISMATCHED)
     return evidence
-
-
-def _patch_id(*, git: GitPort, diff: bytes) -> str:
-    return git(["patch-id", "--stable"], diff).decode().split(" ", 1)[0]
-
-
-@impure_safe
-def _measure(*, git: GitPort, original: OriginalRun, request: Correction) -> tuple[str, str, str]:
-    """Base, staged tree and repair digest; the digest is empty for the reverted change."""
-    head = request.next_head_sha
-    base = _text(git=git, args=["merge-base", request.base_ref, head])
-    _ = git(["merge-base", "--is-ancestor", original.revert_sha, base], b"")
-    if request.staged_tree and head != base:
-        raise ValueError(_STAGED_TREE_NEEDS_BASE)
-    end = request.staged_tree or head
-    tree = _text(git=git, args=["rev-parse", "--verify", end + "^{tree}"])
-    proposed = git(["diff", "--binary", base, end], b"")
-    reverted = git(["diff", "--binary", original.revert_sha, original.revert_sha + "^"], b"")
-    unchanged = not proposed.strip() or _patch_id(git=git, diff=proposed) == _patch_id(
-        git=git, diff=reverted
-    )
-    return base, tree, "" if unchanged else hashlib.sha256(proposed).hexdigest()
 
 
 def _current_query(*, registration: ObserverRegistration, request: Correction) -> dict[str, object]:
@@ -283,7 +265,13 @@ def propose(*, request: Correction, ports: EntryPorts) -> str | EvidenceRefusal:
         recorded.unwrap()
     ):
         return _refuse(code="unrecorded", detail="evidence is not recorded on the incident item")
-    measured = _measure(git=ports.git, original=evidence.original, request=request)
+    measured = measure_correction(
+        git=ports.git,
+        original=evidence.original,
+        next_head_sha=request.next_head_sha,
+        base_ref=request.base_ref,
+        staged_tree=request.staged_tree,
+    )
     if not is_successful(measured):
         return _refuse(code="local-revision", detail="corrected head does not build on the revert")
     base, tree, repair = unsafe_perform_io(measured.unwrap())
