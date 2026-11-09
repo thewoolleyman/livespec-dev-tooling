@@ -7,6 +7,7 @@ import errno
 import importlib.util
 import inspect
 import os
+import re
 import sys
 import time
 import uuid
@@ -244,3 +245,106 @@ def test_a_silent_suite_is_killed_whole_once_it_stalls(tmp_path: Path) -> None:
     while _live_processes_carrying(token) and time.monotonic() < hang_guard:  # pragma: no branch
         time.sleep(0.1)  # pragma: no cover
     assert not _live_processes_carrying(token)
+
+
+def _stalled_pytest_run(
+    *, project: Path, files: dict[str, str], extra_args: list[str], monkeypatch: pytest.MonkeyPatch
+):
+    """Run a real pytest project through `run_suite` until its 4 second stall window ends it."""
+    mod = _load()
+    for name, body in files.items():
+        (project / name).write_text(body, encoding="utf-8")
+    monkeypatch.chdir(project)
+    return mod.run_suite(
+        argv=[sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", *extra_args],
+        bound=mod.SuiteBound(stall_seconds=4, ceiling_seconds=None),
+    )
+
+
+def test_a_stalled_run_names_its_elapsed_seconds_completed_tests_and_last_test(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    run = _stalled_pytest_run(
+        project=tmp_path,
+        files={
+            "test_slow.py": (
+                "import time\n\n\n"
+                "def test_fast():\n    pass\n\n\n"
+                "def test_hangs():\n    time.sleep(120)\n\n\n"
+                "def test_never_reached():\n    pass\n"
+            )
+        },
+        extra_args=[],
+        monkeypatch=monkeypatch,
+    )
+
+    assert run.kill_reason == "stalled"
+    assert run.attribution is not None
+    assert "1 of 3 collected tests had completed" in run.attribution
+    assert "test_slow.py::test_fast" in run.attribution
+    assert re.search(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z", run.attribution)
+    elapsed = re.search(r"after (\d+) seconds", run.attribution)
+    assert elapsed is not None
+    assert int(elapsed[1]) >= 4
+
+
+def test_a_run_ended_during_collection_says_collection_had_not_finished(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    run = _stalled_pytest_run(
+        project=tmp_path,
+        files={
+            "conftest.py": "import time\n\ntime.sleep(120)\n",
+            "test_never.py": "def test_never():\n    pass\n",
+        },
+        extra_args=[],
+        monkeypatch=monkeypatch,
+    )
+
+    assert run.kill_reason == "stalled"
+    assert run.attribution is not None
+    assert "collection had not finished" in run.attribution
+    assert "no test had completed" in run.attribution
+
+
+def test_a_stalled_xdist_run_names_each_running_test_its_duration_and_worker(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    run = _stalled_pytest_run(
+        project=tmp_path,
+        files={
+            "test_slow.py": (
+                "import time\n\n\n"
+                "def test_fast():\n    pass\n\n\n"
+                "def test_hangs():\n    time.sleep(120)\n"
+            )
+        },
+        extra_args=["-n", "2"],
+        monkeypatch=monkeypatch,
+    )
+
+    assert run.kill_reason == "stalled"
+    assert run.attribution is not None
+    assert re.search(r"test_slow\.py::test_hangs on worker gw\d+ for \d+ seconds", run.attribution)
+    assert "test_fast on" not in run.attribution
+    assert "stalled mid-suite" in run.attribution
+
+
+def test_a_run_that_stalls_after_its_last_test_is_reported_as_a_post_last_test_stall(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    run = _stalled_pytest_run(
+        project=tmp_path,
+        files={
+            "conftest.py": ("import time\n\n\ndef pytest_sessionfinish():\n    time.sleep(120)\n"),
+            "test_done.py": "def test_one():\n    pass\n\n\ndef test_two():\n    pass\n",
+        },
+        extra_args=[],
+        monkeypatch=monkeypatch,
+    )
+
+    assert run.kill_reason == "stalled"
+    assert run.attribution is not None
+    assert "2 of 2 collected tests had completed" in run.attribution
+    assert "stalled after its last test rather than mid-suite" in run.attribution
+    assert "test_done.py::test_two" in run.attribution

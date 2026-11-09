@@ -90,22 +90,29 @@ def _append(*, event: Mapping[str, str | int | float]) -> None:
 
 
 def read_record(*, path: Path) -> SuiteRecord:
-    """Fold the run's record file into one `SuiteRecord`."""
+    """Fold the run's record file into one `SuiteRecord`.
+
+    Under pytest-xdist the controller logs each test's start and finish as well
+    as the worker that ran it, and only the worker's line names the worker, so a
+    test seen starting twice is attributed to the worker.
+    """
     collected: int | None = None
     finished: dict[str, float] = {}
-    running: dict[str, RunningTest] = {}
+    starts: dict[str, list[RunningTest]] = {}
     for line in path.read_text(encoding="utf-8").splitlines():
         event: dict[str, str | int | float] = json.loads(line)
         if event["event"] == "collected":
             collected = max(collected or 0, int(event["count"]))
         elif event["event"] == "start":
-            running[str(event["nodeid"])] = RunningTest(
-                nodeid=str(event["nodeid"]),
-                worker=str(event["worker"]),
-                started_at=float(event["at"]),
+            starts.setdefault(str(event["nodeid"]), []).append(
+                RunningTest(
+                    nodeid=str(event["nodeid"]),
+                    worker=str(event["worker"]),
+                    started_at=float(event["at"]),
+                )
             )
         else:
-            _ = running.pop(str(event["nodeid"]), None)
+            _ = starts.pop(str(event["nodeid"]), None)
             finished[str(event["nodeid"])] = float(event["at"])
     last = max(finished.items(), key=lambda item: item[1], default=(None, None))
     return SuiteRecord(
@@ -113,7 +120,10 @@ def read_record(*, path: Path) -> SuiteRecord:
         completed=len(finished),
         last_nodeid=last[0],
         last_completed_at=last[1],
-        running=tuple(running.values()),
+        running=tuple(
+            min(starts_of_one_test, key=lambda test: (test.worker == "", test.started_at))
+            for starts_of_one_test in starts.values()
+        ),
     )
 
 
