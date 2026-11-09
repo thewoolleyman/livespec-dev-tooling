@@ -64,7 +64,6 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 _ANSIBLE = _REPO_ROOT / "ansible"
 _DOC = _ANSIBLE / "roles" / "fabro_server" / "HOST_VARS.md"
 _HOST_VARS = _ANSIBLE / "inventory" / "host_vars" / "gmktec-xubuntu.yml"
-_DRIVER_DEFAULTS = _ANSIBLE / "roles" / "sandbox_driver_kubernetes" / "defaults" / "main.yml"
 
 _HOST_SECTION = "## `host_vars/gmktec-xubuntu.yml`"
 _PROVIDERS_SECTION = "## Sandbox-driver plugin providers"
@@ -241,8 +240,8 @@ def test_the_section_states_the_fleet_instances_concurrency_and_environment_ids(
 def _assert_kubernetes_pin_is_staged(*, unit: str) -> None:
     """One instance's `kubernetes` pin equals the digest the role stages at its path.
 
-    The shared path's digest is the role's default release; a versioned path's is
-    the release `host_vars` declares for that version.
+    The path is a versioned one, and its digest is the release `host_vars` declares
+    for that version.
     """
     declared = re.search(
         rf"^      {re.escape(_PROVIDER_KIND)}:\n(?P<body>(?:(?:        .*)?\n)*)",
@@ -266,24 +265,21 @@ def _assert_kubernetes_pin_is_staged(*, unit: str) -> None:
     versioned = re.fullmatch(
         r"/usr/local/bin/sandbox-driver-kubernetes-(?P<version>v[0-9.]+)", instance_path["path"]
     )
-    if versioned is None:
-        # The shared path: the role's default release is what it stages there.
-        pinned = re.search(
-            rf"^{re.escape(_DRIVER_ROLE)}_sha256: (?P<digest>\S+)$",
-            _DRIVER_DEFAULTS.read_text(encoding="utf-8"),
-            re.MULTILINE,
-        )
-        staged_by = f"{_DRIVER_DEFAULTS} `{_DRIVER_ROLE}_sha256`"
-    else:
-        # A versioned path: the release the host declares for that version.
-        pinned = re.search(
-            rf"^  - version: {re.escape(versioned['version'])}\n\s+sha256: (?P<digest>\S+)$",
-            _HOST_VARS.read_text(encoding="utf-8").split(f"{_DRIVER_ROLE}_versioned_releases:", 1)[
-                -1
-            ],
-            re.MULTILINE,
-        )
-        staged_by = f"{_HOST_VARS} `{_DRIVER_ROLE}_versioned_releases`"
+    # Both gmktec instances name a VERSIONED plugin path. The shared unversioned path
+    # let the candidate silently run another release than the fleet (bd-ib-xwtohc), so
+    # an instance falling back to it is itself the failure.
+    assert versioned is not None, (
+        f"`{unit}` must name a versioned `{_PROVIDER_KIND}` plugin path "
+        f"(/usr/local/bin/sandbox-driver-kubernetes-v<version>), not {instance_path['path']}: "
+        f"the shared path stages the role's default release, which need not be this instance's"
+    )
+    # The release the host declares for that version.
+    pinned = re.search(
+        rf"^  - version: {re.escape(versioned['version'])}\n\s+sha256: (?P<digest>\S+)$",
+        _HOST_VARS.read_text(encoding="utf-8").split(f"{_DRIVER_ROLE}_versioned_releases:", 1)[-1],
+        re.MULTILINE,
+    )
+    staged_by = f"{_HOST_VARS} `{_DRIVER_ROLE}_versioned_releases`"
     assert pinned is not None, (
         f"{staged_by} must pin the digest the role stages at {instance_path['path']}; this "
         f"arm reads it out of the declaration rather than restating it, so a renamed variable "
