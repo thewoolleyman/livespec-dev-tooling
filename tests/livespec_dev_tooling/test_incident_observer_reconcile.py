@@ -210,3 +210,16 @@ def test_a_retry_answers_the_receipt_a_rival_completed_with_no_principal_call(
     assert reply["status"] == "completed"
     assert reply["receipt"] == "rival-receipt"
     recover.assert_not_called()
+
+
+def test_a_retry_refuses_by_name_when_the_action_left_the_record_with_no_principal_call(
+    world: World, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def removed(record: dict[str, Any]) -> None:
+        del record["actions"][world.intent.action_id]
+
+    recover = _race_after_pending_read(monkeypatch=monkeypatch, world=world, change=removed)
+    reply = _execute(world=world, retry_publish=True)
+    assert reply["status"] == "refused"
+    assert reply["reason"] == "retained action missing before the retry"
+    recover.assert_not_called()
