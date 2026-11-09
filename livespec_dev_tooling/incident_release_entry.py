@@ -6,16 +6,27 @@ A release or pin dispatch workflow step runs this immediately before its effect:
         --observed-repository OWNER/REPO --repository OWNER/SOURCE \\
         --source-sha SHA --tag TAG
 
-`LIVESPEC_INCIDENT_OBSERVER_URL` names the incident observer of
-`--observed-repository`, and `LIVESPEC_INCIDENT_OBSERVER_QUERY_TOKEN` is its
-read-only query credential. With no URL, or with a source repository that is
-not the observed one, the entrance prints a no-op line and exits 0 without any
-network call, so a dispatch with no incident observer runs exactly as before.
+`LIVESPEC_INCIDENT_OBSERVER_URL` is the BASE URL of the incident observer of
+`--observed-repository`; the entrance appends `/release/screen` to its path.
+`LIVESPEC_INCIDENT_OBSERVER_QUERY_TOKEN` is the observer's read-only query
+credential.
 
-Once configured it fails closed. A named refusal from the observer
-(`incident-release-recovery-retained`, `incident-release-source-unverifiable`),
-an unreachable observer, a misconfiguration or a malformed reply each exit 1
-and name why. The screen route itself is `incident_release_screen`.
+With no URL the entrance prints a no-op line and exits 0 without any network
+call, so a dispatch with no incident observer runs exactly as before. It does
+the same for a source repository that is not the observed one.
+
+Once a URL is set it fails closed. Each of these exits 1 and names why:
+
+- a named refusal from the observer (`incident-release-recovery-retained`,
+  `incident-release-source-unverifiable`);
+- an unreachable observer, or a reply that is malformed or larger than the
+  bound;
+- a misconfiguration: an empty `--observed-repository`, a URL that already
+  ends in `/release/screen`, a non-https URL or a missing token.
+
+An empty observed repository refuses rather than no-ops. A screen whose
+observed repository is never named would otherwise pass every dispatch in
+silence. The screen route itself is `incident_release_screen`.
 """
 
 from __future__ import annotations
@@ -28,7 +39,7 @@ import sys
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, cast
-from urllib.parse import urlsplit
+from urllib.parse import SplitResult, urlsplit
 
 from livespec_dev_tooling.incident_release_screen import RELEASE_SCREEN_PATH
 
@@ -61,14 +72,17 @@ def screen(
     url = environ.get(_URL, "")
     if not url:
         return 0, f"incident release screen: {_URL} is unset; {_PROCEEDS}"
+    parsed = urlsplit(url)
+    problem = _misconfiguration(
+        observed=request.observed_repository,
+        parsed=parsed,
+        token=environ.get(_CREDENTIAL_VARIABLE, ""),
+    )
+    if problem is not None:
+        return 1, f"incident-release-screen-misconfigured: {problem}"
     if request.repository != request.observed_repository:
         detail = f"{request.repository} is not observed here ({request.observed_repository})"
         return 0, f"incident release screen: {detail}; {_PROCEEDS}"
-    parsed = urlsplit(url)
-    token = environ.get(_CREDENTIAL_VARIABLE, "")
-    if parsed.scheme != "https" or not parsed.hostname or not token:
-        detail = f"{_URL} must be an https URL and {_CREDENTIAL_VARIABLE} must be set"
-        return 1, f"incident-release-screen-misconfigured: {detail}"
     payload = {
         "repository": request.repository,
         "source_sha": request.source_sha,
@@ -81,7 +95,10 @@ def screen(
                 "POST",
                 parsed.path.rstrip("/") + RELEASE_SCREEN_PATH,
                 body=json.dumps(payload, sort_keys=True).encode(),
-                headers={"Content-Type": "application/json", "Authorization": "Bearer " + token},
+                headers={
+                    "Content-Type": "application/json",
+                    "Authorization": "Bearer " + environ.get(_CREDENTIAL_VARIABLE, ""),
+                },
             )
             response = connection.getresponse()
             status, raw = response.status, response.read(_MAX_REPLY + 1)
@@ -95,7 +112,20 @@ def screen(
     return _verdict(status=status, raw=raw, payload=payload)
 
 
+def _misconfiguration(*, observed: str, parsed: SplitResult, token: str) -> str | None:
+    """Name what makes a configured screen unusable, or None when it can be asked."""
+    if not observed:
+        return f"{_URL} is set but no observed repository is named"
+    if parsed.path.rstrip("/").endswith(RELEASE_SCREEN_PATH):
+        return f"{_URL} is a base URL; the entrance appends {RELEASE_SCREEN_PATH} itself"
+    if parsed.scheme != "https" or not parsed.hostname or not token:
+        return f"{_URL} must be an https URL and {_CREDENTIAL_VARIABLE} must be set"
+    return None
+
+
 def _verdict(*, status: int, raw: bytes, payload: dict[str, str]) -> tuple[int, str]:
+    if len(raw) > _MAX_REPLY:
+        return 1, f"incident-release-screen-malformed-reply: HTTP {status} reply exceeds the bound"
     try:
         reply: object = json.loads(raw)
     except ValueError:
