@@ -1093,6 +1093,44 @@ def test_a_compound_foreground_pytest_is_judged_against_its_own_target_repositor
     assert _run_main(monkeypatch=monkeypatch, stdin_text=payload) == expected_exit
 
 
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    "command",
+    [
+        pytest.param("pytest -n 4 tests/test_widget.py", id="separate-n"),
+        pytest.param("pytest -n4 tests/test_widget.py", id="attached-n"),
+        pytest.param(
+            "uv run pytest --numprocesses 4 tests/test_widget.py", id="separate-numprocesses"
+        ),
+        pytest.param("pytest --numprocesses=auto tests/test_widget.py", id="equals-numprocesses"),
+    ],
+)
+def test_xdist_makes_a_pytest_naming_an_existing_test_file_a_full_suite(
+    command: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """`-n` or `--numprocesses` is refused even when the named test file exists.
+
+    The named file is created by the fixture, so the targeted-path rule alone
+    would let each command through. Only the xdist rule refuses it: the control
+    below proves the same file without a worker count proceeds.
+    """
+    delegating, _ = _two_repositories(tmp_path=tmp_path, monkeypatch=monkeypatch)
+    assert (delegating / "tests" / "test_widget.py").is_file()
+
+    event = _foreground_refusal_event(
+        command=command, cwd=delegating, monkeypatch=monkeypatch, capsys=capsys
+    )
+
+    assert event["check_id"] == _FOREGROUND_PYTEST_CHECK_ID
+    targeted = json.dumps(
+        {"tool_name": "Bash", "tool_input": {"command": "pytest tests/test_widget.py"}}
+    )
+    assert _run_main(monkeypatch=monkeypatch, stdin_text=targeted) == 0
+
+
 @pytest.mark.parametrize(
     ("command", "delegated", "credential_readable"),
     [
