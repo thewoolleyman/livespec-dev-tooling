@@ -198,8 +198,9 @@ install-worktree-pack:
 ensure-plugins:
     mise exec -- uv run --no-sync python -m livespec_dev_tooling.fleet.ensure_plugins
 
-ensure-plugins-fleet:
-    mise exec -- uv run --no-sync python -m livespec_dev_tooling.fleet.ensure_plugins_fleet
+[positional-arguments]
+ensure-plugins-fleet build:
+    mise exec -- uv run --no-sync python -m livespec_dev_tooling.fleet.ensure_plugins_fleet "$1"
 
 # The named operator step that moves the orchestrator plugin: `ensure-plugins`
 # (and so every SessionStart hook) never moves an installed orchestrator build.
