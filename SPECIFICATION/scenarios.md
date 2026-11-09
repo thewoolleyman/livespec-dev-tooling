@@ -3198,6 +3198,20 @@ And the authorized revert merges through the scoped recovery principal without l
 And recovery records exact action and merge receipts across timeout or restart while ordinary actors retain their existing branch protection obligations.
 ```
 
+## Scenario: an incident recovery principal configured for a scratch branch recovers only that branch
+
+```gherkin
+Given a recovery principal whose released controller's installation configuration names a non-master scratch branch as its target branch
+And an authorized recovery action for an incident patch landed on that scratch branch
+And the scratch branch's head has moved since the action was authorized, through a later change that overlaps the incident patch
+When the principal publishes the action's inverse
+Then it MUST recompute the inverse against the scratch branch's current head
+And it MUST record the genuine overlap as an owned rollback-conflict instead of a merge
+And it MUST NOT read or move master
+And a request naming any other branch MUST be refused rather than applied to master
+And an installation configuration that names no target branch MUST target master.
+```
+
 ## Scenario: a reverted incident retains its original CI evidence before another attempt
 
 ```gherkin
