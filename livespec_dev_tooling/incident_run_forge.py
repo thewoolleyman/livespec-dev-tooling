@@ -16,6 +16,7 @@ from livespec_dev_tooling._incident_run_types import (
     OriginalRun,
     RunSnapshot,
 )
+from livespec_dev_tooling.incident_ci_job_identity import attempt_jobs
 from livespec_dev_tooling.incident_forge_reads import ForgeRead
 
 _VENDOR_DIR = Path(__file__).resolve().parent / "_vendor"
@@ -80,10 +81,9 @@ class ForgeRunReader:
 
     read: ForgeRead
     budget_seconds: float = 45
-    max_pages: int = 20
 
     def __call__(self, original: OriginalRun) -> RunSnapshot | EvidenceRefusal:
-        if self.budget_seconds <= 0 or self.max_pages <= 0:
+        if self.budget_seconds <= 0:
             return _refuse(detail="invalid provisioned forge collection budget")
         deadline = time.monotonic() + self.budget_seconds
         base = (
@@ -133,7 +133,29 @@ class ForgeRunReader:
         return None
 
     def _read(self, *, endpoint: str, deadline: float) -> object:
-        remaining = deadline - time.monotonic()
+        return _DeadlineRead(read=self.read, deadline=deadline).fetch(endpoint=endpoint)
+
+    def _jobs(self, *, base: str, deadline: float) -> tuple[ObservedJob, ...] | EvidenceRefusal:
+        rows = attempt_jobs(
+            read=_DeadlineRead(read=self.read, deadline=deadline), path=f"{base}/jobs"
+        )
+        if rows is None:
+            return _refuse(detail="original-attempt job listing is unavailable or incomplete")
+        decoded = [_job(value=row) for row in rows]
+        if any(job is None for job in decoded):
+            return _refuse(detail="malformed original-attempt job")
+        return tuple(cast("list[ObservedJob]", decoded))
+
+
+@dataclass(frozen=True, kw_only=True)
+class _DeadlineRead:
+    """One forge read held to this collection's one deadline; also the jobs pager's `ForgeRead`."""
+
+    read: ForgeRead
+    deadline: float
+
+    def fetch(self, *, endpoint: str) -> object:
+        remaining = self.deadline - time.monotonic()
         if remaining <= 0:
             return _refuse(detail="original-run collection budget exhausted; no complete listing")
         value = self.read(endpoint)
@@ -141,35 +163,6 @@ class ForgeRunReader:
             return _refuse(detail="authenticated original-run request failed; no complete listing")
         return value
 
-    def _jobs(self, *, base: str, deadline: float) -> tuple[ObservedJob, ...] | EvidenceRefusal:
-        jobs: list[ObservedJob] = []
-        expected_total: int | None = None
-        for page in range(1, self.max_pages + 1):
-            read = self._page(base=base, page=page, deadline=deadline)
-            if isinstance(read, EvidenceRefusal):
-                return read
-            total, batch = read
-            if expected_total is not None and total != expected_total:
-                return _refuse(detail="original-attempt job listing changed while paginating")
-            expected_total = total
-            jobs.extend(batch)
-            if len(jobs) == expected_total:
-                return tuple(jobs)
-            if not batch or len(jobs) > expected_total:
-                return _refuse(detail="incomplete or overflowing original-attempt listing")
-        return _refuse(detail="original-attempt job listing exceeds page budget")
-
-    def _page(
-        self, *, base: str, page: int, deadline: float
-    ) -> tuple[int, list[ObservedJob]] | EvidenceRefusal:
-        read = self._read(endpoint=f"{base}/jobs?per_page=100&page={page}", deadline=deadline)
-        if isinstance(read, EvidenceRefusal):
-            return read
-        row = _object(value=read)
-        total, batch = row.get("total_count"), row.get("jobs")
-        if type(total) is not int or not isinstance(batch, list) or total < 0:
-            return _refuse(detail="malformed original-attempt jobs page")
-        decoded = [_job(value=value) for value in cast("list[object]", batch)]
-        if any(job is None for job in decoded):
-            return _refuse(detail="malformed original-attempt job")
-        return total, cast("list[ObservedJob]", decoded)
+    def __call__(self, endpoint: str) -> object:
+        value = self.fetch(endpoint=endpoint)
+        return None if isinstance(value, EvidenceRefusal) else value
