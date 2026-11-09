@@ -166,8 +166,8 @@ any_short=0
 for node in "$@"; do
   stamp="$(date -u +%Y%m%dt%H%M%Sz)"
   echo "${SCRIPT_NAME}: NODE ${node} at $(date -u +%FT%TZ)"
-  flavor_node="$(kubectl get node "$node" -l "$FLAVOR_LABEL" -o name || true)"
-  if [ -z "$flavor_node" ]; then
+  flavor_nodes="$(kubectl get nodes -l "$FLAVOR_LABEL" -o name || true)"
+  if ! grep -qx "node/${node}" <<<"$flavor_nodes"; then
     echo "ABORT node=${node} reason=no-node-carrying-${FLAVOR_LABEL}"; any_short=1; continue
   fi
   runners="$(count_runner_pods "$node")"

@@ -43,8 +43,10 @@ _LOADED_LOGS = (
 _FAKE_KUBECTL = r"""#!/usr/bin/env bash
 printf '%s\n' "$*" >>"$FAKE_DIR/argv.log"
 case "$*" in
-  "get node "*" -l k3s-role=arc-runner-host -o name")
-    [ -f "$FAKE_DIR/labelled" ] && echo "node/$3" ;;
+  "get node "*" -l "*)
+    echo "error: name cannot be provided when a selector is specified" >&2; exit 1 ;;
+  "get nodes -l k3s-role=arc-runner-host -o name")
+    [ -f "$FAKE_DIR/labelled" ] && cat "$FAKE_DIR/labelled" ;;
   "-n arc-runners get pods "*) cat "$FAKE_DIR/runners.json" ;;
   "-n factory get pods "*) cat "$FAKE_DIR/factory.json" ;;
   "-n factory-mi-homelab get pods "*) echo '{"items": []}' ;;
@@ -78,7 +80,7 @@ def _set_up(
         json.dumps({"items": [{}] * factory}), encoding="utf-8"
     )
     if labelled:
-        _ = (tmp_path / "labelled").write_text("", encoding="utf-8")
+        _ = (tmp_path / "labelled").write_text(f"node/{_NODE}\nnode/other-node\n", encoding="utf-8")
     conditions = [] if job == "running" else [{"type": job, "status": "True"}]
     _ = (tmp_path / "job.json").write_text(
         json.dumps({"status": {"conditions": conditions}}), encoding="utf-8"
