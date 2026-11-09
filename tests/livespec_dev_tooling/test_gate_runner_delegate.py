@@ -12,7 +12,10 @@ from pathlib import Path
 
 import pytest
 
-from livespec_dev_tooling.install_worktree_pack import CANONICAL_GATE_RUN_BODY
+from livespec_dev_tooling.install_worktree_pack import (
+    CANONICAL_GATE_RUN_BODY,
+    WORKTREE_PACK_FILES,
+)
 
 __all__: list[str] = []
 
@@ -166,11 +169,16 @@ def _init_repo(*, tmp_path: Path, delegated: bool = True) -> tuple[Path, dict[st
         f"[tool.livespec_dev_tooling]\ndelegated_gate = {str(delegated).lower()}\n",
         encoding="utf-8",
     )
-    runner = root / _RUNNER
-    _ = runner.parent.mkdir()
-    _ = runner.write_text(CANONICAL_GATE_RUN_BODY, encoding="utf-8")
-    _ = runner.chmod(0o755)
-    _ = (runner.parent / "worktree-lib.sh").write_text("# installed\n", encoding="utf-8")
+    # The whole canonical pack, so the only pack drift a test meets is drift it
+    # makes itself: venue selection refreshes a drifted pack and names it in the
+    # reason, and the runner's own refresh cannot be relied on where `uv` cannot
+    # run in this bare repository.
+    pack_dir = root / _RUNNER.parent
+    _ = pack_dir.mkdir()
+    for pack_file in WORKTREE_PACK_FILES:
+        installed = pack_dir / pack_file.name
+        _ = installed.write_text(pack_file.body, encoding="utf-8")
+        _ = installed.chmod(0o755 if pack_file.executable else 0o644)
     return root, environment
 
 
@@ -269,11 +277,93 @@ def test_selector_cli_strips_gate_starts_command_separator(
         return module.GateVenue(venue="cluster_job", reason="eligible full-suite command")
 
     monkeypatch.setattr(module, "select_for_repository", choose)
+    monkeypatch.setattr(module, "refresh_installed_pack", lambda **_: ())
     monkeypatch.setattr(module.sys, "argv", ["gate-runner-venue", "--", "just", "check"])
 
     assert module.main() == 0
     assert selected["command"] == ("just", "check")
     assert capsys.readouterr().out == "cluster_job\neligible full-suite command\n"
+
+
+# The refresh block a runner installed before livespec-dev-tooling-js3cum lacks:
+# its `ensure_worktree_pack` returned as soon as any pack member was present.
+_REFRESH_BLOCK = (
+    '        if [[ -f "$pack_dir/$f" ]]; then\n'
+    "            printf ':: dev-tooling/ worktree pack present"
+    " — refreshing from installed package\\n' >&2\n"
+    '            ( cd "$root" && uv run --no-sync python -m'
+    " livespec_dev_tooling.install_worktree_pack ) >&2 || true\n"
+    "            return 0\n"
+    "        fi\n"
+)
+_PRE_REFRESH_BLOCK = '        [[ -f "$pack_dir/$f" ]] && return 0\n'
+
+
+def _stale_runner_body() -> str:
+    """Return the canonical runner as it stood before it learned to refresh."""
+    assert _REFRESH_BLOCK in CANONICAL_GATE_RUN_BODY
+    return CANONICAL_GATE_RUN_BODY.replace(_REFRESH_BLOCK, _PRE_REFRESH_BLOCK)
+
+
+def test_gate_start_from_a_stale_runner_refreshes_the_pack_and_names_each_file(
+    *, tmp_path: Path
+) -> None:
+    """A runner installed before the refresh existed is refreshed by its own start.
+
+    The stale runner never refreshes the pack itself, so the venue selector it
+    already calls does: the installed runner ends canonical, and the run record
+    names the pack file the refresh rewrote.
+    """
+    root, environment = _init_repo(tmp_path=tmp_path)
+    runner = root / _RUNNER
+    _ = runner.write_text(_stale_runner_body(), encoding="utf-8")
+
+    run_dir = _start(root=root, env=environment, args=["--", "true"])
+
+    assert runner.read_text(encoding="utf-8") == CANONICAL_GATE_RUN_BODY
+    assert (run_dir / "venue").read_text(encoding="utf-8") == "host_local\n"
+    assert (run_dir / "venue_reason").read_text(encoding="utf-8") == (
+        "command outside full-suite set; refreshed worktree pack: gate-run.sh\n"
+    )
+    assert (run_dir / "exit_code").read_text(encoding="utf-8").strip() == "0"
+
+
+def test_selector_cli_names_the_pack_files_it_refreshed_in_the_reason(
+    *,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Venue selection refreshes a drifted pack and appends what it rewrote."""
+    module = importlib.import_module("livespec_dev_tooling.gate_runner_delegate")
+    root, _ = _init_repo(tmp_path=tmp_path)
+    runner = root / _RUNNER
+    _ = runner.write_text(_stale_runner_body(), encoding="utf-8")
+    monkeypatch.chdir(root)
+    monkeypatch.setattr(module.sys, "argv", ["gate-runner-venue", "--local", "--", "true"])
+
+    assert module.main() == 0
+    assert capsys.readouterr().out == (
+        "host_local\n--local; refreshed worktree pack: gate-run.sh\n"
+    )
+    assert runner.read_text(encoding="utf-8") == CANONICAL_GATE_RUN_BODY
+
+    assert module.main() == 0
+    assert capsys.readouterr().out == "host_local\n--local\n"
+
+
+def test_pack_refresh_leaves_a_checkout_without_a_pack_alone(*, tmp_path: Path) -> None:
+    """No pack member installed, or no git work tree at all, refreshes nothing."""
+    module = importlib.import_module("livespec_dev_tooling.install_worktree_pack")
+    root, _ = _init_repo(tmp_path=tmp_path)
+    for installed in (root / "dev-tooling").iterdir():
+        installed.unlink()
+    outside = tmp_path / "outside"
+    _ = outside.mkdir()
+
+    assert module.refresh_installed_pack(cwd=root) == ()
+    assert list((root / "dev-tooling").iterdir()) == []
+    assert module.refresh_installed_pack(cwd=outside) == ()
 
 
 def test_gate_start_keeps_commit_and_push_hooks_on_the_launching_host(*, tmp_path: Path) -> None:
