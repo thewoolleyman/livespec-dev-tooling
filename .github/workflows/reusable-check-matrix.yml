@@ -20,18 +20,6 @@
 #     livespec-dev-tooling to consume Actions from. Pinned via the
 #     consumer's `uses:` reference (typically vX.Y.Z); included here
 #     for non-tag-pinned local-fork experimentation only.
-#   incident-omitted (optional, default '[]') — JSON-array string of the
-#     check slugs an expedited incident PR omits. The caller passes ONLY its
-#     incident-ci job's `omitted` output, which that job writes after the
-#     released incident controller's aggregate has PASSED (see this
-#     repository's own ci.yml), e.g.
-#     `${{ needs.incident-ci.result == 'success' && needs.incident-ci.outputs.omitted || '[]' }}`.
-#     A leg whose slug is in the list reports omitted-by-incident-policy
-#     instead of running; every other leg runs its check. The list is honored
-#     on a pull_request event ONLY: a master push, or any other event, runs
-#     every requested check whatever labels, markers or omission input it
-#     receives (SPECIFICATION/contracts.md, the expedited incident execution
-#     contract).
 
 name: livespec-dev-tooling check matrix
 
@@ -47,11 +35,6 @@ on:
         required: false
         type: string
         default: master
-      incident-omitted:
-        description: JSON-array string of check slugs the caller's passed incident aggregate omits; honored on pull_request events only.
-        required: false
-        type: string
-        default: '[]'
 
 jobs:
   check:
@@ -72,24 +55,10 @@ jobs:
           ref: ${{ inputs.ref }}
           path: .livespec-dev-tooling-actions
 
-      # Expedited incident PRs only: a check the caller's passed incident
-      # aggregate defers is reported here instead of being run, never skipped
-      # silently. The pull_request test is the master-push guard: every other
-      # event runs every requested check.
-      - name: omitted-by-incident-policy (per the caller's released incident CI aggregate)
-        if: ${{ github.event_name == 'pull_request' && contains(fromJSON(inputs.incident-omitted || '[]'), matrix.check) }}
-        shell: bash
-        env:
-          MEMBER: ${{ matrix.check }}
-        run: |
-          echo "omitted-by-incident-policy: ${MEMBER} was not executed. The caller's released incident controller's passed aggregate defers it for this pull request head." | tee -a "$GITHUB_STEP_SUMMARY"
-
       - name: Setup toolchain
-        if: ${{ !(github.event_name == 'pull_request' && contains(fromJSON(inputs.incident-omitted || '[]'), matrix.check)) }}
         uses: ./.livespec-dev-tooling-actions/.github/actions/setup
 
       - name: Run check
-        if: ${{ !(github.event_name == 'pull_request' && contains(fromJSON(inputs.incident-omitted || '[]'), matrix.check)) }}
         uses: ./.livespec-dev-tooling-actions/.github/actions/run-check
         with:
           check-name: ${{ matrix.check }}
