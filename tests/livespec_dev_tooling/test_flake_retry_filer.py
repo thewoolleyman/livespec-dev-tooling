@@ -227,7 +227,9 @@ def _fixed_plugin_root(**_: object) -> Path:
     return _PLUGIN_ROOT
 
 
-def test_the_host_cli_reports_the_nodeids_it_files(*, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_the_host_cli_reports_the_nodeids_it_files(
+    *, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     """The host invocation uses the reader and returns a successful exit code."""
     module_path = _REPO_ROOT / "livespec_dev_tooling" / "flake_retry_filer.py"
     assert module_path.is_file(), "the host-side flake reader must be shipped"
@@ -235,7 +237,17 @@ def test_the_host_cli_reports_the_nodeids_it_files(*, monkeypatch: pytest.Monkey
     monkeypatch.setattr(filer, "file_root_fixes", _one_filed_nodeid)
     monkeypatch.setattr(filer, "registered_plugin_root", _fixed_plugin_root)
 
-    assert filer.main(argv=["--repo-root", "/tmp/retry-reader"]) == 0
+    assert (
+        filer.main(
+            argv=[
+                "--repo-root",
+                str(tmp_path / "retry-reader"),
+                "--state-dir",
+                str(tmp_path / "reader-state"),
+            ]
+        )
+        == 0
+    )
 
 
 def test_the_host_cli_marks_a_completed_reader_pass(
