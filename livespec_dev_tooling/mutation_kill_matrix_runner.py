@@ -2,34 +2,58 @@
 
 The report model lives separately so other mutation engines can emit exactly
 the same document.  This adapter uses only mutmut's public command-line
-surface: it enumerates generated mutants, applies one at a time, and invokes
-the collected pytest nodes that coverage pairs with that mutant while it is
-present (see `mutation_kill_matrix_selection`).
+surface and runs no language model and no network service.  One run:
+
+1. generates, measures and plans (see `mutation_kill_matrix_stages`): the
+   mutant catalogue, per-test coverage with the baseline failures it reveals,
+   and each mutant's selected tests and cache key;
+2. reuses every cached outcome whose inputs are unchanged (see
+   `mutation_kill_matrix_cache`);
+3. runs every other mutant in a worker's private copy of the target, all of
+   its selected tests in one process, each keeping its own outcome (see
+   `mutation_kill_matrix_pool` and `mutation_kill_matrix_execution`).
+
+It writes the report, the cache, and, given a previous report, the
+what-changed summary.  The target itself is never mutated.
 """
 
 from __future__ import annotations
 
 import argparse
-import subprocess
+import json
+import os
 import sys
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Protocol
 
 from livespec_dev_tooling.mutation_kill_matrix import (
-    Mutant,
     MutationKillMatrixReport,
+    RunMetadata,
     build_report,
+    write_json,
     write_report,
 )
+from livespec_dev_tooling.mutation_kill_matrix_cache import CachedOutcome, load_cache, save_cache
+from livespec_dev_tooling.mutation_kill_matrix_changes import build_changes
+from livespec_dev_tooling.mutation_kill_matrix_execution import CommandExecutor, execute_command
+from livespec_dev_tooling.mutation_kill_matrix_pool import run_pending
 from livespec_dev_tooling.mutation_kill_matrix_selection import (
     COVERAGE_GUIDED_METHOD,
     FULL_MATRIX_METHOD,
-    locate_mutant,
-    measure_per_test_coverage,
-    select_tests,
+)
+from livespec_dev_tooling.mutation_kill_matrix_stages import (
+    ENGINE_VERSION,
+    MutantPlan,
+    generate,
+    measure,
+    plan_mutants,
 )
 
 __all__: list[str] = [
+    "CACHE_PATH",
+    "CHANGES_PATH",
+    "REPORT_PATH",
+    "RunOptions",
     "execute_command",
     "main",
     "run_kill_matrix",
@@ -37,24 +61,25 @@ __all__: list[str] = [
 ]
 
 
-_REPORT_PATH = Path("reports/mutation-kill-matrix.json")
-_MUTMUT_RUN_FAILED = "mutmut run failed while generating the kill matrix"
-_NO_MUTANTS = "mutmut generated no mutants for the kill matrix"
-# `-B`: an applied mutant usually has the source's size and lands within the
-# same second, so a cached `.pyc` would pass its mtime-and-size check and the
-# test would run the unmutated module. No child writes bytecode.
-_PYTHON = (sys.executable, "-B")
+REPORT_PATH = Path("reports/mutation-kill-matrix.json")
+CHANGES_PATH = Path("reports/mutation-kill-matrix-changes.json")
+CACHE_PATH = Path("reports/mutation-kill-matrix-cache.json")
+_DEFAULT_TIMEOUT_SECONDS = 60.0
+_NO_APPLIED = (
+    "no generated mutant could be applied: the applied mutant set is empty, "
+    "so the kill matrix has nothing to attribute"
+)
 
 
-class CommandExecutor(Protocol):
-    """Run one command from a package root and capture its result."""
+@dataclass(frozen=True, kw_only=True)
+class RunOptions:
+    """How one run is executed; none of these change the matrix content."""
 
-    def __call__(self, *, args: list[str], cwd: Path) -> subprocess.CompletedProcess[str]: ...
-
-
-def execute_command(*, args: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
-    """Execute one adapter command without raising for test failures."""
-    return subprocess.run(args=args, capture_output=True, check=False, cwd=str(cwd), text=True)
+    workers: int = 1
+    per_test_timeout: float = _DEFAULT_TIMEOUT_SECONDS
+    cache_path: Path | None = None
+    previous_report: Path | None = None
+    workspace: Path | None = None
 
 
 def source_revision(*, target: Path) -> str:
@@ -63,144 +88,163 @@ def source_revision(*, target: Path) -> str:
     return result.stdout.strip() if result.returncode == 0 else "unknown"
 
 
-def _mutants_from_results(*, output: str) -> list[Mutant]:
-    """Translate mutmut's public results rows into portable mutant rows."""
-    rows = [line.strip().rpartition(": ") for line in output.strip().splitlines()]
-    return [
-        Mutant(identifier=identifier, location=f"mutmut:{identifier}") for identifier, _, _ in rows
-    ]
-
-
-def _collected_tests(*, output: str) -> list[str]:
-    """Extract pytest node IDs from quiet collection output."""
-    return sorted(line.strip() for line in output.splitlines() if "::" in line and " " not in line)
-
-
-def _source_snapshot(*, target: Path) -> dict[Path, bytes]:
-    """Capture source bytes so each applied mutant starts from the clean package."""
-    return {
-        path: path.read_bytes()
-        for path in target.rglob("*.py")
-        if "mutants" not in path.relative_to(target).parts
-    }
-
-
-def _restore_sources(*, snapshot: dict[Path, bytes]) -> None:
-    """Restore the target after a mutant application or a failed test command."""
-    for path, content in snapshot.items():
-        _ = path.write_bytes(content)
-
-
-def _checked_command(
-    *, execute: CommandExecutor, args: list[str], target: Path, failure: str
-) -> subprocess.CompletedProcess[str]:
-    """Run a setup command that must succeed before attribution can be sound."""
-    result = execute(args=args, cwd=target)
-    if result.returncode != 0:
-        raise RuntimeError(failure)
-    return result
+def _write_outputs(
+    *,
+    target: Path,
+    report: MutationKillMatrixReport,
+    plans: list[MutantPlan],
+    outcomes: dict[str, CachedOutcome],
+    options: RunOptions,
+) -> None:
+    """Write the report, the cache and, given a previous report, the summary."""
+    write_report(report=report, path=target / REPORT_PATH)
+    if options.cache_path is not None:
+        save_cache(
+            path=options.cache_path,
+            entries={plan.key: outcomes[plan.mutant.identifier] for plan in plans},
+        )
+    if options.previous_report is not None:
+        previous = json.loads(options.previous_report.read_text(encoding="utf-8"))
+        write_json(
+            document=build_changes(previous=previous, current=report.to_dict()),
+            path=target / CHANGES_PATH,
+        )
 
 
 def run_kill_matrix(
-    *, target: Path, source_revision: str, execute: CommandExecutor = execute_command
+    *,
+    target: Path,
+    source_revision: str,
+    execute: CommandExecutor = execute_command,
+    options: RunOptions | None = None,
 ) -> MutationKillMatrixReport:
-    """Run each mutmut mutant against the tests that execute it and write one report.
-
-    A mutmut run creates its on-disk mutant catalogue.  The suite then runs
-    once under per-test coverage, and each mutant is located at the function
-    body it mutates.  Each following ``mutmut apply`` changes one mutant into
-    the package, then every test selected for it runs separately; a test not
-    selected is recorded as not killing it.  A non-zero pytest result is that
-    test's kill.  The source snapshot makes this destructive-looking public
-    CLI operation safe for the package being measured.
-    """
-    generated = execute(args=[*_PYTHON, "-m", "mutmut", "run"], cwd=target)
-    if generated.returncode not in (0, 1):
-        raise RuntimeError(_MUTMUT_RUN_FAILED)
-    results = _checked_command(
-        execute=execute,
-        args=[*_PYTHON, "-m", "mutmut", "results", "--all", "True"],
-        target=target,
-        failure="mutmut results failed while listing generated mutants",
+    """Run each mutmut mutant against the tests that execute it and write one report."""
+    options = options or RunOptions()
+    generated, tests = generate(execute=execute, target=target)
+    coverage, baseline_failures = measure(
+        execute=execute, target=target, tests=tests, timeout=options.per_test_timeout
     )
-    generated_mutants = _mutants_from_results(output=results.stdout)
-    if not generated_mutants:
-        raise RuntimeError(_NO_MUTANTS)
-    collected = _checked_command(
+    plans = plan_mutants(
         execute=execute,
-        args=[*_PYTHON, "-m", "pytest", "--collect-only", "-q"],
         target=target,
-        failure="pytest collection failed for the kill matrix",
+        generated=generated,
+        attributable=[test for test in tests if test not in baseline_failures],
+        coverage=coverage,
+        timeout=options.per_test_timeout,
     )
-    tests = _collected_tests(output=collected.stdout)
-    coverage = measure_per_test_coverage(target=target, execute=execute)
-    spans = {
-        mutant.identifier: locate_mutant(target=target, identifier=mutant.identifier)
-        for mutant in generated_mutants
+    cache = load_cache(path=options.cache_path)
+    reused = {
+        plan.mutant.identifier: cache[plan.key]
+        for plan in plans
+        if cache is not None and plan.key in cache
     }
-    mutants = [
-        Mutant(identifier=mutant.identifier, location=span.location())
-        if (span := spans[mutant.identifier]) is not None
-        else mutant
-        for mutant in generated_mutants
-    ]
-    # Judge "measured" only on the files that hold mutants: tests sit inside
-    # the measured tree, so every test's own body would otherwise give it a
-    # context, and a test that reaches the source only where coverage cannot
-    # follow (a bare subprocess) would never run against any mutant.
-    source_paths = {span.path for span in spans.values() if span is not None}
-    source_coverage = (
-        None
-        if coverage is None
-        else {path: lines for path, lines in coverage.items() if path in source_paths}
+    outcomes = reused | run_pending(
+        execute=execute,
+        target=target,
+        plans=[plan for plan in plans if plan.mutant.identifier not in reused],
+        workers=options.workers,
+        timeout=options.per_test_timeout,
+        workspace=options.workspace,
     )
-    snapshot = _source_snapshot(target=target)
-    killers_by_mutant: dict[str, set[str]] = {}
-    try:
-        for mutant in mutants:
-            _restore_sources(snapshot=snapshot)
-            _ = _checked_command(
-                execute=execute,
-                args=[*_PYTHON, "-m", "mutmut", "apply", mutant.identifier],
-                target=target,
-                failure=f"mutmut could not apply mutant {mutant.identifier}",
-            )
-            killers_by_mutant[mutant.identifier] = {
-                test
-                for test in select_tests(
-                    span=spans[mutant.identifier], coverage=source_coverage, tests=tests
-                )
-                if execute(args=[*_PYTHON, "-m", "pytest", "-q", test], cwd=target).returncode != 0
-            }
-    finally:
-        _restore_sources(snapshot=snapshot)
+    unapplied = frozenset(mutant for mutant, outcome in outcomes.items() if outcome.unapplied)
+    if len(unapplied) == len(plans):
+        raise RuntimeError(_NO_APPLIED)
+    collected = set(tests)
     report = build_report(
         engine_name="mutmut",
-        engine_version="3.2.3",
+        engine_version=ENGINE_VERSION,
         source_revision=source_revision,
         test_selection_method=FULL_MATRIX_METHOD if coverage is None else COVERAGE_GUIDED_METHOD,
-        mutants=mutants,
+        mutants=[plan.mutant for plan in plans],
         tests=tests,
-        killers_by_mutant=killers_by_mutant,
+        killers_by_mutant={
+            mutant: set(outcome.killed_by) & collected for mutant, outcome in outcomes.items()
+        },
+        unapplied_mutants=unapplied,
+        selected_for_unapplied=frozenset(
+            test for plan in plans if plan.mutant.identifier in unapplied for test in plan.selected
+        ),
+        baseline_failures=baseline_failures,
+        per_test_timeout_seconds=options.per_test_timeout,
+        run=RunMetadata(
+            workers=options.workers, incremental=cache is not None, reused_mutants=len(reused)
+        ),
     )
-    write_report(report=report, path=target / _REPORT_PATH)
+    _write_outputs(target=target, report=report, plans=plans, outcomes=outcomes, options=options)
     return report
 
 
-def main() -> int:
-    """Generate a Rule-26 report for the target package path supplied by just."""
+def _parser() -> argparse.ArgumentParser:
+    """Describe the on-demand command line."""
     parser = argparse.ArgumentParser(description="Generate a Rule-26 mutation kill matrix.")
     _ = parser.add_argument(
         "target", type=Path, help="package root containing pyproject.toml and tests"
     )
-    arguments = parser.parse_args()
+    _ = parser.add_argument(
+        "--workers",
+        type=int,
+        default=os.cpu_count() or 1,
+        help="parallel workers (default: CPU count)",
+    )
+    _ = parser.add_argument(
+        "--timeout",
+        type=float,
+        default=_DEFAULT_TIMEOUT_SECONDS,
+        help="per-test timeout in seconds; a test that exceeds it against a mutant kills it",
+    )
+    _ = parser.add_argument(
+        "--previous-report",
+        type=Path,
+        help="earlier report to write a what-changed summary against",
+    )
+    _ = parser.add_argument(
+        "--cache", type=Path, help=f"result cache path (default: <target>/{CACHE_PATH})"
+    )
+    _ = parser.add_argument(
+        "--no-cache", action="store_true", help="neither read nor write a cache"
+    )
+    _ = parser.add_argument(
+        "--workspace",
+        type=Path,
+        help="directory for the worker trees (default: the system temp dir)",
+    )
+    return parser
+
+
+def main(*, argv: list[str] | None = None) -> int:
+    """Generate a Rule-26 report for the target package path supplied by just."""
+    parser = _parser()
+    arguments = parser.parse_args(argv)
     target = arguments.target.resolve()
     if not target.is_dir():
         parser.error(f"target package path is not a directory: {target}")
-    _ = run_kill_matrix(
-        target=target,
-        source_revision=source_revision(target=target),
-        execute=execute_command,
+    if arguments.workers < 1:
+        parser.error("--workers must be at least 1")
+    previous = arguments.previous_report.resolve() if arguments.previous_report else None
+    if previous is not None and not previous.is_file():
+        parser.error(f"previous report is not a file: {previous}")
+    options = RunOptions(
+        workers=arguments.workers,
+        per_test_timeout=arguments.timeout,
+        cache_path=None if arguments.no_cache else (arguments.cache or target / CACHE_PATH),
+        previous_report=previous,
+        workspace=arguments.workspace,
+    )
+    try:
+        _ = run_kill_matrix(
+            target=target,
+            source_revision=source_revision(target=target),
+            execute=execute_command,
+            options=options,
+        )
+    except RuntimeError as error:
+        _ = sys.stderr.write(f"mutation-kill-matrix: {error}\n")
+        return 1
+    _ = sys.stdout.write(f"mutation-kill-matrix: wrote {target / REPORT_PATH}\n")
+    _ = sys.stdout.write(
+        "mutation-kill-matrix: no previous report given, so no what-changed summary was written\n"
+        if previous is None
+        else f"mutation-kill-matrix: wrote {target / CHANGES_PATH}\n"
     )
     return 0
 
