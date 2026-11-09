@@ -145,7 +145,14 @@ def retry_marker_for(
     change_paths: set[Path],
     memo: dict[Path, _ModuleFacts | None] | None = None,
 ) -> dict[str, int] | None:
-    """Return a rerun marker only when no changed path touches the closure."""
+    """Return a rerun marker only when no changed path touches the closure.
+
+    A test file outside `repo_root` cannot be analysed against the repository's
+    change set, so it takes the same conservative path as an unanalysable
+    closure: no marker, and it fails at once when it fails.
+    """
+    if not test_path.is_relative_to(repo_root):
+        return None
     if any(path.name in _UNSAFE_NAMES or path.name == Path(__file__).name for path in change_paths):
         return None
     analyzed = _closure(repo_root=repo_root, test_path=test_path, memo=memo)
