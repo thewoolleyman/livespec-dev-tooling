@@ -735,3 +735,65 @@ def test_main_renders_the_consumer_config_parse_failure(
         monkeypatch=monkeypatch,
         capsys=capsys,
     )
+
+
+_PYTEST_PLUGIN_SOURCE = (
+    "from __future__ import annotations\n"
+    "\n"
+    "import pytest\n"
+    "\n"
+    "__all__: list[str] = []\n"
+    "\n"
+    "\n"
+    "def pytest_runtest_logreport(report: pytest.TestReport) -> None:\n"
+    "    _ = report\n"
+    "\n"
+    "\n"
+    "@pytest.hookimpl(hookwrapper=True)\n"
+    "def pytest_runtest_protocol(item: pytest.Item) -> object:\n"
+    "    yield\n"
+)
+
+
+def test_keyword_only_args_accepts_pytest_hook_implementations(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A module-level `pytest_*` hook in a module that imports pytest is exempt (exit 0).
+
+    pluggy calls a hook implementation POSITIONALLY with the arguments its signature
+    names, so a keyword-only hook fails at runtime with `missing ... keyword-only
+    arguments`. It is a third-party-SDK callback, which the spec's keyword-only rule
+    exempts (the keyword-only rule in non-functional-requirements.md).
+    """
+    _write(
+        tmp_path=tmp_path,
+        rel_path=".claude-plugin/scripts/livespec/plugin.py",
+        source=_PYTEST_PLUGIN_SOURCE,
+    )
+
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
+
+    assert result.returncode == 0, (
+        f"keyword_only_args should exempt pytest hook implementations; "
+        f"got returncode={result.returncode} "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+
+
+def test_keyword_only_args_still_rejects_a_pytest_named_function_without_pytest(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The `pytest_` prefix alone exempts nothing: the module must import pytest."""
+    _write(
+        tmp_path=tmp_path,
+        rel_path=".claude-plugin/scripts/livespec/plugin.py",
+        source=_PYTEST_PLUGIN_SOURCE.replace("import pytest\n", "")
+        .replace("@pytest.hookimpl(hookwrapper=True)\n", "")
+        .replace("pytest.TestReport", "object")
+        .replace("pytest.Item", "object"),
+    )
+
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
+
+    assert result.returncode == 1
+    assert "pytest_runtest_logreport" in result.stdout + result.stderr

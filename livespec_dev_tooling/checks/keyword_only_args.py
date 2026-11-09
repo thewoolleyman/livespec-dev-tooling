@@ -15,13 +15,18 @@ first separator (every parameter keyword-only). Exempts:
   a position whose caller lives outside this repository and
   passes positionally, so a keyword-only signature would stop
   the callable being a substitute for the thing it stands in
-  for. Three forms, every one DERIVED from the consumer's own
+  for. Four forms, every one DERIVED from the consumer's own
   code rather than declared in config:
     * `sorted(..., key=fn)` / `list.sort(key=fn)`;
     * `monkeypatch.setattr(<stdlib-owned name>, ..., fn)`, and
       the methods of a stand-in class a substituted factory
       constructs;
-    * `parser.add_argument(..., type=fn)`.
+    * `parser.add_argument(..., type=fn)`;
+    * a module-level `pytest_*` hook implementation in a module
+      that imports pytest, which pluggy calls positionally with
+      the arguments its signature names (the third-party-SDK
+      callbacks the keyword-only rule in
+      non-functional-requirements.md exempts).
   The exemption is deliberately NOT "is monkeypatched": a
   double of a FIRST-PARTY keyword-only function keeps failing,
   because there the positional signature is a real defect.
@@ -93,6 +98,7 @@ CHECK_PURITY = "tree-pure"
 
 _IMPLICIT_FIRST_PARAMS = frozenset({"self", "cls"})
 _SORT_FUNC_NAMES = frozenset({"sort", "sorted"})
+_PYTEST_PACKAGES = frozenset({"pytest", "_pytest"})
 _STDLIB_MODULE_NAMES = frozenset(sys.stdlib_module_names)
 # `monkeypatch.setattr(target, "name", value)` — the three-positional form. The
 # two-arg `setattr("mod.attr", value)` form carries no separable target to test
@@ -235,6 +241,32 @@ def _methods_of(*, tree: ast.AST, class_names: frozenset[str]) -> frozenset[str]
     return frozenset(names)
 
 
+def _imports_pytest(*, tree: ast.Module) -> bool:
+    """Whether a module imports pytest (or its private package) at all."""
+    imported = {
+        alias.name
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Import)
+        for alias in node.names
+    } | {node.module or "" for node in ast.walk(tree) if isinstance(node, ast.ImportFrom)}
+    return any(name.split(".")[0] in _PYTEST_PACKAGES for name in imported)
+
+
+def _collect_pytest_hook_names(*, tree: ast.Module) -> frozenset[str]:
+    """Module-level `pytest_*` hook implementations, which pluggy calls positionally.
+
+    The prefix alone is no evidence: the module must also import pytest.
+    """
+    if not _imports_pytest(tree=tree):
+        return frozenset()
+    return frozenset(
+        node.name
+        for node in tree.body
+        if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef)
+        and node.name.startswith("pytest_")
+    )
+
+
 def _collect_sort_key_names(*, tree: ast.AST) -> frozenset[str]:
     """Collect names of callables passed as key= to sort/sorted call sites."""
     names: set[str] = set()
@@ -279,6 +311,7 @@ def _find_offenders(*, source: str) -> list[tuple[int, str]]:
     fixed_functions, standin_classes = _collect_externally_fixed(tree=tree)
     exempt_names = (
         _collect_sort_key_names(tree=tree)
+        | _collect_pytest_hook_names(tree=tree)
         | fixed_functions
         | _methods_of(tree=tree, class_names=standin_classes)
     )
