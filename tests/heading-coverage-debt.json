@@ -1496,5 +1496,12 @@
     "heading": "## Scenario: two scale sets pinning different runner versions fail the check",
     "work_item": "livespec-dev-tooling-jkwzwv",
     "first_seen": "2026-11-08"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: the range replay refuses a suite-green commit whose added tests fail on its parent",
+    "work_item": "livespec-dev-tooling-5uobsl",
+    "first_seen": "2026-11-09"
   }
 ]

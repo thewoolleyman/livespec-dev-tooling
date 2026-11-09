@@ -3747,3 +3747,19 @@ When the producer runs twice, and then runs once with its dry-run flag
 Then every fleet repository's `CI_PRIORITY_RECORD` after the second run MUST be byte-identical to its value after the first
 
 And the dry-run MUST print each repository's value and MUST leave every `CI_PRIORITY_RECORD` unchanged
+
+## Scenario: the range replay refuses a suite-green commit whose added tests fail on its parent
+
+Given a commit that changes a product `.py` file, adds a test that fails when run against the commit's parent tree, and carries `TDD-Suite-Green-*` trailers but no `TDD-Red-*` trailers
+
+When `check-red-green-replay` validates a range containing that commit
+
+Then the check MUST fail
+
+And its failure MUST name the commit and the test that fails on the parent
+
+Given a commit that changes a product `.py` file, adds characterization tests that pass on its parent tree, and carries `TDD-Suite-Green-*` trailers with a `TDD-Suite-Green-Parent-Replay` trailer
+
+When `check-red-green-replay` validates a range containing that commit
+
+Then the check MUST pass that commit
