@@ -58,6 +58,18 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.189.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.189.0...v1.189.1) (2026-11-09)
+
+
+### Bug Fixes
+
+* a delegated gate client ended by a hangup deletes its gate Job, as it does for TERM and INT (livespec-dev-tooling-4rliwe) ([9940cd4](https://github.com/thewoolleyman/livespec-dev-tooling/commit/9940cd45df672f33f7595449d2e58b4f519b0606))
+* a pre-commit gate ended by a signal reports the termination and names the Job it deleted (livespec-dev-tooling-4rliwe) ([53e9bd2](https://github.com/thewoolleyman/livespec-dev-tooling/commit/53e9bd215e03a7ab2f48d9298c0b549f0bd98d31))
+* an expedited gate receipt keeps each gate's text to a bounded tail so it fits the one argument it travels in (livespec-dev-tooling-oqpw6t) ([d378cb9](https://github.com/thewoolleyman/livespec-dev-tooling/commit/d378cb9344d053aa286aa44a0663204fc8d33991))
+* **ansible:** the converge role installs the gates-cq worker flavor template, so an apply keeps the M4's gate share ([44204e8](https://github.com/thewoolleyman/livespec-dev-tooling/commit/44204e8488ff621e19bd1b95f176822c2f44223d))
+* the per-target wall-time table shows an hour or more as hours, minutes and seconds (livespec-dev-tooling-e62ss6) ([2af4285](https://github.com/thewoolleyman/livespec-dev-tooling/commit/2af428540b028d952976c6559a6e28a2cf8364c2))
+* the suite-green leg renews the gate runner's progress stamp on each pytest output chunk (livespec-dev-tooling-54usvh) ([6d84d33](https://github.com/thewoolleyman/livespec-dev-tooling/commit/6d84d333636a9cf0c1a60ae039c9816fcb0ea2d4))
+
 ## [1.189.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.188.1...v1.189.0) (2026-11-09)
 
 
