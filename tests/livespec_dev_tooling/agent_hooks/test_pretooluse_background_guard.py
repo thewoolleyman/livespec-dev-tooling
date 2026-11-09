@@ -1058,6 +1058,98 @@ def test_a_prefixed_or_compound_foreground_pytest_in_the_cwd_is_refused(
 
 @pytest.mark.integration
 @pytest.mark.parametrize(
+    ("template", "start", "refused_repository"),
+    [
+        pytest.param(
+            "pytest tests/test_widget.py && pytest", "delegating", "delegating", id="targeted-and"
+        ),
+        pytest.param(
+            "pytest tests/test_widget.py; uv run pytest -n 4",
+            "delegating",
+            "delegating",
+            id="targeted-semicolon",
+        ),
+        pytest.param(
+            "uv run pytest tests/test_widget.py && python -m pytest --cov=widget",
+            "delegating",
+            "delegating",
+            id="targeted-uv-then-module",
+        ),
+        pytest.param(
+            "bash -c 'pytest tests/test_widget.py && pytest'",
+            "delegating",
+            "delegating",
+            id="targeted-then-full-in-shell-runner",
+        ),
+        pytest.param(
+            "cd {undelegated} && pytest && cd {delegating} && pytest",
+            "undelegated",
+            "delegating",
+            id="full-in-undelegated-then-full-in-delegating",
+        ),
+        pytest.param(
+            "pytest tests/test_widget.py && cd {undelegated} && pytest tests/test_widget.py"
+            " && cd {delegating} && pytest",
+            "delegating",
+            "delegating",
+            id="each-judged-against-its-own-cd-target",
+        ),
+    ],
+)
+def test_any_full_suite_pytest_in_a_compound_foreground_command_is_refused(
+    template: str,
+    start: str,
+    refused_repository: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A targeted pytest ahead of a full one does not decide the whole command."""
+    delegating, undelegated = _two_repositories(tmp_path=tmp_path, monkeypatch=monkeypatch)
+    command = template.format(delegating=delegating, undelegated=undelegated)
+    repositories = {"delegating": delegating, "undelegated": undelegated}
+
+    event = _foreground_refusal_event(
+        command=command, cwd=repositories[start], monkeypatch=monkeypatch, capsys=capsys
+    )
+
+    assert event["check_id"] == _FOREGROUND_PYTEST_CHECK_ID
+    assert event["repository"] == str(repositories[refused_repository])
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    ("template", "start"),
+    [
+        pytest.param(
+            "pytest tests/test_widget.py && pytest tests/test_widget.py::test_x",
+            "delegating",
+            id="every-pytest-targeted",
+        ),
+        pytest.param(
+            "pytest tests/test_widget.py && cd {undelegated} && pytest",
+            "delegating",
+            id="later-full-suite-targets-an-undelegated-repository",
+        ),
+    ],
+)
+def test_a_compound_foreground_command_with_no_eligible_full_suite_pytest_proceeds(
+    template: str,
+    start: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Judging every pytest refuses nothing that no single pytest would be refused for."""
+    delegating, undelegated = _two_repositories(tmp_path=tmp_path, monkeypatch=monkeypatch)
+    command = template.format(delegating=delegating, undelegated=undelegated)
+    monkeypatch.chdir(delegating if start == "delegating" else undelegated)
+    payload = json.dumps({"tool_name": "Bash", "tool_input": {"command": command}})
+
+    assert _run_main(monkeypatch=monkeypatch, stdin_text=payload) == 0
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize(
     ("template", "start", "expected_exit"),
     [
         pytest.param(

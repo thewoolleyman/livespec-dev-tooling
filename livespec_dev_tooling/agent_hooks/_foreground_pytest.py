@@ -105,9 +105,11 @@ def foreground_full_suite_pytest(*, command: str, cwd: Path) -> Path | None:
     script hides no pytest, and a pytest after `;` or `&&` is still found. The
     target repository is decided as for a git command: each `cd <path>` moves
     it, and any pytest reached before a `cd` targets the session's working
-    directory. The FIRST pytest decides, against the target in force when the
-    shell reaches it. Text the shell cannot lex (an unterminated quote) runs
-    nothing at all, so it is not refused.
+    directory. EVERY pytest is judged, each against the target in force when
+    the shell reaches it, so a targeted pytest ahead of a full one hides
+    nothing; the first eligible full suite decides the verdict. Text the shell
+    cannot lex (an unterminated quote) runs nothing at all, so it is not
+    refused.
     """
     try:
         _ = shlex.split(command)
@@ -125,7 +127,8 @@ def foreground_full_suite_pytest(*, command: str, cwd: Path) -> Path | None:
                 and delegated_gate_enabled(repo_root=target)
                 and gates_kubeconfig_readable()
             )
-            return target if eligible else None
+            if eligible:
+                return target
     return None
 
 
