@@ -4,7 +4,9 @@ Shared by `check_coverage_incremental` and the expedited incident's focused
 evidence, so the two cannot disagree about what a covered line is. Both run a
 nested pytest whose coverage data must land in a private file rather than in the
 normal `.coverage`, and both measure under `pyproject.toml` — its `omit` and
-`exclude_also` and its pytest `addopts` — exactly as the full-tree gates do.
+`exclude_also` and its pytest `addopts`. They differ from the full-tree gates in
+one way: those run with `COVERAGE_FILE` unset (`check-per-file-coverage.sh`),
+while these set it to the private data file.
 """
 
 from __future__ import annotations

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+import time
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -611,3 +612,51 @@ def test_ambient_pytest_plugin_variables_do_not_leak_in(
     evidence = _collect(root, base)
     assert evidence["tests"]["returncode"] == 0
     assert evidence["outcome"] == "passed"
+
+
+def test_the_sixty_second_bound_is_shared_by_the_test_run_and_the_coverage_report(
+    project: tuple[Path, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    waits: list[tuple[object, float | None]] = []
+
+    class Recording(subprocess.Popen[str]):
+        def communicate(
+            self, input: str | None = None, timeout: float | None = None
+        ) -> tuple[str, str]:
+            waits.append((self.args, timeout))
+            return super().communicate(input, timeout)
+
+    monkeypatch.setattr(subprocess, "Popen", Recording)
+    root, base = project
+    assert _collect(root, base, timeout=30)["outcome"] == "passed"
+    bounds = [
+        timeout
+        for args, timeout in waits
+        if isinstance(args, list) and args[1:3] in (["-m", "pytest"], ["-m", "coverage"])
+    ]
+    assert len(bounds) == 2
+    assert bounds[0] is not None
+    assert bounds[1] is not None
+    assert bounds[0] <= 30
+    assert bounds[1] < bounds[0] - 0.5
+
+
+def test_a_descendant_holding_the_output_open_cannot_outlast_the_bound(
+    project: tuple[Path, str],
+) -> None:
+    root, base = project
+    (root / "pyproject.toml").write_text(
+        '[tool.livespec_dev_tooling]\nsource_trees = ["src"]\n'
+        '[tool.pytest.ini_options]\naddopts = "-s"\n'
+    )
+    (root / "tests/test_escaped.py").write_text(
+        "import subprocess\n"
+        "def test_escaped():\n"
+        '    subprocess.Popen(["sleep", "15"], start_new_session=True)\n'
+    )
+    _git(root, "add", ".")
+    started = time.monotonic()
+    evidence = _collect(root, base, timeout=2)
+    assert time.monotonic() - started < 10
+    assert evidence["tests"]["timed_out"] is True
+    assert evidence["outcome"] == "incomplete"

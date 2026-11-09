@@ -10,7 +10,8 @@ import sys
 import tempfile
 from contextlib import suppress
 from pathlib import Path
-from typing import cast
+from time import monotonic
+from typing import IO, cast
 
 from livespec_dev_tooling._coverage_measure_omitted import measuring_config
 from livespec_dev_tooling._incident_focused_types import CoverageDocument, CoverageFile
@@ -35,7 +36,15 @@ _AMBIENT_OVERRIDES = (
 )
 
 
-def _run(*, argv: list[str], root: Path, env: dict[str, str], timeout: float) -> dict[str, object]:
+# After the group is killed, only a descendant that escaped it can still hold the
+# output pipe open; give it this long to drain, then stop waiting on it.
+_DRAIN_SECONDS = 0.5
+
+
+def _run(*, argv: list[str], root: Path, env: dict[str, str], deadline: float) -> dict[str, object]:
+    remaining = deadline - monotonic()
+    if remaining <= 0:
+        return {"argv": argv, "returncode": None, "output": "", "timed_out": True}
     process = subprocess.Popen(  # noqa: S603 — interpreter and flags are selected here.
         argv,
         cwd=root,
@@ -46,12 +55,17 @@ def _run(*, argv: list[str], root: Path, env: dict[str, str], timeout: float) ->
         start_new_session=True,
     )
     try:
-        output, _ = process.communicate(timeout=timeout)
+        output, _ = process.communicate(timeout=remaining)
         timed_out = False
     except subprocess.TimeoutExpired:
         with suppress(ProcessLookupError):
             os.killpg(process.pid, signal.SIGKILL)
-        output, _ = process.communicate()
+        try:
+            output, _ = process.communicate(timeout=_DRAIN_SECONDS)
+        except subprocess.TimeoutExpired as late:
+            output = os.fsdecode(late.output or b"")
+            _ = process.wait()
+            cast("IO[str]", process.stdout).close()
         timed_out = True
     return {
         "argv": argv,
@@ -67,9 +81,12 @@ def measure(
     """Measure under the repository's own pytest and coverage configuration.
 
     Only the scope, the private data file, the bound and the process ownership
-    differ from the normal coverage gates. Ambient pytest and coverage overrides
-    are dropped so the evidence reflects the staged tree, not the caller's shell.
+    differ from the normal coverage gates. The bound is one deadline shared by the
+    test run and the coverage report, so a collection never outlasts `timeout`.
+    Ambient pytest and coverage overrides are dropped so the evidence reflects the
+    staged tree, not the caller's shell.
     """
+    deadline = monotonic() + timeout
     ambient = gate_child_environment(environ=os.environ)
     for name in _AMBIENT_OVERRIDES:
         _ = ambient.pop(name, None)
@@ -87,7 +104,7 @@ def measure(
             ],
             root=repo_root,
             env=env,
-            timeout=timeout,
+            deadline=deadline,
         )
         report_path = folder / "coverage.json"
         report = _run(
@@ -103,7 +120,7 @@ def measure(
             ],
             root=repo_root,
             env=env,
-            timeout=timeout,
+            deadline=deadline,
         )
         raw: CoverageDocument = (
             cast("CoverageDocument", json.loads(report_path.read_text()))
