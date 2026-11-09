@@ -132,6 +132,65 @@ def test_hosted_current_query_uses_fresh_reader_and_exact_echo(provisioned):
     assert len(calls) == 1
 
 
+def test_an_unbound_premerge_arm_owns_the_matching_ordinary_reconciler_action(provisioned):
+    """The ordinary reconciler must leave a pre-merge observer arm alone."""
+    application, _, _, _ = provisioned
+    query = {"repository": "owner/repo", "head_sha": "e" * 40, "run_id": 1}
+
+    response, result = _request(application=application, path="/ordinary-action", payload=query)
+
+    assert response[0] == "202 Accepted"
+    assert result == {
+        "schema": 1,
+        "status": "incident-owned",
+        "reason": "pre-merge observer owns repository action",
+        "query": query,
+    }
+
+
+def test_an_unregistered_ordinary_action_keeps_its_policy_under_the_shared_lock(
+    provisioned, tmp_path
+):
+    """A repository with no incident record answers `ordinary` for any run."""
+    application, _, _, _ = provisioned
+    settings = SimpleNamespace(**(vars(application.installation) | {"state": tmp_path / "empty"}))
+    quiet = ControllerService(installation=settings, recover=lambda _: None)
+    query = {"repository": "owner/repo", "head_sha": "e" * 40, "run_id": 1}
+
+    response, result = _request(application=quiet, path="/ordinary-action", payload=query)
+
+    assert response[0] == "202 Accepted"
+    assert result == {
+        "schema": 1,
+        "status": "ordinary",
+        "reason": "ordinary reconciler policy retained",
+        "query": query,
+    }
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        {"repository": "owner/repo", "head_sha": "e" * 40, "run_id": 0},
+        {"repository": "owner/repo", "head_sha": "e" * 40, "run_id": True},
+        {"repository": "owner/repo", "head_sha": 7, "run_id": 1},
+        {"repository": "owner/repo", "head_sha": "e" * 40, "run_id": 1, "extra": "x"},
+    ],
+)
+def test_a_malformed_ordinary_action_query_is_refused(provisioned, query):
+    """Ownership queries name one exact positive workflow run."""
+    application, _, _, _ = provisioned
+
+    response, result = _request(application=application, path="/ordinary-action", payload=query)
+
+    assert response[0] == "403 Forbidden"
+    assert result == {
+        "schema": 1,
+        "status": "refused",
+        "reason": "invalid ordinary action ownership query",
+    }
+
+
 @pytest.mark.parametrize("path", ["/arm", "/bind"])
 def test_query_credential_cannot_mutate_retained_arm(provisioned, path):
     application, query, _, calls = provisioned
