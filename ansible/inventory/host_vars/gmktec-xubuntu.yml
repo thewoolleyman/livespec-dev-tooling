@@ -986,7 +986,9 @@ tailscale_serve_mappings:
     backend: http://127.0.0.1:32279
 
 # --- factory_budget_reconciler ---
-# This node may hold 6 factory sandbox pods: the TEMPORARY fixed factory-vs-CI CPU
+# This node may hold 7 factory sandbox pods: the TEMPORARY fixed factory-vs-CI CPU
 # share (maintainer ruling 2026-11-08). Derived from CI p95 by concurrent factory
-# sandboxes (role HOST_VARS.md). Revert: raise it, or use the reconciler's kill switch.
-factory_pod_budget: 6
+# sandboxes, then raised 6 -> 7 for fleet cap 12 by legacy-coordinator-agent's
+# 2026-11-10 ruling, under its 6 h guards (role HOST_VARS.md). ROLLBACK: set 6, and
+# lower the fleet cap to 11 FIRST. Kill switch: the reconciler's.
+factory_pod_budget: 7
