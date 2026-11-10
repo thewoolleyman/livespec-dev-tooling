@@ -26,7 +26,7 @@ from livespec_dev_tooling._incident_observer_types import (
 from livespec_dev_tooling.incident_ci_attachment import CiJobAttachment
 from livespec_dev_tooling.incident_ci_identity import CiIdentityVerifier
 from livespec_dev_tooling.incident_ci_job_collection import CiJobCollection
-from livespec_dev_tooling.incident_conflict_chain import is_conflict_receipt
+from livespec_dev_tooling.incident_conflict_sweep import ConflictSweep, waking_recover
 from livespec_dev_tooling.incident_controller_installation import ControllerInstallation
 from livespec_dev_tooling.incident_observer_control import ObserverControl
 from livespec_dev_tooling.incident_observer_endpoint import _read_request, observer_endpoint
@@ -85,7 +85,7 @@ class ControllerService:
         journaled = Event()
         return cls(
             installation=installation,
-            recover=_waking(callback=callback, journaled=journaled),
+            recover=waking_recover(callback=callback, journaled=journaled),
             conflict_journaled=journaled,
         )
 
@@ -256,20 +256,6 @@ class _RequestDispatcher:
             self.server.shutdown_request(request)
 
 
-def _waking(
-    *, callback: Callable[[RecoveryIntent], str | None], journaled: Event
-) -> Callable[[RecoveryIntent], str | None]:
-    """The recovery callback, waking the conflict sweep when it journals a conflict."""
-
-    def recover(*, intent: RecoveryIntent) -> str | None:
-        receipt = callback(intent)
-        if is_conflict_receipt(receipt=receipt):
-            journaled.set()
-        return receipt
-
-    return lambda intent: recover(intent=intent)
-
-
 def main() -> int:
     """Serve only a provisioned isolated installation on loopback behind host TLS."""
     parser = argparse.ArgumentParser(description=__doc__)
@@ -290,12 +276,23 @@ def main() -> int:
     # operator has to remember to run the entrance; the watcher resumes from the record.
     # A watcher that dies shuts the server down, so the service exits non-zero and systemd
     # restarts it instead of answering HTTP with nothing collecting.
+    # The conflict sweep writes journaled rollback-conflicts to the chain outside the
+    # fence; like the watcher, a sweep that crashes shuts the server down.
     watcher = installed_watcher(installation=application.installation)
+    stop = Event()
+    sweep = ConflictSweep(
+        installation=application.installation, wake=application.conflict_journaled
+    )
     with make_server("127.0.0.1", application.installation.port, application) as server:
         server.process_request = _RequestDispatcher(server=server)
         _ = watcher.start(on_exit=server.shutdown)
-        server.serve_forever()
-    return 1 if watcher.failed.is_set() else 0
+        _ = sweep.start(stop=stop, on_crash=server.shutdown)
+        try:
+            server.serve_forever()
+        finally:
+            stop.set()
+            application.conflict_journaled.set()
+    return 1 if watcher.failed.is_set() or sweep.crashed.is_set() else 0
 
 
 if __name__ == "__main__":
