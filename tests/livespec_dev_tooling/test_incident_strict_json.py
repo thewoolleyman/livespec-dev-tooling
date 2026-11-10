@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import ast
+import hashlib
+import hmac
 import http.client
 import importlib
 import io
 import json
+import subprocess
 from pathlib import Path
 from typing import Any
 from unittest.mock import Mock
@@ -17,9 +20,13 @@ from returns.pipeline import is_successful
 from livespec_dev_tooling import incident_ci_attachment as attachment_module
 from livespec_dev_tooling import incident_ci_identity as identity_module
 from livespec_dev_tooling import incident_ci_job_collection as collection_module
+from livespec_dev_tooling import incident_hook_scope as scope_module
+from livespec_dev_tooling._incident_observer_store import load_record
 from livespec_dev_tooling.incident_authority_client import check_authority_reply
+from livespec_dev_tooling.incident_observer_events import verify_leaf_completion
 from livespec_dev_tooling.incident_release_entry import ScreenRequest, screen
 from tests.livespec_dev_tooling import test_incident_ci_attachment_edges as edge_tests
+from tests.livespec_dev_tooling import test_incident_hook_scope as scope_tests
 
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-utw7u6
 
@@ -267,3 +274,98 @@ def test_control_route_refuses_an_ambiguous_body(authenticated, body: bytes) -> 
         ["403 Forbidden"],
         {"status": "refused", "reason": "invalid control request or unavailable protected state"},
     )
+
+
+# A duplicate key, NaN and an out-of-range exponent appended to an otherwise valid document.
+_AMBIGUOUS_TAILS = [', "x": 1, "x": 2', ', "x": NaN', ', "x": 1e999']
+
+
+def _with_tail(*, document: dict[str, Any], tail: str) -> bytes:
+    return (json.dumps(document)[:-1] + tail + "}").encode()
+
+
+@pytest.mark.parametrize("tail", _AMBIGUOUS_TAILS)
+def test_controller_state_read_refuses_an_ambiguous_record(tmp_path: Path, tail: str) -> None:
+    path = tmp_path / "record.json"
+    path.write_bytes(_with_tail(document={"schema": 1}, tail=""))
+    clean = load_record(path=path)
+    path.write_bytes(_with_tail(document={"schema": 1}, tail=tail))
+    with pytest.raises(_strict().IncidentJsonRefusalError):
+        load_record(path=path)
+    assert clean == {"schema": 1}
+
+
+@pytest.mark.parametrize("tail", _AMBIGUOUS_TAILS)
+def test_job_callback_refuses_an_ambiguous_signed_body(tail: str) -> None:
+    secret = b"strict-json-fixture-secret"
+    job = {
+        "name": "coverage (3.12)",
+        "head_sha": "a" * 40,
+        "head_branch": "master",
+        "conclusion": "failure",
+        "run_id": 91,
+        "id": 92,
+        "status": "completed",
+    }
+    payload = {
+        "action": "completed",
+        "repository": {"full_name": "owner/repo"},
+        "workflow_job": job,
+    }
+
+    def verify(*, body: bytes) -> object:
+        return verify_leaf_completion(
+            body=body,
+            signature="sha256=" + hmac.new(secret, body, hashlib.sha256).hexdigest(),
+            event="workflow_job",
+            delivery_id="delivery-one",
+            secret=secret,
+        )
+
+    clean = verify(body=_with_tail(document=payload, tail=""))
+    ambiguous = verify(body=_with_tail(document=payload, tail=tail))
+    assert (clean is not None, ambiguous) == (True, None)
+
+
+def _scope_git(**kwargs: Any) -> str:
+    replies = {"diff": "app.py", "ls-tree": "app.py", "rev-parse": "a" * 40}
+    return replies.get(
+        kwargs["args"][0], "# EXPEDITED_INCIDENT_RESPONSE flag: incident\nvalue = 2\n"
+    )
+
+
+def _validate_scope_against(
+    *, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, reply: bytes
+) -> Any:
+    monkeypatch.setattr(scope_module, "git_text", _scope_git)
+    monkeypatch.setattr(
+        scope_module,
+        "gh_read",
+        lambda **_kwargs: subprocess.CompletedProcess([], 0, reply.decode(), ""),
+    )
+    return scope_module.validate_scope(
+        repo=tmp_path,
+        context=scope_tests.context(),
+        reading={"attempt": scope_tests.attempt()},
+        query={"repository": "owner/repo"},
+        tree="d" * 40,
+        call=scope_tests.push(f"refs/heads/repair {'b' * 40} refs/heads/repair {'c' * 40}\n"),
+    )
+
+
+@pytest.mark.parametrize("tail", [', "state": "open"', ', "x": NaN', ', "x": 1e999'])
+def test_hook_scope_refuses_an_ambiguous_pull_request_read(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, tail: str
+) -> None:
+    clean = _validate_scope_against(
+        monkeypatch=monkeypatch,
+        tmp_path=tmp_path,
+        reply=_with_tail(document=scope_tests.pr(), tail=""),
+    )
+    with pytest.raises(_strict().IncidentJsonRefusalError):
+        _validate_scope_against(
+            monkeypatch=monkeypatch,
+            tmp_path=tmp_path,
+            reply=_with_tail(document=scope_tests.pr(), tail=tail),
+        )
+    assert clean["marker"] == "app.py"
