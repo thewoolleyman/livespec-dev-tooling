@@ -136,6 +136,14 @@ def test_every_spelling_of_the_module_is_read(
     assert _pairs(run=run) == [("unpinned-get-url", "ansible/roles/r/tasks/main.yml", 2)]
 
 
+def test_a_nameless_get_url_task_is_read(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    tasks = "- ansible.builtin.get_url:\n" "    url: https://example.invalid/x\n" "    dest: /x\n"
+    run = _run_check(cwd=_tree(root=tmp_path, tasks=tasks), monkeypatch=monkeypatch, capsys=capsys)
+    assert _pairs(run=run) == [("unpinned-get-url", "ansible/roles/r/tasks/main.yml", 1)]
+
+
 def test_a_folded_checksum_value_counts_as_a_pin(
     *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

@@ -53,7 +53,7 @@ __all__: list[str] = []
 _ROLES_DIR = Path("ansible") / "roles"
 _TASK_GLOBS = ("*/tasks/**/*.yml", "*/tasks/**/*.yaml")
 
-_GET_URL = re.compile(r"^(\s*)(?:ansible\.(?:builtin|legacy)\.)?get_url:(.*)$")
+_GET_URL = re.compile(r"^(\s*)(?:-\s+)?(?:ansible\.(?:builtin|legacy)\.)?get_url:(.*)$")
 _TASK_NAME = re.compile(r"^\s*(?:-\s+)?name:\s*(\S.*?)\s*$")
 _CHECKSUM_KEY = re.compile(r"^(\s*)checksum:\s*(.*?)\s*$")
 _INLINE_CHECKSUM = re.compile(r"\bchecksum=\S")
