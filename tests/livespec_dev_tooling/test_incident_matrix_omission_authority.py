@@ -8,9 +8,10 @@ reusable workflow's decision step runs it:
 
 - F1: an omission needs the caller's `incident-ci` result `success`, the
   `expedited-incident-response` label on the event payload's pull request, a
-  head repository equal to this repository (a fork omits nothing), and caller
-  workflows that wire both inputs only from `incident-ci`'s guarded output;
-  `--check-callers` refuses a literal list or a repository variable;
+  head repository equal to this repository (a fork omits nothing), and a
+  calling workflow (read at the base commit through a stubbed sanctioned client) that wires
+  both inputs only from `incident-ci`'s guarded output; `--check-callers`
+  refuses a literal list or a repository variable;
 - F2: an omitted leg prints a `::notice` annotation;
 - F4: a `pull_request_target` event omits nothing and reads nothing;
 - F5: a caller value cannot inject a workflow command through a newline;
@@ -25,10 +26,12 @@ from __future__ import annotations
 import json
 import sys
 from pathlib import Path
+from unittest.mock import Mock
 
 import pytest
 
-from livespec_dev_tooling import incident_matrix_omission
+from livespec_dev_tooling import budgeted_gh, incident_matrix_omission
+from livespec_dev_tooling.budgeted_gh import GhRead
 
 __all__: list[str] = []
 
@@ -39,7 +42,7 @@ _GUARDED = (
     "needs.incident-ci.outputs.omitted || '[]' }}\n"
 )
 _CALLER = (
-    "jobs:\n  shared:\n    needs: [incident-ci]\n"
+    "jobs:\n  incident-ci:\n    runs-on: ubuntu-latest\n  shared:\n    needs: [incident-ci]\n"
     "    uses: thewoolleyman/livespec-dev-tooling/.github/workflows/"
     "reusable-check-matrix.yml@v1.191.0\n    with:\n"
     "      checks: '[\"heading_coverage\"]'\n"
@@ -53,7 +56,7 @@ def _payload(*, labels=("expedited-incident-response",), head=_REPOSITORY):
         "pull_request": {
             "labels": [{"name": name} for name in labels],
             "head": {"repo": {"full_name": head}},
-            "base": {"repo": {"full_name": _REPOSITORY}},
+            "base": {"repo": {"full_name": _REPOSITORY}, "sha": "b" * 40},
         }
     }
 
@@ -64,6 +67,8 @@ def _run(tmp_path: Path, monkeypatch, capsys, **overrides):
     (workspace / ".github" / "workflows").mkdir(parents=True, exist_ok=True)
     caller = overrides.pop("caller", _CALLER)
     (workspace / ".github" / "workflows" / "ci.yml").write_text(caller, encoding="utf-8")
+    read = Mock(return_value=GhRead(returncode=0, stdout=caller, stderr=""))
+    monkeypatch.setattr(budgeted_gh, "gh_read", read)
     event = tmp_path / "event.json"
     event.write_text(json.dumps(overrides.pop("payload", _payload())), encoding="utf-8")
     output = tmp_path / "github_output"
@@ -74,6 +79,7 @@ def _run(tmp_path: Path, monkeypatch, capsys, **overrides):
         "GITHUB_REPOSITORY": _REPOSITORY,
         "GITHUB_WORKSPACE": str(workspace),
         "GITHUB_OUTPUT": str(output),
+        "CALLER_WORKFLOW_REF": f"{_REPOSITORY}/.github/workflows/ci.yml@refs/pull/7/merge",
         "INCIDENT_OMITTED": _LIST,
         "INCIDENT_CI_RESULT": "success",
         "MATRIX_CHECK": "heading_coverage",

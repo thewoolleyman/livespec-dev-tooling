@@ -29,10 +29,12 @@ import json
 import sys
 from dataclasses import replace
 from pathlib import Path
+from unittest.mock import Mock
 
 import pytest
 
 from livespec_dev_tooling import incident_matrix_omission
+from livespec_dev_tooling.budgeted_gh import GhRead
 from livespec_dev_tooling.incident_ci_inventory import load_inventory
 from livespec_dev_tooling.incident_ci_policy import (
     CiAuthority,
@@ -47,12 +49,11 @@ from livespec_dev_tooling.incident_execution import (
     Invocation,
     OperationIdentity,
 )
+from livespec_dev_tooling.incident_matrix_call_site import GUARDED_OMITTED, GUARDED_RESULT
 from livespec_dev_tooling.incident_matrix_omission import (
-    GUARDED_OMITTED,
-    GUARDED_RESULT,
+    CONTROLLER_ONLY_MEMBERS,
     OMITTABLE_MEMBERS,
     IncidentAuthority,
-    caller_wiring_findings,
     decide,
     leg_member,
 )
@@ -110,7 +111,9 @@ def _controller_omitted() -> frozenset[str]:
 
 def test_the_allowlist_is_what_the_controller_defers_for_coverage_or_spec():
     controller = _controller_omitted()
-    assert controller == OMITTABLE_MEMBERS
+    # Every controller deferral is omittable, except a member with no check module.
+    assert controller - OMITTABLE_MEMBERS == CONTROLLER_ONLY_MEMBERS == {"check-coverage"}
+    assert controller >= OMITTABLE_MEMBERS
     # Negative control: a fast member the controller runs is not omittable.
     assert "check-lint" not in controller
     assert "check-lint" not in OMITTABLE_MEMBERS
@@ -118,20 +121,25 @@ def test_the_allowlist_is_what_the_controller_defers_for_coverage_or_spec():
 
 _REPOSITORY = "owner/repo"
 _CALLER = (
-    f"      incident-omitted: {GUARDED_OMITTED}\n" f"      incident-ci-result: {GUARDED_RESULT}\n"
+    "jobs:\n  incident-ci:\n    runs-on: ubuntu-latest\n  shared:\n    needs: [incident-ci]\n"
+    "    uses: ./.github/workflows/reusable-check-matrix.yml\n    with:\n"
+    f"      incident-omitted: {GUARDED_OMITTED}\n      incident-ci-result: {GUARDED_RESULT}\n"
 )
+_CALLER_PATH = ".github/workflows/ci.yml"
 _PAYLOAD = {
     "pull_request": {
         "labels": [{"name": "question"}, {"name": "expedited-incident-response"}],
         "head": {"repo": {"full_name": _REPOSITORY}},
-        "base": {"repo": {"full_name": _REPOSITORY}},
+        "base": {"repo": {"full_name": _REPOSITORY}, "sha": "b" * 40},
     }
 }
 _AUTHORIZED = IncidentAuthority(
     payload=_PAYLOAD,
     repository=_REPOSITORY,
     incident_ci_result="success",
-    workflows=(("ci.yml", _CALLER),),
+    caller=_CALLER_PATH,
+    base_text=_CALLER,
+    running_text=_CALLER,
 )
 
 
@@ -160,7 +168,7 @@ def test_only_a_module_slug_run_check_can_run_names_a_member(check, member):
     assert leg_member(check=check) == member
 
 
-@pytest.mark.parametrize("check", ["heading_coverage", "per_file_coverage", "coverage"])
+@pytest.mark.parametrize("check", ["heading_coverage", "per_file_coverage", "no_todo_registry"])
 def test_an_allowlisted_listed_leg_is_omitted_and_annotated(check):
     decision = _decide(check=check)
     assert (decision.code, decision.omit) == (0, True)
@@ -170,7 +178,7 @@ def test_an_allowlisted_listed_leg_is_omitted_and_annotated(check):
         "request",
     )
     # Negative control: the same leg is not omitted when the list does not name it.
-    unlisted = _decide(raw='["check-no-todo-registry"]', check=check)
+    unlisted = _decide(raw='["check-check-coverage-incremental"]', check=check)
     assert (unlisted.code, unlisted.omit) == (0, False)
 
 
@@ -249,17 +257,16 @@ def test_every_caller_value_is_quoted_so_no_newline_reaches_the_log():
             ),
             'head repository is not ""',
         ),
-        (replace(_AUTHORIZED, workflows=()), "do not wire incident-omitted only from incident-ci"),
-        (
-            replace(_AUTHORIZED, workflows=(("ci.yml", "      incident-omitted: '[]'\n"),)),
-            "do not wire incident-omitted only from incident-ci",
-        ),
+        (replace(_AUTHORIZED, caller=None), 'the calling workflow "" could not be read'),
+        (replace(_AUTHORIZED, base_text=None), "could not be read at the pull request's base"),
+        (replace(_AUTHORIZED, running_text=None), "the pull request changes the calling workflow"),
         (
             replace(
                 _AUTHORIZED,
-                workflows=(("ci.yml", _CALLER), ("x.yml", "  incident-ci-result: success\n")),
+                base_text=_CALLER.replace("[incident-ci]", "[]"),
+                running_text=_CALLER.replace("[incident-ci]", "[]"),
             ),
-            "do not wire incident-omitted only from incident-ci",
+            'fails the call-site rule: job "shared" does not need incident-ci',
         ),
     ],
 )
@@ -281,43 +288,6 @@ def test_an_unrequested_leg_never_consults_the_authority():
 
 
 @pytest.mark.parametrize(
-    "line",
-    [
-        f"      incident-omitted: {GUARDED_OMITTED}",
-        f"      incident-omitted: '{GUARDED_OMITTED}'",
-        f'      incident-omitted: "{GUARDED_OMITTED}"',
-        f"      incident-ci-result: {GUARDED_RESULT}",
-        "      incident-omitted:",
-        "      incident-ci-result:",
-        "#     incident-omitted: '[\"check-coverage\"]'",
-        "        INCIDENT_OMITTED: ${{ inputs.incident-omitted }}",
-    ],
-)
-def test_the_guarded_wiring_and_declarations_are_not_findings(line):
-    assert caller_wiring_findings(workflows=(("ci.yml", line),)) == []
-
-
-@pytest.mark.parametrize(
-    "line",
-    [
-        "      incident-omitted: '[\"check-coverage\"]'",
-        "      incident-omitted: ${{ vars.OMITTED }}",
-        "      incident-omitted: ${{ needs.incident-ci.outputs.omitted }}",
-        "      incident-omitted: >-",
-        "      incident-omitted: '",
-        "      incident-ci-result: success",
-        "      incident-ci-result: ${{ vars.RESULT }}",
-        f"    with: {{incident-omitted: {GUARDED_OMITTED}}}",
-    ],
-)
-def test_any_other_wiring_is_a_finding(line):
-    findings = caller_wiring_findings(workflows=(("ci.yml", "jobs:\n" + line),))
-    assert len(findings) == 1
-    assert findings[0].startswith("ci.yml:2: incident-")
-    assert "is not wired from the incident-ci job's guarded output" in findings[0]
-
-
-@pytest.mark.parametrize(
     "raw",
     [
         '"check-coverage-incremental"',
@@ -334,11 +304,11 @@ def test_any_other_wiring_is_a_finding(line):
     ],
 )
 def test_an_input_that_is_not_a_json_array_of_strings_is_refused(raw):
-    decision = _decide(raw=raw, check="coverage")
+    decision = _decide(raw=raw, check="heading_coverage")
     assert (decision.code, decision.omit) == (1, False)
     assert decision.lines[0].startswith("::error::incident-omitted-malformed:")
     # Negative control: the same member as a JSON array is a well-formed omission.
-    assert _decide(raw='["check-coverage"]', check="coverage").omit is True
+    assert _decide(raw='["check-heading-coverage"]', check="heading_coverage").omit is True
 
 
 def test_a_json_string_is_never_a_substring_test():
@@ -375,15 +345,19 @@ def test_a_non_incident_pull_request_omits_nothing(raw):
             (f'incident-omission: "{check}" runs',),
         )
     # Negative control: a populated list on the same event omits.
-    assert _decide(check="coverage").omit is True
+    assert _decide(check="heading_coverage").omit is True
 
 
 def _workspace(tmp_path: Path) -> Path:
     workflows = tmp_path / "workspace" / ".github" / "workflows"
     workflows.mkdir(parents=True)
-    _ = (workflows / "ci.yml").write_text("jobs:\n" + _CALLER, encoding="utf-8")
-    _ = (workflows / "notes.txt").write_text("incident-omitted: '[]'\n", encoding="utf-8")
+    _ = (workflows / "ci.yml").write_text(_CALLER, encoding="utf-8")
     return workflows.parents[1]
+
+
+def _forge(*, text: str = _CALLER):
+    """A sanctioned-client read that answers with the calling workflow's base copy."""
+    return Mock(return_value=GhRead(returncode=0, stdout=text, stderr=""))
 
 
 def test_main_publishes_the_decision_and_writes_nothing_when_refused(tmp_path: Path, capsys):
@@ -395,19 +369,25 @@ def test_main_publishes_the_decision_and_writes_nothing_when_refused(tmp_path: P
         "GITHUB_EVENT_PATH": str(event),
         "GITHUB_REPOSITORY": _REPOSITORY,
         "GITHUB_WORKSPACE": str(_workspace(tmp_path)),
+        "CALLER_WORKFLOW_REF": f"{_REPOSITORY}/{_CALLER_PATH}@refs/pull/7/merge",
         "INCIDENT_CI_RESULT": "success",
         "MATRIX_CHECK": "heading_coverage",
     }
     omitted = incident_matrix_omission.main(
-        argv=[], environ={**base, "GITHUB_EVENT_NAME": _PR, "INCIDENT_OMITTED": _ALL_SIX}
+        argv=[],
+        environ={**base, "GITHUB_EVENT_NAME": _PR, "INCIDENT_OMITTED": _ALL_SIX},
+        read=_forge(),
     )
     ran = incident_matrix_omission.main(
-        argv=[], environ={**base, "GITHUB_EVENT_NAME": "push", "INCIDENT_OMITTED": _ALL_SIX}
+        argv=[],
+        environ={**base, "GITHUB_EVENT_NAME": "push", "INCIDENT_OMITTED": _ALL_SIX},
+        read=_forge(),
     )
     first = capsys.readouterr()
     refused = incident_matrix_omission.main(
         argv=[],
         environ={**base, "GITHUB_EVENT_NAME": _PR, "INCIDENT_OMITTED": '"check-heading-coverage"'},
+        read=_forge(),
     )
     second = capsys.readouterr()
     assert (omitted, ran, refused) == (0, 0, 1)
@@ -435,6 +415,25 @@ def test_an_unreadable_payload_or_workspace_authorizes_nothing(tmp_path: Path, c
     assert "::warning::incident-omission-unauthorized:" in capsys.readouterr().out
 
 
+def test_a_missing_running_copy_authorizes_nothing(tmp_path: Path, capsys):
+    code = incident_matrix_omission.main(
+        argv=[],
+        environ={
+            "GITHUB_EVENT_NAME": _PR,
+            "GITHUB_EVENT_PATH": "",
+            "GITHUB_REPOSITORY": _REPOSITORY,
+            "GITHUB_WORKSPACE": str(tmp_path),
+            "CALLER_WORKFLOW_REF": f"{_REPOSITORY}/{_CALLER_PATH}@refs/pull/7/merge",
+            "INCIDENT_CI_RESULT": "success",
+            "INCIDENT_OMITTED": _ALL_SIX,
+            "MATRIX_CHECK": "heading_coverage",
+        },
+        read=_forge(),
+    )
+    assert code == 0
+    assert "does not carry the expedited-incident-response label" in capsys.readouterr().out
+
+
 def test_main_reads_the_process_environment(monkeypatch, capsys):
     monkeypatch.delenv("GITHUB_OUTPUT", raising=False)
     monkeypatch.setenv("GITHUB_EVENT_NAME", _PR)
@@ -450,10 +449,10 @@ def test_check_callers_scans_the_workflows_directory_by_default(tmp_path, monkey
     monkeypatch.chdir(workspace)
     assert incident_matrix_omission.main(argv=["--check-callers"]) == 0
     _ = (workspace / ".github" / "workflows" / "bad.yaml").write_text(
-        "  incident-omitted: ${{ vars.OMITTED }}\n", encoding="utf-8"
+        _CALLER.replace(GUARDED_OMITTED, "${{ vars.OMITTED }}"), encoding="utf-8"
     )
     assert incident_matrix_omission.main(argv=["--check-callers"]) == 1
-    assert "bad.yaml:1: incident-omitted is not wired" in capsys.readouterr().err
+    assert 'bad.yaml: job "shared": with.incident-omitted is not exactly' in capsys.readouterr().err
 
 
 def test_this_repository_wires_no_caller_but_incident_ci(capsys):
