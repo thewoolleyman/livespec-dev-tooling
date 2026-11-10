@@ -11,7 +11,6 @@ checkout): that serves its clean HEAD, and a dirty tree serves nothing verifiabl
 
 from __future__ import annotations
 
-import json
 import re
 from pathlib import Path
 from typing import cast
@@ -21,6 +20,7 @@ from livespec_dev_tooling._incident_fleet_clones import consumer_clone
 from livespec_dev_tooling.fleet._invocation_failure import InvocationNotPerformed
 from livespec_dev_tooling.fleet._local_context import command_answer
 from livespec_dev_tooling.incident_fleet_host import HostProbe
+from livespec_dev_tooling.incident_strict_json import IncidentJsonRefusalError, strict_json
 
 __all__: list[str] = ["read_gate_readers"]
 
@@ -62,8 +62,9 @@ def read_gate_readers(*, probe: HostProbe, repository: str) -> str | None:
     if clone is None or len(dists) != 1:
         return None
     try:
-        parsed = cast("object", json.loads((dists[0] / "direct_url.json").read_text("utf-8")))
-    except (OSError, ValueError):
+        text = (dists[0] / "direct_url.json").read_text("utf-8")
+        parsed = cast("object", strict_json(text=text, limit=None))
+    except (OSError, ValueError, IncidentJsonRefusalError):
         return None
     direct = cast("dict[str, object]", parsed) if isinstance(parsed, dict) else {}
     vcs = direct.get("vcs_info")
