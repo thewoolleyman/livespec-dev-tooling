@@ -7,10 +7,12 @@ import hashlib
 import json
 import os
 import selectors
+import stat
 import subprocess
 import sys
 import time
 from contextlib import ExitStack
+from pathlib import Path
 from threading import Event, Thread
 
 import pytest
@@ -24,6 +26,7 @@ from livespec_dev_tooling._incident_observer_store import (
     repository_lock,
 )
 from livespec_dev_tooling.incident_inverse_service import ProcessInverseForge
+from livespec_dev_tooling.incident_protected_path import protected_path
 
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-dln3ac
 _REPOSITORY = "controlled/repository"
@@ -301,3 +304,102 @@ def test_a_bounded_acquisition_waits_for_a_release_and_gives_up_when_none_comes(
 def test_a_bounded_acquisition_of_a_free_fence_succeeds_at_once(tmp_path):
     with repository_lock(directory=tmp_path, repository=_REPOSITORY, wait_seconds=0):
         assert current_repository_fence(repository=_REPOSITORY, directory=tmp_path)
+
+
+@pytest.mark.parametrize("existing_only", [False, True])
+@pytest.mark.parametrize("mode", [0o770, 0o707, 0o777])
+def test_writable_lock_directory_is_refused_before_a_lock_file_exists(
+    tmp_path, existing_only, mode
+):
+    state = tmp_path / "state"
+    state.mkdir(mode=0o700)
+    state.chmod(mode)
+    _refuses(repository_lock(directory=state, repository=_REPOSITORY, existing_only=existing_only))
+    assert not _path(state).exists()
+
+
+@pytest.mark.parametrize("existing_only", [False, True])
+def test_writable_non_sticky_ancestor_is_refused_even_for_an_absent_lock_directory(
+    tmp_path, existing_only
+):
+    ancestor = tmp_path / "ancestor"
+    ancestor.mkdir(mode=0o700)
+    state = ancestor / "state"
+    state.mkdir(mode=0o700)
+    ancestor.chmod(0o770)
+    _refuses(repository_lock(directory=state, repository=_REPOSITORY, existing_only=existing_only))
+    assert not _path(state).exists()
+    state.rmdir()
+    if not existing_only:
+        _refuses(repository_lock(directory=state, repository=_REPOSITORY))
+        assert not _path(state).exists()
+
+
+def _owned_by_a_stranger(*, method, owned):
+    """A Path.stat/lstat stand-in reporting `owned` as owned by an unrelated account."""
+    real = getattr(Path, method)
+
+    def report(self, *args, **kwargs):
+        result = real(self, *args, **kwargs)
+        if self != owned:
+            return result
+        fields = list(result)
+        fields[stat.ST_UID] = 54321
+        return os.stat_result(fields)
+
+    return report
+
+
+@pytest.mark.parametrize("existing_only", [False, True])
+@pytest.mark.parametrize("level", ["directory", "ancestor"])
+def test_foreign_owned_lock_directory_or_ancestor_is_refused(
+    tmp_path, monkeypatch, existing_only, level
+):
+    ancestor = tmp_path / "ancestor"
+    state = ancestor / "state"
+    state.mkdir(mode=0o700, parents=True)
+    foreign = state if level == "directory" else ancestor
+    for method in ("stat", "lstat"):
+        monkeypatch.setattr(Path, method, _owned_by_a_stranger(method=method, owned=foreign))
+    _refuses(repository_lock(directory=state, repository=_REPOSITORY, existing_only=existing_only))
+    assert not _path(state).exists()
+
+
+def _owned_by_a_non_root_caller(*, method, owned):
+    """A Path.stat/lstat stand-in: `owned` belongs to uid 54321, every other path to root."""
+    real = getattr(Path, method)
+
+    def report(self, *args, **kwargs):
+        fields = list(real(self, *args, **kwargs))
+        fields[stat.ST_UID] = 54321 if self == owned else 0
+        return os.stat_result(fields)
+
+    return report
+
+
+@pytest.mark.parametrize("existing_only", [False, True])
+def test_sticky_world_writable_ancestor_is_refused_unless_root_owns_it(
+    tmp_path, monkeypatch, existing_only
+):
+    ancestor = tmp_path / "ancestor"
+    state = ancestor / "state"
+    state.mkdir(mode=0o700, parents=True)
+    ancestor.chmod(0o1777)
+    monkeypatch.setattr(os, "geteuid", lambda: 54321)
+    for method in ("stat", "lstat"):
+        monkeypatch.setattr(
+            Path, method, _owned_by_a_non_root_caller(method=method, owned=ancestor)
+        )
+    assert not protected_path(path=state)
+    _refuses(repository_lock(directory=state, repository=_REPOSITORY, existing_only=existing_only))
+    assert not _path(state).exists()
+
+
+def test_default_path_still_creates_an_absent_directory_private_and_grants_the_lock(tmp_path):
+    parent = tmp_path / "parent"
+    parent.mkdir(mode=0o700)
+    state = parent / "state"
+    with repository_lock(directory=state, repository=_REPOSITORY) as record:
+        assert record.parent == state
+        _assert_locked(_path(state))
+    assert state.stat().st_mode & 0o777 == 0o700
