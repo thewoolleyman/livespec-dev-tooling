@@ -18,6 +18,27 @@ if [[ -z "$(git diff --cached --name-only)" ]]; then
     exit 0
 fi
 
+# A staged replacement of declared capacity/config VALUE lines has its own
+# schema-only lane. It precedes delegation and every ordinary mode decision:
+# qualifying changes run neither a test suite nor another aggregate member.
+set +e
+uv run -m livespec_dev_tooling.config_value_fast_path classify
+config_value_status=$?
+set -e
+case "$config_value_status" in
+    0)
+        echo ":: config-value fast path detected: validating changed files without a test suite"
+        uv run -m livespec_dev_tooling.config_value_fast_path validate
+        exit $?
+        ;;
+    75)
+        ;;
+    *)
+        echo ":: config-value fast-path classification failed; refusing rather than guessing the normal lane" >&2
+        exit "$config_value_status"
+        ;;
+esac
+
 staged=$(git diff --cached --name-only --diff-filter=AM)
 py_staged=$(echo "$staged" | grep -E '\.py$' || true)
 test_staged=$(echo "$staged" | grep -E '^tests/.*\.py$' || true)

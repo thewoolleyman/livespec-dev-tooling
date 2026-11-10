@@ -116,24 +116,31 @@ def test_declared_config_value_changes_take_the_schema_only_pre_commit_lane(
         ("ci-runner/k3s/phase0-bare-metal/profiles/*.env", "ADMISSION_CAPACITY_C"),
     }
 
-    _install_fixture(tmp_path=tmp_path)
-    _replace_and_stage(tmp_path=tmp_path, old='"wip_cap": 4', new='"wip_cap": 6')
-    valid = _run_hook(tmp_path=tmp_path)
+    valid_root = tmp_path / "valid"
+    _install_fixture(tmp_path=valid_root)
+    _replace_and_stage(tmp_path=valid_root, old='"wip_cap": 4', new='"wip_cap": 6')
+    valid = _run_hook(tmp_path=valid_root)
     assert valid.returncode == 0, valid.stdout + valid.stderr
-    assert not (tmp_path / "just.log").exists()
-    assert "config_value_fast_path classify" in (tmp_path / "uv.log").read_text(encoding="utf-8")
-    assert "config_value_fast_path validate" in (tmp_path / "uv.log").read_text(encoding="utf-8")
+    assert not (valid_root / "just.log").exists()
+    assert "config_value_fast_path classify" in (valid_root / "uv.log").read_text(encoding="utf-8")
+    assert "config_value_fast_path validate" in (valid_root / "uv.log").read_text(encoding="utf-8")
 
-    _install_fixture(tmp_path=tmp_path)
-    _replace_and_stage(tmp_path=tmp_path, old='"wip_cap": 4', new='"wip_cap": "bad"')
-    invalid = _run_hook(tmp_path=tmp_path)
+    invalid_root = tmp_path / "invalid"
+    _install_fixture(tmp_path=invalid_root)
+    _replace_and_stage(tmp_path=invalid_root, old='"wip_cap": 4', new='"wip_cap": "bad"')
+    invalid = _run_hook(tmp_path=invalid_root)
     assert invalid.returncode != 0
     assert ".livespec.jsonc" in invalid.stderr
     assert "dispatcher.wip_cap" in invalid.stderr
-    assert not (tmp_path / "just.log").exists()
+    assert not (invalid_root / "just.log").exists()
 
-    _install_fixture(tmp_path=tmp_path)
-    _replace_and_stage(tmp_path=tmp_path, old='"wip_cap": 4', new='"wip_cap": 6 // comment change"')
-    mixed = _run_hook(tmp_path=tmp_path)
+    mixed_root = tmp_path / "mixed"
+    _install_fixture(tmp_path=mixed_root)
+    _replace_and_stage(
+        tmp_path=mixed_root, old='"wip_cap": 4', new='"wip_cap": 6 // comment change"'
+    )
+    mixed = _run_hook(tmp_path=mixed_root)
     assert mixed.returncode == 0, mixed.stdout + mixed.stderr
-    assert (tmp_path / "just.log").read_text(encoding="utf-8") == "just check-pre-commit-doc-only\n"
+    assert (mixed_root / "just.log").read_text(
+        encoding="utf-8"
+    ) == "just check-pre-commit-doc-only\n"

@@ -1,0 +1,22 @@
+# The single shared declaration for value-only pre-commit changes. Consumers
+# read this packaged file through livespec_dev_tooling.config_value_fast_path.
+
+[[rules]]
+pattern = ".livespec.jsonc"
+key_path = "dispatcher.wip_cap"
+format = "jsonc"
+
+[[rules]]
+pattern = ".livespec.jsonc"
+key_path = "stall_timeout_seconds"
+format = "jsonc"
+
+[[rules]]
+pattern = "ansible/inventory/host_vars/*.yml"
+key_path = "max_concurrent_runs"
+format = "yaml"
+
+[[rules]]
+pattern = "ci-runner/k3s/phase0-bare-metal/profiles/*.env"
+key_path = "ADMISSION_CAPACITY_C"
+format = "profile"
