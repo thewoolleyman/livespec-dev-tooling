@@ -1398,10 +1398,16 @@ def test_master_push_concurrency_with_reconciler_caller_is_refused(
     """A reconciler caller cannot coexist with a master-push concurrency group."""
     _ = _write_canonical_json(cwd=tmp_path, slugs=[])
     _ = _write_justfile(cwd=tmp_path, body=_justfile_with_targets(targets=[]))
-    _ = _write_ci_yml(
+    ci_yml = _write_ci_yml(
         cwd=tmp_path,
         jobs=[_ci_green_job(needs="[]")],
         trailer="concurrency: ci-master\n",
+    )
+    _ = ci_yml.write_text(
+        ci_yml.read_text(encoding="utf-8").replace(
+            "on: [push]", "on:\n  push:\n    branches: [master]"
+        ),
+        encoding="utf-8",
     )
     caller = tmp_path / ".github" / "workflows" / "master-health.yml"
     _ = caller.write_text(
@@ -1421,3 +1427,5 @@ def test_master_push_concurrency_with_reconciler_caller_is_refused(
     )
 
     assert result.returncode == 4
+    assert ".github/workflows/ci.yml" in result.stderr
+    assert ".github/workflows/master-health.yml" in result.stderr
