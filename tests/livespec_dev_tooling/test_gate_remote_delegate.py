@@ -28,8 +28,8 @@ import subprocess
 import sys
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import TYPE_CHECKING
 
+import pytest
 from returns.result import Failure, Success
 
 from livespec_dev_tooling._gate_host_authority import GATE_HOST_AUTHORITY_REFUSED
@@ -62,9 +62,6 @@ from livespec_dev_tooling.gate_remote_verdict import (
     GATE_PASSED,
     GateVerdict,
 )
-
-if TYPE_CHECKING:
-    import pytest
 
 __all__: list[str] = []
 
@@ -1854,3 +1851,117 @@ def test_a_push_a_green_job_cleared_and_this_host_refused_still_names_that_job(
     assert refused.get("namespace") == GATE_NAMESPACE
     assert refused.get("job_started_at") == _STARTED_AT
     assert refused.get("job_finished_at") == _FINISHED_AT
+
+
+# ---------------------------------------------------------------------------
+# The gate Job's resources — declared per repository, defaults unchanged
+# ---------------------------------------------------------------------------
+
+
+def _rendered_with(*, repo_root: Path, body: str | None) -> list[str]:
+    """The argv the renderer was invoked with for one fixture repository."""
+    repo_root.mkdir()
+    if body is not None:
+        _write_pyproject(repo_root=repo_root, body=body)
+    runner = _StubWorld()
+    built = gate_remote_request(repo_root=repo_root, renderer=_RENDERER, runner=runner)
+    assert isinstance(built, Success)
+    return list(next(argv for argv in runner.argvs if argv[0] == str(_RENDERER)))
+
+
+def _values_of(*, render: list[str], flag: str) -> list[str]:
+    return [render[index + 1] for index, arg in enumerate(render) if arg == flag]
+
+
+def test_a_repository_that_declares_its_gate_resources_has_the_renderer_told_them(
+    *, tmp_path: Path
+) -> None:
+    """Each declared key reaches the renderer as the flag it already accepts."""
+    render = _rendered_with(
+        repo_root=tmp_path / "widget",
+        body=(
+            "[tool.livespec_dev_tooling]\n"
+            'gate_cpu = 6\ngate_memory = "10Gi"\ngate_parallelism = 8\n'
+        ),
+    )
+
+    assert _values_of(render=render, flag="--cpu") == ["6"]
+    assert _values_of(render=render, flag="--memory") == ["10Gi"]
+    assert _values_of(render=render, flag="--parallelism") == ["8"]
+
+
+def test_a_repository_that_declares_no_gate_resources_leaves_the_renderer_its_defaults(
+    *, tmp_path: Path
+) -> None:
+    """No flag at all, so the renderer's own 5 cpu / 6Gi / 4 workers stand."""
+    render = _rendered_with(repo_root=tmp_path / "widget", body=None)
+
+    for flag in ("--cpu", "--memory", "--parallelism"):
+        assert _values_of(render=render, flag=flag) == []
+
+
+def test_a_partial_declaration_passes_only_the_declared_resources(*, tmp_path: Path) -> None:
+    """An undeclared key keeps the renderer's default rather than a guess of ours."""
+    render = _rendered_with(
+        repo_root=tmp_path / "widget",
+        body="[tool.livespec_dev_tooling]\ngate_parallelism = 12\n",
+    )
+
+    assert _values_of(render=render, flag="--parallelism") == ["12"]
+    assert _values_of(render=render, flag="--cpu") == []
+    assert _values_of(render=render, flag="--memory") == []
+
+
+@pytest.mark.parametrize(
+    ("declaration", "expected"),
+    [
+        ('gate_cpu = "3500m"', "3500m"),
+        ("gate_cpu = 2.5", "2.5"),
+        ('gate_cpu = "3"', "3"),
+    ],
+)
+def test_a_cpu_request_below_a_whole_core_or_in_millicores_is_passed_as_written(
+    *, tmp_path: Path, declaration: str, expected: str
+) -> None:
+    """A request below the worker count is legitimate: the Job has no cpu limit."""
+    render = _rendered_with(
+        repo_root=tmp_path / "widget",
+        body=f"[tool.livespec_dev_tooling]\n{declaration}\n",
+    )
+
+    assert _values_of(render=render, flag="--cpu") == [expected]
+
+
+@pytest.mark.parametrize(
+    ("declaration", "key"),
+    [
+        ("gate_cpu = 0", "gate_cpu"),
+        ("gate_cpu = -1.5", "gate_cpu"),
+        ("gate_cpu = true", "gate_cpu"),
+        ('gate_cpu = "lots"', "gate_cpu"),
+        ('gate_cpu = "0m"', "gate_cpu"),
+        ("gate_memory = 6", "gate_memory"),
+        ('gate_memory = "6GB"', "gate_memory"),
+        ('gate_memory = "0Gi"', "gate_memory"),
+        ("gate_parallelism = 0", "gate_parallelism"),
+        ('gate_parallelism = "4"', "gate_parallelism"),
+        ("gate_parallelism = 2.0", "gate_parallelism"),
+    ],
+)
+def test_an_unusable_gate_resource_declaration_submits_no_gate_and_names_the_key(
+    *, tmp_path: Path, declaration: str, key: str
+) -> None:
+    """Fail closed, as an unreadable check suite does: nothing is rendered."""
+    repo_root = tmp_path / "widget"
+    repo_root.mkdir()
+    _write_pyproject(repo_root=repo_root, body=f"[tool.livespec_dev_tooling]\n{declaration}\n")
+    runner = _StubWorld()
+    verdict = run_delegated_gate(
+        repo_root=repo_root, renderer=_RENDERER, runner=runner, sleeper=_no_sleep
+    )
+
+    assert verdict.state == GATE_NO_VERDICT
+    assert verdict.refuses_push is True
+    assert "no gate was submitted" in verdict.detail
+    assert key in verdict.detail
+    assert not any(argv[0] == str(_RENDERER) for argv in runner.argvs)

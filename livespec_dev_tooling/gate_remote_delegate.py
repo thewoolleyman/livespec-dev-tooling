@@ -87,6 +87,7 @@ from livespec_dev_tooling._gate_host_authority import (
 )
 from livespec_dev_tooling._gate_remote_assembly import (
     assembly_refusal,
+    declared_gate_job_resources,
     gate_ref_tree_hash,
     gate_repo_name,
     per_run_gate_ref,
@@ -265,6 +266,30 @@ def resolve_renderer(*, repo_root: Path) -> Path:
     return GATE_RENDERER_PACKAGED
 
 
+def _declared_render_flags(
+    *, repo_root: Path
+) -> Result[tuple[tuple[str, ...], tuple[str, ...]], GateStepFailed]:
+    """The renderer flags this repository's own declarations decide.
+
+    Two reads of the repository, each of which can refuse the run before
+    anything is rendered: the authority-skip members the pushing host runs
+    instead of the Job, and the gate Job resources the repository declares.
+    """
+    authority_skip = authority_skip_resolution(repo_root=repo_root)
+    if authority_skip.refusal is not None:
+        return Failure(
+            GateStepFailed(
+                step=_AUTHORITY_SKIP_STEP,
+                argv=(),
+                returncode=None,
+                detail=authority_skip.refusal,
+            )
+        )
+    return declared_gate_job_resources(repo_root=repo_root).map(
+        lambda resources: (authority_skip.argv, resources)
+    )
+
+
 def gate_remote_request(
     *,
     repo_root: Path,
@@ -302,16 +327,10 @@ def gate_remote_request(
         return Failure(inputs.failure())
     declared_suite, private_siblings, private_sibling_token = inputs.unwrap()
     suite = check_suite if check_suite is not None else declared_suite
-    authority_skip = authority_skip_resolution(repo_root=repo_root)
-    if authority_skip.refusal is not None:
-        return Failure(
-            GateStepFailed(
-                step=_AUTHORITY_SKIP_STEP,
-                argv=(),
-                returncode=None,
-                detail=authority_skip.refusal,
-            )
-        )
+    declared_flags = _declared_render_flags(repo_root=repo_root)
+    if isinstance(declared_flags, Failure):
+        return Failure(declared_flags.failure())
+    authority_skip_argv, resource_argv = declared_flags.unwrap()
     gate_ref = per_run_gate_ref(tree_hash=tree_hash)
     # THE SECRET'S NAME IS DERIVED FROM THE REF'S NONCE, so it is per-RUN rather
     # than per-tree: two janitors gating one master tip concurrently must not
@@ -337,8 +356,11 @@ def gate_remote_request(
         # cannot come to disagree about which member belongs to which host — a
         # pod that skipped a member nobody ran would be an unread authorization
         # treated as granted (`_gate_authority_skip`).
-        *authority_skip.argv,
+        *authority_skip_argv,
         *request_inputs.render_check_arguments(pytest_argv=pytest_argv, suite=suite),
+        # Only the resources this repository DECLARES: an undeclared one passes
+        # no flag, so the renderer's own default stands and has one owner.
+        *resource_argv,
     ]
     rendered = require_success(
         step=_RENDER_STEP, argv=render_argv, outcome=runner(argv=render_argv, cwd=repo_root)
