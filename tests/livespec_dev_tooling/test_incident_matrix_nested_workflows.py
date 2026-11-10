@@ -11,6 +11,12 @@ and is walked in turn up to GitHub's four levels; and any nested workflow that
 reaches the matrix refuses. A harmless local reusable workflow still omits.
 Every case runs through `main()` with the runner's environment, real workspace
 copies and a forge read per path, beside the authorized negative control.
+
+Re-review of 2bfd031a, finding A: ONLY the canonical
+`thewoolleyman/livespec-dev-tooling/.github/workflows/reusable-check-matrix.yml@<ref>`
+(owner and repo case-insensitive) is the matrix call site. A local file merely
+named `reusable-check-matrix.yml`, or the same path under another owner, is a
+reusable workflow like any other: walked when local, refused when remote.
 """
 
 from __future__ import annotations
@@ -30,11 +36,21 @@ __all__: list[str] = []
 _REPOSITORY = "owner/repo"
 _BASE = "b" * 40
 _MATRIX = "thewoolleyman/livespec-dev-tooling/.github/workflows/reusable-check-matrix.yml@v1"
-_DIRECT = (
-    "jobs:\n  incident-ci:\n    runs-on: ubuntu-latest\n  shared:\n    needs: [incident-ci]\n"
-    f"    uses: {_MATRIX}\n    with:\n"
-    f"      incident-omitted: {GUARDED_OMITTED}\n      incident-ci-result: {GUARDED_RESULT}\n"
-)
+_LOCAL_MATRIX = "./.github/workflows/reusable-check-matrix.yml"
+_OTHER_OWNER = "evil/x/.github/workflows/reusable-check-matrix.yml@main"
+_MATRIX_CASED = "TheWoolleyman/LiveSpec-Dev-Tooling/.github/workflows/reusable-check-matrix.yml@v1"
+
+
+def _guarded(*, uses: str, name: str = "shared") -> str:
+    """One job that passes incident-ci's guarded pair to `uses`."""
+    return (
+        f"  {name}:\n    needs: [incident-ci]\n    uses: {uses}\n    with:\n"
+        f"      incident-omitted: {GUARDED_OMITTED}\n      incident-ci-result: {GUARDED_RESULT}\n"
+    )
+
+
+_INCIDENT_CI = "jobs:\n  incident-ci:\n    runs-on: ubuntu-latest\n"
+_DIRECT = _INCIDENT_CI + _guarded(uses=_MATRIX)
 _LITERAL_CALL = (
     f"on: workflow_call\njobs:\n  sneaky:\n    uses: {_MATRIX}\n    with:\n"
     "      incident-omitted: '[\"check-per-file-coverage\"]'\n      incident-ci-result: success\n"
@@ -156,6 +172,40 @@ _RUNS = (0, "omit=false\n")
         ),
         ({"ci.yml": _DIRECT + "  shared:\n    runs-on: ubuntu-latest\n"}, None, _RUNS),
         ({"ci.yml": "x: &m {a: 1}\n" + _DIRECT + "  merged:\n    <<: *m\n"}, None, _RUNS),
+        (
+            {
+                "ci.yml": _INCIDENT_CI + _guarded(uses=_LOCAL_MATRIX),
+                "reusable-check-matrix.yml": _HARMLESS,
+            },
+            {
+                "ci.yml": _INCIDENT_CI + _guarded(uses=_LOCAL_MATRIX),
+                "reusable-check-matrix.yml": _LITERAL_CALL,
+            },
+            _RUNS,
+        ),
+        (
+            {
+                "ci.yml": _DIRECT + _guarded(uses=_LOCAL_MATRIX, name="local"),
+                "reusable-check-matrix.yml": _HARMLESS,
+            },
+            {
+                "ci.yml": _DIRECT + _guarded(uses=_LOCAL_MATRIX, name="local"),
+                "reusable-check-matrix.yml": _LITERAL_CALL,
+            },
+            _RUNS,
+        ),
+        (
+            {
+                "ci.yml": _DIRECT + _guarded(uses=_LOCAL_MATRIX, name="local"),
+                "reusable-check-matrix.yml": _HARMLESS,
+            },
+            None,
+            _OMITS,
+        ),
+        ({"ci.yml": _INCIDENT_CI + _guarded(uses=_OTHER_OWNER)}, None, _RUNS),
+        ({"ci.yml": _DIRECT + _guarded(uses=_OTHER_OWNER, name="other")}, None, _RUNS),
+        ({"ci.yml": _INCIDENT_CI + _guarded(uses="evil/" + _MATRIX)}, None, _RUNS),
+        ({"ci.yml": _INCIDENT_CI + _guarded(uses=_MATRIX_CASED)}, None, _OMITS),
     ],
     ids=[
         "direct-only",
@@ -169,6 +219,13 @@ _RUNS = (0, "omit=false\n")
         "chain-beyond-four-levels",
         "duplicate-job-key",
         "merge-key",
+        "p1-local-file-named-matrix-is-the-only-call",
+        "p1-pr-edits-a-local-file-named-matrix-beside-the-direct-call",
+        "unchanged-harmless-local-file-named-matrix-still-omits",
+        "p2-other-owner-matrix-is-the-only-call",
+        "p2-other-owner-matrix-beside-the-direct-call",
+        "canonical-path-under-another-owner",
+        "canonical-owner-and-repo-case-insensitive",
     ],
 )
 def test_only_a_caller_with_no_unchecked_route_to_the_matrix_omits(

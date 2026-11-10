@@ -5,8 +5,14 @@ the matrix may omit anything. The workflow is parsed as YAML (`yaml.safe_load`),
 never matched as text, so a quoted key, a space before the colon or a value on
 the next line reads exactly as GitHub reads it.
 
-Every job of a workflow whose `uses:` names `reusable-check-matrix.yml` is a
-call site. A call site passes when ALL of these hold:
+At run time a call site is a job whose `uses:` is exactly the canonical
+`thewoolleyman/livespec-dev-tooling/.github/workflows/reusable-check-matrix.yml@<ref>`
+(owner and repo compared case-insensitively, as GitHub resolves them). A local
+file merely NAMED `reusable-check-matrix.yml`, or that path under any other
+owner, is not the matrix: it is a reusable workflow like any other, so the
+nested walk below reads or refuses it (re-review of 2bfd031a, finding A).
+`check_callers` lints the same call sites. A call site passes when ALL of
+these hold:
 
 - `with.incident-omitted` is exactly `GUARDED_OMITTED` and
   `with.incident-ci-result` is exactly `GUARDED_RESULT`;
@@ -81,7 +87,9 @@ GUARDED_OMITTED = (
 GUARDED_RESULT = "${{ needs.incident-ci.result }}"
 _WIRED = {"incident-omitted": GUARDED_OMITTED, "incident-ci-result": GUARDED_RESULT}
 
-_MATRIX_USES = re.compile(r"(?:^|/)\.github/workflows/reusable-check-matrix\.ya?ml(?:@|$)")
+_MATRIX_CALL = re.compile(
+    r"(?i:thewoolleyman/livespec-dev-tooling)/\.github/workflows/reusable-check-matrix\.yml@[^\s@]+"
+)
 _WORKFLOW_PATH = re.compile(r"\.github/workflows/[A-Za-z0-9_.-]+\.ya?ml")
 _REPOSITORY = re.compile(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+")
 _SHA = re.compile(r"[0-9a-f]{40}")
@@ -160,7 +168,7 @@ def call_site_findings(*, workflow: dict[str, Any] | None, required: bool) -> li
     sites = {
         str(name): _mapping(value=job)
         for name, job in jobs.items()
-        if _MATRIX_USES.search(str(_mapping(value=job).get("uses", "")))
+        if _MATRIX_CALL.fullmatch(str(_mapping(value=job).get("uses", "")))
     }
     adopted = {
         name: job
@@ -211,10 +219,9 @@ def nested_reason(
     """Why a reusable workflow below `workflow` may reach the matrix; None when none can."""
     for uses in _jobs_uses(workflow=workflow):
         text = quoted(value=str(uses))
-        matrix = isinstance(uses, str) and _MATRIX_USES.search(uses) is not None
-        if matrix and level == 1:
+        if level == 1 and _MATRIX_CALL.fullmatch(str(uses)):
             continue
-        local = _LOCAL_USES.fullmatch(uses) if isinstance(uses, str) and not matrix else None
+        local = _LOCAL_USES.fullmatch(uses) if isinstance(uses, str) else None
         if local is None:
             return f"calls a reusable workflow that may reach the matrix unchecked: {text}"
         if level >= MAX_LEVELS:
