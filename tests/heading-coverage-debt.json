@@ -758,6 +758,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: a push of only seed or preserve refs runs only the authorization members",
+    "work_item": "livespec-dev-tooling-2zb3gk",
+    "first_seen": "2026-11-10"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: a radar consumer refuses an item already covered by a listed plan",
     "work_item": "livespec-dev-tooling-22wpdk",
     "first_seen": "2026-11-02"

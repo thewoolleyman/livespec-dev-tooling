@@ -3226,5 +3226,13 @@
     "test": "TODO",
     "work_item": "livespec-dev-tooling-xtofr3",
     "reason": "A real test at the integration tier or above is owed for this heading: an integration test of the just check guard over fixture repositories, proving it fails naming the workflow file and the reconciler caller when a reconciler-calling repository groups its master push runs, and passes when the repository calls no reconciler (proposal master-push-cancel-superseded B', v182). livespec-dev-tooling-xtofr3 owns it."
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a push of only seed or preserve refs runs only the authorization members",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above (`tests.consumer`, this repository's `scenario_tiers`, or an integration-marked test) is owed for this heading. It must push, through the pack's pre-push gate in a synthetic repository with a local bare remote, a ref update naming only refs/heads/needs-human/ or refs/heads/preserve/ and assert no gate Job is submitted and no local just check runs while an authorization-reading member still runs and refuses on failure, and that a push also updating another ref is gated as before. livespec-dev-tooling-2zb3gk owns it.",
+    "work_item": "livespec-dev-tooling-2zb3gk"
   }
 ]

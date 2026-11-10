@@ -1026,6 +1026,22 @@ And a gate Job MUST NOT be submitted to the `gates` namespace
 
 And the push MUST be refused
 
+## Scenario: a push of only seed or preserve refs runs only the authorization members
+
+Given a consumer repository whose pre-push gate is installed from the dev-tooling pack
+
+And a member of the repository's check set that declares it reads an authorization held outside the tree
+
+When a git push that has at least one non-deleting ref update, and whose non-deleting ref updates all name refs under `refs/heads/needs-human/` or `refs/heads/preserve/` runs the pre-push gate
+
+Then the pre-push gate MUST NOT submit a gate Job and MUST NOT run the local `just check` fall-through
+
+And the pre-push gate MUST run that member on the pushing host and MUST refuse the push, naming the member, when it fails or cannot be evaluated
+
+And the pre-push gate MUST print the updated refs and a line saying the test aggregate was not run
+
+And when the same push also updates any other ref, the pre-push gate MUST gate it exactly as an ordinary push
+
 ## Scenario: a check aggregate member with no purity declaration fails the aggregate
 
 Given a member of livespec-dev-tooling's check aggregate that carries no purity declaration
