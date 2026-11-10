@@ -2198,7 +2198,13 @@ And the suite-green leg's pytest run prints no new output for 60 seconds
 
 When the commit-msg `red_green_replay` check runs its suite-green leg
 
-Then it MUST kill the run's whole process group, pytest-xdist workers included
+Then it MUST end the run's whole process group, pytest-xdist workers included
+
+And every other process attributed to the run, including one that entered a new OS session, MUST be ended before the commit is refused
+
+And each attributed process found in the first pass MUST receive SIGTERM, and SIGKILL only if it is still alive after the kill grace period
+
+And the refusal event MUST name the pid and command line of each process the leg ended outside the run's process group
 
 And the commit MUST be refused with an event naming the 60-second stall window and `LIVESPEC_SUITE_GREEN_STALL_SECONDS`
 
@@ -2283,6 +2289,22 @@ When the commit-msg `red_green_replay` check runs its suite-green leg
 Then it MUST NOT start a pytest suite run
 
 And it MUST record its `TDD-Suite-Green-*` trailers from the aggregate run, naming that run
+
+## Scenario: the commit-range validation fails a Red+Green commit whose recorded test cannot be collected on its own tree
+
+Given a branch whose range from origin/master holds a commit that touches product impl .py and carries the TDD-Red-Test-File-Checksum and TDD-Green-Verified-At trailers
+
+And the test module named by that commit's TDD-Red-Test trailer fails pytest collection on that commit's own tree with an ImportError
+
+When check-red-green-replay validates the range
+
+Then the check MUST fail with a finding whose check_id differs from the missing-trailers finding
+
+And the finding MUST name that commit's sha, that test module and the first collection error line
+
+And a recorded test module that collects no test on its commit's tree MUST fail the check the same way
+
+And a range in which every such commit's recorded test module collects at least one test with no error MUST pass this check
 
 ## Scenario: a suite-green leg runs the full suite when the pre-commit aggregate judged a different tree or ran partially
 
@@ -3403,6 +3425,10 @@ Given a gate run whose pytest session, running pytest-xdist workers, has printed
 When the stall window elapses
 
 Then the session's whole process group, pytest-xdist workers included, MUST be ended
+
+And every other process attributed to the gate's run, including one that entered a new OS session and the pytest session of a nested suite-green leg, MUST be ended before the gate records its verdict or its no-verdict state
+
+And each attributed process found in the first pass MUST receive SIGTERM, and SIGKILL only if it is still alive after the kill grace period
 
 And the gate MUST end with a verdict or an explicit no-verdict state
 

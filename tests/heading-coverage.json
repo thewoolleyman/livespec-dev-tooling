@@ -1463,6 +1463,14 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: the commit-range validation fails a Red+Green commit whose recorded test cannot be collected on its own tree",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above (`tests.consumer`, this repository's `scenario_tiers`, or an integration-marked test) is owed for this heading. It must build a commit range whose Red+Green commit's recorded test module fails collection on that commit's own tree (an ImportError, and a module that collects no test), assert the range check fails naming the commit sha, module and first collection error under a distinct check_id, and assert a range whose recorded modules all collect passes. livespec-dev-tooling-5be65c owns it.",
+    "work_item": "livespec-dev-tooling-5be65c"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: a suite-green leg runs the full suite when the pre-commit aggregate judged a different tree or ran partially",
     "test": "TODO",
     "reason": "Spec-first: a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) or an integration-marked test is owed for this heading, driving the commit-msg suite-green leg after a pre-commit aggregate on a different tree or a partial aggregate; livespec-dev-tooling-z5fwwn owns it.",
