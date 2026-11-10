@@ -1,0 +1,155 @@
+"""Production's rendered incident observer files stay byte-identical beside a scratch instance.
+
+livespec-dev-tooling-32qdja. The role gained a second, scratch-branch instance
+(`ansible/incident-observer-scratch.yml`) by overriding its own variables, and
+the production apply (`ansible/dev-host.yml`) must render exactly what it
+rendered before that change. The fixtures under
+`fixtures/incident_observer_production_render/` were rendered from the role as
+it stood on master `aa3ed2cb`, before the scratch instance existed: the four
+templates (controller.json, the observer unit, the reference fetch service and
+timer) byte-identical to ansible-core 2.21.4's own `template` output, plus the
+manifest renderer's argv (which bakes `--config` into the principal) and every
+per-instance install destination. A production render that moves by one byte
+fails here.
+"""
+
+from __future__ import annotations
+
+import json
+import re
+from pathlib import Path
+from typing import Any
+
+import jinja2
+import yaml
+
+# EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-32qdja
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+ROLE = _REPO_ROOT / "ansible" / "roles" / "incident_observer"
+_FIXTURES = Path(__file__).resolve().parent / "fixtures" / "incident_observer_production_render"
+_MANAGED = "Ansible managed"
+_CANDIDATE = "candidate"
+_CANDIDATE_UID = 1000
+_REVISION = "0" * 40
+_RESOLVE_DEPTH = 4
+_RENDER_TASK = "Render the released-installation manifest with the serving interpreter"
+_TEMPLATES = {
+    "controller.json": "controller.json.j2",
+    "livespec-incident-observer.service": "livespec-incident-observer.service.j2",
+    "livespec-incident-reference-fetch.service": "livespec-incident-reference-fetch.service.j2",
+    "livespec-incident-reference-fetch.timer": "livespec-incident-reference-fetch.timer.j2",
+}
+DESTINATIONS = (
+    "incident_observer_config_path",
+    "incident_observer_manifest_path",
+    "incident_observer_state_dir",
+    "incident_observer_reference_dir",
+    "incident_observer_port",
+    "incident_observer_unit_name",
+    "incident_observer_unit_path",
+    "incident_observer_fetch_unit_name",
+    "incident_observer_fetch_service_path",
+    "incident_observer_fetch_timer_path",
+)
+
+
+def ansible_jinja() -> jinja2.Environment:
+    """Jinja as Ansible's template module configures it, with the Ansible filters the role uses."""
+    jinja = jinja2.Environment(
+        trim_blocks=True,
+        lstrip_blocks=False,
+        keep_trailing_newline=True,
+        undefined=jinja2.StrictUndefined,
+        autoescape=False,
+    )
+    jinja.filters["to_json"] = json.dumps
+    jinja.filters["regex_escape"] = re.escape
+    jinja.filters["regex_replace"] = lambda value, pattern, replacement: re.sub(
+        pattern, replacement, value
+    )
+    jinja.filters["intersect"] = lambda left, right: [item for item in left if item in right]
+    jinja.filters["bool"] = lambda value: (
+        value if isinstance(value, bool) else str(value).strip().lower() in {"1", "true", "yes"}
+    )
+    jinja.tests["match"] = lambda value, pattern: re.match(pattern, value) is not None
+    return jinja
+
+
+def resolve(*, variables: dict[str, Any]) -> dict[str, Any]:
+    """Template every string value against the others, as Ansible does lazily, to a fixed point."""
+    jinja = ansible_jinja()
+    resolved = dict(variables)
+    for _ in range(_RESOLVE_DEPTH):
+        resolved = {
+            key: jinja.from_string(value).render(**resolved)
+            if isinstance(value, str) and "{{" in value
+            else value
+            for key, value in resolved.items()
+        }
+    unresolved = [
+        key for key, value in resolved.items() if isinstance(value, str) and "{{" in value
+    ]
+    assert unresolved == [], f"role variables did not resolve: {unresolved}"
+    return resolved
+
+
+def role_yaml(*, relative: str) -> Any:
+    """One YAML file of the role, parsed."""
+    return yaml.safe_load((ROLE / relative).read_text(encoding="utf-8"))
+
+
+def production_variables() -> dict[str, Any]:
+    """The role's defaults, as ansible/dev-host.yml applies them, with a declared candidate."""
+    defaults = role_yaml(relative="defaults/main.yml")
+    defaults["incident_observer_candidate_user"] = _CANDIDATE
+    return defaults
+
+
+def render_installation(*, variables: dict[str, Any]) -> dict[str, str]:
+    """Every file the role installs from a template or a rendered argv, by fixture name."""
+    resolved = resolve(variables=variables)
+    context = {
+        **resolved,
+        "ansible_managed": _MANAGED,
+        "ansible_facts": {
+            "getent_passwd": {_CANDIDATE: ["x", str(_CANDIDATE_UID), "1000", "", "/", "/bin/sh"]}
+        },
+        "incident_observer_revision": {"stdout": _REVISION},
+    }
+    jinja = ansible_jinja()
+    rendered = {
+        name: jinja.from_string((ROLE / "templates" / source).read_text(encoding="utf-8")).render(
+            **context
+        )
+        for name, source in _TEMPLATES.items()
+    }
+    tasks = role_yaml(relative="tasks/main.yml")
+    (render,) = [task for task in tasks if task.get("name") == _RENDER_TASK]
+    expression = render["ansible.builtin.command"]["argv"].strip()
+    assert expression.startswith("{{")
+    assert expression.endswith("}}")
+    argv = jinja.compile_expression(expression[2:-2])(**context)
+    rendered["manifest-render-argv.json"] = json.dumps(argv, indent=2) + "\n"
+    destinations = {key: resolved[key] for key in DESTINATIONS}
+    rendered["destinations.json"] = json.dumps(destinations, indent=2, sort_keys=True) + "\n"
+    return rendered
+
+
+def test_the_production_apply_renders_every_installed_file_byte_identical_to_before() -> None:
+    rendered = render_installation(variables=production_variables())
+
+    fixtures = sorted(path.name for path in _FIXTURES.iterdir())
+    assert sorted(rendered) == fixtures
+    for name in fixtures:
+        assert rendered[name].encode() == (_FIXTURES / name).read_bytes(), name
+
+
+def test_the_production_apply_declares_no_scratch_instance_and_no_target_branch() -> None:
+    variables = resolve(variables=production_variables())
+
+    assert variables["incident_observer_scratch"] is False
+    assert variables["incident_observer_target_branch"] == ""
+    controller = json.loads(
+        render_installation(variables=production_variables())["controller.json"]
+    )
+    assert "target_branch" not in controller

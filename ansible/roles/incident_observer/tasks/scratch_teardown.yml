@@ -1,0 +1,146 @@
+---
+# The committed teardown of the scratch-branch incident observer instance
+# (ansible/incident-observer-scratch-teardown.yml, which loads vars/scratch.yml
+# and includes this file). livespec-dev-tooling-32qdja.
+#
+# It stops and disables the scratch observer unit and its reference fetch
+# timer, removes their unit files, the scratch controller.json and the scratch
+# manifest, and reads production's unit, controller.json and manifest back
+# byte-identical to what they were before it started. It never stops, restarts
+# or writes production, and it never notifies the role's restart handler.
+#
+# The scratch root (receipts and reference clone) is the evidence store a
+# Proof of Done may still cite, so it is kept unless
+# `incident_observer_scratch_teardown_purge` is true.
+
+- name: Read production's instance values the teardown must leave alone
+  ansible.builtin.include_vars:
+    file: "{{ role_path }}/defaults/main.yml"
+    name: incident_observer_production
+
+- name: Name what the teardown removes and what it must leave byte-identical
+  ansible.builtin.set_fact:
+    incident_observer_scratch_removed:
+      - "{{ incident_observer_unit_path }}"
+      - "{{ incident_observer_fetch_service_path }}"
+      - "{{ incident_observer_fetch_timer_path }}"
+      - "{{ incident_observer_config_path }}"
+      - "{{ incident_observer_manifest_path }}"
+    incident_observer_production_files:
+      - "{{ incident_observer_production.incident_observer_unit_path }}"
+      - "{{ incident_observer_production.incident_observer_config_path }}"
+      - "{{ incident_observer_production.incident_observer_manifest_path }}"
+
+- name: Refuse a teardown that names anything production owns
+  # Only a scratch instance is torn down, and every path it removes must be a
+  # scratch path, never one of production's.
+  ansible.builtin.assert:
+    that:
+      - incident_observer_scratch | bool
+      - >-
+        incident_observer_scratch_removed
+        | intersect(incident_observer_production_files
+                    + [incident_observer_production.incident_observer_fetch_service_path,
+                       incident_observer_production.incident_observer_fetch_timer_path])
+        | length == 0
+      - incident_observer_unit_name != incident_observer_production.incident_observer_unit_name
+      - >-
+        incident_observer_fetch_unit_name
+        != incident_observer_production.incident_observer_fetch_unit_name
+      - >-
+        (not (incident_observer_scratch_teardown_purge | bool))
+        or (incident_observer_scratch_root not in
+            [incident_observer_production.incident_observer_home,
+             incident_observer_production.incident_observer_state_dir,
+             incident_observer_production.incident_observer_reference_dir])
+    fail_msg: >-
+      the teardown runs only with incident_observer_scratch true and scratch
+      names and paths distinct from production's (vars/scratch.yml). Nothing
+      has been stopped or removed.
+    success_msg: tearing down {{ incident_observer_unit_name }}; production is left alone
+
+- name: Read production's unit, controller.json and manifest before the teardown
+  ansible.builtin.stat:
+    path: "{{ item }}"
+    checksum_algorithm: sha256
+  become: true
+  loop: "{{ incident_observer_production_files }}"
+  register: incident_observer_production_before
+  check_mode: false
+
+- name: Look for the scratch observer's unit and its fetch timer
+  ansible.builtin.stat:
+    path: "{{ item }}"
+    get_checksum: false
+  become: true
+  loop:
+    - "{{ incident_observer_unit_path }}"
+    - "{{ incident_observer_fetch_timer_path }}"
+  register: incident_observer_scratch_units
+  check_mode: false
+
+- name: Stop and disable the scratch observer
+  ansible.builtin.systemd_service:
+    name: "{{ incident_observer_unit_name }}"
+    state: stopped
+    enabled: false
+  become: true
+  when: incident_observer_scratch_units.results[0].stat.exists
+
+- name: Stop and disable the scratch reference fetch timer
+  ansible.builtin.systemd_service:
+    name: "{{ incident_observer_fetch_unit_name }}.timer"
+    state: stopped
+    enabled: false
+  become: true
+  when: incident_observer_scratch_units.results[1].stat.exists
+
+- name: Stop a scratch reference fetch the timer already started
+  ansible.builtin.systemd_service:
+    name: "{{ incident_observer_fetch_unit_name }}.service"
+    state: stopped
+  become: true
+  when: incident_observer_scratch_units.results[1].stat.exists
+
+- name: Remove the scratch unit files, controller.json and manifest
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  become: true
+  loop: "{{ incident_observer_scratch_removed }}"
+
+- name: Reload systemd so it forgets the removed scratch units
+  # Unconditional: a reload is idempotent, and a rerun after a teardown that
+  # stopped half-way still leaves systemd naming no scratch unit.
+  ansible.builtin.systemd_service:
+    daemon_reload: true
+  become: true
+
+- name: Remove the scratch evidence store only when asked
+  ansible.builtin.file:
+    path: "{{ incident_observer_scratch_root }}"
+    state: absent
+  become: true
+  when: incident_observer_scratch_teardown_purge | bool
+
+- name: Read production's unit, controller.json and manifest after the teardown
+  ansible.builtin.stat:
+    path: "{{ item }}"
+    checksum_algorithm: sha256
+  become: true
+  loop: "{{ incident_observer_production_files }}"
+  register: incident_observer_production_after
+  check_mode: false
+
+- name: Refuse a teardown that moved a byte of production
+  ansible.builtin.assert:
+    that:
+      - >-
+        incident_observer_production_after.results | map(attribute='stat.checksum', default='')
+        | list
+        == incident_observer_production_before.results
+        | map(attribute='stat.checksum', default='') | list
+    fail_msg: >-
+      production's {{ incident_observer_production_files | join(', ') }} changed
+      during the scratch teardown; read them and the production unit now.
+    success_msg: production's unit, controller.json and manifest are byte-identical

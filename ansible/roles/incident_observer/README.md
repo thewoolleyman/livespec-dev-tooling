@@ -224,3 +224,61 @@ safe state: an observer that is not reachable admits nothing.
   this role so one apply brings the listener up and fronts it.
 - The GitHub webhook, the repository variable and secret (steps 2–3) and the
   tailnet policy's `funnel` grant are named, never faked as checks.
+
+## The scratch-branch instance
+
+A host proof that must exercise the recovery principal off master (the thhgeg
+moved-head and restart proofs) needs a SECOND observer installation bound to a
+scratch branch, while production stays on master. The principal takes no
+branch argument: it reads `target_branch` from the controller.json its
+observer's manifest names as the principal argv's last element. So the scratch
+instance is the same role applied with another variable set,
+`vars/scratch.yml`, through `ansible/incident-observer-scratch.yml`
+(livespec-dev-tooling-32qdja):
+
+- its own `/etc/livespec-incident/controller-scratch-<name>.json`, with
+  `target_branch: incident-scratch/<name>-proof`, in production's directory
+  because the principal reads `recovery-app.json` from the config's parent;
+- its own `released-installation-scratch-<name>.json`, whose principal argv
+  ends in the scratch controller.json;
+- its own state directory and reference clone under
+  `/var/lib/livespec-incident/scratch-<name>/`, loopback port 8766, and units
+  `livespec-incident-observer-scratch` and
+  `livespec-incident-reference-fetch-scratch` (service and timer).
+
+`<name>` defaults to `thhgeg`; `-e incident_observer_scratch_name=<name>` moves
+every path and the branch together, and `-e
+incident_observer_target_branch=incident-scratch/<x>` names the branch alone.
+
+The scratch apply shares production's venv, reader clone and the three secret
+files, `reader.env` and `recovery-app.json` READ-ONLY: it writes none of them,
+never pip-installs or re-clones the reader, publishes no funnel and never
+restarts production's unit. It refuses before writing anything when a value
+equals production's or sits inside production's directories, when the target
+branch is empty or master, and when the shared venv does not already serve
+`incident_observer_release` (converge production first). The observer and its
+principal then refuse every action whose registered branch is not the scratch
+branch (livespec-dev-tooling-thhgeg).
+
+```bash
+/usr/local/bin/with-livespec-env.sh -- just ansible-drift ansible/incident-observer-scratch.yml
+/usr/local/bin/with-livespec-env.sh -- just ansible-apply ansible/incident-observer-scratch.yml
+```
+
+The committed teardown is `ansible/incident-observer-scratch-teardown.yml`
+(`tasks/scratch_teardown.yml`). It stops and disables the scratch observer and
+its fetch timer, removes their unit files, the scratch controller.json and the
+scratch manifest, and reads production's unit, controller.json and manifest
+back byte-identical, failing loudly if any moved. It keeps
+`/var/lib/livespec-incident/scratch-<name>/` as the evidence store unless run
+with `-e incident_observer_scratch_teardown_purge=true`.
+
+```bash
+/usr/local/bin/with-livespec-env.sh -- just ansible-apply ansible/incident-observer-scratch-teardown.yml
+```
+
+With the scratch instance absent, the production apply renders controller.json,
+the manifest's renderer argv, the observer unit and the fetch service and timer
+byte-identical to the role before the instance existed;
+`tests/livespec_dev_tooling/test_incident_observer_role_production_unchanged.py`
+holds that against fixtures matching ansible-core 2.21.4's own output.

@@ -1,0 +1,22 @@
+---
+# The committed teardown of the scratch-branch incident observer that
+# ansible/incident-observer-scratch.yml installs. livespec-dev-tooling-32qdja.
+#
+# Stops and disables the scratch observer unit and its reference fetch timer,
+# removes their unit files, the scratch controller.json and the scratch
+# manifest, and reads production's unit, controller.json and manifest back
+# byte-identical. The scratch root (receipts and reference clone) is kept as
+# evidence unless `-e incident_observer_scratch_teardown_purge=true`.
+#
+#   /usr/local/bin/with-livespec-env.sh -- just ansible-drift ansible/incident-observer-scratch-teardown.yml
+#   /usr/local/bin/with-livespec-env.sh -- just ansible-apply ansible/incident-observer-scratch-teardown.yml
+- name: Tear down the scratch-branch incident observer
+  hosts: dev_hosts
+  gather_facts: false
+  vars_files:
+    - roles/incident_observer/vars/scratch.yml
+  tasks:
+    - name: Remove every scratch artifact and leave production byte-identical
+      ansible.builtin.include_role:
+        name: incident_observer
+        tasks_from: scratch_teardown

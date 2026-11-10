@@ -1,0 +1,27 @@
+---
+# A second, scratch-branch incident observer beside production on the dev host.
+# livespec-dev-tooling-32qdja.
+#
+# The same role as ansible/dev-host.yml's `incident_observer`, applied with the
+# variable set in roles/incident_observer/vars/scratch.yml: its own
+# controller.json (with `target_branch` set to the scratch branch), its own
+# manifest whose principal argv ends in THAT controller.json, its own state
+# directory, reference clone, loopback port and systemd units. It shares
+# production's venv, reader clone and secret files read-only, writes none of
+# them, publishes no funnel, and never restarts production's unit.
+#
+# Converge production first, at the same release: the scratch apply refuses a
+# venv that does not already serve `incident_observer_release`. Run through the
+# credential wrapper, drift first:
+#
+#   /usr/local/bin/with-livespec-env.sh -- just ansible-drift ansible/incident-observer-scratch.yml
+#   /usr/local/bin/with-livespec-env.sh -- just ansible-apply ansible/incident-observer-scratch.yml
+#
+# Remove it with ansible/incident-observer-scratch-teardown.yml.
+- name: Scratch-branch incident observer beside production
+  hosts: dev_hosts
+  gather_facts: true
+  vars_files:
+    - roles/incident_observer/vars/scratch.yml
+  roles:
+    - role: incident_observer

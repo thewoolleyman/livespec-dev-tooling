@@ -64,8 +64,11 @@ def test_an_ungranted_node_publishes_nothing_and_the_run_output_names_whose_step
     publish = tasks[_position(tasks=tasks, name=_PUBLISH)]
     say = tasks[_position(tasks=tasks, name=_SAY)]
 
+    # The funnel is the production instance's alone; a scratch instance
+    # (livespec-dev-tooling-32qdja) publishes nothing.
     assert publish["when"] == (
-        "incident_observer_funnel_granted and not incident_observer_funnel_served"
+        "not (incident_observer_scratch | bool) "
+        "and incident_observer_funnel_granted and not incident_observer_funnel_served"
     )
     notice = say["vars"]["incident_observer_funnel_ungranted_notice"]
     assert "incident_observer_funnel_ungranted_notice" in say["ansible.builtin.debug"]["msg"]
