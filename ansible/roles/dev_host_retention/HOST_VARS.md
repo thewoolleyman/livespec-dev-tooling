@@ -32,6 +32,22 @@ control was a human noticing (work-item `livespec-dev-tooling-fj6dm5`).
 - each run logs what it removed and the free space of `/` and `/tmp` before and
   after.
 
+**Multi-GB artifacts go to `/var/tmp/livespec-dumps`, never `/tmp`.** This
+covers a `docker export` tar, an extracted image tree, a copied home directory,
+or a journal copy. `/tmp` is a 48G tmpfs shared by every seat's Bash capture,
+heredocs, gates and factory preflights, and a full `/tmp` breaks all of them.
+The bulk-dump directory is on `/`. Each run caps it at
+`dev_host_retention_bulk_dump_cap_bytes` (20G) by removing the oldest files
+first, so put only artifacts you can afford to lose there.
+- The role does not create the directory. Run
+  `mkdir -p /var/tmp/livespec-dumps` before the first write; `/var/tmp` is
+  world-writable with the sticky bit.
+- Why this rule exists: a session scratchpad under `/tmp/claude-<uid>/` is
+  removed only after its session has ended, so a LIVE seat's bulk files stay
+  there until that seat removes them. Measured 2026-11-10: three live seats
+  added 7.1G to `/tmp` in 25 minutes. The largest share was a 3.2G
+  `docker export` tar plus its 0.6G extract, and `/tmp` rose from 62% to 77%.
+
 **Cargo build targets are deliberately out of scope.** The two large ones
 measured on 2026-10-21 (`/data/projects/fabro/target` at 129G and the shared
 `~/.worktrees/fabro/factory-wave-c/target` at 122G) belong to the fabro
