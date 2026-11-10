@@ -71,6 +71,7 @@ import re
 import sys
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
+from functools import partial
 from pathlib import Path
 from typing import Any, cast
 
@@ -121,7 +122,8 @@ class IncidentAuthority:
     """What the leg can see of the incident: payload, result and the calling workflow.
 
     `caller` is the calling workflow's path, `base_text` its text at the pull
-    request's base commit, and `running_text` the copy GitHub ran.
+    request's base commit, and `running_text` the copy GitHub ran. `copies`
+    reads any nested workflow's two copies the same way.
     """
 
     payload: Mapping[str, Any] | None
@@ -130,6 +132,7 @@ class IncidentAuthority:
     caller: str | None
     base_text: str | None
     running_text: str | None
+    copies: Callable[..., tuple[str | None, str | None]] = call_site.no_copies
 
 
 def leg_member(*, check: str) -> str | None:
@@ -157,7 +160,10 @@ def _unauthorized(*, authority: IncidentAuthority) -> str | None:
     if not (head == base == authority.repository and authority.repository):
         return f"the pull request's head repository is not {_q(value=authority.repository)}"
     return call_site.call_site_reason(
-        caller=authority.caller, base_text=authority.base_text, running_text=authority.running_text
+        caller=authority.caller,
+        base_text=authority.base_text,
+        running_text=authority.running_text,
+        copies=authority.copies,
     )
 
 
@@ -239,36 +245,32 @@ def _read_payload(*, path: str) -> Mapping[str, Any] | None:
     return _map(value=value)
 
 
-def _read_text(*, path: Path) -> str | None:
-    try:
-        return path.read_text(encoding="utf-8")
-    except (OSError, UnicodeDecodeError):
-        return None
-
-
 def _authority(
     *, env: Mapping[str, str], read: Callable[..., budgeted_gh.GhRead]
 ) -> IncidentAuthority:
-    """The incident as this leg can verify it, reading the calling workflow at the base."""
+    """The incident as this leg can verify it, reading every workflow it walks at the base."""
     payload = _read_payload(path=env.get("GITHUB_EVENT_PATH", ""))
     repository = env.get("GITHUB_REPOSITORY", "")
     caller = call_site.caller_path(
         workflow_ref=env.get("CALLER_WORKFLOW_REF", ""), repository=repository
     )
     base = _map(value=_map(value=_map(value=payload).get("pull_request")).get("base"))
-    workspace = env.get("GITHUB_WORKSPACE", "")
+    copies = partial(
+        call_site.workflow_copies,
+        repository=repository,
+        sha=str(base.get("sha", "")),
+        workspace=env.get("GITHUB_WORKSPACE", ""),
+        read=read,
+    )
+    base_text, running_text = copies(path=caller) if caller else (None, None)
     return IncidentAuthority(
         payload=payload,
         repository=repository,
         incident_ci_result=env.get("INCIDENT_CI_RESULT", ""),
         caller=caller,
-        base_text=call_site.fetch_at(
-            repository=repository,
-            path=caller or "",
-            sha=str(base.get("sha", "")),
-            read=read,
-        ),
-        running_text=_read_text(path=Path(workspace) / caller) if caller and workspace else None,
+        base_text=base_text,
+        running_text=running_text,
+        copies=copies,
     )
 
 
