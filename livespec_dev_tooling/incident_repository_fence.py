@@ -78,6 +78,29 @@ def _protected_directory(*, directory: Path) -> None:
         raise OSError(_FENCE_REFUSAL)
 
 
+def _create_private_directories(*, directory: Path) -> None:
+    """Create each missing component of ``directory`` as exactly 0700.
+
+    ``Path.mkdir(parents=True)`` applies its mode to the leaf only; intermediate
+    parents take the umask default (0775 under umask 002), which the protected
+    check then refuses. Walk from the deepest existing ancestor down and chmod
+    every component this call created, never one that already existed.
+    """
+    missing: list[Path] = []
+    current = directory
+    while not current.exists():
+        missing.append(current)
+        current = current.parent
+    for component in reversed(missing):
+        try:
+            component.mkdir(mode=0o700)
+        except FileExistsError:
+            # A dangling link or a concurrent creator owns this name; leave its
+            # mode alone and let the protected check judge it.
+            continue
+        component.chmod(0o700)
+
+
 def _lock_path(*, directory: Path, repository: str) -> Path:
     return directory / (hashlib.sha256(repository.encode()).hexdigest() + ".lock")
 
@@ -201,10 +224,9 @@ def hold_repository_fence(
     deadline; ``None`` blocks. A bounded caller that times out raises
     ``RepositoryFenceBusyError`` and never holds the lock.
     """
-    if existing_only:
-        _protected_directory(directory=directory)
-    else:
-        directory.mkdir(mode=0o700, parents=True, exist_ok=True)
+    if not existing_only:
+        _create_private_directories(directory=directory)
+    _protected_directory(directory=directory)
     current = current_repository_fence(repository=repository, directory=directory)
     if current is not None:
         yield current

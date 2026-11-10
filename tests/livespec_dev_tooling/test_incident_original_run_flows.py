@@ -159,7 +159,7 @@ def world(tmp_path: Path) -> World:
     shas["stale"] = commit(repo, {"src": "elsewhere\n"}, "not on the revert")
     _ = git(repo, "checkout", "-q", "master")
     state = tmp_path / "state"
-    state.mkdir()
+    state.mkdir(mode=0o700)
     registration = ObserverRegistration(
         repository=REPOSITORY,
         incident_item_id="incident-1",
