@@ -21,7 +21,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "mise exec -- uv run --no-sync python -m livespec_dev_tooling.agent_hooks.pretooluse_background_guard",
+            "command": "sh -c 'p=\"$CLAUDE_PROJECT_DIR/.venv/bin/python\"; [ -x \"$p\" ] && exec \"$p\" -m livespec_dev_tooling.agent_hooks.pretooluse_background_guard; exec mise exec -- uv run --no-sync python -m livespec_dev_tooling.agent_hooks.pretooluse_background_guard'",
             "timeout": 15
           },
           {
@@ -43,7 +43,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "mise exec -- uv run --no-sync python -m livespec_dev_tooling.agent_hooks.subagent_stop_guard",
+            "command": "sh -c 'p=\"$CLAUDE_PROJECT_DIR/.venv/bin/python\"; [ -x \"$p\" ] && exec \"$p\" -m livespec_dev_tooling.agent_hooks.subagent_stop_guard; exec mise exec -- uv run --no-sync python -m livespec_dev_tooling.agent_hooks.subagent_stop_guard'",
             "timeout": 30
           }
         ]
