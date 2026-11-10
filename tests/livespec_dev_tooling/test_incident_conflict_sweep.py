@@ -288,6 +288,83 @@ def test_a_crashed_sweep_shuts_the_server_down_and_the_service_exits_non_zero(
     assert code == 1 and started[-2:] == ["shutdown", "serve"]
 
 
+_MALFORMED = {
+    "a" * 64: ("not an object", "a hand edit left a bare string"),
+    "b" * 64: ("sweep state is not an object", {"status": "pending", "sweep": "oops"}),
+    "c" * 64: ("sweep next_at is not a number", {"status": "pending", "sweep": {"next_at": "x"}}),
+    "d" * 64: ("sweep streak is not a whole number", {"sweep": {"streak": True}}),
+    "e" * 64: ("receipt is not text", {"status": "completed", "receipt": 7}),
+    "f" * 64: ("status is not text", {"status": ["pending"]}),
+    "0" * 64: ("reconciled is not a flag", {"receipt": "rollback-conflict:x", "reconciled": 1}),
+}
+
+
+def test_a_malformed_action_entry_is_quarantined_and_never_crashes_the_sweep(
+    failing, monkeypatch, capsys
+):
+    """One bad entry must not take the webhook listener down on every start (review F3a)."""
+    world, chain = failing
+    _journal(world, chain, monkeypatch)
+    record = json.loads(world.record.read_text())
+    record["actions"].update({key: entry for key, (_, entry) in _MALFORMED.items()})
+    world.record.write_text(json.dumps(record))
+    crashes = []
+    monkeypatch.setattr(threading, "excepthook", lambda args: crashes.append(args.exc_type))
+    stop, second = Event(), Event()
+    real = ConflictSweep.sweep
+    passes = []
+
+    def counted(self):
+        accepted = real(self)
+        passes.append(accepted)
+        (self.wake if len(passes) == 1 else second).set()
+        return accepted
+
+    monkeypatch.setattr(ConflictSweep, "sweep", counted)
+    sweep = _sweep(world, interval_seconds=3600)
+    on_crash = Mock(side_effect=stop.set)
+    thread = sweep.start(stop=stop, on_crash=on_crash)
+    finished = second.wait(30)
+    stop.set()
+    sweep.wake.set()
+    thread.join(timeout=10)
+    quarantine = json.loads(world.record.read_text()).get("sweep_quarantine", {})
+    named = capsys.readouterr().err.count(" quarantined: ")
+    facts = (
+        finished,
+        on_crash.call_count == 0,
+        crashes == [],
+        quarantine == {key: why for key, (why, _) in _MALFORMED.items()},
+        named == len(_MALFORMED),
+        passes[:2] == [(world.intent.action_id,), ()],
+        chain.status() == "blocked",
+    )
+    assert all(facts), facts
+
+
+def test_a_state_whose_actions_are_not_an_object_is_named_and_never_crashes(
+    failing, monkeypatch, capsys
+):
+    world, _ = failing
+    record = json.loads(world.record.read_text())
+    record["actions"] = ["not", "an", "object"]
+    world.record.write_text(json.dumps(record))
+    crashes = []
+    monkeypatch.setattr(threading, "excepthook", lambda args: crashes.append(args.exc_type))
+    stop = Event()
+    real = ConflictSweep.pending
+
+    def once(self):
+        stop.set()
+        return real(self)
+
+    monkeypatch.setattr(ConflictSweep, "pending", once)
+    thread = _sweep(world, interval_seconds=0.01).start(stop=stop, on_crash=Mock())
+    thread.join(timeout=10)
+    facts = (crashes == [], "actions is not an object" in capsys.readouterr().err)
+    assert all(facts), facts
+
+
 @pytest.mark.parametrize("receipt", [None, "", "recovery-inverse:a:commit:b"])
 def test_only_a_conflict_receipt_makes_a_settled_action_pending(failing, receipt):
     world, _ = failing
