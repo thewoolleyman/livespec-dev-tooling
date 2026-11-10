@@ -2,7 +2,8 @@
 
 A hosted range gate holds no tenant credential, so it asks here. The query names
 the exact attempt; the answer comes only from the host's `read-history` process,
-decoded by the same consumer every other historical reader uses. A retained arm
+decoded by the shared `_incident_provenance_protocol` decoder, which only this
+module uses; the other `read-history` readers decode their replies themselves. A retained arm
 is not consulted, so an answer still holds once that arm is bound or invalidated.
 The route grants no current effect and no normal proof.
 """

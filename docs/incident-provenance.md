@@ -2,9 +2,12 @@
 
 `incident_observer_provenance.ObserverProvenance` is the one implementation of the
 historical provenance lookup. It takes an `IncidentCommitQuery` and invokes the
-installed orchestrator's public `scripts/bin/incident_authority.py read-history`
-command through the canonical credential wrapper, with the one authority-call
-ceiling `incident_authority_client.AUTHORITY_CALL_CEILING_SECONDS`. The shared
+manifest-pinned reader the observer runs: the host manifest's `reader`, a fixed
+canonical `incident_authority.py read-history` argv of authenticated absolute
+files. That reader runs with its own credential projection; the observer refuses
+the tenant sudo launcher as a reader (see
+`docs/incident-observer-service.md`). The call uses the one authority-call ceiling
+`incident_authority_client.AUTHORITY_CALL_CEILING_SECONDS`. The shared
 `_incident_provenance_protocol.decode_historical_result` decodes the reply. The
 observer's `POST /provenance` route is the only entrance the range gate uses.
 
