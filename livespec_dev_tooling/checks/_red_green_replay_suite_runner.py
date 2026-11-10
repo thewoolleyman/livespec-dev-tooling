@@ -140,9 +140,17 @@ def _drain(*, fd: int, progress: SuiteProgress) -> None:
 
 
 def run_suite(
-    *, argv: list[str], bound: SuiteBound, clock: Callable[[], float] = time.monotonic
+    *,
+    argv: list[str],
+    bound: SuiteBound,
+    clock: Callable[[], float] = time.monotonic,
+    cwd: Path | None = None,
+    environ: Mapping[str, str] | None = None,
 ) -> SuiteRun:
     """Run in a process group and kill it only for a stall or configured ceiling.
+
+    `cwd` and `environ` place the child in another tree: `environ` is layered
+    over this process's environment, so a caller names only what differs.
 
     Pytest emits collection and xdist-startup status only when its output is a
     terminal. Giving it a pseudo-terminal makes those lifecycle updates
@@ -154,7 +162,8 @@ def run_suite(
             argv,
             stdout=slave_fd,
             stderr=slave_fd,
-            env={**os.environ, "PYTHONUNBUFFERED": "1"},
+            cwd=cwd,
+            env={**os.environ, "PYTHONUNBUFFERED": "1", **(environ or {})},
             start_new_session=True,
         )
     finally:
