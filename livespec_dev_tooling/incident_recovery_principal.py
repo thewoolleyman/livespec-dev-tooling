@@ -110,7 +110,9 @@ class RecoveryPrincipal:
         if isinstance(effects, dict):
             return effects
         head = effects.head()
-        return _refused(reason="master head unavailable") if head is None else {"head": head}
+        if head is None:
+            return _refused(reason=f"{self.installation.target_branch} head unavailable")
+        return {"head": head}
 
     def lookup(self, *, payload: Reply) -> Reply:
         intent = JournalCodec.intent(raw=payload["intent"])
