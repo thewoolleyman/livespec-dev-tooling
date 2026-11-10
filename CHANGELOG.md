@@ -58,6 +58,22 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.190.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.190.0...v1.190.1) (2026-11-10)
+
+
+### Bug Fixes
+
+* **ci-runner:** a container worker's gate flavor admits only gates that tolerate the worker class taint, so an older renderer's gate never lands on arm64 (livespec-dev-tooling-ko26ez.7) ([0b47832](https://github.com/thewoolleyman/livespec-dev-tooling/commit/0b47832dfd9b6a4996a5b6588e1120e88ba1871d))
+* focused incident evidence measures omitted touched files, ignores ambient pytest plugin variables, and bounds the whole collection by one deadline (livespec-dev-tooling-nqb274) ([6766759](https://github.com/thewoolleyman/livespec-dev-tooling/commit/6766759f2ed36f04ded4569660da0da76d668648))
+* **incident_release_entry:** add the dispatch entrance that asks the release screen first (livespec-dev-tooling-wbvbj6) ([86f2fcf](https://github.com/thewoolleyman/livespec-dev-tooling/commit/86f2fcf202e8da4b606c5709a0594e0ee01786ae))
+* **incident_release_entry:** bound the reply, require a base URL and an observed repository (livespec-dev-tooling-wbvbj6) ([ce041d0](https://github.com/thewoolleyman/livespec-dev-tooling/commit/ce041d0553da20adb9cfe130cb4127247f6e1ad9))
+* **incident_release_screen:** clear a fenced incident head only on a published inverse in the source (livespec-dev-tooling-wbvbj6) ([bf21477](https://github.com/thewoolleyman/livespec-dev-tooling/commit/bf21477b71c23d129a154400a2f7ed5844520405))
+* **incident_release_screen:** screen release and pin dispatch against retained incident recovery (livespec-dev-tooling-wbvbj6) ([899693b](https://github.com/thewoolleyman/livespec-dev-tooling/commit/899693b848d6256a53830ef8ee283e06981ff1bc))
+* **incident-observer:** reconcile retry answers a rival's retained receipt without a principal call ([af93f01](https://github.com/thewoolleyman/livespec-dev-tooling/commit/af93f01a3fbc91c649407f9c5b2a66acf383efa4))
+* **incident-observer:** reconcile retry refuses by name when the action left the record ([f6fda44](https://github.com/thewoolleyman/livespec-dev-tooling/commit/f6fda44bda9e5a0868b97ebc1b365794110416d5))
+* **incident:** one protected-path ownership check for every expedited-incident path ([8761b4c](https://github.com/thewoolleyman/livespec-dev-tooling/commit/8761b4c8e36e78a931c917ac717cb2bbdb028b8c))
+* **incident:** reach the incident authority through one client ([5bdc3b9](https://github.com/thewoolleyman/livespec-dev-tooling/commit/5bdc3b9b97d9c9eaa487a1b56589716a622d795f))
+
 ## [1.190.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.189.1...v1.190.0) (2026-11-09)
 
 
