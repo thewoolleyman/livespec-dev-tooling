@@ -769,6 +769,7 @@ subprocess_spawn_allowlist = [
     "tests/livespec_dev_tooling/test_dispatcher_coverage_namespaces_signals.py",
     "tests/consumer/test_delegated_gate_check_suite.py",
     "tests/consumer/test_delegated_job_authority_skip.py",
+    "tests/consumer/test_ci_matrix_completeness_consumer_levers.py",
     # Incident transport requires a fresh interpreter for vendor bootstrap and
     # real child environment propagation. These properties cannot be observed
     # in pytest's already-imported process; the exact test file scrubs coverage

@@ -347,10 +347,10 @@ def test_ci_severity_levers_and_the_committed_source_must_match(
     assert parity[0].get("lever") == lever
 
 
-def test_missing_committed_lever_source_names_each_ci_armed_lever(
+def test_an_absent_committed_lever_source_judges_no_lever_parity(
     *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """An absent committed lever source fails closed, naming every lever ci.yml arms."""
+    """A tree without the committed lever source (a consumer) gets no lever-parity finding."""
     _ = _write_canonical_json(cwd=tmp_path, slugs=[])
     _ = _write_justfile(cwd=tmp_path, body=_justfile_with_targets(targets=[]))
     armed = ["LIVESPEC_FAIL_IF_CI_MATRIX_GAPS_EXIST", "LIVESPEC_FAIL_IF_FMT_DIRECTIVES_EXIST"]
@@ -374,14 +374,9 @@ def test_missing_committed_lever_source_names_each_ci_armed_lever(
         monkeypatch=monkeypatch,
         capsys=capsys,
     )
-    assert result.returncode == 4, result.stderr
     findings = _parse_findings(stderr=result.stderr)
-    named = sorted(
-        str(item.get("lever"))
-        for item in findings
-        if item.get("failure_mode") == "ci-severity-lever-missing-from-source"
-    )
-    assert named == armed
+    levers = [item for item in findings if "lever" in item]
+    assert (result.returncode, levers) == (0, []), result.stderr
 
 
 def test_target_inventory_supplies_aggregate_for_ci_scan(
