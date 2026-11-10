@@ -708,3 +708,25 @@ def test_a_playbook_run_that_stops_printing_fails_naming_its_task_and_each_compl
     assert re.search(
         r"Completed tasks and their elapsed times: 'Read the drill start' \d+\.\d s\.", message
     )
+
+
+def test_an_exit_report_leads_with_the_first_task_that_failed() -> None:
+    output = (
+        "PLAY [Race two claim writers] ***\n"
+        "TASK [Open the tunnel] ***\n"
+        "ok: [race-drill-target]\n"
+        "TASK [Release both writers at that one instant] ***\n"
+        "fatal: [race-drill-target]: FAILED! => {}\n"
+        "TASK [Close the tunnel] ***\n"
+        "failed: [race-drill-target] (item=x) => {}\n"
+    )
+
+    report = _exit_report(code=2, output=output)
+
+    assert report.splitlines()[0] == (
+        "playbook exited 2; first failed task: 'Release both writers at that one instant'"
+    )
+    assert report.endswith(output)
+    assert _first_failed_task(output="PLAY [Race two claim writers] ***\n") == (
+        "(no task reported a failure)"
+    )
