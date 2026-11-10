@@ -242,6 +242,46 @@ def test_retention_scans_liveness_with_a_fixed_number_of_child_processes(*, tmp_
     )
 
 
+def test_retention_removes_no_session_scratch_when_the_liveness_scan_cannot_run(
+    *, tmp_path: Path
+) -> None:
+    """A liveness scan that did not complete removes no session directory.
+
+    An empty answer from a scan that never ran would make every session look
+    dead. The session leg is skipped with a WARNING naming the scan's status,
+    and the pytest leg, which does not depend on liveness, still runs.
+    """
+    assert _SCRATCH.is_file(), "the committed scratch helper must implement liveness discovery"
+    tmp_root = tmp_path / "tmp"
+    session = tmp_root / "claude-1000" / "project" / "unscanned"
+    old_pytest = tmp_root / "pytest-of-ubuntu" / "pytest-1"
+    for directory in (session, old_pytest):
+        directory.mkdir(parents=True)
+        _age(path=directory, seconds=_AGED_SECONDS)
+    proc_root = tmp_path / "proc"
+    environment_file = proc_root / "100" / "environ"
+    environment_file.parent.mkdir(parents=True)
+    environment_file.write_bytes(b"CLAUDE_CODE_SESSION_ID=other\0")
+    environment = _hermetic_env(tmp_path=tmp_path, tmp_root=tmp_root, bulk=tmp_path / "bulk")
+    # xargs exits 127 when the command it runs cannot be found.
+    _stub(directory=tmp_path / "bin", name="xargs", body="#!/bin/sh\nexit 127\n")
+    environment["LIVESPEC_DEV_HOST_RETENTION_PROC_ROOT"] = str(proc_root)
+
+    done = subprocess.run(
+        ["bash", str(_RETENTION)],
+        env=environment,
+        capture_output=True,
+        check=False,
+        text=True,
+        timeout=600,
+    )
+
+    assert done.returncode == 0, done.stdout + done.stderr
+    assert session.exists(), done.stdout
+    assert "session leg skipped: liveness scan failed (status 127)" in done.stdout, done.stdout
+    assert not old_pytest.exists(), done.stdout
+
+
 def test_retention_reclaims_dead_tmp_scratch_pytest_and_oldest_bulk_dumps(
     *, tmp_path: Path
 ) -> None:
