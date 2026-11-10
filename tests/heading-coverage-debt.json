@@ -275,6 +275,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: a canary clone adopts a release tag ahead of the release branch and the release branch does not move",
+    "work_item": "livespec-dev-tooling-zpqvnr",
+    "first_seen": "2026-11-10"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: a change set that touches the build or the plugin disables every retry",
     "work_item": "livespec-dev-tooling-crxcy4",
     "first_seen": "2026-11-03"

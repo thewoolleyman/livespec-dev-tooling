@@ -4037,3 +4037,15 @@ When it writes the per-target wall-time table
 Then the 59.96 s target shows as `1m 00s`, not `60.0s`
 And the 3599.6 s target shows as `1h 00m 00s`, not `59m 60s`
 And the `::: just <target>` lines and the structured `wall_s` field still carry raw seconds.
+
+## Scenario: a canary clone adopts a release tag ahead of the release branch and the release branch does not move
+
+Given the orchestrator marketplace's `release` ref names commit R, and a published release tag T whose commit descends from R
+And clones A and B whose project-scope orchestrator install records name R
+And A's `just ensure-plugins` runs a livespec-dev-tooling package that provides the **Session reconcile.** hold, and A's committed Claude Code settings carry a SessionStart hook that runs it
+When the operator runs `just adopt-orchestrator-build <A> T`
+Then A's install record MUST name T's commit as its `gitCommitSha`
+And B's install record MUST still name R
+And the host's user-scope settings, marketplace registration and marketplace clone MUST be unchanged
+And when the operator then runs `just adopt-orchestrator-build <A> R`, A's install record MUST name R again
+And when the operator runs the recipe with a tag whose commit does not descend from R, it MUST exit non-zero having moved nothing, naming both commits
