@@ -3193,6 +3193,24 @@ And a second failure of the same job at `Initialize containers` MUST NOT be re-r
 
 And a job that failed at a later step, or at `Initialize containers` with no registry network error, MUST NOT be re-run, and the summary MUST record it as left for its owner
 
+
+## Scenario: a CI run GitHub fails at job creation with an Internal server error is re-run with backoff
+
+Given a gating CI run of a fleet repository whose caller workflow calls `reusable-ci-infra-rerun.yml`
+
+And GitHub created none of the run's jobs, or only some of them, and no created job failed
+
+And a run annotation reads `Internal server error`
+
+When the run completes
+
+Then the reconciler MUST re-run the run after 2 minutes, a second time after 5 minutes and a third time after 10 minutes, while each attempt fails the same way
+
+And it MUST write the run id, the attempt number and the matched annotation line to its own run summary for each re-run
+
+And a fourth failure of the same run at job creation MUST NOT be re-run, and the summary MUST record it as left for its owner
+
+And a run in which any created job failed MUST NOT be re-run by this mechanism, and its failure MUST stay the run's verdict
 ## Scenario: a merged runner-pool change reaches the live cluster through one committed apply
 
 Given a merged change that adds a runner scale set and its ClusterQueue under `ci-runner/k3s/phase2/`
@@ -4117,3 +4135,55 @@ And B's install record MUST still name R
 And the host's user-scope settings, marketplace registration and marketplace clone MUST be unchanged
 And when the operator then runs `just adopt-orchestrator-build <A> R`, A's install record MUST name R again
 And when the operator runs the recipe with a tag whose commit does not descend from R, it MUST exit non-zero having moved nothing, naming both commits
+
+## Scenario: a pending superseded master push run is dropped while the run in progress completes
+
+Given a repository whose workflows call no master-health reconciler
+
+And its CI workflow groups its `master` push runs in one concurrency group whose `cancel-in-progress` is false
+
+And a `master` push run of that workflow is in progress for commit C1
+
+And a `master` push run of that workflow for commit C2 is pending in the group
+
+When a newer `master` push for commit C3 starts a run of the same workflow
+
+Then the run for C1 MUST run to completion
+
+And the pending run for C2 MUST be cancelled, and it MUST NOT be read as C2's verdict
+
+And the run for C3 MUST run the unconditional full aggregate
+
+## Scenario: a release or expedited master push run is never dropped from the master concurrency group
+
+Given a repository whose CI workflow groups its `master` push runs in one concurrency group whose `cancel-in-progress` is false
+
+And a `master` push run of that workflow is in progress for commit C1
+
+And a `master` push for commit C2 starts a run of that workflow, and C2's subject begins `chore(master): release` or C2 carries a `Factory-Override` trailer whose value begins `EXPEDITED_INCIDENT_RESPONSE`
+
+When a newer `master` push for commit C3 starts a run of the same workflow
+
+Then the run for C2 MUST run in a concurrency group of its own
+
+And the run for C2 MUST NOT be cancelled
+
+## Scenario: the master concurrency group never holds or cancels a pull-request run
+
+Given a repository whose CI workflow groups its `master` push runs in one concurrency group whose `cancel-in-progress` is false
+
+And a `pull_request` run and a `merge_group` run of that workflow are in progress or pending
+
+When newer `master` pushes start runs of the same workflow
+
+Then the pull-request run and the merge-group run MUST NOT be held, cancelled or dropped by the group
+
+## Scenario: a master push concurrency group is refused in a repository that calls the master-health reconciler
+
+Given a repository whose workflows call the master-health reconciler's reusable workflow
+
+And one of its CI workflows puts its `master` push runs in a concurrency group
+
+When `just check` runs
+
+Then the check MUST fail naming that workflow file and the reconciler caller
