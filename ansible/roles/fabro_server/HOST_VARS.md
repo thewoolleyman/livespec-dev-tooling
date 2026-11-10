@@ -629,6 +629,12 @@ values files set. It is a per-host variable if a host ever needs a different
 budget; see the defaults file for why the default is 300 and not the
 verifier's own 60.
 
+`fabro_server_start_timeout_sec` defaults to 600 and renders as the unit's
+`TimeoutStartSec`. A host that raises the verifier budget raises this with
+it: the verifier runs inside systemd's start job, so a start budget below
+the verifier's lets systemd kill a booting server before the verifier
+finishes.
+
 `fabro_server_restart_allowed`, `fabro_server_manage_settings` and
 `fabro_server_settings_mode` are deliberately not host variables. The first
 two are per-run decisions an operator makes with `-e`, not standing

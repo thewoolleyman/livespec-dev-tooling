@@ -66,6 +66,12 @@ ExecStart={{ fabro_server_binary_path }} server start --foreground --bind 127.0.
 ExecStartPost=/usr/local/libexec/fabro-server-verify-web
 Restart=always
 RestartSec=5
+# The verifier's budget above only holds if systemd lets it run. Without this
+# line systemd's default TimeoutStartSec (90s) killed ExecStartPost first, so
+# FABRO_WEB_VERIFY_ATTEMPTS=300 bought nothing: on 2026-11-10 at 20:26Z a
+# restart of vps's fabro-server under load ~35 crash-looped at exactly 90s per
+# attempt while SlateDB warmed its projection cache.
+TimeoutStartSec={{ fabro_server_start_timeout_sec }}
 TimeoutStopSec=90
 
 [Install]
