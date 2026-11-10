@@ -9,6 +9,7 @@ its ``bd`` calls reach the repository's live Beads tenant:
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import sys
 import time
@@ -40,6 +41,7 @@ _READER_NAME = "flake-retry-filer"
 _DEFAULT_STATE_DIR = Path("/var/lib/livespec/flake-retry-filer")
 _DEFAULT_INTERVAL_SECONDS = 900
 _COMPLETION_MARKER = "last-successful-pass"
+_FILED_RECORDS_LEDGER = "filed-records"
 # Runs inside the registered orchestrator build so the filer calls the one shared
 # intake Definition-of-Ready primitive instead of copying its routing rules. Every
 # gate answer is true: a root fix is one coherent, test-verified, repo-targeted fix.
@@ -76,14 +78,36 @@ sys.stdout.write(f"{unsafe_perform_io(routed.unwrap())}\\n")
 """
 
 
-def _retry_nodeids(*, repo_root: Path) -> tuple[str, ...]:
-    """Return each recorded node id once, in deterministic order."""
-    nodeids: set[str] = set()
+def _retry_records(*, repo_root: Path) -> tuple[tuple[str, str], ...]:
+    """Return each distinct record as a (digest, node id) pair, in deterministic order.
+
+    The digest is the sha256 of the record line, so a record's identity is its
+    own content: an unchanged record keeps its digest and a recurrence differs.
+    """
+    records: dict[str, str] = {}
     for record_path in sorted((repo_root / _RETRY_RECORDS_DIR).glob("*.jsonl")):
         for line in record_path.read_text(encoding="utf-8").splitlines():
             record = cast("dict[str, str]", json.loads(line))
-            nodeids.add(record["nodeid"])
-    return tuple(sorted(nodeids))
+            digest = hashlib.sha256(line.strip().encode("utf-8")).hexdigest()
+            records[digest] = record["nodeid"]
+    return tuple(sorted(records.items(), key=lambda pair: (pair[1], pair[0])))
+
+
+def _filed_digests(*, state_dir: Path) -> set[str]:
+    """Read the digests of every record an earlier pass already accounted for."""
+    ledger = state_dir / _FILED_RECORDS_LEDGER
+    if not ledger.is_file():
+        return set()
+    return set(ledger.read_text(encoding="utf-8").split())
+
+
+def _remember_filed(*, state_dir: Path, digests: set[str]) -> None:
+    """Persist the filed-record digests atomically so a restart keeps them."""
+    _ = state_dir.mkdir(parents=True, exist_ok=True)
+    ledger = state_dir / _FILED_RECORDS_LEDGER
+    pending = ledger.with_name(f"{_FILED_RECORDS_LEDGER}.tmp")
+    _ = pending.write_text("".join(f"{digest}\n" for digest in sorted(digests)), encoding="utf-8")
+    _ = pending.replace(ledger)
 
 
 def _command_result(
@@ -195,20 +219,36 @@ def registered_plugin_root(*, repo_root: Path, registry: Path) -> Path:
 
 
 def file_root_fixes(
-    *, repo_root: Path, runner: GateCommandRunner, plugin_root: Path
+    *, repo_root: Path, runner: GateCommandRunner, plugin_root: Path, state_dir: Path
 ) -> tuple[str, ...]:
-    """File root fixes for retry records that have no open root-fix item."""
-    nodeids = _retry_nodeids(repo_root=repo_root)
+    """File one root fix per node id with a retry record no earlier pass accounted for.
+
+    A record is accounted for once a root-fix item was filed from it or an open
+    root-fix item already covered its node id; the memory lives under ``state_dir``
+    so a closed item never re-files an unchanged record, while a new record for the
+    same node id is a recurrence and files again.
+    """
+    records = _retry_records(repo_root=repo_root)
+    filed_digests = _filed_digests(state_dir=state_dir)
     existing = _open_root_fix_nodeids(repo_root=repo_root, runner=runner)
     filed: list[str] = []
-    for nodeid in nodeids:
-        if nodeid in existing:
+    for nodeid in sorted({nodeid for _, nodeid in records}):
+        new_digests = {
+            digest for digest, record_nodeid in records if record_nodeid == nodeid
+        } - filed_digests
+        if not new_digests:
             continue
-        item_id = _create_root_fix(nodeid=nodeid, repo_root=repo_root, runner=runner)
-        _route_through_intake(
-            item_id=item_id, plugin_root=plugin_root, repo_root=repo_root, runner=runner
-        )
-        filed.append(nodeid)
+        if nodeid not in existing:
+            item_id = _create_root_fix(nodeid=nodeid, repo_root=repo_root, runner=runner)
+            filed_digests |= new_digests
+            _remember_filed(state_dir=state_dir, digests=filed_digests)
+            _route_through_intake(
+                item_id=item_id, plugin_root=plugin_root, repo_root=repo_root, runner=runner
+            )
+            filed.append(nodeid)
+            continue
+        filed_digests |= new_digests
+        _remember_filed(state_dir=state_dir, digests=filed_digests)
     return tuple(filed)
 
 
@@ -266,6 +306,7 @@ def main(*, argv: Sequence[str] | None = None) -> int:
         repo_root=arguments.repo_root,
         runner=default_gate_command_runner,
         plugin_root=plugin_root,
+        state_dir=arguments.state_dir,
     )
     _mark_successful_pass(state_dir=arguments.state_dir)
     _ = _logger().info("filed flake root fixes", nodeids=filed, count=len(filed))
