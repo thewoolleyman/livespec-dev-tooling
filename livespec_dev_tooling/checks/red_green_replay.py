@@ -97,7 +97,6 @@ import structlog  # noqa: E402  — vendor-path-aware import after sys.path inse
 # (cycle 4c LLOC reduction). The leading underscore in the module
 # name marks it as a private helper rather than a check entry
 # point.
-from _red_green_replay_collect import collect_recorded_tests  # noqa: E402  — sibling private import
 from _red_green_replay_incident import (  # noqa: E402  — sibling private import
     admitted_by_recorded_incident,
 )
@@ -108,6 +107,7 @@ from _red_green_replay_modes import (  # noqa: E402  — sibling private import
     _handle_suite_green_mode,
     _refuse_half_pair,
 )
+from _red_green_replay_range_integrity import validate_range_evidence  # noqa: E402  — sibling
 from _red_green_replay_revert import (  # noqa: E402  — sibling private import
     FORGE_EXEMPTION_UNPROBED,
     RANGE_MISSING_TRAILERS_HINT,
@@ -442,7 +442,7 @@ def _validate_range() -> int:
     shas = _git_stdout_lines(args=["rev-list", "--no-merges", f"{_RANGE_BASE}..HEAD"])
     violating = [sha for sha in shas if _commit_violates(sha=sha)]
     if not violating:
-        return collect_recorded_tests(shas=shas, base_ref=_RANGE_BASE, log=log)
+        return validate_range_evidence(shas=shas, base_ref=_RANGE_BASE, log=log)
     log.error(
         "commits in origin/master..HEAD touch product impl .py without a "
         "valid TDD trailer shape: either the TDD-Red-*/TDD-Green-* pair "
