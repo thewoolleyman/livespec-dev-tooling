@@ -15,6 +15,10 @@
 # It drives Codex's own config editor for one key, so the operation is additive
 # and every machine-local setting in that file survives. A rendered config.toml
 # would be a second source of truth for settings that are not in any repository.
+#
+# The Cloudflare API MCP server is the second thing written there, through
+# `codex mcp add`, and only after the role has asserted that its bearer token
+# resolves through the 1Password wrapper.
 
 - name: Require Ansible to be connected as the Codex operator account
   # The installer's `id -un` guard, kept whole. `become: false` above makes the
@@ -59,6 +63,72 @@
       {{ inventory_hostname }}. Install the Codex CLI for that account first;
       this role only configures it.
     success_msg: "codex resolves"
+
+- name: Look for the 1Password credential wrapper
+  ansible.builtin.stat:
+    path: "{{ codex_config_env_wrapper }}"
+  become: false
+  register: codex_config_env_wrapper_stat
+
+- name: Require the 1Password credential wrapper
+  # An out-of-band input the role does not create: it ships from the
+  # 1password-env-wrapper repo, and the service-account token behind it is
+  # delivered by hand. The Cloudflare MCP entry below names a token that only
+  # this wrapper can resolve, so the check sits here, ahead of the role's first
+  # change, rather than beside the task that needs it.
+  ansible.builtin.assert:
+    that:
+      - codex_config_env_wrapper_stat.stat.exists
+    fail_msg: >-
+      {{ codex_config_env_wrapper }} is missing. Install it from the
+      1password-env-wrapper repo (canonical copy at
+      /data/projects/1password-env-wrapper/with-homelab-env.sh) before applying
+      this role; it resolves {{ codex_config_cloudflare_mcp_token_env }} for the
+      Cloudflare MCP entry.
+    success_msg: "{{ codex_config_env_wrapper }} is present"
+
+- name: Probe whether the Cloudflare MCP token resolves through the wrapper
+  # KEPT as a command: nothing else can answer this. The probe prints nothing and
+  # reports only an exit status, and the task is no_log anyway -- the child shell
+  # holds the token in its environment.
+  #
+  # The sudo fallback mirrors the wrapper's own: when it is present but not
+  # executable by this account it re-enters itself through
+  # `sudo -n WRAPPER_STAGE=1`.
+  ansible.builtin.command:
+    argv: >-
+      {{ (codex_config_env_wrapper_stat.stat.executable | default(false))
+         | ternary([], ['sudo', '-n', 'WRAPPER_STAGE=1', '--'])
+         + [codex_config_env_wrapper, 'bash', '-lc', _codex_config_cloudflare_probe] }}
+  become: false
+  register: codex_config_cloudflare_token_probe
+  changed_when: false
+  failed_when: false
+  no_log: true
+  # check_mode: false because this is a READ-ONLY probe that a later assert reads.
+  # `command` is not check-mode-safe, so under --check Ansible would skip it, the
+  # registered result would carry no rc, and the assert would fail blaming the
+  # host for a task that never ran. A drift report has to be able to evaluate a
+  # precondition; running a probe that changes nothing is how it does that.
+  check_mode: false
+  vars:
+    _codex_config_cloudflare_probe: >-
+      test -n "$(printenv {{ codex_config_cloudflare_mcp_token_env }})"
+
+- name: Require the Cloudflare MCP token to resolve through the wrapper
+  # The Cloudflare MCP entry reads its bearer token from this variable at every
+  # Codex session start. An entry written with no token to resolve is a server
+  # that looks configured and fails every call, so the apply refuses here, before
+  # its first changed task, and names the variable and where it lives.
+  ansible.builtin.assert:
+    that:
+      - codex_config_cloudflare_token_probe.rc == 0
+    fail_msg: >-
+      {{ codex_config_cloudflare_mcp_token_env }} does not resolve through
+      {{ codex_config_env_wrapper }}. Add a Cloudflare API token for the MCP
+      server as {{ codex_config_cloudflare_mcp_token_env }} to the 1Password
+      `homelab` Environment before applying this role.
+    success_msg: "{{ codex_config_cloudflare_mcp_token_env }} resolves"
 
 - name: Stage the released Driver dev-tooling for the observer unit
   # The unit's ExecStart and its definition both live under this directory, and
@@ -318,3 +388,75 @@
          | select('search', '^' ~ codex_config_feature ~ '[ \t]') | first | default('') }}
     _codex_config_state: >-
       {{ (_codex_config_line.split() | last) if _codex_config_line | length > 0 else '' }}
+
+- name: Probe whether Codex already carries the Cloudflare MCP server
+  # Asked of Codex rather than read out of the file, because the role does not
+  # parse config.toml: that file holds machine-local settings in no repository.
+  # A nonzero exit is the answer "absent", so the task never fails on it.
+  ansible.builtin.command:
+    argv: [codex, mcp, get, "{{ codex_config_cloudflare_mcp_name }}"]
+  become: false
+  register: codex_config_cloudflare_mcp_probe
+  changed_when: false
+  failed_when: false
+  # check_mode: false because this is a READ-ONLY probe that a later task reads;
+  # see the other probes above.
+  check_mode: false
+
+- name: Report that an apply would add the Cloudflare MCP server
+  # `codex mcp add` is a command, so --check skips it rather than reporting a
+  # would-be change, and this tree hides skipped tasks. Without this line a host
+  # that lacks the entry reads as converged.
+  ansible.builtin.debug:
+    msg: >-
+      DRIFT: Codex has no [mcp_servers.{{ codex_config_cloudflare_mcp_name }}]
+      entry. An apply would run: codex mcp add {{ codex_config_cloudflare_mcp_name }}
+      --url {{ codex_config_cloudflare_mcp_url }}
+      --bearer-token-env-var {{ codex_config_cloudflare_mcp_token_env }}
+  when:
+    - ansible_check_mode
+    - codex_config_cloudflare_mcp_probe.rc != 0
+
+- name: Add the Cloudflare MCP server to the Codex configuration
+  # Written only after the token assert above, and through Codex's own editor
+  # like the feature flag, so the entry lands in ~/.codex/config.toml additively
+  # and every machine-local setting survives. The entry names the token's
+  # VARIABLE, never its value: the secret stays in 1Password and is resolved at
+  # session start. An entry that already exists is left alone, so a hand-added
+  # one is adopted rather than duplicated into an invalid TOML table.
+  ansible.builtin.command:
+    argv:
+      - codex
+      - mcp
+      - add
+      - "{{ codex_config_cloudflare_mcp_name }}"
+      - --url
+      - "{{ codex_config_cloudflare_mcp_url }}"
+      - --bearer-token-env-var
+      - "{{ codex_config_cloudflare_mcp_token_env }}"
+  become: false
+  changed_when: true
+  when: codex_config_cloudflare_mcp_probe.rc != 0
+
+- name: Read the Cloudflare MCP server back
+  # POST-WRITE VERIFICATION, so like the feature read-back it is skipped under
+  # --check, where the add above did not run.
+  ansible.builtin.command:
+    argv: [codex, mcp, get, "{{ codex_config_cloudflare_mcp_name }}"]
+  become: false
+  register: codex_config_cloudflare_mcp_verify
+  changed_when: false
+  failed_when: false
+  when: not ansible_check_mode
+
+- name: Require the Cloudflare MCP server to be configured
+  ansible.builtin.assert:
+    that:
+      - codex_config_cloudflare_mcp_verify.rc == 0
+    fail_msg: >-
+      Codex does not report an MCP server named
+      {{ codex_config_cloudflare_mcp_name }} in
+      ~{{ codex_config_user }}/.codex/config.toml after `codex mcp add`. The
+      CLI's `mcp add` flags may have changed upstream.
+    success_msg: "{{ codex_config_cloudflare_mcp_name }} is configured"
+  when: not ansible_check_mode

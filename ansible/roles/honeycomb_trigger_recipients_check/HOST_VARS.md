@@ -29,7 +29,9 @@ under a different account.
   Environment. It must be a Honeycomb **Configuration** (v1) key holding
   `manageTriggers` **and** `manageRecipients`. A Management key will not work:
   v1 rejects it at `/1/auth`, before scopes are consulted, and v2 has no trigger
-  endpoints at all. The role warns rather than refusing, so the units can be
-  staged before the key exists -- but every run exits 2 until it does.
+  endpoints at all. The role asserts that it resolves, for the account the unit
+  runs as, before its first changed task, and refuses otherwise: apply it only
+  after the key is in the Environment.
 - `dolt-backup-alert@.service`, from the `dolt-server` repo. It is this unit's
-  `OnFailure` target. The role warns when it is absent.
+  `OnFailure` target. The role warns when it is absent: that dependency decides
+  only whether a failing run is HEARD, not whether the check can run.

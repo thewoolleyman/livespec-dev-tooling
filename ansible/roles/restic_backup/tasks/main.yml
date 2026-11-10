@@ -15,9 +15,12 @@
 # VPS_RESTIC_PASSWORD, VPS_RESTIC_AWS_ACCESS_KEY_ID,
 # VPS_RESTIC_AWS_SECRET_ACCESS_KEY, VPS_RESTIC_S3_BUCKET, VPS_RESTIC_S3_REGION)
 # live in the 1Password "homelab" Environment and are imported by a human once,
-# out of band. No secret is read, written, or templated anywhere in this role.
+# out of band. No secret is written or templated anywhere in this role; the
+# credential probe below only asks WHICH of those names resolve, and the assert
+# after it fails the apply before any change when one does not.
 # After the first apply on a new host, the operator runs
-# `sudo {{ restic_backup_bin }} doctor` and then starts the service once.
+# `sudo {{ restic_backup_bin }} doctor` and then starts the service once; both
+# are listed in this role's HOST_VARS.md "Out-of-band" section.
 
 - name: Check for the 1Password credential wrapper
   ansible.builtin.stat:
@@ -39,6 +42,64 @@
       Install it from the 1password-env-wrapper repo before applying this role;
       the backup runner re-execs through it to load the repository credentials.
     success_msg: the 1Password credential wrapper is present and executable
+
+- name: Probe which restic credentials the 1Password wrapper fails to resolve
+  # The wrapper existing proves nothing about what it injects. Without this
+  # probe a host missing any of the six names applies cleanly and the first
+  # scheduled backup dies at 03:30, in a log nobody reads. The probe is invoked
+  # exactly as the runner re-enters itself (`sudo -n OPENV_KEEP_PRIVILEGES=1
+  # WRAPPER`), so it answers for the environment the backup will actually have.
+  #
+  # It prints only the NAMES that do not resolve, never a value, and the task is
+  # no_log anyway: the child shell holds the repository password and the AWS
+  # secret in its environment, and a -vvv run must not surface them.
+  ansible.builtin.command:
+    argv:
+      - sudo
+      - -n
+      - OPENV_KEEP_PRIVILEGES=1
+      - "{{ restic_backup_credential_wrapper }}"
+      - bash
+      - -lc
+      - "{{ _restic_backup_credential_probe }}"
+  become: false
+  register: restic_backup_credential_probe
+  changed_when: false
+  failed_when: false
+  no_log: true
+  # check_mode: false because this is a READ-ONLY probe that a later assert reads.
+  # `command` is not check-mode-safe, so under --check Ansible would skip it, the
+  # registered result would carry no rc, and the assert would fail blaming the
+  # host for a task that never ran. A drift report has to be able to evaluate a
+  # precondition; running a probe that changes nothing is how it does that.
+  check_mode: false
+  vars:
+    _restic_backup_credential_probe: >-
+      missing=""; for v in {{ restic_backup_credential_names | join(' ') }}; do
+      [ -n "${!v:-}" ] || missing="$missing $v"; done; echo "$missing"
+
+- name: Refuse to install when a restic credential does not resolve
+  # These are out-of-band inputs: the bucket, the IAM user and the restic
+  # password are created by a human and imported into the 1Password `homelab`
+  # Environment once. The role cannot create them, so it refuses here, before
+  # its first changed task, and names every missing variable at once.
+  ansible.builtin.assert:
+    that:
+      - restic_backup_credential_probe.rc == 0
+      - restic_backup_credential_probe.stdout | trim | length == 0
+    fail_msg: >-
+      {% if restic_backup_credential_probe.rc != 0 %}
+      {{ restic_backup_credential_wrapper }} failed (exit
+      {{ restic_backup_credential_probe.rc }}) before it could resolve the
+      restic credentials; confirm `sudo -n` works for this account and that the
+      service-account token behind the wrapper is delivered.
+      {% else %}
+      These variables do not resolve through {{ restic_backup_credential_wrapper }}:
+      {{ restic_backup_credential_probe.stdout | trim }}.
+      Create the S3 bucket, the IAM user and the restic password, then import
+      them into the 1Password `homelab` Environment.
+      {% endif %}
+    success_msg: all {{ restic_backup_credential_names | length }} restic credentials resolve
 
 - name: Install restic
   # `package` rather than `apt`: the module is portable and the fleet's roles use

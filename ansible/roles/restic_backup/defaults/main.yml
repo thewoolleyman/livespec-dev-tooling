@@ -30,5 +30,16 @@ restic_backup_timeout_start_sec: 6h
 # by this role — asserted, never installed.
 restic_backup_credential_wrapper: /usr/local/bin/with-homelab-env.sh
 
+# The 1Password `homelab` Environment names the runner reads (`map_env` and
+# `doctor` in the runner). The role asserts every one resolves through the
+# wrapper before it changes anything on the host.
+restic_backup_credential_names:
+  - VPS_RESTIC_REPOSITORY
+  - VPS_RESTIC_PASSWORD
+  - VPS_RESTIC_AWS_ACCESS_KEY_ID
+  - VPS_RESTIC_AWS_SECRET_ACCESS_KEY
+  - VPS_RESTIC_S3_BUCKET
+  - VPS_RESTIC_S3_REGION
+
 restic_backup_documentation_url: >-
   file:/home/ubuntu/workspace/vps-info/services/vps-restic-backup/README.md

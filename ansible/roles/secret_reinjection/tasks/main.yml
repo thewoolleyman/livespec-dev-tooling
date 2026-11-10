@@ -18,7 +18,9 @@
 # subsequent boot, which is the disaster-recovery point. The credstore
 # credentials each unit decrypts are seeded ONCE, attended, by the maintainer via
 # the matching seed-*.sh; this role warns (never fails) per missing credential so
-# the units can be armed in either order.
+# the units can be armed in either order. That warning is NOT the record of the
+# step: the seeding is listed in this role's HOST_VARS.md "Out-of-band" section
+# as a post-apply step an operator still performs on a rebuilt server.
 
 - name: Create the pool library directory
   ansible.builtin.file:
