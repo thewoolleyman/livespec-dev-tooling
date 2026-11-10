@@ -58,6 +58,31 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.193.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.192.2...v1.193.0) (2026-11-10)
+
+
+### Features
+
+* each incident capability is read from what serves it, per consumer, with no shared version label (livespec-dev-tooling-3wcldx) ([a9f7160](https://github.com/thewoolleyman/livespec-dev-tooling/commit/a9f7160a51c086aa53507556221d072382f2354d))
+* every audited incident surface maps to one serving capability (livespec-dev-tooling-3wcldx) ([008971c](https://github.com/thewoolleyman/livespec-dev-tooling/commit/008971cd0e98a4903fd9d43d9d74ed6e2fe2534a))
+* **pressure-telemetry:** export a configured cgroup's cpu pressure ([a8cebb6](https://github.com/thewoolleyman/livespec-dev-tooling/commit/a8cebb6c5afc9643b1fc7e811c0e560d86d92a17))
+* **pressure-telemetry:** render the configured cgroup list per host ([34534d6](https://github.com/thewoolleyman/livespec-dev-tooling/commit/34534d6966ab75d1539a4fc57b85cbccf79f5325))
+* the incident fleet audit also reads the guidance hooks of every instruction-only adopter (livespec-dev-tooling-3wcldx) ([d4f393a](https://github.com/thewoolleyman/livespec-dev-tooling/commit/d4f393a6ef0b56187adb7544a8bee7497041a8b9))
+* the incident fleet audit and its one enablement step run from fixed sources and refuse by name (livespec-dev-tooling-3wcldx) ([33aefd7](https://github.com/thewoolleyman/livespec-dev-tooling/commit/33aefd71e517c8eabe3bffcef2f32e6d37fba3c4))
+* the incident fleet audit reads its host from fixed locations, never the caller (livespec-dev-tooling-3wcldx) ([ac742e1](https://github.com/thewoolleyman/livespec-dev-tooling/commit/ac742e1ef2aed016f7b3ef5cdc683f9db0919489))
+* the incident fleet audit ready list is per consumer and a not-applicable claim is bound to serving evidence (livespec-dev-tooling-3wcldx) ([8b3ed9d](https://github.com/thewoolleyman/livespec-dev-tooling/commit/8b3ed9dc60ffd05c48041e9e9b9211de4cd7c25a))
+* the independent controller's serving version is read from the running observer process (livespec-dev-tooling-3wcldx) ([8e0429f](https://github.com/thewoolleyman/livespec-dev-tooling/commit/8e0429f0d5545ff2118a199be0a9190adbc39c41))
+
+
+### Bug Fixes
+
+* **ansible:** scan dev host liveness with one grep and switch the uv prune by uid (livespec-dev-tooling-spva5x) ([50f644d](https://github.com/thewoolleyman/livespec-dev-tooling/commit/50f644d7781c30bbdba3b903fed0990a0c629397))
+* **ansible:** the dev host retention's live-session scan fails closed (livespec-dev-tooling-spva5x) ([55ec9ee](https://github.com/thewoolleyman/livespec-dev-tooling/commit/55ec9ee1008280d97ed35a9e23d7c062e47dd57a))
+* every incident fleet reader refuses duplicate keys and non-finite numbers in the JSON it reads (livespec-dev-tooling-3wcldx) ([6f4508e](https://github.com/thewoolleyman/livespec-dev-tooling/commit/6f4508e6d97c13c360e777bd7fea8de0b1b33c45))
+* the incident fleet audit runs git, gh and systemctl with fixed binaries and a scrubbed environment (livespec-dev-tooling-3wcldx) ([42d621a](https://github.com/thewoolleyman/livespec-dev-tooling/commit/42d621a428fdd60af014eda64a995a315a9197eb))
+* the incident fleet recovery read fails closed on any ruleset it cannot read or evaluate, and this library's templates are its own CI's (livespec-dev-tooling-3wcldx) ([e9f0502](https://github.com/thewoolleyman/livespec-dev-tooling/commit/e9f0502416b9e11f9fc75a719f118daddd6b711c))
+* the incident fleet templates reader reads this library's pins across every workflow file, composite actions included (livespec-dev-tooling-3wcldx) ([d1bdd41](https://github.com/thewoolleyman/livespec-dev-tooling/commit/d1bdd41f9aed7f765964f1478b8fbbce6b379f05))
+
 ## [1.192.2](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.192.1...v1.192.2) (2026-11-10)
 
 
