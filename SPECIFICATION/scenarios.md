@@ -2422,6 +2422,18 @@ And the event MUST carry `spend.price_fallback` = `true` and a `cost_note` namin
 
 And a response on `gpt-6.1-sol` itself MUST be sent at its list price with no fallback marker
 
+## Scenario: a factory response sent on a credential the rotator did not select is attributed to the credential's own account
+
+Given the credential rotator's selected Anthropic account is `anthropic-1`
+
+And a factory dispatcher projects the credential labelled `anthropic-0` into a run and records that label against the run's dispatch id
+
+When that run's node sends a response and the factory spend emitter writes it to the `llm-spend` dataset
+
+Then the event carries `spend.account` = `anthropic-0` and `spend.account_observed` = `true`
+
+And no event for that response carries `spend.account` = `anthropic-1`
+
 ## Scenario: an interactive seat launched by class runs with the model and effort its profile class names
 
 Given the committed fleet seat profile defines a class `monitor` with model `claude-sonnet-5-5`, effort `medium` and an auto-compact threshold below the model's context ceiling
