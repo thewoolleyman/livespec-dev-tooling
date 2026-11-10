@@ -19,6 +19,9 @@ invoked by a specific workflow step rather than by the per-commit
   recipe ahead of its pre-commit aggregate. `staged_precheck` is the
   member: it lints the staged Python files and type-checks those pyright
   covers, refusing in seconds before any aggregate member starts.
+  `actionlint_workflows` is the second: it feeds each staged
+  `.github/workflows/*.yml` to the pinned actionlint and refuses a file
+  GitHub cannot parse (kind `syntax-check`), naming file, line and message.
 
 Living here (NOT under `checks/`) keeps them out of the canonical-set
 derivation (`canonical_checks` walks `checks/*.py`) and out of the

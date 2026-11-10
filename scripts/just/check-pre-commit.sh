@@ -37,6 +37,11 @@ if [[ -z "${LIVESPEC_GATE_CONTEXT:-}" ]]; then
         uv run python -m livespec_dev_tooling.workflow_checks.staged_precheck
     fi
 
+    if grep -Eq '^\.github/workflows/[^/]+\.ya?ml$' <<<"$staged"; then
+        echo ":: staged-file pre-check: actionlint syntax-check on the staged workflow files"
+        uv run python -m livespec_dev_tooling.workflow_checks.actionlint_workflows
+    fi
+
     set +e
     uv run python -m livespec_dev_tooling.pre_commit_delegate run
     delegate_status=$?

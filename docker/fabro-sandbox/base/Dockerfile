@@ -54,7 +54,7 @@ FROM buildpack-deps:noble-scm
 # ---------------------------------------------------------------
 # Tool pins — ARG form so `just check-fabro-image-pin-lockstep` can
 # parse them mechanically across the layer Dockerfiles. JUST_VERSION /
-# LEFTHOOK_VERSION / SHELLCHECK_VERSION MUST match this repo's .mise.toml
+# LEFTHOOK_VERSION / SHELLCHECK_VERSION / ACTIONLINT_VERSION MUST match this repo's .mise.toml
 # `[tools]` pins (the check fails the build pipeline on drift), and each
 # must ALSO be installed by the `mise use -g` below — an ARG alone pins a
 # version without baking the tool, leaving it to be re-fetched over the
@@ -70,6 +70,7 @@ ARG MISE_VERSION=v2026.2.7
 ARG JUST_VERSION=1.36.0
 ARG LEFTHOOK_VERSION=1.13.6
 ARG SHELLCHECK_VERSION=0.11.0
+ARG ACTIONLINT_VERSION=1.7.12
 ARG NODE_VERSION=26.3.0
 ARG GH_VERSION=2.102.0
 # sha256 of gh_${GH_VERSION}_linux_<arch>.tar.gz for each architecture the
@@ -158,7 +159,8 @@ ENV PATH=/root/.local/share/mise/shims:/root/.local/bin:$PATH
 # optional, so a local build without it still works, unauthenticated.
 RUN --mount=type=secret,id=github_token,env=MISE_GITHUB_TOKEN \
     mise use -g just@${JUST_VERSION} lefthook@${LEFTHOOK_VERSION} \
-        shellcheck@${SHELLCHECK_VERSION} node@${NODE_VERSION} \
+        shellcheck@${SHELLCHECK_VERSION} actionlint@${ACTIONLINT_VERSION} \
+        node@${NODE_VERSION} \
     && mise reshim
 
 # Pre-trust every job / sandbox workspace root so a fresh container can run a
