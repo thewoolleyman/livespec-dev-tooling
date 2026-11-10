@@ -7,6 +7,9 @@ import os
 import subprocess
 from pathlib import Path
 
+import jinja2
+import yaml
+
 __all__: list[str] = []
 
 _REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
@@ -102,3 +105,41 @@ def test_pressure_emitter_posts_parseable_otlp_metrics_with_its_host_name(tmp_pa
         for line in ("some", "full")
         for field in ("avg10", "avg60", "avg300")
     }
+
+
+_HOST_VARS = _ANSIBLE / "inventory" / "host_vars"
+_DEFAULTS = _ROLE / "defaults" / "main.yml"
+_CGROUP = "system.slice/k3s.service"
+
+
+def _render_service(*, host: str) -> str:
+    """The emitter's service unit as the role renders it for one inventory host."""
+    role_variables = yaml.safe_load(_DEFAULTS.read_text(encoding="utf-8"))
+    host_variables = yaml.safe_load((_HOST_VARS / f"{host}.yml").read_text(encoding="utf-8"))
+    variables = {
+        name: value
+        for source in (role_variables, host_variables)
+        for name, value in source.items()
+        if name.startswith("pressure_telemetry_")
+    }
+    environment = jinja2.Environment(autoescape=False, undefined=jinja2.StrictUndefined)
+    environment.globals["ansible_managed"] = "Ansible managed"
+    # Role variables may refer to one another, so resolve them to a fixpoint.
+    for _ in range(len(variables)):
+        variables = {
+            name: environment.from_string(value).render(**variables)
+            if isinstance(value, str)
+            else value
+            for name, value in variables.items()
+        }
+    return environment.from_string(_SERVICE.read_text(encoding="utf-8")).render(**variables)
+
+
+def test_poweredge_renders_the_k3s_cgroup_and_a_host_without_a_list_renders_none() -> None:
+    """Only the host that sets `pressure_telemetry_cgroups` is told to read a cgroup."""
+    assert "role: pressure_telemetry" in _CI_POOL_PLAY.read_text(encoding="utf-8")
+    assert _CGROUP in _render_service(host="poweredge-xubuntu")
+    for host in ("gmktec-xubuntu", "hp-xubuntu", "vps"):
+        rendered = _render_service(host=host)
+        assert "system.slice" not in rendered, host
+        assert "k3s" not in rendered, host
