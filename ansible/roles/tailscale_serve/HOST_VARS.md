@@ -23,15 +23,21 @@ tailscale_serve_mappings:
     backend: http://127.0.0.1:32276
 ```
 
-and on `vps`, the tailnet front of the incident observer's loopback listener
-(`roles/incident_observer/README.md`; `dev-host.yml` runs this role right after
-that one):
+and on `vps`, the tailnet fronts of its two Fabro instances (`fabro-hosts.yml`'s
+dev-host play runs this role, livespec-dev-tooling-jxw2ve) and of the incident
+observer's loopback listener (`roles/incident_observer/README.md`; `dev-host.yml`
+runs this role right after that one):
 
 ```yaml
 tailscale_serve_mappings:
+  - https_port: 32276
+    backend: http://127.0.0.1:32276
+  - https_port: 32277
+    backend: http://127.0.0.1:32277
   - https_port: 8765
     backend: http://127.0.0.1:8765
 ```
 
-`hp-xubuntu` declares nothing, and `vps` declares only that one port: their other
-mappings were made by hand before this role existed, and they are left as they are.
+`hp-xubuntu` declares nothing: its mappings were made by hand before this role
+existed, and they are left as they are. `vps`'s other hand-made mappings (8010,
+8443) are likewise left as they are.

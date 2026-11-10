@@ -569,6 +569,10 @@ fabro_server_host_user: ubuntu
 fabro_server_host_group: ubuntu
 fabro_server_host_home: /home/ubuntu
 fabro_server_host_checkout: /data/projects/livespec-orchestrator-beads-fabro
+# vps declares what gmktec-xubuntu declares (plan ci-pool-provisioning-leftovers,
+# ruling 2026-11-05): the role writes each instance's settings.toml, which was
+# hand-maintained here until livespec-dev-tooling-jxw2ve.
+fabro_server_manage_settings: true
 
 fabro_server_instances:
   - unit_name: fabro-server
@@ -579,15 +583,21 @@ fabro_server_instances:
     # vps sets this explicitly in its live, hand-maintained settings.toml.
     max_concurrent_runs: 10
     github_app_id: "3668528"
-    # THE OPEN DECISION, and it is now exactly this one line. Measured
-    # 2026-09-09: this is the only one of the four instances with no OTLP
-    # drop-in on disk. fabro-hosts' README asks for the call to be made
-    # deliberately, because installing the drop-in here newly adds OTLP export
-    # from the fleet's fallback factory — a behaviour change, not a
-    # transcription. `unmanaged` leaves the host as it is and says so in the
-    # run output. Setting `present` turns export on; `absent` decides against
-    # it. Do not leave it undecided indefinitely; do not decide it by default.
-    otel_dropin: unmanaged
+    # DECIDED 2026-11-05 (plan ci-pool-provisioning-leftovers): vps declares
+    # what gmktec declares, so this instance gets the OTLP drop-in too. It was
+    # `unmanaged` because installing it newly adds OTLP export from the fleet's
+    # fallback factory, a behaviour change rather than a transcription; the
+    # pre-apply drift read is what shows whether it changes a live value.
+    # REVERT: set `absent` (decides against export) or `unmanaged`.
+    otel_dropin: present
+    # An empty vault on a rebuilt host must be refused, not discovered by the
+    # first run that needs the App key. The role creates only a name the vault
+    # lacks and never reads or overwrites a value it holds.
+    vault_secrets:
+      - name: GITHUB_APP_PRIVATE_KEY
+        type: file
+        description: GitHub App 3668528 private key
+        from_controller_env: GITHUB_PRIVATE_KEY
 
   - unit_name: fabro-server-mi-homelab
     home_dir: /home/ubuntu/.fabro-mi-homelab
@@ -600,6 +610,16 @@ fabro_server_instances:
     github_app_id: "4688510"
     # Live on the host since 2026-08-23.
     otel_dropin: present
+    # The org App key comes from its OWN controller variable, never from
+    # GITHUB_PRIVATE_KEY: that one carries the fleet App's key, and a vault
+    # filled from it would publish homelab's pull requests as the fleet App.
+    # Bind it from homelab's parameter store for the apply:
+    #   hl param run --bind MI_HOMELAB_GITHUB_PRIVATE_KEY=/homelab/v1/providers/github/mi-homelab-factory-bot/private-key
+    vault_secrets:
+      - name: GITHUB_APP_PRIVATE_KEY
+        type: file
+        description: GitHub App 4688510 (mi-homelab-factory-bot) private key
+        from_controller_env: MI_HOMELAB_GITHUB_PRIVATE_KEY
 ```
 
 ## Values the role defaults rather than reading from `host_vars`
