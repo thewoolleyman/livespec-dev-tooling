@@ -239,6 +239,9 @@ _HISTORY_READERS: dict[str, str] = {
     "livespec_dev_tooling/_incident_original_run_canonical.py": (
         "authenticates an original run's identity against the attempt record"
     ),
+    "livespec_dev_tooling/incident_conflict_chain.py": (
+        "reads a pre-merge arm's record-merge generation to attribute a first-failure reopen"
+    ),
     "livespec_dev_tooling/incident_focused_evidence_entry.py": (
         "confirms the attempt and head a focused-evidence record measured"
     ),
@@ -256,6 +259,7 @@ _AUTHORITY_USERS = frozenset(
     {
         "livespec_dev_tooling/_incident_original_run_ports.py",
         "livespec_dev_tooling/incident_authority_client.py",
+        "livespec_dev_tooling/incident_conflict_chain.py",
         "livespec_dev_tooling/incident_focused_disposition_entry.py",
         "livespec_dev_tooling/incident_focused_evidence_entry.py",
         "livespec_dev_tooling/incident_gate_entry.py",

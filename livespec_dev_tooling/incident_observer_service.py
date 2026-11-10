@@ -13,9 +13,9 @@ import io
 import json
 import sys
 from collections.abc import Callable, Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
-from threading import Thread
+from threading import Event, Thread
 from typing import Any, cast
 from wsgiref.simple_server import make_server
 
@@ -26,6 +26,7 @@ from livespec_dev_tooling._incident_observer_types import (
 from livespec_dev_tooling.incident_ci_attachment import CiJobAttachment
 from livespec_dev_tooling.incident_ci_identity import CiIdentityVerifier
 from livespec_dev_tooling.incident_ci_job_collection import CiJobCollection
+from livespec_dev_tooling.incident_conflict_chain import is_conflict_receipt
 from livespec_dev_tooling.incident_controller_installation import ControllerInstallation
 from livespec_dev_tooling.incident_observer_control import ObserverControl
 from livespec_dev_tooling.incident_observer_endpoint import _read_request, observer_endpoint
@@ -62,6 +63,9 @@ class ControllerService:
 
     installation: ControllerInstallation
     recover: Callable[[RecoveryIntent], str | None]
+    # Set when a recovery journals a rollback-conflict, so the conflict sweep writes it to
+    # the chain at once, outside the fence the recovery itself ran under.
+    conflict_journaled: Event = field(default_factory=Event, compare=False, repr=False)
 
     @classmethod
     def installed(cls, *, config: Path) -> ControllerService | None:
@@ -78,7 +82,12 @@ class ControllerService:
             )
         except (ImportError, AttributeError, OSError, ValueError):
             return None
-        return cls(installation=installation, recover=callback)
+        journaled = Event()
+        return cls(
+            installation=installation,
+            recover=_waking(callback=callback, journaled=journaled),
+            conflict_journaled=journaled,
+        )
 
     def __call__(self, environ: dict[str, Any], start_response: _StartResponse) -> Iterable[bytes]:
         """Authenticate control calls separately from GitHub's signed callback."""
@@ -245,6 +254,20 @@ class _RequestDispatcher:
             self.server.finish_request(request, address)
         finally:
             self.server.shutdown_request(request)
+
+
+def _waking(
+    *, callback: Callable[[RecoveryIntent], str | None], journaled: Event
+) -> Callable[[RecoveryIntent], str | None]:
+    """The recovery callback, waking the conflict sweep when it journals a conflict."""
+
+    def recover(*, intent: RecoveryIntent) -> str | None:
+        receipt = callback(intent)
+        if is_conflict_receipt(receipt=receipt):
+            journaled.set()
+        return receipt
+
+    return lambda intent: recover(intent=intent)
 
 
 def main() -> int:

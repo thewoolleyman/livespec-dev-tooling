@@ -12,14 +12,25 @@ repository lock. Exactly one revert per action is the principal's rule, kept by 
 durable publication ledger: an open attempt re-sends its one recorded commit, and a
 new attempt starts only when no earlier one can have landed.
 
-The reply's receipt is not yet canonical. Recording it in the incident's chain is the
-orchestrator's `record-revert-receipt` action, which this route does not call.
+The reply's receipt is not yet canonical. Recording a revert receipt in the incident's
+chain is the orchestrator's `record-revert-receipt` action, which this route does not
+call. A journaled rollback-conflict receipt is different: this route writes it onto the
+chain through `ConflictPublication`, so a conflict recorded while the tenant was
+unavailable still blocks the incident item once the tenant returns.
+
+No slow call runs under the observer's repository fence here: the principal's `lookup`
+and the chain write both run between short fenced reads and writes of the protected
+state, so a first-failure callback never waits behind them. The conflict sweep
+(`incident_conflict_sweep`) settles actions through this same route with
+`automatic=True`, which honours the publication's back-off and terminal state.
 """
 
 from __future__ import annotations
 
 import re
-from dataclasses import asdict, dataclass
+import time
+from collections.abc import Callable
+from dataclasses import asdict, dataclass, field, replace
 from typing import Any, cast
 
 from livespec_dev_tooling._incident_observer_ack import recovery_action_id
@@ -35,6 +46,8 @@ from livespec_dev_tooling._incident_recovery_journal_cause import (
     decode_completion,
     decode_regression,
 )
+from livespec_dev_tooling.incident_conflict_chain import ConflictChain, is_conflict_receipt
+from livespec_dev_tooling.incident_conflict_publication import ConflictPublication
 from livespec_dev_tooling.incident_controller_installation import ControllerInstallation
 from livespec_dev_tooling.incident_inverse import observer_inverse_callback
 from livespec_dev_tooling.incident_inverse_service import ProcessInverseForge
@@ -55,6 +68,7 @@ class ObserverReconcile:
     """Resolve one retained action; every effect goes through the installed principal."""
 
     installation: ControllerInstallation
+    clock: Callable[[], float] = field(default=time.time, compare=False, repr=False)
 
     def execute(self, *, path: str, payload: dict[str, Any]) -> dict[str, Any]:
         del path
@@ -66,27 +80,48 @@ class ObserverReconcile:
             or type(retry) is not bool
         ):
             return _refused(reason="exact repository, action_id and retry_publish required")
+        return asdict(self.settle(action_id=action_id, retry=retry, automatic=False))
+
+    def settle(self, *, action_id: str, retry: bool, automatic: bool) -> ObserverResult:
+        """Settle one retained action's receipt, then write a conflict receipt to the chain."""
         settings = self.installation
         with repository_lock(directory=settings.state, repository=settings.repository) as path_:
             action = _actions(record=load_record(path=path_)).get(action_id)
         if action is None:
-            return _refused(reason="unknown exact action receipt")
+            return ObserverResult(status="refused", reason="unknown exact action receipt")
         intent = _retained_intent(action_id=action_id, action=action)
         if intent is None:
-            return _refused(reason="missing immutable action authority")
+            return ObserverResult(status="refused", reason="missing immutable action authority")
         forge = ProcessInverseForge(
             command=settings.principal, timeout_seconds=_PRINCIPAL_TIMEOUT_SECONDS
         )
+        known = action.get("receipt")
+        looked_up = None if known else _exact_receipt(forge=forge, intent=intent)
         result = reconcile_action_receipt(
             directory=settings.state,
             repository=settings.repository,
             action_id=action_id,
-            read_exact_receipt=lambda _action: _exact_receipt(forge=forge, intent=intent),
+            read_exact_receipt=lambda _action: looked_up,
             publish_receipt=lambda _authority, _action, _receipt: False,
         )
         if result.status == "pending" and retry:
             result = self._retry(intent=intent, forge=forge)
-        return asdict(result)
+        receipt = result.receipt
+        if result.status == "reconciled" or not is_conflict_receipt(receipt=receipt):
+            return result
+        published = ConflictPublication(
+            state=settings.state,
+            repository=settings.repository,
+            chain=ConflictChain.installed(
+                command=settings.reader, release=settings.reader_release, repo=settings.repo
+            ),
+            clock=self.clock,
+        ).publish(intent=intent, receipt=cast("str", receipt), automatic=automatic)
+        return replace(
+            result,
+            status="reconciled" if published.status == "reconciled" else result.status,
+            reason=f"rollback-conflict {published.status}: {published.reason}",
+        )
 
     def _retry(self, *, intent: RecoveryIntent, forge: ProcessInverseForge) -> ObserverResult:
         settings = self.installation

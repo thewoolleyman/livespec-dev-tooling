@@ -247,7 +247,8 @@ def test_startup_requires_installed_inverse_before_any_listener(controller, monk
         ),
     }
     monkeypatch.setattr(service.importlib, "import_module", lambda name: modules[name])
-    assert service.ControllerService.installed(config=tmp_path) == application
+    installed = service.ControllerService.installed(config=tmp_path)
+    assert installed is not None and installed.installation == application.installation
     monkeypatch.setattr(service.importlib, "import_module", lambda _: SimpleNamespace())
     assert service.ControllerService.installed(config=tmp_path) is None
     monkeypatch.setattr(service.ControllerInstallation, "load", lambda **_: None)
