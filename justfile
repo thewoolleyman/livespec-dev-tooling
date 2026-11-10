@@ -340,6 +340,7 @@ check:
         check-wrapper-shape
         check-ansible-lint
         check-ansible-hostname-free
+        check-ansible-get-url-checksum
         check-dev-host-fabro-client-bins-declared
         check-lint
         check-format
@@ -403,6 +404,14 @@ check-ansible-lint:
 # role value equals an inventory host name or carries its tailnet name.
 check-ansible-hostname-free:
     uv run python -m livespec_dev_tooling.ansible_hostname_free
+
+# `get_url` does not download under `--check`: with no `checksum:` it compares
+# the destination against an empty temporary file and reports `changed` on a host
+# that is already converged (livespec-dev-tooling-7g5qba). Every `get_url` task
+# under `ansible/roles/*/tasks` pins a checksum or records a
+# `# check-mode-exempt: <why>` comment.
+check-ansible-get-url-checksum:
+    uv run python -m livespec_dev_tooling.ansible_get_url_checksum
 
 # Every `dispatcher.factories.<name>.bin` this repository commits names the
 # `path` of one `fabro_client_builds` entry, so the Fabro client a Dispatcher
