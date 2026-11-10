@@ -164,6 +164,7 @@ def _run_check(
     return returncode, capsys.readouterr().err
 
 
+@pytest.mark.integration
 def test_range_fails_naming_the_commit_and_module_whose_recorded_test_cannot_be_collected(
     *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -180,6 +181,7 @@ def test_range_fails_naming_the_commit_and_module_whose_recorded_test_cannot_be_
     assert "range-missing-trailers" not in stderr
 
 
+@pytest.mark.integration
 def test_range_passes_when_every_recorded_test_collects_on_its_own_tree(
     *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
