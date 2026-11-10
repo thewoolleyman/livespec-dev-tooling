@@ -89,6 +89,15 @@ spec:
               cp -f reports/mutation-kill-matrix.json "$out/" 2>/dev/null || true
               exit "${rc}"
           env:
+            # The clones on the PVC are fresh checkouts that carry a
+            # `.mise.toml`, and the image's `uv` resolves through mise, which
+            # refuses an untrusted config: the first launch (run 20261110t1)
+            # failed 22 s in with `Config files in /data/orchestrator/.mise.toml
+            # are not trusted`. The gate Jobs never meet this because their
+            # tree is the image's trusted /workspace; these trees live on the
+            # PVC, so they are trusted here, by path.
+            - name: MISE_TRUSTED_CONFIG_PATHS
+              value: /data/orchestrator:/data/dev-tooling
             - name: UV_CACHE_DIR
               value: /data/uv-cache
             - name: PYTHONDONTWRITEBYTECODE

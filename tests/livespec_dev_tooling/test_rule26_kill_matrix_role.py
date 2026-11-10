@@ -117,3 +117,28 @@ def test_the_renderer_refuses_a_short_commit() -> None:
     )
     assert refused.returncode == 2
     assert "--orchestrator-sha must be a full 40-hex commit" in refused.stderr
+
+
+def test_the_rendered_job_trusts_the_mise_config_of_both_clones() -> None:
+    """The image's `uv` resolves through mise, which refuses an untrusted clone's config.
+
+    The first launch, run 20261110t1, failed 22 s in with `Config files in
+    /data/orchestrator/.mise.toml are not trusted`.
+    """
+    rendered = subprocess.run(
+        [str(_RENDERER), "--orchestrator-sha", "a" * 40, "--engine-sha", "b" * 40, "--run", "t1"],
+        capture_output=True,
+        check=True,
+        text=True,
+        env={"PATH": "/usr/bin:/bin"},
+    ).stdout
+    job = rendered.split("kind: Job", 1)[1]
+    env = job.split("env:", 1)[1].split("resources:", 1)[0]
+    assert "- name: MISE_TRUSTED_CONFIG_PATHS\n" in env
+    trusted = env.split("- name: MISE_TRUSTED_CONFIG_PATHS\n", 1)[1].splitlines()[0]
+    assert trusted.strip() == "value: /data/orchestrator:/data/dev-tooling"
+    assert (
+        "git clone --quiet https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro /data/orchestrator"
+        in job
+    )
+    assert "/data/dev-tooling" in job
