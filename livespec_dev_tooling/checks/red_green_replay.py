@@ -97,6 +97,7 @@ import structlog  # noqa: E402  — vendor-path-aware import after sys.path inse
 # (cycle 4c LLOC reduction). The leading underscore in the module
 # name marks it as a private helper rather than a check entry
 # point.
+from _red_green_replay_collect import collect_recorded_tests  # noqa: E402  — sibling private import
 from _red_green_replay_incident import (  # noqa: E402  — sibling private import
     admitted_by_recorded_incident,
 )
@@ -417,6 +418,7 @@ def _validate_range() -> int:
     no diff of its own. On `master` itself the range is empty and the
     gate trivially passes.
     """
+    log = _configure_logger()
     base_probe = subprocess.run(
         ["git", "rev-parse", "--verify", "--quiet", _RANGE_BASE],
         capture_output=True,
@@ -424,7 +426,6 @@ def _validate_range() -> int:
         check=False,
     )
     if base_probe.returncode != 0:
-        log = _configure_logger()
         log.error(
             "range base origin/master is not resolvable; the commit-range "
             "validation cannot enumerate origin/master..HEAD and MUST NOT "
@@ -441,8 +442,7 @@ def _validate_range() -> int:
     shas = _git_stdout_lines(args=["rev-list", "--no-merges", f"{_RANGE_BASE}..HEAD"])
     violating = [sha for sha in shas if _commit_violates(sha=sha)]
     if not violating:
-        return 0
-    log = _configure_logger()
+        return collect_recorded_tests(shas=shas, base_ref=_RANGE_BASE, log=log)
     log.error(
         "commits in origin/master..HEAD touch product impl .py without a "
         "valid TDD trailer shape: either the TDD-Red-*/TDD-Green-* pair "

@@ -106,8 +106,10 @@ from types import ModuleType
 from typing import NamedTuple
 
 import pytest
+import structlog.testing
 from returns.io import IOFailure
 
+from livespec_dev_tooling.checks import _red_green_replay_collect
 from livespec_dev_tooling.checks._red_green_replay_trailers import GitCommandFailed
 from livespec_dev_tooling.config import (
     Config,
@@ -2883,13 +2885,22 @@ def test_no_arg_range_commit_with_suite_green_shape_exits_zero(
 def test_no_arg_range_commit_with_full_trailer_shape_exits_zero(
     *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """No argv + a range commit touching product `.py` WITH both trailer sets → exit 0."""
+    """No argv + a range commit touching product `.py` WITH both trailer sets → exit 0.
+
+    The recorded `TDD-Red-Test` module must also collect on the commit's own
+    tree (work-item livespec-dev-tooling-5be65c), so the fixture ships one.
+    """
     _init_range_repo(tmp_path=tmp_path)
     (tmp_path / "livespec").mkdir()
     (tmp_path / "livespec" / "foo.py").write_text("VALUE: int = 1\n", encoding="utf-8")
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "tests" / "test_foo.py").write_text(
+        "def test_value() -> None:\n    assert True\n", encoding="utf-8"
+    )
     message = (
         "feat: add a feature\n"
         "\n"
+        "TDD-Red-Test: tests/test_foo.py\n"
         "TDD-Red-Test-File-Checksum: sha256:deadbeef\n"
         "TDD-Green-Verified-At: 2026-06-02T00:00:00Z\n"
     )
@@ -3945,6 +3956,27 @@ def test_main_renders_the_consumer_config_parse_failure(
         monkeypatch=monkeypatch,
         capsys=capsys,
     )
+
+
+def test_range_collection_renders_the_consumer_config_parse_failure(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The collection leg loads the config itself, so it renders a parse failure too.
+
+    `main()`'s pre-flight load normally fails first; the leg is also callable
+    on its own, and a `ConfigParseError` escaping from it would put the
+    interpreter's traceback back on stderr (work-item livespec-dev-tooling-5be65c).
+    """
+    (tmp_path / "pyproject.toml").write_text("not [toml", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+
+    with structlog.testing.capture_logs() as logs:
+        returncode = _red_green_replay_collect.collect_recorded_tests(
+            shas=[], base_ref="origin/master", log=structlog.get_logger("collect")
+        )
+
+    assert returncode == 1
+    assert [entry["event"] for entry in logs] == ["consumer config parse failed"]
 
 
 # The pre-conversion `git` spawn count from the module docstring's inventory
