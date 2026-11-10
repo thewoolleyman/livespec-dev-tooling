@@ -2293,9 +2293,8 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: the incident fleet audit command refuses enablement for a consumer without verified serving evidence",
-    "test": "TODO",
-    "reason": "A real test at the integration tier or above is owed for this heading: the incident-fleet-audit recipe must be run as a child process against a fixture manifest and fake serving-version readers, and the enablement step must refuse a repository missing from its ready list; livespec-dev-tooling-3wcldx owns it.",
-    "work_item": "livespec-dev-tooling-3wcldx"
+    "test": "tests.livespec_dev_tooling.test_incident_fleet_cli.test_with_production_readers_an_unreadable_controller_is_left_out_named_and_refused",
+    "reason": "Integration-tier: the real audit and enablement entry points run with the production git transport and the production host serving reader against a fixture core manifest and fixture installed consumers; a consumer whose controller serving version cannot be read is unclassified, left out of the ready list, named in the findings, and the enablement step refuses it, naming the missing evidence, and enables nothing (livespec-dev-tooling-3wcldx)."
   },
   {
     "spec_root": "SPECIFICATION",

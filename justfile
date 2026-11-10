@@ -410,6 +410,24 @@ ansible-apply *args:
 git-identity-audit output fabro_evidence:
     uv run python -m livespec_dev_tooling.fleet.git_identity_audit "$1" "$2"
 
+# Operator-invoked incident fleet audit. It reads livespec core's committed
+# fleet manifest from core's master, reads each installed consumer's and the
+# running independent controller's serving version from this host, prints one
+# row per incident surface and consumer, then the findings and the ready list,
+# and exits non-zero unless every row is classified. It is a local-vantage
+# report: deliberately absent from `just check` and CI, it carries no run lever
+# and it enables, mutates and credentials nothing.
+incident-fleet-audit:
+    uv run python -m livespec_dev_tooling.incident_fleet_cli audit
+
+# The one step that enables incident use for a repository. It runs its own
+# fresh audit against core's current master and enables the repository only if
+# that audit's ready list names it; otherwise it refuses, enables nothing and
+# names the repository and the missing evidence. It accepts no ready list.
+[positional-arguments]
+incident-enable repository:
+    uv run python -m livespec_dev_tooling.incident_fleet_cli enable "$1"
+
 check-lint:
     uv run ruff check .
 
