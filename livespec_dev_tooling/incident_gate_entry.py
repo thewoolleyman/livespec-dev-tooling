@@ -9,7 +9,10 @@ recipes, the delegated gate clients, the detached runner's venue selection and
 boundary's shared flag parser and its registered-authority trust path, so there
 is exactly one parser and one notion of a trusted incident context.
 
-Three outcomes, mirroring the hook entrance:
+A trusted normal origin (`incident_trusted_origin`: a master-push CI job or a
+factory sandbox) is resolved first and continues its complete normal body with
+any inherited flag, malformed values included. Otherwise three outcomes,
+mirroring the hook entrance:
 
 - both flags unset (or explicitly false): `normal`, and the caller's complete
   normal body continues unchanged;
@@ -36,7 +39,9 @@ from pathlib import Path
 from livespec_dev_tooling.incident_execution import (
     EXPEDITED_INCIDENT_RESPONSE,
     EXPEDITED_INCIDENT_RESPONSE_REVERT,
+    Invocation,
     parse_incident_truth_value,
+    resolve_execution_context,
 )
 from livespec_dev_tooling.incident_hook_entry import LOCAL_OPERATION_ENV, QUERY_ENV
 from livespec_dev_tooling.incident_hook_process import (
@@ -45,6 +50,7 @@ from livespec_dev_tooling.incident_hook_process import (
     parse_query,
     resolve_current,
 )
+from livespec_dev_tooling.incident_trusted_origin import trusted_invocation
 
 _VENDOR_DIR = Path(__file__).resolve().parent / "_vendor"
 if str(_VENDOR_DIR) not in sys.path:
@@ -112,10 +118,19 @@ def _trust_current() -> None:
     _ = resolve_current(reading=reading, query=query)
 
 
-def resolve_entrance(*, surface: str, launcher: bool = False) -> EntranceDecision:
-    """Decide one entrance's mode before its first selection, probe or submission."""
-    if surface not in ENTRANCES:
-        return _refused(surface=surface, code="unknown-entrance", detail="not a gate entrance")
+def _trusted_normal_decision() -> EntranceDecision | None:
+    """Force normal in a trusted master or factory origin, before any flag is parsed."""
+    invocation = trusted_invocation(environ=os.environ, repo=Path.cwd())
+    if invocation == Invocation.ORDINARY:
+        return None
+    context = resolve_execution_context(
+        environ=os.environ, invocation=invocation, identity=None
+    ).unwrap()
+    return EntranceDecision(mode=context.mode, status=NORMAL)
+
+
+def _ambient_decision(*, surface: str, launcher: bool) -> EntranceDecision:
+    """Resolve ordinary ambient flags once no trusted normal origin applies."""
     flags = [
         parse_incident_truth_value(name=name, value=os.environ.get(name))
         for name in (EXPEDITED_INCIDENT_RESPONSE, EXPEDITED_INCIDENT_RESPONSE_REVERT)
@@ -136,6 +151,13 @@ def resolve_entrance(*, surface: str, launcher: bool = False) -> EntranceDecisio
             detail="incident gates run only through the installed commit/push hook entrance",
         )
     return EntranceDecision(mode="incident", status=NORMAL)
+
+
+def resolve_entrance(*, surface: str, launcher: bool = False) -> EntranceDecision:
+    """Decide one entrance's mode before its first selection, probe or submission."""
+    if surface not in ENTRANCES:
+        return _refused(surface=surface, code="unknown-entrance", detail="not a gate entrance")
+    return _trusted_normal_decision() or _ambient_decision(surface=surface, launcher=launcher)
 
 
 def entrance_refusal(*, surface: str) -> int | None:
