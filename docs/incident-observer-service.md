@@ -213,8 +213,12 @@ answering 503, and GitHub never redelivers it. So the write never runs under the
   tick. The fleet's supervisor discipline allows no broad catch in a daemon loop
   (`check-no-except-outside-io`). So any other exception ends the sweep thread with
   its traceback on stderr, shuts the server down, and the service exits 1; the unit's
-  `Restart=on-failure` restarts it. The sweep never stops silently while the service
-  keeps answering.
+  `Restart=on-failure` restarts it. The unit sets `StartLimitIntervalSec=300` and
+  `StartLimitBurst=5`, so a crash on every start ends in `failed` after five starts
+  instead of looping forever with the webhook listener down. The sweep never stops
+  silently while the service keeps answering. An action entry the sweep cannot read
+  is never a crash: it is quarantined, journaled once under `sweep_quarantine` with
+  what is wrong with it, named on stderr, and skipped.
 - **The fence discipline** (`incident_conflict_publication.ConflictPublication`):
   the lock is held for a snapshot (the action still holds this exact receipt, is
   not `reconciled`, has no terminal state, and its back-off has expired). It is

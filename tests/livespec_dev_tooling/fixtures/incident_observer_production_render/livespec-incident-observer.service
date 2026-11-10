@@ -10,6 +10,12 @@
 Description=Independent released incident observer
 After=network-online.target
 Wants=network-online.target
+# A crash loop must end in `failed`, visibly, not restart forever: the default limit
+# (5 starts in 10 s) can never trip with RestartSec=2 plus any run time. Five starts in
+# 300 s lets a transient failure (a tenant blip, a port still held) recover by itself
+# while a deterministic crash on every start stops after about a minute of retries.
+StartLimitIntervalSec=300
+StartLimitBurst=5
 
 [Service]
 Type=simple

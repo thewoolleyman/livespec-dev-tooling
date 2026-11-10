@@ -176,6 +176,33 @@ def test_the_dev_host_play_runs_the_role_behind_the_tailnet_front() -> None:
     assert "backend: http://127.0.0.1:8765" in vps
 
 
+def test_a_crash_loop_ends_in_failed_rather_than_restarting_forever() -> None:
+    """Restart=on-failure with RestartSec=2 never trips systemd's default 5-in-10s limit.
+
+    The service exits 1 whenever its conflict sweep or original-run watcher dies, so a
+    crash on every start would take the webhook listener down every few seconds forever.
+    Both the role's unit and the packaged provisioning unit bound it in `[Unit]`, and the
+    bound must be reachable: StartLimitBurst starts spaced RestartSec apart fit inside
+    StartLimitIntervalSec.
+    """
+    packaged = _REPO_ROOT / "livespec_dev_tooling" / "data" / "incident-observer.service"
+    for path in (_ROLE / "templates" / "livespec-incident-observer.service.j2", packaged):
+        text = path.read_text(encoding="utf-8")
+        unit_section = text.split("[Unit]", 1)[1].split("[Service]", 1)[0]
+        settings = dict(
+            line.split("=", 1)
+            for line in text.splitlines()
+            if "=" in line and not line.startswith("#")
+        )
+        burst, interval = int(settings["StartLimitBurst"]), int(settings["StartLimitIntervalSec"])
+        assert "StartLimitIntervalSec=300" in unit_section, path
+        assert "StartLimitBurst=5" in unit_section, path
+        assert settings["Restart"] == "on-failure", path
+        assert burst * int(settings["RestartSec"]) < interval, path
+    readme = (_ROLE / "README.md").read_text(encoding="utf-8")
+    assert "StartLimitIntervalSec=300" in readme and "StartLimitBurst=5" in readme
+
+
 def test_the_unit_keeps_the_packaged_confinement() -> None:
     unit = (_ROLE / "templates" / "livespec-incident-observer.service.j2").read_text(
         encoding="utf-8"
