@@ -26,6 +26,16 @@ _DECIDE = "      - name: Decide the ONE step this run takes\n"
 _OWNERSHIP = "      - name: Ask the incident observer who owns this step\n"
 _PERFORM = "      - name: Perform the ONE step\n"
 _GATE = "        if: steps.ownership.outputs.status == 'ordinary'\n"
+_PUBLIC_URL_VARIABLE = "LIVESPEC_INCIDENT_OBSERVER_PUBLIC_URL"
+_PUBLIC_URL_ENV = (
+    "          LIVESPEC_INCIDENT_OBSERVER_URL: "
+    "${{ vars.LIVESPEC_INCIDENT_OBSERVER_PUBLIC_URL || vars.LIVESPEC_INCIDENT_OBSERVER_URL }}"
+)
+_PUBLIC_CONNECT_ENV = (
+    "          LIVESPEC_INCIDENT_OBSERVER_CONNECT_ADDR: "
+    "${{ !vars.LIVESPEC_INCIDENT_OBSERVER_PUBLIC_URL "
+    "&& vars.LIVESPEC_INCIDENT_OBSERVER_CONNECT_ADDR || '' }}"
+)
 _MUTATIONS = (
     "gh run rerun",
     "gh api graphql",
@@ -75,14 +85,51 @@ def test_the_question_is_bounded_and_reads_the_callers_observer_configuration():
     assert "        id: ownership\n" in ownership
     assert bound is not None
     assert 0 < int(bound.group(1)) <= 10
-    assert "LIVESPEC_INCIDENT_OBSERVER_URL: ${{ vars.LIVESPEC_INCIDENT_OBSERVER_URL }}" in ownership
-    assert (
-        "LIVESPEC_INCIDENT_OBSERVER_CONNECT_ADDR: "
-        "${{ vars.LIVESPEC_INCIDENT_OBSERVER_CONNECT_ADDR }}" in ownership
-    )
+    assert _PUBLIC_URL_ENV in ownership
+    assert _PUBLIC_CONNECT_ENV in ownership
     assert (
         "LIVESPEC_INCIDENT_OBSERVER_QUERY_TOKEN: "
         "${{ secrets.LIVESPEC_INCIDENT_OBSERVER_QUERY_TOKEN }}" in ownership
+    )
+
+
+def test_a_public_observer_url_is_dialed_by_name_and_otherwise_nothing_changes():
+    """livespec-dev-tooling-jpfdcx: the hosted reconciler reaches the observer's Funnel route.
+
+    The maintainer ruled (option A, 2026-11-10) that `POST /ordinary-action` is
+    published through the observer's path-scoped Funnel and that the reconciler
+    reads a NEW reconciler-only variable for it. Set, it is the observer URL and
+    no connect-address override is passed, because the override dials the
+    tailnet literal a hosted runner cannot reach. Unset, the step reads exactly
+    the two variables it read before.
+    """
+    ownership = _step(body=REUSABLE_RECONCILER_BODY, name=_OWNERSHIP)
+    env = ownership.partition("        env:\n")[2].partition("        run: |\n")[0]
+
+    assert env.splitlines() == [
+        "          REPO: ${{ github.repository }}",
+        _PUBLIC_URL_ENV,
+        _PUBLIC_CONNECT_ENV,
+        "          LIVESPEC_INCIDENT_OBSERVER_QUERY_TOKEN: "
+        "${{ secrets.LIVESPEC_INCIDENT_OBSERVER_QUERY_TOKEN }}",
+    ]
+
+
+def test_the_public_observer_url_is_read_by_the_reconciler_alone():
+    """The k3s incident CI job keeps the tailnet URL and connect address it reads today."""
+    workflows = _REPO_ROOT / ".github" / "workflows"
+    readers = sorted(
+        path.name
+        for path in workflows.glob("*.yml")
+        if _PUBLIC_URL_VARIABLE in path.read_text(encoding="utf-8")
+    )
+    ci = (workflows / "ci.yml").read_text(encoding="utf-8")
+
+    assert readers == ["reusable-master-health-reconcile.yml"]
+    assert (
+        "          LIVESPEC_INCIDENT_OBSERVER_URL: ${{ vars.LIVESPEC_INCIDENT_OBSERVER_URL }}\n"
+        "          LIVESPEC_INCIDENT_OBSERVER_CONNECT_ADDR: "
+        "${{ vars.LIVESPEC_INCIDENT_OBSERVER_CONNECT_ADDR }}\n" in ci
     )
 
 

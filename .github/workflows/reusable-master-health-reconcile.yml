@@ -478,13 +478,20 @@ jobs:
       # policy runs exactly as before. The step bound keeps a slow observer
       # from holding this queued, never-cancelled reconciler for the job's
       # default six hours.
+      # A hosted runner cannot reach the tailnet, so a repository that sets the
+      # reconciler-only variable LIVESPEC_INCIDENT_OBSERVER_PUBLIC_URL is asked
+      # through the observer's public Funnel route by name, with no connect-
+      # address override. Unset, the step reads LIVESPEC_INCIDENT_OBSERVER_URL
+      # and its connect address exactly as before, the pair the k3s incident CI
+      # job also reads (livespec-dev-tooling-jpfdcx; docs/master-health-
+      # reconciler.md in livespec-dev-tooling).
       - name: Ask the incident observer who owns this step
         id: ownership
         timeout-minutes: 5
         env:
           REPO: ${{ github.repository }}
-          LIVESPEC_INCIDENT_OBSERVER_URL: ${{ vars.LIVESPEC_INCIDENT_OBSERVER_URL }}
-          LIVESPEC_INCIDENT_OBSERVER_CONNECT_ADDR: ${{ vars.LIVESPEC_INCIDENT_OBSERVER_CONNECT_ADDR }}
+          LIVESPEC_INCIDENT_OBSERVER_URL: ${{ vars.LIVESPEC_INCIDENT_OBSERVER_PUBLIC_URL || vars.LIVESPEC_INCIDENT_OBSERVER_URL }}
+          LIVESPEC_INCIDENT_OBSERVER_CONNECT_ADDR: ${{ !vars.LIVESPEC_INCIDENT_OBSERVER_PUBLIC_URL && vars.LIVESPEC_INCIDENT_OBSERVER_CONNECT_ADDR || '' }}
           LIVESPEC_INCIDENT_OBSERVER_QUERY_TOKEN: ${{ secrets.LIVESPEC_INCIDENT_OBSERVER_QUERY_TOKEN }}
         run: |
           set -euo pipefail
