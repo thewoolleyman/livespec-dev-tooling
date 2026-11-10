@@ -3238,6 +3238,9 @@ Then a trusted expedited PR signal selects the declared fast checks while record
 And mixed CI batches and direct actions execute retained fast targets and publish a required aggregate that distinguishes actual passes, failures and deferred work.
 And a new PR head invalidates earlier incident verdicts and label events reconcile mode before permitting merge.
 And every normal master push disables both incident flags and selects its complete normal job graph regardless of PR labels, markers or ambient configuration.
+And the reusable check matrix honours an incident-omitted list only on a pull_request that carries the trusted incident label and has a same-repository head, and each leg it omits reports omitted-by-incident-policy under its real check name.
+And that workflow runs every requested check on a master push or any other event whatever the input carries, and fails a leg closed on an input that is not a JSON array of strings.
+And a caller that wires incident-omitted from anything other than its incident-ci job's guarded output is refused by the repository conformance check on callers.
 ```
 
 ## Scenario: the first required master leaf failure fences incident recovery
