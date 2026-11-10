@@ -187,8 +187,10 @@ _ANSIBLE_MANAGED = "Ansible managed"
 
 # `hp-xubuntu`'s fleet unit as the role rendered it BEFORE `binary_path` and
 # `home_env` existed: `templates/fabro-server.service.j2` at c5e39a11, substituted
-# with that host's committed host_vars and the role's own defaults. The scenario's
-# first Then is byte-identity with this.
+# with that host's committed host_vars and the role's own defaults, plus the
+# TimeoutStartSec block the role added to EVERY instance's unit on 2026-11-10
+# (fix/fabro-server-start-timeout), which is not an axis and so belongs in the
+# baseline. The scenario's first Then is byte-identity with this.
 _PRE_AXIS_UNIT = """\
 # Ansible managed
 [Unit]
@@ -227,6 +229,12 @@ ExecStart=/home/cwoolley/.fabro/bin/fabro server start --foreground --bind 127.0
 ExecStartPost=/usr/local/libexec/fabro-server-verify-web
 Restart=always
 RestartSec=5
+# The verifier's budget above only holds if systemd lets it run. Without this
+# line systemd's default TimeoutStartSec (90s) killed ExecStartPost first, so
+# FABRO_WEB_VERIFY_ATTEMPTS=300 bought nothing: on 2026-11-10 at 20:26Z a
+# restart of vps's fabro-server under load ~35 crash-looped at exactly 90s per
+# attempt while SlateDB warmed its projection cache.
+TimeoutStartSec=600
 TimeoutStopSec=90
 
 [Install]
