@@ -627,6 +627,56 @@ def test_an_idle_detached_gate_run_and_an_idle_waiter_spawn_no_per_tick_process(
     assert "FAILED" in stdout
 
 
+_REPORT_SHIMMED: tuple[str, ...] = ("cat", "cut", "git")
+
+
+def _report_spawns(*, tmp_path: Path, repo: Path, subcommand: str) -> dict[str, int]:
+    """Exec counts of `_REPORT_SHIMMED` for one `subcommand` run on a finished record."""
+    shims = tmp_path / f"shims-{subcommand}"
+    shims.mkdir()
+    log = tmp_path / f"{subcommand}-spawns.log"
+    for name in _REPORT_SHIMMED:
+        real = shutil.which(name)
+        assert real is not None, name
+        shim = shims / name
+        _ = shim.write_text(
+            f'#!/bin/sh\nprintf \'%s\\n\' "{name}" >> "{log}"\nexec {real} "$@"\n',
+            encoding="utf-8",
+        )
+        shim.chmod(0o755)
+    env = {key: value for key, value in os.environ.items() if key not in _GIT_ENV_VARS}
+    env["PATH"] = f"{shims}{os.pathsep}{env['PATH']}"
+    done = subprocess.run(
+        ["bash", str(Path("dev-tooling") / _SCRIPT), subcommand, _RUN_ID],
+        cwd=str(repo),
+        env=env,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert done.returncode == 0, f"{done.stdout}{done.stderr}"
+    spawned = log.read_text(encoding="utf-8").splitlines() if log.is_file() else []
+    return {name: spawned.count(name) for name in _REPORT_SHIMMED}
+
+
+def test_the_report_after_a_verdict_forks_no_process_per_record_field(*, tmp_path: Path) -> None:
+    """`wait` reads the record with builtins and resolves the run directory once."""
+    repo = _init_repo(tmp_path=tmp_path)
+    _record_run(repo=repo, output_log=_PARALLEL_LOG, exit_code="0")
+    run_dir = repo / "tmp" / "gate-runs" / _RUN_ID
+    _write(path=run_dir / "CORE_BARE_FLIP", text="core.bare flipped\n")
+    _write(path=run_dir / "job_name", text="check-per-file-coverage\n")
+    _write(path=run_dir / "tree_hash", text="abc123\n")
+
+    status = _report_spawns(tmp_path=tmp_path, repo=repo, subcommand="status")
+    waited = _report_spawns(tmp_path=tmp_path, repo=repo, subcommand="wait")
+
+    assert waited["cat"] == 0, waited
+    assert waited["cut"] == 0, waited
+    assert status["git"] > 0
+    assert waited["git"] == status["git"], (status, waited)
+
+
 @pytest.mark.integration
 def test_gate_wait_reports_the_gates_own_exit_code_for_a_finished_detached_run(
     *, fixture_repo: tuple[Path, Path, dict[str, str]]

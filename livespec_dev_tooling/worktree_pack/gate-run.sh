@@ -406,15 +406,6 @@ derive_state() {
     printf '%s' "$STATE"
 }
 
-state_exit_code() {
-    local dir="$1" state="$2"
-    case "$state" in
-        PASSED) printf '0' ;;
-        FAILED) cat "$dir/exit_code" ;;
-        *) printf '%s' "$EX_NO_VERDICT" ;;
-    esac
-}
-
 # ---------------------------------------------------------------------
 # .git/config write-watch (livespec-p32m6d, folded into trfzkw)
 #
@@ -1077,42 +1068,77 @@ report_target_evidence() {
     fi
 }
 
-cmd_status() {
-    local run_id="${1:-}"
-    if [[ -z "$run_id" ]]; then
-        run_id="$(latest_run_id)" || {
-            printf 'no gate runs recorded\n' >&2
-            return "$EX_USAGE"
-        }
+# Set the variable named by `$1` to the contents of file `$2`, or to `?`
+# when the file is absent or unreadable. Builtins only (`read`, `[[ ]]`,
+# `printf -v`): the report after a verdict reads a dozen record fields, and a
+# `cat` per field is a fork and exec each, which a CPU-throttled CI runner
+# stretches past `wait`'s five-second return budget. Trailing newlines are
+# stripped, as `$(cat file)` strips them; `$3` = raw keeps them.
+field_into() {
+    local __name="$1" __file="$2" __raw="${3:-}" __value=""
+    if [[ ! -f "$__file" || ! -r "$__file" ]]; then
+        printf -v "$__name" '%s' '?'
+        return
     fi
-    local dir state
-    dir="$(run_dir_for_read "$run_id")" || {
-        unknown_run "$run_id"
-        return "$EX_USAGE"
-    }
-    state="$(derive_state "$dir")"
+    IFS= read -r -d '' __value <"$__file" || true
+    if [[ "$__raw" != "raw" ]]; then
+        while [[ "$__value" == *$'\n' ]]; do
+            __value="${__value%$'\n'}"
+        done
+    fi
+    printf -v "$__name" '%s' "$__value"
+}
+
+# Print the report for a run directory already resolved by the caller. The
+# state is derived here with builtins, so neither `status` nor `wait`
+# re-resolves the run through git or forks a process per record field.
+report_run() {
+    local run_id="$1" dir="$2" state
+    derive_state_into "$dir"
+    state="$STATE"
 
     if [[ "$state" == "UNKNOWN_RUN" ]]; then
         unknown_run "$run_id"
         return "$EX_USAGE"
     fi
 
+    local label venue venue_reason command worktree branch head started_at
+    local job_name tree_hash finished_at exit_code pid
+    field_into label "$dir/label"
+    field_into venue "$dir/venue"
+    field_into venue_reason "$dir/venue_reason"
+    field_into command "$dir/command" raw
+    command="${command//$'\n'/ }"
+    field_into worktree "$dir/worktree"
+    field_into branch "$dir/branch"
+    field_into head "$dir/head"
+    [[ "$head" == "?" ]] || head="${head:0:8}"
+    field_into started_at "$dir/started_at"
+
     printf '=== gate run %s ===\n' "$run_id"
     printf '  state             : %s\n' "$state"
-    printf '  label             : %s\n' "$(cat "$dir/label" 2>/dev/null || echo '?')"
-    printf '  venue             : %s (%s)\n' \
-        "$(cat "$dir/venue" 2>/dev/null || echo '?')" \
-        "$(cat "$dir/venue_reason" 2>/dev/null || echo '?')"
-    [[ -f "$dir/job_name" ]] && printf '  Job name          : %s\n' "$(cat "$dir/job_name")"
-    [[ -f "$dir/tree_hash" ]] && printf '  tree hash         : %s\n' "$(cat "$dir/tree_hash")"
-    printf '  command           : %s\n' "$(tr '\n' ' ' <"$dir/command" 2>/dev/null || echo '?')"
-    printf '  worktree          : %s\n' "$(cat "$dir/worktree" 2>/dev/null || echo '?')"
-    printf '  branch @ head     : %s @ %s\n' \
-        "$(cat "$dir/branch" 2>/dev/null || echo '?')" \
-        "$(cut -c1-8 "$dir/head" 2>/dev/null || echo '?')"
-    printf '  started_at        : %s\n' "$(cat "$dir/started_at" 2>/dev/null || echo '?')"
-    [[ -f "$dir/finished_at" ]] && printf '  finished_at       : %s\n' "$(cat "$dir/finished_at")"
-    [[ -f "$dir/exit_code" ]] && printf '  exit_code         : %s\n' "$(cat "$dir/exit_code")"
+    printf '  label             : %s\n' "$label"
+    printf '  venue             : %s (%s)\n' "$venue" "$venue_reason"
+    if [[ -f "$dir/job_name" ]]; then
+        field_into job_name "$dir/job_name"
+        printf '  Job name          : %s\n' "$job_name"
+    fi
+    if [[ -f "$dir/tree_hash" ]]; then
+        field_into tree_hash "$dir/tree_hash"
+        printf '  tree hash         : %s\n' "$tree_hash"
+    fi
+    printf '  command           : %s\n' "$command"
+    printf '  worktree          : %s\n' "$worktree"
+    printf '  branch @ head     : %s @ %s\n' "$branch" "$head"
+    printf '  started_at        : %s\n' "$started_at"
+    if [[ -f "$dir/finished_at" ]]; then
+        field_into finished_at "$dir/finished_at"
+        printf '  finished_at       : %s\n' "$finished_at"
+    fi
+    if [[ -f "$dir/exit_code" ]]; then
+        field_into exit_code "$dir/exit_code"
+        printf '  exit_code         : %s\n' "$exit_code"
+    fi
     report_target_evidence "$dir"
     printf '  output.log        : %s\n' "$dir/output.log"
 
@@ -1121,14 +1147,14 @@ cmd_status() {
             printf '  VERDICT: the gate RAN TO COMPLETION and PASSED.\n'
             ;;
         FAILED)
-            printf '  VERDICT: the gate RAN TO COMPLETION and REFUSED (exit %s).\n' \
-                "$(cat "$dir/exit_code")"
+            printf '  VERDICT: the gate RAN TO COMPLETION and REFUSED (exit %s).\n' "$exit_code"
             printf '  This IS a verdict and it must be honored — read output.log for the reason.\n'
             printf '  --- last 40 lines ---\n'
             tail -40 "$dir/output.log" 2>/dev/null || true
             ;;
         RUNNING)
-            printf '  VERDICT: NONE YET — still running (pid %s).\n' "$(cat "$dir/pid")"
+            field_into pid "$dir/pid"
+            printf '  VERDICT: NONE YET — still running (pid %s).\n' "$pid"
             ;;
         DIED_WITHOUT_VERDICT)
             printf '  ⛔ NO VERDICT: the gate DID NOT FINISH.\n'
@@ -1140,12 +1166,34 @@ cmd_status() {
     # because a flip is orthogonal to the verdict and must be seen even
     # under a PASSED run.
     if [[ -f "$dir/CORE_BARE_FLIP" ]]; then
+        local flip
+        field_into flip "$dir/CORE_BARE_FLIP" raw
         printf '\n'
         printf '  ############################################################\n'
-        cat "$dir/CORE_BARE_FLIP"
+        printf '%s' "$flip"
         printf '  ############################################################\n'
     fi
-    return "$(state_exit_code "$dir" "$state")"
+    case "$state" in
+        PASSED) return 0 ;;
+        FAILED) return "$exit_code" ;;
+        *) return "$EX_NO_VERDICT" ;;
+    esac
+}
+
+cmd_status() {
+    local run_id="${1:-}"
+    if [[ -z "$run_id" ]]; then
+        run_id="$(latest_run_id)" || {
+            printf 'no gate runs recorded\n' >&2
+            return "$EX_USAGE"
+        }
+    fi
+    local dir
+    dir="$(run_dir_for_read "$run_id")" || {
+        unknown_run "$run_id"
+        return "$EX_USAGE"
+    }
+    report_run "$run_id" "$dir"
 }
 
 cmd_wait() {
@@ -1161,7 +1209,7 @@ cmd_wait() {
         [[ "$STATE" == "RUNNING" ]] || break
         idle_sleep "$POLL_INTERVAL_S"
     done
-    cmd_status "$run_id"
+    report_run "$run_id" "$dir"
 }
 
 cmd_list() {
