@@ -74,7 +74,29 @@
 #   /usr/local/bin/with-livespec-env.sh -- ./apply-boards.sh
 # plus python3. Prints one `created|updated <id> <name>` line per board,
 # preceded by one line per panel.
+#
+# DRIFT MODE. `apply-boards.sh --drift` is READ-ONLY: for every definition
+# beside this script it reads the live board of the same name and prints the
+# name and each differing field or panel (`differs <name>` then one line per
+# difference, a query panel named by its annotation), or `missing <name>` when
+# no live board carries the name. It sends no create or update request — the
+# program's HTTP helper refuses any method but GET in this mode — and exits
+# non-zero when it reports any difference or missing definition, zero when
+# every definition matches. What the service assigns is left out: board and
+# annotation ids, the query ids a panel references (the stored query behind
+# each is fetched and compared by its specification instead), timestamps and
+# links, and the defaults the API fills in (the comparison is a SUBSET of what
+# the live side holds, the same rule `stored_matches` applies when applying).
+# A definition edited by hand is thereby reported BEFORE the next apply
+# overwrites it.
 set -euo pipefail
+
+MODE=apply
+case "${1:-}" in
+  "") ;;
+  --drift) MODE=drift ;;
+  *) echo "usage: apply-boards.sh [--drift]" >&2; exit 2 ;;
+esac
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 export HONEYCOMB_API="${HONEYCOMB_API:-https://api.honeycomb.io}"
@@ -82,7 +104,7 @@ export HONEYCOMB_API="${HONEYCOMB_API:-https://api.honeycomb.io}"
 
 rc=0
 for def in "${SCRIPT_DIR}"/*.json; do
-  if ! python3 - "${def}" <<'PY'
+  if ! python3 - "${def}" "${MODE}" <<'PY'
 import json
 import os
 import sys
@@ -92,10 +114,14 @@ import urllib.request
 API = os.environ["HONEYCOMB_API"]
 KEY = os.environ["HONEYCOMB_CONFIG_KEY_LIVESPEC"]
 STYLES = ("graph", "table", "combo")
+DRIFT = sys.argv[2] == "drift"
+ABSENT = "<absent>"
 
 
 def call(method, path, body=None):
     """Return (ok, payload). payload is parsed JSON on success, else a message."""
+    if DRIFT and method != "GET":
+        raise RuntimeError("drift mode is read-only; refusing %s %s" % (method, path))
     req = urllib.request.Request(API + path, method=method)
     req.add_header("X-Honeycomb-Team", KEY)
     data = None
@@ -220,6 +246,135 @@ def resolve_panel(panel, prior):
     return "created", query["id"], created["id"]
 
 
+def identity(items):
+    """Per-element identity (id, else key) when every element has a distinct one."""
+    keys = []
+    for item in items:
+        if not isinstance(item, dict) or not (item.get("id") or item.get("key")):
+            return None
+        keys.append(item.get("id") or item.get("key"))
+    return keys if len(set(keys)) == len(keys) else None
+
+
+def diff(path, want, have, out):
+    """Append one line per field where the committed `want` is not what `have` holds."""
+    if isinstance(want, dict):
+        if not isinstance(have, dict):
+            out.append("  %s: committed %s live %s" % (path, json.dumps(want), json.dumps(have)))
+            return
+        for key, value in want.items():
+            diff("%s.%s" % (path, key) if path else key, value, have.get(key, ABSENT), out)
+    elif isinstance(want, list):
+        if not isinstance(have, list):
+            out.append("  %s: committed %s live %s" % (path, json.dumps(want), json.dumps(have)))
+            return
+        want_ids, have_ids = identity(want), identity(have)
+        if want_ids is not None and have_ids is not None:
+            by_id = dict(zip(have_ids, have))
+            for key, item in zip(want_ids, want):
+                diff("%s[%s]" % (path, key), item, by_id.get(key, ABSENT), out)
+            for key in have_ids:
+                if key not in want_ids:
+                    out.append("  %s[%s]: committed %s live %s" % (path, key, ABSENT, json.dumps(by_id[key])))
+        elif len(want) != len(have):
+            out.append("  %s: committed %s live %s" % (path, json.dumps(want), json.dumps(have)))
+        else:
+            for index, (item, held) in enumerate(zip(want, have)):
+                diff("%s[%d]" % (path, index), item, held, out)
+    elif want != have:
+        out.append("  %s: committed %s live %s" % (path, json.dumps(want), json.dumps(have)))
+
+
+def read_live_panel(panel):
+    """A live query panel as {name, dataset, style, position, annotation, query}."""
+    query_panel = panel.get("query_panel") or {}
+    dataset = query_panel.get("dataset")
+    ok, annotation = call(
+        "GET", "/1/query_annotations/%s/%s" % (dataset, query_panel.get("query_annotation_id"))
+    )
+    if not (ok and isinstance(annotation, dict)):
+        return {"name": "<unreadable annotation: %s>" % annotation}
+    ok, query = call("GET", "/1/queries/%s/%s" % (dataset, query_panel.get("query_id")))
+    return {
+        "name": annotation.get("name"),
+        "dataset": dataset,
+        "query_style": query_panel.get("query_style"),
+        "position": panel.get("position"),
+        "annotation": {"description": annotation.get("description", "")},
+        "query": query if ok else None,
+    }
+
+
+def drift_panels(defn, board):
+    """Lines naming every committed panel the live board does not hold as committed."""
+    lines = []
+    live_text = [p for p in board.get("panels") or [] if p.get("type") == "text"]
+    live_query = {}
+    for panel in board.get("panels") or []:
+        if panel.get("type") == "query":
+            held = read_live_panel(panel)
+            live_query[held["name"]] = held
+    texts = [p for p in defn.get("panels", []) if p["type"] == "text"]
+    for index, panel in enumerate(texts):
+        label = "text panel #%d" % (index + 1)
+        if index >= len(live_text):
+            lines.append("  %s: committed, missing from the live board" % label)
+            continue
+        want = {"position": panel["position"], "text_panel": panel["text_panel"]}
+        diff(label, want, live_text[index], lines)
+    for extra in range(len(texts), len(live_text)):
+        lines.append("  text panel #%d: live only, not committed" % (extra + 1))
+    wanted = set()
+    for panel in defn.get("panels", []):
+        if panel["type"] != "query":
+            continue
+        name = panel["annotation"]["name"]
+        wanted.add(name)
+        label = "panel %s" % name
+        held = live_query.get(name)
+        if held is None:
+            lines.append("  %s: committed, missing from the live board" % label)
+            continue
+        want = {
+            "dataset": panel["dataset"],
+            "query_style": panel.get("query_style", "graph"),
+            "position": panel["position"],
+            "annotation": {"description": panel["annotation"].get("description", "")},
+            "query": panel["query"],
+        }
+        diff(label, want, held, lines)
+    for name in live_query:
+        if name not in wanted:
+            lines.append("  panel %s: live only, not committed" % name)
+    return lines
+
+
+def drift(path, defn):
+    """Print the drift of the live board named by `defn`; 0 matches, 1 differs or missing."""
+    ok, boards = call("GET", "/1/boards")
+    if not ok:
+        print("FAILED list boards: %s" % boards, file=sys.stderr)
+        return 1
+    board = next((b for b in boards if b.get("name") == defn["name"]), None)
+    if board is None:
+        print("missing %s" % defn["name"])
+        return 1
+    lines = []
+    want = {
+        "description": defn.get("description", ""),
+        "type": "flexible",
+        "layout_generation": defn.get("layout_generation", "manual"),
+        "tags": defn.get("tags", []),
+    }
+    diff("", want, board, lines)
+    lines.extend(drift_panels(defn, board))
+    if lines:
+        print("differs %s" % defn["name"])
+        print("\n".join(lines))
+        return 1
+    return 0
+
+
 def main(path):
     with open(path, encoding="utf-8") as handle:
         defn = json.load(handle)
@@ -228,6 +383,8 @@ def main(path):
         for problem in problems:
             print("REFUSED %s: %s" % (path, problem), file=sys.stderr)
         return 1
+    if DRIFT:
+        return drift(path, defn)
 
     ok, boards = call("GET", "/1/boards")
     if not ok:

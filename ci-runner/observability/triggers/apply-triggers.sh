@@ -18,7 +18,26 @@
 # livespec environment) — projected by the fleet's credential wrapper:
 #   /usr/local/bin/with-livespec-env.sh -- ./apply-triggers.sh
 # plus curl and python3. Prints one line per trigger: created|updated id name.
+#
+# DRIFT MODE. `apply-triggers.sh --drift` is READ-ONLY: for every definition
+# beside this script it GETs the live trigger of the same name and prints the
+# name and each field that differs (`differs <name>` then one `  <field>:
+# committed … live …` line per field), or `missing <name>` when no live trigger
+# carries the name. It sends no create or update request — every call it makes
+# is a GET — and exits non-zero when it reports any difference or missing
+# definition, zero when every definition matches. The comparison is a SUBSET
+# one: only what the committed definition states is compared, so what the
+# service assigns (id, timestamps, defaults it fills in, a recipient's type and
+# target) is left out by construction. A definition edited by hand is thereby
+# reported BEFORE the next apply overwrites it.
 set -euo pipefail
+
+MODE=apply
+case "${1:-}" in
+  "") ;;
+  --drift) MODE=drift ;;
+  *) echo "usage: apply-triggers.sh [--drift]" >&2; exit 2 ;;
+esac
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 API="${HONEYCOMB_API:-https://api.honeycomb.io}"
@@ -57,6 +76,80 @@ PY
     continue
   fi
   dataset="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("dataset") or sys.argv[2])' "${def}" "${DATASET}")"
+  if [ "${MODE}" = drift ]; then
+    # Read-only: the list and the one live trigger are fetched with GET, and no
+    # branch of this arm reaches the POST/PUT calls below.
+    existing="$(hc -X GET "${API}/1/triggers/${dataset}")"
+    id="$(printf '%s' "${existing}" | python3 -c 'import json,sys; n=sys.argv[1]; print(next((t["id"] for t in json.load(sys.stdin) if t["name"]==n), ""))' "${name}")"
+    if [ -z "${id}" ]; then
+      echo "missing [${dataset}] ${name}"
+      rc=1
+      continue
+    fi
+    if ! live="$(hc -X GET "${API}/1/triggers/${dataset}/${id}")"; then
+      echo "FAILED read ${name}: ${live}" >&2; rc=1
+      continue
+    fi
+    printf '%s' "${live}" > "${body}"
+    if ! python3 - "${def}" "${name}" "${body}" <<'PY'
+import json, sys
+
+ABSENT = "<absent>"
+
+
+def identity(items):
+    """Per-element identity (id, else key) when every element has a distinct one."""
+    keys = []
+    for item in items:
+        if not isinstance(item, dict) or not (item.get("id") or item.get("key")):
+            return None
+        keys.append(item.get("id") or item.get("key"))
+    return keys if len(set(keys)) == len(keys) else None
+
+
+def diff(path, want, have, out):
+    """Append one line per field where the committed `want` is not what `have` holds."""
+    if isinstance(want, dict):
+        if not isinstance(have, dict):
+            out.append("  %s: committed %s live %s" % (path, json.dumps(want), json.dumps(have)))
+            return
+        for key, value in want.items():
+            diff("%s.%s" % (path, key) if path else key, value, have.get(key, ABSENT), out)
+    elif isinstance(want, list):
+        if not isinstance(have, list):
+            out.append("  %s: committed %s live %s" % (path, json.dumps(want), json.dumps(have)))
+            return
+        want_ids, have_ids = identity(want), identity(have)
+        if want_ids is not None and have_ids is not None:
+            by_id = dict(zip(have_ids, have))
+            for key, item in zip(want_ids, want):
+                diff("%s[%s]" % (path, key), item, by_id.get(key, ABSENT), out)
+            for key in have_ids:
+                if key not in want_ids:
+                    out.append("  %s[%s]: committed %s live %s" % (path, key, ABSENT, json.dumps(by_id[key])))
+        elif len(want) != len(have):
+            out.append("  %s: committed %s live %s" % (path, json.dumps(want), json.dumps(have)))
+        else:
+            for index, (item, held) in enumerate(zip(want, have)):
+                diff("%s[%d]" % (path, index), item, held, out)
+    elif want != have:
+        out.append("  %s: committed %s live %s" % (path, json.dumps(want), json.dumps(have)))
+
+
+committed = json.load(open(sys.argv[1]))
+committed.pop("dataset", None)
+lines = []
+diff("", committed, json.load(open(sys.argv[3])), lines)
+if lines:
+    print("differs %s" % sys.argv[2])
+    print("\n".join(lines))
+    sys.exit(1)
+PY
+    then
+      rc=1
+    fi
+    continue
+  fi
   python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); d.pop("dataset", None); json.dump(d, open(sys.argv[2], "w"))' "${def}" "${body}"
   existing="$(hc "${API}/1/triggers/${dataset}")"
   id="$(printf '%s' "${existing}" | python3 -c 'import json,sys; n=sys.argv[1]; print(next((t["id"] for t in json.load(sys.stdin) if t["name"]==n), ""))' "${name}")"

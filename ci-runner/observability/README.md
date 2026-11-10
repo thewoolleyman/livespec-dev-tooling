@@ -44,6 +44,25 @@ Value and dead-man triggers, one `*.json` per trigger, converged by name:
 
 Each definition may name a `dataset`; absent, it defaults to `metrics`.
 
+### Drift report (read-only)
+
+`apply-triggers.sh --drift` reads each live trigger by the committed
+definition's name and prints `differs <name>` with one line per differing field,
+or `missing [<dataset>] <name>` when no live trigger carries the name. It sends
+only GETs and exits non-zero on any difference or missing definition, zero when
+every definition matches. Only fields the committed definition states are
+compared, so ids, timestamps and API-filled defaults never show as drift. Run it
+before an apply to see a hand edit that the apply would overwrite:
+
+```bash
+/usr/local/bin/with-livespec-env.sh -- ci-runner/observability/triggers/apply-triggers.sh --drift
+```
+
+`boards/apply-boards.sh --drift` is the same contract for boards: a differing
+board field or panel (a query panel is named by its annotation) is printed
+under `differs <name>`, an absent name as `missing <name>`, and the stored query
+behind each panel is compared by specification, never by query id.
+
 The `k8s-node-*.json` triggers realize `SPECIFICATION/non-functional-requirements.md`
 §"Runner-pool node telemetry": MemoryPressure and memory working set over 90% of capacity
 (per `k8s.node.name`) — CPU idle share is board-only and carries no value trigger,
