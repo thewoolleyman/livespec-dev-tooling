@@ -687,7 +687,14 @@ fabro_server_instances:
         env:
           SANDBOX_DRIVER_KUBERNETES_STATE_DIR: /home/cwoolley/.fabro-candidate/.local/state/sandbox-driver-kubernetes-rust
         process_spec:
-          image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-rust-agent-v1.136.2
+          # python-rust-agent-v1.188.1 (bd-ib-2mtdwn): claude-agent-acp 0.91.0 / SDK 0.3.300,
+          # whose bundled claude reports Claude Code 2.1.300 (read from the image binary,
+          # digest sha256:b6c55f44e60d...). v1.136.2's Claude Code 2.1.170 embedded grep
+          # (ugrep) grows past 3 GiB on a wide bounded-repetition regex and OOM-kills the
+          # pod; 2.1.300 errors out at 323 MB (measured on bd-ib-546m3d). Proven here on the
+          # candidate first; the fleet kubernetes-rust line moves only after a real turn.
+          # ROLLBACK: image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-rust-agent-v1.136.2
+          image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-rust-agent-v1.188.1
           cpu_cores: 4
           memory_mb: 7629
     # The fleet instance's vault entries, by the same names and sources; this
