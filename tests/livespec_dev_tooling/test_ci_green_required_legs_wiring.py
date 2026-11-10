@@ -21,13 +21,18 @@ the Actions API, it checks the tree out before the reader runs, the reader step
 cannot be skipped or soft-failed, and the original needs-result step is still
 there unchanged (the change only ADDS to the gate).
 
-"Cannot be soft-failed" is pinned over the step's shell text, not assumed
-(independent review of livespec-dev-tooling#3931, finding 3). An unreadable job
-list must end in `exit 1`; the reader invocation must be the step's LAST
-command, exactly as committed, so nothing after it (a trailing `true`) and
-nothing on its line (`|| true`) can replace its exit status; and the step may
-neither relax errexit (`set +e`) nor override its `shell:`. Each pin is
-mutation-proved below against a copy of the committed workflow.
+"Cannot be soft-failed" is pinned over the step's text, not assumed
+(independent review of livespec-dev-tooling#3931, finding 3 and its re-review
+finding). The whole reader step, `run:` block included, must equal ONE exact
+expected string: an allow-list, so ANY edit to it fails, including shapes no
+probe names. A deny-list of four probes (an unreadable job list must end in
+`exit 1`; the reader invocation must be the step's last command, so no trailing
+`true` and no `|| true` can replace its exit status; no `set +e`; no `shell:`
+override) let `trap "exit 0" EXIT` and a `python3() { :; }` shadow through, each
+of which makes a failing reader exit 0 under GitHub's `bash -eo pipefail`. The
+four probes stay below as named diagnostics; the exact pin is the guarantee.
+Every mutant is applied below to a copy of the committed workflow, and each is
+caught by the pin.
 """
 
 from __future__ import annotations
@@ -64,6 +69,20 @@ _UNREADABLE_BRANCH = (
     ' failing closed"\n'
     "            exit 1\n"
     "          }\n"
+)
+_NOT_PINNED = "the reader step is not exactly the pinned text"
+# The reader step exactly as committed. Any edit to it, however small, fails.
+_READER_STEP = (
+    _READER_STEP_HEADER
+    + "        env:\n"
+    + "          GH_TOKEN: ${{ github.token }}\n"
+    + "        run: |\n"
+    + '          jobs_file="${RUNNER_TEMP}/ci-green-run-jobs.jsonl"\n'
+    + "          read_jobs() {\n"
+    + f'            {_API_READ} > "$jobs_file"\n'
+    + "          }\n"
+    + _UNREADABLE_BRANCH
+    + f"          {_READER_LINE}\n"
 )
 _NEEDS_RESULT_STEP = (
     "      - name: All required checks passed\n"
@@ -108,12 +127,17 @@ def _replayed_verdict(*, jobs: Path) -> int:
 
 
 def _fail_closed_findings(*, text: str) -> list[str]:
-    """Every way the reader step, as written, could pass without its verdict."""
+    """Every way the reader step, as written, could pass without its verdict.
+
+    The first finding (the exact pin) catches every edit; the rest only name
+    the shapes the earlier deny-list knew about.
+    """
     steps = _reader_steps(block=_gate_block(text=text))
     step = steps[0] if steps else ""
     commands = [line.strip() for line in step.split("        run: |\n", 1)[-1].splitlines()]
     commands = [command for command in commands if command]
     findings = [
+        (_NOT_PINNED, step != _READER_STEP),
         ("an unreadable job list does not fail the step", _UNREADABLE_BRANCH not in step),
         ("the reader is not the step's last command", commands[-1:] != [_READER_LINE]),
         ("the step relaxes errexit", "set +e" in step or "set +o errexit" in step),
@@ -132,25 +156,46 @@ def test_the_reader_step_fails_closed_as_committed() -> None:
         (
             'failing closed"\n            exit 1\n',
             'failing closed"\n            exit 0\n',
-            ["an unreadable job list does not fail the step"],
+            [_NOT_PINNED, "an unreadable job list does not fail the step"],
         ),
         (
             f"          {_READER_LINE}\n",
             f"          set +e\n          {_READER_LINE}\n          true\n",
-            ["the reader is not the step's last command", "the step relaxes errexit"],
+            [
+                _NOT_PINNED,
+                "the reader is not the step's last command",
+                "the step relaxes errexit",
+            ],
         ),
         (
             f"          {_READER_LINE}\n",
             f"          {_READER_LINE} || true\n",
-            ["the reader is not the step's last command"],
+            [_NOT_PINNED, "the reader is not the step's last command"],
         ),
         (
             _READER_STEP_HEADER,
             _READER_STEP_HEADER + "        shell: bash {0}\n",
-            ["the step overrides its shell"],
+            [_NOT_PINNED, "the step overrides its shell"],
+        ),
+        (
+            "        run: |\n          jobs_file=",
+            '        run: |\n          trap "exit 0" EXIT\n          jobs_file=',
+            [_NOT_PINNED],
+        ),
+        (
+            "        run: |\n          jobs_file=",
+            "        run: |\n          python3() { :; }\n          jobs_file=",
+            [_NOT_PINNED],
         ),
     ],
-    ids=["unreadable-exit-0", "set-e-off-and-trailing-true", "or-true", "shell-override"],
+    ids=[
+        "unreadable-exit-0",
+        "set-e-off-and-trailing-true",
+        "or-true",
+        "shell-override",
+        "trap-exit-0",
+        "python3-function-shadow",
+    ],
 )
 def test_each_soft_fail_mutant_of_the_reader_step_is_caught(
     *, old: str, new: str, expected: list[str]
