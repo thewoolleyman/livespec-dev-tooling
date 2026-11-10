@@ -205,6 +205,14 @@ fabro_server_host_checkout_ref: HEAD
 # a forgotten variable harmless instead of latent.
 fabro_server_web_verify_attempts: 300
 
+# systemd's start budget for the unit, in seconds. It MUST exceed the
+# verifier's budget above: ExecStartPost runs inside the start job, so with
+# systemd's 90s default the job timed out and Restart=always killed the
+# half-booted server long before 300 attempts ran (vps, 2026-11-10). Each
+# attempt is at least 1s and can take several more when a curl waits on a
+# slow server, so 600 is twice the attempt count.
+fabro_server_start_timeout_sec: 600
+
 # --- restart policy --------------------------------------------------------
 #
 # THE ROLE DOES NOT RESTART A FABRO SERVER UNLESS THIS IS TRUE.
