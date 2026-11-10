@@ -219,6 +219,10 @@ _READER = (
             refuse("incident-action-invalid-payload", "--rollback-conflict-json")
         if matched["phase"] != "reverting":
             refuse("incident-rollback-conflict-not-eligible", matched["phase"])
+        # Orchestrator v0.313.0 (bd-ib-hyho7h): a reverting generation whose item claim it
+        # does not hold is refused BEFORE the chain write.
+        if mode == "claim-not-held":
+            refuse("incident-rollback-conflict-claim-not-held", item.get("claim"))
         name = digest("rollback-conflict", {
             "item_id": matched["item_id"], "operation_id": matched["operation_id"],
             "generation": matched["generation"], "conflict": json.loads(payload)})
@@ -505,6 +509,63 @@ def test_a_registration_already_at_reverting_is_not_reopened(tmp_path):
     other = _chain(tmp_path, registration=_registration(phase="reverting"))
     assert other.writer.record(intent=_intent(phase="reverting"), receipt=_RECEIPT) == _LANDED
     assert other.actions() == ["record-rollback-conflict"]
+
+
+_UNCLAIMED_REOPEN = ChainWrite.terminal(
+    reason=(
+        "half-reopen: the reverting generation this conflict is owed to never took the "
+        "item's claim, and this writer did not make that reopen, so it cannot repeat it "
+        "(incident-rollback-conflict-claim-not-held, orchestrator bd-ib-hyho7h)"
+    )
+)
+
+
+def test_a_regression_reopen_whose_claim_never_moved_is_terminal_and_named(tmp_path, capsys):
+    """N1: the writer cannot repeat a regression's reopen, so retrying cannot help."""
+    regression = RegressionReopen(
+        attempt_id="attempt-2",
+        operation_id="operation-2",
+        generation=5,
+        owner="reopen-owner",
+        receipt_digest="d" * 64,
+    )
+    reverting = {
+        **_attempt(registration=_registration())[0],
+        "attempt_id": "attempt-2",
+        "phase": "reverting",
+        "operation_id": "operation-2",
+        "generation": 5,
+        "owner": "reopen-owner",
+    }
+    other = _chain(tmp_path, registration=_registration(), history=[reverting])
+    other.mode("claim-not-held")
+    written = other.writer.record(intent=_intent(regression=regression), receipt=_RECEIPT)
+    assert written == _UNCLAIMED_REOPEN
+    assert other.actions() == ["record-rollback-conflict"] and other.transitions() == []
+    err = capsys.readouterr().err
+    assert "incident-authority-refused: incident-rollback-conflict-claim-not-held" in err
+
+
+def test_a_registration_at_reverting_whose_claim_never_moved_is_terminal(tmp_path):
+    other = _chain(tmp_path, registration=_registration(phase="reverting"))
+    other.mode("claim-not-held")
+    written = other.writer.record(intent=_intent(phase="reverting"), receipt=_RECEIPT)
+    assert written == _UNCLAIMED_REOPEN
+    assert other.actions() == ["record-rollback-conflict"] and other.transitions() == []
+
+
+def test_a_first_failure_whose_claim_is_not_held_is_retried_through_its_own_reopen(chain):
+    """The first-failure path reopens first, so a retry repeats the reopen, which completes."""
+    chain.mode("claim-not-held")
+    written = chain.writer.record(intent=_intent(), receipt=_RECEIPT)
+    assert written == ChainWrite.retry(
+        reason="conflict-refused: incident-rollback-conflict-claim-not-held"
+    )
+    assert chain.actions() == ["reopen-regression", "record-rollback-conflict"]
+    assert chain.transitions() == []
+    chain.mode("up")
+    assert chain.writer.record(intent=_intent(), receipt=_RECEIPT) == _LANDED
+    assert chain.status() == "blocked"
 
 
 def test_repeating_the_same_conflict_leaves_exactly_one_transition(chain):

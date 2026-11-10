@@ -38,7 +38,11 @@ lost a race, or a refusal not known to be final. A claim move refused as
 `claim-changed` across spaced attempts is the orchestrator's non-atomic
 `reopen-regression` (bd-ib-hyho7h): the chain holds the conflict but the item's claim
 never moved, and the publication journals it terminal after its bound
-(`docs/incident-observer-service.md`, "Known limitation").
+(`docs/incident-observer-service.md`, "Known limitation"). From orchestrator v0.313.0
+the conflict write refuses such a generation before the chain write, as
+`incident-rollback-conflict-claim-not-held`: a first failure retries, which repeats its
+own reopen, while a regression reopen or a registration already at `reverting`, which
+this writer cannot reopen again, is journaled terminal at once as a half-reopen.
 
 How the owner's resolution continues: nothing here moves a chain out of
 `rollback-conflict`. The orchestrator's `resolve-rollback-conflict` action does, by
@@ -90,6 +94,7 @@ _STALE_REOPEN = "incident-reopen-stale-observation"
 _IDENTITY_MISMATCH = "incident-authority-identity-mismatch"
 _GENERATION_STALE = "incident-generation-stale"
 _CLAIM_REFUSED = "incident-rollback-conflict-lifecycle-refused"
+_CLAIM_NOT_HELD = "incident-rollback-conflict-claim-not-held"
 _REVERTING = "reverting"
 _REPAIR = "repair"
 _MERGED = "master-observation"
@@ -103,6 +108,18 @@ _CLAIM_CHANGED = "claim-changed"
 _CONFLICT_TERMINALS = {
     _GENERATION_STALE: "superseded: the chain moved past this conflict (the owner resolved it)",
     _IDENTITY_MISMATCH: "superseded: a different reopen holds the chain",
+}
+# Orchestrator v0.313.0 (bd-ib-hyho7h) refuses the conflict write BEFORE the chain write
+# when the reverting generation never took the item's claim; its remedy is to retry the
+# reopen. Only a writer that made the reopen can do that. For a regression reopen, or a
+# registration already at reverting, the refusal is therefore final.
+_UNREPEATABLE_REOPEN_TERMINALS = {
+    **_CONFLICT_TERMINALS,
+    _CLAIM_NOT_HELD: (
+        "half-reopen: the reverting generation this conflict is owed to never took the "
+        "item's claim, and this writer did not make that reopen, so it cannot repeat it "
+        "(incident-rollback-conflict-claim-not-held, orchestrator bd-ib-hyho7h)"
+    ),
 }
 
 
@@ -152,9 +169,10 @@ class ConflictChain:
             flags={**reverting.flags(), "rollback-conflict-json": canonical(value=conflict)},
         )
         if not is_successful(checked):
-            return _refused(
-                refusal=checked.failure(), terminals=_CONFLICT_TERMINALS, prefix="conflict"
+            terminals = (
+                _CONFLICT_TERMINALS if _reopens(intent=intent) else _UNREPEATABLE_REOPEN_TERMINALS
             )
+            return _refused(refusal=checked.failure(), terminals=terminals, prefix="conflict")
         if proves_conflict(result=checked.unwrap(), identity=reverting):
             return ChainWrite.landed()
         say(words="the conflict reply does not prove the blocked next generation")
@@ -261,6 +279,11 @@ class ConflictChain:
 
 
 _Checked = Result[dict[str, Any], AuthorityRefusal]
+
+
+def _reopens(*, intent: RecoveryIntent) -> bool:
+    """Whether this writer makes the reopen itself, so that a retry repeats it."""
+    return intent.regression is None and intent.registration.phase != _REVERTING
 
 
 def _refused(*, refusal: AuthorityRefusal, terminals: dict[str, str], prefix: str) -> ChainWrite:
