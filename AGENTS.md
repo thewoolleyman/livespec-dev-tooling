@@ -72,7 +72,9 @@ The files:
   `ls` in a command substitution (`$(ls -d …)`, `$(ls -td … | head -1)`) or
   reporting a surprising `No such file or directory`: `ls` is aliased to lsd
   here, the symptom is a FALSE ABSENCE, and it has cost three different roles a
-  false observation across 42 days.
+  false observation across 42 days. Read it also before any `git stash` in a
+  worktree: `refs/stash` is shared by every worktree, so a pop can apply
+  another session's entry (2026-11-10).
 - Read `.ai/fleet-and-secrets.md` before pushing any change under
   `.github/workflows/` (it needs an exemption, a label and the wrapper), before
   changing fleet coordination workflows,
