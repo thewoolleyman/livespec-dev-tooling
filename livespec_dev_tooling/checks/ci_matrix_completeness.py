@@ -215,13 +215,21 @@ def _collect_findings(
         jobs=jobs,
         repo_local_skips=load_repo_local_ci_skips(repo_root=cwd) or (),
     )
+    # The committed lever source binds only the repository that carries it
+    # (the gate-surface severity lever rules in contracts.md): it is sourced by
+    # livespec-dev-tooling's own `check` recipe and is not shipped by the pack.
+    # A consumer tree has none, so parity is not judged there. Reading the
+    # absent file as empty reported every lever a consumer's ci.yml arms as
+    # missing and reddened consumer CI. Deleting the source here stays caught
+    # by the `check` recipe's `source ... || exit 1` and test_aggregate_completeness.
     source = cwd / _SEVERITY_LEVERS_SOURCE
-    findings.extend(
-        ci_severity_lever_findings(
-            ci_yml=ci_yml,
-            source=source.read_text(encoding="utf-8") if source.is_file() else "",
+    if source.is_file():
+        findings.extend(
+            ci_severity_lever_findings(
+                ci_yml=ci_yml,
+                source=source.read_text(encoding="utf-8"),
+            )
         )
-    )
     return findings
 
 
