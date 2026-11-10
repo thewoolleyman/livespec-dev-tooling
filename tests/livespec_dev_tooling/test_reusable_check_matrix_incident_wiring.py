@@ -46,12 +46,8 @@ from typing import Any
 import pytest
 import yaml
 
-from livespec_dev_tooling.incident_matrix_omission import (
-    GUARDED_OMITTED,
-    GUARDED_RESULT,
-    IncidentAuthority,
-    decide,
-)
+from livespec_dev_tooling.incident_matrix_call_site import GUARDED_OMITTED, GUARDED_RESULT
+from livespec_dev_tooling.incident_matrix_omission import IncidentAuthority, decide
 
 __all__: list[str] = []
 
@@ -77,7 +73,8 @@ _ORDER = (
     _SETUP,
     _RUN,
 )
-_INVOCATION = "python3 -m livespec_dev_tooling.incident_matrix_omission"
+_INVOCATION = "-m livespec_dev_tooling.incident_matrix_omission"
+_DECISION_RUN = "python3 -m livespec_dev_tooling.incident_matrix_omission"
 _DEV_TOOLING = "thewoolleyman/livespec-dev-tooling"
 
 _GATE = "${{ github.event_name == 'pull_request' && inputs.incident-omitted != '[]' }}"
@@ -131,7 +128,7 @@ _PINNED = {
         "uses": "actions/checkout@v5",
         "with": {
             "repository": _DEV_TOOLING,
-            "ref": "${{ steps.release.outputs.tag }}",
+            "ref": "refs/tags/${{ steps.release.outputs.tag }}",
             "path": ".livespec-dev-tooling-released",
             "persist-credentials": False,
         },
@@ -143,11 +140,13 @@ _PINNED = {
         "shell": "bash",
         "working-directory": ".livespec-dev-tooling-released",
         "env": {
+            "GH_TOKEN": "${{ github.token }}",
+            "CALLER_WORKFLOW_REF": "${{ github.workflow_ref }}",
             "INCIDENT_OMITTED": "${{ inputs.incident-omitted }}",
             "INCIDENT_CI_RESULT": "${{ inputs.incident-ci-result }}",
             "MATRIX_CHECK": "${{ matrix.check }}",
         },
-        "run": _INVOCATION,
+        "run": _DECISION_RUN,
     },
     _REPORT: {
         "name": _REPORT,
@@ -168,8 +167,8 @@ _ALL_SIX = json.dumps(
         "check-per-file-coverage",
     ]
 )
-_ALLOWLISTED_LEGS = ("heading_coverage", "per_file_coverage", "no_todo_registry", "coverage")
-_OTHER_LEGS = ("lint", "types", "check-heading-coverage")
+_ALLOWLISTED_LEGS = ("heading_coverage", "per_file_coverage", "no_todo_registry")
+_OTHER_LEGS = ("lint", "types", "coverage", "check-heading-coverage")
 _LEGS = _ALLOWLISTED_LEGS + _OTHER_LEGS
 # Every leg slug as a list: a guard that reads the raw input would omit them all.
 _EVERY_LEG = json.dumps(list(_LEGS))
@@ -183,17 +182,23 @@ _PAYLOAD = {
         "base": {"repo": {"full_name": _REPOSITORY}},
     }
 }
+_CALLER = (
+    "jobs:\n  incident-ci:\n    runs-on: ubuntu-latest\n  shared:\n    needs: [incident-ci]\n"
+    "    uses: thewoolleyman/livespec-dev-tooling/.github/workflows/reusable-check-matrix.yml@v1\n"
+    f"    with:\n      incident-omitted: {GUARDED_OMITTED}\n"
+    f"      incident-ci-result: {GUARDED_RESULT}\n"
+)
+# A quoted, spaced key with a literal list: valid YAML the old text rule let through.
+_QUOTED_KEY_BYPASS = _CALLER.replace(
+    f"incident-omitted: {GUARDED_OMITTED}", '"incident-omitted" : \'["check-heading-coverage"]\''
+)
 _AUTHORIZED = IncidentAuthority(
     payload=_PAYLOAD,
     repository=_REPOSITORY,
     incident_ci_result="",
-    workflows=(
-        (
-            "ci.yml",
-            f"      incident-omitted: {GUARDED_OMITTED}\n"
-            f"      incident-ci-result: {GUARDED_RESULT}\n",
-        ),
-    ),
+    caller=".github/workflows/ci.yml",
+    base_text=_CALLER,
+    running_text=_CALLER,
 )
 _UNAUTHORIZED = (
     replace(_AUTHORIZED, payload={"pull_request": {**_PAYLOAD["pull_request"], "labels": []}}),
@@ -203,7 +208,12 @@ _UNAUTHORIZED = (
             "pull_request": {**_PAYLOAD["pull_request"], "head": {"repo": {"full_name": "f/r"}}}
         },
     ),
-    replace(_AUTHORIZED, workflows=(("ci.yml", "      incident-omitted: '[\"x\"]'\n"),)),
+    replace(_AUTHORIZED, running_text=_CALLER.replace(GUARDED_OMITTED, "'[\"x\"]'")),
+    replace(
+        _AUTHORIZED,
+        base_text=_QUOTED_KEY_BYPASS,
+        running_text=_QUOTED_KEY_BYPASS,
+    ),
 )
 
 
@@ -382,7 +392,7 @@ def _simulate(
         if not runs:
             continue
         executed.append(step["name"])
-        if step.get("run") == _INVOCATION:
+        if _INVOCATION in str(step.get("run", "")):
             env = {k: _render(value=str(v), context=context) for k, v in step["env"].items()}
             decision = decide(
                 event_name=event,

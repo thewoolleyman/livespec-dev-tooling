@@ -26,16 +26,28 @@
 #     incident-ci job, exactly as:
 #       incident-omitted: ${{ needs.incident-ci.result == 'success' && needs.incident-ci.outputs.omitted || '[]' }}
 #       incident-ci-result: ${{ needs.incident-ci.result }}
-#     `python3 -m livespec_dev_tooling.incident_matrix_omission --check-callers`
-#     checks that wiring over a repository's workflows; the decision below
-#     runs the same rule over the caller's workflows and omits nothing when
-#     it fails (no literal list, no repository variable, no raw output).
+#     and that job must `needs:` an incident-ci job the workflow defines.
+#     `python -m livespec_dev_tooling.incident_matrix_omission --check-callers`
+#     parses a repository's workflows (yaml.safe_load) and checks every call
+#     site of this matrix per job. The decision below applies the same rule to
+#     the CALLING workflow only, which `github.workflow_ref` names (in a called
+#     workflow the github context is the caller's). It reads that file at the
+#     pull request's BASE commit, the trusted revision (merged code that passed
+#     review and the workflow-edit gates; the head and the merge commit carry
+#     the PR author's edits), and requires the copy GitHub ran, the merge
+#     commit in the consumer checkout, to equal it. Every call site in it must
+#     pass, because the matrix cannot tell which job called it. Anything else
+#     (a literal list, a repository variable, a raw output, an oddly spelled
+#     key, a missing needs, a PR that edits its calling workflow) omits
+#     nothing. That one read goes through the sanctioned budgeted_gh.gh_read
+#     with the caller's token, which needs contents: read.
 #
 #     When the list is anything but '[]' on a pull_request event, each leg
 #     resolves the LATEST RELEASE of livespec-dev-tooling (the same
 #     releases/latest read the incident-ci job of this repository's own
-#     ci.yml installs from), checks that tag out into
-#     .livespec-dev-tooling-released, and runs the decision from there:
+#     ci.yml installs from), checks out refs/tags/<that tag> into
+#     .livespec-dev-tooling-released (a same-named branch cannot win), and
+#     runs the decision from there:
 #     never from the consumer's tree, and never from the `ref` input (whose
 #     default is unreleased master, so the `uses:` pin does not pin the
 #     Actions checkout). A change that widens what can be omitted therefore
@@ -129,7 +141,7 @@ jobs:
         uses: actions/checkout@v5
         with:
           repository: thewoolleyman/livespec-dev-tooling
-          ref: ${{ steps.release.outputs.tag }}
+          ref: refs/tags/${{ steps.release.outputs.tag }}
           path: .livespec-dev-tooling-released
           persist-credentials: false
 
@@ -139,6 +151,8 @@ jobs:
         shell: bash
         working-directory: .livespec-dev-tooling-released
         env:
+          GH_TOKEN: ${{ github.token }}
+          CALLER_WORKFLOW_REF: ${{ github.workflow_ref }}
           INCIDENT_OMITTED: ${{ inputs.incident-omitted }}
           INCIDENT_CI_RESULT: ${{ inputs.incident-ci-result }}
           MATRIX_CHECK: ${{ matrix.check }}
