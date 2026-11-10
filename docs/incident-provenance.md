@@ -1,13 +1,26 @@
 # Historical incident receipt consumer
 
-`incident_observer_provenance.ObserverProvenance` is the one implementation of the
-historical provenance lookup. It takes an `IncidentCommitQuery` and invokes the
-manifest-pinned reader the observer runs: the host manifest's `reader`, a fixed
-canonical `incident_authority.py read-history` argv of authenticated absolute
-files. That reader runs with its own credential projection; the observer refuses
-the tenant sudo launcher as a reader (see
-`docs/incident-observer-service.md`). The call uses the one authority-call ceiling
-`incident_authority_client.AUTHORITY_CALL_CEILING_SECONDS`. The shared
+`incident_observer_provenance.ObserverProvenance` is the one implementation of
+the historical provenance lookup. It takes an `IncidentCommitQuery` and invokes
+the manifest-pinned reader the observer runs: the host manifest's `reader`, a
+fixed argv of authenticated absolute files, `[<interpreter>, <installed
+incident_authority.py>]`. The manifest renderer
+(`ansible/roles/incident_observer/files/render_released_installation.py`,
+`render_manifest`) writes exactly those two elements and hashes each into
+`files`. The `reader` argv names no action, because the same argv also serves
+the observer's `read-current` call (`incident_observer_control`).
+`ObserverProvenance` passes it to `incident_authority_client.call_authority`
+with the action `read-history`, and `call_authority` runs `[*reader,
+"read-history", "--<flag>", "<value>", ...]`: it appends the action and then
+each query flag. Do not add `read-history` (or any other action or flag) to the
+manifest's `reader` list. Apart from the `-I` and `--` separators, every
+`reader` element must be an absolute path listed in `files`
+(`incident_controller_installation._command_files`), so
+`ControllerInstallation.load` returns no installation for that manifest and the
+observer does not start. That reader runs with its own credential projection;
+the observer refuses the tenant sudo launcher as a reader (see
+`docs/incident-observer-service.md`). The call uses the one authority-call
+ceiling `incident_authority_client.AUTHORITY_CALL_CEILING_SECONDS`. The shared
 `_incident_provenance_protocol.decode_historical_result` decodes the reply. The
 observer's `POST /provenance` route is the only entrance the range gate uses.
 
