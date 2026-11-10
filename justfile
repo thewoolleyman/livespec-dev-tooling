@@ -198,6 +198,7 @@ install-worktree-pack:
 ensure-plugins:
     mise exec -- uv run --no-sync python -m livespec_dev_tooling.fleet.ensure_plugins
 
+# Holds the host-wide adoption lock for its whole run.
 [positional-arguments]
 ensure-plugins-fleet build:
     mise exec -- uv run --no-sync python -m livespec_dev_tooling.fleet.ensure_plugins_fleet "$1"
@@ -205,8 +206,11 @@ ensure-plugins-fleet build:
 # The named operator step that moves the orchestrator plugin: `ensure-plugins`
 # (and so every SessionStart hook) never moves an installed orchestrator build.
 # `<clone>` is a fleet or adopter repository name, or an absolute path to a
-# checkout (a linked worktree included); `<build>` is the full commit id the
-# host's marketplace clone names at the ref known_marketplaces.json records.
+# checkout (a linked worktree included). `<build>` is either the full commit id
+# the host's marketplace clone names at the ref known_marketplaces.json records,
+# or a published orchestrator release tag (the tag adopt: a canary adopts a
+# release ahead of `release`, moving only that clone's install record and never
+# the host's marketplace). Holds the host-wide adoption lock for its whole run.
 [positional-arguments]
 adopt-orchestrator-build clone build:
     mise exec -- uv run --no-sync python -m livespec_dev_tooling.fleet.adopt_orchestrator_build "$1" "$2"

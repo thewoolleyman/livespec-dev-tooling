@@ -1,4 +1,9 @@
-"""Fleet-wide Claude plugin adoption command."""
+"""Fleet-wide Claude plugin adoption command.
+
+The recipe holds the host-wide adoption lock for its whole run. The adopt step
+it takes for each member runs in-process under that hold and does not take the
+lock a second time.
+"""
 
 from __future__ import annotations
 
@@ -9,6 +14,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol, cast
 
+from livespec_dev_tooling.fleet._adoption_lock import adoption_lock_path, holding_adoption_lock
 from livespec_dev_tooling.fleet._fleet_manifest_read import (
     ManifestUnreadable,
     fetch_master_manifest,
@@ -218,12 +224,26 @@ def _run_recipe(*, args: list[str], cwd: Path | None = None) -> CommandResult:  
     )
 
 
+def _report_wait() -> None:  # pragma: no cover
+    _ = sys.stderr.write("ensure-plugins-fleet: waiting for the host-wide adoption lock\n")
+
+
 def main() -> int:  # pragma: no cover
-    """Run fleet adoption against sibling clones on the current host."""
+    """Run fleet adoption against sibling clones on the current host, under the adoption lock."""
+    home = Path.home()
     if len(sys.argv) != 2:  # noqa: PLR2004 — program name and the named build.
         _ = sys.stderr.write("usage: just ensure-plugins-fleet <build>\n")
         return _USAGE_EXIT
     build = sys.argv[1]
+    return holding_adoption_lock(
+        path=adoption_lock_path(home=home),
+        body=lambda: _adopt_fleet(build=build, home=home),
+        on_wait=_report_wait,
+    )
+
+
+def _adopt_fleet(*, build: str, home: Path) -> int:  # pragma: no cover
+    """The fleet recipe's body; the caller holds the adoption lock."""
     manifest = master_manifest_source()
     if isinstance(manifest, ManifestUnreadable):
         _ = sys.stderr.write(f"ensure-plugins-fleet: {manifest.cause}\n")
@@ -249,7 +269,7 @@ def main() -> int:  # pragma: no cover
     report = adopt(
         manifest_source=manifest,
         clones_root=root,
-        registry_path=Path.home() / ".claude" / "plugins" / "installed_plugins.json",
+        registry_path=home / ".claude" / "plugins" / "installed_plugins.json",
         run=_run_recipe,
         build=build,
         tip=marketplace_tip(
