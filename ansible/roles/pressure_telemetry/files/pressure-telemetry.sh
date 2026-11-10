@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Emit the kernel's complete host PSI surface to Honeycomb's OTLP Metrics API.
+# Emit the kernel's complete host PSI surface to Honeycomb's OTLP Metrics API,
+# plus the CPU PSI of each cgroup named in PRESSURE_TELEMETRY_CGROUPS.
 #
 # The OTLP endpoint is direct by design.  Every target already receives
 # HONEYCOMB_INGEST_KEY_LIVESPEC through the otel_collector role, whereas adding
@@ -9,6 +10,10 @@ set -euo pipefail
 
 OTLP_ENDPOINT="${PRESSURE_TELEMETRY_OTLP_ENDPOINT:-https://api.honeycomb.io/v1/metrics}"
 : "${HONEYCOMB_INGEST_KEY_LIVESPEC:?pressure telemetry requires HONEYCOMB_INGEST_KEY_LIVESPEC}"
+
+# Space-separated cgroup paths relative to the cgroup root; empty adds none.
+CGROUP_ROOT="${PRESSURE_TELEMETRY_CGROUP_ROOT:-/sys/fs/cgroup}"
+read -r -a CGROUPS <<< "${PRESSURE_TELEMETRY_CGROUPS:-}"
 
 host_name="$(hostname -s)"
 if [[ ! "${host_name}" =~ ^[A-Za-z0-9][A-Za-z0-9.-]*$ ]]; then
@@ -51,22 +56,38 @@ read_psi_line() {
 }
 
 metrics=""
-append_metric() {
-  local resource="$1" line="$2" field="$3" value="$4" separator=""
+append_gauge() {
+  local name="$1" description="$2" value="$3" attributes="${4:-}" separator=""
   if [[ -n "${metrics}" ]]; then
     separator=","
   fi
   metrics+="${separator}
             {
-              \"name\": \"livespec.host.pressure.${resource}.${line}.${field}\",
-              \"description\": \"Host PSI ${resource} ${line} ${field} percentage\",
+              \"name\": \"${name}\",
+              \"description\": \"${description}\",
               \"unit\": \"%\",
               \"gauge\": {
                 \"dataPoints\": [
-                  { \"asDouble\": ${value}, \"timeUnixNano\": \"${now_ns}\" }
+                  { \"asDouble\": ${value}, \"timeUnixNano\": \"${now_ns}\"${attributes} }
                 ]
               }
             }"
+}
+
+append_metric() {
+  local resource="$1" line="$2" field="$3" value="$4"
+  append_gauge "livespec.host.pressure.${resource}.${line}.${field}" \
+    "Host PSI ${resource} ${line} ${field} percentage" "${value}"
+}
+
+append_cgroup_metric() {
+  local cgroup="$1" line="$2" field="$3" value="$4" attributes
+  attributes=", \"attributes\": [
+                    { \"key\": \"cgroup\", \"value\": { \"stringValue\": \"${cgroup}\" } },
+                    { \"key\": \"host.name\", \"value\": { \"stringValue\": \"${host_name}\" } }
+                  ]"
+  append_gauge "livespec.cgroup.pressure.cpu.${line}.${field}" \
+    "Cgroup PSI cpu ${line} ${field} percentage" "${value}" "${attributes}"
 }
 
 now_ns="$(date +%s%N)"
@@ -89,6 +110,25 @@ for resource in cpu memory io; do
     append_metric "${resource}" "${line}" avg10 "${avg10}"
     append_metric "${resource}" "${line}" avg60 "${avg60}"
     append_metric "${resource}" "${line}" avg300 "${avg300}"
+  done
+done
+
+for cgroup in "${CGROUPS[@]}"; do
+  if [[ ! "${cgroup}" =~ ^[A-Za-z0-9._@:-]+(/[A-Za-z0-9._@:-]+)*$ || "${cgroup}" == *..* ]]; then
+    echo "pressure telemetry: cgroup path '${cgroup}' cannot be represented safely in OTLP JSON" >&2
+    exit 1
+  fi
+  pressure_file="${CGROUP_ROOT}/${cgroup}/cpu.pressure"
+  if [[ ! -r "${pressure_file}" ]]; then
+    # Same fail-closed rule as the host files: no datapoint at all for this run.
+    echo "pressure telemetry: missing pressure file ${pressure_file}; refusing to emit cgroup ${cgroup}" >&2
+    exit 1
+  fi
+  for line in some full; do
+    read -r avg10 avg60 avg300 <<< "$(read_psi_line "${pressure_file}" "${line}")"
+    append_cgroup_metric "${cgroup}" "${line}" avg10 "${avg10}"
+    append_cgroup_metric "${cgroup}" "${line}" avg60 "${avg60}"
+    append_cgroup_metric "${cgroup}" "${line}" avg300 "${avg300}"
   done
 done
 
@@ -121,4 +161,4 @@ curl --silent --show-error --fail --max-time 10 \
   -H "X-Honeycomb-Team: ${HONEYCOMB_INGEST_KEY_LIVESPEC}" \
   -d "${payload}" > /dev/null
 
-echo "pressure telemetry: emitted cpu, memory, and io PSI some/full avg10/avg60/avg300 for host.name=${host_name}" >&2
+echo "pressure telemetry: emitted cpu, memory, and io PSI some/full avg10/avg60/avg300 for host.name=${host_name} (cgroups: ${CGROUPS[*]:-none})" >&2

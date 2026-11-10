@@ -143,3 +143,93 @@ def test_poweredge_renders_the_k3s_cgroup_and_a_host_without_a_list_renders_none
         rendered = _render_service(host=host)
         assert "system.slice" not in rendered, host
         assert "k3s" not in rendered, host
+
+
+_FAKE_CURL = (
+    "#!/usr/bin/env bash\n"
+    "set -euo pipefail\n"
+    "while (($#)); do\n"
+    '  case "$1" in\n'
+    '    -d) printf \'%s\' "$2" > "${PRESSURE_TELEMETRY_CAPTURE:?}"; shift 2 ;;\n'
+    "    *) shift ;;\n"
+    "  esac\n"
+    "done\n"
+)
+
+
+def _run_emitter(
+    *, tmp_path: Path, cgroup_root: Path, cgroups: str
+) -> subprocess.CompletedProcess[str]:
+    """Run the emitter against a stand-in curl and a fake cgroup tree."""
+    curl = tmp_path / "curl"
+    curl.write_text(_FAKE_CURL, encoding="utf-8")
+    curl.chmod(0o755)
+    return subprocess.run(
+        ["bash", str(_SCRIPT)],
+        capture_output=True,
+        check=False,
+        env=os.environ
+        | {
+            "HONEYCOMB_INGEST_KEY_LIVESPEC": "test-ingest-key",
+            "PATH": f"{tmp_path}:{os.environ['PATH']}",
+            "PRESSURE_TELEMETRY_CAPTURE": str(tmp_path / "otlp-payload.json"),
+            "PRESSURE_TELEMETRY_CGROUP_ROOT": str(cgroup_root),
+            "PRESSURE_TELEMETRY_CGROUPS": cgroups,
+        },
+        text=True,
+    )
+
+
+def test_pressure_emitter_sends_a_configured_cgroups_cpu_pressure_with_the_host_datapoints(
+    tmp_path: Path,
+) -> None:
+    """A readable cgroup cpu.pressure rides in the same request, attributed to its path."""
+    cgroup_root = tmp_path / "cgroup"
+    (cgroup_root / _CGROUP).mkdir(parents=True)
+    (cgroup_root / _CGROUP / "cpu.pressure").write_text(
+        "some avg10=1.10 avg60=2.20 avg300=3.30 total=123\n"
+        "full avg10=0.40 avg60=0.50 avg300=0.60 total=45\n",
+        encoding="utf-8",
+    )
+
+    completed = _run_emitter(tmp_path=tmp_path, cgroup_root=cgroup_root, cgroups=_CGROUP)
+
+    assert completed.returncode == 0, completed.stderr
+    payload = json.loads((tmp_path / "otlp-payload.json").read_text(encoding="utf-8"))
+    resource = payload["resourceMetrics"][0]["resource"]
+    host_name = next(
+        attribute["value"]["stringValue"]
+        for attribute in resource["attributes"]
+        if attribute["key"] == "host.name"
+    )
+    expected_host = subprocess.run(
+        ["hostname", "-s"], capture_output=True, check=True, text=True
+    ).stdout.strip()
+    assert host_name == expected_host
+    metrics = payload["resourceMetrics"][0]["scopeMetrics"][0]["metrics"]
+    assert len(metrics) == 18 + 6
+    assert {metric["name"] for metric in metrics if ".host." in metric["name"]} == {
+        f"livespec.host.pressure.{resource}.{line}.{field}"
+        for resource in ("cpu", "memory", "io")
+        for line in ("some", "full")
+        for field in ("avg10", "avg60", "avg300")
+    }
+    cgroup_values: dict[str, float] = {}
+    for metric in metrics:
+        if not metric["name"].startswith("livespec.cgroup.pressure.cpu."):
+            continue
+        (datapoint,) = metric["gauge"]["dataPoints"]
+        attributes = {item["key"]: item["value"] for item in datapoint["attributes"]}
+        assert attributes["cgroup"] == {"stringValue": _CGROUP}
+        assert attributes["host.name"] == {"stringValue": expected_host}
+        cgroup_values[metric["name"].removeprefix("livespec.cgroup.pressure.cpu.")] = datapoint[
+            "asDouble"
+        ]
+    assert cgroup_values == {
+        "some.avg10": 1.10,
+        "some.avg60": 2.20,
+        "some.avg300": 3.30,
+        "full.avg10": 0.40,
+        "full.avg60": 0.50,
+        "full.avg300": 0.60,
+    }
