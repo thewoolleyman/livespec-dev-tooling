@@ -166,6 +166,12 @@
     # needs (livespec-ifwnqj.2).
     - role: gha_runner
       tags: [gha_runner]
+    # The `tailscale serve` mappings that publish this host's loopback-only Fabro
+    # instances (32276, 32277) on the tailnet, declared in its host_vars like
+    # gmktec-xubuntu's (livespec-dev-tooling-jxw2ve). dev-host.yml applies the
+    # same role for the incident observer's mapping; the role is additive.
+    - role: tailscale_serve
+      tags: [tailscale_serve]
     # The RETIRED privileged gate-runner tier (bd-ib-te4h, 2026-11-05): held
     # absent, because the hand-run provision-gate-runner.sh that installed it
     # is gone with ci-runner/gate-runner/ and nothing else knows its paths.

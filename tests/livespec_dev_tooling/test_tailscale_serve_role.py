@@ -9,6 +9,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import yaml
+
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _ANSIBLE = _REPO_ROOT / "ansible"
 _ROLE = _ANSIBLE / "roles" / "tailscale_serve"
@@ -45,3 +47,18 @@ def test_the_factory_play_runs_the_role_and_only_gmktec_declares_a_mapping() -> 
     assert "tailscale_serve_mappings" not in _HP.read_text(
         encoding="utf-8"
     ), "hp-xubuntu's mappings were made by hand and must be left as they are"
+
+
+def test_vps_declares_its_fabro_mappings_and_the_dev_host_play_applies_the_role() -> None:
+    """livespec-dev-tooling-jxw2ve: vps declares what gmktec declares, F3-F6."""
+    playbook = _PLAYBOOK.read_text(encoding="utf-8")
+    dev_play = playbook[playbook.index("- name: Fabro services on the dev host") :]
+    assert "- role: tailscale_serve" in dev_play, "the dev-host play must apply the role to vps"
+    vps = yaml.safe_load((_ANSIBLE / "inventory" / "host_vars" / "vps.yml").read_text("utf-8"))
+    mappings = {m["https_port"]: m["backend"] for m in vps["tailscale_serve_mappings"]}
+    for port in (32276, 32277):
+        assert mappings.get(port) == f"http://127.0.0.1:{port}"
+    assert vps["fabro_server_manage_settings"] is True
+    for instance in vps["fabro_server_instances"]:
+        assert instance["otel_dropin"] in {"present", "absent"}, instance["unit_name"]
+        assert "GITHUB_APP_PRIVATE_KEY" in [s["name"] for s in instance["vault_secrets"]]
