@@ -26,10 +26,12 @@ from coverage import CoverageData
 __all__: list[str] = [
     "COVERAGE_GUIDED_METHOD",
     "FULL_MATRIX_METHOD",
+    "MutantLocator",
     "MutantSpan",
     "PerTestCoverage",
     "locate_mutant",
     "measure_per_test_coverage",
+    "measured_tests",
     "select_tests",
     "text_digest",
 ]
@@ -105,23 +107,48 @@ def _find_function(*, body: list[ast.stmt], names: tuple[str, ...]) -> ast.stmt 
     return None
 
 
+class MutantLocator:
+    """Locate mutants against one snapshot of the target.
+
+    The tree is walked once and each source file is read and parsed at most
+    once, however many mutants it holds: a real target generates tens of
+    thousands of mutants, and a walk and parse per mutant took hours.
+    """
+
+    def __init__(self, *, target: Path) -> None:
+        self._target = target
+        self._modules = _module_files(target=target)
+        self._parsed: dict[Path, tuple[str, list[ast.stmt]]] = {}
+
+    def _parse(self, *, source: Path) -> tuple[str, list[ast.stmt]]:
+        """Read and parse one source file, once."""
+        if source not in self._parsed:
+            text = source.read_text(encoding="utf-8")
+            self._parsed[source] = (text, ast.parse(text).body)
+        return self._parsed[source]
+
+    def locate(self, *, identifier: str) -> MutantSpan | None:
+        """Locate the function body a mutmut mutant identifier names, if it can be found."""
+        module, _, mangled = identifier.rpartition(".")
+        names = _function_names(mangled=mangled)
+        source = self._modules.get(module)
+        if not names or source is None:
+            return None
+        text, body = self._parse(source=source)
+        function = _find_function(body=body, names=names)
+        if not isinstance(function, ast.FunctionDef | ast.AsyncFunctionDef):
+            return None
+        return MutantSpan(
+            path=source.relative_to(self._target).as_posix(),
+            first_line=function.body[0].lineno,
+            last_line=function.end_lineno or function.body[-1].lineno,
+            function_digest=text_digest(text=ast.get_source_segment(text, function) or ""),
+        )
+
+
 def locate_mutant(*, target: Path, identifier: str) -> MutantSpan | None:
-    """Locate the function body a mutmut mutant identifier names, if it can be found."""
-    module, _, mangled = identifier.rpartition(".")
-    names = _function_names(mangled=mangled)
-    source = _module_files(target=target).get(module)
-    if not names or source is None:
-        return None
-    text = source.read_text(encoding="utf-8")
-    function = _find_function(body=ast.parse(text).body, names=names)
-    if not isinstance(function, ast.FunctionDef | ast.AsyncFunctionDef):
-        return None
-    return MutantSpan(
-        path=source.relative_to(target).as_posix(),
-        first_line=function.body[0].lineno,
-        last_line=function.end_lineno or function.body[-1].lineno,
-        function_digest=text_digest(text=ast.get_source_segment(text, function) or ""),
-    )
+    """Locate one mutant; a caller locating many builds one `MutantLocator` instead."""
+    return MutantLocator(target=target).locate(identifier=identifier)
 
 
 def text_digest(*, text: str) -> str:
@@ -199,10 +226,26 @@ def measure_per_test_coverage(
         return _read_coverage(data_file=data_file, target=target)
 
 
+def measured_tests(*, coverage: PerTestCoverage) -> frozenset[str]:
+    """Name every test with a coverage context anywhere in `coverage`."""
+    return frozenset(
+        name for file in coverage.values() for names in file.values() for name in names
+    )
+
+
 def select_tests(
-    *, span: MutantSpan | None, coverage: PerTestCoverage | None, tests: list[str]
+    *,
+    span: MutantSpan | None,
+    coverage: PerTestCoverage | None,
+    tests: list[str],
+    measured: frozenset[str] | None = None,
 ) -> list[str]:
-    """Return the tests one mutant must run against, in collection order."""
+    """Return the tests one mutant must run against, in collection order.
+
+    `measured` is `measured_tests(coverage=coverage)`; a caller selecting for
+    many mutants computes it once and passes it, because it folds the whole
+    coverage map.
+    """
     if span is None or coverage is None:
         return list(tests)
     lines = coverage.get(span.path, {})
@@ -213,5 +256,5 @@ def select_tests(
     }
     if _OUTSIDE_ANY_TEST in executing:
         return list(tests)
-    measured = {name for file in coverage.values() for names in file.values() for name in names}
-    return [test for test in tests if test in executing or test not in measured]
+    known = measured_tests(coverage=coverage) if measured is None else measured
+    return [test for test in tests if test in executing or test not in known]
