@@ -66,6 +66,8 @@ if str(_VENDOR_DIR) not in sys.path:
 from returns.io import IOFailure, IOResult, IOSuccess  # noqa: E402  — vendor-path-aware import.
 from returns.unsafe import unsafe_perform_io  # noqa: E402  — vendor-path-aware import.
 
+from livespec_dev_tooling.commit_message import append_trailers  # noqa: E402
+
 if TYPE_CHECKING:  # pragma: no cover
     import structlog.stdlib
 
@@ -330,12 +332,7 @@ def write_trailers(*, msg_path: Path, trailers: tuple[tuple[str, str], ...]) -> 
         stripped_lines.append(line)
     _ = msg_path.write_text("".join(stripped_lines), encoding="utf-8")
 
-    args: list[str] = []
-    for key, value in trailers:
-        args.extend(["--trailer", f"{key}: {value}"])
-    _ = subprocess.run(
-        ["git", "interpret-trailers", "--in-place", *args, str(msg_path)],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    # A message with no content stays empty (`commit_message.append_trailers`): git
+    # runs this hook BEFORE its empty-message abort, and a trailer written here
+    # would turn the aborted commit into one whose whole message is trailers.
+    append_trailers(message_path=msg_path, text="".join(stripped_lines), trailers=trailers)
