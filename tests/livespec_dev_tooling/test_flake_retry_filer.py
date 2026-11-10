@@ -72,7 +72,9 @@ def test_the_reader_skips_an_open_root_fix_and_files_the_other_nodeid(*, tmp_pat
 
     filer = importlib.import_module("livespec_dev_tooling.flake_retry_filer")
 
-    filed = filer.file_root_fixes(repo_root=tmp_path, runner=runner, plugin_root=_PLUGIN_ROOT)
+    filed = filer.file_root_fixes(
+        repo_root=tmp_path, runner=runner, plugin_root=_PLUGIN_ROOT, state_dir=tmp_path / "state"
+    )
 
     assert filed == (nodeid_without_fix,)
     assert [call[:3] for call in calls] == [
@@ -104,9 +106,9 @@ def test_a_filed_root_fix_carries_a_definition_of_done_naming_the_nodeid(*, tmp_
 
     filer = importlib.import_module("livespec_dev_tooling.flake_retry_filer")
 
-    assert filer.file_root_fixes(repo_root=tmp_path, runner=runner, plugin_root=_PLUGIN_ROOT) == (
-        nodeid,
-    )
+    assert filer.file_root_fixes(
+        repo_root=tmp_path, runner=runner, plugin_root=_PLUGIN_ROOT, state_dir=tmp_path / "state"
+    ) == (nodeid,)
 
     create = next(call for call in calls if call[1] == "create")
     description = create[create.index("--description") + 1]
@@ -135,7 +137,15 @@ def test_the_reader_returns_cleanly_when_no_retry_records_exist(*, tmp_path: Pat
 
     filer = importlib.import_module("livespec_dev_tooling.flake_retry_filer")
 
-    assert filer.file_root_fixes(repo_root=tmp_path, runner=runner, plugin_root=_PLUGIN_ROOT) == ()
+    assert (
+        filer.file_root_fixes(
+            repo_root=tmp_path,
+            runner=runner,
+            plugin_root=_PLUGIN_ROOT,
+            state_dir=tmp_path / "state",
+        )
+        == ()
+    )
     assert calls == [["bd", "list", "--status", "all", "--json"]]
 
 
@@ -174,9 +184,9 @@ def test_the_reader_ignores_closed_and_non_root_fix_ledger_rows(*, tmp_path: Pat
 
     filer = importlib.import_module("livespec_dev_tooling.flake_retry_filer")
 
-    assert filer.file_root_fixes(repo_root=tmp_path, runner=runner, plugin_root=_PLUGIN_ROOT) == (
-        nodeid,
-    )
+    assert filer.file_root_fixes(
+        repo_root=tmp_path, runner=runner, plugin_root=_PLUGIN_ROOT, state_dir=tmp_path / "state"
+    ) == (nodeid,)
     assert calls[1][2] == f"root-fix: {nodeid}"
 
 
@@ -201,7 +211,12 @@ def test_the_reader_refuses_a_ledger_command_that_did_not_succeed(
     filer = importlib.import_module("livespec_dev_tooling.flake_retry_filer")
 
     with pytest.raises(OSError, match="^$"):
-        _ = filer.file_root_fixes(repo_root=tmp_path, runner=runner, plugin_root=_PLUGIN_ROOT)
+        _ = filer.file_root_fixes(
+            repo_root=tmp_path,
+            runner=runner,
+            plugin_root=_PLUGIN_ROOT,
+            state_dir=tmp_path / "state",
+        )
 
 
 def test_the_reader_refuses_a_non_array_ledger_response(*, tmp_path: Path) -> None:
@@ -216,7 +231,12 @@ def test_the_reader_refuses_a_non_array_ledger_response(*, tmp_path: Path) -> No
     filer = importlib.import_module("livespec_dev_tooling.flake_retry_filer")
 
     with pytest.raises(TypeError):
-        _ = filer.file_root_fixes(repo_root=tmp_path, runner=runner, plugin_root=_PLUGIN_ROOT)
+        _ = filer.file_root_fixes(
+            repo_root=tmp_path,
+            runner=runner,
+            plugin_root=_PLUGIN_ROOT,
+            state_dir=tmp_path / "state",
+        )
 
 
 def _one_filed_nodeid(**_: object) -> tuple[str, ...]:
@@ -327,7 +347,9 @@ def test_each_filed_root_fix_is_routed_through_intake_by_its_own_id(*, tmp_path:
 
     filer = importlib.import_module("livespec_dev_tooling.flake_retry_filer")
 
-    filed = filer.file_root_fixes(repo_root=tmp_path, runner=runner, plugin_root=_PLUGIN_ROOT)
+    filed = filer.file_root_fixes(
+        repo_root=tmp_path, runner=runner, plugin_root=_PLUGIN_ROOT, state_dir=tmp_path / "state"
+    )
 
     assert filed == nodeids
     assert routed == ["dt-1", "dt-2"]
@@ -347,7 +369,12 @@ def test_the_reader_refuses_a_create_response_without_an_item_id(
     filer = importlib.import_module("livespec_dev_tooling.flake_retry_filer")
 
     with pytest.raises(TypeError):
-        _ = filer.file_root_fixes(repo_root=tmp_path, runner=runner, plugin_root=_PLUGIN_ROOT)
+        _ = filer.file_root_fixes(
+            repo_root=tmp_path,
+            runner=runner,
+            plugin_root=_PLUGIN_ROOT,
+            state_dir=tmp_path / "state",
+        )
 
 
 def test_the_reader_refuses_an_intake_routing_that_did_not_succeed(*, tmp_path: Path) -> None:
@@ -363,7 +390,147 @@ def test_the_reader_refuses_an_intake_routing_that_did_not_succeed(*, tmp_path: 
     filer = importlib.import_module("livespec_dev_tooling.flake_retry_filer")
 
     with pytest.raises(OSError, match="^$"):
-        _ = filer.file_root_fixes(repo_root=tmp_path, runner=runner, plugin_root=_PLUGIN_ROOT)
+        _ = filer.file_root_fixes(
+            repo_root=tmp_path,
+            runner=runner,
+            plugin_root=_PLUGIN_ROOT,
+            state_dir=tmp_path / "state",
+        )
+
+
+class _FakeLedger:
+    """A stateful stand-in for the Beads ledger the host reader files into."""
+
+    def __init__(self) -> None:
+        self.items: list[dict[str, str]] = []
+        self.created: list[str] = []
+
+    def __call__(self, *, argv: list[str], cwd: Path, **_: object) -> Success[GateCommandResult]:
+        del cwd
+        if argv[1] == "list":
+            return _ok(stdout=json.dumps(self.items))
+        if argv[1] == "create":
+            self.items.append({"status": "ready", "title": argv[2]})
+            self.created.append(argv[2])
+            return _ok(stdout=json.dumps({"id": f"dt-{len(self.created)}"}))
+        return _ok()
+
+    def close_all(self) -> None:
+        for item in self.items:
+            item["status"] = "closed"
+
+
+def _run_pass(
+    *,
+    monkeypatch: pytest.MonkeyPatch,
+    ledger: _FakeLedger,
+    repo_root: Path,
+    state_dir: Path,
+) -> None:
+    """Run one timer pass of the host CLI against the fake ledger."""
+    filer = importlib.import_module("livespec_dev_tooling.flake_retry_filer")
+    monkeypatch.setattr(filer, "default_gate_command_runner", ledger)
+    monkeypatch.setattr(filer, "registered_plugin_root", _fixed_plugin_root)
+    assert filer.main(argv=["--repo-root", str(repo_root), "--state-dir", str(state_dir)]) == 0
+
+
+def _append_record(*, repo_root: Path, record: dict[str, object]) -> None:
+    records = repo_root / "tmp" / "flake-retries"
+    _ = records.mkdir(parents=True, exist_ok=True)
+    with (records / "retries.jsonl").open("a", encoding="utf-8") as handle:
+        _ = handle.write(json.dumps(record) + "\n")
+
+
+_NODEID = "tests/test_a.py::test_one"
+
+
+def test_an_unchanged_record_files_nothing_after_its_root_fix_closes(
+    *, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A closed root fix does not make the same unconsumed record file again."""
+    state_dir = tmp_path / "state"
+    ledger = _FakeLedger()
+    _append_record(repo_root=tmp_path, record={"nodeid": _NODEID, "attempts": 4})
+
+    _run_pass(monkeypatch=monkeypatch, ledger=ledger, repo_root=tmp_path, state_dir=state_dir)
+    ledger.close_all()
+    _run_pass(monkeypatch=monkeypatch, ledger=ledger, repo_root=tmp_path, state_dir=state_dir)
+    _run_pass(monkeypatch=monkeypatch, ledger=ledger, repo_root=tmp_path, state_dir=state_dir)
+
+    assert ledger.created == [f"root-fix: {_NODEID}"]
+
+
+def test_a_new_record_after_the_root_fix_closed_files_exactly_one_new_item(
+    *, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A recurrence is a distinct record, so it files once and only once."""
+    state_dir = tmp_path / "state"
+    ledger = _FakeLedger()
+    _append_record(repo_root=tmp_path, record={"nodeid": _NODEID, "attempts": 4})
+    _run_pass(monkeypatch=monkeypatch, ledger=ledger, repo_root=tmp_path, state_dir=state_dir)
+    ledger.close_all()
+
+    _append_record(repo_root=tmp_path, record={"nodeid": _NODEID, "attempts": 2})
+    _run_pass(monkeypatch=monkeypatch, ledger=ledger, repo_root=tmp_path, state_dir=state_dir)
+    ledger.close_all()
+    _run_pass(monkeypatch=monkeypatch, ledger=ledger, repo_root=tmp_path, state_dir=state_dir)
+
+    assert ledger.created == [f"root-fix: {_NODEID}"] * 2
+
+
+def test_the_filed_record_memory_lives_under_the_state_dir_and_survives_a_restart(
+    *, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The memory is a file under the state dir, not process state."""
+    state_dir = tmp_path / "state"
+    ledger = _FakeLedger()
+    _append_record(repo_root=tmp_path, record={"nodeid": _NODEID})
+    _run_pass(monkeypatch=monkeypatch, ledger=ledger, repo_root=tmp_path, state_dir=state_dir)
+    ledger.close_all()
+
+    assert any(
+        path.is_file() for path in state_dir.iterdir() if path.name != "last-successful-pass"
+    )
+
+    filer = importlib.reload(importlib.import_module("livespec_dev_tooling.flake_retry_filer"))
+    monkeypatch.setattr(filer, "default_gate_command_runner", ledger)
+    monkeypatch.setattr(filer, "registered_plugin_root", _fixed_plugin_root)
+    assert filer.main(argv=["--repo-root", str(tmp_path), "--state-dir", str(state_dir)]) == 0
+
+    assert ledger.created == [f"root-fix: {_NODEID}"]
+
+
+def test_a_record_covered_by_an_open_root_fix_does_not_refile_after_that_item_closes(
+    *, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """An open root fix already accounts for the records it was filed from."""
+    state_dir = tmp_path / "state"
+    ledger = _FakeLedger()
+    ledger.items.append({"status": "ready", "title": f"root-fix: {_NODEID}"})
+    _append_record(repo_root=tmp_path, record={"nodeid": _NODEID})
+
+    _run_pass(monkeypatch=monkeypatch, ledger=ledger, repo_root=tmp_path, state_dir=state_dir)
+    ledger.close_all()
+    _run_pass(monkeypatch=monkeypatch, ledger=ledger, repo_root=tmp_path, state_dir=state_dir)
+
+    assert ledger.created == []
+
+
+def test_two_records_with_one_open_root_fix_file_only_the_untracked_nodeid(
+    *, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A pass over a tracked and an untracked node id files one item, for the untracked one."""
+    other = "tests/test_b.py::test_two"
+    ledger = _FakeLedger()
+    ledger.items.append({"status": "ready", "title": f"root-fix: {_NODEID}"})
+    _append_record(repo_root=tmp_path, record={"nodeid": _NODEID})
+    _append_record(repo_root=tmp_path, record={"nodeid": other})
+
+    _run_pass(
+        monkeypatch=monkeypatch, ledger=ledger, repo_root=tmp_path, state_dir=tmp_path / "state"
+    )
+
+    assert ledger.created == [f"root-fix: {other}"]
 
 
 def _write_registry(*, path: Path, entries: dict[str, list[dict[str, str]]]) -> None:
