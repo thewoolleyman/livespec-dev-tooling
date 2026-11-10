@@ -137,6 +137,8 @@ class _World:
 
         monkeypatch.setattr(subprocess, "run", reader)
         monkeypatch.setattr(control.ForgeReads, "installed", lambda **_: forge)
+        # Focused evidence at `/arm` has its own tests; these exercise the target branch.
+        monkeypatch.setattr(control.FocusedEvidenceGate, "__call__", lambda *_: None)
 
     @property
     def application(self):
