@@ -40,6 +40,9 @@ _PROJECT_ADOPTION = re.compile(
 _SANCTIONED_SOURCES = frozenset(
     {
         "livespec_dev_tooling/fleet/_ensure_plugin_commands.py",
+        # The tag adopt's builder installs at project scope only in a throwaway
+        # clone of a throwaway builder home, never in a fleet member's clone.
+        "livespec_dev_tooling/fleet/_tag_adopt_build.py",
         "livespec_dev_tooling/fleet/adopt_orchestrator_build.py",
     }
 )

@@ -1,11 +1,15 @@
 """The operator step that moves the orchestrator plugin to a named build.
 
 A session reconcile never moves an installed orchestrator build. This is the
-named operator step that does: it refreshes the host's marketplace, refuses any
-commit other than the one the marketplace names at its recorded ref, runs
-`claude plugin update` at project scope in the chosen clone, and confirms the
-install record afterwards. `claude plugin update` can report "already at the
-latest version" after a failed fetch, which is why the record is read back.
+named operator step that does. Given a full commit id it refreshes the host's
+marketplace, refuses any commit other than the one the marketplace names at its
+recorded ref, runs `claude plugin update` at project scope in the chosen clone,
+and confirms the install record afterwards. `claude plugin update` can report
+"already at the latest version" after a failed fetch, which is why the record
+is read back. Given a published release tag it takes the tag adopt instead
+(`_tag_adopt`), which moves only that clone's record and never touches the
+host's marketplace. Run on its own, the step holds the host-wide adoption lock
+for its whole run.
 """
 
 from __future__ import annotations
@@ -18,6 +22,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
 
+from livespec_dev_tooling.fleet._adoption_lock import adoption_lock_path, holding_adoption_lock
 from livespec_dev_tooling.fleet._fleet_manifest_read import (
     ManifestUnreadable,
     manifest_names,
@@ -38,13 +43,19 @@ from livespec_dev_tooling.fleet._plugin_build_currency_core import (
     resolved_build,
     unresolved_build,
 )
-from livespec_dev_tooling.fleet._plugin_build_currency_reads import governed_pins
 from livespec_dev_tooling.fleet._plugin_settings import marketplace_of
+from livespec_dev_tooling.fleet._tag_adopt import TagAdoptHost, host_seams, tag_adopt
+from livespec_dev_tooling.fleet._tag_adopt_checks import (
+    AdoptionOutcome,
+    enablement_refusal,
+    is_full_commit,
+)
 
 __all__: list[str] = [
     "AdoptionOutcome",
     "CloneUnresolved",
     "adopt_build",
+    "adopt_named_build",
     "clones_root",
     "main",
     "marketplace_tip",
@@ -55,14 +66,6 @@ __all__: list[str] = [
 
 _MARKETPLACE = marketplace_of(plugin=ORCHESTRATOR_PLUGIN)
 _USAGE_EXIT = 2
-
-
-@dataclass(frozen=True, kw_only=True)
-class AdoptionOutcome:
-    """The lines an adoption printed and, when it failed, the cause."""
-
-    lines: tuple[str, ...]
-    failure: str
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -165,19 +168,6 @@ def _refused(*, cause: str) -> AdoptionOutcome:
     return AdoptionOutcome(lines=(), failure=cause)
 
 
-def _enablement_refusal(*, clone: Path) -> str:
-    """Why the clone's committed settings cannot take the adopt step, or the empty string."""
-    settings = clone / ".claude" / "settings.json"
-    if not settings.is_file():
-        return f"{clone} has no committed .claude/settings.json"
-    pins = governed_pins(settings_text=settings.read_text(encoding="utf-8"))
-    if pins.unreadable:
-        return f"{settings} is unusable: {pins.unreadable}"
-    if all(pin.plugin != ORCHESTRATOR_PLUGIN for pin in pins.sources):
-        return f"{settings} does not enable {ORCHESTRATOR_PLUGIN}"
-    return ""
-
-
 def _refusal_before_update(
     *,
     clone: Path,
@@ -188,7 +178,7 @@ def _refusal_before_update(
     """Why nothing may be moved yet, or the empty string when the update may run."""
     if not clone.is_dir():
         return f"local clone missing at {clone}"
-    refusal = _enablement_refusal(clone=clone)
+    refusal = enablement_refusal(clone=clone)
     if refusal:
         return refusal
     tip = marketplace_tip(run=run, read_known_marketplaces=read_known_marketplaces)
@@ -208,6 +198,8 @@ def adopt_build(
     read_known_marketplaces: Callable[[], str | None],
 ) -> AdoptionOutcome:
     """Update the orchestrator plugin in one clone to the named marketplace commit."""
+    if not is_full_commit(build=build):
+        return _refused(cause=f"{build!r} is not a full commit id; nothing was moved")
     named = build.strip().lower()
     refusal = _refusal_before_update(
         clone=clone, named=named, run=run, read_known_marketplaces=read_known_marketplaces
@@ -236,12 +228,29 @@ def adopt_build(
     return AdoptionOutcome(lines=lines, failure="")
 
 
-def main() -> int:  # pragma: no cover
-    """CLI entry point: `adopt_orchestrator_build <clone> <build>`."""
-    if len(sys.argv) != 3:  # noqa: PLR2004 — program name, clone and build.
-        _ = sys.stderr.write("usage: just adopt-orchestrator-build <clone> <build>\n")
-        return _USAGE_EXIT
-    clone_arg, build = sys.argv[1], sys.argv[2]
+def adopt_named_build(
+    *,
+    clone: Path,
+    build: str,
+    run: CommandRunner,
+    read_registry: Callable[[], str | None],
+    read_known_marketplaces: Callable[[], str | None],
+    tag_host: TagAdoptHost,
+) -> AdoptionOutcome:
+    """Take the full-commit adopt step for a full commit id, and the tag adopt otherwise."""
+    if is_full_commit(build=build):
+        return adopt_build(
+            clone=clone,
+            build=build,
+            run=run,
+            read_registry=read_registry,
+            read_known_marketplaces=read_known_marketplaces,
+        )
+    return tag_adopt(clone=clone, tag=build.strip(), host=tag_host)
+
+
+def _resolved_clone(*, clone_arg: str) -> Path | CloneUnresolved:  # pragma: no cover
+    """The clone a CLI argument names, resolved against the manifest when it is a name."""
     names: frozenset[str] = frozenset()
     root = clones_root(
         env_root=os.environ.get("LIVESPEC_FLEET_CLONES_ROOT"),
@@ -251,22 +260,26 @@ def main() -> int:  # pragma: no cover
     if not Path(clone_arg).is_absolute():
         source = master_manifest_source()
         if isinstance(source, ManifestUnreadable):
-            _ = sys.stderr.write(f"adopt-orchestrator-build: {source.cause}\n")
-            return 1
+            return CloneUnresolved(cause=source.cause)
         names = manifest_names(manifest_source=source)
     if isinstance(root, CloneUnresolved):
-        _ = sys.stderr.write(f"adopt-orchestrator-build: {root.cause}\n")
-        return 1
-    clone = resolve_clone(clone=clone_arg, clones_root=root, names=names)
+        return root
+    return resolve_clone(clone=clone_arg, clones_root=root, names=names)
+
+
+def _adopt_from_cli(*, clone_arg: str, build: str, home: Path) -> int:  # pragma: no cover
+    """Resolve the clone, take the step and print its lines; the exit code."""
+    clone = _resolved_clone(clone_arg=clone_arg)
     if isinstance(clone, CloneUnresolved):
         _ = sys.stderr.write(f"adopt-orchestrator-build: {clone.cause}\n")
         return 1
-    outcome = adopt_build(
+    outcome = adopt_named_build(
         clone=clone,
         build=build,
         run=default_command_runner,
         read_registry=read_installed_registry,
         read_known_marketplaces=read_known_marketplaces,
+        tag_host=host_seams(home=home),
     )
     for line in outcome.lines:
         _ = sys.stdout.write(f"adopt-orchestrator-build: {line}\n")
@@ -274,6 +287,24 @@ def main() -> int:  # pragma: no cover
         _ = sys.stderr.write(f"adopt-orchestrator-build: {outcome.failure}\n")
         return 1
     return 0
+
+
+def _report_wait() -> None:  # pragma: no cover
+    _ = sys.stderr.write("adopt-orchestrator-build: waiting for the host-wide adoption lock\n")
+
+
+def main() -> int:  # pragma: no cover
+    """CLI entry point: `adopt_orchestrator_build <clone> <build>`, under the adoption lock."""
+    home = Path.home()
+    if len(sys.argv) != 3:  # noqa: PLR2004 — program name, clone and build.
+        _ = sys.stderr.write("usage: just adopt-orchestrator-build <clone> <build>\n")
+        return _USAGE_EXIT
+    clone_arg, build = sys.argv[1], sys.argv[2]
+    return holding_adoption_lock(
+        path=adoption_lock_path(home=home),
+        body=lambda: _adopt_from_cli(clone_arg=clone_arg, build=build, home=home),
+        on_wait=_report_wait,
+    )
 
 
 if __name__ == "__main__":
