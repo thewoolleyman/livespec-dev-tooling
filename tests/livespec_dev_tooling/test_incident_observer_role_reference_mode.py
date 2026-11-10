@@ -24,7 +24,7 @@ _REFERENCE = "{{ incident_observer_reference_dir }}"
 
 
 def _tasks() -> list[dict[str, Any]]:
-    loaded = yaml.safe_load((_ROLE / "tasks" / "main.yml").read_text(encoding="utf-8"))
+    loaded = yaml.safe_load((_ROLE / "tasks" / "converge.yml").read_text(encoding="utf-8"))
     assert isinstance(loaded, list)
     return loaded
 

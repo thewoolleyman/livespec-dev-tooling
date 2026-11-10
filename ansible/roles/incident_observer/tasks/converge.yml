@@ -1,0 +1,792 @@
+---
+# incident_observer converge body, for BOTH instances. tasks/main.yml includes it
+# for production; tasks/scratch_apply.yml includes it for the scratch instance,
+# only after tasks/scratch_preflight.yml has passed. Both includes are dynamic,
+# so `--start-at-task` cannot reach any task here (livespec-dev-tooling-32qdja).
+# incident_observer — converge a dev host to a running independent incident
+# observer (docs/incident-observer-service.md). livespec-dev-tooling-w7n3ad.
+#
+# ORDER IS THE CONTRACT. The service authenticates its installation at every
+# start and exits 2 before binding a socket when any piece is wrong, so each
+# piece is written before the one that names it: account → directories → venv
+# at the released tag → reader clone → reference clone → secrets → controller.json
+# → manifest (hashes controller.json and every executable) → an isolated load of
+# the whole installation AS THE CONTROLLER ACCOUNT → unit → start → a probe that
+# the listener refuses an unauthenticated read.
+#
+# SECRETS. The three secret files are written from the CONTROL NODE's environment
+# under no_log, the shape otel_collector uses for its ingest key: run the apply
+# through /usr/local/bin/with-livespec-env.sh, which projects the livespec
+# 1Password environment. A bare apply refuses at the preflight and names the
+# variable. No value is read back, printed or compared in the run output.
+#
+# CHECK MODE. On a host this role has never reached, `--check` writes nothing,
+# so the venv, the clones and the unit do not exist; every step that needs one
+# is guarded on the pre-read `incident_observer_installed` and says so, rather
+# than failing on the dry run's own omission (the otel_collector guard).
+
+- name: Measure each secret the control node's environment carries
+  # Lengths and digests only, under no_log, so neither a value nor its absence
+  # leaks a byte into the run output; the values themselves are never kept.
+  ansible.builtin.set_fact:
+    incident_observer_secret_lengths: >-
+      {{ (incident_observer_secret_lengths | default([]))
+         + [lookup('ansible.builtin.env', item.env) | length] }}
+    incident_observer_secret_digests: >-
+      {{ (incident_observer_secret_digests | default([]))
+         + [lookup('ansible.builtin.env', item.env) | hash('sha256')] }}
+  loop: "{{ incident_observer_secrets }}"
+  loop_control:
+    label: "{{ item.env }}"
+  no_log: true
+
+- name: Refuse an apply with a missing, short or repeated secret
+  ansible.builtin.assert:
+    that:
+      - incident_observer_secret_lengths | min >= incident_observer_secret_min_bytes
+      - incident_observer_secret_digests | unique | length == incident_observer_secrets | length
+      - lookup('ansible.builtin.env', incident_observer_reader_env_var) | length > 0
+    fail_msg: >-
+      the control node's environment does not carry
+      {{ incident_observer_secrets | map(attribute='env') | join(', ') }}
+      as three distinct values of at least {{ incident_observer_secret_min_bytes }}
+      bytes together with {{ incident_observer_reader_env_var }}. Create the three
+      in the livespec 1Password environment and run the apply through
+      /usr/local/bin/with-livespec-env.sh (README.md §"Maintainer-only steps").
+      Nothing has been written.
+    success_msg: the environment carries three distinct secrets and the reader's credential
+
+- name: Refuse a host that does not declare its candidate account
+  ansible.builtin.assert:
+    that:
+      - incident_observer_candidate_user | string | length > 0
+    fail_msg: >-
+      incident_observer_candidate_user is undeclared; the controller refuses a
+      candidate uid equal to its own, so the host must name the account its
+      candidates run as (HOST_VARS.md).
+    success_msg: the candidate account is {{ incident_observer_candidate_user }}
+
+- name: Look for an installation already converged here
+  ansible.builtin.stat:
+    path: "{{ incident_observer_venv }}/bin/python"
+    get_checksum: false
+  become: true
+  register: incident_observer_venv_python_stat
+  check_mode: false
+
+- name: Name whether the installation exists before this run writes anything
+  ansible.builtin.set_fact:
+    incident_observer_installed: "{{ incident_observer_venv_python_stat.stat.exists }}"
+
+- name: Read the distribution version the venv serves
+  ansible.builtin.command:
+    argv:
+      - "{{ incident_observer_venv }}/bin/python"
+      - -I
+      - -c
+      - import importlib.metadata as m; print(m.version('livespec-dev-tooling'))
+  become: true
+  register: incident_observer_installed_version
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  when: incident_observer_installed
+
+- name: Refuse a scratch apply onto a venv production does not already serve
+  # The scratch instance shares production's venv and reader clone and writes
+  # neither: installing a release there would change the package production's
+  # manifest hashes without restarting production. Converge production first.
+  ansible.builtin.assert:
+    that:
+      - incident_observer_installed
+      - (incident_observer_installed_version.rc | default(1)) == 0
+      - >-
+        ('v' ~ (incident_observer_installed_version.stdout | default('') | trim))
+        == incident_observer_release
+    fail_msg: >-
+      {{ incident_observer_venv }} does not serve {{ incident_observer_release }};
+      converge production (ansible/dev-host.yml --tags incident_observer) at that
+      release before the scratch instance. Nothing has been written.
+    success_msg: the shared venv serves {{ incident_observer_release }}
+  when: incident_observer_scratch | bool
+
+- name: Install the interpreter's venv module and git
+  ansible.builtin.apt:
+    name:
+      - python3-venv
+      - git
+    state: present
+  become: true
+  when: >-
+    not (incident_observer_scratch | bool)
+    and incident_observer_scratch_name is not defined
+    and incident_observer_target_branch | default('', true) | length == 0
+
+- name: Create the controller account
+  ansible.builtin.user:
+    name: "{{ incident_observer_user }}"
+    system: true
+    create_home: false
+    home: "{{ incident_observer_home }}"
+    shell: /usr/sbin/nologin
+  become: true
+  register: incident_observer_account
+  when: >-
+    not (incident_observer_scratch | bool)
+    and incident_observer_scratch_name is not defined
+    and incident_observer_target_branch | default('', true) | length == 0
+
+- name: Name whether the controller account can be become yet
+  # Under `--check` on a host this role has never reached the account was not
+  # created, and Ansible cannot become a user that does not exist: the steps
+  # that run AS the controller are withheld below and say so.
+  ansible.builtin.set_fact:
+    incident_observer_account_ready: >-
+      {{ not (ansible_check_mode and incident_observer_account.changed) }}
+
+- name: Read the candidate account
+  ansible.builtin.getent:
+    database: passwd
+    key: "{{ incident_observer_candidate_user }}"
+  become: true
+
+- name: Create the root-owned installation directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+  loop:
+    - "{{ incident_observer_install_dir }}"
+    - "{{ incident_observer_bin_dir }}"
+  when: >-
+    not (incident_observer_scratch | bool)
+    and incident_observer_scratch_name is not defined
+    and incident_observer_target_branch | default('', true) | length == 0
+
+- name: Create the protected configuration directory
+  ansible.builtin.file:
+    path: "{{ incident_observer_etc_dir }}"
+    state: directory
+    owner: root
+    group: "{{ incident_observer_group }}"
+    mode: "0750"
+  become: true
+  when: >-
+    not (incident_observer_scratch | bool)
+    and incident_observer_scratch_name is not defined
+    and incident_observer_target_branch | default('', true) | length == 0
+
+- name: Create the controller account's home
+  ansible.builtin.file:
+    path: "{{ incident_observer_home }}"
+    state: directory
+    owner: "{{ incident_observer_user }}"
+    group: "{{ incident_observer_group }}"
+    mode: "0750"
+  become: true
+  when: >-
+    not (incident_observer_scratch | bool)
+    and incident_observer_scratch_name is not defined
+    and incident_observer_target_branch | default('', true) | length == 0
+
+- name: Create the scratch instance's own root beside production's state
+  # The scratch state directory and reference clone are siblings beneath it,
+  # as production's are beneath the controller account's home.
+  ansible.builtin.file:
+    path: "{{ incident_observer_scratch_root }}"
+    state: directory
+    owner: "{{ incident_observer_user }}"
+    group: "{{ incident_observer_group }}"
+    mode: "0750"
+  become: true
+  when: incident_observer_scratch | bool
+
+- name: Create the private state directory and its recovery journal
+  # 0700 is what the loader checks on the state directory itself; the two
+  # journal directories beneath it are the provisioner's obligation
+  # (docs/incident-recovery-journal.md).
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ incident_observer_user }}"
+    group: "{{ incident_observer_group }}"
+    mode: "0700"
+  become: true
+  loop:
+    - "{{ incident_observer_state_dir }}"
+    - "{{ incident_observer_state_dir }}/recovery-journal"
+    - "{{ incident_observer_state_dir }}/recovery-journal-contexts"
+
+- name: Create the isolated venv on the system interpreter
+  ansible.builtin.command:
+    argv:
+      - "{{ incident_observer_python }}"
+      - -m
+      - venv
+      - "{{ incident_observer_venv }}"
+    creates: "{{ incident_observer_venv }}/bin/python"
+  become: true
+  when: >-
+    not (incident_observer_scratch | bool)
+    and incident_observer_scratch_name is not defined
+    and incident_observer_target_branch | default('', true) | length == 0
+
+- name: Install the released distribution from its tag, never from a checkout
+  # Only when the venv does not already serve this release: pip rebuilds a
+  # git requirement on every call, so a bare pip task would report a change on
+  # every apply. The release is installed WITH the runtime dependencies it
+  # declares: its vendored `returns` imports typing_extensions and anyio, and
+  # the distribution names both, so nothing is installed beside it.
+  ansible.builtin.command:
+    argv:
+      - "{{ incident_observer_venv }}/bin/python"
+      - -I
+      - -m
+      - pip
+      - install
+      - --quiet
+      - --no-cache-dir
+      - "livespec-dev-tooling @ git+{{ incident_observer_release_repo }}@{{ incident_observer_release }}"
+  become: true
+  when: >-
+    not (incident_observer_scratch | bool)
+    and incident_observer_scratch_name is not defined
+    and incident_observer_target_branch | default('', true) | length == 0
+    and (not incident_observer_installed
+    or (incident_observer_installed_version.rc | default(1)) != 0
+    or ('v' ~ (incident_observer_installed_version.stdout | default('') | trim))
+       != incident_observer_release)
+  changed_when: true
+  notify: Restart the incident observer onto its installation
+
+- name: Clone the canonical reader at its released tag
+  # Root-owned beside the venv: the loader requires every argv file and every
+  # ancestor to be owned by root or the controller and writable by neither
+  # group nor other.
+  ansible.builtin.git:
+    repo: "{{ incident_observer_reader_repo }}"
+    dest: "{{ incident_observer_reader_dir }}"
+    version: "{{ incident_observer_reader_release }}"
+    depth: 1
+  become: true
+  when: >-
+    not (incident_observer_scratch | bool)
+    and incident_observer_scratch_name is not defined
+    and incident_observer_target_branch | default('', true) | length == 0
+  notify: Restart the incident observer onto its installation
+
+- name: Clone the independent reference repository at the released tag
+  # Owned by the controller account so its fetch timer can keep the objects
+  # current; a full clone, because the inverse resolves landed commit chains.
+  ansible.builtin.git:
+    repo: "{{ incident_observer_release_repo }}"
+    dest: "{{ incident_observer_reference_dir }}"
+    version: "{{ incident_observer_release }}"
+    umask: "0022"
+  become: true
+  become_user: "{{ incident_observer_user }}"
+  when: incident_observer_account_ready
+
+- name: Keep the reference clone writable by its owner alone
+  # The loader refuses a repository whose own directory is group- or
+  # other-writable, and the controller account's umask is 0002, so a clone made
+  # as that account landed 0775 and the isolated load below refused for that one
+  # reason: measured on the second apply, 2026-11-06. The clone's `umask` keeps
+  # a fresh clone tight; this repairs one already made.
+  ansible.builtin.file:
+    path: "{{ incident_observer_reference_dir }}"
+    state: directory
+    owner: "{{ incident_observer_user }}"
+    group: "{{ incident_observer_group }}"
+    mode: "0750"
+  become: true
+  when: incident_observer_account_ready
+  notify: Restart the incident observer onto its installation
+
+- name: Install the reference fetch service and timer
+  ansible.builtin.template:
+    src: "{{ item.src }}"
+    dest: "{{ item.dest }}"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+  loop:
+    - src: livespec-incident-reference-fetch.service.j2
+      dest: "{{ incident_observer_fetch_service_path }}"
+    - src: livespec-incident-reference-fetch.timer.j2
+      dest: "{{ incident_observer_fetch_timer_path }}"
+  loop_control:
+    label: "{{ item.dest }}"
+  notify: Reload systemd for the incident observer units
+
+- name: Write each secret from the control node's projected environment
+  # The exact bytes, no trailing newline: the service compares
+  # `Bearer <bytes>` against the file's contents.
+  ansible.builtin.copy:
+    content: "{{ lookup('ansible.builtin.env', item.env) }}"
+    dest: "{{ item.path }}"
+    owner: "{{ incident_observer_user }}"
+    group: "{{ incident_observer_group }}"
+    mode: "0600"
+  become: true
+  loop: "{{ incident_observer_secrets }}"
+  loop_control:
+    label: "{{ item.path }}"
+  no_log: true
+  when: >-
+    not (incident_observer_scratch | bool)
+    and incident_observer_scratch_name is not defined
+    and incident_observer_target_branch | default('', true) | length == 0
+  notify: Restart the incident observer onto its installation
+
+- name: Write the canonical reader's credential as the unit's environment file
+  # `KEY=value`, read by systemd as root before the privilege drop and
+  # inherited by the reader subprocess; no value reaches the run output.
+  ansible.builtin.copy:
+    content: "{{ incident_observer_reader_env_var }}={{ lookup('ansible.builtin.env', incident_observer_reader_env_var) }}\n"
+    dest: "{{ incident_observer_reader_env_path }}"
+    owner: "{{ incident_observer_user }}"
+    group: "{{ incident_observer_group }}"
+    mode: "0600"
+  become: true
+  no_log: true
+  when: >-
+    not (incident_observer_scratch | bool)
+    and incident_observer_scratch_name is not defined
+    and incident_observer_target_branch | default('', true) | length == 0
+  notify: Restart the incident observer onto its installation
+
+- name: Write the recovery App credential the principal reads beside controller.json
+  # JSON `{"app_id", "private_key"}`; the single-line projected PEM is rewrapped
+  # by the principal, not here. Written only when the wrapper projects both
+  # variables, so an apply before the maintainer provisions the App (GO-1)
+  # still converges and the principal refuses forge work by name.
+  ansible.builtin.copy:
+    content: >-
+      {{ {'app_id': lookup('ansible.builtin.env', incident_observer_recovery_app_id_env),
+          'private_key': lookup('ansible.builtin.env', incident_observer_recovery_app_key_env)}
+         | to_json }}
+    dest: "{{ incident_observer_recovery_app_path }}"
+    owner: "{{ incident_observer_user }}"
+    group: "{{ incident_observer_group }}"
+    mode: "0600"
+  become: true
+  no_log: true
+  when:
+    - >-
+      not (incident_observer_scratch | bool)
+      and incident_observer_scratch_name is not defined
+      and incident_observer_target_branch | default('', true) | length == 0
+    - lookup('ansible.builtin.env', incident_observer_recovery_app_id_env) | length > 0
+    - lookup('ansible.builtin.env', incident_observer_recovery_app_key_env) | length > 0
+
+- name: Say when the recovery App credential is not projected
+  ansible.builtin.debug:
+    msg: >-
+      {{ incident_observer_recovery_app_id_env }} and
+      {{ incident_observer_recovery_app_key_env }} are not both projected, so
+      {{ incident_observer_recovery_app_path }} is not written and the recovery
+      principal refuses every forge operation as recovery-app-credential-absent.
+      Provisioning the recovery App, its 1Password key and the master ruleset
+      bypass is the maintainer's step (role README, maintainer step 4).
+  when: >-
+    lookup('ansible.builtin.env', incident_observer_recovery_app_id_env) | length == 0
+    or lookup('ansible.builtin.env', incident_observer_recovery_app_key_env) | length == 0
+
+- name: Install controller.json from host facts
+  ansible.builtin.template:
+    src: controller.json.j2
+    dest: "{{ incident_observer_config_path }}"
+    owner: "{{ incident_observer_user }}"
+    group: "{{ incident_observer_group }}"
+    mode: "0600"
+  become: true
+  notify: Restart the incident observer onto its installation
+
+- name: Install the manifest renderer outside the package and the clones
+  ansible.builtin.copy:
+    src: render_released_installation.py
+    dest: "{{ incident_observer_bin_dir }}/render_released_installation.py"
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+  when: >-
+    not (incident_observer_scratch | bool)
+    and incident_observer_scratch_name is not defined
+    and incident_observer_target_branch | default('', true) | length == 0
+
+- name: Name the installation and the account this apply has just created
+  # Both facts were read before this run wrote anything, so on a FIRST apply
+  # they are still false here although the venv, the release and the account
+  # now exist. Without this refresh a first apply skips the manifest, the load
+  # and the import below and starts a unit nothing verified: measured on the
+  # first apply, 2026-11-06. A dry run creates nothing, so it keeps the
+  # pre-read answers.
+  ansible.builtin.set_fact:
+    incident_observer_installed: true
+    incident_observer_account_ready: true
+  when: not ansible_check_mode
+
+- name: Look for the reference clone's committed tenant connection
+  ansible.builtin.stat:
+    path: "{{ incident_observer_reference_dir }}/.beads/config.yaml"
+    get_checksum: false
+  become: true
+  register: incident_observer_reference_config_stat
+  check_mode: false
+  when: incident_observer_account_ready
+
+- name: Name whether the reference clone can be read on this run
+  # A dry run before the first apply of an instance has no clone yet: the
+  # clone task writes nothing under `--check`. Its reads are withheld there
+  # and say so below. An apply reads the clone it has just made, so a clone
+  # that is still missing fails loudly there (livespec-dev-tooling-32qdja).
+  ansible.builtin.set_fact:
+    incident_observer_reference_ready: >-
+      {{ incident_observer_account_ready
+         and (not ansible_check_mode or incident_observer_reference_config_stat.stat.exists) }}
+
+- name: Say what this dry run cannot read from a reference clone not yet made
+  ansible.builtin.debug:
+    msg: >-
+      {{ incident_observer_reference_dir }} has not been cloned yet, so this dry
+      run cannot read its tenant connection or its released tag; an apply
+      clones it at {{ incident_observer_release }}, writes its ledger pointer
+      and renders the manifest from it.
+  when: incident_observer_account_ready and not incident_observer_reference_ready
+
+- name: Read the reference clone's committed tenant connection
+  # `.beads/config.yaml` is committed and carries the tenant's host, port, user
+  # and database and no credential; the pointer below is rendered from it, so
+  # the reference clone names the same tenant as every other clone of the
+  # repository without a second copy of the connection in this role.
+  ansible.builtin.slurp:
+    src: "{{ incident_observer_reference_dir }}/.beads/config.yaml"
+  become: true
+  register: incident_observer_beads_config
+  when: incident_observer_reference_ready
+
+- name: Hold the reference clone's ledger directory to its owner alone
+  # `bd` writes its port file, local version and touch marker beside the
+  # pointer on every read, so the controller account must own the directory;
+  # 0700 is the mode `bd` itself recommends (it warns at the clone's 0775).
+  ansible.builtin.file:
+    path: "{{ incident_observer_reference_dir }}/.beads"
+    state: directory
+    owner: "{{ incident_observer_user }}"
+    group: "{{ incident_observer_group }}"
+    mode: "0700"
+  become: true
+  when: incident_observer_reference_ready
+
+- name: Write the reference clone's ledger pointer for the canonical reader
+  # `.beads/metadata.json` is the gitignored, regenerable pointer `bd` resolves
+  # its workspace from (AGENTS.md §"Beads runtime prerequisites"); a clone that
+  # carries only the committed `config.yaml` answers `Error: no beads database
+  # found` to every read. The first `POST /arm` (2026-11-06, 16:27Z) refused
+  # `canonical pre-merge authority unavailable` for exactly that reason, run
+  # as the controller account against this clone. The port is load-bearing:
+  # without `dolt_server_port` `bd` dials port 0 (config.yaml's port is not
+  # consulted), so the pointer carries the committed port as an integer. `bd`
+  # reads the file and never rewrites it, so a converge that changed nothing
+  # reports this task unchanged.
+  # The pointer is built and serialized inside ONE expression so the port stays
+  # a JSON integer; a `vars:` mapping of per-key templates would render it as
+  # the string "3307".
+  ansible.builtin.copy:
+    content: >-
+      {{ {
+        'database': 'dolt',
+        'backend': 'dolt',
+        'dolt_mode': incident_observer_beads_connection['dolt.mode'],
+        'dolt_server_host': incident_observer_beads_connection['dolt.server-host'],
+        'dolt_server_port': incident_observer_beads_connection['dolt.server-port'] | int,
+        'dolt_server_user': incident_observer_beads_connection['dolt.server-user'],
+        'dolt_database': incident_observer_beads_connection['dolt.database'],
+        'project_id': incident_observer_tenant_project_id,
+      } | to_nice_json(indent=2) }}
+
+    dest: "{{ incident_observer_reference_dir }}/.beads/metadata.json"
+    owner: "{{ incident_observer_user }}"
+    group: "{{ incident_observer_group }}"
+    mode: "0600"
+  vars:
+    incident_observer_beads_connection: "{{ incident_observer_beads_config.content | b64decode | from_yaml }}"
+  become: true
+  when: incident_observer_reference_ready
+
+- name: Read the released tag's commit from the reference clone
+  ansible.builtin.command:
+    argv:
+      - git
+      - -C
+      - "{{ incident_observer_reference_dir }}"
+      - rev-parse
+      - "{{ incident_observer_release }}^{commit}"
+  become: true
+  become_user: "{{ incident_observer_user }}"
+  register: incident_observer_revision
+  changed_when: false
+  check_mode: false
+  when: incident_observer_installed and incident_observer_reference_ready
+
+- name: Render the released-installation manifest with the serving interpreter
+  # The digest the service recomputes at start is a fact of THIS interpreter
+  # and THIS site-packages, so it is rendered here, isolated, and only
+  # installed below when its bytes differ.
+  ansible.builtin.command:
+    argv: >-
+      {{ [
+           incident_observer_venv ~ '/bin/python',
+           '-I',
+           incident_observer_bin_dir ~ '/render_released_installation.py',
+           '--release', incident_observer_release,
+           '--revision', incident_observer_revision.stdout | trim,
+           '--reader-release', incident_observer_reader_release,
+           '--reader-script',
+           incident_observer_reader_dir ~ '/' ~ incident_observer_reader_script_relative,
+           '--config', incident_observer_config_path,
+         ]
+         + (incident_observer_required_jobs | map('regex_replace', '^', '--required-job=') | list) }}
+  become: true
+  register: incident_observer_rendered_manifest
+  changed_when: false
+  check_mode: false
+  when: incident_observer_installed and not ansible_check_mode
+
+- name: Install the released-installation manifest
+  ansible.builtin.copy:
+    content: "{{ incident_observer_rendered_manifest.stdout }}\n"
+    dest: "{{ incident_observer_manifest_path }}"
+    owner: "{{ incident_observer_user }}"
+    group: "{{ incident_observer_group }}"
+    mode: "0600"
+  become: true
+  when: incident_observer_installed and not ansible_check_mode
+  notify: Restart the incident observer onto its installation
+
+- name: Load the whole installation as the controller account before serving it
+  # The same loader the service runs at start, under the same euid: a refusal
+  # here names the apply as the failure instead of a unit that exits 2.
+  ansible.builtin.command:
+    argv:
+      - "{{ incident_observer_venv }}/bin/python"
+      - -I
+      - -c
+      - >-
+        import sys; from pathlib import Path;
+        from livespec_dev_tooling.incident_controller_installation import ControllerInstallation;
+        sys.exit(0 if ControllerInstallation.load(config=Path(sys.argv[1])) is not None else 1)
+      - "{{ incident_observer_config_path }}"
+  become: true
+  become_user: "{{ incident_observer_user }}"
+  changed_when: false
+  check_mode: false
+  when: incident_observer_installed and not ansible_check_mode
+
+- name: Import the service module as the controller account before serving it
+  # The loader above authenticates the installation; this proves the module the
+  # unit executes imports under the same isolated interpreter and euid, so a
+  # missing import refuses the apply here instead of leaving a unit that
+  # restarts in a loop.
+  ansible.builtin.command:
+    argv:
+      - "{{ incident_observer_venv }}/bin/python"
+      - -I
+      - -c
+      - import livespec_dev_tooling.incident_observer_service
+  become: true
+  become_user: "{{ incident_observer_user }}"
+  changed_when: false
+  check_mode: false
+  when: incident_observer_installed and not ansible_check_mode
+
+- name: Say what a first apply will do that this dry run cannot verify
+  ansible.builtin.debug:
+    msg: >-
+      no installation exists at {{ incident_observer_venv }} yet, so this dry
+      run cannot render the manifest, load the installation or start the unit;
+      an apply creates the {{ incident_observer_user }} account and its
+      reference clone, installs {{ incident_observer_release }}, renders and
+      verifies the manifest, then starts {{ incident_observer_unit_name }}.
+  when: not incident_observer_installed or not incident_observer_account_ready
+
+- name: Look for a unit systemd already knows
+  ansible.builtin.stat:
+    path: "{{ incident_observer_unit_path }}"
+    get_checksum: false
+  become: true
+  register: incident_observer_unit_stat
+  check_mode: false
+
+- name: Install the observer's unit
+  ansible.builtin.template:
+    src: livespec-incident-observer.service.j2
+    dest: "{{ incident_observer_unit_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+  notify:
+    - Reload systemd for the incident observer units
+    - Restart the incident observer onto its installation
+
+- name: Reload and restart now, before the units are managed
+  ansible.builtin.meta: flush_handlers
+
+- name: Keep the reference fetch timer enabled and running
+  ansible.builtin.systemd_service:
+    name: "{{ incident_observer_fetch_unit_name }}.timer"
+    enabled: true
+    state: started
+  become: true
+  when: not ansible_check_mode or incident_observer_unit_stat.stat.exists
+
+- name: Keep the observer enabled and running
+  ansible.builtin.systemd_service:
+    name: "{{ incident_observer_unit_name }}"
+    enabled: true
+    state: started
+  become: true
+  when: not ansible_check_mode or incident_observer_unit_stat.stat.exists
+
+- name: Prove the listener answers on loopback and refuses an unauthenticated read
+  # A read of /current without the query token must be refused (403), which is
+  # also the proof the unit got past its installation check and bound its
+  # socket; a unit that exited 2 answers nothing and the apply fails here.
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ incident_observer_port }}/current"
+    method: POST
+    body_format: json
+    body: {}
+    status_code: [403]
+  register: incident_observer_probe
+  retries: 10
+  delay: 2
+  until: incident_observer_probe.status == 403
+  when: not ansible_check_mode
+
+- name: Read this node's tailscale serve and funnel configuration
+  # The tailnet mapping for every other route is the tailscale_serve role's,
+  # from the host's declared mappings; this reads the same status for the one
+  # public path. The funnel belongs to the production instance alone: a scratch
+  # instance is loopback-only, its trigger is POST /recover, and it never
+  # publishes a second callback (livespec-dev-tooling-32qdja).
+  ansible.builtin.command:
+    argv: [tailscale, funnel, status]
+  become: true
+  register: incident_observer_funnel_status
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  when: >-
+    not (incident_observer_scratch | bool)
+    and incident_observer_scratch_name is not defined
+    and incident_observer_target_branch | default('', true) | length == 0
+
+- name: Read whether the tailnet grants this node the funnel attribute
+  # `tailscale funnel --bg --yes` on a node the tailnet policy has not granted
+  # the `funnel` attribute exits 0 and publishes nothing: measured on vps,
+  # 2026-11-06, where the publish below reported a change on two applies in a
+  # row and tailscaled never received a serve-config write for the port. The
+  # node's own capability map is the fact, so it is read before anything is
+  # published.
+  ansible.builtin.command:
+    argv: [tailscale, status, --json, --peers=false]
+  become: true
+  register: incident_observer_tailscale_status
+  changed_when: false
+  check_mode: false
+  when: >-
+    not (incident_observer_scratch | bool)
+    and incident_observer_scratch_name is not defined
+    and incident_observer_target_branch | default('', true) | length == 0
+
+- name: Name the funnel grant and the callback path's current disposition
+  ansible.builtin.set_fact:
+    incident_observer_funnel_granted: >-
+      {{ 'funnel' in ((incident_observer_tailscale_status.stdout | from_json).Self.CapMap
+                      | default({}, true)) }}
+    incident_observer_funnel_served: >-
+      {{ ((':' ~ incident_observer_funnel_https_port ~ ' (Funnel on)')
+          in (incident_observer_funnel_status.stdout | default('')))
+         and (('proxy http://127.0.0.1:' ~ incident_observer_port ~ incident_observer_funnel_path)
+              in (incident_observer_funnel_status.stdout | default(''))) }}
+  when: >-
+    not (incident_observer_scratch | bool)
+    and incident_observer_scratch_name is not defined
+    and incident_observer_target_branch | default('', true) | length == 0
+
+- name: Name the public callback path's disposition in the run output
+  ansible.builtin.debug:
+    msg: >-
+      {{ incident_observer_funnel_path }} on funnel port
+      {{ incident_observer_funnel_https_port }}
+      {{ 'is already public; nothing to do'
+         if incident_observer_funnel_served
+         else ('is not public and will be published'
+               if incident_observer_funnel_granted
+               else incident_observer_funnel_ungranted_notice) }}
+  vars:
+    incident_observer_funnel_ungranted_notice: >-
+      is NOT public and cannot be published: the tailnet policy does not grant
+      this node the funnel attribute. Granting it is a tailnet-admin step
+      (README.md, maintainer-only step 2); GitHub cannot deliver workflow_job
+      callbacks until it is granted and this apply is run again
+  when: >-
+    not (incident_observer_scratch | bool)
+    and incident_observer_scratch_name is not defined
+    and incident_observer_target_branch | default('', true) | length == 0
+
+- name: Publish only the callback path through a path-scoped funnel
+  # Persisted in tailscaled's own state (`--bg`), additive, and scoped to the
+  # one path: a request to any other path on this port is not proxied. Withheld
+  # on a node the tailnet does not grant the funnel attribute, where the
+  # command would exit 0 having published nothing.
+  ansible.builtin.command:
+    argv:
+      - tailscale
+      - funnel
+      - --bg
+      - --yes
+      - "--https={{ incident_observer_funnel_https_port }}"
+      - "--set-path={{ incident_observer_funnel_path }}"
+      - "http://127.0.0.1:{{ incident_observer_port }}{{ incident_observer_funnel_path }}"
+  become: true
+  register: incident_observer_funnel_publish
+  when: >-
+    not (incident_observer_scratch | bool)
+    and incident_observer_scratch_name is not defined
+    and incident_observer_target_branch | default('', true) | length == 0
+    and incident_observer_funnel_granted and not incident_observer_funnel_served
+  changed_when: true
+
+- name: Read the funnel configuration back after publishing
+  ansible.builtin.command:
+    argv: [tailscale, funnel, status]
+  become: true
+  register: incident_observer_funnel_after
+  changed_when: false
+  when: incident_observer_funnel_publish is changed and not ansible_check_mode
+
+- name: Refuse a publish that left the callback path unpublished
+  # The publish command's exit code does not say the path is public, so the
+  # status is the verdict.
+  ansible.builtin.assert:
+    that:
+      - (':' ~ incident_observer_funnel_https_port ~ ' (Funnel on)') in incident_observer_funnel_after.stdout
+      - >-
+        ('proxy http://127.0.0.1:' ~ incident_observer_port ~ incident_observer_funnel_path)
+        in incident_observer_funnel_after.stdout
+    fail_msg: >-
+      tailscale funnel exited 0 but {{ incident_observer_funnel_path }} on port
+      {{ incident_observer_funnel_https_port }} is not in this node's funnel
+      status, so GitHub cannot deliver callbacks. Read `tailscale funnel status`
+      and the tailnet policy's funnel grant for this node.
+    success_msg: the callback path is public on funnel port {{ incident_observer_funnel_https_port }}
+  when: incident_observer_funnel_publish is changed and not ansible_check_mode

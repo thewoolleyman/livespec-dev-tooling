@@ -287,18 +287,23 @@ on the scratch playbook cannot fall through to production's path. Both scratch
 playbooks also refuse, as their first task (`pre_tasks`), unless scratch mode is
 on and a scratch name and an `incident-scratch/` branch are set.
 
-**Operator boundary: `--start-at-task`.** Ansible cannot stop an operator from
-starting a play past its refusals. Never pass `--start-at-task` to either
-scratch playbook. What still holds when one is passed: every production-shared
-write (apt, the account, the shared directories, the venv, the release
-install, the reader clone, the secrets, `reader.env`, `recovery-app.json`, the
-manifest renderer) and every funnel task carries its own guard on the task
-itself. That guard refuses whenever the scratch flag, the scratch name or a
-target branch is set, so production's public `/callback` funnel is never
-re-pointed and no shared file is written. The scratch instance's own writes are
-then unvalidated, which is why the flag is forbidden. The teardown's stops and
-removals depend on facts only its preflight sets, so starting past them fails
-on an undefined variable before acting.
+**`--start-at-task` cannot skip the refusals.** `tasks/main.yml` holds two
+dynamic includes and nothing else. Production reaches the converge body
+(`tasks/converge.yml`) directly. The scratch instance reaches it only through
+`tasks/scratch_apply.yml`, which takes the preflight first. The teardown's tasks
+sit under a dynamic `include_role` the same way. Ansible's `--start-at-task`
+can only follow static includes, so naming any converge, preflight or teardown
+task finds nothing to run. Naming one of the includes starts the run there,
+and the scratch include still runs the preflight first. As a further layer,
+every production-shared write (apt, the account, the shared directories, the
+venv, the release install, the reader clone, the secrets, `reader.env`,
+`recovery-app.json`, the manifest renderer) and every funnel task carries its
+own guard on the task itself. That guard refuses whenever the scratch flag, the
+scratch name or a target branch is set, so production's public `/callback`
+funnel is never re-pointed by a scratch run.
+`tests/livespec_dev_tooling/test_incident_observer_role_scratch_guards.py`
+runs the real pinned `ansible-playbook` with `--start-at-task` at every scratch
+write over a recording connection, and finds nothing run.
 
 The scratch apply then writes none of production's shared installation: no
 apt package, account, shared directory, venv, release install, reader clone,

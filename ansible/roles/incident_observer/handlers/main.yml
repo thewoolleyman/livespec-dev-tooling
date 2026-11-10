@@ -2,7 +2,7 @@
 # The restart fence. A converge over a host whose installation, secrets,
 # controller.json, manifest and units already match notifies nothing, so these
 # never run and the observer is left exactly as found — a retained arm and its
-# receipts survive an apply that changed nothing. tasks/main.yml flushes these
+# receipts survive an apply that changed nothing. tasks/converge.yml flushes these
 # straight after the unit is written, so a restart starts the NEW unit.
 #
 # Both carry the otel_collector guard: under `--check` on a host this role has

@@ -24,6 +24,7 @@ Templar (see test_incident_observer_role_scratch_refusals.py).
 
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 from pathlib import Path
@@ -42,7 +43,8 @@ _PLAYBOOKS = (
     _ANSIBLE / "incident-observer-scratch-teardown.yml",
 )
 _PLAYBOOK_TIMEOUT_SECONDS = 600
-_INCLUDE = "Take the scratch instance's refusals before writing anything"
+_SCRATCH_INCLUDE = "Converge the scratch instance only through its refusals"
+_PRODUCTION_INCLUDE = "Converge the production instance"
 _PUBLISH = "Publish only the callback path through a path-scoped funnel"
 _STAT = "Read each scratch path on the host as root, without following a link"
 _LINK = "Refuse a scratch path that is a symbolic link on the host"
@@ -84,7 +86,7 @@ _SCRATCH_PATH_VARIABLES = (
 
 def _main_task(*, name: str) -> dict[str, Any]:
     (task,) = [
-        task for task in base.role_yaml(relative="tasks/main.yml") if task.get("name") == name
+        task for task in base.role_yaml(relative="tasks/converge.yml") if task.get("name") == name
     ]
     return task
 
@@ -148,15 +150,20 @@ _IDENTIFIED = [
 
 
 def test_the_role_takes_the_preflight_whenever_any_scratch_variable_is_set() -> None:
-    include = _main_task(name=_INCLUDE)["when"]
-    guard = _GUARD
+    dispatch = {task["name"]: task["when"] for task in base.role_yaml(relative="tasks/main.yml")}
+    conditions = [dispatch[_SCRATCH_INCLUDE], dispatch[_PRODUCTION_INCLUDE], _GUARD]
 
-    verdicts = _judge(cases=[(variables, [include, guard]) for _, variables, _ in _IDENTIFIED])
+    verdicts = _judge(cases=[(variables, conditions) for _, variables, _ in _IDENTIFIED])
 
-    for (label, _, identified), (takes_preflight, shared_write_runs) in zip(
+    assert " ".join(dispatch[_PRODUCTION_INCLUDE].split()) == _GUARD
+    for (label, _, identified), (scratch_path, production_path, shared_write_runs) in zip(
         _IDENTIFIED, verdicts, strict=True
     ):
-        assert (takes_preflight, shared_write_runs) == (identified, not identified), label
+        assert (scratch_path, production_path, shared_write_runs) == (
+            identified,
+            not identified,
+            not identified,
+        ), label
 
 
 @pytest.mark.parametrize("name", _GUARDED)
@@ -271,6 +278,11 @@ def _run_host_check(*, root: Path, paths: dict[str, Path]) -> subprocess.Complet
     )
 
 
+def _named_link(*, path: Path) -> str:
+    """The link refusal's message, naming exactly one linked path and nothing else."""
+    return f'"msg": "[\'{path}\']'
+
+
 def _tree(*, home: Path) -> dict[str, Path]:
     """The eight scratch paths beneath a throwaway home, in the role's layout."""
     root = home / "scratch-32qdja-drill"
@@ -310,7 +322,32 @@ def test_the_host_check_refuses_a_scratch_root_linked_into_production_receipts(
     completed = _run_host_check(root=tmp_path, paths=paths)
 
     assert completed.returncode != 0, completed.stdout
-    assert "is a symbolic link on the host" in completed.stdout
+    assert _named_link(path=paths["incident_observer_scratch_root"]) in completed.stdout
+
+
+@pytest.mark.parametrize(
+    ("parent", "below"),
+    [
+        ("incident_observer_state_dir", "recovery-journal"),
+        ("incident_observer_state_dir", "recovery-journal-contexts"),
+        ("incident_observer_reference_dir", ".beads"),
+    ],
+)
+def test_the_host_check_refuses_a_link_below_the_scratch_root_the_apply_writes_through(
+    tmp_path: Path, *, parent: str, below: str
+) -> None:
+    home = tmp_path / "home"
+    production = home / "receipts" / below
+    production.mkdir(parents=True)
+    paths = _tree(home=home)
+    paths[parent].mkdir(parents=True)
+    link = paths[parent] / below
+    link.symlink_to(production)
+
+    completed = _run_host_check(root=tmp_path, paths=paths)
+
+    assert completed.returncode != 0, completed.stdout
+    assert _named_link(path=link) in completed.stdout
 
 
 def test_the_host_check_refuses_a_link_the_control_node_cannot_see_behind_an_unreadable_parent(
@@ -330,3 +367,169 @@ def test_the_host_check_refuses_a_link_the_control_node_cannot_see_behind_an_unr
 
     assert completed.returncode != 0, completed.stdout
     assert "no scratch path is a link on the host" not in completed.stdout
+
+
+# A connection that records every call and executes nothing, so the committed
+# scratch playbook can be run for real without reaching a host (the round-3
+# review's method).
+_RECORDING_CONNECTION = '''
+DOCUMENTATION = """
+name: recording
+short_description: Record every call; execute nothing
+description:
+  - A test stand-in for livespec-dev-tooling's incident observer role tests.
+author: livespec-dev-tooling
+options: {}
+"""
+
+import json
+import json
+import os
+
+from ansible.plugins.connection import ConnectionBase
+
+
+class Connection(ConnectionBase):
+    transport = "recording"
+    has_pipelining = True
+    always_pipeline_modules = True
+
+    def _connect(self):
+        self._connected = True
+        return self
+
+    def _record(self, kind, detail):
+        with open(os.environ["RECORDING_LOG"], "a", encoding="utf-8") as log:
+            log.write(json.dumps({"kind": kind, "detail": detail}) + "\\n")
+
+    def exec_command(self, cmd, in_data=None, sudoable=True):
+        super().exec_command(cmd, in_data=in_data, sudoable=sudoable)
+        self._record("exec", cmd)
+        if in_data:
+            return 0, json.dumps({"changed": False, "ansible_facts": {}}).encode(), b""
+        return 0, b"/nonexistent\\n", b""
+
+    def put_file(self, in_path, out_path):
+        super().put_file(in_path, out_path)
+        self._record("put", out_path)
+
+    def fetch_file(self, in_path, out_path):
+        super().fetch_file(in_path, out_path)
+        self._record("fetch", in_path)
+
+    def close(self):
+        self._connected = False
+'''
+_WRITE_MODULES = {
+    "ansible.builtin.apt",
+    "ansible.builtin.user",
+    "ansible.builtin.file",
+    "ansible.builtin.copy",
+    "ansible.builtin.template",
+    "ansible.builtin.git",
+    "ansible.builtin.systemd_service",
+    "ansible.builtin.command",
+    "ansible.builtin.uri",
+    "ansible.builtin.meta",
+}
+_PRE_TASK = "Refuse this scratch playbook without scratch mode, a scratch name and a scratch branch"
+
+
+def _scratch_writes() -> list[str]:
+    """Every converge task a scratch run would write, run or restart through."""
+    return [
+        task["name"]
+        for task in base.role_yaml(relative="tasks/converge.yml")
+        if _WRITE_MODULES & set(task)
+    ] + [task["name"] for task in base.role_yaml(relative="tasks/scratch_apply.yml")]
+
+
+@pytest.fixture(scope="module")
+def recorded_host(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """An inventory whose one dev host is reached only through the recording connection."""
+    root = tmp_path_factory.mktemp("recorded-host")
+    plugins = root / "connection_plugins"
+    plugins.mkdir()
+    (plugins / "recording.py").write_text(_RECORDING_CONNECTION, encoding="utf-8")
+    (root / "inventory.yml").write_text(
+        yaml.safe_dump(
+            {
+                "dev_hosts": {
+                    "hosts": {
+                        "recorded": {
+                            "ansible_connection": "recording",
+                            "ansible_python_interpreter": "/usr/bin/python3",
+                        }
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    return root
+
+
+def _run_scratch_playbook(*, root: Path, start_at: str) -> tuple[str, list[dict[str, Any]]]:
+    log = root / f"recording-{abs(hash(start_at))}.jsonl"
+    env = _plain_env()
+    env.update(
+        {
+            "ANSIBLE_CONNECTION_PLUGINS": str(root / "connection_plugins"),
+            "ANSIBLE_PIPELINING": "True",
+            "RECORDING_LOG": str(log),
+        }
+    )
+    completed = subprocess.run(
+        [
+            "uvx",
+            "--from",
+            refusals.ansible_core_pin(),
+            "ansible-playbook",
+            "-i",
+            str(root / "inventory.yml"),
+            str(_PLAYBOOKS[0]),
+            "--start-at-task",
+            start_at,
+        ],
+        cwd=root,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=_PLAYBOOK_TIMEOUT_SECONDS,
+        check=False,
+    )
+    calls = [
+        json.loads(line)
+        for line in (log.read_text(encoding="utf-8").splitlines() if log.exists() else [])
+    ]
+    return completed.stdout + completed.stderr, calls
+
+
+def _tasks_run(*, output: str) -> list[str]:
+    return [
+        line.split("TASK [", 1)[1].split("]", 1)[0]
+        for line in output.splitlines()
+        if line.startswith("TASK [") and not line.startswith("TASK [Gathering Facts]")
+    ]
+
+
+@pytest.mark.parametrize("task", _scratch_writes())
+def test_start_at_task_naming_any_scratch_write_finds_nothing_to_run(
+    recorded_host: Path, task: str
+) -> None:
+    output, calls = _run_scratch_playbook(root=recorded_host, start_at=task)
+
+    assert f'No matching task "{task}" found' in output, output
+    assert _tasks_run(output=output) == [], output
+    # Only the play's own fact gathering reaches the connection.
+    assert len([call for call in calls if call["kind"] == "put"]) == 0, calls
+    assert len([call for call in calls if call["kind"] == "exec"]) <= 1, calls
+
+
+def test_the_recording_harness_sees_a_task_it_can_reach(recorded_host: Path) -> None:
+    """The control: a static task IS found and run, so silence above is not a blind harness."""
+    output, calls = _run_scratch_playbook(root=recorded_host, start_at=_PRE_TASK)
+
+    assert _PRE_TASK in _tasks_run(output=output), output
+    assert "incident_observer : Read each scratch path on the host as root" in output, output
+    assert any(call["kind"] == "exec" for call in calls), calls

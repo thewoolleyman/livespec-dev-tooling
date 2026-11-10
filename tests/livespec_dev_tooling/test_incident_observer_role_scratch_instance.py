@@ -283,7 +283,7 @@ def test_the_loader_reads_the_branch_the_role_renders_and_master_when_none(host)
 def test_a_scratch_apply_refuses_a_venv_production_does_not_already_serve(
     *, installed: bool, stdout: str, holds: bool
 ) -> None:
-    task = _task(relative="tasks/main.yml", name=_VENV_REFUSAL)
+    task = _task(relative="tasks/converge.yml", name=_VENV_REFUSAL)
     context = _context(variables=scratch_variables(overrides={}))
     context["incident_observer_installed"] = installed
     context["incident_observer_installed_version"] = {"rc": 0, "stdout": stdout}
@@ -295,7 +295,7 @@ def test_a_scratch_apply_refuses_a_venv_production_does_not_already_serve(
 
 @pytest.mark.parametrize("name", [*_SHARED_WRITES, *_FUNNEL])
 def test_a_scratch_apply_withholds_every_shared_write_and_the_funnel(name: str) -> None:
-    when = _task(relative="tasks/main.yml", name=name)["when"]
+    when = _task(relative="tasks/converge.yml", name=name)["when"]
     first = when[0] if isinstance(when, list) else when
     jinja = base.ansible_jinja()
 
@@ -305,8 +305,8 @@ def test_a_scratch_apply_withholds_every_shared_write_and_the_funnel(name: str) 
 
 def test_production_still_publishes_its_callback_and_never_creates_a_scratch_root() -> None:
     jinja = base.ansible_jinja()
-    publish = _task(relative="tasks/main.yml", name=_FUNNEL[-1])["when"]
-    root = _task(relative="tasks/main.yml", name=_SCRATCH_ROOT_TASK)["when"]
+    publish = _task(relative="tasks/converge.yml", name=_FUNNEL[-1])["when"]
+    root = _task(relative="tasks/converge.yml", name=_SCRATCH_ROOT_TASK)["when"]
 
     assert jinja.compile_expression(publish)(
         incident_observer_scratch=False,
