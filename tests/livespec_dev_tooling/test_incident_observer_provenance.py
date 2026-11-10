@@ -256,6 +256,7 @@ _AUTHORITY_USERS = frozenset(
     {
         "livespec_dev_tooling/_incident_original_run_ports.py",
         "livespec_dev_tooling/incident_authority_client.py",
+        "livespec_dev_tooling/incident_focused_disposition_entry.py",
         "livespec_dev_tooling/incident_focused_evidence_entry.py",
         "livespec_dev_tooling/incident_gate_entry.py",
         "livespec_dev_tooling/incident_hook_entry.py",
