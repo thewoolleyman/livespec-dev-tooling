@@ -12,12 +12,15 @@
    a timer kills its process, and with it the coverage data.
 3. `plan_mutants` locates each mutant's function, selects the tests whose
    coverage executes it (see `mutation_kill_matrix_selection`), and computes
-   its cache key (see `mutation_kill_matrix_cache`).
+   its cache key (see `mutation_kill_matrix_cache`).  Everything it derives
+   from the whole target is derived once, and it reports progress every
+   thousand mutants.
 """
 
 from __future__ import annotations
 
 import subprocess
+import sys
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -34,10 +37,11 @@ from livespec_dev_tooling.mutation_kill_matrix_execution import (
     run_selected,
 )
 from livespec_dev_tooling.mutation_kill_matrix_selection import (
+    MutantLocator,
     MutantSpan,
     PerTestCoverage,
-    locate_mutant,
     measure_per_test_coverage,
+    measured_tests,
     select_tests,
 )
 
@@ -51,6 +55,7 @@ __all__: list[str] = [
 
 
 ENGINE_VERSION = "3.2.3"
+_PROGRESS_EVERY = 1000
 _GENERATION_FAILED = "mutmut could not generate mutants for the kill matrix"
 # What `mutmut run` does before it starts testing, and nothing after: it sets
 # the same environment marker, reads the [tool.mutmut] configuration, and
@@ -158,9 +163,9 @@ def plan_mutants(
     timeout: float,
 ) -> list[MutantPlan]:
     """Locate every mutant, select its tests and compute its cache key."""
+    locator = MutantLocator(target=target)
     spans = {
-        mutant.identifier: locate_mutant(target=target, identifier=mutant.identifier)
-        for mutant in generated
+        mutant.identifier: locator.locate(identifier=mutant.identifier) for mutant in generated
     }
     # Judge "measured" only on the files that hold mutants: tests sit inside
     # the measured tree, so every test's own body would otherwise give it a
@@ -172,6 +177,7 @@ def plan_mutants(
         if coverage is None
         else {path: lines for path, lines in coverage.items() if path in source_paths}
     )
+    measured = None if source_coverage is None else measured_tests(coverage=source_coverage)
     keys = CacheKeys(
         target=target,
         coverage=coverage,
@@ -180,7 +186,7 @@ def plan_mutants(
         execute=execute,
     )
     plans: list[MutantPlan] = []
-    for generated_mutant in generated:
+    for done, generated_mutant in enumerate(generated, start=1):
         span = spans[generated_mutant.identifier]
         mutant = (
             generated_mutant
@@ -191,7 +197,11 @@ def plan_mutants(
                 function_digest=span.function_digest,
             )
         )
-        selected = select_tests(span=span, coverage=source_coverage, tests=attributable)
+        selected = select_tests(
+            span=span, coverage=source_coverage, tests=attributable, measured=measured
+        )
         key = keys.key(identifier=mutant.identifier, span=span, selected=selected)
         plans.append(MutantPlan(mutant=mutant, span=span, selected=selected, key=key))
+        if done % _PROGRESS_EVERY == 0 or done == len(generated):
+            _ = sys.stderr.write(f"mutation-kill-matrix: planned {done}/{len(generated)} mutants\n")
     return plans
