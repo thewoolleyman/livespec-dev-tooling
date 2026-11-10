@@ -29,6 +29,8 @@ import os
 import shutil
 import subprocess
 import threading
+import urllib.error
+import urllib.request
 from collections.abc import Iterator
 from dataclasses import dataclass, field
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -245,6 +247,30 @@ def _live_board(world: _World) -> dict[str, Any]:
 
 def _only_reads(world: _World) -> bool:
     return bool(world.requests) and all(method == "GET" for method, _ in world.requests)
+
+
+def test_the_stub_records_a_write_and_answers_it_with_success(
+    world: tuple[_World, str],
+) -> None:
+    state, api = world
+    post = urllib.request.Request(api + "/1/triggers/metrics", data=b"{}", method="POST")  # noqa: S310
+
+    with urllib.request.urlopen(post, timeout=_RUN_TIMEOUT_S) as reply:  # noqa: S310
+        assert reply.status == 200
+
+    assert state.requests == [("POST", "/1/triggers/metrics")]
+    assert not _only_reads(state)
+
+
+def test_the_stub_answers_a_path_it_does_not_route_with_not_found(
+    world: tuple[_World, str],
+) -> None:
+    _, api = world
+
+    with pytest.raises(urllib.error.HTTPError) as refused:
+        _ = urllib.request.urlopen(api + "/1/nothing", timeout=_RUN_TIMEOUT_S)  # noqa: S310
+
+    assert refused.value.code == 404
 
 
 def test_trigger_drift_reports_each_differing_field_and_writes_nothing(
