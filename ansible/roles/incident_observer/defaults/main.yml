@@ -19,6 +19,13 @@ incident_observer_release: v1.188.1
 incident_observer_release_repo: https://github.com/thewoolleyman/livespec-dev-tooling.git
 # The repository the observer serves (controller.json `repository`).
 incident_observer_repository: thewoolleyman/livespec-dev-tooling
+# The ONE branch the observer binds, watches and recovers, with the recovery
+# principal it drives (controller.json's optional `target_branch`). Empty
+# leaves the key out of controller.json, so the installation serves master and
+# the rendered file is byte-identical to one written before the key existed.
+# Name a scratch branch only for a proof installation: every observer route and
+# the principal then refuse master (livespec-dev-tooling-thhgeg).
+incident_observer_target_branch: ""
 # The required master leaf jobs the manifest names: the observer acts on the
 # first FAILING `workflow_job` callback whose name is in this list. It is every
 # leaf job and matrix leg `ci-green` needs in `.github/workflows/ci.yml`, spelled
