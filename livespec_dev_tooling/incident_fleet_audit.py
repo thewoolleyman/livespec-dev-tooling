@@ -60,6 +60,7 @@ SURFACES: tuple[str, ...] = (
 
 _GUIDANCE_SURFACES = frozenset({"Agent tool and stop guards", "Operator factory routing"})
 _DISPOSITIONS = frozenset({"implemented", "deliberately-normal", "not-applicable"})
+_UNCLASSIFIED = "missing, contradictory, stale or unauthenticated serving proof"
 
 
 def _consumers(*, manifest: Manifest) -> tuple[tuple[str, bool], ...]:
@@ -110,6 +111,7 @@ def _consumer_rows(
     manifest_sha256: str,
     indexed: dict[tuple[str, str], CapabilityEvidence],
     verify_evidence: Callable[[CapabilityEvidence], bool],
+    explain: Callable[[CapabilityEvidence], str],
 ) -> tuple[SurfaceDisposition, ...]:
     rows: list[SurfaceDisposition] = []
     for surface in SURFACES:
@@ -149,7 +151,7 @@ def _consumer_rows(
                     repository=repository,
                     surface=surface,
                     disposition="unclassified",
-                    reason="missing, contradictory, stale or unauthenticated serving proof",
+                    reason=(evidence and explain(evidence)) or _UNCLASSIFIED,
                     evidence=evidence,
                 )
             )
@@ -180,12 +182,15 @@ def audit_incident_fleet(
     evidence: tuple[CapabilityEvidence, ...],
     verify_manifest: Callable[[Manifest, str], bool],
     verify_evidence: Callable[[CapabilityEvidence], bool],
+    explain: Callable[[CapabilityEvidence], str] = lambda _row: "",
 ) -> FleetAudit:
     """Expand authenticated current membership, including every declared adopter.
 
     Verifiers are independently installed readers of committed membership and
     released serving proof, not candidate labels or caller-supplied receipt
     parsers. They must return False when their authoritative read is unavailable.
+    `explain` may name why a claim cannot classify against what was read; an unclassified
+    row carries that reason, or the generic one when it names none.
     This function creates no credentials, lifecycle records or activation effects.
     """
     consumers = _consumers(manifest=manifest)
@@ -213,6 +218,7 @@ def audit_incident_fleet(
             manifest_sha256=manifest_sha256,
             indexed=indexed,
             verify_evidence=verify_evidence,
+            explain=explain,
         )
     )
     findings = invalid_evidence + tuple(
@@ -222,8 +228,5 @@ def audit_incident_fleet(
     )
     ready = () if invalid_evidence else _ready(consumers=consumers, rows=rows)
     return FleetAudit(
-        manifest_sha256=manifest_sha256,
-        rows=rows,
-        findings=findings,
-        ready_repositories=ready,
+        manifest_sha256=manifest_sha256, rows=rows, findings=findings, ready_repositories=ready
     )
