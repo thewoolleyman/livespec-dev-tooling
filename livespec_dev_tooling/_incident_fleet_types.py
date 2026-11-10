@@ -55,5 +55,5 @@ class FleetAudit:
         return bool(self.rows) and not self.findings
 
     def permits_enablement(self, *, repository: str) -> bool:
-        """An explicitly normal or instruction-only consumer is never enabled."""
-        return self.complete and repository in self.ready_repositories
+        """Only a ready consumer is enabled; a normal or instruction-only one never is."""
+        return repository in self.ready_repositories
