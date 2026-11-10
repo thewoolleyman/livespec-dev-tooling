@@ -933,6 +933,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: a scratch-branch incident drill runs beside production on the full master CI graph",
+    "work_item": "livespec-dev-tooling-32qdja",
+    "first_seen": "2026-11-10"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: a seat's gate-runner full suite runs as a gate Job by default",
     "work_item": "livespec-dev-tooling-qgv3tb",
     "first_seen": "2026-11-01"
