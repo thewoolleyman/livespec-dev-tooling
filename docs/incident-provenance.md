@@ -1,10 +1,12 @@
 # Historical incident receipt consumer
 
-`incident_provenance.read_historical_incident_commit` takes the governed
-primary repository checkout and an `IncidentCommitQuery`. It resolves that
-repository's registered orchestrator installation and invokes its public
-`scripts/bin/incident_authority.py read-history` command through the canonical
-credential wrapper, with a thirty-second process bound.
+`incident_observer_provenance.ObserverProvenance` is the one implementation of the
+historical provenance lookup. It takes an `IncidentCommitQuery` and invokes the
+installed orchestrator's public `scripts/bin/incident_authority.py read-history`
+command through the canonical credential wrapper, with the one authority-call
+ceiling `incident_authority_client.AUTHORITY_CALL_CEILING_SECONDS`. The shared
+`_incident_provenance_protocol.decode_historical_result` decodes the reply. The
+observer's `POST /provenance` route is the only entrance the range gate uses.
 
 The query binds repository, item, attempt, phase, operation, generation, owner,
 original base/head, PR number and the landed commit/tree being inspected. A

@@ -197,3 +197,11 @@ def test_the_service_routes_provenance_under_the_query_credential_only(
     assert accepted[0].startswith("202")
     assert accepted[1]["status"] == "provenance"
     assert refused[0].startswith("403")
+
+
+def test_the_provenance_lookup_has_one_implementation_and_the_docs_name_it() -> None:
+    root = Path(__file__).resolve().parents[2]
+    assert not (root / "livespec_dev_tooling" / "incident_provenance.py").exists()
+    doc = (root / "docs" / "incident-provenance.md").read_text()
+    assert "incident_provenance.read_historical_incident_commit" not in doc
+    assert "incident_observer_provenance" in doc
