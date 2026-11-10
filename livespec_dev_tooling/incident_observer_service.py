@@ -47,15 +47,8 @@ __all__: list[str] = ["ControllerService"]
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-zbzls2
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-ariayn
 _QUERY_PATHS = frozenset(
-    {
-        "/current",
-        "/admitted",
-        ORDINARY_ACTION_PATH,
-        "/provenance",
-        "/ci/jobs/inspect",
-        RELEASE_SCREEN_PATH,
-    }
-)
+    {"/current", "/admitted", "/provenance", "/ci/jobs/inspect", RELEASE_SCREEN_PATH}
+) | {ORDINARY_ACTION_PATH}
 _CONTROL_PATHS = frozenset(
     {"/arm", "/bind", "/invalidate-ci", "/recover", "/reconcile", "/ci/jobs/collect"}
 )

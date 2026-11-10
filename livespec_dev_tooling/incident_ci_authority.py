@@ -13,27 +13,37 @@ import os
 import re
 import socket
 import ssl
-import sys
 from contextlib import closing
 from dataclasses import dataclass
 from typing import Any, cast
 from urllib.parse import urlsplit
 
+from livespec_dev_tooling._incident_ordinary_action import ACCEPTED as _ACCEPTED
+from livespec_dev_tooling._incident_ordinary_action import MAX_REPLY as _MAX_REPLY
+from livespec_dev_tooling._incident_ordinary_action import (
+    UNREADABLE,
+    OrdinaryActionOwnership,
+    read_ownership,
+)
+from livespec_dev_tooling._incident_ordinary_action import is_header_value as _is_header_value
+from livespec_dev_tooling._incident_ordinary_action import refuse as _refuse
 from livespec_dev_tooling.incident_strict_json import IncidentJsonRefusalError, strict_json
 
-__all__: list[str] = ["CiAuthorityBoundary", "ObserverTokenError", "ObserverUnreachableError"]
+__all__: list[str] = [
+    "UNREADABLE",
+    "CiAuthorityBoundary",
+    "ObserverTokenError",
+    "ObserverUnreachableError",
+    "OrdinaryActionOwnership",
+]
 
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-egy3ri
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-zbzls2
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-qeu4cx
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-a6wgjz
-_MAX_REPLY = 65536
-_MAX_TOKEN = 4096
-# An RFC 7230 field-value the client can encode: visible ASCII and latin-1 obs-text.
-# No whitespace, control character or character beyond latin-1 can be sent as the
-# Authorization header, so http.client would fail while encoding it, before any dial.
-_HEADER_VALUE = re.compile(r"[\x21-\x7e\x80-\xff]+")
-_ACCEPTED = 202
+# EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-ariayn
+# The reply bound, the 202 status, the header-value rule and the stderr refusal
+# line are shared with the ordinary-action read in `_incident_ordinary_action`.
 # The job's read ceiling. The observer answers /current only after its own
 # reader pass, whose ceiling is incident_authority_client.AUTHORITY_CALL_CEILING_SECONDS
 # (600 s, the one bound every authority call shares); this stays above that plus
@@ -48,12 +58,6 @@ _OBSERVER_READ_TIMEOUT_SECONDS = 630
 # is still what the certificate is verified against and what the Host header
 # names, so the trust boundary does not move. Unset keeps hostname dialing.
 _CONNECT_ADDRESS_VARIABLE = "LIVESPEC_INCIDENT_OBSERVER_CONNECT_ADDR"
-# A read that fails on the wire says why on stderr. The drill's refusals carried
-# no trace of the host the client had dialed or how the dial failed, because
-# every error became a bare False (livespec-dev-tooling-ws2idp, 2026-11-06).
-# The detail names the error class, the route, the dialed address:port and the
-# verified hostname, never the token or the reply.
-_REFUSAL_PREFIX = "incident-ci: observer read refused: "
 _ARM_FIELDS: dict[str, frozenset[str]] = {
     "text": frozenset({"repository"}),
     "int": frozenset({"pr_number"}),
@@ -115,6 +119,21 @@ class CiAuthorityBoundary:
             raise ObserverTokenError
         return self._query(route="provenance", query=query)
 
+    def ordinary_action(self, *, query: dict[str, Any]) -> OrdinaryActionOwnership:
+        """Ask who owns the master-health reconciler's next step over its window.
+
+        Never raises and never guesses: anything but the observer's exact answer
+        is ``UNREADABLE`` with its cause named on stderr.
+        """
+        return read_ownership(
+            url=self.observer_url,
+            token=self.observer_token,
+            query=query,
+            exchange=self._exchange,
+            connect_address=_connect_address,
+            connect_variable=_CONNECT_ADDRESS_VARIABLE,
+        )
+
     def _query(self, *, route: str, query: dict[str, Any]) -> bool:
         try:
             parsed = urlsplit(self.observer_url)
@@ -161,40 +180,13 @@ class CiAuthorityBoundary:
         where = " while reading /" + route + " from " + (connect_to or host) + ":" + str(port)
         where += " as " + host
         try:
-            # System TLS verification; no redirect handler can forward the token.
-            with closing(
-                http.client.HTTPSConnection(
-                    host, port=parsed.port, timeout=_OBSERVER_READ_TIMEOUT_SECONDS
-                )
-            ) as connection:
-                if connect_to is not None:
-                    # Dial the literal, verify and name the URL's host: the socket is
-                    # handed to the connection, which then never dials by name.
-                    raw = socket.create_connection(
-                        (connect_to, port), timeout=_OBSERVER_READ_TIMEOUT_SECONDS
-                    )
-                    # A failing wrap raises into the handler below and refuses; the
-                    # unwrapped socket is released with `raw` when this frame unwinds.
-                    connection.sock = ssl.create_default_context().wrap_socket(
-                        raw, server_hostname=host
-                    )
-                connection.request(
-                    "POST",
-                    parsed.path.rstrip("/") + "/" + route,
-                    body=json.dumps(query, sort_keys=True).encode(),
-                    headers={
-                        "Content-Type": "application/json",
-                        "Authorization": "Bearer " + self.observer_token,
-                    },
-                )
-                response = connection.getresponse()
-                return _accepts(
-                    status=response.status,
-                    raw=response.read(_MAX_REPLY + 1),
-                    route=route,
-                    query=query,
-                    where=where,
-                )
+            status, raw = self._exchange(
+                route=route,
+                query=query,
+                connect_to=connect_to,
+                timeout=_OBSERVER_READ_TIMEOUT_SECONDS,
+            )
+            return _accepts(status=status, raw=raw, route=route, query=query, where=where)
         except (
             OSError,
             ValueError,
@@ -207,6 +199,39 @@ class CiAuthorityBoundary:
             if route == "provenance" and isinstance(error, OSError | http.client.HTTPException):
                 raise ObserverUnreachableError(type(error).__name__ + where) from error
             return refused
+
+    def _exchange(
+        self, *, route: str, query: dict[str, Any], connect_to: str | None, timeout: float
+    ) -> tuple[int, bytes]:
+        """POST one validated query and return its status and bounded body."""
+        parsed = urlsplit(self.observer_url)
+        host = parsed.hostname or ""
+        # System TLS verification; no redirect handler can forward the token.
+        with closing(
+            http.client.HTTPSConnection(host, port=parsed.port, timeout=timeout)
+        ) as connection:
+            if connect_to is not None:
+                # Dial the literal, verify and name the URL's host: the socket is
+                # handed to the connection, which then never dials by name.
+                raw = socket.create_connection(
+                    (connect_to, parsed.port or http.client.HTTPS_PORT), timeout=timeout
+                )
+                # A failing wrap raises into the caller's handler and refuses; the
+                # unwrapped socket is released with `raw` when this frame unwinds.
+                connection.sock = ssl.create_default_context().wrap_socket(
+                    raw, server_hostname=host
+                )
+            connection.request(
+                "POST",
+                parsed.path.rstrip("/") + "/" + route,
+                body=json.dumps(query, sort_keys=True).encode(),
+                headers={
+                    "Content-Type": "application/json",
+                    "Authorization": "Bearer " + self.observer_token,
+                },
+            )
+            response = connection.getresponse()
+            return response.status, response.read(_MAX_REPLY + 1)
 
 
 def _accepts(*, status: int, raw: bytes, route: str, query: dict[str, Any], where: str) -> bool:
@@ -224,17 +249,6 @@ def _accepts(*, status: int, raw: bytes, route: str, query: dict[str, Any], wher
         and reply.get("status") == route
         and json.dumps(reply.get("query"), sort_keys=True) == json.dumps(query, sort_keys=True)
     )
-
-
-def _is_header_value(*, token: str) -> bool:
-    """Whether the token is non-empty, bounded and encodable as an Authorization value."""
-    return len(token) <= _MAX_TOKEN and _HEADER_VALUE.fullmatch(token) is not None
-
-
-def _refuse(*, detail: str) -> bool:
-    """Name the refusal on stderr; the token never appears in the detail."""
-    _ = sys.stderr.write(_REFUSAL_PREFIX + detail + "\n")
-    return False
 
 
 def _connect_address() -> str | None:
