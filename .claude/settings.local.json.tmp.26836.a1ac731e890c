@@ -1,0 +1,51 @@
+{
+  "env": {
+    "CLAUDE_CODE_DISABLE_BACKGROUND_TASKS": "1",
+    "BASH_DEFAULT_TIMEOUT_MS": "600000",
+    "BASH_MAX_TIMEOUT_MS": "3600000",
+    "LIVESPEC_TEST_PARALLELISM": "4"
+  },
+  "permissions": {
+    "allow": [
+      "Bash(cat /etc/livespec/sandbox-capabilities 2>&1; grep -n \"sandbox_capabilities\" -A6 .livespec.jsonc | head -20; grep -n \"^## Delegated pre-push gate\" SPECIFICATION/*.md)",
+      "Bash(awk 'NR>=544 && /^## /&&NR>544{exit} NR>=544' SPECIFICATION/contracts.md)",
+      "Bash(git fetch *)",
+      "Bash(python3 -)",
+      "Bash(.venv/bin/python -m pytest tests/consumer/test_gate_lane_placement_scenarios.py -x -q -p no:cacheprovider)",
+      "Bash(.venv/bin/python -)",
+      "Bash(.venv/bin/python -m pytest tests/livespec_dev_tooling/test_gate_placement.py -q -p no:cacheprovider)",
+      "Bash(.venv/bin/python -m pytest tests/livespec_dev_tooling/test_gate_placement.py tests/livespec_dev_tooling/test_ci_pool_factory_only_agent_roles.py tests/livespec_dev_tooling/test_factory_pressure_placement.py tests/livespec_dev_tooling/test_gate_hp_xubuntu_capacity.py -q -p no:cacheprovider)",
+      "Bash(.venv/bin/python -m pytest tests/livespec_dev_tooling/test_ci_pool_factory_only_agent_roles.py tests/livespec_dev_tooling/test_gate_placement.py -q -p no:cacheprovider)",
+      "Bash(.venv/bin/ruff format *)",
+      "Bash(.venv/bin/ruff check *)",
+      "Bash(.venv/bin/pyright tests/consumer/test_gate_lane_placement_scenarios.py tests/livespec_dev_tooling/test_gate_placement.py)",
+      "Bash(timeout 900 .venv/bin/python -m pytest tests/livespec_dev_tooling tests/consumer -q -p no:cacheprovider -n 4 -k \"ansible or ci_pool or role or k3s or gate or kueue or pressure or heading or converge\")",
+      "Bash(git stash *)",
+      "Bash(.venv/bin/python -m pytest tests/livespec_dev_tooling/worktree_pack/test_gate_run.py -q -p no:cacheprovider -x)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${LIVESPEC_SANDBOX_CLAUDE_PLUGINS_ROOT:-$HOME/.claude/plugins}/livespec-run-plugin-gate.py\" || { echo 'LIVESPEC_PLUGIN_GATE_HOOK_UNREPAIRED: the sandbox plugin registry names a build whose cache this run could not repair before an in-session check, so a check resolving that plugin root may report the sandbox'\"'\"'s provisioning as the repository'\"'\"'s own failure' >&2; exit 1; }",
+            "timeout": 60
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "p=\"${LIVESPEC_SANDBOX_CLAUDE_PLUGINS_ROOT:-$HOME/.claude/plugins}/livespec-review-guard.py\"; if test -f \"$p\"; then exec python3 \"$p\"; fi",
+            "timeout": 15
+          }
+        ]
+      }
+    ]
+  }
+}
