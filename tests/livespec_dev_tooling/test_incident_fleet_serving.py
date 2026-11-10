@@ -4,18 +4,21 @@ from __future__ import annotations
 
 import json
 import shutil
+import time
 from collections.abc import Sequence
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 
 import pytest
 from returns.io import IOFailure, IOSuccess
+from returns.result import Failure
 
 from livespec_dev_tooling._incident_fleet_capabilities import CAPABILITIES
 from livespec_dev_tooling._incident_fleet_clones import consumer_clone
 from livespec_dev_tooling._incident_fleet_driver_reader import read_driver_hooks
 from livespec_dev_tooling._incident_fleet_gate_reader import read_gate_readers
 from livespec_dev_tooling._incident_fleet_recovery_reader import read_recovery_authorization
+from livespec_dev_tooling._incident_fleet_sources import load_claims
 from livespec_dev_tooling._incident_fleet_template_reader import read_templates
 from livespec_dev_tooling.budgeted_gh import GhRead
 from livespec_dev_tooling.fleet._invocation_failure import BINARY_ABSENT, InvocationNotPerformed
@@ -27,6 +30,9 @@ from livespec_dev_tooling.incident_fleet_serving import (
     Reader,
     host_serving_reader,
 )
+from tests.livespec_dev_tooling import test_incident_fleet_controller_reader as controller_tests
+
+host = controller_tests.host
 
 
 # --- consumer clones ---
@@ -147,6 +153,11 @@ def test_a_venv_without_exactly_one_install_is_unverified(fleet: _Fleet) -> None
         None,
         "not json",
         "[]",
+        '{"vcs_info": {"commit_id": "'
+        + "a" * 40
+        + '"}, "vcs_info": {"commit_id": "'
+        + "a" * 40
+        + '"}}',
         {"vcs_info": {"commit_id": "v1.2.3"}},
         {"vcs_info": {"commit_id": 5}},
         {"vcs_info": "x"},
@@ -452,6 +463,14 @@ def test_unreadable_rulesets_are_unverified() -> None:
     assert forge.read() is None
 
 
+def test_a_ruleset_detail_with_a_duplicate_key_is_unverified() -> None:
+    forge = _Forge(rulesets=[_ruleset()])
+    forge.answers[f"{BASE}/7"] = GhRead(
+        returncode=0, stdout='{"id": 7, ' + json.dumps(_ruleset())[1:], stderr=""
+    )
+    assert forge.read() is None
+
+
 def test_a_ruleset_whose_detail_cannot_be_read_adds_no_actor() -> None:
     forge = _Forge(rulesets=[_ruleset()])
     forge.answers[f"{BASE}/7"] = GhRead(returncode=1, stdout="", stderr="x")
@@ -532,6 +551,23 @@ def test_each_enabled_plugin_serves_the_commit_the_harness_installed_for_this_pr
     assert harness.read() == f"alpha@alpha={PLUGIN_SHA},beta@beta={OTHER_SHA}"
 
 
+def test_a_registry_with_a_duplicate_key_serves_nothing(harness: _Harness) -> None:
+    harness.enable(name="alpha@alpha")
+    registry = json.dumps({"version": 2, "plugins": harness.records})
+    assert harness.read(registry=registry) == f"alpha@alpha={PLUGIN_SHA}"
+    assert (
+        harness.read(registry='{"version": 2, "version": 2,' + registry[1:].split(",", 1)[1])
+        is None
+    )
+    plugins = json.dumps(harness.records["alpha@alpha"])
+    assert (
+        harness.read(
+            registry='{"plugins": {"alpha@alpha": ' + plugins + ', "alpha@alpha": ' + plugins + "}}"
+        )
+        is None
+    )
+
+
 def test_an_install_for_another_project_does_not_serve_this_one(harness: _Harness) -> None:
     harness.enable(name="alpha@alpha", project=harness.root / "elsewhere")
     assert harness.read() is None
@@ -566,6 +602,7 @@ def test_unreadable_registry_or_settings_leave_the_consumer_unverified(harness: 
     harness.enable(name="alpha@alpha")
     assert harness.read(registry="not json") is None
     assert harness.read(settings="not json") is None
+    assert harness.read(registry='{"version": 2, "version": 2, "plugins": {}}') is None
     assert harness.read(settings=json.dumps({"enabledPlugins": {}})) is None
     (harness.root / "home" / ".claude" / "plugins" / "installed_plugins.json").unlink()
     probe = HostProbe(
@@ -638,3 +675,23 @@ def test_a_capability_without_a_reader_is_unverified() -> None:
     read = host_serving_reader(probe=_asking_probe(asked=[]), readers={})
     assert read(repository="example/tooling", capability="gate-readers") is None
     assert read(repository="example/tooling", capability="") is None
+
+
+def test_a_controller_install_record_with_a_duplicate_key_is_unverified(host: Any) -> None:
+    commit = controller_tests.COMMIT
+    assert host.read() == f"v1.2.3@{commit}"
+    vcs = '{"commit_id": "' + commit + '"}'
+    record = '{"vcs_info": ' + vcs + ', "vcs_info": ' + vcs + "}"
+    _ = (host.dist / "direct_url.json").write_text(record)
+    host.write_process(started_at=time.time() + 60)
+    assert host.read() is None
+
+
+def test_claims_with_a_duplicate_key_or_a_non_finite_number_are_refused(tmp_path: Path) -> None:
+    path = tmp_path / "claims.json"
+    for text in (
+        '{"schema": 1, "schema": 1, "evidence": []}',
+        '{"schema": 1, "evidence": [], "n": NaN}',
+    ):
+        _ = path.write_text(text, encoding="utf-8")
+        assert isinstance(load_claims(path=path), Failure)

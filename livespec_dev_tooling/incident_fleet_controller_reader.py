@@ -15,7 +15,6 @@ that is not a recorded VCS revision, and a process that predates its install.
 
 from __future__ import annotations
 
-import json
 import os
 import re
 from pathlib import Path
@@ -24,6 +23,7 @@ from typing import cast
 from livespec_dev_tooling.fleet._invocation_failure import InvocationNotPerformed
 from livespec_dev_tooling.fleet._local_context import command_answer
 from livespec_dev_tooling.incident_fleet_host import HostProbe
+from livespec_dev_tooling.incident_strict_json import IncidentJsonRefusalError, strict_json
 
 __all__: list[str] = ["OBSERVED_REPOSITORY", "read_controller_serving"]
 
@@ -82,9 +82,12 @@ def _command(*, proc_root: Path, pid: int) -> list[str] | None:
 def _installed(*, dist: Path) -> tuple[str, float] | None:
     try:
         metadata = (dist / "METADATA").read_text(encoding="utf-8")
-        direct = cast("object", json.loads((dist / "direct_url.json").read_text(encoding="utf-8")))
+        direct = cast(
+            "object",
+            strict_json(text=(dist / "direct_url.json").read_text(encoding="utf-8"), limit=None),
+        )
         touched = (dist / "METADATA").stat()
-    except (OSError, ValueError):
+    except (OSError, ValueError, IncidentJsonRefusalError):
         return None
     versions = [line[9:].strip() for line in metadata.splitlines() if line.startswith("Version:")]
     vcs = cast("dict[str, object]", direct).get("vcs_info") if isinstance(direct, dict) else None
