@@ -1451,6 +1451,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: the commit-range validation fails a Red+Green commit whose recorded test cannot be collected on its own tree",
+    "work_item": "livespec-dev-tooling-5be65c",
+    "first_seen": "2026-11-10"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: the coverage receipt is stamped over the final rewritten data",
     "work_item": "livespec-dev-tooling-cj5dg5",
     "first_seen": "2026-11-08"
