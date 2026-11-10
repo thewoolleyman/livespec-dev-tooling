@@ -15,6 +15,13 @@
 # by a pod that can never start, starving the x86 queues that lent it. With no
 # arm64 worker enrolled (quota 0) the queue admits nothing, which is the
 # intended fail-closed state (coordinator ruling, 2026-11-08, R301).
+#
+# It HOLDS the worker flavor's quota (livespec-dev-tooling-eorpen). Until then
+# it requested churn-slot-flavor, so the worker's slots were added to the
+# FLEET flavor's cohort total and an amd64 queue could borrow a slot that only
+# an arm64 node could fill. On churn-slot-worker-arm64-flavor the slots are
+# counted only against that flavor, and the cohort lends them only to the
+# eligible repositories' queues that list it after churn-slot-flavor.
 apiVersion: kueue.x-k8s.io/v1beta2
 kind: ClusterQueue
 metadata:
@@ -27,7 +34,7 @@ spec:
   resourceGroups:
     - coveredResources: ["ci-runner.io/churn-slot"]
       flavors:
-        - name: churn-slot-flavor
+        - name: churn-slot-worker-arm64-flavor
           resources:
             - name: "ci-runner.io/churn-slot"
               nominalQuota: @WORKER_CHURN_SLOTS@

@@ -1,5 +1,10 @@
-# resource-flavor.yaml — the SINGLE ResourceFlavor every phase-2
-# per-repo ClusterQueue (kueue/cluster-queue-*.yaml) requests from.
+# resource-flavor.yaml — the churn-slot ResourceFlavors the phase-2 per-repo
+# ClusterQueues (kueue/cluster-queue-*.yaml) request from: the FLEET flavor
+# every queue lists first, and the container-worker flavor an eligible
+# repository's queue lists after it (livespec-dev-tooling-eorpen). Both are in
+# this one file because converge-ci-stack.sh applies it BEFORE any
+# ClusterQueue: a queue naming a flavor that does not exist yet is inactive and
+# admits nothing.
 #
 # Keyed on ci-runner.io/churn-slot, an EXTENDED RESOURCE (see
 # ../node-extended-resource/) rather than cpu/memory. Per the migration
@@ -19,4 +24,51 @@ metadata:
   name: churn-slot-flavor
 spec:
   nodeLabels:
-    k3s-role: arc-runner-host  # matches provision-k3s.sh's --node-label; both pool nodes (poweredge + gmktec since R5) carry it
+    k3s-role: arc-runner-host  # matches provision-k3s.sh's --node-label; every pool node carries it
+    # The fleet's flavor MUST NOT match a container worker (SPECIFICATION/
+    # non-functional-requirements.md, "Homelab worker nodes", Live production
+    # load). A container worker carries k3s-role=arc-runner-host too, because
+    # homelab-worker/enroll-workload-classes.sh enrolls it in the runner role,
+    # so that label alone placed fleet quota on the worker. This one is set by
+    # the K3s agent's embedded cloud provider on every K3s node and never on a
+    # container worker, which runs upstream kubelet with no K3s agent. It
+    # excludes container workers of EVERY architecture, so an amd64 worker
+    # would not match either. Kueue injects a flavor's nodeLabels as the
+    # admitted runner pod's nodeSelector.
+    node.kubernetes.io/instance-type: k3s
+---
+# churn-slot-worker-arm64-flavor — the enrolled arm64 container workers' churn
+# slots (livespec-dev-tooling-eorpen). One ClusterQueue HOLDS the quota:
+# ./worker/cluster-queue-livespec-dev-tooling-arm64.yaml, rendered by
+# ./converge-worker-queues.sh from the workers' derived churn-slot capacity, so
+# no per-host number is committed. Every other queue that lists this flavor
+# does so AFTER churn-slot-flavor with nominalQuota 0 and reaches it only by
+# borrowing within the cohort, which Kueue does flavor by flavor, so the
+# worker's slots are never counted as fleet quota or the reverse.
+#
+# A queue lists it only when its release line in ../workload-arch.conf
+# includes arm64 (tests/spec/test_worker_churn_slot_overflow.py holds the two
+# together). Kueue skips this flavor for any pod whose required
+# kubernetes.io/arch affinity excludes arm64, which is the second guard keeping
+# an amd64-only image off the worker.
+#
+# tolerations, NOT nodeTaints. Kueue adds a flavor's tolerations only to a pod
+# it ADMITS on that flavor, so a runner pod tolerates the worker class taint
+# only when it was admitted onto the worker's quota; the same pod admitted on
+# churn-slot-flavor cannot schedule onto a worker at all. The gate flavor
+# (./worker/gates-worker-flavor.yaml) needs nodeTaints instead because gates-cq
+# is shared by every repository; these queues are per repository, and only
+# eligible ones list this flavor.
+apiVersion: kueue.x-k8s.io/v1beta2
+kind: ResourceFlavor
+metadata:
+  name: churn-slot-worker-arm64-flavor
+spec:
+  nodeLabels:
+    homelab-worker.livespec.dev/class: worker
+    kubernetes.io/arch: arm64
+  tolerations:
+    - key: homelab-worker.livespec.dev/class
+      operator: Equal
+      value: worker
+      effect: NoSchedule
