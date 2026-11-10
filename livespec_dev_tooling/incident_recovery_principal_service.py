@@ -102,7 +102,14 @@ class PrincipalService:
         handler: Callable[..., dict[str, Any]] = getattr(self.principal, operation)
         try:
             return handler(payload=payload)
-        except (OSError, ValueError, TypeError, KeyError, subprocess.SubprocessError) as error:
+        except (
+            OSError,
+            ValueError,
+            IncidentJsonRefusalError,
+            TypeError,
+            KeyError,
+            subprocess.SubprocessError,
+        ) as error:
             return _refused(reason=f"{operation} unavailable: {type(error).__name__}")
 
 
