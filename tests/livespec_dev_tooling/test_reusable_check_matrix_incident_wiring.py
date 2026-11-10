@@ -1,31 +1,36 @@
-"""reusable-check-matrix omits only allowlisted legs, only on a pull request.
+"""reusable-check-matrix omits only an authorized, allowlisted leg, only on a pull request.
 
 Work-item livespec-dev-tooling-hlxbsv (plan expedited-incident-response-flag,
-epic livespec-dev-tooling-bqnzcm), carrying finding 4 of the independent review
-of livespec-dev-tooling#3911. The live behaviour is a GitHub Actions run, so this
+epic livespec-dev-tooling-bqnzcm): finding 4 of the independent review of
+livespec-dev-tooling#3911, and the six findings of the review of
+livespec-dev-tooling#3966. The live behaviour is a GitHub Actions run, so this
 file holds the workflow's SHAPE, plus a step-by-step simulation of one leg that
 evaluates the committed `if:` expressions and runs the real
 `incident_matrix_omission` decision:
 
-- **One reader.** The `incident-omitted` input is optional, defaults to `'[]'`,
-  and is read by exactly one step: the leg's decision step, which runs
-  `python3 -m livespec_dev_tooling.incident_matrix_omission` from the Actions
-  checkout. No `contains()` ever sees the raw input, so a JSON string can never
-  become a substring test, and no expression can omit a member the module's
-  allowlist refuses.
-- **The master-push guard.** The decision step runs on a pull_request event
-  only, and the report, setup and run-check guards repeat that test.
-- **Reported, never skipped silently.** One `omitted-by-incident-policy` step
-  carries the omit guard; setup and run-check carry its exact negation.
+- **Pinned steps.** The consumer checkout, the Actions checkout
+  (`thewoolleyman/livespec-dev-tooling` at `inputs.ref`), the release
+  resolution, the released checkout (`thewoolleyman/livespec-dev-tooling` at
+  the resolved tag), the decision (run from the released checkout), the report
+  (with its step-summary write) and the job name are each pinned exactly, in
+  order. A checkout moved to the PR head or to the consumer's repository fails
+  here by name.
+- **Readers.** The `incident-omitted` input is read by the decision step's env
+  and by the exact `!= '[]'` gate of the three incident steps, and nowhere
+  else: no `contains()` ever sees the raw input.
+- **The master-push guard.** The three incident steps run on a pull_request
+  event only; the report, setup and run-check guards repeat that test.
 
-The simulation then proves the outcomes the item's Definition of Done names: a
-master push runs every check whatever the input; a non-incident PR omits
-nothing; a listed `check-lint` runs; a malformed input fails every leg before
-any reports an omission.
+The simulation then proves the outcomes: a push, pull_request_target,
+merge_group or workflow_dispatch runs every check whatever the input; a
+non-incident PR omits nothing and resolves no release; an authorized incident
+omits only allowlisted module-slug legs; a fork, an unlabeled PR, a failed
+incident-ci or a miswired caller omits nothing; a malformed input fails every
+leg before any reports an omission.
 
-Each rule is exercised twice, as the sibling `test_incident_ci_omission_wiring`
-does: against the committed workflow (expecting silence) and against a copy
-mutated to break exactly that rule (expecting the finding).
+Each rule is exercised twice: against the committed workflow (expecting
+silence) and against a copy mutated to break exactly that rule (expecting the
+finding).
 """
 
 from __future__ import annotations
@@ -34,34 +39,123 @@ import copy
 import json
 import re
 from collections.abc import Callable
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
 import pytest
 import yaml
 
-from livespec_dev_tooling.incident_matrix_omission import decide
+from livespec_dev_tooling.incident_matrix_omission import (
+    GUARDED_OMITTED,
+    GUARDED_RESULT,
+    IncidentAuthority,
+    decide,
+)
 
 __all__: list[str] = []
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _WORKFLOW = _REPO_ROOT / ".github" / "workflows" / "reusable-check-matrix.yml"
 
-_INPUT = "incident-omitted"
+_INPUTS = ("incident-omitted", "incident-ci-result")
+_CONSUMER_CHECKOUT = "Checkout consumer repo"
+_ACTIONS_CHECKOUT = "Checkout livespec-dev-tooling Actions"
+_RELEASE = "Resolve the latest livespec-dev-tooling release for the incident decision"
+_RELEASED_CHECKOUT = "Checkout the released livespec-dev-tooling incident decision"
 _DECISION = "Decide incident omission for this leg"
 _REPORT = "omitted-by-incident-policy (per the caller's incident CI aggregate)"
 _SETUP = "Setup toolchain"
 _RUN = "Run check"
-_ACTIONS_CHECKOUT = "Checkout livespec-dev-tooling Actions"
+_ORDER = (
+    _CONSUMER_CHECKOUT,
+    _ACTIONS_CHECKOUT,
+    _RELEASE,
+    _RELEASED_CHECKOUT,
+    _DECISION,
+    _REPORT,
+    _SETUP,
+    _RUN,
+)
 _INVOCATION = "python3 -m livespec_dev_tooling.incident_matrix_omission"
+_DEV_TOOLING = "thewoolleyman/livespec-dev-tooling"
 
-_PR_GUARD = "${{ github.event_name == 'pull_request' }}"
+_GATE = "${{ github.event_name == 'pull_request' && inputs.incident-omitted != '[]' }}"
 _OMIT = "github.event_name == 'pull_request' && steps.incident.outputs.omit == 'true'"
 _REPORT_IF = "${{ " + _OMIT + " }}"
 _RUN_IF = "${{ !(" + _OMIT + ") }}"
-_DECISION_ENV = {
-    "INCIDENT_OMITTED": "${{ inputs.incident-omitted }}",
-    "MATRIX_CHECK": "${{ matrix.check }}",
+_GUARDS = {
+    _CONSUMER_CHECKOUT: None,
+    _ACTIONS_CHECKOUT: None,
+    _RELEASE: _GATE,
+    _RELEASED_CHECKOUT: _GATE,
+    _DECISION: _GATE,
+    _REPORT: _REPORT_IF,
+    _SETUP: _RUN_IF,
+    _RUN: _RUN_IF,
+}
+_RELEASE_RUN = (
+    'tag="$(gh api repos/thewoolleyman/livespec-dev-tooling/releases/latest --jq .tag_name)"\n'
+    'if ! [[ "$tag" =~ ^v[0-9]+[.][0-9]+[.][0-9]+$ ]]; then\n'
+    '  echo "::error::could not resolve the latest livespec-dev-tooling release tag"\n'
+    "  exit 1\n"
+    "fi\n"
+    'echo "tag=${tag}" >> "$GITHUB_OUTPUT"\n'
+)
+_REPORT_RUN = (
+    "echo \"omitted-by-incident-policy: ${MEMBER} was not executed. The caller's passed "
+    'incident CI aggregate defers it for this pull request head." | tee -a "$GITHUB_STEP_SUMMARY"\n'
+)
+_PINNED = {
+    _CONSUMER_CHECKOUT: {"name": _CONSUMER_CHECKOUT, "uses": "actions/checkout@v5"},
+    _ACTIONS_CHECKOUT: {
+        "name": _ACTIONS_CHECKOUT,
+        "uses": "actions/checkout@v5",
+        "with": {
+            "repository": _DEV_TOOLING,
+            "ref": "${{ inputs.ref }}",
+            "path": ".livespec-dev-tooling-actions",
+        },
+    },
+    _RELEASE: {
+        "name": _RELEASE,
+        "id": "release",
+        "if": _GATE,
+        "shell": "bash",
+        "env": {"GH_TOKEN": "${{ github.token }}"},
+        "run": _RELEASE_RUN,
+    },
+    _RELEASED_CHECKOUT: {
+        "name": _RELEASED_CHECKOUT,
+        "if": _GATE,
+        "uses": "actions/checkout@v5",
+        "with": {
+            "repository": _DEV_TOOLING,
+            "ref": "${{ steps.release.outputs.tag }}",
+            "path": ".livespec-dev-tooling-released",
+            "persist-credentials": False,
+        },
+    },
+    _DECISION: {
+        "name": _DECISION,
+        "id": "incident",
+        "if": _GATE,
+        "shell": "bash",
+        "working-directory": ".livespec-dev-tooling-released",
+        "env": {
+            "INCIDENT_OMITTED": "${{ inputs.incident-omitted }}",
+            "INCIDENT_CI_RESULT": "${{ inputs.incident-ci-result }}",
+            "MATRIX_CHECK": "${{ matrix.check }}",
+        },
+        "run": _INVOCATION,
+    },
+    _REPORT: {
+        "name": _REPORT,
+        "if": _REPORT_IF,
+        "shell": "bash",
+        "env": {"MEMBER": "${{ matrix.check }}"},
+        "run": _REPORT_RUN,
+    },
 }
 
 _ALL_SIX = json.dumps(
@@ -74,12 +168,43 @@ _ALL_SIX = json.dumps(
         "check-per-file-coverage",
     ]
 )
-_ALLOWLISTED_LEGS = ("heading_coverage", "per_file_coverage", "no_todo_registry", "check-coverage")
-_OTHER_LEGS = ("lint", "types", "check-coverage-incremental")
+_ALLOWLISTED_LEGS = ("heading_coverage", "per_file_coverage", "no_todo_registry", "coverage")
+_OTHER_LEGS = ("lint", "types", "check-heading-coverage")
 _LEGS = _ALLOWLISTED_LEGS + _OTHER_LEGS
 # Every leg slug as a list: a guard that reads the raw input would omit them all.
 _EVERY_LEG = json.dumps(list(_LEGS))
 _NOT_ALLOWLISTED = '["check-lint", "check-types", "lint", "types"]'
+
+_REPOSITORY = "owner/repo"
+_PAYLOAD = {
+    "pull_request": {
+        "labels": [{"name": "expedited-incident-response"}],
+        "head": {"repo": {"full_name": _REPOSITORY}},
+        "base": {"repo": {"full_name": _REPOSITORY}},
+    }
+}
+_AUTHORIZED = IncidentAuthority(
+    payload=_PAYLOAD,
+    repository=_REPOSITORY,
+    incident_ci_result="",
+    workflows=(
+        (
+            "ci.yml",
+            f"      incident-omitted: {GUARDED_OMITTED}\n"
+            f"      incident-ci-result: {GUARDED_RESULT}\n",
+        ),
+    ),
+)
+_UNAUTHORIZED = (
+    replace(_AUTHORIZED, payload={"pull_request": {**_PAYLOAD["pull_request"], "labels": []}}),
+    replace(
+        _AUTHORIZED,
+        payload={
+            "pull_request": {**_PAYLOAD["pull_request"], "head": {"repo": {"full_name": "f/r"}}}
+        },
+    ),
+    replace(_AUTHORIZED, workflows=(("ci.yml", "      incident-omitted: '[\"x\"]'\n"),)),
+)
 
 
 def _load() -> dict[Any, Any]:
@@ -141,6 +266,7 @@ class _Parser:
             "failure": lambda _args: not self.status,
             "contains": lambda args: _contains(haystack=args[0], needle=args[1]),
             "fromJSON": lambda args: json.loads(str(args[0])),
+            "startsWith": lambda args: str(args[0]).lower().startswith(str(args[1]).lower()),
         }
 
     def peek(self) -> str | None:
@@ -229,12 +355,19 @@ def _render(*, value: str, context: dict[str, object]) -> str:
 
 
 def _simulate(
-    *, workflow: dict[Any, Any], event: str, raw: str, check: str
+    *,
+    workflow: dict[Any, Any],
+    event: str,
+    raw: str,
+    check: str,
+    result: str = "success",
+    authority: IncidentAuthority = _AUTHORIZED,
 ) -> tuple[bool, list[str]]:
     """One leg, step by step: (the leg succeeded, the steps that executed)."""
     context: dict[str, object] = {
         "github.event_name": event,
         "inputs.incident-omitted": raw,
+        "inputs.incident-ci-result": result,
         "matrix.check": check,
     }
     status, executed = True, []
@@ -252,7 +385,10 @@ def _simulate(
         if step.get("run") == _INVOCATION:
             env = {k: _render(value=str(v), context=context) for k, v in step["env"].items()}
             decision = decide(
-                event_name=event, raw=env["INCIDENT_OMITTED"], check=env["MATRIX_CHECK"]
+                event_name=event,
+                raw=env["INCIDENT_OMITTED"],
+                check=env["MATRIX_CHECK"],
+                authority=replace(authority, incident_ci_result=env.get("INCIDENT_CI_RESULT", "")),
             )
             if decision.code == 0:
                 context[f"steps.{step['id']}.outputs.omit"] = "true" if decision.omit else "false"
@@ -265,11 +401,14 @@ def _simulate(
 
 
 def _input_findings(*, workflow: dict[Any, Any]) -> list[str]:
-    declared = dict(_inputs(workflow=workflow).get(_INPUT, {}))
-    _ = declared.pop("description", None)
-    if declared != {"required": False, "type": "string", "default": "[]"}:
-        return [f"input {_INPUT} is not an optional string defaulting to '[]': {declared}"]
-    return []
+    expected = {"incident-omitted": "[]", "incident-ci-result": ""}
+    findings: list[str] = []
+    for name, default in expected.items():
+        declared = dict(_inputs(workflow=workflow).get(name, {}))
+        _ = declared.pop("description", None)
+        if declared != {"required": False, "type": "string", "default": default}:
+            findings.append(f"input {name} is not an optional string defaulting to {default!r}")
+    return findings
 
 
 def _reader_findings(*, workflow: dict[Any, Any]) -> list[str]:
@@ -279,36 +418,31 @@ def _reader_findings(*, workflow: dict[Any, Any]) -> list[str]:
         for key, value in {**step.get("env", {}), **step}.items()
         if key != "env" and "inputs.incident-omitted" in json.dumps(value)
     ]
+    allowed = [(_RELEASE, "if"), (_RELEASED_CHECKOUT, "if"), (_DECISION, "INCIDENT_OMITTED")]
+    allowed.insert(2, (_DECISION, "if"))
     findings: list[str] = []
-    if readers != [(_DECISION, "INCIDENT_OMITTED")]:
-        findings.append(f"the {_INPUT} input is read outside the decision step's env: {readers}")
-    if "inputs.incident-omitted" in json.dumps(
-        {k: v for k, v in workflow["jobs"]["check"].items() if k != "steps"}
-    ):
-        findings.append(f"the job definition itself reads the {_INPUT} input")
+    if sorted(readers, key=str) != sorted(allowed, key=str):
+        findings.append(f"the incident-omitted input is read outside the decision: {readers}")
+    job = {k: v for k, v in workflow["jobs"]["check"].items() if k != "steps"}
+    if any(f"inputs.{name}" in json.dumps(job) for name in _INPUTS):
+        findings.append("the job definition itself reads an incident input")
     return findings
 
 
-def _decision_findings(*, workflow: dict[Any, Any]) -> list[str]:
+def _pinned_findings(*, workflow: dict[Any, Any]) -> list[str]:
     names = [s.get("name") for s in _steps(workflow=workflow)]
-    if any(n not in names for n in (_ACTIONS_CHECKOUT, _DECISION, _REPORT, _SETUP, _RUN)):
-        return [f"the leg lacks a decision, report, setup or run step: {names}"]
-    decision = _step(workflow=workflow, name=_DECISION)
-    expected = {
-        "name": _DECISION,
-        "id": "incident",
-        "if": _PR_GUARD,
-        "shell": "bash",
-        "working-directory": ".livespec-dev-tooling-actions",
-        "env": _DECISION_ENV,
-        "run": _INVOCATION,
-    }
-    findings: list[str] = []
-    if decision != expected:
-        findings.append(f"the decision step is not the guarded module invocation: {decision}")
-    order = [names.index(n) for n in (_ACTIONS_CHECKOUT, _DECISION, _REPORT, _SETUP, _RUN)]
+    if any(n not in names for n in _ORDER):
+        return [f"the leg lacks a pinned step: {names}"]
+    findings = [
+        f"step <{name}> is not its pinned form: {_step(workflow=workflow, name=name)}"
+        for name, pinned in _PINNED.items()
+        if _step(workflow=workflow, name=name) != pinned
+    ]
+    order = [names.index(n) for n in _ORDER]
     if order != sorted(order):
-        findings.append(f"the decision step does not precede the report, setup and run: {names}")
+        findings.append(f"the leg's steps are out of order: {names}")
+    if workflow["jobs"]["check"].get("name") != "${{ matrix.check }}":
+        findings.append("the check job is not named by its matrix slug")
     return findings
 
 
@@ -317,52 +451,48 @@ def _guard_findings(*, workflow: dict[Any, Any]) -> list[str]:
     findings: list[str] = []
     if "if" in job:
         findings.append("the check job carries a job-level if:")
-    expected = {_DECISION: _PR_GUARD, _REPORT: _REPORT_IF, _SETUP: _RUN_IF, _RUN: _RUN_IF}
     for step in _steps(workflow=workflow):
-        if step.get("if") != expected.get(step.get("name")):
+        if step.get("if") != _GUARDS.get(step.get("name")):
             findings.append(f"step <{step.get('name')}> has guard <{step.get('if')}>")
-    reports = [
-        s for s in _steps(workflow=workflow) if "omitted-by-incident-policy" in s.get("run", "")
-    ]
-    if len(reports) != 1 or "${{" in reports[0]["run"]:
-        findings.append("there is not exactly one report step free of ${{ }} in its run:")
     if any("continue-on-error" in s for s in _steps(workflow=workflow)):
         findings.append("a step continues on error")
     return findings
 
 
 _EVERY_CHECK = [_ACTIONS_CHECKOUT, _SETUP, _RUN]
+_INCIDENT_STEPS = {_RELEASE, _RELEASED_CHECKOUT, _DECISION, _REPORT}
 
 
 def _push_findings(*, workflow: dict[Any, Any], check: str) -> list[str]:
     """A non-pull_request event runs the check whatever the input says."""
     findings: list[str] = []
-    for event in ("push", "merge_group", "workflow_dispatch"):
+    for event in ("push", "pull_request_target", "merge_group", "workflow_dispatch"):
         for raw in (_ALL_SIX, _EVERY_LEG, '"check-coverage-incremental"', "{"):
             ok, steps = _simulate(workflow=workflow, event=event, raw=raw, check=check)
-            if not ok or _REPORT in steps or not set(_EVERY_CHECK) <= set(steps):
+            if not ok or _INCIDENT_STEPS & set(steps) or not set(_EVERY_CHECK) <= set(steps):
                 findings.append(f"a {event} with {raw} does not run {check}")
     return findings
 
 
-def _runs(*, workflow: dict[Any, Any], raw: str, check: str) -> bool:
-    ok, steps = _simulate(workflow=workflow, event="pull_request", raw=raw, check=check)
+def _runs(*, workflow: dict[Any, Any], raw: str, check: str, **scenario: Any) -> bool:
+    ok, steps = _simulate(workflow=workflow, event="pull_request", raw=raw, check=check, **scenario)
     return ok and _REPORT not in steps and _RUN in steps
 
 
 def _pull_request_findings(*, workflow: dict[Any, Any], check: str) -> list[str]:
-    """On a pull request only an allowlisted listed leg is omitted; bad input fails first."""
-    findings = [
-        f"a non-incident pull request ({raw!r}) does not run {check}"
-        for raw in ("[]", "")
-        if not _runs(workflow=workflow, raw=raw, check=check)
-    ]
+    """On a pull request only an authorized, allowlisted, listed leg is omitted."""
+    _, steps = _simulate(workflow=workflow, event="pull_request", raw="[]", check=check)
+    findings = [] if _runs(workflow=workflow, raw="[]", check=check) else [f"[] skips {check}"]
+    if _INCIDENT_STEPS & set(steps):
+        findings.append(f"a non-incident pull request runs incident steps for {check}")
     ok, steps = _simulate(workflow=workflow, event="pull_request", raw=_ALL_SIX, check=check)
     omitted = ok and _REPORT in steps and _SETUP not in steps and _RUN not in steps
     if omitted != (check in _ALLOWLISTED_LEGS):
         findings.append(f"an incident pull request omits {check}: {omitted}")
-    if not _runs(workflow=workflow, raw=_NOT_ALLOWLISTED, check=check):
-        findings.append(f"a non-allowlisted list does not run {check}")
+    unauthorized = [{"result": "failure"}] + [{"authority": a} for a in _UNAUTHORIZED]
+    for raw, scenario in [(_NOT_ALLOWLISTED, {}), ("", {})] + [(_ALL_SIX, u) for u in unauthorized]:
+        if not _runs(workflow=workflow, raw=raw, check=check, **scenario):
+            findings.append(f"an unauthorized or non-allowlisted request skips {check}")
     for raw in ('"check-coverage-incremental"', '"check-heading-coverage"', "{"):
         ok, steps = _simulate(workflow=workflow, event="pull_request", raw=raw, check=check)
         if ok or _REPORT in steps or _RUN in steps:
@@ -385,7 +515,7 @@ def _findings(*, workflow: dict[Any, Any]) -> list[str]:
     return [
         *_input_findings(workflow=workflow),
         *_reader_findings(workflow=workflow),
-        *_decision_findings(workflow=workflow),
+        *_pinned_findings(workflow=workflow),
         *_guard_findings(workflow=workflow),
         *_behaviour_findings(workflow=workflow),
     ]
@@ -399,48 +529,48 @@ def test_the_committed_workflow_satisfies_every_rule():
 
 # The saved pre-review shape: guards read the raw input with contains().
 _RAW_OMIT = "contains(fromJSON(inputs.incident-omitted || '[]'), matrix.check)"
+_HEAD = "${{ github.event.pull_request.head.sha }}"
 
 
-def _set_guard(*, workflow: dict[Any, Any], name: str, guard: str) -> None:
-    _step(workflow=workflow, name=name)["if"] = guard
+def _set(*, workflow: dict[Any, Any], name: str, key: str, value: object) -> None:
+    _step(workflow=workflow, name=name)[key] = value
 
 
 def _raw_contains(workflow: dict[Any, Any]) -> None:
     """The saved pre-review shape: no decision step, the guards read the raw input."""
     _steps(workflow=workflow).remove(_step(workflow=workflow, name=_DECISION))
-    _set_guard(
+    _set(
         workflow=workflow,
         name=_REPORT,
-        guard="${{ github.event_name == 'pull_request' && " + _RAW_OMIT + " }}",
+        key="if",
+        value="${{ github.event_name == 'pull_request' && " + _RAW_OMIT + " }}",
     )
     for name in (_SETUP, _RUN):
-        _set_guard(
-            workflow=workflow,
-            name=name,
-            guard="${{ !(github.event_name == 'pull_request' && " + _RAW_OMIT + ") }}",
-        )
+        guard = "${{ !(github.event_name == 'pull_request' && " + _RAW_OMIT + ") }}"
+        _set(workflow=workflow, name=name, key="if", value=guard)
 
 
 def _no_push_guard(workflow: dict[Any, Any]) -> None:
     """The raw shape without the pull_request test: a master push can omit."""
     _raw_contains(workflow)
-    _set_guard(workflow=workflow, name=_REPORT, guard="${{ " + _RAW_OMIT + " }}")
+    _set(workflow=workflow, name=_REPORT, key="if", value="${{ " + _RAW_OMIT + " }}")
     for name in (_SETUP, _RUN):
-        _set_guard(workflow=workflow, name=name, guard="${{ !(" + _RAW_OMIT + ") }}")
+        _set(workflow=workflow, name=name, key="if", value="${{ !(" + _RAW_OMIT + ") }}")
 
 
-def _decision_on_every_event(workflow: dict[Any, Any]) -> None:
-    del _step(workflow=workflow, name=_DECISION)["if"]
+def _gate_widened(workflow: dict[Any, Any]) -> None:
+    widened = "${{ startsWith(github.event_name, 'pull_request') }}"
+    for name in (_RELEASE, _RELEASED_CHECKOUT, _DECISION):
+        _set(workflow=workflow, name=name, key="if", value=widened)
 
 
 def _decision_continues_on_error(workflow: dict[Any, Any]) -> None:
-    _step(workflow=workflow, name=_DECISION)["continue-on-error"] = True
+    _set(workflow=workflow, name=_DECISION, key="continue-on-error", value=True)
 
 
 def _report_without_event_test(workflow: dict[Any, Any]) -> None:
-    _set_guard(
-        workflow=workflow, name=_REPORT, guard="${{ steps.incident.outputs.omit == 'true' }}"
-    )
+    guard = "${{ steps.incident.outputs.omit == 'true' }}"
+    _set(workflow=workflow, name=_REPORT, key="if", value=guard)
 
 
 def _run_check_unguarded(workflow: dict[Any, Any]) -> None:
@@ -454,17 +584,54 @@ def _decision_after_run_check(workflow: dict[Any, Any]) -> None:
     steps.append(decision)
 
 
-def _decision_from_consumer_tree(workflow: dict[Any, Any]) -> None:
-    del _step(workflow=workflow, name=_DECISION)["working-directory"]
+def _decision_from_the_actions_checkout(workflow: dict[Any, Any]) -> None:
+    _set(
+        workflow=workflow,
+        name=_DECISION,
+        key="working-directory",
+        value=".livespec-dev-tooling-actions",
+    )
+
+
+def _released_checkout_at_the_pr_head(workflow: dict[Any, Any]) -> None:
+    _step(workflow=workflow, name=_RELEASED_CHECKOUT)["with"]["ref"] = _HEAD
+
+
+def _released_checkout_of_the_consumer(workflow: dict[Any, Any]) -> None:
+    released = _step(workflow=workflow, name=_RELEASED_CHECKOUT)
+    released["with"]["repository"] = "${{ github.repository }}"
+
+
+def _actions_checkout_at_the_pr_head(workflow: dict[Any, Any]) -> None:
+    _step(workflow=workflow, name=_ACTIONS_CHECKOUT)["with"]["ref"] = _HEAD
+
+
+def _actions_checkout_of_the_consumer(workflow: dict[Any, Any]) -> None:
+    actions = _step(workflow=workflow, name=_ACTIONS_CHECKOUT)
+    actions["with"]["repository"] = "${{ github.repository }}"
+
+
+def _release_from_master(workflow: dict[Any, Any]) -> None:
+    _set(
+        workflow=workflow, name=_RELEASE, key="run", value='echo "tag=master" >> "$GITHUB_OUTPUT"\n'
+    )
+
+
+def _job_renamed(workflow: dict[Any, Any]) -> None:
+    workflow["jobs"]["check"]["name"] = "check"
+
+
+def _summary_dropped(workflow: dict[Any, Any]) -> None:
+    run = _REPORT_RUN.replace(' | tee -a "$GITHUB_STEP_SUMMARY"', "")
+    _set(workflow=workflow, name=_REPORT, key="run", value=run)
+
+
+def _result_not_passed(workflow: dict[Any, Any]) -> None:
+    del _step(workflow=workflow, name=_DECISION)["env"]["INCIDENT_CI_RESULT"]
 
 
 def _required_input(workflow: dict[Any, Any]) -> None:
-    _inputs(workflow=workflow)[_INPUT]["required"] = True
-
-
-def _report_interpolates(workflow: dict[Any, Any]) -> None:
-    step = _step(workflow=workflow, name=_REPORT)
-    step["run"] = 'echo "omitted-by-incident-policy: ${{ matrix.check }}"'
+    _inputs(workflow=workflow)["incident-ci-result"]["required"] = True
 
 
 def _job_level_if(workflow: dict[Any, Any]) -> None:
@@ -474,32 +641,37 @@ def _job_level_if(workflow: dict[Any, Any]) -> None:
 @pytest.mark.parametrize(
     ("mutate", "expected"),
     [
-        (_raw_contains, "a non-allowlisted list does not run lint"),
+        (_raw_contains, "an unauthorized or non-allowlisted request skips lint"),
         (
             _raw_contains,
-            'a malformed input "check-coverage-incremental" does not fail check-coverage before',
+            'a malformed input "check-coverage-incremental" does not fail coverage before',
         ),
-        (_raw_contains, "the leg lacks a decision, report, setup or run step"),
-        (_raw_contains, "the incident-omitted input is read outside the decision step's env"),
+        (_raw_contains, "the incident-omitted input is read outside the decision"),
+        (_raw_contains, "the leg lacks a pinned step"),
         (_no_push_guard, "a push with " + _EVERY_LEG + " does not run heading_coverage"),
-        (_decision_on_every_event, "the decision step is not the guarded module invocation"),
+        (_gate_widened, "step <" + _RELEASE + "> has guard"),
+        (_gate_widened, "a pull_request_target with " + _ALL_SIX + " does not run lint"),
         (
             _decision_continues_on_error,
             'a malformed input "check-heading-coverage" does not fail lint before any report',
         ),
         (_decision_continues_on_error, "a step continues on error"),
-        (
-            _report_without_event_test,
-            "step <omitted-by-incident-policy (per the caller's incident CI aggregate)> has guard",
-        ),
+        (_report_without_event_test, "step <" + _REPORT + "> has guard"),
         (_run_check_unguarded, "an incident pull request omits heading_coverage: False"),
         (_run_check_unguarded, "step <Run check> has guard <None>"),
-        (_decision_after_run_check, "the decision step does not precede the report"),
-        (_decision_from_consumer_tree, "the decision step is not the guarded module invocation"),
-        (_required_input, "input incident-omitted is not an optional string defaulting to '[]'"),
-        (_report_interpolates, "there is not exactly one report step free of ${{ }} in its run:"),
+        (_decision_after_run_check, "the leg's steps are out of order"),
+        (_decision_from_the_actions_checkout, "step <" + _DECISION + "> is not its pinned form"),
+        (_released_checkout_at_the_pr_head, "step <" + _RELEASED_CHECKOUT + "> is not its pinned"),
+        (_released_checkout_of_the_consumer, "step <" + _RELEASED_CHECKOUT + "> is not its"),
+        (_actions_checkout_at_the_pr_head, "step <" + _ACTIONS_CHECKOUT + "> is not its pinned"),
+        (_actions_checkout_of_the_consumer, "step <" + _ACTIONS_CHECKOUT + "> is not its pinned"),
+        (_release_from_master, "step <" + _RELEASE + "> is not its pinned form"),
+        (_job_renamed, "the check job is not named by its matrix slug"),
+        (_summary_dropped, "step <" + _REPORT + "> is not its pinned form"),
+        (_result_not_passed, "step <" + _DECISION + "> is not its pinned form"),
+        (_required_input, "input incident-ci-result is not an optional string defaulting to ''"),
         (_job_level_if, "the check job carries a job-level if:"),
-        (_job_level_if, "the job definition itself reads the incident-omitted input"),
+        (_job_level_if, "the job definition itself reads an incident input"),
     ],
 )
 def test_each_mutation_is_caught_by_name(mutate, expected):

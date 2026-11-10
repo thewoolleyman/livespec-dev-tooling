@@ -20,30 +20,46 @@
 #     livespec-dev-tooling to consume Actions from. Pinned via the
 #     consumer's `uses:` reference (typically vX.Y.Z); included here
 #     for non-tag-pinned local-fork experimentation only.
-#   incident-omitted (optional, default '[]') — JSON-array string of the
-#     incident controller members an expedited incident PR omits (work-item
-#     livespec-dev-tooling-hlxbsv). The caller passes ONLY its incident-ci
-#     job's `omitted` output, which that job writes after the released
-#     incident controller's aggregate has PASSED (see this repository's own
-#     ci.yml), e.g.
-#     `${{ needs.incident-ci.result == 'success' && needs.incident-ci.outputs.omitted || '[]' }}`.
-#     Each leg asks `python3 -m livespec_dev_tooling.incident_matrix_omission`
-#     (run from the Actions checkout, never the consumer's tree), and only
-#     that step reads the input. Three rules hold there:
-#     - only a pull_request event can omit: a master push, or any other
-#       event, runs every requested check whatever labels, markers or
-#       omission input it receives (SPECIFICATION/contracts.md, the
+#   incident-omitted (optional, default '[]') and incident-ci-result
+#     (optional, default '') — the expedited incident inputs (work-item
+#     livespec-dev-tooling-hlxbsv). A caller wires them ONLY from its
+#     incident-ci job, exactly as:
+#       incident-omitted: ${{ needs.incident-ci.result == 'success' && needs.incident-ci.outputs.omitted || '[]' }}
+#       incident-ci-result: ${{ needs.incident-ci.result }}
+#     `python3 -m livespec_dev_tooling.incident_matrix_omission --check-callers`
+#     checks that wiring over a repository's workflows; the decision below
+#     runs the same rule over the caller's workflows and omits nothing when
+#     it fails (no literal list, no repository variable, no raw output).
+#
+#     When the list is anything but '[]' on a pull_request event, each leg
+#     resolves the LATEST RELEASE of livespec-dev-tooling (the same
+#     releases/latest read the incident-ci job of this repository's own
+#     ci.yml installs from), checks that tag out into
+#     .livespec-dev-tooling-released, and runs the decision from there:
+#     never from the consumer's tree, and never from the `ref` input (whose
+#     default is unreleased master, so the `uses:` pin does not pin the
+#     Actions checkout). A change that widens what can be omitted therefore
+#     reaches no consumer until it is released. The decision omits a leg
+#     only when ALL of these hold, and otherwise the leg runs its check:
+#     - the event is pull_request (a push, pull_request_target, merge_group
+#       or any other event never reaches it, and the module repeats the
+#       test), so a master push runs every requested check whatever labels,
+#       markers or input it receives (SPECIFICATION/contracts.md, the
 #       expedited incident execution contract);
-#     - only a coverage or spec member can be omitted (the module's
-#       OMITTABLE_MEMBERS allowlist); a listed check-lint or check-types is
-#       refused with a warning and runs;
-#     - the input must be a JSON array of strings: anything else fails the
-#       leg before it can report an omission, so membership is never a
-#       substring test.
-#     An omitted leg reports omitted-by-incident-policy in its step summary
-#     and concludes success under its usual check-run name: a consumer that
-#     requires individual legs sees green, and the step summary is the
-#     disclosure.
+#     - the input is a JSON array of strings (anything else FAILS the leg
+#       before any report; membership is never a substring test);
+#     - the leg's slug is a module slug run-check can run, naming a coverage
+#       or spec member in the module's OMITTABLE_MEMBERS allowlist (a listed
+#       check-lint is refused with a warning and runs);
+#     - incident-ci-result is success, the event payload's pull request
+#       carries the expedited-incident-response label, its head repository
+#       is this repository (a fork omits nothing), and the caller's wiring
+#       passes the rule above.
+#     An omitted leg prints a ::notice annotation and reports
+#     omitted-by-incident-policy in its step summary, and it concludes
+#     success under its usual check-run name. A caller's protected
+#     aggregate MUST therefore re-report the omitted members, as this
+#     repository's ci-green does.
 
 name: livespec-dev-tooling check matrix
 
@@ -64,6 +80,11 @@ on:
         required: false
         type: string
         default: '[]'
+      incident-ci-result:
+        description: The caller's incident-ci job result; an omission needs success.
+        required: false
+        type: string
+        default: ''
 
 jobs:
   check:
@@ -84,18 +105,42 @@ jobs:
           ref: ${{ inputs.ref }}
           path: .livespec-dev-tooling-actions
 
-      # Expedited incident PRs only. The pull_request test is the master-push
-      # guard: on every other event this step is skipped, `omit` stays unset,
-      # and the leg runs its check. The module repeats that guard, refuses a
-      # member outside its coverage-and-spec allowlist, and fails the leg on
-      # an input that is not a JSON array of strings, before any report.
+      # Expedited incident PRs only, and only when the caller passes a list.
+      # The pull_request test is the master-push guard: on every other event
+      # these three steps are skipped, `omit` stays unset, and the leg runs
+      # its check. The decision runs from the latest RELEASE, never from the
+      # consumer's tree or from the `ref` input.
+      - name: Resolve the latest livespec-dev-tooling release for the incident decision
+        id: release
+        if: ${{ github.event_name == 'pull_request' && inputs.incident-omitted != '[]' }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="$(gh api repos/thewoolleyman/livespec-dev-tooling/releases/latest --jq .tag_name)"
+          if ! [[ "$tag" =~ ^v[0-9]+[.][0-9]+[.][0-9]+$ ]]; then
+            echo "::error::could not resolve the latest livespec-dev-tooling release tag"
+            exit 1
+          fi
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout the released livespec-dev-tooling incident decision
+        if: ${{ github.event_name == 'pull_request' && inputs.incident-omitted != '[]' }}
+        uses: actions/checkout@v5
+        with:
+          repository: thewoolleyman/livespec-dev-tooling
+          ref: ${{ steps.release.outputs.tag }}
+          path: .livespec-dev-tooling-released
+          persist-credentials: false
+
       - name: Decide incident omission for this leg
         id: incident
-        if: ${{ github.event_name == 'pull_request' }}
+        if: ${{ github.event_name == 'pull_request' && inputs.incident-omitted != '[]' }}
         shell: bash
-        working-directory: .livespec-dev-tooling-actions
+        working-directory: .livespec-dev-tooling-released
         env:
           INCIDENT_OMITTED: ${{ inputs.incident-omitted }}
+          INCIDENT_CI_RESULT: ${{ inputs.incident-ci-result }}
           MATRIX_CHECK: ${{ matrix.check }}
         run: python3 -m livespec_dev_tooling.incident_matrix_omission
 
