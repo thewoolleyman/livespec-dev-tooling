@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 import contextlib
 import errno
 import importlib.util
@@ -23,6 +24,7 @@ _MODULE_PATH = (
     / "checks"
     / "_red_green_replay_suite_runner.py"
 )
+_CONFTEST_PATH = Path(__file__).resolve().parents[2] / "conftest.py"
 
 
 def _load():
@@ -244,3 +246,25 @@ def test_a_silent_suite_is_killed_whole_once_it_stalls(tmp_path: Path) -> None:
     while _live_processes_carrying(token) and time.monotonic() < hang_guard:  # pragma: no branch
         time.sleep(0.1)  # pragma: no cover
     assert not _live_processes_carrying(token)
+
+
+def test_the_gate_runners_progress_stamp_is_one_of_the_scrubbed_gate_variables() -> None:
+    """The caller's progress stamp is scrubbed like every gate-shaping variable.
+
+    gate-run.sh exports LIVESPEC_GATE_RUN_PROGRESS_STAMP to the gated command, so
+    under the detached runner every test saw it set and the `if stamp:` false
+    branch of `SuiteProgress.saw` was never taken, which failed
+    check-per-file-coverage on a passing suite (livespec-dev-tooling-khjkyu).
+    The suite's autouse fixture unsets exactly the variables this tuple names.
+    """
+    tree = ast.parse(_CONFTEST_PATH.read_text(encoding="utf-8"))
+    scrubbed = {
+        element.value
+        for node in tree.body
+        if isinstance(node, ast.Assign)
+        and any(isinstance(t, ast.Name) and t.id == "_CALLER_GATE_VARIABLES" for t in node.targets)
+        and isinstance(node.value, ast.Tuple)
+        for element in node.value.elts
+        if isinstance(element, ast.Constant)
+    }
+    assert "LIVESPEC_GATE_RUN_PROGRESS_STAMP" in scrubbed
