@@ -20,6 +20,14 @@ The remaining assertions pin the wiring the replay depends on: the job may read
 the Actions API, it checks the tree out before the reader runs, the reader step
 cannot be skipped or soft-failed, and the original needs-result step is still
 there unchanged (the change only ADDS to the gate).
+
+"Cannot be soft-failed" is pinned over the step's shell text, not assumed
+(independent review of livespec-dev-tooling#3931, finding 3). An unreadable job
+list must end in `exit 1`; the reader invocation must be the step's LAST
+command, exactly as committed, so nothing after it (a trailing `true`) and
+nothing on its line (`|| true`) can replace its exit status; and the step may
+neither relax errexit (`set +e`) nor override its `shell:`. Each pin is
+mutation-proved below against a copy of the committed workflow.
 """
 
 from __future__ import annotations
@@ -27,6 +35,8 @@ from __future__ import annotations
 import re
 import shlex
 from pathlib import Path
+
+import pytest
 
 from livespec_dev_tooling.ci_green_required_legs import main
 
@@ -43,6 +53,18 @@ _API_READ = (
     'gh api --paginate "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/jobs'
     "?filter=latest&per_page=100\" --jq '.jobs[] | {name, status, conclusion}'"
 )
+_READER_LINE = (
+    "python3 -m livespec_dev_tooling.ci_green_required_legs "
+    '--workflow .github/workflows/ci.yml --gate-job ci-green --jobs "$jobs_file"'
+)
+_READER_STEP_HEADER = "      - name: Every required leg was created and concluded success\n"
+_UNREADABLE_BRANCH = (
+    "          read_jobs || { sleep 5; read_jobs; } || { sleep 15; read_jobs; } || {\n"
+    "            echo \"::error::ci-green: could not read this run's jobs from the Actions API;"
+    ' failing closed"\n'
+    "            exit 1\n"
+    "          }\n"
+)
 _NEEDS_RESULT_STEP = (
     "      - name: All required checks passed\n"
     "        if: ${{ contains(needs.*.result, 'failure') || "
@@ -51,9 +73,9 @@ _NEEDS_RESULT_STEP = (
 )
 
 
-def _gate_block() -> str:
+def _gate_block(*, text: str | None = None) -> str:
     """The `ci-green` job's text, from its header to the next job or the end."""
-    text = _CI_YML.read_text(encoding="utf-8")
+    text = _CI_YML.read_text(encoding="utf-8") if text is None else text
     rest = text[text.index(f"\n{_GATE_HEADER}\n") + 1 :]
     return _NEXT_JOB.split(rest, maxsplit=1)[0]
 
@@ -83,6 +105,61 @@ def _replayed_verdict(*, jobs: Path) -> int:
     resolved = {"$jobs_file": str(jobs), ".github/workflows/ci.yml": str(_CI_YML)}
     argv = [resolved.get(token, token) for line in lines for token in shlex.split(line)[3:]]
     return main(argv=argv) if lines else 0
+
+
+def _fail_closed_findings(*, text: str) -> list[str]:
+    """Every way the reader step, as written, could pass without its verdict."""
+    steps = _reader_steps(block=_gate_block(text=text))
+    step = steps[0] if steps else ""
+    commands = [line.strip() for line in step.split("        run: |\n", 1)[-1].splitlines()]
+    commands = [command for command in commands if command]
+    findings = [
+        ("an unreadable job list does not fail the step", _UNREADABLE_BRANCH not in step),
+        ("the reader is not the step's last command", commands[-1:] != [_READER_LINE]),
+        ("the step relaxes errexit", "set +e" in step or "set +o errexit" in step),
+        ("the step overrides its shell", "\n        shell:" in step),
+    ]
+    return [finding for finding, present in findings if present]
+
+
+def test_the_reader_step_fails_closed_as_committed() -> None:
+    assert _fail_closed_findings(text=_CI_YML.read_text(encoding="utf-8")) == []
+
+
+@pytest.mark.parametrize(
+    ("old", "new", "expected"),
+    [
+        (
+            'failing closed"\n            exit 1\n',
+            'failing closed"\n            exit 0\n',
+            ["an unreadable job list does not fail the step"],
+        ),
+        (
+            f"          {_READER_LINE}\n",
+            f"          set +e\n          {_READER_LINE}\n          true\n",
+            ["the reader is not the step's last command", "the step relaxes errexit"],
+        ),
+        (
+            f"          {_READER_LINE}\n",
+            f"          {_READER_LINE} || true\n",
+            ["the reader is not the step's last command"],
+        ),
+        (
+            _READER_STEP_HEADER,
+            _READER_STEP_HEADER + "        shell: bash {0}\n",
+            ["the step overrides its shell"],
+        ),
+    ],
+    ids=["unreadable-exit-0", "set-e-off-and-trailing-true", "or-true", "shell-override"],
+)
+def test_each_soft_fail_mutant_of_the_reader_step_is_caught(
+    *, old: str, new: str, expected: list[str]
+) -> None:
+    committed = _CI_YML.read_text(encoding="utf-8")
+    assert (committed.count(old), _fail_closed_findings(text=committed.replace(old, new))) == (
+        1,
+        expected,
+    )
 
 
 def test_the_outage_run_that_merged_now_fails_the_gate_as_wired() -> None:
