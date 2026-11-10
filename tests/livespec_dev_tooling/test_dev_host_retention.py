@@ -430,20 +430,30 @@ def uv_in_use(*, tmp_path: Path) -> Iterator[subprocess.Popen[bytes]]:
     cache_dir.mkdir(exist_ok=True)
     lock = cache_dir / ".lock"
     lock.touch()
-    holder = subprocess.Popen(["flock", "--shared", str(lock), "sleep", _LIVE_CHILD_SECONDS])
-    deadline = datetime.now(timezone.utc) + timedelta(seconds=30)
-    while (
-        subprocess.run(
-            ["flock", "--exclusive", "--nonblock", str(lock), "true"], check=False
-        ).returncode
-        == 0
-    ):
-        assert datetime.now(timezone.utc) < deadline, "the lock holder never took the lock"
+    holder = subprocess.Popen(
+        [
+            "flock",
+            "--shared",
+            str(lock),
+            "sh",
+            "-c",
+            'echo ready; exec sleep "$1"',
+            "sh",
+            _LIVE_CHILD_SECONDS,
+        ],
+        stdout=subprocess.PIPE,
+    )
+    ready = holder.stdout
+    assert ready is not None
+    # The child prints only once it holds the shared lock, so this read is the
+    # readiness signal and no polling loop (or its timing) is involved.
+    assert ready.readline().strip() == b"ready"
     try:
         yield holder
     finally:
         holder.terminate()
         _ = holder.wait(timeout=30)
+        ready.close()
 
 
 def test_a_run_prunes_the_uv_cache_while_another_uv_process_holds_it_in_use(
