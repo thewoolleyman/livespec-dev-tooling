@@ -710,10 +710,15 @@ def test_a_descendant_holding_the_output_open_cannot_outlast_the_bound(
     _git(root, "add", ".")
     pid_file.touch()
     try:
-        evidence = _collect(root, base, timeout=2)
+        # The nested pytest must reach `test_escaped` before the bound fires, even on a
+        # loaded host; the held pipe then guarantees the deadline is what ends the run.
+        evidence = _collect(root, base, timeout=20)
         # The collection returned while the descendant still holds the pipe open, so it
-        # did not wait for the pipe to close; nothing here depends on how fast the host is.
-        for pid in _escaped_pids(pid_file):
+        # did not wait for the pipe to close. A run that never spawned the child proves
+        # nothing about the drain, so it fails here instead of passing vacuously.
+        pids = _escaped_pids(pid_file)
+        assert pids
+        for pid in pids:
             os.kill(pid, 0)
     finally:
         for pid in _escaped_pids(pid_file):
