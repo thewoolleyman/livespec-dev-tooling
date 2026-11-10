@@ -3132,5 +3132,13 @@
     "test": "TODO",
     "reason": "Spec-first: a real test at the integration tier or above (`tests.consumer`, this repository's `scenario_tiers`, or an integration-marked test) is owed for this heading. It must drive the gate placement reconciler with a gate-lane node whose CPU idle share cannot be read and show the static lane order and the logged node and reading. livespec-dev-tooling-gvo7fa owns it.",
     "work_item": "livespec-dev-tooling-gvo7fa"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a canary clone adopts a release tag ahead of the release branch and the release branch does not move",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above (`tests.consumer`, this repository's `scenario_tiers`, or an integration-marked test) is owed for this heading, with the live leg host-captured. It must run `just adopt-orchestrator-build` with a published release tag against a scratch home holding two clones, show only the named clone's install record moving to the tag's commit, the host's settings, marketplace registration and marketplace clone unchanged, the full-commit adopt moving it back, and a non-descendant tag refused naming both commits. livespec-dev-tooling-zpqvnr owns it.",
+    "work_item": "livespec-dev-tooling-zpqvnr"
   }
 ]
