@@ -113,12 +113,17 @@ jobs:
 # maintainer-side from this text. `tests/livespec_dev_tooling/fleet/
 # test_reconciler_shim.py` applies a proven byte-comparator to the committed
 # path, so from the moment the file lands the two cannot drift.
-# Two lines of the ownership step's env block run past the 100-column source
+# Three lines of the ownership step's env block run past the 100-column source
 # limit, so they are joined into the body here rather than written inline; the
-# committed workflow carries them verbatim and the byte comparator holds.
+# committed workflow carries them verbatim and the byte comparator holds. The
+# first two prefer the reconciler-only LIVESPEC_INCIDENT_OBSERVER_PUBLIC_URL and
+# drop the connect-address override when it is set (livespec-dev-tooling-jpfdcx).
 _OBSERVER_ENV_TAIL = (
+    "          LIVESPEC_INCIDENT_OBSERVER_URL: "
+    "${{ vars.LIVESPEC_INCIDENT_OBSERVER_PUBLIC_URL || vars.LIVESPEC_INCIDENT_OBSERVER_URL }}\n"
     "          LIVESPEC_INCIDENT_OBSERVER_CONNECT_ADDR: "
-    "${{ vars.LIVESPEC_INCIDENT_OBSERVER_CONNECT_ADDR }}\n"
+    "${{ !vars.LIVESPEC_INCIDENT_OBSERVER_PUBLIC_URL "
+    "&& vars.LIVESPEC_INCIDENT_OBSERVER_CONNECT_ADDR || '' }}\n"
     "          LIVESPEC_INCIDENT_OBSERVER_QUERY_TOKEN: "
     "${{ secrets.LIVESPEC_INCIDENT_OBSERVER_QUERY_TOKEN }}\n"
 )
@@ -604,12 +609,18 @@ jobs:
       # policy runs exactly as before. The step bound keeps a slow observer
       # from holding this queued, never-cancelled reconciler for the job's
       # default six hours.
+      # A hosted runner cannot reach the tailnet, so a repository that sets the
+      # reconciler-only variable LIVESPEC_INCIDENT_OBSERVER_PUBLIC_URL is asked
+      # through the observer's public Funnel route by name, with no connect-
+      # address override. Unset, the step reads LIVESPEC_INCIDENT_OBSERVER_URL
+      # and its connect address exactly as before, the pair the k3s incident CI
+      # job also reads (livespec-dev-tooling-jpfdcx; docs/master-health-
+      # reconciler.md in livespec-dev-tooling).
       - name: Ask the incident observer who owns this step
         id: ownership
         timeout-minutes: 5
         env:
           REPO: ${{ github.repository }}
-          LIVESPEC_INCIDENT_OBSERVER_URL: ${{ vars.LIVESPEC_INCIDENT_OBSERVER_URL }}
 """.lstrip("\n")
     + _OBSERVER_ENV_TAIL
     + r"""        run: |
