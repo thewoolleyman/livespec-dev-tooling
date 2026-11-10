@@ -162,13 +162,17 @@ def _normalized_real_target_inventory() -> tuple[str, ...]:
 
 
 def test_real_check_recipe_is_legacy_readable_exact_inventory_mirror() -> None:
-    """CORE's v1.17.1 reader sees the exact authoritative 86-target inventory."""
+    """CORE's v1.17.1 reader sees the exact authoritative 87-target inventory."""
     justfile_text = (_REPO_ROOT / "justfile").read_text(encoding="utf-8")
 
     wired = _legacy_core_v1_17_1_extract_check_slugs(justfile_text=justfile_text)
 
     assert wired == _normalized_real_target_inventory()
-    # 86 since livespec-dev-tooling-zqrg7d added the canonical
+    # 87 since livespec-dev-tooling-7g5qba added the repo-private
+    # `check-ansible-get-url-checksum` (every `get_url` task under
+    # `ansible/roles/*/tasks` pins a checksum or records a `check-mode-exempt`
+    # reason, because get_url reports a false change under `--check` otherwise).
+    # The 86th was livespec-dev-tooling-zqrg7d, which added the canonical
     # `check-delegated-job-authority-skip`, which reports a delegated gate Job path
     # that runs an authority member without honouring the repository's skip variable.
     # The 85th was livespec-dev-tooling-xpuv6h, which added the canonical
@@ -216,7 +220,7 @@ def test_real_check_recipe_is_legacy_readable_exact_inventory_mirror() -> None:
     # stays EXACT rather than becoming a `>=`: its job is to make any change to
     # the inventory a deliberate edit here, and a lower bound would let a silent
     # drop through.
-    assert wired is not None and len(wired) == 86
+    assert wired is not None and len(wired) == 87
     canonical = unsafe_perform_io(canonical_check_slugs().unwrap())
     assert not set(canonical).difference(wired)
     assert _legacy_core_v1_17_1_extract_check_slugs(justfile_text="default:\n    true\n") is None

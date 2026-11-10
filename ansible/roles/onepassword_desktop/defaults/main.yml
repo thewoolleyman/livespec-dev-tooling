@@ -12,6 +12,10 @@ onepassword_desktop_required_unit: vnc-desktop.service
 
 # Package source. Per https://support.1password.com/install-linux/#debian-or-ubuntu.
 onepassword_desktop_key_url: https://downloads.1password.com/linux/keys/1password.asc
+# sha256 of the bytes served at the URL above, verified against the vendor
+# 2026-11-10. get_url compares the existing file against it, so a converged host
+# reports ok under --check; a rotated vendor key fails the fetch until re-pinned.
+onepassword_desktop_key_sha256: f39e7dd9dedc581ced85732832f217e0de5860a3b80279b5af4bc7c6d8157bae
 onepassword_desktop_armored_key: /usr/share/keyrings/1password-archive-keyring.asc
 onepassword_desktop_keyring: /usr/share/keyrings/1password-archive-keyring.gpg
 onepassword_desktop_repo: >-
@@ -22,6 +26,9 @@ onepassword_desktop_repo: >-
 # rogue .deb that apt's own repository signature would still accept.
 onepassword_desktop_debsig_key_id: AC2D62742012EA22
 onepassword_desktop_debsig_policy_url: https://downloads.1password.com/linux/debian/debsig/1password.pol
+# sha256 of the policy served at the URL above (494 bytes), verified against the
+# vendor 2026-11-10 and equal to the digest measured on hetzner-xubuntu.
+onepassword_desktop_debsig_policy_sha256: c0c148807d8dc588750a9cc512c7243ed10a9cfd5519a5a6f0a038ad66a19c39
 
 onepassword_desktop_unit_name: 1password-desktop.service
 onepassword_desktop_unit_path: /etc/systemd/system/1password-desktop.service
