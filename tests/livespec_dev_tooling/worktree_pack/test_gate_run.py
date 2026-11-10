@@ -751,3 +751,66 @@ def test_a_silent_delegate_that_refreshes_the_progress_stamp_keeps_its_verdict(
 
     assert (run_dir / "exit_code").read_text(encoding="utf-8").strip() == "0"
     assert "stall window" not in (run_dir / "output.log").read_text(encoding="utf-8")
+
+
+_REPO_ROOT = Path(__file__).resolve().parents[3]
+_SILENT_AGGREGATE = (
+    "from pathlib import Path\n"
+    "from livespec_dev_tooling._check_target_runner import TargetRun, run_targets\n"
+    "outcomes = run_targets(\n"
+    '    runs=[TargetRun(name="silent", argv=("sleep", "7"))],\n'
+    "    cwd=Path.cwd(),\n"
+    "    max_workers=1,\n"
+    ")\n"
+    "raise SystemExit(outcomes[0].returncode)\n"
+)
+
+
+@pytest.mark.integration
+def test_an_aggregate_whose_only_running_member_is_silent_keeps_its_own_verdict(
+    *, fixture_repo: tuple[Path, Path, dict[str, str]]
+) -> None:
+    """A member silent for longer than the stall window is live, not stalled.
+
+    The aggregate runner spools every member's output until the member ends, so
+    a member running past the window prints nothing. The runner renews the
+    progress stamp while the member runs, and the run ends with the member's
+    own verdict rather than the stall window's exit 124.
+    """
+    primary, worktree, env = fixture_repo
+    run_id = _start(
+        cwd=worktree,
+        env={
+            **env,
+            _STALL_ENV: "3",
+            _STALL_GRACE_ENV: "1",
+            "PYTHONPATH": str(_REPO_ROOT),
+        },
+        command=[sys.executable, "-c", _SILENT_AGGREGATE],
+    )
+
+    run_dir = _await_verdict(primary=primary, run_id=run_id)
+
+    assert (run_dir / "exit_code").read_text(encoding="utf-8").strip() == "0"
+    assert "stall window" not in (run_dir / "output.log").read_text(encoding="utf-8")
+
+
+@pytest.mark.integration
+def test_a_gate_with_no_running_member_and_no_output_is_ended_by_the_stall_window(
+    *, fixture_repo: tuple[Path, Path, dict[str, str]]
+) -> None:
+    """With no aggregate member running there is nothing to renew the window."""
+    primary, worktree, env = fixture_repo
+    run_id = _start(
+        cwd=worktree,
+        env={**env, _STALL_ENV: "2", _STALL_GRACE_ENV: "1"},
+        command=["sleep", "300"],
+    )
+
+    run_dir = _await_verdict(primary=primary, run_id=run_id)
+    waited = _gate(cwd=primary, env=env, args=["wait", run_id])
+
+    assert (run_dir / "exit_code").read_text(encoding="utf-8").strip() == "124"
+    assert "FAILED" in waited.stdout
+    assert "PASSED" not in waited.stdout
+    assert "stall window" in (run_dir / "output.log").read_text(encoding="utf-8")

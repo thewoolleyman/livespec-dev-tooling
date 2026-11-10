@@ -18,6 +18,13 @@ gates (`incident_local_gates.execute_plan`) and the expedited CI entrance
   refusal reports that target `NOT_ADMITTED` and stops every later launch;
   targets already running finish and keep their honest outcomes.
 
+A target's output is spooled until it ends, so a long-running target is silent
+to whatever watches the run's output. While a target runs, the runner therefore
+renews the progress stamp `gate-run.sh` exports (`LIVESPEC_GATE_RUN_PROGRESS_STAMP`)
+once per `_LIVENESS_SECONDS`, as liveness and without printing, so the gate
+runner's stall window ends only a run in which no target is running
+(livespec-dev-tooling-5tqyfb). With no stamp exported nothing is touched.
+
 WITHOUT a deadline (the normal aggregate and the CI entrance) a target stays in
 the caller's process group, exactly as before this runner existed, so a signal
 or a SIGKILL sent to that group (Ctrl-C, `gate-run.sh`'s stall kill, an OOM or
@@ -32,6 +39,7 @@ Callers keep their own selection, environments, reporting and result shapes.
 
 from __future__ import annotations
 
+import os
 import subprocess
 import tempfile
 import threading
@@ -73,6 +81,10 @@ NOT_ADMITTED = "not-admitted"
 NOT_LAUNCHED = "not-launched"
 
 _LAUNCH_FAILED_CODE = 127
+# Exported by gate-run.sh to the gate's process tree; touching it renews the
+# runner's outer stall window.
+_PROGRESS_STAMP_ENV = "LIVESPEC_GATE_RUN_PROGRESS_STAMP"
+_LIVENESS_SECONDS = 1.0
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -103,6 +115,13 @@ def cap_workers(*, requested: int | None, allowed: int) -> int:
     """Return the effective worker count: min(allowed CPUs, requested or DEFAULT)."""
     cap = requested if requested is not None else DEFAULT_MAX_WORKERS
     return max(1, min(allowed, cap))
+
+
+def _renew_progress_stamp() -> None:
+    """Touch the gate run's progress stamp, when this run was started by one."""
+    stamp = os.environ.get(_PROGRESS_STAMP_ENV, "")
+    if stamp:
+        Path(stamp).touch()
 
 
 class _Groups:
@@ -136,7 +155,7 @@ class _Groups:
     def wait(self, *, process: subprocess.Popen[bytes], deadline_seconds: float | None) -> bool:
         """Wait for the target; True when its deadline expired. Never leaves a zombie."""
         if deadline_seconds is None:
-            _ = process.wait()
+            _wait_renewing_progress(process=process)
             return False
         timed_out = wait_for_exit(process=process, deadline_seconds=deadline_seconds)
         # Kill the group and leave the live set under the lock, BEFORE the reap:
@@ -152,6 +171,17 @@ class _Groups:
             self._closed = True
             for pid in tuple(self._live) if kill else ():
                 kill_group(pid=pid)
+
+
+def _wait_renewing_progress(*, process: subprocess.Popen[bytes]) -> None:
+    """Wait for the target to exit, renewing the progress stamp while it runs."""
+    while True:
+        try:
+            _ = process.wait(timeout=_LIVENESS_SECONDS)
+        except subprocess.TimeoutExpired:
+            _renew_progress_stamp()
+        else:
+            return
 
 
 def _run_one(
