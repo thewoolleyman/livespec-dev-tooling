@@ -18,6 +18,7 @@ import hmac
 import io
 import json
 import subprocess
+import threading
 from dataclasses import replace
 
 import pytest
@@ -205,6 +206,23 @@ class _World:
             },
         )
 
+    def settled(self, *, action_id):
+        """The action's recorded state once its recovery has finished.
+
+        The endpoint may acknowledge a leaf before its recovery principal
+        returns, running recovery on a thread named for the action
+        (livespec-dev-tooling-q6eyrr). Join exactly that thread, bounded, and
+        read the durable action; a synchronous endpoint starts no thread.
+        """
+        name = f"incident-recovery-{action_id}"
+        workers = [t for t in threading.enumerate() if t.name == name]
+        _ = [worker.join(timeout=30) for worker in workers]
+        assert not any(worker.is_alive() for worker in workers), name
+        with repository_lock(
+            directory=self.installation.state, repository=self.installation.repository
+        ) as path:
+            return load_record(path=path)["actions"][action_id]
+
     def registration(self):
         with repository_lock(
             directory=self.installation.state, repository=self.installation.repository
@@ -253,7 +271,11 @@ def test_scratch_observer_acts_once_on_its_branch_leaf_and_ignores_master(scratc
     assert scratch.effects == []
     for _ in range(2):
         status, result = scratch.leaf(branch=SCRATCH)
-        assert (status, result["status"]) == ("202 Accepted", "completed"), result
+        assert (status, result["status"]) in {
+            ("202 Accepted", "pending"),
+            ("202 Accepted", "completed"),
+        }, result
+        assert scratch.settled(action_id=result["action_id"])["status"] == "completed"
     assert [intent.registration.branch for intent in scratch.effects] == [SCRATCH]
 
 
@@ -278,7 +300,9 @@ def test_an_installation_naming_no_branch_binds_and_acts_on_master_as_before(def
     assert (status, result["status"]) == ("202 Accepted", "admitted"), result
     assert default.registration().branch == "master"
     assert default.leaf(branch=SCRATCH)[1]["status"] == "ignored"
-    assert default.leaf(branch="master")[1]["status"] == "completed"
+    status, result = default.leaf(branch="master")
+    assert result["status"] in {"pending", "completed"}, (status, result)
+    assert default.settled(action_id=result["action_id"])["status"] == "completed"
     assert [intent.registration.branch for intent in default.effects] == ["master"]
 
 
