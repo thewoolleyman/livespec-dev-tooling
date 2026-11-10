@@ -427,10 +427,51 @@ def test_an_unreachable_remote_is_unverified() -> None:
     assert read_templates(probe=probe, repository="thewoolleyman/consumer") is None
 
 
+def _library(*, workflows: dict[str, str], remote: dict[str, str]) -> tuple[str | None, _Remote]:
+    remote_ = _Remote(workflows=workflows, remote=remote)
+    served = read_templates(probe=remote_.probe(), repository="thewoolleyman/livespec-dev-tooling")
+    return served, remote_
+
+
+def test_this_librarys_own_ci_serves_its_local_templates_not_its_release_lane_self_pins() -> None:
+    # Its ci.yml runs `./.github/...` at the audited revision; its release-lane workflows
+    # pin an older release of itself. The CI surfaces are served by the local templates.
+    workflows = {
+        "ci.yml": _workflow("./.github/workflows/reusable-check-matrix.yml"),
+        "release-dispatch.yml": _workflow(f"{TEMPLATE}@v1.183.0"),
+    }
+    served, remote = _library(
+        workflows=workflows, remote={"HEAD": SELF_SHA, "refs/tags/v1.183.0": TAG_SHA}
+    )
+    assert served == f"livespec-dev-tooling@{SELF_SHA}"
+    lookup = next(a for a in remote.asked if "ls-remote" in a)
+    assert "https://github.com/thewoolleyman/livespec-dev-tooling.git" in lookup
+    assert "HEAD" in lookup
+
+
+def test_this_library_with_no_local_workflows_is_read_from_its_pins() -> None:
+    served, _ = _library(
+        workflows={"release-dispatch.yml": _workflow(f"{TEMPLATE}@v1.183.0")},
+        remote={"HEAD": SELF_SHA, "refs/tags/v1.183.0": TAG_SHA},
+    )
+    assert served == f"livespec-dev-tooling@{TAG_SHA}"
+
+
+def test_another_consumer_with_local_workflows_and_this_librarys_pins_is_read_from_its_pins() -> (
+    None
+):
+    workflows = {
+        "ci.yml": _workflow("./.github/actions/setup", f"{ACTION}@v1.2.3"),
+    }
+    remote = _Remote(workflows=workflows, remote={"HEAD": SELF_SHA, "refs/tags/v1.2.3": TAG_SHA})
+    assert remote.read() == f"livespec-dev-tooling@{TAG_SHA}"
+
+
 # --- recovery authorization ---
 CONTROLLER = "v1.2.3@" + "c" * 40
 APP = {"actor_id": 987, "actor_type": "Integration", "bypass_mode": "always"}
-BASE = "repos/example/tooling/rulesets"
+REPO = "repos/example/tooling"
+BASE = f"{REPO}/rulesets"
 
 
 def _ruleset(
@@ -452,6 +493,7 @@ def _ruleset(
 class _Forge:
     def __init__(self, *, rulesets: list[dict[str, object]]) -> None:
         self.answers: dict[str, GhRead] = {BASE: _json_ok([{"id": r["id"], **r} for r in rulesets])}
+        self.answers[REPO] = _json_ok({"default_branch": "master"})
         for ruleset in rulesets:
             self.answers[f"{BASE}/{ruleset['id']}"] = _json_ok(ruleset)
         self.asked: list[list[str]] = []
@@ -473,7 +515,7 @@ def _json_ok(document: object) -> GhRead:
 def test_the_released_principal_and_one_always_bypass_app_are_the_serving_build() -> None:
     forge = _Forge(rulesets=[_ruleset()])
     assert forge.read() == f"{CONTROLLER}+bypass-app-987"
-    assert forge.asked[0] == ["api", BASE]
+    assert ["api", BASE] in forge.asked
 
 
 def test_without_a_verified_controller_nothing_is_asked_and_nothing_is_served() -> None:
@@ -556,6 +598,132 @@ def test_a_failed_forge_read_is_unverified_even_when_its_body_parses() -> None:
         assert forge.read() is None
         forge.answers[path] = answer
     assert forge.read() == f"{CONTROLLER}+bypass-app-987"
+
+
+def _with(ruleset: dict[str, object], **changes: object) -> dict[str, object]:
+    return {**ruleset, **changes}
+
+
+def _ref_names(*, include: list[object], exclude: list[object] | None = None) -> dict[str, object]:
+    return {"ref_name": {"include": include, "exclude": exclude or []}}
+
+
+ROLE = {"actor_id": 5, "actor_type": "RepositoryRole", "bypass_mode": "always"}
+ORG_ADMIN = {"actor_id": 1, "actor_type": "OrganizationAdmin", "bypass_mode": "always"}
+
+
+def test_an_unreadable_ruleset_detail_is_unverified_not_skipped() -> None:
+    # The review's probe: ruleset 7 has the App, ruleset 8 has a role bypass and its
+    # detail read fails. Skipping 8 would read verified; it must read unverified.
+    other = _with(_ruleset(actors=[ROLE]), id=8)
+    forge = _Forge(rulesets=[_ruleset(), other])
+    assert forge.read() is None
+    forge.answers[f"{BASE}/8"] = GhRead(returncode=1, stdout="", stderr="HTTP 502")
+    assert forge.read() is None
+
+
+def test_an_unreadable_default_branch_is_unverified() -> None:
+    forge = _Forge(rulesets=[_ruleset()])
+    forge.answers[REPO] = GhRead(returncode=1, stdout="", stderr="HTTP 404")
+    assert forge.read() is None
+    forge.answers[REPO] = _json_ok({"default_branch": ""})
+    assert forge.read() is None
+
+
+def test_a_listed_entry_that_is_not_a_ruleset_is_unverified() -> None:
+    forge = _Forge(rulesets=[_ruleset()])
+    forge.answers[BASE] = _json_ok(["not-a-ruleset", _ruleset()])
+    assert forge.read() is None
+
+
+@pytest.mark.parametrize(
+    "include",
+    [["~ALL"], ["refs/heads/*"], ["refs/heads/ma*"], ["refs/heads/m?ster"], ["refs/heads/**"]],
+)
+def test_a_ruleset_guarding_the_default_branch_by_any_spelling_adds_its_actors(
+    include: list[object],
+) -> None:
+    other = _with(_ruleset(actors=[ORG_ADMIN]), id=8, conditions=_ref_names(include=include))
+    assert _Forge(rulesets=[_ruleset(), other]).read() is None
+
+
+@pytest.mark.parametrize(
+    "include",
+    [["~ALL"], ["refs/heads/*"], ["refs/heads/ma*"], ["refs/heads/m?ster"], ["refs/heads/**"]],
+)
+def test_the_app_is_counted_when_its_ruleset_guards_the_default_branch_by_any_spelling(
+    include: list[object],
+) -> None:
+    only = _with(_ruleset(), conditions=_ref_names(include=include))
+    assert _Forge(rulesets=[only]).read() == f"{CONTROLLER}+bypass-app-987"
+
+
+@pytest.mark.parametrize(
+    "conditions",
+    [
+        _ref_names(include=["refs/heads/release/**"]),
+        _ref_names(include=["refs/heads/main"]),
+        _ref_names(include=["~ALL"], exclude=["~DEFAULT_BRANCH"]),
+        _ref_names(include=["~ALL"], exclude=["refs/heads/master"]),
+        _ref_names(include=["refs/heads/*"], exclude=["refs/heads/ma*"]),
+    ],
+)
+def test_a_ruleset_that_leaves_the_default_branch_out_adds_no_actor(
+    conditions: dict[str, object],
+) -> None:
+    other = _with(_ruleset(actors=[ORG_ADMIN]), id=8, conditions=conditions)
+    assert _Forge(rulesets=[_ruleset(), other]).read() == f"{CONTROLLER}+bypass-app-987"
+
+
+@pytest.mark.parametrize(
+    "conditions",
+    [
+        _ref_names(include=["refs/heads/[a-m]*"]),
+        _ref_names(include=["refs/tags/*"]),
+        _ref_names(include=["master"]),
+        _ref_names(include=["~ALL"], exclude=["refs/heads/{a,b}"]),
+        _ref_names(include=[7]),
+        {"ref_name": {"include": "~ALL"}},
+        {"ref_name": {"include": ["~ALL"], "exclude": "x"}},
+        {"ref_name": "~ALL"},
+        {"ref_name": {"include": ["~ALL"]}, "unknown_condition": {}},
+        "not-a-mapping",
+    ],
+)
+def test_conditions_that_cannot_be_evaluated_are_unverified(conditions: object) -> None:
+    # The second ruleset has no actors: any guess about its conditions reads verified.
+    other = _with(_ruleset(actors=[]), id=8, conditions=conditions)
+    assert _Forge(rulesets=[_ruleset(), other]).read() is None
+
+
+def test_an_organization_rulesets_repository_scope_is_already_satisfied() -> None:
+    scoped = {**_ref_names(include=["~DEFAULT_BRANCH"]), "repository_name": {"include": ["~ALL"]}}
+    forge = _Forge(rulesets=[_with(_ruleset(), conditions=scoped)])
+    assert forge.read() == f"{CONTROLLER}+bypass-app-987"
+
+
+def test_a_pattern_that_may_or_may_not_cross_a_slash_is_unverified() -> None:
+    # `*` either stops at `/` or crosses it depending on the matcher; a default branch
+    # with a `/` makes the two disagree, so the reader refuses rather than guess.
+    forge = _Forge(rulesets=[_with(_ruleset(), conditions=_ref_names(include=["refs/heads/*"]))])
+    forge.answers[REPO] = _json_ok({"default_branch": "team/main"})
+    assert forge.read() is None
+    other = _with(
+        _ruleset(actors=[ORG_ADMIN]), id=8, conditions=_ref_names(include=["refs/heads/*"])
+    )
+    beside = _Forge(rulesets=[_ruleset(), other])
+    beside.answers[REPO] = _json_ok({"default_branch": "team/main"})
+    assert beside.read() is None
+    forge.answers[REPO] = _json_ok({"default_branch": "master"})
+    assert forge.read() == f"{CONTROLLER}+bypass-app-987"
+
+
+def test_a_guarding_ruleset_without_a_readable_bypass_list_is_unverified() -> None:
+    bare = {key: value for key, value in _ruleset().items() if key != "bypass_actors"}
+    assert _Forge(rulesets=[bare]).read() is None
+    assert _Forge(rulesets=[_ruleset(), _with(bare, id=8)]).read() is None
+    leaves_out = _with(bare, id=8, conditions=_ref_names(include=["refs/heads/main"]))
+    assert _Forge(rulesets=[_ruleset(), leaves_out]).read() == f"{CONTROLLER}+bypass-app-987"
 
 
 # --- driver hooks ---
