@@ -172,8 +172,8 @@ The existing repository lock continues to serialize actual durable effects.
   out of an unknown recovery outcome: a timed-out principal leaves the action
   `pending`, and a pending action refuses every later `/arm`. The route asks the
   principal's `lookup` for the action's exact receipt, using the intent retained
-  in protected state, and on a receipt marks the action `completed` so a later
-  `/arm` can proceed. It takes no receipt from the caller. While no receipt is
+  in protected state, OUTSIDE the repository lock, and on a receipt marks the
+  action `completed` under the lock so a later `/arm` can proceed. It takes no receipt from the caller. While no receipt is
   available the action stays `pending`, and the reply says so. With `retry_publish:
   true` it then runs that retained intent through the principal under the
   repository lock, past the refusal an unresolved lookup raises, and refuses if the
@@ -181,13 +181,80 @@ The existing repository lock continues to serialize actual durable effects.
   this safe: it settles any open attempt from forge facts, re-sends the one recorded
   commit when master has not moved, and starts one new attempt only when no earlier
   attempt can have landed. A repeat after completion answers the retained receipt
-  with no principal call. A completed action's receipt still has to be recorded in
-  the chain with the orchestrator's `record-revert-receipt`.
+  with no principal call. A completed action's revert receipt still has to be
+  recorded in the chain with the orchestrator's `record-revert-receipt`. A
+  rollback-conflict receipt is written to the chain by this route itself (see
+  "Rollback-conflict on the chain" below), and the reply's `reason` names how that
+  write ended.
 - `POST /callback` verifies GitHub's raw-body HMAC with the existing verifier,
   requires the configured repository, then uses the existing observer endpoint.
   The first registered failing required leaf records immutable intent and calls
   recovery while other original CI jobs remain running. Duplicate deliveries
   retain the same effect identity.
+
+## Rollback-conflict on the chain
+
+A genuine overlap is journaled by the principal's `conflict` operation inside the
+recovery, under the repository lock. The recovery writes nothing to the chain. The
+chain write is `incident_conflict_chain.ConflictChain` (`docs/incident-inverse.md`,
+"A conflict reaches the incident item's chain"): up to three authority calls,
+`read-history`, `reopen-regression` and `record-rollback-conflict`, each measured
+at 21-39 s. A first-failure callback waits only five seconds for the lock before
+answering 503, and GitHub never redelivers it. So the write never runs under the lock.
+
+- **The conflict sweep** (`incident_conflict_sweep.ConflictSweep`) starts with the
+  service, is woken at once when a recovery returns a conflict receipt, and also
+  runs every 300 seconds. Each pass reads the protected state under the lock just
+  long enough to list the actions that owe the chain, then settles each through
+  `/reconcile`'s `settle` with `automatic=True`.
+- **Failures.** An expected failure is named on stderr: an unreadable or corrupt state
+  file, a failed process, or a malformed value. If it happens settling one action, the
+  pass moves on; anywhere else in a pass, the loop sweeps again on the next wake or
+  tick. The fleet's supervisor discipline allows no broad catch in a daemon loop
+  (`check-no-except-outside-io`). So any other exception ends the sweep thread with
+  its traceback on stderr, shuts the server down, and the service exits 1; the unit's
+  `Restart=on-failure` restarts it. The sweep never stops silently while the service
+  keeps answering.
+- **The fence discipline** (`incident_conflict_publication.ConflictPublication`):
+  the lock is held for a snapshot (the action still holds this exact receipt, is
+  not `reconciled`, has no terminal state, and its back-off has expired). It is
+  released for the chain write, and taken again to record the outcome, only if the
+  action is still the one written.
+- **Back-off and terminal state**, kept per action under `sweep` in the observer
+  record (`attempts`, `next_at`, `last`, `terminal`):
+  - A `retry` outcome (the tenant was unavailable; a pre-merge arm's merge is not
+    yet recorded by `record-merge`; the principal could not yet supply a receipt)
+    waits 5 minutes, doubling per attempt up to an hour.
+  - After 12 attempts for an unrecorded merge, or 48 for anything else, the action
+    turns `terminal`.
+  - A `terminal` outcome is the chain's own decision against the write, journaled
+    with its reason at once and never retried automatically. Examples: the owner
+    already resolved the conflict (`incident-generation-stale`), a different reopen
+    holds the chain (`incident-authority-identity-mismatch`), or the half-reopen
+    below.
+  - A terminal action needs the incident owner or an operator. `/reconcile` reports
+    its reason and does not write it again.
+
+### Known limitation: the orchestrator's `reopen-regression` is not atomic
+
+`reopen-regression` writes the `reverting` generation and only then moves the item's
+claim to it. Suppose it is interrupted between the two: the authority client's
+ceiling, a host restart, or a failed claim write. The chain then holds `reverting`,
+but the item's claim still names the merged generation.
+
+The writer's next attempt meets a stale reopen and writes the conflict on the
+`reverting` generation the chain holds. The chain records `rollback-conflict`, but the
+orchestrator refuses to move the item's claim (`incident-rollback-conflict-lifecycle-refused`,
+`claim-changed`). So read-current shows `rollback-conflict` while the item never reads
+`blocked`.
+
+No retry from dev-tooling can repair this. The writer therefore classifies that
+refusal as the terminal state `half-reopen`, journals the reason, and stops. The fix
+belongs to the orchestrator: a stale reopen whose exact successor is already recorded
+should recover that successor and finish its claim. It is filed as `bd-ib-hyho7h` in
+the livespec-orchestrator-beads-fabro tenant. Until it lands, "a repeat after a timeout
+or restart leaves exactly one transition" holds for the chain, but not for the item's
+`blocked` status across an interruption inside the reopen.
 
 Local controlled settings, mock reader/principal responses and process/HTTP
 checks exercise the serving adapter. They do not prove production account

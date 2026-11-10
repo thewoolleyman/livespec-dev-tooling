@@ -59,6 +59,76 @@ a reply to another action, or an omitted binding is refused. The operations are:
 | `publish` | Durably reserve the action before effects, deduplicate that action across restart, compare master atomically, publish only the verified inverse tree through the scoped principal, and persist its exact receipt. |
 | `conflict` | Persist rollback-conflict with its identified owner and exact action receipt before acknowledging it. |
 
+## A conflict reaches the incident item's chain
+
+The principal's `conflict` operation persists the owned rollback-conflict in the
+recovery journal. The journal is the controller's own record and survives a tenant
+outage, but it is not the incident item's lifecycle. `incident_conflict_chain.ConflictChain`
+carries the journaled receipt onto the canonical chain through the orchestrator's
+`record-rollback-conflict` action. It calls the manifest's installed reader command
+through the shared authority client (`incident_authority_client.call_authority`), with
+the same liveness ceiling and reply checks as every other reader caller. The writer
+runs only when the manifest's reader release and command are approved. The recovery
+itself never writes the chain. The controller service writes it afterwards, outside the
+observer's repository lock (`docs/incident-observer-service.md`, "Rollback-conflict on
+the chain").
+
+`record-rollback-conflict` accepts only a `reverting` generation, and a first master
+failure has not reached it, so the writer reopens first:
+
+1. **Find the merged generation.** A standalone admission after the merge registers
+   at `master-observation`, and that is the merged generation. A pre-merge arm stays at
+   its `repair` generation: binding it to the master run after the merge changes no
+   canonical identity, and that `repair` attempt is neither reopenable nor carrying
+   landed commits. The orchestrator's `record-merge` writes `master-observation` one
+   generation on, with the landed commits. So for a `repair` registration the writer
+   reads that exact generation back with `read-history` (attempt `<attempt>`, operation
+   `<attempt>#master-observation`, generation + 1; the same identity
+   `_incident_original_run_canonical._merge_query` names). It uses the record only when
+   it is this attempt's merge and its landed commits include the registration's master
+   head.
+2. **Reopen it.** The writer calls `reopen-regression` on the merged generation, with
+   that generation's canonical attempt record as the attributed attempt and the
+   registration's owner as the principal. The finding is a `trunk` finding built from
+   the failing leaf: the leaf's run id, its failed head, the registration's landed
+   commit as the attributed commit, and the recovery action id as the subject. That
+   keys the reopen to the same immutable action as the revert.
+3. **Record the conflict** with `record-rollback-conflict` on the `reverting`
+   generation that reply names. A regression reopen is already at `reverting` and is
+   named directly, with no second reopen.
+
+The conflict write takes `{receipt, release_condition}` as its payload. It writes the
+`rollback-conflict` phase at the next generation, sets the item's lifecycle status to
+`blocked`, and keeps the identified owner.
+
+Every payload field is a function of the journaled receipt and the registration, so a
+repeat for the same action and head sends identical bytes. The orchestrator then
+recovers its one recorded transition instead of adding a second. A repeat meets a
+reopen that is already recorded, which the orchestrator refuses as
+`incident-reopen-stale-observation`. The writer then names the `reverting` generation
+that reopen produced: the orchestrator's `recovery-<digest>` identity over the attempt
+and the finding.
+
+Each write ends in one `ChainWrite`:
+
+- `landed`: the reply proves the blocked transition.
+- `retry`: the tenant was unavailable, or the merge is not yet recorded.
+- `terminal`: the chain decided against the write. The owner already resolved it, a
+  different reopen holds the chain, or the half-reopen named in
+  `docs/incident-observer-service.md` ("Known limitation").
+
+Only a conflict receipt is ever written: a successful revert receipt never reaches the
+conflict action. A moved master head with no overlap recomputes the inverse and never
+writes the chain.
+
+How the owner's resolution continues: nothing in dev-tooling moves a chain out of
+`rollback-conflict`. The owner resolves the overlap, and the orchestrator's
+`resolve-rollback-conflict` action releases the chain by the exact `release_condition`
+this module wrote into the conflict record. It releases back to `reverting` while the
+inverse is still owed, or on to `collecting-failures` once the resolution carries the
+revert receipt. A conflict the owner resolved before the writer reached it becomes
+terminal (superseded) and is never written again.
+
 `lookup` must distinguish `status: absent` (authoritative no effect) from
 `status: recorded` (with its exact receipt) and reserved/unobservable state.
 Only explicit bound absence returns `None`; an unavailable, malformed or reserved
