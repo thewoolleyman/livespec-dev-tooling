@@ -115,12 +115,15 @@ def _gate_outcome_receiver_is_never_the_hosts_own(monkeypatch: pytest.MonkeyPatc
 # Each one is read by product code a test exercises: the suite-green stall window
 # and timeout ceiling (`_red_green_replay_suite_runner`), the replay's worker
 # count and CI lane (`_red_green_replay_suite_argv`), and the same four in the
-# pack's `gate-run.sh`.
+# pack's `gate-run.sh`. The fifth is the progress stamp `gate-run.sh` exports to
+# the gated command and `SuiteProgress.saw` touches; left set, no test took its
+# unset branch under the detached runner (livespec-dev-tooling-khjkyu).
 _CALLER_GATE_VARIABLES = (
     "LIVESPEC_SUITE_GREEN_STALL_SECONDS",
     "LIVESPEC_SUITE_GREEN_TIMEOUT_SECONDS",
     "LIVESPEC_TEST_PARALLELISM",
     "LIVESPEC_CI_LANE",
+    "LIVESPEC_GATE_RUN_PROGRESS_STAMP",
 )
 
 
