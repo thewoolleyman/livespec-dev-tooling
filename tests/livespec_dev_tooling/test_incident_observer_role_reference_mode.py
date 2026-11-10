@@ -109,8 +109,10 @@ def test_the_reference_clone_gets_a_ledger_pointer_before_the_installation_loads
     assert "to_nice_json" in content
     assert all(f"'{key}'" in content for key in _POINTER_KEYS)
     assert "'dolt.server-port'] | int" in content
+    # Withheld only on a dry run before the clone exists (livespec-dev-tooling-32qdja);
+    # an apply reads the clone it has just made.
     for task in (connection, ledger_dir, pointer):
-        assert task["when"] == "incident_observer_account_ready"
+        assert task["when"] == "incident_observer_reference_ready"
     assert (
         _position(tasks=tasks, name=_MODE)
         < _position(tasks=tasks, name=_CONNECTION)

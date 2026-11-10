@@ -3,69 +3,69 @@
 # (ansible/incident-observer-scratch-teardown.yml, which loads vars/scratch.yml
 # and includes this file). livespec-dev-tooling-32qdja.
 #
-# It stops and disables the scratch observer unit and its reference fetch
-# timer, removes their unit files, the scratch controller.json and the scratch
-# manifest, and reads production's unit, controller.json and manifest back
-# byte-identical to what they were before it started. It never stops, restarts
-# or writes production, and it never notifies the role's restart handler.
+# It runs on the PRODUCTION host, so it first takes the same refusals as the
+# apply (tasks/scratch_preflight.yml): a name that is one safe segment, the
+# layout that name fixes, and no path that is, sits inside or contains one of
+# production's. Then it stops and disables the scratch observer and its
+# reference fetch timer, removes their unit files, the timer's stamp, the
+# scratch controller.json and the scratch manifest, and reads back that every
+# production file it could reach, and the listing of production's state
+# directory, are byte-identical to what they were before it started. It never
+# stops, restarts or writes production, and never notifies a handler.
 #
-# The scratch root (receipts and reference clone) is the evidence store a
-# Proof of Done may still cite, so it is kept unless
-# `incident_observer_scratch_teardown_purge` is true.
+# The scratch root (receipts and reference clone) is the evidence store a Proof
+# of Done may still cite, so it is kept unless
+# `incident_observer_scratch_teardown_purge` is true. A purge removes only
+# `<production home>/scratch-<name>`, spelled from the validated name, never
+# from a path variable an override could point elsewhere.
 
-- name: Read production's instance values the teardown must leave alone
-  ansible.builtin.include_vars:
-    file: "{{ role_path }}/defaults/main.yml"
-    name: incident_observer_production
+- name: Take the scratch instance's refusals before stopping or removing anything
+  ansible.builtin.include_tasks: scratch_preflight.yml
 
-- name: Name what the teardown removes and what it must leave byte-identical
+- name: Name what the teardown removes and every production path it reads back
   ansible.builtin.set_fact:
     incident_observer_scratch_removed:
       - "{{ incident_observer_unit_path }}"
       - "{{ incident_observer_fetch_service_path }}"
       - "{{ incident_observer_fetch_timer_path }}"
+      - "/var/lib/systemd/timers/stamp-{{ incident_observer_fetch_unit_name }}.timer"
       - "{{ incident_observer_config_path }}"
       - "{{ incident_observer_manifest_path }}"
-    incident_observer_production_files:
-      - "{{ incident_observer_production.incident_observer_unit_path }}"
-      - "{{ incident_observer_production.incident_observer_config_path }}"
-      - "{{ incident_observer_production.incident_observer_manifest_path }}"
+    incident_observer_production_files: >-
+      {{ [incident_observer_production.incident_observer_unit_path,
+          incident_observer_production.incident_observer_config_path,
+          incident_observer_production.incident_observer_manifest_path,
+          incident_observer_production.incident_observer_fetch_service_path,
+          incident_observer_production.incident_observer_fetch_timer_path,
+          incident_observer_production.incident_observer_recovery_app_path,
+          incident_observer_production.incident_observer_reader_env_path]
+         + (incident_observer_production.incident_observer_secrets | map(attribute='path') | list) }}
+    incident_observer_production_directories:
+      - "{{ incident_observer_production.incident_observer_home }}"
+      - "{{ incident_observer_production.incident_observer_state_dir }}"
+      - "{{ incident_observer_production.incident_observer_reference_dir }}"
+      - "{{ incident_observer_production.incident_observer_etc_dir }}"
+      - "{{ incident_observer_production.incident_observer_venv }}"
 
-- name: Refuse a teardown that names anything production owns
-  # Only a scratch instance is torn down, and every path it removes must be a
-  # scratch path, never one of production's.
-  ansible.builtin.assert:
-    that:
-      - incident_observer_scratch | bool
-      - >-
-        incident_observer_scratch_removed
-        | intersect(incident_observer_production_files
-                    + [incident_observer_production.incident_observer_fetch_service_path,
-                       incident_observer_production.incident_observer_fetch_timer_path])
-        | length == 0
-      - incident_observer_unit_name != incident_observer_production.incident_observer_unit_name
-      - >-
-        incident_observer_fetch_unit_name
-        != incident_observer_production.incident_observer_fetch_unit_name
-      - >-
-        (not (incident_observer_scratch_teardown_purge | bool))
-        or (incident_observer_scratch_root not in
-            [incident_observer_production.incident_observer_home,
-             incident_observer_production.incident_observer_state_dir,
-             incident_observer_production.incident_observer_reference_dir])
-    fail_msg: >-
-      the teardown runs only with incident_observer_scratch true and scratch
-      names and paths distinct from production's (vars/scratch.yml). Nothing
-      has been stopped or removed.
-    success_msg: tearing down {{ incident_observer_unit_name }}; production is left alone
-
-- name: Read production's unit, controller.json and manifest before the teardown
+- name: Read production's files and directories before the teardown
   ansible.builtin.stat:
     path: "{{ item }}"
     checksum_algorithm: sha256
   become: true
-  loop: "{{ incident_observer_production_files }}"
+  loop: "{{ incident_observer_production_files + incident_observer_production_directories }}"
   register: incident_observer_production_before
+  check_mode: false
+
+- name: List production's state directory before the teardown
+  # The receipts and the recovery journal: every file, with its checksum.
+  ansible.builtin.find:
+    paths: "{{ incident_observer_production.incident_observer_state_dir }}"
+    recurse: true
+    hidden: true
+    file_type: any
+    get_checksum: true
+  become: true
+  register: incident_observer_production_state_before
   check_mode: false
 
 - name: Look for the scratch observer's unit and its fetch timer
@@ -102,7 +102,7 @@
   become: true
   when: incident_observer_scratch_units.results[1].stat.exists
 
-- name: Remove the scratch unit files, controller.json and manifest
+- name: Remove the scratch unit files, timer stamp, controller.json and manifest
   ansible.builtin.file:
     path: "{{ item }}"
     state: absent
@@ -116,31 +116,78 @@
     daemon_reload: true
   become: true
 
+- name: Clear any failed state systemd still holds for the scratch units
+  # A scratch unit that ended `failed` otherwise lingers as `not-found failed`
+  # in `systemctl list-units --all`. `reset-failed` exits non-zero for a unit
+  # it does not know, which is the expected case after a clean stop.
+  ansible.builtin.command:
+    argv:
+      - systemctl
+      - reset-failed
+      - "{{ incident_observer_unit_name }}.service"
+      - "{{ incident_observer_fetch_unit_name }}.service"
+      - "{{ incident_observer_fetch_unit_name }}.timer"
+  become: true
+  changed_when: false
+  failed_when: false
+
 - name: Remove the scratch evidence store only when asked
+  # The path is spelled from production's home and the validated name, never
+  # from incident_observer_scratch_root: the preflight proved the two equal,
+  # and an override can reach a variable but not this expression.
   ansible.builtin.file:
-    path: "{{ incident_observer_scratch_root }}"
+    path: "{{ incident_observer_production.incident_observer_home }}/scratch-{{ incident_observer_scratch_name }}"
     state: absent
   become: true
   when: incident_observer_scratch_teardown_purge | bool
 
-- name: Read production's unit, controller.json and manifest after the teardown
+- name: Read production's files and directories after the teardown
   ansible.builtin.stat:
     path: "{{ item }}"
     checksum_algorithm: sha256
   become: true
-  loop: "{{ incident_observer_production_files }}"
+  loop: "{{ incident_observer_production_files + incident_observer_production_directories }}"
   register: incident_observer_production_after
+  check_mode: false
+
+- name: List production's state directory after the teardown
+  ansible.builtin.find:
+    paths: "{{ incident_observer_production.incident_observer_state_dir }}"
+    recurse: true
+    hidden: true
+    file_type: any
+    get_checksum: true
+  become: true
+  register: incident_observer_production_state_after
   check_mode: false
 
 - name: Refuse a teardown that moved a byte of production
   ansible.builtin.assert:
     that:
       - >-
-        incident_observer_production_after.results | map(attribute='stat.checksum', default='')
-        | list
+        incident_observer_production_after.results
+        | map(attribute='stat.checksum', default='') | list
         == incident_observer_production_before.results
         | map(attribute='stat.checksum', default='') | list
+      - >-
+        incident_observer_production_after.results
+        | map(attribute='stat.exists') | list
+        == incident_observer_production_before.results
+        | map(attribute='stat.exists') | list
+      - >-
+        incident_observer_production_state_after.files
+        | sort(attribute='path') | map(attribute='path') | list
+        == incident_observer_production_state_before.files
+        | sort(attribute='path') | map(attribute='path') | list
+      - >-
+        incident_observer_production_state_after.files
+        | sort(attribute='path') | map(attribute='checksum', default='') | list
+        == incident_observer_production_state_before.files
+        | sort(attribute='path') | map(attribute='checksum', default='') | list
     fail_msg: >-
-      production's {{ incident_observer_production_files | join(', ') }} changed
-      during the scratch teardown; read them and the production unit now.
-    success_msg: production's unit, controller.json and manifest are byte-identical
+      production's files ({{ incident_observer_production_files | join(', ') }}),
+      directories or state listing changed during the scratch teardown; read
+      them and the production unit now.
+    success_msg: >-
+      production's unit, configuration, manifest, credentials, fetch units and
+      state directory listing are byte-identical

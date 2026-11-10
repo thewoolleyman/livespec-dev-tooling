@@ -9,14 +9,18 @@
 # the same instance. Production (ansible/dev-host.yml) never loads it.
 #
 # Override the instance name, and with it every path and the branch, at the
-# command line: `-e incident_observer_scratch_name=<name>`. The branch can be
-# named on its own with `-e incident_observer_target_branch=incident-scratch/<x>`.
+# command line: `-e incident_observer_scratch_name=<name>` (one segment of
+# lowercase letters, digits and hyphens). The branch and the port can be named
+# on their own: `-e incident_observer_target_branch=incident-scratch/<x>`,
+# `-e incident_observer_port=<n>`. Every PATH and unit name below is fixed by
+# the name: tasks/scratch_preflight.yml refuses an override of any single one,
+# any shared value moved off production's, and any normalized path that is,
+# sits inside or contains a path production owns, before anything is written.
 #
 # The controller.json stays in production's configuration directory on
-# purpose: the recovery principal reads recovery-app.json from the config's
-# parent, and the scratch instance reuses that file and the three secret files
-# production's apply writes. The role refuses (tasks/main.yml) any scratch
-# value that equals production's, and a target branch of master.
+# purpose: the recovery principal and the observer's forge reads load
+# recovery-app.json from the config's parent, and the scratch instance reuses
+# that file and the three secret files production's apply writes.
 incident_observer_scratch: true
 incident_observer_scratch_name: thhgeg
 incident_observer_target_branch: "incident-scratch/{{ incident_observer_scratch_name }}-proof"
