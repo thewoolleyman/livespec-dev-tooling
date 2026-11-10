@@ -98,6 +98,7 @@ class _World:
     triggers: list[dict[str, Any]] = field(default_factory=list[dict[str, Any]])
     boards: list[dict[str, Any]] = field(default_factory=list[dict[str, Any]])
     annotations: dict[str, dict[str, Any]] = field(default_factory=dict[str, dict[str, Any]])
+    datasets: dict[str, dict[str, Any]] = field(default_factory=dict[str, dict[str, Any]])
     queries: dict[str, dict[str, Any]] = field(default_factory=dict[str, dict[str, Any]])
     requests: list[tuple[str, str]] = field(default_factory=list[tuple[str, str]])
 
@@ -106,17 +107,24 @@ def _read(world: _World, path: str) -> tuple[int, object]:
     """The stub's answer to a GET of `path`: (status, payload)."""
     parts = path.strip("/").split("/")
     kind, size = parts[1] if len(parts) > 1 else "", len(parts)
+    payload: object | None = None
     if kind == "triggers" and size == 3:
-        return 200, world.triggers
-    if kind == "triggers" and size == 4:
+        payload = world.triggers
+    elif kind == "triggers" and size == 4:
         found = [t for t in world.triggers if t["id"] == parts[3]]
-        return (200, found[0]) if found else (404, {"error": "none"})
-    if kind == "boards" and size == 2:
-        return 200, world.boards
-    if kind == "query_annotations" and size == 4:
-        return 200, world.annotations[parts[3]]
-    if kind == "queries" and size == 4:
-        return 200, world.queries[parts[3]]
+        if not found:
+            return 404, {"error": "none"}
+        payload = found[0]
+    elif kind == "boards" and size == 2:
+        payload = world.boards
+    elif kind == "datasets" and size == 3:
+        payload = world.datasets[parts[2]]
+    elif kind == "query_annotations" and size == 4:
+        payload = world.annotations[parts[3]]
+    elif kind == "queries" and size == 4:
+        payload = world.queries[parts[3]]
+    if payload is not None:
+        return 200, payload
     return 404, {"error": "unrouted " + path}
 
 
@@ -210,6 +218,7 @@ def _live_trigger() -> dict[str, Any]:
 
 
 def _live_board(world: _World) -> dict[str, Any]:
+    world.datasets["metrics"] = {"slug": "metrics", "name": "Metrics"}
     world.annotations["ann1"] = {
         "id": "ann1",
         "name": "Load by host",
@@ -223,7 +232,9 @@ def _live_board(world: _World) -> dict[str, Any]:
         "granularity": 0,
         "filter_combination": "AND",
     }
-    live = {k: copy.deepcopy(v) for k, v in _BOARD.items() if k != "panels"}
+    live = {
+        k: copy.deepcopy(v) for k, v in _BOARD.items() if k not in {"layout_generation", "panels"}
+    }
     live.update({"id": "board1", "created_at": "2026-11-01T00:00:00Z", "links": {"board_url": "u"}})
     live["panels"] = [
         {
@@ -238,7 +249,7 @@ def _live_board(world: _World) -> dict[str, Any]:
                 "query_id": "q1",
                 "query_annotation_id": "ann1",
                 "query_style": "graph",
-                "dataset": "metrics",
+                "dataset": "Metrics",
             },
         },
     ]
@@ -376,6 +387,22 @@ def test_board_drift_matching_live_exits_zero_ignoring_server_assigned_fields(
     result = _run(script, api, "--drift")
 
     assert result.returncode == 0, result.stdout + result.stderr
+    assert _only_reads(state), state.requests
+
+
+def test_board_drift_reports_a_query_panel_with_a_different_dataset(
+    tmp_path: Path, world: tuple[_World, str]
+) -> None:
+    state, api = world
+    live = _live_board(state)
+    live["panels"][1]["query_panel"]["dataset"] = "OtherMetrics"
+    state.boards = [live]
+    script = _stage(tmp_path, _APPLY_BOARDS, _BOARD)
+
+    result = _run(script, api, "--drift")
+
+    assert result.returncode != 0, result.stdout + result.stderr
+    assert 'panel Load by host.dataset: committed "Metrics" live "OtherMetrics"' in result.stdout
     assert _only_reads(state), state.requests
 
 
