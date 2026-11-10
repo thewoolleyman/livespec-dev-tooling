@@ -1036,6 +1036,16 @@ Then the aggregate MUST exit non-zero
 
 And its output MUST name that member
 
+## Scenario: a check runner terminated by SIGTERM or SIGHUP removes its coverage directories and exits non-zero
+
+Given a check runner whose selected targets include a coverage-touching target, with its temp directory pointed at an empty directory
+
+When the runner receives SIGTERM, or SIGHUP, while that target is running
+
+Then the runner MUST exit with a non-zero status
+
+And the temp directory MUST hold no coverage-namespace directory the runner created
+
 ## Scenario: a second controller cannot reserve the Docker engine install guard while a run is unfinished
 
 Given a factory host whose Docker engine install guard holds a current reservation for run A in phase `observing`

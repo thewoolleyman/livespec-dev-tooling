@@ -841,6 +841,14 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: a check runner terminated by SIGTERM or SIGHUP removes its coverage directories and exits non-zero",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading. It signals a running parallel check dispatcher, incident local-gate runner and incident CI entry point with SIGTERM and with SIGHUP while a coverage-touching target runs, with TMPDIR pointed at an empty directory, and asserts a non-zero exit and no surviving covns-* directory; livespec-dev-tooling-8o8e.16 owns it.",
+    "work_item": "livespec-dev-tooling-8o8e.16"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: a delegated gate run that reaches no verdict emits a no-verdict outcome event",
     "test": "tests.livespec_dev_tooling.test_gate_outcome_telemetry.test_a_delegated_gate_run_that_reaches_no_verdict_emits_a_no_verdict_event",
     "reason": "Integration-tier (module-level `pytest.mark.integration`): drives the real `run_delegated_gate` end to end against a canned cluster whose API server refuses the submit, so the scenario's three Then-lines are read off what one run actually reported — the push is refused, EXACTLY ONE event is emitted, its outcome is the word `no-verdict`, and it carries the repository and the gated tree's hash. The Job's name is absent because that run never obtained one, which is §\"Delegated pre-push gate\"'s never-guessed rule; its presence on an adjudicated run is asserted by the sibling test that reaches `passed` and `failed-tree` (work-item livespec-dev-tooling-cmgqnz).",
