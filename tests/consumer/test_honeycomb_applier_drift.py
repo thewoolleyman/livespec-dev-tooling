@@ -459,6 +459,39 @@ def test_board_apply_reuses_a_query_panel_when_the_api_adds_an_empty_filter_join
     ), state.requests
 
 
+def test_board_apply_creates_a_query_panel_when_a_stored_filter_value_differs(
+    tmp_path: Path, world: tuple[_World, str]
+) -> None:
+    state, api = world
+    definition = copy.deepcopy(_BOARD)
+    definition["panels"][1]["query"]["filters"] = [
+        {"column": "host.name", "op": "=", "value": "fixture-host"},
+    ]
+    live = _live_board(state)
+    state.queries["q1"]["filters"] = [
+        {
+            "column": "host.name",
+            "op": "=",
+            "value": "different-host",
+            "join_column": "",
+        },
+    ]
+    state.boards = [live]
+    script = _stage(tmp_path, _APPLY_BOARDS, definition)
+
+    result = _run(script, api)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "panel created load [metrics] query=written" in result.stdout
+    assert any(
+        method == "POST" and path == "/1/queries/metrics" for method, path in state.requests
+    ), state.requests
+    assert any(
+        method == "POST" and path == "/1/query_annotations/metrics"
+        for method, path in state.requests
+    ), state.requests
+
+
 def test_board_drift_reports_a_name_absent_from_the_api_as_missing(
     tmp_path: Path, world: tuple[_World, str]
 ) -> None:
