@@ -252,6 +252,9 @@ if [ -n "${EXPEDITED_INCIDENT_RESPONSE:-}${EXPEDITED_INCIDENT_RESPONSE_REVERT:-}
   if [ "$incident_status" -ne 75 ]; then
     exit "$incident_status"
   fi
+  # 75 here is the unchanged ordinary path, so an inherited flag is inert: clear it
+  # so the factory-provenance gate and lefthook children never re-parse it.
+  unset EXPEDITED_INCIDENT_RESPONSE EXPEDITED_INCIDENT_RESPONSE_REVERT
 fi
 
 # FACTORY-PROVENANCE gate (livespec-dev-tooling-pxsr7w). It decides WHO may

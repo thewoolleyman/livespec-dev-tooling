@@ -55,8 +55,28 @@ changes HEAD, so its old pre-commit authority must be canonically advanced
 before push. An attempt that publishes no carrier state, or an unknown state,
 refuses by naming the carrier state; a missing PR number is never the reason.
 
-Workflow publication needs separate scoped authority, and emergency inverses
-need the independently trusted recovery boundary. Unsupported marker formats
+An invocation with `EXPEDITED_INCIDENT_RESPONSE_REVERT` set, alone or beside the
+repair flag, resolves the canonical current attempt like any incident, with the
+revert flag taking precedence. When that attempt is in the `reverting` phase and
+records a landed incident merge, the hook resolves an `emergency-revert` context
+naming that merge (the last entry of `landed_commits`) and hands off: it prints
+one JSON line (`handoff: trusted-recovery-boundary`, the identity and
+`recorded_incident_merge_sha`) and exits 79 with no local commit or push admitted,
+because the inverse is built against current master and published by the
+independently provisioned recovery principal (`docs/incident-recovery-principal.md`),
+not by a local operation. The hand-off is a named, terminal resolution and nothing
+more: no component reads exit 79 or signals the recovery principal, which runs from
+its own trigger. The printed line is what an operator carries to that boundary, so
+the merge it names is the one the recovery principal must reverse. An attempt with no usable landed merge is refused with
+the named code `missing-recorded-incident-merge` or `invalid-recorded-incident-merge`;
+every canonical refusal now carries its code before its detail. The repair scope
+check (`validate_scope`) still refuses any context that is not an expedited repair.
+In a trusted normal origin (a master-push CI job or a factory sandbox; see
+`docs/incident-local-gates.md`) the hook exits 75 before it reads either flag, so
+an inherited `EXPEDITED_INCIDENT_RESPONSE_REVERT` there runs the ordinary hook and
+never reaches this hand-off.
+
+Workflow publication needs separate scoped authority. Unsupported marker formats
 require a legal adjacent Python carrier. Genesis, factory fencing,
 focused/manual merge admission, other direct/delegated entrances, CI/templates,
 release and installed fleet adoption remain required plan work. Developing this
