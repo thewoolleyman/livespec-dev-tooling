@@ -13,6 +13,7 @@ hold, which no stand-in can show.
 
 from __future__ import annotations
 
+import hashlib
 import os
 import subprocess
 import sys
@@ -23,6 +24,9 @@ import pytest
 from livespec_dev_tooling.checks import red_green_replay
 
 _SUBJECT_CHECK_ID = "red-green-replay-range-trailer-subject"
+_CHECKSUM_CHECK_ID = "red-green-replay-range-stale-test-checksum"
+_TEST_PATH = "tests/test_x.py"
+_TEST_BYTES = b"def test_x() -> None:\n    assert True\n"
 _PYPROJECT = (
     "[tool.livespec_dev_tooling]\n"
     'source_trees = ["livespec"]\n'
@@ -129,3 +133,76 @@ def test_range_accepts_every_conventional_subject(
     returncode, stderr = _run_check(repo=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert (returncode, _SUBJECT_CHECK_ID in stderr) == (0, False)
+
+
+def _checksum(*, content: bytes) -> str:
+    return f"sha256:{hashlib.sha256(content).hexdigest()}"
+
+
+def _recorded_commit(
+    *, repo: Path, content: bytes, recorded_for: bytes, test: str = _TEST_PATH
+) -> str:
+    """Commit `content` at the test path under a message recording the checksum of `recorded_for`."""
+    target = repo / _TEST_PATH
+    target.parent.mkdir(exist_ok=True)
+    target.write_bytes(content)
+    _git(repo=repo, args=["add", "-A"])
+    message = (
+        "fix: record a Red\n\n"
+        f"TDD-Red-Test: {test}\n"
+        f"TDD-Red-Test-File-Checksum: {_checksum(content=recorded_for)}\n"
+    )
+    _git(repo=repo, args=["commit", "-q", "-m", message])
+    return _git(repo=repo, args=["rev-parse", "HEAD"])
+
+
+def test_range_fails_naming_the_commit_and_test_file_whose_recorded_checksum_is_stale(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _init_repo(repo=tmp_path)
+    intact = _recorded_commit(repo=tmp_path, content=_TEST_BYTES, recorded_for=_TEST_BYTES)
+    stale = _recorded_commit(
+        repo=tmp_path, content=_TEST_BYTES + b"# rebased\n", recorded_for=_TEST_BYTES
+    )
+
+    returncode, stderr = _run_check(repo=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
+
+    assert returncode == 1
+    assert _CHECKSUM_CHECK_ID in stderr
+    assert stale in stderr
+    assert _TEST_PATH in stderr
+    assert intact not in stderr
+
+
+def test_range_fails_when_the_recorded_test_file_is_absent_from_the_commits_tree(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _init_repo(repo=tmp_path)
+    sha = _recorded_commit(
+        repo=tmp_path,
+        content=_TEST_BYTES,
+        recorded_for=_TEST_BYTES,
+        test="tests/test_gone.py::test_x",
+    )
+
+    returncode, stderr = _run_check(repo=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
+
+    assert returncode == 1
+    assert sha in stderr
+    assert "tests/test_gone.py" in stderr
+
+
+def test_range_passes_when_every_subject_and_recorded_checksum_is_intact(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _init_repo(repo=tmp_path)
+    _recorded_commit(repo=tmp_path, content=_TEST_BYTES, recorded_for=_TEST_BYTES)
+    _commit(repo=tmp_path, name="a.md", message="docs: a well-formed subject")
+
+    returncode, stderr = _run_check(repo=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
+
+    assert (returncode, _CHECKSUM_CHECK_ID in stderr, _SUBJECT_CHECK_ID in stderr) == (
+        0,
+        False,
+        False,
+    )
