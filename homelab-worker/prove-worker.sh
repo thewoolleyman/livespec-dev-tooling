@@ -14,6 +14,15 @@
 # DNS from the worker, and a NetworkPolicy deny enforced on a worker pod
 # (allowed, denied, allowed again).
 #
+# It also MEASURES the pod-network throughput between the worker and
+# --peer-node, both ways: each client downloads a 32 MiB file and times it
+# inside the pod with /proc/uptime, so the caller's exec round trip is not in
+# the number. Each direction prints `PROOF-INFO throughput-<direction> <KiB/s>
+# KiB/s (...)`, or `... unmeasured <reason>`. A measurement never decides the
+# proof: the 4 MiB transfers above prove bytes arrive, and this says how fast
+# (added 2026-11-11 after the M4's gate fetch-tree took 88 s for ~32 MiB while
+# the 4 MiB check passed; plan homelab-k8s-worker-nodes).
+#
 # With --expect-streaming-failure it runs the negative control instead: logs
 # and exec on the worker MUST fail, as they do while the API server reaches
 # kubelets only through K3s agent tunnels.
@@ -112,7 +121,8 @@ spec:
 EOF
 }
 
-server_cmd="mkdir -p /www && echo proof-ok > /www/index.html && dd if=/dev/zero of=/www/big bs=1024 count=4096 2>/dev/null && exec httpd -f -p 8080 -h /www"
+server_cmd="mkdir -p /www && echo proof-ok > /www/index.html && dd if=/dev/zero of=/www/big bs=1024 count=4096 2>/dev/null && dd if=/dev/zero of=/www/huge bs=1024 count=32768 2>/dev/null && exec httpd -f -p 8080 -h /www"
+throughput_kib=32768
 client_cmd="echo proof-ready && exec sleep 3600"
 {
   printf 'apiVersion: v1\nkind: Namespace\nmetadata:\n  name: %s\n' "$ns"
@@ -140,6 +150,22 @@ expect() {
   fi
 }
 
+# throughput <direction> <client pod> <url>: time a ${throughput_kib} KiB
+# download inside the client pod and print one PROOF-INFO line. Informational:
+# it never sets `failed`.
+throughput() {
+  local direction="$1" client="$2" url="$3" out start end extra
+  if out="$(kubectl exec --namespace "$ns" "$client" -- sh -c \
+    "a=\$(cut -d' ' -f1 /proc/uptime); wget -qO /dev/null -T 600 '$url' || exit 1; b=\$(cut -d' ' -f1 /proc/uptime); echo \"\$a \$b\"" 2>&1)" &&
+    read -r start end extra <<<"$out" && [ -n "$end" ] && [ -z "$extra" ]; then
+    awk -v a="$start" -v b="$end" -v kib="$throughput_kib" -v d="$direction" 'BEGIN {
+      s = b - a; if (s <= 0) s = 0.01
+      printf "PROOF-INFO throughput-%s %d KiB/s (%d KiB in %.2f s)\n", d, kib / s, kib, s }'
+  else
+    printf 'PROOF-INFO throughput-%s unmeasured %s\n' "$direction" "$(printf '%s' "$out" | tr '\n' ' ' | cut -c1-120)"
+  fi
+}
+
 if [ "$negative" = 1 ]; then
   expect logs-on-worker fail kubectl logs --namespace "$ns" client-worker
   expect exec-on-worker fail kubectl exec --namespace "$ns" client-worker -- echo exec-ok
@@ -157,6 +183,8 @@ else
   expect large-tcp-worker-to-peer ok kubectl exec --namespace "$ns" client-worker -- wget -qO /dev/null -T 30 "http://$ip_peer:8080/big"
   expect large-tcp-peer-to-worker ok kubectl exec --namespace "$ns" client-peer -- wget -qO /dev/null -T 30 "http://$ip_worker:8080/big"
   expect large-icmp-worker-to-peer ok kubectl exec --namespace "$ns" client-worker -- ping -c 3 -W 5 -s 1400 "$ip_peer"
+  throughput worker-to-peer client-worker "http://$ip_peer:8080/huge"
+  throughput peer-to-worker client-peer "http://$ip_worker:8080/huge"
   expect clusterip-and-dns-from-worker ok kubectl exec --namespace "$ns" client-worker -- wget -qO- -T 5 "http://server-peer.$ns.svc.cluster.local:8080/"
   expect cluster-dns-from-worker ok kubectl exec --namespace "$ns" client-worker -- nslookup kubernetes.default.svc.cluster.local "$cluster_dns"
   kubectl apply -f - >/dev/null <<EOF
