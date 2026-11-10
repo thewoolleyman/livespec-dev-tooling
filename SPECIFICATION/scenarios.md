@@ -1376,6 +1376,16 @@ And the live session's directory MUST remain in place
 
 And the run's log MUST name the removed directory and the free space of the root filesystem and of `/tmp` before and after
 
+## Scenario: dev host retention leaves an aged session scratch directory that a running process holds open
+
+Given a session scratch directory under `/tmp/claude-<uid>` unmodified for longer than the scratch retention period, whose session id no running process carries
+
+And a running process holding an open file descriptor beneath that directory, with no child process carrying the session id
+
+When one run of the dev host retention script completes
+
+Then that directory MUST remain in place
+
 ## Scenario: dev host retention removes an aged Codex marketplace backup and leaves the live marketplaces
 
 Given the retention user's `~/.codex/.tmp/marketplaces` holding a `marketplace-backup-*` directory unmodified for longer than the scratch retention period

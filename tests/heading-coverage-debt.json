@@ -1353,6 +1353,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: dev host retention leaves an aged session scratch directory that a running process holds open",
+    "work_item": "livespec-dev-tooling-ovnrsv",
+    "first_seen": "2026-11-10"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: dev host retention removes a dead session's scratch directory and leaves a live one",
     "work_item": "livespec-dev-tooling-tjldi2",
     "first_seen": "2026-11-01"
