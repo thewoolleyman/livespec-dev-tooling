@@ -12,7 +12,7 @@ wrapper and no `gh`, and needs none of them:
     sudo -u livespec-incident -H /opt/livespec-incident/venv/bin/python -I \\
         -m livespec_dev_tooling.incident_original_run_entry collect \\
         --config /etc/livespec-incident/controller.json \\
-        --revert-sha SHA --expected-graph GRAPH.json
+        --revert-sha SHA [--expected-graph GRAPH.json]
 
     sudo -u livespec-incident -H /opt/livespec-incident/venv/bin/python -I \\
         -m livespec_dev_tooling.incident_original_run_entry propose-correction \\
@@ -22,7 +22,11 @@ wrapper and no `gh`, and needs none of them:
         [--staged-tree TREE] [--resolved JOB=RECEIPT ...]
 
 `collect` refuses until the registered original master run has completed and
-the canonical chain records the merge, through its `record-merge` action.
+the canonical chain records the merge, through its `record-merge` action. The
+expected jobs come from the workflow at the merge revision, matrix legs
+expanded; `--expected-graph` is optional and, when given, must agree with that
+workflow or it is refused by name. The running controller also collects by
+itself after a revert lands, so this command is the operator's manual retry.
 `propose-correction` hands a correction to the canonical `correct-attempt`
 action against the attempt a recorded revert receipt moved to
 `collecting-failures`: the `recovery-<digest>` attempt reopen-regression
@@ -42,7 +46,7 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import cast
 
-from livespec_dev_tooling._incident_original_run_ports import installed_ports, refresh_reference
+from livespec_dev_tooling._incident_original_run_ports import bound_ports, installed_ports
 from livespec_dev_tooling._incident_run_types import (
     EvidenceRefusal,
     ExpectedJob,
@@ -85,7 +89,7 @@ def _parse(*, argv: Sequence[str]) -> argparse.Namespace:
     for sub in (gather, correct):
         _ = sub.add_argument("--config", required=True, type=Path)
     _ = gather.add_argument("--revert-sha", required=True)
-    _ = gather.add_argument("--expected-graph", required=True, type=Path)
+    _ = gather.add_argument("--expected-graph", type=Path)
     _ = gather.add_argument("--run-attempt", type=int, default=1)
     _ = gather.add_argument("--workflow", default=".github/workflows/ci.yml")
     for name in (
@@ -152,14 +156,16 @@ def _graph(*, path: Path) -> tuple[ExpectedJob, ...]:
 def _collect(
     *, args: argparse.Namespace, ports: EntryPorts, installation: ControllerInstallation
 ) -> int:
-    graph = _graph(path=args.expected_graph)
-    if not is_successful(graph):
-        return _refused(
-            refusal=EvidenceRefusal(
-                code="incident-original-run-graph-invalid", detail="unreadable expected graph"
+    expected = None
+    if args.expected_graph is not None:
+        graph = _graph(path=args.expected_graph)
+        if not is_successful(graph):
+            return _refused(
+                refusal=EvidenceRefusal(
+                    code="incident-original-run-graph-invalid", detail="unreadable expected graph"
+                )
             )
-        )
-    expected = unsafe_perform_io(graph.unwrap())
+        expected = unsafe_perform_io(graph.unwrap())
     result = collect(
         request=Collection(
             state_dir=installation.state,
@@ -207,16 +213,6 @@ def _propose(
     return _reply(body={"status": "proposed", "receipt": result})
 
 
-def _bound(*, installation: ControllerInstallation) -> EntryPorts | None:
-    """The installed ports with a current reference clone, or None without the credential."""
-    try:
-        ports = installed_ports(installation=installation)
-    except OSError:
-        return None
-    refresh_reference(installation=installation)
-    return ports
-
-
 def main(*, argv: Sequence[str] | None = None, ports: EntryPorts | None = None) -> int:
     """Collect or propose for one registered original run; refusals exit 78."""
     args = _parse(argv=sys.argv[1:] if argv is None else argv)
@@ -225,7 +221,7 @@ def main(*, argv: Sequence[str] | None = None, ports: EntryPorts | None = None) 
     installation = ControllerInstallation.load(config=args.config)
     bound = ports
     if installation is not None and bound is None:
-        bound = _bound(installation=installation)
+        bound = bound_ports(installation=installation)
     if installation is None or bound is None:
         return _refused(
             refusal=EvidenceRefusal(
