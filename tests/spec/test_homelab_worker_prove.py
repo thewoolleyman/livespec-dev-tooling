@@ -88,6 +88,12 @@ case "$1" in
       wget) [ "$STUB_DNS" = 0 ] && case "$*" in *svc.cluster.local*) exit 1 ;; esac; echo proof-ok ;;
       nslookup) [ "$STUB_DNS" = 0 ] && exit 1; [ "$3" = {_DNS} ] || exit 1; echo ok ;;
       ping) [ "$STUB_MTU" = 0 ] && exit 1; echo '3 packets received' ;;
+      sh)
+        case "$*" in
+          *proc/uptime*/huge*)
+            [ "$STUB_THROUGHPUT" = fail ] && {{ echo 'wget: download timed out' >&2; exit 1; }}
+            case "$pod" in client-worker) echo '100.00 102.00' ;; *) echo '200.00 201.00' ;; esac ;;
+        esac ;;
     esac ;;
   delete)
     [ "$2" = networkpolicy ] && rm -f "$s/policy" ;;
@@ -136,6 +142,7 @@ def _prove(
     mtu: str = "1",
     hold: str = "1",
     taint_delay: str = "0",
+    throughput: str = "ok",
 ) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         ["/bin/bash", str(_SCRIPT), *args],
@@ -152,6 +159,7 @@ def _prove(
             "STUB_MTU": mtu,
             "STUB_HOLD": hold,
             "STUB_TAINT_DELAY": taint_delay,
+            "STUB_THROUGHPUT": throughput,
             "POLICY_SETTLE_SECONDS": "0",
         },
         check=False,
@@ -300,3 +308,28 @@ def test_without_the_flag_no_hold_check_runs(env: _Env) -> None:
     result = _prove(env=env, args=[_HOST, "--peer-node", _PEER], tunnel_only="0", hold="0")
     assert result.returncode == 0, result.stdout + result.stderr
     assert not set(_HOLD_CHECKS) & set(_proofs(result))
+
+
+def test_the_proof_measures_pod_network_throughput_both_ways(env: _Env) -> None:
+    """32 MiB timed inside each client pod: 2.00 s worker-to-peer, 1.00 s peer-to-worker."""
+    result = _prove(env=env, args=[_HOST, "--peer-node", _PEER], tunnel_only="0")
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "PROOF-INFO throughput-worker-to-peer 16384 KiB/s (32768 KiB in 2.00 s)" in result.stdout
+    assert "PROOF-INFO throughput-peer-to-worker 32768 KiB/s (32768 KiB in 1.00 s)" in result.stdout
+    applied = (env.state / "applied.yaml").read_text(encoding="utf-8")
+    assert "of=/www/huge bs=1024 count=32768" in applied
+
+
+def test_a_failed_throughput_measurement_never_decides_the_proof(env: _Env) -> None:
+    result = _prove(env=env, args=[_HOST, "--peer-node", _PEER], tunnel_only="0", throughput="fail")
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert _proofs(result) == dict.fromkeys(_ALL_CHECKS, "PASS")
+    assert "PROOF-INFO throughput-worker-to-peer unmeasured" in result.stdout
+    assert "PROOF-INFO throughput-peer-to-worker unmeasured" in result.stdout
+
+
+def test_the_negative_control_measures_no_throughput(env: _Env) -> None:
+    result = _prove(
+        env=env, args=[_HOST, "--peer-node", _PEER, "--expect-streaming-failure"], tunnel_only="1"
+    )
+    assert "throughput-" not in result.stdout
