@@ -59,6 +59,7 @@ _CHECKSUM_KEY = re.compile(r"^(\s*)checksum:\s*(.*?)\s*$")
 _INLINE_CHECKSUM = re.compile(r"\bchecksum=\S")
 _EXEMPTION = re.compile(r"^\s*#\s*check-mode-exempt:\s*(\S.*)$")
 _EMPTY_SCALARS = ("", "''", '""')
+_BLOCK_SCALAR_HEADER = re.compile(r"^[|>](?:[1-9][+-]?|[+-][1-9]?)?\s*(?:#.*)?$")
 
 _REMEDIATION = (
     "pin the vendor's digest with `checksum: sha256:<digest>` so the module hashes the "
@@ -123,17 +124,39 @@ def _task_lines(
     return lines[start:end]
 
 
+def _block_scalar_has_content(*, lines: list[str], header_index: int, key_indent: int) -> bool:
+    """Return whether the block scalar opened on `header_index` holds any non-blank line.
+
+    Its content is every following line indented further than the key; the first
+    non-blank line at the key's indent or below ends it.
+    """
+    for line in lines[header_index + 1 :]:
+        if not line.strip():
+            continue
+        return _indent(line=line) > key_indent
+    return False
+
+
 def _is_pinned(*, lines: list[str], module_index: int, key_indent: int, inline: str) -> bool:
     if _INLINE_CHECKSUM.search(inline):
         return True
     end = _block_end(lines=lines, start=module_index + 1, key_indent=key_indent, deeper=True)
-    code = [line for line in lines[module_index + 1 : end] if _is_code(line=line)]
-    argument_indent = min((_indent(line=line) for line in code), default=0)
-    for line in code:
+    indexed = [
+        (index, lines[index])
+        for index in range(module_index + 1, end)
+        if _is_code(line=lines[index])
+    ]
+    argument_indent = min((_indent(line=line) for _, line in indexed), default=0)
+    for index, line in indexed:
         match = _CHECKSUM_KEY.match(line)
         if match is None or _indent(line=line) != argument_indent:
             continue
-        return match.group(2) not in _EMPTY_SCALARS
+        value = match.group(2)
+        if _BLOCK_SCALAR_HEADER.match(value):
+            return _block_scalar_has_content(
+                lines=lines, header_index=index, key_indent=argument_indent
+            )
+        return value not in _EMPTY_SCALARS
     return False
 
 

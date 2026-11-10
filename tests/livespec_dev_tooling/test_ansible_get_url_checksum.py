@@ -174,6 +174,35 @@ def test_an_empty_checksum_value_is_not_a_pin(
     assert _pairs(run=run) == [("unpinned-get-url", "ansible/roles/r/tasks/main.yml", 2)]
 
 
+def test_an_empty_block_scalar_checksum_is_not_a_pin(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    tasks = (
+        "- name: Folded\n"
+        "  ansible.builtin.get_url:\n"
+        "    url: https://example.invalid/x\n"
+        "    checksum: >-\n"
+        "    dest: /x\n"
+        "- name: Literal\n"
+        "  ansible.builtin.get_url:\n"
+        "    url: https://example.invalid/y\n"
+        "    dest: /y\n"
+        "    checksum: |\n"
+        "\n"
+        "- name: Kept\n"
+        "  ansible.builtin.get_url:\n"
+        "    url: https://example.invalid/z\n"
+        "    dest: /z\n"
+        "    checksum: |+2\n"
+    )
+    run = _run_check(cwd=_tree(root=tmp_path, tasks=tasks), monkeypatch=monkeypatch, capsys=capsys)
+    assert _pairs(run=run) == [
+        ("unpinned-get-url", "ansible/roles/r/tasks/main.yml", 2),
+        ("unpinned-get-url", "ansible/roles/r/tasks/main.yml", 7),
+        ("unpinned-get-url", "ansible/roles/r/tasks/main.yml", 13),
+    ]
+
+
 def test_an_inline_checksum_argument_counts_as_a_pin(
     *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
