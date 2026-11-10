@@ -66,6 +66,27 @@ if [[ "${GITHUB_ACTIONS:-}" == "true" ]] && [[ -f "$coverage_file" ]] && [[ ! -f
     rm -f "$coverage_file" "$failure_receipt"
     exit 1
 fi
+if [[ "${GITHUB_ACTIONS:-}" == "true" ]] && [[ -f "$coverage_file" ]] && [[ -f "$reuse_stamp" ]]; then
+    if reuse_id="$(scripts/just/coverage-reuse-id.sh)"; then
+        recorded_reuse_id="$(cat "$reuse_stamp")"
+        recorded_tree_digest="${recorded_reuse_id#git-tree:}"
+        recorded_tree_digest="${recorded_tree_digest%%:*}"
+        current_tree_digest="${reuse_id#git-tree:}"
+        current_tree_digest="${current_tree_digest%%:*}"
+        if [[ "$recorded_tree_digest" != "$current_tree_digest" ]]; then
+            echo ":: check-coverage: coverage reuse receipt tree mismatch; refusing to start pytest"
+            rm -f "$coverage_file" "$reuse_stamp" "$failure_receipt"
+            exit 1
+        fi
+        recorded_data_digest="${recorded_reuse_id##*:coverage:}"
+        current_data_digest="${reuse_id##*:coverage:}"
+        if [[ "$recorded_data_digest" != "$current_data_digest" ]]; then
+            echo ":: check-coverage: coverage reuse receipt data-digest mismatch; refusing to start pytest"
+            rm -f "$coverage_file" "$reuse_stamp" "$failure_receipt"
+            exit 1
+        fi
+    fi
+fi
 if [[ -f "$coverage_file" ]]; then
     if [[ -f "$reuse_stamp" ]] \
         && reuse_id="$(scripts/just/coverage-reuse-id.sh)" \
