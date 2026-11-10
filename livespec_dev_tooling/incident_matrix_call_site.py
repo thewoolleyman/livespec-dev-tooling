@@ -44,9 +44,13 @@ Every unreadable, unparseable or unexpected shape refuses.
 a call site that passes no incident input at all has not adopted the inputs and
 is not a finding.
 
-A workflow with a duplicate mapping key (compared case-insensitively, as
-GitHub compares `with:` keys) or a `<<` merge key loads as None: GitHub runs
-neither, so neither is read as anything at all.
+A workflow with a duplicate mapping key or a `<<` merge key loads as None:
+GitHub runs neither, so neither is read as anything at all. Keys are compared
+twice: as raw scalars, case-insensitively (as GitHub compares `with:` keys),
+and again as PyYAML resolves them. PyYAML reads keys by YAML 1.1, so `yes:` and
+`on:` both load as True and the later silently replaces the earlier, while
+GitHub reads both as string job ids (re-review of 2bfd031a, finding B). The
+top-level `on:` alone resolves to True in every workflow and is no collision.
 
 PyYAML is imported only when a workflow is parsed. Without it nothing parses,
 so nothing passes: the reusable workflow's decision step installs it, pinned
@@ -106,7 +110,12 @@ def quoted(*, value: str) -> str:
 
 
 def _ambiguous(*, node: object, seen: set[int]) -> bool:
-    """Whether a composed YAML node holds a merge key or a duplicate (case-folded) key."""
+    """Whether a composed YAML node holds a merge key or a duplicate key, raw or resolved.
+
+    A raw duplicate is compared case-folded. A resolved duplicate is two keys
+    PyYAML constructs to one value, such as `yes` and `on` (both True); a
+    non-scalar key never constructs to a hashable value, so it refuses too.
+    """
     import yaml
 
     if id(node) in seen:
@@ -114,8 +123,11 @@ def _ambiguous(*, node: object, seen: set[int]) -> bool:
     seen.add(id(node))
     if isinstance(node, yaml.MappingNode):
         keys = [key for key, _value in node.value]
-        names = [str(key.value).casefold() for key in keys]
-        if any(key.tag == _MERGE_TAG for key in keys) or len(set(names)) != len(names):
+        names = {str(key.value).casefold() for key in keys}
+        if any(key.tag == _MERGE_TAG for key in keys) or len(names) != len(keys):
+            return True
+        construct: Callable[[object], object] = cast("Any", yaml.SafeLoader("")).construct_object
+        if len({construct(k) for k in keys if isinstance(k, yaml.ScalarNode)}) != len(keys):
             return True
         return any(_ambiguous(node=n, seen=seen) for pair in node.value for n in pair)
     if isinstance(node, yaml.SequenceNode):
