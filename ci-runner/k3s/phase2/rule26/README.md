@@ -31,17 +31,30 @@ result cache. `run.log` records the start, end, exit code and elapsed seconds.
 
 ## Launch
 
-Run the recipe on a host whose `kubectl` reaches the cluster (the control
-plane, `poweredge-xubuntu`):
+A launch is a committed apply from the control node, never a hand `kubectl
+apply` on a fleet host: the fleet host guard refuses that. The playbook
+`ansible/rule26-kill-matrix.yml` (role `rule26_kill_matrix`) renders the
+manifest on the control node with `./render-kill-matrix-job.sh` and applies it
+on the k3s server:
 
 ```bash
-just rule26-kill-matrix-apply <orchestrator-sha> <engine-sha> [workers]
+just ansible-drift ansible/rule26-kill-matrix.yml \
+  -e rule26_kill_matrix_orchestrator_sha=<40-hex> \
+  -e rule26_kill_matrix_engine_sha=<40-hex> \
+  -e rule26_kill_matrix_run=<lowercase id>
+just ansible-apply ansible/rule26-kill-matrix.yml -e ...   # the same -e flags
 ```
 
-It runs `./apply-kill-matrix.sh`, which renders the manifest with
-`./render-kill-matrix-job.sh` and applies it.
-`workers` defaults to 12. If the node's CPU pressure (PSI avg60) reads above
-30 twice, re-launch with 8 (legacy-coordinator-agent ruling, 2026-11-09).
+`rule26_kill_matrix_workers` defaults to 12. If the node's CPU pressure (PSI
+avg60) reads above 30 twice, re-launch with 8 (legacy-coordinator-agent ruling,
+2026-11-09).
+
+Revert, which deletes the whole `rule26` namespace, including the PVC and
+every run's outputs:
+
+```bash
+just ansible-apply ansible/rule26-kill-matrix.yml -e rule26_kill_matrix_state=absent
+```
 
 ## Watching
 

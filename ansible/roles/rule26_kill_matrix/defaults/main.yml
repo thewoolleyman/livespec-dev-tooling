@@ -1,0 +1,16 @@
+---
+# present: render and apply the rule-26 kill-matrix Job. absent: delete the
+# whole `rule26` namespace, which removes the Job, its pod and the PVC.
+rule26_kill_matrix_state: present
+# The run's inputs. Each is a playbook variable passed with -e, never typed
+# into a host. Both SHAs must be full 40-hex commits. The run id names the Job
+# (rule26-orchestrator-kill-matrix-<run>) and its output directory on the PVC.
+rule26_kill_matrix_orchestrator_sha: ""
+rule26_kill_matrix_engine_sha: ""
+rule26_kill_matrix_workers: 12
+rule26_kill_matrix_run: ""
+# The committed renderer, run on the control node over the committed template.
+rule26_kill_matrix_renderer: "{{ role_path }}/../../../ci-runner/k3s/phase2/rule26/render-kill-matrix-job.sh"
+rule26_kill_matrix_namespace: rule26
+# The server's admin kubeconfig, the same one ../ci_factory_quota reads.
+rule26_kill_matrix_kubeconfig: /etc/rancher/k3s/k3s.yaml
