@@ -132,20 +132,40 @@ def _needs(*, value: str) -> tuple[str, ...]:
     return tuple(token.strip() for token in inner.split(",") if token.strip())
 
 
+def _matrix_lines(*, body: tuple[str, ...]) -> tuple[str, ...]:
+    """The significant lines nested under the job's `matrix:` key."""
+    starts = [index for index, line in enumerate(body) if line.strip() == "matrix:"]
+    if not starts:
+        return ()
+    indent = _indent(line=body[starts[0]])
+    nested: list[str] = []
+    for line in body[starts[0] + 1 :]:
+        if not _significant(line=line):
+            continue
+        if _indent(line=line) <= indent:
+            break
+        nested.append(line)
+    return tuple(nested)
+
+
 def _matrix_targets(*, body: tuple[str, ...]) -> tuple[str, ...]:
-    targets: list[str] = []
-    state = "before-matrix"
-    for line in body:
-        stripped = line.strip()
-        if state == "before-matrix" and stripped == "matrix:":
-            state = "in-matrix"
-        elif state == "in-matrix" and stripped == "target:":
-            state = "in-targets"
-        elif state == "in-targets" and _significant(line=line):
-            if not stripped.startswith("- "):
-                break
-            targets.append(stripped[2:].split("#", 1)[0].strip())
-    return tuple(targets)
+    """The `matrix.target` entries, or () for any matrix shape this reader does not model.
+
+    Only a matrix whose ONE key is a block-list `target:` names its legs one per
+    entry. A second axis (`os:`) makes legs that share a name, and `include:` or
+    `exclude:` add or drop legs, so any key other than `target` is underivable:
+    the gate fails closed rather than counting a partial leg set.
+    """
+    nested = _matrix_lines(body=body)
+    key_indent = min((_indent(line=line) for line in nested), default=0)
+    keys = {line.strip() for line in nested if _indent(line=line) == key_indent}
+    if keys != {"target:"}:
+        return ()
+    return tuple(
+        line.strip()[2:].split("#", 1)[0].strip()
+        for line in nested[1:]
+        if line.strip().startswith("- ")
+    )
 
 
 def _leg_names(*, job: str, body: tuple[str, ...] | None) -> tuple[str, ...]:
