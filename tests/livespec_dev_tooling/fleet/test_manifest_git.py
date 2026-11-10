@@ -64,6 +64,7 @@ from livespec_dev_tooling.fleet._manifest_git import (
     GIT_READ_OPERATION,
     GIT_READ_REFUSED,
     default_git_reader,
+    git_directory_texts,
     git_file_text,
     manifest_text,
 )
@@ -420,3 +421,57 @@ def test_the_reader_runs_in_the_requested_working_directory(
     assert seen["cwd"] == str(tmp_path)
     assert isinstance(outcome, IOSuccess)
     assert unsafe_perform_io(outcome.unwrap()).returncode == 3
+
+
+_WORKFLOWS = ".github/workflows"
+_SUFFIXES = (".yml", ".yaml")
+
+
+def test_a_directory_read_answers_every_matching_file_from_one_clone() -> None:
+    """One clone serves the listing and each blob; a non-matching name is never fetched."""
+    calls: list[tuple[str, ...]] = []
+    listing = f"{_WORKFLOWS}/b.yml\0{_WORKFLOWS}/README.md\0{_WORKFLOWS}/a.yaml\0"
+    answers = [_ran(), _ran(stdout=listing), _ran(stdout="first"), _ran(stdout="second")]
+    read = _recorded_git(answers=answers, calls=calls)
+
+    result = git_directory_texts(
+        run=read, owner="acme", repo="tooling", directory=_WORKFLOWS, suffixes=_SUFFIXES
+    )
+
+    assert unsafe_perform_io(result.unwrap()) == ("first", "second")
+    assert sum("clone" in call for call in calls) == 1
+    assert "https://github.com/acme/tooling.git" in calls[0]
+    assert calls[1][-1] == f"{_WORKFLOWS}/"
+    assert [call[-1] for call in calls[2:]] == [
+        f"HEAD:{_WORKFLOWS}/a.yaml",
+        f"HEAD:{_WORKFLOWS}/b.yml",
+    ]
+
+
+def test_a_refused_directory_clone_never_lists_or_reads() -> None:
+    """No listing and no blob read once the clone has already said no."""
+    calls: list[tuple[str, ...]] = []
+    read = _recorded_git(answers=[_ran(returncode=128, stderr="fatal: not found")], calls=calls)
+
+    result = git_directory_texts(
+        run=read, owner="acme", repo="tooling", directory=_WORKFLOWS, suffixes=_SUFFIXES
+    )
+
+    assert isinstance(result, IOFailure)
+    assert unsafe_perform_io(result.failure()).kind == GIT_READ_REFUSED
+    assert len(calls) == 1
+
+
+def test_a_refused_directory_listing_is_a_refusal_not_an_empty_directory() -> None:
+    """A listing git refused must never read as a directory holding no files."""
+    calls: list[tuple[str, ...]] = []
+    answers = [_ran(), _ran(returncode=128, stderr="fatal: not a tree object")]
+    read = _recorded_git(answers=answers, calls=calls)
+
+    result = git_directory_texts(
+        run=read, owner="acme", repo="tooling", directory=_WORKFLOWS, suffixes=_SUFFIXES
+    )
+
+    assert isinstance(result, IOFailure)
+    assert unsafe_perform_io(result.failure()).kind == GIT_READ_REFUSED
+    assert len(calls) == 2
