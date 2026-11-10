@@ -3266,6 +3266,20 @@ And a request naming any other branch MUST be refused rather than applied to mas
 And an installation configuration that names no target branch MUST target master.
 ```
 
+## Scenario: a scratch-branch incident drill runs beside production on the full master CI graph
+
+```gherkin
+Given a production incident observer installation targeting master, whose configuration, manifest and units are read back and whose observer is running
+When the committed observer role installs a second installation whose configuration names an incident-scratch/** branch as its target branch
+Then the scratch installation MUST have its own configuration, its own manifest whose recovery-principal invocation names that configuration, and its own state directory, reference clone, listener port and units
+And production's configuration, manifest and units MUST keep their bytes, and its running observer MUST NOT restart
+And a push to the scratch branch MUST start a ci.yml push run of the complete master job graph with both incident flags absent and every check executed
+And that push run MUST NOT release, reconcile master health, deploy or export CI telemetry
+And a push to any other non-master branch MUST start no ci.yml run
+And the committed teardown MUST remove the scratch installation's units, configuration and manifest while production keeps its bytes and its running observer
+And the scratch installation MUST NOT be counted as recovery capability for master.
+```
+
 ## Scenario: a reverted incident retains its original CI evidence before another attempt
 
 ```gherkin

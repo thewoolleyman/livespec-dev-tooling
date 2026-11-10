@@ -2268,6 +2268,14 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: a scratch-branch incident drill runs beside production on the full master CI graph",
+    "test": "TODO",
+    "reason": "A real test at the integration tier or above is owed for this heading: the incident_observer role's scratch instance must render beside an unchanged production installation and tear down cleanly, and a push to an incident-scratch/** branch must run ci.yml's complete master job graph with no master-only side effect; livespec-dev-tooling-32qdja owns it, with livespec-dev-tooling-7w757z owning the ci.yml trigger.",
+    "work_item": "livespec-dev-tooling-32qdja"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: a reverted incident retains its original CI evidence before another attempt",
     "test": "TODO",
     "reason": "A real test at the integration tier or above is owed for this heading: the normally shipped incident capability must exercise this contract with ordinary-path controls; livespec-dev-tooling-kobmka owns the implementation and scenario evidence under plan livespec-dev-tooling-bqnzcm.",
