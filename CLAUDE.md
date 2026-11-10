@@ -208,6 +208,11 @@ The files:
   than this project's install. On 2026-11-01 a session reported that no
   `classify-tier` verb existed, and the coordinator ruled on that report. The
   verb had shipped in the installed build.
+- Read `.ai/tailnet-posture.md` before proposing any network route into or
+  out of the tailnet, any Tailscale key, tag, ACL or grant change, or any way
+  for GitHub-hosted runners to reach a fleet host. The tailnet has no tags and
+  no agent mints a key, so a CI tailnet join is never the answer (proposed for
+  the incident observer under livespec-dev-tooling-jpfdcx, 2026-11-10).
 
 ## Backlog drive — this repo has no foreman seat
 
