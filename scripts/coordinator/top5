@@ -24,9 +24,10 @@ import subprocess
 TOP = [
     ("1 expedited-incident-response-flag", "livespec-dev-tooling-bqnzcm"),
     ("2 secret-writer-stored-key-alias (homelab; workspace homelab, tab secret-writer-stored-key-alias)", "hl-bvycoc"),
-    ("3 fleet-mutation-testing-rule-26 (Mac w3:t2, ledger-only asks)", "livespec-dev-tooling-oi2two"),
-    ("4 dev-host-test-gate-load", "livespec-dev-tooling-6vuiwe"),
-    ("5 factory yield: sandbox-commit-gate-ceiling", "bd-ib-qy5wol"),
+    ("3a implement-test-performance: gate suite double-run fix", "livespec-dev-tooling-sv6m5p"),
+    ("3b gate-job-resources", "livespec-dev-tooling-ukoeah"),
+    ("4 fleet-mutation-testing-rule-26 (Mac w3:t2, ledger-only asks)", "livespec-dev-tooling-oi2two"),
+    ("5 dev-host-test-gate-load", "livespec-dev-tooling-6vuiwe"),
 ]
 WRAPPER = ["/usr/local/bin/with-livespec-env.sh", "--"]
 # The homelab tenant refuses the livespec wrapper (Error 1045 for user 'homelab');

@@ -1058,8 +1058,10 @@ runs waste about 4,110 runner-minutes a day, 48% of master-lane CI, almost all o
 "OK B'". B' keeps B's place in the ruling above and changes how it cancels: a master-only concurrency group with
 `cancel-in-progress: false`, so GitHub lets the in-progress run finish and keeps only the newest pending run.
 `chore(master): release` commits, and commits carrying the EXPEDITED_INCIDENT_RESPONSE Factory-Override trailer, get
-unique groups of their own, so their runs are never dropped. ci-runtime-and-cost re-cuts the proposal as a modify. Until
-it lands, superseded runs are cancelled only by hand, under the guards above. Measured 2026-11-09 by
+unique groups of their own, so their runs are never dropped. ci-runtime-and-cost re-cuts the proposal as a modify. B'
+LANDED (dev-tooling spec v182, livespec-dev-tooling-qzw2gf; the orchestrator's ci.yml carries the same stanza under
+bd-ib-5o5ibo): a cancelled PENDING master run is B' working as designed, not a fault, and no seat cancels a master run
+by hand. Measured 2026-11-09 by
 ci-runtime-and-cost: B as written (`cancel-in-progress: true`) cancelled release and expedited runs, and starved master
 of any verdict when merges landed faster than CI.
 
