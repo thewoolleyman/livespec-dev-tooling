@@ -12,6 +12,7 @@ import pytest
 
 from livespec_dev_tooling import incident_recovery_principal_service as service
 from livespec_dev_tooling._incident_observer_store import repository_lock
+from livespec_dev_tooling.incident_strict_json import IncidentJsonRefusalError
 from tests.livespec_dev_tooling.test_incident_recovery_principal import (
     plan_for,
     publish_request,
@@ -58,6 +59,17 @@ def test_envelope_and_fence_refusals_keep_the_binding(world, operation, payload,
     assert reply["reason"] == reason
     assert reply["binding"] == world.packet(operation, payload)["binding"]
     assert reply["authorizes_current_effects"] is False
+
+
+def test_a_damaged_publication_record_fails_closed_with_the_refusal_reply(world, monkeypatch):
+    def damaged(_principal, **_):
+        raise IncidentJsonRefusalError("incident JSON refused: duplicate key")
+
+    monkeypatch.setattr(service.RecoveryPrincipal, "lookup", damaged)
+    reply = world.call("lookup", {"intent": asdict(world.intent)}, fenced=False)
+    assert reply["status"] == "refused"
+    assert reply["reason"] == "lookup unavailable: IncidentJsonRefusalError"
+    assert reply["binding"] == world.packet("lookup", {"intent": asdict(world.intent)})["binding"]
 
 
 def _main(monkeypatch, world, packet, *, config=_CONFIG):
