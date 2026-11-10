@@ -435,6 +435,30 @@ def test_board_apply_reuses_a_query_panel_with_a_display_name_dataset(
     ), state.requests
 
 
+def test_board_apply_reuses_a_query_panel_when_the_api_adds_an_empty_filter_join_column(
+    tmp_path: Path, world: tuple[_World, str]
+) -> None:
+    state, api = world
+    definition = copy.deepcopy(_BOARD)
+    filters = [{"column": "host.name", "op": "=", "value": "fixture-host"}]
+    definition["panels"][1]["query"]["filters"] = filters
+    live = _live_board(state)
+    state.queries["q1"]["filters"] = [
+        {**filters[0], "join_column": ""},
+    ]
+    state.boards = [live]
+    script = _stage(tmp_path, _APPLY_BOARDS, definition)
+
+    result = _run(script, api)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "panel reused load [metrics] query=q1" in result.stdout
+    assert not any(
+        method == "POST" and path.startswith(("/1/queries/", "/1/query_annotations/"))
+        for method, path in state.requests
+    ), state.requests
+
+
 def test_board_drift_reports_a_name_absent_from_the_api_as_missing(
     tmp_path: Path, world: tuple[_World, str]
 ) -> None:
