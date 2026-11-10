@@ -66,6 +66,17 @@ _CHECK = _REPO_ROOT / "livespec_dev_tooling" / "checks" / "master_ci_green.py"
 # `ci-green` check run branch protection requires. `{owner}`/`{repo}` are
 # `gh api` placeholders, expanded by `gh` from the current repo's remote.
 _EXPECTED_ENDPOINT = "repos/{owner}/{repo}/commits/master/check-runs?check_name=ci-green"
+# Master's head commit, and the check suites of two runs on it: master's own
+# push run, and an incident-scratch drill's push run of the SAME commit
+# (livespec-dev-tooling-7w757z). Only the first is master-health evidence.
+_MASTER_HEAD_SHA = "0123456789abcdef0123456789abcdef01234567"
+_MASTER_SUITE = 7
+_SCRATCH_SUITE = 8
+# The second read: master's own push runs of the head commit, every workflow.
+_EXPECTED_RUNS_ENDPOINT = (
+    "repos/{owner}/{repo}/actions/runs"
+    f"?branch=master&event=push&head_sha={_MASTER_HEAD_SHA}&per_page=100"
+)
 
 
 def _load_check_module() -> ModuleType:
@@ -187,6 +198,21 @@ def _invocation_log(*, tmp_path: Path) -> Path:
     return tmp_path / "gh-invocations.log"
 
 
+def _workflow_run(*, suite: int, branch: str = "master", event: str = "push") -> str:
+    """One workflow-run record of the runs answer."""
+    return f'{{"check_suite_id": {suite}, "head_branch": "{branch}", "event": "{event}"}}'
+
+
+def _runs_payload(*runs: str) -> str:
+    """A workflow-runs answer listing `runs`."""
+    return f'{{"total_count": {len(runs)}, "workflow_runs": [{", ".join(runs)}]}}'
+
+
+# The default runs answer: master's own push run of the head commit.
+_MASTER_RUNS = _runs_payload(_workflow_run(suite=_MASTER_SUITE))
+_MASTER_RUNS_ANSWER = _CheckRun(returncode=0, stdout=_MASTER_RUNS, stderr="")
+
+
 def _install_fake_gh(
     *,
     tmp_path: Path,
@@ -194,6 +220,7 @@ def _install_fake_gh(
     stderr: str = "",
     returncode: int = 0,
     auth_returncode: int = 0,
+    runs: _CheckRun = _MASTER_RUNS_ANSWER,
 ) -> str:
     """Install a fake `gh` shell stub at tmp_path/bin/gh, return PATH including it.
 
@@ -208,6 +235,10 @@ def _install_fake_gh(
     - `gh run list ...` — the WORKFLOW-RUN signal the check must no longer
       read. It always answers RED, so any test that passes proves the check
       did not consult it.
+    - `gh api .../actions/runs?...` — the master push-runs read. Prints
+      `runs.stdout` and `runs.stderr` and exits `runs.returncode`; the default
+      lists master's own push run, whose check suite `_check_runs_payload`'s
+      check run belongs to.
     - anything else (i.e. `gh api ...`) — prints `stdout` to stdout,
       `stderr` to stderr, and exits `returncode`.
 
@@ -229,6 +260,13 @@ def _install_fake_gh(
         '  echo \'[{"status": "completed", "conclusion": "failure"}]\'\n'
         "  exit 0\n"
         "fi\n"
+        'case "$*" in\n'
+        "  *actions/runs*)\n"
+        f"    cat <<'STUB_EOF'\n{runs.stdout}\nSTUB_EOF\n"
+        f"    cat >&2 <<'STUB_EOF'\n{runs.stderr}\nSTUB_EOF\n"
+        f"    exit {runs.returncode}\n"
+        "    ;;\n"
+        "esac\n"
         f"cat <<'STUB_EOF'\n{stdout}\nSTUB_EOF\n"
         f"cat >&2 <<'STUB_EOF'\n{stderr}\nSTUB_EOF\n"
         f"exit {returncode}\n"
@@ -238,12 +276,22 @@ def _install_fake_gh(
     return f"{bin_dir}:/usr/bin:/bin"
 
 
-def _check_runs_payload(*, status: str, conclusion: str) -> str:
-    """A one-entry `check-runs` response body for the `ci-green` check run."""
+def _check_run(*, status: str, conclusion: str, suite: int = _MASTER_SUITE) -> str:
+    """One `ci-green` check-run record on master's head commit, in check suite `suite`."""
     return (
-        '{"total_count": 1, "check_runs": [{"name": "ci-green", '
-        f'"status": "{status}", "conclusion": {conclusion}}}]}}'
+        f'{{"name": "ci-green", "status": "{status}", "conclusion": {conclusion}, '
+        f'"head_sha": "{_MASTER_HEAD_SHA}", "check_suite": {{"id": {suite}}}}}'
     )
+
+
+def _check_runs_answer(*runs: str) -> str:
+    """A `check-runs` response body listing `runs` in the order the API gave them."""
+    return f'{{"total_count": {len(runs)}, "check_runs": [{", ".join(runs)}]}}'
+
+
+def _check_runs_payload(*, status: str, conclusion: str) -> str:
+    """A one-entry `check-runs` response body: master's own push run's `ci-green`."""
+    return _check_runs_answer(_check_run(status=status, conclusion=conclusion))
 
 
 def test_reads_head_commit_ci_green_check_run_not_the_workflow_run(
@@ -484,6 +532,7 @@ def test_transient_api_failure_retries_and_uses_the_first_answer(
                 stdout=_check_runs_payload(status="completed", conclusion='"success"'),
                 stderr="",
             ),
+            _CheckRun(returncode=0, stdout=_MASTER_RUNS, stderr=""),
         ]
     )
 
@@ -502,7 +551,11 @@ def test_transient_api_failure_retries_and_uses_the_first_answer(
     result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode == 0
-    assert calls == [["api", _EXPECTED_ENDPOINT], ["api", _EXPECTED_ENDPOINT]]
+    assert calls == [
+        ["api", _EXPECTED_ENDPOINT],
+        ["api", _EXPECTED_ENDPOINT],
+        ["api", _EXPECTED_RUNS_ENDPOINT],
+    ]
     assert delays == [1.0]
 
 
@@ -520,6 +573,7 @@ def test_rate_limit_retries_and_uses_the_first_answer(
                 stdout=_check_runs_payload(status="completed", conclusion='"success"'),
                 stderr="",
             ),
+            _CheckRun(returncode=0, stdout=_MASTER_RUNS, stderr=""),
         ]
     )
 
@@ -538,7 +592,11 @@ def test_rate_limit_retries_and_uses_the_first_answer(
     result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode == 0
-    assert calls == [["api", _EXPECTED_ENDPOINT], ["api", _EXPECTED_ENDPOINT]]
+    assert calls == [
+        ["api", _EXPECTED_ENDPOINT],
+        ["api", _EXPECTED_ENDPOINT],
+        ["api", _EXPECTED_RUNS_ENDPOINT],
+    ]
     assert delays == [1.0]
 
 
@@ -767,13 +825,183 @@ def test_missing_status_and_conclusion(
     """gh returns a check run without status/conclusion fields → exit 0 with warning."""
     fake_path = _install_fake_gh(
         tmp_path=tmp_path,
-        stdout='{"total_count": 1, "check_runs": [{}]}',
+        stdout=_check_runs_answer(
+            f'{{"head_sha": "{_MASTER_HEAD_SHA}", "check_suite": {{"id": {_MASTER_SUITE}}}}}'
+        ),
     )
     result = _run_check(cwd=tmp_path, env_path=fake_path, monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == 0
     # status is None (not in PENDING set) and conclusion is None
     # (not in GREEN or RED set), so falls through to "unrecognized" warning.
     assert "unrecognized conclusion" in result.stderr
+
+
+def test_a_green_scratch_run_on_masters_head_cannot_mask_a_red_master(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A green scratch `ci-green` listed FIRST on master's head commit does not hide a red master.
+
+    A drill creates its incident-scratch branch at master's head, so the scratch
+    push run lands a second `ci-green` on the SAME commit (livespec-dev-tooling-
+    7w757z). Only the check run in master's own push run's check suite is master's
+    verdict, whatever order the API lists them in.
+    """
+    fake_path = _install_fake_gh(
+        tmp_path=tmp_path,
+        stdout=_check_runs_answer(
+            _check_run(status="completed", conclusion='"success"', suite=_SCRATCH_SUITE),
+            _check_run(status="completed", conclusion='"failure"'),
+        ),
+    )
+    result = _run_check(cwd=tmp_path, env_path=fake_path, monkeypatch=monkeypatch, capsys=capsys)
+    assert result.returncode == 1, f"a green scratch run masked a red master: {result.stderr!r}"
+    assert "master CI is red" in result.stderr
+    invocations = _invocation_log(tmp_path=tmp_path).read_text(encoding="utf-8")
+    assert _EXPECTED_RUNS_ENDPOINT in invocations, (
+        f"master's own push runs of the head commit were never read; gh was invoked as: "
+        f"{invocations!r}"
+    )
+
+
+def test_a_red_scratch_run_on_masters_head_cannot_redden_a_green_master(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A red or cancelled scratch `ci-green` listed FIRST does not report a green master red."""
+    fake_path = _install_fake_gh(
+        tmp_path=tmp_path,
+        stdout=_check_runs_answer(
+            _check_run(status="completed", conclusion='"cancelled"', suite=_SCRATCH_SUITE),
+            _check_run(status="completed", conclusion='"success"'),
+        ),
+    )
+    result = _run_check(cwd=tmp_path, env_path=fake_path, monkeypatch=monkeypatch, capsys=capsys)
+    assert result.returncode == 0, f"a red scratch run reddened a green master: {result.stderr!r}"
+    assert "master CI is red" not in result.stderr
+
+
+def test_a_runs_answer_naming_other_runs_still_lends_them_no_authority(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Only a master push run counts, even when the runs answer lists other runs too.
+
+    The endpoint filters on branch and event already; the check re-checks both,
+    so a scratch push run, a pull_request run on master, a malformed record and a
+    non-integer suite id are each ignored, and master's own run decides.
+    """
+    fake_path = _install_fake_gh(
+        tmp_path=tmp_path,
+        stdout=_check_runs_answer(
+            _check_run(status="completed", conclusion='"failure"', suite=_SCRATCH_SUITE),
+            _check_run(status="completed", conclusion='"failure"', suite=9),
+            _check_run(status="completed", conclusion='"success"'),
+        ),
+        runs=_CheckRun(
+            returncode=0,
+            stdout=_runs_payload(
+                '"not a run"',
+                _workflow_run(suite=_SCRATCH_SUITE, branch="incident-scratch/thhgeg-proof"),
+                _workflow_run(suite=9, event="pull_request"),
+                '{"check_suite_id": "7", "head_branch": "master", "event": "push"}',
+                _workflow_run(suite=_MASTER_SUITE),
+            ),
+            stderr="",
+        ),
+    )
+    result = _run_check(cwd=tmp_path, env_path=fake_path, monkeypatch=monkeypatch, capsys=capsys)
+    assert result.returncode == 0, f"a non-master run decided master's verdict: {result.stderr!r}"
+
+
+def test_check_runs_without_a_master_check_suite_are_ignored(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A check run with no suite, a malformed one, or a non-integer suite id is never master's."""
+    fake_path = _install_fake_gh(
+        tmp_path=tmp_path,
+        stdout=_check_runs_answer(
+            f'{{"head_sha": "{_MASTER_HEAD_SHA}", "status": "completed", "conclusion": "failure"}}',
+            '"not a check run"',
+            '{"status": "completed", "conclusion": "failure", "check_suite": "7"}',
+            '{"status": "completed", "conclusion": "failure", "check_suite": {"id": "7"}}',
+            _check_run(status="completed", conclusion='"success"'),
+        ),
+    )
+    result = _run_check(cwd=tmp_path, env_path=fake_path, monkeypatch=monkeypatch, capsys=capsys)
+    assert result.returncode == 0, f"a suite-less check run decided master: {result.stderr!r}"
+
+
+def test_only_a_scratch_check_run_on_masters_head_is_no_evidence(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """With no `ci-green` from master's own push run yet, the check skips, never reads scratch."""
+    fake_path = _install_fake_gh(
+        tmp_path=tmp_path,
+        stdout=_check_runs_answer(
+            _check_run(status="completed", conclusion='"failure"', suite=_SCRATCH_SUITE),
+        ),
+    )
+    result = _run_check(cwd=tmp_path, env_path=fake_path, monkeypatch=monkeypatch, capsys=capsys)
+    assert result.returncode == 0
+    assert "no ci-green check run from master's own push run" in result.stderr
+    assert "master CI is red" not in result.stderr
+
+
+def test_a_runs_answer_without_a_run_list_lends_nothing(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A runs answer with no `workflow_runs` list names no master push run → skip."""
+    fake_path = _install_fake_gh(
+        tmp_path=tmp_path,
+        stdout=_check_runs_payload(status="completed", conclusion='"failure"'),
+        runs=_CheckRun(returncode=0, stdout='{"total_count": 0, "workflow_runs": null}', stderr=""),
+    )
+    result = _run_check(cwd=tmp_path, env_path=fake_path, monkeypatch=monkeypatch, capsys=capsys)
+    assert result.returncode == 0
+    assert "no ci-green check run from master's own push run" in result.stderr
+
+
+def test_a_check_run_without_a_head_sha_is_an_unexpected_shape(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """With no head SHA there is no master push run to look up → error log, skip, no runs read."""
+    fake_path = _install_fake_gh(
+        tmp_path=tmp_path,
+        stdout=_check_runs_answer('{"status": "completed", "conclusion": "failure"}'),
+    )
+    result = _run_check(cwd=tmp_path, env_path=fake_path, monkeypatch=monkeypatch, capsys=capsys)
+    assert result.returncode == 0
+    assert "unexpected ci-green check-run shape" in result.stderr
+    invocations = _invocation_log(tmp_path=tmp_path).read_text(encoding="utf-8")
+    assert "actions/runs" not in invocations
+
+
+def test_a_failed_master_push_runs_read_while_credentialed_fails_loudly(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A credentialed runs read that fails is `unprovable`, never a pass on the check run alone."""
+    fake_path = _install_fake_gh(
+        tmp_path=tmp_path,
+        stdout=_check_runs_payload(status="completed", conclusion='"success"'),
+        runs=_CheckRun(
+            returncode=1, stdout='{"message": "Not Found"}', stderr="gh: Not Found (HTTP 404)"
+        ),
+    )
+    result = _run_check(cwd=tmp_path, env_path=fake_path, monkeypatch=monkeypatch, capsys=capsys)
+    assert result.returncode == 1
+    assert "cannot prove master CI is green" in result.stderr
+
+
+def test_a_non_object_runs_answer_skips(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A runs answer that is not an object → exit 0 with an error log."""
+    fake_path = _install_fake_gh(
+        tmp_path=tmp_path,
+        stdout=_check_runs_payload(status="completed", conclusion='"failure"'),
+        runs=_CheckRun(returncode=0, stdout='["not an object"]', stderr=""),
+    )
+    result = _run_check(cwd=tmp_path, env_path=fake_path, monkeypatch=monkeypatch, capsys=capsys)
+    assert result.returncode == 0
+    assert "unexpected gh response shape for master's push runs" in result.stderr
 
 
 def test_module_importable_without_running_main() -> None:
