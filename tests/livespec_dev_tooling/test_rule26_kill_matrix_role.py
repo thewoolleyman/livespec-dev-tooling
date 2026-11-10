@@ -57,8 +57,32 @@ def test_the_diff_runs_under_check_and_the_apply_follows_only_drift() -> None:
     apply = _task(name_fragment="Apply the rendered")
     assert 'argv: [kubectl, apply, -f, "-"]' in apply
     assert "rule26_kill_matrix_manifest.stdout" in apply
-    assert "when: rule26_kill_matrix_diff.rc == 1" in apply
+    assert "or rule26_kill_matrix_diff.rc == 1" in apply
     assert _TASKS.count("kubectl, apply") == 1
+
+
+def test_a_first_run_with_no_namespace_skips_the_diff_and_applies() -> None:
+    """kubectl diff of namespaced objects fails while their namespace is absent."""
+    found = _task(name_fragment="Find whether the kill-matrix namespace exists yet")
+    assert "--ignore-not-found" in found
+    assert "check_mode: false" in found
+    assert "changed_when: false" in found
+    first = _task(name_fragment="Report a first launch")
+    assert "when: rule26_kill_matrix_namespace_found.stdout | length == 0" in first
+    assert "changed_when: true" in first
+    diff = _task(name_fragment="Diff the rendered")
+    assert "when: rule26_kill_matrix_namespace_found.stdout | length > 0" in diff
+    apply = _task(name_fragment="Apply the rendered")
+    assert "rule26_kill_matrix_namespace_found.stdout | length == 0" in apply
+    order = [
+        _TASKS.index(name)
+        for name in (
+            "Find whether the kill-matrix namespace",
+            "Diff the rendered",
+            "Apply the rendered",
+        )
+    ]
+    assert order == sorted(order)
 
 
 def test_the_role_fails_unless_the_live_job_is_the_rendered_one() -> None:

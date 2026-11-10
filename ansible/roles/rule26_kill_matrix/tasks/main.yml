@@ -16,6 +16,12 @@
 # writes nothing) and reports a pending launch as `changed`, so
 # `just ansible-drift ansible/rule26-kill-matrix.yml -e ...` shows it.
 #
+# A FIRST RUN HAS NO NAMESPACE, and `kubectl diff` of the manifest's namespaced
+# objects then fails (rc 2, `namespaces "rule26" not found`; measured from the
+# control node 2026-11-10). So the namespace is looked up first: when it is
+# absent the launch is drift by definition, the diff is skipped, and the apply
+# creates the Namespace, the PVC and the Job, in the manifest's order.
+#
 # REVERT: -e rule26_kill_matrix_state=absent deletes the `rule26` namespace.
 
 - name: Refuse to run anywhere but the k3s server
@@ -56,6 +62,22 @@
       changed_when: false
       register: rule26_kill_matrix_manifest
 
+    - name: Find whether the kill-matrix namespace exists yet
+      ansible.builtin.command:
+        argv: [kubectl, get, namespace, "{{ rule26_kill_matrix_namespace }}", --ignore-not-found, -o, name]
+      environment:
+        KUBECONFIG: "{{ rule26_kill_matrix_kubeconfig }}"
+      become: true
+      check_mode: false
+      changed_when: false
+      register: rule26_kill_matrix_namespace_found
+
+    - name: Report a first launch, with no namespace yet, as drift
+      ansible.builtin.debug:
+        msg: "namespace {{ rule26_kill_matrix_namespace }} is absent: the apply creates it, its PVC and the Job"
+      when: rule26_kill_matrix_namespace_found.stdout | length == 0
+      changed_when: true
+
     - name: Diff the rendered kill-matrix manifest against the cluster
       ansible.builtin.command:
         argv: [kubectl, diff, -f, "-"]
@@ -65,6 +87,7 @@
       become: true
       check_mode: false
       register: rule26_kill_matrix_diff
+      when: rule26_kill_matrix_namespace_found.stdout | length > 0
       # kubectl diff: 0 = no drift, 1 = drift, anything else = the diff failed.
       changed_when: rule26_kill_matrix_diff.rc == 1
       failed_when: rule26_kill_matrix_diff.rc > 1
@@ -76,7 +99,9 @@
       environment:
         KUBECONFIG: "{{ rule26_kill_matrix_kubeconfig }}"
       become: true
-      when: rule26_kill_matrix_diff.rc == 1
+      when: >-
+        rule26_kill_matrix_namespace_found.stdout | length == 0
+        or rule26_kill_matrix_diff.rc == 1
       changed_when: true
 
     - name: Read the live kill-matrix Job's name back
