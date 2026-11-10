@@ -363,6 +363,14 @@
       "batch": "check-metadata-batch",
       "classification": "fast",
       "consumes": [],
+      "name": "check-delegated-job-authority-skip",
+      "needs": [],
+      "produces": []
+    },
+    {
+      "batch": "check-metadata-batch",
+      "classification": "fast",
+      "consumes": [],
       "name": "check-fabro-image-pin-lockstep",
       "needs": [],
       "produces": []

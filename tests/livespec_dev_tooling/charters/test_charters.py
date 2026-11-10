@@ -30,6 +30,7 @@ EXPECTED_CANONICAL_SLUGS: tuple[str, ...] = (
     "check-comment-line-anchors",
     "check-commit-pairs-source-and-test",
     "check-delegated-gate-check-suite",
+    "check-delegated-job-authority-skip",
     "check-file-lloc",
     "check-fleet-marketplace-relative-sources",
     "check-global-writes",
