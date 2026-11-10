@@ -109,11 +109,24 @@ variable that is not mapped through, or that a typo empties, must not read as
 fence and read immediately before the one side effect, not before the gather.
 A lease the reconciler held across its step would have to delay arming or
 recovery, and the credential asking is the read-only hosted query credential;
-giving it the power to hold back an incident's arm would open a denial of the
-recovery path. The remaining seconds cannot hand an incident's run to the
-reconciler: a master commit becomes incident-owned only through an arm made
-before its merge, which the answer already reports, and that merge waits on the
-incident PR's own CI (review finding F3).
+giving it the power to hold back an incident's arm or recovery would open a
+denial of the recovery path. Two paths make a master commit incident-owned,
+and the remaining seconds differ for each (review finding F3):
+
+- Through the pre-merge arm, the normal incident path. The arm is made before
+  the merge, so the answer already reports it as `incident-owned`, and the merge
+  waits on the incident PR's own CI. That takes far longer than the seconds
+  between the answer and the step.
+- Through `admit_observer`, which binds a registration to an EXISTING master
+  commit and run with no arm. A registration it writes between the answer and
+  the step is not seen by that step. It has no production caller today: the
+  observer service exposes no route to it. A standalone admission also names a
+  run that has already failed or passed, so the reconciler may already have
+  acted on it before any admission. The race is one ordinary step taken seconds
+  before the admission, and the reconciler's next pass asks again and sees the
+  registration. Declining the lease still costs less than the denial it would
+  open. If `admit_observer` gains a production caller, that caller must account
+  for a reconciler step already in flight.
 
 **Reachability is a precondition for installing the reconciler where an
 observer runs.** The observer is served only on the tailnet, and the reconciler
