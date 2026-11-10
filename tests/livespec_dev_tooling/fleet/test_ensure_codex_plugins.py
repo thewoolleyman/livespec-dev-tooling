@@ -16,11 +16,14 @@ the whole file dying at collection on a top-level import.
 
 from __future__ import annotations
 
+import fcntl
 import importlib
 import json
+from collections.abc import Callable
 from pathlib import Path
 from typing import Protocol, cast
 
+import pytest
 from returns.io import IOFailure, IOSuccess
 
 from livespec_dev_tooling.fleet._ensure_plugin_commands import (
@@ -435,3 +438,126 @@ def test_both_provisioners_share_one_vacuity_reader() -> None:
         "_split_enablement" not in claude_source
     ), "ensure_plugins.py must consume the shared reader, not keep its own copy"
     assert "def _marketplace_of" not in claude_source
+
+
+class LockedRunnerFactory(Protocol):
+    """The lock-wrapping runner factory under test."""
+
+    def __call__(
+        self, *, runner: object, lock_path: Path, wait_seconds: float
+    ) -> Callable[..., PluginCommandOutcome]: ...
+
+
+def _locked_runner(*, module: object) -> LockedRunnerFactory:
+    factory = getattr(module, "locked_runner", None)
+    assert (
+        factory is not None
+    ), "ensure_codex_plugins must expose locked_runner, the file-keyed lock around Codex writes"
+    return cast("LockedRunnerFactory", factory)
+
+
+class LockPathResolver(Protocol):
+    """The config-path-to-lock-path resolver under test."""
+
+    def __call__(self, *, codex_home: Path) -> Path: ...
+
+
+class CodexHomeResolver(Protocol):
+    """The operator's Codex home resolver under test."""
+
+    def __call__(self) -> Path: ...
+
+
+def _is_locked_elsewhere(*, lock_path: Path) -> bool:
+    """True when another open of the lock file cannot take the exclusive lock now."""
+    with lock_path.open("a") as probe:
+        try:
+            fcntl.flock(probe, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            return True
+        _ = fcntl.flock(probe, fcntl.LOCK_UN)
+        return False
+
+
+def test_the_lock_file_is_the_real_path_of_config_toml_plus_the_driver_suffix(
+    tmp_path: Path,
+) -> None:
+    """The lock is keyed on the RESOLVED config path, so a symlinked config shares it."""
+    module = _codex_module()
+    real_dir = tmp_path / "real"
+    real_dir.mkdir()
+    home = tmp_path / "home"
+    home.mkdir()
+    (home / "config.toml").symlink_to(real_dir / "config.toml")
+
+    resolver = cast("LockPathResolver", getattr(module, "config_lock_path", None))
+    assert resolver is not None, "config_lock_path must exist"
+    lock_path = resolver(codex_home=home)
+
+    assert lock_path == real_dir.resolve() / "config.toml.livespec-lock"
+
+
+def test_the_codex_home_defaults_to_the_dot_codex_directory(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """`CODEX_HOME` wins when set; otherwise the operator's `~/.codex`."""
+    module = _codex_module()
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path / "elsewhere"))
+    resolver = cast("CodexHomeResolver", getattr(module, "codex_home", None))
+    assert resolver is not None, "codex_home must exist"
+    assert resolver() == tmp_path / "elsewhere"
+    monkeypatch.delenv("CODEX_HOME")
+    monkeypatch.setenv("HOME", str(tmp_path))
+    assert resolver() == tmp_path / ".codex"
+
+
+def test_every_codex_command_runs_while_the_exclusive_lock_is_held(tmp_path: Path) -> None:
+    """The write runs under the flock and the lock is released after it."""
+    module = _codex_module()
+    lock_path = tmp_path / "config.toml.livespec-lock"
+    held_during: list[bool] = []
+
+    def probing(*, args: tuple[str, ...]) -> PluginCommandOutcome:
+        _ = args
+        held_during.append(_is_locked_elsewhere(lock_path=lock_path))
+        return IOSuccess(PluginCommandResult(returncode=0))
+
+    runner = _locked_runner(module=module)(runner=probing, lock_path=lock_path, wait_seconds=1.0)
+    findings = _ensure(module=module)(settings_text=json.dumps(_MANIFEST), runner=runner)
+
+    assert findings == ()
+    assert held_during == [True] * len(_EXPECTED)
+    assert not _is_locked_elsewhere(lock_path=lock_path), "the lock must be released afterwards"
+
+
+def test_an_unobtainable_lock_fails_naming_the_file_and_runs_no_command(tmp_path: Path) -> None:
+    """A held lock past the bounded wait refuses, naming the lock file."""
+    module = _codex_module()
+    lock_path = tmp_path / "config.toml.livespec-lock"
+    recorder = Recorder()
+    runner = _locked_runner(module=module)(runner=recorder, lock_path=lock_path, wait_seconds=0.05)
+
+    with lock_path.open("a") as holder:
+        _ = fcntl.flock(holder, fcntl.LOCK_EX)
+        findings = _ensure(module=module)(settings_text=json.dumps(_MANIFEST), runner=runner)
+
+    assert recorder.calls == [], "no Codex command may run without the lock"
+    assert len(findings) == 1
+    assert str(lock_path) in findings[0]
+    assert findings[0].startswith("command did not run: lock_not_obtained")
+
+
+def test_a_lock_file_that_cannot_be_opened_fails_naming_the_file(tmp_path: Path) -> None:
+    """An unopenable lock path is the same refusal, never an unlocked write."""
+    module = _codex_module()
+    blocker = tmp_path / "blocker"
+    blocker.write_text("not a directory", encoding="utf-8")
+    lock_path = blocker / "config.toml.livespec-lock"
+    recorder = Recorder()
+    runner = _locked_runner(module=module)(runner=recorder, lock_path=lock_path, wait_seconds=0.05)
+
+    findings = _ensure(module=module)(settings_text=json.dumps(_MANIFEST), runner=runner)
+
+    assert recorder.calls == []
+    assert len(findings) == 1
+    assert str(lock_path) in findings[0]
