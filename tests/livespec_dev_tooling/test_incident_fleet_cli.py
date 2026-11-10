@@ -758,6 +758,7 @@ def test_a_ruleset_guarding_the_default_branch_among_other_refs_still_counts() -
         "bypass_actors": [{"actor_id": 5, "actor_type": "Integration", "bypass_mode": "always"}],
     }
     answers = {
+        "repos/example/tooling": {"default_branch": "master"},
         "repos/example/tooling/rulesets": [ruleset],
         "repos/example/tooling/rulesets/7": ruleset,
     }
