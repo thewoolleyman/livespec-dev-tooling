@@ -31,7 +31,7 @@ from livespec_dev_tooling.incident_observer_control import ObserverControl
 from livespec_dev_tooling.incident_observer_endpoint import _read_request, observer_endpoint
 from livespec_dev_tooling.incident_observer_events import verify_leaf_completion
 from livespec_dev_tooling.incident_observer_provenance import ObserverProvenance
-from livespec_dev_tooling.incident_observer_query import ObserverQuery
+from livespec_dev_tooling.incident_observer_query import ORDINARY_ACTION_PATH, ObserverQuery
 from livespec_dev_tooling.incident_observer_reconcile import ObserverReconcile
 from livespec_dev_tooling.incident_observer_recovery import ObserverRecovery
 from livespec_dev_tooling.incident_original_run_watch import installed_watcher
@@ -45,8 +45,16 @@ __all__: list[str] = ["ControllerService"]
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-si6uu7
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-gho3w4
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-zbzls2
+# EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-ariayn
 _QUERY_PATHS = frozenset(
-    {"/current", "/admitted", "/provenance", "/ci/jobs/inspect", RELEASE_SCREEN_PATH}
+    {
+        "/current",
+        "/admitted",
+        ORDINARY_ACTION_PATH,
+        "/provenance",
+        "/ci/jobs/inspect",
+        RELEASE_SCREEN_PATH,
+    }
 )
 _CONTROL_PATHS = frozenset(
     {"/arm", "/bind", "/invalidate-ci", "/recover", "/reconcile", "/ci/jobs/collect"}
