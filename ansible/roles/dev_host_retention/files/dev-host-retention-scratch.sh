@@ -3,18 +3,27 @@
 
 declare -A LIVE_SESSION_IDS=()
 
+# One `grep` reads every process environment, so the scan starts the same
+# number of child processes however many processes the host runs. The earlier
+# loop forked a `tr` and a subshell per process: 34 s over 1,076 processes at
+# load 46 on vmi3006760 (2026-11-10, livespec-dev-tooling-spva5x), against
+# 0.38 s for one grep over the same environments. The paths reach grep through
+# `xargs`, so a host with more processes than one argv can name still has
+# every environment read instead of none. Its command buffer is sized from
+# ARG_MAX (xargs lowers it to the real limit, silently here) because the
+# 128 KiB default would split a few thousand paths across several greps. `-s` keeps an environment that cannot be read, or whose
+# process exits mid-scan, silent; the exit status is ignored for the same
+# reason. `-z` reads NUL-separated entries and writes each match
+# NUL-terminated, so an id is read back whole.
 scan_live_session_ids() {
-    local proc_root=${LIVESPEC_DEV_HOST_RETENTION_PROC_ROOT:-/proc} process environment entry
+    local proc_root=${LIVESPEC_DEV_HOST_RETENTION_PROC_ROOT:-/proc} entry
+    local -a environments=("$proc_root"/[0-9]*/environ)
     LIVE_SESSION_IDS=()
-    for process in "$proc_root"/[0-9]*; do
-        environment="$process/environ"
-        [[ -r $environment ]] || continue
-        while IFS= read -r entry; do
-            case $entry in
-                CLAUDE_CODE_SESSION_ID=*) LIVE_SESSION_IDS[${entry#CLAUDE_CODE_SESSION_ID=}]=1 ;;
-            esac
-        done < <(tr '\0' '\n' 2>/dev/null <"$environment")
-    done
+    [[ -e ${environments[0]} ]] || return 0
+    while IFS= read -r -d '' entry; do
+        LIVE_SESSION_IDS[${entry#CLAUDE_CODE_SESSION_ID=}]=1
+    done < <(printf '%s\0' "${environments[@]}" |
+        xargs -0 -s "$(getconf ARG_MAX)" grep -ahsz '^CLAUDE_CODE_SESSION_ID=.' -- 2>/dev/null)
 }
 
 session_is_live() {
