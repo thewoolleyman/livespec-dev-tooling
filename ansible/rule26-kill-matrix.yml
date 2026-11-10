@@ -1,0 +1,20 @@
+---
+# Launch, or remove, one rule-26 mutation kill matrix of
+# livespec-orchestrator-beads-fabro as a cluster Job on the k3s server
+# (plan fleet-mutation-testing-rule-26, livespec-dev-tooling-fqnbtd;
+# ci-runner/k3s/phase2/rule26/README.md). Run from the control node:
+#
+#   just ansible-drift ansible/rule26-kill-matrix.yml \
+#     -e rule26_kill_matrix_orchestrator_sha=<40-hex> \
+#     -e rule26_kill_matrix_engine_sha=<40-hex> \
+#     -e rule26_kill_matrix_run=<lowercase id>
+#   just ansible-apply ansible/rule26-kill-matrix.yml -e ... (the same -e flags)
+#
+# Revert: just ansible-apply ansible/rule26-kill-matrix.yml \
+#   -e rule26_kill_matrix_state=absent
+- name: Launch or remove the rule-26 kill-matrix Job
+  hosts: ci_pool
+  gather_facts: false
+  roles:
+    - role: rule26_kill_matrix
+      when: cluster_role == 'server'

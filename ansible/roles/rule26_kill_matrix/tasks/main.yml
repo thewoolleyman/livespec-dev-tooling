@@ -1,0 +1,128 @@
+---
+# rule26_kill_matrix: launch, or remove, one rule-26 mutation kill matrix of
+# livespec-orchestrator-beads-fabro as a cluster Job (plan
+# fleet-mutation-testing-rule-26, livespec-dev-tooling-fqnbtd;
+# ci-runner/k3s/phase2/rule26/README.md).
+#
+# WHY A ROLE. A hand `kubectl apply` is a hand change to a fleet host, which the
+# fleet host guard refuses: a deploy is a git change plus the committed apply,
+# run from the control node over committed source. This role is that apply.
+# The manifest is rendered on the control node by the committed
+# render-kill-matrix-job.sh from the committed template, so the only inputs are
+# the playbook variables: the orchestrator SHA, the engine SHA, the worker count
+# and the run id.
+#
+# UNDER --check the diff below still RUNS (check_mode: false; `kubectl diff`
+# writes nothing) and reports a pending launch as `changed`, so
+# `just ansible-drift ansible/rule26-kill-matrix.yml -e ...` shows it.
+#
+# REVERT: -e rule26_kill_matrix_state=absent deletes the `rule26` namespace.
+
+- name: Refuse to run anywhere but the k3s server
+  ansible.builtin.assert:
+    that:
+      - cluster_role == 'server'
+
+- name: Launch the kill-matrix Job
+  when: rule26_kill_matrix_state == 'present'
+  block:
+    - name: Fail unless the run's inputs are full commits, a worker count and a run id
+      ansible.builtin.assert:
+        that:
+          - rule26_kill_matrix_orchestrator_sha is match('^[0-9a-f]{40}$')
+          - rule26_kill_matrix_engine_sha is match('^[0-9a-f]{40}$')
+          - (rule26_kill_matrix_workers | string) is match('^[1-9][0-9]*$')
+          - rule26_kill_matrix_run is match('^[a-z0-9-]{1,40}$')
+        fail_msg: >-
+          pass -e rule26_kill_matrix_orchestrator_sha=<40-hex>
+          -e rule26_kill_matrix_engine_sha=<40-hex>
+          -e rule26_kill_matrix_run=<lowercase id> [-e rule26_kill_matrix_workers=N]
+
+    - name: Render the committed Job manifest on the control node
+      ansible.builtin.command:
+        argv:
+          - "{{ rule26_kill_matrix_renderer }}"
+          - --orchestrator-sha
+          - "{{ rule26_kill_matrix_orchestrator_sha }}"
+          - --engine-sha
+          - "{{ rule26_kill_matrix_engine_sha }}"
+          - --workers
+          - "{{ rule26_kill_matrix_workers | string }}"
+          - --run
+          - "{{ rule26_kill_matrix_run }}"
+      delegate_to: localhost
+      become: false
+      check_mode: false
+      changed_when: false
+      register: rule26_kill_matrix_manifest
+
+    - name: Diff the rendered kill-matrix manifest against the cluster
+      ansible.builtin.command:
+        argv: [kubectl, diff, -f, "-"]
+        stdin: "{{ rule26_kill_matrix_manifest.stdout }}"
+      environment:
+        KUBECONFIG: "{{ rule26_kill_matrix_kubeconfig }}"
+      become: true
+      check_mode: false
+      register: rule26_kill_matrix_diff
+      # kubectl diff: 0 = no drift, 1 = drift, anything else = the diff failed.
+      changed_when: rule26_kill_matrix_diff.rc == 1
+      failed_when: rule26_kill_matrix_diff.rc > 1
+
+    - name: Apply the rendered kill-matrix manifest
+      ansible.builtin.command:
+        argv: [kubectl, apply, -f, "-"]
+        stdin: "{{ rule26_kill_matrix_manifest.stdout }}"
+      environment:
+        KUBECONFIG: "{{ rule26_kill_matrix_kubeconfig }}"
+      become: true
+      when: rule26_kill_matrix_diff.rc == 1
+      changed_when: true
+
+    - name: Read the live kill-matrix Job's name back
+      ansible.builtin.command:
+        argv:
+          - kubectl
+          - -n
+          - "{{ rule26_kill_matrix_namespace }}"
+          - get
+          - job
+          - "rule26-orchestrator-kill-matrix-{{ rule26_kill_matrix_run }}"
+          - -o
+          - jsonpath={.metadata.name}
+      environment:
+        KUBECONFIG: "{{ rule26_kill_matrix_kubeconfig }}"
+      become: true
+      check_mode: false
+      changed_when: false
+      register: rule26_kill_matrix_live_job
+      when: not ansible_check_mode
+
+    - name: Fail unless the live Job is the one this run rendered
+      ansible.builtin.assert:
+        that:
+          - rule26_kill_matrix_live_job.stdout == 'rule26-orchestrator-kill-matrix-' ~ rule26_kill_matrix_run
+        success_msg: "launched job/{{ rule26_kill_matrix_live_job.stdout }} in namespace {{ rule26_kill_matrix_namespace }}"
+      when: not ansible_check_mode
+
+- name: Remove the kill-matrix namespace
+  when: rule26_kill_matrix_state == 'absent'
+  block:
+    - name: Look for the kill-matrix namespace
+      ansible.builtin.command:
+        argv: [kubectl, get, namespace, "{{ rule26_kill_matrix_namespace }}", --ignore-not-found, -o, name]
+      environment:
+        KUBECONFIG: "{{ rule26_kill_matrix_kubeconfig }}"
+      become: true
+      check_mode: false
+      changed_when: rule26_kill_matrix_existing.stdout | length > 0
+      register: rule26_kill_matrix_existing
+
+    - name: Delete the kill-matrix namespace
+      ansible.builtin.command:
+        argv: [kubectl, delete, namespace, "{{ rule26_kill_matrix_namespace }}", --ignore-not-found]
+      environment:
+        KUBECONFIG: "{{ rule26_kill_matrix_kubeconfig }}"
+      become: true
+      when: rule26_kill_matrix_existing.stdout | length > 0
+      changed_when: true
