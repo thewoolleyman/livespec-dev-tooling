@@ -90,6 +90,8 @@ The existing repository lock continues to serialize actual durable effects.
   verify every identity and the exact receipt bytes before the arm is stored.
   `authority_receipt` uses the existing protected-store hexadecimal encoding;
   `expected_arm_id` is the optional existing compare-and-swap id.
+  Before the arm is stored, `/arm` also requires the incident item's focused
+  evidence for the PR's exact head tree (section "Focused evidence at `/arm`").
 - `POST /admitted` requires the read-only query credential and exact six
   `ObserverArmQuery` fields to read the protected pre-merge arm.
 - `POST /provenance` uses the same query credential with the exact twelve
@@ -179,3 +181,50 @@ separation, a released principal's authority, real webhook delivery, installed
 fleet adoption or factory acceptance. Normal release, protected installation,
 independent deployment and the plan's outage/recovery drills remain required
 before incident activation or closure of the observer carrier.
+
+## Focused evidence at `/arm`
+
+`/arm` is the last point before an expedited merge, so it enforces the
+pre-merge focused-verification obligation of SPECIFICATION `contracts.md`
+§"Expedited incident execution" (livespec-dev-tooling-4aksht). Before it calls
+the canonical current reader, the observer reads the head commit's tree through
+its own read-only forge credential (`repos/<repository>/git/commits/<head>`),
+then reads the incident item's focused-evidence records for exactly that
+identity, head and tree through the installed reader's `read-local-gates`.
+
+The record ids are derived, never named by the request
+(`livespec_dev_tooling.incident_focused_admission`): each record sits in a slot
+whose id hashes the repository, item, attempt, operation, generation, head,
+tree and slot number, and the evidence entrance appends to the first free slot.
+The observer reads every slot, so a caller cannot choose which record is judged.
+`read-local-gates` answers only under the current generation, so evidence must
+be recorded after the last transition before the arm (for example after the
+carrier is bound to its PR); evidence recorded under an earlier generation
+reads as absent.
+
+The arm is refused, and nothing is stored, with:
+
+- `incident-focused-evidence-absent` when no record exists for the head tree,
+  naming the tree;
+- `incident-focused-evidence-failed` when any record for the tree has a failed
+  focused test or manual reproduction, whatever disposition is recorded;
+- `incident-focused-evidence-member-missing` when the latest record lacks the
+  manual reproduction, the focused test result or the touched-file coverage
+  result, naming the member;
+- `incident-focused-evidence-undisposed` when the latest record names a
+  deferred or incomplete member (a deferred or timed-out test, a touched path
+  below full coverage, an unsupported executable path, a collection past the
+  sixty-second budget, or any recorded risk) with no operator disposition,
+  naming every such member;
+- `incident-focused-evidence-unavailable` when the forge, the reader or any
+  record or disposition cannot be read or does not bind the head tree.
+
+The operator records a disposition with
+`python -m livespec_dev_tooling.incident_focused_disposition_entry
+--evidence-receipt <receipt_id> --member <member> --disposition <text>`, run in
+the same resolved incident context as the evidence entrance. It publishes on the
+same `record-local-gates` channel under an id derived from the record and the
+member, binds the record's checksum, refuses a failed member, and reads the
+disposition back. Once every deferred or incomplete member is disposed, `/arm`
+proceeds to its existing checks and returns the same `armed` result and receipt
+as before.
