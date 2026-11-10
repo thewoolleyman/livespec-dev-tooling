@@ -10,8 +10,12 @@
 #     -e rule26_kill_matrix_run=<lowercase id>
 #   just ansible-apply ansible/rule26-kill-matrix.yml -e ... (the same -e flags)
 #
-# Revert: just ansible-apply ansible/rule26-kill-matrix.yml \
-#   -e rule26_kill_matrix_state=absent
+# Stop one run, keeping the namespace and the PVC:
+#   just ansible-apply ansible/rule26-kill-matrix.yml \
+#     -e rule26_kill_matrix_state=job-absent -e rule26_kill_matrix_run=<id>
+#
+# Revert (deletes the namespace, PVC included): just ansible-apply \
+#   ansible/rule26-kill-matrix.yml -e rule26_kill_matrix_state=absent
 - name: Launch or remove the rule-26 kill-matrix Job
   hosts: ci_pool
   gather_facts: false

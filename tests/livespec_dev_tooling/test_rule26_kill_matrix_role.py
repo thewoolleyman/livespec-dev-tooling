@@ -96,9 +96,26 @@ def test_absent_deletes_the_namespace_and_present_never_does() -> None:
     assert "rule26_kill_matrix_state: present" in _DEFAULTS
     delete = _task(name_fragment="Delete the kill-matrix namespace")
     assert "kubectl, delete, namespace" in delete
-    assert _TASKS.count("kubectl, delete") == 1
+    assert _TASKS.count("kubectl, delete, namespace") == 1
     removal = _TASKS.split("- name: Remove the kill-matrix namespace", 1)[1]
     assert "when: rule26_kill_matrix_state == 'absent'" in removal.splitlines()[1]
+
+
+def test_job_absent_deletes_only_the_named_job_and_keeps_the_pvc() -> None:
+    """Stopping a stuck run must not delete the PVC holding its mutants/ tree and logs."""
+    assert "job-absent" in _DEFAULTS
+    block = _TASKS.split("- name: Remove one kill-matrix Job and keep its namespace and PVC", 1)[1]
+    assert "when: rule26_kill_matrix_state == 'job-absent'" in block.splitlines()[1]
+    delete = _task(name_fragment="Delete the run's kill-matrix Job")
+    assert "- namespace\n" not in delete
+    assert "- delete\n" in delete
+    assert '- "rule26-orchestrator-kill-matrix-{{ rule26_kill_matrix_run }}"' in delete
+    assert "--cascade=foreground" in delete
+    guard = _task(name_fragment="Fail unless a run id names the Job to remove")
+    assert "rule26_kill_matrix_run is match('^[a-z0-9-]{1,40}$')" in guard
+    verify = _task(name_fragment="Fail unless the Job is gone and the PVC is kept")
+    assert "['persistentvolumeclaim/rule26-orchestrator']" in verify
+    assert "job-absent" in _PLAY
 
 
 def test_the_play_runs_the_role_only_on_the_k3s_server() -> None:
