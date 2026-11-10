@@ -21,10 +21,11 @@ from urllib.parse import urlsplit
 
 from livespec_dev_tooling.incident_ci_payload import strict_json
 
-__all__: list[str] = ["CiAuthorityBoundary"]
+__all__: list[str] = ["CiAuthorityBoundary", "ObserverUnreachableError"]
 
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-egy3ri
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-zbzls2
+# EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-qeu4cx
 _MAX_REPLY = 65536
 _MAX_TOKEN = 4096
 _MIN_TOKEN_CHARACTER = 33
@@ -64,6 +65,15 @@ _PROVENANCE_FIELDS: dict[str, frozenset[str]] = {
 _FIELDS = {"current": _ARM_FIELDS, "admitted": _ARM_FIELDS, "provenance": _PROVENANCE_FIELDS}
 
 
+class ObserverUnreachableError(Exception):
+    """The /provenance read failed on the wire, so the observer said nothing at all.
+
+    Distinct from an answer that does not confirm the head: a caller reporting
+    the refusal must not claim the observer's history lacks the commit when
+    nobody read that history (livespec-dev-tooling-qeu4cx).
+    """
+
+
 @dataclass(frozen=True, kw_only=True)
 class CiAuthorityBoundary:
     """Authenticate exact read-only queries without following redirects."""
@@ -80,7 +90,12 @@ class CiAuthorityBoundary:
         return self._query(route="admitted", query=query)
 
     def provenance(self, *, query: dict[str, Any]) -> bool:
-        """Require the host's canonical history to record this exact attempt and commit."""
+        """Require the host's canonical history to record this exact attempt and commit.
+
+        A transport failure (refused, timed out, TLS) raises ObserverUnreachableError
+        after the usual stderr line; every other refusal, including a reply the observer
+        did send but that does not parse or confirm, returns False.
+        """
         return self._query(route="provenance", query=query)
 
     def _query(self, *, route: str, query: dict[str, Any]) -> bool:
@@ -167,7 +182,10 @@ class CiAuthorityBoundary:
                     where=where,
                 )
         except (OSError, ValueError, TypeError, RecursionError, http.client.HTTPException) as error:
-            return _refuse(detail=type(error).__name__ + where)
+            refused = _refuse(detail=type(error).__name__ + where)
+            if route == "provenance" and isinstance(error, OSError | http.client.HTTPException):
+                raise ObserverUnreachableError(type(error).__name__ + where) from error
+            return refused
 
 
 def _accepts(*, status: int, raw: bytes, route: str, query: dict[str, Any], where: str) -> bool:

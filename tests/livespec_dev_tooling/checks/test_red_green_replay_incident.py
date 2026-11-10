@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import hashlib
+import http.client
 import json
+import ssl
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock
@@ -246,3 +248,148 @@ def test_the_range_gate_keeps_convicting_a_commit_the_chain_does_not_record(
     admission = _commit(monkeypatch=monkeypatch, admitted=False)
     assert red_green_replay._commit_violates(sha=_SHA) is True  # noqa: SLF001
     assert admission.call_count == 1
+
+
+def _real_boundary_git(*, monkeypatch: pytest.MonkeyPatch, message: str = _MESSAGE) -> None:
+    """Answer the gate's git calls from a fixture so only the observer read is real."""
+
+    def run(args: list[str], **_kwargs: object) -> SimpleNamespace:
+        if args[:2] == ["git", "log"]:
+            return SimpleNamespace(returncode=0, stdout=message, stderr="")
+        return SimpleNamespace(returncode=0, stdout="e" * 40 + "\n", stderr="")
+
+    monkeypatch.setattr(module.subprocess, "run", run)
+
+
+def _unreachable(*, monkeypatch: pytest.MonkeyPatch, error: Exception) -> None:
+    def connect(*_args: object, **_kwargs: object) -> None:
+        raise error
+
+    monkeypatch.setattr(incident_ci_authority.http.client, "HTTPSConnection", connect)
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        ConnectionRefusedError("refused"),
+        TimeoutError("timed out"),
+        ssl.SSLError("handshake failed"),
+        http.client.HTTPException("bad protocol"),
+    ],
+)
+def test_an_unreachable_observer_is_named_unreachable_not_as_failing_to_record_the_head(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    error: Exception,
+) -> None:
+    _real_boundary_git(monkeypatch=monkeypatch)
+    _unreachable(monkeypatch=monkeypatch, error=error)
+    environ = _environ(tmp_path=tmp_path)
+    assert not module.admitted_by_recorded_incident(sha=_SHA, message=_MESSAGE, environ=environ)
+    err = capsys.readouterr().err
+    refused = [line for line in err.splitlines() if line.startswith("incident-provenance-refused:")]
+    assert len(refused) == 1
+    assert _SHA in refused[0]
+    assert "observer is unreachable" in refused[0]
+    assert "does not record this head" not in err
+
+
+def test_an_observer_that_answers_without_confirming_still_does_not_record_the_head(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _real_boundary_git(monkeypatch=monkeypatch)
+    response = SimpleNamespace(status=202, read=lambda _: b'{"schema": 1, "status": "other"}')
+    connection = SimpleNamespace(
+        request=lambda *_a, **_k: None, getresponse=lambda: response, close=lambda: None
+    )
+    monkeypatch.setattr(
+        incident_ci_authority.http.client, "HTTPSConnection", lambda *_a, **_k: connection
+    )
+    environ = _environ(tmp_path=tmp_path)
+    assert not module.admitted_by_recorded_incident(sha=_SHA, message=_MESSAGE, environ=environ)
+    err = capsys.readouterr().err
+    assert "does not record this head" in err
+    assert "unreachable" not in err
+
+
+@pytest.mark.parametrize(
+    "body",
+    [b"\xff\xfe", b'{"schema": 1, "status"', b'{"schema": 1, "schema": 1}'],
+)
+def test_an_observer_that_answers_with_a_malformed_body_is_not_named_unreachable(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    body: bytes,
+) -> None:
+    _real_boundary_git(monkeypatch=monkeypatch)
+    response = SimpleNamespace(status=202, read=lambda _: body)
+    connection = SimpleNamespace(
+        request=lambda *_a, **_k: None, getresponse=lambda: response, close=lambda: None
+    )
+    monkeypatch.setattr(
+        incident_ci_authority.http.client, "HTTPSConnection", lambda *_a, **_k: connection
+    )
+    environ = _environ(tmp_path=tmp_path)
+    assert not module.admitted_by_recorded_incident(sha=_SHA, message=_MESSAGE, environ=environ)
+    err = capsys.readouterr().err
+    assert "does not record this head" in err
+    assert "unreachable" not in err
+
+
+def test_the_range_gate_refuses_a_trailerless_commit_and_names_the_unreachable_observer(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(
+        red_green_replay, "_git_stdout_lines", Mock(return_value=["livespec_dev_tooling/repair.py"])
+    )
+    monkeypatch.setattr(
+        red_green_replay,
+        "_impl_prefixes_for_current_repo",
+        Mock(return_value=("livespec_dev_tooling/",)),
+    )
+    monkeypatch.setattr(
+        red_green_replay,
+        "is_forge_authored_revert",
+        Mock(return_value=IOSuccess(False)),  # noqa: FBT003
+    )
+    _real_boundary_git(monkeypatch=monkeypatch)
+    _unreachable(monkeypatch=monkeypatch, error=ConnectionRefusedError("refused"))
+    for key, value in _environ(tmp_path=tmp_path).items():
+        monkeypatch.setenv(key, value)
+    assert red_green_replay._commit_violates(sha=_SHA) is True  # noqa: SLF001
+    err = capsys.readouterr().err
+    assert "observer is unreachable" in err
+    assert "does not record this head" not in err
+
+
+def test_the_boundary_raises_its_unreachable_condition_under_a_conventional_error_name(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    assert "ObserverUnreachableError" in incident_ci_authority.__all__
+    error_class = getattr(incident_ci_authority, "ObserverUnreachableError", None)
+    assert isinstance(error_class, type)
+    assert issubclass(error_class, Exception)
+    _unreachable(monkeypatch=monkeypatch, error=ConnectionRefusedError("refused"))
+    boundary = incident_ci_authority.CiAuthorityBoundary(
+        observer_url="https://controller.example:8765/api",
+        observer_token="query-token",  # noqa: S106 — a fixture literal, not a credential.
+    )
+    with pytest.raises(error_class):
+        boundary.provenance(
+            query={
+                "repository": "owner/repo",
+                "item_id": "item-1",
+                "attempt_id": "attempt-1",
+                "phase": "land",
+                "operation_id": "op-1",
+                "generation": 1,
+                "owner": "owner",
+                "base": "a" * 40,
+                "head": "b" * 40,
+                "pr_number": 7,
+                "commit_sha": "b" * 40,
+                "tree_sha": "c" * 40,
+            }
+        )
