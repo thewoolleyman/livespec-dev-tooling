@@ -74,7 +74,10 @@ _ORDER = (
     _RUN,
 )
 _INVOCATION = "-m livespec_dev_tooling.incident_matrix_omission"
-_DECISION_RUN = "python3 -m livespec_dev_tooling.incident_matrix_omission"
+_DECISION_RUN = (
+    'python3 -m livespec_dev_tooling.incident_matrix_venv "$RUNNER_TEMP/incident-decision"\n'
+    '"$RUNNER_TEMP/incident-decision/bin/python" -m livespec_dev_tooling.incident_matrix_omission\n'
+)
 _DEV_TOOLING = "thewoolleyman/livespec-dev-tooling"
 
 _GATE = "${{ github.event_name == 'pull_request' && inputs.incident-omitted != '[]' }}"
