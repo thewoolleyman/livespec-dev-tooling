@@ -280,6 +280,14 @@
     - role: factory_pressure_reconciler
       tags: [factory_pressure_placement]
       when: cluster_role == 'server'
+    # Gate placement (livespec-dev-tooling-gvo7fa): EVERY pool node publishes its
+    # CPU idle share and its CI slice's CPU pressure as a node condition, through
+    # the same node-status credential. There is no `when:` on purpose, so a node
+    # that joins ci_pool is covered with no edit here. The reconciler that reads
+    # those conditions follows ci_converge_unit below (README in
+    # phase2/gate-placement/).
+    - role: gate_placement_publisher
+      tags: [gate_placement]
     # And it holds each factory node to its committed `factory_pod_budget` with
     # the ci-runner.io/factory-admit label, which the sandbox driver selects: the
     # TEMPORARY fixed factory-vs-CI CPU share (README in
@@ -332,6 +340,14 @@
     # 8/10 — reconstruct-on-boot converge unit (server-only, STEP_SKIP).
     - role: ci_converge_unit
       tags: [ci_converge_unit]
+      when: cluster_role == 'server'
+    # And the server reorders gates-cq's flavors from those readings so a newly
+    # submitted gate Job is admitted on an unsaturated lane. AFTER ci_converge_unit
+    # on purpose: the static lane order it falls back to is that role's installed
+    # copy of the committed gates queue, and the gate architectures are its copy
+    # of workload-arch.conf.
+    - role: gate_placement_reconciler
+      tags: [gate_placement]
       when: cluster_role == 'server'
     # The local-path provisioner manifest ALONE, under its own tag, so a fix to
     # the provisioner's volume setup script reaches the cluster without a

@@ -1,0 +1,14 @@
+---
+# gate_placement_publisher: EVERY ci_pool node publishes its own gate-placement
+# readings (CPU idle share over 60 s, and the CI slice's CPU pressure avg60) as
+# the LivespecGateLaneCPU node condition (work item livespec-dev-tooling-gvo7fa).
+# See ../../../ci-runner/k3s/phase2/gate-placement/README.md.
+gate_placement_publisher_phase2_dir: "{{ role_path }}/../../../ci-runner/k3s/phase2"
+gate_placement_publisher_profiles_dir: "{{ role_path }}/../../../ci-runner/k3s/phase0-bare-metal/profiles"
+gate_placement_publisher_profile: "{{ gate_placement_publisher_profiles_dir }}/{{ inventory_hostname }}.env"
+gate_placement_publisher_lib_dir: /usr/local/lib/ci-runner-k3s
+gate_placement_publisher_unit_dir: /etc/systemd/system
+gate_placement_publisher_state_dir: /var/lib/livespec/gate-placement
+gate_placement_publisher_script: publish-gate-lane-readings.sh
+gate_placement_publisher_service: publish-gate-lane-readings.service
+gate_placement_publisher_timer: publish-gate-lane-readings.timer

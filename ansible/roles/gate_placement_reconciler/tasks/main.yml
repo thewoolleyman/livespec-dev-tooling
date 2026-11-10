@@ -1,0 +1,57 @@
+---
+# gate_placement_reconciler: install reconcile-gate-lane-order.sh and its
+# 30-second timer on the k3s server (work item livespec-dev-tooling-gvo7fa). It
+# runs under k3s's admin kubeconfig, which only the server holds, so ci-pool.yml
+# gates this role on cluster_role == 'server'. It reads the static lane order
+# and the gate architectures from the copies ci_converge_unit installs under
+# the same library directory (kueue/cluster-queue-gates.yaml, workload-arch.conf).
+
+- name: Create the pool library directory
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  loop:
+    - "{{ gate_placement_reconciler_lib_dir }}"
+  become: true
+
+- name: Install the gate placement reconciler script
+  ansible.builtin.copy:
+    src: "{{ gate_placement_reconciler_phase2_dir }}/gate-placement/{{ gate_placement_reconciler_script }}"
+    dest: "{{ gate_placement_reconciler_lib_dir }}/{{ gate_placement_reconciler_script }}"
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+
+- name: Check whether the reconciler service is already installed
+  ansible.builtin.stat:
+    path: "{{ gate_placement_reconciler_unit_dir }}/{{ gate_placement_reconciler_service }}"
+  register: gate_placement_reconciler_service_present
+  become: true
+
+- name: Install the reconciler service and timer
+  ansible.builtin.copy:
+    src: "{{ gate_placement_reconciler_phase2_dir }}/gate-placement/{{ item }}"
+    dest: "{{ gate_placement_reconciler_unit_dir }}/{{ item }}"
+    owner: root
+    group: root
+    mode: "0644"
+  loop:
+    - "{{ gate_placement_reconciler_service }}"
+    - "{{ gate_placement_reconciler_timer }}"
+  become: true
+  notify: Reload systemd for the gate placement reconciler
+
+- name: Publish a changed unit before arming it
+  ansible.builtin.meta: flush_handlers
+
+- name: Enable and start the reconciler timer
+  ansible.builtin.systemd_service:
+    name: "{{ gate_placement_reconciler_timer }}"
+    enabled: true
+    state: started
+  become: true
+  when: not ansible_check_mode or gate_placement_reconciler_service_present.stat.exists

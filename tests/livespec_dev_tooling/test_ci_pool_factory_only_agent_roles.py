@@ -145,6 +145,8 @@ _POWEREDGE_ROLES = (
     "factory_pressure_publisher",
     # And the server steers new sandbox pods off a pressured node.
     "factory_pressure_reconciler",
+    # Every pool node publishes its gate-placement readings (livespec-dev-tooling-gvo7fa).
+    "gate_placement_publisher",
     # And it holds each factory node to its factory_pod_budget (the TEMPORARY
     # fixed factory-vs-CI CPU share, maintainer ruling 2026-11-08).
     "factory_budget_reconciler",
@@ -158,6 +160,9 @@ _POWEREDGE_ROLES = (
     "cache_telemetry",
     "container_hook",
     "ci_converge_unit",
+    # The server reorders gates-cq's flavors from those readings, after
+    # ci_converge_unit installs the static lane order it falls back to.
+    "gate_placement_reconciler",
     # The local-path provisioner manifest alone, under its own tag
     # (livespec-dev-tooling-5j5x). Server-only.
     "ci_local_path_provisioner",
@@ -215,6 +220,7 @@ _GMKTEC_ROLES = (
     "node_labels",
     # Each factory node publishes its CPU pressure (orchestrator bd-ib-plon2p).
     "factory_pressure_publisher",
+    "gate_placement_publisher",
     "wedged_runner",
     "runner_pod_lifecycle",
     "arc_log_archive",

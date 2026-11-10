@@ -1,0 +1,11 @@
+---
+# gate_placement_reconciler: the server reorders gates-cq's flavors so a newly
+# submitted gate Job is admitted on an unsaturated lane (work item
+# livespec-dev-tooling-gvo7fa). See
+# ../../../ci-runner/k3s/phase2/gate-placement/README.md.
+gate_placement_reconciler_phase2_dir: "{{ role_path }}/../../../ci-runner/k3s/phase2"
+gate_placement_reconciler_lib_dir: /usr/local/lib/ci-runner-k3s
+gate_placement_reconciler_unit_dir: /etc/systemd/system
+gate_placement_reconciler_script: reconcile-gate-lane-order.sh
+gate_placement_reconciler_service: reconcile-gate-lane-order.service
+gate_placement_reconciler_timer: reconcile-gate-lane-order.timer

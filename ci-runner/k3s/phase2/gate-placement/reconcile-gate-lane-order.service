@@ -1,0 +1,11 @@
+# Steer which gate lane of gates-cq admits a newly submitted gate Job
+# (reconcile-gate-lane-order.sh). Server-only: it holds k3s's admin kubeconfig.
+# Installed by the gate_placement_reconciler Ansible role.
+[Unit]
+Description=Reconcile the gates-cq gate lane order from measured node readings
+After=k3s.service
+
+[Service]
+Type=oneshot
+Environment=KUBECONFIG=/etc/rancher/k3s/k3s.yaml
+ExecStart=/usr/local/lib/ci-runner-k3s/reconcile-gate-lane-order.sh
