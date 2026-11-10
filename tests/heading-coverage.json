@@ -3100,5 +3100,37 @@
     "test": "TODO",
     "reason": "Spec-first: a real test at the integration tier or above (`tests.consumer`, this repository's `scenario_tiers`, or an integration-marked test) is owed for this heading, driving the suite-green leg with an affected-tests record outside a sandbox and for a failed, empty and different-tree run; livespec-dev-tooling-svjqbe owns it.",
     "work_item": "livespec-dev-tooling-svjqbe"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a delegated gate Job path that runs an authority member without honouring the skip variable is reported",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above (`tests.consumer`, this repository's `scenario_tiers`, or an integration-marked test) is owed for this heading. It must drive the delegated_job_authority_skip check against fixture repositories whose delegated pre-commit Job recipe reaches an authority member with and without a skip read in each accepted shape, and with a fixed member list. livespec-dev-tooling-zqrg7d owns it.",
+    "work_item": "livespec-dev-tooling-zqrg7d"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a gate Job submitted while one gate lane's node is saturated is admitted on an unsaturated lane",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above (`tests.consumer`, this repository's `scenario_tiers`, or an integration-marked test) is owed for this heading. It must drive the gate placement reconciler with one saturated and one unsaturated gate-lane node and show where the next gate Job is admitted and what the reconciler logs. livespec-dev-tooling-gvo7fa owns it.",
+    "work_item": "livespec-dev-tooling-gvo7fa"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a gate Job submitted while every gate lane's node is saturated is still admitted",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above (`tests.consumer`, this repository's `scenario_tiers`, or an integration-marked test) is owed for this heading. It must drive the gate placement reconciler with every gate-lane node saturated and show that a gate Job is still admitted on a lane with room. livespec-dev-tooling-gvo7fa owns it.",
+    "work_item": "livespec-dev-tooling-gvo7fa"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a gate placement reconciler that cannot read a node's readings falls back to the static lane order",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above (`tests.consumer`, this repository's `scenario_tiers`, or an integration-marked test) is owed for this heading. It must drive the gate placement reconciler with a gate-lane node whose CPU idle share cannot be read and show the static lane order and the logged node and reading. livespec-dev-tooling-gvo7fa owns it.",
+    "work_item": "livespec-dev-tooling-gvo7fa"
   }
 ]

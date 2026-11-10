@@ -380,6 +380,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: a delegated gate Job path that runs an authority member without honouring the skip variable is reported",
+    "work_item": "livespec-dev-tooling-zqrg7d",
+    "first_seen": "2026-11-10"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: a delegated gate-runner run with no cluster verdict ends without a verdict",
     "work_item": "livespec-dev-tooling-qgv3tb",
     "first_seen": "2026-11-01"
@@ -534,9 +541,30 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: a gate Job submitted while every gate lane's node is saturated is still admitted",
+    "work_item": "livespec-dev-tooling-gvo7fa",
+    "first_seen": "2026-11-10"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a gate Job submitted while one gate lane's node is saturated is admitted on an unsaturated lane",
+    "work_item": "livespec-dev-tooling-gvo7fa",
+    "first_seen": "2026-11-10"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: a gate client that stops waiting on an admitted gate Job deletes it",
     "work_item": "livespec-dev-tooling-f2dgn6",
     "first_seen": "2026-11-05"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a gate placement reconciler that cannot read a node's readings falls back to the static lane order",
+    "work_item": "livespec-dev-tooling-gvo7fa",
+    "first_seen": "2026-11-10"
   },
   {
     "spec_root": "SPECIFICATION",

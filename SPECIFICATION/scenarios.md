@@ -992,6 +992,22 @@ And the push MUST complete only when the gate Job reports a green verdict and th
 
 And when that member fails or cannot be evaluated on the pushing host, the push MUST be refused with a line naming the member and saying it ran on the pushing host
 
+## Scenario: a delegated gate Job path that runs an authority member without honouring the skip variable is reported
+
+Given a consumer repository whose `[tool.livespec_dev_tooling]` table sets `delegated_pre_commit = true`
+
+And a member of the repository's check set that declares it reads an authorization held outside the tree
+
+And the recipe the delegated pre-commit Job runs reaches an aggregate that runs that member by a route that does not read the repository's skip variable
+
+When the `delegated_job_authority_skip` check runs against the repository's tree
+
+Then the check MUST report a finding naming the delegated pre-commit path, the Job recipe and the member
+
+And when that route instead reads the skip variable in the justfile recipe, reads it in a script the recipe calls that honours the list, or carries it into `just check` by appending or unioning it, the check MUST report no finding for that route
+
+And when the route runs only a fixed list of members that holds no declared authority member, the check MUST report no finding for that route
+
 ## Scenario: a push of a tree holding a green token still runs the members that read state outside the tree
 
 Given a consuming repository's worktree with no uncommitted changes whose `HEAD` tree is the tree its green token names
@@ -1867,6 +1883,44 @@ When a seat runs `gate-start -- just check` in a worktree with uncommitted chang
 Then the suite MUST run as a gate Job against a tree that includes those changes
 
 And the run record MUST carry `venue: cluster_job`, the gate Job's name and the tree hash
+
+## Scenario: a gate Job submitted while one gate lane's node is saturated is admitted on an unsaturated lane
+
+Given two nodes that each carry a gate lane of the `gates` ClusterQueue
+
+And the first node's CPU idle is under 5% and its CI pod slice's CPU pressure avg60 is above 30
+
+And the second node's CPU idle is above 5%
+
+And both lanes have quota room for the gate Job
+
+When the gate placement reconciler completes a pass and a gate Job is then submitted
+
+Then the gate Job MUST be admitted on the second node's lane
+
+And the reconciler's log MUST name the change it made and the readings of both nodes that caused it
+
+## Scenario: a gate Job submitted while every gate lane's node is saturated is still admitted
+
+Given every node that carries a gate lane reads saturated by the placement rule
+
+And at least one gate lane has room
+
+When the gate placement reconciler completes a pass and a gate Job is then submitted
+
+Then the gate Job MUST be admitted on a lane with room
+
+And the gate Job MUST NOT stay suspended for want of an unsaturated lane
+
+## Scenario: a gate placement reconciler that cannot read a node's readings falls back to the static lane order
+
+Given a node that carries a gate lane whose CPU idle share cannot be read
+
+When the gate placement reconciler completes a pass
+
+Then gate admission MUST use the static lane order
+
+And the reconciler's log MUST name the node and the reading it could not take
 
 ## Scenario: a full suite spelled as python -m pytest runs as a gate Job
 
