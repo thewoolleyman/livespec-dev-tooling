@@ -785,6 +785,7 @@ jobs:
           just check-check-tools || failed="$failed check-check-tools"
           just check-ci-gate-parity || failed="$failed check-ci-gate-parity"
           just check-ci-matrix-completeness || failed="$failed check-ci-matrix-completeness"
+          just check-ci-single-container-image || failed="$failed check-ci-single-container-image"
           just check-claude-md-coverage || failed="$failed check-claude-md-coverage"
           just check-codex-hook-reconcilable || failed="$failed check-codex-hook-reconcilable"
           just check-comment-line-anchors || failed="$failed check-comment-line-anchors"

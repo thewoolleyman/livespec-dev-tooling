@@ -1206,20 +1206,6 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario: a workflow declaring one container image passes",
-    "work_item": "livespec-dev-tooling-kzhduc",
-    "first_seen": "2026-11-08"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a workflow declaring two container images fails its own CI",
-    "work_item": "livespec-dev-tooling-kzhduc",
-    "first_seen": "2026-11-08"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
     "heading": "## Scenario: a workload is never scheduled onto a node whose architecture its image does not publish",
     "work_item": "livespec-dev-tooling-ko26ez.6",
     "first_seen": "2026-11-07"
