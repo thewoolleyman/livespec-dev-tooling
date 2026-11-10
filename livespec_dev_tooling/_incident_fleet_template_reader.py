@@ -10,6 +10,12 @@ name: a tag is resolved to the commit it points at, so a moved or deleted tag ne
 reads as the release it names. A consumer that runs its own local workflows serves its
 own default-branch commit. Pins that disagree, a branch ref, an unreadable file or an
 unresolvable ref leave the consumer unverified.
+
+This library is the exception to pins-first. Its own `ci.yml` runs its templates
+locally (`./.github/...`) at the audited revision, and those serve its CI surfaces; its
+release-lane workflows pin older releases of itself. So when this library runs local
+workflows, its serving templates are its own default-branch commit, whatever its
+self-pins say.
 """
 
 from __future__ import annotations
@@ -57,6 +63,12 @@ def _remote_commit(*, run: CommandRunner, repo: str, ref: str) -> str | None:
     return commit if commit and _COMMIT.fullmatch(commit) else None
 
 
+def _own_head(*, probe: HostProbe, name: str) -> str | None:
+    """`<repo>@<commit>` of the consumer's own default branch: it runs its local templates."""
+    commit = _remote_commit(run=probe.run, repo=name, ref="HEAD")
+    return None if commit is None else f"{name}@{commit}"
+
+
 def read_templates(*, probe: HostProbe, repository: str) -> str | None:
     """`<repo>@<commit>` of the templates the consumer's workflows are pinned to, else None."""
     name = repository.rsplit("/", 1)[-1]
@@ -72,6 +84,9 @@ def read_templates(*, probe: HostProbe, repository: str) -> str | None:
     targets = [
         m["target"] for text in unsafe_perform_io(read.unwrap()) for m in _USES.finditer(text)
     ]
+    local = any(t.startswith("./.github/") for t in targets)
+    if name == _TEMPLATE_REPOSITORY and local:
+        return _own_head(probe=probe, name=name)
     refs = {t.rsplit("@", 1)[1] for t in targets if t.startswith(_TEMPLATE_PREFIX) and "@" in t}
     if len(refs) > 1:
         return None
@@ -87,7 +102,4 @@ def read_templates(*, probe: HostProbe, repository: str) -> str | None:
             )
         )
         return None if commit is None else f"{_TEMPLATE_REPOSITORY}@{commit}"
-    if any(t.startswith("./.github/") for t in targets):
-        commit = _remote_commit(run=probe.run, repo=name, ref="HEAD")
-        return None if commit is None else f"{name}@{commit}"
-    return None
+    return _own_head(probe=probe, name=name) if local else None
