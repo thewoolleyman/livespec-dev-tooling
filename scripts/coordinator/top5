@@ -23,13 +23,10 @@ import subprocess
 
 TOP = [
     ("1 expedited-incident-response-flag", "livespec-dev-tooling-bqnzcm"),
-    ("2 fleet-mutation-testing-rule-26 (Mac w3:t2, ledger-only asks)", "livespec-dev-tooling-oi2two"),
-    ("3 dev-host-test-gate-load", "livespec-dev-tooling-6vuiwe"),
-    ("4 factory yield: sandbox-commit-gate-ceiling", "bd-ib-qy5wol"),
-    (
-        "5 homelab-k8s-worker-nodes (VPS seat, workspace livespec-dev-tooling, tab homelab-k8s-worker-nodes)",
-        "livespec-dev-tooling-ko26ez",
-    ),
+    ("2 secret-writer-stored-key-alias (homelab; workspace homelab, tab secret-writer-stored-key-alias)", "hl-bvycoc"),
+    ("3 fleet-mutation-testing-rule-26 (Mac w3:t2, ledger-only asks)", "livespec-dev-tooling-oi2two"),
+    ("4 dev-host-test-gate-load", "livespec-dev-tooling-6vuiwe"),
+    ("5 factory yield: sandbox-commit-gate-ceiling", "bd-ib-qy5wol"),
 ]
 WRAPPER = ["/usr/local/bin/with-livespec-env.sh", "--"]
 STALE_MINUTES = 60
@@ -45,6 +42,8 @@ def run(args, cwd):
 
 
 def repo_for(epic):
+    if epic.startswith("hl-"):
+        return "/data/projects/homelab"
     if epic.startswith("bd-ib"):
         return "/data/projects/livespec-orchestrator-beads-fabro"
     return "/data/projects/livespec-dev-tooling"
