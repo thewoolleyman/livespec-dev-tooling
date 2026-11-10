@@ -289,6 +289,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: a check runner terminated by SIGTERM or SIGHUP removes its coverage directories and exits non-zero",
+    "work_item": "livespec-dev-tooling-8o8e.16",
+    "first_seen": "2026-11-10"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: a closed profile with admission capacity or without its CI-closing taint is refused",
     "work_item": "livespec-dev-tooling-zreev4",
     "first_seen": "2026-11-03"
