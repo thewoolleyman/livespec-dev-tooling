@@ -737,6 +737,13 @@ subprocess_spawn_allowlist = [
     # process tree. The test scrubs COV_CORE_* and COVERAGE_* (including
     # COVERAGE_PROCESS_START) from the child env.
     "tests/livespec_dev_tooling/test_pytest_cov_bare_spelling.py",
+    # livespec-dev-tooling-3wcldx: the incident fleet audit scenario ("the operator
+    # runs `just incident-fleet-audit`") is a CLI-binary behavior: its exit status
+    # and its stdout/stderr as a fresh interpreter produces them under `python -I`
+    # (no cwd, no PYTHONPATH, no user site), which an in-process call to `main()`
+    # cannot observe. The test scrubs COVERAGE_PROCESS_START + COV_CORE_* + COVERAGE_*
+    # from the child env.
+    "tests/livespec_dev_tooling/test_incident_fleet_cli.py",
     # livespec-dev-tooling-dkgwsm: the rule-26 kill-matrix scenarios run the
     # engine as a consumer does, `python -m ...mutation_kill_matrix_runner`, and
     # the engine itself starts the mutmut stand-in and pytest per mutant; only a
