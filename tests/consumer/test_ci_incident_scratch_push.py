@@ -53,6 +53,24 @@ _REF_READ = re.compile(
 _EXPORT_JOB = "export-telemetry"
 _EXPORT_STEP = "Export CI run telemetry to Honeycomb (closed-loop verified)"
 _EXPORT_GUARD = "${{ github.ref == 'refs/heads/master' }}"
+# The one admitted top-level ref read: the B' master-push concurrency block (constraints.md
+# "CI matrix shape", v182; livespec-dev-tooling-qzw2gf), pinned whole. Its only ref read is the
+# equality with refs/heads/master, so a master push joins the shared group while an
+# incident-scratch/** push (like a pull request, a release commit, a principal revert and any
+# Factory-Override push)
+# resolves to its own run_id group: a scratch push is never grouped with, held by or dropped behind
+# another run, and it runs master's complete job graph under master's job conditions and routing.
+# Any other concurrency form, including cancel-in-progress true, is still a ref read and refused.
+_BPRIME_CONCURRENCY = {
+    "group": (
+        "${{ github.workflow }}-${{ (github.event_name == 'push' && github.ref == 'refs/heads/master'"
+        " && !startsWith(github.event.head_commit.message, 'chore(master): release')"
+        " && !startsWith(github.event.head_commit.message, 'Revert complete incident PR #')"
+        " && !contains(join(github.event.commits.*.message, ' '), 'Factory-Override:'))"
+        " && 'master-push' || github.run_id }}"
+    ),
+    "cancel-in-progress": False,
+}
 
 
 def _load(*, text: str) -> dict[Any, Any]:
@@ -99,7 +117,9 @@ def _ref_reads(*, workflow: dict[Any, Any]) -> list[str]:
     reads: list[str] = [
         str(key)
         for key, value in workflow.items()
-        if key not in ("on", True, "jobs") and _REF_READ.search(str(value))
+        if key not in ("on", True, "jobs")
+        and _REF_READ.search(str(value))
+        and not (key == "concurrency" and value == _BPRIME_CONCURRENCY)
     ]
     for name, job in _jobs(workflow=workflow).items():
         # Every job key but `steps` (if, runs-on, needs, strategy, outputs, env,
@@ -274,6 +294,37 @@ def test_a_ref_read_outside_the_export_guard_is_caught(*, before: str, after: st
     mutated = _CONTROL.replace(before, after, 1)
     assert mutated != _CONTROL
     assert _ref_reads(workflow=_load(text=mutated)) != []
+
+
+def _with_concurrency(*, group: str, cancel: str) -> dict[Any, Any]:
+    block = f"concurrency:\n  group: >-\n    {group}\n  cancel-in-progress: {cancel}\njobs:\n"
+    return _load(text=_CONTROL.replace("jobs:\n", block, 1))
+
+
+def test_the_b_prime_master_push_concurrency_block_is_the_one_admitted_top_level_ref_read() -> None:
+    """The pinned B' block keeps a scratch push in its own run_id group, so it splits nothing."""
+    workflow = _with_concurrency(group=str(_BPRIME_CONCURRENCY["group"]), cancel="false")
+    assert _ref_reads(workflow=workflow) == []
+
+
+@pytest.mark.parametrize(
+    ("group", "cancel"),
+    [
+        (str(_BPRIME_CONCURRENCY["group"]), "true"),
+        (
+            str(_BPRIME_CONCURRENCY["group"]).replace(
+                "refs/heads/master", "refs/heads/incident-scratch"
+            ),
+            "false",
+        ),
+        ("${{ github.workflow }}-${{ github.ref }}", "false"),
+    ],
+)
+def test_any_other_concurrency_form_that_reads_the_ref_is_still_caught(
+    *, group: str, cancel: str
+) -> None:
+    """Only the exact pinned block is admitted: a cancelling, retargeted or ref-keyed group is refused."""
+    assert _ref_reads(workflow=_with_concurrency(group=group, cancel=cancel)) == ["concurrency"]
 
 
 def test_the_honeycomb_export_is_master_only_inside_a_job_every_push_runs() -> None:
