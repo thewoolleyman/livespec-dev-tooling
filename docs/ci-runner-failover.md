@@ -93,3 +93,4 @@ two present identically and have opposite fixes, and no capacity change clears
 the second. `ci-runner/k3s/phase2/README.md` §"Wedged runner vs. saturation"
 carries the two commands that discriminate them and the one that clears a
 wedge.
+<!-- t2ezzq host proof: this PR is closed unmerged -->
