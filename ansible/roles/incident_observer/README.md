@@ -79,7 +79,9 @@ which rules out every CI node and every sandbox host whatever their TLS posture.
   from this role;
 - `/etc/livespec-incident/controller.json` with exactly the nine keys the loader
   demands, every value a host fact (paths from the role's layout, the candidate
-  uid from `getent`, the repository and port from the role's defaults);
+  uid from `getent`, the repository and port from the role's defaults), plus the
+  optional tenth key `target_branch` only when `incident_observer_target_branch`
+  is set (empty by default, so production keeps master and an unchanged file);
 - `/etc/livespec-incident/released-installation.json`, rendered **on the host by
   the serving interpreter** with `files/render_released_installation.py`: the
   package digest over every installed `.py` in the loader's own order, the

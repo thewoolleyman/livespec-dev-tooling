@@ -77,6 +77,7 @@ def settings(tmp_path, landed):
         control_secret=b"control" * 8,
         query_secret=b"query" * 8,
         webhook_secret=_WEBHOOK,
+        target_branch="master",
     )
     admitted = admit_observer(
         directory=namespace.state,

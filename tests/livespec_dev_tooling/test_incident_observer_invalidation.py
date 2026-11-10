@@ -67,6 +67,7 @@ def provisioned(tmp_path, monkeypatch):
         control_secret=b"control" * 8,
         query_secret=b"query" * 8,
         webhook_secret=b"webhook" * 8,
+        target_branch="master",
     )
     ready = _arm(settings=settings, arm=arm)
     query = dict(

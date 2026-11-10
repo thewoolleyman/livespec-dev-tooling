@@ -17,7 +17,8 @@ directory must already exist with mode 0700 and must be outside the independent
 reference Git clone. The loaded controller package must also be outside that
 clone. Startup never creates missing state or falls back to a candidate tree.
 
-`controller.json` has exactly these keys, whose values are independently
+`controller.json` has exactly these keys, plus the one optional
+`target_branch` key described below, whose values are independently
 provisioned host facts:
 
 ```json
@@ -33,6 +34,18 @@ provisioned host facts:
   "port": 8765
 }
 ```
+
+`target_branch` is optional and names the one branch this installation serves.
+Absent, it is `master`, so an installation written before the key existed keeps
+its exact behaviour with no configuration change. The loader refuses any other
+key, and a value that is not a plain branch name (a leading `-`, an empty or
+`.lock` component, or `..`). When a scratch branch is configured, `/bind`
+authenticates only a pull request merged into that branch and a push run on it,
+and records that branch in the registration; a leaf callback for any other
+branch is ignored before protected state is opened; `/recover` refuses a
+registration retained for any other branch; and the recovery principal answers
+`head`, and acts, only for that branch. None of them falls back to master. The
+role writes the key only when `incident_observer_target_branch` is set.
 
 Both configuration files and the three distinct secret files require mode 0600 or
 stricter. Secrets must each contain at least 32 bytes. The query secret is separate from
@@ -105,7 +118,8 @@ The existing repository lock continues to serialize actual durable effects.
   entrance instead of treating a prior reply as a durable mutation grant.
 - `POST /bind` accepts only repository, landed `head_sha` and positive `run_id`.
   It copies identity and authority from the retained arm and authenticates the
-  exact merged PR and normal master run through `MergedRunVerifier`. Its forge
+  exact merged PR and normal run on the configured target branch (master by
+  default) through `MergedRunVerifier`. Its forge
   reads, and those of `/ci/identity`, `/ci/attach` and `/ci/jobs/collect`, go
   through `incident_forge_reads`: a `contents: read` installation token of the
   recovery App, minted for one operation from the protected `recovery-app.json`
