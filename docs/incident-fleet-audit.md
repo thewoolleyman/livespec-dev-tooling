@@ -47,11 +47,11 @@ refuses, naming the missing evidence (or the unauthenticated-manifest finding), 
 - **Committed claims.** `config/incident-fleet-evidence.json` is empty. Authoring the claims for
   15 applicable consumers across 37 surfaces and 2 guidance surfaces for each of 7 instruction-only
   adopters needs per-row proof references read from the installed fleet; it is carried by
-  `livespec-dev-tooling-2xxnku`.
+  `livespec-dev-tooling-v46q5g`.
   Until then every row prints `unclassified`, the per-capability `serving` lines still print the
   version read for every consumer, and the ready list is empty.
 - **Resolver enforcement.** The incident execution resolver does not yet consult the enablement
   record, so `EXPEDITED_INCIDENT_RESPONSE=1` in a repository that was never enabled is not refused
   by it. Where the record lives so that every resolver (dev host, CI runner, controller host) can
   read it is a design decision this item does not make; it is carried by
-  `livespec-dev-tooling-v46q5g`.
+  `livespec-dev-tooling-2xxnku`.
