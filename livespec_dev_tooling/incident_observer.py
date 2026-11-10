@@ -174,16 +174,11 @@ def route_ordinary_action(
     the red episode, not one run.
     """
     with repository_lock(directory=directory, repository=repository) as path:
-        owner = _incident_owner(
+        return _incident_owner(
             record=load_record(path=path),
             owns=lambda registration: (registration.head_sha, registration.run_id)
             == (head_sha, run_id),
-        )
-        if owner is not None:
-            return owner
-        return ObserverResult(
-            status="ordinary", reason="ordinary reconciler policy retained", receipt=perform()
-        )
+        ) or _ordinary(perform=perform)
 
 
 def route_reconciler_window(
@@ -211,20 +206,21 @@ def route_reconciler_window(
         with repository_lock(
             directory=directory, repository=repository, wait_seconds=wait_seconds
         ) as path:
-            owner = _incident_owner(
+            return _incident_owner(
                 record=load_record(path=path),
                 owns=lambda registration: registration.head_sha in window_shas,
-            )
-            if owner is not None:
-                return owner
-            return ObserverResult(
-                status="ordinary", reason="ordinary reconciler policy retained", receipt=perform()
-            )
+            ) or _ordinary(perform=perform)
     except RepositoryFenceBusyError:
         return ObserverResult(
             status="incident-owned",
             reason="repository action fence is held by the incident observer",
         )
+
+
+def _ordinary(*, perform: Callable[[], str]) -> ObserverResult:
+    return ObserverResult(
+        status="ordinary", reason="ordinary reconciler policy retained", receipt=perform()
+    )
 
 
 def _incident_owner(
