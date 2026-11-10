@@ -57,3 +57,16 @@ def test_home_comes_from_the_account_database_not_the_home_variable(
     probe = production_probe(run=run)
     assert probe.home == Path(pwd.getpwuid(os.getuid()).pw_dir)
     assert probe.proc_root == Path("/proc")
+
+
+@pytest.mark.parametrize(
+    "variable",
+    ["LIVESPEC_FLEET_PROJECTS_ROOT", "LIVESPEC_PROJECTS_ROOT", "PROJECTS_ROOT"],
+)
+def test_no_environment_variable_moves_the_clones_root(
+    monkeypatch: pytest.MonkeyPatch, variable: str
+) -> None:
+    monkeypatch.setenv(variable, "/attacker/chosen")
+    run, seen = _git(stdout="/srv/projects/livespec-dev-tooling/.git\n")
+    assert production_probe(run=run).clones_root == Path("/srv/projects")
+    assert len(seen) == 1

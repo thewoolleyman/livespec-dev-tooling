@@ -546,6 +546,18 @@ def test_a_ruleset_whose_detail_cannot_be_read_adds_no_actor() -> None:
     assert forge.read() is None
 
 
+def test_a_failed_forge_read_is_unverified_even_when_its_body_parses() -> None:
+    # `gh api` exits non-zero on an HTTP error yet can still print a JSON body; a
+    # failed read is never evidence, whatever that body says (review mutant M14).
+    forge = _Forge(rulesets=[_ruleset()])
+    for path in (BASE, f"{BASE}/7"):
+        answer = forge.answers[path]
+        forge.answers[path] = GhRead(returncode=1, stdout=answer.stdout, stderr="HTTP 502")
+        assert forge.read() is None
+        forge.answers[path] = answer
+    assert forge.read() == f"{CONTROLLER}+bypass-app-987"
+
+
 # --- driver hooks ---
 
 PLUGIN_SHA = "9" * 40
