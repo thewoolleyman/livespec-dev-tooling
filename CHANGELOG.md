@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.192.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.192.0...v1.192.1) (2026-11-10)
+
+
+### Bug Fixes
+
+* run CI severity-lever parity only in a repository that carries the lever source ([ad3bd9c](https://github.com/thewoolleyman/livespec-dev-tooling/commit/ad3bd9cb1591530350e9f52d15fbfd008121774f))
+
 ## [1.192.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.191.0...v1.192.0) (2026-11-10)
 
 
