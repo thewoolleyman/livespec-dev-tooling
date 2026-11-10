@@ -359,6 +359,20 @@ def test_the_window_adds_the_rerun_target_and_the_culprit_outside_the_walk():
     ) == frozenset({old, _INCIDENT})
 
 
+def test_the_rerun_target_is_the_first_failed_run_as_the_workflow_reruns_it():
+    """Two failed runs outside the walk: only the FIRST is the one the step reruns."""
+    green_head = {"head_sha": _GREEN, "commits": [_STATE["commits"][2]]}
+    first, second = "4" * 40, "5" * 40
+
+    assert _window(
+        state=green_head,
+        runs=[
+            {"conclusion": "failure", "head_sha": first},
+            {"conclusion": "failure", "head_sha": second},
+        ],
+    ) == frozenset({first})
+
+
 def test_the_window_keeps_an_unrecorded_head_and_survives_a_parent_cycle():
     looped = {
         "head_sha": _LATER,
