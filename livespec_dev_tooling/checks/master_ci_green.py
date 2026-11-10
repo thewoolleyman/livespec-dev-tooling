@@ -27,6 +27,21 @@ Reading the run conclusion therefore rejected work while master was
 genuinely green (work-item livespec-dev-tooling-aa7, absorbing gam8 and
 8o8e.22). A gate that guards merges must read what the merge gate reads.
 
+ONLY MASTER'S OWN PUSH RUN IS EVIDENCE. The check-runs endpoint is keyed on
+the COMMIT, not the branch, and each workflow run is its own check suite. A
+push to an `incident-scratch/**` branch runs the full CI workflow
+(livespec-dev-tooling-7w757z), and a drill creates that branch at master's
+head, so the same commit then carries a second `ci-green` check run from the
+scratch run. Taking whichever run the API lists first would let a green
+scratch rerun mask a red master, and a red or cancelled scratch run redden
+every gate on a green one. The check therefore reads master's own push runs
+of the head commit from
+`repos/{owner}/{repo}/actions/runs?branch=master&event=push&head_sha=<sha>`,
+re-checks `head_branch` and `event` on each, and takes the `ci-green` check run
+whose check suite is one of theirs (`_master_ci_green_runs`). A scratch run is
+never master-health evidence. A credentialed runs read that fails is
+`unprovable`, exactly like a failed check-runs read.
+
 External state: shells out to `gh api`. Five `gh` failure states are
 kept apart, because four of them mean "this host was never able to
 check at all" and one means "the check was attempted and returned no
@@ -84,9 +99,12 @@ Acceptable conclusions for the head commit's `ci-green` check run:
 - no `ci-green` check run on the head commit → exit 0 with warning
   (a fresh repo, a repo that does not run the fan-in gate, or a push
   whose checks have not been created yet)
+- `ci-green` check runs on the head commit, none from master's own push
+  run → exit 0 with warning (master's push run has not started yet, and
+  any other run on the commit, a scratch drill's say, is not evidence)
 
-Both GitHub reads — the offline credential probe and the check-runs
-call — are issued through `livespec_dev_tooling.budgeted_gh.gh_read`
+All GitHub reads — the offline credential probe, the check-runs call and
+the master push-runs call — are issued through `livespec_dev_tooling.budgeted_gh.gh_read`
 rather than by spawning `gh` here, so the GitHub request-budget policy
 applies to them (livespec-dev-tooling-z69s).
 
@@ -115,6 +133,11 @@ from livespec_dev_tooling.budgeted_gh import GhRead, gh_read  # noqa: E402
 from livespec_dev_tooling.checks._gate_context import (  # noqa: E402
     credential_skip_is_failure,
     gate_repository,
+)
+from livespec_dev_tooling.checks._master_ci_green_runs import (  # noqa: E402
+    from_master_push_runs,
+    master_push_runs_endpoint,
+    master_push_suite_ids,
 )
 
 __all__: list[str] = []
@@ -311,6 +334,63 @@ def _classify_failed_gh_call(
     return "unprovable"
 
 
+def _fetch_master_push_suite_ids(
+    *,
+    log: structlog.stdlib.BoundLogger,
+    head_sha: str,
+) -> frozenset[int] | Literal["skip", "unprovable"]:
+    """Read the check suites of master's own push runs of `head_sha`, or an outcome.
+
+    A failed read is classified exactly like a failed check-runs read: a host
+    that could never check skips, and a credentialed read that failed is
+    `unprovable`.
+    """
+    repository = gate_repository(env=os.environ) or _GH_REPOSITORY_PLACEHOLDERS
+    endpoint = master_push_runs_endpoint(repository=repository, head_sha=head_sha)
+    completed = _read_check_runs_with_transient_retry(args=["api", endpoint])
+    if completed.returncode != 0:
+        return _classify_failed_gh_call(
+            log=log, stdout_full=completed.stdout, stderr_full=completed.stderr, env=os.environ
+        )
+    suite_ids = master_push_suite_ids(payload=json.loads(completed.stdout))
+    if suite_ids is None:
+        log.error("unexpected gh response shape for master's push runs")
+        return "skip"
+    return suite_ids
+
+
+def _select_master_check_run(
+    *,
+    log: structlog.stdlib.BoundLogger,
+    entries: list[object],
+) -> _CiGreenCheckRun | Literal["skip", "unprovable"]:
+    """The `ci-green` check run from master's own push run, out of the head commit's runs.
+
+    The head SHA comes from the check runs themselves, so the runs read is
+    pinned to the commit they judged even if master moves between the reads.
+    A head commit whose `ci-green` runs include none from master's push run
+    skips with a warning: master's run may not have started yet, and a run
+    from any other branch on the same commit (an incident-scratch drill, say)
+    is never master-health evidence.
+    """
+    first = entries[0]
+    if not isinstance(first, dict):
+        log.error("unexpected ci-green check-run shape", payload_type=type(first).__name__)
+        return "skip"
+    head_sha = cast("dict[str, object]", first).get("head_sha")
+    if not isinstance(head_sha, str):
+        log.error("unexpected ci-green check-run shape", missing="head_sha")
+        return "skip"
+    suite_ids = _fetch_master_push_suite_ids(log=log, head_sha=head_sha)
+    if isinstance(suite_ids, str):
+        return suite_ids
+    from_master = from_master_push_runs(entries=entries, suite_ids=suite_ids)
+    if not from_master:
+        log.warning("no ci-green check run from master's own push run", head_sha=head_sha)
+        return "skip"
+    return cast("_CiGreenCheckRun", from_master[0])
+
+
 def _fetch_master_ci_green_check(
     *,
     log: structlog.stdlib.BoundLogger,
@@ -366,11 +446,9 @@ def _fetch_master_ci_green_check(
             ),
         )
         return "skip"
-    first = cast("list[object]", check_runs)[0]
-    if not isinstance(first, dict):
-        log.error("unexpected ci-green check-run shape", payload_type=type(first).__name__)
-        return "skip"
-    run = cast("_CiGreenCheckRun", first)
+    run = _select_master_check_run(log=log, entries=cast("list[object]", check_runs))
+    if isinstance(run, str):
+        return run
     status_raw = run.get("status")
     conclusion_raw = run.get("conclusion")
     status = status_raw if isinstance(status_raw, str) else None
