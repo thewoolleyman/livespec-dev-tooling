@@ -134,6 +134,7 @@ class _Groups:
         self.isolated = isolated
         self._lock = threading.Lock()
         self._live: set[int] = set()
+        self._unisolated: set[subprocess.Popen[bytes]] = set()
         self._closed = False
 
     def launch(
@@ -153,6 +154,8 @@ class _Groups:
             )
             if self.isolated:
                 self._live.add(process.pid)
+            else:
+                self._unisolated.add(process)
             return process
 
     def wait(
@@ -161,6 +164,8 @@ class _Groups:
         """Wait for the target; True when its deadline expired. Never leaves a zombie."""
         if deadline_seconds is None:
             _wait_renewing_progress(process=process, output=output)
+            with self._lock:
+                self._unisolated.discard(process)
             return False
         timed_out = wait_for_exit(process=process, deadline_seconds=deadline_seconds)
         # Kill the group and leave the live set under the lock, BEFORE the reap:
@@ -176,6 +181,11 @@ class _Groups:
             self._closed = True
             for pid in tuple(self._live) if kill else ():
                 kill_group(pid=pid)
+            # A target in the caller's own group is not reached by a signal sent
+            # to the caller alone, and the pool joins its waiting thread, so
+            # ask it to stop; a group-wide signal has already reached it.
+            for process in tuple(self._unisolated) if kill else ():
+                process.terminate()
 
 
 def _wait_renewing_progress(*, process: subprocess.Popen[bytes], output: IO[bytes]) -> None:
