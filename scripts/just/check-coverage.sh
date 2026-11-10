@@ -61,6 +61,11 @@ if [[ -n "$failure_status" ]]; then
     rm -f "$coverage_file" "$reuse_stamp" "$failure_receipt"
     exit "$failure_status"
 fi
+if [[ "${GITHUB_ACTIONS:-}" == "true" ]] && [[ -f "$coverage_file" ]] && [[ ! -f "$reuse_stamp" ]]; then
+    echo ":: check-coverage: missing coverage reuse receipt beside downloaded .coverage; refusing to start pytest"
+    rm -f "$coverage_file" "$failure_receipt"
+    exit 1
+fi
 if [[ -f "$coverage_file" ]]; then
     if [[ -f "$reuse_stamp" ]] \
         && reuse_id="$(scripts/just/coverage-reuse-id.sh)" \
