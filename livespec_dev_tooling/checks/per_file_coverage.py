@@ -232,7 +232,11 @@ def _without_vanished_sources(
 
 
 def _report_unmeasured_first_party(
-    *, log: structlog.stdlib.BoundLogger, repo_root: Path, measured_files: Iterable[str]
+    *,
+    log: structlog.stdlib.BoundLogger,
+    repo_root: Path,
+    measured_files: Iterable[str],
+    omit_patterns: Iterable[str],
 ) -> bool:
     """Report, by path, every tracked first-party file no test imported; True when it must fail.
 
@@ -243,7 +247,9 @@ def _report_unmeasured_first_party(
     """
     opted_in = load_fail_on_unmeasured_first_party(repo_root=repo_root) is True
     emit = log.error if opted_in else log.warning
-    unmeasured = find_unmeasured_first_party(repo_root=repo_root, measured_files=measured_files)
+    unmeasured = find_unmeasured_first_party(
+        repo_root=repo_root, measured_files=measured_files, omit_patterns=omit_patterns
+    )
     if unmeasured is None:
         emit(
             "tracked first-party files could not be listed; unmeasured files not reported",
@@ -311,7 +317,10 @@ def main() -> int:
     report = json.loads(buf.getvalue())
 
     unmeasured_fails = _report_unmeasured_first_party(
-        log=log, repo_root=cwd, measured_files=cov.get_data().measured_files()
+        log=log,
+        repo_root=cwd,
+        measured_files=cov.get_data().measured_files(),
+        omit_patterns=cov.config.run_omit or [],
     )
 
     offenders: list[tuple[str, dict[str, object]]] = []

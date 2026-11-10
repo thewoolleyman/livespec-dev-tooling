@@ -159,3 +159,62 @@ def test_opt_in_loader_reads_the_boolean_and_rejects_anything_else(*, tmp_path: 
     )
     with pytest.raises(config_module.ConfigParseError):
         _ = _load_opt_in(repo_root=tmp_path)
+
+
+def _add_tracked(*, root: Path, rel: str) -> None:
+    target = root / rel
+    target.parent.mkdir(parents=True, exist_ok=True)
+    _ = target.write_text("from __future__ import annotations\n__all__: list[str] = []\n", "utf-8")
+    _git(cwd=root, args=["add", rel])
+
+
+def test_omitted_and_out_of_tree_files_are_never_reported_as_unmeasured(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A file `[tool.coverage.run] omit` matches, or outside every prefix, is not unmeasured.
+
+    Both a repo-relative pattern and a `*`-anchored one are exercised, because
+    coverage resolves a relative pattern against the repository, and the opt-in
+    is armed so a wrongly reported file would also fail the exit status.
+    """
+    omit = '[tool.coverage.run]\nomit = ["src/generated/*", "*/skipped_*.py"]\n'
+    _build_repo(
+        root=tmp_path,
+        extra_pyproject="fail_on_unmeasured_first_party = true\n" + omit,
+    )
+    _add_tracked(root=tmp_path, rel="src/generated/stub.py")
+    _add_tracked(root=tmp_path, rel="src/pkg/skipped_helper.py")
+
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
+
+    assert result.returncode != 0
+    assert "src/orphan.py" in result.stderr
+    assert "src/generated/stub.py" not in result.stderr
+    assert "skipped_helper.py" not in result.stderr
+    assert "other/outside.py" not in result.stderr
+
+
+def test_omit_only_finding_leaves_the_opted_in_check_green(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """With every unmeasured file omitted or out of tree, the opted-in check exits 0."""
+    omit = '[tool.coverage.run]\nomit = ["src/orphan.py"]\n'
+    _build_repo(root=tmp_path, extra_pyproject="fail_on_unmeasured_first_party = true\n" + omit)
+
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
+
+    assert result.returncode == 0
+    assert "unmeasured" not in result.stderr
+
+
+def test_tracked_file_deleted_from_the_working_tree_is_not_reported(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The index lists a deleted tracked file, but there is no source left to judge."""
+    _build_repo(root=tmp_path)
+    (tmp_path / "src" / "orphan.py").unlink()
+
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
+
+    assert result.returncode == 0
+    assert "src/orphan.py" not in result.stderr

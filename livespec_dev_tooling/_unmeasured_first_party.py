@@ -15,6 +15,8 @@ from __future__ import annotations
 from collections.abc import Iterable
 from pathlib import Path
 
+from coverage.files import GlobMatcher
+
 from livespec_dev_tooling.config import (
     GitLsFilesError,
     list_tracked_py,
@@ -31,13 +33,16 @@ def _resolved(*, repo_root: Path, name: str) -> Path:
 
 
 def find_unmeasured_first_party(
-    *, repo_root: Path, measured_files: Iterable[str]
+    *, repo_root: Path, measured_files: Iterable[str], omit_patterns: Iterable[str]
 ) -> tuple[str, ...] | None:
     """Return the repo-relative POSIX paths of tracked first-party files coverage never measured.
 
     A file is first-party when it is a tracked `.py` under one of the repository's
     configured `source_tree_prefixes` and present on disk (the index also lists a
-    tracked file deleted from the working tree). A repository that declares no
+    tracked file deleted from the working tree) that no `omit_patterns` entry
+    matches: the repository's `[tool.coverage.run] omit` list says that file is
+    not measured on purpose. Each pattern is matched as written and anchored at
+    the repo, as coverage anchors a relative one. A repository that declares no
     prefixes has no first-party surface, so nothing is listed.
 
     Returns `None` when the tracked files cannot be listed because `repo_root` is
@@ -46,6 +51,8 @@ def find_unmeasured_first_party(
     """
     config = load_config(repo_root=repo_root)
     prefixes = role_prefixes(role=config.source_tree_prefixes)
+    patterns = [*omit_patterns]
+    omitted = GlobMatcher([*patterns, *(str(repo_root / pattern) for pattern in patterns)])
     measured = {_resolved(repo_root=repo_root, name=name) for name in measured_files}
     try:
         tracked = list_tracked_py(repo_root=repo_root)
@@ -54,7 +61,9 @@ def find_unmeasured_first_party(
     first_party = (
         rel.as_posix()
         for rel in tracked
-        if rel.as_posix().startswith(prefixes) and (repo_root / rel).is_file()
+        if rel.as_posix().startswith(prefixes)
+        and (repo_root / rel).is_file()
+        and not omitted.match(str((repo_root / rel).resolve()))
     )
     return tuple(
         sorted(
