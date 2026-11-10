@@ -10,11 +10,11 @@ The forge is read with the operator's own `gh` credential; no consumer is creden
 
 from __future__ import annotations
 
-import json
 from collections.abc import Callable
 from typing import cast
 
 from livespec_dev_tooling.budgeted_gh import GhRead, gh_read
+from livespec_dev_tooling.incident_strict_json import IncidentJsonRefusalError, strict_json
 
 __all__: list[str] = ["ForgeReader", "read_recovery_authorization"]
 
@@ -28,8 +28,8 @@ def _api(*, read_forge: ForgeReader, path: str) -> object | None:
     if answer.returncode != 0:
         return None
     try:
-        return cast("object", json.loads(answer.stdout))
-    except ValueError:
+        return cast("object", strict_json(text=answer.stdout, limit=None))
+    except (ValueError, IncidentJsonRefusalError):
         return None
 
 

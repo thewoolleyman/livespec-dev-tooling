@@ -8,7 +8,6 @@ refuses a `serving_build` key, and the audit overwrites it with a host read (see
 
 from __future__ import annotations
 
-import json
 import sys
 from collections.abc import Callable
 from pathlib import Path
@@ -25,6 +24,10 @@ from returns.unsafe import unsafe_perform_io  # noqa: E402
 from livespec_dev_tooling._incident_fleet_types import CapabilityEvidence  # noqa: E402
 from livespec_dev_tooling.fleet._local_context import CommandRunner  # noqa: E402
 from livespec_dev_tooling.fleet._manifest_git import git_file_text  # noqa: E402
+from livespec_dev_tooling.incident_strict_json import (  # noqa: E402
+    IncidentJsonRefusalError,
+    strict_json,
+)
 
 __all__: list[str] = [
     "CLAIMS_RELATIVE_PATH",
@@ -88,8 +91,8 @@ def load_claims(*, path: Path) -> Result[tuple[CapabilityEvidence, ...], str]:
     if not path.is_file():
         return Success(())
     try:
-        parsed = cast("object", json.loads(path.read_text(encoding="utf-8")))
-    except (OSError, ValueError) as unreadable:
+        parsed = cast("object", strict_json(text=path.read_text(encoding="utf-8"), limit=None))
+    except (OSError, ValueError, IncidentJsonRefusalError) as unreadable:
         return Failure(f"{path} is unreadable: {unreadable}")
     document = cast("dict[str, object]", parsed) if isinstance(parsed, dict) else {}
     entries = document.get("evidence")

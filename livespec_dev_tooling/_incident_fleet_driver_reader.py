@@ -9,7 +9,6 @@ installed for this project (or installed without its cache) leaves the consumer 
 
 from __future__ import annotations
 
-import json
 import re
 from pathlib import Path
 from typing import cast
@@ -20,6 +19,7 @@ from livespec_dev_tooling.fleet._plugin_build_currency_reads import (
     served_build_identifier,
 )
 from livespec_dev_tooling.incident_fleet_host import HostProbe
+from livespec_dev_tooling.incident_strict_json import IncidentJsonRefusalError, strict_json
 
 __all__: list[str] = ["read_driver_hooks"]
 
@@ -29,7 +29,10 @@ _REGISTRY = Path(".claude") / "plugins" / "installed_plugins.json"
 
 
 def _cache_present(*, registry_text: str, plugin: str, clone: Path) -> bool:
-    document = cast("object", json.loads(registry_text))
+    try:
+        document = cast("object", strict_json(text=registry_text, limit=None))
+    except (ValueError, IncidentJsonRefusalError):
+        return False
     plugins = (
         cast("dict[str, object]", document).get("plugins") if isinstance(document, dict) else None
     )
