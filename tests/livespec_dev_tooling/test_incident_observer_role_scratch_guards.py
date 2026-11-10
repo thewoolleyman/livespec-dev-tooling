@@ -331,6 +331,7 @@ def test_the_host_check_refuses_a_scratch_root_linked_into_production_receipts(
         ("incident_observer_state_dir", "recovery-journal"),
         ("incident_observer_state_dir", "recovery-journal-contexts"),
         ("incident_observer_reference_dir", ".beads"),
+        ("incident_observer_reference_dir", ".git"),
     ],
 )
 def test_the_host_check_refuses_a_link_below_the_scratch_root_the_apply_writes_through(

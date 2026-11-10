@@ -177,7 +177,8 @@
   # apply writes or re-modes beneath the scratch root is read, not only the
   # ones the layout names: `file: state=directory` and `copy` follow a link at
   # any level, so a link at receipts/recovery-journal would send the scratch
-  # principal into production's recovery journal.
+  # principal into production's recovery journal, and the clone task writes
+  # through a link at reference/.git into another repository's objects.
   ansible.builtin.stat:
     path: "{{ item }}"
     follow: false
@@ -195,6 +196,7 @@
     - "{{ incident_observer_fetch_timer_path }}"
     - "{{ incident_observer_state_dir }}/recovery-journal"
     - "{{ incident_observer_state_dir }}/recovery-journal-contexts"
+    - "{{ incident_observer_reference_dir }}/.git"
     - "{{ incident_observer_reference_dir }}/.beads"
     - "{{ incident_observer_reference_dir }}/.beads/metadata.json"
   register: incident_observer_scratch_path_stats
@@ -205,7 +207,7 @@
   # exist yet is not a link.
   ansible.builtin.assert:
     that:
-      - incident_observer_scratch_path_stats.results | length == 12
+      - incident_observer_scratch_path_stats.results | length == 13
       - >-
         incident_observer_scratch_path_stats.results
         | selectattr('stat.islnk', 'defined') | selectattr('stat.islnk')
