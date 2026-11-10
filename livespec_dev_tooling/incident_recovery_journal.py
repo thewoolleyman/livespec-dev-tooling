@@ -29,10 +29,17 @@ class RecoveryJournal:
 
     installation: ControllerInstallation
 
+    def _bound(self, *, intent: RecoveryIntent) -> None:
+        """Refuse an action registered for any branch but the configured target branch."""
+        if intent.registration.branch != self.installation.target_branch:
+            message = "action is not registered for the configured target branch"
+            raise ValueError(message)
+
     def lookup(self, *, intent: RecoveryIntent) -> JournalResult:
         """Observe an exact retained action; corruption never becomes absence."""
         try:
             exact = JournalCodec.intent(raw=JournalCodec.wire(value=asdict(intent)))
+            self._bound(intent=exact)
         except (ValueError, TypeError, KeyError, RecursionError):
             return JournalResult(status="refused", reason="invalid exact recovery intent")
         return JournalStore(installation=self.installation).perform(
@@ -53,6 +60,7 @@ class RecoveryJournal:
         try:
             raw = JournalCodec.wire(value=asdict(request))
             exact = JournalCodec.request(operation=operation, raw=raw)
+            self._bound(intent=exact.intent)
         except (ValueError, TypeError, KeyError, RecursionError):
             return JournalResult(status="refused", reason="invalid exact recovery effect request")
         return JournalStore(installation=self.installation).perform(

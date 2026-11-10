@@ -52,7 +52,6 @@ from livespec_dev_tooling.incident_recovery_journal import JournalResult, Recove
 
 __all__: list[str] = ["RecoveryPrincipal"]
 
-_BRANCH = "master"
 Reply = dict[str, Any]
 _refused = Replies.refused
 
@@ -73,7 +72,11 @@ class RecoveryPrincipal:
         forge = self.connect()
         if isinstance(forge, AppRefusal):
             return _refused(reason=forge.detail, code=forge.code)
-        return RecoveryEffects(forge=forge, root=self.installation.repo, branch=_BRANCH)
+        return RecoveryEffects(
+            forge=forge,
+            root=self.installation.repo,
+            branch=self.installation.target_branch,
+        )
 
     def landed(self, *, payload: Reply) -> Reply:
         intent = JournalCodec.intent(raw=payload["intent"])
@@ -100,8 +103,9 @@ class RecoveryPrincipal:
         return {"authorized": effects.landed(intent=intent) == scope}
 
     def head(self, *, payload: Reply) -> Reply:
-        if (payload["repository"], payload["branch"]) != (self.installation.repository, _BRANCH):
-            return _refused(reason="only the observed repository's master is readable")
+        target = (self.installation.repository, self.installation.target_branch)
+        if (payload["repository"], payload["branch"]) != target:
+            return _refused(reason="only the observed repository's target branch is readable")
         effects = self.effects()
         if isinstance(effects, dict):
             return effects
