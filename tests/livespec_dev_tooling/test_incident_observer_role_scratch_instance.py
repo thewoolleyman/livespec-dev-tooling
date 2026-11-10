@@ -56,12 +56,16 @@ _LOADER_KEYS = {
     "query_secret",
     "port",
 }
-# A collision case names "production's own value" rather than spelling a host path.
-_PRODUCTION_VALUE = object()
-_PREFLIGHT = "Refuse a scratch instance that shares a name, path, port or branch with production"
 _VENV_REFUSAL = "Refuse a scratch apply onto a venv production does not already serve"
 _SCRATCH_ROOT_TASK = "Create the scratch instance's own root beside production's state"
 _SHARED_WRITES = (
+    "Install the interpreter's venv module and git",
+    "Create the controller account",
+    "Create the root-owned installation directories",
+    "Create the protected configuration directory",
+    "Create the controller account's home",
+    "Create the isolated venv on the system interpreter",
+    "Install the manifest renderer outside the package and the clones",
     "Install the released distribution from its tag, never from a checkout",
     "Clone the canonical reader at its released tag",
     "Write each secret from the control node's projected environment",
@@ -75,9 +79,7 @@ _FUNNEL = (
     "Name the public callback path's disposition in the run output",
     "Publish only the callback path through a path-scoped funnel",
 )
-_NAMES = "Name what the teardown removes and what it must leave byte-identical"
-_TEARDOWN_REFUSAL = "Refuse a teardown that names anything production owns"
-_READ_BACK = "Refuse a teardown that moved a byte of production"
+_NAMES = "Name what the teardown removes and every production path it reads back"
 
 
 def _play(*, path: Path) -> dict[str, Any]:
@@ -95,27 +97,17 @@ def scratch_variables(*, overrides: dict[str, Any]) -> dict[str, Any]:
     variables = base.production_variables()
     for relative in _play(path=_SCRATCH_PLAY)["vars_files"]:
         variables.update(yaml.safe_load((_ANSIBLE / relative).read_text(encoding="utf-8")))
-    production = base.role_yaml(relative="defaults/main.yml")
-    variables.update(
-        {
-            key: production[key] if value is _PRODUCTION_VALUE else value
-            for key, value in overrides.items()
-        }
-    )
+    variables.update(overrides)
     return variables
 
 
-def _context(*, variables: dict[str, Any], task: dict[str, Any]) -> dict[str, Any]:
-    """The variables a task's conditions see: resolved role variables, production's, the task's."""
+def _context(*, variables: dict[str, Any]) -> dict[str, Any]:
+    """The variables a task's conditions see: resolved role variables and production's."""
     resolved = base.resolve(variables=variables)
-    context = {
+    return {
         **resolved,
         "incident_observer_production": base.role_yaml(relative="defaults/main.yml"),
     }
-    jinja = base.ansible_jinja()
-    for key, value in task.get("vars", {}).items():
-        context[key] = [jinja.from_string(item).render(**context) for item in value]
-    return context
 
 
 def _holds(*, task: dict[str, Any], context: dict[str, Any]) -> bool:
@@ -127,15 +119,15 @@ def _holds(*, task: dict[str, Any], context: dict[str, Any]) -> bool:
     )
 
 
-def _teardown_facts(*, overrides: dict[str, Any]) -> dict[str, Any]:
-    """The teardown's resolved context, with its named removal and read-back lists."""
-    variables = scratch_variables(overrides=overrides)
-    context = _context(variables=variables, task={})
+def _scratch_removed() -> list[str]:
+    """The teardown's removal list, resolved against the committed scratch variables."""
+    context = _context(variables=scratch_variables(overrides={}))
     names = _task(relative="tasks/scratch_teardown.yml", name=_NAMES)["ansible.builtin.set_fact"]
     jinja = base.ansible_jinja()
-    for key, value in names.items():
-        context[key] = [jinja.from_string(item).render(**context) for item in value]
-    return context
+    return [
+        jinja.from_string(item).render(**context)
+        for item in names["incident_observer_scratch_removed"]
+    ]
 
 
 def test_the_scratch_play_applies_the_one_role_with_the_scratch_variable_set() -> None:
@@ -285,39 +277,6 @@ def test_the_loader_reads_the_branch_the_role_renders_and_master_when_none(host)
 
 
 @pytest.mark.parametrize(
-    ("overrides", "holds"),
-    [
-        ({}, True),
-        ({"incident_observer_scratch_name": "other"}, True),
-        ({"incident_observer_port": _PRODUCTION_VALUE}, False),
-        ({"incident_observer_target_branch": "master"}, False),
-        ({"incident_observer_target_branch": ""}, False),
-        ({"incident_observer_config_path": _PRODUCTION_VALUE}, False),
-        (
-            {"incident_observer_manifest_path": _PRODUCTION_VALUE},
-            False,
-        ),
-        ({"incident_observer_state_dir": "/var/lib/livespec-incident/reference/receipts"}, False),
-        ({"incident_observer_reference_dir": "/var/lib/livespec-incident/receipts/clone"}, False),
-        ({"incident_observer_unit_name": _PRODUCTION_VALUE}, False),
-        ({"incident_observer_fetch_unit_name": _PRODUCTION_VALUE}, False),
-        (
-            {"incident_observer_unit_path": _PRODUCTION_VALUE},
-            False,
-        ),
-    ],
-)
-def test_a_scratch_apply_refuses_any_value_production_owns(
-    overrides: dict[str, Any], *, holds: bool
-) -> None:
-    task = _task(relative="tasks/main.yml", name=_PREFLIGHT)
-    context = _context(variables=scratch_variables(overrides=overrides), task=task)
-
-    assert task["when"] == "incident_observer_scratch | bool"
-    assert _holds(task=task, context=context) is holds
-
-
-@pytest.mark.parametrize(
     ("installed", "stdout", "holds"),
     [(True, "1.188.1\n", True), (True, "1.187.0\n", False), (False, "", False)],
 )
@@ -325,7 +284,7 @@ def test_a_scratch_apply_refuses_a_venv_production_does_not_already_serve(
     *, installed: bool, stdout: str, holds: bool
 ) -> None:
     task = _task(relative="tasks/main.yml", name=_VENV_REFUSAL)
-    context = _context(variables=scratch_variables(overrides={}), task=task)
+    context = _context(variables=scratch_variables(overrides={}))
     context["incident_observer_installed"] = installed
     context["incident_observer_installed_version"] = {"rc": 0, "stdout": stdout}
 
@@ -369,24 +328,21 @@ def test_the_teardown_play_runs_the_teardown_tasks_on_the_same_instance() -> Non
     }
 
 
-def test_the_teardown_removes_exactly_the_scratch_units_controller_json_and_manifest() -> None:
-    context = _teardown_facts(overrides={})
+def test_the_teardown_removes_exactly_the_scratch_units_stamp_controller_json_and_manifest() -> (
+    None
+):
     removal = _task(
         relative="tasks/scratch_teardown.yml",
-        name="Remove the scratch unit files, controller.json and manifest",
+        name="Remove the scratch unit files, timer stamp, controller.json and manifest",
     )
 
-    assert context["incident_observer_scratch_removed"] == [
+    assert _scratch_removed() == [
         "/etc/systemd/system/livespec-incident-observer-scratch.service",
         "/etc/systemd/system/livespec-incident-reference-fetch-scratch.service",
         "/etc/systemd/system/livespec-incident-reference-fetch-scratch.timer",
+        "/var/lib/systemd/timers/stamp-livespec-incident-reference-fetch-scratch.timer",
         "/etc/livespec-incident/controller-scratch-thhgeg.json",
         "/etc/livespec-incident/released-installation-scratch-thhgeg.json",
-    ]
-    assert context["incident_observer_production_files"] == [
-        "/etc/systemd/system/livespec-incident-observer.service",
-        "/etc/livespec-incident/controller.json",
-        "/etc/livespec-incident/released-installation.json",
     ]
     assert removal["ansible.builtin.file"]["state"] == "absent"
     assert removal["loop"] == "{{ incident_observer_scratch_removed }}"
@@ -415,46 +371,6 @@ def test_the_teardown_stops_and_disables_the_scratch_observer_and_its_fetch_time
     assert all("notify" not in task for task in tasks), "the teardown never restarts a unit"
 
 
-@pytest.mark.parametrize(
-    ("overrides", "holds"),
-    [
-        ({}, True),
-        ({"incident_observer_scratch_teardown_purge": True}, True),
-        ({"incident_observer_scratch": False}, False),
-        ({"incident_observer_config_path": _PRODUCTION_VALUE}, False),
-        ({"incident_observer_unit_name": _PRODUCTION_VALUE}, False),
-        ({"incident_observer_fetch_unit_name": _PRODUCTION_VALUE}, False),
-        (
-            {"incident_observer_fetch_timer_path": _PRODUCTION_VALUE},
-            False,
-        ),
-        (
-            {
-                "incident_observer_scratch_teardown_purge": True,
-                "incident_observer_scratch_root": "/var/lib/livespec-incident",
-            },
-            False,
-        ),
-    ],
-)
-def test_the_teardown_refuses_anything_production_owns(
-    overrides: dict[str, Any], *, holds: bool
-) -> None:
-    task = _task(relative="tasks/scratch_teardown.yml", name=_TEARDOWN_REFUSAL)
-
-    assert _holds(task=task, context=_teardown_facts(overrides=overrides)) is holds
-
-
-@pytest.mark.parametrize(("after", "holds"), [("a", True), ("b", False)])
-def test_the_teardown_reads_production_back_byte_identical(*, after: str, holds: bool) -> None:
-    task = _task(relative="tasks/scratch_teardown.yml", name=_READ_BACK)
-    context = _teardown_facts(overrides={})
-    context["incident_observer_production_before"] = {"results": [{"stat": {"checksum": "a"}}]}
-    context["incident_observer_production_after"] = {"results": [{"stat": {"checksum": after}}]}
-
-    assert _holds(task=task, context=context) is holds
-
-
 def test_the_teardown_keeps_the_scratch_evidence_store_unless_asked() -> None:
     purge = _task(
         relative="tasks/scratch_teardown.yml",
@@ -465,6 +381,9 @@ def test_the_teardown_keeps_the_scratch_evidence_store_unless_asked() -> None:
     assert variables["incident_observer_scratch_teardown_purge"] is False
     assert purge["when"] == "incident_observer_scratch_teardown_purge | bool"
     assert purge["ansible.builtin.file"] == {
-        "path": "{{ incident_observer_scratch_root }}",
+        "path": (
+            "{{ incident_observer_production.incident_observer_home }}"
+            "/scratch-{{ incident_observer_scratch_name }}"
+        ),
         "state": "absent",
     }

@@ -249,29 +249,90 @@ instance is the same role applied with another variable set,
 `<name>` defaults to `thhgeg`; `-e incident_observer_scratch_name=<name>` moves
 every path and the branch together, and `-e
 incident_observer_target_branch=incident-scratch/<x>` names the branch alone.
+The name must be one segment of lowercase letters, digits and hyphens, and
+every path and unit name is FIXED by it: an override of a single path refuses.
 
-The scratch apply shares production's venv, reader clone and the three secret
-files, `reader.env` and `recovery-app.json` READ-ONLY: it writes none of them,
-never pip-installs or re-clones the reader, publishes no funnel and never
-restarts production's unit. It refuses before writing anything when a value
-equals production's or sits inside production's directories, when the target
-branch is empty or master, and when the shared venv does not already serve
-`incident_observer_release` (converge production first). The observer and its
-principal then refuse every action whose registered branch is not the scratch
-branch (livespec-dev-tooling-thhgeg).
+### Separation from production is enforced by code, not by the OS
+
+Both instances run as the same controller account, and the scratch unit's
+`ReadWritePaths` is the controller's home, which holds production's receipts.
+Nothing in systemd or the filesystem stops the scratch process, or a mistyped
+override, from reaching production's state. `tasks/scratch_preflight.yml` is
+what does, and both the apply and the teardown run it before they write, stop
+or remove anything:
+
+- the name is one safe segment, the branch is named and not master, and the
+  port is not production's;
+- every shared value (home, configuration directory, `/opt` install, venv and
+  reader directories, account, the three secret files, `reader.env`,
+  `recovery-app.json`, repository) is exactly production's;
+- every per-instance path is exactly the layout the name fixes;
+- after `realpath` normalization (a trailing slash, `..`), no scratch path is,
+  sits inside or contains any path production owns. Production's home and
+  configuration directory are parents a scratch path may sit inside, never be
+  or contain.
+
+The scratch apply then writes none of production's shared installation: no
+apt package, account, shared directory, venv, release install, reader clone,
+manifest renderer, secret, `reader.env` or `recovery-app.json`. It publishes no
+funnel and never restarts production's unit. It also refuses when the shared
+venv does not already serve `incident_observer_release` (converge production
+first). Every refusal comes before the scratch apply's first write, so its
+"Nothing has been written" is true. The observer and its principal then refuse
+every action whose registered branch is not the scratch branch
+(livespec-dev-tooling-thhgeg).
+
+### How the scratch instance binds and observes: no webhook
+
+Only production has the public funnel, so GitHub's one webhook delivers every
+`workflow_job` event, scratch-branch runs included, to PRODUCTION. Production
+answers each scratch job `ignored` and writes nothing, because its
+controller.json names no target branch and so serves master
+(`tests/livespec_dev_tooling/test_incident_observer_role_production_ignores_scratch.py`).
+The scratch observer receives no delivery at all.
+
+- **Binding works without a webhook.** `POST /bind` on the scratch loopback
+  port is called by the operator with the merge sha and the id of `ci.yml`'s
+  push run on the scratch branch. The observer then reads `pulls/<n>` and
+  `actions/runs/<id>` from GitHub itself, as the recovery App, through
+  `recovery-app.json` beside the scratch controller.json. That push run exists
+  only once `ci.yml` runs on `incident-scratch/**` pushes
+  (livespec-dev-tooling-7w757z).
+- **Recovery works without a webhook.** `POST /recover` and `POST /reconcile`
+  are operator-called on the loopback port and drive the scratch principal.
+- **First-failure observation is MISSING.** The observer has no forge-polling
+  path for `workflow_job` outcomes: only a `/callback` delivery starts the
+  revert of a failing leaf. A scratch observer therefore never acts on a
+  failing scratch CI job by itself. The thhgeg proofs do not need it, because
+  they trigger recovery through `/recover`, but a proof of first-failure
+  recovery on a scratch branch would need a polling path built first.
 
 ```bash
 /usr/local/bin/with-livespec-env.sh -- just ansible-drift ansible/incident-observer-scratch.yml
 /usr/local/bin/with-livespec-env.sh -- just ansible-apply ansible/incident-observer-scratch.yml
 ```
 
+A drift run before the first apply has no scratch reference clone yet. It
+withholds the clone's reads and says so, rather than failing, and the apply
+clones it.
+
 The committed teardown is `ansible/incident-observer-scratch-teardown.yml`
-(`tasks/scratch_teardown.yml`). It stops and disables the scratch observer and
-its fetch timer, removes their unit files, the scratch controller.json and the
-scratch manifest, and reads production's unit, controller.json and manifest
-back byte-identical, failing loudly if any moved. It keeps
-`/var/lib/livespec-incident/scratch-<name>/` as the evidence store unless run
-with `-e incident_observer_scratch_teardown_purge=true`.
+(`tasks/scratch_teardown.yml`). It runs the same preflight first. Then it:
+
+- stops and disables the scratch observer and its fetch timer;
+- removes their unit files, the timer's stamp, the scratch controller.json and
+  the scratch manifest, then reloads systemd and clears any failed state for
+  the scratch units;
+- reads back production's unit, controller.json, manifest, fetch service and
+  timer, `recovery-app.json`, `reader.env`, the three secrets, its main
+  directories and the full listing (with checksums) of its state directory.
+  It fails loudly if any moved.
+
+It keeps `/var/lib/livespec-incident/scratch-<name>/` as the evidence store
+unless run with `-e incident_observer_scratch_teardown_purge=true`. A purge
+removes only `<production home>/scratch-<name>`, spelled from the validated
+name, never from a path an override could move. The teardown loads
+`vars/scratch.yml`, so run it BEFORE a change that removes that file merges.
 
 ```bash
 /usr/local/bin/with-livespec-env.sh -- just ansible-apply ansible/incident-observer-scratch-teardown.yml

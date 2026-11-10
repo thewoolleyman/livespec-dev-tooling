@@ -62,151 +62,12 @@
       candidates run as (HOST_VARS.md).
     success_msg: the candidate account is {{ incident_observer_candidate_user }}
 
-- name: Read production's instance values for a scratch apply to differ from
-  # A scratch apply (ansible/incident-observer-scratch.yml) overrides the role's
-  # defaults, which ARE production's values; they are read here under one
-  # separate name, compared against and never applied. livespec-dev-tooling-32qdja.
-  ansible.builtin.include_vars:
-    file: "{{ role_path }}/defaults/main.yml"
-    name: incident_observer_production
+- name: Take the scratch instance's refusals before writing anything
+  # tasks/scratch_preflight.yml, shared with the teardown: the name, the shared
+  # values, the fixed layout and normalized disjointness from every production
+  # path. livespec-dev-tooling-32qdja.
+  ansible.builtin.include_tasks: scratch_preflight.yml
   when: incident_observer_scratch | bool
-
-- name: Refuse a scratch instance that shares a name, path, port or branch with production
-  # Every per-instance value must differ from production's, and no scratch
-  # directory may sit inside production's state or reference clone, so a
-  # scratch apply can never write, restart or bind anything production owns.
-  ansible.builtin.assert:
-    that:
-      - incident_observer_target_branch | length > 0
-      - incident_observer_target_branch != 'master'
-      - incident_observer_port | int != incident_observer_production.incident_observer_port | int
-      - incident_observer_scratch_values | intersect(incident_observer_production_values) | length == 0
-      - >-
-        incident_observer_scratch_values | select('match', '^(' ~
-        (incident_observer_production_values | map('regex_escape') | join('|')) ~ ')/')
-        | list | length == 0
-    fail_msg: >-
-      the scratch instance must name a target branch other than master, a port
-      other than production's {{ incident_observer_production.incident_observer_port }},
-      and its own controller.json, manifest, state directory, reference clone and
-      unit names, none of them production's or inside production's directories
-      (vars/scratch.yml). Nothing has been written.
-    success_msg: >-
-      the scratch instance binds {{ incident_observer_target_branch }} on port
-      {{ incident_observer_port }} under {{ incident_observer_unit_name }}
-  vars:
-    incident_observer_scratch_values:
-      - "{{ incident_observer_config_path }}"
-      - "{{ incident_observer_manifest_path }}"
-      - "{{ incident_observer_state_dir }}"
-      - "{{ incident_observer_reference_dir }}"
-      - "{{ incident_observer_scratch_root }}"
-      - "{{ incident_observer_unit_name }}"
-      - "{{ incident_observer_unit_path }}"
-      - "{{ incident_observer_fetch_unit_name }}"
-      - "{{ incident_observer_fetch_service_path }}"
-      - "{{ incident_observer_fetch_timer_path }}"
-    incident_observer_production_values:
-      - "{{ incident_observer_production.incident_observer_config_path }}"
-      - "{{ incident_observer_production.incident_observer_manifest_path }}"
-      - "{{ incident_observer_production.incident_observer_state_dir }}"
-      - "{{ incident_observer_production.incident_observer_reference_dir }}"
-      - "{{ incident_observer_production.incident_observer_unit_name }}"
-      - "{{ incident_observer_production.incident_observer_unit_path }}"
-      - "{{ incident_observer_production.incident_observer_fetch_unit_name }}"
-      - "{{ incident_observer_production.incident_observer_fetch_service_path }}"
-      - "{{ incident_observer_production.incident_observer_fetch_timer_path }}"
-  when: incident_observer_scratch | bool
-
-- name: Install the interpreter's venv module and git
-  ansible.builtin.apt:
-    name:
-      - python3-venv
-      - git
-    state: present
-  become: true
-
-- name: Create the controller account
-  ansible.builtin.user:
-    name: "{{ incident_observer_user }}"
-    system: true
-    create_home: false
-    home: "{{ incident_observer_home }}"
-    shell: /usr/sbin/nologin
-  become: true
-  register: incident_observer_account
-
-- name: Name whether the controller account can be become yet
-  # Under `--check` on a host this role has never reached the account was not
-  # created, and Ansible cannot become a user that does not exist: the steps
-  # that run AS the controller are withheld below and say so.
-  ansible.builtin.set_fact:
-    incident_observer_account_ready: >-
-      {{ not (ansible_check_mode and incident_observer_account.changed) }}
-
-- name: Read the candidate account
-  ansible.builtin.getent:
-    database: passwd
-    key: "{{ incident_observer_candidate_user }}"
-  become: true
-
-- name: Create the root-owned installation directories
-  ansible.builtin.file:
-    path: "{{ item }}"
-    state: directory
-    owner: root
-    group: root
-    mode: "0755"
-  become: true
-  loop:
-    - "{{ incident_observer_install_dir }}"
-    - "{{ incident_observer_bin_dir }}"
-
-- name: Create the protected configuration directory
-  ansible.builtin.file:
-    path: "{{ incident_observer_etc_dir }}"
-    state: directory
-    owner: root
-    group: "{{ incident_observer_group }}"
-    mode: "0750"
-  become: true
-
-- name: Create the controller account's home
-  ansible.builtin.file:
-    path: "{{ incident_observer_home }}"
-    state: directory
-    owner: "{{ incident_observer_user }}"
-    group: "{{ incident_observer_group }}"
-    mode: "0750"
-  become: true
-
-- name: Create the scratch instance's own root beside production's state
-  # The scratch state directory and reference clone are siblings beneath it,
-  # as production's are beneath the controller account's home.
-  ansible.builtin.file:
-    path: "{{ incident_observer_scratch_root }}"
-    state: directory
-    owner: "{{ incident_observer_user }}"
-    group: "{{ incident_observer_group }}"
-    mode: "0750"
-  become: true
-  when: incident_observer_scratch | bool
-
-- name: Create the private state directory and its recovery journal
-  # 0700 is what the loader checks on the state directory itself; the two
-  # journal directories beneath it are the provisioner's obligation
-  # (docs/incident-recovery-journal.md).
-  ansible.builtin.file:
-    path: "{{ item }}"
-    state: directory
-    owner: "{{ incident_observer_user }}"
-    group: "{{ incident_observer_group }}"
-    mode: "0700"
-  become: true
-  loop:
-    - "{{ incident_observer_state_dir }}"
-    - "{{ incident_observer_state_dir }}/recovery-journal"
-    - "{{ incident_observer_state_dir }}/recovery-journal-contexts"
 
 - name: Look for an installation already converged here
   ansible.builtin.stat:
@@ -219,16 +80,6 @@
 - name: Name whether the installation exists before this run writes anything
   ansible.builtin.set_fact:
     incident_observer_installed: "{{ incident_observer_venv_python_stat.stat.exists }}"
-
-- name: Create the isolated venv on the system interpreter
-  ansible.builtin.command:
-    argv:
-      - "{{ incident_observer_python }}"
-      - -m
-      - venv
-      - "{{ incident_observer_venv }}"
-    creates: "{{ incident_observer_venv }}/bin/python"
-  become: true
 
 - name: Read the distribution version the venv serves
   ansible.builtin.command:
@@ -261,6 +112,112 @@
       release before the scratch instance. Nothing has been written.
     success_msg: the shared venv serves {{ incident_observer_release }}
   when: incident_observer_scratch | bool
+
+- name: Install the interpreter's venv module and git
+  ansible.builtin.apt:
+    name:
+      - python3-venv
+      - git
+    state: present
+  become: true
+  when: not (incident_observer_scratch | bool)
+
+- name: Create the controller account
+  ansible.builtin.user:
+    name: "{{ incident_observer_user }}"
+    system: true
+    create_home: false
+    home: "{{ incident_observer_home }}"
+    shell: /usr/sbin/nologin
+  become: true
+  register: incident_observer_account
+  when: not (incident_observer_scratch | bool)
+
+- name: Name whether the controller account can be become yet
+  # Under `--check` on a host this role has never reached the account was not
+  # created, and Ansible cannot become a user that does not exist: the steps
+  # that run AS the controller are withheld below and say so.
+  ansible.builtin.set_fact:
+    incident_observer_account_ready: >-
+      {{ not (ansible_check_mode and incident_observer_account.changed) }}
+
+- name: Read the candidate account
+  ansible.builtin.getent:
+    database: passwd
+    key: "{{ incident_observer_candidate_user }}"
+  become: true
+
+- name: Create the root-owned installation directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+  loop:
+    - "{{ incident_observer_install_dir }}"
+    - "{{ incident_observer_bin_dir }}"
+  when: not (incident_observer_scratch | bool)
+
+- name: Create the protected configuration directory
+  ansible.builtin.file:
+    path: "{{ incident_observer_etc_dir }}"
+    state: directory
+    owner: root
+    group: "{{ incident_observer_group }}"
+    mode: "0750"
+  become: true
+  when: not (incident_observer_scratch | bool)
+
+- name: Create the controller account's home
+  ansible.builtin.file:
+    path: "{{ incident_observer_home }}"
+    state: directory
+    owner: "{{ incident_observer_user }}"
+    group: "{{ incident_observer_group }}"
+    mode: "0750"
+  become: true
+  when: not (incident_observer_scratch | bool)
+
+- name: Create the scratch instance's own root beside production's state
+  # The scratch state directory and reference clone are siblings beneath it,
+  # as production's are beneath the controller account's home.
+  ansible.builtin.file:
+    path: "{{ incident_observer_scratch_root }}"
+    state: directory
+    owner: "{{ incident_observer_user }}"
+    group: "{{ incident_observer_group }}"
+    mode: "0750"
+  become: true
+  when: incident_observer_scratch | bool
+
+- name: Create the private state directory and its recovery journal
+  # 0700 is what the loader checks on the state directory itself; the two
+  # journal directories beneath it are the provisioner's obligation
+  # (docs/incident-recovery-journal.md).
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ incident_observer_user }}"
+    group: "{{ incident_observer_group }}"
+    mode: "0700"
+  become: true
+  loop:
+    - "{{ incident_observer_state_dir }}"
+    - "{{ incident_observer_state_dir }}/recovery-journal"
+    - "{{ incident_observer_state_dir }}/recovery-journal-contexts"
+
+- name: Create the isolated venv on the system interpreter
+  ansible.builtin.command:
+    argv:
+      - "{{ incident_observer_python }}"
+      - -m
+      - venv
+      - "{{ incident_observer_venv }}"
+    creates: "{{ incident_observer_venv }}/bin/python"
+  become: true
+  when: not (incident_observer_scratch | bool)
 
 - name: Install the released distribution from its tag, never from a checkout
   # Only when the venv does not already serve this release: pip rebuilds a
@@ -428,6 +385,7 @@
     group: root
     mode: "0755"
   become: true
+  when: not (incident_observer_scratch | bool)
 
 - name: Name the installation and the account this apply has just created
   # Both facts were read before this run wrote anything, so on a FIRST apply
@@ -441,6 +399,34 @@
     incident_observer_account_ready: true
   when: not ansible_check_mode
 
+- name: Look for the reference clone's committed tenant connection
+  ansible.builtin.stat:
+    path: "{{ incident_observer_reference_dir }}/.beads/config.yaml"
+    get_checksum: false
+  become: true
+  register: incident_observer_reference_config_stat
+  check_mode: false
+  when: incident_observer_account_ready
+
+- name: Name whether the reference clone can be read on this run
+  # A dry run before the first apply of an instance has no clone yet: the
+  # clone task writes nothing under `--check`. Its reads are withheld there
+  # and say so below. An apply reads the clone it has just made, so a clone
+  # that is still missing fails loudly there (livespec-dev-tooling-32qdja).
+  ansible.builtin.set_fact:
+    incident_observer_reference_ready: >-
+      {{ incident_observer_account_ready
+         and (not ansible_check_mode or incident_observer_reference_config_stat.stat.exists) }}
+
+- name: Say what this dry run cannot read from a reference clone not yet made
+  ansible.builtin.debug:
+    msg: >-
+      {{ incident_observer_reference_dir }} has not been cloned yet, so this dry
+      run cannot read its tenant connection or its released tag; an apply
+      clones it at {{ incident_observer_release }}, writes its ledger pointer
+      and renders the manifest from it.
+  when: incident_observer_account_ready and not incident_observer_reference_ready
+
 - name: Read the reference clone's committed tenant connection
   # `.beads/config.yaml` is committed and carries the tenant's host, port, user
   # and database and no credential; the pointer below is rendered from it, so
@@ -450,7 +436,7 @@
     src: "{{ incident_observer_reference_dir }}/.beads/config.yaml"
   become: true
   register: incident_observer_beads_config
-  when: incident_observer_account_ready
+  when: incident_observer_reference_ready
 
 - name: Hold the reference clone's ledger directory to its owner alone
   # `bd` writes its port file, local version and touch marker beside the
@@ -463,7 +449,7 @@
     group: "{{ incident_observer_group }}"
     mode: "0700"
   become: true
-  when: incident_observer_account_ready
+  when: incident_observer_reference_ready
 
 - name: Write the reference clone's ledger pointer for the canonical reader
   # `.beads/metadata.json` is the gitignored, regenerable pointer `bd` resolves
@@ -499,7 +485,7 @@
   vars:
     incident_observer_beads_connection: "{{ incident_observer_beads_config.content | b64decode | from_yaml }}"
   become: true
-  when: incident_observer_account_ready
+  when: incident_observer_reference_ready
 
 - name: Read the released tag's commit from the reference clone
   ansible.builtin.command:
@@ -514,7 +500,7 @@
   register: incident_observer_revision
   changed_when: false
   check_mode: false
-  when: incident_observer_installed and incident_observer_account_ready
+  when: incident_observer_installed and incident_observer_reference_ready
 
 - name: Render the released-installation manifest with the serving interpreter
   # The digest the service recomputes at start is a fact of THIS interpreter
