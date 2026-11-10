@@ -228,6 +228,8 @@ SHA = "d" * 40
 TAG_SHA = "e" * 40
 SELF_SHA = "f" * 40
 TEMPLATE = "thewoolleyman/livespec-dev-tooling/.github/workflows/reusable-check-matrix.yml"
+ACTION = "thewoolleyman/livespec-dev-tooling/.github/actions/publish-flake-retries"
+WORKFLOWS = ".github/workflows/"
 
 
 def _workflow(*uses: str) -> str:
@@ -236,10 +238,15 @@ def _workflow(*uses: str) -> str:
 
 
 class _Remote:
-    def __init__(self, *, ci: str | None, remote: dict[str, str] | None = None) -> None:
-        self.ci = ci
+    """A consumer's default branch over the git transport: its workflow files and its refs."""
+
+    def __init__(
+        self, *, workflows: dict[str, str] | None, remote: dict[str, str] | None = None
+    ) -> None:
+        self.workflows = workflows
         self.remote = remote or {}
         self.asked: list[list[str]] = []
+        self.unreadable: frozenset[str] = frozenset()
         self.ls_remote_status = 0
         self.ls_remote_runs = True
 
@@ -247,14 +254,17 @@ class _Remote:
         def run(*, args: list[str], cwd: Path | None = None) -> CommandOutcome:
             _ = cwd
             self.asked.append(args)
+            files = self.workflows or {}
             if "clone" in args:
                 return IOSuccess(CommandResult(returncode=0, stdout="", stderr=""))
+            if "ls-tree" in args:
+                status = 128 if self.workflows is None else 0
+                listing = "".join(f"{WORKFLOWS}{name}\0" for name in files)
+                return IOSuccess(CommandResult(returncode=status, stdout=listing, stderr=""))
             if "show" in args:
-                if self.ci is None:
-                    return IOSuccess(
-                        CommandResult(returncode=128, stdout="", stderr="no such path")
-                    )
-                return IOSuccess(CommandResult(returncode=0, stdout=self.ci, stderr=""))
+                name = args[-1].removeprefix(f"HEAD:{WORKFLOWS}")
+                status = 128 if name in self.unreadable else 0
+                return IOSuccess(CommandResult(returncode=status, stdout=files[name], stderr=""))
             assert args[1] == "ls-remote"
             if not self.ls_remote_runs:
                 return IOFailure(
@@ -272,26 +282,35 @@ class _Remote:
     def read(self) -> str | None:
         return read_templates(probe=self.probe(), repository="thewoolleyman/consumer")
 
+    def shown(self) -> list[str]:
+        return [a[-1] for a in self.asked if "show" in a]
+
+
+def _ci(*uses: str) -> dict[str, str]:
+    return {"ci.yml": _workflow(*uses)}
+
 
 def test_a_pinned_commit_is_the_serving_build_and_is_read_from_the_remote_default_branch() -> None:
-    remote = _Remote(ci=_workflow("actions/checkout@v5", f"{TEMPLATE}@{SHA}"))
+    remote = _Remote(workflows=_ci("actions/checkout@v5", f"{TEMPLATE}@{SHA}"))
     assert remote.read() == f"livespec-dev-tooling@{SHA}"
-    shown = next(a for a in remote.asked if "show" in a)
-    assert shown[-1] == "HEAD:.github/workflows/ci.yml"
+    listed = next(a for a in remote.asked if "ls-tree" in a)
+    assert listed[-1] == WORKFLOWS
+    assert remote.shown() == [f"HEAD:{WORKFLOWS}ci.yml"]
     assert any("thewoolleyman/consumer.git" in part for a in remote.asked for part in a)
+    assert sum("clone" in a for a in remote.asked) == 1
     assert not any("ls-remote" in a for a in remote.asked)
 
 
 def test_a_pinned_tag_is_resolved_to_the_commit_it_points_at() -> None:
     remote = _Remote(
-        ci=_workflow(f"{TEMPLATE}@v1.2.3"),
+        workflows=_ci(f"{TEMPLATE}@v1.2.3"),
         remote={"refs/tags/v1.2.3": "1" * 40, "refs/tags/v1.2.3^{}": TAG_SHA},
     )
     assert remote.read() == f"livespec-dev-tooling@{TAG_SHA}"
 
 
 def test_a_lightweight_tag_resolves_to_its_own_commit() -> None:
-    remote = _Remote(ci=_workflow(f"{TEMPLATE}@v1.2.3"), remote={"refs/tags/v1.2.3": TAG_SHA})
+    remote = _Remote(workflows=_ci(f"{TEMPLATE}@v1.2.3"), remote={"refs/tags/v1.2.3": TAG_SHA})
     assert remote.read() == f"livespec-dev-tooling@{TAG_SHA}"
 
 
@@ -300,39 +319,87 @@ def test_a_lightweight_tag_resolves_to_its_own_commit() -> None:
     [{}, {"refs/tags/v1.2.3": "short"}, {"refs/tags/other": TAG_SHA}],
 )
 def test_a_ref_that_names_no_tag_is_unverified(remote: dict[str, str]) -> None:
-    assert _Remote(ci=_workflow(f"{TEMPLATE}@v1.2.3"), remote=remote).read() is None
+    assert _Remote(workflows=_ci(f"{TEMPLATE}@v1.2.3"), remote=remote).read() is None
 
 
 def test_an_unanswered_tag_lookup_is_unverified() -> None:
-    remote = _Remote(ci=_workflow(f"{TEMPLATE}@v1.2.3"), remote={"refs/tags/v1.2.3": TAG_SHA})
+    remote = _Remote(workflows=_ci(f"{TEMPLATE}@v1.2.3"), remote={"refs/tags/v1.2.3": TAG_SHA})
     remote.ls_remote_status = 128
     assert remote.read() is None
 
 
 def test_a_tag_lookup_that_cannot_run_is_unverified() -> None:
-    remote = _Remote(ci=_workflow(f"{TEMPLATE}@v1.2.3"), remote={"refs/tags/v1.2.3": TAG_SHA})
+    remote = _Remote(workflows=_ci(f"{TEMPLATE}@v1.2.3"), remote={"refs/tags/v1.2.3": TAG_SHA})
     remote.ls_remote_runs = False
     assert remote.read() is None
 
 
 def test_pins_that_disagree_are_unverified() -> None:
-    ci = _workflow(f"{TEMPLATE}@{SHA}", f"{TEMPLATE}@{TAG_SHA}")
-    assert _Remote(ci=ci).read() is None
+    assert _Remote(workflows=_ci(f"{TEMPLATE}@{SHA}", f"{TEMPLATE}@{TAG_SHA}")).read() is None
 
 
 def test_the_same_pin_repeated_is_one_serving_build() -> None:
-    ci = _workflow(f"{TEMPLATE}@{SHA}", f"{TEMPLATE}@{SHA}")
-    assert _Remote(ci=ci).read() == f"livespec-dev-tooling@{SHA}"
+    remote = _Remote(workflows=_ci(f"{TEMPLATE}@{SHA}", f"{TEMPLATE}@{SHA}"))
+    assert remote.read() == f"livespec-dev-tooling@{SHA}"
 
 
 def test_only_this_librarys_templates_count_as_pins() -> None:
-    ci = _workflow("thewoolleyman/livespec/.github/workflows/x.yml@v9.9.9", "actions/cache@v5")
-    assert _Remote(ci=ci).read() is None
+    ci = _ci("thewoolleyman/livespec/.github/workflows/x.yml@v9.9.9", "actions/cache@v5")
+    assert _Remote(workflows=ci).read() is None
+
+
+def test_a_pinned_composite_action_of_this_library_is_a_template_pin() -> None:
+    # The fleet's ci.yml files pin this library's composite actions, not only its
+    # reusable workflows (for example `.github/actions/publish-flake-retries@v1.189.1`).
+    remote = _Remote(workflows=_ci(f"{ACTION}@v1.2.3"), remote={"refs/tags/v1.2.3": TAG_SHA})
+    assert remote.read() == f"livespec-dev-tooling@{TAG_SHA}"
+
+
+def test_pins_in_every_workflow_file_are_read_not_only_ci() -> None:
+    # A consumer's release-dispatch, pin-freshness and bump-pin workflows run this
+    # library's reusable workflows; ci.yml alone does not name them.
+    workflows = {
+        "ci.yml": _workflow("actions/checkout@v5"),
+        "release-dispatch.yml": _workflow(f"{TEMPLATE}@{SHA}"),
+        "pin-freshness.yaml": _workflow(f"{ACTION}@{SHA}"),
+    }
+    remote = _Remote(workflows=workflows)
+    assert remote.read() == f"livespec-dev-tooling@{SHA}"
+    assert sorted(remote.shown()) == sorted(f"HEAD:{WORKFLOWS}{name}" for name in workflows)
+    assert sum("clone" in a for a in remote.asked) == 1
+
+
+def test_pins_that_disagree_across_workflow_files_are_unverified() -> None:
+    workflows = {
+        "ci.yml": _workflow(f"{ACTION}@{SHA}"),
+        "pin-freshness.yml": _workflow(f"{TEMPLATE}@{TAG_SHA}"),
+    }
+    assert _Remote(workflows=workflows).read() is None
+
+
+def test_a_file_that_is_not_a_workflow_is_never_read() -> None:
+    workflows = {
+        "README.md": f"uses: {TEMPLATE}@{TAG_SHA}\n",
+        "ci.yaml": _workflow(f"{TEMPLATE}@{SHA}"),
+    }
+    remote = _Remote(workflows=workflows)
+    assert remote.read() == f"livespec-dev-tooling@{SHA}"
+    assert remote.shown() == [f"HEAD:{WORKFLOWS}ci.yaml"]
+
+
+def test_an_unreadable_workflow_file_leaves_the_consumer_unverified() -> None:
+    workflows = {
+        "ci.yml": _workflow(f"{TEMPLATE}@{SHA}"),
+        "release-dispatch.yml": _workflow(f"{TEMPLATE}@{TAG_SHA}"),
+    }
+    remote = _Remote(workflows=workflows)
+    remote.unreadable = frozenset({"release-dispatch.yml"})
+    assert remote.read() is None
 
 
 def test_a_consumer_running_its_own_local_workflows_serves_its_default_branch_commit() -> None:
     remote = _Remote(
-        ci=_workflow("./.github/actions/budget", "actions/checkout@v5"),
+        workflows=_ci("./.github/actions/budget", "actions/checkout@v5"),
         remote={"HEAD": SELF_SHA},
     )
     assert remote.read() == f"consumer@{SELF_SHA}"
@@ -341,12 +408,14 @@ def test_a_consumer_running_its_own_local_workflows_serves_its_default_branch_co
 
 
 def test_a_local_workflow_consumer_with_an_unreadable_head_is_unverified() -> None:
-    assert _Remote(ci=_workflow("./.github/actions/budget"), remote={"HEAD": "bad"}).read() is None
+    remote = _Remote(workflows=_ci("./.github/actions/budget"), remote={"HEAD": "bad"})
+    assert remote.read() is None
 
 
-def test_a_consumer_with_no_ci_or_no_template_use_is_unverified() -> None:
-    assert _Remote(ci=None).read() is None
-    assert _Remote(ci=_workflow("actions/checkout@v5")).read() is None
+def test_a_consumer_with_no_workflows_or_no_template_use_is_unverified() -> None:
+    assert _Remote(workflows=None).read() is None
+    assert _Remote(workflows={}).read() is None
+    assert _Remote(workflows=_ci("actions/checkout@v5")).read() is None
 
 
 def test_an_unreachable_remote_is_unverified() -> None:
