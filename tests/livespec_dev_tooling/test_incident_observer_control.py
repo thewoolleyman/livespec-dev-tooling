@@ -82,6 +82,8 @@ def controller(tmp_path, monkeypatch):
 
     monkeypatch.setattr(subprocess, "run", reader)
     monkeypatch.setattr(control.MergedRunVerifier, "__call__", lambda *_: True)
+    # Focused evidence at `/arm` has its own tests; these exercise the rest of the arm.
+    monkeypatch.setattr(control.FocusedEvidenceGate, "__call__", lambda *_: None)
     effects = []
     application = service.ControllerService(
         installation=settings,

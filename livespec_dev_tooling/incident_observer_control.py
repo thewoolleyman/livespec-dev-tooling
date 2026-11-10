@@ -20,6 +20,7 @@ from livespec_dev_tooling.incident_observer_admission import (
     bind_after_merge,
 )
 from livespec_dev_tooling.incident_observer_authority import CurrentAuthorityReader
+from livespec_dev_tooling.incident_observer_evidence import FocusedEvidenceGate
 from livespec_dev_tooling.incident_observer_forge import MergedRunVerifier
 from livespec_dev_tooling.incident_observer_invalidation import ObserverCiInvalidation
 
@@ -27,6 +28,7 @@ __all__: list[str] = ["ObserverControl"]
 
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-47ij37
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-wanebl
+# EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-4aksht
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -108,6 +110,16 @@ class ObserverControl:
         )
         if arm is None or (expected is not None and not isinstance(expected, str)):
             return {"status": "refused", "reason": "invalid exact observer arm"}
+        refusal = FocusedEvidenceGate(
+            command=settings.reader,
+            repo=settings.repo,
+            release=settings.reader_release,
+            installed_reader_approved=lambda release, command: (release, command)
+            == (settings.reader_release, settings.reader),
+            read=ForgeReads.installed(installation=settings),
+        )(arm)
+        if refusal is not None:
+            return {"status": "refused", "reason": refusal}
         reader = CurrentAuthorityReader(
             command=settings.reader,
             repo=settings.repo,

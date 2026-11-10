@@ -98,6 +98,11 @@ def provisioned(tmp_path, monkeypatch):
         "livespec_dev_tooling.incident_observer_control.MergedRunVerifier.__call__",
         lambda *_: True,
     )
+    # Focused evidence at `/arm` has its own tests; these exercise CI revocation.
+    monkeypatch.setattr(
+        "livespec_dev_tooling.incident_observer_control.FocusedEvidenceGate.__call__",
+        lambda *_: None,
+    )
     application = ControllerService(
         installation=settings, recover=lambda intent: effects.append(intent.action_id) or "effect-1"
     )
