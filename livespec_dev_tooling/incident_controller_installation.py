@@ -53,6 +53,7 @@ class ControllerInstallation:
     config: Path
     ci_identity_policy: CiIdentityPolicy | None = None
     target_branch: str = _DEFAULT_TARGET_BRANCH
+    ci_identity_declared: bool = False
 
     @classmethod
     def load(cls, *, config: Path) -> ControllerInstallation | None:
@@ -131,6 +132,7 @@ class ControllerInstallation:
                     descriptor=manifest.get("ci_identity_policy"), repository=data["repository"]
                 ),
                 target_branch=data.get("target_branch", _DEFAULT_TARGET_BRANCH),
+                ci_identity_declared=manifest.get("ci_identity_policy") is not None,
             )
         except (
             OSError,

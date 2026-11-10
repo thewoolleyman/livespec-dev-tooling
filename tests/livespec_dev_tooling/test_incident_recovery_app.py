@@ -3,17 +3,24 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import io
 import json
+import shutil
 import subprocess
 import urllib.error
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import Mock
 
 import pytest
 from livespec_runtime_budget.github_budget import GithubBudgetedClient, GithubBudgetResponse
 
+from livespec_dev_tooling import _incident_recovery_signing as signing
+from livespec_dev_tooling import incident_ci_identity_policy as policy_module
 from livespec_dev_tooling import incident_recovery_app as app
+from livespec_dev_tooling import incident_recovery_principal_service as principal_service
+from livespec_dev_tooling.incident_forge_reads import ForgeReads
 from livespec_dev_tooling.incident_recovery_app import (
     AppRefusal,
     RecoveryAppCredential,
@@ -94,16 +101,18 @@ def test_signing_uses_only_the_fixed_system_crypto_and_a_private_key_file(monkey
         seen["key"] = Path(key).read_text()
         return subprocess.CompletedProcess(argv, 0, stdout=b"signature")
 
-    monkeypatch.setattr(app.subprocess, "run", run)
-    assert app.openssl_sign(message=b"header.claims", private_key="PEM\n") == b"signature"
+    monkeypatch.setattr(signing.subprocess, "run", run)
+    assert signing.openssl_sign(message=b"header.claims", private_key="PEM\n") == b"signature"
     assert seen["argv"][0] == "/usr/bin/openssl"
     assert seen["input"] == b"header.claims"
     assert seen["key"] == "PEM\n"
     assert set(seen["env"]) == {"PATH", "HOME", "OPENSSL_CONF"}
     monkeypatch.setattr(
-        app.subprocess, "run", lambda argv, **_: subprocess.CompletedProcess(argv, 1, stdout=b"x")
+        signing.subprocess,
+        "run",
+        lambda argv, **_: subprocess.CompletedProcess(argv, 1, stdout=b"x"),
     )
-    assert app.openssl_sign(message=b"m", private_key="PEM\n") == b""
+    assert signing.openssl_sign(message=b"m", private_key="PEM\n") == b""
 
 
 class Forge:
@@ -291,9 +300,9 @@ def test_a_revalidated_read_is_the_retained_body_at_status_200():
 
 def test_signing_that_outlives_its_ceiling_answers_no_signature(monkeypatch):
     monkeypatch.setattr(
-        app.subprocess, "run", Mock(side_effect=subprocess.TimeoutExpired("openssl", 10))
+        signing.subprocess, "run", Mock(side_effect=subprocess.TimeoutExpired("openssl", 10))
     )
-    assert app.openssl_sign(message=b"m", private_key="PEM\n") == b""
+    assert signing.openssl_sign(message=b"m", private_key="PEM\n") == b""
 
 
 def test_transport_posts_json_to_the_fixed_origin(monkeypatch):
@@ -334,3 +343,183 @@ def test_transport_reports_refusals_and_unobserved_answers(monkeypatch, failure)
         "empty": (200, None),
     }
     assert (response.status_code, response.value) == expected[failure]
+
+
+# livespec-dev-tooling-gwzviw: the recovery App signs with the pinned program, digest included.
+def _pin() -> SimpleNamespace:
+    name = shutil.which("openssl")
+    assert name is not None
+    program = Path(name).resolve()
+    return SimpleNamespace(
+        crypto_path=program, crypto_sha256=hashlib.sha256(program.read_bytes()).hexdigest()
+    )
+
+
+def _spy(monkeypatch: pytest.MonkeyPatch, *, signature: bytes = b"signature") -> Mock:
+    spy = Mock(side_effect=lambda argv, **_: subprocess.CompletedProcess(argv, 0, stdout=signature))
+    monkeypatch.setattr(signing.subprocess, "run", spy)
+    return spy
+
+
+def test_the_pinned_program_check_is_the_one_ci_verification_rechecks(tmp_path: Path) -> None:
+    pin = _pin()
+    intact = policy_module.pinned_crypto_intact
+    assert intact(path=pin.crypto_path, sha256=pin.crypto_sha256) is True
+    assert intact(path=pin.crypto_path, sha256="0" * 64) is False
+    assert intact(path=tmp_path / "missing", sha256=pin.crypto_sha256) is False
+    assert intact(path=Path("openssl"), sha256=pin.crypto_sha256) is False
+    plain = tmp_path / "plain"
+    plain.write_bytes(b"not executable")
+    plain.chmod(0o600)
+    assert intact(path=plain, sha256=hashlib.sha256(b"not executable").hexdigest()) is False
+
+
+def test_a_pinned_program_outside_a_protected_directory_is_not_intact(tmp_path):
+    exposed = tmp_path / "exposed"
+    exposed.mkdir(mode=0o700)
+    program = exposed / "program"
+    program.write_bytes(b"pinned")
+    program.chmod(0o700)
+    digest = hashlib.sha256(b"pinned").hexdigest()
+    assert policy_module.pinned_crypto_intact(path=program, sha256=digest)
+    exposed.chmod(0o777)
+    assert not policy_module.pinned_crypto_intact(path=program, sha256=digest)
+
+
+def test_a_pinned_path_that_is_not_a_file_is_refused_without_reading_it(tmp_path, monkeypatch):
+    directory = tmp_path / "directory"
+    directory.mkdir(mode=0o700)
+
+    reader = Mock(side_effect=AssertionError("a non-file pin must be refused before any read"))
+    monkeypatch.setattr(Path, "read_bytes", reader)
+    assert not policy_module.pinned_crypto_intact(path=directory, sha256="0" * 64)
+    assert reader.call_count == 0
+
+
+def test_signing_runs_the_pinned_program_when_its_digest_matches(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    pin = _pin()
+    spy = _spy(monkeypatch)
+    signed = signing.openssl_sign(
+        message=b"m", private_key="PEM\n", program=pin.crypto_path, sha256=pin.crypto_sha256
+    )
+    assert signed == b"signature"
+    assert spy.call_args.args[0][:3] == [str(pin.crypto_path), "dgst", "-sha256"]
+
+
+def test_signing_never_runs_a_program_whose_digest_is_not_the_pinned_one(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    pin = _pin()
+    spy = _spy(monkeypatch)
+    signed = signing.openssl_sign(
+        message=b"m", private_key="PEM\n", program=pin.crypto_path, sha256="0" * 64
+    )
+    assert signed == b""
+    assert spy.call_count == 0
+
+
+def test_a_program_replaced_while_it_signed_yields_no_signature(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    pin = _pin()
+    _spy(monkeypatch)
+    monkeypatch.setattr(signing, "pinned_crypto_intact", Mock(side_effect=[True, False]))
+    signed = signing.openssl_sign(
+        message=b"m", private_key="PEM\n", program=pin.crypto_path, sha256=pin.crypto_sha256
+    )
+    assert signed == b""
+
+
+def test_an_installation_that_never_declared_a_pin_keeps_the_fixed_system_signer() -> None:
+    assert signing.pinned_signer(policy=None, declared=False) is signing.openssl_sign
+
+
+def test_a_declared_pin_that_did_not_load_signs_nothing(monkeypatch: pytest.MonkeyPatch) -> None:
+    spy = _spy(monkeypatch)
+    signer = signing.pinned_signer(policy=None, declared=True)
+    assert signer is not signing.openssl_sign
+    assert signer(message=b"m", private_key="PEM\n") == b""
+    assert spy.call_count == 0
+
+
+@pytest.mark.parametrize("half", ["program", "sha256"])
+def test_half_a_pin_signs_nothing_and_never_runs_the_named_program(
+    monkeypatch: pytest.MonkeyPatch, half: str
+) -> None:
+    pin = _pin()
+    spy = _spy(monkeypatch)
+    named = {"program": pin.crypto_path} if half == "program" else {"sha256": pin.crypto_sha256}
+    assert signing.openssl_sign(message=b"m", private_key="PEM\n", **named) == b""
+    assert spy.call_count == 0
+
+
+def test_an_installed_pin_makes_the_signer_pinned(monkeypatch: pytest.MonkeyPatch) -> None:
+    pin = _pin()
+    spy = _spy(monkeypatch)
+    assert (
+        signing.pinned_signer(policy=pin, declared=True)(message=b"m", private_key="PEM\n")
+        == b"signature"
+    )
+    assert spy.call_args.args[0][0] == str(pin.crypto_path)
+    spy.reset_mock()
+    wrong = SimpleNamespace(crypto_path=pin.crypto_path, crypto_sha256="0" * 64)
+    assert (
+        signing.pinned_signer(policy=wrong, declared=True)(message=b"m", private_key="PEM\n") == b""
+    )
+    assert spy.call_count == 0
+
+
+@pytest.mark.parametrize("pinned", [True, False])
+def test_both_connectors_mint_their_token_with_the_installations_signer(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *, pinned: bool
+) -> None:
+    pin = _pin() if pinned else None
+    credential = tmp_path / app.RECOVERY_APP_CREDENTIAL
+    credential.write_text(json.dumps({"app_id": "7", "private_key": _SINGLE_LINE}))
+    credential.chmod(0o600)
+    installation = SimpleNamespace(
+        config=tmp_path / "controller.json",
+        repository="owner/repo",
+        ci_identity_policy=pin,
+        ci_identity_declared=pinned,
+    )
+    connect = Mock(return_value=Mock(repository="owner/repo"))
+    monkeypatch.setattr(RecoveryForge, "connect", connect)
+    ForgeReads.installed(installation=installation).connect()
+    principal_service._connector(installation=installation, config=installation.config)()  # noqa: SLF001
+    assert connect.call_count == 2
+    for call in connect.call_args_list:
+        signer = call.kwargs["signer"]
+        assert (signer is signing.openssl_sign) is (not pinned)
+        if pin is not None:
+            assert signer.func is signing.openssl_sign
+            assert signer.keywords == {"program": pin.crypto_path, "sha256": pin.crypto_sha256}
+
+
+# A declared signing policy that failed to load hands each connector the declining signer:
+# the loaded flag reaches both, so neither falls back to the unpinned fixed program.
+def test_both_connectors_decline_to_sign_when_a_declared_policy_failed_to_load(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    credential = tmp_path / app.RECOVERY_APP_CREDENTIAL
+    credential.write_text(json.dumps({"app_id": "7", "private_key": _SINGLE_LINE}))
+    credential.chmod(0o600)
+    installation = SimpleNamespace(
+        config=tmp_path / "controller.json",
+        repository="owner/repo",
+        ci_identity_policy=None,
+        ci_identity_declared=True,
+    )
+    connect = Mock(return_value=Mock(repository="owner/repo"))
+    monkeypatch.setattr(RecoveryForge, "connect", connect)
+    ForgeReads.installed(installation=installation).connect()
+    principal_service._connector(installation=installation, config=installation.config)()  # noqa: SLF001
+    spy = _spy(monkeypatch)
+    signers = [call.kwargs["signer"] for call in connect.call_args_list]
+    signatures = [signer(message=b"m", private_key="PEM\n") for signer in signers]
+    assert len(signers) == 2
+    assert all(signer is not signing.openssl_sign for signer in signers)
+    assert signatures == [b"", b""]
+    assert spy.call_count == 0

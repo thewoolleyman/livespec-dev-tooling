@@ -66,6 +66,8 @@ def _installation(*, root: Path) -> Any:
             state=root / "state",
             config=root / "controller.json",
             target_branch="master",
+            ci_identity_policy=None,
+            ci_identity_declared=False,
         ),
     )
 
