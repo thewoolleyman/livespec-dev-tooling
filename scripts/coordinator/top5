@@ -4,6 +4,8 @@
 # Shell entry point; the logic is embedded Python (stdlib only) so the repo's
 # product-Python AST gates, which govern the package, do not apply to a script.
 set -euo pipefail
+COORDINATOR_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+export COORDINATOR_DIR
 exec python3 -I - "$@" <<'PY'
 """Priority-first tick header (coordinator 546979bb, 2026-11-09, after the 10.5 h stall of priority 1).
 
@@ -19,6 +21,7 @@ docs PR; the record wins over this list until then. Nothing here mutates: only
 """
 import datetime as dt
 import json
+import os
 import subprocess
 
 TOP = [
@@ -45,6 +48,31 @@ HOMELAB_WRAPPER = [
 ]
 STALE_MINUTES = 60
 NOW = dt.datetime.now(dt.timezone.utc)
+STRANDED_TIMEOUT_S = 120
+
+
+def stranded_header():
+    """FLAGGED and UNREAD lines of fleet-utilization.sh's STRANDED-CAPACITY section (one source)."""
+    script = os.path.join(os.environ.get("COORDINATOR_DIR", "."), "fleet-utilization.sh")
+    try:
+        proc = subprocess.run(
+            ["bash", script, "--stranded-only"], capture_output=True, text=True, timeout=STRANDED_TIMEOUT_S
+        )
+    except Exception as exc:
+        print(f"STRANDED-CAPACITY READ FAILED: {exc}")
+        return
+    if proc.returncode != 0:
+        err = (proc.stderr.strip() or proc.stdout.strip() or f"exit {proc.returncode}").splitlines()[-1]
+        print(f"STRANDED-CAPACITY READ FAILED: {err[:200]}")
+        return
+    hits = [ln.strip() for ln in proc.stdout.splitlines() if ln.strip().startswith(("FLAGGED", "UNREAD"))]
+    print("STRANDED-CAPACITY (fleet-utilization.sh --stranded-only; resolve every FLAGGED line THIS tick):")
+    for line in hits or ["none flagged"]:
+        print(f"  {line}")
+    print()
+
+
+stranded_header()
 
 
 def run(args, cwd, wrapper):

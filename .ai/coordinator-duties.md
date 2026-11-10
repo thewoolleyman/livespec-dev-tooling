@@ -497,6 +497,13 @@ although its Definition of Done required one. Also that day: gvylzw closed throu
 13:01:55Z on 2026-11-04 in a batch of ten, with 0 assertions graded (as measured by expedited-incident-response-flag's
 seat). The 19:30Z handoff's audit found eight of the ten gapped or partly wired, and two wired but never run live.
 
+**Rule BYTE-CLAIMS-ARE-DIFFED: a "byte-identical" grade diffs the two files (coordinator's reading).** A grade that
+rests on "byte-identical" or "the same as" diffs the two files. It never compares names by grep. Recorded on epic
+`livespec-dev-tooling-6tgd2z` at 2026-11-10T23:33:39Z. Measured 2026-11-10 ~23:0xZ: the coordinator passed the
+disarm-workflow copies on matching secret names and missed client-id versus app-id; ci-runtime-and-cost caught it before
+it shipped. The maintainer, on that day's misses: "How are you making this fix mechanical and permanane for your
+coordinator plan and the dispatcher (if necessry?"
+
 **The release waiver permits, it does not oblige (coordinator's reading).** On 2026-11-07 ~19:4xZ, at
 expedited-incident-response-flag's request, Release Please was not dispatched per merge, so its final fix set rides
 one release.
@@ -612,6 +619,13 @@ name both. Measured 2026-11-06 ~05:4xZ-05:57Z: the coordinator told the maintain
 silent fallback started at 81defbb9 (2026-09-06) and extrapolated ~58,000 runner-minutes; logs either side showed the
 real break was 34f370e1 (2026-11-04T02:39:51Z), about 2,000 runner-minutes, and the figure had to be retracted.
 Adopted by the maintainer 2026-11-06 ~16:0xZ, verbatim: "Ok, go with rules J and G, I approve them".
+
+**Rule NO-UNMEASURED-CAPACITY-CLAIM: a claim about where time or capacity goes names its measurement (coordinator's
+reading, extending rule J).** The coordinator states no claim about where time or capacity goes without a measurement it
+names. Recorded on epic `livespec-dev-tooling-6tgd2z` at 2026-11-10T23:33:39Z. Measured 2026-11-10 ~23:0xZ: the
+coordinator told the maintainer that gate runs on the VPS were the slow part. The gates had run as cluster Jobs since
+11-02, and the measured cost is the orchestrator suite (38-40 min on 4 workers). The maintainer, on that day's misses:
+"Why aren't you figuring out these bottlenexks before I ask you?  Is it just that you attention is overloaded?"
 
 ## 8. One plan, one correctly named seat
 
@@ -812,6 +826,22 @@ hold as the constraint before checking that it binds. Also check every tick that
 priorities record: an arrival-ordered queue buries top-priority work. Read `.ai/ci-node-capacity-reads.md` before
 any cap, hold or throttle call.
 
+**Rule STRANDED-CAPACITY: a binding cap beside an idle node is a stall (coordinator's reading).** A cap or quota binds
+when its use is at its limit while launchable work waits. When it binds while a node it covers sits idle, that is a
+stall of the "cap too low" kind. Resolve it that tick: route a measured raise to the cap's owner, or name a measured
+reason why the idle cores cannot take the work. Never print it as "the cap binds, not a stall". The check is mechanical:
+the STRANDED-CAPACITY section of `scripts/coordinator/fleet-utilization.sh` reads every cap and quota (the launcher
+`fleet-cap` and per-host caps, the dispatcher's per-repository `wip_cap`, the factory namespace ResourceQuota, each
+Kueue ClusterQueue flavor quota, and each ARC scale set's maxRunners). It prints each one's limit, use, waiting work and
+covered nodes' idle, and prefixes `FLAGGED` to each one that binds while a covered node reads idle above
+`STRANDED_IDLE_PCT`. A cap it cannot read prints `UNREAD`, never silence. `scripts/coordinator/top5` prints the flagged
+lines at the top of every tick header, so the priority-first tick cannot skip them. Recorded on epic
+`livespec-dev-tooling-6tgd2z` at 2026-11-10T23:33:39Z. Measured 2026-11-10 22:24Z (tick-1 record): gmktec-xubuntu sat
+80% idle, the factory ran 11/12 with 73 queued, and the coordinator wrote "the cap binds, not a stall". The maintainer
+asked about it 90 minutes later: "ANd I also want to know why HP and gmktec are sitting mostly idle (and a lot idle on
+poweredge right now), when we are claiming there's no cluster capacity". Then: "Why aren't you figuring out these
+bottlenexks before I ask you?  Is it just that you attention is overloaded?"
+
 **A change needed in more than one place is the finding.** When one intended change has to be made in more than one
 place, or a fix needs a second follow-up of the same kind, stop and report the duplication itself, with the
 consolidation, in that same tick. Before acting on any cap, limit or hold, name the one that actually binds, measured.
@@ -917,6 +947,11 @@ ticket order (its charter), so on every pass it also:
 - reads live runs against the fleet cap and each per-host cap, with the queue depth;
 - arms a Monitor that fires when live runs stay below the cap for 5 minutes while tickets wait and no hold is set,
   and on that event names the serializer and messages the coordinator at once, without waiting for a tick;
+- arms the CONVERSE Monitor: it fires when live runs equal the cap, launchable (not size-gated) tickets wait, and the
+  factory nodes read idle above the threshold for 10 minutes; on that event it names the binding cap and messages the
+  coordinator at once. It calls the same committed check as the coordinator's tick header, the STRANDED-CAPACITY section
+  of `scripts/coordinator/fleet-utilization.sh` (`--stranded-only`), never a second copy (rule STRANDED-CAPACITY above;
+  recorded on epic `livespec-dev-tooling-6tgd2z` at 2026-11-10T23:33:39Z);
 - carries this duty in its own loop prompt and restart handoff, so a restart does not drop it.
 
 The coordinator runs the same stall Monitor from its own seat (local launcher logs, `fleet-cap` and the queue
