@@ -58,6 +58,33 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.191.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.190.1...v1.191.0) (2026-11-10)
+
+
+### Features
+
+* **incident:** installation configuration names the recovery target branch ([f710d90](https://github.com/thewoolleyman/livespec-dev-tooling/commit/f710d9084777a0aa52bfd7221c9254cc58c8bc0e))
+
+
+### Bug Fixes
+
+* a reader.env without the credential refuses by name ([0c8b47d](https://github.com/thewoolleyman/livespec-dev-tooling/commit/0c8b47dddea2e473b7931584c263f97f1f5b303b))
+* **ansible:** the rule-26 kill-matrix role launches on a first run, when its namespace does not exist yet (livespec-dev-tooling-fqnbtd) ([cb2d48f](https://github.com/thewoolleyman/livespec-dev-tooling/commit/cb2d48f718e992ab55c9f76fdafa6f080ca09dda))
+* **ci-runner:** the rule-26 kill-matrix Job trusts the mise config of its fresh clones (livespec-dev-tooling-fqnbtd) ([5b204c5](https://github.com/thewoolleyman/livespec-dev-tooling/commit/5b204c5c6ba950ad452df8f58d30c89be5a28d4f))
+* **gate-run:** the report after a verdict forks no process per record field (livespec-dev-tooling-b42rqi) ([9d51374](https://github.com/thewoolleyman/livespec-dev-tooling/commit/9d51374f3bfd2fda6268b827c0381ed1e6cadbe4))
+* **incident:** acknowledge the workflow_job webhook before the recovery principal finishes ([aa3ed2c](https://github.com/thewoolleyman/livespec-dev-tooling/commit/aa3ed2cbfb8d668752f4aaa060e55b1cc79626cf))
+* **incident:** bound a repository-fence acquisition so a deadline-bound caller can give up ([426cac6](https://github.com/thewoolleyman/livespec-dev-tooling/commit/426cac62ce5a3f79fd7f276e0fda133fdb95eb8d))
+* **incident:** record the leaf callback first and run the principal behind the observer fence ([f603210](https://github.com/thewoolleyman/livespec-dev-tooling/commit/f6032107154935ad872dd0b1beabc06cd6d70ab4))
+* **incident:** recovery principal acts on the configured target branch ([0227072](https://github.com/thewoolleyman/livespec-dev-tooling/commit/02270723e1c425bfdc9cad60d120c035d0db9549))
+* **incident:** the observer binds and recovers only its configured target branch ([6a27fbb](https://github.com/thewoolleyman/livespec-dev-tooling/commit/6a27fbba0e9462179597f79b0b039dff364cb4f9))
+* keep the history reader's zero-total answer as unavailable ([44de2ae](https://github.com/thewoolleyman/livespec-dev-tooling/commit/44de2ae6622728c5f8757747c6f9fd54a552aa78))
+* name an unreachable observer as unreachable, not as failing to record the head ([b792c35](https://github.com/thewoolleyman/livespec-dev-tooling/commit/b792c358725b38fbee233d8a598c1e9b056bb577))
+* no-shadow-ledger typecheck failure record names pyright stdout, stderr and config path ([5e7d871](https://github.com/thewoolleyman/livespec-dev-tooling/commit/5e7d8714eb9e25a1607043f69e98c9f5d1b18e3d))
+* page the collector's job listing through the one shared attempt-jobs pager ([962ae0a](https://github.com/thewoolleyman/livespec-dev-tooling/commit/962ae0aa28779fba619535dc951e03f783b6b3ed))
+* pin the shared attempt-jobs pager's empty-listing, total and page-size rules ([eab0027](https://github.com/thewoolleyman/livespec-dev-tooling/commit/eab0027af8c0c296a3291531c959d36b7be0f784))
+* reader.env contributes only the canonical credential to the ports ([cc1dca8](https://github.com/thewoolleyman/livespec-dev-tooling/commit/cc1dca8dfb8014c74dacbf791fef51afe0e95b4c))
+* retire the dead incident_provenance duplicate of the provenance lookup ([a9ac1cd](https://github.com/thewoolleyman/livespec-dev-tooling/commit/a9ac1cd0915bec9f9ee72e9b5099e29e741a67e8))
+
 ## [1.190.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.190.0...v1.190.1) (2026-11-10)
 
 
