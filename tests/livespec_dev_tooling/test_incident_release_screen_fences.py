@@ -143,26 +143,29 @@ def test_only_a_published_inverse_in_the_source_clears_the_incident_head(
 
 
 @pytest.mark.parametrize(
-    ("with_inverse", "source", "expected"),
+    ("inverse_owner", "source", "expected"),
     [
-        (False, "later", _RETAINED),
-        (False, "after", _RETAINED),
-        (False, "unrelated", "clear"),
-        (True, "after", "clear"),
-        (True, "later", _RETAINED),
+        (None, "later", _RETAINED),
+        (None, "after", _RETAINED),
+        (None, "unrelated", "clear"),
+        ("same", "after", "clear"),
+        ("same", "later", _RETAINED),
+        ("other", "after", _RETAINED),
     ],
 )
 def test_a_regression_fences_its_head_until_an_inverse_of_that_registration_is_in_the_source(
-    screen, with_inverse, source, expected
+    screen, inverse_owner, source, expected
 ):
+    """An inverse recorded for ANOTHER registration never clears this regression."""
     application, registration, commits = screen
+    owners = {"same": registration, "other": {**registration, "attempt_id": "repair-2"}}
     record = {
         "release_regressions": {
             "regression-1": {"registration": registration, "regression_id": "r", "receipt": ""}
         },
         **(
-            _action(registration=registration, receipt=_inverse(commit=commits["revert"]))
-            if with_inverse
+            _action(registration=owners[inverse_owner], receipt=_inverse(commit=commits["revert"]))
+            if inverse_owner is not None
             else {}
         ),
     }
