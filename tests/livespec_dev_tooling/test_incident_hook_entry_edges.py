@@ -11,10 +11,12 @@ import sys
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
+from unittest.mock import Mock
 
 import pytest
 
 from livespec_dev_tooling import incident_hook_entry as module
+from livespec_dev_tooling import incident_trusted_origin
 from livespec_dev_tooling.incident_hook_process import HookRefusalError, canonical
 
 
@@ -308,16 +310,25 @@ def test_inconsistent_receipt_route_or_tree_never_admits(
 def test_real_partial_git_commit_cannot_certify_the_ordinary_index(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    _reading, _receipts = _wired(root=tmp_path, monkeypatch=monkeypatch)
+    primary = tmp_path / "primary"
+    primary.mkdir()
+    _reading, _receipts = _wired(root=primary, monkeypatch=monkeypatch)
     from livespec_dev_tooling.install_commit_refuse_hooks import CANONICAL_HOOK_BODY
 
-    subprocess.run(["git", "config", "livespec.sandboxExempt", "true"], cwd=tmp_path, check=True)
-    (tmp_path / "b.py").write_text("value = 3\n")
-    subprocess.run(["git", "add", "b.py"], cwd=tmp_path, check=True)
-    hook = tmp_path / ".git/hooks/pre-commit"
+    # A sanctioned linked worktree gets past the primary-checkout refusal without the
+    # factory-sandbox marker, which now names a trusted normal origin that ignores flags.
+    home = tmp_path / "home"
+    worktree = home / ".worktrees" / "primary" / "partial"
+    subprocess.run(
+        ["git", "worktree", "add", "-q", "--detach", str(worktree)], cwd=primary, check=True
+    )
+    (worktree / "app.py").write_text("value = 2\n")
+    (worktree / "b.py").write_text("value = 3\n")
+    subprocess.run(["git", "add", "app.py", "b.py"], cwd=worktree, check=True)
+    hook = primary / ".git/hooks/pre-commit"
     hook.write_text(CANONICAL_HOOK_BODY)
     hook.chmod(0o755)
-    binary = tmp_path / ".git/bin"
+    binary = primary / ".git/bin"
     binary.mkdir()
     script = binary / "mise"
     script.write_text(
@@ -326,16 +337,17 @@ def test_real_partial_git_commit_cannot_certify_the_ordinary_index(
     script.chmod(0o755)
     environment = dict(
         os.environ,
+        HOME=str(home),
         PATH=str(binary) + os.pathsep + os.environ["PATH"],
         PYTHON_BIN=sys.executable,
         PYTHONPATH=str(Path(module.__file__).resolve().parent.parent),
     )
     before = subprocess.run(
-        ["git", "rev-parse", "HEAD"], cwd=tmp_path, check=True, text=True, capture_output=True
+        ["git", "rev-parse", "HEAD"], cwd=worktree, check=True, text=True, capture_output=True
     ).stdout
     done = subprocess.run(
         ["git", "commit", "-m", "fix: partial repair", "--", "app.py"],
-        cwd=tmp_path,
+        cwd=worktree,
         env=environment,
         check=False,
         text=True,
@@ -345,14 +357,14 @@ def test_real_partial_git_commit_cannot_certify_the_ordinary_index(
     assert "alternate Git operation index" in done.stderr
     assert (
         subprocess.run(
-            ["git", "rev-parse", "HEAD"], cwd=tmp_path, check=True, text=True, capture_output=True
+            ["git", "rev-parse", "HEAD"], cwd=worktree, check=True, text=True, capture_output=True
         ).stdout
         == before
     )
     assert set(
         subprocess.run(
             ["git", "diff", "--cached", "--name-only"],
-            cwd=tmp_path,
+            cwd=worktree,
             check=True,
             text=True,
             capture_output=True,
@@ -393,3 +405,161 @@ def test_a_slow_receipt_lookup_never_counts_toward_the_scope_gate_duration(
     scope = receipts[0]["results"][0]
     assert (scope["name"], scope["status"]) == ("incident-carrier-scope", "passed")
     assert scope["duration_seconds"] < 60
+
+
+_INCIDENT_VARIABLES = (
+    module.EXPEDITED_INCIDENT_RESPONSE,
+    module.EXPEDITED_INCIDENT_RESPONSE_REVERT,
+    "LIVESPEC_INCIDENT_CONTEXT",
+    module.QUERY_ENV,
+    module.LOCAL_OPERATION_ENV,
+)
+
+
+def _revert_wired(
+    *, monkeypatch: pytest.MonkeyPatch, landed: list[str], repair: str | None
+) -> list[str]:
+    for key in _INCIDENT_VARIABLES:
+        monkeypatch.delenv(key, raising=False)
+    query = dict(
+        repository="owner/repo",
+        item="incident-1",
+        attempt="attempt-1",
+        phase="reverting",
+        operation="operation-1",
+        generation=1,
+        owner="operator:alice",
+    )
+    reading = dict(
+        attempt=dict(
+            repository="owner/repo",
+            item_id="incident-1",
+            attempt_id="attempt-1",
+            phase="reverting",
+            operation_id="operation-1",
+            generation=1,
+            owner="operator:alice",
+            base="a" * 40,
+            head="b" * 40,
+            landed_commits=landed,
+        ),
+        committed_token_id="closed-1",  # noqa: S106 — public immutable record identifier.
+        current_token_id="open-2",  # noqa: S106 — public immutable record identifier.
+        is_current=True,
+    )
+    actions: list[str] = []
+
+    def invoke(**kwargs: Any) -> dict[str, Any]:
+        actions.append(kwargs["action"])
+        return reading
+
+    monkeypatch.setenv(module.EXPEDITED_INCIDENT_RESPONSE_REVERT, "1")
+    if repair is not None:
+        monkeypatch.setenv(module.EXPEDITED_INCIDENT_RESPONSE, repair)
+    monkeypatch.setenv(module.QUERY_ENV, canonical(value=query))
+    monkeypatch.setenv(module.LOCAL_OPERATION_ENV, "local-operation-1")
+    monkeypatch.setattr(module, "invoke_authority", invoke)
+    monkeypatch.setattr(sys, "stdin", io.StringIO(""))
+    return actions
+
+
+@pytest.mark.parametrize("repair", [None, "1"])
+@pytest.mark.parametrize("hook", ["pre-commit", "commit-msg", "pre-push"])
+def test_revert_flag_hands_off_to_the_trusted_recovery_boundary(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    hook: str,
+    repair: str | None,
+) -> None:
+    actions = _revert_wired(monkeypatch=monkeypatch, landed=["d" * 40, "c" * 40], repair=repair)
+    status = module.main(argv=[hook])
+    handoff = json.loads(capsys.readouterr().out)
+    facts = [
+        status == 79,
+        actions == ["read-current"],
+        handoff["handoff"] == "trusted-recovery-boundary",
+        handoff["mode"] == "emergency-revert",
+        handoff["recorded_incident_merge_sha"] == "c" * 40,
+        handoff["incident_item_id"] == "incident-1",
+        handoff["normal_factory_proof"] is False,
+    ]
+    assert all(facts), (status, actions, handoff)
+
+
+@pytest.mark.parametrize("repair", [None, "1"])
+def test_revert_flag_without_a_landed_incident_merge_is_refused_by_name(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], repair: str | None
+) -> None:
+    actions = _revert_wired(monkeypatch=monkeypatch, landed=[], repair=repair)
+    status = module.main(argv=["pre-commit"])
+    captured = capsys.readouterr()
+    facts = [
+        status == 78,
+        actions == ["read-current"],
+        "missing-recorded-incident-merge" in captured.err,
+        captured.out == "",
+    ]
+    assert all(facts), (status, actions, captured)
+
+
+_TRUSTED_NORMAL_FLAGS = (
+    {module.EXPEDITED_INCIDENT_RESPONSE: "maybe"},
+    {module.EXPEDITED_INCIDENT_RESPONSE_REVERT: "%%"},
+    {module.EXPEDITED_INCIDENT_RESPONSE: "1"},
+    {module.EXPEDITED_INCIDENT_RESPONSE_REVERT: "1"},
+    {module.EXPEDITED_INCIDENT_RESPONSE: "1", module.EXPEDITED_INCIDENT_RESPONSE_REVERT: "1"},
+)
+
+
+def _origin_wired(*, monkeypatch: pytest.MonkeyPatch, flags: dict[str, str]) -> Mock:
+    for key in _INCIDENT_VARIABLES:
+        monkeypatch.delenv(key, raising=False)
+    for name, value in flags.items():
+        monkeypatch.setenv(name, value)
+    authority = Mock()
+    monkeypatch.setattr(module, "invoke_authority", authority)
+    monkeypatch.setattr(sys, "stdin", io.StringIO(""))
+    return authority
+
+
+@pytest.mark.parametrize("flags", _TRUSTED_NORMAL_FLAGS)
+@pytest.mark.parametrize("hook", ["pre-commit", "commit-msg", "pre-push"])
+def test_a_master_push_hook_entrance_continues_normally_with_any_inherited_flag(
+    monkeypatch: pytest.MonkeyPatch, hook: str, flags: dict[str, str]
+) -> None:
+    authority = _origin_wired(monkeypatch=monkeypatch, flags=flags)
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    monkeypatch.setenv("GITHUB_EVENT_NAME", "push")
+    assert (module.main(argv=[hook]), authority.call_count) == (75, 0)
+
+
+@pytest.mark.parametrize("flags", _TRUSTED_NORMAL_FLAGS)
+@pytest.mark.parametrize("hook", ["pre-commit", "commit-msg", "pre-push"])
+def test_a_factory_follow_up_hook_entrance_continues_normally_with_any_inherited_flag(
+    monkeypatch: pytest.MonkeyPatch, hook: str, flags: dict[str, str]
+) -> None:
+    authority = _origin_wired(monkeypatch=monkeypatch, flags=flags)
+    monkeypatch.setattr(incident_trusted_origin, "factory_sandbox", lambda **_kwargs: True)
+    assert (module.main(argv=[hook]), authority.call_count) == (75, 0)
+
+
+@pytest.mark.parametrize(
+    ("flags", "refusal"),
+    [
+        ({module.EXPEDITED_INCIDENT_RESPONSE: "maybe"}, "malformed incident flag"),
+        ({module.EXPEDITED_INCIDENT_RESPONSE_REVERT: "%%"}, "malformed incident flag"),
+        ({module.EXPEDITED_INCIDENT_RESPONSE: "1"}, "exact canonical query"),
+        ({module.EXPEDITED_INCIDENT_RESPONSE_REVERT: "1"}, "exact canonical query"),
+    ],
+)
+def test_outside_the_trusted_origins_the_hook_entrance_still_refuses_an_unverified_flag(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    flags: dict[str, str],
+    refusal: str,
+) -> None:
+    authority = _origin_wired(monkeypatch=monkeypatch, flags=flags)
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    monkeypatch.setenv("GITHUB_EVENT_NAME", "pull_request")
+    status = module.main(argv=["pre-commit"])
+    assert (status, refusal in capsys.readouterr().err, authority.call_count) == (78, True, 0)
