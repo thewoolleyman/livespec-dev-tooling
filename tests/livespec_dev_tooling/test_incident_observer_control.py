@@ -259,12 +259,24 @@ def test_isolated_main_binds_only_loopback_after_protected_installation(controll
     monkeypatch.setattr(service.ControllerService, "installed", lambda **_: application)
     calls = []
 
+    class Watcher:
+        failed = threading.Event()
+
+        def start(self, *, on_exit):
+            # The service hands the watcher its own shutdown; a watcher that ends at once uses it.
+            on_exit()
+
+    monkeypatch.setattr(service, "installed_watcher", lambda **_: Watcher())
+
     class Server:
         def __enter__(self):
             return self
 
         def __exit__(self, *_):
             return False
+
+        def shutdown(self):
+            calls.append("shutdown")
 
         def serve_forever(self):
             calls.append("serve")
@@ -275,7 +287,7 @@ def test_isolated_main_binds_only_loopback_after_protected_installation(controll
 
     monkeypatch.setattr(service, "make_server", make)
     assert service.main() == 0
-    assert calls == [("127.0.0.1", 8765, application), "serve"]
+    assert calls == [("127.0.0.1", 8765, application), "shutdown", "serve"]
 
 
 @pytest.mark.parametrize("repository", ["other/repo", "owner/repo"])
