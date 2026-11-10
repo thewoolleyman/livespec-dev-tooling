@@ -2507,6 +2507,14 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: CI overflows onto a container worker only when fleet capacity is full",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this scenario. It runs converge-worker-queues.sh's rendering of the container-worker churn-slot flavor against a stub kubectl and asserts three things: each eligible ClusterQueue lists the worker flavor after its amd64 fleet flavor; the fleet churn-slot flavor no longer matches a container worker; and no amd64-only repository's queue lists the worker flavor. The live admission proof is host-captured on the item. livespec-dev-tooling-eorpen owns it.",
+    "work_item": "livespec-dev-tooling-eorpen"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: a worker that leaves mid-run loses no work and rejoins on its own",
     "test": "TODO",
     "reason": "A real test at the integration tier or above is owed for this heading: it exercises a measured departure of the real worker during live load, plus a stub test of the rejoin path. livespec-dev-tooling-ko26ez.8 owns it.",

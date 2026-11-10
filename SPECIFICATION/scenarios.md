@@ -3568,6 +3568,21 @@ And a class the worker is not enrolled in MUST receive no share, its share being
 
 And the CI share MUST be expressed in churn slots by the fleet's churn-slot sizing rule
 
+
+## Scenario: CI overflows onto a container worker only when fleet capacity is full
+
+Given an enrolled arm64 container worker with derived churn slots
+
+And a repository whose every CI job image publishes arm64
+
+When that repository's runner pod is admitted while its fleet churn-slot capacity, including what it can borrow, is free
+
+Then the pod MUST be placed on a fleet node and not on the worker
+
+And when the fleet's churn-slot capacity is full, the next such pod MUST be admitted onto the worker's flavor without preempting any workload
+
+And a pod of a repository with an amd64-only CI image MUST NOT be admitted onto the worker
+
 ## Scenario: a worker that leaves mid-run loses no work and rejoins on its own
 
 Given an enrolled worker running a CI job, a gate job and a factory run
