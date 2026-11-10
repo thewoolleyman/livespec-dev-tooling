@@ -184,8 +184,13 @@ spec:
       # (2026-11-07)". Only the ORDER changed; every lane keeps its size.
       # REVERT: restore that order (gates-hp-flavor, gates-poweredge-flavor,
       # gates-flavor), apply this file, then rerun ./converge-worker-queues.sh.
-      # The order is static, so it does not follow load as it moves
-      # (livespec-dev-tooling-gvo7fa).
+      # This committed order is the STATIC lane order. It does not follow load
+      # as it moves, so ../gate-placement/reconcile-gate-lane-order.sh reorders
+      # the LIVE queue from measured node readings (livespec-dev-tooling-gvo7fa),
+      # and a converge run that applies this file restores the static order for
+      # the reconciler's next pass to re-apply. The reconciler reads this file's
+      # flavor list from its installed copy, so keep each flavor name unquoted
+      # at this indent.
       flavors:
         - name: gates-flavor
           resources:

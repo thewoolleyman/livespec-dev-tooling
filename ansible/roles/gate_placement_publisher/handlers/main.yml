@@ -1,0 +1,5 @@
+---
+- name: Reload systemd for the gate placement publisher
+  ansible.builtin.systemd_service:
+    daemon_reload: true
+  become: true

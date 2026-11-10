@@ -3145,25 +3145,22 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a gate Job submitted while one gate lane's node is saturated is admitted on an unsaturated lane",
-    "test": "TODO",
-    "reason": "Spec-first: a real test at the integration tier or above (`tests.consumer`, this repository's `scenario_tiers`, or an integration-marked test) is owed for this heading. It must drive the gate placement reconciler with one saturated and one unsaturated gate-lane node and show where the next gate Job is admitted and what the reconciler logs. livespec-dev-tooling-gvo7fa owns it.",
-    "work_item": "livespec-dev-tooling-gvo7fa"
+    "test": "tests.consumer.test_gate_lane_placement_scenarios.test_a_gate_job_submitted_while_one_lane_is_saturated_is_admitted_on_an_unsaturated_lane",
+    "reason": "Consumer-tier: reconcile-gate-lane-order.sh run for real against a fake kubectl serving one saturated node (idle 1.2, CI-slice avg60 52) and one unsaturated node; a Kueue first-flavor-with-room model then admits the next gate Job on the unsaturated node's lane, and the reconciler's CHANGE line names the change and both nodes' readings (livespec-dev-tooling-gvo7fa)."
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a gate Job submitted while every gate lane's node is saturated is still admitted",
-    "test": "TODO",
-    "reason": "Spec-first: a real test at the integration tier or above (`tests.consumer`, this repository's `scenario_tiers`, or an integration-marked test) is owed for this heading. It must drive the gate placement reconciler with every gate-lane node saturated and show that a gate Job is still admitted on a lane with room. livespec-dev-tooling-gvo7fa owns it.",
-    "work_item": "livespec-dev-tooling-gvo7fa"
+    "test": "tests.consumer.test_gate_lane_placement_scenarios.test_a_gate_job_submitted_while_every_lane_is_saturated_is_still_admitted",
+    "reason": "Consumer-tier: the reconciler run against three saturated lanes with the first lane full; it leaves the static order, and the next gate Job is admitted on a lane with room instead of staying suspended (livespec-dev-tooling-gvo7fa)."
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a gate placement reconciler that cannot read a node's readings falls back to the static lane order",
-    "test": "TODO",
-    "reason": "Spec-first: a real test at the integration tier or above (`tests.consumer`, this repository's `scenario_tiers`, or an integration-marked test) is owed for this heading. It must drive the gate placement reconciler with a gate-lane node whose CPU idle share cannot be read and show the static lane order and the logged node and reading. livespec-dev-tooling-gvo7fa owns it.",
-    "work_item": "livespec-dev-tooling-gvo7fa"
+    "test": "tests.consumer.test_gate_lane_placement_scenarios.test_a_lane_whose_idle_share_cannot_be_read_falls_back_to_the_static_order",
+    "reason": "Consumer-tier: the reconciler run with a lane node whose cpu.idle60 is unreadable and the queue previously steered; it restores the static lane order and logs UNREAD naming the node and the reading (livespec-dev-tooling-gvo7fa)."
   },
   {
     "spec_root": "SPECIFICATION",

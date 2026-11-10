@@ -1,0 +1,10 @@
+[Unit]
+Description=Publish the gate-placement readings every 30 seconds
+
+[Timer]
+OnBootSec=1min
+OnUnitActiveSec=30s
+AccuracySec=1s
+
+[Install]
+WantedBy=timers.target
