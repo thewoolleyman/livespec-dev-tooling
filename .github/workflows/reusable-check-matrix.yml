@@ -46,8 +46,10 @@
 #     resolves the LATEST RELEASE of livespec-dev-tooling (the same
 #     releases/latest read the incident-ci job of this repository's own
 #     ci.yml installs from), checks out refs/tags/<that tag> into
-#     .livespec-dev-tooling-released (a same-named branch cannot win), and
-#     runs the decision from there:
+#     .livespec-dev-tooling-released (a same-named branch cannot win),
+#     prepares a throwaway venv holding only the decision's hash-pinned
+#     dependencies (python3 -m livespec_dev_tooling.incident_matrix_venv), and
+#     runs the decision from there with that venv's interpreter:
 #     never from the consumer's tree, and never from the `ref` input (whose
 #     default is unreleased master, so the `uses:` pin does not pin the
 #     Actions checkout). A change that widens what can be omitted therefore
@@ -156,7 +158,9 @@ jobs:
           INCIDENT_OMITTED: ${{ inputs.incident-omitted }}
           INCIDENT_CI_RESULT: ${{ inputs.incident-ci-result }}
           MATRIX_CHECK: ${{ matrix.check }}
-        run: python3 -m livespec_dev_tooling.incident_matrix_omission
+        run: |
+          python3 -m livespec_dev_tooling.incident_matrix_venv "$RUNNER_TEMP/incident-decision"
+          "$RUNNER_TEMP/incident-decision/bin/python" -m livespec_dev_tooling.incident_matrix_omission
 
       # A member the decision omits is reported here instead of being run,
       # never skipped silently.
