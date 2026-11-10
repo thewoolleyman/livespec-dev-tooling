@@ -96,10 +96,22 @@ env:
 # exactly the routing hole the trusted-event audit forbids, since merge_group
 # is not a fork-gated event and the matrices below are self-hosted. Re-add it
 # WITH hosted routing only if a merge queue is adopted.
+#
+# A push to an incident-scratch/** branch runs the SAME master job graph as a
+# push to master (livespec-dev-tooling-7w757z): no job-level `if:` and no
+# runs-on reads the ref, so every gating job runs under the same condition and
+# the same CI_RUNNER_LABELS_MASTER routing, and incident-ci selects nothing for
+# a push, so both incident flags stay absent. That gives an incident drill's
+# scratch observer a real push run of this file to bind a scratch merge to.
+# Pushes to any other branch still start no push run. The one master-only side
+# effect inside this file, the Honeycomb export step of export-telemetry, is
+# guarded on refs/heads/master at the step, so a drill run is never recorded
+# as master CI telemetry. release-please and the image publishers trigger on
+# master in their own files and are untouched.
 on:
   pull_request:
   push:
-    branches: [master]
+    branches: [master, 'incident-scratch/**']
 
 jobs:
   check-python:
@@ -1023,7 +1035,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
 
+      # The job runs on every push, so a push to an incident-scratch/** branch
+      # keeps master's job set; only this export is master-only, so a drill
+      # run never enters the github-ci dataset as master CI (7w757z).
       - name: Export CI run telemetry to Honeycomb (closed-loop verified)
+        if: ${{ github.ref == 'refs/heads/master' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
