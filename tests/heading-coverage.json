@@ -842,9 +842,8 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a check runner terminated by SIGTERM or SIGHUP removes its coverage directories and exits non-zero",
-    "test": "TODO",
-    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading. It signals a running parallel check dispatcher, incident local-gate runner and incident CI entry point with SIGTERM and with SIGHUP while a coverage-touching target runs, with TMPDIR pointed at an empty directory, and asserts a non-zero exit and no surviving covns-* directory; livespec-dev-tooling-8o8e.16 owns it.",
-    "work_item": "livespec-dev-tooling-8o8e.16"
+    "test": "tests.livespec_dev_tooling.test_dispatcher_coverage_namespaces_signals.test_a_signalled_check_runner_removes_its_coverage_directories_and_exits_non_zero",
+    "reason": "Integration-tier (module-level `pytest.mark.integration`): starts a real parallel check dispatcher, incident local-gate runner and incident CI entry point in its own process, with TMPDIR pointed at an empty directory and a fake `just` holding a coverage-touching target open, waits until that target is running, then sends SIGTERM and SIGHUP to the runner. It asserts a non-zero exit and that no covns-* directory the runner created survives (work-item livespec-dev-tooling-8o8e.16)."
   },
   {
     "spec_root": "SPECIFICATION",

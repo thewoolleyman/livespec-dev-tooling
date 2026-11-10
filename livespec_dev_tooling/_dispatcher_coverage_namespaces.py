@@ -21,6 +21,8 @@ from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from pathlib import Path
 
+from livespec_dev_tooling._check_target_isolation import termination_raises
+
 __all__: list[str] = [
     "COVERAGE_CONSUMERS",
     "COVERAGE_NAMESPACES",
@@ -128,16 +130,24 @@ def isolated_environments(
     repo: pytest's `tmp_path` derives from the per-target TMPDIR, and a TMPDIR
     inside the repo's git worktree breaks tests that assume `tmp_path` is not in
     a repo. Removal is best-effort, so a transient failure never masks a result.
+    SIGTERM and SIGHUP received meanwhile are turned into a non-zero `SystemExit`
+    (a signal the caller ignores stays ignored), so the dirs are removed on the
+    way out.
     """
-    namespace_dirs = build_namespace_dirs(
-        targets=list(names), skip_set=frozenset(), root=Path(tempfile.gettempdir())
-    )
-    try:
-        yield {
-            name: target_env(name=name, namespace_dirs=namespace_dirs, base=base)
-            or (None if base is None else dict(base))
-            for name in names
-        }
-    finally:
-        for ns_dir in namespace_dirs.values():
-            shutil.rmtree(ns_dir, ignore_errors=True)
+    # SIGTERM and SIGHUP raise `SystemExit` for the whole life of the dirs, so the
+    # `finally` below runs when the gate runner's stall kill, a lefthook hangup or
+    # a harness kill ends the run, instead of leaking one dir per namespace
+    # (livespec-dev-tooling-8o8e.16). SIGKILL cannot be caught and is outside this.
+    with termination_raises(isolated=True):
+        namespace_dirs = build_namespace_dirs(
+            targets=list(names), skip_set=frozenset(), root=Path(tempfile.gettempdir())
+        )
+        try:
+            yield {
+                name: target_env(name=name, namespace_dirs=namespace_dirs, base=base)
+                or (None if base is None else dict(base))
+                for name in names
+            }
+        finally:
+            for ns_dir in namespace_dirs.values():
+                shutil.rmtree(ns_dir, ignore_errors=True)
