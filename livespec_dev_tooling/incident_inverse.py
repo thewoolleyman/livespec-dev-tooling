@@ -23,7 +23,6 @@ from livespec_dev_tooling._incident_inverse_git import (  # noqa: E402
     scope_matches_git,
 )
 from livespec_dev_tooling._incident_inverse_types import (  # noqa: E402
-    InverseConflictRequest,
     InverseForge,
     InversePlan,
     InversePublishRequest,
@@ -32,6 +31,11 @@ from livespec_dev_tooling._incident_inverse_types import (  # noqa: E402
     RecoveryOutcome,
 )
 from livespec_dev_tooling._incident_observer_types import RecoveryIntent  # noqa: E402
+from livespec_dev_tooling.incident_conflict_chain import (  # noqa: E402
+    ConflictChain,
+    record_inverse_conflict,
+    replay_conflict,
+)
 
 __all__: list[str] = [
     "InverseForge",
@@ -88,6 +92,7 @@ def recover_incident_inverse(
     intent: RecoveryIntent,
     forge: InverseForge,
     resume_unresolved: bool = False,
+    chain: ConflictChain | None = None,
 ) -> IOResult[RecoveryOutcome, InverseRefusal]:
     """Resolve prior effects then execute under the caller-held observer lock.
 
@@ -102,10 +107,18 @@ def recover_incident_inverse(
     so the same action reaches the principal's `publish`, which settles the open
     attempt from forge facts and re-sends its one recorded commit. Exactly-one is
     the principal's ledger's rule, so a caller cannot mint a second revert this way.
+
+    ``chain`` carries a journaled rollback-conflict onto the incident's canonical
+    chain (the `rollback-conflict` phase and `blocked` status). The journal stays the
+    controller's record: a chain write that fails changes no outcome, and the same
+    receipt is replayed on every later recovery of the action and by `/reconcile`.
+    The owner's resolution continues from the chain, through the orchestrator's
+    `resolve-rollback-conflict` action, which this module never calls.
     """
     try:
         prior = None if resume_unresolved else forge.read_exact_receipt(intent=intent)
         if prior:
+            replay_conflict(intent=intent, receipt=prior, chain=chain)
             return IOSuccess(
                 RecoveryOutcome(
                     status="recovered", reason="exact prior action effect", receipt=prior
@@ -126,7 +139,7 @@ def recover_incident_inverse(
                     detail="retained observer grant and scoped recovery principal required",
                 )
             )
-        return _execute(repo_root=repo_root, intent=intent, scope=scope, forge=forge)
+        return _execute(repo_root=repo_root, intent=intent, scope=scope, forge=forge, chain=chain)
     except (OSError, subprocess.SubprocessError, ValueError) as error:
         return IOFailure(InverseRefusal(code="inverse-unavailable", detail=str(error)))
 
@@ -175,7 +188,12 @@ def _matches_arm(*, intent: RecoveryIntent, scope: LandedIncident) -> bool:
 
 
 def _execute(
-    *, repo_root: Path, intent: RecoveryIntent, scope: LandedIncident, forge: InverseForge
+    *,
+    repo_root: Path,
+    intent: RecoveryIntent,
+    scope: LandedIncident,
+    forge: InverseForge,
+    chain: ConflictChain | None,
 ) -> IOResult[RecoveryOutcome, InverseRefusal]:
     for _attempt in range(_CAS_ATTEMPTS):
         head = forge.read_master_head(
@@ -186,8 +204,15 @@ def _execute(
             refusal = unsafe_perform_io(planned.failure())
             if refusal.code != "rollback-conflict":
                 return IOFailure(refusal)
-            return _conflict(
-                intent=intent, scope=scope, head=head, reason=refusal.detail, forge=forge
+            return IOSuccess(
+                record_inverse_conflict(
+                    intent=intent,
+                    scope=scope,
+                    head=head,
+                    reason=refusal.detail,
+                    forge=forge,
+                    chain=chain,
+                )
             )
         plan = unsafe_perform_io(planned.unwrap())
         result = forge.publish_inverse(
@@ -225,35 +250,22 @@ def _execute(
     )
 
 
-def _conflict(
-    *, intent: RecoveryIntent, scope: LandedIncident, head: str, reason: str, forge: InverseForge
-) -> IOResult[RecoveryOutcome, InverseRefusal]:
-    receipt = forge.record_conflict(
-        request=InverseConflictRequest(
-            intent=intent,
-            scope=scope,
-            expected_head=head,
-            reason=reason,
-            receipt=f"rollback-conflict:{intent.action_id}:owner:{intent.registration.owner}:head:{head}",
-        )
-    )
-    return IOSuccess(
-        RecoveryOutcome(
-            status="rollback-conflict" if receipt else "pending",
-            reason="overlapping later work requires identified owner resolution",
-            receipt=receipt,
-        )
-    )
-
-
 def observer_inverse_callback(
-    *, repo_root: Path, forge: InverseForge, resume_unresolved: bool = False
+    *,
+    repo_root: Path,
+    forge: InverseForge,
+    resume_unresolved: bool = False,
+    chain: ConflictChain | None = None,
 ) -> Callable[[RecoveryIntent], str | None]:
     """Adapt to receipt-or-pending without reacquiring the observer's OS lock."""
 
     def callback(*, intent: RecoveryIntent) -> str | None:
         result = recover_incident_inverse(
-            repo_root=repo_root, intent=intent, forge=forge, resume_unresolved=resume_unresolved
+            repo_root=repo_root,
+            intent=intent,
+            forge=forge,
+            resume_unresolved=resume_unresolved,
+            chain=chain,
         )
         return unsafe_perform_io(result.unwrap()).receipt if is_successful(result) else None
 

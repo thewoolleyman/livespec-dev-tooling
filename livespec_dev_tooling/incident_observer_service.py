@@ -26,6 +26,7 @@ from livespec_dev_tooling._incident_observer_types import (
 from livespec_dev_tooling.incident_ci_attachment import CiJobAttachment
 from livespec_dev_tooling.incident_ci_identity import CiIdentityVerifier
 from livespec_dev_tooling.incident_ci_job_collection import CiJobCollection
+from livespec_dev_tooling.incident_conflict_chain import ConflictChain
 from livespec_dev_tooling.incident_controller_installation import ControllerInstallation
 from livespec_dev_tooling.incident_observer_control import ObserverControl
 from livespec_dev_tooling.incident_observer_endpoint import _read_request, observer_endpoint
@@ -71,7 +72,13 @@ class ControllerService:
             service = importlib.import_module("livespec_dev_tooling.incident_inverse_service")
             principal = service.ProcessInverseForge(command=installation.principal)
             callback = inverse.observer_inverse_callback(
-                repo_root=installation.repo, forge=principal
+                repo_root=installation.repo,
+                forge=principal,
+                chain=ConflictChain.installed(
+                    command=installation.reader,
+                    release=installation.reader_release,
+                    repo=installation.repo,
+                ),
             )
         except (ImportError, AttributeError, OSError, ValueError):
             return None
