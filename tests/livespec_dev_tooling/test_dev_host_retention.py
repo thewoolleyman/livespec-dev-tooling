@@ -227,8 +227,19 @@ def _install_stubs(*, tmp_path: Path) -> Path:
 
 
 def _base_env(*, tmp_path: Path) -> dict[str, str]:
+    """The run's environment, confined to the test's own directories.
+
+    Every path the script defaults to a host location is pointed into
+    `tmp_path`: the state directory (`/var/lib/livespec-dev-host-retention`,
+    root-owned on a converged host, so its stamp write is refused), the scratch
+    root (`/tmp`, whose dead-session and aged pytest directories the scratch leg
+    removes) and the bulk-dump directory (`/var/tmp/livespec-dumps`). Left on
+    their defaults, a host-local run fails on a converged host and touches real
+    state on any host.
+    """
     env = {key: value for key, value in os.environ.items() if key not in _GIT_ENV_VARS}
     stub_dir = _install_stubs(tmp_path=tmp_path)
+    (tmp_path / "tmp-root").mkdir(exist_ok=True)
     return env | {
         "PATH": f"{stub_dir}{os.pathsep}{env['PATH']}",
         "STUB_STORE": str(tmp_path / "store"),
@@ -239,6 +250,9 @@ def _base_env(*, tmp_path: Path) -> dict[str, str]:
         "LIVESPEC_DEV_HOST_UV_CACHE_DIR": str(tmp_path / "uv-cache"),
         "LIVESPEC_DEV_HOST_RETENTION_DAYS": str(_RETENTION_DAYS),
         "LIVESPEC_DEV_HOST_RETENTION_CHECKOUT_ROOTS": str(tmp_path / "projects"),
+        "LIVESPEC_DEV_HOST_RETENTION_STATE_DIR": str(tmp_path / "state"),
+        "LIVESPEC_DEV_HOST_TMP_ROOT": str(tmp_path / "tmp-root"),
+        "LIVESPEC_DEV_HOST_BULK_DUMP_DIR": str(tmp_path / "bulk"),
     }
 
 

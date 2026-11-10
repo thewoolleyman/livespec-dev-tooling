@@ -85,6 +85,9 @@ def _hermetic_env(*, tmp_path: Path, tmp_root: Path, bulk: Path) -> dict[str, st
     Without the checkout-root and uv-cache overrides the script sweeps every
     real checkout under /data/projects and walks the invoking user's real uv
     cache, which made the run load-sensitive and let it touch real state.
+    Without the state-directory override the ownership walk writes its stamp
+    under /var/lib/livespec-dev-host-retention, which a converged host holds
+    root-owned, so the write is refused and the run fails.
     """
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
@@ -103,6 +106,7 @@ def _hermetic_env(*, tmp_path: Path, tmp_root: Path, bulk: Path) -> dict[str, st
         "LIVESPEC_DEV_HOST_RETENTION_USER": str(os.getuid()),
         "LIVESPEC_DEV_HOST_RETENTION_CHECKOUT_ROOTS": str(checkout_roots),
         "LIVESPEC_DEV_HOST_UV_CACHE_DIR": str(uv_cache),
+        "LIVESPEC_DEV_HOST_RETENTION_STATE_DIR": str(tmp_path / "state"),
     }
 
 
