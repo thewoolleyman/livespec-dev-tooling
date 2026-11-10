@@ -10,6 +10,8 @@ Type=oneshot
 # every execution target.  This emitter posts OTLP directly, so no collector
 # configuration change is required.
 EnvironmentFile=/etc/otel-collector/.env
+# Space-separated cgroup paths relative to /sys/fs/cgroup; empty adds none.
+Environment="PRESSURE_TELEMETRY_CGROUPS={{ pressure_telemetry_cgroups | join(' ') }}"
 ExecStart={{ pressure_telemetry_script_dest }}
 NoNewPrivileges=true
 PrivateTmp=true

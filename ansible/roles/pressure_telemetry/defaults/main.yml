@@ -1,6 +1,9 @@
 ---
-# Pressure Stall Information is a kernel interface, so this small emitter has
-# no per-host configuration: every execution target runs the same definition.
+# Pressure Stall Information is a kernel interface, so every execution target
+# runs the same definition. The one per-host value is the list of cgroup paths,
+# relative to /sys/fs/cgroup, whose cpu.pressure is also exported. Empty means
+# the host emits only its host pressure datapoints.
+pressure_telemetry_cgroups: []
 pressure_telemetry_lib_dir: /usr/local/lib/livespec
 pressure_telemetry_unit_dir: /etc/systemd/system
 pressure_telemetry_script_dest: "{{ pressure_telemetry_lib_dir }}/pressure-telemetry.sh"
