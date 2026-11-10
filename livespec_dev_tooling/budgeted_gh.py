@@ -70,6 +70,7 @@ if str(_VENDOR_DIR) not in sys.path:
     sys.path.insert(0, str(_VENDOR_DIR))
 
 from livespec_runtime_budget.github_budget import (  # noqa: E402  — vendor-path-aware import.
+    GhExecutor,
     GhInvocation,
     GithubBudgetedClient,
     gh_invocation,
@@ -146,6 +147,7 @@ def gh_read(
     args: list[str],
     cwd: Path | None = None,
     timeout: float | None = None,
+    execute: GhExecutor | None = None,
 ) -> GhRead:
     """One budgeted GitHub read, in the shape its callers already read.
 
@@ -155,9 +157,16 @@ def gh_read(
     `resource`, which doubles as the conditional-read cache key, and
     `gh_argv` inverts that join exactly — so the argv `gh` receives is the
     one the call site named, unchanged.
+
+    `execute` replaces only HOW that argv is started, for a caller that must
+    control the process itself (the incident fleet audit runs `gh` as a fixed
+    binary with a scrubbed environment). The argv, the budget and the reading
+    of the answer stay this client's; `cwd` and `timeout` apply only to the
+    default spawn.
     """
+    spawn = execute or partial(_spawn_gh, cwd=cwd, timeout=timeout)
     client = GithubBudgetedClient(
-        transport=gh_transport(execute=partial(_spawn_gh, cwd=cwd, timeout=timeout)),
+        transport=gh_transport(execute=spawn),
         max_attempts=1,
     )
     outcome = client.request(method="GET", resource=shlex.join(args))
