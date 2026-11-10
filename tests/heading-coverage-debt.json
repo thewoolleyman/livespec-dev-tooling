@@ -219,6 +219,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: a CI run GitHub fails at job creation with an Internal server error is re-run with backoff",
+    "work_item": "livespec-dev-tooling-ybnep5",
+    "first_seen": "2026-11-10"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: a Codex plugin hook command that mentions CLAUDE_PLUGIN_ROOT without a braced plugin-root path fails the producing repository's gate",
     "work_item": "livespec-dev-tooling-yhacv6",
     "first_seen": "2026-11-03"
@@ -653,6 +660,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: a master push concurrency group is refused in a repository that calls the master-health reconciler",
+    "work_item": "livespec-dev-tooling-xtofr3",
+    "first_seen": "2026-11-10"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: a master red past the threshold with no revert in flight raises needs-attention",
     "work_item": "livespec-dev-tooling-4xrhck",
     "first_seen": "2026-10-22"
@@ -716,6 +730,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: a pending superseded master push run is dropped while the run in progress completes",
+    "work_item": "livespec-dev-tooling-qzw2gf",
+    "first_seen": "2026-11-10"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: a per-tick query set larger than the budget constant fails the unit tests",
     "work_item": "livespec-dev-tooling-34bee5",
     "first_seen": "2026-11-02"
@@ -775,6 +796,13 @@
     "heading": "## Scenario: a related edge does not block a radar target",
     "work_item": "livespec-dev-tooling-m2x5pt",
     "first_seen": "2026-11-02"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a release or expedited master push run is never dropped from the master concurrency group",
+    "work_item": "livespec-dev-tooling-qzw2gf",
+    "first_seen": "2026-11-10"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -1482,6 +1510,13 @@
     "heading": "## Scenario: the local-aggregate entry point writes no evidence for a failed, dirty or changed tree",
     "work_item": "livespec-dev-tooling-4scqti",
     "first_seen": "2026-11-09"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: the master concurrency group never holds or cancels a pull-request run",
+    "work_item": "livespec-dev-tooling-qzw2gf",
+    "first_seen": "2026-11-10"
   },
   {
     "spec_root": "SPECIFICATION",

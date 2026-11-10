@@ -3165,5 +3165,45 @@
     "test": "TODO",
     "reason": "Spec-first: a real test at the integration tier or above (`tests.consumer`, this repository's `scenario_tiers`, or an integration-marked test) is owed for this heading, with the live leg host-captured. It must run `just adopt-orchestrator-build` with a published release tag against a scratch home holding two clones, show only the named clone's install record moving to the tag's commit, the host's settings, marketplace registration and marketplace clone unchanged, the full-commit adopt moving it back, and a non-descendant tag refused naming both commits. livespec-dev-tooling-zpqvnr owns it.",
     "work_item": "livespec-dev-tooling-zpqvnr"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a CI run GitHub fails at job creation with an Internal server error is re-run with backoff",
+    "test": "TODO",
+    "work_item": "livespec-dev-tooling-ybnep5",
+    "reason": "A real test at the integration tier or above is owed for this heading: an integration test of the reusable-ci-infra-rerun.yml reconciler over recorded run annotations, proving a run failed at job creation with an Internal server error annotation, no created job failed, is re-run after 2, 5 and 10 minutes with its run id, attempt number and matched annotation line in the summary, that a fourth failure is left for its owner, and that a run with a failed created job is never re-run (proposal job-creation-server-error-rerun, v182). livespec-dev-tooling-ybnep5 owns it."
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a pending superseded master push run is dropped while the run in progress completes",
+    "test": "TODO",
+    "work_item": "livespec-dev-tooling-qzw2gf",
+    "reason": "A real test at the integration tier or above is owed for this heading: an integration test that reads this repository's committed ci.yml and asserts its master push runs share one concurrency group with cancel-in-progress false, so the run in progress completes and only the newest pending run is kept (proposal master-push-cancel-superseded B', v182). livespec-dev-tooling-qzw2gf owns it."
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a release or expedited master push run is never dropped from the master concurrency group",
+    "test": "TODO",
+    "work_item": "livespec-dev-tooling-qzw2gf",
+    "reason": "A real test at the integration tier or above is owed for this heading: an integration test that evaluates this repository's committed ci.yml concurrency group expression for a release-commit push and for an EXPEDITED_INCIDENT_RESPONSE trailer push, and asserts each gets a group of its own (proposal master-push-cancel-superseded B', v182). livespec-dev-tooling-qzw2gf owns it."
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: the master concurrency group never holds or cancels a pull-request run",
+    "test": "TODO",
+    "work_item": "livespec-dev-tooling-qzw2gf",
+    "reason": "A real test at the integration tier or above is owed for this heading: an integration test that evaluates this repository's committed ci.yml concurrency group expression for pull_request and merge_group events and asserts neither shares the master push group (proposal master-push-cancel-superseded B', v182). livespec-dev-tooling-qzw2gf owns it."
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a master push concurrency group is refused in a repository that calls the master-health reconciler",
+    "test": "TODO",
+    "work_item": "livespec-dev-tooling-xtofr3",
+    "reason": "A real test at the integration tier or above is owed for this heading: an integration test of the just check guard over fixture repositories, proving it fails naming the workflow file and the reconciler caller when a reconciler-calling repository groups its master push runs, and passes when the repository calls no reconciler (proposal master-push-cancel-superseded B', v182). livespec-dev-tooling-xtofr3 owns it."
   }
 ]
