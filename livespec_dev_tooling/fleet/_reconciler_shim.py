@@ -113,7 +113,17 @@ jobs:
 # maintainer-side from this text. `tests/livespec_dev_tooling/fleet/
 # test_reconciler_shim.py` applies a proven byte-comparator to the committed
 # path, so from the moment the file lands the two cannot drift.
-REUSABLE_RECONCILER_BODY = r"""
+# Two lines of the ownership step's env block run past the 100-column source
+# limit, so they are joined into the body here rather than written inline; the
+# committed workflow carries them verbatim and the byte comparator holds.
+_OBSERVER_ENV_TAIL = (
+    "          LIVESPEC_INCIDENT_OBSERVER_CONNECT_ADDR: "
+    "${{ vars.LIVESPEC_INCIDENT_OBSERVER_CONNECT_ADDR }}\n"
+    "          LIVESPEC_INCIDENT_OBSERVER_QUERY_TOKEN: "
+    "${{ secrets.LIVESPEC_INCIDENT_OBSERVER_QUERY_TOKEN }}\n"
+)
+REUSABLE_RECONCILER_BODY = (
+    r"""
 # reusable-master-health-reconcile.yml — the red-master self-healing reconciler.
 #
 # Authority: plan/red-master-self-healing/research/001-charter-red-master-self-
@@ -581,7 +591,38 @@ jobs:
             --state state.json --step-out step.json
           jq -r '"step=\(.kind) reason=\(.reason)"' step.json
 
+      # THE INCIDENT OBSERVER OWNS AN INCIDENT'S RECOVERY (livespec-dev-tooling-
+      # ariayn; docs/incident-observer.md in livespec-dev-tooling). The question
+      # is asked AFTER the decision and immediately BEFORE the one step is
+      # performed, so the answer is seconds old when the step acts. It covers
+      # every commit the step can touch: the head back to the newest green
+      # commit, the run it would rerun and the culprit it would revert.
+      # `incident-owned` skips the perform step. A repository whose committed
+      # configuration names an observer and that gets no readable answer exits
+      # 1 here, naming the cause, so the pass stops before any action. A
+      # repository with no observer answers `ordinary` without asking, and its
+      # policy runs exactly as before. The step bound keeps a slow observer
+      # from holding this queued, never-cancelled reconciler for the job's
+      # default six hours.
+      - name: Ask the incident observer who owns this step
+        id: ownership
+        timeout-minutes: 5
+        env:
+          REPO: ${{ github.repository }}
+          LIVESPEC_INCIDENT_OBSERVER_URL: ${{ vars.LIVESPEC_INCIDENT_OBSERVER_URL }}
+""".lstrip("\n")
+    + _OBSERVER_ENV_TAIL
+    + r"""        run: |
+          set -euo pipefail
+          export PYTHONPATH=.livespec-dev-tooling
+          python3 -m livespec_dev_tooling.master_health_observer \
+            --repository "${REPO}" --state state.json --runs runs.json \
+            --step step.json > ownership.json
+          jq -r '"owner=\(.status) reason=\(.reason) receipt=\(.receipt)"' ownership.json
+          echo "status=$(jq -r '.status' ownership.json)" >> "${GITHUB_OUTPUT}"
+
       - name: Perform the ONE step
+        if: steps.ownership.outputs.status == 'ordinary'
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
           REPO: ${{ github.repository }}
@@ -686,6 +727,7 @@ jobs:
               ;;
           esac
 """.lstrip("\n")
+)
 
 
 def _reusable_workflow_permissions(*, body: str) -> tuple[tuple[str, str], ...]:
