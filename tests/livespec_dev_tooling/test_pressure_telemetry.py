@@ -233,3 +233,18 @@ def test_pressure_emitter_sends_a_configured_cgroups_cpu_pressure_with_the_host_
         "full.avg60": 0.50,
         "full.avg300": 0.60,
     }
+
+
+def test_pressure_emitter_with_a_missing_cgroup_file_fails_and_sends_nothing(
+    tmp_path: Path,
+) -> None:
+    """A configured cgroup without cpu.pressure is not turned into zeros or a partial request."""
+    cgroup_root = tmp_path / "cgroup"
+    (cgroup_root / _CGROUP).mkdir(parents=True)
+    missing = cgroup_root / _CGROUP / "cpu.pressure"
+
+    completed = _run_emitter(tmp_path=tmp_path, cgroup_root=cgroup_root, cgroups=_CGROUP)
+
+    assert completed.returncode != 0
+    assert str(missing) in completed.stderr
+    assert not (tmp_path / "otlp-payload.json").exists()
