@@ -661,8 +661,10 @@
         // from the factory registry, and its client login from the registry role
         // (#3912). `bin` is the client for the build it pins, the same 0.393
         // bbe693847 build as `petri`. It is never the default: legacy-dispatcher-agent
-        // routes to it per dispatch with `--factory homelab-worker-arm64`, counted
-        // inside the shared fleet cap, at max_concurrent_runs 1.
+        // routes to it per dispatch with `--factory homelab-worker-arm64`. Its runs
+        // are bounded by the instance's own max_concurrent_runs (1, in gmktec's
+        // host_vars) and are NOT counted in the shared fleet cap, which bounds amd64
+        // factory load only (coordinator ruling 126a, 2026-11-09, Rule K).
         "homelab-worker-arm64": {
           "registry": true,
           "bin": "/home/ubuntu/.local/state/fabro-currency/carrier-petri-v0.393-bbe693847/fabro",

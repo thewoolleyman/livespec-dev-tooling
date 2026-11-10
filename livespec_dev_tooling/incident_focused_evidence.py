@@ -12,6 +12,7 @@ import json
 import subprocess
 from dataclasses import asdict
 from pathlib import Path
+from time import monotonic
 
 from livespec_dev_tooling._incident_focused_measurement import measure
 from livespec_dev_tooling._incident_focused_scope import (
@@ -112,6 +113,9 @@ def _collect_focused_evidence(
     *, repo_root: Path, context: ResolvedContext, scope: FocusedScope, manual: ManualReproduction
 ) -> dict[str, object]:
     """Measure exact staged scope; refusals are explicit, never empty success."""
+    # The bound covers the git calls that scope the collection as well as the
+    # measurement, so the total is bounded by construction.
+    deadline = monotonic() + scope.timeout
     identity = context.identity
     if context.mode != "expedited-repair" or identity is None:
         return {"outcome": "refused", "reason": "resolved expedited repair context required"}
@@ -136,7 +140,7 @@ def _collect_focused_evidence(
         return {"outcome": "refused", "reason": "manual reproduction is incomplete"}
     executable = [name for name, disposition in dispositions.items() if disposition == "executable"]
     tests, report, coverage = measure(
-        repo_root=repo_root, selected=selected, executable=executable, timeout=scope.timeout
+        repo_root=repo_root, selected=selected, executable=executable, deadline=deadline
     )
     return _evidence(
         repo_root=repo_root,

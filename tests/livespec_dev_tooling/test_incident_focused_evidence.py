@@ -2,13 +2,18 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
+import os
+import signal
 import subprocess
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
+from livespec_dev_tooling import _incident_focused_measurement as measurement
+from livespec_dev_tooling import incident_focused_evidence as evidence_module
 from livespec_dev_tooling._green_token_evidence import read_evidence_text
 from livespec_dev_tooling.incident_focused_evidence import (
     FocusedScope,
@@ -575,3 +580,191 @@ def test_focused_tests_see_no_incident_variable(project, monkeypatch) -> None:
     _git(root, "add", ".")
     evidence = _collect(root, base)
     assert evidence["outcome"] == "passed", evidence["tests"]["output"]
+
+
+def test_touched_module_under_the_omit_list_is_measured_not_zero(
+    project: tuple[Path, str],
+) -> None:
+    root, base = project
+    (root / "pyproject.toml").write_text(
+        '[tool.livespec_dev_tooling]\nsource_trees = ["src"]\n'
+        '[tool.coverage.run]\nbranch = true\nomit = ["*/vendored/*", "*/never_touched/*"]\n'
+    )
+    (root / "src/vendored").mkdir()
+    (root / "src/vendored/thing.py").write_text("def thing():\n    return 1\n")
+    (root / "tests/test_thing.py").write_text(
+        "from src.vendored.thing import thing\ndef test_thing():\n    assert thing() == 1\n"
+    )
+    _git(root, "add", ".")
+    evidence = _collect(root, base)
+    assert evidence["coverage"]["src/vendored/thing.py"]["summary"]["percent_covered"] == 100
+    assert evidence["outcome"] == "passed"
+
+
+@pytest.mark.parametrize(
+    ("name", "value"),
+    [
+        ("PYTEST_PLUGINS", "a_plugin_the_staged_tree_does_not_have"),
+        ("PYTEST_DISABLE_PLUGIN_AUTOLOAD", "1"),
+    ],
+)
+def test_ambient_pytest_plugin_variables_do_not_leak_in(
+    project: tuple[Path, str], monkeypatch: pytest.MonkeyPatch, name: str, value: str
+) -> None:
+    root, base = project
+    monkeypatch.setenv(name, value)
+    evidence = _collect(root, base)
+    assert evidence["tests"]["returncode"] == 0
+    assert evidence["outcome"] == "passed"
+
+
+class _Clock:
+    """A clock that moves only when called or advanced, so no test waits on wall time."""
+
+    def __init__(self) -> None:
+        self.now = 0.0
+
+    def __call__(self) -> float:
+        self.now += 1.0
+        return self.now
+
+
+def _recorded_waits(monkeypatch: pytest.MonkeyPatch) -> list[tuple[object, float | None]]:
+    waits: list[tuple[object, float | None]] = []
+
+    class Recording(subprocess.Popen[str]):
+        def communicate(
+            self, input: str | None = None, timeout: float | None = None
+        ) -> tuple[str, str]:
+            waits.append((self.args, timeout))
+            return super().communicate(input, timeout)
+
+    monkeypatch.setattr(subprocess, "Popen", Recording)
+    return waits
+
+
+def _run_bounds(waits: list[tuple[object, float | None]]) -> list[float]:
+    return [
+        timeout
+        for args, timeout in waits
+        if isinstance(args, list)
+        and args[1:3] in (["-m", "pytest"], ["-m", "coverage"])
+        and timeout is not None
+    ]
+
+
+def test_the_sixty_second_bound_is_shared_by_the_test_run_and_the_coverage_report(
+    project: tuple[Path, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    clock = _Clock()
+    monkeypatch.setattr(measurement, "monotonic", clock)
+    monkeypatch.setattr(evidence_module, "monotonic", clock)
+    waits = _recorded_waits(monkeypatch)
+    root, base = project
+    assert _collect(root, base, timeout=30)["outcome"] == "passed"
+    bounds = _run_bounds(waits)
+    assert len(bounds) == 2
+    assert bounds[1] < bounds[0] <= 30
+
+
+def test_the_bound_starts_before_the_git_calls_that_scope_the_collection(
+    project: tuple[Path, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    clock = _Clock()
+    monkeypatch.setattr(measurement, "monotonic", clock)
+    monkeypatch.setattr(evidence_module, "monotonic", clock)
+    real_preflight = evidence_module.preflight
+
+    def slow_preflight(**kwargs: object) -> str:
+        clock.now += 20
+        return real_preflight(**kwargs)
+
+    monkeypatch.setattr(evidence_module, "preflight", slow_preflight)
+    waits = _recorded_waits(monkeypatch)
+    root, base = project
+    _ = _collect(root, base, timeout=30)
+    bounds = _run_bounds(waits)
+    assert bounds
+    assert bounds[0] <= 10
+
+
+def _escaped_pids(path: Path) -> list[int]:
+    return [int(token) for token in path.read_text().split()]
+
+
+def test_a_descendant_holding_the_output_open_cannot_outlast_the_bound(
+    project: tuple[Path, str],
+) -> None:
+    root, base = project
+    pid_file = root.parent / f"{root.name}-escaped.pid"
+    (root / "pyproject.toml").write_text(
+        '[tool.livespec_dev_tooling]\nsource_trees = ["src"]\n'
+        '[tool.pytest.ini_options]\naddopts = "-s"\n'
+    )
+    (root / "tests/test_escaped.py").write_text(
+        "import pathlib, subprocess\n"
+        "def test_escaped():\n"
+        '    child = subprocess.Popen(["sleep", "300"], start_new_session=True)\n'
+        f'    pathlib.Path(r"{pid_file}").write_text(str(child.pid))\n'
+    )
+    _git(root, "add", ".")
+    pid_file.touch()
+    try:
+        evidence = _collect(root, base, timeout=2)
+        # The collection returned while the descendant still holds the pipe open, so it
+        # did not wait for the pipe to close; nothing here depends on how fast the host is.
+        for pid in _escaped_pids(pid_file):
+            os.kill(pid, 0)
+    finally:
+        for pid in _escaped_pids(pid_file):
+            with contextlib.suppress(ProcessLookupError):
+                os.kill(pid, signal.SIGKILL)
+    assert evidence["tests"]["timed_out"] is True
+    assert evidence["outcome"] == "incomplete"
+
+
+def test_a_relative_omit_pattern_is_joined_to_the_repository_root(
+    project: tuple[Path, str],
+) -> None:
+    root, base = project
+    (root / "pyproject.toml").write_text(
+        '[tool.livespec_dev_tooling]\nsource_trees = ["src"]\n'
+        '[tool.coverage.run]\nbranch = true\nomit = ["src/vendored/*"]\n'
+    )
+    (root / "src/vendored").mkdir()
+    (root / "src/vendored/thing.py").write_text("def thing():\n    return 1\n")
+    (root / "tests/test_thing.py").write_text(
+        "from src.vendored.thing import thing\ndef test_thing():\n    assert thing() == 1\n"
+    )
+    _git(root, "add", ".")
+    evidence = _collect(root, base)
+    assert evidence["coverage"]["src/vendored/thing.py"]["summary"]["percent_covered"] == 100
+    assert evidence["outcome"] == "passed"
+
+
+def test_a_checkout_under_an_omitted_directory_is_measured_not_zero(
+    project: tuple[Path, str],
+) -> None:
+    root, base = project
+    (root / "pyproject.toml").write_text(
+        '[tool.livespec_dev_tooling]\nsource_trees = ["src"]\n'
+        f'[tool.coverage.run]\nbranch = true\nomit = ["{root.parent}/*"]\n'
+    )
+    (root / "tests/test_widget.py").write_text(
+        "import importlib.util, pathlib, tempfile\n"
+        "from src.widget import answer\n"
+        "def test_answer():\n"
+        "    assert answer() == 43\n"
+        "def test_a_module_that_is_gone_by_report_time():\n"
+        f'    with tempfile.TemporaryDirectory(dir=r"{root.parent}") as folder:\n'
+        '        path = pathlib.Path(folder) / "gone.py"\n'
+        '        path.write_text("VALUE = 1\\n")\n'
+        '        spec = importlib.util.spec_from_file_location("gone", path)\n'
+        "        module = importlib.util.module_from_spec(spec)\n"
+        "        spec.loader.exec_module(module)\n"
+    )
+    _git(root, "add", ".")
+    evidence = _collect(root, base)
+    assert evidence["coverage_command"]["returncode"] == 0, evidence["coverage_command"]["output"]
+    assert evidence["coverage"]["src/widget.py"]["summary"]["percent_covered"] == 100
+    assert evidence["outcome"] == "passed"
