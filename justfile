@@ -261,6 +261,7 @@ check:
         check-comment-line-anchors
         check-commit-pairs-source-and-test
         check-delegated-gate-check-suite
+        check-delegated-job-authority-skip
         check-file-lloc
         check-fleet-marketplace-relative-sources
         check-global-writes
@@ -845,6 +846,12 @@ check-commit-pairs-source-and-test:
 # pre-commit aggregate.
 check-delegated-gate-check-suite:
     uv run python -m livespec_dev_tooling.checks.delegated_gate_check_suite
+
+# A delegated gate Job leaves an authority member to the pushing host only when the
+# recipe it runs reads the repository's skip variable. Warn-default; the lever is
+# armed in a repository's severity-lever source only once its own tree passes.
+check-delegated-job-authority-skip:
+    uv run python -m livespec_dev_tooling.checks.delegated_job_authority_skip
 
 check-file-lloc:
     uv run python -m livespec_dev_tooling.checks.file_lloc
