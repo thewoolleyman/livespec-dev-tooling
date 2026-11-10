@@ -18,9 +18,14 @@ lint opinion about a file GitHub still accepts, and is NOT refused here: this
 gate is about a file that would make the whole workflow unrunnable. shellcheck
 and pyflakes are switched off, so the verdict does not depend on either tool.
 
-The STAGED workflow files are judged, read from the index
-(`git show :<path>`) so the verdict speaks for what the commit will carry, not
-for the working tree. This is the pre-commit gate.
+Two scopes:
+
+- With no flag, the STAGED workflow files, read from the index
+  (`git show :<path>`) so the verdict speaks for what the commit will carry,
+  not for the working tree. This is the pre-commit gate.
+- With `--tree`, every workflow file in the working tree. This is the
+  pre-push gate and the pull-request gate: the push carries the tree it
+  publishes, and a pull request is judged on its tree.
 
 actionlint is a pinned toolchain binary (`.mise.toml`). When it is absent, or
 exits with anything but "no findings" (0) or "findings" (1), the check cannot
@@ -28,7 +33,7 @@ have looked at the files, so it refuses with exit 3 and a remedy; it never
 passes blind.
 
 CLI:
-    python -m livespec_dev_tooling.workflow_checks.actionlint_workflows
+    python -m livespec_dev_tooling.workflow_checks.actionlint_workflows [--tree]
 
     Exits 0 when no judged workflow file is unparseable; exits 4 with one
     structured `error` event per finding naming `path`, `line` and `message`;
@@ -86,6 +91,12 @@ def _staged_sources(*, cwd: Path) -> list[tuple[str, bytes]]:
     ]
 
 
+def _tree_sources(*, cwd: Path) -> list[tuple[str, bytes]]:
+    workflows = cwd / ".github" / "workflows"
+    paths = sorted([*workflows.glob("*.yml"), *workflows.glob("*.yaml")])
+    return [(path.relative_to(cwd).as_posix(), path.read_bytes()) for path in paths]
+
+
 def _configure_logger() -> structlog.stdlib.BoundLogger:
     structlog.configure(
         processors=[
@@ -125,9 +136,17 @@ def _refusal_summary(*, name: str, finding: dict[str, Any]) -> str:
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description=("Refuse a staged .github/workflows file actionlint reports as unparseable.")
+        description=(
+            "Refuse a .github/workflows file actionlint reports as unparseable: the staged "
+            "files by default, every file in the working tree with --tree."
+        )
     )
-    _ = parser.parse_args()
+    _ = parser.add_argument(
+        "--tree",
+        action="store_true",
+        help="judge every workflow file in the working tree instead of the staged files",
+    )
+    tree = cast("bool", parser.parse_args().tree)
     log = _configure_logger()
     binary = shutil.which("actionlint")
     if binary is None:
@@ -138,7 +157,7 @@ def main() -> int:
         )
         return _EXIT_PRECONDITION
     cwd = Path.cwd()
-    sources = _staged_sources(cwd=cwd)
+    sources = _tree_sources(cwd=cwd) if tree else _staged_sources(cwd=cwd)
     refused = 0
     for name, source in sources:
         found = _findings(binary=binary, name=name, source=source)

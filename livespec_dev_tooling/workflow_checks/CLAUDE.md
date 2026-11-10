@@ -21,7 +21,9 @@ invoked by a specific workflow step rather than by the per-commit
   covers, refusing in seconds before any aggregate member starts.
   `actionlint_workflows` is the second: it feeds each staged
   `.github/workflows/*.yml` to the pinned actionlint and refuses a file
-  GitHub cannot parse (kind `syntax-check`), naming file, line and message.
+  GitHub cannot parse (kind `syntax-check`), naming file, line and message;
+  with `--tree` it judges every workflow file in the working tree, which is
+  what `just check-actionlint-workflows` runs for the push gate.
 
 Living here (NOT under `checks/`) keeps them out of the canonical-set
 derivation (`canonical_checks` walks `checks/*.py`) and out of the

@@ -339,6 +339,7 @@ check:
         check-work-item-status-vocabulary
         check-wrapper-shape
         check-ansible-lint
+        check-actionlint-workflows
         check-ansible-hostname-free
         check-dev-host-fabro-client-bins-declared
         check-lint
@@ -397,6 +398,14 @@ check:
 
 check-ansible-lint:
     uvx --from ansible-lint==26.8.0 --with ansible-core==2.21.4 ansible-lint ansible/
+
+# A workflow GitHub cannot parse is refused (livespec-dev-tooling-f3q7r7):
+# actionlint's `syntax-check` findings over every `.github/workflows/*.yml` in
+# the tree, naming file, line and message. The pre-commit gate runs the same
+# module over the STAGED files (`scripts/just/check-pre-commit.sh`); this recipe
+# is the pre-push and pull-request half, through the `check` aggregate.
+check-actionlint-workflows:
+    uv run python -m livespec_dev_tooling.workflow_checks.actionlint_workflows --tree
 
 # A machine is bound ONLY through the inventory's groups and host_vars
 # (livespec-dev-tooling-prdxxe): a play's `hosts:` field names groups, and no

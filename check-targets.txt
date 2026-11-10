@@ -87,6 +87,7 @@ check-wrapper-shape  # incident-timing: fast
 # module, so the declaration travels with the library to every consumer. Only a
 # member that exists ONLY here is declared here.
 check-ansible-lint  # purity: tree-pure # incident-timing: slow
+check-actionlint-workflows  # purity: tree-pure # incident-timing: fast
 check-ansible-hostname-free  # purity: tree-pure # incident-timing: fast
 # Reads this repository's own `.livespec.jsonc` against its own
 # `ansible/inventory/group_vars/dev_hosts.yml` and nothing else, so the same

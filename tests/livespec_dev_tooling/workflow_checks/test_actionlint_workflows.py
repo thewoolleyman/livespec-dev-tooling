@@ -31,6 +31,8 @@ __all__: list[str] = []
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _CHECK_PRE_COMMIT = _REPO_ROOT / "scripts" / "just" / "check-pre-commit.sh"
+_JUSTFILE = _REPO_ROOT / "justfile"
+_CHECK_TARGETS = _REPO_ROOT / "check-targets.txt"
 _WORKFLOW = ".github/workflows/release-please.yml"
 
 _GIT_ENV_PASSTHROUGH_VARS: tuple[str, ...] = (
@@ -218,3 +220,54 @@ def test_check_pre_commit_runs_the_staged_mode_before_any_aggregate_run() -> Non
     assert invocation < script.index("just red_staged=")
     assert invocation < script.index("just hook_gate=1 check")
     assert invocation < script.index("just check-pre-commit-doc-only")
+
+
+def test_a_tree_carrying_an_unparseable_workflow_is_refused_naming_file_and_line(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo = _repo(tmp_path=tmp_path)
+    _write(repo=repo, rel=".github/workflows/ci.yml", body=_CLEAN)
+    _write(repo=repo, rel=".github/workflows/second.yaml", body=_UNPARSEABLE)
+    rc = _invoke_main(monkeypatch=monkeypatch, cwd=repo, argv=["--tree"])
+    refusals = _refusals(events=_events(capsys=capsys))
+    assert rc == 4
+    assert [(r["path"], r["line"]) for r in refusals] == [(".github/workflows/second.yaml", 5)]
+
+
+def test_every_unparseable_workflow_in_the_tree_is_named(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo = _repo(tmp_path=tmp_path)
+    _write(repo=repo, rel=".github/workflows/a.yml", body=_UNPARSEABLE)
+    _write(repo=repo, rel=".github/workflows/b.yml", body=_UNPARSEABLE)
+    rc = _invoke_main(monkeypatch=monkeypatch, cwd=repo, argv=["--tree"])
+    refusals = _refusals(events=_events(capsys=capsys))
+    assert rc == 4
+    assert [r["path"] for r in refusals] == [".github/workflows/a.yml", ".github/workflows/b.yml"]
+
+
+def test_a_tree_of_parseable_workflows_passes(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = _repo(tmp_path=tmp_path)
+    _write(repo=repo, rel=".github/workflows/ci.yml", body=_CLEAN)
+    assert _invoke_main(monkeypatch=monkeypatch, cwd=repo, argv=["--tree"]) == 0
+
+
+def test_a_tree_without_workflows_passes(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = _repo(tmp_path=tmp_path)
+    assert _invoke_main(monkeypatch=monkeypatch, cwd=repo, argv=["--tree"]) == 0
+
+
+def test_the_check_aggregate_wires_the_tree_mode_recipe_that_pre_push_runs() -> None:
+    justfile = _JUSTFILE.read_text(encoding="utf-8")
+    aggregate = justfile[justfile.index("\ncheck:\n") :]
+    assert "        check-actionlint-workflows\n" in aggregate.split("\n\n", maxsplit=1)[0]
+    assert (
+        "check-actionlint-workflows:\n"
+        "    uv run python -m livespec_dev_tooling.workflow_checks.actionlint_workflows --tree\n"
+    ) in justfile
+    targets = _CHECK_TARGETS.read_text(encoding="utf-8").splitlines()
+    assert any(line.startswith("check-actionlint-workflows ") for line in targets)
