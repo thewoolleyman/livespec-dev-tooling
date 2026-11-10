@@ -123,15 +123,23 @@ uv_cache_is_in_use() {
     ! flock --exclusive --nonblock "$lock_file" true 2>/dev/null
 }
 
+# The prune runs as the retention user. When the run already executes as that
+# account, uv is invoked directly; otherwise `runuser` switches to it. The
+# account is compared by uid, so a login name and a numeric uid naming the same
+# account take the same route, and `runuser` is handed the login name because
+# it does not accept a numeric uid ("runuser: user 1000 does not exist",
+# livespec-dev-tooling-spva5x).
 run_uv_cache_prune() {
-    local cache_home=$1 force=$2 output status
+    local cache_home=$1 force=$2 output status retention_uid login
     local args=(cache prune)
     [[ $force == true ]] && args+=(--force)
-    if [[ $RETENTION_USER == root || $RETENTION_USER == 0 ]]; then
+    retention_uid=$(id -u "$RETENTION_USER" 2>/dev/null) || retention_uid=$RETENTION_USER
+    if [[ $retention_uid == "$(id -u)" ]]; then
         output=$("$UV_BIN" "${args[@]}" 2>&1)
         status=$?
     else
-        output=$(runuser -u "$RETENTION_USER" -- env "HOME=$cache_home" "$UV_BIN" "${args[@]}" 2>&1)
+        login=$(getent passwd "$RETENTION_USER" 2>/dev/null | cut -d: -f1)
+        output=$(runuser -u "${login:-$RETENTION_USER}" -- env "HOME=$cache_home" "$UV_BIN" "${args[@]}" 2>&1)
         status=$?
     fi
     printf '%s' "$output"

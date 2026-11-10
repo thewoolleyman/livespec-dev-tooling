@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import os
+import shlex
 import shutil
 import subprocess
 import tempfile
 import time
+from collections import Counter
 from pathlib import Path
 
 _ROOT = Path(__file__).resolve().parents[2]
@@ -141,52 +143,103 @@ def test_retention_keeps_a_live_session_when_an_environment_cannot_be_read(
     assert done.stderr == ""
 
 
-def test_retention_reads_each_process_environment_once_for_all_aged_sessions(
-    *, tmp_path: Path
-) -> None:
-    """One liveness scan serves every aged session directory in the run."""
-    assert _SCRATCH.is_file(), "the committed scratch helper must implement liveness discovery"
-    tmp_root = tmp_path / "tmp"
-    for session_id in ("live-one", "live-two", "dead"):
-        session = tmp_root / "claude-1000" / "project" / session_id
+def _exec_counting_path(*, shim_dir: Path, path: str, log: Path) -> str:
+    """A PATH whose every command records one line in `log` before it runs.
+
+    Each executable name the run could resolve gets a shim that appends its
+    name and then execs the real binary, so the log holds one line per child
+    process the run starts through PATH, whatever the command.
+    """
+    shim_dir.mkdir()
+    seen: set[str] = set()
+    for directory in path.split(os.pathsep):
+        # `glob` yields nothing for a PATH entry that does not exist.
+        for entry in sorted(Path(directory).glob("*")):
+            if entry.name in seen or not entry.is_file() or not os.access(entry, os.X_OK):
+                continue
+            seen.add(entry.name)
+            _stub(
+                directory=shim_dir,
+                name=entry.name,
+                body=f"#!/bin/sh\nprintf '%s\\n' {shlex.quote(entry.name)} >> \"$EXEC_LOG\"\n"
+                f'exec {shlex.quote(str(entry))} "$@"\n',
+            )
+    log.touch()
+    return f"{shim_dir}{os.pathsep}{path}"
+
+
+def _run_over_process_root(*, base: Path, process_count: int) -> tuple[Path, Path, Path, list[str]]:
+    """One retention run over a fixture process root of `process_count` entries.
+
+    Two of the entries carry a live session id, the rest carry other
+    variables. Returns the two live session directories, the dead one, and
+    the commands the run started.
+    """
+    base.mkdir()
+    tmp_root = base / "tmp"
+    sessions = {
+        name: tmp_root / "claude-1000" / "project" / name
+        for name in ("live-one", "live-two", "dead")
+    }
+    for session in sessions.values():
         session.mkdir(parents=True)
         _age(path=session, seconds=_AGED_SECONDS)
-    proc_root = tmp_path / "proc"
-    for pid, session_id in (("100", "live-one"), ("101", "live-two"), ("102", "other")):
-        environment = proc_root / pid / "environ"
+    proc_root = base / "proc"
+    for pid in range(100, 100 + process_count):
+        environment = proc_root / str(pid) / "environ"
         environment.parent.mkdir(parents=True)
-        environment.write_bytes(f"CLAUDE_CODE_SESSION_ID={session_id}\0".encode())
-    tr = shutil.which("tr")
-    assert tr is not None, "the retention helper requires tr for process environments"
-    tr_log = tmp_path / "tr.log"
-    tr_bin_dir = tmp_path / "tr-bin"
-    tr_bin_dir.mkdir()
-    _stub(
-        directory=tr_bin_dir,
-        name="tr",
-        body=f'#!/bin/sh\nprintf x >> "$TR_LOG"\nexec {tr} "$@"\n',
+        environment.write_bytes(f"HOME=/home/u{pid}\0PATH=/usr/bin\0".encode())
+    for pid, session_id in ((100, "live-one"), (101 + process_count // 2, "live-two")):
+        (proc_root / str(pid) / "environ").write_bytes(
+            f"PWD=/\0CLAUDE_CODE_SESSION_ID={session_id}\0TERM=dumb\0".encode()
+        )
+    exec_log = base / "exec.log"
+    environment = _hermetic_env(tmp_path=base, tmp_root=tmp_root, bulk=base / "bulk")
+    environment["PATH"] = _exec_counting_path(
+        shim_dir=base / "exec-shims", path=environment["PATH"], log=exec_log
     )
-    bulk = tmp_path / "bulk"
-    environment = _hermetic_env(tmp_path=tmp_path, tmp_root=tmp_root, bulk=bulk)
-    environment["PATH"] = f"{tr_bin_dir}:{environment['PATH']}"
     environment |= {
         "LIVESPEC_DEV_HOST_RETENTION_PROC_ROOT": str(proc_root),
-        "TR_LOG": str(tr_log),
+        "EXEC_LOG": str(exec_log),
     }
+    bash = shutil.which("bash")
+    assert bash is not None
 
     done = subprocess.run(
-        ["bash", str(_RETENTION)],
+        [bash, str(_RETENTION)],
         env=environment,
         capture_output=True,
         check=False,
         text=True,
+        timeout=600,
     )
 
     assert done.returncode == 0, done.stdout + done.stderr
-    assert (tmp_root / "claude-1000" / "project" / "live-one").exists()
-    assert (tmp_root / "claude-1000" / "project" / "live-two").exists()
-    assert not (tmp_root / "claude-1000" / "project" / "dead").exists()
-    assert len(tr_log.read_text(encoding="utf-8")) == 3
+    started = exec_log.read_text(encoding="utf-8").splitlines()
+    return sessions["live-one"], sessions["live-two"], sessions["dead"], started
+
+
+def test_retention_scans_liveness_with_a_fixed_number_of_child_processes(*, tmp_path: Path) -> None:
+    """The live-session scan's child processes do not grow with the process count.
+
+    One child per process made the scan take 34 s over 1,076 processes at load
+    46 on the dev host (livespec-dev-tooling-spva5x). A run over 2,000 process
+    entries must start exactly as many child processes as a run over 20, and
+    still keep every live session and remove the aged dead one.
+    """
+    assert _SCRATCH.is_file(), "the committed scratch helper must implement liveness discovery"
+    small = _run_over_process_root(base=tmp_path / "small", process_count=20)
+    large = _run_over_process_root(base=tmp_path / "large", process_count=2000)
+
+    for live_one, live_two, dead, _ in (small, large):
+        assert live_one.exists()
+        assert live_two.exists()
+        assert not dead.exists()
+    assert Counter(large[3]) == Counter(small[3]), (
+        f"20 entries started {len(small[3])} child processes, 2,000 started {len(large[3])}; "
+        f"only at 2,000: {Counter(large[3]) - Counter(small[3])}, "
+        f"only at 20: {Counter(small[3]) - Counter(large[3])}"
+    )
 
 
 def test_retention_reclaims_dead_tmp_scratch_pytest_and_oldest_bulk_dumps(

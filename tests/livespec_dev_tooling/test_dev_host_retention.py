@@ -45,6 +45,7 @@ from __future__ import annotations
 
 import json
 import os
+import pwd
 import re
 import subprocess
 from collections.abc import Iterator
@@ -180,9 +181,10 @@ fi
 """
 
 _RUNUSER_STUB = """#!/usr/bin/env bash
-# A `runuser -u <user> -- <command...>` that runs the command as the caller, so
-# the retention user's prune is reachable without root.
+# A `runuser -u <user> -- <command...>` that records its argv and runs the
+# command as the caller, so the retention user's prune is reachable without root.
 set -uo pipefail
+printf 'runuser %s\\n' "$*" >>"$STUB_EVENT_LOG"
 shift 3
 exec "$@"
 """
@@ -371,6 +373,50 @@ def test_a_run_prunes_the_uv_cache(*, tmp_path: Path) -> None:
     )
 
 
+@pytest.mark.parametrize("spelling", ["login name", "numeric uid"])
+def test_a_retention_user_that_is_the_caller_prunes_with_uv_directly(
+    *, tmp_path: Path, spelling: str
+) -> None:
+    """The account the run already executes as needs no switch, however it is named.
+
+    `runuser` takes a login name only, so handing it the caller's numeric uid
+    printed "runuser: user 1000 does not exist" and the prune never ran
+    (livespec-dev-tooling-spva5x).
+    """
+    caller = pwd.getpwuid(os.getuid())
+    user = caller.pw_name if spelling == "login name" else str(caller.pw_uid)
+    env = _base_env(tmp_path=tmp_path) | {"LIVESPEC_DEV_HOST_RETENTION_USER": user}
+
+    done = _retain(env=env)
+
+    assert done.returncode == 0, done.stdout + done.stderr
+    events = (tmp_path / "events.log").read_text(encoding="utf-8").splitlines()
+    assert "uv cache prune" in events, events
+    assert not [event for event in events if event.startswith("runuser ")], events
+    assert "runuser" not in done.stdout + done.stderr, done.stdout + done.stderr
+    assert "uv cache prune: Removed 4096 files" in done.stdout, done.stdout
+
+
+def test_a_retention_user_given_by_numeric_uid_prunes_as_that_account(*, tmp_path: Path) -> None:
+    """A different account named by uid is switched to by its login name."""
+    other = pwd.getpwnam("nobody")
+    assert other.pw_uid != os.getuid(), "the test needs an account other than the caller"
+    env = _base_env(tmp_path=tmp_path) | {"LIVESPEC_DEV_HOST_RETENTION_USER": str(other.pw_uid)}
+
+    done = _retain(env=env)
+
+    assert done.returncode == 0, done.stdout + done.stderr
+    events = (tmp_path / "events.log").read_text(encoding="utf-8").splitlines()
+    switches = [index for index, event in enumerate(events) if event.startswith("runuser ")]
+    assert switches, f"the prune did not switch to {other.pw_name}:\n{events}"
+    assert events[switches[0]].startswith(
+        f"runuser -u {other.pw_name} -- env HOME={other.pw_dir} "
+    ), events[switches[0]]
+    assert events[switches[0]].endswith(" cache prune"), events[switches[0]]
+    assert events[switches[0] + 1] == "uv cache prune", events
+    assert "uv cache prune: Removed 4096 files" in done.stdout, done.stdout
+
+
 def test_a_run_with_no_uv_on_path_uses_the_configured_uv_executable(*, tmp_path: Path) -> None:
     """The root systemd PATH must not prevent the retention user's cache prune."""
     env = _base_env(tmp_path=tmp_path)
@@ -379,8 +425,11 @@ def test_a_run_with_no_uv_on_path_uses_the_configured_uv_executable(*, tmp_path:
     configured_uv.chmod(0o755)
     cache_dir = tmp_path / "uv-cache"
     cache_dir.mkdir(exist_ok=True)
+    # The retention user is the caller, so the prune runs uv directly: this
+    # regression is about the PATH, not about switching accounts.
     env |= {
         "PATH": "/usr/bin:/bin",
+        "LIVESPEC_DEV_HOST_RETENTION_USER": str(os.getuid()),
         "LIVESPEC_DEV_HOST_RETENTION_UV_BIN": str(configured_uv),
         "LIVESPEC_DEV_HOST_UV_CACHE_DIR": str(cache_dir),
     }
