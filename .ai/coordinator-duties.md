@@ -104,6 +104,14 @@ ONE-OFF exception for run 42384603843 attempt 2, rerun 15:53:16Z. The root cause
 expedited plan's own fix could commit. This section stands: another rerun of that kind needs the maintainer's word
 again.
 
+**The CI range gate re-runs nothing, so it is never a backstop for a hook bypass (coordinator's reading).** In CI,
+`check-red-green-replay` checks only that each commit's TDD trailer keys are present. It compares no checksum and
+re-runs no test, so a commit whose local Red or Green leg was bypassed passes it. Excuse no hook bypass on the strength
+of the range gate. The coordinator's correction is recorded on epic `livespec-dev-tooling-6tgd2z` at
+2026-11-10T02:33:23Z, and the gate fix is filed as livespec-dev-tooling-5be65c (proposal livespec-dev-tooling#3971).
+Measured 2026-11-10 by expedited-incident-response-flag and re-measured by dev-host-test-gate-load: commit 31d49d7a
+passed the range check although its recorded test fails to import on its own tree.
+
 ## 3. Unblock blocked seats every tick
 
 **Rule P1: every tick starts with priorities 1-5, in order.** Before any peer message is answered, run
@@ -250,7 +258,10 @@ made both edits itself in about two minutes and approved it green.
 
 **Read an item's spec-change hold before pressing `approve:` (coordinator's reading).** The approve valve did not read
 that hold. Measured 2026-11-07 ~20:03Z by radar-and-deterministic-admission: 31 of 306 ready items were held with no
-proposal on master. The door fix is bd-ib-bomy33, and this lesson ends when it ships.
+proposal on master. Session 70706809 repeated the error once, at ~01:51Z on 2026-11-10: it approved
+livespec-dev-tooling-32qdja and livespec-dev-tooling-7w757z before their topic ratified, and reverted both to backlog
+within minutes. Recorded on epic `livespec-dev-tooling-6tgd2z` at 2026-11-10T01:54:20Z. They moved to ready only after
+v177 merged (a451491e). The door fix is bd-ib-bomy33, and this lesson ends when it ships.
 
 **A tier hold that a proof-mode edit created is released by its clause, not waited out (coordinator's reading).**
 Editing an item's Definition of Done (for example, moving a bullet from factory-captured to Host-captured) changes its
@@ -455,6 +466,12 @@ never waits for the seat, or the maintainer, to press them. Measured 2026-11-05:
 was accepted ~21:5xZ on its seat's reproduction comment, and bd-ib-5guqmt and bd-ib-fvgkw4 were closed out-of-band
 under this section.
 
+**A hand-lane item carries `admission:manual` and a recorded reason (coordinator's reading).** An item that a seat is
+landing by hand gets the `admission:manual` label plus a ledger comment giving the reason and the end condition.
+Without the label, the dispatcher treats it as factory work and dispatches it. Recorded in the restart handoff on epic
+`livespec-dev-tooling-6tgd2z` at 2026-11-10T02:45:38Z (session 70706809). Measured 2026-11-10:
+livespec-dev-tooling-5xwfda was factory-dispatched while hand-laned.
+
 **Grade a hand-landed carrier yourself before `accept:` (coordinator's reading).** A hand-land parks at 0 graded
 assertions, so a press with no grading closes it unproven. Read the test as well as the reproduction, and say in the
 grade what you did not re-run. Measured 2026-11-07: livespec-dev-tooling-se537s's test asserted no repair digest
@@ -470,6 +487,17 @@ one release.
 hand-landed close path above applies outside the expedited plan too: the carrier is hand-landed and closed on the
 coordinator's grade, with no replay. Measured 2026-11-09: the factory-yield carriers bd-ib-e6zk4u
 (livespec-orchestrator-beads-fabro#4727, hand-composed) and bd-ib-fkd4ve were routed that way.
+
+**Unblock a planned step by building its committed route, never by a hand apply (coordinator's reading).** A step that
+is in a plan, lands through a normal PR and is reversible (a k3s Job, for example) is not held as a maintainer ask
+because one seat's classifier refused it. The coordinator unblocks it in the owning seat with a recorded authority, by
+building the committed route the step runs through. The maintainer, 2026-11-10 ~01:27Z, recorded on epic
+`livespec-dev-tooling-6tgd2z` at 01:29:13Z, on launching rule-26 slice 1 (livespec-dev-tooling-fqnbtd, the committed
+kill-matrix Job on poweredge-xubuntu) after the Mac seat's classifier refused it: "Why can't you unblock this?  It's
+part of the plan, and no reason to not do it". Measured 2026-11-10: the route became `ansible/rule26-kill-matrix.yml`
+(livespec-dev-tooling#3962, 7b5021fe). A coordinator hand-apply attempt was blocked by fleet_host_guard and changed
+nothing. The first drift run failed on a first-run namespace NotFound (rc 2) and went back to the owning seat as a role
+fix (livespec-dev-tooling#3972, cb2d48f7).
 
 **Cleanup of a provably superseded local artifact is not a maintainer ask.** A branch, worktree or tmp file whose
 content is already on master is looked at first (`git worktree list`, `git ls-remote`, the PR list, a diff against
@@ -849,6 +877,10 @@ seats' scratch (a 3.8 G image dump, 1.3 G of lab homes and 1.5 G of journal copi
 those sessions dead from `/proc/<pid>/environ` alone; dev-host-disk-retention's parent-process map showed both live.
 Read a parent-process map, not an environ, before calling a writer dead.
 
+**Create the dump directory before writing to it (coordinator's reading).** `/var/tmp/livespec-dumps` is not
+guaranteed to exist, so run `mkdir -p /var/tmp/livespec-dumps` before the first write there. Recorded in the restart
+handoff on epic `livespec-dev-tooling-6tgd2z` at 2026-11-10T02:45:38Z (session 70706809).
+
 **The dispatcher watches throughput first; the coordinator checks it independently.** The coordinator's tick samples
 every ~20 minutes, so it cannot be the first to see a stall. legacy-dispatcher-agent runs the launchers and owns
 ticket order (its charter), so on every pass it also:
@@ -1128,6 +1160,10 @@ CI-capacity routing, and is not used to cut the factory cap. Correction recorded
 - **In zsh, brace a variable before a colon.** Write `"resolve-blocked:${i}:ready"`. A bare `$i:ready` applies zsh's
   `:r` modifier: `i=bd-ib-abc.1` yields `resolve-blocked:bd-ib-abceady`, an action that names no item. Measured
   2026-11-07 in this seat's shell.
+- **Write `bd comment` text to a file first (coordinator's reading).** Build the text in a quoted heredoc
+  (`<<'EOF'`) into a file and pass it with `bd comment <id> --file <path>`. Inside a double-quoted comment string, an
+  unescaped backtick is a shell command substitution. Measured 2026-11-10 by expedited-incident-response-flag:
+  backticks garbled livespec-dev-tooling-3wcldx's first rider, and one ran uv and pasted its usage text into the ledger.
 - **Look before you delete.** `/data/projects/livespec-dev-tooling/.overseer-state` at the repo root can be ANOTHER
   session's state marker. Read a file before removing it.
 - **Relays.** Peers keep messaging a retired seat's name. That seat forwards what it receives to the current
