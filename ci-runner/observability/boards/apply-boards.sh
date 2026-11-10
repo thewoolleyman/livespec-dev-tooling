@@ -202,6 +202,18 @@ def stored_matches(desired, stored):
     return all(canon(stored.get(k)) == canon(v) for k, v in desired.items())
 
 
+dataset_names = {}
+
+
+def dataset_display_name(slug):
+    """Return the name the board API uses for a committed dataset slug."""
+    if slug not in dataset_names:
+        ok, dataset = call("GET", "/1/datasets/%s" % slug)
+        name = dataset.get("name") if ok and isinstance(dataset, dict) else None
+        dataset_names[slug] = name if isinstance(name, str) and name else slug
+    return dataset_names[slug]
+
+
 def live_panels_by_annotation_name(board):
     """Map annotation name -> (query_id, annotation_id, dataset) for a live board."""
     index = {}
@@ -336,7 +348,7 @@ def drift_panels(defn, board):
             lines.append("  %s: committed, missing from the live board" % label)
             continue
         want = {
-            "dataset": panel["dataset"],
+            "dataset": dataset_display_name(panel["dataset"]),
             "query_style": panel.get("query_style", "graph"),
             "position": panel["position"],
             "annotation": {"description": panel["annotation"].get("description", "")},
@@ -363,7 +375,6 @@ def drift(path, defn):
     want = {
         "description": defn.get("description", ""),
         "type": "flexible",
-        "layout_generation": defn.get("layout_generation", "manual"),
         "tags": defn.get("tags", []),
     }
     diff("", want, board, lines)
