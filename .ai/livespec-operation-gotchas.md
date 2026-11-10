@@ -268,5 +268,7 @@ the B' master-push concurrency block) opened at 11:18:42Z, and the bot armed
 auto-rebase at 11:18:51Z. legacy-coordinator-agent graded it PASS but held the
 merge until the factory launch build carried orchestrator `9965c14aa`. The
 session acknowledged the hold and never checked auto-merge. The PR merged at
-11:38:04Z against the hold, and B' started cancelling superseded master runs
-while the launch build could still read a cancelled run as master's verdict.
+11:38:04Z against the hold. Here the merge did no harm: the hold's own basis
+proved incomplete, because the launch build already skips `cancelled` runs in
+its master-CI ancestor walk, and the coordinator ruled that B' stays live. A
+hold whose basis is sound gets no such second chance, so disarm it at once.
