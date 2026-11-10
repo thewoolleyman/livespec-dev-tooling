@@ -38,6 +38,8 @@ _ENGINE_TIMEOUT_SECONDS = 600
 _PREFLIGHT = "tasks/scratch_preflight.yml"
 _TEARDOWN = "tasks/scratch_teardown.yml"
 _MAIN = "tasks/main.yml"
+_CONVERGE = "tasks/converge.yml"
+_APPLY = "tasks/scratch_apply.yml"
 _NAME = (
     "Refuse scratch variables without scratch mode, an unsafe name, a non-scratch branch"
     " or production's port"
@@ -533,13 +535,31 @@ def test_the_apply_and_the_teardown_take_the_same_preflight_before_any_write() -
             and not str(task.get("when", "")).startswith("not (incident_observer_scratch | bool)")
         )
 
-    (preflight,) = [i for i, task in enumerate(main) if include.items() <= task.items()]
-    venv = [task.get("name") for task in main].index(_VENV)
-    assert main[preflight]["when"] == (
+    apply = base.role_yaml(relative=_APPLY)
+    converge = base.role_yaml(relative=_CONVERGE)
+    venv = [task.get("name") for task in converge].index(_VENV)
+
+    # main.yml only dispatches, through DYNAMIC includes: the scratch path to the
+    # converge body runs the preflight first, and nothing below is reachable by
+    # `--start-at-task` (review round 3, F1).
+    assert [set(task) - {"name", "when"} for task in main] == [
+        {"ansible.builtin.include_tasks"},
+        {"ansible.builtin.include_tasks"},
+    ]
+    assert [task["ansible.builtin.include_tasks"] for task in main] == [
+        "scratch_apply.yml",
+        "converge.yml",
+    ]
+    assert main[0]["when"] == (
         "incident_observer_scratch | bool or incident_observer_scratch_name is defined"
         " or incident_observer_target_branch | default('', true) | length > 0"
     )
-    assert preflight < venv < first_scratch_write(main)
+    assert [task.get("ansible.builtin.import_tasks") for task in apply] == [
+        "scratch_preflight.yml",
+        None,
+    ]
+    assert apply[1]["ansible.builtin.include_tasks"] == "converge.yml"
+    assert venv < first_scratch_write(converge)
     assert include.items() <= teardown[0].items()
     assert first_scratch_write(teardown) > 0
 
@@ -650,7 +670,7 @@ def test_the_teardown_reads_back_every_production_credential_unit_and_its_state(
 def test_a_dry_run_tolerates_an_absent_reference_clone_and_an_apply_does_not(
     *, check_mode: bool, exists: bool, ready: bool
 ) -> None:
-    fact = _task(relative=_MAIN, name=_READY)["ansible.builtin.set_fact"]
+    fact = _task(relative=_CONVERGE, name=_READY)["ansible.builtin.set_fact"]
     variables = scratch_run_variables(overrides={})
     variables.update(
         {

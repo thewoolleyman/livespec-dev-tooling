@@ -1,5 +1,5 @@
 ---
-# The scratch instance's refusals, shared by the apply (tasks/main.yml) and the
+# The scratch instance's refusals, shared by the apply (tasks/scratch_apply.yml) and the
 # teardown (tasks/scratch_teardown.yml), which each include this file BEFORE
 # they write, stop or remove anything. livespec-dev-tooling-32qdja.
 #
@@ -26,8 +26,9 @@
 #    configuration directory are parents the scratch paths may sit inside,
 #    never be or contain;
 # 5. on the HOST, read as root without following links, no scratch path is a
-#    symbolic link. `realpath` above runs on the control node as the operator,
-#    who cannot enter production's 0750 home, so it cannot see a link there.
+#    symbolic link, and neither is any path the apply writes beneath them.
+#    `realpath` above runs on the control node as the operator, who cannot
+#    enter production's 0750 home, so it cannot see a link there.
 
 - name: Read production's values for the teardown's read-back
   # Evidence only: the teardown names what it reads back from these. No assert
@@ -172,7 +173,11 @@
 
 - name: Read each scratch path on the host as root, without following a link
   # The host's own view: `realpath` above is the control node's, as the
-  # operator, and it cannot see past production's 0750 home.
+  # operator, and it cannot see past production's 0750 home. EVERY path the
+  # apply writes or re-modes beneath the scratch root is read, not only the
+  # ones the layout names: `file: state=directory` and `copy` follow a link at
+  # any level, so a link at receipts/recovery-journal would send the scratch
+  # principal into production's recovery journal.
   ansible.builtin.stat:
     path: "{{ item }}"
     follow: false
@@ -188,6 +193,10 @@
     - "{{ incident_observer_unit_path }}"
     - "{{ incident_observer_fetch_service_path }}"
     - "{{ incident_observer_fetch_timer_path }}"
+    - "{{ incident_observer_state_dir }}/recovery-journal"
+    - "{{ incident_observer_state_dir }}/recovery-journal-contexts"
+    - "{{ incident_observer_reference_dir }}/.beads"
+    - "{{ incident_observer_reference_dir }}/.beads/metadata.json"
   register: incident_observer_scratch_path_stats
 
 - name: Refuse a scratch path that is a symbolic link on the host
@@ -196,7 +205,7 @@
   # exist yet is not a link.
   ansible.builtin.assert:
     that:
-      - incident_observer_scratch_path_stats.results | length == 8
+      - incident_observer_scratch_path_stats.results | length == 12
       - >-
         incident_observer_scratch_path_stats.results
         | selectattr('stat.islnk', 'defined') | selectattr('stat.islnk')

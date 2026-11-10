@@ -32,7 +32,7 @@ _UNIT = "Install the observer's unit"
 
 
 def _tasks() -> list[dict[str, Any]]:
-    loaded = yaml.safe_load((_ROLE / "tasks" / "main.yml").read_text(encoding="utf-8"))
+    loaded = yaml.safe_load((_ROLE / "tasks" / "converge.yml").read_text(encoding="utf-8"))
     assert isinstance(loaded, list)
     return loaded
 
@@ -50,7 +50,7 @@ def _is_pip_install(*, argv: object) -> bool:
 def test_the_role_installs_only_the_release_with_its_declared_dependencies() -> None:
     tasks = _tasks()
     defaults = yaml.safe_load((_ROLE / "defaults" / "main.yml").read_text(encoding="utf-8"))
-    rendered = (_ROLE / "tasks" / "main.yml").read_text(encoding="utf-8")
+    rendered = (_ROLE / "tasks" / "converge.yml").read_text(encoding="utf-8")
 
     install = tasks[_position(tasks=tasks, name=_INSTALL)]
     argv = install["ansible.builtin.command"]["argv"]

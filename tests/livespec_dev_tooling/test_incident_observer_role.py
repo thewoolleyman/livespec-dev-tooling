@@ -188,7 +188,7 @@ def test_the_unit_keeps_the_packaged_confinement() -> None:
         if key in {"NoNewPrivileges", "ProtectSystem", "ProtectHome", "PrivateTmp", "UMask"}:
             assert line in unit, f"the role's unit dropped the packaged `{line}`"
     assert "python -I -m livespec_dev_tooling.incident_observer_service --config" in unit
-    tasks = (_ROLE / "tasks" / "main.yml").read_text(encoding="utf-8")
+    tasks = (_ROLE / "tasks" / "converge.yml").read_text(encoding="utf-8")
     assert "no_log: true" in tasks, "secret projection must never reach the run output"
     readme = (_ROLE / "README.md").read_text(encoding="utf-8")
     for step in (

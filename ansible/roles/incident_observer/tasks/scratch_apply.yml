@@ -1,0 +1,11 @@
+---
+# The scratch instance's apply: its refusals, then the shared converge body.
+# Reached only through tasks/main.yml's dynamic include, so neither half can be
+# started at with `--start-at-task`, and the converge body runs only once every
+# refusal has passed. livespec-dev-tooling-32qdja.
+
+- name: Take the scratch instance's refusals before writing anything
+  ansible.builtin.import_tasks: scratch_preflight.yml
+
+- name: Converge the scratch instance now that its refusals have passed
+  ansible.builtin.include_tasks: converge.yml

@@ -123,7 +123,7 @@ def render_installation(*, variables: dict[str, Any]) -> dict[str, str]:
         )
         for name, source in _TEMPLATES.items()
     }
-    tasks = role_yaml(relative="tasks/main.yml")
+    tasks = role_yaml(relative="tasks/converge.yml")
     (render,) = [task for task in tasks if task.get("name") == _RENDER_TASK]
     expression = render["ansible.builtin.command"]["argv"].strip()
     assert expression.startswith("{{")
