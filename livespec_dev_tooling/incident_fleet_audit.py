@@ -205,13 +205,15 @@ def audit_incident_fleet(
         for row in rows
         if row.disposition == "unclassified"
     )
+    unready = {row.repository for row in rows if row.disposition == "unclassified"}
     ready = (
         ()
-        if findings
+        if invalid_evidence
         else tuple(
             repository
             for repository, instruction_only in consumers
             if not instruction_only
+            and repository not in unready
             and not any(
                 row.repository == repository and row.disposition == "deliberately-normal"
                 for row in rows
