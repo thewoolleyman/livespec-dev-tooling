@@ -11,6 +11,7 @@ from livespec_dev_tooling._incident_observer_ack import (
     recover_recorded_job_callback,
 )
 from livespec_dev_tooling._incident_observer_store import (
+    RepositoryFenceBusyError,
     load_record,
     read_registration,
     registration_record,
@@ -29,7 +30,15 @@ __all__: list[str] = [
     "handle_job_callback",
     "reconcile_action_receipt",
     "route_ordinary_action",
+    "route_reconciler_window",
 ]
+
+# EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-ariayn
+# How long the reconciler's ownership question waits for the repository fence.
+# A holder that keeps it longer is the observer acting (a recovery principal
+# runs with the fence held), so the bounded answer is incident-owned rather
+# than a wait that outlasts the reconciler's own step timeout.
+RECONCILER_FENCE_WAIT_SECONDS = 10.0
 
 
 def admit_observer(
@@ -160,26 +169,84 @@ def route_ordinary_action(
     Existing ordinary policy runs unchanged when no incident registration exists.
     A recorded incident is owned by the early controller, so the normal policy
     cannot race its revert or delay it behind reruns or fix-forward classification.
+    This is the exact-run form; the master-health reconciler asks
+    ``route_reconciler_window`` because one of its passes can touch any commit of
+    the red episode, not one run.
     """
     with repository_lock(directory=directory, repository=repository) as path:
-        record = load_record(path=path)
-        if record.get("observer_arm_id") and not record.get("observer_arm_bound"):
-            return ObserverResult(
-                status="incident-owned", reason="pre-merge observer owns repository action"
-            )
-        registration = read_registration(record=record)
-        if (
-            registration is not None
-            and registration.head_sha == head_sha
-            and registration.run_id == run_id
-        ):
-            return ObserverResult(
-                status="incident-owned",
-                reason="independent incident controller owns repository action",
-            )
+        owner = _incident_owner(
+            record=load_record(path=path),
+            owns=lambda registration: (registration.head_sha, registration.run_id)
+            == (head_sha, run_id),
+        )
+        if owner is not None:
+            return owner
         return ObserverResult(
             status="ordinary", reason="ordinary reconciler policy retained", receipt=perform()
         )
+
+
+def route_reconciler_window(
+    *,
+    directory: Path,
+    repository: str,
+    window_shas: frozenset[str],
+    perform: Callable[[], str],
+    wait_seconds: float = RECONCILER_FENCE_WAIT_SECONDS,
+) -> ObserverResult:
+    """The master-health reconciler's ownership answer for one whole pass.
+
+    A reconciler pass does not act on one run. It reruns the newest failing run,
+    reverts the culprit at the bottom of the red episode, and releases or closes
+    a revert, so ownership is keyed on every commit the pass can touch: the
+    caller's ``window_shas``. A registered incident commit anywhere in that set,
+    an unbound pre-merge arm, or a recovery action whose outcome is still unknown
+    makes the pass incident-owned. Otherwise ``perform`` runs under the same
+    repository fence and its receipt is returned.
+
+    A fence still held after ``wait_seconds`` is the observer acting, so the
+    answer is incident-owned and nothing waits on it.
+    """
+    try:
+        with repository_lock(
+            directory=directory, repository=repository, wait_seconds=wait_seconds
+        ) as path:
+            owner = _incident_owner(
+                record=load_record(path=path),
+                owns=lambda registration: registration.head_sha in window_shas,
+            )
+            if owner is not None:
+                return owner
+            return ObserverResult(
+                status="ordinary", reason="ordinary reconciler policy retained", receipt=perform()
+            )
+    except RepositoryFenceBusyError:
+        return ObserverResult(
+            status="incident-owned",
+            reason="repository action fence is held by the incident observer",
+        )
+
+
+def _incident_owner(
+    *, record: dict[str, object], owns: Callable[[ObserverRegistration], bool]
+) -> ObserverResult | None:
+    """The incident-owned answer for this record, or None when ordinary policy may act."""
+    if record.get("observer_arm_id") and not record.get("observer_arm_bound"):
+        return ObserverResult(
+            status="incident-owned", reason="pre-merge observer owns repository action"
+        )
+    if any(action.get("status") == "pending" for action in _actions(record=record).values()):
+        return ObserverResult(
+            status="incident-owned",
+            reason="an incident recovery action with an unknown outcome owns repository action",
+        )
+    registration = read_registration(record=record)
+    if registration is not None and owns(registration):
+        return ObserverResult(
+            status="incident-owned",
+            reason="independent incident controller owns repository action",
+        )
+    return None
 
 
 def _actions(*, record: dict[str, object]) -> dict[str, dict[str, object]]:
