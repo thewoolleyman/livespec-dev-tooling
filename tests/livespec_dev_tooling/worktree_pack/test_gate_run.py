@@ -20,11 +20,13 @@ self-instrument under `pytest --cov`.
 
 from __future__ import annotations
 
+import itertools
 import os
 import shutil
 import subprocess
 import sys
 import time
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -226,13 +228,22 @@ def _start(*, cwd: Path, env: dict[str, str], command: list[str]) -> str:
     return started.stdout.strip()
 
 
-def _wait_for_file(*, path: Path, timeout_s: float) -> bool:
-    """True as soon as `path` appears; False once `timeout_s` has elapsed."""
-    deadline = time.monotonic() + timeout_s
+def _wait_for_file(
+    *,
+    path: Path,
+    timeout_s: float,
+    clock: Callable[[], float] = time.monotonic,
+    sleep: Callable[[float], None] = time.sleep,
+) -> bool:
+    """True as soon as `path` appears; False once `timeout_s` has elapsed.
+
+    The clock and sleep are injectable so a test fixes which lines run.
+    """
+    deadline = clock() + timeout_s
     while not path.is_file():
-        if time.monotonic() >= deadline:
+        if clock() >= deadline:
             return False
-        time.sleep(_POLL_INTERVAL_S)
+        sleep(_POLL_INTERVAL_S)
     return True
 
 
@@ -245,12 +256,56 @@ def _await_verdict(*, primary: Path, run_id: str) -> Path:
     return run_dir
 
 
+def _fake_clock(*, step_s: float) -> Callable[[], float]:
+    """A clock that advances `step_s` per reading, never by wall time."""
+    readings = itertools.count()
+    return lambda: next(readings) * step_s
+
+
 def test_the_verdict_poll_helper_gives_up_rather_than_blocking_forever(*, tmp_path: Path) -> None:
-    """The arm every other case in this file must NOT take."""
-    assert not _wait_for_file(path=tmp_path / "never-appears", timeout_s=0.05)
+    """The arm every other case in this file must NOT take.
+
+    The fake clock passes the deadline after a fixed number of readings, so
+    this arm runs the same lines on every host and under any load.
+    """
+    sleeps: list[float] = []
+    assert not _wait_for_file(
+        path=tmp_path / "never-appears",
+        timeout_s=2.0,
+        clock=_fake_clock(step_s=1.0),
+        sleep=sleeps.append,
+    )
+    assert sleeps == [_POLL_INTERVAL_S]
+
+
+def test_the_verdict_poll_helper_returns_at_once_when_the_file_is_already_there(
+    *, tmp_path: Path
+) -> None:
     present = tmp_path / "present"
     _ = present.write_text("", encoding="utf-8")
-    assert _wait_for_file(path=present, timeout_s=0.05)
+    sleeps: list[float] = []
+    assert _wait_for_file(
+        path=present, timeout_s=2.0, clock=_fake_clock(step_s=1.0), sleep=sleeps.append
+    )
+    assert sleeps == []
+
+
+def test_the_verdict_poll_helper_sleeps_until_the_file_appears(*, tmp_path: Path) -> None:
+    late = tmp_path / "late"
+    sleeps: list[float] = []
+
+    def sleep_then_create_on_third(seconds: float) -> None:
+        sleeps.append(seconds)
+        if len(sleeps) == 3:
+            _ = late.write_text("", encoding="utf-8")
+
+    assert _wait_for_file(
+        path=late,
+        timeout_s=100.0,
+        clock=_fake_clock(step_s=1.0),
+        sleep=sleep_then_create_on_third,
+    )
+    assert sleeps == [_POLL_INTERVAL_S] * 3
 
 
 def _flip_writer(*, tmp_path: Path, primary: Path) -> Path:
