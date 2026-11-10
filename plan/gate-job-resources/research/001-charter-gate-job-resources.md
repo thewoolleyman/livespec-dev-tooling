@@ -13,7 +13,7 @@ lets parallelize it, make this a plan ... and make it a priority next to the sui
 
 # gate-job-resources — charter
 
-Created 2026-11-11 ~00:3xZ by the gate-job-resources seat, from the
+Created 2026-11-10 ~23:31Z by the gate-job-resources seat, from the
 legacy-coordinator-agent seat brief (coordinator session 4e17d8e9). Priority
 3b: one slot shared with 3a, implement-test-performance's suite double-run
 fix; the two run in parallel. The maintainer's direction is recorded on epic
