@@ -393,3 +393,23 @@ def test_the_boundary_raises_its_unreachable_condition_under_a_conventional_erro
                 "tree_sha": "c" * 40,
             }
         )
+
+
+def test_a_token_that_cannot_be_a_header_value_is_named_a_local_error_and_dials_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _real_boundary_git(monkeypatch=monkeypatch)
+    dialed = Mock()
+    monkeypatch.setattr(incident_ci_authority.http.client, "HTTPSConnection", dialed)
+    environ = _environ(tmp_path=tmp_path)
+    environ["LIVESPEC_INCIDENT_OBSERVER_QUERY_TOKEN"] = "query-tokenΩ"
+    assert not module.admitted_by_recorded_incident(sha=_SHA, message=_MESSAGE, environ=environ)
+    err = capsys.readouterr().err
+    refused = [line for line in err.splitlines() if line.startswith("incident-provenance-refused:")]
+    assert len(refused) == 1
+    assert _SHA in refused[0]
+    assert "observer query token is not a valid header value" in refused[0]
+    assert "no request was made" in refused[0]
+    assert "unreachable" not in err
+    assert "does not record this head" not in err
+    assert dialed.call_count == 0
