@@ -22,7 +22,9 @@
 # absent the launch is drift by definition, the diff is skipped, and the apply
 # creates the Namespace, the PVC and the Job, in the manifest's order.
 #
-# REVERT: -e rule26_kill_matrix_state=absent deletes the `rule26` namespace.
+# REVERT: -e rule26_kill_matrix_state=absent deletes the `rule26` namespace,
+# PVC included. To stop one run and keep the PVC, pass
+# -e rule26_kill_matrix_state=job-absent -e rule26_kill_matrix_run=<id>.
 
 - name: Refuse to run anywhere but the k3s server
   ansible.builtin.assert:
@@ -151,3 +153,81 @@
       become: true
       when: rule26_kill_matrix_existing.stdout | length > 0
       changed_when: true
+
+# job-absent stops ONE run and keeps everything else: it deletes the Job named
+# by rule26_kill_matrix_run (and, through foreground cascade, its pod) and
+# leaves the namespace and the PVC, whose generated mutants/ tree and run logs
+# a stopped run may still be read for. `absent` above deletes the PVC too.
+- name: Remove one kill-matrix Job and keep its namespace and PVC
+  when: rule26_kill_matrix_state == 'job-absent'
+  block:
+    - name: Fail unless a run id names the Job to remove
+      ansible.builtin.assert:
+        that:
+          - rule26_kill_matrix_run is match('^[a-z0-9-]{1,40}$')
+        fail_msg: pass -e rule26_kill_matrix_run=<lowercase id> naming the Job to remove
+
+    - name: Look for the run's kill-matrix Job
+      ansible.builtin.command:
+        argv:
+          - kubectl
+          - -n
+          - "{{ rule26_kill_matrix_namespace }}"
+          - get
+          - job
+          - "rule26-orchestrator-kill-matrix-{{ rule26_kill_matrix_run }}"
+          - --ignore-not-found
+          - -o
+          - name
+      environment:
+        KUBECONFIG: "{{ rule26_kill_matrix_kubeconfig }}"
+      become: true
+      check_mode: false
+      changed_when: rule26_kill_matrix_existing_job.stdout | length > 0
+      register: rule26_kill_matrix_existing_job
+
+    - name: Delete the run's kill-matrix Job and its pod
+      ansible.builtin.command:
+        argv:
+          - kubectl
+          - -n
+          - "{{ rule26_kill_matrix_namespace }}"
+          - delete
+          - job
+          - "rule26-orchestrator-kill-matrix-{{ rule26_kill_matrix_run }}"
+          - --ignore-not-found
+          - --cascade=foreground
+          - --wait=true
+          - --timeout=300s
+      environment:
+        KUBECONFIG: "{{ rule26_kill_matrix_kubeconfig }}"
+      become: true
+      when: rule26_kill_matrix_existing_job.stdout | length > 0
+      changed_when: true
+
+    - name: Read back the run's Job and the PVC
+      ansible.builtin.command:
+        argv:
+          - kubectl
+          - -n
+          - "{{ rule26_kill_matrix_namespace }}"
+          - get
+          - "job/rule26-orchestrator-kill-matrix-{{ rule26_kill_matrix_run }}"
+          - pvc/rule26-orchestrator
+          - --ignore-not-found
+          - -o
+          - name
+      environment:
+        KUBECONFIG: "{{ rule26_kill_matrix_kubeconfig }}"
+      become: true
+      check_mode: false
+      changed_when: false
+      register: rule26_kill_matrix_after_job_absent
+      when: not ansible_check_mode
+
+    - name: Fail unless the Job is gone and the PVC is kept
+      ansible.builtin.assert:
+        that:
+          - rule26_kill_matrix_after_job_absent.stdout_lines == ['persistentvolumeclaim/rule26-orchestrator']
+        success_msg: "removed job/rule26-orchestrator-kill-matrix-{{ rule26_kill_matrix_run }}; kept pvc/rule26-orchestrator"
+      when: not ansible_check_mode

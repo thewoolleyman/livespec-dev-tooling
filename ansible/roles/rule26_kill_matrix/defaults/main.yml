@@ -1,6 +1,8 @@
 ---
 # present: render and apply the rule-26 kill-matrix Job. absent: delete the
 # whole `rule26` namespace, which removes the Job, its pod and the PVC.
+# job-absent: delete only the Job named by rule26_kill_matrix_run, and its pod,
+# keeping the namespace and the PVC.
 rule26_kill_matrix_state: present
 # The run's inputs. Each is a playbook variable passed with -e, never typed
 # into a host. Both SHAs must be full 40-hex commits. The run id names the Job
