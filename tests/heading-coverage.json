@@ -1565,6 +1565,14 @@
   },
   {
     "spec_root": "SPECIFICATION",
+    "spec_file": "non-functional-requirements.md",
+    "heading": "## LLM-spend account attribution",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, exercising an llm-spend emitter's spend.account_observed / spend.account_source fields, the factory dispatcher's per-dispatch projected-credential record read by the factory spend emitter, and the unattributed-billing trigger; livespec-dev-tooling-n277mo owns it.",
+    "work_item": "livespec-dev-tooling-n277mo"
+  },
+  {
+    "spec_root": "SPECIFICATION",
     "spec_file": "contracts.md",
     "heading": "## Delegated pre-commit aggregate",
     "test": "TODO",
@@ -1633,6 +1641,14 @@
     "test": "tests.livespec_dev_tooling.test_llm_spend.test_unlisted_model_is_sent_at_a_marked_fallback_price",
     "reason": "Integration-tier (module-level `pytest.mark.integration`, the scenario-tier floor): a `gpt-7-sol` response is priced through the shared table the emitters use and its sent fields are read back: a non-zero `cost_usd` equal to `gpt-6.1-sol`'s list price for the same tokens, `spend.price_fallback` true and a `cost_note` naming `gpt-6.1-sol`, while a `gpt-6.1-sol` response carries no marker.",
     "work_item": "livespec-dev-tooling-mnj7"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a factory response sent on a credential the rotator did not select is attributed to the credential's own account",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this scenario, driving the factory spend emitter over a dispatch whose recorded projected credential label differs from the rotator's selected account and reading back spend.account and spend.account_observed; livespec-dev-tooling-n277mo owns it.",
+    "work_item": "livespec-dev-tooling-n277mo"
   },
   {
     "spec_root": "SPECIFICATION",

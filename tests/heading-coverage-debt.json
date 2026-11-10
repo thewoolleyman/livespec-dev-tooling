@@ -121,6 +121,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "non-functional-requirements.md",
+    "heading": "## LLM-spend account attribution",
+    "work_item": "livespec-dev-tooling-n277mo",
+    "first_seen": "2026-11-10"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "non-functional-requirements.md",
     "heading": "## Maintainer radar",
     "work_item": "livespec-dev-tooling-xhbgdg",
     "first_seen": "2026-11-02"
@@ -453,6 +460,13 @@
     "heading": "## Scenario: a factory node keeps its factory label across a control-plane reboot",
     "work_item": "livespec-dev-tooling-izlx4g",
     "first_seen": "2026-10-16"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a factory response sent on a credential the rotator did not select is attributed to the credential's own account",
+    "work_item": "livespec-dev-tooling-n277mo",
+    "first_seen": "2026-11-10"
   },
   {
     "spec_root": "SPECIFICATION",
