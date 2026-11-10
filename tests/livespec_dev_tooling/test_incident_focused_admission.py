@@ -216,7 +216,7 @@ def test_every_deferred_or_incomplete_member_needs_a_disposition() -> None:
         coverage={"src/widget.py": {"summary": {"percent_covered": 87.5}}},
         selection={"tests": [], "deferred_tests": {"tests/test_slow.py": "slow"}},
         tests={"returncode": None, "timed_out": True},
-        risks=["coverage incomplete: src/widget.py", "incident tree changed during collection"],
+        risks=["coverage incomplete: src/widget.py", "a risk the collector recorded"],
         outcome="incomplete",
     )
     review = _review(record=record, status="deferred-timeout")
@@ -227,7 +227,7 @@ def test_every_deferred_or_incomplete_member_needs_a_disposition() -> None:
         "deferred test: tests/test_slow.py: slow",
         "focused test or coverage collection incomplete",
         "focused evidence collection reached the sixty-second budget",
-        "incident tree changed during collection",
+        "a risk the collector recorded",
     )
 
 
