@@ -8,7 +8,7 @@ from pathlib import Path
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 _EARLY_READER = re.compile(
-    r"""\|\s*(?:
+    r"""(?<!\|)\|(?!\|)\s*(?:
         grep\b(?:\s+-[^\s'\"]*)*?\s+(?:-[A-Za-z]*q[A-Za-z]*\b|--quiet\b|-m\s*\d+\b|-m\d+\b)
         |head\b\s+(?:-\d+\b|-n\s*\d+\b|-n\d+\b|-c\s*\d+\b|-c\d+\b)
         |awk\b[^\n]*\bexit\b
@@ -178,6 +178,33 @@ def test_pipefail_sweep_reports_an_early_exiting_reader(tmp_path: Path) -> None:
 
     assert _early_reader_violations(paths=(unsafe_script,), repo_root=tmp_path) == (
         "scripts/unsafe.sh:3: printf 'needle\\n' | grep -q needle",
+    )
+
+
+def test_pipefail_sweep_ignores_readers_after_logical_operators(tmp_path: Path) -> None:
+    """A logical operator does not make its following reader a pipeline site."""
+    safe_script = tmp_path / "scripts" / "safe.sh"
+    safe_script.parent.mkdir()
+    safe_script.write_text(
+        "#!/usr/bin/env bash\nset -o pipefail\n[ -f x ] || grep -qs pat file\n"
+        "[ -f y ] && grep -qs pat other-file\n",
+        encoding="utf-8",
+    )
+
+    assert _early_reader_violations(paths=(safe_script,), repo_root=tmp_path) == ()
+
+
+def test_pipefail_sweep_reports_a_reader_after_a_logical_operator_pipeline(tmp_path: Path) -> None:
+    """A real single pipe remains actionable after a preceding logical operator."""
+    unsafe_script = tmp_path / "scripts" / "unsafe.sh"
+    unsafe_script.parent.mkdir()
+    unsafe_script.write_text(
+        "#!/usr/bin/env bash\nset -o pipefail\na || b | grep -q pat\n",
+        encoding="utf-8",
+    )
+
+    assert _early_reader_violations(paths=(unsafe_script,), repo_root=tmp_path) == (
+        "scripts/unsafe.sh:3: a || b | grep -q pat",
     )
 
 
