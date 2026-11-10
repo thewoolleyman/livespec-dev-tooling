@@ -20,6 +20,30 @@
 #     livespec-dev-tooling to consume Actions from. Pinned via the
 #     consumer's `uses:` reference (typically vX.Y.Z); included here
 #     for non-tag-pinned local-fork experimentation only.
+#   incident-omitted (optional, default '[]') — JSON-array string of the
+#     incident controller members an expedited incident PR omits (work-item
+#     livespec-dev-tooling-hlxbsv). The caller passes ONLY its incident-ci
+#     job's `omitted` output, which that job writes after the released
+#     incident controller's aggregate has PASSED (see this repository's own
+#     ci.yml), e.g.
+#     `${{ needs.incident-ci.result == 'success' && needs.incident-ci.outputs.omitted || '[]' }}`.
+#     Each leg asks `python3 -m livespec_dev_tooling.incident_matrix_omission`
+#     (run from the Actions checkout, never the consumer's tree), and only
+#     that step reads the input. Three rules hold there:
+#     - only a pull_request event can omit: a master push, or any other
+#       event, runs every requested check whatever labels, markers or
+#       omission input it receives (SPECIFICATION/contracts.md, the
+#       expedited incident execution contract);
+#     - only a coverage or spec member can be omitted (the module's
+#       OMITTABLE_MEMBERS allowlist); a listed check-lint or check-types is
+#       refused with a warning and runs;
+#     - the input must be a JSON array of strings: anything else fails the
+#       leg before it can report an omission, so membership is never a
+#       substring test.
+#     An omitted leg reports omitted-by-incident-policy in its step summary
+#     and concludes success under its usual check-run name: a consumer that
+#     requires individual legs sees green, and the step summary is the
+#     disclosure.
 
 name: livespec-dev-tooling check matrix
 
@@ -35,6 +59,11 @@ on:
         required: false
         type: string
         default: master
+      incident-omitted:
+        description: JSON-array string of the incident controller members the caller's passed incident aggregate omits; honored on pull_request events, for coverage and spec members, only.
+        required: false
+        type: string
+        default: '[]'
 
 jobs:
   check:
@@ -55,10 +84,37 @@ jobs:
           ref: ${{ inputs.ref }}
           path: .livespec-dev-tooling-actions
 
+      # Expedited incident PRs only. The pull_request test is the master-push
+      # guard: on every other event this step is skipped, `omit` stays unset,
+      # and the leg runs its check. The module repeats that guard, refuses a
+      # member outside its coverage-and-spec allowlist, and fails the leg on
+      # an input that is not a JSON array of strings, before any report.
+      - name: Decide incident omission for this leg
+        id: incident
+        if: ${{ github.event_name == 'pull_request' }}
+        shell: bash
+        working-directory: .livespec-dev-tooling-actions
+        env:
+          INCIDENT_OMITTED: ${{ inputs.incident-omitted }}
+          MATRIX_CHECK: ${{ matrix.check }}
+        run: python3 -m livespec_dev_tooling.incident_matrix_omission
+
+      # A member the decision omits is reported here instead of being run,
+      # never skipped silently.
+      - name: omitted-by-incident-policy (per the caller's incident CI aggregate)
+        if: ${{ github.event_name == 'pull_request' && steps.incident.outputs.omit == 'true' }}
+        shell: bash
+        env:
+          MEMBER: ${{ matrix.check }}
+        run: |
+          echo "omitted-by-incident-policy: ${MEMBER} was not executed. The caller's passed incident CI aggregate defers it for this pull request head." | tee -a "$GITHUB_STEP_SUMMARY"
+
       - name: Setup toolchain
+        if: ${{ !(github.event_name == 'pull_request' && steps.incident.outputs.omit == 'true') }}
         uses: ./.livespec-dev-tooling-actions/.github/actions/setup
 
       - name: Run check
+        if: ${{ !(github.event_name == 'pull_request' && steps.incident.outputs.omit == 'true') }}
         uses: ./.livespec-dev-tooling-actions/.github/actions/run-check
         with:
           check-name: ${{ matrix.check }}
