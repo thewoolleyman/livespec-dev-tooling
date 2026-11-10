@@ -11,6 +11,7 @@ which no stand-in for the tree or the child can show.
 
 from __future__ import annotations
 
+import hashlib
 import os
 import subprocess
 import sys
@@ -110,7 +111,7 @@ def _pair_message(*, red_test: str | None = _MODULE_PATH) -> str:
     if red_test is not None:
         lines.append(f"TDD-Red-Test: {red_test}")
     lines += [
-        "TDD-Red-Test-File-Checksum: sha256:deadbeef",
+        f"TDD-Red-Test-File-Checksum: sha256:{hashlib.sha256(_TEST.encode()).hexdigest()}",
         "TDD-Green-Verified-At: 2026-11-10T00:00:00Z",
     ]
     return "\n".join(lines) + "\n"

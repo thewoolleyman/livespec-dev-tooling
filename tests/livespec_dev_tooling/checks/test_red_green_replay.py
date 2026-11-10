@@ -2894,14 +2894,13 @@ def test_no_arg_range_commit_with_full_trailer_shape_exits_zero(
     (tmp_path / "livespec").mkdir()
     (tmp_path / "livespec" / "foo.py").write_text("VALUE: int = 1\n", encoding="utf-8")
     (tmp_path / "tests").mkdir()
-    (tmp_path / "tests" / "test_foo.py").write_text(
-        "def test_value() -> None:\n    assert True\n", encoding="utf-8"
-    )
+    test_source = "def test_value() -> None:\n    assert True\n"
+    (tmp_path / "tests" / "test_foo.py").write_text(test_source, encoding="utf-8")
     message = (
         "feat: add a feature\n"
         "\n"
         "TDD-Red-Test: tests/test_foo.py\n"
-        "TDD-Red-Test-File-Checksum: sha256:deadbeef\n"
+        f"TDD-Red-Test-File-Checksum: sha256:{hashlib.sha256(test_source.encode()).hexdigest()}\n"
         "TDD-Green-Verified-At: 2026-06-02T00:00:00Z\n"
     )
     _commit_all(tmp_path=tmp_path, message=message)

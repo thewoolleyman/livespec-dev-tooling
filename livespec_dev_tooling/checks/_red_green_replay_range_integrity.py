@@ -25,6 +25,7 @@ key shape at all because of the parenthesis.
 
 from __future__ import annotations
 
+import hashlib
 import re
 import subprocess
 import sys
@@ -43,6 +44,8 @@ if TYPE_CHECKING:  # pragma: no cover
     import structlog.stdlib
 
 __all__: list[str] = [
+    "CHECKSUM_CHECK_ID",
+    "CHECKSUM_HINT",
     "SUBJECT_CHECK_ID",
     "SUBJECT_HINT",
     "check_range_integrity",
@@ -56,6 +59,21 @@ SUBJECT_HINT: str = (
     "produces when it appends trailers to an EMPTY message before git's empty-message abort. "
     "Remedy: rewrite the range so the commit carries a real conventional-commit subject, "
     "then redo it through the hook. There is no flag, skip or subject prefix that exempts it."
+)
+CHECKSUM_CHECK_ID: str = "red-green-replay-range-stale-test-checksum"
+CHECKSUM_HINT: str = (
+    "Every commit that records a TDD-Red-Test-File-Checksum must record the checksum of its "
+    "TDD-Red-Test file exactly as that file stands on the commit's OWN tree. A rebase or "
+    "cherry-pick that bypassed the commit-time hook keeps the old trailers while the test "
+    "file changes under them. Remedy: rewrite the range so that each such commit is redone "
+    "through the hook (Red, then the Green amend) and earns its trailers on the tree it ships. "
+    "There is no flag, skip or subject prefix that exempts a stale checksum."
+)
+_NO_TEST_RECORDED = "<none recorded>"
+_ABSENT = "<absent from the commit's tree>"
+_RECORDED_TEST_RE = re.compile(r"^TDD-Red-Test:[ \t]*(\S.*?)[ \t]*$", re.MULTILINE)
+_RECORDED_CHECKSUM_RE = re.compile(
+    r"^TDD-Red-Test-File-Checksum:[ \t]*(\S.*?)[ \t]*$", re.MULTILINE
 )
 _TRAILER_SUBJECT_RE = re.compile(r"^([A-Za-z][A-Za-z0-9-]*):[ \t]+\S")
 _CONVENTIONAL_TYPES = frozenset(
@@ -91,18 +109,60 @@ def _subject_is_trailer(*, message: str) -> bool:
     return found is not None and found.group(1).lower() not in _CONVENTIONAL_TYPES
 
 
+def _stale_checksum(*, sha: str, message: str) -> dict[str, str] | None:
+    """Return the finding for `sha` when a recorded checksum differs from its own tree, else None.
+
+    A commit recording no `TDD-Red-Test-File-Checksum` is not judged here. One that
+    records a checksum but no `TDD-Red-Test`, or whose test file is not a blob on its
+    own tree, cannot match anything, so it is convicted with the placeholder it lacks.
+    """
+    recorded = _RECORDED_CHECKSUM_RE.findall(message)
+    if not recorded:
+        return None
+    tests = _RECORDED_TEST_RE.findall(message)
+    test_file = (tests[0] if tests else "").split("::", 1)[0]
+    blob = subprocess.run(
+        ["git", "cat-file", "blob", f"{sha}:{test_file}"],
+        capture_output=True,
+        check=False,
+    )
+    actual = (
+        f"sha256:{hashlib.sha256(blob.stdout).hexdigest()}" if blob.returncode == 0 else _ABSENT
+    )
+    if all(checksum == actual for checksum in recorded):
+        return None
+    return {
+        "sha": sha,
+        "test_file": test_file or _NO_TEST_RECORDED,
+        "recorded": recorded[0],
+        "actual": actual,
+    }
+
+
 def check_range_integrity(*, shas: list[str], log: structlog.stdlib.BoundLogger) -> int:
     """Return 0 when every commit in `shas` is intact, else log each finding and return 1."""
-    trailer_subjects = [sha for sha in shas if _subject_is_trailer(message=_message(sha=sha))]
-    if not trailer_subjects:
-        return 0
-    log.error(
-        "commits in origin/master..HEAD have a trailer as their subject line",
-        check_id=SUBJECT_CHECK_ID,
-        violating_commits=trailer_subjects,
-        hint=SUBJECT_HINT,
-    )
-    return 1
+    messages = {sha: _message(sha=sha) for sha in shas}
+    trailer_subjects = [sha for sha, text in messages.items() if _subject_is_trailer(message=text)]
+    stale = [
+        found
+        for sha, text in messages.items()
+        if (found := _stale_checksum(sha=sha, message=text)) is not None
+    ]
+    if trailer_subjects:
+        log.error(
+            "commits in origin/master..HEAD have a trailer as their subject line",
+            check_id=SUBJECT_CHECK_ID,
+            violating_commits=trailer_subjects,
+            hint=SUBJECT_HINT,
+        )
+    if stale:
+        log.error(
+            "commits in origin/master..HEAD record a stale TDD-Red-Test-File-Checksum",
+            check_id=CHECKSUM_CHECK_ID,
+            failing_commits=stale,
+            hint=CHECKSUM_HINT,
+        )
+    return 1 if trailer_subjects or stale else 0
 
 
 def validate_range_evidence(
