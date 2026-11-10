@@ -122,7 +122,8 @@ def test_the_allowlist_is_what_the_controller_defers_for_coverage_or_spec():
 _REPOSITORY = "owner/repo"
 _CALLER = (
     "jobs:\n  incident-ci:\n    runs-on: ubuntu-latest\n  shared:\n    needs: [incident-ci]\n"
-    "    uses: ./.github/workflows/reusable-check-matrix.yml\n    with:\n"
+    "    uses: thewoolleyman/livespec-dev-tooling/.github/workflows/reusable-check-matrix.yml@v1\n"
+    "    with:\n"
     f"      incident-omitted: {GUARDED_OMITTED}\n      incident-ci-result: {GUARDED_RESULT}\n"
 )
 _CALLER_PATH = ".github/workflows/ci.yml"
