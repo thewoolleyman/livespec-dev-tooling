@@ -160,6 +160,20 @@ the screen refuses on a heading, add the heading it names to the `References:`
 line, written with its literal `## ` marker, beside the scenario heading, and ask
 the dispatcher seat to screen it again.
 
+## Definition Of Done Lines The Approve Valve Repairs
+
+legacy-coordinator-agent repaired two lines on livespec-dev-tooling-n277mo before
+approving it (2026-11-10). They called both rules fleet scope:
+
+- **Separate references with ", ".** The resolver reads
+  `References: ## A; ## B` as ONE heading. Write `References: ## A, ## B`, with
+  the literal `## ` marker on each heading.
+- **Do not write a test-existence bullet on a behaviour item.** "The TODO rows
+  are replaced by real tests" is not a Definition of Done line. Restate it as the
+  behaviour those tests establish, usually as a `factory_captured` line. The
+  owed `"test": "TODO"` rows stay tracked through the heading-coverage debt
+  register.
+
 ## A Definition Of Done Rewrite Owed After A Revise: Warn Before The Valve
 
 When an item's Definition of Done must be rewritten once a revise lands, tell
