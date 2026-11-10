@@ -31,9 +31,6 @@ from livespec_dev_tooling import (
 from livespec_dev_tooling import (
     incident_observer_provenance as observer_provenance,
 )
-from livespec_dev_tooling import (
-    incident_provenance as provenance,
-)
 from livespec_dev_tooling._incident_observer_types import ObserverArm
 from livespec_dev_tooling.incident_observer_authority import CurrentAuthorityReader
 
@@ -401,25 +398,11 @@ def _observer_provenance_caller(
     return _dump(_history_reply()), refused
 
 
-def _provenance_caller(
-    *, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> tuple[str, Callable[[], bool]]:
-    monkeypatch.setattr(provenance, "registered_plugin_root", lambda **_kwargs: tmp_path)
-    query = provenance.IncidentCommitQuery(**_HISTORY_QUERY)
-
-    def refused() -> bool:
-        done = provenance.read_historical_incident_commit(repo_root=tmp_path, query=query)
-        return not is_successful(done)
-
-    return _dump(_history_reply()), refused
-
-
 _CALLERS = {
     "hook": _hook_caller,
     "observer-reader": _observer_reader_caller,
     "operator": _operator_caller,
     "observer-provenance": _observer_provenance_caller,
-    "provenance": _provenance_caller,
 }
 
 
