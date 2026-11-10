@@ -10,6 +10,12 @@ dev_host_retention_uv_installs_dir: "/home/{{ dev_host_retention_user }}/.local/
 dev_host_retention_unit_dir: /etc/systemd/system
 dev_host_retention_service: livespec-dev-host-retention.service
 dev_host_retention_timer: livespec-dev-host-retention.timer
+# The committed hold. False stops and disables the retention timer on the next
+# converge, and keeps it so: a hold that lives only in a hand `systemctl stop`
+# is undone by the next converge, whose arming task restarts the timer, and the
+# timer's Persistent=true then fires the missed daily run at once
+# (livespec-dev-tooling-7bij7b).
+dev_host_retention_timer_enabled: true
 
 # THE RETENTION PERIOD, in whole days, and the only number in this role an
 # operator is expected to revisit. It bounds how long a TERMINAL gate run's
