@@ -37,6 +37,7 @@ def _scrubbed() -> dict[str, str]:
         key: value
         for key, value in os.environ.items()
         if not key.startswith(("GIT_", "EXPEDITED_", "LIVESPEC_INCIDENT_", "COVERAGE_"))
+        and key not in {"GITHUB_ACTIONS", "GITHUB_EVENT_NAME"}
     }
 
 
@@ -50,7 +51,11 @@ def _stub_bin(*, root: Path) -> Path:
         'shift 3; exec "$ENTRY_PYTHON" "$@";; esac\n'
         'touch "$GATE_MARKER"\nexit 0\n'
     )
-    staged = '#!/bin/sh\ntouch "$GATE_MARKER"\necho staged.py\nexit 0\n'
+    staged = (
+        "#!/bin/sh\n"
+        'case "$*" in "config --get livespec.sandboxExempt") exit 1;; esac\n'
+        'touch "$GATE_MARKER"\necho staged.py\nexit 0\n'
+    )
     for name, body in (("uv", forward), ("git", staged), ("xargs", staged)):
         _ = (binary / name).write_text(body)
         (binary / name).chmod(0o755)
