@@ -124,7 +124,14 @@ never open. Today no observed repository runs the reconciler:
 livespec-dev-tooling, the only observed repository, carries no
 `master-health-reconcile.yml` shim, and `livespec`, which does, has no observer.
 Before the shim is installed in an observed repository, a hosted runner must be
-proven to reach `POST /ordinary-action` (review finding F5).
+proven to reach `POST /ordinary-action` (review finding F5). `wire-fleet-member`
+enforces that order. It refuses to install the shim into a repository in
+`OBSERVED_REPOSITORIES` until the committed opt-in
+`master_health_observer.HOSTED_REACHABILITY_PROOFS` maps that repository to the
+URL of a GitHub-hosted Actions run that reached the route
+(`https://github.com/<owner>/<repo>/actions/runs/<id>`), and names the missing
+proof as a finding. A member with no observer is installed as before. Recording
+the proof and arming livespec-dev-tooling is livespec-dev-tooling-jpfdcx.
 
 This source slice supplies controlled callback and action adapters. It does not
 activate a production observer. Activation and child closure still require:

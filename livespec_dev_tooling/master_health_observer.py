@@ -44,13 +44,26 @@ from livespec_dev_tooling.cross_repo.master_health_reconcile import STEP_NONE
 from livespec_dev_tooling.cross_repo.master_health_state import CI_FAILURE, CI_SUCCESS
 from livespec_dev_tooling.incident_ci_authority import UNREADABLE, CiAuthorityBoundary
 
-__all__: list[str] = ["OBSERVED_REPOSITORIES", "main", "ownership_window"]
+__all__: list[str] = [
+    "HOSTED_REACHABILITY_PROOFS",
+    "OBSERVED_REPOSITORIES",
+    "main",
+    "ownership_window",
+]
 
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-ariayn
 # Every repository an independent incident observer watches. It is kept equal to
 # the observer role's `incident_observer_repository` by a test, so installing an
 # observer for a repository and fencing its reconciler are one committed change.
 OBSERVED_REPOSITORIES = frozenset({"thewoolleyman/livespec-dev-tooling"})
+# The committed opt-in that admits ARMING the reconciler in an observed
+# repository: the URL of a GitHub-hosted Actions run that reached the observer's
+# POST /ordinary-action. The reconciler must stay on hosted runners, and the
+# observer is tailnet-only, so until such a run exists every acting pass there
+# would fail closed. wire-fleet-member therefore refuses to install the shim
+# into a repository in OBSERVED_REPOSITORIES with no entry here: adoption first,
+# then arming (review finding F5 on livespec-dev-tooling#3915).
+HOSTED_REACHABILITY_PROOFS: dict[str, str] = {}
 _URL_VARIABLE = "LIVESPEC_INCIDENT_OBSERVER_URL"
 _TOKEN_VARIABLE = "LIVESPEC_INCIDENT_OBSERVER_QUERY_TOKEN"  # noqa: S105 — a variable name.
 _SHA = re.compile(r"[0-9a-f]{40}")

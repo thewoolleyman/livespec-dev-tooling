@@ -21,8 +21,10 @@ from __future__ import annotations
 
 import base64
 import json
+import re
 from typing import cast
 
+from livespec_dev_tooling import master_health_observer
 from livespec_dev_tooling.fleet._context import (
     FleetContext,
     FleetMember,
@@ -54,6 +56,8 @@ __all__: list[str] = [
 
 
 SHIM_BRANCH = "wire-fleet-member/shim-workflows"
+# EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-ariayn
+_REACHABILITY_PROOF = re.compile(r"https://github\.com/[\w.-]+/[\w.-]+/actions/runs/[0-9]+")
 
 # The master-health reconciler shim rides the SAME provisioning mechanism as
 # the three pin-and-bump shims rather than growing a second one, and that reuse
@@ -256,6 +260,9 @@ def reconcile_master_health_shim(*, ctx: FleetContext, member: FleetMember) -> R
             )
         )
     if MASTER_HEALTH_WORKFLOW not in tree.paths:
+        refusal = _arming_refusal(ctx=ctx, member=member)
+        if refusal is not None:
+            return RowFinding(message=refusal)
         return reconcile_shim_workflows(ctx=ctx, member=member)
     committed = ctx.file_text(repo=member.repo, path=MASTER_HEALTH_WORKFLOW)
     if committed is None:
@@ -288,6 +295,8 @@ def reconcile_shim_workflows(*, ctx: FleetContext, member: FleetMember) -> RowOu
             reason=f"{member.repo}: default-branch tree unreadable; cannot reconcile shims"
         )
     missing = [path for path in _SHIM_WORKFLOWS if path not in tree.paths]
+    if MASTER_HEALTH_WORKFLOW in missing and _arming_refusal(ctx=ctx, member=member) is not None:
+        missing.remove(MASTER_HEALTH_WORKFLOW)
     if not missing:
         return RowPass(note="all shim workflows present")
     if not ctx.once(key=f"shim-pr:{member.repo}"):
@@ -302,3 +311,30 @@ def reconcile_shim_workflows(*, ctx: FleetContext, member: FleetMember) -> RowOu
     if branch_probe.returncode == 0:
         return RowPass(note=f"shim branch {SHIM_BRANCH} already exists (PR pending merge)")
     return _open_shim_pr(ctx=ctx, member=member, missing=missing)
+
+
+def _arming_refusal(*, ctx: FleetContext, member: FleetMember) -> str | None:
+    """Why the reconciler shim must not be installed into this member yet, or None.
+
+    A member with an incident observer gets the shim only once a hosted-runner
+    reachability proof is recorded for it. Its reconciler asks the observer before
+    every action and fails closed without an answer, so installing it ahead of
+    that proof arms a reconciler that can never act. A member with no observer is
+    unaffected.
+    """
+    repository = f"{ctx.owner}/{member.repo}"
+    proof = master_health_observer.HOSTED_REACHABILITY_PROOFS.get(repository, "")
+    if (
+        repository not in master_health_observer.OBSERVED_REPOSITORIES
+        or _REACHABILITY_PROOF.fullmatch(proof) is not None
+    ):
+        return None
+    return (
+        f"{member.repo}: refusing to install {MASTER_HEALTH_WORKFLOW}: the repository has "
+        "an incident observer (master_health_observer.OBSERVED_REPOSITORIES) but no "
+        "hosted-runner reachability proof in master_health_observer."
+        "HOSTED_REACHABILITY_PROOFS, so every acting reconciler pass would fail closed. "
+        "Record the URL of a GitHub-hosted run that reached the observer's POST "
+        "/ordinary-action, then re-run wire-fleet-member (livespec-dev-tooling "
+        "docs/incident-observer.md)"
+    )
