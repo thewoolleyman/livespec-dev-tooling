@@ -13,6 +13,7 @@ from __future__ import annotations
 import os
 import select
 import signal
+import sys
 import threading
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -277,3 +278,73 @@ def test_off_the_main_thread_the_callers_signal_handling_stands(tmp_path: Path) 
     worker.start()
     worker.join()
     assert seen == [signal.getsignal(signal.SIGTERM), COMPLETED]
+
+
+_STAMP_ENV = "LIVESPEC_GATE_RUN_PROGRESS_STAMP"
+# A member that writes a line into its spool every 0.5s for ~3.5s and, once 1.5s
+# in, notes the instant; it then exits 0 only if the progress stamp was touched
+# AFTER that instant, i.e. while the member was running and writing.
+_WRITING_THEN_CHECK_STAMP = (
+    "import os, sys, time\n"
+    "for i in range(7):\n"
+    "    time.sleep(0.5)\n"
+    "    print(i, flush=True)\n"
+    "    if i == 2:\n"
+    "        noted = time.time_ns()\n"
+    "sys.exit(0 if os.stat(sys.argv[1]).st_mtime_ns > noted else 1)\n"
+)
+# A member alive for ~3.5s that writes nothing: it exits 0 only if the stamp was
+# never touched, because a process that merely lives is not progress.
+_SILENT_THEN_CHECK_STAMP_UNTOUCHED = (
+    "import os, sys, time\n"
+    "time.sleep(3.5)\n"
+    "sys.exit(0 if os.stat(sys.argv[1]).st_mtime_ns == 0 else 1)\n"
+)
+
+
+def _stamped(*, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    stamp = tmp_path / "progress.stamp"
+    _ = stamp.write_text("", encoding="utf-8")
+    os.utime(stamp, ns=(0, 0))
+    monkeypatch.setenv(_STAMP_ENV, str(stamp))
+    return stamp
+
+
+def test_a_member_writing_into_its_spool_renews_the_gate_runs_progress_stamp(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    stamp = _stamped(tmp_path=tmp_path, monkeypatch=monkeypatch)
+    run = TargetRun(
+        name="writing",
+        argv=(sys.executable, "-c", _WRITING_THEN_CHECK_STAMP, str(stamp)),
+    )
+
+    (outcome,) = run_targets(runs=[run], cwd=tmp_path, max_workers=1)
+
+    assert (outcome.status, outcome.returncode) == (COMPLETED, 0)
+
+
+def test_a_member_alive_but_writing_nothing_does_not_renew_the_progress_stamp(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    stamp = _stamped(tmp_path=tmp_path, monkeypatch=monkeypatch)
+    run = TargetRun(
+        name="silent",
+        argv=(sys.executable, "-c", _SILENT_THEN_CHECK_STAMP_UNTOUCHED, str(stamp)),
+    )
+
+    (outcome,) = run_targets(runs=[run], cwd=tmp_path, max_workers=1)
+
+    assert (outcome.status, outcome.returncode, outcome.output) == (COMPLETED, 0, "")
+
+
+def test_a_member_run_without_a_progress_stamp_touches_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv(_STAMP_ENV, raising=False)
+    run = _sh(name="quick", script="echo started; sleep 1.2")
+
+    (outcome,) = run_targets(runs=[run], cwd=tmp_path, max_workers=1)
+
+    assert outcome.status == COMPLETED
+    assert list(tmp_path.iterdir()) == []

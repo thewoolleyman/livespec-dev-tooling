@@ -18,6 +18,16 @@ gates (`incident_local_gates.execute_plan`) and the expedited CI entrance
   refusal reports that target `NOT_ADMITTED` and stops every later launch;
   targets already running finish and keep their honest outcomes.
 
+A target's output is spooled until it ends, so a long-running target is silent
+to whatever watches the run's output. The runner therefore renews the progress
+stamp `gate-run.sh` exports (`LIVESPEC_GATE_RUN_PROGRESS_STAMP`), without
+printing, on each `_PROGRESS_TICK_SECONDS` tick at which a running target's
+spool has GROWN since the previous tick. That is progress, not mere liveness: a
+working target writes into its spool, while a deadlocked one (the
+rerunfailures-under-xdist deadlock) stays alive and writes nothing, so the gate
+runner's stall window still ends it and the gate cannot hang
+(livespec-dev-tooling-5tqyfb). With no stamp exported nothing is touched.
+
 WITHOUT a deadline (the normal aggregate and the CI entrance) a target stays in
 the caller's process group, exactly as before this runner existed, so a signal
 or a SIGKILL sent to that group (Ctrl-C, `gate-run.sh`'s stall kill, an OOM or
@@ -32,6 +42,7 @@ Callers keep their own selection, environments, reporting and result shapes.
 
 from __future__ import annotations
 
+import os
 import subprocess
 import tempfile
 import threading
@@ -73,6 +84,10 @@ NOT_ADMITTED = "not-admitted"
 NOT_LAUNCHED = "not-launched"
 
 _LAUNCH_FAILED_CODE = 127
+# Exported by gate-run.sh to the gate's process tree; touching it renews the
+# runner's outer stall window.
+_PROGRESS_STAMP_ENV = "LIVESPEC_GATE_RUN_PROGRESS_STAMP"
+_PROGRESS_TICK_SECONDS = 1.0
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -105,6 +120,13 @@ def cap_workers(*, requested: int | None, allowed: int) -> int:
     return max(1, min(allowed, cap))
 
 
+def _renew_progress_stamp() -> None:
+    """Touch the gate run's progress stamp, when this run was started by one."""
+    stamp = os.environ.get(_PROGRESS_STAMP_ENV, "")
+    if stamp:
+        Path(stamp).touch()
+
+
 class _Groups:
     """The live isolated groups of one run; closing it stops launches and may kill all."""
 
@@ -133,10 +155,12 @@ class _Groups:
                 self._live.add(process.pid)
             return process
 
-    def wait(self, *, process: subprocess.Popen[bytes], deadline_seconds: float | None) -> bool:
+    def wait(
+        self, *, process: subprocess.Popen[bytes], output: IO[bytes], deadline_seconds: float | None
+    ) -> bool:
         """Wait for the target; True when its deadline expired. Never leaves a zombie."""
         if deadline_seconds is None:
-            _ = process.wait()
+            _wait_renewing_progress(process=process, output=output)
             return False
         timed_out = wait_for_exit(process=process, deadline_seconds=deadline_seconds)
         # Kill the group and leave the live set under the lock, BEFORE the reap:
@@ -152,6 +176,21 @@ class _Groups:
             self._closed = True
             for pid in tuple(self._live) if kill else ():
                 kill_group(pid=pid)
+
+
+def _wait_renewing_progress(*, process: subprocess.Popen[bytes], output: IO[bytes]) -> None:
+    """Wait for the target to exit, renewing the progress stamp while its spool grows."""
+    spooled = 0
+    while True:
+        try:
+            _ = process.wait(timeout=_PROGRESS_TICK_SECONDS)
+        except subprocess.TimeoutExpired:
+            size = os.fstat(output.fileno()).st_size
+            if size > spooled:
+                spooled = size
+                _renew_progress_stamp()
+        else:
+            return
 
 
 def _run_one(
@@ -177,7 +216,7 @@ def _run_one(
             )
         if process is None:
             return TargetOutcome(name=run.name, status=NOT_LAUNCHED, returncode=None)
-        timed_out = groups.wait(process=process, deadline_seconds=deadline_seconds)
+        timed_out = groups.wait(process=process, output=output, deadline_seconds=deadline_seconds)
         _ = output.seek(0)
         captured = output.read().decode("utf-8", errors="replace")
     return TargetOutcome(
