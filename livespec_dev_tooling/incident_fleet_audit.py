@@ -76,11 +76,9 @@ def _valid(*, row: CapabilityEvidence, manifest_sha256: str, instruction_only: b
         or not all((row.source_path, row.proof_ref, row.owner))
     ):
         return False
-    if row.disposition == "not-applicable":
-        return bool(row.reason)
     if not row.release_build or row.release_build != row.serving_build:
         return False
-    if row.disposition == "deliberately-normal":
+    if row.disposition in {"not-applicable", "deliberately-normal"}:
         return bool(row.reason)
     return instruction_only or (
         bool(row.incident_item and row.normal_factory_proof)
@@ -158,6 +156,23 @@ def _consumer_rows(
     return tuple(rows)
 
 
+def _ready(
+    *, consumers: tuple[tuple[str, bool], ...], rows: tuple[SurfaceDisposition, ...]
+) -> tuple[str, ...]:
+    """A consumer is ready on its own proof: fully classified, none normal, one implemented."""
+    return tuple(
+        repository
+        for repository, instruction_only in consumers
+        if not instruction_only
+        and not any(
+            row.repository == repository
+            and row.disposition in {"unclassified", "deliberately-normal"}
+            for row in rows
+        )
+        and any(row.repository == repository and row.disposition == "implemented" for row in rows)
+    )
+
+
 def audit_incident_fleet(
     *,
     manifest: Manifest,
@@ -205,19 +220,7 @@ def audit_incident_fleet(
         for row in rows
         if row.disposition == "unclassified"
     )
-    ready = (
-        ()
-        if findings
-        else tuple(
-            repository
-            for repository, instruction_only in consumers
-            if not instruction_only
-            and not any(
-                row.repository == repository and row.disposition == "deliberately-normal"
-                for row in rows
-            )
-        )
-    )
+    ready = () if invalid_evidence else _ready(consumers=consumers, rows=rows)
     return FleetAudit(
         manifest_sha256=manifest_sha256,
         rows=rows,
