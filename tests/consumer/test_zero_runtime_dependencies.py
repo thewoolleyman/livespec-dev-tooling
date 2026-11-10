@@ -65,7 +65,8 @@ _DEV_GROUP = re.compile(r"^dev = \[\n(?P<body>.*?)^\]", re.MULTILINE | re.DOTALL
 # the current shelled-out set, each of which must carry an exact pin in the dev
 # group rather than a runtime dependency.
 _PINNED_TOOLS = ("ruff", "pyright", "pytest")
-_RUNTIME_DEPENDENCIES = ["anyio>=3.0", "typing-extensions>=4.0"]
+_RUNTIME_DEPENDENCIES = ["anyio>=3.0", "PyYAML>=6.0", "typing-extensions>=4.0"]
+_PACKAGED_RUNTIME_DEPENDENCIES = ["anyio>=3.0", "pyyaml>=6.0", "typing-extensions>=4.0"]
 
 
 def _project_table_body() -> str:
@@ -83,22 +84,21 @@ def _dev_pin_entries() -> list[str]:
 
 
 def test_vendored_returns_runtime_dependency_is_declared() -> None:
-    """Clean wheel consumers receive `typing_extensions` and `anyio` with vendored `returns`."""
+    """Clean wheel consumers receive each runtime parser dependency with vendored `returns`."""
     declared = _DEPENDENCIES_KEY.search(_project_table_body())
-    assert declared is not None, (
-        "`[project]` must declare typing-extensions and anyio because the vendored "
-        "returns runtime imports them in a clean consumer environment"
-    )
+    assert (
+        declared is not None
+    ), "`[project]` must declare every external runtime import used by the shipped library"
     declared_dependencies = [
         line.strip().strip(",").strip('"') for line in declared.group("body").splitlines()
     ]
     assert declared_dependencies == _RUNTIME_DEPENDENCIES, (
-        "the only declared runtime dependencies must be the third-party imports "
-        f"of vendored returns; declared={declared_dependencies}"
+        "the only declared runtime dependencies must be imports the shipped library needs; "
+        f"declared={declared_dependencies}"
     )
 
     requires = importlib.metadata.requires(_DISTRIBUTION) or []
-    assert sorted(requires) == _RUNTIME_DEPENDENCIES, (
+    assert sorted(requires) == _PACKAGED_RUNTIME_DEPENDENCIES, (
         f"the INSTALLED distribution's Requires-Dist is what a consumer's resolver "
         f"reads, and it must declare typing-extensions and anyio; declared={sorted(requires)}"
     )

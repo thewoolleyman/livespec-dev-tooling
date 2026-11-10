@@ -435,6 +435,7 @@ version = "1.193.0"
 source = { editable = "." }
 dependencies = [
     { name = "anyio" },
+    { name = "pyyaml" },
     { name = "typing-extensions" },
 ]
 
@@ -458,6 +459,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "anyio", specifier = ">=3.0" },
+    { name = "pyyaml", specifier = ">=6.0" },
     { name = "typing-extensions", specifier = ">=4.0" },
 ]
 
