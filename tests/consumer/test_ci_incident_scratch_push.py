@@ -91,8 +91,16 @@ def _trigger_findings(*, workflow: dict[Any, Any]) -> list[str]:
 
 
 def _ref_reads(*, workflow: dict[Any, Any]) -> list[str]:
-    """Every place a job or step reads the ref, except the admitted export guard."""
-    reads: list[str] = []
+    """Every place the workflow, a job or a step reads the ref, except the admitted export guard."""
+    # Every top-level key but the triggers and `jobs` (env, concurrency,
+    # defaults, permissions, run-name, ...) is scanned whole too: a workflow-
+    # wide env value or concurrency group keyed on the ref splits scratch from
+    # master as surely as a job condition does. `on` loads as True under YAML 1.1.
+    reads: list[str] = [
+        str(key)
+        for key, value in workflow.items()
+        if key not in ("on", True, "jobs") and _REF_READ.search(str(value))
+    ]
     for name, job in _jobs(workflow=workflow).items():
         # Every job key but `steps` (if, runs-on, needs, strategy, outputs, env,
         # concurrency, continue-on-error, container, services, timeout-minutes,
@@ -253,6 +261,11 @@ def test_no_job_condition_routing_or_step_reads_the_ref_but_the_export_guard() -
         (
             "  check:\n    runs-on: ubuntu-latest\n",
             "  check:\n    runs-on: ubuntu-latest\n    with:\n      branch: ${{ github.event.ref }}\n",
+        ),
+        ("jobs:\n", "env:\n  LANE: ${{ github.ref_name }}\njobs:\n"),
+        (
+            "jobs:\n",
+            "concurrency:\n  group: ci-${{ github.ref }}\n  cancel-in-progress: true\njobs:\n",
         ),
     ],
 )
