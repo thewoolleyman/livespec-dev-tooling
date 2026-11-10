@@ -15,11 +15,14 @@ The chain write is idempotent, so two publishers racing the same action at worst
 repeat one write; the orchestrator recovers its one transition.
 
 Each action carries its sweep state under `sweep` in the observer record:
-`attempts`, `next_at` (epoch seconds), `last` (the latest reason) and, once set,
-`terminal`. A `retry` outcome backs off exponentially from five minutes to an hour and
-turns `terminal` after a bounded number of attempts, so nothing is retried forever. A
-`terminal` outcome is journaled with its reason at once and is never written again
-automatically; it needs the incident owner or an operator.
+`attempts` (all of them), `streak` (consecutive attempts of the `last` reason),
+`next_at` (epoch seconds) and, once set, `terminal`. A `retry` outcome backs off
+exponentially from five minutes to an hour by its streak and turns `terminal` once the
+streak reaches that reason's bound, so nothing is retried forever. A `terminal` outcome
+is journaled with its reason at once and is never written again automatically; it
+needs the incident owner or an operator. A `landed` outcome always wins: it marks the
+action `reconciled` even over a terminal another publisher recorded meanwhile, keeping
+that diagnosis as `superseded_terminal`.
 """
 
 from __future__ import annotations
@@ -31,7 +34,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import cast
 
-from livespec_dev_tooling._incident_conflict_generation import ChainWrite
+from livespec_dev_tooling._incident_conflict_generation import HALF_REOPEN, ChainWrite
 from livespec_dev_tooling._incident_observer_store import load_record, repository_lock, save_record
 from livespec_dev_tooling._incident_observer_types import RecoveryIntent
 from livespec_dev_tooling.incident_conflict_chain import ConflictChain
@@ -48,11 +51,15 @@ __all__: list[str] = [
 _SWEEP = "sweep"
 _BASE_SECONDS = 300.0
 _CAP_SECONDS = 3600.0
-# Attempts before a retried reason turns terminal. A pre-merge arm's merge is recorded by
-# an operator's `record-merge` within hours or not at all; a tenant outage gets two days.
-_BOUNDS = {"merge-unrecorded": 12}
+# Consecutive attempts of one retried reason before it turns terminal. A pre-merge arm's
+# merge is recorded by an operator's `record-merge` within hours or not at all; a claim
+# move refused as `claim-changed` on three attempts spaced 5 and 10 minutes apart is no
+# token race but the orchestrator's half-reopen; a tenant outage gets about two days.
+_BOUNDS = {"merge-unrecorded": 12, "claim-changed": 3}
+_EXHAUSTED = {"claim-changed": HALF_REOPEN}
 _DEFAULT_BOUND = 48
 _RECONCILED = "reconciled"
+_LANDED = "landed"
 _DEFERRED = "deferred"
 _TERMINAL = "terminal"
 _SKIPPED = "skipped"
@@ -139,7 +146,7 @@ def record_outcome(
         if action.get(_RECONCILED):
             return Published(status=_RECONCILED, reason="already on the chain")
         terminal = _state(action=action).get(_TERMINAL)
-        if terminal:
+        if terminal and outcome.status != _LANDED:
             return Published(status=_TERMINAL, reason=str(terminal))
         published = _apply(action=action, outcome=outcome, clock=clock)
         save_record(path=path, record=record)
@@ -151,20 +158,27 @@ def record_outcome(
 def _apply(
     *, action: dict[str, object], outcome: ChainWrite, clock: Callable[[], float]
 ) -> Published:
-    if outcome.status == "landed":
+    state = _state(action=action)
+    if outcome.status == _LANDED:
+        # A landed write is the chain's proof and outranks any diagnosis recorded before
+        # it, including a rival publisher's terminal.
+        superseded = state.pop(_TERMINAL, None)
+        if superseded:
+            state["superseded_terminal"] = superseded
+            action[_SWEEP] = state
         action[_RECONCILED] = True
         return Published(status=_RECONCILED, reason="conflict recorded on the chain")
-    state = _state(action=action)
     attempts = cast("int", state.get("attempts", 0)) + 1
-    state.update(attempts=attempts, last=outcome.reason)
-    if outcome.status == "retry" and attempts < _BOUNDS.get(outcome.reason, _DEFAULT_BOUND):
-        state["next_at"] = clock() + backoff_seconds(attempts=attempts)
+    streak = cast("int", state.get("streak", 0)) + 1 if state.get("last") == outcome.reason else 1
+    state.update(attempts=attempts, streak=streak, last=outcome.reason)
+    if outcome.status == "retry" and streak < _BOUNDS.get(outcome.reason, _DEFAULT_BOUND):
+        state["next_at"] = clock() + backoff_seconds(attempts=streak)
         action[_SWEEP] = state
         return Published(status=_DEFERRED, reason=outcome.reason)
     reason = (
         outcome.reason
         if outcome.status == _TERMINAL
-        else f"{outcome.reason}: no landing after {attempts} attempts"
+        else _EXHAUSTED.get(outcome.reason, f"{outcome.reason}: no landing after {streak} attempts")
     )
     state[_TERMINAL] = reason
     action[_SWEEP] = state
