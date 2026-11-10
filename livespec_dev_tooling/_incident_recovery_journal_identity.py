@@ -24,6 +24,7 @@ from livespec_dev_tooling._incident_recovery_journal_cause import (
 )
 from livespec_dev_tooling._incident_recovery_journal_types import RetainedAction
 from livespec_dev_tooling._incident_recovery_journal_values import JournalValues
+from livespec_dev_tooling.incident_controller_installation import valid_branch_name
 
 __all__: list[str] = ["JournalCodec"]
 
@@ -49,7 +50,7 @@ def _registration(*, raw: Any) -> Any:
         and all(
             JournalValues.text(value=value) for value in identity.values() if isinstance(value, str)
         )
-        and registration.branch == "master"
+        and valid_branch_name(name=registration.branch)
     ):
         message = "invalid recovery registration"
         raise ValueError(message)

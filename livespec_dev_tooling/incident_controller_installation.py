@@ -23,7 +23,7 @@ from livespec_dev_tooling.incident_ci_identity_policy import (
 )
 from livespec_dev_tooling.incident_protected_path import protected_path
 
-__all__: list[str] = ["ControllerInstallation"]
+__all__: list[str] = ["ControllerInstallation", "valid_branch_name"]
 
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-47ij37
 _PRIVATE_DIRECTORY_MODE = 0o700
@@ -109,7 +109,7 @@ class ControllerInstallation:
                 or query in {webhook, control}
                 or type(data["port"]) is not int
                 or not 0 < data["port"] < _PORT_LIMIT
-                or not _valid_branch(name=data.get("target_branch", _DEFAULT_TARGET_BRANCH))
+                or not valid_branch_name(name=data.get("target_branch", _DEFAULT_TARGET_BRANCH))
             ):
                 return None
             return cls(
@@ -136,7 +136,7 @@ class ControllerInstallation:
             return None
 
 
-def _valid_branch(*, name: object) -> bool:
+def valid_branch_name(*, name: object) -> bool:
     """A plain branch name: no option-like lead, no `..`, no `.lock` component, no empty part."""
     return (
         isinstance(name, str)
