@@ -147,3 +147,14 @@ incident_observer_fetch_unit_name: livespec-incident-reference-fetch
 incident_observer_fetch_service_path: /etc/systemd/system/livespec-incident-reference-fetch.service
 incident_observer_fetch_timer_path: /etc/systemd/system/livespec-incident-reference-fetch.timer
 incident_observer_fetch_interval: 5min
+
+# --- the scratch-branch instance ----------------------------------------------
+# False for production. ansible/incident-observer-scratch.yml sets it, with the
+# instance's own paths, port, unit names and target branch, from
+# vars/scratch.yml; this role then converges a SECOND observer beside
+# production that shares production's venv, reader clone and secret files
+# read-only and writes none of them, and publishes no funnel. The committed
+# teardown is ansible/incident-observer-scratch-teardown.yml
+# (tasks/scratch_teardown.yml). livespec-dev-tooling-32qdja; README.md
+# §"The scratch-branch instance".
+incident_observer_scratch: false

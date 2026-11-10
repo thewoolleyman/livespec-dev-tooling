@@ -62,6 +62,62 @@
       candidates run as (HOST_VARS.md).
     success_msg: the candidate account is {{ incident_observer_candidate_user }}
 
+- name: Read production's instance values for a scratch apply to differ from
+  # A scratch apply (ansible/incident-observer-scratch.yml) overrides the role's
+  # defaults, which ARE production's values; they are read here under one
+  # separate name, compared against and never applied. livespec-dev-tooling-32qdja.
+  ansible.builtin.include_vars:
+    file: "{{ role_path }}/defaults/main.yml"
+    name: incident_observer_production
+  when: incident_observer_scratch | bool
+
+- name: Refuse a scratch instance that shares a name, path, port or branch with production
+  # Every per-instance value must differ from production's, and no scratch
+  # directory may sit inside production's state or reference clone, so a
+  # scratch apply can never write, restart or bind anything production owns.
+  ansible.builtin.assert:
+    that:
+      - incident_observer_target_branch | length > 0
+      - incident_observer_target_branch != 'master'
+      - incident_observer_port | int != incident_observer_production.incident_observer_port | int
+      - incident_observer_scratch_values | intersect(incident_observer_production_values) | length == 0
+      - >-
+        incident_observer_scratch_values | select('match', '^(' ~
+        (incident_observer_production_values | map('regex_escape') | join('|')) ~ ')/')
+        | list | length == 0
+    fail_msg: >-
+      the scratch instance must name a target branch other than master, a port
+      other than production's {{ incident_observer_production.incident_observer_port }},
+      and its own controller.json, manifest, state directory, reference clone and
+      unit names, none of them production's or inside production's directories
+      (vars/scratch.yml). Nothing has been written.
+    success_msg: >-
+      the scratch instance binds {{ incident_observer_target_branch }} on port
+      {{ incident_observer_port }} under {{ incident_observer_unit_name }}
+  vars:
+    incident_observer_scratch_values:
+      - "{{ incident_observer_config_path }}"
+      - "{{ incident_observer_manifest_path }}"
+      - "{{ incident_observer_state_dir }}"
+      - "{{ incident_observer_reference_dir }}"
+      - "{{ incident_observer_scratch_root }}"
+      - "{{ incident_observer_unit_name }}"
+      - "{{ incident_observer_unit_path }}"
+      - "{{ incident_observer_fetch_unit_name }}"
+      - "{{ incident_observer_fetch_service_path }}"
+      - "{{ incident_observer_fetch_timer_path }}"
+    incident_observer_production_values:
+      - "{{ incident_observer_production.incident_observer_config_path }}"
+      - "{{ incident_observer_production.incident_observer_manifest_path }}"
+      - "{{ incident_observer_production.incident_observer_state_dir }}"
+      - "{{ incident_observer_production.incident_observer_reference_dir }}"
+      - "{{ incident_observer_production.incident_observer_unit_name }}"
+      - "{{ incident_observer_production.incident_observer_unit_path }}"
+      - "{{ incident_observer_production.incident_observer_fetch_unit_name }}"
+      - "{{ incident_observer_production.incident_observer_fetch_service_path }}"
+      - "{{ incident_observer_production.incident_observer_fetch_timer_path }}"
+  when: incident_observer_scratch | bool
+
 - name: Install the interpreter's venv module and git
   ansible.builtin.apt:
     name:
@@ -124,6 +180,18 @@
     mode: "0750"
   become: true
 
+- name: Create the scratch instance's own root beside production's state
+  # The scratch state directory and reference clone are siblings beneath it,
+  # as production's are beneath the controller account's home.
+  ansible.builtin.file:
+    path: "{{ incident_observer_scratch_root }}"
+    state: directory
+    owner: "{{ incident_observer_user }}"
+    group: "{{ incident_observer_group }}"
+    mode: "0750"
+  become: true
+  when: incident_observer_scratch | bool
+
 - name: Create the private state directory and its recovery journal
   # 0700 is what the loader checks on the state directory itself; the two
   # journal directories beneath it are the provisioner's obligation
@@ -176,6 +244,24 @@
   check_mode: false
   when: incident_observer_installed
 
+- name: Refuse a scratch apply onto a venv production does not already serve
+  # The scratch instance shares production's venv and reader clone and writes
+  # neither: installing a release there would change the package production's
+  # manifest hashes without restarting production. Converge production first.
+  ansible.builtin.assert:
+    that:
+      - incident_observer_installed
+      - (incident_observer_installed_version.rc | default(1)) == 0
+      - >-
+        ('v' ~ (incident_observer_installed_version.stdout | default('') | trim))
+        == incident_observer_release
+    fail_msg: >-
+      {{ incident_observer_venv }} does not serve {{ incident_observer_release }};
+      converge production (ansible/dev-host.yml --tags incident_observer) at that
+      release before the scratch instance. Nothing has been written.
+    success_msg: the shared venv serves {{ incident_observer_release }}
+  when: incident_observer_scratch | bool
+
 - name: Install the released distribution from its tag, never from a checkout
   # Only when the venv does not already serve this release: pip rebuilds a
   # git requirement on every call, so a bare pip task would report a change on
@@ -194,10 +280,10 @@
       - "livespec-dev-tooling @ git+{{ incident_observer_release_repo }}@{{ incident_observer_release }}"
   become: true
   when: >-
-    not incident_observer_installed
+    not (incident_observer_scratch | bool) and (not incident_observer_installed
     or (incident_observer_installed_version.rc | default(1)) != 0
     or ('v' ~ (incident_observer_installed_version.stdout | default('') | trim))
-       != incident_observer_release
+       != incident_observer_release)
   changed_when: true
   notify: Restart the incident observer onto its installation
 
@@ -211,6 +297,7 @@
     version: "{{ incident_observer_reader_release }}"
     depth: 1
   become: true
+  when: not (incident_observer_scratch | bool)
   notify: Restart the incident observer onto its installation
 
 - name: Clone the independent reference repository at the released tag
@@ -272,6 +359,7 @@
   loop_control:
     label: "{{ item.path }}"
   no_log: true
+  when: not (incident_observer_scratch | bool)
   notify: Restart the incident observer onto its installation
 
 - name: Write the canonical reader's credential as the unit's environment file
@@ -285,6 +373,7 @@
     mode: "0600"
   become: true
   no_log: true
+  when: not (incident_observer_scratch | bool)
   notify: Restart the incident observer onto its installation
 
 - name: Write the recovery App credential the principal reads beside controller.json
@@ -304,6 +393,7 @@
   become: true
   no_log: true
   when:
+    - not (incident_observer_scratch | bool)
     - lookup('ansible.builtin.env', incident_observer_recovery_app_id_env) | length > 0
     - lookup('ansible.builtin.env', incident_observer_recovery_app_key_env) | length > 0
 
@@ -565,7 +655,9 @@
 - name: Read this node's tailscale serve and funnel configuration
   # The tailnet mapping for every other route is the tailscale_serve role's,
   # from the host's declared mappings; this reads the same status for the one
-  # public path.
+  # public path. The funnel belongs to the production instance alone: a scratch
+  # instance is loopback-only, its trigger is POST /recover, and it never
+  # publishes a second callback (livespec-dev-tooling-32qdja).
   ansible.builtin.command:
     argv: [tailscale, funnel, status]
   become: true
@@ -573,6 +665,7 @@
   changed_when: false
   failed_when: false
   check_mode: false
+  when: not (incident_observer_scratch | bool)
 
 - name: Read whether the tailnet grants this node the funnel attribute
   # `tailscale funnel --bg --yes` on a node the tailnet policy has not granted
@@ -587,6 +680,7 @@
   register: incident_observer_tailscale_status
   changed_when: false
   check_mode: false
+  when: not (incident_observer_scratch | bool)
 
 - name: Name the funnel grant and the callback path's current disposition
   ansible.builtin.set_fact:
@@ -598,6 +692,7 @@
           in (incident_observer_funnel_status.stdout | default('')))
          and (('proxy http://127.0.0.1:' ~ incident_observer_port ~ incident_observer_funnel_path)
               in (incident_observer_funnel_status.stdout | default(''))) }}
+  when: not (incident_observer_scratch | bool)
 
 - name: Name the public callback path's disposition in the run output
   ansible.builtin.debug:
@@ -615,6 +710,7 @@
       this node the funnel attribute. Granting it is a tailnet-admin step
       (README.md, maintainer-only step 2); GitHub cannot deliver workflow_job
       callbacks until it is granted and this apply is run again
+  when: not (incident_observer_scratch | bool)
 
 - name: Publish only the callback path through a path-scoped funnel
   # Persisted in tailscaled's own state (`--bg`), additive, and scoped to the
@@ -632,7 +728,9 @@
       - "http://127.0.0.1:{{ incident_observer_port }}{{ incident_observer_funnel_path }}"
   become: true
   register: incident_observer_funnel_publish
-  when: incident_observer_funnel_granted and not incident_observer_funnel_served
+  when: >-
+    not (incident_observer_scratch | bool)
+    and incident_observer_funnel_granted and not incident_observer_funnel_served
   changed_when: true
 
 - name: Read the funnel configuration back after publishing

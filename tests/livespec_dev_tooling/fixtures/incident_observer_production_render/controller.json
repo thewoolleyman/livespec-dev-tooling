@@ -1,0 +1,11 @@
+{
+  "manifest": "/etc/livespec-incident/released-installation.json",
+  "candidate_uid": 1000,
+  "repository": "thewoolleyman/livespec-dev-tooling",
+  "repo": "/var/lib/livespec-incident/reference",
+  "state": "/var/lib/livespec-incident/receipts",
+  "webhook_secret": "/etc/livespec-incident/webhook-secret",
+  "control_secret": "/etc/livespec-incident/control-secret",
+  "query_secret": "/etc/livespec-incident/query-secret",
+  "port": 8765
+}

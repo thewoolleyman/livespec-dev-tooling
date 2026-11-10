@@ -1,0 +1,38 @@
+---
+# The scratch-branch incident observer instance: the variable set that turns
+# this role's ONE installation into a second one beside production, at its own
+# controller.json, manifest, state directory, reference clone, port and units,
+# bound to a scratch branch instead of master. livespec-dev-tooling-32qdja.
+#
+# Loaded by ansible/incident-observer-scratch.yml (the apply) and by
+# ansible/incident-observer-scratch-teardown.yml (the teardown), so both name
+# the same instance. Production (ansible/dev-host.yml) never loads it.
+#
+# Override the instance name, and with it every path and the branch, at the
+# command line: `-e incident_observer_scratch_name=<name>`. The branch can be
+# named on its own with `-e incident_observer_target_branch=incident-scratch/<x>`.
+#
+# The controller.json stays in production's configuration directory on
+# purpose: the recovery principal reads recovery-app.json from the config's
+# parent, and the scratch instance reuses that file and the three secret files
+# production's apply writes. The role refuses (tasks/main.yml) any scratch
+# value that equals production's, and a target branch of master.
+incident_observer_scratch: true
+incident_observer_scratch_name: thhgeg
+incident_observer_target_branch: "incident-scratch/{{ incident_observer_scratch_name }}-proof"
+incident_observer_scratch_root: "{{ incident_observer_home }}/scratch-{{ incident_observer_scratch_name }}"
+incident_observer_config_path: "{{ incident_observer_etc_dir }}/controller-scratch-{{ incident_observer_scratch_name }}.json"
+incident_observer_manifest_path: "{{ incident_observer_etc_dir }}/released-installation-scratch-{{ incident_observer_scratch_name }}.json"
+incident_observer_state_dir: "{{ incident_observer_scratch_root }}/receipts"
+incident_observer_reference_dir: "{{ incident_observer_scratch_root }}/reference"
+# Loopback only: the scratch trigger is POST /recover, so nothing is public.
+incident_observer_port: 8766
+incident_observer_unit_name: livespec-incident-observer-scratch
+incident_observer_unit_path: /etc/systemd/system/livespec-incident-observer-scratch.service
+incident_observer_fetch_unit_name: livespec-incident-reference-fetch-scratch
+incident_observer_fetch_service_path: /etc/systemd/system/livespec-incident-reference-fetch-scratch.service
+incident_observer_fetch_timer_path: /etc/systemd/system/livespec-incident-reference-fetch-scratch.timer
+# The teardown keeps the scratch root (receipts and reference clone) as the
+# evidence store a Proof of Done may still cite. `-e
+# incident_observer_scratch_teardown_purge=true` removes it too.
+incident_observer_scratch_teardown_purge: false

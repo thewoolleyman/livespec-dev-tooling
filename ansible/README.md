@@ -84,6 +84,8 @@ source of truth for how the tool is invoked.
 | `gates-kubeconfig.yml` | `vps` | `vps-info` `services/gates-kubeconfig/` |
 | `fabro-hosts.yml` | `hp-xubuntu`, `vps` | `fabro-hosts` `services/` |
 | `dev-host.yml` | `vps` | `vps-info` `services/` |
+| `incident-observer-scratch.yml` | `vps` (`dev_hosts`), beside `dev-host.yml`'s production incident observer | nothing — a second, scratch-branch observer instance for a host proof, never production |
+| `incident-observer-scratch-teardown.yml` | `vps` (`dev_hosts`), the scratch instance alone | nothing — the committed removal of what `incident-observer-scratch.yml` installs |
 | `reboot-ci-server.yml` | `ci_pool`, and only the host its confirmation names | nothing — no committed artifact could reboot a pool node |
 | `node-loss-drill.yml` | `ci_pool`, and only the AGENT host its confirmation names | nothing — no committed artifact could take a pool node's k3s agent down |
 | `restart-k3s-agent.yml` | `ci_pool`, and only the AGENT host its confirmation names | nothing — no committed artifact could restart a pool agent's k3s agent |
