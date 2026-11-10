@@ -99,3 +99,20 @@ if [ "$dry_run" -eq 1 ]; then
 else
   kubectl patch clusterqueue gates-cq --type=json -p "$patch" >/dev/null
 fi
+
+# --- retired worker flavors -------------------------------------------------
+# A worker flavor renamed out of gates-cq is left behind as an unused
+# ResourceFlavor: apply never deletes. Each name here was replaced by the
+# flavor above (gates-worker-<arch>-flavor -> gates-worker-taint-<arch>-flavor,
+# livespec-dev-tooling#3926), and the gates-cq patch just above has removed
+# every gates-worker-*-flavor entry, so nothing references it here. Kueue's
+# resource-in-use finalizer still refuses to drop a flavor some queue names, so
+# --wait=false keeps a converge from blocking on that guard. Plan
+# homelab-k8s-worker-nodes, cleanup follow-up.
+retired_flavors=(gates-worker-arm64-flavor)
+for flavor in "${retired_flavors[@]}"; do
+  echo "converge-worker-queues: deleting retired ResourceFlavor $flavor"
+  if [ "$dry_run" -eq 0 ]; then
+    kubectl delete resourceflavor "$flavor" --ignore-not-found --wait=false >/dev/null
+  fi
+done

@@ -151,7 +151,7 @@ _FLEET_GATES_CQ = {
 
 
 def _render_gates(
-    *, tmp_path: Path, shares: str, no_gates_cq: bool = False
+    *, tmp_path: Path, shares: str, no_gates_cq: bool = False, dry_run: bool = True
 ) -> tuple[subprocess.CompletedProcess[str], list[str]]:
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
@@ -165,7 +165,7 @@ def _render_gates(
     log = tmp_path / "calls.log"
     log.write_text("", encoding="utf-8")
     result = subprocess.run(
-        ["/bin/bash", str(_SCRIPT), "--dry-run"],
+        ["/bin/bash", str(_SCRIPT), *(["--dry-run"] if dry_run else [])],
         capture_output=True,
         text=True,
         env={
@@ -293,3 +293,28 @@ def test_a_cluster_without_gates_cq_is_left_alone(tmp_path: Path) -> None:
     assert result.returncode == 0, result.stderr
     assert "gates-cq is not present" in result.stderr
     assert not [c for c in calls if " patch " in c]
+
+
+_RETIRED_DELETE = (
+    "kubectl delete resourceflavor gates-worker-arm64-flavor --ignore-not-found --wait=false"
+)
+
+
+def test_a_converge_deletes_the_retired_gate_flavor_after_patching_it_out_of_gates_cq(
+    tmp_path: Path,
+) -> None:
+    # The renamed flavor (livespec-dev-tooling#3926) lingers as an unused
+    # ResourceFlavor because apply never deletes; the converge removes it only
+    # AFTER the gates-cq patch has dropped every gates-worker-*-flavor entry.
+    result, calls = _render_gates(tmp_path=tmp_path, shares="arm64 4000\n", dry_run=False)
+    assert result.returncode == 0, result.stderr
+    patch_at = next(
+        i for i, c in enumerate(calls) if c.startswith("kubectl patch clusterqueue gates-cq")
+    )
+    assert calls.index(_RETIRED_DELETE) > patch_at
+
+
+def test_a_dry_run_names_the_retired_gate_flavor_and_deletes_nothing(tmp_path: Path) -> None:
+    result, calls = _render_gates(tmp_path=tmp_path, shares="arm64 4000\n")
+    assert "deleting retired ResourceFlavor gates-worker-arm64-flavor" in result.stdout
+    assert not [c for c in calls if " delete " in c]
