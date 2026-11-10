@@ -278,6 +278,7 @@ check:
         check-check-tools
         check-ci-gate-parity
         check-ci-matrix-completeness
+        check-ci-single-container-image
         check-claude-md-coverage
         check-codex-hook-reconcilable
         check-comment-line-anchors
@@ -875,6 +876,14 @@ check-ci-gate-parity:
 # warns each not-yet-wired repo without reddening it.
 check-ci-matrix-completeness:
     uv run python -m livespec_dev_tooling.checks.ci_matrix_completeness
+
+# Fails when `.github/workflows/ci.yml` declares two or more distinct job
+# `container:` images, naming each image and its line. A delegated gate Job runs in
+# the one image it resolves from that file, so a second pin refuses every push and
+# post-merge janitor of the repository until it is removed. No severity lever: it
+# fails by default (livespec-dev-tooling-kzhduc).
+check-ci-single-container-image:
+    uv run python -m livespec_dev_tooling.checks.ci_single_container_image
 
 check-claude-md-coverage:
     uv run python -m livespec_dev_tooling.checks.claude_md_coverage
