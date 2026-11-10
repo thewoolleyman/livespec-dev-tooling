@@ -71,6 +71,28 @@ failed its own pre-merge pass with new high-severity findings.
 12 of 117 revise sessions show the phase ran (livespec-wy3blz records this), so
 the post-step alone cannot be relied on to happen.
 
+### Run the shaped artifact's reader tests before review
+
+When a revise prescribes the shape of a committed artifact, such as a
+`ci.yml` block, a justfile recipe or a config key, draft that artifact change
+and run every test that reads the artifact against the draft BEFORE review.
+The spec-reading tests and the independent reviews read only the spec. They
+cannot see a guard that pins the artifact's current bytes.
+
+v182 (livespec-dev-tooling#4010) ratified the B' master-push concurrency block.
+Its spec-reading tests passed (3196) and both sonnet reviews returned no
+blockers. Two `ci.yml` guards then refused the implementation commit for
+livespec-dev-tooling-qzw2gf (gate `20261110T094136Z-1366253`, 2026-11-10).
+`tests/livespec_dev_tooling/test_incident_ci_omission_wiring.py` refuses any
+`ci.yml` that names the `EXPEDITED_INCIDENT_RESPONSE` flag, and
+`tests/consumer/test_ci_incident_scratch_push.py` refuses every top-level ref
+read. One guard forced a different predicate, and the
+other needed a consent from another plan's seat. A pre-review draft would have
+put both into the revise, where they were cheap to settle.
+
+To find the readers, grep `tests/` for the artifact's path and for the names
+the new shape introduces.
+
 ## Heading-Coverage Co-Edits
 
 Any change that adds, renames, or removes a live `## ` H2 heading in
