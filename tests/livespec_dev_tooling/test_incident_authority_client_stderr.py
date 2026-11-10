@@ -18,12 +18,10 @@ from typing import Any
 
 import pytest
 from returns.pipeline import is_successful
-from returns.unsafe import unsafe_perform_io
 
 from livespec_dev_tooling import incident_authority_client as client
 from livespec_dev_tooling import incident_hook_process as hook
 from livespec_dev_tooling import incident_observer_provenance as observer_provenance
-from livespec_dev_tooling import incident_provenance as provenance
 from livespec_dev_tooling._incident_observer_types import ObserverArm
 from livespec_dev_tooling._incident_original_run_ports import installed_ports
 from livespec_dev_tooling.incident_observer_authority import CurrentAuthorityReader
@@ -163,16 +161,6 @@ def _operator_reports(*, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, **_: o
     return str(refused.value)
 
 
-def _provenance_reports(*, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, **_: object) -> str:
-    monkeypatch.setattr(provenance, "registered_plugin_root", lambda **_kwargs: tmp_path)
-    _failing(monkeypatch=monkeypatch)
-    done = provenance.read_historical_incident_commit(
-        repo_root=tmp_path, query=provenance.IncidentCommitQuery(**_QUERY)
-    )
-    refusal = unsafe_perform_io(done.failure())
-    return f"{refusal.code}: {refusal.detail}"
-
-
 def _observer_reader_reports(
     *, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> str:
@@ -222,7 +210,6 @@ def _observer_provenance_reports(
 _REPORTERS: dict[str, Callable[..., str]] = {
     "hook": _hook_reports,
     "operator": _operator_reports,
-    "provenance": _provenance_reports,
     "observer-reader": _observer_reader_reports,
     "observer-provenance": _observer_provenance_reports,
 }

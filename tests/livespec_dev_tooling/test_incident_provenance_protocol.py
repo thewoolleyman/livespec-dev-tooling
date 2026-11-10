@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict
+from dataclasses import asdict, replace
+from typing import Any
 
 import pytest
+from returns.pipeline import is_successful
 
 from livespec_dev_tooling._incident_provenance_protocol import decode_historical_result
-from livespec_dev_tooling.incident_provenance import IncidentCommitQuery
+from livespec_dev_tooling._incident_provenance_types import IncidentCommitQuery
 
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-gvylzw
 
@@ -58,3 +60,88 @@ def test_malformed_landed_scope_is_refused(field: str, value: object) -> None:
         query=query,
     )
     assert result.failure().code == "incident-reader-invalid-response"
+
+
+def _result() -> dict[str, Any]:
+    query = _query()
+    attempt: dict[str, Any] = dict(asdict(query))
+    del attempt["commit_sha"]
+    del attempt["tree_sha"]
+    attempt.update(
+        landed_commits=["c" * 40, "e" * 40],
+        landed_trees=["d" * 40, "f" * 40],
+        original_paths=["src/repair.py"],
+        deferred_work=["full-replay"],
+        repayment_required=True,
+    )
+    return {
+        "attempt": attempt,
+        "committed_token_id": "token-old",
+        "current_token_id": "token-current",
+    }
+
+
+def test_a_matching_receipt_retains_the_deferred_proof() -> None:
+    decoded = decode_historical_result(result=_result(), query=_query())
+    assert is_successful(decoded)
+    proof = decoded.unwrap()
+    assert proof.query == _query()
+    assert proof.committed_token_id == "token-old"
+    assert proof.current_token_id == "token-current"
+    assert proof.original_paths == ("src/repair.py",)
+    assert proof.deferred_work == ("full-replay",)
+    assert proof.repayment_required is True
+
+
+@pytest.mark.parametrize(
+    "field",
+    [
+        "repository",
+        "item_id",
+        "attempt_id",
+        "phase",
+        "operation_id",
+        "generation",
+        "owner",
+        "base",
+        "head",
+        "pr_number",
+    ],
+)
+def test_exact_receipt_fields_must_match(field: str) -> None:
+    result = _result()
+    result["attempt"][field] = "foreign"
+    decoded = decode_historical_result(result=result, query=_query())
+    assert decoded.failure().code == "incident-provenance-identity-mismatch"
+
+
+@pytest.mark.parametrize("mutate", ["commit", "tree", "length", "bool_generation", "bool_pr"])
+def test_landed_commit_and_tree_are_verified_as_one_pair(mutate: str) -> None:
+    result = _result()
+    attempt = result["attempt"]
+    if mutate == "commit":
+        attempt["landed_commits"][0] = "x" * 40
+    elif mutate == "tree":
+        attempt["landed_trees"].reverse()
+    elif mutate == "length":
+        attempt["landed_trees"] = []
+    elif mutate == "bool_generation":
+        attempt["generation"] = True
+    else:
+        attempt["pr_number"] = True
+    assert not is_successful(decode_historical_result(result=result, query=_query()))
+
+
+@pytest.mark.parametrize("field", ["attempt", "committed_token_id", "current_token_id"])
+def test_incomplete_historical_proof_is_refused(field: str) -> None:
+    result = _result()
+    del result[field]
+    decoded = decode_historical_result(result=result, query=_query())
+    assert decoded.failure().code == "incident-reader-invalid-response"
+
+
+def test_a_later_landed_commit_is_not_reduced_to_the_terminal_sha() -> None:
+    query = replace(_query(), commit_sha="e" * 40, tree_sha="f" * 40)
+    decoded = decode_historical_result(result=_result(), query=query)
+    assert is_successful(decoded)
+    assert decoded.unwrap().query == query
