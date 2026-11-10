@@ -10,18 +10,42 @@ read that cannot be taken, is None: unverified.
 
 from __future__ import annotations
 
+import shlex
+import sys
 from collections.abc import Callable, Mapping
+from functools import partial
+from pathlib import Path
 from types import MappingProxyType
 from typing import Protocol
 
-from livespec_dev_tooling._incident_fleet_driver_reader import read_driver_hooks
-from livespec_dev_tooling._incident_fleet_gate_reader import read_gate_readers
-from livespec_dev_tooling._incident_fleet_recovery_reader import read_recovery_authorization
-from livespec_dev_tooling._incident_fleet_template_reader import read_templates
-from livespec_dev_tooling.incident_fleet_controller_reader import read_controller_serving
-from livespec_dev_tooling.incident_fleet_host import HostProbe
+_VENDOR_DIR = Path(__file__).resolve().parent / "_vendor"
+if str(_VENDOR_DIR) not in sys.path:
+    sys.path.insert(0, str(_VENDOR_DIR))
 
-__all__: list[str] = ["PRODUCTION_READERS", "Reader", "ServingReader", "host_serving_reader"]
+from livespec_runtime_budget.github_budget import GhInvocation  # noqa: E402
+
+from livespec_dev_tooling._incident_fleet_driver_reader import read_driver_hooks  # noqa: E402
+from livespec_dev_tooling._incident_fleet_gate_reader import read_gate_readers  # noqa: E402
+from livespec_dev_tooling._incident_fleet_recovery_reader import (  # noqa: E402
+    ForgeReader,
+    read_recovery_authorization,
+)
+from livespec_dev_tooling._incident_fleet_template_reader import read_templates  # noqa: E402
+from livespec_dev_tooling.budgeted_gh import gh_read  # noqa: E402
+from livespec_dev_tooling.fleet._invocation_failure import InvocationNotPerformed  # noqa: E402
+from livespec_dev_tooling.fleet._local_context import CommandRunner, command_answer  # noqa: E402
+from livespec_dev_tooling.incident_fleet_controller_reader import (  # noqa: E402
+    read_controller_serving,
+)
+from livespec_dev_tooling.incident_fleet_host import HostProbe  # noqa: E402
+
+__all__: list[str] = [
+    "PRODUCTION_READERS",
+    "Reader",
+    "ServingReader",
+    "forge_reader",
+    "host_serving_reader",
+]
 
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-3wcldx
 Reader = Callable[..., str | None]
@@ -33,10 +57,33 @@ class ServingReader(Protocol):
     def __call__(self, *, repository: str, capability: str) -> str | None: ...
 
 
+def forge_reader(*, run: CommandRunner) -> ForgeReader:
+    """The budgeted `gh` read, started through the audit's own runner.
+
+    The budgeted client still builds the argv, spends the budget and reads the
+    answer; only the process start is the audit's, so `gh` runs as a fixed binary
+    with a scrubbed environment exactly as git and systemctl do.
+    """
+
+    def execute(*, argv: list[str]) -> GhInvocation:
+        answer = command_answer(outcome=run(args=argv))
+        if isinstance(answer, InvocationNotPerformed):
+            return GhInvocation(argv=shlex.join(argv), unspawnable=answer.reason)
+        return GhInvocation(
+            argv=shlex.join(argv),
+            stdout=answer.stdout,
+            stderr=answer.stderr,
+            returncode=answer.returncode,
+        )
+
+    return partial(gh_read, execute=execute)
+
+
 def _recovery(*, probe: HostProbe, repository: str) -> str | None:
     return read_recovery_authorization(
         repository=repository,
         controller=read_controller_serving(probe=probe, repository=repository),
+        read_forge=forge_reader(run=probe.run),
     )
 
 

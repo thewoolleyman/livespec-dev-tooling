@@ -36,11 +36,11 @@ from livespec_dev_tooling._incident_fleet_sources import (  # noqa: E402
     load_claims,
 )
 from livespec_dev_tooling.fleet._local_context import CommandRunner  # noqa: E402
-from livespec_dev_tooling.fleet._manifest_git import default_git_reader  # noqa: E402
 from livespec_dev_tooling.incident_fleet_host import (  # noqa: E402
     FLEET_OWNER,
     production_probe,
 )
+from livespec_dev_tooling.incident_fleet_runner import scrubbed_runner  # noqa: E402
 from livespec_dev_tooling.incident_fleet_serving import (  # noqa: E402
     ServingReader,
     host_serving_reader,
@@ -63,8 +63,12 @@ class CliEnvironment:
     read_serving: ServingReader
 
 
-def production_environment(*, run: CommandRunner) -> CliEnvironment:
-    """Core's manifest over git, this code's own claims, and this host's installed state."""
+def production_environment(*, run: CommandRunner = scrubbed_runner) -> CliEnvironment:
+    """Core's manifest over git, this code's own claims, and this host's installed state.
+
+    Every subprocess goes through `scrubbed_runner`: fixed binaries and a scrubbed
+    environment, so neither `PATH` nor `GIT_*` nor the caller's git config moves a read.
+    """
     probe = production_probe(run=run)
     return CliEnvironment(
         claims_path=COMMITTED_CLAIMS,
@@ -126,6 +130,4 @@ def main(*, argv: Sequence[str], environment: CliEnvironment) -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(
-        main(argv=sys.argv[1:], environment=production_environment(run=default_git_reader))
-    )
+    raise SystemExit(main(argv=sys.argv[1:], environment=production_environment()))
