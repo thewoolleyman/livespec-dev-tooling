@@ -85,3 +85,77 @@ def test_unmeasured_first_party_file_is_reported_as_a_warning_by_default(
     assert "src/orphan.py" in result.stderr
     assert "unmeasured" in result.stderr
     assert "src/measured.py" not in result.stderr
+
+
+def test_unmeasured_first_party_file_fails_the_check_when_the_repo_opts_in(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`fail_on_unmeasured_first_party = true` turns the finding into a non-zero exit."""
+    _build_repo(root=tmp_path, extra_pyproject="fail_on_unmeasured_first_party = true\n")
+
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
+
+    assert result.returncode != 0
+    assert "src/orphan.py" in result.stderr
+    assert '"level": "error"' in result.stderr
+
+
+def test_opt_out_spelling_keeps_the_finding_a_warning(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """An explicit `false` is the same as the absent key: the exit status is unchanged."""
+    _build_repo(root=tmp_path, extra_pyproject="fail_on_unmeasured_first_party = false\n")
+
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
+
+    assert result.returncode == 0
+    assert "src/orphan.py" in result.stderr
+
+
+def test_opt_in_with_nothing_unmeasured_still_passes(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The opt-in fails only on a finding: with every tracked file measured it exits 0."""
+    _build_repo(root=tmp_path, extra_pyproject="fail_on_unmeasured_first_party = true\n")
+    data = CoverageData(basename=str(tmp_path / ".coverage"), suffix=False)
+    data.add_lines({str(tmp_path / "src" / name): [1, 2] for name in ("measured.py", "orphan.py")})
+    data.write()
+
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
+
+    assert result.returncode == 0
+    assert "unmeasured" not in result.stderr
+
+
+def _load_opt_in(*, repo_root: Path) -> bool | None:
+    loader = getattr(
+        importlib.import_module("livespec_dev_tooling.config"),
+        "load_fail_on_unmeasured_first_party",
+        None,
+    )
+    assert loader is not None, "config must expose load_fail_on_unmeasured_first_party"
+    return loader(repo_root=repo_root)
+
+
+def test_opt_in_loader_is_none_without_a_pyproject_or_block_or_key(*, tmp_path: Path) -> None:
+    """Absent file, absent block and absent key all read as `None`: not opted in."""
+    assert _load_opt_in(repo_root=tmp_path / "missing") is None
+    _ = (tmp_path / "pyproject.toml").write_text("[project]\nname = 'x'\n", encoding="utf-8")
+    assert _load_opt_in(repo_root=tmp_path) is None
+    _ = (tmp_path / "pyproject.toml").write_text("[tool.livespec_dev_tooling]\n", encoding="utf-8")
+    assert _load_opt_in(repo_root=tmp_path) is None
+
+
+def test_opt_in_loader_reads_the_boolean_and_rejects_anything_else(*, tmp_path: Path) -> None:
+    """The key is a boolean; a string is a schema violation like every sibling key."""
+    config_module = importlib.import_module("livespec_dev_tooling.config")
+    pyproject = tmp_path / "pyproject.toml"
+    _ = pyproject.write_text(
+        "[tool.livespec_dev_tooling]\nfail_on_unmeasured_first_party = true\n", encoding="utf-8"
+    )
+    assert _load_opt_in(repo_root=tmp_path) is True
+    _ = pyproject.write_text(
+        '[tool.livespec_dev_tooling]\nfail_on_unmeasured_first_party = "yes"\n', encoding="utf-8"
+    )
+    with pytest.raises(config_module.ConfigParseError):
+        _ = _load_opt_in(repo_root=tmp_path)

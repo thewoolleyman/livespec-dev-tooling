@@ -104,6 +104,7 @@ __all__: list[str] = [
     "load_delegated_gate",
     "load_delegated_pre_commit",
     "load_destructive_cli_allowlist",
+    "load_fail_on_unmeasured_first_party",
     "load_gate_check_suite",
     "load_mutation_staging_dir",
     "load_plan_lifecycle_anchor",
@@ -1251,6 +1252,34 @@ def load_plan_lifecycle_anchor(*, repo_root: Path) -> bool | None:
     if table is None or "plan_lifecycle_anchor" not in table:
         return None
     return _as_bool(value=table["plan_lifecycle_anchor"], key="plan_lifecycle_anchor")
+
+
+def load_fail_on_unmeasured_first_party(*, repo_root: Path) -> bool | None:
+    """Return the `fail_on_unmeasured_first_party` opt-in, or `None` if the key is absent.
+
+    Reads `<repo_root>/pyproject.toml`'s `[tool.livespec_dev_tooling]` block,
+    key `fail_on_unmeasured_first_party` — a single boolean that says whether
+    `per_file_coverage` fails when a tracked first-party `.py` file under the
+    repo's `source_tree_prefixes` is absent from the coverage data (no test
+    imported it, so the per-file walk can never judge it). Rollout is per repo,
+    so the key is absent everywhere until a repo has cleared or omitted its
+    findings and opts in with `fail_on_unmeasured_first_party = true`; an absent
+    key keeps the finding a warning and the check's exit status unchanged.
+
+    Returns `None` when the whole block is absent OR the key is omitted. Raises
+    `ConfigParseError` on a non-boolean value, consistent with the rest of the
+    loader.
+
+    Like `plan_lifecycle_anchor` and `delegated_gate`, this is intentionally NOT
+    a `Config` role key: it is a single-check concern, so it is read directly
+    off the table rather than threaded through the typed layout dataclass.
+    """
+    table = _read_table(repo_root=repo_root)
+    if table is None or "fail_on_unmeasured_first_party" not in table:
+        return None
+    return _as_bool(
+        value=table["fail_on_unmeasured_first_party"], key="fail_on_unmeasured_first_party"
+    )
 
 
 def load_delegated_gate(*, repo_root: Path) -> bool | None:

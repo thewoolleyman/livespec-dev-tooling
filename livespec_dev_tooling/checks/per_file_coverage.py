@@ -74,6 +74,7 @@ from coverage import (  # noqa: E402  — uv-managed dep, available post-vendor-
 from livespec_dev_tooling._unmeasured_first_party import (  # noqa: E402
     find_unmeasured_first_party,
 )
+from livespec_dev_tooling.config import load_fail_on_unmeasured_first_party  # noqa: E402
 
 __all__: list[str] = []
 
@@ -230,23 +231,28 @@ def _without_vanished_sources(
     return cov
 
 
-def _warn_unmeasured_first_party(
+def _report_unmeasured_first_party(
     *, log: structlog.stdlib.BoundLogger, repo_root: Path, measured_files: Iterable[str]
-) -> None:
-    """Warn, by path, of every tracked first-party file no test imported.
+) -> bool:
+    """Report, by path, every tracked first-party file no test imported; True when it must fail.
 
     Work-item livespec-dev-tooling-45qcgo: such a file is absent from the data,
-    so the per-file walk can never judge it.
+    so the per-file walk can never judge it. The finding is a warning unless the
+    repository opted in with `fail_on_unmeasured_first_party = true`, which
+    reports it as an error and makes the check fail on it.
     """
+    opted_in = load_fail_on_unmeasured_first_party(repo_root=repo_root) is True
+    emit = log.error if opted_in else log.warning
     unmeasured = find_unmeasured_first_party(repo_root=repo_root, measured_files=measured_files)
     if unmeasured is None:
-        log.warning(
+        emit(
             "tracked first-party files could not be listed; unmeasured files not reported",
             hint="the working directory is not a git working tree",
         )
-        return
+        return opted_in
     for file in unmeasured:
-        log.warning("first-party file is unmeasured: no test imported it", file=file)
+        emit("first-party file is unmeasured: no test imported it", file=file)
+    return opted_in and bool(unmeasured)
 
 
 def main() -> int:
@@ -304,7 +310,7 @@ def main() -> int:
         _ = cov.json_report(outfile="-")
     report = json.loads(buf.getvalue())
 
-    _warn_unmeasured_first_party(
+    unmeasured_fails = _report_unmeasured_first_party(
         log=log, repo_root=cwd, measured_files=cov.get_data().measured_files()
     )
 
@@ -324,7 +330,7 @@ def main() -> int:
                 missing_lines=summary.get("missing_lines"),
             )
         return 1
-    return 0
+    return 1 if unmeasured_fails else 0
 
 
 if __name__ == "__main__":
