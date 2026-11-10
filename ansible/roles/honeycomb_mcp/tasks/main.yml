@@ -63,28 +63,6 @@
       this role.
     success_msg: "{{ honeycomb_mcp_onepassword_wrapper }} is present"
 
-- name: Make the stdio wrapper executable in the checkout
-  # This mutates a git checkout the role does not own, and it does so knowingly:
-  # Claude Code exec's the path directly, so a wrapper without the bit is a
-  # connection that fails at session start. git already records mode 100755, so
-  # on a clean checkout this is a no-op; it repairs a clone or copy made under a
-  # umask that dropped the bit.
-  #
-  # owner and group are deliberately NOT set. The role does not own this file,
-  # only the one bit it needs, and imposing an ownership on somebody's checkout
-  # is a larger claim than the wrapper's executability warrants.
-  #
-  # THE MODE IS SYMBOLIC, AND THAT IS THE POINT. The installer ran `chmod +x`,
-  # which ADDS the execute bits and touches nothing else. A literal "0755" is
-  # not the same instruction: the live file is 0775, so 0755 would silently
-  # strip a group-write bit the installer never had an opinion about. A dry run
-  # against the vps caught exactly that, reporting 0775 -> 0755 as a change this
-  # role had invented. `a+x` is idempotent and reproduces the shell.
-  ansible.builtin.file:
-    path: "{{ honeycomb_mcp_wrapper }}"
-    mode: a+x
-  become: false
-
 - name: Check that the stdio wrapper parses
   # The installer's `bash -n`, kept. It guards a real and recorded failure: the
   # wrapper's payload is one single-quoted string, and a stray quote inside it
@@ -195,6 +173,33 @@
       first, as {{ honeycomb_mcp_owner }}:
       claude plugin install honeycomb@honeycomb-plugins
     success_msg: "{{ honeycomb_mcp_definitions.matched }} plugin MCP definition(s) found"
+
+- name: Make the stdio wrapper executable in the checkout
+  # ORDERED AFTER EVERY ASSERT ABOVE IT. It is the role's first task that can
+  # change the host, so a host missing the checkout's wrapper, the 1Password
+  # wrapper, the Management key or the plugin fails at the assert that names the
+  # missing input before this edits anything.
+  #
+  # This mutates a git checkout the role does not own, and it does so knowingly:
+  # Claude Code exec's the path directly, so a wrapper without the bit is a
+  # connection that fails at session start. git already records mode 100755, so
+  # on a clean checkout this is a no-op; it repairs a clone or copy made under a
+  # umask that dropped the bit.
+  #
+  # owner and group are deliberately NOT set. The role does not own this file,
+  # only the one bit it needs, and imposing an ownership on somebody's checkout
+  # is a larger claim than the wrapper's executability warrants.
+  #
+  # THE MODE IS SYMBOLIC, AND THAT IS THE POINT. The installer ran `chmod +x`,
+  # which ADDS the execute bits and touches nothing else. A literal "0755" is
+  # not the same instruction: the live file is 0775, so 0755 would silently
+  # strip a group-write bit the installer never had an opinion about. A dry run
+  # against the vps caught exactly that, reporting 0775 -> 0755 as a change this
+  # role had invented. `a+x` is idempotent and reproduces the shell.
+  ansible.builtin.file:
+    path: "{{ honeycomb_mcp_wrapper }}"
+    mode: a+x
+  become: false
 
 - name: Preserve the vendor OAuth MCP definition
   # `force: false` writes only when the .bak is absent, which is what preserves

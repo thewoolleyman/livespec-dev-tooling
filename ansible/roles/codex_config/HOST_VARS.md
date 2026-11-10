@@ -21,3 +21,17 @@ is the correct failure, but only if the value is set per host.
 `codex_config_feature` is `default_mode_request_user_input` everywhere. Codex
 CLI 0.146.0 classifies it as under development, so the NAME may change upstream;
 that is a reason to keep it a variable, not a reason to vary it per host.
+
+## Out-of-band, not provisioned here
+
+- `/usr/local/bin/with-homelab-env.sh`, from the `1password-env-wrapper` repo.
+  The role asserts it exists before its first changed task and refuses
+  otherwise.
+- `CLOUDFLARE_MCP_TOKEN` in the 1Password `homelab` Environment, a Cloudflare
+  API token for the Cloudflare API MCP server. The role asserts it resolves
+  through the wrapper before its first changed task, and only then writes the
+  `[mcp_servers.cloudflare-api]` entry into `~/.codex/config.toml` with
+  `codex mcp add`. The entry holds the variable's NAME
+  (`bearer_token_env_var`), never the token. An entry already present, such as
+  one added by hand, is adopted and left as it is; to change its URL, remove it
+  with `codex mcp remove cloudflare-api` and apply again.

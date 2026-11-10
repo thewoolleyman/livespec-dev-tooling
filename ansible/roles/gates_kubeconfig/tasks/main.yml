@@ -11,6 +11,56 @@
 # nothing cluster-scoped. The Role is this repo's
 # ci-runner/k3s/phase2/gates/gates-rbac.yaml; the host holds only the token.
 
+- name: Look for the rendered gates kubeconfig on the control-plane node
+  # THE ROLE'S OUT-OF-BAND INPUT, read before anything on this host changes. The
+  # control-plane node renders that file on every boot; this role cannot create
+  # it. kubectl and the two scripts below are installed on this host, so a
+  # missing file used to fail only AFTER those changes landed. Asking first lets
+  # the apply fail at the assert below, naming the file and the node.
+  ansible.builtin.stat:
+    path: "{{ gates_kubeconfig_remote_path }}"
+  become: true
+  delegate_to: "{{ gates_kubeconfig_remote_host }}"
+  register: gates_kubeconfig_remote_stat
+
+- name: Require the control-plane node to have rendered the gates kubeconfig
+  ansible.builtin.assert:
+    that:
+      - gates_kubeconfig_remote_stat.stat.exists
+    fail_msg: >-
+      {{ gates_kubeconfig_remote_host }}:{{ gates_kubeconfig_remote_path }} does
+      not exist. The control-plane node renders it on boot; confirm the node is
+      reachable over ssh with passwordless sudo and that its converge has run,
+      then apply again. Nothing on this host has been changed.
+    success_msg: "{{ gates_kubeconfig_remote_host }}:{{ gates_kubeconfig_remote_path }} is present"
+
+- name: Read the rendered gates kubeconfig from the control-plane node
+  # FETCHED BEFORE ANY INSTALL, with the content assert beside it, so a missing
+  # or malformed file fails the apply before kubectl or either script is written.
+  # The shell installer needed `sudo -u <invoking user> sudo` here, because the
+  # ssh key that reaches poweredge belongs to the invoking user while the
+  # destination needs root. Ansible has no such problem: the read happens on
+  # poweredge under its own become, and the write happens here under ours.
+  ansible.builtin.slurp:
+    src: "{{ gates_kubeconfig_remote_path }}"
+  become: true
+  delegate_to: "{{ gates_kubeconfig_remote_host }}"
+  register: gates_kubeconfig_rendered
+  changed_when: false
+  no_log: true
+
+- name: Refuse a fetched file that is not a kubeconfig
+  # A truthful-looking but malformed answer is worse than a failure, because it
+  # would overwrite a good credential with a useless one.
+  ansible.builtin.assert:
+    that:
+      - "'kind: Config' in (gates_kubeconfig_rendered.content | b64decode)"
+      - "'server:' in (gates_kubeconfig_rendered.content | b64decode)"
+    fail_msg: >-
+      {{ gates_kubeconfig_remote_host }}:{{ gates_kubeconfig_remote_path }} is not a
+      kubeconfig — refusing to overwrite {{ gates_kubeconfig_dest }}
+    success_msg: fetched content is a kubeconfig
+
 - name: Install kubectl pinned to the cluster's k3s minor
   # The checksum is the PUBLISHED one fetched from its own URL, not a digest
   # computed from the file just downloaded — that would only prove the
@@ -43,31 +93,6 @@
   loop:
     - refresh-gates-kubeconfig
     - with-gates-kubeconfig
-
-- name: Read the rendered gates kubeconfig from the control-plane node
-  # The shell installer needed `sudo -u <invoking user> sudo` here, because the
-  # ssh key that reaches poweredge belongs to the invoking user while the
-  # destination needs root. Ansible has no such problem: the read happens on
-  # poweredge under its own become, and the write happens here under ours.
-  ansible.builtin.slurp:
-    src: "{{ gates_kubeconfig_remote_path }}"
-  become: true
-  delegate_to: "{{ gates_kubeconfig_remote_host }}"
-  register: gates_kubeconfig_rendered
-  changed_when: false
-  no_log: true
-
-- name: Refuse a fetched file that is not a kubeconfig
-  # A truthful-looking but malformed answer is worse than a failure, because it
-  # would overwrite a good credential with a useless one.
-  ansible.builtin.assert:
-    that:
-      - "'kind: Config' in (gates_kubeconfig_rendered.content | b64decode)"
-      - "'server:' in (gates_kubeconfig_rendered.content | b64decode)"
-    fail_msg: >-
-      {{ gates_kubeconfig_remote_host }}:{{ gates_kubeconfig_remote_path }} is not a
-      kubeconfig — refusing to overwrite {{ gates_kubeconfig_dest }}
-    success_msg: fetched content is a kubeconfig
 
 - name: Create the credential directory
   # `--check` cannot see this: with the directory absent, the copy below is

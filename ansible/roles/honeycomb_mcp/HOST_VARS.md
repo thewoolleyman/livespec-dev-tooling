@@ -17,6 +17,9 @@ with `pwd -P` before writing it into the config for exactly that reason.
 
 ## Out-of-band, not provisioned here
 
+Every input below is asserted before the role's first changed task, so an apply
+on a host missing one fails at that assert and names it.
+
 - `/usr/local/bin/with-homelab-env.sh`, from the `1password-env-wrapper` repo.
   The role asserts it exists and refuses otherwise.
 - `HONEYCOMB_MGMT_API_KEY` in the 1Password `homelab` Environment
@@ -28,8 +31,15 @@ with `pwd -P` before writing it into the config for exactly that reason.
   and refuses otherwise.
 - `npx` (node), which the wrapper calls at every session start.
 
-## Re-run after every plugin update
+### Post-apply steps an operator still performs
 
-`claude plugin update honeycomb@honeycomb-plugins` re-fetches the vendor OAuth
-definition into the cache and reverts the patch. Re-applying this role is the
-repair path, and it is also how a NEW version directory gets patched at all.
+- **Re-apply this role after every plugin update.** Do it right after running
+  `claude plugin update honeycomb@honeycomb-plugins` as the operator account:
+  `just ansible-apply ansible/dev-host.yml --tags honeycomb_mcp`. The update
+  re-fetches the vendor OAuth definition into the cache and reverts the patch,
+  so until the role is applied again every Claude session on the host gets the
+  OAuth transport this role exists to replace. Re-applying is also how a NEW
+  version directory gets patched at all. Nothing triggers it: no timer, unit or
+  release hook runs it, so the operator who updates the plugin owns this step.
+  `just ansible-drift ansible/dev-host.yml` reports the unpatched definition as a
+  change, which is the check that the step was done.

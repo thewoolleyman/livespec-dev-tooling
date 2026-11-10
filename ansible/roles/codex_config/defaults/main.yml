@@ -38,3 +38,16 @@ codex_config_observer_unit_source: "{{ ansible_env.HOME }}/.local/share/livespec
 codex_config_observer_unit_dir: "{{ ansible_env.HOME }}/.config/systemd/user"
 codex_config_observer_unit_dest: "{{ ansible_env.HOME }}/.config/systemd/user/livespec-codex-hook-cache-observer.service"
 codex_config_user_runtime_dir: "/run/user/{{ ansible_facts['user_uid'] }}"
+
+# The Cloudflare API MCP server Codex talks to. The entry written into
+# ~/.codex/config.toml names the token's VARIABLE (bearer_token_env_var), never
+# its value: the token lives in the 1Password `homelab` Environment and is
+# resolved through the wrapper below when a session starts. The role asserts it
+# resolves before it writes the entry.
+codex_config_cloudflare_mcp_name: cloudflare-api
+codex_config_cloudflare_mcp_url: https://mcp.cloudflare.com/mcp
+codex_config_cloudflare_mcp_token_env: CLOUDFLARE_MCP_TOKEN
+
+# The 1Password service-account wrapper. Owned by the 1password-env-wrapper repo,
+# NOT by this role -- asserted, never installed.
+codex_config_env_wrapper: /usr/local/bin/with-homelab-env.sh
