@@ -138,6 +138,13 @@ cannot SendMessage: Mac and Codex seats, today fleet-mutation-testing-rule-26 on
 07:48:20Z scope event. Measured 2026-11-09: that seat posted its ask as a comment on epic `livespec-dev-tooling-oi2two`
 at 07:26Z, and no tick read it.
 
+**A dead login stalls every local seat at once (coordinator's reading).** Measured 2026-11-10: the shared Claude login
+anthropic-3 hit its login-lifetime cap at about 15:14Z. About 25 local seats, the coordinator among them, failed every
+turn on "Login reached its time limit · Please run /login" until the maintainer switched the live account to anthropic-4
+at about 19:38Z. The factory drained to 0 live runs at the same time. caam gives no countdown to that cap. On resume,
+the coordinator scans every pane for that string and sends each dead seat a RESUME message naming its next action.
+Recorded on epic `livespec-dev-tooling-6tgd2z`.
+
 **Rule P4: confirm a plan is not parked before routing it work, and re-justify every hold on a top-5 plan.** Before
 routing work to any plan, confirm it is not parked. radar-and-deterministic-admission (`livespec-dev-tooling-w7ley3`,
 tab w2J:t1E) is PARKED pending the maintainer's attention: it gets no work and no revise slot, and it resumes only on
@@ -216,6 +223,17 @@ changed two plugin SessionStart hooks, and every Codex seat stopped running them
 lifted, read the condition the hold file itself names and get its owner's confirmation. Measured 2026-11-07 14:3xZ:
 the coordinator ruled `hold-repo-livespec-dev-tooling` lifted although the file named a canary condition. It was
 restored at 14:43:59Z, and six runs had launched in the gap, none of which merged.
+
+**A wait's condition is checked against the live store before it is carried forward (coordinator's reading).** Holds and
+waits named in handoffs and records go stale silently. Measured 2026-11-10 ~14:58Z: bd-ib-kclvlo (priority 4's awaited
+item) sat READY under a chain-hold whose own stated end, "ticket it the moment reuccp ENDS", had been met about 20 h
+earlier: bd-ib-reuccp's drive ended rc=0, and the item had been at acceptance since 2026-11-09 18:40Z. Its spec-change
+hold also named a topic that had ratified in orchestrator v332 (1b868aa2a). The coordinator released the tier against
+its ratified clause and re-approved it.
+
+**A held PR is disarmed the moment the hold is ruled (coordinator's reading).** Disable its auto-merge at once, rather
+than relying on a later sweep. Recorded in the 2026-11-10 ~12:28Z restart handoff (session 9f244478) on epic
+`livespec-dev-tooling-6tgd2z`.
 
 **fabro-currency's pickers are answered like any seat's.** The maintainer, 2026-11-02 ~22:26Z: "WHY THGE FUCK ARE YOU
 LETTING IT B LOCK???" A ruling at 18:57Z had recorded "I'll talk to it myself" as "the coordinator does not direct
@@ -482,6 +500,10 @@ seat). The 19:30Z handoff's audit found eight of the ten gapped or partly wired,
 **The release waiver permits, it does not oblige (coordinator's reading).** On 2026-11-07 ~19:4xZ, at
 expedited-incident-response-flag's request, Release Please was not dispatched per merge, so its final fix set rides
 one release.
+
+**A tag cannot pin its own release, so an observer roll needs a committed pin PR after the release tag exists
+(coordinator's reading).** Recorded in the 2026-11-10 ~12:28Z restart handoff (session 9f244478) on epic
+`livespec-dev-tooling-6tgd2z`, from the expedited-incident-response-flag observer roll (release 1, v1.192.1).
 
 **A wedged factory route is a reason to hand-land (coordinator's reading).** When a factory route is wedged, the
 hand-landed close path above applies outside the expedited plan too: the carrier is hand-landed and closed on the
@@ -810,6 +832,12 @@ rulings (an ONLY_ARM launch, and expedited-incident-response-flag carriers) acte
 an expedited carrier that must start past a full repository WIP launches through the operator override
 `dispatcher.py dispatch --item <id>` (enforce_cap=False) at the next free fleet slot, never by a cancel.
 
+**Before ruling a capability absent, read every config surface the tool loads (coordinator's reading).** Measured
+2026-11-10 ~14:2xZ: the coordinator ruled that dev-tooling had no delegated pre-commit path after grepping only
+`.livespec.jsonc`. `delegated_pre_commit = true` had sat in `pyproject.toml` `[tool.livespec_dev_tooling]` since
+74b572f3 (2026-11-02). The ruling was corrected at ~14:4xZ; see the tick-6 record on epic `livespec-dev-tooling-6tgd2z`
+at 2026-11-10T14:37:41Z.
+
 **Rule G: when a fleet-class defect is fixed in one repository, sweep the fleet for it the same day.** A defect whose
 shape can exist in other fleet repositories (a shared check, recipe, workflow or reuse path) gets a same-day sweep of
 every fleet repo when it is fixed in one, and each hit is fixed or filed that day. Measured 2026-11-06: the
@@ -942,6 +970,15 @@ limits. A suite green on the old driver and red on the new one is the driver's f
 `test_gap_closure` failed in 9 of 9 post-window orchestrator full suites (0 of 12 before). The class cost about
 $240, 22% of 24 h of factory spend, before bd-ib-2fpn5m fixed it. At the freeze lift, the v0.8.2 canary takes an
 explicit umask check before other launches follow (legacy-dispatcher-agent ruling 12).
+
+**A canary samples the worst case on every axis the change touches (coordinator's reading).** A canary whose items are
+all small proves nothing about a size limit. Measured 2026-11-10: orchestrator v0.312.3 (f0b6f8909cc4) was rolled at
+13:10Z after two green canaries whose Definition of Done subjects were small. Its dispatcher-materialized
+`workflow.toml` then overflowed Fabro's 512 KiB per-file cap for any item whose DoD subject was over about 19.9 KB: the
+inlined `dod_gate` subject block from 1fdca222e sat on a base of about 504 KB. The fix (bd-ib-p5e32s, gzip+base64 of
+every plain-text embed) carries a worst-case test sized from bd-ib-qshcwc's 110,569 B subject, and the next canary must
+include a large-subject item. Recorded in the restart handoff on epic `livespec-dev-tooling-6tgd2z` at
+2026-11-10T14:46:55Z (session d11a725b).
 
 **Preserve before any cancel.** No seat cancels, removes or abandons a factory run until that run's committed tree is
 on a ref on origin, verified with `git ls-remote`. A diff pointer, a run id or a resume pointer is not a preserved
