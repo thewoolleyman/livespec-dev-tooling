@@ -234,6 +234,15 @@ delegated_gate = true
 # The delegated pre-commit Job derives this declared bootstrap, replacing only
 # its final aggregate with `check-pre-commit-gated-tree` for the staged index.
 delegated_pre_commit = true
+# The commit-msg replay gate's test runs (Red, Green and suite-green legs) run
+# as a gates Job over the staged tree on a host that holds the gates
+# credential; a host without it, or a Job with no verdict, runs the leg
+# locally and the commit is never refused for a missing verdict
+# (SPECIFICATION/contracts.md §"Delegated commit-time replay test runs").
+# Without it, a test-only hand commit spent 947 s of its 1,131 s in
+# red_green_replay on the dev host (gate run 20261110T140715Z-3669640,
+# 2026-11-10); plan epic livespec-dev-tooling-6vuiwe.
+delegated_commit_tests = true
 # What THIS repository's gate Job runs, in order — its own declaration rather
 # than a constant inside the shared `gate-job-template.yaml`
 # (livespec-dev-tooling-saxz). Three of these four exist in no other
