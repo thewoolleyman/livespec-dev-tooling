@@ -252,6 +252,17 @@ made both edits itself in about two minutes and approved it green.
 that hold. Measured 2026-11-07 ~20:03Z by radar-and-deterministic-admission: 31 of 306 ready items were held with no
 proposal on master. The door fix is bd-ib-bomy33, and this lesson ends when it ships.
 
+**A tier hold that a proof-mode edit created is released by its clause, not waited out (coordinator's reading).**
+Editing an item's Definition of Done (for example, moving a bullet from factory-captured to Host-captured) changes its
+behaviour digest and forces a fresh tier judgement, which can flip on identical behaviour. When the re-judged hold names
+behaviour the ratified spec already states, the coordinator presses `release-spec-tier:<id>:<## heading>` itself,
+citing the clauses that state it, and records them on the item. A hold whose behaviour the spec does not yet state still
+waits for its propose-change to ratify. Recorded on epic `livespec-dev-tooling-6tgd2z` at 2026-11-10T00:34:19Z.
+Measured 2026-11-10 00:27Z: livespec-dev-tooling-thhgeg read tier none at v173, and after its bullet-1 proof-mode move
+was refused at admission as spec-change/partial at v174. It was released green against contracts.md:1076 and the
+scratch-branch scenario. The judge's re-roll is filed as a spec change (a proof-mode-only move carries the prior tier
+record forward), owned by spec-implementation-lockstep; this reading ends when that ships.
+
 **Reversible host mutations are authorized.** The coordinator, and seats acting on its direction, may perform a
 reversible host mutation without a maintainer ask. An example is a committed, revertible ansible or converge apply with
 a kill switch or a revert path. Irreversible host mutations, and secrets and credential creation, stay the
@@ -761,6 +772,16 @@ routed three times, one knob at a time (the launcher `fleet-cap`, then `dispatch
 `max_concurrent_runs`), with `FLEET_LAUNCH_GMK_CAP` a fourth copy. The coordinator reported "cap file 20" as progress
 while 16 still bound, and no one asked why one queue had several numbers until the maintainer did.
 
+**Before ruling on a cap, name the cap that binds, measured (coordinator's reading).** A launch exemption from one copy
+of a limit does nothing while another copy binds. The per-repository WIP limit lives twice: the launcher's R77 and the
+dispatcher's committed `wip_cap`, which the loop/drive path enforces. Read the drive's own exit (for example
+`capacity-deferred active_count=10 wip_cap=10`) before ruling, and treat the duplicate as the §10 finding. Recorded on
+epic `livespec-dev-tooling-6tgd2z` at 2026-11-09T23:11:31Z. Measured 2026-11-09 ~22:5x-23:2xZ: two R77 exemption
+rulings (an ONLY_ARM launch, and expedited-incident-response-flag carriers) acted on the launcher's cap; zwlrpf's
+23:03:04Z drive exited capacity-deferred and nothing ran. legacy-dispatcher-agent reverted the launcher exemption, and
+an expedited carrier that must start past a full repository WIP launches through the operator override
+`dispatcher.py dispatch --item <id>` (enforce_cap=False) at the next free fleet slot, never by a cancel.
+
 **Rule G: when a fleet-class defect is fixed in one repository, sweep the fleet for it the same day.** A defect whose
 shape can exist in other fleet repositories (a shared check, recipe, workflow or reuse path) gets a same-day sweep of
 every fleet repo when it is fixed in one, and each hit is fixed or filed that day. Measured 2026-11-06: the
@@ -818,6 +839,15 @@ than delegating it?"
 hp-xubuntu's idleness on 2026-11-02 and 03 came from its CI-closed posture, not from host capacity. Opening hp as a
 runner-only node fixed it (v117, 8 CI slots, first job 08:28Z 2026-11-03), so an idle hp means checking its posture
 first.
+
+**Multi-GB artifacts go to `/var/tmp/livespec-dumps`, never `/tmp` (coordinator's reading).** `/tmp` on
+vmi3006760.contaboserver.net is a 48 G tmpfs, so a seat's run dump, image export or journal copy there spends memory
+and can fill the tmpfs every seat's Bash capture, gates and preflights need. Write any multi-GB artifact to
+`/var/tmp/livespec-dumps` (mode 1777, on `/`, a 20 G cap reaped oldest first). Recorded on epic
+`livespec-dev-tooling-6tgd2z` at 2026-11-10T00:55:46Z. Measured 2026-11-10 ~00:4xZ: `/tmp` grew about 2.3 G/h from live
+seats' scratch (a 3.8 G image dump, 1.3 G of lab homes and 1.5 G of journal copies). The coordinator first called two of
+those sessions dead from `/proc/<pid>/environ` alone; dev-host-disk-retention's parent-process map showed both live.
+Read a parent-process map, not an environ, before calling a writer dead.
 
 **The dispatcher watches throughput first; the coordinator checks it independently.** The coordinator's tick samples
 every ~20 minutes, so it cannot be the first to see a stall. legacy-dispatcher-agent runs the launchers and owns
