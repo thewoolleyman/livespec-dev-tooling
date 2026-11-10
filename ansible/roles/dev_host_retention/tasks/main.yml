@@ -47,6 +47,17 @@
       this host's host_vars against the role defaults.
     success_msg: every field of the dev host retention carries a value
 
+- name: Refuse a timer switch that is not a boolean
+  # A string such as "no" or "off" is truthy to a bare `when`, so an operator's
+  # hold would arm the timer it meant to stop. Only a real boolean is accepted.
+  ansible.builtin.assert:
+    that:
+      - dev_host_retention_timer_enabled is boolean
+    fail_msg: >-
+      dev_host_retention_timer_enabled must be the boolean true or false, not
+      {{ dev_host_retention_timer_enabled | string }}.
+    success_msg: the dev host retention timer switch is a boolean
+
 - name: Refuse a gate-run retention period that is not a whole number of days
   # The value reaches the script through the unit's environment and is then
   # multiplied into an epoch cutoff. A non-numeric value makes that arithmetic
@@ -227,10 +238,13 @@
   notify: Restart the dev host capacity check timer
 
 - name: Enable and start the dev host retention timer
+  # `dev_host_retention_timer_enabled: false` is the committed hold: the timer
+  # is stopped and disabled, and every later converge keeps it so. Starting a
+  # held timer again is a host_vars change back to true, never a hand start.
   ansible.builtin.systemd_service:
     name: "{{ dev_host_retention_timer }}"
-    enabled: true
-    state: started
+    enabled: "{{ dev_host_retention_timer_enabled }}"
+    state: "{{ 'started' if dev_host_retention_timer_enabled else 'stopped' }}"
     daemon_reload: true
   become: true
   when: not ansible_check_mode or dev_host_retention_timer_unit.stat.exists

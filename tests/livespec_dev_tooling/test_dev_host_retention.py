@@ -47,12 +47,15 @@ import json
 import os
 import pwd
 import re
+import shutil
 import subprocess
 from collections.abc import Iterator
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+import jinja2
 import pytest
+import yaml
 
 from livespec_dev_tooling.install_worktree_pack import CANONICAL_GATE_RUN_BODY
 
@@ -519,40 +522,46 @@ def uv_in_use(*, tmp_path: Path) -> Iterator[subprocess.Popen[bytes]]:
         ready.close()
 
 
-def test_a_run_prunes_the_uv_cache_while_another_uv_process_holds_it_in_use(
+def test_a_run_skips_the_uv_cache_prune_while_another_uv_process_holds_it_in_use(
     *, tmp_path: Path, uv_in_use: subprocess.Popen[bytes]
 ) -> None:
-    """The 2026-11-02 dev-host failure: two of two converged runs never pruned.
+    """A cache another uv process is using is never pruned, and never with `--force`.
 
-    uv processes (`uv run` gates, `uvx`) hold the cache in use almost
-    continuously there, so a prune that waits for the exclusive lock times out
-    after 300s and reclaims nothing. The run must still log a `uv cache prune:`
-    result line, which needs `--force` once the cache is in use.
+    `--force` ignores the lock a running uv holds and removes the ephemeral
+    environment a long-running `uvx` re-execs its interpreter from; on
+    2026-11-10 it killed a running ansible apply (livespec-dev-tooling-7bij7b).
+    The run skips the prune, says so, and finishes its other steps.
     """
     assert uv_in_use.poll() is None
     env = _base_env(tmp_path=tmp_path) | {"STUB_UV_CACHE_LOCKED": "1"}
+    checkout = _checkout(tmp_path=tmp_path, env=env)
+    aged = _gate_run(checkout=checkout, run_id="aged", age_days=30, exit_code="0", pid=None)
 
     done = _retain(env=env)
 
     assert done.returncode == 0, done.stdout + done.stderr
-    assert "uv cache prune: Removed 4096 files" in done.stdout, done.stdout + done.stderr
-    assert "did not complete" not in done.stdout, done.stdout
-    assert "--force" in (tmp_path / "uv.log").read_text(encoding="utf-8")
+    assert "uv cache prune skipped: the uv cache" in done.stdout, done.stdout
+    assert "in use by another uv process" in done.stdout, done.stdout
+    assert "--force" not in (tmp_path / "uv.log").read_text(encoding="utf-8")
+    assert not aged.exists(), "a skipped prune must not stop the later steps"
 
 
-def test_a_run_forces_the_prune_when_the_cache_turns_out_to_be_in_use(*, tmp_path: Path) -> None:
-    """The lock can be taken between the in-use probe and the prune."""
+def test_a_lock_timeout_is_never_retried_with_force(*, tmp_path: Path) -> None:
+    """The lock can be taken between the in-use probe and the prune; that prune is skipped."""
     env = _base_env(tmp_path=tmp_path) | {"STUB_UV_CACHE_LOCKED": "1"}
 
     done = _retain(env=env)
 
     assert done.returncode == 0, done.stdout + done.stderr
-    assert "uv cache prune: Removed 4096 files" in done.stdout, done.stdout + done.stderr
-    assert "--force" in (tmp_path / "uv.log").read_text(encoding="utf-8")
+    assert "--force" not in (tmp_path / "uv.log").read_text(encoding="utf-8")
+    assert (
+        "uv cache prune skipped: uv timed out waiting for the cache lock" in done.stdout
+    ), done.stdout
+    assert "uv cache prune: Removed" not in done.stdout, done.stdout
 
 
 def test_an_idle_uv_cache_is_pruned_without_force(*, tmp_path: Path) -> None:
-    """`--force` skips uv's in-use check, so it is reserved for a cache in use."""
+    """A cache no uv process holds is pruned, and the prune is never forced."""
     env = _base_env(tmp_path=tmp_path)
     (tmp_path / "uv-cache" / ".lock").touch()
 
@@ -572,9 +581,83 @@ def test_a_lock_timeout_is_not_logged_as_an_unremovable_path(*, tmp_path: Path) 
     done = _retain(env=env)
 
     assert done.returncode == 0, done.stdout + done.stderr
-    assert "the uv cache prune did not complete" in done.stdout, done.stdout
+    assert "uv cache prune skipped:" in done.stdout, done.stdout
     assert "could not remove" not in done.stdout, done.stdout
     assert not aged.exists(), "a prune that cannot lock must not stop the later steps"
+
+
+def _real_uv() -> str:
+    """The real uv this test session runs under; a missing uv fails the test, never skips it."""
+    found = os.environ.get("UV") or shutil.which("uv")
+    assert found, "the real-uv retention tests need the uv that runs this test session"
+    return found
+
+
+def _unreferenced_archive(*, cache: Path) -> Path:
+    """An archive no cache entry references, holding an interpreter a process re-execs.
+
+    It stands in for the ephemeral environment a running `uvx` executes from:
+    uv's prune treats an unreferenced archive as garbage.
+    """
+    interpreter = cache / "archive-v0" / "RUNNINGUVXENV" / "bin" / "python3"
+    interpreter.parent.mkdir(parents=True)
+    _ = interpreter.write_text("#!/bin/sh\necho alive\n", encoding="utf-8")
+    interpreter.chmod(0o755)
+    return interpreter
+
+
+def _real_uv_env(*, tmp_path: Path) -> dict[str, str]:
+    cache = tmp_path / "uv-cache"
+    return _base_env(tmp_path=tmp_path) | {
+        "LIVESPEC_DEV_HOST_RETENTION_UV_BIN": _real_uv(),
+        "LIVESPEC_DEV_HOST_RETENTION_USER": str(os.getuid()),
+        "UV_CACHE_DIR": str(cache),
+    }
+
+
+def test_a_running_uv_process_can_still_exec_its_archive_after_a_retention_run(
+    *, tmp_path: Path, uv_in_use: subprocess.Popen[bytes]
+) -> None:
+    """The 2026-11-10 field failure, reproduced with real uv.
+
+    A running uv process holds the cache lock, and its environment's archive is
+    one no cache entry references. A forced prune removed exactly such an
+    archive under a running `uvx --from ansible-core ansible-playbook`, which
+    then failed with "bin/python3.14: not found" (livespec-dev-tooling-7bij7b).
+    """
+    assert uv_in_use.poll() is None
+    interpreter = _unreferenced_archive(cache=tmp_path / "uv-cache")
+
+    done = _retain(env=_real_uv_env(tmp_path=tmp_path))
+
+    assert done.returncode == 0, done.stdout + done.stderr
+    assert (
+        interpreter.exists()
+    ), f"the prune removed the running process's interpreter {interpreter}:\n{done.stdout}"
+    reexec = subprocess.run(
+        [str(interpreter)], capture_output=True, text=True, check=False, timeout=30
+    )
+    assert (
+        reexec.returncode == 0 and reexec.stdout.strip() == "alive"
+    ), f"the running process lost its interpreter to the prune:\n{done.stdout}"
+
+
+def test_a_retention_run_prunes_an_unreferenced_archive_when_no_uv_process_holds_the_cache(
+    *, tmp_path: Path
+) -> None:
+    """The control for the test above: with the lock free, real uv prunes that archive.
+
+    Without it, an archive uv would never remove anyway would make the
+    survival above prove nothing.
+    """
+    interpreter = _unreferenced_archive(cache=tmp_path / "uv-cache")
+    (tmp_path / "uv-cache" / ".lock").touch()
+
+    done = _retain(env=_real_uv_env(tmp_path=tmp_path))
+
+    assert done.returncode == 0, done.stdout + done.stderr
+    assert "uv cache prune: " in done.stdout, done.stdout
+    assert not interpreter.exists(), done.stdout
 
 
 def _nobody_env(*, tmp_path: Path) -> dict[str, str]:
@@ -880,16 +963,77 @@ def test_the_converge_accepts_an_executable_uv(*, tmp_path: Path) -> None:
     assert returncode == 0, output
 
 
+_HANDLERS = _ROLE / "handlers" / "main.yml"
+_RESTART_HANDLER = "Restart the dev host retention timer"
+_TIMER_SWITCH = "dev_host_retention_timer_enabled"
+
+
+def _named(*, path: Path, name: str) -> dict[str, object]:
+    """The one task or handler of a role file whose name is `name`."""
+    entries = yaml.safe_load(_read(path=path))
+    found = [entry for entry in entries if entry.get("name") == name]
+    assert len(found) == 1, f"{path.name} must carry exactly one {name!r}: {found!r}"
+    return found[0]
+
+
+def _default_timer_enabled() -> bool:
+    value = yaml.safe_load(_read(path=_DEFAULTS))[_TIMER_SWITCH]
+    assert isinstance(value, bool), f"{_TIMER_SWITCH} must default to a boolean: {value!r}"
+    return value
+
+
+def _rendered_arming(*, enabled: bool) -> tuple[str, str]:
+    """The arming task's `enabled` and `state`, rendered as Ansible renders them."""
+    task = _named(path=_TASKS, name=_ARM_TASK)
+    module = task["ansible.builtin.systemd_service"]
+    assert isinstance(module, dict), task
+    fields: dict[str, object] = {str(key): value for key, value in module.items()}
+
+    def render(key: str) -> str:
+        return jinja2.Template(str(fields[key])).render(**{_TIMER_SWITCH: enabled})
+
+    return render("enabled"), render("state")
+
+
+def test_the_timer_switch_set_false_holds_the_retention_timer_stopped_and_disabled() -> None:
+    """The committed hold: false stops and disables the timer on every converge.
+
+    A hand `systemctl stop` is undone by the next converge, and the timer's
+    Persistent=true then fires the missed daily run at once
+    (livespec-dev-tooling-7bij7b).
+    """
+    assert _default_timer_enabled() is True
+    assert _rendered_arming(enabled=False) == ("False", "stopped")
+    assert _rendered_arming(enabled=True) == ("True", "started")
+
+
+def test_a_held_retention_timer_is_never_restarted_by_the_converge() -> None:
+    """The restart handler would arm a held timer, so the switch guards it."""
+    handler = _named(path=_HANDLERS, name=_RESTART_HANDLER)
+    guard = handler.get("when")
+    conditions: list[str] = (
+        [str(condition) for condition in guard] if isinstance(guard, list) else [str(guard)]
+    )
+    assert _TIMER_SWITCH in conditions, handler
+
+
+def test_the_timer_switch_must_be_a_boolean_and_is_documented() -> None:
+    """A string like "no" is truthy, so only a real boolean is accepted."""
+    check = _named(path=_TASKS, name="Refuse a timer switch that is not a boolean")
+    assert f"{_TIMER_SWITCH} is boolean" in str(check), check
+    assert f"`{_TIMER_SWITCH}`" in _read(path=_ROLE_DOC)
+
+
 def test_the_dev_host_play_installs_the_retention_script_and_its_daily_timer() -> None:
     """The play reaches the arming task, and the timer it arms fires at least daily."""
     assert _ARM_TASK in _list_tasks(tags=None), (
         "ansible/dev-host.yml must include the role that installs the retention: a "
         "hand-installed user unit is not provisioned state and no drift report sees it"
     )
-    arm = _read(path=_TASKS).split(_ARM_TASK, maxsplit=1)[1]
-    assert (
-        "enabled: true" in arm and "state: started" in arm
-    ), f"an installed-but-idle timer reclaims nothing until the next reboot:\n{arm}"
+    assert _rendered_arming(enabled=_default_timer_enabled()) == ("True", "started"), (
+        "with the role defaults the converge must enable and start the timer: an "
+        "installed-but-idle timer reclaims nothing until the next reboot"
+    )
     assert _ARM_TASK not in _list_tasks(tags=[_OTHER_DEV_HOST_TAG]), (
         "the role must carry its own tag, so converging one other dev-host control "
         "does not arm it and `--tags dev_host_retention` can converge it alone"

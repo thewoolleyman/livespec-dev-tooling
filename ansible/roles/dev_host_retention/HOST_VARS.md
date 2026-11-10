@@ -86,6 +86,7 @@ with no installed runner is SKIPPED and says so.
 | `dev_host_retention_unit_dir` | `/etc/systemd/system` | where the two units are installed |
 | `dev_host_retention_service` | `livespec-dev-host-retention.service` | the oneshot unit the timer triggers |
 | `dev_host_retention_timer` | `livespec-dev-host-retention.timer` | the timer the converge enables and starts |
+| `dev_host_retention_timer_enabled` | `true` | **THE COMMITTED HOLD**: `false` stops and disables the retention timer on every converge; see "Holding the timer" below |
 | `dev_host_retention_on_calendar` | `daily` | the cadence; the ratified section states a daily floor |
 | `dev_host_retention_randomized_delay_sec` | `30m` | jitter, so the reclaim does not land in the same second as every other daily unit |
 | `dev_host_retention_timeout_start_sec` | `30min` | bounds ONE run; the first run after this role lands walks the whole gate-run backlog |
@@ -148,6 +149,21 @@ To run one retention by hand — the same thing the timer does:
 ```bash
 sudo -u ubuntu /usr/local/sbin/livespec-dev-host-retention
 ```
+
+## Holding the timer
+
+To stop the retention from firing, for example while a defect in it is fixed,
+set `dev_host_retention_timer_enabled: false` in the host's `host_vars` and
+converge. The timer is stopped and disabled, and every later converge keeps it
+so. A hand `systemctl stop` is not a hold: the next converge of this role
+restarts the timer, and because the timer is `Persistent=true` it then fires
+any daily run it missed at once. Release the hold by setting the variable back
+to `true` and converging. Expect the missed run to fire right away.
+
+The uv cache prune is never forced. When another uv process holds the cache
+lock, the run logs `uv cache prune skipped: …` and leaves the cache for a later
+run, because `uv cache prune --force` removes the ephemeral environment a
+running `uvx` re-execs its interpreter from (livespec-dev-tooling-7bij7b).
 
 ## Retired hourly crons
 

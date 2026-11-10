@@ -129,10 +129,17 @@ uv_cache_is_in_use() {
 # account take the same route, and `runuser` is handed the login name because
 # it does not accept a numeric uid ("runuser: user 1000 does not exist",
 # livespec-dev-tooling-spva5x).
+#
+# The prune is NEVER forced. `uv cache prune --force` ignores the cache lock a
+# running uv or uvx process holds, and it removes any archive no cache entry
+# references, including the ephemeral environment a long-running uvx process
+# re-execs its interpreter from. On 2026-11-10 at 21:45:33Z a forced prune
+# removed archive-v0/O0B37K2mzvi1ETZA1h2Uq under a running
+# `uvx --from ansible-core ansible-playbook`, which then failed with
+# "bin/python3.14: not found" (livespec-dev-tooling-7bij7b).
 run_uv_cache_prune() {
-    local cache_home=$1 force=$2 output status retention_uid login
+    local cache_home=$1 output status retention_uid login
     local args=(cache prune)
-    [[ $force == true ]] && args+=(--force)
     retention_uid=$(id -u "$RETENTION_USER" 2>/dev/null) || retention_uid=$RETENTION_USER
     if [[ $retention_uid == "$(id -u)" ]]; then
         output=$("$UV_BIN" "${args[@]}" 2>&1)
@@ -150,8 +157,12 @@ uv_lock_timeout() {
     [[ $1 == *"Timeout"* && $1 == *"waiting for lock"* ]]
 }
 
+uv_cache_prune_skipped() {
+    log "uv cache prune skipped: $1; the prune is never forced, so a cache another uv process is using is left for a later run"
+}
+
 prune_uv_cache() {
-    local output path cache_home cache_dir owner_uid owner_gid force=false
+    local output path cache_home cache_dir owner_uid owner_gid
     if [[ $UV_BIN == */* && ! -x $UV_BIN ]]; then
         log "configured uv executable is not executable: $UV_BIN; no cache prune attempted"
         return 0
@@ -168,27 +179,25 @@ prune_uv_cache() {
         if [[ -n $owner_uid && -n $owner_gid ]]; then
             restore_uv_cache_ownership "$cache_dir" "$owner_uid" "$owner_gid"
         fi
-        uv_cache_is_in_use "$cache_dir" && force=true
+        if uv_cache_is_in_use "$cache_dir"; then
+            uv_cache_prune_skipped "the uv cache $cache_dir is in use by another uv process"
+            return 0
+        fi
     fi
-    output=$(run_uv_cache_prune "$cache_home" "$force")
+    output=$(run_uv_cache_prune "$cache_home")
     if [[ $? -eq 0 ]]; then
         log "uv cache prune: ${output//$'\n'/; }"
         return 0
     fi
-    if [[ $force == false ]] && uv_lock_timeout "$output"; then
-        output=$(run_uv_cache_prune "$cache_home" true)
-        if [[ $? -eq 0 ]]; then
-            log "uv cache prune: ${output//$'\n'/; }"
-            return 0
-        fi
+    if uv_lock_timeout "$output"; then
+        uv_cache_prune_skipped "uv timed out waiting for the cache lock another uv process holds"
+        return 0
     fi
     log "WARNING: the uv cache prune did not complete: ${output//$'\n'/; }"
-    if ! uv_lock_timeout "$output"; then
-        while IFS= read -r path; do
-            [[ -n $path ]] || continue
-            log "uv cache prune could not remove $path; continuing with the remaining steps"
-        done < <(unremovable_paths "$output")
-    fi
+    while IFS= read -r path; do
+        [[ -n $path ]] || continue
+        log "uv cache prune could not remove $path; continuing with the remaining steps"
+    done < <(unremovable_paths "$output")
 }
 
 # The scratch and bulk legs are separate because their liveness and ordering
