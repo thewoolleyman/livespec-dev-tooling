@@ -108,6 +108,22 @@ env:
 # guarded on refs/heads/master at the step, so a drill run is never recorded
 # as master CI telemetry. release-please and the image publishers trigger on
 # master in their own files and are untouched.
+#
+# DRILL CAVEAT: the range gates do NOT give a scratch push master's verdict.
+# check-red-green-replay, with its forge-revert and incident exemptions,
+# judges origin/master..HEAD. On a master push that range is empty; on a
+# scratch push it is every scratch-only commit. Two verdicts therefore differ
+# from what the same change gets on master, and a drill MUST NOT read either
+# red as an incident signal:
+# - an expedited repair merged into scratch carries no TDD trailers, and the
+#   incident admission applies only to a pull_request event (a push passes no
+#   observer URL or token), so the scratch push run fails the replay check
+#   where the master push run of the same merge passes;
+# - a principal revert of a scratch-only commit that touches product .py is
+#   not admitted by the forge-revert exemption, which requires the reverted
+#   commit to be an ancestor of origin/master, so that run is red as well.
+# Changing the range base for scratch pushes needs a spec ruling; until one
+# lands this difference is documented, not removed (7w757z review F2).
 on:
   pull_request:
   push:

@@ -37,8 +37,17 @@ _CI_WORKFLOW = Path(__file__).resolve().parents[2] / ".github" / "workflows" / "
 # The push trigger's branch filter, in order: the default branch, then the drill branches.
 _PUSH_BRANCHES = ["master", "incident-scratch/**"]
 
-# A ref read in an expression or in a shell line.
-_REF_READ = re.compile(r"github\.(?:ref|ref_name|head_ref)\b|\bGITHUB_(?:REF|REF_NAME|HEAD_REF)\b")
+# A ref or branch read in an expression or in a shell line: the context refs,
+# the push payload's own ref and base ref, and the repository's default branch.
+_REF_READ = re.compile(
+    "|".join(
+        (
+            r"github\.(?:ref|ref_name|head_ref|base_ref)\b",
+            r"github\.event\.(?:ref|base_ref|repository\.default_branch)\b",
+            r"\bGITHUB_(?:REF|REF_NAME|HEAD_REF|BASE_REF)\b",
+        )
+    )
+)
 
 # The single admitted ref read: export-telemetry's Honeycomb export step.
 _EXPORT_JOB = "export-telemetry"
@@ -85,8 +94,11 @@ def _ref_reads(*, workflow: dict[Any, Any]) -> list[str]:
     """Every place a job or step reads the ref, except the admitted export guard."""
     reads: list[str] = []
     for name, job in _jobs(workflow=workflow).items():
-        for key in ("if", "runs-on", "needs", "strategy", "outputs", "env", "concurrency"):
-            if key in job and _REF_READ.search(str(job[key])):
+        # Every job key but `steps` (if, runs-on, needs, strategy, outputs, env,
+        # concurrency, continue-on-error, container, services, timeout-minutes,
+        # with, ...) is scanned whole, so no key can be missed by an allowlist.
+        for key, value in job.items():
+            if key != "steps" and _REF_READ.search(str(value)):
                 reads.append(f"{name}.{key}")
         for step in _steps(job=job):
             label = f"{name}/{step.get('name', step.get('id', '?'))}"
@@ -198,6 +210,49 @@ def test_no_job_condition_routing_or_step_reads_the_ref_but_the_export_guard() -
         (
             "        run: bash export.sh\n",
             "        run: bash export.sh\n      - run: echo ${{ github.ref }}\n",
+        ),
+        (
+            "  check:\n    runs-on: ubuntu-latest\n",
+            (
+                "  check:\n    continue-on-error: ${{ github.ref != 'refs/heads/master' }}\n"
+                "    runs-on: ubuntu-latest\n"
+            ),
+        ),
+        (
+            "  check:\n    runs-on: ubuntu-latest\n",
+            (
+                "  check:\n    runs-on: ubuntu-latest\n"
+                "    container:\n      image: ${{ github.ref_name == 'master' && 'a' || 'b' }}\n"
+            ),
+        ),
+        (
+            "  check:\n    runs-on: ubuntu-latest\n",
+            (
+                "  check:\n    runs-on: ${{ github.event.repository.default_branch == 'master' "
+                "&& 'big' || 'small' }}\n"
+            ),
+        ),
+        (
+            "      - run: just check\n",
+            "      - run: echo ${{ github.event.ref }} && just check\n",
+        ),
+        (
+            "  check:\n    runs-on: ubuntu-latest\n",
+            (
+                "  check:\n    runs-on: ubuntu-latest\n"
+                "    services:\n      cache:\n        image: ${{ github.ref_name }}\n"
+            ),
+        ),
+        (
+            "  check:\n    runs-on: ubuntu-latest\n",
+            (
+                "  check:\n    runs-on: ubuntu-latest\n"
+                "    timeout-minutes: ${{ github.ref == 'refs/heads/master' && 90 || 5 }}\n"
+            ),
+        ),
+        (
+            "  check:\n    runs-on: ubuntu-latest\n",
+            "  check:\n    runs-on: ubuntu-latest\n    with:\n      branch: ${{ github.event.ref }}\n",
         ),
     ],
 )
