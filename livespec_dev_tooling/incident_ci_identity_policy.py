@@ -11,13 +11,13 @@ from pathlib import Path
 from typing import Any, cast
 
 from livespec_dev_tooling._incident_ci_identity_json import identity_json, unbase64url
+from livespec_dev_tooling.incident_protected_path import protected_path
 from livespec_dev_tooling.incident_strict_json import IncidentJsonRefusalError
 
 __all__: list[str] = [
     "CiIdentityPolicy",
     "identity_policy_intact",
     "load_identity_policy",
-    "protected_identity_path",
 ]
 
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-rqhqnb
@@ -63,37 +63,16 @@ class CiIdentityPolicy:
     crypto_sha256: str
 
 
-def protected_identity_path(*, path: Path) -> bool:
-    """Validate ownership of lexical links, resolved targets and every ancestor."""
-    try:
-        if not path.is_absolute() or not path.exists():
-            return False
-        resolved = path.resolve(strict=True)
-        for entry in (path, *path.parents, resolved, *resolved.parents):
-            link, info = entry.lstat(), entry.stat()
-            sticky = entry.is_dir() and info.st_uid == 0 and bool(info.st_mode & stat.S_ISVTX)
-            if (
-                link.st_uid not in {0, os.geteuid()}
-                or info.st_uid not in {0, os.geteuid()}
-                or (info.st_mode & 0o022 and not sticky)
-            ):
-                return False
-    except (OSError, RuntimeError):
-        return False
-    else:
-        return True
-
-
 def identity_policy_intact(*, policy: CiIdentityPolicy) -> bool:
     """Recheck optional data and crypto without adding either to mandatory files."""
     try:
         return (
-            protected_identity_path(path=policy.path)
+            protected_path(path=policy.path)
             and policy.path.is_file()
             and not stat.S_IMODE(policy.path.stat().st_mode) & 0o077
             and policy.path.stat().st_size <= _MAX_POLICY
             and hashlib.sha256(policy.path.read_bytes()).hexdigest() == policy.digest
-            and protected_identity_path(path=policy.crypto_path)
+            and protected_path(path=policy.crypto_path)
             and policy.crypto_path.is_file()
             and os.access(policy.crypto_path, os.X_OK)
             and hashlib.sha256(policy.crypto_path.read_bytes()).hexdigest() == policy.crypto_sha256
@@ -114,7 +93,7 @@ def load_identity_policy(*, descriptor: Any, repository: str) -> CiIdentityPolic
             return None
         path = Path(descriptor["path"])
         if (
-            not protected_identity_path(path=path)
+            not protected_path(path=path)
             or not path.is_file()
             or stat.S_IMODE(path.stat().st_mode) & 0o077
         ):

@@ -1527,6 +1527,14 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: dev host retention removes an aged Codex marketplace backup and leaves the live marketplaces",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, exercising one run of the committed retention script over a fixture ~/.codex/.tmp/marketplaces tree holding an aged marketplace-backup-* directory, a recent one and an aged live marketplace directory, with no process holding .staging.lock; livespec-dev-tooling-aaveom owns it.",
+    "work_item": "livespec-dev-tooling-aaveom"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: the dev host capacity check alerts when /tmp passes its threshold",
     "test": "TODO",
     "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, exercising the committed capacity-check script against stubbed filesystem usage and a stub ntfy endpoint, run twice inside the repeat interval; livespec-dev-tooling-tjldi2 owns it.",
@@ -2252,6 +2260,14 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: an incident recovery principal configured for a scratch branch recovers only that branch",
+    "test": "TODO",
+    "reason": "A real test at the integration tier or above is owed for this heading: the fake-forge recovery principal tests must drive a principal configured for a non-master branch through a moved-head overlap; livespec-dev-tooling-thhgeg owns it.",
+    "work_item": "livespec-dev-tooling-thhgeg"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: a reverted incident retains its original CI evidence before another attempt",
     "test": "TODO",
     "reason": "A real test at the integration tier or above is owed for this heading: the normally shipped incident capability must exercise this contract with ordinary-path controls; livespec-dev-tooling-kobmka owns the implementation and scenario evidence under plan livespec-dev-tooling-bqnzcm.",
@@ -2272,6 +2288,14 @@
     "test": "TODO",
     "reason": "A real test at the integration tier or above is owed for this heading: the normally shipped incident capability must exercise this contract with ordinary-path controls; livespec-dev-tooling-wlrlt2 owns the implementation and scenario evidence under plan livespec-dev-tooling-bqnzcm.",
     "work_item": "livespec-dev-tooling-wlrlt2"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: the incident fleet audit command refuses enablement for a consumer without verified serving evidence",
+    "test": "TODO",
+    "reason": "A real test at the integration tier or above is owed for this heading: the incident-fleet-audit recipe must be run as a child process against a fixture manifest and fake serving-version readers, and the enablement step must refuse a repository missing from its ready list; livespec-dev-tooling-3wcldx owns it.",
+    "work_item": "livespec-dev-tooling-3wcldx"
   },
   {
     "spec_root": "SPECIFICATION",

@@ -15,15 +15,23 @@ import sys
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
-from livespec_dev_tooling._incident_original_run_canonical import CanonicalPorts
-from livespec_dev_tooling._incident_run_types import CanonicalRefusalError
-from livespec_dev_tooling.incident_controller_installation import ControllerInstallation
-from livespec_dev_tooling.incident_forge_reads import ForgeReads
-from livespec_dev_tooling.incident_original_run_flows import EntryPorts
-from livespec_dev_tooling.incident_run_forge import ForgeRunReader
-from livespec_dev_tooling.incident_strict_json import strict_json
+_VENDOR_DIR = Path(__file__).resolve().parent / "_vendor"
+if str(_VENDOR_DIR) not in sys.path:
+    sys.path.insert(0, str(_VENDOR_DIR))
+
+from returns.pipeline import is_successful  # noqa: E402 — vendor-path-aware import.
+
+from livespec_dev_tooling._incident_original_run_canonical import CanonicalPorts  # noqa: E402
+from livespec_dev_tooling._incident_run_types import CanonicalRefusalError  # noqa: E402
+from livespec_dev_tooling.incident_authority_client import call_authority  # noqa: E402
+from livespec_dev_tooling.incident_controller_installation import (  # noqa: E402
+    ControllerInstallation,
+)
+from livespec_dev_tooling.incident_forge_reads import ForgeReads  # noqa: E402
+from livespec_dev_tooling.incident_original_run_flows import EntryPorts  # noqa: E402
+from livespec_dev_tooling.incident_run_forge import ForgeRunReader  # noqa: E402
 
 __all__: list[str] = ["installed_ports", "refresh_reference"]
 
@@ -53,10 +61,6 @@ def _run(
         timeout=_TIMEOUT,
         check=check,
     )
-
-
-def _flags(*, values: Mapping[str, object]) -> list[str]:
-    return [part for name, value in values.items() for part in ("--" + name, str(value))]
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -90,26 +94,20 @@ class _Authority:
     def __call__(
         self, action: str, query: Mapping[str, object], payload: Mapping[str, str]
     ) -> dict[str, Any]:
-        argv = [*self.command, action, "--repo", str(self.repo)]
-        argv += _flags(values={**query, **payload})
-        done = _run(argv=argv, cwd=self.repo, env=self.env, check=False)
-        reply = cast("object", strict_json(text=done.stdout, limit=None))
-        body = cast("dict[str, Any]", reply) if isinstance(reply, dict) else {}
-        result = body.get("result")
-        if body.get("status") == "refused" and isinstance(result, dict):
-            refusal = cast("dict[str, object]", result)
-            code = refusal.get("code")
-            if isinstance(code, str) and code:
-                raise CanonicalRefusalError(code=code, detail=str(refusal.get("detail", "")))
-        if (
-            done.returncode != 0
-            or body.get("schema") != 1
-            or body.get("status") != "verified"
-            or body.get("normal_factory_proof") is not False
-            or not isinstance(result, dict)
-        ):
-            raise ValueError(_UNVERIFIED)
-        return cast("dict[str, Any]", result)
+        checked = call_authority(
+            command=self.command,
+            action=action,
+            flags={"repo": self.repo, **query, **payload},
+            cwd=self.repo,
+            env=self.env,
+        )
+        if is_successful(checked):
+            return checked.unwrap()
+        refusal = checked.failure()
+        if refusal.canonical:
+            raise CanonicalRefusalError(code=refusal.code, detail=refusal.detail)
+        message = f"{_UNVERIFIED}: {refusal.code}: {refusal.detail}"
+        raise ValueError(message)
 
 
 def _account_environment() -> dict[str, str]:

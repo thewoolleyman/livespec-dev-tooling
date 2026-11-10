@@ -1,0 +1,109 @@
+# Rule-26 kill matrix of livespec-orchestrator-beads-fabro as a k8s Job,
+# rendered by ./render-kill-matrix-job.sh (see ./README.md). Placement:
+# poweredge-xubuntu, CPU request = limit = --workers (legacy-coordinator-agent
+# ruling, 2026-11-09). Plan fleet-mutation-testing-rule-26 (livespec-dev-tooling-fqnbtd).
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: rule26
+  labels:
+    app.kubernetes.io/part-of: fleet-mutation-testing-rule-26
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: rule26-orchestrator
+  namespace: rule26
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: local-path
+  resources:
+    requests:
+      storage: 100Gi
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: rule26-orchestrator-kill-matrix-@@RUN@@
+  namespace: rule26
+  labels:
+    app.kubernetes.io/part-of: fleet-mutation-testing-rule-26
+    livespec.io/work-item: livespec-dev-tooling-fqnbtd
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: 86400
+  ttlSecondsAfterFinished: 604800
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/part-of: fleet-mutation-testing-rule-26
+    spec:
+      restartPolicy: Never
+      nodeSelector:
+        kubernetes.io/hostname: poweredge-xubuntu
+      tolerations:
+        - key: node-role/ci
+          operator: Equal
+          value: pending
+          effect: NoSchedule
+        - key: livespec.io/factory-pressure
+          operator: Exists
+          effect: PreferNoSchedule
+      automountServiceAccountToken: false
+      containers:
+        - name: kill-matrix
+          image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.189.1
+          imagePullPolicy: IfNotPresent
+          command: ["/bin/bash", "-lc"]
+          args:
+            - |
+              set -euo pipefail
+              out=/data/@@RUN@@
+              mkdir -p "$out" /data/scratch
+              exec > >(tee -a "$out/run.log") 2>&1
+              echo ":: start $(date -u +%FT%TZ) on $(hostname)"
+              rm -rf /data/orchestrator /data/dev-tooling
+              git clone --quiet https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro /data/orchestrator
+              git -C /data/orchestrator checkout --quiet --detach @@ORCH_SHA@@
+              git clone --quiet https://github.com/thewoolleyman/livespec-dev-tooling /data/dev-tooling
+              git -C /data/dev-tooling checkout --quiet --detach @@ENGINE_SHA@@
+              cd /data/orchestrator
+              uv sync --frozen
+              uv pip install --python .venv/bin/python --no-deps /data/dev-tooling
+              # Widen mutation to the whole first-party package and test tree.
+              .venv/bin/python - <<'PY'
+              from pathlib import Path
+              p = Path("pyproject.toml")
+              text = p.read_text(encoding="utf-8")
+              assert "[tool.mutmut]" not in text, "unexpected existing [tool.mutmut]"
+              p.write_text(text + '\n[tool.mutmut]\npaths_to_mutate = [".claude-plugin/scripts/livespec_orchestrator_beads_fabro/"]\ntests_dir = ["tests/"]\n', encoding="utf-8")
+              PY
+              echo ":: orchestrator $(git rev-parse HEAD) engine $(git -C /data/dev-tooling rev-parse HEAD)"
+              echo ":: engine start $(date -u +%FT%TZ)"
+              s=$(date +%s)
+              rc=0
+              .venv/bin/python -B -m livespec_dev_tooling.mutation_kill_matrix_runner /data/orchestrator \
+                --workers @@WORKERS@@ --timeout 120 --workspace /data/scratch \
+                --cache "$out/mutation-kill-matrix-cache.json" || rc=$?
+              echo ":: engine end $(date -u +%FT%TZ) rc=${rc} elapsed_s=$(( $(date +%s) - s ))"
+              cp -f reports/mutation-kill-matrix.json "$out/" 2>/dev/null || true
+              exit "${rc}"
+          env:
+            - name: UV_CACHE_DIR
+              value: /data/uv-cache
+            - name: PYTHONDONTWRITEBYTECODE
+              value: "1"
+          resources:
+            requests:
+              cpu: "@@WORKERS@@"
+              memory: 24Gi
+            limits:
+              cpu: "@@WORKERS@@"
+              memory: 24Gi
+          volumeMounts:
+            - name: data
+              mountPath: /data
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: rule26-orchestrator

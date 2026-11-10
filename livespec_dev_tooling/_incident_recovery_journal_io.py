@@ -18,6 +18,7 @@ from livespec_dev_tooling._incident_recovery_journal_history import JournalHisto
 from livespec_dev_tooling._incident_recovery_journal_identity import JournalCodec
 from livespec_dev_tooling._incident_recovery_journal_types import JournalResult, RetainedAction
 from livespec_dev_tooling.incident_controller_installation import ControllerInstallation
+from livespec_dev_tooling.incident_protected_path import protected_path
 from livespec_dev_tooling.incident_strict_json import IncidentJsonRefusalError
 
 __all__: list[str] = ["JournalStore"]
@@ -34,24 +35,10 @@ def _resolved(*, path: Path) -> Path:
         raise OSError(_UNAVAILABLE) from error
 
 
-def _protected(*, path: Path) -> bool:
-    resolved = _resolved(path=path)
-    for entry in (path, *path.parents, resolved, *resolved.parents):
-        link, target = entry.lstat(), entry.stat()
-        sticky = entry.is_dir() and target.st_uid == 0 and bool(target.st_mode & stat.S_ISVTX)
-        if (
-            link.st_uid not in {0, os.geteuid()}
-            or target.st_uid not in {0, os.geteuid()}
-            or (target.st_mode & 0o022 and not sticky)
-        ):
-            return False
-    return path.is_absolute()
-
-
 def _private(*, path: Path, directory: bool = False) -> None:
     mode = path.stat().st_mode
     valid_kind = stat.S_ISDIR(mode) if directory else stat.S_ISREG(mode)
-    if not (_protected(path=path) and valid_kind and not stat.S_IMODE(mode) & 0o077):
+    if not (protected_path(path=path) and valid_kind and not stat.S_IMODE(mode) & 0o077):
         message = "unprotected recovery journal path"
         raise OSError(message)
 

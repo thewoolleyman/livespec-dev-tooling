@@ -102,7 +102,7 @@ def test_an_override_address_is_dialed_while_the_url_host_is_verified_and_sent(
     monkeypatch.setenv(_VARIABLE, "100.89.189.118")
 
     assert _boundary().current(query=_query()) is True
-    assert seen["tcp"] == [{"address": ("100.89.189.118", 8765), "timeout": 60}]
+    assert seen["tcp"] == [{"address": ("100.89.189.118", 8765), "timeout": 630}]
     assert [t["server_hostname"] for t in seen["tls"]] == [_HOST]
     assert seen["tls"][0]["sock"] is not None and seen["tls"][0]["sock"].kind == "tcp"
     assert [c["host"] for c in seen["connections"]] == [_HOST]
@@ -117,7 +117,7 @@ def test_an_ipv6_override_literal_is_dialed_the_same_way(monkeypatch) -> None:
     monkeypatch.setenv(_VARIABLE, "fd7a:115c:a1e0::5f01:bd8d")
 
     assert _boundary().admitted(query=_query()) is True
-    assert seen["tcp"] == [{"address": ("fd7a:115c:a1e0::5f01:bd8d", 8765), "timeout": 60}]
+    assert seen["tcp"] == [{"address": ("fd7a:115c:a1e0::5f01:bd8d", 8765), "timeout": 630}]
     assert [t["server_hostname"] for t in seen["tls"]] == [_HOST]
 
 

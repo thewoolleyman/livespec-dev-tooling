@@ -62,7 +62,7 @@ def test_package_digest_is_the_loaders_algorithm(tmp_path, monkeypatch) -> None:
         path = tmp_path / relative
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(body)
-    monkeypatch.setattr(installation, "_protected", lambda *, path: path is not None)
+    monkeypatch.setattr(installation, "protected_path", lambda *, path: path is not None)
     assert _load().package_digest(root=tmp_path) == installation._package_digest(root=tmp_path)
 
 
@@ -95,7 +95,7 @@ def host(tmp_path, monkeypatch):
     config_path.chmod(0o600)
     # The developer tree is not a protected installation (group-writable
     # ancestors); the digest and argv rendering are what is under test here.
-    monkeypatch.setattr(installation, "_protected", lambda *, path: path is not None)
+    monkeypatch.setattr(installation, "protected_path", lambda *, path: path is not None)
     monkeypatch.setattr(installation.importlib.metadata, "version", lambda _: "1.2.3")
     return tmp_path, reader_script, config_path
 

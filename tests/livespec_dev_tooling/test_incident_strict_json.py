@@ -5,7 +5,6 @@ from __future__ import annotations
 import ast
 import importlib
 import json
-from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
@@ -14,8 +13,7 @@ from returns.pipeline import is_successful
 
 from livespec_dev_tooling import incident_ci_attachment as attachment_module
 from livespec_dev_tooling import incident_ci_job_collection as collection_module
-from livespec_dev_tooling._incident_provenance_protocol import decode_historical_reply
-from livespec_dev_tooling.incident_provenance import IncidentCommitQuery
+from livespec_dev_tooling.incident_authority_client import check_authority_reply
 from tests.livespec_dev_tooling import test_incident_ci_attachment_edges as edge_tests
 
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-utw7u6
@@ -93,51 +91,25 @@ def test_the_named_decoders_share_the_strict_decoder() -> None:
             JournalValues.decode(raw=text.encode(), limit=1024)
 
 
-def _query() -> IncidentCommitQuery:
-    return IncidentCommitQuery(
-        repository="owner/repo",
-        item_id="incident-1",
-        attempt_id="attempt-2",
-        phase="repair",
-        operation_id="operation-3",
-        generation=4,
-        owner="operator-5",
-        base="a" * 40,
-        head="b" * 40,
-        pr_number=6,
-        commit_sha="c" * 40,
-        tree_sha="d" * 40,
-    )
-
-
 def _verified_reply(*, extra: str) -> str:
-    query = _query()
-    attempt: dict[str, object] = dict(asdict(query))
-    del attempt["commit_sha"]
-    del attempt["tree_sha"]
-    attempt.update(
-        landed_commits=[query.commit_sha],
-        landed_trees=[query.tree_sha],
-        original_paths=["src/repair.py"],
-        deferred_work=[],
-        repayment_required=False,
-    )
     response = {
         "schema": 1,
         "status": "verified",
         "authorizes_current_effects": False,
         "normal_factory_proof": False,
-        "result": {"attempt": attempt, "committed_token_id": "a", "current_token_id": "b"},
+        "result": {"attempt": {}},
     }
     return json.dumps(response)[:-1] + extra + "}"
 
 
-def test_provenance_reply_with_a_nonfinite_number_is_refused() -> None:
-    clean = decode_historical_reply(stdout=_verified_reply(extra=""), returncode=0, query=_query())
+def test_authority_reply_with_a_nonfinite_number_or_duplicate_key_is_refused() -> None:
+    clean = check_authority_reply(
+        action="read-history", returncode=0, stdout=_verified_reply(extra=""), stderr=""
+    )
     assert is_successful(clean)
-    for extra in (', "x": NaN', ', "x": Infinity', ', "x": 1e999'):
-        result = decode_historical_reply(
-            stdout=_verified_reply(extra=extra), returncode=0, query=_query()
+    for extra in (', "x": NaN', ', "x": Infinity', ', "x": 1e999', ', "schema": 1'):
+        result = check_authority_reply(
+            action="read-history", returncode=0, stdout=_verified_reply(extra=extra), stderr=""
         )
         assert not is_successful(result)
 

@@ -1,7 +1,8 @@
-"""Consistency checks for replies from the registered canonical history reader.
+"""Consistency checks for the result of a verified canonical history reply.
 
-Only the process adapter calls this decoder. It does not read an authority store,
-validate a token chain, authorize current effects or manufacture normal proof.
+The authority client has already checked the process protocol. This decoder checks
+only the exact attribution. It does not read an authority store, validate a token
+chain, authorize current effects or manufacture normal proof.
 """
 
 from __future__ import annotations
@@ -14,17 +15,15 @@ _VENDOR_DIR = Path(__file__).resolve().parent / "_vendor"
 if str(_VENDOR_DIR) not in sys.path:
     sys.path.insert(0, str(_VENDOR_DIR))
 
-from returns.pipeline import is_successful  # noqa: E402 — vendor-path-aware import.
-from returns.result import Failure, Result, Success, safe  # noqa: E402 — vendor-path-aware import.
+from returns.result import Failure, Result, Success  # noqa: E402 — vendor-path-aware import.
 
 from livespec_dev_tooling._incident_provenance_types import (  # noqa: E402
     HistoricalIncidentProof,
     IncidentCommitQuery,
     IncidentProvenanceRefusal,
 )
-from livespec_dev_tooling.incident_strict_json import strict_json  # noqa: E402
 
-__all__: list[str] = ["decode_historical_reply"]
+__all__: list[str] = ["decode_historical_result"]
 
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-gvylzw
 _IDENTITY_FIELDS = (
@@ -39,17 +38,6 @@ _IDENTITY_FIELDS = (
     "head",
     "pr_number",
 )
-_REFUSED_EXIT = 78
-
-
-@safe
-def _json(*, text: str) -> object:
-    """JSON parsing is a data boundary with an expected failure channel."""
-    return cast(object, strict_json(text=text, limit=None))
-
-
-def _mapping(*, value: object) -> dict[str, object]:
-    return cast(dict[str, object], value) if isinstance(value, dict) else {}
 
 
 def _texts(*, value: object) -> tuple[str, ...] | None:
@@ -73,7 +61,7 @@ def _invalid() -> Result[HistoricalIncidentProof, IncidentProvenanceRefusal]:
     )
 
 
-def _verified(
+def decode_historical_result(
     *, result: dict[str, object], query: IncidentCommitQuery
 ) -> Result[HistoricalIncidentProof, IncidentProvenanceRefusal]:
     raw_attempt = result.get("attempt")
@@ -131,45 +119,3 @@ def _verified(
             repayment_required=repayment,
         )
     )
-
-
-def _canonical_refusal(
-    *, response: dict[str, object], result: dict[str, object]
-) -> Result[HistoricalIncidentProof, IncidentProvenanceRefusal]:
-    code = result.get("code")
-    detail = result.get("detail")
-    if (
-        response.get("status") == "refused"
-        and isinstance(code, str)
-        and code
-        and isinstance(detail, str)
-    ):
-        return _refuse(code=code, detail=detail)
-    return _invalid()
-
-
-def decode_historical_reply(
-    *, stdout: str, returncode: int, query: IncidentCommitQuery
-) -> Result[HistoricalIncidentProof, IncidentProvenanceRefusal]:
-    """Check the process protocol and exact attribution without accepting normal proof."""
-    if returncode not in {0, _REFUSED_EXIT}:
-        return _refuse(
-            code="incident-reader-unavailable", detail="canonical history process failed"
-        )
-    parsed = _json(text=stdout)
-    if not is_successful(parsed):
-        return _invalid()
-    response = _mapping(value=parsed.unwrap())
-    if (
-        type(response.get("schema")) is not int
-        or response.get("schema") != 1
-        or response.get("authorizes_current_effects") is not False
-        or response.get("normal_factory_proof") is not False
-    ):
-        return _invalid()
-    result = _mapping(value=response.get("result"))
-    if returncode == _REFUSED_EXIT:
-        return _canonical_refusal(response=response, result=result)
-    if response.get("status") != "verified":
-        return _invalid()
-    return _verified(result=result, query=query)

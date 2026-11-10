@@ -23,30 +23,38 @@ _PREFIX = "incident JSON refused: "
 
 
 class IncidentJsonRefusalError(Exception):
-    """The single refusal shape for every incident JSON decoder."""
+    """The single refusal shape for every incident JSON decoder.
+
+    ``kind`` names the ambiguity for a caller that keeps its own refusal codes:
+    ``duplicate-key``, ``non-finite``, ``nesting`` or the default ``malformed``.
+    """
+
+    kind: str = "malformed"
 
 
-def _refuse(*, detail: str) -> NoReturn:
-    raise IncidentJsonRefusalError(_PREFIX + detail)
+def _refuse(*, detail: str, kind: str = "malformed") -> NoReturn:
+    refusal = IncidentJsonRefusalError(_PREFIX + detail)
+    refusal.kind = kind
+    raise refusal
 
 
 def _unique(*, pairs: list[tuple[str, Any]]) -> dict[str, Any]:
     value: dict[str, Any] = {}
     for key, item in pairs:
         if key in value:
-            _refuse(detail="duplicate key")
+            _refuse(detail="duplicate key", kind="duplicate-key")
         value[key] = item
     return value
 
 
 def _constant(*, name: str) -> NoReturn:
-    _refuse(detail="non-finite number " + name)
+    _refuse(detail="non-finite number " + name, kind="non-finite")
 
 
 def _number(*, text: str) -> float:
     value = float(text)
     if not math.isfinite(value):
-        _refuse(detail="non-finite number " + text)
+        _refuse(detail="non-finite number " + text, kind="non-finite")
     return value
 
 
@@ -72,6 +80,6 @@ def strict_json(*, text: str | bytes, limit: int | None = DEFAULT_LIMIT) -> Any:
     except UnicodeDecodeError:
         _refuse(detail="input is not UTF-8")
     except RecursionError:
-        _refuse(detail="nesting is too deep")
+        _refuse(detail="nesting is too deep", kind="nesting")
     except ValueError:
         _refuse(detail="malformed JSON")

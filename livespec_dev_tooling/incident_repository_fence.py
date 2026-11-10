@@ -13,6 +13,8 @@ from contextvars import ContextVar
 from dataclasses import dataclass
 from pathlib import Path
 
+from livespec_dev_tooling.incident_protected_path import protected_path
+
 __all__: list[str] = [
     "REPOSITORY_FENCE_FD_ENV",
     "RepositoryFence",
@@ -43,20 +45,11 @@ _FENCES: ContextVar[tuple[RepositoryFence, ...]] = ContextVar("repository_fences
 
 
 def _protected_directory(*, directory: Path) -> None:
-    try:
-        resolved = directory.resolve(strict=True)
-    except RuntimeError as error:
-        raise OSError(_FENCE_REFUSAL) from error
-    for entry in (directory, *directory.parents, resolved, *resolved.parents):
-        link, target = entry.lstat(), entry.stat()
-        sticky = entry.is_dir() and target.st_uid == 0 and bool(target.st_mode & stat.S_ISVTX)
-        if (
-            link.st_uid not in {0, os.geteuid()}
-            or target.st_uid not in {0, os.geteuid()}
-            or (target.st_mode & 0o022 and not sticky)
-        ):
-            raise OSError(_FENCE_REFUSAL)
-    if not directory.is_absolute() or not directory.is_dir() or directory.stat().st_mode & 0o077:
+    if (
+        not protected_path(path=directory)
+        or not directory.is_dir()
+        or directory.stat().st_mode & 0o077
+    ):
         raise OSError(_FENCE_REFUSAL)
 
 

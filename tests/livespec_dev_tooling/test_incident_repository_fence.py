@@ -94,6 +94,24 @@ def test_existing_only_refuses_missing_or_unprotected_state_without_creating(tmp
     _refuses(repository_lock(directory=tmp_path, repository=_REPOSITORY, existing_only=True))
 
 
+def test_existing_only_refuses_a_group_writable_ancestor_of_a_private_leaf(tmp_path):
+    outer = tmp_path / "outer"
+    state = outer / "state"
+    state.mkdir(parents=True, mode=0o700)
+    outer.chmod(0o700)
+    with repository_lock(directory=state, repository=_REPOSITORY):
+        pass
+    state.chmod(0o700)
+    _path(state).chmod(0o600)
+    with repository_lock(directory=state, repository=_REPOSITORY, existing_only=True):
+        pass
+    outer.chmod(0o770)
+    try:
+        _refuses(repository_lock(directory=state, repository=_REPOSITORY, existing_only=True))
+    finally:
+        outer.chmod(0o700)
+
+
 @pytest.mark.parametrize("descriptor", [True, -1, 0, 1, 2, 999999])
 def test_invalid_borrow_descriptor_refuses(tmp_path, descriptor):
     _refuses(

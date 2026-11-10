@@ -1350,6 +1350,24 @@ And the live session's directory MUST remain in place
 
 And the run's log MUST name the removed directory and the free space of the root filesystem and of `/tmp` before and after
 
+## Scenario: dev host retention removes an aged Codex marketplace backup and leaves the live marketplaces
+
+Given the retention user's `~/.codex/.tmp/marketplaces` holding a `marketplace-backup-*` directory unmodified for longer than the scratch retention period
+
+And a `marketplace-backup-*` directory modified within the scratch retention period
+
+And a live marketplace directory unmodified for longer than the scratch retention period
+
+And no process holding `~/.codex/.tmp/marketplaces/.staging.lock`
+
+When one run of the dev host retention script completes
+
+Then the aged backup directory MUST be removed
+
+And the recent backup directory and the live marketplace directory MUST remain in place
+
+And the run's log MUST name the removed directory
+
 ## Scenario: the dev host capacity check alerts when /tmp passes its threshold
 
 Given `/tmp` on the dev host with a used share at or above its configured threshold
@@ -3180,6 +3198,20 @@ And the authorized revert merges through the scoped recovery principal without l
 And recovery records exact action and merge receipts across timeout or restart while ordinary actors retain their existing branch protection obligations.
 ```
 
+## Scenario: an incident recovery principal configured for a scratch branch recovers only that branch
+
+```gherkin
+Given a recovery principal whose released controller's installation configuration names a non-master scratch branch as its target branch
+And an authorized recovery action for an incident patch landed on that scratch branch
+And the scratch branch's head has moved since the action was authorized, through a later change that overlaps the incident patch
+When the principal publishes the action's inverse
+Then it MUST recompute the inverse against the scratch branch's current head
+And it MUST record the genuine overlap as an owned rollback-conflict instead of a merge
+And it MUST NOT read or move master
+And a request naming any other branch MUST be refused rather than applied to master
+And an installation configuration that names no target branch MUST target master.
+```
+
 ## Scenario: a reverted incident retains its original CI evidence before another attempt
 
 ```gherkin
@@ -3211,6 +3243,20 @@ Then the fleet audit expands the committed manifest and reports an explicit impl
 And enablement requires serving-version evidence for gate readers, templates, driver hooks, recovery authorization and independent controller in each applicable consumer.
 And consumer closure retains normal factory proof over the cumulative incident scope and all deferred spec and verification obligations.
 And the operator can inspect attempts, skip reasons, focused evidence, CI runs, rollback and final factory proof through the incident item identity.
+```
+
+## Scenario: the incident fleet audit command refuses enablement for a consumer without verified serving evidence
+
+```gherkin
+Given livespec core's committed fleet manifest, authenticated against core's master
+And one manifest consumer whose running independent controller's serving version cannot be read
+When the operator runs `just incident-fleet-audit`
+Then it MUST print one row per incident surface and manifest consumer, each naming the consumer, the surface and a disposition of implemented, deliberately-normal, not-applicable or unclassified
+And that consumer's controller row MUST be unclassified
+And the command MUST exit non-zero, naming the surface and consumer of every unclassified row
+And its ready list MUST NOT include that consumer, and its findings MUST name that consumer and the missing controller serving-version evidence
+And the incident enablement step run for that consumer MUST refuse, exit non-zero and enable nothing, naming the consumer and the missing evidence
+And the same command run against a manifest whose committed identity cannot be authenticated MUST report that finding, list zero ready repositories and exit non-zero.
 ```
 
 ## Scenario: a macOS developer host reads the ledger tenant through the loopback forward

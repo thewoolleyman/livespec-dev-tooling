@@ -30,11 +30,11 @@ _MAX_TOKEN = 4096
 _MIN_TOKEN_CHARACTER = 33
 _ACCEPTED = 202
 # The job's read ceiling. The observer answers /current only after its own
-# reader pass, whose ceiling is incident_observer_authority._READER_TIMEOUT_SECONDS
-# (45 s); this stays above that plus the observer's overhead so the job
-# outwaits the pass instead of racing it, and about five such reads happen
-# per incident run (livespec-dev-tooling-ws2idp, 2026-11-06).
-_OBSERVER_READ_TIMEOUT_SECONDS = 60
+# reader pass, whose ceiling is incident_authority_client.AUTHORITY_CALL_CEILING_SECONDS
+# (600 s, the one bound every authority call shares); this stays above that plus
+# the observer's overhead so the job outwaits the pass instead of racing it
+# (livespec-dev-tooling-ws2idp, 2026-11-06; livespec-dev-tooling-iezdmk).
+_OBSERVER_READ_TIMEOUT_SECONDS = 630
 # Where to open the TCP connection when the URL's hostname does not resolve to
 # the observer from the runner. A runner pod resolves the observer's ts.net name
 # through public DNS to Tailscale's Funnel ingress, where the tailnet port is not

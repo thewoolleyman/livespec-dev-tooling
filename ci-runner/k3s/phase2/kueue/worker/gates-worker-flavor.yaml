@@ -13,14 +13,29 @@
 apiVersion: kueue.x-k8s.io/v1beta2
 kind: ResourceFlavor
 metadata:
-  name: gates-worker-@ARCH@-flavor
+  name: gates-worker-taint-@ARCH@-flavor
 spec:
   nodeLabels:
     homelab-worker.livespec.dev/class: worker
     kubernetes.io/arch: @ARCH@
-  tolerations:
+  # nodeTaints, NOT tolerations. Kueue INJECTS a flavor's tolerations into every
+  # pod it assigns, so a flavor carrying the class-taint toleration admitted any
+  # gate that did not itself exclude arm64. A gate rendered by a repository's
+  # older vendored renderer carries no arch rule, so console's python-rust gates
+  # (amd64-only) were placed here and died with exec format error (2026-11-09
+  # 22:29Z). With nodeTaints, Kueue assigns this flavor only to a pod that
+  # ALREADY tolerates the class taint, which only the current gate template
+  # does; its required kubernetes.io/arch affinity still keeps an amd64-only gate
+  # off an arm64 worker.
+  # RENAMED from gates-worker-@ARCH@-flavor for this change: Kueue refuses to
+  # change a flavor's tolerations once topologyName is set, so the old flavor
+  # cannot be edited in place. converge-worker-queues.sh drops every
+  # gates-worker-*-flavor entry from gates-cq before adding the current ones,
+  # so the old name leaves the queue in the same patch. The orphaned
+  # gates-worker-arm64-flavor ResourceFlavor is then unused; deleting it is a
+  # recorded follow-up on plan homelab-k8s-worker-nodes.
+  nodeTaints:
     - key: homelab-worker.livespec.dev/class
-      operator: Equal
       value: worker
       effect: NoSchedule
   topologyName: gates-hostname

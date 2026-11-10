@@ -51,6 +51,7 @@ from livespec_runtime_budget.github_budget import (  # noqa: E402 — vendor-pat
 from returns.io import IOFailure  # noqa: E402
 
 from livespec_dev_tooling.budgeted_gh import github_api_url  # noqa: E402
+from livespec_dev_tooling.incident_protected_path import protected_path  # noqa: E402
 from livespec_dev_tooling.incident_strict_json import (  # noqa: E402
     IncidentJsonRefusalError,
     strict_json,
@@ -94,7 +95,7 @@ class AppRefusal:
 
 
 def _protected_file(*, path: Path) -> bool:
-    if not path.is_absolute() or path.is_symlink() or not path.is_file():
+    if not protected_path(path=path) or path.is_symlink() or not path.is_file():
         return False
     info = path.stat()
     return (

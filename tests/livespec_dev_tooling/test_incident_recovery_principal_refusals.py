@@ -254,5 +254,27 @@ def test_the_ledger_refuses_an_unprotected_directory(world):
         held.__enter__()
 
 
+@pytest.mark.parametrize("operation", ["hold", "load"])
+def test_the_ledger_refuses_a_group_writable_ancestor_of_a_private_leaf(world, operation):
+    directory = world.installation.state / "recovery-journal"
+    record = directory / f"{'a' * 64}.publication.json"
+    directory.mkdir(mode=0o700, exist_ok=True)
+    directory.chmod(0o700)
+    record.write_text("{}")
+    record.chmod(0o600)
+    ledger = PublicationLedger(directory=directory)
+    ancestor = directory.parent
+    ancestor.chmod(0o770)
+    try:
+        attempt = {
+            "hold": lambda: ledger.hold(action_id="a" * 64).__enter__(),
+            "load": lambda: ledger.load(action_id="a" * 64),
+        }[operation]
+        with pytest.raises(OSError, match="unprotected"):
+            attempt()
+    finally:
+        ancestor.chmod(0o700)
+
+
 def _scope(world):
     return world.principal().effects().landed(intent=world.intent)

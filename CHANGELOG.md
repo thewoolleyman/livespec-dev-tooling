@@ -58,6 +58,30 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.190.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.189.1...v1.190.0) (2026-11-09)
+
+
+### Features
+
+* arm gate severity levers ([328a9ef](https://github.com/thewoolleyman/livespec-dev-tooling/commit/328a9ef44ab0389b75b636f800c2a77d5d4a2cda))
+* enforce gate severity lever parity ([27a9743](https://github.com/thewoolleyman/livespec-dev-tooling/commit/27a9743ccbd64a807c8e4d51dc9eb8937e911773))
+* the rule-26 kill-matrix engine is pure code, parallel, incremental and schedulable (livespec-dev-tooling-dkgwsm) ([2f8cfb9](https://github.com/thewoolleyman/livespec-dev-tooling/commit/2f8cfb9e243b6ff41769e94f6e8e8e19ea6f11bd))
+
+
+### Bug Fixes
+
+* **agent_hooks:** refuse a full-suite pytest that follows a targeted pytest ([49a7741](https://github.com/thewoolleyman/livespec-dev-tooling/commit/49a77410c25773ff0fb912bfefe046c32df7c09b))
+* align gate renderer stream assertion ([aeefb9c](https://github.com/thewoolleyman/livespec-dev-tooling/commit/aeefb9cf225bb4ae22da911431fdc3a65695ae32))
+* **check:** fail closed when the severity-lever source is missing ([f90db0d](https://github.com/thewoolleyman/livespec-dev-tooling/commit/f90db0dcd379acf51621bea0f9c38ec967cb337a))
+* **check:** fail the aggregate closed when the severity-lever source is unreadable ([9372b11](https://github.com/thewoolleyman/livespec-dev-tooling/commit/9372b1166dd8e4e1bb81cdb2a312e71797dd99ab))
+* **coverage:** bare pytest --cov spelling must combine branch and subprocess data (livespec-dev-tooling-wj45qt) ([52d0627](https://github.com/thewoolleyman/livespec-dev-tooling/commit/52d062751ae486b9aa34a9eec3054d7c32c14756))
+* expose delegated gate summary ordering race ([c571b25](https://github.com/thewoolleyman/livespec-dev-tooling/commit/c571b25a37d6168065a2a91f3ed9a068bda0b789))
+* fail closed when the committed severity-lever source is missing ([bc01250](https://github.com/thewoolleyman/livespec-dev-tooling/commit/bc01250c28d6ce7361006b574a17a5d7acb01f66))
+* **gate_command:** read a uv run option ahead of the program as no program ([338fc0e](https://github.com/thewoolleyman/livespec-dev-tooling/commit/338fc0e0b861bbe53a6b1f1a3592e2fc1d9c303c))
+* keep the shim stream fidelity check and the capture-writer assertion in place ([4e03ac5](https://github.com/thewoolleyman/livespec-dev-tooling/commit/4e03ac5113c2ae9adbca7208652a4881be39c102))
+* show a wall time that rounds up into the next unit in that unit ([ecb55a2](https://github.com/thewoolleyman/livespec-dev-tooling/commit/ecb55a21c01844cc0d59b50f5fe8ad896923c707))
+* the keyword-only check exempts pytest hook implementations, the third-party callbacks the spec exempts ([1d76ad7](https://github.com/thewoolleyman/livespec-dev-tooling/commit/1d76ad7ec455beddeaa4cd7b9bbd3e67ed42ea08))
+
 ## [1.189.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.189.0...v1.189.1) (2026-11-09)
 
 

@@ -20,6 +20,7 @@ from livespec_dev_tooling.incident_ci_identity_policy import (
     CiIdentityPolicy,
     load_identity_policy,
 )
+from livespec_dev_tooling.incident_protected_path import protected_path
 from livespec_dev_tooling.incident_strict_json import IncidentJsonRefusalError, strict_json
 
 __all__: list[str] = ["ControllerInstallation"]
@@ -156,7 +157,7 @@ def _valid_files(*, manifest: dict[str, Any]) -> bool:
         isinstance(raw_files, dict)
         and _command_files(manifest=manifest, files=files)
         and all(
-            _protected(path=Path(name))
+            protected_path(path=Path(name))
             and hashlib.sha256(Path(name).read_bytes()).hexdigest() == digest
             for name, digest in files.items()
         )
@@ -170,9 +171,9 @@ def _valid_paths(*, data: dict[str, Any]) -> bool:
         and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9-]*/[A-Za-z0-9_.-]+", data["repository"])
         is not None
         and repo.is_dir()
-        and _protected(path=repo)
+        and protected_path(path=repo)
         and state.is_dir()
-        and _protected(path=state)
+        and protected_path(path=state)
         and stat.S_IMODE(state.stat().st_mode) == _PRIVATE_DIRECTORY_MODE
         and not state.resolve().is_relative_to(repo.resolve())
         and not Path(__file__).resolve().parent.is_relative_to(repo.resolve())
@@ -190,14 +191,22 @@ def _valid_jobs(*, jobs: Any) -> bool:
 
 
 def _record(*, path: Path) -> dict[str, Any] | None:
-    if not _protected(path=path) or not path.is_file() or stat.S_IMODE(path.stat().st_mode) & 0o077:
+    if (
+        not protected_path(path=path)
+        or not path.is_file()
+        or stat.S_IMODE(path.stat().st_mode) & 0o077
+    ):
         return None
     data: object = strict_json(text=path.read_bytes(), limit=None)
     return cast("dict[str, Any]", data) if isinstance(data, dict) else None
 
 
 def _secret(*, path: Path) -> bytes | None:
-    if not _protected(path=path) or not path.is_file() or stat.S_IMODE(path.stat().st_mode) & 0o077:
+    if (
+        not protected_path(path=path)
+        or not path.is_file()
+        or stat.S_IMODE(path.stat().st_mode) & 0o077
+    ):
         return None
     value = path.read_bytes()
     return value if len(value) >= _SECRET_BYTES else None
@@ -224,33 +233,20 @@ def _command_files(*, manifest: dict[str, Any], files: dict[str, Any]) -> bool:
                 return False
     # The actual interpreter and every imported dependency are also protected;
     # -I in the service unit prevents PYTHONPATH and user-site injection.
-    return _protected(path=Path(sys.executable)) and str(Path(sys.executable).resolve()) in files
+    return (
+        protected_path(path=Path(sys.executable)) and str(Path(sys.executable).resolve()) in files
+    )
 
 
 def _package_digest(*, root: Path) -> str | None:
     digest = hashlib.sha256()
     for path in sorted(root.rglob("*.py")):
-        if not _protected(path=path):
+        if not protected_path(path=path):
             return None
         digest.update(str(path.relative_to(root)).encode() + b"\0")
         digest.update(path.read_bytes())
     for module in tuple(sys.modules.values()):
         name = getattr(module, "__file__", None)
-        if name and Path(name).is_absolute() and not _protected(path=Path(name)):
+        if name and Path(name).is_absolute() and not protected_path(path=Path(name)):
             return None
     return digest.hexdigest()
-
-
-def _protected(*, path: Path) -> bool:
-    if not path.is_absolute() or not path.exists():
-        return False
-    resolved = path.resolve(strict=True)
-    for entry in (path, *path.parents, resolved, *resolved.parents):
-        link = entry.lstat()
-        if link.st_uid not in {0, os.geteuid()}:
-            return False
-        info = entry.stat()
-        sticky_root = entry.is_dir() and info.st_uid == 0 and bool(info.st_mode & stat.S_ISVTX)
-        if info.st_uid not in {0, os.geteuid()} or (info.st_mode & 0o022 and not sticky_root):
-            return False
-    return True
