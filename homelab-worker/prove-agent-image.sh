@@ -108,7 +108,7 @@ check bwrap "bwrap --version"
 # The Claude CLI the ACP adapter spawns for each session, not just the adapter on
 # PATH: on the M4's second factory run (2026-11-09, livespec-dev-tooling-ko26ez.9)
 # the adapter was present but "The Claude Agent process exited unexpectedly".
-check claude-cli-runs "c=\$(find / -path '*claude-agent-sdk-linux-*/claude' -type f 2>/dev/null | head -n 1); [ -n \"\$c\" ] || { echo 'no claude-agent-sdk native CLI'; exit 1; }; \"\$c\" --version"
+check claude-cli-runs "c=\$(find / -path '*claude-agent-sdk-linux-*/claude' -type f -print -quit 2>/dev/null); [ -n \"\$c\" ] || { echo 'no claude-agent-sdk native CLI'; exit 1; }; \"\$c\" --version"
 # pyright as the factory's type gate runs it (pyright-python fetching its node
 # package on first use); the same run failed "Cannot find module .../pyright/package.json".
 check pyright-runs "cd /tmp && uvx --from pyright==${PYRIGHT_VERSION:-1.1.391} pyright --version"
