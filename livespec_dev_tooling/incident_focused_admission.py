@@ -13,7 +13,9 @@ id names the evidence record and the one member it disposes.
 `contracts.md`, the expedited incident execution contract: "Incomplete focused
 evidence MUST remain recorded risk with an operator disposition; a failing assertion
 requires repair"): which required members it lacks, which members failed, and
-which deferred or incomplete members need an operator disposition.
+which deferred or incomplete members need an operator disposition. A record
+whose collector saw the tree change during collection did not measure the head
+tree, so that risk fails the record instead of awaiting a disposition.
 """
 
 from __future__ import annotations
@@ -47,6 +49,10 @@ DISPOSITION_ROW = "incident-focused-evidence-disposition"
 MAX_EVIDENCE_SLOTS = 8
 _FULL_COVERAGE = 100
 _MANUAL_FAILED_RISK = "manual reproduction did not pass"
+# The collector's word that its measurement may not be of the head tree: such a
+# record is not evidence of this tree, so it fails rather than awaiting disposition.
+_TREE_CHANGED_RISK = "incident tree changed during collection"
+_NOT_DISPOSABLE = frozenset((_MANUAL_FAILED_RISK, _TREE_CHANGED_RISK))
 _MANUAL_FIELDS = ("procedure", "expected", "observed")
 _OUTCOMES = frozenset(("passed", "incomplete", "failed"))
 
@@ -189,6 +195,7 @@ def _failed(*, record: dict[str, Any]) -> list[str]:
     failed = [
         *(["focused test"] if tests["returncode"] and not tests["timed_out"] else []),
         *(["manual reproduction"] if manual.get("outcome") == "failed" else []),
+        *([_TREE_CHANGED_RISK] if _TREE_CHANGED_RISK in record["risks"] else []),
     ]
     if not failed and record["outcome"] == "failed":
         failed.append("focused evidence outcome")
@@ -227,7 +234,7 @@ def _members(*, record: dict[str, Any]) -> list[str] | None:
             if record["row_status"] == "deferred-timeout"
             else []
         ),
-        *(risk for risk in cast("list[str]", risks) if risk != _MANUAL_FAILED_RISK),
+        *(risk for risk in cast("list[str]", risks) if risk not in _NOT_DISPOSABLE),
     ]
     if not members and record["outcome"] == "incomplete":
         members.append("focused evidence outcome incomplete")
