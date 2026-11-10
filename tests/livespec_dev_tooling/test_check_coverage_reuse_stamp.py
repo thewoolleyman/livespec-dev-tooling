@@ -284,15 +284,15 @@ def test_marker_is_invalidated_by_a_tracked_tree_change(*, tmp_path: Path) -> No
 
 
 def test_github_actions_consumer_rejects_unstamped_partial_artifact(*, tmp_path: Path) -> None:
-    """Runner location cannot promote an unproven focused artifact to full proof."""
+    """CI refuses an artifact without the producer receipt before pytest can run."""
     _install_harness(tmp_path=tmp_path, git_tree=True)
     _ = (tmp_path / ".coverage").write_text("4242\n", encoding="utf-8")
 
     result = _run(tmp_path=tmp_path, script="check-coverage.sh", extra={"GITHUB_ACTIONS": "true"})
 
-    assert result.returncode == 0, result.stderr
-    assert _reported_total(output=result.stdout) == "1000"
-    assert _uv_log(tmp_path=tmp_path) == [_PYTEST_LINE]
+    assert result.returncode != 0
+    assert "missing coverage reuse receipt" in result.stdout
+    assert not (tmp_path / "uv.log").exists()
 
 
 def test_producer_outside_a_git_tree_leaves_no_marker(*, tmp_path: Path) -> None:
