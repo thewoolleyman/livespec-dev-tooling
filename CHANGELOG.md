@@ -58,6 +58,24 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.192.2](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.192.1...v1.192.2) (2026-11-10)
+
+
+### Bug Fixes
+
+* **incident_focused_admission:** a record whose tree changed during collection fails instead of awaiting disposition (livespec-dev-tooling-4aksht) ([d9dd1ea](https://github.com/thewoolleyman/livespec-dev-tooling/commit/d9dd1ea18d84ace09140ddf07387cb8f61e22e0a))
+* **incident_focused_admission:** derive focused-evidence ids and judge a record as /arm does (livespec-dev-tooling-4aksht) ([f58428c](https://github.com/thewoolleyman/livespec-dev-tooling/commit/f58428cbf08add3d3a3626ecd85e834c7a9d40ab))
+* **incident_focused_disposition_entry:** record an operator risk disposition for an incomplete focused-evidence member (livespec-dev-tooling-4aksht) ([2db91de](https://github.com/thewoolleyman/livespec-dev-tooling/commit/2db91def3981486b950168a7a87ed98ba1b7f3c0))
+* **incident_focused_evidence_entry:** publish each record to the next derived slot of its head tree (livespec-dev-tooling-4aksht) ([8d3526c](https://github.com/thewoolleyman/livespec-dev-tooling/commit/8d3526c2fe637c6664f0681c8db54713750ba59c))
+* **incident_observer_control:** /arm refuses an expedited PR without complete focused evidence for its exact head tree (livespec-dev-tooling-4aksht) ([84dbdf4](https://github.com/thewoolleyman/livespec-dev-tooling/commit/84dbdf4f58aa73bb18f980e5680d37b4b0c41dcf))
+* **incident_observer_evidence:** refuse an arm whose head tree lacks complete, disposed focused evidence (livespec-dev-tooling-4aksht) ([835f24c](https://github.com/thewoolleyman/livespec-dev-tooling/commit/835f24c646e0c614507b0026b37d264046fed1bc))
+* the hosted client reads the observer's exact ownership answer or names why not (livespec-dev-tooling-ariayn) ([5a9e3d1](https://github.com/thewoolleyman/livespec-dev-tooling/commit/5a9e3d1ff9affb1a31b09160604001fd0c9a730d))
+* the observer answers the reconciler's ownership question over its query route (livespec-dev-tooling-ariayn) ([e6caaf9](https://github.com/thewoolleyman/livespec-dev-tooling/commit/e6caaf9014807ad851bb001d34f1553f9b691338))
+* the reconciler's ownership answer covers its whole red episode (livespec-dev-tooling-ariayn) ([bd20b65](https://github.com/thewoolleyman/livespec-dev-tooling/commit/bd20b65ae2df092e444105143f9173d18f2b6525))
+* the reconciler's workflow-side transport asks the observer and fails closed (livespec-dev-tooling-ariayn) ([fc84503](https://github.com/thewoolleyman/livespec-dev-tooling/commit/fc845038ccf8a7322a7ea4a6cef47d04d160e2fb))
+* the reusable reconciler asks the incident observer before its one step (livespec-dev-tooling-ariayn) ([bdec0e6](https://github.com/thewoolleyman/livespec-dev-tooling/commit/bdec0e63bd14d0614f632839cb8b6116066fb888))
+* wire-fleet-member does not arm the reconciler where the observer is unreachable (livespec-dev-tooling-ariayn) ([b5aa180](https://github.com/thewoolleyman/livespec-dev-tooling/commit/b5aa1806106de68415ef887db196ffc7438f65a1))
+
 ## [1.192.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.192.0...v1.192.1) (2026-11-10)
 
 
