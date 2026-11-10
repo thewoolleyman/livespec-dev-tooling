@@ -284,6 +284,18 @@ def test_the_stub_answers_a_path_it_does_not_route_with_not_found(
     assert refused.value.code == 404
 
 
+def test_the_stub_answers_a_missing_trigger_with_not_found(
+    world: tuple[_World, str],
+) -> None:
+    state, api = world
+
+    with pytest.raises(urllib.error.HTTPError) as refused:
+        _ = urllib.request.urlopen(api + "/1/triggers/metrics/missing", timeout=_RUN_TIMEOUT_S)  # noqa: S310
+
+    assert refused.value.code == 404
+    assert state.requests == [("GET", "/1/triggers/metrics/missing")]
+
+
 def test_trigger_drift_reports_each_differing_field_and_writes_nothing(
     tmp_path: Path, world: tuple[_World, str]
 ) -> None:
