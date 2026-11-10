@@ -102,7 +102,15 @@ replayed
 - on every later `recover_incident_inverse` of the same action (a journaled conflict
   receipt is the "prior" the lookup returns), and
 - by `POST /reconcile`, which marks the action `reconciled` only once the chain
-  accepted the write, so an unreconciled conflict is retried on each reconcile.
+  accepted the write, so an unreconciled conflict is retried on each reconcile, and
+- by the conflict sweep (`incident_conflict_sweep.ConflictSweep`), which needs no
+  operator: the observer never calls recovery again for a retained action, so the
+  controller service runs the `/reconcile` route itself for every retained action whose
+  journaled conflict the chain has not accepted, and for every action that never settled
+  a receipt (the principal's journal is then asked for it). It sweeps once at service
+  start and then every 300 seconds, so a conflict journaled while the tenant was
+  unavailable reaches the chain once the tenant returns. A pass that cannot reach the
+  chain leaves the action pending, and the failed write names its refusal on stderr.
 
 Only a conflict receipt is ever replayed: a successful revert receipt never reaches the
 conflict action.

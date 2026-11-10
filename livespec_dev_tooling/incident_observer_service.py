@@ -15,7 +15,7 @@ import sys
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from pathlib import Path
-from threading import Thread
+from threading import Event, Thread
 from typing import Any, cast
 from wsgiref.simple_server import make_server
 
@@ -27,6 +27,7 @@ from livespec_dev_tooling.incident_ci_attachment import CiJobAttachment
 from livespec_dev_tooling.incident_ci_identity import CiIdentityVerifier
 from livespec_dev_tooling.incident_ci_job_collection import CiJobCollection
 from livespec_dev_tooling.incident_conflict_chain import ConflictChain
+from livespec_dev_tooling.incident_conflict_sweep import ConflictSweep
 from livespec_dev_tooling.incident_controller_installation import ControllerInstallation
 from livespec_dev_tooling.incident_observer_control import ObserverControl
 from livespec_dev_tooling.incident_observer_endpoint import _read_request, observer_endpoint
@@ -267,9 +268,14 @@ def main() -> int:
             )
         )
         return 2
-    with make_server("127.0.0.1", application.installation.port, application) as server:
-        server.process_request = _RequestDispatcher(server=server)
-        server.serve_forever()
+    stop = Event()
+    _ = ConflictSweep(installation=application.installation).start(stop=stop)
+    try:
+        with make_server("127.0.0.1", application.installation.port, application) as server:
+            server.process_request = _RequestDispatcher(server=server)
+            server.serve_forever()
+    finally:
+        stop.set()
     return 0
 
 
