@@ -9,8 +9,8 @@ from pathlib import Path
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 _EARLY_READER = re.compile(
     r"""\|\s*(?:
-        grep\b(?:\s+-[^\s'\"]*)*?\s+(?:-[A-Za-z]*q[A-Za-z]*\b|--quiet\b|-m\s*1\b|-m1\b)
-        |head\b\s+(?:-1\b|-n\s*1\b|-n1\b|-c\s*1\b|-c1\b)
+        grep\b(?:\s+-[^\s'\"]*)*?\s+(?:-[A-Za-z]*q[A-Za-z]*\b|--quiet\b|-m\s*\d+\b|-m\d+\b)
+        |head\b\s+(?:-\d+\b|-n\s*\d+\b|-n\d+\b|-c\s*\d+\b|-c\d+\b)
         |awk\b[^\n]*\bexit\b
     )""",
     re.VERBOSE,
