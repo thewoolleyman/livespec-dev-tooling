@@ -224,9 +224,21 @@ def test_prints_the_serving_version_read_for_every_consumer_and_capability_even_
     for repository in ("example/tooling", "example/other"):
         for capability in CAPABILITIES:
             assert f"serving\t{repository}\t{capability}\tv1.0.0" in lines
-    assert not any(line.startswith("serving\texample/notes") for line in lines)
+    assert [line for line in lines if line.startswith("serving\texample/notes")] == [
+        "serving\texample/notes\tdriver-hooks\tv1.0.0"
+    ]
     assert exit_code(report=report) != 0
     assert "ready\t-" in lines
+
+
+def test_an_instruction_only_consumers_guidance_hooks_are_read_even_without_claims() -> None:
+    report = _run_audit(unreadable=frozenset({("example/notes", "driver-hooks")}), claims=())
+    lines = render_report(report=report)
+    assert "serving\texample/notes\tdriver-hooks\t-" in lines
+    assert not any(
+        line.startswith("serving\texample/notes") and "driver-hooks" not in line for line in lines
+    )
+    assert "finding\texample/notes: lacks serving-version evidence for driver-hooks" not in lines
 
 
 def test_a_capability_that_cannot_be_read_is_printed_as_unread() -> None:
