@@ -237,7 +237,7 @@ def resolve_panel(panel, prior):
     dataset = panel["dataset"]
     annotation = panel["annotation"]
     spec = panel["query"]
-    if prior and prior[2] == dataset:
+    if prior and prior[2] == dataset_display_name(dataset):
         ok, stored = call("GET", "/1/queries/%s/%s" % (dataset, prior[0]))
         if ok and stored_matches(spec, stored):
             return "reused", prior[0], prior[1]

@@ -406,6 +406,23 @@ def test_board_drift_reports_a_query_panel_with_a_different_dataset(
     assert _only_reads(state), state.requests
 
 
+def test_board_apply_reuses_a_query_panel_with_a_display_name_dataset(
+    tmp_path: Path, world: tuple[_World, str]
+) -> None:
+    state, api = world
+    state.boards = [_live_board(state)]
+    script = _stage(tmp_path, _APPLY_BOARDS, _BOARD)
+
+    result = _run(script, api)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "panel reused load [metrics] query=q1" in result.stdout
+    assert not any(
+        method == "POST" and path.startswith(("/1/queries/", "/1/query_annotations/"))
+        for method, path in state.requests
+    ), state.requests
+
+
 def test_board_drift_reports_a_name_absent_from_the_api_as_missing(
     tmp_path: Path, world: tuple[_World, str]
 ) -> None:
