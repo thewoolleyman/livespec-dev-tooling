@@ -3223,9 +3223,8 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a master push concurrency group is refused in a repository that calls the master-health reconciler",
-    "test": "TODO",
-    "work_item": "livespec-dev-tooling-xtofr3",
-    "reason": "A real test at the integration tier or above is owed for this heading: an integration test of the just check guard over fixture repositories, proving it fails naming the workflow file and the reconciler caller when a reconciler-calling repository groups its master push runs, and passes when the repository calls no reconciler (proposal master-push-cancel-superseded B', v182). livespec-dev-tooling-xtofr3 owns it."
+    "test": "tests.livespec_dev_tooling.checks.test_ci_matrix_completeness.test_master_push_concurrency_with_reconciler_caller_is_refused",
+    "reason": "Integration-tier: the fixture repository invokes the shared ci-matrix check over a reconciler caller and a master-push concurrency group, requiring a failing verdict (proposal master-push-cancel-superseded B', v182)."
   },
   {
     "spec_root": "SPECIFICATION",
