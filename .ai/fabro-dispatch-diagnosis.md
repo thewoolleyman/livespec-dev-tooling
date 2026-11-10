@@ -193,6 +193,26 @@ queue, a lane stop-the-line or a fleet outage, say it as a wait, for example
 "waiting in petri's dev-tooling lane (session-headroom-shortfall)". Reserve
 "hold", "held" and "HOLD" for an owner hold you mean the dispatcher to honour.
 
+## A succeeded run with an unmerged PR may be under the coordinator's merge hold
+
+Measured 2026-11-10 on `livespec-dev-tooling-jxw2ve` and `-c763up`.
+
+An item labelled `merge-hold:on` launches with `--input merge_hold=true`. The
+run SUCCEEDS: the PR opens, Proof of Done is captured and verified, and CI is
+green. But no auto-merge is armed, so the item stays `active` with a proved PR
+that never merges. Nothing on the item or the plan says who set the label.
+On that day 62 items in this tenant carried it.
+
+The label is legacy-coordinator-agent's merge-gap regime, which keeps master
+still while other plans' pin-gate runs are in flight. The coordinator presses
+`set-merge-hold:<id>:off` itself, after checking master CI, because removing
+the label IS the merge (coordinator, 2026-11-10 ~20:25Z).
+
+**How to apply:** a plan seat whose proved PR is held this way reports it to
+the coordinator and waits. It does not press the valve, and it runs any
+host-captured drift proof only after the merge lands. Look for the input in the
+launcher's `CAPTURE fabro run` argv line before you diagnose a quiet merge.
+
 ## `fabro create` plus `fabro dump` shows what a run actually resolved
 
 Used 2026-09-04 to settle the fleet-wide factory setup outage.

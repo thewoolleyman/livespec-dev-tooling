@@ -138,7 +138,10 @@ The files:
   worker's brief is frozen at dispatch, a comment saying an item is "held"
   makes petri's screen refuse it, and `fabro create` plus `fabro dump` shows
   the resolved spec. Read it also before rebasing a factory PR: a moved head
-  makes resume refuse.
+  makes resume refuse. Read it also before diagnosing a succeeded run whose
+  proved, green PR does not merge, or before pressing `set-merge-hold:<id>:off`:
+  the `merge-hold:on` label is legacy-coordinator-agent's, and removing it IS
+  the merge (2026-11-10).
 - Read `.ai/false-green-gates-and-audits.md` before trusting a green gate
   that disagrees with reality, writing a gate that replays a production step,
   auditing `.livespec.jsonc` keys across the fleet, or re-running a coverage
