@@ -196,6 +196,18 @@ class ControllerService:
                     "reason": "authenticated callback outside provisioned repository",
                 },
             )
+        if completion.branch != self.installation.target_branch:
+            # Only the configured target branch's jobs reach protected state; a
+            # registration retained for any other branch never acts.
+            return _reply(
+                start_response=start_response,
+                status="202 Accepted",
+                result={
+                    "status": "ignored",
+                    "reason": "job is outside the configured target branch",
+                    "action_id": None,
+                },
+            )
         forwarded = {**environ, "wsgi.input": io.BytesIO(body or b"")}
         return observer_endpoint(
             directory=self.installation.state,

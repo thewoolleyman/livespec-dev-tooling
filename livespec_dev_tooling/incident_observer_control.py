@@ -52,7 +52,11 @@ class ObserverControl:
                 or payload["run_id"] <= 0
                 or not isinstance(payload["head_sha"], str)
             ):
-                return {"status": "refused", "reason": "retained arm and exact master run required"}
+                return {
+                    "status": "refused",
+                    "reason": f"retained arm and exact {settings.target_branch} run required",
+                }
+            # The configured target branch is the only branch a binding can name.
             registration = ObserverRegistration(
                 repository=arm.repository,
                 incident_item_id=arm.incident_item_id,
@@ -68,6 +72,7 @@ class ObserverControl:
                 controller_revision=arm.controller_revision,
                 candidate_revision=arm.head_sha,
                 authority_receipt=arm.authority_receipt,
+                branch=settings.target_branch,
             )
             return asdict(
                 bind_after_merge(
@@ -75,7 +80,8 @@ class ObserverControl:
                     arm=arm,
                     registration=registration,
                     verify_merged_run=MergedRunVerifier(
-                        read=ForgeReads.installed(installation=settings)
+                        read=ForgeReads.installed(installation=settings),
+                        target_branch=settings.target_branch,
                     ),
                 )
             )

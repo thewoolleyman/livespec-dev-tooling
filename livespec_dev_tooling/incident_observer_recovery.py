@@ -64,7 +64,7 @@ class ObserverRecovery:
             replayed = _replayed(record=record, regression=regression)
             if replayed is not None:
                 return replayed
-            landed = _landed(record=record, payload=payload)
+            landed = _landed(record=record, payload=payload, branch=settings.target_branch)
         if isinstance(landed, str):
             return _refused(reason=landed)
         reader = CurrentAuthorityReader(
@@ -160,10 +160,14 @@ def _receipt(*, payload: dict[str, Any]) -> tuple[RegressionReopen, bytes] | str
     return regression, authority
 
 
-def _landed(*, record: dict[str, object], payload: dict[str, Any]) -> ObserverRegistration | str:
+def _landed(
+    *, record: dict[str, object], payload: dict[str, Any], branch: str
+) -> ObserverRegistration | str:
     registration = read_registration(record=record)
     if registration is None:
         return "no landed incident attempt is registered"
+    if registration.branch != branch:
+        return "landed incident attempt is not registered for the configured target branch"
     if payload["incident_item_id"] != registration.incident_item_id:
         return "reopened-chain receipt names another incident"
     if payload["generation"] <= registration.generation:
