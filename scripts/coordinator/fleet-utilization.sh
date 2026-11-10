@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# READ-ONLY fleet utilization read for the coordinator seat. Usage: fleet-utilization.sh [--json]
+# READ-ONLY fleet utilization read for the coordinator seat. Usage: fleet-utilization.sh [--json] [--stranded-only]
 # Shell entry point; the logic is embedded Python (stdlib only) so the repo's
 # product-Python AST gates, which govern the package, do not apply to a script.
 set -euo pipefail
 exec python3 -I - "$@" <<'PY'
 """READ-ONLY fleet utilization read for the coordinator seat.
 
-Run first every tick:  scripts/coordinator/fleet-utilization.sh [--json]
+Run first every tick:  scripts/coordinator/fleet-utilization.sh [--json] [--stranded-only]
 
 Reports each execution node's real utilization (PSI, idle, memory), the
 k3s cluster's pods / pending / quota, and the factory's fleet-vs-cap state,
@@ -31,6 +31,16 @@ UNREADABLE, never skipped. Each flagged row then carries its cause when it has o
 from this host's checkout of the tenant's SPECIFICATION/history), or `BLOCKED by <id>`
 for a `blocks` dependency that is not closed. Causes share the section's time budget;
 rows the budget did not reach are counted as skipped, never shown as having no cause.
+
+The STRANDED-CAPACITY section, printed right after the node table, reads every cap and
+quota this script can reach: the launcher fleet-cap and per-host cap files, the
+dispatcher's per-tenant wip_cap (wip-act.*), the factory namespace ResourceQuota, each
+Kueue ClusterQueue flavor quota, and each ARC scale set's maxRunners. For each it prints
+the limit, the use, the waiting work and the idle % of the nodes it covers. A line is
+prefixed FLAGGED when the limit is reached while work waits AND a covered node reads idle
+above STRANDED_IDLE_PCT: a stall of the "cap too low" kind (.ai/coordinator-duties.md
+section 10). A cap or quota that cannot be read prints `UNREAD <name>: <reason>`, never
+silence. `--stranded-only` prints just that section; scripts/coordinator/top5 calls it.
 """
 
 import argparse
@@ -45,6 +55,10 @@ import shutil
 import subprocess
 import sys
 import time
+
+# A covered node idle above this % beside a binding cap or quota is stranded capacity.
+# A value-only constant: tune it here, never pin it in a test.
+STRANDED_IDLE_PCT = 40
 
 # Candidate ssh targets, in order. First that answers wins. `cwoolley` is the
 # account that holds the authorized key on every execution node (verified
@@ -661,7 +675,415 @@ def read_unticketed_ready():
     return result
 
 
-def build_flags(nodes, cluster, factory, unticketed):
+# ---- STRANDED-CAPACITY (coordinator rule STRANDED-CAPACITY, scope event 2026-11-10T23:33:39Z) ----
+KC = "sudo -n k3s kubectl"
+HP_QUEUE_DIR = pathlib.Path("/run/user/1000/hp-launch-queue.d")
+FACTORY_NS = "factory"
+FACTORY_NODE_LABEL = "ci-runner.io/factory"
+ARC_NS = "arc-runners"
+# A ticket log quieter than this is not a live waiting ticket.
+TICKET_FRESH_S = 10 * 60
+# Per-host cap file -> the launcher counters that log its use, and the node its servers run on.
+HOST_CAPS = {
+    "gmk-cap": (("gmktec", "petri"), ["gmktec-xubuntu"]),
+    "candidate-cap": (("candidate",), ["gmktec-xubuntu"]),
+    "hl-cap": (("hl",), ["gmktec-xubuntu"]),
+}
+COUNTER_RE = re.compile(r"\b(gmktec|petri|candidate|hl)=(\d+)")
+HL_LIVE_RE = re.compile(r"mi-homelab not green: live=(\d+)")
+WIP_TENANT_RE = re.compile(r"active in ([\w.-]+)")
+SIZE_GATE_RE = re.compile(r"SIZE-SCREEN (HOLD|GATE)")
+QTY_RE = re.compile(r"([\d.]+)([a-zA-Z]*)")
+QTY_SUFFIX = {
+    "m": 1e-3,
+    "k": 1e3,
+    "M": 1e6,
+    "G": 1e9,
+    "T": 1e12,
+    "Ki": 1024,
+    "Mi": 1024**2,
+    "Gi": 1024**3,
+    "Ti": 1024**4,
+}
+
+
+def qty(text):
+    """A Kubernetes quantity as a float, or None when it does not parse."""
+    m = QTY_RE.fullmatch(str(text).strip())
+    if not m or (m.group(2) and m.group(2) not in QTY_SUFFIX):
+        return None
+    return float(m.group(1)) * QTY_SUFFIX.get(m.group(2), 1)
+
+
+def kube_json(args):
+    """(document, None) for a read-only `kubectl get ... -o json`, or (None, reason)."""
+    ok, text = ssh(K3S_SERVER, f"{KC} get {args} -o json")
+    if not ok:
+        return None, text
+    try:
+        return json.loads(text), None
+    except ValueError as exc:
+        return None, f"unparseable JSON: {exc}"
+
+
+def expr_ok(labels, expr):
+    op, key, values = expr.get("operator"), expr.get("key"), expr.get("values") or []
+    if op == "In":
+        return labels.get(key) in values
+    if op == "NotIn":
+        return labels.get(key) not in values
+    if op == "Exists":
+        return key in labels
+    if op == "DoesNotExist":
+        return key not in labels
+    return True
+
+
+def nodes_matching(node_labels, selector=None, terms=None):
+    """Node names whose labels satisfy a selector and any one of the affinity terms."""
+    hits = []
+    for name, labels in sorted(node_labels.items()):
+        if any(labels.get(k) != v for k, v in (selector or {}).items()):
+            continue
+        if terms and not any(
+            all(expr_ok(labels, e) for e in t.get("matchExpressions") or []) for t in terms
+        ):
+            continue
+        hits.append(name)
+    return hits
+
+
+def covered_idle(names, nodes_by_name):
+    """(text, any covered node idle above STRANDED_IDLE_PCT)."""
+    parts, idle_hit = [], False
+    for name in names:
+        node = nodes_by_name.get(name)
+        if node is None:
+            parts.append(f"{name} unprobed")
+        elif not node["reachable"]:
+            parts.append(f"{name} UNREACHABLE")
+        elif node["idle_pct"] is None:
+            parts.append(f"{name} idle ?")
+        else:
+            parts.append(f"{name} {node['idle_pct']:.0f}% idle")
+            idle_hit = idle_hit or node["idle_pct"] > STRANDED_IDLE_PCT
+    return ", ".join(parts) or "no covered node found", idle_hit
+
+
+def stranded_row(name, limit, use, binds, waiting, waiting_text, covered, nodes_by_name):
+    idle_text, idle_hit = covered_idle(covered, nodes_by_name)
+    flagged = bool(binds and waiting > 0 and idle_hit)
+    at = " AT LIMIT" if binds else ""
+    text = f"{name}: use {use} / limit {limit}{at}; waiting {waiting_text}; nodes {idle_text}"
+    return {"name": name, "flagged": flagged, "text": ("FLAGGED " if flagged else "") + text}
+
+
+def unread_row(name, reason):
+    return {"name": name, "flagged": False, "text": f"UNREAD {name}: {reason}"[:300]}
+
+
+def tenant_index():
+    """item id -> tenant, from the dispatcher's wip-claimed-cache.<tenant>.json files."""
+    index = {}
+    for path in CANARY.glob("wip-claimed-cache.*.json"):
+        tenant = path.name.removeprefix("wip-claimed-cache.").removesuffix(".json")
+        try:
+            items = json.loads(read_or_empty(path) or "{}").get("st") or {}
+        except ValueError:
+            continue
+        index.update(dict.fromkeys(items, tenant))
+    return index
+
+
+def size_gated(item_id):
+    """Whether the item's newest seq-log section ends size-gated (a HOLD/GATE verdict, no LAUNCH)."""
+    lines = read_or_empty(CANARY / f"seq-{item_id}.log").splitlines()
+    heads = [i for i, ln in enumerate(lines) if header_epoch(ln) is not None]
+    section = lines[heads[-1] :] if heads else lines
+    gated = any(SIZE_GATE_RE.search(ln) and "repo WIP full" not in ln for ln in section)
+    return gated and not any("SIZE-SCREEN LAUNCH" in ln or ln[9:16] == "LAUNCH " for ln in section)
+
+
+def read_launcher_tickets(now):
+    """Classify the live queued launcher tickets and take the newest per-host use counters.
+
+    Each queue entry names its launcher pid, its item and wip-wait. A dead pid is stale
+    litter and is counted apart. wip-wait=1 is a ticket held by its repo's WIP limit; any
+    other live ticket is size-gated when its seq log says so, and launchable otherwise.
+    """
+    res = {
+        "queued": 0,
+        "stale": 0,
+        "launchable": 0,
+        "size_gated": 0,
+        "wip_held": collections.Counter(),
+        "wip_reason": {},
+        "counters": {},
+        "queues": {},
+    }
+    index = tenant_index()
+    for qname, qdir in (("gmktec", QUEUE_DIR), ("hp", HP_QUEUE_DIR)):
+        try:
+            entries = [p for p in qdir.iterdir() if p.is_file()]
+        except OSError as exc:
+            res["queues"][qname] = f"UNREAD ({exc})"
+            continue
+        res["queues"][qname] = len(entries)
+        for entry in entries:
+            kv = dict(re.findall(r"([\w-]+)=(\S+)", read_or_empty(entry)))
+            if not kv.get("pid", "").isdigit() or not pathlib.Path(f"/proc/{kv['pid']}").exists():
+                res["stale"] += 1
+                continue
+            res["queued"] += 1
+            item = kv.get("item", "")
+            if kv.get("wip-wait") == "1":
+                res["wip_held"][index.get(item, "?")] += 1
+            elif item and SAFE_NAME_RE.fullmatch(item) and size_gated(item):
+                res["size_gated"] += 1
+            else:
+                res["launchable"] += 1
+    newest = {}
+    for path in recent_files("seq-*.log", TICKET_FRESH_S):
+        for epoch, line in dated_lines(read_or_empty(path), mtime_or_none(path) or now):
+            if now - epoch > TICKET_FRESH_S:
+                continue
+            found = COUNTER_RE.findall(line)
+            hl = HL_LIVE_RE.search(line)
+            if hl:
+                found.append(("hl", hl.group(1)))
+            for key, val in found:
+                if key not in newest or epoch >= newest[key][0]:
+                    newest[key] = (epoch, int(val))
+            if "repo WIP full" in line:
+                m = WIP_TENANT_RE.search(line)
+                why = re.search(r"repo WIP full \(([^)]*)\)", line)
+                if m and why:
+                    res["wip_reason"][m.group(1)] = why.group(1)[:240]
+    res["counters"] = {k: v for k, (_e, v) in newest.items()}
+    return res
+
+
+def read_cap_file(name):
+    try:
+        return int((CANARY / name).read_text().strip()), None
+    except (OSError, ValueError) as exc:
+        return None, str(exc)
+
+
+def launcher_rows(factory, tickets, factory_nodes, nodes_by_name):
+    rows = []
+    held = sum(tickets["wip_held"].values())
+    waiting = tickets["launchable"]
+    queues = " ".join(f"{k}={v}" for k, v in tickets["queues"].items())
+    waiting_text = (
+        f"{waiting} launchable, {tickets['size_gated']} size-gated, {held} WIP-held "
+        f"(of {tickets['queued']} live queued tickets; queue {queues}; {tickets['stale']} stale entries)"
+    )
+    if factory["fleet"] is None or factory["cap"] is None:
+        rows.append(unread_row("fleet-cap", "no fleet=/cap= launcher line within the last 20 minutes"))
+    else:
+        binds = factory["fleet"] >= factory["cap"]
+        rows.append(
+            stranded_row(
+                "fleet-cap", factory["cap"], factory["fleet"], binds, waiting, waiting_text,
+                factory_nodes, nodes_by_name,
+            )
+        )
+    for cap_name, (keys, covered) in HOST_CAPS.items():
+        limit, err = read_cap_file(cap_name)
+        if limit is None:
+            rows.append(unread_row(cap_name, err))
+            continue
+        uses = [tickets["counters"][k] for k in keys if k in tickets["counters"]]
+        if not uses:
+            rows.append(unread_row(cap_name, f"limit {limit}; no {'/'.join(keys)}= use in launcher lines of the last 10 min"))
+            continue
+        use = max(uses)
+        rows.append(stranded_row(cap_name, limit, use, use >= limit, waiting, waiting_text, covered, nodes_by_name))
+    return rows
+
+
+def wip_rows(tickets, factory_nodes, nodes_by_name, now):
+    rows, quiet = [], 0
+    files = sorted(CANARY.glob("wip-act.*"))
+    if not files:
+        return [unread_row("dispatcher wip_cap", f"no wip-act.* file in {CANARY}")]
+    for path in files:
+        tenant = path.name.removeprefix("wip-act.")
+        parts = read_or_empty(path).split()
+        if len(parts) < 3 or not all(p.isdigit() for p in parts[:3]):
+            rows.append(unread_row(f"wip_cap {tenant}", f"unexpected content {parts[:3]}"))
+            continue
+        stamp, active, cap = (int(p) for p in parts[:3])
+        waiting = tickets["wip_held"].get(tenant, 0)
+        if active == 0 and waiting == 0:
+            quiet += 1
+            continue
+        age = fmt_age(max(0, now - stamp))
+        text = f"{waiting} WIP-held queued ticket(s)"
+        if waiting and active < cap:
+            text += " while use is below the numeric cap"
+        if tenant in tickets["wip_reason"]:
+            text += f"; launcher says repo WIP full ({tickets['wip_reason'][tenant]})"
+        # The launcher's own "repo WIP full" verdict (a HELD/canary marker can set it below
+        # the numeric cap) counts as the limit reached: it is what holds the tickets.
+        binds = active >= cap or tenant in tickets["wip_reason"]
+        rows.append(
+            stranded_row(
+                f"wip_cap {tenant} (read {age} ago)", cap, active, binds, waiting,
+                text, factory_nodes, nodes_by_name,
+            )
+        )
+    if tickets["wip_held"].get("?"):
+        rows.append(unread_row("wip_cap tenant", f"{tickets['wip_held']['?']} WIP-held ticket(s) whose item is in no wip-claimed cache"))
+    if quiet:
+        rows.append({"name": "wip_cap", "flagged": False, "text": f"wip_cap: {quiet} other tenant(s) at 0 active, none waiting"})
+    return rows
+
+
+def kueue_rows(node_labels, nodes_by_name):
+    cqs, err = kube_json("clusterqueues.kueue.x-k8s.io")
+    if cqs is None:
+        return [unread_row("kueue ClusterQueues", err)]
+    flavors, err = kube_json("resourceflavors.kueue.x-k8s.io")
+    if flavors is None:
+        return [unread_row("kueue ResourceFlavors", err)]
+    flavor_nodes = {
+        f["metadata"]["name"]: nodes_matching(node_labels, f["spec"].get("nodeLabels") or {})
+        for f in flavors.get("items", [])
+    }
+    rows, quiet = [], 0
+    for cq in cqs.get("items", []):
+        name, status = cq["metadata"]["name"], cq.get("status") or {}
+        pending = int(status.get("pendingWorkloads") or 0)
+        if not pending and not int(status.get("admittedWorkloads") or 0):
+            quiet += 1
+            continue
+        usage = {
+            f["name"]: {r["name"]: r for r in f.get("resources") or []}
+            for f in status.get("flavorsUsage") or []
+        }
+        for group in cq["spec"].get("resourceGroups") or []:
+            for flavor in group.get("flavors") or []:
+                fname, parts, binds = flavor["name"], [], False
+                for res in flavor.get("resources") or []:
+                    used = usage.get(fname, {}).get(res["name"], {})
+                    total, borrowed = used.get("total", "0"), used.get("borrowed", "0")
+                    quota = res.get("nominalQuota")
+                    parts.append(f"{res['name']} {total}/{quota}" + (f" (+{borrowed} borrowed)" if borrowed not in ("0", 0) else ""))
+                    if qty(total) is not None and qty(quota) is not None and qty(total) >= qty(quota):
+                        binds = True
+                rows.append(
+                    stranded_row(
+                        f"kueue {name}/{fname}", "nominal", ", ".join(parts), binds, pending,
+                        f"{pending} pending workload(s) in the ClusterQueue",
+                        flavor_nodes.get(fname, []), nodes_by_name,
+                    )
+                )
+    if quiet:
+        rows.append({"name": "kueue", "flagged": False, "text": f"kueue: {quiet} other ClusterQueue(s) with no admitted or pending workload"})
+    return rows
+
+
+def arc_rows(node_labels, nodes_by_name):
+    sets, err = kube_json(f"autoscalingrunnersets.actions.github.com -n {ARC_NS}")
+    if sets is None:
+        return [unread_row("ARC scale sets", err)]
+    lqs, err = kube_json(f"localqueues.kueue.x-k8s.io -n {ARC_NS}")
+    lq_pending = {}
+    if lqs is None:
+        lq_err = err
+    else:
+        lq_err = None
+        lq_pending = {q["metadata"]["name"]: int((q.get("status") or {}).get("pendingWorkloads") or 0) for q in lqs.get("items", [])}
+    rows, quiet = [], 0
+    for s in sets.get("items", []):
+        name, spec, st = s["metadata"]["name"], s.get("spec") or {}, s.get("status") or {}
+        tmpl = spec.get("template") or {}
+        tspec = tmpl.get("spec") or {}
+        lq = ((tmpl.get("metadata") or {}).get("labels") or {}).get("kueue.x-k8s.io/queue-name")
+        current, pend_r = int(st.get("currentRunners") or 0), int(st.get("pendingEphemeralRunners") or 0)
+        q_pend = lq_pending.get(lq, 0) if lq else 0
+        if not current and not pend_r and not q_pend:
+            quiet += 1
+            continue
+        terms = (
+            ((tspec.get("affinity") or {}).get("nodeAffinity") or {}).get("requiredDuringSchedulingIgnoredDuringExecution") or {}
+        ).get("nodeSelectorTerms")
+        covered = nodes_matching(node_labels, tspec.get("nodeSelector") or {}, terms)
+        maxr = spec.get("maxRunners")
+        binds = maxr is not None and current >= int(maxr)
+        lq_text = f"queue {lq} pending UNREAD ({lq_err})" if lq and lq_err else f"{q_pend} pending in {lq or 'no queue'}"
+        rows.append(
+            stranded_row(
+                f"arc {name}", maxr, f"{current} runners ({st.get('runningEphemeralRunners', 0)} running)", binds,
+                pend_r + q_pend, f"{pend_r} pending runner(s), {lq_text}; GitHub-side queue not visible",
+                covered, nodes_by_name,
+            )
+        )
+    if quiet:
+        rows.append({"name": "arc", "flagged": False, "text": f"arc: {quiet} other scale set(s) with no runner and nothing pending"})
+    return rows
+
+
+def quota_rows(tickets, factory_nodes, nodes_by_name):
+    doc, err = kube_json(f"resourcequota -n {FACTORY_NS}")
+    if doc is None:
+        return [unread_row(f"ResourceQuota {FACTORY_NS}", err)]
+    if not doc.get("items"):
+        return [unread_row(f"ResourceQuota {FACTORY_NS}", "no ResourceQuota object in the namespace")]
+    rows = []
+    for q in doc["items"]:
+        st = q.get("status") or {}
+        hard, used = st.get("hard") or {}, st.get("used") or {}
+        parts, binds = [], False
+        for res in sorted(hard):
+            parts.append(f"{res} {used.get(res, '?')}/{hard[res]}")
+            u, h = qty(used.get(res, "")), qty(hard[res])
+            if u is not None and h is not None and u >= h:
+                binds = True
+        waiting = tickets["launchable"]
+        rows.append(
+            stranded_row(
+                f"ResourceQuota {FACTORY_NS}/{q['metadata']['name']}", "hard", ", ".join(parts), binds, waiting,
+                f"{waiting} launchable launcher ticket(s)", factory_nodes, nodes_by_name,
+            )
+        )
+    return rows
+
+
+def read_stranded(nodes, factory):
+    """Every cap and quota: limit, use, waiting work, covered nodes' idle; FLAGGED when stranded."""
+    now = time.time()
+    nodes_by_name = {n["name"]: n for n in nodes}
+    tickets = read_launcher_tickets(now)
+    nodes_doc, err = kube_json("nodes")
+    if nodes_doc is None:
+        node_labels = {}
+        rows = [unread_row("k3s node labels", f"{err}; covered nodes fall back to the probed hosts")]
+        factory_nodes = sorted(HOSTS)
+    else:
+        node_labels = {n["metadata"]["name"]: n["metadata"].get("labels") or {} for n in nodes_doc.get("items", [])}
+        rows = []
+        factory_nodes = nodes_matching(node_labels, {FACTORY_NODE_LABEL: "true"})
+    rows += launcher_rows(factory, tickets, factory_nodes, nodes_by_name)
+    rows += wip_rows(tickets, factory_nodes, nodes_by_name, now)
+    rows += quota_rows(tickets, factory_nodes, nodes_by_name)
+    rows += kueue_rows(node_labels, nodes_by_name) if node_labels else [unread_row("kueue", "node labels unread")]
+    rows += arc_rows(node_labels, nodes_by_name) if node_labels else [unread_row("arc", "node labels unread")]
+    return {"threshold_idle_pct": STRANDED_IDLE_PCT, "rows": rows}
+
+
+def render_stranded(stranded):
+    out(
+        f"\nSTRANDED-CAPACITY (FLAGGED = at its limit while work waits and a covered node "
+        f"reads idle above {stranded['threshold_idle_pct']}%; see .ai/coordinator-duties.md section 10)"
+    )
+    for row in stranded["rows"]:
+        out(f"  {row['text']}")
+
+
+def build_flags(nodes, cluster, factory, unticketed, stranded):
     flags = []
     live = [n for n in nodes if n["reachable"] and n["name"] != "vps"]
     for n in nodes:
@@ -697,10 +1119,13 @@ def build_flags(nodes, cluster, factory, unticketed):
     if unticketed["items"]:
         n = len(unticketed["items"])
         flags.append(f"UNTICKETED-READY {n} item(s) ready >30m with no ticket (see section)")
+    for row in stranded["rows"]:
+        if row["flagged"]:
+            flags.append(f"STRANDED-CAPACITY {row['name']} (see section)")
     return flags
 
 
-def render(nodes, cluster, factory, unticketed, flags):
+def render(nodes, cluster, factory, unticketed, stranded, flags):
     ns_all = sorted({ns for v in cluster["pods"].values() for ns in v})
     out(f"FLEET UTILIZATION {datetime.datetime.now(datetime.UTC):%Y-%m-%dT%H:%M:%SZ}")
     out(
@@ -718,6 +1143,7 @@ def render(nodes, cluster, factory, unticketed, flags):
             f"{n['psi_some_avg60']:>7}{n['idle_pct'] if n['idle_pct'] is not None else '?':>7}"
             f"{n['mem_avail_gib']:>8}{n['swap_used_gib']:>8}  {pod_s}"
         )
+    render_stranded(stranded)
     out(f"\nCluster namespaces seen: {', '.join(ns_all) or '-'}")
     out(
         "Pending pods: "
@@ -764,11 +1190,22 @@ def render(nodes, cluster, factory, unticketed, flags):
 def main():
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--json", action="store_true", help="emit one JSON document")
+    ap.add_argument(
+        "--stranded-only", action="store_true", help="read and print only the STRANDED-CAPACITY section"
+    )
     args = ap.parse_args()
     nodes = [probe_node(h) for h in HOSTS] + [probe_vps()]
-    cluster, factory = read_cluster(), read_factory()
+    factory = read_factory()
+    stranded = read_stranded(nodes, factory)
+    if args.stranded_only:
+        if args.json:
+            out(json.dumps(stranded, indent=2))
+        else:
+            render_stranded(stranded)
+        return 0
+    cluster = read_cluster()
     unticketed = read_unticketed_ready()
-    flags = build_flags(nodes, cluster, factory, unticketed)
+    flags = build_flags(nodes, cluster, factory, unticketed, stranded)
     if args.json:
         out(
             json.dumps(
@@ -777,13 +1214,14 @@ def main():
                     "cluster": cluster,
                     "factory": factory,
                     "unticketed_ready": unticketed,
+                    "stranded_capacity": stranded,
                     "flags": flags,
                 },
                 indent=2,
             )
         )
     else:
-        render(nodes, cluster, factory, unticketed, flags)
+        render(nodes, cluster, factory, unticketed, stranded, flags)
     return 0
 
 
