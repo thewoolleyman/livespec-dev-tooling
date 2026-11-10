@@ -33,6 +33,13 @@ from livespec_dev_tooling import (
 )
 from livespec_dev_tooling._incident_observer_types import ObserverArm
 from livespec_dev_tooling.incident_observer_authority import CurrentAuthorityReader
+from tests.livespec_dev_tooling.fixtures.incident_authority_refusals import (
+    CRASH_EXIT,
+    OUTAGE_CODES,
+    REFUSED_EXIT,
+    crash_stderr,
+    refusal_reply,
+)
 
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-iezdmk
 _HEAD = "b" * 40
@@ -235,6 +242,66 @@ def test_a_canonical_refusal_keeps_its_own_code_and_detail(
         "no chain",
         True,
     )
+
+
+@pytest.mark.parametrize("code", sorted(OUTAGE_CODES))
+def test_the_authoritys_own_outage_refusal_is_an_outage_not_a_decision(
+    monkeypatch: pytest.MonkeyPatch, code: str
+) -> None:
+    """A Dolt outage arrives as exit 78 with the authority's own code (livespec-dev-tooling-fdquen)."""
+    stdout = refusal_reply(code=code, detail="Dolt server unreachable: connection refused")
+    _ = _run_returning(monkeypatch=monkeypatch, stdout=stdout, returncode=REFUSED_EXIT)
+    refused = _call().failure()
+    assert (refused.code, refused.canonical, refused.is_outage) == (code, True, True)
+
+
+def test_a_reader_that_crashes_with_a_traceback_and_no_reply_is_an_outage(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _ = _run_returning(
+        monkeypatch=monkeypatch,
+        stdout="",
+        returncode=CRASH_EXIT,
+        stderr=crash_stderr(action="record-rollback-conflict"),
+    )
+    refused = _call(action="record-rollback-conflict").failure()
+    assert (refused.canonical, refused.is_outage) == (False, True)
+
+
+def test_a_call_past_the_ceiling_or_that_cannot_start_is_an_outage(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _ = _run_returning(monkeypatch=monkeypatch, error=subprocess.TimeoutExpired("reader", 600))
+    timed_out = _call().failure()
+    _ = _run_returning(monkeypatch=monkeypatch, error=OSError("no such reader"))
+    unstarted = _call().failure()
+    assert (timed_out.is_outage, unstarted.is_outage) == (True, True)
+
+
+@pytest.mark.parametrize(
+    "code",
+    [
+        "incident-generation-stale",
+        "incident-authority-identity-mismatch",
+        "incident-reopen-not-eligible",
+        "incident-rollback-conflict-lifecycle-refused",
+    ],
+)
+def test_an_authority_decision_is_never_an_outage(
+    monkeypatch: pytest.MonkeyPatch, code: str
+) -> None:
+    _ = _run_returning(
+        monkeypatch=monkeypatch,
+        stdout=refusal_reply(code=code, detail="decided"),
+        returncode=REFUSED_EXIT,
+    )
+    refused = _call().failure()
+    assert (refused.canonical, refused.is_outage) == (True, False)
+
+
+def test_the_client_and_the_shared_fixture_name_the_same_outage_codes() -> None:
+    """One catalogue: product classification and every fake read the same real codes."""
+    assert client.AUTHORITY_OUTAGE_CODES == OUTAGE_CODES
 
 
 @pytest.mark.parametrize(

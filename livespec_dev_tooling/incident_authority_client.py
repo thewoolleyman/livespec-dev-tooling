@@ -31,6 +31,7 @@ from livespec_dev_tooling.incident_strict_json import (  # noqa: E402
 
 __all__: list[str] = [
     "AUTHORITY_CALL_CEILING_SECONDS",
+    "AUTHORITY_OUTAGE_CODES",
     "AuthorityRefusal",
     "call_authority",
     "check_authority_reply",
@@ -53,6 +54,26 @@ _CURRENT_ACTION = "read-current"
 _STDERR_LIMIT = 2000
 
 
+# EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-fdquen
+# The authority's OWN names for "the tenant, or the fate of a write, could not be
+# observed". They arrive as a canonical refusal (exit 78) like any decision, but they
+# decide nothing about the incident. Read from the installed orchestrator build
+# 456712f1af12: `effects/_incident_authority_reader.py` (`_OUTAGES`),
+# `effects/_incident_authority_transition.py`, `effects/_incident_genesis_writer.py`,
+# `effects/_incident_entry_writer.py` and the local-gate receipt commands.
+AUTHORITY_OUTAGE_CODES = frozenset(
+    {
+        "incident-authority-unavailable",
+        "incident-transition-unavailable",
+        "incident-genesis-unavailable",
+        "incident-filing-unavailable",
+        "incident-receipt-unavailable",
+        "incident-transition-outcome-unknown",
+        "incident-genesis-outcome-unknown",
+    }
+)
+
+
 @dataclass(frozen=True, kw_only=True)
 class AuthorityRefusal:
     """A call refused by name; `canonical` marks the authority's own named refusal."""
@@ -60,6 +81,17 @@ class AuthorityRefusal:
     code: str
     detail: str
     canonical: bool = False
+
+    @property
+    def is_outage(self) -> bool:
+        """Whether the refusal says only that the authority could not be reached or observed.
+
+        A caller retries an outage and treats every other canonical refusal as the
+        authority's decision. The client's own refusals (no reply within the ceiling, a
+        process that could not start or died, an unreadable reply) never reached a
+        decision, so they are outages; so is any of `AUTHORITY_OUTAGE_CODES`.
+        """
+        return not self.canonical or self.code in AUTHORITY_OUTAGE_CODES
 
 
 _Checked = Result[dict[str, Any], AuthorityRefusal]
