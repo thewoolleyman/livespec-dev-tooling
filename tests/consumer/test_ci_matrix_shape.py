@@ -98,8 +98,13 @@ _TARGET_ENTRY = re.compile(r"^          - (?P<entry>.+?)\s*$", re.MULTILINE)
 # plus the trigger-level path filters that would subset the same way.
 _SUBSETTING_MECHANISMS = ("py_changed", "detect-py-changes", "paths:", "paths-ignore:")
 
-# The two events the gate must present the same matrix on.
-_REQUIRED_TRIGGERS = ("  pull_request:\n", "  push:\n    branches: [master]\n")
+# The two events the gate must present the same matrix on. The push filter also
+# admits incident-scratch/** branches, which run the master graph unchanged
+# (livespec-dev-tooling-7w757z; tests/consumer/test_ci_incident_scratch_push.py).
+_REQUIRED_TRIGGERS = (
+    "  pull_request:\n",
+    "  push:\n    branches: [master, 'incident-scratch/**']\n",
+)
 
 # The gate job branch protection requires; its dependencies are the gating set.
 _GATE_JOB = "  ci-green:\n"
