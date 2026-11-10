@@ -24,7 +24,11 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
-from livespec_dev_tooling.incident_ci_authority import CiAuthorityBoundary, ObserverUnreachableError
+from livespec_dev_tooling.incident_ci_authority import (
+    CiAuthorityBoundary,
+    ObserverTokenError,
+    ObserverUnreachableError,
+)
 from livespec_dev_tooling.incident_ci_event import incident_block
 from livespec_dev_tooling.incident_ci_payload import decode_authority
 
@@ -35,6 +39,7 @@ if TYPE_CHECKING:
 __all__: list[str] = ["admitted_by_recorded_incident"]
 
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-zbzls2
+# EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-a6wgjz
 _REFUSAL_PREFIX = "incident-provenance-refused: "
 _URL = "LIVESPEC_INCIDENT_OBSERVER_URL"
 _TOKEN = "LIVESPEC_INCIDENT_OBSERVER_QUERY_TOKEN"
@@ -137,6 +142,11 @@ def admitted_by_recorded_incident(
     boundary = CiAuthorityBoundary(observer_url=environ[_URL], observer_token=environ[_TOKEN])
     try:
         recorded = boundary.provenance(query=query)
+    except ObserverTokenError:
+        return _refuse(
+            sha=sha,
+            reason="the observer query token is not a valid header value; no request was made",
+        )
     except ObserverUnreachableError:
         return _refuse(sha=sha, reason="the observer is unreachable, so this head was not checked")
     return recorded or _refuse(sha=sha, reason="the observer does not record this head")

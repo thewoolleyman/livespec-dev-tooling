@@ -21,14 +21,18 @@ from urllib.parse import urlsplit
 
 from livespec_dev_tooling.incident_ci_payload import strict_json
 
-__all__: list[str] = ["CiAuthorityBoundary", "ObserverUnreachableError"]
+__all__: list[str] = ["CiAuthorityBoundary", "ObserverTokenError", "ObserverUnreachableError"]
 
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-egy3ri
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-zbzls2
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-qeu4cx
+# EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-a6wgjz
 _MAX_REPLY = 65536
 _MAX_TOKEN = 4096
-_MIN_TOKEN_CHARACTER = 33
+# An RFC 7230 field-value the client can encode: visible ASCII and latin-1 obs-text.
+# No whitespace, control character or character beyond latin-1 can be sent as the
+# Authorization header, so http.client would fail while encoding it, before any dial.
+_HEADER_VALUE = re.compile(r"[\x21-\x7e\x80-\xff]+")
 _ACCEPTED = 202
 # The job's read ceiling. The observer answers /current only after its own
 # reader pass, whose ceiling is incident_authority_client.AUTHORITY_CALL_CEILING_SECONDS
@@ -74,6 +78,15 @@ class ObserverUnreachableError(Exception):
     """
 
 
+class ObserverTokenError(Exception):
+    """The configured query token cannot be sent as a header value, so nothing was sent.
+
+    A local configuration fault: no request left the host and the observer's history
+    was not read, so a caller must name neither an unreachable observer nor one that
+    does not record the head (livespec-dev-tooling-a6wgjz).
+    """
+
+
 @dataclass(frozen=True, kw_only=True)
 class CiAuthorityBoundary:
     """Authenticate exact read-only queries without following redirects."""
@@ -92,10 +105,14 @@ class CiAuthorityBoundary:
     def provenance(self, *, query: dict[str, Any]) -> bool:
         """Require the host's canonical history to record this exact attempt and commit.
 
-        A transport failure (refused, timed out, TLS) raises ObserverUnreachableError
-        after the usual stderr line; every other refusal, including a reply the observer
-        did send but that does not parse or confirm, returns False.
+        A token that cannot be a header value raises ObserverTokenError before any
+        connection is opened. A transport failure (refused, timed out, TLS) raises
+        ObserverUnreachableError after the usual stderr line; every other refusal,
+        including a reply the observer did send but that does not parse or confirm,
+        returns False.
         """
+        if not _is_header_value(token=self.observer_token):
+            raise ObserverTokenError
         return self._query(route="provenance", query=query)
 
     def _query(self, *, route: str, query: dict[str, Any]) -> bool:
@@ -110,10 +127,7 @@ class CiAuthorityBoundary:
                 or parsed.password
                 or parsed.query
                 or parsed.fragment
-                or not self.observer_token
-                or self.observer_token.strip() != self.observer_token
-                or any(ord(c) < _MIN_TOKEN_CHARACTER for c in self.observer_token)
-                or len(self.observer_token) > _MAX_TOKEN
+                or not _is_header_value(token=self.observer_token)
                 or set(query) != set[str]().union(*_FIELDS[route].values())
                 or any(
                     type(query[key]) is not int or query[key] <= 0 for key in _FIELDS[route]["int"]
@@ -203,6 +217,11 @@ def _accepts(*, status: int, raw: bytes, route: str, query: dict[str, Any], wher
         and reply.get("status") == route
         and json.dumps(reply.get("query"), sort_keys=True) == json.dumps(query, sort_keys=True)
     )
+
+
+def _is_header_value(*, token: str) -> bool:
+    """Whether the token is non-empty, bounded and encodable as an Authorization value."""
+    return len(token) <= _MAX_TOKEN and _HEADER_VALUE.fullmatch(token) is not None
 
 
 def _refuse(*, detail: str) -> bool:
