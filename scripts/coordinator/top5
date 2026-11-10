@@ -15,7 +15,7 @@ seat) is seen every tick (rule P3).
 
 TOP mirrors the priorities-record. When the record changes, change TOP in the same
 docs PR; the record wins over this list until then. Nothing here mutates: only
-`bd show` and `bd comments`, through the credential wrapper.
+`bd show` and `bd comments`, through each tenant's credential wrapper.
 """
 import datetime as dt
 import json
@@ -29,30 +29,44 @@ TOP = [
     ("5 factory yield: sandbox-commit-gate-ceiling", "bd-ib-qy5wol"),
 ]
 WRAPPER = ["/usr/local/bin/with-livespec-env.sh", "--"]
+# The homelab tenant refuses the livespec wrapper (Error 1045 for user 'homelab');
+# it is read with the homelab-workload role and the beads password parameter.
+HOMELAB_WRAPPER = [
+    "/usr/local/bin/with-homelab-aws.sh",
+    "--role",
+    "homelab-workload",
+    "/home/ubuntu/.nix-profile/bin/hl",
+    "param",
+    "run",
+    "--bind",
+    "BEADS_DOLT_PASSWORD=/homelab/v1/services/dolt/production/beads-password",
+    "--",
+]
 STALE_MINUTES = 60
 NOW = dt.datetime.now(dt.timezone.utc)
 
 
-def run(args, cwd):
+def run(args, cwd, wrapper):
     try:
-        out = subprocess.run(WRAPPER + args, cwd=cwd, capture_output=True, text=True, timeout=60).stdout
+        out = subprocess.run(wrapper + args, cwd=cwd, capture_output=True, text=True, timeout=60).stdout
         return json.loads(out or "null")
     except Exception:
         return None
 
 
 def repo_for(epic):
+    """Return the (checkout, wrapper prefix) that reads this epic's tenant."""
     if epic.startswith("hl-"):
-        return "/data/projects/homelab"
+        return "/data/projects/homelab", HOMELAB_WRAPPER
     if epic.startswith("bd-ib"):
-        return "/data/projects/livespec-orchestrator-beads-fabro"
-    return "/data/projects/livespec-dev-tooling"
+        return "/data/projects/livespec-orchestrator-beads-fabro", WRAPPER
+    return "/data/projects/livespec-dev-tooling", WRAPPER
 
 
 for label, epic in TOP:
-    cwd = repo_for(epic)
-    rec = run(["bd", "show", epic, "--json"], cwd)
-    comments = run(["bd", "comments", epic, "--json"], cwd) or []
+    cwd, wrapper = repo_for(epic)
+    rec = run(["bd", "show", epic, "--json"], cwd, wrapper)
+    comments = run(["bd", "comments", epic, "--json"], cwd, wrapper) or []
     if not rec:
         print(f"P{label}: LEDGER READ FAILED ({epic})")
         continue
