@@ -34,6 +34,7 @@ from livespec_dev_tooling.incident_observer_provenance import ObserverProvenance
 from livespec_dev_tooling.incident_observer_query import ObserverQuery
 from livespec_dev_tooling.incident_observer_reconcile import ObserverReconcile
 from livespec_dev_tooling.incident_observer_recovery import ObserverRecovery
+from livespec_dev_tooling.incident_original_run_watch import installed_watcher
 from livespec_dev_tooling.incident_release_screen import RELEASE_SCREEN_PATH, ReleaseScreen
 
 __all__: list[str] = ["ControllerService"]
@@ -260,10 +261,16 @@ def main() -> int:
             )
         )
         return 2
+    # A reverted incident's original run is collected by the controller itself, so no
+    # operator has to remember to run the entrance; the watcher resumes from the record.
+    # A watcher that dies shuts the server down, so the service exits non-zero and systemd
+    # restarts it instead of answering HTTP with nothing collecting.
+    watcher = installed_watcher(installation=application.installation)
     with make_server("127.0.0.1", application.installation.port, application) as server:
         server.process_request = _RequestDispatcher(server=server)
+        _ = watcher.start(on_exit=server.shutdown)
         server.serve_forever()
-    return 0
+    return 1 if watcher.failed.is_set() else 0
 
 
 if __name__ == "__main__":
