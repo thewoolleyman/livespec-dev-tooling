@@ -198,3 +198,20 @@ command that `cd`s into a sibling repo, treat the cwd as poisoned for `bd`
 until reset. Cross-tenant filing (a bug owned by a sibling) is done by
 deliberately `cd`-ing into the OWNING repo first — make that explicit in the
 command, never inherited.
+
+## Never `git stash` In A Fleet Worktree — `refs/stash` Is Shared
+
+Every worktree of a clone shares ONE `refs/stash`: the primary checkout and all of
+`~/.worktrees/<repo>/*`, with dozens of live sessions writing to it. `stash@{0}` is
+whichever entry was pushed last by ANYONE, so a "stash, test against HEAD, pop"
+round trip can pop another session's work into your tree. On 2026-11-10 a
+three-second round trip in an eorpen worktree did exactly that. A 4aksht session
+stashed in between, and the pop applied its `incident_focused_admission.py` edit
+into the wrong worktree as a `DU` conflict. The entry survived only because a
+conflicting pop does not drop it.
+
+Rule: do not stash. To compare against HEAD, use a throwaway
+`git worktree add --detach <scratch> HEAD`, or read a file with
+`git show HEAD:<path>`. If you already stashed, apply and drop BY COMMIT SHA,
+never by `stash@{N}`, because indexes shift under you. Read the sha from
+`git stash list --format='%gd %H %gs'`, matching your branch name in `%gs`.
