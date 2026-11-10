@@ -22,7 +22,6 @@ still requires the registered canonical authority's receipt.
 
 from __future__ import annotations
 
-import subprocess
 from collections.abc import Mapping
 from pathlib import Path
 
@@ -31,7 +30,7 @@ from livespec_dev_tooling.incident_execution import (
     EXPEDITED_INCIDENT_RESPONSE_REVERT,
     Invocation,
 )
-from livespec_dev_tooling.incident_hook_process import git_text
+from livespec_dev_tooling.incident_git import IncidentGitError, git_text
 
 __all__: list[str] = ["factory_sandbox", "trusted_invocation"]
 
@@ -42,7 +41,7 @@ def factory_sandbox(*, repo: Path) -> bool:
     """Whether the checkout at `repo` declares itself a factory sandbox."""
     try:
         marker = git_text(repo=repo, args=["config", "--get", "livespec.sandboxExempt"])
-    except (OSError, subprocess.SubprocessError):
+    except IncidentGitError:
         return False
     return marker == "true"
 

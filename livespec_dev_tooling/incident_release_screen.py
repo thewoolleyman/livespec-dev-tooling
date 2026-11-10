@@ -39,6 +39,7 @@ from livespec_dev_tooling._incident_inverse_git import IsolatedGit
 from livespec_dev_tooling._incident_observer_store import load_record, repository_lock
 from livespec_dev_tooling._incident_release_types import _mapping, _object
 from livespec_dev_tooling.incident_controller_installation import ControllerInstallation
+from livespec_dev_tooling.incident_git import IncidentGitError
 
 __all__: list[str] = ["RELEASE_SCREEN_PATH", "ReleaseScreen"]
 
@@ -183,7 +184,7 @@ def _contains(*, root: Path, ancestor: object, descendant: str) -> bool | None:
                 administration=administration,
                 objects=objects,
             )
-    except (OSError, subprocess.SubprocessError):
+    except (OSError, subprocess.SubprocessError, IncidentGitError):
         return None
     return base.decode().strip() == ancestor
 

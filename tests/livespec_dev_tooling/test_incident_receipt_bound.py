@@ -73,7 +73,7 @@ def test_every_argv_element_of_a_worst_case_receipt_call_stays_under_the_cap(
 
     monkeypatch.setattr(module, "_governed_root", lambda **_kwargs: tmp_path)
     monkeypatch.setattr(module, "registered_plugin_root", lambda **_kwargs: tmp_path)
-    monkeypatch.setattr(module.subprocess, "run", run)
+    monkeypatch.setattr(subprocess, "run", run)
     results = _results()
     receipt = dict(
         receipt_id="receipt",
