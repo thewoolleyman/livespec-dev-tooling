@@ -410,6 +410,33 @@ ansible-apply *args:
 git-identity-audit output fabro_evidence:
     uv run python -m livespec_dev_tooling.fleet.git_identity_audit "$1" "$2"
 
+# Operator-invoked incident fleet audit (contracts.md §"Expedited incident
+# execution"). It reads livespec core's committed fleet manifest from core's
+# master, reads each consumer's serving version per capability from this host
+# (the installed dev-tooling revision, the plugin builds the harness installed,
+# the consumer's pinned workflow commit, the forge bypass and the RUNNING
+# independent observer process), prints one row per incident surface and
+# consumer plus the version read for every consumer and capability, then the
+# findings and the ready list, and exits non-zero unless every row is
+# classified. It is a local-vantage report: deliberately absent from `just check`
+# and CI, it carries no run lever and it enables, mutates and credentials
+# nothing. `--no-sync` is load-bearing: a syncing `uv run` would rewrite the very
+# venv whose installed revision this repository's gate-reader row reads. Run it
+# from the primary checkout, at a released tag when a host-captured proof is taken.
+incident-fleet-audit:
+    uv run --no-sync python -m livespec_dev_tooling.incident_fleet_cli audit
+
+# The one step that enables incident use for a repository. It runs its own
+# fresh audit against core's current master and enables the repository only if
+# that audit's ready list names it; otherwise it refuses, enables nothing and
+# names the repository and the missing evidence (the unauthenticated-manifest
+# finding when that is the cause). It accepts no ready list, no owner and no
+# path: every evidence source is fixed by the code. `--no-sync` for the reason
+# the audit recipe gives.
+[positional-arguments]
+incident-enable repository:
+    uv run --no-sync python -m livespec_dev_tooling.incident_fleet_cli enable "$1"
+
 check-lint:
     uv run ruff check .
 
