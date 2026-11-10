@@ -27,13 +27,17 @@ transition. A repeat meets a reopen that is already recorded, which the orchestr
 refuses as a stale observation; the writer then names the `reverting` generation that
 reopen produced (the orchestrator's own `recovery-<digest>` identity).
 
-Every call ends in one `ChainWrite`: `landed` when the reply proves the blocked
-`rollback-conflict` transition, `retry` when the answer may change (the tenant was
-unavailable, or `record-merge` has not yet recorded a pre-merge arm's merge), and
-`terminal` when the chain itself decided against this write and repeating it cannot
-help: another reopen or the owner's resolution moved the chain on, or the
-orchestrator's non-atomic `reopen-regression` left the chain at `reverting` without
-moving the item's claim, so the conflict is recorded but the item cannot be blocked
+Every call ends in one `ChainWrite`. `landed` means the reply proves the blocked
+`rollback-conflict` transition. `terminal` is reserved for the chain's own proof that
+this write can never land: another reopen or the owner's resolution moved the chain
+past it, or a reply that answers for a different generation. Everything else is
+`retry`, classified by the refusal's code so the publication can bound it: the tenant
+was unavailable (the client's silence, or the orchestrator's own `*-unavailable`
+refusal), `record-merge` has not yet recorded a pre-merge arm's merge, a claim move
+lost a race, or a refusal not known to be final. A claim move refused as
+`claim-changed` across spaced attempts is the orchestrator's non-atomic
+`reopen-regression` (bd-ib-hyho7h): the chain holds the conflict but the item's claim
+never moved, and the publication journals it terminal after its bound
 (`docs/incident-observer-service.md`, "Known limitation").
 
 How the owner's resolution continues: nothing here moves a chain out of
@@ -93,13 +97,10 @@ _RECEIPT_PREFIX = "rollback-conflict:"
 _TRUNK = "trunk"
 _TENANT = "tenant-unavailable"
 _MERGE_UNRECORDED = "merge-unrecorded"
-# The chain's own refusals of the conflict write, by what each says about the incident.
+_CLAIM_CHANGED = "claim-changed"
+# The only refusals of the conflict write that are final on sight: the chain itself moved
+# past this conflict. Every other refusal is retried, within the publication's bounds.
 _CONFLICT_TERMINALS = {
-    _CLAIM_REFUSED: (
-        "half-reopen: rollback-conflict is on the chain but the item's claim was never "
-        "moved to reverting, so the item cannot be blocked (orchestrator non-atomic "
-        "reopen-regression, bd-ib-hyho7h)"
-    ),
     _GENERATION_STALE: "superseded: the chain moved past this conflict (the owner resolved it)",
     _IDENTITY_MISMATCH: "superseded: a different reopen holds the chain",
 }
@@ -263,10 +264,26 @@ _Checked = Result[dict[str, Any], AuthorityRefusal]
 
 
 def _refused(*, refusal: AuthorityRefusal, terminals: dict[str, str], prefix: str) -> ChainWrite:
-    """A refusal named on stderr: the tenant's silence is retried, its decision is final."""
+    """A refusal named on stderr, classified by its code.
+
+    An outage (`AuthorityRefusal.is_outage`: the client's own silence, or the
+    orchestrator's own `*-unavailable` / `*-outcome-unknown` refusal, which arrives as
+    exit 78 like a decision) and any refusal not known to be final are retried under the
+    publication's back-off and bound.
+    Only a refusal in `terminals` is final at once. A refused claim move is retried under
+    its own reason: `claim-changed` repeating across spaced attempts is the orchestrator's
+    half-reopen (bd-ib-hyho7h), which the publication turns terminal after its bound, while
+    every other claim outcome is a transient lease or token race.
+    """
     report_authority_refusal(refusal=refusal)
-    if not refusal.canonical:
+    if refusal.is_outage:
         return ChainWrite.retry(reason=_TENANT)
-    return ChainWrite.terminal(
-        reason=terminals.get(refusal.code, f"{prefix}-refused: {refusal.code}")
-    )
+    terminal = terminals.get(refusal.code)
+    if terminal is not None:
+        return ChainWrite.terminal(reason=terminal)
+    if refusal.code == _CLAIM_REFUSED:
+        detail = refusal.detail
+        return ChainWrite.retry(
+            reason=_CLAIM_CHANGED if detail == _CLAIM_CHANGED else f"claim-unsettled: {detail}"
+        )
+    return ChainWrite.retry(reason=f"{prefix}-refused: {refusal.code}")

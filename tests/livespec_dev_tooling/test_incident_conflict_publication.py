@@ -76,14 +76,16 @@ def test_a_lookup_that_found_no_receipt_backs_off_the_unsettled_action(failing):
     )
 
 
-def test_a_terminal_outcome_is_journaled_once_and_kept(failing, monkeypatch):
+def test_a_terminal_outcome_is_journaled_once_and_kept_against_a_later_retry(failing, monkeypatch):
     world, chain = _deferred_conflict(failing, monkeypatch)
     receipt = _action(world)["receipt"]
     clock = Clock()
     first = _outcome(
         world, receipt=receipt, outcome=ChainWrite.terminal(reason="superseded: x"), clock=clock
     )
-    later = _outcome(world, receipt=receipt, outcome=ChainWrite.landed(), clock=clock)
+    later = _outcome(
+        world, receipt=receipt, outcome=ChainWrite.retry(reason="tenant-unavailable"), clock=clock
+    )
     state = _action(world)["sweep"]
     assert (first.status, later.status, later.reason) == ("terminal", "terminal", "superseded: x")
     assert state["terminal"] == "superseded: x" and state["attempts"] == 2

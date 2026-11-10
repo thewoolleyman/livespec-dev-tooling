@@ -19,8 +19,10 @@ import io
 import json
 import sys
 import textwrap
+import time
 from dataclasses import replace
 from pathlib import Path
+from threading import Event, Thread
 from types import SimpleNamespace
 from typing import Any
 from unittest.mock import Mock
@@ -30,6 +32,7 @@ from returns.pipeline import is_successful
 from returns.unsafe import unsafe_perform_io
 
 import livespec_dev_tooling.incident_authority_client as authority_client
+import livespec_dev_tooling.incident_observer_reconcile as reconcile_module
 import livespec_dev_tooling.incident_observer_service as service
 from livespec_dev_tooling._incident_conflict_generation import ChainWrite
 from livespec_dev_tooling._incident_observer_store import repository_lock, save_record
@@ -51,6 +54,17 @@ from livespec_dev_tooling.incident_observer_reconcile import ObserverReconcile
 from livespec_dev_tooling.incident_observer_service import ControllerService
 from tests.livespec_dev_tooling import test_incident_observer_control as control_tests
 from tests.livespec_dev_tooling import test_incident_recovery_principal as principal_tests
+from tests.livespec_dev_tooling.fixtures.incident_authority_refusals import (
+    AUTHORITY_UNAVAILABLE,
+    CLAIM_OUTCOMES,
+    CRASH_EXIT,
+    REFUSED_EXIT,
+    TRANSITION_OUTCOME_UNKNOWN,
+    TRANSITION_UNAVAILABLE,
+    client_timeout,
+    crash_stderr,
+    refusal_reply,
+)
 from tests.livespec_dev_tooling.test_incident_recovery_principal import (
     REPOSITORY,
     World,
@@ -72,8 +86,9 @@ _REVERT_RECEIPT = "recovery-inverse:exact-action-1:commit:" + "a" * 40
 # and their `operation_digest`, so the eligibility, staleness, canonical-payload, claim and
 # recovery rules are the real ones. `item.json` holds the item's status and the operation
 # its claim names.
-_READER = textwrap.dedent(
-    """
+_READER = (
+    textwrap.dedent(
+        """
     import hashlib, json, sys, time
     from pathlib import Path
 
@@ -81,8 +96,16 @@ _READER = textwrap.dedent(
     argv = sys.argv[1:]
     action, flags = argv[0], dict(zip(argv[1::2], argv[2::2]))
     mode = (here / "mode").read_text() if (here / "mode").exists() else "up"
-    if mode == "down" or (mode == "record-down" and action == "record-rollback-conflict"):
-        sys.exit(1)
+    # An unreachable tenant answers exactly as the installed reader does: its own named
+    # refusal, exit 78 (tests/livespec_dev_tooling/fixtures/incident_authority_refusals.py).
+    outages = __OUTAGES__
+    on_record = mode in ("record-down", "record-unknown") and action == "record-rollback-conflict"
+    if mode == "down" or on_record:
+        print(outages[mode])
+        sys.exit(__REFUSED_EXIT__)
+    if mode == "crash":
+        sys.stderr.write(__CRASH__)
+        sys.exit(__CRASH_EXIT__)
     if mode == "hang":
         time.sleep(30)
     if mode == "garbage":
@@ -215,6 +238,8 @@ _READER = textwrap.dedent(
                 refuse("incident-generation-stale", matched["item_id"])
             if item.get("claim") != matched["operation_id"]:
                 refuse("incident-rollback-conflict-lifecycle-refused", "claim-changed")
+            if mode.startswith("claim-"):
+                refuse("incident-rollback-conflict-lifecycle-refused", mode)
             item.update(status="blocked", claim=operation)
             (here / "item.json").write_text(json.dumps(item))
         state = "active" if mode == "reply-lifecycle" else item["status"]
@@ -222,6 +247,28 @@ _READER = textwrap.dedent(
              "reading": {"attempt": tamper(recorded, "reply-")}})
     refuse("incident-unknown-action", action)
     """
+    )
+    .replace(
+        "__OUTAGES__",
+        repr(
+            {
+                "down": refusal_reply(
+                    code=AUTHORITY_UNAVAILABLE,
+                    detail="Dolt server unreachable at 127.0.0.1:3399: connection refused",
+                ),
+                "record-down": refusal_reply(
+                    code=TRANSITION_UNAVAILABLE,
+                    detail="Dolt server unreachable: connection refused",
+                ),
+                "record-unknown": refusal_reply(
+                    code=TRANSITION_OUTCOME_UNKNOWN, detail="readback failed after the write"
+                ),
+            }
+        ),
+    )
+    .replace("__REFUSED_EXIT__", str(REFUSED_EXIT))
+    .replace("__CRASH__", repr(crash_stderr(action="record-rollback-conflict")))
+    .replace("__CRASH_EXIT__", str(CRASH_EXIT))
 )
 
 
@@ -495,7 +542,7 @@ def test_an_unavailable_tenant_is_retried_and_writes_nothing(chain):
 
 
 def test_a_hung_reader_is_bounded_and_retried(chain, monkeypatch):
-    monkeypatch.setattr(authority_client, "AUTHORITY_CALL_CEILING_SECONDS", 1)
+    client_timeout(monkeypatch=monkeypatch)
     chain.mode("hang")
     assert chain.writer.record(intent=_intent(), receipt=_RECEIPT) == _TENANT
     assert chain.transitions() == []
@@ -540,11 +587,11 @@ def test_a_reply_missing_its_result_keys_is_never_a_recorded_conflict(tmp_path):
     assert written == ChainWrite.terminal(reason="conflict-reply-unproven")
 
 
-def test_a_reopen_the_chain_refuses_is_terminal_and_named_on_stderr(tmp_path, capsys):
+def test_a_reopen_refusal_not_known_to_be_final_is_retried_under_its_code(tmp_path, capsys):
     other = _chain(tmp_path, registration=_registration(phase="collecting-failures"))
     intent = _intent(phase="collecting-failures")
     written = other.writer.record(intent=intent, receipt=_RECEIPT)
-    assert written == ChainWrite.terminal(reason="reopen-refused: incident-reopen-not-eligible")
+    assert written == ChainWrite.retry(reason="reopen-refused: incident-reopen-not-eligible")
     assert other.actions() == ["reopen-regression"] and other.transitions() == []
     assert "incident-authority-refused: incident-reopen-not-eligible" in capsys.readouterr().err
 
@@ -580,20 +627,61 @@ def test_a_different_reopen_holding_the_chain_is_terminal(chain):
     assert chain.transitions() == []
 
 
-def test_a_reopen_interrupted_before_its_claim_is_detected_terminal_and_cites_the_carrier(
-    chain, capsys
-):
-    """bd-ib-hyho7h: the chain moved to reverting but the claim stayed on the merge."""
+def test_a_reopen_interrupted_before_its_claim_is_retried_as_claim_changed(chain, capsys):
+    """bd-ib-hyho7h: the chain moved to reverting but the claim stayed on the merge.
+
+    One `claim-changed` is indistinguishable from a lost token race, so the writer retries
+    it under its own reason; the publication calls it a half-reopen only once it persists.
+    """
     chain.mode("half-reopen")
     assert chain.writer.record(intent=_intent(), receipt=_RECEIPT) == _TENANT
     chain.mode("up")
     written = chain.writer.record(intent=_intent(), receipt=_RECEIPT)
-    assert written.status == "terminal"
-    assert written.reason.startswith("half-reopen:") and "bd-ib-hyho7h" in written.reason
+    assert written == ChainWrite.retry(reason="claim-changed")
     assert chain.history()[-1]["phase"] == "rollback-conflict"
     assert chain.status() == "active"
     err = capsys.readouterr().err
     assert "incident-rollback-conflict-lifecycle-refused: claim-changed" in err
+
+
+@pytest.mark.parametrize("outcome", [o for o in CLAIM_OUTCOMES if o != "claim-changed"])
+def test_a_transient_claim_outcome_is_retried_never_called_a_half_reopen(chain, outcome):
+    chain.mode(outcome)
+    written = chain.writer.record(intent=_intent(), receipt=_RECEIPT)
+    assert written == ChainWrite.retry(reason=f"claim-unsettled: {outcome}")
+
+
+@pytest.mark.parametrize(
+    "phase", ["master-observation", "repair", "reverting"], ids=["merged", "armed", "reopened"]
+)
+def test_the_orchestrators_own_outage_refusal_is_retried_at_every_entry_point(
+    tmp_path, phase, capsys
+):
+    """The real reader's Dolt outage: exit 78, incident-authority-unavailable (review F1)."""
+    if phase == "repair":
+        chain, _ = _armed_chain(tmp_path / "armed", registration=_registration(phase=phase))
+    else:
+        chain = _chain(tmp_path, registration=_registration(phase=phase))
+    chain.down(down=True)
+    assert chain.writer.record(intent=_intent(phase=phase), receipt=_RECEIPT) == _TENANT
+    assert f"incident-authority-refused: {AUTHORITY_UNAVAILABLE}" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    ("mode", "code"),
+    [("record-down", TRANSITION_UNAVAILABLE), ("record-unknown", TRANSITION_OUTCOME_UNKNOWN)],
+)
+def test_a_conflict_commit_that_failed_or_whose_fate_is_unknown_is_retried(
+    chain, capsys, mode, code
+):
+    chain.mode(mode)
+    assert chain.writer.record(intent=_intent(), receipt=_RECEIPT) == _TENANT
+    assert f"incident-authority-refused: {code}" in capsys.readouterr().err
+
+
+def test_a_reader_that_dies_without_a_reply_is_retried(chain):
+    chain.mode("crash")
+    assert chain.writer.record(intent=_intent(), receipt=_RECEIPT) == _TENANT
 
 
 def test_a_failure_with_no_cause_has_nothing_to_attribute_and_calls_nothing(chain):
@@ -741,11 +829,11 @@ def test_a_merge_record_that_is_not_this_attempts_landed_merge_is_terminal(
     assert "records no merge of this attempt" in capsys.readouterr().err
 
 
-def test_a_merge_read_the_chain_refuses_otherwise_is_terminal(tmp_path):
+def test_a_merge_read_the_chain_refuses_otherwise_is_retried_under_its_code(tmp_path):
     chain, _ = _armed_chain(tmp_path / "armed", registration=_registration(phase="repair"))
     chain.mode("history-refused")
     written = chain.writer.record(intent=_intent(phase="repair"), receipt=_RECEIPT)
-    assert written == ChainWrite.terminal(
+    assert written == ChainWrite.retry(
         reason="merge-read-refused: incident-authority-history-unreadable"
     )
 
@@ -929,10 +1017,15 @@ def test_a_terminal_conflict_is_journaled_with_its_reason_and_never_written_agai
     _ = _settle(world, automatic=True)
     chain.mode("up")
     clock = Clock()
-    clock.now += 3600
-    terminal = _settle(world, automatic=True, clock=clock)
+    reasons = []
+    for _attempt in range(3):
+        clock.now += 3600
+        reasons.append(_settle(world, automatic=True, clock=clock).reason)
+    terminal_reason = reasons[-1]
     state = _action(world)["sweep"]
-    assert "rollback-conflict terminal: half-reopen:" in terminal.reason
+    assert reasons[:2] == ["rollback-conflict deferred: claim-changed"] * 2
+    assert state["streak"] == 3 and state["attempts"] == 4
+    assert "rollback-conflict terminal: half-reopen:" in terminal_reason
     assert state["terminal"].startswith("half-reopen:") and "bd-ib-hyho7h" in state["terminal"]
     assert "terminal: half-reopen:" in capsys.readouterr().err
     calls = len(chain.calls())
@@ -1075,6 +1168,103 @@ def test_a_write_whose_action_was_reconciled_meanwhile_is_left_reconciled(failin
     assert (
         publication.publish(intent=world.intent, receipt="rollback-conflict:other", automatic=True)
     ).status == "skipped"
+
+
+def test_a_claim_race_lost_once_then_won_lands_and_is_never_called_a_half_reopen(
+    failing, monkeypatch
+):
+    world, chain = failing
+    _journal(world, chain, monkeypatch)
+    chain.mode("claim-changed")
+    clock = Clock()
+    lost = _settle(world, automatic=True, clock=clock)
+    chain.mode("up")
+    clock.now += 3600
+    won = _settle(world, automatic=True, clock=clock)
+    assert "deferred: claim-changed" in lost.reason and won.status == "reconciled"
+    assert "terminal" not in _action(world)["sweep"]
+
+
+def test_a_landed_write_wins_over_a_terminal_a_rival_recorded_first(failing, monkeypatch):
+    world, chain = failing
+    _journal(world, chain, monkeypatch)
+    chain.down(down=True)
+    assert "deferred" in _settle(world, automatic=True).reason
+    receipt = _action(world)["receipt"]
+    rival = record_outcome(
+        state=world.installation.state,
+        repository=REPOSITORY,
+        action_id=world.intent.action_id,
+        receipt=receipt,
+        outcome=ChainWrite.terminal(reason="superseded: a rival's diagnosis"),
+    )
+    landed = record_outcome(
+        state=world.installation.state,
+        repository=REPOSITORY,
+        action_id=world.intent.action_id,
+        receipt=receipt,
+        outcome=_LANDED,
+    )
+    action = _action(world)
+    assert (rival.status, landed.status, action["reconciled"]) == ("terminal", "reconciled", True)
+    assert "terminal" not in action["sweep"]
+    assert action["sweep"]["superseded_terminal"] == "superseded: a rival's diagnosis"
+
+
+def test_a_write_made_during_the_chain_call_survives_the_outcome_write(failing, monkeypatch):
+    """The outcome write re-reads the record under the fence; it never saves a stale copy."""
+    world, chain = failing
+    _journal(world, chain, monkeypatch)
+    chain.down(down=True)
+    assert "deferred" in _settle(world, automatic=True).reason
+    receipt = _action(world)["receipt"]
+    other_id = "f" * 64
+
+    def concurrent(**_):
+        with repository_lock(directory=world.installation.state, repository=REPOSITORY) as path:
+            record = json.loads(path.read_text())
+            record["actions"][other_id] = {"status": "pending", "written": "mid-call"}
+            record["actions"][world.intent.action_id]["note"] = "mid-call"
+            save_record(path=path, record=record)
+        return _LANDED
+
+    published = ConflictPublication(
+        state=world.installation.state,
+        repository=REPOSITORY,
+        chain=SimpleNamespace(record=concurrent),
+    ).publish(intent=world.intent, receipt=receipt, automatic=False)
+    actions = json.loads(world.record.read_text())["actions"]
+    assert published.status == "reconciled" and actions[world.intent.action_id]["reconciled"]
+    assert actions[other_id] == {"status": "pending", "written": "mid-call"}
+    assert actions[world.intent.action_id]["note"] == "mid-call"
+
+
+def test_a_callback_gets_the_fence_while_the_principals_lookup_is_slow(failing, monkeypatch):
+    """/reconcile asks the principal for the receipt OUTSIDE the fence (review F4, MR14)."""
+    world, chain = failing
+    _overlap(world)
+    _recover(world, monkeypatch)
+    _use_reader(world=world, chain=chain)
+    looking = Event()
+
+    class SlowForge(reconcile_module.ProcessInverseForge):
+        def read_exact_receipt(self, *, intent):
+            looking.set()
+            time.sleep(6)
+            return super().read_exact_receipt(intent=intent)
+
+    monkeypatch.setattr(reconcile_module, "ProcessInverseForge", SlowForge)
+    thread = Thread(target=lambda: _settle(world, automatic=True), daemon=True)
+    thread.start()
+    assert looking.wait(30)
+    started = time.monotonic()
+    with repository_lock(
+        directory=world.installation.state, repository=REPOSITORY, wait_seconds=5.0
+    ):
+        waited = time.monotonic() - started
+    assert waited < 5.0 and thread.is_alive()
+    thread.join(timeout=60)
+    assert not thread.is_alive() and chain.status() == "blocked"
 
 
 def test_a_moved_head_with_no_overlap_recomputes_and_never_reaches_the_chain(failing, monkeypatch):

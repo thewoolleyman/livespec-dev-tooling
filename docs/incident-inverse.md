@@ -112,10 +112,13 @@ and the finding.
 Each write ends in one `ChainWrite`:
 
 - `landed`: the reply proves the blocked transition.
-- `retry`: the tenant was unavailable, or the merge is not yet recorded.
-- `terminal`: the chain decided against the write. The owner already resolved it, a
-  different reopen holds the chain, or the half-reopen named in
-  `docs/incident-observer-service.md` ("Known limitation").
+- `retry`: the answer may change. Either the tenant was unavailable (the client's
+  silence, or the orchestrator's own exit-78 `*-unavailable` refusal), the merge is not
+  yet recorded, a claim move lost a race, or the refusal is not known to be final. The
+  publication bounds every retry. A `claim-changed` that persists is the half-reopen
+  named in `docs/incident-observer-service.md` ("Known limitation").
+- `terminal`: the chain proved the write can never land. The owner already resolved it,
+  a different reopen holds the chain, or a reply answers for another generation.
 
 Only a conflict receipt is ever written: a successful revert receipt never reaches the
 conflict action. A moved master head with no overlap recomputes the inverse and never

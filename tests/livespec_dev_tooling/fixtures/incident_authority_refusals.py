@@ -35,13 +35,17 @@ The three shapes an outage really takes, each with a helper here:
 2. a crash: a lifecycle action that meets an outage mid-action can leak the exception
    uncaught, which is exit 1, a traceback on stderr and NOTHING on stdout
    (`CRASH_EXIT`, `crash_stderr`);
-3. the client's own timeout: the reader never answers within the liveness ceiling,
-   which the client names `incident-authority-timeout`.
+3. the client's own timeout: the reader never answers within the liveness ceiling
+   (`client_timeout`), which the client names `incident-authority-timeout`.
 """
 
 from __future__ import annotations
 
 import json
+
+import pytest
+
+import livespec_dev_tooling.incident_authority_client as authority_client
 
 __all__: list[str] = [
     "AUTHORITY_UNAVAILABLE",
@@ -55,6 +59,7 @@ __all__: list[str] = [
     "REFUSED_EXIT",
     "TRANSITION_OUTCOME_UNKNOWN",
     "TRANSITION_UNAVAILABLE",
+    "client_timeout",
     "crash_stderr",
     "refusal_reply",
 ]
@@ -110,3 +115,8 @@ def crash_stderr(*, action: str) -> str:
         f"livespec_orchestrator_beads_fabro._beads_client.BeadsConnectionError: {action}: "
         "Dolt server unreachable at 127.0.0.1:3307: connection refused\n"
     )
+
+
+def client_timeout(*, monkeypatch: pytest.MonkeyPatch, ceiling_seconds: int = 1) -> None:
+    """Shrink the client's liveness ceiling so a reader that hangs times the call out."""
+    monkeypatch.setattr(authority_client, "AUTHORITY_CALL_CEILING_SECONDS", ceiling_seconds)

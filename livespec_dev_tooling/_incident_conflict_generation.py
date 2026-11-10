@@ -20,6 +20,7 @@ from typing import Any, cast
 from livespec_dev_tooling._incident_observer_types import ObserverRegistration
 
 __all__: list[str] = [
+    "HALF_REOPEN",
     "ChainWrite",
     "Generation",
     "canonical",
@@ -35,6 +36,11 @@ _REVERTING = "reverting"
 _CONFLICT_PHASE = "rollback-conflict"
 _BLOCKED = "blocked"
 _LANDED = "landed"
+HALF_REOPEN = (
+    "half-reopen: rollback-conflict is on the chain but the item's claim was never "
+    "moved to reverting, so the item cannot be blocked (orchestrator non-atomic "
+    "reopen-regression, bd-ib-hyho7h)"
+)
 _RETRY = "retry"
 _TERMINAL = "terminal"
 

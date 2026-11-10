@@ -221,19 +221,28 @@ answering 503, and GitHub never redelivers it. So the write never runs under the
   released for the chain write, and taken again to record the outcome, only if the
   action is still the one written.
 - **Back-off and terminal state**, kept per action under `sweep` in the observer
-  record (`attempts`, `next_at`, `last`, `terminal`):
-  - A `retry` outcome (the tenant was unavailable; a pre-merge arm's merge is not
-    yet recorded by `record-merge`; the principal could not yet supply a receipt)
-    waits 5 minutes, doubling per attempt up to an hour.
-  - After 12 attempts for an unrecorded merge, or 48 for anything else, the action
-    turns `terminal`.
-  - A `terminal` outcome is the chain's own decision against the write, journaled
-    with its reason at once and never retried automatically. Examples: the owner
-    already resolved the conflict (`incident-generation-stale`), a different reopen
-    holds the chain (`incident-authority-identity-mismatch`), or the half-reopen
-    below.
-  - A terminal action needs the incident owner or an operator. `/reconcile` reports
-    its reason and does not write it again.
+  record (`attempts`, `streak`, `last`, `next_at`, `terminal`):
+  - Each outcome is classified by the refusal's CODE. An unreachable tenant is a
+    `retry`. That covers the client's own silence (no reply, a timeout, a dead
+    process) and the orchestrator's OWN named refusals for an outage, which arrive
+    as exit 78 like any other refusal: `incident-authority-unavailable`,
+    `incident-transition-unavailable`, `incident-filing-unavailable` and
+    `incident-receipt-unavailable`. Other retries: a pre-merge arm's merge not yet
+    recorded by `record-merge`, the principal not yet able to supply a receipt, a
+    claim move that lost a lease or token race, and any refusal not known to be
+    final.
+  - A retry waits 5 minutes, doubling with each consecutive attempt of the same
+    reason (`streak`), up to an hour.
+  - The action turns `terminal` once its streak reaches that reason's bound: 3 for
+    `claim-changed` (journaled as the half-reopen below), 12 for an unrecorded
+    merge, 48 for anything else.
+  - Only the chain's own proof that the write can never land is `terminal` at once:
+    the owner already resolved the conflict (`incident-generation-stale`), or a
+    different reopen holds the chain (`incident-authority-identity-mismatch`).
+  - A terminal action is never retried automatically, and `/reconcile` reports its
+    reason without writing it again. A `landed` outcome still wins, though: it marks
+    the action `reconciled` even over a terminal another publisher recorded
+    meanwhile, and keeps that diagnosis as `superseded_terminal`.
 
 ### Known limitation: the orchestrator's `reopen-regression` is not atomic
 
@@ -248,8 +257,16 @@ orchestrator refuses to move the item's claim (`incident-rollback-conflict-lifec
 `claim-changed`). So read-current shows `rollback-conflict` while the item never reads
 `blocked`.
 
-No retry from dev-tooling can repair this. The writer therefore classifies that
-refusal as the terminal state `half-reopen`, journals the reason, and stops. The fix
+No retry from dev-tooling can repair this. A single `claim-changed` is also what a
+writer that lost a claim-token race sees, for example an operator's `/reconcile`
+overlapping the sweep. So the publication calls it a half-reopen only when
+`claim-changed` repeats on three consecutive attempts spaced 5 and 10 minutes apart.
+Every attempt names a `reverting` generation the chain itself verified as this
+action's own reopen. Only then does it journal the terminal state `half-reopen`
+(citing `bd-ib-hyho7h`) and stop. A race that is lost once and then won simply lands.
+Every other claim outcome the orchestrator reports under the same code
+(`claim-transition-pending`, `claim-lease-expired`, `claim-unobservable`,
+`claim-token-missing`) is retried as transient. The fix
 belongs to the orchestrator: a stale reopen whose exact successor is already recorded
 should recover that successor and finish its claim. It is filed as `bd-ib-hyho7h` in
 the livespec-orchestrator-beads-fabro tenant. Until it lands, "a repeat after a timeout
