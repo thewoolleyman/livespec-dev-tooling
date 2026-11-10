@@ -14,6 +14,8 @@ first-failure callback is never kept waiting behind a principal lookup or a chai
 write, and it honours the publication's back-off and terminal state, so nothing is
 retried forever.
 
+An entry the sweep cannot read is quarantined: journaled once under `sweep_quarantine`
+in the observer record with what is wrong with it, named on stderr, and never swept.
 An action owes the chain when its journaled conflict is not yet `reconciled`, or when
 it never settled a receipt (the principal's journal is then asked for it); either way
 only while it has no terminal state and its back-off has expired. A failed lookup backs
@@ -39,11 +41,16 @@ import sys
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from pathlib import Path
 from threading import Event, Thread
 from typing import cast
 
 from livespec_dev_tooling._incident_conflict_generation import ChainWrite
-from livespec_dev_tooling._incident_observer_store import load_record, repository_lock
+from livespec_dev_tooling._incident_observer_store import (
+    load_record,
+    repository_lock,
+    save_record,
+)
 from livespec_dev_tooling._incident_observer_types import RecoveryIntent
 from livespec_dev_tooling.incident_conflict_chain import is_conflict_receipt
 from livespec_dev_tooling.incident_conflict_publication import is_due, record_outcome
@@ -56,7 +63,15 @@ __all__: list[str] = ["ConflictSweep", "waking_recover"]
 _INTERVAL_SECONDS = 300
 _RECEIPT_UNAVAILABLE = "receipt-unavailable"
 # The failures a pass expects and survives; anything else crashes the service loudly.
-_EXPECTED = (OSError, ValueError, TypeError, KeyError, subprocess.SubprocessError)
+_EXPECTED = (
+    OSError,
+    ValueError,
+    TypeError,
+    KeyError,
+    AttributeError,
+    subprocess.SubprocessError,
+)
+_QUARANTINE = "sweep_quarantine"
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -70,17 +85,22 @@ class ConflictSweep:
     clock: Callable[[], float] = field(default=time.time, compare=False, repr=False)
 
     def pending(self) -> tuple[str, ...]:
-        """Action ids that owe the chain now; read under the fence, nothing written."""
+        """Action ids that owe the chain now, quarantining any entry it cannot read.
+
+        Read under the fence. A malformed entry (a hand edit, an older schema) is never
+        swept: it is journaled once under `sweep_quarantine` with what is wrong with it,
+        named on stderr and skipped, so one bad entry cannot crash every start.
+        """
         settings = self.installation
         try:
             with repository_lock(
                 directory=settings.state, repository=settings.repository, existing_only=True
             ) as path:
                 record = load_record(path=path)
+                actions = _quarantined(record=record, path=path)
         except (OSError, ValueError, TypeError) as error:
             _say(words=f"{error}")
             return ()
-        actions = cast("dict[str, dict[str, object]]", record.get("actions", {}))
         now = self.clock()
         return tuple(
             action_id
@@ -159,6 +179,64 @@ def waking_recover(
 
 def _say(*, words: str) -> None:
     _ = sys.stderr.write(f"incident-conflict-sweep: {words}\n")
+
+
+def _quarantined(*, record: dict[str, object], path: Path) -> dict[str, dict[str, object]]:
+    """The well-formed actions; newly malformed ones are journaled before they are skipped."""
+    raw = record.get("actions", {})
+    if not isinstance(raw, dict):
+        _say(words="the observer state's actions is not an object; nothing is swept")
+        return {}
+    actions = cast("dict[str, object]", raw)
+    held = record.get(_QUARANTINE)
+    quarantine = dict(cast("dict[str, str]", held)) if isinstance(held, dict) else {}
+    fresh = {
+        action_id: why
+        for action_id, action in actions.items()
+        if action_id not in quarantine and (why := _malformed(action=action)) is not None
+    }
+    if fresh:
+        quarantine.update(fresh)
+        record[_QUARANTINE] = quarantine
+        save_record(path=path, record=record)
+        for action_id, why in fresh.items():
+            _say(words=f"{action_id} quarantined: {why}")
+    return {
+        action_id: cast("dict[str, object]", action)
+        for action_id, action in actions.items()
+        if action_id not in quarantine
+    }
+
+
+def _malformed(*, action: object) -> str | None:
+    """What is wrong with one action entry, or None when the sweep can read it."""
+    if not isinstance(action, dict):
+        return "not an object"
+    entry = cast("dict[str, object]", action)
+    kinds: tuple[tuple[str, tuple[type, ...], str], ...] = (
+        ("receipt", (str, type(None)), "receipt is not text"),
+        ("status", (str,), "status is not text"),
+        ("reconciled", (bool,), "reconciled is not a flag"),
+        ("sweep", (dict,), "sweep state is not an object"),
+    )
+    for key, allowed, why in kinds:
+        if key in entry and not isinstance(entry[key], allowed):
+            return why
+    state = cast("dict[str, object]", entry.get("sweep", {}))
+    if "next_at" in state and not _number(value=state["next_at"]):
+        return "sweep next_at is not a number"
+    for key in ("attempts", "streak"):
+        if key in state and not _whole(value=state[key]):
+            return f"sweep {key} is not a whole number"
+    return None
+
+
+def _number(*, value: object) -> bool:
+    return isinstance(value, int | float) and not isinstance(value, bool)
+
+
+def _whole(*, value: object) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool)
 
 
 def _owes_chain(*, action: dict[str, object]) -> bool:
