@@ -2,6 +2,7 @@
 # Scratch retention helpers sourced by dev-host-retention.sh.
 
 declare -A LIVE_SESSION_IDS=()
+LIVE_SESSION_SCAN_FAILURE=
 
 # One `grep` reads every process environment, so the scan starts the same
 # number of child processes however many processes the host runs. The earlier
@@ -11,19 +12,38 @@ declare -A LIVE_SESSION_IDS=()
 # `xargs`, so a host with more processes than one argv can name still has
 # every environment read instead of none. Its command buffer is sized from
 # ARG_MAX (xargs lowers it to the real limit, silently here) because the
-# 128 KiB default would split a few thousand paths across several greps. `-s` keeps an environment that cannot be read, or whose
-# process exits mid-scan, silent; the exit status is ignored for the same
-# reason. `-z` reads NUL-separated entries and writes each match
+# 128 KiB default would split a few thousand paths across several greps.
+# `-s` keeps an environment that cannot be read, or whose process exits
+# mid-scan, silent. `-z` reads NUL-separated entries and writes each match
 # NUL-terminated, so an id is read back whole.
+#
+# The scan FAILS CLOSED. An empty answer from a scan that did not run would
+# make every session look dead, so only xargs's 0 (every grep matched) and
+# 123 (some grep exited 1 for no match or 2 for an unreadable environment) are
+# a completed scan. Anything else, including a missing ARG_MAX, returns
+# non-zero with the reason in LIVE_SESSION_SCAN_FAILURE, and the caller
+# removes no session directory and says so in the run's journal.
 scan_live_session_ids() {
-    local proc_root=${LIVESPEC_DEV_HOST_RETENTION_PROC_ROOT:-/proc} entry
-    local -a environments=("$proc_root"/[0-9]*/environ)
+    local proc_root=${LIVESPEC_DEV_HOST_RETENTION_PROC_ROOT:-/proc} entry arg_max status
+    local -a environments=("$proc_root"/[0-9]*/environ) matches=()
     LIVE_SESSION_IDS=()
+    LIVE_SESSION_SCAN_FAILURE=
     [[ -e ${environments[0]} ]] || return 0
-    while IFS= read -r -d '' entry; do
+    if ! arg_max=$(getconf ARG_MAX 2>/dev/null) || [[ ! $arg_max =~ ^[0-9]+$ ]]; then
+        LIVE_SESSION_SCAN_FAILURE="ARG_MAX unreadable"
+        return 1
+    fi
+    mapfile -d '' -t matches < <(printf '%s\0' "${environments[@]}" |
+        xargs -0 -s "$arg_max" grep -ahsz '^CLAUDE_CODE_SESSION_ID=.' -- 2>/dev/null)
+    wait "$!"
+    status=$?
+    if [[ $status != 0 && $status != 123 ]]; then
+        LIVE_SESSION_SCAN_FAILURE="status $status"
+        return 1
+    fi
+    for entry in "${matches[@]}"; do
         LIVE_SESSION_IDS[${entry#CLAUDE_CODE_SESSION_ID=}]=1
-    done < <(printf '%s\0' "${environments[@]}" |
-        xargs -0 -s "$(getconf ARG_MAX)" grep -ahsz '^CLAUDE_CODE_SESSION_ID=.' -- 2>/dev/null)
+    done
 }
 
 session_is_live() {
@@ -40,15 +60,18 @@ older_than() {
 
 remove_old_scratch() {
     local tmp_root=$1 seconds=$2 session
-    scan_live_session_ids
-    for session in "$tmp_root"/claude-*/*/*; do
-        [[ -d $session ]] || continue
-        older_than "$session" "$seconds" || continue
-        if session_is_live "$(basename "$session")"; then
-            continue
-        fi
-        rm -rf -- "$session" && log "removed dead session scratch $session"
-    done
+    if scan_live_session_ids; then
+        for session in "$tmp_root"/claude-*/*/*; do
+            [[ -d $session ]] || continue
+            older_than "$session" "$seconds" || continue
+            if session_is_live "$(basename "$session")"; then
+                continue
+            fi
+            rm -rf -- "$session" && log "removed dead session scratch $session"
+        done
+    else
+        log "WARNING: session leg skipped: liveness scan failed ($LIVE_SESSION_SCAN_FAILURE); no session scratch directory is removed this run"
+    fi
     for session in "$tmp_root"/pytest-of-*/*; do
         [[ -e $session ]] || continue
         older_than "$session" "$seconds" || continue
