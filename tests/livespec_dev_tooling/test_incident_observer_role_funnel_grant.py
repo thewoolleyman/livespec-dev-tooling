@@ -1,4 +1,4 @@
-"""The incident_observer role never claims a callback path it did not publish.
+"""The incident_observer role never claims a public path it did not publish.
 
 livespec-dev-tooling-w7n3ad. On vps (2026-11-06) the role's funnel publish
 reported a change on two applies in a row while the node's funnel status never
@@ -19,12 +19,17 @@ import yaml
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _ROLE = _REPO_ROOT / "ansible" / "roles" / "incident_observer"
 _GRANT_READ = "Read whether the tailnet grants this node the funnel attribute"
-_GRANT_FACT = "Name the funnel grant and the callback path's current disposition"
-_SAY = "Name the public callback path's disposition in the run output"
-_PUBLISH = "Publish only the callback path through a path-scoped funnel"
+_GRANT_FACT = "Name the funnel grant and each public path's current disposition"
+_SAY = "Name the public paths' disposition in the run output"
+_PUBLISH = "Publish only the declared paths through a path-scoped funnel"
 _READ_BACK = "Read the funnel configuration back after publishing"
-_REFUSE = "Refuse a publish that left the callback path unpublished"
+_REFUSE = "Refuse a publish that left a declared path unpublished"
 _PUBLISHED = "incident_observer_funnel_publish is changed and not ansible_check_mode"
+_PRODUCTION_ONLY = (
+    "not (incident_observer_scratch | bool) "
+    "and incident_observer_scratch_name is not defined "
+    "and incident_observer_target_branch | default('', true) | length == 0"
+)
 
 
 def _tasks() -> list[dict[str, Any]]:
@@ -83,14 +88,32 @@ def test_a_publish_is_believed_only_after_the_funnel_status_carries_the_path() -
     tasks = _tasks()
     read_back = tasks[_position(tasks=tasks, name=_READ_BACK)]
     refuse = tasks[_position(tasks=tasks, name=_REFUSE)]
+    fact = tasks[_position(tasks=tasks, name=_GRANT_FACT)]
 
-    assert read_back["ansible.builtin.command"]["argv"] == ["tailscale", "funnel", "status"]
+    # The read-back runs on every production apply (livespec-dev-tooling-jpfdcx):
+    # the refusal of an undeclared public path judges the port as the apply
+    # leaves it, whether or not anything was published.
+    assert read_back["ansible.builtin.command"]["argv"] == [
+        "tailscale",
+        "funnel",
+        "status",
+        "--json",
+    ]
     assert read_back["changed_when"] is False
-    assert read_back["when"] == _PUBLISHED
+    assert read_back["when"] == _PRODUCTION_ONLY
     assert refuse["when"] == _PUBLISHED
-    conditions = refuse["ansible.builtin.assert"]["that"]
-    assert all("incident_observer_funnel_after.stdout" in condition for condition in conditions)
-    assert any("(Funnel on)" in condition for condition in conditions)
-    assert any("incident_observer_funnel_path" in condition for condition in conditions)
+    assert refuse["ansible.builtin.assert"]["that"] == [
+        "incident_observer_funnel_pending | length == 0"
+    ]
+    # The refusal applies the same reading as the disposition fact, to the
+    # status read back after the publish.
+    assert {**fact["vars"], "incident_observer_funnel_read": None} == {
+        **refuse["vars"],
+        "incident_observer_funnel_read": None,
+    }
+    assert (
+        "incident_observer_funnel_after.stdout" in refuse["vars"]["incident_observer_funnel_read"]
+    )
+    assert "incident_observer_funnel_status.stdout" in fact["vars"]["incident_observer_funnel_read"]
     assert _position(tasks=tasks, name=_PUBLISH) < _position(tasks=tasks, name=_READ_BACK)
     assert _position(tasks=tasks, name=_READ_BACK) < _position(tasks=tasks, name=_REFUSE)

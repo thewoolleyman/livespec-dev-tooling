@@ -146,6 +146,46 @@ URL of a GitHub-hosted Actions run that reached the route
 proof as a finding. A member with no observer is installed as before. Recording
 the proof and arming livespec-dev-tooling is livespec-dev-tooling-jpfdcx.
 
+**The hosted route is public, through the observer's Funnel.** The maintainer
+ruled the route on livespec-dev-tooling-jpfdcx (option A, 2026-11-10): "If it
+is not adding any security concerns that we don't already have, then it's good
+enough for now." The observer role publishes `POST /ordinary-action` through
+the same path-scoped Tailscale Funnel that already makes `POST /callback`
+public, at `https://vps.perch-rudd.ts.net:10000/ordinary-action`. The role
+declares its public paths as a list (`incident_observer_funnel_paths`). Each
+entry is an exact path proxied to the same path on production's loopback port,
+never `/`. An apply refuses when a publish leaves a declared path unpublished,
+and whenever the funnel port publishes a path the list does not name. A scratch
+instance publishes nothing (`ansible/roles/incident_observer/README.md`). Every
+other route stays tailnet-only: the other query routes (`/current`, `/admitted`,
+`/provenance` and the rest), the CI identity routes and the control routes. The route is read-only: the query token is checked before
+the body is read, a missing or wrong token gets 403, and the route writes
+nothing. It takes the repository lock only to read.
+
+The reconciler reads the public URL from its own repository variable,
+`LIVESPEC_INCIDENT_OBSERVER_PUBLIC_URL`. When that variable is set, the
+reusable reconciler workflow passes it as the observer URL and passes NO
+connect-address override, so the runner dials the public name. When it is
+unset, the reconciler reads `LIVESPEC_INCIDENT_OBSERVER_URL` and
+`LIVESPEC_INCIDENT_OBSERVER_CONNECT_ADDR` exactly as before. The incident CI
+job on the k3s runners keeps those two variables unchanged: it reaches the
+tailnet port 8765 through the connect address (decision C3 under
+livespec-dev-tooling-ws2idp), and emptying them would break it.
+
+Accepted risks, named in the ruling:
+
+- **An occasional failed read through the Funnel.** The reconciler then fails
+  closed. It takes no rerun, classification or revert action in that pass, and
+  the five-minute schedule asks again.
+- **The observer is single-threaded (`wsgiref`) and now has two public
+  paths.** A flood of requests to `/ordinary-action` can hold it busy exactly
+  as a flood to `/callback` already can. Every such request is refused at the
+  token check before its body is read, but the listener serves one request at
+  a time.
+
+Follow-up owed: isolate the observer on its own host, so a flood of its public
+paths cannot contend with the dev host's other services.
+
 This source slice supplies controlled callback and action adapters. It does not
 activate a production observer. Activation and child closure still require:
 

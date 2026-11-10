@@ -34,7 +34,8 @@ which rules out every CI node and every sandbox host whatever their TLS posture.
 | --- | --- | --- |
 | `POST /current`, `POST /admitted` (query token) | the incident CI job on a self-hosted k3s runner | **tailnet-internal**: `https://vps.perch-rudd.ts.net:8765`, the `tailscale serve` mapping `vps` declares in `host_vars` (`:8765 -> http://127.0.0.1:8765`). The runners sit inside the tailnet, so nothing here needs a public address. |
 | `POST /arm`, `/bind`, `/invalidate-ci` (control token) | the maintainer's independent host | tailnet-internal, the same mapping. |
-| `POST /callback` (GitHub HMAC) | GitHub's `workflow_job` webhook delivery | **must be public**: `https://vps.perch-rudd.ts.net:10000/callback`, a path-scoped Tailscale Funnel the role publishes (`tailscale funnel --bg --https=10000 --set-path=/callback http://127.0.0.1:8765/callback`). Only that path is public; a request to any other path on port 10000 is not proxied, and the tailnet-only mapping above is untouched. Funnel admits ports 443, 8443 and 10000 only, and 8443 is already served here. |
+| `POST /callback` (GitHub HMAC) | GitHub's `workflow_job` webhook delivery | **must be public**: `https://vps.perch-rudd.ts.net:10000/callback`, a path-scoped Tailscale Funnel the role publishes (`tailscale funnel --bg --https=10000 --set-path=/callback http://127.0.0.1:8765/callback`). Only the declared paths are public (`incident_observer_funnel_paths`: this one and `/ordinary-action` below); a request to any other path on port 10000 is not proxied, and the tailnet-only mapping above is untouched. Funnel admits ports 443, 8443 and 10000 only, and 8443 is already served here. |
+| `POST /ordinary-action` (query token) | the master-health reconciler on a GitHub-hosted runner | **must be public**: `https://vps.perch-rudd.ts.net:10000/ordinary-action`, the same path-scoped Funnel (`tailscale funnel --bg --https=10000 --set-path=/ordinary-action http://127.0.0.1:8765/ordinary-action`). A hosted runner cannot reach the tailnet, so the reconciler reads it through the repository variable `LIVESPEC_INCIDENT_OBSERVER_PUBLIC_URL` with no connect-address override (`docs/master-health-reconciler.md`). The route is read-only: the query token is checked before the body is read, a missing or wrong token gets 403, and it writes nothing. Maintainer ruling, option A, on livespec-dev-tooling-jpfdcx (2026-11-10). |
 
 ## What the apply converges
 
@@ -106,14 +107,24 @@ which rules out every CI node and every sandbox host whatever their TLS posture.
   on loopback port 8765;
 - a probe that `POST /current` without the query token is refused (403), which
   is also the proof the unit passed its installation check and bound its socket;
-- the path-scoped Funnel for `/callback` (above), published only when the
-  node's funnel status does not already carry it **and the tailnet grants this
-  node the `funnel` attribute**. The role reads the grant from the node's own
-  capability map first. Without it `tailscale funnel` exits 0 and publishes
-  nothing (measured on `vps`, 2026-11-06), so the role withholds the publish,
-  says in the run output that the path is not public and whose step that is,
-  and still converges the listener and its tailnet front. After a publish it
-  reads the funnel status back and refuses an apply whose path is not there.
+- the path-scoped Funnel for each path in `incident_observer_funnel_paths`
+  (`/callback` and `/ordinary-action`, above), each an exact path proxied to
+  the same path on production's loopback port, never `/`. A path is published
+  only when the node's funnel status (read as JSON, keyed by the node's DNS
+  name and the funnel port) does not already carry it as that proxy **and the
+  tailnet grants this node the `funnel` attribute**; a path already public is
+  never rewritten. The role reads the grant from the node's own capability map
+  first. Without it `tailscale funnel` exits 0 and publishes nothing (measured
+  on `vps`, 2026-11-06), so the role withholds the publish, says in the run
+  output that the paths are not public and whose step that is, and still
+  converges the listener and its tailnet front. Every production apply then
+  reads the funnel status back. It refuses an apply whose publish left a
+  declared path unpublished, and it refuses any apply in which the funnel port
+  publishes a path the list does not name (`/` included), naming that path
+  rather than removing it
+  (`tests/livespec_dev_tooling/test_incident_observer_role_funnel_paths.py`
+  runs these tasks through the pinned `ansible-playbook` against a fake
+  `tailscale`).
 
 A second apply over a converged host reports no change: the install is gated on
 the served version, both clones sit at tags, every file is compared by content,
@@ -299,8 +310,8 @@ every production-shared write (apt, the account, the shared directories, the
 venv, the release install, the reader clone, the secrets, `reader.env`,
 `recovery-app.json`, the manifest renderer) and every funnel task carries its
 own guard on the task itself. That guard refuses whenever the scratch flag, the
-scratch name or a target branch is set, so production's public `/callback`
-funnel is never re-pointed by a scratch run.
+scratch name or a target branch is set, so production's public funnel paths
+are never re-pointed by a scratch run.
 `tests/livespec_dev_tooling/test_incident_observer_role_scratch_guards.py`
 runs the real pinned `ansible-playbook` with `--start-at-task` at every scratch
 write over a recording connection, and finds nothing run.

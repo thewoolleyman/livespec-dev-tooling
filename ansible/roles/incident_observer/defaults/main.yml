@@ -130,13 +130,25 @@ incident_observer_state_dir: /var/lib/livespec-incident/receipts
 incident_observer_reference_dir: /var/lib/livespec-incident/reference
 # The loopback port the listener binds; the tailnet front proxies to it.
 incident_observer_port: 8765
-# The ONE public route. GitHub's webhook delivery must reach POST /callback,
-# so the role publishes it through a path-scoped Tailscale Funnel on this
-# port: only this path is public; every other route stays tailnet-only on the
-# `tailscale serve` mapping the host declares. Funnel admits ports 443, 8443
-# and 10000 only, and 8443 is already served on the dev host.
+# The public routes, each an EXACT path the role publishes through a
+# path-scoped Tailscale Funnel on this port, proxied to the same path on
+# production's loopback listener; `/` is never published, and every other
+# route stays tailnet-only on the `tailscale serve` mapping the host declares.
+# Funnel admits ports 443, 8443 and 10000 only, and 8443 is already served on
+# the dev host.
+#   - POST /callback: GitHub's webhook delivery must reach it.
+#   - POST /ordinary-action: the master-health reconciler runs on
+#     GitHub-hosted runners, which cannot reach the tailnet, and asks this
+#     route who owns its next step. It is a read-only query route: the query
+#     token is checked before the body is read, and a missing or wrong token
+#     gets 403 (maintainer ruling, option A, livespec-dev-tooling-jpfdcx,
+#     2026-11-10).
+# An apply refuses when any declared path is left unpublished after it
+# publishes, and whenever the funnel port publishes a path not in this list.
 incident_observer_funnel_https_port: 10000
-incident_observer_funnel_path: /callback
+incident_observer_funnel_paths:
+  - /callback
+  - /ordinary-action
 
 # --- units ------------------------------------------------------------------
 incident_observer_unit_name: livespec-incident-observer
