@@ -1,8 +1,8 @@
 """Consumer-tier: the read-only drift mode of the Honeycomb board and trigger appliers.
 
-`SPECIFICATION/non-functional-requirements.md` §"Runner-pool node telemetry",
-paragraph "Board and trigger drift": `apply-boards.sh` and `apply-triggers.sh`
-each offer a read-only drift mode that reads the live definition by the
+`SPECIFICATION/non-functional-requirements.md`, in its runner-pool node
+telemetry section, paragraph on board and trigger drift: `apply-boards.sh` and
+`apply-triggers.sh` each offer a read-only drift mode that reads the live definition by the
 committed definition's name, leaves out what the service assigns, prints the
 name and each differing field or panel, reports an absent name as missing,
 exits non-zero on any difference and never sends a create, update or delete.
