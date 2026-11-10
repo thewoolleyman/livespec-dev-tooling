@@ -49,6 +49,9 @@ case "$1" in
       *claude-agent-acp*) [ "$STUB_NO" = claude ] && exit 1; echo /usr/local/bin/claude-agent-acp ;;
       *codex-acp*) [ "$STUB_NO" = codex ] && { echo 'No such file or directory' >&2; exit 2; }; echo /opt/livespec/codex-acp ;;
       *bwrap*) [ "$STUB_NO" = bwrap ] && { echo 'bwrap: not found' >&2; exit 127; }; echo 'bubblewrap 0.11.0' ;;
+      *claude-agent-sdk*) [ "$STUB_NO" = claude-cli ] && { echo 'Bus error' >&2; exit 135; }; echo '2.1.0 (Claude Code)' ;;
+      *pyright*) [ "$STUB_NO" = pyright ] && { echo "Error: Cannot find module 'pyright/package.json'" >&2; exit 1; }; echo 'pyright 1.1.391' ;;
+      PAGESIZE) echo 16384 ;;
     esac ;;
 esac
 """
@@ -97,7 +100,14 @@ def _run(
 def test_a_native_image_with_every_tool_passes(tmp_path: Path) -> None:
     result, _ = _run(tmp_path=tmp_path)
     assert result.returncode == 0, result.stdout + result.stderr
-    for check in ("machine", "claude-agent-acp", "codex-acp", "bwrap"):
+    for check in (
+        "machine",
+        "claude-agent-acp",
+        "codex-acp",
+        "bwrap",
+        "claude-cli-runs",
+        "pyright-runs",
+    ):
         assert f"PROOF {check} PASS" in result.stdout
 
 
@@ -152,3 +162,9 @@ def test_an_unreachable_cluster_is_named_and_creates_nothing(tmp_path: Path) -> 
     assert result.returncode != 0
     assert "nothing was created" in result.stderr
     assert not (state / "applied.yaml").exists()
+
+
+def test_the_page_size_is_reported_and_never_decides_the_proof(tmp_path: Path) -> None:
+    result, _ = _run(tmp_path=tmp_path)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "PROOF-INFO page-size 16384" in result.stdout
