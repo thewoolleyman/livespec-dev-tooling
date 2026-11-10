@@ -105,6 +105,7 @@ __all__: list[str] = [
     "GitReadRefused",
     "GitReader",
     "default_git_reader",
+    "git_directory_texts",
     "git_file_text",
     "manifest_text",
 ]
@@ -257,6 +258,49 @@ def git_file_text(
         if isinstance(shown, GitReadRefused):
             return IOFailure(shown)
         return IOSuccess(shown)
+
+
+def git_directory_texts(
+    *, run: GitReader, owner: str, repo: str, directory: str, suffixes: tuple[str, ...]
+) -> IOResult[tuple[str, ...], GitReadRefused]:
+    """Every file directly under `directory` named `*<suffix>`, from ONE default-branch clone.
+
+    The sibling of `git_file_text` for a reader that needs a whole directory (for example
+    a repository's `.github/workflows/`): one blobless clone answers the listing and every
+    blob, where calling `git_file_text` per file would clone once per file. A file whose
+    name ends in none of `suffixes` is never fetched. Any refused invocation refuses the
+    whole read, so a caller never mistakes a partial directory for the complete one.
+    """
+    with tempfile.TemporaryDirectory(prefix=_WORKSPACE_PREFIX) as workspace:
+        checkout = Path(workspace) / _CLONE_DIRNAME
+        url = f"{_ORIGIN}/{owner}/{repo}.git"
+        cloned = _answered(
+            run=run, args=["git", *_CREDENTIAL_ARGS, *_CLONE_ARGS, url, str(checkout)]
+        )
+        if isinstance(cloned, GitReadRefused):
+            return IOFailure(cloned)
+        listed = _answered(
+            run=run,
+            args=[
+                "git",
+                "-C",
+                str(checkout),
+                "ls-tree",
+                "-z",
+                "--name-only",
+                "HEAD",
+                f"{directory}/",
+            ],
+        )
+        if isinstance(listed, GitReadRefused):
+            return IOFailure(listed)
+        texts: list[str] = []
+        for path in sorted(name for name in listed.split("\0") if name.endswith(suffixes)):
+            shown = _answered(run=run, args=["git", "-C", str(checkout), "show", f"HEAD:{path}"])
+            if isinstance(shown, GitReadRefused):
+                return IOFailure(shown)
+            texts.append(shown)
+        return IOSuccess(tuple(texts))
 
 
 def manifest_text(
