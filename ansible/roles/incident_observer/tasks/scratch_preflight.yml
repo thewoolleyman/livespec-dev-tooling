@@ -5,113 +5,81 @@
 #
 # Both run on the PRODUCTION host as production's controller account, so the
 # separation is enforced here, in code, not by the operating system. A typo in a
-# `-e` override must refuse, never act on a production path. Four layers, each
-# its own assert so a refusal names its reason:
+# `-e` override must refuse, never act on a production path.
 #
-# 1. the name is ONE safe path segment, and the branch and port are not
-#    production's;
-# 2. every value the two instances share (directories, accounts, credential
-#    files) is exactly production's, so a scratch apply cannot move one;
-# 3. every per-instance path is exactly the layout the name fixes, so an
-#    override of a single path refuses instead of landing somewhere else;
+# NO VERDICT READS A VARIABLE THAT ONLY STATES WHAT IS EXPECTED. An `-e`
+# override outranks every variable a play, a vars file, `include_vars`,
+# `set_fact` or a task's `vars:` can set, so production's paths and the scratch
+# layout are spelled INLINE in each assert, from fixed literals plus the
+# validated name. The only variables an assert reads are the ones the role then
+# ACTS on. `test_incident_observer_role_scratch_refusals.py` holds every literal
+# here equal to defaults/main.yml.
+#
+# Five layers, each its own assert so a refusal names its reason:
+#
+# 1. scratch mode is on; the name is ONE safe path segment; the branch starts
+#    with `incident-scratch/`; the port is not production's;
+# 2. every value the two instances share is exactly production's;
+# 3. every per-instance path and unit name is exactly the layout the name fixes;
 # 4. after `realpath` normalization (a trailing slash, `..`), no scratch path
-#    is, sits inside, or contains a path production owns; production's home
-#    and configuration directory are parents the scratch paths may sit inside,
-#    never be or contain.
+#    is, sits inside, or contains a path production owns; production's home and
+#    configuration directory are parents the scratch paths may sit inside,
+#    never be or contain;
+# 5. on the HOST, read as root without following links, no scratch path is a
+#    symbolic link. `realpath` above runs on the control node as the operator,
+#    who cannot enter production's 0750 home, so it cannot see a link there.
 
-- name: Read production's values for the scratch instance to be checked against
-  # The role's defaults ARE production's values; a scratch run overrides them,
-  # so they are read under one separate name, compared against, never applied.
+- name: Read production's values for the teardown's read-back
+  # Evidence only: the teardown names what it reads back from these. No assert
+  # below reads them.
   ansible.builtin.include_vars:
     file: "{{ role_path }}/defaults/main.yml"
     name: incident_observer_production
 
-- name: Refuse a scratch name that is not one safe path segment, or production's branch or port
+- name: Refuse scratch variables without scratch mode, an unsafe name, a non-scratch branch or production's port
   ansible.builtin.assert:
     that:
       - incident_observer_scratch | bool
+      - incident_observer_scratch_name is defined
       - incident_observer_scratch_name is string
       - incident_observer_scratch_name | length > 0
       - incident_observer_scratch_name | length <= 40
       - incident_observer_scratch_name is match('[a-z0-9]')
       - incident_observer_scratch_name | regex_findall('[^a-z0-9-]') | length == 0
-      - incident_observer_target_branch | length > 0
-      - incident_observer_target_branch != 'master'
-      - incident_observer_port | int != incident_observer_production.incident_observer_port | int
+      - incident_observer_target_branch is string
+      - incident_observer_target_branch is match('incident-scratch/[a-z0-9]')
+      - incident_observer_target_branch | regex_findall('[^a-z0-9._/-]') | length == 0
+      - "'..' not in incident_observer_target_branch"
+      - incident_observer_port | int > 0
+      - incident_observer_port | int < 65536
+      - incident_observer_port | int != 8765
     fail_msg: >-
-      incident_observer_scratch_name must be one path segment of lowercase
-      letters, digits and hyphens (got {{ incident_observer_scratch_name | to_json }}),
-      the target branch must be named and not master, and the port must not be
-      production's {{ incident_observer_production.incident_observer_port }}.
-      Nothing has been written, stopped or removed.
+      a scratch run needs incident_observer_scratch true (scratch variables are
+      set, so production's path is refused), a name of one path segment of
+      lowercase letters, digits and hyphens, a branch under incident-scratch/,
+      and a port other than production's 8765. Nothing has been written,
+      stopped or removed.
     success_msg: the scratch instance is {{ incident_observer_scratch_name }} on {{ incident_observer_target_branch }}
-
-- name: Name the layout the scratch name fixes, and every path production owns
-  ansible.builtin.set_fact:
-    # The per-instance paths this run would use, and, in the same order, the
-    # ones its name fixes beneath production's own directories. The fixed
-    # layout is spelled inline, never through a variable, because an `-e`
-    # override outranks every variable a play or a fact can set.
-    incident_observer_scratch_paths:
-      - "{{ incident_observer_scratch_root }}"
-      - "{{ incident_observer_state_dir }}"
-      - "{{ incident_observer_reference_dir }}"
-      - "{{ incident_observer_config_path }}"
-      - "{{ incident_observer_manifest_path }}"
-      - "{{ incident_observer_unit_path }}"
-      - "{{ incident_observer_fetch_service_path }}"
-      - "{{ incident_observer_fetch_timer_path }}"
-    incident_observer_scratch_layout:
-      - "{{ incident_observer_production.incident_observer_home }}/scratch-{{ incident_observer_scratch_name }}"
-      - "{{ incident_observer_production.incident_observer_home }}/scratch-{{ incident_observer_scratch_name }}/receipts"
-      - "{{ incident_observer_production.incident_observer_home }}/scratch-{{ incident_observer_scratch_name }}/reference"
-      - "{{ incident_observer_production.incident_observer_etc_dir }}/controller-scratch-{{ incident_observer_scratch_name }}.json"
-      - "{{ incident_observer_production.incident_observer_etc_dir }}/released-installation-scratch-{{ incident_observer_scratch_name }}.json"
-      - >-
-        {{ incident_observer_production.incident_observer_unit_path | dirname }}/{{
-        incident_observer_production.incident_observer_unit_name }}-scratch.service
-      - >-
-        {{ incident_observer_production.incident_observer_fetch_service_path | dirname }}/{{
-        incident_observer_production.incident_observer_fetch_unit_name }}-scratch.service
-      - >-
-        {{ incident_observer_production.incident_observer_fetch_timer_path | dirname }}/{{
-        incident_observer_production.incident_observer_fetch_unit_name }}-scratch.timer
-    # Production paths no scratch path may be, sit inside, or contain.
-    incident_observer_production_exclusive_paths: >-
-      {{ [incident_observer_production.incident_observer_config_path,
-          incident_observer_production.incident_observer_manifest_path,
-          incident_observer_production.incident_observer_state_dir,
-          incident_observer_production.incident_observer_reference_dir,
-          incident_observer_production.incident_observer_unit_path,
-          incident_observer_production.incident_observer_fetch_service_path,
-          incident_observer_production.incident_observer_fetch_timer_path,
-          incident_observer_production.incident_observer_install_dir,
-          incident_observer_production.incident_observer_venv,
-          incident_observer_production.incident_observer_bin_dir,
-          incident_observer_production.incident_observer_reader_dir,
-          incident_observer_production.incident_observer_reader_env_path,
-          incident_observer_production.incident_observer_recovery_app_path]
-         + (incident_observer_production.incident_observer_secrets | map(attribute='path') | list) }}
-    # Production directories scratch paths sit inside, but may never be or contain.
-    incident_observer_production_parent_paths:
-      - "{{ incident_observer_production.incident_observer_home }}"
-      - "{{ incident_observer_production.incident_observer_etc_dir }}"
 
 - name: Refuse a scratch run that would move anything the two instances share
   ansible.builtin.assert:
     that:
-      - incident_observer_home == incident_observer_production.incident_observer_home
-      - incident_observer_etc_dir == incident_observer_production.incident_observer_etc_dir
-      - incident_observer_install_dir == incident_observer_production.incident_observer_install_dir
-      - incident_observer_venv == incident_observer_production.incident_observer_venv
-      - incident_observer_bin_dir == incident_observer_production.incident_observer_bin_dir
-      - incident_observer_reader_dir == incident_observer_production.incident_observer_reader_dir
-      - incident_observer_user == incident_observer_production.incident_observer_user
-      - incident_observer_group == incident_observer_production.incident_observer_group
-      - incident_observer_secrets == incident_observer_production.incident_observer_secrets
-      - incident_observer_reader_env_path == incident_observer_production.incident_observer_reader_env_path
-      - incident_observer_recovery_app_path == incident_observer_production.incident_observer_recovery_app_path
-      - incident_observer_repository == incident_observer_production.incident_observer_repository
+      - incident_observer_home == '/var/lib/livespec-incident'
+      - incident_observer_etc_dir == '/etc/livespec-incident'
+      - incident_observer_install_dir == '/opt/livespec-incident'
+      - incident_observer_venv == '/opt/livespec-incident/venv'
+      - incident_observer_bin_dir == '/opt/livespec-incident/bin'
+      - incident_observer_reader_dir == '/opt/livespec-incident/reader'
+      - incident_observer_user == 'livespec-incident'
+      - incident_observer_group == 'livespec-incident'
+      - >-
+        incident_observer_secrets
+        == [{'name': 'webhook', 'path': '/etc/livespec-incident/webhook-secret', 'env': 'LIVESPEC_INCIDENT_WEBHOOK_SECRET'},
+            {'name': 'control', 'path': '/etc/livespec-incident/control-secret', 'env': 'LIVESPEC_INCIDENT_CONTROL_SECRET'},
+            {'name': 'query', 'path': '/etc/livespec-incident/query-secret', 'env': 'LIVESPEC_INCIDENT_QUERY_SECRET'}]
+      - incident_observer_reader_env_path == '/etc/livespec-incident/reader.env'
+      - incident_observer_recovery_app_path == '/etc/livespec-incident/recovery-app.json'
+      - incident_observer_repository == 'thewoolleyman/livespec-dev-tooling'
     fail_msg: >-
       a scratch run shares production's directories, account and credential
       files read-only and may not override any of them. Nothing has been
@@ -122,12 +90,21 @@
   ansible.builtin.assert:
     that:
       - >-
-        incident_observer_scratch_paths | map('realpath') | list
-        == incident_observer_scratch_layout | map('realpath') | list
-      - incident_observer_unit_name == incident_observer_production.incident_observer_unit_name ~ '-scratch'
-      - >-
-        incident_observer_fetch_unit_name
-        == incident_observer_production.incident_observer_fetch_unit_name ~ '-scratch'
+        [incident_observer_scratch_root, incident_observer_state_dir, incident_observer_reference_dir,
+         incident_observer_config_path, incident_observer_manifest_path, incident_observer_unit_path,
+         incident_observer_fetch_service_path, incident_observer_fetch_timer_path]
+        | map('realpath') | list
+        == ['/var/lib/livespec-incident/scratch-' ~ incident_observer_scratch_name,
+            '/var/lib/livespec-incident/scratch-' ~ incident_observer_scratch_name ~ '/receipts',
+            '/var/lib/livespec-incident/scratch-' ~ incident_observer_scratch_name ~ '/reference',
+            '/etc/livespec-incident/controller-scratch-' ~ incident_observer_scratch_name ~ '.json',
+            '/etc/livespec-incident/released-installation-scratch-' ~ incident_observer_scratch_name ~ '.json',
+            '/etc/systemd/system/livespec-incident-observer-scratch.service',
+            '/etc/systemd/system/livespec-incident-reference-fetch-scratch.service',
+            '/etc/systemd/system/livespec-incident-reference-fetch-scratch.timer']
+        | map('realpath') | list
+      - incident_observer_unit_name == 'livespec-incident-observer-scratch'
+      - incident_observer_fetch_unit_name == 'livespec-incident-reference-fetch-scratch'
     fail_msg: >-
       every scratch path and unit name is fixed by incident_observer_scratch_name
       (vars/scratch.yml); override the name, never a single path. Nothing has
@@ -137,25 +114,96 @@
 - name: Refuse any scratch path that is, sits inside, or contains a path production owns
   ansible.builtin.assert:
     that:
+      # A scratch path that is, or sits inside, a path production owns.
       - >-
-        incident_observer_scratch_real | select('match', '^(' ~
-        (incident_observer_exclusive_real | map('regex_escape') | join('|')) ~ ')(/|$)')
+        [incident_observer_scratch_root, incident_observer_state_dir, incident_observer_reference_dir,
+         incident_observer_config_path, incident_observer_manifest_path, incident_observer_unit_path,
+         incident_observer_fetch_service_path, incident_observer_fetch_timer_path]
+        | map('realpath')
+        | select('match', '^(' ~ (['/etc/livespec-incident/controller.json',
+                                   '/etc/livespec-incident/released-installation.json',
+                                   '/var/lib/livespec-incident/receipts',
+                                   '/var/lib/livespec-incident/reference',
+                                   '/etc/systemd/system/livespec-incident-observer.service',
+                                   '/etc/systemd/system/livespec-incident-reference-fetch.service',
+                                   '/etc/systemd/system/livespec-incident-reference-fetch.timer',
+                                   '/opt/livespec-incident',
+                                   '/opt/livespec-incident/venv',
+                                   '/opt/livespec-incident/bin',
+                                   '/opt/livespec-incident/reader',
+                                   '/etc/livespec-incident/reader.env',
+                                   '/etc/livespec-incident/recovery-app.json',
+                                   '/etc/livespec-incident/webhook-secret',
+                                   '/etc/livespec-incident/control-secret',
+                                   '/etc/livespec-incident/query-secret']
+                                  | map('regex_escape') | join('|')) ~ ')(/|$)')
         | list | length == 0
+      # A path production owns, or one of its parents, that is or sits inside a scratch path.
       - >-
-        incident_observer_exclusive_real | select('match', '^(' ~
-        (incident_observer_scratch_real | map('regex_escape') | join('|')) ~ ')(/|$)')
-        | list | length == 0
-      - >-
-        incident_observer_parent_real | select('match', '^(' ~
-        (incident_observer_scratch_real | map('regex_escape') | join('|')) ~ ')(/|$)')
+        ['/etc/livespec-incident/controller.json',
+         '/etc/livespec-incident/released-installation.json',
+         '/var/lib/livespec-incident/receipts',
+         '/var/lib/livespec-incident/reference',
+         '/etc/systemd/system/livespec-incident-observer.service',
+         '/etc/systemd/system/livespec-incident-reference-fetch.service',
+         '/etc/systemd/system/livespec-incident-reference-fetch.timer',
+         '/opt/livespec-incident',
+         '/opt/livespec-incident/venv',
+         '/opt/livespec-incident/bin',
+         '/opt/livespec-incident/reader',
+         '/etc/livespec-incident/reader.env',
+         '/etc/livespec-incident/recovery-app.json',
+         '/etc/livespec-incident/webhook-secret',
+         '/etc/livespec-incident/control-secret',
+         '/etc/livespec-incident/query-secret',
+         '/var/lib/livespec-incident',
+         '/etc/livespec-incident']
+        | select('match', '^(' ~ ([incident_observer_scratch_root, incident_observer_state_dir,
+                                   incident_observer_reference_dir, incident_observer_config_path,
+                                   incident_observer_manifest_path, incident_observer_unit_path,
+                                   incident_observer_fetch_service_path, incident_observer_fetch_timer_path]
+                                  | map('realpath') | map('regex_escape') | join('|')) ~ ')(/|$)')
         | list | length == 0
     fail_msg: >-
-      a scratch path, normalized, is, sits inside or contains one of production's
-      paths ({{ incident_observer_exclusive_real | join(', ') }}) or is or
-      contains {{ incident_observer_parent_real | join(' or ') }}. Nothing has
-      been written, stopped or removed.
+      a scratch path, normalized, is, sits inside or contains one of the paths
+      production owns, or is or contains production's home or configuration
+      directory. Nothing has been written, stopped or removed.
     success_msg: no scratch path touches a path production owns
-  vars:
-    incident_observer_scratch_real: "{{ incident_observer_scratch_paths | map('realpath') | list }}"
-    incident_observer_exclusive_real: "{{ incident_observer_production_exclusive_paths | map('realpath') | list }}"
-    incident_observer_parent_real: "{{ incident_observer_production_parent_paths | map('realpath') | list }}"
+
+- name: Read each scratch path on the host as root, without following a link
+  # The host's own view: `realpath` above is the control node's, as the
+  # operator, and it cannot see past production's 0750 home.
+  ansible.builtin.stat:
+    path: "{{ item }}"
+    follow: false
+    get_checksum: false
+  become: true
+  check_mode: false
+  loop:
+    - "{{ incident_observer_scratch_root }}"
+    - "{{ incident_observer_state_dir }}"
+    - "{{ incident_observer_reference_dir }}"
+    - "{{ incident_observer_config_path }}"
+    - "{{ incident_observer_manifest_path }}"
+    - "{{ incident_observer_unit_path }}"
+    - "{{ incident_observer_fetch_service_path }}"
+    - "{{ incident_observer_fetch_timer_path }}"
+  register: incident_observer_scratch_path_stats
+
+- name: Refuse a scratch path that is a symbolic link on the host
+  # A link at the scratch root could point into production's receipts; the
+  # apply's directory and file tasks would follow it. A path that does not
+  # exist yet is not a link.
+  ansible.builtin.assert:
+    that:
+      - incident_observer_scratch_path_stats.results | length == 8
+      - >-
+        incident_observer_scratch_path_stats.results
+        | selectattr('stat.islnk', 'defined') | selectattr('stat.islnk')
+        | list | length == 0
+    fail_msg: >-
+      {{ incident_observer_scratch_path_stats.results | selectattr('stat.islnk', 'defined')
+         | selectattr('stat.islnk') | map(attribute='item') | list }}
+      is a symbolic link on the host; a scratch path must be a real directory or
+      file, or not exist. Nothing has been written, stopped or removed.
+    success_msg: no scratch path is a link on the host

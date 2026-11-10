@@ -261,8 +261,8 @@ override, from reaching production's state. `tasks/scratch_preflight.yml` is
 what does, and both the apply and the teardown run it before they write, stop
 or remove anything:
 
-- the name is one safe segment, the branch is named and not master, and the
-  port is not production's;
+- scratch mode is on, the name is one safe segment, the branch starts with
+  `incident-scratch/`, and the port is not production's;
 - every shared value (home, configuration directory, `/opt` install, venv and
   reader directories, account, the three secret files, `reader.env`,
   `recovery-app.json`, repository) is exactly production's;
@@ -270,7 +270,35 @@ or remove anything:
 - after `realpath` normalization (a trailing slash, `..`), no scratch path is,
   sits inside or contains any path production owns. Production's home and
   configuration directory are parents a scratch path may sit inside, never be
-  or contain.
+  or contain;
+- on the host, read as root without following links, no scratch path is a
+  symbolic link. The control node's `realpath` runs as the operator, who
+  cannot enter production's 0750 home, so it cannot see a link planted there.
+
+Each assert spells production's paths and the scratch layout inline, from
+fixed literals plus the validated name. An `-e` override outranks every
+variable a play, a vars file or a fact can set, so no intermediate variable
+stands between an override and a verdict.
+
+The role runs the preflight whenever ANY scratch-identifying variable is set:
+the scratch flag, the name, or a target branch. Its first assert refuses
+scratch variables without scratch mode, so `-e incident_observer_scratch=false`
+on the scratch playbook cannot fall through to production's path. Both scratch
+playbooks also refuse, as their first task (`pre_tasks`), unless scratch mode is
+on and a scratch name and an `incident-scratch/` branch are set.
+
+**Operator boundary: `--start-at-task`.** Ansible cannot stop an operator from
+starting a play past its refusals. Never pass `--start-at-task` to either
+scratch playbook. What still holds when one is passed: every production-shared
+write (apt, the account, the shared directories, the venv, the release
+install, the reader clone, the secrets, `reader.env`, `recovery-app.json`, the
+manifest renderer) and every funnel task carries its own guard on the task
+itself. That guard refuses whenever the scratch flag, the scratch name or a
+target branch is set, so production's public `/callback` funnel is never
+re-pointed and no shared file is written. The scratch instance's own writes are
+then unvalidated, which is why the flag is forbidden. The teardown's stops and
+removals depend on facts only its preflight sets, so starting past them fails
+on an undefined variable before acting.
 
 The scratch apply then writes none of production's shared installation: no
 apt package, account, shared directory, venv, release install, reader clone,

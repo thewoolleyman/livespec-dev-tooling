@@ -15,6 +15,24 @@
   gather_facts: false
   vars_files:
     - roles/incident_observer/vars/scratch.yml
+  pre_tasks:
+    - name: Refuse this scratch playbook without scratch mode, a scratch name and a scratch branch
+      # The FIRST task, outside the role and its conditionals: `-e
+      # incident_observer_scratch=false` (or no, 0, False) would otherwise send
+      # this play down production's path. livespec-dev-tooling-32qdja.
+      ansible.builtin.assert:
+        that:
+          - incident_observer_scratch | bool
+          - incident_observer_scratch_name is defined
+          - incident_observer_scratch_name | string | length > 0
+          - incident_observer_target_branch is defined
+          - incident_observer_target_branch is string
+          - incident_observer_target_branch is match('incident-scratch/[a-z0-9]')
+        fail_msg: >-
+          this playbook converges only the scratch instance: it needs
+          incident_observer_scratch true, a scratch name and a branch under
+          incident-scratch/. Nothing has been written, stopped or removed.
+        success_msg: scratch mode is on for {{ incident_observer_scratch_name }}
   tasks:
     - name: Remove every scratch artifact and leave production byte-identical
       ansible.builtin.include_role:

@@ -68,6 +68,8 @@ def test_an_ungranted_node_publishes_nothing_and_the_run_output_names_whose_step
     # (livespec-dev-tooling-32qdja) publishes nothing.
     assert publish["when"] == (
         "not (incident_observer_scratch | bool) "
+        "and incident_observer_scratch_name is not defined "
+        "and incident_observer_target_branch | default('', true) | length == 0 "
         "and incident_observer_funnel_granted and not incident_observer_funnel_served"
     )
     notice = say["vars"]["incident_observer_funnel_ungranted_notice"]

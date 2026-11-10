@@ -38,8 +38,10 @@ _ENGINE_TIMEOUT_SECONDS = 600
 _PREFLIGHT = "tasks/scratch_preflight.yml"
 _TEARDOWN = "tasks/scratch_teardown.yml"
 _MAIN = "tasks/main.yml"
-_FACTS = "Name the layout the scratch name fixes, and every path production owns"
-_NAME = "Refuse a scratch name that is not one safe path segment, or production's branch or port"
+_NAME = (
+    "Refuse scratch variables without scratch mode, an unsafe name, a non-scratch branch"
+    " or production's port"
+)
 _SHARED = "Refuse a scratch run that would move anything the two instances share"
 _LAYOUT = "Refuse a scratch layout other than the one its name fixes"
 _DISJOINT = "Refuse any scratch path that is, sits inside, or contains a path production owns"
@@ -94,7 +96,7 @@ Production = dict[str, Any]
 Override = Callable[[Production], object]
 
 
-def _pin() -> str:
+def ansible_core_pin() -> str:
     recipe = re.search(
         r"^ansible-apply \*args:\n(?P<body>(?:    .*\n)+)",
         _JUSTFILE.read_text(encoding="utf-8"),
@@ -115,13 +117,12 @@ def _production() -> Production:
     return base.role_yaml(relative="defaults/main.yml")
 
 
-def _variables(*, overrides: dict[str, Override]) -> dict[str, Any]:
+def scratch_run_variables(*, overrides: dict[str, Override]) -> dict[str, Any]:
     """A scratch run's variables in Ansible's precedence: defaults, vars file, facts, `-e`."""
     production = _production()
     variables: dict[str, Any] = {**production, "incident_observer_candidate_user": "candidate"}
     variables.update(yaml.safe_load(_SCRATCH_VARS.read_text(encoding="utf-8")))
     variables["incident_observer_production"] = production
-    variables.update(_task(relative=_PREFLIGHT, name=_FACTS)["ansible.builtin.set_fact"])
     variables.update({key: override(production) for key, override in overrides.items()})
     return variables
 
@@ -143,7 +144,11 @@ def _home(production: Production) -> str:
 # no host path is spelled here), and the asserts expected to REFUSE it.
 _CASES: list[tuple[str, dict[str, Override], frozenset[str]]] = [
     ("committed-defaults", {}, frozenset()),
-    ("another-safe-name", {"incident_observer_scratch_name": lambda _: "drill-2"}, frozenset()),
+    (
+        "another-safe-name",
+        {"incident_observer_scratch_name": lambda _: "32qdja-drill"},
+        frozenset(),
+    ),
     (
         "dotdot-name",
         {"incident_observer_scratch_name": lambda _: "x/../.."},
@@ -280,6 +285,80 @@ _CASES: list[tuple[str, dict[str, Override], frozenset[str]]] = [
         frozenset({_SHARED, _LAYOUT}),
     ),
     ("moved-account", {"incident_observer_user": lambda _: "root"}, frozenset({_SHARED})),
+    # Scratch variables with scratch mode switched off, in every spelling (re-review F1).
+    ("scratch-flag-false", {"incident_observer_scratch": lambda _: False}, frozenset({_NAME})),
+    (
+        "scratch-flag-string-false",
+        {"incident_observer_scratch": lambda _: "false"},
+        frozenset({_NAME}),
+    ),
+    ("scratch-flag-no", {"incident_observer_scratch": lambda _: "no"}, frozenset({_NAME})),
+    ("scratch-flag-zero", {"incident_observer_scratch": lambda _: "0"}, frozenset({_NAME})),
+    # The branch must sit under incident-scratch/ (v177's push trigger).
+    (
+        "branch-refs-heads-master",
+        {"incident_observer_target_branch": lambda _: "refs/heads/master"},
+        frozenset({_NAME}),
+    ),
+    (
+        "branch-heads-master",
+        {"incident_observer_target_branch": lambda _: "heads/master"},
+        frozenset({_NAME}),
+    ),
+    (
+        "branch-upper-master",
+        {"incident_observer_target_branch": lambda _: "MASTER"},
+        frozenset({_NAME}),
+    ),
+    (
+        "branch-prefix-only",
+        {"incident_observer_target_branch": lambda _: "incident-scratch/"},
+        frozenset({_NAME}),
+    ),
+    (
+        "branch-dotdot",
+        {"incident_observer_target_branch": lambda _: "incident-scratch/a/../b"},
+        frozenset({_NAME}),
+    ),
+    (
+        "branch-32qdja",
+        {"incident_observer_target_branch": lambda _: "incident-scratch/32qdja-proof"},
+        frozenset(),
+    ),
+    # Forged intermediates (re-review F2): no assert reads them, so each forgery
+    # changes nothing and the real state path is still refused.
+    (
+        "forged-scratch-paths-list",
+        {
+            "incident_observer_state_dir": lambda p: p["incident_observer_state_dir"],
+            "incident_observer_scratch_paths": lambda p: [
+                _home(p) + "/scratch-thhgeg",
+                _home(p) + "/scratch-thhgeg/receipts",
+            ],
+        },
+        frozenset({_LAYOUT, _DISJOINT}),
+    ),
+    (
+        "forged-production-map",
+        {
+            "incident_observer_state_dir": lambda p: p["incident_observer_state_dir"],
+            "incident_observer_production": lambda p: {
+                **p,
+                "incident_observer_state_dir": _home(p) + "/elsewhere",
+            },
+        },
+        frozenset({_LAYOUT, _DISJOINT}),
+    ),
+    (
+        "forged-layout-and-exclusive-lists",
+        {
+            "incident_observer_state_dir": lambda p: p["incident_observer_state_dir"],
+            "incident_observer_scratch_layout": lambda _: [],
+            "incident_observer_production_exclusive_paths": lambda _: [],
+            "incident_observer_production_parent_paths": lambda _: [],
+        },
+        frozenset({_LAYOUT, _DISJOINT}),
+    ),
 ]
 
 # The disjointness assert alone: a scratch state directory equal to each path
@@ -310,32 +389,37 @@ def _exclusive_cases() -> list[tuple[str, str]]:
         (f"secret:{secret['name']}", secret["path"])
         for secret in production["incident_observer_secrets"]
     ]
+    paths += [
+        (key, production[key]) for key in ("incident_observer_home", "incident_observer_etc_dir")
+    ]
     return paths
 
 
 def _batch() -> list[dict[str, Any]]:
     cases = [
-        _assert_case(relative=_PREFLIGHT, name=name, variables=_variables(overrides=overrides))
+        _assert_case(
+            relative=_PREFLIGHT, name=name, variables=scratch_run_variables(overrides=overrides)
+        )
         for _, overrides, _ in _CASES
         for name in _ASSERTS
     ]
     for _, path in _exclusive_cases():
         # The scratch state directory set to exactly one production path, with
         # the layout list moved alongside it so only the disjointness list judges.
-        variables = _variables(overrides={})
+        variables = scratch_run_variables(overrides={})
         variables["incident_observer_state_dir"] = path
         cases.append(_assert_case(relative=_PREFLIGHT, name=_DISJOINT, variables=variables))
     return cases
 
 
-def _run_engine(*, cases: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def run_engine(*, cases: list[dict[str, Any]]) -> list[dict[str, Any]]:
     env = {
         key: value
         for key, value in os.environ.items()
         if key != "COVERAGE_PROCESS_START" and not key.startswith("COV_CORE_")
     }
     completed = subprocess.run(
-        ["uvx", "--from", _pin(), "python", "-I", "-c", _ENGINE],
+        ["uvx", "--from", ansible_core_pin(), "python", "-I", "-c", _ENGINE],
         input=json.dumps(cases),
         env=env,
         capture_output=True,
@@ -353,7 +437,7 @@ def _run_engine(*, cases: list[dict[str, Any]]) -> list[dict[str, Any]]:
 @pytest.fixture(scope="module")
 def verdicts() -> list[dict[str, Any]]:
     """The engine's verdict on every batched case, once per module."""
-    return _run_engine(cases=_batch())
+    return run_engine(cases=_batch())
 
 
 def _holds(*, reply: dict[str, Any]) -> bool:
@@ -394,18 +478,36 @@ def test_the_disjointness_list_itself_refuses_every_production_path(
     assert not _holds(reply=reply), label
 
 
-def test_the_preflight_names_every_production_path_the_two_instances_share() -> None:
-    facts = _task(relative=_PREFLIGHT, name=_FACTS)["ansible.builtin.set_fact"]
-    listed = facts["incident_observer_production_exclusive_paths"]
-    parents = facts["incident_observer_production_parent_paths"]
+def test_every_literal_the_preflight_judges_by_is_production_s_own_default() -> None:
+    """The verdicts spell production inline (re-review F2); each literal must stay its default."""
+    text = (base.ROLE / _PREFLIGHT).read_text(encoding="utf-8")
+    production = _production()
 
-    for key in _EXCLUSIVE_KEYS:
-        assert f"incident_observer_production.{key}" in listed, key
-    assert "incident_observer_secrets | map(attribute='path')" in listed
-    assert parents == [
-        "{{ incident_observer_production.incident_observer_home }}",
-        "{{ incident_observer_production.incident_observer_etc_dir }}",
-    ]
+    for key in (
+        *_EXCLUSIVE_KEYS,
+        "incident_observer_home",
+        "incident_observer_etc_dir",
+        "incident_observer_user",
+        "incident_observer_group",
+        "incident_observer_repository",
+    ):
+        assert f"'{production[key]}'" in text, key
+    for secret in production["incident_observer_secrets"]:
+        assert (
+            f"{{'name': '{secret['name']}', 'path': '{secret['path']}', 'env': '{secret['env']}'}}"
+            in text
+        ), secret["name"]
+    assert len(production["incident_observer_secrets"]) == text.count("{'name': ")
+    assert f"incident_observer_port | int != {production['incident_observer_port']}" in text
+    for key in ("incident_observer_unit_name", "incident_observer_fetch_unit_name"):
+        assert f"'{production[key]}-scratch'" in text, key
+    for key in ("incident_observer_unit_path", "incident_observer_fetch_service_path"):
+        assert f"'{Path(production[key]).parent}/" in text, key
+    assert (
+        f"'{production['incident_observer_home']}/scratch-' ~ incident_observer_scratch_name"
+        in text
+    )
+    assert "incident_observer_production." not in text, "no verdict reads an overridable map"
 
 
 def test_the_apply_and_the_teardown_take_the_same_preflight_before_any_write() -> None:
@@ -433,7 +535,10 @@ def test_the_apply_and_the_teardown_take_the_same_preflight_before_any_write() -
 
     (preflight,) = [i for i, task in enumerate(main) if include.items() <= task.items()]
     venv = [task.get("name") for task in main].index(_VENV)
-    assert main[preflight]["when"] == "incident_observer_scratch | bool"
+    assert main[preflight]["when"] == (
+        "incident_observer_scratch | bool or incident_observer_scratch_name is defined"
+        " or incident_observer_target_branch | default('', true) | length > 0"
+    )
     assert preflight < venv < first_scratch_write(main)
     assert include.items() <= teardown[0].items()
     assert first_scratch_write(teardown) > 0
@@ -441,10 +546,10 @@ def test_the_apply_and_the_teardown_take_the_same_preflight_before_any_write() -
 
 def test_a_purge_removes_only_the_scratch_root_its_validated_name_fixes() -> None:
     purge = _task(relative=_TEARDOWN, name=_PURGE)
-    variables = _variables(
+    variables = scratch_run_variables(
         overrides={"incident_observer_scratch_root": lambda p: str(Path(_home(p)).parent)}
     )
-    (reply,) = _run_engine(
+    (reply,) = run_engine(
         cases=[
             {
                 "variables": variables,
@@ -460,7 +565,7 @@ def test_a_purge_removes_only_the_scratch_root_its_validated_name_fixes() -> Non
 
 
 def _read_back(*, before: dict[str, Any], after: dict[str, Any]) -> dict[str, Any]:
-    variables = _variables(overrides={})
+    variables = scratch_run_variables(overrides={})
     variables.update(_task(relative=_TEARDOWN, name=_TEARDOWN_NAMES)["ansible.builtin.set_fact"])
     variables.update(before)
     variables.update(after)
@@ -512,7 +617,7 @@ def test_the_teardown_read_back_refuses_any_moved_production_byte_or_journal_ent
         ),
     ]
 
-    held = [_holds(reply=reply) for reply in _run_engine(cases=cases)]
+    held = [_holds(reply=reply) for reply in run_engine(cases=cases)]
 
     assert held == [True, False, False, False, False]
 
@@ -546,7 +651,7 @@ def test_a_dry_run_tolerates_an_absent_reference_clone_and_an_apply_does_not(
     *, check_mode: bool, exists: bool, ready: bool
 ) -> None:
     fact = _task(relative=_MAIN, name=_READY)["ansible.builtin.set_fact"]
-    variables = _variables(overrides={})
+    variables = scratch_run_variables(overrides={})
     variables.update(
         {
             "ansible_check_mode": check_mode,
@@ -555,7 +660,7 @@ def test_a_dry_run_tolerates_an_absent_reference_clone_and_an_apply_does_not(
         }
     )
     (expression,) = fact.values()
-    (reply,) = _run_engine(
+    (reply,) = run_engine(
         cases=[
             {
                 "variables": variables,

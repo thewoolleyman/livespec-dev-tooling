@@ -67,7 +67,14 @@
   # values, the fixed layout and normalized disjointness from every production
   # path. livespec-dev-tooling-32qdja.
   ansible.builtin.include_tasks: scratch_preflight.yml
-  when: incident_observer_scratch | bool
+  # Whenever ANY scratch-identifying variable is set, in any spelling: the
+  # preflight's first assert then refuses scratch variables without scratch
+  # mode, so `-e incident_observer_scratch=false` on the scratch playbook
+  # cannot fall through to production's path.
+  when: >-
+    incident_observer_scratch | bool
+    or incident_observer_scratch_name is defined
+    or incident_observer_target_branch | default('', true) | length > 0
 
 - name: Look for an installation already converged here
   ansible.builtin.stat:
@@ -120,7 +127,10 @@
       - git
     state: present
   become: true
-  when: not (incident_observer_scratch | bool)
+  when: >-
+    not (incident_observer_scratch | bool)
+    and incident_observer_scratch_name is not defined
+    and incident_observer_target_branch | default('', true) | length == 0
 
 - name: Create the controller account
   ansible.builtin.user:
@@ -131,7 +141,10 @@
     shell: /usr/sbin/nologin
   become: true
   register: incident_observer_account
-  when: not (incident_observer_scratch | bool)
+  when: >-
+    not (incident_observer_scratch | bool)
+    and incident_observer_scratch_name is not defined
+    and incident_observer_target_branch | default('', true) | length == 0
 
 - name: Name whether the controller account can be become yet
   # Under `--check` on a host this role has never reached the account was not
@@ -158,7 +171,10 @@
   loop:
     - "{{ incident_observer_install_dir }}"
     - "{{ incident_observer_bin_dir }}"
-  when: not (incident_observer_scratch | bool)
+  when: >-
+    not (incident_observer_scratch | bool)
+    and incident_observer_scratch_name is not defined
+    and incident_observer_target_branch | default('', true) | length == 0
 
 - name: Create the protected configuration directory
   ansible.builtin.file:
@@ -168,7 +184,10 @@
     group: "{{ incident_observer_group }}"
     mode: "0750"
   become: true
-  when: not (incident_observer_scratch | bool)
+  when: >-
+    not (incident_observer_scratch | bool)
+    and incident_observer_scratch_name is not defined
+    and incident_observer_target_branch | default('', true) | length == 0
 
 - name: Create the controller account's home
   ansible.builtin.file:
@@ -178,7 +197,10 @@
     group: "{{ incident_observer_group }}"
     mode: "0750"
   become: true
-  when: not (incident_observer_scratch | bool)
+  when: >-
+    not (incident_observer_scratch | bool)
+    and incident_observer_scratch_name is not defined
+    and incident_observer_target_branch | default('', true) | length == 0
 
 - name: Create the scratch instance's own root beside production's state
   # The scratch state directory and reference clone are siblings beneath it,
@@ -217,7 +239,10 @@
       - "{{ incident_observer_venv }}"
     creates: "{{ incident_observer_venv }}/bin/python"
   become: true
-  when: not (incident_observer_scratch | bool)
+  when: >-
+    not (incident_observer_scratch | bool)
+    and incident_observer_scratch_name is not defined
+    and incident_observer_target_branch | default('', true) | length == 0
 
 - name: Install the released distribution from its tag, never from a checkout
   # Only when the venv does not already serve this release: pip rebuilds a
@@ -237,7 +262,10 @@
       - "livespec-dev-tooling @ git+{{ incident_observer_release_repo }}@{{ incident_observer_release }}"
   become: true
   when: >-
-    not (incident_observer_scratch | bool) and (not incident_observer_installed
+    not (incident_observer_scratch | bool)
+    and incident_observer_scratch_name is not defined
+    and incident_observer_target_branch | default('', true) | length == 0
+    and (not incident_observer_installed
     or (incident_observer_installed_version.rc | default(1)) != 0
     or ('v' ~ (incident_observer_installed_version.stdout | default('') | trim))
        != incident_observer_release)
@@ -254,7 +282,10 @@
     version: "{{ incident_observer_reader_release }}"
     depth: 1
   become: true
-  when: not (incident_observer_scratch | bool)
+  when: >-
+    not (incident_observer_scratch | bool)
+    and incident_observer_scratch_name is not defined
+    and incident_observer_target_branch | default('', true) | length == 0
   notify: Restart the incident observer onto its installation
 
 - name: Clone the independent reference repository at the released tag
@@ -316,7 +347,10 @@
   loop_control:
     label: "{{ item.path }}"
   no_log: true
-  when: not (incident_observer_scratch | bool)
+  when: >-
+    not (incident_observer_scratch | bool)
+    and incident_observer_scratch_name is not defined
+    and incident_observer_target_branch | default('', true) | length == 0
   notify: Restart the incident observer onto its installation
 
 - name: Write the canonical reader's credential as the unit's environment file
@@ -330,7 +364,10 @@
     mode: "0600"
   become: true
   no_log: true
-  when: not (incident_observer_scratch | bool)
+  when: >-
+    not (incident_observer_scratch | bool)
+    and incident_observer_scratch_name is not defined
+    and incident_observer_target_branch | default('', true) | length == 0
   notify: Restart the incident observer onto its installation
 
 - name: Write the recovery App credential the principal reads beside controller.json
@@ -350,7 +387,10 @@
   become: true
   no_log: true
   when:
-    - not (incident_observer_scratch | bool)
+    - >-
+      not (incident_observer_scratch | bool)
+      and incident_observer_scratch_name is not defined
+      and incident_observer_target_branch | default('', true) | length == 0
     - lookup('ansible.builtin.env', incident_observer_recovery_app_id_env) | length > 0
     - lookup('ansible.builtin.env', incident_observer_recovery_app_key_env) | length > 0
 
@@ -385,7 +425,10 @@
     group: root
     mode: "0755"
   become: true
-  when: not (incident_observer_scratch | bool)
+  when: >-
+    not (incident_observer_scratch | bool)
+    and incident_observer_scratch_name is not defined
+    and incident_observer_target_branch | default('', true) | length == 0
 
 - name: Name the installation and the account this apply has just created
   # Both facts were read before this run wrote anything, so on a FIRST apply
@@ -651,7 +694,10 @@
   changed_when: false
   failed_when: false
   check_mode: false
-  when: not (incident_observer_scratch | bool)
+  when: >-
+    not (incident_observer_scratch | bool)
+    and incident_observer_scratch_name is not defined
+    and incident_observer_target_branch | default('', true) | length == 0
 
 - name: Read whether the tailnet grants this node the funnel attribute
   # `tailscale funnel --bg --yes` on a node the tailnet policy has not granted
@@ -666,7 +712,10 @@
   register: incident_observer_tailscale_status
   changed_when: false
   check_mode: false
-  when: not (incident_observer_scratch | bool)
+  when: >-
+    not (incident_observer_scratch | bool)
+    and incident_observer_scratch_name is not defined
+    and incident_observer_target_branch | default('', true) | length == 0
 
 - name: Name the funnel grant and the callback path's current disposition
   ansible.builtin.set_fact:
@@ -678,7 +727,10 @@
           in (incident_observer_funnel_status.stdout | default('')))
          and (('proxy http://127.0.0.1:' ~ incident_observer_port ~ incident_observer_funnel_path)
               in (incident_observer_funnel_status.stdout | default(''))) }}
-  when: not (incident_observer_scratch | bool)
+  when: >-
+    not (incident_observer_scratch | bool)
+    and incident_observer_scratch_name is not defined
+    and incident_observer_target_branch | default('', true) | length == 0
 
 - name: Name the public callback path's disposition in the run output
   ansible.builtin.debug:
@@ -696,7 +748,10 @@
       this node the funnel attribute. Granting it is a tailnet-admin step
       (README.md, maintainer-only step 2); GitHub cannot deliver workflow_job
       callbacks until it is granted and this apply is run again
-  when: not (incident_observer_scratch | bool)
+  when: >-
+    not (incident_observer_scratch | bool)
+    and incident_observer_scratch_name is not defined
+    and incident_observer_target_branch | default('', true) | length == 0
 
 - name: Publish only the callback path through a path-scoped funnel
   # Persisted in tailscaled's own state (`--bg`), additive, and scoped to the
@@ -716,6 +771,8 @@
   register: incident_observer_funnel_publish
   when: >-
     not (incident_observer_scratch | bool)
+    and incident_observer_scratch_name is not defined
+    and incident_observer_target_branch | default('', true) | length == 0
     and incident_observer_funnel_granted and not incident_observer_funnel_served
   changed_when: true
 
