@@ -21,17 +21,24 @@ chain the test reads back out of the store was produced by a real race.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
+import queue
 import re
+import signal
 import subprocess
 import sys
 import tarfile
+import threading
+import time
 import uuid
 from dataclasses import dataclass
 from hashlib import sha256
+from itertools import pairwise
 from pathlib import Path
-from shutil import copytree
+from shutil import copytree, which
+from typing import IO
 
 import pytest
 
@@ -53,7 +60,28 @@ _OTHER = "race-drill-other"
 _TAG = "v0.0.0-drill-test"
 _PORT = 3307
 
-_PLAYBOOK_TIMEOUT_SECONDS = 600
+# THE HANG GUARD (livespec-dev-tooling-wacdfl). A playbook run is judged by its
+# exit status and its output, never by how long it took: on one loaded CI runner
+# this module's confirmed run took 600.04 s on its first attempt and 481.27 s on
+# its retry, and a 600-second bound on the whole run decided the verdict. The
+# guard fires only when the play has printed NOTHING for
+# `_HANG_GUARD_SILENCE_SECONDS`. The default callback prints a banner as each
+# task starts, and the play's longest single wait is bounded by its own
+# `claim_token_race_drill_*_timeout_seconds` (`_PLAY_WAIT_SECONDS` here), after
+# which it prints that task's failure itself. So a run that is merely slow keeps
+# printing and runs until it ends or the CI job's own ceiling ends it. When the
+# guard does fire, its failure names the task that was running and the elapsed
+# time of every task that completed.
+_PLAY_WAIT_SECONDS = 600
+_HANG_GUARD_SILENCE_SECONDS = _PLAY_WAIT_SECONDS + 300
+# The play's own default lead between naming the race instant and the instant
+# (`claim_token_race_drill_barrier_lead_seconds` in the playbook). It has to
+# cover the two go-FIFO release writes, each one Ansible module start; a loaded
+# runner measured 5.7 s per start, so the 6 s lead this module used to pass let
+# a slow second write miss the instant.
+_PLAY_BARRIER_LEAD_SECONDS = 30
+_TASK_BANNER = re.compile(r"^(?:TASK|RUNNING HANDLER) \[(?P<name>.*)\] \**\s*$")
+_FAILED_HOST_LINE = re.compile(r"^(?:fatal|failed): \[")
 _UTC = r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z"
 _REPORT = re.compile(
     rf"Claim-token race drill on (?P<host>\S+)\s+started at (?P<start>{_UTC})\s+ended at (?P<end>{_UTC})"
@@ -96,6 +124,26 @@ exit 0
 """
 
 
+# The stand-in `timeout`: every go-FIFO release write waits
+# `DRILL_SLOW_RELEASE_SECONDS` before it runs, the way a loaded host's module
+# start-up delays it, and then hands over to the real `timeout`. Nothing else
+# the play wraps in `timeout` is delayed.
+_TIMEOUT_STAND_IN = """#!/bin/sh
+case "$*" in
+  *go.fifo*) sleep "${DRILL_SLOW_RELEASE_SECONDS:-0}" ;;
+esac
+exec "${DRILL_REAL_TIMEOUT}" "$@"
+"""
+
+_REAL_TIMEOUT = which("timeout")
+
+
+@dataclass(frozen=True, kw_only=True)
+class _Line:
+    at: float
+    text: str
+
+
 @dataclass(frozen=True, kw_only=True)
 class _Scratch:
     root: Path
@@ -132,6 +180,95 @@ class _Scratch:
     @property
     def throwaway_dirs(self) -> list[Path]:
         return sorted(self.tmp_dir.glob("claim-token-race-drill.*"))
+
+
+def _pump(*, stream: IO[str], into: queue.Queue[_Line | None]) -> None:
+    """Hand every output line to the guard with the instant it arrived, then the end."""
+    for text in stream:
+        into.put(_Line(at=time.monotonic(), text=text))
+    into.put(None)
+
+
+def _hang_diagnosis(
+    *, lines: list[_Line], silence_seconds: float, started: float, now: float
+) -> str:
+    """Name the task the play was in and how long each task before it took."""
+    banners = [(m["name"], line.at) for line in lines if (m := _TASK_BANNER.match(line.text))]
+    completed = "; ".join(
+        f"{name!r} {after[1] - at:.1f} s" for (name, at), after in pairwise(banners)
+    )
+    running = (
+        f"task {banners[-1][0]!r}, running for {now - banners[-1][1]:.1f} s"
+        if banners
+        else "no task, before the play printed its first task banner"
+    )
+    tail = "".join(line.text for line in lines[-40:])
+    return (
+        f"playbook hang guard: no output for {silence_seconds:g} s "
+        f"({now - started:.1f} s after the run started); the play was in {running}. "
+        f"Completed tasks and their elapsed times: {completed or 'none'}.\n"
+        f"Last output:\n{tail}"
+    )
+
+
+def _run_under_hang_guard(
+    *, argv: list[str], cwd: Path, env: dict[str, str], silence_seconds: float
+) -> tuple[int, str]:
+    """Run a playbook to its end; fail with a diagnosis only if it stops printing.
+
+    The exit status and the output are returned for the caller to judge.
+    Elapsed time decides nothing unless the play has been silent for
+    `silence_seconds`, which is the hang this guard exists for.
+    """
+    lines: list[_Line] = []
+    arrivals: queue.Queue[_Line | None] = queue.Queue()
+    started = time.monotonic()
+    with subprocess.Popen(
+        argv,
+        cwd=cwd,
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        start_new_session=True,
+    ) as process:
+        assert process.stdout is not None
+        threading.Thread(
+            target=_pump, kwargs={"stream": process.stdout, "into": arrivals}, daemon=True
+        ).start()
+        while True:
+            try:
+                line = arrivals.get(timeout=silence_seconds)
+            except queue.Empty:
+                now = time.monotonic()
+                with contextlib.suppress(ProcessLookupError):
+                    os.killpg(process.pid, signal.SIGKILL)
+                process.wait()
+                pytest.fail(
+                    _hang_diagnosis(
+                        lines=lines, silence_seconds=silence_seconds, started=started, now=now
+                    )
+                )
+            if line is None:
+                break
+            lines.append(line)
+        code = process.wait()
+    return code, "".join(line.text for line in lines)
+
+
+def _first_failed_task(*, output: str) -> str:
+    current = "(before any task)"
+    for text in output.splitlines():
+        if (banner := _TASK_BANNER.match(text)) is not None:
+            current = banner["name"]
+        elif _FAILED_HOST_LINE.match(text):
+            return current
+    return "(no task reported a failure)"
+
+
+def _exit_report(*, code: int, output: str) -> str:
+    """Lead an exit-status assertion with the failed task, so a one-line report names it."""
+    return f"playbook exited {code}; first failed task: {_first_failed_task(output=output)!r}\n{output}"
 
 
 def _ansible_core_pin() -> str:
@@ -187,16 +324,21 @@ def _warm_pinned_ansible_env(*, tmp_path_factory: pytest.TempPathFactory) -> Non
         if key != "COVERAGE_PROCESS_START" and not key.startswith("COV_CORE_")
     }
     env["ANSIBLE_NOCOWS"] = "1"
-    completed = subprocess.run(
-        ["uvx", "--from", _ansible_core_pin(), "ansible-playbook", "-i", str(inventory), str(play)],
+    code, output = _run_under_hang_guard(
+        argv=[
+            "uvx",
+            "--from",
+            _ansible_core_pin(),
+            "ansible-playbook",
+            "-i",
+            str(inventory),
+            str(play),
+        ],
         cwd=root,
         env=env,
-        capture_output=True,
-        text=True,
-        timeout=_PLAYBOOK_TIMEOUT_SECONDS,
-        check=False,
+        silence_seconds=_HANG_GUARD_SILENCE_SECONDS,
     )
-    assert completed.returncode == 0, completed.stdout + completed.stderr
+    assert code == 0, _exit_report(code=code, output=output)
 
 
 @pytest.fixture
@@ -204,7 +346,11 @@ def scratch(*, tmp_path: Path) -> _Scratch:
     """Stand-ins on a private bin dir, a tagged fixture plugin repo, a bd tarball, an empty store."""
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
-    for name, body in (("ssh", _SSH_STAND_IN), ("ss", _SS_STAND_IN)):
+    for name, body in (
+        ("ssh", _SSH_STAND_IN),
+        ("ss", _SS_STAND_IN),
+        ("timeout", _TIMEOUT_STAND_IN),
+    ):
         stand_in = bin_dir / name
         stand_in.write_text(body, encoding="utf-8")
         stand_in.chmod(0o755)
@@ -283,8 +429,9 @@ def _run_playbook(
     port_busy: bool = False,
     tunnel_bind: str = "loopback",
     hang_intent: str = "",
-    probe_timeout: int = 120,
+    probe_timeout: int = _PLAY_WAIT_SECONDS,
     barrier_lead: int = 6,
+    slow_release_seconds: int = 0,
 ) -> tuple[int, str]:
     """Run the committed playbook; return its exit code and its callback output."""
     # The throwaway root is passed as the play's own variable, never as TMPDIR:
@@ -308,12 +455,15 @@ def _run_playbook(
             "DRILL_PORT_BUSY": "yes" if port_busy else "no",
             "DRILL_TUNNEL_BIND": tunnel_bind,
             "DRILL_FAKE_HANG_INTENT": hang_intent,
+            "DRILL_SLOW_RELEASE_SECONDS": str(slow_release_seconds),
+            "DRILL_REAL_TIMEOUT": str(_REAL_TIMEOUT),
             "ANSIBLE_DISPLAY_SKIPPED_HOSTS": "True",
             "ANSIBLE_NOCOWS": "1",
             "ANSIBLE_RETRY_FILES_ENABLED": "False",
             "ANSIBLE_HOST_KEY_CHECKING": "False",
             "ANSIBLE_INTERPRETER_PYTHON": "auto_silent",
             "ANSIBLE_PIPELINING": "True",
+            "PYTHONUNBUFFERED": "1",
         }
     )
     if with_secret:
@@ -330,10 +480,10 @@ def _run_playbook(
         "claim_token_race_drill_python": sys.executable,
         "claim_token_race_drill_tmp_root": str(scratch.tmp_dir),
         "claim_token_race_drill_barrier_lead_seconds": barrier_lead,
-        "claim_token_race_drill_feed_timeout_seconds": 60,
+        "claim_token_race_drill_feed_timeout_seconds": _PLAY_WAIT_SECONDS,
         "claim_token_race_drill_probe_timeout_seconds": probe_timeout,
         "claim_token_race_drill_wait_interval": 1,
-        "claim_token_race_drill_wait_retries": 15,
+        "claim_token_race_drill_wait_retries": _PLAY_WAIT_SECONDS,
     }
     if confirm is not None:
         extra_vars["claim_token_race_drill_confirm"] = confirm
@@ -349,16 +499,9 @@ def _run_playbook(
         *(["--check"] if check_mode else []),
         str(_PLAYBOOK),
     ]
-    completed = subprocess.run(
-        argv,
-        cwd=scratch.root,
-        env=env,
-        capture_output=True,
-        text=True,
-        timeout=_PLAYBOOK_TIMEOUT_SECONDS,
-        check=False,
+    return _run_under_hang_guard(
+        argv=argv, cwd=scratch.root, env=env, silence_seconds=_HANG_GUARD_SILENCE_SECONDS
     )
-    return completed.returncode, completed.stdout + completed.stderr
 
 
 def _tokens(*, scratch: _Scratch) -> dict[str, dict[str, object]]:
@@ -440,7 +583,7 @@ def test_a_run_without_the_confirmation_naming_the_target_reads_nothing_and_chan
 ) -> None:
     code, output = _run_playbook(scratch=scratch, confirm=confirm)
 
-    assert code == 0, output
+    assert code == 0, _exit_report(code=code, output=output)
     assert scratch.commands == [], output
     assert scratch.records == {}
     assert {int(m["changed"]) for m in _RECAP_CHANGED.finditer(output)} == {0}, output
@@ -471,7 +614,7 @@ def test_a_target_already_listening_on_the_dolt_port_is_refused_before_any_write
 def test_a_check_mode_run_opens_no_tunnel_and_writes_no_record(*, scratch: _Scratch) -> None:
     code, output = _run_playbook(scratch=scratch, confirm=_TARGET, check_mode=True)
 
-    assert code == 0, output
+    assert code == 0, _exit_report(code=code, output=output)
     assert "Check mode" in output
     assert all(line.startswith("ss ") for line in scratch.commands), scratch.commands
     assert scratch.records == {}
@@ -481,9 +624,17 @@ def test_a_check_mode_run_opens_no_tunnel_and_writes_no_record(*, scratch: _Scra
 def test_a_confirmed_run_races_both_cases_and_exactly_one_writer_wins_each_token(
     *, scratch: _Scratch
 ) -> None:
-    code, output = _run_playbook(scratch=scratch, confirm=_TARGET)
+    # Each go-FIFO release write starts 8 s late, as on a loaded runner: the
+    # second write of the overlapping case lands 16 s or more after the play
+    # named the instant. The run is slower and still passes.
+    code, output = _run_playbook(
+        scratch=scratch,
+        confirm=_TARGET,
+        barrier_lead=_PLAY_BARRIER_LEAD_SECONDS,
+        slow_release_seconds=8,
+    )
 
-    assert code == 0, output
+    assert code == 0, _exit_report(code=code, output=output)
     _assert_everything_removed(scratch=scratch, output=output)
     report = _REPORT.search(output)
     assert report is not None, output
@@ -536,3 +687,24 @@ def test_a_release_instant_already_past_is_a_diagnosable_miss_and_still_cleaned_
     _assert_everything_removed(scratch=scratch, output=output)
     (item,) = _items(scratch=scratch).values()
     assert item["status"] == "closed", "the always block disposes of the probe item"
+
+
+def test_a_playbook_run_that_stops_printing_fails_naming_its_task_and_each_completed_tasks_time(
+    *, tmp_path: Path
+) -> None:
+    # A real hang: the stand-in prints two task banners, then never prints again.
+    script = (
+        "printf 'TASK [Read the drill start] ***\\nTASK [Open the tunnel] ***\\n'; exec sleep 600"
+    )
+
+    with pytest.raises(pytest.fail.Exception) as failure:
+        _run_under_hang_guard(
+            argv=["sh", "-c", script], cwd=tmp_path, env=dict(os.environ), silence_seconds=5
+        )
+
+    message = str(failure.value)
+    assert "playbook hang guard: no output for 5 s" in message
+    assert "the play was in task 'Open the tunnel', running for " in message
+    assert re.search(
+        r"Completed tasks and their elapsed times: 'Read the drill start' \d+\.\d s\.", message
+    )
