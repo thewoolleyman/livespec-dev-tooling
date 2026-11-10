@@ -1,7 +1,8 @@
 """Every out-of-band precondition of the VPS dev-host roles fails at the start or is recorded.
 
-Work-item `livespec-dev-tooling-c763up`; spec clause: SPECIFICATION/non-functional-requirements.md
-§"Host provisioning tree", "Out-of-band preconditions fail at the start". A role that
+Work-item `livespec-dev-tooling-c763up`; spec clause: the "Out-of-band preconditions fail at
+the start" clause of the host provisioning tree in
+SPECIFICATION/non-functional-requirements.md. A role that
 depends on state it cannot create MUST assert each such input before its first
 task that can change the host, and MUST list each step only an operator can take
 after the apply in an "Out-of-band" section of its `HOST_VARS.md`. These tests

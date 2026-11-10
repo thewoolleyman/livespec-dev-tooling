@@ -84,10 +84,17 @@ _SERVER_SELECTORS = (
 # `ansible-playbook --list-tasks ansible/gates-kubeconfig.yml` prints today, in
 # order.
 _GATES_TASK_NAMES = (
-    "Install kubectl pinned to the cluster's k3s minor",
-    "Install the gates-credential scripts",
+    # The three leading tasks and the refusal are the out-of-band precondition
+    # asserts of livespec-dev-tooling-c763up: the remote file is looked for,
+    # required by name, fetched and checked BEFORE the first task that changes the
+    # host, so an apply on a node that never rendered the kubeconfig fails at its
+    # start. The role keeps its name and its install tasks; only their order moved.
+    "Look for the rendered gates kubeconfig on the control-plane node",
+    "Require the control-plane node to have rendered the gates kubeconfig",
     "Read the rendered gates kubeconfig from the control-plane node",
     "Refuse a fetched file that is not a kubeconfig",
+    "Install kubectl pinned to the cluster's k3s minor",
+    "Install the gates-credential scripts",
     "Create the credential directory",
     "Create the group that may read the gates credential",
     "Put this host's login user in the gate-client group",
