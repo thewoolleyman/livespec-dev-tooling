@@ -75,9 +75,11 @@ _SHARED_WRITES = (
 _FUNNEL = (
     "Read this node's tailscale serve and funnel configuration",
     "Read whether the tailnet grants this node the funnel attribute",
-    "Name the funnel grant and the callback path's current disposition",
-    "Name the public callback path's disposition in the run output",
-    "Publish only the callback path through a path-scoped funnel",
+    "Name the funnel grant and each public path's current disposition",
+    "Name the public paths' disposition in the run output",
+    "Read the funnel configuration back after publishing",
+    "Refuse a funnel port that publishes a path beyond the declared list",
+    "Publish only the declared paths through a path-scoped funnel",
 )
 _NAMES = "Name what the teardown removes and every production path it reads back"
 

@@ -416,3 +416,54 @@ has already landed in the episode is not reverted again. Unrecorded changed
 paths refuse too, whenever a later commit exists: an unknown list cannot show
 there is no overlap, and a file list the API truncated at 300 entries is
 recorded as unknown, not short.
+
+## Asking the incident observer from a hosted runner — livespec-dev-tooling-jpfdcx
+
+Before the ONE step, the reusable workflow's step "Ask the incident observer
+who owns this step" asks the independent incident observer's
+`POST /ordinary-action` route whether an incident owns the step
+(`docs/incident-observer.md`, livespec-dev-tooling-ariayn). The reconciler runs
+on GitHub-hosted runners, and the observer's query routes are tailnet-only, so
+a hosted runner needs a route that does not pass through the tailnet.
+
+The maintainer ruled the route on livespec-dev-tooling-jpfdcx (option A,
+2026-11-10): the observer role publishes `/ordinary-action` through the same
+path-scoped Tailscale Funnel as `/callback`, at
+`https://vps.perch-rudd.ts.net:10000/ordinary-action`. The route is read-only
+and token-guarded: the query token is checked before the body is read, a
+missing or wrong token gets 403, and the route writes nothing. The rejected
+options were a tailnet join step in this workflow, which would need an untagged
+auth key in CI that the tailnet posture forbids, and deferring the route.
+
+The step reads three repository settings:
+
+| Setting | Kind | Used when |
+| --- | --- | --- |
+| `LIVESPEC_INCIDENT_OBSERVER_PUBLIC_URL` | variable | Set: it is the observer URL, and no connect-address override is passed, so the runner dials the public Funnel name. This variable is read by the reconciler only. |
+| `LIVESPEC_INCIDENT_OBSERVER_URL`, `LIVESPEC_INCIDENT_OBSERVER_CONNECT_ADDR` | variables | `LIVESPEC_INCIDENT_OBSERVER_PUBLIC_URL` is unset: the step behaves exactly as before. The incident CI job on the k3s runners reads these two unchanged, to reach tailnet port 8765 through the connect address (livespec-dev-tooling-ws2idp). |
+| `LIVESPEC_INCIDENT_OBSERVER_QUERY_TOKEN` | secret | Always: the read-only query credential. |
+
+For livespec-dev-tooling the variable's value is the Funnel's base URL,
+`https://vps.perch-rudd.ts.net:10000`; the transport appends
+`/ordinary-action`. Setting it is a maintainer step. It comes after the observer
+role is applied with a release that serves the route, because a variable that
+points at an unpublished path fails every acting pass closed.
+
+Accepted risks, named in the ruling:
+
+- **A failed read through the Funnel.** Funnel ingress adds a public hop that
+  can fail. The step then exits 1 with the cause on stderr, the pass takes no
+  rerun, classification or revert action, and the five-minute schedule asks
+  again.
+- **The observer is single-threaded (`wsgiref`) and its public paths can be
+  flooded.** A flood to `/ordinary-action` can hold it busy exactly as a flood
+  to `/callback` already can. Each such request is refused at the token check,
+  before its body is read.
+
+Follow-up owed: isolate the observer on its own host.
+
+Arming is still gated. `wire-fleet-member` refuses to install the shim into
+livespec-dev-tooling until `master_health_observer.HOSTED_REACHABILITY_PROOFS`
+records the URL of a GitHub-hosted run that reached the released route. That
+proof needs a real hosted run against the published path, so this change does
+not record it.

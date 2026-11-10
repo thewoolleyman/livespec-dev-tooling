@@ -423,8 +423,9 @@ from the control node's projected environment and never from this tree:
 ```
 
 `roles/incident_observer/README.md` names the host and why, which URL is
-tailnet-internal and which must be public (the role publishes the one public
-path, `/callback`, through a path-scoped Tailscale Funnel), and the exact
+tailnet-internal and which must be public (the role publishes exactly its
+declared public paths, `/callback` and `/ordinary-action`, through a
+path-scoped Tailscale Funnel), and the exact
 maintainer-only steps (the secrets in 1Password, the webhook, the repository
 variable and secret) with one reason each.
 
