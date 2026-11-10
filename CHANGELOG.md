@@ -58,6 +58,45 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.192.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.191.0...v1.192.0) (2026-11-10)
+
+
+### Features
+
+* **fleet:** add the orchestrator hold probe a tag adopt runs in a clone's environment ([4825552](https://github.com/thewoolleyman/livespec-dev-tooling/commit/48255523356abe1b18324f0100d100e43ad33844))
+* **fleet:** adopt a published orchestrator release tag under a host-wide adoption lock ([cf2d6ce](https://github.com/thewoolleyman/livespec-dev-tooling/commit/cf2d6ce04bf02c65f620916d6081a966cf68d8a0))
+* **incident:** name the trusted normal origins whose incident flags are inert ([42fc496](https://github.com/thewoolleyman/livespec-dev-tooling/commit/42fc496fb3e80b97a18dc509b1a68fd65a134beb))
+* report a delegated Job path that ignores the skip variable ([14cd1f0](https://github.com/thewoolleyman/livespec-dev-tooling/commit/14cd1f0471148780ab1786ea5b30e7ac4a1ce19d))
+
+
+### Bug Fixes
+
+* **ansible:** retain the dev host uv cache under load ([5659210](https://github.com/thewoolleyman/livespec-dev-tooling/commit/565921076300a95115ed72e1c5239b8c4070b0bc))
+* check runners remove their coverage-namespace dirs on SIGTERM or SIGHUP and exit non-zero (livespec-dev-tooling-8o8e.16) ([948f7b5](https://github.com/thewoolleyman/livespec-dev-tooling/commit/948f7b5a770ece5919eeeae990e73f5cdc2e13a3))
+* check-master-ci-green reads ci-green only from master's own push run (livespec-dev-tooling-7w757z) ([82bfbcb](https://github.com/thewoolleyman/livespec-dev-tooling/commit/82bfbcb48fae725f3d29b15bd34e4b807237c740))
+* **ci:** ci-green fails a run in which a required leg was never created or did not succeed (livespec-dev-tooling-nofeol) ([78f43d5](https://github.com/thewoolleyman/livespec-dev-tooling/commit/78f43d535e00fa5695f88cda6a844ce6dc20dce4))
+* **ci:** ci-green's leg reader fails closed on a matrix shape it does not model (livespec-dev-tooling-nofeol) ([613df9f](https://github.com/thewoolleyman/livespec-dev-tooling/commit/613df9f3fa812ae7a80fc58e9b8d9ba429e46ab1))
+* **ci:** read a run's created jobs so ci-green can fail a required leg the forge never created (livespec-dev-tooling-nofeol) ([299208a](https://github.com/thewoolleyman/livespec-dev-tooling/commit/299208a053ac216d5549b2cae6f5a6aadf80dd72))
+* collect a reverted incident's original run without an operator command (livespec-dev-tooling-zapgpu) ([540a88d](https://github.com/thewoolleyman/livespec-dev-tooling/commit/540a88db6bd7a12900d3edd6c2f95b0d4a23165a))
+* collect against the graph the merge revision's workflow declares (livespec-dev-tooling-zapgpu) ([fb03f6b](https://github.com/thewoolleyman/livespec-dev-tooling/commit/fb03f6ba3b08110a7f0a1c6464f4252417102448))
+* derive the expected job graph from workflow source (livespec-dev-tooling-zapgpu) ([b5e130a](https://github.com/thewoolleyman/livespec-dev-tooling/commit/b5e130abbfbeafc4adb6e6ce36e45f712349bb17))
+* **incident:** a revert invocation names the recorded incident merge or is refused by code ([25753c0](https://github.com/thewoolleyman/livespec-dev-tooling/commit/25753c0bb0f2b99a1cd022789799e1c1bac2258a))
+* **incident:** a trusted normal origin clears the inherited incident flags for its normal body ([cbf2874](https://github.com/thewoolleyman/livespec-dev-tooling/commit/cbf28747bfccae28e8f4cf2381f90ea0d6be21e5))
+* **incident:** gate entrances force normal in a trusted master or factory origin ([7cd4053](https://github.com/thewoolleyman/livespec-dev-tooling/commit/7cd40539d82c0c643877829e9321a06f3de20566))
+* **incident:** refuse duplicate keys and non-finite numbers in every incident JSON decoder (livespec-dev-tooling-utw7u6) ([c028e1b](https://github.com/thewoolleyman/livespec-dev-tooling/commit/c028e1b57309619b19ecc7924476df41cc1ccafa))
+* **incident:** the hook entrance honors trusted origins and hands a revert to the recovery boundary ([694fb70](https://github.com/thewoolleyman/livespec-dev-tooling/commit/694fb7006c8e4174bf04da874280db2263cb1424))
+* **incident:** the installed hook clears the inherited flags once its entrance continues normally ([cac20d2](https://github.com/thewoolleyman/livespec-dev-tooling/commit/cac20d20e98fb5976dcd815af113496d5bffd042))
+* **incident:** the principal handler fails closed on a damaged publication record (livespec-dev-tooling-utw7u6) ([ea74573](https://github.com/thewoolleyman/livespec-dev-tooling/commit/ea7457325aa5df7dc0067e9fb7084991ba6178d5))
+* make the operator's expected graph optional at the entrance (livespec-dev-tooling-zapgpu) ([941a832](https://github.com/thewoolleyman/livespec-dev-tooling/commit/941a8326aa05c6ffb80387115919240180e63180))
+* name an unsendable observer token as a local configuration error (livespec-dev-tooling-a6wgjz) ([309cfae](https://github.com/thewoolleyman/livespec-dev-tooling/commit/309cfaeeba7495ccca6cddf20aab22b961c86ad3))
+* pin provenance doc and guard the single read-history implementation ([54fb264](https://github.com/thewoolleyman/livespec-dev-tooling/commit/54fb264c97826d64b6a78942c9639ea77043b990))
+* read every page of the armed pull's commits (livespec-dev-tooling-gwzviw) ([e5fd99a](https://github.com/thewoolleyman/livespec-dev-tooling/commit/e5fd99a2710e8b790270fec572814041bb7e3528))
+* repository_lock validates its lock directory on the default path and creates parents private ([34cd6f6](https://github.com/thewoolleyman/livespec-dev-tooling/commit/34cd6f63e44ad3f59ca197082b054ce616fe7492))
+* route every incident git call through one helper (livespec-dev-tooling-gwzviw) ([6854d9f](https://github.com/thewoolleyman/livespec-dev-tooling/commit/6854d9fcfa8e6b6b27df6e5316a5115895f317ea))
+* scrub the gate runner's progress stamp from the test environment (livespec-dev-tooling-khjkyu) ([1cf57df](https://github.com/thewoolleyman/livespec-dev-tooling/commit/1cf57dfb40c596675e473c03dda654a2755cc837))
+* sign the recovery App JWT with the pinned openssl path and digest (livespec-dev-tooling-gwzviw) ([62b435b](https://github.com/thewoolleyman/livespec-dev-tooling/commit/62b435ba97cb2802a41629effed0cea329bc3532))
+* skip flake-retry analysis for a test file outside the repository root ([bad5fec](https://github.com/thewoolleyman/livespec-dev-tooling/commit/bad5fec6b81a12a74da741c3db1e656fea3ad1d0))
+
 ## [1.191.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.190.1...v1.191.0) (2026-11-10)
 
 
