@@ -10,6 +10,7 @@ if [ -n "${EXPEDITED_INCIDENT_RESPONSE:-}${EXPEDITED_INCIDENT_RESPONSE_REVERT:-}
     incident_status=0
     uv run --no-sync python -m livespec_dev_tooling.incident_gate_entry lint-autofix-staged || incident_status=$?
     [ "$incident_status" -eq 75 ] || exit $((incident_status == 0 ? 78 : incident_status))
+    unset EXPEDITED_INCIDENT_RESPONSE EXPEDITED_INCIDENT_RESPONSE_REVERT
 fi
 
 staged=$(git diff --cached --name-only --diff-filter=AM | grep -E '\.py$' || true)

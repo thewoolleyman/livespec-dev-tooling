@@ -123,6 +123,8 @@ def _trusted_normal_decision() -> EntranceDecision | None:
     invocation = trusted_invocation(environ=os.environ, repo=Path.cwd())
     if invocation == Invocation.ORDINARY:
         return None
+    for name in (EXPEDITED_INCIDENT_RESPONSE, EXPEDITED_INCIDENT_RESPONSE_REVERT):
+        _ = os.environ.pop(name, None)
     context = resolve_execution_context(
         environ=os.environ, invocation=invocation, identity=None
     ).unwrap()

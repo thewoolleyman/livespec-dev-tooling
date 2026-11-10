@@ -67,6 +67,12 @@ def _clear(*, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.delenv(key, raising=False)
 
 
+_ENV_PROBE = (
+    "printf '%s|%s\\n' \"${EXPEDITED_INCIDENT_RESPONSE-unset}\" "
+    '"${EXPEDITED_INCIDENT_RESPONSE_REVERT-unset}" >> "$ENV_LOG"\n'
+)
+
+
 def _stub_bin(*, root: Path) -> Path:
     binary = root / "bin"
     binary.mkdir()
@@ -75,13 +81,15 @@ def _stub_bin(*, root: Path) -> Path:
         'printf "%s\\n" "$*" >> "$UV_LOG"\n'
         'case "$*" in *livespec_dev_tooling.incident_gate_entry*) '
         'shift 3; exec "$ENTRY_PYTHON" "$@";; esac\n'
-        'touch "$GATE_MARKER"\nexit 0\n'
+        + _ENV_PROBE
+        + 'touch "$GATE_MARKER"\nexit 0\n'
     )
-    work = '#!/bin/sh\ntouch "$GATE_MARKER"\nexit 0\n'
+    work = "#!/bin/sh\n" + _ENV_PROBE + 'touch "$GATE_MARKER"\nexit 0\n'
     probe = (
         "#!/bin/sh\n"
         'case "$*" in "config --get livespec.sandboxExempt") exit 1;; esac\n'
-        'touch "$GATE_MARKER"\nexit 0\n'
+        + _ENV_PROBE
+        + 'touch "$GATE_MARKER"\nexit 0\n'
     )
     for name, body in (("uv", forward), ("just", work), ("git", probe), ("mise", work)):
         _ = (binary / name).write_text(body)
@@ -104,6 +112,7 @@ def _run_script(*, root: Path, script: str, flags: dict[str, str]) -> tuple[int,
             "PATH": str(binary) + os.pathsep + os.environ["PATH"],
             "UV_LOG": str(log),
             "GATE_MARKER": str(marker),
+            "ENV_LOG": str(work / "env.log"),
             "ENTRY_PYTHON": sys.executable,
         },
         stdin=subprocess.DEVNULL,
@@ -318,3 +327,26 @@ def test_outside_the_trusted_origins_a_pull_request_job_still_refuses(
         monkeypatch.setenv(name, value)
     decision = incident_gate_entry.resolve_entrance(surface="check")
     assert (decision.status, code in decision.reason) == (incident_gate_entry.REFUSED, True)
+
+
+@pytest.mark.parametrize("script", _SCRIPTS)
+@pytest.mark.parametrize("flags", _TRUSTED_NORMAL_FLAGS)
+def test_a_master_push_recipe_clears_the_inherited_flags_for_its_normal_body(
+    *, tmp_path: Path, script: str, flags: dict[str, str]
+) -> None:
+    _ = _run_script(root=tmp_path, script=script, flags=flags | _MASTER_PUSH)
+    seen = (tmp_path / script / "env.log").read_text().splitlines()
+    assert seen
+    assert set(seen) == {"unset|unset"}, seen
+
+
+@pytest.mark.parametrize("flags", _TRUSTED_NORMAL_FLAGS)
+def test_a_trusted_python_entrance_clears_the_inherited_flags_for_its_children(
+    *, monkeypatch: pytest.MonkeyPatch, flags: dict[str, str]
+) -> None:
+    _clear(monkeypatch=monkeypatch)
+    monkeypatch.setattr(incident_trusted_origin, "factory_sandbox", lambda **_kwargs: True)
+    for name, value in flags.items():
+        monkeypatch.setenv(name, value)
+    _ = incident_gate_entry.resolve_entrance(surface="check", launcher=True)
+    assert (_FLAG in os.environ, _REVERT in os.environ) == (False, False)
