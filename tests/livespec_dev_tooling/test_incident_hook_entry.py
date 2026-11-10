@@ -46,3 +46,46 @@ def test_installed_incident_hook_stops_before_lefthook_and_preserves_real_failur
     )
     assert completed.returncode == 23
     assert not normal.exists()
+
+
+def test_installed_hook_clears_the_inherited_flags_once_the_entrance_continues_normally(
+    tmp_path: Path,
+) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    environment = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
+    for args in (["init", "-q"], ["config", "livespec.sandboxExempt", "true"]):
+        subprocess.run(["git", *args], cwd=repo, env=environment, check=True)
+    hook = repo / ".git/hooks/pre-commit"
+    hook.write_text(CANONICAL_HOOK_BODY)
+    hook.chmod(0o755)
+    binary = tmp_path / "bin"
+    binary.mkdir()
+    (binary / "mise").write_text(
+        "#!/bin/sh\n"
+        'case "$*" in *livespec_dev_tooling.incident_hook_entry*) exit 75;; esac\n'
+        "printf '%s|%s\\n' \"${EXPEDITED_INCIDENT_RESPONSE-unset}\" "
+        '"${EXPEDITED_INCIDENT_RESPONSE_REVERT-unset}" >> "$ENV_LOG"\n'
+        "exit 0\n"
+    )
+    (binary / "mise").chmod(0o755)
+    log = tmp_path / "env.log"
+    completed = subprocess.run(
+        [str(hook)],
+        cwd=repo,
+        env=environment
+        | {
+            "PATH": str(binary) + os.pathsep + environment["PATH"],
+            "EXPEDITED_INCIDENT_RESPONSE": "maybe",
+            "EXPEDITED_INCIDENT_RESPONSE_REVERT": "%%",
+            "ENV_LOG": str(log),
+        },
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    seen = log.read_text().splitlines() if log.exists() else []
+    assert (completed.returncode, bool(seen), set(seen)) == (0, True, {"unset|unset"}), (
+        completed.stderr,
+        seen,
+    )
