@@ -11,6 +11,10 @@ timer) byte-identical to ansible-core 2.21.4's own `template` output, plus the
 manifest renderer's argv (which bakes `--config` into the principal) and every
 per-instance install destination. A production render that moves by one byte
 fails here.
+
+A deliberate production change updates its fixture in the same commit and says so
+here: the observer unit gained `StartLimitIntervalSec=300` and `StartLimitBurst=5`
+(livespec-dev-tooling-fdquen), so a crash loop ends in `failed`.
 """
 
 from __future__ import annotations

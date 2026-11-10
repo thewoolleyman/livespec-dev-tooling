@@ -104,7 +104,13 @@ which rules out every CI node and every sandbox host whatever their TLS posture.
   `PrivateTmp=true`, `UMask=0077`, the cleared injection variables and a fixed
   `PATH`, executing
   `/opt/livespec-incident/venv/bin/python -I -m livespec_dev_tooling.incident_observer_service --config /etc/livespec-incident/controller.json`
-  on loopback port 8765;
+  on loopback port 8765. Its restart policy is `Restart=on-failure` with
+  `RestartSec=2`, bounded by `StartLimitIntervalSec=300` and `StartLimitBurst=5`.
+  The service exits 1 when its conflict sweep or original-run watcher dies, and
+  systemd restarts it. The host default limit of 5 starts in 10 s can never trip
+  with a 2 s restart delay, so a crash on every start would restart forever. Five
+  starts in 300 s lets a transient failure recover by itself, while a deterministic
+  crash ends in `failed`, where `systemctl --failed` shows it;
 - a probe that `POST /current` without the query token is refused (403), which
   is also the proof the unit passed its installation check and bound its socket;
 - the path-scoped Funnel for each path in `incident_observer_funnel_paths`
