@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 import io
 import json
 import subprocess
@@ -205,3 +206,56 @@ def test_the_provenance_lookup_has_one_implementation_and_the_docs_name_it() -> 
     doc = (root / "docs" / "incident-provenance.md").read_text()
     assert "incident_provenance.read_historical_incident_commit" not in doc
     assert "incident_observer_provenance" in doc
+
+
+def _modules_matching(*, root: Path, wanted: str) -> set[str]:
+    """Return the product modules under livespec_dev_tooling that use `wanted`.
+
+    A module uses the decoder by importing the name, and uses the history read by
+    passing the `read-history` action to `call_authority`.
+    """
+    found: set[str] = set()
+    package = root / "livespec_dev_tooling"
+    for path in package.rglob("*.py"):
+        if "_vendor" in path.parts:
+            continue
+        for node in ast.walk(ast.parse(path.read_text())):
+            if wanted == "decoder":
+                hit = isinstance(node, ast.ImportFrom) and any(
+                    alias.name == "decode_historical_result" for alias in node.names
+                )
+            else:
+                hit = (
+                    isinstance(node, ast.Call)
+                    and getattr(node.func, "id", getattr(node.func, "attr", "")) == "call_authority"
+                    and any(
+                        keyword.arg == "action"
+                        and isinstance(keyword.value, ast.Constant)
+                        and keyword.value.value == "read-history"
+                        for keyword in node.keywords
+                    )
+                )
+            if hit:
+                found.add(path.stem)
+    return found
+
+
+def test_only_the_observer_provenance_client_reads_history_for_commit_provenance() -> None:
+    root = Path(__file__).resolve().parents[2]
+    assert _modules_matching(root=root, wanted="decoder") == {"incident_observer_provenance"}
+    assert _modules_matching(root=root, wanted="read-history") == {"incident_observer_provenance"}
+
+
+def test_the_provenance_doc_describes_the_manifest_pinned_reader_not_a_credential_wrapper() -> None:
+    root = Path(__file__).resolve().parents[2]
+    doc = (root / "docs" / "incident-provenance.md").read_text()
+    assert "credential wrapper" not in doc
+    assert "with-livespec-env" not in doc
+    assert "manifest-pinned" in doc
+    assert "incident-observer-service.md" in doc
+
+
+def test_the_module_docstring_names_the_shared_decoder_without_claiming_other_readers() -> None:
+    docstring = module.__doc__ or ""
+    assert "every other historical reader" not in docstring
+    assert "_incident_provenance_protocol" in docstring
