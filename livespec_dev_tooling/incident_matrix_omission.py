@@ -32,6 +32,10 @@ The rules, in order:
   reading the input.
 - **The input is a JSON array of strings, or nothing.** Anything else fails
   the leg before it can report an omission. Membership is exact equality.
+  Both foreign JSON reads, the input and the event payload, go through the
+  strict incident decoder (`incident_strict_json.strict_json`): a duplicate
+  key, a non-finite number or an input past its 65536-byte bound is refused,
+  never resolved, and a refused payload authorizes nothing.
 - **Only an omittable member can be omitted** (`OMITTABLE_MEMBERS`): a coverage
   or spec member the incident controller defers that has a run-check module.
   `check-coverage` is deferred by the controller but is a `just` target with no
@@ -62,7 +66,6 @@ before it is printed, so no input can inject a workflow command.
 
 from __future__ import annotations
 
-import json
 import os
 import re
 import sys
@@ -73,6 +76,7 @@ from typing import Any, cast
 
 from livespec_dev_tooling import budgeted_gh
 from livespec_dev_tooling import incident_matrix_call_site as call_site
+from livespec_dev_tooling.incident_strict_json import IncidentJsonRefusalError, strict_json
 
 __all__: list[str] = [
     "CONTROLLER_ONLY_MEMBERS",
@@ -162,8 +166,8 @@ def _parse(*, raw: str) -> tuple[str, ...] | None:
     if not raw.strip():
         return ()
     try:
-        value: object = json.loads(raw)
-    except (ValueError, RecursionError):
+        value: object = strict_json(text=raw)
+    except IncidentJsonRefusalError:
         return None
     if not isinstance(value, list):
         return None
@@ -229,8 +233,8 @@ def decide(*, event_name: str, raw: str, check: str, authority: IncidentAuthorit
 
 def _read_payload(*, path: str) -> Mapping[str, Any] | None:
     try:
-        value: object = json.loads(Path(path).read_text(encoding="utf-8"))
-    except (OSError, ValueError, RecursionError):
+        value: object = strict_json(text=Path(path).read_bytes(), limit=None)
+    except (OSError, IncidentJsonRefusalError):
         return None
     return _map(value=value)
 
