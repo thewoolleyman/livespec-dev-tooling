@@ -10,6 +10,7 @@ check-check-mutation  # incident-timing: fast
 check-check-tools  # incident-timing: fast
 check-ci-gate-parity  # incident-timing: fast
 check-ci-matrix-completeness  # incident-timing: fast
+check-ci-single-container-image  # incident-timing: fast
 check-claude-md-coverage  # incident-timing: fast
 check-codex-hook-reconcilable  # incident-timing: fast
 check-comment-line-anchors  # incident-timing: fast

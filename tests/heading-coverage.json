@@ -2990,17 +2990,15 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a workflow declaring two container images fails its own CI",
-    "test": "TODO",
-    "reason": "Spec-first: a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) is owed for this scenario, running the shared check over a ci.yml declaring two distinct job container images and asserting it fails naming each image and line. livespec-dev-tooling-kzhduc owns it (plan ci-runtime-and-cost); the implementation PR that ships it replaces this row.",
-    "work_item": "livespec-dev-tooling-kzhduc"
+    "test": "tests.consumer.test_ci_single_container_image.test_a_workflow_declaring_two_container_images_fails_naming_each_image_and_its_line",
+    "reason": "Consumer-tier: the shipped `ci_single_container_image` check run over a ci.yml declaring two distinct job container images (one of them twice) exits non-zero and names each image with every line that declares it; the same test module pins the check as a member of the `just check` aggregate and of `check-targets.txt`, the wiring through which the failure reaches the required aggregate (livespec-dev-tooling-kzhduc)."
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a workflow declaring one container image passes",
-    "test": "TODO",
-    "reason": "Spec-first: a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) is owed for this scenario, running the shared check over a ci.yml whose job container images are one reference and asserting it passes. livespec-dev-tooling-kzhduc owns it (plan ci-runtime-and-cost); the implementation PR that ships it replaces this row.",
-    "work_item": "livespec-dev-tooling-kzhduc"
+    "test": "tests.consumer.test_ci_single_container_image.test_a_workflow_declaring_one_container_image_passes",
+    "reason": "Consumer-tier: the shipped `ci_single_container_image` check run over a ci.yml whose job container images are one reference, declared by two jobs, exits zero with no error finding (livespec-dev-tooling-kzhduc)."
   },
   {
     "spec_root": "SPECIFICATION",

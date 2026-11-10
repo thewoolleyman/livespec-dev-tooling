@@ -1,9 +1,10 @@
 # Workflow-edit exemption — one exemption binds to one reviewed change.
 #
-# The change: in .github/workflows/ci.yml, the check-metadata and incident-ci
-# jobs' runs-on and LIVESPEC_CI_LANE lines read
-# vars.CI_INCIDENT_RUNNER_LABELS || vars.CI_RUNNER_LABELS (the coverage
-# pattern) instead of vars.CI_RUNNER_LABELS alone. Nothing is added or
-# removed: 4 MODIFIED lines (ci.yml 612, 616, 882, 893).
-work_item=livespec-dev-tooling-onk27y
-reason=Logically ADDITIVE (coordinator-duties §12: modifying runs-on is additive; same jobs and steps, routed back to the k3s pool they ran on before 07:34Z, so no runtime increase). The line-diff guard reads modified lines as the maintainer tier, so this carries no change=additive line and is admitted under approval:workflow-edit, applied by legacy-coordinator-agent under §12 (STOP-THE-LINE ruling 2026-11-11 ~13:0xZ). Why: both jobs read the tailnet incident observer, which a GitHub-hosted runner cannot reach (run 43022867200). actionlint -shellcheck= exit 0, no new finding. Plan ci-runtime-and-cost (livespec-dev-tooling-ib3oe3).
+# The change: in .github/workflows/ci.yml, ONE added line in the batch check
+# list runs `just check-ci-single-container-image` beside its sibling checks, so
+# check-ci-matrix-completeness finds the new aggregate member wired into CI.
+# Nothing is deleted or modified. ADDITIVE.
+work_item=livespec-dev-tooling-kzhduc
+change=additive
+ci_runtime=no-significant-increase
+reason=ADDITIVE tier (approval:workflow-edit-additive), under legacy-coordinator-agent's delegated authorization of 2026-11-11 (hand-land ruling for kzhduc, dpkz32 class: the factory cannot write the ci.yml line). One more check in an existing step, nothing removed; the check is a single-file regex scan (well under a second). actionlint -shellcheck= exit 0. Factory run 01M734HE0P74 preserved the check itself; plan ci-runtime-and-cost (livespec-dev-tooling-ib3oe3).

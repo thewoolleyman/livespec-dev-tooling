@@ -36,6 +36,7 @@ just check-claude-md-coverage
 just check-comment-line-anchors
 just check-delegated-gate-check-suite
 just check-delegated-job-authority-skip
+just check-ci-single-container-image
 just check-agents-ai-references-resolve
 just check-plan-anchor-declared
 just check-vendor-manifest
