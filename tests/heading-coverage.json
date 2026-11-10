@@ -3202,25 +3202,22 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a pending superseded master push run is dropped while the run in progress completes",
-    "test": "TODO",
-    "work_item": "livespec-dev-tooling-qzw2gf",
-    "reason": "A real test at the integration tier or above is owed for this heading: an integration test that reads this repository's committed ci.yml and asserts its master push runs share one concurrency group with cancel-in-progress false, so the run in progress completes and only the newest pending run is kept (proposal master-push-cancel-superseded B', v182). livespec-dev-tooling-qzw2gf owns it."
+    "test": "tests.spec.test_master_push_concurrency_group.test_ordinary_master_pushes_share_one_group_that_never_cancels_the_run_in_progress",
+    "reason": "Integration-tier: tests/spec/test_master_push_concurrency_group.py reads this repository's committed ci.yml and evaluates its top-level concurrency.group expression for three ordinary master pushes, asserting they resolve to ONE shared group, and asserts cancel-in-progress is false, so the run in progress completes and GitHub keeps only the newest pending run (v182 B', livespec-dev-tooling-qzw2gf). The live serialization is host-captured on qzw2gf."
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a release or expedited master push run is never dropped from the master concurrency group",
-    "test": "TODO",
-    "work_item": "livespec-dev-tooling-qzw2gf",
-    "reason": "A real test at the integration tier or above is owed for this heading: an integration test that evaluates this repository's committed ci.yml concurrency group expression for a release-commit push and for an EXPEDITED_INCIDENT_RESPONSE trailer push, and asserts each gets a group of its own (proposal master-push-cancel-superseded B', v182). livespec-dev-tooling-qzw2gf owns it."
+    "test": "tests.spec.test_master_push_concurrency_group.test_a_release_or_expedited_master_push_runs_in_a_group_of_its_own",
+    "reason": "Integration-tier: tests/spec/test_master_push_concurrency_group.py evaluates the committed ci.yml concurrency.group expression for a `chore(master): release` push, a push whose head commit carries the `Factory-Override: EXPEDITED_INCIDENT_RESPONSE` trailer, a push where only an EARLIER commit carries it, and the incident recovery principal's `Revert complete incident PR #` commit, asserting each resolves to a group keyed on its own run id, apart from the shared master group (v182 B', livespec-dev-tooling-qzw2gf)."
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: the master concurrency group never holds or cancels a pull-request run",
-    "test": "TODO",
-    "work_item": "livespec-dev-tooling-qzw2gf",
-    "reason": "A real test at the integration tier or above is owed for this heading: an integration test that evaluates this repository's committed ci.yml concurrency group expression for pull_request and merge_group events and asserts neither shares the master push group (proposal master-push-cancel-superseded B', v182). livespec-dev-tooling-qzw2gf owns it."
+    "test": "tests.spec.test_master_push_concurrency_group.test_pull_request_and_incident_scratch_runs_never_join_the_master_group",
+    "reason": "Integration-tier: tests/spec/test_master_push_concurrency_group.py evaluates the committed ci.yml concurrency.group expression for a pull_request run and an incident-scratch push, asserting each resolves to a group keyed on its own run id, and asserts the workflow declares no merge_group trigger (v182 B', livespec-dev-tooling-qzw2gf)."
   },
   {
     "spec_root": "SPECIFICATION",
