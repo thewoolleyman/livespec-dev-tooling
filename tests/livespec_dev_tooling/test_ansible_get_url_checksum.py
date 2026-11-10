@@ -259,6 +259,45 @@ def test_an_exemption_on_a_neighbouring_task_does_not_leak(
     assert _pairs(run=run) == [("unpinned-get-url", "ansible/roles/r/tasks/main.yml", 8)]
 
 
+def test_an_exemption_on_a_later_task_does_not_exempt_a_nameless_dash_led_task(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    tasks = (
+        "- ansible.builtin.get_url:\n"
+        "    url: https://example.invalid/x\n"
+        "    dest: /x\n"
+        "\n"
+        "- name: Exempt\n"
+        "  # check-mode-exempt: gated off under check mode\n"
+        "  ansible.builtin.get_url:\n"
+        "    url: https://example.invalid/y\n"
+        "    dest: /y\n"
+    )
+    run = _run_check(cwd=_tree(root=tmp_path, tasks=tasks), monkeypatch=monkeypatch, capsys=capsys)
+    assert _pairs(run=run) == [("unpinned-get-url", "ansible/roles/r/tasks/main.yml", 1)]
+
+
+def test_a_nameless_dash_led_task_after_another_task_does_not_borrow_its_exemption(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    tasks = (
+        "- name: Exempt\n"
+        "  # check-mode-exempt: gated off under check mode\n"
+        "  ansible.builtin.get_url:\n"
+        "    url: https://example.invalid/x\n"
+        "    dest: /x\n"
+        "- ansible.builtin.get_url:\n"
+        "    url: https://example.invalid/y\n"
+        "    dest: /y\n"
+        "    checksum: sha256:abc\n"
+        "- ansible.builtin.get_url:\n"
+        "    url: https://example.invalid/z\n"
+        "    dest: /z\n"
+    )
+    run = _run_check(cwd=_tree(root=tmp_path, tasks=tasks), monkeypatch=monkeypatch, capsys=capsys)
+    assert _pairs(run=run) == [("unpinned-get-url", "ansible/roles/r/tasks/main.yml", 10)]
+
+
 def test_a_get_url_outside_role_tasks_is_out_of_scope(
     *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

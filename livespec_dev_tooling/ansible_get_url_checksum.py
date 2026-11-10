@@ -53,7 +53,7 @@ __all__: list[str] = []
 _ROLES_DIR = Path("ansible") / "roles"
 _TASK_GLOBS = ("*/tasks/**/*.yml", "*/tasks/**/*.yaml")
 
-_GET_URL = re.compile(r"^(\s*)(?:-\s+)?(?:ansible\.(?:builtin|legacy)\.)?get_url:(.*)$")
+_GET_URL = re.compile(r"^(\s*(?:-\s+)?)(?:ansible\.(?:builtin|legacy)\.)?get_url:(.*)$")
 _TASK_NAME = re.compile(r"^\s*(?:-\s+)?name:\s*(\S.*?)\s*$")
 _CHECKSUM_KEY = re.compile(r"^(\s*)checksum:\s*(.*?)\s*$")
 _INLINE_CHECKSUM = re.compile(r"\bchecksum=\S")
@@ -96,21 +96,27 @@ def _block_end(*, lines: list[str], start: int, key_indent: int, deeper: bool) -
     return end
 
 
-def _task_lines(*, lines: list[str], module_index: int, key_indent: int) -> list[str]:
+def _task_lines(
+    *, lines: list[str], module_index: int, key_indent: int, dash_led: bool
+) -> list[str]:
     """Return the lines of the task whose module key sits at `module_index`.
 
-    The task opens at the nearest line above whose indent is below the module key's
-    (its `- name:` dash) and closes at the first code line below whose indent is
-    below it again (the next task); trailing comments belong to that next task.
+    A nameless task carries the module key on its own dash line, so the task opens
+    there. Otherwise it opens at the nearest line above whose indent is below the
+    module key's (its `- name:` dash). It closes at the first code line below whose
+    indent is below the key's again (the next task); trailing comments belong to
+    that next task.
     """
-    start = next(
-        (
-            index
-            for index in range(module_index - 1, -1, -1)
-            if _is_code(line=lines[index]) and _indent(line=lines[index]) < key_indent
-        ),
-        0,
-    )
+    start = module_index
+    if not dash_led:
+        start = next(
+            (
+                index
+                for index in range(module_index - 1, -1, -1)
+                if _is_code(line=lines[index]) and _indent(line=lines[index]) < key_indent
+            ),
+            0,
+        )
     end = _block_end(lines=lines, start=module_index + 1, key_indent=key_indent, deeper=False)
     while not _is_code(line=lines[end - 1]):
         end -= 1
@@ -141,7 +147,9 @@ def _file_findings(*, path: str, source: str) -> tuple[int, list[Finding]]:
             continue
         inspected += 1
         key_indent = len(match.group(1))
-        task = _task_lines(lines=lines, module_index=number, key_indent=key_indent)
+        task = _task_lines(
+            lines=lines, module_index=number, key_indent=key_indent, dash_led="-" in match.group(1)
+        )
         if any(_EXEMPTION.match(line) for line in task):
             continue
         if _is_pinned(
