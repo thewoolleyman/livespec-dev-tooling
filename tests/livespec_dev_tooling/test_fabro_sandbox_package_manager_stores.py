@@ -59,12 +59,13 @@ def test_base_layer_copies_into_the_pnpm_store_instead_of_hard_linking() -> None
 
 def test_no_stacked_layer_points_a_store_back_into_the_workspace() -> None:
     """A toolchain layer may restate a location, but never move it under /workspace."""
-    for layer in ("python", "python-rust", "python-rust-fuzz", "agent"):
-        values = _env_values(layer=layer)
-        for variable in _STORE_VARIABLES:
-            if variable in values:
-                location = PurePosixPath(values[variable])
-                assert _WORKSPACE not in (location, *location.parents), f"{layer}: {variable}"
+    for layer in ("base", "python", "python-rust", "python-rust-fuzz", "agent"):
+        stated = [
+            PurePosixPath(value)
+            for variable, value in _env_values(layer=layer).items()
+            if variable in _STORE_VARIABLES
+        ]
+        assert all(_WORKSPACE not in (path, *path.parents) for path in stated), layer
 
 
 def test_base_build_probes_the_locations_it_publishes() -> None:
