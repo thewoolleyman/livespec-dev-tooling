@@ -251,3 +251,22 @@ Rule: do not stash. To compare against HEAD, use a throwaway
 `git show HEAD:<path>`. If you already stashed, apply and drop BY COMMIT SHA,
 never by `stash@{N}`, because indexes shift under you. Read the sha from
 `git stash list --format='%gd %H %gs'`, matching your branch name in `%gs`.
+
+## A Merge Hold Must Disarm Auto-Merge — The Fleet Bot Arms It On Every PR
+
+`thewoolleyman-factory-bot` turns on rebase auto-merge for a new pull request
+within seconds of it opening, with no action from the session. A merge HOLD
+from a coordinator or a ruling is therefore not a state you can reach by doing
+nothing. Make it an action: run `gh pr merge <n> --disable-auto`, then read
+back `gh pr view <n> --json autoMergeRequest` and confirm it is `null`. Where a
+hold is likely, for example a change whose ruling names a precondition, open
+the pull request with `gh pr create --draft` and mark it ready only once the
+grade and the precondition clear.
+
+Measured 2026-11-10. livespec-dev-tooling#4019 (livespec-dev-tooling-qzw2gf,
+the B' master-push concurrency block) opened at 11:18:42Z, and the bot armed
+auto-rebase at 11:18:51Z. legacy-coordinator-agent graded it PASS but held the
+merge until the factory launch build carried orchestrator `9965c14aa`. The
+session acknowledged the hold and never checked auto-merge. The PR merged at
+11:38:04Z against the hold, and B' started cancelling superseded master runs
+while the launch build could still read a cancelled run as master's verdict.
