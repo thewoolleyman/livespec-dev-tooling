@@ -143,8 +143,12 @@ enforces that order. It refuses to install the shim into a repository in
 `master_health_observer.HOSTED_REACHABILITY_PROOFS` maps that repository to the
 URL of a GitHub-hosted Actions run that reached the route
 (`https://github.com/<owner>/<repo>/actions/runs/<id>`), and names the missing
-proof as a finding. A member with no observer is installed as before. Recording
-the proof and arming livespec-dev-tooling is livespec-dev-tooling-jpfdcx.
+proof as a finding. A member with no observer is installed as before.
+livespec-dev-tooling's proof is recorded (livespec-dev-tooling-jpfdcx): run
+https://github.com/thewoolleyman/livespec-dev-tooling/actions/runs/42922861122,
+on a GitHub-hosted runner, received HTTP 202 and the exact ownership answer from
+the released v1.193.0 client through the public route below, and a no-token
+POST in the same run got 403.
 
 **The hosted route is public, through the observer's Funnel.** The maintainer
 ruled the route on livespec-dev-tooling-jpfdcx (option A, 2026-11-10): "If it

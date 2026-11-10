@@ -63,7 +63,15 @@ OBSERVED_REPOSITORIES = frozenset({"thewoolleyman/livespec-dev-tooling"})
 # would fail closed. wire-fleet-member therefore refuses to install the shim
 # into a repository in OBSERVED_REPOSITORIES with no entry here: adoption first,
 # then arming (review finding F5 on livespec-dev-tooling#3915).
-HOSTED_REACHABILITY_PROOFS: dict[str, str] = {}
+# livespec-dev-tooling's run (livespec-dev-tooling-jpfdcx, 2026-11-10) ran on a
+# GitHub-hosted runner, cloned released v1.193.0, asked POST /ordinary-action
+# through the observer's public Funnel with the reconciler's own client and env,
+# and got HTTP 202 and the exact ownership answer; a no-token POST got 403.
+HOSTED_REACHABILITY_PROOFS: dict[str, str] = {
+    "thewoolleyman/livespec-dev-tooling": (
+        "https://github.com/thewoolleyman/livespec-dev-tooling/actions/runs/42922861122"
+    ),
+}
 _URL_VARIABLE = "LIVESPEC_INCIDENT_OBSERVER_URL"
 _TOKEN_VARIABLE = "LIVESPEC_INCIDENT_OBSERVER_QUERY_TOKEN"  # noqa: S105 — a variable name.
 _SHA = re.compile(r"[0-9a-f]{40}")
