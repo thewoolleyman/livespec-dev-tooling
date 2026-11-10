@@ -13,9 +13,12 @@ flags select incident handling, and only the registered canonical authority's
 related tests and touched-file coverage through `collect_focused_evidence`,
 keeps the manual reproduction verbatim beside that measurement, and publishes
 the record to the incident item through the authority's `record-local-gates`
-evidence channel, the only canonical evidence write the authority exposes. The
-receipt is `expedited-local-partial` evidence for the pushed tree, never a
-normal green token, coverage reuse marker or factory proof.
+evidence channel, the only canonical evidence write the authority exposes. Its
+receipt id is the first free slot derived from the exact identity, head and tree
+(`incident_focused_admission`), so the observer's `/arm` reads every record of
+the head tree without the operator naming one. The receipt is
+`expedited-local-partial` evidence for the pushed tree, never a normal green
+token, coverage reuse marker or factory proof.
 
 Every refusal exits 78 with a named reason. A refusal raised before the
 publish step publishes nothing.
@@ -24,7 +27,6 @@ publish step publishes nothing.
 from __future__ import annotations
 
 import argparse
-import hashlib
 import os
 import re
 import sys
@@ -38,6 +40,7 @@ from livespec_dev_tooling.incident_execution import (
     EXPEDITED_INCIDENT_RESPONSE_REVERT,
     parse_incident_truth_value,
 )
+from livespec_dev_tooling.incident_focused_admission import EvidenceSubject, first_free_slot
 from livespec_dev_tooling.incident_focused_evidence import (
     FocusedScope,
     ManualReproduction,
@@ -123,7 +126,9 @@ def _deferred(*, values: list[str]) -> tuple[tuple[str, str], ...]:
     return tuple((name, reason) for name, _, reason in parts)
 
 
-def _receipt(*, record: dict[str, Any], duration: float, tree: str) -> dict[str, Any]:
+def _receipt(
+    *, record: dict[str, Any], duration: float, tree: str, receipt_id: str
+) -> dict[str, Any]:
     """Shape the record as one canonical expedited-local-partial evidence row."""
     outcome = record["outcome"]
     status = (
@@ -140,9 +145,8 @@ def _receipt(*, record: dict[str, Any], duration: float, tree: str) -> dict[str,
         duration_seconds=duration,
         output=canonical(value=record),
     )
-    identity = canonical(value=["focused-evidence", record])
     return dict(
-        receipt_id=hashlib.sha256(identity.encode()).hexdigest(),
+        receipt_id=receipt_id,
         hook="pre-push",
         tree=tree,
         mode=record["mode"],
@@ -150,6 +154,31 @@ def _receipt(*, record: dict[str, Any], duration: float, tree: str) -> dict[str,
         exit_status=returncode or 0,
         results=[row],
     )
+
+
+def _recorded(*, repo: Path, query: dict[str, Any], receipt_id: str) -> bool:
+    lookup = invoke_authority(
+        repo=repo, query=query, action="read-local-gates", receipt_id=receipt_id
+    )
+    status = lookup.get("status")
+    if lookup.get("receipt_id") != receipt_id or status not in {"recorded", "absent"}:
+        _fail(reason="focused-evidence slot lookup does not bind this tree")
+    return status == "recorded"
+
+
+def _slot(*, repo: Path, query: dict[str, Any], subject: EvidenceSubject) -> str:
+    """The first free evidence slot for this exact identity, head and tree.
+
+    The observer's `/arm` reads every slot of the head tree, so a record is only
+    ever appended, never chosen by the operator at arm time.
+    """
+    receipt_id = first_free_slot(
+        subject=subject,
+        recorded=lambda slot_id: _recorded(repo=repo, query=query, receipt_id=slot_id),
+    )
+    if receipt_id is None:
+        _fail(reason="every focused-evidence slot of this head tree is recorded; commit a new head")
+    return receipt_id
 
 
 def _publish(
@@ -237,14 +266,26 @@ def _run(*, args: argparse.Namespace) -> int:
     duration = monotonic() - started
     if record["outcome"] == "refused":
         _fail(reason="focused evidence refused: " + str(record["reason"]))
-    receipt = _receipt(record=record, duration=duration, tree=tree)
+    identity = cast("OperationIdentity", context.identity)
+    subject = EvidenceSubject(
+        repository=identity.repository,
+        item=identity.incident_item_id,
+        attempt=identity.attempt_id,
+        operation=identity.operation_id,
+        generation=query["generation"],
+        head=identity.head_sha,
+        tree=tree,
+    )
+    # Every slot id is 64 hex characters, so the bound holds for whichever slot is free.
+    receipt = _receipt(record=record, duration=duration, tree=tree, receipt_id="0" * 64)
     if len(canonical(value=receipt).encode()) > _MAX_RECEIPT_BYTES:
         _fail(reason="focused record exceeds the authority's receipt size bound")
+    receipt["receipt_id"] = _slot(repo=repo, query=query, subject=subject)
     publication = _publish(
         repo=repo,
         query=query,
         reading=reading,
-        identity=cast("OperationIdentity", context.identity),
+        identity=identity,
         receipt=receipt,
     )
     _ = sys.stdout.write(

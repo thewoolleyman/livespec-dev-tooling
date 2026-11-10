@@ -108,11 +108,12 @@ class _Authority:
             return {"receipt_id": receipt["receipt_id"], "checksum": spoiled, **tokens}
         if action == "read-local-gates":
             receipt = self.receipts.get(kwargs["receipt_id"])
+            absent = receipt is None or self.corrupt == "lookup"
             return {
-                "status": "absent" if self.corrupt == "lookup" else "recorded",
+                "status": "absent" if absent else "recorded",
                 "receipt_id": kwargs["receipt_id"],
                 "receipt": receipt,
-                "checksum": checksum,
+                "checksum": None if receipt is None else checksum,
                 **tokens,
             }
         if action == "read-history":
@@ -269,7 +270,7 @@ def test_record_is_published_through_the_canonical_authority_and_bound_to_histor
     printed = json.loads(capsys.readouterr().out)
     (receipt,) = authority.receipts.values()
     (row,) = receipt["results"]
-    published = authority.calls[1]["receipt"]
+    published = authority.calls[2]["receipt"]
     assert {
         "actions": authority.actions(),
         "canonical": published == canonical(value=json.loads(published)),
@@ -286,7 +287,13 @@ def test_record_is_published_through_the_canonical_authority_and_bound_to_histor
         "publication": printed["publication"],
         "normal": printed["normal_factory_proof"],
     } == {
-        "actions": ["read-current", "record-local-gates", "read-local-gates", "read-history"],
+        "actions": [
+            "read-current",
+            "read-local-gates",
+            "record-local-gates",
+            "read-local-gates",
+            "read-history",
+        ],
         "canonical": True,
         "keys": _RECEIPT_KEYS,
         "row_keys": _ROW_KEYS,
