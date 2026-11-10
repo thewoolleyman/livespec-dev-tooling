@@ -270,12 +270,28 @@ action's own reopen. Only then does it journal the terminal state `half-reopen`
 (citing `bd-ib-hyho7h`) and stop. A race that is lost once and then won simply lands.
 Every other claim outcome the orchestrator reports under the same code
 (`claim-transition-pending`, `claim-lease-expired`, `claim-unobservable`,
-`claim-token-missing`) is retried as transient. The fix
-belongs to the orchestrator: a stale reopen whose exact successor is already recorded
-should recover that successor and finish its claim. It is filed as `bd-ib-hyho7h` in
-the livespec-orchestrator-beads-fabro tenant. Until it lands, "a repeat after a timeout
-or restart leaves exactly one transition" holds for the chain, but not for the item's
-`blocked` status across an interruption inside the reopen.
+`claim-token-missing`) is retried as transient.
+
+The fix belongs to the orchestrator, as `bd-ib-hyho7h` in the
+livespec-orchestrator-beads-fabro tenant, and it shipped in orchestrator v0.313.0
+(`a5790445`). From that release, a retried reopen binds its claim move to the claim it
+decided on, and `record-rollback-conflict` refuses a current `reverting` generation
+whose item claim it does not hold, as `incident-rollback-conflict-claim-not-held`,
+BEFORE the chain write. So the chain can no longer reach `rollback-conflict` while the
+item never reads `blocked`. The orchestrator's remedy is to retry the reopen, and the
+writer classifies the refusal by whether it can:
+
+- **A first failure** reopens through this writer, so the refusal is retried. The next
+  attempt repeats the reopen, which completes the claim, and then the conflict lands.
+- **A regression reopen** (`intent.regression` set) or **a registration already at
+  `reverting`** was reopened by someone else, and this writer cannot repeat that reopen.
+  The refusal is journaled terminal at once as a `half-reopen` that names the code and
+  `bd-ib-hyho7h`, instead of being retried for two days.
+
+The `claim-changed` detection above still applies while the observer's pinned reader is
+older than v0.313.0 (`incident_observer_reader_release`). Under such a reader, "a repeat
+after a timeout or restart leaves exactly one transition" holds for the chain, but not
+for the item's `blocked` status across an interruption inside the reopen.
 
 Local controlled settings, mock reader/principal responses and process/HTTP
 checks exercise the serving adapter. They do not prove production account
