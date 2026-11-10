@@ -319,6 +319,36 @@ def test_a_build_that_is_not_the_marketplace_tip_runs_no_member(*, tmp_path: Pat
     assert _AFTER in report.lines[0]
 
 
+def test_a_short_prefix_of_the_marketplace_tip_names_the_full_commit_to_rerun_with(
+    *, tmp_path: Path
+) -> None:
+    """A short commit id is refused before any member recipe can run."""
+    from livespec_dev_tooling.fleet.ensure_plugins_fleet import adopt
+
+    clones_root, _alpha, _beta, registry_path, manifest = _orch_fleet(tmp_path=tmp_path)
+    calls: list[Path | None] = []
+    adopted: list[Path] = []
+    build = _AFTER[:12]
+
+    report = adopt(
+        manifest_source=manifest,
+        clones_root=clones_root,
+        registry_path=registry_path,
+        run=_recording_run(calls=calls),
+        build=build,
+        tip=_tip(sha=_AFTER),
+        adopt_step=_recording_step(adopted=adopted),
+    )
+
+    assert adopted == []
+    assert calls == []
+    assert report.exit_code == 1
+    assert report.lines == (
+        f"named build {build} must be the full 40-character commit id; "
+        f"re-run with {_AFTER}; no member was run",
+    )
+
+
 def test_an_unreadable_marketplace_tip_runs_no_member(*, tmp_path: Path) -> None:
     from livespec_dev_tooling.fleet.ensure_plugins_fleet import adopt
 
