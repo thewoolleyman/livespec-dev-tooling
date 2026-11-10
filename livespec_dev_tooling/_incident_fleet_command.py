@@ -72,6 +72,14 @@ def _applicable_consumers(*, manifest: Manifest) -> tuple[str, ...]:
     )
 
 
+def _guidance_consumers(*, manifest: Manifest) -> tuple[str, ...]:
+    return tuple(
+        f"{manifest.owner}/{a.repo}"
+        for a in manifest.adopters
+        if a.profile == ("instruction-only",)
+    )
+
+
 def _confirmed(*, read_manifest: Callable[[], str | None], candidate_digest: str) -> bool:
     """Re-read core's master: the audited identity must be the one it serves now."""
     confirmed = read_manifest()
@@ -149,6 +157,10 @@ def run_fleet_audit(
             ]
         )
     )
+    for repository in _guidance_consumers(manifest=manifest):
+        # An instruction-only adopter carries guidance surfaces only; the hooks serving them
+        # are read and printed, but its missing read is already named by its unclassified rows.
+        _ = served(repository=repository, capability="driver-hooks")
     return FleetReport(
         audit=replace(audit, findings=audit.findings + lacking),
         readings=tuple(sorted((r, c, v) for (r, c), v in readings.items())),
