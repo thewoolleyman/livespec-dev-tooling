@@ -954,6 +954,7 @@ def _write_delegated_gate_config(*, repository: Path, delegated: bool) -> None:
         pytest.param("uv run --frozen pytest", id="uv-flag-before-pytest"),
         pytest.param("uv run --frozen python -m pytest", id="uv-flag-before-python-module"),
         pytest.param("uv run --with x pytest", id="uv-valued-option-before-pytest"),
+        pytest.param("uv run --with pytest pytest", id="uv-pytest-dependency-then-pytest"),
         pytest.param("uv run --python 3.12 pytest", id="uv-python-option-before-pytest"),
         pytest.param("uv run --no-sync --frozen --offline pytest", id="uv-several-flags"),
         pytest.param("uv run --with=x pytest", id="uv-attached-option-value"),
@@ -1072,6 +1073,7 @@ def test_a_prefixed_or_compound_foreground_pytest_in_the_cwd_is_refused(
     [
         pytest.param("uv run --frozen ruff check", id="flag-then-other-program"),
         pytest.param("uv run --with x ruff check", id="valued-option-then-other-program"),
+        pytest.param("uv run --with pytest ruff check", id="pytest-dependency-then-other-program"),
         pytest.param("uv run --frozen", id="flags-only"),
         pytest.param("uv run --frozen pytest tests/test_widget.py", id="flag-then-targeted-pytest"),
         pytest.param(

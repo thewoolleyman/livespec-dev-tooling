@@ -11,6 +11,10 @@ __all__: list[str] = [
 
 _JUST_COMMAND_MINIMUM_WORDS = 2
 
+# `uv run` options known to take a separate value that names a dependency or
+# package, so the word after one is that value even when it reads `pytest`.
+_UV_DEPENDENCY_VALUE_OPTIONS: frozenset[str] = frozenset({"--with", "--with-editable"})
+
 
 def is_full_suite_command(*, command: tuple[str, ...]) -> bool:
     """Whether ``command`` is a delegated full-suite command."""
@@ -44,12 +48,18 @@ def _without_uv_options(*, command: tuple[str, ...]) -> tuple[str, ...]:
     scan does not enumerate them: a dashed word is an option, and a bare word
     straight after one is its value unless it names pytest or an interpreter,
     which is then the program. That errs toward reading a pytest, never away.
+    The one exception is an option whose arity is known and whose value is a
+    dependency (`--with pytest`): that word is the value, so the program is
+    the word after it.
     """
     index = 0
     after_option = False
     while index < len(command):
         word = command[index]
-        if word.startswith("-"):
+        if word in _UV_DEPENDENCY_VALUE_OPTIONS:
+            index += 1
+            after_option = False
+        elif word.startswith("-"):
             after_option = True
         elif after_option and not _names_pytest_program(word=word):
             after_option = False

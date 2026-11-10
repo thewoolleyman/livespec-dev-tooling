@@ -49,6 +49,31 @@ def test_full_suite_recognition_covers_each_accepted_command_shape(
             id="path-module",
         ),
         pytest.param(("just", "check"), None, id="just-is-not-pytest"),
+        pytest.param(
+            ("uv", "run", "--with", "pytest", "ruff", "check"),
+            None,
+            id="with-pytest-dependency-then-other-program",
+        ),
+        pytest.param(
+            ("uv", "run", "--with", "pytest", "python", "scripts/foo.py"),
+            None,
+            id="with-pytest-dependency-then-interpreter-script",
+        ),
+        pytest.param(
+            ("uv", "run", "--with-editable", "pytest", "ruff", "check"),
+            None,
+            id="with-editable-pytest-then-other-program",
+        ),
+        pytest.param(
+            ("uv", "run", "--with", "pytest", "pytest"),
+            ("pytest",),
+            id="with-pytest-dependency-then-pytest-program",
+        ),
+        pytest.param(
+            ("uv", "run", "--with", "pytest", "python", "-m", "pytest", "-n", "8"),
+            ("pytest", "-n", "8"),
+            id="with-pytest-dependency-then-python-module",
+        ),
     ],
 )
 def test_pytest_command_normalizes_module_invocations(
