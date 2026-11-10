@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import hashlib
 import importlib.metadata
-import json
 import os
 import re
 import stat
@@ -22,6 +21,7 @@ from livespec_dev_tooling.incident_ci_identity_policy import (
     load_identity_policy,
 )
 from livespec_dev_tooling.incident_protected_path import protected_path
+from livespec_dev_tooling.incident_strict_json import IncidentJsonRefusalError, strict_json
 
 __all__: list[str] = ["ControllerInstallation", "valid_branch_name"]
 
@@ -132,7 +132,14 @@ class ControllerInstallation:
                 ),
                 target_branch=data.get("target_branch", _DEFAULT_TARGET_BRANCH),
             )
-        except (OSError, ValueError, TypeError, KeyError, importlib.metadata.PackageNotFoundError):
+        except (
+            OSError,
+            ValueError,
+            IncidentJsonRefusalError,
+            TypeError,
+            KeyError,
+            importlib.metadata.PackageNotFoundError,
+        ):
             return None
 
 
@@ -205,7 +212,7 @@ def _record(*, path: Path) -> dict[str, Any] | None:
         or stat.S_IMODE(path.stat().st_mode) & 0o077
     ):
         return None
-    data: object = json.loads(path.read_bytes())
+    data: object = strict_json(text=path.read_bytes(), limit=None)
     return cast("dict[str, Any]", data) if isinstance(data, dict) else None
 
 

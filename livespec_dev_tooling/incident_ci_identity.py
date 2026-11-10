@@ -19,6 +19,7 @@ from livespec_dev_tooling.incident_observer_admission import (
     observer_arm_admitted,
     retained_observer_arm,
 )
+from livespec_dev_tooling.incident_strict_json import IncidentJsonRefusalError
 
 if TYPE_CHECKING:
     from livespec_dev_tooling.incident_controller_installation import ControllerInstallation
@@ -124,7 +125,7 @@ class CiIdentityVerifier:
                 "authorizes_merge": False,
                 "normal_factory_proof": False,
             }
-        except (OSError, ValueError, TypeError, KeyError, RecursionError):
+        except (OSError, ValueError, IncidentJsonRefusalError, TypeError, KeyError, RecursionError):
             return _refused(reason="CI identity state or observations unavailable")
 
 

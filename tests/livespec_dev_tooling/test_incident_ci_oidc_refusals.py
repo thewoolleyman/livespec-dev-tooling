@@ -10,6 +10,7 @@ import pytest
 
 from livespec_dev_tooling._incident_ci_identity_json import identity_json, unbase64url
 from livespec_dev_tooling.incident_ci_oidc import verify_oidc
+from livespec_dev_tooling.incident_strict_json import IncidentJsonRefusalError
 from tests.livespec_dev_tooling import test_incident_ci_identity_policy as policy_tests
 from tests.livespec_dev_tooling.test_incident_ci_oidc import encoded
 
@@ -119,7 +120,7 @@ def test_real_signature_rejects_claim_and_signature_tampering(trusted):
     "raw", [b'{"a":1,"a":2}', b'{"n":NaN}', b'{"n":Infinity}', b"[]", b"\xff", b"{"]
 )
 def test_strict_identity_json_rejects_ambiguity_and_extensions(raw):
-    with pytest.raises((ValueError, TypeError, UnicodeError)):
+    with pytest.raises((IncidentJsonRefusalError, TypeError)):
         identity_json(raw=raw)
 
 
@@ -132,7 +133,7 @@ def test_base64_requires_bounded_canonical_unpadded_encoding(value):
 def test_bounds_malformed_and_duplicate_signed_tokens(trusted):
     _, policy, *_ = trusted
     assert unbase64url(value="AA", limit=2) == b"\0"
-    with pytest.raises(ValueError, match="identity|base64"):
+    with pytest.raises(IncidentJsonRefusalError, match="incident JSON refused"):
         identity_json(raw=b"{}", limit=1)
     for token in (
         "",

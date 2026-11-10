@@ -10,7 +10,6 @@ manifest-provisioned reader), and what it does with a verified result.
 
 from __future__ import annotations
 
-import json
 import subprocess
 import sys
 from collections.abc import Mapping, Sequence
@@ -24,6 +23,11 @@ if str(_VENDOR_DIR) not in sys.path:
 
 from returns.pipeline import is_successful  # noqa: E402 — vendor-path-aware import.
 from returns.result import Failure, Result, Success  # noqa: E402 — vendor-path-aware import.
+
+from livespec_dev_tooling.incident_strict_json import (  # noqa: E402
+    IncidentJsonRefusalError,
+    strict_json,
+)
 
 __all__: list[str] = [
     "AUTHORITY_CALL_CEILING_SECONDS",
@@ -70,27 +74,21 @@ def _refuse(*, code: str, detail: str) -> _Checked:
     return Failure(AuthorityRefusal(code=code, detail=detail))
 
 
-def _unique(*, pairs: list[tuple[str, Any]]) -> dict[str, Any]:
-    value: dict[str, Any] = {}
-    for key, item in pairs:
-        if key in value:
-            message = "duplicate JSON key"
-            raise ValueError(message)
-        value[key] = item
-    return value
+_PARSE_REFUSALS = {
+    "duplicate-key": ("incident-authority-duplicate-keys", "reply repeats a JSON key"),
+    "non-finite": ("incident-authority-malformed-reply", "reply carries a non-finite number"),
+    "nesting": ("incident-authority-malformed-reply", "reply nests JSON too deeply"),
+}
 
 
 def _parse(*, text: str) -> _Checked:
     try:
-        value = cast("object", json.loads(text, object_pairs_hook=lambda p: _unique(pairs=p)))
-    except json.JSONDecodeError:
-        return _refuse(code="incident-authority-malformed-reply", detail="reply is not JSON")
-    except RecursionError:
-        return _refuse(
-            code="incident-authority-malformed-reply", detail="reply nests JSON too deeply"
+        value = cast("object", strict_json(text=text, limit=None))
+    except IncidentJsonRefusalError as refusal:
+        code, detail = _PARSE_REFUSALS.get(
+            refusal.kind, ("incident-authority-malformed-reply", "reply is not JSON")
         )
-    except ValueError:
-        return _refuse(code="incident-authority-duplicate-keys", detail="reply repeats a JSON key")
+        return _refuse(code=code, detail=detail)
     if not isinstance(value, dict):
         return _refuse(
             code="incident-authority-malformed-reply", detail="reply is not a JSON object"

@@ -42,6 +42,7 @@ from typing import Any, cast
 from urllib.parse import SplitResult, urlsplit
 
 from livespec_dev_tooling.incident_release_screen import RELEASE_SCREEN_PATH
+from livespec_dev_tooling.incident_strict_json import IncidentJsonRefusalError, strict_json
 
 __all__: list[str] = ["ScreenRequest", "main", "screen"]
 
@@ -127,8 +128,8 @@ def _verdict(*, status: int, raw: bytes, payload: dict[str, str]) -> tuple[int, 
     if len(raw) > _MAX_REPLY:
         return 1, f"incident-release-screen-malformed-reply: HTTP {status} reply exceeds the bound"
     try:
-        reply: object = json.loads(raw)
-    except ValueError:
+        reply: object = strict_json(text=raw, limit=None)
+    except IncidentJsonRefusalError:
         reply = None
     if isinstance(reply, dict):
         answer = cast("dict[str, Any]", reply)

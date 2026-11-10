@@ -12,6 +12,7 @@ from typing import Any, cast
 
 from livespec_dev_tooling._incident_ci_identity_json import identity_json, unbase64url
 from livespec_dev_tooling.incident_protected_path import protected_path
+from livespec_dev_tooling.incident_strict_json import IncidentJsonRefusalError
 
 __all__: list[str] = [
     "CiIdentityPolicy",
@@ -120,7 +121,7 @@ def load_identity_policy(*, descriptor: Any, repository: str) -> CiIdentityPolic
             crypto_sha256=data["crypto"]["sha256"],
         )
         return policy if identity_policy_intact(policy=policy) else None
-    except (OSError, ValueError, TypeError, KeyError, RecursionError):
+    except (OSError, ValueError, IncidentJsonRefusalError, TypeError, KeyError, RecursionError):
         return None
 
 

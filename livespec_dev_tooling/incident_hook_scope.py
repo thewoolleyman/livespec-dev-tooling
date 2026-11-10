@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -22,6 +21,7 @@ from livespec_dev_tooling.incident_hook_process import (  # noqa: E402
     mapping,
 )
 from livespec_dev_tooling.incident_markers import validate_python_repair_marker  # noqa: E402
+from livespec_dev_tooling.incident_strict_json import strict_json  # noqa: E402
 
 __all__: list[str] = ["HookCall", "validate_scope"]
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-cerkbn
@@ -128,7 +128,7 @@ def _bound(
     result = gh_read(
         args=["api", f"repos/{query['repository']}/pulls/{attempt['pr_number']}"], timeout=10
     )
-    pr = mapping(value=json.loads(result.stdout))
+    pr = mapping(value=strict_json(text=result.stdout, limit=None))
     source, base = mapping(value=pr.get("head")), mapping(value=pr.get("base"))
     branch = source.get("ref")
     if (
