@@ -9,9 +9,9 @@ from pathlib import Path
 from typing import Any, cast
 
 from livespec_dev_tooling.checks._ci_matrix_parse import parse_ci_jobs
-from livespec_dev_tooling.incident_ci_payload import strict_json
 from livespec_dev_tooling.incident_ci_policy import CiTarget
 from livespec_dev_tooling.incident_gate_inventory import timing_classes
+from livespec_dev_tooling.incident_strict_json import strict_json
 
 __all__: list[str] = ["decode_inventory", "load_inventory", "render_inventory"]
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-egy3ri
@@ -57,7 +57,7 @@ def render_inventory(*, workflow: str, inventory: str) -> str:
 
 def decode_inventory(*, text: str) -> tuple[CiTarget, ...]:
     """Refuse incomplete, duplicate, ambiguous or malformed released inventory."""
-    value = strict_json(text=text)
+    value = strict_json(text=text, limit=65536)
     data = cast("dict[str, Any]", value) if isinstance(value, dict) else {}
     if (
         set(data) != {"schema", "targets"}

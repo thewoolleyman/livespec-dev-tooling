@@ -3,38 +3,17 @@
 from __future__ import annotations
 
 import base64
-import json
 import re
-from typing import Any, NoReturn, cast
+from typing import Any, cast
+
+from livespec_dev_tooling.incident_strict_json import strict_json
 
 __all__: list[str] = ["identity_json", "unbase64url"]
 
 
-def _unique(*, pairs: list[tuple[str, Any]]) -> dict[str, Any]:
-    result: dict[str, Any] = {}
-    for key, value in pairs:
-        if key in result:
-            message = "duplicate identity JSON key"
-            raise ValueError(message)
-        result[key] = value
-    return result
-
-
-def _nonfinite(*, _value: str) -> NoReturn:
-    message = "nonfinite identity JSON constant"
-    raise ValueError(message)
-
-
 def identity_json(*, raw: bytes, limit: int = 65536) -> dict[str, Any]:
     """Decode an object without duplicate keys or non-JSON numeric extensions."""
-    if len(raw) > limit:
-        message = "identity JSON exceeds bound"
-        raise ValueError(message)
-    value: object = json.loads(
-        raw.decode("utf-8"),
-        object_pairs_hook=lambda pairs: _unique(pairs=pairs),
-        parse_constant=lambda value: _nonfinite(_value=value),
-    )
+    value: object = strict_json(text=raw, limit=limit)
     if not isinstance(value, dict):
         message = "identity JSON must be an object"
         raise TypeError(message)

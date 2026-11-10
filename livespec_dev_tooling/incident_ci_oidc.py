@@ -9,6 +9,7 @@ from typing import Any, cast
 from livespec_dev_tooling._incident_ci_identity_json import identity_json, unbase64url
 from livespec_dev_tooling.incident_ci_identity_policy import CiIdentityPolicy
 from livespec_dev_tooling.incident_ci_jws import verify_ci_signature
+from livespec_dev_tooling.incident_strict_json import IncidentJsonRefusalError
 
 __all__: list[str] = ["OidcIdentity", "oidc_current", "verify_oidc"]
 
@@ -83,7 +84,14 @@ def verify_oidc(*, token: str, policy: CiIdentityPolicy, now: float) -> OidcIden
             )
             else None
         )
-    except (ValueError, TypeError, KeyError, UnicodeError, RecursionError):
+    except (
+        ValueError,
+        IncidentJsonRefusalError,
+        TypeError,
+        KeyError,
+        UnicodeError,
+        RecursionError,
+    ):
         return None
 
 

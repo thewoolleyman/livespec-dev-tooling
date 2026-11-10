@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import hashlib
 import hmac
-import json
 from typing import cast
 
 from livespec_dev_tooling._incident_observer_types import LeafCompletion
+from livespec_dev_tooling.incident_strict_json import IncidentJsonRefusalError, strict_json
 
 __all__: list[str] = ["verify_leaf_completion"]
 _MAX_CALLBACK_BYTES = 1_000_000
@@ -64,7 +64,7 @@ def _parse_job(*, record: dict[str, object], delivery_id: str) -> LeafCompletion
 
 def _read_object(*, body: bytes) -> dict[str, object] | None:
     try:
-        record: object = json.loads(body)
-    except (UnicodeDecodeError, json.JSONDecodeError):
+        record: object = strict_json(text=body, limit=None)
+    except IncidentJsonRefusalError:
         return None
     return cast("dict[str, object]", record) if isinstance(record, dict) else None

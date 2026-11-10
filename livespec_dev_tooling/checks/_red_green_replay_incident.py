@@ -16,7 +16,6 @@ on its missing evidence (contracts `Expedited incident execution`).
 
 from __future__ import annotations
 
-import json
 import os
 import subprocess
 import sys
@@ -27,6 +26,7 @@ from typing import TYPE_CHECKING, Any, cast
 from livespec_dev_tooling.incident_ci_authority import CiAuthorityBoundary, ObserverUnreachableError
 from livespec_dev_tooling.incident_ci_event import incident_block
 from livespec_dev_tooling.incident_ci_payload import decode_authority
+from livespec_dev_tooling.incident_strict_json import IncidentJsonRefusalError, strict_json
 
 if TYPE_CHECKING:
     from livespec_dev_tooling.incident_ci_payload import CiAuthority
@@ -55,8 +55,10 @@ def _pull_request(*, environ: Mapping[str, str]) -> dict[str, Any]:
         return {}
     try:
         text = Path(environ.get("GITHUB_EVENT_PATH", "")).read_text(encoding="utf-8")
-        return _mapping(value=_mapping(value=json.loads(text)).get("pull_request"))
-    except (OSError, ValueError):
+        return _mapping(
+            value=_mapping(value=strict_json(text=text, limit=None)).get("pull_request")
+        )
+    except (OSError, ValueError, IncidentJsonRefusalError):
         return {}
 
 

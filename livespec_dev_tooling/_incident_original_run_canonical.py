@@ -17,6 +17,7 @@ from typing import Any, cast
 from livespec_dev_tooling._incident_observer_types import ObserverRegistration
 from livespec_dev_tooling._incident_run_types import CorrectedAttempt, OriginalRun, RunEvidence
 from livespec_dev_tooling.incident_run_collector import CanonicalRunAdapter
+from livespec_dev_tooling.incident_strict_json import strict_json
 
 __all__: list[str] = [
     "EVIDENCE_MARKER",
@@ -76,7 +77,10 @@ def _run_key(*, original: OriginalRun) -> dict[str, object]:
 
 def recorded_digests(*, ports: CanonicalPorts, original: OriginalRun) -> tuple[str, ...]:
     """Evidence digests the incident item records for exactly this original run."""
-    comments = cast("object", json.loads(ports.ledger(["comments", original.item_id, "--json"])))
+    comments = cast(
+        "object",
+        strict_json(text=ports.ledger(["comments", original.item_id, "--json"]), limit=None),
+    )
     rows = cast("list[object]", comments) if isinstance(comments, list) else []
     key = _run_key(original=original)
     digests: list[str] = []
@@ -84,7 +88,9 @@ def recorded_digests(*, ports: CanonicalPorts, original: OriginalRun) -> tuple[s
         text = cast("dict[str, object]", row).get("text") if isinstance(row, dict) else None
         if not isinstance(text, str) or not text.startswith(EVIDENCE_MARKER + "\n"):
             continue
-        body = cast("object", json.loads(text.removeprefix(EVIDENCE_MARKER + "\n")))
+        body = cast(
+            "object", strict_json(text=text.removeprefix(EVIDENCE_MARKER + "\n"), limit=None)
+        )
         if not isinstance(body, dict):
             continue
         record = cast("dict[str, object]", body)

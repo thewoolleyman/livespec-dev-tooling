@@ -9,6 +9,7 @@ import pytest
 
 from livespec_dev_tooling import incident_ci_process as module
 from livespec_dev_tooling.incident_ci_policy import CiEvent, CiTarget
+from livespec_dev_tooling.incident_strict_json import IncidentJsonRefusalError
 from tests.livespec_dev_tooling.test_incident_ci_payload import outcome
 
 
@@ -115,7 +116,7 @@ def test_outcome_files_are_bounded_strict_and_symlink_free(monkeypatch, tmp_path
     report.write_text(json.dumps(outcome()) + "\n")
     assert asdict(module.CiProcess.outcomes(directory=tmp_path)[0]) == outcome()
     report.write_text('{"name":"check-fast","name":"check-fast"}\n')
-    with pytest.raises(ValueError, match="duplicate"):
+    with pytest.raises(IncidentJsonRefusalError, match="duplicate"):
         module.CiProcess.outcomes(directory=tmp_path)
     report.write_text(json.dumps(outcome()) + "\n")
     link = tmp_path / "two.jsonl"

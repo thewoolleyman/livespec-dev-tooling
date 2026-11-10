@@ -30,6 +30,10 @@ from livespec_dev_tooling.incident_execution import (  # noqa: E402
     OperationIdentity,
     resolve_execution_context,
 )
+from livespec_dev_tooling.incident_strict_json import (  # noqa: E402
+    IncidentJsonRefusalError,
+    strict_json,
+)
 from livespec_dev_tooling.incident_transport import (  # noqa: E402
     CONTEXT_ENV,
     decode_execution_context,
@@ -72,7 +76,10 @@ def _fail(*, detail: str) -> NoReturn:
 def parse_query(*, text: str) -> dict[str, Any] | None:
     if len(text) > _MAX_QUERY:
         return None
-    value = mapping(value=json.loads(text))
+    try:
+        value = mapping(value=strict_json(text=text, limit=None))
+    except IncidentJsonRefusalError:
+        return None
     if frozenset(value) != _QUERY_KEYS or canonical(value=value) != text:
         return None
     if type(value["generation"]) is not int or value["generation"] <= 0:

@@ -21,6 +21,7 @@ from livespec_dev_tooling._incident_observer_store import (
 )
 from livespec_dev_tooling.incident_ci_job_history import observe_retained_job
 from livespec_dev_tooling.incident_forge_reads import ForgeReads
+from livespec_dev_tooling.incident_strict_json import IncidentJsonRefusalError
 
 if TYPE_CHECKING:
     from livespec_dev_tooling.incident_controller_installation import ControllerInstallation
@@ -54,7 +55,7 @@ class CiJobCollection:
                 return self._collect(payload=payload)
             if path == "/ci/jobs/inspect" and set(payload) == {"repository", "attachment_id"}:
                 return self._inspect(payload=payload)
-        except (OSError, ValueError, TypeError, KeyError, RecursionError):
+        except (OSError, ValueError, IncidentJsonRefusalError, TypeError, KeyError, RecursionError):
             return _refused(reason="CI job attachment state unavailable")
         return _refused(reason="unknown or malformed CI job operation")
 

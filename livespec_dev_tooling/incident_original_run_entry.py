@@ -57,6 +57,7 @@ from livespec_dev_tooling.incident_original_run_flows import (
     propose,
 )
 from livespec_dev_tooling.incident_run_evidence import evidence_digest
+from livespec_dev_tooling.incident_strict_json import strict_json
 
 _VENDOR_DIR = Path(__file__).resolve().parent / "_vendor"
 if str(_VENDOR_DIR) not in sys.path:
@@ -146,7 +147,7 @@ def parse_graph(*, value: object) -> tuple[ExpectedJob, ...]:
 
 @impure_safe
 def _graph(*, path: Path) -> tuple[ExpectedJob, ...]:
-    return parse_graph(value=json.loads(path.read_text()))
+    return parse_graph(value=strict_json(text=path.read_text(), limit=None))
 
 
 def _collect(

@@ -13,6 +13,7 @@ from livespec_dev_tooling._incident_recovery_journal_identity import JournalCode
 from livespec_dev_tooling._incident_recovery_journal_io import JournalStore
 from livespec_dev_tooling._incident_recovery_journal_types import JournalResult
 from livespec_dev_tooling.incident_controller_installation import ControllerInstallation
+from livespec_dev_tooling.incident_strict_json import IncidentJsonRefusalError
 
 __all__: list[str] = ["JournalResult", "RecoveryJournal"]
 
@@ -40,7 +41,7 @@ class RecoveryJournal:
         try:
             exact = JournalCodec.intent(raw=JournalCodec.wire(value=asdict(intent)))
             self._bound(intent=exact)
-        except (ValueError, TypeError, KeyError, RecursionError):
+        except (ValueError, IncidentJsonRefusalError, TypeError, KeyError, RecursionError):
             return JournalResult(status="refused", reason="invalid exact recovery intent")
         return JournalStore(installation=self.installation).perform(
             operation="lookup", intent=exact
@@ -61,7 +62,7 @@ class RecoveryJournal:
             raw = JournalCodec.wire(value=asdict(request))
             exact = JournalCodec.request(operation=operation, raw=raw)
             self._bound(intent=exact.intent)
-        except (ValueError, TypeError, KeyError, RecursionError):
+        except (ValueError, IncidentJsonRefusalError, TypeError, KeyError, RecursionError):
             return JournalResult(status="refused", reason="invalid exact recovery effect request")
         return JournalStore(installation=self.installation).perform(
             operation=operation, intent=exact.intent, request=raw

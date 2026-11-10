@@ -13,8 +13,9 @@ from typing import Any
 from livespec_dev_tooling.incident_ci_entry import CiEntry
 from livespec_dev_tooling.incident_ci_event import observe_event
 from livespec_dev_tooling.incident_ci_inventory import load_inventory
-from livespec_dev_tooling.incident_ci_payload import decode_outcome, strict_json
+from livespec_dev_tooling.incident_ci_payload import decode_outcome
 from livespec_dev_tooling.incident_ci_policy import CiOutcome
+from livespec_dev_tooling.incident_strict_json import IncidentJsonRefusalError, strict_json
 from livespec_dev_tooling.incident_transport import normal_child_environment
 
 __all__: list[str] = ["CiProcess", "main"]
@@ -39,7 +40,10 @@ class CiProcess:
             if len(raw.encode()) > _MAX_REPORT:
                 message = "oversized incident CI report"
                 raise ValueError(message)
-            rows.extend(decode_outcome(value=strict_json(text=line)) for line in raw.splitlines())
+            rows.extend(
+                decode_outcome(value=strict_json(text=line, limit=65536))
+                for line in raw.splitlines()
+            )
         if len(rows) > _MAX_ROWS:
             message = "too many incident CI outcomes"
             raise ValueError(message)
@@ -139,7 +143,7 @@ def main(*, argv: list[str] | None = None) -> int:
     _ = parser.add_argument("--target", action="append", default=[])
     try:
         return CiProcess.run(args=parser.parse_args(argv))
-    except (OSError, ValueError, TypeError, KeyError, RecursionError):
+    except (OSError, ValueError, IncidentJsonRefusalError, TypeError, KeyError, RecursionError):
         return _emit(
             result={
                 "status": "refused",
