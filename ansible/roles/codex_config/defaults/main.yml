@@ -51,3 +51,11 @@ codex_config_cloudflare_mcp_token_env: CLOUDFLARE_MCP_TOKEN
 # The 1Password service-account wrapper. Owned by the 1password-env-wrapper repo,
 # NOT by this role -- asserted, never installed.
 codex_config_env_wrapper: /usr/local/bin/with-homelab-env.sh
+
+# `codex features enable` rewrites ~/.codex/config.toml, so the role runs it
+# under `flock` on the Driver's lock file (`<realpath(config.toml)>.livespec-lock`,
+# livespec-driver-codex spec v019). The wait matches the Driver writer's own
+# bound (CONFIG_LOCK_WAIT_SECONDS, 10 s); `flock -E` makes a timeout exit with a
+# code the role can tell from a Codex failure.
+codex_config_lock_wait_seconds: 10
+codex_config_lock_timeout_rc: 75
