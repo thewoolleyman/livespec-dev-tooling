@@ -15,6 +15,7 @@ check-codex-hook-reconcilable  # incident-timing: fast
 check-comment-line-anchors  # incident-timing: fast
 check-commit-pairs-source-and-test  # incident-timing: not-applicable # incident-precondition: a-staged-test-beside-each-staged-source-file
 check-delegated-gate-check-suite  # incident-timing: fast
+check-delegated-job-authority-skip  # incident-timing: fast
 check-file-lloc  # incident-timing: fast
 check-fleet-marketplace-relative-sources  # incident-timing: fast
 check-global-writes  # incident-timing: fast

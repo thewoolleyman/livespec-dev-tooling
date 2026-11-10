@@ -3137,9 +3137,7 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a delegated gate Job path that runs an authority member without honouring the skip variable is reported",
-    "test": "TODO",
-    "reason": "Spec-first: a real test at the integration tier or above (`tests.consumer`, this repository's `scenario_tiers`, or an integration-marked test) is owed for this heading. It must drive the delegated_job_authority_skip check against fixture repositories whose delegated pre-commit Job recipe reaches an authority member with and without a skip read in each accepted shape, and with a fixed member list. livespec-dev-tooling-zqrg7d owns it.",
-    "work_item": "livespec-dev-tooling-zqrg7d"
+    "test": "tests.consumer.test_delegated_job_authority_skip.test_delegated_path_that_ignores_the_skip_variable_is_reported"
   },
   {
     "spec_root": "SPECIFICATION",
