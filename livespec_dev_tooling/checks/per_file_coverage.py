@@ -57,6 +57,7 @@ import json
 import os
 import sqlite3
 import sys
+from collections.abc import Iterable
 from contextlib import closing, redirect_stdout
 from pathlib import Path
 
@@ -68,6 +69,10 @@ import structlog  # noqa: E402  — vendor-path-aware import after sys.path inse
 from coverage import (  # noqa: E402  — uv-managed dep, available post-vendor-path-insert.
     Coverage,
     CoverageData,
+)
+
+from livespec_dev_tooling._unmeasured_first_party import (  # noqa: E402
+    find_unmeasured_first_party,
 )
 
 __all__: list[str] = []
@@ -202,6 +207,48 @@ def _resolve_data_file(*, cwd: Path) -> Path:
     return cwd / _DEFAULT_DATA_FILE
 
 
+def _without_vanished_sources(
+    *, cov: Coverage, coverage_file: Path, log: structlog.stdlib.BoundLogger
+) -> Coverage:
+    # Vanished-source rewrite (work-item livespec-dev-tooling-5xh8): drop
+    # every measured file whose source is gone BEFORE json_report walks
+    # the data, or the first one raises `NoSource` and kills the gate.
+    # The rewrite lands in the data FILE, so the consume-once
+    # check-coverage read that follows in the `just check` aggregate sees
+    # the sanitized data too; the Coverage object is then reloaded from it.
+    vanished = sorted(f for f in cov.get_data().measured_files() if not Path(f).is_file())
+    if vanished:
+        for fname in vanished:
+            log.warning(
+                "measured file vanished before report; dropping it",
+                file=fname,
+                hint=_VANISHED_SOURCE_HINT,
+            )
+        _rewrite_without(data=cov.get_data(), vanished=set(vanished), data_file=coverage_file)
+        cov = Coverage(data_file=str(coverage_file))
+        cov.load()
+    return cov
+
+
+def _warn_unmeasured_first_party(
+    *, log: structlog.stdlib.BoundLogger, repo_root: Path, measured_files: Iterable[str]
+) -> None:
+    """Warn, by path, of every tracked first-party file no test imported.
+
+    Work-item livespec-dev-tooling-45qcgo: such a file is absent from the data,
+    so the per-file walk can never judge it.
+    """
+    unmeasured = find_unmeasured_first_party(repo_root=repo_root, measured_files=measured_files)
+    if unmeasured is None:
+        log.warning(
+            "tracked first-party files could not be listed; unmeasured files not reported",
+            hint="the working directory is not a git working tree",
+        )
+        return
+    for file in unmeasured:
+        log.warning("first-party file is unmeasured: no test imported it", file=file)
+
+
 def main() -> int:
     structlog.configure(
         processors=[
@@ -235,23 +282,7 @@ def main() -> int:
     cov = Coverage(data_file=str(coverage_file))
     cov.load()
 
-    # Vanished-source rewrite (work-item livespec-dev-tooling-5xh8): drop
-    # every measured file whose source is gone BEFORE json_report walks
-    # the data, or the first one raises `NoSource` and kills the gate.
-    # The rewrite lands in the data FILE, so the consume-once
-    # check-coverage read that follows in the `just check` aggregate sees
-    # the sanitized data too; the Coverage object is then reloaded from it.
-    vanished = sorted(f for f in cov.get_data().measured_files() if not Path(f).is_file())
-    if vanished:
-        for fname in vanished:
-            log.warning(
-                "measured file vanished before report; dropping it",
-                file=fname,
-                hint=_VANISHED_SOURCE_HINT,
-            )
-        _rewrite_without(data=cov.get_data(), vanished=set(vanished), data_file=coverage_file)
-        cov = Coverage(data_file=str(coverage_file))
-        cov.load()
+    cov = _without_vanished_sources(cov=cov, coverage_file=coverage_file, log=log)
 
     # Tier-2 empty-data guard (work-item livespec-dev-tooling-cmn): a
     # present-but-empty data file (zero measured files) is the symptom of
@@ -272,6 +303,10 @@ def main() -> int:
     with redirect_stdout(buf):
         _ = cov.json_report(outfile="-")
     report = json.loads(buf.getvalue())
+
+    _warn_unmeasured_first_party(
+        log=log, repo_root=cwd, measured_files=cov.get_data().measured_files()
+    )
 
     offenders: list[tuple[str, dict[str, object]]] = []
     for fname, file_info in sorted(report["files"].items()):
