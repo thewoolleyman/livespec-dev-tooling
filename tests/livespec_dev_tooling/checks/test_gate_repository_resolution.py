@@ -61,6 +61,13 @@ _GATED_REPOSITORY = "thewoolleyman/livespec-dev-tooling"
 # The two addresses each check must reach once it has resolved the repository.
 _PROTECTION_PATH = f"repos/{_GATED_REPOSITORY}/branches/master/protection/required_status_checks"
 _CHECK_RUNS_PATH = f"repos/{_GATED_REPOSITORY}/commits/master/check-runs?check_name=ci-green"
+# Master's head commit and the check suite of master's own push run of it.
+_MASTER_HEAD_SHA = "0123456789abcdef0123456789abcdef01234567"
+_MASTER_PUSH_SUITE = 7
+_MASTER_PUSH_RUNS_PATH = (
+    f"repos/{_GATED_REPOSITORY}/actions/runs"
+    f"?branch=master&event=push&head_sha={_MASTER_HEAD_SHA}&per_page=100"
+)
 # What `gh` puts on the wire when nothing has told it otherwise. Asserted
 # ABSENT from the gate run's invocations: `gh` expands these from the clone's
 # own remote, which in a gate pod cannot answer.
@@ -126,7 +133,7 @@ def _invocations(*, root: Path) -> str:
 def _install_fake_gh(*, root: Path) -> str:
     """Install a fake `gh` under `root/bin` and return a PATH that finds it first.
 
-    It answers ONLY the five addresses that name `_GATED_REPOSITORY` and refuses
+    It answers ONLY the six addresses that name `_GATED_REPOSITORY` and refuses
     everything else the way the real API does (a JSON body on stdout, a rendered
     line on stderr, non-zero exit). That refusal is what makes the negative
     controls meaningful: a check that resolved the wrong repository does not
@@ -146,8 +153,16 @@ def _install_fake_gh(*, root: Path) -> str:
             '{"enabled": true}'
         ),
         _CHECK_RUNS_PATH: (
-            '{"total_count": 1, "check_runs": '
-            '[{"name": "ci-green", "status": "completed", "conclusion": "success"}]}'
+            '{"total_count": 1, "check_runs": [{"name": "ci-green", "status": "completed", '
+            f'"conclusion": "success", "head_sha": "{_MASTER_HEAD_SHA}", '
+            f'"check_suite": {{"id": {_MASTER_PUSH_SUITE}}}}}]}}'
+        ),
+        # Master's own push run of that commit, the run whose check suite the
+        # `ci-green` above belongs to: `master_ci_green` reads `ci-green` only
+        # from master's push run, never from a scratch run on the same commit.
+        _MASTER_PUSH_RUNS_PATH: (
+            '{"workflow_runs": [{"head_branch": "master", "event": "push", '
+            f'"check_suite_id": {_MASTER_PUSH_SUITE}}}]}}'
         ),
     }
     # Literal `[ "$2" = ... ]` comparisons rather than a `case`: one address
@@ -157,7 +172,7 @@ def _install_fake_gh(*, root: Path) -> str:
         f"if [ \"$2\" = \"{path}\" ]; then\n  printf '%s\\n' '{payload}'\n  exit 0\nfi\n"
         for path, payload in answers.items()
     )
-    # The fifth address is the paginated ruleset read of the effective
+    # The sixth address is the paginated ruleset read of the effective
     # required-check set (contracts.md v149): its path is the FOURTH argument,
     # after `--paginate --slurp`. One empty page models a repository with no
     # ruleset, so classic `ci-green` alone keeps the check aligned.
