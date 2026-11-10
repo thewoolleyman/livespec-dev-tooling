@@ -30,6 +30,7 @@ from livespec_dev_tooling._incident_fleet_recovery_reader import (  # noqa: E402
     ForgeReader,
     read_recovery_authorization,
 )
+from livespec_dev_tooling._incident_fleet_release_keyed import ServingReading  # noqa: E402
 from livespec_dev_tooling._incident_fleet_template_reader import read_templates  # noqa: E402
 from livespec_dev_tooling.budgeted_gh import gh_read  # noqa: E402
 from livespec_dev_tooling.fleet._invocation_failure import InvocationNotPerformed  # noqa: E402
@@ -48,13 +49,16 @@ __all__: list[str] = [
 ]
 
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-3wcldx
-Reader = Callable[..., str | None]
+Reader = Callable[..., str | ServingReading | None]
 
 
 class ServingReader(Protocol):
-    """Reads one capability's serving version for one consumer; None when unverified."""
+    """Reads one capability's serving version for one consumer; None when unverified.
 
-    def __call__(self, *, repository: str, capability: str) -> str | None: ...
+    A release-keyed read answers a `ServingReading`, which also names what it rests on.
+    """
+
+    def __call__(self, *, repository: str, capability: str) -> str | ServingReading | None: ...
 
 
 def forge_reader(*, run: CommandRunner) -> ForgeReader:
@@ -103,7 +107,7 @@ def host_serving_reader(
 ) -> ServingReader:
     """A `(repository, capability)` reader; an unnamed capability reads as unverified."""
 
-    def read(*, repository: str, capability: str) -> str | None:
+    def read(*, repository: str, capability: str) -> str | ServingReading | None:
         reader = readers.get(capability)
         return None if reader is None else reader(probe=probe, repository=repository)
 
