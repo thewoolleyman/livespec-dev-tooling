@@ -1463,8 +1463,8 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: the commit-range validation fails a Red+Green commit whose recorded test cannot be collected on its own tree",
-    "test": "TODO",
-    "reason": "Spec-first: a real test at the integration tier or above (`tests.consumer`, this repository's `scenario_tiers`, or an integration-marked test) is owed for this heading. It must build a commit range whose Red+Green commit's recorded test module fails collection on that commit's own tree (an ImportError, and a module that collects no test), assert the range check fails naming the commit sha, module and first collection error under a distinct check_id, and assert a range whose recorded modules all collect passes. livespec-dev-tooling-5be65c owns it.",
+    "test": "tests.livespec_dev_tooling.checks.test_red_green_replay_collect.test_range_fails_naming_the_commit_and_module_whose_recorded_test_cannot_be_collected",
+    "reason": "Integration-tier (`@pytest.mark.integration`, the function-level marker fallback for a test in the mirror tree): the mapped test builds a real git history in the measured livespec-dev-tooling#3913 shape, a Red+Green commit whose recorded test module imports a name its own tree does not define followed by a commit that adds it, and drives the shipped `red_green_replay.main()` over that range. It asserts the check fails (exit 1) under the distinct collection check_id, naming the broken commit's sha, the recorded module and the first collection error (`decode_historical_reply`), and does not name the later commit whose tree collects. Its integration-marked sibling `test_range_passes_when_every_recorded_test_collects_on_its_own_tree` drives `main()` over a range whose recorded module collects and asserts it passes with no collection finding; `test_a_recorded_module_that_collects_no_test_fails_the_range` covers the module that collects no test (livespec-dev-tooling-5be65c).",
     "work_item": "livespec-dev-tooling-5be65c"
   },
   {
