@@ -44,7 +44,7 @@ def test_an_authority_call_three_times_slower_than_measured_is_not_cut_off(
         raise subprocess.TimeoutExpired(argv, kwargs["timeout"])
 
     _registered(monkeypatch=monkeypatch, tmp_path=tmp_path)
-    monkeypatch.setattr(module.subprocess, "run", run)
+    monkeypatch.setattr(subprocess, "run", run)
     with pytest.raises(module.HookRefusalError):
         _ = module.invoke_authority(repo=tmp_path, query=_QUERY, action="read-local-gates")
     # 39 s is the slowest call measured; three times that must still complete.
@@ -59,7 +59,7 @@ def test_a_timed_out_authority_call_names_the_action_and_its_elapsed_seconds(
         raise subprocess.TimeoutExpired(argv, kwargs["timeout"])
 
     _registered(monkeypatch=monkeypatch, tmp_path=tmp_path)
-    monkeypatch.setattr(module.subprocess, "run", run)
+    monkeypatch.setattr(subprocess, "run", run)
     with pytest.raises(module.HookRefusalError) as refused:
         _ = module.invoke_authority(repo=tmp_path, query=_QUERY, action="record-local-gates")
     message = str(refused.value)

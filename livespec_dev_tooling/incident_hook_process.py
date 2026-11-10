@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import json
 import os
-import subprocess
 import sys
 from pathlib import Path
 from typing import Any, NoReturn, cast
@@ -30,6 +29,7 @@ from livespec_dev_tooling.incident_execution import (  # noqa: E402
     OperationIdentity,
     resolve_execution_context,
 )
+from livespec_dev_tooling.incident_git import git_text  # noqa: E402
 from livespec_dev_tooling.incident_strict_json import (  # noqa: E402
     IncidentJsonRefusalError,
     strict_json,
@@ -43,7 +43,6 @@ __all__: list[str] = [
     "HookRefusalError",
     "canonical",
     "exact_tree",
-    "git_text",
     "invoke_authority",
     "mapping",
     "parse_query",
@@ -53,7 +52,6 @@ __all__: list[str] = [
 _QUERY_KEYS = frozenset(
     ("repository", "item", "attempt", "phase", "operation", "generation", "owner")
 )
-_TIMEOUT = 30
 _MAX_QUERY = 16384
 
 
@@ -180,17 +178,6 @@ def resolve_current(*, reading: dict[str, Any], query: dict[str, Any]) -> Execut
     ):
         _fail(detail="incident transport differs from canonical current context")
     return context
-
-
-def git_text(*, repo: Path, args: list[str]) -> str:
-    return subprocess.run(  # noqa: S603 — fixed git executable and structured argv.
-        ["git", *args],  # noqa: S607 — git is the repository toolchain executable.
-        cwd=repo,
-        text=True,
-        capture_output=True,
-        timeout=_TIMEOUT,
-        check=True,
-    ).stdout.strip()
 
 
 def exact_tree(*, repo: Path, context: ExecutionContext, hook: str) -> str:

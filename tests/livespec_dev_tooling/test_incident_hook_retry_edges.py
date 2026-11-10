@@ -119,7 +119,7 @@ def test_registered_lookup_process_receives_exact_receipt_identity(
             "",
         )
 
-    monkeypatch.setattr(process.subprocess, "run", command)
+    monkeypatch.setattr(subprocess, "run", command)
     assert process.invoke_authority(
         repo=tmp_path, query={}, action="read-local-gates", receipt_id="exact-receipt"
     ) == dict(status="absent")

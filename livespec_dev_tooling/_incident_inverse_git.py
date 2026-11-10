@@ -5,7 +5,6 @@ from __future__ import annotations
 import hashlib
 import os
 import re
-import subprocess
 import tempfile
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
@@ -13,10 +12,9 @@ from functools import partial
 from pathlib import Path
 
 from livespec_dev_tooling._incident_inverse_types import InversePlan, LandedIncident
+from livespec_dev_tooling.incident_git import run_git
 
 __all__: list[str] = ["IsolatedGit", "build_inverse", "scope_matches_git"]
-
-_GIT_TIMEOUT = 15
 
 
 def _git(
@@ -37,14 +35,7 @@ def _git(
         environment["GIT_DIR"] = str(administration)
     if objects is not None:
         environment["GIT_OBJECT_DIRECTORY"] = objects
-    return subprocess.run(  # noqa: S603 — fixed Git plumbing argv, no shell or candidate command.
-        ["git", "-C", str(root), *args],  # noqa: S607 — configured Git executable on PATH.
-        input=data,
-        capture_output=True,
-        check=True,
-        timeout=_GIT_TIMEOUT,
-        env=environment,
-    ).stdout
+    return run_git(repo=root, args=args, data=data, env=environment).stdout
 
 
 def _sha(*, value: str) -> bool:
