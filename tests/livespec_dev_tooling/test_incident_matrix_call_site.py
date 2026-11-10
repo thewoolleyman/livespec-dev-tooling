@@ -391,3 +391,148 @@ def test_check_callers_parses_every_workflow_per_job(tmp_path):
 
 def test_quoted_values_are_one_inert_line():
     assert call_site.quoted(value="a\n::error::b%0A") == '"a\\n::error::b%250A"'
+
+
+# --- Round 3: nested reusable workflows and ambiguous YAML -------------------
+
+_NESTED_HARMLESS = "on: workflow_call\njobs:\n  build:\n    runs-on: ubuntu-latest\n"
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "a: 1\nA: 2\n",
+        "jobs:\n  x: {with: {incident-omitted: 1, Incident-Omitted: 2}}\n",
+        "base: &b {k: 1}\nmerged:\n  <<: *b\n",
+        "list:\n  - {a: 1, a: 2}\n",
+    ],
+    ids=["case-folded-duplicate", "nested-duplicate", "merge-key", "duplicate-in-a-sequence"],
+)
+def test_an_ambiguous_workflow_loads_as_none(text):
+    assert load_workflow(text=text) is None
+    # Negative control: an alias reused twice, with no merge key, is unambiguous.
+    assert load_workflow(text="a: &x {k: 1}\nb: *x\nc: *x\n") == {
+        "a": {"k": 1},
+        "b": {"k": 1},
+        "c": {"k": 1},
+    }
+
+
+def test_no_copies_reads_nothing():
+    assert call_site.no_copies(path=".github/workflows/ci.yml") == (None, None)
+
+
+def test_workflow_copies_reads_the_base_from_the_forge_and_the_ran_copy_from_disk(tmp_path):
+    workflows = tmp_path / ".github" / "workflows"
+    workflows.mkdir(parents=True)
+    (workflows / "ci.yml").write_text("ran\n", encoding="utf-8")
+    (workflows / "bad.yml").write_bytes(b"\xff\xfe")
+    read = _read(stdout="base\n")
+
+    def copies(*, path, workspace=str(tmp_path)):
+        return call_site.workflow_copies(
+            path=path, repository=_REPOSITORY, sha=_BASE, workspace=workspace, read=read
+        )
+
+    facts = [
+        copies(path=".github/workflows/ci.yml") == ("base\n", "ran\n"),
+        copies(path=".github/workflows/missing.yml") == ("base\n", None),
+        copies(path=".github/workflows/bad.yml") == ("base\n", None),
+        copies(path=".github/workflows/ci.yml", workspace="") == ("base\n", None),
+        copies(path="../ci.yml") == (None, None),
+    ]
+    assert all(facts), facts
+
+
+def _reader(**copies_by_name: tuple[str | None, str | None]):
+    def read(*, path):
+        return copies_by_name.get(path.removeprefix(".github/workflows/"), (None, None))
+
+    return read
+
+
+def _caller(*uses: object) -> dict:
+    return {"jobs": {f"j{i}": {"uses": u} for i, u in enumerate(uses)}}
+
+
+@pytest.mark.parametrize(
+    ("workflow", "copies", "reason"),
+    [
+        (_caller(_USES), _reader(), None),
+        (
+            _caller(_USES, "./.github/workflows/h.yml"),
+            _reader(**{"h.yml": (_NESTED_HARMLESS,) * 2}),
+            None,
+        ),
+        (_caller("org/x/.github/workflows/r.yml@v1"), _reader(), "may reach the matrix unchecked"),
+        (_caller(["./.github/workflows/h.yml"]), _reader(), "may reach the matrix unchecked"),
+        (_caller("./ci.yml"), _reader(), "may reach the matrix unchecked"),
+        (
+            _caller("./.github/workflows/h.yml"),
+            _reader(),
+            "which is unreadable at the base or changed",
+        ),
+        (
+            _caller("./.github/workflows/h.yml"),
+            _reader(**{"h.yml": (_NESTED_HARMLESS, _NESTED_HARMLESS + "\n")}),
+            "which is unreadable at the base or changed",
+        ),
+        (
+            _caller("./.github/workflows/h.yml"),
+            _reader(**{"h.yml": ("- x\n",) * 2}),
+            "which is unreadable",
+        ),
+        (
+            _caller("./.github/workflows/w.yml"),
+            _reader(**{"w.yml": (f"jobs:\n  m:\n    uses: {_USES}\n",) * 2}),
+            "may reach the matrix unchecked",
+        ),
+    ],
+    ids=[
+        "direct-site-only",
+        "harmless-local",
+        "remote",
+        "non-string-uses",
+        "local-outside-workflows",
+        "unreadable",
+        "changed-by-the-pr",
+        "nested-not-a-mapping",
+        "nested-calls-the-matrix",
+    ],
+)
+def test_nested_reason_walks_every_other_reusable_workflow(workflow, copies, reason):
+    found = call_site.nested_reason(workflow=workflow, copies=copies)
+    assert found == reason if reason is None else reason in (found or ""), found
+
+
+def test_nested_reason_stops_at_four_levels_of_workflows():
+    chain = {
+        n: (f"jobs:\n  next:\n    uses: ./.github/workflows/{m}.yml\n",) * 2
+        for n, m in (("a.yml", "b"), ("b.yml", "c"), ("c.yml", "d"))
+    }
+    found = call_site.nested_reason(
+        workflow=_caller("./.github/workflows/a.yml"),
+        copies=_reader(**chain, **{"d.yml": (_NESTED_HARMLESS,) * 2}),
+    )
+    assert "beyond GitHub's 4 levels" in (found or ""), found
+    # Negative control: the same chain one level shorter is within the limit.
+    shorter = {**chain, "c.yml": (_NESTED_HARMLESS,) * 2}
+    assert (
+        call_site.nested_reason(
+            workflow=_caller("./.github/workflows/a.yml"), copies=_reader(**shorter)
+        )
+        is None
+    )
+
+
+def test_the_call_site_reason_names_the_nested_route():
+    text = _GOOD + "  wrapped:\n    uses: org/x/.github/workflows/r.yml@v1\n"
+    found = call_site_reason(caller=".github/workflows/ci.yml", base_text=text, running_text=text)
+    assert (found or "").startswith(
+        'the calling workflow ".github/workflows/ci.yml" calls a reusable workflow that may reach'
+    )
+    # Negative control: the same workflow without the nested job passes.
+    assert (
+        call_site_reason(caller=".github/workflows/ci.yml", base_text=_GOOD, running_text=_GOOD)
+        is None
+    )

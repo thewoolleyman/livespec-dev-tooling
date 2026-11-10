@@ -17,9 +17,30 @@ call site. A call site passes when ALL of these hold:
 
 At run time (`required=True`) the calling workflow must have at least one call
 site and every call site must pass, because the matrix cannot tell which of a
-workflow's jobs called it. `check_callers` applies the same per-job rule to
-every workflow file, and there a call site that passes no incident input at all
-has not adopted the inputs and is not a finding.
+workflow's jobs called it.
+
+`github.workflow_ref` names the TOP-LEVEL workflow, which may reach the matrix
+through a reusable workflow of its own as well (re-review round 3). So at run
+time `nested_reason` also walks every other job-level `uses:` of the top-level
+workflow:
+
+- a REMOTE reusable workflow (`owner/repo/...@ref`) refuses: it cannot be read
+  to prove it never reaches the matrix;
+- a LOCAL one (`./.github/workflows/<file>`) is read at the pull request's base
+  commit, the copy that ran must equal it, and its own `uses:` are walked the
+  same way, up to GitHub's four levels of workflows;
+- the omission passes only if NO nested workflow calls the matrix, directly or
+  transitively, because the leg cannot tell which call site it is.
+
+Every unreadable, unparseable or unexpected shape refuses.
+
+`check_callers` applies the same per-job rule to every workflow file, and there
+a call site that passes no incident input at all has not adopted the inputs and
+is not a finding.
+
+A workflow with a duplicate mapping key (compared case-insensitively, as
+GitHub compares `with:` keys) or a `<<` merge key loads as None: GitHub runs
+neither, so neither is read as anything at all.
 
 PyYAML is imported only when a workflow is parsed. Without it nothing parses,
 so nothing passes: the reusable workflow's decision step installs it, pinned
@@ -40,13 +61,17 @@ __all__: list[str] = [
     "GUARDED_OMITTED",
     "GUARDED_RESULT",
     "INCIDENT_JOB",
+    "MAX_LEVELS",
     "call_site_findings",
     "call_site_reason",
     "caller_path",
     "check_callers",
     "fetch_at",
     "load_workflow",
+    "nested_reason",
+    "no_copies",
     "quoted",
+    "workflow_copies",
 ]
 
 INCIDENT_JOB = "incident-ci"
@@ -61,6 +86,10 @@ _WORKFLOW_PATH = re.compile(r"\.github/workflows/[A-Za-z0-9_.-]+\.ya?ml")
 _REPOSITORY = re.compile(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+")
 _SHA = re.compile(r"[0-9a-f]{40}")
 _MAX_CHARACTERS = 1048576
+_LOCAL_USES = re.compile(r"\./(\.github/workflows/[A-Za-z0-9_.-]+\.ya?ml)")
+_MERGE_TAG = "tag:yaml.org,2002:merge"
+# GitHub connects at most four levels of workflows: the caller and three nested.
+MAX_LEVELS = 4
 
 
 def quoted(*, value: str) -> str:
@@ -68,13 +97,33 @@ def quoted(*, value: str) -> str:
     return json.dumps(value).replace("%", "%25")
 
 
+def _ambiguous(*, node: object, seen: set[int]) -> bool:
+    """Whether a composed YAML node holds a merge key or a duplicate (case-folded) key."""
+    import yaml
+
+    if id(node) in seen:
+        return False
+    seen.add(id(node))
+    if isinstance(node, yaml.MappingNode):
+        keys = [key for key, _value in node.value]
+        names = [str(key.value).casefold() for key in keys]
+        if any(key.tag == _MERGE_TAG for key in keys) or len(set(names)) != len(names):
+            return True
+        return any(_ambiguous(node=n, seen=seen) for pair in node.value for n in pair)
+    if isinstance(node, yaml.SequenceNode):
+        return any(_ambiguous(node=n, seen=seen) for n in node.value)
+    return False
+
+
 def load_workflow(*, text: str) -> dict[str, Any] | None:
-    """The workflow as YAML reads it, or None when it is not a YAML mapping."""
+    """The workflow as YAML reads it, or None when it is not an unambiguous YAML mapping."""
     try:
         import yaml
     except ImportError:
         return None
     try:
+        if _ambiguous(node=yaml.SafeLoader(text).get_single_node(), seen=set()):
+            return None
         value: object = yaml.safe_load(text)
     except (yaml.YAMLError, RecursionError):
         return None
@@ -129,23 +178,81 @@ def call_site_findings(*, workflow: dict[str, Any] | None, required: bool) -> li
     return findings
 
 
+def no_copies(*, path: str) -> tuple[str | None, str | None]:
+    """A reader that can read no nested workflow, so any nested workflow refuses."""
+    _ = path
+    return None, None
+
+
+def workflow_copies(
+    *, path: str, repository: str, sha: str, workspace: str, read: Callable[..., GhRead]
+) -> tuple[str | None, str | None]:
+    """A workflow's copy at the base commit (from the forge) and the copy that ran (on disk)."""
+    running = None
+    if workspace and _WORKFLOW_PATH.fullmatch(path):
+        try:
+            running = (Path(workspace) / path).read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            running = None
+    return fetch_at(repository=repository, path=path, sha=sha, read=read), running
+
+
+def _jobs_uses(*, workflow: dict[str, Any]) -> list[object]:
+    jobs = _mapping(value=workflow.get("jobs"))
+    return [_mapping(value=job)["uses"] for job in jobs.values() if "uses" in _mapping(value=job)]
+
+
+def nested_reason(
+    *,
+    workflow: dict[str, Any],
+    copies: Callable[..., tuple[str | None, str | None]],
+    level: int = 1,
+) -> str | None:
+    """Why a reusable workflow below `workflow` may reach the matrix; None when none can."""
+    for uses in _jobs_uses(workflow=workflow):
+        text = quoted(value=str(uses))
+        matrix = isinstance(uses, str) and _MATRIX_USES.search(uses) is not None
+        if matrix and level == 1:
+            continue
+        local = _LOCAL_USES.fullmatch(uses) if isinstance(uses, str) and not matrix else None
+        if local is None:
+            return f"calls a reusable workflow that may reach the matrix unchecked: {text}"
+        if level >= MAX_LEVELS:
+            return f"nests reusable workflows beyond GitHub's {MAX_LEVELS} levels: {text}"
+        base, running = copies(path=local.group(1))
+        nested = load_workflow(text=base) if base is not None and running == base else None
+        if nested is None:
+            return f"calls {text}, which is unreadable at the base or changed by the PR"
+        reason = nested_reason(workflow=nested, copies=copies, level=level + 1)
+        if reason is not None:
+            return reason
+    return None
+
+
 def call_site_reason(
-    *, caller: str | None, base_text: str | None, running_text: str | None
+    *,
+    caller: str | None,
+    base_text: str | None,
+    running_text: str | None,
+    copies: Callable[..., tuple[str | None, str | None]] = no_copies,
 ) -> str | None:
     """Why the calling workflow may not omit, or None when its trusted copy passes.
 
     `base_text` is the calling workflow at the pull request's base commit, the
     trusted revision; `running_text` is the copy GitHub ran, which must equal it.
+    `copies` reads a nested workflow's two copies for `nested_reason`.
     """
     name = quoted(value=caller or "")
     if caller is None or base_text is None:
         return f"the calling workflow {name} could not be read at the pull request's base"
     if running_text != base_text:
         return f"the pull request changes the calling workflow {name}"
-    findings = call_site_findings(workflow=load_workflow(text=base_text), required=True)
+    workflow = load_workflow(text=base_text)
+    findings = call_site_findings(workflow=workflow, required=True)
     if findings:
         return f"the calling workflow {name} fails the call-site rule: {findings[0]}"
-    return None
+    reason = nested_reason(workflow=workflow or {}, copies=copies)
+    return None if reason is None else f"the calling workflow {name} {reason}"
 
 
 def caller_path(*, workflow_ref: str, repository: str) -> str | None:
