@@ -17,6 +17,11 @@ Re-review of 2bfd031a, finding A: ONLY the canonical
 (owner and repo case-insensitive) is the matrix call site. A local file merely
 named `reusable-check-matrix.yml`, or the same path under another owner, is a
 reusable workflow like any other: walked when local, refused when remote.
+
+Finding B: PyYAML resolves keys by YAML 1.1, so job ids `yes:` and `on:` both
+load as the key True and the later job silently replaces the earlier one, while
+GitHub runs both. A workflow whose keys collide AFTER that resolution refuses;
+the top-level `on:` alone still loads.
 """
 
 from __future__ import annotations
@@ -57,6 +62,19 @@ _LITERAL_CALL = (
 )
 _HARMLESS = (
     "on: workflow_call\njobs:\n  build:\n    runs-on: ubuntu-latest\n    steps: [{run: make}]\n"
+)
+
+
+# `yes` and `on` are both the YAML 1.1 boolean True: PyYAML keeps only the later job.
+_YES_WRAPPER_ON_HARMLESS = (
+    _DIRECT
+    + "  yes:\n    uses: ./.github/workflows/wrapper.yml\n  on:\n    runs-on: ubuntu-latest\n"
+)
+_YES_LITERAL_ON_GUARDED = (
+    _INCIDENT_CI
+    + f"  yes:\n    uses: {_MATRIX}\n    with:\n"
+    + "      incident-omitted: '[\"check-per-file-coverage\"]'\n      incident-ci-result: success\n"
+    + _guarded(uses=_MATRIX, name="on")
 )
 
 
@@ -206,6 +224,21 @@ _RUNS = (0, "omit=false\n")
         ({"ci.yml": _DIRECT + _guarded(uses=_OTHER_OWNER, name="other")}, None, _RUNS),
         ({"ci.yml": _INCIDENT_CI + _guarded(uses="evil/" + _MATRIX)}, None, _RUNS),
         ({"ci.yml": _INCIDENT_CI + _guarded(uses=_MATRIX_CASED)}, None, _OMITS),
+        (
+            {"ci.yml": _YES_WRAPPER_ON_HARMLESS, "wrapper.yml": _HARMLESS},
+            {"ci.yml": _YES_WRAPPER_ON_HARMLESS, "wrapper.yml": _LITERAL_CALL},
+            _RUNS,
+        ),
+        ({"ci.yml": _YES_WRAPPER_ON_HARMLESS, "wrapper.yml": _HARMLESS}, None, _RUNS),
+        ({"ci.yml": _YES_LITERAL_ON_GUARDED}, None, _RUNS),
+        (
+            {
+                "ci.yml": "on: pull_request\n" + _with_job(uses="./.github/workflows/w.yml"),
+                "w.yml": _HARMLESS,
+            },
+            None,
+            _OMITS,
+        ),
     ],
     ids=[
         "direct-only",
@@ -226,6 +259,10 @@ _RUNS = (0, "omit=false\n")
         "p2-other-owner-matrix-beside-the-direct-call",
         "canonical-path-under-another-owner",
         "canonical-owner-and-repo-case-insensitive",
+        "yes-on-collision-hides-a-wrapper-the-pr-edits",
+        "yes-on-collision-refuses-even-unedited",
+        "yes-on-collision-hides-a-second-direct-caller",
+        "top-level-on-key-still-omits",
     ],
 )
 def test_only_a_caller_with_no_unchecked_route_to_the_matrix_omits(
