@@ -252,7 +252,10 @@ def test_main_refuses_by_name_without_an_installation_or_its_credential(
 def test_installed_ports_pass_only_the_canonical_credential_from_reader_env(
     monkeypatch: pytest.MonkeyPatch, installation: SimpleNamespace, tmp_path: Path
 ) -> None:
-    spawn = Mock(side_effect=[completed(b"tree\n"), completed(b"[]"), completed(b"[]")])
+    unavailable = OSError("reader")
+    spawn = Mock(
+        side_effect=[completed(b"tree\n"), completed(b"[]"), completed(b"[]"), unavailable]
+    )
     monkeypatch.setattr(subprocess, "run", spawn)
     installation.config = tmp_path / "controller.json"
     lines = ["PATH=/tmp/evil", "HOME=/tmp/evil", "PYTHONPATH=/overrides", "GIT_DIR=/x"]
@@ -262,6 +265,9 @@ def test_installed_ports_pass_only_the_canonical_credential_from_reader_env(
     _ = ports.git(["rev-parse", "HEAD"], b"")
     _ = ports.canonical.ledger(["comments", "incident-1"])
     _ = ports.canonical.ledger(["show", "incident-1"])
+    with pytest.raises(ValueError, match="registered incident authority"):
+        _ = ports.canonical.authority("read-current", {"item": "incident-1"}, {})
+    assert spawn.call_args_list[-1].args[0][0] == installation.reader[0]
     plain = spawn.call_args_list[0].kwargs["env"]
     for call in spawn.call_args_list[1:]:
         env = call.kwargs["env"]
