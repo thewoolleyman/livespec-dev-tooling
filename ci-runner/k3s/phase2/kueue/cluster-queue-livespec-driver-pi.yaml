@@ -71,6 +71,14 @@ spec:
             - name: "ci-runner.io/churn-slot"
               # Measured-job-hours re-derivation, 2026-10-22: see DERIVATION.md.
               nominalQuota: 1
+        # The arm64 container workers' churn slots (livespec-dev-tooling-eorpen), listed AFTER
+        # the fleet flavor at nominalQuota 0: this repository reaches a worker only by borrowing
+        # once the fleet flavor, its own quota and what it can borrow, has no slot left. Listed
+        # because this repository's release line in ../workload-arch.conf includes arm64.
+        - name: churn-slot-worker-arm64-flavor
+          resources:
+            - name: "ci-runner.io/churn-slot"
+              nominalQuota: 0
 ---
 apiVersion: kueue.x-k8s.io/v1beta2
 kind: LocalQueue

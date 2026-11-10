@@ -2508,9 +2508,8 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: CI overflows onto a container worker only when fleet capacity is full",
-    "test": "TODO",
-    "reason": "Spec-first: a real test at the integration tier or above is owed for this scenario. It runs converge-worker-queues.sh's rendering of the container-worker churn-slot flavor against a stub kubectl and asserts three things: each eligible ClusterQueue lists the worker flavor after its amd64 fleet flavor; the fleet churn-slot flavor no longer matches a container worker; and no amd64-only repository's queue lists the worker flavor. The live admission proof is host-captured on the item. livespec-dev-tooling-eorpen owns it.",
-    "work_item": "livespec-dev-tooling-eorpen"
+    "test": "tests.spec.test_worker_churn_slot_overflow.test_no_fleet_queue_lists_the_worker_flavor_unless_its_releases_all_include_arm64",
+    "reason": "Integration-tier: tests/spec/test_worker_churn_slot_overflow.py reads the committed Kueue flavors and queues, converge-ci-stack.sh's release table and workload-arch.conf, and asserts that a repository's queue lists the arm64 container-worker churn-slot flavor exactly when every release feeding it declares arm64, AFTER the fleet flavor at nominalQuota 0, that the fleet flavor matches no container worker of any architecture, and that the worker queue holds the rendered quota (tests/spec/test_worker_queues.py covers the rendering). The live admission and placement proofs are host-captured on livespec-dev-tooling-eorpen."
   },
   {
     "spec_root": "SPECIFICATION",

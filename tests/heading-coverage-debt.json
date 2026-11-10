@@ -170,13 +170,6 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario: CI overflows onto a container worker only when fleet capacity is full",
-    "work_item": "livespec-dev-tooling-eorpen",
-    "first_seen": "2026-11-10"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
     "heading": "## Scenario: Codex plugin hooks wrapped in shell conditionals with existing plugin-root entrypoints pass",
     "work_item": "livespec-dev-tooling-yhacv6",
     "first_seen": "2026-11-03"
