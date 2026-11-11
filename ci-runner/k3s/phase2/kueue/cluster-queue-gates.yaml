@@ -235,17 +235,16 @@ spec:
               nominalQuota: 24Gi
         - name: gates-poweredge-flavor
           resources:
-            # Four concurrent gates at 5 cpu / 6 Gi each (2026-11-11). The lane
-            # started at two on 2026-11-07, when the node read 0.4% idle. On
-            # 2026-11-11 at 02:13Z 19 gates were queued while this node had
-            # 21.6 cpu and 272 Gi of requests free and its two-gate quota was
-            # full, so the quota, not the node, held gates out. 20 is four times
-            # the 5-cpu gate unit. Derivation: DERIVATION.md "The PowerEdge gate
-            # lane to four gates (2026-11-11)".
+            # Six concurrent gates, six gate units of 5 cpu / 8 Gi (2026-11-11,
+            # 07:53Z). The lane went from two to four at 04:57Z. At 07:53Z it was
+            # full at four with gates pending, while the node had 49.7 cpu of
+            # requests free and read 63% idle. Six gates leave about 20 cpu of
+            # requests for factory growth. Derivation: DERIVATION.md "The
+            # PowerEdge gate lane to six gates (2026-11-11)".
             - name: "cpu"
-              nominalQuota: 20
+              nominalQuota: 30
             - name: "memory"
-              nominalQuota: 32Gi
+              nominalQuota: 48Gi
         - name: gates-hp-flavor
           resources:
             # Two concurrent gates. hp-xubuntu has 14500m CPU / 27.2 GiB
