@@ -9,11 +9,14 @@ import pty
 import re
 import signal
 import subprocess
+import tempfile
 import threading
 import time
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
+
+from livespec_dev_tooling.suite_run_record import describe_record, read_record, record_environment
 
 __all__: list[str] = [
     "CEILING_ENV",
@@ -56,6 +59,7 @@ class SuiteRun:
     output: str
     timed_out: bool
     kill_reason: str | None = None
+    attribution: str | None = None
 
 
 @dataclass(kw_only=True)
@@ -139,6 +143,25 @@ def _drain(*, fd: int, progress: SuiteProgress) -> None:
     progress.saw(chunk=decoder.decode(b"", final=True))
 
 
+def _child_environment(
+    *, cwd: Path | None, environ: Mapping[str, str] | None, record_path: Path
+) -> dict[str, str]:
+    """Layer the caller environment with the record plugin for this supervised run."""
+    child_environment: dict[str, str] = {
+        **dict(os.environ),
+        "PYTHONUNBUFFERED": "1",
+        **(environ or {}),
+    }
+    child_environment.update(
+        record_environment(
+            environ=child_environment,
+            record_path=record_path,
+            root=cwd or Path.cwd(),
+        )
+    )
+    return child_environment
+
+
 def run_suite(
     *,
     argv: list[str],
@@ -155,7 +178,14 @@ def run_suite(
     Pytest emits collection and xdist-startup status only when its output is a
     terminal. Giving it a pseudo-terminal makes those lifecycle updates
     visible before the first completed test renews the stall window.
+
+    The child also keeps a per-test record (`suite_run_record`), because a
+    run ended at its bound must say which tests held it and the output stream
+    cannot: under `-q` it names no passing test.
     """
+    record_handle, record_name = tempfile.mkstemp(prefix="livespec-suite-run-", suffix=".jsonl")
+    os.close(record_handle)
+    record_path = Path(record_name)
     master_fd, slave_fd = pty.openpty()
     try:
         proc = subprocess.Popen(
@@ -163,7 +193,7 @@ def run_suite(
             stdout=slave_fd,
             stderr=slave_fd,
             cwd=cwd,
-            env={**os.environ, "PYTHONUNBUFFERED": "1", **(environ or {})},
+            env=_child_environment(cwd=cwd, environ=environ, record_path=record_path),
             start_new_session=True,
         )
     finally:
@@ -197,6 +227,15 @@ def run_suite(
             output=progress.output,
             timed_out=reason is not None,
             kill_reason=reason,
+            attribution=None
+            if reason is None
+            else describe_record(
+                record=read_record(path=record_path),
+                elapsed_seconds=clock() - started,
+                now=time.time(),
+                kind=reason,
+            ),
         )
     finally:
         os.close(master_fd)
+        record_path.unlink(missing_ok=True)
