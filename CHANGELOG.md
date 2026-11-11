@@ -58,6 +58,32 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.194.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.193.0...v1.194.0) (2026-11-11)
+
+
+### Features
+
+* decide reusable-check-matrix incident omission per leg from an allowlist (livespec-dev-tooling-hlxbsv) ([8994519](https://github.com/thewoolleyman/livespec-dev-tooling/commit/89945195dc45c10b671747c3c961324d8b86e9a8))
+* per_file_coverage fails on an unmeasured first-party file when the repo opts in ([bc5eddf](https://github.com/thewoolleyman/livespec-dev-tooling/commit/bc5eddfdb19fee4d845d5ecb3d50ff5d7f66d8f0))
+* per_file_coverage never reports an omitted or out-of-tree file as unmeasured ([da8b735](https://github.com/thewoolleyman/livespec-dev-tooling/commit/da8b735947948a549d8aa632cfc17159542a9bf9))
+* per_file_coverage reports an unimported first-party file as unmeasured ([0b26226](https://github.com/thewoolleyman/livespec-dev-tooling/commit/0b26226ffc13264b1da7b34b74f207e7cdc3a660))
+* **reconciler:** a set LIVESPEC_INCIDENT_OBSERVER_PUBLIC_URL sends the ownership question through the observer's Funnel (livespec-dev-tooling-jpfdcx) ([d261767](https://github.com/thewoolleyman/livespec-dev-tooling/commit/d261767495ddae54bdc2fde72a5971868f88729e))
+
+
+### Bug Fixes
+
+* a reusable workflow nested under the caller can never carry an incident matrix omission past the call-site rule (livespec-dev-tooling-hlxbsv) ([0452134](https://github.com/thewoolleyman/livespec-dev-tooling/commit/04521346eda7f618554a8b06ed52216b5384266d))
+* a workflow whose mapping keys collide after YAML 1.1 resolution can never authorize an incident matrix omission (livespec-dev-tooling-hlxbsv) ([9b78fa9](https://github.com/thewoolleyman/livespec-dev-tooling/commit/9b78fa956a80b2241efdaf30fe1ad5bbb80bdcd0))
+* an incident matrix omission needs a verified incident, a released decision and a runnable leg (livespec-dev-tooling-hlxbsv) ([b14be6b](https://github.com/thewoolleyman/livespec-dev-tooling/commit/b14be6b948a2ec0d02e899937588196d40159ae0))
+* **ansible:** never force the dev host's uv cache prune, and give the retention timer a committed hold (livespec-dev-tooling-7bij7b) ([2eaaeaf](https://github.com/thewoolleyman/livespec-dev-tooling/commit/2eaaeaf58285d6d540a320a75dca034b0b045a4e))
+* cover Honeycomb board dataset reads ([d83d0c8](https://github.com/thewoolleyman/livespec-dev-tooling/commit/d83d0c85529ecb169aa12bbd4f97fd467decc9fc))
+* cover Honeycomb board query reuse ([d1f1863](https://github.com/thewoolleyman/livespec-dev-tooling/commit/d1f1863a262d7d1344543626c3e0526d67328694))
+* **mutation:** the kill matrix plans each target once, not once per mutant (livespec-dev-tooling-oi2two) ([c6cf628](https://github.com/thewoolleyman/livespec-dev-tooling/commit/c6cf6289caf4c60b23ed76ca2cf86930d70dbf0e))
+* only the calling workflow's parsed call site, read at the base commit, authorizes an incident matrix omission (livespec-dev-tooling-hlxbsv) ([dd01273](https://github.com/thewoolleyman/livespec-dev-tooling/commit/dd01273207a866b3071fde4687cd0cb88b6ebdff))
+* only the canonical livespec-dev-tooling matrix call is an incident call site; a namesake is walked or refused (livespec-dev-tooling-hlxbsv) ([f1fb92f](https://github.com/thewoolleyman/livespec-dev-tooling/commit/f1fb92f65167ec5dc66bafe76d41f4e426c45584))
+* run the incident matrix decision from a hash-pinned throwaway environment (livespec-dev-tooling-hlxbsv) ([6b853d0](https://github.com/thewoolleyman/livespec-dev-tooling/commit/6b853d0f816c83b7a52bfa6e9b5bb1adbed7fea1))
+* the incident matrix decision reads foreign JSON only through the strict incident decoder (livespec-dev-tooling-hlxbsv) ([1f6a592](https://github.com/thewoolleyman/livespec-dev-tooling/commit/1f6a59296d2bc65b14bc7740320e528a3a775174))
+
 ## [1.193.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.192.2...v1.193.0) (2026-11-10)
 
 
