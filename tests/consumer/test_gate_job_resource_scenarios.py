@@ -6,6 +6,7 @@ import importlib
 import json
 import subprocess
 from pathlib import Path
+from types import ModuleType
 
 import pytest
 import yaml
@@ -239,12 +240,23 @@ def test_red_leg_replay_uses_the_small_job_size_despite_declared_resources(
     )
 
 
-def test_oom_killed_red_replay_returns_no_verdict_for_a_local_red_leg(
-    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+class _RecordingLog:
+    """A logger double keeping the events the Red leg narrates."""
+
+    def __init__(self) -> None:
+        self.events: list[tuple[str, dict[str, object]]] = []
+
+    def info(self, event: str, **kwargs: object) -> None:
+        self.events.append((event, kwargs))
+
+    def error(self, event: str, **kwargs: object) -> None:
+        self.events.append((event, kwargs))
+
+
+def _oom_kill_every_gate_job(
+    *, module: ModuleType, root: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """An OOM-killed replay supplies no remote Red verdict, so its caller runs locally."""
-    module = importlib.import_module("livespec_dev_tooling.commit_replay_delegate")
-    root = _consumer(tmp_path=tmp_path, declaration="delegated_commit_tests = true\n")
+    """Make the committing host's gate Job end OOMKilled with no verdict."""
     monkeypatch.setattr(module, "gates_kubeconfig_readable", lambda: True)
     monkeypatch.setattr(module, "_staged_tree_hash", lambda **_kwargs: _TREE)
     monkeypatch.setattr(module, "resolve_renderer", lambda **_kwargs: _RENDERER)
@@ -269,10 +281,60 @@ def test_oom_killed_red_replay_returns_no_verdict_for_a_local_red_leg(
         ),
     )
 
-    verdict = module.run_one_test(repo_root=root, pytest_argv=["pytest", "tests/test_red.py"])
 
+def test_oom_killed_red_replay_returns_no_verdict_for_a_local_red_leg(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An OOM-killed replay supplies no Red verdict, so the Red leg runs locally and records only that."""
+    module = importlib.import_module("livespec_dev_tooling.commit_replay_delegate")
+    root = _consumer(tmp_path=tmp_path, declaration="delegated_commit_tests = true\n")
+    staged_test = root / "tests" / "test_red.py"
+    staged_test.parent.mkdir()
+    _ = staged_test.write_text("def test_red() -> None:\n    assert False\n", encoding="utf-8")
+    monkeypatch.chdir(root)
+    _oom_kill_every_gate_job(module=module, root=root, monkeypatch=monkeypatch)
+    verdict = module.run_one_test(repo_root=root, pytest_argv=["pytest", "tests/test_red.py"])
     assert (verdict.local, verdict.exit_status) == (False, None)
     assert "OOMKilled" in verdict.reason
+
+    modes = _load_red_green_replay_modes()
+    message = root / "COMMIT_EDITMSG"
+    _ = message.write_text("feat: red\n", encoding="utf-8")
+    log = _RecordingLog()
+
+    status = modes._handle_red_mode(  # noqa: SLF001
+        msg_path=message, log=log, tests_paths=["tests/test_red.py"]
+    )
+
+    trailers = dict(
+        line.split(": ", 1)
+        for line in message.read_text(encoding="utf-8").splitlines()
+        if line.startswith("TDD-")
+    )
+    local_events = [
+        kwargs for event, kwargs in log.events if event == "commit-time replay gated locally"
+    ]
+    assert status == 0
+    assert len(local_events) == 1 and "OOMKilled" in str(local_events[0]["reason"])
+    assert not any(event == "commit-time replay gated by a gate Job" for event, _ in log.events)
+    assert trailers["TDD-Red-Test"] == "tests/test_red.py"
+    assert trailers["TDD-Red-Failure-Reason"].startswith("F ")
+    assert trailers["TDD-Red-Output-Checksum"].startswith("sha256:")
+    assert "TDD-Red-Gate-Job" not in trailers and "TDD-Red-Staged-Tree" not in trailers
     assert _registered_test(heading=_REPLAY_OOM_HEADING).endswith(
         ".test_oom_killed_red_replay_returns_no_verdict_for_a_local_red_leg"
     )
+
+
+def _load_red_green_replay_modes():
+    """Load the shipped Red-leg handler module the way the commit hook does."""
+    import importlib.util
+    import sys
+
+    path = _REPO_ROOT / "livespec_dev_tooling" / "checks" / "_red_green_replay_modes.py"
+    spec = importlib.util.spec_from_file_location("_rgr_modes_for_consumer_test", str(path))
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
