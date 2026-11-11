@@ -85,6 +85,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from livespec_dev_tooling._gate_member_report import parse_member_report
+from livespec_dev_tooling._gate_remote_failed_pod import FailedPod, read_failed_pod
 from livespec_dev_tooling._gate_wait_interrupt import (
     GateWaitInterruptedError,
     interrupted_wait_failure,
@@ -169,13 +170,6 @@ _DELETE_ABANDONED_JOB_STEP = "delete-abandoned-gate-job"
 _START_TIME = "startTime"
 _COMPLETION_TIME = "completionTime"
 
-# The failed pod's own last words. `containerStatuses` rather than
-# `initContainerStatuses`: the aggregate container is the one whose refusal an
-# operator has to act on, and the initContainer's own fatal paths already name
-# themselves in the log. The Job object does not carry this — only its pod does
-# — so it is a separate read, taken only when there is a failure to explain.
-_TERMINATION_MESSAGE_JSONPATH = "{.items[*].status.containerStatuses[*].state.terminated.message}"
-
 
 @dataclass(frozen=True, kw_only=True)
 class GateRunOutcome:
@@ -215,6 +209,9 @@ class GateRunOutcome:
     `member_verdicts` is the Job's own `LIVESPEC_GATE_MEMBERS` report, read from a
     CAPTURED log only, and `None` when the log was streamed or carried no usable
     report (`_gate_member_report`).
+
+    `resource_kill` is `OOMKilled` or `Evicted` when the failed pod's own reason
+    names a resource kill, and the empty string otherwise (`read_failed_pod`).
     """
 
     tree_hash: str
@@ -227,6 +224,7 @@ class GateRunOutcome:
     output_checksum: str = ""
     reported_tree_hash: str = ""
     member_verdicts: tuple[tuple[str, str], ...] | None = None
+    resource_kill: str = ""
 
 
 def run_gate(
@@ -473,12 +471,17 @@ def _gate_a_pushed_tree(
         return Failure(terminal.failure()), False
     ended = terminal.unwrap()
     # Read only when there is a failure to explain. That is a decision about
-    # whether to spend an API call, NOT an adjudication: the message is carried
-    # verbatim either way and this slice still forms no opinion about it.
-    message = (
-        ""
+    # whether to spend an API call, NOT an adjudication: the pod's readings are
+    # carried verbatim either way and this slice still forms no opinion about them.
+    failed = (
+        FailedPod()
         if ended.condition == COMPLETE_CONDITION
-        else _failure_message(request=request, runner=runner, job_name=job_name)
+        else read_failed_pod(
+            kubectl=_kubectl(request=request),
+            runner=runner,
+            cwd=request.repo_root,
+            job_name=job_name,
+        )
     )
     logs_argv = [
         *_kubectl(request=request),
@@ -503,13 +506,14 @@ def _gate_a_pushed_tree(
                 job_name=job_name,
                 terminal_state=ended.condition,
                 logs_returncode=ran.returncode,
-                failure_message=message,
+                failure_message=failed.message,
                 started_at=reported_time(status=ended.status, key=_START_TIME),
                 finished_at=reported_time(status=ended.status, key=_COMPLETION_TIME),
                 output_checksum=_shown_output_checksum(request=request, output=ran.stdout),
                 member_verdicts=(
                     parse_member_report(output=ran.stdout) if request.capture_output else None
                 ),
+                resource_kill=failed.resource_kill,
             )
         ),
         True,
@@ -522,27 +526,3 @@ def _shown_output_checksum(*, request: GateRunRequest, output: str) -> str:
         return ""
     _ = sys.stdout.write(output)
     return f"sha256:{hashlib.sha256(output.encode('utf-8')).hexdigest()}"
-
-
-def _failure_message(*, request: GateRunRequest, runner: GateCommandRunner, job_name: str) -> str:
-    """The failed pod's termination message, or the empty string.
-
-    EVIDENCE, NEVER A VERDICT, which is why every unreadable shape answers the
-    empty string rather than a failure. The gate has already reported a real
-    terminal condition by the time this runs; a pod that has been collected, a
-    read the API server declines, or a container that wrote nothing must not be
-    able to turn that red verdict into a no-verdict — the push is refused
-    either way, and losing the explanation is strictly better than losing the
-    verdict that carries it.
-    """
-    argv = [
-        *_kubectl(request=request),
-        "get",
-        "pods",
-        "--selector",
-        f"job-name={job_name}",
-        "--output",
-        f"jsonpath={_TERMINATION_MESSAGE_JSONPATH}",
-    ]
-    read = runner(argv=argv, cwd=request.repo_root)
-    return read.map(lambda ran: ran.stdout.strip()).value_or("")
