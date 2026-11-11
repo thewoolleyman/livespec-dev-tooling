@@ -302,6 +302,14 @@ decide and report, not to escalate.
   wording fixes, internal-consistency repairs, and items clearly aligned with
   established preferences, presenting each with its disposition. When a gate is
   warranted, ask exactly one question per turn.
+- **A fleet seat never raises a blocking picker.** In seat work under
+  legacy-coordinator-agent, take the coordinator's advice unless the maintainer
+  says otherwise. A question that truly needs the maintainer goes to the
+  coordinator, who carries it non-blocking; the seat never stops its turn on an
+  `AskUserQuestion` picker, not even for an apparent conflict between two
+  maintainer directions. The maintainer, 2026-11-11 ~00:20Z, after a seat put an
+  hp-xubuntu factory question to him as a picker: "NEVER EVER PRESENT A BLOCKIN
+  G PICKER. TAKE THE COORDINATORS ADVICE UNLESS I TELL YOU OTHERWISE."
 - **One investigation, one finding, one question.** When a focused investigation
   surfaces unrelated discrepancies, finish the original question first and
   surface only the load-bearing finding; log side observations briefly. Cosmetic
