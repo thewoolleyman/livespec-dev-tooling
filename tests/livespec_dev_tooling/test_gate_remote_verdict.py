@@ -32,6 +32,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+import pytest
 from returns.result import Failure, Success
 
 from livespec_dev_tooling.gate_remote_client import GateRunRequest
@@ -138,9 +139,11 @@ class _StubCluster:
         head_trees: Iterable[str | None] = (_TREE,),
         refusals: Mapping[str, str] | None = None,
         never_runs: Iterable[str] = (),
+        pod_reasons: str = "",
     ) -> None:
         self.calls: list[_Invocation] = []
         self._job_state = job_state
+        self._pod_reasons = pod_reasons
         self._head_trees = list(head_trees)
         self._refusals = dict(refusals or {})
         self._never_runs = frozenset(never_runs)
@@ -163,7 +166,9 @@ class _StubCluster:
         refusal = self._refusals.get(kind)
         if refusal is not None:
             return Success(GateCommandResult(returncode=1, stdout="", stderr=refusal))
-        return Success(GateCommandResult(returncode=0, stdout=self._stdout(kind=kind), stderr=""))
+        return Success(
+            GateCommandResult(returncode=0, stdout=self._stdout(kind=kind, argv=argv), stderr="")
+        )
 
     @property
     def kinds(self) -> list[str]:
@@ -180,7 +185,11 @@ class _StubCluster:
             return Failure(GateCommandNotRun(argv=tuple(argv), detail="git not on PATH"))
         return Success(GateCommandResult(returncode=0, stdout=f"{tree}\n", stderr=""))
 
-    def _stdout(self, *, kind: str) -> str:
+    def _stdout(self, *, kind: str, argv: Sequence[str]) -> str:
+        # The failed pod's reasons are a `get pods` read like its termination
+        # message; only the jsonpath that asks for `.reason` tells them apart.
+        if any(arg.startswith("jsonpath=") and ".reason}" in arg for arg in argv):
+            return self._pod_reasons
         if kind == "get-job":
             return _job_status(state=self._job_state)
         if kind == "submit-job":
@@ -330,3 +339,29 @@ def test_a_token_write_that_never_ran_leaves_the_push_refused() -> None:
     assert verdict.token_written is False
     assert verdict.refuses_push is True
     assert cluster.only(kind="write-token").argv == _TOKEN_ARGV
+
+
+@pytest.mark.parametrize(
+    ("pod_reasons", "resource_kill"),
+    [
+        (" OOMKilled", "OOMKilled"),
+        ("Evicted ", "Evicted"),
+        (" Error", None),
+    ],
+)
+def test_a_failed_job_names_the_resource_kill_that_ended_its_pod(
+    *, pod_reasons: str, resource_kill: str | None
+) -> None:
+    """A pod killed for memory, or evicted, says so in its OWN reason, and the verdict carries it.
+
+    The pod's reason is the kubelet's word, not the container's: a test that
+    failed reads `Error`, while a container killed for memory reads `OOMKilled`
+    and an evicted pod reads `Evicted`. The verdict is still `FAILED` either
+    way; a one-file replay leg is the reader that turns a resource kill into an
+    absent verdict (contracts.md "Delegated commit-time replay test runs",
+    Replay Job size).
+    """
+    cluster = _StubCluster(job_state="Failed", pod_reasons=pod_reasons)
+    verdict = run_gated_push(request=_REQUEST, runner=cluster, sleeper=_no_sleep)
+    assert verdict.state == GATE_FAILED
+    assert verdict.resource_kill == resource_kill
