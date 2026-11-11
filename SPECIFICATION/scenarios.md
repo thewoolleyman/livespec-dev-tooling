@@ -2004,6 +2004,20 @@ Then the gate Job MUST be admitted on a lane with room
 
 And the gate Job MUST NOT stay suspended for want of an unsaturated lane
 
+## Scenario: a gate placement pass that cannot read a gate-lane node's readings raises an alarm and fails its unit
+
+Given the gate placement reconciler runs as a unit on the pool's server
+And one node that carries a gate lane publishes its CPU idle reading as `unreadable`
+When the reconciler runs a pass
+Then gate admission for the whole `gates` queue runs on the static lane order
+And the reconciler prints one line beginning `ALARM` that names that node and the CPU idle reading
+And the pass ends with exit status 3, so the unit reports failed
+
+Given every node that carries a gate lane publishes both readings
+When the reconciler runs a pass
+Then it prints no line beginning `ALARM`
+And the pass ends with exit status 0
+
 ## Scenario: a gate placement reconciler that cannot read a node's readings falls back to the static lane order
 
 Given a node that carries a gate lane whose CPU idle share cannot be read
