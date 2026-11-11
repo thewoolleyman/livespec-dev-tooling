@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import json
+import os
+import subprocess
 from pathlib import Path
 from unittest.mock import Mock
 
 from returns.result import Failure, Success
 
-from livespec_dev_tooling.gate_remote_admission import await_terminal_state
+from livespec_dev_tooling.gate_remote_admission import _WATCH_TERMINAL_SCRIPT, await_terminal_state
 from livespec_dev_tooling.gate_remote_invocation import GateCommandOutcome, GateCommandResult
 from livespec_dev_tooling.gate_remote_request import GateRunRequest
 
@@ -90,3 +92,37 @@ def test_an_expired_terminal_watch_budget_starts_no_watch_attempt() -> None:
     assert isinstance(outcome, Failure)
     assert len(calls) == 1
     sleeper.assert_not_called()
+
+
+def test_a_terminal_event_buffered_behind_an_earlier_event_ends_the_watch(tmp_path: Path) -> None:
+    """Both events arrive in one read, and the verdict is still reported promptly."""
+    kubectl = tmp_path / "kubectl"
+    kubectl.write_text(
+        "#!/bin/sh\n"
+        "printf '%s\\n%s\\n'"
+        ' \'{"status": {"conditions": []}}\''
+        ' \'{"status": {"conditions": [{"type": "Complete", "status": "True"}]}}\'\n'
+        "sleep 60\n",
+        encoding="utf-8",
+    )
+    kubectl.chmod(0o755)
+    environment = {**os.environ, "PATH": f"{tmp_path}:{os.environ['PATH']}"}
+
+    completed = subprocess.run(
+        [
+            "sh",
+            "-ceu",
+            _WATCH_TERMINAL_SCRIPT,
+            "await-gate-terminal-watch",
+            "gate-widget-7f2qd",
+            "gates",
+            "60s",
+        ],
+        check=True,
+        env=environment,
+        timeout=2,
+        capture_output=True,
+        text=True,
+    )
+
+    assert "Complete" in completed.stdout
