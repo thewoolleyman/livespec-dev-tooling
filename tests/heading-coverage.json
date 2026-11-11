@@ -3448,5 +3448,29 @@
     "test": "TODO",
     "reason": "Spec-first: a real test at the integration tier (static `pytest.mark.integration`, driving the shipped `gate-run.sh` with a delegated gate client whose cluster side is faked at the client's Job-cleanup seam) is owed for this scenario: `gate-stop` on a RUNNING delegated run exits 0 only after the gate Job has ended, and `gate-wait` then prints `STOPPED` and exits 75. The shipped runner has no `gate-stop` verb; livespec-dev-tooling-kjwanx owns the change and this test.",
     "work_item": "livespec-dev-tooling-kjwanx"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a workflow whose layered fuzz flavor runs no aggregate target passes and its gate runs in the base flavor",
+    "test": "TODO",
+    "reason": "A real test at the integration tier or above is owed for this heading: a consumer-style test drives the shipped single-container-image check, and the shipped `render-gate-job.sh`, against fixture workflows, and shows the check passes a workflow whose only non-gate-flavor job runs a target outside the `just check` aggregate while the delegated gate resolves the gate flavor's image. livespec-dev-tooling-kzhduc owns it.",
+    "work_item": "livespec-dev-tooling-kzhduc"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a workflow naming two image versions fails the single-container-image check",
+    "test": "TODO",
+    "reason": "A real test at the integration tier or above is owed for this heading: a consumer-style test drives the shipped single-container-image check against a fixture workflow naming two release versions of one image repository, and shows it fails naming both images and their lines. livespec-dev-tooling-kzhduc owns it.",
+    "work_item": "livespec-dev-tooling-kzhduc"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: an image written below comment lines inside a container block is counted by the gate and the check alike",
+    "test": "TODO",
+    "reason": "A real test at the integration tier or above is owed for this heading: a consumer-style test drives the shipped `render-gate-job.sh` and the shared check, reading one fixture workflow through the shared YAML reader, and shows both count an `image:` written below comment lines inside a `container:` block; the check fails the two-version set and the gate refuses to render, each naming both images. livespec-dev-tooling-op67ed owns it.",
+    "work_item": "livespec-dev-tooling-op67ed"
   }
 ]

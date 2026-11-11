@@ -1178,6 +1178,20 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: a workflow naming two image versions fails the single-container-image check",
+    "work_item": "livespec-dev-tooling-kzhduc",
+    "first_seen": "2026-11-11"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a workflow whose layered fuzz flavor runs no aggregate target passes and its gate runs in the base flavor",
+    "work_item": "livespec-dev-tooling-kzhduc",
+    "first_seen": "2026-11-11"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: a workload is never scheduled onto a node whose architecture its image does not publish",
     "work_item": "livespec-dev-tooling-ko26ez.6",
     "first_seen": "2026-11-07"
@@ -1258,6 +1272,13 @@
     "heading": "## Scenario: an explicit local gate-runner run is recorded as local",
     "work_item": "livespec-dev-tooling-qgv3tb",
     "first_seen": "2026-11-01"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: an image written below comment lines inside a container block is counted by the gate and the check alike",
+    "work_item": "livespec-dev-tooling-op67ed",
+    "first_seen": "2026-11-11"
   },
   {
     "spec_root": "SPECIFICATION",
