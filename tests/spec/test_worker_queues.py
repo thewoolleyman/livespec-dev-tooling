@@ -25,6 +25,10 @@ _SCRIPT = _KUEUE / "converge-worker-queues.sh"
 
 _STUB = """#!/bin/bash
 printf 'kubectl %s\\n' "$*" >> "$STUB_LOG"
+# A real `kubectl apply -f -` reads its stdin. A stub that does not lets the
+# script's `printf ... | kubectl apply -f -` die of SIGPIPE (141 under
+# pipefail) whenever the stub exits before printf writes.
+case " $* " in *" -f - "*) cat >/dev/null ;; esac
 case "$*" in
   *"kubernetes.io/arch=arm64"*) printf '%b' "$ARM64_SLOTS" ;;
   *"kubernetes.io/arch=amd64"*) printf '%b' "$AMD64_SLOTS" ;;
@@ -128,6 +132,10 @@ def test_no_committed_worker_template_borrows_from_the_cohort() -> None:
 
 _GATES_STUB = """#!/bin/bash
 printf 'kubectl %s\\n' "$*" >> "$STUB_LOG"
+# A real `kubectl apply -f -` reads its stdin. A stub that does not lets the
+# script's `printf ... | kubectl apply -f -` die of SIGPIPE (141 under
+# pipefail) whenever the stub exits before printf writes.
+case " $* " in *" -f - "*) cat >/dev/null ;; esac
 case "$*" in
   *"gate-share-millicores"*) printf '%b' "$GATE_SHARES" ;;
   *"get clusterqueue gates-cq"*) [ -n "$NO_GATES_CQ" ] && exit 1; printf '%s' "$GATES_CQ" ;;
