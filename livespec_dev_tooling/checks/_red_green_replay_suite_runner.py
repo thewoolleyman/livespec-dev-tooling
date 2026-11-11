@@ -39,6 +39,7 @@ PROGRESS_STAMP_ENV: str = "LIVESPEC_GATE_RUN_PROGRESS_STAMP"
 _POLL_SECONDS: float = 1.0
 _KILL_GRACE_SECONDS: int = 30
 _READ_BYTES: int = 65536
+_FREEZE_ROUNDS: int = 50
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -140,13 +141,11 @@ def _drain(*, fd: int, progress: SuiteProgress) -> None:
     progress.saw(chunk=decoder.decode(b"", final=True))
 
 
-def _escaped_descendants(*, leader_pid: int) -> tuple[tuple[int, str], ...]:
-    """Return live descendants outside the suite leader's process group.
+def _process_table() -> tuple[tuple[int, int, int, str], ...]:
+    """Return (pid, ppid, pgid, command) for every process.
 
-    A subprocess can start a session of its own and escape `killpg`; its parent
-    link still identifies it as work the suite started. `ps -axww -o` is shared
-    by the Linux and macOS developer hosts, and leaves the command line after
-    the three numeric fields for the stall record.
+    `ps -axww -o` is shared by the Linux and macOS developer hosts, and leaves
+    the command line after the three numeric fields for the stall record.
     """
     snapshot = subprocess.run(
         ["ps", "-axww", "-o", "pid=", "-o", "ppid=", "-o", "pgid=", "-o", "command="],
@@ -159,30 +158,58 @@ def _escaped_descendants(*, leader_pid: int) -> tuple[tuple[int, str], ...]:
         with contextlib.suppress(ValueError):
             pid, parent_pid, process_group, command = line.split(maxsplit=3)
             rows.append((int(pid), int(parent_pid), int(process_group), command))
-    descendants = {leader_pid}
-    while True:
-        discovered = {pid for pid, parent_pid, _, _ in rows if parent_pid in descendants}
-        if discovered <= descendants:
-            break
-        descendants.update(discovered)
-    return tuple(
-        (pid, command)
-        for pid, _, process_group, command in rows
-        if pid != leader_pid and pid in descendants and process_group != leader_pid
-    )
+    return tuple(rows)
 
 
-def _kill_escaped_descendants(*, leader_pid: int, progress: SuiteProgress) -> None:
-    """Kill and record descendants the suite's process-group signal misses."""
-    for pid, command in _escaped_descendants(leader_pid=leader_pid):
+def _signal_tree(*, signal_number: int, leader_pid: int, escaped: dict[int, int]) -> None:
+    """Signal the suite's group, each escaper, and each group an escaper leads."""
+    targets = [(os.killpg, leader_pid), *((os.kill, pid) for pid in escaped)]
+    targets += [(os.killpg, pid) for pid, group in escaped.items() if group == pid]
+    for send, target in targets:
         with contextlib.suppress(ProcessLookupError):
-            os.kill(pid, signal.SIGKILL)
+            send(target, signal_number)
+
+
+def _end_session_escapers(*, leader_pid: int, progress: SuiteProgress) -> None:
+    """Freeze the suite's whole tree, then kill every descendant outside its group.
+
+    A subprocess can start a session of its own and escape `killpg`, and the
+    suite keeps forking while it is signalled, so any single snapshot of the
+    process table is stale before the signal lands. The tree is stopped first
+    and the table re-read until a round finds nothing new and the tree stopped
+    changing: a stopped process forks nothing, and SIGKILL reaches it. A process
+    belongs to the tree when its parent does, or when it sits in the process
+    group an escaper leads (a reparented orphan of an escaper).
+    """
+    escaped: dict[int, int] = {}
+    previous_size = -1
+    for _ in range(_FREEZE_ROUNDS):  # pragma: no branch
+        _signal_tree(signal_number=signal.SIGSTOP, leader_pid=leader_pid, escaped=escaped)
+        rows = _process_table()
+        tree = {leader_pid, *escaped}
+        groups = {leader_pid, *(pid for pid, group in escaped.items() if group == pid)}
+        grown = True
+        while grown:
+            members = {
+                pid for pid, parent_pid, group, _ in rows if parent_pid in tree or group in groups
+            }
+            grown = not members <= tree
+            tree |= members
+        discovered = [
+            row for row in rows if row[0] in tree and row[2] != leader_pid and row[0] not in escaped
+        ]
+        for pid, _, group, command in discovered:
+            escaped[pid] = group
             progress.saw(
                 chunk=(
                     "\nsuite-green: ending escaped descendant outside the suite process group: "
                     f"pid {pid} command {command}\n"
                 )
             )
+        if not discovered and len(tree) == previous_size:
+            break
+        previous_size = len(tree)
+    _signal_tree(signal_number=signal.SIGKILL, leader_pid=leader_pid, escaped=escaped)
 
 
 def run_suite(
@@ -235,7 +262,7 @@ def run_suite(
                     bound=bound,
                 )
                 if reason is not None:
-                    _kill_escaped_descendants(leader_pid=proc.pid, progress=progress)
+                    _end_session_escapers(leader_pid=proc.pid, progress=progress)
                     _ = os.killpg(proc.pid, signal.SIGKILL)
                     _ = proc.wait(timeout=_KILL_GRACE_SECONDS)
         reader.join(timeout=_KILL_GRACE_SECONDS)
