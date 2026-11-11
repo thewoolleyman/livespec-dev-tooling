@@ -1,10 +1,9 @@
 # Workflow-edit exemption — one exemption binds to one reviewed change.
 #
-# The change: two NEW files. .github/workflows/reusable-ci-infra-rerun.yml is
-# the CI infrastructure re-run reconciler, and .github/workflows/ci-infra-rerun.yml
-# is this repository's caller of it on a failed CI workflow_run. No existing
-# workflow line is deleted or modified.
-work_item=livespec-dev-tooling-cetyrq
-change=additive
-ci_runtime=no-significant-increase
-reason=approval:workflow-edit, set by legacy-coordinator-agent 2026-11-03T15:30:26Z under the maintainer's standing ruling of 2026-11-03T15:00:49Z ("I approve all workflow edits, even if they are not strictly additive"); hand lane on legacy-coordinator-agent's ruling of 2026-11-11 because publish_draft refuses run-owned workflow files. Adds the reconciler non-functional-requirements.md §"Hooks and CI" requires: a gating CI job that failed at Set up job with an action-download 429 or "An action could not be found" is re-run with growing waits (120/300/600 s) for at most three attempts; every other failure stays the verdict. It runs only when the CI workflow completes with a failure, on one hosted job, so the gating CI's runtime is unchanged. actionlint exit 0. Plan ci-runtime-and-cost (livespec-dev-tooling-ib3oe3).
+# The change: in .github/workflows/ci-cache-negative-tests.yml, the
+# cache-negative-tests job's if: and runs-on: lines read
+# vars.CI_COVERAGE_RUNNER_LABELS || vars.CI_RUNNER_LABELS instead of
+# vars.CI_RUNNER_LABELS alone, and the header comment says so. Nothing else
+# changes. MODIFIED lines, so the maintainer tier.
+work_item=livespec-dev-tooling-z3bgxl
+reason=MAINTAINER tier (approval:workflow-edit). The maintainer approved this specific edit verbatim at ~06:2xZ 2026-11-11 in the ci-runtime-and-cost session: "OK I approve that edit as long as the cache is still working and the check is still checking it properly"; recorded on livespec-dev-tooling-z3bgxl. Why: since 06:12:36Z CI_RUNNER_LABELS routes non-coverage CI to hosted, which silently skipped the 6-hourly k3s cache negative tests; they now follow the coverage pool (CI_COVERAGE_RUNNER_LABELS=["livespec-dev-tooling-k3s"]). No quality gate is removed, the check is restored; same job, same runtime. actionlint exit 0. Plan ci-runtime-and-cost (livespec-dev-tooling-ib3oe3).
