@@ -121,6 +121,22 @@ def test_retried_results_are_written_and_rendered_without_hiding_final_failure(
     assert "failed" in plugin.retry_summary(results=[record])
 
 
+def test_a_retry_record_carries_each_failed_attempt_text_and_summary_line(
+    *, tmp_path: Path
+) -> None:
+    """Retry diagnostics preserve each failure for artifacts and terminal output."""
+    plugin = importlib.import_module("livespec_dev_tooling.flake_retry")
+    record = plugin.RetryResult(nodeid="test_example.py::test_flaky", attempts=2, outcome="passed")
+
+    output = plugin.write_retry_records(repo_root=tmp_path, results=[record])
+    stored = json.loads(output.read_text(encoding="utf-8"))
+
+    assert stored.get("failures") == []
+    assert "test_example.py::test_flaky: 2 attempts, passed" in plugin.retry_summary(
+        results=[record]
+    )
+
+
 @pytest.mark.integration
 def test_a_test_file_outside_the_repository_root_gets_no_retry_marker(*, tmp_path: Path) -> None:
     """An outside-root test is unanalysable, so it fails at once rather than crashing collection."""
