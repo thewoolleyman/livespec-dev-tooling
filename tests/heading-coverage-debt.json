@@ -870,6 +870,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: a recorded scratch-branch drill ends in drill-closed and a master incident is refused",
+    "work_item": "livespec-dev-tooling-io6hyk",
+    "first_seen": "2026-11-11"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: a red master whose re-run passes is classified a flake and never merges a revert",
     "work_item": "livespec-dev-tooling-zcp5vb",
     "first_seen": "2026-10-22"

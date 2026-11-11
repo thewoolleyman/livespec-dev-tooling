@@ -3371,6 +3371,19 @@ And the committed teardown MUST remove the scratch installation's units, configu
 And the scratch installation MUST NOT be counted as recovery capability for master.
 ```
 
+
+## Scenario: a recorded scratch-branch drill ends in drill-closed and a master incident is refused
+
+```gherkin
+Given an incident item whose incident authority binds only pull-request-bound carriers, every one of whose pull requests merged into an incident-scratch/** base branch, with no landed commit reachable from master
+And a second incident item whose bound carrier pull request's base branch is master
+When an operator applies the implementation orchestrator's drill-close verb to each item
+Then the first item reads the terminal phase drill-closed, with no repayment owed, and its incident authority history remains readable
+And the first item's closure is not counted as a completed incident or as recovery capability for master
+And the verb refuses the second item with incident-not-a-recorded-drill
+And the second item's incident phase, generation, claim and authority history are unchanged
+```
+
 ## Scenario: a reverted incident retains its original CI evidence before another attempt
 
 ```gherkin
