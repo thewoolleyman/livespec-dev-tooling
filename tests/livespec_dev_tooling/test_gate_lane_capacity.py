@@ -224,6 +224,65 @@ def test_a_quantity_is_read_by_value_not_spelling(
     assert _module().quantity(value=value) == expected
 
 
+def test_a_declaration_is_refused_when_no_single_lane_admits_both_its_cpu_and_memory(
+    *, tmp_path: Path
+) -> None:
+    """One lane must hold both quotas: a cpu-rich lane and a memory-rich lane together do not admit it.
+
+    Lane A has the cpu but too little memory; lane B has the memory but too
+    little cpu. Each dimension fits SOME lane, and no lane fits both, so the
+    declaration is refused. The committed lanes grow cpu and memory together,
+    so only a constructed file can tell a single-lane rule from two
+    independent any-lane checks.
+    """
+    queue_text = _queue(flavors=[("cpu-rich", "8", "2Gi"), ("memory-rich", "2", "32Gi")])
+    repo = _consumer(tmp_path, table='gate_cpu = 4\ngate_memory = "16Gi"\n', queue_text=queue_text)
+
+    refused = declared_gate_job_resources(repo_root=repo)
+
+    assert not is_successful(refused)
+    facts = [
+        refuses_declaration(failure=refused.failure()),
+        "gate_cpu = 4, gate_memory = 16Gi" in refused.failure().detail,
+        "cpu-rich with 8 CPU and 2Gi memory" in refused.failure().detail,
+    ]
+    assert facts == [True] * 3
+
+
+def test_the_packaged_queue_file_and_renderer_are_the_ones_the_wheel_ships() -> None:
+    """The packaged paths are the destinations of the wheel's `force-include` table.
+
+    A consumer carries no `ci-runner/` tree, so the client reads the copies
+    under `livespec_dev_tooling/gates/`. The mapping is read off
+    `pyproject.toml` rather than restated, so dropping the force-include line
+    for the queue file fails here instead of refusing every declaring consumer
+    over a file the package does not carry.
+    """
+    module = _module()
+    declaration = (_ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    facts = [
+        module.GATES_QUEUE_PACKAGED.as_posix().endswith(
+            "livespec_dev_tooling/gates/cluster-queue-gates.yaml"
+        ),
+        module.RENDERER_PACKAGED.as_posix().endswith(
+            "livespec_dev_tooling/gates/render-gate-job.sh"
+        ),
+        f'"{_QUEUE.as_posix()}" = "livespec_dev_tooling/gates/cluster-queue-gates.yaml"'
+        in declaration,
+        f'"{_RENDERER.as_posix()}" = "livespec_dev_tooling/gates/render-gate-job.sh"'
+        in declaration,
+    ]
+    assert facts == [True] * 4
+
+
+def test_a_repository_declaring_no_cpu_or_memory_is_not_refused_over_an_unparseable_queue_file(
+    *, tmp_path: Path
+) -> None:
+    """A present but unparseable queue file is never read for a repository declaring neither key."""
+    repo = _consumer(tmp_path, table="gate_parallelism = 8\n", queue_text="kind: [unclosed\n")
+    assert declared_gate_job_resources(repo_root=repo).unwrap() == ("--parallelism", "8")
+
+
 def _queue(*, flavors: list[tuple[str, str, str]]) -> str:
     """A minimal multi-document queue file with a gates-cq ClusterQueue over these flavors."""
     rendered = "".join(
