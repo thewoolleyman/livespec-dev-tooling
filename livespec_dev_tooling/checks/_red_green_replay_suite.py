@@ -17,12 +17,12 @@ file-LLOC ceiling. The leading underscore marks a private sibling.
 
 from __future__ import annotations
 
-import datetime
 import hashlib
 import importlib.util
 import os
 import re
 import sys
+import time
 from collections.abc import Mapping
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -41,8 +41,12 @@ from _red_green_replay_pre_commit import (  # noqa: E402
     reuse_pre_commit_evidence,
     staged_tree_hash,
 )
-from _red_green_replay_protocol import RED_GREEN_REPLAY_PROTOCOL  # noqa: E402
 from _red_green_replay_suite_argv import lane_worker_count, visible_cpu_count  # noqa: E402
+from _red_green_replay_suite_outcome import (  # noqa: E402
+    SuiteOutcomeTools,
+    finish_suite_run,
+    run_suite_candidate,
+)
 from _red_green_replay_suite_runner import (  # noqa: E402
     CEILING_ENV,
     DEFAULT_STALL_SECONDS,
@@ -51,11 +55,10 @@ from _red_green_replay_suite_runner import (  # noqa: E402
     SuiteRun,
     run_suite,
     suite_bound,
-    test_completion_summary,
 )
-from _red_green_replay_trailers import write_trailers  # noqa: E402
 
-from livespec_dev_tooling.commit_replay_delegate import run_replay, unrefused  # noqa: E402
+from livespec_dev_tooling.commit_replay_delegate import run_replay  # noqa: E402
+from livespec_dev_tooling.gate_outcome_telemetry import emit_suite_green_outcome  # noqa: E402
 from livespec_dev_tooling.green_token import read_pre_commit_evidence  # noqa: E402
 
 __all__: list[str] = [
@@ -197,6 +200,25 @@ def _suite_argv(*, test_paths: list[str] | None, log: structlog.stdlib.BoundLogg
     )
 
 
+def _suite_outcome_tools() -> SuiteOutcomeTools:
+    """Bind the suite entry point's execution and refusal-description seams."""
+    return SuiteOutcomeTools(
+        canonical_output_checksum=canonical_output_checksum,
+        failure_detail=_suite_failure_detail,
+        failure_summary=_suite_failure_summary,
+        run_local_suite=run_suite,
+        run_replay=run_replay,
+    )
+
+
+def _suite_scope(
+    *, staged_paths: list[str], tests_paths: list[str] | None
+) -> tuple[str, list[str] | None]:
+    """Select the narrow staged-test scope only when support is isolated."""
+    run_touched_tests = bool(tests_paths) and not has_shared_test_support(staged_paths=staged_paths)
+    return ("staged-tests", tests_paths) if run_touched_tests else ("full-suite", None)
+
+
 def _handle_suite_green_mode(
     *,
     msg_path: Path,
@@ -217,121 +239,70 @@ def _handle_suite_green_mode(
     lands in the commit message so the commit-range validation
     recognizes the commit as verified.
     """
-    run_touched_tests = bool(tests_paths) and not has_shared_test_support(staged_paths=staged_paths)
-    selected_tests = tests_paths if run_touched_tests else None
-    scope = "staged-tests" if run_touched_tests else "full-suite"
+    scope, selected_tests = _suite_scope(staged_paths=staged_paths, tests_paths=tests_paths)
+    started = time.monotonic()
+    index_tree = staged_tree_hash(cwd=Path.cwd())
+    mode: str | None = None
+    outcome: str | None = None
+    exit_status = 1
     log.info(
         "suite-green-candidate: product/test change without a Red leg; selecting replay scope",
         check_id="red-green-replay-suite-green-candidate",
         staged_paths=staged_paths,
         tests_paths=selected_tests,
     )
-    if scope == "full-suite" and reuse_pre_commit_evidence(
-        evidence=read_pre_commit_evidence(cwd=Path.cwd()),
-        index_tree=staged_tree_hash(cwd=Path.cwd()),
-        log=log,
-        msg_path=msg_path,
-    ):
-        return 0
-    bound = suite_bound(environ=os.environ)
-    argv = _suite_argv(test_paths=selected_tests, log=log)
-    log.info(
-        "suite-green-argv: pytest invocation",
-        check_id="red-green-replay-suite-green-argv",
-        argv=argv,
-        scope=scope,
-        stall_seconds=bound.stall_seconds,
-        ceiling_seconds=bound.ceiling_seconds,
-    )
-    verdict = unrefused(verdict=run_replay(repo_root=Path.cwd(), pytest_argv=["pytest", *argv[3:]]))
-    if (
-        not verdict.local
-        and verdict.exit_status is not None
-        and verdict.job_name is not None
-        and verdict.tree_hash is not None
-        and verdict.output_checksum is not None
-    ):
-        suite_result = SuiteRun(
-            returncode=verdict.exit_status,
-            output=verdict.reason,
-            timed_out=False,
-        )
-        output_checksum = verdict.output_checksum
-        gate_trailers = (
-            ("TDD-Suite-Green-Gate-Job", verdict.job_name),
-            ("TDD-Suite-Green-Staged-Tree", verdict.tree_hash),
-        )
-        log.info(
-            "commit-time replay gated by a gate Job",
-            check_id="red-green-replay-delegated",
-            job_name=verdict.job_name,
-            tree_hash=verdict.tree_hash,
-        )
+    try:
+        if scope == "full-suite" and reuse_pre_commit_evidence(
+            evidence=read_pre_commit_evidence(cwd=Path.cwd()),
+            index_tree=index_tree,
+            log=log,
+            msg_path=msg_path,
+        ):
+            mode = "reused"
+            outcome = "green"
+            exit_status = 0
+        else:
+            bound = suite_bound(environ=os.environ)
+            argv = _suite_argv(test_paths=selected_tests, log=log)
+            log.info(
+                "suite-green-argv: pytest invocation",
+                check_id="red-green-replay-suite-green-argv",
+                argv=argv,
+                scope=scope,
+                stall_seconds=bound.stall_seconds,
+                ceiling_seconds=bound.ceiling_seconds,
+            )
+            tools = _suite_outcome_tools()
+            run = run_suite_candidate(
+                argv=argv,
+                bound=bound,
+                log=log,
+                tools=tools,
+            )
+            mode = "ran"
+            outcome = finish_suite_run(
+                run=run,
+                bound=bound,
+                log=log,
+                msg_path=msg_path,
+                scope=scope,
+                tools=tools,
+            )
+            exit_status = 0 if outcome == "green" else 1
+    except SystemExit:
+        outcome = "red"
+        raise
     else:
-        suite_result = run_suite(argv=argv, bound=bound)
-        output_checksum = canonical_output_checksum(output=suite_result.output)
-        gate_trailers: tuple[tuple[str, str], ...] = ()
-        log.info(
-            "commit-time replay gated locally",
-            check_id="red-green-replay-gated-locally",
-            reason=verdict.reason,
+        return exit_status
+    finally:
+        emit_suite_green_outcome(
+            cwd=str(Path.cwd()),
+            tree_hash=index_tree,
+            mode=mode,
+            scope=scope,
+            outcome=outcome,
+            duration_seconds=time.monotonic() - started,
         )
-    if suite_result.timed_out:
-        timeout_message = (
-            f"suite-green-timeout: the suite-green leg was killed ({suite_result.kill_reason}): "
-            f"its stall window is {bound.stall_seconds}s with no new output ({STALL_ENV}) "
-            f"and its total ceiling is {bound.ceiling_seconds or 'unset'} ({CEILING_ENV}); "
-            f"{test_completion_summary(output=suite_result.output)}; "
-            "the pytest process group was killed"
-        )
-        log.error(
-            timeout_message,
-            check_id="red-green-replay-suite-green-timeout",
-            leg="suite-green",
-            kill_reason=suite_result.kill_reason,
-            stall_seconds=bound.stall_seconds,
-            ceiling_seconds=bound.ceiling_seconds,
-            stall_env_var=STALL_ENV,
-            timeout_env_var=CEILING_ENV,
-            hint=(
-                "The suite-green leg is bounded by progress: it is killed only after "
-                f"{STALL_ENV} seconds (default {DEFAULT_STALL_SECONDS}) without a byte of "
-                f"output, or past {CEILING_ENV} seconds in total when that opt-in ceiling "
-                "is set. Parallelism comes from `test_nprocs`."
-            ),
-            protocol=RED_GREEN_REPLAY_PROTOCOL,
-        )
-        return 1
-    suite_output = suite_result.output
-    if suite_result.returncode != 0:
-        log.error(
-            "suite-red: selected pytest tests do not pass against the staged tree",
-            check_id="red-green-replay-suite-red",
-            pytest_returncode=suite_result.returncode,
-            failure_summary=_suite_failure_summary(output=suite_output),
-            failure_detail=_suite_failure_detail(output=suite_output),
-            hint=(
-                "The green-verified leg requires its selected tests to pass (exit 0; "
-                "an empty selection, pytest exit 5, also rejects): a behavior-"
-                "preserving change must keep every existing test green. If this "
-                "change is SUPPOSED to alter behavior, author it via the ritual "
-                "instead: Red commit (stage the failing test alone), then Green "
-                "amend (stage the impl)."
-            ),
-            protocol=RED_GREEN_REPLAY_PROTOCOL,
-        )
-        return 1
-    captured_at = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    write_trailers(
-        msg_path=msg_path,
-        trailers=(
-            ("TDD-Suite-Green-Scope", scope),
-            ("TDD-Suite-Green-Output-Checksum", output_checksum),
-            ("TDD-Suite-Green-Captured-At", captured_at),
-            *gate_trailers,
-        ),
-    )
-    return 0
 
 
 handle_suite_green_mode = _handle_suite_green_mode
