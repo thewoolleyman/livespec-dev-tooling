@@ -26,7 +26,12 @@
 #   stop     k3s_datastore_stop_confirm=<host>
 #            Stops k3s.service and nothing else. It exists because a restore
 #            refuses while k3s runs, and no other committed path stops the
-#            server unit.
+#            server unit. Stopping the k3s SERVER stops the whole control plane,
+#            so it is for a DECLARED ROLLBACK only, run inside a factory-quiet
+#            window: the board drained by legacy-dispatcher-agent and live runs
+#            cancelled through the factory server's API (POST
+#            /api/v1/runs/{id}/cancel, .ai/factory-restart-cancels-runs.md).
+#            It is never a routine operation (coordinator ruling, 2026-11-11).
 #   restore  k3s_datastore_restore_confirm=<host> AND k3s_datastore_restore_set=<set>
 #            Refuses unless k3s.service is inactive, unless the datastore dir is
 #            on its tmpfs, unless no etcd/ dir is present (k3s ignores SQLite
