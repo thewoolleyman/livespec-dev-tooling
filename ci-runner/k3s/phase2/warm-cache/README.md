@@ -262,9 +262,20 @@ each be at or under the budget, else the generation is renamed
 with both numbers, and the job exits 3. Fixed numbers, not a multiple of
 the last build: a ratchet is self-referential, and the point is an alarm
 when the union drifts; re-deriving it is a reviewed commit against the
-cost table above. Values: **1,000,000,000 bytes and 20,000 files** (union
-379 MB / 8,070 files; the runaway generation was 1,388 MB / 159,409 files,
-so both axes trip well before that shape recurs). Home: the
+cost table above. Values: **1,350,000,000 bytes and 45,000 files**,
+re-derived 2026-11-11. The ten-lock union outgrew the previous
+1,000,000,000 / 20,000 (set against the 2026-09-04 union of 379 MB / 8,070
+files): run `20261111T093001Z` measured 1,041,015,159 bytes / 32,749 files at
+124 (name,version) pairs, and every populate from 2026-11-08 11:30Z to then
+was refused, leaving the tier on generation `20261108T070002Z`. The growth is
+fleet version skew (one package pinned at several versions across the
+repositories) more than new packages. The new values carry about 37% (files)
+and 30% (bytes) over that measurement, for the pairs master added after it
+(132 on 2026-11-11, including `nodejs-wheel-binaries`). The runaway
+generation was 1,388 MB / 159,409 files, so both axes still trip before that
+shape recurs. livespec-dev-tooling-243dzr owns the full re-derivation
+(including the per-start seed cost) and the test that pins these numbers to
+this paragraph. Home: the
 `warm-cache-budget` ConfigMap (`bytes`, `files`) in
 `warm-cache-cronjob.yaml`, injected as `WARM_BUDGET_BYTES` /
 `WARM_BUDGET_FILES` via `configMapKeyRef`; the populator refuses to start
