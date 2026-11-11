@@ -20,8 +20,6 @@ from livespec_dev_tooling.flake_retry_changes import change_paths, withheld_reas
 from livespec_dev_tooling.flake_retry_decisions import (
     RETRY_ATTEMPTS,
     RETRY_DELAY_SECONDS,
-    ModuleFacts,
-    RetryPolicy,
     retry_marker_for,
 )
 from livespec_dev_tooling.flake_retry_finalizers import preserve_finalizers
@@ -31,11 +29,14 @@ if TYPE_CHECKING:
 
     from _pytest.terminal import TerminalReporter
 
+    from livespec_dev_tooling.flake_retry_decisions import _ModuleFacts
+
 __all__: list[str] = [
     "RETRY_ATTEMPTS",
     "RETRY_DELAY_SECONDS",
     "RetryResult",
     "announce_retries",
+    "ast",
     "mark_untouched_tests",
     "record_report",
     "retry_marker_for",
@@ -73,21 +74,13 @@ def mark_untouched_tests(
     paths = change_paths(repo_root=root)
     if paths is None:
         return withheld_reason()
-    memo: dict[Path, ModuleFacts | None] = {}
+    memo: dict[Path, _ModuleFacts | None] = {}
     markers: dict[Path, dict[str, int] | None] = {}
     for item in items:
         test_path = Path(str(item.path))
         if test_path not in markers:
             markers[test_path] = retry_marker_for(
-                repo_root=root,
-                test_path=test_path,
-                change_paths=paths,
-                memo=memo,
-                retry_policy=RetryPolicy(
-                    attempts=RETRY_ATTEMPTS,
-                    delay_seconds=RETRY_DELAY_SECONDS,
-                ),
-                parse=ast.parse,
+                repo_root=root, test_path=test_path, change_paths=paths, memo=memo
             )
         marker = markers[test_path]
         if marker is not None:
