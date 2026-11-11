@@ -128,6 +128,28 @@ wrapper is there. Measured 2026-11-11 on the kzhduc Green amend: gate
 was still refused for the missing credential (plan `ci-runtime-and-cost`,
 epic `livespec-dev-tooling-ib3oe3`).
 
+### A launched gate cannot be called back: SIGINT does not stop it
+
+The runner has no stop verb, and signalling the gate's `__child` process
+group does not stop a DELEGATED gate. The pre-commit or pre-push hook that
+does the work runs under lefthook, which gives each hook its own session,
+so a signal sent to the child's group never reaches it (the same session
+split is behind the SIGHUP note in `.ai/independent-host-replay-identity.md`).
+The gate runs on, records its verdict, and, if that verdict is a pass,
+finishes the commit or the push.
+
+Measured 2026-11-11 (plan `ci-runtime-and-cost`, epic
+`livespec-dev-tooling-ib3oe3`): a docs push gate was relaunched past a test
+flake, which coordinator-duties §2 forbids. SIGINT was sent to its
+`__child` group to take the relaunch back. The gate ran on, PASSED and
+pushed the branch, and the breach was self-reported to the coordinator.
+
+Decide BEFORE `gate-start`. Treat a launched push gate as one that will
+push if it passes, and a launched commit gate as one that will commit. If
+you need to undo it, undo the result, the commit or the pushed branch,
+after the verdict lands. Do not read a quiet gate after a signal as a
+stopped one: read its `VERDICT` line through `gate-status`.
+
 ### What this does NOT change
 
 **Nothing is weakened.** The same command runs, with the same hooks,
