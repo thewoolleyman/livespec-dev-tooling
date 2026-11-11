@@ -192,8 +192,13 @@ def _value_at_path(*, document: object, key_path: str) -> object | None:
 def _jsonc_rule_changed(*, cwd: Path, path: str, rule: ConfigValueFastPathRule) -> bool:
     """Prove that a JSONC replacement changed the exact declared nested key."""
     try:
-        before: object = jsoncomment.loads(_head_text(cwd=cwd, path=path))
         after: object = jsoncomment.loads(_staged_text(cwd=cwd, path=path))
+    except ValueError:
+        # The textual value-only replacement already qualified, so the lane stays open and
+        # validation refuses the unparsable staged file by name.
+        return True
+    try:
+        before: object = jsoncomment.loads(_head_text(cwd=cwd, path=path))
     except ValueError:
         return False
     before_value = _value_at_path(document=before, key_path=rule.key_path)
