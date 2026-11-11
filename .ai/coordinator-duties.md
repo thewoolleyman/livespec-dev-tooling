@@ -484,6 +484,13 @@ never waits for the seat, or the maintainer, to press them. Measured 2026-11-05:
 was accepted ~21:5xZ on its seat's reproduction comment, and bd-ib-5guqmt and bd-ib-fvgkw4 were closed out-of-band
 under this section.
 
+**Run reconcile-merged detached and read its journal (coordinator's reading).** reconcile-merged runs the full
+post-merge janitor, which can run past 15 min against a 3,600 s budget. Launch it detached (`just gate-start -- ...`, or
+setsid nohup) with no outer timeout under 3,600 s, and read the verdict from the journal's `stage: outcome` row for the
+invocation id, never from stdout. Measured 2026-11-11 ~00:36Z: the coordinator ran `timeout 900 ... reconcile-merged ...
+| tail -3` on bd-ib-p5e32s, the timeout killed it mid-janitor, the pipe hid exit 124, and the item read as silently
+unreconciled until gmktec-factory-placement traced the journal.
+
 **A hand-lane item carries `admission:manual` and a recorded reason (coordinator's reading).** An item that a seat is
 landing by hand gets the `admission:manual` label plus a ledger comment giving the reason and the end condition.
 Without the label, the dispatcher treats it as factory work and dispatches it. Recorded in the restart handoff on epic
