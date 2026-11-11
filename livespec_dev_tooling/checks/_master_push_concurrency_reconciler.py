@@ -13,7 +13,10 @@ _RECONCILER_CALL = re.compile(
     re.MULTILINE,
 )
 _TOP_LEVEL_CONCURRENCY = re.compile(r"^concurrency:\s*\S", re.MULTILINE)
-_PUSH_TRIGGER = re.compile(r"^on:[ \t]*(?:push|\[[^\]]*\bpush\b[^\]]*\])", re.MULTILINE)
+_PUSH_TRIGGER = re.compile(
+    r"^on:[ \t]*(?:push|\[[^\]]*\bpush\b[^\]]*\]|\n[ \t]+push[ \t]*:)",
+    re.MULTILINE,
+)
 
 
 @dataclass(frozen=True, kw_only=True)
