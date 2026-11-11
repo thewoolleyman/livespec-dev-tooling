@@ -2306,6 +2306,14 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: a prepared incident recovery publication completes after the controller restarts",
+    "test": "TODO",
+    "work_item": "livespec-dev-tooling-52die6",
+    "reason": "A real test at the integration tier or above is owed for this heading: the released incident controller, restarted while a pending recovery action's principal holds an unresolved publication attempt with no effect receipt, must complete that publication on its next due sweep pass with no operator reconcile, sending only the one recorded commit through the expected-head compare-and-swap; must record an already-landed commit as the receipt without publishing; must recompute or record an owned rollback-conflict when the head moved; must leave an incomplete resume pending; and must honour the action's persisted back-off, terminal state and retry bounds (proposal the-recovery-principal-does-not, v191). livespec-dev-tooling-52die6 owns it."
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: an incident recovery principal configured for a scratch branch recovers only that branch",
     "test": "TODO",
     "reason": "A real test at the integration tier or above is owed for this heading: the fake-forge recovery principal tests must drive a principal configured for a non-master branch through a moved-head overlap; livespec-dev-tooling-thhgeg owns it.",
