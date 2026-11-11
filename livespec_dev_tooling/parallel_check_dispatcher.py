@@ -63,7 +63,9 @@ deadline, so a target stays in this process's group, a group kill still takes
 it, and it runs to completion however long it takes.
 
 Output:
-    Human-readable per-target headers + captured output on stdout.
+    Human-readable per-target headers + captured output on stdout, and one
+    `LIVESPEC_CHECK_MEMBERS {...}` line in the summary naming every member
+    that ran and whether it passed.
     Machine-readable per-target timing events on stderr (structlog JSON)
     for e60 observability.
 """
@@ -92,6 +94,10 @@ from livespec_dev_tooling._check_target_runner import (  # noqa: E402
 from livespec_dev_tooling._dispatcher_coverage_namespaces import (  # noqa: E402
     COVERAGE_CONSUMERS,
     isolated_environments,
+)
+from livespec_dev_tooling._gate_member_report import (  # noqa: E402
+    CHECK_MEMBERS_PREFIX,
+    format_member_line,
 )
 from livespec_dev_tooling._pyright_warmup import warm_locked_pyright  # noqa: E402
 from livespec_dev_tooling.allowed_cpus import current_allowed_cpu_count  # noqa: E402
@@ -220,6 +226,10 @@ def _emit_summary(*, results: list[TargetResult], log: structlog.stdlib.BoundLog
     skipped = [r for r in results if r.skipped]
     counts = f"passed: {len(passed)}, failed: {len(failed)}, skipped: {len(skipped)}"
     _write(text=f"\n--- parallel check summary ---\n{counts}\n")
+    # The one structured line naming every member that RAN and its verdict, which
+    # a delegated gate Job re-prints as its own report (`_gate_member_report`).
+    ran = ((r.name, r.exit_code == 0) for r in results if not r.skipped)
+    _write(text=f"{format_member_line(prefix=CHECK_MEMBERS_PREFIX, ran=ran)}\n")
     _write_timing_table(results=results)
     if failed:
         _write(text=f"\nFailed targets ({len(failed)}):\n")

@@ -3239,56 +3239,49 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a push of a tree whose delegated pre-commit aggregate passed submits no gate Job and runs only the members that run did not cover",
-    "test": "TODO",
-    "reason": "Spec-first: a real test at the integration tier or above (`tests.consumer`, this repository's `scenario_tiers`, or an integration-marked test) is owed for this heading. It must drive the pack's pre-commit hook and pre-push gate in a synthetic repository that sets delegated_gate and delegated_pre_commit, with a stubbed gate client, and assert the scenario's pre-push evidence, gate Job submission and member-run outcomes (proposal pre-push-accepts-a-same-tree-delegated-pre-commit-pass). livespec-dev-tooling-73ocxb owns it.",
-    "work_item": "livespec-dev-tooling-73ocxb"
+    "test": "tests.consumer.test_pre_push_same_tree_delegated_pre_commit_scenarios.test_an_accepting_push_runs_only_the_members_the_pre_commit_job_did_not_cover",
+    "reason": "Consumer-tier: drives the committed check.sh with the pre-push gate's accepted-evidence environment against stub `uv`/`just`, asserting it skips only the tree-pure member gate Job J reported as passed, runs check-alpha, check-red-green-replay, every world-reading and every authorization-reading member on the pushing host, prints J, T, each member it ran and the count it skipped, and writes no green token. Siblings in the same module prove the evidence is recorded from a real pre-commit seam run and that check-pre-push.sh submits no gate Job (livespec-dev-tooling-73ocxb)."
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a pre-commit aggregate that ran on the committing host does not stand in for the pre-push gate",
-    "test": "TODO",
-    "reason": "Spec-first: a real test at the integration tier or above (`tests.consumer`, this repository's `scenario_tiers`, or an integration-marked test) is owed for this heading. It must drive the pack's pre-commit hook and pre-push gate in a synthetic repository that sets delegated_gate and delegated_pre_commit, with a stubbed gate client, and assert the scenario's pre-push evidence, gate Job submission and member-run outcomes (proposal pre-push-accepts-a-same-tree-delegated-pre-commit-pass). livespec-dev-tooling-73ocxb owns it.",
-    "work_item": "livespec-dev-tooling-73ocxb"
+    "test": "tests.consumer.test_pre_push_same_tree_delegated_pre_commit_scenarios.test_a_local_pre_commit_pass_in_a_both_keys_repository_never_stands_in_for_the_push",
+    "reason": "Consumer-tier: in a throwaway repository setting delegated_gate and delegated_pre_commit, the real green_token module writes no token under the pre-commit hook's marker, refuses the local same-tree evidence as a token and finds no pre-push evidence, and the committed check-pre-push.sh then submits a gate Job without saying it accepted a pre-commit verdict (livespec-dev-tooling-73ocxb)."
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a delegated pre-commit pass on a dirty or changed tree does not stand in for the pre-push gate",
-    "test": "TODO",
-    "reason": "Spec-first: a real test at the integration tier or above (`tests.consumer`, this repository's `scenario_tiers`, or an integration-marked test) is owed for this heading. It must drive the pack's pre-commit hook and pre-push gate in a synthetic repository that sets delegated_gate and delegated_pre_commit, with a stubbed gate client, and assert the scenario's pre-push evidence, gate Job submission and member-run outcomes (proposal pre-push-accepts-a-same-tree-delegated-pre-commit-pass). livespec-dev-tooling-73ocxb owns it.",
-    "work_item": "livespec-dev-tooling-73ocxb"
+    "test": "tests.consumer.test_pre_push_same_tree_delegated_pre_commit_scenarios.test_a_delegated_pre_commit_pass_on_a_dirty_or_changed_tree_records_no_evidence",
+    "reason": "Consumer-tier: runs the real pre_commit_delegate seam against a throwaway both-keys repository with only the cluster stubbed, disturbing the host (unstaged change, untracked file, index moved) while the green gate Job runs, and asserts no pre-push evidence is recorded (livespec-dev-tooling-73ocxb)."
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a delegated pre-commit pass does not stand in for a push whose tree or worktree differs",
-    "test": "TODO",
-    "reason": "Spec-first: a real test at the integration tier or above (`tests.consumer`, this repository's `scenario_tiers`, or an integration-marked test) is owed for this heading. It must drive the pack's pre-commit hook and pre-push gate in a synthetic repository that sets delegated_gate and delegated_pre_commit, with a stubbed gate client, and assert the scenario's pre-push evidence, gate Job submission and member-run outcomes (proposal pre-push-accepts-a-same-tree-delegated-pre-commit-pass). livespec-dev-tooling-73ocxb owns it.",
-    "work_item": "livespec-dev-tooling-73ocxb"
+    "test": "tests.consumer.test_pre_push_same_tree_delegated_pre_commit_scenarios.test_a_delegated_pre_commit_pass_does_not_stand_in_when_the_tree_or_worktree_differs",
+    "reason": "Consumer-tier: records real pre-push evidence for tree T, proves it qualifies, then moves HEAD to another tree or dirties the worktree and asserts the real green_token reader refuses it and check-pre-push.sh gates as with no evidence (livespec-dev-tooling-73ocxb)."
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a doc-only or Red-leg delegated pre-commit run records no pre-push evidence",
-    "test": "TODO",
-    "reason": "Spec-first: a real test at the integration tier or above (`tests.consumer`, this repository's `scenario_tiers`, or an integration-marked test) is owed for this heading. It must drive the pack's pre-commit hook and pre-push gate in a synthetic repository that sets delegated_gate and delegated_pre_commit, with a stubbed gate client, and assert the scenario's pre-push evidence, gate Job submission and member-run outcomes (proposal pre-push-accepts-a-same-tree-delegated-pre-commit-pass). livespec-dev-tooling-73ocxb owns it.",
-    "work_item": "livespec-dev-tooling-73ocxb"
+    "test": "tests.consumer.test_pre_push_same_tree_delegated_pre_commit_scenarios.test_a_doc_only_or_red_leg_delegated_pre_commit_run_records_no_pre_push_evidence",
+    "reason": "Consumer-tier: runs the real pre_commit_delegate seam on a doc-only and on a Red-leg staged tree whose gate Job passed with a member report on a clean host, and asserts no pre-push evidence qualifies (livespec-dev-tooling-73ocxb)."
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a member outside the delegated pre-commit run's scope still runs at pre-push and refuses the push when it fails",
-    "test": "TODO",
-    "reason": "Spec-first: a real test at the integration tier or above (`tests.consumer`, this repository's `scenario_tiers`, or an integration-marked test) is owed for this heading. It must drive the pack's pre-commit hook and pre-push gate in a synthetic repository that sets delegated_gate and delegated_pre_commit, with a stubbed gate client, and assert the scenario's pre-push evidence, gate Job submission and member-run outcomes (proposal pre-push-accepts-a-same-tree-delegated-pre-commit-pass). livespec-dev-tooling-73ocxb owns it.",
-    "work_item": "livespec-dev-tooling-73ocxb"
+    "test": "tests.consumer.test_pre_push_same_tree_delegated_pre_commit_scenarios.test_a_member_outside_the_pre_commit_jobs_scope_still_runs_and_refuses_the_push",
+    "reason": "Consumer-tier: drives the committed check.sh on the accepted-evidence path with evidence that does not name check-red-green-replay and a failing aggregate, asserting the member runs on the pushing host and the run exits non-zero, and that check-pre-push.sh carries that refusal (livespec-dev-tooling-73ocxb)."
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a repository that does not set both delegated keys keeps pre-commit-to-pre-push green token reuse",
-    "test": "TODO",
-    "reason": "Spec-first: a real test at the integration tier or above (`tests.consumer`, this repository's `scenario_tiers`, or an integration-marked test) is owed for this heading. It must drive the pack's pre-commit hook and pre-push gate in a synthetic repository that sets delegated_gate and delegated_pre_commit, with a stubbed gate client, and assert the scenario's pre-push evidence, gate Job submission and member-run outcomes (proposal pre-push-accepts-a-same-tree-delegated-pre-commit-pass). livespec-dev-tooling-73ocxb owns it.",
-    "work_item": "livespec-dev-tooling-73ocxb"
+    "test": "tests.consumer.test_pre_push_same_tree_delegated_pre_commit_scenarios.test_a_repository_without_both_delegated_keys_keeps_pre_commit_token_reuse",
+    "reason": "Consumer-tier: in a repository setting only delegated_gate, the real green_token module still writes the token under the pre-commit hook's marker and honours pre-commit evidence as a token, has no pre-push evidence reader, and check-pre-push.sh takes the token_match route without printing an accepted pre-commit verdict (livespec-dev-tooling-73ocxb)."
   }
 ]

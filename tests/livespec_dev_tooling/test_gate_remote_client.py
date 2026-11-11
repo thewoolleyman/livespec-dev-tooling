@@ -716,6 +716,23 @@ def test_a_streaming_request_retains_no_output_checksum() -> None:
     assert outcome.unwrap().output_checksum == ""
 
 
+def test_a_capturing_request_carries_the_jobs_member_report_and_a_stream_none(
+    *, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The Job's `LIVESPEC_GATE_MEMBERS` line is read only from a captured log."""
+    output = 'ran\nLIVESPEC_GATE_MEMBERS {"check-a": "passed", "check-b": "failed"}\n'
+    request = dataclasses.replace(_REQUEST, capture_output=True)
+
+    capturing = _StubCluster(log_output=output)
+    streaming = _StubCluster(log_output=output)
+    captured = run_gate(request=request, runner=capturing, sleeper=capturing.sleep)
+    streamed = run_gate(request=_REQUEST, runner=streaming, sleeper=streaming.sleep)
+
+    assert captured.unwrap().member_verdicts == (("check-a", "passed"), ("check-b", "failed"))
+    assert streamed.unwrap().member_verdicts is None
+    _ = capsys.readouterr()
+
+
 def test_a_failed_gate_comes_back_as_a_raw_terminal_state_rather_than_a_verdict() -> None:
     """S7b decides pass from fail; this slice reports what the cluster said."""
     cluster = _StubCluster(job_states=("Failed",))

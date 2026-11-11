@@ -64,10 +64,17 @@ if [[ "$test_count" -eq 1 ]] && [[ "$impl_count" -eq 0 ]]; then
     echo ":: Red-mode shape detected: $test_staged"
     echo ":: scoping the Red gate by staged-path class (red_leg_scope): coverage gates skip"
     echo ":: (verified at the Green amend) + any orthogonal legs a staged unit test cannot affect"
-    just red_staged="$test_staged" hook_gate=1 check
+    LIVESPEC_PRE_COMMIT_HOOK=1 just red_staged="$test_staged" hook_gate=1 check
     exit $?
 fi
 
+# `LIVESPEC_PRE_COMMIT_HOOK=1` marks both local aggregates above and below as the
+# pre-commit hook's own, and only this script sets it. In a repository that sets
+# both delegated_gate and delegated_pre_commit, check.sh then writes no green
+# token, because there a local pre-commit pass never stands in for the pre-push
+# gate; in every other repository the marker changes nothing
+# (livespec-dev-tooling-73ocxb).
+#
 # `hook_gate=1` omits the world-gate members enumerated in check.sh — today
 # just check-fleet-conformance-admin, whose verdict is a fact about nine OTHER
 # repositories' live admin state and so can refuse a commit that has nothing
@@ -75,7 +82,7 @@ fi
 aggregate_log=$(mktemp "$(git rev-parse --git-path livespec-pre-commit-aggregate.XXXXXX)")
 staged_tree=$(git write-tree)
 set +e
-just hook_gate=1 check 2>&1 | tee "$aggregate_log"
+LIVESPEC_PRE_COMMIT_HOOK=1 just hook_gate=1 check 2>&1 | tee "$aggregate_log"
 aggregate_status=${PIPESTATUS[0]}
 set -e
 # `just check` reads the working tree, so its verdict speaks for the staged

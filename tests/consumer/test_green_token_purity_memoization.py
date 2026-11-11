@@ -100,6 +100,7 @@ case "$*" in
         ;;
     *"green_token undeclared"*)   exit 0 ;;
     *"green_token check")         exit "${GREEN_TOKEN_EXIT:-1}" ;;
+    *"green_token pre-push-evidence") exit 1 ;;
     *parallel_check_dispatcher*)  exit "${DISPATCH_EXIT:-0}" ;;
     *"gate_remote_delegate enabled") exit "${SWITCH_EXIT:-1}" ;;
 esac

@@ -423,6 +423,7 @@ def test_a_fleet_app_token_push_is_refused_before_the_local_aggregate_starts(
     assert code == 78
     assert invoked == [
         "uv run python -m livespec_dev_tooling.green_token check",
+        "uv run python -m livespec_dev_tooling.green_token pre-push-evidence",
         "uv run python -m livespec_dev_tooling.gate_remote_delegate enabled",
     ]
 
