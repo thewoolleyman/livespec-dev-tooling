@@ -41,6 +41,39 @@ Neither disk I/O nor tmpfs explains it. Major faults ran at 4 per second, iowait
 - Among long-lived processes, `claude` (all sessions together) held 1.28 system cores. Next were `python3` 0.49,
   `herdr` 0.38 (system-heavy: 0.38 system against 0.23 user) and `bash` 0.37.
 
+## Fork rate by owning seat, 600 s
+
+Added on legacy-coordinator-agent's request, which wanted a longer window than the 20-30 s samples above, with each fork
+charged to the seat that owns it. Window: 06:44:03Z to 06:54:03Z. The host made 183,999 forks in that window, 307 per
+second. Data: `data/011-system-cpu/fork-owner-600s-*`.
+
+**Method.** `bpftrace` on `sched:sched_process_fork` walks up to 14 ancestors from the forking task, looking for a
+`claude` process. A fork is charged to the seat named by that process's `-n` flag. A detached script has no `claude`
+ancestor, so it is charged to the seat whose scratchpad session id its command line names. That id is mapped to the
+`customTitle` in the seat's transcript.
+
+| Owner | Forks/s | Share | Where they come from |
+| --- | ---: | ---: | --- |
+| legacy-dispatcher-agent | 86.9 | 28.3% | in-session 25.6/s; detached `turn-watch.sh` 22.2/s; detached `tmp/petri-canary/dispatch-dual-r681b.sh` 15.6/s; also `ending-r267`, `giveup-loop`, `v331-merge-watch`, `reg-watch`, `seat-watch2` and `stranded-watch` |
+| (unattributed) | 52.3 | 17.1% | ancestor chain longer than 14 levels, or the ancestors had already exited |
+| implement-test-performance | 22.9 | 7.5% | in-session 20.4/s, detached proof script 2.0/s |
+| dispatch-payload-packaging | 15.6 | 5.1% | a detached gate-run push, which is real work |
+| fleet-flaky-tests | 11.8 | 3.9% | in-session 11.1/s |
+| claude sessions that exited before mapping | 11.2 | 3.6% | in-session 9.8/s |
+| sandbox-commit-gate-ceiling | 9.7 | 3.2% | in-session 9.2/s |
+| gate-job-resources | 8.2 | 2.7% | in-session 6.2/s, detached gate script 1.6/s |
+| ci-runtime-and-cost | 5.5 | 1.8% | in-session 3.8/s, detached script 1.3/s |
+
+The `claude` CLI processes made 12.7 forks/s themselves (4.1%) across 34 sessions. That count covers hooks, the status
+line and tool shells.
+
+**What it changes.** One seat's watcher loops make up more than a quarter of the host's process creation. That backs
+lever 1 below with a measured owner: rewriting or retiring legacy-dispatcher-agent's detached watchers is the largest
+single cut. The coordinator received the top three rows at about 07:00Z.
+
+**Blind spot.** The mapping script behind the final summary was not kept. The raw bpftrace map is keyed by pid, so it
+cannot be re-mapped now that those processes are gone. The summary file is the record.
+
 ## Levers
 
 1. **Seat watcher loops: the cheapest lever.** Most of them poll by forking `date`, `awk`, `basename`, `cat` or `tr` on
