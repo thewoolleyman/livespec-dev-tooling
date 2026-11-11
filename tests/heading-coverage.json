@@ -3399,5 +3399,45 @@
     "heading": "## Scenario: the gmktec gate lane keeps room for three default-size gate Jobs",
     "test": "tests.spec.test_gates_queue_gate_unit.test_the_gmktec_lane_holds_three_default_size_gate_jobs",
     "reason": "Integration-tier: tests/spec/test_gates_queue_gate_unit.py reads the committed cluster-queue-gates.yaml and the renderer's default request from render-gate-job.sh, and fails naming the gates-flavor lane when that lane's nominal cpu or memory quota is below three default-size gate Jobs. It asserts the derivation, never a literal quota (v187 Gate lane headroom, livespec-dev-tooling-brggiu)."
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: reused delegated pre-commit evidence whose gate Job the cluster no longer holds does not stand in for the pre-push gate",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, exercising the pre-push gate's confirmation of reused delegated pre-commit evidence against the cluster's record of its gate Job (a missing record and a disagreeing record each fall back to submitting a gate Job); livespec-dev-tooling-7uae5p owns it.",
+    "work_item": "livespec-dev-tooling-7uae5p"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: reused delegated pre-commit evidence that the cluster's record of its gate Job contradicts does not stand in for the pre-push gate",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, exercising the pre-push gate's confirmation of reused delegated pre-commit evidence against the cluster's record of its gate Job (a missing record and a disagreeing record each fall back to submitting a gate Job); livespec-dev-tooling-7uae5p owns it.",
+    "work_item": "livespec-dev-tooling-7uae5p"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a consumer's pre-push gate that passes its check set to the shared entry point reuses a qualifying delegated pre-commit verdict",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, exercising `green_token pre-push-reuse` with a consumer's check-set member names (exit 0 on a reused verdict whose members pass, exit 1 naming a failing member, exit 3 when no run qualifies); livespec-dev-tooling-yud7rc owns it.",
+    "work_item": "livespec-dev-tooling-yud7rc"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: the shared entry point refuses a push naming a member that fails after it accepted a delegated pre-commit verdict",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, exercising `green_token pre-push-reuse` with a consumer's check-set member names (exit 0 on a reused verdict whose members pass, exit 1 naming a failing member, exit 3 when no run qualifies); livespec-dev-tooling-yud7rc owns it.",
+    "work_item": "livespec-dev-tooling-yud7rc"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: the shared entry point tells its caller to continue with its own gate when no delegated pre-commit verdict qualifies",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, exercising `green_token pre-push-reuse` with a consumer's check-set member names (exit 0 on a reused verdict whose members pass, exit 1 naming a failing member, exit 3 when no run qualifies); livespec-dev-tooling-yud7rc owns it.",
+    "work_item": "livespec-dev-tooling-yud7rc"
   }
 ]

@@ -4428,6 +4428,59 @@ Then the pre-commit hook's local aggregate MUST have recorded the green token fo
 And the pre-push gate MUST take the **Explicit local route**, submitting no gate Job, not running the local fall-through, and running only the world-reading members that **Token memoization** requires
 
 And it MUST NOT print that it accepted a pre-commit verdict
+## Scenario: reused delegated pre-commit evidence whose gate Job the cluster no longer holds does not stand in for the pre-push gate
+
+Given a consuming repository that sets both delegated_gate = true and delegated_pre_commit = true
+And a delegated pre-commit run recorded pre-push evidence naming gate Job J, tree T and a member list
+And the pushing worktree is clean and its HEAD tree is T
+And the cluster no longer holds gate Job J
+When the pre-push gate runs for that push
+Then it MUST NOT accept the evidence
+And it MUST print a line naming gate Job J and saying that the cluster no longer holds its record
+And it MUST submit a gate Job for tree T exactly as it does when no reusable evidence exists
+
+## Scenario: reused delegated pre-commit evidence that the cluster's record of its gate Job contradicts does not stand in for the pre-push gate
+
+Given a consuming repository that sets both delegated_gate = true and delegated_pre_commit = true
+And a delegated pre-commit run recorded pre-push evidence naming gate Job J, tree T and a member list
+And the pushing worktree is clean and its HEAD tree is T
+And the cluster holds gate Job J, and its record disagrees with the evidence on its outcome, its livespec.gate/tree-hash label or the members its LIVESPEC_GATE_MEMBERS line names as run and passed
+When the pre-push gate runs for that push
+Then it MUST NOT accept the evidence
+And it MUST print gate Job J's name, each field that disagreed, the value the evidence named and the value the cluster's record carried
+And it MUST submit a gate Job for tree T exactly as it does when no reusable evidence exists
+And the push MUST be decided only by that Job's verdict
+
+## Scenario: a consumer's pre-push gate that passes its check set to the shared entry point reuses a qualifying delegated pre-commit verdict
+
+Given a consuming repository that sets both delegated_gate = true and delegated_pre_commit = true
+And a delegated pre-commit run recorded pre-push evidence naming gate Job J, tree T, and members A and B as run and passed
+And member A is tree-pure, member B is world-reading, and member C is tree-pure and not named by the evidence
+And the pushing worktree is clean and its HEAD tree is T
+When the consumer's pre-push gate runs python -m livespec_dev_tooling.green_token pre-push-reuse A B C
+Then it MUST submit no gate Job
+And it MUST run B and C on the pushing host and MUST NOT run A
+And it MUST print gate Job J's name, tree T, the names B and C, and that 1 member was skipped because the verdict covered it
+And it MUST exit 0 when B and C pass
+
+## Scenario: the shared entry point refuses a push naming a member that fails after it accepted a delegated pre-commit verdict
+
+Given a consuming repository that sets both delegated_gate = true and delegated_pre_commit = true
+And python -m livespec_dev_tooling.green_token pre-push-evidence would accept a delegated pre-commit verdict for the pushing worktree's clean HEAD tree
+And a member the shared entry point runs for that push fails with exit status 3
+When the consumer's pre-push gate runs python -m livespec_dev_tooling.green_token pre-push-reuse with its check set
+Then the command MUST exit 1 and name that member
+And the consumer's pre-push gate MUST refuse the push
+
+## Scenario: the shared entry point tells its caller to continue with its own gate when no delegated pre-commit verdict qualifies
+
+Given a consuming repository that sets both delegated_gate = true and delegated_pre_commit = true
+And no delegated pre-commit run qualifies for the pushing worktree's HEAD tree
+When the consumer's pre-push gate runs python -m livespec_dev_tooling.green_token pre-push-reuse with its check set
+Then the command MUST run no member and MUST submit no gate Job
+And it MUST exit 3
+And the consumer's pre-push gate MUST then gate the push exactly as it does without the command
+
 ## Scenario: a repository that declares gate_cpu 9 and gate_parallelism 8 gets a gate Job requesting 9 CPUs whose coverage run uses 8 xdist workers
 
 Given a consuming repository whose `[tool.livespec_dev_tooling]` table sets `delegated_gate = true`, `gate_cpu = 9` and `gate_parallelism = 8`, and declares no `gate_memory`
