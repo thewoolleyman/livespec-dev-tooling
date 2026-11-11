@@ -3454,16 +3454,16 @@
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a workflow whose layered fuzz flavor runs no aggregate target passes and its gate runs in the base flavor",
     "test": "TODO",
-    "reason": "A real test at the integration tier or above is owed for this heading: a consumer-style test drives the shipped single-container-image check, and the shipped `render-gate-job.sh`, against fixture workflows, and shows the check passes a workflow whose only non-gate-flavor job runs a target outside the `just check` aggregate while the delegated gate resolves the gate flavor's image. livespec-dev-tooling-kzhduc owns it.",
-    "work_item": "livespec-dev-tooling-kzhduc"
+    "reason": "A real test at the integration tier or above is owed for this heading: a consumer-style test drives the shipped single-container-image check, and the shipped `render-gate-job.sh`, against fixture workflows, and shows the check passes a workflow whose only non-gate-flavor job runs a target outside the `just check` aggregate while the delegated gate resolves the gate flavor's image. livespec-dev-tooling-fsle5g owns it.",
+    "work_item": "livespec-dev-tooling-fsle5g"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a workflow naming two image versions fails the single-container-image check",
     "test": "TODO",
-    "reason": "A real test at the integration tier or above is owed for this heading: a consumer-style test drives the shipped single-container-image check against a fixture workflow naming two release versions of one image repository, and shows it fails naming both images and their lines. livespec-dev-tooling-kzhduc owns it.",
-    "work_item": "livespec-dev-tooling-kzhduc"
+    "reason": "A real test at the integration tier or above is owed for this heading: a consumer-style test drives the shipped single-container-image check against a fixture workflow naming two release versions of one image repository, and shows it fails naming both images and their lines. livespec-dev-tooling-fsle5g owns it.",
+    "work_item": "livespec-dev-tooling-fsle5g"
   },
   {
     "spec_root": "SPECIFICATION",
