@@ -61,24 +61,29 @@ class _KueueCluster:
         return Success(GateCommandResult(returncode=0, stdout=self._answer(argv=argv), stderr=""))
 
     def _answer(self, *, argv: list[str]) -> str:
+        answer = ""
         if argv[0] == GATES_WRAPPER:
             if "create" in argv:
-                return _CREATED
-            if "get" in argv and "job" in argv:
-                return self._read_job()
-            return ""
-        if "rev-parse" in argv:
-            return f"{_TREE}\n"
-        if argv[0] == str(_RENDERER):
-            return _MANIFEST
-        return ""
+                answer = _CREATED
+            elif any("--watch" in argument for argument in argv):
+                answer = self._watch_job()
+            elif "get" in argv and "job" in argv:
+                answer = self._read_job()
+        elif "rev-parse" in argv:
+            answer = f"{_TREE}\n"
+        elif argv[0] == str(_RENDERER):
+            answer = _MANIFEST
+        return answer
 
     def _read_job(self) -> str:
         self.reads += 1
         if self.reads <= self._suspended_polls:
             return _SUSPENDED
-        if self.reads <= self._suspended_polls + self._running_polls:
-            return _RUNNING
+        return _RUNNING
+
+    def _watch_job(self) -> str:
+        """Deliver the terminal event after the running interval in one watch."""
+        self.reads = self._suspended_polls + self._running_polls + 1
         return _COMPLETE
 
     def issued(self, *, needle: str) -> list[tuple[str, ...]]:
@@ -131,6 +136,10 @@ def test_a_jobs_kueue_admission_wait_does_not_consume_its_poll_budget(
     assert verdict.state == GATE_PASSED
     assert verdict.refuses_push is False
     assert cluster.reads == suspended + running + 1
+    assert (
+        len([argv for argv in cluster.argvs if any("--watch" in argument for argument in argv)])
+        == 1
+    )
     assert not cluster.issued(needle="delete")
 
 
