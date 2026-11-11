@@ -156,6 +156,42 @@ def test_an_unreadable_declared_suite_gates_the_pre_commit_aggregate_locally(
     assert "gate check suite could not be read" in verdict.reason
 
 
+def test_an_unusable_gate_resource_declaration_refuses_the_commit_instead_of_gating_locally(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A refused resource declaration refuses the commit, naming the key (c3nd2h).
+
+    The refusal rejects the committed configuration rather than reporting a
+    missing cluster verdict, so the aggregate must not run locally in its place.
+    """
+    from livespec_dev_tooling._gate_remote_assembly import declared_gate_job_resources
+
+    module = _module()
+    _ = (tmp_path / "pyproject.toml").write_text(
+        "[tool.livespec_dev_tooling]\ndelegated_pre_commit = true\ngate_cpu = 0\n",
+        encoding="utf-8",
+    )
+    pushed: list[object] = []
+    monkeypatch.setattr(module, "gates_kubeconfig_readable", lambda: True)
+    monkeypatch.setattr(module, "_staged_tree_hash", lambda **_kwargs: "a" * 40)
+    monkeypatch.setattr(module, "resolve_renderer", lambda **_kwargs: Path("renderer"))
+    monkeypatch.setattr(
+        module,
+        "gate_remote_request",
+        lambda **kwargs: declared_gate_job_resources(repo_root=kwargs["repo_root"]),
+    )
+    monkeypatch.setattr(module, "run_gated_push", lambda **kwargs: pushed.append(kwargs))
+
+    verdict = module.run_pre_commit(repo_root=tmp_path)
+
+    assert verdict.local is False
+    assert verdict.exit_status == 1
+    assert verdict.tree_hash == "a" * 40
+    assert "gate_cpu" in verdict.reason
+    assert "pyproject.toml" in verdict.reason
+    assert pushed == []
+
+
 @pytest.mark.parametrize(
     "remote",
     [
