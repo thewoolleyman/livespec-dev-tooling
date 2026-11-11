@@ -68,36 +68,8 @@ if [[ "$test_count" -eq 1 ]] && [[ "$impl_count" -eq 0 ]]; then
     exit $?
 fi
 
-# `LIVESPEC_PRE_COMMIT_HOOK=1` marks both local aggregates above and below as the
-# pre-commit hook's own, and only this script sets it. In a repository that sets
-# both delegated_gate and delegated_pre_commit, check.sh then writes no green
-# token, because there a local pre-commit pass never stands in for the pre-push
-# gate; in every other repository the marker changes nothing
-# (livespec-dev-tooling-73ocxb).
-#
-# `hook_gate=1` omits the world-gate members enumerated in check.sh — today
-# just check-fleet-conformance-admin, whose verdict is a fact about nine OTHER
-# repositories' live admin state and so can refuse a commit that has nothing
-# to do with it (work-item livespec-dev-tooling-mmqe, absorbing tkzf).
-aggregate_log=$(mktemp "$(git rev-parse --git-path livespec-pre-commit-aggregate.XXXXXX)")
-staged_tree=$(git write-tree)
-set +e
-LIVESPEC_PRE_COMMIT_HOOK=1 just hook_gate=1 check 2>&1 | tee "$aggregate_log"
-aggregate_status=${PIPESTATUS[0]}
-set -e
-# `just check` reads the working tree, so its verdict speaks for the staged
-# tree only when the two are identical; with unstaged differences, or with
-# untracked non-ignored files the suite may read, no token is recorded and
-# commit-msg runs the full suite-green leg. The tree is captured BEFORE the
-# aggregate and the token is written only if the index still names that tree
-# afterwards, so a concurrent index change cannot certify a tree the suite
-# never ran against.
-if [[ "$aggregate_status" -eq 0 ]] && git diff --quiet \
-    && [[ -z "$(git ls-files --others --exclude-standard)" ]] \
-    && [[ "$(git write-tree)" == "$staged_tree" ]]; then
-    run_id="pre-commit-aggregate:$(date -u +%Y%m%dT%H%M%SZ):${staged_tree}"
-    output_checksum="sha256:$(sha256sum "$aggregate_log" | awk '{print $1}')"
-    uv run python -m livespec_dev_tooling.green_token write-pre-commit "$run_id" "$output_checksum"
-fi
-rm -f "$aggregate_log"
-exit "$aggregate_status"
+# `LIVESPEC_PRE_COMMIT_HOOK=1` identifies this local run to the aggregate; the
+# shared entry point owns same-tree evidence and exits with this command's own
+# status. `hook_gate=1` omits world-reading fleet-admin members.
+LIVESPEC_PRE_COMMIT_HOOK=1 uv run python -m livespec_dev_tooling.pre_commit_aggregate -- \
+    just hook_gate=1 check

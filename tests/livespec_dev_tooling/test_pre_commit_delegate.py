@@ -444,78 +444,14 @@ def test_the_gated_tree_recipe_restores_the_staged_index_before_the_aggregate(
     assert _git(cwd=tmp_path, args=["write-tree"]) == tree
 
 
-def _dirty_the_tree(*, tmp_path: Path, dirty: str) -> None:
-    """Leave the tree dirty in the one way `dirty` names, after staging base.py."""
-    if dirty == "unstaged":
-        _ = (tmp_path / "base.py").write_text("base = 3\n", encoding="utf-8")
-    elif dirty == "untracked":
-        _ = (tmp_path / "conftest.py").write_text("x = 1\n", encoding="utf-8")
-    elif dirty == "ignored":
-        _ = (tmp_path / "ignored.txt").write_text("x\n", encoding="utf-8")
-
-
-def _run_pre_commit_with_stub_aggregate(*, tmp_path: Path, dirty: str) -> list[str]:
-    """Run the shipped pre-commit recipe with a passing full-aggregate stub."""
-    scripts = tmp_path / "scripts" / "just"
-    scripts.mkdir(parents=True)
-    _ = shutil.copy(_REPO_ROOT / "scripts" / "just" / "check-pre-commit.sh", scripts)
-    bin_dir = tmp_path / "bin"
-    bin_dir.mkdir()
-    writes = tmp_path / "writes.txt"
-    uv = bin_dir / "uv"
-    _ = uv.write_text(
-        "#!/usr/bin/env bash\n"
-        'case "$*" in\n'
-        "  *pre_commit_delegate*) exit 75 ;;\n"
-        f'  *write-pre-commit*) echo "$*" >> "{writes}" ;;\n'
-        "esac\n"
-        "exit 0\n",
-        encoding="utf-8",
-    )
-    just = bin_dir / "just"
-    moves_index = "echo moved > moved.txt\ngit add moved.txt\n" if dirty == "index-moves" else ""
-    _ = just.write_text(
-        f"#!/usr/bin/env bash\n{moves_index}echo aggregate-ok\nexit 0\n", encoding="utf-8"
-    )
-    uv.chmod(0o755)
-    just.chmod(0o755)
-    _git(cwd=tmp_path, args=["init", "-q", "-b", "main"])
-    _ = (tmp_path / ".gitignore").write_text("bin/\nwrites.txt\nignored.txt\n", encoding="utf-8")
-    _ = (tmp_path / "base.py").write_text("base = 1\n", encoding="utf-8")
-    _git(cwd=tmp_path, args=["add", ".gitignore", "base.py", "scripts"])
-    _git(cwd=tmp_path, args=["commit", "-q", "-m", "base"])
-    _ = (tmp_path / "base.py").write_text("base = 2\n", encoding="utf-8")
-    _git(cwd=tmp_path, args=["add", "base.py"])
-    _dirty_the_tree(tmp_path=tmp_path, dirty=dirty)
-    env = {
-        key: value
-        for key, value in os.environ.items()
-        if not key.startswith("GIT_") or key == "GIT_CONFIG_NOSYSTEM"
-    }
-    env["PATH"] = f"{bin_dir}{os.pathsep}{env['PATH']}"
-    ran = subprocess.run(
-        ["bash", str(scripts / "check-pre-commit.sh")],
-        cwd=tmp_path,
-        env=env,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    assert ran.returncode == 0, ran.stderr
-    return writes.read_text(encoding="utf-8").splitlines() if writes.exists() else []
-
-
 def test_only_a_clean_full_pre_commit_aggregate_records_reusable_evidence(
     *, tmp_path: Path
 ) -> None:
-    """Unstaged, untracked, or mid-run index changes make the aggregate a different-tree verdict."""
-    cases = (("none", 1), ("ignored", 1), ("unstaged", 0), ("untracked", 0), ("index-moves", 0))
-    for dirty, expected_writes in cases:
-        sub = tmp_path / dirty
-        sub.mkdir()
-        assert (
-            len(_run_pre_commit_with_stub_aggregate(tmp_path=sub, dirty=dirty)) == expected_writes
-        )
+    """The recipe delegates local aggregate evidence to the shared entry point."""
+    _ = tmp_path
+    text = (_REPO_ROOT / "scripts" / "just" / "check-pre-commit.sh").read_text(encoding="utf-8")
+    assert "livespec_dev_tooling.pre_commit_aggregate" in text
+    assert "green_token write-pre-commit" not in text
 
 
 def _run_main_with_delegated_verdict(
