@@ -13,11 +13,13 @@ import os
 import subprocess
 from collections.abc import Callable
 from dataclasses import dataclass
+from fnmatch import fnmatch
 from pathlib import Path
 
 import pytest
 from returns.io import IOFailure, IOSuccess
 
+from livespec_dev_tooling import _incident_fleet_release_keyed as release_keyed
 from livespec_dev_tooling._incident_fleet_capabilities import SURFACE_CAPABILITY
 from livespec_dev_tooling._incident_fleet_command import render_report, run_fleet_audit
 from livespec_dev_tooling._incident_fleet_gate_reader import read_gate_readers
@@ -107,7 +109,11 @@ class _Host:
                 InvocationNotPerformed(argv=tuple(args), kind=BINARY_ABSENT, detail="x")
             )
         if args[1] == "ls-remote":
-            rows = "".join(f"{sha}\t{ref}\n" for ref, sha in self.remote.items() if ref in args[3:])
+            rows = "".join(
+                f"{sha}\t{ref}\n"
+                for ref, sha in self.remote.items()
+                if any(fnmatch(ref, pattern) for pattern in args[3:])
+            )
             return IOSuccess(CommandResult(returncode=0, stdout=rows, stderr=""))
         if args[1] == "-C" and Path(args[2]).is_relative_to(self.root):
             return scrubbed_runner(args=args, cwd=cwd)
@@ -151,11 +157,14 @@ def tooling(tmp_path: Path) -> _Repo:
 
 
 def _host(repo: _Repo, **extra: str) -> _Host:
-    tags = {
-        f"refs/tags/{tag}": repo.git("rev-parse", f"{tag}^{{commit}}")
-        for tag in repo.git("tag", "--list").split()
-    }
-    return _Host(root=repo.path.parent, remote={**tags, **extra})
+    """The remote lists each tag as ls-remote does: an annotated one also peeled."""
+    remote: dict[str, str] = {}
+    for tag in repo.git("tag", "--list").split():
+        commit = repo.git("rev-parse", f"{tag}^{{commit}}")
+        remote[f"refs/tags/{tag}"] = repo.git("rev-parse", f"refs/tags/{tag}")
+        if remote[f"refs/tags/{tag}"] != commit:
+            remote[f"refs/tags/{tag}^{{}}"] = commit
+    return _Host(root=repo.path.parent, remote={**remote, **extra})
 
 
 def _gate(repo: _Repo, host: _Host | None = None) -> ServingReading:
@@ -232,8 +241,78 @@ def test_commits_touching_only_files_outside_a_surface_leave_its_row_classified(
 ) -> None:
     _ = tooling.commit("outside", {"livespec_dev_tooling/elsewhere.py": "Y = 1\n"})
     reading = _gate(tooling)
-    assert all(reading.build_for(surface=s) == "v1.1.0" for s, _ in reading.surfaces)
+    served = [reading.build_for(surface=s.surface, claimed="v1.1.0") for s in reading.surfaces]
+    assert served == ["v1.1.0"] * len(reading.surfaces)
     assert "ready\texample/tooling" in _audit(tooling, gate_release="v1.1.0")
+
+
+def test_a_later_release_touching_no_surface_file_leaves_an_earlier_claim_classified(
+    tooling: _Repo,
+) -> None:
+    _ = tooling.commit("release", {"CHANGELOG.md": "## 1.2.0\n", "pyproject.toml": "v\n"})
+    _ = tooling.git("tag", "-a", "-m", "release 1.2.0", "v1.2.0")
+    head = tooling.commit("after", {"config/note.txt": "x\n"})
+    lines = _audit(tooling, gate_release="v1.1.0")
+    newest = f"release v1.2.0 at HEAD {head}"
+    assert f"serving\texample/tooling\tgate-readers\tv1.2.0\t{newest}" in lines
+    assert (
+        f"row\texample/tooling\t{PRE_PUSH}\timplemented\tv1.1.0\trelease v1.1.0 at HEAD {head}"
+        in lines
+    )
+    assert "ready\texample/tooling" in lines
+    assert _gate(tooling).confirmed == ("v1.2.0", "v1.1.0", "v1.0.0")
+
+
+def test_releases_older_than_the_one_every_surface_changed_at_are_judged_without_comparing(
+    tooling: _Repo,
+) -> None:
+    roots = {root for roots in SURFACE_ROOTS.values() for root in roots}
+    _ = tooling.commit("all", {root: "# changed\n" for root in roots})
+    tooling.tag("v1.2.0")
+    _ = tooling.commit("after", {"config/note.txt": "x\n"})
+    first = tooling.git("rev-parse", "v1.0.0^{commit}")
+    asked: list[list[str]] = []
+    host = _host(tooling)
+    host.fail = lambda args: asked.append(args) is not None and False
+    reading = _gate(tooling, host)
+    pre_push = next(s for s in reading.surfaces if s.surface == PRE_PUSH)
+    changed = "livespec_dev_tooling/green_token.py, scripts/just/check-pre-push.sh"
+    assert (pre_push.serving, ", ".join(pre_push.changed)) == (frozenset({"v1.2.0"}), changed)
+    assert [
+        claim_reason(reading=reading, surface=PRE_PUSH, claimed=claimed)
+        for claimed in ("v1.2.0", "v1.1.0", "v1.0.0")
+    ] == [
+        "",
+        *(f"surface files changed since release {r}: {changed}" for r in ("v1.1.0", "v1.0.0")),
+    ]
+    assert [args for args in asked if "diff" in args and first in args] == []
+
+
+def test_an_older_release_whose_changed_files_cannot_be_read_is_unread_while_newer_serve(
+    tooling: _Repo,
+) -> None:
+    first = tooling.git("rev-parse", "v1.0.0^{commit}")
+    head = tooling.git("rev-parse", "HEAD")
+    host = _host(tooling)
+    host.fail = lambda args: "diff" in args and first in args
+    reading = _gate(tooling, host)
+    assert (reading.build, reading.unread) == ("v1.1.0", "v1.0.0")
+    assert reading.build_for(surface=PRE_PUSH, claimed="v1.1.0") == "v1.1.0"
+    assert claim_reason(reading=reading, surface=PRE_PUSH, claimed="v1.0.0") == (
+        f"the files changed between release v1.0.0 and {head} cannot be read"
+    )
+
+
+def test_an_older_release_the_remote_does_not_confirm_does_not_serve_while_the_newest_does(
+    tooling: _Repo,
+) -> None:
+    host = _host(tooling, **{"refs/tags/v1.0.0": "0" * 40})
+    reason = "release v1.0.0 is not confirmed on the remote at the commit it names here"
+    assert _gate(tooling, host).confirmed == ("v1.1.0",)
+    lines = _audit(tooling, gate_release="v1.0.0", host=host)
+    assert f"row\texample/tooling\t{PRE_PUSH}\tunclassified\t-" in lines
+    assert _finding(PRE_PUSH, reason) in lines
+    assert "ready\texample/tooling" in _audit(tooling, gate_release="v1.1.0", host=host)
 
 
 def test_a_changed_surface_file_unclassifies_only_its_own_row_naming_the_path(
@@ -271,7 +350,7 @@ def test_no_release_ancestor_leaves_the_rows_unclassified_naming_the_commit(
     assert _finding(COMMIT_MSG, reason) in _audit(repo, gate_release="v2.0.0")
 
 
-def test_a_claim_naming_a_release_that_is_not_the_newest_ancestor_does_not_classify(
+def test_a_foreign_release_does_not_classify_but_an_older_ancestor_serves_unchanged_surfaces(
     tooling: _Repo,
 ) -> None:
     head = tooling.git("rev-parse", "HEAD")
@@ -281,14 +360,17 @@ def test_a_claim_naming_a_release_that_is_not_the_newest_ancestor_does_not_class
     _ = tooling.git("checkout", "-q", "master")
     foreign = _audit(tooling, gate_release="v2.0.0")
     older = _audit(tooling, gate_release="v1.0.0")
-    assert f"row\texample/tooling\t{PRE_PUSH}\tunclassified\tv1.1.0" in foreign
+    assert f"row\texample/tooling\t{PRE_PUSH}\tunclassified\t-" in foreign
     assert _finding(PRE_PUSH, f"claimed release v2.0.0 is not an ancestor of HEAD {head}") in (
         foreign
     )
-    older_reason = (
-        f"claimed release v1.0.0 is not v1.1.0, the newest release ancestor of HEAD {head}"
+    assert f"serving\texample/tooling\tgate-readers\tv1.1.0\trelease v1.1.0 at HEAD {head}" in older
+    assert (
+        f"row\texample/tooling\t{PRE_PUSH}\timplemented\tv1.0.0\trelease v1.0.0 at HEAD {head}"
+        in older
     )
-    assert _finding(PRE_PUSH, older_reason) in older
+    assert _finding(COMMIT_MSG, f"surface files changed since release v1.0.0: {HELPER}") in older
+    assert "ready\t-" in older
 
 
 def test_untracked_files_do_not_dirty_the_checkout_but_a_tracked_modification_does(
@@ -342,16 +424,18 @@ def test_a_reason_is_named_only_where_a_claim_cannot_classify_against_what_was_r
         build="v1.1.0",
         head=head,
         releases=frozenset({"v1.1.0"}),
-        surfaces=((PRE_PUSH, ""),),
+        confirmed=("v1.1.0",),
+        surfaces=(release_keyed.SurfaceReading(surface=PRE_PUSH, serving=frozenset({"v1.1.0"})),),
     )
     commit_read = ServingReading(build="d" * 40)
     assert [
         claim_reason(reading=keyed, surface=PRE_PUSH, claimed="v1.1.0"),
         claim_reason(reading=keyed, surface="Elsewhere", claimed="v1.1.0"),
         claim_reason(reading=commit_read, surface=PRE_PUSH, claimed="e" * 40),
-        keyed.build_for(surface="Elsewhere"),
-        commit_read.build_for(surface=PRE_PUSH),
-    ] == ["", "no surface file set is defined for this surface", "", "", "d" * 40]
+        keyed.build_for(surface="Elsewhere", claimed="v1.1.0"),
+        keyed.build_for(surface=PRE_PUSH, claimed=""),
+        commit_read.build_for(surface=PRE_PUSH, claimed="e" * 40),
+    ] == ["", "no surface file set is defined for this surface", "", "", "", "d" * 40]
 
 
 # --- templates served from a consumer's own default branch ---
@@ -378,9 +462,9 @@ def test_local_templates_are_keyed_to_the_newest_release_and_judged_per_template
     reading = _templates(library, head=head)
     matrix = "CI matrix/batch/direct action"
     assert (reading.build, reading.detail) == ("v1.1.0", f"release v1.1.0 at HEAD {head}")
-    assert reading.build_for(surface="Release and distribution") == "v1.1.0"
-    assert reading.build_for(surface=matrix) == ""
-    assert dict(reading.surfaces)[matrix] == (
+    assert reading.build_for(surface="Release and distribution", claimed="v1.1.0") == "v1.1.0"
+    assert reading.build_for(surface=matrix, claimed="v1.1.0") == ""
+    assert claim_reason(reading=reading, surface=matrix, claimed="v1.1.0") == (
         "surface files changed since release v1.1.0: .github/workflows/reusable-check-matrix.yml"
     )
 
