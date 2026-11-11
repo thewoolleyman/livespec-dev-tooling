@@ -133,6 +133,33 @@ fi
 # ---------------------------------------------------------------------------
 log "warm-cache 3. Apply the budget ConfigMap + CronJob and converge the repos and script ConfigMaps"
 run kubectl apply -f "${SCRIPT_DIR}/warm-cache-cronjob.yaml"
+# The two warm uv DaemonSets (warm-uv-cache-populate, warm-uv-cache-populate-hp)
+# read warm-cache-budget as configMapKeyRef env, which is fixed at pod start, and
+# their while-sleep loop never restarts — so a budget raise in the ConfigMap
+# reached neither of them (livespec-dev-tooling-gry6tq, 2026-11-11: both kept
+# refusing on the old 20000-file budget while the carrier CronJob published on
+# the new one). Stamp the hash of the LIVE ConfigMap's .data onto both pod
+# templates so a budget change rolls them.
+#
+# The hash covers .data alone, not the manifest file: a comment-only or
+# CronJob-only edit to warm-cache-cronjob.yaml must not roll both DaemonSets and
+# start an immediate populate on every node. An unchanged hash is a no-op merge
+# patch, so the roll is idempotent. It is deliberately NOT gated on apply's
+# "configured" output either: a run that died between the apply and this patch
+# would otherwise lose the roll for good. Killing a populate mid-generation is
+# safe — a generation is published only by an atomic symlink rename, and an
+# unpublished directory is pruned by the next run's KEEP_GENERATIONS sweep.
+#
+# kubectl prints a jsonpath map as JSON with sorted keys, so the hash is stable.
+if [ "${DRY_RUN}" -eq 1 ]; then
+  budget_hash="<sha256-16 of live warm-cache-budget .data>"
+else
+  budget_hash="$(kubectl -n "${NAMESPACE}" get configmap warm-cache-budget -o jsonpath='{.data}' | sha256sum | cut -c1-16)"
+fi
+for budget_ds in warm-uv-cache-populate warm-uv-cache-populate-hp; do
+  run_quiet kubectl -n "${NAMESPACE}" patch daemonset "${budget_ds}" --type=merge \
+    -p "{\"spec\":{\"template\":{\"metadata\":{\"annotations\":{\"ci-runner.io/budget-hash\":\"${budget_hash}\"}}}}}"
+done
 apply_created create configmap warm-cache-repos \
   --namespace "${NAMESPACE}" \
   --from-file="repos.txt=${repos_file}"
