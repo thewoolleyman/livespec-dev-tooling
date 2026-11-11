@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib
+import json
 import sys
 from pathlib import Path
 
@@ -58,6 +59,33 @@ def _context_with_targets(*, targets: tuple[str, ...]) -> FleetContext:
     return make_context(table=table)
 
 
+def _pinned_preflight_context(
+    *, pyproject: str | None, pinned_tree: dict[str, object] | None
+) -> FleetContext:
+    """A filter-consuming context with an optional readable pin and inventory."""
+    member_pin = "v1.187.0"
+    table = tree_table(paths=[_JUSTFILE_PATH, _PYPROJECT_PATH])
+    table[_contents_args(path=_JUSTFILE_PATH)] = GhResult(
+        returncode=0, stdout=_justfile(targets=("check-alpha",)), stderr=""
+    )
+    if pyproject is not None:
+        table[_contents_args(path=_PYPROJECT_PATH)] = GhResult(
+            returncode=0, stdout=pyproject, stderr=""
+        )
+    if pinned_tree is not None:
+        table[("api", f"repos/acme/livespec-dev-tooling/git/trees/{member_pin}?recursive=1")] = (
+            GhResult(returncode=0, stdout=json.dumps(pinned_tree), stderr="")
+        )
+    return FleetContext(
+        owner="acme", run_gh=make_context(table=table).run_gh, filter_consuming_preflight=True
+    )
+
+
+def _member_pin() -> str:
+    """The fixture's committed dev-tooling pin in the production pin shape."""
+    return '[tool.uv.sources]\nlivespec-dev-tooling = { git = "x", tag = "v1.187.0" }\n'
+
+
 def _rows_module():
     """Import the new row only after its Red assertion has run."""
     assert _MODULE_PATH.is_file()
@@ -75,7 +103,6 @@ def test_member_missing_a_canonical_slug_is_an_error_and_complete_aggregate_pass
     missing = rows.assert_canonical_check_slugs_wired(
         ctx=_context_with_targets(targets=("check-alpha",)), member=_MEMBER
     )
-
     assert isinstance(missing, RowFinding)
     assert missing.severity == "error"
     assert _MEMBER.repo in missing.message
@@ -86,6 +113,110 @@ def test_member_missing_a_canonical_slug_is_an_error_and_complete_aggregate_pass
         )
         == RowPass()
     )
+
+
+def test_preflight_uses_the_member_pinned_check_inventory_not_the_new_release(
+    *, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A bump PR wires a slug that was not required by the member's current pin."""
+    rows = _rows_module()
+    member_pin = "v1.187.0"
+    table = tree_table(paths=[_JUSTFILE_PATH, _PYPROJECT_PATH])
+    table[_contents_args(path=_JUSTFILE_PATH)] = GhResult(
+        returncode=0, stdout=_justfile(targets=("check-alpha",)), stderr=""
+    )
+    table[_contents_args(path=_PYPROJECT_PATH)] = GhResult(
+        returncode=0,
+        stdout=(
+            "[tool.uv.sources]\n" f'livespec-dev-tooling = {{ git = "x", tag = "{member_pin}" }}\n'
+        ),
+        stderr="",
+    )
+    table[
+        (
+            "api",
+            f"repos/acme/livespec-dev-tooling/git/trees/{member_pin}?recursive=1",
+        )
+    ] = GhResult(
+        returncode=0,
+        stdout=json.dumps(
+            {"tree": [{"path": "livespec_dev_tooling/checks/alpha.py", "mode": "100644"}]}
+        ),
+        stderr="",
+    )
+    monkeypatch.setattr(
+        rows, "canonical_check_slugs", lambda: IOSuccess(("check-alpha", "check-beta"))
+    )
+
+    outcome = rows.assert_canonical_check_slugs_wired(
+        ctx=FleetContext(
+            owner="acme",
+            run_gh=make_context(table=table).run_gh,
+            filter_consuming_preflight=True,
+        ),
+        member=_MEMBER,
+    )
+
+    assert outcome == RowPass()
+
+
+def test_preflight_excludes_an_aggregate_missing_a_slug_required_by_its_pin() -> None:
+    rows = _rows_module()
+    outcome = rows.assert_canonical_check_slugs_wired(
+        ctx=_pinned_preflight_context(
+            pyproject=_member_pin(),
+            pinned_tree={
+                "tree": [
+                    {"path": "livespec_dev_tooling/checks/alpha.py", "mode": "100644"},
+                    {"path": "livespec_dev_tooling/checks/beta.py", "mode": "100644"},
+                ]
+            },
+        ),
+        member=_MEMBER,
+    )
+    assert isinstance(outcome, RowFinding)
+    assert outcome.severity == "error"
+    assert "check-beta" in outcome.message
+
+
+@pytest.mark.parametrize(
+    "pyproject",
+    [
+        "[tool",
+        'tool = "not-a-table"\n',
+        "[project]\nname = 'widget'\n",
+        "[tool.uv]\n",
+        "[tool.uv.sources]\n",
+        '[tool.uv.sources]\nlivespec-dev-tooling = { git = "x" }\n',
+    ],
+)
+def test_preflight_skips_when_a_member_pin_cannot_be_resolved(pyproject: str) -> None:
+    rows = _rows_module()
+    outcome = rows.assert_canonical_check_slugs_wired(
+        ctx=_pinned_preflight_context(pyproject=pyproject, pinned_tree=None), member=_MEMBER
+    )
+    assert isinstance(outcome, RowSkip)
+    assert "tag pin missing" in outcome.reason
+
+
+@pytest.mark.parametrize(
+    ("pyproject", "pinned_tree", "reason"),
+    [
+        (None, None, "pin inventory unknown"),
+        (_member_pin(), None, "canonical check inventory at v1.187.0 unreadable"),
+        (_member_pin(), {"tree": [], "truncated": True}, "unreadable"),
+        (_member_pin(), {"tree": [{"path": "README.md", "mode": "100644"}]}, "is empty"),
+    ],
+)
+def test_preflight_skips_when_the_pinned_inventory_is_unavailable(
+    *, pyproject: str | None, pinned_tree: dict[str, object] | None, reason: str
+) -> None:
+    rows = _rows_module()
+    outcome = rows.assert_canonical_check_slugs_wired(
+        ctx=_pinned_preflight_context(pyproject=pyproject, pinned_tree=pinned_tree), member=_MEMBER
+    )
+    assert isinstance(outcome, RowSkip)
+    assert reason in outcome.reason
 
 
 def test_row_skips_unreadable_member_tree_and_aggregate() -> None:
