@@ -28,6 +28,7 @@ Nothing here reaches a cluster, a mirror or the network.
 from __future__ import annotations
 
 import importlib
+import json
 import os
 import subprocess
 import sys
@@ -37,6 +38,9 @@ from typing import NamedTuple
 
 import pytest
 import yaml
+from returns.result import Success
+
+from livespec_dev_tooling.gate_remote_invocation import GateCommandResult
 
 __all__: list[str] = []
 
@@ -345,6 +349,27 @@ def _pre_push_evidence(
 ) -> tuple[int, list[str]]:
     """Ask the real green-token module whether a qualifying verdict exists for this push."""
     _delegate, green_token = _modules()
+    pre_push = importlib.import_module("livespec_dev_tooling._pre_push_evidence")
+
+    def cluster_record(
+        *, argv: list[str], cwd: Path, stdin: str | None = None, stream: bool = False
+    ) -> Success[GateCommandResult]:
+        _ = cwd, stdin, stream
+        tree = _git(repo=repo, args=("rev-parse", "HEAD^{tree}"))
+        if "job" in argv:
+            output = json.dumps(
+                {
+                    "metadata": {"labels": {"livespec.gate/tree-hash": tree}},
+                    "status": {"conditions": [{"type": "Complete", "status": "True"}]},
+                }
+            )
+        elif "pods" in argv:
+            output = json.dumps({"items": [{"metadata": {"name": "gate-pod"}}]})
+        else:
+            output = 'LIVESPEC_GATE_MEMBERS {"check-approval": "passed", "check-beta": "passed", "check-world": "passed"}\n'
+        return Success(GateCommandResult(returncode=0, stdout=output, stderr=""))
+
+    monkeypatch.setattr(pre_push, "default_gate_command_runner", cluster_record)
     _scrub_process(monkeypatch=monkeypatch)
     monkeypatch.chdir(repo)
     monkeypatch.setattr(sys, "argv", ["green-token", "pre-push-evidence"])

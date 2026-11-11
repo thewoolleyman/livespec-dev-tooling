@@ -26,10 +26,19 @@ from livespec_dev_tooling._green_token_git import (
     repo_root,
     worktree_is_clean,
 )
+from livespec_dev_tooling._pre_push_cluster_record import (
+    Evidence,
+)
+from livespec_dev_tooling._pre_push_cluster_record import (
+    confirmation as _cluster_confirmation,
+)
 from livespec_dev_tooling.config import (
     ConfigParseError,
     load_delegated_gate,
     load_delegated_pre_commit,
+)
+from livespec_dev_tooling.gate_remote_invocation import (
+    default_gate_command_runner,
 )
 
 if TYPE_CHECKING:
@@ -186,6 +195,31 @@ def accepted_lines(*, cwd: Path, log: structlog.stdlib.BoundLogger) -> tuple[str
             evidence_tree_hash=evidence.tree_hash,
             current_tree_hash=current,
             gate_job=evidence.gate_job,
+        )
+        return None
+    confirmation = _cluster_confirmation(
+        evidence=Evidence(
+            tree_hash=evidence.tree_hash,
+            gate_job=evidence.gate_job,
+            members_passed=evidence.members_passed,
+        ),
+        cwd=cwd,
+        runner=default_gate_command_runner,
+    )
+    if confirmation.missing:
+        log.info(
+            "pre-push evidence: the cluster no longer holds the gate Job record",
+            gate_job=evidence.gate_job,
+        )
+        return None
+    if not confirmation.matches:
+        log.info(
+            "pre-push evidence: the cluster record disagrees with the evidence",
+            gate_job=evidence.gate_job,
+            disagreements=[
+                {"field": field, "evidence": expected, "cluster": actual}
+                for field, expected, actual in confirmation.disagreements
+            ],
         )
         return None
     return (evidence.gate_job, evidence.tree_hash, *evidence.members_passed)
