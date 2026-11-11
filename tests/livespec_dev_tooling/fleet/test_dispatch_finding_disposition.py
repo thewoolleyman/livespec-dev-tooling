@@ -323,3 +323,25 @@ def test_main_annotates_every_retained_member_by_name_and_rows(
     # was kept despite.
     assert any("compat-pin-currency" in line for line in retained_lines)
     assert any("not excluded" in line.casefold() for line in retained_lines)
+
+
+def test_main_calls_retention_a_non_excluding_finding(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The summary must not describe every retained row as pin-currency staleness."""
+    verdicts_path, siblings_path = _write_inputs(tmp_path=tmp_path)
+    exit_code = main(
+        argv=[
+            "--verdicts",
+            str(verdicts_path),
+            "--siblings",
+            str(siblings_path),
+            "--filtered-out",
+            str(tmp_path / "filtered.json"),
+            "--exclusions-out",
+            str(tmp_path / "exclusions.json"),
+        ]
+    )
+
+    assert exit_code == 0
+    assert "non-excluding finding" in capsys.readouterr().out.casefold()

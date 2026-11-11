@@ -164,7 +164,7 @@ def _announce(*, outcome: FilterOutcome, log: structlog.stdlib.BoundLogger) -> N
     for retained in outcome.retained:
         rows = ", ".join(retained.failing_rows) or "(rows unavailable)"
         print(  # noqa: T201
-            f"::warning::NOT EXCLUDED from release dispatch (pin-currency staleness only, "
+            f"::warning::NOT EXCLUDED from release dispatch (non-excluding finding only, "
             f"and the dispatch is the remedy): {retained.member} — "
             f"error-severity conformance rows: {rows}"
         )
