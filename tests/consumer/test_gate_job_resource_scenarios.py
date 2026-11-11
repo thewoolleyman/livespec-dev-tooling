@@ -284,16 +284,6 @@ def test_red_leg_replay_uses_the_small_job_size_despite_declared_resources(
     )
 
 
-class _RecordingLog:
-    """A logger double keeping the events the Red leg narrates."""
-
-    def __init__(self) -> None:
-        self.events: list[tuple[str, dict[str, object]]] = []
-
-    def info(self, event: str, **kwargs: object) -> None:
-        self.events.append((event, kwargs))
-
-
 def _oom_kill_every_gate_job(
     *, module: ModuleType, root: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -324,7 +314,7 @@ def _oom_kill_every_gate_job(
 
 
 def test_oom_killed_red_replay_returns_no_verdict_for_a_local_red_leg(
-    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """An OOM-killed replay supplies no Red verdict, so the Red leg runs locally and records only that."""
     module = importlib.import_module("livespec_dev_tooling.commit_replay_delegate")
@@ -338,26 +328,29 @@ def test_oom_killed_red_replay_returns_no_verdict_for_a_local_red_leg(
     assert (verdict.local, verdict.exit_status) == (False, None)
     assert "OOMKilled" in verdict.reason
 
-    modes = _load_red_green_replay_modes()
+    # Drive the Red leg through the commit hook's public entry point: a real
+    # staged tests-only tree and the commit message file the hook receives.
+    _ = subprocess.run(["git", "init", "--quiet"], cwd=str(root), check=True)
+    _ = subprocess.run(["git", "add", "tests/test_red.py"], cwd=str(root), check=True)
     message = root / "COMMIT_EDITMSG"
     _ = message.write_text("feat: red\n", encoding="utf-8")
-    log = _RecordingLog()
+    hook = importlib.import_module("livespec_dev_tooling.checks.red_green_replay")
+    monkeypatch.setattr("sys.argv", ["red_green_replay", str(message)])
 
-    status = modes._handle_red_mode(  # noqa: SLF001
-        msg_path=message, log=log, tests_paths=["tests/test_red.py"]
-    )
+    status = hook.main()
 
     trailers = dict(
         line.split(": ", 1)
         for line in message.read_text(encoding="utf-8").splitlines()
         if line.startswith("TDD-")
     )
-    local_events = [
-        kwargs for event, kwargs in log.events if event == "commit-time replay gated locally"
+    events = [
+        json.loads(line) for line in capsys.readouterr().err.splitlines() if line.startswith("{")
     ]
+    local_events = [e for e in events if e["event"] == "commit-time replay gated locally"]
     assert status == 0
-    assert len(local_events) == 1 and "OOMKilled" in str(local_events[0]["reason"])
-    assert not any(event == "commit-time replay gated by a gate Job" for event, _ in log.events)
+    assert len(local_events) == 1 and "OOMKilled" in local_events[0]["reason"]
+    assert not any(e["event"] == "commit-time replay gated by a gate Job" for e in events)
     assert trailers["TDD-Red-Test"] == "tests/test_red.py"
     assert trailers["TDD-Red-Failure-Reason"].startswith("F ")
     assert trailers["TDD-Red-Output-Checksum"].startswith("sha256:")
@@ -365,17 +358,3 @@ def test_oom_killed_red_replay_returns_no_verdict_for_a_local_red_leg(
     assert _registered_test(heading=_REPLAY_OOM_HEADING).endswith(
         ".test_oom_killed_red_replay_returns_no_verdict_for_a_local_red_leg"
     )
-
-
-def _load_red_green_replay_modes():
-    """Load the shipped Red-leg handler module the way the commit hook does."""
-    import importlib.util
-    import sys
-
-    path = _REPO_ROOT / "livespec_dev_tooling" / "checks" / "_red_green_replay_modes.py"
-    spec = importlib.util.spec_from_file_location("_rgr_modes_for_consumer_test", str(path))
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
-    return module
