@@ -32,6 +32,7 @@ import sys
 import uuid
 from pathlib import Path
 
+from livespec_dev_tooling._gate_lane_capacity import lane_capacity_refusal
 from livespec_dev_tooling.config import (
     ConfigParseError,
     load_gate_check_suite,
@@ -208,6 +209,11 @@ def declared_gate_job_resources(*, repo_root: Path) -> Result[tuple[str, ...], G
                     f"{repo_root}/pyproject.toml cannot be read: {unreadable}"
                 ),
             )
+        )
+    lane_refusal = lane_capacity_refusal(repo_root=repo_root, declared=declared)
+    if lane_refusal is not None:
+        return Failure(
+            GateStepFailed(step=_JOB_RESOURCES_STEP, argv=(), returncode=None, detail=lane_refusal)
         )
     return Success(
         tuple(part for key, value in declared for part in (_JOB_RESOURCE_FLAGS[key], value))

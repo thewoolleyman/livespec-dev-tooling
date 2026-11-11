@@ -53,15 +53,19 @@ _SECONDARY_LIMIT_BODIES = r"abuse detection mechanism|secondary quota"
 # Ordered because a `gh` error body can mention more than one number; the FIRST
 # match wins and the specific statuses are tried before the 5xx range.
 _STATUS_KINDS: tuple[tuple[re.Pattern[str], str], ...] = (
-    (re.compile(rf"\b(?:HTTP\s*)?429\b|rate limit|{_SECONDARY_LIMIT_BODIES}"), "rate_limited"),
-    (re.compile(r"\b(?:HTTP\s*)?40[13]\b|not accessible|bad credentials"), "forbidden"),
-    (re.compile(r"\b(?:HTTP\s*)?404\b|not found"), "not_found"),
-    # A 5xx digit run is a server error only behind `gh`'s own `HTTP` marker. A
-    # bare run such as `… with the number of 512.` is an issue number, not a
-    # status, and retrying it as a transient turns a permanent failure into a
-    # loop. The haystack is lowercased before matching, so the marker is too.
-    # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-t26bbr
-    (re.compile(r"\bhttp\s*5\d{2}\b"), "server_error"),
+    (re.compile(rf"\bhttp\s*429\b|rate limit|{_SECONDARY_LIMIT_BODIES}"), "rate_limited"),
+    (re.compile(r"\bhttp\s*40[13]\b|not accessible|bad credentials"), "forbidden"),
+    (re.compile(r"\bhttp\s*404\b|not found"), "not_found"),
+    # A 5xx digit run is a server error only when a real HTTP relay frames it
+    # as a status: `gh` writes an HTTP marker, while Git writes its requested
+    # URL error form. A bare run such as `… with the number of 512.` is an
+    # issue number, not a status, and retrying it as a transient turns a
+    # permanent failure into a loop. The haystack is lowercased before
+    # matching, so the markers are too.
+    (
+        re.compile(r"\b(?:http\s*5\d{2}|requested url returned error:\s*5\d{2})\b"),
+        "server_error",
+    ),
 )
 
 
