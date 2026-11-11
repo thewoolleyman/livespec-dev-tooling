@@ -51,3 +51,34 @@ def test_a_worker_failure_is_raised_on_the_calling_thread(*, tmp_path: Path) -> 
         _ = module.run_pending(
             execute=execute, target=target, plans=[plan], workers=2, timeout=1.0, workspace=tmp_path
         )
+
+
+def test_a_run_without_an_outcome_callback_still_returns_every_outcome(*, tmp_path: Path) -> None:
+    """The callback is optional: the pool's own result is the same with or without one."""
+    module = importlib.import_module("livespec_dev_tooling.mutation_kill_matrix_pool")
+    execution = importlib.import_module("livespec_dev_tooling.mutation_kill_matrix_execution")
+    stages = importlib.import_module("livespec_dev_tooling.mutation_kill_matrix_stages")
+    report = importlib.import_module("livespec_dev_tooling.mutation_kill_matrix")
+    target = tmp_path / "pkg"
+    target.mkdir()
+
+    def execute(
+        *, args: list[str], cwd: Path, timeout: float | None = None
+    ) -> subprocess.CompletedProcess[str]:
+        if "apply" in args:
+            return subprocess.CompletedProcess(args, 1, "", "cannot apply")
+        return execution.execute_command(args=args, cwd=cwd, timeout=timeout)
+
+    plan = stages.MutantPlan(
+        mutant=report.Mutant(identifier="pkg.x_f__mutmut_1", location="mutmut:pkg.x_f__mutmut_1"),
+        span=None,
+        selected=[],
+        key="k",
+    )
+
+    results = module.run_pending(
+        execute=execute, target=target, plans=[plan], workers=1, timeout=1.0, workspace=tmp_path
+    )
+
+    assert set(results) == {"pkg.x_f__mutmut_1"}
+    assert results["pkg.x_f__mutmut_1"].unapplied

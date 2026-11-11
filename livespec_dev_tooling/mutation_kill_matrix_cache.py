@@ -317,7 +317,11 @@ def load_cache(*, path: Path | None) -> dict[str, CachedOutcome] | None:
 
 
 def save_cache(*, path: Path, entries: dict[str, CachedOutcome]) -> None:
-    """Write the cache holding exactly this run's outcomes."""
+    """Write the cache holding exactly these outcomes, replacing any earlier file at once.
+
+    The document goes to a sibling temporary file first and is then renamed
+    over `path`, so a run killed mid-save leaves the previous cache whole.
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
     document = {
         "schema": CACHE_SCHEMA,
@@ -326,4 +330,6 @@ def save_cache(*, path: Path, entries: dict[str, CachedOutcome]) -> None:
             for key, outcome in sorted(entries.items())
         },
     }
-    _ = path.write_text(json.dumps(document, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    partial = path.with_name(path.name + ".partial")
+    _ = partial.write_text(json.dumps(document, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    _ = partial.replace(path)
