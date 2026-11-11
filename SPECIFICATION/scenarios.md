@@ -3399,6 +3399,18 @@ And the authorized revert merges through the scoped recovery principal without l
 And recovery records exact action and merge receipts across timeout or restart while ordinary actors retain their existing branch protection obligations.
 ```
 
+## Scenario: a prepared incident recovery publication completes after the controller restarts
+
+```gherkin
+Given a pending incident recovery action with no effect receipt, whose recovery principal recorded an unresolved publication attempt before the target branch ref moved
+When the controller's service restarts
+Then the controller completes that publication on its next due sweep pass, with no operator reconcile, sending only the one recorded commit
+And a recorded commit that forge facts show already landed is recorded as the receipt and not published again
+And a moved target branch head whose recorded commit did not land causes inverse recomputation or an owned rollback-conflict instead of publication
+And a resume that cannot complete leaves the action pending, completable by a later due pass or the operator's explicit reconcile
+And the resume honours the action's persisted back-off and terminal state and counts toward its retry bounds
+```
+
 ## Scenario: an incident recovery principal configured for a scratch branch recovers only that branch
 
 ```gherkin
