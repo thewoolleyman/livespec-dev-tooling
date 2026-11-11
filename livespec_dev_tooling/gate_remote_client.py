@@ -84,6 +84,7 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+from livespec_dev_tooling._gate_member_report import parse_member_report
 from livespec_dev_tooling._gate_wait_interrupt import (
     GateWaitInterruptedError,
     interrupted_wait_failure,
@@ -210,6 +211,10 @@ class GateRunOutcome:
     empty string when the label is absent — never the requested tree echoed back,
     so a caller comparing the two can tell a Job that gated another tree, or that
     never said which tree it gated, from one that gated the tree it was asked for.
+
+    `member_verdicts` is the Job's own `LIVESPEC_GATE_MEMBERS` report, read from a
+    CAPTURED log only, and `None` when the log was streamed or carried no usable
+    report (`_gate_member_report`).
     """
 
     tree_hash: str
@@ -221,6 +226,7 @@ class GateRunOutcome:
     finished_at: str = ""
     output_checksum: str = ""
     reported_tree_hash: str = ""
+    member_verdicts: tuple[tuple[str, str], ...] | None = None
 
 
 def run_gate(
@@ -501,6 +507,9 @@ def _gate_a_pushed_tree(
                 started_at=reported_time(status=ended.status, key=_START_TIME),
                 finished_at=reported_time(status=ended.status, key=_COMPLETION_TIME),
                 output_checksum=_shown_output_checksum(request=request, output=ran.stdout),
+                member_verdicts=(
+                    parse_member_report(output=ran.stdout) if request.capture_output else None
+                ),
             )
         ),
         True,

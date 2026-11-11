@@ -141,6 +141,10 @@ class GateVerdict:
     instants because they are carried VERBATIM from the Job's status: parsing
     and re-rendering them here would hand a reader a second spelling of an
     instant it can already compare to the cluster's own output.
+
+    `member_verdicts` is the Job's own report of every aggregate member it ran
+    and each one's verdict, carried verbatim from `GateRunOutcome`, and `None`
+    wherever the Job reported none.
     """
 
     state: str
@@ -152,6 +156,7 @@ class GateVerdict:
     job_finished_at: str | None = None
     output_checksum: str | None = None
     tree_hash: str | None = None
+    member_verdicts: tuple[tuple[str, str], ...] | None = None
 
     @property
     def refuses_push(self) -> bool:
@@ -236,6 +241,7 @@ def _decided(
         job_finished_at=outcome.finished_at or None,
         output_checksum=outcome.output_checksum or None,
         tree_hash=outcome.reported_tree_hash or None,
+        member_verdicts=outcome.member_verdicts,
     )
 
 
