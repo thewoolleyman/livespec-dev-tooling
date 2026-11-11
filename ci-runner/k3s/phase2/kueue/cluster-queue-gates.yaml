@@ -143,6 +143,21 @@ apiVersion: kueue.x-k8s.io/v1beta2
 kind: ClusterQueue
 metadata:
   name: gates-cq
+  annotations:
+    # THE GATE UNIT: what one gate counts as in every gates-cq quota, fleet and
+    # worker alike. Each fleet flavor below commits a whole number of these (cpu
+    # and memory alike), and ./converge-worker-queues.sh reads them off the live
+    # queue to size the worker flavors, so this is the ONE place the unit lives
+    # (plan gate-job-resources, livespec-dev-tooling-brggiu). Change it here and
+    # the worker flavors follow at the next converge;
+    # tests/spec/test_gates_queue_gate_unit.py then fails, naming each fleet
+    # flavor whose quota is no longer a whole number of units, so the fleet
+    # literals cannot drift from it. Memory is 8Gi rather than the renderer's
+    # 6Gi request: the 2Gi is headroom so an under-estimated gate does not make
+    # memory the binding term (see the gates-flavor quota note below). A
+    # repository's own gate_cpu / gate_memory sizes its Job WITHIN these quotas.
+    ci-runner.io/gate-unit-cpu: "5"
+    ci-runner.io/gate-unit-memory: "8Gi"
 spec:
   # NO `cohortName`, on purpose. A cohort exists so members can lend and borrow
   # unused quota, and every member of `fleet-ci-runner-pool` is denominated in
