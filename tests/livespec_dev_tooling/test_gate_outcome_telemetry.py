@@ -272,6 +272,30 @@ def test_each_gate_outcome_vocabulary_word_is_the_one_the_contract_names() -> No
     ) == ("passed", "failed-tree", "no-verdict")
 
 
+def test_suite_green_outcome_payload_names_the_completed_leg() -> None:
+    """A suite-green result is its own measurable outcome, not a log line."""
+    telemetry = _telemetry()
+
+    assert hasattr(telemetry, "build_suite_green_span_payload")
+    payload = telemetry.build_suite_green_span_payload(
+        repository=_REPOSITORY,
+        tree_hash=_TREE,
+        mode="reused",
+        scope="full-suite",
+        outcome="green",
+        duration_seconds=1.25,
+    )
+
+    assert _attributes_of(payload=payload) == {
+        "repo": _REPOSITORY,
+        "tree_hash": _TREE,
+        "suite_green.mode": "reused",
+        "suite_green.scope": "full-suite",
+        "suite_green.outcome": "green",
+        "duration_ms": "1250",
+    }
+
+
 def test_a_value_the_run_never_determined_is_absent_rather_than_guessed() -> None:
     """An attribute it could invent is one an alert would read as fact.
 

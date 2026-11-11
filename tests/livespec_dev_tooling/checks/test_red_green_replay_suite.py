@@ -11,6 +11,7 @@ import importlib.util
 import inspect
 import sys
 from pathlib import Path
+from typing import Any
 
 import pytest
 import structlog
@@ -153,6 +154,12 @@ def test_same_tree_full_pre_commit_evidence_reuses_the_aggregate_run(
     monkeypatch.setattr(mod, "staged_tree_hash", lambda **_kwargs: "same-tree")
     suite_runs: list[object] = []
     monkeypatch.setattr(mod, "run_suite", lambda **kwargs: suite_runs.append(kwargs))
+    telemetry: list[dict[str, object]] = []
+    monkeypatch.setattr(
+        mod,
+        "emit_suite_green_outcome",
+        lambda **kwargs: telemetry.append(kwargs),
+    )
     msg_path = tmp_path / "COMMIT_EDITMSG"
     msg_path.write_text("refactor: behaviour-preserving change\n", encoding="utf-8")
 
@@ -168,6 +175,53 @@ def test_same_tree_full_pre_commit_evidence_reuses_the_aggregate_run(
     message = msg_path.read_text(encoding="utf-8")
     assert "TDD-Suite-Green-Output-Checksum: sha256:aggregate-output" in message
     assert "TDD-Suite-Green-Producer: pre-commit-aggregate:run-123" in message
+    assert {key: value for key, value in telemetry[0].items() if key != "duration_seconds"} == {
+        "cwd": str(tmp_path),
+        "tree_hash": "same-tree",
+        "mode": "reused",
+        "scope": "full-suite",
+        "outcome": "green",
+    }
+    assert isinstance(telemetry[0]["duration_seconds"], float)
+
+
+def test_suite_green_telemetry_stays_fail_soft_when_git_probes_are_unavailable(
+    *, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A receiver event never changes a suite-green leg's own result."""
+
+    from livespec_dev_tooling import gate_outcome_telemetry
+
+    delivered: list[dict[str, Any]] = []
+
+    def unavailable(*args: object, **kwargs: object) -> object:
+        _ = (args, kwargs)
+        raise OSError("git unavailable")
+
+    def record(*, endpoint: str, payload: dict[str, object]) -> None:
+        delivered.append({"endpoint": endpoint, "payload": payload})
+
+    monkeypatch.setattr(gate_outcome_telemetry.subprocess, "run", unavailable)
+    monkeypatch.setattr(gate_outcome_telemetry, "post_span", record)
+    monkeypatch.delenv(gate_outcome_telemetry.ENDPOINT_ENV, raising=False)
+    monkeypatch.delenv("LIVESPEC_SANDBOX_OTEL_ENDPOINT", raising=False)
+
+    gate_outcome_telemetry.emit_suite_green_outcome(
+        cwd=str(tmp_path),
+        duration_seconds=None,
+        mode="ran",
+        outcome="green",
+        scope="full-suite",
+        tree_hash="same-tree",
+    )
+
+    attributes = delivered[0]["payload"]["resourceSpans"][0]["scopeSpans"][0]["spans"][0][
+        "attributes"
+    ]
+    keys = {attribute["key"] for attribute in attributes}
+    assert delivered[0]["endpoint"] == gate_outcome_telemetry.DEFAULT_ENDPOINT
+    assert "repo" not in keys
+    assert "duration_ms" not in keys
 
 
 @pytest.mark.parametrize("evidence_tree", [None, "different-tree"])

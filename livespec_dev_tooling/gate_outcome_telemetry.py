@@ -47,6 +47,7 @@ from __future__ import annotations
 import contextlib
 import json
 import os
+import subprocess
 import time
 import urllib.error
 import urllib.request
@@ -58,7 +59,9 @@ __all__: list[str] = [
     "GATE_OUTCOME_NO_VERDICT",
     "GATE_OUTCOME_PASSED",
     "build_span_payload",
+    "build_suite_green_span_payload",
     "emit_gate_outcome",
+    "emit_suite_green_outcome",
     "post_span",
 ]
 
@@ -77,6 +80,9 @@ _POST_TIMEOUT_S = 2.0
 _SERVICE_NAME = "livespec-delegated-gate"
 _SCOPE_NAME = "livespec.delegated-gate"
 _SPAN_NAME = "livespec.delegated-gate.outcome"
+_SUITE_GREEN_SANDBOX_ENDPOINT_ENV = "LIVESPEC_SANDBOX_OTEL_ENDPOINT"
+_SUITE_GREEN_SANDBOX_DEFAULT_ENDPOINT = "http://172.17.0.1:4318"
+_SUITE_GREEN_SPAN_NAME = "livespec.suite-green.outcome"
 
 
 def build_span_payload(
@@ -163,5 +169,135 @@ def emit_gate_outcome(
         endpoint=endpoint,
         payload=build_span_payload(
             outcome=outcome, repository=repository, tree_hash=tree_hash, job_name=job_name
+        ),
+    )
+
+
+def build_suite_green_span_payload(
+    *,
+    repository: str | None,
+    tree_hash: str | None,
+    mode: str | None,
+    scope: str | None,
+    outcome: str | None,
+    duration_seconds: float | None,
+) -> dict[str, object]:
+    """Build one OTLP outcome span for a completed suite-green leg."""
+    string_attributes = (
+        ("repo", repository),
+        ("tree_hash", tree_hash),
+        ("suite_green.mode", mode),
+        ("suite_green.scope", scope),
+        ("suite_green.outcome", outcome),
+    )
+    attributes: list[dict[str, object]] = [
+        {"key": key, "value": {"stringValue": value}}
+        for key, value in string_attributes
+        if value is not None
+    ]
+    if duration_seconds is not None:
+        attributes.append(
+            {
+                "key": "duration_ms",
+                "value": {"intValue": str(max(0, round(duration_seconds * 1000)))},
+            }
+        )
+    now = str(time.time_ns())
+    return {
+        "resourceSpans": [
+            {
+                "resource": {
+                    "attributes": [
+                        {"key": "service.name", "value": {"stringValue": "livespec-suite-green"}}
+                    ]
+                },
+                "scopeSpans": [
+                    {
+                        "scope": {"name": "livespec.suite-green"},
+                        "spans": [
+                            {
+                                "traceId": os.urandom(16).hex(),
+                                "spanId": os.urandom(8).hex(),
+                                "name": _SUITE_GREEN_SPAN_NAME,
+                                "kind": 1,
+                                "startTimeUnixNano": now,
+                                "endTimeUnixNano": now,
+                                "attributes": attributes,
+                            }
+                        ],
+                    }
+                ],
+            }
+        ]
+    }
+
+
+def _repository_name(*, cwd: str) -> str | None:
+    """Read the checkout's repository name without manufacturing an identity."""
+    try:
+        completed = subprocess.run(  # noqa: S603  — fixed read-only git probe.
+            ["/usr/bin/git", "remote", "get-url", "origin"],
+            cwd=cwd,
+            capture_output=True,
+            check=False,
+            text=True,
+        )
+    except OSError:
+        return None
+    remote = completed.stdout.strip() if completed.returncode == 0 else ""
+    trimmed = remote.removesuffix("/").removesuffix(".git")
+    if not trimmed:
+        return None
+    separator = "/" if "/" in trimmed else ":"
+    name = trimmed.rsplit(separator, maxsplit=1)[-1]
+    return name or None
+
+
+def _sandbox_checkout(*, cwd: str) -> bool:
+    """Return whether the declared sandbox marker selects the sandbox receiver."""
+    try:
+        completed = subprocess.run(  # noqa: S603  — fixed read-only git probe.
+            [
+                "/usr/bin/git",
+                "config",
+                "--get",
+                "livespec.sandboxExempt",
+            ],
+            cwd=cwd,
+            capture_output=True,
+            check=False,
+            text=True,
+        )
+    except OSError:
+        return False
+    return completed.returncode == 0 and completed.stdout.strip() == "true"
+
+
+def emit_suite_green_outcome(
+    *,
+    cwd: str,
+    tree_hash: str | None,
+    mode: str | None,
+    scope: str | None,
+    outcome: str | None,
+    duration_seconds: float | None,
+) -> None:
+    """Best-effort emit one suite-green outcome without changing its verdict."""
+    sandbox = _sandbox_checkout(cwd=cwd)
+    endpoint = (
+        (os.environ.get(_SUITE_GREEN_SANDBOX_ENDPOINT_ENV) or "").strip()
+        or _SUITE_GREEN_SANDBOX_DEFAULT_ENDPOINT
+        if sandbox
+        else (os.environ.get(ENDPOINT_ENV) or "").strip() or DEFAULT_ENDPOINT
+    )
+    post_span(
+        endpoint=endpoint,
+        payload=build_suite_green_span_payload(
+            repository=_repository_name(cwd=cwd),
+            tree_hash=tree_hash,
+            mode=mode,
+            scope=scope,
+            outcome=outcome,
+            duration_seconds=duration_seconds,
         ),
     )
