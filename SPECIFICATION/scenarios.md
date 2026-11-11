@@ -4634,3 +4634,25 @@ When the consumer's single-container-image check runs, and the delegated gate re
 Then the check MUST fail, naming both images
 
 And the delegated gate MUST refuse to render the Job, naming both images
+
+## Scenario: a self-hosted CI job's span names its runner pod, which joins to the node that ran it
+
+Given a fleet member's pull-request CI run whose `check-coverage` job ran on runner `livespec-dev-tooling-k3s-f96mp-runner-kv9mc`
+
+And the runner-pool node telemetry attributes pod `livespec-dev-tooling-k3s-f96mp-runner-kv9mc` to node `poweredge-xubuntu` in that window
+
+When the member's CI run-telemetry exporter emits that run's spans
+
+Then the `ci.job.check-coverage` span MUST carry `ci.runner_name` equal to `livespec-dev-tooling-k3s-f96mp-runner-kv9mc`
+
+And a query joining `ci.runner_name` to `k8s.pod.name` MUST attribute that job to `poweredge-xubuntu`
+
+## Scenario: a fleet member's CI runs the CI run-telemetry exporter livespec-dev-tooling ships
+
+Given a fleet member whose pinned livespec-dev-tooling ships the CI run-telemetry exporter module
+
+When that member's CI `export-telemetry` job runs
+
+Then it MUST emit the run's `ci.run` and `ci.job.<name>` spans by running that module
+
+And the member's repository MUST carry no copy of the exporter's span-building logic

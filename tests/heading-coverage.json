@@ -3472,5 +3472,21 @@
     "test": "TODO",
     "reason": "A real test at the integration tier or above is owed for this heading: a consumer-style test drives the shipped `render-gate-job.sh` and the shared check, reading one fixture workflow through the shared YAML reader, and shows both count an `image:` written below comment lines inside a `container:` block; the check fails the two-version set and the gate refuses to render, each naming both images. livespec-dev-tooling-op67ed owns it.",
     "work_item": "livespec-dev-tooling-op67ed"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a self-hosted CI job's span names its runner pod, which joins to the node that ran it",
+    "test": "TODO",
+    "reason": "A real test at the integration tier or above is owed for this heading: a consumer-style test runs the shipped CI run-telemetry exporter against a recorded GitHub jobs API payload whose job ran on a self-hosted runner, and shows the `ci.job.<name>` span carries `ci.runner_name` equal to that runner's pod name. livespec-dev-tooling-wnwwsl owns it.",
+    "work_item": "livespec-dev-tooling-wnwwsl"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a fleet member's CI runs the CI run-telemetry exporter livespec-dev-tooling ships",
+    "test": "TODO",
+    "reason": "A real test at the integration tier or above is owed for this heading: a consumer-style test runs the shipped CI run-telemetry exporter module, as a member's `export-telemetry` job invokes it, against a recorded run, and shows it emits the `ci.run` and `ci.job.<name>` spans. livespec-dev-tooling-5ua57h owns it.",
+    "work_item": "livespec-dev-tooling-5ua57h"
   }
 ]
