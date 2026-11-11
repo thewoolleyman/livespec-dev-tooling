@@ -263,7 +263,7 @@ def test_a_stale_or_missing_reading_clears_the_taint_everywhere(tmp_path: Path) 
         ],
         pods=[],
     )
-    assert run.returncode == 0, run.stderr
+    assert run.returncode == _ALARM_EXIT, run.stderr
     assert mutations == [f"taint nodes {_PE} {_TAINT_KEY}:PreferNoSchedule-"], mutations
     assert f"reading-unknown:{_GMK}" in run.stdout
 
@@ -274,7 +274,7 @@ def test_a_node_that_publishes_no_pressure_condition_is_unknown(tmp_path: Path) 
         nodes=[_node(_PE, avg60=45.0, alloc="72"), _node(_GMK, avg60=None)],
         pods=[],
     )
-    assert run.returncode == 0, run.stderr
+    assert run.returncode == _ALARM_EXIT, run.stderr
     assert mutations == [], mutations
     assert f"reading-unknown:{_GMK}" in run.stdout
 
@@ -527,6 +527,7 @@ def _reconcile_with_env(
 
 
 _M4 = "macbook-m4-max-homelab-worker"
+_ALARM_EXIT = 3
 
 
 def _unreachable(node: _Json, *, taint: _Json | None = None, arch: str | None = None) -> _Json:
@@ -595,7 +596,7 @@ def test_a_tolerated_or_soft_taint_keeps_a_node_in_scope(tmp_path: Path) -> None
         ],
         pods=[],
     )
-    assert run.returncode == 0, run.stderr
+    assert run.returncode == _ALARM_EXIT, run.stderr
     assert f"reading-unknown:{_GMK}" in run.stdout
     assert mutations == [f"taint nodes {_PE} {_TAINT_KEY}:PreferNoSchedule-"], mutations
 
@@ -610,3 +611,37 @@ def test_an_out_of_scope_node_is_never_left_tainted(tmp_path: Path) -> None:
     assert run.returncode == 0, run.stderr
     assert f"taint nodes {_M4} {_TAINT_KEY}:PreferNoSchedule-" in mutations
     assert not any(m.startswith(f"taint nodes {_M4} {_TAINT_KEY}=high") for m in mutations)
+
+
+def test_an_unknown_in_scope_reading_raises_a_named_alarm_after_clearing_the_taint(
+    tmp_path: Path,
+) -> None:
+    # A silently disabled steer ran for two days before anyone saw it. An unknown
+    # in-scope reading still clears the taint (the fail-safe), but it also writes a
+    # named alarm at journal priority err and fails the unit, so `systemctl --failed`
+    # and the journal both show it.
+    run, mutations = _reconcile(
+        tmp_path,
+        nodes=[_node(_PE, avg60=45.0, alloc="72", tainted=True), _node(_GMK, avg60=None)],
+        pods=[],
+    )
+    assert run.returncode == _ALARM_EXIT, run.stderr
+    assert mutations == [f"taint nodes {_PE} {_TAINT_KEY}:PreferNoSchedule-"], mutations
+    assert (
+        f"<3>reconcile-factory-pressure-taint.sh: ALARM factory-pressure-steer-disabled nodes={_GMK}"
+        in run.stderr
+    )
+
+
+def test_an_out_of_scope_node_without_a_reading_raises_no_alarm(tmp_path: Path) -> None:
+    run, _ = _reconcile(
+        tmp_path,
+        nodes=[
+            _node(_PE, avg60=45.0, alloc="72"),
+            _node(_GMK, avg60=8.0),
+            _unreachable(_node(_M4, avg60=None), taint=_WORKER_CLASS, arch="arm64"),
+        ],
+        pods=[],
+    )
+    assert run.returncode == 0, run.stderr
+    assert "ALARM" not in run.stderr

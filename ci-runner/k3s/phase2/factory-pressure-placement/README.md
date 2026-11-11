@@ -49,7 +49,10 @@ On each 30 s cycle the reconciler works through these steps:
    (orchestrator `bd-ib-nmuyjc`).
 2. **Unknown readings.** An in-scope factory node whose `LivespecCPUPressure`
    heartbeat is older than 90 s (or is absent) is UNKNOWN. Any unknown in-scope
-   reading removes the taint from every factory node.
+   reading removes the taint from every factory node, AND raises the named alarm
+   `ALARM factory-pressure-steer-disabled nodes=<names>` at journal priority err
+   and exits 3, so the unit shows in `systemctl --failed` until the reading
+   returns. A disabled steer is never silent.
 3. **Fit of the lowest-pressure node:**
    `fit = allocatable cpu - requested cpu (Pending/Running pods) - gates_reserve`.
 4. **The gates reserve.** `gates_reserve` is `gates-cq`'s cpu `nominalQuota` for
