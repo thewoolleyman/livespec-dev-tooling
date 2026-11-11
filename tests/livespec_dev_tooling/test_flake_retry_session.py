@@ -40,18 +40,34 @@ def _git(*, repo: Path, args: list[str]) -> None:
     _ = subprocess.run(["git", *_GIT_IDENTITY, *args], cwd=repo, check=True, capture_output=True)
 
 
-def _flaky_repository(*, root: Path, touch_test: bool) -> Path:
+def _flaky_repository(*, root: Path, touch_test: bool, release_change: bool = False) -> Path:
     repo = root / "repo"
     repo.mkdir()
     _git(repo=repo, args=["init", "-q", "-b", "master", "."])
     _ = (repo / "test_flaky.py").write_text(_FLAKY_TEST, encoding="utf-8")
     _ = (repo / "conftest.py").write_text(_NO_DELAY_CONFTEST, encoding="utf-8")
     _ = (repo / ".gitignore").write_text("seen\ntmp/\n", encoding="utf-8")
+    if release_change:
+        _ = (repo / "pyproject.toml").write_text(
+            '[project]\nname = "example"\nversion = "1.0.0"\n', encoding="utf-8"
+        )
+        _ = (repo / "uv.lock").write_text(
+            '[[package]]\nname = "example"\nversion = "1.0.0"\n', encoding="utf-8"
+        )
     _git(repo=repo, args=["add", "-A"])
     _git(repo=repo, args=["commit", "-qm", "base"])
     _git(repo=repo, args=["update-ref", "refs/remotes/origin/master", "HEAD"])
     if touch_test:
         _ = (repo / "test_flaky.py").write_text(_FLAKY_TEST + "# touched\n", encoding="utf-8")
+    elif release_change:
+        _ = (repo / "pyproject.toml").write_text(
+            '[project]\nname = "example"\nversion = "1.0.1"\n', encoding="utf-8"
+        )
+        _ = (repo / "uv.lock").write_text(
+            '[[package]]\nname = "example"\nversion = "1.0.1"\n', encoding="utf-8"
+        )
+        _git(repo=repo, args=["add", "pyproject.toml", "uv.lock"])
+        _git(repo=repo, args=["commit", "-qm", "release version"])
     else:
         _ = (repo / "README.md").write_text("unrelated\n", encoding="utf-8")
         _git(repo=repo, args=["add", "README.md"])
@@ -199,6 +215,18 @@ def test_an_untouched_failing_test_is_retried_on_its_own_and_reported_as_a_flake
     assert [json.loads(line) for line in records.splitlines()] == [
         {"attempts": 2, "nodeid": "test_flaky.py::test_flaky", "outcome": "passed"}
     ]
+
+
+@pytest.mark.integration
+def test_a_version_only_release_change_retries_an_untouched_failing_test(*, tmp_path: Path) -> None:
+    """A release bump does not silently withhold retries from unrelated failures."""
+    repo = _flaky_repository(root=tmp_path, touch_test=False, release_change=True)
+
+    completed = _run_session(repo=repo)
+
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    assert "1 passed, 1 rerun" in completed.stdout
+    assert "FLAKE-RETRY-WITHHELD" not in completed.stdout
 
 
 @pytest.mark.integration
