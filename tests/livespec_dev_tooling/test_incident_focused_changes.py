@@ -46,6 +46,8 @@ _CONFIG = '[tool.livespec_dev_tooling]\nsource_trees = ["src"]\n'
 # The head's changed product files: two executable modules and one docstring-only module.
 _PRODUCT = ("src/doc_only.py", "src/gadget.py", "src/widget.py")
 _EXECUTABLE = ("src/gadget.py", "src/widget.py")
+# An executable product module the base has and the head deletes.
+_RETIRED = "src/retired.py"
 
 
 def _git(*, repo: Path, args: list[str]) -> str:
@@ -76,17 +78,20 @@ def _commit(*, repo: Path, files: dict[str, str], message: str) -> str:
     return _git(repo=repo, args=["rev-parse", "HEAD"])
 
 
-def _clone(*, root: Path, config: str = _CONFIG, target_ref: bool = True) -> _Clone:
+def _clone(
+    *, root: Path, config: str = _CONFIG, target_ref: bool = True, retired: bool = False
+) -> _Clone:
     repo = root / "repo"
     repo.mkdir()
     _ = _git(repo=repo, args=["init", "-q", "-b", "master"])
-    base = _commit(
-        repo=repo,
-        files={"pyproject.toml": config, "src/widget.py": "VALUE = 1\n", "README.md": "a\n"},
-        message="base",
-    )
+    base_files = {"pyproject.toml": config, "src/widget.py": "VALUE = 1\n", "README.md": "a\n"}
+    if retired:
+        base_files[_RETIRED] = "def retired() -> int:\n    return 0\n"
+    base = _commit(repo=repo, files=base_files, message="base")
     if target_ref:
         _ = _git(repo=repo, args=["update-ref", "refs/remotes/origin/master", base])
+    if retired:
+        (repo / _RETIRED).unlink()
     head = _commit(
         repo=repo,
         files={
@@ -347,6 +352,29 @@ def test_a_record_covering_every_changed_product_file_is_admitted(
         (status, result.get("status")) == ("202 Accepted", "armed"),
         authority.actions[-1] == "read-current",
     ]
+    assert all(facts), (facts, status, result)
+
+
+@pytest.mark.parametrize("names_the_deletion", [True, False])
+def test_a_head_deleting_a_product_file_is_judged_against_the_collectors_deleted_row(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, names_the_deletion: bool
+) -> None:
+    # The collector's `git diff --name-only` lists a deleted path and `classify`
+    # names it "deleted", so an honest record carries it with no coverage row.
+    clone = _clone(root=tmp_path, retired=True)
+    application, authority = _observer(tmp_path=tmp_path, monkeypatch=monkeypatch, clone=clone)
+    paths = {**_HONEST, _RETIRED: "deleted"} if names_the_deletion else _HONEST
+    authority.add(record=_record(clone=clone, paths=paths, covered=_EXECUTABLE))
+    status, result = _arm(application=application, clone=clone)
+    reason = str(result.get("reason"))
+    if names_the_deletion:
+        facts = [(status, result.get("status")) == ("202 Accepted", "armed")]
+    else:
+        facts = [
+            status == "403 Forbidden",
+            reason.startswith("incident-focused-evidence-paths-incomplete:"),
+            _RETIRED in reason,
+        ]
     assert all(facts), (facts, status, result)
 
 
