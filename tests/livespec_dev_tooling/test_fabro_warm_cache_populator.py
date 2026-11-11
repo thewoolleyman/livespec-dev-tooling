@@ -8,7 +8,7 @@ __all__: list[str] = []
 
 _ROOT = Path(__file__).resolve().parents[2]
 _WARM_CACHE = _ROOT / "ci-runner" / "k3s" / "phase2" / "warm-cache"
-_CRONJOB = _WARM_CACHE / "warm-cache-cronjob.yaml"
+_FABRO_CRONJOB = _WARM_CACHE / "warm-cache-fabro-cronjob.yaml"
 _CONVERGE = _WARM_CACHE / "converge-warm-cache.sh"
 _FABRO_VALUES = _ROOT / "ci-runner" / "k3s" / "phase2" / "arc" / "values-fabro.yaml"
 
@@ -16,7 +16,7 @@ _FABRO_VALUES = _ROOT / "ci-runner" / "k3s" / "phase2" / "arc" / "values-fabro.y
 def test_fabro_is_warmed_by_its_own_guarded_populator_with_the_gate_profiles() -> None:
     """The large fork cannot consume the shared pass, and its warm keys match its jobs."""
     script = (_WARM_CACHE / "warm-cache-fabro-populate.sh").read_text(encoding="utf-8")
-    cronjob = _CRONJOB.read_text(encoding="utf-8")
+    cronjob = _FABRO_CRONJOB.read_text(encoding="utf-8")
 
     assert "# warm-cache: exclude" in _FABRO_VALUES.read_text(encoding="utf-8")
     assert "name: warm-cache-populate-fabro" in cronjob

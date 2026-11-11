@@ -133,6 +133,7 @@ fi
 # ---------------------------------------------------------------------------
 log "warm-cache 3. Apply the budget ConfigMap + CronJob and converge the repos and script ConfigMaps"
 run kubectl apply -f "${SCRIPT_DIR}/warm-cache-cronjob.yaml"
+run kubectl apply -f "${SCRIPT_DIR}/warm-cache-fabro-cronjob.yaml"
 # The two warm uv DaemonSets (warm-uv-cache-populate, warm-uv-cache-populate-hp)
 # read warm-cache-budget as configMapKeyRef env, which is fixed at pod start, and
 # their while-sleep loop never restarts — so a budget raise in the ConfigMap
