@@ -1696,6 +1696,35 @@ follows real CPU use is still livespec-dev-tooling-gvo7fa. The after-read (one
 gate's wall time, and hp's best-effort pressure) is recorded on the plan epic
 livespec-dev-tooling-6vuiwe.
 
+### The PowerEdge gate lane to four gates (2026-11-11)
+
+**What was wrong.** At 02:13Z on 2026-11-11, `gates-cq` held 19 pending gate
+workloads, the oldest 1,462 s old, and 6 admitted. The gmktec lane used 5 of
+its 15 cpu, but Kueue's topology-aware admission could not place a gate there:
+the node's 7 factory sandboxes requested 21 cpu and 52.2 Gi, leaving 3.3 Gi of
+allocatable memory free against a gate's 6 Gi. The PowerEdge and hp lanes were
+full at their two-gate quotas. The PowerEdge node itself had 21.6 cpu and
+272 Gi of requests free, so its QUOTA held gates out, not its capacity. hp had
+3.8 cpu free, too little for a third gate.
+
+**What changed.** `gates-poweredge-flavor` rises from 10 cpu / 16 Gi to
+20 cpu / 32 Gi, four gates at the 5 cpu / 6 Gi unit (4 x 5 cpu; 4 x 6 Gi plus
+headroom). It admits two more gates at once, using 10 of the node's 21.6 free
+cpu. Ruled by legacy-coordinator-agent, about 02:20Z, as a value-only,
+hand-landed change under plan gate-job-resources (epic
+livespec-dev-tooling-ukoeah). In the same ruling the gmktec memory reservation
+became a factory placement cap of five sandboxes on gmktec-xubuntu, owned by
+legacy-dispatcher-agent, and the factory cap was held at 16.
+
+**Revert.** Restore 10 cpu / 16 Gi on `gates-poweredge-flavor`, then apply the
+file through the converge.
+
+**What this does not fix.** The gmktec lane stays stranded until the factory
+placement cap leaves its memory free. The 2026-11-07 concern still applies:
+each admitted gate's 5-cpu request takes about that much CPU from the
+PowerEdge's best-effort runners. The after-read (the live quota and the pending
+count ten minutes after apply) is recorded on livespec-dev-tooling-ukoeah.
+
 ### Topology-aware admission on the gates flavors (2026-11-04, livespec-dev-tooling-cikd6m)
 
 **What was wrong.** Quota is not capacity. On 2026-11-04 at 01:35Z,
