@@ -9,8 +9,8 @@
 # run from the control node over committed source. This role is that apply.
 # The manifest is rendered on the control node by the committed
 # render-kill-matrix-job.sh from the committed template, so the only inputs are
-# the playbook variables: the orchestrator SHA, the engine SHA, the worker count
-# and the run id.
+# the playbook variables: the orchestrator SHA, the engine SHA, the worker count,
+# the run id and the node.
 #
 # UNDER --check the diff below still RUNS (check_mode: false; `kubectl diff`
 # writes nothing) and reports a pending launch as `changed`, so
@@ -20,10 +20,10 @@
 # objects then fails (rc 2, `namespaces "rule26" not found`; measured from the
 # control node 2026-11-10). So the namespace is looked up first: when it is
 # absent the launch is drift by definition, the diff is skipped, and the apply
-# creates the Namespace, the PVC and the Job, in the manifest's order.
+# creates the Namespace, the node's PVC and the Job, in the manifest's order.
 #
 # REVERT: -e rule26_kill_matrix_state=absent deletes the `rule26` namespace,
-# PVC included. To stop one run and keep the PVC, pass
+# every PVC included. To stop one run and keep the PVCs, pass
 # -e rule26_kill_matrix_state=job-absent -e rule26_kill_matrix_run=<id>.
 
 - name: Refuse to run anywhere but the k3s server
@@ -41,10 +41,11 @@
           - rule26_kill_matrix_engine_sha is match('^[0-9a-f]{40}$')
           - (rule26_kill_matrix_workers | string) is match('^[1-9][0-9]*$')
           - rule26_kill_matrix_run is match('^[a-z0-9-]{1,40}$')
+          - rule26_kill_matrix_node is match('^[a-z0-9]([a-z0-9.-]{0,61}[a-z0-9])?$')
         fail_msg: >-
           pass -e rule26_kill_matrix_orchestrator_sha=<40-hex>
           -e rule26_kill_matrix_engine_sha=<40-hex>
-          -e rule26_kill_matrix_run=<lowercase id> [-e rule26_kill_matrix_workers=N]
+          -e rule26_kill_matrix_run=<lowercase id> -e rule26_kill_matrix_node=<k3s node name> [-e rule26_kill_matrix_workers=N]
 
     - name: Render the committed Job manifest on the control node
       ansible.builtin.command:
@@ -58,6 +59,8 @@
           - "{{ rule26_kill_matrix_workers | string }}"
           - --run
           - "{{ rule26_kill_matrix_run }}"
+          - --node
+          - "{{ rule26_kill_matrix_node }}"
       delegate_to: localhost
       become: false
       check_mode: false
@@ -156,8 +159,10 @@
 
 # job-absent stops ONE run and keeps everything else: it deletes the Job named
 # by rule26_kill_matrix_run (and, through foreground cascade, its pod) and
-# leaves the namespace and the PVC, whose generated mutants/ tree and run logs
-# a stopped run may still be read for. `absent` above deletes the PVC too.
+# leaves the namespace and every PVC (one per node), whose generated mutants/
+# tree and run logs a stopped run may still be read for. It lists the PVCs
+# before and after and fails unless the two lists match, so it never has to
+# know which node the run used. `absent` above deletes the PVCs too.
 - name: Remove one kill-matrix Job and keep its namespace and PVC
   when: rule26_kill_matrix_state == 'job-absent'
   block:
@@ -186,6 +191,16 @@
       changed_when: rule26_kill_matrix_existing_job.stdout | length > 0
       register: rule26_kill_matrix_existing_job
 
+    - name: List the namespace's PVCs before the delete
+      ansible.builtin.command:
+        argv: [kubectl, -n, "{{ rule26_kill_matrix_namespace }}", get, pvc, -o, name]
+      environment:
+        KUBECONFIG: "{{ rule26_kill_matrix_kubeconfig }}"
+      become: true
+      check_mode: false
+      changed_when: false
+      register: rule26_kill_matrix_pvcs_before
+
     - name: Delete the run's kill-matrix Job and its pod
       ansible.builtin.command:
         argv:
@@ -205,7 +220,7 @@
       when: rule26_kill_matrix_existing_job.stdout | length > 0
       changed_when: true
 
-    - name: Read back the run's Job and the PVC
+    - name: Read back the run's Job
       ansible.builtin.command:
         argv:
           - kubectl
@@ -213,7 +228,6 @@
           - "{{ rule26_kill_matrix_namespace }}"
           - get
           - "job/rule26-orchestrator-kill-matrix-{{ rule26_kill_matrix_run }}"
-          - pvc/rule26-orchestrator
           - --ignore-not-found
           - -o
           - name
@@ -225,9 +239,23 @@
       register: rule26_kill_matrix_after_job_absent
       when: not ansible_check_mode
 
-    - name: Fail unless the Job is gone and the PVC is kept
+    - name: List the namespace's PVCs after the delete
+      ansible.builtin.command:
+        argv: [kubectl, -n, "{{ rule26_kill_matrix_namespace }}", get, pvc, -o, name]
+      environment:
+        KUBECONFIG: "{{ rule26_kill_matrix_kubeconfig }}"
+      become: true
+      check_mode: false
+      changed_when: false
+      register: rule26_kill_matrix_pvcs_after
+      when: not ansible_check_mode
+
+    - name: Fail unless the Job is gone and every PVC is kept
       ansible.builtin.assert:
         that:
-          - rule26_kill_matrix_after_job_absent.stdout_lines == ['persistentvolumeclaim/rule26-orchestrator']
-        success_msg: "removed job/rule26-orchestrator-kill-matrix-{{ rule26_kill_matrix_run }}; kept pvc/rule26-orchestrator"
+          - rule26_kill_matrix_after_job_absent.stdout | length == 0
+          - rule26_kill_matrix_pvcs_after.stdout_lines == rule26_kill_matrix_pvcs_before.stdout_lines
+        success_msg: >-
+          removed job/rule26-orchestrator-kill-matrix-{{ rule26_kill_matrix_run }};
+          kept {{ rule26_kill_matrix_pvcs_after.stdout_lines | join(', ') }}
       when: not ansible_check_mode

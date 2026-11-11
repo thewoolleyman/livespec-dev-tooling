@@ -7,13 +7,15 @@
 # Both commits are required and must be full 40-hex SHAs, so a run always names
 # exactly the orchestrator tree it measured and the engine that measured it.
 # --workers sets the engine's worker count AND the pod's CPU request and limit,
-# so the scheduler sees what the run uses.
+# so the scheduler sees what the run uses. --node names the node the Job runs
+# on; the PVC is that node's own (rule26-orchestrator-<node>), because a
+# local-path volume never moves between nodes.
 #
 # Writes the manifest to stdout. Applies NOTHING; contacts no cluster.
 #
 # Usage:
 #   render-kill-matrix-job.sh --orchestrator-sha SHA --engine-sha SHA
-#                             [--workers N] [--run ID]
+#                             [--workers N] [--run ID] [--node NAME]
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -21,9 +23,10 @@ orchestrator_sha=""
 engine_sha=""
 workers=12
 run="$(date -u +%Y%m%dt%H%M)"
+node=poweredge-xubuntu
 
 usage() {
-    echo "usage: render-kill-matrix-job.sh --orchestrator-sha SHA --engine-sha SHA [--workers N] [--run ID]" >&2
+    echo "usage: render-kill-matrix-job.sh --orchestrator-sha SHA --engine-sha SHA [--workers N] [--run ID] [--node NAME]" >&2
     exit 2
 }
 
@@ -33,6 +36,7 @@ while [[ $# -gt 0 ]]; do
         --engine-sha) engine_sha="${2:-}"; shift 2 ;;
         --workers) workers="${2:-}"; shift 2 ;;
         --run) run="${2:-}"; shift 2 ;;
+        --node) node="${2:-}"; shift 2 ;;
         *) usage ;;
     esac
 done
@@ -41,9 +45,11 @@ done
 [[ "$engine_sha" =~ ^[0-9a-f]{40}$ ]] || { echo "render-kill-matrix-job: --engine-sha must be a full 40-hex commit" >&2; exit 2; }
 [[ "$workers" =~ ^[1-9][0-9]*$ ]] || { echo "render-kill-matrix-job: --workers must be a positive integer" >&2; exit 2; }
 [[ "$run" =~ ^[a-z0-9-]{1,40}$ ]] || { echo "render-kill-matrix-job: --run must be lowercase letters, digits and dashes" >&2; exit 2; }
+[[ "$node" =~ ^[a-z0-9]([a-z0-9.-]{0,61}[a-z0-9])?$ ]] || { echo "render-kill-matrix-job: --node must be a lowercase node name" >&2; exit 2; }
 
 sed -e "s/@@ORCH_SHA@@/${orchestrator_sha}/g" \
     -e "s/@@ENGINE_SHA@@/${engine_sha}/g" \
     -e "s/@@WORKERS@@/${workers}/g" \
     -e "s/@@RUN@@/${run}/g" \
+    -e "s/@@NODE@@/${node}/g" \
     "${here}/kill-matrix-job-template.yaml"
