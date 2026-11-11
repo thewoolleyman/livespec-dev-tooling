@@ -108,6 +108,26 @@ launched with `-F /dev/stdin`. Plan `gmktec-factory-placement` (epic
 `livespec-dev-tooling-me5aqz`) caught it mid-run, and the gate was
 stopped and relaunched with a message file.
 
+### A workflow-touching commit needs the credential wrapper INSIDE `gate-start`
+
+`check-no-workflow-edits` runs on the pushing host, not in the gate Job,
+because it reads the work item's ledger-held workflow-edit approval
+through `bd`. A bare `gate-start -- mise exec -- git commit ...` carries
+no `BEADS_DOLT_PASSWORD`, so `bd show` answers `Error 1045` and the check
+FAILS CLOSED with exit 2. That happens only AFTER the gate Job has run the
+whole aggregate green, so one full gate cycle is spent first.
+
+```bash
+# right, for any tree that touches .github/workflows/
+mise exec -- just gate-start -- /usr/local/bin/with-livespec-env.sh -- mise exec -- git commit --amend --no-edit
+```
+
+Read `tmp/gate-runs/<run-id>/command` right after launching to confirm the
+wrapper is there. Measured 2026-11-11 on the kzhduc Green amend: gate
+`20261111T123641Z-1307890` passed every aggregate member in its Job and
+was still refused for the missing credential (plan `ci-runtime-and-cost`,
+epic `livespec-dev-tooling-ib3oe3`).
+
 ### What this does NOT change
 
 **Nothing is weakened.** The same command runs, with the same hooks,
