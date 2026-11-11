@@ -79,30 +79,58 @@ def test_an_admitted_job_starts_one_terminal_condition_watch() -> None:
     )
 
     assert isinstance(outcome, Success)
-    assert calls == [
-        (
-            "with-gates-kubeconfig",
-            "kubectl",
-            "--namespace",
-            "gates",
-            "get",
-            "job",
-            "gate-widget-7f2qd",
-            "--output",
-            "json",
-        ),
-        (
-            "with-gates-kubeconfig",
-            "kubectl",
-            "--namespace",
-            "gates",
-            "get",
-            "job",
-            "gate-widget-7f2qd",
-            "--watch",
-            "--output",
-            "json",
-            "--timeout",
-            "600s",
-        ),
-    ]
+    assert calls[0] == (
+        "with-gates-kubeconfig",
+        "kubectl",
+        "--namespace",
+        "gates",
+        "get",
+        "job",
+        "gate-widget-7f2qd",
+        "--output",
+        "json",
+    )
+    assert calls[1][:3] == ("with-gates-kubeconfig", "sh", "-ceu")
+    assert (
+        'kubectl --namespace "$namespace" get job "$job_name" --watch --output json --timeout "$timeout"'
+        in calls[1][3]
+    )
+    assert calls[1][4:] == ("await-gate-terminal-watch", "gate-widget-7f2qd", "gates", "600s")
+
+
+def test_a_transient_terminal_watch_failure_is_rearmed_within_the_budget() -> None:
+    """A failed watch does not abandon the Job or resume interval polling."""
+    request = GateRunRequest(
+        repo_root=Path("/repo"),
+        mirror_url="ssh://mirror/repo.git",
+        manifest="apiVersion: batch/v1\nkind: Job\n",
+        gate_ref="refs/gates/tree-run",
+        poll_timeout_seconds=20.0,
+    )
+    active = json.dumps({"spec": {"suspend": False}, "status": {}})
+    complete = json.dumps({"status": {"conditions": [{"type": "Complete", "status": "True"}]}})
+    calls: list[tuple[str, ...]] = []
+    naps: list[float] = []
+
+    def runner(
+        *, argv: list[str], cwd: Path, stdin: str | None = None, stream: bool = False
+    ) -> GateCommandOutcome:
+        _ = cwd, stdin, stream
+        calls.append(tuple(argv))
+        if len(calls) == 1:
+            return Success(GateCommandResult(returncode=0, stdout=active, stderr=""))
+        if len(calls) == 2:
+            return Success(GateCommandResult(returncode=1, stdout="", stderr="watch refused\n"))
+        return Success(GateCommandResult(returncode=0, stdout=complete, stderr=""))
+
+    outcome = await_terminal_state(
+        request=request,
+        runner=runner,
+        sleeper=lambda *, seconds: naps.append(seconds),
+        job_name="gate-widget-7f2qd",
+    )
+
+    assert isinstance(outcome, Success)
+    assert len(calls) == 3
+    assert all(call[:3] == ("with-gates-kubeconfig", "sh", "-ceu") for call in calls[1:])
+    assert naps == [10.0]
