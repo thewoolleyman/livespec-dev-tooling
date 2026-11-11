@@ -14,13 +14,11 @@ for its whole run.
 
 from __future__ import annotations
 
-import json
 import os
 import sys
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import cast
 
 from livespec_dev_tooling.fleet._adoption_lock import adoption_lock_path, holding_adoption_lock
 from livespec_dev_tooling.fleet._fleet_manifest_read import (
@@ -48,7 +46,10 @@ from livespec_dev_tooling.fleet._tag_adopt import TagAdoptHost, host_seams, tag_
 from livespec_dev_tooling.fleet._tag_adopt_checks import (
     AdoptionOutcome,
     enablement_refusal,
+    is_commit_prefix,
     is_full_commit,
+    marketplace_install_source,
+    release_refusal,
 )
 
 __all__: list[str] = [
@@ -87,23 +88,6 @@ def read_known_marketplaces() -> str | None:  # pragma: no cover
     return path.read_text(encoding="utf-8") if path.is_file() else None
 
 
-def _recorded_source(*, text: str | None) -> tuple[str, str] | None:
-    """The `(installLocation, ref)` the host records for the orchestrator marketplace."""
-    parsed: object = json.loads(text) if text is not None else None
-    entry = (
-        cast("dict[str, object]", parsed).get(_MARKETPLACE) if isinstance(parsed, dict) else None
-    )
-    if not isinstance(entry, dict):
-        return None
-    fields = cast("dict[str, object]", entry)
-    source = fields.get("source")
-    ref = cast("dict[str, object]", source).get("ref") if isinstance(source, dict) else None
-    location = fields.get("installLocation")
-    if isinstance(ref, str) and ref and isinstance(location, str) and location:
-        return location, ref
-    return None
-
-
 def marketplace_tip(
     *, run: CommandRunner, read_known_marketplaces: Callable[[], str | None]
 ) -> BuildIdentifier:
@@ -117,7 +101,7 @@ def marketplace_tip(
         return unresolved_build(
             detail=f"marketplace refresh exited {refresh.returncode}: {refresh.stderr.strip()}"
         )
-    recorded = _recorded_source(text=read_known_marketplaces())
+    recorded = marketplace_install_source(known_marketplaces=read_known_marketplaces())
     if recorded is None:
         return unresolved_build(
             detail=f"known_marketplaces.json records no source and location for {_MARKETPLACE}"
@@ -246,6 +230,11 @@ def adopt_named_build(
             read_registry=read_registry,
             read_known_marketplaces=read_known_marketplaces,
         )
+    if is_commit_prefix(build=build):
+        tip = marketplace_tip(run=run, read_known_marketplaces=read_known_marketplaces)
+        refusal = release_refusal(tag=build.strip(), gh=tag_host.gh, marketplace_commit=tip.sha)
+        if refusal:
+            return _refused(cause=refusal)
     return tag_adopt(clone=clone, tag=build.strip(), host=tag_host)
 
 
