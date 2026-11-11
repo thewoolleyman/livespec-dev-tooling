@@ -263,6 +263,20 @@ def test_the_privileged_tuning_pod_is_placed_only_on_a_homelab_worker_node(tmp_p
     assert f"nodeName: {_PEER}" in client_out
 
 
+def test_the_worker_placed_pods_tolerate_a_cordon_and_the_peer_pods_do_not(tmp_path: Path) -> None:
+    result, state = _run(tmp_path=tmp_path)
+    assert result.returncode == 0, result.stdout + result.stderr
+    applied = (state / "applied.yaml").read_text(encoding="utf-8")
+    docs = {
+        name: applied.split(f"name: {name}\n", 1)[1].split("---", 1)[0]
+        for name in ("tune", "client", "server", "server-out", "client-out")
+    }
+    for name in ("tune", "client", "server-out"):
+        assert "key: node.kubernetes.io/unschedulable" in docs[name], name
+    for name in ("server", "client-out"):
+        assert "node.kubernetes.io/unschedulable" not in docs[name], name
+
+
 def test_a_node_without_the_worker_class_is_refused_before_anything_is_created(
     tmp_path: Path,
 ) -> None:
