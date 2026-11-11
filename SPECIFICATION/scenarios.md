@@ -4462,15 +4462,25 @@ And the commit MUST be refused, and the aggregate MUST NOT run on the committing
 
 ## Scenario: a declared gate resource that no single gate lane can admit is refused naming the largest lane's quotas
 
-Given a consuming repository whose `[tool.livespec_dev_tooling]` table sets `delegated_gate = true` and `gate_cpu = 40`
-
-And no flavor committed in `cluster-queue-gates.yaml` has a nominal CPU quota of 40 or more, and the largest lane's quotas are 15 CPU and `24Gi`
+Given a consuming repository whose `[tool.livespec_dev_tooling]` table sets `delegated_gate = true` and declares `gate_cpu` one more than the largest nominal CPU quota of any flavor committed in `cluster-queue-gates.yaml`
 
 When a push in that repository reaches the gate client on a host eligible under **Host eligibility**
 
 Then the gate client MUST refuse before it submits any gate Job
 
-And its message MUST name the key `gate_cpu`, the declared value 40 and the largest lane's quotas 15 CPU and `24Gi`
+And its message MUST name the key `gate_cpu`, the declared value, and the largest lane's name and CPU and memory quotas as committed
+
+## Scenario: a repository that declares no gate cpu or memory is not refused over an unreadable gates queue file
+
+Given a consuming repository whose `[tool.livespec_dev_tooling]` table sets `delegated_gate = true` and declares neither `gate_cpu` nor `gate_memory`
+
+And the `cluster-queue-gates.yaml` the gate client would read is absent or cannot be parsed
+
+When a push in that repository reaches the gate client on a host eligible under **Host eligibility**
+
+Then the gate client MUST NOT refuse the push because of that file
+
+And it MUST submit the pre-push gate Job at the renderer's default size
 
 ## Scenario: a Red-leg replay Job requests the small replay size whatever the repository declares
 
