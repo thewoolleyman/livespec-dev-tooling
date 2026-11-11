@@ -563,8 +563,7 @@ def test_a_failed_or_unattributable_delegated_aggregate_records_no_evidence(
 def _stage_repo(*, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, files: dict[str, str]) -> str:
     """Build a repo with one base commit, stage `files`, and return the staged tree."""
     monkeypatch.setenv("GIT_LIVESPEC_STRIP_PROBE", "1")
-    for name in [name for name in os.environ if name.startswith("GIT_")]:
-        monkeypatch.delenv(name)
+    _ = [monkeypatch.delenv(name) for name in tuple(os.environ) if name.startswith("GIT_")]
     _git(cwd=tmp_path, args=["init", "-q", "-b", "main"])
     _ = (tmp_path / "keep.py").write_text("KEEP = 1\n", encoding="utf-8")
     _ = (tmp_path / "pyproject.toml").write_text(

@@ -406,8 +406,11 @@ def test_a_token_from_a_green_delegated_verdict_reaches_the_same_memoized_path(
         relative="livespec_dev_tooling/green_token.py", name="green_token_under_delegated_test"
     )
     _init_repo(repo=tmp_path)
-    for key in [name for name in os.environ if name.startswith(("GIT_", "COVERAGE_", "COV_"))]:
+    _ = [
         monkeypatch.delenv(key, raising=False)
+        for key in tuple(os.environ)
+        if key.startswith(("GIT_", "COVERAGE_", "COV_"))
+    ]
     monkeypatch.chdir(tmp_path)
 
     monkeypatch.setattr(sys, "argv", ["green-token", "write"])

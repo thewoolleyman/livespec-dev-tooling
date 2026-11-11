@@ -45,6 +45,7 @@ EXPECTED_CANONICAL_SLUGS: tuple[str, ...] = (
     "check-master-ci-green",
     "check-match-keyword-only",
     "check-newtype-domain-primitives",
+    "check-no-ambient-environment-loops",
     "check-no-direct-destructive-cli",
     "check-no-direct-tool-invocation",
     "check-no-except-outside-io",

@@ -22,8 +22,11 @@ _EMPTY_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
 
 def _scrub(*, monkeypatch: pytest.MonkeyPatch) -> None:
     """Keep a surrounding hook's git variables away from the fixture repository."""
-    for key in [name for name in os.environ if name.startswith(("GIT_", "COVERAGE_", "COV_"))]:
+    _ = [
         monkeypatch.delenv(key, raising=False)
+        for key in tuple(os.environ)
+        if key.startswith(("GIT_", "COVERAGE_", "COV_"))
+    ]
 
 
 def test_the_reads_answer_for_a_fresh_repository(

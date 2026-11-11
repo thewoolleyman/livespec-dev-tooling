@@ -119,8 +119,9 @@ def _scrub_process_env(*, monkeypatch: pytest.MonkeyPatch) -> None:
     on a `subprocess.run(env=...)` argument — this is what the retired child's
     `env=_scrubbed_env()` supplied, applied one frame earlier.
     """
-    for key in [name for name in os.environ if _is_scrubbed(key=name)]:
-        monkeypatch.delenv(key, raising=False)
+    _ = [
+        monkeypatch.delenv(key, raising=False) for key in tuple(os.environ) if _is_scrubbed(key=key)
+    ]
 
 
 def _init_repo(*, repo: Path) -> None:
