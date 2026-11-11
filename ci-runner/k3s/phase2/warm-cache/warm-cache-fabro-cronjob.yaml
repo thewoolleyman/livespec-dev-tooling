@@ -7,6 +7,36 @@
 # NODE PINNING: this job uses the ci-cache Redis writer endpoint and the
 # host-mounted sccache binary, both on the cache-tier carrier. The key is a
 # storage fact, not the k3s runner-role label every ARC node carries.
+#
+# SERIALIZATION: the two CronJobs have separate concurrencyPolicy scopes, so the
+# schedule alone cannot keep this pass out of the regular */30 pass's up-to-3600 s
+# window. The script lists the regular CronJob's Jobs (the namespaced read below,
+# granted to the shared warm-cache-populate ServiceAccount) and waits for them
+# before it touches Redis or builds anything.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: warm-cache-populate-fabro-job-reader
+  namespace: ci-warm-cache
+rules:
+  - apiGroups: ["batch"]
+    resources: ["jobs"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: warm-cache-populate-fabro-job-reader
+  namespace: ci-warm-cache
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: warm-cache-populate-fabro-job-reader
+subjects:
+  - kind: ServiceAccount
+    name: warm-cache-populate
+    namespace: ci-warm-cache
+---
 apiVersion: batch/v1
 kind: CronJob
 metadata:

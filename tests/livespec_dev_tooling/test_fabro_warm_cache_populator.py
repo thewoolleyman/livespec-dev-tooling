@@ -51,6 +51,33 @@ def test_fabro_is_warmed_by_its_own_guarded_populator_with_the_gate_profiles() -
     assert "SCCACHE_REDIS_RW_MODE=READ_WRITE" in script
 
 
+def test_the_headroom_read_is_made_as_the_default_user_not_the_writer() -> None:
+    """The writer ACL has no +info, so INFO must use the default user the ACL grants it to."""
+    script = (_WARM_CACHE / "warm-cache-fabro-populate.sh").read_text(encoding="utf-8")
+    acl = (
+        _ROOT / "ci-runner" / "k3s" / "phase2" / "sccache" / "converge-sccache-redis.sh"
+    ).read_text(encoding="utf-8")
+
+    assert "-@all +@read +@connection +info" in acl
+    assert "redis_default_raw INFO memory" in script
+    assert "redis_raw INFO memory" not in script
+
+
+def test_the_fabro_pass_waits_for_the_regular_pass_instead_of_overlapping_it() -> None:
+    """The two CronJobs have separate concurrency scopes, so the fork pass reads the regular Jobs."""
+    script = (_WARM_CACHE / "warm-cache-fabro-populate.sh").read_text(encoding="utf-8")
+    cronjob = _FABRO_CRONJOB.read_text(encoding="utf-8")
+
+    assert "regular_pass_active" in script
+    assert "/apis/batch/v1/namespaces/" in script
+    assert "kind: Role\n" in cronjob
+    assert "name: warm-cache-populate-fabro-job-reader" in cronjob
+    assert 'resources: ["jobs"]' in cronjob
+    assert 'verbs: ["get", "list"]' in cronjob
+    assert "kind: RoleBinding" in cronjob
+    assert "FABRO_WAIT_FOR_REGULAR_SECONDS" in script
+
+
 def test_the_converge_mounts_the_fabro_populator_script() -> None:
     """The mounted ConfigMap, not a disk copy, is the reader the CronJob executes."""
     converge = _CONVERGE.read_text(encoding="utf-8")

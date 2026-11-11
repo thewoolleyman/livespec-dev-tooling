@@ -22,6 +22,9 @@ SCCACHE_REDIS_WRITER_USERNAME="${SCCACHE_REDIS_WRITER_USERNAME:-}"
 SCCACHE_REDIS_WRITER_PASSWORD="${SCCACHE_REDIS_WRITER_PASSWORD:-}"
 SCCACHE_WRITER_PORT="${SCCACHE_WRITER_PORT:-4228}"
 SCCACHE_FABRO_MIN_FREE_BYTES="${SCCACHE_FABRO_MIN_FREE_BYTES:-}"
+FABRO_WAIT_FOR_REGULAR_SECONDS="${FABRO_WAIT_FOR_REGULAR_SECONDS:-3000}"
+FABRO_REGULAR_POLL_SECONDS="${FABRO_REGULAR_POLL_SECONDS:-30}"
+REGULAR_CRONJOB="${REGULAR_CRONJOB:-warm-cache-populate}"
 CRATES_PROXY_URL="${CRATES_PROXY_URL:-http://crates-proxy.ci-crates-proxy.svc.cluster.local:3080}"
 POPULATE_ADMITTED_JOB_THRESHOLD="${POPULATE_ADMITTED_JOB_THRESHOLD:-16}"
 K8S_SA_DIR="${K8S_SA_DIR:-/var/run/secrets/kubernetes.io/serviceaccount}"
@@ -30,11 +33,14 @@ SCRATCH="${SCRATCH:-$(mktemp -d)}"
 log() { printf '[warm-cache-fabro %s] %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*"; }
 die() { log "FATAL: $*"; exit 2; }
 
-# redis_raw COMMAND [ARG...] — one authenticated RESP exchange.  It prints a
-# simple or bulk reply and fails closed on a Redis error: a missing memory read
-# must not become permission to fill the cache.
-redis_raw() {
-  REDIS_USER="${SCCACHE_REDIS_WRITER_USERNAME}" REDIS_PASS="${SCCACHE_REDIS_WRITER_PASSWORD}" \
+# redis_resp USER PASS COMMAND [ARG...] — one RESP exchange.  It prints a simple
+# or bulk reply and fails closed on a Redis error: a missing memory read must not
+# become permission to fill the cache.  An empty USER sends no AUTH, so the
+# exchange runs as the ACL's unauthenticated default user.
+redis_resp() {
+  local user="$1" pass="$2"
+  shift 2
+  REDIS_USER="${user}" REDIS_PASS="${pass}" \
     python3 - "${SCCACHE_REDIS_ENDPOINT}" "$@" <<'PY'
 import os
 import socket
@@ -71,14 +77,22 @@ def reply(reader) -> str:
 
 with socket.create_connection((endpoint.hostname, endpoint.port or 6379), timeout=10) as client:
     reader = client.makefile("rb")
-    if not os.environ["REDIS_USER"] or not os.environ["REDIS_PASS"]:
-        raise SystemExit("missing writer credential")
-    client.sendall(encode("AUTH", os.environ["REDIS_USER"], os.environ["REDIS_PASS"]))
-    reply(reader)
+    if os.environ["REDIS_USER"]:
+        client.sendall(encode("AUTH", os.environ["REDIS_USER"], os.environ["REDIS_PASS"]))
+        reply(reader)
     client.sendall(encode(*parts))
     print(reply(reader))
 PY
 }
+
+# redis_raw COMMAND [ARG...] — as the sccache-writer, for the marker GET/SET and
+# BGSAVE the writer ACL grants.
+redis_raw() { redis_resp "${SCCACHE_REDIS_WRITER_USERNAME}" "${SCCACHE_REDIS_WRITER_PASSWORD}" "$@"; }
+
+# redis_default_raw COMMAND [ARG...] — as the unauthenticated default user.  The
+# sccache ACL grants +info to that user alone; the writer has no +info, so the
+# headroom read must not authenticate as the writer.
+redis_default_raw() { redis_resp "" "" "$@"; }
 
 admitted_jobs() {
   local token
@@ -88,6 +102,45 @@ admitted_jobs() {
     --cacert "${K8S_SA_DIR}/ca.crt" -H "Authorization: Bearer ${token}" \
     "https://kubernetes.default.svc/apis/kueue.x-k8s.io/v1beta2/clusterqueues" \
     | python3 -c 'import json,sys; print(sum(int((item.get("status") or {}).get("admittedWorkloads") or 0) for item in json.load(sys.stdin)["items"]))'
+}
+
+# regular_pass_active — success while a Job of the regular warm-cache CronJob is
+# running.  The two CronJobs have separate concurrencyPolicy scopes, so Forbid on
+# either does not order them; this read does.  Fails closed (reports active) when
+# the Job list cannot be read.
+regular_pass_active() {
+  local token namespace jobs
+  [ -r "${K8S_SA_DIR}/token" ] && [ -r "${K8S_SA_DIR}/namespace" ] || return 0
+  token="$(cat "${K8S_SA_DIR}/token")"
+  namespace="$(cat "${K8S_SA_DIR}/namespace")"
+  jobs="$(curl --silent --fail --max-time 10 \
+    --cacert "${K8S_SA_DIR}/ca.crt" -H "Authorization: Bearer ${token}" \
+    "https://kubernetes.default.svc/apis/batch/v1/namespaces/${namespace}/jobs")" || return 0
+  python3 -c '
+import json, sys
+cronjob = sys.argv[1]
+for item in json.load(sys.stdin)["items"]:
+    owners = item["metadata"].get("ownerReferences") or []
+    if any(o.get("kind") == "CronJob" and o.get("name") == cronjob for o in owners):
+        if int((item.get("status") or {}).get("active") or 0) > 0:
+            sys.exit(0)
+sys.exit(1)
+' "${REGULAR_CRONJOB}" <<<"${jobs}" || return 1
+}
+
+# wait_for_regular_pass — hold the fork pass behind any running regular pass, up to
+# FABRO_WAIT_FOR_REGULAR_SECONDS, so the fork's build never contends with the
+# routed repositories' 3600-second warm.  Returns 1 when the wait ran out.
+wait_for_regular_pass() {
+  local waited=0
+  while regular_pass_active; do
+    if [ "${waited}" -ge "${FABRO_WAIT_FOR_REGULAR_SECONDS}" ]; then
+      return 1
+    fi
+    [ "${waited}" -ne 0 ] || log "regular warm-cache pass is running; waiting for it before any Fabro work"
+    sleep "${FABRO_REGULAR_POLL_SECONDS}"
+    waited=$((waited + FABRO_REGULAR_POLL_SECONDS))
+  done
 }
 
 sccache_env=(
@@ -129,7 +182,7 @@ sccache_writer_start() {
 
 check_redis_headroom() {
   local memory used max free
-  memory="$(redis_raw INFO memory)" || return 1
+  memory="$(redis_default_raw INFO memory)" || return 1
   used="$(awk -F: '$1 == "used_memory" { print $2 }' <<<"${memory}" | tr -d '\r')"
   max="$(awk -F: '$1 == "maxmemory" { print $2 }' <<<"${memory}" | tr -d '\r')"
   [[ "${used}" =~ ^[0-9]+$ ]] && [[ "${max}" =~ ^[0-9]+$ ]] && [ "${max}" -gt 0 ] || return 1
@@ -197,6 +250,8 @@ command -v tini >/dev/null || die "tini is not on PATH"
 command -v git >/dev/null || die "git is not on PATH"
 command -v python3 >/dev/null || die "python3 is not on PATH"
 
+wait_for_regular_pass \
+  || { log "regular warm-cache pass still running after ${FABRO_WAIT_FOR_REGULAR_SECONDS}s; skipping this tick"; exit 0; }
 admitted="$(admitted_jobs)" || die "cannot read Kueue admitted-job count"
 [[ "${admitted}" =~ ^[0-9]+$ ]] || die "invalid Kueue admitted-job count: ${admitted}"
 [ "${admitted}" -le "${POPULATE_ADMITTED_JOB_THRESHOLD}" ] \
