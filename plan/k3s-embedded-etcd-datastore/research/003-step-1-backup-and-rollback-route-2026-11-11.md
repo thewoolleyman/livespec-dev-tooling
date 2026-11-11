@@ -28,6 +28,7 @@ The playbook has three actions, each behind its own confirmation variable naming
 - **stop** (`k3s_datastore_stop_confirm`)
   - Stops `k3s.service` and does nothing else.
   - It exists because the restore refuses while k3s runs, and no other committed path stops the server unit.
+  - Restricted by coordinator ruling (2026-11-11): stopping the k3s server stops the whole control plane, so `stop` runs only as part of a DECLARED ROLLBACK inside a factory-quiet window. The board must first be drained by legacy-dispatcher-agent, and live runs cancelled through the factory server's `POST /api/v1/runs/{id}/cancel` per `.ai/factory-restart-cancels-runs.md`. It is never a routine operation.
 - **restore** (`k3s_datastore_restore_confirm` plus `k3s_datastore_restore_set`)
   - Refuses unless all of these hold: k3s is inactive; the datastore dir is on its tmpfs; no `etcd/` dir is present; and the set's manifest verifies.
   - Only then does it copy `state.db` into the tmpfs, drop the stale `-wal`/`-shm`, check the copied file's sha256 against the manifest, and start k3s.
@@ -57,7 +58,7 @@ If the conversion does not take on the live server, step 2 falls back to a rebui
    - Revert the step-2 commit and apply `ansible/ci-pool.yml`, then reboot through `just ansible-apply ansible/reboot-ci-server.yml -e ci_server_reboot_confirm=poweredge-xubuntu`.
    - The etcd data dir (`db/etcd`) lives on the same tmpfs, so the boot comes up with no etcd files. k3s selects SQLite, and `converge-ci-stack.service` rebuilds the cluster from committed source. That is the unattended recovery the archived k3s-on-gmktec plan already proved (its assertion 2).
    - The empty tmpfs is also what makes the revert clean: k3s will not fall back to SQLite while an `etcd/` dir exists (the second quoted sentence).
-2. **Secondary: restore the step-1 set.**
+2. **Secondary: restore the step-1 set.** This is a declared rollback, so it runs inside a factory-quiet window (see `stop` above).
    - For the case where a rebuild from empty is not acceptable, run the playbook's `stop` action, then its `restore` action with the newest verified set.
    - The restore refuses while any `etcd/` dir is present. After a cut-over, therefore, it runs only after the reboot in route 1 has emptied the tmpfs.
 
