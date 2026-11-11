@@ -22,6 +22,7 @@ from livespec_dev_tooling.incident_focused_admission import (
     disposition_receipt,
     evidence_receipt_id,
 )
+from livespec_dev_tooling.incident_focused_changes import ChangedProductFiles
 
 _HEAD = "c" * 40
 _TREE = "f" * 40
@@ -152,6 +153,16 @@ def observer(
         return commits.get
 
     monkeypatch.setattr(control.ForgeReads, "installed", installed)
+    changes = {
+        (settings.repo, "master", _HEAD): ChangedProductFiles(
+            product=("src/widget.py",), executable=("src/widget.py",)
+        )
+    }
+
+    def changed(*, repo: Path, target_branch: str, head: str) -> ChangedProductFiles:
+        return changes[repo, target_branch, head]
+
+    monkeypatch.setattr(control, "changed_product_files", changed)
     payload = {
         "repository": "owner/repo",
         "incident_item_id": "incident-1",

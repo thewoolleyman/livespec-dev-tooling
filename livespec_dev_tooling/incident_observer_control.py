@@ -14,6 +14,7 @@ from livespec_dev_tooling._incident_observer_store import (
 )
 from livespec_dev_tooling._incident_observer_types import ObserverRegistration
 from livespec_dev_tooling.incident_controller_installation import ControllerInstallation
+from livespec_dev_tooling.incident_focused_changes import changed_product_files
 from livespec_dev_tooling.incident_forge_reads import ForgeReads
 from livespec_dev_tooling.incident_observer_admission import (
     arm_before_merge,
@@ -29,6 +30,7 @@ __all__: list[str] = ["ObserverControl"]
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-47ij37
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-wanebl
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-4aksht
+# EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-6ou5m2
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -123,6 +125,9 @@ class ObserverControl:
             installed_reader_approved=lambda release, command: (release, command)
             == (settings.reader_release, settings.reader),
             read=ForgeReads.installed(installation=settings),
+            changed=lambda head: changed_product_files(
+                repo=settings.repo, target_branch=settings.target_branch, head=head
+            ),
         )(arm)
         if refusal is not None:
             return {"status": "refused", "reason": refusal}
