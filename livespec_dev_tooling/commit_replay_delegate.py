@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import sys
 from dataclasses import dataclass, replace
+from functools import partial
 from pathlib import Path
 
 from livespec_dev_tooling._gate_remote_assembly import refuses_declaration
@@ -26,7 +27,7 @@ if str(_VENDOR_DIR) not in sys.path:
 import structlog  # noqa: E402  — vendor-path-aware import.
 from returns.result import Failure  # noqa: E402  — vendor-path-aware import.
 
-__all__: list[str] = ["ReplayVerdict", "run_replay", "unrefused"]
+__all__: list[str] = ["ReplayVerdict", "run_one_test", "run_replay", "unrefused"]
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -44,8 +45,21 @@ class ReplayVerdict:
     refused: bool = False
 
 
-def run_replay(*, repo_root: Path, pytest_argv: list[str]) -> ReplayVerdict:
-    """Decide whether a replay leg stays local or is delegated."""
+# A Red or Green replay Job runs ONE recorded test module with no worker count,
+# so it takes the replay contract's size, never the repository's full-suite
+# declaration (contracts.md "Delegated commit-time replay test runs", Replay
+# Job size).
+_SINGLE_TEST_JOB_SIZE = ("--cpu", "2", "--memory", "3Gi", "--parallelism", "1")
+
+
+def run_replay(
+    *, repo_root: Path, pytest_argv: list[str], single_test: bool = False
+) -> ReplayVerdict:
+    """Decide whether a replay leg stays local or is delegated.
+
+    `single_test` marks a Red or Green leg, whose Job is sized by the replay
+    contract. A suite-green leg leaves it unset and keeps the declared size.
+    """
     try:
         enabled = load_delegated_commit_tests(repo_root=repo_root) is True
     except ConfigParseError:
@@ -57,7 +71,18 @@ def run_replay(*, repo_root: Path, pytest_argv: list[str]) -> ReplayVerdict:
     tree_hash = _staged_tree_hash(repo_root=repo_root)
     if not tree_hash:
         return ReplayVerdict(local=False, reason="the staged tree could not be read")
-    return _run_remote(repo_root=repo_root, pytest_argv=pytest_argv, tree_hash=tree_hash)
+    return _run_remote(
+        repo_root=repo_root,
+        pytest_argv=pytest_argv,
+        tree_hash=tree_hash,
+        resources=_SINGLE_TEST_JOB_SIZE if single_test else None,
+    )
+
+
+# The Red and Green legs' entry point: one recorded test module, at the replay
+# contract's size. A suite-green leg calls run_replay itself and keeps the
+# repository's declared size.
+run_one_test = partial(run_replay, single_test=True)
 
 
 def unrefused(*, verdict: ReplayVerdict) -> ReplayVerdict:
@@ -100,7 +125,13 @@ def _staged_commit(*, repo_root: Path, tree_hash: str) -> str:
     return committed.unwrap().stdout.strip()
 
 
-def _run_remote(*, repo_root: Path, pytest_argv: list[str], tree_hash: str) -> ReplayVerdict:
+def _run_remote(
+    *,
+    repo_root: Path,
+    pytest_argv: list[str],
+    tree_hash: str,
+    resources: tuple[str, ...] | None,
+) -> ReplayVerdict:
     """Submit the selected index tree and retain the Job's own verdict."""
     built = gate_remote_request(
         repo_root=repo_root,
@@ -108,6 +139,7 @@ def _run_remote(*, repo_root: Path, pytest_argv: list[str], tree_hash: str) -> R
         runner=default_gate_command_runner,
         tree_hash=tree_hash,
         pytest_argv=tuple(pytest_argv),
+        resources=resources,
     )
     if isinstance(built, Failure):
         refused = refuses_declaration(failure=built.failure())

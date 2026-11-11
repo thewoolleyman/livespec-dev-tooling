@@ -408,3 +408,38 @@ def test_an_unrefused_replay_verdict_passes_through_unchanged() -> None:
     verdict = module.ReplayVerdict(local=True, reason="gates kubeconfig is not readable")
 
     assert module.unrefused(verdict=verdict) is verdict
+
+
+def test_a_one_file_replay_job_is_sized_by_the_replay_contract_and_suite_green_by_the_declaration(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A Red or Green leg's Job takes 2 cpu / 3Gi / 1 worker; suite-green keeps the declaration (lfkkaf).
+
+    The one-file legs run one recorded test module with no worker count, so
+    they must not spend a full-suite gate unit of quota. The suite-green leg
+    runs the suite, so it keeps the repository's declared size or the default.
+    """
+    from returns.result import Failure
+
+    from livespec_dev_tooling.gate_remote_invocation import GateStepFailed
+
+    module = _module()
+    _ = (tmp_path / "pyproject.toml").write_text(
+        "[tool.livespec_dev_tooling]\ndelegated_commit_tests = true\ngate_cpu = 9\n",
+        encoding="utf-8",
+    )
+    requested: list[object] = []
+
+    def request(**kwargs: object) -> object:
+        requested.append(kwargs.get("resources"))
+        return Failure(GateStepFailed(step="render", argv=(), returncode=1, detail="stopped"))
+
+    monkeypatch.setattr(module, "gates_kubeconfig_readable", lambda: True)
+    monkeypatch.setattr(module, "_staged_tree_hash", lambda **_kwargs: "a" * 40)
+    monkeypatch.setattr(module, "resolve_renderer", lambda **_kwargs: Path("renderer"))
+    monkeypatch.setattr(module, "gate_remote_request", request)
+
+    _ = module.run_replay(repo_root=tmp_path, pytest_argv=["tests/test_x.py"], single_test=True)
+    _ = module.run_replay(repo_root=tmp_path, pytest_argv=["tests/"])
+
+    assert requested == [("--cpu", "2", "--memory", "3Gi", "--parallelism", "1"), None]
