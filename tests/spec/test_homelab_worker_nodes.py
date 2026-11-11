@@ -49,7 +49,7 @@ _SPAN_BYTES = b"#!/bin/sh\n# mocked cache-span emitter\n"
 _A = "alpha"
 _B = "beta"
 _NO_LAN = "delta"
-_OPTIONAL_HOST_KEYS = {"WORKER_LAN_ADDRESS"}
+_OPTIONAL_HOST_KEYS = {"WORKER_LAN_ADDRESS", "WORKER_LAN_INTERFACE"}
 _REQUIRED_HOST_KEYS = {
     "WORKER_HOST_OS",
     "WORKER_VM_CPUS",
@@ -588,6 +588,52 @@ def test_a_missing_socket_vmnet_stops_the_task_before_the_vm_starts(host: _Host)
     calls = _calls(host=host)
     assert [c for c in calls if c.split()[1] in {"create", "start", "shell"}] == []
     assert [c for c in calls if c.startswith("brew ")] == []
+
+
+def _declare_lan_interface(*, host: _Host, name: str, iface: str, lima_iface: str | None) -> None:
+    env = host.state / "hosts" / f"{name}.env"
+    env.write_text(
+        env.read_text(encoding="utf-8") + f"WORKER_LAN_INTERFACE={iface}\n", encoding="utf-8"
+    )
+    if lima_iface is not None:
+        config = host.state / ".lima" / "_config"
+        config.mkdir(parents=True, exist_ok=True)
+        (config / "networks.yaml").write_text(
+            "networks:\n"
+            "  shared:\n"
+            "    mode: shared\n"
+            "    gateway: 192.168.105.1\n"
+            "  bridged:\n"
+            "    mode: bridged\n"
+            f"    interface: {lima_iface}\n"
+            "  host:\n"
+            "    mode: host\n",
+            encoding="utf-8",
+        )
+
+
+@pytest.mark.parametrize("lima_iface", ["en0", None])
+def test_a_bridged_network_on_another_interface_than_declared_stops_the_task_before_the_vm_starts(
+    host: _Host, lima_iface: str | None
+) -> None:
+    _install_lima(host=host, version="2.2.1")
+    _declare_lan_interface(host=host, name=_A, iface="en7", lima_iface=lima_iface)
+    result = _run(host=host, args=[_A])
+    assert result.returncode != 0
+    assert "WORKER_LAN_INTERFACE=en7" in result.stderr
+    assert f"uses interface '{lima_iface or '<none>'}'" in result.stderr
+    assert "limactl sudoers" in result.stderr
+    assert [c for c in _calls(host=host) if c.split()[1] in {"create", "start", "shell"}] == []
+
+
+def test_a_bridged_network_on_the_declared_interface_passes_the_prerequisite_check(
+    host: _Host,
+) -> None:
+    _install_lima(host=host, version="2.2.1")
+    _declare_lan_interface(host=host, name=_A, iface="en7", lima_iface="en7")
+    result = _run(host=host, args=[_A])
+    assert "WORKER_LAN_INTERFACE" not in result.stderr, result.stderr
+    assert [c for c in _calls(host=host) if c.split()[1] in {"create", "start"}] != []
 
 
 def test_a_failing_sudoers_check_stops_the_task_before_the_vm_starts(host: _Host) -> None:

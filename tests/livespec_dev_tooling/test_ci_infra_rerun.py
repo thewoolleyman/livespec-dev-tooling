@@ -41,6 +41,7 @@ _FIXTURES = Path(__file__).resolve().parents[1] / "fixtures"
 _REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 _RECORDED_429_LOG = (_FIXTURES / "ci_infra_rerun" / "setup-job-429.log").read_text(encoding="utf-8")
 _SETUP = "Set up job"
+_INITIALIZE_CONTAINERS = "Initialize containers"
 _NOT_FOUND_LINE = (
     "2026-11-03T13:40:01.0000000Z ##[error]An action could not be found at the URI "
     "'https://api.github.com/repos/actions/checkout/tarball/11d5960a'"
@@ -49,13 +50,21 @@ _PLAIN_SETUP_FAILURE = "2026-11-03T13:40:01.0000000Z ##[error]Runner disk is ful
 
 
 def _job(
-    *, attempt: int, job_id: int, name: str, failed_step: str | None, conclusion: str = "failure"
+    *,
+    attempt: int,
+    job_id: int,
+    name: str,
+    failed_step: str | None,
+    conclusion: str = "failure",
+    later_step_started: bool = False,
 ) -> dict[str, object]:
     steps: list[dict[str, object]] = [{"name": _SETUP, "conclusion": "success"}]
     if failed_step == _SETUP:
         steps = [{"name": _SETUP, "conclusion": "failure"}]
     elif failed_step is not None:
         steps.append({"name": failed_step, "conclusion": "failure"})
+    if later_step_started:
+        steps.append({"name": "just check", "conclusion": "success"})
     return {
         "attempt": attempt,
         "id": job_id,
@@ -109,6 +118,7 @@ def test_a_setup_job_429_is_rerun_with_growing_waits_up_to_three_attempts(
     jobs: list[dict[str, object]] = [later]
     codes: list[int] = []
     waits: list[object] = []
+    recorded_logs: dict[int, str] = {}
     attempts: list[list[object]] = []
     lefts: list[list[object]] = []
     summaries: list[str] = []
@@ -117,8 +127,9 @@ def test_a_setup_job_429_is_rerun_with_growing_waits_up_to_three_attempts(
             _job(attempt=attempt, job_id=job_id, name="check-types (root)", failed_step=_SETUP)
         )
         jobs.extend([{**later, "attempt": attempt}] if attempt > 1 else [])
+        recorded_logs[job_id] = _RECORDED_429_LOG
         code, payload, summary = _run_plan(
-            tmp_path=tmp_path, jobs=jobs, run_attempt=attempt, logs={job_id: _RECORDED_429_LOG}
+            tmp_path=tmp_path, jobs=jobs, run_attempt=attempt, logs=dict(recorded_logs)
         )
         codes.append(code)
         reruns = cast("list[dict[str, object]]", payload["reruns"])
@@ -153,6 +164,87 @@ def test_an_action_not_found_at_set_up_job_is_rerun() -> None:
 
     assert [r.signature for r in plan.reruns] == ["action-not-found"]
     assert plan.reruns[0].matched_line == _NOT_FOUND_LINE
+
+
+@pytest.mark.integration
+def test_initialize_containers_registry_network_failures_rerun_once_before_any_later_step(
+    tmp_path: Path,
+) -> None:
+    """Scenario: registry failures before a job starts re-run once and are summarized."""
+    logs = {
+        101: "##[error]pkg-containers.githubusercontent.com: connection reset by peer\n",
+        102: "##[error]pulling ghcr.io/example/image: i/o timeout\n",
+        103: "##[error]pulling ghcr.io/example/image: TLS handshake timeout\n",
+        104: "##[error]Head https://ghcr.io/v2/example: 503 Service Unavailable\n",
+        105: "##[error]pkg-containers.githubusercontent.com: connection reset by peer\n",
+        106: "##[error]Pod workflow-123 is unhealthy with phase status Failed\n",
+        107: "##[error]pkg-containers.githubusercontent.com: connection reset by peer\n",
+    }
+    first_attempt = [
+        _job(attempt=1, job_id=job_id, name=f"check-{job_id}", failed_step=_INITIALIZE_CONTAINERS)
+        for job_id in (101, 102, 103, 104)
+    ]
+    first_attempt.extend(
+        [
+            _job(
+                attempt=1,
+                job_id=105,
+                name="started-later",
+                failed_step=_INITIALIZE_CONTAINERS,
+                later_step_started=True,
+            ),
+            _job(
+                attempt=1,
+                job_id=106,
+                name="unhealthy-pod",
+                failed_step=_INITIALIZE_CONTAINERS,
+            ),
+        ]
+    )
+    first_code, first_payload, first_summary = _run_plan(
+        tmp_path=tmp_path,
+        jobs=first_attempt,
+        run_attempt=1,
+        logs=logs,
+    )
+
+    first_reruns = cast("list[dict[str, object]]", first_payload["reruns"])
+    assert first_code == 0
+    assert [
+        (rerun["job_id"], rerun["signature"], rerun["max_attempts"]) for rerun in first_reruns
+    ] == [
+        (101, "registry-connection-reset", 1),
+        (102, "registry-io-timeout", 1),
+        (103, "registry-tls-handshake-timeout", 1),
+        (104, "registry-5xx", 1),
+    ]
+    assert first_payload["wait_seconds"] <= 300
+    assert "run 41645065357" in first_summary
+    assert "job 'check-101' (id 101)" in first_summary
+    assert logs[101].strip() in first_summary
+    assert "left for its owner: job 'started-later'" in first_summary
+    assert "left for its owner: job 'unhealthy-pod'" in first_summary
+
+    next_jobs = [
+        *first_attempt,
+        _job(
+            attempt=2,
+            job_id=107,
+            name="check-101",
+            failed_step=_INITIALIZE_CONTAINERS,
+        ),
+    ]
+    retry_code, retry_payload, retry_summary = _run_plan(
+        tmp_path=tmp_path,
+        jobs=next_jobs,
+        run_attempt=2,
+        logs=logs,
+    )
+
+    assert retry_code == 0
+    assert retry_payload["reruns"] == []
+    assert "left for its owner: job 'check-101'" in retry_summary
+    assert "already re-run 1 times" in retry_summary
 
 
 def test_a_setup_job_failure_without_the_signature_or_its_log_is_left() -> None:
@@ -205,7 +297,58 @@ def test_only_the_current_attempts_failed_classified_jobs_need_logs() -> None:
     )
     assert jobs is not None
 
-    assert jobs_needing_logs(jobs=jobs, run_attempt=2) == (2,)
+    assert jobs_needing_logs(jobs=jobs, run_attempt=2) == (1, 2)
+
+
+def test_an_earlier_non_registry_initialize_failure_does_not_consume_the_one_rerun() -> None:
+    jobs = parse_jobs(
+        payload=[
+            _job(attempt=1, job_id=1, name="check-a", failed_step=_INITIALIZE_CONTAINERS),
+            _job(attempt=2, job_id=2, name="check-a", failed_step=_INITIALIZE_CONTAINERS),
+        ]
+    )
+    assert jobs is not None
+    pod = "##[error]Pod workflow-1 is unhealthy with phase status Failed\n"
+    reset = "##[error]pkg-containers.githubusercontent.com: connection reset by peer\n"
+
+    assert jobs_needing_logs(jobs=jobs, run_attempt=2) == (1, 2)
+    plan = plan_reruns(jobs=jobs, run_attempt=2, logs={1: pod, 2: reset})
+
+    assert [(r.job_id, r.attempt) for r in plan.reruns] == [(2, 1)]
+
+
+def test_an_earlier_initialize_failure_with_an_unreadable_log_does_not_consume_the_one_rerun() -> (
+    None
+):
+    jobs = parse_jobs(
+        payload=[
+            _job(attempt=1, job_id=1, name="check-a", failed_step=_INITIALIZE_CONTAINERS),
+            _job(attempt=2, job_id=2, name="check-a", failed_step=_INITIALIZE_CONTAINERS),
+        ]
+    )
+    assert jobs is not None
+    reset = "##[error]pkg-containers.githubusercontent.com: connection reset by peer\n"
+
+    plan = plan_reruns(jobs=jobs, run_attempt=2, logs={2: reset})
+
+    assert [(r.job_id, r.attempt) for r in plan.reruns] == [(2, 1)]
+    assert plan.left == ()
+
+
+def test_an_earlier_registry_initialize_failure_consumes_the_one_rerun() -> None:
+    jobs = parse_jobs(
+        payload=[
+            _job(attempt=1, job_id=1, name="check-a", failed_step=_INITIALIZE_CONTAINERS),
+            _job(attempt=2, job_id=2, name="check-a", failed_step=_INITIALIZE_CONTAINERS),
+        ]
+    )
+    assert jobs is not None
+    reset = "##[error]pkg-containers.githubusercontent.com: connection reset by peer\n"
+
+    plan = plan_reruns(jobs=jobs, run_attempt=2, logs={1: reset, 2: reset})
+
+    assert plan.reruns == ()
+    assert [left.job_id for left in plan.left] == [2]
 
 
 def test_log_jobs_prints_the_ids_whose_logs_to_fetch(

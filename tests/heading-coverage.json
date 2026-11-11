@@ -2227,9 +2227,8 @@
     "heading": "## Scenario: a CI job killed at Initialize containers by a registry network error is re-run once",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "test": "TODO",
-    "work_item": "livespec-dev-tooling-khlrw3",
-    "reason": "A real test at the integration tier or above is owed for this heading: an integration test of the reusable-ci-infra-rerun.yml reconciler over recorded job logs, proving a job that failed at Initialize containers with a container-registry network error is re-run once within 5 minutes with its run id, job id and matched line in the summary, that a second such failure is not re-run, and that a later-step failure or a registry-free container failure is left for its owner (proposal initialize-containers-registry-rerun, v171). livespec-dev-tooling-khlrw3 owns it."
+    "test": "tests.livespec_dev_tooling.test_ci_infra_rerun.test_initialize_containers_registry_network_failures_rerun_once_before_any_later_step",
+    "reason": "Integration-tier: drives `ci_infra_rerun.main` through the same files that reusable-ci-infra-rerun.yml writes, with container-registry connection-reset, i/o-timeout, TLS-handshake-timeout, and 5xx logs. It proves every matching job re-runs after 120 seconds, records the run id, job id, and matched line in the run summary, leaves a later-started job and registry-free unhealthy pod to their owners, and leaves the matching second failure at its one-rerun cap (livespec-dev-tooling-khlrw3)."
   },
   {
     "heading": "## Scenario: a merged runner-pool change reaches the live cluster through one committed apply",

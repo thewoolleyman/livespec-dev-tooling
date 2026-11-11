@@ -48,6 +48,7 @@ class JobClassifier:
     step: str
     signatures: tuple[Signature, ...]
     waits_seconds: tuple[int, ...]
+    requires_no_later_step_start: bool = False
 
 
 _ACTION_DOWNLOAD_429 = (
@@ -77,7 +78,47 @@ _SETUP_JOB_ACTION_DOWNLOAD = JobClassifier(
     waits_seconds=(120, 300, 600),
 )
 
-CLASSIFIERS: tuple[JobClassifier, ...] = (_SETUP_JOB_ACTION_DOWNLOAD,)
+# GitHub's hosted runner records these transport failures while it pulls the
+# job container, before the job can execute a repository step. They are a
+# separate one-time recovery path (livespec-dev-tooling-khlrw3): a second
+# failed pull is left to its owner rather than being hidden as a test flake.
+_INITIALIZE_CONTAINERS_REGISTRY_NETWORK = JobClassifier(
+    cause="initialize-containers registry network error",
+    step="Initialize containers",
+    signatures=(
+        Signature(
+            name="registry-connection-reset",
+            pattern=re.compile(r"connection reset by peer", re.IGNORECASE),
+        ),
+        Signature(
+            name="registry-io-timeout",
+            pattern=re.compile(r"i/o timeout", re.IGNORECASE),
+        ),
+        Signature(
+            name="registry-tls-handshake-timeout",
+            pattern=re.compile(r"TLS handshake timeout", re.IGNORECASE),
+        ),
+        Signature(
+            name="registry-5xx",
+            pattern=re.compile(
+                "|".join(
+                    (
+                        r"(?:ghcr\.io|pkg-containers\.githubusercontent\.com|registry).*\b5\d{2}\b",
+                        r"\b5\d{2}\b.*(?:ghcr\.io|pkg-containers\.githubusercontent\.com|registry)",
+                    )
+                ),
+                re.IGNORECASE,
+            ),
+        ),
+    ),
+    waits_seconds=(120,),
+    requires_no_later_step_start=True,
+)
+
+CLASSIFIERS: tuple[JobClassifier, ...] = (
+    _SETUP_JOB_ACTION_DOWNLOAD,
+    _INITIALIZE_CONTAINERS_REGISTRY_NETWORK,
+)
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -89,6 +130,7 @@ class RecordedJob:
     name: str
     conclusion: str
     first_failed_step: str | None
+    later_step_started: bool = False
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -135,13 +177,33 @@ def _current_failures(*, jobs: Sequence[RecordedJob], run_attempt: int) -> list[
     return [job for job in jobs if job.attempt == run_attempt and job.conclusion == FAILURE]
 
 
-def jobs_needing_logs(*, jobs: Sequence[RecordedJob], run_attempt: int) -> tuple[int, ...]:
-    """The current attempt's failed jobs whose first failed step some classifier covers."""
-    return tuple(
-        job.job_id
-        for job in _current_failures(jobs=jobs, run_attempt=run_attempt)
-        if _classifier_for(step=job.first_failed_step) is not None
+def _is_classified_failure(*, job: RecordedJob) -> bool:
+    classifier = _classifier_for(step=job.first_failed_step)
+    return (
+        job.conclusion == FAILURE
+        and classifier is not None
+        and not (classifier.requires_no_later_step_start and job.later_step_started)
     )
+
+
+def jobs_needing_logs(*, jobs: Sequence[RecordedJob], run_attempt: int) -> tuple[int, ...]:
+    """Failed classified jobs of the current attempt, plus same-name earlier attempts of them.
+
+    The earlier attempts' logs are needed to count how many of them failed for the cause.
+    """
+    current_names = {
+        job.name
+        for job in _current_failures(jobs=jobs, run_attempt=run_attempt)
+        if _is_classified_failure(job=job)
+    }
+    wanted = [
+        job.job_id
+        for job in jobs
+        if job.attempt <= run_attempt
+        and job.name in current_names
+        and _is_classified_failure(job=job)
+    ]
+    return tuple(dict.fromkeys(wanted))
 
 
 def _match(*, classifier: JobClassifier, log_text: str) -> tuple[str, str] | None:
@@ -152,8 +214,17 @@ def _match(*, classifier: JobClassifier, log_text: str) -> tuple[str, str] | Non
     return None
 
 
+def _may_have_been_rerun_for_cause(*, classifier: JobClassifier, log_text: str | None) -> bool:
+    """Only a readable earlier log that carries a signature counts as the cause."""
+    return log_text is not None and _match(classifier=classifier, log_text=log_text) is not None
+
+
 def _attempt_number(
-    *, jobs: Sequence[RecordedJob], job: RecordedJob, classifier: JobClassifier
+    *,
+    jobs: Sequence[RecordedJob],
+    job: RecordedJob,
+    classifier: JobClassifier,
+    logs: Mapping[int, str],
 ) -> int:
     return len(
         {
@@ -162,7 +233,11 @@ def _attempt_number(
             if other.name == job.name
             and other.conclusion == FAILURE
             and other.first_failed_step == classifier.step
+            and not (classifier.requires_no_later_step_start and other.later_step_started)
             and other.attempt <= job.attempt
+            and _may_have_been_rerun_for_cause(
+                classifier=classifier, log_text=logs.get(other.job_id)
+            )
         }
     )
 
@@ -174,6 +249,9 @@ def _plan_one(
     if classifier is None:
         reason = f"failed at step {job.first_failed_step!r}, which no re-run classifier covers"
         return LeftJob(job_id=job.job_id, name=job.name, reason=reason)
+    if classifier.requires_no_later_step_start and job.later_step_started:
+        reason = f"failed at {classifier.step!r}, but a later step started"
+        return LeftJob(job_id=job.job_id, name=job.name, reason=reason)
     log_text = logs.get(job.job_id)
     if log_text is None:
         reason = f"failed at {classifier.step!r}, but its log was not readable"
@@ -182,7 +260,7 @@ def _plan_one(
     if matched is None:
         reason = f"failed at {classifier.step!r} without a {classifier.cause} signature"
         return LeftJob(job_id=job.job_id, name=job.name, reason=reason)
-    attempt = _attempt_number(jobs=jobs, job=job, classifier=classifier)
+    attempt = _attempt_number(jobs=jobs, job=job, classifier=classifier, logs=logs)
     cap = len(classifier.waits_seconds)
     if attempt > cap:
         reason = f"already re-run {cap} times for {classifier.cause}; the attempt cap is reached"

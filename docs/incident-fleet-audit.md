@@ -24,14 +24,41 @@ of the ready list and the findings name the consumer and the capability.
 
 | Capability | Serving version | Unverified when |
 | --- | --- | --- |
-| `gate-readers` | the commit `direct_url.json` records for `livespec_dev_tooling` in the consumer's own `.venv` (its clean HEAD when the consumer runs its own source). The consumer's interpreter is never run. | no clone, no `.venv` (for example `openbrain`, `resume`, `homelab` on a host that has none), no or several installs, an install that is not a recorded revision, a dirty own-source checkout |
-| `templates` | the one commit that every pin of this library's reusable workflows (`.github/workflows/...@ref`) and composite actions (`.github/actions/...@ref`) names, across ALL of the consumer's default-branch `.github/workflows/*.yml` files, read from one blobless clone (a tag is resolved to its commit); a consumer with no such pin that runs only local workflows serves its default-branch commit | an unreadable workflow directory or file, pins that disagree, a ref that names no tag or commit, no template use at all (for example `dolt-server`) |
+| `gate-readers` | the commit `direct_url.json` records for `livespec_dev_tooling` in the consumer's own `.venv` (release-keyed when the consumer runs its own source, below). The consumer's interpreter is never run. | no clone, no `.venv` (for example `openbrain`, `resume`, `homelab` on a host that has none), no or several installs, an install that is not a recorded revision, a tracked modification in an own-source checkout (an untracked file does not count) |
+| `templates` | the one commit that every pin of this library's reusable workflows (`.github/workflows/...@ref`) and composite actions (`.github/actions/...@ref`) names, across ALL of the consumer's default-branch `.github/workflows/*.yml` files, read from one blobless clone (a tag is resolved to its commit); a consumer that runs its own local workflows (this library always, any other consumer with no such pin) is release-keyed against its default-branch commit, below | an unreadable workflow directory or file, pins that disagree, a ref that names no tag or commit, no template use at all (for example `dolt-server`) |
 | `driver-hooks` | `plugin=<commit>` for every plugin the consumer's `.claude/settings.json` enables, from the install record whose project path is the consumer's clone, with its plugin cache present | an enabled plugin that is not installed for this project, no cache, an unreadable registry |
 | `recovery-authorization` | the controller's serving version plus the single always-bypass GitHub App on the consumer's default-branch ruleset | no verified controller, no or several bypass actors, not an always-bypass Integration |
 | `independent-controller` | `v<version>@<commit>` of the venv the RUNNING `livespec-incident-observer.service` main process was started from, and only if the process started after that install | the unit is not `active`/`running`, the process is not the packaged observer command, no single recorded install, the process predates its install, or the repository is not the one the observer serves (`thewoolleyman/livespec-dev-tooling`) |
 
 The controller reader never opens the protected `controller.json` (the operator cannot read it, and
 a release name written there is a claim) and never consults the auditor's own package.
+
+## Release-keyed rows: a consumer that serves from its own source
+
+Two reads would otherwise key to the consumer's own commit: the gate readers of a consumer whose
+`.venv` is an editable install of its own checkout, and the templates of a consumer that runs its
+own local workflows. A claim committed to `config/incident-fleet-evidence.json` can never name the
+commit that contains it, so those reads are keyed to a RELEASE
+(`livespec_dev_tooling/_incident_fleet_release_keyed.py`):
+
+- The serving build is the newest `vX.Y.Z` tag that is an ancestor of the serving commit (the
+  checkout's HEAD, or the default-branch tip read in the consumer's clone on this host). The tag's
+  commit must be confirmed on the remote.
+- A claim for such a row names that release (for example `v1.193.0`), never a commit.
+- It is judged PER ROW. A row serves the release only while every file of that row's surface at the
+  serving commit is byte-identical to the release's. Commits that touch only files outside the
+  surface leave the row serving. A surface is the exact file set its reader serves from
+  (`livespec_dev_tooling/_incident_fleet_surface_files.py`): the surface's roots, pinned by a test,
+  plus the in-package modules they import or run and the local workflows and actions they call.
+  It is never the whole tree, because this repository's master moves many times an hour.
+- An unclassified release-keyed row names its reason in the findings: no release ancestor, a tag
+  the remote does not confirm, the surface's changed or absent files, a claim naming a release that
+  is not an ancestor of HEAD or not the newest one, or a tracked modification.
+- The `serving` line, and each row that classifies through a release claim, print
+  `release vX.Y.Z at HEAD <commit>`.
+
+On the dev host (2026-11-10) only `thewoolleyman/livespec-dev-tooling` is read this way, for both
+capabilities.
 
 ## The ready list and enablement
 

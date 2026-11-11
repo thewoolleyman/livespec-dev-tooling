@@ -18,6 +18,7 @@ from livespec_dev_tooling._incident_fleet_clones import consumer_clone
 from livespec_dev_tooling._incident_fleet_driver_reader import read_driver_hooks
 from livespec_dev_tooling._incident_fleet_gate_reader import read_gate_readers
 from livespec_dev_tooling._incident_fleet_recovery_reader import read_recovery_authorization
+from livespec_dev_tooling._incident_fleet_release_keyed import ServingReading
 from livespec_dev_tooling._incident_fleet_sources import load_claims
 from livespec_dev_tooling._incident_fleet_template_reader import read_templates
 from livespec_dev_tooling.budgeted_gh import GhRead
@@ -117,7 +118,7 @@ class _Fleet:
 
         return HostProbe(clones_root=self.root, proc_root=Path("/proc"), home=self.root, run=run)
 
-    def read(self, *, name: str = "tooling") -> str | None:
+    def read(self, *, name: str = "tooling") -> str | ServingReading | None:
         return read_gate_readers(probe=self.probe(), repository=f"example/{name}")
 
 
@@ -175,13 +176,22 @@ def _editable(*, clone: Path, url: str | None = None) -> dict[str, object]:
     return {"url": url or clone.as_uri(), "dir_info": {"editable": True}}
 
 
-def test_a_consumer_running_its_own_clean_source_serves_its_head(fleet: _Fleet) -> None:
+def test_a_consumer_running_its_own_clean_source_is_keyed_to_a_release_not_its_head(
+    fleet: _Fleet,
+) -> None:
+    # Its HEAD can never be named by a committed claim; with no release tag it serves nothing.
     clone = fleet.root / "tooling"
     _ = fleet.install(name="tooling", direct_url=_editable(clone=clone))
     fleet.git["rev-parse"] = _text_ok(COMMIT + "\n")
     fleet.git["status"] = _text_ok("")
-    assert fleet.read() == COMMIT
+    assert fleet.read() == ServingReading(
+        build="",
+        detail=f"no release tag is an ancestor of {COMMIT}",
+        head=COMMIT,
+        releases=frozenset(),
+    )
     assert {"git", "-C", str(clone)} <= set(fleet.asked[0])
+    assert ["git", "-C", str(clone), "status", "--porcelain", "--untracked-files=no"] in fleet.asked
 
 
 @pytest.mark.parametrize(
@@ -205,7 +215,10 @@ def test_an_own_source_install_that_is_dirty_or_unreadable_is_unverified(
     _ = fleet.install(name="tooling", direct_url=_editable(clone=clone))
     fleet.git["rev-parse"] = head
     fleet.git["status"] = status
-    assert fleet.read() is None
+    reading = fleet.read()
+    assert isinstance(reading, ServingReading)
+    assert reading.build == ""
+    assert reading.detail
 
 
 def test_an_editable_install_of_another_checkout_is_unverified(fleet: _Fleet) -> None:
@@ -279,7 +292,7 @@ class _Remote:
 
         return HostProbe(clones_root=None, proc_root=Path("/proc"), home=Path("/"), run=run)
 
-    def read(self) -> str | None:
+    def read(self) -> str | ServingReading | None:
         return read_templates(probe=self.probe(), repository="thewoolleyman/consumer")
 
     def shown(self) -> list[str]:
@@ -397,12 +410,14 @@ def test_an_unreadable_workflow_file_leaves_the_consumer_unverified() -> None:
     assert remote.read() is None
 
 
-def test_a_consumer_running_its_own_local_workflows_serves_its_default_branch_commit() -> None:
+def test_a_consumer_running_its_own_local_workflows_is_read_from_its_default_branch() -> None:
     remote = _Remote(
         workflows=_ci("./.github/actions/budget", "actions/checkout@v5"),
         remote={"HEAD": SELF_SHA},
     )
-    assert remote.read() == f"consumer@{SELF_SHA}"
+    assert remote.read() == ServingReading(
+        build="", detail="no clone of consumer on this host", head=SELF_SHA
+    )
     lookup = next(a for a in remote.asked if "ls-remote" in a)
     assert any("thewoolleyman/consumer.git" in part for part in lookup)
 
@@ -427,7 +442,9 @@ def test_an_unreachable_remote_is_unverified() -> None:
     assert read_templates(probe=probe, repository="thewoolleyman/consumer") is None
 
 
-def _library(*, workflows: dict[str, str], remote: dict[str, str]) -> tuple[str | None, _Remote]:
+def _library(
+    *, workflows: dict[str, str], remote: dict[str, str]
+) -> tuple[str | ServingReading | None, _Remote]:
     remote_ = _Remote(workflows=workflows, remote=remote)
     served = read_templates(probe=remote_.probe(), repository="thewoolleyman/livespec-dev-tooling")
     return served, remote_
@@ -443,7 +460,9 @@ def test_this_librarys_own_ci_serves_its_local_templates_not_its_release_lane_se
     served, remote = _library(
         workflows=workflows, remote={"HEAD": SELF_SHA, "refs/tags/v1.183.0": TAG_SHA}
     )
-    assert served == f"livespec-dev-tooling@{SELF_SHA}"
+    assert served == ServingReading(
+        build="", detail="no clone of livespec-dev-tooling on this host", head=SELF_SHA
+    )
     lookup = next(a for a in remote.asked if "ls-remote" in a)
     assert "https://github.com/thewoolleyman/livespec-dev-tooling.git" in lookup
     assert "HEAD" in lookup

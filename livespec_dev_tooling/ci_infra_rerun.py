@@ -72,20 +72,25 @@ __all__: list[str] = [
 ]
 
 
-def _first_failed_step(*, steps: object) -> str | None | bool:
-    """The first failed step's name, None when no step failed, False when malformed."""
+def _failure_details(*, steps: object) -> tuple[str | None, bool] | None:
+    """Return the first failed step and whether a following step had started."""
     if not isinstance(steps, list):
-        return False
+        return None
+    first_failed_step: str | None = None
+    later_step_started = False
     for step in cast("list[object]", steps):
         if not isinstance(step, dict):
-            return False
+            return None
         record = cast("dict[str, object]", step)
         name = record.get("name")
         if not isinstance(name, str):
-            return False
-        if record.get("conclusion") == FAILURE:
-            return name
-    return None
+            return None
+        conclusion = record.get("conclusion")
+        if first_failed_step is None and conclusion == FAILURE:
+            first_failed_step = name
+        elif first_failed_step is not None and conclusion not in {None, "skipped"}:
+            later_step_started = True
+    return first_failed_step, later_step_started
 
 
 def _parse_job(*, raw: object) -> RecordedJob | None:
@@ -96,20 +101,22 @@ def _parse_job(*, raw: object) -> RecordedJob | None:
     job_id = record.get("id")
     name = record.get("name")
     conclusion = record.get("conclusion")
-    first = _first_failed_step(steps=record.get("steps"))
+    failure_details = _failure_details(steps=record.get("steps"))
     if (
         not isinstance(attempt, int)
         or not isinstance(job_id, int)
         or not isinstance(name, str)
-        or first is False
+        or failure_details is None
     ):
         return None
+    first_failed_step, later_step_started = failure_details
     return RecordedJob(
         attempt=attempt,
         job_id=job_id,
         name=name,
         conclusion=conclusion if isinstance(conclusion, str) else "",
-        first_failed_step=cast("str | None", first),
+        first_failed_step=first_failed_step,
+        later_step_started=later_step_started,
     )
 
 
