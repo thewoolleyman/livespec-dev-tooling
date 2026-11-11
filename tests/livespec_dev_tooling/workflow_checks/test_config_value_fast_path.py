@@ -186,7 +186,7 @@ def test_classifier_helpers_refuse_unreadable_or_ambiguous_staged_data(
 
     valid = '{"harnesses": {"dispatcher": {"wip_cap": 4}}}'
     configure(before=valid, after="{")
-    assert subject.is_config_value_fast_path(cwd=tmp_path) is False
+    assert subject.is_config_value_fast_path(cwd=tmp_path) is True
     configure(before=valid, after=valid, before_returncode=1)
     assert subject.is_config_value_fast_path(cwd=tmp_path) is False
     configure(before="[]", after="[]")
@@ -298,6 +298,26 @@ def test_any_value_only_replacement_on_a_listed_key_is_refused_by_validation_not
     failures = subject.validate_config_value_fast_path(cwd=root)
     assert {(failure.path, failure.key_path) for failure in failures} == {
         (".livespec.jsonc", "dispatcher.wip_cap")
+    }
+
+
+@pytest.mark.parametrize("value", ["1e", "tru", "4 4"])
+def test_a_value_only_replacement_that_leaves_jsonc_unparsable_is_refused_naming_file_and_key(
+    *, tmp_path: Path, value: str
+) -> None:
+    """An unparsable replacement still qualifies, so validation refuses it by file and key."""
+    subject = _subject()
+    root = _repository(tmp_path=tmp_path)
+    target = root / ".livespec.jsonc"
+    _ = target.write_text(
+        target.read_text(encoding="utf-8").replace('"wip_cap": 4', f'"wip_cap": {value}'),
+        encoding="utf-8",
+    )
+    _git(cwd=root, args=["add", ".livespec.jsonc"])
+    assert subject.is_config_value_fast_path(cwd=root) is True
+    failures = subject.validate_config_value_fast_path(cwd=root)
+    assert (".livespec.jsonc", "dispatcher.wip_cap") in {
+        (failure.path, failure.key_path) for failure in failures
     }
 
 
