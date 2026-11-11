@@ -131,7 +131,7 @@ avg60 is above about 30 (`legacy-coordinator-agent` ruling, 2026-11-04,
 recorded on `livespec-dev-tooling-6e5pyj`). Sandbox throttling with idle cores
 is a sizing question for the sandbox limit, not a sign the node is full.
 
-## Two instruments that lied, and one that only looked like it
+## Three instruments that lied, and one that only looked like it
 
 - **`iostat -dx` column offsets.** In sysstat 12.x the write columns are
   `w/s`=$8, `wkB/s`=$9, `wrqm/s`=$10, `%wrqm`=$11, **`w_await`=$12**,
@@ -147,6 +147,11 @@ is a sizing question for the sandbox limit, not a sign the node is full.
   165–182 s at a 51-runner burst); `systemctl --failed` counting 1 is the
   signal working, not a unit to repair. Read its journal for the class and
   whether it cleared.
+- **`ClusterQueue` cohort membership is `spec.cohortName`.** Kueue v1beta2
+  names the field `spec.cohortName`; v1beta1's `spec.cohort` is absent on
+  every queue here, so a read of it reports every queue cohort-less, which
+  is false. Read `-o custom-columns=NAME:.metadata.name,COHORT:.spec.cohortName`
+  before concluding a queue cannot borrow.
 
 ## `Slow SQL` tracks the backlog's depth, not the cap
 
