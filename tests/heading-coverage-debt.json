@@ -1563,13 +1563,6 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario: the gmktec gate lane keeps room for three default-size gate Jobs",
-    "work_item": "livespec-dev-tooling-brggiu",
-    "first_seen": "2026-11-11"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
     "heading": "## Scenario: the highest-ordered ready target is admitted to any execution target with headroom for its cost",
     "work_item": "livespec-dev-tooling-hvfc6c",
     "first_seen": "2026-11-04"
