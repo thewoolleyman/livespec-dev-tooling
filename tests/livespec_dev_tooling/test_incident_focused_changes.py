@@ -23,6 +23,8 @@ import pytest
 
 from livespec_dev_tooling import incident_observer_control as control
 from livespec_dev_tooling import incident_observer_service as service
+from livespec_dev_tooling._incident_focused_scope import changed_paths, classify
+from livespec_dev_tooling._incident_focused_types import FocusedScope
 from livespec_dev_tooling.incident_controller_installation import ControllerInstallation
 from livespec_dev_tooling.incident_focused_admission import (
     EVIDENCE_ROW,
@@ -426,5 +428,208 @@ def test_a_changed_set_the_clone_cannot_establish_refuses_and_never_admits(
         reason.startswith("incident-focused-evidence-changes-unavailable:"),
         detail in reason,
         "read-current" not in authority.actions,
+    ]
+    assert all(facts), (facts, status, result)
+
+
+@dataclass(kw_only=True)
+class _Identity:
+    incident_item_id: str = "incident-1"
+    attempt_id: str = "repair-1"
+    phase: str = "repair"
+    repository: str = "owner/repo"
+    base_sha: str
+    head_sha: str
+    operation_id: str = "operation-1"
+
+
+def _history(
+    *,
+    root: Path,
+    base_files: dict[str, str],
+    head_commits: list[dict[str, str | None]],
+    target_files: dict[str, str] | None = None,
+) -> _Clone:
+    """A clone whose head is `head_commits` on the base; a None value deletes the file."""
+    repo = root / "repo"
+    repo.mkdir()
+    _ = _git(repo=repo, args=["init", "-q", "-b", "master"])
+    base = _commit(repo=repo, files=base_files, message="base")
+    head = base
+    for number, files in enumerate(head_commits):
+        for name in [name for name, text in files.items() if text is None]:
+            (repo / name).unlink()
+        head = _commit(
+            repo=repo,
+            files={name: text for name, text in files.items() if text is not None},
+            message=f"head {number}",
+        )
+    target = base
+    if target_files is not None:
+        _ = _git(repo=repo, args=["checkout", "-q", base])
+        target = _commit(repo=repo, files=target_files, message="target moved on")
+    _ = _git(repo=repo, args=["update-ref", "refs/remotes/origin/master", target])
+    _ = _git(repo=repo, args=["checkout", "-q", head])
+    return _Clone(
+        repo=repo, base=base, head=head, tree=_git(repo=repo, args=["rev-parse", head + "^{tree}"])
+    )
+
+
+def _collector_record(*, clone: _Clone) -> dict[str, Any]:
+    """The record the collector's own `changed_paths` and `classify` build for the head."""
+    _ = _git(repo=clone.repo, args=["checkout", "-q", clone.head])
+    scope = FocusedScope(
+        tree_hash=clone.tree, source_prefixes=("src/",), test_prefixes=("tests/",), related_tests=()
+    )
+    names = changed_paths(
+        repo_root=clone.repo,
+        identity=_Identity(base_sha=clone.base, head_sha=clone.head),
+        scope=scope,
+    )
+    paths = {
+        name: classify(path=clone.repo / name, name=name, source_prefixes=scope.source_prefixes)
+        for name in sorted(names)
+    }
+    _ = _git(repo=clone.repo, args=["checkout", "-q", clone.base])
+    covered = tuple(name for name, disposition in paths.items() if disposition == "executable")
+    return _record(clone=clone, paths=paths, covered=covered)
+
+
+def test_a_head_renaming_a_product_file_is_admitted_with_the_collectors_own_record(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The observer lists a rename as the old path AND the new one; the collector
+    # must too, or every repair that moves a product file is refused.
+    clone = _history(
+        root=tmp_path,
+        base_files={
+            "pyproject.toml": _CONFIG,
+            "src/old_name.py": "def thing() -> int:\n    return 1\n",
+        },
+        head_commits=[
+            {"src/old_name.py": None, "src/new_name.py": "def thing() -> int:\n    return 1\n"}
+        ],
+    )
+    application, authority = _observer(tmp_path=tmp_path, monkeypatch=monkeypatch, clone=clone)
+    record = _collector_record(clone=clone)
+    authority.add(record=record)
+    status, result = _arm(application=application, clone=clone)
+    facts = [
+        record["paths"] == {"src/new_name.py": "executable", "src/old_name.py": "deleted"},
+        (status, result.get("status")) == ("202 Accepted", "armed"),
+    ]
+    assert all(facts), (facts, record["paths"], status, result)
+
+
+def test_a_head_declaring_a_new_source_tree_must_name_the_code_under_it(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The prefixes are the union of the target's and the head's COMMITTED
+    # configuration, never the clone's checked-out copy frozen at provisioning.
+    widened = '[tool.livespec_dev_tooling]\nsource_trees = ["src", "lib"]\n'
+    clone = _history(
+        root=tmp_path,
+        base_files={"pyproject.toml": _CONFIG, "src/widget.py": "VALUE = 1\n"},
+        head_commits=[
+            {
+                "pyproject.toml": widened,
+                "src/widget.py": "VALUE = 2\n",
+                "lib/extra.py": "def extra() -> int:\n    return 1\n",
+            }
+        ],
+    )
+    _ = _git(repo=clone.repo, args=["checkout", "-q", clone.base])
+    application, authority = _observer(tmp_path=tmp_path, monkeypatch=monkeypatch, clone=clone)
+    paths = {"pyproject.toml": "non-executable", "src/widget.py": "executable"}
+    authority.add(record=_record(clone=clone, paths=paths, covered=("src/widget.py",)))
+    status, result = _arm(application=application, clone=clone)
+    reason = str(result.get("reason"))
+    facts = [
+        status == "403 Forbidden",
+        reason.startswith("incident-focused-evidence-paths-incomplete:"),
+        "lib/extra.py" in reason,
+        "src/widget.py" not in reason,
+    ]
+    assert all(facts), (facts, status, result)
+
+
+def test_a_head_narrowing_its_source_trees_still_owes_the_targets_product_files(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The union keeps the target's prefixes: a head that drops `src` from its own
+    # configuration cannot take its changes under `src/` out of scope.
+    narrowed = '[tool.livespec_dev_tooling]\nsource_trees = ["other"]\n'
+    clone = _history(
+        root=tmp_path,
+        base_files={"pyproject.toml": _CONFIG, "src/widget.py": "VALUE = 1\n"},
+        head_commits=[{"pyproject.toml": narrowed, "src/widget.py": "VALUE = 2\n"}],
+    )
+    _ = _git(repo=clone.repo, args=["checkout", "-q", clone.base])
+    application, authority = _observer(tmp_path=tmp_path, monkeypatch=monkeypatch, clone=clone)
+    authority.add(
+        record=_record(clone=clone, paths={"pyproject.toml": "non-executable"}, covered=())
+    )
+    status, result = _arm(application=application, clone=clone)
+    reason = str(result.get("reason"))
+    facts = [
+        status == "403 Forbidden",
+        reason.startswith("incident-focused-evidence-paths-incomplete:"),
+        "src/widget.py" in reason,
+    ]
+    assert all(facts), (facts, status, result)
+
+
+def test_the_changed_set_spans_every_head_commit_from_the_merge_base_not_the_target_tip(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A two-commit head on a target that moved on since the merge base: a file
+    # changed only in the FIRST head commit is required, and a file only the
+    # target changed is not.
+    clone = _history(
+        root=tmp_path,
+        base_files={
+            "pyproject.toml": _CONFIG,
+            "src/first.py": "VALUE = 1\n",
+            "src/second.py": "VALUE = 1\n",
+            "src/target_only.py": "VALUE = 1\n",
+        },
+        head_commits=[{"src/first.py": "VALUE = 2\n"}, {"src/second.py": "VALUE = 2\n"}],
+        target_files={"src/target_only.py": "VALUE = 2\n"},
+    )
+    _ = _git(repo=clone.repo, args=["checkout", "-q", clone.base])
+    application, authority = _observer(tmp_path=tmp_path, monkeypatch=monkeypatch, clone=clone)
+    paths = {"src/second.py": "executable"}
+    authority.add(record=_record(clone=clone, paths=paths, covered=("src/second.py",)))
+    status, result = _arm(application=application, clone=clone)
+    reason = str(result.get("reason"))
+    facts = [
+        status == "403 Forbidden",
+        reason.startswith("incident-focused-evidence-paths-incomplete:"),
+        "src/first.py" in reason,
+        "src/target_only.py" not in reason,
+        "src/second.py" not in reason,
+    ]
+    assert all(facts), (facts, status, result)
+
+
+def test_a_coverage_row_without_a_numeric_percent_does_not_cover_a_changed_executable_file(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    clone = _clone(root=tmp_path)
+    application, authority = _observer(tmp_path=tmp_path, monkeypatch=monkeypatch, clone=clone)
+    record = _record(
+        clone=clone,
+        paths={**_HONEST, "src/gadget.py": "non-executable"},
+        covered=("src/widget.py",),
+    )
+    record["coverage"]["src/gadget.py"] = {"summary": {"percent_covered": "100"}}
+    authority.add(record=record)
+    status, result = _arm(application=application, clone=clone)
+    reason = str(result.get("reason"))
+    facts = [
+        status == "403 Forbidden",
+        reason.startswith("incident-focused-evidence-coverage-absent:"),
+        "src/gadget.py" in reason,
+        "src/widget.py" not in reason,
     ]
     assert all(facts), (facts, status, result)
