@@ -37,15 +37,37 @@ for template in "$dir"/cluster-queue-*.yaml; do
 done
 
 # --- gates: one worker flavor per architecture, placed FIRST in gates-cq ----
-# One gate is the size gates-cq's committed quotas count in: 5 CPU and 8 Gi
-# (../kueue/cluster-queue-gates.yaml: 15 cpu / 24Gi is three gates on gmktec,
-# 10 / 16Gi two on hp and poweredge; the renderer requests 5 cpu per gate). A
-# worker's gate share (enroll-workload-classes.sh) holds max(1, share / 5 CPU)
-# whole gates, the same at-least-one rule its churn slots follow.
-gate_millicores=5000
-gate_memory_gi=8
+# One gate is the GATE UNIT that gates-cq itself declares, in its
+# ci-runner.io/gate-unit-cpu and ci-runner.io/gate-unit-memory annotations
+# (../kueue/cluster-queue-gates.yaml). That file's fleet flavor quotas are whole
+# multiples of the same unit, which tests/spec/test_gates_queue_gate_unit.py
+# holds, so this script and the fleet lanes count gates in one committed value
+# rather than three (plan gate-job-resources, livespec-dev-tooling-brggiu). It is
+# read off the LIVE queue, which converge-ci-stack.sh applies from that file just
+# before this script runs. A worker's gate share (enroll-workload-classes.sh)
+# holds max(1, share / unit cpu) whole gates, the same at-least-one rule its
+# churn slots follow.
 gates_template="$dir/gates-worker-flavor.yaml"
 [ -e "$gates_template" ] || exit 0
+if ! queue="$(kubectl get clusterqueue gates-cq -o json)"; then
+  echo "converge-worker-queues: gates-cq is not present; no worker gate flavor added" >&2
+  exit 0
+fi
+if ! unit="$(printf '%s' "$queue" | python3 -c '
+import json, re, sys
+annotations = json.load(sys.stdin).get("metadata", {}).get("annotations") or {}
+cpu = annotations.get("ci-runner.io/gate-unit-cpu", "")
+memory = annotations.get("ci-runner.io/gate-unit-memory", "")
+if not re.fullmatch(r"[1-9][0-9]*", cpu) or not re.fullmatch(r"[1-9][0-9]*Gi", memory):
+    sys.exit("gates-cq must carry ci-runner.io/gate-unit-cpu (a positive integer) and "
+             "ci-runner.io/gate-unit-memory (a positive integer of Gi); read cpu=%r memory=%r"
+             % (cpu, memory))
+print(cpu, memory[:-2])')"; then
+  echo "converge-worker-queues: FATAL: no gate unit on gates-cq; no worker gate flavor added" >&2
+  exit 1
+fi
+read -r gate_cpu gate_memory_gi <<<"$unit"
+gate_millicores=$((gate_cpu * 1000))
 shares="$(kubectl get nodes -l 'homelab-worker.livespec.dev/class=worker,homelab-worker.livespec.dev/gate-share-millicores' \
   -o jsonpath='{range .items[*]}{.metadata.labels.kubernetes\.io/arch} {.metadata.labels.homelab-worker\.livespec\.dev/gate-share-millicores}{"\n"}{end}')"
 gates="$(printf '%s\n' "$shares" | awk -v g="$gate_millicores" '
@@ -79,10 +101,6 @@ done <<<"$gates"
 # worker flavor to a gate whose required kubernetes.io/arch affinity excludes
 # that architecture, so the order moves no amd64-only gate onto an arm64 worker.
 # A worker no longer enrolled drops out.
-if ! queue="$(kubectl get clusterqueue gates-cq -o json)"; then
-  echo "converge-worker-queues: gates-cq is not present; no worker gate flavor added" >&2
-  exit 0
-fi
 patch="$(printf '%s' "$queue" | WORKER_FLAVORS="$flavors_json" python3 -c '
 import json, os, sys
 queue = json.load(sys.stdin)
