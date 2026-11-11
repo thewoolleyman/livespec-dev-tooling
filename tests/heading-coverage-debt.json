@@ -269,14 +269,14 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a Red-leg replay Job killed for memory is an absent verdict, not a valid Red",
-    "work_item": "livespec-dev-tooling-lfkkaf",
+    "work_item": "livespec-dev-tooling-4g7als",
     "first_seen": "2026-11-11"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a Red-leg replay Job requests the small replay size whatever the repository declares",
-    "work_item": "livespec-dev-tooling-lfkkaf",
+    "work_item": "livespec-dev-tooling-4g7als",
     "first_seen": "2026-11-11"
   },
   {
@@ -696,7 +696,7 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a malformed declared gate resource refuses a delegated commit instead of gating it locally",
-    "work_item": "livespec-dev-tooling-c3nd2h",
+    "work_item": "livespec-dev-tooling-4g7als",
     "first_seen": "2026-11-11"
   },
   {
@@ -780,7 +780,7 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a non-positive declared gate resource is refused before any gate Job is submitted",
-    "work_item": "livespec-dev-tooling-c3nd2h",
+    "work_item": "livespec-dev-tooling-4g7als",
     "first_seen": "2026-11-11"
   },
   {
@@ -871,7 +871,7 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a repository that declares gate_cpu 9 and gate_parallelism 8 gets a gate Job requesting 9 CPUs whose coverage run uses 8 xdist workers",
-    "work_item": "livespec-dev-tooling-c3nd2h",
+    "work_item": "livespec-dev-tooling-4g7als",
     "first_seen": "2026-11-11"
   },
   {
@@ -885,7 +885,7 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a repository that declares no gate resources keeps the default gate Job size",
-    "work_item": "livespec-dev-tooling-c3nd2h",
+    "work_item": "livespec-dev-tooling-4g7als",
     "first_seen": "2026-11-11"
   },
   {
