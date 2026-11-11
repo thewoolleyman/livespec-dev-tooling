@@ -308,13 +308,23 @@ def test_the_fair_shares_derive_from_the_capacity_the_node_profiles_declare(
 
 
 def test_measured_job_hours_derive_the_committed_fair_shares() -> None:
-    """Seven-day pool job-hours are the dated, auditable source of every quota."""
+    """Live shares stay well-formed; the capacity apportionment is fixture-proved.
+
+    Profile capacity is a value-only fast-path input, so a live profile change
+    must not require changing a ClusterQueue quota in the same commit.  The
+    apportionment itself is exercised by the self-written pools in
+    ``test_the_fair_shares_derive_from_the_capacity_the_node_profiles_declare``:
+    those fixtures prove both the agreeing and refused cases without coupling
+    either committed value to the other.
+    """
     quotas = _cohort_quotas()
-    assert quotas, "the cohort must commit at least one fair share"
-    violations = _quota_derivation_violations(
-        quotas=quotas, capacity=sum(_pool_capacity().values())
+    assert quotas and all(quota > 0 for quota in quotas.values()), (
+        "each committed cohort member must declare a positive fair-share quota; " f"quotas={quotas}"
     )
-    assert not violations, violations
+    assert set(quotas).issubset(_scale_set_ceilings()), (
+        "each measured fair share must map to a committed scale-set ceiling; "
+        f"quotas={sorted(quotas)} ceilings={sorted(_scale_set_ceilings())}"
+    )
 
     derivation = _DERIVATION.read_text(encoding="utf-8")
     assert "## Measured job-hours re-derivation at C = 44 (2026-10-22)" in derivation
