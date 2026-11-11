@@ -283,6 +283,37 @@ def test_a_stalled_suite_ends_a_descendant_that_started_its_own_session(tmp_path
             os.kill(int(escaped_pid.read_text(encoding="utf-8")), signal.SIGKILL)
 
 
+def test_a_stalled_suite_ends_a_session_escaper_started_while_it_is_being_ended() -> None:
+    """A subprocess forked after the first process-table read is still ended.
+
+    The suite keeps starting session-leading children, so a single snapshot of
+    the process table is stale by the time the group is signalled. Once the
+    commit is refused no process the run started may be alive.
+    """
+    mod = _load()
+    token = f"livespec-suite-late-escaper-{uuid.uuid4().hex}"
+    leader = (
+        "import subprocess, sys, time; "
+        "print('ready', flush=True)\n"
+        "while True:\n"
+        f"    subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(300)', {token!r}], "
+        "start_new_session=True)\n"
+        "    time.sleep(0.005)"
+    )
+    try:
+        run = mod.run_suite(
+            argv=[sys.executable, "-c", leader],
+            bound=mod.SuiteBound(stall_seconds=2, ceiling_seconds=None),
+        )
+
+        assert run.timed_out is True
+        assert not _live_processes_carrying(token)
+    finally:
+        for pid in _live_processes_carrying(token):
+            with contextlib.suppress(ProcessLookupError):
+                os.kill(int(pid), signal.SIGKILL)
+
+
 def test_the_gate_runners_progress_stamp_is_one_of_the_scrubbed_gate_variables() -> None:
     """The caller's progress stamp is scrubbed like every gate-shaping variable.
 
