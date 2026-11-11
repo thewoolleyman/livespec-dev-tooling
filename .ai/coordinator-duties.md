@@ -33,7 +33,9 @@ A test the run did not touch is retried up to 3 times, 60 seconds apart, on its 
 and every retried failure gets a root-fix item at once. The retry is the flake-retry pytest plugin's, inside the
 same pytest session (non-functional-requirements.md §"Testing approach", maintainer rulings on
 livespec-dev-tooling-6tgd2z, 2026-11-02 18:38:21Z and 18:39:54Z). A test the run touched, or one whose closure
-cannot be read, is never retried. No seat re-runs a CI job, a suite or a factory run to get past a flake.
+cannot be read, is never retried. No seat re-runs a CI job, a suite or a factory run to get past a flake, and that includes a local gate: relaunching
+a `gate-start` commit or push gate after a flake is the same re-run (a 2026-11-11 seat did it, and the relaunch could
+not be stopped once started; see `.ai/gate-runtime-vs-harness-patience.md`).
 
 **One bounded job-level retry (maintainer ruling 2026-11-04 ~16:4xZ, recorded on epic `livespec-dev-tooling-6tgd2z`).**
 Where the in-place test retry cannot reach (runner teardown or container faults, OOM kills, failures outside
