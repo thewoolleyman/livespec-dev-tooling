@@ -1266,7 +1266,35 @@ Then the push MUST be refused
 
 And the gate client MUST emit exactly one outcome event whose outcome is `no-verdict`
 
-And that event MUST carry the repository's name, the gated tree's hash, and the gate Job's name
+And that event MUST carry the repository's name and the gated tree's hash
+
+And that event MUST NOT carry a gate Job's name, because no Job was submitted
+
+And that event's refusal step MUST be `submit`
+
+And that event's no-verdict cause MUST be `delegation`
+
+## Scenario: a delegated gate run its own client interrupts emits a client-interrupted no-verdict outcome event
+
+Given a consumer repository whose `[tool.livespec_dev_tooling]` table sets `delegated_gate = true`
+
+And a pushing host where the pushing user can read the gates kubeconfig
+
+And a git push of a tree that has no green token whose pre-push gate has submitted its gate Job
+
+When the gate client receives SIGTERM while it waits for that Job's verdict
+
+Then the push MUST be refused
+
+And the gate client MUST emit exactly one outcome event whose outcome is `no-verdict`
+
+And that event's no-verdict cause MUST be `client-interrupted`
+
+And that event's refusal step MUST be `await-verdict`
+
+And that event MUST carry the repository's name, the gated tree's hash, and the submitted gate Job's name
+
+And the fleet's no-verdict trigger MUST NOT count that event
 
 ## Scenario: a delegated gate verdict is unchanged when its outcome event cannot be delivered
 

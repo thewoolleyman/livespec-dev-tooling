@@ -856,6 +856,14 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: a delegated gate run its own client interrupts emits a client-interrupted no-verdict outcome event",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) is owed for this scenario, driving the shipped delegated gate client against a canned cluster that accepts the gate Job submission, delivering SIGTERM to the client while it awaits that Job's verdict, and reading the one emitted outcome span: outcome `no-verdict`, no-verdict cause `client-interrupted`, refusal step `await-verdict`, the repository, the gated tree's hash and the submitted Job's name, and that the committed no-verdict trigger definition excludes it. The behaviour is not yet implemented; livespec-dev-tooling-donph5 owns the implementation and this test (spec v190, proposal delegated-gate-no-verdict-cause-and-refusal-step).",
+    "work_item": "livespec-dev-tooling-donph5"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: a delegated gate verdict is unchanged when its outcome event cannot be delivered",
     "test": "tests.livespec_dev_tooling.test_gate_outcome_telemetry.test_a_delegated_gate_verdict_is_unchanged_when_its_event_cannot_be_delivered",
     "reason": "Integration-tier (module-level `pytest.mark.integration`): runs the SAME green gate twice through the REAL emitter against one canned cluster — once with a receiver that accepts the span, once with one that refuses the connection — and compares the two verdicts to EACH OTHER rather than to a constant, which is the claim the scenario makes: the push completes, and the verdict and the status it produces are the same ones a delivered event produces (work-item livespec-dev-tooling-cmgqnz).",
