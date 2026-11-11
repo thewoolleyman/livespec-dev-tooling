@@ -609,11 +609,11 @@ jobs:
     needs: [incident-ci]
     if: ${{ !cancelled() }}
     # The same single variable routes every ordinary gating target.
-    runs-on: ${{ fromJSON(github.event_name == 'push' && vars.CI_RUNNER_LABELS_MASTER || vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
+    runs-on: ${{ fromJSON(github.event_name == 'push' && vars.CI_RUNNER_LABELS_MASTER || vars.CI_INCIDENT_RUNNER_LABELS || vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
     container:
       image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.183.1
     env:
-      LIVESPEC_CI_LANE: ${{ contains(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]', 'ubuntu') && 'hosted' || 'local' }}
+      LIVESPEC_CI_LANE: ${{ contains(vars.CI_INCIDENT_RUNNER_LABELS || vars.CI_RUNNER_LABELS || '["ubuntu-latest"]', 'ubuntu') && 'hosted' || 'local' }}
       MISE_DATA_DIR: /root/.local/share/mise
       MISE_NOT_FOUND_AUTO_INSTALL: "0"
       GITHUB_TOKEN: ${{ github.token }}
@@ -879,7 +879,7 @@ jobs:
   incident-ci:
     timeout-minutes: 90  # 7-day max 58 min (livespec-dev-tooling-u6jztk)
     name: incident-ci
-    runs-on: ${{ fromJSON(github.event_name == 'push' && vars.CI_RUNNER_LABELS_MASTER || vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
+    runs-on: ${{ fromJSON(github.event_name == 'push' && vars.CI_RUNNER_LABELS_MASTER || vars.CI_INCIDENT_RUNNER_LABELS || vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
     container:
       image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.183.1
     permissions:
@@ -890,7 +890,7 @@ jobs:
     outputs:
       omitted: ${{ steps.entrance.outputs.omitted }}
     env:
-      LIVESPEC_CI_LANE: ${{ contains(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]', 'ubuntu') && 'hosted' || 'local' }}
+      LIVESPEC_CI_LANE: ${{ contains(vars.CI_INCIDENT_RUNNER_LABELS || vars.CI_RUNNER_LABELS || '["ubuntu-latest"]', 'ubuntu') && 'hosted' || 'local' }}
       MISE_DATA_DIR: /root/.local/share/mise
       MISE_NOT_FOUND_AUTO_INSTALL: "0"
       GITHUB_TOKEN: ${{ github.token }}
