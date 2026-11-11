@@ -408,7 +408,8 @@ fabro_server_instances:
       kubernetes:
         # v0.8.1 at its OWN versioned path (sandbox_driver_kubernetes_versioned_releases
         # below), so mi-homelab keeps v0.5.0 at the shared path. The candidate's
-        # `kubernetes` provider runs this same v0.8.2 (wrlwvk parity canary).
+        # `kubernetes` provider ran this same v0.8.2 (wrlwvk parity canary) and now
+        # carries the v0.8.3 one-pod canary (bd-ib-u4fp5z).
         # REVERT: path: /usr/local/bin/sandbox-driver-kubernetes
         # REVERT: sha256: d93437f0bcb495e13a3373a4d2578cc0b2dba2c39c1ad5f3fdcf801ce0788b6e
         # v0.8.2 (2026-11-05, orchestrator bd-ib-digmk2): an exec'd command runs
@@ -645,8 +646,9 @@ fabro_server_instances:
     # which would be that same collision, so it names one under this
     # instance's root. Bump both sha256 together with the fleet instance's.
     # The `kubernetes-rust` digest equals the role default (v0.5.0, d93437f0), the
-    # binary the role installs at /usr/local/bin; `kubernetes` pins the fleet's
-    # versioned v0.8.2. Fabro verifies each against its pin at EVERY plugin
+    # binary the role installs at /usr/local/bin; `kubernetes` pins the versioned
+    # v0.8.3 (its one-pod canary; the fleet instance stays on v0.8.2). Fabro
+    # verifies each against its pin at EVERY plugin
     # launch, so the pin and the binary must always be equal; see the role's
     # defaults/main.yml.
     sandbox_providers:
@@ -659,8 +661,15 @@ fabro_server_instances:
         # REVERT: path: /usr/local/bin/sandbox-driver-kubernetes
         # REVERT: sha256: d93437f0bcb495e13a3373a4d2578cc0b2dba2c39c1ad5f3fdcf801ce0788b6e
         # REVERT: drop SANDBOX_DRIVER_KUBERNETES_CPU_REQUEST_CORES; cpu_cores: 4
-        path: /usr/local/bin/sandbox-driver-kubernetes-v0.8.2
-        sha256: cf3cedc8900d2176630f8a700964a094f9db30648955310e930bee07ca6b9ec7
+        # v0.8.3 ONE-POD CANARY (2026-11-11, orchestrator bd-ib-u4fp5z; coordinator
+        # legacy-coordinator-agent, duties section 10): an exec's stop-watcher and
+        # stdin feeder exit when their parent shell dies, so a killed wrapper leaves
+        # no orphan polling its stop file. This instance alone moves first; the
+        # fleet instance stays on v0.8.2 until this canary's parity read passes.
+        # REVERT to v0.8.2: path: /usr/local/bin/sandbox-driver-kubernetes-v0.8.2
+        # REVERT to v0.8.2: sha256: cf3cedc8900d2176630f8a700964a094f9db30648955310e930bee07ca6b9ec7
+        path: /usr/local/bin/sandbox-driver-kubernetes-v0.8.3
+        sha256: 008d343f0696a1dbc4ad13d8dc5782be223ce8c37600ec47d24ca8873c752ce5
         inherit_env:
           - HOME
           - PATH
@@ -975,6 +984,11 @@ sandbox_driver_kubernetes_versioned_releases:
   # pins it; v0.8.1 stays installed as the REVERT target.
   - version: v0.8.2
     sha256: cf3cedc8900d2176630f8a700964a094f9db30648955310e930bee07ca6b9ec7
+  # v0.8.3 (bd-ib-u4fp5z): v0.8.2 plus the exec stop-watcher and stdin-feeder
+  # parent-death exit. The candidate pins it for its one-pod canary; v0.8.2 stays
+  # installed as the REVERT target.
+  - version: v0.8.3
+    sha256: 008d343f0696a1dbc4ad13d8dc5782be223ce8c37600ec47d24ca8873c752ce5
 
 # tailscale_serve: publish the fabro-server instance's loopback port on the
 # tailnet, so the Dispatcher reaches https://gmktec-xubuntu.perch-rudd.ts.net:32276.
