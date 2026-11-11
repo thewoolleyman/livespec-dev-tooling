@@ -290,7 +290,7 @@ def _declared_render_flags(
     )
 
 
-def gate_remote_request(
+def gate_remote_request(  # noqa: PLR0913 — every keyword is an independent input of the one request the gate Job is rendered from.
     *,
     repo_root: Path,
     renderer: Path,
@@ -298,8 +298,14 @@ def gate_remote_request(
     tree_hash: str | None = None,
     pytest_argv: tuple[str, ...] | None = None,
     check_suite: tuple[str, ...] | None = None,
+    resources: tuple[str, ...] | None = None,
 ) -> Result[GateRunRequest, GateStepFailed]:
     """Assemble the one request S7a needs, out of the repository itself.
+
+    `resources`, when given, is the render-flag size the CALLER's Job takes in
+    place of the declared one: a one-file Red or Green replay Job is sized by
+    the replay contract, not by the repository's full-suite declaration. The
+    declaration is validated either way, so an unusable one refuses every Job.
 
     Every reach into the world goes through the SAME seam the client uses, so a
     caller that can stub the cluster can stub the assembly too — and a failure
@@ -359,8 +365,9 @@ def gate_remote_request(
         *authority_skip_argv,
         *request_inputs.render_check_arguments(pytest_argv=pytest_argv, suite=suite),
         # Only the resources this repository DECLARES: an undeclared one passes
-        # no flag, so the renderer's own default stands and has one owner.
-        *resource_argv,
+        # no flag, so the renderer's own default stands and has one owner. A
+        # caller-sized Job passes its own size instead.
+        *(resource_argv if resources is None else resources),
     ]
     rendered = require_success(
         step=_RENDER_STEP, argv=render_argv, outcome=runner(argv=render_argv, cwd=repo_root)
