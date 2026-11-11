@@ -77,6 +77,22 @@ node_status_credential_render_path: >-
 # baked into the tool; it is the account ansible/inventory/legacy.yml reaches
 # these nodes as.
 node_status_credential_ssh_user: cwoolley
+# The account the agent LOGS IN AS on the control-plane node, when it differs
+# from the agent-side ssh user above. Empty (the default) means the ssh user's own
+# name, which is every pool node that reaches the server as `cwoolley`; the
+# rendered env-file is then byte-identical to before this variable existed. A node
+# whose operator account is not `cwoolley` (gamingpc-xubuntu's is `ubuntu`) sets
+# it in host_vars, because Tailscale SSH on poweredge-xubuntu maps the login name
+# to a LOCAL account and refuses one it has none of ("failed to look up local
+# user"). It is rendered into the REMOTE_HOST string as `<user>@<host>`, so the
+# refresh tool needs no change, and the known_hosts entry stays under the bare
+# host name, which is what ssh matches it on.
+node_status_credential_remote_user: ""
+# The ssh destination the refresh tool dials, composed ONCE: `<remote_user>@` only
+# when that is set, then the server host. Only the env-file reads it; the
+# known_hosts entry is written under the bare server host name.
+node_status_credential_remote_login: >-
+  {{ (node_status_credential_remote_user ~ '@') if node_status_credential_remote_user else '' }}{{ node_status_credential_server_host }}
 # The SERVER's ssh HOST key, named as a path on the server rather than as bytes
 # committed here: the trust then follows the machine's own key instead of a copy
 # that goes stale the first time the key is rotated. ed25519 because it is the
