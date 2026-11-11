@@ -111,14 +111,19 @@ sccache_redis_state: absent
 storage_reclaim_state: absent
 
 # --- factory_budget_reconciler ---
-# FACTORY TRIAL, 2026-11-11: at most 2 factory sandbox pods (sandbox pods only,
-# no Fabro server). FACTORY_NODE=true again in the profile for this trial,
+# FACTORY TRIAL, 2026-11-11: at most 1 factory sandbox pod (sandbox pods only,
+# no Fabro server). Lowered 2 -> 1 at ~05:15Z on 2026-11-11 under the trial's
+# GATES-FIRST rule: legacy-coordinator-agent measured gates-cq with 3 pending
+# while gates-hp-flavor held 5 cpu of quota idle (05:08:46Z); hp's requests
+# were 11.7 of 14.5 cpu and 21.6 of 27.2Gi, leaving 2.8 cpu / 5.6Gi, below one
+# 5 cpu / 6Gi gate, with the 2 sandboxes holding 6 cpu / 14.9Gi. If gates
+# still queue on hp at 1, the next step is 0. FACTORY_NODE=true again in the profile for this trial,
 # decided by legacy-coordinator-agent consistent with the maintainer's pick
 # (epic livespec-dev-tooling-ko26ez); it was 0 since FACTORY_NODE=false on
 # 2026-11-03. Memory binds first (7.6 GiB per pod against 27 GiB allocatable).
 # Judged on factory runs per hour, green rate and hp CI p95. Revert: 0 here and
 # FACTORY_NODE=false in the profile (see the profile's FACTORY TRIAL block).
-factory_pod_budget: 2
+factory_pod_budget: 1
 
 # --- k3s_config ---
 # system.slice's root-level CPU share against kubepods.slice (567 on this 16-CPU

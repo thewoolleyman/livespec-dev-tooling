@@ -111,7 +111,7 @@ _HP_MUST_RUN = frozenset(
         # The two FACTORY_NODE-gated roles (livespec-dev-tooling-due2h6,
         # orchestrator work-item bd-ib-kogktm). hp declared FACTORY_NODE=false
         # from 2026-11-03 (orchestrator epic bd-ib-nmuyjc) and declares it true
-        # again for its 2026-11-11 factory trial (sandbox pods only, capped at 2
+        # again for its 2026-11-11 factory trial (sandbox pods only, capped at 1
         # by factory_pod_budget; epic livespec-dev-tooling-ko26ez), so the play
         # reaches both roles there again. Reverting the trial is the same profile
         # edit back, after which these two move back to _HP_MUST_NOT_RUN.
