@@ -16,6 +16,7 @@ import json
 
 from test_rows_files import _MEMBER, make_context, tree_table
 
+from livespec_dev_tooling.fleet import _rows_claude_plugin as plugin_rows
 from livespec_dev_tooling.fleet._context import GhResult, RowFinding, RowPass, RowSkip
 from livespec_dev_tooling.fleet._rows_claude_plugin import (
     CLAUDE_SETTINGS,
@@ -34,6 +35,12 @@ _PLUGIN_SETTINGS_ARGS: tuple[str, ...] = (
 _PLUGIN_JUSTFILE_ARGS: tuple[str, ...] = (
     "api",
     "repos/acme/widget/contents/justfile?ref=master",
+    "-H",
+    "Accept: application/vnd.github.raw",
+)
+_PLUGIN_PYPROJECT_ARGS: tuple[str, ...] = (
+    "api",
+    "repos/acme/widget/contents/pyproject.toml?ref=master",
     "-H",
     "Accept: application/vnd.github.raw",
 )
@@ -85,6 +92,29 @@ def _plugin_currency_table(
     if justfile is not None:
         table[_PLUGIN_JUSTFILE_ARGS] = GhResult(returncode=0, stdout=justfile, stderr="")
     return table
+
+
+def test_session_start_orchestrator_hold_names_a_stale_dev_tooling_pin_as_a_move() -> None:
+    """The fleet row distinguishes an old provisioner from a hold-carrying one."""
+    assert hasattr(plugin_rows, "assert_session_start_orchestrator_hold")
+    table = _plugin_currency_table(
+        paths=[CLAUDE_SETTINGS, "justfile", "pyproject.toml"],
+    )
+    table[_PLUGIN_PYPROJECT_ARGS] = GhResult(
+        returncode=0,
+        stdout=("[tool.uv.sources]\n" 'livespec-dev-tooling = { git = "x", tag = "v1.190.9" }\n'),
+        stderr="",
+    )
+
+    outcome = plugin_rows.assert_session_start_orchestrator_hold(
+        ctx=make_context(table=table), member=_MEMBER
+    )
+
+    assert isinstance(outcome, RowFinding)
+    assert "widget" in outcome.message
+    assert "would move" in outcome.message
+    assert "v1.190.9" in outcome.message
+    assert "v1.191.0" in outcome.message
 
 
 def test_claude_plugin_currency_edge_outcomes() -> None:
