@@ -597,6 +597,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: a gate placement pass that cannot read a gate-lane node's readings raises an alarm and fails its unit",
+    "work_item": "livespec-dev-tooling-ln7q3b",
+    "first_seen": "2026-11-11"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: a gate-start whose venue selector cannot be imported refuses by name",
     "work_item": "livespec-dev-tooling-p3mhfh",
     "first_seen": "2026-11-05"
