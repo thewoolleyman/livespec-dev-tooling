@@ -216,6 +216,19 @@ def test_yaml_config_values_inside_lists_remain_schema_valid(*, tmp_path: Path) 
     assert subject.validate_config_value_fast_path(cwd=root) == ()
 
 
+def test_profile_validation_reads_the_staged_version_not_an_unstaged_worktree_edit(
+    *, tmp_path: Path
+) -> None:
+    """The validation lane judges the exact profile that the commit would contain."""
+    subject = _subject()
+    root = _repository(tmp_path=tmp_path)
+    path = "ci-runner/k3s/phase0-bare-metal/profiles/test.env"
+    _write(root=root, path=path, text="ADMISSION_CAPACITY_C=3\n")
+    _git(cwd=root, args=["add", path])
+    _write(root=root, path=path, text="ADMISSION_CAPACITY_C=not-staged\n")
+    assert subject.validate_config_value_fast_path(cwd=root) == ()
+
+
 def test_invalid_jsonc_yaml_and_profile_values_name_the_affected_rule(*, tmp_path: Path) -> None:
     """Validation preserves file/key diagnostics for every authoritative parser."""
     subject = _subject()

@@ -258,10 +258,11 @@ def _validate_profile(
     parser = cwd / "ci-runner/k3s/phase0-bare-metal/profile.sh"
     command = 'die() { printf \'%s\\n\' "$1" >&2; exit 4; }; source "$1"; profile_load "$2"'
     result = subprocess.run(
-        ["bash", "-c", command, "config-value-fast-path", str(parser), str(cwd / path)],
+        ["bash", "-c", command, "config-value-fast-path", str(parser), "/dev/stdin"],
         cwd=cwd,
         check=False,
         capture_output=True,
+        input=_staged_text(cwd=cwd, path=path),
         text=True,
     )
     if result.returncode == 0:
