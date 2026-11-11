@@ -174,8 +174,12 @@ tune() {
 
 # read_feature <iface> <feature>: prints on, off, fixed or absent.
 read_feature() {
-  local line
-  line="$(tune ethtool -k "$1" 2>/dev/null | grep -E "^[[:space:]]*$2:" | head -n 1 || true)"
+  local out line
+  # Capture first, then filter a here-string: an early-exiting reader on a
+  # pipe would SIGPIPE ethtool under pipefail (tests/test_pipefail_reader_sweep.py).
+  out="$(tune ethtool -k "$1" 2>/dev/null || true)"
+  line="$(grep -E "^[[:space:]]*$2:" <<<"$out" || true)"
+  line="${line%%$'\n'*}"
   case "$line" in
     "") echo absent ;;
     *"[fixed]"*) echo fixed ;;
