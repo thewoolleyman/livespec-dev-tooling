@@ -31,7 +31,10 @@ from pathlib import Path
 
 import pytest
 
-from livespec_dev_tooling.install_worktree_pack import CANONICAL_GATE_RUN_BODY
+from livespec_dev_tooling.install_worktree_pack import (
+    CANONICAL_GATE_RUN_BODY,
+    CANONICAL_WORKTREE_JUST_BODY,
+)
 
 __all__: list[str] = []
 
@@ -167,6 +170,18 @@ def _run_status(*, repo: Path, run_id: str = _RUN_ID) -> subprocess.CompletedPro
     env = {key: value for key, value in os.environ.items() if key not in _GIT_ENV_VARS}
     return subprocess.run(
         ["bash", str(Path("dev-tooling") / _SCRIPT), "status", run_id],
+        cwd=str(repo),
+        env=env,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+
+def _run_gate_list_recipe(*, repo: Path, env: dict[str, str]) -> subprocess.CompletedProcess[str]:
+    """Run the installed `gate-list --all` recipe, not the script directly."""
+    return subprocess.run(
+        ["just", "gate-list", "--all"],
         cwd=str(repo),
         env=env,
         check=False,
@@ -451,6 +466,25 @@ def test_gate_list_reads_run_records_with_builtins_and_limits_the_default_to_rec
     assert "$(tr " not in list_body
     assert "ls -1" not in list_body
     assert "sort" not in list_body
+
+
+def test_gate_list_recipe_forwards_all_to_the_runner(*, tmp_path: Path) -> None:
+    """The public recipe reaches the runner's all-records mode unchanged."""
+    repo = _init_repo(tmp_path=tmp_path)
+    _write(path=repo / "justfile", text="import 'dev-tooling/worktree.just'\n")
+    _write(
+        path=repo / "dev-tooling" / "worktree.just",
+        text=CANONICAL_WORKTREE_JUST_BODY,
+    )
+    _ = _record_list_runs(repo=repo, count=60)
+
+    listed = _run_gate_list_recipe(repo=repo, env=_child_env(home=tmp_path / "home"))
+
+    assert listed.returncode == 0, listed.stderr
+    lines = listed.stdout.splitlines()
+    assert len(lines) == 60
+    assert "run-000" in lines[0]
+    assert "run-059" in lines[-1]
 
 
 def test_the_run_record_names_the_worktree_and_the_command_line(
