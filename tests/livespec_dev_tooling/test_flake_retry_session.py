@@ -21,16 +21,22 @@ import pytest
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _GIT_IDENTITY = ("-c", "user.email=flake@example.invalid", "-c", "user.name=flake")
-_FLAKY_TEST = (
-    "from pathlib import Path\n"
-    "\n"
-    "\n"
-    "def test_flaky():\n"
-    "    marker = Path(__file__).with_name('seen')\n"
-    "    if not marker.exists():\n"
-    "        marker.write_text('1')\n"
-    "        raise AssertionError('first attempt fails')\n"
-)
+
+
+def _flaky_test(*, failure_text: str = "first attempt fails") -> str:
+    """Return a test that fails exactly once with the supplied diagnostic."""
+    return (
+        "from pathlib import Path\n"
+        "\n"
+        "\n"
+        "def test_flaky():\n"
+        "    marker = Path(__file__).with_name('seen')\n"
+        "    if not marker.exists():\n"
+        "        marker.write_text('1')\n"
+        f"        raise AssertionError({failure_text!r})\n"
+    )
+
+
 # Committed into the base, so the change set never contains it: it only takes
 # the minute out of the retry delay for this throwaway session.
 _NO_DELAY_CONFTEST = "import livespec_dev_tooling.flake_retry as flake_retry\n\nflake_retry.RETRY_DELAY_SECONDS = 0\n"
@@ -40,18 +46,21 @@ def _git(*, repo: Path, args: list[str]) -> None:
     _ = subprocess.run(["git", *_GIT_IDENTITY, *args], cwd=repo, check=True, capture_output=True)
 
 
-def _flaky_repository(*, root: Path, touch_test: bool) -> Path:
+def _flaky_repository(
+    *, root: Path, touch_test: bool, failure_text: str = "first attempt fails"
+) -> Path:
     repo = root / "repo"
     repo.mkdir()
     _git(repo=repo, args=["init", "-q", "-b", "master", "."])
-    _ = (repo / "test_flaky.py").write_text(_FLAKY_TEST, encoding="utf-8")
+    source = _flaky_test(failure_text=failure_text)
+    _ = (repo / "test_flaky.py").write_text(source, encoding="utf-8")
     _ = (repo / "conftest.py").write_text(_NO_DELAY_CONFTEST, encoding="utf-8")
     _ = (repo / ".gitignore").write_text("seen\ntmp/\n", encoding="utf-8")
     _git(repo=repo, args=["add", "-A"])
     _git(repo=repo, args=["commit", "-qm", "base"])
     _git(repo=repo, args=["update-ref", "refs/remotes/origin/master", "HEAD"])
     if touch_test:
-        _ = (repo / "test_flaky.py").write_text(_FLAKY_TEST + "# touched\n", encoding="utf-8")
+        _ = (repo / "test_flaky.py").write_text(source + "# touched\n", encoding="utf-8")
     else:
         _ = (repo / "README.md").write_text("unrelated\n", encoding="utf-8")
         _git(repo=repo, args=["add", "README.md"])
@@ -85,10 +94,10 @@ def _fixture_finalizer_repository(
     )
     user = "def test_uses_the_resource(resource) -> None:\n    assert resource is None\n"
     if same_module:
-        _ = (repo / "test_early.py").write_text(user + "\n\n" + _FLAKY_TEST, encoding="utf-8")
+        _ = (repo / "test_early.py").write_text(user + "\n\n" + _flaky_test(), encoding="utf-8")
     else:
         _ = (repo / "test_early.py").write_text(user, encoding="utf-8")
-        _ = (repo / "test_later.py").write_text(_FLAKY_TEST, encoding="utf-8")
+        _ = (repo / "test_later.py").write_text(_flaky_test(), encoding="utf-8")
     if after_retry:
         _ = (repo / "test_last.py").write_text(
             "def test_after_the_retry() -> None:\n    assert True\n", encoding="utf-8"
@@ -196,9 +205,41 @@ def test_an_untouched_failing_test_is_retried_on_its_own_and_reported_as_a_flake
     assert "FLAKE-RETRIED" in completed.stdout
     assert "test_flaky.py::test_flaky: 2 attempts, passed" in completed.stdout
     records = (repo / "tmp" / "flake-retries" / "retries.jsonl").read_text(encoding="utf-8")
-    assert [json.loads(line) for line in records.splitlines()] == [
-        {"attempts": 2, "nodeid": "test_flaky.py::test_flaky", "outcome": "passed"}
-    ]
+    record = json.loads(records)
+    assert record["attempts"] == 2
+    assert record["nodeid"] == "test_flaky.py::test_flaky"
+    assert record["outcome"] == "passed"
+    assert "failures" in record
+    failures = record["failures"]
+    assert len(failures) == 1
+    assert "AssertionError: first attempt fails" in failures[0]["text"]
+    assert failures[0]["cut"] is False
+
+
+@pytest.mark.integration
+def test_a_retried_failure_record_keeps_a_bounded_diagnostic_and_summary_line(
+    *, tmp_path: Path
+) -> None:
+    """A passing retry preserves its original oversized failure for diagnosis."""
+    repo = _flaky_repository(root=tmp_path, touch_test=False, failure_text="x" * 4001)
+
+    completed = _run_session(repo=repo)
+
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    record = json.loads(
+        (repo / "tmp" / "flake-retries" / "retries.jsonl").read_text(encoding="utf-8")
+    )
+    assert "failures" in record
+    failures = record["failures"]
+    assert isinstance(failures, list) and len(failures) == 1
+    failure = failures[0]
+    assert isinstance(failure, dict)
+    assert failure["cut"] is True
+    text = failure["text"]
+    assert isinstance(text, str) and len(text) == 4000
+    first_line = next(line for line in text.splitlines() if line)
+    summary = completed.stdout.split("FLAKE-RETRIED", maxsplit=1)[1]
+    assert first_line in summary
 
 
 @pytest.mark.integration
@@ -397,21 +438,72 @@ def test_the_report_hook_counts_every_attempt_of_a_retried_test(
     monkeypatch.setattr(plugin, "_RESULTS", {})
     monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
 
-    def report(outcome: str, when: str = "call") -> object:
-        return SimpleNamespace(when=when, nodeid="t.py::t", outcome=outcome)
+    def report(outcome: str, when: str = "call", longrepr: str = "") -> object:
+        return SimpleNamespace(
+            when=when,
+            nodeid="t.py::t",
+            outcome=outcome,
+            longrepr=longrepr,
+        )
 
     plugin.pytest_runtest_logreport(report("passed", when="setup"))
     plugin.pytest_runtest_logreport(report("passed"))
-    for _ in range(3):
-        plugin.pytest_runtest_logreport(report("rerun"))
+    for failure in ("first failure\ncontext", "second failure", "third failure"):
+        plugin.pytest_runtest_logreport(report("rerun", longrepr=failure))
     plugin.pytest_runtest_logreport(report("passed"))
     written: list[str] = []
     reporter = _capturing_reporter(into=written)
     plugin.pytest_terminal_summary(reporter, 0, SimpleNamespace(rootpath=tmp_path))
 
-    assert written == ["FLAKE-RETRIED", "t.py::t: 4 attempts, passed"]
+    assert written == [
+        "FLAKE-RETRIED",
+        "t.py::t: 4 attempts, passed",
+        "  first failure",
+        "  second failure",
+        "  third failure",
+    ]
     records = (tmp_path / "tmp" / "flake-retries" / "retries.jsonl").read_text(encoding="utf-8")
-    assert json.loads(records) == {"attempts": 4, "nodeid": "t.py::t", "outcome": "passed"}
+    assert json.loads(records) == {
+        "attempts": 4,
+        "failures": [
+            {"cut": False, "text": "first failure\ncontext"},
+            {"cut": False, "text": "second failure"},
+            {"cut": False, "text": "third failure"},
+        ],
+        "nodeid": "t.py::t",
+        "outcome": "passed",
+    }
+
+
+def test_the_report_hook_records_a_final_failed_retry_attempt(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A retry that remains red retains the final failure as well as reruns."""
+    plugin = importlib.import_module("livespec_dev_tooling.flake_retry")
+    monkeypatch.setattr(plugin, "_RESULTS", {})
+    plugin.pytest_runtest_logreport(
+        SimpleNamespace(when="call", nodeid="t.py::t", outcome="rerun", longrepr="first failure")
+    )
+    plugin.pytest_runtest_logreport(
+        SimpleNamespace(when="call", nodeid="t.py::t", outcome="failed", longrepr="final failure")
+    )
+    written: list[str] = []
+
+    plugin.pytest_terminal_summary(
+        _capturing_reporter(into=written), 1, SimpleNamespace(rootpath=tmp_path)
+    )
+
+    assert written == [
+        "FLAKE-RETRIED",
+        "t.py::t: 2 attempts, failed",
+        "  first failure",
+        "  final failure",
+    ]
+    records = (tmp_path / "tmp" / "flake-retries" / "retries.jsonl").read_text(encoding="utf-8")
+    assert json.loads(records)["failures"] == [
+        {"cut": False, "text": "first failure"},
+        {"cut": False, "text": "final failure"},
+    ]
 
 
 def test_the_summary_hook_is_silent_when_nothing_was_retried(
