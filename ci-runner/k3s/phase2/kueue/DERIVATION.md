@@ -1696,6 +1696,48 @@ follows real CPU use is still livespec-dev-tooling-gvo7fa. The after-read (one
 gate's wall time, and hp's best-effort pressure) is recorded on the plan epic
 livespec-dev-tooling-6vuiwe.
 
+### The PowerEdge gate lane to six gates (2026-11-11)
+
+**The read.** ci-runtime-and-cost's `fleet-utilization.sh --stranded-only`
+flagged the gmktec and hp lanes full while those nodes read 64-79% idle.
+Kueue's topology-aware admission places a gate by REQUESTS, not by idle, so
+each lane was re-measured by requests at 07:53Z (read-only, `kubectl get` of
+nodes and pods), with CPU from `mpstat 10 1` at 07:54Z:
+
+| Node | Allocatable | Non-gate requests | Room by requests (5 cpu / 6 Gi gates) | Lane | Idle |
+|---|---|---|---|---|---|
+| poweredge-xubuntu | 72 cpu / 378 Gi | 22.3 cpu / 48 Gi (3 factory pods) | 9 | 4 | 63% |
+| gmktec-xubuntu | 32 cpu / 62.4 Gi | 10.0 cpu / 23.4 Gi (3 factory pods) | 4 | 3 | 63% |
+| hp-xubuntu | 14.5 cpu / 27.2 Gi | 0.7 cpu / 0.7 Gi (0 factory pods) | 2 | 2 | not read |
+
+`gates-cq` had 4 pending and 10 admitted, and every fleet lane was full.
+
+**What changed.** `gates-poweredge-flavor` rises from 20 cpu / 32 Gi to
+30 cpu / 48 Gi, six gate units of 5 cpu / 8 Gi. Six gates plus today's non-gate
+requests use 52.3 of 72 cpu, leaving about 20 cpu for factory growth on the
+node (about six more sandbox pods at 3 cpu).
+
+**Why gmktec stays at three.** A fourth 5-cpu gate fits on gmktec only while
+the node carries 3 or fewer factory sandboxes. At the 5-pod factory placement
+cap the coordinator set for gmktec on 2026-11-11, non-gate requests reach
+about 16 cpu, which leaves room for exactly three gates. A fourth gate lane
+would take its room from factory pods the dispatcher places.
+
+**Why hp stays at two.** hp-xubuntu's 14.5 cpu allocatable fits two 5-cpu
+gates, whatever its idle. It still fits only two with one factory sandbox (3 cpu), and one with
+two, which matches kubernetes-observability's reading #2: hp gates strand at
+two factory pods and not at one. hp's idle cores can carry more gates only
+through a smaller gate cpu request: the 2-cpu replay size of
+livespec-dev-tooling-lfkkaf, or the worker-count measurement of this plan's
+assertion 4.
+
+**Apply.** It renders `gates-cq`, so it is applied through
+`just ansible-apply ansible/ci-pool.yml --tags ci_converge_unit` only after the
+coordinator lifts the 2026-11-11 converge hold on gamingpc's taint-cleared
+read-back. The same converge also writes `gates-gamingpc-flavor`.
+
+**Revert.** Restore 20 cpu / 32 Gi and apply the same way.
+
 ### The PowerEdge gate lane to four gates (2026-11-11)
 
 **What was wrong.** At 02:13Z on 2026-11-11, `gates-cq` held 19 pending gate
