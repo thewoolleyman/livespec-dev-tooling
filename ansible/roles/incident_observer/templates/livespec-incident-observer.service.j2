@@ -12,8 +12,11 @@ After=network-online.target
 Wants=network-online.target
 # A crash loop must end in `failed`, visibly, not restart forever: the default limit
 # (5 starts in 10 s) can never trip with RestartSec=2 plus any run time. Five starts in
-# 300 s lets a transient failure (a tenant blip, a port still held) recover by itself
-# while a deterministic crash on every start stops after about a minute of retries.
+# 300 s lets a transient failure (a tenant blip, a port still held) recover by itself,
+# while a deterministic crash on every start lands in `failed` after five starts: about
+# 10 s for a fast crash, starts spaced RestartSec=2 apart. Once tripped, systemd refuses
+# a plain restart until the interval passes, so the role's restart handler clears the
+# state with `systemctl reset-failed` first.
 StartLimitIntervalSec=300
 StartLimitBurst=5
 

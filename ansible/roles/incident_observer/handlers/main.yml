@@ -14,6 +14,29 @@
   become: true
   when: not ansible_check_mode or incident_observer_unit_stat.stat.exists
 
+# Runs immediately before the restart below: it listens on the restart's own name, and
+# handlers run in the order they are defined here. Once the unit's StartLimitBurst has
+# tripped (a crash loop), systemd refuses a plain restart, "Start request repeated too
+# quickly", until StartLimitIntervalSec passes, so a converge that ships the fix within
+# 300 s of the loop would fail at the restart. reset-failed clears that state and is a
+# no-op on a healthy unit; the restart that follows reports the change. On a first apply
+# the unit was never loaded, and reset-failed exits 1 with "not loaded" (measured): that
+# one answer is accepted, and any other failure stops the converge.
+- name: Clear the incident observer's start-limit state before restarting it
+  ansible.builtin.command:
+    argv:
+      - systemctl
+      - reset-failed
+      - "{{ incident_observer_unit_name }}"
+  become: true
+  register: incident_observer_reset_failed
+  changed_when: false
+  failed_when:
+    - incident_observer_reset_failed.rc != 0
+    - "'not loaded' not in incident_observer_reset_failed.stderr"
+  listen: Restart the incident observer onto its installation
+  when: not ansible_check_mode or incident_observer_unit_stat.stat.exists
+
 - name: Restart the incident observer onto its installation
   ansible.builtin.systemd_service:
     name: "{{ incident_observer_unit_name }}"

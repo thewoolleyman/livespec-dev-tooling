@@ -14,7 +14,8 @@ fails here.
 
 A deliberate production change updates its fixture in the same commit and says so
 here: the observer unit gained `StartLimitIntervalSec=300` and `StartLimitBurst=5`
-(livespec-dev-tooling-fdquen), so a crash loop ends in `failed`.
+(livespec-dev-tooling-fdquen), so a crash loop ends in `failed`; its comment then
+gained the reset-failed note.
 """
 
 from __future__ import annotations
