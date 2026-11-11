@@ -102,6 +102,9 @@
       register: k3s_window_node_read
       changed_when: false
       failed_when: false
+      # A read-only lookup: run it under --check too, so `just ansible-drift`
+      # previews the node path instead of skipping it.
+      check_mode: false
 
     - name: Refuse a node action that does not name a pool node or a registered cluster node
       ansible.builtin.fail:

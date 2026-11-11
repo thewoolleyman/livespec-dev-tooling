@@ -105,6 +105,7 @@ def test_a_node_outside_the_pool_inventory_is_held_when_the_cluster_registers_it
     assert "register: k3s_window_node_read" in read
     assert "changed_when: false" in read
     assert "failed_when: false" in read
+    assert "check_mode: false" in read
     assert "not (k3s_window_node_known | bool)" in read
     refuse = _task(
         name="Refuse a node action that does not name a pool node or a registered cluster node"
