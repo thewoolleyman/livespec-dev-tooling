@@ -90,6 +90,7 @@ source of truth for how the tool is invoked.
 | `node-loss-drill.yml` | `ci_pool`, and only the AGENT host its confirmation names | nothing — no committed artifact could take a pool node's k3s agent down |
 | `restart-k3s-agent.yml` | `ci_pool`, and only the AGENT host its confirmation names | nothing — no committed artifact could restart a pool agent's k3s agent |
 | `restart-k3s-server.yml` | `ci_pool`, and only the SERVER host its confirmation names | nothing — no committed artifact could restart the pool server's k3s unit without rebooting the host |
+| `restart-otel-collector.yml` | `ci_pool`, and only the host its confirmation names | nothing — no committed artifact could restart a collector whose managed configuration is unchanged |
 | `k3s-window-drain.yml` | `ci_pool`, acting once on the SERVER, only for the action its confirmation names | nothing — no committed artifact could pause runner intake or cordon a pool node |
 | `container-termination-drill.yml` | `ci_pool`, and only the k3s SERVER its confirmation names | nothing — no committed artifact could produce a crash-looping or OOM-killed container |
 | `claim-token-race-drill.yml` | `ci_pool`, and only the host its confirmation names, raced against the control node | nothing — no second fleet host could act as a ledger claim writer |
