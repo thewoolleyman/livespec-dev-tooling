@@ -1,0 +1,27 @@
+A6 window 4, 2026-11-10T20:52:04Z -> 2026-11-11T01:18:51Z. Gate runs overlapping the window, by checkout / venue / reason
+(count, in-window wall-minutes). 158 records that started before the window and never wrote finished_at are excluded.
+  121   1117.2m  livespec-dev-tooling                 host_local   command outside full-suite set
+   45   1073.2m  livespec-orchestrator-beads-fabro    host_local   command outside full-suite set
+   14     72.0m  livespec-overseer                    host_local   command outside full-suite set
+    2     39.5m  livespec-dev-tooling                 host_local   --local
+   12     27.7m  livespec                             host_local   command outside full-suite set
+    7     26.7m  livespec-driver-claude               host_local   command outside full-suite set
+    8     25.8m  livespec-runtime                     (none)       
+    7     25.1m  livespec-driver-codex                host_local   command outside full-suite set
+longest host_local or unrouted runs in the window:
+   105.5m livespec-dev-tooling               host_local command outside full-suite set   mise exec -- git commit -F /tmp/claude-1000/-data-projects-livespec-dev-tooling/3aeb40f4-ee52-4ff2-a6cc-756fab
+    56.0m livespec-orchestrator-beads-fabro  host_local command outside full-suite set   bash /tmp/claude-1000/-data-projects-livespec-orchestrator-beads-fabro/daa885d4-c998-4f40-8ea6-539b6825cc2b/sc
+    54.3m livespec-dev-tooling               host_local command outside full-suite set   mise exec -- git push -u origin spec/revise-pre-push-same-tree
+    52.2m livespec-orchestrator-beads-fabro  host_local command outside full-suite set   /tmp/claude-1000/-data-projects-livespec-orchestrator-beads-fabro/1283cb86-d1fd-4c5f-b8df-0fb7790f3fa6/scratch
+    44.9m livespec-dev-tooling               host_local command outside full-suite set   gh run watch 42913155787 --repo thewoolleyman/livespec-orchestrator-beads-fabro --exit-status --interval 30
+    44.5m livespec-dev-tooling               host_local command outside full-suite set   gh run watch 42918543490 --repo thewoolleyman/livespec-orchestrator-beads-fabro --exit-status --interval 30
+    44.5m livespec-orchestrator-beads-fabro  host_local command outside full-suite set   gh pr checks 4867 --watch --interval 60
+    44.0m livespec-orchestrator-beads-fabro  host_local command outside full-suite set   /usr/local/bin/with-livespec-env.sh -- mise exec -- git push -u origin chore/hg6mjm-uv-cache-comment
+    43.5m livespec-orchestrator-beads-fabro  host_local command outside full-suite set   /usr/local/bin/with-livespec-env.sh -- mise exec -- git push -u origin chore/copier-sync-hold-label-disarm
+    43.1m livespec-orchestrator-beads-fabro  host_local command outside full-suite set   bash /tmp/claude-1000/-data-projects-livespec-orchestrator-beads-fabro/daa885d4-c998-4f40-8ea6-539b6825cc2b/sc
+    43.0m livespec-orchestrator-beads-fabro  host_local command outside full-suite set   sh /tmp/claude-1000/-data-projects-livespec-orchestrator-beads-fabro/d92865b3-aae7-4c26-8394-d5b76e565957/scra
+    42.5m livespec-orchestrator-beads-fabro  host_local command outside full-suite set   gh pr checks 4856 --watch --interval 60
+    41.4m livespec-orchestrator-beads-fabro  host_local command outside full-suite set   gh pr checks 4860 --watch --interval 60
+    40.9m livespec-orchestrator-beads-fabro  host_local command outside full-suite set   mise exec -- git push -u origin fix/pack-prepare-payload-helpers
+    40.3m livespec-orchestrator-beads-fabro  host_local command outside full-suite set   mise exec -- git push -u origin fix/bd-ib-elrodm-walk-public-seam
+cluster_job runs:

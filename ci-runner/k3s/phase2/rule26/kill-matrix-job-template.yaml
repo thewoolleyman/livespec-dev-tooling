@@ -102,6 +102,16 @@ spec:
               value: /data/uv-cache
             - name: PYTHONDONTWRITEBYTECODE
               value: "1"
+            # The engine is installed into the target's venv with --no-deps,
+            # but the target's own suite can re-sync that venv to its uv.lock
+            # mid-run (measured on a local sample, 2026-11-10), which swaps the
+            # engine for the lock-pinned release that lacks the kill-matrix
+            # modules. Every pytest process loads the engine's outcome plugin
+            # by module name, so after such a swap each one would fail. The
+            # engine clone on PYTHONPATH outranks site-packages and survives
+            # any re-sync; the worker trees append the inherited PYTHONPATH.
+            - name: PYTHONPATH
+              value: /data/dev-tooling
           resources:
             requests:
               cpu: "@@WORKERS@@"

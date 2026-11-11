@@ -1,0 +1,14 @@
+# Known non-routine runs inside A6 after-window 4 (reported by peer seats; for note 009)
+1. dev-host-disk-retention manual run (4rcuxp/zrl7rm host-record capture), reported 2026-11-10 ~21:10Z:
+   - livespec-dev-host-retention.service InvocationID 90bab0e2e80945188f930ccc10de6d32, 20:58:43Z-21:05:10Z, Result=success.
+   - ownership walk (find) 20:58:44-21:03:44Z (hit its 300 s budget); uv cache prune 21:03:44-21:04:45Z (12,403 files / 509 MiB);
+     session-scratch rm -rf 21:04:48-21:05:04Z; pytest-scratch rm -rf 21:05:06-21:05:10Z (classifies adhoc-pytest-or-check).
+   - uvx loop 20:58:32Z-21:05:12Z: 155 sequential runs of `uvx --from ansible-core==2.21.4 ansible-playbook --version` (mise uvx 0.9.26).
+2. Independent replay of the same shape, by a separate replayer session: approved by this seat for before 22:40Z; times to be reported.
+   Reported ~21:50Z: the replay was TWO runs (the replayer's first measurement process died with its codex turn before the uv prune; it re-measured once).
+   Neither replay run removed any pytest scratch (the journals carry no "removed aged pytest scratch" lines), so neither adds to adhoc-pytest-or-check.
+   - Replay run 1: InvocationID 26d1e0fb06624c1983944e694eb2975d, 21:10:30-21:16:51Z; ownership walk to 21:15:30Z, uv prune to 21:16:42Z; uvx loop 21:10:30-21:13:37Z.
+   - Replay run 2: InvocationID a64a2eae077042e1ba31b56e29de9190, 21:40:32-21:46:06Z.
+   - Replay uvx command (looped sequentially): /home/ubuntu/.local/bin/uvx --offline --cache-dir /home/ubuntu/.cache/uv --from py-spy==0.4.2 python -c 'import importlib.metadata as m,time; print(m.version("py-spy"),flush=True); time.sleep(2)'
+3. dev-host-disk-retention read-only sizing scan, 21:09:05-21:38:11Z: nice -n 19 ionice -c3 find /home/ubuntu/.cache/uv -xdev -printf '%U\n' | sort | uniq -c (classifies "other").
+4. Scheduled timer run of livespec-dev-host-retention.service at 23:12:56Z (routine; part of normal fleet activity).

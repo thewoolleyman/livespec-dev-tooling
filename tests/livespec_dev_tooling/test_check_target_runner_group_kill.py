@@ -16,12 +16,14 @@ show what survives that, so these tests start one (allowlisted in
 
 from __future__ import annotations
 
+import itertools
 import os
 import select
 import signal
 import subprocess
 import sys
 import time
+from collections.abc import Callable
 from pathlib import Path
 from shutil import which
 
@@ -55,6 +57,26 @@ def _caller_environment() -> dict[str, str]:
     return environment
 
 
+def _wait_for_ready(
+    *,
+    ready: Path,
+    limit_s: float = 30,
+    clock: Callable[[], float] = time.monotonic,
+    sleep: Callable[[float], None] = time.sleep,
+) -> bool:
+    """True once `ready` exists; False once `limit_s` has passed.
+
+    The clock and sleep are injectable so a test fixes which lines run; the
+    limit is only a guard against a hang.
+    """
+    started = clock()
+    while not ready.exists():
+        if clock() - started >= limit_s:
+            return False
+        sleep(0.05)
+    return True
+
+
 def _group_kill_leaves_no_holder(*, tmp_path: Path, deadline: str, script: str) -> bool:
     fifo = tmp_path / "lifetime.fifo"
     os.mkfifo(fifo)
@@ -68,9 +90,7 @@ def _group_kill_leaves_no_holder(*, tmp_path: Path, deadline: str, script: str) 
             start_new_session=True,
         )
         ready = tmp_path / "ready"
-        started = time.monotonic()
-        while not ready.exists() and time.monotonic() - started < 30:
-            time.sleep(0.05)
+        _ = _wait_for_ready(ready=ready)
         os.killpg(caller.pid, signal.SIGKILL)
         _ = caller.wait()
         readable, _, _ = select.select([reader], [], [], 5)
@@ -88,3 +108,39 @@ def test_a_group_kill_of_the_normal_caller_takes_its_targets(tmp_path: Path) -> 
 def test_a_group_kill_of_the_expedited_caller_takes_the_isolated_target(tmp_path: Path) -> None:
     script = 'exec 3> "{fifo}"; touch ready; exec sleep 30'
     assert _group_kill_leaves_no_holder(tmp_path=tmp_path, deadline="60", script=script)
+
+
+def _fake_clock() -> Callable[[], float]:
+    readings = itertools.count()
+    return lambda: float(next(readings))
+
+
+def test_the_ready_wait_returns_at_once_when_the_file_is_already_there(tmp_path: Path) -> None:
+    ready = tmp_path / "ready"
+    _ = ready.write_text("", encoding="utf-8")
+    sleeps: list[float] = []
+    assert _wait_for_ready(ready=ready, clock=_fake_clock(), sleep=sleeps.append)
+    assert sleeps == []
+
+
+def test_the_ready_wait_sleeps_until_the_file_appears(tmp_path: Path) -> None:
+    ready = tmp_path / "ready"
+    sleeps: list[float] = []
+
+    def sleep_then_create_on_third(seconds: float) -> None:
+        sleeps.append(seconds)
+        if len(sleeps) == 3:
+            _ = ready.write_text("", encoding="utf-8")
+
+    assert _wait_for_ready(
+        ready=ready, limit_s=100, clock=_fake_clock(), sleep=sleep_then_create_on_third
+    )
+    assert sleeps == [0.05] * 3
+
+
+def test_the_ready_wait_gives_up_when_the_file_never_appears(tmp_path: Path) -> None:
+    sleeps: list[float] = []
+    assert not _wait_for_ready(
+        ready=tmp_path / "never", limit_s=2, clock=_fake_clock(), sleep=sleeps.append
+    )
+    assert sleeps == [0.05]

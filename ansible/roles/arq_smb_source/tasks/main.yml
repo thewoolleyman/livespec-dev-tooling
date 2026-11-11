@@ -92,8 +92,15 @@
   # which holds a copy a human pasted in. openssl writes the file itself, so the
   # secret never passes through argv, a register, or a diff. no_log is belt and
   # braces — nothing here should print, and nothing is allowed to.
+  #
+  # Every option precedes the positional byte count. OpenSSL 3.5 rejects an
+  # option after it ("rand: Extra option"), so the earlier
+  # `rand -base64 N -out FILE` spelling failed on any host converging this role
+  # for the first time (measured on hetzner-xubuntu, Ubuntu 26.04, OpenSSL
+  # 3.5.5; livespec-dev-tooling-pztogk). Hosts converged earlier never re-ran
+  # it, because `creates` skips once the file exists.
   ansible.builtin.command:
-    cmd: "openssl rand -base64 {{ arq_smb_source_password_bytes }} -out {{ arq_smb_source_password_file }}"
+    cmd: "openssl rand -base64 -out {{ arq_smb_source_password_file }} {{ arq_smb_source_password_bytes }}"
     creates: "{{ arq_smb_source_password_file }}"
   become: true
   no_log: true

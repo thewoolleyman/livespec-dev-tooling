@@ -1,0 +1,32 @@
+top-list coverage of test/gate classes (lower bound; top lists are truncated): 0.337 cores
+Rust compile (rustc/clippy/lld/cargo) inside test/gate classes: 0.000
+by class and repository:
+  0.179 adhoc-pytest-or-check        ?
+  0.078 adhoc-pytest-or-check        livespec-dev-tooling
+  0.022 adhoc-pytest-or-check        livespec-orchestrator-beads-fabro
+  0.014 janitor-post-merge           ?
+  0.011 pre-push                     ?
+  0.009 pre-push                     livespec-orchestrator-beads-fabro
+  0.005 commit-red-green-replay      ?
+top test/gate processes:
+  0.031 adhoc-pytest-or-check        python3
+  0.029 adhoc-pytest-or-check        /home/ubuntu/.cache/uv/archive-v0/GP3F2LKfSMbHzn01Q5gbc/bin/python /home/ubuntu/.cache/uv/archive-v0/GP3F2LKfSMbHzn01Q5g
+  0.028 adhoc-pytest-or-check        python
+  0.022 adhoc-pytest-or-check        /home/ubuntu/.worktrees/livespec-dev-tooling/fix/livespec-dev-tooling-ri2lwi-release-keyed-serving-build/.venv/bin/pytho
+  0.021 adhoc-pytest-or-check        git
+  0.012 adhoc-pytest-or-check        /home/ubuntu/.worktrees/livespec-dev-tooling/review-fdquen-4002-3961/.venv/bin/python /home/ubuntu/.worktrees/livespec-d
+  0.007 janitor-post-merge           python
+  0.007 adhoc-pytest-or-check        /home/ubuntu/.worktrees/livespec-dev-tooling/feat/ci-infra-rerun-cetyrq/.venv/bin/python -u -c import sys;exec(eval(sys.
+  0.006 adhoc-pytest-or-check        /home/ubuntu/.worktrees/livespec-orchestrator-beads-fabro/fix/pack-prepare-payload-helpers/.venv/bin/python -u -c import
+  0.005 adhoc-pytest-or-check        /home/ubuntu/.cache/uv/archive-v0/O0B37K2mzvi1ETZA1h2Uq/bin/python /home/ubuntu/.cache/uv/archive-v0/O0B37K2mzvi1ETZA1h2
+  0.005 adhoc-pytest-or-check        /home/ubuntu/.worktrees/livespec-orchestrator-beads-fabro/fix/scenario101-zero-wait/.venv/bin/python /home/ubuntu/.workt
+  0.005 adhoc-pytest-or-check        /home/ubuntu/.worktrees/livespec-dev-tooling/hp-factory-trial/.venv/bin/python -u -c import sys;exec(eval(sys.stdin.read
+  0.005 pre-push                     python3 .claude-plugin/scripts/bin/dispatcher.py ledger-normalize --project-root . --gate 
+  0.005 adhoc-pytest-or-check        /home/ubuntu/.worktrees/livespec-dev-tooling/feat/livespec-dev-tooling-hlxbsv-hand/.venv/bin/python -m pytest -q -p no:c
+  0.005 adhoc-pytest-or-check        ruff
+  0.004 adhoc-pytest-or-check        [pytest-xdist idle]                                                                                                     
+  0.004 adhoc-pytest-or-check        find /home/ubuntu/.worktrees -mindepth 1 -name .git -printf %h
+n 
+  0.004 adhoc-pytest-or-check        [pytest-xdist running] tests/spec/test_comment_discipline.py::test_no_source_prose_cites_a_spec_heading_via_the_section_
+  0.004 adhoc-pytest-or-check        /home/ubuntu/.worktrees/livespec-dev-tooling/feat/gate-job-resources-declaration/.venv/bin/python -u -c import sys;exec(
+  0.004 pre-push                     /usr/lib/git-core/git pack-objects --all-progress-implied --revs --stdout --thin --delta-base-offset -q 

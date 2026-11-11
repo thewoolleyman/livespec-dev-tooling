@@ -159,3 +159,18 @@ def test_the_rendered_job_trusts_the_mise_config_of_both_clones() -> None:
         in job
     )
     assert "/data/dev-tooling" in job
+
+
+def test_the_rendered_job_puts_the_engine_clone_on_pythonpath() -> None:
+    """A re-sync of the target's venv to its lock must not swap the engine out mid-run."""
+    rendered = subprocess.run(
+        [str(_RENDERER), "--orchestrator-sha", "a" * 40, "--engine-sha", "b" * 40, "--run", "t3"],
+        capture_output=True,
+        check=True,
+        text=True,
+        env={"PATH": "/usr/bin:/bin"},
+    ).stdout
+    env = rendered.split("kind: Job", 1)[1].split("env:", 1)[1].split("resources:", 1)[0]
+    assert "- name: PYTHONPATH\n" in env
+    value = env.split("- name: PYTHONPATH\n", 1)[1].splitlines()[0]
+    assert value.strip() == "value: /data/dev-tooling"
