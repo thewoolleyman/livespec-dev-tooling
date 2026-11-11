@@ -80,18 +80,20 @@ def test_an_unobserved_ref_update_is_retried_as_its_one_recorded_commit(
     moved_early = world.forge.master() != world.merge
     status, retried = _post(world=world, retry=True)
     _, repeated = _post(world=world, retry=False)
-    facts = (
-        cleared["status"] == "pending",
-        still_pending == "pending",
-        not moved_early,
-        status == "202 Accepted",
-        retried["status"] == "completed",
-        repeated["receipt"] == retried["receipt"] == _action(world=world)["receipt"],
-        _action(world=world)["status"] == "completed",
-        world.forge.count("POST", "git/commits") == 1,
-        len(world.reverts()) == 1,
-    )
-    assert all(facts), (cleared, retried, repeated, facts)
+    facts = {
+        "initial receipt lookup remains pending": cleared["status"] == "pending",
+        "record stays pending before retry": still_pending == "pending",
+        "failed initial publish did not move master": not moved_early,
+        "retry route accepts the request": status == "202 Accepted",
+        "retry completes the action": retried["status"] == "completed",
+        "every receipt lookup returns the recorded receipt": repeated["receipt"]
+        == retried["receipt"]
+        == _action(world=world)["receipt"],
+        "action record is completed": _action(world=world)["status"] == "completed",
+        "one inverse commit was created": world.forge.count("POST", "git/commits") == 1,
+        "one inverse commit landed": len(world.reverts()) == 1,
+    }
+    assert all(facts.values()), (cleared, retried, repeated, facts)
     assert git_timeouts and set(git_timeouts) == {_SLOW_INVERSE_GIT_TIMEOUT_SECONDS}
 
 
@@ -107,12 +109,13 @@ def test_a_lost_reply_is_cleared_by_its_exact_receipt_with_no_retry(
     _ = world.call("publish", request)
     world.forge.lost_patch_reply = False
     status, cleared = _post(world=world, retry=False)
-    facts = (
-        status == "202 Accepted",
-        cleared["status"] == "completed",
-        cleared["receipt"] == _action(world=world)["receipt"],
-        world.forge.count("POST", "git/commits") == 1,
-        len(world.reverts()) == 1,
-    )
-    assert all(facts), (cleared, facts)
+    facts = {
+        "receipt route accepts the request": status == "202 Accepted",
+        "lost reply resolves as completed": cleared["status"] == "completed",
+        "resolved receipt matches the action record": cleared["receipt"]
+        == _action(world=world)["receipt"],
+        "one inverse commit was created": world.forge.count("POST", "git/commits") == 1,
+        "one inverse commit landed": len(world.reverts()) == 1,
+    }
+    assert all(facts.values()), (cleared, facts)
     assert git_timeouts and set(git_timeouts) == {_SLOW_INVERSE_GIT_TIMEOUT_SECONDS}
