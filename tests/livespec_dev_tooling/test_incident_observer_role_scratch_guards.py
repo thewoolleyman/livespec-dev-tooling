@@ -47,6 +47,7 @@ _SCRATCH_INCLUDE = "Converge the scratch instance only through its refusals"
 _PRODUCTION_INCLUDE = "Converge the production instance"
 _PUBLISH = "Publish only the declared paths through a path-scoped funnel"
 _STAT = "Read each scratch path on the host as root, without following a link"
+_GIT_LINKS = "Read every link below the scratch reference clone's git directory"
 _LINK = "Refuse a scratch path that is a symbolic link on the host"
 _GUARD = (
     "not (incident_observer_scratch | bool)"
@@ -233,7 +234,9 @@ def _plain_env() -> dict[str, str]:
     return env
 
 
-def _run_host_check(*, root: Path, paths: dict[str, Path]) -> subprocess.CompletedProcess[str]:
+def _run_host_check(
+    *, root: Path, paths: dict[str, Path], task_names: tuple[str, ...] = (_STAT, _LINK)
+) -> subprocess.CompletedProcess[str]:
     """Run the preflight's own stat and link refusal, as committed, over a throwaway tree.
 
     The one change: `become` is dropped, because the test runs as an ordinary
@@ -243,9 +246,9 @@ def _run_host_check(*, root: Path, paths: dict[str, Path]) -> subprocess.Complet
     tasks = [
         {key: value for key, value in task.items() if key != "become"}
         for task in base.role_yaml(relative="tasks/scratch_preflight.yml")
-        if task.get("name") in {_STAT, _LINK}
+        if task.get("name") in task_names
     ]
-    assert [task["name"] for task in tasks] == [_STAT, _LINK]
+    assert [task["name"] for task in tasks] == list(task_names)
     play = root / "host-check.yml"
     play.write_text(
         yaml.safe_dump(
@@ -348,6 +351,26 @@ def test_the_host_check_refuses_a_link_below_the_scratch_root_the_apply_writes_t
     link.symlink_to(production)
 
     completed = _run_host_check(root=tmp_path, paths=paths)
+
+    assert completed.returncode != 0, completed.stdout
+    assert _named_link(path=link) in completed.stdout
+
+
+def test_the_host_check_refuses_a_link_at_any_depth_below_the_reference_git_directory(
+    tmp_path: Path,
+) -> None:
+    home = tmp_path / "home"
+    paths = _tree(home=home)
+    git_objects = paths["incident_observer_reference_dir"] / ".git" / "objects" / "pack"
+    git_objects.mkdir(parents=True)
+    link = git_objects / "linked-object"
+    link.symlink_to(tmp_path / "production-object")
+
+    completed = _run_host_check(
+        root=tmp_path,
+        paths=paths,
+        task_names=(_STAT, _GIT_LINKS, _LINK),
+    )
 
     assert completed.returncode != 0, completed.stdout
     assert _named_link(path=link) in completed.stdout
