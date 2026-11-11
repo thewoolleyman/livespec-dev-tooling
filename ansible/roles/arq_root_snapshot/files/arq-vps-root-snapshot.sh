@@ -49,6 +49,9 @@ RSYNC_FILTERS=(
     "--filter=- arq-vps-root-snapshot/***"
     "--filter=- *.pyc"
     "--filter=- .DS_Store"
+    # A desktop session's per-user GVFS FUSE mount; root cannot read it, and the
+    # resulting rsync IO error (exit 23) also suppresses --delete-excluded.
+    "--filter=- .gvfs"
 )
 
 mkdir -p "${DEST}"
