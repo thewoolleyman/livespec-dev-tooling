@@ -107,7 +107,10 @@ from _red_green_replay_modes import (  # noqa: E402  — sibling private import
     _handle_suite_green_mode,
     _refuse_half_pair,
 )
-from _red_green_replay_range_integrity import validate_range_evidence  # noqa: E402  — sibling
+from _red_green_replay_range_integrity import (  # noqa: E402  — sibling private import
+    check_range_integrity,
+    validate_range_evidence,
+)
 from _red_green_replay_revert import (  # noqa: E402  — sibling private import
     FORGE_EXEMPTION_UNPROBED,
     RANGE_MISSING_TRAILERS_HINT,
@@ -443,6 +446,10 @@ def _validate_range() -> int:
     violating = [sha for sha in shas if _commit_violates(sha=sha)]
     if not violating:
         return validate_range_evidence(shas=shas, base_ref=_RANGE_BASE, log=log)
+    # The integrity checks judge the WHOLE range independently of the legacy-shape
+    # verdict, so a trailer-subject or stale-checksum commit is named even when
+    # another commit already lacks trailers.
+    _ = check_range_integrity(shas=shas, log=log)
     log.error(
         "commits in origin/master..HEAD touch product impl .py without a "
         "valid TDD trailer shape: either the TDD-Red-*/TDD-Green-* pair "
