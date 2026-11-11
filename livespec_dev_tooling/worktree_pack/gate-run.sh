@@ -232,11 +232,19 @@ readonly STALL_EXIT_CODE=124
 
 # The gate's process group catches pytest and xdist workers, but a command can
 # call `setsid` and leave that group while remaining a descendant of the gate.
-# Take one process-table snapshot before signalling the group, then walk parent
-# links from its leader so the escaped processes are ended too. `ps -ax -o` is
-# available on the Linux and macOS developer hosts; the four fixed numeric
+# A process-table snapshot alone is stale the moment it is read: the gate keeps
+# forking while it is signalled, and a child started after the snapshot can
+# leave the group before the signal lands. So the tree is FROZEN first — SIGSTOP
+# to the group and to every escaper found so far, re-reading the table until a
+# round finds nothing new and the tree stopped changing — and only then ended.
+# A stopped process forks nothing, and SIGKILL reaches a stopped process. A
+# process belongs to the tree when its parent does, or when it sits in the
+# process group an escaper leads (a reparented orphan of an escaper). `ps -ax -o`
+# is available on the Linux and macOS developer hosts; the four fixed numeric
 # fields leave the rest of each row as the command line recorded for operators.
 ESCAPED_DESCENDANT_PIDS=()
+ESCAPED_GROUP_LEADERS=()
+readonly FREEZE_ROUND_CEILING=50
 
 pid_is_listed() {
     local sought="$1"
@@ -248,49 +256,85 @@ pid_is_listed() {
     return 1
 }
 
-find_escaped_descendants() {
-    local dir="$1" gate_pid="$2"
-    local snapshot="$dir/descendants.ps"
-    local -a pids=() ppids=() pgids=() commands=() descendants=("$gate_pid")
-    local pid ppid pgid command index changed
-    ESCAPED_DESCENDANT_PIDS=()
-    ps -axww -o pid= -o ppid= -o pgid= -o command= >"$snapshot" 2>/dev/null || return 0
-    while read -r pid ppid pgid command; do
-        [[ "$pid" =~ ^[0-9]+$ && "$ppid" =~ ^[0-9]+$ && "$pgid" =~ ^[0-9]+$ ]] || continue
-        pids+=("$pid")
-        ppids+=("$ppid")
-        pgids+=("$pgid")
-        commands+=("$command")
-    done <"$snapshot"
-    changed=true
-    while [[ "$changed" == true ]]; do
-        changed=false
-        for index in "${!pids[@]}"; do
-            pid="${pids[$index]}"
-            if ! pid_is_listed "$pid" "${descendants[@]}" \
-                && pid_is_listed "${ppids[$index]}" "${descendants[@]}"; then
-                descendants+=("$pid")
-                changed=true
-            fi
-        done
+signal_gate_tree() {
+    local signal_name="$1" gate_pid="$2"
+    local pid
+    kill -"$signal_name" -- "-$gate_pid" 2>/dev/null || true
+    for pid in ${ESCAPED_GROUP_LEADERS[@]+"${ESCAPED_GROUP_LEADERS[@]}"}; do
+        kill -"$signal_name" -- "-$pid" 2>/dev/null || true
     done
-    for index in "${!pids[@]}"; do
-        pid="${pids[$index]}"
-        if [[ "$pid" != "$gate_pid" ]] && pid_is_listed "$pid" "${descendants[@]}" \
-            && [[ "${pgids[$index]}" != "$gate_pid" ]]; then
-            ESCAPED_DESCENDANT_PIDS+=("$pid")
-            printf 'gate-run: ending escaped descendant outside the gate process group: pid %s command %s\n' \
-                "$pid" "${commands[$index]}" >>"$dir/output.log"
-        fi
+    for pid in ${ESCAPED_DESCENDANT_PIDS[@]+"${ESCAPED_DESCENDANT_PIDS[@]}"}; do
+        kill -"$signal_name" "$pid" 2>/dev/null || true
     done
 }
 
-end_escaped_descendants() {
-    local signal_name="$1"
-    local pid
-    for pid in "${ESCAPED_DESCENDANT_PIDS[@]}"; do
-        kill -"$signal_name" "$pid" 2>/dev/null || true
+freeze_gate_tree() {
+    local dir="$1" gate_pid="$2"
+    local snapshot="$dir/descendants.ps"
+    local -a pids=() ppids=() pgids=() commands=() tree=()
+    local pid ppid pgid command index changed found rounds=0 previous_size=-1
+    while (( rounds < FREEZE_ROUND_CEILING )); do
+        rounds=$((rounds + 1))
+        signal_gate_tree STOP "$gate_pid"
+        pids=() ppids=() pgids=() commands=()
+        ps -axww -o pid= -o ppid= -o pgid= -o command= >"$snapshot" 2>/dev/null || return 0
+        while read -r pid ppid pgid command; do
+            [[ "$pid" =~ ^[0-9]+$ && "$ppid" =~ ^[0-9]+$ && "$pgid" =~ ^[0-9]+$ ]] || continue
+            pids+=("$pid")
+            ppids+=("$ppid")
+            pgids+=("$pgid")
+            commands+=("$command")
+        done <"$snapshot"
+        tree=("$gate_pid" ${ESCAPED_DESCENDANT_PIDS[@]+"${ESCAPED_DESCENDANT_PIDS[@]}"})
+        changed=true
+        while [[ "$changed" == true ]]; do
+            changed=false
+            for index in "${!pids[@]}"; do
+                pid="${pids[$index]}"
+                pid_is_listed "$pid" "${tree[@]}" && continue
+                if pid_is_listed "${ppids[$index]}" "${tree[@]}" \
+                    || pid_is_listed "${pgids[$index]}" "$gate_pid" ${ESCAPED_GROUP_LEADERS[@]+"${ESCAPED_GROUP_LEADERS[@]}"}; then
+                    tree+=("$pid")
+                    changed=true
+                fi
+            done
+        done
+        found=false
+        for index in "${!pids[@]}"; do
+            pid="${pids[$index]}"
+            if [[ "$pid" != "$gate_pid" ]] && pid_is_listed "$pid" "${tree[@]}" \
+                && [[ "${pgids[$index]}" != "$gate_pid" ]] \
+                && ! pid_is_listed "$pid" ${ESCAPED_DESCENDANT_PIDS[@]+"${ESCAPED_DESCENDANT_PIDS[@]}"}; then
+                ESCAPED_DESCENDANT_PIDS+=("$pid")
+                [[ "${pgids[$index]}" == "$pid" ]] && ESCAPED_GROUP_LEADERS+=("$pid")
+                printf 'gate-run: ending escaped descendant outside the gate process group: pid %s command %s\n' \
+                    "$pid" "${commands[$index]}" >>"$dir/output.log"
+                found=true
+            fi
+        done
+        # Stable only when this round met nothing new and the tree is the size
+        # it was the round before, so every member was stopped before it was read.
+        if [[ "$found" == false ]] && (( ${#tree[@]} == previous_size )); then
+            return 0
+        fi
+        previous_size=${#tree[@]}
     done
+}
+
+end_gate_tree() {
+    local signal_name="$1" dir="$2" gate_pid="$3"
+    freeze_gate_tree "$dir" "$gate_pid"
+    signal_gate_tree "$signal_name" "$gate_pid"
+    signal_gate_tree CONT "$gate_pid"
+}
+
+gate_tree_is_alive() {
+    local gate_pid="$1" pid
+    kill -0 -- "-$gate_pid" 2>/dev/null && return 0
+    for pid in ${ESCAPED_DESCENDANT_PIDS[@]+"${ESCAPED_DESCENDANT_PIDS[@]}"}; do
+        kill -0 "$pid" 2>/dev/null && return 0
+    done
+    return 1
 }
 
 run_gate_with_stall_bound() {
@@ -316,17 +360,19 @@ run_gate_with_stall_bound() {
         elif (( SECONDS - quiet_since >= stall )); then
             printf '\ngate-run: no output for %ss, the stall window (LIVESPEC_SUITE_GREEN_STALL_SECONDS); ending the gate'"'"'s whole process group and every session-escaping descendant — not a pass\n' \
                 "$stall" >>"$dir/output.log"
-            find_escaped_descendants "$dir" "$gate_pid"
-            end_escaped_descendants TERM
-            kill -TERM -- "-$gate_pid" 2>/dev/null || true
+            ESCAPED_DESCENDANT_PIDS=()
+            ESCAPED_GROUP_LEADERS=()
+            end_gate_tree TERM "$dir" "$gate_pid"
             ended=$SECONDS
-            # Wait for the whole GROUP, not just its leader: a worker's TERM
+            # Wait for the whole tree, not just its leader: a worker's TERM
             # handler gets its grace period even after the leader has gone.
-            while kill -0 -- "-$gate_pid" 2>/dev/null && (( SECONDS - ended < grace )); do
+            while gate_tree_is_alive "$gate_pid" && (( SECONDS - ended < grace )); do
                 idle_sleep 1
             done
-            end_escaped_descendants KILL
-            kill -KILL -- "-$gate_pid" 2>/dev/null || true
+            # Frozen again before KILL, so nothing the TERM handlers started
+            # can leave the group between the last read and the signal.
+            freeze_gate_tree "$dir" "$gate_pid"
+            signal_gate_tree KILL "$gate_pid"
             wait "$gate_pid" 2>/dev/null || true
             close_idle_fd || true
             return "$STALL_EXIT_CODE"

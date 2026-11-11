@@ -23,9 +23,11 @@ from __future__ import annotations
 import os
 import shlex
 import shutil
+import signal
 import subprocess
 import sys
 import time
+from contextlib import suppress
 from pathlib import Path
 
 import pytest
@@ -786,6 +788,46 @@ def test_a_stalled_gate_ends_a_descendant_that_started_its_own_session(
     assert not Path(f"/proc/{escaped_process}").exists()
     assert f"pid {escaped_process}" in log
     assert token in log
+
+
+def _live_processes_carrying(token: str) -> list[str]:
+    """Pids of non-zombie processes whose command line carries `token`."""
+    live: list[str] = []
+    for proc in Path("/proc").glob("[0-9]*"):
+        cmdline, state = "", "Z"
+        with suppress(OSError):
+            cmdline = (proc / "cmdline").read_bytes().replace(b"\0", b" ").decode(errors="replace")
+            state = (proc / "stat").read_text().rsplit(")", 1)[1].split()[0]
+        live += [proc.name] * (token in cmdline and state != "Z")
+    return live
+
+
+@pytest.mark.integration
+def test_a_stalled_gate_ends_a_session_escaper_started_while_it_is_being_ended(
+    *, fixture_repo: tuple[Path, Path, dict[str, str]]
+) -> None:
+    """A descendant forked after the first process-table read is still ended.
+
+    The gate's own process group keeps starting session-leading children, so
+    any single snapshot of the process table is stale by the time the group is
+    signalled. Once the verdict is recorded no such child may be alive.
+    """
+    primary, worktree, env = fixture_repo
+    token = f"livespec-gate-late-escaper-{time.monotonic_ns()}"
+    spawner = f'while :; do setsid sh -c "sleep 60; :" {token} & sleep 0.01; done'
+    run_id = _start(
+        cwd=worktree,
+        env={**env, _STALL_ENV: "2", _STALL_GRACE_ENV: "1"},
+        command=["bash", "-c", spawner],
+    )
+
+    try:
+        _ = _await_verdict(primary=primary, run_id=run_id)
+        assert _live_processes_carrying(token) == []
+    finally:
+        for pid in _live_processes_carrying(token):
+            with suppress(ProcessLookupError):
+                os.kill(int(pid), signal.SIGKILL)
 
 
 @pytest.mark.integration
