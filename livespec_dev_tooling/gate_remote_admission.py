@@ -60,13 +60,15 @@ kubectl --namespace "$namespace" get job "$job_name" --watch --output json """
     r"""--request-timeout "$timeout" >"$fifo" 2>"$stderr" &
 watch_pid=$!
 if python3 -c '
+import codecs
 import json
 import sys
 
 decoder = json.JSONDecoder()
+utf8 = codecs.getincrementaldecoder("utf-8")()
 buffer = ""
 while chunk := sys.stdin.buffer.read1(8192):
-    buffer += chunk.decode()
+    buffer += utf8.decode(chunk)
     while True:
         document_text = buffer.lstrip()
         if not document_text:
