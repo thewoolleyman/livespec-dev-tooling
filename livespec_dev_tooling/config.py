@@ -45,7 +45,6 @@ import sys
 from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 from fnmatch import fnmatch
-from math import isfinite
 from pathlib import Path
 from typing import Any, NoReturn, cast
 
@@ -1359,41 +1358,22 @@ def load_gate_check_suite(*, repo_root: Path) -> tuple[str, ...] | None:
     return _as_str_tuple(value=table["gate_check_suite"], key="gate_check_suite")
 
 
-# The three gate Job resource keys, in the order the gate client passes them. A
-# Kubernetes cpu quantity is a positive decimal or a whole number of millicores;
-# a memory quantity here is a positive whole number of a binary unit — the only
-# unit the gates template and the gates Kueue quotas are written in, so a
-# decimal `6GB` is refused as the typo it almost always is rather than rendered
-# as a 7% smaller request than its author meant.
+# The three gate Job resource keys, in the order the gate client passes them.
+# `gate_cpu` and `gate_parallelism` are positive integers; `gate_memory` is a
+# Kubernetes memory quantity — a positive integer and one of the unit suffixes
+# the a-consumer-declares-its-gate-job-resources contract names. A bare number
+# is refused: Kubernetes would read `"6"` as six BYTES.
 _GATE_CPU_KEY = "gate_cpu"
 _GATE_MEMORY_KEY = "gate_memory"
 _GATE_PARALLELISM_KEY = "gate_parallelism"
-_GATE_CPU_QUANTITY = re.compile(r"^(?:[0-9]+(?:\.[0-9]+)?|[0-9]+m)$")
-_GATE_MEMORY_QUANTITY = re.compile(r"^[1-9][0-9]*(?:Ki|Mi|Gi|Ti)$")
-
-
-def _as_gate_cpu(*, value: object) -> str:
-    quantity: str | None = None
-    if isinstance(value, str) and _GATE_CPU_QUANTITY.match(value):
-        quantity = value
-    # `bool` is refused for the reason `_as_positive_int` gives: TOML `true` is
-    # an int. A non-finite TOML float (`inf`, `nan`) is no request at all.
-    elif isinstance(value, int | float) and not isinstance(value, bool) and isfinite(value):
-        quantity = str(value)
-    if quantity is None or float(quantity.removesuffix("m")) <= 0:
-        msg = (
-            f"`{_GATE_CPU_KEY}` must be a positive cpu quantity: a number of cores "
-            '(6, 2.5, "3") or of millicores ("3500m")'
-        )
-        raise ConfigParseError(msg)
-    return quantity
+_GATE_MEMORY_QUANTITY = re.compile(r"^[1-9][0-9]*(?:Ki|Mi|Gi|Ti|k|M|G|T)$")
 
 
 def _as_gate_memory(*, value: object) -> str:
     if not isinstance(value, str) or not _GATE_MEMORY_QUANTITY.match(value):
         msg = (
-            f"`{_GATE_MEMORY_KEY}` must be a positive memory quantity in a binary "
-            'unit, such as "10Gi" or "6144Mi"'
+            f"`{_GATE_MEMORY_KEY}` must be a positive memory quantity: an integer and "
+            'one of Ki, Mi, Gi, Ti, k, M, G or T, such as "12Gi"'
         )
         raise ConfigParseError(msg)
     return value
@@ -1411,10 +1391,10 @@ def load_gate_job_resources(*, repo_root: Path) -> tuple[tuple[str, str], ...]:
     renderer's own default (5 cpu, 6Gi, 4 workers) rather than restated here,
     so the default has one owner.
 
-    A cpu request below the worker count is accepted on purpose. The gate Job
-    carries no cpu limit, so the request is what Kueue and the scheduler
-    reserve, not what the workers may use; measured gate use ran at 0.3-5.7 of
-    a 5-cpu request (legacy-coordinator-agent capacity read, 2026-11-10).
+    A cpu request below the worker count is legitimate. The gate Job carries
+    no cpu limit, so the request is what Kueue and the scheduler reserve, not
+    what the workers may use; measured gate use ran at 0.3-5.7 of a 5-cpu
+    request (legacy-coordinator-agent capacity read, 2026-11-10).
 
     Raises `ConfigParseError` naming the key on an unusable value. Like
     `gate_check_suite`, these are intentionally NOT `Config` role keys: the
@@ -1425,7 +1405,8 @@ def load_gate_job_resources(*, repo_root: Path) -> tuple[tuple[str, str], ...]:
         return ()
     declared: list[tuple[str, str]] = []
     if _GATE_CPU_KEY in table:
-        declared.append((_GATE_CPU_KEY, _as_gate_cpu(value=table[_GATE_CPU_KEY])))
+        cpu = _as_positive_int(value=table[_GATE_CPU_KEY], key=_GATE_CPU_KEY)
+        declared.append((_GATE_CPU_KEY, str(cpu)))
     if _GATE_MEMORY_KEY in table:
         declared.append((_GATE_MEMORY_KEY, _as_gate_memory(value=table[_GATE_MEMORY_KEY])))
     if _GATE_PARALLELISM_KEY in table:
