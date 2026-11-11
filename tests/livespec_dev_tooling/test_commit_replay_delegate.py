@@ -382,3 +382,29 @@ def test_a_staged_tree_that_cannot_be_committed_is_an_explicit_no_verdict(
     assert verdict.job_name is None
     assert verdict.tree_hash == "a" * 40
     assert verdict.reason == "the staged tree could not be committed for the gate"
+
+
+def test_a_refused_replay_verdict_stops_the_commit_naming_its_reason(
+    *, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A refused verdict ends the commit with exit 1 and its reason on stderr (c3nd2h)."""
+    module = _module()
+    refused = module.ReplayVerdict(
+        local=False,
+        reason="the commit is refused: `gate_cpu` must be a positive integer (pyproject.toml)",
+        refused=True,
+    )
+
+    with pytest.raises(SystemExit) as stopped:
+        _ = module.unrefused(verdict=refused)
+
+    assert stopped.value.code == 1
+    assert "`gate_cpu` must be a positive integer" in capsys.readouterr().err
+
+
+def test_an_unrefused_replay_verdict_passes_through_unchanged() -> None:
+    """Any verdict that is not a refusal is handed back as it came (c3nd2h)."""
+    module = _module()
+    verdict = module.ReplayVerdict(local=True, reason="gates kubeconfig is not readable")
+
+    assert module.unrefused(verdict=verdict) is verdict
