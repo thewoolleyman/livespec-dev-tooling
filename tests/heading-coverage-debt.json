@@ -373,6 +373,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: a consumer's pre-push gate that passes its check set to the shared entry point reuses a qualifying delegated pre-commit verdict",
+    "work_item": "livespec-dev-tooling-yud7rc",
+    "first_seen": "2026-11-11"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: a coverage consumer that did not reuse reaches the maintainer",
     "work_item": "livespec-dev-tooling-akljpy",
     "first_seen": "2026-11-08"
@@ -1507,6 +1514,20 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: reused delegated pre-commit evidence that the cluster's record of its gate Job contradicts does not stand in for the pre-push gate",
+    "work_item": "livespec-dev-tooling-7uae5p",
+    "first_seen": "2026-11-11"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: reused delegated pre-commit evidence whose gate Job the cluster no longer holds does not stand in for the pre-push gate",
+    "work_item": "livespec-dev-tooling-7uae5p",
+    "first_seen": "2026-11-11"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: runner pods select the committed runner scheduler profile and every other pod keeps the default profile",
     "work_item": "livespec-dev-tooling-mtvxde",
     "first_seen": "2026-11-04"
@@ -1615,6 +1636,20 @@
     "heading": "## Scenario: the replay legs never retry the Red test and never accept a final failure",
     "work_item": "livespec-dev-tooling-crxcy4",
     "first_seen": "2026-11-03"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: the shared entry point refuses a push naming a member that fails after it accepted a delegated pre-commit verdict",
+    "work_item": "livespec-dev-tooling-yud7rc",
+    "first_seen": "2026-11-11"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: the shared entry point tells its caller to continue with its own gate when no delegated pre-commit verdict qualifies",
+    "work_item": "livespec-dev-tooling-yud7rc",
+    "first_seen": "2026-11-11"
   },
   {
     "spec_root": "SPECIFICATION",
