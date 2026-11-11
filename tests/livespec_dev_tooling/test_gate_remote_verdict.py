@@ -27,6 +27,7 @@ proceed on the strength of having seen a green one.
 from __future__ import annotations
 
 import json
+import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -139,11 +140,15 @@ class _StubCluster:
         head_trees: Iterable[str | None] = (_TREE,),
         refusals: Mapping[str, str] | None = None,
         never_runs: Iterable[str] = (),
-        pod_reasons: str = "",
+        pod_reason: str = "",
+        container_reason: str = "",
     ) -> None:
         self.calls: list[_Invocation] = []
         self._job_state = job_state
-        self._pod_reasons = pod_reasons
+        self._pod_fields = {
+            ".items[*].status.reason": pod_reason,
+            ".items[*].status.containerStatuses[*].state.terminated.reason": container_reason,
+        }
         self._head_trees = list(head_trees)
         self._refusals = dict(refusals or {})
         self._never_runs = frozenset(never_runs)
@@ -185,11 +190,23 @@ class _StubCluster:
             return Failure(GateCommandNotRun(argv=tuple(argv), detail="git not on PATH"))
         return Success(GateCommandResult(returncode=0, stdout=f"{tree}\n", stderr=""))
 
+    def _render_pod_jsonpath(self, *, jsonpath: str) -> str:
+        """Render a `get pods` jsonpath as kubectl does, one `{...}` field at a time.
+
+        Each field renders its own value and a field this pod does not carry
+        renders empty, so a read that stops asking for one field loses exactly
+        that field's answer: a client that drops the pod-level reason no longer
+        sees `Evicted`, and one that drops the container's terminated reason no
+        longer sees `OOMKilled`.
+        """
+        return re.sub(r"\{([^}]*)\}", lambda m: self._pod_fields.get(m.group(1), ""), jsonpath)
+
     def _stdout(self, *, kind: str, argv: Sequence[str]) -> str:
-        # The failed pod's reasons are a `get pods` read like its termination
-        # message; only the jsonpath that asks for `.reason` tells them apart.
-        if any(arg.startswith("jsonpath=") and ".reason}" in arg for arg in argv):
-            return self._pod_reasons
+        jsonpath = next(
+            (arg.removeprefix("jsonpath=") for arg in argv if arg.startswith("jsonpath=")), None
+        )
+        if jsonpath is not None:
+            return self._render_pod_jsonpath(jsonpath=jsonpath)
         if kind == "get-job":
             return _job_status(state=self._job_state)
         if kind == "submit-job":
@@ -342,15 +359,15 @@ def test_a_token_write_that_never_ran_leaves_the_push_refused() -> None:
 
 
 @pytest.mark.parametrize(
-    ("pod_reasons", "resource_kill"),
+    ("pod_reason", "container_reason", "resource_kill"),
     [
-        (" OOMKilled", "OOMKilled"),
-        ("Evicted ", "Evicted"),
-        (" Error", None),
+        ("Evicted", "", "Evicted"),
+        ("", "OOMKilled", "OOMKilled"),
+        ("", "Error", None),
     ],
 )
 def test_a_failed_job_names_the_resource_kill_that_ended_its_pod(
-    *, pod_reasons: str, resource_kill: str | None
+    *, pod_reason: str, container_reason: str, resource_kill: str | None
 ) -> None:
     """A pod killed for memory, or evicted, says so in its OWN reason, and the verdict carries it.
 
@@ -361,7 +378,25 @@ def test_a_failed_job_names_the_resource_kill_that_ended_its_pod(
     absent verdict (contracts.md "Delegated commit-time replay test runs",
     Replay Job size).
     """
-    cluster = _StubCluster(job_state="Failed", pod_reasons=pod_reasons)
+    cluster = _StubCluster(
+        job_state="Failed", pod_reason=pod_reason, container_reason=container_reason
+    )
     verdict = run_gated_push(request=_REQUEST, runner=cluster, sleeper=_no_sleep)
     assert verdict.state == GATE_FAILED
     assert verdict.resource_kill == resource_kill
+
+
+def test_an_unreadable_failed_pod_reports_no_message_and_no_resource_kill() -> None:
+    """A pod read that never ran loses its evidence; it never invents a kill.
+
+    Both reads are still attempted, and each answers the empty string, so the
+    gate's red verdict stands with no explanation rather than a wrong one.
+    """
+    from unittest.mock import Mock
+
+    from livespec_dev_tooling._gate_remote_failed_pod import FailedPod, read_failed_pod
+
+    not_run = Failure(GateCommandNotRun(argv=("kubectl",), detail="kubectl not on PATH"))
+    runner = Mock(return_value=not_run)
+    pod = read_failed_pod(kubectl=["kubectl"], runner=runner, cwd=Path("/repo"), job_name=_JOB)
+    assert (pod, runner.call_count) == (FailedPod(), 2)
