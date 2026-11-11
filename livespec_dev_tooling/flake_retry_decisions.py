@@ -8,7 +8,6 @@ fails closed whenever that closure or the complete change set is uncertain.
 from __future__ import annotations
 
 import ast
-from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -18,29 +17,17 @@ from livespec_dev_tooling.flake_retry_paths import path_literals
 __all__: list[str] = [
     "RETRY_ATTEMPTS",
     "RETRY_DELAY_SECONDS",
-    "ModuleFacts",
-    "RetryPolicy",
     "retry_marker_for",
 ]
 
 RETRY_ATTEMPTS = 3
 RETRY_DELAY_SECONDS = 60
 _UNSAFE_NAMES = {"pyproject.toml", "uv.lock", "justfile", "conftest.py"}
+_PLUGIN_FILE_NAMES = {"flake_retry.py", Path(__file__).name}
 
 
 @dataclass(frozen=True, kw_only=True)
-class RetryPolicy:
-    """The hook's retry policy, supplied at collection time."""
-
-    attempts: int
-    delay_seconds: int
-
-
-_DEFAULT_POLICY = RetryPolicy(attempts=RETRY_ATTEMPTS, delay_seconds=RETRY_DELAY_SECONDS)
-
-
-@dataclass(frozen=True, kw_only=True)
-class ModuleFacts:
+class _ModuleFacts:
     """What one parsed source module contributes to any closure that reaches it."""
 
     imports: frozenset[Path]
@@ -48,12 +35,10 @@ class ModuleFacts:
     undeterminable_paths: bool
 
 
-def _module_facts(
-    *, repo_root: Path, path: Path, parse: Callable[..., ast.AST]
-) -> ModuleFacts | None:
+def _module_facts(*, repo_root: Path, path: Path) -> _ModuleFacts | None:
     """Parse one module once and keep its imports and path-bearing literals."""
     try:
-        tree = parse(path.read_text(encoding="utf-8"), filename=str(path))
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
     except (OSError, SyntaxError, UnicodeError):
         return None
     path_component_nodes = {
@@ -70,7 +55,7 @@ def _module_facts(
         if id(node) not in path_component_nodes or Path(node.value).suffix
     }
     path_names, path_is_undeterminable = path_literals(tree=tree, repo_root=repo_root)
-    return ModuleFacts(
+    return _ModuleFacts(
         imports=frozenset(module_imports(repo_root=repo_root, path=path, tree=tree)),
         literals=frozenset(literals | path_names),
         undeterminable_paths=path_is_undeterminable,
@@ -78,11 +63,7 @@ def _module_facts(
 
 
 def _closure(
-    *,
-    repo_root: Path,
-    test_path: Path,
-    memo: dict[Path, ModuleFacts | None] | None = None,
-    parse: Callable[..., ast.AST],
+    *, repo_root: Path, test_path: Path, memo: dict[Path, _ModuleFacts | None] | None = None
 ) -> tuple[set[Path], set[str], bool] | None:
     """Read imports and string literals without executing the test tree.
 
@@ -100,7 +81,7 @@ def _closure(
         if path in modules:
             continue
         if path not in facts_by_path:
-            facts_by_path[path] = _module_facts(repo_root=repo_root, path=path, parse=parse)
+            facts_by_path[path] = _module_facts(repo_root=repo_root, path=path)
         facts = facts_by_path[path]
         if facts is None:
             return None
@@ -133,9 +114,7 @@ def retry_marker_for(
     repo_root: Path,
     test_path: Path,
     change_paths: set[Path],
-    memo: dict[Path, ModuleFacts | None] | None = None,
-    parse: Callable[..., ast.AST] = ast.parse,
-    retry_policy: RetryPolicy = _DEFAULT_POLICY,
+    memo: dict[Path, _ModuleFacts | None] | None = None,
 ) -> dict[str, int] | None:
     """Return a rerun marker only when no changed path touches the closure.
 
@@ -145,9 +124,9 @@ def retry_marker_for(
     """
     if not test_path.is_relative_to(repo_root):
         return None
-    if any(path.name in _UNSAFE_NAMES or path.name == "flake_retry.py" for path in change_paths):
+    if any(path.name in _UNSAFE_NAMES or path.name in _PLUGIN_FILE_NAMES for path in change_paths):
         return None
-    analyzed = _closure(repo_root=repo_root, test_path=test_path, memo=memo, parse=parse)
+    analyzed = _closure(repo_root=repo_root, test_path=test_path, memo=memo)
     if analyzed is None:
         return None
     modules, literals, undeterminable_paths = analyzed
@@ -156,4 +135,4 @@ def retry_marker_for(
     relative_modules = {path.relative_to(repo_root) for path in modules}
     if relative_modules & change_paths or literals & _changed_names(paths=change_paths):
         return None
-    return {"reruns": retry_policy.attempts, "reruns_delay": retry_policy.delay_seconds}
+    return {"reruns": RETRY_ATTEMPTS, "reruns_delay": RETRY_DELAY_SECONDS}
