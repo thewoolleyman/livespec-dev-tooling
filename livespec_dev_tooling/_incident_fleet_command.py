@@ -51,12 +51,13 @@ _NONE = "-"
 class FleetReport:
     """The audit plus every serving version read for it ("" when the read was unavailable).
 
-    Each reading is (repository, capability, serving version, detail): the detail names
-    the release and HEAD a release-keyed read matched, or why it matched none.
+    Each reading is (repository, capability, serving version, detail, head): the detail
+    names the newest release and the HEAD a release-keyed read matched, or why it matched
+    none, and head is the serving commit such a read compared ("" on any other read).
     """
 
     audit: FleetAudit
-    readings: tuple[tuple[str, str, str, str], ...]
+    readings: tuple[tuple[str, str, str, str, str], ...]
 
 
 def _digest(*, text: str) -> str:
@@ -145,7 +146,7 @@ def run_fleet_audit(
                 claim,
                 serving_build=served(
                     repository=claim.repository, capability=capability_of(surface=claim.surface)
-                ).build_for(surface=claim.surface),
+                ).build_for(surface=claim.surface, claimed=claim.release_build),
             )
             for claim in claims
         ),
@@ -155,7 +156,7 @@ def run_fleet_audit(
         verify_evidence=lambda row: (
             verified(
                 repository=row.repository, capability=capability_of(surface=row.surface)
-            ).build_for(surface=row.surface)
+            ).build_for(surface=row.surface, claimed=row.release_build)
             == row.serving_build
         ),
         explain=lambda row: claim_reason(
@@ -185,25 +186,23 @@ def run_fleet_audit(
         _ = served(repository=repository, capability="driver-hooks")
     return FleetReport(
         audit=replace(audit, findings=audit.findings + lacking),
-        readings=tuple(sorted((r, c, v.build, v.detail) for (r, c), v in readings.items())),
+        readings=tuple(sorted((r, c, v.build, v.detail, v.head) for (r, c), v in readings.items())),
     )
 
 
 def _row_lines(*, report: FleetReport) -> tuple[str, ...]:
     """One line per row; a row classified through a release-keyed read also names it.
 
-    That read's detail is the release it matched and the HEAD it read.
+    It names the release the row's claim matched and the HEAD that read compared.
     """
-    details = {(r, c): (v, detail) for r, c, v, detail in report.readings if detail}
+    heads = {(r, c): head for r, c, _v, _detail, head in report.readings if head}
 
     def line(*, row: SurfaceDisposition) -> str:
         serving = row.evidence.serving_build if row.evidence else ""
-        build, detail = details.get(
-            (row.repository, SURFACE_CAPABILITY.get(row.surface, "")), ("", "")
-        )
-        named = serving != "" and serving == build and row.disposition != "unclassified"
+        head = heads.get((row.repository, SURFACE_CAPABILITY.get(row.surface, "")), "")
+        named = serving != "" and head != "" and row.disposition != "unclassified"
         fields = ("row", row.repository, row.surface, row.disposition, serving or _NONE)
-        return "\t".join((*fields, detail) if named else fields)
+        return "\t".join((*fields, f"release {serving} at HEAD {head}") if named else fields)
 
     return tuple(line(row=row) for row in report.audit.rows)
 
@@ -217,7 +216,7 @@ def render_report(*, report: FleetReport) -> tuple[str, ...]:
         *_row_lines(report=report),
         *(
             "\t".join(("serving", r, c, v or _NONE, *((detail,) if detail else ())))
-            for r, c, v, detail in report.readings
+            for r, c, v, detail, _head in report.readings
         ),
         *(f"finding\t{finding}" for finding in audit.findings),
         *(ready or (f"ready\t{_NONE}",)),

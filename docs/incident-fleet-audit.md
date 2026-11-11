@@ -24,7 +24,7 @@ of the ready list and the findings name the consumer and the capability.
 
 | Capability | Serving version | Unverified when |
 | --- | --- | --- |
-| `gate-readers` | the commit `direct_url.json` records for `livespec_dev_tooling` in the consumer's own `.venv` (release-keyed when the consumer runs its own source, below). The consumer's interpreter is never run. | no clone, no `.venv` (for example `openbrain`, `resume`, `homelab` on a host that has none), no or several installs, an install that is not a recorded revision, a tracked modification in an own-source checkout (an untracked file does not count) |
+| `gate-readers` | the commit `direct_url.json` records for `livespec_dev_tooling` in the consumer's own `.venv` (release-keyed when the consumer runs its own source, below). The consumer's interpreter is never run. | no clone, no `.venv` (for example `openbrain`, `resume`, `homelab` on a host that has none), no or several installs, an install that is not a recorded revision, a tracked modification in an own-source checkout (an untracked file does not count), or a release-keyed reason below |
 | `templates` | the one commit that every pin of this library's reusable workflows (`.github/workflows/...@ref`) and composite actions (`.github/actions/...@ref`) names, across ALL of the consumer's default-branch `.github/workflows/*.yml` files, read from one blobless clone (a tag is resolved to its commit); a consumer that runs its own local workflows (this library always, any other consumer with no such pin) is release-keyed against its default-branch commit, below | an unreadable workflow directory or file, pins that disagree, a ref that names no tag or commit, no template use at all (for example `dolt-server`) |
 | `driver-hooks` | `plugin=<commit>` for every plugin the consumer's `.claude/settings.json` enables, from the install record whose project path is the consumer's clone, with its plugin cache present | an enabled plugin that is not installed for this project, no cache, an unreadable registry |
 | `recovery-authorization` | the controller's serving version plus the single always-bypass GitHub App on the consumer's default-branch ruleset | no verified controller, no or several bypass actors, not an always-bypass Integration |
@@ -43,19 +43,26 @@ commit that contains it, so those reads are keyed to a RELEASE
 
 - The serving build is the newest `vX.Y.Z` tag that is an ancestor of the serving commit (the
   checkout's HEAD, or the default-branch tip read in the consumer's clone on this host). The tag's
-  commit must be confirmed on the remote.
-- A claim for such a row names that release (for example `v1.193.0`), never a commit.
-- It is judged PER ROW. A row serves the release only while every file of that row's surface at the
-  serving commit is byte-identical to the release's. Commits that touch only files outside the
-  surface leave the row serving. A surface is the exact file set its reader serves from
-  (`livespec_dev_tooling/_incident_fleet_surface_files.py`): the surface's roots, pinned by a test,
-  plus the in-package modules they import or run and the local workflows and actions they call.
-  It is never the whole tree, because this repository's master moves many times an hour.
+  commit must be confirmed on the remote; so must every release a claim names.
+- A claim for such a row names a release (for example `v1.193.0`), never a commit. It may name an
+  older release than the newest: the claim is judged against the release it names.
+- It is judged PER ROW. A row serves the claimed release only while every file of that row's
+  surface at the serving commit is byte-identical to that release's. Commits, and later releases,
+  that touch only files outside the surface leave the row serving. A surface is the exact file set
+  its reader serves from (`livespec_dev_tooling/_incident_fleet_surface_files.py`): the surface's
+  roots, pinned by a test, plus the in-package modules they import or run and the local workflows
+  and actions they call. It is never the whole tree, because this repository's master moves many
+  times an hour and cuts several releases a day.
+- Releases are compared newest first, one `git diff --name-only` per release shared by every
+  surface of the capability. A surface stops serving at the first release that changed one of its
+  files, and every older release is judged changed since it too, naming the files found changed
+  there, without another comparison. Comparing stops once no surface still serves.
 - An unclassified release-keyed row names its reason in the findings: no release ancestor, a tag
   the remote does not confirm, the surface's changed or absent files, a claim naming a release that
-  is not an ancestor of HEAD or not the newest one, or a tracked modification.
-- The `serving` line, and each row that classifies through a release claim, print
-  `release vX.Y.Z at HEAD <commit>`.
+  is not an ancestor of HEAD, a release whose changed files could not be read, or a tracked
+  modification.
+- The `serving` line prints the newest release, `release vX.Y.Z at HEAD <commit>`; each row that
+  classifies through a release claim prints the release its claim named, at that HEAD.
 
 On the dev host (2026-11-10) only `thewoolleyman/livespec-dev-tooling` is read this way, for both
 capabilities.
