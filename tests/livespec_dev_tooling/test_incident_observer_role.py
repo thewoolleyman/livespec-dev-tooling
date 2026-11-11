@@ -232,6 +232,10 @@ def test_the_restart_handler_clears_the_start_limit_first() -> None:
     )
     assert reset["become"] is True
     assert reset["when"] == handlers[restart]["when"]
+    # failed_when reads this name, and an undefined one fails even an rc-0 reset; a
+    # check_mode override would reset a real unit under --check.
+    assert reset["register"] == "incident_observer_reset_failed"
+    assert "check_mode" not in reset
     # Ansible ANDs the list: a dropped `rc` clause fails a healthy rc-0 reset, and
     # systemctl writes "not loaded" to stderr, not stdout.
     assert reset["failed_when"] == [
