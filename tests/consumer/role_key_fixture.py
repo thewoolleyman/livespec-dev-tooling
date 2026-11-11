@@ -21,8 +21,8 @@ from pathlib import Path
 __all__: list[str] = [
     "LEGACY_EMPTY_SPELLINGS",
     "ROLE_KEY_SPELLING_FIELD",
+    "complete_block_declaring",
     "records_from",
-    "union_key_block",
     "write_consumer",
 ]
 
@@ -59,8 +59,11 @@ _BASE_DECLARATIONS: dict[str, str] = {
 }
 
 
-def union_key_block(*, key: str, value: str, comment: str) -> str:
+def complete_block_declaring(*, key: str, value: str, comment: str) -> str:
     """The complete block with `key` declared as `value`, under a decoy `comment`.
+
+    Named for what it returns: the WHOLE `[tool.livespec_dev_tooling]` block, with
+    one key (union or clean) replaced — not a fragment for a union key alone.
 
     The comment is written where a consumer would really put a reason — on the
     line above the key — and every caller supplies one that CONTRADICTS the
