@@ -2315,6 +2315,14 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: a recorded scratch-branch drill ends in drill-closed and a master incident is refused",
+    "test": "TODO",
+    "work_item": "livespec-dev-tooling-io6hyk",
+    "reason": "A real test at the integration tier or above is owed for this heading: the implementation orchestrator's drill-close verb must move an incident item whose bound carrier pull requests all merged into an incident-scratch/** base, with no landed commit reachable from master, to drill-closed, and must refuse an item with a master-based carrier with incident-not-a-recorded-drill, leaving it unchanged (proposal no-verb-closes-a-drill, v188). livespec-dev-tooling-io6hyk owns it."
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: a reverted incident retains its original CI evidence before another attempt",
     "test": "TODO",
     "reason": "A real test at the integration tier or above is owed for this heading: the normally shipped incident capability must exercise this contract with ordinary-path controls; livespec-dev-tooling-kobmka owns the implementation and scenario evidence under plan livespec-dev-tooling-bqnzcm.",
