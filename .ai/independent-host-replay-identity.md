@@ -129,6 +129,25 @@ record's `commit`. Alternatively, run the steps in a worktree made from the tag
 with `just worktree-create <branch> <tag>`. Use a worktree whenever the
 assertion does not need the primary itself.
 
+## The fifth trap: an external `test -r` calls the gates kubeconfig unreadable
+
+On the dev host, `/usr/bin/test` links to `/usr/lib/cargo/bin/coreutils/test`,
+which is uutils (the Rust coreutils). Its `test -r` ignores supplementary
+groups. `/etc/ci-runner/gates.kubeconfig` is `root:gates-client 0640` and
+readable only through the `gates-client` group, so the external binary calls it
+unreadable. Measured 2026-11-11 at about 08:08Z: two codex replayers, for
+khjkyu and qpgiip, each checked the file with
+`subprocess.run(['test', '-r', ...])`, got exit code 1, and stopped before
+launching their gate. In the same shell, `os.access(path, os.R_OK)` was True
+and a real read succeeded. The shell builtins (`[ -r ]` in bash or zsh) give
+the right answer. Only the external binary is wrong.
+
+So when a brief asks a replayer to confirm a file is readable, name an actual
+read: `head -c 1 <file> >/dev/null`. Treat a "not readable" report from a
+script as unconfirmed until a real read fails. Resuming the SAME codex session
+with that correction kept each replayer's identity, and both gates then
+launched.
+
 ## A codex replayer cannot wait on a long gate
 
 The codex harness forbids long foreground waits. A codex replayer briefed to
