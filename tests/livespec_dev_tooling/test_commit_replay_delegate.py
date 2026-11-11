@@ -443,3 +443,48 @@ def test_a_one_file_replay_job_is_sized_by_the_replay_contract_and_suite_green_b
     _ = module.run_replay(repo_root=tmp_path, pytest_argv=["tests/"])
 
     assert requested == [("--cpu", "2", "--memory", "3Gi", "--parallelism", "1"), None]
+
+
+def test_a_one_file_replay_job_killed_for_resources_is_an_absent_verdict_and_suite_green_stays_red(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A Red or Green leg whose Job ended OOMKilled or evicted proved nothing about its test (lfkkaf).
+
+    Read as a failed run, a memory kill would pass as a valid failing Red, so a
+    one-file leg reads it as an absent verdict and its consumer runs the test
+    locally. A suite-green leg's kill stays a red verdict.
+    """
+    from returns.result import Success
+
+    from livespec_dev_tooling.gate_remote_client import GateRunRequest
+    from livespec_dev_tooling.gate_remote_verdict import GATE_FAILED, GateVerdict
+
+    module = _module()
+    _ = (tmp_path / "pyproject.toml").write_text(
+        "[tool.livespec_dev_tooling]\ndelegated_commit_tests = true\n",
+        encoding="utf-8",
+    )
+    request = GateRunRequest(
+        repo_root=tmp_path, mirror_url="mirror", manifest="manifest", gate_ref="ref"
+    )
+    killed = GateVerdict(
+        state=GATE_FAILED,
+        detail="the gate Job gate-replay-oom ended Failed",
+        token_written=False,
+        job_name="gate-replay-oom",
+        output_checksum="sha256:0",
+        resource_kill="OOMKilled",
+    )
+    monkeypatch.setattr(module, "gates_kubeconfig_readable", lambda: True)
+    monkeypatch.setattr(module, "resolve_renderer", lambda **_kwargs: Path("renderer"))
+    monkeypatch.setattr(module, "gate_remote_request", lambda **_kwargs: Success(request))
+    monkeypatch.setattr(
+        module, "default_gate_command_runner", _git_runner(calls=[], commit_works=True)
+    )
+    monkeypatch.setattr(module, "run_gated_push", lambda **_kwargs: killed)
+
+    one_file = module.run_one_test(repo_root=tmp_path, pytest_argv=["pytest", "tests/test_x.py"])
+    suite = module.run_replay(repo_root=tmp_path, pytest_argv=["pytest", "tests/"])
+
+    assert (one_file.local, one_file.exit_status, suite.exit_status) == (False, None, 1)
+    assert "OOMKilled" in one_file.reason
