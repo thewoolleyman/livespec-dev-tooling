@@ -53,17 +53,38 @@ if ! queue="$(kubectl get clusterqueue gates-cq -o json)"; then
   echo "converge-worker-queues: gates-cq is not present; no worker gate flavor added" >&2
   exit 0
 fi
-if ! unit="$(printf '%s' "$queue" | python3 -c '
-import json, re, sys
+# The LIVE annotation wins. When it is absent or unusable — a node joined through
+# homelab-worker/enroll-workload-classes.sh before the annotated
+# cluster-queue-gates.yaml was applied, which that path does not do itself — the
+# unit is read from the committed file beside this script (installed there by the
+# ci_converge_unit role's kueue/cluster-queue-*.yaml glob), so a node join never
+# refuses on rollout order. Only when BOTH are unusable does the script refuse.
+gate_unit_queue_file="${GATE_UNIT_QUEUE_FILE:-$here/cluster-queue-gates.yaml}"
+if ! unit="$(printf '%s' "$queue" | GATE_UNIT_QUEUE_FILE="$gate_unit_queue_file" python3 -c '
+import json, os, re, sys
+CPU, MEMORY = "ci-runner.io/gate-unit-cpu", "ci-runner.io/gate-unit-memory"
+
+def usable(cpu, memory):
+    return re.fullmatch(r"[1-9][0-9]*", cpu) and re.fullmatch(r"[1-9][0-9]*Gi", memory)
+
 annotations = json.load(sys.stdin).get("metadata", {}).get("annotations") or {}
-cpu = annotations.get("ci-runner.io/gate-unit-cpu", "")
-memory = annotations.get("ci-runner.io/gate-unit-memory", "")
-if not re.fullmatch(r"[1-9][0-9]*", cpu) or not re.fullmatch(r"[1-9][0-9]*Gi", memory):
-    sys.exit("gates-cq must carry ci-runner.io/gate-unit-cpu (a positive integer) and "
-             "ci-runner.io/gate-unit-memory (a positive integer of Gi); read cpu=%r memory=%r"
-             % (cpu, memory))
+cpu, memory = annotations.get(CPU, ""), annotations.get(MEMORY, "")
+if not usable(cpu, memory):
+    path = os.environ["GATE_UNIT_QUEUE_FILE"]
+    try:
+        text = open(path, encoding="utf-8").read()
+    except OSError:
+        text = ""
+    found = dict(re.findall(r"^\s*(ci-runner\.io/gate-unit-(?:cpu|memory)):\s*\"([^\"]*)\"\s*$",
+                            text, re.MULTILINE))
+    cpu, memory = found.get(CPU, ""), found.get(MEMORY, "")
+    if not usable(cpu, memory):
+        sys.exit("gates-cq carries no usable %s / %s annotation, and neither does %s "
+                 "(read cpu=%r memory=%r)" % (CPU, MEMORY, path, cpu, memory))
+    print("converge-worker-queues: gates-cq carries no gate unit yet; using %s from %s"
+          % (cpu + "/" + memory, path), file=sys.stderr)
 print(cpu, memory[:-2])')"; then
-  echo "converge-worker-queues: FATAL: no gate unit on gates-cq; no worker gate flavor added" >&2
+  echo "converge-worker-queues: FATAL: no gate unit on gates-cq or in $gate_unit_queue_file; no worker gate flavor added" >&2
   exit 1
 fi
 read -r gate_cpu gate_memory_gi <<<"$unit"
