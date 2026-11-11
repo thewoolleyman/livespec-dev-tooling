@@ -58,6 +58,29 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.195.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.194.0...v1.195.0) (2026-11-11)
+
+
+### Features
+
+* refuse unstamped CI coverage artifacts ([90b6c76](https://github.com/thewoolleyman/livespec-dev-tooling/commit/90b6c765d866af4b5b890edd39009f8392c577e5))
+* reject stale CI coverage data ([7057cb0](https://github.com/thewoolleyman/livespec-dev-tooling/commit/7057cb0a367d1181078e2d5058bfb4d948669196))
+
+
+### Bug Fixes
+
+* **ansible:** order arq_smb_source's openssl rand options before the byte count ([14e1ee5](https://github.com/thewoolleyman/livespec-dev-tooling/commit/14e1ee5fe350f33d2ddae7a66825031dde17257c))
+* **ci-runner:** the rule-26 kill-matrix Job puts the engine clone on PYTHONPATH so a target venv re-sync cannot swap it out (livespec-dev-tooling-oi2two) ([15b0414](https://github.com/thewoolleyman/livespec-dev-tooling/commit/15b0414176e088e25a35e991da8b3958fa118fec))
+* **incident:** /arm and the collector agree on renames, and a head can only widen its source prefixes (livespec-dev-tooling-6ou5m2) ([9cb7863](https://github.com/thewoolleyman/livespec-dev-tooling/commit/9cb78633f207e6c236e2daa237c2cef700d93d14))
+* **incident:** /arm compares the focused-evidence record with the head's changed product files (livespec-dev-tooling-6ou5m2) ([101b1f0](https://github.com/thewoolleyman/livespec-dev-tooling/commit/101b1f031b954922868366a1217cd603c1883912))
+* **incident:** a genuine inverse overlap reaches the incident chain as rollback-conflict, outside the observer fence, and the item blocks (livespec-dev-tooling-fdquen) ([2b159ed](https://github.com/thewoolleyman/livespec-dev-tooling/commit/2b159ed1c99b9ea2dd84590ec52e41d2e3468da2))
+* **incident:** a journaled rollback-conflict reaches the chain automatically, bounded and outside the fence (livespec-dev-tooling-fdquen) ([ba7c62a](https://github.com/thewoolleyman/livespec-dev-tooling/commit/ba7c62a1453bf8e9292d08c40001a7f765d8fd21))
+* **incident:** a regression reopen that never took the item's claim is a named half-reopen, not two days of retries (livespec-dev-tooling-fdquen) ([c95c027](https://github.com/thewoolleyman/livespec-dev-tooling/commit/c95c027dd5052f270f1cb70d6e8fd436d0076e8d))
+* **incident:** a tenant outage defers a rollback-conflict instead of ending it, and a half-reopen needs proof (livespec-dev-tooling-fdquen) ([c11bdd5](https://github.com/thewoolleyman/livespec-dev-tooling/commit/c11bdd531e2dc3b85553809a25dd581f437bbef9))
+* **incident:** an authority outage is told apart from a decision by one shared predicate (livespec-dev-tooling-fdquen) ([f46eaf0](https://github.com/thewoolleyman/livespec-dev-tooling/commit/f46eaf06c1792ea9b3223c86dcc9b5d7b782d06b))
+* **incident:** the conflict sweep quarantines an action entry it cannot read instead of crashing on it (livespec-dev-tooling-fdquen) ([33db50c](https://github.com/thewoolleyman/livespec-dev-tooling/commit/33db50ca9e2ad4f8f7220e9c5733ddcecd151e11))
+* remember filed flake-retry records so a closed root fix is not re-filed ([dceb909](https://github.com/thewoolleyman/livespec-dev-tooling/commit/dceb909fba4a4efceffc60eef72c69eacbda3d0e))
+
 ## [1.194.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.193.0...v1.194.0) (2026-11-11)
 
 
