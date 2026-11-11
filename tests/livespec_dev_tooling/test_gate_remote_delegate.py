@@ -67,6 +67,28 @@ __all__: list[str] = []
 
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
+
+
+@pytest.fixture(autouse=True)
+def _packaged_gate_lanes(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Give the gate client the packaged queue file and renderer an installed wheel carries.
+
+    The wheel's `force-include` packages `cluster-queue-gates.yaml` beside the
+    renderer under `livespec_dev_tooling/gates/`, but a source checkout has no
+    such directory. The fixture repositories here carry no ci-runner tree, so
+    Lane capacity reads the packaged copies; point them at the committed files
+    the wheel is built from, so a declaration is compared as an installed client
+    would compare it.
+    """
+    from livespec_dev_tooling import _gate_lane_capacity
+
+    kueue = _REPO_ROOT / "ci-runner" / "k3s" / "phase2"
+    queue = kueue / "kueue" / "cluster-queue-gates.yaml"
+    monkeypatch.setattr(_gate_lane_capacity, "GATES_QUEUE_PACKAGED", queue)
+    renderer = kueue / "gates" / "render-gate-job.sh"
+    monkeypatch.setattr(_gate_lane_capacity, "RENDERER_PACKAGED", renderer)
+
+
 _PRE_PUSH = _REPO_ROOT / "scripts" / "just" / "check-pre-push.sh"
 _WRAPPER_SCRIPT = (
     _REPO_ROOT / "ansible" / "roles" / "gates_kubeconfig" / "files" / "with-gates-kubeconfig"
