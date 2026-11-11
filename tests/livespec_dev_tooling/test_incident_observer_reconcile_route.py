@@ -11,6 +11,8 @@ from unittest.mock import Mock
 
 import pytest
 
+from livespec_dev_tooling import _incident_inverse_git as inverse_git
+from livespec_dev_tooling.incident_git import INCIDENT_GIT_TIMEOUT_SECONDS
 from livespec_dev_tooling.incident_observer_service import ControllerService
 from tests.livespec_dev_tooling import test_incident_recovery_principal as principal_tests
 from tests.livespec_dev_tooling.test_incident_recovery_principal import REPOSITORY, World
@@ -19,6 +21,7 @@ from tests.livespec_dev_tooling.test_incident_recovery_principal import REPOSITO
 world = principal_tests.world
 
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-gho3w4
+_SLOW_INVERSE_GIT_TIMEOUT_SECONDS = INCIDENT_GIT_TIMEOUT_SECONDS + 20
 
 
 def _post(*, world: World, retry: bool) -> tuple[str, dict[str, Any]]:
@@ -43,14 +46,34 @@ def _action(*, world: World) -> dict[str, Any]:
     return json.loads(Path(world.record).read_text())["actions"][world.intent.action_id]
 
 
+def _slow_inverse_git(*, monkeypatch: pytest.MonkeyPatch) -> list[float]:
+    """Make every inverse-helper Git call require 20 seconds beyond its normal bound."""
+    observed: list[float] = []
+    normal = inverse_git.run_git
+
+    def delayed(*, timeout_seconds: float = INCIDENT_GIT_TIMEOUT_SECONDS, **kwargs: Any) -> Any:
+        observed.append(timeout_seconds)
+        return normal(timeout_seconds=timeout_seconds, **kwargs)
+
+    monkeypatch.setattr(
+        inverse_git,
+        "_INVERSE_GIT_TIMEOUT_SECONDS",
+        _SLOW_INVERSE_GIT_TIMEOUT_SECONDS,
+        raising=False,
+    )
+    monkeypatch.setattr(inverse_git, "run_git", delayed)
+    return observed
+
+
 def test_an_unobserved_ref_update_is_retried_as_its_one_recorded_commit(
     world: World, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    world.client(monkeypatch)
-    world.forge.hooks[("PATCH", "master")] = principal_tests.raise_oserror
     request = {
         "request": asdict(principal_tests.publish_request(world, principal_tests.plan_for(world)))
     }
+    git_timeouts = _slow_inverse_git(monkeypatch=monkeypatch)
+    world.client(monkeypatch)
+    world.forge.hooks[("PATCH", "master")] = principal_tests.raise_oserror
     _ = world.call("publish", request)
     _, cleared = _post(world=world, retry=False)
     still_pending = _action(world=world)["status"]
@@ -69,16 +92,18 @@ def test_an_unobserved_ref_update_is_retried_as_its_one_recorded_commit(
         len(world.reverts()) == 1,
     )
     assert all(facts), (cleared, retried, repeated, facts)
+    assert git_timeouts and set(git_timeouts) == {_SLOW_INVERSE_GIT_TIMEOUT_SECONDS}
 
 
 def test_a_lost_reply_is_cleared_by_its_exact_receipt_with_no_retry(
     world: World, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    world.client(monkeypatch)
-    world.forge.lost_patch_reply = True
     request = {
         "request": asdict(principal_tests.publish_request(world, principal_tests.plan_for(world)))
     }
+    git_timeouts = _slow_inverse_git(monkeypatch=monkeypatch)
+    world.client(monkeypatch)
+    world.forge.lost_patch_reply = True
     _ = world.call("publish", request)
     world.forge.lost_patch_reply = False
     status, cleared = _post(world=world, retry=False)
@@ -90,3 +115,4 @@ def test_a_lost_reply_is_cleared_by_its_exact_receipt_with_no_retry(
         len(world.reverts()) == 1,
     )
     assert all(facts), (cleared, facts)
+    assert git_timeouts and set(git_timeouts) == {_SLOW_INVERSE_GIT_TIMEOUT_SECONDS}
