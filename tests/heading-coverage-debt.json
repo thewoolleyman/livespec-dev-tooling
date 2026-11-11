@@ -268,20 +268,6 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario: a Red-leg replay Job killed for memory is an absent verdict, not a valid Red",
-    "work_item": "livespec-dev-tooling-4g7als",
-    "first_seen": "2026-11-11"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a Red-leg replay Job requests the small replay size whatever the repository declares",
-    "work_item": "livespec-dev-tooling-4g7als",
-    "first_seen": "2026-11-11"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
     "heading": "## Scenario: a behaviour-preserving commit runs the full suite, and an empty run is refused",
     "work_item": "livespec-dev-tooling-z5fwwn",
     "first_seen": "2026-11-02"
@@ -709,13 +695,6 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario: a malformed declared gate resource refuses a delegated commit instead of gating it locally",
-    "work_item": "livespec-dev-tooling-4g7als",
-    "first_seen": "2026-11-11"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
     "heading": "## Scenario: a master push carrying a high-band work item's commit runs on the master lane's priority set",
     "work_item": "livespec-dev-tooling-5wewi2",
     "first_seen": "2026-11-08"
@@ -789,13 +768,6 @@
     "heading": "## Scenario: a node takes runner pods up to its declared churn-slot capacity and no fewer",
     "work_item": "livespec-dev-tooling-mtvxde",
     "first_seen": "2026-11-04"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a non-positive declared gate resource is refused before any gate Job is submitted",
-    "work_item": "livespec-dev-tooling-4g7als",
-    "first_seen": "2026-11-11"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -886,13 +858,6 @@
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a repository that declares no gate cpu or memory is not refused over an unreadable gates queue file",
     "work_item": "livespec-dev-tooling-jgabjo",
-    "first_seen": "2026-11-11"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a repository that declares no gate resources keeps the default gate Job size",
-    "work_item": "livespec-dev-tooling-4g7als",
     "first_seen": "2026-11-11"
   },
   {

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib
 import json
 import subprocess
 from pathlib import Path
@@ -10,8 +11,10 @@ import pytest
 import yaml
 from returns.result import Success
 
-from livespec_dev_tooling.gate_remote_delegate import gate_remote_request
+from livespec_dev_tooling._gate_remote_assembly import declared_gate_job_resources
+from livespec_dev_tooling.gate_remote_delegate import gate_remote_request, run_delegated_gate
 from livespec_dev_tooling.gate_remote_invocation import GateCommandOutcome, GateCommandResult
+from livespec_dev_tooling.gate_remote_verdict import GATE_FAILED, GATE_NO_VERDICT, GateVerdict
 
 __all__: list[str] = []
 
@@ -25,6 +28,17 @@ _ORIGIN = "git@github.com:acme/widget.git"
 _CPU_PARALLELISM_HEADING = (
     "## Scenario: a repository that declares gate_cpu 9 and gate_parallelism 8 gets a gate Job "
     "requesting 9 CPUs whose coverage run uses 8 xdist workers"
+)
+_DEFAULTS_HEADING = (
+    "## Scenario: a repository that declares no gate resources keeps the default gate Job size"
+)
+_NON_POSITIVE_HEADING = (
+    "## Scenario: a non-positive declared gate resource is refused before any gate Job is submitted"
+)
+_MALFORMED_HEADING = "## Scenario: a malformed declared gate resource refuses a delegated commit instead of gating it locally"
+_REPLAY_SIZE_HEADING = "## Scenario: a Red-leg replay Job requests the small replay size whatever the repository declares"
+_REPLAY_OOM_HEADING = (
+    "## Scenario: a Red-leg replay Job killed for memory is an absent verdict, not a valid Red"
 )
 
 
@@ -121,4 +135,144 @@ def test_declared_cpu_and_parallelism_render_into_the_gate_job_and_coverage_work
     assert _registered_test(heading=_CPU_PARALLELISM_HEADING) == (
         "tests.consumer.test_gate_job_resource_scenarios."
         "test_declared_cpu_and_parallelism_render_into_the_gate_job_and_coverage_worker_count"
+    )
+
+
+def test_undeclared_resources_render_the_default_gate_job_size(*, tmp_path: Path) -> None:
+    """An opted-in consumer with no resource keys leaves all renderer defaults intact."""
+    job = _gate_job(root=_consumer(tmp_path=tmp_path, declaration="delegated_gate = true\n"))
+    gate = next(
+        container
+        for container in job["spec"]["template"]["spec"]["containers"]
+        if container["name"] == "gate"
+    )
+    env = {entry["name"]: entry["value"] for entry in gate["env"] if "value" in entry}
+
+    assert gate["resources"] == {
+        "requests": {"cpu": "5", "memory": "6Gi"},
+        "limits": {"memory": "6Gi"},
+    }
+    assert env["LIVESPEC_TEST_PARALLELISM"] == "4"
+    assert _registered_test(heading=_DEFAULTS_HEADING).endswith(
+        ".test_undeclared_resources_render_the_default_gate_job_size"
+    )
+
+
+def test_non_positive_cpu_refuses_before_the_consumer_submits_a_gate_job(*, tmp_path: Path) -> None:
+    """A zero CPU declaration is a refusal, not a rendered or submitted Job."""
+    root = _consumer(tmp_path=tmp_path, declaration="delegated_gate = true\ngate_cpu = 0\n")
+    verdict = run_delegated_gate(
+        repo_root=root,
+        renderer=_RENDERER,
+        runner=_World(),
+        sleeper=lambda **_kwargs: None,
+        emit=lambda **_kwargs: None,
+    )
+
+    assert verdict.state == GATE_NO_VERDICT
+    assert verdict.refuses_push is True
+    assert "pyproject.toml" in verdict.detail and "gate_cpu" in verdict.detail
+    assert _registered_test(heading=_NON_POSITIVE_HEADING).endswith(
+        ".test_non_positive_cpu_refuses_before_the_consumer_submits_a_gate_job"
+    )
+
+
+def test_malformed_memory_refuses_a_delegated_commit_without_local_fallback(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A malformed declaration refuses the commit instead of converting it to a local gate."""
+    root = _consumer(
+        tmp_path=tmp_path,
+        declaration='delegated_pre_commit = true\ngate_memory = "6"\n',
+    )
+    module = importlib.import_module("livespec_dev_tooling.pre_commit_delegate")
+    submitted: list[object] = []
+    monkeypatch.setattr(module, "gates_kubeconfig_readable", lambda: True)
+    monkeypatch.setattr(module, "_staged_tree_hash", lambda **_kwargs: _TREE)
+    monkeypatch.setattr(module, "_pre_commit_check_suite", lambda **_kwargs: ("check",))
+    monkeypatch.setattr(
+        module,
+        "gate_remote_request",
+        lambda **kwargs: declared_gate_job_resources(repo_root=kwargs["repo_root"]),
+    )
+    monkeypatch.setattr(module, "run_gated_push", lambda **kwargs: submitted.append(kwargs))
+
+    verdict = module.run_pre_commit(repo_root=root)
+
+    assert (verdict.local, verdict.exit_status, submitted) == (False, 1, [])
+    assert "pyproject.toml" in verdict.reason and "gate_memory" in verdict.reason
+    assert _registered_test(heading=_MALFORMED_HEADING).endswith(
+        ".test_malformed_memory_refuses_a_delegated_commit_without_local_fallback"
+    )
+
+
+def test_red_leg_replay_uses_the_small_job_size_despite_declared_resources(
+    *, tmp_path: Path
+) -> None:
+    """The replay caller size wins over a consumer's full-suite resource declaration."""
+    root = _consumer(
+        tmp_path=tmp_path,
+        declaration="delegated_commit_tests = true\ngate_cpu = 9\ngate_parallelism = 8\n",
+    )
+    built = gate_remote_request(
+        repo_root=root,
+        renderer=_RENDERER,
+        runner=_World(),
+        resources=("--cpu", "2", "--memory", "3Gi", "--parallelism", "1"),
+    )
+    assert isinstance(built, Success)
+    job = next(document for document in yaml.safe_load_all(built.unwrap().manifest) if document)
+    gate = next(
+        container
+        for container in job["spec"]["template"]["spec"]["containers"]
+        if container["name"] == "gate"
+    )
+    env = {entry["name"]: entry["value"] for entry in gate["env"] if "value" in entry}
+
+    assert gate["resources"] == {
+        "requests": {"cpu": "2", "memory": "3Gi"},
+        "limits": {"memory": "3Gi"},
+    }
+    assert env["LIVESPEC_TEST_PARALLELISM"] == "1"
+    assert _registered_test(heading=_REPLAY_SIZE_HEADING).endswith(
+        ".test_red_leg_replay_uses_the_small_job_size_despite_declared_resources"
+    )
+
+
+def test_oom_killed_red_replay_returns_no_verdict_for_a_local_red_leg(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An OOM-killed replay supplies no remote Red verdict, so its caller runs locally."""
+    module = importlib.import_module("livespec_dev_tooling.commit_replay_delegate")
+    root = _consumer(tmp_path=tmp_path, declaration="delegated_commit_tests = true\n")
+    monkeypatch.setattr(module, "gates_kubeconfig_readable", lambda: True)
+    monkeypatch.setattr(module, "_staged_tree_hash", lambda **_kwargs: _TREE)
+    monkeypatch.setattr(module, "resolve_renderer", lambda **_kwargs: _RENDERER)
+    monkeypatch.setattr(
+        module,
+        "gate_remote_request",
+        lambda **_kwargs: Success(
+            importlib.import_module("livespec_dev_tooling.gate_remote_client").GateRunRequest(
+                repo_root=root, mirror_url="mirror", manifest="manifest", gate_ref="refs/gates/tree"
+            )
+        ),
+    )
+    monkeypatch.setattr(module, "_staged_commit", lambda **_kwargs: "commit")
+    monkeypatch.setattr(
+        module,
+        "run_gated_push",
+        lambda **_kwargs: GateVerdict(
+            state=GATE_FAILED,
+            detail="the gate Job ended Failed",
+            token_written=False,
+            resource_kill="OOMKilled",
+        ),
+    )
+
+    verdict = module.run_one_test(repo_root=root, pytest_argv=["pytest", "tests/test_red.py"])
+
+    assert (verdict.local, verdict.exit_status) == (False, None)
+    assert "OOMKilled" in verdict.reason
+    assert _registered_test(heading=_REPLAY_OOM_HEADING).endswith(
+        ".test_oom_killed_red_replay_returns_no_verdict_for_a_local_red_leg"
     )
