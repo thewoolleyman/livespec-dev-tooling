@@ -12,7 +12,9 @@ With a `checksum:` the module hashes the existing destination first and exits
 The rule, over every task file under `ansible/roles/*/tasks`:
 
 - A `get_url` task MUST carry a non-empty `checksum:` (a literal digest, a
-  templated one, or a `sha256:<url>` the module fetches itself), OR
+  templated one, or a `sha256:<url>` the module fetches itself; an empty value, a
+  YAML null such as `null` or `~`, a comment-only value, or an empty block scalar
+  is not one), OR
 - the task MUST record an exemption, a comment line anywhere in the task of the
   form `# check-mode-exempt: <why check mode cannot report it falsely>`. The
   reason is mandatory; an exemption that names none is a finding. The honest
@@ -58,7 +60,8 @@ _TASK_NAME = re.compile(r"^\s*(?:-\s+)?name:\s*(\S.*?)\s*$")
 _CHECKSUM_KEY = re.compile(r"^(\s*)checksum:\s*(.*?)\s*$")
 _INLINE_CHECKSUM = re.compile(r"\bchecksum=\S")
 _EXEMPTION = re.compile(r"^\s*#\s*check-mode-exempt:\s*(\S.*)$")
-_EMPTY_SCALARS = ("", "''", '""')
+_EMPTY_SCALARS = ("", "''", '""', "~", "null", "Null", "NULL")
+_TRAILING_COMMENT = re.compile(r"(?:^|\s)#.*$")
 _BLOCK_SCALAR_HEADER = re.compile(r"^[|>](?:[1-9][+-]?|[+-][1-9]?)?\s*(?:#.*)?$")
 
 _REMEDIATION = (
@@ -151,7 +154,7 @@ def _is_pinned(*, lines: list[str], module_index: int, key_indent: int, inline: 
         match = _CHECKSUM_KEY.match(line)
         if match is None or _indent(line=line) != argument_indent:
             continue
-        value = match.group(2)
+        value = _TRAILING_COMMENT.sub("", match.group(2)).strip()
         if _BLOCK_SCALAR_HEADER.match(value):
             return _block_scalar_has_content(
                 lines=lines, header_index=index, key_indent=argument_indent

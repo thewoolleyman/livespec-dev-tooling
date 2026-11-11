@@ -203,6 +203,51 @@ def test_an_empty_block_scalar_checksum_is_not_a_pin(
     ]
 
 
+def test_a_yaml_null_or_comment_only_checksum_is_not_a_pin(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    forms = ["null", "Null", "NULL", "~", "# comment", "''  # empty", "~ # nothing", ""]
+    tasks = "".join(
+        f"- name: Fetch {index}\n"
+        "  ansible.builtin.get_url:\n"
+        "    url: https://example.invalid/x\n"
+        f"    checksum: {form}\n"
+        "    dest: /x\n"
+        for index, form in enumerate(forms)
+    )
+    run = _run_check(cwd=_tree(root=tmp_path, tasks=tasks), monkeypatch=monkeypatch, capsys=capsys)
+    assert _pairs(run=run) == [
+        ("unpinned-get-url", "ansible/roles/r/tasks/main.yml", 5 * index + 2)
+        for index in range(len(forms))
+    ]
+
+
+def test_a_pinned_checksum_with_a_trailing_comment_or_hash_is_still_a_pin(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    tasks = (
+        "- name: Commented\n"
+        "  ansible.builtin.get_url:\n"
+        "    url: https://example.invalid/x\n"
+        "    checksum: sha256:abc  # vendor digest\n"
+        "    dest: /x\n"
+        "- name: Hash inside\n"
+        "  ansible.builtin.get_url:\n"
+        "    url: https://example.invalid/y\n"
+        "    checksum: sha256:abc#def\n"
+        "    dest: /y\n"
+        "- name: Folded commented\n"
+        "  ansible.builtin.get_url:\n"
+        "    url: https://example.invalid/z\n"
+        "    checksum: >- # folded\n"
+        "      sha256:abc\n"
+        "    dest: /z\n"
+    )
+    run = _run_check(cwd=_tree(root=tmp_path, tasks=tasks), monkeypatch=monkeypatch, capsys=capsys)
+    assert run.returncode == 0
+    assert run.findings == []
+
+
 def test_an_inline_checksum_argument_counts_as_a_pin(
     *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
