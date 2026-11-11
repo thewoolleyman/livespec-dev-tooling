@@ -8,11 +8,13 @@ from test_fleet_conformance import RecordingLog
 from test_rows_files import _MEMBER, make_context, tree_table
 
 from livespec_dev_tooling.fleet import _lanes
+from livespec_dev_tooling.fleet import _rows_canonical_check_slugs as canonical_rows
 from livespec_dev_tooling.fleet._context import FleetMember, GhResult, RowFinding
 from livespec_dev_tooling.fleet._contract_classes import ALL_CLASSES
 from livespec_dev_tooling.fleet._contract_model import ObligationRow
 from livespec_dev_tooling.fleet._contract_rows import OBLIGATION_ROWS, rows_for
 from livespec_dev_tooling.fleet._lanes import run_member_rows
+from livespec_dev_tooling.fleet._row_finding import PIN_STALENESS_FINDING_CLASS
 from livespec_dev_tooling.fleet._rows_canonical_check_slugs import (
     assert_canonical_check_slugs_wired,
 )
@@ -187,3 +189,143 @@ def test_lane_logs_the_honoured_waiver_even_when_another_slug_fails_the_member(
     assert result.error_findings == 1
     assert [fields["slug"] for fields in log.fields_for(event=_WAIVER_EVENT)] == ["check-alpha"]
     assert len(log.error_events) == 1
+
+
+def test_missing_slug_absent_from_pinned_release_is_a_non_excluding_staleness(
+    *, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A dispatch can deliver the release whose check inventory the member lacks."""
+    monkeypatch.setattr(
+        "livespec_dev_tooling.fleet._rows_canonical_check_slugs.canonical_check_slugs",
+        lambda: IOSuccess(("check-alpha",)),
+    )
+    table = tree_table(paths=[_JUSTFILE_PATH, _PYPROJECT_PATH])
+    table[_contents_args(repo="widget")] = GhResult(
+        returncode=0,
+        stdout=_unwired_justfile(),
+        stderr="",
+    )
+    table[
+        (
+            "api",
+            f"repos/acme/widget/contents/{_PYPROJECT_PATH}?ref=master",
+            "-H",
+            "Accept: application/vnd.github.raw",
+        )
+    ] = GhResult(
+        returncode=0,
+        stdout=(
+            "[tool.uv.sources]\n"
+            'livespec-dev-tooling = { git = "https://github.com/thewoolleyman/livespec-dev-tooling.git", tag = "v1.191.0" }\n'
+        ),
+        stderr="",
+    )
+    table[
+        (
+            "api",
+            "repos/acme/livespec-dev-tooling/git/trees/v1.191.0?recursive=1",
+        )
+    ] = GhResult(
+        returncode=0,
+        stdout=('{"tree": [{"path": "livespec_dev_tooling/checks/__init__.py", "type": "blob"}]}'),
+        stderr="",
+    )
+
+    outcome = assert_canonical_check_slugs_wired(ctx=make_context(table=table), member=_MEMBER)
+
+    assert isinstance(outcome, RowFinding)
+    assert outcome.finding_class == PIN_STALENESS_FINDING_CLASS
+
+
+def test_missing_slug_with_unreadable_pinned_inventory_still_excludes(
+    *, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A release that cannot be inspected cannot prove the slug is unavailable."""
+    monkeypatch.setattr(
+        "livespec_dev_tooling.fleet._rows_canonical_check_slugs.canonical_check_slugs",
+        lambda: IOSuccess(("check-alpha",)),
+    )
+    table = tree_table(paths=[_JUSTFILE_PATH, _PYPROJECT_PATH])
+    table[_contents_args(repo="widget")] = GhResult(
+        returncode=0,
+        stdout=_unwired_justfile(),
+        stderr="",
+    )
+    table[
+        (
+            "api",
+            f"repos/acme/widget/contents/{_PYPROJECT_PATH}?ref=master",
+            "-H",
+            "Accept: application/vnd.github.raw",
+        )
+    ] = GhResult(
+        returncode=0,
+        stdout=(
+            "[tool.uv.sources]\n"
+            'livespec-dev-tooling = { git = "https://github.com/thewoolleyman/livespec-dev-tooling.git", tag = "v1.191.0" }\n'
+        ),
+        stderr="",
+    )
+
+    outcome = assert_canonical_check_slugs_wired(ctx=make_context(table=table), member=_MEMBER)
+
+    assert isinstance(outcome, RowFinding)
+    assert outcome.finding_class == ""
+
+
+@pytest.mark.parametrize(
+    "pyproject",
+    [
+        "[tool",
+        "",
+        "[tool]\n",
+        "[tool.uv]\n",
+        "[tool.uv.sources]\n",
+        '[tool.uv.sources]\nlivespec-dev-tooling = "v1.191.0"\n',
+        "[tool.uv.sources.livespec-dev-tooling]\n",
+    ],
+)
+def test_pinned_tag_requires_a_declared_dev_tooling_tag(pyproject: str) -> None:
+    assert canonical_rows.pinned_dev_tooling_tag(pyproject_text=pyproject) is None
+
+
+class _InventoryContext:
+    """Small API seam for the pinned-release inventory shape tests."""
+
+    def __init__(self, *, payload: object) -> None:
+        self.owner = "acme"
+        self._payload = payload
+
+    def api_object(self, *, path: str, operation: str) -> object:
+        del path, operation
+        return self._payload
+
+
+@pytest.mark.parametrize(
+    ("payload", "expected"),
+    [
+        (None, None),
+        ({"truncated": True, "tree": []}, None),
+        ({"tree": {}}, None),
+        (
+            {
+                "tree": [
+                    {"path": "livespec_dev_tooling/checks/alpha.py"},
+                    {"path": "livespec_dev_tooling/checks/_private.py"},
+                    {"path": "README.md"},
+                    "not-an-entry",
+                ]
+            },
+            frozenset({"check-alpha"}),
+        ),
+    ],
+)
+def test_pinned_check_inventory_is_fail_closed_on_unreadable_shapes(
+    *, payload: object, expected: frozenset[str] | None
+) -> None:
+    assert (
+        canonical_rows.pinned_release_check_slugs(
+            ctx=_InventoryContext(payload=payload), tag="v1.191.0"
+        )
+        == expected
+    )
