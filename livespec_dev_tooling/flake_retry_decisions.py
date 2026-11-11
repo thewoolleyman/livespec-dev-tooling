@@ -8,16 +8,19 @@ fails closed whenever that closure or the complete change set is uncertain.
 from __future__ import annotations
 
 import ast
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 
 from livespec_dev_tooling._flake_retry_closure import conftest_chain, module_imports
 from livespec_dev_tooling.flake_retry_paths import path_literals
+from livespec_dev_tooling.flake_retry_release import version_only_release_change
 
 __all__: list[str] = [
     "RETRY_ATTEMPTS",
     "RETRY_DELAY_SECONDS",
     "retry_marker_for",
+    "session_withheld_reason",
 ]
 
 RETRY_ATTEMPTS = 3
@@ -109,6 +112,60 @@ def _changed_names(*, paths: set[Path]) -> set[str]:
     return names
 
 
+def _unsafe_change_reason(*, repo_root: Path, change_paths: set[Path]) -> str | None:
+    """Name an unsafe whole-session change unless it is release metadata only."""
+    unsafe = {
+        path
+        for path in change_paths
+        if path.name in _UNSAFE_NAMES or path.name in _PLUGIN_FILE_NAMES
+    }
+    if not unsafe:
+        return None
+    release_paths = {Path("pyproject.toml"), Path("uv.lock")}
+    if unsafe <= release_paths and version_only_release_change(
+        repo_root=repo_root, change_paths=change_paths
+    ):
+        return None
+    if unsafe & release_paths:
+        return "a non-version-only pyproject.toml or uv.lock change"
+    if any(path.name == "justfile" for path in unsafe):
+        return "a justfile change"
+    if any(path.name == "conftest.py" for path in unsafe):
+        return "a conftest.py change"
+    return "a flake-retry plugin change"
+
+
+def _closure_withheld_reason(
+    *, repo_root: Path, test_path: Path, memo: dict[Path, _ModuleFacts | None]
+) -> str | None:
+    """Name a closure analysis condition that must withhold every retry."""
+    analyzed = _closure(repo_root=repo_root, test_path=test_path, memo=memo)
+    if analyzed is None:
+        return "an unparseable closure module"
+    if analyzed[2]:
+        return "an indeterminable path in a closure module"
+    return None
+
+
+def session_withheld_reason(
+    *,
+    repo_root: Path,
+    test_paths: Iterable[Path],
+    change_paths: set[Path],
+    memo: dict[Path, _ModuleFacts | None],
+) -> str | None:
+    """Return the one whole-session reason that must withhold every retry."""
+    unsafe = _unsafe_change_reason(repo_root=repo_root, change_paths=change_paths)
+    if unsafe is not None:
+        return unsafe
+    for test_path in test_paths:
+        if test_path.is_relative_to(repo_root):
+            withheld = _closure_withheld_reason(repo_root=repo_root, test_path=test_path, memo=memo)
+            if withheld is not None:
+                return withheld
+    return None
+
+
 def retry_marker_for(
     *,
     repo_root: Path,
@@ -126,7 +183,7 @@ def retry_marker_for(
     """
     if not test_path.is_relative_to(repo_root):
         return None
-    if any(path.name in _UNSAFE_NAMES or path.name in _PLUGIN_FILE_NAMES for path in change_paths):
+    if _unsafe_change_reason(repo_root=repo_root, change_paths=change_paths) is not None:
         return None
     analyzed = _closure(repo_root=repo_root, test_path=test_path, memo=memo)
     if analyzed is None:

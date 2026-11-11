@@ -17,7 +17,7 @@ from pathlib import Path
 
 from livespec_dev_tooling.gate_remote_invocation import Failure, default_gate_command_runner
 
-__all__: list[str] = ["change_paths", "withheld_reason"]
+__all__: list[str] = ["change_paths", "comparison_revision", "withheld_reason"]
 
 _FETCH_LOCK_NAME = "livespec-flake-retry-fetch.lock"
 _LAST_FAILURE: list[str] = []
@@ -95,7 +95,7 @@ def _fetch_parent(*, repo_root: Path, head: str) -> None:
     _deepen_if_parent_missing(repo_root=repo_root, head=head)
 
 
-def _comparison(*, repo_root: Path) -> str | None:
+def comparison_revision(*, repo_root: Path) -> str | None:
     """Name the revision the change set is measured from, or report it unknown.
 
     With a default-branch ref that is the merge-base, or `HEAD`'s parent on the
@@ -125,7 +125,7 @@ def change_paths(*, repo_root: Path) -> set[Path] | None:
     """Return committed, index, working-tree, and untracked changes."""
     _LAST_FAILURE[:] = ["no git query failed, yet HEAD or its base did not resolve to one commit"]
     _FAILED_FETCH.clear()
-    comparison = _comparison(repo_root=repo_root)
+    comparison = comparison_revision(repo_root=repo_root)
     if comparison is None:
         return None
     queries: tuple[list[str], ...] = (
