@@ -1,31 +1,42 @@
 #!/usr/bin/env bash
 # prove-vxlan-offload.sh <host> --peer-node <node> — sweep the NIC offload
-# settings of a homelab WORKER node one at a time and time VXLAN-inbound
-# throughput under each, so a receive-path offload fault is named by
-# measurement rather than by guess.
+# settings of a homelab WORKER node one at a time and time VXLAN throughput in
+# BOTH directions under each, so an offload fault on the receive or the
+# transmit path is named by measurement rather than by guess.
 #
 # Written for plan homelab-k8s-worker-nodes (livespec-dev-tooling-ko26ez). On
 # 2026-11-11 prove-worker.sh measured the M4 worker at 228 KiB/s for pod-network
 # (VXLAN) traffic INTO it against 33.4 MB/s for the same transfer over the
 # underlay (node IPs): only VXLAN-encapsulated traffic arriving at the worker VM
-# collapses, MTU is ruled out, and peer-to-peer VXLAN between fleet nodes is
-# healthy.
+# collapsed, MTU was ruled out, and peer-to-peer VXLAN between fleet nodes was
+# healthy. After the M4 moved to a wired USB NIC (16:03Z the same day) inbound
+# recovered to ~99 MiB/s and the collapse moved to the TRANSMIT side: VXLAN
+# OUT of the worker ran at ~465 KiB/s against ~105 MiB/s over the underlay. The
+# sweep was blind to that direction, so it now times both (coordinator ruling
+# 16:13Z: the outbound sweep goes in this shared probe).
 #
 # SCOPE (binding, legacy-coordinator-agent 2026-11-11): every privileged action
 # runs ONLY on a homelab worker node. The tuning pod is placed by nodeSelector
 # homelab-worker.livespec.dev/class=worker AND kubernetes.io/hostname=
 # <host>-homelab-worker, and the script refuses before creating anything when
 # the named Node does not carry homelab-worker.livespec.dev/class=worker. The
-# peer side runs only an unprivileged pod-network file server.
+# peer side runs only an unprivileged pod-network file server and client.
 #
 # THE SWEEP. One privileged hostNetwork pod on the worker (the worker node image,
 # which ships ethtool) reads `ethtool -k` for every setting below. Then, for the
-# baseline and for each candidate ALONE, a pod-network client on the worker
-# times a 32 MiB download from a pod-network server on --peer-node (in-pod, with
-# /proc/uptime), printing `PROOF-INFO offload <candidate> <KiB/s> ...`. Each
-# candidate is restored to its recorded value before the next one runs, so no
-# two toggles are ever stacked. A setting ethtool reports as [fixed] or absent
-# is printed `unsupported` and never touched.
+# baseline and for each candidate ALONE, two 32 MiB pod-network downloads are
+# timed in-pod with /proc/uptime:
+#   in   a client on the worker fetches from a server on --peer-node, printing
+#        `PROOF-INFO offload in <candidate> <KiB/s> ...`;
+#   out  a client on --peer-node fetches from a server on the worker, printing
+#        `PROOF-INFO offload out <candidate> <KiB/s> ...`.
+# Both directions are timed under every candidate, so a toggle that cures one
+# direction and harms the other is visible. Each candidate is restored to its
+# recorded value before the next one runs, so no two toggles are ever stacked
+# by the sweep. (The kernel itself drops a dependent feature: turning lima0 tx
+# checksumming off also takes TSO off while it is off. The restore runs twice so
+# such a dependent feature comes back with its parent.) A setting ethtool
+# reports as [fixed] or absent is printed `unsupported` and never touched.
 #
 # RECEIPTS (binding). Every setting the sweep may touch is read BEFORE the run
 # and read AGAIN after the final restore, which an EXIT trap performs whatever
@@ -34,9 +45,14 @@
 # back, fails the proof loudly and leaves the tuning pod in place for repair.
 #
 # Candidates are <iface> <ethtool -K key> <ethtool -k feature name>:
-#   lima0 rx rx-checksumming; lima0 gro generic-receive-offload;
-#   lima0 rx-udp-gro-forwarding; lima0 rx-gro-list;
-#   flannel.1 tx-checksum-ip-generic; flannel.1 gro generic-receive-offload.
+#   receive path: lima0 rx rx-checksumming; lima0 gro generic-receive-offload;
+#     lima0 rx-udp-gro-forwarding; lima0 rx-gro-list;
+#     flannel.1 gro generic-receive-offload;
+#   transmit path: lima0 tx tx-checksumming; lima0 tso tcp-segmentation-offload;
+#     lima0 gso generic-segmentation-offload; lima0 tx-udp_tnl-segmentation;
+#     flannel.1 tx-checksum-ip-generic; flannel.1 tso tcp-segmentation-offload;
+#     flannel.1 gso generic-segmentation-offload;
+#     flannel.1 tx-udp_tnl-segmentation.
 # The underlay interface is read from ConfigMap homelab-worker-cluster
 # (flannel-iface); OFFLOAD_IFACE overrides it. The caller's `kubectl` decides
 # the cluster. Pods live in namespace hw-offload-proof, deleted at the end
@@ -93,8 +109,15 @@ candidates=(
   "$underlay gro generic-receive-offload"
   "$underlay rx-udp-gro-forwarding rx-udp-gro-forwarding"
   "$underlay rx-gro-list rx-gro-list"
-  "flannel.1 tx-checksum-ip-generic tx-checksum-ip-generic"
   "flannel.1 gro generic-receive-offload"
+  "$underlay tx tx-checksumming"
+  "$underlay tso tcp-segmentation-offload"
+  "$underlay gso generic-segmentation-offload"
+  "$underlay tx-udp_tnl-segmentation tx-udp_tnl-segmentation"
+  "flannel.1 tx-checksum-ip-generic tx-checksum-ip-generic"
+  "flannel.1 tso tcp-segmentation-offload"
+  "flannel.1 gso generic-segmentation-offload"
+  "flannel.1 tx-udp_tnl-segmentation tx-udp_tnl-segmentation"
 )
 
 worker_placement() {
@@ -163,6 +186,30 @@ spec:
     - name: main
       image: $busybox
       command: [sh, -c, "$server_cmd"]
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: server-out
+  namespace: $ns
+spec:
+$(worker_placement)
+  containers:
+    - name: main
+      image: $busybox
+      command: [sh, -c, "$server_cmd"]
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: client-out
+  namespace: $ns
+spec:
+  nodeName: $peer
+  containers:
+    - name: main
+      image: $busybox
+      command: [sh, -c, "exec sleep 7200"]
 EOF
 } | kubectl apply -f - >/dev/null
 kubectl wait --namespace "$ns" --for=condition=Ready pod --all --timeout="${OFFLOAD_READY_TIMEOUT:-600s}" >/dev/null ||
@@ -198,10 +245,14 @@ done
 
 restore_and_receipt() {
   local rc=$? mismatch=0 row iface key feature want got
-  for row in "${candidates[@]}"; do
-    read -r iface key feature <<<"$row"
-    want="${before["$iface $feature"]}"
-    case "$want" in on | off) tune ethtool -K "$iface" "$key" "$want" >/dev/null 2>&1 || true ;; esac
+  # Two passes: a dependent feature (TSO under tx checksumming) can only come
+  # back once its parent is on again.
+  for _ in 1 2; do
+    for row in "${candidates[@]}"; do
+      read -r iface key feature <<<"$row"
+      want="${before["$iface $feature"]}"
+      case "$want" in on | off) tune ethtool -K "$iface" "$key" "$want" >/dev/null 2>&1 || true ;; esac
+    done
   done
   for row in "${candidates[@]}"; do
     read -r iface key feature <<<"$row"
@@ -227,20 +278,33 @@ trap restore_and_receipt EXIT
 
 server_ip="$(kubectl get pod --namespace "$ns" server -o 'jsonpath={.status.podIP}')"
 [ -n "$server_ip" ] || die "the server pod on $peer has no pod IP"
-url="http://$server_ip:8080/huge"
+server_out_ip="$(kubectl get pod --namespace "$ns" server-out -o 'jsonpath={.status.podIP}')"
+[ -n "$server_out_ip" ] || die "the server-out pod on $worker has no pod IP"
 
-# measure <label>: time the 32 MiB pod-network download into the worker.
-measure() {
-  local label="$1" out start end extra
-  if out="$(kubectl exec --namespace "$ns" client -- sh -c \
+# measure_one <in|out> <label>: time one 32 MiB pod-network download. `in` runs
+# the client on the worker against the server on --peer-node; `out` runs the
+# client on --peer-node against the server on the worker.
+measure_one() {
+  local dir="$1" label="$2" client url out start end extra
+  case "$dir" in
+    in) client=client url="http://$server_ip:8080/huge" ;;
+    out) client=client-out url="http://$server_out_ip:8080/huge" ;;
+  esac
+  if out="$(kubectl exec --namespace "$ns" "$client" -- sh -c \
     "a=\$(cut -d' ' -f1 /proc/uptime); wget -qO /dev/null -T 600 '$url' || exit 1; b=\$(cut -d' ' -f1 /proc/uptime); echo \"\$a \$b\"" 2>&1)" &&
     read -r start end extra <<<"$out" && [ -n "$end" ] && [ -z "$extra" ]; then
-    awk -v a="$start" -v b="$end" -v kib="$transfer_kib" -v l="$label" 'BEGIN {
+    awk -v a="$start" -v b="$end" -v kib="$transfer_kib" -v d="$dir" -v l="$label" 'BEGIN {
       s = b - a; if (s <= 0) s = 0.01
-      printf "PROOF-INFO offload %s %d KiB/s (%d KiB in %.2f s)\n", l, kib / s, kib, s }'
+      printf "PROOF-INFO offload %s %s %d KiB/s (%d KiB in %.2f s)\n", d, l, kib / s, kib, s }'
   else
-    printf 'PROOF-INFO offload %s unmeasured %s\n' "$label" "$(printf '%s' "$out" | tr '\n' ' ' | cut -c1-120)"
+    printf 'PROOF-INFO offload %s %s unmeasured %s\n' "$dir" "$label" "$(printf '%s' "$out" | tr '\n' ' ' | cut -c1-120)"
   fi
+}
+
+# measure <label>: time both directions under the current settings.
+measure() {
+  measure_one in "$1"
+  measure_one out "$1"
 }
 
 measure baseline
