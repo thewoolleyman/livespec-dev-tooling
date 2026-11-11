@@ -55,7 +55,7 @@ from _red_green_replay_suite_runner import (  # noqa: E402
 )
 from _red_green_replay_trailers import write_trailers  # noqa: E402
 
-from livespec_dev_tooling.commit_replay_delegate import run_replay  # noqa: E402
+from livespec_dev_tooling.commit_replay_delegate import run_replay, unrefused  # noqa: E402
 from livespec_dev_tooling.green_token import read_pre_commit_evidence  # noqa: E402
 
 __all__: list[str] = [
@@ -243,7 +243,7 @@ def _handle_suite_green_mode(
         stall_seconds=bound.stall_seconds,
         ceiling_seconds=bound.ceiling_seconds,
     )
-    verdict = run_replay(repo_root=Path.cwd(), pytest_argv=["pytest", *argv[3:]])
+    verdict = unrefused(verdict=run_replay(repo_root=Path.cwd(), pytest_argv=["pytest", *argv[3:]]))
     if (
         not verdict.local
         and verdict.exit_status is not None
