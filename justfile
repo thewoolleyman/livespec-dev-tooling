@@ -298,6 +298,7 @@ check:
         check-master-ci-green
         check-match-keyword-only
         check-newtype-domain-primitives
+        check-no-ambient-environment-loops
         check-no-direct-destructive-cli
         check-no-direct-tool-invocation
         check-no-except-outside-io
@@ -997,6 +998,9 @@ check-match-keyword-only:
 
 check-newtype-domain-primitives:
     uv run python -m livespec_dev_tooling.checks.newtype_domain_primitives
+
+check-no-ambient-environment-loops:
+    uv run python -m livespec_dev_tooling.checks.no_ambient_environment_loops
 
 # Destructive-default CLI wrapping gate (livespec/SPECIFICATION/
 # non-functional-requirements.md §"Destructive-default CLI wrapping"):
