@@ -40,6 +40,7 @@ CLAUDE_SETTINGS = ".claude/settings.json"
 _STANDARD_ENSURE_PLUGINS_COMMAND = (
     "mise exec -- uv run --no-sync python -m livespec_dev_tooling.fleet.ensure_plugins"
 )
+_SYNC_DEV_TOOLING_COMMAND = "mise exec -- uv sync"
 _WRAPPER_VERIFICATION_REQUIRED = "settings require justfile wrapper verification"
 _HOLD_RELEASE = "v1.191.0"
 _HOLD_VERSION = (1, 191, 0)
@@ -115,7 +116,27 @@ def _has_standard_ensure_plugins_recipe(*, justfile_text: str) -> bool:
             stripped = candidate.strip()
             if stripped and not stripped.startswith("#"):
                 body.append(stripped)
-        return body == [_STANDARD_ENSURE_PLUGINS_COMMAND]
+        return body in (
+            [_STANDARD_ENSURE_PLUGINS_COMMAND],
+            [_SYNC_DEV_TOOLING_COMMAND, _STANDARD_ENSURE_PLUGINS_COMMAND],
+        )
+    return False
+
+
+def _syncs_before_ensure_plugins(*, justfile_text: str) -> bool:
+    """Whether the recipe resolves its pinned dev-tooling release before running it."""
+    lines = justfile_text.splitlines()
+    for index, line in enumerate(lines):
+        if line.strip() != "ensure-plugins:" or line.startswith((" ", "\t")):
+            continue
+        body: list[str] = []
+        for candidate in lines[index + 1 :]:
+            if candidate and not candidate.startswith((" ", "\t")):
+                break
+            stripped = candidate.strip()
+            if stripped and not stripped.startswith("#"):
+                body.append(stripped)
+        return body == [_SYNC_DEV_TOOLING_COMMAND, _STANDARD_ENSURE_PLUGINS_COMMAND]
     return False
 
 
@@ -154,6 +175,14 @@ def assert_session_start_orchestrator_hold(*, ctx: FleetContext, member: FleetMe
             message=(
                 f"{member.repo}: SessionStart plugin step would move the installed "
                 f"orchestrator build: livespec-dev-tooling pin {shown} predates {_HOLD_RELEASE}"
+            )
+        )
+    justfile = ctx.file_text(repo=member.repo, path="justfile")
+    if justfile is None or not _syncs_before_ensure_plugins(justfile_text=justfile):
+        return RowFinding(
+            message=(
+                f"{member.repo}: SessionStart ensure-plugins must sync its pinned "
+                "livespec-dev-tooling release before running the hold provisioner"
             )
         )
     return RowPass(

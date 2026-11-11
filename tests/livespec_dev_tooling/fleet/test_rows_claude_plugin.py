@@ -117,6 +117,26 @@ def test_session_start_orchestrator_hold_names_a_stale_dev_tooling_pin_as_a_move
     assert "v1.191.0" in outcome.message
 
 
+def test_session_start_orchestrator_hold_requires_sync_before_the_hold_provisioner() -> None:
+    """A stale venv must sync the pin before it can run the hold-carrying package."""
+    table = _plugin_currency_table(
+        paths=[CLAUDE_SETTINGS, "justfile", "pyproject.toml"],
+    )
+    table[_PLUGIN_PYPROJECT_ARGS] = GhResult(
+        returncode=0,
+        stdout=("[tool.uv.sources]\n" 'livespec-dev-tooling = { git = "x", tag = "v1.191.0" }\n'),
+        stderr="",
+    )
+
+    outcome = plugin_rows.assert_session_start_orchestrator_hold(
+        ctx=make_context(table=table), member=_MEMBER
+    )
+
+    assert isinstance(outcome, RowFinding)
+    assert "sync" in outcome.message
+    assert "ensure-plugins" in outcome.message
+
+
 def test_claude_plugin_currency_edge_outcomes() -> None:
     cases = [
         ({}, RowSkip, "unreadable"),
