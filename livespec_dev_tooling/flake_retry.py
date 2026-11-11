@@ -20,6 +20,7 @@ from livespec_dev_tooling.flake_retry_changes import change_paths, withheld_reas
 from livespec_dev_tooling.flake_retry_decisions import (
     RETRY_ATTEMPTS,
     RETRY_DELAY_SECONDS,
+    session_withheld_reason,
 )
 from livespec_dev_tooling.flake_retry_decisions import (
     retry_marker_for as _retry_marker_for,
@@ -95,6 +96,14 @@ def mark_untouched_tests(
     if paths is None:
         return withheld_reason()
     memo: dict[Path, _ModuleFacts | None] = {}
+    withheld = session_withheld_reason(
+        repo_root=root,
+        test_paths=(Path(str(item.path)) for item in items),
+        change_paths=paths,
+        memo=memo,
+    )
+    if withheld is not None:
+        return withheld
     markers: dict[Path, dict[str, int] | None] = {}
     for item in items:
         test_path = Path(str(item.path))
