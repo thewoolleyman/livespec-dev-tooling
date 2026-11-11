@@ -92,12 +92,20 @@ calculation:
 | `k8s-arc-listener-not-ready` | MAX `k8s.container.ready` below 1 for `*-listener` pods in `arc-systems` (a listener is a Pod, not a Deployment) | 5 min |
 | `k8s-cluster-state-silent` | no `k8s.pod.phase` datapoints, ungrouped | 20 min |
 | `k8s-control-plane-silent` | no `livespec.ci_k3s.readiness_check` datapoints, ungrouped | 20 min |
+| `k8s-events-silent` | no rows in the `k8s-events` dataset, ungrouped | 180 min |
 
 `ci-k3s-api-unavailable` stays; `k8s-api-server-readiness-failing` complements
 it. Events (`k8s-events` dataset) and PersistentVolumeClaim phases ride the
 same collector process as the pod phase rows, so `k8s-cluster-state-silent`
-covers a stopped collector; a stopped `k8sobjects` watch alone is read off the
-board's Warning events panel.
+covers a stopped collector. It does NOT cover a dead `k8sobjects` events watch
+in a running collector: on 2026-11-06 the watch died when the API server stopped
+serving and stayed dead for five days while every other pipeline kept emitting.
+`k8s-events-silent` covers that case. Its window is 180 min, not 20, because
+measured Warning volume (2026-11-01..06) ran 1..4436 per hour with many
+single-event hours. A dead watch comes back only with a collector restart, and a
+converge restarts nothing when no managed file changed, so the restart path is
+`just ansible-apply ansible/restart-otel-collector.yml -e
+otel_collector_restart_confirm=poweredge-xubuntu`.
 
 **Validated on the host, not in the sandbox.** The definitions are committed
 against the columns the collector configuration and the emitters define, and

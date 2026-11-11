@@ -1,0 +1,42 @@
+{
+  "name": "k8s events dead-man — no Warning events for 3 h",
+  "dataset": "k8s-events",
+  "description": "Fires when ZERO rows arrive in the k8s-events dataset in the trailing 180 min (evaluated every 60 min). The poweredge-xubuntu collector's k8sobjects/events receiver watches every Kubernetes event of type Warning; that watch can die on its own while the rest of the collector keeps emitting, so k8s-cluster-state-silent does not cover it. It did exactly that at 2026-11-06T00:55:59Z, when the API server stopped serving in the 11-05 saturation incident, and stayed dead for five days. WINDOW: measured Warning volume 2026-11-01..11-06 ran 1..4436 per hour with many single-event hours, so a 20 min window would fire on a quiet cluster; 3 h of total silence would not. UNGROUPED and unfiltered, because a grouped query cannot fire on a silent subject. Emitter: thewoolleyman/otel-collector config.ci-runner-host.yaml on poweredge-xubuntu. Runbook: on poweredge-xubuntu read `journalctl -u otel-collector | grep -E 'k8sobjects|retrywatcher'`; if the events watch is dead, re-establish it with `mise exec -- just ansible-apply ansible/restart-otel-collector.yml -e otel_collector_restart_confirm=poweredge-xubuntu` under the credential wrapper. Plan kubernetes-observability (livespec-dev-tooling-s2aqob), item livespec-dev-tooling-a4rd4f.",
+  "query": {
+    "calculations": [
+      {
+        "op": "COUNT"
+      }
+    ],
+    "time_range": 10800
+  },
+  "threshold": {
+    "op": "<",
+    "value": 1,
+    "exceeded_limit": 1
+  },
+  "frequency": 3600,
+  "alert_type": "on_change",
+  "recipients": [
+    {
+      "id": "jKw2EyfLJ3W"
+    },
+    {
+      "id": "fort2EXXuVy"
+    }
+  ],
+  "tags": [
+    {
+      "key": "service",
+      "value": "k8s-workloads"
+    },
+    {
+      "key": "component",
+      "value": "events"
+    },
+    {
+      "key": "kind",
+      "value": "dead-man"
+    }
+  ]
+}
