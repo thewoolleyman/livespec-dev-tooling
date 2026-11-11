@@ -1,0 +1,13 @@
+# {{ ansible_managed }}
+# Daily defragmentation of the k3s server's embedded etcd (livespec-dev-tooling-qy2nzf).
+[Unit]
+Description=Daily defragmentation of the k3s server's embedded etcd
+
+[Timer]
+OnCalendar={{ k3s_etcd_defrag_on_calendar }}
+RandomizedDelaySec={{ k3s_etcd_defrag_randomized_delay }}
+Persistent=true
+Unit={{ k3s_etcd_defrag_unit }}.service
+
+[Install]
+WantedBy=timers.target

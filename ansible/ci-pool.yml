@@ -421,6 +421,13 @@
     - role: datastore_tmpfs
       tags: [datastore_tmpfs]
       when: cluster_role == 'server'
+    # 9b — the pinned etcdctl and the daily defragmentation timer for the
+    # server's embedded etcd (livespec-dev-tooling-qy2nzf). Server-only, and
+    # inert until the datastore is etcd: its service is conditioned on the etcd
+    # data dir.
+    - role: k3s_etcd_defrag
+      tags: [k3s_etcd_defrag]
+      when: cluster_role == 'server'
     # 10/10 — boot-time orphaned-scratch sweep; self-gated.
     - role: storage_sweep
       tags: [storage_sweep]
