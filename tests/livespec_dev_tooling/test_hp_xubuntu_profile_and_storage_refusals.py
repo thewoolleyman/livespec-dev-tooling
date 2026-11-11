@@ -274,9 +274,10 @@ def test_the_committed_hp_profile_parses_as_a_runner_only_agent_at_capacity_eigh
         f"hp's runner work volumes live on its existing sandbox-stores mount; the parser read "
         f"RUNNER_WORKVOL_DIR={parsed['RUNNER_WORKVOL_DIR']!r}"
     )
-    assert parsed["FACTORY_NODE"] == "false", (
-        f"and hp is no longer a factory node (2026-11-03, orchestrator epic bd-ib-nmuyjc): "
-        f"its cores go to CI runners and new sandboxes land on poweredge and gmktec; "
+    assert parsed["FACTORY_NODE"] == "true", (
+        f"and hp is a factory node again for its 2026-11-11 trial (sandbox pods only, capped "
+        f"at 2 by factory_pod_budget; epic livespec-dev-tooling-ko26ez), after FACTORY_NODE=false "
+        f"from 2026-11-03 (orchestrator epic bd-ib-nmuyjc); "
         f"got FACTORY_NODE={parsed['FACTORY_NODE']!r}"
     )
     for key in ("PV_PARTLABEL", "VOLUME_GROUPS", "LOGICAL_VOLUMES", "ROLE_TIERS"):

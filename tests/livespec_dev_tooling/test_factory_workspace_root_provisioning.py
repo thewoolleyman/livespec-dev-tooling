@@ -294,10 +294,11 @@ def test_the_play_creates_the_workspace_root_on_exactly_the_factory_nodes() -> N
         f"`{_ROLE_NAME}` must run on exactly the ci_pool hosts whose profile sets "
         f"{_PROFILE_KEY}=true.\nexpected: {expected}\nresolved: {resolved}"
     )
-    assert set(expected) == {"poweredge-xubuntu", "gmktec-xubuntu"}, (
-        f"and that set is poweredge and gmktec today — the untainted server included, which is "
-        f"why the gate could not be spelled as `cluster_role == 'agent'` or as the tainted "
-        f"ones, and hp-xubuntu excluded since its profile declared FACTORY_NODE=false on "
+    assert set(expected) == {"poweredge-xubuntu", "gmktec-xubuntu", "hp-xubuntu"}, (
+        f"and that set is poweredge, gmktec and hp today — the untainted server included, "
+        f"which is why the gate could not be spelled as `cluster_role == 'agent'` or as the "
+        f"tainted ones; hp-xubuntu declares FACTORY_NODE=true again for its 2026-11-11 "
+        f"factory trial (epic livespec-dev-tooling-ko26ez), after FACTORY_NODE=false from "
         f"2026-11-03 (orchestrator epic bd-ib-nmuyjc); it resolved to {expected}"
     )
 
@@ -305,9 +306,9 @@ def test_the_play_creates_the_workspace_root_on_exactly_the_factory_nodes() -> N
 def test_a_pool_node_that_does_not_declare_itself_a_factory_node_gets_no_workspace_root() -> None:
     """The control arm: without it the test above would pass on an ungated role.
 
-    hp-xubuntu's committed profile now declares `FACTORY_NODE=false`, but a
-    future edit could flip it back, after which "exactly the factory nodes" and
-    "every pool node" would resolve identically against the committed tree.
+    Every committed ci_pool profile now declares `FACTORY_NODE=true` (hp-xubuntu
+    again since its 2026-11-11 factory trial), so "exactly the factory nodes" and
+    "every pool node" resolve identically against the committed tree.
     This arm resolves the play's own gate against the other two
     answers a profile may give — `false`, and the absent key that falls back to
     the parser's default — and both must yield no workspace root.
