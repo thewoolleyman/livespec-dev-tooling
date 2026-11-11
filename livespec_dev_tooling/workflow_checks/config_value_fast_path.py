@@ -12,6 +12,7 @@ import fnmatch
 import re
 import subprocess
 import sys
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
@@ -257,14 +258,16 @@ def _validate_profile(
     """Run the profile's authoritative parser instead of duplicating its schema."""
     parser = cwd / "ci-runner/k3s/phase0-bare-metal/profile.sh"
     command = 'die() { printf \'%s\\n\' "$1" >&2; exit 4; }; source "$1"; profile_load "$2"'
-    result = subprocess.run(
-        ["bash", "-c", command, "config-value-fast-path", str(parser), "/dev/stdin"],
-        cwd=cwd,
-        check=False,
-        capture_output=True,
-        input=_staged_text(cwd=cwd, path=path),
-        text=True,
-    )
+    with tempfile.TemporaryDirectory(prefix="config-value-fast-path-") as temporary:
+        staged_profile = Path(temporary) / "staged-profile.env"
+        _ = staged_profile.write_text(_staged_text(cwd=cwd, path=path), encoding="utf-8")
+        result = subprocess.run(
+            ["bash", "-c", command, "config-value-fast-path", str(parser), str(staged_profile)],
+            cwd=cwd,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
     if result.returncode == 0:
         return None
     return ValidationFailure(

@@ -229,6 +229,38 @@ def test_profile_validation_reads_the_staged_version_not_an_unstaged_worktree_ed
     assert subject.validate_config_value_fast_path(cwd=root) == ()
 
 
+def test_profile_validation_passes_a_real_staged_profile_to_its_authoritative_parser(
+    *, tmp_path: Path
+) -> None:
+    """A valid real profile needs a file path, not a stdin pipe, for parsing."""
+    subject = _subject()
+    root = _repository(tmp_path=tmp_path)
+    source_root = _MODULE_PATH.parents[2]
+    parser_path = "ci-runner/k3s/phase0-bare-metal/profile.sh"
+    profile_path = "ci-runner/k3s/phase0-bare-metal/profiles/poweredge-xubuntu.env"
+    _write(
+        root=root,
+        path=parser_path,
+        text=(source_root / parser_path).read_text(encoding="utf-8"),
+    )
+    _write(
+        root=root,
+        path=profile_path,
+        text=(source_root / profile_path).read_text(encoding="utf-8"),
+    )
+    _git(cwd=root, args=["add", "."])
+    _git(cwd=root, args=["commit", "--quiet", "-m", "real profile"])
+    profile = root / profile_path
+    _ = profile.write_text(
+        profile.read_text(encoding="utf-8").replace(
+            "ADMISSION_CAPACITY_C=17", "ADMISSION_CAPACITY_C=16"
+        ),
+        encoding="utf-8",
+    )
+    _git(cwd=root, args=["add", profile_path])
+    assert subject.validate_config_value_fast_path(cwd=root) == ()
+
+
 def test_invalid_jsonc_yaml_and_profile_values_name_the_affected_rule(*, tmp_path: Path) -> None:
     """Validation preserves file/key diagnostics for every authoritative parser."""
     subject = _subject()
