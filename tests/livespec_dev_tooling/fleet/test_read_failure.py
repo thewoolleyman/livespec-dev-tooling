@@ -126,6 +126,11 @@ def test_a_relayed_http_5xx_is_still_a_server_error() -> None:
         assert classify_gh_failure(stderr=stderr) == "server_error", stderr
 
 
+def test_empty_stderr_is_a_transport_failure() -> None:
+    """No answer at all is the transport kind — the same kind the regex path returns for it."""
+    assert classify_gh_failure(stderr="") == "transport"
+
+
 def test_an_unrecognized_failure_classifies_as_transport() -> None:
     """No HTTP status at all means the request never got an answer."""
     assert classify_gh_failure(stderr="connection reset by peer") == "transport"

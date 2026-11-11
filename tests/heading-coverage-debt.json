@@ -800,6 +800,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: a prepared incident recovery publication completes after the controller restarts",
+    "work_item": "livespec-dev-tooling-52die6",
+    "first_seen": "2026-11-11"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: a push of only seed or preserve refs runs only the authorization members",
     "work_item": "livespec-dev-tooling-2zb3gk",
     "first_seen": "2026-11-10"
