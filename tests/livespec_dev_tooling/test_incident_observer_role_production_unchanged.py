@@ -26,6 +26,7 @@ from pathlib import Path
 from typing import Any
 
 import jinja2
+import pytest
 import yaml
 
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-32qdja
@@ -38,6 +39,7 @@ _CANDIDATE_UID = 1000
 _REVISION = "0" * 40
 _RESOLVE_DEPTH = 4
 _RENDER_TASK = "Render the released-installation manifest with the serving interpreter"
+_RELEASE_FIXTURE_TOKEN = "{{ incident_observer_release }}"
 _TEMPLATES = {
     "controller.json": "controller.json.j2",
     "livespec-incident-observer.service": "livespec-incident-observer.service.j2",
@@ -199,13 +201,43 @@ def render_installation(*, variables: dict[str, Any]) -> dict[str, str]:
     return rendered
 
 
-def test_the_production_apply_renders_every_installed_file_byte_identical_to_before() -> None:
-    rendered = render_installation(variables=production_variables())
+def _fixture_bytes(*, name: str, variables: dict[str, Any]) -> bytes:
+    """The expected fixture, expanding the role's single rollable release pin."""
+    fixture = (_FIXTURES / name).read_bytes()
+    if name == "manifest-render-argv.json":
+        assert _RELEASE_FIXTURE_TOKEN.encode() in fixture
+        return fixture.replace(
+            _RELEASE_FIXTURE_TOKEN.encode(), variables["incident_observer_release"].encode()
+        )
+    return fixture
 
+
+def assert_production_render_matches_fixture(
+    *, rendered: dict[str, str], variables: dict[str, Any]
+) -> None:
+    """Reject a production render that differs from its pinned configuration fixture."""
     fixtures = sorted(path.name for path in _FIXTURES.iterdir())
     assert sorted(rendered) == fixtures
     for name in fixtures:
-        assert rendered[name].encode() == (_FIXTURES / name).read_bytes(), name
+        assert rendered[name].encode() == _fixture_bytes(name=name, variables=variables), name
+
+
+def test_the_production_apply_renders_every_installed_file_byte_identical_to_before() -> None:
+    variables = production_variables()
+    rendered = render_installation(variables=variables)
+
+    assert_production_render_matches_fixture(rendered=rendered, variables=variables)
+
+
+def test_the_production_render_rejects_a_manifest_with_a_release_other_than_the_pin() -> None:
+    variables = production_variables()
+    rendered = render_installation(variables=variables)
+    argv = json.loads(rendered["manifest-render-argv.json"])
+    argv[argv.index("--release") + 1] = "v0.0.0"
+    rendered["manifest-render-argv.json"] = json.dumps(argv, indent=2) + "\n"
+
+    with pytest.raises(AssertionError, match="manifest-render-argv.json"):
+        assert_production_render_matches_fixture(rendered=rendered, variables=variables)
 
 
 def test_the_production_apply_declares_no_scratch_instance_and_no_target_branch() -> None:
