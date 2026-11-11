@@ -23,6 +23,13 @@ def test_the_plugin_declares_the_bounded_single_test_retry_policy() -> None:
     assert plugin.RETRY_DELAY_SECONDS == 60
 
 
+def test_the_change_set_and_closure_decision_live_in_a_sibling_module() -> None:
+    """The hook surface delegates its analysis decision without changing its API."""
+    module_path = _REPO_ROOT / "livespec_dev_tooling" / "flake_retry_decisions.py"
+
+    assert module_path.is_file(), "the retry decision must live outside the pytest hook module"
+
+
 def test_pytest_loads_the_plugin_from_the_shared_entry_point() -> None:
     """Consumers receive the retry policy without per-repository conftest wiring."""
     pyproject = (_REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8")
