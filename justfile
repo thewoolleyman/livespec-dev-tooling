@@ -477,7 +477,7 @@ check-format:
     uv run ruff format --check .
 
 check-types:
-    uv run pyright
+    scripts/just/check-types.sh
 
 # `warm-typecheck` — populate pyright's bundled node runtime + typeshed
 # ONCE, serially, so a later PARALLEL `just check` never cold-downloads it
