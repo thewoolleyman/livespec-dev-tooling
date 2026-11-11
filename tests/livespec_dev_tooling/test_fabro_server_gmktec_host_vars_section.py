@@ -95,7 +95,9 @@ _FLEET_COMMIT = "bbe6938"
 # 2026-11-09: the candidate alone runs 85071c8, Fabro 0.408.0-nightly.0, the carrier
 # rebased onto upstream v0.408.0-nightly.0 (livespec-orchestrator-beads-fabro
 # bd-ib-qx45e6, plan fabro-currency), ahead of the fleet instance.
-_CANDIDATE_COMMIT = "85071c8"
+# 2026-11-11: back on bbe6938 with the fleet instance for sandbox-driver-kubernetes
+# v0.8.3's one-pod parity sample (bd-ib-u4fp5z); it returns to 85071c8 afterwards.
+_CANDIDATE_COMMIT = "bbe6938"
 _PINNED_COMMIT = {"fabro-server": _FLEET_COMMIT, "fabro-server-candidate": _CANDIDATE_COMMIT}
 _SUPERSEDED_CARRIER = "adeefec"
 _SUPERSEDED_BUILD_REFERENCE = "#1048"
