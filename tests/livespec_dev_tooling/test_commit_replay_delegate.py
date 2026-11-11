@@ -127,6 +127,42 @@ def test_an_absent_remote_verdict_is_never_a_pass_or_a_failure(
     assert verdict.reason == "the gate Job reached no verdict"
 
 
+def test_an_unusable_gate_resource_declaration_refuses_the_replay_instead_of_an_absent_verdict(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A refused resource declaration is a refusal, not an absent verdict (c3nd2h).
+
+    Its consumers must refuse the commit naming the key rather than run the leg
+    locally, so the verdict must say it was refused, and no Job may be pushed.
+    """
+    from livespec_dev_tooling._gate_remote_assembly import declared_gate_job_resources
+
+    module = _module()
+    _ = (tmp_path / "pyproject.toml").write_text(
+        "[tool.livespec_dev_tooling]\ndelegated_commit_tests = true\ngate_cpu = 0\n",
+        encoding="utf-8",
+    )
+    pushed: list[object] = []
+    monkeypatch.setattr(module, "gates_kubeconfig_readable", lambda: True)
+    monkeypatch.setattr(module, "_staged_tree_hash", lambda **_kwargs: "a" * 40)
+    monkeypatch.setattr(module, "resolve_renderer", lambda **_kwargs: Path("renderer"))
+    monkeypatch.setattr(
+        module,
+        "gate_remote_request",
+        lambda **kwargs: declared_gate_job_resources(repo_root=kwargs["repo_root"]),
+    )
+    monkeypatch.setattr(module, "run_gated_push", lambda **kwargs: pushed.append(kwargs))
+
+    verdict = module.run_replay(repo_root=tmp_path, pytest_argv=["tests/test_x.py"])
+
+    assert verdict.refused is True
+    assert verdict.local is False
+    assert verdict.exit_status is None
+    assert "gate_cpu" in verdict.reason
+    assert "pyproject.toml" in verdict.reason
+    assert pushed == []
+
+
 def test_a_tree_that_cannot_be_read_returns_an_absent_verdict(
     *, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
