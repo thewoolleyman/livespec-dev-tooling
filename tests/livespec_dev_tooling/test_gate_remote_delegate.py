@@ -1915,21 +1915,23 @@ def test_a_partial_declaration_passes_only_the_declared_resources(*, tmp_path: P
 @pytest.mark.parametrize(
     ("declaration", "expected"),
     [
-        ('gate_cpu = "3500m"', "3500m"),
-        ("gate_cpu = 2.5", "2.5"),
-        ('gate_cpu = "3"', "3"),
+        ('gate_memory = "12Gi"', "12Gi"),
+        ('gate_memory = "6144Mi"', "6144Mi"),
+        ('gate_memory = "12G"', "12G"),
+        ('gate_memory = "500M"', "500M"),
+        ('gate_memory = "800k"', "800k"),
     ],
 )
-def test_a_cpu_request_below_a_whole_core_or_in_millicores_is_passed_as_written(
+def test_a_memory_quantity_in_a_binary_or_decimal_unit_is_passed_as_written(
     *, tmp_path: Path, declaration: str, expected: str
 ) -> None:
-    """A request below the worker count is legitimate: the Job has no cpu limit."""
+    """Every unit suffix a Kubernetes memory quantity takes reaches the renderer."""
     render = _rendered_with(
         repo_root=tmp_path / "widget",
         body=f"[tool.livespec_dev_tooling]\n{declaration}\n",
     )
 
-    assert _values_of(render=render, flag="--cpu") == [expected]
+    assert _values_of(render=render, flag="--memory") == [expected]
 
 
 @pytest.mark.parametrize(
@@ -1939,10 +1941,14 @@ def test_a_cpu_request_below_a_whole_core_or_in_millicores_is_passed_as_written(
         ("gate_cpu = -1.5", "gate_cpu"),
         ("gate_cpu = true", "gate_cpu"),
         ('gate_cpu = "lots"', "gate_cpu"),
-        ('gate_cpu = "0m"', "gate_cpu"),
+        ('gate_cpu = "3500m"', "gate_cpu"),
+        ("gate_cpu = 2.5", "gate_cpu"),
+        ('gate_cpu = "3"', "gate_cpu"),
         ("gate_memory = 6", "gate_memory"),
         ('gate_memory = "6GB"', "gate_memory"),
         ('gate_memory = "0Gi"', "gate_memory"),
+        ('gate_memory = "6"', "gate_memory"),
+        ('gate_memory = "1.5Gi"', "gate_memory"),
         ("gate_parallelism = 0", "gate_parallelism"),
         ('gate_parallelism = "4"', "gate_parallelism"),
         ("gate_parallelism = 2.0", "gate_parallelism"),
