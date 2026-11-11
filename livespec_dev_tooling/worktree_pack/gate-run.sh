@@ -230,6 +230,69 @@ idle_sleep() {
 # and bounds that wait itself.
 readonly STALL_EXIT_CODE=124
 
+# The gate's process group catches pytest and xdist workers, but a command can
+# call `setsid` and leave that group while remaining a descendant of the gate.
+# Take one process-table snapshot before signalling the group, then walk parent
+# links from its leader so the escaped processes are ended too. `ps -ax -o` is
+# available on the Linux and macOS developer hosts; the four fixed numeric
+# fields leave the rest of each row as the command line recorded for operators.
+ESCAPED_DESCENDANT_PIDS=()
+
+pid_is_listed() {
+    local sought="$1"
+    shift
+    local candidate
+    for candidate in "$@"; do
+        [[ "$candidate" == "$sought" ]] && return 0
+    done
+    return 1
+}
+
+find_escaped_descendants() {
+    local dir="$1" gate_pid="$2"
+    local snapshot="$dir/descendants.ps"
+    local -a pids=() ppids=() pgids=() commands=() descendants=("$gate_pid")
+    local pid ppid pgid command index changed
+    ESCAPED_DESCENDANT_PIDS=()
+    ps -axww -o pid= -o ppid= -o pgid= -o command= >"$snapshot" 2>/dev/null || return 0
+    while read -r pid ppid pgid command; do
+        [[ "$pid" =~ ^[0-9]+$ && "$ppid" =~ ^[0-9]+$ && "$pgid" =~ ^[0-9]+$ ]] || continue
+        pids+=("$pid")
+        ppids+=("$ppid")
+        pgids+=("$pgid")
+        commands+=("$command")
+    done <"$snapshot"
+    changed=true
+    while [[ "$changed" == true ]]; do
+        changed=false
+        for index in "${!pids[@]}"; do
+            pid="${pids[$index]}"
+            if ! pid_is_listed "$pid" "${descendants[@]}" \
+                && pid_is_listed "${ppids[$index]}" "${descendants[@]}"; then
+                descendants+=("$pid")
+                changed=true
+            fi
+        done
+    done
+    for index in "${!pids[@]}"; do
+        pid="${pids[$index]}"
+        if [[ "$pid" != "$gate_pid" ]] && pid_is_listed "$pid" "${descendants[@]}" \
+            && [[ "${pgids[$index]}" != "$gate_pid" ]]; then
+            ESCAPED_DESCENDANT_PIDS+=("$pid")
+            printf 'gate-run: ending escaped descendant outside the gate process group: pid %s command %s\n' \
+                "$pid" "${commands[$index]}" >>"$dir/output.log"
+        fi
+    done
+}
+
+end_escaped_descendants() {
+    local signal_name="$1"
+    local pid
+    for pid in "${ESCAPED_DESCENDANT_PIDS[@]}"; do
+        kill -"$signal_name" "$pid" 2>/dev/null || true
+    done
+}
+
 run_gate_with_stall_bound() {
     local dir="$1"
     shift
@@ -251,8 +314,10 @@ run_gate_with_stall_bound() {
             : >"$observed"
             quiet_since=$SECONDS
         elif (( SECONDS - quiet_since >= stall )); then
-            printf '\ngate-run: no output for %ss, the stall window (LIVESPEC_SUITE_GREEN_STALL_SECONDS); ending the gate'"'"'s whole process group, workers included — not a pass\n' \
+            printf '\ngate-run: no output for %ss, the stall window (LIVESPEC_SUITE_GREEN_STALL_SECONDS); ending the gate'"'"'s whole process group and every session-escaping descendant — not a pass\n' \
                 "$stall" >>"$dir/output.log"
+            find_escaped_descendants "$dir" "$gate_pid"
+            end_escaped_descendants TERM
             kill -TERM -- "-$gate_pid" 2>/dev/null || true
             ended=$SECONDS
             # Wait for the whole GROUP, not just its leader: a worker's TERM
@@ -260,6 +325,7 @@ run_gate_with_stall_bound() {
             while kill -0 -- "-$gate_pid" 2>/dev/null && (( SECONDS - ended < grace )); do
                 idle_sleep 1
             done
+            end_escaped_descendants KILL
             kill -KILL -- "-$gate_pid" 2>/dev/null || true
             wait "$gate_pid" 2>/dev/null || true
             close_idle_fd || true

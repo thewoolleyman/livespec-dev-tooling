@@ -21,6 +21,7 @@ self-instrument under `pytest --cov`.
 from __future__ import annotations
 
 import os
+import shlex
 import shutil
 import subprocess
 import sys
@@ -753,6 +754,38 @@ def test_a_gate_pytest_session_that_stops_making_progress_ends_without_a_pass(
     assert "PASSED" not in waited.stdout
     assert "stall window" in (run_dir / "output.log").read_text(encoding="utf-8")
     assert ended.read_text(encoding="utf-8").strip() == "TERM"
+
+
+@pytest.mark.integration
+def test_a_stalled_gate_ends_a_descendant_that_started_its_own_session(
+    *, tmp_path: Path, fixture_repo: tuple[Path, Path, dict[str, str]]
+) -> None:
+    """A session-escaping descendant is reaped and named in the stall record."""
+    primary, worktree, env = fixture_repo
+    escaped_pid = tmp_path / "escaped.pid"
+    token = f"livespec-gate-escaped-session-{time.monotonic_ns()}"
+    escaped_child = (
+        "import os, pathlib, time; "
+        f"pathlib.Path({str(escaped_pid)!r}).write_text(str(os.getpid())); "
+        "time.sleep(300)"
+    )
+    escaped = (
+        f"setsid {sys.executable} -c {shlex.quote(escaped_child)} {shlex.quote(token)} "
+        "& echo collected; exec sleep 300"
+    )
+    run_id = _start(
+        cwd=worktree,
+        env={**env, _STALL_ENV: "2", _STALL_GRACE_ENV: "1"},
+        command=["bash", "-c", escaped],
+    )
+
+    run_dir = _await_verdict(primary=primary, run_id=run_id)
+    escaped_process = int(escaped_pid.read_text(encoding="utf-8"))
+    log = (run_dir / "output.log").read_text(encoding="utf-8")
+
+    assert not Path(f"/proc/{escaped_process}").exists()
+    assert f"pid {escaped_process}" in log
+    assert token in log
 
 
 @pytest.mark.integration
