@@ -40,3 +40,11 @@ factory_pod_budget: 1
 # `ssh cwoolley@poweredge-xubuntu` returns `cwoolley` and passes `sudo -n`.
 node_status_credential_ssh_user: ubuntu
 node_status_credential_remote_user: cwoolley
+
+# --- controller_known_hosts ---
+# This host's Tailscale SSH ed25519 host key, pinned into the control node's
+# known_hosts by ansible/dev-host.yml (role controller_known_hosts). Fingerprint
+# SHA256:B80TQ80TSdj4j8fef3gQhQtWnafGppS4N817Gh4z33o. Verified 2026-11-11
+# against the fingerprint thewoolleyman/gamingpc-xubuntu-info docs/bootstrap.md
+# records.
+controller_known_hosts_ed25519: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIKuej1c3Cw/I995gHVmAjaFfibSxBIKHNznAuNkyYiCV"

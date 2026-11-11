@@ -75,3 +75,11 @@ pressure_telemetry_cgroups:
 # first and the cap after. TRIPWIRE: if avg60 passes 30 at any read, lower the
 # fleet cap to 9 FIRST, then set this to 6 (role HOST_VARS.md).
 factory_pod_budget: 9
+
+# --- controller_known_hosts ---
+# This host's Tailscale SSH ed25519 host key, pinned into the control node's
+# known_hosts by ansible/dev-host.yml (role controller_known_hosts). Fingerprint
+# SHA256:v3I/O4FRyavIf0kN40Tpb639hEW+X6yGES1j/rNlqfc. Verified 2026-11-11: the
+# key the control node already trusted (a hand entry) equals the key the host
+# presented live; its info repository records no fingerprint.
+controller_known_hosts_ed25519: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEfDCrV8q/TFCEDdGsvS8Rr0vH19hEEERqTik5eLpQ0/"

@@ -1,0 +1,58 @@
+---
+# Pins each ci_pool host's Tailscale SSH ed25519 host key into the control
+# node's known_hosts.
+#
+# WHY. Until 2026-11-11 every one of these entries was placed by hand, so a
+# rebuilt control node trusted no pool host and its first ci-pool converge
+# failed with "Host key verification failed" (gamingpc-xubuntu, the first host
+# enrolled after the last hand entry). The key bytes now live in each host's
+# host_vars, verified there against the fingerprint the host's own info
+# repository records or, for hosts whose record carries none, against the key
+# the control node already trusted and the host presented live on 2026-11-11.
+#
+# NOT TRUST ON FIRST USE. Nothing here reads a key from the network: an
+# `ssh-keyscan` would authenticate nothing on exactly the run that matters. A
+# host whose key changes fails ssh until its host_vars value is re-verified and
+# committed, which is the point.
+
+- name: Refuse a pinned value that is not one ed25519 public key
+  ansible.builtin.assert:
+    that:
+      - hostvars[item]['controller_known_hosts_ed25519'] is string
+      - hostvars[item]['controller_known_hosts_ed25519'] is match('^ssh-ed25519 [A-Za-z0-9+/]+={0,2}$')
+    fail_msg: >-
+      {{ item }}'s controller_known_hosts_ed25519 must be exactly
+      "ssh-ed25519 <base64>", the public key alone with no host name or comment.
+    quiet: true
+  loop: "{{ groups[controller_known_hosts_group] | sort }}"
+  when: hostvars[item]['controller_known_hosts_ed25519'] is defined
+
+- name: Name every pool host that declares no pinned key
+  ansible.builtin.debug:
+    msg: >-
+      {{ item }} declares no controller_known_hosts_ed25519, so the control node's
+      trust in it is not managed here. Verify its key and add it to its host_vars.
+  loop: "{{ groups[controller_known_hosts_group] | sort }}"
+  when: hostvars[item]['controller_known_hosts_ed25519'] is not defined
+
+- name: Make sure the connecting account's ssh directory exists
+  ansible.builtin.file:
+    path: "{{ controller_known_hosts_path | dirname }}"
+    state: directory
+    mode: "0700"
+
+- name: Trust each pool host's pinned tailnet host key under its inventory name
+  # Under the inventory NAME, because that is the literal ansible and every
+  # operator pass to ssh, and known_hosts is matched on the name given. HASHED,
+  # because the control node's file is hashed throughout (HashKnownHosts), and
+  # an existing hashed entry with the same key is then left unchanged; an
+  # unhashed one is rewritten hashed once. Measured 2026-11-11: with hashing off,
+  # the module replaced three hashed entries with plain copies of the same key.
+  ansible.builtin.known_hosts:
+    path: "{{ controller_known_hosts_path }}"
+    name: "{{ item }}"
+    key: "{{ item }} {{ hostvars[item]['controller_known_hosts_ed25519'] }}"
+    hash_host: true
+    state: present
+  loop: "{{ groups[controller_known_hosts_group] | sort }}"
+  when: hostvars[item]['controller_known_hosts_ed25519'] is defined
