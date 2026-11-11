@@ -41,6 +41,7 @@ from livespec_dev_tooling.incident_focused_admission import (  # noqa: E402
     evidence_receipt_id,
     review_record,
 )
+from livespec_dev_tooling.incident_focused_changes import ChangedProductFiles  # noqa: E402
 from livespec_dev_tooling.incident_forge_reads import ForgeRead  # noqa: E402
 
 __all__: list[str] = ["FocusedEvidenceGate"]
@@ -51,6 +52,10 @@ _UNAVAILABLE = "incident-focused-evidence-unavailable"
 _MISSING = "incident-focused-evidence-member-missing"
 _FAILED = "incident-focused-evidence-failed"
 _UNDISPOSED = "incident-focused-evidence-undisposed"
+# EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-6ou5m2
+_CHANGES_UNAVAILABLE = "incident-focused-evidence-changes-unavailable"
+_PATHS_INCOMPLETE = "incident-focused-evidence-paths-incomplete"
+_COVERAGE_ABSENT = "incident-focused-evidence-coverage-absent"
 _SHA = re.compile(r"(?:[0-9a-f]{40}|[0-9a-f]{64})")
 _CHECKSUM = re.compile(r"sha256:[0-9a-f]{64}")
 
@@ -71,6 +76,9 @@ class FocusedEvidenceGate:
     release: str
     installed_reader_approved: Callable[[str, tuple[str, ...]], bool]
     read: ForgeRead
+    # The head's changed product files from the observer's own reference clone,
+    # or why they are unknown; never read from the record or the request.
+    changed: Callable[[str], ChangedProductFiles | str]
 
     def __call__(self, arm: ObserverArm) -> str | None:
         if not self.command or not self.installed_reader_approved(self.release, self.command):
@@ -135,9 +143,24 @@ class FocusedEvidenceGate:
                 f"{_MISSING}: record {receipt_id} for head tree {subject.tree} lacks"
                 f" {'; '.join(latest.missing)}"
             )
+        return self._changes_refusal(
+            head=arm.head_sha, receipt_id=receipt_id, tree=subject.tree, review=latest
+        ) or self._disposition_refusal(
+            arm=arm, subject=subject, receipt_id=receipt_id, checksum=checksum, review=latest
+        )
+
+    def _disposition_refusal(
+        self,
+        *,
+        arm: ObserverArm,
+        subject: EvidenceSubject,
+        receipt_id: str,
+        checksum: str,
+        review: EvidenceReview,
+    ) -> str | None:
         undisposed = [
             member
-            for member in latest.members
+            for member in review.members
             if not self._disposed(
                 arm=arm, subject=subject, receipt_id=receipt_id, checksum=checksum, member=member
             )
@@ -146,6 +169,27 @@ class FocusedEvidenceGate:
             return (
                 f"{_UNDISPOSED}: record {receipt_id} for head tree {subject.tree} has no operator"
                 f" risk disposition for: {'; '.join(undisposed)}"
+            )
+        return None
+
+    def _changes_refusal(
+        self, *, head: str, receipt_id: str, tree: str, review: EvidenceReview
+    ) -> str | None:
+        """Refuse a record that omits a changed product file or a changed file's coverage."""
+        changes = self.changed(head)
+        if isinstance(changes, str):
+            return f"{_CHANGES_UNAVAILABLE}: {changes}"
+        omitted = [name for name in changes.product if name not in review.paths]
+        if omitted:
+            return (
+                f"{_PATHS_INCOMPLETE}: record {receipt_id} for head tree {tree} omits changed"
+                f" product files: {', '.join(omitted)}"
+            )
+        uncovered = [name for name in changes.executable if name not in review.covered]
+        if uncovered:
+            return (
+                f"{_COVERAGE_ABSENT}: record {receipt_id} for head tree {tree} has no coverage"
+                f" row for changed executable product files: {', '.join(uncovered)}"
             )
         return None
 

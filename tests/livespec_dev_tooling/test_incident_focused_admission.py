@@ -95,7 +95,13 @@ def _review(*, record: object, **changes: Any) -> EvidenceReview | None:
 
 
 def test_a_complete_passing_record_leaves_nothing_to_dispose() -> None:
-    assert _review(record=_record()) == EvidenceReview(missing=(), failed=(), members=())
+    assert _review(record=_record()) == EvidenceReview(
+        missing=(),
+        failed=(),
+        members=(),
+        paths=("README.md", "src/widget.py"),
+        covered=("src/widget.py",),
+    )
 
 
 def test_evidence_ids_name_identity_head_tree_and_slot() -> None:

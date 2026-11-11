@@ -18,6 +18,7 @@ from livespec_dev_tooling.incident_focused_admission import (
     disposition_receipt,
     evidence_receipt_id,
 )
+from livespec_dev_tooling.incident_focused_changes import ChangedProductFiles
 from livespec_dev_tooling.incident_observer_evidence import FocusedEvidenceGate
 
 _HEAD = "c" * 40
@@ -152,7 +153,13 @@ def authority(monkeypatch: pytest.MonkeyPatch) -> _Authority:
     return fake
 
 
-def _gate(*, read: Any = _forge, approved: bool = True) -> FocusedEvidenceGate:
+# The head's changed product files the reference clone answers in these tests.
+_CHANGED = ChangedProductFiles(product=("src/widget.py",), executable=("src/widget.py",))
+
+
+def _gate(
+    *, read: Any = _forge, approved: bool = True, changed: ChangedProductFiles | str = _CHANGED
+) -> FocusedEvidenceGate:
     return FocusedEvidenceGate(
         command=("/installed/reader",),
         repo=Path("/protected/repo"),
@@ -160,6 +167,7 @@ def _gate(*, read: Any = _forge, approved: bool = True) -> FocusedEvidenceGate:
         installed_reader_approved=lambda release, command: approved
         and (release, command) == ("v0.304.0", ("/installed/reader",)),
         read=read,
+        changed={_HEAD: changed}.__getitem__,
     )
 
 
@@ -342,3 +350,50 @@ def test_a_disposition_bound_to_other_bytes_refuses_unavailable(authority: _Auth
     refusal = _gate()(_ARM)
     assert refusal is not None
     assert refusal.startswith("incident-focused-evidence-unavailable:")
+
+
+def test_a_changed_set_the_reference_clone_cannot_establish_refuses(
+    authority: _Authority,
+) -> None:
+    authority.add(_evidence(slot=0, record=_record()))
+    refusal = _gate(changed="the reference clone does not hold head")(_ARM)
+    assert str(refusal).startswith(
+        "incident-focused-evidence-changes-unavailable: the reference clone does not hold head"
+    ), refusal
+
+
+def test_a_record_omitting_a_changed_product_file_refuses_naming_each_one(
+    authority: _Authority,
+) -> None:
+    authority.add(_evidence(slot=0, record=_record()))
+    changed = ChangedProductFiles(
+        product=("src/gadget.py", "src/notes.py", "src/widget.py"), executable=("src/widget.py",)
+    )
+    refusal = str(_gate(changed=changed)(_ARM))
+    facts = [
+        refusal.startswith("incident-focused-evidence-paths-incomplete:"),
+        refusal.endswith("omits changed product files: src/gadget.py, src/notes.py"),
+    ]
+    assert all(facts), refusal
+
+
+def test_a_changed_executable_file_without_a_coverage_row_refuses(
+    authority: _Authority,
+) -> None:
+    authority.add(
+        _evidence(
+            slot=0,
+            record=_record(
+                paths={"src/widget.py": "executable", "src/gadget.py": "non-executable"}
+            ),
+        )
+    )
+    changed = ChangedProductFiles(
+        product=("src/gadget.py", "src/widget.py"), executable=("src/gadget.py", "src/widget.py")
+    )
+    refusal = str(_gate(changed=changed)(_ARM))
+    facts = [
+        refusal.startswith("incident-focused-evidence-coverage-absent:"),
+        refusal.endswith("changed executable product files: src/gadget.py"),
+    ]
+    assert all(facts), refusal
