@@ -22,6 +22,7 @@ SCCACHE_REDIS_WRITER_USERNAME="${SCCACHE_REDIS_WRITER_USERNAME:-}"
 SCCACHE_REDIS_WRITER_PASSWORD="${SCCACHE_REDIS_WRITER_PASSWORD:-}"
 SCCACHE_WRITER_PORT="${SCCACHE_WRITER_PORT:-4228}"
 SCCACHE_FABRO_MIN_FREE_BYTES="${SCCACHE_FABRO_MIN_FREE_BYTES:-}"
+FABRO_BUN_VERSION="${FABRO_BUN_VERSION:-1.3.14}"
 FABRO_WAIT_FOR_REGULAR_SECONDS="${FABRO_WAIT_FOR_REGULAR_SECONDS:-3000}"
 FABRO_REGULAR_POLL_SECONDS="${FABRO_REGULAR_POLL_SECONDS:-30}"
 REGULAR_CRONJOB="${REGULAR_CRONJOB:-warm-cache-populate}"
@@ -152,6 +153,15 @@ sccache_env=(
   "SCCACHE_REDIS_RW_MODE=READ_WRITE"
 )
 
+# The two CARGO_* variables both fork workflows set at workflow level.  sccache
+# hashes every CARGO_* variable into a compile's key, so the warm must carry the
+# workflows' values rather than the image's (CARGO_NET_RETRY=5), or it writes
+# keys the ARC jobs never ask for.
+cargo_env=(
+  "CARGO_NET_RETRY=10"
+  "CARGO_TERM_COLOR=always"
+)
+
 sccache_writer_stop() {
   SCCACHE_SERVER_PORT="${SCCACHE_WRITER_PORT}" "${SCCACHE_BIN}" --stop-server >/dev/null 2>&1 || true
 }
@@ -201,10 +211,61 @@ checkout_branch() {
   git -C "${repo}" clean -ffdx >/dev/null
 }
 
+# ensure_toolchain TOOLCHAIN [COMPONENT] — the image bakes one Rust, and the
+# fork's jobs compile with a pinned nightly and a pinned stable, so each profile
+# installs the toolchain it compiles with.  rustup is idempotent: a toolchain
+# already present is a no-op.
+ensure_toolchain() {
+  local toolchain="$1" component="${2:-}"
+  command -v rustup >/dev/null || { log "rustup is not on PATH; cannot install ${toolchain}"; return 1; }
+  if [ -n "${component}" ]; then
+    rustup toolchain install "${toolchain}" --profile minimal --component "${component}" --no-self-update
+  else
+    rustup toolchain install "${toolchain}" --profile minimal --no-self-update
+  fi
+}
+
+# ensure_bun — carrier-build installs Bun ${FABRO_BUN_VERSION} (setup-bun) before
+# `cargo dev build`, whose SPA refresh runs `bun run build`.  The image has no
+# Bun, so the release warm fetches the same release.
+ensure_bun() {
+  local arch archive
+  if command -v bun >/dev/null && [ "$(bun --version)" = "${FABRO_BUN_VERSION}" ]; then
+    return 0
+  fi
+  case "$(uname -m)" in
+    x86_64) arch=x64 ;;
+    aarch64|arm64) arch=aarch64 ;;
+    *) log "no Bun release for $(uname -m)"; return 1 ;;
+  esac
+  archive="${SCRATCH}/bun.zip"
+  curl --silent --fail --location --max-time 300 --output "${archive}" \
+    "https://github.com/oven-sh/bun/releases/download/bun-v${FABRO_BUN_VERSION}/bun-linux-${arch}.zip" \
+    || { log "Bun ${FABRO_BUN_VERSION} could not be downloaded"; return 1; }
+  python3 -c '
+import sys, zipfile
+zipfile.ZipFile(sys.argv[1]).extractall(sys.argv[2])
+' "${archive}" "${SCRATCH}/bun" || return 1
+  chmod 755 "${SCRATCH}/bun/bun-linux-${arch}/bun"
+  export PATH="${SCRATCH}/bun/bun-linux-${arch}:${PATH}"
+}
+
+# prepare_carrier_release — the steps carrier-build runs before its compile:
+# Bun, `bun install --frozen-lockfile`, then a clean of the SPA crate so the
+# release build re-runs the SPA refresh exactly as the workflow does.
+prepare_carrier_release() {
+  ensure_bun || return 1
+  (
+    cd "${build_dir}"
+    bun install --frozen-lockfile
+    RUSTUP_TOOLCHAIN=1.97.1 cargo clean --release -p fabro-spa
+  )
+}
+
 warm_profile() {
-  local branch="$1" profile="$2" toolchain="$3" node_env="$4"
+  local branch="$1" profile="$2" toolchain="$3" component="$4" node_env="$5" prepare="$6"
   local sha marker want have started
-  shift 4
+  shift 6
   checkout_branch "${branch}" "${build_dir}"
   sha="$(git -C "${build_dir}" rev-parse HEAD)"
   marker="livespec:sccache:populated:fabro:${branch}:${profile}"
@@ -218,13 +279,21 @@ warm_profile() {
     log "Redis became unreachable before ${branch}/${profile}; no write"
     return 1
   fi
+  if ! ensure_toolchain "${toolchain}" "${component}"; then
+    log "${branch}/${profile} toolchain ${toolchain} could not be installed; marker remains absent for the next tick"
+    return 1
+  fi
+  if [ -n "${prepare}" ] && ! "${prepare}"; then
+    log "${branch}/${profile} preparation ${prepare} failed; marker remains absent for the next tick"
+    return 1
+  fi
   if [ -n "${node_env}" ]; then
-    if (cd "${build_dir}" && env "${sccache_env[@]}" "NODE_ENV=${node_env}" nice -n 19 ionice -c 3 "$@"); then
+    if (cd "${build_dir}" && env "${sccache_env[@]}" "${cargo_env[@]}" "NODE_ENV=${node_env}" nice -n 19 ionice -c 3 "$@"); then
       started=true
     else
       started=false
     fi
-  elif (cd "${build_dir}" && env "${sccache_env[@]}" nice -n 19 ionice -c 3 "$@"); then
+  elif (cd "${build_dir}" && env "${sccache_env[@]}" "${cargo_env[@]}" nice -n 19 ionice -c 3 "$@"); then
     started=true
   else
     started=false
@@ -268,14 +337,14 @@ git clone --quiet --no-checkout --depth 1 --branch factory-integration "${FABRO_
 trap 'sccache_writer_stop; rm -rf "${JOB_WORK_ROOT:?}/fabro" "${SCRATCH}"' EXIT
 sccache_writer_start || die "writer server did not prove ReadWrite"
 
-clippy_command=(cargo +nightly-2026-04-14 clippy --workspace --all-targets)
+clippy_command=(cargo +nightly-2026-04-14 clippy --workspace --all-targets -- -D warnings)
 test_command=(tini -s -- cargo +1.97.1 nextest run --locked --workspace --profile ci)
 release_command=(cargo +1.97.1 dev build --release -p fabro-cli)
 
 failed=0
-warm_profile factory-integration clippy nightly-2026-04-14 "" "${clippy_command[@]}" || failed=1
-warm_profile factory-integration test 1.97.1 "" "${test_command[@]}" || failed=1
-warm_profile carrier-candidate-registered-20261023 carrier-release 1.97.1 production "${release_command[@]}" || failed=1
+warm_profile factory-integration clippy nightly-2026-04-14 clippy "" "" "${clippy_command[@]}" || failed=1
+warm_profile factory-integration test 1.97.1 "" "" "" "${test_command[@]}" || failed=1
+warm_profile carrier-candidate-registered-20261023 carrier-release 1.97.1 "" production prepare_carrier_release "${release_command[@]}" || failed=1
 SCCACHE_SERVER_PORT="${SCCACHE_WRITER_PORT}" "${SCCACHE_BIN}" --show-stats 2>/dev/null \
   | grep -E 'Compile requests|Cache hits|Cache misses|Cache errors|Cache write|Non-cacheable' \
   | sed 's/^/sccache stats: /' || true

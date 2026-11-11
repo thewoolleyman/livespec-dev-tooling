@@ -85,3 +85,41 @@ def test_the_converge_mounts_the_fabro_populator_script() -> None:
         "--from-file=warm-cache-fabro-populate.sh=${SCRIPT_DIR}/warm-cache-fabro-populate.sh"
         in converge
     )
+
+
+def test_each_profile_installs_the_toolchain_it_compiles_with() -> None:
+    """The image bakes one Rust, so the nightly and stable the fork pins are installed first."""
+    script = (_WARM_CACHE / "warm-cache-fabro-populate.sh").read_text(encoding="utf-8")
+
+    assert "ensure_toolchain()" in script
+    assert 'rustup toolchain install "${toolchain}"' in script
+    assert "--profile minimal" in script
+    assert 'ensure_toolchain "${toolchain}" "${component}"' in script
+    assert "factory-integration clippy nightly-2026-04-14 clippy" in script
+
+
+def test_the_clippy_warm_carries_the_gates_deny_warnings_arguments() -> None:
+    """Arguments after `--` reach rustc, so they are part of the sccache key."""
+    script = (_WARM_CACHE / "warm-cache-fabro-populate.sh").read_text(encoding="utf-8")
+
+    assert "cargo +nightly-2026-04-14 clippy --workspace --all-targets -- -D warnings" in script
+
+
+def test_the_warm_environment_matches_the_fork_workflows_cargo_variables() -> None:
+    """sccache hashes CARGO_* variables, and both fork workflows set these two."""
+    script = (_WARM_CACHE / "warm-cache-fabro-populate.sh").read_text(encoding="utf-8")
+
+    assert '"CARGO_NET_RETRY=10"' in script
+    assert '"CARGO_TERM_COLOR=always"' in script
+    assert '"${cargo_env[@]}"' in script
+
+
+def test_the_carrier_release_warm_provides_bun_and_the_spa_inputs_as_the_workflow_does() -> None:
+    """`cargo dev build` runs the SPA build, which needs Bun and a frozen install first."""
+    script = (_WARM_CACHE / "warm-cache-fabro-populate.sh").read_text(encoding="utf-8")
+
+    assert 'FABRO_BUN_VERSION="${FABRO_BUN_VERSION:-1.3.14}"' in script
+    assert "ensure_bun()" in script
+    assert "bun install --frozen-lockfile" in script
+    assert "cargo clean --release -p fabro-spa" in script
+    assert "prepare_carrier_release" in script
