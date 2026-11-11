@@ -1151,6 +1151,7 @@ addopts = [
 markers = [
     "consumer: consumer-tier check-runner test exercising a shipped check against a fixture project (scenarios.md coverage)",
     "integration: integration-tier test driving a shipped check's `main()` end-to-end against a real git repository fixture (scenarios.md coverage)",
+    "real_gate_job: a test that deliberately reaches a real gate Job submission; without it the conftest guard fails the test (livespec-dev-tooling-qpgiip)",
 ]
 
 # ---------------------------------------------------------------------------
