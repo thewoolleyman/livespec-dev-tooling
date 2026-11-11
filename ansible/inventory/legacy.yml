@@ -71,6 +71,16 @@ all:
             hp-xubuntu:
               ansible_user: cwoolley
               cluster_role: agent
+            # The maintainer's dual-boot gaming PC, a k3s AGENT since 2026-11-11
+            # (plan homelab-k8s-worker-nodes, epic livespec-dev-tooling-ko26ez).
+            # Runner-only CI, one gate lane and one factory sandbox pod, per its
+            # profile ci-runner/k3s/phase0-bare-metal/profiles/gamingpc-xubuntu.env.
+            # No Fabro server, so it is in no fabro-hosts or sandbox_hosts group.
+            # Its operator account is `ubuntu`. Not yet in `home_lab`: its
+            # lan-ssh-fallback host_vars are a separate change.
+            gamingpc-xubuntu:
+              ansible_user: ubuntu
+              cluster_role: agent
         # Hosts that LEFT `sandbox_hosts` and still carry what its play
         # installed. ansible/former-sandbox-hosts.yml converges them: it keeps the
         # sandbox-play roles a host still needs, and retires the rest through each

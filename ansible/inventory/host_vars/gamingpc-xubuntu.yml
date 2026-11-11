@@ -1,0 +1,32 @@
+---
+# gamingpc-xubuntu — the maintainer's dual-boot gaming PC, a k3s pool AGENT
+# (plan homelab-k8s-worker-nodes, epic livespec-dev-tooling-ko26ez; maintainer
+# direction 2026-11-11 ~00:40Z). Its node facts and the derivation of its
+# default split are in
+# ci-runner/k3s/phase0-bare-metal/profiles/gamingpc-xubuntu.env; the host
+# record is thewoolleyman/gamingpc-xubuntu-info.
+
+# --- otel_collector ---
+# The host collector on a k3s agent node, as gmktec-xubuntu's.
+otel_collector_config_file: config.k3s-agent-host.yaml
+otel_collector_user: otel-collector
+otel_collector_group: otel-collector
+otel_collector_manage_install: true
+otel_collector_hardened: true
+otel_collector_unit_description: >-
+  otel-collector -- host OTel Collector on a k3s agent node (livespec env)
+otel_collector_unit_after: network-online.target
+otel_collector_unit_wants: network-online.target
+otel_collector_env_from_controller:
+  - HONEYCOMB_INGEST_KEY_LIVESPEC
+
+# --- disk_guard ---
+disk_guard_threshold_gb: 40
+
+# --- factory_budget_reconciler ---
+# One factory sandbox pod. A run is 4 cpu / 8 Gi
+# (ci-runner/k3s/phase2/factory/DERIVATION.md) and this node's one-third
+# memory share is about 8.8 GiB of ~26.5 GiB allocatable, so memory binds
+# first at one run. Raise it only from a measured read (runs per hour, green
+# rate, the node's CI p95).
+factory_pod_budget: 1

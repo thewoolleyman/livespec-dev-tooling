@@ -294,12 +294,18 @@ def test_the_play_creates_the_workspace_root_on_exactly_the_factory_nodes() -> N
         f"`{_ROLE_NAME}` must run on exactly the ci_pool hosts whose profile sets "
         f"{_PROFILE_KEY}=true.\nexpected: {expected}\nresolved: {resolved}"
     )
-    assert set(expected) == {"poweredge-xubuntu", "gmktec-xubuntu", "hp-xubuntu"}, (
-        f"and that set is poweredge, gmktec and hp today — the untainted server included, "
-        f"which is why the gate could not be spelled as `cluster_role == 'agent'` or as the "
-        f"tainted ones; hp-xubuntu declares FACTORY_NODE=true again for its 2026-11-11 "
+    assert set(expected) == {
+        "poweredge-xubuntu",
+        "gmktec-xubuntu",
+        "hp-xubuntu",
+        "gamingpc-xubuntu",
+    }, (
+        f"and that set is poweredge, gmktec, hp and gamingpc today — the untainted server "
+        f"included, which is why the gate could not be spelled as `cluster_role == 'agent'` or "
+        f"as the tainted ones; hp-xubuntu declares FACTORY_NODE=true again for its 2026-11-11 "
         f"factory trial (epic livespec-dev-tooling-ko26ez), after FACTORY_NODE=false from "
-        f"2026-11-03 (orchestrator epic bd-ib-nmuyjc); it resolved to {expected}"
+        f"2026-11-03 (orchestrator epic bd-ib-nmuyjc), and gamingpc-xubuntu joined as a factory "
+        f"agent on 2026-11-11 (plan homelab-k8s-worker-nodes); it resolved to {expected}"
     )
 
 

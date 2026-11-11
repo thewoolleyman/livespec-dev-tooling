@@ -182,9 +182,10 @@ def test_every_committed_pool_profile_plans_the_factory_node_label(
     kubernetes-sandbox-backend plugin selects on it and poweredge stays
     untainted. Asserted over the committed set rather than over a list this file
     keeps, so a fourth profile is covered the day it lands. poweredge and gmktec
-    declare it, and so does hp-xubuntu again since its 2026-11-11 factory trial
+    declare it; so does hp-xubuntu again since its 2026-11-11 factory trial
     (FACTORY_NODE=false from 2026-11-03; trial decided by legacy-coordinator-agent,
-    epic livespec-dev-tooling-ko26ez).
+    epic livespec-dev-tooling-ko26ez); and so does gamingpc-xubuntu (joined
+    2026-11-11, plan homelab-k8s-worker-nodes).
     """
     _hp_profile()
     planned: set[str] = set()
@@ -210,7 +211,11 @@ def test_every_committed_pool_profile_plans_the_factory_node_label(
         "poweredge-xubuntu",
         "gmktec-xubuntu",
         "hp-xubuntu",
-    }, f"poweredge, gmktec and (trial) hp are the factory nodes today; planned={sorted(planned)}"
+        "gamingpc-xubuntu",
+    }, (
+        f"poweredge, gmktec, (trial) hp and gamingpc are the factory nodes today; "
+        f"planned={sorted(planned)}"
+    )
 
 
 def test_the_hp_plan_is_the_agent_join_its_measured_facts_imply(
