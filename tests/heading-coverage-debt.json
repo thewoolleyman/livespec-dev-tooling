@@ -576,6 +576,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: a fleet member's CI runs the CI run-telemetry exporter livespec-dev-tooling ships",
+    "work_item": "livespec-dev-tooling-5ua57h",
+    "first_seen": "2026-11-11"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: a gate client that stops waiting on an admitted gate Job deletes it",
     "work_item": "livespec-dev-tooling-f2dgn6",
     "first_seen": "2026-11-05"
@@ -992,6 +999,13 @@
     "heading": "## Scenario: a seat's gate-runner full suite runs as a gate Job by default",
     "work_item": "livespec-dev-tooling-qgv3tb",
     "first_seen": "2026-11-01"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a self-hosted CI job's span names its runner pod, which joins to the node that ran it",
+    "work_item": "livespec-dev-tooling-wnwwsl",
+    "first_seen": "2026-11-11"
   },
   {
     "spec_root": "SPECIFICATION",
