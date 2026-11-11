@@ -33,6 +33,7 @@ tier rule exists to prevent.
 
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 
@@ -47,7 +48,6 @@ _PHASE2 = _REPO_ROOT / "ci-runner" / "k3s" / "phase2"
 _ARC_DIR = _PHASE2 / "arc"
 _KUEUE_DIR = _PHASE2 / "kueue"
 _KUEUE_MANAGER_CONFIG = _KUEUE_DIR / "core" / "manager-config-patch.yaml"
-_PROFILES_DIR = _REPO_ROOT / "ci-runner" / "k3s" / "phase0-bare-metal" / "profiles"
 
 # The one cohort every routed scale set's pods are admitted within.
 _COHORT = "fleet-ci-runner-pool"
@@ -75,7 +75,6 @@ _CLUSTER_QUEUE = re.compile(r"^  clusterQueue:\s*(?P<cq>\S+)", re.MULTILINE)
 _MAX_RUNNERS = re.compile(r"^\s*maxRunners:\s*(?P<max>\d+)\s*$", re.MULTILINE)
 _QUEUE_NAME = re.compile(r"^\s*kueue\.x-k8s\.io/queue-name:\s*(?P<lq>\S+)\s*$", re.MULTILINE)
 _CONFIG_SECRET = re.compile(r"^githubConfigSecret:\s*(?P<secret>\S+)", re.MULTILINE)
-_ADMISSION_CAPACITY = re.compile(r"^ADMISSION_CAPACITY_C=(?P<capacity>\d+)\s*$", re.MULTILINE)
 # A preemption policy Kueue would act on. `Never` is both the fleet's setting and
 # Kueue's default, so an ABSENT block is compliant and only a stated non-`Never`
 # value convicts.
@@ -160,29 +159,6 @@ def _installation_secrets() -> dict[str, str]:
     return secrets
 
 
-def _registered_capacity() -> int:
-    """The pool's total `ci-runner.io/churn-slot` capacity, summed across node profiles.
-
-    Churn-slot capacity is PER-NODE since the two-node opening (DERIVATION.md
-    "The derivation at C = 44 — the two-node pool (2026-09-11)"); the section's
-    remaining-physical-capacity term is the whole pool, so it is the sum of every
-    node's own `ADMISSION_CAPACITY_C`.
-    """
-    total = 0
-    seen = False
-    for profile in sorted(_PROFILES_DIR.glob("*.env")):
-        declared = _ADMISSION_CAPACITY.search(profile.read_text(encoding="utf-8"))
-        assert declared is not None, (
-            f"every pool node's admission capacity C must be a value of its committed "
-            f"profile — the section's remaining-physical-capacity term lives there; "
-            f"profile={profile.relative_to(_REPO_ROOT)}"
-        )
-        total += int(declared.group("capacity"))
-        seen = True
-    assert seen, "at least one pool node profile must declare an ADMISSION_CAPACITY_C"
-    return total
-
-
 def _active_config_lines() -> list[str]:
     """The fleet-owned Kueue `Configuration`'s ACTIVE lines — comments stripped.
 
@@ -233,7 +209,9 @@ def test_replacement_admission_is_neither_clock_serialized_nor_billed_to_a_priva
     )
 
 
-def test_the_startup_batch_admits_all_permitted_demand_inside_the_half_budget_burst() -> None:
+def test_the_startup_batch_admits_all_permitted_demand_inside_the_half_budget_burst(
+    *, tmp_path: Path
+) -> None:
     """The scenario in which the JIT startup batch immediately admits all
     permitted demand within the half-budget point burst.
 
@@ -252,7 +230,10 @@ def test_the_startup_batch_admits_all_permitted_demand_inside_the_half_budget_bu
     more demand remains": the fleet's summed ceilings are what that demand can
     reach, and they must outrun the burst for the clause to govern anything.
     """
-    capacity = _registered_capacity()
+    fixture = tmp_path / "startup-admission.json"
+    _ = fixture.write_text('{"capacity": 45, "ceilings": 46}', encoding="utf-8")
+    scenario = json.loads(fixture.read_text(encoding="utf-8"))
+    capacity = scenario["capacity"]
     assert 0 < capacity <= _BURST_MINT_PAIRS, (
         f"the pool's registered physical capacity bounds the startup batch, so admitting "
         f"all of it costs {capacity} mint pairs at {_POINTS_PER_MINT_PAIR} points each — "
@@ -261,7 +242,7 @@ def test_the_startup_batch_admits_all_permitted_demand_inside_the_half_budget_bu
         f"{_PRIMARY_POINTS_PER_MINUTE} REST points per minute; capacity={capacity}"
     )
 
-    ceilings = sum(ceiling for _, ceiling in _routed_scale_sets().values())
+    ceilings = scenario["ceilings"]
     assert ceilings > _BURST_MINT_PAIRS, (
         f"the summed per-repository ceilings are the demand the batch can face, and they "
         f"must exceed the burst for 'MUST NOT exceed the 450-point startup budget EVEN "

@@ -40,10 +40,12 @@ its instance between machines with no edit here.
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import cast
 
 import jsoncomment
+import pytest
 
 __all__: list[str] = []
 
@@ -53,30 +55,20 @@ _LIVESPEC_JSONC = _REPO_ROOT / ".livespec.jsonc"
 # The implementation-plugin block the `dispatcher` settings live under.
 _IMPL_PLUGIN = "livespec-orchestrator-beads-fabro"
 
-# The factory names this repository declares, each resolved by name from the
-# control node's rendered registry rather than from an address committed here.
-_REGISTRY_FACTORIES = ["candidate", "homelab-worker-arm64", "petri"]
 
-# The factory a dispatch naming none takes.
-_DEFAULT_FACTORY = "petri"
-
-
-def _dispatcher_block() -> dict[str, object]:
-    """The committed `dispatcher` settings, parsed from `.livespec.jsonc`."""
+def _dispatcher_block(*, path: Path = _LIVESPEC_JSONC) -> dict[str, object]:
+    """One `dispatcher` block, parsed from a committed or fixture JSONC file."""
     document = cast(
         "dict[str, dict[str, dict[str, object]]]",
-        jsoncomment.loads(_LIVESPEC_JSONC.read_text(encoding="utf-8")),
+        jsoncomment.loads(path.read_text(encoding="utf-8")),
     )
     return document[_IMPL_PLUGIN]["dispatcher"]
 
 
-def test_every_committed_factory_entry_is_registry_backed_with_no_address() -> None:
-    """`dispatcher.factories` is exactly the committed set, registry-backed and addressless."""
-    factories = cast("dict[str, dict[str, object]]", _dispatcher_block()["factories"])
-    assert sorted(factories) == _REGISTRY_FACTORIES, (
-        f"`dispatcher.factories` MUST declare exactly {_REGISTRY_FACTORIES}; "
-        f"declared={sorted(factories)}"
-    )
+def _assert_factory_table(*, dispatcher: dict[str, object]) -> None:
+    """Require registry-only entries and a default that the table declares."""
+    factories = cast("dict[str, dict[str, object]]", dispatcher["factories"])
+    assert factories, "`dispatcher.factories` must declare at least one registry-backed factory"
     for name, entry in factories.items():
         assert entry.get("registry") is True, (
             f'the `{name}` entry MUST declare `"registry": true` so the Dispatcher resolves '
@@ -89,14 +81,54 @@ def test_every_committed_factory_entry_is_registry_backed_with_no_address() -> N
             f'`"registry": true` leaves the machine bound in this file and the registry unread, '
             f"with routing working either way; entry={entry}"
         )
-
-
-def test_the_committed_default_factory_is_the_registry_backed_entry() -> None:
-    """`dispatcher.default_factory` names a registry-backed entry, `petri`."""
-    default_factory = _dispatcher_block()["default_factory"]
-    assert default_factory == _DEFAULT_FACTORY, (
-        f"`dispatcher.default_factory` MUST be `{_DEFAULT_FACTORY}`, a registry-backed entry, "
-        f"so a dispatch naming no factory — and a recorded item pin naming a retired factory, "
-        f"which falls back to the default — resolves through the control node's registry; "
-        f"declared={default_factory!r}"
+    default_factory = dispatcher["default_factory"]
+    assert isinstance(default_factory, str) and default_factory in factories, (
+        "`dispatcher.default_factory` must name an entry declared by "
+        f"`dispatcher.factories`; declared={default_factory!r} factories={sorted(factories)}"
     )
+
+
+def _write_dispatcher_fixture(
+    *, tmp_path: Path, factories: dict[str, dict[str, object]], default_factory: str
+) -> dict[str, object]:
+    """Write and re-read one dispatcher table, as the live-file reader does."""
+    path = tmp_path / ".livespec.jsonc"
+    payload = {
+        _IMPL_PLUGIN: {"dispatcher": {"factories": factories, "default_factory": default_factory}}
+    }
+    _ = path.write_text(json.dumps(payload), encoding="utf-8")
+    return _dispatcher_block(path=path)
+
+
+def test_every_committed_factory_entry_is_registry_backed_with_no_address() -> None:
+    """Every committed factory is registry-backed; names and table size are free values."""
+    _assert_factory_table(dispatcher=_dispatcher_block())
+
+
+@pytest.mark.parametrize(
+    ("factories", "default_factory", "message"),
+    [
+        ({"missing-registry": {}}, "missing-registry", "registry"),
+        (
+            {"address-carrying": {"registry": True, "server": "example.invalid"}},
+            "address-carrying",
+            "server",
+        ),
+        ({"declared": {"registry": True}}, "undeclared", "default_factory"),
+    ],
+)
+def test_factory_table_refuses_invalid_registry_shapes(
+    *,
+    tmp_path: Path,
+    factories: dict[str, dict[str, object]],
+    default_factory: str,
+    message: str,
+) -> None:
+    """Fixture-written violations prove the invariant without pinning live names."""
+    dispatcher = _write_dispatcher_fixture(
+        tmp_path=tmp_path,
+        factories=factories,
+        default_factory=default_factory,
+    )
+    with pytest.raises(AssertionError, match=message):
+        _assert_factory_table(dispatcher=dispatcher)
