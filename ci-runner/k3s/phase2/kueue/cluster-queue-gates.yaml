@@ -140,6 +140,18 @@ spec:
   topologyName: gates-hostname
 ---
 apiVersion: kueue.x-k8s.io/v1beta2
+kind: ResourceFlavor
+metadata:
+  name: gates-gamingpc-flavor
+spec:
+  nodeLabels:
+    # gamingpc-xubuntu, a runner-only k3s agent since 2026-11-11 (plan
+    # homelab-k8s-worker-nodes, livespec-dev-tooling-ko26ez). Its lane is one
+    # gate; see the quota below and its profile's header.
+    kubernetes.io/hostname: gamingpc-xubuntu
+  topologyName: gates-hostname
+---
+apiVersion: kueue.x-k8s.io/v1beta2
 kind: ClusterQueue
 metadata:
   name: gates-cq
@@ -245,6 +257,19 @@ spec:
               nominalQuota: 10
             - name: "memory"
               nominalQuota: 16Gi
+        - name: gates-gamingpc-flavor
+          resources:
+            # One concurrent gate at 5 cpu / 6 Gi. gamingpc-xubuntu expects
+            # 14500m CPU / ~26.5 GiB allocatable, split a third each to CI,
+            # gates and factory (its profile's header): the gate third is
+            # 4833m, and the "at least one unit per class" floor lifts it to one
+            # 5-cpu gate. 8 Gi gives the 6 Gi request 2 Gi of headroom. LAST in
+            # the order: its gate speed is unmeasured, and the lane-order
+            # reconciler moves it once it has a read.
+            - name: "cpu"
+              nominalQuota: 5
+            - name: "memory"
+              nominalQuota: 8Gi
 ---
 apiVersion: kueue.x-k8s.io/v1beta2
 kind: WorkloadPriorityClass

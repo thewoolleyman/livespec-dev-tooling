@@ -62,7 +62,11 @@ spec:
               # "The master-push slice for livespec-dev-tooling (2026-11-03)").
               # 6 -> 9 on 2026-11-08 (R301, after the 6e5pyj step-4 KEEP): 3 slots from
               # livespec-orchestrator-beads-fabro-cq; the cohort stays 30. See DERIVATION.md.
-              nominalQuota: 9
+              # 9 -> 10 on 2026-11-11: gamingpc-xubuntu joins with 1 churn slot, the
+              # cohort rises 30 -> 31, and the new slot goes to this queue, the one
+              # holding waiting work (as R301). See DERIVATION.md "gamingpc-xubuntu
+              # joins: cohort 31 (2026-11-11)".
+              nominalQuota: 10
 ---
 apiVersion: kueue.x-k8s.io/v1beta2
 kind: LocalQueue

@@ -2101,3 +2101,21 @@ legacy-coordinator-agent then ruled (R301) to move 3 slots from the orchestrator
 Every other queue and every node profile is unchanged. The quotas still sum to 30, equal to poweredge 17 + gmktec 8 + hp 5.
 
 ci-runtime-and-cost re-measures 60 minutes after the apply, from the apply time this change's applier reports. Kill switch: restore orchestrator-cq 12 with maxRunners 24, and dev-tooling-cq 6 with maxRunners 12, by applying ci_converge_unit.
+
+## gamingpc-xubuntu joins: cohort 31 (2026-11-11)
+
+**Why.** The maintainer directed plan homelab-k8s-worker-nodes (epic livespec-dev-tooling-ko26ez) on 2026-11-11 ~00:40Z to get a node running on the newly provisioned gaming PC as soon as possible. It joins as a fourth k3s pool agent, runner-only, with the default per-class split its profile derives (`../../phase0-bare-metal/profiles/gamingpc-xubuntu.env`).
+
+**Its churn slots.** The split follows `homelab-worker/enroll-workload-classes.sh`'s rule. The expected 14500m allocatable CPU is divided by three enrolled classes (CI, gates, factory), giving 4833m per class. At about 2.73 CPUs per slot that is 1 slot. Its gate lane is one gate (5 cpu / 8 Gi, `cluster-queue-gates.yaml`), and its factory budget is one pod (`factory_pod_budget: 1`; memory binds first at 4 cpu / 8 Gi per run).
+
+**The quota.** "Recomputing at another C" applies: the node capacity rises 30 -> 31 (poweredge 17 + gmktec 8 + hp 5 + gamingpc 1), so the quotas must sum to 31. The one new slot goes to the queue holding waiting work, as in R301 above.
+
+| Queue | Change | maxRunners |
+| --- | --- | --- |
+| livespec-dev-tooling-cq | 9 -> 10 | max(2 x 10, 6) = 20 |
+
+Every other queue is unchanged.
+
+**Order.** Raise the node capacity first, then the quota. The node's churn-slot capacity is stamped at join by the `node_extended_resource` role, and only then is `ci_converge_unit` applied with this quota. A quota applied before the node exists would promise a slot no node has.
+
+**A first value.** It is revised from measured runs per hour, green rate and CI p95 on this node, as every node's numbers have been. Kill switch: restore livespec-dev-tooling-cq 9 with maxRunners 18, and remove the profile's capacity, by applying ci_converge_unit.

@@ -89,7 +89,9 @@ _DEV_HOST = "vps"
 _POWEREDGE = "poweredge-xubuntu"
 _GMKTEC = "gmktec-xubuntu"
 _HP = "hp-xubuntu"
-_CI_POOL = (_POWEREDGE, _GMKTEC, _HP)
+# The fourth pool node, a k3s agent since 2026-11-11 (plan homelab-k8s-worker-nodes).
+_GAMINGPC = "gamingpc-xubuntu"
+_CI_POOL = (_POWEREDGE, _GMKTEC, _HP, _GAMINGPC)
 
 # The collector shape each pool node runs, and the one `vps` keeps. These are the
 # four files `thewoolleyman/otel-collector` carries at `cb42f5f`; the pool's three
@@ -99,6 +101,8 @@ _CONFIG_FILES = {
     _POWEREDGE: "config.ci-runner-host.yaml",
     _GMKTEC: "config.k3s-agent-host.yaml",
     _HP: "config.hp-factory.yaml",
+    # A k3s agent node like gmktec, so it runs gmktec's agent-host shape.
+    _GAMINGPC: "config.k3s-agent-host.yaml",
 }
 
 # The dedicated system account every pool node's collector runs as, matching the

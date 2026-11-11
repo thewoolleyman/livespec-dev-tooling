@@ -310,6 +310,10 @@ data:
       {
         "node":"hp-xubuntu",
         "paths":["/srv/sandbox-storage/runner-workvols"]
+      },
+      {
+        "node":"gamingpc-xubuntu",
+        "paths":["/var/lib/rancher/k3s/storage"]
       }
       ]
     }

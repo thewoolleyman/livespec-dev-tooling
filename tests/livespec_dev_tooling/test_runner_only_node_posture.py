@@ -212,17 +212,17 @@ def test_the_rebalance_moves_eight_slots_from_poweredge_to_hp_and_keeps_the_tota
         for profile in sorted(_PROFILES.glob("*.env"))
     }
     assert capacities == {
-        "gamingpc-xubuntu": 0,
+        "gamingpc-xubuntu": 1,
         "gmktec-xubuntu": 8,
         "hp-xubuntu": 5,
         "poweredge-xubuntu": 17,
     }, (
         f'the cores-derived split is poweredge 27, gmktec 12, hp 5 (DERIVATION.md "Per-node '
-        f'churn slots derived from cores (2026-11-04)"), and gamingpc joins closed to CI at 0 '
-        f"until its stage two opens it; got {capacities}"
+        f'churn slots derived from cores (2026-11-04)"), and gamingpc joined at 1 (DERIVATION.md '
+        f'"gamingpc-xubuntu joins: cohort 31 (2026-11-11)"); got {capacities}'
     )
-    assert sum(capacities.values()) == 30 == _cohort_quota_total(), (
-        f"the profiles must sum to 30 and equal the summed cohort quotas; "
+    assert sum(capacities.values()) == 31 == _cohort_quota_total(), (
+        f"the profiles must sum to 31 and equal the summed cohort quotas; "
         f"profiles={sum(capacities.values())} quotas={_cohort_quota_total()}"
     )
     assert (

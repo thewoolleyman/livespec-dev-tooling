@@ -243,7 +243,7 @@ def test_measured_job_hours_derive_the_committed_fair_shares() -> None:
     """Seven-day pool job-hours are the dated, auditable source of every quota."""
     expected = {
         "livespec-orchestrator-beads-fabro-cq": 9,
-        "livespec-dev-tooling-cq": 9,
+        "livespec-dev-tooling-cq": 10,
         "livespec-dev-tooling-master-cq": 3,
         "livespec-cq": 1,
         "livespec-overseer-cq": 1,
@@ -263,6 +263,7 @@ def test_measured_job_hours_derive_the_committed_fair_shares() -> None:
     assert "deducts one from `livespec-orchestrator-beads-fabro` (30 → 29)" in derivation
     assert "## The master-push slice for livespec-dev-tooling (2026-11-03)" in derivation
     assert "## The fabro fork scale set (2026-11-05)" in derivation
+    assert "## gamingpc-xubuntu joins: cohort 31 (2026-11-11)" in derivation
 
 
 def test_master_push_slice_reserves_its_quota_and_lends_none_of_it() -> None:
