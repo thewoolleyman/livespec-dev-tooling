@@ -41,6 +41,17 @@ prefixed FLAGGED when the limit is reached while work waits AND a covered node r
 above STRANDED_IDLE_PCT: a stall of the "cap too low" kind (.ai/coordinator-duties.md
 section 10). A cap or quota that cannot be read prints `UNREAD <name>: <reason>`, never
 silence. `--stranded-only` prints just that section; scripts/coordinator/top5 calls it.
+
+A FACTORY line (fleet-cap, the per-host cap files, the dispatcher wip_cap lines and the
+factory ResourceQuota) covers only the nodes a factory sandbox pod can be placed on: Ready,
+not cordoned, no NoSchedule/NoExecute taint the pods do not tolerate
+(FACTORY_PRESSURE_TOLERATED_TAINTS, default node-role/ci=factory), and every label the pods'
+nodeSelector requires (FACTORY_PRESSURE_REQUIRED_LABELS, `key=value`, comma-separated, default
+ci-runner.io/factory-admit=true) - the same scope the factory pressure reconciler uses. Any
+other factory node is printed with its reason, e.g. `hp-xubuntu 55% idle (not-admitting)`,
+and never makes a line FLAGGED. When the node labels cannot be read the scoping prints
+UNREAD and no node counts as covered. CI lines (Kueue flavors, ARC scale sets) keep their
+own node scoping.
 """
 
 import argparse
@@ -49,6 +60,7 @@ import concurrent.futures
 import datetime
 import glob
 import json
+import os
 import pathlib
 import re
 import shutil
@@ -680,6 +692,18 @@ KC = "sudo -n k3s kubectl"
 HP_QUEUE_DIR = pathlib.Path("/run/user/1000/hp-launch-queue.d")
 FACTORY_NS = "factory"
 FACTORY_NODE_LABEL = "ci-runner.io/factory"
+# Labels the factory sandbox pods' nodeSelector requires, and the taints they tolerate. The
+# env names and defaults are the factory pressure reconciler's (reconcile-factory-pressure-taint.sh).
+FACTORY_REQUIRED_LABELS = [
+    r.strip()
+    for r in os.environ.get("FACTORY_PRESSURE_REQUIRED_LABELS", "ci-runner.io/factory-admit=true").split(",")
+    if r.strip()
+]
+FACTORY_TOLERATED_TAINTS = [
+    t.strip()
+    for t in os.environ.get("FACTORY_PRESSURE_TOLERATED_TAINTS", "node-role/ci=factory").split(",")
+    if t.strip()
+]
 ARC_NS = "arc-runners"
 # A ticket log quieter than this is not a live waiting ticket.
 TICKET_FRESH_S = 10 * 60
@@ -753,21 +777,88 @@ def nodes_matching(node_labels, selector=None, terms=None):
     return hits
 
 
-def covered_idle(names, nodes_by_name):
-    """(text, any covered node idle above STRANDED_IDLE_PCT)."""
+def node_idle_text(name, nodes_by_name):
+    """(text, idle % or None) for one node from the probe table."""
+    node = nodes_by_name.get(name)
+    if node is None:
+        return f"{name} unprobed", None
+    if not node["reachable"]:
+        return f"{name} UNREACHABLE", None
+    if node["idle_pct"] is None:
+        return f"{name} idle ?", None
+    return f"{name} {node['idle_pct']:.0f}% idle", node["idle_pct"]
+
+
+def covered_idle(covered, nodes_by_name):
+    """(text, any covered node idle above STRANDED_IDLE_PCT).
+
+    `covered` is a list of node names, or a factory scope dict (see factory_scope): its
+    excluded nodes are printed with their reason and never count toward the idle hit.
+    """
+    scope = covered if isinstance(covered, dict) else {"covered": covered, "excluded": {}, "unread": None}
+    if scope["unread"]:
+        return f"covered-node scoping UNREAD ({scope['unread']})"[:200], False
     parts, idle_hit = [], False
-    for name in names:
-        node = nodes_by_name.get(name)
-        if node is None:
-            parts.append(f"{name} unprobed")
-        elif not node["reachable"]:
-            parts.append(f"{name} UNREACHABLE")
-        elif node["idle_pct"] is None:
-            parts.append(f"{name} idle ?")
+    for name in scope["covered"]:
+        text, idle = node_idle_text(name, nodes_by_name)
+        parts.append(text)
+        idle_hit = idle_hit or (idle is not None and idle > STRANDED_IDLE_PCT)
+    for name, reason in sorted(scope["excluded"].items()):
+        parts.append(f"{node_idle_text(name, nodes_by_name)[0]} ({reason})")
+    if not scope["covered"]:
+        parts.insert(0, "no covered node found")
+    return ", ".join(parts), idle_hit
+
+
+def tolerates(taint):
+    key, value = taint.get("key", ""), taint.get("value")
+    return any(t == key or (value is not None and t == f"{key}={value}") for t in FACTORY_TOLERATED_TAINTS)
+
+
+def factory_exclusion(node):
+    """Why a factory sandbox pod can never be placed on this node now, or None."""
+    labels = node["metadata"].get("labels") or {}
+    for req in FACTORY_REQUIRED_LABELS:
+        key, _, value = req.partition("=")
+        if labels.get(key) != value:
+            return "not-admitting" if key == "ci-runner.io/factory-admit" else f"label {key}!={value}"
+    ready = [c.get("status") for c in (node.get("status") or {}).get("conditions") or [] if c.get("type") == "Ready"]
+    if ready != ["True"]:
+        return "not-ready"
+    spec = node.get("spec") or {}
+    if spec.get("unschedulable"):
+        return "cordoned"
+    for taint in spec.get("taints") or []:
+        if taint.get("effect") in ("NoSchedule", "NoExecute") and not tolerates(taint):
+            return f"untolerated-taint {taint.get('key', '')}"
+    return None
+
+
+def factory_scope(nodes_doc, err):
+    """{covered, excluded: {name: reason}, unread} over the nodes labelled FACTORY_NODE_LABEL=true."""
+    if nodes_doc is None:
+        return {"covered": [], "excluded": {}, "unread": f"node labels: {err}"}
+    covered, excluded = [], {}
+    for node in sorted(nodes_doc.get("items", []), key=lambda n: n["metadata"]["name"]):
+        if (node["metadata"].get("labels") or {}).get(FACTORY_NODE_LABEL) != "true":
+            continue
+        why = factory_exclusion(node)
+        if why is None:
+            covered.append(node["metadata"]["name"])
         else:
-            parts.append(f"{name} {node['idle_pct']:.0f}% idle")
-            idle_hit = idle_hit or node["idle_pct"] > STRANDED_IDLE_PCT
-    return ", ".join(parts) or "no covered node found", idle_hit
+            excluded[node["metadata"]["name"]] = why
+    return {"covered": covered, "excluded": excluded, "unread": None}
+
+
+def host_scope(scope, names):
+    """A per-host cap's fixed node list, narrowed to the factory scope."""
+    if scope["unread"]:
+        return scope
+    return {
+        "covered": [n for n in names if n in scope["covered"]],
+        "excluded": {n: scope["excluded"].get(n, "not a factory node") for n in names if n not in scope["covered"]},
+        "unread": None,
+    }
 
 
 def stranded_row(name, limit, use, binds, waiting, waiting_text, covered, nodes_by_name):
@@ -899,7 +990,12 @@ def launcher_rows(factory, tickets, factory_nodes, nodes_by_name):
             rows.append(unread_row(cap_name, f"limit {limit}; no {'/'.join(keys)}= use in launcher lines of the last 10 min"))
             continue
         use = max(uses)
-        rows.append(stranded_row(cap_name, limit, use, use >= limit, waiting, waiting_text, covered, nodes_by_name))
+        rows.append(
+            stranded_row(
+                cap_name, limit, use, use >= limit, waiting, waiting_text,
+                host_scope(factory_nodes, covered), nodes_by_name,
+            )
+        )
     return rows
 
 
@@ -1061,12 +1157,12 @@ def read_stranded(nodes, factory):
     nodes_doc, err = kube_json("nodes")
     if nodes_doc is None:
         node_labels = {}
-        rows = [unread_row("k3s node labels", f"{err}; covered nodes fall back to the probed hosts")]
-        factory_nodes = sorted(HOSTS)
+        rows = [unread_row("k3s node labels", f"{err}; no node counts as covered")]
     else:
         node_labels = {n["metadata"]["name"]: n["metadata"].get("labels") or {} for n in nodes_doc.get("items", [])}
         rows = []
-        factory_nodes = nodes_matching(node_labels, {FACTORY_NODE_LABEL: "true"})
+    # Factory lines cover only nodes a factory sandbox pod can be placed on (see the docstring).
+    factory_nodes = factory_scope(nodes_doc, err)
     rows += launcher_rows(factory, tickets, factory_nodes, nodes_by_name)
     rows += wip_rows(tickets, factory_nodes, nodes_by_name, now)
     rows += quota_rows(tickets, factory_nodes, nodes_by_name)
