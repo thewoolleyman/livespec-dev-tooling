@@ -13,6 +13,8 @@ are worth pinning:
 - Each pinned key is the key its recorded fingerprint names. The fingerprint is
   what a reader verifies against the host's info repository, so a pasted key
   that does not hash to it is caught here rather than at the next failed ssh.
+  The cross-check against each host's own record lives in its host_vars comment,
+  not in a committed value here, so a legitimate rekey edits one file.
 - The role reads no key from the network. Trust on first use (`ssh-keyscan`, or
   `StrictHostKeyChecking=accept-new`) is the shorter patch and authenticates
   nothing on the run that matters, so its absence is asserted over the role's
@@ -36,10 +38,6 @@ _ROLE = _REPO_ROOT / "ansible" / "roles" / "controller_known_hosts"
 _DEV_HOST_PLAY = _REPO_ROOT / "ansible" / "dev-host.yml"
 
 _PINNED_HOSTS = ("gamingpc-xubuntu", "gmktec-xubuntu", "hp-xubuntu", "poweredge-xubuntu")
-# gamingpc-xubuntu-info docs/bootstrap.md records this fingerprint for the key
-# Tailscale SSH presents at gamingpc-xubuntu.
-_GAMINGPC_RECORDED_FINGERPRINT = "SHA256:B80TQ80TSdj4j8fef3gQhQtWnafGppS4N817Gh4z33o"
-
 _KEY_LINE = re.compile(
     r'^controller_known_hosts_ed25519: "ssh-ed25519 (?P<key>[A-Za-z0-9+/]+={0,2})"$', re.MULTILINE
 )
@@ -74,11 +72,6 @@ def test_every_pinned_key_hashes_to_the_fingerprint_recorded_beside_it() -> None
         assert (
             _fingerprint(key) == recorded
         ), f"{host}: the pinned key hashes to {_fingerprint(key)}, not the recorded {recorded}"
-
-
-def test_gamingpc_pins_the_key_its_host_record_names() -> None:
-    key, _ = _pinned("gamingpc-xubuntu")
-    assert _fingerprint(key) == _GAMINGPC_RECORDED_FINGERPRINT
 
 
 def test_the_role_reads_no_host_key_from_the_network() -> None:
