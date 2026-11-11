@@ -117,6 +117,10 @@ _HP_MUST_RUN = frozenset(
         # edit back, after which these two move back to _HP_MUST_NOT_RUN.
         "factory_workspace_root",
         "sandbox_image_warm",
+        # The ghcr pull mirror's node half, on EVERY ci_pool node
+        # (livespec-dev-tooling-e2gv6n): hp pulls CI and factory images from
+        # ghcr like every other node, and the role is ungated.
+        "registry_mirror_node",
     }
 )
 
@@ -126,6 +130,10 @@ _HP_MUST_RUN = frozenset(
 # the play orders them, which is `install-node.sh`'s retired STEP_IDS order.
 _POWEREDGE_ROLES = (
     "k3s_config",
+    # The ghcr pull mirror's node half, beside the k3s start configuration
+    # (livespec-dev-tooling-e2gv6n). Ungated: the server takes over its
+    # hand-installed 2026-09-08 registries.yaml through it.
+    "registry_mirror_node",
     "agent_node_password",
     "node_sysctl",
     "storage_layout",
@@ -136,6 +144,9 @@ _POWEREDGE_ROLES = (
     "factory_workspace_root",
     # The containerd warm of the factory pod image, beside the workspace root on
     # the same FACTORY_NODE gate (work-item bd-ib-kogktm).
+    "sandbox_image_warm",
+    # And the CI job warm: the python-v* tags the fleet's ci.yml files pin, on
+    # every node that takes CI runner pods (livespec-dev-tooling-e2gv6n).
     "sandbox_image_warm",
     "node_status_credential",
     "node_extended_resource",
@@ -204,6 +215,7 @@ _POWEREDGE_ROLES = (
 )
 _GMKTEC_ROLES = (
     "k3s_config",
+    "registry_mirror_node",
     "agent_rejoin",
     "node_sysctl",
     "storage_layout",
@@ -213,6 +225,9 @@ _GMKTEC_ROLES = (
     "factory_workspace_root",
     # The containerd warm of the factory pod image, beside the workspace root on
     # the same FACTORY_NODE gate (work-item bd-ib-kogktm).
+    "sandbox_image_warm",
+    # And the CI job warm: the python-v* tags the fleet's ci.yml files pin, on
+    # every node that takes CI runner pods (livespec-dev-tooling-e2gv6n).
     "sandbox_image_warm",
     "node_status_credential",
     "node_extended_resource",

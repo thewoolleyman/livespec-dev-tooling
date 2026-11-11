@@ -121,3 +121,10 @@ def test_hp_warm_uv_publisher_uses_its_runner_volume_root() -> None:
         "KEEP_GENERATIONS": "2",
         "WARM_CACHE_UV_ONLY": "true",
     }.items() <= environment_values.items()
+    environment_names = {entry["name"] for entry in environment}
+    assert "WARM_CACHE_ACTIONS" not in environment_names, (
+        "hp is runner-only: its UV-only publisher derives the action archive seed OFF, "
+        "because SPECIFICATION 'What a runner-only node's jobs get' forbids seeding its "
+        "runner work volumes from that tree (livespec-dev-tooling-e2gv6n)"
+    )
+    assert not {"WARM_ACTIONS_BUDGET_BYTES", "WARM_ACTIONS_BUDGET_FILES"} & environment_names

@@ -349,6 +349,16 @@ spec:
 # writers for one warm root.  The two workloads share the populator script but
 # the UV-only switch makes this pod incapable of becoming a second writer of
 # the carrier-only caches.
+#
+# It also publishes this node's ACTION ARCHIVE SEED (WARM_CACHE_ACTIONS=true,
+# livespec-dev-tooling-e2gv6n). That tree is not a carrier-only cache: the
+# provisioner reflink-copies the node's own `.warm/actions` into each runner
+# work volume on that node, so a node without its own copy starts every job
+# with `actions-seed-absent` and downloads each action from codeload. It reads
+# the same `warm-cache-budget` actions- keys as the carrier CronJob. The hp
+# DaemonSet below deliberately does NOT set it: hp is runner-only, and
+# SPECIFICATION "What a runner-only node's jobs get" forbids seeding its runner
+# work volumes from this tree.
 apiVersion: apps/v1
 kind: DaemonSet
 metadata:
@@ -396,6 +406,9 @@ spec:
               value: "2"
             - name: WARM_CACHE_UV_ONLY
               value: "true"
+            # The action archive seed is per node, not carrier-only (comment above).
+            - name: WARM_CACHE_ACTIONS
+              value: "true"
             - name: WARM_BUDGET_BYTES
               valueFrom:
                 configMapKeyRef:
@@ -406,6 +419,18 @@ spec:
                 configMapKeyRef:
                   name: warm-cache-budget
                   key: files
+            # The action archive seed's budget (same ConfigMap, actions- keys),
+            # injected exactly as the carrier CronJob injects it.
+            - name: WARM_ACTIONS_BUDGET_BYTES
+              valueFrom:
+                configMapKeyRef:
+                  name: warm-cache-budget
+                  key: actions-bytes
+            - name: WARM_ACTIONS_BUDGET_FILES
+              valueFrom:
+                configMapKeyRef:
+                  name: warm-cache-budget
+                  key: actions-files
             - name: PYPI_FILES_PROXY
               value: http://pypi-proxy.ci-warm-cache.svc.cluster.local:8081
           securityContext:

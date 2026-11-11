@@ -25,7 +25,7 @@ local-path provisioner creates it:
 |---|---|
 | `warm-cache-populate.sh` | The populator. Clones or fast-forwards every routed repository's default branch, hashes its `uv.lock`, and — when any lock changed, the published generation no longer verifies, or it is older than 24 h — builds a NEW generation from an EMPTY directory: per repository it rewrites the file-host prefix in its own clone's lock to the PyPI files proxy and runs `uv sync --frozen --all-groups --no-install-project --no-install-workspace` with that generation as `UV_CACHE_DIR`; runs the verifier; checks the budget; writes the generation's manifest; publishes with one atomic symlink rename; prunes to the newest two. A run with nothing changed verifies the live generation and records `rebuilt=0`. Every run writes `last-run.json` for the host sweep. For every repository with a `Cargo.lock` it also runs `cargo fetch --locked` through the crates proxy (`../crates-proxy/`) and builds the default branch with sccache as the compilation cache's one writer (`../sccache/`) when the branch or toolchain changed. Its header carries the whole control flow and the exit codes. |
 | `verify-uv-cache.py`, `uv_cache_layout.py` | The verifier (stdlib plus `returns`, both files shipped in the populator's ConfigMap and mounted together at `/scripts`): maps every entry of a uv 0.9.x cache back to a `(name, version)` and fails on any entry no routed lock references. The layout module holds the bucket table and the scanners; the CLI holds the lock union, the build-dependency closure and the report — split at the repo's per-file LLOC ceiling. "Verifier" below. |
-| `warm-cache-cronjob.yaml` | Namespace `ci-warm-cache`, the `warm-cache-budget` ConfigMap, the carrier-only `warm-cache-populate` CronJob (the one writer of cargo, sccache and target caches), and the `warm-uv-cache-populate` DaemonSet. The DaemonSet selects every non-carrier node labelled `ci-runner.io/warm-uv-cache=true`, writes only that node's uv lower, starts one run immediately and repeats every 30 minutes. |
+| `warm-cache-cronjob.yaml` | Namespace `ci-warm-cache`, the `warm-cache-budget` ConfigMap, the carrier-only `warm-cache-populate` CronJob (the one writer of cargo, sccache and target caches), and the `warm-uv-cache-populate` DaemonSet. The DaemonSet selects every non-carrier node labelled `ci-runner.io/warm-uv-cache=true`, writes only that node's uv lower and its action archive seed (`WARM_CACHE_ACTIONS=true`, livespec-dev-tooling-e2gv6n), starts one run immediately and repeats every 30 minutes. The hp DaemonSet writes the uv lower only: hp is runner-only, and its runner volumes are never seeded from the action tree. |
 | `pypi-proxy/` | The PyPI FILES proxy every rebuild fetches through: one nginx `proxy_cache` in front of `files.pythonhosted.org` on the `ci-cache` tier, read only by the populator. "The PyPI files proxy" below and its own README. |
 | `converge-warm-cache.sh` | The idempotent converge of every cluster object here: the proxy (with a bounded rollout wait), the budget ConfigMap + CronJob, the `warm-cache-repos` ConfigMap derived from `../arc/values-*.yaml`, and the script ConfigMap from the populator AND the verifier. Run by the boot converge and by `install-warm-cache.sh`. |
 | `install-warm-cache.sh` | The attended superset: the converge, one populate Job run immediately and waited for, then `arc-hook-pod-template` converged via `../arc/converge-hook-pod-template.sh`. Idempotent; re-run after adding a routed repository. |
@@ -1033,7 +1033,15 @@ freshly provisioned node gets NONE of them from `ansible/ci-pool.yml` today
    boot path is gone at the next reboot — which is how the mirror was lost
    at the 2026-09-09 05:08Z reboot (`livespec-dev-tooling-y1t5`).
 
-### The half that is open
+### The half that is open (closed by livespec-dev-tooling-e2gv6n)
+
+Step 2 above is now the `registry_mirror_node` role in `ansible/ci-pool.yml`,
+on EVERY ci_pool node, the server included: it wraps
+`registry-mirror/install-registry-mirror.sh`, reports drift through the
+installer's own `--dry-run`, and never restarts k3s
+(`just ansible-apply ansible/ci-pool.yml --tags registry_mirror_node`). The file
+takes effect at each node's next k3s start. The history below is kept for the
+record.
 
 **A freshly provisioned node carries the mirror's node half, and nothing
 installs it.** `ansible/ci-pool.yml` (like the retired `install-node.sh`
@@ -1095,7 +1103,12 @@ calls the forge, so no workflow changes and no forked runner are needed.
   reports `actions:over-budget`.
 - **The provisioner** reflink-copies `archives/` into
   `<volume>/_warm/actions/archives` for EVERY volume (the tree is content-addressed,
-  so it is not per repository) and stamps `.generation`.
+  so it is not per repository) and stamps `.generation`. It copies the volume's
+  OWN node's `.warm/actions`, so each ci-workvols node needs its own publisher:
+  the carrier CronJob on the carrier, and the `warm-uv-cache-populate` DaemonSet
+  (`WARM_CACHE_ACTIONS=true`) on every other ci-workvols node
+  (livespec-dev-tooling-e2gv6n). `WARM_CACHE_ACTIONS` defaults to the negation of
+  `WARM_CACHE_UV_ONLY`, so a populator that does not set it behaves as before.
 - **The runner** is the reader, and it reads during Set up job, before any hook or
   job container exists. So the switch lives in the runner container's command:
   `arc/action-archive-entry.sh` (in the `arc-hook-pod-template` ConfigMap, mounted

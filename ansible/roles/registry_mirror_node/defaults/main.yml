@@ -1,0 +1,33 @@
+---
+# registry_mirror_node — the NODE-side half of the ghcr pull-through cache:
+# /etc/rancher/k3s/registries.yaml, written by the committed installer
+# ci-runner/k3s/phase2/warm-cache/registry-mirror/install-registry-mirror.sh
+# (livespec-dev-tooling-e2gv6n). See tasks/main.yml for why the role wraps that
+# installer rather than re-rendering its template.
+
+# The committed installer and the template it renders. Referenced rather than
+# copied into the role's own files/: the installer is the one place the
+# endpoint derivation (loopback on the server, the host of CLUSTER_JOIN_ADDRESS
+# on an agent) is written, and a second copy under roles/ would be a second
+# thing to drift.
+registry_mirror_node_source_dir: >-
+  {{ role_path }}/../../../ci-runner/k3s/phase2/warm-cache/registry-mirror
+registry_mirror_node_installer: install-registry-mirror.sh
+registry_mirror_node_template: registries.yaml.template
+
+# The node's committed phase0 profile, read on the CONTROLLER for the two keys
+# the installer reads (CLUSTER_ROLE and CLUSTER_JOIN_ADDRESS) and for nothing
+# else. The same directory every other role in ci-pool.yml reads a profile from.
+registry_mirror_node_profiles_dir: "{{ role_path }}/../../../ci-runner/k3s/phase0-bare-metal/profiles"
+registry_mirror_node_profile: "{{ registry_mirror_node_profiles_dir }}/{{ inventory_hostname }}.env"
+
+# Where the installer, its template and its two-key profile live on the node.
+# Its OWN directory, deliberately not ci_converge_unit's
+# /usr/local/lib/ci-runner-k3s/warm-cache/registry-mirror: that role installs
+# the cluster-side half there on the server only, and two roles owning one
+# directory is two writers of one tree.
+registry_mirror_node_install_dir: /usr/local/lib/ci-runner-k3s/registry-mirror-node
+
+# The directory the installer writes registries.yaml into (its K3S_CONFIG_ROOT).
+# k3s's own, and the one k3s reads at start.
+registry_mirror_node_config_root: /etc/rancher/k3s
