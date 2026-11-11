@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import importlib
 import json
+import os
+import shutil
 import subprocess
 from pathlib import Path
 from types import ModuleType
@@ -15,7 +17,12 @@ from returns.result import Success
 from livespec_dev_tooling._gate_remote_assembly import declared_gate_job_resources
 from livespec_dev_tooling.gate_remote_delegate import gate_remote_request, run_delegated_gate
 from livespec_dev_tooling.gate_remote_invocation import GateCommandOutcome, GateCommandResult
-from livespec_dev_tooling.gate_remote_verdict import GATE_FAILED, GATE_NO_VERDICT, GateVerdict
+from livespec_dev_tooling.gate_remote_verdict import (
+    GATE_FAILED,
+    GATE_NO_VERDICT,
+    GATE_PASSED,
+    GateVerdict,
+)
 
 __all__: list[str] = []
 
@@ -46,6 +53,9 @@ _REPLAY_OOM_HEADING = (
 class _World:
     """Canned host commands with the real renderer as the consumer-visible seam."""
 
+    def __init__(self) -> None:
+        self.calls: list[list[str]] = []
+
     def __call__(
         self,
         *,
@@ -55,6 +65,7 @@ class _World:
         stream: bool = False,
     ) -> GateCommandOutcome:
         _ = (stdin, stream)
+        self.calls.append(list(argv))
         if argv[0] == str(_RENDERER):
             completed = subprocess.run(
                 argv, cwd=str(cwd), capture_output=True, text=True, check=False
@@ -130,6 +141,24 @@ def test_declared_cpu_and_parallelism_render_into_the_gate_job_and_coverage_work
         "limits": {"memory": "6Gi"},
     }
     assert env["LIVESPEC_TEST_PARALLELISM"] == "8"
+    # Trace the rendered variable to the coverage run: the Job's environment
+    # sets test_nprocs through the justfile, and the coverage script's xdist
+    # worker count is exactly that variable.
+    just = shutil.which("just")
+    assert just is not None
+    evaluated = subprocess.run(
+        [just, "--evaluate", "test_nprocs"],
+        cwd=str(_REPO_ROOT),
+        env={
+            "PATH": os.environ["PATH"],
+            "HOME": os.environ.get("HOME", ""),
+            "LIVESPEC_TEST_PARALLELISM": env["LIVESPEC_TEST_PARALLELISM"],
+        },
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert (evaluated.returncode, evaluated.stdout.strip()) == (0, "8")
     assert 'pytest -n "${test_nprocs}"' in (
         _REPO_ROOT / "scripts" / "just" / "check-per-file-coverage.sh"
     ).read_text(encoding="utf-8")
@@ -162,14 +191,19 @@ def test_undeclared_resources_render_the_default_gate_job_size(*, tmp_path: Path
 def test_non_positive_cpu_refuses_before_the_consumer_submits_a_gate_job(*, tmp_path: Path) -> None:
     """A zero CPU declaration is a refusal, not a rendered or submitted Job."""
     root = _consumer(tmp_path=tmp_path, declaration="delegated_gate = true\ngate_cpu = 0\n")
+    world = _World()
     verdict = run_delegated_gate(
         repo_root=root,
         renderer=_RENDERER,
-        runner=_World(),
+        runner=world,
         sleeper=lambda **_kwargs: None,
         emit=lambda **_kwargs: None,
     )
 
+    # The submission seam: the mirror push and the Job create are the two
+    # commands that put a gate Job on the cluster, and neither was reached.
+    assert not any(argv[0] == "kubectl" or "push" in argv for argv in world.calls)
+    assert not any(argv[0] == str(_RENDERER) for argv in world.calls)
     assert verdict.state == GATE_NO_VERDICT
     assert verdict.refuses_push is True
     assert "pyproject.toml" in verdict.detail and "gate_cpu" in verdict.detail
@@ -208,21 +242,31 @@ def test_malformed_memory_refuses_a_delegated_commit_without_local_fallback(
 
 
 def test_red_leg_replay_uses_the_small_job_size_despite_declared_resources(
-    *, tmp_path: Path
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The replay caller size wins over a consumer's full-suite resource declaration."""
+    """The Red-leg replay caller's size wins over a consumer's full-suite declaration."""
+    module = importlib.import_module("livespec_dev_tooling.commit_replay_delegate")
     root = _consumer(
         tmp_path=tmp_path,
         declaration="delegated_commit_tests = true\ngate_cpu = 9\ngate_parallelism = 8\n",
     )
-    built = gate_remote_request(
-        repo_root=root,
-        renderer=_RENDERER,
-        runner=_World(),
-        resources=("--cpu", "2", "--memory", "3Gi", "--parallelism", "1"),
-    )
-    assert isinstance(built, Success)
-    job = next(document for document in yaml.safe_load_all(built.unwrap().manifest) if document)
+    submitted: list[object] = []
+    monkeypatch.setattr(module, "gates_kubeconfig_readable", lambda: True)
+    monkeypatch.setattr(module, "_staged_tree_hash", lambda **_kwargs: _TREE)
+    monkeypatch.setattr(module, "_staged_commit", lambda **_kwargs: "commit")
+    monkeypatch.setattr(module, "resolve_renderer", lambda **_kwargs: _RENDERER)
+    monkeypatch.setattr(module, "default_gate_command_runner", _World())
+
+    def submit(**kwargs: object) -> GateVerdict:
+        submitted.append(kwargs["request"])
+        return GateVerdict(state=GATE_PASSED, detail="passed", token_written=False)
+
+    monkeypatch.setattr(module, "run_gated_push", submit)
+
+    _ = module.run_one_test(repo_root=root, pytest_argv=["pytest", "tests/test_red.py"])
+
+    assert len(submitted) == 1
+    job = next(document for document in yaml.safe_load_all(submitted[0].manifest) if document)
     gate = next(
         container
         for container in job["spec"]["template"]["spec"]["containers"]
