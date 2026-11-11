@@ -3333,9 +3333,8 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a repository that declares gate_cpu 9 and gate_parallelism 8 gets a gate Job requesting 9 CPUs whose coverage run uses 8 xdist workers",
-    "test": "TODO",
-    "work_item": "livespec-dev-tooling-4g7als",
-    "reason": "A real test at the consumer tier (tests.consumer, the scenario_tiers integration tier) is owed for this heading; the unit tests that shipped with the behaviour do not satisfy the scenario tier. livespec-dev-tooling-4g7als owns it (plan gate-job-resources, livespec-dev-tooling-ukoeah)."
+    "test": "tests.consumer.test_gate_job_resource_scenarios.test_declared_cpu_and_parallelism_render_into_the_gate_job_and_coverage_worker_count",
+    "reason": "Consumer-tier: a fixture consumer declares gate_cpu 9 and gate_parallelism 8, the shipped gate client renders its real Job, and the test observes the 9 CPU request, default 6Gi memory, LIVESPEC_TEST_PARALLELISM=8 and the coverage command's xdist worker seam (livespec-dev-tooling-4g7als)."
   },
   {
     "spec_root": "SPECIFICATION",
