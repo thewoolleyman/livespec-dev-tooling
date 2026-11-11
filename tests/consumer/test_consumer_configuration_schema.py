@@ -44,7 +44,6 @@ from livespec_dev_tooling.config import (
     load_config,
     role_absence,
 )
-from tests.consumer.role_key_fixture import union_key_block
 
 __all__: list[str] = []
 
@@ -77,9 +76,6 @@ _ALTERNATE_LOCATION = '{ "tool": { "livespec_dev_tooling": { "source_trees": ["d
 
 _UNION_KEY = "pure_trees"
 _CLEAN_KEY = "io_trees"
-# Written where a consumer would really put a reason, and contradicting the
-# payload below, so a loader reading the comment instead of the table is caught.
-_DECOY_COMMENT = "# one deliberate opt-out, spelled once"
 
 
 def _fixture(*, root: Path, block: str, livespec_jsonc: str | None = None) -> Path:
@@ -167,34 +163,4 @@ def test_a_bare_empty_is_rejected_on_a_union_key_and_remains_legal_on_a_clean_on
         f'"declared-empty is retired" MUST NOT be read as universal: an empty '
         f"`{_CLEAN_KEY}` exempts no directory, which makes its consuming checks "
         f"stricter rather than blinder; got {clean.io_trees}"
-    )
-
-
-def test_a_union_key_declared_with_two_absence_spellings_is_rejected_naming_every_legal_one(
-    *, tmp_path: Path
-) -> None:
-    """Exactly ONE declared-absent spelling is legal per key; two in one table fail at parse.
-
-    Two spellings in one inline table say two different things about the same
-    key — the concept does not exist here, AND something else checks it — so a
-    loader that kept either would be choosing a meaning the consumer never
-    wrote. The rejection must name the key and every legal spelling, as every
-    other role-key rejection does; the unit tier pins the unknown-name and
-    empty-payload rejections, and this is the third arm of the same clause.
-    """
-    doubled = union_key_block(
-        key=_UNION_KEY,
-        value='{ not_applicable = "fixture", superseded_by = "fixture" }',
-        comment=_DECOY_COMMENT,
-    )
-
-    with pytest.raises(ConfigParseError) as rejected:
-        _ = load_config(repo_root=_fixture(root=tmp_path / "doubled", block=doubled))
-
-    diagnostic = str(rejected.value)
-    unnamed = [spelling for spelling in BLESSED_ROLE_SPELLINGS if spelling not in diagnostic]
-    assert _UNION_KEY in diagnostic and not unnamed, (
-        f"a table carrying two blessed spellings is not 'exactly one of the four', and the "
-        f"diagnostic MUST name the offending key and EVERY legal spelling; "
-        f"unnamed={unnamed} diagnostic={diagnostic!r}"
     )

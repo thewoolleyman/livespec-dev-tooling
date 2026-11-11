@@ -1938,6 +1938,7 @@ def test_a_memory_quantity_in_a_binary_or_decimal_unit_is_passed_as_written(
     ("declaration", "key"),
     [
         ("gate_cpu = 0", "gate_cpu"),
+        ("gate_cpu = -2", "gate_cpu"),
         ("gate_cpu = -1.5", "gate_cpu"),
         ("gate_cpu = true", "gate_cpu"),
         ('gate_cpu = "lots"', "gate_cpu"),
@@ -1950,6 +1951,7 @@ def test_a_memory_quantity_in_a_binary_or_decimal_unit_is_passed_as_written(
         ('gate_memory = "6"', "gate_memory"),
         ('gate_memory = "1.5Gi"', "gate_memory"),
         ("gate_parallelism = 0", "gate_parallelism"),
+        ("gate_parallelism = -1", "gate_parallelism"),
         ('gate_parallelism = "4"', "gate_parallelism"),
         ("gate_parallelism = 2.0", "gate_parallelism"),
     ],
