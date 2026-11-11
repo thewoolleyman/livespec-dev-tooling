@@ -4333,3 +4333,90 @@ Then the pre-commit hook's local aggregate MUST have recorded the green token fo
 And the pre-push gate MUST take the **Explicit local route**, submitting no gate Job, not running the local fall-through, and running only the world-reading members that **Token memoization** requires
 
 And it MUST NOT print that it accepted a pre-commit verdict
+## Scenario: a repository that declares gate_cpu 9 and gate_parallelism 8 gets a gate Job requesting 9 CPUs whose coverage run uses 8 xdist workers
+
+Given a consuming repository whose `[tool.livespec_dev_tooling]` table sets `delegated_gate = true`, `gate_cpu = 9` and `gate_parallelism = 8`, and declares no `gate_memory`
+
+And its coverage test run takes its pytest-xdist worker count from `LIVESPEC_TEST_PARALLELISM`, as this repository's `just check` does
+
+When the gate client submits that repository's pre-push gate Job
+
+Then the Job's container MUST request 9 CPUs and request and limit memory `6Gi`
+
+And the Job MUST export `LIVESPEC_TEST_PARALLELISM` as `8`
+
+And the coverage pytest run inside the Job MUST start 8 pytest-xdist workers
+
+## Scenario: a repository that declares no gate resources keeps the default gate Job size
+
+Given a consuming repository whose `[tool.livespec_dev_tooling]` table sets `delegated_gate = true` and declares none of `gate_cpu`, `gate_memory` and `gate_parallelism`
+
+When the gate client submits that repository's pre-push gate Job or its delegated pre-commit aggregate Job
+
+Then the Job's container MUST request 5 CPUs and request and limit memory `6Gi`
+
+And the Job MUST export `LIVESPEC_TEST_PARALLELISM` as `4`
+
+## Scenario: a non-positive declared gate resource is refused before any gate Job is submitted
+
+Given a consuming repository whose `[tool.livespec_dev_tooling]` table sets `delegated_gate = true` and `gate_cpu = 0`
+
+When a push in that repository reaches the gate client on a host eligible under **Host eligibility**
+
+Then the gate client MUST refuse before it renders or submits any gate Job
+
+And its message MUST name `pyproject.toml` and the key `gate_cpu`
+
+And the push MUST be refused
+
+## Scenario: a malformed declared gate resource refuses a delegated commit instead of gating it locally
+
+Given a consuming repository whose `[tool.livespec_dev_tooling]` table sets `delegated_pre_commit = true` and `gate_memory = "6"`
+
+When a commit's pre-commit hook would delegate its aggregate on a host eligible under **Host eligibility**
+
+Then the gate client MUST refuse before it renders or submits any gate Job, naming `pyproject.toml` and the key `gate_memory`
+
+And the commit MUST be refused, and the aggregate MUST NOT run on the committing host in its place
+
+## Scenario: a declared gate resource that no single gate lane can admit is refused naming the largest lane's quotas
+
+Given a consuming repository whose `[tool.livespec_dev_tooling]` table sets `delegated_gate = true` and `gate_cpu = 40`
+
+And no flavor committed in `cluster-queue-gates.yaml` has a nominal CPU quota of 40 or more, and the largest lane's quotas are 15 CPU and `24Gi`
+
+When a push in that repository reaches the gate client on a host eligible under **Host eligibility**
+
+Then the gate client MUST refuse before it submits any gate Job
+
+And its message MUST name the key `gate_cpu`, the declared value 40 and the largest lane's quotas 15 CPU and `24Gi`
+
+## Scenario: a Red-leg replay Job requests the small replay size whatever the repository declares
+
+Given a consuming repository whose `[tool.livespec_dev_tooling]` table sets `delegated_commit_tests = true` and `gate_cpu = 9`
+
+When a Red commit's replay leg runs as a gate Job
+
+Then the Job's container MUST request 2 CPUs and request and limit memory `3Gi`
+
+And the Job MUST export `LIVESPEC_TEST_PARALLELISM` as `1`
+
+## Scenario: a Red-leg replay Job killed for memory is an absent verdict, not a valid Red
+
+Given a consuming repository whose `[tool.livespec_dev_tooling]` table sets `delegated_commit_tests = true`
+
+And a Red commit whose replay leg runs as a gate Job that ends OOMKilled
+
+When the committing host reads the Job's outcome
+
+Then it MUST treat the outcome as an absent verdict and run the Red leg's test itself
+
+And it MUST record the Red trailers only from that local run
+
+## Scenario: the gmktec gate lane keeps room for three default-size gate Jobs
+
+Given the committed `cluster-queue-gates.yaml`
+
+When its tests run
+
+Then they MUST fail, naming the `gates-flavor` lane, if that lane's nominal CPU quota is below three times the renderer's default CPU request or its nominal memory quota is below three times the renderer's default memory request

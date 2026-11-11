@@ -275,6 +275,20 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: a Red-leg replay Job killed for memory is an absent verdict, not a valid Red",
+    "work_item": "livespec-dev-tooling-lfkkaf",
+    "first_seen": "2026-11-11"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a Red-leg replay Job requests the small replay size whatever the repository declares",
+    "work_item": "livespec-dev-tooling-lfkkaf",
+    "first_seen": "2026-11-11"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: a behaviour-preserving commit runs the full suite, and an empty run is refused",
     "work_item": "livespec-dev-tooling-z5fwwn",
     "first_seen": "2026-11-02"
@@ -390,6 +404,13 @@
     "heading": "## Scenario: a coverage-guided kill-matrix run skips tests that do not execute a mutant",
     "work_item": "livespec-dev-tooling-tcmw34",
     "first_seen": "2026-11-07"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a declared gate resource that no single gate lane can admit is refused naming the largest lane's quotas",
+    "work_item": "livespec-dev-tooling-yznwz7",
+    "first_seen": "2026-11-11"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -688,6 +709,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: a malformed declared gate resource refuses a delegated commit instead of gating it locally",
+    "work_item": "livespec-dev-tooling-c3nd2h",
+    "first_seen": "2026-11-11"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: a master push carrying a high-band work item's commit runs on the master lane's priority set",
     "work_item": "livespec-dev-tooling-5wewi2",
     "first_seen": "2026-11-08"
@@ -772,6 +800,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: a non-positive declared gate resource is refused before any gate Job is submitted",
+    "work_item": "livespec-dev-tooling-c3nd2h",
+    "first_seen": "2026-11-11"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: a per-tick query set larger than the budget constant fails the unit tests",
     "work_item": "livespec-dev-tooling-34bee5",
     "first_seen": "2026-11-02"
@@ -852,6 +887,20 @@
     "heading": "## Scenario: a related edge does not block a radar target",
     "work_item": "livespec-dev-tooling-m2x5pt",
     "first_seen": "2026-11-02"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a repository that declares gate_cpu 9 and gate_parallelism 8 gets a gate Job requesting 9 CPUs whose coverage run uses 8 xdist workers",
+    "work_item": "livespec-dev-tooling-c3nd2h",
+    "first_seen": "2026-11-11"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a repository that declares no gate resources keeps the default gate Job size",
+    "work_item": "livespec-dev-tooling-c3nd2h",
+    "first_seen": "2026-11-11"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -1552,6 +1601,13 @@
     "heading": "## Scenario: the first required master leaf failure fences incident recovery",
     "work_item": "livespec-dev-tooling-47ij37",
     "first_seen": "2026-11-03"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: the gmktec gate lane keeps room for three default-size gate Jobs",
+    "work_item": "livespec-dev-tooling-brggiu",
+    "first_seen": "2026-11-11"
   },
   {
     "spec_root": "SPECIFICATION",

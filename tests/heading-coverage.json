@@ -3290,5 +3290,69 @@
     "test": "TODO",
     "reason": "Spec-first: a real test at the integration tier or above (`tests.consumer`, this repository's `scenario_tiers`, or an integration-marked test) is owed for this heading. It must drive the pack's pre-commit hook and pre-push gate in a synthetic repository that sets delegated_gate and delegated_pre_commit, with a stubbed gate client, and assert the scenario's pre-push evidence, gate Job submission and member-run outcomes (proposal pre-push-accepts-a-same-tree-delegated-pre-commit-pass). livespec-dev-tooling-73ocxb owns it.",
     "work_item": "livespec-dev-tooling-73ocxb"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a repository that declares gate_cpu 9 and gate_parallelism 8 gets a gate Job requesting 9 CPUs whose coverage run uses 8 xdist workers",
+    "test": "TODO",
+    "work_item": "livespec-dev-tooling-c3nd2h",
+    "reason": "A real test at the integration tier or above is owed for this heading: an integration test that drives gate_remote_request over a fixture consumer declaring gate_cpu = 9 and gate_parallelism = 8 and asserts the rendered gate Job requests 9 cpu, requests and limits 6Gi, exports LIVESPEC_TEST_PARALLELISM=8, and that the coverage run inside it starts 8 xdist workers (proposal a-consumer-declares-its-gate-job-resources, v186). livespec-dev-tooling-c3nd2h owns it."
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a repository that declares no gate resources keeps the default gate Job size",
+    "test": "TODO",
+    "work_item": "livespec-dev-tooling-c3nd2h",
+    "reason": "A real test at the integration tier or above is owed for this heading: an integration test that drives gate_remote_request over a fixture consumer declaring none of gate_cpu, gate_memory and gate_parallelism and asserts the pre-push and delegated pre-commit aggregate Jobs request 5 cpu, request and limit 6Gi and export LIVESPEC_TEST_PARALLELISM=4 (proposal a-consumer-declares-its-gate-job-resources, v186). livespec-dev-tooling-c3nd2h owns it."
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a non-positive declared gate resource is refused before any gate Job is submitted",
+    "test": "TODO",
+    "work_item": "livespec-dev-tooling-c3nd2h",
+    "reason": "A real test at the integration tier or above is owed for this heading: an integration test that pushes from a fixture consumer declaring gate_cpu = 0 on an eligible host and asserts the gate client refuses before rendering or submitting any Job, naming pyproject.toml and gate_cpu, and the push is refused (proposal a-consumer-declares-its-gate-job-resources, v186). livespec-dev-tooling-c3nd2h owns it."
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a malformed declared gate resource refuses a delegated commit instead of gating it locally",
+    "test": "TODO",
+    "work_item": "livespec-dev-tooling-c3nd2h",
+    "reason": "A real test at the integration tier or above is owed for this heading: an integration test that commits in a fixture consumer declaring delegated_pre_commit = true and gate_memory = \"6\" and asserts the gate client refuses before rendering or submitting any Job, naming pyproject.toml and gate_memory, and the commit is refused without the aggregate running on the committing host (proposal a-consumer-declares-its-gate-job-resources, v186). livespec-dev-tooling-c3nd2h owns it."
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a declared gate resource that no single gate lane can admit is refused naming the largest lane's quotas",
+    "test": "TODO",
+    "work_item": "livespec-dev-tooling-yznwz7",
+    "reason": "A real test at the integration tier or above is owed for this heading: an integration test that pushes from a fixture consumer declaring gate_cpu = 40 against a cluster-queue-gates.yaml whose largest lane is 15 cpu / 24Gi and asserts the gate client refuses before submitting any Job, naming gate_cpu, the value 40 and the largest lane's quotas (proposal a-consumer-declares-its-gate-job-resources, v186). livespec-dev-tooling-yznwz7 owns it."
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a Red-leg replay Job requests the small replay size whatever the repository declares",
+    "test": "TODO",
+    "work_item": "livespec-dev-tooling-lfkkaf",
+    "reason": "A real test at the integration tier or above is owed for this heading: an integration test that runs a Red commit's replay leg as a gate Job for a fixture consumer declaring gate_cpu = 9 and asserts the Job requests 2 cpu, requests and limits 3Gi and exports LIVESPEC_TEST_PARALLELISM=1 (proposal a-consumer-declares-its-gate-job-resources, v186). livespec-dev-tooling-lfkkaf owns it."
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a Red-leg replay Job killed for memory is an absent verdict, not a valid Red",
+    "test": "TODO",
+    "work_item": "livespec-dev-tooling-lfkkaf",
+    "reason": "A real test at the integration tier or above is owed for this heading: an integration test that feeds the committing host an OOMKilled Red-leg replay Job outcome and asserts it is read as an absent verdict, the Red leg's test runs locally, and the Red trailers come only from that local run (proposal a-consumer-declares-its-gate-job-resources, v186). livespec-dev-tooling-lfkkaf owns it."
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: the gmktec gate lane keeps room for three default-size gate Jobs",
+    "test": "TODO",
+    "work_item": "livespec-dev-tooling-brggiu",
+    "reason": "A real test at the integration tier or above is owed for this heading: an integration-tier test of the committed cluster-queue-gates.yaml that fails naming the gates-flavor lane when its nominal cpu or memory quota is below three times the renderer's default request, asserting the derivation and never a literal quota (proposal a-consumer-declares-its-gate-job-resources, v186). livespec-dev-tooling-brggiu owns it."
   }
 ]
