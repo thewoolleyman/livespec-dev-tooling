@@ -905,7 +905,8 @@ def launcher_rows(factory, tickets, factory_nodes, nodes_by_name):
 
 def wip_rows(tickets, factory_nodes, nodes_by_name, now):
     rows, quiet = [], 0
-    files = sorted(CANARY.glob("wip-act.*"))
+    # wip-act.<tenant>.lk is the launcher's lock DIRECTORY, not a reading.
+    files = sorted(p for p in CANARY.glob("wip-act.*") if p.is_file() and p.suffix != ".lk")
     if not files:
         return [unread_row("dispatcher wip_cap", f"no wip-act.* file in {CANARY}")]
     for path in files:
