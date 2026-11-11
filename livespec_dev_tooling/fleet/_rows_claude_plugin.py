@@ -14,6 +14,7 @@ other committed-file rows stay there.
 from __future__ import annotations
 
 import json
+import re
 from typing import cast
 
 from livespec_dev_tooling.config import assert_never
@@ -25,10 +26,12 @@ from livespec_dev_tooling.fleet._context import (
     RowPass,
     RowSkip,
 )
+from livespec_dev_tooling.fleet._rows_files import pinned_dev_tooling_tag
 
 __all__: list[str] = [
     "CLAUDE_SETTINGS",
     "assert_claude_plugin_currency",
+    "assert_session_start_orchestrator_hold",
 ]
 
 
@@ -38,6 +41,9 @@ _STANDARD_ENSURE_PLUGINS_COMMAND = (
     "mise exec -- uv run --no-sync python -m livespec_dev_tooling.fleet.ensure_plugins"
 )
 _WRAPPER_VERIFICATION_REQUIRED = "settings require justfile wrapper verification"
+_HOLD_RELEASE = "v1.191.0"
+_HOLD_VERSION = (1, 191, 0)
+_VERSION_TAG = re.compile(r"^v?(\d+)\.(\d+)\.(\d+)$")
 
 
 def _settings_payload(*, settings_text: str) -> dict[str, object] | None:
@@ -111,6 +117,51 @@ def _has_standard_ensure_plugins_recipe(*, justfile_text: str) -> bool:
                 body.append(stripped)
         return body == [_STANDARD_ENSURE_PLUGINS_COMMAND]
     return False
+
+
+def _version_at_least_hold(*, tag: str) -> bool:
+    """Whether a dev-tooling release tag includes the installed-build hold."""
+    matched = _VERSION_TAG.fullmatch(tag)
+    if matched is None:
+        return False
+    return tuple(int(part) for part in matched.groups()) >= _HOLD_VERSION
+
+
+def assert_session_start_orchestrator_hold(*, ctx: FleetContext, member: FleetMember) -> RowOutcome:
+    """A member's SessionStart provisioner preserves its installed orchestrator build."""
+    currency = assert_claude_plugin_currency(ctx=ctx, member=member)
+    match currency:
+        case RowFinding() | RowSkip():
+            return currency
+        case RowPass():
+            pass
+        case _:
+            assert_never(currency)
+    settings_text = ctx.file_text(repo=member.repo, path=CLAUDE_SETTINGS)
+    settings = _settings_payload(settings_text=settings_text) if settings_text is not None else None
+    if settings is None or not _has_ensure_plugins_session_start(settings=settings):
+        return RowFinding(
+            message=(
+                f"{member.repo}: cannot establish that its SessionStart plugin step keeps "
+                "the installed orchestrator build"
+            )
+        )
+    pyproject = ctx.file_text(repo=member.repo, path="pyproject.toml")
+    tag = pinned_dev_tooling_tag(pyproject_text=pyproject) if pyproject is not None else None
+    if tag is None or not _version_at_least_hold(tag=tag):
+        shown = tag if tag is not None else "<missing-or-invalid>"
+        return RowFinding(
+            message=(
+                f"{member.repo}: SessionStart plugin step would move the installed "
+                f"orchestrator build: livespec-dev-tooling pin {shown} predates {_HOLD_RELEASE}"
+            )
+        )
+    return RowPass(
+        note=(
+            f"{member.repo}: SessionStart plugin step keeps the installed orchestrator build "
+            f"through livespec-dev-tooling {tag}"
+        )
+    )
 
 
 def _claude_settings_presence_outcome(*, ctx: FleetContext, member: FleetMember) -> RowOutcome:

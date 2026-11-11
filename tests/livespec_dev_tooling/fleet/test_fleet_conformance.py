@@ -154,7 +154,7 @@ def _all_required_role_keys_block() -> str:
 
 
 _PYPROJECT = (
-    '[tool.uv.sources]\nlivespec-dev-tooling = { git = "x", tag = "v1.0.0" }\n\n'
+    '[tool.uv.sources]\nlivespec-dev-tooling = { git = "x", tag = "v1.191.0" }\n\n'
     + _all_required_role_keys_block()
 )
 # The fixture members are BEADS-BACKED with a consistent connection pair,
