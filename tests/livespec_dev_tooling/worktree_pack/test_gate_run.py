@@ -460,8 +460,10 @@ def test_gate_list_reads_run_records_with_builtins_and_limits_the_default_to_rec
     list_body = CANONICAL_GATE_RUN_BODY.split("cmd_list() {", maxsplit=1)[1].split(
         "\n}\n\nmain()", maxsplit=1
     )[0]
-    assert "derive_state_into" in list_body
-    assert 'field_into command "$dir/command" raw' in list_body
+    assert "derive_list_state_into" in list_body
+    assert "list_command_into" in list_body
+    assert "derive_state_into" not in list_body
+    assert 'field_into command "$dir/command" raw' not in list_body
     assert "$(derive_state" not in list_body
     assert "$(tr " not in list_body
     assert "ls -1" not in list_body
