@@ -1,0 +1,24 @@
+# {{ ansible_managed }}
+# Defragment the k3s server's embedded etcd (livespec-dev-tooling-qy2nzf).
+# Started only by k3s-etcd-defrag.timer. Inert unless the datastore is etcd.
+[Unit]
+Description=Defragment the k3s server's embedded etcd
+After=k3s.service
+Requisite=k3s.service
+ConditionPathExists={{ k3s_etcd_defrag_etcd_data_dir }}
+
+[Service]
+Type=oneshot
+ExecStart={{ k3s_etcd_defrag_bin }} \
+  --endpoints={{ k3s_etcd_defrag_endpoint }} \
+  --cacert={{ k3s_etcd_defrag_tls_dir }}/server-ca.crt \
+  --cert={{ k3s_etcd_defrag_tls_dir }}/client.crt \
+  --key={{ k3s_etcd_defrag_tls_dir }}/client.key \
+  --command-timeout=120s \
+  defrag
+ExecStartPost={{ k3s_etcd_defrag_bin }} \
+  --endpoints={{ k3s_etcd_defrag_endpoint }} \
+  --cacert={{ k3s_etcd_defrag_tls_dir }}/server-ca.crt \
+  --cert={{ k3s_etcd_defrag_tls_dir }}/client.crt \
+  --key={{ k3s_etcd_defrag_tls_dir }}/client.key \
+  endpoint status --write-out=table

@@ -1,0 +1,40 @@
+---
+# k3s_etcd_defrag — a pinned etcdctl and a timer that defragments the k3s
+# server's embedded etcd (plan k3s-embedded-etcd-datastore, livespec-dev-tooling-qy2nzf).
+#
+# WHY A HOST etcdctl. k3s v1.36.2+k3s1 embeds etcd but ships no etcdctl, and it
+# defragments only at server start. etcd's API-server compaction (every 5 min,
+# ../../../ci-runner/k3s/phase2/k3s-config/config.yaml) frees revisions but not
+# space; on a tmpfs that space is RAM, and the backend quota counts it. A
+# periodic `etcdctl defrag` reclaims it.
+#
+# THE PIN IS THE SERVER'S OWN etcd. Read 2026-11-11 from the live server binary
+# (/var/lib/rancher/k3s/data/current/bin/k3s, `go version -m`):
+# go.etcd.io/etcd/server/v3 v3.6.12. The sha256 is the one the v3.6.12 release's
+# SHA256SUMS states for the linux-amd64 tarball. Raise the three together when
+# k3s moves to another etcd minor.
+k3s_etcd_defrag_etcd_version: "3.6.12"
+k3s_etcd_defrag_arch: amd64
+k3s_etcd_defrag_host_architecture: x86_64
+k3s_etcd_defrag_tarball_sha256: d2564bb50b58e52fbaf3bde4a9561a1d04e20cdc761f795580e4d615d5d41355
+k3s_etcd_defrag_release_dir: "etcd-v{{ k3s_etcd_defrag_etcd_version }}-linux-{{ k3s_etcd_defrag_arch }}"
+k3s_etcd_defrag_tarball: "{{ k3s_etcd_defrag_release_dir }}.tar.gz"
+k3s_etcd_defrag_tarball_url: >-
+  https://github.com/etcd-io/etcd/releases/download/v{{ k3s_etcd_defrag_etcd_version }}/{{ k3s_etcd_defrag_tarball }}
+# A committed path rather than a tempfile, so a check run resolves it. Removed
+# again after the binary is installed.
+k3s_etcd_defrag_download_dir: /var/cache/k3s-etcd-defrag
+k3s_etcd_defrag_bin: /usr/local/bin/etcdctl
+
+# The k3s server's etcd client endpoint and certificates.
+k3s_etcd_defrag_endpoint: https://127.0.0.1:2379
+k3s_etcd_defrag_tls_dir: /var/lib/rancher/k3s/server/tls/etcd
+# The service runs only when the datastore IS etcd, so the timer is inert on a
+# server still on kine and after a rollback to SQLite.
+k3s_etcd_defrag_etcd_data_dir: /var/lib/rancher/k3s/server/db/etcd
+
+k3s_etcd_defrag_unit_dir: /etc/systemd/system
+k3s_etcd_defrag_unit: k3s-etcd-defrag
+# Daily at a quiet hour, with a spread so it never lands on the minute.
+k3s_etcd_defrag_on_calendar: "*-*-* 04:20:00 UTC"
+k3s_etcd_defrag_randomized_delay: 15min

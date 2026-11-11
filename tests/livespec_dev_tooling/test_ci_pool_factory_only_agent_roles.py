@@ -189,6 +189,9 @@ _POWEREDGE_ROLES = (
     # resolves the install, the consent gate and that credential.
     "factory_reach_check",
     "datastore_tmpfs",
+    # The pinned etcdctl and the daily defragmentation timer for the server's
+    # embedded etcd (livespec-dev-tooling-qy2nzf). Server-only.
+    "k3s_etcd_defrag",
     "storage_sweep",
     # The five node-local timers two hand-run installers used to carry
     # (livespec-dev-tooling-xcscdz). Server-only, and LAST: arming the prune's

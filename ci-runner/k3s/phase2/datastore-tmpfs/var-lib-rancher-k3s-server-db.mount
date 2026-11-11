@@ -35,21 +35,30 @@
 #     datastore into a live cluster would be actively harmful.
 #   - size= is a ceiling, not a reservation — tmpfs consumes RAM only as
 #     written. mode=0700 preserves the on-disk directory's root-only perms.
-#     noexec/nosuid/nodev: a SQLite directory needs none of them.
+#     noexec/nosuid/nodev: a datastore directory needs none of them.
+#   - size=6G since the move to embedded etcd (plan k3s-embedded-etcd-datastore,
+#     livespec-dev-tooling-qy2nzf). It holds the 2 GiB etcd backend quota
+#     (../k3s-config/config.yaml), a full defragmentation copy beside it, and
+#     the WAL. poweredge-xubuntu has 377 GB of RAM.
+#   - A CHANGED size is applied to the MOUNTED tmpfs by the datastore_tmpfs
+#     role with `mount -o remount,size=<new>`, which keeps the contents. It
+#     must never be applied by stopping or restarting this unit: that unmounts
+#     the tmpfs, empties the datastore, and (RequiresMountsFor= in the k3s
+#     drop-in) stops k3s with it.
 #
 # INSTALL with install-datastore-tmpfs.sh, which ENABLES for next boot and
 # NEVER starts this live — starting it under a RUNNING k3s would hide its
 # datastore mid-flight. Activation is a boot, or a deliberate cutover with
 # k3s stopped.
 [Unit]
-Description=tmpfs for the k3s kine/SQLite datastore (volatile; cluster reconstructed on boot)
+Description=tmpfs for the k3s datastore (volatile; cluster reconstructed on boot)
 Before=k3s.service
 
 [Mount]
 What=tmpfs
 Where=/var/lib/rancher/k3s/server/db
 Type=tmpfs
-Options=size=2G,mode=0700,noexec,nosuid,nodev
+Options=size=6G,mode=0700,noexec,nosuid,nodev
 
 [Install]
 WantedBy=multi-user.target

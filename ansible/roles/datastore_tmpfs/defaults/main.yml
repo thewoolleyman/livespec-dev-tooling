@@ -9,3 +9,10 @@ datastore_tmpfs_dropin_name: 20-requires-datastore-mount.conf
 datastore_tmpfs_required_units:
   - inject-github-app-secret.service
   - converge-ci-stack.service
+# The datastore's mount point and the size the committed mount unit declares.
+# The size is read from the unit file itself, so the remount below can never
+# apply a size the unit does not state.
+datastore_tmpfs_mount_point: /var/lib/rancher/k3s/server/db
+datastore_tmpfs_size: >-
+  {{ lookup('ansible.builtin.file', datastore_tmpfs_phase2_dir ~ '/datastore-tmpfs/' ~ datastore_tmpfs_mount_unit)
+     | regex_findall('^Options=size=([0-9]+[KMGT]?),', multiline=True) | first }}
