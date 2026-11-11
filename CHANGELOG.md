@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.196.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.195.0...v1.196.0) (2026-11-11)
+
+
+### Features
+
+* a push of a tree whose delegated pre-commit aggregate passed submits no gate Job (livespec-dev-tooling-73ocxb) ([b39ea81](https://github.com/thewoolleyman/livespec-dev-tooling/commit/b39ea818a31031a8d0c16ad25cb0869bf1f130f7))
+
 ## [1.195.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.194.0...v1.195.0) (2026-11-11)
 
 
