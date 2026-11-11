@@ -1080,8 +1080,9 @@ check-no-shadow-ledger-body-typechecks:
 # (epic li-cvaudit, cvtodo). The heading-coverage.json TODO scan ALWAYS
 # runs; `LIVESPEC_FAIL_IF_HEADING_COVERAGE_TODOS_EXIST` unset → TODO
 # offenders warn + exit 0 (authoring placeholders surface without
-# blocking per-commit `just check`); set (CI sets it to `true`) → they
-# fail. Replaces the prior LIVESPEC_RELEASE_GATE skip carve-out, which
+# blocking per-commit `just check`); set → they fail. The lever arms the
+# release tier wherever a consumer's release workflow sets it to `true`;
+# this repository's own workflows do not set it. Replaces the prior LIVESPEC_RELEASE_GATE skip carve-out, which
 # silently skipped the scan entirely when the gate was unset.
 check-no-todo-registry:
     uv run python -m livespec_dev_tooling.checks.no_todo_registry
