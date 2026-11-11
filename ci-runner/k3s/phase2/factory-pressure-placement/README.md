@@ -36,12 +36,23 @@ The reconciler runs only on the server, under the admin kubeconfig.
 
 On each 30 s cycle the reconciler works through these steps:
 
-1. **Unknown readings.** A factory node whose `LivespecCPUPressure` heartbeat is
-   older than 90 s (or is absent) is UNKNOWN. Any unknown reading removes the
-   taint from every factory node.
-2. **Fit of the lowest-pressure node:**
+1. **Scope.** Only the factory nodes the steered sandbox pods can schedule on
+   are compared. A node that carries a `NoSchedule`/`NoExecute` taint the pods
+   do not tolerate (`FACTORY_PRESSURE_TOLERATED_TAINTS`, default
+   `node-role/ci=factory`), or whose `kubernetes.io/arch` is not
+   `FACTORY_PRESSURE_ARCH` (default `amd64`), is OUT OF SCOPE: its reading is
+   neither required nor compared, it is never tainted, and each `DECISION` line
+   names it under `out-of-scope[...]`. The M4 homelab worker is the case: arm64,
+   with a `homelab-worker.livespec.dev/class` NoSchedule taint and no publisher.
+   Before this rule its unknown reading made every cycle from
+   2026-11-09T19:55:58Z `reading-unknown` and switched steering off fleet-wide
+   (orchestrator `bd-ib-nmuyjc`).
+2. **Unknown readings.** An in-scope factory node whose `LivespecCPUPressure`
+   heartbeat is older than 90 s (or is absent) is UNKNOWN. Any unknown in-scope
+   reading removes the taint from every factory node.
+3. **Fit of the lowest-pressure node:**
    `fit = allocatable cpu - requested cpu (Pending/Running pods) - gates_reserve`.
-3. **The gates reserve.** `gates_reserve` is `gates-cq`'s cpu `nominalQuota` for
+4. **The gates reserve.** `gates_reserve` is `gates-cq`'s cpu `nominalQuota` for
    the flavor whose `ResourceFlavor.spec.nodeLabels` select that node (mapped
    by labels, never by flavor name), minus the cpu its Pending/Running gate pods
    (namespace `gates`, label `app.kubernetes.io/part-of=livespec-ci-gates`)
@@ -56,7 +67,7 @@ On each 30 s cycle the reconciler works through these steps:
    `topologyName` keeps the uncapped unused quota. The cap was agreed with
    dev-host-test-gate-load (cikd6m). Each cycle logs a `RESERVE` line naming
    the branch it took: `capped-topology` or `uncapped`.
-4. **Taint.** If the lowest node fits one more sandbox, every node at least
+5. **Taint.** If the lowest node fits one more sandbox, every node at least
    `FACTORY_PRESSURE_GAP` points above the lowest gets the taint. The script
    defaults to 20; the committed unit sets 10 (2026-11-07), because at 20 the
    taint flapped on gmktec while it ran at avg60 15-30 against an idle poweredge.
@@ -64,7 +75,7 @@ On each 30 s cycle the reconciler works through these steps:
    `FACTORY_PRESSURE_RELEASE_GAP` (defaults to the gap; the committed unit sets 5),
    so the taint does not flap around a single threshold. Otherwise the taint comes off everywhere, and placement falls
    back to the sandbox pods' own hostname spread.
-5. **Quota fail-safe ladder.** Every successful `gates-cq` read is cached in
+6. **Quota fail-safe ladder.** Every successful `gates-cq` read is cached in
    `/var/lib/livespec/factory-pressure-placement/gates-quota.json`. If a read
    fails, the cached FULL nominal quota is reserved. If no read has ever
    succeeded, no taint is applied.

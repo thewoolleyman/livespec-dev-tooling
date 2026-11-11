@@ -524,3 +524,89 @@ def _reconcile_with_env(
     )
     log = (fake / "argv.log").read_text(encoding="utf-8").splitlines()
     return run, [line for line in log if not line.startswith("get ")]
+
+
+_M4 = "macbook-m4-max-homelab-worker"
+
+
+def _unreachable(node: _Json, *, taint: _Json | None = None, arch: str | None = None) -> _Json:
+    if taint is not None:
+        node["spec"]["taints"] = [*node["spec"]["taints"], taint]
+    if arch is not None:
+        node["metadata"]["labels"]["kubernetes.io/arch"] = arch
+    return node
+
+
+_WORKER_CLASS = {
+    "key": "homelab-worker.livespec.dev/class",
+    "value": "worker",
+    "effect": "NoSchedule",
+}
+
+
+def test_a_factory_node_the_sandbox_pods_cannot_schedule_on_does_not_stop_the_steer(
+    tmp_path: Path,
+) -> None:
+    # The 2026-11-09 regression: the M4 homelab worker joined ci-runner.io/factory=true
+    # with no pressure publisher. Its NoSchedule class taint keeps every amd64
+    # sandbox pod off it, yet its unknown reading cleared the taint fleet-wide.
+    run, mutations = _reconcile(
+        tmp_path,
+        nodes=[
+            _node(_PE, avg60=45.0, alloc="72"),
+            _node(_GMK, avg60=8.0),
+            _unreachable(_node(_M4, avg60=None), taint=_WORKER_CLASS, arch="arm64"),
+        ],
+        pods=[],
+    )
+    assert run.returncode == 0, run.stderr
+    assert f"taint nodes {_PE} {_TAINT_KEY}=high:PreferNoSchedule --overwrite" in mutations
+    assert "reading-unknown" not in run.stdout
+    assert f"out-of-scope[{_M4}:untolerated-taint:homelab-worker.livespec.dev/class]" in run.stdout
+
+
+def test_a_factory_node_of_another_architecture_is_out_of_scope(tmp_path: Path) -> None:
+    run, mutations = _reconcile(
+        tmp_path,
+        nodes=[
+            _node(_PE, avg60=45.0, alloc="72"),
+            _node(_GMK, avg60=8.0),
+            _unreachable(_node(_M4, avg60=None), arch="arm64"),
+        ],
+        pods=[],
+    )
+    assert run.returncode == 0, run.stderr
+    assert f"taint nodes {_PE} {_TAINT_KEY}=high:PreferNoSchedule --overwrite" in mutations
+    assert f"out-of-scope[{_M4}:arch:arm64]" in run.stdout
+
+
+def test_a_tolerated_or_soft_taint_keeps_a_node_in_scope(tmp_path: Path) -> None:
+    # node-role/ci=factory is tolerated by the sandbox pods and a PreferNoSchedule
+    # taint never filters, so neither takes a node out: its unknown reading still
+    # clears the taint everywhere.
+    run, mutations = _reconcile(
+        tmp_path,
+        nodes=[
+            _node(_PE, avg60=45.0, alloc="72", tainted=True),
+            _unreachable(
+                _node(_GMK, avg60=None),
+                taint={"key": "node-role/ci", "value": "factory", "effect": "NoSchedule"},
+            ),
+        ],
+        pods=[],
+    )
+    assert run.returncode == 0, run.stderr
+    assert f"reading-unknown:{_GMK}" in run.stdout
+    assert mutations == [f"taint nodes {_PE} {_TAINT_KEY}:PreferNoSchedule-"], mutations
+
+
+def test_an_out_of_scope_node_is_never_left_tainted(tmp_path: Path) -> None:
+    m4 = _unreachable(_node(_M4, avg60=60.0, tainted=True), taint=_WORKER_CLASS)
+    run, mutations = _reconcile(
+        tmp_path,
+        nodes=[_node(_PE, avg60=45.0, alloc="72"), _node(_GMK, avg60=8.0), m4],
+        pods=[],
+    )
+    assert run.returncode == 0, run.stderr
+    assert f"taint nodes {_M4} {_TAINT_KEY}:PreferNoSchedule-" in mutations
+    assert not any(m.startswith(f"taint nodes {_M4} {_TAINT_KEY}=high") for m in mutations)

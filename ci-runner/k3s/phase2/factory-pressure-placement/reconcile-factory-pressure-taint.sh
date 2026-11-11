@@ -9,6 +9,15 @@
 #      `LivespecCPUPressure` condition, which each node publishes about itself
 #      (publish-node-cpu-pressure.sh). A heartbeat older than
 #      FACTORY_PRESSURE_STALE_SECONDS, or no condition at all, is UNKNOWN.
+#      ONLY nodes the steered sandbox pods can schedule on are compared. A node
+#      whose kubernetes.io/arch is not FACTORY_PRESSURE_ARCH, or that carries a
+#      NoSchedule/NoExecute taint the pods do not tolerate
+#      (FACTORY_PRESSURE_TOLERATED_TAINTS, `key` or `key=value`, comma-separated),
+#      is OUT OF SCOPE: its reading is neither required nor compared, it is never
+#      tainted, and the DECISION line names it. Without this, the M4 homelab
+#      worker (arm64, NoSchedule class taint, no publisher) made every cycle
+#      `reading-unknown` from 2026-11-09T19:55:58Z and switched steering off for
+#      the whole fleet (orchestrator bd-ib-nmuyjc).
 #   2. Finds the lowest-pressure node and asks whether it fits one more sandbox:
 #        fit = allocatable cpu - requested cpu (Pending/Running pods)
 #              - gates_reserve
@@ -100,6 +109,9 @@ release = float(os.environ["FACTORY_PRESSURE_RELEASE_GAP"])
 need = int(os.environ["FACTORY_PRESSURE_SANDBOX_MILLICPU"])
 reserve_cap = int(os.environ["FACTORY_PRESSURE_GATES_RESERVE_CAP_MILLICPU"])
 stale = int(os.environ["FACTORY_PRESSURE_STALE_SECONDS"])
+arch = os.environ.get("FACTORY_PRESSURE_ARCH", "amd64")
+tolerated = [t.strip() for t in os.environ.get(
+    "FACTORY_PRESSURE_TOLERATED_TAINTS", "node-role/ci=factory").split(",") if t.strip()]
 now = int(os.environ["FACTORY_PRESSURE_NOW"])
 quota_ok = os.environ["FACTORY_PRESSURE_QUOTA_OK"] == "1"
 TAINT_KEY = "livespec.io/factory-pressure"
@@ -127,7 +139,28 @@ def pod_cpu(pod):
     return max(main, init)
 
 
-nodes = load("nodes.json")["items"]
+all_nodes = load("nodes.json")["items"]
+
+
+def tolerates(taint):
+    key, value = taint.get("key", ""), taint.get("value", "")
+    return any(t == key or t == f"{key}={value}" for t in tolerated)
+
+
+def out_of_scope(n):
+    """Why the steered sandbox pods can never land on this node, or None."""
+    for t in (n.get("spec", {}).get("taints") or []):
+        if t.get("effect") in ("NoSchedule", "NoExecute") and not tolerates(t):
+            return f"untolerated-taint:{t.get('key', '')}"
+    node_arch = n["metadata"].get("labels", {}).get("kubernetes.io/arch")
+    if node_arch and node_arch != arch:
+        return f"arch:{node_arch}"
+    return None
+
+
+excluded = {n["metadata"]["name"]: out_of_scope(n) for n in all_nodes}
+excluded = {k: v for k, v in excluded.items() if v}
+nodes = [n for n in all_nodes if n["metadata"]["name"] not in excluded]
 pods = [p for p in load("pods.json")["items"]
         if p.get("status", {}).get("phase") in ("Pending", "Running")]
 
@@ -222,7 +255,7 @@ def fit(node):
     return alloc - requested - gates_reserve(node)
 
 
-tainted_now = {n["metadata"]["name"] for n in nodes
+tainted_now = {n["metadata"]["name"] for n in all_nodes
                if any(t.get("key") == TAINT_KEY for t in (n.get("spec", {}).get("taints") or []))}
 want = set()
 reason = ""
@@ -247,6 +280,8 @@ else:
         reason = f"steer-to:{low}:fit={fit_low}m"
 
 summary = " ".join(f"{k}={'unknown' if v is None else v}" for k, v in sorted(readings.items()))
+if excluded:
+    summary += " out-of-scope[" + " ".join(f"{k}:{v}" for k, v in sorted(excluded.items())) + "]"
 for line in reserve_log:
     print(line)
 print(f"DECISION {reason} readings[{summary}] quota={quota_source} taint={','.join(sorted(want)) or 'none'}")
