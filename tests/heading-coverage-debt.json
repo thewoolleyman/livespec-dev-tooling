@@ -409,7 +409,7 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a declared gate resource that no single gate lane can admit is refused naming the largest lane's quotas",
-    "work_item": "livespec-dev-tooling-yznwz7",
+    "work_item": "livespec-dev-tooling-jgabjo",
     "first_seen": "2026-11-11"
   },
   {
@@ -892,7 +892,7 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a repository that declares no gate cpu or memory is not refused over an unreadable gates queue file",
-    "work_item": "livespec-dev-tooling-yznwz7",
+    "work_item": "livespec-dev-tooling-jgabjo",
     "first_seen": "2026-11-11"
   },
   {
@@ -1083,6 +1083,13 @@
     "heading": "## Scenario: a stalled suite-green run names the tests that were still running",
     "work_item": "livespec-dev-tooling-h2i4u2",
     "first_seen": "2026-11-08"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a stopped push gate ends without pushing and reads STOPPED",
+    "work_item": "livespec-dev-tooling-kjwanx",
+    "first_seen": "2026-11-11"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -1531,6 +1538,13 @@
     "heading": "## Scenario: runner pods select the committed runner scheduler profile and every other pod keeps the default profile",
     "work_item": "livespec-dev-tooling-mtvxde",
     "first_seen": "2026-11-04"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: stopping a delegated gate ends its gate Job",
+    "work_item": "livespec-dev-tooling-kjwanx",
+    "first_seen": "2026-11-11"
   },
   {
     "spec_root": "SPECIFICATION",

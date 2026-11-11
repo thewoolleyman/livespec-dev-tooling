@@ -3366,16 +3366,16 @@
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a declared gate resource that no single gate lane can admit is refused naming the largest lane's quotas",
     "test": "TODO",
-    "work_item": "livespec-dev-tooling-yznwz7",
-    "reason": "A real test at the integration tier or above is owed for this heading: an integration test that pushes from a fixture consumer declaring gate_cpu one more than the largest nominal CPU quota committed in cluster-queue-gates.yaml, read from that file rather than stated as a literal, and asserts the gate client refuses before submitting any Job, naming gate_cpu, the declared value and the largest lane's name and quotas as committed (proposal gate-resources-lane-capacity-follow-ups, v192). livespec-dev-tooling-yznwz7 owns it."
+    "work_item": "livespec-dev-tooling-jgabjo",
+    "reason": "A real test at the integration tier or above is owed for this heading: an integration test that pushes from a fixture consumer declaring gate_cpu one more than the largest nominal CPU quota committed in cluster-queue-gates.yaml, read from that file rather than stated as a literal, and asserts the gate client refuses before submitting any Job, naming gate_cpu, the declared value and the largest lane's name and quotas as committed (proposal gate-resources-lane-capacity-follow-ups, v192). livespec-dev-tooling-jgabjo owns it."
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a repository that declares no gate cpu or memory is not refused over an unreadable gates queue file",
     "test": "TODO",
-    "work_item": "livespec-dev-tooling-yznwz7",
-    "reason": "A real test at the integration tier or above is owed for this heading: an integration test that pushes from a fixture consumer declaring neither gate_cpu nor gate_memory with cluster-queue-gates.yaml absent, then unparseable, and asserts the gate client does not refuse over that file and submits the pre-push gate Job at the renderer's default size (proposal gate-resources-lane-capacity-follow-ups, v192). livespec-dev-tooling-yznwz7 owns it."
+    "work_item": "livespec-dev-tooling-jgabjo",
+    "reason": "A real test at the integration tier or above is owed for this heading: an integration test that pushes from a fixture consumer declaring neither gate_cpu nor gate_memory with cluster-queue-gates.yaml absent, then unparseable, and asserts the gate client does not refuse over that file and submits the pre-push gate Job at the renderer's default size (proposal gate-resources-lane-capacity-follow-ups, v192). livespec-dev-tooling-jgabjo owns it."
   },
   {
     "spec_root": "SPECIFICATION",
@@ -3439,5 +3439,21 @@
     "test": "TODO",
     "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, exercising `green_token pre-push-reuse` with a consumer's check-set member names (exit 0 on a reused verdict whose members pass, exit 1 naming a failing member, exit 3 when no run qualifies); livespec-dev-tooling-yud7rc owns it.",
     "work_item": "livespec-dev-tooling-yud7rc"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a stopped push gate ends without pushing and reads STOPPED",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier (static `pytest.mark.integration`, driving the shipped `gate-run.sh` through real `bash` and `git` subprocesses beside the other detached gate scenarios in `tests.livespec_dev_tooling.worktree_pack.test_gate_run`) is owed for this scenario: a `gate-start -- git push` whose pre-push hook runs a gate client in its own session is stopped with `gate-stop`, the remote never receives the branch, and `gate-status` prints `STOPPED` and exits 75. The shipped runner has no `gate-stop` verb; livespec-dev-tooling-kjwanx owns the change and this test.",
+    "work_item": "livespec-dev-tooling-kjwanx"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: stopping a delegated gate ends its gate Job",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier (static `pytest.mark.integration`, driving the shipped `gate-run.sh` with a delegated gate client whose cluster side is faked at the client's Job-cleanup seam) is owed for this scenario: `gate-stop` on a RUNNING delegated run exits 0 only after the gate Job has ended, and `gate-wait` then prints `STOPPED` and exits 75. The shipped runner has no `gate-stop` verb; livespec-dev-tooling-kjwanx owns the change and this test.",
+    "work_item": "livespec-dev-tooling-kjwanx"
   }
 ]
