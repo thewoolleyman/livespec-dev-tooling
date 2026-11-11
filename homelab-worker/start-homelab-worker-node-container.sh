@@ -141,6 +141,7 @@ WORKER_VM_MEMORY_GIB=""
 WORKER_VM_DISK_GIB=""
 WORKER_DATA_DISK_GIB=""
 WORKER_LAN_ADDRESS=""
+WORKER_LAN_INTERFACE=""
 # shellcheck disable=SC1090  # the declared host's data file
 . "$hosts_dir/$host.env"
 for key in WORKER_HOST_OS WORKER_VM_CPUS WORKER_VM_MEMORY_GIB WORKER_VM_DISK_GIB WORKER_DATA_DISK_GIB; do
@@ -155,6 +156,13 @@ case "$WORKER_LAN_ADDRESS" in
   *) die "homelab-worker/hosts/$host.env declares WORKER_LAN_ADDRESS=$WORKER_LAN_ADDRESS, which is not an IPv4 address/prefix" ;;
 esac
 lan_ip="${WORKER_LAN_ADDRESS%/*}"
+# Optional: the host's LAN interface that Lima's bridged network must use
+# (e.g. a wired adapter rather than Wi-Fi). Checked below with the other
+# bridged-network prerequisites; never written by this task.
+case "$WORKER_LAN_INTERFACE" in
+  "" | [a-z]*[0-9]) ;;
+  *) die "homelab-worker/hosts/$host.env declares WORKER_LAN_INTERFACE=$WORKER_LAN_INTERFACE, which is not a network interface name (for example en7)" ;;
+esac
 
 worker="$host-homelab-worker"
 data_disk="hwdata"
@@ -218,6 +226,20 @@ missing=""
 limactl sudoers --check >/dev/null 2>&1 ||
   missing="$missing
   limactl sudoers --check fails: write the sudoers entry with 'limactl sudoers | sudo tee /etc/sudoers.d/lima' as a documented host change"
+if [ -n "$WORKER_LAN_INTERFACE" ]; then
+  lima_networks="${LIMA_HOME:-$HOME/.lima}/_config/networks.yaml"
+  bridged_iface=""
+  if [ -f "$lima_networks" ]; then
+    bridged_iface="$(awk '
+      /^[[:space:]]*bridged:[[:space:]]*$/ { in_bridged = 1; next }
+      in_bridged && /^[[:space:]]*[a-zA-Z0-9_-]+:[[:space:]]*$/ { in_bridged = 0 }
+      in_bridged && /^[[:space:]]*interface:/ { sub(/^[[:space:]]*interface:[[:space:]]*/, ""); gsub(/["[:space:]]/, ""); print; exit }
+    ' "$lima_networks")"
+  fi
+  [ "$bridged_iface" = "$WORKER_LAN_INTERFACE" ] ||
+    missing="$missing
+  Lima's bridged network uses interface '${bridged_iface:-<none>}' in $lima_networks, but homelab-worker/hosts/$host.env declares WORKER_LAN_INTERFACE=$WORKER_LAN_INTERFACE: set the bridged entry's interface to $WORKER_LAN_INTERFACE, then regenerate the sudoers entry with 'limactl sudoers > lima.sudoers && sudo install -o root -g wheel -m 0444 lima.sudoers /etc/sudoers.d/lima', as a documented host change"
+fi
 [ -z "$missing" ] || die "the bridged network's host prerequisites are missing; the VM was not created or started:$missing"
 
 instances="$(limactl list --format '{{.Name}}' 2>/dev/null || true)"
