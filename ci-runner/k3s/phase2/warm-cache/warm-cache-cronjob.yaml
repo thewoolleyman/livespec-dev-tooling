@@ -337,6 +337,7 @@ spec:
                 # the same path it mounts read-write; counted, never written.
                 path: /var/cache/ci-runner/pypi-proxy
                 type: DirectoryOrCreate
+---
 # The carrier CronJob above owns the PyPI files store, cargo pre-warm, sccache and
 # target-generation writes.  This DaemonSet is deliberately narrower: every
 # non-carrier node that can provision a ci-workvols volume gets exactly one
