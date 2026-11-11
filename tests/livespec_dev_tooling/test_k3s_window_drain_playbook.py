@@ -12,7 +12,9 @@ Jinja is importable here):
   overwrites an existing record (a re-run must not record the paused 0);
 - restore-arc restores the recorded value exactly, drops the record, and refuses
   when nothing was recorded;
-- the node actions are exactly cordon and uncordon of a named pool node;
+- the node actions are exactly cordon and uncordon of a named node: a pool host,
+  or any Node registered in the cluster, read on the server, with an
+  unregistered name refused (the generic hold/lift for any k3s node);
 - nothing evicts, drains or deletes a pod.
 """
 
@@ -86,11 +88,37 @@ def test_restore_writes_the_recorded_value_drops_the_record_and_refuses_when_non
 def test_the_node_actions_are_cordon_and_uncordon_of_a_named_pool_node() -> None:
     assert "k3s_window_node_actions: [cordon, uncordon]" in _text()
     assert "k3s_window_node | default('') in groups['ci_pool']" in _text()
-    refuse = _task(name="Refuse a node action that does not name a pool node")
+    refuse = _task(
+        name="Refuse a node action that does not name a pool node or a registered cluster node"
+    )
     assert "ansible.builtin.fail:" in refuse
     node = _task(name="Cordon or uncordon the confirmed node")
     assert '- "{{ k3s_window_action }}"' in node
     assert "k3s_window_action in k3s_window_node_actions" in node
+
+
+def test_a_node_outside_the_pool_inventory_is_held_when_the_cluster_registers_it() -> None:
+    assert "{{ (k3s_window_node_read.rc | default(1)) == 0 }}" in _text()
+    read = _task(name="Read whether the named node is registered in the cluster")
+    for word in ("- kubectl", "- get", "- node", '- "{{ k3s_window_node }}"'):
+        assert word in read, word
+    assert "register: k3s_window_node_read" in read
+    assert "changed_when: false" in read
+    assert "failed_when: false" in read
+    assert "not (k3s_window_node_known | bool)" in read
+    refuse = _task(
+        name="Refuse a node action that does not name a pool node or a registered cluster node"
+    )
+    assert "not (k3s_window_node_known | bool)" in refuse
+    assert "not (k3s_window_node_registered | bool)" in refuse
+    assert _text().index("- name: Read whether the named node") < _text().index(
+        "- name: Refuse a node action"
+    )
+
+
+def test_holding_an_already_held_node_changes_nothing() -> None:
+    node = _task(name="Cordon or uncordon the confirmed node")
+    assert "changed_when: \"'already' not in k3s_window_node_change.stdout\"" in node
 
 
 def test_nothing_evicts_drains_or_deletes_a_pod() -> None:
