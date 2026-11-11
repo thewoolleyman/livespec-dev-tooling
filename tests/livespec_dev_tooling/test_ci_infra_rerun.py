@@ -41,6 +41,7 @@ _FIXTURES = Path(__file__).resolve().parents[1] / "fixtures"
 _REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 _RECORDED_429_LOG = (_FIXTURES / "ci_infra_rerun" / "setup-job-429.log").read_text(encoding="utf-8")
 _SETUP = "Set up job"
+_INITIALIZE_CONTAINERS = "Initialize containers"
 _NOT_FOUND_LINE = (
     "2026-11-03T13:40:01.0000000Z ##[error]An action could not be found at the URI "
     "'https://api.github.com/repos/actions/checkout/tarball/11d5960a'"
@@ -49,13 +50,21 @@ _PLAIN_SETUP_FAILURE = "2026-11-03T13:40:01.0000000Z ##[error]Runner disk is ful
 
 
 def _job(
-    *, attempt: int, job_id: int, name: str, failed_step: str | None, conclusion: str = "failure"
+    *,
+    attempt: int,
+    job_id: int,
+    name: str,
+    failed_step: str | None,
+    conclusion: str = "failure",
+    later_step_started: bool = False,
 ) -> dict[str, object]:
     steps: list[dict[str, object]] = [{"name": _SETUP, "conclusion": "success"}]
     if failed_step == _SETUP:
         steps = [{"name": _SETUP, "conclusion": "failure"}]
     elif failed_step is not None:
         steps.append({"name": failed_step, "conclusion": "failure"})
+    if later_step_started:
+        steps.append({"name": "just check", "conclusion": "success"})
     return {
         "attempt": attempt,
         "id": job_id,
@@ -153,6 +162,72 @@ def test_an_action_not_found_at_set_up_job_is_rerun() -> None:
 
     assert [r.signature for r in plan.reruns] == ["action-not-found"]
     assert plan.reruns[0].matched_line == _NOT_FOUND_LINE
+
+
+def test_initialize_containers_registry_network_failures_rerun_once_before_any_later_step() -> None:
+    """Scenario: registry network failures before a job starts are re-run only once."""
+    logs = {
+        101: "##[error]pkg-containers.githubusercontent.com: connection reset by peer\n",
+        102: "##[error]pulling ghcr.io/example/image: i/o timeout\n",
+        103: "##[error]pulling ghcr.io/example/image: TLS handshake timeout\n",
+        104: "##[error]Head https://ghcr.io/v2/example: 503 Service Unavailable\n",
+        105: "##[error]pkg-containers.githubusercontent.com: connection reset by peer\n",
+        106: "##[error]Pod workflow-123 is unhealthy with phase status Failed\n",
+        107: "##[error]pkg-containers.githubusercontent.com: connection reset by peer\n",
+    }
+    first_attempt = [
+        _job(attempt=1, job_id=job_id, name=f"check-{job_id}", failed_step=_INITIALIZE_CONTAINERS)
+        for job_id in (101, 102, 103, 104)
+    ]
+    first_attempt.extend(
+        [
+            _job(
+                attempt=1,
+                job_id=105,
+                name="started-later",
+                failed_step=_INITIALIZE_CONTAINERS,
+                later_step_started=True,
+            ),
+            _job(
+                attempt=1,
+                job_id=106,
+                name="unhealthy-pod",
+                failed_step=_INITIALIZE_CONTAINERS,
+            ),
+        ]
+    )
+    jobs = parse_jobs(payload=first_attempt)
+    assert jobs is not None
+
+    first_plan = plan_reruns(jobs=jobs, run_attempt=1, logs=logs)
+
+    assert [(rerun.job_id, rerun.signature, rerun.max_attempts) for rerun in first_plan.reruns] == [
+        (101, "registry-connection-reset", 1),
+        (102, "registry-io-timeout", 1),
+        (103, "registry-tls-handshake-timeout", 1),
+        (104, "registry-5xx", 1),
+    ]
+    assert all(rerun.wait_seconds <= 300 for rerun in first_plan.reruns)
+    assert [left.name for left in first_plan.left] == ["started-later", "unhealthy-pod"]
+
+    next_jobs = parse_jobs(
+        payload=[
+            *first_attempt,
+            _job(
+                attempt=2,
+                job_id=107,
+                name="check-101",
+                failed_step=_INITIALIZE_CONTAINERS,
+            ),
+        ]
+    )
+    assert next_jobs is not None
+
+    retry_plan = plan_reruns(jobs=next_jobs, run_attempt=2, logs=logs)
+
+    assert retry_plan.reruns == ()
+    assert retry_plan.left[0].name == "check-101"
+    assert "already re-run 1 times" in retry_plan.left[0].reason
 
 
 def test_a_setup_job_failure_without_the_signature_or_its_log_is_left() -> None:
