@@ -504,6 +504,17 @@ although its Definition of Done required one. Also that day: gvylzw closed throu
 13:01:55Z on 2026-11-04 in a batch of ten, with 0 assertions graded (as measured by expedited-incident-response-flag's
 seat). The 19:30Z handoff's audit found eight of the ten gapped or partly wired, and two wired but never run live.
 
+**A PR sent for grade opens as a draft (coordinator's reading).** In every fleet repository that carries
+`.github/workflows/auto-enable-merge.yml` (at least livespec-dev-tooling, livespec, livespec-orchestrator-beads-fabro,
+livespec-overseer and livespec-driver-codex), that workflow arms auto-merge on every ready pull request from an
+allowlisted author, which includes any agent pushing with the maintainer's PAT. So a ready PR merges on green whether
+or not its grade has come back, and leaving `gh pr merge --auto` unrun holds nothing. A seat therefore opens
+every PR it sends for grade with `gh pr create --draft`, and runs `gh pr ready` only on the coordinator's PASS. Measured
+2026-11-11: C1 livespec-dev-tooling#4148 (livespec-dev-tooling-c3nd2h) was opened ready and reported as "auto-merge not
+armed". It merged at 10:31:04Z, before the fix its PASS-WITH-ONE-FIX grade required, so the fix had to land as a
+separate follow-up PR (livespec-dev-tooling#4157), and c3nd2h and livespec-dev-tooling-brggiu were held unaccepted
+until that follow-up merged.
+
 **Rule BYTE-CLAIMS-ARE-DIFFED: a "byte-identical" grade diffs the two files (coordinator's reading).** A grade that
 rests on "byte-identical" or "the same as" diffs the two files. It never compares names by grep. Recorded on epic
 `livespec-dev-tooling-6tgd2z` at 2026-11-10T23:33:39Z. Measured 2026-11-10 ~23:0xZ: the coordinator passed the
