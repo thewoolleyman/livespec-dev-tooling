@@ -232,7 +232,12 @@ def test_the_restart_handler_clears_the_start_limit_first() -> None:
     )
     assert reset["become"] is True
     assert reset["when"] == handlers[restart]["when"]
-    assert any("'not loaded' not in" in clause for clause in reset["failed_when"])
+    # Ansible ANDs the list: a dropped `rc` clause fails a healthy rc-0 reset, and
+    # systemctl writes "not loaded" to stderr, not stdout.
+    assert reset["failed_when"] == [
+        "incident_observer_reset_failed.rc != 0",
+        "'not loaded' not in incident_observer_reset_failed.stderr",
+    ]
     assert handlers[restart]["ansible.builtin.systemd_service"]["state"] == "restarted"
 
 
