@@ -142,6 +142,10 @@ def is_config_value_fast_path(*, cwd: Path) -> bool:
             after_rule = _line_rule(path=path, line=after)
             if before_rule is None or before_rule != after_rule:
                 return False
+            if before_rule.format == "jsonc" and not _jsonc_rule_changed(
+                cwd=cwd, path=path, rule=before_rule
+            ):
+                return False
     return True
 
 
@@ -149,6 +153,49 @@ def _staged_text(*, cwd: Path, path: str) -> str:
     """Read one changed file exactly as the commit would store it."""
     result = _git(cwd=cwd, args=["show", f":{path}"])
     return result.stdout if result.returncode == 0 else ""
+
+
+def _head_text(*, cwd: Path, path: str) -> str:
+    """Read one changed file from the committed tree before the staged edit."""
+    result = _git(cwd=cwd, args=["show", f"HEAD:{path}"])
+    return result.stdout if result.returncode == 0 else ""
+
+
+def _value_at_path(*, document: object, key_path: str) -> object | None:
+    """Return a declared JSONC value, allowing its object to sit below a root wrapper."""
+    parts = key_path.split(".")
+
+    def visit(*, candidate: object) -> object | None:
+        if not isinstance(candidate, dict):
+            return None
+        mapping = cast(dict[str, object], candidate)
+        current: object = mapping
+        for part in parts:
+            if not isinstance(current, dict) or part not in current:
+                break
+            current_mapping: dict[str, object] = current
+            current = current_mapping[part]
+        else:
+            return current
+        for nested in mapping.values():
+            found = visit(candidate=nested)
+            if found is not None:
+                return found
+        return None
+
+    return visit(candidate=document)
+
+
+def _jsonc_rule_changed(*, cwd: Path, path: str, rule: ConfigValueFastPathRule) -> bool:
+    """Prove that a JSONC replacement changed the exact declared nested key."""
+    try:
+        before: object = jsoncomment.loads(_head_text(cwd=cwd, path=path))
+        after: object = jsoncomment.loads(_staged_text(cwd=cwd, path=path))
+    except ValueError:
+        return False
+    before_value = _value_at_path(document=before, key_path=rule.key_path)
+    after_value = _value_at_path(document=after, key_path=rule.key_path)
+    return before_value is not None and after_value is not None and before_value != after_value
 
 
 def _values_named(*, document: object, key: str) -> tuple[object, ...]:
