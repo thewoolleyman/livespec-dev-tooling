@@ -1,0 +1,16 @@
+import pickle,collections,re,statistics as S
+rows=pickle.load(open("rows.pkl","rb"))
+def kind(cmd):
+    if re.search(r"\bgit commit\b",cmd): return "commit-amend" if "--amend" in cmd else "commit"
+    if re.search(r"\bgit push\b",cmd): return "push"
+    if "just check" in cmd or cmd.endswith("check"): return "check"
+    if "pytest" in cmd: return "pytest"
+    return "other"
+g=collections.defaultdict(list); cmds=collections.Counter()
+for r in rows:
+    k=kind(r[9]); 
+    if k=="other": cmds[r[9][:70]]+=1
+    if r[7] is not None: g[(r[0],k)].append(r[7]/60)
+def q(v,p): v=sorted(v); return v[min(len(v)-1,int(p*len(v)))]
+for k,v in sorted(g.items()): print(k,len(v),"med %.1f p90 %.1f max %.1f"%(S.median(v),q(v,.9),max(v)))
+print(cmds.most_common(15))
