@@ -168,6 +168,7 @@ apply_created create configmap warm-cache-repos \
 apply_created create configmap warm-cache-populate \
   --namespace "${NAMESPACE}" \
   --from-file="warm-cache-populate.sh=${SCRIPT_DIR}/warm-cache-populate.sh" \
+  --from-file=warm-cache-fabro-populate.sh=${SCRIPT_DIR}/warm-cache-fabro-populate.sh \
   --from-file="verify-uv-cache.py=${SCRIPT_DIR}/verify-uv-cache.py" \
   --from-file="uv_cache_layout.py=${SCRIPT_DIR}/uv_cache_layout.py"
 if [ -n "${WARM_CACHE_IMAGE}" ]; then
@@ -179,4 +180,4 @@ if [ "${DRY_RUN}" -eq 1 ]; then
   echo "DRY RUN: nothing was applied."
   exit 0
 fi
-log "warm-cache converged: namespace ${NAMESPACE}, pypi-proxy, budget ConfigMap, CronJob warm-cache-populate (+ verifier), ${repo_count} repositories."
+log "warm-cache converged: namespace ${NAMESPACE}, pypi-proxy, budget ConfigMap, CronJobs warm-cache-populate and warm-cache-populate-fabro, ${repo_count} regular repositories."
