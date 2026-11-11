@@ -20,7 +20,9 @@ from livespec_dev_tooling.flake_retry_changes import change_paths, withheld_reas
 from livespec_dev_tooling.flake_retry_decisions import (
     RETRY_ATTEMPTS,
     RETRY_DELAY_SECONDS,
-    retry_marker_for,
+)
+from livespec_dev_tooling.flake_retry_decisions import (
+    retry_marker_for as _retry_marker_for,
 )
 from livespec_dev_tooling.flake_retry_finalizers import preserve_finalizers
 
@@ -56,6 +58,24 @@ class RetryResult:
     nodeid: str
     attempts: int
     outcome: str
+
+
+def retry_marker_for(
+    *,
+    repo_root: Path,
+    test_path: Path,
+    change_paths: set[Path],
+    memo: dict[Path, _ModuleFacts | None] | None = None,
+) -> dict[str, int] | None:
+    """Preserve the hook module's live retry-policy compatibility surface."""
+    return _retry_marker_for(
+        repo_root=repo_root,
+        test_path=test_path,
+        change_paths=change_paths,
+        memo=memo,
+        retry_attempts=RETRY_ATTEMPTS,
+        retry_delay_seconds=RETRY_DELAY_SECONDS,
+    )
 
 
 def mark_untouched_tests(
