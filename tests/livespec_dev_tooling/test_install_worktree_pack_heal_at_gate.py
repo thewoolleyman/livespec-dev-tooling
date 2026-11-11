@@ -122,7 +122,7 @@ _DRIFT_TARGET = "gate-run.sh"
 class _Wiring:
     """The gate wiring read out of a repository's `lefthook.yml` + `justfile`."""
 
-    first_gate_commands: tuple[tuple[str, str, str], ...]
+    first_gate_commands: tuple[tuple[str, str, str, bool], ...]
     import_lines: tuple[str, ...]
     installer_recipe_body: str
 
@@ -137,8 +137,8 @@ class _Fixture:
     bootstrap_sentinel: Path
 
 
-def _first_gate_command(*, source: str, hook: str) -> tuple[str, str]:
-    """Return `(command-name, run-line)` for `hook`'s FIRST lefthook command.
+def _first_gate_command(*, source: str, hook: str) -> tuple[str, str, bool]:
+    """Return the first command and whether its hook follows members live.
 
     A hand-rolled scan rather than a YAML parse, matching the house idiom in
     `checks/no_direct_tool_invocation.py`: no YAML library is vendored, and the
@@ -146,12 +146,12 @@ def _first_gate_command(*, source: str, hook: str) -> tuple[str, str]:
     — is answerable from the indentation `lefthook.yml` already uses.
     """
     match = re.search(
-        rf"^{re.escape(hook)}:\n  commands:\n {{4}}([\w-]+):\n {{6}}run: (.+)$",
+        rf"^{re.escape(hook)}:\n(?:(  follow: true\n))?  commands:\n {{4}}([\w-]+):\n {{6}}run: (.+)$",
         source,
         flags=re.MULTILINE,
     )
     assert match is not None, f"lefthook hook {hook!r} declares no first command"
-    return (match.group(1), match.group(2))
+    return (match.group(2), match.group(3), match.group(1) is not None)
 
 
 def _installer_recipe_body(*, source: str) -> str:
@@ -322,8 +322,11 @@ def _fixture_justfile(*, wiring: _Wiring, sentinel: Path) -> str:
 def _fixture_lefthook(*, wiring: _Wiring) -> str:
     """The fixture `lefthook.yml`: the installer first in both gate hooks."""
     stanzas: list[str] = []
-    for hook, name, run in wiring.first_gate_commands:
-        stanzas.extend([f"{hook}:", "  commands:", f"    {name}:", f"      run: {run}", ""])
+    for hook, name, run, follows in wiring.first_gate_commands:
+        stanzas.append(f"{hook}:")
+        if follows:
+            stanzas.append("  follow: true")
+        stanzas.extend(["  commands:", f"    {name}:", f"      run: {run}", ""])
     return "\n".join(stanzas)
 
 
@@ -427,7 +430,7 @@ def test_this_repo_is_wired_as_the_central_row_will_require() -> None:
     """
     wiring = _repo_wiring(repo_root=_PACKAGE_ROOT)
     assert wiring.first_gate_commands == tuple(
-        (hook, _INSTALLER_COMMAND_NAME, _INSTALLER_RUN_LINE) for hook in _GATE_HOOKS
+        (hook, _INSTALLER_COMMAND_NAME, _INSTALLER_RUN_LINE, True) for hook in _GATE_HOOKS
     )
     assert wiring.import_lines == tuple(
         f"import? '{_PACK_DIR_NAME}/{fragment}'" for fragment in _PACK_FRAGMENTS
@@ -455,6 +458,24 @@ def test_fixture_wiring_equals_the_wiring_this_repo_carries(
     assert (
         fixture_wiring.installer_recipe_body.replace(_FIXTURE_UV_FLAGS, "")
         == repo_wiring.installer_recipe_body
+    )
+
+
+def test_fixture_wiring_keeps_an_unfollowed_hook_unfollowed() -> None:
+    """The fixture must mirror the source setting instead of always enabling follow."""
+    wiring = _Wiring(
+        first_gate_commands=(("pre-commit", _INSTALLER_COMMAND_NAME, _INSTALLER_RUN_LINE, False),),
+        import_lines=(),
+        installer_recipe_body="",
+    )
+
+    rendered = _fixture_lefthook(wiring=wiring)
+
+    assert rendered == (
+        "pre-commit:\n"
+        "  commands:\n"
+        "    00-install-worktree-pack:\n"
+        "      run: just install-worktree-pack\n"
     )
 
 
