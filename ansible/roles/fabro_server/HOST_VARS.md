@@ -906,8 +906,10 @@ plugin digest the `sandbox_driver_kubernetes` role pins for that kind's path.
 Since 2026-11-05 that path is the versioned
 `/usr/local/bin/sandbox-driver-kubernetes-v0.8.2`, and the digest is the one
 `sandbox_driver_kubernetes_versioned_releases` declares for v0.8.2. The
-candidate and `fabro-server-mi-homelab` keep the shared
-`/usr/local/bin/sandbox-driver-kubernetes` at the role's default release. Either
+candidate's `kubernetes` kind pins the versioned v0.8.3 for that release's
+one-pod canary (orchestrator bd-ib-u4fp5z), and `fabro-server-mi-homelab` keeps
+the shared `/usr/local/bin/sandbox-driver-kubernetes` at the role's default
+release. Either
 way the pin and the binary the role stages at that path move together, so the
 instance never launches a plugin binary the role did not put on the host.
 `inherit_env` passes `HOME` and `PATH` through the cleared plugin environment,
