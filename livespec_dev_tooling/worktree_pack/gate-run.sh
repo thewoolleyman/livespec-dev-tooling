@@ -1213,18 +1213,43 @@ cmd_wait() {
 }
 
 cmd_list() {
-    local root
+    local all=false root
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --all) all=true ;;
+            *) usage ;;
+        esac
+        shift
+    done
     root="$(runs_root)"
     if [[ ! -d "$root" ]]; then
         printf 'no gate runs recorded\n'
         return 0
     fi
-    local run_id dir
-    for run_id in $(ls -1 "$root" 2>/dev/null | sort); do
-        dir="$root/$run_id"
+    # Bash expands globs in lexical order, which is chronological for run ids.
+    # Keep directories in an array so the normal view can omit all but the
+    # fifty newest without invoking external directory utilities. Per-record state and
+    # command reads remain builtins: a large host store must not turn one list
+    # operation into thousands of child processes.
+    local -a dirs=()
+    local dir run_id state command index start=0 count
+    for dir in "$root"/*; do
+        [[ -d "$dir" ]] || continue
+        dirs+=("$dir")
+    done
+    count="${#dirs[@]}"
+    if [[ "$all" != true && "$count" -gt 50 ]]; then
+        start=$((count - 50))
+    fi
+    for ((index = start; index < count; index++)); do
+        dir="${dirs[index]}"
+        run_id="${dir##*/}"
+        derive_state_into "$dir"
+        state="$STATE"
+        field_into command "$dir/command" raw
+        command="${command//$'\n'/ }"
         printf '%-24s  %-20s  %s\n' \
-            "$run_id" "$(derive_state "$dir")" \
-            "$(tr '\n' ' ' <"$dir/command" 2>/dev/null || echo '?')"
+            "$run_id" "$state" "$command"
     done
 }
 

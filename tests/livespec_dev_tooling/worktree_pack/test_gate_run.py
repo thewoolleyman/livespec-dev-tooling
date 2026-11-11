@@ -146,6 +146,22 @@ def _record_run(*, repo: Path, output_log: str, exit_code: str, run_id: str = _R
     _write(path=run_dir / "exit_code", text=f"{exit_code}\n")
 
 
+def _record_list_runs(*, repo: Path, count: int) -> tuple[str, ...]:
+    """Create the terminal and live record mix that `list` must render."""
+    states = ("PASSED", "FAILED", "RUNNING", "DIED_WITHOUT_VERDICT")
+    for number in range(count):
+        run_dir = repo / _STORE / f"run-{number:03d}"
+        _write(path=run_dir / "command", text=f"command-{number}\nargument-{number}\n")
+        state = states[number % len(states)]
+        if state == "PASSED":
+            _write(path=run_dir / "exit_code", text="0\n")
+        elif state == "FAILED":
+            _write(path=run_dir / "exit_code", text="1\n")
+        elif state == "RUNNING":
+            _write(path=run_dir / "pid", text=f"{os.getpid()}\n")
+    return states
+
+
 def _run_status(*, repo: Path, run_id: str = _RUN_ID) -> subprocess.CompletedProcess[str]:
     """Run `gate-run.sh status <run-id>` from the repo root, as the recipe does."""
     env = {key: value for key, value in os.environ.items() if key not in _GIT_ENV_VARS}
@@ -398,6 +414,43 @@ def test_gate_list_is_the_same_from_the_primary_and_from_a_linked_worktree(
     assert listed_at_worktree.stdout == listed_at_primary.stdout
     assert from_worktree in listed_at_primary.stdout
     assert from_primary in listed_at_worktree.stdout
+
+
+def test_gate_list_reads_run_records_with_builtins_and_limits_the_default_to_recent_runs(
+    *, tmp_path: Path
+) -> None:
+    """`list` avoids per-record processes and defaults to the newest fifty runs."""
+    repo = _init_repo(tmp_path=tmp_path)
+    expected_states = _record_list_runs(repo=repo, count=60)
+
+    default = _gate(cwd=repo, env=_child_env(home=tmp_path / "home"), args=["list"])
+    every_run = _gate(
+        cwd=repo,
+        env=_child_env(home=tmp_path / "home"),
+        args=["list", "--all"],
+    )
+
+    assert default.returncode == 0, default.stderr
+    assert every_run.returncode == 0, every_run.stderr
+    default_lines = default.stdout.splitlines()
+    every_line = every_run.stdout.splitlines()
+    assert len(default_lines) == 50
+    assert len(every_line) == 60
+    assert "run-009" not in default.stdout
+    for number, line in enumerate(every_line):
+        assert f"run-{number:03d}" in line
+        assert expected_states[number % len(expected_states)] in line
+        assert f"command-{number} argument-{number}" in line
+
+    list_body = CANONICAL_GATE_RUN_BODY.split("cmd_list() {", maxsplit=1)[1].split(
+        "\n}\n\nmain()", maxsplit=1
+    )[0]
+    assert "derive_state_into" in list_body
+    assert 'field_into command "$dir/command" raw' in list_body
+    assert "$(derive_state" not in list_body
+    assert "$(tr " not in list_body
+    assert "ls -1" not in list_body
+    assert "sort" not in list_body
 
 
 def test_the_run_record_names_the_worktree_and_the_command_line(
