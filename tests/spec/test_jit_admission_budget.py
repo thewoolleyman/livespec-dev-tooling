@@ -311,7 +311,9 @@ def test_measured_job_hours_derive_the_committed_fair_shares() -> None:
     """Seven-day pool job-hours are the dated, auditable source of every quota."""
     quotas = _cohort_quotas()
     assert quotas, "the cohort must commit at least one fair share"
-    violations = _quota_derivation_violations(quotas=quotas, capacity=sum(quotas.values()))
+    violations = _quota_derivation_violations(
+        quotas=quotas, capacity=sum(_pool_capacity().values())
+    )
     assert not violations, violations
 
     derivation = _DERIVATION.read_text(encoding="utf-8")
