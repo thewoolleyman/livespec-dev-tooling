@@ -4,9 +4,9 @@
 #
 # WHY A HOST etcdctl. k3s v1.36.2+k3s1 embeds etcd but ships no etcdctl, and it
 # defragments only at server start. etcd's API-server compaction (every 5 min,
-# ../../../ci-runner/k3s/phase2/k3s-config/config.yaml) frees revisions but not
-# space; on a tmpfs that space is RAM, and the backend quota counts it. A
-# periodic `etcdctl defrag` reclaims it.
+# ../../../ci-runner/k3s/phase2/k3s-config/config.yaml.d/50-embedded-etcd.yaml)
+# frees revisions but not space; on a tmpfs that space is RAM, and the backend
+# quota counts it. A periodic `etcdctl defrag` reclaims it.
 #
 # THE PIN IS THE SERVER'S OWN etcd. Read 2026-11-11 from the live server binary
 # (/var/lib/rancher/k3s/data/current/bin/k3s, `go version -m`):
@@ -35,6 +35,11 @@ k3s_etcd_defrag_etcd_data_dir: /var/lib/rancher/k3s/server/db/etcd
 
 k3s_etcd_defrag_unit_dir: /etc/systemd/system
 k3s_etcd_defrag_unit: k3s-etcd-defrag
-# Daily at a quiet hour, with a spread so it never lands on the minute.
-k3s_etcd_defrag_on_calendar: "*-*-* 04:20:00 UTC"
+# Daily at 16:20 UTC, with a spread so it never lands on the minute. No hour is
+# quiet. 16Z is the lowest-CI hour on a 7-day Honeycomb read of ci-runner-pool
+# COUNT per hour (2026-11-11): median 552/h at 16Z, against 791 at 04Z. Factory
+# load is flat across the day, with a median of 13-21 distinct factory pods in
+# every hour (20 at 16Z). A defrag of a few-hundred-MB etcd on tmpfs blocks
+# writes for seconds, well under the 25-30 s kine stalls that cost leases.
+k3s_etcd_defrag_on_calendar: "*-*-* 16:20:00 UTC"
 k3s_etcd_defrag_randomized_delay: 15min

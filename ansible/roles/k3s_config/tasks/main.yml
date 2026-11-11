@@ -453,6 +453,65 @@
     or (k3s_config_system_slice_cpu_weight_removed.changed | default(false))
   tags: [k3s_system_slice_cpu_weight]
 
+- name: Refuse an embedded-etcd request on an agent, or one that also asks for rollback
+  # Embedded etcd is the SERVER's datastore. An agent has none, and a k3s agent
+  # given `cluster-init` would refuse to start. Install and rollback are
+  # opposite acts, so asking for both is a mistake, not a choice.
+  ansible.builtin.assert:
+    that:
+      - not (k3s_config_embedded_etcd | bool) or k3s_config_cluster_role == 'server'
+      - not ((k3s_config_embedded_etcd | bool) and (k3s_config_embedded_etcd_rollback | bool))
+    fail_msg: >-
+      k3s_config_embedded_etcd is server-only and excludes
+      k3s_config_embedded_etcd_rollback; got embedded_etcd={{ k3s_config_embedded_etcd }},
+      rollback={{ k3s_config_embedded_etcd_rollback }}, role={{ k3s_config_cluster_role }}
+  tags: [k3s_embedded_etcd]
+
+- name: Create the k3s configuration drop-in directory for the server's datastore selection
+  # Explicit for the same reason as the agent's: --check cannot see past a
+  # missing parent. The server had no config.yaml.d before this drop-in.
+  ansible.builtin.file:
+    path: "{{ k3s_config_drop_in_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+  when:
+    - k3s_config_cluster_role == 'server'
+    - k3s_config_embedded_etcd | bool
+  tags: [k3s_embedded_etcd]
+
+- name: Install the server's embedded-etcd datastore selection
+  # TAKES EFFECT AT THE NEXT k3s START, which converts the SQLite datastore in
+  # place. Nothing here restarts k3s. The window reaches that start through
+  # ansible/restart-k3s-server.yml. Installed only on request. A false value
+  # writes nothing and removes nothing; see the defaults.
+  ansible.builtin.copy:
+    src: "{{ k3s_config_phase2_dir }}/k3s-config/config.yaml.d/50-embedded-etcd.yaml"
+    dest: "{{ k3s_config_embedded_etcd_drop_in }}"
+    owner: root
+    group: root
+    mode: "0600"
+  become: true
+  when:
+    - k3s_config_cluster_role == 'server'
+    - k3s_config_embedded_etcd | bool
+  tags: [k3s_embedded_etcd]
+
+- name: Remove the server's embedded-etcd datastore selection on an explicit rollback
+  # Plan note 003's rollback only. After this, a sanctioned reboot empties the
+  # tmpfs and k3s comes up on SQLite. Without the reboot, a running etcd keeps
+  # serving, because k3s ignores datastore arguments while an etcd dir exists.
+  ansible.builtin.file:
+    path: "{{ k3s_config_embedded_etcd_drop_in }}"
+    state: absent
+  become: true
+  when:
+    - k3s_config_cluster_role == 'server'
+    - k3s_config_embedded_etcd_rollback | bool
+  tags: [k3s_embedded_etcd]
+
 - name: Create the packaged-manifest directory on the server
   # 0700 as the shell installed it. This is under /var/lib/rancher/k3s/server/
   # on disk, NOT the tmpfs datastore, so the marker below is reboot-durable.

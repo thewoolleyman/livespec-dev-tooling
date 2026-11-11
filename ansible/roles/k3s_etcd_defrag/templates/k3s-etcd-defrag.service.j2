@@ -1,14 +1,19 @@
 # {{ ansible_managed }}
 # Defragment the k3s server's embedded etcd (livespec-dev-tooling-qy2nzf).
 # Started only by k3s-etcd-defrag.timer. Inert unless the datastore is etcd.
+# The timer has no Persistent=, so a missed run is SKIPPED, never run late at
+# boot. A boot is when the cluster is rebuilt, and etcd is fresh then.
+# k3s is NOT a dependency: Requisite= would put a start job on k3s's
+# transaction and propagate this unit's failure into it. ExecCondition= skips
+# the run cleanly while k3s is not active, and touches k3s in no way.
 [Unit]
 Description=Defragment the k3s server's embedded etcd
 After=k3s.service
-Requisite=k3s.service
 ConditionPathExists={{ k3s_etcd_defrag_etcd_data_dir }}
 
 [Service]
 Type=oneshot
+ExecCondition=/bin/systemctl is-active --quiet k3s.service
 ExecStart={{ k3s_etcd_defrag_bin }} \
   --endpoints={{ k3s_etcd_defrag_endpoint }} \
   --cacert={{ k3s_etcd_defrag_tls_dir }}/server-ca.crt \

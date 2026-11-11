@@ -130,48 +130,9 @@ write-kubeconfig-mode: "0644"
 # maintainer. Rollback: delete this key and run restart-k3s-server.yml again.
 egress-selector-mode: "disabled"
 
-# EMBEDDED ETCD, not kine over SQLite (plan k3s-embedded-etcd-datastore, epic
-# livespec-dev-tooling-qql3lo, child livespec-dev-tooling-qy2nzf).
-#
-# WHY. kine's post-compaction `PRAGMA wal_checkpoint(FULL)` stalled every
-# datastore write for 30.0 s (2026-11-10T14:20Z) and 25.3 s (2026-11-11T02:31Z),
-# and each stall cost the ci-runner scheduler its leader lease. etcd is chosen
-# for control-plane stability under write churn, not for speed.
-#
-# HOW IT TAKES EFFECT. On the first k3s start that carries `cluster-init` over
-# an existing SQLite datastore, k3s converts it to embedded etcd in place. The
-# k3s docs say: "If you have an existing cluster using the default embedded
-# SQLite database, you can convert it to etcd by simply restarting your K3s
-# server with the `--cluster-init` flag" (k3s-io/docs ha-embedded.md, commit
-# 2936f007, quoted in plan note 003). Every later boot starts on an EMPTY
-# tmpfs (../datastore-tmpfs/), so `cluster-init` there initializes a fresh
-# single-member etcd, and converge-ci-stack.service rebuilds the cluster onto
-# it, exactly as it rebuilds onto an empty kine today.
-#
-# TAKES EFFECT AT THE NEXT k3s START, which is reached only in the plan's
-# factory-quiet window through ../../../../ansible/restart-k3s-server.yml. The
-# k3s_config role installs this file and restarts nothing on the server.
-# ROLLBACK (note 003): revert these keys, apply ansible/ci-pool.yml, then a
-# sanctioned reboot (ansible/reboot-ci-server.yml), which empties the tmpfs so
-# k3s comes up on SQLite again. k3s ignores every datastore argument while an
-# etcd directory exists, so only an emptied tmpfs reverts cleanly.
-cluster-init: true
-
-# Snapshots OFF. The datastore lives on a tmpfs that every reboot empties, and
-# the cluster is rebuilt from this repository, so a snapshot has nothing to
-# restore. k3s's default snapshot cron would also write under the data dir.
-etcd-disable-snapshots: true
-
-# The etcd backend quota: 2 GiB. The tmpfs is sized to hold it, a full
-# defragmentation copy beside it, and the WAL (see the mount unit). The kine
-# datastore this replaces held ~370 MB with its WAL on 2026-11-11.
-etcd-arg:
-  - "quota-backend-bytes=2147483648"
-
-# The API server compacts etcd's revision history every 5 minutes. This is the
-# upstream default, stated here so the plan's compaction interval is committed
-# and read back from the live server rather than assumed. The periodic
-# defragmentation that reclaims the compacted space is the k3s_etcd_defrag
-# role's timer.
-kube-apiserver-arg:
-  - "etcd-compaction-interval=5m"
+# The DATASTORE SELECTION (embedded etcd: cluster-init, its quota, snapshots off,
+# the compaction interval) is NOT in this file. It is in
+# config.yaml.d/50-embedded-etcd.yaml, which the k3s_config role installs only
+# when k3s_config_embedded_etcd is true (livespec-dev-tooling-qy2nzf). This file
+# is installed by every ci-pool apply, so a key here would arm the conversion on
+# any routine apply.

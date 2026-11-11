@@ -38,8 +38,9 @@
 #     noexec/nosuid/nodev: a datastore directory needs none of them.
 #   - size=6G since the move to embedded etcd (plan k3s-embedded-etcd-datastore,
 #     livespec-dev-tooling-qy2nzf). It holds the 2 GiB etcd backend quota
-#     (../k3s-config/config.yaml), a full defragmentation copy beside it, and
-#     the WAL. poweredge-xubuntu has 377 GB of RAM.
+#     (../k3s-config/config.yaml.d/50-embedded-etcd.yaml), a full
+#     defragmentation copy beside it, and the WAL. poweredge-xubuntu has
+#     377 GB of RAM.
 #   - A CHANGED size is applied to the MOUNTED tmpfs by the datastore_tmpfs
 #     role with `mount -o remount,size=<new>`, which keeps the contents. It
 #     must never be applied by stopping or restarting this unit: that unmounts
