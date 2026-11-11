@@ -63,6 +63,26 @@ def test_an_untouched_test_is_marked_for_a_bounded_single_test_retry(*, tmp_path
 
 
 @pytest.mark.integration
+def test_the_hook_passes_its_live_retry_policy_to_the_extracted_decision(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A consumer's hook-level retry override still reaches the extracted decision."""
+    test_path = tmp_path / "test_example.py"
+    _ = test_path.write_text("VALUE = 1\n", encoding="utf-8")
+    plugin = importlib.import_module("livespec_dev_tooling.flake_retry")
+    monkeypatch.setattr(plugin, "RETRY_ATTEMPTS", 1)
+    monkeypatch.setattr(plugin, "RETRY_DELAY_SECONDS", 0)
+
+    marker = plugin.retry_marker_for(
+        repo_root=tmp_path,
+        test_path=test_path,
+        change_paths={Path("README.md")},
+    )
+
+    assert marker == {"reruns": 1, "reruns_delay": 0}
+
+
+@pytest.mark.integration
 def test_a_changed_path_does_not_match_a_bare_ancestor_directory_literal(*, tmp_path: Path) -> None:
     """A closure literal must name the changed path, not merely one of its segments."""
     tests = tmp_path / "tests"
