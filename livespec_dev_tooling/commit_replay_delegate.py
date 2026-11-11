@@ -162,6 +162,17 @@ def _run_remote(
         )
     request = replace(built.unwrap(), source_ref=source, capture_output=True)
     remote = run_gated_push(request=request, runner=default_gate_command_runner)
+    # Only a one-file leg is sized by the caller. Killed for memory or evicted,
+    # it proved nothing about its test, and read as a failed run it would pass
+    # as a valid Red (contracts.md "Delegated commit-time replay test runs",
+    # Replay Job size), so it is an absent verdict and the leg runs locally.
+    if resources is not None and remote.resource_kill:
+        return ReplayVerdict(
+            local=False,
+            reason=f"the replay Job ended {remote.resource_kill}, so no verdict: {remote.detail}",
+            job_name=remote.job_name,
+            tree_hash=tree_hash,
+        )
     exit_status = 0 if remote.state == GATE_PASSED else 1 if remote.state == GATE_FAILED else None
     return ReplayVerdict(
         local=False,
