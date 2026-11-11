@@ -3359,8 +3359,7 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: the gmktec gate lane keeps room for three default-size gate Jobs",
-    "test": "TODO",
-    "work_item": "livespec-dev-tooling-brggiu",
-    "reason": "A real test at the integration tier or above is owed for this heading: an integration-tier test of the committed cluster-queue-gates.yaml that fails naming the gates-flavor lane when its nominal cpu or memory quota is below three times the renderer's default request, asserting the derivation and never a literal quota (proposal a-consumer-declares-its-gate-job-resources, v186). livespec-dev-tooling-brggiu owns it."
+    "test": "tests.spec.test_gates_queue_gate_unit.test_the_gmktec_lane_holds_three_default_size_gate_jobs",
+    "reason": "Integration-tier: tests/spec/test_gates_queue_gate_unit.py reads the committed cluster-queue-gates.yaml and the renderer's default request from render-gate-job.sh, and fails naming the gates-flavor lane when that lane's nominal cpu or memory quota is below three default-size gate Jobs. It asserts the derivation, never a literal quota (v187 Gate lane headroom, livespec-dev-tooling-brggiu)."
   }
 ]
