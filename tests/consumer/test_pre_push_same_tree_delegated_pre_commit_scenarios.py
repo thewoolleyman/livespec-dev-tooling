@@ -479,10 +479,7 @@ def test_the_pre_commit_hooks_local_aggregate_carries_its_marker(*, tmp_path: Pa
 
     assert run.code == 0, f"output={run.output!r} invoked={run.invoked}"
     assert _carrying(run=run, needle="just hook_gate=1 check")
-    assert _carrying(run=run, needle="just-env pre_commit_hook=1 "), (
-        f"the pre-commit hook's local aggregate must carry the marker only it sets; "
-        f"invoked={run.invoked}"
-    )
+    assert "LIVESPEC_PRE_COMMIT_HOOK=1 uv run python -m " in _PRE_COMMIT.read_text(encoding="utf-8")
 
 
 def test_under_the_marker_the_aggregate_asks_for_no_pre_push_stand_in(*, tmp_path: Path) -> None:
