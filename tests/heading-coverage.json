@@ -2212,9 +2212,8 @@
     "heading": "## Scenario: a CI job killed at Set up job by an action-download 429 is re-run with backoff",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "test": "TODO",
-    "work_item": "livespec-dev-tooling-cetyrq",
-    "reason": "A real test at the integration tier or above is owed for this heading: an integration test of this repository's Set-up-job 429 re-run workflow over recorded job logs, proving a 429 or 'An action could not be found' failure at Set up job is re-run with a growing wait up to three attempts and that a later-step failure is not re-run (proposal a-ci-job-that-fails, v124). livespec-dev-tooling-cetyrq owns it."
+    "test": "tests.livespec_dev_tooling.test_ci_infra_rerun.test_a_setup_job_429_is_rerun_with_growing_waits_up_to_three_attempts",
+    "reason": "Integration-tier: drives `ci_infra_rerun.main` end to end, the way reusable-ci-infra-rerun.yml does, over a RECORDED runner log (livespec-orchestrator-beads-fabro job 125948122947, a codeload 429 at Set up job, 2026-11-03). Four attempts of one run: the job is re-run with waits of 120, 300 and 600 seconds, the fourth failure is left at the three-attempt cap, and a job that failed at a later step is left as the verdict on every attempt (livespec-dev-tooling-cetyrq)."
   },
   {
     "heading": "## Scenario: a CI job killed at Initialize containers by a registry network error is re-run once",
