@@ -406,6 +406,44 @@ derive_state() {
     printf '%s' "$STATE"
 }
 
+# The list path already selected directories from the store, and prints only
+# a state word. Avoid the general reader's extra directory probe while still
+# preserving its exact state derivation for each record.
+derive_list_state_into() {
+    local dir="$1" code="" pid=""
+    if [[ -r "$dir/exit_code" ]]; then
+        read -r code <"$dir/exit_code" || code=""
+        if [[ "$code" == "0" ]]; then
+            STATE='PASSED'
+        elif [[ "$code" -eq "$EX_NO_VERDICT" || "$code" -ge "$SIGNAL_EXIT_FLOOR" ]]; then
+            STATE='DIED_WITHOUT_VERDICT'
+        else
+            STATE='FAILED'
+        fi
+        return
+    fi
+    if [[ -r "$dir/pid" ]]; then
+        read -r pid <"$dir/pid" || pid=""
+        if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
+            STATE='RUNNING'
+            return
+        fi
+    fi
+    STATE='DIED_WITHOUT_VERDICT'
+}
+
+# `list` needs only the command field. Its narrow reader avoids the generic
+# report reader's separate regular-file and readability probes for every row.
+list_command_into() {
+    local __name="$1" __file="$2" __value=""
+    if [[ ! -r "$__file" ]]; then
+        printf -v "$__name" '%s' '?'
+        return
+    fi
+    IFS= read -r -d '' __value <"$__file" || true
+    printf -v "$__name" '%s' "$__value"
+}
+
 # ---------------------------------------------------------------------
 # .git/config write-watch (livespec-p32m6d, folded into trfzkw)
 #
@@ -1232,21 +1270,21 @@ cmd_list() {
     # command reads remain builtins: a large host store must not turn one list
     # operation into thousands of child processes.
     local -a dirs=()
-    local dir run_id state command index start=0 count
-    for dir in "$root"/*; do
-        [[ -d "$dir" ]] || continue
-        dirs+=("$dir")
-    done
+    local dir run_id state command index start=0 count nullglob_was_set=false
+    shopt -q nullglob && nullglob_was_set=true
+    shopt -s nullglob
+    dirs=("$root"/*/)
+    [[ "$nullglob_was_set" == true ]] || shopt -u nullglob
     count="${#dirs[@]}"
     if [[ "$all" != true && "$count" -gt 50 ]]; then
         start=$((count - 50))
     fi
     for ((index = start; index < count; index++)); do
-        dir="${dirs[index]}"
+        dir="${dirs[index]%/}"
         run_id="${dir##*/}"
-        derive_state_into "$dir"
+        derive_list_state_into "$dir"
         state="$STATE"
-        field_into command "$dir/command" raw
+        list_command_into command "$dir/command"
         command="${command//$'\n'/ }"
         printf '%-24s  %-20s  %s\n' \
             "$run_id" "$state" "$command"
