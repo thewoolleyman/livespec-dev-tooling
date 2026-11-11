@@ -348,6 +348,56 @@ def test_suite_green_uses_job_evidence_and_falls_back_when_it_has_no_verdict(
     ]
 
 
+def test_passing_staged_test_probe_reuses_one_delegated_job_for_suite_green(
+    *, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A passing test-only commit consumes its delegated replay only once."""
+    from livespec_dev_tooling.commit_replay_delegate import ReplayVerdict
+
+    mod = _load()
+    monkeypatch.chdir(tmp_path)
+    message = tmp_path / "COMMIT_EDITMSG"
+    message.write_text("chore: tidy a test\n", encoding="utf-8")
+    log = _RecordingLog()
+    replay_calls: list[list[str]] = []
+
+    def delegated(*, pytest_argv: list[str], **_kwargs: object) -> ReplayVerdict:
+        replay_calls.append(pytest_argv)
+        return ReplayVerdict(
+            local=False,
+            reason="the Job passed",
+            job_name="gate-staged-tests-1",
+            tree_hash="a" * 40,
+            exit_status=0,
+            output_checksum="sha256:remote-output",
+        )
+
+    monkeypatch.setattr(mod, "run_replay", delegated)
+    monkeypatch.setattr(mod, "xdist_importable", lambda: False)
+    monkeypatch.setattr(mod, "run_suite", lambda **_kwargs: pytest.fail("local pytest ran"))
+
+    probe = mod.run_staged_tests_probe(
+        log=log,
+        tests_paths=["tests/test_changed.py"],
+    )
+    assert probe.suite_result.returncode == 0
+    assert (
+        mod._handle_suite_green_mode(  # noqa: SLF001
+            msg_path=message,
+            log=log,
+            staged_paths=["tests/test_changed.py"],
+            tests_paths=["tests/test_changed.py"],
+            replay=probe,
+        )
+        == 0
+    )
+
+    assert replay_calls == [["pytest", "--tb=line", "-q", "tests/test_changed.py"]]
+    rendered = message.read_text(encoding="utf-8")
+    assert "TDD-Suite-Green-Scope: staged-tests" in rendered
+    assert "TDD-Suite-Green-Gate-Job: gate-staged-tests-1" in rendered
+
+
 def test_silent_suite_green_stall_names_the_window_and_missing_test_completion(
     *, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

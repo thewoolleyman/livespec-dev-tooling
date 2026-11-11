@@ -23,7 +23,7 @@ import importlib.util
 import os
 import re
 import sys
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -36,13 +36,18 @@ _SCRIPT_DIR = Path(__file__).resolve().parent
 if str(_SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(_SCRIPT_DIR))
 
+import _red_green_replay_suite_argv as suite_argv  # noqa: E402
 from _red_green_replay_pre_commit import (  # noqa: E402
     PreCommitAggregateEvidence,
     reuse_pre_commit_evidence,
     staged_tree_hash,
 )
 from _red_green_replay_protocol import RED_GREEN_REPLAY_PROTOCOL  # noqa: E402
-from _red_green_replay_suite_argv import lane_worker_count, visible_cpu_count  # noqa: E402
+from _red_green_replay_suite_argv import (  # noqa: E402
+    SuiteGreenReplay,
+    lane_worker_count,
+    visible_cpu_count,
+)
 from _red_green_replay_suite_runner import (  # noqa: E402
     CEILING_ENV,
     DEFAULT_STALL_SECONDS,
@@ -69,9 +74,9 @@ __all__: list[str] = [
     "canonical_output_checksum",
     "handle_suite_green_mode",
     "has_shared_test_support",
+    "run_staged_tests_probe",
     "run_suite",
     "staged_tree_hash",
-    "stages_only_shared_test_support",
     "suite_bound",
     "suite_pytest_argv",
     "xdist_importable",
@@ -137,17 +142,6 @@ def has_shared_test_support(*, staged_paths: list[str]) -> bool:
     )
 
 
-def stages_only_shared_test_support(*, staged_paths: list[str], tests_paths: list[str]) -> bool:
-    """Return whether shared test support is staged with no test module beside it.
-
-    Such a staging has no test of its own to fail or pass (pytest exits 5), so
-    it is never a Red: it is green-verified by the full suite it can affect.
-    """
-    return has_shared_test_support(staged_paths=staged_paths) and not any(
-        Path(path).name.startswith("test_") for path in tests_paths
-    )
-
-
 def canonical_output_checksum(*, output: str) -> str:
     """Checksum the sorted set of non-noise lines, durations normalized.
 
@@ -197,12 +191,55 @@ def _suite_argv(*, test_paths: list[str] | None, log: structlog.stdlib.BoundLogg
     )
 
 
+def run_staged_tests_probe(
+    *, log: structlog.stdlib.BoundLogger, tests_paths: list[str] | None
+) -> SuiteGreenReplay:
+    """Run a replay through this module's configured suite command."""
+    return suite_argv.run_staged_tests_probe(
+        log=log,
+        tests_paths=tests_paths,
+        runners=suite_argv.SuiteReplayRunners(
+            argv_builder=lambda paths: _suite_argv(test_paths=paths, log=log),
+            output_checksum=lambda output: canonical_output_checksum(output=output),
+            bound_factory=suite_bound,
+            replay_runner=run_replay,
+            suite_runner=run_suite,
+        ),
+    )
+
+
+def dispatch_tests_only_staged(
+    *,
+    msg_path: Path,
+    log: structlog.stdlib.BoundLogger,
+    staged_paths: list[str],
+    tests_paths: list[str],
+    declares_red_intent: bool,
+    handle_red: Callable[..., int],
+) -> int:
+    """Route test-only staging through Red or this module's Green replay."""
+    return suite_argv.dispatch_tests_only_staged(
+        msg_path=msg_path,
+        log=log,
+        staged_paths=staged_paths,
+        tests_paths=tests_paths,
+        declares_red_intent=declares_red_intent,
+        handlers=suite_argv.TestOnlyHandlers(
+            has_shared_support=lambda paths: has_shared_test_support(staged_paths=paths),
+            run_probe=lambda paths: run_staged_tests_probe(log=log, tests_paths=paths),
+            handle_red=handle_red,
+            handle_suite=_handle_suite_green_mode,
+        ),
+    )
+
+
 def _handle_suite_green_mode(
     *,
     msg_path: Path,
     log: structlog.stdlib.BoundLogger,
     staged_paths: list[str],
     tests_paths: list[str] | None = None,
+    replay: SuiteGreenReplay | None = None,
 ) -> int:
     """Green-verify a product/test change that carries no new failing test.
 
@@ -233,49 +270,11 @@ def _handle_suite_green_mode(
         msg_path=msg_path,
     ):
         return 0
-    bound = suite_bound(environ=os.environ)
-    argv = _suite_argv(test_paths=selected_tests, log=log)
-    log.info(
-        "suite-green-argv: pytest invocation",
-        check_id="red-green-replay-suite-green-argv",
-        argv=argv,
-        scope=scope,
-        stall_seconds=bound.stall_seconds,
-        ceiling_seconds=bound.ceiling_seconds,
-    )
-    verdict = run_replay(repo_root=Path.cwd(), pytest_argv=["pytest", *argv[3:]])
-    if (
-        not verdict.local
-        and verdict.exit_status is not None
-        and verdict.job_name is not None
-        and verdict.tree_hash is not None
-        and verdict.output_checksum is not None
-    ):
-        suite_result = SuiteRun(
-            returncode=verdict.exit_status,
-            output=verdict.reason,
-            timed_out=False,
-        )
-        output_checksum = verdict.output_checksum
-        gate_trailers = (
-            ("TDD-Suite-Green-Gate-Job", verdict.job_name),
-            ("TDD-Suite-Green-Staged-Tree", verdict.tree_hash),
-        )
-        log.info(
-            "commit-time replay gated by a gate Job",
-            check_id="red-green-replay-delegated",
-            job_name=verdict.job_name,
-            tree_hash=verdict.tree_hash,
-        )
-    else:
-        suite_result = run_suite(argv=argv, bound=bound)
-        output_checksum = canonical_output_checksum(output=suite_result.output)
-        gate_trailers: tuple[tuple[str, str], ...] = ()
-        log.info(
-            "commit-time replay gated locally",
-            check_id="red-green-replay-gated-locally",
-            reason=verdict.reason,
-        )
+    completed_replay = replay or run_staged_tests_probe(log=log, tests_paths=selected_tests)
+    suite_result = completed_replay.suite_result
+    output_checksum = completed_replay.output_checksum
+    gate_trailers = completed_replay.gate_trailers
+    bound = completed_replay.bound
     if suite_result.timed_out:
         timeout_message = (
             f"suite-green-timeout: the suite-green leg was killed ({suite_result.kill_reason}): "
