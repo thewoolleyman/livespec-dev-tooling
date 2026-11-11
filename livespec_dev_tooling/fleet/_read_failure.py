@@ -56,7 +56,12 @@ _STATUS_KINDS: tuple[tuple[re.Pattern[str], str], ...] = (
     (re.compile(rf"\b(?:HTTP\s*)?429\b|rate limit|{_SECONDARY_LIMIT_BODIES}"), "rate_limited"),
     (re.compile(r"\b(?:HTTP\s*)?40[13]\b|not accessible|bad credentials"), "forbidden"),
     (re.compile(r"\b(?:HTTP\s*)?404\b|not found"), "not_found"),
-    (re.compile(r"\b(?:HTTP\s*)?5\d{2}\b"), "server_error"),
+    # A 5xx digit run is a server error only behind `gh`'s own `HTTP` marker. A
+    # bare run such as `… with the number of 512.` is an issue number, not a
+    # status, and retrying it as a transient turns a permanent failure into a
+    # loop. The haystack is lowercased before matching, so the marker is too.
+    # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-t26bbr
+    (re.compile(r"\bhttp\s*5\d{2}\b"), "server_error"),
 )
 
 
@@ -84,6 +89,8 @@ def classify_gh_failure(*, stderr: str) -> str:
     "unavailable" is what made one transient rejection indistinguishable from
     a genuine blind spot.
     """
+    if not stderr:
+        return "transport"
     haystack = stderr.lower()
     for pattern, kind in _STATUS_KINDS:
         if pattern.search(haystack):

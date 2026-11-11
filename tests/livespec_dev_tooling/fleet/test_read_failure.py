@@ -109,6 +109,28 @@ def test_a_secondary_rate_limit_is_told_apart_from_a_permission_denial() -> None
         assert classify_gh_failure(stderr=stderr) == expected, label
 
 
+# EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-t26bbr
+def test_a_bare_5xx_digit_run_that_is_not_an_http_status_is_not_a_server_error() -> None:
+    """An issue number such as 512 is not an HTTP status, so it must not be retried as one."""
+    stderr = "GraphQL: Could not resolve to an issue or pull request with the number of 512."
+
+    assert classify_gh_failure(stderr=stderr) != "server_error", (
+        "a digit run with no HTTP marker must not read as a server error: the fleet `gh` "
+        "runner retries `server_error`, so a permanent failure would be retried as a transient"
+    )
+
+
+def test_a_relayed_http_5xx_is_still_a_server_error() -> None:
+    """The control: both ways `gh` relays a real 5xx keep the retryable kind."""
+    for stderr in ("gh: Bad Gateway (HTTP 502)", "HTTP 503: Service Unavailable"):
+        assert classify_gh_failure(stderr=stderr) == "server_error", stderr
+
+
+def test_empty_stderr_is_a_transport_failure() -> None:
+    """No answer at all is the transport kind — the same kind the regex path returns for it."""
+    assert classify_gh_failure(stderr="") == "transport"
+
+
 def test_an_unrecognized_failure_classifies_as_transport() -> None:
     """No HTTP status at all means the request never got an answer."""
     assert classify_gh_failure(stderr="connection reset by peer") == "transport"
