@@ -208,16 +208,17 @@ spec:
               nominalQuota: 24Gi
         - name: gates-poweredge-flavor
           resources:
-            # Two concurrent gates at 5 cpu / 6 Gi each. The node has 72 cpu
-            # and about 378 Gi allocatable, but it read 0.4% idle with CI-slice
-            # pressure 23 at 21:38Z, close to the saturation rule, and each
-            # gate's 5-cpu request takes about that much from best-effort
-            # runners. So the lane starts at two, a first estimate to confirm by
-            # soak.
+            # Four concurrent gates at 5 cpu / 6 Gi each (2026-11-11). The lane
+            # started at two on 2026-11-07, when the node read 0.4% idle. On
+            # 2026-11-11 at 02:13Z 19 gates were queued while this node had
+            # 21.6 cpu and 272 Gi of requests free and its two-gate quota was
+            # full, so the quota, not the node, held gates out. 20 is four times
+            # the 5-cpu gate unit. Derivation: DERIVATION.md "The PowerEdge gate
+            # lane to four gates (2026-11-11)".
             - name: "cpu"
-              nominalQuota: 10
+              nominalQuota: 20
             - name: "memory"
-              nominalQuota: 16Gi
+              nominalQuota: 32Gi
         - name: gates-hp-flavor
           resources:
             # Two concurrent gates. hp-xubuntu has 14500m CPU / 27.2 GiB
