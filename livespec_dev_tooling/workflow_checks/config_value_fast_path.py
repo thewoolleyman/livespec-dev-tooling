@@ -35,7 +35,9 @@ __all__: list[str] = ["CONFIG_VALUE_FAST_PATH_RULES", "ConfigValueFastPathRule",
 
 _RULES_PATH = Path(__file__).resolve().parent.parent / "data" / "config_value_fast_path.toml"
 _NORMAL_PRE_COMMIT = 75
-_VALID_JSON_VALUE = r'(?:-?(?:0|[1-9][0-9]*)|true|false|null|"(?:[^"\\\\]|\\\\.)*")'
+# Any one-line value that is not a bare container opener and carries no comment. Whether the new
+# value is acceptable is the schema validation's decision, so a malformed one is refused by name.
+_JSONC_VALUE = r"(?![\[{]\s*,?\s*$)[^/\s][^/\n]*?"
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -95,7 +97,7 @@ def _line_rule(*, path: str, line: str) -> ConfigValueFastPathRule | None:
     for rule in _rules_for_path(path=path):
         key = re.escape(rule.key_path.rsplit(".", maxsplit=1)[-1])
         if rule.format == "jsonc":
-            pattern = rf'^\s*"{key}"\s*:\s*{_VALID_JSON_VALUE}\s*,?\s*$'
+            pattern = rf'^\s*"{key}"\s*:\s*{_JSONC_VALUE}\s*,?\s*$'
         elif rule.format == "yaml":
             pattern = rf"^\s*{key}:\s*[^#\n]+?\s*$"
         else:

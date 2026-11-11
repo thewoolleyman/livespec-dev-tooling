@@ -281,6 +281,26 @@ def test_invalid_jsonc_yaml_and_profile_values_name_the_affected_rule(*, tmp_pat
     }
 
 
+@pytest.mark.parametrize("value", ["1e2", "1.5", "[1, 2]", '{"n": 1}'])
+def test_any_value_only_replacement_on_a_listed_key_is_refused_by_validation_not_skipped(
+    *, tmp_path: Path, value: str
+) -> None:
+    """A float, exponent, or compound value still qualifies, so validation names the file and key."""
+    subject = _subject()
+    root = _repository(tmp_path=tmp_path)
+    target = root / ".livespec.jsonc"
+    _ = target.write_text(
+        target.read_text(encoding="utf-8").replace('"wip_cap": 4', f'"wip_cap": {value}'),
+        encoding="utf-8",
+    )
+    _git(cwd=root, args=["add", ".livespec.jsonc"])
+    assert subject.is_config_value_fast_path(cwd=root) is True
+    failures = subject.validate_config_value_fast_path(cwd=root)
+    assert {(failure.path, failure.key_path) for failure in failures} == {
+        (".livespec.jsonc", "dispatcher.wip_cap")
+    }
+
+
 def test_the_python_311_tomllib_import_path_loads_the_same_public_rules(
     *, monkeypatch: pytest.MonkeyPatch
 ) -> None:
