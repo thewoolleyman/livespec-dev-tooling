@@ -215,7 +215,9 @@ answering 503, and GitHub never redelivers it. So the write never runs under the
   its traceback on stderr, shuts the server down, and the service exits 1; the unit's
   `Restart=on-failure` restarts it. The unit sets `StartLimitIntervalSec=300` and
   `StartLimitBurst=5`, so a crash on every start ends in `failed` after five starts
-  instead of looping forever with the webhook listener down. The sweep never stops
+  instead of looping forever with the webhook listener down. The role's restart
+  handler runs `systemctl reset-failed` first, so a converge that ships the fix
+  restarts the unit even inside the 300 s interval. The sweep never stops
   silently while the service keeps answering. An action entry the sweep cannot read
   is never a crash: it is quarantined, journaled once under `sweep_quarantine` with
   what is wrong with it, named on stderr, and skipped.

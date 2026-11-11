@@ -18,6 +18,7 @@ from pathlib import Path
 from types import ModuleType
 
 import pytest
+import yaml
 
 from livespec_dev_tooling import incident_controller_installation as installation
 
@@ -201,6 +202,38 @@ def test_a_crash_loop_ends_in_failed_rather_than_restarting_forever() -> None:
         assert burst * int(settings["RestartSec"]) < interval, path
     readme = (_ROLE / "README.md").read_text(encoding="utf-8")
     assert "StartLimitIntervalSec=300" in readme and "StartLimitBurst=5" in readme
+
+
+def test_the_restart_handler_clears_the_start_limit_first() -> None:
+    """A tripped StartLimitBurst refuses a plain restart until the interval passes.
+
+    Measured: after a crash loop lands in `failed`, `systemctl restart` answers "Start
+    request repeated too quickly" for up to StartLimitIntervalSec, even with the cause
+    fixed. So every restart the role notifies is preceded by `systemctl reset-failed` on
+    the same unit: a handler listening on the restart's own name, defined before it
+    (handlers run in definition order), accepting only a never-loaded unit's refusal.
+    """
+    handlers = yaml.safe_load((_ROLE / "handlers" / "main.yml").read_text(encoding="utf-8"))
+    names = [handler["name"] for handler in handlers]
+    restart_name = "Restart the incident observer onto its installation"
+    restart = names.index(restart_name)
+    (clear,) = [
+        index
+        for index, handler in enumerate(handlers)
+        if handler.get("ansible.builtin.command", {}).get("argv", [])[:2]
+        == ["systemctl", "reset-failed"]
+    ]
+    reset = handlers[clear]
+    assert clear < restart
+    assert reset["listen"] == restart_name
+    assert (
+        reset["ansible.builtin.command"]["argv"][2]
+        == handlers[restart]["ansible.builtin.systemd_service"]["name"]
+    )
+    assert reset["become"] is True
+    assert reset["when"] == handlers[restart]["when"]
+    assert any("'not loaded' not in" in clause for clause in reset["failed_when"])
+    assert handlers[restart]["ansible.builtin.systemd_service"]["state"] == "restarted"
 
 
 def test_the_unit_keeps_the_packaged_confinement() -> None:

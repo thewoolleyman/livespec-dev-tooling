@@ -110,7 +110,11 @@ which rules out every CI node and every sandbox host whatever their TLS posture.
   systemd restarts it. The host default limit of 5 starts in 10 s can never trip
   with a 2 s restart delay, so a crash on every start would restart forever. Five
   starts in 300 s lets a transient failure recover by itself, while a deterministic
-  crash ends in `failed`, where `systemctl --failed` shows it;
+  crash ends in `failed` after five starts (about 10 s for a fast crash), where
+  `systemctl --failed` shows it. Once the limit has tripped, systemd refuses a
+  plain restart until the 300 s interval passes, so the restart handler is preceded
+  by one that runs `systemctl reset-failed` on the unit: a converge that ships the
+  fix restarts the observer at once;
 - a probe that `POST /current` without the query token is refused (403), which
   is also the proof the unit passed its installation check and bound its socket;
 - the path-scoped Funnel for each path in `incident_observer_funnel_paths`
