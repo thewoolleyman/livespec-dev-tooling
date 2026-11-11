@@ -9,11 +9,14 @@
 # (VXLAN) traffic INTO it against 33.4 MB/s for the same transfer over the
 # underlay (node IPs): only VXLAN-encapsulated traffic arriving at the worker VM
 # collapsed, MTU was ruled out, and peer-to-peer VXLAN between fleet nodes was
-# healthy. After the M4 moved to a wired USB NIC (16:03Z the same day) inbound
-# recovered to ~99 MiB/s and the collapse moved to the TRANSMIT side: VXLAN
-# OUT of the worker ran at ~465 KiB/s against ~105 MiB/s over the underlay. The
-# sweep was blind to that direction, so it now times both (coordinator ruling
-# 16:13Z: the outbound sweep goes in this shared probe).
+# healthy. After the M4 moved to a wired USB NIC (16:03Z the same day), VXLAN
+# OUT of the worker rose to ~91-99 MiB/s, while VXLAN INTO it stayed collapsed
+# at ~465 KiB/s against ~105 MiB/s over the underlay. A misread of
+# prove-worker.sh's direction labels, which name the requesting client and not
+# the data's direction, first reported that the other way round. The sweep now
+# times both directions either way (coordinator ruling 16:13Z). Its 18:56Z
+# two-way run found that no guest offload toggle cures inbound: lima0
+# rx-checksumming and tx-udp_tnl-segmentation are [fixed] (plan research 011).
 #
 # SCOPE (binding, legacy-coordinator-agent 2026-11-11): every privileged action
 # runs ONLY on a homelab worker node. The tuning pod is placed by nodeSelector
