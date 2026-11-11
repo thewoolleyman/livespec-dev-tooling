@@ -213,6 +213,12 @@ The files:
   for GitHub-hosted runners to reach a fleet host. The tailnet has no tags and
   no agent mints a key, so a CI tailnet join is never the answer (proposed for
   the incident observer under livespec-dev-tooling-jpfdcx, 2026-11-10).
+- Read `.ai/deleted-gate-pod-diagnosis.md` before diagnosing a delegated gate
+  that "was admitted but reached no terminal condition", or any gate Job whose
+  pod is already gone. The client deletes the abandoned Job and its logs go
+  with it, but the node's events, kubelet journal and sysstat, and Honeycomb's
+  per-pod `k8s.pod.cpu.usage`, still show where and when the work stopped
+  (livespec-dev-tooling-ddy5xu, 2026-11-11).
 
 ## Backlog drive — this repo has no foreman seat
 
