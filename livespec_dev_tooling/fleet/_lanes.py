@@ -32,7 +32,7 @@ lane zero API reads.
 from __future__ import annotations
 
 import sys
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -114,6 +114,7 @@ class MemberVerdict:
     member: str
     failing_rows: tuple[str, ...]
     non_excluding_rows: tuple[str, ...] = ()
+    non_excluding_notes: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -180,9 +181,11 @@ def run_member_rows(
     out_of_vantage: dict[tuple[str, str], int] = {}
     failing_rows_by_member: dict[str, list[str]] = {}
     non_excluding_by_member: dict[str, list[str]] = {}
+    notes_by_member: dict[str, list[str]] = {}
     for member in manifest.members:
         failing_rows_by_member[member.repo] = []
         non_excluding_by_member[member.repo] = []
+        notes_by_member[member.repo] = []
         for row in rows_for(repo_class=member.repo_class):
             if row.vantage not in vantages:
                 key = (row.row_id, row.vantage)
@@ -197,6 +200,7 @@ def run_member_rows(
                     skips=skips,
                     failing_rows=failing_rows_by_member[member.repo],
                     non_excluding_rows=non_excluding_by_member[member.repo],
+                    non_excluding_notes=notes_by_member[member.repo],
                     read_failures=ctx.read_failures,
                 ),
                 log=log,
@@ -212,6 +216,7 @@ def run_member_rows(
                 member=member,
                 failing_rows=tuple(failing_rows),
                 non_excluding_rows=tuple(non_excluding_by_member[member]),
+                non_excluding_notes=tuple(notes_by_member[member]),
             )
             for member, failing_rows in failing_rows_by_member.items()
         ),
@@ -237,6 +242,7 @@ class _LaneTallies:
     failing_rows: list[str]
     non_excluding_rows: list[str]
     read_failures: list[ReadFailure]
+    non_excluding_notes: list[str] = field(default_factory=list)
 
 
 def _log_honoured_waivers(
@@ -335,6 +341,8 @@ def _fold_member_outcome(
                 # the filter from the row id, which cannot tell a staleness
                 # finding from the can't-parse finding the SAME row emits.
                 tallies.non_excluding_rows.append(row.row_id)
+                if outcome.retained_detail:
+                    tallies.non_excluding_notes.append(f"{row.row_id}: {outcome.retained_detail}")
             log.error(
                 "fleet obligation violated",
                 row=row.row_id,

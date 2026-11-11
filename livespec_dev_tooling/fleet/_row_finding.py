@@ -69,9 +69,19 @@ class RowFinding:
     severity: str = "error"
     finding_class: str = ""
     waivers: tuple[tuple[str, str], ...] = ()
+    # Why a non-excluding finding did not exclude its member, in words the
+    # fan-out's retained annotation can repeat; empty where the message alone
+    # says it.
+    retained_detail: str = ""
 
 
-def pin_staleness_finding(*, message: str, severity: str) -> RowFinding:
+def pin_staleness_finding(
+    *,
+    message: str,
+    severity: str,
+    waivers: tuple[tuple[str, str], ...] = (),
+    retained_detail: str = "",
+) -> RowFinding:
     """A staleness-class finding — error-severity where it escalates, never excluding.
 
     A named constructor rather than the keyword at each of the four call sites
@@ -91,4 +101,6 @@ def pin_staleness_finding(*, message: str, severity: str) -> RowFinding:
         message=message,
         severity=severity,
         finding_class=PIN_STALENESS_FINDING_CLASS,
+        waivers=waivers,
+        retained_detail=retained_detail,
     )

@@ -189,13 +189,15 @@ def _findings_outcome(
     pinned_missing = _pinned_release_missing_slugs(ctx=ctx, member=member, missing=missing)
     if pinned_missing is not None and pinned_missing[1] == missing:
         tag, absent = pinned_missing
-        detail = ", ".join(absent)
+        reason = (
+            f"missing canonical slug(s) {', '.join(absent)} "
+            f"are absent from pinned livespec-dev-tooling release {tag}"
+        )
         return pin_staleness_finding(
-            message=(
-                f"{member.repo}: {'; '.join(findings)} — missing canonical slug(s) {detail} "
-                f"are absent from pinned livespec-dev-tooling release {tag}"
-            ),
+            message=f"{member.repo}: {'; '.join(findings)} — {reason}",
             severity="error",
+            waivers=honoured,
+            retained_detail=reason,
         )
     return RowFinding(
         message=f"{member.repo}: {'; '.join(findings)}",

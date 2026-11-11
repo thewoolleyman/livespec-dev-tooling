@@ -329,3 +329,76 @@ def test_pinned_check_inventory_is_fail_closed_on_unreadable_shapes(
         )
         == expected
     )
+
+
+def _stale_pin_waiver_table() -> dict[tuple[str, ...], GhResult]:
+    """`widget` waives `check-alpha`, omits `check-beta`, and pins a release lacking both."""
+    table = _waiver_table(justfile=_justfile_selecting(slugs=("check-lint",)))
+    table[
+        (
+            "api",
+            f"repos/acme/widget/contents/{_PYPROJECT_PATH}?ref=master",
+            "-H",
+            "Accept: application/vnd.github.raw",
+        )
+    ] = GhResult(
+        returncode=0,
+        stdout=(
+            "[tool.livespec_dev_tooling]\n"
+            f'canonical_check_waivers = [{{ slug = "check-alpha", reason = "{_WAIVER_REASON}" }}]\n'
+            "[tool.uv.sources]\n"
+            'livespec-dev-tooling = { git = "https://github.com/thewoolleyman/livespec-dev-tooling.git", tag = "v1.191.0" }\n'
+        ),
+        stderr="",
+    )
+    table[("api", "repos/acme/livespec-dev-tooling/git/trees/v1.191.0?recursive=1")] = GhResult(
+        returncode=0,
+        stdout='{"tree": [{"path": "livespec_dev_tooling/checks/__init__.py", "type": "blob"}]}',
+        stderr="",
+    )
+    return table
+
+
+def test_retained_canonical_finding_keeps_honoured_waivers_and_names_slugs_and_release(
+    *, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A kept member still reports its waivers, and says which slugs the pin lacks."""
+    monkeypatch.setattr(
+        "livespec_dev_tooling.fleet._rows_canonical_check_slugs.canonical_check_slugs",
+        lambda: IOSuccess(("check-alpha", "check-beta", "check-lint")),
+    )
+
+    outcome = assert_canonical_check_slugs_wired(
+        ctx=make_context(table=_stale_pin_waiver_table()), member=_MEMBER
+    )
+
+    assert isinstance(outcome, RowFinding)
+    assert outcome.finding_class == PIN_STALENESS_FINDING_CLASS
+    assert outcome.waivers == (("check-alpha", _WAIVER_REASON),)
+    assert "check-beta" in outcome.retained_detail
+    assert "v1.191.0" in outcome.retained_detail
+
+
+def test_lane_records_the_retained_detail_and_still_logs_the_waiver(
+    *, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    manifest = parse_manifest(source=_MANIFEST_WITH_ADOPTER).unwrap()
+    monkeypatch.setattr(
+        "livespec_dev_tooling.fleet._rows_canonical_check_slugs.canonical_check_slugs",
+        lambda: IOSuccess(("check-alpha", "check-beta", "check-lint")),
+    )
+    monkeypatch.setattr(_lanes, "rows_for", _canonical_row_only)
+    log = RecordingLog()
+
+    result = run_member_rows(
+        ctx=make_context(table=_stale_pin_waiver_table()), manifest=manifest, log=log
+    )
+
+    verdict = result.member_verdicts[0]
+    assert verdict.non_excluding_rows == (_ROW_ID,)
+    assert len(verdict.non_excluding_notes) == 1
+    note = verdict.non_excluding_notes[0]
+    assert note.startswith(f"{_ROW_ID}: ")
+    assert "check-beta" in note
+    assert "v1.191.0" in note
+    assert [fields["slug"] for fields in log.fields_for(event=_WAIVER_EVENT)] == ["check-alpha"]
