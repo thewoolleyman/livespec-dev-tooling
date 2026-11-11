@@ -16,6 +16,7 @@ recorded log.
 from __future__ import annotations
 
 import json
+import subprocess
 from pathlib import Path
 from typing import cast
 
@@ -37,6 +38,7 @@ from livespec_dev_tooling.ci_infra_rerun import (
 __all__: list[str] = []
 
 _FIXTURES = Path(__file__).resolve().parents[1] / "fixtures"
+_REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 _RECORDED_429_LOG = (_FIXTURES / "ci_infra_rerun" / "setup-job-429.log").read_text(encoding="utf-8")
 _SETUP = "Set up job"
 _NOT_FOUND_LINE = (
@@ -225,6 +227,77 @@ def test_log_jobs_prints_the_ids_whose_logs_to_fetch(
 
     assert code == 0
     assert capsys.readouterr().out == "11\n13\n"
+
+
+def test_module_runs_under_the_reusable_workflow_bare_pythonpath(*, tmp_path: Path) -> None:
+    """The reusable workflow's system Python imports the repository's vendored structlog."""
+    jobs_path = tmp_path / "jobs.json"
+    log_dir = tmp_path / "logs"
+    plan_path = tmp_path / "plan.json"
+    summary_path = tmp_path / "summary.md"
+    log_dir.mkdir()
+    _ = jobs_path.write_text(
+        json.dumps([_job(attempt=1, job_id=73, name="check", failed_step=_SETUP)]),
+        encoding="utf-8",
+    )
+    _ = (log_dir / "73.log").write_text(_RECORDED_429_LOG, encoding="utf-8")
+    environment = {
+        "HOME": str(tmp_path),
+        "PATH": "/usr/local/bin:/usr/bin:/bin",
+        "PYTHONPATH": str(_REPOSITORY_ROOT),
+    }
+
+    log_jobs = subprocess.run(
+        [
+            "python3",
+            "-m",
+            "livespec_dev_tooling.ci_infra_rerun",
+            "log-jobs",
+            "--jobs",
+            str(jobs_path),
+            "--run-attempt",
+            "1",
+        ],
+        capture_output=True,
+        check=False,
+        cwd=_REPOSITORY_ROOT,
+        env=environment,
+        text=True,
+    )
+    plan = subprocess.run(
+        [
+            "python3",
+            "-m",
+            "livespec_dev_tooling.ci_infra_rerun",
+            "plan",
+            "--jobs",
+            str(jobs_path),
+            "--run-attempt",
+            "1",
+            "--logs-dir",
+            str(log_dir),
+            "--plan-out",
+            str(plan_path),
+            "--summary-out",
+            str(summary_path),
+            "--repository",
+            "thewoolleyman/livespec-dev-tooling",
+            "--run-id",
+            "41645065357",
+        ],
+        capture_output=True,
+        check=False,
+        cwd=_REPOSITORY_ROOT,
+        env=environment,
+        text=True,
+    )
+
+    assert log_jobs.returncode == 0, log_jobs.stderr
+    assert log_jobs.stdout == "73\n"
+    assert plan.returncode == 0, plan.stderr
+    reruns = json.loads(plan_path.read_text(encoding="utf-8"))["reruns"]
+    assert [rerun["job_id"] for rerun in reruns] == [73]
+    assert [rerun["signature"] for rerun in reruns] == ["action-download-429"]
 
 
 def test_unreadable_or_malformed_recorded_jobs_plan_nothing(tmp_path: Path) -> None:
