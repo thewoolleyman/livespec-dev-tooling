@@ -53,6 +53,7 @@ case "$1" in
     case "$*" in *Unschedulable*) [ "$STUB_HOLD" = 0 ] && {{ echo 'timed out waiting for the condition' >&2; exit 1; }} ;; esac ;;
   get)
     if [ "$2" = node ]; then
+      case "$*" in *InternalIP*) case "$3" in peer-node-1) echo 192.0.2.20 ;; *) echo 192.0.2.10 ;; esac; exit 0 ;; esac
       if [ "$STUB_HOLD" != 0 ]; then
         echo 'homelab-worker.livespec.dev/admission=hold:NoSchedule'
         sleep "$STUB_TAINT_DELAY"
@@ -92,7 +93,12 @@ case "$1" in
         case "$*" in
           *proc/uptime*/huge*)
             [ "$STUB_THROUGHPUT" = fail ] && {{ echo 'wget: download timed out' >&2; exit 1; }}
-            case "$pod" in client-worker) echo '100.00 102.00' ;; *) echo '200.00 201.00' ;; esac ;;
+            case "$pod" in
+              client-worker) echo '100.00 102.00' ;;
+              host-worker) echo '300.00 300.50' ;;
+              host-peer) echo '400.00 404.00' ;;
+              *) echo '200.00 201.00' ;;
+            esac ;;
         esac ;;
     esac ;;
   delete)
@@ -245,9 +251,9 @@ def test_the_proof_pods_tolerate_the_hold_are_pinned_and_use_a_digest_pinned_ima
 ) -> None:
     _prove(env=env, args=[_HOST, "--peer-node", _PEER], tunnel_only="0")
     applied = (env.state / "applied.yaml").read_text(encoding="utf-8")
-    assert applied.count(f"nodeName: {_WORKER}") == 2
-    assert applied.count(f"nodeName: {_PEER}") == 2
-    assert applied.count("key: homelab-worker.livespec.dev/admission") == 4
+    assert applied.count(f"nodeName: {_WORKER}") == 3
+    assert applied.count(f"nodeName: {_PEER}") == 3
+    assert applied.count("key: homelab-worker.livespec.dev/admission") == 6
     images = set(re.findall(r"image: (\S+)", applied))
     assert images
     assert all(re.fullmatch(r"\S+@sha256:[0-9a-f]{64}", image) for image in images)
@@ -333,3 +339,23 @@ def test_the_negative_control_measures_no_throughput(env: _Env) -> None:
         env=env, args=[_HOST, "--peer-node", _PEER, "--expect-streaming-failure"], tunnel_only="1"
     )
     assert "throughput-" not in result.stdout
+
+
+def test_the_proof_measures_underlay_throughput_over_node_ips_both_ways(env: _Env) -> None:
+    """hostNetwork pods time 32 MiB over the nodes' InternalIPs: 0.50 s out of the worker, 4.00 s in."""
+    result = _prove(env=env, args=[_HOST, "--peer-node", _PEER], tunnel_only="0")
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert (
+        "PROOF-INFO throughput-underlay-worker-to-peer 65536 KiB/s (32768 KiB in 0.50 s)"
+        in result.stdout
+    )
+    assert (
+        "PROOF-INFO throughput-underlay-peer-to-worker 8192 KiB/s (32768 KiB in 4.00 s)"
+        in result.stdout
+    )
+    calls = (env.state / "calls.log").read_text(encoding="utf-8")
+    assert "http://192.0.2.20:18089/huge" in calls
+    assert "http://192.0.2.10:18089/huge" in calls
+    applied = (env.state / "applied.yaml").read_text(encoding="utf-8")
+    assert applied.count("hostNetwork: true") == 2
+    assert "httpd -f -p 18089" in applied

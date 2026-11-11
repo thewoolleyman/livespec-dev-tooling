@@ -162,7 +162,7 @@ def test_the_disabled_mode_runs_the_full_proof_inside_the_fixture(mac: _Mac) -> 
     )
     assert any(" sh -c kubectl port-forward " in c for c in calls)
     applied = (mac.state / "applied.yaml").read_text(encoding="utf-8")
-    assert applied.count("nodeName: k3d-hw-fixture-agent-0") == 2
+    assert applied.count("nodeName: k3d-hw-fixture-agent-0") == 3
 
 
 def test_the_disabled_mode_fails_when_the_worker_is_unreachable(mac: _Mac) -> None:
