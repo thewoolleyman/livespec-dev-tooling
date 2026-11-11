@@ -37,8 +37,11 @@ The reconciler runs only on the server, under the admin kubeconfig.
 On each 30 s cycle the reconciler works through these steps:
 
 1. **Scope.** Only the factory nodes the steered sandbox pods can schedule on
-   are compared. A node that carries a `NoSchedule`/`NoExecute` taint the pods
-   do not tolerate (`FACTORY_PRESSURE_TOLERATED_TAINTS`, default
+   are compared. A node that lacks a label the pods' nodeSelector requires
+   (`FACTORY_PRESSURE_REQUIRED_LABELS`, default `ci-runner.io/factory-admit=true`;
+   the factory-vs-CI share flips that label per node, so a node that is not
+   admitting factory pods this cycle drops out of the comparison), that carries a
+   `NoSchedule`/`NoExecute` taint the pods do not tolerate (`FACTORY_PRESSURE_TOLERATED_TAINTS`, default
    `node-role/ci=factory`), or whose `kubernetes.io/arch` is not
    `FACTORY_PRESSURE_ARCH` (default `amd64`), is OUT OF SCOPE: its reading is
    neither required nor compared, it is never tainted, and each `DECISION` line
@@ -46,7 +49,10 @@ On each 30 s cycle the reconciler works through these steps:
    with a `homelab-worker.livespec.dev/class` NoSchedule taint and no publisher.
    Before this rule its unknown reading made every cycle from
    2026-11-09T19:55:58Z `reading-unknown` and switched steering off fleet-wide
-   (orchestrator `bd-ib-nmuyjc`).
+   (orchestrator `bd-ib-nmuyjc`). The label rule followed on 2026-11-11: with
+   gamingpc and hp at `factory-admit=false`, gamingpc (avg60 0.00, unreachable)
+   was taken as the lowest node, so BOTH reachable nodes were tainted and the
+   steer netted to nothing.
 2. **Unknown readings.** An in-scope factory node whose `LivespecCPUPressure`
    heartbeat is older than 90 s (or is absent) is UNKNOWN. Any unknown in-scope
    reading removes the taint from every factory node, AND raises the named alarm

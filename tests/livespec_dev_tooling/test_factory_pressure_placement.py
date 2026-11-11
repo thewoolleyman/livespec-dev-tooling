@@ -79,7 +79,11 @@ def _node(
     return {
         "metadata": {
             "name": name,
-            "labels": {"kubernetes.io/hostname": name, "ci-runner.io/factory": "true"},
+            "labels": {
+                "kubernetes.io/hostname": name,
+                "ci-runner.io/factory": "true",
+                "ci-runner.io/factory-admit": "true",
+            },
         },
         "spec": {
             "taints": [{"key": _TAINT_KEY, "value": "high", "effect": "PreferNoSchedule"}]
@@ -645,3 +649,48 @@ def test_an_out_of_scope_node_without_a_reading_raises_no_alarm(tmp_path: Path) 
     )
     assert run.returncode == 0, run.stderr
     assert "ALARM" not in run.stderr
+
+
+def _admit(node: _Json, value: str) -> _Json:
+    node["metadata"]["labels"]["ci-runner.io/factory-admit"] = value
+    return node
+
+
+_GAMING = "gamingpc-xubuntu"
+
+
+def test_a_node_whose_factory_admit_label_the_pods_reject_is_out_of_scope(tmp_path: Path) -> None:
+    # 2026-11-11 16:3xZ: gamingpc and hp read ci-runner.io/factory-admit=false, which
+    # the sandbox pods' nodeSelector rejects. Compared anyway, gamingpc (0.00) was the
+    # "lowest", so BOTH reachable nodes were tainted and the steer netted to nothing.
+    run, mutations = _reconcile(
+        tmp_path,
+        nodes=[
+            _admit(_node(_PE, avg60=2.5, alloc="72"), "true"),
+            _admit(_node(_GMK, avg60=30.0), "true"),
+            _admit(_node(_GAMING, avg60=0.0), "false"),
+        ],
+        pods=[],
+    )
+    assert run.returncode == 0, run.stderr
+    assert f"taint nodes {_GMK} {_TAINT_KEY}=high:PreferNoSchedule --overwrite" in mutations
+    assert not any(m.startswith(f"taint nodes {_PE} {_TAINT_KEY}=high") for m in mutations)
+    assert f"steer-to:{_PE}:" in run.stdout
+    assert f"out-of-scope[{_GAMING}:label:ci-runner.io/factory-admit]" in run.stdout
+
+
+def test_a_node_without_the_factory_admit_label_is_out_of_scope(tmp_path: Path) -> None:
+    gaming = _node(_GAMING, avg60=None)
+    del gaming["metadata"]["labels"]["ci-runner.io/factory-admit"]
+    run, mutations = _reconcile(
+        tmp_path,
+        nodes=[
+            _admit(_node(_PE, avg60=2.5, alloc="72"), "true"),
+            _admit(_node(_GMK, avg60=30.0), "true"),
+            gaming,
+        ],
+        pods=[],
+    )
+    assert run.returncode == 0, run.stderr
+    assert "reading-unknown" not in run.stdout
+    assert f"taint nodes {_GMK} {_TAINT_KEY}=high:PreferNoSchedule --overwrite" in mutations
