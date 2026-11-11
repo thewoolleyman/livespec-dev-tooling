@@ -13,7 +13,10 @@ from livespec_dev_tooling._gate_host_authority import (
     host_authority_decision,
     run_host_authority_members,
 )
-from livespec_dev_tooling._gate_remote_assembly import declared_gate_check_suite
+from livespec_dev_tooling._gate_remote_assembly import (
+    declared_gate_check_suite,
+    refuses_declaration,
+)
 from livespec_dev_tooling.gate_command import is_full_suite_command, pytest_command
 from livespec_dev_tooling.gate_credential import gates_kubeconfig_readable
 from livespec_dev_tooling.gate_remote_delegate import (
@@ -192,8 +195,10 @@ def run_cluster_gate(*, repo_root: Path, command: tuple[str, ...]) -> ClusterGat
         check_suite=check_suite,
     )
     if isinstance(built, Failure):
+        # An unusable resource declaration rejects the committed configuration:
+        # the run FAILS naming the key, and never reads as a cluster with no verdict.
         return ClusterGateResult(
-            exit_status=75,
+            exit_status=1 if refuses_declaration(failure=built.failure()) else 75,
             tree_hash=tree_hash,
             job_name="",
             detail=built.failure().detail,
