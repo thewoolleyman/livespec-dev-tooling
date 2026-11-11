@@ -398,6 +398,40 @@ def test_passing_staged_test_probe_reuses_one_delegated_job_for_suite_green(
     assert "TDD-Suite-Green-Gate-Job: gate-staged-tests-1" in rendered
 
 
+def test_declared_red_intent_with_only_shared_test_support_routes_to_suite_green(
+    *, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Shared support with no test module has no test to fail, so it is never a Red."""
+    mod = _load()
+    monkeypatch.chdir(tmp_path)
+    message = tmp_path / "COMMIT_EDITMSG"
+    message.write_text("feat: update test support\n", encoding="utf-8")
+    routes: list[str] = []
+
+    def red(**_kwargs: object) -> int:
+        routes.append("red")
+        return 0
+
+    def suite(**_kwargs: object) -> int:
+        routes.append("suite")
+        return 0
+
+    monkeypatch.setattr(mod, "_handle_suite_green_mode", suite)
+    monkeypatch.setattr(mod, "run_staged_tests_probe", lambda **_kwargs: pytest.fail("probe ran"))
+
+    result = mod.dispatch_tests_only_staged(
+        msg_path=message,
+        log=_RecordingLog(),
+        staged_paths=["tests/conftest.py"],
+        tests_paths=["tests/conftest.py"],
+        declares_red_intent=True,
+        handle_red=red,
+    )
+
+    assert result == 0
+    assert routes == ["suite"]
+
+
 def test_silent_suite_green_stall_names_the_window_and_missing_test_completion(
     *, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
