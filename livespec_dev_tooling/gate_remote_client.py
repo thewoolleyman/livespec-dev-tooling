@@ -81,6 +81,7 @@ from __future__ import annotations
 
 import hashlib
 import sys
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -232,6 +233,7 @@ def run_gate(
     request: GateRunRequest,
     runner: GateCommandRunner = default_gate_command_runner,
     sleeper: Sleeper = default_sleeper,
+    job_name_recorder: Callable[[str], None] | None = None,
 ) -> Result[GateRunOutcome, GateStepFailed]:
     """Gate the current HEAD tree on the cluster and report what happened.
 
@@ -273,7 +275,11 @@ def run_gate(
     if isinstance(pushed, Failure):
         return Failure(pushed.failure())
     gated, may_collect = _gate_a_pushed_tree(
-        request=request, runner=runner, sleeper=sleeper, tree_hash=tree_hash
+        request=request,
+        runner=runner,
+        sleeper=sleeper,
+        tree_hash=tree_hash,
+        job_name_recorder=job_name_recorder,
     )
     if may_collect:
         deleted = _delete_gate_ref(request=request, runner=runner)
@@ -383,6 +389,7 @@ def _gate_a_pushed_tree(
     runner: GateCommandRunner,
     sleeper: Sleeper,
     tree_hash: str,
+    job_name_recorder: Callable[[str], None] | None,
 ) -> tuple[Result[GateRunOutcome, GateStepFailed], bool]:
     """Submit, wait, stream and say whether a ref collection is now safe.
 
@@ -427,6 +434,8 @@ def _gate_a_pushed_tree(
         # A malformed create response may still name a Job the server accepted.
         return Failure(named.failure()), False
     job_name = named.unwrap()
+    if job_name_recorder is not None:
+        job_name_recorder(job_name)
     reported_tree = created_job_tree_hash(payload=submitted.unwrap().stdout)
     # ONLY when a token was actually minted, which is the state of a push whose
     # repository names a PRIVATE cross-repo sibling and of no other. The step is

@@ -1565,6 +1565,7 @@ def test_an_unreadable_venue_still_refuses_the_foreground_command(
         # The waiter and the two read-only verdict surfaces. Cheap,
         # restartable, and they run no gate of their own.
         'mise exec -- just gate-wait "$(cat tmp/run-checks.id)"',
+        "mise exec -- just gate-stop 20260805T051456Z-4055481",
         "mise exec -- just gate-status 20260805T051456Z-4055481",
         "mise exec -- just gate-list",
         # Asking git what the subcommand does runs no hook.

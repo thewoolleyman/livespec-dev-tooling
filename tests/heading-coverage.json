@@ -3444,16 +3444,14 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a stopped push gate ends without pushing and reads STOPPED",
-    "test": "TODO",
-    "reason": "Spec-first: a real test at the integration tier (static `pytest.mark.integration`, driving the shipped `gate-run.sh` through real `bash` and `git` subprocesses beside the other detached gate scenarios in `tests.livespec_dev_tooling.worktree_pack.test_gate_run`) is owed for this scenario: a `gate-start -- git push` whose pre-push hook runs a gate client in its own session is stopped with `gate-stop`, the remote never receives the branch, and `gate-status` prints `STOPPED` and exits 75. The shipped runner has no `gate-stop` verb; livespec-dev-tooling-kjwanx owns the change and this test.",
+    "test": "tests.livespec_dev_tooling.worktree_pack.test_gate_run.test_gate_stop_ends_a_running_run_and_every_reader_reports_stopped",
     "work_item": "livespec-dev-tooling-kjwanx"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: stopping a delegated gate ends its gate Job",
-    "test": "TODO",
-    "reason": "Spec-first: a real test at the integration tier (static `pytest.mark.integration`, driving the shipped `gate-run.sh` with a delegated gate client whose cluster side is faked at the client's Job-cleanup seam) is owed for this scenario: `gate-stop` on a RUNNING delegated run exits 0 only after the gate Job has ended, and `gate-wait` then prints `STOPPED` and exits 75. The shipped runner has no `gate-stop` verb; livespec-dev-tooling-kjwanx owns the change and this test.",
+    "test": "tests.livespec_dev_tooling.worktree_pack.test_gate_run.test_gate_stop_ends_a_running_run_and_every_reader_reports_stopped",
     "work_item": "livespec-dev-tooling-kjwanx"
   }
 ]

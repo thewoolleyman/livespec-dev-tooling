@@ -135,6 +135,10 @@
 #   64       usage error (EX_USAGE)
 #   70       the runner itself could not launch the gate (EX_SOFTWARE)
 #
+# Signalling the recorded pid or its process group is NOT a supported way to
+# stop a run: hook runners may put the wrapped push and its gate client in a
+# separate session. Use `just gate-stop <run-id>` instead.
+#
 # `set -euo pipefail` (errexit): a runner whose own bookkeeping fails
 # part-way MUST NOT go on to write a verdict file, because a
 # half-written run directory is exactly the ambiguity this script
@@ -959,6 +963,7 @@ cmd_child() {
     local dir="$1"
     shift
     printf '%s\n' "$$" >"$dir/pid"
+    export LIVESPEC_GATE_RUN_DIR="$dir"
 
     # Arm the write-watch. Every step is `|| true`: the observer may report
     # nothing, but it may never be the reason a gate does not report.
@@ -1269,13 +1274,11 @@ cmd_wait() {
 # after the parent exits those session members are reparented to init, so a
 # later descendant walk cannot find the still-live push or gate client.
 PROC_STATE=""
-PROC_PGID=""
 PROC_SID=""
 read_proc_identity() {
     local line="" rest
     PROC_STATE=""
     PROC_PPID="?"
-    PROC_PGID=""
     PROC_SID=""
     { read -r line <"/proc/$1/stat"; } 2>/dev/null || true
     [[ -n "$line" ]] || return 0
@@ -1284,7 +1287,6 @@ read_proc_identity() {
     rest="${rest#* }"
     PROC_PPID="${rest%% *}"
     rest="${rest#* }"
-    PROC_PGID="${rest%% *}"
     rest="${rest#* }"
     PROC_SID="${rest%% *}"
 }
@@ -1321,9 +1323,26 @@ signal_run_sessions() {
     done <"$sessions_file"
 }
 
+recorded_job_is_gone() {
+    local dir="$1" job_name="" probe=""
+    field_into job_name "$dir/job_name"
+    [[ "$job_name" != "?" && -n "$job_name" ]] || return 0
+    if probe="$(with-gates-kubeconfig kubectl --namespace "${GATE_JOB_NAMESPACE:-gates}" get job "$job_name" --output name 2>&1)"; then
+        printf 'gate-stop: surviving Job for %s: %s\n' "$dir" "$job_name" >&2
+        return 1
+    fi
+    case "$probe" in
+        *NotFound*|*"not found"*) return 0 ;;
+        *)
+            printf 'gate-stop: could not confirm Job %s is gone: %s\n' "$job_name" "$probe" >&2
+            return 1
+            ;;
+    esac
+}
+
 cmd_stop() {
     [[ $# -eq 1 ]] || usage
-    local run_id="$1" dir deadline survivors=""
+    local run_id="$1" dir deadline survivors="" job_gone=true
     dir="$(run_dir_for_read "$run_id")" || {
         unknown_run "$run_id"
         return "$EX_USAGE"
@@ -1352,6 +1371,12 @@ cmd_stop() {
     survivors="$(session_processes "$dir/stopped_sessions")"
     if [[ -n "$survivors" ]]; then
         printf 'gate-stop: surviving processes for %s: %s\n' "$run_id" "$survivors" >&2
+        job_gone=false
+    fi
+    if ! recorded_job_is_gone "$dir"; then
+        job_gone=false
+    fi
+    if [[ "$job_gone" != true ]]; then
         return 1
     fi
     report_run "$run_id" "$dir" || true

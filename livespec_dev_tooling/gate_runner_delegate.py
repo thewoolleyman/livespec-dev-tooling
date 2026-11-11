@@ -6,6 +6,7 @@ import argparse
 import os
 import sys
 import tempfile
+from collections.abc import Callable
 from dataclasses import dataclass, replace
 from pathlib import Path
 
@@ -18,6 +19,7 @@ from livespec_dev_tooling._gate_remote_assembly import (
     refuses_declaration,
 )
 from livespec_dev_tooling.gate_command import is_full_suite_command, pytest_command
+from livespec_dev_tooling.gate_run_record import job_name_recorder
 from livespec_dev_tooling.gate_credential import gates_kubeconfig_readable
 from livespec_dev_tooling.gate_remote_delegate import (
     delegated_gate_enabled,
@@ -169,7 +171,12 @@ def _remote_command(
     return pytest_argv, ()
 
 
-def run_cluster_gate(*, repo_root: Path, command: tuple[str, ...]) -> ClusterGateResult:
+def run_cluster_gate(
+    *,
+    repo_root: Path,
+    command: tuple[str, ...],
+    job_name_recorder: Callable[[str], None] | None = None,
+) -> ClusterGateResult:
     """Publish and run the current worktree tree without falling back to the host."""
     source = _working_tree_source(repo_root=repo_root)
     if source is None:
@@ -209,7 +216,11 @@ def run_cluster_gate(*, repo_root: Path, command: tuple[str, ...]) -> ClusterGat
         tree_hash=tree_hash,
         capture_output=False,
     )
-    verdict = run_gated_push(request=request, runner=default_gate_command_runner)
+    verdict = run_gated_push(
+        request=request,
+        runner=default_gate_command_runner,
+        job_name_recorder=job_name_recorder,
+    )
     if verdict.state == GATE_PASSED:
         verdict = host_authority_decision(
             verdict=verdict,
@@ -248,7 +259,12 @@ def _run_main() -> int:
     """Persist remote evidence beside the shell runner's durable run record."""
     arguments = _run_arguments()
     command = tuple(arguments.command[1:]) if arguments.command[:1] == ["--"] else ()
-    result = run_cluster_gate(repo_root=Path.cwd(), command=command)
+
+    result = run_cluster_gate(
+        repo_root=Path.cwd(),
+        command=command,
+        job_name_recorder=job_name_recorder(run_dir=arguments.run_dir),
+    )
     if result.tree_hash:
         _ = (arguments.run_dir / "tree_hash").write_text(f"{result.tree_hash}\n", encoding="utf-8")
     if result.job_name:

@@ -834,13 +834,16 @@ def test_cluster_runner_cli_records_tree_and_job_for_gate_status(
     module = importlib.import_module("livespec_dev_tooling.gate_runner_delegate")
     run_dir = tmp_path / "run"
     _ = run_dir.mkdir()
-    monkeypatch.setattr(
-        module,
-        "run_cluster_gate",
-        lambda **_kwargs: module.ClusterGateResult(
-            exit_status=75, tree_hash="tree", job_name="job"
-        ),
-    )
+    recorders: list[object | None] = []
+
+    def cluster(**kwargs: object) -> object:
+        recorder = kwargs.get("job_name_recorder")
+        recorders.append(recorder)
+        if callable(recorder):
+            recorder("job-submitted")
+        return module.ClusterGateResult(exit_status=75, tree_hash="tree", job_name="")
+
+    monkeypatch.setattr(module, "run_cluster_gate", cluster)
     monkeypatch.setattr(
         module.sys,
         "argv",
@@ -849,7 +852,9 @@ def test_cluster_runner_cli_records_tree_and_job_for_gate_status(
 
     assert module.main() == 75
     assert (run_dir / "tree_hash").read_text(encoding="utf-8") == "tree\n"
-    assert (run_dir / "job_name").read_text(encoding="utf-8") == "job\n"
+    assert (run_dir / "job_name").is_file()
+    assert (run_dir / "job_name").read_text(encoding="utf-8") == "job-submitted\n"
+    assert callable(recorders[0])
 
 
 def _command_result(*, returncode: int = 0, stdout: str = "") -> object:

@@ -453,6 +453,22 @@ def test_every_later_step_names_the_job_the_cluster_assigned() -> None:
     assert f"job/{assigned}" in cluster.only(kind="stream-logs").argv
 
 
+def test_submission_records_the_assigned_job_before_waiting_for_its_verdict() -> None:
+    """The detached runner can stop an interrupted client only after submit records its Job."""
+    recorded: list[str] = []
+    cluster = _StubCluster()
+
+    outcome = run_gate(
+        request=_REQUEST,
+        runner=cluster,
+        sleeper=cluster.sleep,
+        job_name_recorder=recorded.append,
+    )
+
+    assert is_successful(outcome)
+    assert recorded == [_JOB]
+
+
 def test_the_outcome_names_the_tree_the_created_job_reports() -> None:
     """The outcome's tree is the created Job's own label, not the tree that was asked for.
 

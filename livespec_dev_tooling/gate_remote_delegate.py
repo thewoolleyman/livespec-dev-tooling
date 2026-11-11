@@ -74,6 +74,7 @@ so a push is never completed on the strength of a gate that was never submitted.
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from collections.abc import Callable
 from pathlib import Path
@@ -109,6 +110,7 @@ from livespec_dev_tooling.gate_outcome_telemetry import (
     emit_gate_outcome,
 )
 from livespec_dev_tooling.gate_remote_client import GateRunRequest
+from livespec_dev_tooling.gate_run_record import job_name_recorder as make_job_name_recorder
 from livespec_dev_tooling.gate_remote_invocation import (
     GateCommandRunner,
     GateStepFailed,
@@ -394,6 +396,7 @@ def run_delegated_gate(
     runner: GateCommandRunner = default_gate_command_runner,
     sleeper: Sleeper = default_sleeper,
     emit: Callable[..., None] = emit_gate_outcome,
+    job_name_recorder: Callable[[str], None] | None = None,
 ) -> GateVerdict:
     """Gate this repository's HEAD on the cluster and report S7b's verdict.
 
@@ -451,7 +454,12 @@ def run_delegated_gate(
     # Job: the ratified scenario's Then is unconditional, and an operator whose
     # tree AND whose approval are both wrong should learn both in one push.
     ran = run_host_authority_members(repo_root=repo_root, tree_hash=tree_hash, runner=runner)
-    verdict = run_gated_push(request=request, runner=runner, sleeper=sleeper)
+    verdict = run_gated_push(
+        request=request,
+        runner=runner,
+        sleeper=sleeper,
+        job_name_recorder=job_name_recorder,
+    )
     # THE EVENT REPORTS THE GATE'S VERDICT, NOT THE PUSH'S FATE, so it is emitted
     # from the Job's own verdict BEFORE the authority half is joined. A Job-green
     # push that the pushing host then refuses therefore reports `passed`, which
@@ -520,8 +528,14 @@ def main() -> int:
     decided = group_repair_status(opted_in=delegated_gate_enabled(repo_root=repo_root))
     if decided is not None:
         return decided
+    job_name_recorder: Callable[[str], None] | None = None
+    inherited = os.environ.get("LIVESPEC_GATE_RUN_DIR")
+    if inherited and Path(inherited).is_dir():
+        job_name_recorder = make_job_name_recorder(run_dir=Path(inherited))
     verdict = run_delegated_gate(
-        repo_root=repo_root, renderer=resolve_renderer(repo_root=repo_root)
+        repo_root=repo_root,
+        renderer=resolve_renderer(repo_root=repo_root),
+        job_name_recorder=job_name_recorder,
     )
     if verdict.refuses_push:
         log.error(

@@ -55,6 +55,7 @@ default is an ungated push, and only one of the two is recoverable.
 from __future__ import annotations
 
 import sys
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -179,6 +180,7 @@ def run_gated_push(
     request: GateRunRequest,
     runner: GateCommandRunner = default_gate_command_runner,
     sleeper: Sleeper = default_sleeper,
+    job_name_recorder: Callable[[str], None] | None = None,
 ) -> GateVerdict:
     """Gate the current HEAD tree on the cluster and decide whether to push.
 
@@ -189,7 +191,12 @@ def run_gated_push(
     re-discriminated. Which fault it was belongs in the `detail` an operator
     reads; what the client does about it is identical either way.
     """
-    gated = run_gate(request=request, runner=runner, sleeper=sleeper)
+    gated = run_gate(
+        request=request,
+        runner=runner,
+        sleeper=sleeper,
+        job_name_recorder=job_name_recorder,
+    )
     if isinstance(gated, Failure):
         return _no_verdict(failure=gated.failure())
     return _adjudicate(outcome=gated.unwrap(), request=request, runner=runner)

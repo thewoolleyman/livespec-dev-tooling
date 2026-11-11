@@ -1649,6 +1649,31 @@ def test_run_exits_zero_only_on_a_verdict_that_authorises_the_push(
     assert main() == 0
 
 
+def test_run_records_the_submitted_job_in_the_detached_run_directory(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A hook-run delegated client inherits the runner directory and records its Job there."""
+    run_dir = tmp_path / "gate-run"
+    run_dir.mkdir()
+    captured: list[object | None] = []
+
+    def _passed(**kwargs: object) -> GateVerdict:
+        recorder = kwargs.get("job_name_recorder")
+        captured.append(recorder)
+        if callable(recorder):
+            recorder("gate-widget-submitted")
+        return GateVerdict(state=GATE_PASSED, detail="gated", token_written=True)
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("LIVESPEC_GATE_RUN_DIR", str(run_dir))
+    monkeypatch.setattr(sys, "argv", ["gate_remote_delegate", "run"])
+    monkeypatch.setattr("livespec_dev_tooling.gate_remote_delegate.run_delegated_gate", _passed)
+
+    assert main() == 0
+    assert callable(captured[0])
+    assert (run_dir / "job_name").read_text(encoding="utf-8") == "gate-widget-submitted\n"
+
+
 def test_run_exits_non_zero_on_every_other_verdict(
     *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
