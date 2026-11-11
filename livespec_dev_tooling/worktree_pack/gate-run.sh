@@ -123,13 +123,14 @@
 #       `run_in_background: true` — killing the waiter does not touch
 #       the gate, and `gate-wait` can simply be re-issued.
 #
+#   just gate-stop <run-id>        stop a running gate and every process it owns
 #   just gate-status [<run-id>]    one-shot verdict, never blocks
 #   just gate-list                 recent runs, newest last
 #
 # EXIT CODES
 #   0        PASSED
 #   1..127   FAILED — the gate's own exit code, passed through unchanged
-#   75       DIED_WITHOUT_VERDICT (EX_TEMPFAIL) — the gate did not finish;
+#   75       STOPPED or DIED_WITHOUT_VERDICT (EX_TEMPFAIL) — the gate did not finish;
 #            this is NOT a failing verdict and NOT a pass
 #   64       usage error (EX_USAGE)
 #   70       the runner itself could not launch the gate (EX_SOFTWARE)
@@ -355,6 +356,7 @@ usage() {
 usage:
   gate-run.sh start [--label LABEL] [--local] -- COMMAND [ARG...]
   gate-run.sh wait  RUN_ID
+  gate-run.sh stop  RUN_ID
   gate-run.sh status [RUN_ID]
   gate-run.sh list
 USAGE
@@ -374,6 +376,10 @@ derive_state_into() {
     local dir="$1" code="" pid=""
     if [[ ! -d "$dir" ]]; then
         STATE='UNKNOWN_RUN'
+        return
+    fi
+    if [[ -f "$dir/stopped" ]]; then
+        STATE='STOPPED'
         return
     fi
     if [[ -f "$dir/exit_code" ]]; then
@@ -411,6 +417,10 @@ derive_state() {
 # preserving its exact state derivation for each record.
 derive_list_state_into() {
     local dir="$1" code="" pid=""
+    if [[ -f "$dir/stopped" && -r "$dir/stopped" ]]; then
+        STATE='STOPPED'
+        return
+    fi
     if [[ -f "$dir/exit_code" && -r "$dir/exit_code" ]]; then
         read -r code <"$dir/exit_code" || code=""
         if [[ "$code" == "0" ]]; then
@@ -1194,6 +1204,10 @@ report_run() {
             field_into pid "$dir/pid"
             printf '  VERDICT: NONE YET — still running (pid %s).\n' "$pid"
             ;;
+        STOPPED)
+            printf '  VERDICT: STOPPED — gate-stop ended this run before a verdict.\n'
+            printf '  Do not re-run this gate automatically.\n'
+            ;;
         DIED_WITHOUT_VERDICT)
             printf '  ⛔ NO VERDICT: the gate DID NOT FINISH.\n'
             printf '  This is NOT a pass and NOT a refusal. Nothing was decided, so nothing\n'
@@ -1250,6 +1264,99 @@ cmd_wait() {
     report_run "$run_id" "$dir"
 }
 
+# A hook runner such as lefthook may start the gate client in a fresh session.
+# Capture every session reachable from the detached child BEFORE sending TERM:
+# after the parent exits those session members are reparented to init, so a
+# later descendant walk cannot find the still-live push or gate client.
+PROC_STATE=""
+PROC_PGID=""
+PROC_SID=""
+read_proc_identity() {
+    local line="" rest
+    PROC_STATE=""
+    PROC_PPID="?"
+    PROC_PGID=""
+    PROC_SID=""
+    { read -r line <"/proc/$1/stat"; } 2>/dev/null || true
+    [[ -n "$line" ]] || return 0
+    rest="${line##*) }"
+    PROC_STATE="${rest%% *}"
+    rest="${rest#* }"
+    PROC_PPID="${rest%% *}"
+    rest="${rest#* }"
+    PROC_PGID="${rest%% *}"
+    rest="${rest#* }"
+    PROC_SID="${rest%% *}"
+}
+
+record_run_sessions() {
+    local dir="$1" root="" pid
+    read -r root <"$dir/pid" || return 1
+    while IFS= read -r pid; do
+        read_proc_identity "$pid"
+        [[ -n "$PROC_SID" ]] && printf '%s\n' "$PROC_SID"
+    done < <(descendant_pids "$root") | sort -u >"$dir/stopped_sessions"
+}
+
+session_processes() {
+    local sessions_file="$1" entry pid
+    [[ -s "$sessions_file" ]] || return 0
+    for entry in /proc/[0-9]*; do
+        pid="${entry##*/}"
+        read_proc_identity "$pid"
+        [[ "$PROC_STATE" == "Z" || -z "$PROC_SID" ]] && continue
+        if grep -qxF "$PROC_SID" "$sessions_file"; then
+            printf '%s\n' "$pid"
+        fi
+    done
+}
+
+signal_run_sessions() {
+    local signal="$1" sessions_file="$2" session
+    while IFS= read -r session; do
+        # `pkill -s` addresses every process group in the recorded session.
+        # That includes lefthook's separately-sessioned hook client without
+        # relying on its parent still being alive after the first TERM.
+        pkill "-$signal" -s "$session" 2>/dev/null || true
+    done <"$sessions_file"
+}
+
+cmd_stop() {
+    [[ $# -eq 1 ]] || usage
+    local run_id="$1" dir deadline survivors=""
+    dir="$(run_dir_for_read "$run_id")" || {
+        unknown_run "$run_id"
+        return "$EX_USAGE"
+    }
+    if [[ -f "$dir/exit_code" ]]; then
+        report_run "$run_id" "$dir" || true
+        return 1
+    fi
+    {
+        printf 'stopped_at: %s\n' "$(timestamp)"
+        printf 'requested_by: %s\n' "$(id -un)"
+    } >"$dir/stopped.partial"
+    mv "$dir/stopped.partial" "$dir/stopped"
+    record_run_sessions "$dir" || : >"$dir/stopped_sessions"
+    signal_run_sessions TERM "$dir/stopped_sessions"
+    deadline=$((SECONDS + ${GATE_STOP_GRACE_SECONDS:-30}))
+    while [[ "$SECONDS" -lt "$deadline" ]]; do
+        survivors="$(session_processes "$dir/stopped_sessions")"
+        [[ -z "$survivors" ]] && break
+        sleep 0.1
+    done
+    if [[ -n "$survivors" ]]; then
+        signal_run_sessions KILL "$dir/stopped_sessions"
+        sleep 0.1
+    fi
+    survivors="$(session_processes "$dir/stopped_sessions")"
+    if [[ -n "$survivors" ]]; then
+        printf 'gate-stop: surviving processes for %s: %s\n' "$run_id" "$survivors" >&2
+        return 1
+    fi
+    report_run "$run_id" "$dir" || true
+}
+
 cmd_list() {
     local all=false root
     while [[ $# -gt 0 ]]; do
@@ -1298,6 +1405,7 @@ main() {
     case "$sub" in
         start) cmd_start "$@" ;;
         wait) cmd_wait "$@" ;;
+        stop) cmd_stop "$@" ;;
         status) cmd_status "$@" ;;
         list) cmd_list "$@" ;;
         __child) cmd_child "$@" ;;

@@ -895,6 +895,29 @@ def test_a_run_whose_process_died_without_a_verdict_exits_75_and_is_not_a_pass(
         assert "PASSED" not in result.stdout, subcommand
 
 
+@pytest.mark.integration
+def test_gate_stop_ends_a_running_run_and_every_reader_reports_stopped(
+    *, fixture_repo: tuple[Path, Path, dict[str, str]]
+) -> None:
+    """A stopped detached run has no verdict and cannot continue its command."""
+    primary, worktree, env = fixture_repo
+    marker = primary / "command-completed"
+    run_id = _start(
+        cwd=worktree,
+        env=env,
+        command=["bash", "-c", f"sleep 5; touch {marker}"],
+    )
+
+    stopped = _gate(cwd=primary, env=env, args=["stop", run_id])
+
+    assert stopped.returncode == 0, stopped.stderr
+    assert not marker.exists()
+    for subcommand in ("status", "wait"):
+        result = _gate(cwd=primary, env=env, args=[subcommand, run_id])
+        assert result.returncode == 75, result.stdout
+        assert "STOPPED" in result.stdout
+
+
 # --- scenario: a gate pytest session that stops making progress ------------
 
 _STALL_ENV = "LIVESPEC_SUITE_GREEN_STALL_SECONDS"

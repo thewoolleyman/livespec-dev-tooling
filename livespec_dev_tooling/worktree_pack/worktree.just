@@ -70,6 +70,11 @@ gate-start *args:
 gate-wait *args:
     ./dev-tooling/gate-run.sh wait "$@"
 
+# Stop a running detached gate; signals every recorded gate session.
+[positional-arguments]
+gate-stop *args:
+    ./dev-tooling/gate-run.sh stop "$@"
+
 # One-shot verdict for a run (or the latest); never blocks.
 [positional-arguments]
 gate-status *args:
