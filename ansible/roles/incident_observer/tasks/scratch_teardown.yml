@@ -46,6 +46,12 @@
       - "{{ incident_observer_production.incident_observer_reference_dir }}"
       - "{{ incident_observer_production.incident_observer_etc_dir }}"
       - "{{ incident_observer_production.incident_observer_venv }}"
+    # Production remains live while a scratch instance is removed.  Its
+    # receipts and recovery journal are its append-only evidence, not teardown
+    # output, so compare the rest of the state directory byte-for-byte.
+    incident_observer_production_live_state_pattern: >-
+      {{ '^' ~ (incident_observer_production.incident_observer_state_dir | regex_escape)
+         ~ '/(?:[^/]+[.]json|recovery-journal(?:-contexts)?(?:/|$))' }}
 
 - name: Read production's files and directories before the teardown
   ansible.builtin.stat:
@@ -176,13 +182,17 @@
         | map(attribute='stat.exists') | list
       - >-
         incident_observer_production_state_after.files
+        | rejectattr('path', 'match', incident_observer_production_live_state_pattern)
         | sort(attribute='path') | map(attribute='path') | list
         == incident_observer_production_state_before.files
+        | rejectattr('path', 'match', incident_observer_production_live_state_pattern)
         | sort(attribute='path') | map(attribute='path') | list
       - >-
         incident_observer_production_state_after.files
+        | rejectattr('path', 'match', incident_observer_production_live_state_pattern)
         | sort(attribute='path') | map(attribute='checksum', default='') | list
         == incident_observer_production_state_before.files
+        | rejectattr('path', 'match', incident_observer_production_live_state_pattern)
         | sort(attribute='path') | map(attribute='checksum', default='') | list
     fail_msg: >-
       production's files ({{ incident_observer_production_files | join(', ') }}),
