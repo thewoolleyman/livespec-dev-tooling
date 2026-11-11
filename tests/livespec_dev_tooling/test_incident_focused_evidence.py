@@ -9,12 +9,15 @@ import signal
 import subprocess
 from pathlib import Path
 from types import SimpleNamespace
+from typing import cast
 
 import pytest
 
 from livespec_dev_tooling import _incident_focused_measurement as measurement
 from livespec_dev_tooling import incident_focused_evidence as evidence_module
 from livespec_dev_tooling._green_token_evidence import read_evidence_text
+from livespec_dev_tooling._incident_focused_scope import changed_paths
+from livespec_dev_tooling._incident_focused_types import Identity
 from livespec_dev_tooling.incident_focused_evidence import (
     FocusedScope,
     ManualReproduction,
@@ -773,3 +776,28 @@ def test_a_checkout_under_an_omitted_directory_is_measured_not_zero(
     assert evidence["coverage_command"]["returncode"] == 0, evidence["coverage_command"]["output"]
     assert evidence["coverage"]["src/widget.py"]["summary"]["percent_covered"] == 100
     assert evidence["outcome"] == "passed"
+
+
+@pytest.mark.parametrize("renamed_in", ["head", "tree"])
+def test_changed_paths_names_both_the_old_and_the_new_path_of_a_rename(
+    project: tuple[Path, str], renamed_in: str
+) -> None:
+    # `/arm` lists a moved file as its old path and its new one (`--no-renames`);
+    # the collector must name both, or an honest record omits the old path. Each
+    # of its two diffs (base to the previous head, base to the exact tree) is
+    # given the rename alone.
+    root, base = project
+    _ = _git(root, "reset", "-q", "--hard")
+    _ = _git(root, "mv", "src/widget.py", "src/gizmo.py")
+    _ = _git(root, "commit", "-qm", "rename")
+    renamed = _git(root, "rev-parse", "HEAD")
+    head, tree = (renamed, base) if renamed_in == "head" else (base, renamed)
+    identity = cast("Identity", SimpleNamespace(base_sha=base, head_sha=head))
+    scope = FocusedScope(
+        tree_hash=_git(root, "rev-parse", f"{tree}^{{tree}}"),
+        source_prefixes=("src/",),
+        test_prefixes=("tests/",),
+        related_tests=(),
+    )
+    names = changed_paths(repo_root=root, identity=identity, scope=scope)
+    assert names == {"src/widget.py", "src/gizmo.py"}
