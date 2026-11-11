@@ -430,6 +430,7 @@ def _run_pre_commit_with_stub_aggregate(*, tmp_path: Path, dirty: str) -> list[s
     _ = uv.write_text(
         "#!/usr/bin/env bash\n"
         'case "$*" in\n'
+        "  *config_value_fast_path*classify*) exit 75 ;;\n"
         "  *pre_commit_delegate*) exit 75 ;;\n"
         f'  *write-pre-commit*) echo "$*" >> "{writes}" ;;\n'
         "esac\n"

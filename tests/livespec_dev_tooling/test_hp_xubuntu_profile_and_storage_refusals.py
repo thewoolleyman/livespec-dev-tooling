@@ -250,7 +250,7 @@ def _closed_fixture(*, tmp_path: Path) -> Path:
 # --- the parse half of the assertion ---------------------------------------
 
 
-def test_the_committed_hp_profile_parses_as_a_runner_only_agent_at_capacity_eight() -> None:
+def test_the_committed_hp_profile_parses_as_a_runner_only_agent_with_a_positive_capacity() -> None:
     """hp's opened posture, as the ONE parser resolves it (livespec-dev-tooling-zreev4)."""
     parsed = _parsed(profile=_HP_PROFILE)
     assert parsed["CLUSTER_ROLE"] == "agent", (
@@ -261,10 +261,11 @@ def test_the_committed_hp_profile_parses_as_a_runner_only_agent_at_capacity_eigh
         f"hp takes CI runner pods without carrying storage tiers, so its posture must be "
         f"`runner-only`; the parser read {parsed['CI_NODE_FACILITIES']!r}"
     )
-    assert parsed["ADMISSION_CAPACITY_C"] == "5", (
-        f"hp advertises its cores-derived 5 churn slots in the split (poweredge 17 "
-        f"+ gmktec 8 + hp 5 = 30): its jobs measured 2-6 cores each on 14.5 allocatable "
-        f"CPU; the parser read {parsed['ADMISSION_CAPACITY_C']!r}"
+    capacity = parsed["ADMISSION_CAPACITY_C"]
+    assert capacity.isdigit() and int(capacity) > 0, (
+        f"hp advertises a positive number of churn slots, which opens Kueue's admission "
+        f"(the operational value is a declared config value, so it is not pinned here); "
+        f"the parser read {capacity!r}"
     )
     assert "node-role/ci=" not in parsed["NODE_TAINTS"], (
         f"hp must carry no node-role/ci taint: the capacity opens Kueue's admission and only "

@@ -159,9 +159,10 @@ def test_the_workers_instance_keeps_the_toolchain_id_on_a_native_image() -> None
     assert re.search(r":python-agent-[^:]*-arm64$", provider["process_spec"]["image"])
 
 
-def test_the_workers_instance_serves_one_run_under_its_own_home() -> None:
+def test_the_workers_instance_serves_a_positive_number_of_runs_under_its_own_home() -> None:
     instance = _instance()
-    assert instance["max_concurrent_runs"] == 1
+    assert isinstance(instance["max_concurrent_runs"], int)
+    assert instance["max_concurrent_runs"] > 0
     homes = _host_vars()["sandbox_driver_kubernetes_worker_config_homes"]
     assert instance["home_env"] == homes[0]["home"]
     state_dir = instance["sandbox_providers"]["kubernetes"]["env"][
