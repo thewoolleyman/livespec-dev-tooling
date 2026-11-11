@@ -877,13 +877,6 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario: a repository that declares gate_cpu 9 and gate_parallelism 8 gets a gate Job requesting 9 CPUs whose coverage run uses 8 xdist workers",
-    "work_item": "livespec-dev-tooling-4g7als",
-    "first_seen": "2026-11-11"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
     "heading": "## Scenario: a repository that declares no gate cpu or memory is not refused over an unreadable gates queue file",
     "work_item": "livespec-dev-tooling-jgabjo",
     "first_seen": "2026-11-11"
