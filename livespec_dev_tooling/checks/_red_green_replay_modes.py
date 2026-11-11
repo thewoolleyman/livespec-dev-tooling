@@ -47,7 +47,7 @@ from _red_green_replay_trailers import (  # noqa: E402  — sibling private impo
 from returns.io import IOFailure  # noqa: E402  — vendor-path-aware import.
 from returns.unsafe import unsafe_perform_io  # noqa: E402  — vendor-path-aware import.
 
-from livespec_dev_tooling.commit_replay_delegate import run_replay  # noqa: E402
+from livespec_dev_tooling.commit_replay_delegate import run_replay, unrefused  # noqa: E402
 
 # These symbols form this private sibling module's public surface to
 # its sole importer, `red_green_replay.py` (the parent supervisor imports
@@ -100,7 +100,7 @@ def _run_replay_test(
     The Job checks the staged tree out itself, so it gets a literal `pytest`
     and a repo-relative path; the local run keeps the host interpreter and path.
     """
-    verdict = run_replay(repo_root=Path.cwd(), pytest_argv=job_pytest_argv)
+    verdict = unrefused(verdict=run_replay(repo_root=Path.cwd(), pytest_argv=job_pytest_argv))
     if (
         not verdict.local
         and verdict.exit_status is not None

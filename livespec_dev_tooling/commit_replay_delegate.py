@@ -23,9 +23,10 @@ _VENDOR_DIR = Path(__file__).resolve().parent / "_vendor"
 if str(_VENDOR_DIR) not in sys.path:
     sys.path.insert(0, str(_VENDOR_DIR))
 
+import structlog  # noqa: E402  — vendor-path-aware import.
 from returns.result import Failure  # noqa: E402  — vendor-path-aware import.
 
-__all__: list[str] = ["ReplayVerdict", "run_replay"]
+__all__: list[str] = ["ReplayVerdict", "run_replay", "unrefused"]
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -57,6 +58,18 @@ def run_replay(*, repo_root: Path, pytest_argv: list[str]) -> ReplayVerdict:
     if not tree_hash:
         return ReplayVerdict(local=False, reason="the staged tree could not be read")
     return _run_remote(repo_root=repo_root, pytest_argv=pytest_argv, tree_hash=tree_hash)
+
+
+def unrefused(*, verdict: ReplayVerdict) -> ReplayVerdict:
+    """Pass a replay verdict on, or stop the commit when the delegate refused it.
+
+    Running the leg locally instead would let a refused Red pass as a valid
+    failing Red, so a refusal ends the commit before any pytest run or trailer.
+    """
+    if verdict.refused:
+        structlog.PrintLogger(file=sys.stderr).msg(verdict.reason)
+        raise SystemExit(1)
+    return verdict
 
 
 def _staged_tree_hash(*, repo_root: Path) -> str:

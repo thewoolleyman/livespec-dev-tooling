@@ -217,6 +217,44 @@ def test_an_absent_remote_verdict_runs_the_replay_locally(
     assert [event for _level, event, _kwargs in log.records] == ["commit-time replay gated locally"]
 
 
+def test_a_refused_replay_refuses_the_commit_instead_of_running_the_leg_locally(
+    *, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A refused resource declaration refuses the commit; it is no absent verdict (c3nd2h).
+
+    Running the leg locally would let a refused Red pass as a valid failing Red,
+    so the leg must stop before any pytest run and before any trailer is written.
+    """
+    from livespec_dev_tooling.commit_replay_delegate import ReplayVerdict
+
+    modes = _load_modes()
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        modes,
+        "run_replay",
+        lambda **_kwargs: ReplayVerdict(
+            local=False,
+            reason="the commit is refused: `gate_cpu` must be a positive integer (pyproject.toml)",
+            refused=True,
+        ),
+    )
+    # A local pytest run fails the test outright: the refusal must come first.
+    monkeypatch.setattr(
+        modes.subprocess, "run", lambda *_args, **_kwargs: pytest.fail("the leg ran locally")
+    )
+
+    with pytest.raises(SystemExit) as stopped:
+        _ = modes._run_replay_test(  # noqa: SLF001
+            log=_RecordingLog(),
+            pytest_argv=["/abs/python", "-m", "pytest", "/abs/tests/test_red.py"],
+            job_pytest_argv=["pytest", "tests/test_red.py"],
+            trailer_prefix="Red",
+        )
+
+    assert stopped.value.code == 1
+    assert "gate_cpu" in capsys.readouterr().err
+
+
 class _RecordingLog:
     """Minimal structlog stand-in recording (level, event, kwargs)."""
 
