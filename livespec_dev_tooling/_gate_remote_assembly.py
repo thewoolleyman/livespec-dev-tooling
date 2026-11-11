@@ -60,6 +60,7 @@ __all__: list[str] = [
     "gate_ref_tree_hash",
     "gate_repo_name",
     "per_run_gate_ref",
+    "refuses_declaration",
     "renderer_refusal",
 ]
 
@@ -363,6 +364,17 @@ def renderer_refusal(*, renderer: Path, failure: GateStepFailed) -> GateStepFail
             "client passes, so that renderer is older than the client driving it"
         ),
     )
+
+
+def refuses_declaration(*, failure: object) -> bool:
+    """Whether an assembly failed because the repository's own declaration is unusable.
+
+    Such a failure rejects the COMMITTED configuration; it is not a missing
+    cluster verdict. A caller that falls back to a local gate on a submission
+    failure must refuse instead here, naming the key, because no retry on any
+    host can make that declaration usable.
+    """
+    return isinstance(failure, GateStepFailed) and failure.step == _JOB_RESOURCES_STEP
 
 
 def assembly_refusal(*, failure: GateStepFailed) -> str:

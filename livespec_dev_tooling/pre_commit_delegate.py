@@ -12,7 +12,10 @@ from livespec_dev_tooling._gate_host_authority import (
     run_host_authority_members,
 )
 from livespec_dev_tooling._gate_member_report import passed_members
-from livespec_dev_tooling._gate_remote_assembly import declared_gate_check_suite
+from livespec_dev_tooling._gate_remote_assembly import (
+    declared_gate_check_suite,
+    refuses_declaration,
+)
 from livespec_dev_tooling._pre_commit_delegate_evidence import (
     host_holds_tree,
     record_delegated_evidence,
@@ -146,6 +149,25 @@ def _pre_commit_check_suite(*, repo_root: Path) -> tuple[str, ...] | None:
     return (*declared.unwrap()[:-1], _GATED_TREE_CHECK)
 
 
+def _unbuilt_verdict(*, refused: bool, detail: str, tree_hash: str) -> PreCommitVerdict:
+    """The verdict for a gate request that could not be assembled.
+
+    An unusable resource declaration rejects the committed configuration, so the
+    commit is refused naming the key; any other assembly failure is a missing
+    cluster verdict, and the aggregate gates locally.
+    """
+    return PreCommitVerdict(
+        local=not refused,
+        reason=(
+            f"the commit is refused, not gated locally: unusable gate Job resources: {detail}"
+            if refused
+            else f"the gate Job could not be submitted: {detail}"
+        ),
+        tree_hash=tree_hash,
+        exit_status=1 if refused else None,
+    )
+
+
 def _run_remote(
     *, repo_root: Path, tree_hash: str, check_suite: tuple[str, ...]
 ) -> PreCommitVerdict:
@@ -160,9 +182,9 @@ def _run_remote(
         check_suite=check_suite,
     )
     if isinstance(built, Failure):
-        return PreCommitVerdict(
-            local=True,
-            reason=f"the gate Job could not be submitted: {built.failure().detail}",
+        return _unbuilt_verdict(
+            refused=refuses_declaration(failure=built.failure()),
+            detail=built.failure().detail,
             tree_hash=tree_hash,
         )
     source = _staged_commit(repo_root=repo_root, tree_hash=tree_hash)
