@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from unittest.mock import Mock
 
 from returns.result import Failure, Success
 
@@ -39,7 +40,7 @@ def test_an_admitted_job_without_a_terminal_state_uses_its_terminal_bound() -> N
     outcome = await_terminal_state(
         request=request,
         runner=runner,
-        sleeper=lambda *, seconds: None if seconds else None,
+        sleeper=Mock(),
         job_name="gate-widget-7f2qd",
     )
 
@@ -74,7 +75,7 @@ def test_an_admitted_job_starts_one_terminal_condition_watch() -> None:
     outcome = await_terminal_state(
         request=request,
         runner=runner,
-        sleeper=lambda *, seconds: None if seconds else None,
+        sleeper=Mock(),
         job_name="gate-widget-7f2qd",
     )
 
@@ -123,10 +124,13 @@ def test_a_transient_terminal_watch_failure_is_rearmed_within_the_budget() -> No
             return Success(GateCommandResult(returncode=1, stdout="", stderr="watch refused\n"))
         return Success(GateCommandResult(returncode=0, stdout=complete, stderr=""))
 
+    def sleeper(*, seconds: float) -> None:
+        naps.append(seconds)
+
     outcome = await_terminal_state(
         request=request,
         runner=runner,
-        sleeper=lambda *, seconds: naps.append(seconds),
+        sleeper=sleeper,
         job_name="gate-widget-7f2qd",
     )
 
