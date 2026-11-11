@@ -37,8 +37,10 @@ __all__: list[str] = [
     "ancestry_refusal",
     "enablement_refusal",
     "hold_probe_refusal",
+    "is_commit_prefix",
     "is_full_commit",
     "json_object",
+    "marketplace_install_source",
     "marketplace_remote",
     "release_refusal",
     "remote_commits",
@@ -50,6 +52,7 @@ ORCHESTRATOR_MARKETPLACE = marketplace_of(plugin=ORCHESTRATOR_PLUGIN)
 HOLD_PROBE_MODULE = "livespec_dev_tooling.fleet.orchestrator_hold_probe"
 
 _FULL_COMMIT = re.compile(r"[0-9a-f]{40}")
+_COMMIT_PREFIX = re.compile(r"[0-9a-f]{7,39}")
 _TAG_SHAPE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._+-]{0,127}")
 _ENSURE_PLUGINS = re.compile(r"\bjust\s+ensure-plugins(?![\w-])")
 _ACCEPTED_COMPARISONS = frozenset({"identical", "ahead"})
@@ -81,6 +84,11 @@ class RemoteCommits:
 def is_full_commit(*, build: str) -> bool:
     """Whether the named build is a full 40-hex commit id."""
     return _FULL_COMMIT.fullmatch(build.strip().lower()) is not None
+
+
+def is_commit_prefix(*, build: str) -> bool:
+    """Whether the named build is a 7-to-39-character hexadecimal commit prefix."""
+    return _COMMIT_PREFIX.fullmatch(build.strip().lower()) is not None
 
 
 def json_object(*, text: str | None) -> dict[str, object]:
@@ -150,8 +158,18 @@ def hold_probe_refusal(*, clone: Path, run: CommandRunner) -> str:
     )
 
 
-def release_refusal(*, tag: str, gh: GhReader) -> str:
+def release_refusal(*, tag: str, gh: GhReader, marketplace_commit: str | None = None) -> str:
     """Why the argument is not a published orchestrator release tag, or ''."""
+    named_commit = tag.strip().lower()
+    if (
+        marketplace_commit is not None
+        and is_commit_prefix(build=named_commit)
+        and marketplace_commit.startswith(named_commit)
+    ):
+        return (
+            f"commit {tag} must be the full 40-character commit id; "
+            f"re-run with {marketplace_commit}; nothing was moved"
+        )
     named = (
         f"{tag!r} is neither a full commit id nor a published release tag of "
         f"{ORCHESTRATOR_REPO}; nothing was moved"
@@ -179,6 +197,18 @@ def marketplace_remote(*, known_marketplaces: str | None) -> tuple[str, str] | N
         return f"https://github.com/{repo}.git", ref
     if isinstance(url, str) and url:
         return url, ref
+    return None
+
+
+def marketplace_install_source(*, known_marketplaces: str | None) -> tuple[str, str] | None:
+    """The installed marketplace location and ref the host recorded, when both are usable."""
+    entry = json_object(text=known_marketplaces).get(ORCHESTRATOR_MARKETPLACE)
+    fields = cast("dict[str, object]", entry) if isinstance(entry, dict) else {}
+    source = fields.get("source")
+    ref = cast("dict[str, object]", source).get("ref") if isinstance(source, dict) else None
+    location = fields.get("installLocation")
+    if isinstance(ref, str) and ref and isinstance(location, str) and location:
+        return location, ref
     return None
 
 
