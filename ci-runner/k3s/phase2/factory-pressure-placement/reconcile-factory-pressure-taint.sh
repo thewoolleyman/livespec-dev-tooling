@@ -10,7 +10,10 @@
 #      (publish-node-cpu-pressure.sh). A heartbeat older than
 #      FACTORY_PRESSURE_STALE_SECONDS, or no condition at all, is UNKNOWN.
 #      ONLY nodes the steered sandbox pods can schedule on are compared. A node
-#      whose kubernetes.io/arch is not FACTORY_PRESSURE_ARCH, or that carries a
+#      lacking a label the pods' nodeSelector requires (FACTORY_PRESSURE_REQUIRED_LABELS,
+#      `key=value`, comma-separated; default ci-runner.io/factory-admit=true, which the
+#      factory-vs-CI share sets per cycle), whose kubernetes.io/arch is not
+#      FACTORY_PRESSURE_ARCH, or that carries a
 #      NoSchedule/NoExecute taint the pods do not tolerate
 #      (FACTORY_PRESSURE_TOLERATED_TAINTS, `key` or `key=value`, comma-separated),
 #      is OUT OF SCOPE: its reading is neither required nor compared, it is never
@@ -114,6 +117,8 @@ stale = int(os.environ["FACTORY_PRESSURE_STALE_SECONDS"])
 arch = os.environ.get("FACTORY_PRESSURE_ARCH", "amd64")
 tolerated = [t.strip() for t in os.environ.get(
     "FACTORY_PRESSURE_TOLERATED_TAINTS", "node-role/ci=factory").split(",") if t.strip()]
+required = [r.strip() for r in os.environ.get(
+    "FACTORY_PRESSURE_REQUIRED_LABELS", "ci-runner.io/factory-admit=true").split(",") if r.strip()]
 now = int(os.environ["FACTORY_PRESSURE_NOW"])
 quota_ok = os.environ["FACTORY_PRESSURE_QUOTA_OK"] == "1"
 TAINT_KEY = "livespec.io/factory-pressure"
@@ -151,6 +156,11 @@ def tolerates(taint):
 
 def out_of_scope(n):
     """Why the steered sandbox pods can never land on this node, or None."""
+    labels = n["metadata"].get("labels", {})
+    for r in required:
+        key, _, value = r.partition("=")
+        if labels.get(key) != value:
+            return f"label:{key}"
     for t in (n.get("spec", {}).get("taints") or []):
         if t.get("effect") in ("NoSchedule", "NoExecute") and not tolerates(t):
             return f"untolerated-taint:{t.get('key', '')}"
