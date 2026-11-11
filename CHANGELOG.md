@@ -58,6 +58,55 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.198.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.197.0...v1.198.0) (2026-11-11)
+
+
+### Features
+
+* fail a CI workflow that declares more than one container image (livespec-dev-tooling-kzhduc) ([ae33b79](https://github.com/thewoolleyman/livespec-dev-tooling/commit/ae33b7997f011239bfdc946e7b7f5249a10a8f88))
+* **gates:** a declared gate request that no committed gates-cq lane admits is refused naming the largest lane (livespec-dev-tooling-yznwz7) ([f7c8bda](https://github.com/thewoolleyman/livespec-dev-tooling/commit/f7c8bda1b2355fee05c5629e1f5d0912ae3e3b7e))
+* **gates:** a failed gate Job's verdict names the resource kill that ended its pod (livespec-dev-tooling-lfkkaf) ([c2e1302](https://github.com/thewoolleyman/livespec-dev-tooling/commit/c2e1302c02992c35da8e2322cf2ba311a4f3efc4))
+* **gates:** a gate request sized by its caller replaces the declared resources, which are still validated (livespec-dev-tooling-lfkkaf) ([d76234e](https://github.com/thewoolleyman/livespec-dev-tooling/commit/d76234e64a242a5bf8fc591917beef254b8452ce))
+* **gates:** a one-file Red or Green replay Job requests 2 cpu, 3Gi and one worker, and suite-green keeps the declared size (livespec-dev-tooling-lfkkaf) ([f83f072](https://github.com/thewoolleyman/livespec-dev-tooling/commit/f83f072fdcd6bdd4d2ce5a41261e0d9c49377199))
+* **gates:** a one-file replay Job killed for memory or evicted is an absent verdict, never a valid Red (livespec-dev-tooling-lfkkaf) ([e39650e](https://github.com/thewoolleyman/livespec-dev-tooling/commit/e39650e251a42801416bd042257789f47ea96994))
+* **gates:** a repository declares its gate Job's cpu, memory and test parallelism (livespec-dev-tooling-c3nd2h) ([683ed67](https://github.com/thewoolleyman/livespec-dev-tooling/commit/683ed6796dd249fa3e6cc187f08177012fe13666))
+
+
+### Bug Fixes
+
+* **ci-runner:** an unknown in-scope pressure reading raises a named alarm instead of disabling the steer silently (bd-ib-nmuyjc) ([044d052](https://github.com/thewoolleyman/livespec-dev-tooling/commit/044d052eaa47ea41bc849e98ebd59a749011d4ad))
+* **ci-runner:** the factory pressure reconciler compares only nodes the sandbox pods can schedule on (bd-ib-nmuyjc) ([cd9066b](https://github.com/thewoolleyman/livespec-dev-tooling/commit/cd9066bd81f74a06935cbd924f5ad78aee7e141b))
+* **ci-runner:** the factory pressure reconciler leaves a node the sandbox pods' nodeSelector rejects out of scope (bd-ib-nmuyjc) ([72d1b33](https://github.com/thewoolleyman/livespec-dev-tooling/commit/72d1b33abb711eb4f9781527d2380466566dd8c9))
+* classify relayed git 5xx failures (livespec-dev-tooling-t26bbr) ([d359904](https://github.com/thewoolleyman/livespec-dev-tooling/commit/d359904d106a537384ae15a95de5adb37424a967))
+* cover bare CI infrastructure Python environment ([26285a1](https://github.com/thewoolleyman/livespec-dev-tooling/commit/26285a189024168306ed9a0c81acd08cf12a34d4))
+* cover delayed node registration probe ([7375c45](https://github.com/thewoolleyman/livespec-dev-tooling/commit/7375c4577039bcf6e88b83d996b445930d96fc36))
+* detect idle xdist coverage controller ([22d5851](https://github.com/thewoolleyman/livespec-dev-tooling/commit/22d58516a12ad979d32b3a5a32c28ca010872949))
+* **fleet:** a gh 5xx is a server error only when gh relays it as an HTTP status (livespec-dev-tooling-t26bbr) ([d8d23ca](https://github.com/thewoolleyman/livespec-dev-tooling/commit/d8d23caec1ec979c16bc3c00f13046874f95d735))
+* **fleet:** the gh 5xx marker fix covers its empty-stderr fast path (livespec-dev-tooling-t26bbr) ([dfef576](https://github.com/thewoolleyman/livespec-dev-tooling/commit/dfef576569dac103098322639d79b4034db79af1))
+* forward gate-list arguments ([7f34fc7](https://github.com/thewoolleyman/livespec-dev-tooling/commit/7f34fc78f4376f9f95ea250ae4d75c8203037bd1))
+* **gate:** bound default gate list ([0224123](https://github.com/thewoolleyman/livespec-dev-tooling/commit/0224123983bb28405401bb79405bfacea9d63d1d))
+* **gate:** refresh queued slot progress (livespec-dev-tooling-5cgqgw) ([5547552](https://github.com/thewoolleyman/livespec-dev-tooling/commit/55475522dd1796d79acfd4776bc0522773a32065))
+* **gates:** a commit-time replay refused by its gate resource declaration says it was refused, not that no verdict arrived (livespec-dev-tooling-c3nd2h) ([ecb9124](https://github.com/thewoolleyman/livespec-dev-tooling/commit/ecb9124b15b5e8f891271ec58c7d0dccd13ca710))
+* **gates:** a delegated pre-commit refuses an unusable gate resource declaration instead of gating locally (livespec-dev-tooling-c3nd2h) ([66cda87](https://github.com/thewoolleyman/livespec-dev-tooling/commit/66cda8752688765b7fff2dba0e12278f78163337))
+* **gates:** a gate-runner run refused by its gate resource declaration ends FAILED, not without a verdict (livespec-dev-tooling-c3nd2h) ([4d0bef5](https://github.com/thewoolleyman/livespec-dev-tooling/commit/4d0bef5082d392fa9c465e91d5d67e48d73c5b77))
+* **gates:** a refused Red or Green replay refuses the commit instead of running the leg locally (livespec-dev-tooling-c3nd2h) ([606e477](https://github.com/thewoolleyman/livespec-dev-tooling/commit/606e477c5c9421675d2797794e21a956f57e21ae))
+* **gates:** a refused suite-green replay refuses the commit instead of running the suite locally (livespec-dev-tooling-c3nd2h) ([8703d69](https://github.com/thewoolleyman/livespec-dev-tooling/commit/8703d6931b8c2c296f97b41ac0789582188b2074))
+* **gates:** gate_cpu is a positive integer, and gate_memory takes every Kubernetes unit suffix (livespec-dev-tooling-c3nd2h) ([c2e613e](https://github.com/thewoolleyman/livespec-dev-tooling/commit/c2e613e967c8729f4ff3149d5a0bcd0993e5a5de))
+* guard platform-specific type checks ([0117426](https://github.com/thewoolleyman/livespec-dev-tooling/commit/0117426c6df4a66971669cec6bd32e8128c9c5b1))
+* **hooks:** stream hook member output (livespec-dev-tooling-5cgqgw) ([ef7d074](https://github.com/thewoolleyman/livespec-dev-tooling/commit/ef7d074c9a8ed67db4fff2c6c642252a96e81874))
+* require HTTP markers for gh statuses (livespec-dev-tooling-t26bbr) ([02adb9d](https://github.com/thewoolleyman/livespec-dev-tooling/commit/02adb9dbf0907465beb9ee6a831df6e8329139f5))
+* the flake retry self-guard covers the decision module ([8271a8b](https://github.com/thewoolleyman/livespec-dev-tooling/commit/8271a8b7d7e91e37b816e1444f9ab94e222dc564))
+
+
+### Performance
+
+* reduce gate-list record probes ([b1b2138](https://github.com/thewoolleyman/livespec-dev-tooling/commit/b1b2138b53cc605de15b515faeb5625987410931))
+
+
+### Reverts
+
+* revert this commit and re-apply the factory_pressure_placement tag. ([cd9066b](https://github.com/thewoolleyman/livespec-dev-tooling/commit/cd9066bd81f74a06935cbd924f5ad78aee7e141b))
+
 ## [1.197.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.196.0...v1.197.0) (2026-11-11)
 
 

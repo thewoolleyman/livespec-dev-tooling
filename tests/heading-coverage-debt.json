@@ -409,7 +409,7 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a declared gate resource that no single gate lane can admit is refused naming the largest lane's quotas",
-    "work_item": "livespec-dev-tooling-yznwz7",
+    "work_item": "livespec-dev-tooling-jgabjo",
     "first_seen": "2026-11-11"
   },
   {
@@ -892,7 +892,7 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a repository that declares no gate cpu or memory is not refused over an unreadable gates queue file",
-    "work_item": "livespec-dev-tooling-yznwz7",
+    "work_item": "livespec-dev-tooling-jgabjo",
     "first_seen": "2026-11-11"
   },
   {

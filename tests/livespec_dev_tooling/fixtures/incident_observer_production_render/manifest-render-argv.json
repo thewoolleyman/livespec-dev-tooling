@@ -3,7 +3,7 @@
   "-I",
   "/opt/livespec-incident/bin/render_released_installation.py",
   "--release",
-  "v1.195.0",
+  "{{ incident_observer_release }}",
   "--revision",
   "0000000000000000000000000000000000000000",
   "--reader-release",
