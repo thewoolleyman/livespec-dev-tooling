@@ -23,6 +23,7 @@ __all__: list[str] = [
     "ROLE_KEY_SPELLING_FIELD",
     "complete_block_declaring",
     "records_from",
+    "union_key_block",
     "write_consumer",
 ]
 
@@ -78,6 +79,16 @@ def complete_block_declaring(*, key: str, value: str, comment: str) -> str:
     ]
     body = "\n".join(lines)
     return f"[tool.livespec_dev_tooling]\n{body}\n"
+
+
+def union_key_block(*, key: str, value: str, comment: str) -> str:
+    """Return a complete consumer block with the specified UNION-key payload.
+
+    The schema tests exercise invalid UNION table spellings at parse time, so
+    the surrounding declaration still needs every required role key.  Keep the
+    shared construction in one place instead of maintaining a second block.
+    """
+    return complete_block_declaring(key=key, value=value, comment=comment)
 
 
 def write_consumer(*, root: Path, block: str) -> Path:
