@@ -111,9 +111,14 @@ sccache_redis_state: absent
 storage_reclaim_state: absent
 
 # --- factory_budget_reconciler ---
-# No factory sandbox pods: FACTORY_NODE=false since 2026-11-03. Declared so the
-# intent can be read here (role HOST_VARS.md).
-factory_pod_budget: 0
+# FACTORY TRIAL, 2026-11-11: at most 2 factory sandbox pods (sandbox pods only,
+# no Fabro server). FACTORY_NODE=true again in the profile for this trial,
+# decided by legacy-coordinator-agent consistent with the maintainer's pick
+# (epic livespec-dev-tooling-ko26ez); it was 0 since FACTORY_NODE=false on
+# 2026-11-03. Memory binds first (7.6 GiB per pod against 27 GiB allocatable).
+# Judged on factory runs per hour, green rate and hp CI p95. Revert: 0 here and
+# FACTORY_NODE=false in the profile (see the profile's FACTORY TRIAL block).
+factory_pod_budget: 2
 
 # --- k3s_config ---
 # system.slice's root-level CPU share against kubepods.slice (567 on this 16-CPU
