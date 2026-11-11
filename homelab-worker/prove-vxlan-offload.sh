@@ -132,6 +132,12 @@ worker_placement() {
     - key: homelab-worker.livespec.dev/admission
       operator: Exists
       effect: NoSchedule
+    # A held (cordoned) worker is exactly the node this sweep diagnoses, and the
+    # nodeSelector placement above must still land there; no other workload
+    # carries this toleration (legacy-coordinator-agent, 2026-11-11 ~17:36Z).
+    - key: node.kubernetes.io/unschedulable
+      operator: Exists
+      effect: NoSchedule
 EOF
 }
 
