@@ -196,7 +196,7 @@ install-worktree-pack:
 # structurally impossible. The SessionStart hook in `.claude/settings.json`
 # runs this recipe so each new session's project-scope plugins are current.
 ensure-plugins:
-    mise exec -- uv run --no-sync python -m livespec_dev_tooling.fleet.ensure_plugins
+    mise exec -- uv run python -m livespec_dev_tooling.fleet.ensure_plugins
 
 # Holds the host-wide adoption lock for its whole run.
 [positional-arguments]
