@@ -40,6 +40,7 @@ _REVISION = "0" * 40
 _RESOLVE_DEPTH = 4
 _RENDER_TASK = "Render the released-installation manifest with the serving interpreter"
 _RELEASE_FIXTURE_TOKEN = "{{ incident_observer_release }}"
+_SCRATCH_ROLE_TEST = Path(__file__).with_name("test_incident_observer_role_scratch_instance.py")
 _TEMPLATES = {
     "controller.json": "controller.json.j2",
     "livespec-incident-observer.service": "livespec-incident-observer.service.j2",
@@ -238,6 +239,12 @@ def test_the_production_render_rejects_a_manifest_with_a_release_other_than_the_
 
     with pytest.raises(AssertionError, match="manifest-render-argv.json"):
         assert_production_render_matches_fixture(rendered=rendered, variables=variables)
+
+
+def test_the_scratch_role_test_does_not_literal_pin_the_observer_release() -> None:
+    source = _SCRATCH_ROLE_TEST.read_text(encoding="utf-8")
+
+    assert 'context["incident_observer_release"] == "v' not in source
 
 
 def test_the_production_apply_declares_no_scratch_instance_and_no_target_branch() -> None:
