@@ -1,0 +1,60 @@
+import os,re,json,glob,pickle,collections,datetime as dt,statistics as S
+ANSI=re.compile(r"\x1b\[[0-9;]*m")
+def T(s):
+    s=s.rstrip("Z").split(".")[0]
+    return dt.datetime.strptime(s,"%Y-%m-%dT%H:%M:%S")
+VERD=("delegated pre-commit aggregate completed","no pre-commit aggregate evidence","delegated gate passed","commit-time replay gated","delegated gate refuses","GATED_LOCALLY")
+rows=pickle.load(open("rows.pkl","rb"))
+def kind(cmd):
+    if re.search(r"\bgit commit\b",cmd): return "commit-amend" if "--amend" in cmd else "commit"
+    if re.search(r"\bgit push\b",cmd): return "push"
+    return None
+jobsum={j["name"]:j for j in json.load(open("jobsum.json"))}
+out=[]
+for r in rows:
+    repo,rid,_,venue,_,st,fin,dur,ec,cmd=r
+    k=kind(cmd)
+    if not k or dur is None: continue
+    p=f"/data/projects/{repo}/tmp/gate-runs/{rid}/output.log"
+    try: L=[ANSI.sub("",l) for l in open(p,errors="replace")]
+    except Exception: continue
+    t0=st.replace(tzinfo=None); t1=fin.replace(tzinfo=None)
+    waits=collections.Counter(); jobs={}; steps=[]
+    for l in L:
+        m=re.search(r"gate: (gate-[a-z0-9-]+) not finished yet, waited (\d+)s",l)
+        if m: waits[m.group(1)]=max(waits[m.group(1)],int(m.group(2))); continue
+        if '"job_name"' in l and any(v in l for v in VERD):
+            try: d=json.loads(l[l.find("{"):])
+            except Exception: continue
+            jobs.setdefault(d["job_name"],d)
+        m=re.match(r"\s*[✔️🥊❌✖️]+\s*(\S+) \(([\d.]+) seconds\)",l)
+        m=m or re.search(r"(?:✔️|❌|🥊)\s*(\S+) \(([\d.]+) seconds\)",l)
+        if m: steps.append((m.group(1),float(m.group(2))))
+    J=[]
+    for name,d in jobs.items():
+        tv=T(d["timestamp"])
+        if "job_started_at" in d:
+            ja=T(d["job_started_at"]); jf=T(d.get("job_finished_at") or d["timestamp"])
+            created=ja-dt.timedelta(seconds=(jobsum.get(name,{}).get("admit_s") or 1))
+        else:
+            w=waits.get(name,0); W=w+30
+            created=tv-dt.timedelta(seconds=W); ja=None; jf=None
+        J.append(dict(name=name,created=created,verdict=tv,admit=ja,finish=jf,exact=jobsum.get(name)))
+    J.sort(key=lambda j:j["created"])
+    rec=dict(repo=repo,rid=rid,kind=k,venue=venue,ec=ec,total=dur,njobs=len(J),steps=steps)
+    if J:
+        a=(J[0]["created"]-t0).total_seconds()
+        jobspan=sum((j["verdict"]-j["created"]).total_seconds() for j in J)
+        gaps=sum(max(0,(J[i+1]["created"]-J[i]["verdict"]).total_seconds()) for i in range(len(J)-1))
+        d_=(t1-J[-1]["verdict"]).total_seconds()
+        rec.update(a=a,job=jobspan,gaps=gaps,d=d_,e=dur-a-jobspan-gaps-d_,jobs=[(j["name"],j["exact"]["node"] if j["exact"] else None) for j in J])
+    out.append(rec)
+pickle.dump(out,open("seg.pkl","wb"))
+def q(v,p): v=sorted(v); return v[min(len(v)-1,int(round(p*(len(v)-1))))]
+def fmt(v): return "n=%d med %.1f p90 %.1f"%(len(v),S.median(v)/60,q(v,.9)/60) if v else "-"
+G=collections.defaultdict(list)
+for o in out: G[(o["repo"],o["kind"],"jobs" if o["njobs"] else "nojob")].append(o)
+for key,v in sorted(G.items()):
+    print(key, "total",fmt([o["total"] for o in v]))
+    if key[2]=="jobs":
+        for s in ("a","job","gaps","d","e"): print("   ",s,fmt([o[s] for o in v]))

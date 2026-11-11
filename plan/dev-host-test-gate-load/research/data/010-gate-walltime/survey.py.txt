@@ -1,0 +1,20 @@
+import os,sys,glob,datetime as dt,collections
+cut=dt.datetime.now(dt.timezone.utc)-dt.timedelta(hours=24)
+def rd(p):
+    try: return open(p).read().strip()
+    except Exception: return None
+def ts(s):
+    try: return dt.datetime.strptime(s,"%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=dt.timezone.utc)
+    except Exception: return None
+rows=[]
+for d in glob.glob("/data/projects/*/tmp/gate-runs/*/"):
+    repo=d.split("/")[3]
+    st=ts(rd(d+"started_at") or "")
+    if not st or st<cut: continue
+    fin=ts(rd(d+"finished_at") or "")
+    cmd=" ".join((rd(d+"command") or "").split())
+    rows.append((repo,os.path.basename(d.rstrip("/")),rd(d+"label"),rd(d+"venue"),rd(d+"venue_reason"),st,fin,(fin-st).total_seconds() if fin else None,rd(d+"exit_code"),cmd[:110]))
+c=collections.Counter((r[0],r[2],r[3],r[4]) for r in rows)
+for k,v in sorted(c.items()): print(v,k)
+print(len(rows))
+import pickle; pickle.dump(rows,open(sys.argv[1],"wb"))

@@ -1,0 +1,27 @@
+import json,datetime as dt,statistics as S,collections
+def t(s): return dt.datetime.strptime(s,"%Y-%m-%dT%H:%M:%SZ") if s else None
+J=json.load(open("jobs.json"))["items"]; P=json.load(open("pods.json"))["items"]
+pods=collections.defaultdict(list)
+for p in P: pods[p["metadata"].get("labels",{}).get("job-name")].append(p)
+out=[]
+for j in J:
+    m=j["metadata"]; s=j["status"]; n=m["name"]
+    c=t(m["creationTimestamp"]); st=t(s.get("startTime")); done=t(s.get("completionTime"))
+    if not done:
+        for cd in s.get("conditions",[]):
+            if cd["type"] in("Failed","Complete") and cd["status"]=="True": done=t(cd["lastTransitionTime"])
+    ps=pods.get(n,[]); node=None; sched=None; cstart=None; cend=None
+    for p in ps:
+        node=p["spec"].get("nodeName")
+        for cd in p["status"].get("conditions",[]):
+            if cd["type"]=="PodScheduled" and cd["status"]=="True": sched=t(cd["lastTransitionTime"])
+        for cs in p["status"].get("containerStatuses",[]):
+            stt=cs.get("state",{}); r=stt.get("running") or stt.get("terminated") or {}
+            if r.get("startedAt"): cstart=t(r["startedAt"])
+            if r.get("finishedAt"): cend=t(r["finishedAt"])
+        ics=p["status"].get("initContainerStatuses",[])
+    res="Complete" if s.get("succeeded") else ("Failed" if s.get("failed") else "Running")
+    sec=lambda a,b: (b-a).total_seconds() if a and b else None
+    out.append(dict(name=n,repo=m["labels"].get("livespec.gate/repo"),created=str(c),admit_s=sec(c,st),sched_to_start_s=sec(sched,cstart),start_to_cstart_s=sec(st,cstart),run_s=sec(cstart,cend or done),job_total_s=sec(c,done),node=node,res=res,npods=len(ps)))
+for o in sorted(out,key=lambda o:o["created"]): print(o)
+json.dump(out,open("jobsum.json","w"),default=str)
