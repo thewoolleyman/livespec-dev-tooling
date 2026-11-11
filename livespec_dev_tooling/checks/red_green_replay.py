@@ -107,7 +107,10 @@ from _red_green_replay_modes import (  # noqa: E402  — sibling private import
     _handle_suite_green_mode,
     _refuse_half_pair,
 )
-from _red_green_replay_range_integrity import validate_range_evidence  # noqa: E402  — sibling
+from _red_green_replay_range_integrity import (  # noqa: E402  — sibling private import
+    check_range_integrity,
+    validate_range_evidence,
+)
 from _red_green_replay_revert import (  # noqa: E402  — sibling private import
     FORGE_EXEMPTION_UNPROBED,
     RANGE_MISSING_TRAILERS_HINT,
@@ -453,6 +456,9 @@ def _validate_range() -> int:
         hint=RANGE_MISSING_TRAILERS_HINT,
         protocol=RED_GREEN_REPLAY_PROTOCOL,
     )
+    # The subject and checksum findings are independent of the shape finding:
+    # a range that fails both names every offending commit, not only the first.
+    _ = check_range_integrity(shas=shas, log=log)
     return 1
 
 
