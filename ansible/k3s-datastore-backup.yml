@@ -1,0 +1,193 @@
+---
+# k3s-datastore-backup.yml — the committed backup, stop and restore of the k3s
+# SERVER's kine/SQLite datastore. It is step 1 of plan k3s-embedded-etcd-datastore
+# (epic livespec-dev-tooling-qql3lo).
+#
+# WHY IT EXISTS. The plan moves poweredge-xubuntu's control-plane datastore from
+# kine over SQLite to embedded etcd. The coordinator ruled that the first step is
+# a committed, read-back backup of the current kine/SQLite state plus a written
+# rollback route (research/003-…). The datastore lives on a tmpfs
+# (/var/lib/rancher/k3s/server/db), so it is VOLATILE by design: every boot
+# rebuilds the cluster from empty through converge-ci-stack.service. This backup
+# is therefore a rollback point for the migration window, not durable cluster
+# state. The fleet host guard refuses hand `sqlite3`/`systemctl` writes on a pool
+# host, so this playbook is the only path.
+#
+# THREE ACTIONS, EACH BEHIND ITS OWN FENCE. Each fence is a variable naming this
+# host's inventory name. A run without it reads nothing, changes nothing and
+# exits 0.
+#   backup   k3s_datastore_backup_confirm=<host>
+#            An online `sqlite3 .backup` of state.db (SQLite's backup API: a
+#            consistent copy while kine keeps writing, and in WAL mode it does
+#            not block writers). It also takes a tarball of the server token,
+#            cred/ and tls/, because a kine database cannot be restored without
+#            them. Both go to a new 0700 set directory under
+#            /var/backups/k3s-datastore on the root disk.
+#   stop     k3s_datastore_stop_confirm=<host>
+#            Stops k3s.service and nothing else. It exists because a restore
+#            refuses while k3s runs, and no other committed path stops the
+#            server unit.
+#   restore  k3s_datastore_restore_confirm=<host> AND k3s_datastore_restore_set=<set>
+#            Refuses unless k3s.service is inactive, unless the datastore dir is
+#            on its tmpfs, unless no etcd/ dir is present (k3s ignores SQLite
+#            once etcd files exist), and unless the set's manifest verifies.
+#            Only then does it copy the set's state.db into the tmpfs, drop the
+#            stale -wal/-shm, and start k3s.
+# A run that confirms more than one action is refused.
+#
+# READ-BACK (backup). The play FAILS unless all of these hold:
+#   - `PRAGMA integrity_check` on the copy returns `ok`;
+#   - the copy's max(kine.id) lies between the live max(id) read just before
+#     the backup and the live max(id) read just after it;
+#   - the set's sha256 manifest re-verifies (`sha256sum -c`).
+#
+# RETENTION. The backup run keeps the newest `k3s_datastore_backup_keep` (3) sets
+# and deletes older ones in the same run, so server tokens and TLS keys do not
+# pile up on the root disk. Output carries only set names, file names and
+# sha256 values, never file contents.
+#
+# Read with: research/003 of plan/k3s-embedded-etcd-datastore (the rollback route).
+
+- name: Back up, stop or restore the k3s server's kine/SQLite datastore on confirmation
+  hosts: ci_pool
+  gather_facts: false
+  vars:
+    k3s_datastore_server_dir: /var/lib/rancher/k3s/server
+    k3s_datastore_dir: "{{ k3s_datastore_server_dir }}/db"
+    k3s_datastore_backup_root: /var/backups/k3s-datastore
+    k3s_datastore_backup_keep: 3
+    k3s_datastore_unit: k3s.service
+    k3s_datastore_backup_requested: "{{ k3s_datastore_backup_confirm | default('') == inventory_hostname }}"
+    k3s_datastore_stop_requested: "{{ k3s_datastore_stop_confirm | default('') == inventory_hostname }}"
+    k3s_datastore_restore_requested: "{{ k3s_datastore_restore_confirm | default('') == inventory_hostname }}"
+    k3s_datastore_requested_count: >-
+      {{ [k3s_datastore_backup_requested, k3s_datastore_stop_requested, k3s_datastore_restore_requested]
+         | map('bool') | select | list | length }}
+  tasks:
+    - name: Report a run that confirms no datastore action for this host
+      ansible.builtin.debug:
+        msg: >-
+          No k3s datastore action on {{ inventory_hostname }}: this run carries none of
+          k3s_datastore_backup_confirm, k3s_datastore_stop_confirm or
+          k3s_datastore_restore_confirm naming {{ inventory_hostname }}. Nothing was
+          read and nothing was changed.
+      when: k3s_datastore_requested_count | int == 0
+
+    - name: Refuse a run that confirms more than one datastore action
+      ansible.builtin.fail:
+        msg: >-
+          Refused on {{ inventory_hostname }}: this run confirms more than one of backup,
+          stop and restore. Run each action on its own.
+      when: k3s_datastore_requested_count | int > 1
+
+    - name: Back up the confirmed host's kine/SQLite datastore and read it back
+      when: k3s_datastore_backup_requested | bool and k3s_datastore_requested_count | int == 1
+      become: true
+      ansible.builtin.shell:
+        executable: /bin/bash
+        cmd: |
+          set -euo pipefail
+          db='{{ k3s_datastore_dir }}/state.db'
+          root='{{ k3s_datastore_backup_root }}'
+          keep='{{ k3s_datastore_backup_keep }}'
+          [ -f "$db" ] || { echo "no kine datastore at $db" >&2; exit 1; }
+          umask 077
+          install -d -m 0700 "$root"
+          set_name="$(date -u +%Y%m%dT%H%M%SZ)"
+          dir="$root/$set_name"
+          install -d -m 0700 "$dir"
+          live_before="$(sqlite3 "$db" 'SELECT max(id) FROM kine;')"
+          sqlite3 "$db" ".backup '$dir/state.db'"
+          live_after="$(sqlite3 "$db" 'SELECT max(id) FROM kine;')"
+          integrity="$(sqlite3 "$dir/state.db" 'PRAGMA integrity_check;')"
+          copy_max="$(sqlite3 "$dir/state.db" 'SELECT max(id) FROM kine;')"
+          copy_rows="$(sqlite3 "$dir/state.db" 'SELECT count(*) FROM kine;')"
+          [ "$integrity" = ok ] || { echo "integrity_check on the copy: $integrity" >&2; exit 1; }
+          if [ "$copy_max" -lt "$live_before" ] || [ "$copy_max" -gt "$live_after" ]; then
+            echo "copy max(id) $copy_max outside live bracket [$live_before, $live_after]" >&2
+            exit 1
+          fi
+          tar -C '{{ k3s_datastore_server_dir }}' -czf "$dir/server-credentials.tar.gz" token cred tls
+          ( cd "$dir" && sha256sum state.db server-credentials.tar.gz > MANIFEST.sha256 \
+              && sha256sum -c --quiet MANIFEST.sha256 )
+          echo "set $set_name: integrity_check ok; kine rows $copy_rows; max(id) $copy_max in live bracket [$live_before, $live_after]"
+          cat "$dir/MANIFEST.sha256"
+          mapfile -t sets < <(find "$root" -mindepth 1 -maxdepth 1 -type d -name '2*Z' -printf '%f\n' | sort)
+          total=0
+          for s in "${sets[@]}"; do total=$((total + 1)); done
+          for ((i = 0; i < total - keep; i++)); do
+            rm -rf -- "${root:?}/${sets[$i]}"
+            echo "pruned set ${sets[$i]}"
+          done
+          echo "kept sets: $(find "$root" -mindepth 1 -maxdepth 1 -type d -name '2*Z' -printf '%f ' | tr -s ' ')"
+      register: k3s_datastore_backup_result
+      changed_when: true
+
+    - name: Report the backup
+      ansible.builtin.debug:
+        var: k3s_datastore_backup_result.stdout_lines
+      when: k3s_datastore_backup_result is not skipped and k3s_datastore_backup_result.stdout_lines is defined
+
+    - name: Stop the confirmed host's k3s server unit
+      when: k3s_datastore_stop_requested | bool and k3s_datastore_requested_count | int == 1
+      become: true
+      ansible.builtin.systemd_service:
+        name: "{{ k3s_datastore_unit }}"
+        state: stopped
+
+    - name: Restore a verified backup set into the tmpfs datastore and start k3s
+      when: k3s_datastore_restore_requested | bool and k3s_datastore_requested_count | int == 1
+      become: true
+      block:
+        - name: Refuse a restore that names no backup set
+          ansible.builtin.fail:
+            msg: "Refused: a restore needs k3s_datastore_restore_set=<set name under {{ k3s_datastore_backup_root }}>."
+          when: k3s_datastore_restore_set | default('') | length == 0
+
+        - name: Refuse unless k3s is stopped, the datastore is on its tmpfs, no etcd dir exists, and the manifest verifies
+          ansible.builtin.shell:
+            executable: /bin/bash
+            cmd: |
+              set -euo pipefail
+              dir='{{ k3s_datastore_backup_root }}/{{ k3s_datastore_restore_set }}'
+              state="$(systemctl is-active '{{ k3s_datastore_unit }}' || true)"
+              if [ "$state" != inactive ] && [ "$state" != failed ]; then
+                echo "Refused: {{ k3s_datastore_unit }} is $state; stop it first with k3s_datastore_stop_confirm" >&2
+                exit 1
+              fi
+              fstype="$(findmnt -n -o FSTYPE -T '{{ k3s_datastore_dir }}')"
+              [ "$fstype" = tmpfs ] || { echo "Refused: {{ k3s_datastore_dir }} is on $fstype, not its tmpfs" >&2; exit 1; }
+              if [ -e '{{ k3s_datastore_dir }}/etcd' ]; then
+                echo "Refused: {{ k3s_datastore_dir }}/etcd exists, so k3s would ignore a SQLite restore" >&2
+                exit 1
+              fi
+              [ -f "$dir/MANIFEST.sha256" ] || { echo "Refused: no manifest in set {{ k3s_datastore_restore_set }}" >&2; exit 1; }
+              ( cd "$dir" && sha256sum -c --quiet MANIFEST.sha256 )
+              echo "set {{ k3s_datastore_restore_set }} verified; {{ k3s_datastore_unit }} is $state"
+          register: k3s_datastore_restore_preflight
+          changed_when: false
+
+        - name: Copy the verified state.db into the tmpfs and drop the stale WAL and shm
+          ansible.builtin.shell:
+            executable: /bin/bash
+            cmd: |
+              set -euo pipefail
+              src='{{ k3s_datastore_backup_root }}/{{ k3s_datastore_restore_set }}/state.db'
+              rm -f -- '{{ k3s_datastore_dir }}/state.db-wal' '{{ k3s_datastore_dir }}/state.db-shm'
+              install -m 0644 -o root -g root "$src" '{{ k3s_datastore_dir }}/state.db'
+              expected="$(awk '$2 == "state.db" { print $1 }' '{{ k3s_datastore_backup_root }}/{{ k3s_datastore_restore_set }}/MANIFEST.sha256')"
+              actual="$(sha256sum '{{ k3s_datastore_dir }}/state.db')"
+              actual="${actual%% *}"
+              [ "$actual" = "$expected" ] || { echo "restored state.db sha256 $actual != manifest $expected" >&2; exit 1; }
+              echo "restored state.db sha256 $actual matches the manifest"
+          register: k3s_datastore_restore_copy
+          changed_when: true
+
+        - name: Start k3s on the restored datastore
+          ansible.builtin.systemd_service:
+            name: "{{ k3s_datastore_unit }}"
+            state: started
+
+        - name: Report the restore
+          ansible.builtin.debug:
+            msg: "{{ k3s_datastore_restore_preflight.stdout_lines + k3s_datastore_restore_copy.stdout_lines }}"
