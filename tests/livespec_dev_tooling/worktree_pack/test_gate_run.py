@@ -470,6 +470,42 @@ def test_gate_list_reads_run_records_with_builtins_and_limits_the_default_to_rec
     assert "sort" not in list_body
 
 
+def test_gate_list_ignores_non_regular_record_entries_without_blocking(*, tmp_path: Path) -> None:
+    """A FIFO or directory standing in for a record file never blocks or skews `list`."""
+    repo = _init_repo(tmp_path=tmp_path)
+    store = repo / _STORE
+    fifo_exit = store / "run-a-fifo-exit"
+    _write(path=fifo_exit / "command", text="fifo-exit-command\n")
+    os.mkfifo(fifo_exit / "exit_code")
+    dir_exit = store / "run-b-dir-exit"
+    _write(path=dir_exit / "command", text="dir-exit-command\n")
+    (dir_exit / "exit_code").mkdir()
+    _write(path=dir_exit / "pid", text=f"{os.getpid()}\n")
+    fifo_pid = store / "run-c-fifo-pid"
+    _write(path=fifo_pid / "command", text="fifo-pid-command\n")
+    os.mkfifo(fifo_pid / "pid")
+    fifo_command = store / "run-d-fifo-command"
+    _write(path=fifo_command / "exit_code", text="0\n")
+    os.mkfifo(fifo_command / "command")
+
+    listed = subprocess.run(
+        [str(repo / "dev-tooling" / _SCRIPT), "list", "--all"],
+        cwd=str(repo),
+        env=_child_env(home=tmp_path / "home"),
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+
+    assert listed.returncode == 0, listed.stderr
+    rows = {line.split()[0]: line.rstrip().split(maxsplit=2) for line in listed.stdout.splitlines()}
+    assert rows["run-a-fifo-exit"][1:] == ["DIED_WITHOUT_VERDICT", "fifo-exit-command"]
+    assert rows["run-b-dir-exit"][1:] == ["RUNNING", "dir-exit-command"]
+    assert rows["run-c-fifo-pid"][1:] == ["DIED_WITHOUT_VERDICT", "fifo-pid-command"]
+    assert rows["run-d-fifo-command"][1:] == ["PASSED", "?"]
+
+
 def test_gate_list_recipe_forwards_all_to_the_runner(*, tmp_path: Path) -> None:
     """The public recipe reaches the runner's all-records mode unchanged."""
     repo = _init_repo(tmp_path=tmp_path)

@@ -411,7 +411,7 @@ derive_state() {
 # preserving its exact state derivation for each record.
 derive_list_state_into() {
     local dir="$1" code="" pid=""
-    if [[ -r "$dir/exit_code" ]]; then
+    if [[ -f "$dir/exit_code" && -r "$dir/exit_code" ]]; then
         read -r code <"$dir/exit_code" || code=""
         if [[ "$code" == "0" ]]; then
             STATE='PASSED'
@@ -422,7 +422,7 @@ derive_list_state_into() {
         fi
         return
     fi
-    if [[ -r "$dir/pid" ]]; then
+    if [[ -f "$dir/pid" && -r "$dir/pid" ]]; then
         read -r pid <"$dir/pid" || pid=""
         if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
             STATE='RUNNING'
@@ -436,7 +436,7 @@ derive_list_state_into() {
 # report reader's separate regular-file and readability probes for every row.
 list_command_into() {
     local __name="$1" __file="$2" __value=""
-    if [[ ! -r "$__file" ]]; then
+    if [[ ! -f "$__file" || ! -r "$__file" ]]; then
         printf -v "$__name" '%s' '?'
         return
     fi
