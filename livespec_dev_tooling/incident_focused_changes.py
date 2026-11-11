@@ -8,14 +8,19 @@ target branch and the head, then every path that differs between that base and
 the head (SPECIFICATION `contracts.md`, the expedited incident execution contract:
 focused tests and touched-file coverage are recorded before merge).
 
-A product file is a changed path under the clone's configured source prefixes,
-the same prefixes the collector's scope must match. Each one present at the head
-is classified by the collector's own `classify`, over the head's exact blob and
-mode, so the observer and the collector name the same files `executable`.
+A product file is a changed path under the source prefixes of the COMMITTED
+configuration, the union of the target branch's and the head's. The clone's
+checked-out copy is never read (nothing moves it after provisioning), and the
+union means a head can widen its own scope, by declaring a new source tree, but
+never narrow it. Each changed path is listed with `--no-renames`, so a moved file
+is both its old path and its new one, as the collector lists it. Each one present
+at the head is classified by the collector's own `classify`, over the head's exact
+blob and mode, so the observer and the collector name the same files `executable`.
 
 Anything the clone cannot establish is a reason, never an empty set: a missing
-head, an unresolvable merge base, an unreadable configuration or a source-prefix
-set that is empty would otherwise admit a record that covers nothing.
+head, an unresolvable merge base, an unreadable committed configuration at either
+ref or a source-prefix set that is empty would otherwise admit a record that
+covers nothing.
 """
 
 from __future__ import annotations
@@ -69,16 +74,22 @@ def _blobs(*, repo: Path, head: str, names: list[str]) -> dict[str, tuple[str, b
     return blobs
 
 
+def _committed_prefixes(*, repo: Path, refs: tuple[str, ...]) -> tuple[str, ...]:
+    """The union of the source prefixes each ref's committed configuration declares."""
+    prefixes: list[str] = []
+    with tempfile.TemporaryDirectory(prefix="incident-focused-config-") as scratch:
+        root = Path(scratch)
+        for ref in refs:
+            text = run_git(repo=repo, args=("show", f"{ref}:pyproject.toml")).stdout
+            _ = (root / "pyproject.toml").write_bytes(text)
+            prefixes.extend(derive_source_prefixes(config=load_config(repo_root=root)))
+    return tuple(dict.fromkeys(prefixes))
+
+
 def _changed(
-    *, repo: Path, target_branch: str, head: str, prefixes: tuple[str, ...]
-) -> ChangedProductFiles | str:
-    present = run_git(repo=repo, args=("cat-file", "-e", f"{head}^{{commit}}"), check=False)
-    if present.returncode:
-        return (
-            f"the reference clone does not hold head {head}; its reference fetch has not"
-            " brought the head in yet"
-        )
-    base = git_text(repo=repo, args=("merge-base", f"refs/remotes/origin/{target_branch}", head))
+    *, repo: Path, target_ref: str, head: str, prefixes: tuple[str, ...]
+) -> ChangedProductFiles:
+    base = git_text(repo=repo, args=("merge-base", target_ref, head))
     raw = run_git(
         repo=repo, args=("diff-tree", "-r", "-z", "--no-renames", "--name-only", base, head)
     )
@@ -103,14 +114,26 @@ def changed_product_files(
     *, repo: Path, target_branch: str, head: str
 ) -> ChangedProductFiles | str:
     """The changed product files of `head` in the reference clone, or why they are unknown."""
+    target_ref = f"refs/remotes/origin/{target_branch}"
     try:
-        prefixes = derive_source_prefixes(config=load_config(repo_root=repo))
-    except (ConfigParseError, OSError) as unreadable:
-        return f"the reference clone's configuration is unreadable: {unreadable}"
-    if not prefixes:
-        return "the reference clone declares no source prefixes, so no product file is knowable"
-    try:
-        return _changed(repo=repo, target_branch=target_branch, head=head, prefixes=prefixes)
+        present = run_git(repo=repo, args=("cat-file", "-e", f"{head}^{{commit}}"), check=False)
+        if present.returncode:
+            return (
+                f"the reference clone does not hold head {head}; its reference fetch has not"
+                " brought the head in yet"
+            )
+        prefixes = _committed_prefixes(repo=repo, refs=(target_ref, head))
+        if not prefixes:
+            return (
+                "the committed configuration declares no source prefixes, so no product file"
+                " is knowable"
+            )
+        return _changed(repo=repo, target_ref=target_ref, head=head, prefixes=prefixes)
+    except ConfigParseError as unreadable:
+        return (
+            f"the committed configuration at {target_branch} or head {head} is unreadable:"
+            f" {unreadable}"
+        )
     except (
         IncidentGitError,
         IndexError,
