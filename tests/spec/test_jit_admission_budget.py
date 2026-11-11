@@ -111,19 +111,19 @@ def _ceiling_rule(*, quota: int) -> int:
     return max(_CEILING_MULTIPLE * quota, _CEILING_FLOOR)
 
 
-def _documents() -> list[str]:
-    """Every YAML document across the committed ClusterQueue manifests."""
+def _documents(kueue_dir: Path = _KUEUE_DIR) -> list[str]:
+    """Every YAML document across the ClusterQueue manifests under `kueue_dir`."""
     return [
         document
-        for path in sorted(_KUEUE_DIR.glob("cluster-queue-*.yaml"))
+        for path in sorted(kueue_dir.glob("cluster-queue-*.yaml"))
         for document in _DOC_SEPARATOR.split(path.read_text(encoding="utf-8"))
     ]
 
 
-def _cohort_quotas() -> dict[str, int]:
+def _cohort_quotas(kueue_dir: Path = _KUEUE_DIR) -> dict[str, int]:
     """Each cohort-member ClusterQueue's churn-slot `nominalQuota`."""
     quotas: dict[str, int] = {}
-    for document in _documents():
+    for document in _documents(kueue_dir):
         kind = _KIND.search(document)
         cohort = _COHORT_NAME.search(document)
         name = _NAME.search(document)
@@ -208,7 +208,7 @@ def test_every_repository_ceiling_is_the_bounded_multiple_of_its_fair_share() ->
     )
 
 
-def _pool_capacity() -> dict[str, int]:
+def _pool_capacity(profiles_dir: Path = _PROFILES_DIR) -> dict[str, int]:
     """Each pool node's `ADMISSION_CAPACITY_C`, keyed by profile name.
 
     Churn-slot capacity is PER-NODE since the two-node opening (DERIVATION.md
@@ -217,32 +217,102 @@ def _pool_capacity() -> dict[str, int]:
     to is the TOTAL across every node's own profile, not any one node's value.
     """
     capacities: dict[str, int] = {}
-    for profile in sorted(_PROFILES_DIR.glob("*.env")):
+    for profile in sorted(profiles_dir.glob("*.env")):
         declared = _ADMISSION_CAPACITY.search(profile.read_text(encoding="utf-8"))
         assert declared is not None, (
             f"every pool node's admission capacity C must be a value of its committed "
             f"profile — the per-node profile is where the section's host-capacity term "
-            f"lives; profile={profile.relative_to(_REPO_ROOT)}"
+            f"lives; profile={profile.name}"
         )
         capacities[profile.name] = int(declared.group("capacity"))
     return capacities
 
 
+def _quota_derivation_violations(*, quotas: dict[str, int], capacity: int) -> list[str]:
+    """Why these fair shares break the apportionment rule for a pool of `capacity`.
+
+    The rule gives every cohort member a floor of at least one and makes the
+    guaranteed floors add up to exactly the pool's total registered capacity.
+    """
+    violations = [
+        f"{cq}: nominalQuota={quota} is below the floor of 1 the rule guarantees every member"
+        for cq, quota in sorted(quotas.items())
+        if quota < 1
+    ]
+    if sum(quotas.values()) != capacity:
+        violations.append(
+            f"the cohort's guaranteed floors must sum to exactly the pool's TOTAL registered "
+            f"capacity across every node — over-subscribed, a floor is not a floor; "
+            f"under-subscribed, capacity the pool has is unreachable by anyone; "
+            f"sum={sum(quotas.values())} capacity={capacity} quotas={quotas}"
+        )
+    return violations
+
+
 def test_every_pool_profile_declares_an_admission_capacity() -> None:
-    """Every profile carries the capacity input without pinning its tunable value."""
+    """Every profile carries the capacity input, as an integer, without pinning its value."""
     capacities = _pool_capacity()
     assert capacities, "at least one pool node profile must declare an ADMISSION_CAPACITY_C"
-    assert all(isinstance(capacity, int) for capacity in capacities.values()), (
-        "each profile capacity must parse as an integer; " f"capacities={capacities}"
+    assert all(capacity > 0 for capacity in capacities.values()), capacities
+
+
+def _write_fixture_pool(*, root: Path, quotas: dict[str, int], capacities: dict[str, int]) -> None:
+    """Write a self-contained kueue directory and profile directory under `root`."""
+    kueue = root / "kueue"
+    profiles = root / "profiles"
+    kueue.mkdir()
+    profiles.mkdir()
+    documents = "---\n".join(
+        f"kind: ClusterQueue\nmetadata:\n  name: {cq}\nspec:\n  cohortName: {_COHORT}\n"
+        f"  resourceGroups:\n  - flavors:\n    - resources:\n      - name: {_CHURN_SLOT}\n"
+        f"        nominalQuota: {quota}\n"
+        for cq, quota in quotas.items()
     )
+    _ = (kueue / "cluster-queue-fixture.yaml").write_text(documents, encoding="utf-8")
+    for node, capacity in capacities.items():
+        _ = (profiles / f"{node}.env").write_text(
+            f"ADMISSION_CAPACITY_C={capacity}\n", encoding="utf-8"
+        )
+
+
+def test_the_fair_shares_derive_from_the_capacity_the_node_profiles_declare(
+    *, tmp_path: Path
+) -> None:
+    """The apportionment is exact on a fixture pool, and refused when it is not."""
+    agreeing = tmp_path / "agreeing"
+    agreeing.mkdir()
+    _write_fixture_pool(
+        root=agreeing, quotas={"a-cq": 3, "b-cq": 1}, capacities={"node-a": 3, "node-b": 1}
+    )
+    assert not _quota_derivation_violations(
+        quotas=_cohort_quotas(agreeing / "kueue"),
+        capacity=sum(_pool_capacity(agreeing / "profiles").values()),
+    )
+
+    oversubscribed = tmp_path / "oversubscribed"
+    oversubscribed.mkdir()
+    _write_fixture_pool(
+        root=oversubscribed, quotas={"a-cq": 3, "b-cq": 2}, capacities={"node-a": 3, "node-b": 1}
+    )
+    refused = _quota_derivation_violations(
+        quotas=_cohort_quotas(oversubscribed / "kueue"),
+        capacity=sum(_pool_capacity(oversubscribed / "profiles").values()),
+    )
+    assert len(refused) == 1
+    assert "sum=5 capacity=4" in refused[0]
+
+    zero_floor = _quota_derivation_violations(quotas={"a-cq": 4, "b-cq": 0}, capacity=4)
+    assert zero_floor == [
+        "b-cq: nominalQuota=0 is below the floor of 1 the rule guarantees every member"
+    ]
 
 
 def test_measured_job_hours_derive_the_committed_fair_shares() -> None:
     """Seven-day pool job-hours are the dated, auditable source of every quota."""
     quotas = _cohort_quotas()
-    assert quotas and all(quota > 0 for quota in quotas.values()), (
-        "each committed cohort member must declare a positive fair-share quota; " f"quotas={quotas}"
-    )
+    assert quotas, "the cohort must commit at least one fair share"
+    violations = _quota_derivation_violations(quotas=quotas, capacity=sum(quotas.values()))
+    assert not violations, violations
 
     derivation = _DERIVATION.read_text(encoding="utf-8")
     assert "## Measured job-hours re-derivation at C = 44 (2026-10-22)" in derivation
