@@ -62,6 +62,13 @@
 #   U. a locked artifact the proxy cannot serve falls through to PyPI directly.
 #   V. the operator cache kill switch removes the gate's private uv seed before
 #      the gate container starts.
+#   X. the gate container's size is what the client passed: --cpu, --memory and
+#      --parallelism become its cpu and memory requests, a memory limit equal to
+#      the memory request, and LIVESPEC_TEST_PARALLELISM, and a render with no
+#      size flags carries the renderer's own defaults, read from the renderer
+#      rather than restated here, and requests no more than one gate unit, read
+#      from the gates-cq annotations in ../kueue/cluster-queue-gates.yaml
+#      (livespec-dev-tooling-c3nd2h, livespec-dev-tooling-brggiu).
 #
 # WHY R EXISTS (livespec-dev-tooling-mex6ga). A member declaring it reads an
 # authorization held outside the tree must not run in the gate Job, but the Job
@@ -1177,6 +1184,91 @@ if run_gate_script "${declared_out}" "verify publish"; then
   fi
 else
   fail "an unreachable proxy made gate preparation fail: $(cat "${SCRATCH}/gate.err")"
+fi
+
+echo "== X. the gate container is sized by --cpu, --memory and --parallelism =="
+# Prints "<cpu request> <memory request> <memory limit> <LIVESPEC_TEST_PARALLELISM>"
+# for the gate container of the rendered manifest at $1. The block is bounded by
+# INDENTATION, not by container_block's next `- name:` line: the container's own
+# env entries are `- name:` lines too, and would end the block at the first one.
+# So no init container's requests can answer for the gate container.
+gate_container_block() {
+  awk '
+    !inblock && /^ *- name: gate *$/ { inblock = 1; indent = match($0, /-/); print; next }
+    inblock && /^ *- / && match($0, /-/) <= indent { exit }
+    inblock { print }
+  ' "$1"
+}
+gate_size() {
+  gate_container_block "$1" | sed 's/[[:space:]]*#.*$//' | awk '
+    /^[[:space:]]*requests:[[:space:]]*$/ { section = "requests"; next }
+    /^[[:space:]]*limits:[[:space:]]*$/ { section = "limits"; next }
+    /^[[:space:]]*[a-zA-Z]+:[[:space:]]*$/ { section = "" }
+    section == "requests" && /^[[:space:]]*cpu:/ { gsub(/[" ]/, "", $2); cpu = $2 }
+    section == "requests" && /^[[:space:]]*memory:/ { gsub(/[" ]/, "", $2); mem_req = $2 }
+    section == "limits" && /^[[:space:]]*memory:/ { gsub(/[" ]/, "", $2); mem_lim = $2 }
+    want_value && /^[[:space:]]*value:/ { gsub(/[" ]/, "", $2); par = $2; want_value = 0 }
+    /^[[:space:]]*- name: LIVESPEC_TEST_PARALLELISM[[:space:]]*$/ { want_value = 1 }
+    END { print cpu, mem_req, mem_lim, par }
+  '
+}
+# The renderer's own defaults, read off its defaults line, so this case follows
+# the renderer instead of pinning a committed value.
+defaults_line="$(grep -E '^cpu="[^"]*"; memory="[^"]*"; parallelism="[^"]*";' "${RENDERER}")"
+default_cpu="$(printf '%s\n' "${defaults_line}" | sed -E 's/^cpu="([^"]*)".*/\1/')"
+default_memory="$(printf '%s\n' "${defaults_line}" | sed -E 's/.*memory="([^"]*)".*/\1/')"
+default_parallelism="$(printf '%s\n' "${defaults_line}" | sed -E 's/.*parallelism="([^"]*)".*/\1/')"
+if [ -z "${default_cpu}" ] || [ -z "${default_memory}" ] || [ -z "${default_parallelism}" ]; then
+  fail "could not read the renderer's cpu, memory and parallelism defaults line"
+fi
+# Values chosen to differ from every default, so a render that ignored a flag
+# could not pass by carrying the default.
+sized_cpu="$((default_cpu + 4))"
+sized_memory="$((${default_memory%Gi} + 5))Gi"
+sized_parallelism="$((default_parallelism + 3))"
+out_sized="${SCRATCH}/sized.yaml"
+if "${RENDERER}" --repo-root "${SCRATCH}/repo-a" --tree-hash "${HASH_A}" "${OUR_SUITE[@]}" \
+     --cpu "${sized_cpu}" --memory "${sized_memory}" --parallelism "${sized_parallelism}" \
+     > "${out_sized}" 2>"${SCRATCH}/sized.err"; then
+  read -r got_cpu got_mem_req got_mem_lim got_par <<< "$(gate_size "${out_sized}")"
+  if [ "${got_cpu}" = "${sized_cpu}" ] && [ "${got_mem_req}" = "${sized_memory}" ]; then
+    pass "the gate container requests the passed cpu ${sized_cpu} and memory ${sized_memory}"
+  else
+    fail "the gate container requests cpu '${got_cpu}' memory '${got_mem_req}', not ${sized_cpu} / ${sized_memory}"
+  fi
+  if [ -n "${got_mem_lim}" ] && [ "${got_mem_lim}" = "${got_mem_req}" ]; then
+    pass "the gate container's memory limit equals its memory request"
+  else
+    fail "the gate container's memory limit '${got_mem_lim}' differs from its request '${got_mem_req}'"
+  fi
+  if [ "${got_par}" = "${sized_parallelism}" ]; then
+    pass "LIVESPEC_TEST_PARALLELISM is the passed ${sized_parallelism}"
+  else
+    fail "LIVESPEC_TEST_PARALLELISM is '${got_par}', not ${sized_parallelism}"
+  fi
+else
+  fail "renderer failed with size flags: $(cat "${SCRATCH}/sized.err")"
+fi
+read -r got_cpu got_mem_req got_mem_lim got_par <<< "$(gate_size "${out_a}")"
+if [ "${got_cpu}" = "${default_cpu}" ] && [ "${got_mem_req}" = "${default_memory}" ] && \
+   [ "${got_mem_lim}" = "${default_memory}" ] && [ "${got_par}" = "${default_parallelism}" ]; then
+  pass "a render with no size flags carries the renderer's own defaults"
+else
+  fail "a render with no size flags carries cpu '${got_cpu}' memory '${got_mem_req}' / '${got_mem_lim}' parallelism '${got_par}', not the renderer's defaults"
+fi
+# One gate unit, read off the gates-cq annotations where the unit lives, so a
+# default-size Job is held to the quota unit without restating either value.
+gates_queue="${SCRIPT_DIR}/../kueue/cluster-queue-gates.yaml"
+unit_cpu="$(sed -n 's/^[[:space:]]*ci-runner\.io\/gate-unit-cpu:[[:space:]]*"\{0,1\}\([0-9][0-9]*\)"\{0,1\}[[:space:]]*$/\1/p' "${gates_queue}")"
+unit_memory="$(sed -n 's/^[[:space:]]*ci-runner\.io\/gate-unit-memory:[[:space:]]*"\{0,1\}\([0-9][0-9]*Gi\)"\{0,1\}[[:space:]]*$/\1/p' "${gates_queue}")"
+if [ -z "${unit_cpu}" ] || [ -z "${unit_memory}" ]; then
+  fail "could not read the gate unit annotations of ${gates_queue}"
+elif [ -z "${got_cpu}" ] || [ "${got_mem_req%Gi}" = "${got_mem_req}" ]; then
+  fail "a render with no size flags requests cpu '${got_cpu}' memory '${got_mem_req}', which cannot be compared with one gate unit in whole cpus and Gi"
+elif [ "${got_cpu}" -le "${unit_cpu}" ] && [ "${got_mem_req%Gi}" -le "${unit_memory%Gi}" ]; then
+  pass "a render with no size flags requests no more than one gate unit (${unit_cpu} cpu / ${unit_memory})"
+else
+  fail "a render with no size flags requests cpu ${got_cpu} / memory ${got_mem_req}, more than one gate unit (${unit_cpu} cpu / ${unit_memory})"
 fi
 
 echo
