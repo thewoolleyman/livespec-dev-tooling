@@ -74,7 +74,18 @@ pressure_telemetry_cgroups:
 # is 15, matching fleet 12 + candidate 1 + mi-homelab 2. The budget was raised
 # first and the cap after. TRIPWIRE: if avg60 passes 30 at any read, lower the
 # fleet cap to 9 FIRST, then set this to 6 (role HOST_VARS.md).
-factory_pod_budget: 9
+# 2026-11-11: 9 -> 11, a measured STEP (coordinator legacy-coordinator-agent
+# 5bf269cf, ~18:03Z; orchestrator bd-ib-nmuyjc). PR check-python and the batch
+# checks moved to hosted runners at 16:04:39Z, so this node no longer carries
+# all PR CI; the 9 dated from when it did. Meanwhile the overflow path drove
+# gmktec-xubuntu (the smaller node, the only one still admitting) to about 4%
+# idle and forced the fleet-cap cut 18 -> 16. Before the step (17:53-17:54Z):
+# idle 3.09%, CI BestEffort cpu.pressure some avg60 2.17 (avg300 5.81).
+# REVERT TRIGGER, at once, back to 9: poweredge idle under 5% AND
+# kubepods-besteffort cpu.pressure avg60 over 30 on two consecutive reads, or a
+# master or coverage CI p95 job duration rise of more than 20% against the 24 h
+# before this change. REVERT: factory_pod_budget: 9
+factory_pod_budget: 11
 
 # --- controller_known_hosts ---
 # This host's Tailscale SSH ed25519 host key, pinned into the control node's
