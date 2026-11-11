@@ -76,9 +76,20 @@ inbound, FAILS: 465 KiB/s against about 105 MiB/s is a ratio of about 230x.
     under Virtualization.framework, and the `[fixed]` rx-checksum behaviour
     belongs to that virtio device, not to socket_vmnet. Tart could show the
     same collapse.
-  - If the maintainer wants it, it can be measured cheaply first: a throwaway
-    Tart VM, bridged on en7, running iperf3 UDP 8472 and VXLAN from poweredge.
-    That is a host change the maintainer must authorize.
+  - Unmeasured, by decision. legacy-coordinator-agent authorized a throwaway
+    Tart measurement on the M4 host (~19:20Z), conditioned on about an hour of
+    seat time. The seat declined, because a faithful receipt needs a VXLAN
+    sender on the LAN that is not the M4:
+    - Every LAN peer is a fleet k3s node: poweredge, hp, gmktec and gamingpc.
+      Creating a vxlan endpoint on one needs a privileged change or a hand
+      mutation there, which the GitOps rule and the probe's scope rule exclude.
+    - An unprivileged pod can emit UDP 8472, but cannot hold a TCP session
+      through a real tunnel.
+    - VXLAN between two VMs on the M4 never crosses en7. Separating the virtio
+      rx path from socket_vmnet would also need a Lima control VM.
+  - The cheapest faithful variant needs either a non-fleet LAN peer (the
+    MacBook Air, when online) or a ruling that allows a committed, scoped probe
+    pod on poweredge.
 
 ## The cluster-wide choice: (a) host-gw vs (c) wireguard
 
