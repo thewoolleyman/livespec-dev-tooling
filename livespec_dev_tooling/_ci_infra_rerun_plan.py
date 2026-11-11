@@ -215,8 +215,8 @@ def _match(*, classifier: JobClassifier, log_text: str) -> tuple[str, str] | Non
 
 
 def _may_have_been_rerun_for_cause(*, classifier: JobClassifier, log_text: str | None) -> bool:
-    """An unreadable earlier log counts as the cause, so a missing log never grants a re-run."""
-    return log_text is None or _match(classifier=classifier, log_text=log_text) is not None
+    """Only a readable earlier log that carries a signature counts as the cause."""
+    return log_text is not None and _match(classifier=classifier, log_text=log_text) is not None
 
 
 def _attempt_number(

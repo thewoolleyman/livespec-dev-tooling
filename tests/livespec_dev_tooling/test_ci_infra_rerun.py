@@ -118,6 +118,7 @@ def test_a_setup_job_429_is_rerun_with_growing_waits_up_to_three_attempts(
     jobs: list[dict[str, object]] = [later]
     codes: list[int] = []
     waits: list[object] = []
+    recorded_logs: dict[int, str] = {}
     attempts: list[list[object]] = []
     lefts: list[list[object]] = []
     summaries: list[str] = []
@@ -126,8 +127,9 @@ def test_a_setup_job_429_is_rerun_with_growing_waits_up_to_three_attempts(
             _job(attempt=attempt, job_id=job_id, name="check-types (root)", failed_step=_SETUP)
         )
         jobs.extend([{**later, "attempt": attempt}] if attempt > 1 else [])
+        recorded_logs[job_id] = _RECORDED_429_LOG
         code, payload, summary = _run_plan(
-            tmp_path=tmp_path, jobs=jobs, run_attempt=attempt, logs={job_id: _RECORDED_429_LOG}
+            tmp_path=tmp_path, jobs=jobs, run_attempt=attempt, logs=dict(recorded_logs)
         )
         codes.append(code)
         reruns = cast("list[dict[str, object]]", payload["reruns"])
@@ -313,6 +315,24 @@ def test_an_earlier_non_registry_initialize_failure_does_not_consume_the_one_rer
     plan = plan_reruns(jobs=jobs, run_attempt=2, logs={1: pod, 2: reset})
 
     assert [(r.job_id, r.attempt) for r in plan.reruns] == [(2, 1)]
+
+
+def test_an_earlier_initialize_failure_with_an_unreadable_log_does_not_consume_the_one_rerun() -> (
+    None
+):
+    jobs = parse_jobs(
+        payload=[
+            _job(attempt=1, job_id=1, name="check-a", failed_step=_INITIALIZE_CONTAINERS),
+            _job(attempt=2, job_id=2, name="check-a", failed_step=_INITIALIZE_CONTAINERS),
+        ]
+    )
+    assert jobs is not None
+    reset = "##[error]pkg-containers.githubusercontent.com: connection reset by peer\n"
+
+    plan = plan_reruns(jobs=jobs, run_attempt=2, logs={2: reset})
+
+    assert [(r.job_id, r.attempt) for r in plan.reruns] == [(2, 1)]
+    assert plan.left == ()
 
 
 def test_an_earlier_registry_initialize_failure_consumes_the_one_rerun() -> None:
