@@ -58,6 +58,7 @@
 # migrates the corresponding scripts from livespec-core/dev-tooling/.
 
 pre-commit:
+  follow: true
   commands:
     00-install-worktree-pack:
       run: just install-worktree-pack
@@ -69,6 +70,7 @@ pre-commit:
       run: just check-pre-commit
 
 commit-msg:
+  follow: true
   commands:
     00-no-commit-on-master:
       run: |
@@ -84,6 +86,7 @@ commit-msg:
       run: just check-shipped-path-release-guard {1}
 
 pre-push:
+  follow: true
   commands:
     00-install-worktree-pack:
       run: just install-worktree-pack
