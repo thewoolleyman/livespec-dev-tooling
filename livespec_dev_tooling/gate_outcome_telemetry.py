@@ -198,8 +198,8 @@ def build_suite_green_span_payload(
     if duration_seconds is not None:
         attributes.append(
             {
-                "key": "duration_ms",
-                "value": {"intValue": str(max(0, round(duration_seconds * 1000)))},
+                "key": "suite_green.duration_seconds",
+                "value": {"doubleValue": max(0.0, duration_seconds)},
             }
         )
     now = str(time.time_ns())
