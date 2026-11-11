@@ -295,7 +295,40 @@ def test_only_the_current_attempts_failed_classified_jobs_need_logs() -> None:
     )
     assert jobs is not None
 
-    assert jobs_needing_logs(jobs=jobs, run_attempt=2) == (2,)
+    assert jobs_needing_logs(jobs=jobs, run_attempt=2) == (1, 2)
+
+
+def test_an_earlier_non_registry_initialize_failure_does_not_consume_the_one_rerun() -> None:
+    jobs = parse_jobs(
+        payload=[
+            _job(attempt=1, job_id=1, name="check-a", failed_step=_INITIALIZE_CONTAINERS),
+            _job(attempt=2, job_id=2, name="check-a", failed_step=_INITIALIZE_CONTAINERS),
+        ]
+    )
+    assert jobs is not None
+    pod = "##[error]Pod workflow-1 is unhealthy with phase status Failed\n"
+    reset = "##[error]pkg-containers.githubusercontent.com: connection reset by peer\n"
+
+    assert jobs_needing_logs(jobs=jobs, run_attempt=2) == (1, 2)
+    plan = plan_reruns(jobs=jobs, run_attempt=2, logs={1: pod, 2: reset})
+
+    assert [(r.job_id, r.attempt) for r in plan.reruns] == [(2, 1)]
+
+
+def test_an_earlier_registry_initialize_failure_consumes_the_one_rerun() -> None:
+    jobs = parse_jobs(
+        payload=[
+            _job(attempt=1, job_id=1, name="check-a", failed_step=_INITIALIZE_CONTAINERS),
+            _job(attempt=2, job_id=2, name="check-a", failed_step=_INITIALIZE_CONTAINERS),
+        ]
+    )
+    assert jobs is not None
+    reset = "##[error]pkg-containers.githubusercontent.com: connection reset by peer\n"
+
+    plan = plan_reruns(jobs=jobs, run_attempt=2, logs={1: reset, 2: reset})
+
+    assert plan.reruns == ()
+    assert [left.job_id for left in plan.left] == [2]
 
 
 def test_log_jobs_prints_the_ids_whose_logs_to_fetch(

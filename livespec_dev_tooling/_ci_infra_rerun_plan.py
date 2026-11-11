@@ -177,14 +177,33 @@ def _current_failures(*, jobs: Sequence[RecordedJob], run_attempt: int) -> list[
     return [job for job in jobs if job.attempt == run_attempt and job.conclusion == FAILURE]
 
 
-def jobs_needing_logs(*, jobs: Sequence[RecordedJob], run_attempt: int) -> tuple[int, ...]:
-    """The current attempt's failed jobs whose first failed step some classifier covers."""
-    return tuple(
-        job.job_id
-        for job in _current_failures(jobs=jobs, run_attempt=run_attempt)
-        if (classifier := _classifier_for(step=job.first_failed_step)) is not None
+def _is_classified_failure(*, job: RecordedJob) -> bool:
+    classifier = _classifier_for(step=job.first_failed_step)
+    return (
+        job.conclusion == FAILURE
+        and classifier is not None
         and not (classifier.requires_no_later_step_start and job.later_step_started)
     )
+
+
+def jobs_needing_logs(*, jobs: Sequence[RecordedJob], run_attempt: int) -> tuple[int, ...]:
+    """Failed classified jobs of the current attempt, plus same-name earlier attempts of them.
+
+    The earlier attempts' logs are needed to count how many of them failed for the cause.
+    """
+    current_names = {
+        job.name
+        for job in _current_failures(jobs=jobs, run_attempt=run_attempt)
+        if _is_classified_failure(job=job)
+    }
+    wanted = [
+        job.job_id
+        for job in jobs
+        if job.attempt <= run_attempt
+        and job.name in current_names
+        and _is_classified_failure(job=job)
+    ]
+    return tuple(dict.fromkeys(wanted))
 
 
 def _match(*, classifier: JobClassifier, log_text: str) -> tuple[str, str] | None:
@@ -195,8 +214,17 @@ def _match(*, classifier: JobClassifier, log_text: str) -> tuple[str, str] | Non
     return None
 
 
+def _may_have_been_rerun_for_cause(*, classifier: JobClassifier, log_text: str | None) -> bool:
+    """An unreadable earlier log counts as the cause, so a missing log never grants a re-run."""
+    return log_text is None or _match(classifier=classifier, log_text=log_text) is not None
+
+
 def _attempt_number(
-    *, jobs: Sequence[RecordedJob], job: RecordedJob, classifier: JobClassifier
+    *,
+    jobs: Sequence[RecordedJob],
+    job: RecordedJob,
+    classifier: JobClassifier,
+    logs: Mapping[int, str],
 ) -> int:
     return len(
         {
@@ -207,6 +235,9 @@ def _attempt_number(
             and other.first_failed_step == classifier.step
             and not (classifier.requires_no_later_step_start and other.later_step_started)
             and other.attempt <= job.attempt
+            and _may_have_been_rerun_for_cause(
+                classifier=classifier, log_text=logs.get(other.job_id)
+            )
         }
     )
 
@@ -229,7 +260,7 @@ def _plan_one(
     if matched is None:
         reason = f"failed at {classifier.step!r} without a {classifier.cause} signature"
         return LeftJob(job_id=job.job_id, name=job.name, reason=reason)
-    attempt = _attempt_number(jobs=jobs, job=job, classifier=classifier)
+    attempt = _attempt_number(jobs=jobs, job=job, classifier=classifier, logs=logs)
     cap = len(classifier.waits_seconds)
     if attempt > cap:
         reason = f"already re-run {cap} times for {classifier.cause}; the attempt cap is reached"
