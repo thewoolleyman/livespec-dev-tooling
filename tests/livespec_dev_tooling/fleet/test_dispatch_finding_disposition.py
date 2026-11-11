@@ -31,8 +31,10 @@ from test_rows_files import make_context
 
 from livespec_dev_tooling.cross_repo.pin_autodiscovery import PinFileUnparseable
 from livespec_dev_tooling.fleet._context import FleetContext, FleetMember
+from livespec_dev_tooling.fleet._lanes import MemberVerdict
 from livespec_dev_tooling.fleet._pin_walk_failure import walk_failure_outcome
 from livespec_dev_tooling.fleet.dispatch_matrix_filter import filter_siblings, main
+from livespec_dev_tooling.fleet.fleet_conformance import _write_member_verdicts
 
 __all__: list[str] = []
 
@@ -269,7 +271,7 @@ def test_main_names_the_retained_findings_and_dispatches_that_member(tmp_path: P
         {"member": "alpha", "failing_rows": ["app-installation"]}
     ]
     assert json.loads(retained_path.read_text(encoding="utf-8")) == [
-        {"member": "beta", "failing_rows": ["compat-pin-currency"]}
+        {"member": "beta", "failing_rows": ["compat-pin-currency"], "notes": []}
     ]
 
 
@@ -345,3 +347,102 @@ def test_main_calls_retention_a_non_excluding_finding(
 
     assert exit_code == 0
     assert "non-excluding finding" in capsys.readouterr().out.casefold()
+
+
+_NOTE = (
+    "canonical-check-slugs-wired: missing canonical slug(s) check-beta "
+    "are absent from pinned livespec-dev-tooling release v1.191.0"
+)
+
+
+def test_the_verdict_artifact_carries_the_retained_notes(tmp_path: Path) -> None:
+    path = tmp_path / "verdicts.json"
+    _write_member_verdicts(
+        path=path,
+        member_verdicts=(
+            MemberVerdict(
+                member="beta",
+                failing_rows=("canonical-check-slugs-wired",),
+                non_excluding_rows=("canonical-check-slugs-wired",),
+                non_excluding_notes=(_NOTE,),
+            ),
+        ),
+    )
+
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    assert payload[0]["non_excluding_notes"] == [_NOTE]
+
+
+def test_the_partition_hands_the_notes_to_the_retained_finding() -> None:
+    result = filter_siblings(
+        siblings=[{"name": "beta"}],
+        verdicts=[
+            {
+                **_verdict(
+                    member="beta",
+                    failing_rows=["canonical-check-slugs-wired"],
+                    non_excluding_rows=["canonical-check-slugs-wired"],
+                ),
+                "non_excluding_notes": [_NOTE],
+            }
+        ],
+    )
+
+    assert isinstance(result, Success), result
+    assert result.unwrap().retained[0].notes == (_NOTE,)
+
+
+def test_a_malformed_notes_value_fails_closed() -> None:
+    result = filter_siblings(
+        siblings=[{"name": "beta"}],
+        verdicts=[{**_verdict(member="beta", failing_rows=[]), "non_excluding_notes": "oops"}],
+    )
+
+    assert not isinstance(result, Success), result
+    assert "beta" in result.failure().reason
+
+
+def test_main_names_the_missing_slug_and_pinned_release_in_the_run_log(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    verdicts_path = tmp_path / "verdicts.json"
+    siblings_path = tmp_path / "siblings.json"
+    _ = verdicts_path.write_text(
+        json.dumps(
+            [
+                {
+                    **_verdict(
+                        member="beta",
+                        failing_rows=["canonical-check-slugs-wired"],
+                        non_excluding_rows=["canonical-check-slugs-wired"],
+                    ),
+                    "non_excluding_notes": [_NOTE],
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+    _ = siblings_path.write_text(json.dumps([{"name": "beta"}]), encoding="utf-8")
+    retained_path = tmp_path / "retained.json"
+
+    exit_code = main(
+        argv=[
+            "--verdicts",
+            str(verdicts_path),
+            "--siblings",
+            str(siblings_path),
+            "--filtered-out",
+            str(tmp_path / "filtered.json"),
+            "--exclusions-out",
+            str(tmp_path / "exclusions.json"),
+            "--retained-out",
+            str(retained_path),
+        ]
+    )
+
+    assert exit_code == 0
+    line = next(line for line in capsys.readouterr().out.splitlines() if "beta" in line)
+    assert "canonical-check-slugs-wired" in line
+    assert "check-beta" in line
+    assert "v1.191.0" in line
+    assert json.loads(retained_path.read_text(encoding="utf-8"))[0]["notes"] == [_NOTE]
