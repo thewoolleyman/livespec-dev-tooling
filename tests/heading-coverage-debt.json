@@ -415,6 +415,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: a delegated gate Job's tree fetch reads its volume's git object seed copy as an alternate, and refetches cold on any seed fault",
+    "work_item": "livespec-dev-tooling-zbu7jf",
+    "first_seen": "2026-11-11"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: a delegated gate-runner run with no cluster verdict ends without a verdict",
     "work_item": "livespec-dev-tooling-qgv3tb",
     "first_seen": "2026-11-01"
@@ -1552,6 +1559,13 @@
     "heading": "## Scenario: the first required master leaf failure fences incident recovery",
     "work_item": "livespec-dev-tooling-47ij37",
     "first_seen": "2026-11-03"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: the git object seed covers every gated repository, and a node with no ci-workvols tier seeds only its reflink-capable gate volumes",
+    "work_item": "livespec-dev-tooling-zbu7jf",
+    "first_seen": "2026-11-11"
   },
   {
     "spec_root": "SPECIFICATION",

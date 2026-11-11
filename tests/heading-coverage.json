@@ -2370,6 +2370,22 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: the git object seed covers every gated repository, and a node with no ci-workvols tier seeds only its reflink-capable gate volumes",
+    "test": "TODO",
+    "work_item": "livespec-dev-tooling-zbu7jf",
+    "reason": "A real test at the integration tier or above is owed for this heading: an integration-tier test of the populator and the gate-volume seeding that publishes a generation for a delegated_gate-only repository, asserts it holds only default-branch and tag objects, asserts that on a node with no ci-workvols tier a reflink-capable gate volume gets a refs-carrying reflink copy of its own repository's seed while a non-reflink gate volume and every runner work volume there get none, and asserts a generation is not pruned while a gate-volume copy from it may still be in progress (proposal gate-fetch-tree-git-object-seed, v189). livespec-dev-tooling-zbu7jf owns it."
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a delegated gate Job's tree fetch reads its volume's git object seed copy as an alternate, and refetches cold on any seed fault",
+    "test": "TODO",
+    "work_item": "livespec-dev-tooling-zbu7jf",
+    "reason": "A real test at the integration tier or above is owed for this heading: an integration-tier test of the gate Job's fetch-tree that runs it with a seed copy present, missing, unreadable, failing the fetch and failing the connectivity check, and under the kill switch, and asserts a full-depth fetch with the same tree, base, refs and history as the unseeded fetch, a cold refetch on each fault, and the verdict of that refetch (proposal gate-fetch-tree-git-object-seed, v189). livespec-dev-tooling-zbu7jf owns it."
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: a runner pod is placed on the node with the lowest churn-slot use, whatever its CPU and memory requests",
     "test": "TODO",
     "reason": "Spec-first: a real test at the integration tier or above (a host-captured placement run on the k3s pool) is owed for this scenario, reading which node a new runner pod lands on while the nodes' churn-slot use and non-runner CPU requests point in opposite directions; livespec-dev-tooling-mtvxde owns it, and its Definition of Done asserts this behaviour.",

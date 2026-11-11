@@ -448,6 +448,34 @@ And a routed job on a `runner-only` node MUST fetch from the forge and run to it
 
 And under the fleet kill switch every job MUST fetch from the forge as it would without the tier
 
+## Scenario: the git object seed covers every gated repository, and a node with no ci-workvols tier seeds only its reflink-capable gate volumes
+
+Given a repository that declares `delegated_gate = true`
+
+When the populator publishes a git object seed generation
+
+Then the generation MUST hold that repository's default-branch and tag objects and no object reachable only from a pull-request ref
+
+And on a node with no `ci-workvols` tier whose gate-volume directory supports reflink, when the pool seeds a delegated gate Job's volume, that volume MUST receive a reflink copy of its own repository's seed only, as a git repository carrying that repository's default-branch and tag refs, while a runner work volume on that node MUST receive no seed
+
+And on a node whose gate-volume directory does not support reflink, the gate volume MUST receive no seed
+
+And a generation MUST NOT be pruned while a copy from it into a gate volume may still be in progress
+
+## Scenario: a delegated gate Job's tree fetch reads its volume's git object seed copy as an alternate, and refetches cold on any seed fault
+
+Given a delegated gate Job whose volume holds a private copy of the gated repository's git object seed, carrying the seed's default-branch and tag refs, and whose base commit descends from a commit those refs reach
+
+When the gate Job fetches the tree under test and its base into a fresh repository with the copy's object directory named as its git alternate
+
+Then the fetch MUST transfer fewer objects from the gate mirror than the same fetch with no alternate
+
+And the fetch MUST NOT use a depth limit, and the fresh repository MUST end with the same tree, base commit, refs and reachable history as the same fetch with no alternate
+
+And when the copy is missing or unreadable, the fetch fails with the alternate named, or the connectivity check of the fetched tree and base fails, the Job MUST discard the fresh repository, fetch again with no alternate, and report the verdict that fetch yields
+
+And when the gate Job reads the fleet kill switch from the cluster as set, the fetch MUST name no alternate
+
 ## Scenario: a stale warm-cache generation fires the trigger
 
 Given the populator has not published a generation for longer than twice its schedule interval
