@@ -206,3 +206,28 @@ def test_range_passes_when_every_subject_and_recorded_checksum_is_intact(
         False,
         False,
     )
+
+
+def test_range_names_integrity_violations_even_when_an_impl_commit_lacks_trailers(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _init_repo(repo=tmp_path)
+    (tmp_path / "livespec").mkdir()
+    (tmp_path / "livespec" / "impl.py").write_text("X = 1\n", encoding="utf-8")
+    _git(repo=tmp_path, args=["add", "-A"])
+    _git(repo=tmp_path, args=["commit", "-q", "-m", "fix: impl without trailers"])
+    trailer_only = _commit(
+        repo=tmp_path, name="b.md", message="Factory-Run-Id: c5d75329e0b24a1f8d3a\n"
+    )
+    stale = _recorded_commit(
+        repo=tmp_path, content=_TEST_BYTES + b"# rebased\n", recorded_for=_TEST_BYTES
+    )
+
+    returncode, stderr = _run_check(repo=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
+
+    assert returncode == 1
+    assert "red-green-replay-range-missing-trailers" in stderr
+    assert _SUBJECT_CHECK_ID in stderr
+    assert trailer_only in stderr
+    assert _CHECKSUM_CHECK_ID in stderr
+    assert stale in stderr
