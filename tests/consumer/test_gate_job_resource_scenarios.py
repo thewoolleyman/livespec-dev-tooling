@@ -249,9 +249,6 @@ class _RecordingLog:
     def info(self, event: str, **kwargs: object) -> None:
         self.events.append((event, kwargs))
 
-    def error(self, event: str, **kwargs: object) -> None:
-        self.events.append((event, kwargs))
-
 
 def _oom_kill_every_gate_job(
     *, module: ModuleType, root: Path, monkeypatch: pytest.MonkeyPatch
