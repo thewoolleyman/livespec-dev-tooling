@@ -276,7 +276,7 @@ def test_the_committed_hp_profile_parses_as_a_runner_only_agent_at_capacity_eigh
     )
     assert parsed["FACTORY_NODE"] == "true", (
         f"and hp is a factory node again for its 2026-11-11 trial (sandbox pods only, capped "
-        f"at 2 by factory_pod_budget; epic livespec-dev-tooling-ko26ez), after FACTORY_NODE=false "
+        f"at 1 by factory_pod_budget; epic livespec-dev-tooling-ko26ez), after FACTORY_NODE=false "
         f"from 2026-11-03 (orchestrator epic bd-ib-nmuyjc); "
         f"got FACTORY_NODE={parsed['FACTORY_NODE']!r}"
     )
