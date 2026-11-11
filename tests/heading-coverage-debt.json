@@ -212,13 +212,6 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario: a CI job killed at Set up job by an action-download 429 is re-run with backoff",
-    "work_item": "livespec-dev-tooling-cetyrq",
-    "first_seen": "2026-11-03"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
     "heading": "## Scenario: a CI job that re-ran no test publishes no flake-retry artifact",
     "work_item": "livespec-dev-tooling-ljea46",
     "first_seen": "2026-11-08"
