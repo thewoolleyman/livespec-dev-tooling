@@ -32,9 +32,12 @@ _STACK = _PHASE2 / "reconstruct" / "converge-ci-stack.sh"
 _UNIT_DEFAULTS = _REPO_ROOT / "ansible" / "roles" / "ci_converge_unit" / "defaults" / "main.yml"
 _ARC = _PHASE2 / "arc"
 _SCHEDULER = "ci-runner-scheduler"
-# Scale sets that name the runner scheduler before its fail-open reconciler is
-# live: exactly one canary (legacy-coordinator-agent, R301, 2026-11-04).
-_CANARY = {"values-livespec-dev-tooling.yaml"}
+# Scale sets that name the runner scheduler during its staged rollout. R301
+# (legacy-coordinator-agent, 2026-11-04) held it to one canary until the
+# fail-open reconciler was live; that was proven 2026-11-09 (gate
+# 20261109T083643Z-3789908 drill, livespec-dev-tooling-mtvxde), and the
+# coordinator then widened it one measured set at a time (2026-11-11).
+_CANARY = {"values-livespec-dev-tooling.yaml", "values-livespec-runtime.yaml"}
 
 
 def _docs() -> list[dict]:
@@ -102,7 +105,7 @@ def test_the_deployment_runs_two_replicas_on_the_runner_profile_config() -> None
 
 
 def test_only_the_canary_scale_set_names_the_runner_scheduler() -> None:
-    """Until the fail-open reconciler is live a dead scheduler must strand one lane at most."""
+    """Only the scale sets the staged rollout has reached name the runner scheduler."""
     naming = set()
     for values in sorted(_ARC.glob("values-*.yaml")):
         spec = (yaml.safe_load(values.read_text(encoding="utf-8")).get("template") or {}).get(
