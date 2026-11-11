@@ -30,3 +30,13 @@ disk_guard_threshold_gb: 40
 # first at one run. Raise it only from a measured read (runs per hour, green
 # rate, the node's CI p95).
 factory_pod_budget: 1
+
+# --- node_status_credential ---
+# The agent-side account the refresh tool drops its fetch to is this node's
+# operator account, `ubuntu` (there is no `cwoolley` here). It logs in to the
+# control-plane node as `cwoolley`, the only account Tailscale SSH maps there.
+# Measured 2026-11-11 ~07:10Z from this host as `ubuntu`: `ssh poweredge-xubuntu`
+# is refused with "tailscale: failed to look up local user \"ubuntu\"", while
+# `ssh cwoolley@poweredge-xubuntu` returns `cwoolley` and passes `sudo -n`.
+node_status_credential_ssh_user: ubuntu
+node_status_credential_remote_user: cwoolley
