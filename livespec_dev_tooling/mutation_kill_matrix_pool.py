@@ -6,7 +6,9 @@ shared queue (one `None` per worker ends it), restores its tree before each
 one, applies it with `mutmut apply`, and runs the mutant's selected tests in
 one process.  A mutant mutmut cannot apply is recorded as unapplied.  A
 worker's error is re-raised on the calling thread, so a broken worker fails
-the run instead of thinning it.
+the run instead of thinning it.  Each finished mutant is also handed to an
+optional callback as it finishes (see `mutation_kill_matrix_checkpoint`), so a
+run can keep its outcomes before the whole pool ends.
 """
 
 from __future__ import annotations
@@ -15,6 +17,7 @@ import queue
 import tempfile
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from typing import Protocol
 
 from livespec_dev_tooling.mutation_kill_matrix_cache import CachedOutcome
 from livespec_dev_tooling.mutation_kill_matrix_execution import (
@@ -28,8 +31,20 @@ from livespec_dev_tooling.mutation_kill_matrix_execution import (
 from livespec_dev_tooling.mutation_kill_matrix_stages import MutantPlan
 
 __all__: list[str] = [
+    "OutcomeCallback",
     "run_pending",
 ]
+
+
+class OutcomeCallback(Protocol):
+    """Receive one finished mutant's outcome, from whichever worker thread finished it."""
+
+    def __call__(self, *, identifier: str, outcome: CachedOutcome) -> None: ...
+
+
+def _ignore(*, identifier: str, outcome: CachedOutcome) -> None:
+    """Keep nothing: the default when no caller watches outcomes as they finish."""
+    _ = identifier, outcome
 
 
 def _work(
@@ -38,6 +53,7 @@ def _work(
     tree: WorkerTree,
     pending: queue.SimpleQueue[MutantPlan | None],
     timeout: float,
+    on_outcome: OutcomeCallback = _ignore,
 ) -> dict[str, CachedOutcome]:
     """Apply each queued mutant in this worker's own tree and record its outcome."""
     snapshot = {
@@ -62,17 +78,21 @@ def _work(
             cwd=tree.root,
         )
         if applied.returncode != 0:
-            results[plan.mutant.identifier] = CachedOutcome(unapplied=True, killed_by=())
-            continue
-        outcomes = run_selected(execute=execute, tree=tree, tests=plan.selected, timeout=timeout)
-        results[plan.mutant.identifier] = CachedOutcome(
-            unapplied=False,
-            killed_by=tuple(sorted(test for test, failed in outcomes.items() if failed)),
-        )
+            outcome = CachedOutcome(unapplied=True, killed_by=())
+        else:
+            outcomes = run_selected(
+                execute=execute, tree=tree, tests=plan.selected, timeout=timeout
+            )
+            outcome = CachedOutcome(
+                unapplied=False,
+                killed_by=tuple(sorted(test for test, failed in outcomes.items() if failed)),
+            )
+        results[plan.mutant.identifier] = outcome
+        on_outcome(identifier=plan.mutant.identifier, outcome=outcome)
     return results
 
 
-def run_pending(
+def run_pending(  # noqa: PLR0913 — the callback is optional; every other keyword is required.
     *,
     execute: CommandExecutor,
     target: Path,
@@ -80,6 +100,7 @@ def run_pending(
     workers: int,
     timeout: float,
     workspace: Path | None,
+    on_outcome: OutcomeCallback = _ignore,
 ) -> dict[str, CachedOutcome]:
     """Run every pending mutant across `workers` isolated worker trees."""
     if not plans:
@@ -106,7 +127,14 @@ def run_pending(
         ]
         with ThreadPoolExecutor(max_workers=count) as pool:
             futures = [
-                pool.submit(_work, execute=execute, tree=tree, pending=pending, timeout=timeout)
+                pool.submit(
+                    _work,
+                    execute=execute,
+                    tree=tree,
+                    pending=pending,
+                    timeout=timeout,
+                    on_outcome=on_outcome,
+                )
                 for tree in trees
             ]
             results: dict[str, CachedOutcome] = {}
