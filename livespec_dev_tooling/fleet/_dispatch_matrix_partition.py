@@ -60,11 +60,14 @@ class RetainedFinding:
     `failing_rows` is EVERY error-severity row of that member, not just the
     non-excluding ones — the contract has the preflight's summary "name every
     error finding per member", and a member retained over one finding has by
-    construction no other kind.
+    construction no other kind. `notes` is why each non-excluding finding did
+    not exclude the member — for a canonical-slug finding, the absent slugs and
+    the pinned release — so the retained annotation can name them.
     """
 
     member: str
     failing_rows: tuple[str, ...]
+    notes: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -73,6 +76,7 @@ class MemberVerdictRows:
 
     failing_rows: tuple[str, ...]
     non_excluding_rows: tuple[str, ...]
+    non_excluding_notes: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -153,7 +157,9 @@ def _place(
         excluded.append(Exclusion(member=name, failing_rows=rows.failing_rows))
         return
     filtered.append({"name": name})
-    retained.append(RetainedFinding(member=name, failing_rows=rows.failing_rows))
+    retained.append(
+        RetainedFinding(member=name, failing_rows=rows.failing_rows, notes=rows.non_excluding_notes)
+    )
 
 
 def _verdict_rows_by_member(
@@ -179,8 +185,17 @@ def _verdict_rows_by_member(
         )
         if isinstance(non_excluding, Failure):
             return Failure(non_excluding.failure())
+        # Absent reads as empty for the same compatibility reason: an older
+        # emitter has no notes to give.
+        notes = _row_names(
+            member=member, key="non_excluding_notes", value=verdict.get("non_excluding_notes", [])
+        )
+        if isinstance(notes, Failure):
+            return Failure(notes.failure())
         by_member[member] = MemberVerdictRows(
-            failing_rows=failing.unwrap(), non_excluding_rows=non_excluding.unwrap()
+            failing_rows=failing.unwrap(),
+            non_excluding_rows=non_excluding.unwrap(),
+            non_excluding_notes=notes.unwrap(),
         )
     return Success(by_member)
 

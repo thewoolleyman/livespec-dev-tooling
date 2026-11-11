@@ -308,6 +308,14 @@ def _member_verdict_payload(
             # what keeps the preflight's exit-4 guard on its per-member path
             # and the finding loud in every other lane.
             "non_excluding_rows": list(verdict.non_excluding_rows),
+            # Why each such row did not exclude, for the filter's retained
+            # annotation. Present only where there is one, so a verdict with
+            # none keeps the shape an earlier filter release already reads.
+            **(
+                {"non_excluding_notes": list(verdict.non_excluding_notes)}
+                if verdict.non_excluding_notes
+                else {}
+            ),
         }
         for verdict in member_verdicts
     ]

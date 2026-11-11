@@ -129,16 +129,16 @@ def _write_findings(
     *, path: Path, findings: tuple[Exclusion, ...] | tuple[RetainedFinding, ...]
 ) -> None:
     """One disposition's per-member findings, as the JSON array the caller renders."""
-    _ = path.write_text(
-        json.dumps(
-            [
-                {"member": finding.member, "failing_rows": list(finding.failing_rows)}
-                for finding in findings
-            ]
-        )
-        + "\n",
-        encoding="utf-8",
-    )
+    records: list[dict[str, object]] = []
+    for finding in findings:
+        record: dict[str, object] = {
+            "member": finding.member,
+            "failing_rows": list(finding.failing_rows),
+        }
+        if isinstance(finding, RetainedFinding):
+            record["notes"] = list(finding.notes)
+        records.append(record)
+    _ = path.write_text(json.dumps(records) + "\n", encoding="utf-8")
 
 
 def _announce(*, outcome: FilterOutcome, log: structlog.stdlib.BoundLogger) -> None:
@@ -163,15 +163,17 @@ def _announce(*, outcome: FilterOutcome, log: structlog.stdlib.BoundLogger) -> N
         )
     for retained in outcome.retained:
         rows = ", ".join(retained.failing_rows) or "(rows unavailable)"
+        why = "".join(f"; kept because {note}" for note in retained.notes)
         print(  # noqa: T201
             f"::warning::NOT EXCLUDED from release dispatch (non-excluding finding only, "
             f"and the dispatch is the remedy): {retained.member} — "
-            f"error-severity conformance rows: {rows}"
+            f"error-severity conformance rows: {rows}{why}"
         )
         log.warning(
             "member retained in dispatch matrix despite error findings",
             member=retained.member,
             failing_rows=list(retained.failing_rows),
+            notes=list(retained.notes),
         )
 
 
