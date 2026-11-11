@@ -32,7 +32,9 @@
 #      livespec.io/factory-pressure=high:PreferNoSchedule on THAT node.
 #      Otherwise (no gap, no fit, any reading unknown, no quota read ever) it
 #      removes the taint from every factory node, so placement falls back to the
-#      sandbox pods' own hostname topology spread.
+#      sandbox pods' own hostname topology spread. An unknown IN-SCOPE reading
+#      also raises `ALARM factory-pressure-steer-disabled` at priority err and
+#      exits 3, so the disabled steer is never silent.
 #      A gates flavor that sets .spec.topologyName reserves at most
 #      FACTORY_PRESSURE_GATES_RESERVE_CAP_MILLICPU (default 5000m, committed in
 #      the .service unit); one without keeps the uncapped unused quota. Each
@@ -285,6 +287,10 @@ if excluded:
 for line in reserve_log:
     print(line)
 print(f"DECISION {reason} readings[{summary}] quota={quota_source} taint={','.join(sorted(want)) or 'none'}")
+if reason.startswith("reading-unknown:"):
+    print("ALARM factory-pressure-steer-disabled nodes=" + reason.split(":", 1)[1]
+          + " (no fresh LivespecCPUPressure reading on an in-scope factory node;"
+          + " the taint is cleared fleet-wide until it returns)")
 for n in sorted(want - tainted_now):
     print(f"TAINT {n}")
 for n in sorted(tainted_now - want):
@@ -301,8 +307,8 @@ for p in pods:
     print(f"ANNOTATE {md['namespace']} {md['name']} {annotation}")
 PY
 
-grep -E '^(RESERVE|DECISION)' "$work/decision" | sed "s/^/${SCRIPT_NAME}: /"
-[ "$DRY_RUN" = 0 ] || { grep -vE '^(RESERVE|DECISION)' "$work/decision" | sed "s/^/${SCRIPT_NAME}: dry-run: /"; exit 0; }
+grep -E '^(RESERVE|DECISION|ALARM)' "$work/decision" | sed "s/^/${SCRIPT_NAME}: /"
+[ "$DRY_RUN" = 0 ] || { grep -vE '^(RESERVE|DECISION|ALARM)' "$work/decision" | sed "s/^/${SCRIPT_NAME}: dry-run: /"; exit 0; }
 
 status=0
 while read -r verb a b rest; do
@@ -317,4 +323,13 @@ while read -r verb a b rest; do
       kubectl annotate pod -n "$a" "$b" "${ANNOTATION_KEY}=${rest}" >/dev/null || status=1 ;;
   esac
 done <"$work/decision"
+# RULE K (fail closed, loudly): a steer disabled by an unknown in-scope reading
+# ran silently for two days (2026-11-09..11). The taint is still cleared above
+# (the fail-safe), but the cycle now raises a NAMED alarm at journal priority
+# err (the `<3>` prefix journald parses) and fails the unit, so it shows in
+# `systemctl --failed` and the journal until the reading returns.
+if grep -q '^ALARM' "$work/decision"; then
+  sed -n "s/^ALARM /<3>${SCRIPT_NAME}: ALARM /p" "$work/decision" >&2
+  [ "$status" = 0 ] && status=3
+fi
 exit "$status"
