@@ -64,7 +64,7 @@ def test_red_leg_uses_a_delegated_verdict_and_records_its_job_evidence(
     from livespec_dev_tooling.commit_replay_delegate import ReplayVerdict
 
     modes = _load_modes()
-    assert hasattr(modes, "run_replay")
+    assert hasattr(modes, "run_one_test")
     test_path = tmp_path / "tests" / "test_red.py"
     test_path.parent.mkdir()
     test_path.write_text("def test_red() -> None:\n    assert False\n", encoding="utf-8")
@@ -94,7 +94,7 @@ def test_red_leg_uses_a_delegated_verdict_and_records_its_job_evidence(
         assert msg_path.name == "COMMIT_EDITMSG"
         recorded.extend(trailers)
 
-    monkeypatch.setattr(modes, "run_replay", delegated)
+    monkeypatch.setattr(modes, "run_one_test", delegated)
     monkeypatch.setattr(modes.subprocess, "run", local_pytest)
     monkeypatch.setattr(modes, "write_trailers", record)
     message = tmp_path / "COMMIT_EDITMSG"
@@ -151,7 +151,7 @@ def test_green_leg_uses_a_delegated_verdict_and_records_its_job_evidence(
         assert msg_path.name == "COMMIT_EDITMSG"
         recorded.extend(trailers)
 
-    monkeypatch.setattr(modes, "run_replay", delegated)
+    monkeypatch.setattr(modes, "run_one_test", delegated)
     monkeypatch.setattr(modes, "head_trailer_value", trailer)
     monkeypatch.setattr(modes, "current_head_sha", lambda: IOSuccess("c" * 40))
     monkeypatch.setattr(modes.subprocess, "run", local_pytest)
@@ -186,7 +186,7 @@ def test_an_absent_remote_verdict_runs_the_replay_locally(
     log = _RecordingLog()
     monkeypatch.setattr(
         modes,
-        "run_replay",
+        "run_one_test",
         lambda **_kwargs: ReplayVerdict(
             local=False,
             reason="the gate Job reached no verdict",
@@ -231,7 +231,7 @@ def test_a_refused_replay_refuses_the_commit_instead_of_running_the_leg_locally(
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(
         modes,
-        "run_replay",
+        "run_one_test",
         lambda **_kwargs: ReplayVerdict(
             local=False,
             reason="the commit is refused: `gate_cpu` must be a positive integer (pyproject.toml)",
