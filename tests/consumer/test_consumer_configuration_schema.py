@@ -44,7 +44,7 @@ from livespec_dev_tooling.config import (
     load_config,
     role_absence,
 )
-from tests.consumer.role_key_fixture import union_key_block
+from tests.consumer.role_key_fixture import complete_block_declaring
 
 __all__: list[str] = []
 
@@ -182,7 +182,7 @@ def test_a_union_key_declared_with_two_absence_spellings_is_rejected_naming_ever
     other role-key rejection does; the unit tier pins the unknown-name and
     empty-payload rejections, and this is the third arm of the same clause.
     """
-    doubled = union_key_block(
+    doubled = complete_block_declaring(
         key=_UNION_KEY,
         value='{ not_applicable = "fixture", superseded_by = "fixture" }',
         comment=_DECOY_COMMENT,
