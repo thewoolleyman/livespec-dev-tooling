@@ -445,6 +445,28 @@ def test_emit_summary_returns_1_when_any_target_fails(
     assert "failed" in captured.out.lower() or "Failed" in captured.out
 
 
+def test_emit_summary_names_every_member_that_ran_and_its_verdict_on_one_line(
+    *, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The structured member line a delegated gate Job re-prints (livespec-dev-tooling-73ocxb).
+
+    A skipped member ran nowhere, so it is absent rather than reported as passed.
+    """
+    log = _configure_logger()
+    results = [
+        TargetResult(name="check-lint", skipped=False, exit_code=0, wall_time_s=1.0, output=""),
+        TargetResult(name="check-admin", skipped=True, exit_code=0, wall_time_s=0.0, output=""),
+        TargetResult(name="check-types", skipped=False, exit_code=1, wall_time_s=2.0, output=""),
+    ]
+    _ = _emit_summary(results=results, log=log)
+    lines = [
+        line
+        for line in capsys.readouterr().out.splitlines()
+        if line.startswith("LIVESPEC_CHECK_MEMBERS ")
+    ]
+    assert lines == ['LIVESPEC_CHECK_MEMBERS {"check-lint": "passed", "check-types": "failed"}']
+
+
 def test_emit_summary_shows_per_target_timings(*, capsys: pytest.CaptureFixture[str]) -> None:
     """_emit_summary includes per-target wall times in the output (feeds e60)."""
     log = _configure_logger()

@@ -185,7 +185,14 @@ def test_a_declaring_member_is_resolved_out_of_the_gate_jobs_run_set(*, tmp_path
 
     assert "livespec_dev_tooling.check_authority members" in guarded
     assert "effective_skip" in guarded
-    assert script.count("livespec_dev_tooling.check_authority") == 1
+    # The one other reader is the accepted-delegated-pre-commit-verdict block,
+    # which resolves the same set to RUN those members on the pushing host, never
+    # to skip them (livespec-dev-tooling-73ocxb).
+    unguarded = script.replace(guarded, "")
+    assert unguarded.count("livespec_dev_tooling.check_authority") == 1
+    accepting = unguarded.split('if [[ -n "${evidence_job}" ]]; then', 1)[1].split("\nfi\n", 1)[0]
+    assert "livespec_dev_tooling.check_authority members" in accepting
+    assert "authority_members" in accepting
 
 
 def test_a_declaration_outside_the_vocabulary_refuses_rather_than_reading_as_absent(

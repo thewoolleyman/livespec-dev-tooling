@@ -647,6 +647,22 @@ spec:
               } 2>&1 | tee -a "${recipe_log}"
               recipe_status="${PIPESTATUS[0]}"
               set -e
+              # THE MEMBER REPORT (livespec-dev-tooling-73ocxb): ONE structured
+              # line naming every aggregate member this Job ran for the tree and
+              # each one's verdict, printed after the recipes so it is the Job's
+              # own last word on the subject. The fleet dispatcher closes its
+              # summary with a `LIVESPEC_CHECK_MEMBERS {...}` line; the LAST one
+              # wins, because a member's captured output can carry an earlier
+              # one verbatim. A recipe that printed none gets no report, and the
+              # client then records no pre-push evidence for this run.
+              members_report="$(awk '
+                { sub(/\r$/, "") }
+                /^LIVESPEC_CHECK_MEMBERS / { report = substr($0, 24) }
+                END { print report }
+              ' "${recipe_log}")"
+              if [ -n "${members_report}" ]; then
+                printf 'LIVESPEC_GATE_MEMBERS %s\n' "${members_report}"
+              fi
               if [ "${recipe_status}" -eq 0 ]; then
                 rm -f "${recipe_log}"
                 exit 0
