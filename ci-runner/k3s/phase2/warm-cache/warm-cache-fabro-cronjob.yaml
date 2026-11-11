@@ -12,7 +12,10 @@
 # schedule alone cannot keep this pass out of the regular */30 pass's up-to-3600 s
 # window. The script lists the regular CronJob's Jobs (the namespaced read below,
 # granted to the shared warm-cache-populate ServiceAccount) and waits for them
-# before it touches Redis or builds anything.
+# before it touches Redis or builds anything. The other direction is the regular
+# pass's: while this Job is active, warm-cache-populate.sh defers its sccache and
+# target writer builds (uv and the action archive seed still run), so the two
+# six-CPU writer passes never overlap.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:

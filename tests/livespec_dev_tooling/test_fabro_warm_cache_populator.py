@@ -78,6 +78,20 @@ def test_the_fabro_pass_waits_for_the_regular_pass_instead_of_overlapping_it() -
     assert "FABRO_WAIT_FOR_REGULAR_SECONDS" in script
 
 
+def test_the_regular_pass_defers_its_writer_builds_while_a_fabro_job_is_active() -> None:
+    """Serialize both ways: a fork pass that started first is not joined by a regular writer build."""
+    regular = (_WARM_CACHE / "warm-cache-populate.sh").read_text(encoding="utf-8")
+
+    assert "fabro_pass_active()" in regular
+    assert "warm-cache-populate-fabro" in regular
+    assert "/apis/batch/v1/namespaces/" in regular
+    # Both writer-build sites (the sccache build and the target generation) consult it.
+    assert regular.count("fabro_pass_active") >= 3
+    assert "Fabro" in regular
+    assert "sccache_skipped_busy=$((sccache_skipped_busy + 1))" in regular
+    assert "target_skipped_busy=$((target_skipped_busy + 1))" in regular
+
+
 def test_the_converge_mounts_the_fabro_populator_script() -> None:
     """The mounted ConfigMap, not a disk copy, is the reader the CronJob executes."""
     converge = _CONVERGE.read_text(encoding="utf-8")
