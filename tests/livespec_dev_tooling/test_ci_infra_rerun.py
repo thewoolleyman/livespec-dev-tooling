@@ -164,8 +164,11 @@ def test_an_action_not_found_at_set_up_job_is_rerun() -> None:
     assert plan.reruns[0].matched_line == _NOT_FOUND_LINE
 
 
-def test_initialize_containers_registry_network_failures_rerun_once_before_any_later_step() -> None:
-    """Scenario: registry network failures before a job starts are re-run only once."""
+@pytest.mark.integration
+def test_initialize_containers_registry_network_failures_rerun_once_before_any_later_step(
+    tmp_path: Path,
+) -> None:
+    """Scenario: registry failures before a job starts re-run once and are summarized."""
     logs = {
         101: "##[error]pkg-containers.githubusercontent.com: connection reset by peer\n",
         102: "##[error]pulling ghcr.io/example/image: i/o timeout\n",
@@ -196,38 +199,50 @@ def test_initialize_containers_registry_network_failures_rerun_once_before_any_l
             ),
         ]
     )
-    jobs = parse_jobs(payload=first_attempt)
-    assert jobs is not None
+    first_code, first_payload, first_summary = _run_plan(
+        tmp_path=tmp_path,
+        jobs=first_attempt,
+        run_attempt=1,
+        logs=logs,
+    )
 
-    first_plan = plan_reruns(jobs=jobs, run_attempt=1, logs=logs)
-
-    assert [(rerun.job_id, rerun.signature, rerun.max_attempts) for rerun in first_plan.reruns] == [
+    first_reruns = cast("list[dict[str, object]]", first_payload["reruns"])
+    assert first_code == 0
+    assert [
+        (rerun["job_id"], rerun["signature"], rerun["max_attempts"]) for rerun in first_reruns
+    ] == [
         (101, "registry-connection-reset", 1),
         (102, "registry-io-timeout", 1),
         (103, "registry-tls-handshake-timeout", 1),
         (104, "registry-5xx", 1),
     ]
-    assert all(rerun.wait_seconds <= 300 for rerun in first_plan.reruns)
-    assert [left.name for left in first_plan.left] == ["started-later", "unhealthy-pod"]
+    assert first_payload["wait_seconds"] <= 300
+    assert "run 41645065357" in first_summary
+    assert "job 'check-101' (id 101)" in first_summary
+    assert logs[101].strip() in first_summary
+    assert "left for its owner: job 'started-later'" in first_summary
+    assert "left for its owner: job 'unhealthy-pod'" in first_summary
 
-    next_jobs = parse_jobs(
-        payload=[
-            *first_attempt,
-            _job(
-                attempt=2,
-                job_id=107,
-                name="check-101",
-                failed_step=_INITIALIZE_CONTAINERS,
-            ),
-        ]
+    next_jobs = [
+        *first_attempt,
+        _job(
+            attempt=2,
+            job_id=107,
+            name="check-101",
+            failed_step=_INITIALIZE_CONTAINERS,
+        ),
+    ]
+    retry_code, retry_payload, retry_summary = _run_plan(
+        tmp_path=tmp_path,
+        jobs=next_jobs,
+        run_attempt=2,
+        logs=logs,
     )
-    assert next_jobs is not None
 
-    retry_plan = plan_reruns(jobs=next_jobs, run_attempt=2, logs=logs)
-
-    assert retry_plan.reruns == ()
-    assert retry_plan.left[0].name == "check-101"
-    assert "already re-run 1 times" in retry_plan.left[0].reason
+    assert retry_code == 0
+    assert retry_payload["reruns"] == []
+    assert "left for its owner: job 'check-101'" in retry_summary
+    assert "already re-run 1 times" in retry_summary
 
 
 def test_a_setup_job_failure_without_the_signature_or_its_log_is_left() -> None:
