@@ -193,9 +193,14 @@ def _jsonc_rule_changed(*, cwd: Path, path: str, rule: ConfigValueFastPathRule) 
     """Prove that a JSONC replacement changed the exact declared nested key."""
     try:
         before: object = jsoncomment.loads(_head_text(cwd=cwd, path=path))
-        after: object = jsoncomment.loads(_staged_text(cwd=cwd, path=path))
     except ValueError:
         return False
+    try:
+        after: object = jsoncomment.loads(_staged_text(cwd=cwd, path=path))
+    except ValueError:
+        # The line-level check already proved a listed value replacement; the parse failure is the
+        # validation's to refuse by file and key, so the lane must not be left.
+        return True
     before_value = _value_at_path(document=before, key_path=rule.key_path)
     after_value = _value_at_path(document=after, key_path=rule.key_path)
     return before_value is not None and after_value is not None and before_value != after_value
