@@ -1948,6 +1948,30 @@ And the waiter MUST spawn no child process on any poll of the run's state
 
 And `gate-wait` MUST still return within five seconds of the run's `exit_code` appearing
 
+## Scenario: a stopped push gate ends without pushing and reads STOPPED
+
+Given a run started with `gate-start -- git push origin <branch>` whose pre-push hook runs a gate client in its own session
+
+And the run is RUNNING, its pre-push gate client has not yet returned, and `<branch>` has not yet reached the remote
+
+When the operator runs `gate-stop <run-id>`
+
+Then `gate-stop` MUST exit 0 only after no process attributed to the run remains
+
+And the remote MUST NOT receive `<branch>`
+
+And `gate-status <run-id>` MUST print `STOPPED` and exit 75
+
+## Scenario: stopping a delegated gate ends its gate Job
+
+Given a RUNNING run whose gate is delegated to an in-cluster gate Job
+
+When the operator runs `gate-stop <run-id>`
+
+Then the gate Job MUST have ended before `gate-stop` exits 0
+
+And `gate-wait <run-id>` MUST print `STOPPED` and exit 75
+
 ## Scenario: an opted-in commit from a credentialed host runs its replay tests against the staged tree
 
 Given a repository with `delegated_commit_tests = true`

@@ -1087,6 +1087,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: a stopped push gate ends without pushing and reads STOPPED",
+    "work_item": "livespec-dev-tooling-kjwanx",
+    "first_seen": "2026-11-11"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: a structural or unlisted change of .livespec.jsonc still touches every test that names the file",
     "work_item": "livespec-dev-tooling-n3dr3z",
     "first_seen": "2026-11-09"
@@ -1531,6 +1538,13 @@
     "heading": "## Scenario: runner pods select the committed runner scheduler profile and every other pod keeps the default profile",
     "work_item": "livespec-dev-tooling-mtvxde",
     "first_seen": "2026-11-04"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: stopping a delegated gate ends its gate Job",
+    "work_item": "livespec-dev-tooling-kjwanx",
+    "first_seen": "2026-11-11"
   },
   {
     "spec_root": "SPECIFICATION",
