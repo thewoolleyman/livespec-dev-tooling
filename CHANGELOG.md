@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.197.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.196.0...v1.197.0) (2026-11-11)
+
+
+### Features
+
+* **ci:** a CI job killed at Set up job by an action-download 429 is re-run with growing waits (livespec-dev-tooling-cetyrq) ([db81437](https://github.com/thewoolleyman/livespec-dev-tooling/commit/db814375cbcbf16dd8d86ecd3edf3cffb3dc95e5))
+
 ## [1.196.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.195.0...v1.196.0) (2026-11-11)
 
 
