@@ -179,7 +179,7 @@ def _recorded_events() -> tuple[list[dict[str, Any]], Callable[..., None]]:
     return events, _emit
 
 
-def _attributes_of(*, payload: dict[str, Any]) -> dict[str, str]:
+def _attributes_of(*, payload: dict[str, Any]) -> dict[str, Any]:
     """Flatten one span's OTLP attribute list into the mapping a reader sees."""
     spans = payload["resourceSpans"][0]["scopeSpans"][0]["spans"]
     assert len(spans) == 1
@@ -292,8 +292,26 @@ def test_suite_green_outcome_payload_names_the_completed_leg() -> None:
         "suite_green.mode": "reused",
         "suite_green.scope": "full-suite",
         "suite_green.outcome": "green",
-        "duration_ms": "1250",
+        "suite_green.duration_seconds": 1.25,
     }
+
+
+def test_suite_green_payload_omits_the_duration_it_never_measured() -> None:
+    """An unmeasured wall-clock duration is absent, in either unit, never guessed."""
+    telemetry = _telemetry()
+
+    payload = telemetry.build_suite_green_span_payload(
+        repository=_REPOSITORY,
+        tree_hash=_TREE,
+        mode="ran",
+        scope="full-suite",
+        outcome="green",
+        duration_seconds=None,
+    )
+
+    keys = set(_attributes_of(payload=payload))
+    assert "suite_green.duration_seconds" not in keys
+    assert "duration_ms" not in keys
 
 
 def test_a_value_the_run_never_determined_is_absent_rather_than_guessed() -> None:
