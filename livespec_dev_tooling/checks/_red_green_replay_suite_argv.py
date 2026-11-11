@@ -149,23 +149,31 @@ def dispatch_tests_only_staged(
     declares_red_intent: bool,
     handlers: TestOnlyHandlers,
 ) -> int:
-    """Route test-only staging through Red or its reusable Green replay."""
-    if declares_red_intent:
-        return handlers.handle_red(msg_path=msg_path, log=log, tests_paths=tests_paths)
-    if not handlers.has_shared_support(staged_paths):
-        probe = handlers.run_probe(tests_paths)
-        if probe.suite_result.returncode != 0:
-            return handlers.handle_red(msg_path=msg_path, log=log, tests_paths=tests_paths)
+    """Route test-only staging through Red or its reusable Green replay.
+
+    Shared test support staged with no test module has no test of its own to
+    fail or pass (pytest exits 5), so it is never a Red whatever the subject
+    declares: it is green-verified by the full suite it can affect. A passing
+    probe is reused as the suite-green verdict only when that leg would run the
+    same staged tests, so each staged test module runs once in total.
+    """
+    shared_support = handlers.has_shared_support(staged_paths)
+    if shared_support and not any(Path(path).name.startswith("test_") for path in tests_paths):
         return handlers.handle_suite(
             msg_path=msg_path,
             log=log,
             staged_paths=staged_paths,
             tests_paths=tests_paths,
-            replay=probe,
         )
+    if declares_red_intent:
+        return handlers.handle_red(msg_path=msg_path, log=log, tests_paths=tests_paths)
+    probe = handlers.run_probe(tests_paths)
+    if probe.suite_result.returncode != 0:
+        return handlers.handle_red(msg_path=msg_path, log=log, tests_paths=tests_paths)
     return handlers.handle_suite(
         msg_path=msg_path,
         log=log,
         staged_paths=staged_paths,
         tests_paths=tests_paths,
+        replay=None if shared_support else probe,
     )
