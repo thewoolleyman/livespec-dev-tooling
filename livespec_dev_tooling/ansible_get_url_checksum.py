@@ -150,17 +150,23 @@ def _is_pinned(*, lines: list[str], module_index: int, key_indent: int, inline: 
         if _is_code(line=lines[index])
     ]
     argument_indent = min((_indent(line=line) for _, line in indexed), default=0)
-    for index, line in indexed:
-        match = _CHECKSUM_KEY.match(line)
-        if match is None or _indent(line=line) != argument_indent:
-            continue
-        value = _TRAILING_COMMENT.sub("", match.group(2)).strip()
-        if _BLOCK_SCALAR_HEADER.match(value):
-            return _block_scalar_has_content(
-                lines=lines, header_index=index, key_indent=argument_indent
-            )
-        return value not in _EMPTY_SCALARS
-    return False
+    # Ansible accepts a duplicated mapping key and keeps the LATER value, so the
+    # effective pin is the last `checksum:` at the argument indent, not the first.
+    keys = [
+        (index, match)
+        for index, line in indexed
+        if (match := _CHECKSUM_KEY.match(line)) is not None
+        and _indent(line=line) == argument_indent
+    ]
+    if not keys:
+        return False
+    index, match = keys[-1]
+    value = _TRAILING_COMMENT.sub("", match.group(2)).strip()
+    if _BLOCK_SCALAR_HEADER.match(value):
+        return _block_scalar_has_content(
+            lines=lines, header_index=index, key_indent=argument_indent
+        )
+    return value not in _EMPTY_SCALARS
 
 
 def _file_findings(*, path: str, source: str) -> tuple[int, list[Finding]]:

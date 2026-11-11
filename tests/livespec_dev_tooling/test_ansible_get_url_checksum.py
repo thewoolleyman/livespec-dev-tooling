@@ -222,6 +222,39 @@ def test_a_yaml_null_or_comment_only_checksum_is_not_a_pin(
     ]
 
 
+def test_a_later_duplicate_checksum_key_decides_whether_the_task_is_pinned(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # Ansible accepts duplicate mapping keys and keeps the LATER value, so a valid
+    # pin followed by an empty or null `checksum:` leaves the task unpinned, and a
+    # null followed by a valid pin leaves it pinned.
+    tasks = (
+        "- name: Pin then null\n"
+        "  ansible.builtin.get_url:\n"
+        "    url: https://example.invalid/x\n"
+        "    checksum: sha256:" + "a" * 64 + "\n"
+        "    checksum: null\n"
+        "    dest: /x\n"
+        "- name: Pin then empty\n"
+        "  ansible.builtin.get_url:\n"
+        "    url: https://example.invalid/y\n"
+        "    checksum: sha256:" + "b" * 64 + "\n"
+        "    checksum: ''\n"
+        "    dest: /y\n"
+        "- name: Null then pin\n"
+        "  ansible.builtin.get_url:\n"
+        "    url: https://example.invalid/z\n"
+        "    checksum: ~\n"
+        "    checksum: sha256:" + "c" * 64 + "\n"
+        "    dest: /z\n"
+    )
+    run = _run_check(cwd=_tree(root=tmp_path, tasks=tasks), monkeypatch=monkeypatch, capsys=capsys)
+    assert _pairs(run=run) == [
+        ("unpinned-get-url", "ansible/roles/r/tasks/main.yml", 2),
+        ("unpinned-get-url", "ansible/roles/r/tasks/main.yml", 8),
+    ]
+
+
 def test_a_pinned_checksum_with_a_trailing_comment_or_hash_is_still_a_pin(
     *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
