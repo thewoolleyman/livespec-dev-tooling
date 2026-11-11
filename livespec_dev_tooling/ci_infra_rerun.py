@@ -27,12 +27,17 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
-import structlog
+_VENDOR_DIR = Path(__file__).resolve().parent / "_vendor"
+if str(_VENDOR_DIR) not in sys.path:
+    sys.path.insert(0, str(_VENDOR_DIR))
 
-from livespec_dev_tooling._ci_infra_rerun_plan import (
+import structlog  # noqa: E402  — vendor-path-aware import after sys.path insert.
+
+from livespec_dev_tooling._ci_infra_rerun_plan import (  # noqa: E402  — vendor-path-aware.
     CLASSIFIERS,
     FAILURE,
     JobClassifier,

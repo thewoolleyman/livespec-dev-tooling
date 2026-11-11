@@ -744,6 +744,12 @@ scenario_tiers = ["tests.consumer"]
 # behavior) stay AND must scrub COVERAGE_PROCESS_START + COV_CORE_* from the
 # child env so the child does not self-instrument.
 subprocess_spawn_allowlist = [
+    # livespec-dev-tooling-73qw6g: the reusable workflow invokes the CI
+    # infrastructure re-run planner with a system `python3` and only the
+    # checkout on PYTHONPATH. Only a fresh interpreter proves that vendored
+    # structlog is bootstrapped in that environment; the test uses a hardcoded
+    # PATH/HOME/PYTHONPATH environment, so coverage startup cannot reach it.
+    "tests/livespec_dev_tooling/test_ci_infra_rerun.py",
     # livespec-dev-tooling-wj45qt: the bare `pytest --cov` spelling fails in
     # pytest-cov's combine step only when a test subprocess runs with a cwd
     # that has no pyproject in view, which exists only across a real pytest
