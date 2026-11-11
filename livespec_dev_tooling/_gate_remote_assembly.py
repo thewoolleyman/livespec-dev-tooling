@@ -32,7 +32,11 @@ import sys
 import uuid
 from pathlib import Path
 
-from livespec_dev_tooling.config import ConfigParseError, load_gate_check_suite
+from livespec_dev_tooling.config import (
+    ConfigParseError,
+    load_gate_check_suite,
+    load_gate_job_resources,
+)
 from livespec_dev_tooling.gate_remote_invocation import (
     GateCommandResult,
     GateCommandRunner,
@@ -52,14 +56,23 @@ __all__: list[str] = [
     "assembly_refusal",
     "check_suite_argv",
     "declared_gate_check_suite",
+    "declared_gate_job_resources",
     "gate_ref_tree_hash",
     "gate_repo_name",
     "per_run_gate_ref",
+    "refuses_declaration",
     "renderer_refusal",
 ]
 
 _REPO_NAME_STEP = "derive-repo-name"
 _CHECK_SUITE_STEP = "read-gate-check-suite"
+_JOB_RESOURCES_STEP = "read-gate-job-resources"
+# Each declared resource key and the `render-gate-job.sh` flag it becomes.
+_JOB_RESOURCE_FLAGS = {
+    "gate_cpu": "--cpu",
+    "gate_memory": "--memory",
+    "gate_parallelism": "--parallelism",
+}
 
 # The one render failure that is NOT "the step did not complete": the renderer
 # ran, understood its own argument loop, and refused a flag THIS CLIENT passes.
@@ -171,6 +184,34 @@ def declared_gate_check_suite(*, repo_root: Path) -> Result[tuple[str, ...], Gat
             )
         )
     return Success(declared or GATE_CHECK_SUITE_FALL_THROUGH)
+
+
+def declared_gate_job_resources(*, repo_root: Path) -> Result[tuple[str, ...], GateStepFailed]:
+    """The renderer flags for the gate Job resources THIS repository declares.
+
+    Only declared keys become flags, so a repository that declares nothing hands
+    the renderer no `--cpu`, `--memory` or `--parallelism` and its committed
+    defaults stand. An unusable declaration FAILS THE STEP, for the reason
+    `declared_gate_check_suite` gives: the run has already delegated, and a
+    fallback could only gate the tree in a Job the repository did not ask for.
+    """
+    try:
+        declared = load_gate_job_resources(repo_root=repo_root)
+    except ConfigParseError as unreadable:
+        return Failure(
+            GateStepFailed(
+                step=_JOB_RESOURCES_STEP,
+                argv=(),
+                returncode=None,
+                detail=(
+                    "the gate Job resources in the [tool.livespec_dev_tooling] block of "
+                    f"{repo_root}/pyproject.toml cannot be read: {unreadable}"
+                ),
+            )
+        )
+    return Success(
+        tuple(part for key, value in declared for part in (_JOB_RESOURCE_FLAGS[key], value))
+    )
 
 
 def per_run_gate_ref(*, tree_hash: str) -> str:
@@ -323,6 +364,17 @@ def renderer_refusal(*, renderer: Path, failure: GateStepFailed) -> GateStepFail
             "client passes, so that renderer is older than the client driving it"
         ),
     )
+
+
+def refuses_declaration(*, failure: object) -> bool:
+    """Whether an assembly failed because the repository's own declaration is unusable.
+
+    Such a failure rejects the COMMITTED configuration; it is not a missing
+    cluster verdict. A caller that falls back to a local gate on a submission
+    failure must refuse instead here, naming the key, because no retry on any
+    host can make that declaration usable.
+    """
+    return isinstance(failure, GateStepFailed) and failure.step == _JOB_RESOURCES_STEP
 
 
 def assembly_refusal(*, failure: GateStepFailed) -> str:

@@ -6,6 +6,7 @@ import sys
 from dataclasses import dataclass, replace
 from pathlib import Path
 
+from livespec_dev_tooling._gate_remote_assembly import refuses_declaration
 from livespec_dev_tooling.config import ConfigParseError, load_delegated_commit_tests
 from livespec_dev_tooling.gate_credential import gates_kubeconfig_readable
 from livespec_dev_tooling.gate_remote_delegate import gate_remote_request, resolve_renderer
@@ -22,9 +23,10 @@ _VENDOR_DIR = Path(__file__).resolve().parent / "_vendor"
 if str(_VENDOR_DIR) not in sys.path:
     sys.path.insert(0, str(_VENDOR_DIR))
 
+import structlog  # noqa: E402  — vendor-path-aware import.
 from returns.result import Failure  # noqa: E402  — vendor-path-aware import.
 
-__all__: list[str] = ["ReplayVerdict", "run_replay"]
+__all__: list[str] = ["ReplayVerdict", "run_replay", "unrefused"]
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -37,6 +39,9 @@ class ReplayVerdict:
     tree_hash: str | None = None
     exit_status: int | None = None
     output_checksum: str | None = None
+    # A refusal rejects the committed configuration: its consumer refuses the
+    # commit naming the key, and must never read it as an absent verdict.
+    refused: bool = False
 
 
 def run_replay(*, repo_root: Path, pytest_argv: list[str]) -> ReplayVerdict:
@@ -53,6 +58,18 @@ def run_replay(*, repo_root: Path, pytest_argv: list[str]) -> ReplayVerdict:
     if not tree_hash:
         return ReplayVerdict(local=False, reason="the staged tree could not be read")
     return _run_remote(repo_root=repo_root, pytest_argv=pytest_argv, tree_hash=tree_hash)
+
+
+def unrefused(*, verdict: ReplayVerdict) -> ReplayVerdict:
+    """Pass a replay verdict on, or stop the commit when the delegate refused it.
+
+    Running the leg locally instead would let a refused Red pass as a valid
+    failing Red, so a refusal ends the commit before any pytest run or trailer.
+    """
+    if verdict.refused:
+        structlog.PrintLogger(file=sys.stderr).msg(verdict.reason)
+        raise SystemExit(1)
+    return verdict
 
 
 def _staged_tree_hash(*, repo_root: Path) -> str:
@@ -93,10 +110,16 @@ def _run_remote(*, repo_root: Path, pytest_argv: list[str], tree_hash: str) -> R
         pytest_argv=tuple(pytest_argv),
     )
     if isinstance(built, Failure):
+        refused = refuses_declaration(failure=built.failure())
         return ReplayVerdict(
             local=False,
-            reason=f"the gate Job reached no verdict: {built.failure().detail}",
+            reason=(
+                f"the commit is refused: unusable gate Job resources: {built.failure().detail}"
+                if refused
+                else f"the gate Job reached no verdict: {built.failure().detail}"
+            ),
             tree_hash=tree_hash,
+            refused=refused,
         )
     source = _staged_commit(repo_root=repo_root, tree_hash=tree_hash)
     if not source:

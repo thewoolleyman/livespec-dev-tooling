@@ -106,10 +106,13 @@ data:
 # multiple of the last build: a ratchet is self-referential, and the point is
 # an alarm when the union of the routed locks drifts — re-deriving these is a
 # reviewed commit against the measured union in README.md's cost table.
-# 1,000,000,000 bytes / 20,000 files is ~2.5x the 2026-09-04 nine-lock union
-# (379 MB / 8,070 files); the runaway hardlink-seeded generation that
-# motivated the rebuild was 1,388 MB / 159,409 files, so BOTH axes trip well
-# before that shape recurs. Injected into the populator as WARM_BUDGET_BYTES
+# 1,350,000,000 bytes / 45,000 files (re-derived 2026-11-11, README.md
+# "Budget"): the ten-lock union measured 1,041,015,159 bytes / 32,749 files at
+# 124 (name,version) pairs (run 20261111T093001Z, refused under the previous
+# 1,000,000,000 / 20,000, which was ~2.5x the 2026-09-04 nine-lock union of
+# 379 MB / 8,070 files), plus headroom for the pairs master added since. The
+# runaway hardlink-seeded generation that motivated the rebuild was
+# 1,388 MB / 159,409 files, so BOTH axes still trip before that shape recurs. Injected into the populator as WARM_BUDGET_BYTES
 # / WARM_BUDGET_FILES; the populator records the values in effect in every
 # generation's manifest and in last-run.json, which the host sweep emits as
 # livespec.ci_warm.budget_*. A generation over EITHER number is not
@@ -120,8 +123,8 @@ metadata:
   name: warm-cache-budget
   namespace: ci-warm-cache
 data:
-  bytes: "1000000000"
-  files: "20000"
+  bytes: "1350000000"
+  files: "45000"
   # The action archive seed's budget (the populator's header, "THE ACTION
   # ARCHIVE SEED"): the WHOLE tree, since every work volume receives all of it.
   # One tarball per distinct (action repository, resolved SHA) the routed

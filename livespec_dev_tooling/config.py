@@ -39,6 +39,7 @@ a typed `ConfigParseError` (an IO-layer exception caught by each check's
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 import sys
 from collections.abc import Iterable, Iterator
@@ -106,6 +107,7 @@ __all__: list[str] = [
     "load_destructive_cli_allowlist",
     "load_fail_on_unmeasured_first_party",
     "load_gate_check_suite",
+    "load_gate_job_resources",
     "load_mutation_staging_dir",
     "load_plan_lifecycle_anchor",
     "load_repo_local_ci_skips",
@@ -1354,6 +1356,65 @@ def load_gate_check_suite(*, repo_root: Path) -> tuple[str, ...] | None:
     if table is None or "gate_check_suite" not in table:
         return None
     return _as_str_tuple(value=table["gate_check_suite"], key="gate_check_suite")
+
+
+# The three gate Job resource keys, in the order the gate client passes them.
+# `gate_cpu` and `gate_parallelism` are positive integers; `gate_memory` is a
+# Kubernetes memory quantity — a positive integer and one of the unit suffixes
+# the a-consumer-declares-its-gate-job-resources contract names. A bare number
+# is refused: Kubernetes would read `"6"` as six BYTES.
+_GATE_CPU_KEY = "gate_cpu"
+_GATE_MEMORY_KEY = "gate_memory"
+_GATE_PARALLELISM_KEY = "gate_parallelism"
+_GATE_MEMORY_QUANTITY = re.compile(r"^[1-9][0-9]*(?:Ki|Mi|Gi|Ti|k|M|G|T)$")
+
+
+def _as_gate_memory(*, value: object) -> str:
+    if not isinstance(value, str) or not _GATE_MEMORY_QUANTITY.match(value):
+        msg = (
+            f"`{_GATE_MEMORY_KEY}` must be a positive memory quantity: an integer and "
+            'one of Ki, Mi, Gi, Ti, k, M, G or T, such as "12Gi"'
+        )
+        raise ConfigParseError(msg)
+    return value
+
+
+def load_gate_job_resources(*, repo_root: Path) -> tuple[tuple[str, str], ...]:
+    """Return the DECLARED gate Job resources as `(key, value)` pairs.
+
+    Reads `<repo_root>/pyproject.toml`'s `[tool.livespec_dev_tooling]` block,
+    keys `gate_cpu`, `gate_memory` and `gate_parallelism` — the cpu request,
+    the memory request (which is also the Job's memory limit) and the pytest
+    worker count of this repository's delegated gate Job. Each value is
+    returned as the string the renderer is given, in that key order, and ONLY
+    the declared keys are returned: an undeclared key is left to the
+    renderer's own default (5 cpu, 6Gi, 4 workers) rather than restated here,
+    so the default has one owner.
+
+    A cpu request below the worker count is legitimate. The gate Job carries
+    no cpu limit, so the request is what Kueue and the scheduler reserve, not
+    what the workers may use; measured gate use ran at 0.3-5.7 of a 5-cpu
+    request (legacy-coordinator-agent capacity read, 2026-11-10).
+
+    Raises `ConfigParseError` naming the key on an unusable value. Like
+    `gate_check_suite`, these are intentionally NOT `Config` role keys: the
+    gate client reads them, no check does.
+    """
+    table = _read_table(repo_root=repo_root)
+    if table is None:
+        return ()
+    declared: list[tuple[str, str]] = []
+    if _GATE_CPU_KEY in table:
+        cpu = _as_positive_int(value=table[_GATE_CPU_KEY], key=_GATE_CPU_KEY)
+        declared.append((_GATE_CPU_KEY, str(cpu)))
+    if _GATE_MEMORY_KEY in table:
+        declared.append((_GATE_MEMORY_KEY, _as_gate_memory(value=table[_GATE_MEMORY_KEY])))
+    if _GATE_PARALLELISM_KEY in table:
+        parallelism = _as_positive_int(
+            value=table[_GATE_PARALLELISM_KEY], key=_GATE_PARALLELISM_KEY
+        )
+        declared.append((_GATE_PARALLELISM_KEY, str(parallelism)))
+    return tuple(declared)
 
 
 def _parse_role_key_overrides(*, table: dict[str, Any]) -> dict[str, Any]:
