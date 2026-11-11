@@ -1,4 +1,19 @@
 {
   "schema": 1,
-  "evidence": []
+  "evidence": [
+    {
+      "repository": "thewoolleyman/livespec-dev-tooling",
+      "surface": "Generated projects",
+      "disposition": "not-applicable",
+      "manifest_sha256": "59912fe1d3cad2938389deba186b0478759f0278be2bfea462c20a39d2a9054c",
+      "source_path": "thewoolleyman/livespec:templates/orchestrator-plugin/copier.yml",
+      "release_build": "v1.198.0",
+      "proof_ref": "git ls-tree -r --name-only in thewoolleyman/livespec-dev-tooling, read 2026-11-11, at v1.198.0 (commit a17a87b18d934dbfb7953f4d2209badc7d6dcee4, tree 090878c08a119fb8283b995369d4c6f183c57cc7) and at default-branch master (commit 608f2ac81a86137cf6b8f99fd0463de96ad3146c, tree 6f89a2fdb6d0fa9881fcc94188ff7e4cf883eaf0): no copier.yml, .copier-answers.yml or .jinja path; livespec's copier.yml scopes generation to livespec-impl-* orchestrator plugin repositories",
+      "owner": "thewoolleyman/livespec",
+      "incident_item": "",
+      "cumulative_scope": "",
+      "normal_factory_proof": "",
+      "reason": "livespec-dev-tooling ships no Copier template and was not generated from one, so it has no generated gate or coverage recipe for the incident contract to reach."
+    }
+  ]
 }
