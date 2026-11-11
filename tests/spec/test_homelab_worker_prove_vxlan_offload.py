@@ -1,12 +1,13 @@
-"""The VXLAN-inbound offload sweep on a homelab worker (plan homelab-k8s-worker-nodes, livespec-dev-tooling-ko26ez).
+"""The VXLAN offload sweep, both directions, on a homelab worker (plan homelab-k8s-worker-nodes, livespec-dev-tooling-ko26ez).
 
 `homelab-worker/prove-vxlan-offload.sh <host> --peer-node <node>` toggles one NIC offload at a time on a
-homelab WORKER node and times a 32 MiB pod-network download into it under each. These run it under
-`/bin/bash` against a stub `kubectl` that keeps each offload setting as a file and answers the timed
-download fast only while lima0's rx checksumming is off, and assert:
+homelab WORKER node and times a 32 MiB pod-network download into it and out of it under each. These
+run it under `/bin/bash` against a stub `kubectl` that keeps each offload setting as a file and answers
+the inbound download fast only while lima0's rx checksumming is off and the outbound download fast
+only while lima0's tx-udp_tnl-segmentation is off, and assert:
 
-- the sweep times the baseline and every candidate alone, never two toggles at once, and names the
-  candidate that recovers throughput;
+- the sweep times the baseline and every candidate alone in both directions, never two toggles at
+  once, and names the candidate that recovers each direction;
 - every setting is read before the run and after the restore, with one receipt line each, and a
   restore that does not stick fails loudly and leaves the tuning pod in place;
 - a setting ethtool reports as [fixed] is never toggled;
@@ -39,15 +40,29 @@ _INITIAL = {
     "lima0/generic-receive-offload": "on",
     "lima0/rx-udp-gro-forwarding": "off",
     "lima0/rx-gro-list": "off",
-    "flannel.1/tx-checksum-ip-generic": "on",
     "flannel.1/generic-receive-offload": "on",
+    "lima0/tx-checksumming": "on",
+    "lima0/tcp-segmentation-offload": "on",
+    "lima0/generic-segmentation-offload": "on",
+    "lima0/tx-udp_tnl-segmentation": "on",
+    "flannel.1/tx-checksum-ip-generic": "on",
+    "flannel.1/tcp-segmentation-offload": "on",
+    "flannel.1/generic-segmentation-offload": "on",
+    "flannel.1/tx-udp_tnl-segmentation": "off",
 }
 
 _STUB = r"""#!/bin/bash
 s="$STUB_STATE"
 printf 'kubectl %s\n' "$*" >> "$s/calls.log"
 feature_of() {
-  case "$1" in rx) echo rx-checksumming ;; gro) echo generic-receive-offload ;; *) echo "$1" ;; esac
+  case "$1" in
+    rx) echo rx-checksumming ;;
+    gro) echo generic-receive-offload ;;
+    tx) echo tx-checksumming ;;
+    tso) echo tcp-segmentation-offload ;;
+    gso) echo generic-segmentation-offload ;;
+    *) echo "$1" ;;
+  esac
 }
 case "$1" in
   get)
@@ -87,7 +102,13 @@ case "$1" in
       [ "$(cat "$s/nic/$key")" = "$want" ] || changed=$((changed + 1))
     done < "$s/initial"
     [ "$changed" -le 1 ] || echo stacked >> "$s/stacked"
-    if [ "$(cat "$s/nic/lima0/rx-checksumming")" = off ]; then echo '100.00 101.00'; else echo '100.00 200.00'; fi ;;
+    echo "$pod" >> "$s/clients"
+    if [ "$pod" = client-out ]; then
+      fast="$(cat "$s/nic/lima0/tx-udp_tnl-segmentation")"
+    else
+      fast="$(cat "$s/nic/lima0/rx-checksumming")"
+    fi
+    if [ "$fast" = off ]; then echo '100.00 101.00'; else echo '100.00 200.00'; fi ;;
 esac
 exit 0
 """
@@ -146,13 +167,40 @@ def test_the_sweep_times_each_candidate_alone_and_names_the_one_that_recovers(
     result, state = _run(tmp_path=tmp_path)
     assert result.returncode == 0, result.stdout + result.stderr
     out = result.stdout
-    assert "PROOF-INFO offload baseline 327 KiB/s (32768 KiB in 100.00 s)" in out
-    assert "PROOF-INFO offload lima0:rx=off 32768 KiB/s (32768 KiB in 1.00 s)" in out
-    assert "PROOF-INFO offload lima0:gro=off 327 KiB/s" in out
-    assert "PROOF-INFO offload flannel.1:tx-checksum-ip-generic=off 327 KiB/s" in out
-    assert "PROOF-INFO offload flannel.1:gro=off 327 KiB/s" in out
+    assert "PROOF-INFO offload in baseline 327 KiB/s (32768 KiB in 100.00 s)" in out
+    assert "PROOF-INFO offload out baseline 327 KiB/s (32768 KiB in 100.00 s)" in out
+    assert "PROOF-INFO offload in lima0:rx=off 32768 KiB/s (32768 KiB in 1.00 s)" in out
+    assert "PROOF-INFO offload out lima0:rx=off 327 KiB/s" in out
+    assert "PROOF-INFO offload in lima0:gro=off 327 KiB/s" in out
+    assert "PROOF-INFO offload in flannel.1:tx-checksum-ip-generic=off 327 KiB/s" in out
+    assert "PROOF-INFO offload in flannel.1:gro=off 327 KiB/s" in out
     assert "PROOF-INFO offload lima0:rx-udp-gro-forwarding=off already-off" in out
     assert "PROOF-INFO offload lima0:rx-gro-list=off already-off" in out
+    assert not (state / "stacked").exists()
+
+
+def test_the_sweep_times_the_outbound_direction_and_names_the_transmit_offload_that_recovers_it(
+    tmp_path: Path,
+) -> None:
+    result, state = _run(tmp_path=tmp_path)
+    assert result.returncode == 0, result.stdout + result.stderr
+    out = result.stdout
+    assert (
+        "PROOF-INFO offload out lima0:tx-udp_tnl-segmentation=off 32768 KiB/s (32768 KiB in 1.00 s)"
+        in out
+    )
+    assert "PROOF-INFO offload in lima0:tx-udp_tnl-segmentation=off 327 KiB/s" in out
+    for label in (
+        "lima0:tx=off",
+        "lima0:tso=off",
+        "lima0:gso=off",
+        "flannel.1:tso=off",
+        "flannel.1:gso=off",
+    ):
+        assert f"PROOF-INFO offload out {label} 327 KiB/s" in out
+    assert "PROOF-INFO offload flannel.1:tx-udp_tnl-segmentation=off already-off" in out
+    clients = (state / "clients").read_text(encoding="utf-8").split()
+    assert clients.count("client") == clients.count("client-out") > 1
     assert not (state / "stacked").exists()
 
 
@@ -201,9 +249,18 @@ def test_the_privileged_tuning_pod_is_placed_only_on_a_homelab_worker_node(tmp_p
     assert "homelab-worker.livespec.dev/class: worker" in tune
     assert f"kubernetes.io/hostname: {_WORKER}" in tune
     assert "nodeName" not in tune
-    server = applied.split("name: server", 1)[1]
+    server = applied.split("name: server\n", 1)[1].split("---", 1)[0]
     assert "privileged" not in server
     assert "hostNetwork" not in server
+    assert f"nodeName: {_PEER}" in server
+    server_out = applied.split("name: server-out", 1)[1].split("---", 1)[0]
+    assert "privileged" not in server_out
+    assert "hostNetwork" not in server_out
+    assert f"kubernetes.io/hostname: {_WORKER}" in server_out
+    client_out = applied.split("name: client-out", 1)[1]
+    assert "privileged" not in client_out
+    assert "hostNetwork" not in client_out
+    assert f"nodeName: {_PEER}" in client_out
 
 
 def test_a_node_without_the_worker_class_is_refused_before_anything_is_created(
