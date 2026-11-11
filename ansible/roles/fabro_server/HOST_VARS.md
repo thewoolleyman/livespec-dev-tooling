@@ -905,11 +905,12 @@ of them is pointing that entry, and the rollback is pointing it back.
 
 `sandbox_providers` on that instance declares the `kubernetes` kind at the
 plugin digest the `sandbox_driver_kubernetes` role pins for that kind's path.
-Since 2026-11-05 that path is the versioned
-`/usr/local/bin/sandbox-driver-kubernetes-v0.8.2`, and the digest is the one
-`sandbox_driver_kubernetes_versioned_releases` declares for v0.8.2. The
-candidate's `kubernetes` kind pins the versioned v0.8.3 for that release's
-one-pod canary (orchestrator bd-ib-u4fp5z), and `fabro-server-mi-homelab` keeps
+Since 2026-11-11 that path is the versioned
+`/usr/local/bin/sandbox-driver-kubernetes-v0.8.3`, and the digest is the one
+`sandbox_driver_kubernetes_versioned_releases` declares for v0.8.3, on both the
+`kubernetes` and `kubernetes-rust` kinds (orchestrator bd-ib-u4fp5z; v0.8.2 from
+2026-11-05 is the REVERT target). The candidate's `kubernetes` kind pinned
+v0.8.3 first, for that release's one-pod canary, and `fabro-server-mi-homelab` keeps
 the shared `/usr/local/bin/sandbox-driver-kubernetes` at the role's default
 release. Either
 way the pin and the binary the role stages at that path move together, so the
