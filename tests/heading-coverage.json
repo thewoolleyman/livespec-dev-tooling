@@ -3234,5 +3234,61 @@
     "test": "TODO",
     "reason": "Spec-first: a real test at the integration tier or above (`tests.consumer`, this repository's `scenario_tiers`, or an integration-marked test) is owed for this heading. It must push, through the pack's pre-push gate in a synthetic repository with a local bare remote, a ref update naming only refs/heads/needs-human/ or refs/heads/preserve/ and assert no gate Job is submitted and no local just check runs while an authorization-reading member still runs and refuses on failure, and that a push also updating another ref is gated as before. livespec-dev-tooling-2zb3gk owns it.",
     "work_item": "livespec-dev-tooling-2zb3gk"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a push of a tree whose delegated pre-commit aggregate passed submits no gate Job and runs only the members that run did not cover",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above (`tests.consumer`, this repository's `scenario_tiers`, or an integration-marked test) is owed for this heading. It must drive the pack's pre-commit hook and pre-push gate in a synthetic repository that sets delegated_gate and delegated_pre_commit, with a stubbed gate client, and assert the scenario's pre-push evidence, gate Job submission and member-run outcomes (proposal pre-push-accepts-a-same-tree-delegated-pre-commit-pass). livespec-dev-tooling-73ocxb owns it.",
+    "work_item": "livespec-dev-tooling-73ocxb"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a pre-commit aggregate that ran on the committing host does not stand in for the pre-push gate",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above (`tests.consumer`, this repository's `scenario_tiers`, or an integration-marked test) is owed for this heading. It must drive the pack's pre-commit hook and pre-push gate in a synthetic repository that sets delegated_gate and delegated_pre_commit, with a stubbed gate client, and assert the scenario's pre-push evidence, gate Job submission and member-run outcomes (proposal pre-push-accepts-a-same-tree-delegated-pre-commit-pass). livespec-dev-tooling-73ocxb owns it.",
+    "work_item": "livespec-dev-tooling-73ocxb"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a delegated pre-commit pass on a dirty or changed tree does not stand in for the pre-push gate",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above (`tests.consumer`, this repository's `scenario_tiers`, or an integration-marked test) is owed for this heading. It must drive the pack's pre-commit hook and pre-push gate in a synthetic repository that sets delegated_gate and delegated_pre_commit, with a stubbed gate client, and assert the scenario's pre-push evidence, gate Job submission and member-run outcomes (proposal pre-push-accepts-a-same-tree-delegated-pre-commit-pass). livespec-dev-tooling-73ocxb owns it.",
+    "work_item": "livespec-dev-tooling-73ocxb"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a delegated pre-commit pass does not stand in for a push whose tree or worktree differs",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above (`tests.consumer`, this repository's `scenario_tiers`, or an integration-marked test) is owed for this heading. It must drive the pack's pre-commit hook and pre-push gate in a synthetic repository that sets delegated_gate and delegated_pre_commit, with a stubbed gate client, and assert the scenario's pre-push evidence, gate Job submission and member-run outcomes (proposal pre-push-accepts-a-same-tree-delegated-pre-commit-pass). livespec-dev-tooling-73ocxb owns it.",
+    "work_item": "livespec-dev-tooling-73ocxb"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a doc-only or Red-leg delegated pre-commit run records no pre-push evidence",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above (`tests.consumer`, this repository's `scenario_tiers`, or an integration-marked test) is owed for this heading. It must drive the pack's pre-commit hook and pre-push gate in a synthetic repository that sets delegated_gate and delegated_pre_commit, with a stubbed gate client, and assert the scenario's pre-push evidence, gate Job submission and member-run outcomes (proposal pre-push-accepts-a-same-tree-delegated-pre-commit-pass). livespec-dev-tooling-73ocxb owns it.",
+    "work_item": "livespec-dev-tooling-73ocxb"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a member outside the delegated pre-commit run's scope still runs at pre-push and refuses the push when it fails",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above (`tests.consumer`, this repository's `scenario_tiers`, or an integration-marked test) is owed for this heading. It must drive the pack's pre-commit hook and pre-push gate in a synthetic repository that sets delegated_gate and delegated_pre_commit, with a stubbed gate client, and assert the scenario's pre-push evidence, gate Job submission and member-run outcomes (proposal pre-push-accepts-a-same-tree-delegated-pre-commit-pass). livespec-dev-tooling-73ocxb owns it.",
+    "work_item": "livespec-dev-tooling-73ocxb"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a repository that does not set both delegated keys keeps pre-commit-to-pre-push green token reuse",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above (`tests.consumer`, this repository's `scenario_tiers`, or an integration-marked test) is owed for this heading. It must drive the pack's pre-commit hook and pre-push gate in a synthetic repository that sets delegated_gate and delegated_pre_commit, with a stubbed gate client, and assert the scenario's pre-push evidence, gate Job submission and member-run outcomes (proposal pre-push-accepts-a-same-tree-delegated-pre-commit-pass). livespec-dev-tooling-73ocxb owns it.",
+    "work_item": "livespec-dev-tooling-73ocxb"
   }
 ]

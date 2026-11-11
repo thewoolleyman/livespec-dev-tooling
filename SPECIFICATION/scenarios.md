@@ -4225,3 +4225,111 @@ And one of its CI workflows puts its `master` push runs in a concurrency group
 When `just check` runs
 
 Then the check MUST fail naming that workflow file and the reconciler caller
+
+## Scenario: a push of a tree whose delegated pre-commit aggregate passed submits no gate Job and runs only the members that run did not cover
+
+Given a consuming repository whose `[tool.livespec_dev_tooling]` table sets `delegated_gate = true` and `delegated_pre_commit = true`
+
+And its check set holds a tree-pure member `check-alpha` and the world-reading member `check-red-green-replay`, beside its other members
+
+And a Green-amend commit whose pre-commit hook ran the full aggregate as gate Job `J` on staged tree `T`, and `J` reported a green verdict for `T` with a member list naming every member except `check-alpha` and `check-red-green-replay` as run and passed
+
+And when that verdict arrived the working tree had no unstaged change and no untracked, non-ignored file, and `git write-tree` still named `T`
+
+And the pushing worktree is clean and its `HEAD` tree is `T`
+
+When the pre-push gate runs for a push of that commit to an ordinary branch
+
+Then it MUST NOT submit a gate Job and MUST NOT run the local `just check` fall-through
+
+And it MUST run `check-alpha`, `check-red-green-replay`, every other world-reading member and every authorization-reading member of its check set on the pushing host against `T`
+
+And it MUST NOT run any tree-pure member that `J` reported as run and passed
+
+And it MUST print `J`, `T`, the name of each member it ran, and the number of members it skipped
+
+And the push MUST complete when every member it ran passes
+
+## Scenario: a pre-commit aggregate that ran on the committing host does not stand in for the pre-push gate
+
+Given a consuming repository whose `[tool.livespec_dev_tooling]` table sets `delegated_gate = true` and `delegated_pre_commit = true`
+
+And a commit whose pre-commit aggregate ran `just check` on the committing host and passed on tree `T`, because the delegated run reached no verdict and the hook gated locally
+
+And the pushing worktree is clean and its `HEAD` tree is `T`
+
+When the pre-push gate runs on a host eligible under **Host eligibility** for a push of that commit to an ordinary branch
+
+Then the local aggregate MUST NOT have written a green token or pre-push evidence for `T`
+
+And the pre-push gate MUST submit a gate Job for `T` exactly as it does for a tree with no pre-commit evidence
+
+And it MUST NOT print that it accepted a pre-commit verdict
+
+## Scenario: a delegated pre-commit pass on a dirty or changed tree does not stand in for the pre-push gate
+
+Given a consuming repository whose `[tool.livespec_dev_tooling]` table sets `delegated_gate = true` and `delegated_pre_commit = true`
+
+And a commit whose pre-commit hook ran the full aggregate as gate Job `J` on staged tree `T`, and `J` reported a green verdict and its member list for `T`
+
+And when that verdict arrived the working tree had an unstaged change or an untracked, non-ignored file, or `git write-tree` named a tree other than `T`
+
+When the pre-commit hook finishes
+
+Then it MUST record no pre-push evidence for `J`
+
+And a later pre-push gate for a clean worktree whose `HEAD` tree is `T` MUST submit a gate Job for `T` on a host eligible under **Host eligibility**
+
+## Scenario: a delegated pre-commit pass does not stand in for a push whose tree or worktree differs
+
+Given a consuming repository whose `[tool.livespec_dev_tooling]` table sets `delegated_gate = true` and `delegated_pre_commit = true`
+
+And recorded pre-push evidence that gate Job `J` passed the full pre-commit aggregate on tree `T`
+
+And the pushing worktree's `HEAD` tree is not `T`, or the pushing worktree has an uncommitted change
+
+When the pre-push gate runs on a host eligible under **Host eligibility** for a push to an ordinary branch
+
+Then it MUST gate exactly as it does with no pre-commit evidence, and MUST NOT print that it accepted `J`'s verdict
+
+## Scenario: a doc-only or Red-leg delegated pre-commit run records no pre-push evidence
+
+Given a consuming repository whose `[tool.livespec_dev_tooling]` table sets `delegated_gate = true` and `delegated_pre_commit = true`
+
+And a commit whose delegated pre-commit gate Job ran the doc-only subset or the Red-leg subset for staged tree `T` and reported a green verdict
+
+When the pre-commit hook finishes
+
+Then it MUST record no pre-push evidence for `T`
+
+## Scenario: a member outside the delegated pre-commit run's scope still runs at pre-push and refuses the push when it fails
+
+Given a consuming repository whose `[tool.livespec_dev_tooling]` table sets `delegated_gate = true` and `delegated_pre_commit = true`
+
+And recorded pre-push evidence that gate Job `J` passed the full pre-commit aggregate on tree `T` with a member list that does not name `check-red-green-replay`
+
+And the pushing worktree is clean and its `HEAD` tree is `T`
+
+And `check-red-green-replay` fails for the pushed range
+
+When the pre-push gate runs for a push of that commit to an ordinary branch
+
+Then it MUST run `check-red-green-replay` on the pushing host
+
+And it MUST refuse the push, naming `check-red-green-replay`
+
+## Scenario: a repository that does not set both delegated keys keeps pre-commit-to-pre-push green token reuse
+
+Given a consuming repository whose `[tool.livespec_dev_tooling]` table does not set both `delegated_gate = true` and `delegated_pre_commit = true`
+
+And a commit whose pre-commit hook ran its LOCAL `just check` aggregate, skipping no member, to a green result on tree `T`
+
+And the pushing worktree is clean and its `HEAD` tree is `T`
+
+When the pre-push gate runs for a push of that commit to an ordinary branch
+
+Then the pre-commit hook's local aggregate MUST have recorded the green token for `T`
+
+And the pre-push gate MUST take the **Explicit local route**, submitting no gate Job, not running the local fall-through, and running only the world-reading members that **Token memoization** requires
+
+And it MUST NOT print that it accepted a pre-commit verdict
