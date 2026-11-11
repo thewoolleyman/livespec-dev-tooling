@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import codecs
+import contextlib
 import errno
 import os
 import pty
@@ -139,6 +140,51 @@ def _drain(*, fd: int, progress: SuiteProgress) -> None:
     progress.saw(chunk=decoder.decode(b"", final=True))
 
 
+def _escaped_descendants(*, leader_pid: int) -> tuple[tuple[int, str], ...]:
+    """Return live descendants outside the suite leader's process group.
+
+    A subprocess can start a session of its own and escape `killpg`; its parent
+    link still identifies it as work the suite started. `ps -axww -o` is shared
+    by the Linux and macOS developer hosts, and leaves the command line after
+    the three numeric fields for the stall record.
+    """
+    snapshot = subprocess.run(
+        ["ps", "-axww", "-o", "pid=", "-o", "ppid=", "-o", "pgid=", "-o", "command="],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    rows: list[tuple[int, int, int, str]] = []
+    for line in snapshot.stdout.splitlines():
+        with contextlib.suppress(ValueError):
+            pid, parent_pid, process_group, command = line.split(maxsplit=3)
+            rows.append((int(pid), int(parent_pid), int(process_group), command))
+    descendants = {leader_pid}
+    while True:
+        discovered = {pid for pid, parent_pid, _, _ in rows if parent_pid in descendants}
+        if discovered <= descendants:
+            break
+        descendants.update(discovered)
+    return tuple(
+        (pid, command)
+        for pid, _, process_group, command in rows
+        if pid != leader_pid and pid in descendants and process_group != leader_pid
+    )
+
+
+def _kill_escaped_descendants(*, leader_pid: int, progress: SuiteProgress) -> None:
+    """Kill and record descendants the suite's process-group signal misses."""
+    for pid, command in _escaped_descendants(leader_pid=leader_pid):
+        with contextlib.suppress(ProcessLookupError):
+            os.kill(pid, signal.SIGKILL)
+            progress.saw(
+                chunk=(
+                    "\nsuite-green: ending escaped descendant outside the suite process group: "
+                    f"pid {pid} command {command}\n"
+                )
+            )
+
+
 def run_suite(
     *,
     argv: list[str],
@@ -189,6 +235,7 @@ def run_suite(
                     bound=bound,
                 )
                 if reason is not None:
+                    _kill_escaped_descendants(leader_pid=proc.pid, progress=progress)
                     _ = os.killpg(proc.pid, signal.SIGKILL)
                     _ = proc.wait(timeout=_KILL_GRACE_SECONDS)
         reader.join(timeout=_KILL_GRACE_SECONDS)

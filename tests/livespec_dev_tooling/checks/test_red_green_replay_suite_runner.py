@@ -8,6 +8,7 @@ import errno
 import importlib.util
 import inspect
 import os
+import signal
 import sys
 import time
 import uuid
@@ -246,6 +247,40 @@ def test_a_silent_suite_is_killed_whole_once_it_stalls(tmp_path: Path) -> None:
     while _live_processes_carrying(token) and time.monotonic() < hang_guard:  # pragma: no branch
         time.sleep(0.1)  # pragma: no cover
     assert not _live_processes_carrying(token)
+
+
+def test_a_stalled_suite_ends_a_descendant_that_started_its_own_session(tmp_path: Path) -> None:
+    """Suite-green reaps and records a subprocess that leaves its process group."""
+    mod = _load()
+    token = f"livespec-suite-escaped-session-{uuid.uuid4().hex}"
+    escaped_pid = tmp_path / "escaped.pid"
+    escaped_child = (
+        "import os, pathlib, time; "
+        f"pathlib.Path({str(escaped_pid)!r}).write_text(str(os.getpid())); "
+        "time.sleep(300)"
+    )
+    leader = (
+        "import subprocess, sys, time; "
+        f"subprocess.Popen([sys.executable, '-c', {escaped_child!r}, {token!r}], start_new_session=True); "
+        "print('ready', flush=True); time.sleep(300)"
+    )
+
+    try:
+        run = mod.run_suite(
+            argv=[sys.executable, "-c", leader],
+            bound=mod.SuiteBound(stall_seconds=2, ceiling_seconds=None),
+        )
+
+        assert run.timed_out is True
+        assert (
+            escaped_pid.exists()
+        ), "the session-escaping child never started, so the kill proved nothing"
+        assert not _live_processes_carrying(token)
+        assert f"pid {escaped_pid.read_text(encoding='utf-8')}" in run.output
+        assert token in run.output
+    finally:
+        with contextlib.suppress(FileNotFoundError, ProcessLookupError):
+            os.kill(int(escaped_pid.read_text(encoding="utf-8")), signal.SIGKILL)
 
 
 def test_the_gate_runners_progress_stamp_is_one_of_the_scrubbed_gate_variables() -> None:
