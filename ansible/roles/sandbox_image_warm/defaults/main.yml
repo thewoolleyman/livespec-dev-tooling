@@ -113,7 +113,46 @@ sandbox_image_warm_process_spec_urls: >-
       | map('regex_replace', '^', (sandbox_image_warm_host_vars_base_url | trim) ~ '/')
       | map('regex_replace', '$', '.yml')
       | list)
-     if sandbox_image_warm_store == 'containerd' else [] }}
+     if (sandbox_image_warm_store == 'containerd' and sandbox_image_warm_workflow_urls | length == 0)
+     else [] }}
+
+# A THIRD REFERENCE SOURCE: the CI workflows' own pins (livespec-dev-tooling-e2gv6n).
+# Empty (the default) leaves every existing warm exactly as it was. A play that
+# passes a list here gets a warm whose references are every
+# `<image>:<prefix>-v<version>` those workflow files pin, for each prefix in
+# sandbox_image_warm_tag_prefixes, re-read on master every tick — and no
+# process_spec source (the expression above yields []), because a warm reads one
+# source. ci-pool.yml passes sandbox_image_warm_ci_workflow_urls below on every
+# node that takes CI runner pods, so a CI job's container image is in the node's
+# containerd before the job pulls it, whichever release each repository pins.
+sandbox_image_warm_workflow_urls: []
+
+# The fleet repositories whose CI runs on the k3s pool and pins a sandbox image
+# in `.github/workflows/ci.yml` on `master`: every repository with an ARC scale
+# set in ci-runner/k3s/phase2/arc/values-*.yaml, except `fabro`, whose default
+# branch carries no ci.yml (its carrier builds pin no sandbox tag).
+# tests/livespec_dev_tooling/test_sandbox_image_warm_ci_workflow_pins.py fails
+# when a scale set is added without its repository here, because an unlisted
+# repository's jobs would pull cold without anything saying so.
+sandbox_image_warm_ci_workflow_base_url: https://raw.githubusercontent.com/thewoolleyman
+sandbox_image_warm_ci_workflow_path: master/.github/workflows/ci.yml
+sandbox_image_warm_ci_workflow_repos:
+  - livespec
+  - livespec-console-beads-fabro
+  - livespec-dev-tooling
+  - livespec-driver-claude
+  - livespec-driver-codex
+  - livespec-driver-pi
+  - livespec-orchestrator-beads-fabro
+  - livespec-orchestrator-git-jsonl
+  - livespec-overseer
+  - livespec-runtime
+# Prefix-and-suffix, never a regex back-reference (see process_spec_urls above).
+sandbox_image_warm_ci_workflow_urls: >-
+  {{ sandbox_image_warm_ci_workflow_repos | sort
+     | map('regex_replace', '^', (sandbox_image_warm_ci_workflow_base_url | trim) ~ '/')
+     | map('regex_replace', '$', '/' ~ (sandbox_image_warm_ci_workflow_path | trim))
+     | list }}
 
 # What the inventory ITSELF says those files carry: every process_spec image of
 # every Fabro server instance on every host. Read only by the converge, which

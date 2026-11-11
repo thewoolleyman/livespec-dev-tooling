@@ -308,6 +308,18 @@ POPULATE_ADMITTED_JOB_THRESHOLD="${POPULATE_ADMITTED_JOB_THRESHOLD:-16}"
 # uses this same verified uv writer with this switch set, so it never becomes
 # a second writer of the carrier-only crates, sccache, or target caches.
 WARM_CACHE_UV_ONLY="${WARM_CACHE_UV_ONLY:-false}"
+# The action archive seed (step 4b, header "THE ACTION ARCHIVE SEED") has its
+# own switch, because it is not a carrier-only cache: its tree is per node (the
+# provisioner reflink-copies the node's own ${WARM_ROOT}/actions into each work
+# volume there), so a non-carrier work-volume node publishes its own copy
+# (livespec-dev-tooling-e2gv6n). Unset, it follows the carrier rule: on when
+# WARM_CACHE_UV_ONLY=false, off when true, so the carrier CronJob and any
+# UV-only pod that does not set it behave exactly as before. A runner-only
+# node's publisher never sets it: SPECIFICATION "What a runner-only node's jobs
+# get" forbids seeding its work volumes from this tree.
+if [ -z "${WARM_CACHE_ACTIONS:-}" ]; then
+  if [ "${WARM_CACHE_UV_ONLY}" = false ]; then WARM_CACHE_ACTIONS=true; else WARM_CACHE_ACTIONS=false; fi
+fi
 K8S_SA_DIR="${K8S_SA_DIR:-/var/run/secrets/kubernetes.io/serviceaccount}"
 GENERATIONS_DIR="${WARM_ROOT}/uv-generations"
 SRC_DIR="${WARM_ROOT}/src"
@@ -411,6 +423,10 @@ command -v git >/dev/null || { log "FATAL: git not on PATH"; exit 2; }
   log "FATAL: WARM_CACHE_UV_ONLY must be true or false"
   exit 2
 }
+[ "${WARM_CACHE_ACTIONS}" = true ] || [ "${WARM_CACHE_ACTIONS}" = false ] || {
+  log "FATAL: WARM_CACHE_ACTIONS must be true or false"
+  exit 2
+}
 command -v python3 >/dev/null || { log "FATAL: python3 not on PATH"; exit 2; }
 python3 -c 'import tomllib' 2>/dev/null || { log "FATAL: python3 is older than 3.11 (no tomllib); the verifier cannot run"; exit 2; }
 [ -r "${VERIFIER}" ] || { log "FATAL: verifier ${VERIFIER} not readable (converge-warm-cache.sh ships it in the script ConfigMap)"; exit 2; }
@@ -427,7 +443,7 @@ if ! PYTHONPATH="${PY_DEPS_DIR}" python3 -c 'import returns.io' 2>/dev/null; the
 fi
 PYTHONPATH="${PY_DEPS_DIR}" python3 -c 'import returns.io' 2>/dev/null \
   || { log "FATAL: returns is not importable from ${PY_DEPS_DIR} after installing ${RETURNS_SPEC}; the verifier cannot run"; exit 2; }
-if [ "${WARM_CACHE_UV_ONLY}" = false ]; then
+if [ "${WARM_CACHE_ACTIONS}" = true ]; then
   for v in WARM_ACTIONS_BUDGET_BYTES WARM_ACTIONS_BUDGET_FILES WARM_ACTIONS_RETAIN_SECONDS; do
     [[ "${!v}" =~ ^[0-9]+$ ]] || { log "FATAL: ${v} must be a non-negative integer, got '${!v}' (the warm-cache-budget ConfigMap injects the action archive seed budget)"; exit 2; }
   done
@@ -1116,7 +1132,7 @@ actions_archive_ok() {
   [ "$(gzip -dc "${file}" 2>/dev/null | git get-tar-commit-id 2>/dev/null)" = "${sha}" ]
 }
 
-if [ "${WARM_CACHE_UV_ONLY}" = false ]; then
+if [ "${WARM_CACHE_ACTIONS}" = true ]; then
 mkdir -p "${ACTIONS_GEN_ROOT}"
 actions_refs="${SCRATCH}/actions-refs.tsv"
 actions_keys="${SCRATCH}/actions-keys.tsv"
@@ -1262,6 +1278,8 @@ tmp = path + ".tmp"
 with open(tmp, "w") as f: json.dump(doc, f, indent=1)
 os.replace(tmp, path)
 PY
+else
+  log "action archive seed off (WARM_CACHE_ACTIONS=false); no actions tree written"
 fi
 
 log "run summary: uv generation $(basename "${published_gen:-none}") (rebuilt=${rebuilt} refused=${refused} verified=${verified}, ${synced} repositories synced), ${cargo_warmed} pre-warmed for cargo, sccache builds: ${sccache_built} built / ${sccache_skipped} skipped / ${sccache_skipped_busy} skipped-busy, target generations: ${target_built} built / ${target_skipped} skipped / ${target_skipped_busy} skipped-busy, action archive seed: ${actions_outcome}"

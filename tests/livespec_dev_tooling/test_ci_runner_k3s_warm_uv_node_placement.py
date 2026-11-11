@@ -134,6 +134,12 @@ def test_warm_uv_population_reaches_each_work_volume_node_without_moving_the_car
     assert (
         uv_only["value"] == "true"
     ), "the per-node leg must not become a second cargo/sccache writer"
+    actions = next(entry for entry in environment if entry["name"] == "WARM_CACHE_ACTIONS")
+    assert actions["value"] == "true", (
+        "the action archive seed is per node, not carrier-only: the provisioner copies "
+        "the node's own .warm/actions into its runner volumes, so the per-node leg must "
+        "publish it (livespec-dev-tooling-e2gv6n)"
+    )
     assert "proxy-store" not in per_node_uv_text and "ci-runner-bin" not in per_node_uv_text, (
         "the per-node uv leg needs only the warm root and proxy Service, not carrier "
         "hostPath caches"
@@ -145,6 +151,9 @@ def test_warm_uv_population_reaches_each_work_volume_node_without_moving_the_car
     assert (
         "WARM_CACHE_UV_ONLY" not in carrier_text
     ), "the carrier CronJob remains the sole cargo and compilation-cache writer"
+    assert (
+        "WARM_CACHE_ACTIONS" not in carrier_text
+    ), "the carrier keeps the derived action-seed default, so its behaviour is unchanged"
 
     populator = _POPULATOR.read_text(encoding="utf-8")
     assert 'WARM_CACHE_UV_ONLY="${WARM_CACHE_UV_ONLY:-false}"' in populator
@@ -152,6 +161,9 @@ def test_warm_uv_population_reaches_each_work_volume_node_without_moving_the_car
         "the shared populator must be able to skip carrier-only cache writes on a "
         "non-carrier work-volume node"
     )
+    assert (
+        'if [ "${WARM_CACHE_ACTIONS}" = true ]; then' in populator
+    ), "the action archive seed must be gated on its own switch, not on UV-only mode"
 
 
 def _server_label_converge_env(*, tmp_path: Path, profiles: Path, log: Path) -> dict[str, str]:
