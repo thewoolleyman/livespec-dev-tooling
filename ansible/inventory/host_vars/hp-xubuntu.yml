@@ -135,3 +135,11 @@ factory_pod_budget: 1
 # Applied by a daemon-reload, no k3s restart; revert by removing this key and
 # re-applying --tags k3s_system_slice_cpu_weight.
 k3s_config_system_slice_cpu_weight: 1000
+
+# --- controller_known_hosts ---
+# This host's Tailscale SSH ed25519 host key, pinned into the control node's
+# known_hosts by ansible/dev-host.yml (role controller_known_hosts). Fingerprint
+# SHA256:YEq8NepgBNWE+WKJ4VVuy6ZUXNsySXjVFBYLNvYjJdQ. Verified 2026-11-11: the
+# key the control node already trusted (a hand entry) equals the key the host
+# presented live; its info repository records no fingerprint.
+controller_known_hosts_ed25519: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMV5bdzm23d1z8RlkYoq9Flrx+tn5n5CqyDi8xN1x2FV"

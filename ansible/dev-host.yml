@@ -94,3 +94,8 @@
       tags: [incident_observer]
     - role: tailscale_serve
       tags: [tailscale_serve]
+    # The control node's trust in every ci_pool host's tailnet ssh host key,
+    # from the keys pinned in each host's host_vars (role
+    # controller_known_hosts), so a rebuilt control node can reach the pool.
+    - role: controller_known_hosts
+      tags: [controller_known_hosts]

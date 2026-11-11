@@ -1023,3 +1023,11 @@ tailscale_serve_mappings:
 # 2026-11-10 ruling, under its 6 h guards (role HOST_VARS.md). ROLLBACK: set 6, and
 # lower the fleet cap to 11 FIRST. Kill switch: the reconciler's.
 factory_pod_budget: 7
+
+# --- controller_known_hosts ---
+# This host's Tailscale SSH ed25519 host key, pinned into the control node's
+# known_hosts by ansible/dev-host.yml (role controller_known_hosts). Fingerprint
+# SHA256:vUCMIho6aIRyyY7exW2Is9Yz3h0/aX81uNgZ53103cQ. Verified 2026-11-11: the
+# key the control node already trusted (a hand entry) equals the key the host
+# presented live; its info repository records no fingerprint.
+controller_known_hosts_ed25519: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINVacRASJc+Ig/M6TksRXd8VxTSpD613RIjexvhLRAo8"
