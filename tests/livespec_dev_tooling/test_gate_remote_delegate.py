@@ -1900,6 +1900,46 @@ def test_a_repository_that_declares_no_gate_resources_leaves_the_renderer_its_de
         assert _values_of(render=render, flag=flag) == []
 
 
+def test_a_caller_sized_request_replaces_the_declared_resources_but_still_validates_them(
+    *, tmp_path: Path
+) -> None:
+    """A replay leg's own size overrides the declaration, which must still be usable (lfkkaf).
+
+    A one-file Red or Green replay Job is sized by the replay contract, not by
+    the repository's full-suite declaration, so the caller's flags reach the
+    renderer in place of the declared ones. The declaration is still validated:
+    an unusable one refuses every gate Job, the small one included.
+    """
+    replay_size = ("--cpu", "2", "--memory", "3Gi", "--parallelism", "1")
+    declaring = tmp_path / "declaring"
+    declaring.mkdir()
+    _write_pyproject(
+        repo_root=declaring,
+        body='[tool.livespec_dev_tooling]\ngate_cpu = 9\ngate_memory = "12Gi"\ngate_parallelism = 8\n',
+    )
+    runner = _StubWorld()
+
+    built = gate_remote_request(
+        repo_root=declaring, renderer=_RENDERER, runner=runner, resources=replay_size
+    )
+
+    assert isinstance(built, Success)
+    render = list(next(argv for argv in runner.argvs if argv[0] == str(_RENDERER)))
+    assert _values_of(render=render, flag="--cpu") == ["2"]
+    assert _values_of(render=render, flag="--memory") == ["3Gi"]
+    assert _values_of(render=render, flag="--parallelism") == ["1"]
+
+    unusable = tmp_path / "unusable"
+    unusable.mkdir()
+    _write_pyproject(repo_root=unusable, body="[tool.livespec_dev_tooling]\ngate_cpu = 0\n")
+    refused = gate_remote_request(
+        repo_root=unusable, renderer=_RENDERER, runner=_StubWorld(), resources=replay_size
+    )
+
+    assert isinstance(refused, Failure)
+    assert "gate_cpu" in refused.failure().detail
+
+
 def test_a_partial_declaration_passes_only_the_declared_resources(*, tmp_path: Path) -> None:
     """An undeclared key keeps the renderer's default rather than a guess of ours."""
     render = _rendered_with(
