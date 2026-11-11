@@ -129,9 +129,9 @@ def change_paths(*, repo_root: Path) -> set[Path] | None:
     if comparison is None:
         return None
     queries: tuple[list[str], ...] = (
-        ["diff", "--name-only", comparison, "HEAD"],
-        ["diff", "--name-only", "--cached"],
-        ["diff", "--name-only"],
+        ["diff", "--name-only", comparison, "HEAD", "--no-renames"],
+        ["diff", "--name-only", "--cached", "--no-renames"],
+        ["diff", "--name-only", "--no-renames"],
         ["ls-files", "--others", "--exclude-standard"],
     )
     changed: set[Path] = set()

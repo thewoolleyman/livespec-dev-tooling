@@ -122,6 +122,21 @@ def test_a_depth_one_pull_request_checkout_retries_only_tests_outside_the_pull_r
     assert added["test_touched.py"] == []
 
 
+def test_a_renamed_release_file_is_reported_as_both_deleted_and_added(*, tmp_path: Path) -> None:
+    """A metadata rename must remain unsafe even when Git detects the rename."""
+    plugin = importlib.import_module("livespec_dev_tooling.flake_retry")
+    repo = _origin(root=tmp_path)
+    _ = _commit(repo=repo, files={"pyproject.toml": "[project]\n"}, message="add metadata")
+    _git(repo=repo, args=["update-ref", "refs/remotes/origin/master", "HEAD"])
+    _git(repo=repo, args=["mv", "pyproject.toml", "project.toml"])
+    _git(repo=repo, args=["commit", "-qm", "rename metadata"])
+
+    assert plugin.change_paths(repo_root=repo) == {
+        Path("pyproject.toml"),
+        Path("project.toml"),
+    }
+
+
 @pytest.mark.integration
 def test_a_withheld_retry_is_named_in_the_terminal_summary_with_the_failed_git_query(
     *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
