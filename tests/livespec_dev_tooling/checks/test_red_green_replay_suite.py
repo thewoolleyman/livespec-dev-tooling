@@ -392,6 +392,47 @@ def test_silent_suite_green_stall_names_the_window_and_missing_test_completion(
     assert "no test had completed" in event
 
 
+def test_a_refused_suite_green_replay_refuses_the_commit_instead_of_running_the_suite_locally(
+    *, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A refused resource declaration refuses suite-green; it is no absent verdict (c3nd2h).
+
+    Rerunning the suite on the committing host would let an unusable
+    declaration pass as a green commit, so the leg stops before any suite run
+    and before any trailer is written.
+    """
+    from livespec_dev_tooling.commit_replay_delegate import ReplayVerdict
+
+    mod = _load()
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        mod,
+        "run_replay",
+        lambda **_kwargs: ReplayVerdict(
+            local=False,
+            reason="the commit is refused: `gate_cpu` must be a positive integer (pyproject.toml)",
+            refused=True,
+        ),
+    )
+    monkeypatch.setattr(mod, "xdist_importable", lambda: False)
+    # A local suite run fails the test outright: the refusal must come first.
+    monkeypatch.setattr(mod, "run_suite", lambda **_kwargs: pytest.fail("the suite ran locally"))
+    message = tmp_path / "COMMIT_EDITMSG"
+    message.write_text("chore: suite green\n", encoding="utf-8")
+
+    with pytest.raises(SystemExit) as stopped:
+        _ = mod._handle_suite_green_mode(  # noqa: SLF001
+            msg_path=message,
+            log=_RecordingLog(),
+            staged_paths=["tests/test_changed.py"],
+            tests_paths=["tests/test_changed.py"],
+        )
+
+    assert stopped.value.code == 1
+    assert "TDD-Suite-Green" not in message.read_text(encoding="utf-8")
+    assert "gate_cpu" in capsys.readouterr().err
+
+
 class _RecordingLog:
     """Minimal structured logger for suite-green route assertions."""
 
