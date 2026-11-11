@@ -115,6 +115,8 @@ def retry_marker_for(
     test_path: Path,
     change_paths: set[Path],
     memo: dict[Path, _ModuleFacts | None] | None = None,
+    retry_attempts: int = RETRY_ATTEMPTS,
+    retry_delay_seconds: int = RETRY_DELAY_SECONDS,
 ) -> dict[str, int] | None:
     """Return a rerun marker only when no changed path touches the closure.
 
@@ -135,4 +137,4 @@ def retry_marker_for(
     relative_modules = {path.relative_to(repo_root) for path in modules}
     if relative_modules & change_paths or literals & _changed_names(paths=change_paths):
         return None
-    return {"reruns": RETRY_ATTEMPTS, "reruns_delay": RETRY_DELAY_SECONDS}
+    return {"reruns": retry_attempts, "reruns_delay": retry_delay_seconds}
