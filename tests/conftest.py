@@ -38,7 +38,9 @@ from __future__ import annotations
 
 import os
 import shutil
+import subprocess
 import sys
+import tempfile
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -146,6 +148,83 @@ def _caller_gate_variables_never_reach_a_test(monkeypatch: pytest.MonkeyPatch) -
     """
     for name in _CALLER_GATE_VARIABLES:
         monkeypatch.delenv(name, raising=False)
+
+
+@pytest.fixture(autouse=True)
+def _commit_replay_never_delegates_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep every commit-time replay a test drives on its local route.
+
+    `commit_replay_delegate.run_replay` reads two facts about the REAL world:
+    the repository's committed `delegated_commit_tests` opt-in (on in this
+    repository since e8cb0f09) and whether THIS host can read the gates
+    kubeconfig. On the dev host both are true, so a suite-green test that stubs
+    only `run_suite` pushed its staged tree and waited on a real full-suite gate
+    Job. Seven tests in `test_red_green_replay_modes.py` did exactly that in
+    gate run 20261111T024337Z-1454657: Jobs gate-livespec-dev-tooling-6hftp,
+    -ftp6q, -gtl4z, -hbrnt, -msz8r, -s94nh and -vwwpp, of 10,407 tests each.
+    Each test blocked for 670 to 1993 s, and then failed, because the Job's
+    verdict replaced its stub's. In a gate Job pod the kubeconfig is not
+    readable, so the same tests passed there (livespec-dev-tooling-qpgiip).
+
+    AUTOUSE, for the same OMISSION reason as the two fixtures above. A test that
+    exercises the delegated route says so itself, by setting
+    `gates_kubeconfig_readable` on the module after this fixture runs, as
+    `test_commit_replay_delegate.py` already does.
+    """
+    from livespec_dev_tooling import commit_replay_delegate
+
+    monkeypatch.setattr(commit_replay_delegate, "gates_kubeconfig_readable", lambda: False)
+
+
+def _reaches_a_real_gate_job(*, argv: object) -> bool:
+    """Answer whether one `subprocess.run` argv would create a REAL gate Job.
+
+    The real submission is the gates credential wrapper carrying a `kubectl …
+    create` (`gate_remote_client`), resolved to an installed wrapper. A test's
+    fake wrapper lives under the temporary directory, so it is not real.
+    """
+    from livespec_dev_tooling.gate_credential import GATES_WRAPPER
+
+    parts = [str(part) for part in argv] if isinstance(argv, list | tuple) else [str(argv)]
+    parts = parts or [""]
+    resolved = shutil.which(parts[0])
+    temporary = Path(tempfile.gettempdir()).resolve()
+    return (
+        resolved is not None
+        and Path(parts[0]).name == GATES_WRAPPER
+        and "create" in parts
+        and not Path(resolved).resolve().is_relative_to(temporary)
+    )
+
+
+@pytest.fixture(autouse=True)
+def _no_test_submits_a_real_gate_job(
+    request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Fail any test that reaches a real gate Job submission without opting in.
+
+    The fixture above closes the one leak that was measured. This one closes the
+    class: whatever route a later test takes, a real `kubectl create` through the
+    installed gates wrapper fails that test at once, naming the command, instead
+    of spending a full-suite Job of cluster capacity and hours of silence
+    (livespec-dev-tooling-qpgiip). A test that genuinely needs a real Job carries
+    the `real_gate_job` marker.
+    """
+    if request.node.get_closest_marker("real_gate_job") is not None:
+        return
+    real_run = subprocess.run
+
+    def guarded_run(*args: object, **kwargs: object) -> object:
+        argv = args[0] if args else kwargs.get("args", ())
+        if _reaches_a_real_gate_job(argv=argv):
+            reason = (
+                f"this test reached a real gate Job submission: {argv!r} "
+                "(mark it real_gate_job if that is deliberate; livespec-dev-tooling-qpgiip)"
+            )
+            pytest.fail(reason, pytrace=False)
+        return real_run(*args, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(subprocess, "run", guarded_run)
 
 
 @pytest.fixture(autouse=True)
