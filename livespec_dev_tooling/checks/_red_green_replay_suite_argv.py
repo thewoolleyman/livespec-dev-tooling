@@ -150,22 +150,26 @@ def dispatch_tests_only_staged(
     handlers: TestOnlyHandlers,
 ) -> int:
     """Route test-only staging through Red or its reusable Green replay."""
-    if declares_red_intent:
+    shared_support = handlers.has_shared_support(staged_paths)
+    names_test_module = any(
+        Path(path).suffix == ".py" and Path(path).name.startswith("test_") for path in tests_paths
+    )
+    if declares_red_intent and not (shared_support and not names_test_module):
         return handlers.handle_red(msg_path=msg_path, log=log, tests_paths=tests_paths)
-    if not handlers.has_shared_support(staged_paths):
-        probe = handlers.run_probe(tests_paths)
-        if probe.suite_result.returncode != 0:
-            return handlers.handle_red(msg_path=msg_path, log=log, tests_paths=tests_paths)
+    if shared_support:
         return handlers.handle_suite(
             msg_path=msg_path,
             log=log,
             staged_paths=staged_paths,
             tests_paths=tests_paths,
-            replay=probe,
         )
+    probe = handlers.run_probe(tests_paths)
+    if probe.suite_result.returncode != 0:
+        return handlers.handle_red(msg_path=msg_path, log=log, tests_paths=tests_paths)
     return handlers.handle_suite(
         msg_path=msg_path,
         log=log,
         staged_paths=staged_paths,
         tests_paths=tests_paths,
+        replay=probe,
     )
