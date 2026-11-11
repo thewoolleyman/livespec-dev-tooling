@@ -27,7 +27,9 @@
 #                  EXACTLY and remove the record. It REFUSES when no set carries a
 #                  record, so a stray restore cannot invent limits.
 #   cordon       — mark the confirmed node unschedulable, so new pods land on the
-#                  other nodes while the node's running pods finish.
+#                  other nodes while the node's running pods finish. This is
+#                  also the committed NODE HOLD: "hold node <name>" is
+#                  `cordon`, and "lift node <name>" is `uncordon`.
 #   uncordon     — mark it schedulable again.
 # NOTHING HERE EVICTS, DRAINS OR DELETES A POD. Evicting a busy runner pod kills
 # its CI job, and the ARC workflow pods are unmanaged, so a drain is exactly the
@@ -37,11 +39,21 @@
 #
 # THE FENCE IS A VARIABLE. Without `k3s_window_confirm=<action>` naming the same
 # action as `k3s_window_action`, the play reads nothing and changes nothing. The
-# node actions also require `k3s_window_node` to name a pool node in the
-# inventory. Everything runs once, on the pool's server, under its admin
-# kubeconfig.
+# node actions also require `k3s_window_node` to name a node: either a ci_pool
+# host in the inventory, or a Node registered in the cluster. The second form
+# covers a node with no inventory entry, such as a homelab container worker
+# (macbook-m4-max-homelab-worker). It is read on the server with
+# `kubectl get node`, and an unregistered name is refused. Everything runs once,
+# on the pool's server, under its admin kubeconfig.
+#
+# HOLD AND LIFT ARE IDEMPOTENT. A cordon of a node that is already
+# unschedulable reports `already cordoned` and changes nothing. So the first
+# committed hold of a node cordoned by hand ADOPTS that cordon, and its lift goes
+# through `uncordon` here, never by hand (legacy-coordinator-agent ruling,
+# 2026-11-11 ~17:36Z, after the M4 hand cordon of 15:54:43Z under
+# livespec-dev-tooling-ko26ez).
 
-- name: Pause or restore CI runner intake, or cordon or uncordon a pool node, for a k3s window
+- name: Pause or restore CI runner intake, or hold (cordon) or lift (uncordon) a cluster node
   hosts: ci_pool
   gather_facts: false
   vars:
@@ -55,6 +67,8 @@
          and cluster_role | default('') == 'server' }}
     k3s_window_node_known: >-
       {{ k3s_window_node | default('') in groups['ci_pool'] }}
+    k3s_window_node_registered: >-
+      {{ (k3s_window_node_read.rc | default(1)) == 0 }}
   tasks:
     - name: Report a run that carries no matching confirmation
       ansible.builtin.debug:
@@ -69,16 +83,38 @@
         - cluster_role | default('') == 'server'
         - not (k3s_window_requested | bool)
 
-    - name: Refuse a node action that does not name a pool node
-      ansible.builtin.fail:
-        msg: >-
-          Refusing `{{ k3s_window_action }}`: `k3s_window_node` is
-          `{{ k3s_window_node | default('<unset>') }}`, which is not a ci_pool
-          host in the inventory. Nothing was changed.
+    - name: Read whether the named node is registered in the cluster
       when:
         - k3s_window_requested | bool
         - k3s_window_action in k3s_window_node_actions
         - not (k3s_window_node_known | bool)
+        - k3s_window_node | default('') | length > 0
+      ansible.builtin.command:
+        argv:
+          - kubectl
+          - get
+          - node
+          - "{{ k3s_window_node }}"
+          - --output=name
+      become: true
+      environment:
+        KUBECONFIG: "{{ k3s_window_admin_kubeconfig }}"
+      register: k3s_window_node_read
+      changed_when: false
+      failed_when: false
+
+    - name: Refuse a node action that does not name a pool node or a registered cluster node
+      ansible.builtin.fail:
+        msg: >-
+          Refusing `{{ k3s_window_action }}`: `k3s_window_node` is
+          `{{ k3s_window_node | default('<unset>') }}`, which is neither a ci_pool
+          host in the inventory nor a Node registered in the cluster. Nothing was
+          changed.
+      when:
+        - k3s_window_requested | bool
+        - k3s_window_action in k3s_window_node_actions
+        - not (k3s_window_node_known | bool)
+        - not (k3s_window_node_registered | bool)
 
     - name: Pause every runner set's intake, recording its limit first
       when:
