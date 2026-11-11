@@ -32,7 +32,7 @@ _QUEUE_FILE = _PHASE2 / "kueue" / "cluster-queue-gates.yaml"
 _RENDERER = _PHASE2 / "gates" / "render-gate-job.sh"
 _HEADROOM_LANE = "gates-flavor"
 _HEADROOM_GATES = 3
-_MEMORY = re.compile(r"^(?P<amount>[1-9][0-9]*)Gi$")
+_MEMORY = re.compile(r"^(?P<amount>0|[1-9][0-9]*)Gi$")
 _RENDERER_DEFAULTS = re.compile(
     r'^cpu="(?P<cpu>[0-9]+)"; memory="(?P<memory>[^"]+)";', re.MULTILINE
 )

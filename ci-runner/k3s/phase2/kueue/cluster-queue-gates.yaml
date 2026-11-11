@@ -265,10 +265,20 @@ spec:
             # 5-cpu gate. 8 Gi gives the 6 Gi request 2 Gi of headroom. LAST in
             # the order: its gate speed is unmeasured, and the lane-order
             # reconciler moves it once it has a read.
+            #
+            # HELD AT ZERO since 2026-11-11 (legacy-coordinator-agent's ruling):
+            # 2 of 2 full-suite gate Jobs admitted here (5mxn4, 9p9pc) stopped
+            # doing work about 20 min in and reached no terminal condition in
+            # 3600 s, while every gate on the other three nodes did. The hang is
+            # livespec-dev-tooling-ddy5xu. LIFT, back to 5 / 8Gi, once ddy5xu has
+            # named and fixed the step and one full-suite gate here has reached a
+            # terminal condition in under 3600 s. Short-subset Jobs are held too:
+            # gates-cq admits every gate Job size through the same flavors, so
+            # this lane cannot admit one size and not the other.
             - name: "cpu"
-              nominalQuota: 5
+              nominalQuota: 0
             - name: "memory"
-              nominalQuota: 8Gi
+              nominalQuota: 0Gi
 ---
 apiVersion: kueue.x-k8s.io/v1beta2
 kind: WorkloadPriorityClass

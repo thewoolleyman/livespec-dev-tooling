@@ -47,7 +47,10 @@ def test_gates_cluster_queue_has_a_quota_lane_for_each_pool_node() -> None:
 
     A node that joins ci_pool without a gates flavor fails here, so its gate
     posture is decided in the same change that adds it. The lane sizes are
-    committed capacity values, so only their shape is asserted.
+    committed capacity values, so only their shape is asserted. A lane HELD at
+    zero is a decided posture too (a node whose gates hang is held that way
+    while the hang is fixed), so zero is admitted when cpu and memory are held
+    together; a lane admitting one resource and not the other is refused.
     """
     documents = _documents(_GATES_QUEUE)
     flavors = {
@@ -66,9 +69,11 @@ def test_gates_cluster_queue_has_a_quota_lane_for_each_pool_node() -> None:
     for flavor in queue_flavors:
         quota = {resource["name"]: resource["nominalQuota"] for resource in flavor["resources"]}
         assert set(quota) == {"cpu", "memory"}
-        assert isinstance(quota["cpu"], int) and quota["cpu"] > 0
+        assert isinstance(quota["cpu"], int) and quota["cpu"] >= 0
         assert isinstance(quota["memory"], str) and quota["memory"].endswith("Gi")
-        assert int(quota["memory"].removesuffix("Gi")) > 0
+        memory = int(quota["memory"].removesuffix("Gi"))
+        assert memory >= 0
+        assert (quota["cpu"] == 0) == (memory == 0)
 
 
 def test_every_gates_flavor_admits_by_topology_so_tas_is_implied() -> None:
