@@ -76,6 +76,28 @@ def test_a_lookup_that_found_no_receipt_backs_off_the_unsettled_action(failing):
     )
 
 
+def test_alternating_retry_reasons_turn_terminal_at_the_global_attempt_bound(failing, monkeypatch):
+    world, chain = failing
+    _journal(world, chain, monkeypatch)
+    receipt = _action(world)["receipt"]
+    clock = Clock()
+    outcomes = [
+        _outcome(
+            world,
+            receipt=receipt,
+            outcome=ChainWrite.retry(
+                reason=("tenant-unavailable", "merge-unrecorded")[attempt % 2]
+            ),
+            clock=clock,
+        ).status
+        for attempt in range(48)
+    ]
+    state = _action(world)["sweep"]
+    assert outcomes == ["deferred"] * 47 + ["terminal"]
+    assert state["attempts"] == 48 and "terminal" in state
+    assert not is_due(action=_action(world), now=clock.now + 3600)
+
+
 def test_a_terminal_outcome_is_journaled_once_and_kept_against_a_later_retry(failing, monkeypatch):
     world, chain = _deferred_conflict(failing, monkeypatch)
     receipt = _action(world)["receipt"]
