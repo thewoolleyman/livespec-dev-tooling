@@ -87,21 +87,33 @@ def test_recorded_github_documents_emit_the_shell_exporters_run_and_job_spans(
     class _Response:
         status = 200
 
-        def __enter__(self) -> _Response:
-            return self
-
-        def __exit__(self, *args: object) -> None:
-            _ = args
-
         def read(self) -> bytes:
             return b'{"partialSuccess":{"rejectedSpans":"0"}}'
 
-    def _urlopen(request: Any, timeout: float) -> _Response:
-        _ = timeout
-        posted.append(json.loads(request.data.decode("utf-8")))
-        return _Response()
+    class _Connection:
+        def __init__(self, *, host: str, timeout: float) -> None:
+            assert host == "api.honeycomb.io"
+            assert timeout == 30.0
 
-    monkeypatch.setattr("urllib.request.urlopen", _urlopen)
+        def request(self, method: str, url: str, body: str, headers: dict[str, str]) -> None:
+            assert method == "POST"
+            assert url == "/v1/traces"
+            assert headers == {
+                "x-honeycomb-team": "test-key",
+                "Content-Type": "application/json",
+            }
+            posted.append(json.loads(body))
+
+        def getresponse(self) -> _Response:
+            return _Response()
+
+        def close(self) -> None:
+            return None
+
+    def _connection(host: str, timeout: float) -> _Connection:
+        return _Connection(host=host, timeout=timeout)
+
+    monkeypatch.setattr("http.client.HTTPSConnection", _connection)
 
     assert (
         exporter.main(
