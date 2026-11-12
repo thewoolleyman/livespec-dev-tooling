@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import re
+import socket
 import subprocess
 import threading
 from collections.abc import Iterator
@@ -109,7 +110,7 @@ def _lifted_tasks() -> str:
     return "".join(tasks[name] for name in _LIFTED).replace("  become: true\n", "")
 
 
-def _run(*, tmp_path: Path, port: int) -> tuple[int, str]:
+def _run(*, tmp_path: Path, port: int, service_state: str | None = None) -> tuple[int, str]:
     """Run the committed comparison against the local endpoint and return its report."""
     vars = {
         "fabro_server_unit_name": "fabro-server-fixture",
@@ -118,6 +119,8 @@ def _run(*, tmp_path: Path, port: int) -> tuple[int, str]:
         "fabro_server_github_app_id": "12345",
         "fabro_server_max_concurrent_runs": 7,
     }
+    if service_state is not None:
+        vars["fabro_server_service_state"] = service_state
     playbook = tmp_path / "settings-drift.yml"
     header = "\n".join(
         (
@@ -214,3 +217,19 @@ def test_an_unreachable_settings_endpoint_is_named_unreachable_not_matching(
     assert "settings endpoint is unreachable" in output
     assert "DRIFT:" not in output
     assert settings_server.requests == ["GET"], settings_server.requests
+
+
+def test_a_parked_instance_with_no_listener_is_named_unreachable_not_skipped(
+    *, tmp_path: Path
+) -> None:
+    """A stopped instance still gets a result: its closed endpoint is unreachable."""
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        port = probe.getsockname()[1]
+
+    code, output = _run(tmp_path=tmp_path, port=port, service_state="stopped")
+
+    assert code == 0, output
+    assert "fabro-server-fixture" in output
+    assert "settings endpoint is unreachable" in output
+    assert "DRIFT:" not in output
