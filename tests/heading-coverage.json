@@ -3195,17 +3195,13 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: an in-turn sandbox commit whose affected-tests gate passed on the same tree runs only those tests",
-    "test": "TODO",
-    "reason": "Spec-first: a real test at the integration tier or above (`tests.consumer`, this repository's `scenario_tiers`, or an integration-marked test) is owed for this heading, driving the commit-msg suite-green leg in a checkout with livespec.sandboxExempt set after a passing affected-tests record on the same tree; livespec-dev-tooling-svjqbe owns it.",
-    "work_item": "livespec-dev-tooling-svjqbe"
+    "test": "tests.consumer.test_affected_tests_suite_green_scenarios.test_sandbox_same_tree_passing_record_runs_only_the_selected_tests"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: an affected-tests record outside a sandbox, or for a failed, empty or different run, leaves the full suite in place",
-    "test": "TODO",
-    "reason": "Spec-first: a real test at the integration tier or above (`tests.consumer`, this repository's `scenario_tiers`, or an integration-marked test) is owed for this heading, driving the suite-green leg with an affected-tests record outside a sandbox and for a failed, empty and different-tree run; livespec-dev-tooling-svjqbe owns it.",
-    "work_item": "livespec-dev-tooling-svjqbe"
+    "test": "tests.consumer.test_affected_tests_suite_green_scenarios.test_unqualified_records_leave_the_full_suite_in_place"
   },
   {
     "spec_root": "SPECIFICATION",
