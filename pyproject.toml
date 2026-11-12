@@ -85,6 +85,7 @@ packages = ["livespec_dev_tooling"]
 # Hatchling preserves each source's mode, so the renderer lands executable
 # (verified 0755 against a real `uv build`, 2026-10-20).
 [tool.hatch.build.targets.wheel.force-include]
+"livespec_dev_tooling/data/cross_repo_public_api.json" = "livespec_dev_tooling/data/cross_repo_public_api.json"
 "ci-runner/k3s/phase2/gates/render-gate-job.sh" = "livespec_dev_tooling/gates/render-gate-job.sh"
 "ci-runner/k3s/phase2/gates/gate-job-template.yaml" = "livespec_dev_tooling/gates/gate-job-template.yaml"
 "ci-runner/k3s/phase2/gates/mint-private-sibling-token.sh" = "livespec_dev_tooling/gates/mint-private-sibling-token.sh"

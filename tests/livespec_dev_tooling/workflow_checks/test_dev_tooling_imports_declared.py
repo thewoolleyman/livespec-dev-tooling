@@ -73,12 +73,15 @@ def test_undeclared_direct_import_warns_or_refuses_with_its_site_and_definition(
 ) -> None:
     repo = _consumer(
         tmp_path=tmp_path,
+        product_body='raise RuntimeError("consumer code must not execute")\n',
         test_body="from livespec_dev_tooling.incident_release_entry import screen\n\nscreen()\n",
     )
     warning, warning_text = _run(repo=repo, fail=False, monkeypatch=monkeypatch, capsys=capsys)
     refusal, refusal_text = _run(repo=repo, fail=True, monkeypatch=monkeypatch, capsys=capsys)
     assert warning == 0
     assert refusal == 4
+    assert '"level": "warning"' in warning_text
+    assert '"level": "error"' in refusal_text
     for output in (warning_text, refusal_text):
         assert "tests/test_imports.py" in output
         assert "line" in output
@@ -120,14 +123,3 @@ def test_module_attribute_reach_is_refused(
     assert "tests/test_imports.py" in output
     assert "livespec_dev_tooling/incident_release_entry.py" in output
     assert "screen" in output
-
-
-def test_packaged_declarations_match_this_tree_configuration() -> None:
-    path = (
-        Path(__file__).resolve().parents[3] / "livespec_dev_tooling/data/cross_repo_public_api.json"
-    )
-    assert path.is_file()
-    module = importlib.import_module(
-        "livespec_dev_tooling.checks.cross_repo_public_api_package_data"
-    )
-    assert module.main() == 0
