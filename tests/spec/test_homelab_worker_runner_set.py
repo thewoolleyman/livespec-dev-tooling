@@ -107,15 +107,21 @@ def test_the_set_asks_for_no_fleet_node_capacity(path: Path) -> None:
 
 _CONVERGE = _PHASE2 / "reconstruct" / "converge-ci-stack.sh"
 _PLACEHOLDER = "arc-hook-pod-template-@HOOK_REVISION@"
+_HOOK_PUBLISH_STEP = 'Publish the hook-template ConfigMap revision the scale sets will mount"'
+_LISTENER_STEP = "Assert every scale-set listener references its scale set"
 
 
 def _run_converge_scale_set_step(*, tmp_path: Path, worker_files: list[str]) -> list[str]:
     """Run the converge's own release-map and step-7 text against stub tools; return helm's calls."""
     converge = _CONVERGE.read_text(encoding="utf-8")
     scale_sets = converge.split("declare -A SCALE_SETS=(", 1)[1].split("\nlog() {", 1)[0]
-    step = converge.split('log "7b. Publish the hook-template', 1)[1].split(
-        "# ---------------------------------------------------------------------------", 1
-    )[0]
+    # Anchored on each step's own words, never its number: a step added ahead of this one
+    # renumbers the labels (4793883d8 did), and a number would then select another step.
+    lines = converge.splitlines()
+    start = next(i for i, line in enumerate(lines) if _HOOK_PUBLISH_STEP in line)
+    end = next(i for i, line in enumerate(lines) if _LISTENER_STEP in line)
+    assert start < end
+    step = "\n".join(lines[start + 1 : end])
     arc = tmp_path / "arc"
     (arc / "worker").mkdir(parents=True)
     fleet_files = re.findall(r'\]="(values-[^"]+)"', scale_sets)
@@ -156,7 +162,8 @@ def _run_converge_scale_set_step(*, tmp_path: Path, worker_files: list[str]) -> 
             "RUNNERS_NAMESPACE=arc-runners",
             "ARC_SCALE_SET_CHART=chart.tgz",
             "log() { :; }",
-            f'declare -A SCALE_SETS=({scale_sets}\nlog "7b. Publish the hook-template{step}',
+            f"declare -A SCALE_SETS=({scale_sets}",
+            step,
         ]
     )
     _ = subprocess.run(
