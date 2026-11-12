@@ -11,8 +11,15 @@ collected tests.  A run whose key matches reuses the stored coverage and
 baseline failures and skips the measure stage; anything else measures again.
 
 A run in which coverage could not be measured stores nothing, so a transient
-failure is never reused.  The stored form names each test and each distinct
-set of tests once, because thousands of lines share the same tests.
+failure is never reused.  A stored baseline failure does not stick either: a
+run that reuses a measurement runs each stored failure again, alone, on the
+unmutated target, and keeps only those that still fail.  A test that failed
+once (one out-of-memory kill, say) therefore rejoins attribution in the next
+run, while a test that fails every time stays excluded.  Refusing to store a
+measurement with any baseline failure would be simpler, but a large suite
+rarely has none (run 20261111t1 read 16 of about 14,480), so it would never
+be reused where it matters.  The stored form names each test and each
+distinct set of tests once, because thousands of lines share the same tests.
 """
 
 from __future__ import annotations
@@ -21,25 +28,32 @@ import hashlib
 import json
 import platform
 import sys
+import tempfile
 from collections.abc import Callable
 from dataclasses import dataclass
 from importlib import metadata
 from pathlib import Path
-from typing import cast
+from typing import Protocol, cast
 
 from livespec_dev_tooling.mutation_kill_matrix_cache import tree_files
 from livespec_dev_tooling.mutation_kill_matrix_cache_store import write_whole
-from livespec_dev_tooling.mutation_kill_matrix_execution import CommandExecutor
+from livespec_dev_tooling.mutation_kill_matrix_execution import (
+    CommandExecutor,
+    WorkerTree,
+    run_selected,
+)
 from livespec_dev_tooling.mutation_kill_matrix_selection import PerTestCoverage
 
 __all__: list[str] = [
     "MEASUREMENT_SCHEMA",
     "Measurement",
+    "Rejudge",
     "load_measurement",
     "measurement_key",
     "measurement_path",
     "reuse_or_measure",
     "save_measurement",
+    "still_failing",
 ]
 
 
@@ -150,14 +164,45 @@ def save_measurement(*, path: Path | None, key: str, measurement: Measurement) -
     write_whole(path=path, text=json.dumps(document, sort_keys=True) + "\n")
 
 
+class Rejudge(Protocol):
+    """Judge stored baseline failures again and return those that still fail."""
+
+    def __call__(self, *, failures: frozenset[str]) -> frozenset[str]: ...
+
+
+def _keep(*, failures: frozenset[str]) -> frozenset[str]:
+    """Trust the stored failures: the default when a caller cannot run tests."""
+    return failures
+
+
+def still_failing(
+    *, execute: CommandExecutor, target: Path, failures: frozenset[str], timeout: float
+) -> frozenset[str]:
+    """Run each stored baseline failure again on the unmutated target; keep those that fail."""
+    with tempfile.TemporaryDirectory(prefix="kill-matrix-rejudge-") as scratch:
+        outcomes = run_selected(
+            execute=execute,
+            tree=WorkerTree(root=target, scratch=Path(scratch)),
+            tests=sorted(failures),
+            timeout=timeout,
+        )
+    return frozenset(test for test in failures if outcomes[test])
+
+
 def reuse_or_measure(
-    *, path: Path | None, key: str, measure: Callable[[], Measurement]
+    *, path: Path | None, key: str, measure: Callable[[], Measurement], rejudge: Rejudge = _keep
 ) -> Measurement:
-    """Return the stored measurement for this key, or measure now and store the result."""
+    """Return the stored measurement for this key, or measure now and store the result.
+
+    A reused measurement's baseline failures are judged again by `rejudge`.
+    """
     stored = load_measurement(path=path, key=key)
     if stored is not None:
         _ = sys.stderr.write(_REUSED)
-        return stored
+        return Measurement(
+            coverage=stored.coverage,
+            baseline_failures=rejudge(failures=stored.baseline_failures),
+        )
     measured = measure()
     save_measurement(path=path, key=key, measurement=measured)
     return measured

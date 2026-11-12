@@ -48,12 +48,18 @@ def _target(*, root: Path) -> Path:
     return target
 
 
-def _key(*, target: Path, tests: list[str] | None = None, timeout: float = 60.0) -> str:
+def _key(
+    *,
+    target: Path,
+    tests: list[str] | None = None,
+    timeout: float = 60.0,
+    engine_version: str = "3.2.3",
+) -> str:
     module = importlib.import_module(_MODULE)
     key: str = module.measurement_key(
         target=target,
         tests=[_T1, _T2] if tests is None else tests,
-        engine_version="3.2.3",
+        engine_version=engine_version,
         timeout=timeout,
         execute=_execute(),
     )
@@ -131,6 +137,96 @@ def test_the_key_moves_with_every_input_of_the_baseline_run_and_with_nothing_els
         assert _key(target=target) != before
         _ = (target / relative).write_text(original, encoding="utf-8")
     assert _key(target=target) == before
+
+
+class _Distribution:
+    """A stand-in for one installed distribution: a name and a version."""
+
+    def __init__(self, *, name: str, version: str) -> None:
+        self.metadata = {"Name": name}
+        self.version = version
+
+
+def test_the_key_moves_with_the_engine_the_python_version_and_the_dependency_set(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A different engine, interpreter or installed distribution is a different baseline run."""
+    module = importlib.import_module(_MODULE)
+    target = _target(root=tmp_path)
+    installed = [_Distribution(name="pytest", version="8.0.0")]
+    monkeypatch.setattr(module.metadata, "distributions", lambda: list(installed))
+    monkeypatch.setattr(module.platform, "python_version", lambda: "3.10.16")
+    before = _key(target=target)
+
+    assert _key(target=target, engine_version="3.2.4") != before
+
+    monkeypatch.setattr(module.platform, "python_version", lambda: "3.10.17")
+    assert _key(target=target) != before
+    monkeypatch.setattr(module.platform, "python_version", lambda: "3.10.16")
+    assert _key(target=target) == before
+
+    installed[0] = _Distribution(name="pytest", version="8.0.1")
+    assert _key(target=target) != before
+    installed[0] = _Distribution(name="pytest", version="8.0.0")
+    installed.append(_Distribution(name="coverage", version="7.0.0"))
+    assert _key(target=target) != before
+    _ = installed.pop()
+    assert _key(target=target) == before
+
+
+def test_a_reused_measurement_judges_its_stored_baseline_failures_again(*, tmp_path: Path) -> None:
+    """A stored failure is re-judged on reuse, so a one-off failure does not stick."""
+    module = importlib.import_module(_MODULE)
+    path = tmp_path / "measure.json"
+    measured = module.Measurement(coverage=_COVERAGE, baseline_failures=frozenset({_T1, _T2}))
+    asked: list[frozenset[str]] = []
+
+    def measure() -> object:
+        return measured
+
+    def rejudge(*, failures: frozenset[str]) -> frozenset[str]:
+        asked.append(failures)
+        return frozenset({_T2})
+
+    first = module.reuse_or_measure(path=path, key="k1", measure=measure, rejudge=rejudge)
+    assert first == measured
+    assert asked == []
+
+    reused = module.reuse_or_measure(path=path, key="k1", measure=measure, rejudge=rejudge)
+    assert asked == [frozenset({_T1, _T2})]
+    assert reused == module.Measurement(coverage=_COVERAGE, baseline_failures=frozenset({_T2}))
+    assert module.reuse_or_measure(path=path, key="k1", measure=measure) == measured
+
+
+def test_only_a_stored_failure_that_fails_again_on_the_unmutated_target_is_kept(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Each stored failure runs again, alone from the mutants, and is kept only if it fails."""
+    module = importlib.import_module(_MODULE)
+    target = tmp_path / "pkg"
+    (target / "tests").mkdir(parents=True)
+    _ = (target / "tests" / "test_calc.py").write_text(
+        "def test_add():\n    assert 1 + 1 == 2\n\n\ndef test_double():\n    assert 2 * 2 == 5\n",
+        encoding="utf-8",
+    )
+    for name in (
+        "COVERAGE_PROCESS_START",
+        "COV_CORE_CONFIG",
+        "COV_CORE_DATAFILE",
+        "COV_CORE_SOURCE",
+    ):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("PYTHONDONTWRITEBYTECODE", "1")
+
+    kept = module.still_failing(
+        execute=_execute(), target=target, failures=frozenset({_T1, _T2}), timeout=30.0
+    )
+
+    assert kept == frozenset({_T2})
+    assert (
+        module.still_failing(execute=_execute(), target=target, failures=frozenset(), timeout=30.0)
+        == frozenset()
+    )
 
 
 def test_a_matching_stored_measurement_is_reused_and_anything_else_is_measured(
