@@ -328,7 +328,7 @@ fleet's actual call volume) needs a live-cluster observation —
 | `arc/values-livespec-orchestrator-beads-fabro.yaml`, `kueue/cluster-queue-livespec-orchestrator-beads-fabro.yaml` | The TENTH repository, stood up 2026-09-04 (livespec plan `ci-runner-pod-lifecycle-reliability`, Carrier G1, `livespec-ifwnqj.1`) after the maintainer settled that its recorded hosted-only caution (the fleet's live golden-master tier lives in a separate workflow on a separate runner) was no reason to keep its ordinary CI off the pool. Committed in the same change that created the scale set. Its `maxRunners` was 42 until 2026-09-06 (now 6, bounded to its quota), twice a MEASURED 21-job matrix (master run 33893048859), the second real measurement after `livespec-driver-pi`'s; its arrival moved exactly one sibling quota (`livespec-driver-codex` 5 → 4) — see `kueue/DERIVATION.md` "Recomputation on the tenth repository". Scale set `livespec-orchestrator-k3s`: the 33-character repo name is truncated at the last hyphen-bounded prefix that fits the 30-character budget, like `livespec-orchestrator-git-k3s`. |
 | `arc/values-fabro.yaml`, `kueue/cluster-queue-fabro.yaml` | `thewoolleyman/fabro`, the fleet's Rust fork of Fabro and the first routed repository that is not a livespec repository (no beads tenant, no spec), stood up 2026-11-05 (`bd-ib-dqxcsh` part (a)) to run the fork's format, clippy and nextest jobs off the dev host. Scale set `fabro-k3s`, the name promised to the fork's owner. Its `nominalQuota` of 1 is a donation from `livespec-orchestrator-beads-fabro` (26 → 25, ceiling 52 → 50), its `maxRunners` of 2 is a recorded exception (the floor of 6 waived), its work volume request is 112Gi from a measured ~92 GiB cold debug build plus the 6.1 GiB release target, and it is the first scale set pinned to a node (`poweredge-xubuntu`). See `kueue/DERIVATION.md` "The fabro fork scale set (2026-11-05)". |
 | `arc/values-poweredge-xubuntu-k3s.yaml` | The surviving PHASE-1 proof scale set, also live and also captured 2026-08-19. Named by scale set rather than by repo because it points at `livespec-dev-tooling`, which already owns a `values-<repo>.yaml`. Not Kueue-gated; see the file's header. Its phase-1 sibling `local-ci-k3s` (`arc/values-local-ci-k3s.yaml`, captured the same day) was retired — Helm release uninstalled 2026-08-23, file deleted — under `livespec-s43svm.28`, because no workflow in any fleet repo routed to it. |
-| `reconstruct/converge-ci-stack.sh` | The one idempotent converge of the ENTIRE CI CLUSTER stack from this repository — ARC controller + every runner scale set in its `SCALE_SETS` map + the `arc-hook-pod-template` ConfigMap + Kueue core + every `ResourceFlavor`/`ClusterQueue`/`LocalQueue` — with zero manual `kubectl`/`helm` steps. One run takes an empty k3s datastore to all listeners `Running` and Kueue admitting — after first asserting (step 1b) that THIS SERVER'S OWN node allocatable `ci-runner.io/churn-slot` equals the capacity its profile declares (the profile the INSTALLED reapply unit names in its ExecStart), and re-running `patch-node-churn-capacity.sh` for that node when it does not (`livespec-kgl3`; scoped to the server's own node by R5, so it never re-stamps the agent's per-node capacity). See "Reconstruct-on-boot" below for the scope boundary and the `install-arc.sh`/`install-kueue.sh` drift it supersedes. |
+| `reconstruct/converge-ci-stack.sh` | The one idempotent converge of the ENTIRE CI CLUSTER stack from this repository — ARC controller + every runner scale set in its `SCALE_SETS` map + the `arc-hook-pod-template` ConfigMap + Kueue core + every `ResourceFlavor`/`ClusterQueue`/`LocalQueue` — with zero manual `kubectl`/`helm` steps. One run takes an empty k3s datastore to all listeners `Running` and Kueue admitting — after first asserting (step 1b) that THIS SERVER'S OWN node allocatable `ci-runner.io/churn-slot` equals the capacity its profile declares (the profile the INSTALLED reapply unit names in its ExecStart), and re-running `patch-node-churn-capacity.sh` for that node when it does not (`livespec-kgl3`; scoped to the server's own node by R5, so it never re-stamps the agent's per-node capacity). See "Reconstruct-on-boot" below for the scope boundary. |
 | `reconstruct/converge-ci-stack.service` | Boot-ordered `oneshot` (`After=k3s.service`; `After=`/`Wants=` `reapply-node-extended-resource.service` and `inject-github-app-secret.service`, so a hand-started converge pulls the reapply in too) that runs the converge once per boot. This is what makes the host CATTLE: today none of the cluster stack re-applies on boot, so a datastore wipe loses it. Since 2026-10-12 it also carries `Restart=on-failure` / `RestartSec=30` with a generous but BOUNDED `StartLimitIntervalSec=3600` / `StartLimitBurst=10` in `[Unit]`: with the default `Restart=no`, ONE transient failure at an unattended boot left the whole fleet with no CI until an operator ran `systemctl start` by hand (item `livespec-dev-tooling-tb2az6`). `on-failure` is the only restart mode systemd allows a `oneshot` — a converge that succeeded must stay exited — and the bound keeps a PERMANENT defect a readable failed unit rather than an invisible restart loop. |
 | `reconstruct/install-converge-unit.sh` | **(RETIRED in C5b, 9btv — the `ci_converge_unit` Ansible role installs this now; see `ansible/ci-pool.yml`.)** Copies the converge script AND the `arc/`+`kueue/` artifacts it applies into `/usr/local/lib/ci-runner-k3s/` (the host carries no repo checkout, so the boot unit must be self-contained), installs and enables the unit, then starts it and waits whenever those committed inputs changed. It names the unit result and journal tail on failure; an unchanged second apply does not start the unit. Node-local; re-run after editing any values/queue/template/converge artifact, and on any node rebuild. |
 | `datastore-tmpfs/var-lib-rancher-k3s-server-db.mount` | systemd `.mount` unit backing the k3s datastore directory (`/var/lib/rancher/k3s/server/db`; embedded etcd since livespec-dev-tooling-qy2nzf, kine/SQLite before it; size=6G) with tmpfs, so control-plane fsyncs are RAM-speed and never queue behind CI churn on the array (livespec plan `ci-runner-pod-lifecycle-reliability`, research/003: the kine `Slow SQL` stall that dropped Kueue's admission webhook fleet-wide on 2026-09-01). VOLATILE by design — cleared on every reboot, which is exactly what keeps the reconstruct-on-boot path exercised rather than rotting. See "Datastore on tmpfs" below for the two units it depends on, the fail-safe ordering, and the rollback. |
@@ -368,8 +368,8 @@ fleet's actual call volume) needs a live-cluster observation —
 `reconstruct/` makes the k3s server host **reconstructible** — the
 precondition for its datastore being volatile (tmpfs, below). Before it,
 the whole CI cluster stack lived ONLY in the k3s datastore, applied once by
-hand (`../provision-k3s.sh` → `../install-arc.sh` → `../install-kueue.sh`,
-plus the phase-2 per-repo scale sets and queues); nothing re-applied on
+hand (`../provision-k3s.sh` followed by phase-2 ARC and Kueue configuration);
+nothing re-applied on
 boot, so the host was a PET: wipe the datastore and the cluster is gone.
 `reconstruct/` closes that gap with a boot-ordered `systemd` `oneshot`
 (`converge-ci-stack.service`, `After=k3s.service`,
@@ -559,18 +559,12 @@ those already-decided artifacts durable. And it never creates the GitHub App
 secret — it fail-closes if the secret is absent (`../secret-reinjection/`
 owns re-injection).
 
-**Drift it supersedes.** `../install-arc.sh` step 2 applies the
-`poweredge-xubuntu-k3s` release from the PHASE-1 file `arc/values-host-unique.yaml`;
-the converge instead uses the phase-2 captured file
-`arc/values-poweredge-xubuntu-k3s.yaml` for EVERY scale set (including that
-one), and never calls `install-arc.sh` step 2. Likewise `../install-kueue.sh`
-applies the phase-1 `kueue/resources.yaml` whose `phase1-proof-*` objects are
-declared at `v1beta1`; the phase-2 tree carries the SAME objects at `v1beta2`
-(`kueue/cluster-queue-phase1-proof.yaml`), so the converge INLINES only the
-Kueue-core install and applies the phase-2 `kueue/` tree exclusively, rather
-than invoking `install-kueue.sh` and double-applying those objects at two API
-versions. Both choices mirror the same principle: the phase-2 captured
-artifacts are the source of truth, the phase-1 installers are superseded.
+**Phase-2 source of truth.** The converge uses
+`arc/values-poweredge-xubuntu-k3s.yaml` for that scale set and phase-2 values
+for every other one. It installs Kueue core and applies the phase-2 `kueue/`
+tree exclusively; `kueue/cluster-queue-phase1-proof.yaml` carries the former
+proof objects at `v1beta2`. The phase-2 captured artifacts are the source of
+truth for the whole cluster stack.
 
 **Committed live apply.** `ci_converge_unit` refreshes the installed tree and,
 when that tree changed, starts `converge-ci-stack.service` through the same
@@ -629,7 +623,7 @@ ConfigMap back and forth, restarting the manager every run. So the converge
 applies `kueue/core/` as ONE `kubectl apply --server-side -k`: upstream plus
 patches, merged, a single object set. It asserts the overlay's pinned release
 URL agrees with its own `KUEUE_VERSION` (the two are bumped together, with
-`install-kueue.sh` and "Pinned versions"), and it restarts the manager ONLY
+"Pinned versions"), and it restarts the manager ONLY
 when the ConfigMap's *content* changed across the apply — never on a boot
 from empty (the Deployment is created against the new ConfigMap already) and
 never on an unchanged warm run, which stays a no-op.
@@ -1225,10 +1219,9 @@ kubectl -n arc-runners get pods \
 helm get values <scale-set-name> -n arc-runners | grep githubConfigUrl
 ```
 
-The `install-arc.sh` scripts already run the first of these as a
-post-install verification step. That is not the same as documenting where
-the pool is enumerable: an operator triaging a stalled job is not reading
-an installer.
+The boot converge verifies the installed scale sets. That is not the same as
+documenting where the pool is enumerable: an operator triaging a stalled job
+is not reading the converge.
 
 **Addressing one member.** The unit of addressing here is the scale set,
 so directing work at one member means routing to its set — through the

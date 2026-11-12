@@ -12,7 +12,7 @@ On 2026-11-05 GitHub stopped serving the pinned runner version and in-flight CI 
 
 ## Modifications
 
-Scale-set values files live in two directories, ci-runner/k3s/phase2/arc/ and ci-runner/k3s/arc/ (the macbook homelab worker and host-unique sets pin actions-runner 2.338.2 there too, measured 2026-11-07), so the bump, the age trigger and the same-version check cover both. ci-runner/k3s/arc/values-host-unique.yaml pins a runner image with no container-hook path and no externals version, so the bump moves those only where a file carries them.
+Scale-set values files live in two directories, ci-runner/k3s/phase2/arc/ and ci-runner/k3s/arc/ (the macbook homelab worker set pins actions-runner 2.338.2 there too, measured 2026-11-07), so the bump, the age trigger and the same-version check cover both. The former phase-1 host-unique values file was deleted in livespec-dev-tooling-y4umcc; its runner image had no container-hook path or externals version, so the bump moved those only where a file carried them.
 
 ## Resulting Changes
 

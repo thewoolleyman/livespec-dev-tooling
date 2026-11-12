@@ -99,12 +99,3 @@ def test_the_set_asks_for_no_fleet_node_capacity(path: Path) -> None:
     spec = _load(path)["template"]["spec"]
     assert "schedulerName" not in spec
     assert "resources" not in _runner(_load(path))
-
-
-def test_install_arc_renders_each_worker_sets_hook_template_revision() -> None:
-    script = (_ROOT / "ci-runner" / "k3s" / "install-arc.sh").read_text(encoding="utf-8")
-    step = script.split('log "2b.', 1)[1].split('log "3.', 1)[0]
-    assert "converge-hook-pod-template.sh" in step
-    assert " --publish" in step
-    assert " --render-values " in step
-    assert '-f "$values"' not in step
