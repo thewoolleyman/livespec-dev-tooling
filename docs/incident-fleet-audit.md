@@ -72,9 +72,19 @@ capabilities.
 A consumer is ready when every row is classified, none is `deliberately-normal`, at least one is
 `implemented`, and all five capabilities were read. A `not-applicable` row needs a recorded reason,
 the manifest identity and a serving version equal to its release build, and never makes a consumer
-ready on its own. `just incident-enable` runs its own fresh audit and writes
-`~/.local/state/livespec/incident-enabled/<owner>__<repo>.json` only for a ready repository; it
-refuses, naming the missing evidence (or the unauthenticated-manifest finding), for any other.
+ready on its own. `just incident-enable` runs its own fresh audit and, only for a ready
+repository, writes the enablement record to the controller installation that serves it, through
+that installation's control route (`POST /enablement` on its local listener, with the projected
+`LIVESPEC_INCIDENT_CONTROL_SECRET`; run it through the credential wrapper). The controller confirms
+the manifest identity with its own two reads of core's default branch before it retains anything,
+answers an exact retry with the retained record, and serves the reading on the read-only query
+route (`/enablement/read`). The step refuses, naming the missing evidence (or the
+unauthenticated-manifest finding), for any other repository, and names the controller's refusal,
+an unreachable controller, or a repository no installation serves. No dev-host file stands in for
+the record (`livespec-dev-tooling-qmuk7z`, spec v205). The fence is armed and disarmed by explicit
+writes to the same route (`/fence/arm`, `/fence/disarm`); arming is refused until a record binds
+the current identity. The resolvers that read the record at each vantage are
+`livespec-dev-tooling-exdkra`.
 
 ## The committed claims
 
@@ -162,8 +172,7 @@ release-keyed reason above. The reasons behind those rows, measured on 2026-11-1
 
 ## Not done by this item
 
-- **Resolver enforcement.** The incident execution resolver does not yet consult the enablement
-  record, so `EXPEDITED_INCIDENT_RESPONSE=1` in a repository that was never enabled is not refused
-  by it. Where the record lives so that every resolver (dev host, CI runner, controller host) can
-  read it is a design decision this item does not make; it is carried by
-  `livespec-dev-tooling-2xxnku`.
+- **Resolver enforcement.** The record now lives on the controller (spec v205,
+  `livespec-dev-tooling-qmuk7z`), but the incident execution resolver does not yet read it, so
+  `EXPEDITED_INCIDENT_RESPONSE=1` in a repository that was never enabled is not refused. The
+  readers at the dev host, the CI runner and the controller host are `livespec-dev-tooling-exdkra`.
