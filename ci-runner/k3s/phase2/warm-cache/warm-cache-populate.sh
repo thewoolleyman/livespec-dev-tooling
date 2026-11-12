@@ -971,7 +971,8 @@ for name in "${fetched[@]}"; do
           lag_outcome=unreadable
         elif fabro_pass_active; then
           log "   sccache: the Fabro warm pass is running (or its Job list is unreadable); deferring the build this tick (serialized behind the Fabro pass)"
-          lag_outcome=failed
+          sccache_skipped_busy=$((sccache_skipped_busy + 1))
+          lag_outcome=deferred
         elif ! admitted_last="$(admitted_jobs)"; then
           log "   sccache: cannot read the pool's admitted-job count (Kueue API); treating the pool as busy — no build"
           admitted_last=""
