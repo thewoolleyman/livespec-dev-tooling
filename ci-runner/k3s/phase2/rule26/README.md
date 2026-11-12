@@ -39,6 +39,10 @@ same orchestrator commit, engine image and dependency set reuses it, logs
 `mutation-kill-matrix: reused the stored per-test coverage`, and skips the
 serial measure stage (about 3.6 h on run 20261111t1). A change to any input
 file, to the collected tests or to the per-test timeout measures again.
+A reusing run does not trust the stored baseline failures: it runs each of
+them again on the unmutated orchestrator and keeps only those that still
+fail, so a test that failed once (one out-of-memory kill, say) rejoins
+attribution in the next Job.
 
 ## Launch
 
