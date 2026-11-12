@@ -8,26 +8,20 @@
 # "Is a generator worth building?" for why, and for the recomputation steps
 # when the host's churn-slot capacity changes.
 #
-# nominalQuota derivation for THIS repo:
-#   demand weight w = 67 (podman-era ci-runner-supervisor apportionment)
-#   fleet weight sum W = 516 (482 podman-era + livespec-driver-pi's 13 + livespec-orchestrator-beads-fabro's 21)
-#   pool churn-slot capacity C = 44 (per-node since the 2026-11-03 rebalance: poweredge 24 + gmktec 12 + hp 8; poweredge 32 + gmktec 12 from R5; churn-slot capacity is per-node while the Kueue cohort quota is cluster-wide, so it sums to both nodes -- see DERIVATION.md "The derivation at C = 44 -- the two-node pool (2026-09-11)")
-#   exact share = C * w / W = 5.7132  ->  floor 5, +1 leftover unit
-#                                     (2nd-largest remainder) = 6
-#
-# The ten repositories' nominalQuota values sum to exactly 44 = C = 44 (plan
-# k3s-on-gmktec-for-vps-usage / epic livespec-sab5gn R5, 2026-09-11). C is now
-# the pool total — poweredge 24 + gmktec 12 + hp 8 since 2026-11-03, poweredge 32 + gmktec 12 from R5 — because churn-slot capacity is
-# per-node while the Kueue cohort quota is cluster-wide, so the ten values sum to
-# the pool's whole capacity across both nodes. Every repository's exact share
-# exceeds 1, so the apportionment carries NO `max(1, ...)` excess. Cohort
-# borrowing is bounded by the summed nominal quota, so a sum below it wastes
-# capacity; keep the ten values summing to exactly C. See DERIVATION.md "The
-# derivation at C = 44 -- the two-node pool (2026-09-11)".
+# nominalQuota for THIS repo: 1, the churn-slot-flavor value below, which is
+# the authority. The cohort's churn-slot-flavor quotas sum to 31, equal to the
+# pool's registered churn-slot capacity: poweredge 17 + gmktec 8 + hp 5 +
+# gamingpc 1 (DERIVATION.md "gamingpc-xubuntu joins: cohort 31 (2026-11-11)").
+# The demand-weight apportionment at C = 44 that set the earlier values was
+# superseded by the measured re-derivations from 2026-10-22 on, and each change
+# since is a dated DERIVATION.md section. To change a quota, follow
+# DERIVATION.md "Recomputing at another C" and keep the cohort's sum equal to
+# the registered capacity: a sum above it promises slots no node has, and a sum
+# below it idles capacity.
 #
 # nominalQuota is this repo's GUARANTEED FLOOR, not its ceiling. Unused quota
 # anywhere in the `fleet-ci-runner-pool` cohort is borrowable automatically,
-# so this repo can burst well above 12 when its peers are idle. The per-repo
+# so this repo can burst well above 1 when its peers are idle. The per-repo
 # ceiling is a SEPARATE number — ../arc/values-livespec-driver-codex.yaml's maxRunners, which
 # models the formula's "doubled repository logical ceiling" term. The two are
 # different terms of the same min() and are correctly UNEQUAL; see

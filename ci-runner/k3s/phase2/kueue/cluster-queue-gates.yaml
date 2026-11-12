@@ -50,7 +50,7 @@
 # to RELIEVE: a gate admitted would be one fewer CI runner admitted, fleet-wide.
 # Gates are quota'd on plain cpu/memory over their own flavor instead, so they
 # cannot consume a churn slot and are excluded from DERIVATION.md's
-# apportionment — the ten repositories' churn-slot quotas still sum to exactly
+# apportionment — the cohort's churn-slot quotas still sum to exactly
 # C, unchanged by this file.
 #
 # Read DERIVATION.md "The gates quota on gmktec-xubuntu and hp-xubuntu
