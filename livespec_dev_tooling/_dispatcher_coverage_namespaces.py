@@ -14,12 +14,16 @@ coverage-touching target runs alike whichever path selected it
 
 from __future__ import annotations
 
+import json
+import logging
 import os
 import shutil
 import tempfile
+import time
 from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from pathlib import Path
+from typing import TypeGuard
 
 from livespec_dev_tooling._check_target_isolation import termination_raises
 
@@ -28,8 +32,14 @@ __all__: list[str] = [
     "COVERAGE_NAMESPACES",
     "build_namespace_dirs",
     "isolated_environments",
+    "process_start_time",
+    "reclaim_abandoned_namespace_dirs",
     "target_env",
 ]
+
+_CREATOR_RECORD_NAME = ".livespec-coverage-creator.json"
+_UNRECORDED_NAMESPACE_MAX_AGE_SECONDS = 24 * 60 * 60
+_LOGGER = logging.getLogger(__name__)
 
 COVERAGE_NAMESPACES: dict[str, str] = {
     # The full-tree coverage pair shares one data file: per-file-coverage
@@ -55,6 +65,91 @@ COVERAGE_CONSUMERS: dict[str, str] = {
 }
 
 
+def process_start_time(*, pid: int) -> str | None:
+    """Return Linux's immutable start-time tick for `pid`, if it is observable."""
+    try:
+        stat = Path(f"/proc/{pid}/stat").read_text(encoding="utf-8")
+    except OSError:
+        return None
+    closing_parenthesis = stat.rfind(")")
+    fields = stat[closing_parenthesis + 1 :].split()
+    start_time_index = 19  # Field 22, after fields 1 (pid) and 2 (comm).
+    if closing_parenthesis < 0 or len(fields) <= start_time_index:
+        return None
+    return fields[start_time_index]
+
+
+def _is_string_keyed_dict(*, value: object) -> TypeGuard[dict[str, object]]:
+    """Narrow decoded JSON to an object whose keys are strings."""
+    return isinstance(value, dict)
+
+
+def _creator_identity(*, namespace_dir: Path) -> tuple[int, str] | None:
+    """Read a namespace's valid creator identity, if one was recorded."""
+    try:
+        loaded: object = json.loads(
+            (namespace_dir / _CREATOR_RECORD_NAME).read_text(encoding="utf-8")
+        )
+    except (OSError, json.JSONDecodeError):
+        return None
+    if not _is_string_keyed_dict(value=loaded):
+        return None
+    pid = loaded.get("pid")
+    start_time = loaded.get("start_time")
+    if (
+        not isinstance(pid, int)
+        or isinstance(pid, bool)
+        or not isinstance(start_time, str)
+        or not start_time
+    ):
+        return None
+    return pid, start_time
+
+
+def _creator_is_running(*, pid: int, start_time: str) -> bool:
+    """Return whether `pid` still names the recorded process."""
+    observed_start_time = process_start_time(pid=pid)
+    return observed_start_time == start_time
+
+
+def _is_old_unrecorded_namespace(*, namespace_dir: Path) -> bool:
+    """Return whether an unrecorded namespace has exceeded its grace period."""
+    modified_at = namespace_dir.stat().st_mtime
+    return time.time() - modified_at > _UNRECORDED_NAMESPACE_MAX_AGE_SECONDS
+
+
+def _remove_abandoned_namespace(*, namespace_dir: Path) -> None:
+    """Best-effort removal that cannot alter a runner's target verdict."""
+    try:
+        shutil.rmtree(namespace_dir)
+    except OSError as error:
+        _LOGGER.warning(
+            "could not remove abandoned coverage namespace %s: %s", namespace_dir, error
+        )
+
+
+def reclaim_abandoned_namespace_dirs(*, root: Path) -> None:
+    """Remove dead-recorded and old-unrecorded coverage namespaces below `root`."""
+    for namespace_dir in root.glob("covns-*"):
+        creator = _creator_identity(namespace_dir=namespace_dir)
+        if creator is None:
+            if _is_old_unrecorded_namespace(namespace_dir=namespace_dir):
+                _remove_abandoned_namespace(namespace_dir=namespace_dir)
+            continue
+        pid, start_time = creator
+        if not _creator_is_running(pid=pid, start_time=start_time):
+            _remove_abandoned_namespace(namespace_dir=namespace_dir)
+
+
+def _record_creator(*, namespace_dir: Path) -> None:
+    """Persist this runner's process identity in a newly minted namespace."""
+    pid = os.getpid()
+    start_time = process_start_time(pid=pid)
+    _ = (namespace_dir / _CREATOR_RECORD_NAME).write_text(
+        json.dumps({"pid": pid, "start_time": start_time}), encoding="utf-8"
+    )
+
+
 def build_namespace_dirs(
     *, targets: list[str], skip_set: frozenset[str], root: Path
 ) -> dict[str, Path]:
@@ -74,6 +169,7 @@ def build_namespace_dirs(
     fixture derives from TMPDIR — a TMPDIR inside the repo's git worktree
     breaks tests that assume `tmp_path` is not within any git repo.
     """
+    reclaim_abandoned_namespace_dirs(root=root)
     keys = {
         COVERAGE_NAMESPACES[name]
         for name in targets
@@ -82,6 +178,7 @@ def build_namespace_dirs(
     dirs: dict[str, Path] = {}
     for key in sorted(keys):
         ns_dir = Path(tempfile.mkdtemp(prefix=f"covns-{key}-", dir=str(root)))
+        _record_creator(namespace_dir=ns_dir)
         (ns_dir / "tmp").mkdir(exist_ok=True)
         dirs[key] = ns_dir
     return dirs
