@@ -30,7 +30,7 @@ from livespec_dev_tooling.shellcheck import (  # noqa: E402
 
 __all__: list[str] = []
 
-CHECK_PURITY = "tree-pure"
+CHECK_PURITY = "world-reading"
 
 _CHECK_ID = "shell-quality"
 _EXIT_VIOLATIONS = 1
