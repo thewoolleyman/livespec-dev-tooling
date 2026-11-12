@@ -84,7 +84,9 @@ _DEPLOYED_COMMIT = "9f6c38f"
 # the fleet instance is pinned to it too.
 # 2026-11-06: every gmktec instance is pinned to bbe6938, 85af354 plus the
 # Petri c6bfd5e3 output-drain fix (thewoolleyman/fabro#33).
-_FLEET_COMMIT = "bbe6938"
+# 2026-11-12: every gmktec instance is pinned to d22808f, the 0.408 build the
+# candidate proved (bd-ib-tcdmkr).
+_FLEET_COMMIT = "d22808f"
 # The candidate's build: the carrier tip on that branch, the fleet build plus the
 # node name on run_turn spans (thewoolleyman/fabro#14). The maintainer ruled it
 # onto the candidate and fabro-server-mi-homelab on 2026-11-02 (plan
@@ -97,7 +99,8 @@ _FLEET_COMMIT = "bbe6938"
 # bd-ib-qx45e6, plan fabro-currency), ahead of the fleet instance.
 # 2026-11-11: briefly back on bbe6938 for sandbox-driver-kubernetes v0.8.3's one-pod
 # parity sample (bd-ib-u4fp5z); after it passed, the candidate returned to 85071c8.
-_CANDIDATE_COMMIT = "85071c8"
+# 2026-11-12: d22808f, 85071c8 plus the sqlx patch for RUSTSEC-2026-0459 (bd-ib-tcdmkr).
+_CANDIDATE_COMMIT = "d22808f"
 _PINNED_COMMIT = {"fabro-server": _FLEET_COMMIT, "fabro-server-candidate": _CANDIDATE_COMMIT}
 _SUPERSEDED_CARRIER = "adeefec"
 _SUPERSEDED_BUILD_REFERENCE = "#1048"

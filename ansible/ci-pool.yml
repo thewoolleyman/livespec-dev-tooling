@@ -110,7 +110,9 @@
 #     reads no tier and needs no job. hp is a full agent and the
 #     kubernetes-sandbox-backend will place pods on it (that is what the factory
 #     label is for); a pod that names a confinement profile the node has not
-#     loaded fails to start for a reason nothing in the pod explains.
+#     loaded fails to start for a reason nothing in the pod explains. It also
+#     holds containerd's default profile at node level, which every pod that
+#     names NO profile runs under (livespec-dev-tooling-ddy5xu).
 #   * node_status_credential mints and delivers the scoped node-status
 #     kubeconfig. It runs at capacity 0 because an ADVERTISED zero and an ABSENT
 #     resource are different facts: a ClusterQueue naming a resource no node
@@ -231,8 +233,9 @@
     # 2e/10 — fpart/fpsync, the fleet's bulk tree-copy tool (every host).
     - role: fpart
       tags: [fpart]
-    # 3/10 — AppArmor kernel profile (both roles; the ConfigMap half is the
-    # server's converge, not this role).
+    # 3/10 — AppArmor kernel profiles (both roles; the ConfigMap half is the
+    # server's converge, not this role): the workflow profile pods name, and
+    # containerd's default profile for the pods that name none.
     - role: apparmor_profile
       tags: [apparmor_profile]
     # Beside it, and for the same reason it runs on a node that executes no CI

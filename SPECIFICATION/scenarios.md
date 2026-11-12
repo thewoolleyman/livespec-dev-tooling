@@ -684,6 +684,20 @@ And once the drill exits the API server MUST NOT list that namespace, and no obj
 
 And applying the drill without its confirmation, or with `factory`, `factory-mi-homelab` or an existing namespace configured, MUST exit before any cluster write
 
+## Scenario: a factory sandbox loss drill deletes exactly one named run's sandbox pod and nothing else
+
+Given the k3s cluster reached from the control node `vps`, and a Fabro run with exactly one factory sandbox pod, which the API server lists in the factory namespace the drill is configured to act in, and that run's committed tree on an origin ref whose diff against its merge-base with the run's repository's default branch is non-empty
+
+When an operator applies the factory sandbox loss drill with its confirmation naming the k3s server, its run id naming that run and its preserved-ref naming that origin ref
+
+Then the drill MUST delete that pod once and wait until the API server lists no pod with that pod's UID, and no other object in the cluster MUST have been created, modified or deleted by the drill
+
+And the drill MUST print the run id, the pod's name and UID, the UTC time it issued the delete and the UTC time at which it first saw the API server list no pod with that UID
+
+And applying the drill without its confirmation or its run id MUST read nothing and exit 0, while a confirmed application whose namespace is not `factory` or `factory-mi-homelab`, or whose run id resolves to no pod, to more than one pod, or to a pod without the `sandbox-driver-kubernetes/sandbox` label, MUST exit non-zero before any cluster write
+
+And applying the drill for a run whose committed tree is not preserved on an origin ref with a non-empty diff against its merge-base with the default branch MUST exit non-zero before any cluster write
+
 ## Scenario: a new heading-coverage TODO row absent from the debt register fails the authoring-time armed tier
 
 Given a contributor's staged change adds a `test: "TODO"` heading-coverage row that is not present in the repository's `tests/heading-coverage-debt.json` register
@@ -1077,6 +1091,18 @@ Given a member of livespec-dev-tooling's check aggregate that carries no purity 
 When livespec-dev-tooling's full `just check` aggregate runs
 
 Then the aggregate MUST exit non-zero
+
+And its output MUST name that member
+
+## Scenario: a consuming repository's check aggregate refuses a member with no purity declaration
+
+Given a consuming repository that records the green token
+
+And a member of its `just check` aggregate that is not a canonical check (a module under `livespec_dev_tooling/checks/`) and has no purity line in the repository's `check-targets.txt`
+
+When the repository's `just check` aggregate runs
+
+Then the aggregate MUST exit non-zero before any member runs
 
 And its output MUST name that member
 
@@ -3267,6 +3293,32 @@ When the host-side flake reader runs
 
 Then it MUST file exactly one root-fix work item, for the node id that had none
 
+## Scenario: a root-fix item the reader files in a claim-token tenant names its claim token in the creating write
+
+Given `.livespec.jsonc` commits `dispatcher.claim_tokens` as true
+
+And `tmp/flake-retries/` holds a record for one node id that has no open root-fix work item
+
+When the host-side flake reader runs
+
+Then the reader MUST file the root-fix item through the work-item store's capture path, which names the item's first claim token in the write that creates it
+
+And the item MUST rest in the status the intake gate routed it to, and the reader's pass MUST exit zero
+
+## Scenario: a root-fix item whose intake routing is refused is routed again on the reader's next pass
+
+Given `tmp/flake-retries/` holds records for two node ids, neither of which has an open root-fix work item
+
+And the work-item store's intake gate refuses the first routing of the item the reader files for the first node id
+
+When the host-side flake reader runs
+
+Then it MUST still file and route a root-fix item for the second node id
+
+And its pass MUST exit non-zero, and its log MUST name the first item's id and the refusal text
+
+And when the reader runs again with the intake gate accepting, it MUST route the first item, MUST NOT route the second item again, and MUST NOT file a second root-fix item for either node id while their items are open
+
 ## Scenario: a re-run test's record reaches the host-side reader as a CI artifact
 
 Given the coverage job of this repository, livespec, livespec-overseer or livespec-orchestrator-beads-fabro, whose pytest session re-runs a test
@@ -4656,3 +4708,99 @@ When that member's CI `export-telemetry` job runs
 Then it MUST emit the run's `ci.run` and `ci.job.<name>` spans by running that module
 
 And the member's repository MUST carry no copy of the exporter's span-building logic
+
+## Scenario: a check runner reclaims the coverage directory a killed runner left behind
+
+Given a coverage-namespace directory under the system temp directory whose recorded creator process is no longer running
+
+And a coverage-namespace directory whose recorded creator is a check runner still running
+
+When another check runner starts and creates its own coverage-namespace directories
+
+Then the directory whose creator is no longer running MUST be removed
+
+And the directory whose creator is still running MUST remain in place
+
+And the running runner's verdict MUST be unchanged
+
+## Scenario: a consumer's commit-hook check reports a livespec_dev_tooling function its installed build does not declare
+
+Given a consuming repository whose test file imports a function from livespec_dev_tooling
+
+And the consumer's installed livespec-dev-tooling build neither declares that function in its shipped cross_repo_public_api nor makes it public under the repo-local consumption oracle
+
+And LIVESPEC_FAIL_IF_UNDECLARED_DEV_TOOLING_IMPORTS is set
+
+When the consumer runs `python -m livespec_dev_tooling.workflow_checks.dev_tooling_imports_declared`
+
+Then the check MUST exit 4
+
+And its output MUST name the import's file and line
+
+And its output MUST name the missing declaration's file and function
+
+## Scenario: a consumer whose every livespec_dev_tooling function is declared or locally public passes the commit-hook check
+
+Given a consuming repository that reaches one livespec_dev_tooling function declared in its installed build's shipped cross_repo_public_api
+
+And reaches a second livespec_dev_tooling function that is public under the repo-local consumption oracle and not declared
+
+And imports a third, `_`-prefixed livespec_dev_tooling function that is neither declared nor public
+
+And LIVESPEC_FAIL_IF_UNDECLARED_DEV_TOOLING_IMPORTS is set
+
+When the consumer runs `python -m livespec_dev_tooling.workflow_checks.dev_tooling_imports_declared`
+
+Then the check MUST exit 0
+
+And its output MUST name no offender
+
+## Scenario: a declaration present only on livespec-dev-tooling's default branch does not satisfy the commit-hook check
+
+Given a consuming repository that imports a livespec_dev_tooling function
+
+And that function is declared in cross_repo_public_api on livespec-dev-tooling's default branch but not in the consumer's installed release
+
+And LIVESPEC_FAIL_IF_UNDECLARED_DEV_TOOLING_IMPORTS is set
+
+When the consumer runs `python -m livespec_dev_tooling.workflow_checks.dev_tooling_imports_declared`
+
+Then the check MUST exit 4
+
+And its output MUST name that import as undeclared
+
+## Scenario: with the fail variable unset, a consumer's commit-hook check reports an undeclared livespec_dev_tooling function and exits 0
+
+Given a consuming repository whose test file imports a livespec_dev_tooling function its installed build neither declares nor makes public under the repo-local consumption oracle
+
+And LIVESPEC_FAIL_IF_UNDECLARED_DEV_TOOLING_IMPORTS is unset
+
+When the consumer runs `python -m livespec_dev_tooling.workflow_checks.dev_tooling_imports_declared`
+
+Then the check MUST exit 0
+
+And its output MUST report that import as a warning naming its file and line and the missing declaration's file and function
+
+## Scenario: a consumer's commit-hook check reports an undeclared livespec_dev_tooling function reached as an attribute of an imported module
+
+Given a consuming repository that imports a livespec_dev_tooling module and calls one of its functions as an attribute of that module
+
+And the consumer's installed livespec-dev-tooling build neither declares that function nor makes it public under the repo-local consumption oracle
+
+And LIVESPEC_FAIL_IF_UNDECLARED_DEV_TOOLING_IMPORTS is set
+
+When the consumer runs `python -m livespec_dev_tooling.workflow_checks.dev_tooling_imports_declared`
+
+Then the check MUST exit 4
+
+And its output MUST name the attribute reach's file and line and the missing declaration's file and function
+
+## Scenario: livespec-dev-tooling's check aggregate fails when its cross_repo_public_api package-data file and pyproject.toml disagree
+
+Given a livespec-dev-tooling tree whose committed cross_repo_public_api package-data file lacks one entry that its pyproject.toml cross_repo_public_api array carries
+
+When livespec-dev-tooling's full `just check` aggregate runs
+
+Then the aggregate MUST exit non-zero
+
+And its output MUST name that entry

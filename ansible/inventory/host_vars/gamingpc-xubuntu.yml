@@ -24,12 +24,16 @@ otel_collector_env_from_controller:
 disk_guard_threshold_gb: 40
 
 # --- factory_budget_reconciler ---
-# One factory sandbox pod. A run is 4 cpu / 8 Gi
-# (ci-runner/k3s/phase2/factory/DERIVATION.md) and this node's one-third
-# memory share is about 8.8 GiB of ~26.5 GiB allocatable, so memory binds
-# first at one run. Raise it only from a measured read (runs per hour, green
-# rate, the node's CI p95).
-factory_pod_budget: 1
+# Two factory sandbox pods: legacy-coordinator-agent ruling, 2026-11-12
+# ~10:12Z, on a STRANDED-CAPACITY read (rule K, the same derivation on every
+# factory node). Measured 2026-11-12 ~10:05Z: allocatable 16 cpu / 30.4 GiB;
+# the gate lanes pinned here reserve 5 cpu / 8 GiB
+# (gates-repro-cq/gates-repro-gamingpc-flavor; gates-gamingpc-flavor is 0); a
+# factory sandbox pod requests 3 cpu / 7630Mi. After the lanes and the
+# warm-uv-cache pod (500m / 512Mi), cpu fits 3.67 pods and memory
+# (30.4 - 8 - 0.5) / 7.45 = 2.94, so 2. Was 1 (an earlier one-third memory
+# share read against ~26.5 GiB allocatable). REVERT: factory_pod_budget: 1
+factory_pod_budget: 2
 
 # --- node_status_credential ---
 # The agent-side account the refresh tool drops its fetch to is this node's

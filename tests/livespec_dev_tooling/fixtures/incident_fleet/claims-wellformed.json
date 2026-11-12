@@ -1,0 +1,46 @@
+{
+  "schema": 1,
+  "evidence": [
+    {
+      "repository": "thewoolleyman/livespec-dev-tooling",
+      "surface": "Normal master context",
+      "disposition": "implemented",
+      "manifest_sha256": "59912fe1d3cad2938389deba186b0478759f0278be2bfea462c20a39d2a9054c",
+      "source_path": "thewoolleyman/livespec-dev-tooling:livespec_dev_tooling/incident_execution.py",
+      "release_build": "v1.0.0",
+      "proof_ref": "fixture: thewoolleyman/livespec-dev-tooling incident chain read for a test",
+      "owner": "thewoolleyman/livespec-dev-tooling",
+      "incident_item": "livespec-dev-tooling-fixture",
+      "cumulative_scope": "0000000000000000000000000000000000000000000000000000000000000000",
+      "normal_factory_proof": "fixture: a merged normal repayment"
+    },
+    {
+      "repository": "thewoolleyman/livespec-driver-claude",
+      "surface": "Generated projects",
+      "disposition": "not-applicable",
+      "manifest_sha256": "59912fe1d3cad2938389deba186b0478759f0278be2bfea462c20a39d2a9054c",
+      "source_path": "thewoolleyman/livespec:templates/orchestrator-plugin/copier.yml",
+      "release_build": "livespec-dev-tooling@1111111111111111111111111111111111111111",
+      "proof_ref": "fixture: thewoolleyman/livespec-driver-claude tree read for a test",
+      "owner": "thewoolleyman/livespec",
+      "incident_item": "",
+      "cumulative_scope": "",
+      "normal_factory_proof": "",
+      "reason": "fixture: no Copier template"
+    },
+    {
+      "repository": "thewoolleyman/hetzner-xubuntu-info",
+      "surface": "Focused test selection",
+      "disposition": "not-applicable",
+      "manifest_sha256": "59912fe1d3cad2938389deba186b0478759f0278be2bfea462c20a39d2a9054c",
+      "source_path": "thewoolleyman/hetzner-xubuntu-info:.venv",
+      "release_build": "2222222222222222222222222222222222222222",
+      "proof_ref": "fixture: thewoolleyman/hetzner-xubuntu-info tree read for a test",
+      "owner": "thewoolleyman/hetzner-xubuntu-info",
+      "incident_item": "",
+      "cumulative_scope": "",
+      "normal_factory_proof": "",
+      "reason": "fixture: no tests"
+    }
+  ]
+}

@@ -7,7 +7,8 @@ surface and runs no language model and no network service.  One run:
 1. generates, measures and plans (see `mutation_kill_matrix_stages`): the
    mutant catalogue (generated only, never `mutmut run`), per-test coverage
    with the baseline failures it reveals, and each mutant's selected tests
-   and cache key;
+   and cache key; a measurement stored for an unchanged tree is reused
+   instead of measured again (see `mutation_kill_matrix_measurement`);
 2. reuses every cached outcome whose inputs are unchanged (see
    `mutation_kill_matrix_cache`);
 3. runs every other mutant in a worker's private copy of the target, all of
@@ -36,6 +37,7 @@ from livespec_dev_tooling.mutation_kill_matrix import (
 )
 from livespec_dev_tooling.mutation_kill_matrix_cache import CachedOutcome, load_cache, save_cache
 from livespec_dev_tooling.mutation_kill_matrix_changes import build_changes
+from livespec_dev_tooling.mutation_kill_matrix_checkpoint import Checkpoint
 from livespec_dev_tooling.mutation_kill_matrix_execution import CommandExecutor, execute_command
 from livespec_dev_tooling.mutation_kill_matrix_pool import run_pending
 from livespec_dev_tooling.mutation_kill_matrix_selection import (
@@ -46,7 +48,7 @@ from livespec_dev_tooling.mutation_kill_matrix_stages import (
     ENGINE_VERSION,
     MutantPlan,
     generate,
-    measure,
+    measure_or_reuse,
     plan_mutants,
 )
 
@@ -81,6 +83,7 @@ class RunOptions:
     cache_path: Path | None = None
     previous_report: Path | None = None
     workspace: Path | None = None
+    checkpoint_seconds: float = 300.0
 
 
 def source_revision(*, target: Path) -> str:
@@ -122,8 +125,12 @@ def run_kill_matrix(
     """Run each mutmut mutant against the tests that execute it and write one report."""
     options = options or RunOptions()
     generated, tests = generate(execute=execute, target=target)
-    coverage, baseline_failures = measure(
-        execute=execute, target=target, tests=tests, timeout=options.per_test_timeout
+    coverage, baseline_failures = measure_or_reuse(
+        execute=execute,
+        target=target,
+        tests=tests,
+        timeout=options.per_test_timeout,
+        cache_path=options.cache_path,
     )
     plans = plan_mutants(
         execute=execute,
@@ -139,13 +146,28 @@ def run_kill_matrix(
         for plan in plans
         if cache is not None and plan.key in cache
     }
+    pending = [plan for plan in plans if plan.mutant.identifier not in reused]
+    # Save finished outcomes as execution runs, so a run its deadline ends
+    # leaves them for the next run to reuse.
+    checkpoint = Checkpoint(
+        path=options.cache_path,
+        keys={plan.mutant.identifier: plan.key for plan in pending},
+        seeded={
+            plan.key: reused[plan.mutant.identifier]
+            for plan in plans
+            if plan.mutant.identifier in reused
+        },
+        total=len(pending),
+        every_seconds=options.checkpoint_seconds,
+    )
     outcomes = reused | run_pending(
         execute=execute,
         target=target,
-        plans=[plan for plan in plans if plan.mutant.identifier not in reused],
+        plans=pending,
         workers=options.workers,
         timeout=options.per_test_timeout,
         workspace=options.workspace,
+        on_outcome=checkpoint.record,
     )
     unapplied = frozenset(mutant for mutant, outcome in outcomes.items() if outcome.unapplied)
     if len(unapplied) == len(plans):

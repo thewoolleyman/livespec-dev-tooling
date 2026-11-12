@@ -54,7 +54,30 @@ if not readiness: readiness.append(integer(0, {"k8s.readiness_check": "api-serve
 metrics = [gauge("livespec.ci_k3s.readiness_check", "1", readiness), gauge("livespec.ci_k3s.readiness_latency_seconds", "s", [decimal(int(latency_ns) / 1_000_000_000)])]
 
 if not int(metrics_rc):
-    storage, series = [], defaultdict(lambda: {"buckets": [], "sum": None, "count": None, "labels": {}})
+    storage = []
+    handler_timeout_counts = defaultdict(int)
+    histogram_series = {
+        "etcd_request_duration_seconds": defaultdict(
+            lambda: {
+                "buckets": defaultdict(int),
+                "sum": 0.0,
+                "has_sum": False,
+                "count": 0,
+                "has_count": False,
+                "labels": {},
+            }
+        ),
+        "apiserver_request_duration_seconds": defaultdict(
+            lambda: {
+                "buckets": defaultdict(int),
+                "sum": 0.0,
+                "has_sum": False,
+                "count": 0,
+                "has_count": False,
+                "labels": {},
+            }
+        ),
+    }
     pattern = re.compile(r"^(?P<name>[a-zA-Z_:][a-zA-Z0-9_:]*)(?:\{(?P<labels>[^}]*)\})?\s+(?P<value>[-+0-9.eE]+)$")
     label = re.compile(r'([^=,]+)="((?:\\\\.|[^"\\])*)"')
     for line in open(metrics_path, encoding="utf-8"):
@@ -63,22 +86,50 @@ if not int(metrics_rc):
         name, raw, value = match.group("name"), match.group("labels") or "", float(match.group("value"))
         labels = {key: bytes(text, "utf-8").decode("unicode_escape") for key, text in label.findall(raw)}
         if name == "apiserver_storage_size_bytes": storage.append(decimal(value, labels)); continue
-        suffix = next((item for item in ("_bucket", "_sum", "_count") if name == "etcd_request_duration_seconds" + item), None)
-        if suffix is None: continue
-        le = labels.pop("le", None); item = series[tuple(sorted(labels.items()))]; item["labels"] = labels
-        if suffix == "_bucket" and le is not None: item["buckets"].append((le, int(value)))
-        elif suffix == "_sum": item["sum"] = value
-        elif suffix == "_count": item["count"] = int(value)
+        if name == "apiserver_request_total":
+            if labels.get("code") == "504" and {"verb", "resource"} <= labels.keys():
+                dimensions = {key: labels[key] for key in ("verb", "resource")}
+                handler_timeout_counts[tuple(sorted(dimensions.items()))] += int(value)
+            continue
+        histogram_name = next(
+            (
+                candidate
+                for candidate in histogram_series
+                if name in {candidate + suffix for suffix in ("_bucket", "_sum", "_count")}
+            ),
+            None,
+        )
+        if histogram_name is None: continue
+        suffix = name.removeprefix(histogram_name)
+        le = labels.pop("le", None)
+        if histogram_name == "apiserver_request_duration_seconds":
+            labels = {key: labels[key] for key in ("verb", "resource") if key in labels}
+        item = histogram_series[histogram_name][tuple(sorted(labels.items()))]
+        item["labels"] = labels
+        if suffix == "_bucket" and le is not None: item["buckets"][le] += int(value)
+        elif suffix == "_sum":
+            item["sum"] += value
+            item["has_sum"] = True
+        elif suffix == "_count":
+            item["count"] += int(value)
+            item["has_count"] = True
     if storage: metrics.append(gauge("apiserver_storage_size_bytes", "By", storage))
-    points = []
-    for item in series.values():
-        if item["count"] is None: continue
-        ordered = sorted(item["buckets"], key=lambda pair: float("inf") if pair[0] == "+Inf" else float(pair[0]))
-        counts = [count for _bound, count in ordered]
-        point = {"timeUnixNano": now_ns, "count": str(item["count"]), "sum": item["sum"] or 0.0, "bucketCounts": [str(value - (counts[index - 1] if index else 0)) for index, value in enumerate(counts)], "explicitBounds": [float(bound) for bound, _value in ordered if bound != "+Inf"]}
-        if item["labels"]: point["attributes"] = attrs(item["labels"])
-        points.append(point)
-    if points: metrics.append({"name": "etcd_request_duration_seconds", "unit": "s", "histogram": {"aggregationTemporality": 2, "dataPoints": points}})
+    for histogram_name, series in histogram_series.items():
+        points = []
+        for item in series.values():
+            if not item["has_count"]: continue
+            ordered = sorted(item["buckets"].items(), key=lambda pair: float("inf") if pair[0] == "+Inf" else float(pair[0]))
+            counts = [count for _bound, count in ordered]
+            point = {"timeUnixNano": now_ns, "count": str(item["count"]), "sum": item["sum"] if item["has_sum"] else 0.0, "bucketCounts": [str(value - (counts[index - 1] if index else 0)) for index, value in enumerate(counts)], "explicitBounds": [float(bound) for bound, _value in ordered if bound != "+Inf"]}
+            if item["labels"]: point["attributes"] = attrs(item["labels"])
+            points.append(point)
+        if points: metrics.append({"name": histogram_name, "unit": "s", "histogram": {"aggregationTemporality": 2, "dataPoints": points}})
+    handler_timeout_points = [
+        integer(value, dict(dimensions))
+        for dimensions, value in handler_timeout_counts.items()
+    ]
+    if handler_timeout_points:
+        metrics.append({"name": "apiserver_request_total", "unit": "1", "sum": {"aggregationTemporality": 2, "isMonotonic": True, "dataPoints": handler_timeout_points}})
 
 used, total = filesystem.split()
 metrics.extend([gauge("livespec.ci_k3s.datastore_used_bytes", "By", [integer(used)]), gauge("livespec.ci_k3s.datastore_total_bytes", "By", [integer(total)])])
