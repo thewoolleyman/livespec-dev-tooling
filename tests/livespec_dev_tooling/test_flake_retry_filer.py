@@ -6,6 +6,7 @@ import importlib
 import json
 import os
 from pathlib import Path
+from unittest.mock import Mock
 
 import pytest
 from returns.result import Failure, Success
@@ -263,6 +264,33 @@ def test_the_host_cli_reports_the_nodeids_it_files(
         )
         == 0
     )
+
+
+def test_the_host_cli_uses_an_explicit_fixture_plugin_root(
+    *, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """An injected root bypasses HOME registry lookup for a fixture-only host run."""
+    filer = importlib.import_module("livespec_dev_tooling.flake_retry_filer")
+    observed_roots: list[Path] = []
+
+    def capture_plugin_root(*, plugin_root: Path, **_: object) -> tuple[str, ...]:
+        observed_roots.append(plugin_root)
+        return ()
+
+    override = tmp_path / "fixture-plugin"
+    registry_must_not_run = Mock()
+    monkeypatch.setattr(filer, "file_root_fixes", capture_plugin_root)
+    monkeypatch.setattr(filer, "registered_plugin_root", registry_must_not_run)
+
+    assert (
+        filer.main(
+            argv=["--repo-root", str(tmp_path), "--state-dir", str(tmp_path / "state")],
+            plugin_root=override,
+        )
+        == 0
+    )
+    assert observed_roots == [override]
+    registry_must_not_run.assert_not_called()
 
 
 def test_the_host_cli_marks_a_completed_reader_pass(
