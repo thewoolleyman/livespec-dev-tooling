@@ -248,6 +248,55 @@ def test_a_silent_suite_is_killed_whole_once_it_stalls(tmp_path: Path) -> None:
     assert not _live_processes_carrying(token)
 
 
+def test_a_silent_suite_reaps_a_descendant_that_started_its_own_session() -> None:
+    """A suite stall reaches a subprocess that escaped the suite process group."""
+    mod = _load()
+    token = f"livespec-suite-session-escape-{uuid.uuid4().hex}"
+    escaped = "import os, time; " "os.setsid(); " f"time.sleep(300)  # {token}"
+    leader = (
+        "import subprocess, sys, time; "
+        f"subprocess.Popen([sys.executable, '-c', {escaped!r}]); "
+        "print('ready', flush=True); "
+        "time.sleep(300)"
+    )
+
+    run = mod.run_suite(
+        argv=[sys.executable, "-c", leader],
+        bound=mod.SuiteBound(stall_seconds=2, ceiling_seconds=None),
+    )
+
+    assert not _live_processes_carrying(token)
+    assert "ending out-of-group descendant pid=" in run.output
+    assert token in run.output
+
+
+def test_session_escape_snapshot_ignores_a_descendant_that_exits_during_the_scan(
+    *, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A vanished descendant is not a cleanup failure or an inaccurate output record."""
+    mod = _load()
+    monkeypatch.setattr(mod, "_descendant_pids", lambda **_: (123,))
+    monkeypatch.setattr(mod.os, "getpgid", lambda _pid: 456)
+
+    class UnreadablePath:
+        def read_bytes(self) -> bytes:
+            raise OSError("process exited")
+
+    monkeypatch.setattr(mod, "Path", lambda _path: UnreadablePath())
+
+    assert mod.session_escaping_descendants(root_pid=1) == ()
+
+
+def test_descendant_liveness_reports_a_process_that_survived_term(
+    *, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The grace loop waits when a snapshot descendant remains alive after TERM."""
+    mod = _load()
+    monkeypatch.setattr(mod.os, "kill", lambda _pid, _signal: None)
+
+    assert mod.any_descendant_alive(descendants=((123, "escapee"),)) is True
+
+
 def test_the_gate_runners_progress_stamp_is_one_of_the_scrubbed_gate_variables() -> None:
     """The caller's progress stamp is scrubbed like every gate-shaping variable.
 
