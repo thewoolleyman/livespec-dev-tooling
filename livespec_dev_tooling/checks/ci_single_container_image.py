@@ -61,6 +61,8 @@ _TRAILING_COMMENT = re.compile(r"[ \t]+#.*$")
 _JOB_KEY = re.compile(r"^[ \t]{2}(?P<name>[^ \t:#][^:]*):[ \t]*(?:#.*)?$")
 _JUST_TARGET = re.compile(r"\bjust[ \t]+(?P<target>check(?:-[a-z0-9-]+)?)\b")
 _TARGET = re.compile(r"^check(?:-[a-z0-9-]+)?$")
+_CHECK_RECIPE = re.compile(r"^check(?:[ \t]+[^:]*)?:[ \t]*(?P<dependencies>.*)$")
+_RECIPE_HEADER = re.compile(r"^[^ \t#:][^:]*:[ \t]*(?:#.*)?$")
 _HINT = (
     "Every job must name one image repository and release version. Layered flavors are "
     "allowed only off the gate path, beneath a dash-separated gate-flavor prefix."
@@ -147,14 +149,31 @@ def _aggregate_targets(*, repo_root: Path) -> set[str]:
     """The ``check`` aggregate itself plus its enumerable member targets."""
     inventory = repo_root / "check-targets.txt"
     try:
-        source = inventory.read_text(encoding="utf-8")
+        entries = inventory.read_text(encoding="utf-8").splitlines()
     except OSError:
         try:
-            source = (repo_root / "justfile").read_text(encoding="utf-8")
+            justfile = (repo_root / "justfile").read_text(encoding="utf-8")
+            entries = _check_recipe_targets(source=justfile)
         except OSError:
             return set()
-    entries = {line.split("#", maxsplit=1)[0].strip() for line in source.splitlines()}
-    return {"check"} | {entry for entry in entries if _TARGET.fullmatch(entry)}
+    targets = {entry.split("#", maxsplit=1)[0].strip() for entry in entries}
+    return {"check"} | {target for target in targets if _TARGET.fullmatch(target)}
+
+
+def _check_recipe_targets(*, source: str) -> list[str]:
+    """The direct dependencies and body-listed targets of the ``check`` recipe."""
+    entries: list[str] = []
+    in_check_recipe = False
+    for line in source.splitlines():
+        if match := _CHECK_RECIPE.match(line):
+            in_check_recipe = True
+            entries.extend(match.group("dependencies").split())
+            continue
+        if _RECIPE_HEADER.match(line):
+            in_check_recipe = False
+        if in_check_recipe:
+            entries.append(line.strip())
+    return entries
 
 
 def _image_parts(*, image: str) -> tuple[str, str, str] | None:
