@@ -1,0 +1,41 @@
+import json,sys,subprocess,datetime as dt,bisect
+S=sys.argv[1]
+T=lambda s: dt.datetime.fromisoformat(s)
+pct=lambda xs,p: sorted(xs)[min(len(xs)-1,int(p/100*len(xs)))] if xs else None
+RMIN={"livespec-orchestrator-beads-fabro":61.95,"livespec-dev-tooling":33.31,"livespec-overseer":14.01}
+res={}
+for repo in RMIN:
+    g=f"/data/projects/{repo}"
+    subprocess.run(["git","-C",g,"fetch","-q","origin","master"],check=False)
+    rows=json.load(open(f"{S}/data/{repo}.rows.json"))
+    for x in rows:
+        for k in ("cs","ce","m"): x[k]=T(x[k])
+    rows.sort(key=lambda x:x["m"])
+    files={}; prev=None; ok=0
+    for x in rows:
+        mc=x["mc"]
+        if subprocess.run(["git","-C",g,"cat-file","-e",mc+"^{commit}"],capture_output=True).returncode: files[x["n"]]=None; prev=None; continue
+        base=prev if prev else mc+"~1"
+        r=subprocess.run(["git","-C",g,"diff","--name-only",base,mc],capture_output=True,text=True)
+        files[x["n"]]=set(r.stdout.split()) if r.returncode==0 else None; prev=mc; ok+=1
+    mt=[x["m"] for x in rows]
+    behind=ov=unknown=0; flagged=[]
+    for i,x in enumerate(rows):
+        lo=bisect.bisect_right(mt,x["cs"]); missed=rows[lo:i]
+        if not missed: continue
+        behind+=1
+        f=files.get(x["n"])
+        if f is None or any(files.get(y["n"]) is None for y in missed): unknown+=1; continue
+        if any(f & files[y["n"]] for y in missed): ov+=1; flagged.append(x)
+    # serialized recheck only for overlapping-behind PRs
+    order=sorted(rows,key=lambda x:x["ce"]); tfree=None; L=None; extra=0; delay=[]
+    fl={x["n"] for x in flagged}
+    for x in order:
+        start=x["ce"] if tfree is None else max(x["ce"],tfree)
+        if x["n"] in fl: tm=start+dt.timedelta(seconds=x["D"]); extra+=1
+        else: tm=start
+        delay.append((tm-x["m"]).total_seconds()/60); tfree=tm
+    res[repo]=dict(prs=len(rows),diffed=ok,behind=behind,behind_overlap=ov,behind_unknown=unknown,overlap_frac_of_all=round(ov/len(rows),3),
+      D_serial_overlap_extra_runs=extra,D_extra_runner_min=round(extra*RMIN[repo]),D_delay_p50=round(pct(delay,50),1),D_delay_p90=round(pct(delay,90),1),D_delay_max=round(max(delay),1))
+    print(repo,res[repo],flush=True)
+json.dump(res,open(f"{S}/data/summary3.json","w"),indent=1)

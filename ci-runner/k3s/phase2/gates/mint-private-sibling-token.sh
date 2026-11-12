@@ -120,20 +120,58 @@ jwt="${header}.${claims}.${signature}"
 # curl's own HTTP-status diagnostic: the repository-specific refusal below is
 # the complete no-verdict detail the delegated gate carries to the operator.
 installation_response="$(mktemp)"
-trap 'rm -f "${key_file}" "${installation_response}"' EXIT
+token_response="$(mktemp)"
+trap 'rm -f "${key_file}" "${installation_response}" "${token_response}"' EXIT
+
+# ONE bounded retry for this host's GitHub API calls, the same shape as the gate
+# Job's forge_retry (forge-retry.sh). On 2026-11-12 at 16:34Z a pre-push gate was
+# refused as a missing verdict on `access_tokens ... error: 500`, and passed on a
+# re-run. Retried: a transport failure (status 000), 429, or any 5xx. Every other
+# status goes back to the caller as-is, so a 404 "not covered" or a 422 refuses at
+# once. MINT_RETRY_ATTEMPTS attempts (default 5), waiting MINT_RETRY_BASE_WAIT
+# seconds (default 5) and doubling: 75 s of waiting, inside the JWT's 9 minutes.
+# Each attempt logs its status. The response body goes to <out-file> only and is
+# never logged, because a token response carries the token.
+github_api() {
+  local out_file="$1"
+  shift
+  local attempts="${MINT_RETRY_ATTEMPTS:-5}"
+  local wait_s="${MINT_RETRY_BASE_WAIT:-5}"
+  local attempt=1 status
+  while :; do
+    status="$(curl -s -o "${out_file}" -w '%{http_code}' "$@")" || status="000"
+    echo ":: gate: mint call attempt ${attempt}/${attempts}: HTTP ${status}" >&2
+    case "${status}" in
+      000|429|5[0-9][0-9]) ;;
+      *) printf '%s\n' "${status}"; return 0 ;;
+    esac
+    if [ "${attempt}" -ge "${attempts}" ]; then
+      printf '%s\n' "${status}"
+      return 0
+    fi
+    sleep "${wait_s}"
+    wait_s=$((wait_s * 2))
+    attempt=$((attempt + 1))
+  done
+}
+
+transient_status() {
+  case "$1" in 000|429|5[0-9][0-9]) return 0 ;; *) return 1 ;; esac
+}
 
 installation_for_repository() {
   local named_repository="$1"
   local status
   local named_installation
 
-  status="$(curl -s -o "${installation_response}" -w '%{http_code}' \
+  status="$(github_api "${installation_response}" \
     -H "Authorization: Bearer ${jwt}" -H 'Accept: application/vnd.github+json' \
-    "https://api.github.com/repos/${named_repository}/installation")" || {
+    "https://api.github.com/repos/${named_repository}/installation")"
+  if transient_status "${status}"; then
     echo "FATAL: could not determine whether the gate App's installation covers" \
-         "${named_repository}" >&2
+         "${named_repository}: GitHub answered HTTP ${status} on every attempt" >&2
     return 1
-  }
+  fi
   if [ "${status}" != 200 ]; then
     echo "FATAL: ${named_repository} is not covered: the gate App's installation" \
          "does not cover it" >&2
@@ -167,10 +205,16 @@ done
 # which is the ceiling the contract states.
 scope="$(printf '%s\n' "${private_names[@]}" | jq -R . \
   | jq -s '{repositories: ., permissions: {contents: "read"}}')"
-token="$(curl -fsS -X POST \
+status="$(github_api "${token_response}" -X POST \
   -H "Authorization: Bearer ${jwt}" -H 'Accept: application/vnd.github+json' \
   "https://api.github.com/app/installations/${installation}/access_tokens" \
-  -d "${scope}" | jq -r '.token // empty')"
+  -d "${scope}")"
+if [ "${status}" != 201 ]; then
+  echo "FATAL: GitHub refused to mint an installation token for this gate's private" \
+       "siblings: HTTP ${status}" >&2
+  exit 1
+fi
+token="$(jq -r '.token // empty' < "${token_response}")"
 [ -n "${token}" ] || {
   echo "FATAL: GitHub minted no installation token for this gate's private siblings" >&2
   exit 1; }

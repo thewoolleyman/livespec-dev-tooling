@@ -280,10 +280,24 @@ spec:
             # (livespec-dev-tooling#4274) and the proof run
             # gate-livespec-orchestrator-beads-fabro-xjbqp, terminal in 8 m 25 s
             # with zero signal denials.
+            #
+            # TWO gate units, 10 cpu / 16 Gi, since 2026-11-12 ~19:4xZ
+            # (legacy-coordinator-agent GO, R301; plan gate-job-resources).
+            # Measured ~19:37Z during priority 1's hand-land burst (~95 gate
+            # workloads in an hour):
+            # - gmktec-xubuntu 2.1% idle, CI slice cpu.pressure avg60 29.7;
+            # - poweredge-xubuntu 0.7% idle, avg60 27.5, at 30/30;
+            # - gamingpc 94% idle of 16 cores, PSI avg60 2.8, 23 GiB available.
+            # 4 gates waited 347-409 s for a lane. The second unit's requests
+            # come out of gamingpc's factory share: factory_pod_budget 2 -> 1 in
+            # ansible/inventory/host_vars/gamingpc-xubuntu.yml.
+            # REVERT to 5 / 8Gi, with the budget back to 2, when priority 1's
+            # burst ends (its plan archived) AND a re-measure shows gate waits
+            # under 300 s.
             - name: "cpu"
-              nominalQuota: 5
+              nominalQuota: 10
             - name: "memory"
-              nominalQuota: 8Gi
+              nominalQuota: 16Gi
 ---
 apiVersion: kueue.x-k8s.io/v1beta2
 kind: WorkloadPriorityClass
