@@ -499,11 +499,17 @@ invocation id, never from stdout. Measured 2026-11-11 ~00:36Z: the coordinator r
 | tail -3` on bd-ib-p5e32s, the timeout killed it mid-janitor, the pipe hid exit 124, and the item read as silently
 unreconciled until gmktec-factory-placement traced the journal.
 
-**A hand-lane item carries `admission:manual` and a recorded reason (coordinator's reading).** An item that a seat is
-landing by hand gets the `admission:manual` label plus a ledger comment giving the reason and the end condition.
-Without the label, the dispatcher treats it as factory work and dispatches it. Recorded in the restart handoff on epic
-`livespec-dev-tooling-6tgd2z` at 2026-11-10T02:45:38Z (session 70706809). Measured 2026-11-10:
-livespec-dev-tooling-5xwfda was factory-dispatched while hand-laned.
+**A hand-lane item is held off the factory by the host-only screen or by status `blocked`, never by an admission
+label.** An item that a seat is landing by hand is kept off the factory in one of two ways. Either the host-only screen
+already routes it to the host, or it is held at status `blocked` with its reason and end condition recorded on the item,
+together with the dispatcher's hold-item file. It never gets an `admission:manual` label as the hold. The ratified
+orchestrator contract, contracts.md "Dispatcher policy settings" (line ~7920), makes a committed
+`dispatcher.auto_approve_ready` win over every per-item admission label, and states that "a deliberate per-item hold is
+expressed as status blocked with its reason recorded on the item, never as an admission label". An earlier reading in
+the restart handoff on epic `livespec-dev-tooling-6tgd2z` at 2026-11-10T02:45:38Z (session 70706809) told seats to set
+`admission:manual`, after livespec-dev-tooling-5xwfda was factory-dispatched while hand-laned on 2026-11-10. That
+reading is superseded. The ruling is recorded on epic `livespec-dev-tooling-6tgd2z` at 2026-11-12T15:52:48Z (session
+56abab83), after goal-template-opener-handling correctly declined to set the label on bd-ib-v52w7a.
 
 **Grade a hand-landed carrier yourself before `accept:` (coordinator's reading).** A hand-land parks at 0 graded
 assertions, so a press with no grading closes it unproven. Read the test as well as the reproduction, and say in the

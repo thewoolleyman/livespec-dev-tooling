@@ -26,11 +26,11 @@ import subprocess
 
 TOP = [
     ("1 expedited-incident-response-flag", "livespec-dev-tooling-bqnzcm"),
-    ("2 secret-writer-stored-key-alias (homelab; workspace homelab, tab secret-writer-stored-key-alias)", "hl-bvycoc"),
-    ("3a implement-test-performance: gate suite double-run fix", "livespec-dev-tooling-sv6m5p"),
-    ("3b gate-job-resources", "livespec-dev-tooling-ukoeah"),
-    ("4 fleet-mutation-testing-rule-26 (gamingpc-xubuntu, workspace livespec-dev-tooling; ledger-only asks)", "livespec-dev-tooling-oi2two"),
-    ("5 dev-host-test-gate-load", "livespec-dev-tooling-6vuiwe"),
+    ("2 central-credential-service (livespec-overseer; workspace livespec-overseer, tab central-credential-service; maintainer-driven design)", "overseer-iyfjbo"),
+    ("3 secret-writer-stored-key-alias (homelab; workspace homelab, tab secret-writer-stored-key-alias)", "hl-bvycoc"),
+    ("4a implement-test-performance: gate suite double-run fix", "livespec-dev-tooling-sv6m5p"),
+    ("4b gate-job-resources", "livespec-dev-tooling-ukoeah"),
+    ("5 fleet-mutation-testing-rule-26 (gamingpc-xubuntu, workspace livespec-dev-tooling; ledger-only asks)", "livespec-dev-tooling-oi2two"),
 ]
 WRAPPER = ["/usr/local/bin/with-livespec-env.sh", "--"]
 # The homelab tenant refuses the livespec wrapper (Error 1045 for user 'homelab');
@@ -89,6 +89,8 @@ def repo_for(epic):
         return "/data/projects/homelab", HOMELAB_WRAPPER
     if epic.startswith("bd-ib"):
         return "/data/projects/livespec-orchestrator-beads-fabro", WRAPPER
+    if epic.startswith("overseer-"):
+        return "/data/projects/livespec-overseer", WRAPPER
     return "/data/projects/livespec-dev-tooling", WRAPPER
 
 
