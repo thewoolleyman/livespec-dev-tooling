@@ -351,6 +351,38 @@ admitted_jobs() {
   | python3 -c 'import json,sys; print(sum(int((i.get("status") or {}).get("admittedWorkloads") or 0) for i in json.load(sys.stdin)["items"]))'
 }
 
+# fabro_pass_active — success while a Job of the warm-cache-populate-fabro CronJob
+# is unfinished (no true Complete or Failed condition yet, so a just-created Job
+# counts before its pod does).  The two CronJobs have separate concurrencyPolicy scopes, so the
+# Fabro pass waits for this pass at its start (warm-cache-fabro-populate.sh) but
+# cannot stop a later */30 tick from starting beside its four-hour run; this read
+# closes that direction.  Only the writer BUILDS defer: the uv generation and the
+# action archive seed do not contend for the Fabro pass's CPUs.  Fails closed
+# (reports active) when the Job list cannot be read.
+fabro_pass_active() {
+  local token namespace jobs
+  [ -r "${K8S_SA_DIR}/token" ] && [ -r "${K8S_SA_DIR}/namespace" ] || return 0
+  token="$(cat "${K8S_SA_DIR}/token")"
+  namespace="$(cat "${K8S_SA_DIR}/namespace")"
+  jobs="$(curl --silent --fail --max-time 10 \
+    --cacert "${K8S_SA_DIR}/ca.crt" -H "Authorization: Bearer ${token}" \
+    "https://kubernetes.default.svc/apis/batch/v1/namespaces/${namespace}/jobs")" || return 0
+  python3 -c '
+import json, sys
+for item in json.load(sys.stdin)["items"]:
+    owners = item["metadata"].get("ownerReferences") or []
+    if any(o.get("kind") == "CronJob" and o.get("name") == "warm-cache-populate-fabro" for o in owners):
+        status = item.get("status") or {}
+        finished = any(
+            c.get("type") in ("Complete", "Failed") and c.get("status") == "True"
+            for c in status.get("conditions") or []
+        )
+        if int(status.get("active") or 0) > 0 or not finished:
+            sys.exit(0)
+sys.exit(1)
+' <<<"${jobs}" || return 1
+}
+
 # redis_cmd [--auth USER PASS] CMD ARG... — one RESP round trip to the host
 # redis (python3 is in the image; redis-cli is not). Prints a bulk/simple
 # reply, "(nil)" for null, exits 1 on an error reply or a connection failure.
@@ -903,6 +935,9 @@ for name in "${fetched[@]}"; do
         elif [ "${have}" = "(unreachable)" ]; then
           log "   sccache: redis unreachable at ${SCCACHE_REDIS_ENDPOINT}; no build"
           failed+=("${name}:sccache-unreachable")
+        elif fabro_pass_active; then
+          log "   sccache: the Fabro warm pass is running (or its Job list is unreadable); deferring the build this tick (serialized behind the Fabro pass)"
+          sccache_skipped_busy=$((sccache_skipped_busy + 1))
         elif ! admitted_last="$(admitted_jobs)"; then
           log "   sccache: cannot read the pool's admitted-job count (Kueue API); treating the pool as busy — no build"
           admitted_last=""
@@ -1026,6 +1061,10 @@ for name in "${fetched[@]}"; do
   if [ "${have_sha}" = "${sha}" ] && [ "${have_tc}" = "${fuzz_toolchain}" ]; then
     log "   generation $(basename "${cur}") already holds ${sha:0:8} @ ${fuzz_toolchain}; no build"
     target_skipped=$((target_skipped + 1)); continue
+  fi
+  if fabro_pass_active; then
+    log "   the Fabro warm pass is running (or its Job list is unreadable); deferring the build this tick (serialized behind the Fabro pass)"
+    target_skipped_busy=$((target_skipped_busy + 1)); continue
   fi
   if [ -z "${admitted_last}" ] && ! admitted_last="$(admitted_jobs)"; then
     log "   cannot read the pool's admitted-job count (Kueue API); treating the pool as busy — no build"

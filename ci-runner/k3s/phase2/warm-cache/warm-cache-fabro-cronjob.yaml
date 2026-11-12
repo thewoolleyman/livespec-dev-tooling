@@ -1,0 +1,120 @@
+# warm-cache-fabro-cronjob.yaml — the dedicated writer pass for the
+# thewoolleyman/fabro fork. It is intentionally separate from
+# warm-cache-cronjob.yaml: that manifest owns exactly one cache-tier-pinned
+# hostPath singleton, and this independent pass has a longer deadline so the
+# fork's large Rust workspace cannot starve the regular 3600-second warm.
+#
+# NODE PINNING: this job uses the ci-cache Redis writer endpoint and the
+# host-mounted sccache binary, both on the cache-tier carrier. The key is a
+# storage fact, not the k3s runner-role label every ARC node carries.
+#
+# SERIALIZATION: the two CronJobs have separate concurrencyPolicy scopes, so the
+# schedule alone cannot keep this pass out of the regular */30 pass's up-to-3600 s
+# window. The script lists the regular CronJob's Jobs (the namespaced read below,
+# granted to the shared warm-cache-populate ServiceAccount) and waits for them
+# before it touches Redis or builds anything. The other direction is the regular
+# pass's: while this Job is active, warm-cache-populate.sh defers its sccache and
+# target writer builds (uv and the action archive seed still run), so the two
+# six-CPU writer passes never overlap.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: warm-cache-populate-fabro-job-reader
+  namespace: ci-warm-cache
+rules:
+  - apiGroups: ["batch"]
+    resources: ["jobs"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: warm-cache-populate-fabro-job-reader
+  namespace: ci-warm-cache
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: warm-cache-populate-fabro-job-reader
+subjects:
+  - kind: ServiceAccount
+    name: warm-cache-populate
+    namespace: ci-warm-cache
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: warm-cache-populate-fabro
+  namespace: ci-warm-cache
+spec:
+  schedule: "5 * * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  startingDeadlineSeconds: 600
+  jobTemplate:
+    spec:
+      backoffLimit: 0
+      activeDeadlineSeconds: 14400
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: warm-cache-populate-fabro
+        spec:
+          nodeSelector:
+            ci-runner.io/cache-tier-carrier: "true"
+          restartPolicy: Never
+          serviceAccountName: warm-cache-populate
+          securityContext:
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: populate-fabro
+              image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-rust-fuzz-v1.46.0
+              imagePullPolicy: IfNotPresent
+              command: ["bash", "/scripts/warm-cache-fabro-populate.sh"]
+              env:
+                - name: SCCACHE_FABRO_MIN_FREE_BYTES
+                  value: "4294967296"
+                - name: CRATES_PROXY_URL
+                  value: http://crates-proxy.ci-crates-proxy.svc.cluster.local:3080
+                - name: POPULATE_ADMITTED_JOB_THRESHOLD
+                  value: "16"
+                - name: SCCACHE_REDIS_ENDPOINT
+                  value: redis://sccache-redis.ci-sccache.svc.cluster.local:6379
+                - name: SCCACHE_REDIS_WRITER_USERNAME
+                  valueFrom:
+                    secretKeyRef:
+                      name: sccache-redis-writer
+                      key: username
+                - name: SCCACHE_REDIS_WRITER_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: sccache-redis-writer
+                      key: password
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop: ["ALL"]
+              resources:
+                requests:
+                  cpu: "500m"
+                  memory: "512Mi"
+                limits:
+                  cpu: "6"
+                  memory: "12Gi"
+              volumeMounts:
+                - name: ci-runner-bin
+                  mountPath: /opt/ci-runner/bin
+                  readOnly: true
+                - name: scripts
+                  mountPath: /scripts
+                  readOnly: true
+          volumes:
+            - name: scripts
+              configMap:
+                name: warm-cache-populate
+                defaultMode: 0555
+            - name: ci-runner-bin
+              hostPath:
+                path: /usr/local/lib/ci-runner-k3s/bin
+                type: DirectoryOrCreate
