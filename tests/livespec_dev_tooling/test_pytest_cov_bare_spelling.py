@@ -31,6 +31,12 @@ __all__: list[str] = []
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _PACKAGE = "def f(x):\n    if x:\n        return 1\n    return 2\n"
+_PATH_RUN_CHECKS = (
+    (
+        "tests/livespec_dev_tooling/checks/test_aggregate_completeness.py",
+        "livespec_dev_tooling.checks.aggregate_completeness",
+    ),
+)
 _SUITE = """\
 import subprocess
 import sys
@@ -88,3 +94,11 @@ def test_bare_cov_spelling_combines_branch_and_subprocess_data(*, tmp_path: Path
     assert "Can't combine" not in output, output
     assert completed.returncode == 0, output
     assert "TOTAL" in output, output
+
+
+def test_coverage_sensitive_checks_run_as_package_modules() -> None:
+    """Path-run check scripts cannot be attributed by a package coverage filter."""
+    for relative_path, module_name in _PATH_RUN_CHECKS:
+        source = (_REPO_ROOT / relative_path).read_text(encoding="utf-8")
+        assert "[sys.executable, str(_CHECK)]" not in source
+        assert f'"-m", "{module_name}"' in source
