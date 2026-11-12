@@ -2236,25 +2236,22 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: every retried failure files one root-fix work item",
-    "test": "TODO",
-    "reason": "Spec-first: a real test at the integration tier or above is owed for this scenario, driving the host-side flake reader against fixture retry records for two node ids, one of which already has an open root-fix item; livespec-dev-tooling-o4j3kg owns it (re-owned from livespec-dev-tooling-crxcy4, which closed without it).",
-    "work_item": "livespec-dev-tooling-o4j3kg"
+    "test": "tests.livespec_dev_tooling.test_flake_retry_filer.test_the_host_reader_files_only_the_untracked_retry_record_through_main",
+    "reason": "Integration-tier: drives the host reader's real main() against retry-record and intake-store fixtures, injecting the plugin root, HOME, and gate runner; one node id already has an open triaged root fix, so the assertion proves the reader captures exactly the untracked node and never raw-creates it (livespec-dev-tooling-o4j3kg)."
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a root-fix item the reader files in a claim-token tenant names its claim token in the creating write",
-    "test": "TODO",
-    "reason": "Spec-first: a real test at the integration tier or above is owed for this scenario, driving the host-side flake reader in a tenant that commits claim tokens and asserting it creates the root-fix item only through the store's capture path and the item rests where intake routed it; livespec-dev-tooling-o4j3kg owns it.",
-    "work_item": "livespec-dev-tooling-o4j3kg"
+    "test": "tests.livespec_dev_tooling.test_flake_retry_filer.test_the_host_reader_uses_capture_and_leaves_the_item_intake_triaged",
+    "reason": "Integration-tier: drives main() through a claim-token-tenant fixture, asserting creation enters only through the capture seam and the fixture item rests in intake's triaged ready state; it never asserts a token the reader itself does not create (livespec-dev-tooling-o4j3kg)."
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a root-fix item whose intake routing is refused is routed again on the reader's next pass",
-    "test": "TODO",
-    "reason": "Spec-first: a real test at the integration tier or above is owed for this scenario, driving the host-side flake reader against a work-item store whose intake gate refuses the first routing and accepts the next, asserting the non-zero exit, the logged item id and refusal text, the other node id still filed, and the re-route with no second item; livespec-dev-tooling-o4j3kg owns it.",
-    "work_item": "livespec-dev-tooling-o4j3kg"
+    "test": "tests.livespec_dev_tooling.test_flake_retry_filer.test_the_host_reader_retries_a_refused_route_without_refiling",
+    "reason": "Integration-tier: drives the host reader's real main() against a stateful intake fixture that rejects one item and accepts its next-pass route; asserts the non-zero logged refusal, continued routing of the other node, and no duplicate capture (livespec-dev-tooling-o4j3kg)."
   },
   {
     "spec_root": "SPECIFICATION",
