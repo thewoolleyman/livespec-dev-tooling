@@ -67,25 +67,23 @@ decoder = json.JSONDecoder()
 buffer = ""
 while chunk := sys.stdin.buffer.read1(8192):
     buffer += chunk.decode()
-    while True:
-        document_text = buffer.lstrip()
-        if not document_text:
-            buffer = ""
-            break
-        try:
-            document, end = decoder.raw_decode(document_text)
-        except json.JSONDecodeError:
-            buffer = document_text
-            break
-        buffer = document_text[end:]
-        conditions = document.get("status", {}).get("conditions", ())
-        if any(
-            condition.get("status") == "True"
-            and condition.get("type") in {"Complete", "Failed"}
-            for condition in conditions
-        ):
-            print(json.dumps(document))
-            raise SystemExit(0)
+    document_text = buffer.lstrip()
+    if not document_text:
+        buffer = ""
+        continue
+    try:
+        document, end = decoder.raw_decode(document_text)
+    except json.JSONDecodeError:
+        continue
+    buffer = document_text[end:]
+    conditions = document.get("status", {}).get("conditions", ())
+    if any(
+        condition.get("status") == "True"
+        and condition.get("type") in {"Complete", "Failed"}
+        for condition in conditions
+    ):
+        print(json.dumps(document))
+        raise SystemExit(0)
 raise SystemExit(1)
 ' <"$fifo"; then
     parser_status=0
