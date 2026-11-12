@@ -231,7 +231,7 @@ def test_unreadable_justfile_skips() -> None:
     assert JUSTFILE_PATH in outcome.reason
 
 
-def test_justfile_with_no_bare_check_recipe_skips() -> None:
+def test_justfile_with_no_bare_check_recipe_is_a_warning_finding() -> None:
     """A parameterized `check *skip_targets:` aggregate is not a violation.
 
     `livespec-runtime` declares exactly this and delegates to a script, which
@@ -246,16 +246,18 @@ def test_justfile_with_no_bare_check_recipe_skips() -> None:
     )
     outcome = assert_aggregate_gate_wired(ctx=ctx, member=_MEMBER)
 
-    assert isinstance(outcome, RowSkip)
-    assert "not enumerable" in outcome.reason
+    assert isinstance(outcome, RowFinding)
+    assert outcome.severity == "warning"
+    assert JUSTFILE_PATH in outcome.message
 
 
-def test_justfile_check_recipe_without_a_targets_array_skips() -> None:
+def test_justfile_check_recipe_without_a_targets_array_is_a_warning_finding() -> None:
     ctx = make_context(table=_table(files={JUSTFILE_PATH: "check:\n    just check-lint\n"}))
     outcome = assert_aggregate_gate_wired(ctx=ctx, member=_MEMBER)
 
-    assert isinstance(outcome, RowSkip)
-    assert "targets=(...)" in outcome.reason
+    assert isinstance(outcome, RowFinding)
+    assert outcome.severity == "warning"
+    assert JUSTFILE_PATH in outcome.message
 
 
 def test_row_is_registered_and_armed_in_the_obligation_table() -> None:

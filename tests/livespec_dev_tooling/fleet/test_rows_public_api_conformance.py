@@ -269,7 +269,7 @@ def test_an_unreadable_member_skips_naming_the_cause_rather_than_passing() -> No
     assert "tree unreadable (forbidden)" in outcome.reason
 
 
-def test_a_member_whose_pyproject_will_not_parse_skips_naming_it() -> None:
+def test_a_member_whose_pyproject_will_not_parse_is_a_warning_finding() -> None:
     outcome = outcome_for(
         trees={
             "lib": {
@@ -280,8 +280,9 @@ def test_a_member_whose_pyproject_will_not_parse_skips_naming_it() -> None:
         },
         repo="lib",
     )
-    assert isinstance(outcome, RowSkip)
-    assert "pyproject unparseable" in outcome.reason
+    assert isinstance(outcome, RowFinding)
+    assert outcome.severity == "warning"
+    assert "pyproject.toml" in outcome.message
 
 
 def test_an_unparseable_source_is_named_in_the_output_not_silently_measured_as_empty() -> None:
