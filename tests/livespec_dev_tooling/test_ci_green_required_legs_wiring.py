@@ -62,7 +62,7 @@ _API_READ = (
 _PROJECTION = (
     'python3 -c \'import json, sys; [print(json.dumps({"name": j["name"], '
     '"status": j["status"], "conclusion": j["conclusion"]})) for page in '
-    'json.load(open(sys.argv[1])) for j in page["jobs"]]\' "$pages_file" > "$jobs_file"'
+    'json.load(open(sys.argv[1])) for j in page["jobs"]]\' "$pages_file"'
 )
 _READER_LINE = (
     "python3 -m livespec_dev_tooling.ci_green_required_legs "
@@ -86,7 +86,8 @@ _READER_STEP = (
     + '          jobs_file="${RUNNER_TEMP}/ci-green-run-jobs.jsonl"\n'
     + '          pages_file="${RUNNER_TEMP}/ci-green-run-jobs-pages.json"\n'
     + _UNREADABLE_BRANCH
-    + f"          {_PROJECTION}\n"
+    + f'          jobs_lines="$({_PROJECTION})"\n'
+    + '          printf \'%s\\n\' "$jobs_lines" > "$jobs_file"\n'
     + f"          {_READER_LINE}\n"
 )
 _NEEDS_RESULT_STEP = (
