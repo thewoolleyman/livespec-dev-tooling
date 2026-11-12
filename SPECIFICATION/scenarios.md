@@ -684,6 +684,18 @@ And once the drill exits the API server MUST NOT list that namespace, and no obj
 
 And applying the drill without its confirmation, or with `factory`, `factory-mi-homelab` or an existing namespace configured, MUST exit before any cluster write
 
+## Scenario: a factory sandbox loss drill deletes exactly one named run's sandbox pod and nothing else
+
+Given the k3s cluster reached from the control node `vps`, and a Fabro run with exactly one factory sandbox pod, which the API server lists in the factory namespace the drill is configured to act in
+
+When an operator applies the factory sandbox loss drill with its confirmation naming the k3s server and its run id naming that run
+
+Then the drill MUST delete that pod once and wait until the API server lists no pod with that pod's UID, and no other object in the cluster MUST have been created, modified or deleted by the drill
+
+And the drill MUST print the run id, the pod's name and UID, the UTC time it issued the delete and the UTC time at which it first saw the API server list no pod with that UID
+
+And applying the drill without its confirmation or its run id MUST read nothing and exit 0, while a confirmed application whose namespace is not `factory` or `factory-mi-homelab`, or whose run id resolves to no pod, to more than one pod, or to a pod without the `sandbox-driver-kubernetes/sandbox` label, MUST exit non-zero before any cluster write
+
 ## Scenario: a new heading-coverage TODO row absent from the debt register fails the authoring-time armed tier
 
 Given a contributor's staged change adds a `test: "TODO"` heading-coverage row that is not present in the repository's `tests/heading-coverage-debt.json` register
