@@ -40,36 +40,57 @@ _JOB = "gate-widget-7f2qd"
 _CREATED = json.dumps({"apiVersion": "batch/v1", "kind": "Job", "metadata": {"name": _JOB}})
 _ADMITTED = json.dumps({"spec": {"suspend": False}, "status": {}})
 _COMPLETE = json.dumps({"status": {"conditions": [{"type": "Complete", "status": "True"}]}})
-_WATCH_REFUSAL = "the watch lost the API server"
+_CLUSTER_REFUSAL = "the API server refused the read"
 
 # Marker token -> step, tried IN ORDER; the first marker present in an argv
 # names the step. `--git-common-dir` must precede `rev-parse`, because both
-# identity probes and the tree read are spelled `git rev-parse`, and the terminal
-# watch must precede `get`, which the admission poll is spelled with.
+# identity probes and the tree read are spelled `git rev-parse`.
 _STEP_MARKERS: tuple[tuple[str, str], ...] = (
     ("--git-common-dir", "read-common-dir"),
     ("rev-parse", "read-tree"),
     ("get-url", "read-origin"),
     ("create", "submit-job"),
-    ("get", "watch-job"),
+    ("get", "read-job"),
 )
 
 
 class _StubWorld:
-    """Every command one reproduction issues, canned; `answers` overrides named steps."""
+    """Every command one reproduction issues, canned.
 
-    def __init__(self, *, answers: dict[str, GateCommandResult]) -> None:
+    The Job is READ IN SEQUENCE: the first `kubectl get job` answers that the Job
+    is admitted, and every later read answers `ending`, a Complete Job or a
+    refusal. The client's terminal wait is the client's own business. It has
+    been a poll and, briefly, a watch (livespec-dev-tooling-ie7fas, reverted by
+    livespec-dev-tooling#4177). This suite asserts only how the reproduction
+    reports the ending the client reads. Keying the ending to one wait's argv
+    made the suite pass on its branch and fail on master once that revert
+    landed. `answers` overrides any other named step.
+    """
+
+    def __init__(
+        self,
+        *,
+        ending: GateCommandResult,
+        answers: dict[str, GateCommandResult] | None = None,
+    ) -> None:
         self.argvs: list[tuple[str, ...]] = []
-        self._answers = answers
+        self._ending = ending
+        self._answers = answers or {}
+        self._job_reads = 0
         self._stdout = {
             "read-common-dir": ".git\n",
             "read-tree": f"{_TREE}\n",
             "read-origin": "git@github.com:acme/widget.git\n",
             "submit-job": _CREATED,
-            "poll-job": _ADMITTED,
             "render": _MANIFEST,
             "other": "",
         }
+
+    def _read_job(self) -> GateCommandResult:
+        """Admitted on the first read, then the scenario's ending on every later one."""
+        self._job_reads += 1
+        admitted = GateCommandResult(returncode=0, stdout=_ADMITTED, stderr="")
+        return admitted if self._job_reads == 1 else self._ending
 
     def __call__(
         self,
@@ -87,6 +108,8 @@ class _StubWorld:
                 kind = step
         if kind in self._answers:
             return Success(self._answers[kind])
+        if kind == "read-job":
+            return Success(self._read_job())
         return Success(GateCommandResult(returncode=0, stdout=self._stdout[kind], stderr=""))
 
 
@@ -96,13 +119,11 @@ def _no_sleep(*, seconds: float) -> None:
 
 
 def _completing() -> _StubWorld:
-    complete = GateCommandResult(returncode=0, stdout=_COMPLETE, stderr="")
-    return _StubWorld(answers={"watch-job": complete})
+    return _StubWorld(ending=GateCommandResult(returncode=0, stdout=_COMPLETE, stderr=""))
 
 
 def _never_ending() -> _StubWorld:
-    refused = GateCommandResult(returncode=1, stdout="", stderr=_WATCH_REFUSAL)
-    return _StubWorld(answers={"watch-job": refused})
+    return _StubWorld(ending=GateCommandResult(returncode=1, stdout="", stderr=_CLUSTER_REFUSAL))
 
 
 def _repo(*, tmp_path: Path) -> Path:
@@ -172,7 +193,7 @@ def test_a_job_that_never_ends_is_reported_with_the_clients_reason_and_deleted(
     deletes = [argv for argv in world.argvs if "delete" in argv and _JOB in argv]
     facts = [
         outcome.ended == REPRO_ENDED_NO_TERMINAL_CONDITION,
-        _WATCH_REFUSAL in outcome.detail,
+        _CLUSTER_REFUSAL in outcome.detail,
         deletes != [],
     ]
     assert all(facts), (facts, outcome, deletes)
@@ -204,7 +225,7 @@ def test_a_job_the_renderer_refuses_is_never_submitted_and_names_that_step(
     refused = GateCommandResult(
         returncode=2, stdout="", stderr="FATAL: --queue 'X' is not a LocalQueue name"
     )
-    world = _StubWorld(answers={"render": refused})
+    world = _StubWorld(ending=refused, answers={"render": refused})
     outcome = run_repro_gate(
         repo_root=_repo(tmp_path=tmp_path),
         renderer=_RENDERER,
