@@ -15,10 +15,33 @@ Woolley" or "thewoolleyman" on every record.
   queue** (June). It went on to **a merge queue** in one repository (August, never carried out) and then to
   **self-healing instead** (October).
 - Each decision accepted the same failure on purpose: two pull requests, each green on an older base, break master
-  together. It has happened at least nine times on record, today included.
+  together. Seven instances are on record, today included:
+  - overseer-yo7m (2026-08-21);
+  - overseer-6s3pk6 / overseer-mws8 (PLR0915);
+  - dw7dzd (PR 2452 vs zdqnr2);
+  - dfixhe (PR 2506 vs 2504);
+  - ggoyiq (an LLOC ceiling);
+  - livespec-dev-tooling#4224 (2026-11-12 ~01:15Z);
+  - livespec-dev-tooling#4339 (2026-11-12 16:09Z).
+
+  Note 003 M4 bounds the unrecorded ones.
 - The October decision, the master-health reconciler, is ratified (livespec v224) and partly built. It runs in ONE
-  repository (livespec). It does not run in livespec-dev-tooling or the orchestrator, which carry ~90% of fleet merges.
-- GitHub's merge queue is unavailable. The account is personal; the maintainer said so on 2026-11-12, twice, in capitals.
+  repository (livespec). It does not run in livespec-dev-tooling or the orchestrator, which carried 65% of fleet merges
+  over 2026-10-15..11-12 (note 003, M1).
+- GitHub's merge queue is unavailable while the repositories are owned by a personal account. The maintainer said so on
+  2026-11-12, twice, in capitals.
+- **Facts recorded beside that exclusion, not a recommendation.**
+  - GitHub documents the merge queue as available to PUBLIC repositories owned by an ORGANIZATION; only private
+    organization repositories need Enterprise Cloud. All 10 fleet repositories are public.
+  - Moving them into an organization has costs:
+    - repository URLs, which GitHub redirects;
+    - plugin marketplace names, which must be re-registered on every host;
+    - a new org-owned GitHub App, because the fleet App is private and installs only on its owner's account;
+    - re-registering the ARC runners;
+    - re-projecting secrets;
+    - the GHCR image namespace.
+
+  Note 004 measures these.
 - Only paraphrases survive for the June, August and October rulings. The maintainer's own words are recorded only from
   2026-10-14 on (the self-healing statement) and for the two 2026-11-12 merge-queue statements.
 
@@ -116,7 +139,8 @@ Woolley" or "thewoolleyman" on every record.
   - orchestrator master CI: median 6.4 min, p90 10.5 min (n=26);
   - merges in 24 h: orchestrator 46 (peak 6/h), dev-tooling 14, overseer 20, livespec 4.
 
-  The cadence has since grown roughly fourfold; see note 003.
+  Since then, dev-tooling went from 14 to 54.2 merges a day (about fourfold) and the orchestrator from 46 to 60.3
+  (about 1.3x). The 10-14 figures are a single 24-hour snapshot, and the newer ones are 28-day means (note 003, M1).
 - **Ratification.** livespec v224 (livespec PR #2841, 6b2cb040, 2026-10-15) ratified the revert-by-default reconciler with
   a progress-bounded fix-forward claim and a 2-hour hard cap. It is now livespec NFR lines 1324-1334, which end: "This
   rule introduces no merge queue, no `strict`, no serialized merge train, and no additional CI on the happy path."

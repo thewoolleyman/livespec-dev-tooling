@@ -1,0 +1,32 @@
+import json, subprocess, sys, datetime as dt
+OUT=sys.argv[1]
+REPOS=["livespec","livespec-dev-tooling","livespec-orchestrator-beads-fabro","livespec-overseer","livespec-runtime","livespec-driver-claude","livespec-driver-codex","livespec-driver-pi","livespec-orchestrator-git-jsonl","livespec-console-beads-fabro"]
+START=dt.datetime(2026,10,15,tzinfo=dt.timezone.utc); END=dt.datetime(2026,11,12,18,0,tzinfo=dt.timezone.utc)
+def api(path):
+    r=subprocess.run(["gh","api","-H","Accept: application/vnd.github+json",path],capture_output=True,text=True)
+    if r.returncode: print("ERR",path,r.stderr[:200],file=sys.stderr); return None
+    return json.loads(r.stdout)
+for repo in REPOS:
+    prs=[]; page=1
+    while True:
+        d=api(f"repos/thewoolleyman/{repo}/pulls?state=closed&sort=updated&direction=desc&per_page=100&page={page}")
+        if not d: break
+        for p in d:
+            if p.get("merged_at"): prs.append({k:p[k] for k in ("number","created_at","merged_at","title")}|{"head_sha":p["head"]["sha"],"head_ref":p["head"]["ref"],"user":p["user"]["login"],"merge_commit_sha":p["merge_commit_sha"]})
+        if dt.datetime.fromisoformat(d[-1]["updated_at"].replace("Z","+00:00"))<START or len(d)<100: break
+        page+=1
+    runs=[]
+    day=START
+    while day<END:
+        nxt=day+dt.timedelta(days=2)
+        page=1
+        while True:
+            d=api(f"repos/thewoolleyman/{repo}/actions/workflows/ci.yml/runs?created={day:%Y-%m-%dT%H:%M:%SZ}..{nxt:%Y-%m-%dT%H:%M:%SZ}&per_page=100&page={page}")
+            if not d: break
+            for r in d["workflow_runs"]:
+                runs.append({k:r[k] for k in ("id","event","head_sha","head_branch","status","conclusion","created_at","updated_at","run_started_at","run_attempt")})
+            if len(d["workflow_runs"])<100: break
+            page+=1
+        day=nxt
+    json.dump({"prs":prs,"runs":runs},open(f"{OUT}/{repo}.json","w"))
+    print(repo,len(prs),len(runs),flush=True)
