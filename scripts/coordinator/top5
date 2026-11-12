@@ -72,6 +72,11 @@ def stranded_header():
     print()
 
 
+print(
+    "INCIDENT MODE: livespec-dev-tooling USABLE (EXPEDITED_INCIDENT_RESPONSE is the default response to a red master;"
+    " coordinator-duties §2). Not yet usable: livespec, orchestrator, overseer."
+)
+print()
 stranded_header()
 
 
