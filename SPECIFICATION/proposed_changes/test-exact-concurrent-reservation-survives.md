@@ -121,7 +121,7 @@ Root-fix items, filed 2026-11-12 ~21:28Z through each repository's capture seam 
 - livespec-overseer: overseer-pzr23n.
 - livespec-driver-codex: livespec-driver-codex-tjsdzj.
 
-A mechanical check that refuses a short bound is deliberately not proposed here. A pattern-level check cannot tell a teardown wait or an expected-expiry window from a verdict-bearing bound without the per-line judgment above. A check can be reconsidered after the four root-fix items have closed and the remaining exempt lines show whether a static form is decidable.
+A mechanical check that refuses a short bound is deliberately not proposed here. A pattern-level check cannot tell a teardown wait or an expected-expiry window from a verdict-bearing bound without the per-line judgment above. A check can be reconsidered after the five root-fix items listed above have closed and the remaining exempt lines show whether a static form is decidable.
 
 ### Proposed Changes
 
