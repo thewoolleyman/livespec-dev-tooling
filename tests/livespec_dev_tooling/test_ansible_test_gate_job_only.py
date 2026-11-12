@@ -62,3 +62,8 @@ def test_the_check_names_an_unmatched_ansible_driving_test_module(
     module = _module()
     assert module.undeclared_gate_job_only_modules(repo_root=root) == ("tests/test_declared.py",)
     assert module.main() == 1
+
+
+def test_this_repository_declares_every_ansible_driving_test_module() -> None:
+    """The existing pytest aggregate checks the real repository declaration."""
+    assert _module().undeclared_gate_job_only_modules(repo_root=_REPO_ROOT) == ()
