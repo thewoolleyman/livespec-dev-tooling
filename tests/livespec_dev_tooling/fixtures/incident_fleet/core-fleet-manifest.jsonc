@@ -1,0 +1,126 @@
+// .livespec-fleet-manifest.jsonc — the livespec fleet membership manifest.
+//
+// Authority: SPECIFICATION/non-functional-requirements.md
+//   §"Fleet membership contract" (accepted v108). This committed file
+//   in livespec core enumerates every fleet repo (the `fleet` array)
+//   and its repo class, plus an optional `adopters` array.
+//   Livespec core owns fleet-level facts (precedent: the copier
+//   template at `templates/orchestrator-plugin/` is already core-hosted and
+//   sibling-consumed per `contracts.md` §"Shared content sync — copier
+//   template"); per-repo facts stay in consumer-local config.
+//
+// Consumers (both fetch this file from livespec master at run time):
+//   - the dev-tooling fleet-conformance check (assert mode), which
+//     derives each member's per-class obligations from the shared
+//     contract definition in livespec-dev-tooling;
+//   - the release fan-out (reusable-release-dispatch.yml), with the
+//     GitHub `livespec-sibling` topic demoted to a discovery safety
+//     net (a repo matching `livespec-*` naming or carrying the topic
+//     but absent here is a conformance finding).
+//
+// Repo birth procedure (per the same spec section): create the GitHub
+// repository → scaffold (via the copier template where the class has
+// one) → reach membership-independent readiness → register HERE LAST →
+// immediately run `wire-fleet-member` → fleet conformance green. An
+// entry MUST NOT land before the repo it names exists and is clonable
+// (a premature entry breaks every manifest consumer that clones the
+// fleet); the invisible-straggler concern is carried by the discovery
+// safety net above.
+//
+// `fleet` entries are { repo, class } where `class` is one of:
+// core / enforcement-suite / impl-plugin / driver-plugin / library / console /
+// control-plane-tool.
+// (`console` is the Control-Plane operator console — a pin-CONSUMING
+// member (livespec-oq9w, Option B): it carries a livespec-dev-tooling
+// toolchain pin AND a livespec governance pin, and ships the RECEIVING
+// and FRESHNESS pin-and-bump shims (bump-pin-from-dispatch.yml +
+// pin-freshness.yml). It deliberately ships NO release-dispatch.yml,
+// because it produces no consumable release for a sibling to bump on.
+// See livespec-dev-tooling contracts.md §"Bump-pin policy".)
+//
+// `adopters` entries are { repo, profile, posture } — governed repos
+// (or families) that adopted the workflow but are NOT the livespec
+// fleet (e.g. Open Brain). `profile` is the `baseline` floor plus any
+// additive layers (fleet-infra / orchestrator-plugin / app), or the
+// adopter-only `instruction-only` profile, which REPLACES that floor
+// for a repo whose only livespec surface is committed agent
+// configuration and which is therefore not a governed repo at all;
+// `posture` is one of released / pinned / none (how the adopter tracks
+// upstream livespec releases). A fleet member's profile is DERIVED
+// from its `class`; an adopter has no class, so it declares `profile`
+// explicitly.
+// `adopters` is empty until the first adopter registers. See
+// non-functional-requirements.md §"Fleet membership contract" → "Adopters".
+{
+  "owner": "thewoolleyman",
+  "fleet": [
+    { "repo": "livespec", "class": "core" },
+    { "repo": "livespec-dev-tooling", "class": "enforcement-suite" },
+    { "repo": "livespec-driver-claude", "class": "driver-plugin" },
+    { "repo": "livespec-driver-codex", "class": "driver-plugin" },
+    { "repo": "livespec-driver-pi", "class": "driver-plugin" },
+    { "repo": "livespec-orchestrator-beads-fabro", "class": "impl-plugin" },
+    { "repo": "livespec-orchestrator-git-jsonl", "class": "impl-plugin" },
+    { "repo": "livespec-runtime", "class": "library" },
+    { "repo": "livespec-console-beads-fabro", "class": "console" },
+    { "repo": "livespec-overseer", "class": "control-plane-tool" }
+  ],
+  "adopters": [
+    // openbrain: first registered adopter (github-app-auth D17, 2026-07-03).
+    // Brings its own credential_wrapper (with-openbrain-env.sh) + its own
+    // GitHub App (openbrain-pr-bot); pins the concrete livespec release tag.
+    { "repo": "openbrain", "profile": ["baseline", "orchestrator-plugin"], "posture": "pinned" },
+    { "repo": "dolt-server", "profile": ["baseline", "fleet-infra"], "posture": "released" },
+    // resume: greenfield dogfooding app (registered 2026-07-04) — the
+    // maintainer's resume, built livespec-first from an empty repo (contrast:
+    // openbrain adopted the workflow as an existing brownfield app). Declares
+    // the full target profile up front; all wiring (.livespec.jsonc,
+    // credential_wrapper, spec seed, beads tenant) is DEFERRED to the
+    // onboarding pass. Per the registration-last birth rule, the GitHub repo
+    // itself must exist before the entry lands — it is not deferrable wiring.
+    { "repo": "resume", "profile": ["baseline", "orchestrator-plugin", "app"], "posture": "pinned" },
+    // homelab: greenfield Git-governed control plane for an AI-driven NixOS
+    // homelab (registered 2026-07-18) — built livespec-first from a seed repo,
+    // like resume (contrast: openbrain adopted the workflow as an existing
+    // brownfield app). First adopter on the `released` posture: it tracks the
+    // moving livespec release channel and carries the session-currency updater
+    // hook, so the fleet-conformance currency sweep holds it current (bound
+    // only for `released` adopters, per non-functional-requirements.md §"Fleet
+    // membership contract" → "Adopters"). Declares the full target profile up
+    // front; all wiring (.livespec.jsonc via seed, credential_wrapper, GitHub
+    // App, beads tenant, per-tenant Fabro server) is DEFERRED to the post-seed
+    // onboarding pass (the repo itself existed first, per the
+    // registration-last birth rule).
+    { "repo": "homelab", "profile": ["baseline", "orchestrator-plugin", "app"], "posture": "released" },
+    // Host-specific interactive AI workstation. Seed and released plugin
+    // wiring live in the adopter; its dedicated credentials and tenant are
+    // established by its own first bootstrap plan, never by a fleet fallback.
+    { "repo": "hetzner-xubuntu-info", "profile": ["baseline"], "posture": "released" },
+    // The seven host/deploy repos (registered 2026-10-21) are
+    // `instruction-only` adopters: committed agent configuration is their
+    // only livespec surface — no justfile, no mise configuration, no
+    // `.livespec.jsonc`, no work-items tenant — so the manifest entry is
+    // each one's ONLY profile declaration and a manifest change alone
+    // registers it (non-functional-requirements.md §"Fleet membership
+    // contract" → "Adopters"). Each was registered on `posture` none, which
+    // excluded it from the fleet-conformance sweep without failing until its
+    // wiring passed the adopter plugin-currency row; each now carries
+    // `posture` released, set in this later manifest change after all seven
+    // committed a `.claude/settings.json` that enables livespec core and the
+    // livespec Driver at the `release` ref and declares
+    // `livespecPluginCurrencySuccessor` with a non-empty `mechanism` and
+    // `documentedIn` (scenarios.md §"A released adopter is registered only
+    // after its wiring satisfies the sweep"). On `released` an
+    // `instruction-only` adopter is held to Plugin-currency and to no other
+    // `baseline` concern — no Shell-and-Justfile-discipline, no
+    // Request-budget-discipline (scenarios.md §"An instruction-only adopter
+    // is held to plugin currency and to no other baseline concern").
+    { "repo": "vps-info", "profile": ["instruction-only"], "posture": "released" },
+    { "repo": "poweredge-xubuntu-info", "profile": ["instruction-only"], "posture": "released" },
+    { "repo": "gmktec-xubuntu-info", "profile": ["instruction-only"], "posture": "released" },
+    { "repo": "hp-xubuntu-info", "profile": ["instruction-only"], "posture": "released" },
+    { "repo": "fabro-hosts", "profile": ["instruction-only"], "posture": "released" },
+    { "repo": "otel-collector", "profile": ["instruction-only"], "posture": "released" },
+    { "repo": "local-llm", "profile": ["instruction-only"], "posture": "released" }
+  ]
+}
