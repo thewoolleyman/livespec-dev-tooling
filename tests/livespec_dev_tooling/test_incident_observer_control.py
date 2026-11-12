@@ -102,7 +102,7 @@ def _request(*, application, path, payload, **changes):
         "HTTP_AUTHORIZATION": "Bearer "
         + (
             application.installation.query_secret
-            if path in {"/current", "/admitted"}
+            if path in {"/current", "/admitted", "/enablement/query"}
             else application.installation.control_secret
         ).decode(),
     }
@@ -139,6 +139,60 @@ def test_http_arms_and_queries_canonical_current_authority(controller):
     assert _request(application=application, path="/admitted", payload=query)[0] == "403 Forbidden"
     payload["expected_arm_id"] = result["receipt"]
     assert _request(application=application, path="/arm", payload=payload)[1]["status"] == "armed"
+
+
+def test_controller_enablement_routes_retain_current_identity_and_gate_fence_arming(
+    controller, monkeypatch
+):
+    """The controller alone retains and reads enablement before the fence can arm."""
+    application, _, _, _, _ = controller
+    manifest_sha256 = "a" * 64
+    monkeypatch.setattr(
+        "livespec_dev_tooling.incident_enablement.read_current_manifest_identity",
+        lambda: manifest_sha256,
+        raising=False,
+    )
+    payload = {
+        "repository": "owner/repo",
+        "manifest_sha256": manifest_sha256,
+        "operation_id": "enable-1",
+    }
+
+    assert _request(application=application, path="/enablement", payload=payload) == (
+        "202 Accepted",
+        {
+            "status": "enabled",
+            "repository": "owner/repo",
+            "manifest_sha256": manifest_sha256,
+            "operation_id": "enable-1",
+            "controller_release": "v1.169.0",
+            "controller_revision": "b" * 40,
+        },
+    )
+    assert (
+        _request(
+            application=application,
+            path="/enablement/arm",
+            payload={
+                "repository": "owner/repo",
+                "operation_id": "arm-1",
+            },
+        )[1]["status"]
+        == "armed"
+    )
+    assert _request(
+        application=application,
+        path="/enablement/query",
+        payload={"repository": "owner/repo"},
+    ) == (
+        "202 Accepted",
+        {
+            "status": "enabled",
+            "query": {"repository": "owner/repo"},
+            "manifest_sha256": manifest_sha256,
+            "arming": "armed",
+        },
+    )
 
 
 @pytest.mark.parametrize(
