@@ -47,6 +47,7 @@ from livespec_dev_tooling.gate_remote_verdict import (
     GATE_FAILED,
     GATE_NO_VERDICT,
     GATE_PASSED,
+    ignore_job_name,
     run_gated_push,
 )
 
@@ -240,6 +241,22 @@ def test_a_hook_run_gate_records_its_submitted_job_for_gate_stop(
     assert verdict.state == GATE_PASSED
     assert (run_dir / "job_name").read_text(encoding="utf-8") == f"{_JOB}\n"
     assert (run_dir / "namespace").read_text(encoding="utf-8") == f"{_REQUEST.namespace}\n"
+
+
+def test_an_ordinary_gate_does_not_require_a_detached_runner_record(
+    *, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A direct client call remains independent of a parent gate-runner environment."""
+    monkeypatch.delenv("LIVESPEC_GATE_RUN_DIR", raising=False)
+
+    verdict = run_gated_push(request=_REQUEST, runner=_StubCluster(), sleeper=_no_sleep)
+
+    assert verdict.state == GATE_PASSED
+
+
+def test_the_ordinary_client_job_callback_is_a_safe_noop() -> None:
+    """Direct callers may opt out of the detached shell runner's Job record."""
+    assert ignore_job_name(name=_JOB) is None
 
 
 def test_the_token_is_written_for_the_same_tree_that_named_the_mirror_ref() -> None:
