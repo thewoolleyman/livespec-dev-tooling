@@ -1417,13 +1417,23 @@
   # missing declared setting resolves to null and is correctly reported as
   # drift.  Python is already Ansible's required remote interpreter; unlike
   # jq, it is not a package this role has to install just to make a read.
-  # A non-200 response and a transport error use rc 2, reserved below for an
-  # endpoint that cannot provide a comparison.
+  # A non-200 response, a missing token and a transport error use rc 2,
+  # reserved below for an endpoint that cannot provide a comparison.
+  # The endpoint answers only a bearer-authenticated request, so the instance's
+  # own FABRO_DEV_TOKEN is read from its env file and handed to curl on stdin
+  # as a header, the way the catalog read in environment.yml does: the token
+  # never reaches an argument list or the report.
   ansible.builtin.shell:
     executable: /bin/bash
     cmd: |
       set -o pipefail
-      response="$(curl --silent --show-error --connect-timeout 2 --max-time 5 \
+      token="$(sed -n 's/^FABRO_DEV_TOKEN=//p' "${FABRO_SERVER_ENV_FILE}" 2>/dev/null | tail -n 1)"
+      if [ -z "${token}" ]; then
+        printf 'settings endpoint is unreachable: no FABRO_DEV_TOKEN in the instance env file\n'
+        exit 2
+      fi
+      response="$(printf 'Authorization: Bearer %s\n' "${token}" |
+        curl --silent --show-error --connect-timeout 2 --max-time 5 --header @- \
         --write-out '\n%{http_code}' "${FABRO_SETTINGS_URL}")" || {
         printf 'settings endpoint is unreachable: transport failure\n'
         exit 2
@@ -1447,6 +1457,14 @@
           print("settings endpoint is unreachable: invalid JSON response")
           raise SystemExit(2)
 
+      # The API may wrap the document in a top-level "settings" envelope.
+      if (
+          isinstance(settings, dict)
+          and "server" not in settings
+          and isinstance(settings.get("settings"), dict)
+      ):
+          settings = settings["settings"]
+
       unit = os.environ["FABRO_SETTINGS_UNIT"]
       findings = []
       for setting, declared in expected.items():
@@ -1469,7 +1487,9 @@
         printf '%s\n' "${drift}"
         exit 1
       fi
+  become: true
   environment:
+    FABRO_SERVER_ENV_FILE: "{{ fabro_server_home_dir }}/storage/server.env"
     FABRO_SETTINGS_URL: "http://127.0.0.1:{{ fabro_server_port }}/api/v1/settings"
     FABRO_SETTINGS_EXPECTED: "{{ fabro_server_settings_endpoint_declarations | to_json }}"
     FABRO_SETTINGS_UNIT: "{{ fabro_server_unit_name }}"
