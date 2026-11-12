@@ -223,7 +223,7 @@
       {{ otel_collector_otlp_pods_endpoint
          if otel_collector_otlp_pods_endpoint | length > 0
          else (otel_collector_flannel_subnet_read.stdout
-               | regex_replace('^FLANNEL_SUBNET=([^/]+)/[0-9]+$', '\\1') ~ ':4319') }}
+               | regex_replace('^FLANNEL_SUBNET=([^/]+)/[0-9]+$', '\1') ~ ':4319') }}
   when: "'OTLP_PODS_ENDPOINT' in otel_collector_required_environment_keys"
 
 # --- what a host that owns its own binary installs --------------------------
