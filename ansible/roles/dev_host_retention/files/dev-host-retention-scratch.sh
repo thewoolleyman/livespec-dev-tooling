@@ -4,18 +4,20 @@
 declare -A LIVE_SESSION_IDS=()
 LIVE_SESSION_SCAN_FAILURE=
 
-# One `grep` reads every process environment, so the scan starts the same
-# number of child processes however many processes the host runs. The earlier
-# loop forked a `tr` and a subshell per process: 34 s over 1,076 processes at
-# load 46 on vmi3006760 (2026-11-10, livespec-dev-tooling-spva5x), against
-# 0.38 s for one grep over the same environments. The paths reach grep through
-# `xargs`, so a host with more processes than one argv can name still has
-# every environment read instead of none. Its command buffer is sized from
-# ARG_MAX (xargs lowers it to the real limit, silently here) because the
-# 128 KiB default would split a few thousand paths across several greps.
-# `-s` keeps an environment that cannot be read, or whose process exits
-# mid-scan, silent. `-z` reads NUL-separated entries and writes each match
-# NUL-terminated, so an id is read back whole.
+# One `grep` reads every process environment and one `find` reads every cwd
+# and fd link, so the scan starts the same number of child processes however
+# many processes the host runs. The earlier environment loop forked a `tr` and
+# a subshell per process: 34 s over 1,076 processes at load 46 on vmi3006760
+# (2026-11-10, livespec-dev-tooling-spva5x), against 0.38 s for one grep over
+# the same environments. The paths reach grep through `xargs`, so a host with
+# more processes than one argv can name still has every environment read
+# instead of none. Its command buffer is sized from ARG_MAX (xargs lowers it
+# to the real limit, silently here) because the 128 KiB default would split a
+# few thousand paths across several greps. `-s` keeps an environment that
+# cannot be read, or whose process exits mid-scan, silent. `-z` reads
+# NUL-separated entries and writes each match NUL-terminated, so an id is read
+# back whole. The find read treats vanished and unreadable cwd/fd links the
+# same way by suppressing their diagnostic output and retaining usable links.
 #
 # The scan FAILS CLOSED. An empty answer from a scan that did not run would
 # make every session look dead, so only xargs's 0 (every grep matched) and
@@ -24,25 +26,50 @@ LIVE_SESSION_SCAN_FAILURE=
 # non-zero with the reason in LIVE_SESSION_SCAN_FAILURE, and the caller
 # removes no session directory and says so in the run's journal.
 scan_live_session_ids() {
-    local proc_root=${LIVESPEC_DEV_HOST_RETENTION_PROC_ROOT:-/proc} entry arg_max status
-    local -a environments=("$proc_root"/[0-9]*/environ) matches=()
+    local tmp_root=$1 proc_root=${LIVESPEC_DEV_HOST_RETENTION_PROC_ROOT:-/proc}
+    local entry arg_max status target path_after_project session_id
+    local -a environments=("$proc_root"/[0-9]*/environ) matches=() held_paths=()
     LIVE_SESSION_IDS=()
     LIVE_SESSION_SCAN_FAILURE=
-    [[ -e ${environments[0]} ]] || return 0
-    if ! arg_max=$(getconf ARG_MAX 2>/dev/null) || [[ ! $arg_max =~ ^[0-9]+$ ]]; then
-        LIVE_SESSION_SCAN_FAILURE="ARG_MAX unreadable"
-        return 1
+    if [[ -e ${environments[0]} ]]; then
+        if ! arg_max=$(getconf ARG_MAX 2>/dev/null) || [[ ! $arg_max =~ ^[0-9]+$ ]]; then
+            LIVE_SESSION_SCAN_FAILURE="ARG_MAX unreadable"
+            return 1
+        fi
+        mapfile -d '' -t matches < <(printf '%s\0' "${environments[@]}" |
+            xargs -0 -s "$arg_max" grep -ahsz '^CLAUDE_CODE_SESSION_ID=.' -- 2>/dev/null)
+        wait "$!"
+        status=$?
+        if [[ $status != 0 && $status != 123 ]]; then
+            LIVE_SESSION_SCAN_FAILURE="status $status"
+            return 1
+        fi
+        for entry in "${matches[@]}"; do
+            LIVE_SESSION_IDS[${entry#CLAUDE_CODE_SESSION_ID=}]=1
+        done
     fi
-    mapfile -d '' -t matches < <(printf '%s\0' "${environments[@]}" |
-        xargs -0 -s "$arg_max" grep -ahsz '^CLAUDE_CODE_SESSION_ID=.' -- 2>/dev/null)
+
+    # `find` receives the proc root once, rather than receiving a path per
+    # process. It only needs cwd links and fd entries, and a depth of three
+    # reaches both without walking a process's unrelated descendants.
+    mapfile -d '' -t held_paths < <(find "$proc_root" -ignore_readdir_race -maxdepth 3 -type l \
+        \( -path "$proc_root/[0-9]*/cwd" -o -path "$proc_root/[0-9]*/fd/*" \) \
+        -printf '%l\0' 2>/dev/null)
     wait "$!"
     status=$?
-    if [[ $status != 0 && $status != 123 ]]; then
-        LIVE_SESSION_SCAN_FAILURE="status $status"
+    if [[ $status == 126 || $status == 127 ]]; then
+        LIVE_SESSION_SCAN_FAILURE="held-path scan status $status"
         return 1
     fi
-    for entry in "${matches[@]}"; do
-        LIVE_SESSION_IDS[${entry#CLAUDE_CODE_SESSION_ID=}]=1
+    for target in "${held_paths[@]}"; do
+        case $target in
+            "$tmp_root"/claude-*/*/*) ;;
+            *) continue ;;
+        esac
+        path_after_project=${target#"$tmp_root"/claude-*/}
+        path_after_project=${path_after_project#*/}
+        session_id=${path_after_project%%/*}
+        [[ -n $session_id ]] && LIVE_SESSION_IDS[$session_id]=1
     done
 }
 
@@ -60,7 +87,7 @@ older_than() {
 
 remove_old_scratch() {
     local tmp_root=$1 seconds=$2 session
-    if scan_live_session_ids; then
+    if scan_live_session_ids "$tmp_root"; then
         for session in "$tmp_root"/claude-*/*/*; do
             [[ -d $session ]] || continue
             older_than "$session" "$seconds" || continue

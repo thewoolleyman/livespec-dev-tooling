@@ -143,6 +143,57 @@ def test_retention_keeps_a_live_session_when_an_environment_cannot_be_read(
     assert done.stderr == ""
 
 
+def test_retention_keeps_sessions_held_by_process_cwd_or_file_descriptor(*, tmp_path: Path) -> None:
+    """A process holding scratch keeps its session without an environment carrier.
+
+    The fixture process root represents the Claude process itself: neither
+    process carries a session-id environment entry, one has an fd below its
+    scratch directory, and the other has its cwd at its scratch directory.
+    A peer with neither signal remains removable.
+    """
+    assert _SCRATCH.is_file(), "the committed scratch helper must implement liveness discovery"
+    tmp_root = tmp_path / "tmp"
+    held_by_fd = tmp_root / "claude-1000" / "project" / "held-by-fd"
+    held_by_cwd = tmp_root / "claude-1000" / "project" / "held-by-cwd"
+    dead = tmp_root / "claude-1000" / "project" / "dead"
+    for session in (held_by_fd, held_by_cwd, dead):
+        session.mkdir(parents=True)
+        _age(path=session, seconds=_AGED_SECONDS)
+    held_file = held_by_fd / "tasks" / "output.txt"
+    held_file.parent.mkdir()
+    held_file.write_text("held", encoding="utf-8")
+    proc_root = tmp_path / "proc"
+    for pid in ("100", "101", "102"):
+        environment = proc_root / pid / "environ"
+        environment.parent.mkdir(parents=True)
+        environment.write_bytes(b"HOME=/home/fixture\0")
+    fd = proc_root / "100" / "fd" / "3"
+    fd.parent.mkdir()
+    fd.symlink_to(held_file)
+    cwd = proc_root / "101" / "cwd"
+    cwd.symlink_to(held_by_cwd)
+    # A vanished cwd and unreadable fd directory are silent, like an
+    # unreadable environment in the existing liveness test.
+    (proc_root / "102" / "cwd").symlink_to(tmp_path / "vanished")
+    (proc_root / "102" / "fd").mkdir()
+
+    done = subprocess.run(
+        ["bash", str(_RETENTION)],
+        env=_hermetic_env(tmp_path=tmp_path, tmp_root=tmp_root, bulk=tmp_path / "bulk")
+        | {"LIVESPEC_DEV_HOST_RETENTION_PROC_ROOT": str(proc_root)},
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+
+    assert done.returncode == 0, done.stdout + done.stderr
+    assert held_by_fd.exists(), done.stdout
+    assert held_by_cwd.exists(), done.stdout
+    assert not dead.exists(), done.stdout
+    assert f"removed dead session scratch {dead}" in done.stdout
+    assert done.stderr == ""
+
+
 def _exec_counting_path(*, shim_dir: Path, path: str, log: Path) -> str:
     """A PATH whose every command records one line in `log` before it runs.
 
