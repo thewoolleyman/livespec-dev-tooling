@@ -132,3 +132,116 @@ def test_a_fully_dynamic_division_chain_is_not_an_undeterminable_path() -> None:
     _, undeterminable = analyzer.path_literals(tree=ast.parse("total / count / 2"))
 
     assert not undeterminable
+
+
+def _undeterminable_for(*, source: str, tmp_path: Path) -> bool:
+    """Run the analyzer on `source` as if it were a test module under `tmp_path`."""
+    analyzer = importlib.import_module("livespec_dev_tooling.flake_retry_paths")
+    source_path = tmp_path / "tests" / "test_anchor.py"
+    source_path.parent.mkdir(exist_ok=True)
+    _, undeterminable = analyzer.path_literals(
+        tree=ast.parse(source), repo_root=tmp_path, source_path=source_path
+    )
+    return bool(undeterminable)
+
+
+_ROOT_BINDING = "from pathlib import Path\n"
+
+
+def test_a_root_bound_in_one_function_does_not_bind_a_parameter_of_another(
+    *, tmp_path: Path
+) -> None:
+    """A parameter named like another function's repository root is an unrelated base."""
+    source = (
+        _ROOT_BINDING
+        + "def bound():\n"
+        + "    root = Path(__file__).resolve().parents[1]\n"
+        + "    return root / 'ci-runner'\n"
+        + "def unrelated(root, name):\n"
+        + "    return root / 'ci-runner' / name\n"
+    )
+
+    assert not _undeterminable_for(source=source, tmp_path=tmp_path)
+
+
+def test_a_local_root_in_one_function_does_not_bind_another_functions_local(
+    *, tmp_path: Path
+) -> None:
+    """Two functions each binding `root` keep their bindings apart."""
+    source = (
+        _ROOT_BINDING
+        + "def bound():\n"
+        + "    root = Path(__file__).resolve().parents[1]\n"
+        + "    return root / 'ci-runner'\n"
+        + "def unrelated(base, name):\n"
+        + "    root = base / 'x'\n"
+        + "    return root / 'ci-runner' / name\n"
+    )
+
+    assert not _undeterminable_for(source=source, tmp_path=tmp_path)
+
+
+def test_a_root_bound_in_the_same_function_keeps_a_dynamic_segment_undeterminable(
+    *, tmp_path: Path
+) -> None:
+    """The function that binds the root still withholds on a dynamic segment."""
+    source = (
+        _ROOT_BINDING
+        + "def bound(name):\n"
+        + "    root = Path(__file__).resolve().parents[1]\n"
+        + "    return root / 'ci-runner' / name\n"
+    )
+
+    assert _undeterminable_for(source=source, tmp_path=tmp_path)
+
+
+def test_a_module_level_root_reaches_a_nested_function_that_does_not_rebind_it(
+    *, tmp_path: Path
+) -> None:
+    """A function reading the module-level root through closure still names it."""
+    source = (
+        _ROOT_BINDING
+        + "ROOT = Path(__file__).resolve().parents[1]\n"
+        + "def reader(name):\n"
+        + "    def inner():\n"
+        + "        return ROOT / 'ci-runner' / name\n"
+        + "    return inner\n"
+    )
+
+    assert _undeterminable_for(source=source, tmp_path=tmp_path)
+
+
+def test_a_function_that_rebinds_the_module_root_name_shadows_it(*, tmp_path: Path) -> None:
+    """A local binding of the same name hides the module-level repository root."""
+    source = (
+        _ROOT_BINDING
+        + "ROOT = Path(__file__).resolve().parents[1]\n"
+        + "def shadowing(ROOT, name):\n"
+        + "    return ROOT / 'ci-runner' / name\n"
+    )
+
+    assert not _undeterminable_for(source=source, tmp_path=tmp_path)
+
+
+def test_a_class_body_root_is_not_visible_to_its_methods(*, tmp_path: Path) -> None:
+    """Python resolves a method's free names past the class body."""
+    source = (
+        _ROOT_BINDING
+        + "class Holder:\n"
+        + "    root = Path(__file__).resolve().parents[1]\n"
+        + "    def method(self, name):\n"
+        + "        return root / 'ci-runner' / name\n"
+    )
+
+    assert not _undeterminable_for(source=source, tmp_path=tmp_path)
+
+
+def test_a_lambda_parameter_shadows_the_module_root_name(*, tmp_path: Path) -> None:
+    """A lambda parameter is its own binding scope."""
+    source = (
+        _ROOT_BINDING
+        + "ROOT = Path(__file__).resolve().parents[1]\n"
+        + "join = lambda ROOT, name: ROOT / 'ci-runner' / name\n"
+    )
+
+    assert not _undeterminable_for(source=source, tmp_path=tmp_path)
