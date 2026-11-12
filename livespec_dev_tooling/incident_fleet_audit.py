@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 from collections.abc import Callable
 
+from livespec_dev_tooling._incident_fleet_row_gap import row_gap
 from livespec_dev_tooling._incident_fleet_types import (
     CapabilityEvidence,
     FleetAudit,
@@ -59,31 +60,12 @@ SURFACES: tuple[str, ...] = (
 
 
 _GUIDANCE_SURFACES = frozenset({"Agent tool and stop guards", "Operator factory routing"})
-_DISPOSITIONS = frozenset({"implemented", "deliberately-normal", "not-applicable"})
-_UNCLASSIFIED = "missing, contradictory, stale or unauthenticated serving proof"
 
 
 def _consumers(*, manifest: Manifest) -> tuple[tuple[str, bool], ...]:
     return tuple((f"{manifest.owner}/{m.repo}", False) for m in manifest.members) + tuple(
         (f"{manifest.owner}/{a.repo}", a.profile == ("instruction-only",))
         for a in manifest.adopters
-    )
-
-
-def _valid(*, row: CapabilityEvidence, manifest_sha256: str, instruction_only: bool) -> bool:
-    if (
-        row.manifest_sha256 != manifest_sha256
-        or row.disposition not in _DISPOSITIONS
-        or not all((row.source_path, row.proof_ref, row.owner))
-    ):
-        return False
-    if not row.release_build or row.release_build != row.serving_build:
-        return False
-    if row.disposition in {"not-applicable", "deliberately-normal"}:
-        return bool(row.reason)
-    return instruction_only or (
-        bool(row.incident_item and row.normal_factory_proof)
-        and re.fullmatch(r"[0-9a-f]{64}", row.cumulative_scope) is not None
     )
 
 
@@ -126,22 +108,22 @@ def _consumer_rows(
                     reason="authenticated instruction-only profile has no runtime obligation",
                 )
             )
-        elif (
-            not inapplicable
-            and evidence is not None
-            and _valid(
-                row=evidence,
-                manifest_sha256=manifest_sha256,
-                instruction_only=instruction_only,
-            )
-            and verify_evidence(evidence) is True
-        ):
+            continue
+        gap = row_gap(
+            claim=evidence,
+            manifest_sha256=manifest_sha256,
+            instruction_only=instruction_only,
+            inapplicable=inapplicable,
+            confirmed=verify_evidence,
+            explain=explain,
+        )
+        if gap or evidence is None:
             rows.append(
                 SurfaceDisposition(
                     repository=repository,
                     surface=surface,
-                    disposition=evidence.disposition,
-                    reason=evidence.reason,
+                    disposition="unclassified",
+                    reason=gap,
                     evidence=evidence,
                 )
             )
@@ -150,8 +132,8 @@ def _consumer_rows(
                 SurfaceDisposition(
                     repository=repository,
                     surface=surface,
-                    disposition="unclassified",
-                    reason=(evidence and explain(evidence)) or _UNCLASSIFIED,
+                    disposition=evidence.disposition,
+                    reason=evidence.reason,
                     evidence=evidence,
                 )
             )
@@ -189,8 +171,10 @@ def audit_incident_fleet(
     Verifiers are independently installed readers of committed membership and
     released serving proof, not candidate labels or caller-supplied receipt
     parsers. They must return False when their authoritative read is unavailable.
-    `explain` may name why a claim cannot classify against what was read; an unclassified
-    row carries that reason, or the generic one when it names none.
+    `explain` may name why a claim cannot classify against what was read. Every unclassified
+    row names its missing evidence: that reason when it names one, otherwise the first gap
+    the row has (no claim, a malformed or foreign-identity claim, an unreadable or stale
+    serving version, or a re-read that did not confirm it).
     This function creates no credentials, lifecycle records or activation effects.
     """
     consumers = _consumers(manifest=manifest)
