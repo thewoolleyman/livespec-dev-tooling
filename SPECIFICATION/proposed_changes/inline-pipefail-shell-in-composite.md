@@ -21,7 +21,12 @@ The ratified clause covers "every shell script this repository ships or runs in 
 - `.github/actions/bump-pin-rewrite/action.yml`: `git diff --cached --raw | awk '{ print $2 }' | grep -q '^160000$'`. This is a real verdict: it guards against committing a stray gitlink, and a SIGPIPE reads as "no gitlink".
 - `.github/workflows/reusable-release-dispatch.yml`: `echo "$manifest" | head -20 >&2`. Its status is used through `-e`, so a manifest larger than a pipe buffer fails the step.
 - `.github/workflows/reusable-release-dispatch.yml`: `... | head -1 | awk '{print $2}' || true`. Its status is discarded, so it is out of scope.
-The other nine repositories hold 1 to 6 inline early-reader sites each, none of them under pipefail today, so the clause reaches them only if they turn pipefail on. Each repository's own specification governs its own files; this proposal amends livespec-dev-tooling's. Work item livespec-dev-tooling-ljmpht (plan fleet-flaky-tests, epic livespec-dev-tooling-zwveqp) carries the fix and the widened sweep. Its launch was refused at 18:48Z on 2026-11-12 as spec-change tier, under topic inline-pipefail-shell-in-composite. The coordinator directed this proposal.
+The other nine repositories hold 1 to 6 inline early-reader sites each, none of them under pipefail today, so the clause reaches them only if they turn pipefail on. Each repository's own specification governs its own files; this proposal amends livespec-dev-tooling's.
+
+Two of those nine state the same reader rule in their own specifications, so each needs a follow-up that copies this proposal's text once it is ratified:
+- livespec-overseer carries the identical clause in its non-functional-requirements.md (around line 202, under `## Constraints`) and has 6 inline sites. Its follow-up is overseer-jzyobr.
+- livespec core states the rule for a "governed shell file" whose option policy enables pipefail (its non-functional-requirements.md, around lines 623 and 627, under `### Shell and Justfile discipline`) and does not say whether an action or workflow `run:` body is such a file. It has 4 inline sites. Its follow-up is livespec-3xyody.
+Both follow-ups wait for this proposal to ratify. No fix is owed in either repository today, because none of their inline sites runs under pipefail. The other seven repositories state no such rule, so they need nothing. Work item livespec-dev-tooling-ljmpht (plan fleet-flaky-tests, epic livespec-dev-tooling-zwveqp) carries the fix and the widened sweep. Its launch was refused at 18:48Z on 2026-11-12 as spec-change tier, under topic inline-pipefail-shell-in-composite. The coordinator directed this proposal.
 
 ### Proposed Changes
 
