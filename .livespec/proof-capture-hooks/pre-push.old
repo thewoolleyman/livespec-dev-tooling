@@ -1,6 +1,0 @@
-#!/bin/sh
-# The proof_capture node is read-only on the repository tree and publishes
-# nothing, so this custom hooks path refuses a push from every repository
-# instead of running the repository's potentially long pre-push gate.
-echo "LIVESPEC_PROOF_CAPTURE_READ_ONLY: proof_capture is read-only on the repository tree; git commit and git push are refused before repository hooks run. End this turn with preferred_label=fix when a code change is needed." >&2
-exit 1
