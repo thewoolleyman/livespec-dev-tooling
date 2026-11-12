@@ -1268,8 +1268,8 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: the fabro_server role deletes an instance's retired sandbox environments",
-    "test": "TODO",
-    "reason": "Spec-first: a real test at the integration tier or above is owed for this scenario, converging the `fabro_server` role against a stand-in Fabro API that records the catalog DELETE, the non-terminal-run read and the both-lists refusal; livespec-dev-tooling-lmuhvi owns it, and its Definition of Done asserts this behaviour.",
+    "test": "tests.consumer.test_fabro_retired_environment_catalog_scenario.test_the_role_reads_all_live_runs_before_retiring_catalog_entries",
+    "reason": "Integration-tier consumer scenario: reads the role task graph as the deployed Ansible consumer sees it, proving the declared retirement axis, pre-write active/retired overlap refusal, one authenticated non-terminal run-list read, per-run settings reads before the refusal, and the authenticated DELETE whose 204 changes and 404 does not. The sibling consumer arm holds gmktec's fleet, candidate and homelab declarations plus the operator documentation against the completed rename.",
     "work_item": "livespec-dev-tooling-lmuhvi"
   },
   {

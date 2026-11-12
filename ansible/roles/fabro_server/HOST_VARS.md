@@ -64,6 +64,7 @@ before the axis existed.
 | `binary_sha256` | empty — the role leaves whatever is at `binary_path` alone | the sha256 `binary_source` must hash to. Declared together with `binary_source` or not at all; the role refuses the pair half-spelled, and refuses a source that does not hash to this digest **before** it reads the factory host. |
 | `home_env` | `fabro_server_host_home` | the unit's `Environment=HOME`. Independent of `home_dir`: `home_dir` is the state root the server is POINTED at with `--storage-dir` and `--config`, while this is the `HOME` its process and its CLI resolve `~/.fabro` against. |
 | `environments` | `[]` — the role leaves whatever the instance's server holds alone | the instance's **sandbox environment catalog**: a list of entries, each spelling an `id`, a docker `image`, a `cpu` count and a `memory` size. The one axis that is not a file this role renders — a sandbox environment is server-managed state behind the instance's `/api/v1/environments` API. See "The sandbox environment catalog" below. |
+| `retired_environments` | `[]` — the role deletes no catalog entries | a list of sandbox environment ids this mapping has deliberately retired. For each id the role reads every non-terminal run on that same instance, refuses while one still selects it, then sends `DELETE /api/v1/environments/{id}`. See "Retiring an old catalog environment" below. |
 | `vault_secrets` | `[]` — the role leaves the instance's vault alone | vault entries the instance must hold: a list, each spelling a `name`, a `type` (`token` or `file`), an optional `description`, and either `from_controller_env` (the control-node variable a real credential is read from) or `value` (a committed non-secret placeholder). Each name the vault lacks is created once the server answers; a name it holds is never read, compared or overwritten. See "State the role provisions on a host that has none" below. |
 | `service_state` | `running` | `stopped` parks the instance in version control — unit, drop-in, `settings.toml` and state directory all KEPT on the host, the unit stopped and disabled, the restart handler never fired for it and the running-server verification skipped. Bring it back by flipping the word and re-applying. Refused while the instance is carrying runs, by the quiet-server guard that gates a restart. |
 | `retained_read_only` | `false` — a parked instance's files keep the modes they have | `true` keeps a **parked** instance only as a rollback: after the stop, the role clears every write bit (`a-w`, recursive, symlinks not followed) on the instance's whole `home_dir` and on its `binary_path`, never replaces its binary, and skips its own directory task for any path inside a retained `home_dir` — whichever instance it is converging, because a sibling that names no `binary_path` shares that state root's `bin/`. Refused unless it is a boolean and `service_state` is `stopped`. Rollback: set it back to `false` and `service_state` to `running`; the directory task then restores the owner's write bit on the state root, `storage/` and the binary directory, and anything deeper needs a converge-able step added here first, never a hand `chmod`. |
@@ -278,6 +279,26 @@ Both writes carry the server's own concurrency check where it has one: the repla
 sends `If-Match` with the revision that same read returned, so a change made
 between the read and the write is refused rather than overwritten. The header is
 required by the API, so there is no form of that request that skips it.
+
+### Retiring an old catalog environment
+
+`retired_environments` is the explicit destructive counterpart to
+`environments`. Removing an id from the active list alone is not a deletion: the
+role leaves undeclared catalog entries alone unless this list names them. For each
+listed id, it first reads every non-terminal run from that instance's own
+`/api/v1/runs` API and then reads each run's persisted settings to learn its
+selected environment. If any run selects a listed id, the converge fails naming
+both the run and the id, and sends no DELETE at all. This all-runs read happens
+before any listed id is deleted, so a later id cannot be removed while an earlier
+one is found unsafe.
+
+When no non-terminal run selects a retired id, the role authenticates with the
+same host-side `FABRO_DEV_TOKEN` request shape as the ordinary catalog converge
+and sends `DELETE /api/v1/environments/{id}`. A `204` reports a change; a `404`
+means a prior converge already removed the id and reports no change. An instance
+mapping may never name the same id in both `environments` and
+`retired_environments`; the role refuses that contradictory declaration before
+it writes host or catalog state.
 
 ### The body is DERIVED from the catalog, not spelled in the role
 
