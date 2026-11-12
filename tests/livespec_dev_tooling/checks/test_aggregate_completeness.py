@@ -61,7 +61,7 @@ def _run_check(
     cwd: Path,
     extra_argv: list[str] | None = None,
 ) -> subprocess.CompletedProcess[str]:
-    argv = [sys.executable, str(_CHECK)]
+    argv = [sys.executable, "-m", "livespec_dev_tooling.checks.aggregate_completeness"]
     if extra_argv is not None:
         argv.extend(extra_argv)
     return subprocess.run(
