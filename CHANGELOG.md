@@ -58,6 +58,31 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.202.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.201.0...v1.202.0) (2026-11-12)
+
+
+### Features
+
+* add consumer import declaration checks (livespec-dev-tooling-vobfwi) ([2d1f912](https://github.com/thewoolleyman/livespec-dev-tooling/commit/2d1f9126c287c8c31f3778cfeca61c44747c33b3))
+* preserve flake retry failures ([a40979f](https://github.com/thewoolleyman/livespec-dev-tooling/commit/a40979f41aa2a43c4d7c99161b79f17c19f75e28))
+* report flake retry failures ([1869763](https://github.com/thewoolleyman/livespec-dev-tooling/commit/18697630a2d5eae6a760b392668024641fc14bbc))
+* resume prepared recovery publication on startup ([b18871a](https://github.com/thewoolleyman/livespec-dev-tooling/commit/b18871a6607b1356ed1d4bdbb44afb0631a462cd))
+
+
+### Bug Fixes
+
+* **ansible:** retain sessions held through proc links (livespec-dev-tooling-ovnrsv) ([3a8dee5](https://github.com/thewoolleyman/livespec-dev-tooling/commit/3a8dee57540627f71606b537af718c83f1b6bafc))
+* **ci-runner:** routed CI jobs mount the pypi-proxy uv wrapper from arc-runners (livespec-dev-tooling-rpdowy) ([4793883](https://github.com/thewoolleyman/livespec-dev-tooling/commit/4793883d85b2008ba0aa4b6bf8bf6fc32d3b8312))
+* **ci-runner:** the CI stack converge upgrades each homelab worker's runner set ([b9838b2](https://github.com/thewoolleyman/livespec-dev-tooling/commit/b9838b28cc262b41070c8797e7b591453c8c7930))
+* derive k3s collector pods endpoint ([ef0fb83](https://github.com/thewoolleyman/livespec-dev-tooling/commit/ef0fb8364ffcaeae9143425ec6273adc6a2fe92c))
+* detach runner cache postStart work ([0543f12](https://github.com/thewoolleyman/livespec-dev-tooling/commit/0543f12704228b039d72f1085c3d5f3b34cd4e5b))
+* exclude generated installed files from the dev-tooling import oracle (livespec-dev-tooling-vobfwi) ([46c2058](https://github.com/thewoolleyman/livespec-dev-tooling/commit/46c2058c85eabba6e1c12efdd529d5cc74e4f084))
+* **incident:** leave invalid release claims unclassified ([254743e](https://github.com/thewoolleyman/livespec-dev-tooling/commit/254743e7fb2a419430734d7290d1543bb011d39c))
+* **otel-collector:** restart the collector when its OTLP pods endpoint changes ([b23d0e0](https://github.com/thewoolleyman/livespec-dev-tooling/commit/b23d0e042179a23b497039df3ed4237841f6898c))
+* route flake root-fixes through capture ([2a4314a](https://github.com/thewoolleyman/livespec-dev-tooling/commit/2a4314a5b03dace843ba610b092b6ce9e7328571))
+* the rule-26 kill matrix re-runs unreported tests together, never one process each (livespec-dev-tooling-74i52a) ([5adf35c](https://github.com/thewoolleyman/livespec-dev-tooling/commit/5adf35cc6e3c4a5bed855865297b4c0fb6b29f51))
+* the rule-26 kill-matrix plugin records each file that fails to collect (livespec-dev-tooling-74i52a) ([384d179](https://github.com/thewoolleyman/livespec-dev-tooling/commit/384d1794f18f86a92913af62c69aa3b0d578fef2))
+
 ## [1.201.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.200.0...v1.201.0) (2026-11-12)
 
 
