@@ -58,6 +58,24 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.200.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.199.0...v1.200.0) (2026-11-12)
+
+
+### Features
+
+* **ci-runner:** combine API request histogram series ([f5d2be9](https://github.com/thewoolleyman/livespec-dev-tooling/commit/f5d2be9e2378d09df77a44f7c09e0bdc0e5b6bee))
+* **ci-runner:** cover absent handler timeouts ([f22c691](https://github.com/thewoolleyman/livespec-dev-tooling/commit/f22c69189fe708b08833b6a0265f99b7e37d757c))
+* **ci-runner:** cover API server handler timeouts ([eb2253a](https://github.com/thewoolleyman/livespec-dev-tooling/commit/eb2253abba4e2e826d90aad9f22c6e31886cc5c7))
+* **ci-runner:** cover API server request latency ([5a5ab5a](https://github.com/thewoolleyman/livespec-dev-tooling/commit/5a5ab5a357a13d9a1141a39c2237ad1a5727f828))
+* confirm reused delegated gate evidence ([9f7fdb0](https://github.com/thewoolleyman/livespec-dev-tooling/commit/9f7fdb0a993098a734f9940cff7f94e9dd545b25))
+
+
+### Bug Fixes
+
+* **ci-runner:** the rule-26 kill-matrix Job keeps one result cache on the PVC across run ids (livespec-dev-tooling-oi2two) ([6a35f37](https://github.com/thewoolleyman/livespec-dev-tooling/commit/6a35f37d5e5c95a3ad3a0f7f547b4a87154eee6c))
+* report the Job conditions on a pre-push outcome disagreement ([5d29344](https://github.com/thewoolleyman/livespec-dev-tooling/commit/5d293448ee2438f830d0bff0cd7206957ef02ae1))
+* the rule-26 kill matrix checkpoints its result cache while it runs, so a deadline kill keeps finished mutants (livespec-dev-tooling-oi2two) ([9dca815](https://github.com/thewoolleyman/livespec-dev-tooling/commit/9dca815937774390deadf89dffa1200571ee5800))
+
 ## [1.199.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.198.0...v1.199.0) (2026-11-12)
 
 
