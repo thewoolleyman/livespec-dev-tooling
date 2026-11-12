@@ -8,8 +8,9 @@ three errors:
 - `No ED25519 host key is known for <host>.perch-rudd.ts.net. and you have requested strict checking.`
 - `Permission denied (publickey)` from a fleet host
 
-Each of them is a wrong account or a wrong method. None of them means the host
-is unreachable.
+Each is usually a wrong account or method; check the record and retry before
+concluding a host is unreachable. (`Permission denied (publickey)` can also be
+the right account with its key missing.)
 
 ## Where the routes are written down
 
