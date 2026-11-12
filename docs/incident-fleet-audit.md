@@ -85,10 +85,14 @@ bound to core's manifest `59912fe1…`. A claim goes stale when that build moves
 plugin update, a release that touches a release-keyed surface) or when core's manifest changes;
 its row then prints `unclassified` and the finding names the build the claim expected against the
 one read. Refresh the claim from a new read; never copy the new serving value in without re-reading
-what it proves. `tests/livespec_dev_tooling/test_incident_fleet_committed_claims.py` pins the claim
-set, its binding to the committed manifest identity (fixture
-`tests/livespec_dev_tooling/fixtures/incident_fleet/core-fleet-manifest.jsonc`) and each release
-build as the serving form of a named release tag, so a refresh updates that test with the file.
+what it proves. `tests/livespec_dev_tooling/test_incident_fleet_committed_claims.py` holds every
+claim to its schema: a known surface once per consumer, a disposition, an owner, a proof reference,
+a reason or an incident record, a release build in its capability's serving form, and a binding to
+the committed manifest identity and one of its applicable consumers (fixture
+`tests/livespec_dev_tooling/fixtures/incident_fleet/core-fleet-manifest.jsonc`). It names no claim's
+value, so a refresh edits only this file. The same checks run on
+`tests/livespec_dev_tooling/fixtures/incident_fleet/claims-wellformed.json`, broken one field at a
+time.
 
 Eleven claims: one `implemented` and ten `not-applicable`.
 
@@ -100,14 +104,15 @@ Eleven claims: one `implemented` and ten `not-applicable`.
   generation 19. The surface's five files are byte-identical from `v1.195.0` through `v1.198.0`.
   The claim's `proof_ref` names the runs, commits and reads.
 
-- `Generated projects` for this library (release-keyed, `v1.198.0`) and, at this library's
-  templates `v1.197.0` (the one release every pin of its reusable workflows and composite actions
-  names in their default-branch workflows, read 2026-11-12), for `livespec-console-beads-fabro`,
-  `livespec-driver-claude`, `livespec-driver-codex`, `livespec-driver-pi`, `livespec-overseer` and
-  `livespec-runtime`. Each default-branch tree holds no `copier.yml`, `.copier-answers.yml` or
-  `.jinja` path. Core's `copier.yml` scaffolds `livespec-impl-*` orchestrator plugin repositories,
-  and the two fleet repositories generated from it, `livespec-orchestrator-beads-fabro` and
-  `livespec-orchestrator-git-jsonl`, each carry a `.copier-answers.yml`.
+- `Generated projects` for this library (release-keyed, `v1.198.0`) and, at the one release of this
+  library's templates that every pin of its reusable workflows and composite actions names in each
+  repository's default-branch workflows (read 2026-11-12), for `livespec-console-beads-fabro`
+  (`v1.197.0`) and for `livespec-driver-claude`, `livespec-driver-codex`, `livespec-driver-pi`,
+  `livespec-overseer` and `livespec-runtime` (`v1.199.0`). Each default-branch tree holds no
+  `copier.yml`, `.copier-answers.yml` or `.jinja` path. Core's `copier.yml` scaffolds
+  `livespec-impl-*` orchestrator plugin repositories, and the two fleet repositories generated from
+  it, `livespec-orchestrator-beads-fabro` and `livespec-orchestrator-git-jsonl`, each carry a
+  `.copier-answers.yml`.
 - `Focused test selection`, `Touched-file coverage` and `Full coverage producers/consumers` for
   `hetzner-xubuntu-info`, at the gate readers its dev-host `.venv` records (`v1.195.0`): it has no
   test file and runs neither pytest nor coverage, locally or in CI.

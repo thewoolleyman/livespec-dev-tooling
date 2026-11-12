@@ -2882,6 +2882,31 @@ def test_no_arg_range_commit_with_suite_green_shape_exits_zero(
     )
 
 
+def test_no_arg_range_commit_with_affected_tests_suite_green_shape_exits_zero(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A sandbox's affected-tests suite-green evidence is range-verifiable."""
+    _init_range_repo(tmp_path=tmp_path)
+    (tmp_path / "livespec").mkdir()
+    (tmp_path / "livespec" / "foo.py").write_text("VALUE: int = 1\n", encoding="utf-8")
+    message = (
+        "chore: sandbox cleanup\n"
+        "\n"
+        "TDD-Suite-Green-Scope: affected-tests\n"
+        "TDD-Suite-Green-Producer: affected-tests:run-1\n"
+        "TDD-Suite-Green-Output-Checksum: sha256:deadbeef\n"
+        "TDD-Suite-Green-Captured-At: 2026-06-11T00:00:00Z\n"
+    )
+    _commit_all(tmp_path=tmp_path, message=message)
+
+    result = _run_no_arg(monkeypatch=monkeypatch, capsys=capsys, tmp_path=tmp_path)
+
+    assert result.returncode == 0, (
+        f"affected-tests suite-green product commit in range should exit 0; "
+        f"got returncode={result.returncode} stderr={result.stderr!r}"
+    )
+
+
 def test_no_arg_range_commit_with_full_trailer_shape_exits_zero(
     *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

@@ -160,6 +160,21 @@ see correction C6 in `.ai/supervisor-protocol.md`. This section is the
 host-wide subset, kept here because the trap hits ANY role on this host and
 `.ai/supervisor-protocol.md` is loaded only by supervisor handoffs.
 
+## In zsh, Brace A Variable Before A Colon
+
+HOST-WIDE, the same class of trap as the `ls` alias above: the agent shell here is zsh, and zsh reads `$var:X` as a
+modifier whenever X is a modifier letter. `:r` strips an extension, `:h` and `:t` keep the head or tail, and `:l` and
+`:u` change case. So `--action resolve-blocked:$id:ready` sends a mangled id, and drive.py answers with the generic
+"Unsupported human valve action id.". That reads like a build or grammar change, not a quoting bug. `git show $T:path`
+is hit the same way (`:l` lowercases).
+
+Write `"resolve-blocked:${id}:ready"` and `"${T}:path"`, or wrap the loop in `bash -c`. When a valve press that worked
+before is refused as unsupported, print the expanded argv before blaming the build. Measured 2026-11-12 by the
+implement-test-performance seat: two releases failed inside a loop, the cause was first misread as an orchestrator build
+roll, and the identical literal command went green. The coordinator's record of the same trap is in
+`.ai/coordinator-duties.md` (§12, "In zsh, brace a variable before a colon"). It is repeated here because that file
+loads only for coordinator work.
+
 ## A Clean Filing Display Is Not Evidence Of Admissibility
 
 `filing_display` can print `definition-of-done findings: none` for an item whose

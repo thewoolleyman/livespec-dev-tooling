@@ -38,6 +38,24 @@ _PYPROJECT = "[project]\nname = 'retry-fixture'\nversion = '{version}'\n"
 _UV_LOCK = "version = 1\n\n[[package]]\nname = 'retry-fixture'\nversion = '{version}'\n"
 
 
+@pytest.fixture(autouse=True)
+def _isolate_flake_retry_session_state(*, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Give each in-process hook call its own copy of the plugin's session state.
+
+    The plugin keeps the RUNNING session's retry state in module globals, and this
+    suite's own pytest session loads the same module. A test that drives a hook
+    in-process without this fixture clears the real session's failed node ids and
+    leaves a fixture repository's withholding reason in it. The CI log then says
+    no failing test was retried (fleet-flaky-tests, livespec-dev-tooling-zwveqp),
+    and any later summary test in the same worker fails depending on test order.
+    """
+    plugin = importlib.import_module("livespec_dev_tooling.flake_retry")
+    monkeypatch.setattr(plugin, "_RESULTS", {})
+    monkeypatch.setattr(plugin, "_FAILED_NODEIDS", set[str]())
+    monkeypatch.setattr(plugin, "_SESSION_WITHHELD", list[str]())
+    monkeypatch.setattr(plugin, "_WITHHELD_BY_NODEID", dict[str, str]())
+
+
 def _git(*, repo: Path, args: list[str]) -> None:
     _ = subprocess.run(["git", *_GIT_IDENTITY, *args], cwd=repo, check=True, capture_output=True)
 
