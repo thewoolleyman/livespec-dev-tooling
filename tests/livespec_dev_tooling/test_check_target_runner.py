@@ -30,6 +30,7 @@ from livespec_dev_tooling._check_target_runner import (
     NOT_ADMITTED,
     NOT_LAUNCHED,
     TIMED_OUT,
+    TargetOutcome,
     TargetRun,
     _renew_progress_stamp,
     run_targets,
@@ -67,28 +68,33 @@ _AFTER_READY = "while [ ! -e ready ]; do sleep 0.05; done"
 
 
 def test_outcomes_keep_run_order_status_output_and_stdin_closed(tmp_path: Path) -> None:
-    marker = tmp_path / "fast-started"
-    fast_pid = tmp_path / "fast.pid"
+    # `slow` ends only once `fast`'s `on_complete` callback has written the marker, so
+    # the completion order holds however late either target is spawned. The ceiling
+    # (about 30s) only guards a hang: reaching it fails `slow` with status 4.
+    marker = tmp_path / "fast-completed"
     seen: list[str] = []
+
+    def on_complete(outcome: TargetOutcome) -> None:
+        seen.append(outcome.name)
+        if outcome.name == "fast":
+            marker.touch()
+
     outcomes = run_targets(
         runs=[
             _sh(
                 name="slow",
                 script=(
-                    f'while [ ! -e "{marker}" ]; do sleep 0.01; done; '
-                    f'pid=$(cat "{fast_pid}"); '
-                    'while kill -0 "$pid" 2>/dev/null; do sleep 0.01; done; '
+                    "n=0; "
+                    f'while [ ! -e "{marker}" ]; do '
+                    "n=$((n + 1)); [ $n -gt 600 ] && exit 4; sleep 0.05; done; "
                     "echo slow-out; exit 3"
                 ),
             ),
-            _sh(
-                name="fast",
-                script=f'echo $$ > "{fast_pid}"; touch "{marker}"; cat; echo fast-out >&2',
-            ),
+            _sh(name="fast", script="cat; echo fast-out >&2"),
         ],
         cwd=tmp_path,
         max_workers=2,
-        on_complete=lambda outcome: seen.append(outcome.name),
+        on_complete=on_complete,
     )
     assert [(o.name, o.status, o.returncode) for o in outcomes] == [
         ("slow", COMPLETED, 3),
