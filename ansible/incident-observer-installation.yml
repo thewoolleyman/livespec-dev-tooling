@@ -19,18 +19,16 @@
 # apply refuses a venv that does not already serve `incident_observer_release`.
 # Declare the repository in the inventory first (a committed change).
 #
-# The reader credential is THAT repository's tenant password: the credential
-# wrapper projects BEADS_DOLT_PASSWORD for the repository whose checkout it runs
-# in, so start the wrapper in the served repository's checkout and run the
-# playbook from livespec-dev-tooling's, drift first, one installation per run
-# (`<name>` is the repository without its owner):
+# The reader credential: the credential wrapper projects one BEADS_DOLT_PASSWORD,
+# the same from every checkout; the tenant it opens is the one the served
+# repository's reference clone commits in `.beads/config.yaml`, and the apply
+# proves the credential opens THAT tenant before the installation serves. Drift
+# first, one installation per run (`<name>` is the repository without its owner):
 #
-#   cd /data/projects/<name> && /usr/local/bin/with-livespec-env.sh -- bash -c \
-#     'cd /data/projects/livespec-dev-tooling && just ansible-drift \
-#      ansible/incident-observer-installation.yml -e incident_observer_installation_name=<name>'
-#   cd /data/projects/<name> && /usr/local/bin/with-livespec-env.sh -- bash -c \
-#     'cd /data/projects/livespec-dev-tooling && just ansible-apply \
-#      ansible/incident-observer-installation.yml -e incident_observer_installation_name=<name>'
+#   /usr/local/bin/with-livespec-env.sh -- just ansible-drift \
+#     ansible/incident-observer-installation.yml -e incident_observer_installation_name=<name>
+#   /usr/local/bin/with-livespec-env.sh -- just ansible-apply \
+#     ansible/incident-observer-installation.yml -e incident_observer_installation_name=<name>
 #
 # Then converge the tailnet fronts (ansible/dev-host.yml --tags tailscale_serve),
 # whose host_vars declare one front per installation port.

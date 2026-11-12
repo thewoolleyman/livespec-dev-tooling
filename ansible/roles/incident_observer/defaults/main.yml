@@ -202,11 +202,17 @@ incident_observer_installations:
   # livespec-dev-tooling (epic livespec-dev-tooling-bqnzcm). Each required_jobs
   # list is that repository's own `ci-green` needs on master, spelled as the
   # workflow_job event reports them (a matrix job once per leg), with incident-ci
-  # before ci-green as livespec-dev-tooling's own list has it. Each tenant id is
-  # that repository's `.beads/metadata.json` project_id. Each reader credential
-  # is BEADS_DOLT_PASSWORD as the credential wrapper projects it for THAT
-  # repository: run the apply under /usr/local/bin/with-livespec-env.sh from the
-  # repository's own checkout (ansible/incident-observer-installation.yml).
+  # before ci-green as livespec-dev-tooling's own list has it (incident-ci reaches
+  # the orchestrator and overseer with livespec-orchestrator-beads-fabro#5092 and
+  # livespec-overseer#2963; livespec's release-gate-pre-tag is skipped on master
+  # and reports once under that name). Each tenant id is that repository's
+  # `.beads/metadata.json` project_id. The reader credential: the credential
+  # wrapper projects ONE BEADS_DOLT_PASSWORD, the same from every checkout
+  # (measured 2026-11-12), and the TENANT it opens is chosen by the reference
+  # clone's committed `.beads/config.yaml` (dolt.server-user, dolt.database),
+  # rendered into the clone's pointer. The apply proves that credential opens the
+  # served tenant before it serves (tasks/converge.yml), so a later per-tenant
+  # password cannot silently cross.
   - repository: thewoolleyman/livespec
     repository_id: 1215509712
     owner_id: 158

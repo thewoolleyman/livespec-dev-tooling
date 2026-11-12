@@ -51,8 +51,12 @@ _DISJOINT = (
 _ASSERTS = (_NAME, _INVENTORY, _SHARED, _LAYOUT, _DISJOINT)
 _PLAYBOOK_TIMEOUT_SECONDS = 600
 _IDS = ("repository_id", "owner_id")
+# The owner is read from the role's own default, never spelled here (the fleet is
+# moving to an organization).
+_OWNER = base.role_yaml(relative="defaults/main.yml")["incident_observer_repository"].split("/")[0]
+_SECOND_REPOSITORY = f"{_OWNER}/livespec"
 _SECOND = {
-    "repository": "thewoolleyman/livespec",
+    "repository": _SECOND_REPOSITORY,
     "required_jobs": ["check-lint", "ci-green"],
     "port": 8770,
     "tenant_project_id": "00000000-0000-0000-0000-000000000000",
@@ -298,7 +302,7 @@ def test_a_declared_repository_gets_its_own_layout_derived_from_its_name() -> No
     root = f"{home}/installation-livespec"
 
     assert derived == {
-        "incident_observer_repository": "thewoolleyman/livespec",
+        "incident_observer_repository": _SECOND_REPOSITORY,
         "incident_observer_required_jobs": ["check-lint", "ci-green"],
         "incident_observer_port": 8770,
         "incident_observer_tenant_project_id": "00000000-0000-0000-0000-000000000000",
@@ -309,7 +313,7 @@ def test_a_declared_repository_gets_its_own_layout_derived_from_its_name() -> No
         "incident_observer_reader_env_path": f"{etc}/reader-livespec.env",
         "incident_observer_state_dir": f"{root}/receipts",
         "incident_observer_reference_dir": f"{root}/reference",
-        "incident_observer_reference_repo": "https://github.com/thewoolleyman/livespec.git",
+        "incident_observer_reference_repo": f"https://github.com/{_SECOND_REPOSITORY}.git",
         "incident_observer_reference_version": "master",
         "incident_observer_release_reference_dir": defaults["incident_observer_reference_dir"],
         "incident_observer_unit_name": "livespec-incident-observer-livespec",
@@ -336,7 +340,7 @@ def test_the_installation_renders_its_own_controller_and_units_beside_livespec_d
     production = base.render_installation(variables=base.production_variables())
 
     controller = json.loads(rendered["controller.json"])
-    assert controller["repository"] == "thewoolleyman/livespec"
+    assert controller["repository"] == _SECOND_REPOSITORY
     assert controller["port"] == 8770
     assert controller["manifest"] == derived["incident_observer_manifest_path"]
     assert controller["state"] == derived["incident_observer_state_dir"]
@@ -424,6 +428,16 @@ def _nodes() -> dict[str, tuple[dict[str, Any], dict[str, Any]]]:
         "second-public": (_serve(handlers={**_DEV_ROUTES, **_SECOND_ROUTES}), _second_vars()),
         "dev-beside-second": (
             _serve(handlers={**_DEV_ROUTES, **_SECOND_ROUTES}),
+            _production_vars(inventory=_inventory(_SECOND)),
+        ),
+        "dev-sibling-mistargeted": (
+            _serve(
+                handlers={
+                    **_DEV_ROUTES,
+                    "/livespec/callback": _DEV + "/callback",
+                    "/livespec/ordinary-action": _SECOND_LISTENER + "/ordinary-action",
+                }
+            ),
             _production_vars(inventory=_inventory(_SECOND)),
         ),
         "dev-undeclared-second": (
@@ -598,3 +612,56 @@ def test_a_public_route_no_installation_declares_is_still_refused_and_named(
     )
     assert stranger.failed is True
     assert "publishes /stranger/callback, which the role does not declare" in stranger.output
+
+
+def test_a_declared_path_proxied_to_another_installations_listener_is_refused(
+    outcomes: dict[str, _Outcome],
+) -> None:
+    outcome = outcomes["dev-sibling-mistargeted"]
+
+    assert outcome.failed is True
+    assert outcome.published == []
+    assert "funnel port 10000 proxies /livespec/callback to a listener other than" in (
+        outcome.output
+    )
+
+
+_SHARED_WRITES = (
+    "Install the interpreter's venv module and git",
+    "Create the controller account",
+    "Create the root-owned installation directories",
+    "Create the protected configuration directory",
+    "Create the controller account's home",
+    "Create the isolated venv on the system interpreter",
+    "Install the released distribution from its tag, never from a checkout",
+    "Clone the canonical reader at its released tag",
+    "Write each secret from the control node's projected environment",
+    "Install the manifest renderer outside the package and the clones",
+    "Write the recovery App credential the principal reads beside controller.json",
+)
+
+
+@pytest.mark.parametrize("name", _SHARED_WRITES)
+def test_an_installation_run_skips_every_write_livespec_dev_tooling_owns(name: str) -> None:
+    (task,) = [
+        task for task in base.role_yaml(relative="tasks/converge.yml") if task.get("name") == name
+    ]
+    when = task["when"]
+    first = when[0] if isinstance(when, list) else when
+    jinja = base.ansible_jinja()
+    production = {
+        "incident_observer_scratch": False,
+        "incident_observer_target_branch": "",
+        # The release install also asks whether the venv already serves the
+        # release; a first apply reads it as not installed.
+        "incident_observer_installed": False,
+        "incident_observer_installed_version": {"rc": 1, "stdout": ""},
+    }
+
+    assert jinja.compile_expression(first)(**production) is True
+    assert (
+        jinja.compile_expression(first)(
+            **production, incident_observer_installation_name="livespec"
+        )
+        is False
+    )
