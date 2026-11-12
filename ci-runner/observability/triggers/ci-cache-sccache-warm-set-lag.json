@@ -1,0 +1,56 @@
+{
+  "name": "CI compilation-cache warm set lag — repository busy-skipped past two populate intervals",
+  "description": "Fires per repository when ci-cache-gauges.sh emits warm-set lag above two warm-cache-populate intervals and at least two consecutive admitted-job busy skips. The datapoint is precomputed because a Honeycomb trigger has one calculation. Fields: repository, warm-set lag, consecutive skipped-busy count. Emitter: ci-runner/observability/ci-cache-gauges.sh. Receiver: host otel-collector -> livespec metrics. Owner: livespec-dev-tooling-uyevam. Runbook: inspect /var/lib/rancher/k3s/storage/.warm/populate-manifest.json, then kubectl -n ci-warm-cache get jobs and logs for warm-cache-populate; leave the admitted-job guardrail in place.",
+  "query": {
+    "calculations": [
+      {
+        "op": "MAX",
+        "column": "livespec.ci_cache.sccache.warm_set_lag_trigger_met"
+      }
+    ],
+    "filters": [
+      {
+        "column": "host.name",
+        "op": "=",
+        "value": "poweredge-xubuntu"
+      }
+    ],
+    "breakdowns": [
+      "repository"
+    ],
+    "time_range": 600
+  },
+  "threshold": {
+    "op": ">=",
+    "value": 1,
+    "exceeded_limit": 1
+  },
+  "frequency": 300,
+  "alert_type": "on_change",
+  "recipients": [
+    {
+      "id": "jKw2EyfLJ3W"
+    },
+    {
+      "id": "fort2EXXuVy"
+    }
+  ],
+  "tags": [
+    {
+      "key": "host",
+      "value": "poweredge-xubuntu"
+    },
+    {
+      "key": "service",
+      "value": "ci-runner-liveness"
+    },
+    {
+      "key": "component",
+      "value": "ci-cache"
+    },
+    {
+      "key": "kind",
+      "value": "value"
+    }
+  ]
+}
