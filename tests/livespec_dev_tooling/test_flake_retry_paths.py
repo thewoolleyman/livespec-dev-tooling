@@ -391,3 +391,102 @@ def test_a_bare_annotation_does_not_bind_a_repository_root(*, tmp_path: Path) ->
     )
 
     assert not _undeterminable_for(source=source, tmp_path=tmp_path)
+
+
+def test_a_global_declared_root_does_not_bind_a_parameter_of_another_function(
+    *, tmp_path: Path
+) -> None:
+    """A parameter named like a root assigned through ``global`` is an unrelated base."""
+    source = (
+        _ROOT_BINDING
+        + "def setter():\n"
+        + "    global ROOT\n"
+        + "    ROOT = Path(__file__).resolve().parents[1]\n"
+        + "def reader(ROOT, name):\n"
+        + "    return ROOT / 'ci-runner' / name\n"
+    )
+
+    assert not _undeterminable_for(source=source, tmp_path=tmp_path)
+
+
+def test_a_function_declaring_global_reads_the_module_root(*, tmp_path: Path) -> None:
+    """A ``global`` declaration makes the read resolve in the module scope."""
+    source = (
+        _MODULE_ROOT + "def reader(name):\n    global ROOT\n    return ROOT / 'ci-runner' / name\n"
+    )
+
+    assert _undeterminable_for(source=source, tmp_path=tmp_path)
+
+
+def test_a_global_declared_name_never_bound_at_module_level_is_no_root(*, tmp_path: Path) -> None:
+    """A ``global`` name that no module-level binding makes a root stays a non-repository base."""
+    source = (
+        _ROOT_BINDING + "def reader(name):\n    global ROOT\n    return ROOT / 'ci-runner' / name\n"
+    )
+
+    assert not _undeterminable_for(source=source, tmp_path=tmp_path)
+
+
+def test_a_nonlocal_root_is_a_root_where_the_enclosing_function_reads_it(*, tmp_path: Path) -> None:
+    """A ``nonlocal`` assignment binds the root in the enclosing function's scope."""
+    source = (
+        _ROOT_BINDING
+        + "def outer(name):\n"
+        + "    root = None\n"
+        + "    def setter():\n"
+        + "        nonlocal root\n"
+        + "        root = Path(__file__).resolve().parents[1]\n"
+        + "    return root / 'ci-runner' / name\n"
+    )
+
+    assert _undeterminable_for(source=source, tmp_path=tmp_path)
+
+
+def test_a_nonlocal_root_does_not_bind_a_parameter_of_an_unrelated_function(
+    *, tmp_path: Path
+) -> None:
+    """A parameter named like a ``nonlocal`` root elsewhere is an unrelated base."""
+    source = (
+        _ROOT_BINDING
+        + "def outer():\n"
+        + "    root = None\n"
+        + "    def setter():\n"
+        + "        nonlocal root\n"
+        + "        root = Path(__file__).resolve().parents[1]\n"
+        + "def unrelated(root, name):\n"
+        + "    return root / 'ci-runner' / name\n"
+    )
+
+    assert not _undeterminable_for(source=source, tmp_path=tmp_path)
+
+
+def test_a_nonlocal_declaration_skips_a_class_scope_between_functions(*, tmp_path: Path) -> None:
+    """A ``nonlocal`` name resolves past an enclosing class body to the function binding it."""
+    source = (
+        _ROOT_BINDING
+        + "def outer(name):\n"
+        + "    root = None\n"
+        + "    class Holder:\n"
+        + "        root = 1\n"
+        + "        def setter(self):\n"
+        + "            nonlocal root\n"
+        + "            root = Path(__file__).resolve().parents[1]\n"
+        + "    return root / 'ci-runner' / name\n"
+    )
+
+    assert _undeterminable_for(source=source, tmp_path=tmp_path)
+
+
+def test_a_nonlocal_declaration_with_no_enclosing_binding_binds_locally(*, tmp_path: Path) -> None:
+    """A ``nonlocal`` name no enclosing function binds falls back to the declaring scope."""
+    source = (
+        _ROOT_BINDING
+        + "def outer(name):\n"
+        + "    def setter():\n"
+        + "        nonlocal root\n"
+        + "        root = Path(__file__).resolve().parents[1]\n"
+        + "        return root / 'ci-runner' / name\n"
+        + "    return setter\n"
+    )
+
+    assert _undeterminable_for(source=source, tmp_path=tmp_path)
