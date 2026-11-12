@@ -43,6 +43,11 @@ CLI:
         and passed, one per line, when a delegated pre-commit verdict
         qualifies for this push; exit 1 otherwise.
 
+    python -m livespec_dev_tooling.green_token pre-push-reuse TARGET ...
+        Reuse a qualifying delegated pre-commit verdict for the caller's own
+        check set. Runs only uncovered, world-reading and authorization-reading
+        members locally; exits 3 when the caller must take its normal gate.
+
     python -m livespec_dev_tooling.green_token world-reading TARGET ...
         Print, one per line, exactly those given targets that are
         declared world-reading or carry no purity declaration — the
@@ -81,7 +86,10 @@ import structlog  # noqa: E402  — vendor-path-aware import after sys.path inse
 from returns.pipeline import is_successful  # noqa: E402  — vendor-path-aware import.
 from returns.unsafe import unsafe_perform_io  # noqa: E402  — vendor-path-aware import.
 
-from livespec_dev_tooling import check_purity  # noqa: E402  — vendor-path-aware import.
+from livespec_dev_tooling import (  # noqa: E402  — vendor-path-aware import.
+    check_purity,
+    pre_push_reuse,
+)
 from livespec_dev_tooling._green_token_evidence import (  # noqa: E402
     NORMAL_VALIDATION,
     PreCommitAggregateEvidence,
@@ -102,27 +110,31 @@ from livespec_dev_tooling._green_token_git import (  # noqa: E402
     worktree_is_clean,
 )
 from livespec_dev_tooling._pre_push_evidence import (  # noqa: E402
-    accepted_lines,
     pre_commit_hook_writes_no_token,
     refuses_pre_commit_token,
 )
 
 __all__: list[str] = []
 
-_TOKEN_FILE = "livespec-green-token.json"  # noqa: S105
 _WRITE = "write"
 _WRITE_PRE_COMMIT = "write-pre-commit"
 _CHECK = "check"
 _WORLD_READING = "world-reading"
 _UNDECLARED = "undeclared"
-_PRE_PUSH_EVIDENCE = "pre-push-evidence"
 _PRE_COMMIT_ARGUMENT_COUNT = 2
-_COMMANDS = (_WRITE, _WRITE_PRE_COMMIT, _CHECK, _WORLD_READING, _UNDECLARED, _PRE_PUSH_EVIDENCE)
+_COMMANDS = (
+    _WRITE,
+    _WRITE_PRE_COMMIT,
+    _CHECK,
+    _WORLD_READING,
+    _UNDECLARED,
+    *pre_push_reuse.PRE_PUSH_COMMANDS,
+)
 
 
 def _token_path(*, cwd: Path) -> Path:
     """Return the absolute path to the green token file for this worktree."""
-    return git_dir(cwd=cwd) / _TOKEN_FILE
+    return git_dir(cwd=cwd) / "livespec-green-token.json"
 
 
 def _load_stored_tree_hash(*, cwd: Path, log: structlog.stdlib.BoundLogger) -> str | None:
@@ -354,7 +366,8 @@ def main() -> int:
         help=(
             "'write' records a green token; 'check' tests if the token is valid; "
             "'world-reading' prints the given targets a token match may not stand in "
-            "for; 'undeclared' names the given targets declaring no purity."
+            "for; 'undeclared' names the given targets declaring no purity; "
+            "'pre-push-reuse' reuses qualifying delegated pre-commit evidence."
         ),
     )
     _ = parser.add_argument(
@@ -374,10 +387,10 @@ def main() -> int:
 
     if parsed.command == _WRITE:
         return write_token(cwd=cwd, log=log, pre_commit_hook=bool(parsed.pre_commit_hook))
-    if parsed.command == _PRE_PUSH_EVIDENCE:
-        lines = accepted_lines(cwd=cwd, log=log)
-        _write(text="".join(f"{line}\n" for line in lines or ()))
-        return 1 if lines is None else 0
+    if parsed.command in (pre_push_reuse.PRE_PUSH_EVIDENCE, pre_push_reuse.PRE_PUSH_REUSE):
+        return pre_push_reuse.run_pre_push_command(
+            command=parsed.command, cwd=cwd, targets=targets, log=log
+        )
     if parsed.command == _WRITE_PRE_COMMIT:
         if len(targets) != _PRE_COMMIT_ARGUMENT_COUNT:
             parser.error("write-pre-commit needs RUN_ID and OUTPUT_CHECKSUM")
