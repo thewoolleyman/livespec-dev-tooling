@@ -133,6 +133,7 @@ fi
 # ---------------------------------------------------------------------------
 log "warm-cache 3. Apply the budget ConfigMap + CronJob and converge the repos and script ConfigMaps"
 run kubectl apply -f "${SCRIPT_DIR}/warm-cache-cronjob.yaml"
+run kubectl apply -f "${SCRIPT_DIR}/warm-cache-fabro-cronjob.yaml"
 # The two warm uv DaemonSets (warm-uv-cache-populate, warm-uv-cache-populate-hp)
 # read warm-cache-budget as configMapKeyRef env, which is fixed at pod start, and
 # their while-sleep loop never restarts — so a budget raise in the ConfigMap
@@ -168,6 +169,7 @@ apply_created create configmap warm-cache-repos \
 apply_created create configmap warm-cache-populate \
   --namespace "${NAMESPACE}" \
   --from-file="warm-cache-populate.sh=${SCRIPT_DIR}/warm-cache-populate.sh" \
+  --from-file=warm-cache-fabro-populate.sh=${SCRIPT_DIR}/warm-cache-fabro-populate.sh \
   --from-file="verify-uv-cache.py=${SCRIPT_DIR}/verify-uv-cache.py" \
   --from-file="uv_cache_layout.py=${SCRIPT_DIR}/uv_cache_layout.py"
 if [ -n "${WARM_CACHE_IMAGE}" ]; then
@@ -179,4 +181,4 @@ if [ "${DRY_RUN}" -eq 1 ]; then
   echo "DRY RUN: nothing was applied."
   exit 0
 fi
-log "warm-cache converged: namespace ${NAMESPACE}, pypi-proxy, budget ConfigMap, CronJob warm-cache-populate (+ verifier), ${repo_count} repositories."
+log "warm-cache converged: namespace ${NAMESPACE}, pypi-proxy, budget ConfigMap, CronJobs warm-cache-populate and warm-cache-populate-fabro, ${repo_count} regular repositories."
