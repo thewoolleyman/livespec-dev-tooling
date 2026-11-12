@@ -52,13 +52,26 @@ timeout=$3
 temporary=$(mktemp -d)
 fifo="$temporary/watch"
 stderr="$temporary/stderr"
+progress_stamp=${LIVESPEC_GATE_RUN_PROGRESS_STAMP:-}
+heartbeat() {
+    while :; do
+        if test -n "$progress_stamp"; then
+            : >"$progress_stamp"
+        fi
+        sleep 30
+    done
+}
+heartbeat &
+heartbeat_pid=$!
 cleanup() {
+    kill "$heartbeat_pid" 2>/dev/null || true
+    wait "$heartbeat_pid" 2>/dev/null || true
     rm -rf "$temporary"
 }
 trap cleanup EXIT
 mkfifo "$fifo"
 kubectl --namespace "$namespace" get job "$job_name" --watch --output json \
-    --request-timeout=240s >"$fifo" 2>"$stderr" &
+    --request-timeout="$timeout" >"$fifo" 2>"$stderr" &
 watch_pid=$!
 if python3 -c '
 import codecs
