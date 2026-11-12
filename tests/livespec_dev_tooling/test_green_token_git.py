@@ -18,12 +18,13 @@ from livespec_dev_tooling._green_token_git import (
 __all__: list[str] = []
 
 _EMPTY_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
+_SCRUB_PREFIXES = ("GIT_", "COVERAGE_", "COV_")
 
 
 def _scrub(*, monkeypatch: pytest.MonkeyPatch) -> None:
     """Keep a surrounding hook's git variables away from the fixture repository."""
-    for key in [name for name in os.environ if name.startswith(("GIT_", "COVERAGE_", "COV_"))]:
-        monkeypatch.delenv(key, raising=False)
+    delete = monkeypatch.delenv
+    _ = [delete(key, raising=False) for key in os.environ.copy() if key.startswith(_SCRUB_PREFIXES)]
 
 
 def test_the_reads_answer_for_a_fresh_repository(
