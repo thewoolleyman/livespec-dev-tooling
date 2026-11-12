@@ -16,7 +16,7 @@ created_at: 2026-11-12T14:50:03Z
 In contracts.md §"Delegated pre-push gate", add a **Gate mirror reads.** bullet after **Cross-repository siblings.**:
 - the gate Job fetches the pinned livespec core ref, and clones each PUBLIC cross-repository sibling, from the in-cluster gate mirror that already serves the tree under test;
 - it falls back to the forge only when the mirror does not carry that ref or repository, or the mirror read fails;
-- the mirror's converge keeps livespec core and the public siblings fetched into the mirror;
+- the mirror's converge keeps livespec core and the public siblings fetched into the mirror. Its own forge reads are bounded by **Forge reads.**, and a failed refresh keeps the previous contents;
 - the Job logs which source served each read.
 
 The proposal also amends the anonymous-public-clone sentence of **Cross-repository siblings.** to match. A private sibling keeps its installation-token clone from the forge. Two scenarios are added.
@@ -51,7 +51,7 @@ with
 
 Insert immediately after the **Cross-repository siblings.** bullet:
 
-> - **Gate mirror reads.** The gate Job MUST fetch the livespec core ref that the consumer's `.livespec.jsonc` `compat.pinned` names from the in-cluster gate mirror, the same mirror it fetches the tree under test from. It MUST clone each public cross-repository sibling from that mirror too. The Job MUST read either from the forge only when the mirror does not carry that ref or repository, or when the read from the mirror fails. A forge read made this way is governed by **Forge reads.**. A private sibling MUST NOT be served from the gate mirror: it is cloned from the forge with its installation token, as **Cross-repository siblings.** states. The gate mirror's converge MUST keep livespec core and every public repository that a delegating consumer's `cross_repo_targets` names fetched into the mirror, refreshing them on a schedule the converge declares. A sibling cloned from the mirror is at its default branch's head as of the mirror's last refresh. The Job MUST log, for each of these reads, whether the mirror or the forge served it.
+> - **Gate mirror reads.** The gate Job MUST fetch the livespec core ref that the consumer's `.livespec.jsonc` `compat.pinned` names from the in-cluster gate mirror, the same mirror it fetches the tree under test from. It MUST clone each public cross-repository sibling from that mirror too. The Job MUST read either from the forge only when the mirror does not carry that ref or repository, or when the read from the mirror fails. A forge read made this way is governed by **Forge reads.**. A private sibling MUST NOT be served from the gate mirror: it is cloned from the forge with its installation token, as **Cross-repository siblings.** states. The gate mirror's converge MUST keep livespec core and every public repository that a delegating consumer's `cross_repo_targets` names fetched into the mirror, refreshing them on a schedule the converge declares. The refresh's own reads from the forge are governed by **Forge reads.**, so a refresh refused transiently is retried within the same bound. A refresh that still fails MUST leave the mirror's previous contents of that repository in place: it MUST NOT remove or empty any ref the mirror already carries. That way, one throttled refresh never turns every gate into a forge read at once. A sibling cloned from the mirror is at its default branch's head as of the mirror's last refresh. The Job MUST log, for each of these reads, whether the mirror or the forge served it.
 
 ### scenarios.md
 
