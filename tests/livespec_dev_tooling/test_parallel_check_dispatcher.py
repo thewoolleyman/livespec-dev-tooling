@@ -51,13 +51,16 @@ exclusion is introduced.
 
 from __future__ import annotations
 
+import json
 import os
 import sys
+import time
 from pathlib import Path
 from typing import NamedTuple
 
 import pytest
 
+import livespec_dev_tooling._dispatcher_coverage_namespaces as namespaces
 import livespec_dev_tooling.parallel_check_dispatcher as mod
 from livespec_dev_tooling._check_target_runner import (
     BLOCKED,
@@ -310,6 +313,59 @@ def test_build_namespace_dirs_skips_skipped_targets(*, tmp_path: Path) -> None:
         root=tmp_path,
     )
     assert dirs == {}, f"skipped coverage targets must mint no namespace dir; got {dirs!r}"
+
+
+def test_reclaim_removes_dead_and_old_unrecorded_namespaces_but_keeps_live_and_recent_ones(
+    *, tmp_path: Path
+) -> None:
+    """A startup sweep only reclaims directories no runner can still own."""
+    dead = tmp_path / "covns-dead"
+    live = tmp_path / "covns-live"
+    old = tmp_path / "covns-old"
+    recent = tmp_path / "covns-recent"
+    for namespace_dir in (dead, live, old, recent):
+        namespace_dir.mkdir()
+    _ = (dead / ".livespec-coverage-creator.json").write_text(
+        json.dumps({"pid": 999_999_999, "start_time": "gone"}), encoding="utf-8"
+    )
+    _ = (live / ".livespec-coverage-creator.json").write_text(
+        json.dumps(
+            {"pid": os.getpid(), "start_time": namespaces.process_start_time(pid=os.getpid())}
+        ),
+        encoding="utf-8",
+    )
+    old_time = time.time() - 24 * 60 * 60 - 1
+    os.utime(old, (old_time, old_time))
+
+    namespaces.reclaim_abandoned_namespace_dirs(root=tmp_path)
+
+    assert not dead.exists()
+    assert not old.exists()
+    assert live.is_dir()
+    assert recent.is_dir()
+
+
+def test_reclaim_logs_an_unremovable_dead_namespace_and_continues(
+    *, tmp_path: Path, caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A failed best-effort removal cannot prevent a runner from starting."""
+    dead = tmp_path / "covns-dead"
+    dead.mkdir()
+    _ = (dead / ".livespec-coverage-creator.json").write_text(
+        json.dumps({"pid": 999_999_999, "start_time": "gone"}), encoding="utf-8"
+    )
+
+    def refuse_remove(*, path: Path, ignore_errors: bool) -> None:
+        assert path == dead
+        assert not ignore_errors
+        raise OSError("permission denied")
+
+    monkeypatch.setattr(namespaces.shutil, "rmtree", refuse_remove)
+
+    namespaces.reclaim_abandoned_namespace_dirs(root=tmp_path)
+
+    assert dead.is_dir()
+    assert "could not remove abandoned coverage namespace" in caplog.text
 
 
 # ---------------------------------------------------------------------------

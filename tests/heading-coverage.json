@@ -3568,9 +3568,8 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a check runner reclaims the coverage directory a killed runner left behind",
-    "test": "TODO",
-    "reason": "A real test at the integration tier or above is owed for this heading: a check runner started on a host whose system temp directory holds one coverage-namespace directory recorded for a creator that is no longer running and one recorded for a running runner removes the first, leaves the second, and leaves the running runner's verdict unchanged. livespec-dev-tooling-64ik6g owns it.",
-    "work_item": "livespec-dev-tooling-64ik6g"
+    "test": "tests.livespec_dev_tooling.test_dispatcher_coverage_namespaces_signals.test_a_new_runner_reclaims_a_sigkilled_runners_coverage_directory_but_leaves_a_live_runner_alone",
+    "reason": "Integration-tier (module-level `pytest.mark.integration`): starts a real check dispatcher with a fake coverage target, kills its first run with SIGKILL, and verifies the next runner reclaims that namespace while a still-running aggregate and its eventual verdict are left alone (work-item livespec-dev-tooling-64ik6g)."
   },
   {
     "spec_root": "SPECIFICATION",
