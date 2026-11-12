@@ -94,6 +94,13 @@ def outcome_environment(*, outcomes: Path, timeout: float) -> tuple[str, ...]:
     return (f"{OUTCOMES_VARIABLE}={outcomes}", f"{TIMEOUT_VARIABLE}={timeout}")
 
 
+def _rows(*, outcomes: Path) -> list[dict[str, object]]:
+    """Read every line the plugin wrote: test outcomes and uncollected nodes."""
+    if not outcomes.is_file():
+        return []
+    return [json.loads(line) for line in outcomes.read_text(encoding="utf-8").splitlines() if line]
+
+
 def read_outcomes(*, outcomes: Path, slower_than: float = 0.0) -> dict[str, bool]:
     """Read the plugin's per-test lines as test node id -> failed.
 
@@ -101,12 +108,11 @@ def read_outcomes(*, outcomes: Path, slower_than: float = 0.0) -> dict[str, bool
     reads as failed: the baseline run arms no per-test timer, so this is how it
     judges the per-test timeout.
     """
-    if not outcomes.is_file():
-        return {}
-    rows = (json.loads(line) for line in outcomes.read_text(encoding="utf-8").splitlines() if line)
     return {
-        row["test"]: bool(row["failed"]) or (0 < slower_than < float(row["duration"]))
-        for row in rows
+        str(row["test"]): bool(row["failed"])
+        or (0 < slower_than < float(cast("float", row["duration"])))
+        for row in _rows(outcomes=outcomes)
+        if "test" in row
     }
 
 
