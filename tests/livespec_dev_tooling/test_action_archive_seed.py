@@ -62,6 +62,7 @@ _POPULATOR_SECTION = re.compile(
 )
 _ONE_LINE_HELPER = re.compile(r"^(?:log|gen_bytes|gen_files)\(\) \{.*$", re.MULTILINE)
 _MANIFEST_FIELD = re.compile(r"^manifest_field\(\) \{\n.*?\n\}$", re.MULTILINE | re.DOTALL)
+_ACTIONS_RECORD_WAIT_SECONDS = 30
 
 
 def _git(*args: str, cwd: Path) -> str:
@@ -625,11 +626,11 @@ def test_the_entry_point_reads_the_switch_and_canary_from_the_committed_template
 
 def _wait_for_actions_record(*, recorded: Path) -> bool:
     """Allow the detached postStart cache work to publish its actions row."""
-    # The production hook deliberately detaches this fail-soft cache work.  A
-    # two-second poll is ample in isolation but can expire while the xdist
+    # The production hook deliberately detaches this fail-soft cache work. A
+    # short poll is ample in isolation but can expire while the xdist
     # coverage workers contend for a CPU, turning a valid delayed record into
     # a FileNotFoundError below.
-    deadline = time.monotonic() + 10
+    deadline = time.monotonic() + _ACTIONS_RECORD_WAIT_SECONDS
     while time.monotonic() < deadline:
         if recorded.is_file() and any(
             row.split("\t", 2)[1:2] == ["actions"]
@@ -644,14 +645,21 @@ def test_wait_for_actions_record_reports_a_timeout(
     *, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """A missing detached actions row does not make the scenario test wait forever."""
-    ticks = iter((0.0, 10.1))
+    ticks = iter((0.0, 30.1))
     monkeypatch.setattr(time, "monotonic", lambda: next(ticks))
     monkeypatch.setattr(time, "sleep", lambda _: None)
 
     assert _wait_for_actions_record(recorded=tmp_path / "warm-copy.tsv") is False
 
 
-def _post_start(*, root: Path, seeded: bool, switch: str = "") -> dict[str, str]:
+def _post_start(
+    *,
+    root: Path,
+    seeded: bool,
+    switch: str = "",
+    detached_delay_seconds: int = 0,
+    write_actions_record: bool = True,
+) -> dict[str, str]:
     template = _TEMPLATE.read_text(encoding="utf-8")
     block = re.search(
         r"        postStart:\n          exec:\n            command:\n              - sh\n"
@@ -675,6 +683,18 @@ def _post_start(*, root: Path, seeded: bool, switch: str = "") -> dict[str, str]
         ("/opt/ci-runner/bin", root / "bin"),
     ):
         script = script.replace(absolute, str(local))
+    if detached_delay_seconds:
+        script = script.replace(
+            "(\n",
+            f"(\nsleep {detached_delay_seconds}\n",
+            1,
+        )
+    if not write_actions_record:
+        script = script.replace(
+            'rec actions "$actions_hit" "$actions_gen" "$(ms)" 0 reflink-seed "$actions_err"',
+            ":",
+            1,
+        )
     hook = root / "post-start.sh"
     hook.write_text(script, encoding="utf-8")
     done = subprocess.run(
@@ -700,9 +720,10 @@ def _post_start(*, root: Path, seeded: bool, switch: str = "") -> dict[str, str]
         "error",
     )
     recorded = work / "_temp" / "_ci_cache" / "warm-copy.tsv"
-    assert _wait_for_actions_record(
-        recorded=recorded
-    ), "the detached postStart hook never recorded actions"
+    assert _wait_for_actions_record(recorded=recorded), (
+        "the detached postStart hook did not record an actions-tier row before "
+        f"the {_ACTIONS_RECORD_WAIT_SECONDS}-second deadline: {recorded}"
+    )
     rows = recorded.read_text(encoding="utf-8").splitlines()
     parsed = [dict(zip(columns, (row.split("\t") + [""] * 8)[:8], strict=True)) for row in rows]
     mine = [row for row in parsed if row["tier"] == "actions"]
@@ -711,19 +732,41 @@ def _post_start(*, root: Path, seeded: bool, switch: str = "") -> dict[str, str]
 
 
 def test_a_seeded_job_records_an_actions_hit_with_its_generation(tmp_path: Path) -> None:
-    row = _post_start(root=tmp_path, seeded=True)
+    row = _post_start(root=tmp_path, seeded=True, detached_delay_seconds=5)
     assert (row["hit"], row["generation"], row["error"]) == ("true", "20261104T000000Z", "")
 
 
 def test_a_job_with_no_seed_records_an_actions_miss_with_a_reason(tmp_path: Path) -> None:
-    row = _post_start(root=tmp_path, seeded=False)
+    row = _post_start(root=tmp_path, seeded=False, detached_delay_seconds=5)
     assert (row["hit"], row["error"]) == ("false", "actions-seed-absent")
 
 
 def test_the_kill_switch_records_the_actions_tier_cold_and_removes_the_seed(tmp_path: Path) -> None:
-    row = _post_start(root=tmp_path, seeded=True, switch="operator")
+    row = _post_start(root=tmp_path, seeded=True, switch="operator", detached_delay_seconds=5)
     assert (row["hit"], row["error"]) == ("false", "off:operator")
     assert not (tmp_path / "w" / "_warm" / "actions").exists()
+
+
+def test_post_start_names_the_deadline_and_record_path_when_actions_are_missing(
+    *, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A missing detached actions row is an actionable assertion, not a file read error."""
+    ticks = iter((0.0, 30.1))
+    monkeypatch.setattr(time, "monotonic", lambda: next(ticks))
+    monkeypatch.setattr(time, "sleep", lambda _: pytest.fail("the wait should time out first"))
+
+    with pytest.raises(AssertionError, match=r"30-second deadline: .*warm-copy\.tsv"):
+        _post_start(root=tmp_path, seeded=False, write_actions_record=False)
+
+
+def test_wait_for_actions_record_returns_immediately_for_an_existing_actions_row(
+    *, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    recorded = tmp_path / "warm-copy.tsv"
+    recorded.write_text("0\tactions\ttrue\n", encoding="utf-8")
+    monkeypatch.setattr(time, "sleep", lambda _: pytest.fail("an existing row must not sleep"))
+
+    assert _wait_for_actions_record(recorded=recorded) is True
 
 
 def test_every_values_file_starts_the_runner_through_the_entry_point() -> None:

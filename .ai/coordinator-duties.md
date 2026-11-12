@@ -114,6 +114,23 @@ of the range gate. The coordinator's correction is recorded on epic `livespec-de
 Measured 2026-11-10 by expedited-incident-response-flag and re-measured by dev-host-test-gate-load: commit 31d49d7a
 passed the range check although its recorded test fails to import on its own tree.
 
+**Incident mode is the default response in livespec-dev-tooling.** When livespec-dev-tooling master is red, or a
+production defect there needs a fix faster than the normal lane, the coordinator uses expedited incident mode:
+EXPEDITED_INCIDENT_RESPONSE, or EXPEDITED_INCIDENT_RESPONSE_REVERT for a revert. It goes through the path incident
+t26bbr proved end to end on 2026-11-11. It never waits out a normal roll-forward.
+
+- The enablement fence (livespec-dev-tooling-2xxnku) is not armed yet. Arming it adds only a refusal; it is not needed
+  for use.
+- livespec, livespec-orchestrator-beads-fabro and livespec-overseer are NOT yet usable. Each becomes usable when its
+  observer install, drill and claims land. Each tick names which repositories are usable.
+- Operator mechanics: `docs/incident-execution.md` and the `docs/incident-*.md` files beside it. The step-by-step
+  incident-mode runbook (`.ai/incident-mode-runbook.md`, steps 3-11 from the t26bbr record) is NOT yet in this
+  repository: it is owed by plan expedited-incident-response-flag (`livespec-dev-tooling-bqnzcm`).
+
+The maintainer, 2026-11-12 ~19:2xZ, recorded in the scope event on epic `livespec-dev-tooling-6tgd2z` at 19:17:17Z:
+"It says the expedited is usable on dev-tooling - confirm you wil use it going forward, and record this everywhere as a
+rule to be noticed by coordinator sessions". This does NOT reopen the no-rerun rule for genuine test failures above.
+
 ## 3. Unblock blocked seats every tick
 
 **Rule P1: every tick starts with priorities 1-5, in order.** Before any peer message is answered, run
@@ -704,7 +721,9 @@ Every tick reports, in this order:
    trailing-window counts. Compute them from the orchestrator repo's `tmp/petri-canary/*-r267.json` dispatch records
    by file mtime, skipping unreadable in-flight files.
    - M1 YIELD: green records / finished records over a trailing 6 h, plus the 2 h figure. Owner:
-     sandbox-commit-gate-ceiling (P1).
+     sandbox-commit-gate-ceiling (P1). Method: the denominator is the records whose `listed` is not `none`, the
+     records where a run was listed. A no-run refusal (`listed` is `none`) is excluded from the denominator and
+     reported on its own line, bucketed by exit code: 3, 5 and 1.
    - M2 DELIVERED: green records per hour over a trailing 6 h. This is the outcome M1 and M3 drive.
    - M3 SLOTS: live factory runs against `tmp/petri-canary/fleet-cap`, naming any pods that hold quota without a live
      run (stranded). Owner: legacy-dispatcher-agent.
