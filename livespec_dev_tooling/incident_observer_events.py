@@ -9,7 +9,7 @@ from typing import cast
 from livespec_dev_tooling._incident_observer_types import LeafCompletion
 from livespec_dev_tooling.incident_strict_json import IncidentJsonRefusalError, strict_json
 
-__all__: list[str] = ["verify_leaf_completion"]
+__all__: list[str] = ["completion_run_attempt", "verify_leaf_completion"]
 _MAX_CALLBACK_BYTES = 1_000_000
 
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-47ij37
@@ -60,6 +60,18 @@ def _parse_job(*, record: dict[str, object], delivery_id: str) -> LeafCompletion
         job_name=cast("str", name),
         conclusion=cast("str", conclusion),
     )
+
+
+def completion_run_attempt(*, body: bytes) -> int | None:
+    """The run attempt of an already verified `workflow_job` callback body, or None.
+
+    Call only after `verify_leaf_completion` accepted the same bytes: this reads the
+    attempt the leaf completion does not carry, and authenticates nothing itself.
+    """
+    record = _read_object(body=body)
+    job = record.get("workflow_job") if record is not None else None
+    attempt = cast("dict[str, object]", job).get("run_attempt") if isinstance(job, dict) else None
+    return attempt if type(attempt) is int and attempt > 0 else None
 
 
 def _read_object(*, body: bytes) -> dict[str, object] | None:
