@@ -143,3 +143,28 @@ def test_module_attribute_reach_is_refused(
     assert "tests/test_imports.py" in output
     assert "livespec_dev_tooling/incident_release_entry.py" in output
     assert "screen" in output
+
+
+def test_generated_installed_file_does_not_make_an_import_locally_public(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    package = tmp_path / "installed" / "livespec_dev_tooling"
+    (package / "workflow_checks").mkdir(parents=True)
+    (package / "data").mkdir()
+    (package / "data" / "cross_repo_public_api.json").write_text("[]", encoding="utf-8")
+    (package / "hidden.py").write_text("def hidden() -> None:\n    pass\n", encoding="utf-8")
+    (package / "generated_user.py").write_text(
+        "# @generated\nfrom livespec_dev_tooling.hidden import hidden\n\nhidden()\n",
+        encoding="utf-8",
+    )
+    repo = _consumer(
+        tmp_path=tmp_path,
+        test_body="from livespec_dev_tooling.hidden import hidden\n\nhidden()\n",
+    )
+    module = importlib.import_module(
+        "livespec_dev_tooling.workflow_checks.dev_tooling_imports_declared"
+    )
+    monkeypatch.setattr(module, "__file__", str(package / "workflow_checks" / "check.py"))
+    result, output = _run(repo=repo, fail=True, monkeypatch=monkeypatch, capsys=capsys)
+    assert result == 4, output
+    assert "hidden" in output
