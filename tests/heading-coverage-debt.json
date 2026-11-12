@@ -443,6 +443,20 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: a delegated gate Job fails a forge read of a missing ref at once",
+    "work_item": "livespec-dev-tooling-yjcyay",
+    "first_seen": "2026-11-12"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a delegated gate Job retries a forge read the forge refuses transiently",
+    "work_item": "livespec-dev-tooling-yjcyay",
+    "first_seen": "2026-11-12"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: a delegated gate Job that runs longer than the stall window still ends with its own verdict",
     "work_item": "livespec-dev-tooling-ie7fas",
     "first_seen": "2026-11-12"
@@ -873,6 +887,13 @@
     "heading": "## Scenario: a push of only seed or preserve refs runs only the authorization members",
     "work_item": "livespec-dev-tooling-2zb3gk",
     "first_seen": "2026-11-10"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a pushing host retries a private-sibling token mint the forge refuses transiently",
+    "work_item": "livespec-dev-tooling-yjcyay",
+    "first_seen": "2026-11-12"
   },
   {
     "spec_root": "SPECIFICATION",

@@ -1556,6 +1556,50 @@ And the rendered gate manifest MUST NOT contain that token
 
 And the gate Job MUST run the consumer's recipe with that sibling's clone present
 
+## Scenario: a delegated gate Job retries a forge read the forge refuses transiently
+
+Given a consumer repository whose `[tool.livespec_dev_tooling]` table sets `delegated_gate = true`
+
+And a forge that answers the gate Job's first fetch of the pinned livespec core ref with HTTP 401 and a later fetch with that ref
+
+When a git push of a tree that has no green token runs the pre-push gate
+
+Then the gate Job MUST fetch the livespec core ref again after a wait
+
+And the gate Job MUST run the consumer's recipe
+
+And the gate Job's log MUST name each fetch attempt with its attempt number and the class of its failure
+
+## Scenario: a delegated gate Job fails a forge read of a missing ref at once
+
+Given a consumer repository whose `[tool.livespec_dev_tooling]` table sets `delegated_gate = true`
+
+And whose `.livespec.jsonc` `compat.pinned` names a livespec core ref that does not exist in the livespec core repository, which the gate Job's anonymous read can see
+
+When a git push of a tree that has no green token runs the pre-push gate
+
+Then the gate Job MUST fetch that ref exactly once
+
+And the gate Job MUST report a `FATAL` line naming that ref
+
+And the gate Job MUST NOT run the consumer's recipe
+
+## Scenario: a pushing host retries a private-sibling token mint the forge refuses transiently
+
+Given a consumer repository whose `[tool.livespec_dev_tooling]` table sets `delegated_gate = true`
+
+And whose `.livespec.jsonc` `cross_repo_targets` names a private sibling repository
+
+And a forge that answers the pushing host's first request to mint that sibling's installation token with HTTP 500 and a later request with the token
+
+When a git push of a tree that has no green token runs the pre-push gate
+
+Then the pushing host MUST request the token again after a wait
+
+And the gate Job MUST clone that sibling with the minted token
+
+And the pushing host's log MUST name each mint attempt with its HTTP status and MUST NOT contain the token
+
 ## Scenario: a red master whose re-run passes is classified a flake and never merges a revert
 
 Given `master`'s gate job reports a completed failure on the newest commit
