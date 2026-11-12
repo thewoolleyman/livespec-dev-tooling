@@ -8,9 +8,11 @@ import errno
 import importlib.util
 import inspect
 import os
+import signal
 import sys
 import threading
 import time
+import types
 import uuid
 from pathlib import Path
 
@@ -35,6 +37,16 @@ def _load():
     sys.modules[spec.name] = module
     spec.loader.exec_module(module)
     return module
+
+
+def _process_missing(*_args: object) -> None:
+    """Model a process that exits between observation and signalling."""
+    raise ProcessLookupError
+
+
+def _process_forbidden(*_args: object) -> None:
+    """Model a process that can be observed but not signalled."""
+    raise PermissionError
 
 
 def test_the_run_is_bounded_by_a_stall_window_and_no_default_wall_clock_ceiling() -> None:
@@ -303,6 +315,80 @@ def test_a_silent_suite_is_killed_whole_once_it_stalls(tmp_path: Path) -> None:
     while _live_processes_carrying(token) and time.monotonic() < hang_guard:  # pragma: no branch
         time.sleep(0.1)  # pragma: no cover
     assert not _live_processes_carrying(token)
+
+
+def test_a_stalled_suite_reaps_a_descendant_that_started_its_own_session() -> None:
+    """A stalled suite terminates a session-escaping subprocess too."""
+    mod = _load()
+    token = f"livespec-stall-session-escape-{uuid.uuid4().hex}"
+    escaped = (
+        f"setsid {sys.executable} -c 'import time; time.sleep(300)' {token} & "
+        "printf ready; sleep 300"
+    )
+    try:
+        run = mod.run_suite(
+            argv=["sh", "-c", escaped],
+            bound=mod.SuiteBound(stall_seconds=2, ceiling_seconds=None),
+        )
+
+        assert run.timed_out is True
+        assert run.kill_reason == "stalled"
+        assert not _live_processes_carrying(token)
+        assert "ending out-of-group descendant pid=" in run.output
+        assert token in run.output
+    finally:
+        _ = [os.kill(int(pid), signal.SIGTERM) for pid in _live_processes_carrying(token)]
+
+
+def test_process_cleanup_tolerates_unavailable_process_records_and_disappearing_pids(
+    *, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The cleanup path safely handles incomplete process-table observations."""
+    mod = _load()
+
+    def unavailable(**_kwargs: object) -> None:
+        raise OSError("ps unavailable")
+
+    monkeypatch.setattr(mod.subprocess, "run", unavailable)
+    assert mod.process_table() == {}
+    monkeypatch.setattr(
+        mod.subprocess,
+        "run",
+        lambda **_kwargs: types.SimpleNamespace(returncode=1, stdout=""),
+    )
+    assert mod.process_table() == {}
+    listing = types.SimpleNamespace(
+        returncode=0, stdout="short\nnot-a-pid 2 3 command\n4 5 6 command line\n"
+    )
+    monkeypatch.setattr(mod.subprocess, "run", lambda **_kwargs: listing)
+    assert mod.process_table() == {4: (5, 6, "command line")}
+
+    monkeypatch.setattr(mod.os, "kill", _process_missing)
+    assert mod.is_alive(pid=1) is False
+
+    monkeypatch.setattr(mod.os, "kill", _process_forbidden)
+    assert mod.is_alive(pid=1) is True
+
+    class FinishedProcess:
+        pid = 1
+
+        def poll(self) -> int:
+            return 0
+
+    monkeypatch.setattr(mod, "out_of_group_descendants", lambda **_kwargs: ((2, "escaped"),))
+    alive = iter((True, False, True))
+    monkeypatch.setattr(mod, "is_alive", lambda **_kwargs: next(alive))
+    monkeypatch.setattr(mod.os, "kill", _process_missing)
+    monkeypatch.setattr(mod.os, "killpg", _process_missing)
+    reported: list[str] = []
+    assert mod.end_stalled_suite(proc=FinishedProcess(), report=reported.append) == (
+        (2, "escaped"),
+    )
+    assert reported == ["suite-green: ending out-of-group descendant pid=2 cmdline=escaped\n"]
+
+    alive = iter((True, False, False))
+    monkeypatch.setattr(mod, "is_alive", lambda **_kwargs: next(alive))
+    assert mod.end_stalled_suite(proc=FinishedProcess()) == ((2, "escaped"),)
 
 
 def test_the_gate_runners_progress_stamp_is_one_of_the_scrubbed_gate_variables() -> None:
