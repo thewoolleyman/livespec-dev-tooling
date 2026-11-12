@@ -94,6 +94,11 @@
     # the only default that leaves the catalog of an instance predating the
     # axis exactly as its server holds it.
     fabro_server_environments: "{{ fabro_server_instance.environments | default([]) }}"
+    # OPTIONAL, and EMPTY by default — the catalog ids this instance has
+    # deliberately retired.  These are not inferred from an omitted active
+    # declaration: an omission can be a typo, while this separate axis is the
+    # operator's explicit authority for a destructive catalog DELETE.
+    fabro_server_retired_environments: "{{ fabro_server_instance.retired_environments | default([]) }}"
     # OPTIONAL, and EMPTY by default, for the same reason: the vault entries
     # this instance must hold, each created only when the vault lacks its name
     # and never overwritten (tasks/vault.yml). An entry spells `name`, `type`
@@ -358,6 +363,24 @@
       that id is the one thing two entries cannot share.
     success_msg: this instance's declared environments are distinct
   when: fabro_server_environments | length > 1
+
+- name: Refuse an environment id declared both active and retired
+  # This is a preflight rather than a catalog-time conflict: an id cannot be
+  # desired state and a retirement target in one converge.  Refusing before
+  # any host write keeps a malformed mapping from deleting a catalog entry the
+  # later active-environment loop would recreate.
+  ansible.builtin.assert:
+    that:
+      - >-
+        (fabro_server_environments | map(attribute='id') | list)
+        | intersect(fabro_server_retired_environments) | length == 0
+    fail_msg: >-
+      {{ fabro_server_unit_name }} declares environment id(s)
+      {{ (fabro_server_environments | map(attribute='id') | list)
+         | intersect(fabro_server_retired_environments) | join(', ') }} in
+      both environments and retired_environments. An id must be either
+      declared active or explicitly retired, never both.
+    success_msg: no active environment is also declared retired
 
 # --- preflight: the out-of-band state this role refuses to create ----------
 #
@@ -1676,6 +1699,7 @@
   # write the wrong instance's catalog.
   ansible.builtin.set_fact:
     fabro_server_environments_url: "http://127.0.0.1:{{ fabro_server_port }}/api/v1/environments"
+    fabro_server_runs_url: "http://127.0.0.1:{{ fabro_server_port }}/api/v1/runs"
   check_mode: false
 
 - name: Ask this instance's health endpoint again before reading its catalog
@@ -1691,7 +1715,10 @@
   changed_when: false
   check_mode: false
   when:
-    - (fabro_server_environments | length > 0) or (fabro_server_vault_secrets | length > 0)
+    - >-
+      (fabro_server_environments | length > 0)
+      or (fabro_server_retired_environments | length > 0)
+      or (fabro_server_vault_secrets | length > 0)
     - fabro_server_service_state == 'running'
 
 - name: Create the vault entries this instance declares and lacks
@@ -1726,6 +1753,108 @@
     loop_var: fabro_server_environment
     label: "{{ fabro_server_environment.id }}"
   when:
+    - fabro_server_service_state == 'running'
+    - fabro_server_catalog_health.status | default(-1) == 200
+
+- name: Read this instance's non-terminal runs before retiring environments
+  # The list is read once for ALL retired ids, before any delete begins. A
+  # run's summary does not carry its selected environment, so the include below
+  # reads each non-terminal run's persisted settings before the refusal decides
+  # whether the catalog may change. The request is GET /api/v1/runs on this
+  # instance's own loopback server, never the CLI's ambient default target.
+  ansible.builtin.shell:
+    executable: /bin/bash
+    cmd: |
+      set -euo pipefail
+      printf 'Authorization: Bearer %s\n' \
+        "$(sed -n 's/^FABRO_DEV_TOKEN=//p' "${FABRO_SERVER_ENV_FILE}" | tail -n 1)" |
+        curl --silent --show-error --fail-with-body --header @- \
+          --get --data-urlencode 'status=pending' \
+          --data-urlencode 'status=runnable' \
+          --data-urlencode 'status=initializing' \
+          --data-urlencode 'status=running' \
+          --data-urlencode 'status=blocked' \
+          --data-urlencode 'status=removing' \
+          --data-urlencode 'page[limit]=100' "${FABRO_SERVER_RUNS_URL}"
+  become: true
+  environment:
+    FABRO_SERVER_ENV_FILE: "{{ fabro_server_home_dir }}/storage/server.env"
+    FABRO_SERVER_RUNS_URL: "{{ fabro_server_runs_url }}"
+  register: fabro_server_retired_runs_read
+  changed_when: false
+  check_mode: false
+  when:
+    - fabro_server_retired_environments | length > 0
+    - fabro_server_service_state == 'running'
+    - fabro_server_catalog_health.status | default(-1) == 200
+
+- name: Resolve this instance's non-terminal runs for retirement safety
+  ansible.builtin.set_fact:
+    fabro_server_retired_nonterminal_runs: >-
+      {{ (fabro_server_retired_runs_read.stdout | from_json).data }}
+    fabro_server_retired_runs_have_more: >-
+      {{ (fabro_server_retired_runs_read.stdout | from_json).meta.has_more | default(false) }}
+    fabro_server_retired_run_environments: []
+  check_mode: false
+  when:
+    - fabro_server_retired_environments | length > 0
+    - fabro_server_service_state == 'running'
+    - fabro_server_catalog_health.status | default(-1) == 200
+
+- name: Refuse a retirement check whose run listing did not fit in one response
+  ansible.builtin.assert:
+    that:
+      - not (fabro_server_retired_runs_have_more | bool)
+    fail_msg: >-
+      {{ fabro_server_unit_name }} has more non-terminal runs than one catalog
+      safety read returned. The role will not delete a retired environment until
+      it has read every non-terminal run and its selected environment.
+    success_msg: the retirement safety read contains every non-terminal run
+  when:
+    - fabro_server_retired_environments | length > 0
+    - fabro_server_service_state == 'running'
+    - fabro_server_catalog_health.status | default(-1) == 200
+
+- name: Read every non-terminal run's selected environment
+  ansible.builtin.include_tasks: retired_run.yml
+  loop: "{{ fabro_server_retired_nonterminal_runs }}"
+  loop_control:
+    loop_var: fabro_server_retired_run
+    label: "{{ fabro_server_retired_run.id }}"
+  when:
+    - fabro_server_retired_environments | length > 0
+    - fabro_server_service_state == 'running'
+    - fabro_server_catalog_health.status | default(-1) == 200
+
+- name: Refuse to retire an environment selected by a non-terminal run
+  ansible.builtin.assert:
+    that:
+      - >-
+        fabro_server_retired_run_environments
+        | selectattr('environment', 'in', fabro_server_retired_environments)
+        | list | length == 0
+    fail_msg: >-
+      Cannot retire environment
+      {{ (fabro_server_retired_run_environments
+          | selectattr('environment', 'in', fabro_server_retired_environments)
+          | list | first).environment }} from {{ fabro_server_unit_name }}:
+      non-terminal run {{ (fabro_server_retired_run_environments
+          | selectattr('environment', 'in', fabro_server_retired_environments)
+          | list | first).id }} still selects it. The catalog was left unchanged.
+    success_msg: no non-terminal run selects a retired environment
+  when:
+    - fabro_server_retired_environments | length > 0
+    - fabro_server_service_state == 'running'
+    - fabro_server_catalog_health.status | default(-1) == 200
+
+- name: Delete each retired sandbox environment
+  ansible.builtin.include_tasks: retired_environment.yml
+  loop: "{{ fabro_server_retired_environments }}"
+  loop_control:
+    loop_var: fabro_server_retired_environment
+    label: "{{ fabro_server_retired_environment }}"
+  when:
+    - fabro_server_retired_environments | length > 0
     - fabro_server_service_state == 'running'
     - fabro_server_catalog_health.status | default(-1) == 200
 

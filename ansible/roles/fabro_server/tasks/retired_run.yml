@@ -1,0 +1,33 @@
+---
+# Read the run settings rather than guessing from a summary. The environments
+# API and the run API belong to the same instance, selected by its loopback URL.
+
+- name: Read this non-terminal run's settings
+  ansible.builtin.shell:
+    executable: /bin/bash
+    cmd: |
+      set -euo pipefail
+      printf 'Authorization: Bearer %s\n' \
+        "$(sed -n 's/^FABRO_DEV_TOKEN=//p' "${FABRO_SERVER_ENV_FILE}" | tail -n 1)" |
+        curl --silent --show-error --fail-with-body --header @- \
+          --header 'Accept: application/json' "${FABRO_SERVER_RUN_URL}/settings"
+  become: true
+  environment:
+    FABRO_SERVER_ENV_FILE: "{{ fabro_server_home_dir }}/storage/server.env"
+    FABRO_SERVER_RUN_URL: "{{ fabro_server_runs_url }}/{{ fabro_server_retired_run.id }}"
+  register: fabro_server_retired_run_settings_read
+  changed_when: false
+  check_mode: false
+
+- name: Record this non-terminal run's selected environment
+  ansible.builtin.set_fact:
+    fabro_server_retired_run_environment:
+      id: "{{ fabro_server_retired_run.id }}"
+      environment: "{{ (fabro_server_retired_run_settings_read.stdout | from_json).environment.id }}"
+  check_mode: false
+
+- name: Add this non-terminal run to the retirement safety read
+  ansible.builtin.set_fact:
+    fabro_server_retired_run_environments: >-
+      {{ fabro_server_retired_run_environments + [fabro_server_retired_run_environment] }}
+  check_mode: false

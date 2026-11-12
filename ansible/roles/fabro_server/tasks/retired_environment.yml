@@ -1,0 +1,21 @@
+---
+# DELETE is deliberately idempotent. The catalog itself is authoritative about
+# presence: 204 removed the id and reports a change; 404 proves a prior converge
+# already removed it and reports no change.
+
+- name: Delete this retired environment from the instance's catalog
+  ansible.builtin.shell:
+    executable: /bin/bash
+    cmd: |
+      set -euo pipefail
+      printf 'Authorization: Bearer %s\n' \
+        "$(sed -n 's/^FABRO_DEV_TOKEN=//p' "${FABRO_SERVER_ENV_FILE}" | tail -n 1)" |
+        curl --silent --show-error --output /dev/null --write-out '%{http_code}' \
+          --header @- --request DELETE "${FABRO_ENVIRONMENT_URL}"
+  become: true
+  environment:
+    FABRO_SERVER_ENV_FILE: "{{ fabro_server_home_dir }}/storage/server.env"
+    FABRO_ENVIRONMENT_URL: "{{ fabro_server_environments_url }}/{{ fabro_server_retired_environment }}"
+  register: fabro_server_retired_environment_delete
+  changed_when: (fabro_server_retired_environment_delete.stdout | trim) == '204'
+  failed_when: (fabro_server_retired_environment_delete.stdout | trim) not in ['204', '404']
