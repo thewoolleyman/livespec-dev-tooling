@@ -2,7 +2,7 @@
 # present: render and apply the rule-26 kill-matrix Job. absent: delete the
 # whole `rule26` namespace, which removes the Job, its pod and the PVC.
 # job-absent: delete only the Job named by rule26_kill_matrix_run, and its pod,
-# keeping the namespace and the PVC.
+# keeping the namespace and every PVC.
 rule26_kill_matrix_state: present
 # The run's inputs. Each is a playbook variable passed with -e, never typed
 # into a host. Both SHAs must be full 40-hex commits. The run id names the Job
@@ -11,6 +11,10 @@ rule26_kill_matrix_orchestrator_sha: ""
 rule26_kill_matrix_engine_sha: ""
 rule26_kill_matrix_workers: 12
 rule26_kill_matrix_run: ""
+# The node the Job runs on, passed with -e like the SHAs; no machine is named
+# in the role. Each node has its own local-path claim, rule26-orchestrator-<node>,
+# because a local-path volume never leaves its node.
+rule26_kill_matrix_node: ""
 # The committed renderer, run on the control node over the committed template.
 rule26_kill_matrix_renderer: "{{ role_path }}/../../../ci-runner/k3s/phase2/rule26/render-kill-matrix-job.sh"
 rule26_kill_matrix_namespace: rule26

@@ -7,14 +7,15 @@
 #   just ansible-drift ansible/rule26-kill-matrix.yml \
 #     -e rule26_kill_matrix_orchestrator_sha=<40-hex> \
 #     -e rule26_kill_matrix_engine_sha=<40-hex> \
-#     -e rule26_kill_matrix_run=<lowercase id>
+#     -e rule26_kill_matrix_run=<lowercase id> \
+#     -e rule26_kill_matrix_node=<k3s node name>
 #   just ansible-apply ansible/rule26-kill-matrix.yml -e ... (the same -e flags)
 #
-# Stop one run, keeping the namespace and the PVC:
+# Stop one run, keeping the namespace and every PVC:
 #   just ansible-apply ansible/rule26-kill-matrix.yml \
 #     -e rule26_kill_matrix_state=job-absent -e rule26_kill_matrix_run=<id>
 #
-# Revert (deletes the namespace, PVC included): just ansible-apply \
+# Revert (deletes the namespace, every PVC included): just ansible-apply \
 #   ansible/rule26-kill-matrix.yml -e rule26_kill_matrix_state=absent
 - name: Launch or remove the rule-26 kill-matrix Job
   hosts: ci_pool

@@ -1,7 +1,8 @@
 # Rule-26 kill matrix of livespec-orchestrator-beads-fabro as a k8s Job,
 # rendered by ./render-kill-matrix-job.sh (see ./README.md). Placement:
-# poweredge-xubuntu, CPU request = limit = --workers (legacy-coordinator-agent
-# ruling, 2026-11-09). Plan fleet-mutation-testing-rule-26 (livespec-dev-tooling-fqnbtd).
+# the --node given (default poweredge-xubuntu), CPU request = limit = --workers
+# (legacy-coordinator-agent ruling, 2026-11-09). A local-path PV is bound to the
+# node that first used it, so each node has its own claim, rule26-orchestrator-<node>. Plan fleet-mutation-testing-rule-26 (livespec-dev-tooling-fqnbtd).
 apiVersion: v1
 kind: Namespace
 metadata:
@@ -12,7 +13,7 @@ metadata:
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: rule26-orchestrator
+  name: rule26-orchestrator-@@NODE@@
   namespace: rule26
 spec:
   accessModes: [ReadWriteOnce]
@@ -40,7 +41,7 @@ spec:
     spec:
       restartPolicy: Never
       nodeSelector:
-        kubernetes.io/hostname: poweredge-xubuntu
+        kubernetes.io/hostname: @@NODE@@
       tolerations:
         - key: node-role/ci
           operator: Equal
@@ -125,4 +126,4 @@ spec:
       volumes:
         - name: data
           persistentVolumeClaim:
-            claimName: rule26-orchestrator
+            claimName: rule26-orchestrator-@@NODE@@

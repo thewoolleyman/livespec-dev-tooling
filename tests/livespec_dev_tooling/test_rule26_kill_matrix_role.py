@@ -37,7 +37,7 @@ def test_the_role_renders_with_the_committed_renderer_on_the_control_node() -> N
     assert "rule26_kill_matrix_renderer" in render
     assert "delegate_to: localhost" in render
     assert "check_mode: false" in render
-    for flag in ("--orchestrator-sha", "--engine-sha", "--workers", "--run"):
+    for flag in ("--orchestrator-sha", "--engine-sha", "--workers", "--run", "--node"):
         assert flag in render
 
 
@@ -113,8 +113,16 @@ def test_job_absent_deletes_only_the_named_job_and_keeps_the_pvc() -> None:
     assert "--cascade=foreground" in delete
     guard = _task(name_fragment="Fail unless a run id names the Job to remove")
     assert "rule26_kill_matrix_run is match('^[a-z0-9-]{1,40}$')" in guard
-    verify = _task(name_fragment="Fail unless the Job is gone and the PVC is kept")
-    assert "['persistentvolumeclaim/rule26-orchestrator']" in verify
+    before = _task(name_fragment="List the namespace's PVCs before the delete")
+    assert "pvc" in before
+    assert _TASKS.index("List the namespace's PVCs before") < _TASKS.index(
+        "Delete the run's kill-matrix Job"
+    )
+    verify = _task(name_fragment="Fail unless the Job is gone and every PVC is kept")
+    assert (
+        "rule26_kill_matrix_pvcs_after.stdout_lines == rule26_kill_matrix_pvcs_before.stdout_lines"
+        in verify
+    )
     assert "job-absent" in _PLAY
 
 
@@ -174,3 +182,41 @@ def test_the_rendered_job_puts_the_engine_clone_on_pythonpath() -> None:
     assert "- name: PYTHONPATH\n" in env
     value = env.split("- name: PYTHONPATH\n", 1)[1].splitlines()[0]
     assert value.strip() == "value: /data/dev-tooling"
+
+
+def _render(*extra: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [str(_RENDERER), "--orchestrator-sha", "a" * 40, "--engine-sha", "b" * 40, *extra],
+        capture_output=True,
+        check=False,
+        text=True,
+        env={"PATH": "/usr/bin:/bin"},
+    )
+
+
+def test_the_rendered_job_runs_on_the_named_node_with_that_nodes_own_pvc() -> None:
+    """A local-path PV is bound to one node, so each node gets its own claim."""
+    rendered = _render("--run", "t4", "--node", "hp-xubuntu")
+    assert rendered.returncode == 0, rendered.stderr
+    pvc = rendered.stdout.split("kind: PersistentVolumeClaim", 1)[1].split("---", 1)[0]
+    assert "name: rule26-orchestrator-hp-xubuntu\n" in pvc
+    job = rendered.stdout.split("kind: Job", 1)[1]
+    assert "kubernetes.io/hostname: hp-xubuntu\n" in job
+    assert "claimName: rule26-orchestrator-hp-xubuntu\n" in job
+    assert "poweredge-xubuntu" not in job
+
+
+def test_the_renderer_defaults_to_poweredge_and_refuses_a_bad_node_name() -> None:
+    default = _render("--run", "t5")
+    assert "kubernetes.io/hostname: poweredge-xubuntu\n" in default.stdout
+    refused = _render("--node", "Bad/Node")
+    assert refused.returncode == 2
+    assert "--node must be a lowercase node name" in refused.stderr
+
+
+def test_the_role_passes_a_validated_node_to_the_renderer() -> None:
+    assert 'rule26_kill_matrix_node: ""' in _DEFAULTS
+    guard = _task(name_fragment="Fail unless the run's inputs")
+    assert "rule26_kill_matrix_node is match('^[a-z0-9]([a-z0-9.-]{0,61}[a-z0-9])?$')" in guard
+    render = _task(name_fragment="Render the committed Job manifest")
+    assert '- "{{ rule26_kill_matrix_node }}"' in render
