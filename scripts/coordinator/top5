@@ -12,8 +12,9 @@ exec python3 -I - "$@" <<'PY'
 Run FIRST every tick, before any peer message is answered. For priorities 1-5 of the
 latest priorities-record on epic livespec-dev-tooling-6tgd2z it prints the epic status,
 its typed next_action, the age of its last ledger move (STALE past 60 minutes) and the
-newest epic comment, so an ask from a seat that cannot SendMessage (a Mac or Codex
-seat) is seen every tick (rule P3).
+newest epic comment, so an ask from a seat that cannot SendMessage (a seat on
+another machine, such as chads-macbook-pro or gamingpc-xubuntu, or a Codex seat) is
+seen every tick (rule P3).
 
 TOP mirrors the priorities-record. When the record changes, change TOP in the same
 docs PR; the record wins over this list until then. Nothing here mutates: only
@@ -29,7 +30,10 @@ TOP = [
     ("2 secret-writer-stored-key-alias (homelab; workspace homelab, tab secret-writer-stored-key-alias)", "hl-bvycoc"),
     ("3a implement-test-performance: gate suite double-run fix", "livespec-dev-tooling-sv6m5p"),
     ("3b gate-job-resources", "livespec-dev-tooling-ukoeah"),
-    ("4 fleet-mutation-testing-rule-26 (Mac w3:t2, ledger-only asks)", "livespec-dev-tooling-oi2two"),
+    (
+        "4 fleet-mutation-testing-rule-26 (gamingpc-xubuntu, tab fleet-mutation-testing-rule-26, ledger-only asks)",
+        "livespec-dev-tooling-oi2two",
+    ),
     ("5 dev-host-test-gate-load", "livespec-dev-tooling-6vuiwe"),
 ]
 WRAPPER = ["/usr/local/bin/with-livespec-env.sh", "--"]
