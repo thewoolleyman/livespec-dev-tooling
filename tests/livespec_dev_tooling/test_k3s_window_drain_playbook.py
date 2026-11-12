@@ -211,27 +211,33 @@ def _node_confirmed(*, action: str, node: str, node_confirm: str) -> bool:
     assert match
     expression = " ".join(match["body"].split())
     assert expression == (
-        "{{ k3s_window_action | default('') not in k3s_window_pod_actions "
+        "{{ k3s_window_action | default('') not in k3s_window_node_confirm_actions "
         "or (k3s_window_node | default('') | length > 0 "
         "and k3s_window_node_confirm | default('') == k3s_window_node | default('')) }}"
     ), expression
-    return action not in ("evacuate", "clear-lost") or (len(node) > 0 and node_confirm == node)
+    assert "k3s_window_node_confirm_actions: [uncordon, evacuate, clear-lost]" in _text()
+    return action not in ("uncordon", "evacuate", "clear-lost") or (
+        len(node) > 0 and node_confirm == node
+    )
 
 
-def test_evacuate_and_clear_lost_need_the_node_confirmed_by_name() -> None:
-    for action in ("evacuate", "clear-lost"):
+def test_uncordon_evacuate_and_clear_lost_need_the_node_confirmed_by_name() -> None:
+    for action in ("uncordon", "evacuate", "clear-lost"):
         assert _node_confirmed(action=action, node="node-a", node_confirm="node-a")
         assert not _node_confirmed(action=action, node="node-a", node_confirm="")
         assert not _node_confirmed(action=action, node="node-a", node_confirm="node-b")
         assert not _node_confirmed(action=action, node="", node_confirm="")
-    for action in ("pause-arc", "restore-arc", "cordon", "uncordon"):
+    for action in ("pause-arc", "restore-arc", "cordon"):
         assert _node_confirmed(action=action, node="node-a", node_confirm="")
         assert _node_confirmed(action=action, node="", node_confirm="")
 
 
 def test_an_unconfirmed_node_is_reported_and_nothing_is_read_or_changed() -> None:
     report = _task(
-        name="Report an evacuate or clear-lost whose node confirmation is absent or names another node"
+        name=(
+            "Report an uncordon, evacuate or clear-lost whose node confirmation "
+            "is absent or names another node"
+        )
     )
     assert "ansible.builtin.debug:" in report
     assert "not (k3s_window_node_confirmed | bool)" in report
@@ -240,6 +246,7 @@ def test_an_unconfirmed_node_is_reported_and_nothing_is_read_or_changed() -> Non
         "Read whether the named node is registered in the cluster",
         "Refuse a node action that does not name a pool node or a registered cluster node",
         _POD_TASK,
+        "Cordon or uncordon the confirmed node",
         "Report what the action did",
     )
     for name in gated:
@@ -250,8 +257,14 @@ def test_an_unconfirmed_node_is_reported_and_nothing_is_read_or_changed() -> Non
         if "kubectl" in block and "k3s_window_pod_actions" in block
     ]
     assert len(executing) == 1
-    hold = _task(name="Cordon or uncordon the confirmed node")
-    assert "k3s_window_node_confirmed" not in hold
+    # Cordon is the safe direction: the shared hold task carries the fence, and
+    # the fence's own expression lets a cordon through on its action
+    # confirmation alone.
+    assert _node_confirmed(action="cordon", node="node-a", node_confirm="")
+    assert not _node_confirmed(action="uncordon", node="node-a", node_confirm="")
+    header = _text().split("\n- name: ", 1)[0]
+    assert "-e k3s_window_node_confirm=<node>" in header
+    assert "THREE ACTIONS CARRY A SECOND FENCE" in header
     for name in (
         "Pause every runner set's intake, recording its limit first",
         "Restore every recorded runner set's limit exactly",

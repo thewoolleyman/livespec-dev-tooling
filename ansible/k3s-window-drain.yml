@@ -31,7 +31,8 @@
 #                  other nodes while the node's running pods finish. This is
 #                  also the committed NODE HOLD: "hold node <name>" is
 #                  `cordon`, and "lift node <name>" is `uncordon`.
-#   uncordon     — mark it schedulable again.
+#   uncordon     — mark it schedulable again. It needs the node confirmed by
+#                  name (the second fence below).
 #   evacuate     — BEFORE a planned power-off of a cordoned, Ready node: delete
 #                  (gracefully) the node's pods whose owner recreates them, so
 #                  they reschedule onto another node while this node's kubelet
@@ -133,16 +134,24 @@
 # on the pool's server, under its admin kubeconfig. `evacuate` and `clear-lost`
 # name their node the same way and work for any registered node.
 #
-# THE TWO DELETING ACTIONS CARRY A SECOND FENCE: THE NODE IS CONFIRMED BY NAME.
-# `evacuate` and `clear-lost` also need `k3s_window_node_confirm` equal to
-# `k3s_window_node`. The specification's "Consent-gated pool-node disruption"
+# THREE ACTIONS CARRY A SECOND FENCE: THE NODE IS CONFIRMED BY NAME.
+# `uncordon`, `evacuate` and `clear-lost` also need `k3s_window_node_confirm`
+# equal to `k3s_window_node`. `uncordon` takes it because lifting the wrong
+# node's hold puts load back on a node under maintenance, which is the
+# dangerous direction; `cordon` is the safe direction and keeps its single
+# action confirmation (legacy-coordinator-agent ruling, 2026-11-12, on
+# livespec-dev-tooling-acgcwp). An uncordon therefore reads:
+#   just ansible-apply ansible/k3s-window-drain.yml -e k3s_window_action=uncordon
+#     -e k3s_window_confirm=uncordon -e k3s_window_node=<node>
+#     -e k3s_window_node_confirm=<node>
+# (one line). The specification's "Consent-gated pool-node disruption"
 # section requires a disruption to act only on the single host an explicit
 # confirmation variable names, and to change nothing when that confirmation is
 # absent or names another host. A pool host is confirmed by its inventory name;
 # a registered Node with no inventory entry is confirmed by its node name. When
 # the node confirmation is absent or names another node, the run says so, reads
-# nothing (not even whether the node is registered) and changes nothing. The
-# four older actions keep their one fence unchanged. This is a stop-the-line
+# nothing (not even whether the node is registered) and changes nothing.
+# `pause-arc`, `restore-arc` and `cordon` keep their one fence unchanged. This is a stop-the-line
 # hand-land; the specification text for these two actions follows through the
 # proposed change topic `k3s-window-drain-committed-evacuate`.
 #
@@ -163,6 +172,7 @@
     k3s_window_node_actions: [cordon, uncordon, evacuate, clear-lost]
     k3s_window_hold_actions: [cordon, uncordon]
     k3s_window_pod_actions: [evacuate, clear-lost]
+    k3s_window_node_confirm_actions: [uncordon, evacuate, clear-lost]
     k3s_window_recreating_owner_kinds: [AutoscalingListener, ReplicaSet, StatefulSet]
     k3s_window_kept_namespaces: [factory, factory-mi-homelab]
     k3s_window_evacuate_wait_seconds: 120
@@ -172,7 +182,7 @@
          and k3s_window_confirm | default('') == k3s_window_action | default('')
          and cluster_role | default('') == 'server' }}
     k3s_window_node_confirmed: >-
-      {{ k3s_window_action | default('') not in k3s_window_pod_actions
+      {{ k3s_window_action | default('') not in k3s_window_node_confirm_actions
          or (k3s_window_node | default('') | length > 0
              and k3s_window_node_confirm | default('') == k3s_window_node | default('')) }}
     k3s_window_node_known: >-
@@ -193,11 +203,11 @@
         - cluster_role | default('') == 'server'
         - not (k3s_window_requested | bool)
 
-    - name: Report an evacuate or clear-lost whose node confirmation is absent or names another node
+    - name: Report an uncordon, evacuate or clear-lost whose node confirmation is absent or names another node
       ansible.builtin.debug:
         msg: >-
-          Not acting: `{{ k3s_window_action }}` deletes pods, so it also needs
-          `k3s_window_node_confirm` naming the same node as `k3s_window_node`
+          Not acting: `{{ k3s_window_action }}` puts load back on a node or
+          deletes its pods, so it also needs `k3s_window_node_confirm` naming the same node as `k3s_window_node`
           (this run carries node `{{ k3s_window_node | default('<unset>') }}`,
           node confirm `{{ k3s_window_node_confirm | default('<unset>') }}`).
           Nothing was read and nothing was changed.
@@ -317,6 +327,7 @@
     - name: Cordon or uncordon the confirmed node
       when:
         - k3s_window_requested | bool
+        - k3s_window_node_confirmed | bool
         - k3s_window_action in k3s_window_hold_actions
       ansible.builtin.command:
         argv:
