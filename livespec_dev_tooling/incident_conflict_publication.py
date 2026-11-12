@@ -18,11 +18,12 @@ Each action carries its sweep state under `sweep` in the observer record:
 `attempts` (all of them), `streak` (consecutive attempts of the `last` reason),
 `next_at` (epoch seconds) and, once set, `terminal`. A `retry` outcome backs off
 exponentially from five minutes to an hour by its streak and turns `terminal` once the
-streak reaches that reason's bound, so nothing is retried forever. A `terminal` outcome
-is journaled with its reason at once and is never written again automatically; it
-needs the incident owner or an operator. A `landed` outcome always wins: it marks the
-action `reconciled` even over a terminal another publisher recorded meanwhile, keeping
-that diagnosis as `superseded_terminal`.
+streak reaches that reason's bound or all retry reasons together reach the global
+attempt bound, so nothing is retried forever. A `terminal` outcome is journaled with
+its reason at once and is never written again automatically; it needs the incident
+owner or an operator. A `landed` outcome always wins: it marks the action `reconciled`
+even over a terminal another publisher recorded meanwhile, keeping that diagnosis as
+`superseded_terminal`.
 """
 
 from __future__ import annotations
@@ -58,6 +59,7 @@ _CAP_SECONDS = 3600.0
 _BOUNDS = {"merge-unrecorded": 12, "claim-changed": 3}
 _EXHAUSTED = {"claim-changed": HALF_REOPEN}
 _DEFAULT_BOUND = 48
+_MAX_ATTEMPTS = 48
 _RECONCILED = "reconciled"
 _LANDED = "landed"
 _DEFERRED = "deferred"
@@ -171,14 +173,20 @@ def _apply(
     attempts = cast("int", state.get("attempts", 0)) + 1
     streak = cast("int", state.get("streak", 0)) + 1 if state.get("last") == outcome.reason else 1
     state.update(attempts=attempts, streak=streak, last=outcome.reason)
-    if outcome.status == "retry" and streak < _BOUNDS.get(outcome.reason, _DEFAULT_BOUND):
+    exhausted_reason = streak >= _BOUNDS.get(outcome.reason, _DEFAULT_BOUND)
+    if outcome.status == "retry" and attempts < _MAX_ATTEMPTS and not exhausted_reason:
         state["next_at"] = clock() + backoff_seconds(attempts=streak)
         action[_SWEEP] = state
         return Published(status=_DEFERRED, reason=outcome.reason)
     reason = (
         outcome.reason
         if outcome.status == _TERMINAL
-        else _EXHAUSTED.get(outcome.reason, f"{outcome.reason}: no landing after {streak} attempts")
+        else _EXHAUSTED.get(
+            outcome.reason,
+            f"{outcome.reason}: no landing after {attempts} attempts",
+        )
+        if exhausted_reason
+        else f"{outcome.reason}: no landing after {attempts} attempts"
     )
     state[_TERMINAL] = reason
     action[_SWEEP] = state
