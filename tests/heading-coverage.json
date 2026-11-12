@@ -567,8 +567,8 @@
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a factory node keeps its factory label across a control-plane reboot",
     "test": "TODO",
-    "reason": "A real test at the integration tier or above is owed for this heading; livespec-dev-tooling-izlx4g owns it.",
-    "work_item": "livespec-dev-tooling-izlx4g"
+    "reason": "A real test at the integration tier or above is owed for this heading; livespec-dev-tooling-r5o5zh owns it. (Re-owned from closed livespec-dev-tooling-izlx4g on 2026-11-11.)",
+    "work_item": "livespec-dev-tooling-r5o5zh"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -709,8 +709,8 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "non-functional-requirements.md",
     "heading": "## Docker engine install guard",
-    "test": "TODO",
-    "reason": "A real test at the required tier is owed for this heading; livespec-dev-tooling-ubpufs owns it.",
+    "test": "tests.livespec_dev_tooling.fleet.test_docker_engine_guard_lifecycle.test_every_operation_ensures_the_runtime_directory_and_opens_the_one_lock",
+    "reason": "Unit-tier: drives every Docker engine install guard operation over a fake host and asserts each first ensures `/run/docker-engine-guard` at mode 0700, root-owned, and opens the one lock before deciding, per the section's \"One run at a time, under one lock\" clause; the module's siblings hold the 60-second lock-wait refusal, the not-current-reservation refusal and the dispatch table, and `tests.consumer.test_docker_engine_guard_scenarios` holds the section's scenarios (livespec-dev-tooling-ubpufs).",
     "work_item": "livespec-dev-tooling-ubpufs"
   },
   {
@@ -789,24 +789,24 @@
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a Docker engine install guard publish resumed after a kill during dpkg -i completes the trigger handler that install activated",
     "test": "TODO",
-    "reason": "A real test at the integration tier or above is owed for this heading; livespec-dev-tooling-mrr7ye owns it.",
-    "work_item": "livespec-dev-tooling-mrr7ye"
+    "reason": "A real test at the integration tier or above is owed for this heading; livespec-dev-tooling-r5o5zh owns it. (Re-owned from closed livespec-dev-tooling-mrr7ye on 2026-11-11.)",
+    "work_item": "livespec-dev-tooling-r5o5zh"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a Docker engine install guard publish resumed after a kill during an intended package's unpack re-unpacks it from its audited archive",
     "test": "TODO",
-    "reason": "A real test at the integration tier or above is owed for this heading; livespec-dev-tooling-eyfhky owns it.",
-    "work_item": "livespec-dev-tooling-eyfhky"
+    "reason": "A real test at the integration tier or above is owed for this heading; livespec-dev-tooling-r5o5zh owns it. (Re-owned from closed livespec-dev-tooling-eyfhky on 2026-11-11.)",
+    "work_item": "livespec-dev-tooling-r5o5zh"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a Docker engine install guard observation sample ignores pod veths on a bridge the snapshot recorded",
     "test": "TODO",
-    "reason": "A real test at the integration tier or above is owed for this heading; livespec-dev-tooling-eaigbj owns it.",
-    "work_item": "livespec-dev-tooling-eaigbj"
+    "reason": "A real test at the integration tier or above is owed for this heading; livespec-dev-tooling-r5o5zh owns it. (Re-owned from closed livespec-dev-tooling-eaigbj on 2026-11-11.)",
+    "work_item": "livespec-dev-tooling-r5o5zh"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -819,8 +819,8 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: the fabro-hosts play renders each registered factory's run cap from its instance's max_concurrent_runs",
-    "test": "TODO",
-    "reason": "A real test at the integration tier or above is owed for this scenario: the committed `ansible/fabro-hosts.yml` dev-host play run under the pinned `ansible-core` against a fixture inventory whose `fabro_server_instances` entry declares `max_concurrent_runs`, asserting the world-readable one-line `<factory>.max_concurrent_runs` file equals that value, that changing the value changes the file, and that an instance declaring none is refused before any host writes. livespec-dev-tooling-o5xpdy owns it.",
+    "test": "tests.livespec_dev_tooling.test_fabro_factory_registry_role.test_the_dev_host_play_renders_each_factorys_declared_capacity",
+    "reason": "Integration-tier (module-level `pytest.mark.integration`): runs the committed `ansible/fabro-hosts.yml` dev-host play under the pinned ansible-core against a fixture inventory whose factory instances declare `max_concurrent_runs`, asserting each registered factory's world-readable one-line `<factory>.max_concurrent_runs` file carries its instance's value; the module's siblings `test_a_changed_declared_capacity_rewrites_the_factories_one_line_limit` and `test_a_factory_without_a_declared_capacity_refuses_before_any_limit_write` hold the changed-value and refusal legs (livespec-dev-tooling-o5xpdy).",
     "work_item": "livespec-dev-tooling-o5xpdy"
   },
   {
@@ -954,8 +954,8 @@
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a later master commit touching a culprit path blocks the revert",
     "test": "TODO",
-    "reason": "A real test at the integration tier or above is owed for this heading; livespec-dev-tooling-joqff6 owns it.",
-    "work_item": "livespec-dev-tooling-joqff6"
+    "reason": "A real test at the integration tier or above is owed for this heading; livespec-dev-tooling-r5o5zh owns it. (Re-owned from closed livespec-dev-tooling-joqff6 on 2026-11-11.)",
+    "work_item": "livespec-dev-tooling-r5o5zh"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -970,56 +970,56 @@
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a valid fix-forward claim holds the revert while the fix makes progress",
     "test": "TODO",
-    "reason": "A real test at the integration tier or above is owed for this heading; livespec-dev-tooling-joqff6 owns it.",
-    "work_item": "livespec-dev-tooling-joqff6"
+    "reason": "A real test at the integration tier or above is owed for this heading; livespec-dev-tooling-r5o5zh owns it. (Re-owned from closed livespec-dev-tooling-joqff6 on 2026-11-11.)",
+    "work_item": "livespec-dev-tooling-r5o5zh"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a thrashing fix-forward releases the held revert",
     "test": "TODO",
-    "reason": "A real test at the integration tier or above is owed for this heading; livespec-dev-tooling-joqff6 owns it.",
-    "work_item": "livespec-dev-tooling-joqff6"
+    "reason": "A real test at the integration tier or above is owed for this heading; livespec-dev-tooling-r5o5zh owns it. (Re-owned from closed livespec-dev-tooling-joqff6 on 2026-11-11.)",
+    "work_item": "livespec-dev-tooling-r5o5zh"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a stalled or contested fix-forward releases the held revert",
     "test": "TODO",
-    "reason": "A real test at the integration tier or above is owed for this heading; livespec-dev-tooling-joqff6 owns it.",
-    "work_item": "livespec-dev-tooling-joqff6"
+    "reason": "A real test at the integration tier or above is owed for this heading; livespec-dev-tooling-r5o5zh owns it. (Re-owned from closed livespec-dev-tooling-joqff6 on 2026-11-11.)",
+    "work_item": "livespec-dev-tooling-r5o5zh"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: at the hard cap a revert with green CI lands regardless of fix-forward progress",
     "test": "TODO",
-    "reason": "A real test at the integration tier or above is owed for this heading; livespec-dev-tooling-joqff6 owns it.",
-    "work_item": "livespec-dev-tooling-joqff6"
+    "reason": "A real test at the integration tier or above is owed for this heading; livespec-dev-tooling-lugvnr owns it. (Re-owned from closed livespec-dev-tooling-joqff6 on 2026-11-11.)",
+    "work_item": "livespec-dev-tooling-lugvnr"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: at the hard cap a revert whose CI is not green is not merged",
     "test": "TODO",
-    "reason": "A real test at the integration tier or above is owed for this heading; livespec-dev-tooling-joqff6 owns it.",
-    "work_item": "livespec-dev-tooling-joqff6"
+    "reason": "A real test at the integration tier or above is owed for this heading; livespec-dev-tooling-lugvnr owns it. (Re-owned from closed livespec-dev-tooling-joqff6 on 2026-11-11.)",
+    "work_item": "livespec-dev-tooling-lugvnr"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a fix-forward claim from outside the claimant set is ignored",
     "test": "TODO",
-    "reason": "A real test at the integration tier or above is owed for this heading; livespec-dev-tooling-joqff6 owns it.",
-    "work_item": "livespec-dev-tooling-joqff6"
+    "reason": "A real test at the integration tier or above is owed for this heading; livespec-dev-tooling-lugvnr owns it. (Re-owned from closed livespec-dev-tooling-joqff6 on 2026-11-11.)",
+    "work_item": "livespec-dev-tooling-lugvnr"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: missing or malformed reconciler configuration fails closed to revert-by-default",
     "test": "TODO",
-    "reason": "A real test at the integration tier or above is owed for this heading; livespec-dev-tooling-joqff6 owns it.",
-    "work_item": "livespec-dev-tooling-joqff6"
+    "reason": "A real test at the integration tier or above is owed for this heading; livespec-dev-tooling-lugvnr owns it. (Re-owned from closed livespec-dev-tooling-joqff6 on 2026-11-11.)",
+    "work_item": "livespec-dev-tooling-lugvnr"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -1050,16 +1050,16 @@
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a dev-tooling release fan-out dispatches only after its sandbox image tags are served",
     "test": "TODO",
-    "reason": "A real test at the integration tier or above is owed for this heading; livespec-dev-tooling-epcoja owns it.",
-    "work_item": "livespec-dev-tooling-epcoja"
+    "reason": "A real test at the integration tier or above is owed for this heading; livespec-dev-tooling-lugvnr owns it. (Re-owned from closed livespec-dev-tooling-epcoja on 2026-11-11.)",
+    "work_item": "livespec-dev-tooling-lugvnr"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a dev-tooling release fan-out whose sandbox image never appears fails naming the missing tags",
     "test": "TODO",
-    "reason": "A real test at the integration tier or above is owed for this heading; livespec-dev-tooling-epcoja owns it.",
-    "work_item": "livespec-dev-tooling-epcoja"
+    "reason": "A real test at the integration tier or above is owed for this heading; livespec-dev-tooling-lugvnr owns it. (Re-owned from closed livespec-dev-tooling-epcoja on 2026-11-11.)",
+    "work_item": "livespec-dev-tooling-lugvnr"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -1081,24 +1081,24 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: the dev-host play points the PATH client at a declared build and leaves the server binary it used to name untouched",
-    "test": "TODO",
-    "reason": "Spec-first: a real integration-tier test is owed, driving converges of the committed fabro_client role under the pinned ansible-core against tmp_path-derived links, builds and a stand-in server binary, as the sibling scenario's test does.",
+    "test": "tests.livespec_dev_tooling.test_fabro_client_role.test_a_converge_points_the_path_client_at_a_declared_build_without_touching_the_server_binary",
+    "reason": "Integration-tier (module-level `pytest.mark.integration`): converges the committed fabro_client role under the pinned ansible-core with two declared builds and a PATH link that today names a stand-in server binary, asserting the link's literal target is the second build's path, owned by the role's owner and primary group, that the server binary hashes as before, and that a second converge changes nothing; the module's `test_each_unsafe_entry_is_refused_before_anything_is_written` holds the refusal leg (livespec-dev-tooling-rpw6).",
     "work_item": "livespec-dev-tooling-rpw6"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "non-functional-requirements.md",
     "heading": "## Runner-pool node telemetry",
-    "test": "TODO",
-    "reason": "Spec-first (v090): a real unit-tier test is owed, reading the committed collector configuration (receiver_creator over k8s_observer, no single-node kubeletstats endpoint), the board and trigger definitions under ci-runner/observability, and the ci-pool.yml role wiring. Realized by plan kubernetes-node-observability (epic livespec-dev-tooling-dfdiil): children a2aiza, b7wwgy, ool6ws and uftb4o.",
+    "test": "tests.livespec_dev_tooling.test_otel_collector_ci_pool_converge.test_ci_pool_applies_the_collector_role_to_every_pool_node_ungated",
+    "reason": "Unit-tier: reads the committed inventory and ansible/ci-pool.yml and asserts the otel_collector role is applied, with no gate and its own tag, to every ci_pool node derived from the inventory, after ci_observability, so every pool node's collector is converged by the play and a joining node needs no per-node configuration edit, the section's \"Converged, never hand-installed\" clause (livespec-dev-tooling-uftb4o; test added under livespec-dev-tooling-ool6ws).",
     "work_item": "livespec-dev-tooling-uftb4o"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "non-functional-requirements.md",
     "heading": "## Runner-pool workload and control-plane telemetry",
-    "test": "TODO",
-    "reason": "Spec-first (v094): a real unit-tier test is owed, reading the committed collector configuration (container termination and waiting reasons, the Warning event watch, PersistentVolumeClaim phase), the readiness-probe and datastore emitters, the Kueue gauge's flavorsUsage read on the read-only identity, the ci-pool.yml wiring of each, and the trigger set's thresholds and dead-man coverage. Realized by plan kubernetes-node-observability (epic livespec-dev-tooling-dfdiil); its children are filed after this revision.",
+    "test": "tests.livespec_dev_tooling.test_k8s_workload_control_plane_definitions.test_thresholds_match_the_specification_windows",
+    "reason": "Unit-tier: reads the committed trigger definitions under ci-runner/observability/triggers/ and asserts each trigger the section's \"Board and triggers\" paragraph requires carries the section's window and threshold: factory pod Pending, factory quota at or above 90 percent for 2 hours, API-server readiness failing for 3 minutes, datastore filesystem at 80 percent, datastore request latency p99 over 5 minutes, and controller or ARC listener zero available for 5 minutes (livespec-dev-tooling-dfdiil; test added under livespec-dev-tooling-t6om4l).",
     "work_item": "livespec-dev-tooling-dfdiil"
   },
   {
@@ -1106,32 +1106,32 @@
     "spec_file": "scenarios.md",
     "heading": "## Scenario: every k3s pool node's load is visible and a silent node fires its dead-man",
     "test": "TODO",
-    "reason": "Spec-first (v090): a real integration-tier test is owed, driving a converge of the committed otel_collector role from ansible/ci-pool.yml under the pinned ansible-core for three inventory nodes and asserting the rendered collector configuration scrapes every Node through receiver_creator over k8s_observer, and that the committed trigger set carries one dead-man per ci_pool node filtered to that node. Realized by plan kubernetes-node-observability (epic livespec-dev-tooling-dfdiil): children a2aiza, b7wwgy, ool6ws and uftb4o; its host-run Proof of Done exercises the scenario live in Honeycomb.",
-    "work_item": "livespec-dev-tooling-uftb4o"
+    "reason": "Spec-first (v090): a real integration-tier test is owed, driving a converge of the committed otel_collector role from ansible/ci-pool.yml under the pinned ansible-core for three inventory nodes and asserting the rendered collector configuration scrapes every Node through receiver_creator over k8s_observer, and that the committed trigger set carries one dead-man per ci_pool node filtered to that node. Realized by plan kubernetes-node-observability (epic livespec-dev-tooling-dfdiil): children a2aiza, b7wwgy, ool6ws and uftb4o; its host-run Proof of Done exercises the scenario live in Honeycomb. livespec-dev-tooling-r5o5zh owns it (re-owned from closed livespec-dev-tooling-uftb4o on 2026-11-11).",
+    "work_item": "livespec-dev-tooling-r5o5zh"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: an OOM-killed or unschedulable factory pod is visible with its reason and fires its trigger",
     "test": "TODO",
-    "reason": "Spec-first (v094): a real integration-tier test is owed exercising this scenario against the committed emitters and trigger definitions; its host-run Proof of Done exercises it live in Honeycomb. Realized by plan kubernetes-node-observability (epic livespec-dev-tooling-dfdiil); its children are filed after this revision.",
-    "work_item": "livespec-dev-tooling-dfdiil"
+    "reason": "Spec-first (v094): a real integration-tier test is owed exercising this scenario against the committed emitters and trigger definitions; its host-run Proof of Done exercises it live in Honeycomb. Realized by plan kubernetes-node-observability (epic livespec-dev-tooling-r5o5zh); its children are filed after this revision. (Re-owned from closed livespec-dev-tooling-dfdiil on 2026-11-11.)",
+    "work_item": "livespec-dev-tooling-r5o5zh"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a factory namespace near its quota and a saturated ClusterQueue are each readable and the quota trigger fires",
     "test": "TODO",
-    "reason": "Spec-first (v094): a real integration-tier test is owed exercising this scenario against the committed emitters and trigger definitions; its host-run Proof of Done exercises it live in Honeycomb. Realized by plan kubernetes-node-observability (epic livespec-dev-tooling-dfdiil); its children are filed after this revision.",
-    "work_item": "livespec-dev-tooling-dfdiil"
+    "reason": "Spec-first (v094): a real integration-tier test is owed exercising this scenario against the committed emitters and trigger definitions; its host-run Proof of Done exercises it live in Honeycomb. Realized by plan kubernetes-node-observability (epic livespec-dev-tooling-r5o5zh); its children are filed after this revision. (Re-owned from closed livespec-dev-tooling-dfdiil on 2026-11-11.)",
+    "work_item": "livespec-dev-tooling-r5o5zh"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: an unready API server or a failing datastore fires its trigger",
     "test": "TODO",
-    "reason": "Spec-first (v094): a real integration-tier test is owed exercising this scenario against the committed emitters and trigger definitions; its host-run Proof of Done exercises it live in Honeycomb. Realized by plan kubernetes-node-observability (epic livespec-dev-tooling-dfdiil); its children are filed after this revision.",
-    "work_item": "livespec-dev-tooling-dfdiil"
+    "reason": "Spec-first (v094): a real integration-tier test is owed exercising this scenario against the committed emitters and trigger definitions; its host-run Proof of Done exercises it live in Honeycomb. Realized by plan kubernetes-node-observability (epic livespec-dev-tooling-r5o5zh); its children are filed after this revision. (Re-owned from closed livespec-dev-tooling-dfdiil on 2026-11-11.)",
+    "work_item": "livespec-dev-tooling-r5o5zh"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -1162,15 +1162,15 @@
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a silent cluster-state emitter fires its dead-man",
     "test": "TODO",
-    "reason": "Spec-first (v094): a real integration-tier test is owed exercising this scenario against the committed emitters and trigger definitions; its host-run Proof of Done exercises it live in Honeycomb. Realized by plan kubernetes-node-observability (epic livespec-dev-tooling-dfdiil); its children are filed after this revision.",
-    "work_item": "livespec-dev-tooling-dfdiil"
+    "reason": "Spec-first (v094): a real integration-tier test is owed exercising this scenario against the committed emitters and trigger definitions; its host-run Proof of Done exercises it live in Honeycomb. Realized by plan kubernetes-node-observability (epic livespec-dev-tooling-r5o5zh); its children are filed after this revision. (Re-owned from closed livespec-dev-tooling-dfdiil on 2026-11-11.)",
+    "work_item": "livespec-dev-tooling-r5o5zh"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a hand-edited board or trigger is reported by its applier's drift mode and left unchanged",
-    "test": "TODO",
-    "reason": "Spec-first (v136): a real integration-tier test is owed for this heading, driving apply-boards.sh and apply-triggers.sh in their drift mode against a stub Honeycomb API whose live definitions differ from, or lack, the committed ones and asserting the printed differences, the non-zero exit and that no create, update or delete request was sent; the live no-difference read after an apply is host-captured. livespec-dev-tooling-4vopaj owns it.",
+    "test": "tests.consumer.test_honeycomb_applier_drift.test_trigger_drift_reports_each_differing_field_and_writes_nothing",
+    "reason": "Consumer-tier: drives the committed apply-triggers.sh in its drift mode against a stub Honeycomb API whose live trigger's threshold differs from the committed definition, asserting the printed trigger name and threshold field, a non-zero exit, and that only reads were sent; the module's siblings drive apply-boards.sh drift over an edited panel, a committed trigger absent from the API reported as missing, and a matching live state exiting zero (livespec-dev-tooling-4vopaj).",
     "work_item": "livespec-dev-tooling-4vopaj"
   },
   {
@@ -1261,16 +1261,16 @@
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a member whose only error findings are stale pins still receives the release dispatch",
     "test": "TODO",
-    "reason": "Spec-first: an integration-tier test of the dispatch-matrix filter is owed; exercised by the implementing item livespec-dev-tooling-epcoja.",
-    "work_item": "livespec-dev-tooling-epcoja"
+    "reason": "Spec-first: an integration-tier test of the dispatch-matrix filter is owed; exercised by the implementing item livespec-dev-tooling-mdqkkz. (Re-owned from closed livespec-dev-tooling-epcoja on 2026-11-11.)",
+    "work_item": "livespec-dev-tooling-mdqkkz"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a member with an unparseable pin file or a non-pin error row is still excluded from the release dispatch",
     "test": "TODO",
-    "reason": "Spec-first: an integration-tier test of the dispatch-matrix filter is owed; exercised by the implementing item livespec-dev-tooling-epcoja.",
-    "work_item": "livespec-dev-tooling-epcoja"
+    "reason": "Spec-first: an integration-tier test of the dispatch-matrix filter is owed; exercised by the implementing item livespec-dev-tooling-lugvnr. (Re-owned from closed livespec-dev-tooling-epcoja on 2026-11-11.)",
+    "work_item": "livespec-dev-tooling-lugvnr"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -1384,40 +1384,40 @@
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a test-only commit runs only its staged tests unless shared test support changed",
     "test": "TODO",
-    "reason": "Spec-first: a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) is owed for this scenario, driving the shipped `red_green_replay` check's suite-green leg on a test-only staged tree; livespec-dev-tooling-h3gcs6 owns it.",
-    "work_item": "livespec-dev-tooling-h3gcs6"
+    "reason": "Spec-first: a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) is owed for this scenario, driving the shipped `red_green_replay` check's suite-green leg on a test-only staged tree; livespec-dev-tooling-lugvnr owns it. (Re-owned from closed livespec-dev-tooling-h3gcs6 on 2026-11-11.)",
+    "work_item": "livespec-dev-tooling-lugvnr"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a test-only commit that changes shared test support runs the full suite",
     "test": "TODO",
-    "reason": "Spec-first: a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) is owed for this scenario, driving the shipped `red_green_replay` check's suite-green leg on a test-only staged tree; livespec-dev-tooling-h3gcs6 owns it.",
-    "work_item": "livespec-dev-tooling-h3gcs6"
+    "reason": "Spec-first: a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) is owed for this scenario, driving the shipped `red_green_replay` check's suite-green leg on a test-only staged tree; livespec-dev-tooling-fgy4au owns it. (Re-owned from closed livespec-dev-tooling-h3gcs6 on 2026-11-11.)",
+    "work_item": "livespec-dev-tooling-fgy4au"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a test-only commit whose staged tests fail is refused",
     "test": "TODO",
-    "reason": "Spec-first: a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) is owed for this scenario, driving the shipped `red_green_replay` check's suite-green leg on a test-only staged tree; livespec-dev-tooling-h3gcs6 owns it.",
-    "work_item": "livespec-dev-tooling-h3gcs6"
+    "reason": "Spec-first: a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) is owed for this scenario, driving the shipped `red_green_replay` check's suite-green leg on a test-only staged tree; livespec-dev-tooling-fgy4au owns it. (Re-owned from closed livespec-dev-tooling-h3gcs6 on 2026-11-11.)",
+    "work_item": "livespec-dev-tooling-fgy4au"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a behaviour-preserving commit runs the full suite, and an empty run is refused",
     "test": "TODO",
-    "reason": "Spec-first: a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) or an integration-marked test is owed for this heading, driving the suite-green leg on a staged product change to a full-suite green and to a `suite-red` refusal on pytest exit 5; livespec-dev-tooling-z5fwwn owns it.",
-    "work_item": "livespec-dev-tooling-z5fwwn"
+    "reason": "Spec-first: a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) or an integration-marked test is owed for this heading, driving the suite-green leg on a staged product change to a full-suite green and to a `suite-red` refusal on pytest exit 5; livespec-dev-tooling-fgy4au owns it. (Re-owned from closed livespec-dev-tooling-z5fwwn on 2026-11-11.)",
+    "work_item": "livespec-dev-tooling-fgy4au"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a suite-green run that stops printing output for the stall window is ended",
     "test": "TODO",
-    "reason": "Spec-first: a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) or an integration-marked test is owed for this heading, driving the suite-green leg against a pytest run that goes silent for the stall window; livespec-dev-tooling-t4rx4t owns it.",
-    "work_item": "livespec-dev-tooling-t4rx4t"
+    "reason": "Spec-first: a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) or an integration-marked test is owed for this heading, driving the suite-green leg against a pytest run that goes silent for the stall window; livespec-dev-tooling-fgy4au owns it. (Re-owned from closed livespec-dev-tooling-t4rx4t on 2026-11-11.)",
+    "work_item": "livespec-dev-tooling-fgy4au"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -1440,32 +1440,32 @@
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a suite-green run ended before any test completed says that no test had completed",
     "test": "TODO",
-    "reason": "Spec-first: a real test at the integration tier or above is owed for this scenario, running a suite-green leg whose pytest run completes no test within a short stall window during collection or worker start-up, then reading the refusal event; livespec-dev-tooling-6o3m6m owns it.",
-    "work_item": "livespec-dev-tooling-6o3m6m"
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this scenario, running a suite-green leg whose pytest run completes no test within a short stall window during collection or worker start-up, then reading the refusal event; livespec-dev-tooling-fgy4au owns it. (Re-owned from closed livespec-dev-tooling-6o3m6m on 2026-11-11.)",
+    "work_item": "livespec-dev-tooling-fgy4au"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a long suite-green run that keeps printing output is not ended",
     "test": "TODO",
-    "reason": "Spec-first: a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) or an integration-marked test is owed for this heading, driving the suite-green leg against a long run that keeps printing output and comparing its output checksum with a fast run; livespec-dev-tooling-t4rx4t owns it.",
-    "work_item": "livespec-dev-tooling-t4rx4t"
+    "reason": "Spec-first: a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) or an integration-marked test is owed for this heading, driving the suite-green leg against a long run that keeps printing output and comparing its output checksum with a fast run; livespec-dev-tooling-fgy4au owns it. (Re-owned from closed livespec-dev-tooling-t4rx4t on 2026-11-11.)",
+    "work_item": "livespec-dev-tooling-fgy4au"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a refused suite-green run names why each test failed",
     "test": "TODO",
-    "reason": "Spec-first: a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) or an integration-marked test is owed for this heading, driving the suite-green leg on a failing staged test and asserting the `suite-red` event's `failure_summary` and `failure_detail`; livespec-dev-tooling-z5fwwn owns it.",
-    "work_item": "livespec-dev-tooling-z5fwwn"
+    "reason": "Spec-first: a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) or an integration-marked test is owed for this heading, driving the suite-green leg on a failing staged test and asserting the `suite-red` event's `failure_summary` and `failure_detail`; livespec-dev-tooling-fgy4au owns it. (Re-owned from closed livespec-dev-tooling-z5fwwn on 2026-11-11.)",
+    "work_item": "livespec-dev-tooling-fgy4au"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a suite-green leg reuses a passing full pre-commit aggregate on the same tree",
     "test": "TODO",
-    "reason": "Spec-first: a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) or an integration-marked test is owed for this heading, driving the commit-msg suite-green leg after a passing full pre-commit aggregate on the same tree; livespec-dev-tooling-z5fwwn owns it.",
-    "work_item": "livespec-dev-tooling-z5fwwn"
+    "reason": "Spec-first: a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) or an integration-marked test is owed for this heading, driving the commit-msg suite-green leg after a passing full pre-commit aggregate on the same tree; livespec-dev-tooling-fgy4au owns it. (Re-owned from closed livespec-dev-tooling-z5fwwn on 2026-11-11.)",
+    "work_item": "livespec-dev-tooling-fgy4au"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -1480,16 +1480,16 @@
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a suite-green leg runs the full suite when the pre-commit aggregate judged a different tree or ran partially",
     "test": "TODO",
-    "reason": "Spec-first: a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) or an integration-marked test is owed for this heading, driving the commit-msg suite-green leg after a pre-commit aggregate on a different tree or a partial aggregate; livespec-dev-tooling-z5fwwn owns it.",
-    "work_item": "livespec-dev-tooling-z5fwwn"
+    "reason": "Spec-first: a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) or an integration-marked test is owed for this heading, driving the commit-msg suite-green leg after a pre-commit aggregate on a different tree or a partial aggregate; livespec-dev-tooling-fgy4au owns it. (Re-owned from closed livespec-dev-tooling-z5fwwn on 2026-11-11.)",
+    "work_item": "livespec-dev-tooling-fgy4au"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: the whole-suite coverage run prints its thirty slowest test phases",
     "test": "TODO",
-    "reason": "Spec-first: a real test at the integration tier or above is owed for this scenario, driving `just check-per-file-coverage` and asserting its output lists the thirty slowest test phases with their durations; livespec-dev-tooling-tt4w7h owns it.",
-    "work_item": "livespec-dev-tooling-tt4w7h"
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this scenario, driving `just check-per-file-coverage` and asserting its output lists the thirty slowest test phases with their durations; livespec-dev-tooling-fgy4au owns it. (Re-owned from closed livespec-dev-tooling-tt4w7h on 2026-11-11.)",
+    "work_item": "livespec-dev-tooling-fgy4au"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -1503,8 +1503,8 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "contracts.md",
     "heading": "## Suite-green replay leg",
-    "test": "TODO",
-    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, driving the `red_green_replay` check's suite-green leg end-to-end on a staged tree across its scope, progress-bound, failure-detail and same-tree-reuse clauses; livespec-dev-tooling-z5fwwn owns it.",
+    "test": "tests.livespec_dev_tooling.checks.test_red_green_replay.test_any_subject_staging_impl_without_red_takes_suite_green_leg",
+    "reason": "Unit-tier: runs the red_green_replay commit-msg check in a real git repository whose index stages product impl `.py` with no Red awaiting a Green, under every subject prefix, asserting it takes the suite-green leg, runs the repository's full pytest suite to green and records the `TDD-Suite-Green-*` trailers (livespec-dev-tooling-z5fwwn).",
     "work_item": "livespec-dev-tooling-z5fwwn"
   },
   {
@@ -1544,8 +1544,8 @@
     "spec_file": "scenarios.md",
     "heading": "## Scenario: dev host retention removes a dead session's scratch directory and leaves a live one",
     "test": "TODO",
-    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, exercising one run of the committed retention script over a fixture /tmp/claude-<uid> tree holding a dead session's aged scratch directory and an equally aged one whose session id a real live child process carries; livespec-dev-tooling-tjldi2 owns it.",
-    "work_item": "livespec-dev-tooling-tjldi2"
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, exercising one run of the committed retention script over a fixture /tmp/claude-<uid> tree holding a dead session's aged scratch directory and an equally aged one whose session id a real live child process carries; livespec-dev-tooling-ovnrsv owns it. (Re-owned from closed livespec-dev-tooling-tjldi2 on 2026-11-11.)",
+    "work_item": "livespec-dev-tooling-ovnrsv"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -1568,8 +1568,8 @@
     "spec_file": "scenarios.md",
     "heading": "## Scenario: the dev host capacity check alerts when /tmp passes its threshold",
     "test": "TODO",
-    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, exercising the committed capacity-check script against stubbed filesystem usage and a stub ntfy endpoint, run twice inside the repeat interval; livespec-dev-tooling-tjldi2 owns it.",
-    "work_item": "livespec-dev-tooling-tjldi2"
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, exercising the committed capacity-check script against stubbed filesystem usage and a stub ntfy endpoint, run twice inside the repeat interval; livespec-dev-tooling-r5o5zh owns it. (Re-owned from closed livespec-dev-tooling-tjldi2 on 2026-11-11.)",
+    "work_item": "livespec-dev-tooling-r5o5zh"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -1591,16 +1591,16 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "contracts.md",
     "heading": "## Delegated pre-commit aggregate",
-    "test": "TODO",
-    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, exercising the pre-commit hook's delegation of `just check-pre-commit` to a gates Job keyed to the staged tree; livespec-dev-tooling-3buhph owns it.",
+    "test": "tests.livespec_dev_tooling.test_pre_commit_delegate.test_a_credentialed_pre_commit_delegates_the_staged_tree",
+    "reason": "Unit-tier: in a repository with `delegated_pre_commit = true` on a host that can read the gates kubeconfig, run_pre_commit submits the gate Job against the staged tree hash with the declared bootstrap followed by the gated-tree aggregate, and returns a non-local verdict carrying the Job name, the staged tree hash and the Job's exit status (livespec-dev-tooling-3buhph).",
     "work_item": "livespec-dev-tooling-3buhph"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "contracts.md",
     "heading": "## Delegated gate-runner runs",
-    "test": "TODO",
-    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, exercising gate-start's default delegation of full-suite gate commands to a gates Job and its recorded venue; livespec-dev-tooling-qgv3tb owns it.",
+    "test": "tests.livespec_dev_tooling.test_gate_runner_delegate.test_gate_runner_venue_selection",
+    "reason": "Unit-tier: drives gate_runner_delegate.select_venue over the ratified full-suite set (`just check`, `just check-<name>`, `mise exec --` forms and every pytest spelling including `python -m pytest`, `uv run --no-sync python -m pytest` and an interpreter path) against non-members such as `git commit`/`git push`, asserting each full-suite command in a delegated repository on a credentialed host selects `cluster_job` with reason `eligible full-suite command` and everything else stays `host_local` (livespec-dev-tooling-qgv3tb).",
     "work_item": "livespec-dev-tooling-qgv3tb"
   },
   {
@@ -1608,8 +1608,8 @@
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a seat's gate-runner full suite runs as a gate Job by default",
     "test": "TODO",
-    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, exercising gate-start's default delegation of full-suite gate commands to a gates Job and its recorded venue; livespec-dev-tooling-qgv3tb owns it.",
-    "work_item": "livespec-dev-tooling-qgv3tb"
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, exercising gate-start's default delegation of full-suite gate commands to a gates Job and its recorded venue; livespec-dev-tooling-lugvnr owns it. (Re-owned from closed livespec-dev-tooling-qgv3tb on 2026-11-11.)",
+    "work_item": "livespec-dev-tooling-lugvnr"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -1623,8 +1623,8 @@
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a delegated gate-runner run with no cluster verdict ends without a verdict",
     "test": "TODO",
-    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, exercising gate-start's default delegation of full-suite gate commands to a gates Job and its recorded venue; livespec-dev-tooling-qgv3tb owns it.",
-    "work_item": "livespec-dev-tooling-qgv3tb"
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, exercising gate-start's default delegation of full-suite gate commands to a gates Job and its recorded venue; livespec-dev-tooling-lugvnr owns it. (Re-owned from closed livespec-dev-tooling-qgv3tb on 2026-11-11.)",
+    "work_item": "livespec-dev-tooling-lugvnr"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -1639,16 +1639,16 @@
     "spec_file": "scenarios.md",
     "heading": "## Scenario: an explicit local gate-runner run is recorded as local",
     "test": "TODO",
-    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, exercising gate-start's default delegation of full-suite gate commands to a gates Job and its recorded venue; livespec-dev-tooling-qgv3tb owns it.",
-    "work_item": "livespec-dev-tooling-qgv3tb"
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, exercising gate-start's default delegation of full-suite gate commands to a gates Job and its recorded venue; livespec-dev-tooling-lugvnr owns it. (Re-owned from closed livespec-dev-tooling-qgv3tb on 2026-11-11.)",
+    "work_item": "livespec-dev-tooling-lugvnr"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a delegated pre-commit aggregate gates the staged tree on the cluster",
     "test": "TODO",
-    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, exercising the pre-commit hook's delegation of `just check-pre-commit` to a gates Job keyed to the staged tree; livespec-dev-tooling-3buhph owns it.",
-    "work_item": "livespec-dev-tooling-3buhph"
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, exercising the pre-commit hook's delegation of `just check-pre-commit` to a gates Job keyed to the staged tree; livespec-dev-tooling-lugvnr owns it. (Re-owned from closed livespec-dev-tooling-3buhph on 2026-11-11.)",
+    "work_item": "livespec-dev-tooling-lugvnr"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -1687,8 +1687,8 @@
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a delegated pre-commit aggregate with no cluster verdict gates locally",
     "test": "TODO",
-    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, exercising the pre-commit hook's delegation of `just check-pre-commit` to a gates Job keyed to the staged tree; livespec-dev-tooling-3buhph owns it.",
-    "work_item": "livespec-dev-tooling-3buhph"
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, exercising the pre-commit hook's delegation of `just check-pre-commit` to a gates Job keyed to the staged tree; livespec-dev-tooling-lugvnr owns it. (Re-owned from closed livespec-dev-tooling-3buhph on 2026-11-11.)",
+    "work_item": "livespec-dev-tooling-lugvnr"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -1749,8 +1749,8 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "non-functional-requirements.md",
     "heading": "## Shell script pipeline verdicts",
-    "test": "TODO",
-    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, running each swept pipefail shell script against an input larger than 64 KiB that contains its pattern; livespec-dev-tooling-ftgiu4 owns it.",
+    "test": "tests.test_pipefail_reader_sweep.test_pipefail_scripts_do_not_use_early_exiting_pipeline_readers",
+    "reason": "Unit-tier: sweeps every tracked shell script that runs under `set -o pipefail` and fails naming `file:line` for a pipeline whose status decides a verdict and that ends in an early-exiting reader; the module's `test_pipefail_reader_forms_keep_their_small_input_verdict_on_large_input` proves each approved rewrite keeps its small-input verdict past a 64 KiB pipe buffer (livespec-dev-tooling-ftgiu4).",
     "work_item": "livespec-dev-tooling-ftgiu4"
   },
   {
@@ -1758,15 +1758,15 @@
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a pipefail script reports a match in a large input as a match",
     "test": "TODO",
-    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, running each swept pipefail shell script against an input larger than 64 KiB that contains its pattern; livespec-dev-tooling-ftgiu4 owns it.",
-    "work_item": "livespec-dev-tooling-ftgiu4"
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, running each swept pipefail shell script against an input larger than 64 KiB that contains its pattern; livespec-dev-tooling-fgy4au owns it. (Re-owned from closed livespec-dev-tooling-ftgiu4 on 2026-11-11.)",
+    "work_item": "livespec-dev-tooling-fgy4au"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "non-functional-requirements.md",
     "heading": "## Maintainer radar",
-    "test": "TODO",
-    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, importing the committed RADAR and running its structural and ledger validation through the radar load entry point on fixtures; plan radar-and-deterministic-admission slice 1. livespec-dev-tooling-xhbgdg owns it.",
+    "test": "tests.livespec_dev_tooling.radar.test_radar.test_structural_validation_names_duplicate_indexes_and_bad_references",
+    "reason": "Unit-tier: builds RadarEntry values and runs the committed radar's offline structural validation, asserting a target listed twice is named with both indexes and a malformed `blocked_by` reference is named; the module's `test_radar_exports_seeded_typed_entries` holds the six-field typed schema and the immutable RADAR tuple (livespec-dev-tooling-xhbgdg).",
     "work_item": "livespec-dev-tooling-xhbgdg"
   },
   {
@@ -1774,8 +1774,8 @@
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a radar that lists the same target twice fails just check",
     "test": "TODO",
-    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, running the repo-local radar test against a radar listing one target twice and asserting the failure names the id and both indexes. livespec-dev-tooling-xhbgdg owns it.",
-    "work_item": "livespec-dev-tooling-xhbgdg"
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, running the repo-local radar test against a radar listing one target twice and asserting the failure names the id and both indexes. livespec-dev-tooling-fgy4au owns it. (Re-owned from closed livespec-dev-tooling-xhbgdg on 2026-11-11.)",
+    "work_item": "livespec-dev-tooling-fgy4au"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -1790,8 +1790,8 @@
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a related edge does not block a radar target",
     "test": "TODO",
-    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, computing readiness over ledger fixtures in both dependency-row spellings with relates-to and discovered-from edges to open items and a blocks edge to a closed item. livespec-dev-tooling-m2x5pt owns it.",
-    "work_item": "livespec-dev-tooling-m2x5pt"
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, computing readiness over ledger fixtures in both dependency-row spellings with relates-to and discovered-from edges to open items and a blocks edge to a closed item. livespec-dev-tooling-62zla3 owns it. (Re-owned from closed livespec-dev-tooling-m2x5pt on 2026-11-11.)",
+    "work_item": "livespec-dev-tooling-62zla3"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -1806,15 +1806,15 @@
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a blocked radar target names each open blocker by tenant and id",
     "test": "TODO",
-    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading. It computes readiness over ledger record fixtures in both dependency-row spellings, asserting NOT READY with exactly the open blocks and blocked_by blockers named as tenant:id, and DONE for a closed entry. livespec-dev-tooling-m2x5pt owns it.",
-    "work_item": "livespec-dev-tooling-m2x5pt"
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading. It computes readiness over ledger record fixtures in both dependency-row spellings, asserting NOT READY with exactly the open blocks and blocked_by blockers named as tenant:id, and DONE for a closed entry. livespec-dev-tooling-62zla3 owns it. (Re-owned from closed livespec-dev-tooling-m2x5pt on 2026-11-11.)",
+    "work_item": "livespec-dev-tooling-62zla3"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "non-functional-requirements.md",
     "heading": "## Scheduler Honeycomb input contract",
-    "test": "TODO",
-    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, running the scheduler's Honeycomb reader over its committed query specs with a stub MCP client for the cache, budget and fallback paths; plan radar-and-deterministic-admission slice 2. livespec-dev-tooling-34bee5 owns it.",
+    "test": "tests.livespec_dev_tooling.test_radar_honeycomb_models.test_committed_tick_specs_are_frozen_typed_and_within_budget",
+    "reason": "Integration-tier (module-level `pytest.mark.integration`): imports the committed radar Honeycomb query specs and asserts each is a frozen spec naming its dataset, calculations, filters, breakdowns, window and typed expected columns, and that the fixed per-tick set stays within the committed per-tick budget constant, failing naming the count and the constant; the module's `test_tick_budget_cites_the_steady_state_mcp_key_measurement` holds the measured basis of the constant (livespec-dev-tooling-mauiu5, the slice cut from livespec-dev-tooling-34bee5).",
     "work_item": "livespec-dev-tooling-34bee5"
   },
   {
@@ -1830,23 +1830,23 @@
     "spec_file": "scenarios.md",
     "heading": "## Scenario: an unreachable Honeycomb endpoint yields flagged fallback decisions",
     "test": "TODO",
-    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, pointing the reader's MCP endpoint override at an unresolvable host and asserting every value is marked inputs: fallback with the reason and the radar array is unchanged; the printout line lands with the slice-4 report generator. livespec-dev-tooling-34bee5 owns it.",
-    "work_item": "livespec-dev-tooling-34bee5"
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, pointing the reader's MCP endpoint override at an unresolvable host and asserting every value is marked inputs: fallback with the reason and the radar array is unchanged; the printout line lands with the slice-4 report generator. livespec-dev-tooling-3xeqvg owns it. (Re-owned from closed livespec-dev-tooling-34bee5 on 2026-11-11.)",
+    "work_item": "livespec-dev-tooling-3xeqvg"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a per-tick query set larger than the budget constant fails the unit tests",
-    "test": "TODO",
-    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, adding query specs past the per-tick budget constant and asserting the counting test fails naming the count and the constant. livespec-dev-tooling-34bee5 owns it.",
+    "test": "tests.livespec_dev_tooling.test_radar_honeycomb_models.test_committed_tick_specs_are_frozen_typed_and_within_budget",
+    "reason": "Integration-tier (module-level `pytest.mark.integration`): this is the counting test the scenario names; it counts the committed per-tick query specs against `MAX_QUERIES_PER_TICK` and fails with `tick has <count> specs; MAX_QUERIES_PER_TICK=<N>` once a change makes one tick run N + 1 queries (livespec-dev-tooling-mauiu5).",
     "work_item": "livespec-dev-tooling-34bee5"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "non-functional-requirements.md",
     "heading": "## Execution-target pressure telemetry",
-    "test": "TODO",
-    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, running the pressure emitter against fixture /proc/pressure files and a stub OTLP sink and asserting the emitted datapoints; plan radar-and-deterministic-admission slice 2. livespec-dev-tooling-i7yxpt owns it.",
+    "test": "tests.livespec_dev_tooling.test_pressure_telemetry.test_pressure_emitter_posts_parseable_otlp_metrics_with_its_host_name",
+    "reason": "Unit-tier: runs the committed pressure-telemetry.sh emitter with a capturing curl stand-in and asserts its OTLP payload parses and carries all eighteen some/full avg10/avg60/avg300 gauges for cpu, memory and io stamped with the host's `host.name`; the module's siblings hold the one-minute timer, the ingest key, the per-host cgroup list and the missing-cgroup-file refusal (livespec-dev-tooling-i7yxpt).",
     "work_item": "livespec-dev-tooling-i7yxpt"
   },
   {
@@ -1869,40 +1869,40 @@
     "spec_file": "scenarios.md",
     "heading": "## Scenario: an execution target's pressure stall readings are queryable in livespec by host",
     "test": "TODO",
-    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, running the pressure emitter against fixture pressure files and asserting some and full avg10/avg60/avg300 datapoints for cpu, memory and io stamped with the host's host.name. livespec-dev-tooling-i7yxpt owns it.",
-    "work_item": "livespec-dev-tooling-i7yxpt"
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, running the pressure emitter against fixture pressure files and asserting some and full avg10/avg60/avg300 datapoints for cpu, memory and io stamped with the host's host.name. livespec-dev-tooling-62zla3 owns it. (Re-owned from closed livespec-dev-tooling-i7yxpt on 2026-11-11.)",
+    "work_item": "livespec-dev-tooling-62zla3"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a host with no pressure file makes the emitter fail rather than report zero",
     "test": "TODO",
-    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, running the pressure emitter with /proc/pressure/memory absent and asserting a non-zero exit naming the file and no memory datapoint. livespec-dev-tooling-i7yxpt owns it.",
-    "work_item": "livespec-dev-tooling-i7yxpt"
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, running the pressure emitter with /proc/pressure/memory absent and asserting a non-zero exit naming the file and no memory datapoint. livespec-dev-tooling-62zla3 owns it. (Re-owned from closed livespec-dev-tooling-i7yxpt on 2026-11-11.)",
+    "work_item": "livespec-dev-tooling-62zla3"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a configured cgroup's CPU pressure is queryable in livespec by cgroup and host",
     "test": "TODO",
-    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, reading the livespec metrics dataset after the converged pressure emitter has run on poweredge-xubuntu with system.slice/k3s.service configured, and asserting livespec.cgroup.pressure.cpu.* rows stamped with that cgroup and host.name. livespec-dev-tooling-3gm5rb owns it; the implementation PR that ships it replaces this row.",
-    "work_item": "livespec-dev-tooling-3gm5rb"
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, reading the livespec metrics dataset after the converged pressure emitter has run on poweredge-xubuntu with system.slice/k3s.service configured, and asserting livespec.cgroup.pressure.cpu.* rows stamped with that cgroup and host.name. livespec-dev-tooling-62zla3 owns it; the implementation PR that ships it replaces this row. (Re-owned from closed livespec-dev-tooling-3gm5rb on 2026-11-11.)",
+    "work_item": "livespec-dev-tooling-62zla3"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a configured cgroup with no pressure file makes the emitter fail rather than report zero",
     "test": "TODO",
-    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, running the pressure emitter with a configured cgroup whose cpu.pressure file is absent and asserting a non-zero exit naming that file and no request sent. livespec-dev-tooling-3gm5rb owns it; the implementation PR that ships it replaces this row.",
-    "work_item": "livespec-dev-tooling-3gm5rb"
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, running the pressure emitter with a configured cgroup whose cpu.pressure file is absent and asserting a non-zero exit naming that file and no request sent. livespec-dev-tooling-62zla3 owns it; the implementation PR that ships it replaces this row. (Re-owned from closed livespec-dev-tooling-3gm5rb on 2026-11-11.)",
+    "work_item": "livespec-dev-tooling-62zla3"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a host with no configured cgroup emits only host pressure",
     "test": "TODO",
-    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, running the pressure emitter with no cgroup list against a capturing endpoint and asserting the request holds the host pressure datapoints and no livespec.cgroup.pressure.cpu.* datapoint. livespec-dev-tooling-3gm5rb owns it; the implementation PR that ships it replaces this row.",
-    "work_item": "livespec-dev-tooling-3gm5rb"
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, running the pressure emitter with no cgroup list against a capturing endpoint and asserting the request holds the host pressure datapoints and no livespec.cgroup.pressure.cpu.* datapoint. livespec-dev-tooling-62zla3 owns it; the implementation PR that ships it replaces this row. (Re-owned from closed livespec-dev-tooling-3gm5rb on 2026-11-11.)",
+    "work_item": "livespec-dev-tooling-62zla3"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -1957,136 +1957,136 @@
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a runner-only profile opens a node to CI without planning a storage change",
     "test": "TODO",
-    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, exercising the runner-only node posture through the committed profile parser, storage-stage exit tests, ci-pool role gating, local-path provisioner or Kueue manifests, or, for a host-observed scenario, through its host-captured proof on hp-xubuntu. livespec-dev-tooling-zreev4 owns it.",
-    "work_item": "livespec-dev-tooling-zreev4"
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, exercising the runner-only node posture through the committed profile parser, storage-stage exit tests, ci-pool role gating, local-path provisioner or Kueue manifests, or, for a host-observed scenario, through its host-captured proof on hp-xubuntu. livespec-dev-tooling-62zla3 owns it. (Re-owned from closed livespec-dev-tooling-zreev4 on 2026-11-11.)",
+    "work_item": "livespec-dev-tooling-62zla3"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a runner-only profile that keeps its CI-closing taint is refused",
     "test": "TODO",
-    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, exercising the runner-only node posture through the committed profile parser, storage-stage exit tests, ci-pool role gating, local-path provisioner or Kueue manifests, or, for a host-observed scenario, through its host-captured proof on hp-xubuntu. livespec-dev-tooling-zreev4 owns it.",
-    "work_item": "livespec-dev-tooling-zreev4"
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, exercising the runner-only node posture through the committed profile parser, storage-stage exit tests, ci-pool role gating, local-path provisioner or Kueue manifests, or, for a host-observed scenario, through its host-captured proof on hp-xubuntu. livespec-dev-tooling-62zla3 owns it. (Re-owned from closed livespec-dev-tooling-zreev4 on 2026-11-11.)",
+    "work_item": "livespec-dev-tooling-62zla3"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a runner-only profile with zero admission capacity is refused",
     "test": "TODO",
-    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, exercising the runner-only node posture through the committed profile parser, storage-stage exit tests, ci-pool role gating, local-path provisioner or Kueue manifests, or, for a host-observed scenario, through its host-captured proof on hp-xubuntu. livespec-dev-tooling-zreev4 owns it.",
-    "work_item": "livespec-dev-tooling-zreev4"
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, exercising the runner-only node posture through the committed profile parser, storage-stage exit tests, ci-pool role gating, local-path provisioner or Kueue manifests, or, for a host-observed scenario, through its host-captured proof on hp-xubuntu. livespec-dev-tooling-62zla3 owns it. (Re-owned from closed livespec-dev-tooling-zreev4 on 2026-11-11.)",
+    "work_item": "livespec-dev-tooling-62zla3"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a runner work volume on a runner-only node is provisioned under the profile's directory and starts unseeded",
     "test": "TODO",
-    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, exercising the runner-only node posture through the committed profile parser, storage-stage exit tests, ci-pool role gating, local-path provisioner or Kueue manifests, or, for a host-observed scenario, through its host-captured proof on hp-xubuntu. livespec-dev-tooling-zreev4 owns it.",
-    "work_item": "livespec-dev-tooling-zreev4"
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, exercising the runner-only node posture through the committed profile parser, storage-stage exit tests, ci-pool role gating, local-path provisioner or Kueue manifests, or, for a host-observed scenario, through its host-captured proof on hp-xubuntu. livespec-dev-tooling-62zla3 owns it. (Re-owned from closed livespec-dev-tooling-zreev4 on 2026-11-11.)",
+    "work_item": "livespec-dev-tooling-62zla3"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: the cohort churn-slot quota equals the sum of the nodes' declared capacities",
     "test": "TODO",
-    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, exercising the runner-only node posture through the committed profile parser, storage-stage exit tests, ci-pool role gating, local-path provisioner or Kueue manifests, or, for a host-observed scenario, through its host-captured proof on hp-xubuntu. livespec-dev-tooling-zreev4 owns it.",
-    "work_item": "livespec-dev-tooling-zreev4"
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, exercising the runner-only node posture through the committed profile parser, storage-stage exit tests, ci-pool role gating, local-path provisioner or Kueue manifests, or, for a host-observed scenario, through its host-captured proof on hp-xubuntu. livespec-dev-tooling-62zla3 owns it. (Re-owned from closed livespec-dev-tooling-zreev4 on 2026-11-11.)",
+    "work_item": "livespec-dev-tooling-62zla3"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: an unknown CI-facilities posture is refused",
     "test": "TODO",
-    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, exercising the runner-only node posture through the committed profile parser, storage-stage exit tests, ci-pool role gating, local-path provisioner or Kueue manifests, or, for a host-observed scenario, through its host-captured proof on hp-xubuntu. livespec-dev-tooling-zreev4 owns it.",
-    "work_item": "livespec-dev-tooling-zreev4"
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, exercising the runner-only node posture through the committed profile parser, storage-stage exit tests, ci-pool role gating, local-path provisioner or Kueue manifests, or, for a host-observed scenario, through its host-captured proof on hp-xubuntu. livespec-dev-tooling-62zla3 owns it. (Re-owned from closed livespec-dev-tooling-zreev4 on 2026-11-11.)",
+    "work_item": "livespec-dev-tooling-62zla3"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a runner-only profile with no work-volume directory is refused",
     "test": "TODO",
-    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, exercising the runner-only node posture through the committed profile parser, storage-stage exit tests, ci-pool role gating, local-path provisioner or Kueue manifests, or, for a host-observed scenario, through its host-captured proof on hp-xubuntu. livespec-dev-tooling-zreev4 owns it.",
-    "work_item": "livespec-dev-tooling-zreev4"
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, exercising the runner-only node posture through the committed profile parser, storage-stage exit tests, ci-pool role gating, local-path provisioner or Kueue manifests, or, for a host-observed scenario, through its host-captured proof on hp-xubuntu. livespec-dev-tooling-62zla3 owns it. (Re-owned from closed livespec-dev-tooling-zreev4 on 2026-11-11.)",
+    "work_item": "livespec-dev-tooling-62zla3"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a closed profile with admission capacity or without its CI-closing taint is refused",
     "test": "TODO",
-    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, exercising the runner-only node posture through the committed profile parser, storage-stage exit tests, ci-pool role gating, local-path provisioner or Kueue manifests, or, for a host-observed scenario, through its host-captured proof on hp-xubuntu. livespec-dev-tooling-zreev4 owns it.",
-    "work_item": "livespec-dev-tooling-zreev4"
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, exercising the runner-only node posture through the committed profile parser, storage-stage exit tests, ci-pool role gating, local-path provisioner or Kueue manifests, or, for a host-observed scenario, through its host-captured proof on hp-xubuntu. livespec-dev-tooling-62zla3 owns it. (Re-owned from closed livespec-dev-tooling-zreev4 on 2026-11-11.)",
+    "work_item": "livespec-dev-tooling-62zla3"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a runner-only node receives the runner container hook and still takes factory sandboxes",
     "test": "TODO",
-    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, exercising the runner-only node posture through the committed profile parser, storage-stage exit tests, ci-pool role gating, local-path provisioner or Kueue manifests, or, for a host-observed scenario, through its host-captured proof on hp-xubuntu. livespec-dev-tooling-zreev4 owns it.",
-    "work_item": "livespec-dev-tooling-zreev4"
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, exercising the runner-only node posture through the committed profile parser, storage-stage exit tests, ci-pool role gating, local-path provisioner or Kueue manifests, or, for a host-observed scenario, through its host-captured proof on hp-xubuntu. livespec-dev-tooling-h6jsgv owns it. (Re-owned from closed livespec-dev-tooling-zreev4 on 2026-11-11.)",
+    "work_item": "livespec-dev-tooling-h6jsgv"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a job on a runner-only node reads the pool's host-served caches over the node network",
     "test": "TODO",
-    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, exercising the runner-only node posture through the committed profile parser, storage-stage exit tests, ci-pool role gating, local-path provisioner or Kueue manifests, or, for a host-observed scenario, through its host-captured proof on hp-xubuntu. livespec-dev-tooling-zreev4 owns it.",
-    "work_item": "livespec-dev-tooling-zreev4"
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, exercising the runner-only node posture through the committed profile parser, storage-stage exit tests, ci-pool role gating, local-path provisioner or Kueue manifests, or, for a host-observed scenario, through its host-captured proof on hp-xubuntu. livespec-dev-tooling-h6jsgv owns it. (Re-owned from closed livespec-dev-tooling-zreev4 on 2026-11-11.)",
+    "work_item": "livespec-dev-tooling-h6jsgv"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a move from none to runner-only is rehearsed by its provisioning apply",
     "test": "TODO",
-    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, exercising the runner-only node posture through the committed profile parser, storage-stage exit tests, ci-pool role gating, local-path provisioner or Kueue manifests, or, for a host-observed scenario, through its host-captured proof on hp-xubuntu. livespec-dev-tooling-zreev4 owns it.",
-    "work_item": "livespec-dev-tooling-zreev4"
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, exercising the runner-only node posture through the committed profile parser, storage-stage exit tests, ci-pool role gating, local-path provisioner or Kueue manifests, or, for a host-observed scenario, through its host-captured proof on hp-xubuntu. livespec-dev-tooling-h6jsgv owns it. (Re-owned from closed livespec-dev-tooling-zreev4 on 2026-11-11.)",
+    "work_item": "livespec-dev-tooling-h6jsgv"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a move to or from full still needs an empty-storage rehearsal",
     "test": "TODO",
-    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, exercising the runner-only node posture through the committed profile parser, storage-stage exit tests, ci-pool role gating, local-path provisioner or Kueue manifests, or, for a host-observed scenario, through its host-captured proof on hp-xubuntu. livespec-dev-tooling-zreev4 owns it.",
-    "work_item": "livespec-dev-tooling-zreev4"
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, exercising the runner-only node posture through the committed profile parser, storage-stage exit tests, ci-pool role gating, local-path provisioner or Kueue manifests, or, for a host-observed scenario, through its host-captured proof on hp-xubuntu. livespec-dev-tooling-h6jsgv owns it. (Re-owned from closed livespec-dev-tooling-zreev4 on 2026-11-11.)",
+    "work_item": "livespec-dev-tooling-h6jsgv"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a Codex plugin hook command that mentions CLAUDE_PLUGIN_ROOT without a braced plugin-root path fails the producing repository's gate",
     "test": "TODO",
-    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, running `python -m livespec_dev_tooling.checks.codex_hook_reconcilable` as a subprocess against a fixture git repository in the scenario's shape and asserting its exit code and structured stderr. livespec-dev-tooling-yhacv6 owns it.",
-    "work_item": "livespec-dev-tooling-yhacv6"
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, running `python -m livespec_dev_tooling.checks.codex_hook_reconcilable` as a subprocess against a fixture git repository in the scenario's shape and asserting its exit code and structured stderr. livespec-dev-tooling-h6jsgv owns it. (Re-owned from closed livespec-dev-tooling-yhacv6 on 2026-11-11.)",
+    "work_item": "livespec-dev-tooling-h6jsgv"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a Codex plugin hook entrypoint missing from the plugin payload fails the producing repository's gate",
     "test": "TODO",
-    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, running `python -m livespec_dev_tooling.checks.codex_hook_reconcilable` as a subprocess against a fixture git repository in the scenario's shape and asserting its exit code and structured stderr. livespec-dev-tooling-yhacv6 owns it.",
-    "work_item": "livespec-dev-tooling-yhacv6"
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, running `python -m livespec_dev_tooling.checks.codex_hook_reconcilable` as a subprocess against a fixture git repository in the scenario's shape and asserting its exit code and structured stderr. livespec-dev-tooling-h6jsgv owns it. (Re-owned from closed livespec-dev-tooling-yhacv6 on 2026-11-11.)",
+    "work_item": "livespec-dev-tooling-h6jsgv"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: an unparseable Codex plugin hooks file fails the producing repository's gate",
     "test": "TODO",
-    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, running `python -m livespec_dev_tooling.checks.codex_hook_reconcilable` as a subprocess against a fixture git repository in the scenario's shape and asserting its exit code and structured stderr. livespec-dev-tooling-yhacv6 owns it.",
-    "work_item": "livespec-dev-tooling-yhacv6"
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, running `python -m livespec_dev_tooling.checks.codex_hook_reconcilable` as a subprocess against a fixture git repository in the scenario's shape and asserting its exit code and structured stderr. livespec-dev-tooling-h6jsgv owns it. (Re-owned from closed livespec-dev-tooling-yhacv6 on 2026-11-11.)",
+    "work_item": "livespec-dev-tooling-h6jsgv"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: Codex plugin hooks wrapped in shell conditionals with existing plugin-root entrypoints pass",
     "test": "TODO",
-    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, running `python -m livespec_dev_tooling.checks.codex_hook_reconcilable` as a subprocess against a fixture git repository in the scenario's shape and asserting its exit code and structured stderr. livespec-dev-tooling-yhacv6 owns it.",
-    "work_item": "livespec-dev-tooling-yhacv6"
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, running `python -m livespec_dev_tooling.checks.codex_hook_reconcilable` as a subprocess against a fixture git repository in the scenario's shape and asserting its exit code and structured stderr. livespec-dev-tooling-h6jsgv owns it. (Re-owned from closed livespec-dev-tooling-yhacv6 on 2026-11-11.)",
+    "work_item": "livespec-dev-tooling-h6jsgv"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a repository that ships no Codex plugin passes the Codex hook check and reports that it examined nothing",
     "test": "TODO",
-    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, running `python -m livespec_dev_tooling.checks.codex_hook_reconcilable` as a subprocess against a fixture git repository in the scenario's shape and asserting its exit code and structured stderr. livespec-dev-tooling-yhacv6 owns it.",
-    "work_item": "livespec-dev-tooling-yhacv6"
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, running `python -m livespec_dev_tooling.checks.codex_hook_reconcilable` as a subprocess against a fixture git repository in the scenario's shape and asserting its exit code and structured stderr. livespec-dev-tooling-h6jsgv owns it. (Re-owned from closed livespec-dev-tooling-yhacv6 on 2026-11-11.)",
+    "work_item": "livespec-dev-tooling-h6jsgv"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -2124,8 +2124,8 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a failing test the run did not touch is retried on its own and reported as a flake",
-    "test": "TODO",
-    "reason": "Spec-first: a real test at the integration tier or above is owed for this scenario, driving a pytest session that loads the flake-retry plugin against a fixture repository with a controlled change set; livespec-dev-tooling-crxcy4 owns it.",
+    "test": "tests.livespec_dev_tooling.test_flake_retry_session.test_an_untouched_failing_test_is_retried_on_its_own_and_reported_as_a_flake",
+    "reason": "Integration-tier (function-level `pytest.mark.integration`, the AST marker route direction 4 accepts beside the `tests.consumer` prefix allowlist): runs a real pytest session that loads the flake-retry plugin in a fixture git repository whose change set leaves the failing test untouched, and asserts the test is re-run on its own, the session passes, the terminal summary lists it under FLAKE-RETRIED with its attempts and outcome, and tmp/flake-retries/ holds one JSON line for its node id (livespec-dev-tooling-crxcy4).",
     "work_item": "livespec-dev-tooling-crxcy4"
   },
   {
@@ -2133,8 +2133,8 @@
     "spec_file": "scenarios.md",
     "heading": "## Scenario: an untouched test that fails every attempt still fails the session",
     "test": "TODO",
-    "reason": "Spec-first: a real test at the integration tier or above is owed for this scenario, driving a pytest session that loads the flake-retry plugin against a fixture repository with a controlled change set; livespec-dev-tooling-crxcy4 owns it.",
-    "work_item": "livespec-dev-tooling-crxcy4"
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this scenario, driving a pytest session that loads the flake-retry plugin against a fixture repository with a controlled change set; livespec-dev-tooling-h6jsgv owns it. (Re-owned from closed livespec-dev-tooling-crxcy4 on 2026-11-11.)",
+    "work_item": "livespec-dev-tooling-h6jsgv"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -2148,8 +2148,8 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a failing test the run touched fails at once with no retry",
-    "test": "TODO",
-    "reason": "Spec-first: a real test at the integration tier or above is owed for this scenario, driving a pytest session that loads the flake-retry plugin against a fixture repository with a controlled change set; livespec-dev-tooling-crxcy4 owns it.",
+    "test": "tests.livespec_dev_tooling.test_flake_retry_session.test_a_failing_test_the_run_touched_fails_at_once_with_no_retry",
+    "reason": "Integration-tier (function-level `pytest.mark.integration`): runs a real pytest session that loads the flake-retry plugin in a fixture git repository whose change set modifies the failing test itself, and asserts the session fails on that first failure with no rerun, no FLAKE-RETRIED block and no tmp/flake-retries/ record (livespec-dev-tooling-crxcy4).",
     "work_item": "livespec-dev-tooling-crxcy4"
   },
   {
@@ -2157,23 +2157,23 @@
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a failing test that shares only an ancestor directory name with the change set is retried",
     "test": "TODO",
-    "reason": "Spec-first: a real test at the integration tier or above is owed for this scenario, driving a pytest session that loads the flake-retry plugin against a fixture repository whose failing test names a ci-runner/k3s/phase2/gates/ file through consecutive literal path segments while the change set touches only ci-runner/k3s/phase2/factory/; livespec-dev-tooling-sdrq5v owns it.",
-    "work_item": "livespec-dev-tooling-sdrq5v"
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this scenario, driving a pytest session that loads the flake-retry plugin against a fixture repository whose failing test names a ci-runner/k3s/phase2/gates/ file through consecutive literal path segments while the change set touches only ci-runner/k3s/phase2/factory/; livespec-dev-tooling-h6jsgv owns it. (Re-owned from closed livespec-dev-tooling-sdrq5v on 2026-11-11.)",
+    "work_item": "livespec-dev-tooling-h6jsgv"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a change set that touches the build or the plugin disables every retry",
     "test": "TODO",
-    "reason": "Spec-first: a real test at the integration tier or above is owed for this scenario, driving a pytest session that loads the flake-retry plugin against a fixture repository with a controlled change set; livespec-dev-tooling-crxcy4 owns it.",
-    "work_item": "livespec-dev-tooling-crxcy4"
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this scenario, driving a pytest session that loads the flake-retry plugin against a fixture repository with a controlled change set; livespec-dev-tooling-mdqkkz owns it. (Re-owned from closed livespec-dev-tooling-crxcy4 on 2026-11-11.)",
+    "work_item": "livespec-dev-tooling-mdqkkz"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a version-only release change leaves an untouched failing test retried",
-    "test": "TODO",
-    "reason": "Spec-first: a real test at the integration tier or above is owed for this scenario, driving a pytest session of the flake-retry plugin whose change set is a version-only pyproject.toml and uv.lock change and asserting that an untouched failing test re-runs and no FLAKE-RETRY-WITHHELD block prints. livespec-dev-tooling-lbinx7 owns it.",
+    "test": "tests.livespec_dev_tooling.test_flake_retry_session.test_a_version_only_release_change_retries_an_untouched_failing_test",
+    "reason": "Integration-tier (pytest.mark.integration): runs a real pytest session of the flake-retry plugin in a fixture repository whose change set is a version-only release change of pyproject.toml and uv.lock, with an untouched failing test, and asserts the session passes with one rerun and prints no FLAKE-RETRY-WITHHELD block (livespec-dev-tooling-lbinx7, PR #4215).",
     "work_item": "livespec-dev-tooling-lbinx7"
   },
   {
@@ -2181,8 +2181,8 @@
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a version-only release change still touches a test that names the changed file",
     "test": "TODO",
-    "reason": "Spec-first: a real test at the integration tier or above is owed for this scenario, driving a pytest session of the flake-retry plugin whose change set is a version-only pyproject.toml change and whose failing test names pyproject.toml through a string literal, asserting that the test fails at once with no re-run. livespec-dev-tooling-lbinx7 owns it.",
-    "work_item": "livespec-dev-tooling-lbinx7"
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this scenario, driving a pytest session of the flake-retry plugin whose change set is a version-only pyproject.toml change and whose failing test names pyproject.toml through a string literal, asserting that the test fails at once with no re-run. livespec-dev-tooling-mdqkkz owns it. (Re-owned from closed livespec-dev-tooling-lbinx7 on 2026-11-11.)",
+    "work_item": "livespec-dev-tooling-mdqkkz"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -2213,8 +2213,8 @@
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a re-run test's record reaches the host-side reader as a CI artifact",
     "test": "TODO",
-    "reason": "Spec-first: a real test at the integration tier or above is owed for this scenario, exercising a CI coverage job whose pytest session re-runs a test and reading the workflow run's flake-retries artifact; livespec-dev-tooling-mngdtf owns it.",
-    "work_item": "livespec-dev-tooling-mngdtf"
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this scenario, exercising a CI coverage job whose pytest session re-runs a test and reading the workflow run's flake-retries artifact; livespec-dev-tooling-ljea46 owns it. (Re-owned from closed livespec-dev-tooling-mngdtf on 2026-11-11.)",
+    "work_item": "livespec-dev-tooling-ljea46"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -2229,8 +2229,8 @@
     "spec_file": "scenarios.md",
     "heading": "## Scenario: the replay legs never retry the Red test and never accept a final failure",
     "test": "TODO",
-    "reason": "Spec-first: a real test at the integration tier or above is owed for this scenario, driving a pytest session that loads the flake-retry plugin against a fixture repository with a controlled change set; livespec-dev-tooling-crxcy4 owns it.",
-    "work_item": "livespec-dev-tooling-crxcy4"
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this scenario, driving a pytest session that loads the flake-retry plugin against a fixture repository with a controlled change set; livespec-dev-tooling-h6jsgv owns it. (Re-owned from closed livespec-dev-tooling-crxcy4 on 2026-11-11.)",
+    "work_item": "livespec-dev-tooling-h6jsgv"
   },
   {
     "heading": "## Scenario: a CI job killed at Set up job by an action-download 429 is re-run with backoff",
@@ -2251,16 +2251,16 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "test": "TODO",
-    "work_item": "livespec-dev-tooling-un3zhi",
-    "reason": "A real test at the integration tier or above is owed for this heading: an integration test of the committed live-converge playbook proving it runs the CI stack converge and waits, fails naming the unit result and journal tail when the converge fails, and reports no change on an unchanged host (proposal no-committed-apply-runs-the, v124). livespec-dev-tooling-un3zhi owns it."
+    "work_item": "livespec-dev-tooling-h6jsgv",
+    "reason": "A real test at the integration tier or above is owed for this heading: an integration test of the committed live-converge playbook proving it runs the CI stack converge and waits, fails naming the unit result and journal tail when the converge fails, and reports no change on an unchanged host (proposal no-committed-apply-runs-the, v124). livespec-dev-tooling-h6jsgv owns it. (Re-owned from closed livespec-dev-tooling-un3zhi on 2026-11-11.)"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "contracts.md",
     "heading": "## Expedited incident execution",
     "test": "TODO",
-    "reason": "A real test at the integration tier or above is owed for this heading: the normally shipped incident capability must exercise this contract with ordinary-path controls; livespec-dev-tooling-sh3vz3 owns the implementation and scenario evidence under plan livespec-dev-tooling-bqnzcm.",
-    "work_item": "livespec-dev-tooling-sh3vz3"
+    "reason": "A real test at the integration tier or above is owed for this heading: the normally shipped incident capability must exercise this contract with ordinary-path controls; livespec-dev-tooling-iukhlf owns the implementation and scenario evidence under plan livespec-dev-tooling-bqnzcm. (Re-owned from closed livespec-dev-tooling-sh3vz3 on 2026-11-11.)",
+    "work_item": "livespec-dev-tooling-iukhlf"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -2275,48 +2275,48 @@
     "spec_file": "scenarios.md",
     "heading": "## Scenario: an expedited local gate skips slow work and preserves fast failures",
     "test": "TODO",
-    "reason": "A real test at the integration tier or above is owed for this heading: the normally shipped incident capability must exercise this contract with ordinary-path controls; livespec-dev-tooling-cerkbn owns the implementation and scenario evidence under plan livespec-dev-tooling-bqnzcm.",
-    "work_item": "livespec-dev-tooling-cerkbn"
+    "reason": "A real test at the integration tier or above is owed for this heading: the normally shipped incident capability must exercise this contract with ordinary-path controls; livespec-dev-tooling-h6jsgv owns the implementation and scenario evidence under plan livespec-dev-tooling-bqnzcm. (Re-owned from closed livespec-dev-tooling-cerkbn on 2026-11-11.)",
+    "work_item": "livespec-dev-tooling-h6jsgv"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: focused incident verification cannot satisfy normal validation",
     "test": "TODO",
-    "reason": "A real test at the integration tier or above is owed for this heading: the normally shipped incident capability must exercise this contract with ordinary-path controls; livespec-dev-tooling-xluwqj owns the implementation and scenario evidence under plan livespec-dev-tooling-bqnzcm.",
-    "work_item": "livespec-dev-tooling-xluwqj"
+    "reason": "A real test at the integration tier or above is owed for this heading: the normally shipped incident capability must exercise this contract with ordinary-path controls; livespec-dev-tooling-h6jsgv owns the implementation and scenario evidence under plan livespec-dev-tooling-bqnzcm. (Re-owned from closed livespec-dev-tooling-xluwqj on 2026-11-11.)",
+    "work_item": "livespec-dev-tooling-h6jsgv"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: incident commit provenance remains verifiable on normal master",
     "test": "TODO",
-    "reason": "A real test at the integration tier or above is owed for this heading: the normally shipped incident capability must exercise this contract with ordinary-path controls; livespec-dev-tooling-gvylzw owns the implementation and scenario evidence under plan livespec-dev-tooling-bqnzcm.",
-    "work_item": "livespec-dev-tooling-gvylzw"
+    "reason": "A real test at the integration tier or above is owed for this heading: the normally shipped incident capability must exercise this contract with ordinary-path controls; livespec-dev-tooling-j2rdde owns the implementation and scenario evidence under plan livespec-dev-tooling-bqnzcm. (Re-owned from closed livespec-dev-tooling-gvylzw on 2026-11-11.)",
+    "work_item": "livespec-dev-tooling-j2rdde"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: an expedited PR defers coverage and spec work while master runs normally",
     "test": "TODO",
-    "reason": "A real test at the integration tier or above is owed for this heading: the normally shipped incident capability must exercise this contract with ordinary-path controls; livespec-dev-tooling-egy3ri owns the implementation and scenario evidence under plan livespec-dev-tooling-bqnzcm.",
-    "work_item": "livespec-dev-tooling-egy3ri"
+    "reason": "A real test at the integration tier or above is owed for this heading: the normally shipped incident capability must exercise this contract with ordinary-path controls; livespec-dev-tooling-k1iz4 owns the implementation and scenario evidence under plan livespec-dev-tooling-bqnzcm. (Re-owned from closed livespec-dev-tooling-egy3ri on 2026-11-11.)",
+    "work_item": "livespec-dev-tooling-k1iz4"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: the first required master leaf failure fences incident recovery",
     "test": "TODO",
-    "reason": "A real test at the integration tier or above is owed for this heading: the normally shipped incident capability must exercise this contract with ordinary-path controls; livespec-dev-tooling-47ij37 owns the implementation and scenario evidence under plan livespec-dev-tooling-bqnzcm.",
-    "work_item": "livespec-dev-tooling-47ij37"
+    "reason": "A real test at the integration tier or above is owed for this heading: the normally shipped incident capability must exercise this contract with ordinary-path controls; livespec-dev-tooling-mdqkkz owns the implementation and scenario evidence under plan livespec-dev-tooling-bqnzcm. (Re-owned from closed livespec-dev-tooling-47ij37 on 2026-11-11.)",
+    "work_item": "livespec-dev-tooling-mdqkkz"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: an incident revert preserves later changes without waiting for CI",
     "test": "TODO",
-    "reason": "A real test at the integration tier or above is owed for this heading: the normally shipped incident capability must exercise this contract with ordinary-path controls; livespec-dev-tooling-lgfo3v owns the implementation and scenario evidence under plan livespec-dev-tooling-bqnzcm.",
-    "work_item": "livespec-dev-tooling-lgfo3v"
+    "reason": "A real test at the integration tier or above is owed for this heading: the normally shipped incident capability must exercise this contract with ordinary-path controls; livespec-dev-tooling-fdquen owns the implementation and scenario evidence under plan livespec-dev-tooling-bqnzcm. (Re-owned from closed livespec-dev-tooling-lgfo3v on 2026-11-11.)",
+    "work_item": "livespec-dev-tooling-fdquen"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -2331,16 +2331,16 @@
     "spec_file": "scenarios.md",
     "heading": "## Scenario: an incident recovery principal configured for a scratch branch recovers only that branch",
     "test": "TODO",
-    "reason": "A real test at the integration tier or above is owed for this heading: the fake-forge recovery principal tests must drive a principal configured for a non-master branch through a moved-head overlap; livespec-dev-tooling-thhgeg owns it.",
-    "work_item": "livespec-dev-tooling-thhgeg"
+    "reason": "A real test at the integration tier or above is owed for this heading: the fake-forge recovery principal tests must drive a principal configured for a non-master branch through a moved-head overlap; livespec-dev-tooling-mdqkkz owns it. (Re-owned from closed livespec-dev-tooling-thhgeg on 2026-11-11.)",
+    "work_item": "livespec-dev-tooling-mdqkkz"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a scratch-branch incident drill runs beside production on the full master CI graph",
     "test": "TODO",
-    "reason": "A real test at the integration tier or above is owed for this heading: the incident_observer role's scratch instance must render beside an unchanged production installation and tear down cleanly, and a push to an incident-scratch/** branch must run ci.yml's complete master job graph with no master-only side effect; livespec-dev-tooling-32qdja owns it, with livespec-dev-tooling-7w757z owning the ci.yml trigger.",
-    "work_item": "livespec-dev-tooling-32qdja"
+    "reason": "A real test at the integration tier or above is owed for this heading: the incident_observer role's scratch instance must render beside an unchanged production installation and tear down cleanly, and a push to an incident-scratch/** branch must run ci.yml's complete master job graph with no master-only side effect; livespec-dev-tooling-mdqkkz owns it, with livespec-dev-tooling-7w757z owning the ci.yml trigger. (Re-owned from closed livespec-dev-tooling-32qdja on 2026-11-11.)",
+    "work_item": "livespec-dev-tooling-mdqkkz"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -2355,23 +2355,23 @@
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a reverted incident retains its original CI evidence before another attempt",
     "test": "TODO",
-    "reason": "A real test at the integration tier or above is owed for this heading: the normally shipped incident capability must exercise this contract with ordinary-path controls; livespec-dev-tooling-kobmka owns the implementation and scenario evidence under plan livespec-dev-tooling-bqnzcm.",
-    "work_item": "livespec-dev-tooling-kobmka"
+    "reason": "A real test at the integration tier or above is owed for this heading: the normally shipped incident capability must exercise this contract with ordinary-path controls; livespec-dev-tooling-mdqkkz owns the implementation and scenario evidence under plan livespec-dev-tooling-bqnzcm. (Re-owned from closed livespec-dev-tooling-kobmka on 2026-11-11.)",
+    "work_item": "livespec-dev-tooling-mdqkkz"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: an incident rollback follows released artifacts into consuming repositories",
     "test": "TODO",
-    "reason": "A real test at the integration tier or above is owed for this heading: the normally shipped incident capability must exercise this contract with ordinary-path controls; livespec-dev-tooling-vg36aq owns the implementation and scenario evidence under plan livespec-dev-tooling-bqnzcm.",
-    "work_item": "livespec-dev-tooling-vg36aq"
+    "reason": "A real test at the integration tier or above is owed for this heading: the normally shipped incident capability must exercise this contract with ordinary-path controls; livespec-dev-tooling-wbvbj6 owns the implementation and scenario evidence under plan livespec-dev-tooling-bqnzcm. (Re-owned from closed livespec-dev-tooling-vg36aq on 2026-11-11.)",
+    "work_item": "livespec-dev-tooling-wbvbj6"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: incident enablement follows complete installed-fleet capability proof",
-    "test": "TODO",
-    "reason": "A real test at the integration tier or above is owed for this heading: the normally shipped incident capability must exercise this contract with ordinary-path controls; livespec-dev-tooling-wlrlt2 owns the implementation and scenario evidence under plan livespec-dev-tooling-bqnzcm.",
+    "test": "tests.livespec_dev_tooling.test_incident_fleet_cli.test_run_as_a_child_process_a_consumer_without_controller_evidence_is_left_out_named_and_refused",
+    "reason": "Integration-tier: runs the incident fleet CLI as an isolated child process (`python -I`, scrubbed environment) over a fixture manifest whose consumer lacks independent-controller serving-version evidence, asserting the audit prints a disposition row per incident surface and consumer, names the missing serving-version evidence in its findings, lists no ready repository and exits non-zero, and that the enablement step then refuses that consumer and writes no enablement state (livespec-dev-tooling-3wcldx, carrier of livespec-dev-tooling-wlrlt2).",
     "work_item": "livespec-dev-tooling-wlrlt2"
   },
   {
@@ -2387,8 +2387,8 @@
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a routed job sets up its actions from the pool's action-archive cache, and falls back to a download when an archive is missing",
     "test": "TODO",
-    "reason": "Spec-first: a real test at the integration tier or above (a host-captured end-to-end run) is owed for this scenario, running a routed job on the k3s pool with the action-archive cache populated, absent and kill-switched and reading each job's Set up job log; livespec-dev-tooling-a35sa4 owns it, and its Definition of Done asserts this behaviour.",
-    "work_item": "livespec-dev-tooling-a35sa4"
+    "reason": "Spec-first: a real test at the integration tier or above (a host-captured end-to-end run) is owed for this scenario, running a routed job on the k3s pool with the action-archive cache populated, absent and kill-switched and reading each job's Set up job log; livespec-dev-tooling-r5o5zh owns it, and its Definition of Done asserts this behaviour. (Re-owned from closed livespec-dev-tooling-a35sa4 on 2026-11-11.)",
+    "work_item": "livespec-dev-tooling-r5o5zh"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -2570,8 +2570,8 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a workload is never scheduled onto a node whose architecture its image does not publish",
-    "test": "TODO",
-    "reason": "A real test at the integration tier or above is owed for this heading: it exercises the per-class architecture selection rendered for every scale set, the gate job template and the factory provider against mocked image and node data. livespec-dev-tooling-ko26ez.6 owns it.",
+    "test": "tests.spec.test_workload_arch.test_an_amd64_only_class_never_admits_an_arm64_node",
+    "reason": "Integration-tier (module-level `pytest.mark.integration`): runs the committed render-arch-overlay.sh against a mocked per-class architecture list declaring a CI scale set whose image publishes only amd64, asserting the rendered required `kubernetes.io/arch` affinity never admits arm64; the module's `test_gate_and_factory_classes_render_their_arches_alone` holds the gate and factory-sandbox classes (livespec-dev-tooling-ko26ez.6).",
     "work_item": "livespec-dev-tooling-ko26ez.6"
   },
   {
@@ -2654,8 +2654,8 @@
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a gate client that stops waiting on an admitted gate Job deletes it",
     "test": "TODO",
-    "reason": "A real test at the integration tier or above is owed for this scenario: the gate client driven by a fake kubectl runner whose admitted Job never finishes, asserting the admitted narration, the issued delete and a refused delete that leaves the verdict absent. livespec-dev-tooling-f2dgn6 owns it.",
-    "work_item": "livespec-dev-tooling-f2dgn6"
+    "reason": "A real test at the integration tier or above is owed for this scenario: the gate client driven by a fake kubectl runner whose admitted Job never finishes, asserting the admitted narration, the issued delete and a refused delete that leaves the verdict absent. livespec-dev-tooling-lugvnr owns it. (Re-owned from closed livespec-dev-tooling-f2dgn6 on 2026-11-11.)",
+    "work_item": "livespec-dev-tooling-lugvnr"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -2678,8 +2678,8 @@
     "spec_file": "scenarios.md",
     "heading": "## Scenario: an apply on a host missing a role's out-of-band input fails before the role changes anything",
     "test": "TODO",
-    "reason": "A real test at the integration tier or above is owed for this scenario: a dev-host role converged in check mode against a host whose wrapper does not resolve the role's credential, asserting the run fails at an assert naming the credential before any changing task and that the role's HOST_VARS.md lists its out-of-band steps. livespec-dev-tooling-c763up owns it.",
-    "work_item": "livespec-dev-tooling-c763up"
+    "reason": "A real test at the integration tier or above is owed for this scenario: a dev-host role converged in check mode against a host whose wrapper does not resolve the role's credential, asserting the run fails at an assert naming the credential before any changing task and that the role's HOST_VARS.md lists its out-of-band steps. livespec-dev-tooling-lugvnr owns it. (Re-owned from closed livespec-dev-tooling-c763up on 2026-11-11.)",
+    "work_item": "livespec-dev-tooling-lugvnr"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -2693,8 +2693,8 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "contracts.md",
     "heading": "## Rule-26 mutation kill matrix",
-    "test": "TODO",
-    "reason": "A real test at the integration tier or above is owed for this heading: the kill-matrix engine run over a fixture Python package, asserting per-mutant killer lists, surviving mutants, redundancy candidates and the zero-mutant refusal, plus the keep-out guard refusing an aggregate that reaches mutation-kill-matrix. livespec-dev-tooling-wou75w owns it.",
+    "test": "tests.livespec_dev_tooling.test_mutation_kill_matrix.test_report_attributes_every_mutant_to_its_killing_tests",
+    "reason": "Unit-tier: builds and writes the portable kill-matrix report over two mutants and asserts each mutant's identifier, location and killing tests; the module's siblings hold the surviving-mutant list, the redundancy candidates, the named test-selection method and the generated/applied/unapplied split, and `tests.consumer.test_mutation_kill_matrix_recipe_scenario` holds the on-demand recipe (livespec-dev-tooling-wou75w).",
     "work_item": "livespec-dev-tooling-wou75w"
   },
   {
@@ -2702,8 +2702,8 @@
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a rule-26 kill-matrix run reports survivors and redundancy candidates",
     "test": "TODO",
-    "reason": "A real test at the integration tier or above is owed for this scenario: `just mutation-kill-matrix` over a three-test fixture package, asserting the killers of M1 and M2, M3 as a survivor, and B but not A as a redundancy candidate. livespec-dev-tooling-wou75w owns it.",
-    "work_item": "livespec-dev-tooling-wou75w"
+    "reason": "A real test at the integration tier or above is owed for this scenario: `just mutation-kill-matrix` over a three-test fixture package, asserting the killers of M1 and M2, M3 as a survivor, and B but not A as a redundancy candidate. livespec-dev-tooling-mdqkkz owns it. (Re-owned from closed livespec-dev-tooling-wou75w on 2026-11-11.)",
+    "work_item": "livespec-dev-tooling-mdqkkz"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -2726,8 +2726,8 @@
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a coverage-guided kill-matrix run skips tests that do not execute a mutant",
     "test": "TODO",
-    "reason": "A real test at the integration tier or above is owed for this scenario: the kill-matrix engine run over a fixture package where T1 executes only F and T2 executes only G, asserting each F mutant runs against T1 and not T2, each G mutant against T2 and not T1, and that the report names its test-selection method. livespec-dev-tooling-tcmw34 owns it.",
-    "work_item": "livespec-dev-tooling-tcmw34"
+    "reason": "A real test at the integration tier or above is owed for this scenario: the kill-matrix engine run over a fixture package where T1 executes only F and T2 executes only G, asserting each F mutant runs against T1 and not T2, each G mutant against T2 and not T1, and that the report names its test-selection method. livespec-dev-tooling-mdqkkz owns it. (Re-owned from closed livespec-dev-tooling-tcmw34 on 2026-11-11.)",
+    "work_item": "livespec-dev-tooling-mdqkkz"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -2854,23 +2854,23 @@
     "spec_file": "scenarios.md",
     "heading": "## Scenario: branch protection alignment accepts a required gate held by a ruleset whose only bypass is a GitHub App",
     "test": "TODO",
-    "reason": "Spec-first: a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) is owed for this scenario, driving `branch_protection_alignment` against a classic protection with no required check plus an active ruleset holding the all-green gate with only a GitHub App bypass, and the role-bypass, strict and unreadable-ruleset refusals. livespec-dev-tooling-7536jf owns it (plan expedited-incident-response-flag); the implementation PR that ships the effective-set read replaces this row.",
-    "work_item": "livespec-dev-tooling-7536jf"
+    "reason": "Spec-first: a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) is owed for this scenario, driving `branch_protection_alignment` against a classic protection with no required check plus an active ruleset holding the all-green gate with only a GitHub App bypass, and the role-bypass, strict and unreadable-ruleset refusals. livespec-dev-tooling-mdqkkz owns it (plan expedited-incident-response-flag); the implementation PR that ships the effective-set read replaces this row. (Re-owned from closed livespec-dev-tooling-7536jf on 2026-11-11.)",
+    "work_item": "livespec-dev-tooling-mdqkkz"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "contracts.md",
     "heading": "## Gate-surface severity levers",
-    "test": "TODO",
-    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading: a just check run on a tree carrying a finding of a warn-default check whose lever CI arms, with no LIVESPEC_FAIL_IF_* variable set, failing on each gate surface with CI's check and failure_mode, plus the lever parity check refusing a lever armed in ci.yml but missing from the committed lever source. livespec-dev-tooling-nxeg32 owns it (plan dev-host-test-gate-load); its implementation PR replaces this row.",
+    "test": "tests.livespec_dev_tooling.checks.test_aggregate_completeness.test_check_recipe_loads_the_committed_ci_severity_levers_before_dispatch",
+    "reason": "Unit-tier: sources the one committed lever source scripts/just/gate-surface-severity-levers.sh and asserts it exports exactly the LIVESPEC_FAIL_IF_* levers CI arms, and that the shared `check` recipe sources it before dispatching scripts/just/check.sh, so every gate surface runs those warn-default checks armed (livespec-dev-tooling-nxeg32).",
     "work_item": "livespec-dev-tooling-nxeg32"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "contracts.md",
     "heading": "## Check aggregate tail digest",
-    "test": "TODO",
-    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading: the tail failure-mode digest over a failed target whose output carries a pytest summary with failed tests, reporting failure_mode failing_tests with each node id, over a check-per-file-coverage refusal with every test passing, reporting coverage_below_threshold with each file, and over an unstructured failure, still reported without a structured failure_mode. livespec-dev-tooling-nvh3dl owns it (plan dev-host-test-gate-load); its implementation PR replaces this row.",
+    "test": "tests.livespec_dev_tooling.test_check_failure_digest.test_per_file_coverage_reports_each_failed_pytest_node_id",
+    "reason": "Unit-tier: feeds failure_digest_lines a check-per-file-coverage output whose pytest short test summary names two failed tests and asserts the tail digest reports that target as failing tests naming each failed node id (livespec-dev-tooling-nvh3dl).",
     "work_item": "livespec-dev-tooling-nvh3dl"
   },
   {
@@ -2878,15 +2878,15 @@
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a warn-default finding whose lever CI arms fails a just check run that sets no lever",
     "test": "TODO",
-    "reason": "Spec-first: a real test at the integration tier or above is owed for this scenario, running just check with no LIVESPEC_FAIL_IF_* variable set on a tree carrying a finding of a warn-default check whose lever CI arms, and asserting it fails with CI's check and failure_mode. livespec-dev-tooling-nxeg32 owns it (plan dev-host-test-gate-load); its implementation PR replaces this row.",
-    "work_item": "livespec-dev-tooling-nxeg32"
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this scenario, running just check with no LIVESPEC_FAIL_IF_* variable set on a tree carrying a finding of a warn-default check whose lever CI arms, and asserting it fails with CI's check and failure_mode. livespec-dev-tooling-mdqkkz owns it (plan dev-host-test-gate-load); its implementation PR replaces this row. (Re-owned from closed livespec-dev-tooling-nxeg32 on 2026-11-11.)",
+    "work_item": "livespec-dev-tooling-mdqkkz"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a lever armed by CI but missing from the committed lever source fails the parity check",
-    "test": "TODO",
-    "reason": "Spec-first: a real test at the integration tier or above is owed for this scenario, driving the lever parity check against a ci.yml that arms a LIVESPEC_FAIL_IF_* lever the committed lever source does not name, and asserting the check fails naming that lever. livespec-dev-tooling-nxeg32 owns it (plan dev-host-test-gate-load); its implementation PR replaces this row.",
+    "test": "tests.consumer.test_ci_matrix_completeness_consumer_levers.test_a_repository_whose_source_misses_an_armed_lever_still_fails_naming_it",
+    "reason": "Consumer-tier: runs the shipped `python -m livespec_dev_tooling.checks.ci_matrix_completeness` as consumer CI does against a project whose ci.yml arms two LIVESPEC_FAIL_IF_* levers while its committed lever source names only one, asserting the lever parity check fails (exit 4) with a finding naming exactly the missing lever (livespec-dev-tooling-nxeg32).",
     "work_item": "livespec-dev-tooling-nxeg32"
   },
   {
@@ -2894,8 +2894,8 @@
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a coverage target that fails on failing tests is reported as failing tests in the tail digest",
     "test": "TODO",
-    "reason": "Spec-first: a real test at the integration tier or above is owed for this scenario, feeding the tail digest a check-per-file-coverage output on which three tests fail and asserting failure_mode failing_tests with all three node ids and no unstructured-failure line. livespec-dev-tooling-nvh3dl owns it (plan dev-host-test-gate-load); its implementation PR replaces this row.",
-    "work_item": "livespec-dev-tooling-nvh3dl"
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this scenario, feeding the tail digest a check-per-file-coverage output on which three tests fail and asserting failure_mode failing_tests with all three node ids and no unstructured-failure line. livespec-dev-tooling-mdqkkz owns it (plan dev-host-test-gate-load); its implementation PR replaces this row. (Re-owned from closed livespec-dev-tooling-nvh3dl on 2026-11-11.)",
+    "work_item": "livespec-dev-tooling-mdqkkz"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -2958,16 +2958,16 @@
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a commit that changes only a workflow runs the tests that read ci.yml",
     "test": "TODO",
-    "reason": "Spec-first: a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) is owed for this scenario, staging a workflow-only change against a failing ci.yml-reading test and asserting the pre-commit gate runs those tests and refuses the commit. livespec-dev-tooling-cj5dg5 owns it (plan ci-runtime-and-cost); the implementation PR that ships it replaces this row.",
-    "work_item": "livespec-dev-tooling-cj5dg5"
+    "reason": "Spec-first: a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) is owed for this scenario, staging a workflow-only change against a failing ci.yml-reading test and asserting the pre-commit gate runs those tests and refuses the commit. livespec-dev-tooling-mdqkkz owns it (plan ci-runtime-and-cost); the implementation PR that ships it replaces this row. (Re-owned from closed livespec-dev-tooling-cj5dg5 on 2026-11-11.)",
+    "work_item": "livespec-dev-tooling-mdqkkz"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: the coverage receipt is stamped over the final rewritten data",
     "test": "TODO",
-    "reason": "Spec-first: a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) is owed for this scenario, running the real per-file coverage report over a fixture that measures a deleted source file and asserting the receipt equals coverage-reuse-id.sh over the final .coverage. livespec-dev-tooling-cj5dg5 owns it (plan ci-runtime-and-cost); the implementation PR that ships it replaces this row.",
-    "work_item": "livespec-dev-tooling-cj5dg5"
+    "reason": "Spec-first: a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) is owed for this scenario, running the real per-file coverage report over a fixture that measures a deleted source file and asserting the receipt equals coverage-reuse-id.sh over the final .coverage. livespec-dev-tooling-mdqkkz owns it (plan ci-runtime-and-cost); the implementation PR that ships it replaces this row. (Re-owned from closed livespec-dev-tooling-cj5dg5 on 2026-11-11.)",
+    "work_item": "livespec-dev-tooling-mdqkkz"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -3116,8 +3116,8 @@
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a wall time that rounds up into the next unit is shown in that unit",
     "test": "TODO",
-    "reason": "Spec-first: a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) is owed for this scenario: the check aggregate's per-target wall-time table rendered for wall times of 59.96 s and 3599.6 s shows `1m 00s` and `1h 00m 00s`, while the `::: just <target>` lines and the structured `wall_s` field keep raw seconds. livespec-dev-tooling-e62ss6 owns it (the incident's normal factory repayment); the implementation PR that ships it replaces this row.",
-    "work_item": "livespec-dev-tooling-e62ss6"
+    "reason": "Spec-first: a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) is owed for this scenario: the check aggregate's per-target wall-time table rendered for wall times of 59.96 s and 3599.6 s shows `1m 00s` and `1h 00m 00s`, while the `::: just <target>` lines and the structured `wall_s` field keep raw seconds. livespec-dev-tooling-mdqkkz owns it (the incident's normal factory repayment); the implementation PR that ships it replaces this row. (Re-owned from closed livespec-dev-tooling-e62ss6 on 2026-11-11.)",
+    "work_item": "livespec-dev-tooling-mdqkkz"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -3172,24 +3172,24 @@
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a consumer's local pre-commit aggregate run through the shared entry point is reused by its suite-green leg",
     "test": "TODO",
-    "reason": "Spec-first: a real test at the integration tier or above (`tests.consumer`, this repository's `scenario_tiers`, or an integration-marked test) is owed for this heading, running a consumer's local pre-commit aggregate through the shared local-aggregate entry point on a clean tree and driving the commit-msg suite-green leg on the same tree; livespec-dev-tooling-4scqti owns it.",
-    "work_item": "livespec-dev-tooling-4scqti"
+    "reason": "Spec-first: a real test at the integration tier or above (`tests.consumer`, this repository's `scenario_tiers`, or an integration-marked test) is owed for this heading, running a consumer's local pre-commit aggregate through the shared local-aggregate entry point on a clean tree and driving the commit-msg suite-green leg on the same tree; livespec-dev-tooling-fgy4au owns it. (Re-owned from closed livespec-dev-tooling-4scqti on 2026-11-11.)",
+    "work_item": "livespec-dev-tooling-fgy4au"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: the local-aggregate entry point writes no evidence for a failed, dirty or changed tree",
     "test": "TODO",
-    "reason": "Spec-first: a real test at the integration tier or above (`tests.consumer`, this repository's `scenario_tiers`, or an integration-marked test) is owed for this heading, running the local-aggregate entry point over a failing aggregate, a dirty worktree and a tree that changes during the run, and asserting its exit status and that no evidence is written; livespec-dev-tooling-4scqti owns it.",
-    "work_item": "livespec-dev-tooling-4scqti"
+    "reason": "Spec-first: a real test at the integration tier or above (`tests.consumer`, this repository's `scenario_tiers`, or an integration-marked test) is owed for this heading, running the local-aggregate entry point over a failing aggregate, a dirty worktree and a tree that changes during the run, and asserting its exit status and that no evidence is written; livespec-dev-tooling-fgy4au owns it. (Re-owned from closed livespec-dev-tooling-4scqti on 2026-11-11.)",
+    "work_item": "livespec-dev-tooling-fgy4au"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a suite-green leg run emits one outcome event naming whether it reused evidence",
     "test": "TODO",
-    "reason": "Spec-first: a real test at the integration tier or above (`tests.consumer`, this repository's `scenario_tiers`, or an integration-marked test) is owed for this heading, driving the suite-green leg in reused and ran modes against a recording OTLP receiver and against an unreachable one; livespec-dev-tooling-4scqti owns it.",
-    "work_item": "livespec-dev-tooling-4scqti"
+    "reason": "Spec-first: a real test at the integration tier or above (`tests.consumer`, this repository's `scenario_tiers`, or an integration-marked test) is owed for this heading, driving the suite-green leg in reused and ran modes against a recording OTLP receiver and against an unreachable one; livespec-dev-tooling-fgy4au owns it. (Re-owned from closed livespec-dev-tooling-4scqti on 2026-11-11.)",
+    "work_item": "livespec-dev-tooling-fgy4au"
   },
   {
     "spec_root": "SPECIFICATION",
