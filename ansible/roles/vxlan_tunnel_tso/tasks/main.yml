@@ -32,19 +32,23 @@
 # 4fc1d5bb448d and an overlay throughput proof passes with tso back on.
 
 - name: Read the driver of the default-route interface
+  # FAIL-SAFE: a host with no default route, or with no ethtool, is treated as
+  # not affected and falls through to the removal task. Neither aborts the play.
   ansible.builtin.command:
     argv:
       - "{{ vxlan_tunnel_tso_ethtool }}"
       - -i
-      - "{{ ansible_facts['default_ipv4']['interface'] }}"
+      - "{{ vxlan_tunnel_tso_uplink }}"
   register: vxlan_tunnel_tso_driver_read
   changed_when: false
+  failed_when: false
   check_mode: false
+  when: vxlan_tunnel_tso_uplink | length > 0
 
 - name: Decide whether this node's NIC is affected
   ansible.builtin.set_fact:
     vxlan_tunnel_tso_affected: >-
-      {{ (vxlan_tunnel_tso_driver_read.stdout
+      {{ (vxlan_tunnel_tso_driver_read.stdout | default('')
           | regex_search('^driver: (\S+)', '\1', multiline=True)
           | default([''], true) | first)
          in vxlan_tunnel_tso_affected_drivers }}
@@ -52,8 +56,6 @@
 - name: Install the udev rule that turns tso off whenever the VXLAN interface is added
   ansible.builtin.copy:
     dest: "{{ vxlan_tunnel_tso_udev_rule }}"
-    owner: root
-    group: root
     mode: "0644"
     content: |
       # Managed by ansible role vxlan_tunnel_tso (livespec-dev-tooling). Do not hand-edit.
