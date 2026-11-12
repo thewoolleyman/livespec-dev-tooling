@@ -110,6 +110,16 @@ sccache_redis_state: absent
 # ansible/former-sandbox-hosts.yml. This host carries no interactive worktrees.
 storage_reclaim_state: absent
 
+# --- tailscale_serve ---
+# RETIRED legacy Fabro serve ports (bd-ib-iud52v, the legacy Fabro carrier
+# retirement). hp's fabro-server stopped on 2026-11-02, but tailscaled still
+# served these three hand-made mappings with nothing behind them. hp publishes
+# nothing; ansible/former-sandbox-hosts.yml runs the role for it.
+tailscale_serve_retired_ports:
+  - 32276
+  - 32277
+  - 32278
+
 # --- factory_budget_reconciler ---
 # FACTORY TRIAL, 2026-11-11: at most 1 factory sandbox pod (sandbox pods only,
 # no Fabro server). Lowered 2 -> 1 at ~05:15Z on 2026-11-11 under the trial's

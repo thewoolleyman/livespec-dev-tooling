@@ -9,3 +9,11 @@
 #   https_port  the tailnet HTTPS port the node serves on (e.g. 32276)
 #   backend     the loopback URL it proxies to (e.g. http://127.0.0.1:32276)
 tailscale_serve_mappings: []
+
+# The tailnet HTTPS ports this host RETIRES: each one the node still serves is
+# turned off with `tailscale serve --https=<port> off` (tasks/retire.yml). Empty
+# by default, so the role turns nothing off on a host that names nothing. Only a
+# port named here is ever touched, and a port that is also a declared mapping is
+# refused before any change. Added for hp-xubuntu's hand-made legacy Fabro ports
+# (bd-ib-iud52v); see HOST_VARS.md.
+tailscale_serve_retired_ports: []
