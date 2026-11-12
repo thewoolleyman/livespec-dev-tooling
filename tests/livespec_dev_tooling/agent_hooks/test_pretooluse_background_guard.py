@@ -1010,6 +1010,39 @@ def test_a_declared_gate_job_only_test_file_without_xdist_is_refused(
 
 
 @pytest.mark.integration
+def test_an_ignored_gate_job_only_module_is_not_a_selected_test_path(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The value of a pytest option such as `--ignore` selects nothing to run."""
+    repository = _make_hooked_repo(repo=tmp_path / "delegating", hooks=())
+    _ = (repository / "pyproject.toml").write_text(
+        "[tool.livespec_dev_tooling]\n"
+        "delegated_gate = true\n"
+        'gate_job_only_tests = ["tests/test_ansible_role.py"]\n',
+        encoding="utf-8",
+    )
+    tests_dir = repository / "tests"
+    tests_dir.mkdir()
+    for name in ("test_ansible_role.py", "test_plain.py"):
+        _ = (tests_dir / name).write_text("def test_it() -> None:\n    pass\n", encoding="utf-8")
+    credential = tmp_path / "gates.kubeconfig"
+    _ = credential.write_text("apiVersion: v1\nkind: Config\n", encoding="utf-8")
+    monkeypatch.setenv("GATES_KUBECONFIG", str(credential))
+    monkeypatch.chdir(repository)
+
+    ignored = json.dumps(
+        {
+            "tool_name": "Bash",
+            "tool_input": {
+                "command": "pytest --ignore tests/test_ansible_role.py tests/test_plain.py"
+            },
+        }
+    )
+    assert _run_main(monkeypatch=monkeypatch, stdin_text=ignored) == 0
+
+
+@pytest.mark.integration
 @pytest.mark.parametrize(
     "command",
     [
