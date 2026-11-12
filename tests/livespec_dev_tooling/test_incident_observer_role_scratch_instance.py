@@ -294,7 +294,9 @@ def test_a_scratch_apply_refuses_a_venv_production_does_not_already_serve(
         context["incident_observer_release"]
         == base.production_variables()["incident_observer_release"]
     )
-    assert task["when"] == "incident_observer_scratch | bool"
+    assert task["when"] == (
+        "(incident_observer_scratch | bool) or incident_observer_installation_name is defined"
+    )
     assert _holds(task=task, context=context) is holds
 
 

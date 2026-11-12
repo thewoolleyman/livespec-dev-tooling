@@ -1,0 +1,215 @@
+---
+# The committed teardown of a further production installation
+# (ansible/incident-observer-installation-teardown.yml, which loads
+# vars/installation.yml and includes this file). livespec-dev-tooling-lqp2qx.
+#
+# It runs beside livespec-dev-tooling's installation, so it first takes the same
+# refusals as the apply (tasks/installation_preflight.yml). Then it unpublishes
+# the installation's own /<name>/ routes from the funnel port, stops and
+# disables its observer and reference fetch timer, removes their unit files,
+# the timer's stamp, its controller.json, manifest and reader credential, and
+# reads back that every file of livespec-dev-tooling's installation it could
+# reach, and the listing of that installation's state directory, are
+# byte-identical to what they were before it started. It never stops, restarts
+# or writes livespec-dev-tooling's installation, and never notifies a handler.
+#
+# The installation root (receipts and reference clone) is kept as evidence
+# unless `incident_observer_installation_teardown_purge` is true. A purge removes
+# only `<shared home>/installation-<name>`, spelled from the validated name.
+
+- name: Read livespec-dev-tooling's values for the teardown's read-back
+  # Evidence only: no refusal reads them.
+  ansible.builtin.include_vars:
+    file: "{{ role_path }}/defaults/main.yml"
+    name: incident_observer_production
+
+- name: Take the installation's refusals before stopping or removing anything
+  ansible.builtin.include_tasks: installation_preflight.yml
+
+- name: Name what the teardown removes and every livespec-dev-tooling path it reads back
+  ansible.builtin.set_fact:
+    incident_observer_installation_removed:
+      - "{{ incident_observer_unit_path }}"
+      - "{{ incident_observer_fetch_service_path }}"
+      - "{{ incident_observer_fetch_timer_path }}"
+      - "/var/lib/systemd/timers/stamp-{{ incident_observer_fetch_unit_name }}.timer"
+      - "{{ incident_observer_config_path }}"
+      - "{{ incident_observer_manifest_path }}"
+      - "{{ incident_observer_reader_env_path }}"
+    incident_observer_production_files: >-
+      {{ [incident_observer_production.incident_observer_unit_path,
+          incident_observer_production.incident_observer_config_path,
+          incident_observer_production.incident_observer_manifest_path,
+          incident_observer_production.incident_observer_fetch_service_path,
+          incident_observer_production.incident_observer_fetch_timer_path,
+          incident_observer_production.incident_observer_recovery_app_path,
+          incident_observer_production.incident_observer_reader_env_path]
+         + (incident_observer_production.incident_observer_secrets | map(attribute='path') | list) }}
+    incident_observer_production_directories:
+      - "{{ incident_observer_production.incident_observer_home }}"
+      - "{{ incident_observer_production.incident_observer_state_dir }}"
+      - "{{ incident_observer_production.incident_observer_reference_dir }}"
+      - "{{ incident_observer_production.incident_observer_etc_dir }}"
+      - "{{ incident_observer_production.incident_observer_venv }}"
+    incident_observer_production_live_state_pattern: >-
+      {{ '^' ~ (incident_observer_production.incident_observer_state_dir | regex_escape)
+         ~ '/(?:[^/]+[.]json|recovery-journal(?:-contexts)?(?:/|$))' }}
+
+- name: Read livespec-dev-tooling's files and directories before the teardown
+  ansible.builtin.stat:
+    path: "{{ item }}"
+    checksum_algorithm: sha256
+  become: true
+  loop: "{{ incident_observer_production_files + incident_observer_production_directories }}"
+  register: incident_observer_production_before
+  check_mode: false
+
+- name: List livespec-dev-tooling's state directory before the teardown
+  ansible.builtin.find:
+    paths: "{{ incident_observer_production.incident_observer_state_dir }}"
+    recurse: true
+    hidden: true
+    file_type: any
+    get_checksum: true
+  become: true
+  register: incident_observer_production_state_before
+  check_mode: false
+
+- name: Unpublish the installation's own public routes from the funnel port
+  # Only its /<name>/ paths, spelled from the validated name: livespec-dev-tooling's
+  # exact paths and every other installation's stay published.
+  ansible.builtin.command:
+    argv:
+      - tailscale
+      - funnel
+      - "--https={{ incident_observer_production.incident_observer_funnel_https_port }}"
+      - "--set-path=/{{ incident_observer_installation_name }}{{ item }}"
+      - "off"
+  become: true
+  loop: "{{ incident_observer_production.incident_observer_installation_routes }}"
+  register: incident_observer_installation_unpublish
+  changed_when: incident_observer_installation_unpublish.rc == 0
+  failed_when: false
+
+- name: Look for the installation's observer unit and its fetch timer
+  ansible.builtin.stat:
+    path: "{{ item }}"
+    get_checksum: false
+  become: true
+  loop:
+    - "{{ incident_observer_unit_path }}"
+    - "{{ incident_observer_fetch_timer_path }}"
+  register: incident_observer_installation_units
+  check_mode: false
+
+- name: Stop and disable the installation's observer
+  ansible.builtin.systemd_service:
+    name: "{{ incident_observer_unit_name }}"
+    state: stopped
+    enabled: false
+  become: true
+  when: incident_observer_installation_units.results[0].stat.exists
+
+- name: Stop and disable the installation's reference fetch timer
+  ansible.builtin.systemd_service:
+    name: "{{ incident_observer_fetch_unit_name }}.timer"
+    state: stopped
+    enabled: false
+  become: true
+  when: incident_observer_installation_units.results[1].stat.exists
+
+- name: Stop a reference fetch the installation's timer already started
+  ansible.builtin.systemd_service:
+    name: "{{ incident_observer_fetch_unit_name }}.service"
+    state: stopped
+  become: true
+  when: incident_observer_installation_units.results[1].stat.exists
+
+- name: Remove the installation's unit files, timer stamp, controller.json, manifest and reader credential
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  become: true
+  loop: "{{ incident_observer_installation_removed }}"
+
+- name: Reload systemd so it forgets the removed installation units
+  ansible.builtin.systemd_service:
+    daemon_reload: true
+  become: true
+
+- name: Clear any failed state systemd still holds for the installation's units
+  ansible.builtin.command:
+    argv:
+      - systemctl
+      - reset-failed
+      - "{{ incident_observer_unit_name }}.service"
+      - "{{ incident_observer_fetch_unit_name }}.service"
+      - "{{ incident_observer_fetch_unit_name }}.timer"
+  become: true
+  changed_when: false
+  failed_when: false
+
+- name: Remove the installation's evidence store only when asked
+  # Spelled from the shared home and the validated name, never from
+  # incident_observer_installation_root: an override can reach a variable but
+  # not this expression.
+  ansible.builtin.file:
+    path: "{{ incident_observer_production.incident_observer_home }}/installation-{{ incident_observer_installation_name }}"
+    state: absent
+  become: true
+  when: incident_observer_installation_teardown_purge | bool
+
+- name: Read livespec-dev-tooling's files and directories after the teardown
+  ansible.builtin.stat:
+    path: "{{ item }}"
+    checksum_algorithm: sha256
+  become: true
+  loop: "{{ incident_observer_production_files + incident_observer_production_directories }}"
+  register: incident_observer_production_after
+  check_mode: false
+
+- name: List livespec-dev-tooling's state directory after the teardown
+  ansible.builtin.find:
+    paths: "{{ incident_observer_production.incident_observer_state_dir }}"
+    recurse: true
+    hidden: true
+    file_type: any
+    get_checksum: true
+  become: true
+  register: incident_observer_production_state_after
+  check_mode: false
+
+- name: Refuse a teardown that moved a byte of livespec-dev-tooling's installation
+  ansible.builtin.assert:
+    that:
+      - >-
+        incident_observer_production_after.results
+        | map(attribute='stat.checksum', default='') | list
+        == incident_observer_production_before.results
+        | map(attribute='stat.checksum', default='') | list
+      - >-
+        incident_observer_production_after.results
+        | map(attribute='stat.exists') | list
+        == incident_observer_production_before.results
+        | map(attribute='stat.exists') | list
+      - >-
+        incident_observer_production_state_after.files
+        | rejectattr('path', 'match', incident_observer_production_live_state_pattern)
+        | sort(attribute='path') | map(attribute='path') | list
+        == incident_observer_production_state_before.files
+        | rejectattr('path', 'match', incident_observer_production_live_state_pattern)
+        | sort(attribute='path') | map(attribute='path') | list
+      - >-
+        incident_observer_production_state_after.files
+        | rejectattr('path', 'match', incident_observer_production_live_state_pattern)
+        | sort(attribute='path') | map(attribute='checksum', default='') | list
+        == incident_observer_production_state_before.files
+        | rejectattr('path', 'match', incident_observer_production_live_state_pattern)
+        | sort(attribute='path') | map(attribute='checksum', default='') | list
+    fail_msg: >-
+      livespec-dev-tooling's files ({{ incident_observer_production_files | join(', ') }}),
+      directories or state listing changed during the installation teardown;
+      read them and livespec-dev-tooling's unit now.
+    success_msg: >-
+      livespec-dev-tooling's unit, configuration, manifest, credentials, fetch
+      units and state directory listing are byte-identical

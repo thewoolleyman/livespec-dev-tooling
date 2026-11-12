@@ -211,6 +211,17 @@ storage_reclaim_checkout_roots: /data/projects
 tailscale_serve_mappings:
   - https_port: 8765
     backend: http://127.0.0.1:8765
+  # The tailnet fronts of the further production observer installations
+  # (roles/incident_observer/defaults/main.yml `incident_observer_installations`,
+  # livespec-dev-tooling-lqp2qx): each fronts its own installation's loopback
+  # listener and no other, for livespec, livespec-orchestrator-beads-fabro and
+  # livespec-overseer in turn.
+  - https_port: 8770
+    backend: http://127.0.0.1:8770
+  - https_port: 8771
+    backend: http://127.0.0.1:8771
+  - https_port: 8772
+    backend: http://127.0.0.1:8772
 # RETIRED 2026-11-12 (livespec-dev-tooling-gxepwl): the 32276 and 32277 fronts of
 # the two Fabro instances parked above. Each port the node still serves is turned
 # off with `tailscale serve --https=<port> off`. To bring an instance back, move

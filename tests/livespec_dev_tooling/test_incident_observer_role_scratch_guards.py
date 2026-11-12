@@ -158,7 +158,11 @@ def test_the_role_takes_the_preflight_whenever_any_scratch_variable_is_set() -> 
 
     verdicts = _judge(cases=[(variables, conditions) for _, variables, _ in _IDENTIFIED])
 
-    assert " ".join(dispatch[_PRODUCTION_INCLUDE].split()) == _GUARD
+    # Production's include also steps aside for a further production installation
+    # (livespec-dev-tooling-lqp2qx), which takes its own preflight.
+    assert " ".join(dispatch[_PRODUCTION_INCLUDE].split()) == (
+        _GUARD + " and incident_observer_installation_name is not defined"
+    )
     for (label, _, identified), (scratch_path, production_path, shared_write_runs) in zip(
         _IDENTIFIED, verdicts, strict=True
     ):

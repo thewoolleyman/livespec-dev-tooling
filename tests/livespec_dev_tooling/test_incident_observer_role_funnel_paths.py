@@ -82,6 +82,13 @@ else:
 """
 
 
+# Shared with test_incident_observer_role_installations.py, which runs the same
+# funnel tasks for further production installations (livespec-dev-tooling-lqp2qx).
+FAKE_TAILSCALE = _FAKE_TAILSCALE
+FIRST_FUNNEL_TASK = _FIRST
+LAST_FUNNEL_TASK = _LAST
+
+
 def _serve(*, handlers: dict[str, str]) -> dict[str, Any]:
     """A `tailscale funnel status --json` reply with these handlers on a funnelled port."""
     return {

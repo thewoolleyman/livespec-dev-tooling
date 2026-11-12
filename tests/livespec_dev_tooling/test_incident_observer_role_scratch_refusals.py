@@ -542,12 +542,16 @@ def test_the_apply_and_the_teardown_take_the_same_preflight_before_any_write() -
     # main.yml only dispatches, through DYNAMIC includes: the scratch path to the
     # converge body runs the preflight first, and nothing below is reachable by
     # `--start-at-task` (review round 3, F1).
+    # A further production installation (livespec-dev-tooling-lqp2qx) is a third
+    # dynamic include, taking its own preflight; production's stays last.
     assert [set(task) - {"name", "when"} for task in main] == [
+        {"ansible.builtin.include_tasks"},
         {"ansible.builtin.include_tasks"},
         {"ansible.builtin.include_tasks"},
     ]
     assert [task["ansible.builtin.include_tasks"] for task in main] == [
         "scratch_apply.yml",
+        "installation_apply.yml",
         "converge.yml",
     ]
     assert main[0]["when"] == (
