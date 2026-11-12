@@ -295,6 +295,31 @@ def test_github_actions_consumer_rejects_unstamped_partial_artifact(*, tmp_path:
     assert not (tmp_path / "uv.log").exists()
 
 
+def test_github_actions_consumer_records_a_missing_receipt_outcome(*, tmp_path: Path) -> None:
+    """Every CI consumer reports its explicit fallback outcome in its step summary."""
+    _install_harness(tmp_path=tmp_path, git_tree=True)
+    _ = (tmp_path / ".coverage").write_text("4242\n", encoding="utf-8")
+    summary = tmp_path / "summary.md"
+
+    result = _run(
+        tmp_path=tmp_path,
+        script="check-coverage.sh",
+        extra={
+            "GITHUB_ACTIONS": "true",
+            "GITHUB_REPOSITORY": "thewoolleyman/livespec-dev-tooling",
+            "GITHUB_RUN_ID": "42",
+            "GITHUB_JOB": "check-coverage",
+            "GITHUB_STEP_SUMMARY": str(summary),
+        },
+    )
+
+    assert result.returncode != 0
+    assert '"outcome":"missing_receipt"' in result.stdout
+    assert '"repository":"thewoolleyman/livespec-dev-tooling"' in summary.read_text(
+        encoding="utf-8"
+    )
+
+
 def test_github_actions_consumer_rejects_data_digest_mismatch(*, tmp_path: Path) -> None:
     _install_harness(tmp_path=tmp_path, git_tree=True)
     producer = _run(tmp_path=tmp_path, script="check-per-file-coverage.sh", extra={})
