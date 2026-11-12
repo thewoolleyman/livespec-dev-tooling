@@ -174,3 +174,18 @@ def test_the_rendered_job_puts_the_engine_clone_on_pythonpath() -> None:
     assert "- name: PYTHONPATH\n" in env
     value = env.split("- name: PYTHONPATH\n", 1)[1].splitlines()[0]
     assert value.strip() == "value: /data/dev-tooling"
+
+
+def test_the_rendered_job_keeps_one_result_cache_across_runs() -> None:
+    """A run its deadline ends must leave its checkpointed mutants for the next run id."""
+    rendered = subprocess.run(
+        [str(_RENDERER), "--orchestrator-sha", "a" * 40, "--engine-sha", "b" * 40, "--run", "t6"],
+        capture_output=True,
+        check=True,
+        text=True,
+        env={"PATH": "/usr/bin:/bin"},
+    ).stdout
+    job = rendered.split("kind: Job", 1)[1]
+    assert "cache=/data/cache/mutation-kill-matrix-cache.json\n" in job
+    assert '--cache "${cache}"' in job
+    assert "/data/t6/mutation-kill-matrix-cache.json" not in job

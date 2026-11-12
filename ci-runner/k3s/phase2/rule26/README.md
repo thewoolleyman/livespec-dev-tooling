@@ -26,8 +26,11 @@ The Job clones the orchestrator and livespec-dev-tooling at the two commits
 given, runs `uv sync --frozen`, installs the engine without changing the
 orchestrator's locked dependencies, and widens `[tool.mutmut]` to the whole
 first-party package and `tests/` tree. Then it runs the engine. Outputs land in
-`/data/<run>/` on the PVC: `run.log`, `mutation-kill-matrix.json` and the
-result cache. `run.log` records the start, end, exit code and elapsed seconds.
+`/data/<run>/` on the PVC: `run.log`, `mutation-kill-matrix.json` and a copy of the
+result cache. The live cache is `/data/cache/mutation-kill-matrix-cache.json`,
+shared by every run on the PVC. The engine checkpoints it at most every 300 s,
+so a run ended by its 24-hour deadline leaves its finished mutants for the next
+run id, which reuses them and logs `mutation-kill-matrix: executed N/M mutants`. `run.log` records the start, end, exit code and elapsed seconds.
 
 ## Launch
 

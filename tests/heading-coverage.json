@@ -3195,17 +3195,13 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: an in-turn sandbox commit whose affected-tests gate passed on the same tree runs only those tests",
-    "test": "TODO",
-    "reason": "Spec-first: a real test at the integration tier or above (`tests.consumer`, this repository's `scenario_tiers`, or an integration-marked test) is owed for this heading, driving the commit-msg suite-green leg in a checkout with livespec.sandboxExempt set after a passing affected-tests record on the same tree; livespec-dev-tooling-svjqbe owns it.",
-    "work_item": "livespec-dev-tooling-svjqbe"
+    "test": "tests.consumer.test_affected_tests_suite_green_scenarios.test_sandbox_same_tree_passing_record_runs_only_the_selected_tests"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: an affected-tests record outside a sandbox, or for a failed, empty or different run, leaves the full suite in place",
-    "test": "TODO",
-    "reason": "Spec-first: a real test at the integration tier or above (`tests.consumer`, this repository's `scenario_tiers`, or an integration-marked test) is owed for this heading, driving the suite-green leg with an affected-tests record outside a sandbox and for a failed, empty and different-tree run; livespec-dev-tooling-svjqbe owns it.",
-    "work_item": "livespec-dev-tooling-svjqbe"
+    "test": "tests.consumer.test_affected_tests_suite_green_scenarios.test_unqualified_records_leave_the_full_suite_in_place"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -3512,5 +3508,61 @@
     "test": "TODO",
     "reason": "A real test at the integration tier or above is owed for this heading: a check runner started on a host whose system temp directory holds one coverage-namespace directory recorded for a creator that is no longer running and one recorded for a running runner removes the first, leaves the second, and leaves the running runner's verdict unchanged. livespec-dev-tooling-64ik6g owns it.",
     "work_item": "livespec-dev-tooling-64ik6g"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a consumer's commit-hook check reports a livespec_dev_tooling function its installed build does not declare",
+    "test": "TODO",
+    "reason": "A real test at the integration tier or above is owed for this heading: a fixture consuming repository whose test file imports a livespec_dev_tooling function its fixture installed build neither declares nor makes public runs `python -m livespec_dev_tooling.workflow_checks.dev_tooling_imports_declared` with LIVESPEC_FAIL_IF_UNDECLARED_DEV_TOOLING_IMPORTS set, and shows it exits 4 naming the import's file and line and the missing declaration. livespec-dev-tooling-vobfwi owns it.",
+    "work_item": "livespec-dev-tooling-vobfwi"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a consumer whose every livespec_dev_tooling function is declared or locally public passes the commit-hook check",
+    "test": "TODO",
+    "reason": "A real test at the integration tier or above is owed for this heading: a fixture consuming repository reaching one declared function, one locally public undeclared function and one `_`-prefixed function runs `python -m livespec_dev_tooling.workflow_checks.dev_tooling_imports_declared` with the fail variable set, and shows it exits 0 naming no offender. livespec-dev-tooling-vobfwi owns it.",
+    "work_item": "livespec-dev-tooling-vobfwi"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a declaration present only on livespec-dev-tooling's default branch does not satisfy the commit-hook check",
+    "test": "TODO",
+    "reason": "A real test at the integration tier or above is owed for this heading: a fixture consuming repository whose fixture installed build lacks a declaration that a newer default-branch tree carries runs `python -m livespec_dev_tooling.workflow_checks.dev_tooling_imports_declared` with the fail variable set, and shows it exits 4 naming that import as undeclared. livespec-dev-tooling-vobfwi owns it.",
+    "work_item": "livespec-dev-tooling-vobfwi"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: with the fail variable unset, a consumer's commit-hook check reports an undeclared livespec_dev_tooling function and exits 0",
+    "test": "TODO",
+    "reason": "A real test at the integration tier or above is owed for this heading: a fixture consuming repository with one undeclared, non-public import runs `python -m livespec_dev_tooling.workflow_checks.dev_tooling_imports_declared` with LIVESPEC_FAIL_IF_UNDECLARED_DEV_TOOLING_IMPORTS unset, and shows it exits 0 while reporting that import as a warning. livespec-dev-tooling-vobfwi owns it.",
+    "work_item": "livespec-dev-tooling-vobfwi"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a consumer's commit-hook check reports an undeclared livespec_dev_tooling function reached as an attribute of an imported module",
+    "test": "TODO",
+    "reason": "A real test at the integration tier or above is owed for this heading: a fixture consuming repository that calls an undeclared, non-public function as an attribute of an imported livespec_dev_tooling module runs `python -m livespec_dev_tooling.workflow_checks.dev_tooling_imports_declared` with the fail variable set, and shows it exits 4 naming the attribute reach. livespec-dev-tooling-vobfwi owns it.",
+    "work_item": "livespec-dev-tooling-vobfwi"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: livespec-dev-tooling's check aggregate fails when its cross_repo_public_api package-data file and pyproject.toml disagree",
+    "test": "TODO",
+    "reason": "A real test at the integration tier or above is owed for this heading: a fixture livespec-dev-tooling tree whose committed cross_repo_public_api package-data file lacks one pyproject.toml entry is run through the aggregate member that compares them, and the test shows it fails naming that entry. livespec-dev-tooling-vobfwi owns it.",
+    "work_item": "livespec-dev-tooling-vobfwi"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a consuming repository's check aggregate refuses a member with no purity declaration",
+    "test": "TODO",
+    "reason": "A real test at the integration tier or above is owed for this heading: a fixture consuming repository whose aggregate refuses through `python -m livespec_dev_tooling.green_token undeclared`, with one member that is not a canonical check and carries no purity annotation in its check-targets.txt, shows the aggregate exits non-zero naming that member before any member runs. livespec-dev-tooling-ixtdx7 owns it.",
+    "work_item": "livespec-dev-tooling-ixtdx7"
   }
 ]

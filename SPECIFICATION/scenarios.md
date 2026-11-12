@@ -1080,6 +1080,18 @@ Then the aggregate MUST exit non-zero
 
 And its output MUST name that member
 
+## Scenario: a consuming repository's check aggregate refuses a member with no purity declaration
+
+Given a consuming repository that records the green token
+
+And a member of its `just check` aggregate that is not a canonical check (a module under `livespec_dev_tooling/checks/`) and has no purity line in the repository's `check-targets.txt`
+
+When the repository's `just check` aggregate runs
+
+Then the aggregate MUST exit non-zero before any member runs
+
+And its output MUST name that member
+
 ## Scenario: a check runner terminated by SIGTERM or SIGHUP removes its coverage directories and exits non-zero
 
 Given a check runner whose selected targets include a coverage-touching target, with its temp directory pointed at an empty directory
@@ -4696,3 +4708,85 @@ Then the directory whose creator is no longer running MUST be removed
 And the directory whose creator is still running MUST remain in place
 
 And the running runner's verdict MUST be unchanged
+
+## Scenario: a consumer's commit-hook check reports a livespec_dev_tooling function its installed build does not declare
+
+Given a consuming repository whose test file imports a function from livespec_dev_tooling
+
+And the consumer's installed livespec-dev-tooling build neither declares that function in its shipped cross_repo_public_api nor makes it public under the repo-local consumption oracle
+
+And LIVESPEC_FAIL_IF_UNDECLARED_DEV_TOOLING_IMPORTS is set
+
+When the consumer runs `python -m livespec_dev_tooling.workflow_checks.dev_tooling_imports_declared`
+
+Then the check MUST exit 4
+
+And its output MUST name the import's file and line
+
+And its output MUST name the missing declaration's file and function
+
+## Scenario: a consumer whose every livespec_dev_tooling function is declared or locally public passes the commit-hook check
+
+Given a consuming repository that reaches one livespec_dev_tooling function declared in its installed build's shipped cross_repo_public_api
+
+And reaches a second livespec_dev_tooling function that is public under the repo-local consumption oracle and not declared
+
+And imports a third, `_`-prefixed livespec_dev_tooling function that is neither declared nor public
+
+And LIVESPEC_FAIL_IF_UNDECLARED_DEV_TOOLING_IMPORTS is set
+
+When the consumer runs `python -m livespec_dev_tooling.workflow_checks.dev_tooling_imports_declared`
+
+Then the check MUST exit 0
+
+And its output MUST name no offender
+
+## Scenario: a declaration present only on livespec-dev-tooling's default branch does not satisfy the commit-hook check
+
+Given a consuming repository that imports a livespec_dev_tooling function
+
+And that function is declared in cross_repo_public_api on livespec-dev-tooling's default branch but not in the consumer's installed release
+
+And LIVESPEC_FAIL_IF_UNDECLARED_DEV_TOOLING_IMPORTS is set
+
+When the consumer runs `python -m livespec_dev_tooling.workflow_checks.dev_tooling_imports_declared`
+
+Then the check MUST exit 4
+
+And its output MUST name that import as undeclared
+
+## Scenario: with the fail variable unset, a consumer's commit-hook check reports an undeclared livespec_dev_tooling function and exits 0
+
+Given a consuming repository whose test file imports a livespec_dev_tooling function its installed build neither declares nor makes public under the repo-local consumption oracle
+
+And LIVESPEC_FAIL_IF_UNDECLARED_DEV_TOOLING_IMPORTS is unset
+
+When the consumer runs `python -m livespec_dev_tooling.workflow_checks.dev_tooling_imports_declared`
+
+Then the check MUST exit 0
+
+And its output MUST report that import as a warning naming its file and line and the missing declaration's file and function
+
+## Scenario: a consumer's commit-hook check reports an undeclared livespec_dev_tooling function reached as an attribute of an imported module
+
+Given a consuming repository that imports a livespec_dev_tooling module and calls one of its functions as an attribute of that module
+
+And the consumer's installed livespec-dev-tooling build neither declares that function nor makes it public under the repo-local consumption oracle
+
+And LIVESPEC_FAIL_IF_UNDECLARED_DEV_TOOLING_IMPORTS is set
+
+When the consumer runs `python -m livespec_dev_tooling.workflow_checks.dev_tooling_imports_declared`
+
+Then the check MUST exit 4
+
+And its output MUST name the attribute reach's file and line and the missing declaration's file and function
+
+## Scenario: livespec-dev-tooling's check aggregate fails when its cross_repo_public_api package-data file and pyproject.toml disagree
+
+Given a livespec-dev-tooling tree whose committed cross_repo_public_api package-data file lacks one entry that its pyproject.toml cross_repo_public_api array carries
+
+When livespec-dev-tooling's full `just check` aggregate runs
+
+Then the aggregate MUST exit non-zero
+
+And its output MUST name that entry

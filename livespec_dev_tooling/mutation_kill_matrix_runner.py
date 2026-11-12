@@ -36,6 +36,7 @@ from livespec_dev_tooling.mutation_kill_matrix import (
 )
 from livespec_dev_tooling.mutation_kill_matrix_cache import CachedOutcome, load_cache, save_cache
 from livespec_dev_tooling.mutation_kill_matrix_changes import build_changes
+from livespec_dev_tooling.mutation_kill_matrix_checkpoint import Checkpoint
 from livespec_dev_tooling.mutation_kill_matrix_execution import CommandExecutor, execute_command
 from livespec_dev_tooling.mutation_kill_matrix_pool import run_pending
 from livespec_dev_tooling.mutation_kill_matrix_selection import (
@@ -139,13 +140,27 @@ def run_kill_matrix(
         for plan in plans
         if cache is not None and plan.key in cache
     }
+    pending = [plan for plan in plans if plan.mutant.identifier not in reused]
+    # Save finished outcomes as execution runs, so a run its deadline ends
+    # leaves them for the next run to reuse.
+    checkpoint = Checkpoint(
+        path=options.cache_path,
+        keys={plan.mutant.identifier: plan.key for plan in pending},
+        seeded={
+            plan.key: reused[plan.mutant.identifier]
+            for plan in plans
+            if plan.mutant.identifier in reused
+        },
+        total=len(pending),
+    )
     outcomes = reused | run_pending(
         execute=execute,
         target=target,
-        plans=[plan for plan in plans if plan.mutant.identifier not in reused],
+        plans=pending,
         workers=options.workers,
         timeout=options.per_test_timeout,
         workspace=options.workspace,
+        on_outcome=checkpoint.record,
     )
     unapplied = frozenset(mutant for mutant, outcome in outcomes.items() if outcome.unapplied)
     if len(unapplied) == len(plans):
