@@ -59,7 +59,10 @@ _IMAGE_KEY = re.compile(r"^[ \t]*image:[ \t]*(?P<value>.*)$")
 _QUOTED = re.compile(r"""^(?P<quote>["'])(?P<body>.*?)(?P=quote)""")
 _TRAILING_COMMENT = re.compile(r"[ \t]+#.*$")
 _JOB_KEY = re.compile(r"^[ \t]{2}(?P<name>[^ \t:#][^:]*):[ \t]*(?:#.*)?$")
-_JUST_TARGET = re.compile(r"\bjust[ \t]+(?P<target>check(?:-[a-z0-9-]+)?)\b")
+_JUST_TARGET = re.compile(
+    r"\bjust(?:[ \t]+-[^ \t]+(?:[ \t]+(?!check\b)[^ \t-][^ \t]*)?)*[ \t]+"
+    r"(?P<target>check(?:-[a-z0-9-]+)?)\b"
+)
 _TARGET = re.compile(r"^check(?:-[a-z0-9-]+)?$")
 _CHECK_RECIPE = re.compile(r"^check(?:[ \t]+[^:]*)?:[ \t]*(?P<dependencies>.*)$")
 _RECIPE_HEADER = re.compile(r"^[^ \t#:][^:]*:[ \t]*(?:#.*)?$")

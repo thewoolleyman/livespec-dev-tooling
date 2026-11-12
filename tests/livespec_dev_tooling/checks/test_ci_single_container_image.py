@@ -357,3 +357,35 @@ def test_a_non_gate_job_running_a_justfile_recipe_header_target_fails_without_an
     ]
     assert code == 1
     assert {str(record["image"]) for record in errors} == {_RUST_IMAGE, _FUZZ_IMAGE}
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "just --justfile ./justfile check-lint",
+        "just -f justfile --working-directory . check-lint",
+        "just --unstable check",
+    ],
+)
+def test_a_non_gate_job_running_a_flag_prefixed_just_target_fails_naming_images(
+    *,
+    command: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    source = "jobs:\n" + _job(name="check", container=_block(image=_RUST_IMAGE))
+    source += _job(name="fuzz", container=_block(image=_FUZZ_IMAGE)).replace(
+        "      - run: true", f"      - run: {command}"
+    )
+    _write_ci(root=tmp_path, body=source)
+    _write_justfile(root=tmp_path, targets=("check-lint", "check-test"))
+    monkeypatch.chdir(tmp_path)
+
+    code = _check().main()
+
+    errors = [
+        record for record in _records(stderr=capsys.readouterr().err) if record["level"] == "error"
+    ]
+    assert code == 1
+    assert {str(record["image"]) for record in errors} == {_RUST_IMAGE, _FUZZ_IMAGE}
