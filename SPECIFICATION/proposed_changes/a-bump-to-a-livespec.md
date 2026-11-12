@@ -13,7 +13,7 @@ created_at: 2026-11-12T10:34:22Z
 
 ### Summary
 
-Moves the sandbox-image readiness rule from the release fan-out alone onto every path that opens a bump PR to a livespec-dev-tooling tag. In contracts.md section "Cross-repo coordination automation surface", reusable-bump-pin-from-dispatch.yml gains a readiness paragraph: for source_repo livespec-dev-tooling it MUST NOT open a bump PR until ghcr.io serves all six livespec-fabro-sandbox semver layers of the tag. It polls for at most 90 minutes and, on absence, fails naming each missing tag and opens no PR. reusable-pin-freshness.yml gains the non-waiting form: it MUST NOT open a bump PR to a livespec-dev-tooling tag whose layers are not all served, and it leaves that bump to a later sweep. Two scenarios are added to scenarios.md. The fan-out's own wait in reusable-release-dispatch.yml is unchanged.
+Moves the sandbox-image readiness rule from the release fan-out alone onto every path that opens a bump PR to a livespec-dev-tooling tag. In contracts.md section "Cross-repo coordination automation surface", reusable-bump-pin-from-dispatch.yml gains a readiness paragraph: for source_repo livespec-dev-tooling it MUST NOT open a bump PR until ghcr.io serves every layer of the tag in the layer set the fan-out's readiness clause already names. It polls for at most 90 minutes and, on absence, fails naming each missing tag and opens no PR. reusable-pin-freshness.yml gains the non-waiting form: it MUST NOT open a bump PR to a livespec-dev-tooling tag whose layers are not all served, and it leaves that bump to a later sweep. Two scenarios are added to scenarios.md. The fan-out's own wait in reusable-release-dispatch.yml is unchanged.
 
 ### Motivation
 
@@ -23,11 +23,11 @@ On 2026-11-12 the ci-runtime-and-cost seat sent a direct sibling-released reposi
 
 In SPECIFICATION/contracts.md, section "## Cross-repo coordination automation surface", subsection "#### `reusable-bump-pin-from-dispatch.yml`", insert the following paragraph after the paragraph that begins "Behavior: clones the consumer repository":
 
-Sandbox-image readiness (livespec-dev-tooling tags only): when `source_repo` is livespec-dev-tooling, the workflow MUST NOT open or update a bump PR until ghcr.io serves a manifest for each of the tag's semver-tagged livespec-fabro-sandbox layers (base-v<T>, python-v<T>, python-agent-v<T>, python-rust-v<T>, python-rust-agent-v<T>, python-rust-fuzz-v<T>), whichever path dispatched it: the release fan-out, a direct sibling-released dispatch, or a manual re-dispatch. It MUST poll for them for at most 90 minutes. When any is still absent at that bound, the run MUST fail with an annotation naming each missing tag, and it MUST NOT open a bump PR. A bump for any other `source_repo` MUST NOT wait.
+Sandbox-image readiness (livespec-dev-tooling tags only): when `source_repo` is livespec-dev-tooling, the workflow MUST NOT open or update a bump PR until ghcr.io serves a manifest, at the tag, for every layer of the sandbox-image layer set that §"`reusable-release-dispatch.yml`" names in its sandbox-image readiness paragraph, whichever path dispatched it: the release fan-out, a direct sibling-released dispatch, or a manual re-dispatch. It MUST poll for them for at most 90 minutes. When any is still absent at that bound, the run MUST fail with an annotation naming each missing tag, and it MUST NOT open a bump PR. A bump for any other `source_repo` MUST NOT wait.
 
 In the same section, subsection "#### `reusable-pin-freshness.yml`", append the following sentence to the paragraph that begins "Behavior: runs the pin-autodiscovery walk":
 
-The sweep MUST NOT open a bump PR to a livespec-dev-tooling tag unless ghcr.io serves a manifest for each of that tag's six semver-tagged livespec-fabro-sandbox layers. It MUST NOT wait for them. It MUST annotate each missing tag and leave that bump to a later sweep.
+The sweep MUST NOT open a bump PR to a livespec-dev-tooling tag unless ghcr.io serves a manifest, at that tag, for every layer of the sandbox-image layer set that §"`reusable-release-dispatch.yml`" names in its sandbox-image readiness paragraph. It MUST NOT wait for them. It MUST annotate each missing tag and leave that bump to a later sweep.
 
 In SPECIFICATION/scenarios.md, append the following two scenarios after "## Scenario: a dev-tooling release fan-out whose sandbox image never appears fails naming the missing tags":
 
