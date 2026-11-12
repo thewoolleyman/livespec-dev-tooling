@@ -20,6 +20,12 @@ A test FAILED when any of its setup, call or teardown phases failed.  Each line
 also carries the test's duration, which the baseline run (armed with no timer)
 compares against the timeout instead.
 
+A file (or directory) that fails to COLLECT gets a line of its own,
+``{"uncollected": <node id>}``, because none of its tests will ever report.
+The engine runs with ``--continue-on-collection-errors``, so the files that do
+collect still run, and it counts every selected test under an uncollected node
+as failed instead of starting a process for each.
+
 The hooks take positional parameters because pluggy calls them positionally.
 """
 
@@ -78,14 +84,24 @@ def pytest_runtest_logreport(report: pytest.TestReport) -> None:
     _failed[report.nodeid] = _failed.get(report.nodeid, False) or report.failed
 
 
+def pytest_collectreport(report: pytest.CollectReport) -> None:
+    """Record a file or directory that could not be collected: its tests never report."""
+    if report.failed:
+        _append(row={"uncollected": report.nodeid})
+
+
 def _record(*, nodeid: str, duration: float) -> None:
     """Append and flush one test's outcome line."""
+    _append(
+        row={"test": nodeid, "failed": _failed.get(nodeid, False), "duration": round(duration, 3)}
+    )
+
+
+def _append(*, row: dict[str, object]) -> None:
+    """Append and flush one line to the outcomes file, when the engine named one."""
     destination = os.environ.get(OUTCOMES_VARIABLE)
     if not destination:
         return
-    line = json.dumps(
-        {"test": nodeid, "failed": _failed.get(nodeid, False), "duration": round(duration, 3)}
-    )
     with Path(destination).open("a", encoding="utf-8") as handle:
-        _ = handle.write(line + "\n")
+        _ = handle.write(json.dumps(row) + "\n")
         handle.flush()
