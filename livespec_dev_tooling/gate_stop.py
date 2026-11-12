@@ -54,7 +54,7 @@ def _alive(*, pid: int) -> bool:
     return "State:\tZ" not in state
 
 
-def _tree(*, root: int) -> set[int]:
+def _parents() -> dict[int, int]:
     parents: dict[int, int] = {}
     for entry in Path("/proc").iterdir():
         if not entry.name.isdigit():
@@ -66,6 +66,11 @@ def _tree(*, root: int) -> set[int]:
         parent = next((line[5:] for line in fields if line.startswith("PPid:")), "").strip()
         if parent.isdigit():
             parents[int(entry.name)] = int(parent)
+    return parents
+
+
+def _tree(*, root: int) -> set[int]:
+    parents = _parents()
     found = {root}
     while True:
         added = {pid for pid, parent in parents.items() if parent in found} - found
@@ -89,8 +94,23 @@ def _marked_processes(*, run_dir: Path) -> set[int]:
     return found
 
 
+def _depth(*, pid: int, parents: dict[int, int], pids: set[int]) -> int:
+    """Count the attributed ancestors of `pid`, so a client outranks the hook that started it."""
+    depth = 0
+    seen = {pid}
+    parent = parents.get(pid)
+    while parent is not None and parent not in seen:
+        depth += parent in pids
+        seen.add(parent)
+        parent = parents.get(parent)
+    return depth
+
+
 def _signal(*, pids: set[int], signal_number: int) -> None:
-    for pid in sorted(pids):
+    parents = _parents()
+    for pid in sorted(
+        pids, key=lambda pid: (_depth(pid=pid, parents=parents, pids=pids), pid), reverse=True
+    ):
         try:
             os.kill(pid, signal_number)
         except (ProcessLookupError, PermissionError):
