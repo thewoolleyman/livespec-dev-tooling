@@ -27,10 +27,10 @@ import subprocess
 TOP = [
     ("1 expedited-incident-response-flag", "livespec-dev-tooling-bqnzcm"),
     ("2 central-credential-service (livespec-overseer; workspace livespec-overseer, tab central-credential-service; maintainer-driven design)", "overseer-iyfjbo"),
-    ("3 secret-writer-stored-key-alias (homelab; workspace homelab, tab secret-writer-stored-key-alias)", "hl-bvycoc"),
-    ("4a implement-test-performance: gate suite double-run fix", "livespec-dev-tooling-sv6m5p"),
-    ("4b gate-job-resources", "livespec-dev-tooling-ukoeah"),
-    ("5 fleet-mutation-testing-rule-26 (gamingpc-xubuntu, workspace livespec-dev-tooling; ledger-only asks)", "livespec-dev-tooling-oi2two"),
+    ("3 stale-base-merge-options (maintainer-driven)", "livespec-dev-tooling-xowhol"),
+    ("4 secret-writer-stored-key-alias (homelab; workspace homelab, tab secret-writer-stored-key-alias)", "hl-bvycoc"),
+    ("5a implement-test-performance: gate suite double-run fix", "livespec-dev-tooling-sv6m5p"),
+    ("5b gate-job-resources", "livespec-dev-tooling-ukoeah"),
 ]
 WRAPPER = ["/usr/local/bin/with-livespec-env.sh", "--"]
 # The homelab tenant refuses the livespec wrapper (Error 1045 for user 'homelab');
