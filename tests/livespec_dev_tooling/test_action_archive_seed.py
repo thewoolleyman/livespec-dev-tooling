@@ -635,6 +635,17 @@ def _wait_for_actions_record(*, recorded: Path) -> None:
         time.sleep(0.01)
 
 
+def test_wait_for_actions_record_reports_a_timeout(
+    *, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A missing detached actions row does not make the scenario test wait forever."""
+    ticks = iter((0.0, 2.1))
+    monkeypatch.setattr(time, "monotonic", lambda: next(ticks))
+    monkeypatch.setattr(time, "sleep", lambda _: None)
+
+    assert _wait_for_actions_record(recorded=tmp_path / "warm-copy.tsv") is False
+
+
 def _post_start(*, root: Path, seeded: bool, switch: str = "") -> dict[str, str]:
     template = _TEMPLATE.read_text(encoding="utf-8")
     block = re.search(
