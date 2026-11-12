@@ -67,11 +67,24 @@ _AFTER_READY = "while [ ! -e ready ]; do sleep 0.05; done"
 
 
 def test_outcomes_keep_run_order_status_output_and_stdin_closed(tmp_path: Path) -> None:
+    marker = tmp_path / "fast-started"
+    fast_pid = tmp_path / "fast.pid"
     seen: list[str] = []
     outcomes = run_targets(
         runs=[
-            _sh(name="slow", script="sleep 0.3; echo slow-out; exit 3"),
-            _sh(name="fast", script="cat; echo fast-out >&2"),
+            _sh(
+                name="slow",
+                script=(
+                    f'while [ ! -e "{marker}" ]; do sleep 0.01; done; '
+                    f'pid=$(cat "{fast_pid}"); '
+                    'while kill -0 "$pid" 2>/dev/null; do sleep 0.01; done; '
+                    "echo slow-out; exit 3"
+                ),
+            ),
+            _sh(
+                name="fast",
+                script=f'echo $$ > "{fast_pid}"; touch "{marker}"; cat; echo fast-out >&2',
+            ),
         ],
         cwd=tmp_path,
         max_workers=2,
