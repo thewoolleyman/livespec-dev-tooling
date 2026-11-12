@@ -60,6 +60,7 @@ _JUSTFILE = _REPO_ROOT / "justfile"
 _CHECK_TARGETS = _REPO_ROOT / "check-targets.txt"
 
 _BUILDS_KEY = "fabro_client_builds"
+_PATH_CLIENT_KEY = "fabro_client_path_client"
 _OWNER_VARIABLE = "fabro_client_owner"
 _CHECK_SLUG = "check-dev-host-fabro-client-bins-declared"
 _ENTRY_KEYS = ("path", "source", "sha256")
@@ -74,6 +75,7 @@ _COMMITTED_BIN = re.compile(r'"bin":\s*"(?P<path>[^"]+)"')
 # The declaration block: the key at column zero, and every indented or blank line
 # under it. A line at column zero closes it, which is the rule the check applies.
 _BUILDS_BLOCK = re.compile(rf"^{_BUILDS_KEY}:\n(?P<body>(?:[ \t].*\n|\n)*)", re.MULTILINE)
+_PATH_CLIENT_BLOCK = re.compile(rf"^{_PATH_CLIENT_KEY}:\n(?P<body>(?:[ \t].*\n|\n)*)", re.MULTILINE)
 
 
 def _entries() -> list[dict[str, str]]:
@@ -100,6 +102,18 @@ def _entries() -> list[dict[str, str]]:
         entries[-1][key] = value.strip().strip("\"'")
     assert entries, f"{_GROUP_VARS}'s {_BUILDS_KEY} block must declare at least one entry"
     return entries
+
+
+def _path_client() -> dict[str, str]:
+    """The committed declaration for the Fabro client the host PATH resolves."""
+    block = _PATH_CLIENT_BLOCK.search(_GROUP_VARS.read_text(encoding="utf-8"))
+    assert block is not None, f"{_GROUP_VARS} must declare {_PATH_CLIENT_KEY}"
+    return {
+        key: value.strip().strip("\"'")
+        for raw in block["body"].splitlines()
+        if (stripped := raw.strip()) and not stripped.startswith("#")
+        for key, _, value in [stripped.partition(":")]
+    }
 
 
 def test_the_committed_declaration_carries_an_entry_this_role_can_act_on() -> None:
@@ -216,6 +230,24 @@ def test_every_committed_bin_names_a_declared_path_and_the_check_is_wired() -> N
         f"{_CHECK_SLUG} must also be a member of the tracked check-targets inventory, "
         f"which is the single source of truth the aggregate's mirror is read from"
     )
+
+
+def test_the_path_client_uses_the_current_gmktec_carrier_without_changing_server_pins() -> None:
+    """The PATH-client scenario's committed declaration and server separation."""
+    carrier = "/home/ubuntu/.local/state/fabro-currency/carrier-petri-v0.408-d22808f8e/fabro"
+    source = "/home/ubuntu/.local/state/fabro-web-prod/v0408-d22808f8e/fabro"
+    digest = "f32595473ecb0e476fb5b907d56a24aef7afe41040015379c1b88905057cf015"
+    assert {"path": carrier, "source": source, "sha256": digest} in _entries()
+    assert _path_client() == {
+        "link": "/home/ubuntu/.local/bin/fabro",
+        "target": carrier,
+    }
+    vps = (_ANSIBLE / "inventory" / "host_vars" / "vps.yml").read_text(encoding="utf-8")
+    assert vps.count("binary_path: /home/ubuntu/.fabro/bin/fabro") == 2
+    assert vps.count(f"binary_sha256: {_entries()[0]['sha256']}") == 2
+    assert carrier in _DOC.read_text(
+        encoding="utf-8"
+    ), f"{_DOC} must name the build the PATH client targets"
 
 
 @pytest.mark.parametrize(
