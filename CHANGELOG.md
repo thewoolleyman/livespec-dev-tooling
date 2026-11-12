@@ -58,6 +58,35 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.199.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.198.0...v1.199.0) (2026-11-12)
+
+
+### Features
+
+* **ansible:** retire hp-xubuntu's legacy Fabro carrier leftovers: the docker sandbox image warm and the :32276-:32278 serve ports (bd-ib-iud52v) ([e3529f8](https://github.com/thewoolleyman/livespec-dev-tooling/commit/e3529f82d0767405900195f23a58ed58a96d586c))
+* **ci:** retry registry failures before containers initialize ([2b624f2](https://github.com/thewoolleyman/livespec-dev-tooling/commit/2b624f2d4dc4295674ca882107698c2457e32516))
+* cover declared gate Job resources ([d307885](https://github.com/thewoolleyman/livespec-dev-tooling/commit/d307885bf5f4e9c8b9d04b9396346ac4bd9c8d5f))
+* cover gate resource consumer scenarios ([b2139eb](https://github.com/thewoolleyman/livespec-dev-tooling/commit/b2139eb7bc10d4ef3415e7820deea200127978d1))
+* **gate_repro:** an operator reproduction route submits one diagnosed gate Job onto a named lane (livespec-dev-tooling-pkmxgu) ([323d37e](https://github.com/thewoolleyman/livespec-dev-tooling/commit/323d37ed89f7324f21e1e74b171529bde18a0758))
+* rearm delegated gate terminal watch ([0f7707f](https://github.com/thewoolleyman/livespec-dev-tooling/commit/0f7707f1ac7d1f29813b68ce8aa066277f41465e))
+* type delegated terminal watch seams ([cda46e5](https://github.com/thewoolleyman/livespec-dev-tooling/commit/cda46e506580e23f1302f5267c7d11275e0bedba))
+* watch delegated gate terminal state ([0d3f2b2](https://github.com/thewoolleyman/livespec-dev-tooling/commit/0d3f2b240eb603e6b4bd53b8a9baf6dc2ddc0fd8))
+
+
+### Bug Fixes
+
+* a release-keyed claim is judged against the release it names, so a later release that touches no surface file leaves it classified (livespec-dev-tooling-ri2lwi) ([b1a2f1f](https://github.com/thewoolleyman/livespec-dev-tooling/commit/b1a2f1f32fbb46f4465b526932c31735f57b0bd7))
+* **ansible:** refuse a published-and-retired tailscale port before the publish path, bound every tailscale call, and test hp's retired ports by invariant (bd-ib-iud52v) ([53b9786](https://github.com/thewoolleyman/livespec-dev-tooling/commit/53b9786aacf7526b89351f09626e2932558149e7))
+* **ansible:** the converge unit installs the Fabro warm-cache manifest and script the converge reads (livespec-dev-tooling-m5m2dl) ([c3d4a34](https://github.com/thewoolleyman/livespec-dev-tooling/commit/c3d4a34e1c3fed678aec0a621a32062300520948))
+* **ci-infra-rerun:** an unreadable earlier log must not consume the one-rerun cap ([c895de8](https://github.com/thewoolleyman/livespec-dev-tooling/commit/c895de85c23dbba4dad61e5f3eda239f808a7292))
+* **ci-infra-rerun:** count only registry-signature failures toward the one-rerun cap ([44ea958](https://github.com/thewoolleyman/livespec-dev-tooling/commit/44ea958d1ee0c20c46e9dda9b052f51686835c49))
+* **ci-runner:** a separately budgeted populator warms the thewoolleyman/fabro fork's sccache keys (livespec-dev-tooling-m5m2dl) ([8e46221](https://github.com/thewoolleyman/livespec-dev-tooling/commit/8e46221b62fab14e6d12b9ee942f4a59451c5262))
+* each unclassified incident fleet row names its specific missing evidence (livespec-dev-tooling-v46q5g) ([5bec420](https://github.com/thewoolleyman/livespec-dev-tooling/commit/5bec4204949d01670371f70e236fb5f135816a3e))
+* **fleet:** canonical-check-slugs-wired judges a fan-out member against its pinned release's canonical inventory (livespec-dev-tooling-szjpez) ([d626b4b](https://github.com/thewoolleyman/livespec-dev-tooling/commit/d626b4b1bd4a71b255446eae892ca3700518b5d6))
+* permit version-only flake retry releases ([0ad26e6](https://github.com/thewoolleyman/livespec-dev-tooling/commit/0ad26e64c5b1ea3b308f85010987c20acf01673c))
+* scope closure retry withholding to failing tests ([2ff0d9c](https://github.com/thewoolleyman/livespec-dev-tooling/commit/2ff0d9cc2e20d151673fd7e4601a2be1c8deb738))
+* the incident fleet audit keys a self-serving checkout's rows to their newest release ancestor, judged per surface, not to its own HEAD (livespec-dev-tooling-ri2lwi) ([f72c45b](https://github.com/thewoolleyman/livespec-dev-tooling/commit/f72c45b29507a03384b2aacb3151efaa1e1bd72b))
+
 ## [1.198.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.197.0...v1.198.0) (2026-11-11)
 
 
