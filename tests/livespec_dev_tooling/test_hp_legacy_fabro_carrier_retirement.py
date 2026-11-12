@@ -17,6 +17,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import jinja2
 import yaml
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -28,7 +29,6 @@ _SERVE_DEFAULTS = _SERVE_ROLE / "defaults" / "main.yml"
 _SERVE_HOST_VARS_DOC = _SERVE_ROLE / "HOST_VARS.md"
 _FORMER_PLAY = _ANSIBLE / "former-sandbox-hosts.yml"
 _HP = _ANSIBLE / "inventory" / "host_vars" / "hp-xubuntu.yml"
-_HP_RETIRED_PORTS = [32276, 32277, 32278]
 
 
 def _former_play_roles() -> list[dict[str, object]]:
@@ -68,14 +68,40 @@ def test_the_retire_path_turns_off_only_a_named_port_the_node_serves() -> None:
 
 
 def test_a_port_both_published_and_retired_is_refused_before_any_change() -> None:
-    tasks = yaml.safe_load(_SERVE_RETIRE.read_text(encoding="utf-8"))
-    first = tasks[0]
-    assert (
-        "ansible.builtin.assert" in first
-    ), "the overlap refusal must run before any read or change"
+    main = yaml.safe_load(_SERVE_MAIN.read_text(encoding="utf-8"))
+    first = main[0]
+    assert "ansible.builtin.assert" in first, (
+        "the overlap refusal must be the role's first task, ahead of the publish path,"
+        " so no mapping is published or turned off on a host that names an overlap"
+    )
     that = " ".join(first["ansible.builtin.assert"]["that"])
     assert "tailscale_serve_retired_ports" in that
     assert "tailscale_serve_mappings" in that
+    retire = yaml.safe_load(_SERVE_RETIRE.read_text(encoding="utf-8"))
+    assert not any(
+        "ansible.builtin.assert" in task for task in retire
+    ), "the refusal lives once, at the top of tasks/main.yml"
+
+
+def _tailscale_calls(path: Path) -> list[dict[str, object]]:
+    tasks = yaml.safe_load(path.read_text(encoding="utf-8"))
+    return [
+        task
+        for task in tasks
+        if isinstance(task.get("ansible.builtin.command"), dict)
+        and task["ansible.builtin.command"].get("argv", [None])[0] == "tailscale"
+    ]
+
+
+def test_every_tailscale_call_is_bounded() -> None:
+    calls = _tailscale_calls(_SERVE_MAIN) + _tailscale_calls(_SERVE_RETIRE)
+    assert (
+        len(calls) >= 4
+    ), "the publish status read, the publish, the retire status read and the off"
+    for task in calls:
+        assert (
+            task.get("timeout") == 30
+        ), f"{task.get('name')!r} must carry `timeout: 30`, so a hung tailscaled cannot stall a converge"
 
 
 def test_the_publish_path_includes_the_retire_path_only_for_a_host_that_names_ports() -> None:
@@ -85,10 +111,39 @@ def test_the_publish_path_includes_the_retire_path_only_for_a_host_that_names_po
     assert includes[0]["when"] == "tailscale_serve_retired_ports | length > 0"
 
 
-def test_hp_names_its_three_legacy_fabro_ports_and_publishes_none() -> None:
+def test_hp_retires_only_ports_it_neither_publishes_nor_serves_a_fabro_instance_on() -> None:
     hp = yaml.safe_load(_HP.read_text(encoding="utf-8"))
-    assert hp["tailscale_serve_retired_ports"] == _HP_RETIRED_PORTS
+    retired = hp["tailscale_serve_retired_ports"]
+    assert retired, "hp names the legacy Fabro ports it retires"
+    assert all(isinstance(port, int) for port in retired), "each retired port is an integer port"
     assert "tailscale_serve_mappings" not in hp, "hp runs no Fabro server, so it publishes nothing"
+    instance_ports = {instance["port"] for instance in hp.get("fabro_server_instances", [])}
+    assert not instance_ports & set(retired), "a port a live Fabro instance serves is never retired"
+
+
+_STATUS_SAMPLE = """https://hp-xubuntu.perch-rudd.ts.net:32276 (tailnet only)
+|-- / proxy http://127.0.0.1:32276
+
+https://hp-xubuntu.perch-rudd.ts.net:32278 (tailnet only)
+|-- / proxy http://127.0.0.1:32278
+"""
+
+
+def test_the_served_port_check_reads_a_captured_status_sample() -> None:
+    tasks = yaml.safe_load(_SERVE_RETIRE.read_text(encoding="utf-8"))
+    off = next(
+        task for task in tasks if "off" in task.get("ansible.builtin.command", {}).get("argv", [])
+    )
+    condition = jinja2.Environment().compile_expression(off["when"])
+    status = {"stdout": _STATUS_SAMPLE}
+    assert condition(item=32276, tailscale_serve_retire_status=status) is True
+    assert condition(item=32278, tailscale_serve_retire_status=status) is True
+    assert (
+        condition(item=32277, tailscale_serve_retire_status=status) is False
+    ), "a port the status does not list is left alone"
+    assert (
+        condition(item=3227, tailscale_serve_retire_status=status) is False
+    ), "a port that is only a prefix of a served port is not matched"
 
 
 def test_the_former_sandbox_play_converges_hps_serve_ports() -> None:
