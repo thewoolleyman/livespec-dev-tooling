@@ -11,27 +11,17 @@
 # :32276, :32277 and :32278 with no Fabro server behind them, and the fleet host
 # guard refuses `tailscale serve ... off` by hand.
 #
+# A port that is also a declared mapping was already refused by the first task
+# of tasks/main.yml, before the publish path ran.
+#
 # Under --check the status read still runs, so a drift report names each
 # retired port the node serves; the off command itself is reported, not run.
-
-- name: Refuse a port that this host both publishes and retires
-  ansible.builtin.assert:
-    that:
-      - >-
-        (tailscale_serve_retired_ports | map('int') | list)
-        | intersect(tailscale_serve_mappings | map(attribute='https_port') | map('int') | list)
-        | length == 0
-    fail_msg: >-
-      tailscale_serve_retired_ports {{ tailscale_serve_retired_ports | to_json }} names a
-      port that tailscale_serve_mappings also publishes
-      ({{ tailscale_serve_mappings | map(attribute='https_port') | list | to_json }}).
-      Nothing was read or changed.
-    success_msg: no retired port is also a published mapping
 
 - name: Read this node's tailscale serve configuration before retiring ports
   ansible.builtin.command:
     argv: [tailscale, serve, status]
   become: true
+  timeout: 30
   register: tailscale_serve_retire_status
   changed_when: false
   check_mode: false
@@ -58,6 +48,7 @@
       - "--https={{ item }}"
       - "off"
   become: true
+  timeout: 30
   loop: "{{ tailscale_serve_retired_ports }}"
   loop_control:
     label: ":{{ item }}"
