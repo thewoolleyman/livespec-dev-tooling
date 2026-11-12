@@ -204,3 +204,42 @@ def test_an_outside_root_test_does_not_change_the_decision_for_an_inside_root_te
     assert withheld is None
     assert outside_item.markers == []
     assert len(inside_item.markers) == 1
+
+
+@pytest.mark.integration
+def test_a_session_unsafe_change_set_marks_no_test_and_names_the_withhold(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A whole-session withhold returns its reason before any test is marked."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    test_path = repo / "test_example.py"
+    _ = test_path.write_text("def test_it():\n    assert True\n", encoding="utf-8")
+
+    plugin = importlib.import_module("livespec_dev_tooling.flake_retry")
+
+    def _change_paths(*, repo_root: Path) -> set[Path]:
+        assert repo_root == repo
+        return {Path("justfile")}
+
+    monkeypatch.setattr(plugin, "change_paths", _change_paths)
+
+    class _Item:
+        def __init__(self, *, path: Path) -> None:
+            self.path = path
+            self.nodeid = f"{path.name}::test_it"
+            self.markers: list[object] = []
+
+        def add_marker(self, marker: object) -> None:
+            self.markers.append(marker)
+
+    item = _Item(path=test_path)
+    withheld_by_nodeid: dict[str, str] = {}
+
+    withheld = plugin.mark_untouched_tests(
+        root=repo, items=[item], withheld_by_nodeid=withheld_by_nodeid
+    )
+
+    assert withheld == "a justfile change"
+    assert item.markers == []
+    assert withheld_by_nodeid == {}
