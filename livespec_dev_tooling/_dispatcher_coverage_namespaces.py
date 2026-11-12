@@ -161,9 +161,19 @@ def reclaim_abandoned_namespace_dirs(*, root: Path) -> None:
 
 
 def _record_creator(*, namespace_dir: Path) -> None:
-    """Persist this runner's process identity in a newly minted namespace."""
+    """Persist this runner's process identity in a newly minted namespace.
+
+    A runner whose own start time is unobservable (a host without `/proc`) writes
+    no record rather than a malformed one; the namespace then falls to the
+    unrecorded-age rule, which is the only reclamation that host can support.
+    """
     pid = os.getpid()
     start_time = process_start_time(pid=pid)
+    if start_time is None:
+        _LOGGER.warning(
+            "could not observe this runner's start time; %s records no creator", namespace_dir
+        )
+        return
     _ = (namespace_dir / _CREATOR_RECORD_NAME).write_text(
         json.dumps({"pid": pid, "start_time": start_time}), encoding="utf-8"
     )
