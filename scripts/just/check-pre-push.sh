@@ -119,13 +119,21 @@ fi
 # Below the green-token match on purpose: in such a repository the token can be
 # written only by a full `just check` outside the pre-commit hook, or by a
 # delegated pre-push pass, and either one is the Explicit local route.
-if pre_push_evidence="$(uv run python -m livespec_dev_tooling.green_token pre-push-evidence)"; then
-    LIVESPEC_PRE_PUSH_EVIDENCE_JOB="$(sed -n 1p <<<"${pre_push_evidence}")"
-    LIVESPEC_PRE_PUSH_EVIDENCE_TREE="$(sed -n 2p <<<"${pre_push_evidence}")"
-    LIVESPEC_PRE_PUSH_EVIDENCE_MEMBERS="$(sed -n '3,$p' <<<"${pre_push_evidence}" | tr '\n' ' ')"
-    export LIVESPEC_PRE_PUSH_EVIDENCE_JOB LIVESPEC_PRE_PUSH_EVIDENCE_TREE LIVESPEC_PRE_PUSH_EVIDENCE_MEMBERS
-    echo ":: pre-push: accepted the delegated pre-commit verdict of gate Job ${LIVESPEC_PRE_PUSH_EVIDENCE_JOB} for tree ${LIVESPEC_PRE_PUSH_EVIDENCE_TREE}; submitting no gate Job, and running here only the members it did not cover, every world-reading member and every authorization-reading member"
-    exec just hook_gate=1 check
+pre_push_members=()
+if [ -f check-targets.txt ]; then
+    mapfile -t pre_push_members < <(
+        sed -E 's/[[:space:]]*#.*$//; s/^[[:space:]]+//; s/[[:space:]]+$//' check-targets.txt \
+            | grep -E '^check-' || true
+    )
+fi
+pre_push_reuse_status=0
+uv run python -m livespec_dev_tooling.green_token pre-push-reuse \
+    "${pre_push_members[@]}" || pre_push_reuse_status=$?
+if [ "${pre_push_reuse_status}" -eq 0 ]; then
+    exit 0
+fi
+if [ "${pre_push_reuse_status}" -ne 3 ]; then
+    exit "${pre_push_reuse_status}"
 fi
 
 # The DELEGATED-GATE fall-through (R4.S7c of plan livespec

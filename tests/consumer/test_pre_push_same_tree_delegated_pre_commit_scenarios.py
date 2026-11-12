@@ -91,6 +91,11 @@ case "$*" in
         ;;
     *"green_token undeclared"*)        exit 0 ;;
     *"green_token check")              exit "${GREEN_TOKEN_EXIT:-1}" ;;
+    *"green_token pre-push-reuse"*)
+        [ -n "${EVIDENCE:-}" ] || exit 3
+        printf 'pre-push reuse: accepted delegated evidence\n'
+        exit "${REUSE_EXIT:-0}"
+        ;;
     *"green_token pre-push-evidence")
         [ -n "${EVIDENCE:-}" ] || exit 1
         printf '%b' "${EVIDENCE}"
@@ -230,6 +235,10 @@ def _carrying(*, run: _Run, needle: str) -> list[str]:
 
 def _run_pre_push(*, root: Path, overrides: dict[str, str]) -> _Run:
     """Run the real `check-pre-push.sh` for one ordinary (non-deletion) ref update."""
+    root.mkdir(parents=True, exist_ok=True)
+    _ = (root / "check-targets.txt").write_text(
+        "".join(f"{member}\n" for member in _MEMBERS), encoding="utf-8"
+    )
     live = "b3d4f1a90c7e25486fd1c0b8a7e6554321098765"
     return _run_script(
         root=root,
@@ -425,14 +434,14 @@ def test_an_accepting_push_submits_no_gate_job_and_names_the_job_and_tree(
         f"an accepted delegated pre-commit verdict must not submit a gate Job; "
         f"invoked={run.invoked}"
     )
-    narrowed = _carrying(run=run, needle="just-env")
-    assert narrowed == [
-        f"just-env pre_commit_hook= evidence_job={_JOB} evidence_tree={tree} "
-        f"evidence_members={' '.join(_COVERED)} "
-    ], f"the aggregate must be handed the accepted verdict; invoked={run.invoked}"
-    assert _carrying(run=run, needle="just hook_gate=1 check")
-    assert _JOB in run.output
-    assert tree in run.output
+    reuse = _carrying(run=run, needle="green_token pre-push-reuse")
+    assert reuse == [
+        "uv run python -m livespec_dev_tooling.green_token pre-push-reuse " + " ".join(_MEMBERS)
+    ], f"the shared entry point must receive the consumer's check set; invoked={run.invoked}"
+    assert not _carrying(run=run, needle="just-env"), (
+        f"the shared entry point, rather than this script's aggregate, owns the narrowed run; "
+        f"invoked={run.invoked}"
+    )
 
 
 def test_an_accepting_push_runs_only_the_members_the_pre_commit_job_did_not_cover(
@@ -677,7 +686,7 @@ def test_a_member_outside_the_pre_commit_jobs_scope_still_runs_and_refuses_the_p
 
     pushed = _run_pre_push(
         root=tmp_path,
-        overrides={"EVIDENCE": f"{_JOB}\\n{tree}\\n{_BETA}\\n", "JUST_EXIT": "1"},
+        overrides={"EVIDENCE": f"{_JOB}\\n{tree}\\n{_BETA}\\n", "REUSE_EXIT": "1"},
     )
     assert pushed.code != 0, f"output={pushed.output!r} invoked={pushed.invoked}"
 
