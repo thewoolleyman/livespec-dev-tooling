@@ -90,15 +90,13 @@ raise SystemExit(1)
 else
     parser_status=$?
 fi
-if test "$parser_status" -eq 0; then
-    kill "$watch_pid" 2>/dev/null || true
-    wait "$watch_pid" 2>/dev/null || true
-    exit 0
-fi
 if wait "$watch_pid"; then
     watcher_status=0
 else
     watcher_status=$?
+fi
+if test "$parser_status" -eq 0; then
+    exit 0
 fi
 if test "$watcher_status" -ne 0; then
     cat "$stderr" >&2
