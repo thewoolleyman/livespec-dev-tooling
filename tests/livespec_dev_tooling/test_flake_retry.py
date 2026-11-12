@@ -6,8 +6,11 @@ import importlib
 import json
 import re
 from pathlib import Path
+from types import SimpleNamespace
+from typing import cast
 
 import pytest
+from _pytest.terminal import TerminalReporter
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -132,20 +135,56 @@ def test_a_touched_or_session_unsafe_test_has_no_retry_marker(
 
 
 def test_retried_results_are_written_and_rendered_without_hiding_final_failure(
-    *, tmp_path: Path
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Retried tests leave one machine-readable record and a terminal-summary row."""
+    """Every failed retry is recorded and named under the terminal summary row."""
     plugin = importlib.import_module("livespec_dev_tooling.flake_retry")
-    record = plugin.RetryResult(nodeid="test_example.py::test_flaky", attempts=4, outcome="failed")
-
-    output = plugin.write_retry_records(repo_root=tmp_path, results=[record])
+    monkeypatch.setattr(plugin, "_RESULTS", {})
+    plugin.record_report(
+        report=SimpleNamespace(
+            when="call",
+            nodeid="test_example.py::test_flaky",
+            outcome="rerun",
+            longrepr="AssertionError: first failure\ntraceback",
+        )
+    )
+    plugin.record_report(
+        report=SimpleNamespace(
+            when="call",
+            nodeid="test_example.py::test_flaky",
+            outcome="failed",
+            longrepr="AssertionError: final failure",
+        )
+    )
+    written: list[str] = []
+    reporter = cast(
+        TerminalReporter,
+        SimpleNamespace(
+            write_line=written.append,
+            write_sep=lambda _separator, title: written.append(title),
+        ),
+    )
+    plugin.announce_retries(terminalreporter=reporter, root=tmp_path)
+    output = tmp_path / "tmp" / "flake-retries" / "retries.jsonl"
 
     assert output == tmp_path / "tmp" / "flake-retries" / "retries.jsonl"
     assert [json.loads(line) for line in output.read_text(encoding="utf-8").splitlines()] == [
-        {"attempts": 4, "nodeid": "test_example.py::test_flaky", "outcome": "failed"}
+        {
+            "attempts": 2,
+            "failures": [
+                {"cut": False, "text": "AssertionError: first failure\ntraceback"},
+                {"cut": False, "text": "AssertionError: final failure"},
+            ],
+            "nodeid": "test_example.py::test_flaky",
+            "outcome": "failed",
+        }
     ]
-    assert "FLAKE-RETRIED" in plugin.retry_summary(results=[record])
-    assert "failed" in plugin.retry_summary(results=[record])
+    assert written == [
+        "FLAKE-RETRIED",
+        "test_example.py::test_flaky: 2 attempts, failed",
+        "  AssertionError: first failure",
+        "  AssertionError: final failure",
+    ]
 
 
 @pytest.mark.integration
