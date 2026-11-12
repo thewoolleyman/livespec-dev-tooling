@@ -710,8 +710,16 @@ fabro_server_instances:
         # instance followed on 2026-11-11 after this canary's parity read passed.
         # REVERT to v0.8.2: path: /usr/local/bin/sandbox-driver-kubernetes-v0.8.2
         # REVERT to v0.8.2: sha256: cf3cedc8900d2176630f8a700964a094f9db30648955310e930bee07ca6b9ec7
-        path: /usr/local/bin/sandbox-driver-kubernetes-v0.8.3
-        sha256: 008d343f0696a1dbc4ad13d8dc5782be223ce8c37600ec47d24ca8873c752ce5
+        # v0.8.4 ONE-POD CANARY (2026-11-12, orchestrator bd-ib-ko5kxf; coordinator
+        # legacy-coordinator-agent GO, duties section 10): a pod create refused
+        # for an exceeded namespace ResourceQuota (403) is reported as a retryable
+        # provider error with code quota-exceeded, not as a credential fault.
+        # This instance moves first; the fleet instance follows only after this
+        # canary's environment-parity read passes.
+        # REVERT to v0.8.3: path: /usr/local/bin/sandbox-driver-kubernetes-v0.8.3
+        # REVERT to v0.8.3: sha256: 008d343f0696a1dbc4ad13d8dc5782be223ce8c37600ec47d24ca8873c752ce5
+        path: /usr/local/bin/sandbox-driver-kubernetes-v0.8.4
+        sha256: 9abd74b6d5099686957763b0a06816b9a80554506d292d32d6c3d211ccb6023c
         inherit_env:
           - HOME
           - PATH
@@ -1045,6 +1053,12 @@ sandbox_driver_kubernetes_versioned_releases:
   # installed as the REVERT target.
   - version: v0.8.3
     sha256: 008d343f0696a1dbc4ad13d8dc5782be223ce8c37600ec47d24ca8873c752ce5
+  # v0.8.4 (bd-ib-ko5kxf): v0.8.3 plus an exceeded-ResourceQuota 403 mapped as
+  # retryable capacity (code quota-exceeded), not a missing permission. The
+  # candidate pins it for its one-pod canary; v0.8.3 stays installed as the
+  # REVERT target. Digest verified by download of the release asset.
+  - version: v0.8.4
+    sha256: 9abd74b6d5099686957763b0a06816b9a80554506d292d32d6c3d211ccb6023c
 
 # tailscale_serve: publish the fabro-server instance's loopback port on the
 # tailnet, so the Dispatcher reaches https://gmktec-xubuntu.perch-rudd.ts.net:32276.
