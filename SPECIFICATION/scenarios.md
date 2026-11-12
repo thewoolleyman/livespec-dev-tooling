@@ -4656,3 +4656,17 @@ When that member's CI `export-telemetry` job runs
 Then it MUST emit the run's `ci.run` and `ci.job.<name>` spans by running that module
 
 And the member's repository MUST carry no copy of the exporter's span-building logic
+
+## Scenario: a check runner reclaims the coverage directory a killed runner left behind
+
+Given a coverage-namespace directory under the system temp directory whose recorded creator process is no longer running
+
+And a coverage-namespace directory whose recorded creator is a check runner still running
+
+When another check runner starts and creates its own coverage-namespace directories
+
+Then the directory whose creator is no longer running MUST be removed
+
+And the directory whose creator is still running MUST remain in place
+
+And the running runner's verdict MUST be unchanged
