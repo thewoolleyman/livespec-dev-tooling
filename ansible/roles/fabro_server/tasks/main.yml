@@ -1409,6 +1409,9 @@
   check_mode: false
 
 - name: Read the running instance's resolved settings
+  # Every declared instance is read, parked ones included: a stopped
+  # instance has no listener, so its read ends in the unreachable report
+  # below instead of the instance silently producing no result.
   # Python follows only the declared dotted paths above.  The response can
   # carry additional settings and defaults without creating a finding, while a
   # missing declared setting resolves to null and is correctly reported as
@@ -1474,7 +1477,6 @@
   changed_when: fabro_server_settings_endpoint_read.rc == 1
   failed_when: false
   check_mode: false
-  when: fabro_server_service_state | default('running') == 'running'
 
 - name: Report settings endpoint drift for this instance
   ansible.builtin.debug:
