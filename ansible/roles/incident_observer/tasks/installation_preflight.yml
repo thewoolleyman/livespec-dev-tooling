@@ -51,7 +51,7 @@
     that:
       - incident_observer_installations is sequence
       - incident_observer_installations | length >= 1
-      - incident_observer_installations[0].repository == 'thewoolleyman/livespec-dev-tooling'
+      - incident_observer_installations[0].repository is match('^[^/]+/livespec-dev-tooling$')
       - incident_observer_installations[0].port | int == 8765
       - >-
         incident_observer_installations

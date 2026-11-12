@@ -168,6 +168,9 @@ incident_observer_funnel_paths:
 # The audit's controller reader (livespec_dev_tooling) holds its committed list
 # of served repositories equal to this inventory's `repository` values.
 #   repository        owner/name the installation serves (controller.json `repository`)
+#   repository_id     GitHub's numeric id of that repository (survives a transfer)
+#   owner_id          GitHub's numeric id of its owner (changes with a transfer); the
+#                     CI identity policy keys on both, never on the owner's login
 #   required_jobs     that repository's required master leaf jobs, `ci-green` last
 #   port              its loopback listener port, distinct from every other entry's
 #                     and from the scratch instance's
@@ -177,6 +180,8 @@ incident_observer_funnel_paths:
 #                     tenant's credential; an apply refuses when it is not projected
 incident_observer_installations:
   - repository: thewoolleyman/livespec-dev-tooling
+    repository_id: 1245319543
+    owner_id: 158
     required_jobs:
       - check-types
       - check-lint
@@ -203,6 +208,8 @@ incident_observer_installations:
   # repository: run the apply under /usr/local/bin/with-livespec-env.sh from the
   # repository's own checkout (ansible/incident-observer-installation.yml).
   - repository: thewoolleyman/livespec
+    repository_id: 1215509712
+    owner_id: 158
     required_jobs:
       - check-lint
       - check-format
@@ -221,6 +228,8 @@ incident_observer_installations:
     tenant_project_id: a2a7f557-5359-45a6-9246-786a87ea7d18
     reader_env_var: BEADS_DOLT_PASSWORD
   - repository: thewoolleyman/livespec-orchestrator-beads-fabro
+    repository_id: 1262632932
+    owner_id: 158
     required_jobs:
       - check-lint (nonroot)
       - check-format (nonroot)
@@ -246,6 +255,8 @@ incident_observer_installations:
     tenant_project_id: 6a35844e-3c68-4ea6-bca0-703c27007af3
     reader_env_var: BEADS_DOLT_PASSWORD
   - repository: thewoolleyman/livespec-overseer
+    repository_id: 1307110964
+    owner_id: 158
     required_jobs:
       - check-lint
       - check-format
