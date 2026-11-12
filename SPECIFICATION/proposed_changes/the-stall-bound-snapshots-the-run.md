@@ -25,7 +25,7 @@ A silent stall cannot be localized once the runner has killed it, because the ru
 
 Insert this new bullet directly after the existing "**Stall bound.**" bullet and before "**Stop.**":
 
-- **Stall snapshot.** When the **Stall bound** ends a gate command, the runner MUST first write a `stall-snapshot` file into the run's directory, BEFORE it sends any signal. It holds a header line with the UTC time it was taken, then one line per process attributed to the run under **Stall bound**'s attribution: the command's own process group and every descendant that entered a new OS session. Each line carries the pid, parent pid, session id, elapsed time, kernel wait channel and full command line, in parent-before-child (forest) order. The stall-bound line the runner appends to `output.log`, and the `FAILED` state that `gate-wait` and `gate-status` print for that run, MUST name the `stall-snapshot` path. When the snapshot cannot be taken, the runner MUST write the reason into that file and still end the command on schedule, so a failed snapshot never delays or prevents the kill. Writing the snapshot MUST NOT count as progress and MUST NOT renew the stall window. Fleet scope: every repository whose gate runner is the wheel-carried `CANONICAL_GATE_RUN_BODY`. This bullet is spec-first: the shipped runner records only the stall-bound line, and work item livespec-dev-tooling-q4ahay owns the change.
+- **Stall snapshot.** When the **Stall bound** ends a gate command, the runner MUST first write a `stall-snapshot` file into the run's directory, BEFORE it sends any signal. It holds a header line with the UTC time it was taken, then one line per process attributed to the run under **Stall bound**'s attribution: the command's own process group and every descendant that entered a new OS session. Each line carries the pid, parent pid, session id, elapsed time in whole seconds since the process started, kernel wait channel and full command line, in parent-before-child (forest) order. The stall-bound line the runner appends to `output.log`, and the `FAILED` state that `gate-wait` and `gate-status` print for that run, MUST name the `stall-snapshot` path. When the snapshot cannot be taken, the runner MUST write the reason into that file and still end the command on schedule, so a failed snapshot never delays or prevents the kill. Writing the snapshot MUST NOT count as progress and MUST NOT renew the stall window. Fleet scope: every repository whose gate runner is the wheel-carried `CANONICAL_GATE_RUN_BODY`. This bullet is spec-first: the shipped runner records only the stall-bound line, and work item livespec-dev-tooling-q4ahay owns the change. It depends on **Stall bound**'s attribution of descendants that entered a new OS session, which is itself spec-first and owned by livespec-dev-tooling-5lhafp, so q4ahay ships after 5lhafp.
 
 ### SPECIFICATION/scenarios.md
 
@@ -37,9 +37,9 @@ Given a detached gate run whose command, and a descendant that entered its own O
 
 When the runner ends the command
 
-Then the run directory MUST hold a `stall-snapshot` written before the first signal, listing each attributed process with its pid, parent pid, session id, elapsed time, wait channel and command line
+Then the run directory MUST hold a `stall-snapshot` written before the first signal, listing each attributed process with its pid, parent pid, session id, elapsed time in whole seconds, wait channel and command line
 
-And the run's `output.log` stall-bound line and its `FAILED` state from `gate-status` MUST name that file
+And the run's `output.log` stall-bound line, and the `FAILED` state that both `gate-wait` and `gate-status` print for the run, MUST name that file
 
 And the verdict MUST be `FAILED`, never a pass
 
