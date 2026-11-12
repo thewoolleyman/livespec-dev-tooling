@@ -108,7 +108,7 @@ env:
   # No new token and no scope change: this is the job's GITHUB_TOKEN.
   LIVESPEC_GIT_FETCH_TOKEN: ${{ github.token }}
   GIT_CONFIG_PARAMETERS: >-
-    'credential.https://github.com.helper=!f() { test "$1" = get || exit 0; echo username=x-access-token; echo "password=${LIVESPEC_GIT_FETCH_TOKEN}"; }; f'
+    'credential.https://github.com.helper'='!f() { test "$1" = get || exit 0; echo username=x-access-token; echo "password=${LIVESPEC_GIT_FETCH_TOKEN}"; }; f'
 # merge_group is deliberately ABSENT: no merge queue is configured for this
 # repo (verified live — zero rulesets, required_merge_queue: null; branch
 # protection requires only ci-green). Keeping the vestigial trigger would be
@@ -492,6 +492,15 @@ jobs:
       # - mise: tools are baked into the image, so `mise install` is a
       #   near-no-op; a fresh container does not TRUST the repo .mise.toml,
       #   so `mise trust` is required for the shims to resolve.
+      # THROWAWAY PROOF for livespec-dev-tooling-fc4dzb: shows the credential
+      # helper as this job's git sees it. Removed before the PR is marked ready.
+      - name: git-auth probe (throwaway, fc4dzb)
+        run: |
+          printf 'GIT_CONFIG_PARAMETERS=%s\n' "${GIT_CONFIG_PARAMETERS}"
+          git config --show-origin --get-all credential.https://github.com.helper
+          printf 'protocol=https\nhost=github.com\n\n' | git credential fill | sed 's/^password=.\+/password=<present, redacted>/'
+          git ls-remote https://github.com/thewoolleyman/livespec HEAD
+
       - name: Prepare workspace (git trust, mise trust + install, uv sync)
         run: |
           git config --global --add safe.directory '*'
