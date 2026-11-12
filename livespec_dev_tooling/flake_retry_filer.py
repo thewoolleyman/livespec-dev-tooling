@@ -42,9 +42,8 @@ _DEFAULT_STATE_DIR = Path("/var/lib/livespec/flake-retry-filer")
 _DEFAULT_INTERVAL_SECONDS = 900
 _COMPLETION_MARKER = "last-successful-pass"
 _FILED_RECORDS_LEDGER = "filed-records"
-# Runs inside the registered orchestrator build so the filer calls the one shared
-# intake Definition-of-Ready primitive instead of copying its routing rules. Every
-# gate answer is true: a root fix is one coherent, test-verified, repo-targeted fix.
+# Runs inside the registered orchestrator build so stranded legacy items can be
+# retried through the one shared intake Definition-of-Ready primitive.
 _INTAKE_ROUTING_SNIPPET = """\
 import sys
 from pathlib import Path
@@ -73,8 +72,72 @@ routed = apply_intake_dor(
     ),
 )
 if not is_successful(routed):
+    sys.stderr.write(f"{item_id}: {unsafe_perform_io(routed.failure())}\\n")
     sys.exit(1)
 sys.stdout.write(f"{unsafe_perform_io(routed.unwrap())}\\n")
+"""
+
+# New filings use the capture seam, which creates through the claim-token-aware
+# store path and routes through intake as one operation.  Root fixes satisfy all
+# six gates: each is a coherent, autonomously verifiable, repo-targeted change.
+_INTAKE_FILING_SNIPPET = """\
+import sys
+from datetime import datetime, timezone
+from pathlib import Path
+
+plugin_root, nodeid, description = sys.argv[1], sys.argv[2], sys.argv[3]
+sys.path.insert(0, f"{plugin_root}/scripts")
+sys.path.insert(0, f"{plugin_root}/scripts/_vendor")
+from returns.pipeline import is_successful
+from returns.unsafe import unsafe_perform_io
+from livespec_runtime.work_items.rank import key_between
+from livespec_orchestrator_beads_fabro._ids import new_work_item_id
+from livespec_orchestrator_beads_fabro._beads_client import make_beads_client
+from livespec_orchestrator_beads_fabro.commands._config import resolve_store_config
+from livespec_orchestrator_beads_fabro.intake_dor import (
+    DefinitionOfReadyChecklist,
+    file_captured_work_item,
+)
+from livespec_orchestrator_beads_fabro.types import WorkItem
+
+path = resolve_store_config(cwd=Path.cwd(), work_items_arg=None)
+item = WorkItem(
+    id=new_work_item_id(prefix=path.prefix),
+    type="bug",
+    status="pending-approval",
+    title=f"root-fix: {nodeid}",
+    description=description,
+    origin="freeform",
+    gap_id=None,
+    rank=key_between(a=None, b=None),
+    assignee=None,
+    depends_on=(),
+    captured_at=datetime.now(tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+    resolution=None,
+    reason=None,
+    audit=None,
+    superseded_by=None,
+)
+routed = file_captured_work_item(
+    path=path,
+    item=item,
+    checklist=DefinitionOfReadyChecklist(
+        single_coherent_done=True,
+        autonomously_verifiable=True,
+        autonomy_tiered=True,
+        dependency_linked=True,
+        repo_targeted=True,
+        above_floor=True,
+    ),
+)
+if not is_successful(routed):
+    failure = unsafe_perform_io(routed.failure())
+    if make_beads_client(config=path).exists(issue_id=item.id):
+        sys.stderr.write(f"{item.id}: {failure}\\n")
+    else:
+        sys.stderr.write(f"{failure}\\n")
+    sys.exit(1)
+sys.stdout.write(f"{item.id}\\n")
 """
 
 
@@ -111,20 +174,30 @@ def _remember_filed(*, state_dir: Path, digests: set[str]) -> None:
 
 
 def _command_result(
-    *, argv: list[str], repo_root: Path, runner: GateCommandRunner
+    *,
+    argv: list[str],
+    repo_root: Path,
+    runner: GateCommandRunner,
+    preserve_failure: bool = False,
 ) -> GateCommandResult:
     """Run a required host ledger command, preserving an invocation failure."""
     outcome = runner(argv=argv, cwd=repo_root)
     if isinstance(outcome, Failure):
+        if preserve_failure:
+            raise OSError(outcome.failure().detail)
         raise OSError
     result = outcome.unwrap()
     if result.returncode != 0:
+        if preserve_failure:
+            raise OSError(result.stderr.strip() or result.stdout.strip() or "command failed")
         raise OSError
     return result
 
 
-def _open_root_fix_nodeids(*, repo_root: Path, runner: GateCommandRunner) -> set[str]:
-    """Read node ids that already have a non-closed root-fix item."""
+def _open_root_fix_nodeids(
+    *, repo_root: Path, runner: GateCommandRunner
+) -> dict[str, tuple[str | None, bool]]:
+    """Read every open root-fix id and whether intake has already triaged it."""
     result = _command_result(
         argv=["bd", "list", "--status", "all", "--json"],
         repo_root=repo_root,
@@ -133,7 +206,7 @@ def _open_root_fix_nodeids(*, repo_root: Path, runner: GateCommandRunner) -> set
     parsed = cast("object", json.loads(result.stdout))
     if not isinstance(parsed, list):
         raise TypeError
-    open_nodeids: set[str] = set()
+    open_nodeids: dict[str, tuple[str | None, bool]] = {}
     for item in cast("list[object]", parsed):
         if not isinstance(item, dict):
             continue
@@ -142,7 +215,12 @@ def _open_root_fix_nodeids(*, repo_root: Path, runner: GateCommandRunner) -> set
             continue
         title = item_record.get("title")
         if isinstance(title, str) and title.startswith(_ROOT_FIX_PREFIX):
-            open_nodeids.add(title.removeprefix(_ROOT_FIX_PREFIX))
+            item_id = item_record.get("id")
+            labels = item_record.get("labels")
+            open_nodeids[title.removeprefix(_ROOT_FIX_PREFIX)] = (
+                item_id if isinstance(item_id, str) else None,
+                isinstance(labels, list) and "intake:triaged" in labels,
+            )
     return open_nodeids
 
 
@@ -160,38 +238,27 @@ def _root_fix_description(*, nodeid: str) -> str:
     )
 
 
-def _created_item_id(*, stdout: str) -> str:
-    """Read the server-assigned id out of a ``bd create --json`` body."""
-    parsed = cast("object", json.loads(stdout))
-    if isinstance(parsed, list):
-        records = cast("list[object]", parsed)
-        parsed = records[0] if records else None
-    if isinstance(parsed, dict):
-        item_id = cast("dict[str, object]", parsed).get("id")
-        if isinstance(item_id, str):
-            return item_id
-    raise TypeError
-
-
-def _create_root_fix(*, nodeid: str, repo_root: Path, runner: GateCommandRunner) -> str:
-    """Create the root-fix item whose title is also the de-duplication key."""
+def _file_root_fix_through_intake(
+    *, nodeid: str, plugin_root: Path, repo_root: Path, runner: GateCommandRunner
+) -> str:
+    """File and route one claim-token-aware root fix through the capture seam."""
     result = _command_result(
         argv=[
-            "bd",
-            "create",
-            f"{_ROOT_FIX_PREFIX}{nodeid}",
-            "--description",
+            "python3",
+            "-c",
+            _INTAKE_FILING_SNIPPET,
+            str(plugin_root),
+            nodeid,
             _root_fix_description(nodeid=nodeid),
-            "--type",
-            "bug",
-            "--priority",
-            "0",
-            "--json",
         ],
         repo_root=repo_root,
         runner=runner,
+        preserve_failure=True,
     )
-    return _created_item_id(stdout=result.stdout)
+    item_id = result.stdout.strip()
+    if not item_id:
+        raise TypeError
+    return item_id
 
 
 def _route_through_intake(
@@ -202,6 +269,7 @@ def _route_through_intake(
         argv=["python3", "-c", _INTAKE_ROUTING_SNIPPET, str(plugin_root), item_id],
         repo_root=repo_root,
         runner=runner,
+        preserve_failure=True,
     )
 
 
@@ -223,32 +291,47 @@ def file_root_fixes(
 ) -> tuple[str, ...]:
     """File one root fix per node id with a retry record no earlier pass accounted for.
 
-    A record is accounted for once a root-fix item was filed from it or an open
-    root-fix item already covered its node id; the memory lives under ``state_dir``
-    so a closed item never re-files an unchanged record, while a new record for the
-    same node id is a recurrence and files again.
+    A record is accounted for only after its root fix has been routed through
+    intake. The memory lives under ``state_dir`` so a closed item never re-files
+    an unchanged record, while a new record for the same node id is a recurrence.
     """
     records = _retry_records(repo_root=repo_root)
     filed_digests = _filed_digests(state_dir=state_dir)
     existing = _open_root_fix_nodeids(repo_root=repo_root, runner=runner)
     filed: list[str] = []
+    refusals: list[str] = []
     for nodeid in sorted({nodeid for _, nodeid in records}):
         new_digests = {
             digest for digest, record_nodeid in records if record_nodeid == nodeid
         } - filed_digests
         if not new_digests:
             continue
-        if nodeid not in existing:
-            item_id = _create_root_fix(nodeid=nodeid, repo_root=repo_root, runner=runner)
-            filed_digests |= new_digests
-            _remember_filed(state_dir=state_dir, digests=filed_digests)
-            _route_through_intake(
-                item_id=item_id, plugin_root=plugin_root, repo_root=repo_root, runner=runner
-            )
-            filed.append(nodeid)
+        try:
+            if nodeid not in existing:
+                _ = _file_root_fix_through_intake(
+                    nodeid=nodeid,
+                    plugin_root=plugin_root,
+                    repo_root=repo_root,
+                    runner=runner,
+                )
+                filed.append(nodeid)
+            else:
+                item_id, triaged = existing[nodeid]
+                if item_id is not None and not triaged:
+                    _route_through_intake(
+                        item_id=item_id,
+                        plugin_root=plugin_root,
+                        repo_root=repo_root,
+                        runner=runner,
+                    )
+                    filed.append(nodeid)
+        except OSError as failure:
+            refusals.append(str(failure))
             continue
         filed_digests |= new_digests
         _remember_filed(state_dir=state_dir, digests=filed_digests)
+    if refusals:
+        raise OSError("; ".join(refusals))
     return tuple(filed)
 
 
@@ -302,12 +385,16 @@ def main(*, argv: Sequence[str] | None = None) -> int:
     plugin_root = registered_plugin_root(
         repo_root=arguments.repo_root, registry=Path.home() / _PLUGIN_REGISTRY
     )
-    filed = file_root_fixes(
-        repo_root=arguments.repo_root,
-        runner=default_gate_command_runner,
-        plugin_root=plugin_root,
-        state_dir=arguments.state_dir,
-    )
+    try:
+        filed = file_root_fixes(
+            repo_root=arguments.repo_root,
+            runner=default_gate_command_runner,
+            plugin_root=plugin_root,
+            state_dir=arguments.state_dir,
+        )
+    except OSError as failure:
+        _ = _logger().error("failed to file flake root fixes", error=str(failure))
+        return 1
     _mark_successful_pass(state_dir=arguments.state_dir)
     _ = _logger().info("filed flake root fixes", nodeids=filed, count=len(filed))
     return 0
