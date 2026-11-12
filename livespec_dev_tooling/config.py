@@ -107,6 +107,7 @@ __all__: list[str] = [
     "load_destructive_cli_allowlist",
     "load_fail_on_unmeasured_first_party",
     "load_gate_check_suite",
+    "load_gate_job_only_tests",
     "load_gate_job_resources",
     "load_mutation_staging_dir",
     "load_plan_lifecycle_anchor",
@@ -1311,6 +1312,14 @@ def load_delegated_gate(*, repo_root: Path) -> bool | None:
     if table is None or "delegated_gate" not in table:
         return None
     return _as_bool(value=table["delegated_gate"], key="delegated_gate")
+
+
+def load_gate_job_only_tests(*, repo_root: Path) -> tuple[str, ...]:
+    """Return declared gate-Job-only test-module globs, or an empty tuple."""
+    table = _read_table(repo_root=repo_root)
+    if table is None or "gate_job_only_tests" not in table:
+        return ()
+    return _as_str_tuple(value=table["gate_job_only_tests"], key="gate_job_only_tests")
 
 
 def load_delegated_commit_tests(*, repo_root: Path) -> bool | None:
