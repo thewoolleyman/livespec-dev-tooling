@@ -90,6 +90,7 @@ check-wrapper-shape  # incident-timing: fast
 check-ansible-lint  # purity: tree-pure # incident-timing: slow
 check-ansible-hostname-free  # purity: tree-pure # incident-timing: fast
 check-ansible-get-url-checksum  # purity: tree-pure # incident-timing: fast
+check-ansible-test-gate-job-only  # purity: tree-pure # incident-timing: fast
 # Reads this repository's own `.livespec.jsonc` against its own
 # `ansible/inventory/group_vars/dev_hosts.yml` and nothing else, so the same
 # tree always yields the same verdict.
