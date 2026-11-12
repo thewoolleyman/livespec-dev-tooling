@@ -19,6 +19,8 @@ from livespec_dev_tooling import incident_hook_entry as module
 from livespec_dev_tooling import incident_trusted_origin
 from livespec_dev_tooling.incident_hook_process import HookRefusalError, canonical
 
+_INCIDENT_ENV_PREFIXES = ("GIT_", "EXPEDITED_", "LIVESPEC_INCIDENT_")
+
 
 def _repository(*, root: Path, failure: int = 0) -> tuple[str, str]:
     for args in (
@@ -53,9 +55,8 @@ def _repository(*, root: Path, failure: int = 0) -> tuple[str, str]:
 def _wired(
     *, root: Path, monkeypatch: pytest.MonkeyPatch, failure: int = 0
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
-    for key in tuple(os.environ):
-        if key.startswith(("GIT_", "EXPEDITED_", "LIVESPEC_INCIDENT_")):
-            monkeypatch.delenv(key, raising=False)
+    delete = monkeypatch.delenv
+    _ = [delete(key) for key in os.environ.copy() if key.startswith(_INCIDENT_ENV_PREFIXES)]
     head, tree = _repository(root=root, failure=failure)
     query = dict(
         repository="owner/repo",

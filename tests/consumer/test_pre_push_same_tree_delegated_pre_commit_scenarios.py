@@ -130,8 +130,8 @@ def _scrubbed_env() -> dict[str, str]:
 
 def _scrub_process(*, monkeypatch: pytest.MonkeyPatch) -> None:
     """Scrub this process too, for the in-process seams that spawn their own git."""
-    for key in [name for name in os.environ if name.startswith(_GIT_SCRUB_PREFIXES)]:
-        monkeypatch.delenv(key, raising=False)
+    delete = monkeypatch.delenv
+    _ = [delete(key) for key in os.environ.copy() if key.startswith(_GIT_SCRUB_PREFIXES)]
 
 
 def _git(*, repo: Path, args: tuple[str, ...]) -> str:
