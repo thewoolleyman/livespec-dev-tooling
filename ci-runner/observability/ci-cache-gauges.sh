@@ -320,7 +320,9 @@ def lag_s(state):
     return max(0, now_s - int(state["lag_started_at_epoch"])) if state.get("lag_started_at_epoch") is not None else 0
 # Two populate intervals, and the populate runs a `*/N` schedule starts in them.
 two_intervals_s = 2 * int(step_min) * 60 if step_min else None
-runs_in_two_intervals = (2 * int(step_min)) // int(step_min) if step_min else None
+# A `*/N` schedule starts one run per interval, so two intervals hold two runs
+# whatever N is; only an unreadable schedule leaves the bound undefined.
+runs_in_two_intervals = 2 if step_min else None
 def lag_trigger_met(state):
     return int(lag_s(state) > two_intervals_s and int(state.get("consecutive_skipped_busy", 0)) >= runs_in_two_intervals)
 warm_set_spec = [

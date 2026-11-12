@@ -51,7 +51,10 @@ def transition(
     """Return one repository's next manifest state from one populate outcome.
 
     `unvisited` means the run stopped before a cache-record read; `unreadable`
-    means the read was attempted but unavailable.  Every other non-success,
+    means the read was attempted but unavailable.  `deferred` means the writer
+    build waited behind the Fabro warm pass: it read the record, so the record
+    is refreshed, but it is neither a busy skip nor a failure, so the busy
+    streak and any lag start are left exactly as they were.  Every other non-success,
     non-busy outcome (a failed, refused or unwritable build) read the record,
     so it ends the busy streak and keeps any recorded lag start, but starts the
     lag when the record it read is stale or missing and none is recorded yet.
@@ -75,6 +78,8 @@ def transition(
             **record,
             "lag_started_at_epoch": None,
         }
+    if outcome == "deferred":
+        return {**old, **record}
     stale = (
         cache_record_commit is None
         or cache_record_toolchain is None

@@ -16,6 +16,7 @@ __all__: list[str] = []
 _ROOT = Path(__file__).resolve().parents[2]
 _GAUGES = _ROOT / "ci-runner" / "observability" / "ci-cache-gauges.sh"
 _HELPER = _ROOT / "ci-runner" / "k3s" / "phase2" / "warm-cache" / "sccache-warm-lag.py"
+_POPULATE = _ROOT / "ci-runner" / "k3s" / "phase2" / "warm-cache" / "warm-cache-populate.sh"
 
 
 def _transition_module() -> object:
@@ -232,6 +233,50 @@ def test_trigger_gauge_derives_its_bounds_from_the_populator_schedule(tmp_path: 
     }
     # At a 60-minute step, two intervals is 7200 s, so a 5000 s lag is not yet past them.
     sixty = _trigger_met_by_repository(tmp_path=tmp_path / "sixty", schedule="*/60 * * * *")
-    assert sixty is not None and sixty["streak-two-long-lag"] == 0
+    assert sixty["streak-two-long-lag"] == 0
     # A schedule that is not a minute step is unreadable as an interval: no trigger datapoint.
     assert _trigger_met_by_repository(tmp_path=tmp_path / "daily", schedule="0 3 * * *") == {}
+
+
+def test_a_fabro_pass_deferral_leaves_the_busy_streak_and_the_lag_start_alone() -> None:
+    """A writer build deferred behind the Fabro pass neither ends a busy streak nor starts a lag."""
+    module = _transition_module()
+    record = {
+        "default_branch_commit": "new",
+        "checkout_toolchain": "1.81.0",
+        "cache_record_commit": "old",
+        "cache_record_toolchain": "1.80.0",
+    }
+    streak = {
+        "consecutive_skipped_busy": 3,
+        "last_built_commit": "old",
+        "last_built_toolchain": "1.80.0",
+        "lag_started_at_epoch": 100,
+    }
+    fresh = {
+        "consecutive_skipped_busy": 0,
+        "last_built_commit": None,
+        "last_built_toolchain": None,
+        "lag_started_at_epoch": None,
+    }
+
+    kept = module.transition(
+        previous=streak, outcome="deferred", run_started_at_epoch=500, **record
+    )
+    unstarted = module.transition(
+        previous=fresh, outcome="deferred", run_started_at_epoch=500, **record
+    )
+
+    assert kept == streak
+    assert unstarted == {**fresh, "last_built_commit": "old", "last_built_toolchain": "1.80.0"}
+
+
+def test_the_fabro_pass_deferral_counts_as_a_busy_skip_with_a_deferred_outcome() -> None:
+    """The populator's Fabro-pass branch keeps m5m2dl's busy count and records the deferral."""
+    script = _POPULATE.read_text(encoding="utf-8")
+    start = script.index("        elif fabro_pass_active; then\n")
+    branch = script[start : script.index("        elif ", start + 1)]
+
+    assert "sccache_skipped_busy=$((sccache_skipped_busy + 1))" in branch
+    assert "lag_outcome=deferred" in branch
+    assert "lag_outcome=failed" not in branch
