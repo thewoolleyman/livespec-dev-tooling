@@ -28,7 +28,11 @@ from livespec_dev_tooling.checks._import_resolution import (  # noqa: E402
 from livespec_dev_tooling.checks._public_api_consumption import (  # noqa: E402
     repo_local_public_names,
 )
-from livespec_dev_tooling.config import load_config, resolve_repo_root  # noqa: E402
+from livespec_dev_tooling.config import (  # noqa: E402
+    filter_first_party_py,
+    load_config,
+    resolve_repo_root,
+)
 from livespec_dev_tooling.fleet._member_sources import read_member_sources  # noqa: E402
 
 if TYPE_CHECKING:
@@ -72,6 +76,17 @@ def _installed_sources() -> dict[Path, str]:
         for path in sorted(package.rglob("*.py"))
         if "_vendor" not in path.relative_to(root).parts
     }
+
+
+def _first_party_installed(*, installed: Mapping[Path, str]) -> dict[Path, str]:
+    """Narrow installed sources to the central oracle's first-party universe."""
+    root = Path(__file__).resolve().parent.parent.parent
+    kept = frozenset(
+        filter_first_party_py(
+            tracked_py=tuple(installed), repo_root=root, tests_tree_prefix="tests/"
+        )
+    )
+    return {path: text for path, text in installed.items() if path in kept}
 
 
 def _declared_api() -> frozenset[tuple[Path, str]]:
@@ -118,7 +133,7 @@ def _findings(*, consumer_sources: Mapping[Path, str]) -> tuple[_Finding, ...]:
         path: top_level_functions(tree=ast.parse(source)) for path, source in installed.items()
     }
     declared = _declared_api()
-    locally_public = repo_local_public_names(sources=installed)
+    locally_public = repo_local_public_names(sources=_first_party_installed(installed=installed))
     findings: set[_Finding] = set()
     for source, text in consumer_sources.items():
         tree = ast.parse(text)
