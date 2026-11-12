@@ -10,7 +10,6 @@ created_at: 2026-11-12T10:49:45Z
 
 - SPECIFICATION/non-functional-requirements.md
 - SPECIFICATION/scenarios.md
-- tests/heading-coverage.json
 
 ### Summary
 
@@ -42,4 +41,4 @@ Then a record of the admission names the Workload, `gates-cq`, `gates-flavor` an
 
 And a record of the scheduling names the gate pod, its namespace, `gmktec-xubuntu` and the bind time
 
-In `tests/heading-coverage.json`, add one entry in the same revise for that scenario heading (`spec_file` `scenarios.md`), with `"test": "TODO"`, `"work_item": "livespec-dev-tooling-2mp63s"` and a non-empty `reason` saying the paragraph is spec-first and livespec-dev-tooling-2mp63s owns the test. The section's own H2 is unchanged, so its existing entry stands.
+The revise commit that ratifies this proposal co-edits `tests/heading-coverage.json` (it is not a spec-target file, so it is not listed above): add one row for the new scenario heading (`spec_file` `scenarios.md`) with `"test": "TODO"`, `"work_item": "livespec-dev-tooling-2mp63s"`, and a non-empty `reason` that names the tier of the owed test. That test is owed at the integration tier or above, against the live fleet observability surface, because the scenario's records exist only on that surface after the cluster has removed its objects. In the same commit, regenerate the debt register with `just generate-heading-coverage-debt-register`, never by hand. The section's own H2 is unchanged, so its existing row stands.
