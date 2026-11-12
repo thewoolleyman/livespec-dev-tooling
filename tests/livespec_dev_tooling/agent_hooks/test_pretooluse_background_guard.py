@@ -462,8 +462,7 @@ def _git_child_env() -> dict[str, str]:
     """
     env = dict(os.environ)
     _ = env.pop("COVERAGE_PROCESS_START", None)
-    for name in [key for key in env if key.startswith("COV_CORE_")]:
-        _ = env.pop(name, None)
+    _ = [env.pop(name, None) for name in [key for key in env if key.startswith("COV_CORE_")]]
     return env
 
 
