@@ -2284,7 +2284,7 @@
     "heading": "## Scenario: an expedited PR defers coverage and spec work while master runs normally",
     "test": "TODO",
     "reason": "A real test at the integration tier or above is owed for this heading: the normally shipped incident capability must exercise this contract with ordinary-path controls; livespec-dev-tooling-6xyc42 owns the implementation and scenario evidence under plan livespec-dev-tooling-bqnzcm. (Re-owned from closed livespec-dev-tooling-egy3ri on 2026-11-11.)",
-    "work_item": "livespec-dev-tooling-6xyc42"
+    "work_item": "livespec-dev-tooling-k1iz4"
   },
   {
     "spec_root": "SPECIFICATION",
