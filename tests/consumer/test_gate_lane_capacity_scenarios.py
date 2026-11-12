@@ -46,6 +46,14 @@ _OVERSIZED_TEST = (
     "tests.consumer.test_gate_lane_capacity_scenarios."
     "test_a_declared_cpu_above_every_committed_lane_is_refused_before_any_gate_job"
 )
+_UNREADABLE_HEADING = (
+    "## Scenario: a repository that declares no gate cpu or memory is not refused over an "
+    "unreadable gates queue file"
+)
+_UNREADABLE_TEST = (
+    "tests.consumer.test_gate_lane_capacity_scenarios."
+    "test_a_consumer_without_cpu_or_memory_submits_at_default_size_despite_an_unreadable_queue"
+)
 
 
 class _GateCluster:
@@ -114,7 +122,7 @@ class _GateCluster:
 def _consumer(*, tmp_path: Path, table: str) -> Path:
     """A fixture consumer carrying the in-tree renderer and committed queue file."""
     repo = tmp_path / "consumer"
-    repo.mkdir()
+    repo.mkdir(parents=True)
     _ = (repo / "pyproject.toml").write_text(
         f"[tool.livespec_dev_tooling]\n{table}", encoding="utf-8"
     )
@@ -161,3 +169,32 @@ def test_a_declared_cpu_above_every_committed_lane_is_refused_before_any_gate_jo
         _coverage_test(heading=_OVERSIZED_HEADING) == _OVERSIZED_TEST,
     ]
     assert facts == [True] * len(facts)
+
+
+def test_a_consumer_without_cpu_or_memory_submits_at_default_size_despite_an_unreadable_queue(
+    *, tmp_path: Path
+) -> None:
+    """Neither a missing nor an invalid queue file blocks a default-sized consumer Job."""
+    defaults = _DEFAULTS.search((_ROOT / _RENDERER).read_text(encoding="utf-8"))
+    assert defaults is not None
+    expected_request = f"requests: {{cpu: {defaults.group(1)}, memory: {defaults.group(2)}}}"
+    submitted: list[str] = []
+    for name, queue_text in (("absent", None), ("unparseable", "kind: [unclosed\n")):
+        repo = _consumer(tmp_path=tmp_path / name, table="")
+        queue = repo / _QUEUE
+        if queue_text is None:
+            queue.unlink()
+        else:
+            _ = queue.write_text(queue_text, encoding="utf-8")
+        cluster = _GateCluster()
+
+        verdict = run_delegated_gate(
+            repo_root=repo, renderer=repo / _RENDERER, runner=cluster, sleeper=_no_sleep
+        )
+
+        assert verdict.refuses_push is False
+        assert not [argv for argv in cluster.issued(needle="--cpu")]
+        assert not [argv for argv in cluster.issued(needle="--memory")]
+        submitted.extend(cluster.submitted_manifests())
+    assert [expected_request in manifest for manifest in submitted] == [True, True]
+    assert _coverage_test(heading=_UNREADABLE_HEADING) == _UNREADABLE_TEST

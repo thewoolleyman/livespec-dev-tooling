@@ -3372,9 +3372,9 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a repository that declares no gate cpu or memory is not refused over an unreadable gates queue file",
-    "test": "TODO",
+    "test": "tests.consumer.test_gate_lane_capacity_scenarios.test_a_consumer_without_cpu_or_memory_submits_at_default_size_despite_an_unreadable_queue",
     "work_item": "livespec-dev-tooling-jgabjo",
-    "reason": "A real test at the integration tier or above is owed for this heading: an integration test that pushes from a fixture consumer declaring neither gate_cpu nor gate_memory with cluster-queue-gates.yaml absent, then unparseable, and asserts the gate client does not refuse over that file and submits the pre-push gate Job at the renderer's default size (proposal gate-resources-lane-capacity-follow-ups, v192). livespec-dev-tooling-jgabjo owns it."
+    "reason": "Consumer-tier test: drives the delegated gate client from a fixture consumer declaring neither gate_cpu nor gate_memory, first with cluster-queue-gates.yaml absent and then unparseable; it asserts both pushes submit at the renderer's derived default size (livespec-dev-tooling-jgabjo)."
   },
   {
     "spec_root": "SPECIFICATION",
