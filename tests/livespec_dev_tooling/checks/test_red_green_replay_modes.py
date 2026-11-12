@@ -287,6 +287,14 @@ def _load_modes():
     return module
 
 
+def _load_suite():
+    """Load the private suite helper without depending on test order."""
+    import importlib
+
+    _ = _load_modes()
+    return importlib.import_module("_red_green_replay_suite")
+
+
 def _run_suite_leg(
     monkeypatch,
     tmp_path: Path,
@@ -295,8 +303,10 @@ def _run_suite_leg(
     xdist: bool = True,
     affected_evidence=None,
 ):
+    from livespec_dev_tooling.commit_replay_delegate import ReplayVerdict
+
     modes = _load_modes()
-    import _red_green_replay_suite as suite
+    suite = _load_suite()
 
     seen: dict[str, object] = {}
 
@@ -308,6 +318,11 @@ def _run_suite_leg(
 
     monkeypatch.setattr(suite, "run_suite", fake_run_suite)
     monkeypatch.setattr(suite, "xdist_importable", lambda: xdist)
+    monkeypatch.setattr(
+        suite,
+        "run_replay",
+        lambda **_kwargs: ReplayVerdict(local=True, reason="local replay"),
+    )
     monkeypatch.setattr(suite, "read_pre_commit_evidence", lambda **_kwargs: None)
     monkeypatch.setattr(suite, "staged_tree_hash", lambda **_kwargs: "tree-under-test")
     monkeypatch.setattr(
@@ -366,7 +381,7 @@ def test_suite_green_uses_same_tree_affected_tests_evidence_in_a_sandbox(
         test_paths=("tests/test_alpha.py", "tests/test_beta.py"),
         run_id="affected-tests:run-1",
     )
-    import _red_green_replay_suite as suite
+    suite = _load_suite()
 
     assert hasattr(suite, "qualifying_affected_tests_evidence")
     run = _suite_run_cls()(returncode=0, output="2 passed in 1.00s\n", timed_out=False)
@@ -393,7 +408,7 @@ def test_sandbox_exempt_requires_git_config_to_answer_true(
     *, monkeypatch, tmp_path: Path, returncode: int, stdout: str, expected: bool
 ) -> None:
     """Only an explicit true sandbox marker permits affected-test reuse."""
-    import _red_green_replay_suite as suite
+    suite = _load_suite()
 
     assert hasattr(suite, "_sandbox_exempt")
     monkeypatch.setattr(
@@ -434,7 +449,7 @@ def test_qualifying_affected_tests_evidence_requires_every_sandbox_condition(
     expected: bool,
 ) -> None:
     """The evidence is usable only for a passing, nonempty same-tree sandbox run."""
-    import _red_green_replay_suite as suite
+    suite = _load_suite()
 
     from livespec_dev_tooling.affected_tests_record import AffectedTestsEvidence
 
