@@ -302,6 +302,8 @@ def _run_suite_leg(
     suite_run,
     xdist: bool = True,
     affected_evidence=None,
+    staged_paths: list[str] | None = None,
+    tests_paths: list[str] | None = None,
 ):
     from livespec_dev_tooling.commit_replay_delegate import ReplayVerdict
 
@@ -335,7 +337,10 @@ def _run_suite_leg(
     msg.write_text("chore: x\n", encoding="utf-8")
     log = _RecordingLog()
     rc = modes._handle_suite_green_mode(  # noqa: SLF001
-        msg_path=msg, log=log, staged_paths=["a.py"]
+        msg_path=msg,
+        log=log,
+        staged_paths=["a.py"] if staged_paths is None else staged_paths,
+        tests_paths=tests_paths,
     )
     return rc, log, msg.read_text(encoding="utf-8"), seen, modes
 
@@ -398,6 +403,55 @@ def test_suite_green_uses_same_tree_affected_tests_evidence_in_a_sandbox(
     assert "TDD-Suite-Green-Scope: affected-tests" in message
     assert "TDD-Suite-Green-Producer: affected-tests:run-1" in message
     assert "TDD-Suite-Green-Scope: full-suite" not in message
+
+
+@pytest.mark.parametrize(
+    ("staged_paths", "tests_paths", "expected_scope", "expected_tail"),
+    [
+        (
+            ["tests/test_cleanup.py"],
+            ["tests/test_cleanup.py"],
+            "staged-tests",
+            "tests/test_cleanup.py",
+        ),
+        (["tests/conftest.py"], [], "full-suite", None),
+    ],
+)
+def test_suite_green_affected_tests_evidence_never_narrows_a_test_only_commit(
+    monkeypatch,
+    tmp_path: Path,
+    staged_paths: list[str],
+    tests_paths: list[str],
+    expected_scope: str,
+    expected_tail: str | None,
+) -> None:
+    """Only a behaviour-preserving product commit takes the affected-tests scope."""
+    from livespec_dev_tooling.affected_tests_record import AffectedTestsEvidence
+
+    evidence = AffectedTestsEvidence(
+        tree_hash="tree-under-test",
+        outcome="passed",
+        test_paths=("tests/test_alpha.py", "tests/test_beta.py"),
+        run_id="affected-tests:run-1",
+    )
+    run = _suite_run_cls()(returncode=0, output="2 passed in 1.00s\n", timed_out=False)
+
+    rc, _log, message, seen, _ = _run_suite_leg(
+        monkeypatch,
+        tmp_path,
+        suite_run=run,
+        affected_evidence=evidence,
+        staged_paths=staged_paths,
+        tests_paths=tests_paths,
+    )
+
+    assert rc == 0
+    assert "tests/test_alpha.py" not in seen["argv"]  # type: ignore[operator]
+    if expected_tail is not None:
+        assert seen["argv"][-1] == expected_tail  # type: ignore[index]
+    assert f"TDD-Suite-Green-Scope: {expected_scope}" in message
+    assert "affected-tests" not in message
+    assert "TDD-Suite-Green-Producer" not in message
 
 
 @pytest.mark.parametrize(

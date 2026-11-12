@@ -246,8 +246,17 @@ def qualifying_affected_tests_evidence(
 def _scope_with_affected_tests_evidence(
     *, cwd: Path, index_tree: str | None, staged_paths: list[str], tests_paths: list[str] | None
 ) -> tuple[str, list[str] | None, tuple[tuple[str, str], ...]]:
-    """Return the sandbox scope and the producer trailer it earns, if any."""
-    evidence = qualifying_affected_tests_evidence(cwd=cwd, index_tree=index_tree)
+    """Return the sandbox scope and the producer trailer it earns, if any.
+
+    Only a behaviour-preserving product commit (the caller passes no
+    `tests_paths`) may take the affected-tests scope; a test-only cleanup
+    or a shared-support commit keeps the scope the Scope bullet gives it.
+    """
+    evidence = (
+        qualifying_affected_tests_evidence(cwd=cwd, index_tree=index_tree)
+        if tests_paths is None
+        else None
+    )
     return _affected_tests.scope_from_evidence(
         evidence=evidence,
         index_tree=index_tree,
