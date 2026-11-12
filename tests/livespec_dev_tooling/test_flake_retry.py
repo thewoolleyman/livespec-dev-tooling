@@ -142,10 +142,31 @@ def test_retried_results_are_written_and_rendered_without_hiding_final_failure(
 
     assert output == tmp_path / "tmp" / "flake-retries" / "retries.jsonl"
     assert [json.loads(line) for line in output.read_text(encoding="utf-8").splitlines()] == [
-        {"attempts": 4, "nodeid": "test_example.py::test_flaky", "outcome": "failed"}
+        {
+            "attempts": 4,
+            "failures": [],
+            "nodeid": "test_example.py::test_flaky",
+            "outcome": "failed",
+        }
     ]
     assert "FLAKE-RETRIED" in plugin.retry_summary(results=[record])
     assert "failed" in plugin.retry_summary(results=[record])
+
+
+def test_a_retry_record_carries_each_failed_attempt_text_and_summary_line(
+    *, tmp_path: Path
+) -> None:
+    """Retry diagnostics preserve each failure for artifacts and terminal output."""
+    plugin = importlib.import_module("livespec_dev_tooling.flake_retry")
+    record = plugin.RetryResult(nodeid="test_example.py::test_flaky", attempts=2, outcome="passed")
+
+    output = plugin.write_retry_records(repo_root=tmp_path, results=[record])
+    stored = json.loads(output.read_text(encoding="utf-8"))
+
+    assert stored.get("failures") == []
+    assert "test_example.py::test_flaky: 2 attempts, passed" in plugin.retry_summary(
+        results=[record]
+    )
 
 
 @pytest.mark.integration
