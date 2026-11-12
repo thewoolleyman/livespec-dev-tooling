@@ -215,7 +215,6 @@ def test_preflight_finds_an_unparseable_member_pin() -> None:
         (None, None, "pin inventory unknown"),
         (_member_pin(), None, "canonical check inventory at v1.187.0 unreadable"),
         (_member_pin(), {"tree": [], "truncated": True}, "unreadable"),
-        (_member_pin(), {"tree": [{"path": "README.md", "mode": "100644"}]}, "is empty"),
     ],
 )
 def test_preflight_skips_when_the_pinned_inventory_is_unavailable(
@@ -227,6 +226,22 @@ def test_preflight_skips_when_the_pinned_inventory_is_unavailable(
     )
     assert isinstance(outcome, RowSkip)
     assert reason in outcome.reason
+
+
+def test_preflight_finds_an_empty_pinned_inventory() -> None:
+    rows = _rows_module()
+    outcome = rows.assert_canonical_check_slugs_wired(
+        ctx=_pinned_preflight_context(
+            pyproject=_member_pin(),
+            pinned_tree={"tree": [{"path": "README.md", "mode": "100644"}]},
+        ),
+        member=_MEMBER,
+    )
+
+    assert isinstance(outcome, RowFinding)
+    assert outcome.severity == "error"
+    assert _MEMBER.repo in outcome.message
+    assert _PYPROJECT_PATH in outcome.message
 
 
 def test_row_skips_unreadable_member_tree_and_aggregate() -> None:

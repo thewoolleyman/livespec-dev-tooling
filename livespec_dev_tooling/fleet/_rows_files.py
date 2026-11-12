@@ -29,7 +29,7 @@ from livespec_dev_tooling.fleet._context import (
     RowPass,
     RowSkip,
 )
-from livespec_dev_tooling.fleet._row_finding import pin_staleness_finding
+from livespec_dev_tooling.fleet._row_finding import cant_parse_finding, pin_staleness_finding
 from livespec_dev_tooling.fleet._settle_window import (
     LatestRelease,
     latest_release_unread_clause,
@@ -125,10 +125,7 @@ def assert_no_tracked_gitlinks(*, ctx: FleetContext, member: FleetMember) -> Row
 
 def _pinned_tag(*, pyproject_text: str) -> str | None:
     """The `[tool.uv.sources].livespec-dev-tooling.tag` value, or None."""
-    try:
-        data: dict[str, object] = tomli.loads(pyproject_text)
-    except tomli.TOMLDecodeError:
-        return None
+    data: dict[str, object] = tomli.loads(pyproject_text)
     tool = data.get("tool")
     if not isinstance(tool, dict):
         return None
@@ -150,13 +147,11 @@ def _locked_tag(*, uv_lock_text: str) -> str | None:
 
     `uv.lock` is TOML: a `[[package]]` array where the dev-tooling entry
     carries `source = { git = "…/livespec-dev-tooling.git?tag=vX.Y.Z#<sha>" }`.
-    Returns the `tag=` query value, or None when the lock is unparseable,
-    carries no such package, or the package is not a git-tag source.
+    Returns the `tag=` query value, or None when the lock carries no such
+    package or the package is not a git-tag source. Invalid TOML propagates
+    to the row boundary, where it becomes a context-scoped finding.
     """
-    try:
-        data: dict[str, object] = tomli.loads(uv_lock_text)
-    except tomli.TOMLDecodeError:
-        return None
+    data: dict[str, object] = tomli.loads(uv_lock_text)
     packages = data.get("package")
     if not isinstance(packages, list):
         return None
@@ -260,8 +255,9 @@ def _lock_outcome(*, ctx: FleetContext, member: FleetMember, tag: str) -> RowFin
     pre-rewrite `uv sync` re-locks against the OLD pin, so without a
     post-rewrite re-lock the committed lock lags the pin by one release
     (livespec-glv6). Returns a finding ONLY on a definitive mismatch;
-    returns None — deferring to the freshness leg — when the lock is
-    absent, unreadable, or carries no git-tag source (never a false red).
+    returns None — deferring to the freshness leg — when the lock is absent,
+    unreadable, or carries no git-tag source (never a false red). An invalid
+    committed lock is instead a context-scoped finding.
     """
     tree = ctx.tree(repo=member.repo)
     if "uv.lock" not in tree.paths:
@@ -269,7 +265,13 @@ def _lock_outcome(*, ctx: FleetContext, member: FleetMember, tag: str) -> RowFin
     text = ctx.file_text(repo=member.repo, path="uv.lock")
     if text is None:
         return None
-    locked = _locked_tag(uv_lock_text=text)
+    try:
+        locked = _locked_tag(uv_lock_text=text)
+    except tomli.TOMLDecodeError:
+        return cant_parse_finding(
+            message=f"{member.repo}: committed uv.lock is not parseable TOML",
+            filter_consuming_preflight=ctx.filter_consuming_preflight,
+        )
     if locked is None:
         return None
     if locked != tag:
@@ -302,13 +304,28 @@ def assert_dev_tooling_pin(*, ctx: FleetContext, member: FleetMember) -> RowOutc
     text = ctx.file_text(repo=member.repo, path="pyproject.toml")
     if text is None:
         return RowSkip(reason=f"{member.repo}: pyproject.toml unreadable")
-    tag = _pinned_tag(pyproject_text=text)
-    if tag is None:
-        return RowFinding(
-            message=(
-                f"{member.repo}: no [tool.uv.sources] {_DEV_TOOLING_REPO} tag pin in pyproject.toml"
-            )
+    tag: str | None = None
+    try:
+        tag = _pinned_tag(pyproject_text=text)
+    except tomli.TOMLDecodeError:
+        pin_problem = cant_parse_finding(
+            message=f"{member.repo}: committed pyproject.toml is not parseable TOML",
+            filter_consuming_preflight=ctx.filter_consuming_preflight,
         )
+    else:
+        pin_problem = (
+            RowFinding(
+                message=(
+                    f"{member.repo}: no [tool.uv.sources] {_DEV_TOOLING_REPO} tag pin in "
+                    "pyproject.toml"
+                )
+            )
+            if tag is None
+            else None
+        )
+    if pin_problem is not None:
+        return pin_problem
+    tag = cast("str", tag)
     # Lock-lockstep leg (error) takes precedence over the freshness leg
     # (warning); a single tail return keeps the function within the
     # max-returns budget.

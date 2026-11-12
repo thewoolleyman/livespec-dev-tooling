@@ -61,7 +61,10 @@ def archive_bytes(*, repo: str, files: dict[str, str | bytes]) -> bytes:
 
 
 def make_context(
-    *, trees: dict[str, dict[str, str | bytes]], unreachable: frozenset[str] = frozenset()
+    *,
+    trees: dict[str, dict[str, str | bytes]],
+    unreachable: frozenset[str] = frozenset(),
+    filter_consuming_preflight: bool = False,
 ) -> FleetContext:
     """A context whose downloader serves each member's tarball from `trees`."""
 
@@ -88,6 +91,7 @@ def make_context(
         run_gh=lift_gh(run),
         download_gh=download,
         members=tuple(FleetMember(repo=repo, repo_class="library") for repo in trees),
+        filter_consuming_preflight=filter_consuming_preflight,
     )
 
 
@@ -96,9 +100,14 @@ def outcome_for(
     trees: dict[str, dict[str, str | bytes]],
     repo: str,
     unreachable: frozenset[str] = frozenset(),
+    filter_consuming_preflight: bool = False,
 ) -> RowPass | RowFinding | RowSkip:
     """Run the row for `repo` over a fake fleet."""
-    ctx = make_context(trees=trees, unreachable=unreachable)
+    ctx = make_context(
+        trees=trees,
+        unreachable=unreachable,
+        filter_consuming_preflight=filter_consuming_preflight,
+    )
     return assert_cross_repo_public_api_declared(
         ctx=ctx, member=FleetMember(repo=repo, repo_class="library")
     )
@@ -282,6 +291,25 @@ def test_a_member_whose_pyproject_will_not_parse_is_a_warning_finding() -> None:
     )
     assert isinstance(outcome, RowFinding)
     assert outcome.severity == "warning"
+    assert "pyproject.toml" in outcome.message
+
+
+def test_an_unparseable_member_pyproject_is_an_error_in_preflight() -> None:
+    outcome = outcome_for(
+        trees={
+            "lib": {
+                "pkg/contract.py": _LIBRARY_SOURCE,
+                "pyproject.toml": "[tool.livespec_dev_tooling\n",
+            },
+            "app": {"app/use.py": _CONSUMER_SOURCE},
+        },
+        repo="lib",
+        filter_consuming_preflight=True,
+    )
+
+    assert isinstance(outcome, RowFinding)
+    assert outcome.severity == "error"
+    assert "lib" in outcome.message
     assert "pyproject.toml" in outcome.message
 
 

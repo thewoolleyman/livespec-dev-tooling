@@ -47,6 +47,7 @@ from dataclasses import dataclass
 __all__: list[str] = [
     "PIN_STALENESS_FINDING_CLASS",
     "RowFinding",
+    "cant_parse_finding",
     "pin_staleness_finding",
 ]
 
@@ -69,6 +70,20 @@ class RowFinding:
     severity: str = "error"
     finding_class: str = ""
     waivers: tuple[tuple[str, str], ...] = ()
+
+
+def cant_parse_finding(*, message: str, filter_consuming_preflight: bool) -> RowFinding:
+    """A committed-file parse failure, scoped to the consuming preflight lane.
+
+    A committed member file that cannot parse is a definitive fact about the
+    member's bytes, not a transient read failure. It therefore remains visible
+    in every central-row context, while becoming release-blocking only where
+    the fan-out consumes findings as a member filter.
+    """
+    return RowFinding(
+        message=message,
+        severity="error" if filter_consuming_preflight else "warning",
+    )
 
 
 def pin_staleness_finding(*, message: str, severity: str) -> RowFinding:

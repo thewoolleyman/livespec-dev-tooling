@@ -305,14 +305,20 @@ def test_non_string_implementation_plugin_is_error_finding() -> None:
     assert outcome.severity == "error"
 
 
-def test_acceptance_mode_row_skips_unparseable_config() -> None:
+def test_acceptance_mode_row_finds_unparseable_config() -> None:
     ctx = make_context(table={_JSONC_ARGS: _ok(text="{ not valid json ::: ")})
-    assert isinstance(assert_acceptance_mode_declared(ctx=ctx, member=_MEMBER), RowSkip)
+    outcome = assert_acceptance_mode_declared(ctx=ctx, member=_MEMBER)
+    assert isinstance(outcome, RowFinding)
+    assert outcome.severity == "warning"
+    assert LIVESPEC_JSONC_PATH in outcome.message
 
 
-def test_acceptance_mode_row_skips_non_object_root() -> None:
+def test_acceptance_mode_row_finds_non_object_root() -> None:
     ctx = make_context(table={_JSONC_ARGS: _ok(text="[1, 2, 3]\n")})
-    assert isinstance(assert_acceptance_mode_declared(ctx=ctx, member=_MEMBER), RowSkip)
+    outcome = assert_acceptance_mode_declared(ctx=ctx, member=_MEMBER)
+    assert isinstance(outcome, RowFinding)
+    assert outcome.severity == "warning"
+    assert LIVESPEC_JSONC_PATH in outcome.message
 
 
 def test_acceptance_mode_row_skips_when_absence_is_unprovable() -> None:
