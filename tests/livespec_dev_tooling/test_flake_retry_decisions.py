@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
+from types import SimpleNamespace
+from typing import cast
+from unittest.mock import Mock
 
 import pytest
 
@@ -91,26 +95,26 @@ def test_a_justfile_change_withholds_the_whole_session(*, tmp_path: Path) -> Non
 
 
 @pytest.mark.parametrize(
-    ("closure", "reason"),
+    "closure",
     [
-        (None, "an unparseable closure module"),
-        (_UNDETERMINABLE_CLOSURE, "an indeterminable path in a closure module"),
+        None,
+        _UNDETERMINABLE_CLOSURE,
     ],
 )
-def test_an_unreadable_or_indeterminable_closure_withholds_every_retry(
+def test_an_unreadable_or_indeterminable_closure_does_not_withhold_the_session(
     *,
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
     closure: tuple[set[Path], set[str], bool] | None,
-    reason: str,
 ) -> None:
-    """Closure uncertainty moves from one test marker to the whole session."""
+    """Closure uncertainty is handled by the individual test's retry marker."""
     test_path = tmp_path / "test_example.py"
     _ = test_path.write_text("VALUE = 1\n", encoding="utf-8")
 
     def closure_result(**_: object) -> tuple[set[Path], set[str], bool] | None:
         return closure
 
+    assert closure_result() is closure
     monkeypatch.setattr(decisions, "_closure", closure_result)
 
     assert (
@@ -120,33 +124,46 @@ def test_an_unreadable_or_indeterminable_closure_withholds_every_retry(
             change_paths={Path("README.md")},
             memo={},
         )
-        == reason
+        is None
     )
 
 
-def test_the_closure_loop_returns_the_first_session_withholding_reason(
-    *, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+@pytest.mark.parametrize(
+    ("closure", "reason"),
+    [
+        (None, "an unparseable closure module"),
+        (_UNDETERMINABLE_CLOSURE, "an indeterminable path in a closure module"),
+    ],
+)
+def test_closure_uncertainty_is_recorded_against_its_own_test(
+    *,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    closure: tuple[set[Path], set[str], bool] | None,
+    reason: str,
 ) -> None:
-    """Collection stops when the first test proves the session is unsafe."""
-    first = tmp_path / "test_first.py"
-    second = tmp_path / "test_second.py"
-    _ = first.write_text("VALUE = 1\n", encoding="utf-8")
-    _ = second.write_text("VALUE = 2\n", encoding="utf-8")
-    calls: list[Path] = []
+    """Each uncertainty reason belongs to the test that cannot be retried."""
+    test_path = tmp_path / "test_example.py"
+    _ = test_path.write_text("VALUE = 1\n", encoding="utf-8")
+    decision_members = vars(decisions)
 
-    def withheld(*, test_path: Path, **_: object) -> str | None:
-        calls.append(test_path)
-        return "an unparseable closure module" if test_path == first else None
+    assert "retry_withheld_reason_for" in decision_members
+    retry_reason = cast(Callable[..., str | None], decision_members["retry_withheld_reason_for"])
+    plugin = __import__("livespec_dev_tooling.flake_retry", fromlist=["mark_untouched_tests"])
+    marker_members = vars(plugin)
+    assert "mark_untouched_tests" in marker_members
+    mark = cast(Callable[..., str | None], marker_members["mark_untouched_tests"])
 
-    monkeypatch.setattr(decisions, "_closure_withheld_reason", withheld)
+    def closure_result(**_: object) -> tuple[set[Path], set[str], bool] | None:
+        return closure
 
-    assert (
-        decisions.session_withheld_reason(
-            repo_root=tmp_path,
-            test_paths=(first, second),
-            change_paths={Path("README.md")},
-            memo={},
-        )
-        == "an unparseable closure module"
+    monkeypatch.setattr(decisions, "_closure", closure_result)
+    monkeypatch.setattr(plugin, "change_paths", Mock(return_value={Path("README.md")}))
+    item = SimpleNamespace(
+        path=test_path, nodeid="test_example.py::test_example", add_marker=Mock()
     )
-    assert calls == [first]
+    withheld: dict[str, str] = {}
+
+    assert retry_reason(repo_root=tmp_path, test_path=test_path, memo={}) == reason
+    assert mark(root=tmp_path, items=[item], withheld_by_nodeid=withheld) is None
+    assert withheld == {"test_example.py::test_example": reason}

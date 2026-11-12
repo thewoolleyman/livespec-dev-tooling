@@ -20,6 +20,7 @@ __all__: list[str] = [
     "RETRY_ATTEMPTS",
     "RETRY_DELAY_SECONDS",
     "retry_marker_for",
+    "retry_withheld_reason_for",
     "session_withheld_reason",
 ]
 
@@ -135,10 +136,12 @@ def _unsafe_change_reason(*, repo_root: Path, change_paths: set[Path]) -> str | 
     return "a flake-retry plugin change"
 
 
-def _closure_withheld_reason(
+def retry_withheld_reason_for(
     *, repo_root: Path, test_path: Path, memo: dict[Path, _ModuleFacts | None]
 ) -> str | None:
-    """Name a closure analysis condition that must withhold every retry."""
+    """Name closure uncertainty that makes this test itself count as touched."""
+    if not test_path.is_relative_to(repo_root):
+        return None
     analyzed = _closure(repo_root=repo_root, test_path=test_path, memo=memo)
     if analyzed is None:
         return "an unparseable closure module"
@@ -155,15 +158,9 @@ def session_withheld_reason(
     memo: dict[Path, _ModuleFacts | None],
 ) -> str | None:
     """Return the one whole-session reason that must withhold every retry."""
+    del test_paths, memo
     unsafe = _unsafe_change_reason(repo_root=repo_root, change_paths=change_paths)
-    if unsafe is not None:
-        return unsafe
-    for test_path in test_paths:
-        if test_path.is_relative_to(repo_root):
-            withheld = _closure_withheld_reason(repo_root=repo_root, test_path=test_path, memo=memo)
-            if withheld is not None:
-                return withheld
-    return None
+    return unsafe
 
 
 def retry_marker_for(
