@@ -140,6 +140,16 @@ ci_converge_unit_files:
   - src: warm-cache/warm-cache-cronjob.yaml
     dest: warm-cache/warm-cache-cronjob.yaml
     mode: "0644"
+  # The thewoolleyman/fabro fork's separately budgeted writer pass
+  # (livespec-dev-tooling-m5m2dl). converge-warm-cache.sh applies the manifest
+  # and loads the script into the warm-cache-populate ConfigMap; missing here,
+  # both reads fail on the host and the whole warm-cache converge stops.
+  - src: warm-cache/warm-cache-fabro-cronjob.yaml
+    dest: warm-cache/warm-cache-fabro-cronjob.yaml
+    mode: "0644"
+  - src: warm-cache/warm-cache-fabro-populate.sh
+    dest: warm-cache/warm-cache-fabro-populate.sh
+    mode: "0644"
   # 0644 and not 0755: this is a ConfigMap PAYLOAD executed inside the populator
   # pod, never on the host.
   - src: warm-cache/warm-cache-populate.sh
