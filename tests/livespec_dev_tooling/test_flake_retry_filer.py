@@ -747,6 +747,20 @@ def _scenario_test(*, heading: str) -> str:
     return str(row["test"])
 
 
+def _fixture_host(*, tmp_path: Path) -> tuple[Path, Path]:
+    """Return a fixture HOME whose plugin registry records a fixture build for ``tmp_path``."""
+    home = tmp_path / "fixture-home"
+    plugin_root = tmp_path / "fixture-plugin"
+    registry = home / ".claude" / "plugins" / "installed_plugins.json"
+    _ = registry.parent.mkdir(parents=True)
+    _ = plugin_root.mkdir()
+    _write_registry(
+        path=registry,
+        entries={_PLUGIN_KEY: [{"projectPath": str(tmp_path), "installPath": str(plugin_root)}]},
+    )
+    return home, plugin_root
+
+
 class _ScenarioLedger:
     """Fixture intake store that records capture, routing, and prohibited raw writes."""
 
@@ -765,6 +779,10 @@ class _ScenarioLedger:
         if "file_captured_work_item" in argv[2]:
             return self._capture(argv=argv)
         return self._route(argv=argv)
+
+    def plugin_roots(self) -> set[str]:
+        """Return every plugin root the reader passed to an intake program."""
+        return {command[3] for command in self.commands if command[0] == "python3"}
 
     def _capture(self, *, argv: list[str]) -> Success[GateCommandResult]:
         nodeid = argv[4]
@@ -821,21 +839,18 @@ def test_the_host_reader_files_only_the_untracked_retry_record_through_main(
             "title": f"root-fix: {tracked}",
         }
     )
-    plugin_root = tmp_path / "fixture-plugin"
-    home = tmp_path / "fixture-home"
-    _ = plugin_root.mkdir()
-    _ = home.mkdir()
+    home, plugin_root = _fixture_host(tmp_path=tmp_path)
     filer = importlib.import_module("livespec_dev_tooling.flake_retry_filer")
 
     assert (
         filer.main(
             argv=["--repo-root", str(tmp_path), "--state-dir", str(tmp_path / "state")],
             runner=ledger,
-            plugin_root=plugin_root,
             home=home,
         )
         == 0
     )
+    assert ledger.plugin_roots() == {str(plugin_root)}
     assert ledger.captures == [untracked]
     assert not any(command[:2] == ["bd", "create"] for command in ledger.commands)
 
@@ -855,22 +870,20 @@ def test_the_host_reader_retries_a_refused_route_without_refiling(
     routed = "tests/test_flakes.py::test_b_routed"
     _write_records(repo_root=tmp_path, nodeids=(refused, routed))
     ledger = _ScenarioLedger(refusal_nodeid=refused)
-    plugin_root = tmp_path / "fixture-plugin"
-    home = tmp_path / "fixture-home"
-    _ = plugin_root.mkdir()
-    _ = home.mkdir()
+    home, plugin_root = _fixture_host(tmp_path=tmp_path)
     filer = importlib.import_module("livespec_dev_tooling.flake_retry_filer")
     argv = ["--repo-root", str(tmp_path), "--state-dir", str(tmp_path / "state")]
 
-    assert filer.main(argv=argv, runner=ledger, plugin_root=plugin_root, home=home) == 1
+    assert filer.main(argv=argv, runner=ledger, home=home) == 1
     assert "dt-1: intake refused: claim-token-missing" in capsys.readouterr().err
     assert ledger.captures == [refused, routed]
     assert ledger.items[0]["status"] == "backlog"
     assert ledger.items[1]["status"] == "ready"
 
-    assert filer.main(argv=argv, runner=ledger, plugin_root=plugin_root, home=home) == 0
+    assert filer.main(argv=argv, runner=ledger, home=home) == 0
     assert ledger.captures == [refused, routed]
     assert ledger.routes == ["dt-1"]
+    assert ledger.plugin_roots() == {str(plugin_root)}
     assert ledger.items[0]["status"] == "ready"
 
 
@@ -886,21 +899,18 @@ def test_the_host_reader_uses_capture_and_leaves_the_item_intake_triaged(*, tmp_
     nodeid = "tests/test_flakes.py::test_claim_token_tenant"
     _write_records(repo_root=tmp_path, nodeids=(nodeid,))
     ledger = _ScenarioLedger()
-    plugin_root = tmp_path / "fixture-plugin"
-    home = tmp_path / "fixture-home"
-    _ = plugin_root.mkdir()
-    _ = home.mkdir()
+    home, plugin_root = _fixture_host(tmp_path=tmp_path)
     filer = importlib.import_module("livespec_dev_tooling.flake_retry_filer")
 
     assert (
         filer.main(
             argv=["--repo-root", str(tmp_path), "--state-dir", str(tmp_path / "state")],
             runner=ledger,
-            plugin_root=plugin_root,
             home=home,
         )
         == 0
     )
+    assert ledger.plugin_roots() == {str(plugin_root)}
     assert ledger.captures == [nodeid]
     assert not any(command[:2] == ["bd", "create"] for command in ledger.commands)
     assert ledger.items == [
