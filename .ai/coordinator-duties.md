@@ -1279,6 +1279,11 @@ CI-capacity routing, and is not used to cut the factory cap. Correction recorded
   - dispatch-control-plane is monitor-only, and must not absorb today's operations.
   - Launchers take the factory from the target repository's committed `default_factory` (R503).
   - Keep interactive turns lean (R509).
+  - Never propose GitHub's merge queue for any fleet repository: the account has no team plan. For "green apart, red
+    together", offer only what the account has: branch protection's require-up-to-date (strict), or our own tooling
+    re-testing the rebased result before or after merge. The maintainer, 2026-11-12 ~02:0xZ, recorded on epic
+    `livespec-dev-tooling-6tgd2z` at 01:56:09Z: "I DON'T HAVE A TEAM ACCOUNT I CANNOT USE THE MERGE QUEUE, IVE TOLD YOU
+    THIS MANY TIMES".
 
 ## 13. Directives come from the plan and the ledger, never from a handoff
 
