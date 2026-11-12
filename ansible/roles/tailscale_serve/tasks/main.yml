@@ -12,10 +12,12 @@
 # (curl 000, against hp-xubuntu's 200 on the same path), so the Dispatcher had
 # no route to it.
 #
-# ADDITIVE ONLY. The role never turns a mapping off and never touches a port
-# it was not given. A host whose mappings were made by hand (hp-xubuntu, and
-# vps for its 8010 and 8443) declares nothing for them and is left exactly as
-# it is.
+# ADDITIVE ONLY. This publish path never turns a mapping off and never touches
+# a port it was not given. A host whose mappings were made by hand (vps for its
+# 8010 and 8443) declares nothing for them and is left exactly as it is. A port
+# that has outlived its service is retired only by naming it in
+# `tailscale_serve_retired_ports`, through the separate tasks/retire.yml
+# (hp-xubuntu's legacy Fabro ports, bd-ib-iud52v).
 #
 # The mapping persists in tailscaled's own state (`--bg`), so there is no unit
 # here: once set it survives tailscaled restarts and reboots.
@@ -67,3 +69,7 @@
     not ((':' ~ item.https_port ~ ' ') in (tailscale_serve_status.stdout | default(''))
     and ('proxy ' ~ item.backend) in (tailscale_serve_status.stdout | default('')))
   changed_when: true
+
+- name: Retire each serve port this host names
+  ansible.builtin.include_tasks: retire.yml
+  when: tailscale_serve_retired_ports | length > 0

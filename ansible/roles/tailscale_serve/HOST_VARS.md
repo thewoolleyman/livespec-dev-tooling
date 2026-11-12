@@ -3,6 +3,7 @@
 | Variable | Default | Meaning |
 | --- | --- | --- |
 | `tailscale_serve_mappings` | `[]` | The `tailscale serve` mappings this host publishes. Each entry carries `https_port` (the tailnet HTTPS port) and `backend` (the loopback URL it proxies to). |
+| `tailscale_serve_retired_ports` | `[]` | The tailnet HTTPS ports this host retires. Each one the node still serves is turned off with `tailscale serve --https=<port> off` (`tasks/retire.yml`). A port that is also a declared mapping is refused before any change. |
 
 An empty list leaves the host exactly as it is. The role is additive: it publishes
 a declared mapping the node does not already serve, re-points a declared port that
@@ -38,6 +39,18 @@ tailscale_serve_mappings:
     backend: http://127.0.0.1:8765
 ```
 
-`hp-xubuntu` declares nothing: its mappings were made by hand before this role
-existed, and they are left as they are. `vps`'s other hand-made mappings (8010,
-8443) are likewise left as they are.
+`hp-xubuntu` publishes nothing: it runs no Fabro server since it left the docker
+factory role on 2026-11-02. Its three hand-made legacy Fabro mappings, made before
+this role existed, outlived that server, and it retires them (bd-ib-iud52v, the
+legacy Fabro carrier retirement). `ansible/former-sandbox-hosts.yml` runs this role
+for it:
+
+```yaml
+tailscale_serve_retired_ports:
+  - 32276
+  - 32277
+  - 32278
+```
+
+`vps`'s other hand-made mappings (8010, 8443) are named nowhere and are left as
+they are.
