@@ -1018,7 +1018,7 @@ sandbox_driver_kubernetes_versioned_releases:
 
 # tailscale_serve: publish the fabro-server instance's loopback port on the
 # tailnet, so the Dispatcher reaches https://gmktec-xubuntu.perch-rudd.ts.net:32276.
-# hp-xubuntu made its by hand and declares nothing; vps declares its own (roles/tailscale_serve/HOST_VARS.md).
+# hp-xubuntu publishes nothing and retires its hand-made legacy ports; vps declares its own (roles/tailscale_serve/HOST_VARS.md).
 tailscale_serve_mappings:
   - https_port: 32276
     backend: http://127.0.0.1:32276
