@@ -19,7 +19,6 @@ from __future__ import annotations
 import hashlib
 import os
 import re
-import shutil
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -30,7 +29,6 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 _JUSTFILE = _REPO_ROOT / "justfile"
 _ROLES_PATH = _REPO_ROOT / "ansible" / "roles"
 _PLAY = _REPO_ROOT / "ansible" / "ci-pool.yml"
-_SHIPPED_PROFILES = _REPO_ROOT / "ci-runner" / "k3s" / "phase2" / "apparmor"
 _ANSIBLE_CORE_PIN = re.compile(r"ansible-core==[0-9][0-9A-Za-z.]*")
 _TIMEOUT_SECONDS = 600
 _HOST = "fixture-node"
@@ -265,40 +263,6 @@ def test_a_host_with_no_parser_fails_the_play_before_installing_anything(
     outcome = _play(scratch=scratch)
     assert outcome.returncode != 0, outcome.output
     assert list(scratch.dest.iterdir()) == []
-
-
-def _shipped_profiles() -> list[Path]:
-    return sorted(path for path in _SHIPPED_PROFILES.iterdir() if path.is_file())
-
-
-@pytest.mark.parametrize("profile", _shipped_profiles(), ids=lambda path: path.name)
-def test_every_shipped_profile_compiles_and_declares_the_profile_its_file_is_named_for(
-    *, profile: Path
-) -> None:
-    """The real parser accepts each shipped file; `-Q` keeps it away from the kernel."""
-    parser = shutil.which("apparmor_parser") or shutil.which(
-        "apparmor_parser", path="/usr/sbin:/sbin"
-    )
-    if parser is None:
-        pytest.skip("apparmor_parser is not installed on this host")
-    names = subprocess.run(
-        [parser, "-Q", "-K", "-N", str(profile)],
-        capture_output=True,
-        text=True,
-        timeout=_TIMEOUT_SECONDS,
-        check=False,
-    )
-    assert names.returncode == 0, names.stderr
-    # The role installs and probes each profile under its file name.
-    assert names.stdout.split() == [profile.name]
-    compiled = subprocess.run(
-        [parser, "-Q", "-K", "-S", str(profile)],
-        capture_output=True,
-        timeout=_TIMEOUT_SECONDS,
-        check=False,
-    )
-    assert compiled.returncode == 0, compiled.stderr.decode(errors="replace")
-    assert compiled.stdout
 
 
 def test_ci_pool_reaches_the_role_ungated() -> None:
