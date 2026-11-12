@@ -14,11 +14,15 @@ pull request's CI instead of in other sessions' pushes.
 It reads each job's `container:` declaration, in either YAML shape (the
 `container: <image>` scalar, or a block whose `image:` key is its first-level
 child, wherever it sits among the block's keys), and groups the lines by image
-reference. Two or more distinct references fail the check, naming each distinct
-image and every line that declares it. One reference, or no container at all,
-passes. A service container's `image:` and a step input named `image` are not job
-`container:` images and contribute nothing. A repository with no
-`.github/workflows/ci.yml` has no workflow to judge and passes.
+reference. Every reference must name one image repository and one release
+version; the check fails otherwise, naming each image and every line that
+declares it. Flavors may differ only as a layering: one flavor, the gate flavor,
+must be a dash-separated prefix of every other flavor named, and a job on any
+other flavor must run no target of the repository's `just check` aggregate (the
+bare `just check` included). No gate flavor, or a non-gate job running an
+aggregate target, fails. A service container's `image:` and a step input named
+`image` are not job `container:` images and contribute nothing. A repository
+with no `.github/workflows/ci.yml` has no workflow to judge and passes.
 
 FAIL-BY-DEFAULT: the spec says MUST fail, so there is no severity lever.
 
@@ -140,7 +144,7 @@ def _container_images(*, source: str) -> list[_Image]:
 
 
 def _aggregate_targets(*, repo_root: Path) -> set[str]:
-    """The enumerable targets of the consumer's ``just check`` aggregate."""
+    """The ``check`` aggregate itself plus its enumerable member targets."""
     inventory = repo_root / "check-targets.txt"
     try:
         source = inventory.read_text(encoding="utf-8")
@@ -150,7 +154,7 @@ def _aggregate_targets(*, repo_root: Path) -> set[str]:
         except OSError:
             return set()
     entries = {line.split("#", maxsplit=1)[0].strip() for line in source.splitlines()}
-    return {entry for entry in entries if _TARGET.fullmatch(entry)}
+    return {"check"} | {entry for entry in entries if _TARGET.fullmatch(entry)}
 
 
 def _image_parts(*, image: str) -> tuple[str, str, str] | None:
