@@ -161,10 +161,12 @@ def test_retention_keeps_sessions_held_by_process_cwd_or_file_descriptor(*, tmp_
     dead = tmp_root / "claude-1000" / "project" / "dead"
     for session in (held_by_fd, held_by_cwd, dead):
         session.mkdir(parents=True)
-        _age(path=session, seconds=_AGED_SECONDS)
     held_file = held_by_fd / "tasks" / "output.txt"
     held_file.parent.mkdir()
     held_file.write_text("held", encoding="utf-8")
+    # Age after creating the fd target: adding `tasks` refreshes the session mtime.
+    for session in (held_by_fd, held_by_cwd, dead):
+        _age(path=session, seconds=_AGED_SECONDS)
     proc_root = tmp_path / "proc"
     for pid in ("100", "101", "102"):
         environment = proc_root / pid / "environ"
