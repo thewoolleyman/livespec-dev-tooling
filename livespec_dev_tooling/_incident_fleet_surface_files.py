@@ -106,12 +106,21 @@ SURFACE_ROOTS: Mapping[str, tuple[str, ...]] = MappingProxyType(
             "ci-runner/k3s/phase2/gates/gate-job-template.yaml",
         ),
         "PR mode transport": (".github/workflows/incident-label-ci.yml",),
+        # The forge-read Action is part of every surface whose workflows use it
+        # (livespec-dev-tooling-levu6j). Its `uses:` reference reaches its
+        # action.yml, but nothing reaches the command it puts on the job's path.
         "CI matrix/batch/direct action": (
             ".github/workflows/ci.yml",
             ".github/workflows/reusable-check-matrix.yml",
             ".github/actions/run-check/action.yml",
+            ".github/actions/forge-read/action.yml",
+            ".github/actions/forge-read/livespec-forge-read",
         ),
-        "CI dependency/aggregate/merge context": (".github/workflows/ci.yml",),
+        "CI dependency/aggregate/merge context": (
+            ".github/workflows/ci.yml",
+            ".github/actions/forge-read/action.yml",
+            ".github/actions/forge-read/livespec-forge-read",
+        ),
         "Release and distribution": (
             ".github/workflows/release-please.yml",
             ".github/workflows/release-dispatch.yml",
