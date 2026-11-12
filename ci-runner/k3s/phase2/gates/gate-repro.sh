@@ -55,9 +55,19 @@ repo_root="$(cd "${repo_root}" && pwd)"
 case "${interval}" in
   "" | *[!0-9]* | 0*) echo "FATAL: --interval '${interval}' is not a positive whole number of seconds" >&2; exit 2 ;;
 esac
+# The capture loop fires SLACK seconds early (see the loop below), so an interval
+# no longer than that would capture on every tick.
+SLACK=15
+if [ "${interval}" -le $((SLACK * 2)) ]; then
+  echo "FATAL: --interval '${interval}' must exceed $((SLACK * 2)) seconds" >&2
+  exit 2
+fi
 
 tree="$(git -C "${repo_root}" rev-parse 'HEAD^{tree}')"
 started="$(date -u +%Y%m%dT%H%M%SZ)"
+# RFC3339, the form a Job's metadata.creationTimestamp takes, so the two compare
+# as strings: a Job created before this run started is never this run's Job.
+started_rfc3339="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 [ -n "${out}" ] || out="${TOOLING_ROOT}/tmp/gate-repro/${started}-$(basename "${repo_root}")"
 mkdir -p "${out}"
 {
@@ -70,19 +80,26 @@ mkdir -p "${out}"
 } > "${out}/run.txt"
 echo ":: gate-repro: evidence directory ${out}"
 
-kubectl_gates() { with-gates-kubeconfig kubectl --namespace gates "$@"; }
+# EVERY cluster call here is bounded. An unbounded read that hangs would stop
+# the captures, and the captures are the only evidence a hung Job leaves.
+kubectl_gates() { with-gates-kubeconfig kubectl --request-timeout=30s --namespace gates "$@"; }
 
 capture() {
   local stamp job
   stamp="$(date -u +%Y%m%dT%H%M%SZ)"
+  # THIS run's Job: the NEWEST Job of this tree on this queue created since the
+  # run started. A finished same-tree Job is kept for its
+  # ttlSecondsAfterFinished, so the first name in the list could be an earlier
+  # run's.
   job="$(kubectl_gates get jobs \
           --selector "kueue.x-k8s.io/queue-name=${queue},livespec.gate/tree-hash=${tree}" \
-          --output 'jsonpath={.items[*].metadata.name}' 2>>"${out}/capture-errors.txt" || true)"
+          --output 'jsonpath={range .items[*]}{.metadata.creationTimestamp} {.metadata.name}{"\n"}{end}' \
+          2>>"${out}/capture-errors.txt" |
+        awk -v since="${started_rfc3339}" '$1 >= since' | sort | tail -n 1 | awk '{ print $2 }' || true)"
   if [ -z "${job}" ]; then
-    echo "${stamp} no Job of tree ${tree} on queue ${queue}" >> "${out}/capture-errors.txt"
+    echo "${stamp} no Job of tree ${tree} on queue ${queue} created since ${started_rfc3339}" >> "${out}/capture-errors.txt"
     return 0
   fi
-  job="${job%% *}"
   echo "${job}" > "${out}/job-name.txt"
   kubectl_gates get job "${job}" --output json > "${out}/job-${stamp}.json" 2>>"${out}/capture-errors.txt" || true
   kubectl_gates logs "job/${job}" --all-containers --tail=-1 > "${out}/log-${stamp}.txt" 2>&1 || true
@@ -94,10 +111,14 @@ capture() {
     --queue "${queue}" --stack-interval "${interval}" ) > "${out}/client.log" 2>&1 &
 client=$!
 
+# FIRES SLACK SECONDS EARLY: the loop wakes every 10 s and a capture takes time,
+# so a capture triggered at >= interval would land after it. Triggered at
+# >= interval - SLACK, two capture STARTS are at most interval - 5 s apart,
+# which keeps "at least once every <interval> seconds" true.
 last=0
 while kill -0 "${client}" 2>/dev/null; do
   now="$(date +%s)"
-  if [ $((now - last)) -ge "${interval}" ]; then
+  if [ $((now - last)) -ge $((interval - SLACK)) ]; then
     capture
     last="${now}"
   fi
