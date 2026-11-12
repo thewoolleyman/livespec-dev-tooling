@@ -1199,9 +1199,8 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: an API server with no 504 responses gets no invented zero",
-    "test": "TODO",
-    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, running the control-plane emitter against a fixture /metrics with no code=504 row and asserting no apiserver_request_total data point is sent. livespec-dev-tooling-f5qjzn owns it; the implementation PR that ships it replaces this row.",
-    "work_item": "livespec-dev-tooling-f5qjzn"
+    "test": "tests.consumer.test_control_plane_emitter_scenarios.test_api_server_without_504s_emits_no_invented_zero",
+    "reason": "Consumer-tier: runs the committed control-plane emitter against a fixture scrape containing 200 and 500 API-server rows but no 504 row, then proves it sends no apiserver_request_total data point (livespec-dev-tooling-nbpzvy)."
   },
   {
     "spec_root": "SPECIFICATION",

@@ -175,3 +175,25 @@ def test_api_server_504_responses_are_summed_by_verb_and_resource(tmp_path: Path
         )
         == "tests.consumer.test_control_plane_emitter_scenarios.test_api_server_504_responses_are_summed_by_verb_and_resource"
     )
+
+
+def test_api_server_without_504s_emits_no_invented_zero(tmp_path: Path) -> None:
+    """A scrape with no 504 row sends no API-server request-total data point."""
+    payload = _emit(
+        tmp_path=tmp_path,
+        metrics_text="\n".join(
+            [
+                'apiserver_request_total{verb="PUT",resource="leases",code="200"} 9',
+                'apiserver_request_total{verb="GET",resource="pods",code="500"} 2',
+                "",
+            ]
+        ),
+    )
+    metrics = payload["resourceMetrics"][0]["scopeMetrics"][0]["metrics"]
+    assert "apiserver_request_total" not in {metric["name"] for metric in metrics}
+    assert (
+        _coverage_test(
+            heading="## Scenario: an API server with no 504 responses gets no invented zero"
+        )
+        == "tests.consumer.test_control_plane_emitter_scenarios.test_api_server_without_504s_emits_no_invented_zero"
+    )
