@@ -261,6 +261,7 @@ WARM_ROOT="${WARM_ROOT:-/warm}"
 REPOS_FILE="${REPOS_FILE:-/config/repos.txt}"
 KEEP_GENERATIONS="${KEEP_GENERATIONS:-2}"
 VERIFIER="${VERIFIER:-/scripts/verify-uv-cache.py}"
+LAG_HELPER="${LAG_HELPER:-$(dirname "${VERIFIER}")/sccache-warm-lag.py}"
 # The verifier's railway dependency (header, "THE VERIFIER'S RAILWAY"): where
 # it is installed, and the version pin it is installed at.
 PY_DEPS_DIR="${PY_DEPS_DIR:-${WARM_ROOT}/py-deps}"
@@ -329,6 +330,22 @@ SCRATCH="${SCRATCH:-$(mktemp -d)}"
 PYPI_FILES_PREFIX="https://files.pythonhosted.org/packages/"
 
 log() { printf '[warm-cache-populate %s] %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*"; }
+
+# sccache_warm_set_event REPOSITORY OUTCOME HEAD TOOLCHAIN RECORD_HEAD RECORD_TOOLCHAIN
+#
+# Record the decision separately from the aggregate counters.  The helper at
+# the end of the run merges these events with the previous atomic manifest.
+sccache_warm_set_event() {
+  python3 - "${sccache_warm_set_events}" "$@" <<'PY'
+import json, sys
+path, repository, outcome, head, toolchain, record_head, record_toolchain = sys.argv[1:]
+event = {"repository": repository, "outcome": outcome,
+         "default_branch_commit": head or None, "checkout_toolchain": toolchain or None,
+         "cache_record_commit": record_head or None, "cache_record_toolchain": record_toolchain or None}
+with open(path, "a", encoding="utf-8") as events:
+    events.write(json.dumps(event, sort_keys=True) + "\n")
+PY
+}
 
 # verifier ARG... — the verifier, with its railway dependency on the path and
 # NOWHERE else (header, "THE VERIFIER'S RAILWAY"). Every invocation of
@@ -462,6 +479,7 @@ command -v git >/dev/null || { log "FATAL: git not on PATH"; exit 2; }
 command -v python3 >/dev/null || { log "FATAL: python3 not on PATH"; exit 2; }
 python3 -c 'import tomllib' 2>/dev/null || { log "FATAL: python3 is older than 3.11 (no tomllib); the verifier cannot run"; exit 2; }
 [ -r "${VERIFIER}" ] || { log "FATAL: verifier ${VERIFIER} not readable (converge-warm-cache.sh ships it in the script ConfigMap)"; exit 2; }
+[ -r "${LAG_HELPER}" ] || { log "FATAL: warm-set lag helper ${LAG_HELPER} not readable (converge-warm-cache.sh ships it in the script ConfigMap)"; exit 2; }
 [ -r "$(dirname "${VERIFIER}")/uv_cache_layout.py" ] || { log "FATAL: uv_cache_layout.py not beside ${VERIFIER} (the verifier imports it; converge-warm-cache.sh ships both)"; exit 2; }
 # The verifier's railway dependency (header, "THE VERIFIER'S RAILWAY"). The
 # probe is the acceptance test, not the install's exit code: it is re-run after
@@ -889,6 +907,8 @@ cargo_warmed=0
 sccache_built=0
 sccache_skipped=0
 sccache_skipped_busy=0
+sccache_warm_set_events="${SCRATCH}/sccache-warm-set-events.jsonl"
+: > "${sccache_warm_set_events}"
 admitted_last=""
 target_built=0
 target_skipped=0
@@ -902,6 +922,7 @@ for name in "${fetched[@]}"; do
     if ! command -v cargo >/dev/null; then
       log "   Cargo.lock present but cargo is not on PATH (this image lacks the Rust layer); skipping the cargo pre-warm"
       failed+=("${name}:cargo")
+      sccache_warm_set_event "${name}" unvisited "" "" "" ""
     else
       if grep -q 'source = "git+' "${src}/Cargo.lock"; then
         log "   WARN: Cargo.lock carries git+ sources; the crates proxy serves the registry only, those fetch from their forge in every job"
@@ -917,6 +938,11 @@ for name in "${fetched[@]}"; do
         failed+=("${name}:cargo")
       fi
       # ---- the compilation cache's writer build (see the header) ----
+      sha="$(git -C "${src}" rev-parse HEAD)"
+      toolchain="$(cd "${src}" && rustc --version 2>/dev/null | awk '{print $2}')"
+      record_commit=""
+      record_toolchain=""
+      lag_outcome=unvisited
       if [ ! -x "${SCCACHE_BIN}" ]; then
         log "   sccache: ${SCCACHE_BIN} not mounted; no compilation-cache build"
         sccache_skipped=$((sccache_skipped + 1))
@@ -924,27 +950,35 @@ for name in "${fetched[@]}"; do
         log "   sccache: no writer credential in this pod (converge-sccache-redis.sh projects it); no compilation-cache build"
         failed+=("${name}:sccache-no-credential")
       else
-        sha="$(git -C "${src}" rev-parse HEAD)"
-        toolchain="$(cd "${src}" && rustc --version 2>/dev/null | awk '{print $2}')"
         marker_key="livespec:sccache:populated:${name}"
         want="${sha}@${toolchain}"
         have="$(redis_cmd GET "${marker_key}" 2>/dev/null || echo "(unreachable)")"
         if [ "${have}" = "${want}" ]; then
           log "   sccache: cache already holds ${sha:0:8}@${toolchain}; no build"
           sccache_skipped=$((sccache_skipped + 1))
+          record_commit="${sha}"
+          record_toolchain="${toolchain}"
+          lag_outcome=current
         elif [ "${have}" = "(unreachable)" ]; then
           log "   sccache: redis unreachable at ${SCCACHE_REDIS_ENDPOINT}; no build"
           failed+=("${name}:sccache-unreachable")
+          lag_outcome=unreadable
         elif fabro_pass_active; then
           log "   sccache: the Fabro warm pass is running (or its Job list is unreadable); deferring the build this tick (serialized behind the Fabro pass)"
-          sccache_skipped_busy=$((sccache_skipped_busy + 1))
+          lag_outcome=failed
         elif ! admitted_last="$(admitted_jobs)"; then
           log "   sccache: cannot read the pool's admitted-job count (Kueue API); treating the pool as busy — no build"
           admitted_last=""
           failed+=("${name}:sccache-admitted-unreadable")
+          lag_outcome=failed
         elif [ "${admitted_last}" -gt "${POPULATE_ADMITTED_JOB_THRESHOLD}" ]; then
           log "   sccache: pool busy (${admitted_last} admitted jobs > threshold ${POPULATE_ADMITTED_JOB_THRESHOLD}); skipping the build this tick (guardrail)"
           sccache_skipped_busy=$((sccache_skipped_busy + 1))
+          if [[ "${have}" == *@* ]]; then
+            record_commit="${have%@*}"
+            record_toolchain="${have##*@}"
+          fi
+          lag_outcome=busy
         else
           log "   sccache: pool has ${admitted_last} admitted jobs (threshold ${POPULATE_ADMITTED_JOB_THRESHOLD}); building"
           build_dir="${JOB_WORK_ROOT}/${name}/${name}"
@@ -979,6 +1013,9 @@ for name in "${fetched[@]}"; do
           if [ "${build_ok}" = true ]; then
             if redis_cmd --auth "${SCCACHE_REDIS_WRITER_USERNAME}" "${SCCACHE_REDIS_WRITER_PASSWORD}" SET "${marker_key}" "${want}" >/dev/null; then
               sccache_built=$((sccache_built + 1))
+              record_commit="${sha}"
+              record_toolchain="${toolchain}"
+              lag_outcome=built
               log "   sccache: cache now holds ${sha:0:8}@${toolchain} (marker set)"
               # Snapshot the tier NOW rather than up to five minutes later
               # (../sccache/ `--save`): a reboot in that window would restore
@@ -992,13 +1029,16 @@ for name in "${fetched[@]}"; do
             else
               log "   sccache: build ok but the marker SET failed; it will rebuild next tick"
               failed+=("${name}:sccache-marker")
+              lag_outcome=failed
             fi
           else
             failed+=("${name}:sccache-build")
+            lag_outcome=failed
           fi
           rm -rf "${JOB_WORK_ROOT:?}/${name}"
         fi
       fi
+      sccache_warm_set_event "${name}" "${lag_outcome}" "${sha}" "${toolchain}" "${record_commit}" "${record_toolchain}"
     fi
   fi
 done
@@ -1330,11 +1370,37 @@ log "run summary: uv generation $(basename "${published_gen:-none}") (rebuilt=${
 # reader may open it while the next run writes. `generation` names the LIVE
 # generation (unchanged on a rebuilt=0, refused or rejected run).
 toolchain_version="$(command -v rustc >/dev/null && rustc --version 2>/dev/null | awk '{print $2}' || echo "")"
-python3 - "${WARM_ROOT}/populate-manifest.json" "$(basename "${published_gen:-}")" "${run_started}" "${synced}" "${#failed[@]}" "${cargo_warmed}" "${sccache_built}" "${sccache_skipped}" "${toolchain_version}" "${sccache_skipped_busy}" "${admitted_last}" "${POPULATE_ADMITTED_JOB_THRESHOLD}" "${generation}" "${rebuilt}" "${refused}" "${verified}" "${target_built}" "${target_skipped}" "${target_skipped_busy}" "${fuzz_toolchain}" "${failed[@]:-}" <<'PY' || log "WARN: manifest not written"
+sccache_warm_sets="$(python3 - "${LAG_HELPER}" "${WARM_ROOT}/populate-manifest.json" "${sccache_warm_set_events}" "${run_started}" <<'PY'
+import importlib.util, json, sys
+helper, manifest, events, started = sys.argv[1:]
+spec = importlib.util.spec_from_file_location("sccache_warm_lag", helper)
+module = importlib.util.module_from_spec(spec)
+assert spec and spec.loader
+spec.loader.exec_module(module)
+try:
+    prior = json.load(open(manifest)).get("sccache_warm_sets", {})
+except (OSError, ValueError):
+    prior = {}
+next_sets = {name: state for name, state in prior.items() if isinstance(name, str) and isinstance(state, dict)}
+for line in open(events):
+    event = json.loads(line)
+    name = event["repository"]
+    next_sets[name] = module.transition(previous=prior.get(name), outcome=event["outcome"],
+        run_started_at_epoch=int(started), default_branch_commit=event.get("default_branch_commit"),
+        checkout_toolchain=event.get("checkout_toolchain"), cache_record_commit=event.get("cache_record_commit"),
+        cache_record_toolchain=event.get("cache_record_toolchain"))
+print(json.dumps(next_sets, sort_keys=True))
+PY
+)" || {
+  log "WARN: warm-set lag state not written"
+  sccache_warm_sets='{}'
+  failed+=("sccache-warm-lag")
+}
+python3 - "${WARM_ROOT}/populate-manifest.json" "$(basename "${published_gen:-}")" "${run_started}" "${synced}" "${#failed[@]}" "${cargo_warmed}" "${sccache_built}" "${sccache_skipped}" "${toolchain_version}" "${sccache_skipped_busy}" "${admitted_last}" "${POPULATE_ADMITTED_JOB_THRESHOLD}" "${generation}" "${rebuilt}" "${refused}" "${verified}" "${target_built}" "${target_skipped}" "${target_skipped_busy}" "${fuzz_toolchain}" "${sccache_warm_sets}" "${failed[@]:-}" <<'PY' || log "WARN: manifest not written"
 import json, sys, time, os
 (path, gen, started, synced, nfailed, warmed, built, skipped, toolchain, skipped_busy, admitted, threshold, run_id,
- rebuilt, refused, verified, tbuilt, tskipped, tskipped_busy, fuzz_toolchain) = sys.argv[1:21]
-failed = [f for f in sys.argv[21:] if f]
+ rebuilt, refused, verified, tbuilt, tskipped, tskipped_busy, fuzz_toolchain, warm_sets) = sys.argv[1:22]
+failed = [f for f in sys.argv[22:] if f]
 now = int(time.time())
 doc = {"generation": gen, "published_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now)), "published_at_epoch": now,
        "duration_s": now - int(started), "repos_synced": int(synced), "repos_failed": int(nfailed), "failed": failed,
@@ -1342,7 +1408,7 @@ doc = {"generation": gen, "published_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", ti
        "admitted_jobs": int(admitted) if admitted else None, "admitted_job_threshold": int(threshold), "toolchain_version": toolchain,
        "run_id": run_id, "rebuilt": int(rebuilt), "refused": int(refused), "verified": int(verified),
        "target_built": int(tbuilt), "target_skipped": int(tskipped), "target_skipped_busy": int(tskipped_busy),
-       "fuzz_toolchain": fuzz_toolchain or None}
+       "fuzz_toolchain": fuzz_toolchain or None, "sccache_warm_sets": json.loads(warm_sets)}
 tmp = path + ".tmp"
 with open(tmp, "w") as f: json.dump(doc, f, indent=1)
 os.replace(tmp, path)

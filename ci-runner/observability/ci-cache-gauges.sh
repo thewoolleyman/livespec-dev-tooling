@@ -45,6 +45,11 @@
 #   .sccache_built, .sccache_skipped_busy, .admitted_jobs
 #                                  the manifest's counts, including the
 #                                  admitted-job gate's reading and skips.
+#   sccache.warm_set_consecutive_skipped_busy {repository},
+#   sccache.warm_set_lag_s {repository}, and .warm_set_lag_trigger_met
+#                                  the per-repository record's busy streak,
+#                                  lag (explicitly zero when current), and
+#                                  the two-populate-interval conjunction.
 #
 # FAIL-CLOSED PER SOURCE, like the heartbeat's split: a source that cannot be
 # READ (the warm root missing, the manifest unparseable, the template
@@ -235,12 +240,12 @@ else
 fi
 
 # ---- assemble + POST -----------------------------------------------------------
-payload="$(python3 - "${readings}" "${now_ns}" "${host_name}" <<'PY'
+payload="$(python3 - "${readings}" "${now_ns}" "${host_name}" "${MANIFEST}" <<'PY'
 import json, sys
 r = {}
 for line in open(sys.argv[1]):
     k, _, v = line.rstrip("\n").partition("="); r[k] = v
-now_ns, host = sys.argv[2], sys.argv[3]
+now_ns, host, manifest = sys.argv[2], sys.argv[3], sys.argv[4]
 def attrs(d): return [{"key": k, "value": {"stringValue": v}} for k, v in d.items()]
 def g(name, key, unit, desc, a=None, double=False):
     if key not in r or r[key] == "": return None
@@ -248,6 +253,22 @@ def g(name, key, unit, desc, a=None, double=False):
     dp["asDouble" if double else "asInt"] = float(r[key]) if double else str(int(float(r[key])))
     if a: dp["attributes"] = attrs(a)
     return {"name": "livespec.ci_cache." + name, "description": desc, "unit": unit, "gauge": {"dataPoints": [dp]}}
+def warm_set_gauge(name, field, unit, desc, transform=None):
+    try:
+        sets = json.load(open(manifest)).get("sccache_warm_sets", {})
+    except (OSError, ValueError):
+        return None
+    points = []
+    for repository, state in sorted(sets.items()):
+        if not isinstance(repository, str) or not isinstance(state, dict):
+            continue
+        value = state.get(field) if transform is None else transform(state)
+        if value is None:
+            continue
+        points.append({"timeUnixNano": now_ns, "asInt": str(int(value)),
+                       "attributes": attrs({"repository": repository})})
+    return None if not points else {"name": "livespec.ci_cache." + name, "description": desc,
+                                    "unit": unit, "gauge": {"dataPoints": points}}
 spec = [
   ("kill_switch", "kill_switch", "1", "1 when CI_CACHE_KILL_SWITCH is set in the hook pod template (every tier off for every job)", None, False),
   ("generation_age_s", "uv_generation_age_s", "s", "Seconds since the current warm-cache generation was published", {"tier": "uv"}, False),
@@ -276,7 +297,16 @@ spec = [
   ("populate.sccache_skipped_busy", "populate_sccache_skipped_busy", "{repos}", "Writer builds the populator skipped because the pool's admitted-job count was above the guardrail threshold", None, False),
   ("populate.admitted_jobs", "populate_admitted_jobs", "{jobs}", "The pool's admitted-job count the populator read before its last writer-build decision", None, False),
 ]
-metrics = [m for m in (g(*s) for s in spec) if m]
+now_s = int(now_ns) // 1_000_000_000
+warm_set_spec = [
+  ("sccache.warm_set_consecutive_skipped_busy", "consecutive_skipped_busy", "{runs}", "Consecutive admitted-job busy skips of this repository's compilation-cache warm build"),
+  ("sccache.warm_set_lag_s", "lag_started_at_epoch", "s", "Seconds this repository's compilation-cache warm set has lagged its default branch", lambda state: max(0, now_s - int(state["lag_started_at_epoch"])) if state.get("lag_started_at_epoch") is not None else 0),
+  ("sccache.warm_set_lag_trigger_met", "", "1", "1 when this repository's warm-set lag exceeds two populate intervals and its busy-skip streak reaches two runs", lambda state: int((max(0, now_s - int(state["lag_started_at_epoch"])) if state.get("lag_started_at_epoch") is not None else 0) > 3600 and int(state.get("consecutive_skipped_busy", 0)) >= 2)),
+]
+metrics = [m for m in (g(*s) for s in spec) if m] + [
+    m for name, field, unit, desc, *transform in warm_set_spec
+    if (m := warm_set_gauge(name, field, unit, desc, transform[0] if transform else None))
+]
 print(json.dumps({"resourceMetrics": [{"resource": {"attributes": attrs({"service.name": "ci-runner-liveness", "host.name": host})},
   "scopeMetrics": [{"scope": {"name": "ci-cache-gauges"}, "metrics": metrics}]}]}))
 print(len(metrics), file=sys.stderr)
