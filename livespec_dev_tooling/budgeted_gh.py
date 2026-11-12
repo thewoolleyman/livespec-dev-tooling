@@ -194,11 +194,12 @@ def gh_read(
     )
 
 
-def forge_call(
+def forge_call(  # noqa: PLR0913  — the call's identity plus its three injected effects.
     *,
     name: str,
     endpoint: str,
     method: str = "GET",
+    idempotent: bool = False,
     execute: GhExecutor | None = None,
     sleep: Callable[[float], None] = time.sleep,
     now: Callable[[], float] = time.time,
@@ -207,22 +208,30 @@ def forge_call(
 
     The released incident CI entrance's side of the rule in
     `SPECIFICATION/contracts.md`'s expedited incident execution rules (work item
-    livespec-dev-tooling-levu6j): each attempt is one `gh api --include` read
-    stopped at 30 seconds, so the rate-limit headers the waits need are read
-    from the answer, and `_forge_policy.run_call` decides every retry. Workflow
-    steps get the same rule from the composite Action `forge-read`.
+    livespec-dev-tooling-levu6j). Each attempt is one `gh api --include` call
+    stopped at 30 seconds, and `_forge_policy.run_call` decides every retry from
+    the status and headers the answer really carried. Workflow steps get the
+    same rule from the composite Action `forge-read`.
+
+    ⚠️ The attempt is spawned here, NOT through `gh_read`'s budget client. That
+    client reads `x-ratelimit-*` headers and turns an answer it reads as limited
+    into a refusal with no status. Every real GitHub 403 carries those headers,
+    so through the client a secondary-limit 403 lost its reset wait and a
+    permission 403 was retried, which the rule forbids
+    (legacy-coordinator-agent's grade of livespec-dev-tooling#4401). The rule
+    owns its own waits and budget, so it needs the raw answer.
     """
+    spawn = execute or partial(_spawn_gh, cwd=None, timeout=ATTEMPT_TIMEOUT_SECONDS)
+    argv = ["gh", "api", "--include", "--method", method, endpoint]
 
     def attempt() -> Attempt:
-        reply = gh_read(
-            args=["api", "--include", "--method", method, endpoint],
-            timeout=ATTEMPT_TIMEOUT_SECONDS,
-            execute=execute,
-        )
-        return parse_included(stdout=reply.stdout, stderr=reply.stderr)
+        invocation = spawn(argv=argv)
+        if invocation.unspawnable is not None:
+            return Attempt(status=None, headers={}, body="", stderr=invocation.unspawnable)
+        return parse_included(stdout=invocation.stdout, stderr=invocation.stderr)
 
     return run_call(
-        name=name, method=method, idempotent=False, attempt=attempt, sleep=sleep, now=now
+        name=name, method=method, idempotent=idempotent, attempt=attempt, sleep=sleep, now=now
     )
 
 

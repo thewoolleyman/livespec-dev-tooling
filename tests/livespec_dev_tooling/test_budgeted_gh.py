@@ -695,3 +695,26 @@ def test_forge_call_reads_with_headers_and_applies_the_retry_rule() -> None:
     )
     assert (result.outcome, result.body, waits) == ("answer", '{"n": 7}', [2])
     assert seen == ["gh api --include --method GET repos/o/r/pulls/7"] * 2
+
+
+def test_forge_call_reads_an_unspawnable_gh_as_an_attempt_with_no_status() -> None:
+    """A `gh` that never ran is a retryable attempt with no status, named by why it did not run."""
+    replies = iter(
+        [
+            GhInvocation(argv="gh", unspawnable="gh: not found"),
+            GhInvocation(argv="gh", stdout='HTTP/2.0 200 OK\n\n{"n": 7}', stderr="", returncode=0),
+        ]
+    )
+    waits: list[float] = []
+    result = forge_call(
+        name="pr-body",
+        endpoint="repos/o/r/pulls/7",
+        execute=lambda **_kwargs: next(replies),
+        sleep=waits.append,
+        now=lambda: 0.0,
+    )
+    assert (result.outcome, waits, result.lines[0]) == (
+        "answer",
+        [2],
+        "forge-read: pr-body attempt 1/6 status=none kind=transport wait=2s answer=gh: not found",
+    )

@@ -81,7 +81,7 @@ class Budget:
     attempts: int = 0
     waits: int = 0
     waited: int = 0
-    headerless_rate_waits: int = 0
+    rate_limited_answers: int = 0
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -163,8 +163,10 @@ def _asked_wait(*, kind: str, attempt: Attempt, budget: Budget, now: Callable[[]
     elif attempt.headers.get("x-ratelimit-remaining") == "0" and reset.isdigit():
         asked = max(0, int(reset) - int(now()))
     else:
-        asked = _HEADERLESS_RATE_WAIT * 2**budget.headerless_rate_waits
-        budget.headerless_rate_waits += 1
+        # Doubled once for every earlier rate-limited answer of the call,
+        # whatever header that answer carried.
+        asked = _HEADERLESS_RATE_WAIT * 2**budget.rate_limited_answers
+    budget.rate_limited_answers += 1
     return max(asked, doubling)
 
 
@@ -224,12 +226,16 @@ def run_call(  # noqa: PLR0913  — the call's identity plus its four injected e
             why = "attempts exhausted" if retry else "answer not retryable"
             return _failed(name=name, attempt=got, kind=kind, lines=lines, why=why)
         asked = _asked_wait(kind=kind, attempt=got, budget=shared, now=now)
+        if shared.waited + asked > WAIT_BUDGET_SECONDS:
+            # The wait is refused, never taken, so the line names none.
+            lines.append(
+                _line(name=name, number=shared.attempts, attempt=got, kind=kind, wait="none")
+            )
+            why = f"wait of {asked}s asked would pass the {WAIT_BUDGET_SECONDS}s budget"
+            return _failed(name=name, attempt=got, kind=kind, lines=lines, why=why)
         lines.append(
             _line(name=name, number=shared.attempts, attempt=got, kind=kind, wait=f"{asked}s")
         )
-        if shared.waited + asked > WAIT_BUDGET_SECONDS:
-            why = f"wait of {asked}s asked would pass the {WAIT_BUDGET_SECONDS}s budget"
-            return _failed(name=name, attempt=got, kind=kind, lines=lines, why=why)
         sleep(asked)
         shared.waits += 1
         shared.waited += asked
