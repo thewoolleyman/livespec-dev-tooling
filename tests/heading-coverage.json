@@ -1335,9 +1335,8 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: an agent session's foreground pytest of a gate-Job-only test module is refused whatever its worker count",
-    "test": "TODO",
-    "reason": "A real test at the integration tier or above is owed for this heading: the shipped PreToolUse guard, fed a Bash tool call for a foreground pytest naming a module matched by a fixture repository's declared gate_job_only_tests glob with no -n, on a host that can read the gates kubeconfig, refuses it naming the gate-start form, and does not refuse the same call dispatched through gate-start. livespec-dev-tooling-cvef23 owns it.",
-    "work_item": "livespec-dev-tooling-cvef23"
+    "test": "tests.livespec_dev_tooling.agent_hooks.test_pretooluse_background_guard.test_a_declared_gate_job_only_test_file_without_xdist_is_refused",
+    "reason": "Integration-tier: drives the shipped PreToolUse hook over stdin in a fixture repository that declares a gate_job_only_tests glob. A no-xdist foreground file, directory, and node id are each refused with the exact gate-start remedy, while the dispatched form and absent, empty, or malformed declarations stay allowed (livespec-dev-tooling-cvef23)."
   },
   {
     "spec_root": "SPECIFICATION",

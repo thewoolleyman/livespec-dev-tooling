@@ -234,6 +234,52 @@ plan_lifecycle_anchor = true
 # so. Nothing about the fail-closed rule moves: once a push HAS delegated, a
 # verdict that never arrives refuses it rather than falling back to local.
 delegated_gate = true
+# Tests that execute Ansible are gate-Job-only: a foreground run on the dev
+# host competes with fleet work, even when it does not request xdist workers.
+gate_job_only_tests = [
+    "tests/consumer/test_docker_sandbox_slice_scenario.py",
+    "tests/consumer/test_fabro_deferred_restart_scenario.py",
+    "tests/consumer/test_fabro_environment_catalog_scenario.py",
+    "tests/consumer/test_fabro_host_checkout_provisioning.py",
+    "tests/consumer/test_fabro_instance_axes_scenario.py",
+    "tests/consumer/test_fabro_settings_drift_scenario.py",
+    "tests/livespec_dev_tooling/test_apparmor_profile_role.py",
+    "tests/livespec_dev_tooling/test_ci_pool_drift_reports_pending_changes.py",
+    "tests/livespec_dev_tooling/test_ci_pool_factory_only_agent_roles.py",
+    "tests/livespec_dev_tooling/test_ci_pool_factory_reach_check.py",
+    "tests/livespec_dev_tooling/test_ci_pool_observability_and_prune_units.py",
+    "tests/livespec_dev_tooling/test_ci_runner_k3s_agent_node_taint.py",
+    "tests/livespec_dev_tooling/test_claim_token_race_drill_playbook.py",
+    "tests/livespec_dev_tooling/test_container_termination_drill_playbook.py",
+    "tests/livespec_dev_tooling/test_dev_host_compaction.py",
+    "tests/livespec_dev_tooling/test_dev_host_retention.py",
+    "tests/livespec_dev_tooling/test_docker_sandbox_slice_retire.py",
+    "tests/livespec_dev_tooling/test_fabro_client_role.py",
+    "tests/livespec_dev_tooling/test_fabro_factory_registry_role.py",
+    "tests/livespec_dev_tooling/test_fabro_hosts_target_units.py",
+    "tests/livespec_dev_tooling/test_fabro_server_retained_read_only.py",
+    "tests/livespec_dev_tooling/test_factory_kubeconfig_delivery.py",
+    "tests/livespec_dev_tooling/test_factory_workspace_root_provisioning.py",
+    "tests/livespec_dev_tooling/test_homelab_worker_factory_instance.py",
+    "tests/livespec_dev_tooling/test_hp_coexistence_budget.py",
+    "tests/livespec_dev_tooling/test_incident_observer_role_funnel_paths.py",
+    "tests/livespec_dev_tooling/test_incident_observer_role_scratch_guards.py",
+    "tests/livespec_dev_tooling/test_k3s_pod_egress_probe_playbook.py",
+    "tests/livespec_dev_tooling/test_keyring_budget_single_effective_value.py",
+    "tests/livespec_dev_tooling/test_node_loss_drill_playbook.py",
+    "tests/livespec_dev_tooling/test_node_status_credential_concurrent_rbac_apply.py",
+    "tests/livespec_dev_tooling/test_otel_collector_ci_pool_converge.py",
+    "tests/livespec_dev_tooling/test_otel_collector_converge.py",
+    "tests/livespec_dev_tooling/test_reboot_ci_server_playbook.py",
+    "tests/livespec_dev_tooling/test_restart_k3s_agent_playbook.py",
+    "tests/livespec_dev_tooling/test_sandbox_driver_kubernetes_topology_spread.py",
+    "tests/livespec_dev_tooling/test_sandbox_image_warm.py",
+    "tests/livespec_dev_tooling/test_sandbox_image_warm_ci_workflow_pins.py",
+    "tests/livespec_dev_tooling/test_sandbox_image_warm_crictl_data_dir.py",
+    "tests/livespec_dev_tooling/test_sandbox_image_warm_process_spec_urls.py",
+    "tests/livespec_dev_tooling/test_sandbox_role_retire.py",
+    "tests/livespec_dev_tooling/test_vxlan_tunnel_tso_role.py",
+]
 # The dev host delegates this commit-time aggregate when it can submit a gates
 # Job; sandbox and credentialless hosts retain the local pre-commit gate.
 # The delegated pre-commit Job derives this declared bootstrap, replacing only

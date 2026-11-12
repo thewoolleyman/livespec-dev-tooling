@@ -890,6 +890,7 @@ def test_should_deny_still_denies_every_bare_backgrounded_gate(command: str, exp
 _FOREGROUND_CHECK_ID = "pretooluse-foreground-gate-deny"
 _BACKGROUND_CHECK_ID = "pretooluse-background-guard-deny"
 _FOREGROUND_PYTEST_CHECK_ID = "pretooluse-foreground-full-suite-pytest-deny"
+_GATE_JOB_ONLY_PYTEST_CHECK_ID = "pretooluse-foreground-gate-job-only-pytest-deny"
 
 # A hook body that does nothing: what makes a hook "installed" is that git
 # would RUN it, not what it does when run.
@@ -940,6 +941,72 @@ def _write_delegated_gate_config(*, repository: Path, delegated: bool) -> None:
         f"[tool.livespec_dev_tooling]\ndelegated_gate = {str(delegated).lower()}\n",
         encoding="utf-8",
     )
+
+
+@pytest.mark.integration
+def test_a_declared_gate_job_only_test_file_without_xdist_is_refused(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A declared expensive module is not safe merely because it omits `-n`."""
+    repository = _make_hooked_repo(repo=tmp_path / "delegating", hooks=())
+    _ = (repository / "pyproject.toml").write_text(
+        "[tool.livespec_dev_tooling]\n"
+        "delegated_gate = true\n"
+        'gate_job_only_tests = ["tests/test_ansible_role.py"]\n',
+        encoding="utf-8",
+    )
+    test_path = repository / "tests" / "test_ansible_role.py"
+    test_path.parent.mkdir()
+    _ = test_path.write_text("def test_role() -> None:\n    pass\n", encoding="utf-8")
+    credential = tmp_path / "gates.kubeconfig"
+    _ = credential.write_text("apiVersion: v1\nkind: Config\n", encoding="utf-8")
+    monkeypatch.setenv("GATES_KUBECONFIG", str(credential))
+
+    command = "pytest tests/test_ansible_role.py"
+    event = _foreground_refusal_event(
+        command=command, cwd=repository, monkeypatch=monkeypatch, capsys=capsys
+    )
+    assert event["check_id"] == _GATE_JOB_ONLY_PYTEST_CHECK_ID
+    assert _one_call_detached_form(command=command) in str(event.get("hint", ""))
+
+    for declared_target in ("pytest tests", "pytest tests/test_ansible_role.py::test_role"):
+        declared_event = _foreground_refusal_event(
+            command=declared_target,
+            cwd=repository,
+            monkeypatch=monkeypatch,
+            capsys=capsys,
+        )
+        assert declared_event["check_id"] == _GATE_JOB_ONLY_PYTEST_CHECK_ID
+
+    declared_event = _foreground_refusal_event(
+        command=f"cd {repository} && pytest tests/test_ansible_role.py",
+        cwd=tmp_path,
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+    )
+    assert declared_event["check_id"] == _GATE_JOB_ONLY_PYTEST_CHECK_ID
+
+    allowed = json.dumps(
+        {
+            "tool_name": "Bash",
+            "tool_input": {
+                "command": "mise exec -- just gate-start -- pytest tests/test_ansible_role.py"
+            },
+        }
+    )
+    assert _run_main(monkeypatch=monkeypatch, stdin_text=allowed) == 0
+
+    for declaration in ("", "gate_job_only_tests = []\n", 'gate_job_only_tests = "wrong"\n'):
+        _ = (repository / "pyproject.toml").write_text(
+            "[tool.livespec_dev_tooling]\ndelegated_gate = true\n" + declaration,
+            encoding="utf-8",
+        )
+        no_declaration = json.dumps(
+            {"tool_name": "Bash", "tool_input": {"command": "pytest tests/test_ansible_role.py"}}
+        )
+        assert _run_main(monkeypatch=monkeypatch, stdin_text=no_declaration) == 0
 
 
 @pytest.mark.integration

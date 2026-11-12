@@ -107,6 +107,7 @@ __all__: list[str] = [
     "load_destructive_cli_allowlist",
     "load_fail_on_unmeasured_first_party",
     "load_gate_check_suite",
+    "load_gate_job_only_tests",
     "load_gate_job_resources",
     "load_mutation_staging_dir",
     "load_plan_lifecycle_anchor",
@@ -1311,6 +1312,21 @@ def load_delegated_gate(*, repo_root: Path) -> bool | None:
     if table is None or "delegated_gate" not in table:
         return None
     return _as_bool(value=table["delegated_gate"], key="delegated_gate")
+
+
+def load_gate_job_only_tests(*, repo_root: Path) -> tuple[str, ...]:
+    """Return well-formed gate-Job-only test globs, or no declaration.
+
+    This optional guard declaration must never turn a malformed consumer
+    configuration into a refusal: absent, empty, and non-string-array values
+    all retain the ordinary explicit-pytest rule.
+    """
+    table = _read_table(repo_root=repo_root)
+    value = table.get("gate_job_only_tests") if table is not None else None
+    items = cast("list[object]", value) if isinstance(value, list) else []
+    if not all(isinstance(item, str) for item in items):
+        return ()
+    return tuple(cast("list[str]", items))
 
 
 def load_delegated_commit_tests(*, repo_root: Path) -> bool | None:

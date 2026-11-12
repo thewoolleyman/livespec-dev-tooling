@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import subprocess
 from pathlib import Path
+from typing import cast
 
 import pytest
 
@@ -947,7 +948,7 @@ def _load_gate_check_suite(*, repo_root: Path) -> tuple[str, ...] | None:
     assert callable(loader)
     value = loader(repo_root=repo_root)
     assert value is None or isinstance(value, tuple)
-    return value
+    return cast("tuple[str, ...] | None", value)
 
 
 def test_gate_check_suite_none_when_no_pyproject(*, tmp_path: Path) -> None:
@@ -966,6 +967,20 @@ def test_gate_check_suite_none_when_key_absent(*, tmp_path: Path) -> None:
         body="[tool.livespec_dev_tooling]\ndelegated_gate = true\n",
     )
     assert _load_gate_check_suite(repo_root=tmp_path) is None
+
+
+def test_gate_job_only_tests_with_a_non_string_member_fail_open(*, tmp_path: Path) -> None:
+    """A malformed optional guard declaration must not block explicit pytest."""
+    _write_pyproject(
+        repo_root=tmp_path,
+        body=("[tool.livespec_dev_tooling]\n" 'gate_job_only_tests = ["tests/test_role.py", 1]\n'),
+    )
+    loader_name = "load_gate_job_only_tests"
+    loader = getattr(config_module, loader_name)
+    assert callable(loader)
+    value = loader(repo_root=tmp_path)
+    assert isinstance(value, tuple)
+    assert value == ()
 
 
 def test_gate_check_suite_entries_are_read_in_declaration_order(*, tmp_path: Path) -> None:

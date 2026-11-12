@@ -16,15 +16,18 @@ from __future__ import annotations
 
 import re
 import shlex
+from fnmatch import fnmatchcase
 from pathlib import Path
 
 from livespec_dev_tooling.agent_hooks._command_shape import Invocation, invocations
+from livespec_dev_tooling.config import load_gate_job_only_tests
 from livespec_dev_tooling.gate_command import pytest_command
 from livespec_dev_tooling.gate_credential import gates_kubeconfig_readable
 from livespec_dev_tooling.gate_remote_delegate import delegated_gate_enabled
 
 __all__: list[str] = [
     "foreground_full_suite_pytest",
+    "foreground_gate_job_only_pytest",
 ]
 
 # Options that take a separate value argument. The list narrows what is read
@@ -142,6 +145,44 @@ def foreground_full_suite_pytest(*, command: str, cwd: Path) -> Path | None:
             if eligible:
                 return target
     return None
+
+
+def foreground_gate_job_only_pytest(*, command: str, cwd: Path) -> Path | None:
+    """Return an eligible repository whose explicit pytest hits a declared module."""
+    try:
+        parsed_command = _without_heredoc_bodies(command=command)
+        _ = shlex.split(parsed_command)
+    except ValueError:
+        return None
+    target = cwd
+    for invocation in invocations(command=parsed_command):
+        if invocation.binary == "cd":
+            target = _cd_target(cwd=cwd, target=target, cd_target=invocation.subcommand)
+            continue
+        pytest_argv = pytest_command(command=_argv(invocation=invocation))
+        if pytest_argv is not None and _targets_declared_gate_job_only(
+            pytest_argv=pytest_argv, cwd=target
+        ):
+            return target
+    return None
+
+
+def _targets_declared_gate_job_only(*, pytest_argv: tuple[str, ...], cwd: Path) -> bool:
+    globs = load_gate_job_only_tests(repo_root=cwd)
+    eligible = bool(globs) and delegated_gate_enabled(repo_root=cwd) and gates_kubeconfig_readable()
+    return eligible and any(
+        fnmatchcase(path.relative_to(cwd).as_posix(), pattern)
+        for argument in pytest_argv[1:]
+        if not argument.startswith("-") and _names_test_path(argument=argument, cwd=cwd)
+        for path in _test_modules_under(target=cwd / argument.split("::", maxsplit=1)[0])
+        for pattern in globs
+    )
+
+
+def _test_modules_under(*, target: Path) -> tuple[Path, ...]:
+    if target.is_dir():
+        return tuple(sorted(target.rglob("test_*.py")))
+    return (target,)
 
 
 def _cd_target(*, cwd: Path, target: Path, cd_target: str | None) -> Path:

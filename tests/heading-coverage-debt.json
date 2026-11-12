@@ -1332,13 +1332,6 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario: an agent session's foreground pytest of a gate-Job-only test module is refused whatever its worker count",
-    "work_item": "livespec-dev-tooling-cvef23",
-    "first_seen": "2026-11-12"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
     "heading": "## Scenario: an apply on a host missing a role's out-of-band input fails before the role changes anything",
     "work_item": "livespec-dev-tooling-c763up",
     "first_seen": "2026-11-05"
