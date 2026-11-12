@@ -39,6 +39,7 @@ _PLAIN = "fixture-workload"
 _DOTTED = "fixture-runtime.default.d"
 _PROFILES = (_PLAIN, _DOTTED)
 _FOREIGN_POLICY = "f" * 64
+_REJECT_MARKER = "fixture-reject-marker"
 
 _SUDO_STAND_IN = """#!/bin/sh
 while [ $# -gt 0 ]; do
@@ -51,15 +52,27 @@ done
 exec "$@"
 """
 
-# The stand-in parser. It logs every invocation. `-Q -K -S <file>` prints the
-# file as its "compiled policy" and touches nothing. `-r -W <file>` records that
-# policy as loaded, the way the kernel exposes it: `<name>.<id>/raw_sha256` and
-# `mode`, with the mode taken from the state directory. Anything else exits 64.
+# The stand-in parser. It logs every invocation.
+#   `-Q -K -S <file>` prints the file as its "compiled policy"; touches nothing.
+#   `-Q -K <file>` validates: it rejects a file carrying the reject marker.
+#   `-r -W <file>` records the policy as loaded, the way the kernel exposes it:
+#       `<name>.<id>/raw_sha256` and `mode`, the mode from the state directory.
+#   `-R` unloads the profile named by the definition on stdin.
+# Anything else exits 64.
 _PARSER_STAND_IN = """#!/bin/sh
 state="$(dirname "$0")/../state"
 printf '%s\\n' "$*" >> "$state/argv.log"
 case "$1" in
-  -Q) [ "$2" = -K ] && [ "$3" = -S ] || exit 64; cat "$4"; exit 0 ;;
+  -Q)
+    [ "$2" = -K ] || exit 64
+    if [ "$3" = -S ]; then cat "$4"; exit 0; fi
+    if grep -q 'fixture-reject-marker' "$3"; then echo "syntax error" >&2; exit 1; fi
+    exit 0 ;;
+  -R)
+    name="$(sed -n 's/^profile \\([^ ]*\\) .*/\\1/p')"
+    [ -n "$name" ] || exit 64
+    rm -rf "$state/loaded/$name.7"
+    exit 0 ;;
   -r)
     [ "$2" = -W ] || exit 64
     name="$(basename "$3")"
@@ -84,10 +97,16 @@ class _Scratch:
     def loaded(self) -> Path:
         return self.state / "loaded"
 
-    def loads(self) -> list[str]:
+    def calls(self, *, flag: str) -> list[str]:
         log = self.state / "argv.log"
         lines = log.read_text(encoding="utf-8").splitlines() if log.exists() else []
-        return [line for line in lines if line.startswith("-r ")]
+        return [line for line in lines if line.split()[0] == flag]
+
+    def loads(self) -> list[str]:
+        return self.calls(flag="-r")
+
+    def unloads(self) -> list[str]:
+        return self.calls(flag="-R")
 
     def loaded_policy(self, *, name: str) -> str:
         return (self.loaded / f"{name}.7" / "raw_sha256").read_text(encoding="utf-8").strip()
@@ -133,11 +152,26 @@ def _ansible_core_pin() -> str:
     return pin[0]
 
 
-def _play(*, scratch: _Scratch, check: bool = False) -> _Outcome:
-    """Run the role once; return its exit code and the host's `changed=` count."""
-    host_vars = {
-        "apparmor_profile_names": f"[{', '.join(_PROFILES)}]",
+def _play(
+    *,
+    scratch: _Scratch,
+    check: bool = False,
+    names: tuple[str, ...] = _PROFILES,
+    absent: tuple[str, ...] = (),
+    committed_profiles: bool = False,
+) -> _Outcome:
+    """Run the role once; return its exit code and the host's `changed=` count.
+
+    `committed_profiles` leaves the role's own profile list and source directory
+    in force, so the run installs what the repository ships.
+    """
+    fixture_profiles = {
+        "apparmor_profile_names": f"[{', '.join(names)}]",
         "apparmor_profile_src_dir": str(scratch.src),
+    }
+    host_vars = {
+        **({} if committed_profiles else fixture_profiles),
+        "apparmor_profile_absent": f"[{', '.join(absent)}]",
         "apparmor_profile_dest_dir": str(scratch.dest),
         "apparmor_profile_loaded_dir": str(scratch.loaded),
         "apparmor_profile_owner": str(os.getuid()),
@@ -188,9 +222,15 @@ def _play(*, scratch: _Scratch, check: bool = False) -> _Outcome:
     return _Outcome(returncode=completed.returncode, changed=int(recap["changed"]), output=output)
 
 
-def _run(*, scratch: _Scratch, check: bool = False) -> int:
+def _run(
+    *,
+    scratch: _Scratch,
+    check: bool = False,
+    names: tuple[str, ...] = _PROFILES,
+    absent: tuple[str, ...] = (),
+) -> int:
     """Run the role, require it to complete, and return the `changed=` count."""
-    outcome = _play(scratch=scratch, check=check)
+    outcome = _play(scratch=scratch, check=check, names=names, absent=absent)
     assert outcome.returncode == 0, f"the role must complete:\n{outcome.output}"
     return outcome.changed
 
@@ -263,6 +303,84 @@ def test_a_host_with_no_parser_fails_the_play_before_installing_anything(
     outcome = _play(scratch=scratch)
     assert outcome.returncode != 0, outcome.output
     assert list(scratch.dest.iterdir()) == []
+
+
+def test_a_profile_the_parser_rejects_is_not_installed_and_fails_the_play(
+    *, scratch: _Scratch
+) -> None:
+    """The candidate is compiled before it replaces the file the next boot loads."""
+    _run(scratch=scratch)
+    good = (scratch.dest / _PLAIN).read_bytes()
+    (scratch.src / _PLAIN).write_text(f"profile {_PLAIN} {{ {_REJECT_MARKER}\n", encoding="utf-8")
+    outcome = _play(scratch=scratch)
+    assert outcome.returncode != 0, outcome.output
+    assert (scratch.dest / _PLAIN).read_bytes() == good
+    assert len(scratch.loads()) == len(_PROFILES)
+
+
+def test_a_rejected_profile_never_reaches_a_fresh_node(*, scratch: _Scratch) -> None:
+    (scratch.src / _DOTTED).write_text(f"profile {_DOTTED} {{ {_REJECT_MARKER}\n", encoding="utf-8")
+    outcome = _play(scratch=scratch, names=(_DOTTED,))
+    assert outcome.returncode != 0, outcome.output
+    assert list(scratch.dest.iterdir()) == []
+    assert scratch.loads() == []
+
+
+def test_the_committed_profiles_install_and_load_under_their_own_names(
+    *, scratch: _Scratch
+) -> None:
+    """The role's own list and source directory, with only the host side stood in."""
+    outcome = _play(scratch=scratch, committed_profiles=True)
+    assert outcome.returncode == 0, outcome.output
+    installed = sorted(scratch.dest.iterdir())
+    assert installed
+    for path in installed:
+        # The role installs, probes and unloads each profile under its file name.
+        declared = re.findall(r"^profile (\S+) ", path.read_text(encoding="utf-8"), re.MULTILINE)
+        assert declared == [path.name]
+        policy = hashlib.sha256(path.read_bytes()).hexdigest()
+        assert scratch.loaded_policy(name=path.name) == policy
+    assert sorted(scratch.loads()) == [f"-r -W {path}" for path in installed]
+
+
+def test_an_absent_profile_is_unloaded_and_its_file_removed(*, scratch: _Scratch) -> None:
+    _run(scratch=scratch)
+    # The unload task and the file removal task.
+    assert _run(scratch=scratch, names=(_PLAIN,), absent=(_DOTTED,)) == 2
+    assert not (scratch.dest / _DOTTED).exists()
+    assert not (scratch.loaded / f"{_DOTTED}.7").exists()
+    assert len(scratch.unloads()) == 1
+    # The profile that stays is untouched.
+    assert (scratch.dest / _PLAIN).exists()
+    assert scratch.loaded_policy(name=_PLAIN) == scratch.source_policy(name=_PLAIN)
+    assert len(scratch.loads()) == len(_PROFILES)
+
+
+def test_a_second_apply_of_an_absent_profile_changes_nothing(*, scratch: _Scratch) -> None:
+    _run(scratch=scratch)
+    _run(scratch=scratch, names=(_PLAIN,), absent=(_DOTTED,))
+    assert _run(scratch=scratch, names=(_PLAIN,), absent=(_DOTTED,)) == 0
+    assert len(scratch.unloads()) == 1
+
+
+def test_a_drift_report_shows_a_pending_removal_and_writes_nothing(*, scratch: _Scratch) -> None:
+    _run(scratch=scratch)
+    # The probe standing in for the skipped unload, and the pending file removal.
+    assert _run(scratch=scratch, check=True, names=(_PLAIN,), absent=(_DOTTED,)) == 2
+    assert (scratch.dest / _DOTTED).exists()
+    assert scratch.loaded_policy(name=_DOTTED) == scratch.source_policy(name=_DOTTED)
+    assert scratch.unloads() == []
+
+
+def test_a_profile_named_as_both_present_and_absent_fails_before_anything_is_written(
+    *, scratch: _Scratch
+) -> None:
+    outcome = _play(scratch=scratch, absent=(_DOTTED,))
+    assert outcome.returncode != 0, outcome.output
+    assert "is in both" in outcome.output
+    assert list(scratch.dest.iterdir()) == []
+    assert scratch.loads() == []
+    assert scratch.unloads() == []
 
 
 def test_ci_pool_reaches_the_role_ungated() -> None:
