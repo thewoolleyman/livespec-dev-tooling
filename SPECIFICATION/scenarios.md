@@ -3671,6 +3671,52 @@ And the incident enablement step run for that consumer MUST refuse, exit non-zer
 And the same command run against a manifest whose committed identity cannot be authenticated MUST report that finding, list zero ready repositories and exit non-zero.
 ```
 
+## Scenario: the incident enablement step records enablement on the independent controller and every vantage reads it
+
+```gherkin
+Given a repository the fleet audit lists ready, served by a production controller installation whose fence is disarmed
+When the operator runs the enablement step for that repository
+Then the step MUST write one enablement record through the controller's control-credentialed route, binding the repository, the committed manifest identity the step's audit authenticated and the step's operation identity
+And the controller MUST confirm that identity with its own fresh read of livespec core's default branch before it retains the record, and an exact retry MUST answer the retained record without writing again
+And a later expedited commit in that repository MUST read the record through the installation this library's committed configuration names, compare the confirmed identity against the hook's own fresh read of core's default branch, and record `enabled` in its receipt
+And the incident CI entrance MUST record `enabled` in its plan from the controller's answer, and the controller MUST record `enabled` in its arm receipt
+And no dev-host file, repository file, repository variable, forge label, pull-request body or ledger record MAY be read as the enablement.
+```
+
+## Scenario: an armed enablement fence refuses incident mode without a current enablement record
+
+```gherkin
+Given a production controller installation whose fence is armed for its repository
+When EXPEDITED_INCIDENT_RESPONSE=1 selects repair in an ordinary invocation of that repository's dev-host hook, incident CI entrance or controller arm
+Then with no retained record the resolver MUST refuse with a named configuration refusal naming the repository, the installation and the missing record, and MUST NOT fall through to normal mode
+And with a record bound to a manifest identity other than the one a fresh read of core's default branch confirms, it MUST refuse naming the stale record
+And with a revoked record it MUST refuse naming the revocation
+And a trusted normal-master or normal-factory-follow-up origin, and an invocation with both flags absent, MUST NOT read the record at all.
+```
+
+## Scenario: the enablement fence is armed for a repository only after that repository is enabled
+
+```gherkin
+Given a repository the fleet audit does not yet list ready, served by a disarmed production installation running a controller release that carries the enablement routes
+When an operator attempts the arming write for the installation's fence
+Then the controller MUST refuse the arming write, because it holds no enablement record bound to the current committed manifest identity
+And every incident operation in that repository MUST keep resolving as before, recording `absent` in the artefact its vantage already produces for that operation and refusing nothing
+And once the audit lists the repository ready and the enablement step has recorded it, the arming write MUST succeed and the fence MUST stay armed through a later change of core's committed manifest identity, refusing incident mode until the step records the repository again
+And a controller release that lacks the routes MUST refuse both the enablement write and the arming write as unknown routes.
+```
+
+## Scenario: an armed enablement fence lets an emergency revert through when core's git transport is unreachable past the freshness bound
+
+```gherkin
+Given a production controller installation whose fence is armed, holding an enablement record whose identity was last confirmed more than six hours ago
+And livespec core's git transport unreachable, so its default-branch head cannot be read
+When EXPEDITED_INCIDENT_RESPONSE=1 selects repair in an ordinary invocation of the repository's dev-host hook, incident CI entrance or controller arm
+Then the reading MUST be `unavailable` and the resolver MUST refuse expedited-repair mode, naming `unavailable` and the failed read
+And when EXPEDITED_INCIDENT_RESPONSE_REVERT=1 selects emergency revert for a recorded incident merge in the same state, the enablement fence MUST NOT refuse it and the revert MUST proceed to its recovery boundary
+And each reading MUST be recorded as `unavailable` in the artefact its vantage already produces for that operation
+And while the head read fails within six hours of a confirmed identity, that identity MUST stand and the reading MUST NOT be `unavailable`.
+```
+
 ## Scenario: a macOS developer host reads the ledger tenant through the loopback forward
 
 Given a macOS developer host that runs no Dolt server

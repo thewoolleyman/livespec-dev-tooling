@@ -1353,6 +1353,20 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: an armed enablement fence lets an emergency revert through when core's git transport is unreachable past the freshness bound",
+    "work_item": "livespec-dev-tooling-2xxnku",
+    "first_seen": "2026-11-12"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: an armed enablement fence refuses incident mode without a current enablement record",
+    "work_item": "livespec-dev-tooling-2xxnku",
+    "first_seen": "2026-11-12"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: an execution target stays closed until its reading falls back past the exit threshold",
     "work_item": "livespec-dev-tooling-hvfc6c",
     "first_seen": "2026-11-04"
@@ -1668,6 +1682,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: the enablement fence is armed for a repository only after that repository is enabled",
+    "work_item": "livespec-dev-tooling-2xxnku",
+    "first_seen": "2026-11-12"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: the fabro-hosts play renders each registered factory's run cap from its instance's max_concurrent_runs",
     "work_item": "livespec-dev-tooling-o5xpdy",
     "first_seen": "2026-11-05"
@@ -1699,6 +1720,13 @@
     "heading": "## Scenario: the highest-ordered ready target is admitted to any execution target with headroom for its cost",
     "work_item": "livespec-dev-tooling-hvfc6c",
     "first_seen": "2026-11-04"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: the incident enablement step records enablement on the independent controller and every vantage reads it",
+    "work_item": "livespec-dev-tooling-2xxnku",
+    "first_seen": "2026-11-12"
   },
   {
     "spec_root": "SPECIFICATION",

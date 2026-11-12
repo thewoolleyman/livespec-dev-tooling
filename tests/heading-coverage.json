@@ -2449,6 +2449,38 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: the incident enablement step records enablement on the independent controller and every vantage reads it",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this scenario: the real enablement step writes one record through a scratch controller installation's control-credentialed route, and the dev-host hook receipt, the incident CI plan and the arm receipt each record `enabled` from the controller's query route. livespec-dev-tooling-2xxnku owns it.",
+    "work_item": "livespec-dev-tooling-2xxnku"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: an armed enablement fence refuses incident mode without a current enablement record",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this scenario: an armed scratch controller installation is asked to resolve expedited repair at the hook, CI and arm vantages with no record, a stale record and a revoked record, and each refuses by name without falling through to normal mode. livespec-dev-tooling-2xxnku owns it.",
+    "work_item": "livespec-dev-tooling-2xxnku"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: the enablement fence is armed for a repository only after that repository is enabled",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this scenario: the arming write is refused while the installation holds no enablement record bound to the current manifest identity, succeeds once the step has recorded the repository, stays armed after the manifest identity moves, and is refused as an unknown route by a release that lacks the routes. livespec-dev-tooling-2xxnku owns it.",
+    "work_item": "livespec-dev-tooling-2xxnku"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: an armed enablement fence lets an emergency revert through when core's git transport is unreachable past the freshness bound",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this scenario: with core's git transport unreachable past the six-hour freshness bound an armed installation refuses expedited repair naming `unavailable`, lets an emergency revert through, and records `unavailable` at every vantage. livespec-dev-tooling-2xxnku owns it.",
+    "work_item": "livespec-dev-tooling-2xxnku"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: a routed job sets up its actions from the pool's action-archive cache, and falls back to a download when an archive is missing",
     "test": "TODO",
     "reason": "Spec-first: a real test at the integration tier or above (a host-captured end-to-end run) is owed for this scenario, running a routed job on the k3s pool with the action-archive cache populated, absent and kill-switched and reading each job's Set up job log; livespec-dev-tooling-a35sa4 owns it, and its Definition of Done asserts this behaviour.",
