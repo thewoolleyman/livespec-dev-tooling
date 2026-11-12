@@ -55,6 +55,17 @@ fabro_server_host_checkout: /data/projects/livespec-orchestrator-beads-fabro
 # vps declares what gmktec-xubuntu declares (plan ci-pool-provisioning-leftovers,
 # ruling 2026-11-05): the role writes each instance's settings.toml, which was
 # hand-maintained here until livespec-dev-tooling-jxw2ve.
+#
+# BOTH INSTANCES PARKED 2026-11-12 (livespec-dev-tooling-gxepwl; maintainer,
+# relayed by legacy-coordinator-agent: "approved shutting down the fabro on
+# vps."). No factory routes here any more: /etc/livespec/fabro-factories.json
+# points every factory, mi-homelab included, at gmktec-xubuntu. The fabro-server
+# journal, which reaches back to 2026-10-30, holds no run creation. Its only
+# traffic was bare `fabro ps` reads hitting the CLI's 127.0.0.1:32276 default,
+# which got a stale legacy board back. Parked rather than deleted: each unit is
+# stopped and disabled, and its binary, settings.toml and state directory are
+# all KEPT. To bring one back, flip its `service_state` to running and re-apply.
+# Removing the instances is a later, separate decision.
 fabro_server_manage_settings: true
 fabro_server_instances:
   - unit_name: fabro-server
@@ -95,6 +106,9 @@ fabro_server_instances:
     binary_path: /home/ubuntu/.fabro/bin/fabro
     binary_source: /home/ubuntu/.local/state/fabro-web-prod/v0254-8869e88/fabro
     binary_sha256: 199407cec8119735fc0751407272ba3282703bd45ada87d34a89cc8f62a22421
+    # PARKED 2026-11-12 (livespec-dev-tooling-gxepwl): see the note above
+    # fabro_server_manage_settings. REVERT: set running and re-apply.
+    service_state: stopped
   - unit_name: fabro-server-mi-homelab
     home_dir: /home/ubuntu/.fabro-mi-homelab
     port: 32277
@@ -121,6 +135,9 @@ fabro_server_instances:
     binary_path: /home/ubuntu/.fabro/bin/fabro
     binary_source: /home/ubuntu/.local/state/fabro-web-prod/v0254-8869e88/fabro
     binary_sha256: 199407cec8119735fc0751407272ba3282703bd45ada87d34a89cc8f62a22421
+    # PARKED 2026-11-12 (livespec-dev-tooling-gxepwl). mi-homelab's live
+    # factory is gmktec-xubuntu:32277. REVERT: set running and re-apply.
+    service_state: stopped
 
 # --- gha_runner ---
 gha_runner_user: ubuntu
@@ -190,7 +207,9 @@ storage_reclaim_checkout_roots: /data/projects
 # (roles/incident_observer/README.md), and the two Fabro instances' fronts,
 # declared like gmktec-xubuntu's (livespec-dev-tooling-jxw2ve). The role is
 # additive and touches only the ports declared here, so this host's other
-# hand-made mappings (8010, 8443) are left as they are.
+# hand-made mappings (8010, 8443) are left as they are. The 32276 and 32277
+# fronts point at the instances parked above. livespec-dev-tooling-gxepwl
+# retires them through tailscale_serve_retired_ports once that key lands.
 tailscale_serve_mappings:
   - https_port: 32276
     backend: http://127.0.0.1:32276
