@@ -22,9 +22,13 @@ def _fake(*, bin_dir: Path, name: str, body: str) -> None:
 
 
 def _run_minter(
-    *, tmp_path: Path, repositories: tuple[str, ...]
+    *, tmp_path: Path, repositories: tuple[str, ...], mint_failures: int = 0
 ) -> tuple[subprocess.CompletedProcess[str], str]:
-    """Run the minter with private siblings and return its scoped-token request."""
+    """Run the minter with private siblings and return its scoped-token request.
+
+    `mint_failures` makes the token endpoint answer HTTP 500 that many times
+    before it answers, the shape GitHub gave a pre-push gate on 2026-11-12.
+    """
     consumer = tmp_path / "consumer"
     consumer.mkdir()
     targets = {
@@ -147,10 +151,16 @@ case "${url}" in
   */access_tokens)
     printf '%s' "${data}" > "${MINT_TEST_SCOPE}"
     if [[ "${data}" == *homelab* ]]; then
-      echo 'curl: (22) The requested URL returned error: 422' >&2
-      exit 22
+      respond '{"message":"Unprocessable Entity"}' 422
+      exit 0
     fi
-    printf '{"token":"ghs_test_private_sibling_token"}'
+    calls="$(( $(cat "${MINT_TEST_TOKEN_CALLS}" 2>/dev/null || echo 0) + 1 ))"
+    printf '%s' "${calls}" > "${MINT_TEST_TOKEN_CALLS}"
+    if [ "${calls}" -le "${MINT_TEST_TOKEN_FAILURES}" ]; then
+      respond '{"message":"Server Error"}' 500
+      exit 0
+    fi
+    respond '{"token":"ghs_test_private_sibling_token"}' 201
     ;;
   *)
     echo "unexpected curl request: ${url}" >&2
@@ -170,6 +180,9 @@ esac
             "GITHUB_PRIVATE_KEY": "-----BEGIN PRIVATE KEY-----key-----END PRIVATE KEY-----",
             "MINT_TEST_REQUESTS": str(requests),
             "MINT_TEST_SCOPE": str(scope),
+            "MINT_TEST_TOKEN_CALLS": str(tmp_path / "token-calls"),
+            "MINT_TEST_TOKEN_FAILURES": str(mint_failures),
+            "MINT_RETRY_BASE_WAIT": "0",
             "PATH": f"{bin_dir}{os.pathsep}{environment['PATH']}",
         }
     )
@@ -217,3 +230,36 @@ def test_all_covered_private_siblings_keep_the_existing_scoped_mint(*, tmp_path:
         "repositories": ["covered-one", "covered-two"],
         "permissions": {"contents": "read"},
     }
+
+
+def test_a_transient_mint_server_error_is_retried_until_the_token_is_minted(
+    *, tmp_path: Path
+) -> None:
+    """A 500 from the token endpoint is retried, and the next good answer mints."""
+    completed, _scope = _run_minter(
+        tmp_path=tmp_path,
+        repositories=("acme/covered-one",),
+        mint_failures=2,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    assert json.loads(completed.stdout)["token"] == _TOKEN
+    assert (tmp_path / "token-calls").read_text(encoding="utf-8") == "3"
+    assert "mint call attempt 1/5: HTTP 500" in completed.stderr
+    assert "mint call attempt 3/5: HTTP 201" in completed.stderr
+    assert _TOKEN not in completed.stderr
+
+
+def test_a_persistent_mint_server_error_stops_at_the_bound_naming_github(*, tmp_path: Path) -> None:
+    """A 500 that never clears refuses after five attempts as GitHub's failure."""
+    completed, _scope = _run_minter(
+        tmp_path=tmp_path,
+        repositories=("acme/covered-one",),
+        mint_failures=99,
+    )
+
+    assert completed.returncode != 0
+    assert (tmp_path / "token-calls").read_text(encoding="utf-8") == "5"
+    assert "GitHub refused to mint an installation token" in completed.stderr
+    assert "HTTP 500" in completed.stderr
+    assert "does not cover it" not in completed.stderr
