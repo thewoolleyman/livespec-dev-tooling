@@ -197,6 +197,30 @@ the screen refuses on a heading, add the heading it names to the `References:`
 line, written with its literal `## ` marker, beside the scenario heading, and ask
 the dispatcher seat to screen it again.
 
+## A Raw `bd create` Leaves An Item With No Claim Token
+
+A work item filed with native `bd create` names no dispatch claim token, and
+nothing warns at filing time. Every later valve press then refuses with
+`claim-token-missing`: approve, accept, and the dispatch claim. Measured
+2026-11-12 on plan expedited-incident-response-flag. Its carriers
+livespec-dev-tooling-bqnzcm.1, .2, .3, .3.1 and .4 were filed that way from a
+seat session. The coordinator's approve and accept presses refused, it named
+tokens on four of them by hand, and it closed bqnzcm.1 out of band with
+`resolved-out-of-band`.
+
+The plugin mints and names a token only through its create path,
+`livespec_orchestrator_beads_fabro._store_claim_token_creation.create_issue_naming_first_claim_token`
+(`names_token=True`). The capture-work-item operation goes through it. A seat
+that cannot run that operation, because it raises a consent picker and a seat
+never raises one, must not fall back to raw `bd create`.
+
+How to apply: file a work item through the capture-work-item operation, or call
+`create_issue_naming_first_claim_token(client=..., draft=..., names_token=True)`
+from a Python snippet under `/usr/local/bin/with-livespec-env.sh`. For an item
+already filed without a token, ask the coordinator to name one with the
+per-item helper. Do not run `migrate_claim_tokens.py --confirm-claim-writers-stopped`
+for one item: it attests that every claim writer of the tenant is stopped.
+
 ## Definition Of Done Lines The Approve Valve Repairs
 
 legacy-coordinator-agent repaired two lines on livespec-dev-tooling-n277mo before

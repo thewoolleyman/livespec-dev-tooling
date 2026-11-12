@@ -68,7 +68,10 @@ The files:
 - Read `.ai/livespec-operation-gotchas.md` before running or editing
   livespec revise/propose-change flows, spec heading coverage, or commit-prefix
   classification logic, before treating a clean filing display as evidence an
-  item will pass its pre-dispatch screen — and, whatever your role, before capturing a path from
+  item will pass its pre-dispatch screen, before filing a work item with a raw
+  `bd create` instead of capture-work-item (it leaves no claim token, so
+  approve and accept refuse `claim-token-missing`, 2026-11-12) — and,
+  whatever your role, before capturing a path from
   `ls` in a command substitution (`$(ls -d …)`, `$(ls -td … | head -1)`) or
   reporting a surprising `No such file or directory`: `ls` is aliased to lsd
   here, the symptom is a FALSE ABSENCE, and it has cost three different roles a
