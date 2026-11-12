@@ -61,9 +61,8 @@ _TRAILING_COMMENT = re.compile(r"[ \t]+#.*$")
 _JOB_KEY = re.compile(r"^[ \t]{2}(?P<name>[^ \t:#][^:]*):[ \t]*(?:#.*)?$")
 _JUST_TARGET = re.compile(
     r"\bjust(?:[ \t]+-[^ \t]+(?:[ \t]+(?!check\b)[^ \t-][^ \t]*)?)*[ \t]+"
-    r"(?P<target>check(?:-[a-z0-9-]+)?)\b"
+    r"(?P<target>[a-zA-Z0-9][a-zA-Z0-9_-]*)\b"
 )
-_TARGET = re.compile(r"^check(?:-[a-z0-9-]+)?$")
 _CHECK_RECIPE = re.compile(r"^check(?:[ \t]+[^:]*)?:[ \t]*(?P<dependencies>.*)$")
 _RECIPE_HEADER = re.compile(r"^[^ \t#:][^:]*:[ \t]*(?:#.*)?$")
 _HINT = (
@@ -160,7 +159,7 @@ def _aggregate_targets(*, repo_root: Path) -> set[str]:
         except OSError:
             return set()
     targets = {entry.split("#", maxsplit=1)[0].strip() for entry in entries}
-    return {"check"} | {target for target in targets if _TARGET.fullmatch(target)}
+    return {"check"} | {target for target in targets if target}
 
 
 def _check_recipe_targets(*, source: str) -> list[str]:
