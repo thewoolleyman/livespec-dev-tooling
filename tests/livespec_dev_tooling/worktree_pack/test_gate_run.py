@@ -20,6 +20,7 @@ self-instrument under `pytest --cov`.
 
 from __future__ import annotations
 
+import contextlib
 import itertools
 import os
 import shutil
@@ -116,6 +117,18 @@ def _as_lefthook_pty_capture(*, text: str) -> str:
 def _write(*, path: Path, text: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     _ = path.write_text(text, encoding="utf-8")
+
+
+def _live_processes_carrying(*, token: str) -> list[str]:
+    """Return non-zombie process IDs whose command line contains `token`."""
+    live: list[str] = []
+    for proc in Path("/proc").glob("[0-9]*"):
+        cmdline, state = "", "Z"
+        with contextlib.suppress(OSError):
+            cmdline = (proc / "cmdline").read_bytes().replace(b"\0", b" ").decode(errors="replace")
+            state = (proc / "stat").read_text().rsplit(")", 1)[1].split()[0]
+        live += [proc.name] * (token in cmdline and state != "Z")
+    return live
 
 
 def _init_repo(*, tmp_path: Path) -> Path:
@@ -933,6 +946,27 @@ def test_a_gate_pytest_session_that_stops_making_progress_ends_without_a_pass(
     assert "PASSED" not in waited.stdout
     assert "stall window" in (run_dir / "output.log").read_text(encoding="utf-8")
     assert ended.read_text(encoding="utf-8").strip() == "TERM"
+
+
+@pytest.mark.integration
+def test_a_stalled_gate_reaps_a_descendant_that_started_its_own_session(
+    *, fixture_repo: tuple[Path, Path, dict[str, str]]
+) -> None:
+    """A gate stall ends a session-escaping descendant and records what it ended."""
+    primary, worktree, env = fixture_repo
+    token = f"livespec-gate-session-escape-{time.monotonic_ns()}"
+    escaped = f"setsid sh -c 'sleep 300' {token} & echo collected; exec sleep 300"
+    run_id = _start(
+        cwd=worktree,
+        env={**env, _STALL_ENV: "2", _STALL_GRACE_ENV: "1"},
+        command=["bash", "-c", escaped],
+    )
+
+    run_dir = _await_verdict(primary=primary, run_id=run_id)
+    output = (run_dir / "output.log").read_text(encoding="utf-8")
+    assert not _live_processes_carrying(token=token)
+    assert "out-of-group descendant pid=" in output
+    assert token in output
 
 
 @pytest.mark.integration

@@ -220,7 +220,9 @@ idle_sleep() {
 # runs as its OWN process group, and the child watches its output: when nothing
 # new reaches output.log for the stall window, the whole group is ended — a
 # pytest session and its pytest-xdist workers alike, such as rerunfailures
-# re-runs deadlocked with every worker idle — a line naming the window is
+# re-runs deadlocked with every worker idle. A command can also create a new
+# session, which escapes that group, so the pre-TERM descendant snapshot ends
+# each escapee by pid and records its command line. A line naming the window is
 # appended, and the run records STALL_EXIT_CODE, a FAILED verdict, never a pass.
 # The window, its default and its override are the commit-time replay leg's
 # (LIVESPEC_SUITE_GREEN_STALL_SECONDS, 900 s). TERM first, KILL after
@@ -229,6 +231,37 @@ idle_sleep() {
 # The cluster venue is excluded: its client waits silently through admission
 # and bounds that wait itself.
 readonly STALL_EXIT_CODE=124
+
+out_of_group_descendants() {
+    local root="$1" group="$2" pid
+    while IFS= read -r pid; do
+        read_proc_identity "$pid"
+        [[ "$PROC_PGRP" == "$group" ]] || printf '%s\n' "$pid"
+    done < <(descendant_pids "$root")
+}
+
+record_and_term_out_of_group_descendants() {
+    local dir="$1" group="$2" pid
+    local -a escapees=()
+    while IFS= read -r pid; do
+        read_proc_cmdline "$pid"
+        printf 'gate-run: ending out-of-group descendant pid=%s cmdline=%s\n' \
+            "$pid" "${PROC_CMDLINE:-<exited>}" >>"$dir/output.log"
+        escapees+=("$pid")
+    done < <(out_of_group_descendants "$group" "$group")
+    for pid in "${escapees[@]}"; do
+        kill -TERM "$pid" 2>/dev/null || true
+    done
+    printf '%s\n' "${escapees[@]}"
+}
+
+any_pids_alive() {
+    local pid
+    for pid in "$@"; do
+        kill -0 "$pid" 2>/dev/null && return 0
+    done
+    return 1
+}
 
 run_gate_with_stall_bound() {
     local dir="$1"
@@ -246,6 +279,7 @@ run_gate_with_stall_bound() {
     # Opened after the gate launches, so the gate inherits nothing of ours.
     open_idle_fd || true
     local quiet_since=$SECONDS ended
+    local -a escaped=()
     while kill -0 "$gate_pid" 2>/dev/null; do
         if [[ "$dir/output.log" -nt "$observed" || "$stamp" -nt "$observed" ]]; then
             : >"$observed"
@@ -253,14 +287,19 @@ run_gate_with_stall_bound() {
         elif (( SECONDS - quiet_since >= stall )); then
             printf '\ngate-run: no output for %ss, the stall window (LIVESPEC_SUITE_GREEN_STALL_SECONDS); ending the gate'"'"'s whole process group, workers included — not a pass\n' \
                 "$stall" >>"$dir/output.log"
+            mapfile -t escaped < <(record_and_term_out_of_group_descendants "$dir" "$gate_pid")
             kill -TERM -- "-$gate_pid" 2>/dev/null || true
             ended=$SECONDS
-            # Wait for the whole GROUP, not just its leader: a worker's TERM
-            # handler gets its grace period even after the leader has gone.
-            while kill -0 -- "-$gate_pid" 2>/dev/null && (( SECONDS - ended < grace )); do
+            # Wait for the whole GROUP and its session-escaping descendants,
+            # not just the leader: each TERM handler gets its grace period.
+            while { kill -0 -- "-$gate_pid" 2>/dev/null || any_pids_alive "${escaped[@]}"; } \
+                && (( SECONDS - ended < grace )); do
                 idle_sleep 1
             done
             kill -KILL -- "-$gate_pid" 2>/dev/null || true
+            for pid in "${escaped[@]}"; do
+                kill -KILL "$pid" 2>/dev/null || true
+            done
             wait "$gate_pid" 2>/dev/null || true
             close_idle_fd || true
             return "$STALL_EXIT_CODE"
@@ -548,14 +587,27 @@ config_rebaseline() {
 # (livespec-dev-tooling-lndv2l), which is how a record stayed "still being
 # composed" long enough for the gate to end around it.
 PROC_PPID="?"
-read_proc_ppid() {
+PROC_PGRP="?"
+read_proc_identity() {
     local line="" rest
     PROC_PPID="?"
+    PROC_PGRP="?"
     { read -r line <"/proc/$1/stat"; } 2>/dev/null || true
     [[ -n "$line" ]] || return 0
     rest="${line##*) }"
-    rest="${rest#* }"
-    PROC_PPID="${rest%% *}"
+    read -r _ PROC_PPID PROC_PGRP _ <<<"$rest"
+}
+
+read_proc_ppid() {
+    read_proc_identity "$1"
+}
+
+PROC_CMDLINE=""
+read_proc_cmdline() {
+    local -a argv=()
+    PROC_CMDLINE=""
+    { mapfile -d '' -t argv <"/proc/$1/cmdline"; } 2>/dev/null || true
+    PROC_CMDLINE="${argv[*]:-}"
 }
 
 # Every process descended from the gate child, breadth-first. The gate
