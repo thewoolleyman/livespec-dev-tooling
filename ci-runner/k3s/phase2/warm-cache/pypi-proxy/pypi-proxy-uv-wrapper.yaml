@@ -18,8 +18,38 @@ data:
   uv: |
     #!/bin/sh
     set -u
+    set -f
 
-    real_uv="${CI_RUNNER_REAL_UV:-/root/.local/share/mise/installs/uv/0.9.26/uv-x86_64-unknown-linux-musl/uv}"
+    # The real uv is the first `uv` on PATH outside this wrapper's own mount, so
+    # the wrapper never re-enters itself and holds on every node architecture
+    # and uv release the images carry (a path naming one architecture's uv
+    # install made every job on the arm64 homelab worker exit 127,
+    # 2026-11-12, livespec-dev-tooling-6csh56). CI_RUNNER_REAL_UV
+    # overrides the lookup.
+    self_dir="$(cd "$(dirname "$0")" && pwd -P)"
+    resolve_real_uv() {
+      if [ -n "${CI_RUNNER_REAL_UV:-}" ]; then
+        printf '%s\n' "${CI_RUNNER_REAL_UV}"
+        return 0
+      fi
+      saved_ifs="${IFS}"
+      IFS=:
+      for entry in ${PATH}; do
+        [ -n "${entry}" ] || continue
+        [ "$(cd "${entry}" 2>/dev/null && pwd -P)" = "${self_dir}" ] && continue
+        if [ -f "${entry}/uv" ] && [ -x "${entry}/uv" ]; then
+          IFS="${saved_ifs}"
+          printf '%s\n' "${entry}/uv"
+          return 0
+        fi
+      done
+      IFS="${saved_ifs}"
+      return 1
+    }
+    if ! real_uv="$(resolve_real_uv)"; then
+      printf '%s\n' "ci-runner: no uv on PATH outside ${self_dir}" >&2
+      exit 127
+    fi
     proxy="${PYPI_FILES_PROXY:-http://pypi-proxy.ci-warm-cache.svc.cluster.local:8081}"
     lock="${PWD}/uv.lock"
 
