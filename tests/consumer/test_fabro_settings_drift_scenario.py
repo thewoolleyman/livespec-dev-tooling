@@ -28,6 +28,7 @@ _TASKS = _REPO_ROOT / "ansible" / "roles" / "fabro_server" / "tasks" / "main.yml
 _ANSIBLE_CORE_PIN = re.compile(r"ansible-core==[0-9][0-9A-Za-z.]*")
 _TIMEOUT_SECONDS = 600
 _DEV_TOKEN = "fixture-dev-token"
+_INVALID_DEV_TOKEN = f"not-{_DEV_TOKEN}"
 _LIFTED = (
     "Resolve this instance's settings endpoint declarations",
     "Read the running instance's resolved settings",
@@ -122,12 +123,18 @@ def _lifted_tasks() -> str:
     return "".join(tasks[name] for name in _LIFTED).replace("  become: true\n", "")
 
 
-def _run(*, tmp_path: Path, port: int, service_state: str | None = None) -> tuple[int, str]:
+def _run(
+    *,
+    tmp_path: Path,
+    port: int,
+    service_state: str | None = None,
+    dev_token: str = _DEV_TOKEN,
+) -> tuple[int, str]:
     """Run the committed comparison against the local endpoint and return its report."""
     storage = tmp_path / "home" / "storage"
     storage.mkdir(parents=True, exist_ok=True)
     _ = (storage / "server.env").write_text(
-        f"OTHER=1\nFABRO_DEV_TOKEN={_DEV_TOKEN}\n", encoding="utf-8"
+        f"OTHER=1\nFABRO_DEV_TOKEN={dev_token}\n", encoding="utf-8"
     )
     vars = {
         "fabro_server_home_dir": str(tmp_path / "home"),
@@ -267,6 +274,21 @@ def test_the_settings_read_authenticates_with_the_instances_dev_token(
     assert "settings endpoint is unreachable" not in output
     assert "resolved 3" in output
     assert _DEV_TOKEN not in output
+
+
+def test_a_settings_server_rejects_a_wrong_dev_token(
+    *, tmp_path: Path, settings_server: _SettingsServer
+) -> None:
+    """The token-checking fixture makes an invalid bearer read unreachable."""
+    port = settings_server.server_address[1]
+    settings_server.settings = _resolved(port=port)
+
+    code, output = _run(tmp_path=tmp_path, port=port, dev_token=_INVALID_DEV_TOKEN)
+
+    assert code == 0, output
+    assert settings_server.authorizations == [f"Bearer {_INVALID_DEV_TOKEN}"]
+    assert "settings endpoint is unreachable" in output
+    assert "DRIFT:" not in output
 
 
 def test_a_settings_envelope_response_is_compared_like_a_root_response(
