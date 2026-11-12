@@ -359,8 +359,7 @@ usage:
   gate-run.sh list
   gate-run.sh stop  RUN_ID
 
-Stop a running gate with `stop`; signalling its pid or process group is not
-supported because hook clients run in their own sessions.
+Run `gate-stop` (or `gate-run.sh stop`) to stop a gate; signalling its pid or process group is not supported because hook clients run in their own sessions.
 USAGE
     exit "$EX_USAGE"
 }

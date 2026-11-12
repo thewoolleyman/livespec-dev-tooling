@@ -120,6 +120,21 @@ def test_gate_stop_refuses_unknown_and_completed_run_ids(*, tmp_path: Path) -> N
     assert "DIED_WITHOUT_VERDICT" in interrupted.stdout
 
 
+def test_gate_runner_usage_names_gate_stop_as_the_supported_cancellation_path(
+    *, tmp_path: Path
+) -> None:
+    """Operators are told not to signal a run and are given the stop command."""
+    root = tmp_path / "repo"
+    root.mkdir()
+    script = _write_runner(root=root)
+
+    usage = _run(script=script, root=root, args=[])
+
+    assert usage.returncode == 64
+    assert "signalling its pid or process group is not" in usage.stderr
+    assert "gate-stop" in usage.stderr
+
+
 def test_gate_stop_marks_a_live_run_even_when_its_pid_is_unavailable(
     *, capsys: pytest.CaptureFixture[str], monkeypatch: MonkeyPatch, tmp_path: Path
 ) -> None:
