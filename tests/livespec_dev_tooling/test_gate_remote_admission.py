@@ -36,10 +36,13 @@ def test_an_admitted_job_without_a_terminal_state_uses_its_terminal_bound() -> N
         _ = argv, cwd, stdin, stream
         return Success(GateCommandResult(returncode=0, stdout=active, stderr=""))
 
+    def sleeper(*, seconds: float) -> None:
+        _ = seconds
+
     outcome = await_terminal_state(
         request=request,
         runner=runner,
-        sleeper=lambda *, seconds: None if seconds else None,
+        sleeper=sleeper,
         job_name="gate-widget-7f2qd",
     )
 
@@ -71,10 +74,13 @@ def test_an_admitted_job_starts_one_terminal_condition_watch() -> None:
         payload = active if len(calls) == 1 else complete
         return Success(GateCommandResult(returncode=0, stdout=payload, stderr=""))
 
+    def sleeper(*, seconds: float) -> None:
+        _ = seconds
+
     outcome = await_terminal_state(
         request=request,
         runner=runner,
-        sleeper=lambda *, seconds: None if seconds else None,
+        sleeper=sleeper,
         job_name="gate-widget-7f2qd",
     )
 
