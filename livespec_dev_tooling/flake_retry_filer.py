@@ -364,7 +364,13 @@ def _last_pass_age_seconds(*, state_dir: Path) -> int:
     return max(0, int(time.time() - completed_at))
 
 
-def main(*, argv: Sequence[str] | None = None) -> int:
+def main(
+    *,
+    argv: Sequence[str] | None = None,
+    runner: GateCommandRunner | None = None,
+    plugin_root: Path | None = None,
+    home: Path | None = None,
+) -> int:
     """File missing root fixes from retry records below the selected repository root."""
     parser = argparse.ArgumentParser()
     _ = parser.add_argument("--repo-root", type=Path, default=Path.cwd())
@@ -382,14 +388,18 @@ def main(*, argv: Sequence[str] | None = None) -> int:
             stale=stale,
         )
         return int(stale)
-    plugin_root = registered_plugin_root(
-        repo_root=arguments.repo_root, registry=Path.home() / _PLUGIN_REGISTRY
-    )
+    resolved_runner = default_gate_command_runner if runner is None else runner
+    resolved_plugin_root = plugin_root
+    if resolved_plugin_root is None:
+        resolved_home = Path.home() if home is None else home
+        resolved_plugin_root = registered_plugin_root(
+            repo_root=arguments.repo_root, registry=resolved_home / _PLUGIN_REGISTRY
+        )
     try:
         filed = file_root_fixes(
             repo_root=arguments.repo_root,
-            runner=default_gate_command_runner,
-            plugin_root=plugin_root,
+            runner=resolved_runner,
+            plugin_root=resolved_plugin_root,
             state_dir=arguments.state_dir,
         )
     except OSError as failure:
