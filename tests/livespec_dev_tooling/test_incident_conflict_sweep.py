@@ -263,6 +263,10 @@ def _serve(controller, monkeypatch, *, crash: bool):
     monkeypatch.setattr(service, "installed_watcher", lambda **_: Watcher())
     monkeypatch.setattr(service, "make_server", lambda *_args, **_kwargs: Server())
     monkeypatch.setattr(service, "ConflictSweep", Sweep)
+    # The run-record sweep starts beside it; its own service test lives with it.
+    monkeypatch.setattr(
+        service, "PrRunSweep", lambda **_: SimpleNamespace(crashed=Event(), start=lambda **_: None)
+    )
     monkeypatch.setattr(service, "Event", lambda: captured.setdefault("stop", Event()))
     return application, started, captured, service.main()
 

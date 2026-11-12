@@ -334,10 +334,16 @@ def test_the_installed_watcher_binds_the_installation_and_the_service_starts_it(
 
     started = Mock(failed=threading.Event())
     monkeypatch.setattr(service, "installed_watcher", Mock(return_value=started))
-    application = SimpleNamespace(installation=settings, conflict_journaled=threading.Event())
-    # The conflict sweep starts beside the watcher; its own service tests live with it.
+    application = SimpleNamespace(
+        installation=settings,
+        conflict_journaled=threading.Event(),
+        pr_run_retained=threading.Event(),
+    )
+    # The conflict and run-record sweeps start beside the watcher; their own service
+    # tests live with them.
     sweep = Mock(crashed=threading.Event())
     monkeypatch.setattr(service, "ConflictSweep", Mock(return_value=sweep))
+    monkeypatch.setattr(service, "PrRunSweep", Mock(return_value=Mock(crashed=threading.Event())))
     monkeypatch.setattr(sys, "argv", ["observer-service", "--config", str(tmp_path)])
     monkeypatch.setattr(service.sys, "flags", SimpleNamespace(isolated=1))
     monkeypatch.setattr(service.ControllerService, "installed", lambda **_: application)

@@ -10,19 +10,21 @@ import argparse
 import hmac
 import importlib
 import io
-import json
 import sys
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
-from threading import Event, Thread
+from threading import Event
 from typing import Any, cast
 from wsgiref.simple_server import make_server
 
 from livespec_dev_tooling._incident_ci_identity_json import identity_json
-from livespec_dev_tooling._incident_observer_types import (
-    RecoveryIntent,
-)
+from livespec_dev_tooling._incident_observer_dispatch import REFUSED_STARTUP
+from livespec_dev_tooling._incident_observer_dispatch import RequestDispatcher as _RequestDispatcher
+from livespec_dev_tooling._incident_observer_dispatch import json_reply as _reply
+from livespec_dev_tooling._incident_observer_types import RecoveryIntent
+from livespec_dev_tooling._incident_original_run_canonical import LedgerPort
+from livespec_dev_tooling._incident_original_run_ports import installed_ports
 from livespec_dev_tooling.incident_ci_attachment import CiJobAttachment
 from livespec_dev_tooling.incident_ci_identity import CiIdentityVerifier
 from livespec_dev_tooling.incident_ci_job_collection import CiJobCollection
@@ -36,10 +38,11 @@ from livespec_dev_tooling.incident_observer_query import ORDINARY_ACTION_PATH, O
 from livespec_dev_tooling.incident_observer_reconcile import ObserverReconcile
 from livespec_dev_tooling.incident_observer_recovery import ObserverRecovery
 from livespec_dev_tooling.incident_original_run_watch import installed_watcher
+from livespec_dev_tooling.incident_pr_run_records import PrRunSweep, retain_callback_run
 from livespec_dev_tooling.incident_release_screen import RELEASE_SCREEN_PATH, ReleaseScreen
 from livespec_dev_tooling.incident_strict_json import IncidentJsonRefusalError, strict_json
 
-__all__: list[str] = ["ControllerService"]
+__all__: list[str] = ["ControllerService", "installed_ledger"]
 
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-47ij37
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-wanebl
@@ -66,6 +69,9 @@ class ControllerService:
     # Set when a recovery journals a rollback-conflict, so the conflict sweep writes it to
     # the chain at once, outside the fence the recovery itself ran under.
     conflict_journaled: Event = field(default_factory=Event, compare=False, repr=False)
+    # Set when a callback retains an expedited pull-request run record, so the run sweep
+    # writes it onto the incident item at once, outside the repository lock.
+    pr_run_retained: Event = field(default_factory=Event, compare=False, repr=False)
 
     @classmethod
     def installed(cls, *, config: Path) -> ControllerService | None:
@@ -209,8 +215,9 @@ class ControllerService:
                 },
             )
         if completion.branch != self.installation.target_branch:
-            # Only the configured target branch's jobs reach protected state; a
-            # registration retained for any other branch never acts.
+            # Only the configured target branch's jobs reach recovery; a registration
+            # retained for any other branch never acts. An armed pull-request head's
+            # incident CI job is still recorded on its incident item, and acts on nothing.
             return _reply(
                 start_response=start_response,
                 status="202 Accepted",
@@ -218,6 +225,12 @@ class ControllerService:
                     "status": "ignored",
                     "reason": "job is outside the configured target branch",
                     "action_id": None,
+                    "pr_run": retain_callback_run(
+                        state=self.installation.state,
+                        completion=completion,
+                        body=body or b"",
+                        wake=self.pr_run_retained,
+                    ),
                 },
             )
         forwarded = {**environ, "wsgi.input": io.BytesIO(body or b"")}
@@ -228,32 +241,12 @@ class ControllerService:
         )(forwarded, start_response)
 
 
-def _reply(*, start_response: _StartResponse, status: str, result: dict[str, Any]) -> list[bytes]:
-    _ = start_response(
-        status, [("Content-Type", "application/json"), ("Cache-Control", "no-store")]
-    )
-    return [json.dumps(result).encode()]
-
-
-@dataclass(frozen=True, kw_only=True)
-class _RequestDispatcher:
-    """Compose concurrent dispatch through BaseServer's public request protocol."""
-
-    server: Any
-
-    def __call__(self, request: Any, client_address: Any) -> None:
-        Thread(
-            target=self._finish,
-            kwargs={"request": request, "address": client_address},
-            daemon=True,
-        ).start()
-
-    def _finish(self, *, request: Any, address: Any) -> None:
-        request.settimeout(10)
-        try:
-            self.server.finish_request(request, address)
-        finally:
-            self.server.shutdown_request(request)
+def installed_ledger(*, installation: ControllerInstallation) -> LedgerPort | None:
+    """The tenant-credentialed ledger port, or None while the credential is unavailable."""
+    try:
+        return installed_ports(installation=installation).canonical.ledger
+    except OSError:
+        return None
 
 
 def main() -> int:
@@ -263,14 +256,7 @@ def main() -> int:
     args = parser.parse_args()
     application = ControllerService.installed(config=args.config) if sys.flags.isolated else None
     if application is None:
-        _ = sys.stdout.write(
-            json.dumps(
-                {
-                    "status": "refused",
-                    "reason": "protected released installation and recovery capability required",
-                }
-            )
-        )
+        _ = sys.stdout.write(REFUSED_STARTUP)
         return 2
     _ = ObserverReconcile(installation=application.installation).resume_prepared()
     # A reverted incident's original run is collected by the controller itself, so no
@@ -284,16 +270,25 @@ def main() -> int:
     sweep = ConflictSweep(
         installation=application.installation, wake=application.conflict_journaled
     )
+    # The run sweep writes armed heads' run records onto their incident items.
+    runs = PrRunSweep(
+        state=application.installation.state,
+        repository=application.installation.repository,
+        ledger=lambda: installed_ledger(installation=application.installation),
+        wake=application.pr_run_retained,
+    )
     with make_server("127.0.0.1", application.installation.port, application) as server:
         server.process_request = _RequestDispatcher(server=server)
         _ = watcher.start(on_exit=server.shutdown)
         _ = sweep.start(stop=stop, on_crash=server.shutdown)
+        _ = runs.start(stop=stop, on_crash=server.shutdown)
         try:
             server.serve_forever()
         finally:
             stop.set()
             application.conflict_journaled.set()
-    return 1 if watcher.failed.is_set() or sweep.crashed.is_set() else 0
+            application.pr_run_retained.set()
+    return 1 if any(e.is_set() for e in (watcher.failed, sweep.crashed, runs.crashed)) else 0
 
 
 if __name__ == "__main__":
