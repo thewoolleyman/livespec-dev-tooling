@@ -36,6 +36,18 @@ _PATH_RUN_CHECKS = (
         "tests/livespec_dev_tooling/checks/test_aggregate_completeness.py",
         "livespec_dev_tooling.checks.aggregate_completeness",
     ),
+    (
+        "tests/livespec_dev_tooling/checks/test_ci_gate_parity.py",
+        "livespec_dev_tooling.checks.ci_gate_parity",
+    ),
+    (
+        "tests/livespec_dev_tooling/checks/test_tool_backed_check_completeness.py",
+        "livespec_dev_tooling.checks.tool_backed_check_completeness",
+    ),
+    (
+        "tests/livespec_dev_tooling/workflow_checks/test_no_stale_revise_branches.py",
+        "livespec_dev_tooling.workflow_checks.no_stale_revise_branches",
+    ),
 )
 _SUITE = """\
 import subprocess
