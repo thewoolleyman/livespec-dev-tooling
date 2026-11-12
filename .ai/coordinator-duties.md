@@ -355,12 +355,18 @@ on bd-ib-voozdp. The maintainer: "Ensure there is a permanent fix for this", rec
 SendMessage this seat, so read the comments on the items such a seat owns as well as its pane. Measured 2026-11-07:
 livespec-dev-tooling-xpuv6h, owned by fleet-mutation-testing-rule-26 on chads-macbook-pro, waited 48 minutes on one.
 
-**Seats on other machines are read like local ones.** Every tick, run `herdr --machine chads-macbook-pro agent list`,
-then `herdr --machine chads-macbook-pro pane read <pane> --source recent-unwrapped` for each of these seats:
+**Seats on other machines are read like local ones.** Every tick, run `herdr --machine <machine> agent list` for each
+saved remote herdr machine that holds a monitored seat. Then run `herdr --machine <machine> pane read <pane> --source
+recent-unwrapped` for each seat:
 
-- fleet-mutation-testing-rule-26 (plan `livespec-dev-tooling-oi2two`), workspace w3, tab w3:t2;
-- development-bootstrap (an ad-hoc docs plan in the macbook-pro-info repo, with no livespec tooling), workspace w3,
-  tab w3:t1.
+- fleet-mutation-testing-rule-26 (plan `livespec-dev-tooling-oi2two`) runs on machine gamingpc-xubuntu, workspace
+  livespec-dev-tooling, tab fleet-mutation-testing-rule-26 (pane w2:p1 as of 2026-11-12);
+- expedited-incident-response-flag (plan `livespec-dev-tooling-bqnzcm`) runs on machine chads-macbook-pro, workspace
+  livespec-dev-tooling, tab expedited-incident-response-flag (pane w5:p1 as of 2026-11-12);
+- development-bootstrap (an ad-hoc docs plan in the macbook-pro-info repo, with no livespec tooling) runs on machine
+  chads-macbook-pro, tab w3:t1.
+
+`herdr machine list` names the saved machines. A pane id is only a pointer; re-read the list every tick.
 
 They get the standard §3 seat duties. A design or direction call on the maintainer-driven plan goes to the maintainer
 (§9), never decided by the coordinator. Their CI and factory traffic counts in the tick, and any factory launch they
@@ -1205,10 +1211,13 @@ on the node itself, not on the dispatching host: `ssh <host> cat
 /sys/fs/cgroup/kubepods.slice/kubepods-besteffort.slice/cpu.pressure`. Measured 2026-11-07: legacy-dispatcher-agent
 reported vmi3006760.contaboserver.net's figures as gmktec-xubuntu's until 20:02Z.
 
-**The avg60 tripwire cuts the fleet cap only on a factory-pod node (coordinator's reading).** The fleet-cap cut
-(11 to 9) on the avg60 > 30 tripwire fires only when the reading is on a node that runs factory pods:
-gmktec-xubuntu or poweredge-xubuntu. A reading over 30 twice on hp-xubuntu or the M4 worker is REPORTED for
-CI-capacity routing, and is not used to cut the factory cap. Correction recorded 2026-11-09.
+**The avg60 tripwire cuts the fleet cap only on a factory-pod node (coordinator's reading).** The fleet-cap cut on the
+avg60 > 30 tripwire, which is MINUS 2 from the current cap (20 to 18 at a cap of 20) and is restored on two calm reads,
+fires only when the reading is on a node that runs factory pods: gmktec-xubuntu or poweredge-xubuntu. A reading over 30
+twice on hp-xubuntu or the M4 worker is REPORTED for CI-capacity routing, and is not used to cut the factory cap.
+Correction recorded 2026-11-09. The cut became relative on 2026-11-12, when the fleet and gmk caps went 19 to 20 at
+09:57:08Z and legacy-dispatcher-agent fixed tripwire.sh, which had hard-coded 9 (coordinator session cb187a57 handoff on
+epic `livespec-dev-tooling-6tgd2z`, 2026-11-12T10:33:39Z).
 
 ## 12. Hygiene
 
