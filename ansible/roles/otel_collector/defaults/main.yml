@@ -67,6 +67,14 @@ otel_collector_config_path: "{{ otel_collector_etc_dir }}/config.yaml"
 # when the file lacks it. See ../../README.md for the one-time placement.
 otel_collector_environment_path: "{{ otel_collector_etc_dir }}/.env"
 
+# A k3s agent configuration that reads `${env:OTLP_PODS_ENDPOINT}` binds its
+# pod receiver on this node's flannel gateway. k3s owns the file and rewrites it
+# when the node is enrolled, so the role reads it at converge time instead of
+# carrying one gateway address for every agent. A host may override the derived
+# value only where its collector must bind somewhere else.
+otel_collector_flannel_subnet_path: /run/flannel/subnet.env
+otel_collector_otlp_pods_endpoint: ""
+
 # Further environment files the unit reads, listed BEFORE the one above so a
 # value in it wins — the ordering the CI-runner host's sibling unit states. Each
 # is an ASSERTED precondition, owned by the collector repository's own installer:

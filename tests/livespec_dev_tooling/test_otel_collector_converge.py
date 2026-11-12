@@ -27,6 +27,8 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+import jinja2
+
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _PLAY = _REPO_ROOT / "ansible" / "dev-host.yml"
 _ROLE = _REPO_ROOT / "ansible" / "roles" / "otel_collector"
@@ -62,6 +64,37 @@ def _task_blocks(*, body: str) -> list[str]:
 def _role_text() -> str:
     return "\n".join(
         path.read_text(encoding="utf-8") for path in sorted(_ROLE.rglob("*")) if path.is_file()
+    )
+
+
+def _task(*, name: str) -> str:
+    """Return the one task named ``name`` from the collector role."""
+    matches = [
+        block
+        for block in _task_blocks(body=_TASKS.read_text(encoding="utf-8"))
+        if block.startswith(f"- name: {name}\n")
+    ]
+    assert len(matches) == 1, f"expected one task named {name!r}; got {len(matches)}"
+    return matches[0]
+
+
+def _render_pods_endpoint(*, flannel_subnet: str, override: str = "") -> str:
+    """Render the role's exact endpoint expression for one node's flannel fact."""
+    task = _task(name="Name the OTLP pods endpoint for this node")
+    expression = task.split("otel_collector_otlp_pods_endpoint_effective: >-\n", 1)[1].split(
+        "\n  when:", 1
+    )[0]
+    environment = jinja2.Environment(undefined=jinja2.StrictUndefined, autoescape=False)
+    environment.filters["regex_replace"] = lambda value, pattern, replacement: re.sub(
+        pattern, replacement, value
+    )
+    return (
+        environment.from_string(expression)
+        .render(
+            otel_collector_otlp_pods_endpoint=override,
+            otel_collector_flannel_subnet_read={"stdout": f"FLANNEL_SUBNET={flannel_subnet}"},
+        )
+        .strip()
     )
 
 
@@ -185,3 +218,51 @@ def test_the_same_converge_installs_the_services_systemd_unit() -> None:
             "ansible.builtin.slurp:",
         ):
             assert writer not in block, block
+
+
+def test_k3s_agents_render_their_own_otlp_pods_gateway_from_flannel() -> None:
+    """The same role variables give each agent its own flannel gateway bind."""
+    defaults = _DEFAULTS.read_text(encoding="utf-8")
+    assert "otel_collector_flannel_subnet_path: /run/flannel/subnet.env" in defaults, defaults
+
+    read = _task(name="Read this node's flannel subnet for the OTLP pods endpoint")
+    assert "ansible.builtin.command:" in read, read
+    assert '"{{ otel_collector_flannel_subnet_path }}"' in read, read
+    assert "'OTLP_PODS_ENDPOINT' in otel_collector_required_environment_keys" in read, read
+    assert "otel_collector_otlp_pods_endpoint | length == 0" in read, read
+    assert "changed_when: false" in read, read
+    assert "failed_when: false" in read, read
+
+    refusal = _task(name="Refuse an OTLP pods configuration without this node's flannel subnet")
+    assert "ansible.builtin.assert:" in refusal, refusal
+    assert "otel_collector_flannel_subnet_path" in refusal, refusal
+    assert "FLANNEL_SUBNET" in refusal, refusal
+
+    assert _render_pods_endpoint(flannel_subnet="10.42.5.1/24") == "10.42.5.1:4319"
+    assert _render_pods_endpoint(flannel_subnet="10.42.1.1/24") == "10.42.1.1:4319"
+
+
+def test_otlp_pods_endpoint_override_wins_over_the_flannel_gateway() -> None:
+    """A host-specific override is deliberate and is what the role writes."""
+    write = _task(name="Write the OTLP pods endpoint the merged configuration reads")
+    assert "ansible.builtin.lineinfile:" in write, write
+    assert 'regexp: "^OTLP_PODS_ENDPOINT="' in write, write
+    assert "otel_collector_otlp_pods_endpoint_effective" in write, write
+
+    assert (
+        _render_pods_endpoint(flannel_subnet="10.42.5.1/24", override="192.0.2.8:4319")
+        == "192.0.2.8:4319"
+    )
+
+
+def test_otlp_pods_endpoint_refuses_missing_flannel_before_writing_an_endpoint() -> None:
+    """A configuration that reads the key fails closed when no override can supply it."""
+    refusal = _task(name="Refuse an OTLP pods configuration without this node's flannel subnet")
+    write = _task(name="Write the OTLP pods endpoint the merged configuration reads")
+    tasks = _task_blocks(body=_TASKS.read_text(encoding="utf-8"))
+
+    assert "otel_collector_flannel_subnet_read.rc == 0" in refusal, refusal
+    assert "FLANNEL_SUBNET" in refusal, refusal
+    assert tasks.index(refusal) < tasks.index(
+        write
+    ), "the missing flannel assertion must run before the endpoint writer"

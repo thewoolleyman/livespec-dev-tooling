@@ -147,6 +147,85 @@
       Nothing has been written and the running service is untouched.
     success_msg: every further environment file the unit reads is present
 
+- name: Read the merged collector configuration on the control node
+  # A control-node lookup rather than a download on the target, so the apply
+  # and the `--check --diff` drift report compare the SAME bytes: the dry run
+  # then reports the real difference between what is merged and what the
+  # service is running, instead of whatever a target-side fetch found.
+  ansible.builtin.set_fact:
+    otel_collector_merged_config: >-
+      {{ lookup('ansible.builtin.url', otel_collector_config_url, split_lines=false) }}
+
+- name: Refuse a fetch that did not answer with a collector configuration
+  ansible.builtin.assert:
+    that:
+      - otel_collector_merged_config is search('(?m)^receivers:')
+      - otel_collector_merged_config is search('(?m)^exporters:')
+      - otel_collector_merged_config is search('(?m)^service:')
+    fail_msg: >-
+      {{ otel_collector_config_url }} did not answer with a collector
+      configuration. Nothing has been written and the running service is
+      untouched.
+    success_msg: the merged configuration names receivers, exporters and a service
+
+- name: Name the environment keys the merged configuration reads
+  # Derived from the configuration itself rather than listed here, so the
+  # preflight below cannot go stale when the collector repository adds or drops
+  # one. `[$][{]` and `[}]` are character classes to keep the pattern free of
+  # backslash escapes. A `${env:KEY:-fallback}` is deliberately NOT matched: the
+  # configuration carries its own default for that one, so the host owes no entry.
+  ansible.builtin.set_fact:
+    otel_collector_required_environment_keys: >-
+      {{ otel_collector_merged_config
+         | regex_findall('[$][{]env:([A-Za-z_][A-Za-z0-9_]*)[}]') | unique | sort }}
+
+- name: Read this node's flannel subnet for the OTLP pods endpoint
+  # The pod receiver is local to a k3s agent, so a collector configuration
+  # cannot carry another node's gateway. `grep` prints only the one fact that
+  # supplies the bind; the assertion below keeps a missing or malformed file
+  # from reaching the environment-file writer.
+  ansible.builtin.command:
+    argv:
+      - grep
+      - --only-matching
+      - --regexp
+      - "^FLANNEL_SUBNET=[^[:space:]]*$"
+      - "{{ otel_collector_flannel_subnet_path }}"
+  become: true
+  register: otel_collector_flannel_subnet_read
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  when:
+    - "'OTLP_PODS_ENDPOINT' in otel_collector_required_environment_keys"
+    - otel_collector_otlp_pods_endpoint | length == 0
+
+- name: Refuse an OTLP pods configuration without this node's flannel subnet
+  ansible.builtin.assert:
+    that:
+      - otel_collector_flannel_subnet_read.rc == 0
+      - >-
+        otel_collector_flannel_subnet_read.stdout
+        is match('^FLANNEL_SUBNET=([0-9]{1,3}[.]){3}[0-9]{1,3}/[0-9]{1,2}$')
+    fail_msg: >-
+      {{ otel_collector_flannel_subnet_path }} must set FLANNEL_SUBNET for the
+      OTLP_PODS_ENDPOINT the merged collector configuration reads. Set
+      otel_collector_otlp_pods_endpoint only for an intentional host override.
+      Nothing has been written.
+    success_msg: this node's flannel gateway can supply OTLP_PODS_ENDPOINT
+  when:
+    - "'OTLP_PODS_ENDPOINT' in otel_collector_required_environment_keys"
+    - otel_collector_otlp_pods_endpoint | length == 0
+
+- name: Name the OTLP pods endpoint for this node
+  ansible.builtin.set_fact:
+    otel_collector_otlp_pods_endpoint_effective: >-
+      {{ otel_collector_otlp_pods_endpoint
+         if otel_collector_otlp_pods_endpoint | length > 0
+         else (otel_collector_flannel_subnet_read.stdout
+               | regex_replace('^FLANNEL_SUBNET=([^/]+)/[0-9]+$', '\\1') ~ ':4319') }}
+  when: "'OTLP_PODS_ENDPOINT' in otel_collector_required_environment_keys"
+
 # --- what a host that owns its own binary installs --------------------------
 
 - name: Create the service account and install the pinned collector binary
@@ -224,6 +303,24 @@
     )
   register: otel_collector_environment_appended
 
+- name: Write the OTLP pods endpoint the merged configuration reads
+  # Unlike controller-supplied ingest secrets, this is a host fact the role
+  # owns. Replace a prior derived value on every converge so a node reenrolled
+  # onto a new flannel subnet cannot retain its old, unbindable gateway.
+  ansible.builtin.lineinfile:
+    path: "{{ otel_collector_environment_path }}"
+    regexp: "^OTLP_PODS_ENDPOINT="
+    line: "OTLP_PODS_ENDPOINT={{ otel_collector_otlp_pods_endpoint_effective }}"
+    insertafter: EOF
+    create: true
+    owner: root
+    group: root
+    mode: "0600"
+  become: true
+  no_log: true
+  register: otel_collector_otlp_pods_endpoint_written
+  when: "'OTLP_PODS_ENDPOINT' in otel_collector_required_environment_keys"
+
 - name: Look for the collector's ingest-key environment file
   # Only its existence is read here. The values reach the process through the
   # unit's EnvironmentFile and nowhere else; the role writes it only through the
@@ -249,39 +346,11 @@
     success_msg: the collector's environment file is present
   # Skipped for one run only: a dry run of a host whose file the append above
   # would have created, which under `--check` wrote nothing.
-  when: not (ansible_check_mode and (otel_collector_environment_appended.changed | default(false)))
-
-- name: Read the merged collector configuration on the control node
-  # A control-node lookup rather than a download on the target, so the apply
-  # and the `--check --diff` drift report compare the SAME bytes: the dry run
-  # then reports the real difference between what is merged and what the
-  # service is running, instead of whatever a target-side fetch found.
-  ansible.builtin.set_fact:
-    otel_collector_merged_config: >-
-      {{ lookup('ansible.builtin.url', otel_collector_config_url, split_lines=false) }}
-
-- name: Refuse a fetch that did not answer with a collector configuration
-  ansible.builtin.assert:
-    that:
-      - otel_collector_merged_config is search('(?m)^receivers:')
-      - otel_collector_merged_config is search('(?m)^exporters:')
-      - otel_collector_merged_config is search('(?m)^service:')
-    fail_msg: >-
-      {{ otel_collector_config_url }} did not answer with a collector
-      configuration. Nothing has been written and the running service is
-      untouched.
-    success_msg: the merged configuration names receivers, exporters and a service
-
-- name: Name the environment keys the merged configuration reads
-  # Derived from the configuration itself rather than listed here, so the
-  # preflight below cannot go stale when the collector repository adds or drops
-  # one. `[$][{]` and `[}]` are character classes to keep the pattern free of
-  # backslash escapes. A `${env:KEY:-fallback}` is deliberately NOT matched: the
-  # configuration carries its own default for that one, so the host owes no entry.
-  ansible.builtin.set_fact:
-    otel_collector_required_environment_keys: >-
-      {{ otel_collector_merged_config
-         | regex_findall('[$][{]env:([A-Za-z_][A-Za-z0-9_]*)[}]') | unique | sort }}
+  when: >-
+    not (ansible_check_mode and (
+      (otel_collector_environment_appended.changed | default(false))
+      or (otel_collector_otlp_pods_endpoint_written.changed | default(false))
+    ))
 
 - name: Name the environment files the unit reads
   # ALL of them, because systemd merges them: a key set in a further file is a
@@ -321,6 +390,10 @@
               | selectattr('rc', 'equalto', 0)
               | map(attribute='item') | map('first') | list)
              + (otel_collector_appended_environment_keys if ansible_check_mode else [])
+             + (['OTLP_PODS_ENDPOINT']
+                if ansible_check_mode
+                and 'OTLP_PODS_ENDPOINT' in otel_collector_required_environment_keys
+                else [])
            ) }}
 
 - name: Refuse an environment file set missing a key the merged configuration reads
