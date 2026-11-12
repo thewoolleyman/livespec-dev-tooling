@@ -39,6 +39,7 @@ from livespec_dev_tooling.fleet._local_context import CommandOutcome, CommandRes
 from livespec_dev_tooling.incident_fleet_audit import SURFACES
 from livespec_dev_tooling.incident_fleet_cli import (
     CliEnvironment,
+    EnablementWriter,
     enable_repository,
     main,
     production_environment,
@@ -429,6 +430,20 @@ def _cli_serving(*, unreadable: str = "") -> ServingReader:
     return read
 
 
+def _recording_writer(*, directory: Path) -> EnablementWriter:
+    """Stand in for the serving controller: keep what the step asked it to record."""
+
+    def write(repository: str, manifest_sha256: str) -> tuple[int, str]:
+        directory.mkdir(parents=True, exist_ok=True)
+        record = {"repository": repository, "manifest_sha256": manifest_sha256}
+        _ = (directory / f"{repository.replace('/', '__')}.json").write_text(
+            json.dumps(record), encoding="utf-8"
+        )
+        return 0, f"enabled\t{repository}"
+
+    return write
+
+
 def _environment(
     *, tmp_path: Path, manifest: str | None = MANIFEST, unreadable: str = "", claims: bool = True
 ) -> CliEnvironment:
@@ -438,7 +453,7 @@ def _environment(
     texts = iter((manifest, manifest))
     return CliEnvironment(
         claims_path=claims_path,
-        state_dir=tmp_path / "state",
+        write_enablement=_recording_writer(directory=tmp_path / "state"),
         read_manifest=lambda: next(texts, None),
         read_serving=_cli_serving(unreadable=unreadable),
     )
@@ -542,7 +557,7 @@ def test_enable_repository_takes_the_report_it_is_given_only_by_its_ready_list()
     status, line = enable_repository(
         repository="x/y",
         report=FleetReport(audit=audit, readings=()),
-        state_dir=Path("/nonexistent"),
+        write=_recording_writer(directory=Path("/nonexistent")),
     )
     assert status == 1
     assert line == "refused\tx/y: missing evidence: x/y: gap"
@@ -575,8 +590,12 @@ def test_the_production_environment_cannot_be_steered_by_the_caller(
 
     environment = production_environment(run=run)
     assert environment.claims_path == COMMITTED_CLAIMS
-    assert environment.state_dir == (
-        Path(pwd.getpwuid(os.getuid()).pw_dir) / ".local/state/livespec/incident-enabled"
+    assert environment.write_enablement("example/unserved", "a" * 64) == (
+        1,
+        "refused\texample/unserved: no controller installation serves it",
+    )
+    assert not (Path(pwd.getpwuid(os.getuid()).pw_dir) / ".local/state/livespec").is_relative_to(
+        tmp_path
     )
     assert environment.read_manifest() is None
     assert any("github.com/thewoolleyman/livespec.git" in part for a in asked for part in a)
@@ -610,9 +629,15 @@ from pathlib import Path
 from livespec_dev_tooling.incident_fleet_cli import CliEnvironment, main
 config = json.loads(sys.argv[1])
 unreadable = config["unreadable"]
+def write(repository, manifest_sha256):
+    state = Path(config["state"])
+    state.mkdir(parents=True, exist_ok=True)
+    record = {"repository": repository, "manifest_sha256": manifest_sha256}
+    (state / (repository.replace("/", "__") + ".json")).write_text(json.dumps(record))
+    return 0, "enabled\t" + repository
 environment = CliEnvironment(
     claims_path=Path(config["claims"]),
-    state_dir=Path(config["state"]),
+    write_enablement=write,
     read_manifest=lambda: config["manifest"],
     read_serving=lambda *, repository, capability: None if capability == unreadable else "1.0.0",
 )
@@ -772,7 +797,17 @@ def test_a_ruleset_guarding_the_default_branch_among_other_refs_still_counts() -
     assert served == "v1@" + "c" * 40 + "+bypass-app-5"
 
 
-def test_enablement_creates_the_whole_state_directory_path(tmp_path: Path) -> None:
-    deep = replace(_environment(tmp_path=tmp_path), state_dir=tmp_path / "a" / "b" / "state")
-    assert main(argv=["enable", "example/tooling"], environment=deep) == 0
-    assert (tmp_path / "a" / "b" / "state" / "example__tooling.json").is_file()
+def test_a_refusal_by_the_serving_controller_fails_the_step_and_names_it(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    def refuse(repository: str, manifest_sha256: str) -> tuple[int, str]:
+        assert manifest_sha256
+        return 1, f"refused\t{repository}: controller refused: not confirmed"
+
+    refusing = replace(_environment(tmp_path=tmp_path), write_enablement=refuse)
+    assert main(argv=["enable", "example/tooling"], environment=refusing) == 1
+    captured = capsys.readouterr()
+    assert (captured.out, captured.err) == (
+        "",
+        "refused\texample/tooling: controller refused: not confirmed\n",
+    )

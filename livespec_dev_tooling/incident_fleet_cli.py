@@ -11,7 +11,6 @@ account database, and no argument or environment variable moves them.
 
 from __future__ import annotations
 
-import json
 import sys
 from argparse import ArgumentParser
 from collections.abc import Callable, Sequence
@@ -24,6 +23,7 @@ if str(_VENDOR_DIR) not in sys.path:
 
 from returns.result import Failure  # noqa: E402
 
+from livespec_dev_tooling import incident_enablement as enable  # noqa: E402
 from livespec_dev_tooling._incident_fleet_command import (  # noqa: E402
     FleetReport,
     exit_code,
@@ -46,33 +46,52 @@ from livespec_dev_tooling.incident_fleet_serving import (  # noqa: E402
     host_serving_reader,
 )
 
-__all__: list[str] = ["CliEnvironment", "enable_repository", "main", "production_environment"]
+__all__: list[str] = [
+    "CliEnvironment",
+    "EnablementWriter",
+    "enable_repository",
+    "main",
+    "production_environment",
+]
 
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-3wcldx
-# The enablement record is written for the incident execution resolver's read; wiring that
-# resolver to refuse an incident flag in a repository without this record is not done here.
+# EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-qmuk7z
+# The step's only durable output is the record the serving controller installation holds
+# (incident_enablement.py); no dev-host file stands in for it.
+EnablementWriter = Callable[[str, str], tuple[int, str]]
+
+
+@dataclass(frozen=True, kw_only=True)
+class _ControllerWriter:
+    """The step's positional writer over the controller client's keyword-only one."""
+
+    write: enable.EnablementWriter
+
+    def __call__(self, repository: str, manifest_sha256: str) -> tuple[int, str]:
+        return self.write(repository=repository, manifest_sha256=manifest_sha256)
 
 
 @dataclass(frozen=True, kw_only=True)
 class CliEnvironment:
-    """Where the command reads from. Production builds it from fixed locations only."""
+    """Where the command reads from and writes to. Production fixes every location."""
 
     claims_path: Path
-    state_dir: Path
+    write_enablement: EnablementWriter
     read_manifest: Callable[[], str | None]
     read_serving: ServingReader
 
 
 def production_environment(*, run: CommandRunner = scrubbed_runner) -> CliEnvironment:
-    """Core's manifest over git, this code's own claims, and this host's installed state.
+    """Core's manifest over git, this code's own claims, this host's installed state.
 
     Every subprocess goes through `scrubbed_runner`: fixed binaries and a scrubbed
     environment, so neither `PATH` nor `GIT_*` nor the caller's git config moves a read.
+    The record is written only to the controller installation serving the repository.
     """
     probe = production_probe(run=run)
     return CliEnvironment(
         claims_path=COMMITTED_CLAIMS,
-        state_dir=probe.home / ".local" / "state" / "livespec" / "incident-enabled",
+        write_enablement=_ControllerWriter(write=enable.controller_enablement_writer()),
         read_manifest=core_manifest_reader(owner=FLEET_OWNER, run=run),
         read_serving=host_serving_reader(probe=probe),
     )
@@ -86,19 +105,18 @@ def _missing_evidence(*, repository: str, report: FleetReport) -> str:
     return "; ".join(named) or "no audited incident surface classifies it as a ready consumer"
 
 
-def enable_repository(*, repository: str, report: FleetReport, state_dir: Path) -> tuple[int, str]:
-    """Enable only a ready repository; refuse by name with the audit's recorded evidence gap."""
+def enable_repository(
+    *, repository: str, report: FleetReport, write: EnablementWriter
+) -> tuple[int, str]:
+    """Enable only a ready repository; refuse by name with the audit's recorded evidence gap.
+
+    The record goes to the serving controller, bound to the identity this audit read.
+    """
     audit = report.audit
     if repository not in audit.ready_repositories:
         gap = _missing_evidence(repository=repository, report=report)
         return 1, f"refused\t{repository}: missing evidence: {gap}"
-    state_dir.mkdir(parents=True, exist_ok=True)
-    record = state_dir / f"{repository.replace('/', '__')}.json"
-    _ = record.write_text(
-        json.dumps({"repository": repository, "manifest_sha256": audit.manifest_sha256}) + "\n",
-        encoding="utf-8",
-    )
-    return 0, f"enabled\t{repository}"
+    return write(repository, audit.manifest_sha256)
 
 
 def main(*, argv: Sequence[str], environment: CliEnvironment) -> int:
@@ -123,7 +141,7 @@ def main(*, argv: Sequence[str], environment: CliEnvironment) -> int:
         _ = sys.stdout.write("\n".join((*render_report(report=report), *notes)) + "\n")
         return exit_code(report=report) or int(bool(notes))
     status, line = enable_repository(
-        repository=str(args.repository), report=report, state_dir=environment.state_dir
+        repository=str(args.repository), report=report, write=environment.write_enablement
     )
     _ = (sys.stdout if status == 0 else sys.stderr).write(line + "\n")
     return status
