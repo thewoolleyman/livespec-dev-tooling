@@ -340,6 +340,75 @@ def test_a_stalled_suite_reaps_a_descendant_that_started_its_own_session() -> No
         _ = [os.kill(int(pid), signal.SIGTERM) for pid in _live_processes_carrying(token)]
 
 
+def test_a_stalled_suite_reaps_an_escapee_orphaned_before_the_stall() -> None:
+    """A session-escaping child whose parent already exited is still ended."""
+    mod = _load()
+    token = f"livespec-stall-orphan-escape-{uuid.uuid4().hex}"
+    orphaned = (
+        f"(setsid {sys.executable} -c 'import time; time.sleep(300)' {token} &) ; "
+        "printf ready; sleep 300"
+    )
+    try:
+        run = mod.run_suite(
+            argv=["sh", "-c", orphaned],
+            bound=mod.SuiteBound(stall_seconds=2, ceiling_seconds=None),
+        )
+
+        assert run.timed_out is True
+        assert not _live_processes_carrying(token)
+        assert "ending out-of-group descendant pid=" in run.output
+        assert token in run.output
+    finally:
+        _ = [os.kill(int(pid), signal.SIGTERM) for pid in _live_processes_carrying(token)]
+
+
+def test_marked_pids_names_every_process_carrying_the_run_mark(*, tmp_path: Path) -> None:
+    """Only numeric entries whose readable environment holds the exact mark count."""
+    mod = _load()
+    mark_entry = f"{mod.RUN_MARK_ENV}=wanted".encode()
+    for name, environment in (
+        ("12", b"A=1\0" + mark_entry + b"\0"),
+        ("13", b"A=1\0" + f"{mod.RUN_MARK_ENV}=other".encode() + b"\0"),
+        ("14", b""),
+    ):
+        (tmp_path / name).mkdir()
+        (tmp_path / name / "environ").write_bytes(environment)
+    (tmp_path / "15").mkdir()
+    (tmp_path / "15" / "environ").mkdir()
+    (tmp_path / "self").mkdir()
+    (tmp_path / "self" / "environ").write_bytes(mark_entry)
+
+    assert mod.marked_pids(mark="wanted", proc_root=tmp_path) == frozenset({12})
+    assert mod.marked_pids(mark="wanted", proc_root=tmp_path / "absent") == frozenset()
+
+
+def test_out_of_group_descendants_adds_marked_processes_the_ancestry_walk_misses(
+    *, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A marked orphan joins the ancestry escapees once; in-group and vanished pids do not."""
+    mod = _load()
+    monkeypatch.setattr(
+        mod,
+        "process_table",
+        lambda: {
+            10: (1, 10, "leader"),
+            11: (10, 11, "escaped child"),
+            12: (11, 12, "escaped grandchild"),
+            20: (1, 20, "orphan"),
+            21: (1, 10, "same group"),
+        },
+    )
+    monkeypatch.setattr(mod, "marked_pids", lambda **_kwargs: frozenset({11, 20, 21, 22}))
+
+    found = mod.out_of_group_descendants(root_pid=10, mark="mark")
+
+    assert sorted(found) == [
+        (11, "escaped child"),
+        (12, "escaped grandchild"),
+        (20, "orphan"),
+    ]
+
+
 def test_process_cleanup_tolerates_unavailable_process_records_and_disappearing_pids(
     *, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -381,14 +450,14 @@ def test_process_cleanup_tolerates_unavailable_process_records_and_disappearing_
     monkeypatch.setattr(mod.os, "kill", _process_missing)
     monkeypatch.setattr(mod.os, "killpg", _process_missing)
     reported: list[str] = []
-    assert mod.end_stalled_suite(proc=FinishedProcess(), report=reported.append) == (
+    assert mod.end_stalled_suite(proc=FinishedProcess(), mark="mark", report=reported.append) == (
         (2, "escaped"),
     )
     assert reported == ["suite-green: ending out-of-group descendant pid=2 cmdline=escaped\n"]
 
     alive = iter((True, False, False))
     monkeypatch.setattr(mod, "is_alive", lambda **_kwargs: next(alive))
-    assert mod.end_stalled_suite(proc=FinishedProcess()) == ((2, "escaped"),)
+    assert mod.end_stalled_suite(proc=FinishedProcess(), mark="mark") == ((2, "escaped"),)
 
 
 def test_the_gate_runners_progress_stamp_is_one_of_the_scrubbed_gate_variables() -> None:
