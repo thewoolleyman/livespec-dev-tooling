@@ -1267,6 +1267,33 @@ def test_a_stalled_gate_reaps_a_descendant_that_started_its_own_session(
 
 
 @pytest.mark.integration
+def test_a_stalled_gate_reaps_an_escapee_orphaned_before_the_stall(
+    *, fixture_repo: tuple[Path, Path, dict[str, str]]
+) -> None:
+    """A session-escaping child whose parent already exited is still ended."""
+    primary, worktree, env = fixture_repo
+    token = f"livespec-gate-orphan-escape-{time.monotonic_ns()}"
+    orphaned = (
+        f"(setsid python3 -c 'import time; time.sleep(300)' {token} &) ; "
+        "echo collected; exec sleep 300"
+    )
+    try:
+        run_id = _start(
+            cwd=worktree,
+            env={**env, _STALL_ENV: "2", _STALL_GRACE_ENV: "1"},
+            command=["bash", "-c", orphaned],
+        )
+
+        run_dir = _await_verdict(primary=primary, run_id=run_id)
+        output = (run_dir / "output.log").read_text(encoding="utf-8")
+        assert not _live_processes_carrying(token=token)
+        assert "out-of-group descendant pid=" in output
+        assert token in output
+    finally:
+        _end_processes_carrying(token=token)
+
+
+@pytest.mark.integration
 def test_a_gate_that_keeps_making_progress_is_not_ended_by_the_stall_window(
     *, tmp_path: Path, fixture_repo: tuple[Path, Path, dict[str, str]]
 ) -> None:
