@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 
+from livespec_dev_tooling import incident_conflict_publication as publication
 from livespec_dev_tooling._incident_conflict_generation import ChainWrite
 from livespec_dev_tooling.incident_conflict_publication import (
     ConflictPublication,
@@ -96,6 +97,68 @@ def test_alternating_retry_reasons_turn_terminal_at_the_global_attempt_bound(fai
     assert outcomes == ["deferred"] * 47 + ["terminal"]
     assert state["attempts"] == 48 and "terminal" in state
     assert not is_due(action=_action(world), now=clock.now + 3600)
+
+
+def test_an_operator_reconcile_records_its_override_and_applies_the_next_backoff(
+    failing, monkeypatch
+):
+    world, chain = failing
+    _journal(world, chain, monkeypatch)
+    chain.down(down=True)
+    clock = Clock()
+    assert "deferred" in _settle(world, automatic=True, clock=clock).reason
+    overridden = _settle(world, automatic=False, clock=clock)
+    state = _action(world)["sweep"]
+    assert "deferred" in overridden.reason
+    assert (state["attempts"], state["next_at"], state["operator_overrides"]) == (
+        2,
+        clock.now + 600,
+        1,
+    )
+
+
+def test_an_operator_reconcile_after_the_backoff_is_due_does_not_record_an_override(
+    failing, monkeypatch
+):
+    world, chain = failing
+    _journal(world, chain, monkeypatch)
+    chain.down(down=True)
+    clock = Clock()
+    assert "deferred" in _settle(world, automatic=True, clock=clock).reason
+    clock.now += 300
+    due = _settle(world, automatic=False, clock=clock)
+    state = _action(world)["sweep"]
+    assert "deferred" in due.reason
+    assert (state["attempts"], state["next_at"], state.get("operator_overrides")) == (
+        2,
+        clock.now + 600,
+        None,
+    )
+
+
+def test_an_operator_override_does_not_recreate_an_action_removed_after_its_write(
+    failing, monkeypatch
+):
+    world, chain = failing
+    _journal(world, chain, monkeypatch)
+    chain.down(down=True)
+    clock = Clock()
+    assert "deferred" in _settle(world, automatic=True, clock=clock).reason
+    original_load = publication.load_record
+    calls = 0
+
+    def removed_before_override(*, path):
+        nonlocal calls
+        calls += 1
+        record = original_load(path=path)
+        if calls == 3:
+            record["actions"].pop(world.intent.action_id)
+        return record
+
+    monkeypatch.setattr(publication, "load_record", removed_before_override)
+    assert "deferred" in _settle(world, automatic=False, clock=clock).reason
+    state = _action(world)["sweep"]
+    assert (state["attempts"], state.get("operator_overrides")) == (2, None)
 
 
 def test_a_terminal_outcome_is_journaled_once_and_kept_against_a_later_retry(failing, monkeypatch):
