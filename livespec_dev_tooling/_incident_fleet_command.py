@@ -122,8 +122,14 @@ def run_fleet_audit(
     read_manifest: Callable[[], str | None],
     claims: tuple[CapabilityEvidence, ...],
     read_serving: ServingReader,
+    read_incident_phase: Callable[[str], str] = lambda _item: "",
 ) -> FleetReport:
-    """Audit the installed fleet against core's committed manifest identity."""
+    """Audit the installed fleet against core's committed manifest identity.
+
+    `read_incident_phase` is the canonical incident reader's phase for a claim's incident
+    item ("" when it reports none); an item at `drill-closed` is evidence of a drill, never
+    recovery capability for master.
+    """
     text = read_manifest()
     if text is None:
         return _unauthenticated(digest="", cause="livespec core master read unavailable")
@@ -147,6 +153,7 @@ def run_fleet_audit(
                 serving_build=served(
                     repository=claim.repository, capability=capability_of(surface=claim.surface)
                 ).build_for(surface=claim.surface, claimed=claim.release_build),
+                incident_phase=read_incident_phase(claim.incident_item),
             )
             for claim in claims
         ),

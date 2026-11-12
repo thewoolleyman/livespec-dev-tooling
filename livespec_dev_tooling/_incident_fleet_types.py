@@ -29,6 +29,7 @@ class CapabilityEvidence:
     cumulative_scope: str
     normal_factory_proof: str
     reason: str = ""
+    incident_phase: str = ""
 
 
 @dataclass(frozen=True, kw_only=True)
