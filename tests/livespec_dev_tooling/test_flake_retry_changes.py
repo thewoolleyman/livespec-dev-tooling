@@ -19,6 +19,24 @@ _GIT_IDENTITY = ("-c", "user.email=flake@example.invalid", "-c", "user.name=flak
 _RETRY = {"reruns": 3, "reruns_delay": 60}
 
 
+@pytest.fixture(autouse=True)
+def _isolate_flake_retry_session_state(*, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Give each in-process hook call its own copy of the plugin's session state.
+
+    The plugin keeps the RUNNING session's retry state in module globals, and this
+    suite's own pytest session loads the same module. A test that drives a hook
+    in-process without this fixture clears the real session's failed node ids and
+    leaves a fixture repository's withholding reason in it. The CI log then says
+    no failing test was retried (fleet-flaky-tests, livespec-dev-tooling-zwveqp),
+    and any later summary test in the same worker fails depending on test order.
+    """
+    plugin = importlib.import_module("livespec_dev_tooling.flake_retry")
+    monkeypatch.setattr(plugin, "_RESULTS", {})
+    monkeypatch.setattr(plugin, "_FAILED_NODEIDS", set[str]())
+    monkeypatch.setattr(plugin, "_SESSION_WITHHELD", list[str]())
+    monkeypatch.setattr(plugin, "_WITHHELD_BY_NODEID", dict[str, str]())
+
+
 def _git(*, repo: Path, args: list[str]) -> str:
     completed = subprocess.run(
         ["git", *_GIT_IDENTITY, *args], cwd=repo, check=True, capture_output=True, text=True
@@ -149,7 +167,6 @@ def test_a_withheld_retry_is_named_in_the_terminal_summary_with_the_failed_git_q
         root=tmp_path, origin=origin, sha=pushed, ref="refs/remotes/origin/master"
     )
     _git(repo=work, args=["remote", "set-url", "origin", (tmp_path / "gone").as_uri()])
-    monkeypatch.setattr(plugin, "_WITHHELD", [], raising=False)
     added: dict[str, list[object]] = {}
     session = SimpleNamespace(config=SimpleNamespace(rootpath=work))
     config = SimpleNamespace(pluginmanager=SimpleNamespace(hasplugin=lambda _name: True))
