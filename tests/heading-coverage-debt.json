@@ -1696,13 +1696,6 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario: the fabro_server role deletes an instance's retired sandbox environments",
-    "work_item": "livespec-dev-tooling-lmuhvi",
-    "first_seen": "2026-10-30"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
     "heading": "## Scenario: the first required master leaf failure fences incident recovery",
     "work_item": "livespec-dev-tooling-47ij37",
     "first_seen": "2026-11-03"
