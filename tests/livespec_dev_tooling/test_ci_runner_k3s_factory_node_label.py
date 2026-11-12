@@ -4,7 +4,7 @@ WHY THIS FILE EXISTS (work-item livespec-dev-tooling-7we6po, maintainer rulings
 2026-10-12 and 2026-10-13 on epic livespec-sqvj7p). `hp-xubuntu` joins the k3s
 pool as a FULL agent. It was CLOSED TO CI by its committed profile until
 2026-11-03 and is now `runner-only` (livespec-dev-tooling-zreev4): no
-`node-role/ci` taint and `ADMISSION_CAPACITY_C=8`, so its plan registers no
+`node-role/ci` taint and a declared `ADMISSION_CAPACITY_C`, so its plan registers no
 `--node-taint` at all. The three pool nodes carried a per-node FACTORY label
 that the kubernetes-sandbox-backend plugin selects on until 2026-11-03, when
 hp-xubuntu's profile moved to `FACTORY_NODE=false` (orchestrator plan

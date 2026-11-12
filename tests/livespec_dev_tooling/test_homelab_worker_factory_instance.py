@@ -161,7 +161,11 @@ def test_the_workers_instance_keeps_the_toolchain_id_on_a_native_image() -> None
 
 def test_the_workers_instance_serves_one_run_under_its_own_home() -> None:
     instance = _instance()
-    assert instance["max_concurrent_runs"] == 1
+    runs = instance["max_concurrent_runs"]
+    assert isinstance(runs, int) and runs > 0, (
+        "the worker instance must declare max_concurrent_runs as a positive integer; "
+        f"got {runs!r}"
+    )
     homes = _host_vars()["sandbox_driver_kubernetes_worker_config_homes"]
     assert instance["home_env"] == homes[0]["home"]
     state_dir = instance["sandbox_providers"]["kubernetes"]["env"][

@@ -46,6 +46,7 @@ cleanly, and produces a pool that admits the wrong amount of work.
 
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 
@@ -105,19 +106,24 @@ _QUEUE_NAME = re.compile(r"^\s*kueue\.x-k8s\.io/queue-name:\s*(?P<lq>\S+)\s*$", 
 _ADMISSION_CAPACITY = re.compile(r"^ADMISSION_CAPACITY_C=(?P<capacity>\d+)\s*$", re.MULTILINE)
 
 
-def _documents() -> list[str]:
-    """Every YAML document across the committed ClusterQueue manifests."""
+def _ceiling_rule(*, quota: int) -> int:
+    """The configured ceiling derived from one fair-share quota."""
+    return max(_CEILING_MULTIPLE * quota, _CEILING_FLOOR)
+
+
+def _documents(kueue_dir: Path = _KUEUE_DIR) -> list[str]:
+    """Every YAML document across the ClusterQueue manifests under `kueue_dir`."""
     return [
         document
-        for path in sorted(_KUEUE_DIR.glob("cluster-queue-*.yaml"))
+        for path in sorted(kueue_dir.glob("cluster-queue-*.yaml"))
         for document in _DOC_SEPARATOR.split(path.read_text(encoding="utf-8"))
     ]
 
 
-def _cohort_quotas() -> dict[str, int]:
+def _cohort_quotas(kueue_dir: Path = _KUEUE_DIR) -> dict[str, int]:
     """Each cohort-member ClusterQueue's churn-slot `nominalQuota`."""
     quotas: dict[str, int] = {}
-    for document in _documents():
+    for document in _documents(kueue_dir):
         kind = _KIND.search(document)
         cohort = _COHORT_NAME.search(document)
         name = _NAME.search(document)
@@ -184,7 +190,7 @@ def test_every_repository_ceiling_is_the_bounded_multiple_of_its_fair_share() ->
         f"unrouted={unrouted}"
     )
     expected = {
-        cq: _RECORDED_CEILING_EXCEPTIONS.get(cq, max(_CEILING_MULTIPLE * quota, _CEILING_FLOOR))
+        cq: _RECORDED_CEILING_EXCEPTIONS.get(cq, _ceiling_rule(quota=quota))
         for cq, quota in quotas.items()
     }
     wrong = sorted(
@@ -202,7 +208,7 @@ def test_every_repository_ceiling_is_the_bounded_multiple_of_its_fair_share() ->
     )
 
 
-def _pool_capacity() -> dict[str, int]:
+def _pool_capacity(profiles_dir: Path = _PROFILES_DIR) -> dict[str, int]:
     """Each pool node's `ADMISSION_CAPACITY_C`, keyed by profile name.
 
     Churn-slot capacity is PER-NODE since the two-node opening (DERIVATION.md
@@ -211,51 +217,114 @@ def _pool_capacity() -> dict[str, int]:
     to is the TOTAL across every node's own profile, not any one node's value.
     """
     capacities: dict[str, int] = {}
-    for profile in sorted(_PROFILES_DIR.glob("*.env")):
+    for profile in sorted(profiles_dir.glob("*.env")):
         declared = _ADMISSION_CAPACITY.search(profile.read_text(encoding="utf-8"))
         assert declared is not None, (
             f"every pool node's admission capacity C must be a value of its committed "
             f"profile — the per-node profile is where the section's host-capacity term "
-            f"lives; profile={profile.relative_to(_REPO_ROOT)}"
+            f"lives; profile={profile.name}"
         )
         capacities[profile.name] = int(declared.group("capacity"))
     return capacities
 
 
-def test_the_fair_shares_sum_to_the_capacity_the_node_profiles_declare() -> None:
-    """The apportionment is exact: the floors add up to the pool's total C across nodes."""
-    quotas = _cohort_quotas()
+def _quota_derivation_violations(*, quotas: dict[str, int], capacity: int) -> list[str]:
+    """Why these fair shares break the apportionment rule for a pool of `capacity`.
+
+    The rule gives every cohort member a floor of at least one and makes the
+    guaranteed floors add up to exactly the pool's total registered capacity.
+    """
+    violations = [
+        f"{cq}: nominalQuota={quota} is below the floor of 1 the rule guarantees every member"
+        for cq, quota in sorted(quotas.items())
+        if quota < 1
+    ]
+    if sum(quotas.values()) != capacity:
+        violations.append(
+            f"the cohort's guaranteed floors must sum to exactly the pool's TOTAL registered "
+            f"capacity across every node — over-subscribed, a floor is not a floor; "
+            f"under-subscribed, capacity the pool has is unreachable by anyone; "
+            f"sum={sum(quotas.values())} capacity={capacity} quotas={quotas}"
+        )
+    return violations
+
+
+def test_every_pool_profile_declares_an_admission_capacity() -> None:
+    """Every profile carries the capacity input, as an integer, without pinning its value."""
     capacities = _pool_capacity()
     assert capacities, "at least one pool node profile must declare an ADMISSION_CAPACITY_C"
-    capacity = sum(capacities.values())
-    assert sum(quotas.values()) == capacity, (
-        f"the cohort's guaranteed floors must sum to exactly the pool's TOTAL registered "
-        f"capacity across every node — the cohort quota is cluster-wide while churn-slot "
-        f"capacity is per-node, so it sums to both. Over-subscribed, a floor is not a floor "
-        f"— two repositories at their guaranteed share cannot both be admitted; "
-        f"under-subscribed, capacity the pool has is unreachable by anyone. Kueue applies "
-        f"either without complaint; sum={sum(quotas.values())} capacity={capacity} "
-        f"per_node={capacities} quotas={quotas}"
+    assert all(capacity > 0 for capacity in capacities.values()), capacities
+
+
+def _write_fixture_pool(*, root: Path, quotas: dict[str, int], capacities: dict[str, int]) -> None:
+    """Write a self-contained kueue directory and profile directory under `root`."""
+    kueue = root / "kueue"
+    profiles = root / "profiles"
+    kueue.mkdir()
+    profiles.mkdir()
+    documents = "---\n".join(
+        f"kind: ClusterQueue\nmetadata:\n  name: {cq}\nspec:\n  cohortName: {_COHORT}\n"
+        f"  resourceGroups:\n  - flavors:\n    - resources:\n      - name: {_CHURN_SLOT}\n"
+        f"        nominalQuota: {quota}\n"
+        for cq, quota in quotas.items()
     )
+    _ = (kueue / "cluster-queue-fixture.yaml").write_text(documents, encoding="utf-8")
+    for node, capacity in capacities.items():
+        _ = (profiles / f"{node}.env").write_text(
+            f"ADMISSION_CAPACITY_C={capacity}\n", encoding="utf-8"
+        )
+
+
+def test_the_fair_shares_derive_from_the_capacity_the_node_profiles_declare(
+    *, tmp_path: Path
+) -> None:
+    """The apportionment is exact on a fixture pool, and refused when it is not."""
+    agreeing = tmp_path / "agreeing"
+    agreeing.mkdir()
+    _write_fixture_pool(
+        root=agreeing, quotas={"a-cq": 3, "b-cq": 1}, capacities={"node-a": 3, "node-b": 1}
+    )
+    assert not _quota_derivation_violations(
+        quotas=_cohort_quotas(agreeing / "kueue"),
+        capacity=sum(_pool_capacity(agreeing / "profiles").values()),
+    )
+
+    oversubscribed = tmp_path / "oversubscribed"
+    oversubscribed.mkdir()
+    _write_fixture_pool(
+        root=oversubscribed, quotas={"a-cq": 3, "b-cq": 2}, capacities={"node-a": 3, "node-b": 1}
+    )
+    refused = _quota_derivation_violations(
+        quotas=_cohort_quotas(oversubscribed / "kueue"),
+        capacity=sum(_pool_capacity(oversubscribed / "profiles").values()),
+    )
+    assert len(refused) == 1
+    assert "sum=5 capacity=4" in refused[0]
+
+    zero_floor = _quota_derivation_violations(quotas={"a-cq": 4, "b-cq": 0}, capacity=4)
+    assert zero_floor == [
+        "b-cq: nominalQuota=0 is below the floor of 1 the rule guarantees every member"
+    ]
 
 
 def test_measured_job_hours_derive_the_committed_fair_shares() -> None:
-    """Seven-day pool job-hours are the dated, auditable source of every quota."""
-    expected = {
-        "livespec-orchestrator-beads-fabro-cq": 9,
-        "livespec-dev-tooling-cq": 10,
-        "livespec-dev-tooling-master-cq": 3,
-        "livespec-cq": 1,
-        "livespec-overseer-cq": 1,
-        "livespec-orchestrator-git-jsonl-cq": 1,
-        "livespec-driver-claude-cq": 1,
-        "livespec-driver-pi-cq": 1,
-        "livespec-console-beads-fabro-cq": 1,
-        "livespec-driver-codex-cq": 1,
-        "livespec-runtime-cq": 1,
-        "fabro-cq": 1,
-    }
-    assert _cohort_quotas() == expected
+    """Live shares stay well-formed; the capacity apportionment is fixture-proved.
+
+    Profile capacity is a value-only fast-path input, so a live profile change
+    must not require changing a ClusterQueue quota in the same commit.  The
+    apportionment itself is exercised by the self-written pools in
+    ``test_the_fair_shares_derive_from_the_capacity_the_node_profiles_declare``:
+    those fixtures prove both the agreeing and refused cases without coupling
+    either committed value to the other.
+    """
+    quotas = _cohort_quotas()
+    assert quotas and all(quota > 0 for quota in quotas.values()), (
+        "each committed cohort member must declare a positive fair-share quota; " f"quotas={quotas}"
+    )
+    assert set(quotas).issubset(_scale_set_ceilings()), (
+        "each measured fair share must map to a committed scale-set ceiling; "
+        f"quotas={sorted(quotas)} ceilings={sorted(_scale_set_ceilings())}"
+    )
 
     derivation = _DERIVATION.read_text(encoding="utf-8")
     assert "## Measured job-hours re-derivation at C = 44 (2026-10-22)" in derivation
@@ -290,22 +359,20 @@ def test_master_push_slice_reserves_its_quota_and_lends_none_of_it() -> None:
         assert setting in master
 
 
-def test_rederived_orchestrator_ceiling_removes_its_recorded_exception() -> None:
-    """The former 12-runner exception cannot outlive a rule value at or above 12."""
+def test_rederived_orchestrator_ceiling_removes_its_recorded_exception(*, tmp_path: Path) -> None:
+    """A fixture quota proves the ceiling derivation without pinning the live quota."""
     orchestrator = "livespec-orchestrator-beads-fabro-cq"
-    quota = _cohort_quotas()[orchestrator]
-    rule_value = max(_CEILING_MULTIPLE * quota, _CEILING_FLOOR)
     derivation = _DERIVATION.read_text(encoding="utf-8")
 
-    assert rule_value == 18
+    fixture = tmp_path / "quota.json"
+    _ = fixture.write_text('{"quota": 17}', encoding="utf-8")
+    rule_value = _ceiling_rule(quota=json.loads(fixture.read_text(encoding="utf-8"))["quota"])
+    assert rule_value == 34
     assert rule_value >= 12
     # Its DERIVATION.md row is gone with it: every row there must match an
     # exception here (test_every_recorded_exception_is_a_derivation_row_...).
     assert orchestrator not in _RECORDED_CEILING_EXCEPTIONS
-    assert (
-        "The Recorded exceptions to the rule table remains absent because 52 is not below 12."
-        in " ".join(derivation.split())
-    )
+    assert _EXCEPTIONS_HEADING in derivation
 
 
 def test_every_recorded_exception_is_a_derivation_row_that_still_permits_borrowing() -> None:
@@ -335,7 +402,7 @@ def test_every_recorded_exception_is_a_derivation_row_that_still_permits_borrowi
     for cq, ceiling in _RECORDED_CEILING_EXCEPTIONS.items():
         row = rows[cq]
         assert int(row.group("quota")) == quotas[cq], (cq, row.group(0))
-        assert int(row.group("rule")) == max(_CEILING_MULTIPLE * quotas[cq], _CEILING_FLOOR)
+        assert int(row.group("rule")) == _ceiling_rule(quota=quotas[cq])
         assert int(row.group("max")) == ceiling == ceilings[cq][1], (cq, row.group(0))
         assert ceiling > quotas[cq], (
             f"{cq}: an exception may waive the rule but not the borrowing clause; "

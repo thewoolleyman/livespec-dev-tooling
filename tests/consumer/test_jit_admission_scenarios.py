@@ -160,7 +160,7 @@ def _installation_secrets() -> dict[str, str]:
     return secrets
 
 
-def _registered_capacity() -> int:
+def _registered_capacity(profiles_dir: Path = _PROFILES_DIR) -> int:
     """The pool's total `ci-runner.io/churn-slot` capacity, summed across node profiles.
 
     Churn-slot capacity is PER-NODE since the two-node opening (DERIVATION.md
@@ -170,17 +170,44 @@ def _registered_capacity() -> int:
     """
     total = 0
     seen = False
-    for profile in sorted(_PROFILES_DIR.glob("*.env")):
+    for profile in sorted(profiles_dir.glob("*.env")):
         declared = _ADMISSION_CAPACITY.search(profile.read_text(encoding="utf-8"))
         assert declared is not None, (
             f"every pool node's admission capacity C must be a value of its committed "
             f"profile — the section's remaining-physical-capacity term lives there; "
-            f"profile={profile.relative_to(_REPO_ROOT)}"
+            f"profile={profile.name}"
         )
         total += int(declared.group("capacity"))
         seen = True
     assert seen, "at least one pool node profile must declare an ADMISSION_CAPACITY_C"
     return total
+
+
+def _startup_batch_violations(*, capacity: int, ceilings: int) -> list[str]:
+    """Why a pool of this capacity and summed ceilings breaks the startup-batch bound.
+
+    The capacity must convert to no more mint pairs than the half-budget burst
+    allows, and the summed ceilings must outrun the burst so the bound governs
+    a state the pool can actually be in.
+    """
+    violations: list[str] = []
+    if not 0 < capacity <= _BURST_MINT_PAIRS:
+        violations.append(
+            f"the pool's registered physical capacity bounds the startup batch, so admitting "
+            f"all of it costs {capacity} mint pairs at {_POINTS_PER_MINT_PAIR} points each — "
+            f"which must stay inside the {_STARTUP_BUDGET_POINTS}-point burst, i.e. "
+            f"{_BURST_MINT_PAIRS} pairs, half of GitHub's documented "
+            f"{_PRIMARY_POINTS_PER_MINUTE} REST points per minute; capacity={capacity}"
+        )
+    if ceilings <= _BURST_MINT_PAIRS:
+        violations.append(
+            f"the summed per-repository ceilings are the demand the batch can face, and they "
+            f"must exceed the burst for 'MUST NOT exceed the 450-point startup budget EVEN "
+            f"WHEN MORE DEMAND REMAINS' to govern a state the pool can actually be in — "
+            f"otherwise the bound above is asserted against demand that can never reach it; "
+            f"ceilings={ceilings} burst={_BURST_MINT_PAIRS}"
+        )
+    return violations
 
 
 def _active_config_lines() -> list[str]:
@@ -252,23 +279,32 @@ def test_the_startup_batch_admits_all_permitted_demand_inside_the_half_budget_bu
     more demand remains": the fleet's summed ceilings are what that demand can
     reach, and they must outrun the burst for the clause to govern anything.
     """
-    capacity = _registered_capacity()
-    assert 0 < capacity <= _BURST_MINT_PAIRS, (
-        f"the pool's registered physical capacity bounds the startup batch, so admitting "
-        f"all of it costs {capacity} mint pairs at {_POINTS_PER_MINT_PAIR} points each — "
-        f"which must stay inside the {_STARTUP_BUDGET_POINTS}-point burst, i.e. "
-        f"{_BURST_MINT_PAIRS} pairs, half of GitHub's documented "
-        f"{_PRIMARY_POINTS_PER_MINUTE} REST points per minute; capacity={capacity}"
-    )
-
     ceilings = sum(ceiling for _, ceiling in _routed_scale_sets().values())
-    assert ceilings > _BURST_MINT_PAIRS, (
-        f"the summed per-repository ceilings are the demand the batch can face, and they "
-        f"must exceed the burst for 'MUST NOT exceed the 450-point startup budget EVEN "
-        f"WHEN MORE DEMAND REMAINS' to govern a state the pool can actually be in — "
-        f"otherwise the bound above is asserted against demand that can never reach it; "
-        f"ceilings={ceilings} burst={_BURST_MINT_PAIRS}"
+    violations = _startup_batch_violations(capacity=_registered_capacity(), ceilings=ceilings)
+    assert not violations, violations
+
+
+def test_the_startup_batch_bound_refuses_fixture_pools_that_break_it(*, tmp_path: Path) -> None:
+    """The bound refuses capacity past the burst and ceilings under it, on fixtures written here."""
+    profiles = tmp_path / "profiles"
+    profiles.mkdir()
+    _ = (profiles / "node-a.env").write_text(
+        f"ADMISSION_CAPACITY_C={_BURST_MINT_PAIRS}\n", encoding="utf-8"
     )
+    _ = (profiles / "node-b.env").write_text("ADMISSION_CAPACITY_C=1\n", encoding="utf-8")
+    capacity = _registered_capacity(profiles)
+    assert capacity == _BURST_MINT_PAIRS + 1
+
+    over_capacity = _startup_batch_violations(capacity=capacity, ceilings=_BURST_MINT_PAIRS + 1)
+    assert len(over_capacity) == 1
+    assert "registered physical capacity" in over_capacity[0]
+
+    under_ceilings = _startup_batch_violations(capacity=1, ceilings=_BURST_MINT_PAIRS)
+    assert len(under_ceilings) == 1
+    assert "summed per-repository ceilings" in under_ceilings[0]
+
+    assert not _startup_batch_violations(capacity=_BURST_MINT_PAIRS, ceilings=_BURST_MINT_PAIRS + 1)
+    assert _startup_batch_violations(capacity=0, ceilings=_BURST_MINT_PAIRS + 1)
 
 
 def test_a_throttle_opens_one_circuit_that_evicts_no_healthy_runner() -> None:
