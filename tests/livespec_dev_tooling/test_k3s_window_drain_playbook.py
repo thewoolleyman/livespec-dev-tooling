@@ -299,6 +299,15 @@ case "$1 $2" in
     cat "${STAND_IN_DIR}/node-$3"
     ;;
   'get nodes')
+    if test -e "${STAND_IN_DIR}/nodes-read-fails"; then
+      echo 'stand-in kubectl: the nodes read failed' >&2
+      exit 1
+    fi
+    if test -e "${STAND_IN_DIR}/nodes-read-fails-after-a-delete" \
+      && test -e "${STAND_IN_DIR}/deleted-once"; then
+      echo 'stand-in kubectl: the nodes read failed' >&2
+      exit 1
+    fi
     cat "${STAND_IN_DIR}/nodes"
     ;;
   'get pods')
@@ -318,6 +327,7 @@ case "$1 $2" in
     done < "${STAND_IN_DIR}/pods"
     ;;
   'delete pod')
+    : > "${STAND_IN_DIR}/deleted-once"
     if test ! -e "${STAND_IN_DIR}/kubelet-never-confirms"; then
       row="$(grep -E "^[^ ]+ $4 $5 " "${STAND_IN_DIR}/pods" || true)"
       { grep -v -E "^[^ ]+ $4 $5 " "${STAND_IN_DIR}/pods" || true; } > "${STAND_IN_DIR}/pods.next"
@@ -399,6 +409,7 @@ def _run(
     owner_recreates: bool = True,
     replacement_phase: str = "Running",
     nodes: str = "node-a|True\nnode-b|True\n",
+    nodes_read_fails: str = "",
 ) -> _Outcome:
     stand_in = tmp_path / "stand-in"
     (stand_in / "bin").mkdir(parents=True)
@@ -415,6 +426,8 @@ def _run(
         _ = (stand_in / "owner-never-recreates").write_text("", encoding="utf-8")
     _ = (stand_in / "replacement-phase").write_text(replacement_phase, encoding="utf-8")
     _ = (stand_in / "nodes").write_text(nodes, encoding="utf-8")
+    if nodes_read_fails:
+        _ = (stand_in / nodes_read_fails).write_text("", encoding="utf-8")
     completed = subprocess.run(
         ["/bin/bash", "-c", _pod_script()],
         env={
@@ -614,9 +627,10 @@ def test_a_replacement_on_a_node_that_is_not_ready_does_not_meet_the_post_condit
         node_state="true|True",
         pods=_PODS,
         wait_seconds="0",
-        nodes="node-a|True\nnode-b|Unknown\n",
+        nodes="node-a|True\nnode-b|Unknown\nnode-c|True\n",
     )
     assert outcome.returncode == 1, outcome
+    assert outcome.deletes() != []
     assert _LACKING in outcome.stderr
 
 
@@ -782,3 +796,88 @@ def test_a_check_run_reports_what_it_would_do_and_deletes_nothing(*, tmp_path: P
         assert outcome.pods == pods
         assert any(line.startswith(expected) for line in outcome.stdout.splitlines()), outcome
         assert re.search(r"(?m)^(deleted|cleared) ", outcome.stdout) is None
+
+
+_ALREADY_ELSEWHERE = _PODS + "node-b kube-system coredns-other marked: owners:ReplicaSet\n"
+
+
+def test_a_nodes_read_that_fails_before_the_deletes_refuses_and_deletes_nothing(
+    *, tmp_path: Path
+) -> None:
+    outcome = _run(
+        tmp_path=tmp_path,
+        action="evacuate",
+        node_state="true|True",
+        pods=_ALREADY_ELSEWHERE,
+        owner_recreates=False,
+        nodes_read_fails="nodes-read-fails",
+    )
+    assert outcome.returncode == 1, outcome
+    assert "the cluster's nodes could not be read. Nothing was changed." in outcome.stderr
+    assert outcome.deletes() == []
+    assert outcome.pods == _ALREADY_ELSEWHERE
+    assert "evacuated:" not in outcome.stdout
+
+
+def test_a_nodes_read_that_fails_after_the_deletes_fails_the_post_condition(
+    *, tmp_path: Path
+) -> None:
+    outcome = _run(
+        tmp_path=tmp_path,
+        action="evacuate",
+        node_state="true|True",
+        pods=_ALREADY_ELSEWHERE,
+        nodes_read_fails="nodes-read-fails-after-a-delete",
+    )
+    assert outcome.returncode == 1, outcome
+    assert outcome.deletes() != []
+    assert "the cluster's node list could not be read back after the deletes" in outcome.stderr
+    assert "the post-condition is NOT established" in outcome.stderr
+    assert "evacuated:" not in outcome.stdout
+    assert "replaced " not in outcome.stdout
+
+
+def test_evacuate_refuses_when_no_other_node_is_ready(*, tmp_path: Path) -> None:
+    outcome = _run(
+        tmp_path=tmp_path,
+        action="evacuate",
+        node_state="true|True",
+        pods=_PODS,
+        nodes="node-a|True\nnode-b|Unknown\n",
+    )
+    assert outcome.returncode == 1, outcome
+    assert "no other node is Ready" in outcome.stderr
+    assert "Nothing was changed." in outcome.stderr
+    assert outcome.deletes() == []
+    assert outcome.pods == _PODS
+
+
+_STATEFUL = _PODS + "node-a monitoring store-0 marked: owners:StatefulSet\n"
+
+
+def test_a_statefulset_pod_must_come_back_under_its_name_on_another_ready_node(
+    *, tmp_path: Path
+) -> None:
+    passed = _run(
+        tmp_path=tmp_path / "passed", action="evacuate", node_state="true|True", pods=_STATEFUL
+    )
+    assert passed.returncode == 0, passed
+    assert "delete pod --namespace monitoring store-0 --ignore-not-found --wait=false" in (
+        passed.deletes()
+    )
+    assert (
+        "replaced monitoring StatefulSet/store: 1 Running on another Ready node (0 before)"
+        in passed.stdout.splitlines()
+    )
+    assert "node-b monitoring store-0 marked: owners:StatefulSet Running" in passed.pods
+    assert "node-a monitoring store-0" not in passed.pods
+    pending = _run(
+        tmp_path=tmp_path / "pending",
+        action="evacuate",
+        node_state="true|True",
+        pods=_STATEFUL,
+        wait_seconds="0",
+        replacement_phase="Pending",
+    )
+    assert pending.returncode == 1, pending
+    assert "monitoring/StatefulSet/store(0/1)" in pending.stderr
