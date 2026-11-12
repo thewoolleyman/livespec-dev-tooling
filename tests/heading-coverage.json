@@ -3683,5 +3683,53 @@
     "test": "tests.consumer.test_check_aggregate_purity_declarations.test_a_consuming_repository_refuses_and_then_runs_a_declared_private_member",
     "reason": "Consumer-tier (the `tests.consumer` node-id prefix this repository declares in `scenario_tiers`): builds a fixture consuming repository whose real `just check` invokes the shipped `python -m livespec_dev_tooling.green_token undeclared` command over its complete member list. Its undeclared repo-private member is not a canonical module, so the aggregate exits non-zero, names it, and starts no member; adding `# purity: world-reading` lets both members start. The fixture also attempts to mark canonical `check-master-ci-green` tree-pure, while the shipped command still classifies it world-reading from its module declaration, proving the canonical declaration outranks consumer inventory (work-item livespec-dev-tooling-ixtdx7).",
     "work_item": "livespec-dev-tooling-ixtdx7"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: an expedited pull-request run and its omitted members are recorded on the incident work item",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this scenario: the released controller is fed a published PASSED aggregate and a completion delivery with no publication for an armed head, and the incident item's records answer both runs, their omitted members, conclusion and refusal code without a forge read. livespec-dev-tooling-bqnzcm.4 owns it.",
+    "work_item": "livespec-dev-tooling-bqnzcm.4"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: the observer role renders one production installation per declared repository beside livespec-dev-tooling's",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this scenario: the committed incident_observer role is rendered with an inventory declaring a second repository, and the second installation's configuration, units and funnel routes are read back while livespec-dev-tooling's bytes and running observer stay unchanged. livespec-dev-tooling-lqp2qx owns it.",
+    "work_item": "livespec-dev-tooling-lqp2qx"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: the fleet audit reads each consumer's controller and recovery authorization from the installation that serves it",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this scenario: the real audit runs against fixture observer installations for two consumers and none for a third, and reads each served consumer's controller and recovery serving versions from its own installation and leaves the third unverified. livespec-dev-tooling-iaysvp owns it.",
+    "work_item": "livespec-dev-tooling-iaysvp"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a consumer ruled deliberately-normal classifies from claims citing the ruling, with no installation serving it",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this scenario: the real audit and the committed-claims checks run against deliberately-normal claims for a fleet member no installation serves and an instruction-only adopter, and classify, refuse and report contradictions as the scenario states. livespec-dev-tooling-kddu2b owns it.",
+    "work_item": "livespec-dev-tooling-kddu2b"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: an incident-ci forge read retries an unusable answer and an unreadable pull-request body fails the selection by name",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this scenario: the committed incident-ci select step and ci-green reader step run under bash with the forge-read Action's command against a stub gh that answers non-JSON, 502, 429 and 5xx sequences, and the retries, waits, printed lines and failures match. livespec-dev-tooling-levu6j owns it.",
+    "work_item": "livespec-dev-tooling-levu6j"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: an incident label event's forge writes repeat only what did not take effect",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this scenario: the committed incident label workflow script runs under bash with the forge-read Action's command against a stub gh, and the hold create, cancel and re-run are repeated only as the scenario states. livespec-dev-tooling-levu6j owns it.",
+    "work_item": "livespec-dev-tooling-levu6j"
   }
 ]
