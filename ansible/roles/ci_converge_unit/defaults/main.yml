@@ -232,6 +232,12 @@ ci_converge_unit_files:
   - src: gates/render-gate-job.sh
     dest: gates/render-gate-job.sh
     mode: "0755"
+  # The renderer reads forge_retry from beside itself (its SCRIPT_DIR default)
+  # and refuses to render without it, so it ships wherever the renderer does
+  # (livespec-dev-tooling-yjcyay).
+  - src: gates/forge-retry.sh
+    dest: gates/forge-retry.sh
+    mode: "0644"
   # The `factory` namespace's artifacts, applied as a DIRECTORY by the boot
   # converge's step 10e (livespec-dev-tooling-f5e6vl). Both files must be here:
   # the step applies the whole directory, so an installed tree carrying only one
