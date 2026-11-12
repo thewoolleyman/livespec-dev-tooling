@@ -9,8 +9,8 @@ They also pin the claim set itself. The fixture is livespec core's
 `.livespec-fleet-manifest.jsonc` (sha256 59912fe1…), the identity the audit binds to: the
 audit hashes the manifest text it reads from core's master with the same digest used
 here. A claim added, removed, bound to another manifest identity, held by a repository
-that is not an applicable consumer of that manifest, or naming a release build other than
-the serving form of its pinned release tag fails this test. Refresh a claim from a new
+that is not an applicable consumer of that manifest, or naming a disposition or release
+build other than the pinned ones fails this test. Refresh a claim from a new
 read of the fleet, then update its tag and commit here.
 """
 
@@ -37,18 +37,24 @@ _OWNER = "thewoolleyman"
 _SELF = f"{_OWNER}/livespec-dev-tooling"
 _T197 = "a8360faf87c6d374d42ea2cccbb4807832667d45"
 _T195 = "d4b723761270091517e83dd3ac5d5db48e9f2205"
-# (repository, surface) -> (this library's release tag, the commit that tag names).
-_EXPECTED_CLAIMS: dict[tuple[str, str], tuple[str, str]] = {
-    (_SELF, "Generated projects"): ("v1.198.0", "a17a87b18d934dbfb7953f4d2209badc7d6dcee4"),
-    (f"{_OWNER}/livespec-console-beads-fabro", "Generated projects"): ("v1.197.0", _T197),
-    (f"{_OWNER}/livespec-driver-claude", "Generated projects"): ("v1.197.0", _T197),
-    (f"{_OWNER}/livespec-driver-codex", "Generated projects"): ("v1.197.0", _T197),
-    (f"{_OWNER}/livespec-driver-pi", "Generated projects"): ("v1.197.0", _T197),
-    (f"{_OWNER}/livespec-overseer", "Generated projects"): ("v1.197.0", _T197),
-    (f"{_OWNER}/livespec-runtime", "Generated projects"): ("v1.197.0", _T197),
-    (f"{_OWNER}/hetzner-xubuntu-info", "Focused test selection"): ("v1.195.0", _T195),
-    (f"{_OWNER}/hetzner-xubuntu-info", "Touched-file coverage"): ("v1.195.0", _T195),
-    (f"{_OWNER}/hetzner-xubuntu-info", "Full coverage producers/consumers"): ("v1.195.0", _T195),
+_NA = "not-applicable"
+_IDENTITY = "59912fe1d3cad2938389deba186b0478759f0278be2bfea462c20a39d2a9054c"
+# (repository, surface) -> (disposition, this library's release tag, the commit that tag names).
+_EXPECTED_CLAIMS: dict[tuple[str, str], tuple[str, str, str]] = {
+    (_SELF, "Generated projects"): (_NA, "v1.198.0", "a17a87b18d934dbfb7953f4d2209badc7d6dcee4"),
+    (f"{_OWNER}/livespec-console-beads-fabro", "Generated projects"): (_NA, "v1.197.0", _T197),
+    (f"{_OWNER}/livespec-driver-claude", "Generated projects"): (_NA, "v1.197.0", _T197),
+    (f"{_OWNER}/livespec-driver-codex", "Generated projects"): (_NA, "v1.197.0", _T197),
+    (f"{_OWNER}/livespec-driver-pi", "Generated projects"): (_NA, "v1.197.0", _T197),
+    (f"{_OWNER}/livespec-overseer", "Generated projects"): (_NA, "v1.197.0", _T197),
+    (f"{_OWNER}/livespec-runtime", "Generated projects"): (_NA, "v1.197.0", _T197),
+    (f"{_OWNER}/hetzner-xubuntu-info", "Focused test selection"): (_NA, "v1.195.0", _T195),
+    (f"{_OWNER}/hetzner-xubuntu-info", "Touched-file coverage"): (_NA, "v1.195.0", _T195),
+    (f"{_OWNER}/hetzner-xubuntu-info", "Full coverage producers/consumers"): (
+        _NA,
+        "v1.195.0",
+        _T195,
+    ),
 }
 
 
@@ -99,15 +105,16 @@ def test_every_claim_binds_the_committed_manifest_identity_and_one_of_its_consum
     assert isinstance(manifest, Success)
     consumers = set(_applicable_consumers(manifest=manifest.unwrap()))
     identity = _digest(text=text)
-    assert identity.startswith("59912fe1")
+    assert identity == _IDENTITY
     for claim in _claims():
         assert claim.manifest_sha256 == identity, claim.repository
         assert claim.repository in consumers, claim.repository
 
 
-def test_every_release_build_is_the_serving_form_of_its_pinned_release_tag() -> None:
+def test_every_claim_carries_its_pinned_disposition_and_release_build() -> None:
     for claim in _claims():
-        tag, commit = _EXPECTED_CLAIMS[(claim.repository, claim.surface)]
+        disposition, tag, commit = _EXPECTED_CLAIMS[(claim.repository, claim.surface)]
+        assert claim.disposition == disposition, (claim.repository, claim.surface)
         assert _RELEASE_TAG.fullmatch(tag) is not None
         assert _COMMIT.fullmatch(commit) is not None
         expected = _serving_form(
