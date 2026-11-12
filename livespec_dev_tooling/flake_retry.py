@@ -20,6 +20,7 @@ from livespec_dev_tooling.flake_retry_changes import change_paths, withheld_reas
 from livespec_dev_tooling.flake_retry_decisions import (
     RETRY_ATTEMPTS,
     RETRY_DELAY_SECONDS,
+    retry_withheld_reason_for,
     session_withheld_reason,
 )
 from livespec_dev_tooling.flake_retry_decisions import (
@@ -48,7 +49,9 @@ __all__: list[str] = [
 ]
 
 _RESULTS: dict[str, RetryResult] = {}
-_WITHHELD: list[str] = []
+_FAILED_NODEIDS: set[str] = set()
+_SESSION_WITHHELD: list[str] = []
+_WITHHELD_BY_NODEID: dict[str, str] = {}
 _WORKER_WITHHELD_KEY = "livespec_flake_retry_withheld"
 
 
@@ -80,7 +83,11 @@ def retry_marker_for(
 
 
 def mark_untouched_tests(
-    *, root: Path, items: list[pytest.Item], can_retry: bool = True
+    *,
+    root: Path,
+    items: list[pytest.Item],
+    can_retry: bool = True,
+    withheld_by_nodeid: dict[str, str] = _WITHHELD_BY_NODEID,
 ) -> str | None:
     """Mark only tests proven untouched by this session's complete change set.
 
@@ -107,6 +114,14 @@ def mark_untouched_tests(
     markers: dict[Path, dict[str, int] | None] = {}
     for item in items:
         test_path = Path(str(item.path))
+        retry_withheld = retry_withheld_reason_for(
+            repo_root=root,
+            test_path=test_path,
+            memo=memo,
+        )
+        if retry_withheld is not None:
+            withheld_by_nodeid[item.nodeid] = retry_withheld
+            continue
         if test_path not in markers:
             markers[test_path] = retry_marker_for(
                 repo_root=root, test_path=test_path, change_paths=paths, memo=memo
@@ -153,7 +168,11 @@ def retry_summary(*, results: Iterable[RetryResult]) -> str:
 
 
 def announce_retries(
-    *, terminalreporter: TerminalReporter, root: Path, withheld: str | None = None
+    *,
+    terminalreporter: TerminalReporter,
+    root: Path,
+    withheld: str | None = None,
+    withheld_by_nodeid: dict[str, str] | None = None,
 ) -> None:
     """Persist and announce retry evidence without changing pytest's final verdict."""
     annotate = os.environ.get("GITHUB_ACTIONS") == "true"
@@ -162,6 +181,14 @@ def announce_retries(
         _ = terminalreporter.write_line(f"no failing test is retried this session: {withheld}")
         if annotate:
             _ = terminalreporter.write_line(f"::warning::FLAKE-RETRY-WITHHELD {withheld}")
+    if withheld_by_nodeid:
+        _ = terminalreporter.write_sep("=", "FLAKE-RETRY-WITHHELD")
+        for nodeid, reason in sorted(withheld_by_nodeid.items()):
+            _ = terminalreporter.write_line(f"{nodeid}: {reason}")
+            if annotate:
+                _ = terminalreporter.write_line(
+                    f"::warning::FLAKE-RETRY-WITHHELD {nodeid}: {reason}"
+                )
     results = list(_RESULTS.values())
     if not results:
         return
@@ -180,10 +207,13 @@ def _workeroutput(*, holder: object) -> dict[str, object] | None:
     return cast(dict[str, object], candidate) if isinstance(candidate, dict) else None
 
 
-def _record_withheld(*, withheld: str | None) -> None:
-    """Keep one withholding reason for the controller's terminal summary."""
-    if withheld is not None and withheld not in _WITHHELD:
-        _WITHHELD.append(withheld)
+def _failed_withholding_reasons() -> dict[str, str]:
+    """Return closure holds only for tests that actually failed in this session."""
+    return {
+        nodeid: reason
+        for nodeid, reason in _WITHHELD_BY_NODEID.items()
+        if nodeid in _FAILED_NODEIDS
+    }
 
 
 # PYTEST CALLS ITS HOOKS POSITIONALLY. pluggy reads a hook's argument names off
@@ -196,13 +226,17 @@ class _CollectionHook:
     def __call__(
         self, session: pytest.Session, config: pytest.Config, items: list[pytest.Item]
     ) -> None:
+        _FAILED_NODEIDS.clear()
+        _SESSION_WITHHELD.clear()
+        _WITHHELD_BY_NODEID.clear()
         withheld = mark_untouched_tests(
             root=Path(str(session.config.rootpath)),
             items=items,
             can_retry=config.pluginmanager.hasplugin("rerunfailures"),
+            withheld_by_nodeid=_WITHHELD_BY_NODEID,
         )
-        _WITHHELD[:] = []
-        _record_withheld(withheld=withheld)
+        if withheld is not None:
+            _SESSION_WITHHELD.append(withheld)
 
 
 class _ConfigureHook:
@@ -216,8 +250,11 @@ class _SessionFinishHook:
         """Send a worker's withholding reason to xdist's controller."""
         del exitstatus
         workeroutput = _workeroutput(holder=session.config)
-        if workeroutput is not None and _WITHHELD:
-            workeroutput[_WORKER_WITHHELD_KEY] = _WITHHELD[0]
+        if workeroutput is not None and (_SESSION_WITHHELD or _failed_withholding_reasons()):
+            workeroutput[_WORKER_WITHHELD_KEY] = {
+                "session": _SESSION_WITHHELD[0] if _SESSION_WITHHELD else None,
+                "nodes": _failed_withholding_reasons(),
+            }
 
 
 class _NodeDownHook:
@@ -226,13 +263,28 @@ class _NodeDownHook:
         """Collect the worker withholding reason before the controller summarizes."""
         del error
         workeroutput = _workeroutput(holder=node)
-        withheld = None if workeroutput is None else workeroutput.get(_WORKER_WITHHELD_KEY)
-        _record_withheld(withheld=withheld if isinstance(withheld, str) else None)
+        payload = None if workeroutput is None else workeroutput.get(_WORKER_WITHHELD_KEY)
+        if not isinstance(payload, dict):
+            return
+        payload_mapping = cast(dict[str, object], payload)
+        session_reason = payload_mapping.get("session")
+        if not _SESSION_WITHHELD and isinstance(session_reason, str):
+            _SESSION_WITHHELD.append(session_reason)
+        node_reason_mapping = cast(dict[str, object], payload_mapping.get("nodes", {}))
+        _WITHHELD_BY_NODEID.update(
+            {
+                nodeid: reason
+                for nodeid, reason in node_reason_mapping.items()
+                if isinstance(reason, str)
+            }
+        )
 
 
 class _ReportHook:
     def __call__(self, report: pytest.TestReport) -> None:
         record_report(report=report)
+        if report.when == "call" and report.outcome == "failed":
+            _FAILED_NODEIDS.add(report.nodeid)
 
 
 class _SummaryHook:
@@ -243,7 +295,8 @@ class _SummaryHook:
         announce_retries(
             terminalreporter=terminalreporter,
             root=Path(str(config.rootpath)),
-            withheld=_WITHHELD[0] if _WITHHELD else None,
+            withheld=_SESSION_WITHHELD[0] if _SESSION_WITHHELD else None,
+            withheld_by_nodeid=_failed_withholding_reasons(),
         )
 
 

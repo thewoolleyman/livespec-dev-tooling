@@ -239,6 +239,84 @@ def test_a_failing_test_the_run_touched_fails_at_once_with_no_retry(*, tmp_path:
 
 
 @pytest.mark.integration
+def test_indeterminable_or_unparseable_closures_withhold_only_their_own_failures(
+    *, tmp_path: Path
+) -> None:
+    """Closure uncertainty treats its own test as touched without stopping other retries."""
+    indeterminable_root = tmp_path / "indeterminable"
+    _ = indeterminable_root.mkdir()
+    indeterminable = _flaky_repository(root=indeterminable_root, touch_test=False)
+    _ = (indeterminable / "test_indeterminable.py").write_text(
+        "from pathlib import Path\n"
+        "\n"
+        "\n"
+        "def test_indeterminable_path() -> None:\n"
+        "    segment = 'unknown'\n"
+        "    _ = Path(__file__).parent / 'known' / segment\n"
+        "    assert False\n",
+        encoding="utf-8",
+    )
+
+    failed = _run_session(
+        repo=indeterminable,
+        test_paths=("test_indeterminable.py", "test_flaky.py"),
+    )
+    failed_output = failed.stdout + failed.stderr
+
+    assert failed.returncode == 1, failed_output
+    assert "test_flaky.py::test_flaky: 2 attempts, passed" in failed_output
+    assert "FLAKE-RETRIED" in failed_output
+    assert "FLAKE-RETRY-WITHHELD" in failed_output
+    assert "test_indeterminable.py::test_indeterminable_path" in failed_output
+    assert "an indeterminable path in a closure module" in failed_output
+
+    passing_root = tmp_path / "passing"
+    _ = passing_root.mkdir()
+    passing = _flaky_repository(root=passing_root, touch_test=False)
+    _ = (passing / "test_indeterminable.py").write_text(
+        "from pathlib import Path\n"
+        "\n"
+        "\n"
+        "def test_indeterminable_path() -> None:\n"
+        "    segment = 'unknown'\n"
+        "    _ = Path(__file__).parent / 'known' / segment\n"
+        "    assert True\n",
+        encoding="utf-8",
+    )
+
+    no_failure = _run_session(repo=passing, test_paths=("test_indeterminable.py",))
+
+    assert no_failure.returncode == 0, no_failure.stdout + no_failure.stderr
+    assert "FLAKE-RETRY-WITHHELD" not in no_failure.stdout
+
+    unparseable_root = tmp_path / "unparseable"
+    _ = unparseable_root.mkdir()
+    unparseable = _flaky_repository(root=unparseable_root, touch_test=False)
+    _ = (unparseable / "broken.py").write_text("def (:\n", encoding="utf-8")
+    _ = (unparseable / "test_unparseable.py").write_text(
+        "from typing import TYPE_CHECKING\n"
+        "\n"
+        "if TYPE_CHECKING:\n"
+        "    import broken\n"
+        "\n"
+        "\n"
+        "def test_unparseable_closure() -> None:\n"
+        "    assert True\n",
+        encoding="utf-8",
+    )
+
+    passed = _run_session(
+        repo=unparseable,
+        test_paths=("test_unparseable.py", "test_flaky.py"),
+    )
+    passed_output = passed.stdout + passed.stderr
+
+    assert passed.returncode == 0, passed_output
+    assert "test_flaky.py::test_flaky: 2 attempts, passed" in passed_output
+    assert "FLAKE-RETRIED" in passed_output
+
+
+@pytest.mark.integration
 def test_github_actions_annotates_every_retried_test(*, tmp_path: Path) -> None:
     """Under GitHub Actions each retried node id gets a `::warning` annotation."""
     repo = _flaky_repository(root=tmp_path, touch_test=False)
@@ -450,6 +528,64 @@ def test_the_summary_hook_is_silent_when_nothing_was_retried(
 
     assert written == []
     assert not (tmp_path / "tmp").exists()
+
+
+def test_the_summary_names_only_failed_per_test_closure_holds(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A closure hold is reported only for its failed node, including from xdist."""
+    plugin = importlib.import_module("livespec_dev_tooling.flake_retry")
+    nodeid = "test_indeterminable.py::test_indeterminable_path"
+    reason = "an indeterminable path in a closure module"
+    monkeypatch.setattr(plugin, "_RESULTS", {})
+    monkeypatch.setattr(plugin, "_FAILED_NODEIDS", set())
+    monkeypatch.setattr(plugin, "_SESSION_WITHHELD", [])
+    monkeypatch.setattr(plugin, "_WITHHELD_BY_NODEID", {})
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    plugin.pytest_testnodedown(
+        SimpleNamespace(
+            workeroutput={
+                "livespec_flake_retry_withheld": {"session": None, "nodes": {nodeid: reason}}
+            }
+        ),
+        None,
+    )
+    plugin.pytest_runtest_logreport(SimpleNamespace(when="call", nodeid=nodeid, outcome="failed"))
+    written: list[str] = []
+
+    plugin.pytest_terminal_summary(
+        _capturing_reporter(into=written), 1, SimpleNamespace(rootpath=tmp_path)
+    )
+
+    assert written == [
+        "FLAKE-RETRY-WITHHELD",
+        f"{nodeid}: {reason}",
+        f"::warning::FLAKE-RETRY-WITHHELD {nodeid}: {reason}",
+    ]
+
+
+def test_the_withheld_renderer_annotates_each_failing_node(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Every failed node listed in a per-test hold receives its own annotation."""
+    plugin = importlib.import_module("livespec_dev_tooling.flake_retry")
+    monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
+    written: list[str] = []
+
+    plugin.announce_retries(
+        terminalreporter=_capturing_reporter(into=written),
+        root=tmp_path,
+        withheld_by_nodeid={
+            "test_first.py::test_first": "an indeterminable path in a closure module",
+            "test_second.py::test_second": "an unparseable closure module",
+        },
+    )
+
+    assert written == [
+        "FLAKE-RETRY-WITHHELD",
+        "test_first.py::test_first: an indeterminable path in a closure module",
+        "test_second.py::test_second: an unparseable closure module",
+    ]
 
 
 @pytest.mark.integration
