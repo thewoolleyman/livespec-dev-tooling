@@ -251,6 +251,18 @@ declare -A SCALE_SETS=(
   [livespec-runtime-k3s]="values-livespec-runtime.yaml"
   [poweredge-xubuntu-k3s]="values-poweredge-xubuntu-k3s.yaml"
 )
+# Each homelab worker's host-unique set (plan homelab-k8s-worker-nodes): one
+# release `<host>-homelab-worker-k3s` per arc/worker/values-<host>-homelab-worker.yaml,
+# found by glob so a new worker's set travels with no edit here. They are
+# upgraded by step 7 with the fleet's sets. Before 2026-11-12 only
+# install-arc.sh installed them, which nothing runs after the first install, so
+# the macbook-m4-max set kept the hook-template revision of 2026-11-05 through
+# every later hook change.
+for worker_values in "${ARC_DIR}"/worker/values-*-homelab-worker.yaml; do
+  [ -e "$worker_values" ] || continue
+  worker_release="$(basename "$worker_values" .yaml)"
+  SCALE_SETS["${worker_release#values-}-k3s"]="worker/${worker_values##*/}"
+done
 
 log() { printf '\n== %s ==\n' "$*"; }
 
@@ -611,6 +623,7 @@ for release in $(printf '%s\n' "${!SCALE_SETS[@]}" | sort); do
   values_file="${ARC_DIR}/${SCALE_SETS[$release]}"
   [ -f "$values_file" ] || { echo "FATAL: values file not found: ${values_file}"; exit 1; }
   rendered_values="${rendered_values_dir}/${SCALE_SETS[$release]}"
+  mkdir -p "$(dirname "$rendered_values")"
   "${ARC_DIR}/converge-hook-pod-template.sh" --render-values "$values_file" "$rendered_values"
   # The runner pod's architecture selection comes from the one declared
   # per-class list, never from the values file (livespec-dev-tooling-ko26ez.6),
