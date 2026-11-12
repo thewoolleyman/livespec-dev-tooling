@@ -319,6 +319,7 @@
   become: true
   no_log: true
   register: otel_collector_otlp_pods_endpoint_written
+  notify: Restart the collector onto its managed configuration
   when: "'OTLP_PODS_ENDPOINT' in otel_collector_required_environment_keys"
 
 - name: Look for the collector's ingest-key environment file
