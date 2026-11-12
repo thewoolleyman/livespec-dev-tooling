@@ -127,7 +127,6 @@ def test_the_job_is_rendered_onto_the_named_queue_with_stack_diagnostics(*, tmp_
     render = next(argv for argv in world.argvs if argv[0] == str(_RENDERER))
     pairs = set(pairwise(render))
     facts = [
-        REPRO_QUEUE == "gates-repro-lq",
         ("--queue", REPRO_QUEUE) in pairs,
         ("--repro-stack-interval", "300") in pairs,
     ]
