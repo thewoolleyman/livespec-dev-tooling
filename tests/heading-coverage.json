@@ -490,16 +490,16 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a compilation-cache warm build skipped as busy past two populate intervals fires the lag trigger",
-    "test": "tests.consumer.test_compilation_cache_warm_lag_scenarios.test_busy_skips_start_and_accumulate_per_repository_lag",
-    "reason": "Consumer-tier: drives the populator's pure per-repository transition with a stale marker and repeated admitted-job busy skip, preserving the cache-record commit and toolchain, the streak and its original lag start.",
+    "test": "tests.consumer.test_compilation_cache_warm_lag_scenarios.test_trigger_gauge_derives_its_bounds_from_the_populator_schedule",
+    "reason": "Consumer-tier: runs the real ci-cache-gauges.sh against a populate manifest and the populator CronJob's schedule, and reads the emitted livespec.ci_cache.sccache.warm_set_lag_trigger_met gauge. A warm set busy-skipped through two intervals whose lag exceeds two intervals reads 1, while a one-run streak or a short lag reads 0. The bounds come from the CronJob's own minute step (5000 s is past two */30 intervals but not two */60 intervals), and an unreadable schedule emits no trigger datapoint.",
     "work_item": "livespec-dev-tooling-uyevam"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: rebuilding a lagging compilation-cache warm set clears the lag trigger",
-    "test": "tests.consumer.test_compilation_cache_warm_lag_scenarios.test_current_or_recorded_build_clears_lag_and_a_failed_build_does_not",
-    "reason": "Consumer-tier: drives both a current marker and a freshly recorded build to the zero-streak, zero-lag state carrying the current commit and toolchain.",
+    "test": "tests.consumer.test_compilation_cache_warm_lag_scenarios.test_trigger_gauge_derives_its_bounds_from_the_populator_schedule",
+    "reason": "Consumer-tier: runs the real ci-cache-gauges.sh and reads the emitted livespec.ci_cache.sccache.warm_set_lag_trigger_met gauge. A warm set whose rebuild left it current (zero streak, no lag start) reads 0 beside a lagging set that reads 1, so a rebuild clears the trigger in the gauge the Honeycomb trigger evaluates.",
     "work_item": "livespec-dev-tooling-uyevam"
   },
   {
