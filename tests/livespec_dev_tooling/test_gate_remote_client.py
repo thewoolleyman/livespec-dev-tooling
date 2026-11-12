@@ -57,6 +57,7 @@ from returns.pipeline import is_successful
 from returns.result import Failure, Success
 
 from livespec_dev_tooling.gate_credential import GATES_WRAPPER
+from livespec_dev_tooling.gate_remote_admission import await_terminal_state
 from livespec_dev_tooling.gate_remote_client import GateRunRequest, run_gate
 from livespec_dev_tooling.gate_remote_invocation import (
     GateCommandNotRun,
@@ -449,8 +450,65 @@ def test_every_later_step_names_the_job_the_cluster_assigned() -> None:
 
     assert is_successful(outcome)
     assert outcome.unwrap().job_name == assigned
-    assert cluster.only(kind="get-job").argv[-4:] == ("job", assigned, "--output", "json")
+    assert cluster.only(kind="get-job").argv[-5:] == (
+        "job",
+        assigned,
+        "--output",
+        "json",
+        "--request-timeout=240s",
+    )
     assert f"job/{assigned}" in cluster.only(kind="stream-logs").argv
+
+
+def test_a_terminal_watch_never_starts_after_its_budget_has_expired() -> None:
+    """An elapsed terminal budget returns no verdict without another cluster read."""
+    request = dataclasses.replace(_REQUEST, poll_timeout_seconds=10.0)
+    cluster = _StubCluster(job_states=("Running",))
+    readings = iter((0.0, 10.0))
+
+    outcome = await_terminal_state(
+        request=request,
+        runner=cluster,
+        sleeper=cluster.sleep,
+        job_name=_JOB,
+        clock=lambda: next(readings),
+    )
+
+    assert isinstance(outcome, Failure)
+    assert cluster.kinds == ["get-job"]
+
+
+def test_a_watch_that_ends_without_a_terminal_condition_keeps_its_no_verdict_reason() -> None:
+    """A cleanly ended watch does not get mistaken for a transient API refusal."""
+    request = dataclasses.replace(_REQUEST, poll_timeout_seconds=10.0)
+    active = _job_status(state="Running")
+    cluster = _StubCluster(job_status_payloads=(active,))
+    calls = 0
+
+    def runner(
+        *, argv: list[str], cwd: Path, stdin: str | None = None, stream: bool = False
+    ) -> GateCommandOutcome:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            return cluster(argv=argv, cwd=cwd, stdin=stdin, stream=stream)
+        return Success(
+            GateCommandResult(
+                returncode=1,
+                stdout="",
+                stderr="Job watch ended before a terminal condition was observed\n",
+            )
+        )
+
+    outcome = await_terminal_state(
+        request=request,
+        runner=runner,
+        sleeper=cluster.sleep,
+        job_name=_JOB,
+    )
+
+    assert isinstance(outcome, Failure)
+    assert "reached no terminal condition" in outcome.failure().detail
 
 
 def test_the_outcome_names_the_tree_the_created_job_reports() -> None:
@@ -555,7 +613,7 @@ def test_the_terminal_state_is_awaited_before_the_logs_are_streamed() -> None:
         "stream-logs",
         "delete-ref",
     ]
-    assert cluster.naps == [_REQUEST.poll_interval_seconds, _REQUEST.poll_interval_seconds]
+    assert cluster.naps == [0, _REQUEST.poll_interval_seconds, 0, _REQUEST.poll_interval_seconds, 0]
     assert outcome.unwrap().terminal_state == "Complete"
 
 
@@ -578,7 +636,7 @@ def test_a_suspended_job_keeps_its_full_poll_budget_after_kueue_admits_it() -> N
 
     assert is_successful(outcome)
     assert cluster.kinds.count("get-job") == 7
-    assert cluster.naps == [request.poll_interval_seconds] * 5
+    assert cluster.naps == [0, request.poll_interval_seconds] * 4 + [request.poll_interval_seconds]
 
 
 def test_the_admission_waiter_is_a_cohesive_module() -> None:
@@ -664,7 +722,7 @@ def test_a_refused_job_read_is_retried_before_its_refs_are_collected() -> None:
         "stream-logs",
         "delete-ref",
     ]
-    assert cluster.naps == [request.poll_interval_seconds]
+    assert cluster.naps == [0, request.poll_interval_seconds, 0]
 
 
 def test_the_logs_are_streamed_rather_than_captured() -> None:

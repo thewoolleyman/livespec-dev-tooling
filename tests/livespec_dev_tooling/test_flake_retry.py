@@ -6,6 +6,8 @@ import importlib
 import json
 import re
 from pathlib import Path
+from types import SimpleNamespace
+from typing import cast
 
 import pytest
 
@@ -204,3 +206,27 @@ def test_an_outside_root_test_does_not_change_the_decision_for_an_inside_root_te
     assert withheld is None
     assert outside_item.markers == []
     assert len(inside_item.markers) == 1
+
+
+def test_a_session_wide_retry_hold_is_returned_without_marking_items(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A closure-wide hold leaves every item unmarked and reaches the caller."""
+    plugin = importlib.import_module("livespec_dev_tooling.flake_retry")
+    test_path = tmp_path / "test_safe.py"
+    _ = test_path.write_text("X = 1\n", encoding="utf-8")
+
+    def unsafe_change(*, repo_root: Path) -> set[Path]:
+        assert repo_root == tmp_path
+        return {Path("pyproject.toml")}
+
+    monkeypatch.setattr(plugin, "change_paths", unsafe_change)
+    added: list[object] = []
+
+    withheld = plugin.mark_untouched_tests(
+        root=tmp_path,
+        items=[cast(pytest.Item, SimpleNamespace(path=test_path, add_marker=added.append))],
+    )
+
+    assert withheld == "a non-version-only pyproject.toml or uv.lock change"
+    assert added == []
