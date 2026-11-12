@@ -27,25 +27,20 @@ import subprocess
 TOP = [
     ("1 expedited-incident-response-flag", "livespec-dev-tooling-bqnzcm"),
     ("2 central-credential-service (livespec-overseer; workspace livespec-overseer, tab central-credential-service; maintainer-driven design)", "overseer-iyfjbo"),
-    ("3 stale-base-merge-options (maintainer-driven)", "livespec-dev-tooling-xowhol"),
-    ("4 secret-writer-stored-key-alias (homelab; workspace homelab, tab secret-writer-stored-key-alias)", "hl-bvycoc"),
-    ("5a implement-test-performance: gate suite double-run fix", "livespec-dev-tooling-sv6m5p"),
-    ("5b gate-job-resources", "livespec-dev-tooling-ukoeah"),
+    ("3 bootstrap-credentials-and-onboarding (hetzner-xubuntu-info; the Hetzner seat move)", "hxi-vxsmdv"),
+    ("4 stale-base-merge-options (now the GitHub org move plus merge queue; prep only)", "livespec-dev-tooling-xowhol"),
+    ("5 secret-writer-stored-key-alias (homelab; workspace homelab, tab secret-writer-stored-key-alias)", "hl-bvycoc"),
+    ("6a implement-test-performance: gate suite double-run fix", "livespec-dev-tooling-sv6m5p"),
+    ("6b gate-job-resources", "livespec-dev-tooling-ukoeah"),
 ]
 WRAPPER = ["/usr/local/bin/with-livespec-env.sh", "--"]
 # The homelab tenant refuses the livespec wrapper (Error 1045 for user 'homelab');
-# it is read with the homelab-workload role and the beads password parameter.
-HOMELAB_WRAPPER = [
-    "/usr/local/bin/with-homelab-aws.sh",
-    "--role",
-    "homelab-workload",
-    "/home/ubuntu/.nix-profile/bin/hl",
-    "param",
-    "run",
-    "--bind",
-    "BEADS_DOLT_PASSWORD=/homelab/v1/services/dolt/production/beads-password",
-    "--",
-]
+# it is read through the homelab tenant's own credential wrapper.
+HOMELAB_WRAPPER = ["/usr/local/bin/with-homelab-env.sh", "--"]
+# The hetzner-xubuntu-info tenant (prefix hxi) refuses both of the above (Error 1045 for user
+# 'hetzner-xubuntu-info'); it is read through the credential_wrapper its .livespec.jsonc declares.
+HXI_REPO = "/data/projects/hetzner-xubuntu-info"
+HXI_WRAPPER = [HXI_REPO + "/with-hetzner-xubuntu-credentials.sh", "--"]
 STALE_MINUTES = 60
 NOW = dt.datetime.now(dt.timezone.utc)
 STRANDED_TIMEOUT_S = 120
@@ -92,6 +87,8 @@ def repo_for(epic):
     """Return the (checkout, wrapper prefix) that reads this epic's tenant."""
     if epic.startswith("hl-"):
         return "/data/projects/homelab", HOMELAB_WRAPPER
+    if epic.startswith("hxi-"):
+        return HXI_REPO, HXI_WRAPPER
     if epic.startswith("bd-ib"):
         return "/data/projects/livespec-orchestrator-beads-fabro", WRAPPER
     if epic.startswith("overseer-"):

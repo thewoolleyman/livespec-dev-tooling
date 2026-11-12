@@ -123,8 +123,9 @@ t26bbr proved end to end on 2026-11-11. It never waits out a normal roll-forward
   for use.
 - livespec, livespec-orchestrator-beads-fabro and livespec-overseer are NOT yet usable. Each becomes usable when its
   observer install, drill and claims land. Each tick names which repositories are usable.
-- Operator mechanics: `docs/incident-execution.md` and the `docs/incident-*.md` files beside it. The runbook from the
-  t26bbr record follows in a later PR.
+- Operator mechanics: `docs/incident-execution.md` and the `docs/incident-*.md` files beside it. The step-by-step
+  incident-mode runbook (`.ai/incident-mode-runbook.md`, steps 3-11 from the t26bbr record) is NOT yet in this
+  repository: it is owed by plan expedited-incident-response-flag (`livespec-dev-tooling-bqnzcm`).
 
 The maintainer, 2026-11-12 ~19:2xZ, recorded in the scope event on epic `livespec-dev-tooling-6tgd2z` at 19:17:17Z:
 "It says the expedited is usable on dev-tooling - confirm you wil use it going forward, and record this everywhere as a
@@ -720,7 +721,9 @@ Every tick reports, in this order:
    trailing-window counts. Compute them from the orchestrator repo's `tmp/petri-canary/*-r267.json` dispatch records
    by file mtime, skipping unreadable in-flight files.
    - M1 YIELD: green records / finished records over a trailing 6 h, plus the 2 h figure. Owner:
-     sandbox-commit-gate-ceiling (P1).
+     sandbox-commit-gate-ceiling (P1). Method: the denominator is the records whose `listed` is not `none`, the
+     records where a run was listed. A no-run refusal (`listed` is `none`) is excluded from the denominator and
+     reported on its own line, bucketed by exit code: 3, 5 and 1.
    - M2 DELIVERED: green records per hour over a trailing 6 h. This is the outcome M1 and M3 drive.
    - M3 SLOTS: live factory runs against `tmp/petri-canary/fleet-cap`, naming any pods that hold quota without a live
      run (stranded). Owner: legacy-dispatcher-agent.
