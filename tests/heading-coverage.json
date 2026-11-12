@@ -1146,24 +1146,24 @@
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a lease PUT's latency is readable apart from every other API-server request",
     "test": "TODO",
-    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, reading the livespec metrics dataset after the converged control-plane emitter has run on poweredge-xubuntu and asserting apiserver_request_duration_seconds rows for verb PUT and resource leases carrying none of the summed-away attributes. livespec-dev-tooling-f5qjzn owns it; the implementation PR that ships it replaces this row.",
-    "work_item": "livespec-dev-tooling-f5qjzn"
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, reading the livespec metrics dataset after the converged control-plane emitter has run on poweredge-xubuntu and asserting apiserver_request_duration_seconds rows for verb PUT and resource leases carrying none of the summed-away attributes. livespec-dev-tooling-nbpzvy owns it; the implementation PR that ships it replaces this row.",
+    "work_item": "livespec-dev-tooling-nbpzvy"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: API-server 504 responses are counted by verb and resource",
     "test": "TODO",
-    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, running the control-plane emitter against a fixture /metrics holding 504 rows for PUT leases under two scopes beside other codes, and asserting one summed 504 data point and no other code. livespec-dev-tooling-f5qjzn owns it; the implementation PR that ships it replaces this row.",
-    "work_item": "livespec-dev-tooling-f5qjzn"
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, running the control-plane emitter against a fixture /metrics holding 504 rows for PUT leases under two scopes beside other codes, and asserting one summed 504 data point and no other code. livespec-dev-tooling-nbpzvy owns it; the implementation PR that ships it replaces this row.",
+    "work_item": "livespec-dev-tooling-nbpzvy"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: an API server with no 504 responses gets no invented zero",
     "test": "TODO",
-    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, running the control-plane emitter against a fixture /metrics with no code=504 row and asserting no apiserver_request_total data point is sent. livespec-dev-tooling-f5qjzn owns it; the implementation PR that ships it replaces this row.",
-    "work_item": "livespec-dev-tooling-f5qjzn"
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, running the control-plane emitter against a fixture /metrics with no code=504 row and asserting no apiserver_request_total data point is sent. livespec-dev-tooling-nbpzvy owns it; the implementation PR that ships it replaces this row.",
+    "work_item": "livespec-dev-tooling-nbpzvy"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -3418,16 +3418,16 @@
     "spec_file": "scenarios.md",
     "heading": "## Scenario: reused delegated pre-commit evidence whose gate Job the cluster no longer holds does not stand in for the pre-push gate",
     "test": "TODO",
-    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, exercising the pre-push gate's confirmation of reused delegated pre-commit evidence against the cluster's record of its gate Job (a missing record and a disagreeing record each fall back to submitting a gate Job); livespec-dev-tooling-7uae5p owns it.",
-    "work_item": "livespec-dev-tooling-7uae5p"
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, exercising the pre-push gate's confirmation of reused delegated pre-commit evidence against the cluster's record of its gate Job (a missing record and a disagreeing record each fall back to submitting a gate Job); livespec-dev-tooling-ehug6z owns it.",
+    "work_item": "livespec-dev-tooling-ehug6z"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: reused delegated pre-commit evidence that the cluster's record of its gate Job contradicts does not stand in for the pre-push gate",
     "test": "TODO",
-    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, exercising the pre-push gate's confirmation of reused delegated pre-commit evidence against the cluster's record of its gate Job (a missing record and a disagreeing record each fall back to submitting a gate Job); livespec-dev-tooling-7uae5p owns it.",
-    "work_item": "livespec-dev-tooling-7uae5p"
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, exercising the pre-push gate's confirmation of reused delegated pre-commit evidence against the cluster's record of its gate Job (a missing record and a disagreeing record each fall back to submitting a gate Job); livespec-dev-tooling-ehug6z owns it.",
+    "work_item": "livespec-dev-tooling-ehug6z"
   },
   {
     "spec_root": "SPECIFICATION",

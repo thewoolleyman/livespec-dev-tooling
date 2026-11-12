@@ -80,7 +80,7 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: API-server 504 responses are counted by verb and resource",
-    "work_item": "livespec-dev-tooling-f5qjzn",
+    "work_item": "livespec-dev-tooling-nbpzvy",
     "first_seen": "2026-11-09"
   },
   {
@@ -591,7 +591,7 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a lease PUT's latency is readable apart from every other API-server request",
-    "work_item": "livespec-dev-tooling-f5qjzn",
+    "work_item": "livespec-dev-tooling-nbpzvy",
     "first_seen": "2026-11-09"
   },
   {
@@ -1130,7 +1130,7 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: an API server with no 504 responses gets no invented zero",
-    "work_item": "livespec-dev-tooling-f5qjzn",
+    "work_item": "livespec-dev-tooling-nbpzvy",
     "first_seen": "2026-11-09"
   },
   {
@@ -1410,14 +1410,14 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: reused delegated pre-commit evidence that the cluster's record of its gate Job contradicts does not stand in for the pre-push gate",
-    "work_item": "livespec-dev-tooling-7uae5p",
+    "work_item": "livespec-dev-tooling-ehug6z",
     "first_seen": "2026-11-11"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: reused delegated pre-commit evidence whose gate Job the cluster no longer holds does not stand in for the pre-push gate",
-    "work_item": "livespec-dev-tooling-7uae5p",
+    "work_item": "livespec-dev-tooling-ehug6z",
     "first_seen": "2026-11-11"
   },
   {
