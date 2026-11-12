@@ -79,10 +79,20 @@ spec:
             # gates-gamingpc-flavor lane had before the hold. One repro at a
             # time is the point: a second concurrent gate would make a hang
             # on this node harder to attribute, not easier.
+            #
+            # ZERO since 2026-11-12 (plan gate-job-resources, assertion 6;
+            # legacy-coordinator-agent ruling). livespec-dev-tooling-ddy5xu is
+            # closed and gates-cq's gates-gamingpc-flavor is live again at one
+            # gate unit, so a quota here pinned a SECOND 5 cpu / 8Gi gate to
+            # gamingpc-xubuntu that its factory_pod_budget derivation
+            # (ansible/inventory/host_vars/gamingpc-xubuntu.yml) does not
+            # count. No seat still needs the reproduction route; its code is
+            # retired by a follow-up work item under the same plan. Until then
+            # `just gate-repro` cannot admit, by design.
             - name: "cpu"
-              nominalQuota: 5
+              nominalQuota: 0
             - name: "memory"
-              nominalQuota: 8Gi
+              nominalQuota: 0Gi
 ---
 apiVersion: kueue.x-k8s.io/v1beta2
 kind: LocalQueue
