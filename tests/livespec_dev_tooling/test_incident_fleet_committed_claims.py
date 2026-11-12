@@ -38,10 +38,16 @@ _SELF = f"{_OWNER}/livespec-dev-tooling"
 _T197 = "a8360faf87c6d374d42ea2cccbb4807832667d45"
 _T195 = "d4b723761270091517e83dd3ac5d5db48e9f2205"
 _NA = "not-applicable"
+_IMPL = "implemented"
 _IDENTITY = "59912fe1d3cad2938389deba186b0478759f0278be2bfea462c20a39d2a9054c"
 # (repository, surface) -> (disposition, this library's release tag, the commit that tag names).
 _EXPECTED_CLAIMS: dict[tuple[str, str], tuple[str, str, str]] = {
     (_SELF, "Generated projects"): (_NA, "v1.198.0", "a17a87b18d934dbfb7953f4d2209badc7d6dcee4"),
+    (_SELF, "Normal master context"): (
+        _IMPL,
+        "v1.198.0",
+        "a17a87b18d934dbfb7953f4d2209badc7d6dcee4",
+    ),
     (f"{_OWNER}/livespec-console-beads-fabro", "Generated projects"): (_NA, "v1.197.0", _T197),
     (f"{_OWNER}/livespec-driver-claude", "Generated projects"): (_NA, "v1.197.0", _T197),
     (f"{_OWNER}/livespec-driver-codex", "Generated projects"): (_NA, "v1.197.0", _T197),
