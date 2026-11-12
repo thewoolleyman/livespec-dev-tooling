@@ -83,7 +83,11 @@ def test_admission_reads_carry_a_request_timeout() -> None:
     )
 
     assert isinstance(outcome, Failure)
-    assert "--request-timeout=240s" in calls[0]
+    assert calls[0][:3] == ("with-gates-kubeconfig", "sh", "-ceu")
+    assert "--request-timeout=240s" in calls[0][3]
+    assert "progress_stamp=${LIVESPEC_GATE_RUN_PROGRESS_STAMP:-}" in calls[0][3]
+    assert "sleep 30" in calls[0][3]
+    assert ': >"$progress_stamp"' in calls[0][3]
 
 
 def test_an_admitted_job_uses_a_bounded_terminal_condition_watch() -> None:

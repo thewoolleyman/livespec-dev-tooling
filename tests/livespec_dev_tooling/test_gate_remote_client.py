@@ -450,13 +450,10 @@ def test_every_later_step_names_the_job_the_cluster_assigned() -> None:
 
     assert is_successful(outcome)
     assert outcome.unwrap().job_name == assigned
-    assert cluster.only(kind="get-job").argv[-5:] == (
-        "job",
-        assigned,
-        "--output",
-        "json",
-        "--request-timeout=240s",
-    )
+    admission = cluster.only(kind="get-job").argv
+    assert admission[:3] == (GATES_WRAPPER, "sh", "-ceu")
+    assert "--request-timeout=240s" in admission[3]
+    assert admission[-5:] == ("--namespace", "gates", "get", "job", assigned)
     assert f"job/{assigned}" in cluster.only(kind="stream-logs").argv
 
 
@@ -591,7 +588,7 @@ def test_every_cluster_command_runs_through_the_credential_wrapper() -> None:
     cluster = _StubCluster()
     _ = run_gate(request=_REQUEST, runner=cluster, sleeper=cluster.sleep)
 
-    cluster_calls = [call for call in cluster.calls if "kubectl" in call.argv]
+    cluster_calls = [call for call in cluster.calls if any("kubectl" in arg for arg in call.argv)]
     assert [call.kind for call in cluster_calls] == ["submit-job", "get-job", "stream-logs"]
     assert all(call.argv[0] == GATES_WRAPPER for call in cluster_calls)
     assert not [call for call in cluster.calls if call.argv[0] == "kubectl"]

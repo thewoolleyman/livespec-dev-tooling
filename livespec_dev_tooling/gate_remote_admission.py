@@ -43,6 +43,35 @@ _ASSERTED = "True"
 _WATCH_NO_TERMINAL_DETAIL = "Job watch ended before a terminal condition was observed"
 _WATCH_WINDOW_SECONDS = 240
 Clock = Callable[[], float]
+_RUN_WITH_PROGRESS_SCRIPT = (
+    r"""
+set -eu
+progress_stamp=${LIVESPEC_GATE_RUN_PROGRESS_STAMP:-}
+heartbeat() {
+    while :; do
+        if test -n "$progress_stamp"; then
+            : >"$progress_stamp"
+        fi
+        sleep 30
+    done
+}
+heartbeat &
+heartbeat_pid=$!
+cleanup() {
+    kill "$heartbeat_pid" 2>/dev/null || true
+    wait "$heartbeat_pid" 2>/dev/null || true
+}
+trap cleanup EXIT
+"$@" --output json --request-timeout=240s &
+command_pid=$!
+if wait "$command_pid"; then
+    exit 0
+else
+    command_status=$?
+fi
+exit "$command_status"
+"""
+).strip()
 _WATCH_TERMINAL_SCRIPT = (
     r"""
 set -eu
@@ -138,15 +167,14 @@ def await_terminal_state(
 ) -> Result[Terminal, GateStepFailed]:
     """Wait through admission, then watch the Job within its independent budget."""
     argv = [
-        *with_gates_kubeconfig(argv=["kubectl"]),
+        *with_gates_kubeconfig(argv=["sh", "-ceu", _RUN_WITH_PROGRESS_SCRIPT]),
+        "await-gate-admission-read",
+        "kubectl",
         "--namespace",
         request.namespace,
         "get",
         "job",
         job_name,
-        "--output",
-        "json",
-        "--request-timeout=240s",
     ]
     nap = reporting_sleeper(sleeper=sleeper, job_name=job_name)
     admitted = _await_admission(
