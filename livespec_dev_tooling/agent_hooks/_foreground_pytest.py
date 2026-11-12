@@ -14,6 +14,7 @@ script cannot hide a pytest from one guard that the other would see
 
 from __future__ import annotations
 
+import re
 import shlex
 from pathlib import Path
 
@@ -96,6 +97,12 @@ _PYTEST_VALUE_OPTIONS: frozenset[str] = frozenset(
     }
 )
 
+_HEREDOC_BODY: re.Pattern[str] = re.compile(
+    r"<<-?\s*(?P<quote>['\"]?)(?P<delimiter>[A-Za-z_][A-Za-z0-9_]*)"
+    r"(?P=quote)[^\n]*\n.*?^(?P=delimiter)[ \t]*$",
+    re.DOTALL | re.MULTILINE,
+)
+
 
 def foreground_full_suite_pytest(*, command: str, cwd: Path) -> Path | None:
     """The repository an eligible host's foreground full-suite pytest targets, or None.
@@ -112,13 +119,18 @@ def foreground_full_suite_pytest(*, command: str, cwd: Path) -> Path | None:
     refused.
     """
     try:
-        _ = shlex.split(command)
+        parsed_command = _without_heredoc_bodies(command=command)
+        _ = shlex.split(parsed_command)
     except ValueError:
         return None
     target = cwd
-    for invocation in invocations(command=command):
+    for invocation in invocations(command=parsed_command):
         if invocation.binary == "cd":
-            target = target / (invocation.subcommand or str(Path.home()))
+            target = _cd_target(
+                cwd=cwd,
+                target=target,
+                cd_target=invocation.subcommand,
+            )
             continue
         pytest_argv = pytest_command(command=_argv(invocation=invocation))
         if pytest_argv is not None:
@@ -130,6 +142,20 @@ def foreground_full_suite_pytest(*, command: str, cwd: Path) -> Path | None:
             if eligible:
                 return target
     return None
+
+
+def _cd_target(*, cwd: Path, target: Path, cd_target: str | None) -> Path:
+    """Resolve a literal `cd` target, or use the session cwd when it is opaque."""
+    if cd_target is None:
+        return Path.home()
+    if "$" in cd_target or "`" in cd_target:
+        return cwd
+    return target / Path(cd_target).expanduser()
+
+
+def _without_heredoc_bodies(*, command: str) -> str:
+    """Replace heredoc bodies with separators before reading command positions."""
+    return _HEREDOC_BODY.sub(";", command)
 
 
 def _argv(*, invocation: Invocation) -> tuple[str, ...]:

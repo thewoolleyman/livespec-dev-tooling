@@ -1261,6 +1261,164 @@ def test_xdist_makes_a_pytest_naming_an_existing_test_file_a_full_suite(
     assert _run_main(monkeypatch=monkeypatch, stdin_text=targeted) == 0
 
 
+@pytest.mark.integration
+def test_a_tilde_cd_target_with_xdist_is_refused(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A literal home-relative `cd` target resolves before pytest is judged."""
+    home = tmp_path / "home"
+    delegating = _make_hooked_repo(repo=home / "delegating", hooks=())
+    _write_delegated_gate_config(repository=delegating, delegated=True)
+    credential = tmp_path / "gates.kubeconfig"
+    _ = credential.write_text("apiVersion: v1\nkind: Config\n", encoding="utf-8")
+    monkeypatch.setenv("GATES_KUBECONFIG", str(credential))
+    monkeypatch.setenv("HOME", str(home))
+
+    event = _foreground_refusal_event(
+        command="cd ~/delegating && pytest -n 4 tests/test_widget.py",
+        cwd=tmp_path,
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+    )
+
+    assert event["check_id"] == _FOREGROUND_PYTEST_CHECK_ID
+    assert event["repository"] == str(delegating)
+
+
+@pytest.mark.integration
+def test_a_variable_cd_target_with_xdist_uses_the_session_working_directory(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """An opaque `cd` target cannot move the hook's repository probe."""
+    delegating, undelegated = _two_repositories(tmp_path=tmp_path, monkeypatch=monkeypatch)
+
+    event = _foreground_refusal_event(
+        command=f"W={undelegated}; cd $W; pytest -n 4 tests/test_widget.py",
+        cwd=delegating,
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+    )
+
+    assert event["check_id"] == _FOREGROUND_PYTEST_CHECK_ID
+    assert event["repository"] == str(delegating)
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    "command",
+    [
+        pytest.param("true; pytest -n 4", id="semicolon"),
+        pytest.param("printf ready | pytest -n 4", id="pipe"),
+        pytest.param(
+            "python3 -I - <<'E'\nprint('helper')\nE\ntrue; pytest -n 4",
+            id="after-heredoc",
+        ),
+    ],
+)
+def test_a_late_xdist_pytest_in_a_compound_command_is_refused(
+    command: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Separators and heredocs do not hide a later pytest invocation."""
+    delegating, _ = _two_repositories(tmp_path=tmp_path, monkeypatch=monkeypatch)
+
+    event = _foreground_refusal_event(
+        command=command,
+        cwd=delegating,
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+    )
+
+    assert event["check_id"] == _FOREGROUND_PYTEST_CHECK_ID
+    assert event["repository"] == str(delegating)
+
+
+@pytest.mark.integration
+def test_a_second_delegating_repository_cd_target_with_xdist_is_refused(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The guard probes whichever delegating repository the command names."""
+    delegating, undelegated = _two_repositories(tmp_path=tmp_path, monkeypatch=monkeypatch)
+    other_delegating = _make_hooked_repo(repo=tmp_path / "other-delegating", hooks=())
+    _write_delegated_gate_config(repository=other_delegating, delegated=True)
+
+    event = _foreground_refusal_event(
+        command=f"cd {other_delegating} && pytest -n 4 tests/test_widget.py",
+        cwd=undelegated,
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+    )
+
+    assert delegating != other_delegating
+    assert event["check_id"] == _FOREGROUND_PYTEST_CHECK_ID
+    assert event["repository"] == str(other_delegating)
+
+
+@pytest.mark.integration
+def test_pytest_mentioned_only_in_a_heredoc_body_is_not_refused(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Heredoc text is an argument to Python, not a shell pytest invocation."""
+    delegating, _ = _two_repositories(tmp_path=tmp_path, monkeypatch=monkeypatch)
+    monkeypatch.chdir(delegating)
+    payload = json.dumps(
+        {
+            "tool_name": "Bash",
+            "tool_input": {
+                "command": "python3 -I - <<'E'\nif 'pytest' in cmd:\n"
+                "    i = cmd.find('pytest'); print(i)\nE"
+            },
+        }
+    )
+
+    assert _run_main(monkeypatch=monkeypatch, stdin_text=payload) == 0
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    "command",
+    [
+        pytest.param("cd && pytest -n 4", id="no-cd-argument"),
+        pytest.param("cd ~missing-user && pytest -n 4", id="unexpandable-tilde"),
+    ],
+)
+def test_an_unresolvable_cd_target_uses_the_session_working_directory(
+    command: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A non-literal `cd` target never releases a delegating session's pytest."""
+    home = tmp_path / "home"
+    delegating = _make_hooked_repo(repo=home, hooks=())
+    _write_delegated_gate_config(repository=delegating, delegated=True)
+    credential = tmp_path / "gates.kubeconfig"
+    _ = credential.write_text("apiVersion: v1\nkind: Config\n", encoding="utf-8")
+    monkeypatch.setenv("GATES_KUBECONFIG", str(credential))
+    monkeypatch.setenv("HOME", str(home))
+    if command.startswith("cd ~missing"):
+        monkeypatch.setattr(Path, "expanduser", lambda _path: Path("~unexpanded"))
+
+    event = _foreground_refusal_event(
+        command=command,
+        cwd=delegating,
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+    )
+
+    assert event["check_id"] == _FOREGROUND_PYTEST_CHECK_ID
+    assert event["repository"] == str(delegating)
+
+
 @pytest.mark.parametrize(
     ("command", "delegated", "credential_readable"),
     [
