@@ -60,7 +60,8 @@ def test_a_marker_before_unreadable_source_does_not_pass(source: str) -> None:
 
 
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-gig42c
-def test_a_marker_after_a_shebang_line_is_found_on_its_own_line() -> None:
-    source = "#!/usr/bin/env python3\n" + _MARKER + "\n"
+# DRILL R3 later overlapping edit (livespec-dev-tooling-fdquen): the same lines the expedited PR added.
+def test_a_marker_after_a_shebang_and_an_encoding_line_is_found_on_its_own_line() -> None:
+    source = "#!/usr/bin/env python3\n# -*- coding: utf-8 -*-\n" + _MARKER + "\n"
     result = validate_python_repair_marker(source=source, incident_item_id=_ITEM)
-    assert result.value_or(()) == (2,)
+    assert result.value_or(()) == (3,)
