@@ -951,6 +951,30 @@
   },
   {
     "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a delegated gate Job retries a forge read the forge refuses transiently",
+    "test": "TODO",
+    "reason": "A real test at the consumer tier (the `tests.consumer` node-id prefix this repository declares in `scenario_tiers`) is owed for this heading: a fixture consumer's rendered gate Job runs its fetch-livespec-core script against a git double that answers the first fetch with an anonymous 401 and a later one with the ref, and the test shows a second attempt after a wait, the consumer's recipe running, and one log line per attempt naming its number and class. livespec-dev-tooling-yjcyay owns it.",
+    "work_item": "livespec-dev-tooling-yjcyay"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a delegated gate Job fails a forge read of a missing ref at once",
+    "test": "TODO",
+    "reason": "A real test at the consumer tier (the `tests.consumer` node-id prefix this repository declares in `scenario_tiers`) is owed for this heading: a fixture consumer's rendered gate Job runs its fetch-livespec-core script against a git double that reports the pinned ref not found, and the test shows exactly one fetch, a FATAL line naming the ref, and no recipe run. livespec-dev-tooling-yjcyay owns it.",
+    "work_item": "livespec-dev-tooling-yjcyay"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a pushing host retries a private-sibling token mint the forge refuses transiently",
+    "test": "TODO",
+    "reason": "A real test at the consumer tier (the `tests.consumer` node-id prefix this repository declares in `scenario_tiers`) is owed for this heading: a fixture consumer naming a private sibling drives the shipped gate client's mint through a forge double that answers the token request with HTTP 500 and then with a token, and the test shows a second request after a wait, the minted token reaching the gate Job's private clone, and per-attempt status lines that never contain the token. livespec-dev-tooling-yjcyay owns it.",
+    "work_item": "livespec-dev-tooling-yjcyay"
+  },
+  {
+    "spec_root": "SPECIFICATION",
     "spec_file": "contracts.md",
     "heading": "## Master-health reconciler",
     "test": "TODO",

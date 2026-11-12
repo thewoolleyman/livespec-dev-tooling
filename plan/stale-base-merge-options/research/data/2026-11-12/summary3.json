@@ -1,0 +1,41 @@
+{
+ "livespec-orchestrator-beads-fabro": {
+  "prs": 1688,
+  "diffed": 1688,
+  "behind": 736,
+  "behind_overlap": 34,
+  "behind_unknown": 0,
+  "overlap_frac_of_all": 0.02,
+  "D_serial_overlap_extra_runs": 34,
+  "D_extra_runner_min": 2106,
+  "D_delay_p50": -0.3,
+  "D_delay_p90": -0.1,
+  "D_delay_max": 99.0
+ },
+ "livespec-dev-tooling": {
+  "prs": 1518,
+  "diffed": 1518,
+  "behind": 850,
+  "behind_overlap": 51,
+  "behind_unknown": 0,
+  "overlap_frac_of_all": 0.034,
+  "D_serial_overlap_extra_runs": 51,
+  "D_extra_runner_min": 1699,
+  "D_delay_p50": -0.3,
+  "D_delay_p90": 11.7,
+  "D_delay_max": 269.1
+ },
+ "livespec-overseer": {
+  "prs": 424,
+  "diffed": 424,
+  "behind": 46,
+  "behind_overlap": 7,
+  "behind_unknown": 0,
+  "overlap_frac_of_all": 0.017,
+  "D_serial_overlap_extra_runs": 7,
+  "D_extra_runner_min": 98,
+  "D_delay_p50": -0.3,
+  "D_delay_p90": 0.1,
+  "D_delay_max": 83.7
+ }
+}

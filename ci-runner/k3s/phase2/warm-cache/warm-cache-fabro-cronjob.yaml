@@ -69,7 +69,8 @@ spec:
               type: RuntimeDefault
           containers:
             - name: populate-fabro
-              image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-rust-fuzz-v1.46.0
+              # Match fork-gates.yml and carrier-build.yml: this build base supplies make.
+              image: buildpack-deps:noble
               imagePullPolicy: IfNotPresent
               command: ["bash", "/scripts/warm-cache-fabro-populate.sh"]
               env:
