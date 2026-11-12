@@ -58,7 +58,11 @@ def _module_facts(*, repo_root: Path, path: Path) -> _ModuleFacts | None:
         if isinstance(node, ast.Constant) and isinstance(node.value, str)
         if id(node) not in path_component_nodes or Path(node.value).suffix
     }
-    path_names, path_is_undeterminable = path_literals(tree=tree, repo_root=repo_root)
+    path_names, path_is_undeterminable = path_literals(
+        tree=tree,
+        repo_root=repo_root,
+        source_path=path,
+    )
     return _ModuleFacts(
         imports=frozenset(module_imports(repo_root=repo_root, path=path, tree=tree)),
         literals=frozenset(literals | path_names),
