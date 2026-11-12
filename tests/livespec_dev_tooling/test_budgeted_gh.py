@@ -50,15 +50,17 @@ import importlib.metadata
 import inspect
 import json
 import os
+import shlex
 import subprocess
 import sys
 from pathlib import Path
 
 import pytest
+from livespec_runtime_budget.github_budget import GhInvocation
 
 from livespec_dev_tooling import budgeted_gh
 from livespec_dev_tooling.agent_hooks import subagent_stop_guard
-from livespec_dev_tooling.budgeted_gh import GhRead, gh_read
+from livespec_dev_tooling.budgeted_gh import GhRead, forge_call, gh_read
 from livespec_dev_tooling.checks import _branch_protection_api, master_ci_green
 from livespec_dev_tooling.checks._branch_protection_api import _default_branch_from_api
 from livespec_dev_tooling.checks.master_ci_green import _gh_has_stored_credential
@@ -671,3 +673,25 @@ def test_canonical_api_identity_metadata_ignores_environment_and_makes_no_reques
         budgeted_gh.github_api_url(path="repos/owner/repo/check-runs/913")
         == "https://api.github.com/repos/owner/repo/check-runs/913"
     )
+
+
+def test_forge_call_reads_with_headers_and_applies_the_retry_rule() -> None:
+    """The entrance's forge call is an `--include` read through this boundary, under the rule."""
+    seen: list[str] = []
+    replies = iter(["HTTP/2.0 502 Bad Gateway\n\n{}", 'HTTP/2.0 200 OK\n\n{"n": 7}'])
+
+    def execute(argv: list[str]) -> GhInvocation:
+        seen.append(shlex.join(argv))
+        reply = next(replies)
+        return GhInvocation(argv=shlex.join(argv), stdout=reply, stderr="", returncode=0)
+
+    waits: list[float] = []
+    result = forge_call(
+        name="pr-body",
+        endpoint="repos/o/r/pulls/7",
+        execute=execute,
+        sleep=waits.append,
+        now=lambda: 0.0,
+    )
+    assert (result.outcome, result.body, waits) == ("answer", '{"n": 7}', [2])
+    assert seen == ["gh api --include --method GET repos/o/r/pulls/7"] * 2

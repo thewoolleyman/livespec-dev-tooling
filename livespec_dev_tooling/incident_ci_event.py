@@ -3,14 +3,27 @@
 from __future__ import annotations
 
 import re
+import sys
 from collections.abc import Mapping
 from typing import Any, cast
 
-from livespec_dev_tooling.budgeted_gh import gh_read
+from livespec_dev_tooling.budgeted_gh import forge_call
 from livespec_dev_tooling.incident_ci_policy import CiEvent
 from livespec_dev_tooling.incident_strict_json import IncidentJsonRefusalError, strict_json
 
-__all__: list[str] = ["incident_block", "observe_event"]
+__all__: list[str] = [
+    "PULL_REQUEST_READ",
+    "ForgeReadUnansweredError",
+    "incident_block",
+    "observe_event",
+]
+PULL_REQUEST_READ = "incident-ci-entrance-pull-request-read"
+
+
+class ForgeReadUnansweredError(Exception):
+    """The entrance's read of the pull request ended without an answer; no event is observed."""
+
+
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-egy3ri
 _BEGIN = "<!-- livespec-incident-ci\n"
 _END = "\n-->"
@@ -28,15 +41,22 @@ def _pull_request(
     number = int(environ["GITHUB_PR_NUMBER"])
     if number <= 0:
         return None
-    reply = gh_read(args=["api", f"repos/{repository}/pulls/{number}"], timeout=10)
-    data = _map(value=strict_json(text=reply.stdout, limit=1048576))
+    reply = forge_call(name=PULL_REQUEST_READ, endpoint=f"repos/{repository}/pulls/{number}")
+    for line in reply.lines:
+        _ = sys.stderr.write(f"{line}\n")
+    if reply.outcome != "answer":
+        status = "none" if reply.status is None else str(reply.status)
+        message = (
+            f"{PULL_REQUEST_READ} ended without an answer (last status {status}, kind {reply.kind})"
+        )
+        raise ForgeReadUnansweredError(message)
+    data = _map(value=strict_json(text=reply.body, limit=1048576))
     source, base = _map(value=data.get("head")), _map(value=data.get("base"))
     head_sha, base_sha = source.get("sha"), base.get("sha")
     raw_labels = data.get("labels")
     labels = cast("list[Any]", raw_labels) if isinstance(raw_labels, list) else None
     if (
-        reply.returncode != 0
-        or data.get("state") != "open"
+        data.get("state") != "open"
         or type(data.get("number")) is not int
         or data.get("number") != number
         or head_sha != environ["GITHUB_PR_HEAD_SHA"]

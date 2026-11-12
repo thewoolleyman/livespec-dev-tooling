@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from livespec_dev_tooling.incident_ci_entry import CiEntry
-from livespec_dev_tooling.incident_ci_event import observe_event
+from livespec_dev_tooling.incident_ci_event import ForgeReadUnansweredError, observe_event
 from livespec_dev_tooling.incident_ci_inventory import load_inventory
 from livespec_dev_tooling.incident_ci_payload import decode_outcome
 from livespec_dev_tooling.incident_ci_policy import CiOutcome
@@ -54,7 +54,10 @@ class CiProcess:
         environment = dict(os.environ)
         if environment.get("GITHUB_EVENT_NAME") == "push":
             environment = normal_child_environment(environ=environment)
-        observed = observe_event(environ=environment)
+        try:
+            observed = observe_event(environ=environment)
+        except ForgeReadUnansweredError as unanswered:
+            return _emit(result={"status": "refused", "reason": str(unanswered)}, code=2)
         if observed is None:
             return _emit(
                 result={

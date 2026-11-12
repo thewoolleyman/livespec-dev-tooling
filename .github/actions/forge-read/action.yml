@@ -1,0 +1,33 @@
+# forge-read composite Action — puts the retrying forge call on the job's path.
+#
+# Authority: SPECIFICATION/contracts.md, its expedited incident execution rules (every
+# forge call the incident-ci job, the ci-green job and the incident label
+# workflow make retries an answer it cannot use) and its composite Actions
+# wire contract (`forge-read`). Owning work item: livespec-dev-tooling-levu6j.
+#
+# Performs: one step that adds this Action's directory to the job's
+# GITHUB_PATH, so every later step of the job can run
+#
+#   livespec-forge-read <call-name> [--method <method>] [--field <name>=<value>]...
+#                       [--idempotent] [--paginate] <endpoint>
+#
+# The command needs nothing beyond bash, the `gh` CLI and `python3`, so it runs
+# before the job installs any Python package. It authenticates with the calling
+# job's GH_TOKEN and never prints it. Exit status: 0 with the answer body on
+# standard output; 1 when the call ended without an answer; 75
+# (`outcome-unknown`) for a non-idempotent write whose outcome is unknown, which
+# the calling step resolves by re-reading the state the write changes.
+#
+# The released incident CI entrance applies the same rule through
+# livespec_dev_tooling.budgeted_gh (the other side of the trust boundary), and
+# tests/livespec_dev_tooling/test_forge_policy.py holds the two equal.
+
+name: forge-read
+description: Put livespec-forge-read, the incident forge call that retries an unusable answer, on the job's path.
+
+runs:
+  using: composite
+  steps:
+    - name: Put livespec-forge-read on the job's path
+      shell: bash
+      run: echo "${GITHUB_ACTION_PATH}" >> "${GITHUB_PATH}"

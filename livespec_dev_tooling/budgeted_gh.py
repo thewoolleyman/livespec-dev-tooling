@@ -58,9 +58,19 @@ from __future__ import annotations
 import shlex
 import subprocess
 import sys
+import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
+
+from livespec_dev_tooling._forge_policy import (
+    ATTEMPT_TIMEOUT_SECONDS,
+    Attempt,
+    CallResult,
+    parse_included,
+    run_call,
+)
 
 # `returns` and the budget client are VENDORED, not installed; a bare
 # import here would resolve only when some earlier import in the process
@@ -81,6 +91,7 @@ from returns.unsafe import unsafe_perform_io  # noqa: E402  — vendor-path-awar
 
 __all__: list[str] = [
     "GhRead",
+    "forge_call",
     "gh_read",
     "github_api_url",
 ]
@@ -180,6 +191,38 @@ def gh_read(
         returncode=invocation.returncode,
         stdout=invocation.stdout,
         stderr=invocation.stderr,
+    )
+
+
+def forge_call(
+    *,
+    name: str,
+    endpoint: str,
+    method: str = "GET",
+    execute: GhExecutor | None = None,
+    sleep: Callable[[float], None] = time.sleep,
+    now: Callable[[], float] = time.time,
+) -> CallResult:
+    """One forge call under the incident retry rule, through this read boundary.
+
+    The released incident CI entrance's side of the rule in
+    `SPECIFICATION/contracts.md`'s expedited incident execution rules (work item
+    livespec-dev-tooling-levu6j): each attempt is one `gh api --include` read
+    stopped at 30 seconds, so the rate-limit headers the waits need are read
+    from the answer, and `_forge_policy.run_call` decides every retry. Workflow
+    steps get the same rule from the composite Action `forge-read`.
+    """
+
+    def attempt() -> Attempt:
+        reply = gh_read(
+            args=["api", "--include", "--method", method, endpoint],
+            timeout=ATTEMPT_TIMEOUT_SECONDS,
+            execute=execute,
+        )
+        return parse_included(stdout=reply.stdout, stderr=reply.stderr)
+
+    return run_call(
+        name=name, method=method, idempotent=False, attempt=attempt, sleep=sleep, now=now
     )
 
 

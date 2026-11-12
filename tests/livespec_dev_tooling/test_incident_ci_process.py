@@ -139,3 +139,20 @@ def test_outcome_count_limits_apply_within_and_between_files(monkeypatch, tmp_pa
     (tmp_path / "two.jsonl").write_text("")
     with pytest.raises(ValueError, match="report inventory"):
         module.CiProcess.outcomes(directory=tmp_path)
+
+
+def test_an_unanswered_pull_request_read_refuses_naming_the_read(monkeypatch, tmp_path, capsys):
+    master(monkeypatch=monkeypatch, tmp_path=tmp_path)
+
+    def unanswered(**_kwargs):
+        raise module.ForgeReadUnansweredError(
+            "incident-ci-entrance-pull-request-read ended without an answer"
+        )
+
+    monkeypatch.setattr(module, "observe_event", unanswered)
+    assert module.main(argv=["plan"]) == 2
+    result = json.loads(capsys.readouterr().out)
+    assert result == {
+        "status": "refused",
+        "reason": "incident-ci-entrance-pull-request-read ended without an answer",
+    }
