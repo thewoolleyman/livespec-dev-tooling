@@ -2323,8 +2323,8 @@
     "spec_file": "scenarios.md",
     "heading": "## Scenario: an incident revert preserves later changes without waiting for CI",
     "test": "TODO",
-    "reason": "A real test at the integration tier or above is owed for this heading: the normally shipped incident capability must exercise this contract with ordinary-path controls; livespec-dev-tooling-fdquen owns the implementation and scenario evidence under plan livespec-dev-tooling-bqnzcm. (Re-owned from closed livespec-dev-tooling-lgfo3v on 2026-11-11.)",
-    "work_item": "livespec-dev-tooling-fdquen"
+    "reason": "A real test at the integration tier or above is owed for this heading: the normally shipped incident capability must exercise this contract with ordinary-path controls; livespec-dev-tooling-mdqkkz owns the implementation and scenario evidence under plan livespec-dev-tooling-bqnzcm. (Re-owned from closed livespec-dev-tooling-lgfo3v on 2026-11-11, then from closed livespec-dev-tooling-fdquen on 2026-11-12.)",
+    "work_item": "livespec-dev-tooling-mdqkkz"
   },
   {
     "spec_root": "SPECIFICATION",

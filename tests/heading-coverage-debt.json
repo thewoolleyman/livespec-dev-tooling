@@ -1214,7 +1214,7 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: an incident revert preserves later changes without waiting for CI",
-    "work_item": "livespec-dev-tooling-fdquen",
+    "work_item": "livespec-dev-tooling-mdqkkz",
     "first_seen": "2026-11-03"
   },
   {
