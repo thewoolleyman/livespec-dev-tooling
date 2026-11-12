@@ -26,7 +26,11 @@ import pytest
 from returns.result import Success
 
 from livespec_dev_tooling._incident_fleet_capabilities import SURFACE_CAPABILITY
-from livespec_dev_tooling._incident_fleet_command import _applicable_consumers, _digest
+from livespec_dev_tooling._incident_fleet_command import (
+    _applicable_consumers,
+    _digest,
+    _guidance_consumers,
+)
 from livespec_dev_tooling._incident_fleet_sources import COMMITTED_CLAIMS, load_claims
 from livespec_dev_tooling._incident_fleet_types import CapabilityEvidence
 from livespec_dev_tooling.fleet.contract import parse_manifest
@@ -54,14 +58,20 @@ def _serving_form_ok(*, claim: CapabilityEvidence) -> bool:
     return bool(claim.release_build)
 
 
-def _claim_failures(*, claim: CapabilityEvidence, consumers: set[str], identity: str) -> list[str]:
+_GUIDANCE = frozenset({"Agent tool and stop guards", "Operator factory routing"})
+
+
+def _claim_failures(
+    *, claim: CapabilityEvidence, consumers: set[str], guidance: set[str], identity: str
+) -> list[str]:
     implemented = claim.disposition == "implemented"
+    # A deliberately-normal claim's evidence is the ruling it cites, not a serving build.
+    normal = claim.disposition == "deliberately-normal"
     checks = {
         "unknown-surface": claim.surface in SURFACES,
         "unknown-disposition": claim.disposition in _DISPOSITIONS,
-        "missing-field": all(
-            (claim.owner, claim.proof_ref, claim.release_build, claim.source_path)
-        ),
+        "missing-field": all((claim.owner, claim.proof_ref, claim.source_path))
+        and (normal or bool(claim.release_build)),
         "proof-ref-omits-repository": claim.repository in claim.proof_ref,
         "missing-reason": implemented or bool(claim.reason),
         "missing-incident-record": not implemented
@@ -70,9 +80,11 @@ def _claim_failures(*, claim: CapabilityEvidence, consumers: set[str], identity:
             and claim.normal_factory_proof
             and _DIGEST.fullmatch(claim.cumulative_scope)
         ),
-        "release-build-not-serving-form": _serving_form_ok(claim=claim),
+        "release-build-not-serving-form": normal or _serving_form_ok(claim=claim),
         "other-manifest-identity": claim.manifest_sha256 == identity,
-        "not-an-applicable-consumer": claim.repository in consumers,
+        "not-an-applicable-consumer": claim.repository in consumers | guidance,
+        "instruction-only-runtime-row": claim.repository not in guidance
+        or claim.surface in _GUIDANCE,
     }
     return [f"{claim.repository} {claim.surface}: {name}" for name, ok in checks.items() if not ok]
 
@@ -82,11 +94,14 @@ def _failures(*, claims: Sequence[CapabilityEvidence]) -> list[str]:
     manifest = parse_manifest(source=text)
     assert isinstance(manifest, Success)
     consumers = set(_applicable_consumers(manifest=manifest.unwrap()))
+    guidance = set(_guidance_consumers(manifest=manifest.unwrap()))
     identity = _digest(text=text)
     keys = [(claim.repository, claim.surface) for claim in claims]
     found = [f"{key[0]} {key[1]}: duplicate" for key in sorted(set(keys)) if keys.count(key) > 1]
     for claim in claims:
-        found += _claim_failures(claim=claim, consumers=consumers, identity=identity)
+        found += _claim_failures(
+            claim=claim, consumers=consumers, guidance=guidance, identity=identity
+        )
     return found
 
 
@@ -139,6 +154,49 @@ def test_each_check_refuses_a_fixture_claim_that_breaks_it(
     broken.write_text(json.dumps(document), encoding="utf-8")
     failures = _failures(claims=_load(path=broken))
     assert [entry.rsplit(": ", 1)[1] for entry in failures] == [failure]
+
+
+_RULED = {
+    "disposition": "deliberately-normal",
+    "release_build": "",
+    "reason": "maintainer ruling 2026-11-12 on livespec-dev-tooling-bqnzcm: stays normal",
+}
+
+
+@pytest.mark.parametrize(
+    ("change", "failures"),
+    [
+        (_RULED, []),
+        ({**_RULED, "reason": ""}, ["missing-reason"]),
+        (
+            {
+                **_RULED,
+                "repository": "thewoolleyman/vps-info",
+                "proof_ref": "thewoolleyman/vps-info: ruling",
+                "surface": "Agent tool and stop guards",
+            },
+            [],
+        ),
+        (
+            {
+                **_RULED,
+                "repository": "thewoolleyman/vps-info",
+                "proof_ref": "thewoolleyman/vps-info: ruling",
+                "surface": "Pre-push",
+            },
+            ["instruction-only-runtime-row"],
+        ),
+    ],
+)
+def test_a_ruled_claim_needs_its_ruling_and_no_release_build(
+    *, tmp_path: Path, change: dict[str, str], failures: list[str]
+) -> None:
+    document = json.loads(_WELLFORMED.read_text(encoding="utf-8"))
+    document["evidence"] = [{**document["evidence"][1], **change}]
+    claims = tmp_path / "claims.json"
+    claims.write_text(json.dumps(document), encoding="utf-8")
+    found = _failures(claims=_load(path=claims))
+    assert [entry.rsplit(": ", 1)[1] for entry in found] == failures
 
 
 def test_a_repeated_consumer_and_surface_is_refused(tmp_path: Path) -> None:
