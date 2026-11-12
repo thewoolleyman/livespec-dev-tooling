@@ -92,6 +92,7 @@ from returns.pipeline import is_successful
 from returns.unsafe import unsafe_perform_io
 from livespec_runtime.work_items.rank import key_between
 from livespec_orchestrator_beads_fabro._ids import new_work_item_id
+from livespec_orchestrator_beads_fabro._beads_client import make_beads_client
 from livespec_orchestrator_beads_fabro.commands._config import resolve_store_config
 from livespec_orchestrator_beads_fabro.intake_dor import (
     DefinitionOfReadyChecklist,
@@ -130,7 +131,11 @@ routed = file_captured_work_item(
     ),
 )
 if not is_successful(routed):
-    sys.stderr.write(f"{item.id}: {unsafe_perform_io(routed.failure())}\\n")
+    failure = unsafe_perform_io(routed.failure())
+    if make_beads_client(config=path).exists(issue_id=item.id):
+        sys.stderr.write(f"{item.id}: {failure}\\n")
+    else:
+        sys.stderr.write(f"{failure}\\n")
     sys.exit(1)
 sys.stdout.write(f"{item.id}\\n")
 """
@@ -189,8 +194,10 @@ def _command_result(
     return result
 
 
-def _open_root_fix_nodeids(*, repo_root: Path, runner: GateCommandRunner) -> dict[str, str | None]:
-    """Read node ids and ids for every non-closed root-fix item."""
+def _open_root_fix_nodeids(
+    *, repo_root: Path, runner: GateCommandRunner
+) -> dict[str, tuple[str | None, bool]]:
+    """Read every open root-fix id and whether intake has already triaged it."""
     result = _command_result(
         argv=["bd", "list", "--status", "all", "--json"],
         repo_root=repo_root,
@@ -199,7 +206,7 @@ def _open_root_fix_nodeids(*, repo_root: Path, runner: GateCommandRunner) -> dic
     parsed = cast("object", json.loads(result.stdout))
     if not isinstance(parsed, list):
         raise TypeError
-    open_nodeids: dict[str, str | None] = {}
+    open_nodeids: dict[str, tuple[str | None, bool]] = {}
     for item in cast("list[object]", parsed):
         if not isinstance(item, dict):
             continue
@@ -209,8 +216,10 @@ def _open_root_fix_nodeids(*, repo_root: Path, runner: GateCommandRunner) -> dic
         title = item_record.get("title")
         if isinstance(title, str) and title.startswith(_ROOT_FIX_PREFIX):
             item_id = item_record.get("id")
+            labels = item_record.get("labels")
             open_nodeids[title.removeprefix(_ROOT_FIX_PREFIX)] = (
-                item_id if isinstance(item_id, str) else None
+                item_id if isinstance(item_id, str) else None,
+                isinstance(labels, list) and "intake:triaged" in labels,
             )
     return open_nodeids
 
@@ -290,32 +299,39 @@ def file_root_fixes(
     filed_digests = _filed_digests(state_dir=state_dir)
     existing = _open_root_fix_nodeids(repo_root=repo_root, runner=runner)
     filed: list[str] = []
+    refusals: list[str] = []
     for nodeid in sorted({nodeid for _, nodeid in records}):
         new_digests = {
             digest for digest, record_nodeid in records if record_nodeid == nodeid
         } - filed_digests
         if not new_digests:
             continue
-        if nodeid not in existing:
-            _ = _file_root_fix_through_intake(
-                nodeid=nodeid,
-                plugin_root=plugin_root,
-                repo_root=repo_root,
-                runner=runner,
-            )
-            filed.append(nodeid)
-        else:
-            item_id = existing[nodeid]
-            if item_id is not None:
-                _route_through_intake(
-                    item_id=item_id,
+        try:
+            if nodeid not in existing:
+                _ = _file_root_fix_through_intake(
+                    nodeid=nodeid,
                     plugin_root=plugin_root,
                     repo_root=repo_root,
                     runner=runner,
                 )
                 filed.append(nodeid)
+            else:
+                item_id, triaged = existing[nodeid]
+                if item_id is not None and not triaged:
+                    _route_through_intake(
+                        item_id=item_id,
+                        plugin_root=plugin_root,
+                        repo_root=repo_root,
+                        runner=runner,
+                    )
+                    filed.append(nodeid)
+        except OSError as failure:
+            refusals.append(str(failure))
+            continue
         filed_digests |= new_digests
         _remember_filed(state_dir=state_dir, digests=filed_digests)
+    if refusals:
+        raise OSError("; ".join(refusals))
     return tuple(filed)
 
 
