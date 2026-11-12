@@ -173,3 +173,28 @@ def test_emitter_sends_api_server_request_latency_by_verb_and_resource(
         {attribute["key"] for attribute in point["attributes"]} == {"verb", "resource"}
         for point in points
     )
+
+
+def test_emitter_sends_only_504_api_server_response_counts(
+    tmp_path: Path,
+) -> None:
+    """Handler-timeout responses are summed by verb and resource only."""
+    payload = _emit(
+        tmp_path=tmp_path,
+        metrics_text="\n".join(
+            [
+                'apiserver_request_total{verb="PUT",resource="leases",scope="namespace",code="504"} 2',
+                'apiserver_request_total{verb="PUT",resource="leases",scope="cluster",code="504"} 3',
+                'apiserver_request_total{verb="GET",resource="pods",code="500"} 7',
+                "",
+            ]
+        ),
+    )
+    metrics = payload["resourceMetrics"][0]["scopeMetrics"][0]["metrics"]
+    assert "apiserver_request_total" in {metric["name"] for metric in metrics}
+    points = _metric(payload, "apiserver_request_total")["sum"]["dataPoints"]
+    assert len(points) == 1
+    assert points[0]["asInt"] == "5"
+    assert {
+        attribute["key"]: attribute["value"]["stringValue"] for attribute in points[0]["attributes"]
+    } == {"verb": "PUT", "resource": "leases"}
