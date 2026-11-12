@@ -8,6 +8,7 @@ import os
 import signal
 import sys
 import time
+from contextvars import ContextVar
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -18,6 +19,9 @@ __all__: list[str] = []
 
 _GRACE_SECONDS = 3.0
 _SIGNAL_EXIT_FLOOR = 128
+_EXTRA_ATTRIBUTED_PIDS: ContextVar[set[int] | None] = ContextVar(
+    "extra_attributed_pids", default=None
+)
 
 
 def _args() -> argparse.Namespace:
@@ -103,7 +107,7 @@ def _settle(*, pids: set[int]) -> set[int]:
 
 
 def _stop(*, root: int) -> set[int]:
-    pids = _tree(root=root)
+    pids = _tree(root=root) | (_EXTRA_ATTRIBUTED_PIDS.get() or set())
     _signal(pids=pids, signal_number=signal.SIGTERM)
     alive = _settle(pids=pids)
     _signal(pids=alive, signal_number=signal.SIGKILL)
@@ -111,11 +115,9 @@ def _stop(*, root: int) -> set[int]:
 
 
 def _stop_marked(*, run_dir: Path) -> set[int]:
-    pids = _marked_processes(run_dir=run_dir) - {int(_read(path=run_dir / "pid"))}
-    _signal(pids=pids, signal_number=signal.SIGTERM)
-    alive = _settle(pids=pids)
-    _signal(pids=alive, signal_number=signal.SIGKILL)
-    return _settle(pids=alive)
+    """Keep the marked-process seam after `_stop` takes one ordered process set."""
+    _ = run_dir
+    return set()
 
 
 def _job_gone(*, run_dir: Path) -> bool:
@@ -148,7 +150,13 @@ def main() -> int:
     if not pid.isdigit():
         _ = sys.stdout.write(f"gate-stop: run {run_dir.name} has no live pid\n")
         return 1
-    survivors = _stop(root=int(pid)) | _stop_marked(run_dir=run_dir)
+    marked = _marked_processes(run_dir=run_dir) - {int(pid)}
+    token = _EXTRA_ATTRIBUTED_PIDS.set(marked)
+    try:
+        survivors = _stop(root=int(pid))
+    finally:
+        _EXTRA_ATTRIBUTED_PIDS.reset(token)
+    survivors |= _stop_marked(run_dir=run_dir)
     job_gone = _job_gone(run_dir=run_dir)
     if not survivors and job_gone:
         _ = sys.stdout.write(f"gate-stop: stopped {run_dir.name}\n")
