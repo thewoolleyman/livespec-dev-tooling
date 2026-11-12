@@ -10,6 +10,8 @@
    that fails there, or runs longer than the per-test timeout, is a baseline
    failure and takes no part in attribution.  This run arms no per-test timer:
    a timer kills its process, and with it the coverage data.
+   `measure_or_reuse` wraps it: a measurement stored for an unchanged tree
+   is reused instead of measured again.
 3. `plan_mutants` locates each mutant's function, selects the tests whose
    coverage executes it (see `mutation_kill_matrix_selection`), and computes
    its cache key (see `mutation_kill_matrix_cache`).  Everything it derives
@@ -36,6 +38,13 @@ from livespec_dev_tooling.mutation_kill_matrix_execution import (
     read_outcomes,
     run_selected,
 )
+from livespec_dev_tooling.mutation_kill_matrix_measurement import (
+    Measurement,
+    measurement_key,
+    measurement_path,
+    reuse_or_measure,
+    still_failing,
+)
 from livespec_dev_tooling.mutation_kill_matrix_selection import (
     MutantLocator,
     MutantSpan,
@@ -50,6 +59,7 @@ __all__: list[str] = [
     "MutantPlan",
     "generate",
     "measure",
+    "measure_or_reuse",
     "plan_mutants",
 ]
 
@@ -151,6 +161,45 @@ def measure(
             baseline = WorkerTree(root=target, scratch=Path(scratch))
             recorded |= run_selected(execute=execute, tree=baseline, tests=missing, timeout=timeout)
     return coverage, frozenset(test for test in tests if recorded.get(test, False))
+
+
+def measure_or_reuse(
+    *,
+    execute: CommandExecutor,
+    target: Path,
+    tests: list[str],
+    timeout: float,
+    cache_path: Path | None,
+) -> tuple[PerTestCoverage | None, frozenset[str]]:
+    """Reuse the measurement stored beside the result cache, or run `measure` and store it.
+
+    A reused measurement's baseline failures are run again on the unmutated
+    target, so a test that failed once does not stay excluded (see
+    `mutation_kill_matrix_measurement`).
+    """
+
+    def measured() -> Measurement:
+        coverage, baseline_failures = measure(
+            execute=execute, target=target, tests=tests, timeout=timeout
+        )
+        return Measurement(coverage=coverage, baseline_failures=baseline_failures)
+
+    def rejudge(*, failures: frozenset[str]) -> frozenset[str]:
+        return still_failing(execute=execute, target=target, failures=failures, timeout=timeout)
+
+    measurement = reuse_or_measure(
+        path=measurement_path(cache_path=cache_path),
+        key=measurement_key(
+            target=target,
+            tests=tests,
+            engine_version=ENGINE_VERSION,
+            timeout=timeout,
+            execute=execute,
+        ),
+        measure=measured,
+        rejudge=rejudge,
+    )
+    return measurement.coverage, measurement.baseline_failures
 
 
 def plan_mutants(
