@@ -288,8 +288,15 @@ fabro_server_instances:
     # Built on fabro-k3s by carrier-build run 42231707109. ROLLBACK:
     # v0393-85af3547e/fabro and
     # d6fcfafab6da1bfd32c3b96b4153f93367fe8a5b4fc18b0efecacad80b1e5711.
-    binary_source: /home/ubuntu/.local/state/fabro-web-prod/v0393-bbe693847/fabro
-    binary_sha256: 1529aa9f86b5bf346ae20a731bdf1cb433bc678825c8a43d0c21f513dac0ab1f
+    # 2026-11-12: d22808f8e (fabro 0.408.0-nightly.0), the build the candidate
+    # proved (bd-ib-tcdmkr: ra5o2l run 01M77DZB6XHZ on :32278, setup 56/56 and
+    # runtime parity PASS; consumer [run.prepare] lowering proved live by 58fb on
+    # hl-jq6ov3), widened on legacy-coordinator-agent's GO-SPLIT (2026-11-12
+    # ~10:00Z). ROLLBACK: v0393-bbe693847/fabro and
+    # 1529aa9f86b5bf346ae20a731bdf1cb433bc678825c8a43d0c21f513dac0ab1f, still staged
+    # on gmktec-xubuntu.
+    binary_source: /home/ubuntu/.local/state/fabro-web-prod/v0408-d22808f8e/fabro
+    binary_sha256: f32595473ecb0e476fb5b907d56a24aef7afe41040015379c1b88905057cf015
     # On this engine the catalog, not the workflow table, decides the image.
     # The orchestrator workflow
     # (.claude-plugin/.fabro/workflows/implement-work-item/workflow.toml) pins
@@ -798,8 +805,15 @@ fabro_server_instances:
     otel_dropin: present
     binary_path: /home/cwoolley/.fabro-homelab-worker-arm64/bin/fabro
     home_env: /home/cwoolley/.fabro-homelab-worker-arm64
-    binary_source: /home/ubuntu/.local/state/fabro-web-prod/v0393-bbe693847/fabro
-    binary_sha256: 1529aa9f86b5bf346ae20a731bdf1cb433bc678825c8a43d0c21f513dac0ab1f
+    # 2026-11-12: d22808f8e (fabro 0.408.0-nightly.0), the build the candidate
+    # proved (bd-ib-tcdmkr: ra5o2l run 01M77DZB6XHZ on :32278, setup 56/56 and
+    # runtime parity PASS; consumer [run.prepare] lowering proved live by 58fb on
+    # hl-jq6ov3), widened on legacy-coordinator-agent's GO-SPLIT (2026-11-12
+    # ~10:00Z). ROLLBACK: v0393-bbe693847/fabro and
+    # 1529aa9f86b5bf346ae20a731bdf1cb433bc678825c8a43d0c21f513dac0ab1f, still staged
+    # on gmktec-xubuntu.
+    binary_source: /home/ubuntu/.local/state/fabro-web-prod/v0408-d22808f8e/fabro
+    binary_sha256: f32595473ecb0e476fb5b907d56a24aef7afe41040015379c1b88905057cf015
     environments:
       - id: factory-python
         cpu: 4
@@ -901,8 +915,15 @@ fabro_server_instances:
     # Built on fabro-k3s by carrier-build run 42231707109. ROLLBACK:
     # v0393-85af3547e/fabro and
     # d6fcfafab6da1bfd32c3b96b4153f93367fe8a5b4fc18b0efecacad80b1e5711.
-    binary_source: /home/ubuntu/.local/state/fabro-web-prod/v0393-bbe693847/fabro
-    binary_sha256: 1529aa9f86b5bf346ae20a731bdf1cb433bc678825c8a43d0c21f513dac0ab1f
+    # 2026-11-12: d22808f8e (fabro 0.408.0-nightly.0), the build the candidate
+    # proved (bd-ib-tcdmkr: ra5o2l run 01M77DZB6XHZ on :32278, setup 56/56 and
+    # runtime parity PASS; consumer [run.prepare] lowering proved live by 58fb on
+    # hl-jq6ov3), widened on legacy-coordinator-agent's GO-SPLIT (2026-11-12
+    # ~10:00Z). ROLLBACK: v0393-bbe693847/fabro and
+    # 1529aa9f86b5bf346ae20a731bdf1cb433bc678825c8a43d0c21f513dac0ab1f, still staged
+    # on gmktec-xubuntu.
+    binary_source: /home/ubuntu/.local/state/fabro-web-prod/v0408-d22808f8e/fabro
+    binary_sha256: f32595473ecb0e476fb5b907d56a24aef7afe41040015379c1b88905057cf015
     # The tag FOLLOWS homelab's own workflow pin
     # (.fabro/workflows/implement-work-item/workflow.toml in mi-homelab/homelab,
     # python-agent-v1.126.0), not the orchestrator's; bump the two together.

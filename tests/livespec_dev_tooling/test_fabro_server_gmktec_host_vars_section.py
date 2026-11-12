@@ -84,7 +84,9 @@ _DEPLOYED_COMMIT = "9f6c38f"
 # the fleet instance is pinned to it too.
 # 2026-11-06: every gmktec instance is pinned to bbe6938, 85af354 plus the
 # Petri c6bfd5e3 output-drain fix (thewoolleyman/fabro#33).
-_FLEET_COMMIT = "bbe6938"
+# 2026-11-12: every gmktec instance is pinned to d22808f, the 0.408 build the
+# candidate proved (bd-ib-tcdmkr).
+_FLEET_COMMIT = "d22808f"
 # The candidate's build: the carrier tip on that branch, the fleet build plus the
 # node name on run_turn spans (thewoolleyman/fabro#14). The maintainer ruled it
 # onto the candidate and fabro-server-mi-homelab on 2026-11-02 (plan

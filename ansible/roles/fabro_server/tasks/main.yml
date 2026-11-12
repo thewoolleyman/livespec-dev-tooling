@@ -1386,6 +1386,132 @@
     - not (fabro_server_retained_read_only | bool)
   notify: Fabro instance files changed
 
+# --- resolved settings: report the server's effective values ----------------
+#
+# settings.toml is not the final authority for these values: Fabro supplies
+# defaults, and the running server can resolve a different value than a reader
+# would infer from the file.  The endpoint is therefore the drift-report
+# surface.  This remains a GET-only comparison, including during an apply.
+
+- name: Resolve this instance's settings endpoint declarations
+  # These are exactly the endpoint-visible settings whose values come from an
+  # instance mapping in host_vars.  Constants rendered by settings.toml.j2 and
+  # endpoint settings that Fabro supplies for itself deliberately stay out of
+  # this map: reporting either would turn an undeclared server default into
+  # invented drift.
+  ansible.builtin.set_fact:
+    fabro_server_settings_endpoint_declarations:
+      server.api.url: "https://{{ fabro_server_canonical_host }}/api/v1"
+      server.integrations.github.app_id: "{{ fabro_server_github_app_id }}"
+      server.listen.address: "127.0.0.1:{{ fabro_server_port }}"
+      server.scheduler.max_concurrent_runs: "{{ fabro_server_max_concurrent_runs | int }}"
+      server.web.url: "https://{{ fabro_server_canonical_host }}"
+  check_mode: false
+
+- name: Read the running instance's resolved settings
+  # Every declared instance is read, parked ones included: a stopped
+  # instance has no listener, so its read ends in the unreachable report
+  # below instead of the instance silently producing no result.
+  # Python follows only the declared dotted paths above.  The response can
+  # carry additional settings and defaults without creating a finding, while a
+  # missing declared setting resolves to null and is correctly reported as
+  # drift.  Python is already Ansible's required remote interpreter; unlike
+  # jq, it is not a package this role has to install just to make a read.
+  # A non-200 response, a missing token and a transport error use rc 2,
+  # reserved below for an endpoint that cannot provide a comparison.
+  # The endpoint answers only a bearer-authenticated request, so the instance's
+  # own FABRO_DEV_TOKEN is read from its env file and handed to curl on stdin
+  # as a header, the way the catalog read in environment.yml does: the token
+  # never reaches an argument list or the report.
+  ansible.builtin.shell:
+    executable: /bin/bash
+    cmd: |
+      set -o pipefail
+      token="$(sed -n 's/^FABRO_DEV_TOKEN=//p' "${FABRO_SERVER_ENV_FILE}" 2>/dev/null | tail -n 1)"
+      if [ -z "${token}" ]; then
+        printf 'settings endpoint is unreachable: no FABRO_DEV_TOKEN in the instance env file\n'
+        exit 2
+      fi
+      response="$(printf 'Authorization: Bearer %s\n' "${token}" |
+        curl --silent --show-error --connect-timeout 2 --max-time 5 --header @- \
+        --write-out '\n%{http_code}' "${FABRO_SETTINGS_URL}")" || {
+        printf 'settings endpoint is unreachable: transport failure\n'
+        exit 2
+      }
+      status="${response##*$'\n'}"
+      body="${response%$'\n'*}"
+      if [ "${status}" != 200 ]; then
+        printf 'settings endpoint is unreachable: HTTP %s\n' "${status}"
+        exit 2
+      fi
+      comparison_status=0
+      drift="$(printf '%s' "${body}" | python3 -c '
+      import json
+      import os
+      import sys
+
+      try:
+          settings = json.load(sys.stdin)
+          expected = json.loads(os.environ["FABRO_SETTINGS_EXPECTED"])
+      except (json.JSONDecodeError, KeyError):
+          print("settings endpoint is unreachable: invalid JSON response")
+          raise SystemExit(2)
+
+      # The API may wrap the document in a top-level "settings" envelope.
+      if (
+          isinstance(settings, dict)
+          and "server" not in settings
+          and isinstance(settings.get("settings"), dict)
+      ):
+          settings = settings["settings"]
+
+      unit = os.environ["FABRO_SETTINGS_UNIT"]
+      findings = []
+      for setting, declared in expected.items():
+          resolved = settings
+          for segment in setting.split("."):
+              resolved = resolved.get(segment) if isinstance(resolved, dict) else None
+          if resolved != declared:
+              findings.append(
+                  f"DRIFT: {unit} setting {setting}: "
+                  f"declared {json.dumps(declared)}, resolved {json.dumps(resolved)}"
+              )
+      print("\n".join(findings))
+      raise SystemExit(1 if findings else 0)
+      ')" || comparison_status=$?
+      if [ "${comparison_status}" -eq 2 ]; then
+        printf '%s\n' "${drift}"
+        exit 2
+      fi
+      if [ -n "${drift}" ]; then
+        printf '%s\n' "${drift}"
+        exit 1
+      fi
+  become: true
+  environment:
+    FABRO_SERVER_ENV_FILE: "{{ fabro_server_home_dir }}/storage/server.env"
+    FABRO_SETTINGS_URL: "http://127.0.0.1:{{ fabro_server_port }}/api/v1/settings"
+    FABRO_SETTINGS_EXPECTED: "{{ fabro_server_settings_endpoint_declarations | to_json }}"
+    FABRO_SETTINGS_UNIT: "{{ fabro_server_unit_name }}"
+  register: fabro_server_settings_endpoint_read
+  changed_when: fabro_server_settings_endpoint_read.rc == 1
+  failed_when: false
+  check_mode: false
+
+- name: Report settings endpoint drift for this instance
+  ansible.builtin.debug:
+    msg: "{{ fabro_server_settings_endpoint_read.stdout_lines }}"
+  changed_when: fabro_server_settings_endpoint_read.rc == 1
+  when: fabro_server_settings_endpoint_read.rc | default(0) == 1
+
+- name: Report an unreachable settings endpoint for this instance
+  ansible.builtin.debug:
+    msg: >-
+      {{ fabro_server_unit_name }} on {{ inventory_hostname }}: settings endpoint
+      is unreachable; its resolved settings were not treated as matching.
+      {{ fabro_server_settings_endpoint_read.stdout | default('') | trim }}
+  when: fabro_server_settings_endpoint_read.rc | default(0) == 2
+
 # --- supervise -------------------------------------------------------------
 
 - name: Enable the instance and make sure it is running

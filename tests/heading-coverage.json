@@ -2733,9 +2733,8 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: drift reports a Fabro instance whose resolved setting differs from its declaration",
-    "test": "TODO",
-    "reason": "A real test at the integration tier or above is owed for this scenario: the fabro-hosts drift comparison run against a fake settings endpoint whose resolved value for a declared setting differs from the host_vars mapping, asserting the instance, setting and both values are reported as drift, the endpoint is not written, and an unreachable endpoint is reported as unreachable. livespec-dev-tooling-po2nrg owns it.",
-    "work_item": "livespec-dev-tooling-po2nrg"
+    "test": "tests.consumer.test_fabro_settings_drift_scenario.test_a_declared_resolved_setting_difference_is_named_as_drift",
+    "reason": "Consumer-tier integration test runs the fabro_server role's committed settings-endpoint tasks against a recording local endpoint. It proves a declared resolved-value mismatch reports the instance, setting and both values; an endpoint-only default produces no drift; and a 503 is named unreachable while the recording endpoint sees only GET requests (livespec-dev-tooling-po2nrg)."
   },
   {
     "spec_root": "SPECIFICATION",
@@ -3625,8 +3624,8 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a consuming repository's check aggregate refuses a member with no purity declaration",
-    "test": "TODO",
-    "reason": "A real test at the integration tier or above is owed for this heading: a fixture consuming repository whose aggregate refuses through `python -m livespec_dev_tooling.green_token undeclared`, with one member that is not a canonical check and carries no purity annotation in its check-targets.txt, shows the aggregate exits non-zero naming that member before any member runs. livespec-dev-tooling-ixtdx7 owns it.",
+    "test": "tests.consumer.test_check_aggregate_purity_declarations.test_a_consuming_repository_refuses_and_then_runs_a_declared_private_member",
+    "reason": "Consumer-tier (the `tests.consumer` node-id prefix this repository declares in `scenario_tiers`): builds a fixture consuming repository whose real `just check` invokes the shipped `python -m livespec_dev_tooling.green_token undeclared` command over its complete member list. Its undeclared repo-private member is not a canonical module, so the aggregate exits non-zero, names it, and starts no member; adding `# purity: world-reading` lets both members start. The fixture also attempts to mark canonical `check-master-ci-green` tree-pure, while the shipped command still classifies it world-reading from its module declaration, proving the canonical declaration outranks consumer inventory (work-item livespec-dev-tooling-ixtdx7).",
     "work_item": "livespec-dev-tooling-ixtdx7"
   }
 ]

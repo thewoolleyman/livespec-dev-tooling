@@ -197,6 +197,7 @@ def host(tmp_path: Path) -> _Host:
         f"{hashlib.sha256(_HOOK_BYTES).hexdigest()}  index.js\n", encoding="utf-8"
     )
     (state / "workflow-profile").write_text("# mocked workflow profile\n", encoding="utf-8")
+    (state / "default-profile").write_text("# mocked default profile\n", encoding="utf-8")
     (state / "cache-span").write_bytes(_SPAN_BYTES)
     repo = state / "collector-repo" / _COLLECTOR_COMMIT
     repo.mkdir(parents=True)
@@ -248,6 +249,7 @@ def _run(
         "HOMELAB_WORKER_SOCKET_VMNET": str(host.bin_dir / "socket_vmnet"),
         "HOMELAB_WORKER_HOOK_BUNDLE_DIR": str(host.state / "hook-bundle"),
         "HOMELAB_WORKER_APPARMOR_PROFILE": str(host.state / "workflow-profile"),
+        "HOMELAB_WORKER_APPARMOR_DEFAULT_PROFILE": str(host.state / "default-profile"),
         "HOMELAB_WORKER_CACHE_SPAN": str(host.state / "cache-span"),
         "HOMELAB_WORKER_COLLECTOR_REF": str(host.state / "collector.ref"),
         "HOMELAB_WORKER_COLLECTOR_BASE_URL": f"file://{host.state / 'collector-repo'}",
@@ -804,6 +806,35 @@ def test_the_workflow_apparmor_profile_is_loaded_in_the_vm_before_the_container_
         if c.endswith(" apparmor_parser -r " + "/etc/apparmor.d/workflow-profile")
     )
     assert loaded < _converge_index(shells)
+
+
+def test_the_default_apparmor_profile_is_loaded_in_the_vm_before_the_container_step(
+    host: _Host,
+) -> None:
+    """Pods naming no profile run under containerd's default; the VM holds the fleet's copy."""
+    _install_lima(host=host, version="2.2.1")
+    result = _run(host=host, args=[_A])
+    assert result.returncode == 0, result.stderr
+    installed = host.state / "vm" / "etc" / "apparmor.d" / "default-profile"
+    assert installed.read_text(encoding="utf-8") == "# mocked default profile\n"
+    shells = _shells(host=host)
+    loaded = next(
+        i
+        for i, c in enumerate(shells)
+        if c.endswith(" apparmor_parser -r " + "/etc/apparmor.d/default-profile")
+    )
+    assert loaded < _converge_index(shells)
+
+
+def test_a_missing_default_apparmor_profile_is_refused_before_any_host_change(
+    host: _Host,
+) -> None:
+    _install_lima(host=host, version="2.2.1")
+    (host.state / "default-profile").unlink()
+    result = _run(host=host, args=[_A])
+    assert result.returncode != 0
+    assert "the default AppArmor profile" in result.stderr
+    assert [c for c in _calls(host=host) if c.startswith(("limactl create", "limactl start"))] == []
 
 
 def test_a_profile_apparmor_refuses_never_converges_the_worker(host: _Host) -> None:
