@@ -52,6 +52,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 HOOK_FILES=(
   "hook-pod-template.yaml=${SCRIPT_DIR}/hook-pod-template.yaml"
   "action-archive-entry.sh=${SCRIPT_DIR}/action-archive-entry.sh"
+  # TEMPORARY (livespec-dev-tooling-4oeffe straddle drill; removed by its revert).
+  "drill-hook-entry.js=${SCRIPT_DIR}/drill-hook-entry.js"
 )
 BASE_NAME="arc-hook-pod-template"
 PLACEHOLDER="${BASE_NAME}-@HOOK_REVISION@"

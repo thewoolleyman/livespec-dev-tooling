@@ -121,6 +121,10 @@ ci_converge_unit_files:
   - src: arc/action-archive-entry.sh
     dest: arc/action-archive-entry.sh
     mode: "0644"
+  # TEMPORARY (livespec-dev-tooling-4oeffe straddle drill; removed by its revert).
+  - src: arc/drill-hook-entry.js
+    dest: arc/drill-hook-entry.js
+    mode: "0644"
   - src: kueue/resource-flavor.yaml
     dest: kueue/resource-flavor.yaml
     mode: "0644"
