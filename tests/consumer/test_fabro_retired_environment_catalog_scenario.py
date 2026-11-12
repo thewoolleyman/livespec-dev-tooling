@@ -10,6 +10,7 @@ factory host in a repository test.
 
 from __future__ import annotations
 
+import json
 import re
 from itertools import pairwise
 from pathlib import Path
@@ -24,6 +25,9 @@ _ROOT = Path(__file__).resolve().parents[2]
 _MAIN = _ROOT / "ansible" / "roles" / "fabro_server" / "tasks" / "main.yml"
 _RETIRED_ENVIRONMENT = _MAIN.with_name("retired_environment.yml")
 _RETIRED_RUN = _MAIN.with_name("retired_run.yml")
+_INVENTORY = _ROOT / "ansible" / "inventory" / "host_vars" / "gmktec-xubuntu.yml"
+_HOST_VARS = _ROOT / "ansible" / "roles" / "fabro_server" / "HOST_VARS.md"
+_HEADING_COVERAGE = _ROOT / "tests" / "heading-coverage.json"
 
 
 def _tasks(*, source: Path) -> list[tuple[str, str]]:
@@ -96,3 +100,65 @@ def test_the_role_reads_all_live_runs_before_retiring_catalog_entries() -> None:
     assert "FABRO_SERVER_ENV_FILE" in delete
     assert "204" in delete and "404" in delete
     assert "changed_when" in delete
+
+
+def _instance_block(*, unit: str) -> str:
+    """Return one inventory instance mapping, excluding its siblings."""
+    text = _INVENTORY.read_text(encoding="utf-8")
+    opener = f"  - unit_name: {unit}\n"
+    start = text.find(opener)
+    assert start >= 0, f"gmktec inventory must declare {unit}"
+    stop = text.find("\n  - unit_name: ", start + len(opener))
+    return text[start:] if stop < 0 else text[start:stop]
+
+
+def _list_items(*, block: str, key: str) -> list[str]:
+    """Return scalar list items from one instance mapping."""
+    match = re.search(
+        rf"^    {re.escape(key)}:\n(?P<items>(?:^      - [^\n]+\n)+)", block, re.MULTILINE
+    )
+    return [] if match is None else [line[8:] for line in match["items"].splitlines()]
+
+
+def _environment_ids(*, block: str) -> list[str]:
+    """Return the catalog ids that one mapping still declares active."""
+    return re.findall(r"^      - id: ([^\s]+)$", block, re.MULTILINE)
+
+
+def test_gmktec_declares_the_completed_environment_rename_and_its_operator_interface() -> None:
+    """The fleet and homelab mappings retire only their replaced ids."""
+    fleet = _instance_block(unit="fabro-server")
+    candidate = _instance_block(unit="fabro-server-candidate")
+    homelab = _instance_block(unit="fabro-server-mi-homelab")
+
+    assert not {"livespec-ci", "livespec-ci-k8s", "livespec-ci-rust"} & set(
+        _environment_ids(block=fleet)
+    )
+    assert _list_items(block=fleet, key="retired_environments") == [
+        "livespec-ci",
+        "livespec-ci-k8s",
+        "livespec-ci-rust",
+    ]
+    assert "retired_environments" not in candidate
+    assert {"livespec-ci", "livespec-ci-k8s", "livespec-ci-rust"} <= set(
+        _environment_ids(block=candidate)
+    )
+    assert _environment_ids(block=homelab) == ["factory-python"]
+    assert _list_items(block=homelab, key="retired_environments") == ["livespec-ci"]
+
+    document = _HOST_VARS.read_text(encoding="utf-8")
+    assert "| `retired_environments` |" in document
+    assert "DELETE /api/v1/environments/{id}" in document
+    assert "non-terminal run" in document
+
+    coverage = json.loads(_HEADING_COVERAGE.read_text(encoding="utf-8"))
+    row = next(
+        row
+        for row in coverage
+        if row["heading"]
+        == "## Scenario: the fabro_server role deletes an instance's retired sandbox environments"
+    )
+    assert row["test"] == (
+        "tests.consumer.test_fabro_retired_environment_catalog_scenario."
+        "test_the_role_reads_all_live_runs_before_retiring_catalog_entries"
+    )
