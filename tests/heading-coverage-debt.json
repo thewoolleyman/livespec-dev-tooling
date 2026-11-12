@@ -387,13 +387,6 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario: a consuming repository's check aggregate refuses a member with no purity declaration",
-    "work_item": "livespec-dev-tooling-ixtdx7",
-    "first_seen": "2026-11-12"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
     "heading": "## Scenario: a coverage consumer that did not reuse reaches the maintainer",
     "work_item": "livespec-dev-tooling-akljpy",
     "first_seen": "2026-11-08"

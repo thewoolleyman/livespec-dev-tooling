@@ -32,12 +32,21 @@ The script is driven rather than `just check` itself: running the aggregate
 from inside the suite it gates would be a second execution of it rather than
 a test of it, and the recipe's only content is the literal target mirror the
 script already validates.
+
+The consuming-repository fixture below does invoke its real `just check`.
+That is CLI-binary behavior, not a replaceable call to `green_token.main()`:
+the assertion is that the fixture's shell aggregate gives the command its
+complete member list and starts no recipe after refusal. The fixture scrubs
+`COVERAGE_PROCESS_START` and `COV_CORE_*` from every child environment, and
+this file is allowlisted in `pyproject.toml` for that one necessary child.
 """
 
 from __future__ import annotations
 
 import os
+import shlex
 import subprocess
+import sys
 from pathlib import Path
 
 __all__: list[str] = []
@@ -81,6 +90,89 @@ _JUST_STUB = """#!/usr/bin/env bash
 printf 'just %s\\n' "$*" >> "${STUB_LOG}"
 exit 0
 """
+
+_CONSUMER_CANONICAL_MEMBER = "check-master-ci-green"
+_CONSUMER_PRIVATE_MEMBER = "check-consumer-private"
+
+
+def _a_consuming_repository(*, root: Path, private_declaration: str = "") -> Path:
+    """Build a consumer whose `just check` audits every member before starting one."""
+    root.mkdir()
+    inventory_line = f"{_CONSUMER_PRIVATE_MEMBER}{private_declaration}"
+    _ = (root / "check-targets.txt").write_text(
+        "\n".join(
+            (
+                f"{_CONSUMER_CANONICAL_MEMBER}  # purity: tree-pure",
+                inventory_line,
+                "",
+            )
+        ),
+        encoding="utf-8",
+    )
+    _ = (root / "justfile").write_text(
+        "\n".join(
+            (
+                "check:",
+                "    #!/usr/bin/env bash",
+                "    set -euo pipefail",
+                f"    members=({_CONSUMER_CANONICAL_MEMBER} {_CONSUMER_PRIVATE_MEMBER})",
+                '    if ! undeclared=$(python -m livespec_dev_tooling.green_token undeclared "${members[@]}"); then',
+                "        printf 'refusing aggregate: %s\\n' \"${undeclared}\" >&2",
+                "        exit 1",
+                "    fi",
+                '    for member in "${members[@]}"; do just "${member}"; done',
+                "",
+                f"{_CONSUMER_CANONICAL_MEMBER}:",
+                f"    printf '%s\\n' {_CONSUMER_CANONICAL_MEMBER} >> \"${{START_LOG}}\"",
+                "",
+                f"{_CONSUMER_PRIVATE_MEMBER}:",
+                f"    printf '%s\\n' {_CONSUMER_PRIVATE_MEMBER} >> \"${{START_LOG}}\"",
+                "",
+            )
+        ),
+        encoding="utf-8",
+    )
+    runner = root / "python"
+    _ = runner.write_text(
+        f'#!/usr/bin/env bash\nexec {shlex.quote(sys.executable)} "$@"\n', encoding="utf-8"
+    )
+    runner.chmod(0o755)
+    return root
+
+
+def _run_consumer_check(*, root: Path) -> subprocess.CompletedProcess[str]:
+    """Run the fixture's aggregate through `just`, as a downstream repository does."""
+    env = {k: v for k, v in os.environ.items() if not k.startswith(("COVERAGE_", "COV_CORE_"))}
+    env["PATH"] = f"{root}{os.pathsep}{env['PATH']}"
+    env["START_LOG"] = str(root / "started-members.log")
+    return subprocess.run(
+        ["just", "check"],
+        cwd=root,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+
+def _world_reading_members(*, root: Path) -> subprocess.CompletedProcess[str]:
+    """Ask the shipped command how it classified the consumer's canonical member."""
+    env = {k: v for k, v in os.environ.items() if not k.startswith(("COVERAGE_", "COV_CORE_"))}
+    env["PATH"] = f"{root}{os.pathsep}{env['PATH']}"
+    return subprocess.run(
+        [
+            "python",
+            "-m",
+            "livespec_dev_tooling.green_token",
+            "world-reading",
+            _CONSUMER_CANONICAL_MEMBER,
+        ],
+        cwd=root,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
 
 
 def _run_check_sh(
@@ -190,3 +282,46 @@ def test_a_member_with_no_purity_declaration_fails_the_aggregate_and_is_named(
         f"own member list would memoize a verdict the aggregate never reached; "
         f"invoked={invoked}"
     )
+
+
+def test_a_consuming_repository_refuses_and_then_runs_a_declared_private_member(
+    *, tmp_path: Path
+) -> None:
+    """A consumer's aggregate needs its own declaration for every private member."""
+    root = _a_consuming_repository(root=tmp_path / "consumer")
+
+    refused = _run_consumer_check(root=root)
+
+    assert refused.returncode != 0, (
+        "an unannotated member outside `livespec_dev_tooling.checks` must refuse the "
+        f"consumer aggregate; output={refused.stdout + refused.stderr!r}"
+    )
+    assert _CONSUMER_PRIVATE_MEMBER in refused.stdout + refused.stderr
+    assert not (root / "started-members.log").exists(), (
+        "the purity audit must refuse before starting any member; "
+        f"output={refused.stdout + refused.stderr!r}"
+    )
+
+    _ = (root / "check-targets.txt").write_text(
+        "\n".join(
+            (
+                f"{_CONSUMER_CANONICAL_MEMBER}  # purity: tree-pure",
+                f"{_CONSUMER_PRIVATE_MEMBER}  # purity: world-reading",
+                "",
+            )
+        ),
+        encoding="utf-8",
+    )
+    canonical = _world_reading_members(root=root)
+    declared = _run_consumer_check(root=root)
+
+    assert canonical.returncode == 0, canonical.stderr
+    assert canonical.stdout.splitlines() == [_CONSUMER_CANONICAL_MEMBER], (
+        "a canonical check carries its module declaration into every consuming "
+        f"repository, ahead of the fixture inventory; output={canonical.stdout!r}"
+    )
+    assert declared.returncode == 0, declared.stdout + declared.stderr
+    assert (root / "started-members.log").read_text(encoding="utf-8").splitlines() == [
+        _CONSUMER_CANONICAL_MEMBER,
+        _CONSUMER_PRIVATE_MEMBER,
+    ]
