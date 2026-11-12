@@ -164,6 +164,12 @@ ci_converge_unit_files:
   - src: warm-cache/pypi-proxy/pypi-proxy.yaml
     dest: warm-cache/pypi-proxy/pypi-proxy.yaml
     mode: "0644"
+  # The shared uv wrapper ConfigMap (livespec-dev-tooling-rpdowy): both
+  # converge-warm-cache.sh (into ci-warm-cache) and converge-ci-stack.sh step 7a
+  # (into arc-runners) apply it, so a missing copy stops both converges.
+  - src: warm-cache/pypi-proxy/pypi-proxy-uv-wrapper.yaml
+    dest: warm-cache/pypi-proxy/pypi-proxy-uv-wrapper.yaml
+    mode: "0644"
   # The ghcr pull-through registry mirror (livespec-dev-tooling-y1t5): its
   # apply-bearing converge and the manifest that converge applies. converge-ci-stack.sh
   # calls converge-registry-mirror.sh at boot, so it MUST be installed here — its

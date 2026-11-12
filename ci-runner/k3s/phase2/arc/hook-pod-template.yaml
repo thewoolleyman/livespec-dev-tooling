@@ -287,20 +287,15 @@ spec:
     - name: pypi-proxy-uv-wrapper
       configMap:
         name: pypi-proxy-uv-wrapper
+        optional: false
+        defaultMode: 365
         # DECIMAL 365 == octal 0555 (r-xr-xr-x). Never write a leading-zero
         # octal here: the container hook parses this template as YAML 1.2,
         # which reads `0555` as decimal 555, and the API server rejects every
         # workflow pod ("defaultMode: Invalid value: 555"), as on 2026-11-05.
-        defaultMode: 365
-        # OPTIONAL because a configMap volume resolves in the POD's namespace
-        # (arc-runners) and the wrapper ConfigMap is published in ci-warm-cache
-        # (../warm-cache/pypi-proxy/pypi-proxy.yaml). A required mount kept
-        # every workflow pod in ContainerCreating with "configmap
-        # pypi-proxy-uv-wrapper not found" (2026-11-05). With the volume absent
-        # the mount is an empty directory: the first PATH entry below finds no
-        # `uv` and the real uv runs, which the wrapper does off hp-xubuntu
-        # anyway. Publishing the wrapper into arc-runners is the follow-up.
-        optional: true
+        # This ConfigMap is published into arc-runners by the committed CI
+        # stack converge, so a missing mount is a deployment error, not a
+        # fail-soft fallback to public PyPI.
     - name: ci-runner-bin
       hostPath:
         # The pool-provided binaries (today: sccache, from
