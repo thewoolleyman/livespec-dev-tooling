@@ -2677,7 +2677,7 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: drift reports a Fabro instance whose resolved setting differs from its declaration",
-    "test": "tests.consumer.test_fabro_settings_drift_scenario",
+    "test": "tests.consumer.test_fabro_settings_drift_scenario.test_a_declared_resolved_setting_difference_is_named_as_drift",
     "reason": "Consumer-tier integration test runs the fabro_server role's committed settings-endpoint tasks against a recording local endpoint. It proves a declared resolved-value mismatch reports the instance, setting and both values; an endpoint-only default produces no drift; and a 503 is named unreachable while the recording endpoint sees only GET requests (livespec-dev-tooling-po2nrg)."
   },
   {
