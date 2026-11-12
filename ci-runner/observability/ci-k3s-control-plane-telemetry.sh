@@ -55,6 +55,7 @@ metrics = [gauge("livespec.ci_k3s.readiness_check", "1", readiness), gauge("live
 
 if not int(metrics_rc):
     storage = []
+    handler_timeout_counts = defaultdict(int)
     histogram_series = {
         "etcd_request_duration_seconds": defaultdict(
             lambda: {"buckets": [], "sum": None, "count": None, "labels": {}}
@@ -71,6 +72,11 @@ if not int(metrics_rc):
         name, raw, value = match.group("name"), match.group("labels") or "", float(match.group("value"))
         labels = {key: bytes(text, "utf-8").decode("unicode_escape") for key, text in label.findall(raw)}
         if name == "apiserver_storage_size_bytes": storage.append(decimal(value, labels)); continue
+        if name == "apiserver_request_total":
+            if labels.get("code") == "504" and {"verb", "resource"} <= labels.keys():
+                dimensions = {key: labels[key] for key in ("verb", "resource")}
+                handler_timeout_counts[tuple(sorted(dimensions.items()))] += int(value)
+            continue
         histogram_name = next(
             (
                 candidate
@@ -100,6 +106,11 @@ if not int(metrics_rc):
             if item["labels"]: point["attributes"] = attrs(item["labels"])
             points.append(point)
         if points: metrics.append({"name": histogram_name, "unit": "s", "histogram": {"aggregationTemporality": 2, "dataPoints": points}})
+    handler_timeout_points = [
+        integer(value, dict(dimensions))
+        for dimensions, value in handler_timeout_counts.items()
+    ]
+    metrics.append({"name": "apiserver_request_total", "unit": "1", "sum": {"aggregationTemporality": 2, "isMonotonic": True, "dataPoints": handler_timeout_points}})
 
 used, total = filesystem.split()
 metrics.extend([gauge("livespec.ci_k3s.datastore_used_bytes", "By", [integer(used)]), gauge("livespec.ci_k3s.datastore_total_bytes", "By", [integer(total)])])
