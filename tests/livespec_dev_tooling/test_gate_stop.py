@@ -285,6 +285,35 @@ def test_gate_stop_follows_every_descendant_before_signalling(
     assert signalled == [123, 456]
 
 
+def test_gate_stop_terms_every_attributed_process_before_any_kill(
+    *, monkeypatch: MonkeyPatch, tmp_path: Path
+) -> None:
+    """The separately-sessioned hook client gets the client's cleanup chance first."""
+    gate_stop = _gate_stop()
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    _ = (run_dir / "pid").write_text("123\n", encoding="utf-8")
+    monkeypatch.setattr(gate_stop, "_args", lambda: argparse.Namespace(run_dir=run_dir))
+    monkeypatch.setattr(gate_stop, "_tree", lambda *, root: {root})
+    monkeypatch.setattr(
+        gate_stop, "_marked_processes", lambda *, run_dir: {456} if run_dir.is_dir() else set()
+    )
+    monkeypatch.setattr(gate_stop, "_job_gone", lambda *, run_dir: run_dir.is_dir())
+    signals: list[tuple[int, set[int]]] = []
+    monkeypatch.setattr(
+        gate_stop,
+        "_signal",
+        lambda *, pids, signal_number: signals.append((signal_number, set(pids))),
+    )
+    monkeypatch.setattr(gate_stop, "_settle", lambda *, pids: set(pids))
+
+    assert gate_stop.main() == 1
+    assert signals == [
+        (signal.SIGTERM, {123, 456}),
+        (signal.SIGKILL, {123, 456}),
+    ]
+
+
 def test_gate_stop_tolerates_a_process_that_disappears_during_signalling(
     *, monkeypatch: MonkeyPatch, tmp_path: Path
 ) -> None:
