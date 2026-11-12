@@ -21,9 +21,11 @@ import hashlib
 import importlib.util
 import os
 import re
+import subprocess
 import sys
 import time
 from collections.abc import Mapping
+from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -36,6 +38,7 @@ _SCRIPT_DIR = Path(__file__).resolve().parent
 if str(_SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(_SCRIPT_DIR))
 
+import _red_green_replay_affected_tests as _affected_tests  # noqa: E402
 from _red_green_replay_pre_commit import (  # noqa: E402
     PreCommitAggregateEvidence,
     reuse_pre_commit_evidence,
@@ -57,6 +60,10 @@ from _red_green_replay_suite_runner import (  # noqa: E402
     suite_bound,
 )
 
+from livespec_dev_tooling.affected_tests_record import (  # noqa: E402
+    AffectedTestsEvidence,
+    read_affected_tests_evidence,
+)
 from livespec_dev_tooling.commit_replay_delegate import run_replay  # noqa: E402
 from livespec_dev_tooling.gate_outcome_telemetry import emit_suite_green_outcome  # noqa: E402
 from livespec_dev_tooling.green_token import read_pre_commit_evidence  # noqa: E402
@@ -219,6 +226,35 @@ def _suite_scope(
     return ("staged-tests", tests_paths) if run_touched_tests else ("full-suite", None)
 
 
+def _sandbox_exempt(*, cwd: Path) -> bool:
+    """Return whether this checkout explicitly permits factory-only scope reuse."""
+    return _affected_tests.sandbox_exempt(cwd=cwd, run=subprocess.run)
+
+
+def qualifying_affected_tests_evidence(
+    *, cwd: Path, index_tree: str | None
+) -> AffectedTestsEvidence | None:
+    """Return scoped evidence only when every sandbox reuse condition holds."""
+    return _affected_tests.qualifying_affected_tests_evidence(
+        cwd=cwd,
+        index_tree=index_tree,
+        sandbox=_sandbox_exempt,
+        read_evidence=read_affected_tests_evidence,
+    )
+
+
+def _scope_with_affected_tests_evidence(
+    *, cwd: Path, index_tree: str | None, staged_paths: list[str], tests_paths: list[str] | None
+) -> tuple[str, list[str] | None, tuple[tuple[str, str], ...]]:
+    """Return the sandbox scope and the producer trailer it earns, if any."""
+    evidence = qualifying_affected_tests_evidence(cwd=cwd, index_tree=index_tree)
+    return _affected_tests.scope_from_evidence(
+        evidence=evidence,
+        index_tree=index_tree,
+        fallback=lambda: _suite_scope(staged_paths=staged_paths, tests_paths=tests_paths),
+    )
+
+
 def _handle_suite_green_mode(
     *,
     msg_path: Path,
@@ -258,10 +294,14 @@ def _handle_suite_green_mode(
             log=log,
             msg_path=msg_path,
         ):
-            mode = "reused"
-            outcome = "green"
-            exit_status = 0
+            mode, outcome, exit_status = "reused", "green", 0
         else:
+            scope, selected_tests, producer_trailers = _scope_with_affected_tests_evidence(
+                cwd=Path.cwd(),
+                index_tree=index_tree,
+                staged_paths=staged_paths,
+                tests_paths=tests_paths,
+            )
             bound = suite_bound(environ=os.environ)
             argv = _suite_argv(test_paths=selected_tests, log=log)
             log.info(
@@ -279,6 +319,8 @@ def _handle_suite_green_mode(
                 log=log,
                 tools=tools,
             )
+            if producer_trailers:
+                run = replace(run, gate_trailers=(*run.gate_trailers, *producer_trailers))
             mode = "ran"
             outcome = finish_suite_run(
                 run=run,
