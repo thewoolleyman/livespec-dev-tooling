@@ -337,6 +337,13 @@ cross_repo_public_api = [
     # BEFORE DECLARING: both consumers assert `delegated_gate_enabled(...) is True` on the
     # plain `bool` return, with no `is None` guard, so the Result-vs-None hazard does not apply.
     { file = "livespec_dev_tooling/gate_remote_delegate.py", function = "delegated_gate_enabled", reason = "cross-repo test import: livespec-driver-codex's and livespec-driver-pi's tests/integration/test_delegated_pre_push.py assert `gate_remote_delegate.delegated_gate_enabled(repo_root=_REPO_ROOT) is True` in-process; bool return, no `is None` guard at either site" },
+    # Arrived with the krc2yd purity slice of livespec-orchestrator-git-jsonl
+    # (commits 32f4360 / 4a64604, 2026-11-12T01:12:34Z, factory run 9fd23816),
+    # after this repo's last green fleet-conformance run, so the gap opened in the
+    # fleet rather than in any one PR here. GUARD READ BEFORE DECLARING: the
+    # consumer calls `green_token_main()` for its INT exit code, and `main` is a
+    # supervisor entry point that `supervisor_entry_files` exempts (member 4).
+    { file = "livespec_dev_tooling/green_token.py", function = "main", reason = "cross-repo test import: livespec-orchestrator-git-jsonl tests/integration/test_pre_push_delegated_gate.py (krc2yd purity slice) imports `main as green_token_main` and reads its int exit code; supervisor entry point, exempt as member 4 via supervisor_entry_files" },
     { file = "livespec_dev_tooling/testing/cli_e2e.py", function = "test_workflow_full_round_trip", reason = "cross-repo test import: the e2e round-trip suites of both Drivers and both orchestrators" },
     { file = "livespec_dev_tooling/testing/cli_e2e.py", function = "assert_coverage", reason = "cross-repo test import: livespec-driver-codex's tests/e2e-cli/test_cli_e2e.py" },
     # Arrived with livespec-driver-pi's progressive-guidance witnesses (e7e0bbb..d114f96,
@@ -521,17 +528,24 @@ supervisor_entry_files = [
     "livespec_dev_tooling/fleet/_git_identity_host_probe.py",
     "livespec_dev_tooling/parallel_check_dispatcher.py",
     "livespec_dev_tooling/red_leg_scope.py",
-    # WHAT IT NEEDS, and only this one: `no_write_direct`. The `world-reading`
-    # and `undeclared` subcommands emit one check-target name per line on
-    # stdout, which `scripts/just/check.sh` and `scripts/just/check-pre-push.sh`
-    # read back — a report surface, exactly the category the three entries above
-    # were declared for. MEASURED for the other three: the file carries no broad
-    # `except Exception`, so `no_except_outside_io` is unused; its
+    # WHAT IT NEEDS: `no_write_direct` and, since 2026-11-12,
+    # `public_api_result_typed`. The `world-reading` and `undeclared`
+    # subcommands emit one check-target name per line on stdout, which
+    # `scripts/just/check.sh` and `scripts/just/check-pre-push.sh` read back — a
+    # report surface, exactly the category the three entries above were declared
+    # for. Its `main() -> int` is now consumed across a boundary
+    # (livespec-orchestrator-git-jsonl's tests/integration/test_pre_push_delegated_gate.py
+    # imports it), so it is declared in `cross_repo_public_api` above, and this
+    # entry grants it the ratified livespec v177 member-4 supervisor exemption it
+    # qualifies for: a `main() -> int`, a `__main__` guard, a
+    # `raise SystemExit(main())` tail, and a real PROCESS invocation
+    # (`uv run python -m livespec_dev_tooling.green_token` from
+    # `scripts/just/check.sh`). MEASURED for the other two: the file carries no
+    # broad `except Exception`, so `no_except_outside_io` is unused, and its
     # `raise SystemExit(main())` tail is already tolerated by
-    # `supervisor_discipline` outside the plugin-scripts tree; and its
-    # `main() -> int` is not consumed across any boundary, so
-    # `public_api_result_typed` is unused. The cost of the three it does not
-    # need is the same whole-file widening the block above records.
+    # `supervisor_discipline` outside the plugin-scripts tree. The cost of the
+    # two it does not need is the same whole-file widening the block above
+    # records.
     "livespec_dev_tooling/green_token.py",
     # WHAT IT NEEDS, and only this one: `no_write_direct`. The `members`
     # subcommand emits one check-target name per line on stdout, which
