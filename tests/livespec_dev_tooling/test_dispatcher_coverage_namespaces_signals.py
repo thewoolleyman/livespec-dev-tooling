@@ -306,8 +306,8 @@ def test_reclaim_handles_invalid_creator_records_using_the_unrecorded_directory_
     _write_creator_record(namespace_dir=namespace_dir, creator=creator)
     if unreadable:
 
-        def refuse_read(*, encoding: str) -> str:
-            _ = encoding
+        def refuse_read(path: Path, *, encoding: str) -> str:
+            _ = (path, encoding)
             raise OSError("permission denied")
 
         monkeypatch.setattr(namespaces.Path, "read_text", refuse_read)
@@ -327,8 +327,8 @@ def test_process_start_time_handles_a_vanished_pid_and_an_unparsable_stat_line(
     assert hasattr(namespaces, "process_start_time")
     assert namespaces.process_start_time(pid=999_999_999) is None
 
-    def unreadable_stat(*, encoding: str) -> str:
-        _ = encoding
+    def unreadable_stat(path: Path, *, encoding: str) -> str:
+        _ = (path, encoding)
         return "not a proc stat record"
 
     monkeypatch.setattr(namespaces.Path, "read_text", unreadable_stat)
@@ -347,7 +347,7 @@ def test_reclaim_logs_an_unremovable_dead_namespace_and_carries_on(
         namespace_dir=namespace_dir, creator={"pid": 999_999_999, "start_time": "gone"}
     )
 
-    def refuse_remove(*, path: Path) -> None:
+    def refuse_remove(path: Path) -> None:
         assert path == namespace_dir
         raise OSError("permission denied")
 
