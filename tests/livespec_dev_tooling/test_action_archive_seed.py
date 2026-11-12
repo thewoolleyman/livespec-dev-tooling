@@ -625,7 +625,11 @@ def test_the_entry_point_reads_the_switch_and_canary_from_the_committed_template
 
 def _wait_for_actions_record(*, recorded: Path) -> bool:
     """Allow the detached postStart cache work to publish its actions row."""
-    deadline = time.monotonic() + 2
+    # The production hook deliberately detaches this fail-soft cache work.  A
+    # two-second poll is ample in isolation but can expire while the xdist
+    # coverage workers contend for a CPU, turning a valid delayed record into
+    # a FileNotFoundError below.
+    deadline = time.monotonic() + 10
     while time.monotonic() < deadline:
         if recorded.is_file() and any(
             row.split("\t", 2)[1:2] == ["actions"]
@@ -640,7 +644,7 @@ def test_wait_for_actions_record_reports_a_timeout(
     *, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """A missing detached actions row does not make the scenario test wait forever."""
-    ticks = iter((0.0, 2.1))
+    ticks = iter((0.0, 10.1))
     monkeypatch.setattr(time, "monotonic", lambda: next(ticks))
     monkeypatch.setattr(time, "sleep", lambda _: None)
 
@@ -696,7 +700,9 @@ def _post_start(*, root: Path, seeded: bool, switch: str = "") -> dict[str, str]
         "error",
     )
     recorded = work / "_temp" / "_ci_cache" / "warm-copy.tsv"
-    _wait_for_actions_record(recorded=recorded)
+    assert _wait_for_actions_record(
+        recorded=recorded
+    ), "the detached postStart hook never recorded actions"
     rows = recorded.read_text(encoding="utf-8").splitlines()
     parsed = [dict(zip(columns, (row.split("\t") + [""] * 8)[:8], strict=True)) for row in rows]
     mine = [row for row in parsed if row["tier"] == "actions"]
