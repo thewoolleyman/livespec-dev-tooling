@@ -15,7 +15,7 @@ from livespec_dev_tooling._incident_observer_ack import (
 )
 from livespec_dev_tooling._incident_observer_types import JobCallback, RecoveryIntent
 
-__all__: list[str] = ["observer_endpoint"]
+__all__: list[str] = ["RequestDispatcher", "observer_endpoint"]
 
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-47ij37
 _MAX_BODY_BYTES = 1_000_000
@@ -106,3 +106,25 @@ def _read_request(*, environ: dict[str, Any]) -> bytes | None:
         return None
     body: object = stream.read(int(length))
     return body if isinstance(body, bytes) and len(body) == int(length) else None
+
+
+@dataclass(frozen=True, kw_only=True)
+class RequestDispatcher:
+    """Compose concurrent dispatch through BaseServer's public request protocol."""
+
+    server: Any
+    threads: Callable[[], Callable[..., Any]] = lambda: Thread
+
+    def __call__(self, request: Any, client_address: Any) -> None:
+        self.threads()(
+            target=self._finish,
+            kwargs={"request": request, "address": client_address},
+            daemon=True,
+        ).start()
+
+    def _finish(self, *, request: Any, address: Any) -> None:
+        request.settimeout(10)
+        try:
+            self.server.finish_request(request, address)
+        finally:
+            self.server.shutdown_request(request)

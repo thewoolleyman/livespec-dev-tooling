@@ -19,6 +19,7 @@ from threading import Event, Thread
 from typing import Any, cast
 from wsgiref.simple_server import make_server
 
+from livespec_dev_tooling import incident_enablement as enable
 from livespec_dev_tooling._incident_ci_identity_json import identity_json
 from livespec_dev_tooling._incident_observer_types import (
     RecoveryIntent,
@@ -29,7 +30,11 @@ from livespec_dev_tooling.incident_ci_job_collection import CiJobCollection
 from livespec_dev_tooling.incident_conflict_sweep import ConflictSweep, waking_recover
 from livespec_dev_tooling.incident_controller_installation import ControllerInstallation
 from livespec_dev_tooling.incident_observer_control import ObserverControl
-from livespec_dev_tooling.incident_observer_endpoint import _read_request, observer_endpoint
+from livespec_dev_tooling.incident_observer_endpoint import (
+    RequestDispatcher,
+    _read_request,
+    observer_endpoint,
+)
 from livespec_dev_tooling.incident_observer_events import verify_leaf_completion
 from livespec_dev_tooling.incident_observer_provenance import ObserverProvenance
 from livespec_dev_tooling.incident_observer_query import ORDINARY_ACTION_PATH, ObserverQuery
@@ -47,11 +52,11 @@ __all__: list[str] = ["ControllerService"]
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-gho3w4
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-zbzls2
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-ariayn
-_QUERY_PATHS = frozenset(
-    {"/current", "/admitted", "/provenance", "/ci/jobs/inspect", RELEASE_SCREEN_PATH}
-) | {ORDINARY_ACTION_PATH}
-_CONTROL_PATHS = frozenset(
-    {"/arm", "/bind", "/invalidate-ci", "/recover", "/reconcile", "/ci/jobs/collect"}
+_QUERIES = {ORDINARY_ACTION_PATH, RELEASE_SCREEN_PATH} | enable.QUERY_PATHS
+_QUERY_PATHS = frozenset({"/current", "/admitted", "/provenance", "/ci/jobs/inspect"}) | _QUERIES
+_CONTROL_PATHS = (
+    frozenset({"/arm", "/bind", "/invalidate-ci", "/recover", "/reconcile", "/ci/jobs/collect"})
+    | enable.CONTROL_PATHS
 )
 _OIDC_ROUTES = {"/ci/identity": CiIdentityVerifier, "/ci/attach": CiJobAttachment}
 _StartResponse = Callable[[str, list[tuple[str, str]]], object]
@@ -66,6 +71,9 @@ class ControllerService:
     # Set when a recovery journals a rollback-conflict, so the conflict sweep writes it to
     # the chain at once, outside the fence the recovery itself ran under.
     conflict_journaled: Event = field(default_factory=Event, compare=False, repr=False)
+    identity_source: enable.IdentitySource = field(
+        default_factory=enable.production_identity_source
+    )
 
     @classmethod
     def installed(cls, *, config: Path) -> ControllerService | None:
@@ -151,16 +159,20 @@ class ControllerService:
         | ObserverQuery
         | ObserverReconcile
         | ObserverControl
+        | enable.ObserverEnablement
         | ReleaseScreen
     ):
         if path == RELEASE_SCREEN_PATH:
             return ReleaseScreen(installation=self.installation)
         if path.startswith("/ci/jobs/"):
             return CiJobCollection(installation=self.installation)
-        if path == "/provenance":
-            return ObserverProvenance(installation=self.installation)
-        if path == "/reconcile":
-            return ObserverReconcile(installation=self.installation)
+        if path in enable.CONTROL_PATHS | enable.QUERY_PATHS:
+            return enable.ObserverEnablement(
+                installation=self.installation, source=self.identity_source
+            )
+        if path in {"/provenance", "/reconcile"}:
+            kind = ObserverProvenance if path == "/provenance" else ObserverReconcile
+            return kind(installation=self.installation)
         if path in _QUERY_PATHS:
             return ObserverQuery(installation=self.installation)
         return ObserverControl(installation=self.installation)
@@ -228,32 +240,15 @@ class ControllerService:
         )(forwarded, start_response)
 
 
+def _RequestDispatcher(*, server: Any) -> RequestDispatcher:  # noqa: N802 - the name callers use
+    return RequestDispatcher(server=server, threads=lambda: Thread)
+
+
 def _reply(*, start_response: _StartResponse, status: str, result: dict[str, Any]) -> list[bytes]:
     _ = start_response(
         status, [("Content-Type", "application/json"), ("Cache-Control", "no-store")]
     )
     return [json.dumps(result).encode()]
-
-
-@dataclass(frozen=True, kw_only=True)
-class _RequestDispatcher:
-    """Compose concurrent dispatch through BaseServer's public request protocol."""
-
-    server: Any
-
-    def __call__(self, request: Any, client_address: Any) -> None:
-        Thread(
-            target=self._finish,
-            kwargs={"request": request, "address": client_address},
-            daemon=True,
-        ).start()
-
-    def _finish(self, *, request: Any, address: Any) -> None:
-        request.settimeout(10)
-        try:
-            self.server.finish_request(request, address)
-        finally:
-            self.server.shutdown_request(request)
 
 
 def main() -> int:
