@@ -11,6 +11,12 @@ package is never consulted (that would make the controller read circular).
 Every other outcome is unverified: a stopped, failed or restarting unit, a process that
 is not the packaged observer command, a venv without exactly one install, an install
 that is not a recorded VCS revision, and a process that predates its install.
+
+Each repository is read from the production installation that serves it. Which
+repositories have one is `SERVED_REPOSITORIES`, which a test holds equal to the
+incident_observer role's committed inventory (`incident_observer_installations`), and
+each installation's unit and configuration are derived from the repository's name the
+way the role names them. Nothing about the installation comes from the caller.
 """
 
 from __future__ import annotations
@@ -25,28 +31,39 @@ from livespec_dev_tooling.fleet._local_context import command_answer
 from livespec_dev_tooling.incident_fleet_host import HostProbe
 from livespec_dev_tooling.incident_strict_json import IncidentJsonRefusalError, strict_json
 
-__all__: list[str] = ["OBSERVED_REPOSITORY", "read_controller_serving"]
+__all__: list[str] = ["OBSERVED_REPOSITORY", "SERVED_REPOSITORIES", "read_controller_serving"]
 
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-3wcldx
-# The ansible role (`incident_observer_repository`) installs exactly one observer, for this
-# repository; a test pins this constant to the role's default.
+# This library's own installation keeps the unit and configuration it always had; a test
+# pins them to the role's defaults.
 OBSERVED_REPOSITORY = "thewoolleyman/livespec-dev-tooling"
+# Every repository a production installation serves, in the order the role's committed
+# inventory declares them; a test holds this equal to that inventory.
+SERVED_REPOSITORIES: tuple[str, ...] = (OBSERVED_REPOSITORY,)
 _UNIT = "livespec-incident-observer.service"
-_COMMAND_TAIL = [
-    "-I",
-    "-m",
-    "livespec_dev_tooling.incident_observer_service",
-    "--config",
-    "/etc/livespec-incident/controller.json",
-]
+_CONFIG = "/etc/livespec-incident/controller.json"
+_COMMAND_HEAD = ["-I", "-m", "livespec_dev_tooling.incident_observer_service", "--config"]
 _COMMIT = re.compile(r"[0-9a-f]{40}")
 _FIELD_AFTER_COMMAND = 19
 
 
-def _unit_pid(*, probe: HostProbe) -> int | None:
+def _installation(*, repository: str) -> tuple[str, str] | None:
+    """The serving installation's (unit, configuration), or None when none serves it."""
+    if repository not in SERVED_REPOSITORIES:
+        return None
+    if repository == OBSERVED_REPOSITORY:
+        return _UNIT, _CONFIG
+    name = repository.rsplit("/", 1)[-1]
+    return (
+        f"livespec-incident-observer-{name}.service",
+        f"/etc/livespec-incident/controller-{name}.json",
+    )
+
+
+def _unit_pid(*, probe: HostProbe, unit: str) -> int | None:
     answer = command_answer(
         outcome=probe.run(
-            args=["systemctl", "show", _UNIT, "--property=ActiveState,SubState,MainPID"]
+            args=["systemctl", "show", unit, "--property=ActiveState,SubState,MainPID"]
         )
     )
     if isinstance(answer, InvocationNotPerformed) or answer.returncode != 0:
@@ -103,15 +120,17 @@ def _installed(*, dist: Path) -> tuple[str, float] | None:
 
 
 def read_controller_serving(*, probe: HostProbe, repository: str) -> str | None:
-    """`v<version>@<commit>` of the running observer's installed release, else None."""
-    if repository != OBSERVED_REPOSITORY:
+    """`v<version>@<commit>` of the serving installation's running release, else None."""
+    installation = _installation(repository=repository)
+    if installation is None:
         return None
-    pid = _unit_pid(probe=probe)
+    unit, config = installation
+    pid = _unit_pid(probe=probe, unit=unit)
     argv = None if pid is None else _command(proc_root=probe.proc_root, pid=pid)
     if (
         pid is None
         or argv is None
-        or argv[1:] != _COMMAND_TAIL
+        or argv[1:] != [*_COMMAND_HEAD, config]
         or Path(argv[0]).parent.name != "bin"
     ):
         return None
