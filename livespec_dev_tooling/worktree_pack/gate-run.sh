@@ -357,6 +357,10 @@ usage:
   gate-run.sh wait  RUN_ID
   gate-run.sh status [RUN_ID]
   gate-run.sh list
+  gate-run.sh stop  RUN_ID
+
+Stop a running gate with `stop`; signalling its pid or process group is not
+supported because hook clients run in their own sessions.
 USAGE
     exit "$EX_USAGE"
 }
@@ -374,6 +378,10 @@ derive_state_into() {
     local dir="$1" code="" pid=""
     if [[ ! -d "$dir" ]]; then
         STATE='UNKNOWN_RUN'
+        return
+    fi
+    if [[ -f "$dir/stopped" ]]; then
+        STATE='STOPPED'
         return
     fi
     if [[ -f "$dir/exit_code" ]]; then
@@ -411,6 +419,10 @@ derive_state() {
 # preserving its exact state derivation for each record.
 derive_list_state_into() {
     local dir="$1" code="" pid=""
+    if [[ -f "$dir/stopped" ]]; then
+        STATE='STOPPED'
+        return
+    fi
     if [[ -f "$dir/exit_code" && -r "$dir/exit_code" ]]; then
         read -r code <"$dir/exit_code" || code=""
         if [[ "$code" == "0" ]]; then
@@ -976,10 +988,10 @@ cmd_child() {
     # are here to capture, not an error in the runner.
     set +e
     if [[ "$(cat "$dir/venue")" == "cluster_job" ]]; then
-        uv run --no-sync python -m livespec_dev_tooling.gate_runner_delegate run --run-dir "$dir" -- "$@" \
+        LIVESPEC_GATE_RUN_DIR="$dir" uv run --no-sync python -m livespec_dev_tooling.gate_runner_delegate run --run-dir "$dir" -- "$@" \
             >>"$dir/output.log" 2>&1
     else
-        run_gate_with_stall_bound "$dir" "$@"
+        LIVESPEC_GATE_RUN_DIR="$dir" run_gate_with_stall_bound "$dir" "$@"
     fi
     local code=$?
     set -e
@@ -1199,6 +1211,9 @@ report_run() {
             printf '  This is NOT a pass and NOT a refusal. Nothing was decided, so nothing\n'
             printf '  may be concluded from it. Re-run the gate; do not treat this as green.\n'
             ;;
+        STOPPED)
+            printf '  STOPPED: a stop request was recorded before signalling the run.\n'
+            ;;
     esac
     # Last, so it is the last thing read — and unconditional on state,
     # because a flip is orthogonal to the verdict and must be seen even
@@ -1248,6 +1263,16 @@ cmd_wait() {
         idle_sleep "$POLL_INTERVAL_S"
     done
     report_run "$run_id" "$dir"
+}
+
+cmd_stop() {
+    [[ $# -eq 1 ]] || usage
+    local run_id="$1" dir
+    dir="$(run_dir_for_read "$run_id")" || {
+        unknown_run "$run_id"
+        return "$EX_USAGE"
+    }
+    uv run --no-sync python -m livespec_dev_tooling.gate_stop --run-dir "$dir"
 }
 
 cmd_list() {
@@ -1300,6 +1325,7 @@ main() {
         wait) cmd_wait "$@" ;;
         status) cmd_status "$@" ;;
         list) cmd_list "$@" ;;
+        stop) cmd_stop "$@" ;;
         __child) cmd_child "$@" ;;
         *) usage ;;
     esac
