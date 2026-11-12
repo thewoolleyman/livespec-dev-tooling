@@ -65,13 +65,11 @@ def _confine_children(*, monkeypatch: pytest.MonkeyPatch) -> None:
     and `COVERAGE_PROCESS_START` or `COV_CORE_*` would make the collecting
     pytest self-instrument and write data files that race the parallel gate.
     """
-    for name in os.environ:
-        if (
-            name in _GIT_ENV_VARS
-            or name == "COVERAGE_PROCESS_START"
-            or name.startswith("COV_CORE_")
-        ):
-            monkeypatch.delenv(name)
+    _ = [
+        monkeypatch.delenv(name)
+        for name in tuple(os.environ)
+        if name in _GIT_ENV_VARS or name == "COVERAGE_PROCESS_START" or name.startswith("COV_CORE_")
+    ]
 
 
 class _History(NamedTuple):

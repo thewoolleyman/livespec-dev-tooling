@@ -53,9 +53,11 @@ def _repository(*, root: Path, failure: int = 0) -> tuple[str, str]:
 def _wired(
     *, root: Path, monkeypatch: pytest.MonkeyPatch, failure: int = 0
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
-    for key in tuple(os.environ):
-        if key.startswith(("GIT_", "EXPEDITED_", "LIVESPEC_INCIDENT_")):
-            monkeypatch.delenv(key, raising=False)
+    _ = [
+        monkeypatch.delenv(key, raising=False)
+        for key in tuple(os.environ)
+        if key.startswith(("GIT_", "EXPEDITED_", "LIVESPEC_INCIDENT_"))
+    ]
     head, tree = _repository(root=root, failure=failure)
     query = dict(
         repository="owner/repo",
