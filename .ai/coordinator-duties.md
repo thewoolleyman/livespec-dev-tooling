@@ -1287,6 +1287,11 @@ epic `livespec-dev-tooling-6tgd2z`, 2026-11-12T10:33:39Z).
   - dispatch-control-plane is monitor-only, and must not absorb today's operations.
   - Launchers take the factory from the target repository's committed `default_factory` (R503).
   - Keep interactive turns lean (R509).
+  - Never offer GitHub's merge queue for any fleet repository: the maintainer has no GitHub Enterprise account and
+    cannot use it. For a stale-base merge break, the options are requiring branches to be up to date before merging
+    (strict required status checks), a self-built serialize-or-recheck step, or leaving it as it is. The maintainer,
+    2026-11-12 ~18:0xZ, recorded on epic `livespec-dev-tooling-6tgd2z`: "FOR THE MILLIONTH TIME, I DO NOT HAVE AN
+    ENTERPRISE ACCOUNT AND CANNOT USE GITHUBS MERGE QUEUE".
 
 ## 13. Directives come from the plan and the ledger, never from a handoff
 
