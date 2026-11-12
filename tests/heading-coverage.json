@@ -490,24 +490,24 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a compilation-cache warm build skipped as busy past two populate intervals fires the lag trigger",
-    "test": "TODO",
-    "reason": "Spec-first: a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) is owed for this scenario, reading the populator's run record, the host gauge table and the warm-set lag value trigger definition, and asserting that the populate manifest carries the per-repository consecutive skipped-busy count, last-built commit and toolchain as the cache's own record reports them, and lag start time, that the trigger fires per repository past two populate intervals of busy skips and names the repository, the lag and the skipped-busy count, and that the busy-pool guardrail still refuses the build. livespec-dev-tooling-uyevam owns it (plan ci-cache-optimization); the implementation PR that ships it replaces this row.",
+    "test": "tests.consumer.test_compilation_cache_warm_lag_scenarios.test_busy_skips_start_and_accumulate_per_repository_lag",
+    "reason": "Consumer-tier: drives the populator's pure per-repository transition with a stale marker and repeated admitted-job busy skip, preserving the cache-record commit and toolchain, the streak and its original lag start.",
     "work_item": "livespec-dev-tooling-uyevam"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: rebuilding a lagging compilation-cache warm set clears the lag trigger",
-    "test": "TODO",
-    "reason": "Spec-first: a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) is owed for this scenario, asserting that a populate run which builds the warm set from the current default-branch head and toolchain, or finds that pair already in the cache, resets the consecutive skipped-busy count to zero and records that commit and toolchain, and that the warm-set lag trigger's threshold is then no longer met. livespec-dev-tooling-uyevam owns it (plan ci-cache-optimization); the implementation PR that ships it replaces this row.",
+    "test": "tests.consumer.test_compilation_cache_warm_lag_scenarios.test_current_or_recorded_build_clears_lag_and_a_failed_build_does_not",
+    "reason": "Consumer-tier: drives both a current marker and a freshly recorded build to the zero-streak, zero-lag state carrying the current commit and toolchain.",
     "work_item": "livespec-dev-tooling-uyevam"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a failed compilation-cache warm build ends the busy-skip streak but keeps the lag start time",
-    "test": "TODO",
-    "reason": "Spec-first: a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) is owed for this scenario, asserting that a populate run whose compilation-cache warm build fails, is refused, finds the cache unreachable or cannot read the admitted-job count resets the consecutive skipped-busy count to zero and keeps the lag start time, and that the warm-set lag trigger's threshold is then not met. livespec-dev-tooling-uyevam owns it (plan ci-cache-optimization); the implementation PR that ships it replaces this row.",
+    "test": "tests.consumer.test_compilation_cache_warm_lag_scenarios.test_current_or_recorded_build_clears_lag_and_a_failed_build_does_not",
+    "reason": "Consumer-tier: drives a failed writer decision after a busy streak and proves it resets only the streak while retaining the lag start.",
     "work_item": "livespec-dev-tooling-uyevam"
   },
   {
