@@ -50,6 +50,7 @@ _DISJOINT = (
 )
 _ASSERTS = (_NAME, _INVENTORY, _SHARED, _LAYOUT, _DISJOINT)
 _PLAYBOOK_TIMEOUT_SECONDS = 600
+_IDS = ("repository_id", "owner_id")
 _SECOND = {
     "repository": "thewoolleyman/livespec",
     "required_jobs": ["check-lint", "ci-green"],
@@ -242,7 +243,7 @@ def test_the_inventory_lists_livespec_dev_tooling_first_exactly_as_dev_host_conv
     defaults = _defaults()
     (first, *_) = defaults["incident_observer_installations"]
 
-    assert first == {
+    assert {key: first[key] for key in first if key not in _IDS} == {
         "repository": defaults["incident_observer_repository"],
         "required_jobs": defaults["incident_observer_required_jobs"],
         "port": defaults["incident_observer_port"],
@@ -253,6 +254,13 @@ def test_the_inventory_lists_livespec_dev_tooling_first_exactly_as_dev_host_conv
         defaults["incident_observer_installation_routes"]
         == defaults["incident_observer_funnel_paths"]
     )
+
+
+def test_every_inventory_entry_names_its_repository_and_owner_by_numeric_id() -> None:
+    """The CI identity policy keys on both ids, never on the owner's login."""
+    for entry in _defaults()["incident_observer_installations"]:
+        assert {key: type(entry[key]) for key in _IDS} == {key: int for key in _IDS}, entry
+        assert all(entry[key] > 0 for key in _IDS), entry
 
 
 @pytest.mark.parametrize(
@@ -544,11 +552,17 @@ def test_a_second_installation_publishes_its_prefixed_routes_to_its_own_listener
 ) -> None:
     outcome = outcomes["second-fresh"]
 
+    # The pending paths come out of `difference`, which keeps no order, so the
+    # publishes are compared as a set of argvs.
     assert outcome.failed is False, outcome.output
-    assert outcome.published == [
-        _publish(path="/livespec/callback", target=_SECOND_LISTENER + "/callback"),
-        _publish(path="/livespec/ordinary-action", target=_SECOND_LISTENER + "/ordinary-action"),
-    ]
+    assert sorted(outcome.published) == sorted(
+        [
+            _publish(path="/livespec/callback", target=_SECOND_LISTENER + "/callback"),
+            _publish(
+                path="/livespec/ordinary-action", target=_SECOND_LISTENER + "/ordinary-action"
+            ),
+        ]
+    )
 
 
 def test_a_second_installation_already_public_publishes_nothing(
