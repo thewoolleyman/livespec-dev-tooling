@@ -28,7 +28,8 @@ Scope: the 10 `fleet` entries of livespec's `.livespec-fleet-manifest.jsonc`. Ev
   replaced by the org App's (note 004 item 1).
 - **Integration 5656677** is the bypass actor in four repositories' `master-incident-recovery-bypass` rulesets. That is
   the expedited-incident-response recovery App. If it is user-owned and private, it too needs an org-owned replacement,
-  and its four rulesets need the new actor id. **Verify which account owns 5656677 before the cutover.**
+  and its four rulesets need the new actor id. Phase 1 step 2 reads its owner and records the answer on the epic, and the
+  §3 cutover blocker follows from that answer.
 - **The incident observer's webhook** points at a tailnet host. It transfers with the repository, but its
   shared secret and the observer's expected-repository checks are owner-bound. One of those checks is note 004's
   silent-break line, `scratch_preflight.yml`.
@@ -79,6 +80,7 @@ The coordinator announces it. These are the contents. Order: freeze inflow, drai
 - No workflow run is in progress or queued in the 10 repositories (`gh run list --status in_progress` / `queued` empty).
 - No gate Job is on the ARC runners.
 - No release is mid-flight.
+- Every image the held PRs pin is present at `ghcr.io/<org>/<name>:<tag>` (Phase 1 step 4).
 
 **Quiet check (the gate to start the cutover):** all of the above read live by one script. The seat writes the script
 during preparation and reports its output to the coordinator.
@@ -87,10 +89,13 @@ during preparation and reports its output to the coordinator.
 
 **Phase 0 — maintainer calls (§5), before anything else.**
 
-**Cutover blocker (coordinator, 2026-11-12 ~20:0xZ): the recovery App's org twin.** No repository transfers until the
-recovery bypass actor has an org-owned twin, Integration 5656677 in the `master-incident-recovery-bypass` rulesets of
-livespec, livespec-dev-tooling, livespec-orchestrator-beads-fabro and livespec-overseer. The twin must be installed on
-the organization, and the rehearsal must prove that a transferred repository's ruleset bypass resolves to it. A bypass
+**Cutover blocker (coordinator, 2026-11-12 ~20:0xZ): the recovery App's org twin.** The recovery bypass actor is
+Integration 5656677, in the `master-incident-recovery-bypass` rulesets of livespec, livespec-dev-tooling,
+livespec-orchestrator-beads-fabro and livespec-overseer. A PRIVATE user-owned App cannot be installed on an
+organization. So, unless Phase 1 step 2 records that 5656677 can be installed there (a public App, or one the organization
+owns), no repository transfers until an org-owned twin exists. The expected answer is that the twin is required: the incident
+plan's 19:36Z item on this epic records 5656677 installed on the personal account. The twin must be installed on the
+organization, and the rehearsal must prove that a transferred repository's ruleset bypass resolves to it. A bypass
 that does not survive the transfer would remove incident recovery DURING the move, which is exactly when the maintainer
 wants expedited incident response available.
 
@@ -100,22 +105,35 @@ wants expedited incident response available.
    - an Actions policy;
    - member repository-creation off;
    - default `GITHUB_TOKEN` read-only.
-2. Create a private, org-owned fleet App, installable only on the organization, as the homelab constraint requires for
-   `mi-homelab-factory-bot`. Do the same for the recovery App if 5656677 is user-owned. Keys go into the 1Password
-   environment.
-3. **Rehearsal on a throwaway repository** (`thewoolleyman/livespec-transfer-rehearsal`). Seed it with:
+2. **Read the recovery App's owner and record the answer.** Run
+   `gh api /apps/thewoolleyman-incident-recovery --jq '{owner: .owner.login, type: .owner.type}'` (the slug the incident
+   plan recorded), plus the App's settings page for its public or private flag, and record both as a scope event on this
+   epic. This is not measured yet. On 2026-11-12 the coordinator's `gh api user/installations` returned 403, and at 21:17Z
+   the seat's `/apps/<slug>` read returned 404 and then hit the token's rate limit. A private App owned by the user
+   account cannot be installed on an organization, so that answer makes the §3 twin REQUIRED.
+3. Create a private, org-owned fleet App, installable only on the organization, as the homelab constraint requires for
+   `mi-homelab-factory-bot`. Create the recovery App's org twin as well, unless step 2 recorded that 5656677 can be
+   installed on the organization. Keys go into the 1Password environment.
+4. **Publish the images under the organization.** The organization exists from step 1, so publish (or mirror)
+   `livespec-fabro-sandbox` and every other fleet image at `ghcr.io/<org>/<name>`, at each tag the held PRs pin. Make
+   each package readable by the repositories that pull it. The quiet check (§2) reads "image present at
+   `ghcr.io/<org>`" for each one.
+5. **Rehearsal on a throwaway repository** (`thewoolleyman/livespec-transfer-rehearsal`). Seed it with:
    - a reusable workflow called from a second throwaway;
    - a ruleset with an Integration bypass;
    - an Actions secret and a variable;
    - a webhook;
    - a Release Please config;
    - an ARC registration;
-   - a Claude marketplace and a Codex marketplace pointing at it.
+   - a Claude marketplace and a Codex marketplace pointing at it;
+   - a workflow that pulls an image from `ghcr.io/thewoolleyman/…`. Record whether the transferred repository can still
+     pull the OLD package name, and grant the transferred repositories package access to it. Between a transfer and its
+     held PR landing, master CI and the factory's `workflow.toml` still name the old image.
 
    Transfer it, then record which of these survive the transfer and whether the old `uses:`, git and marketplace
    references still resolve. Then test whether it can be transferred BACK: the namespace-retirement rule may forbid
    reusing the old name. This settles every "verify" in note 004 before a real repository moves.
-4. **Specification first:**
+6. **Specification first:**
    - a livespec propose-change replacing v126's "no merge queue" with "merge queue on organization-owned repositories";
    - the manifest `owner` change;
    - a Fork-exclusion amendment if `merge_group` runs on guarded self-hosted runners;
@@ -123,14 +141,35 @@ wants expedited incident response available.
      trigger).
 
    Each is revised and ratified before its code.
-5. **Draft PRs, held unmerged**, one per repository, carrying the code and config changes:
+7. **Draft PRs, held unmerged**, one per repository, carrying the code and config changes:
    - note 004's ~300 lines, the owner constants and the two silent-break comparisons;
    - `.claude/settings.json` marketplaces;
    - GHCR names;
    - `merge_group` plus routing;
    - ARC values.
 
-   Each is green on CI before the halt.
+   **These PRs cannot be fully green before the halt.** They run in thewoolleyman-owned repositories until the transfer,
+   so an owner-bound check fails by construction. The checks that MAY be red before the transfer, and why:
+   - **Owner-equality checks.** livespec's `reusable-spec-pr-merge-policy.yml` prefix test now expects
+     `<org>/livespec/.github/workflows/…`, but the run's `job_workflow_ref` still says `thewoolleyman/…`. Any test or
+     check that compares a changed owner constant (`FLEET_OWNER`, `OWNER`, `EXPECTED_APP_OWNER`, the manifest `"owner"`)
+     with the live repository's owner fails the same way.
+   - **Live reads by `<org>/<repo>`.** These include the fleet audit reading the manifest by owner and name, the
+     git-identity audit and branch-protection alignment. Each one 404s, because no repository exists at the org name
+     yet.
+   - **Anything that calls a reusable workflow or action at `<org>/livespec-dev-tooling/…@vX`.** That ref does not
+     resolve until the transfer and the dev-tooling release in Phase 3.
+
+   Image pulls from `ghcr.io/<org>` are NOT on this list, because step 4 publishes the images first. A pull that is red
+   is a defect to fix before the halt.
+
+   **What proves each PR good before the halt:**
+   - every required check outside the three classes above is green on the PR;
+   - the PR body names each red check, by job name, together with its class;
+   - each owner-bound check is proven green against the rehearsal repository after that repository moves to the
+     organization (step 5), by running the same check with the org owner against an org-owned repository.
+
+   After the transfer, each PR must be fully green before Phase 3 step 6 lands it.
 
 **Phase 2 — the halt (§2), announced by the coordinator.**
 
@@ -144,12 +183,17 @@ wants expedited incident response available.
    - livespec-dev-tooling first: checks, reusable workflows and a release;
    - livespec (the manifest `owner`);
    - then the other eight, through the pin bump.
-7. Publish the images under the organization.
-8. Re-register the marketplaces on every host, through the per-host ensure-plugins path: Claude `known_marketplaces`,
+7. Re-register the marketplaces on every host, through the per-host ensure-plugins path: Claude `known_marketplaces`,
    `installed_plugins` and Codex `config.toml`.
-9. Re-point the 12 adopters' `.claude/settings.json`.
+8. Re-point the 12 adopters' `.claude/settings.json`.
 
 **Phase 4 — the merge queue:**
+
+`.ai/coordinator-duties.md` §12 carries "never offer GitHub's merge queue". This phase does not breach it. The
+maintainer chose the org move and the adoption of GitHub's merge queue, in the scope event on this epic at
+2026-11-12T19:34:25Z ("OK, we are going to go with the org move"). The seat had presented the organization path because
+the maintainer asked how option 3 compared with GitHub's merge queue.
+
 1. Enable "require merge queue" on livespec-dev-tooling and the orchestrator, with build concurrency of 2 or more
    (note 003's sensitivity: a single lane is fragile on dev-tooling).
 2. Run the semantic-conflict drill (assertion 4 below).
@@ -170,8 +214,17 @@ possible. After Phase 4, disable the merge-queue requirement; nothing else depen
   armed for auto-merge lands on master only through the queue.
 - Two pull requests that each pass CI alone but break CI together cannot both land: the queue ejects the second one,
   and master stays green.
-- After the move, factory dispatch, release fan-out, pin bumps and the incident-recovery path each complete once
-  against the organization's repositories, and master CI is green in all 10.
+- After the move, factory dispatch, release fan-out and a pin bump each complete once against the organization's
+  repositories, and master CI is green in all 10.
+- The recovery drill passes once on livespec-dev-tooling after its transfer. The recovery App's org twin (or 5656677, if
+  Phase 1 step 2 recorded that it can be installed on the organization) pushes one commit directly to master through
+  the `master-incident-recovery-bypass` ruleset. The commit lands. In the same drill the maintainer's own token is
+  refused a direct push to master by the ruleset. The drill does not wait for a real incident.
+- In the committed tree of each of the 10 fleet repositories at master, one committed grep counts 0 occurrences of
+  `github.com/thewoolleyman/<fleet-repo>` and 0 of `ghcr.io/thewoolleyman`. That grep is a script the seat commits under
+  `plan/stale-base-merge-options/research/data/`, and it excludes spec `history/` trees, `plan/archive/` and
+  release-generated `CHANGELOG.md`. Any non-zero count means the move still depends on GitHub's redirects, which break
+  the day someone reuses the old name.
 - On every fleet host, Claude Code and Codex resolve the fleet marketplaces at the organization's names.
 - Merge-queue CI runs on the runners the maintainer chose, and the self-hosted routing check passes in all 10
   repositories.
@@ -180,7 +233,9 @@ possible. After Phase 4, disable the merge-queue requirement; nothing else depen
 
 1. **The organization's name.**
 2. **Approve the outward-facing grants:**
-   - a new private org-owned fleet App, plus a recovery App if 5656677 is user-owned;
+   - a new private org-owned fleet App, plus an org twin of the recovery App 5656677. The twin is required unless
+     Phase 1 step 2 records that 5656677 can be installed on the organization; a private user-owned App cannot be, and
+     that is the expected answer;
    - publishing images under `ghcr.io/<org>`.
 3. **Where `merge_group` CI runs:** guarded self-hosted runners (the seat's pick; a security-policy change) or
    GitHub-hosted runners (a free org's 20-job concurrency cap, shared by all its repositories; latency unmeasured).
