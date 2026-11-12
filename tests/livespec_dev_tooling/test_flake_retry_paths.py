@@ -245,3 +245,123 @@ def test_a_lambda_parameter_shadows_the_module_root_name(*, tmp_path: Path) -> N
     )
 
     assert not _undeterminable_for(source=source, tmp_path=tmp_path)
+
+
+_MODULE_ROOT = _ROOT_BINDING + "ROOT = Path(__file__).resolve().parents[1]\n"
+
+
+def test_an_async_function_parameter_shadows_the_module_root_name(*, tmp_path: Path) -> None:
+    """An async function is a binding scope like any other function."""
+    source = (
+        _MODULE_ROOT + "async def shadowing(ROOT, name):\n    return ROOT / 'ci-runner' / name\n"
+    )
+
+    assert not _undeterminable_for(source=source, tmp_path=tmp_path)
+
+
+def test_a_comprehension_variable_shadows_the_module_root_name(*, tmp_path: Path) -> None:
+    """A comprehension target binds in the comprehension, not in the module."""
+    source = (
+        _MODULE_ROOT
+        + "def shadowing(names, name):\n"
+        + "    return [ROOT / 'ci-runner' / name for ROOT in names]\n"
+    )
+
+    assert not _undeterminable_for(source=source, tmp_path=tmp_path)
+
+
+def test_a_comprehension_variable_does_not_shadow_the_name_outside_it(*, tmp_path: Path) -> None:
+    """The enclosing function still reads the module-level root."""
+    source = (
+        _MODULE_ROOT
+        + "def reading(names, name):\n"
+        + "    listed = [0 for ROOT in names]\n"
+        + "    return ROOT / 'ci-runner' / name\n"
+    )
+
+    assert _undeterminable_for(source=source, tmp_path=tmp_path)
+
+
+def test_an_import_inside_a_function_shadows_the_module_root_name(*, tmp_path: Path) -> None:
+    """An import binds the name it introduces in the importing scope."""
+    source = (
+        _MODULE_ROOT
+        + "def shadowing(name):\n"
+        + "    from elsewhere import anchor as ROOT\n"
+        + "    return ROOT / 'ci-runner' / name\n"
+    )
+
+    assert not _undeterminable_for(source=source, tmp_path=tmp_path)
+
+
+def test_a_dotted_import_binds_its_first_component(*, tmp_path: Path) -> None:
+    """``import a.b`` binds ``a``."""
+    source = (
+        _ROOT_BINDING
+        + "a = Path(__file__).resolve().parents[1]\n"
+        + "def shadowing(name):\n"
+        + "    import a.b\n"
+        + "    return a / 'ci-runner' / name\n"
+    )
+
+    assert not _undeterminable_for(source=source, tmp_path=tmp_path)
+
+
+def test_an_exception_name_shadows_the_module_root_name(*, tmp_path: Path) -> None:
+    """An ``except ... as`` name is bound in the handling scope."""
+    source = (
+        _MODULE_ROOT
+        + "def shadowing(name):\n"
+        + "    try:\n"
+        + "        pass\n"
+        + "    except Exception as ROOT:\n"
+        + "        return ROOT / 'ci-runner' / name\n"
+    )
+
+    assert not _undeterminable_for(source=source, tmp_path=tmp_path)
+
+
+def test_a_nested_definition_shadows_the_module_root_name(*, tmp_path: Path) -> None:
+    """A ``def`` or ``class`` statement binds its own name in the enclosing scope."""
+    source = (
+        _MODULE_ROOT
+        + "def shadowing(name):\n"
+        + "    def ROOT():\n"
+        + "        pass\n"
+        + "    return ROOT / 'ci-runner' / name\n"
+    )
+
+    assert not _undeterminable_for(source=source, tmp_path=tmp_path)
+
+
+def test_a_root_declared_global_stays_a_root_in_every_scope(*, tmp_path: Path) -> None:
+    """A function assigning a global root makes that name a root wherever it is read."""
+    source = (
+        _ROOT_BINDING
+        + "def setter():\n"
+        + "    global ROOT\n"
+        + "    ROOT = Path(__file__).resolve().parents[1]\n"
+        + "def reader(name):\n"
+        + "    return ROOT / 'ci-runner' / name\n"
+    )
+
+    assert _undeterminable_for(source=source, tmp_path=tmp_path)
+
+
+def test_an_attribute_assignment_does_not_bind_a_root_name(*, tmp_path: Path) -> None:
+    """Only a plain name target can become a repository-root name."""
+    source = (
+        _ROOT_BINDING
+        + "holder.root = Path(__file__).resolve().parents[1]\n"
+        + "def reader(root, name):\n"
+        + "    return root / 'ci-runner' / name\n"
+    )
+
+    assert not _undeterminable_for(source=source, tmp_path=tmp_path)
+
+
+def test_a_default_argument_is_read_in_the_enclosing_scope(*, tmp_path: Path) -> None:
+    """A parameter default sees the module root even when the parameter shares its name."""
+    source = _MODULE_ROOT + "def reading(ROOT=ROOT / 'ci-runner' / dynamic):\n    return ROOT\n"
+
+    assert _undeterminable_for(source=source, tmp_path=tmp_path)
