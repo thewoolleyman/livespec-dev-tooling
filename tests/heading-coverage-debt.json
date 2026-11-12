@@ -1283,13 +1283,6 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario: an affected-tests record outside a sandbox, or for a failed, empty or different run, leaves the full suite in place",
-    "work_item": "livespec-dev-tooling-svjqbe",
-    "first_seen": "2026-11-09"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
     "heading": "## Scenario: an aged runner pin raises a trigger",
     "work_item": "livespec-dev-tooling-jkwzwv",
     "first_seen": "2026-11-08"
@@ -1349,13 +1342,6 @@
     "heading": "## Scenario: an image written below comment lines inside a container block is counted by the gate and the check alike",
     "work_item": "livespec-dev-tooling-op67ed",
     "first_seen": "2026-11-11"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: an in-turn sandbox commit whose affected-tests gate passed on the same tree runs only those tests",
-    "work_item": "livespec-dev-tooling-svjqbe",
-    "first_seen": "2026-11-09"
   },
   {
     "spec_root": "SPECIFICATION",
