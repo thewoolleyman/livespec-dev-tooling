@@ -57,3 +57,10 @@ def test_invalid_identity_never_builds_a_marker(item: str) -> None:
 def test_a_marker_before_unreadable_source_does_not_pass(source: str) -> None:
     result = validate_python_repair_marker(source=source, incident_item_id=_ITEM)
     assert result.failure().code == "unreadable-incident-marker-source"
+
+
+# EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-gig42c
+def test_a_marker_after_a_shebang_line_is_found_on_its_own_line() -> None:
+    source = "#!/usr/bin/env python3\n" + _MARKER + "\n"
+    result = validate_python_repair_marker(source=source, incident_item_id=_ITEM)
+    assert result.value_or(()) == (2,)
