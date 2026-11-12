@@ -50,7 +50,7 @@ class Budget:
         self.attempts = 0
         self.waits = 0
         self.waited = 0
-        self.headerless_rate_waits = 0
+        self.rate_limited_answers = 0
 
 
 def escape_answer(*, text):
@@ -123,8 +123,10 @@ def asked_wait(*, kind, attempt, budget, now):
     elif attempt.headers.get("x-ratelimit-remaining") == "0" and reset.isdigit():
         asked = max(0, int(reset) - int(now()))
     else:
-        asked = HEADERLESS_RATE_WAIT * 2**budget.headerless_rate_waits
-        budget.headerless_rate_waits += 1
+        # Doubled once for every earlier rate-limited answer of the call,
+        # whatever header that answer carried.
+        asked = HEADERLESS_RATE_WAIT * 2**budget.rate_limited_answers
+    budget.rate_limited_answers += 1
     return max(asked, doubling)
 
 
@@ -164,11 +166,13 @@ def run_call(*, name, method, idempotent, attempt, sleep, now, emit, budget=None
             emit(ended(name=name, attempt=got, kind=kind, why=why))
             return "failed", got, kind
         asked = asked_wait(kind=kind, attempt=got, budget=shared, now=now)
-        emit(failed_line(name=name, number=shared.attempts, attempt=got, kind=kind, wait=f"{asked}s"))
         if shared.waited + asked > WAIT_BUDGET_SECONDS:
+            # The wait is refused, never taken, so the line names none.
+            emit(failed_line(name=name, number=shared.attempts, attempt=got, kind=kind, wait="none"))
             why = f"wait of {asked}s asked would pass the {WAIT_BUDGET_SECONDS}s budget"
             emit(ended(name=name, attempt=got, kind=kind, why=why))
             return "failed", got, kind
+        emit(failed_line(name=name, number=shared.attempts, attempt=got, kind=kind, wait=f"{asked}s"))
         sleep(asked)
         shared.waits += 1
         shared.waited += asked
