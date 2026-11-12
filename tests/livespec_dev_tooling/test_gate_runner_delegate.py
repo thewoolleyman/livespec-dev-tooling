@@ -9,6 +9,7 @@ import sys
 import textwrap
 import time
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -892,6 +893,36 @@ def test_cluster_runner_cli_records_tree_and_job_for_gate_status(
     assert module.main() == 75
     assert (run_dir / "tree_hash").read_text(encoding="utf-8") == "tree\n"
     assert (run_dir / "job_name").read_text(encoding="utf-8") == "job\n"
+
+
+def test_cluster_runner_cli_records_the_job_namespace_for_gate_stop(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The stop confirmation addresses the submitted Job in its real namespace."""
+    module = importlib.import_module("livespec_dev_tooling.gate_runner_delegate")
+    run_dir = tmp_path / "run"
+    _ = run_dir.mkdir()
+    monkeypatch.setattr(
+        module,
+        "run_cluster_gate",
+        lambda **_kwargs: SimpleNamespace(
+            exit_status=75,
+            tree_hash="",
+            job_name="job",
+            namespace="custom-gates",
+            detail="",
+        ),
+    )
+    monkeypatch.setattr(
+        module.sys,
+        "argv",
+        ["gate-runner-venue", "run", "--run-dir", str(run_dir), "--", "just", "check"],
+    )
+
+    assert module.main() == 75
+    namespace = run_dir / "namespace"
+    assert namespace.is_file()
+    assert namespace.read_text(encoding="utf-8") == "custom-gates\n"
 
 
 def _command_result(*, returncode: int = 0, stdout: str = "") -> object:
