@@ -90,7 +90,15 @@ set, its binding to the committed manifest identity (fixture
 `tests/livespec_dev_tooling/fixtures/incident_fleet/core-fleet-manifest.jsonc`) and each release
 build as the serving form of a named release tag, so a refresh updates that test with the file.
 
-Ten claims, all `not-applicable`:
+Eleven claims: one `implemented` and ten `not-applicable`.
+
+- `Normal master context` for this library (gate-reader capability, release-keyed, `v1.198.0`),
+  `implemented`. Incident chain `livespec-dev-tooling-t26bbr` landed two expedited commits on
+  master, and each master push still ran the complete normal job graph with the incident flags
+  forced absent. The same-item unexpedited factory repayment livespec-dev-tooling#4204 then merged
+  on full checks and removed the repair marker, and `complete-incident` closed the chain at
+  generation 19. The surface's five files are byte-identical from `v1.195.0` through `v1.198.0`.
+  The claim's `proof_ref` names the runs, commits and reads.
 
 - `Generated projects` for this library (release-keyed, `v1.198.0`) and, at this library's
   templates `v1.197.0` (the one release every pin of its reusable workflows and composite actions
@@ -115,8 +123,9 @@ release-keyed reason above. The reasons behind those rows, measured on 2026-11-1
   and the Codex driver references the flag. A row is `deliberately-normal` only when someone rules
   that it is, and no ruling exists. Not having adopted the feature yet is not that ruling.
 - **No `implemented` claim.** One needs the incident item, the cumulative scope digest and the
-  normal factory proof of an incident that exercised the surface, read from that incident's record;
-  this file commits none.
+  normal factory proof of an incident that exercised the surface, read from that incident's record.
+  This file commits one, for this library's `Normal master context`. No other surface has an
+  incident record that exercised it.
 - **Open carriers in this library.** The controller and recovery rows that this library could
   classify each have an open carrier or a proof the observer docs still owe. These are First-failure
   observer (`q6eyrr`, `jpfdcx`), Existing reconciler coordination (`ariayn`), Failed-run retention
