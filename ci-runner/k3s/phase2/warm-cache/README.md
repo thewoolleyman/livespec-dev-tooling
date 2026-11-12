@@ -270,9 +270,20 @@ with the same `du -sb` and `find -type f` accounting the populator uses. The
 per-start seed cost is the lifecycle sweep's `start-seed-cost` observation:
 `seed.seconds` spans the provisioner's `_warm` creation through the final
 `.uv-generation` marker, while `seed.bytes` uses the same byte accounting as
-the union. The live XFS/reflink measurement remains host-captured after the
-converge; the sweep's ten-second threshold was calibrated from the prior
-12,192-file generation's three-second seed. The measurement retains sufficient
+the union.
+
+The per-start seed cost of this union, measured 2026-11-12 on the factory
+sandbox (overlayfs, so no reflink: every byte is really copied, which makes it
+an upper bound for the XFS/reflink medium). A tree of 18,665 regular files
+totalling 740,981,208 bytes (the union's file count and byte total, spread
+over 64 directories) was copied with `cp -a --reflink=auto` three times:
+1.80 s, 1.83 s and 2.46 s, so about 2.5 s at worst. `seed.bytes` for a seed of
+this union is its 740,981,208 bytes by the sweep's `du -sb` accounting. The
+reflink medium is cheaper per byte but still pays per file; scaling the prior
+calibration (3 s at 12,192 files) linearly by file count gives about 4.6 s for
+18,665 files, and the sweep's ten-second `start-seed-cost` threshold sits above
+both figures. The live XFS/reflink read-back of `seed.seconds` remains
+host-captured after the converge. The measurement retains sufficient
 headroom for lock growth while still alarming before the recorded runaway
 shape. The budget values themselves are deliberately stated only in their
 home: the
