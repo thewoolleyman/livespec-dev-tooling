@@ -1837,12 +1837,14 @@
         | list | length == 0
     fail_msg: >-
       Cannot retire environment
-      {{ (fabro_server_retired_run_environments
-          | selectattr('environment', 'in', fabro_server_retired_environments)
-          | list | first).environment }} from {{ fabro_server_unit_name }}:
-      non-terminal run {{ (fabro_server_retired_run_environments
-          | selectattr('environment', 'in', fabro_server_retired_environments)
-          | list | first).id }} still selects it. The catalog was left unchanged.
+      {{ ((fabro_server_retired_run_environments
+           | selectattr('environment', 'in', fabro_server_retired_environments)
+           | list | first | default({})).environment | default('unknown')) }} from
+      {{ fabro_server_unit_name }}: non-terminal run
+      {{ ((fabro_server_retired_run_environments
+           | selectattr('environment', 'in', fabro_server_retired_environments)
+           | list | first | default({})).id | default('unknown')) }} still selects it.
+      The catalog was left unchanged.
     success_msg: no non-terminal run selects a retired environment
   when:
     - fabro_server_retired_environments | length > 0
