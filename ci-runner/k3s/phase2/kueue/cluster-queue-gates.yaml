@@ -247,15 +247,23 @@ spec:
               nominalQuota: 48Gi
         - name: gates-hp-flavor
           resources:
-            # Two concurrent gates. hp-xubuntu has 14500m CPU / 27.2 GiB
-            # allocatable and, since FACTORY_NODE=false drained its factory
-            # sandboxes, carried 5.7 cpu of requests with one gate running at
-            # 21:09Z. Two 5-cpu gates fit beside its five churn slots; 16 Gi
-            # gives two 6 Gi requests two Gi of headroom each.
+            # One concurrent gate, one gate unit of 5 cpu / 8 Gi (2026-11-12,
+            # plan gate-job-resources; legacy-coordinator-agent GO cb187a57).
+            # hp is the last full lane in flavor order, so a gate reaches it
+            # only after gmktec and poweredge are full. Measured over the whole
+            # current layout (2026-11-11T08:45Z to 2026-11-12T10:20Z, 297
+            # five-minute buckets of gate pods per node): hp ran no gate in 76%
+            # of buckets and two or more in at most 10.8%, which is an upper
+            # bound, nearly all of it one overflow burst while gamingpc's lane
+            # was held at zero. Kueue admission waits read 0-2 s. With the
+            # gamingpc lane open, the fleet keeps 12 gate slots, the most the
+            # worst burst used, and the second slot's 5 cpu / 8 Gi of reserved
+            # requests go to factory sandboxes. Revert to 10 / 16Gi if a gate
+            # waits over five minutes for a lane.
             - name: "cpu"
-              nominalQuota: 10
+              nominalQuota: 5
             - name: "memory"
-              nominalQuota: 16Gi
+              nominalQuota: 8Gi
         - name: gates-gamingpc-flavor
           resources:
             # One concurrent gate at 5 cpu / 6 Gi. gamingpc-xubuntu expects
