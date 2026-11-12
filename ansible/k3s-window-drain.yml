@@ -2,7 +2,8 @@
 # k3s-window-drain.yml — the ONE sanctioned way to pause the CI runner pool's
 # intake and to cordon or uncordon a pool node around a k3s restart window, so
 # the restart can run without killing a CI job or waiting for a naturally idle
-# pool.
+# pool. It is also the one sanctioned way to move a node's recreated pods off it
+# before a planned power-off, and to clear the pods a lost node left behind.
 #
 # WHY IT EXISTS (orchestrator work-items bd-ib-v7h3az and bd-ib-3kdjct; the
 # maintainer-approved combined k3s restart window, livespec-dev-tooling-6tgd2z
@@ -16,7 +17,7 @@
 # `fleet_host_guard.py` refuses as hand changes to the fleet. This playbook is
 # that gap closed, in the fenced shape the restart playbooks already use.
 #
-# FOUR ACTIONS, ONE CONFIRMATION EACH. `k3s_window_action` selects one:
+# SIX ACTIONS, ONE CONFIRMATION EACH. `k3s_window_action` selects one:
 #   pause-arc    — for EVERY AutoscalingRunnerSet, record its spec.maxRunners in
 #                  the annotation `livespec.dev/window-paused-max-runners`, then
 #                  set maxRunners to 0. GitHub queues new jobs instead of failing
@@ -31,11 +32,96 @@
 #                  also the committed NODE HOLD: "hold node <name>" is
 #                  `cordon`, and "lift node <name>" is `uncordon`.
 #   uncordon     — mark it schedulable again.
-# NOTHING HERE EVICTS, DRAINS OR DELETES A POD. Evicting a busy runner pod kills
-# its CI job, and the ARC workflow pods are unmanaged, so a drain is exactly the
-# disruption this window must avoid. The operator waits for the node's work to
-# finish (the agent playbook's pod gate is the check), and factory sandbox pods
-# follow the dispatcher's cancel-and-re-dispatch route.
+#   evacuate     — BEFORE a planned power-off of a cordoned, Ready node: delete
+#                  (gracefully) the node's pods whose owner recreates them, so
+#                  they reschedule onto another node while this node's kubelet
+#                  can still complete the delete.
+#   clear-lost   — AFTER a node is already gone (not Ready): force-delete the
+#                  pods the API still binds to it that are marked for deletion
+#                  or whose owner recreates them, so their owners can replace
+#                  them.
+# THE FIRST FOUR EVICT, DRAIN AND DELETE NOTHING, and no action here is a drain.
+# Evicting a busy runner pod kills its CI job, and the ARC runner and workflow
+# pods are unmanaged, so a drain is exactly the disruption a window must avoid.
+# The operator waits for the node's work to finish (the agent playbook's pod
+# gate is the check), and factory sandbox pods follow the dispatcher's
+# cancel-and-re-dispatch route.
+#
+# WHY `evacuate` AND `clear-lost` DELETE PODS (livespec-dev-tooling-acgcwp).
+# On 2026-11-12 a pool agent node was cordoned and then powered off at 21:23:26Z
+# for a RAM upgrade. Eight ARC AutoscalingListener pods (namespace arc-systems)
+# were on it. After the 5-minute unreachable toleration the API marked them for
+# deletion, but a node with no kubelet never confirms a delete, so they sat
+# `Terminating`, and the ARC controller does not create a listener pod while the
+# old pod of the same name exists. Eight runner scale sets took no CI job.
+# `cordon` moves no pod, and a hand `kubectl delete pod --force` is refused by
+# `fleet_host_guard.py` as a hand change. The coordinator ruled that both halves
+# need a committed action, for ANY named node. `evacuate` is the half that
+# prevents the outage; `clear-lost` is the half that ends one.
+#
+# THE OWNER RULE, shared by both. Pods are read in every namespace,
+# field-selected to the named node, with their owner kinds. A pod is RECREATED
+# ELSEWHERE when an owner kind is in `k3s_window_recreating_owner_kinds`:
+#   AutoscalingListener — ARC recreates the listener pod once the old one is gone;
+#   ReplicaSet          — a Deployment's pod (CoreDNS, the ARC and Kueue
+#                         controllers, add-ons);
+#   StatefulSet         — recreated under the same name.
+# Neither action ever touches:
+#   - a DaemonSet's pod: it belongs to the node and returns with it;
+#   - a pod in a namespace listed in `k3s_window_kept_namespaces` (the factory
+#     namespaces): a sandbox pod holds a factory run, which follows the
+#     dispatcher's cancel-and-re-dispatch route.
+# `evacuate` additionally leaves every other pod: a Job's pod (a gate Job has
+# backoffLimit=0, so deleting its pod kills the gate), a pod with no owner (an
+# ARC runner or workflow pod is unmanaged, so deleting it kills a CI job), and a
+# pod of any owner kind not listed (an EphemeralRunner's pod is a CI job too).
+# The operator sees each one reported as `left`, with the reason, and waits for
+# it before the power-off.
+# `clear-lost` additionally clears a pod of ANY other owner, or none, once the
+# API has ALREADY marked it for deletion (metadata.deletionTimestamp set): the
+# cluster has given that pod up, its work is lost with the node, and only the
+# missing kubelet keeps the object. A Job's pod or an unowned pod that is NOT
+# yet marked is left and reported; a re-run after the toleration expires clears
+# it.
+#
+# WHAT EACH REFUSES, changing nothing:
+#   evacuate   — a node that cannot be read; a node that is not cordoned (run
+#                `cordon` first, or a deleted pod could reschedule straight back);
+#                a node whose Ready condition is not True (its kubelet cannot
+#                complete a graceful delete; that is `clear-lost`'s case).
+#   clear-lost — a node that cannot be read; a node whose Ready condition is
+#                anything but False or Unknown. Force-deleting a pod on a live
+#                kubelet removes the API object while its containers may keep
+#                running. `clear-lost` is the operator's statement that the node
+#                is DOWN, not merely slow; for a StatefulSet's pod a wrong
+#                statement means two pods with one identity.
+# `evacuate` HAS A BOUNDED POST-CONDITION. It waits up to
+# `k3s_window_evacuate_wait_seconds` (120) until no pod it deleted is still
+# bound to the node AND every owner it deleted from has that many more pods
+# Running on another Ready node than before the run (read back from the API). At
+# the deadline it FAILS, naming the pods still bound and the owners without a
+# replacement, so "safe to power off" is never reported early. An owner whose
+# pod cannot run anywhere else (node-local storage, a node selector) fails here
+# by name.
+#
+# A DELETE IS NOT AN EVICTION. `evacuate` deletes gracefully and does not go
+# through the eviction API, so no PodDisruptionBudget is consulted: the
+# power-off takes those pods whatever a budget says. A ReplicaSet's or
+# StatefulSet's pod is deleted whatever volumes it mounts; the contents of an
+# emptyDir volume are lost with the pod, and the report names each deleted pod
+# that mounts one (`its emptyDir volume data is lost with it`), under `--check`
+# too.
+#
+# A GATE JOB'S POD ON A LOST NODE. `clear-lost` force-deletes a Kueue gate Job's
+# pod (namespace `gates`) once the API has marked it for deletion, like any
+# other marked pod outside the factory namespaces: that gate was lost with the
+# node, and its client reads the failure. A gate Job's pod that is not yet
+# marked is left and reported.
+#
+# Both report each pod acted on and each pod
+# left with its reason, and a re-run with nothing to do reports that and changes
+# nothing. Under `--check` (`just ansible-drift`) both read the node and its
+# pods and report what they WOULD delete or clear, and delete nothing.
 #
 # THE FENCE IS A VARIABLE. Without `k3s_window_confirm=<action>` naming the same
 # action as `k3s_window_action`, the play reads nothing and changes nothing. The
@@ -44,7 +130,21 @@
 # covers a node with no inventory entry, such as a homelab container worker
 # (macbook-m4-max-homelab-worker). It is read on the server with
 # `kubectl get node`, and an unregistered name is refused. Everything runs once,
-# on the pool's server, under its admin kubeconfig.
+# on the pool's server, under its admin kubeconfig. `evacuate` and `clear-lost`
+# name their node the same way and work for any registered node.
+#
+# THE TWO DELETING ACTIONS CARRY A SECOND FENCE: THE NODE IS CONFIRMED BY NAME.
+# `evacuate` and `clear-lost` also need `k3s_window_node_confirm` equal to
+# `k3s_window_node`. The specification's "Consent-gated pool-node disruption"
+# section requires a disruption to act only on the single host an explicit
+# confirmation variable names, and to change nothing when that confirmation is
+# absent or names another host. A pool host is confirmed by its inventory name;
+# a registered Node with no inventory entry is confirmed by its node name. When
+# the node confirmation is absent or names another node, the run says so, reads
+# nothing (not even whether the node is registered) and changes nothing. The
+# four older actions keep their one fence unchanged. This is a stop-the-line
+# hand-land; the specification text for these two actions follows through the
+# proposed change topic `k3s-window-drain-committed-evacuate`.
 #
 # HOLD AND LIFT ARE IDEMPOTENT. A cordon of a node that is already
 # unschedulable reports `already cordoned` and changes nothing. So the first
@@ -53,18 +153,28 @@
 # 2026-11-11 ~17:36Z, after the M4 hand cordon of 15:54:43Z under
 # livespec-dev-tooling-ko26ez).
 
-- name: Pause or restore CI runner intake, or hold (cordon) or lift (uncordon) a cluster node
+- name: Pause or restore CI runner intake, or hold, lift, evacuate or clear a cluster node
   hosts: ci_pool
   gather_facts: false
   vars:
     k3s_window_admin_kubeconfig: /etc/rancher/k3s/k3s.yaml
     k3s_window_record_annotation: livespec.dev/window-paused-max-runners
-    k3s_window_actions: [pause-arc, restore-arc, cordon, uncordon]
-    k3s_window_node_actions: [cordon, uncordon]
+    k3s_window_actions: [pause-arc, restore-arc, cordon, uncordon, evacuate, clear-lost]
+    k3s_window_node_actions: [cordon, uncordon, evacuate, clear-lost]
+    k3s_window_hold_actions: [cordon, uncordon]
+    k3s_window_pod_actions: [evacuate, clear-lost]
+    k3s_window_recreating_owner_kinds: [AutoscalingListener, ReplicaSet, StatefulSet]
+    k3s_window_kept_namespaces: [factory, factory-mi-homelab]
+    k3s_window_evacuate_wait_seconds: 120
+    k3s_window_evacuate_poll_seconds: 5
     k3s_window_requested: >-
       {{ k3s_window_action | default('') in k3s_window_actions
          and k3s_window_confirm | default('') == k3s_window_action | default('')
          and cluster_role | default('') == 'server' }}
+    k3s_window_node_confirmed: >-
+      {{ k3s_window_action | default('') not in k3s_window_pod_actions
+         or (k3s_window_node | default('') | length > 0
+             and k3s_window_node_confirm | default('') == k3s_window_node | default('')) }}
     k3s_window_node_known: >-
       {{ k3s_window_node | default('') in groups['ci_pool'] }}
     k3s_window_node_registered: >-
@@ -83,9 +193,22 @@
         - cluster_role | default('') == 'server'
         - not (k3s_window_requested | bool)
 
+    - name: Report an evacuate or clear-lost whose node confirmation is absent or names another node
+      ansible.builtin.debug:
+        msg: >-
+          Not acting: `{{ k3s_window_action }}` deletes pods, so it also needs
+          `k3s_window_node_confirm` naming the same node as `k3s_window_node`
+          (this run carries node `{{ k3s_window_node | default('<unset>') }}`,
+          node confirm `{{ k3s_window_node_confirm | default('<unset>') }}`).
+          Nothing was read and nothing was changed.
+      when:
+        - k3s_window_requested | bool
+        - not (k3s_window_node_confirmed | bool)
+
     - name: Read whether the named node is registered in the cluster
       when:
         - k3s_window_requested | bool
+        - k3s_window_node_confirmed | bool
         - k3s_window_action in k3s_window_node_actions
         - not (k3s_window_node_known | bool)
         - k3s_window_node | default('') | length > 0
@@ -115,6 +238,7 @@
           changed.
       when:
         - k3s_window_requested | bool
+        - k3s_window_node_confirmed | bool
         - k3s_window_action in k3s_window_node_actions
         - not (k3s_window_node_known | bool)
         - not (k3s_window_node_registered | bool)
@@ -193,7 +317,7 @@
     - name: Cordon or uncordon the confirmed node
       when:
         - k3s_window_requested | bool
-        - k3s_window_action in k3s_window_node_actions
+        - k3s_window_action in k3s_window_hold_actions
       ansible.builtin.command:
         argv:
           - kubectl
@@ -205,11 +329,262 @@
       register: k3s_window_node_change
       changed_when: "'already' not in k3s_window_node_change.stdout"
 
+    - name: Evacuate a cordoned node's recreated pods, or clear a lost node's pods
+      when:
+        - k3s_window_requested | bool
+        - k3s_window_node_confirmed | bool
+        - k3s_window_action in k3s_window_pod_actions
+      ansible.builtin.shell:
+        executable: /bin/bash
+        # NO JINJA IN THIS SCRIPT: every input arrives through `environment`,
+        # so the test suite runs these exact bytes against a stand-in kubectl.
+        # Each read is its own assignment, so a kubectl that failed reaches
+        # `set -e` instead of reading as an empty pod list (an empty list would
+        # report "nothing to do" over a node nobody could read).
+        cmd: |
+          set -euo pipefail
+          action="${K3S_WINDOW_ACTION}"
+          node="${K3S_WINDOW_NODE}"
+          recreating="${K3S_WINDOW_RECREATING_OWNER_KINDS}"
+          kept_namespaces="${K3S_WINDOW_KEPT_NAMESPACES}"
+          # Anything but the exact word `false` is a dry run: fail closed.
+          dry_run="${K3S_WINDOW_DRY_RUN}"
+          in_list() {
+            case " ${2} " in *" ${1} "*) return 0 ;; esac
+            return 1
+          }
+          recreated() {
+            local kind
+            for kind in ${1}; do
+              if in_list "${kind}" "${recreating}"; then return 0; fi
+            done
+            return 1
+          }
+          refuse() {
+            printf 'refusing %s of node %s: %s Nothing was changed.\n' "${action}" "${node}" "${1}" >&2
+            exit 1
+          }
+
+          node_template='{.spec.unschedulable}{"|"}{.status.conditions[?(@.type=="Ready")].status}'
+          if ! node_state="$(kubectl get node "${node}" --output "jsonpath=${node_template}")"; then
+            refuse 'the node could not be read.'
+          fi
+          cordoned="${node_state%%|*}"
+          ready="${node_state##*|}"
+          case "${action}" in
+            evacuate)
+              test "${cordoned}" = 'true' \
+                || refuse 'it is not cordoned, so a deleted pod could reschedule onto it. Run `cordon` first.'
+              test "${ready}" = 'True' \
+                || refuse "its Ready condition is '${ready}', so no kubelet can complete a graceful delete. A lost node is \`clear-lost\`."
+              ;;
+            clear-lost)
+              case "${ready}" in
+                False | Unknown) ;;
+                *) refuse "its Ready condition is '${ready}', not False or Unknown. A force delete on a live kubelet can leave containers running." ;;
+              esac
+              ;;
+            *) refuse 'this task knows only evacuate and clear-lost.' ;;
+          esac
+
+          pod_template='{range .items[*]}{.metadata.namespace}{" "}{.metadata.name}'
+          pod_template+='{" marked:"}{.metadata.deletionTimestamp}'
+          pod_template+='{" owners:"}{.metadata.ownerReferences[*].kind}{"\n"}{end}'
+          node_pods() {
+            kubectl get pods --all-namespaces \
+              --field-selector "spec.nodeName=${node}" \
+              --output "jsonpath=${pod_template}"
+          }
+
+          # `evacuate` also reads every pod with its owner, phase, node and
+          # emptyDir volumes, and every node's Ready condition: the owner names
+          # what must come back on another node, and the emptyDir names the
+          # data a delete loses. `clear-lost` needs neither read.
+          table_template='{range .items[*]}{.metadata.namespace}{" "}{.metadata.name}'
+          table_template+='{" node:"}{.spec.nodeName}{" phase:"}{.status.phase}'
+          table_template+='{" marked:"}{.metadata.deletionTimestamp}{" owners:"}'
+          table_template+='{range .metadata.ownerReferences[*]}{.kind}{"/"}{.name}{","}{end}'
+          table_template+='{" local:"}{range .spec.volumes[*]}{.emptyDir}{end}{"\n"}{end}'
+          all_pods() {
+            kubectl get pods --all-namespaces --output "jsonpath=${table_template}"
+          }
+          nodes_template='{range .items[*]}{.metadata.name}{"|"}'
+          nodes_template+='{.status.conditions[?(@.type=="Ready")].status}{"\n"}{end}'
+          other_ready_nodes() {
+            local listed name state names=''
+            listed="$(kubectl get nodes --output "jsonpath=${nodes_template}")"
+            while IFS='|' read -r name state; do
+              if test "${state}" = 'True' && test "${name}" != "${node}"; then
+                names+=" ${name}"
+              fi
+            done <<< "${listed}"
+            printf '%s' "${names}"
+          }
+          # Print `<Kind>/<name>` of the first recreating owner of pod $1/$2 in
+          # table $3, then ` local` when the pod mounts an emptyDir volume.
+          owner_of() {
+            local t_ns t_name t_node t_phase t_marked t_owners t_local entry
+            while read -r t_ns t_name t_node t_phase t_marked t_owners t_local; do
+              test "${t_ns}" = "${1}" && test "${t_name}" = "${2}" || continue
+              t_owners="${t_owners#owners:}"
+              for entry in ${t_owners//,/ }; do
+                if in_list "${entry%%/*}" "${recreating}"; then
+                  printf '%s' "${entry}"
+                  test -z "${t_local#local:}" || printf ' local'
+                  return 0
+                fi
+              done
+            done <<< "${3}"
+            return 0
+          }
+          # Count the pods of owner $2 in namespace $1 that table $3 shows
+          # Running, not marked for deletion, on a node listed in $4.
+          running_elsewhere() {
+            local t_ns t_name t_node t_phase t_marked t_owners t_local count=0
+            while read -r t_ns t_name t_node t_phase t_marked t_owners t_local; do
+              test "${t_ns}" = "${1}" || continue
+              test "${t_phase}" = 'phase:Running' && test "${t_marked}" = 'marked:' || continue
+              in_list "${t_node#node:}" "${4}" || continue
+              case ",${t_owners#owners:}" in *",${2},"*) count=$((count + 1)) ;; esac
+            done <<< "${3}"
+            printf '%s' "${count}"
+          }
+
+          table=''
+          ready_nodes=''
+          if test "${action}" = 'evacuate'; then
+            table="$(all_pods)"
+            ready_nodes="$(other_ready_nodes)"
+          fi
+          pods="$(node_pods)"
+          selected=''
+          left=''
+          deleted_owners=''
+          while read -r namespace name marked owners; do
+            test -n "${namespace}" || continue
+            marked="${marked#marked:}"
+            owners="${owners#owners:}"
+            pod="${namespace}/${name}"
+            if in_list DaemonSet "${owners}"; then
+              left+="left ${pod}: a DaemonSet owns it, so it belongs to the node"$'\n'
+            elif in_list "${namespace}" "${kept_namespaces}"; then
+              left+="left ${pod}: a factory namespace pod follows the dispatcher's cancel-and-re-dispatch route"$'\n'
+            elif recreated "${owners}" || { test "${action}" = 'clear-lost' && test -n "${marked}"; }; then
+              detail="owners: ${owners:-none}; ${marked:+marked for deletion at }${marked:-not marked for deletion}"
+              if test "${action}" = 'evacuate'; then
+                owner="$(owner_of "${namespace}" "${name}" "${table}")"
+                if test -z "${owner}"; then
+                  left+="left ${pod}: it appeared while the play was reading the cluster; re-run to evacuate it"$'\n'
+                  continue
+                fi
+                if test "${owner}" != "${owner% local}"; then
+                  owner="${owner% local}"
+                  detail+='; its emptyDir volume data is lost with it'
+                fi
+                deleted_owners+="${namespace} ${owner}"$'\n'
+              fi
+              selected+=" ${pod}"
+              if test "${dry_run}" != 'false'; then
+                printf 'would %s %s (%s)\n' "${action}" "${pod}" "${detail}"
+              elif test "${action}" = 'evacuate'; then
+                kubectl delete pod --namespace "${namespace}" "${name}" \
+                  --ignore-not-found --wait=false </dev/null >/dev/null
+                printf 'deleted %s (%s)\n' "${pod}" "${detail}"
+              else
+                kubectl delete pod --namespace "${namespace}" "${name}" \
+                  --ignore-not-found --wait=false --grace-period=0 --force </dev/null >/dev/null
+                printf 'cleared %s (%s)\n' "${pod}" "${detail}"
+              fi
+            elif test -z "${owners}"; then
+              left+="left ${pod}: no controller owns it, so nothing would recreate it"$'\n'
+            else
+              left+="left ${pod}: its owner (${owners}) does not recreate it elsewhere"$'\n'
+            fi
+          done <<< "${pods}"
+          printf '%s' "${left}"
+          if test -z "${selected}"; then
+            printf 'nothing to %s on node %s\n' "${action}" "${node}"
+            exit 0
+          fi
+          if test "${action}" != 'evacuate' || test "${dry_run}" != 'false'; then
+            exit 0
+          fi
+
+          # THE POST-CONDITION, bounded by the wait. The deletes are graceful, so
+          # each pod stays bound until the kubelet confirms it, and each owner
+          # then has to bring its pod back somewhere else. Wait until no deleted
+          # pod is still bound AND every owner has, Running on another Ready
+          # node, as many pods more than before as this run deleted from it. At
+          # the deadline, fail naming what is still bound and which owner lacks
+          # its replacement.
+          owners_deleted="$(printf '%s' "${deleted_owners}" | sort -u)"
+          deadline=$((SECONDS + K3S_WINDOW_EVACUATE_WAIT_SECONDS))
+          while :; do
+            pods="$(node_pods)"
+            remaining=''
+            while read -r namespace name _; do
+              test -n "${namespace}" || continue
+              if in_list "${namespace}/${name}" "${selected}"; then
+                remaining+=" ${namespace}/${name}"
+              fi
+            done <<< "${pods}"
+            now_table="$(all_pods)"
+            now_ready="$(other_ready_nodes)"
+            lacking=''
+            replaced=''
+            while read -r namespace owner; do
+              test -n "${namespace}" || continue
+              before="$(running_elsewhere "${namespace}" "${owner}" "${table}" "${ready_nodes}")"
+              deleted="$(printf '%s' "${deleted_owners}" | grep -c -x -F -- "${namespace} ${owner}")"
+              now="$(running_elsewhere "${namespace}" "${owner}" "${now_table}" "${now_ready}")"
+              if test "${now}" -lt $((before + deleted)); then
+                lacking+=" ${namespace}/${owner}($((now - before))/${deleted})"
+              else
+                replaced+="replaced ${namespace} ${owner}: ${now} Running on another Ready node (${before} before)"$'\n'
+              fi
+            done <<< "${owners_deleted}"
+            if test -z "${remaining}" && test -z "${lacking}"; then
+              printf '%s' "${replaced}"
+              printf 'evacuated: no deleted pod is still bound to node %s, ' "${node}"
+              printf 'and each owner has its pods Running on another Ready node\n'
+              exit 0
+            fi
+            if test "${SECONDS}" -ge "${deadline}"; then
+              failure='evacuate of node %s FAILED its post-condition after %ss.'
+              failure+=' Still bound to the node:%s.'
+              failure+=' Owners without their replacement Running on another Ready node'
+              failure+=' (replaced/deleted):%s. The pods are deleted; re-run to re-check.\n'
+              # shellcheck disable=SC2059  # the format is the constant built above
+              printf "${failure}" "${node}" "${K3S_WINDOW_EVACUATE_WAIT_SECONDS}" \
+                "${remaining:- none}" "${lacking:- none}" >&2
+              exit 1
+            fi
+            sleep "${K3S_WINDOW_EVACUATE_POLL_SECONDS}"
+          done
+      become: true
+      environment:
+        KUBECONFIG: "{{ k3s_window_admin_kubeconfig }}"
+        K3S_WINDOW_ACTION: "{{ k3s_window_action }}"
+        K3S_WINDOW_NODE: "{{ k3s_window_node }}"
+        K3S_WINDOW_RECREATING_OWNER_KINDS: "{{ k3s_window_recreating_owner_kinds | join(' ') }}"
+        K3S_WINDOW_KEPT_NAMESPACES: "{{ k3s_window_kept_namespaces | join(' ') }}"
+        K3S_WINDOW_EVACUATE_WAIT_SECONDS: "{{ k3s_window_evacuate_wait_seconds }}"
+        K3S_WINDOW_EVACUATE_POLL_SECONDS: "{{ k3s_window_evacuate_poll_seconds }}"
+        K3S_WINDOW_DRY_RUN: "{{ ansible_check_mode | ternary('true', 'false') }}"
+      register: k3s_window_pods
+      # Run under `--check` too: the script reads and reports what it WOULD do,
+      # and `K3S_WINDOW_DRY_RUN` withholds every delete.
+      check_mode: false
+      changed_when: k3s_window_pods.stdout is search('(?m)^(deleted|cleared) ')
+
     - name: Report what the action did
-      when: k3s_window_requested | bool
+      when:
+        - k3s_window_requested | bool
+        - k3s_window_node_confirmed | bool
       ansible.builtin.debug:
         msg: >-
           {{ k3s_window_action }} on the pool:
           {{ (k3s_window_pause.stdout_lines | default([]))
              + (k3s_window_restore.stdout_lines | default([]))
-             + (k3s_window_node_change.stdout_lines | default([])) }}
+             + (k3s_window_node_change.stdout_lines | default([]))
+             + (k3s_window_pods.stdout_lines | default([])) }}
