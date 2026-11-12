@@ -3488,5 +3488,13 @@
     "test": "TODO",
     "reason": "A real test at the integration tier or above is owed for this heading: a consumer-style test runs the shipped CI run-telemetry exporter module, as a member's `export-telemetry` job invokes it, against a recorded run, and shows it emits the `ci.run` and `ci.job.<name>` spans. livespec-dev-tooling-5ua57h owns it.",
     "work_item": "livespec-dev-tooling-5ua57h"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a check runner reclaims the coverage directory a killed runner left behind",
+    "test": "TODO",
+    "reason": "A real test at the integration tier or above is owed for this heading: a check runner started on a host whose system temp directory holds one coverage-namespace directory recorded for a creator that is no longer running and one recorded for a running runner removes the first, leaves the second, and leaves the running runner's verdict unchanged. livespec-dev-tooling-64ik6g owns it.",
+    "work_item": "livespec-dev-tooling-64ik6g"
   }
 ]
