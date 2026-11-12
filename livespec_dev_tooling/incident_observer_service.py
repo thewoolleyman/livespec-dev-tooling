@@ -18,10 +18,12 @@ from threading import Event
 from typing import Any, cast
 from wsgiref.simple_server import make_server
 
+from livespec_dev_tooling import incident_enablement as enable
 from livespec_dev_tooling._incident_ci_identity_json import identity_json
 from livespec_dev_tooling._incident_observer_dispatch import REFUSED_STARTUP
 from livespec_dev_tooling._incident_observer_dispatch import RequestDispatcher as _RequestDispatcher
 from livespec_dev_tooling._incident_observer_dispatch import json_reply as _reply
+from livespec_dev_tooling._incident_observer_routes import CONTROL_PATHS, QUERY_PATHS
 from livespec_dev_tooling._incident_observer_types import RecoveryIntent
 from livespec_dev_tooling._incident_original_run_canonical import LedgerPort
 from livespec_dev_tooling._incident_original_run_ports import installed_ports
@@ -34,7 +36,7 @@ from livespec_dev_tooling.incident_observer_control import ObserverControl
 from livespec_dev_tooling.incident_observer_endpoint import _read_request, observer_endpoint
 from livespec_dev_tooling.incident_observer_events import verify_leaf_completion
 from livespec_dev_tooling.incident_observer_provenance import ObserverProvenance
-from livespec_dev_tooling.incident_observer_query import ORDINARY_ACTION_PATH, ObserverQuery
+from livespec_dev_tooling.incident_observer_query import ObserverQuery
 from livespec_dev_tooling.incident_observer_reconcile import ObserverReconcile
 from livespec_dev_tooling.incident_observer_recovery import ObserverRecovery
 from livespec_dev_tooling.incident_original_run_watch import installed_watcher
@@ -50,12 +52,7 @@ __all__: list[str] = ["ControllerService", "installed_ledger"]
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-gho3w4
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-zbzls2
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-ariayn
-_QUERY_PATHS = frozenset(
-    {"/current", "/admitted", "/provenance", "/ci/jobs/inspect", RELEASE_SCREEN_PATH}
-) | {ORDINARY_ACTION_PATH}
-_CONTROL_PATHS = frozenset(
-    {"/arm", "/bind", "/invalidate-ci", "/recover", "/reconcile", "/ci/jobs/collect"}
-)
+_ROUTED = {"/provenance": ObserverProvenance, "/reconcile": ObserverReconcile}
 _OIDC_ROUTES = {"/ci/identity": CiIdentityVerifier, "/ci/attach": CiJobAttachment}
 _StartResponse = Callable[[str, list[tuple[str, str]]], object]
 
@@ -72,6 +69,9 @@ class ControllerService:
     # Set when a callback retains an expedited pull-request run record, so the run sweep
     # writes it onto the incident item at once, outside the repository lock.
     pr_run_retained: Event = field(default_factory=Event, compare=False, repr=False)
+    identity_source: enable.IdentitySource = field(
+        default_factory=enable.production_identity_source
+    )
 
     @classmethod
     def installed(cls, *, config: Path) -> ControllerService | None:
@@ -104,10 +104,10 @@ class ControllerService:
             return self._identity(environ=environ, start_response=start_response, path=path)
         secret = (
             self.installation.query_secret
-            if path in _QUERY_PATHS
+            if path in QUERY_PATHS
             else self.installation.control_secret
         )
-        authorized = path in _QUERY_PATHS | _CONTROL_PATHS and hmac.compare_digest(
+        authorized = path in QUERY_PATHS | CONTROL_PATHS and hmac.compare_digest(
             str(environ.get("HTTP_AUTHORIZATION", "")).encode(),
             b"Bearer " + secret,
         )
@@ -157,17 +157,19 @@ class ControllerService:
         | ObserverQuery
         | ObserverReconcile
         | ObserverControl
+        | enable.ObserverEnablement
         | ReleaseScreen
     ):
         if path == RELEASE_SCREEN_PATH:
             return ReleaseScreen(installation=self.installation)
         if path.startswith("/ci/jobs/"):
             return CiJobCollection(installation=self.installation)
-        if path == "/provenance":
-            return ObserverProvenance(installation=self.installation)
-        if path == "/reconcile":
-            return ObserverReconcile(installation=self.installation)
-        if path in _QUERY_PATHS:
+        if path in _ROUTED:
+            return _ROUTED[path](installation=self.installation)
+        if path in enable.CONTROL_PATHS | enable.QUERY_PATHS:
+            source, installation = self.identity_source, self.installation
+            return enable.ObserverEnablement(installation=installation, source=source)
+        if path in QUERY_PATHS:
             return ObserverQuery(installation=self.installation)
         return ObserverControl(installation=self.installation)
 

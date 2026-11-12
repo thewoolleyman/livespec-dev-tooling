@@ -8,6 +8,8 @@ refuses a `serving_build` key, and the audit overwrites it with a host read (see
 
 from __future__ import annotations
 
+import hashlib
+import re
 import sys
 from collections.abc import Callable
 from pathlib import Path
@@ -32,11 +34,14 @@ from livespec_dev_tooling.incident_strict_json import (  # noqa: E402
 __all__: list[str] = [
     "CLAIMS_RELATIVE_PATH",
     "COMMITTED_CLAIMS",
+    "core_head_reader",
+    "core_identity_reader",
     "core_manifest_reader",
     "load_claims",
 ]
 
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-3wcldx
+# EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-qmuk7z
 CLAIMS_RELATIVE_PATH = Path("config") / "incident-fleet-evidence.json"
 # The claims this code was released with, never a file the caller's working directory holds.
 COMMITTED_CLAIMS = Path(__file__).resolve().parents[1] / CLAIMS_RELATIVE_PATH
@@ -110,5 +115,33 @@ def core_manifest_reader(*, owner: str, run: CommandRunner) -> Callable[[], str 
     def read() -> str | None:
         text = git_file_text(run=run, owner=owner, repo=_CORE_REPOSITORY, path=_MANIFEST_PATH)
         return None if isinstance(text, IOFailure) else unsafe_perform_io(text.unwrap())
+
+    return read
+
+
+def core_identity_reader(*, owner: str, run: CommandRunner) -> Callable[[], str | None]:
+    """Each call digests core's committed manifest exactly as the fleet audit does."""
+    read_manifest = core_manifest_reader(owner=owner, run=run)
+
+    def read() -> str | None:
+        text = read_manifest()
+        return None if text is None else hashlib.sha256(text.encode()).hexdigest()
+
+    return read
+
+
+def core_head_reader(*, owner: str, run: CommandRunner) -> Callable[[], str | None]:
+    """Each call reads core's default-branch head commit with ``git ls-remote`` alone."""
+    url = f"https://github.com/{owner}/{_CORE_REPOSITORY}.git"
+
+    def read() -> str | None:
+        outcome = run(args=["git", "-c", "credential.helper=", "ls-remote", url, "HEAD"])
+        if isinstance(outcome, IOFailure):
+            return None
+        result = unsafe_perform_io(outcome.unwrap())
+        words = result.stdout.split()
+        if result.returncode != 0 or not words or re.fullmatch(r"[0-9a-f]{40}", words[0]) is None:
+            return None
+        return words[0]
 
     return read
