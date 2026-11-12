@@ -50,6 +50,7 @@ _STEP_MARKERS: tuple[tuple[str, str], ...] = (
     ("rev-parse", "read-tree"),
     ("get-url", "read-origin"),
     ("create", "submit-job"),
+    ("await-gate-terminal-watch", "read-job"),
     ("get", "read-job"),
 )
 

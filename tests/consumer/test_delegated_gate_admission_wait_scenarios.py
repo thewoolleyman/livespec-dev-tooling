@@ -64,7 +64,7 @@ class _KueueCluster:
         if argv[0] == GATES_WRAPPER:
             if "create" in argv:
                 return _CREATED
-            if "get" in argv and "job" in argv:
+            if "await-gate-terminal-watch" in argv or ("get" in argv and "job" in argv):
                 return self._read_job()
             return ""
         if "rev-parse" in argv:
