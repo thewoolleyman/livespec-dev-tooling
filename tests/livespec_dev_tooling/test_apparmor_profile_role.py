@@ -4,8 +4,13 @@ Kernel 7.0.0-43 labels every non-privileged container `<profile>//&unconfined`,
 and containerd's built-in default profile allows signals only to the bare name,
 so a gate Job could not signal its own children (livespec-dev-tooling-ddy5xu).
 The role now also holds containerd's default profile at node level. What a pod
-is confined by is the policy the KERNEL holds, not the file on disk, so the role
-compares the two and loads on any difference.
+is confined by is the policy the KERNEL holds, not the file on disk. The role
+records, at its own load, the installed file's sha256 and the policy hash the
+kernel then holds, and loads again whenever the node no longer matches that
+record. It does NOT compare the kernel against a fresh compile: on the pool
+nodes a skip-kernel-load compile hashes differently from the blob a real load
+sends (measured on gamingpc-xubuntu, 2026-11-12), so the stand-in parser here
+behaves the same way.
 
 THE ROLE IS RUN, NOT READ. Each test executes it with the `ansible-core` pin
 `just ansible-drift` uses, against a one-host local inventory, a stand-in
@@ -19,6 +24,7 @@ from __future__ import annotations
 import hashlib
 import os
 import re
+import shutil
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -40,6 +46,7 @@ _DOTTED = "fixture-runtime.default.d"
 _PROFILES = (_PLAIN, _DOTTED)
 _FOREIGN_POLICY = "f" * 64
 _REJECT_MARKER = "fixture-reject-marker"
+_BLOB_HEADER = b"fixture-kernel-blob\n"
 
 _SUDO_STAND_IN = """#!/bin/sh
 while [ $# -gt 0 ]; do
@@ -54,9 +61,12 @@ exec "$@"
 
 # The stand-in parser. It logs every invocation.
 #   `-Q -K -S <file>` prints the file as its "compiled policy"; touches nothing.
+#       Its sha256 is NOT the hash a load records, as on a real node, so a role
+#       that compared the kernel against a fresh compile would never converge.
 #   `-Q -K <file>` validates: it rejects a file carrying the reject marker.
 #   `-r -W <file>` records the policy as loaded, the way the kernel exposes it:
 #       `<name>.<id>/raw_sha256` and `mode`, the mode from the state directory.
+#       The hash is of the file behind a blob header, not of the file alone.
 #   `-R` unloads the profile named by the definition on stdin.
 # Anything else exits 64.
 _PARSER_STAND_IN = """#!/bin/sh
@@ -77,7 +87,8 @@ case "$1" in
     [ "$2" = -W ] || exit 64
     name="$(basename "$3")"
     mkdir -p "$state/loaded/$name.7"
-    sha256sum < "$3" | cut -d' ' -f1 > "$state/loaded/$name.7/raw_sha256"
+    { printf 'fixture-kernel-blob\\n'; cat "$3"; } | sha256sum | cut -d' ' -f1 \\
+      > "$state/loaded/$name.7/raw_sha256"
     cat "$state/mode" > "$state/loaded/$name.7/mode"
     exit 0 ;;
 esac
@@ -108,11 +119,29 @@ class _Scratch:
     def unloads(self) -> list[str]:
         return self.calls(flag="-R")
 
+    @property
+    def records(self) -> Path:
+        return self.root / "records"
+
     def loaded_policy(self, *, name: str) -> str:
         return (self.loaded / f"{name}.7" / "raw_sha256").read_text(encoding="utf-8").strip()
 
+    def record(self, *, name: str) -> list[str]:
+        """The record's two values: the installed file's sha256, the kernel's policy hash."""
+        return (self.records / name).read_text(encoding="utf-8").split()
+
     def source_policy(self, *, name: str) -> str:
-        return hashlib.sha256((self.src / name).read_bytes()).hexdigest()
+        return _kernel_policy(path=self.src / name)
+
+    def source_record(self, *, name: str) -> list[str]:
+        """The record a load of the source file must leave."""
+        file_sha = hashlib.sha256((self.src / name).read_bytes()).hexdigest()
+        return [file_sha, self.source_policy(name=name)]
+
+
+def _kernel_policy(*, path: Path) -> str:
+    """The hash the stand-in kernel exposes after a load of `path`."""
+    return hashlib.sha256(_BLOB_HEADER + path.read_bytes()).hexdigest()
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -174,6 +203,7 @@ def _play(
         "apparmor_profile_absent": f"[{', '.join(absent)}]",
         "apparmor_profile_dest_dir": str(scratch.dest),
         "apparmor_profile_loaded_dir": str(scratch.loaded),
+        "apparmor_profile_record_dir": str(scratch.records),
         "apparmor_profile_owner": str(os.getuid()),
         "apparmor_profile_group": str(os.getgid()),
         "apparmor_profile_parser_paths": f"[{scratch.bin_dir / 'apparmor_parser'}]",
@@ -235,12 +265,15 @@ def _run(
     return outcome.changed
 
 
-def test_a_fresh_node_gets_every_profile_installed_and_loaded(*, scratch: _Scratch) -> None:
-    # The recap counts tasks, not loop items: the install task and the load task.
-    assert _run(scratch=scratch) == 2
+def test_a_fresh_node_gets_every_profile_installed_loaded_and_recorded(
+    *, scratch: _Scratch
+) -> None:
+    # The recap counts tasks, not loop items: install, load and record.
+    assert _run(scratch=scratch) == 3
     for name in _PROFILES:
         assert (scratch.dest / name).read_bytes() == (scratch.src / name).read_bytes()
         assert scratch.loaded_policy(name=name) == scratch.source_policy(name=name)
+        assert scratch.record(name=name) == scratch.source_record(name=name)
     assert scratch.loads() == [f"-r -W {scratch.dest / name}" for name in _PROFILES]
 
 
@@ -257,6 +290,7 @@ def test_a_drift_report_on_a_fresh_node_shows_the_pending_change_and_writes_noth
     assert _run(scratch=scratch, check=True) == 2
     assert list(scratch.dest.iterdir()) == []
     assert list(scratch.loaded.iterdir()) == []
+    assert not scratch.records.exists()
     assert scratch.loads() == []
 
 
@@ -265,17 +299,20 @@ def test_a_drift_report_on_a_converged_node_shows_nothing(*, scratch: _Scratch) 
     assert _run(scratch=scratch, check=True) == 0
 
 
-def test_a_policy_the_runtime_loaded_over_ours_is_reported_and_replaced(
+def test_a_policy_the_runtime_loaded_over_ours_is_reported_replaced_and_recorded_again(
     *, scratch: _Scratch
 ) -> None:
-    """The file on disk still matches, but the kernel holds someone else's policy."""
+    """The file and the record still match, but the kernel holds someone else's policy."""
     _run(scratch=scratch)
     held = scratch.loaded / f"{_DOTTED}.7" / "raw_sha256"
     held.write_text(f"{_FOREIGN_POLICY}\n", encoding="utf-8")
     assert _run(scratch=scratch, check=True) == 1
     assert held.read_text(encoding="utf-8").strip() == _FOREIGN_POLICY
-    assert _run(scratch=scratch) == 1
+    assert scratch.record(name=_DOTTED) == scratch.source_record(name=_DOTTED)
+    # The load and the record.
+    assert _run(scratch=scratch) == 2
     assert scratch.loaded_policy(name=_DOTTED) == scratch.source_policy(name=_DOTTED)
+    assert scratch.record(name=_DOTTED) == scratch.source_record(name=_DOTTED)
     assert scratch.loads()[-1] == f"-r -W {scratch.dest / _DOTTED}"
     assert len(scratch.loads()) == len(_PROFILES) + 1
 
@@ -283,10 +320,36 @@ def test_a_policy_the_runtime_loaded_over_ours_is_reported_and_replaced(
 def test_a_changed_profile_file_is_installed_and_reloaded_alone(*, scratch: _Scratch) -> None:
     _run(scratch=scratch)
     (scratch.src / _PLAIN).write_text(f"profile {_PLAIN} {{\n  # edited\n}}\n", encoding="utf-8")
-    assert _run(scratch=scratch) == 2
+    # Install, load and record.
+    assert _run(scratch=scratch) == 3
     assert scratch.loaded_policy(name=_PLAIN) == scratch.source_policy(name=_PLAIN)
+    assert scratch.record(name=_PLAIN) == scratch.source_record(name=_PLAIN)
     assert scratch.loads()[-1] == f"-r -W {scratch.dest / _PLAIN}"
     assert len(scratch.loads()) == len(_PROFILES) + 1
+
+
+def test_a_loaded_profile_with_no_record_is_loaded_and_recorded(*, scratch: _Scratch) -> None:
+    """A node that held the profile before this role kept records: the first apply."""
+    _run(scratch=scratch)
+    (scratch.records / _PLAIN).unlink()
+    assert _run(scratch=scratch, check=True) == 1
+    assert not (scratch.records / _PLAIN).exists()
+    # The load and the record; the file itself is already installed.
+    assert _run(scratch=scratch) == 2
+    assert scratch.record(name=_PLAIN) == scratch.source_record(name=_PLAIN)
+    assert scratch.loads()[-1] == f"-r -W {scratch.dest / _PLAIN}"
+    assert _run(scratch=scratch) == 0
+    assert len(scratch.loads()) == len(_PROFILES) + 1
+
+
+def test_a_recorded_profile_the_kernel_no_longer_holds_is_loaded_again(
+    *, scratch: _Scratch
+) -> None:
+    _run(scratch=scratch)
+    shutil.rmtree(scratch.loaded / f"{_DOTTED}.7")
+    assert _run(scratch=scratch) == 2
+    assert scratch.loaded_policy(name=_DOTTED) == scratch.source_policy(name=_DOTTED)
+    assert scratch.loads()[-1] == f"-r -W {scratch.dest / _DOTTED}"
 
 
 def test_a_profile_that_did_not_reach_enforce_mode_fails_the_play(*, scratch: _Scratch) -> None:
@@ -338,17 +401,22 @@ def test_the_committed_profiles_install_and_load_under_their_own_names(
         # The role installs, probes and unloads each profile under its file name.
         declared = re.findall(r"^profile (\S+) ", path.read_text(encoding="utf-8"), re.MULTILINE)
         assert declared == [path.name]
-        policy = hashlib.sha256(path.read_bytes()).hexdigest()
+        policy = _kernel_policy(path=path)
         assert scratch.loaded_policy(name=path.name) == policy
+        assert scratch.record(name=path.name)[1] == policy
     assert sorted(scratch.loads()) == [f"-r -W {path}" for path in installed]
 
 
-def test_an_absent_profile_is_unloaded_and_its_file_removed(*, scratch: _Scratch) -> None:
+def test_an_absent_profile_is_unloaded_and_its_file_and_record_removed(
+    *, scratch: _Scratch
+) -> None:
     _run(scratch=scratch)
-    # The unload task and the file removal task.
+    # The unload task and the removal task.
     assert _run(scratch=scratch, names=(_PLAIN,), absent=(_DOTTED,)) == 2
     assert not (scratch.dest / _DOTTED).exists()
     assert not (scratch.loaded / f"{_DOTTED}.7").exists()
+    assert not (scratch.records / _DOTTED).exists()
+    assert scratch.record(name=_PLAIN) == scratch.source_record(name=_PLAIN)
     assert len(scratch.unloads()) == 1
     # The profile that stays is untouched.
     assert (scratch.dest / _PLAIN).exists()
@@ -365,10 +433,11 @@ def test_a_second_apply_of_an_absent_profile_changes_nothing(*, scratch: _Scratc
 
 def test_a_drift_report_shows_a_pending_removal_and_writes_nothing(*, scratch: _Scratch) -> None:
     _run(scratch=scratch)
-    # The probe standing in for the skipped unload, and the pending file removal.
+    # The probe standing in for the skipped unload, and the pending removal.
     assert _run(scratch=scratch, check=True, names=(_PLAIN,), absent=(_DOTTED,)) == 2
     assert (scratch.dest / _DOTTED).exists()
     assert scratch.loaded_policy(name=_DOTTED) == scratch.source_policy(name=_DOTTED)
+    assert scratch.record(name=_DOTTED) == scratch.source_record(name=_DOTTED)
     assert scratch.unloads() == []
 
 
