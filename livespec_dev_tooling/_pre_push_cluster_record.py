@@ -66,8 +66,8 @@ def _payload(*, output: str) -> Mapping[str, object] | None:
     return cast("Mapping[str, object]", decoded) if isinstance(decoded, Mapping) else None
 
 
-def _job_succeeded(*, payload: Mapping[str, object]) -> bool:
-    """Whether the Job carries Complete=True and never Failed=True."""
+def _job_conditions(*, payload: Mapping[str, object]) -> tuple[tuple[object, object], ...]:
+    """Return the ``(type, status)`` pairs the Job's status conditions carried."""
     status = payload.get("status")
     empty: Mapping[str, object] = {}
     typed_status: Mapping[str, object] = (
@@ -79,16 +79,27 @@ def _job_succeeded(*, payload: Mapping[str, object]) -> bool:
         if isinstance(conditions, Sequence) and not isinstance(conditions, str)
         else ()
     )
-    complete = False
-    failed = False
+    pairs: list[tuple[object, object]] = []
     for condition in typed_conditions:
         typed: Mapping[str, object] = (
             cast("Mapping[str, object]", condition) if isinstance(condition, Mapping) else empty
         )
-        if typed.get("status") == _ASSERTED:
-            complete = complete or typed.get("type") == _COMPLETE
-            failed = failed or typed.get("type") == _FAILED
+        pairs.append((typed.get("type"), typed.get("status")))
+    return tuple(pairs)
+
+
+def _job_succeeded(*, conditions: tuple[tuple[object, object], ...]) -> bool:
+    """Whether the Job carries Complete=True and never Failed=True."""
+    complete = (_COMPLETE, _ASSERTED) in conditions
+    failed = (_FAILED, _ASSERTED) in conditions
     return complete and not failed
+
+
+def _carried_conditions(*, conditions: tuple[tuple[object, object], ...]) -> str:
+    """Render the conditions the cluster carried, or say it carried none."""
+    if not conditions:
+        return "no conditions"
+    return ",".join(f"{kind}={asserted}" for kind, asserted in conditions)
 
 
 def _tree_hash(*, payload: Mapping[str, object]) -> str:
@@ -144,8 +155,15 @@ def confirmation(*, evidence: Evidence, cwd: Path, runner: GateCommandRunner) ->
     if report is None:
         return Confirmation(matches=False, missing=True, disagreements=())
     disagreements: list[tuple[str, str, str]] = []
-    if not _job_succeeded(payload=payload):
-        disagreements.append(("outcome", "Complete=True and Failed!=True", "not succeeded"))
+    conditions = _job_conditions(payload=payload)
+    if not _job_succeeded(conditions=conditions):
+        disagreements.append(
+            (
+                "outcome",
+                "Complete=True and Failed!=True",
+                _carried_conditions(conditions=conditions),
+            )
+        )
     reported_tree = _tree_hash(payload=payload)
     if reported_tree != evidence.tree_hash:
         disagreements.append(("tree", evidence.tree_hash, reported_tree))
