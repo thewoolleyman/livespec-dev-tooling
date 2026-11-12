@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import codecs
+import contextlib
 import errno
 import os
 import pty
@@ -86,6 +87,78 @@ class SuiteProgress:
         stamp = os.environ.get(PROGRESS_STAMP_ENV, "")
         if stamp:
             Path(stamp).touch()
+
+
+def _descendant_pids(*, root_pid: int) -> tuple[int, ...]:
+    """Return the live process-tree descendants observed before cleanup begins."""
+    children: dict[int, list[int]] = {}
+    for proc in Path("/proc").glob("[0-9]*"):
+        try:
+            parent = int((proc / "stat").read_text().rsplit(")", 1)[1].split()[1])
+        except (IndexError, OSError, ValueError):
+            continue
+        children.setdefault(parent, []).append(int(proc.name))
+    descendants: list[int] = []
+    pending = list(children.get(root_pid, []))
+    while pending:
+        pid = pending.pop()
+        descendants.append(pid)
+        pending.extend(children.get(pid, []))
+    return tuple(descendants)
+
+
+def session_escaping_descendants(*, root_pid: int) -> tuple[tuple[int, str], ...]:
+    """Snapshot descendants outside `root_pid`'s process group with their commands."""
+    escaped: list[tuple[int, str]] = []
+    for pid in _descendant_pids(root_pid=root_pid):
+        try:
+            if os.getpgid(pid) == root_pid:
+                continue
+            command = Path(f"/proc/{pid}/cmdline").read_bytes().replace(b"\0", b" ").decode()
+        except (OSError, UnicodeDecodeError):
+            continue
+        escaped.append((pid, command or "<exited>"))
+    return tuple(escaped)
+
+
+def _signal_descendants(*, descendants: tuple[tuple[int, str], ...], signal_number: int) -> None:
+    """Signal the snapshot best-effort; an exited process needs no further cleanup."""
+    for pid, _ in descendants:
+        try:
+            os.kill(pid, signal_number)
+        except ProcessLookupError:
+            continue
+
+
+def any_descendant_alive(*, descendants: tuple[tuple[int, str], ...]) -> bool:
+    """Whether a snapshot process still exists after its termination signal."""
+    for pid, _ in descendants:
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            continue
+        return True
+    return False
+
+
+def _end_stalled_suite(*, proc: subprocess.Popen[bytes], progress: SuiteProgress) -> None:
+    """End the suite group and descendants that escaped it into their own sessions."""
+    escaped = session_escaping_descendants(root_pid=proc.pid)
+    for pid, command in escaped:
+        progress.saw(
+            chunk=f"\nsuite-green: ending out-of-group descendant pid={pid} cmdline={command}\n"
+        )
+    _signal_descendants(descendants=escaped, signal_number=signal.SIGTERM)
+    with contextlib.suppress(ProcessLookupError):
+        os.killpg(proc.pid, signal.SIGTERM)
+    deadline = time.monotonic() + _KILL_GRACE_SECONDS
+    while (
+        proc.poll() is None or any_descendant_alive(descendants=escaped)
+    ) and time.monotonic() < deadline:
+        time.sleep(0.05)
+    with contextlib.suppress(ProcessLookupError):
+        os.killpg(proc.pid, signal.SIGKILL)
+    _signal_descendants(descendants=escaped, signal_number=signal.SIGKILL)
 
 
 def _positive_seconds(*, raw: str) -> int | None:
@@ -189,7 +262,7 @@ def run_suite(
                     bound=bound,
                 )
                 if reason is not None:
-                    _ = os.killpg(proc.pid, signal.SIGKILL)
+                    _end_stalled_suite(proc=proc, progress=progress)
                     _ = proc.wait(timeout=_KILL_GRACE_SECONDS)
         reader.join(timeout=_KILL_GRACE_SECONDS)
         return SuiteRun(
