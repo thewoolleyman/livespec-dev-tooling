@@ -568,6 +568,14 @@ recorded on epic `livespec-dev-tooling-6tgd2z`: "Why are you asking me this? It'
 clean up". Measured that day: an ask to delete the local branch `spec/revise-v162-a-compilation-cache-warm-build`,
 superseded by v163 (a14f9543), sat under `FOR THE MAINTAINER` for several ticks.
 
+**A requirement of a priority plan is not a maintainer ask.** A step that a maintainer-set priority plan requires (for
+example a tool upgrade it needs) is done, with a recorded rollback plan, and reverted if it breaks. It never goes under
+FOR THE MAINTAINER. The maintainer, 2026-11-12 ~18:2xZ, recorded on epic `livespec-dev-tooling-6tgd2z` at 18:23:54Z, on
+the caam 0.1.25 upgrade: "Yes, it's a requirement right?  Just do it, why are you asking me. If it breaks, revert it,
+make sure the plan has a rollback plan". A seat whose own standing rule needs the maintainer's word in its own session
+(caam-anthropic-loop-runner's credential rule) still gets that word there; the coordinator tells the maintainer which
+tab.
+
 ## 6. Never block: no pickers, ever
 
 The maintainer, 2026-11-01: "You should be forbidden from presenting blocking pickers. You are only ever supposed to
@@ -1287,11 +1295,15 @@ epic `livespec-dev-tooling-6tgd2z`, 2026-11-12T10:33:39Z).
   - dispatch-control-plane is monitor-only, and must not absorb today's operations.
   - Launchers take the factory from the target repository's committed `default_factory` (R503).
   - Keep interactive turns lean (R509).
-  - Never offer GitHub's merge queue for any fleet repository: the maintainer has no GitHub Enterprise account and
-    cannot use it. For a stale-base merge break, the options are requiring branches to be up to date before merging
-    (strict required status checks), a self-built serialize-or-recheck step, or leaving it as it is. The maintainer,
-    2026-11-12 ~18:0xZ, recorded on epic `livespec-dev-tooling-6tgd2z`: "FOR THE MILLIONTH TIME, I DO NOT HAVE AN
-    ENTERPRISE ACCOUNT AND CANNOT USE GITHUBS MERGE QUEUE".
+  - Never offer GitHub's merge queue for any fleet repository. The maintainer, 2026-11-12 ~18:0xZ, recorded on epic
+    `livespec-dev-tooling-6tgd2z`: "FOR THE MILLIONTH TIME, I DO NOT HAVE AN ENTERPRISE ACCOUNT AND CANNOT USE GITHUBS
+    MERGE QUEUE". Plan `stale-base-merge-options` (livespec-dev-tooling-xowhol, maintainer-driven, priority 3 since
+    2026-11-12T18:23:54Z) owns re-investigating the stale-base options. Until the maintainer rules otherwise in that
+    plan, no seat offers GitHub's merge queue (the maintainer's standing words above). That plan may put measured
+    facts about it to the maintainer in its direction discussion.
+  - **Never raise vmi3006760's swap/RAM configuration.** It is the VPS provider's and intentional. The maintainer,
+    2026-11-12 ~18:2xZ, recorded on epic `livespec-dev-tooling-6tgd2z` at 18:23:54Z: "This is intentional, it's a VPS,
+    I don't configure it. RIGHT? Seems like a bad question".
 
 ## 13. Directives come from the plan and the ledger, never from a handoff
 
