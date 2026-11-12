@@ -27,6 +27,7 @@ _JUSTFILE = _REPO_ROOT / "justfile"
 _TASKS = _REPO_ROOT / "ansible" / "roles" / "fabro_server" / "tasks" / "main.yml"
 _ANSIBLE_CORE_PIN = re.compile(r"ansible-core==[0-9][0-9A-Za-z.]*")
 _TIMEOUT_SECONDS = 600
+_DEV_TOKEN = "fixture-dev-token"
 _LIFTED = (
     "Resolve this instance's settings endpoint declarations",
     "Read the running instance's resolved settings",
@@ -43,6 +44,7 @@ class _SettingsServer(ThreadingTCPServer):
         self.settings = settings
         self.status = status
         self.requests: list[str] = []
+        self.authorizations: list[str | None] = []
 
 
 def _handler() -> type[StreamRequestHandler]:
@@ -52,9 +54,19 @@ def _handler() -> type[StreamRequestHandler]:
             assert isinstance(server, _SettingsServer)
             request = self.rfile.readline().decode().split()
             server.requests.append(request[0])
-            payload = json.dumps(server.settings).encode()
+            authorization = None
+            while (line := self.rfile.readline().decode().strip()) != "":
+                name, _, value = line.partition(":")
+                if name.lower() == "authorization":
+                    authorization = value.strip()
+            server.authorizations.append(authorization)
+            status = server.status
+            settings = server.settings
+            if authorization != f"Bearer {_DEV_TOKEN}":
+                status, settings = 401, {}
+            payload = json.dumps(settings).encode()
             response = (
-                f"HTTP/1.1 {server.status} fixture\r\n"
+                f"HTTP/1.1 {status} fixture\r\n"
                 "Content-Type: application/json\r\n"
                 f"Content-Length: {len(payload)}\r\n"
                 "Connection: close\r\n\r\n"
@@ -112,7 +124,13 @@ def _lifted_tasks() -> str:
 
 def _run(*, tmp_path: Path, port: int, service_state: str | None = None) -> tuple[int, str]:
     """Run the committed comparison against the local endpoint and return its report."""
+    storage = tmp_path / "home" / "storage"
+    storage.mkdir(parents=True, exist_ok=True)
+    _ = (storage / "server.env").write_text(
+        f"OTHER=1\nFABRO_DEV_TOKEN={_DEV_TOKEN}\n", encoding="utf-8"
+    )
     vars = {
+        "fabro_server_home_dir": str(tmp_path / "home"),
         "fabro_server_unit_name": "fabro-server-fixture",
         "fabro_server_port": port,
         "fabro_server_canonical_host": f"fixture.invalid:{port}",
@@ -233,3 +251,43 @@ def test_a_parked_instance_with_no_listener_is_named_unreachable_not_skipped(
     assert "fabro-server-fixture" in output
     assert "settings endpoint is unreachable" in output
     assert "DRIFT:" not in output
+
+
+def test_the_settings_read_authenticates_with_the_instances_dev_token(
+    *, tmp_path: Path, settings_server: _SettingsServer
+) -> None:
+    """A token-protected server is compared, not misreported as unreachable."""
+    port = settings_server.server_address[1]
+    settings_server.settings = _resolved(port=port, runs=3)
+
+    code, output = _run(tmp_path=tmp_path, port=port)
+
+    assert code == 0, output
+    assert settings_server.authorizations == [f"Bearer {_DEV_TOKEN}"]
+    assert "settings endpoint is unreachable" not in output
+    assert "resolved 3" in output
+    assert _DEV_TOKEN not in output
+
+
+def test_a_settings_envelope_response_is_compared_like_a_root_response(
+    *, tmp_path: Path, settings_server: _SettingsServer
+) -> None:
+    """The top-level settings envelope yields real drift and no false drift."""
+    port = settings_server.server_address[1]
+    settings_server.settings = {"settings": _resolved(port=port, runs=3)}
+
+    code, output = _run(tmp_path=tmp_path, port=port)
+
+    assert code == 0, output
+    assert output.count("DRIFT:") == 1, output
+    assert "server.scheduler.max_concurrent_runs" in output
+    assert "declared 7" in output
+    assert "resolved 3" in output
+
+    settings_server.settings = {"settings": _resolved(port=port)}
+
+    code, output = _run(tmp_path=tmp_path, port=port)
+
+    assert code == 0, output
+    assert "DRIFT:" not in output
+    assert "settings endpoint is unreachable" not in output
