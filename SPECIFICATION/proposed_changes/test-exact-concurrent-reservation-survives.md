@@ -19,7 +19,7 @@ The bullet states three things:
 - a bound on such a wait is a hang guard only: one shared value per repository, at least 120 seconds, and its expiry fails the test as a hang naming what it waited for;
 - an exception raised in a test's worker thread fails the test, and the report names that exception.
 
-It names the two kinds of wait the rule does not govern, and the repositories it applies to.
+It names the two kinds of wait the rule does not govern. It binds this repository's tests only; the fleet half is carried by one proposal per member repository (see "Fleet scope").
 
 ### Motivation
 
@@ -108,9 +108,18 @@ The hits below are PATTERN hits. Each has not yet been judged against the rule, 
   - `tests/e2e-cli/test_codex_skill_picker.py`: 178, 182, 185
   - `tests/hooks/test_supervisor_completion_gate.py`: 611
 
-Routing after this proposal ratifies:
-- livespec-dev-tooling: dqndbz fixes its own test. One further root-fix item, filed through the capture seam as a child of dh3hub, covers the remaining 19 files.
-- Each of livespec-orchestrator-beads-fabro, livespec-overseer and livespec-driver-codex: one root-fix item, filed in that repository's ledger through its capture seam and citing this clause.
+Where the fleet half is carried. This clause binds only this repository: each member's work items are tier-judged against that member's own specification, so a dev-tooling clause cannot release them. livespec core is not the shared home either. Core's fleet-binding homes are Conformance-Pattern concerns (livespec `non-functional-requirements.md` §"Conformance Pattern"), and a concern is not adopted until all five of its slots are filled, one of which is a Verifier. This proposal deliberately defers the mechanical check that would be that Verifier (below). So the fleet half is carried by ONE PROPOSAL PER MEMBER REPOSITORY, each stating this same clause in that member's specification:
+- livespec-orchestrator-beads-fabro: in `constraints.md`, section "Forbidden patterns".
+- livespec-overseer: in `non-functional-requirements.md`, section "Constraints".
+- livespec-driver-codex: in `non-functional-requirements.md`, section "Test discipline".
+
+If a Verifier is later adopted, the four clauses can be folded into one core Conformance-Pattern concern.
+
+Root-fix items, filed 2026-11-12 ~21:28Z through each repository's capture seam with a claim token. Each was routed pending-approval at the spec-change tier and waits for its own repository's clause. The cross-tenant links are recorded in prose on both sides (each item's description, and the dh3hub scope event of 21:28:51Z), never as a dependency edge.
+- livespec-dev-tooling: livespec-dev-tooling-dqndbz (the failing test) and livespec-dev-tooling-rs6o3q (the other 19 files), both children of dh3hub.
+- livespec-orchestrator-beads-fabro: bd-ib-4aq6ej.
+- livespec-overseer: overseer-pzr23n.
+- livespec-driver-codex: livespec-driver-codex-tjsdzj.
 
 A mechanical check that refuses a short bound is deliberately not proposed here. A pattern-level check cannot tell a teardown wait or an expected-expiry window from a verdict-bearing bound without the per-line judgment above. A check can be reconsidered after the four root-fix items have closed and the remaining exempt lines show whether a static form is decidable.
 
@@ -118,4 +127,4 @@ A mechanical check that refuses a short bound is deliberately not proposed here.
 
 In `SPECIFICATION/non-functional-requirements.md`, section "Testing approach", insert the following bullet immediately after the bullet that begins "**Host-state isolation of CLIs.**" and immediately before the bullet that begins "**Import-Linter.**". No heading is added, removed or renamed in that file.
 
-- **Load-independent concurrency waits.** A test's verdict MUST NOT depend on how fast the host runs it. When a test waits for something the code under test is required to do — a worker thread or child process to finish, or a barrier, event or condition to be reached — it MUST wait either without a wall-clock bound or under a hang guard. A hang guard is one value the repository defines once for every such wait, MUST be no shorter than 120 seconds, and its expiry MUST fail the test as a hang that names what the test was waiting for. A test MUST NOT bound such a wait more tightly, as `join(3)` followed by `assert not worker.is_alive()`, `Barrier(2).wait(timeout=3)` or `assert event.wait(timeout=2)` do. An exception raised in a test's worker thread MUST fail that test, and the failure report MUST name that exception, never surface only as a missing or short result. Two kinds of wait are outside this rule: a teardown wait whose expiry falls through to a forced stop and decides no verdict, and a wait whose expiry is the outcome the test expects, such as a check that a blocked party has not yet proceeded. The rule applies to the tests of this repository, livespec-orchestrator-beads-fabro, livespec-overseer and livespec-driver-codex.
+- **Load-independent concurrency waits.** A test's verdict MUST NOT depend on how fast the host runs it. When a test waits for something the code under test is required to do — a worker thread or child process to finish, or a barrier, event or condition to be reached — it MUST wait either without a wall-clock bound or under a hang guard. A hang guard is one value the repository defines once for every such wait, MUST be no shorter than 120 seconds, and its expiry MUST fail the test as a hang that names what the test was waiting for. A test MUST NOT bound such a wait more tightly, as `join(3)` followed by `assert not worker.is_alive()`, `Barrier(2).wait(timeout=3)` or `assert event.wait(timeout=2)` do. An exception raised in a test's worker thread MUST fail that test, and the failure report MUST name that exception, never surface only as a missing or short result. Two kinds of wait are outside this rule: a teardown wait whose expiry falls through to a forced stop and decides no verdict, and a wait whose expiry is the outcome the test expects, such as a check that a blocked party has not yet proceeded. The rule applies to this repository's tests.
