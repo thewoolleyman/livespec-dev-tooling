@@ -251,6 +251,18 @@ declare -A SCALE_SETS=(
   [livespec-runtime-k3s]="values-livespec-runtime.yaml"
   [poweredge-xubuntu-k3s]="values-poweredge-xubuntu-k3s.yaml"
 )
+# Each homelab worker's host-unique set (plan homelab-k8s-worker-nodes): one
+# release `<host>-homelab-worker-k3s` per arc/worker/values-<host>-homelab-worker.yaml,
+# found by glob so a new worker's set travels with no edit here. They are
+# upgraded by step 7 with the fleet's sets. Before 2026-11-12 only
+# install-arc.sh installed them, which nothing runs after the first install, so
+# the macbook-m4-max set kept the hook-template revision of 2026-11-05 through
+# every later hook change.
+for worker_values in "${ARC_DIR}"/worker/values-*-homelab-worker.yaml; do
+  [ -e "$worker_values" ] || continue
+  worker_release="$(basename "$worker_values" .yaml)"
+  SCALE_SETS["${worker_release#values-}-k3s"]="worker/${worker_values##*/}"
+done
 
 log() { printf '\n== %s ==\n' "$*"; }
 
@@ -596,13 +608,18 @@ log "7. Install/upgrade all ${#SCALE_SETS[@]} runner scale sets from phase-2 val
 # first helm call rather than once per release.
 [ -f "${ARC_SCALE_SET_CHART}" ] \
   || { echo "FATAL: ${ARC_SCALE_SET_CHART} is missing; re-run the ci_converge_unit Ansible role to pull the pinned ARC charts into the artifact tree" >&2; exit 1; }
-# 7a. Publish the hook-template revision BEFORE any scale set names it: each
+# 7a. Publish the PyPI wrapper ConfigMap BEFORE the hook template that mounts
+# it: every workflow pod consumes this exact shared definition from
+# arc-runners, while warm-cache applies it into ci-warm-cache below.
+log "7a. Publish the shared PyPI uv wrapper ConfigMap for workflow pods"
+kubectl -n "$RUNNERS_NAMESPACE" apply -f "${WARM_CACHE_DIR}/pypi-proxy/pypi-proxy-uv-wrapper.yaml"
+# 7b. Publish the hook-template revision BEFORE any scale set names it: each
 # values file mounts the placeholder arc-hook-pod-template-@HOOK_REVISION@,
 # rendered below to the immutable, content-addressed revision published here,
 # so a runner pod can never be created against a revision that does not exist
 # (livespec-dev-tooling-4oeffe). The older revisions are pruned at step 8,
 # AFTER every scale set has moved off them.
-log "7a. Publish the hook-template ConfigMap revision the scale sets will mount"
+log "7b. Publish the hook-template ConfigMap revision the scale sets will mount"
 "${ARC_DIR}/converge-hook-pod-template.sh" --publish
 hook_revision="$("${ARC_DIR}/converge-hook-pod-template.sh" --name)"
 rendered_values_dir="$(mktemp -d)"
@@ -611,6 +628,7 @@ for release in $(printf '%s\n' "${!SCALE_SETS[@]}" | sort); do
   values_file="${ARC_DIR}/${SCALE_SETS[$release]}"
   [ -f "$values_file" ] || { echo "FATAL: values file not found: ${values_file}"; exit 1; }
   rendered_values="${rendered_values_dir}/${SCALE_SETS[$release]}"
+  mkdir -p "$(dirname "$rendered_values")"
   "${ARC_DIR}/converge-hook-pod-template.sh" --render-values "$values_file" "$rendered_values"
   # The runner pod's architecture selection comes from the one declared
   # per-class list, never from the values file (livespec-dev-tooling-ko26ez.6),

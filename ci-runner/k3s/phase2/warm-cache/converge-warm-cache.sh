@@ -113,12 +113,13 @@ echo "${repo_count} repositories:"
 sed 's/^/  /' "${repos_file}"
 
 # ---------------------------------------------------------------------------
-log "warm-cache 2. Apply the PyPI files proxy (Namespace, nginx ConfigMap, Deployment, Service)"
+log "warm-cache 2. Apply the PyPI files proxy and shared uv wrapper"
 # Before the CronJob: the populator's next rebuild fetches through it. A
 # changed ConfigMap does not restart the Deployment by itself; stamp the
 # manifest's hash onto the pod template so a config edit rolls the pod
 # (../crates-proxy/converge-crates-proxy.sh does the same).
 run kubectl apply -f "${SCRIPT_DIR}/pypi-proxy/pypi-proxy.yaml"
+run kubectl -n "${NAMESPACE}" apply -f "${SCRIPT_DIR}/pypi-proxy/pypi-proxy-uv-wrapper.yaml"
 proxy_hash="$(sha256sum "${SCRIPT_DIR}/pypi-proxy/pypi-proxy.yaml" | cut -c1-16)"
 run_quiet kubectl -n "${NAMESPACE}" patch deployment pypi-proxy --type=merge \
   -p "{\"spec\":{\"template\":{\"metadata\":{\"annotations\":{\"ci-runner.io/config-hash\":\"${proxy_hash}\"}}}}}"

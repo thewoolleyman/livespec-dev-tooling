@@ -272,6 +272,7 @@ def main() -> int:
             )
         )
         return 2
+    _ = ObserverReconcile(installation=application.installation).resume_prepared()
     # A reverted incident's original run is collected by the controller itself, so no
     # operator has to remember to run the entrance; the watcher resumes from the record.
     # A watcher that dies shuts the server down, so the service exits non-zero and systemd

@@ -1,6 +1,6 @@
 """Phase E placement of `SPECIFICATION/non-functional-requirements.md`, "Homelab worker nodes".
 
-Each homelab worker gets a host-unique ARC runner scale set (`ci-runner/k3s/arc/values-*-homelab-worker.yaml`,
+Each homelab worker gets a host-unique ARC runner scale set (`ci-runner/k3s/phase2/arc/worker/values-*-homelab-worker.yaml`,
 research/009), addressed by name so no existing CI traffic moves. These parse every such values
 file and assert rules that hold for any host:
 
@@ -11,7 +11,9 @@ file and assert rules that hold for any host:
 - its listener runs on the fleet's amd64 nodes, never on a worker;
 - the runner image is pinned by digest;
 - jobs run in the fleet's container mode (compared against the fleet's reference set), asking
-  for none of the fleet CI nodes' capacity, with the hook template revision rendered on install.
+  for none of the fleet CI nodes' capacity;
+- the CI stack converge, not a one-time installer, upgrades the set, so its hook template
+  revision follows every hook change.
 
 No assertion restates a production value.
 """
@@ -19,6 +21,7 @@ No assertion restates a production value.
 from __future__ import annotations
 
 import re
+import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -28,7 +31,8 @@ import yaml
 __all__: list[str] = []
 
 _ROOT = Path(__file__).resolve().parents[2]
-_ARC = _ROOT / "ci-runner" / "k3s" / "arc"
+_PHASE2 = _ROOT / "ci-runner" / "k3s" / "phase2"
+_ARC = _PHASE2 / "arc" / "worker"
 _HOSTS = {p.stem for p in (_ROOT / "homelab-worker" / "hosts").glob("*.env")}
 _CLASS_TAINT = "homelab-worker.livespec.dev/class"
 _HOLD_TAINT = "homelab-worker.livespec.dev/admission"
@@ -101,10 +105,125 @@ def test_the_set_asks_for_no_fleet_node_capacity(path: Path) -> None:
     assert "resources" not in _runner(_load(path))
 
 
-def test_install_arc_renders_each_worker_sets_hook_template_revision() -> None:
+_CONVERGE = _PHASE2 / "reconstruct" / "converge-ci-stack.sh"
+_PLACEHOLDER = "arc-hook-pod-template-@HOOK_REVISION@"
+_HOOK_PUBLISH_STEP = 'Publish the hook-template ConfigMap revision the scale sets will mount"'
+_LISTENER_STEP = "Assert every scale-set listener references its scale set"
+
+
+def _run_converge_scale_set_step(*, tmp_path: Path, worker_files: list[str]) -> list[str]:
+    """Run the converge's own release-map and step-7 text against stub tools; return helm's calls."""
+    converge = _CONVERGE.read_text(encoding="utf-8")
+    scale_sets = converge.split("declare -A SCALE_SETS=(", 1)[1].split("\nlog() {", 1)[0]
+    # Anchored on each step's own words, never its number: a step added ahead of this one
+    # renumbers the labels (4793883d8 did), and a number would then select another step.
+    lines = converge.splitlines()
+    start = next(i for i, line in enumerate(lines) if _HOOK_PUBLISH_STEP in line)
+    end = next(i for i, line in enumerate(lines) if _LISTENER_STEP in line)
+    assert start < end
+    step = "\n".join(lines[start + 1 : end])
+    arc = tmp_path / "arc"
+    (arc / "worker").mkdir(parents=True)
+    fleet_files = re.findall(r'\]="(values-[^"]+)"', scale_sets)
+    for name in [*fleet_files, *(f"worker/{w}" for w in worker_files)]:
+        _ = (arc / name).write_text(f"mount: {_PLACEHOLDER}\n", encoding="utf-8")
+    stubs = tmp_path / "bin"
+    stubs.mkdir()
+    calls = tmp_path / "helm.calls"
+    hook_stub = "\n".join(
+        [
+            "#!/bin/bash",
+            'case "$1" in',
+            "  --name) echo arc-hook-pod-template-cafe ;;",
+            '  --render-values) sed "s/@HOOK_REVISION@/cafe/" "$2" > "$3" ;;',
+            "esac",
+            "",
+        ]
+    )
+    helm_stub = "\n".join(
+        [
+            "#!/bin/bash",
+            'release="$3"; values="$8"',
+            f'echo "$release $(cat "$values")" >> {calls}',
+            "",
+        ]
+    )
+    for path, text in (
+        (arc / "converge-hook-pod-template.sh", hook_stub),
+        (arc / "render-arch-overlay.sh", '#!/bin/bash\n: > "$3"\n'),
+        (stubs / "helm", helm_stub),
+    ):
+        _ = path.write_text(text, encoding="utf-8")
+        path.chmod(0o755)
+    program = "\n".join(
+        [
+            "set -euo pipefail",
+            f'ARC_DIR="{arc}"',
+            "RUNNERS_NAMESPACE=arc-runners",
+            "ARC_SCALE_SET_CHART=chart.tgz",
+            "log() { :; }",
+            f"declare -A SCALE_SETS=({scale_sets}",
+            step,
+        ]
+    )
+    _ = subprocess.run(
+        ["/bin/bash", "-c", program],
+        check=True,
+        capture_output=True,
+        text=True,
+        env={"PATH": f"{stubs}:/usr/bin:/bin"},
+        timeout=60,
+    )
+    return calls.read_text(encoding="utf-8").splitlines()
+
+
+def test_the_ci_stack_converge_upgrades_each_worker_set_on_the_published_hook_revision(
+    tmp_path: Path,
+) -> None:
+    # Mocked worker hosts, not the committed one: the converge finds a worker's set by its
+    # values file alone, and upgrades it with the placeholder rendered like a fleet set's.
+    calls = _run_converge_scale_set_step(
+        tmp_path=tmp_path,
+        worker_files=["values-alpha-homelab-worker.yaml", "values-beta-homelab-worker.yaml"],
+    )
+    by_release = dict(line.split(" ", 1) for line in calls)
+    for release in ("alpha-homelab-worker-k3s", "beta-homelab-worker-k3s"):
+        assert by_release[release] == "mount: arc-hook-pod-template-cafe"
+    assert all(_PLACEHOLDER not in rendered for rendered in by_release.values())
+
+
+def test_the_ci_stack_converge_runs_unchanged_with_no_worker_set(tmp_path: Path) -> None:
+    calls = _run_converge_scale_set_step(tmp_path=tmp_path, worker_files=[])
+    assert calls
+    assert not [line for line in calls if "homelab-worker" in line]
+
+
+def test_every_committed_worker_set_declares_its_architecture() -> None:
+    # The converge refuses a release the per-class architecture list does not declare.
+    declared = {
+        line.split()[1]: line.split()[2]
+        for line in (_PHASE2 / "workload-arch.conf").read_text(encoding="utf-8").splitlines()
+        if line.startswith("release ")
+    }
+    for path in _VALUES:
+        release = path.name.removeprefix("values-").removesuffix(".yaml") + "-k3s"
+        assert declared.get(release) == "arm64", release
+
+
+def test_the_converge_unit_role_installs_the_worker_sets_values() -> None:
+    role = _ROOT / "ansible" / "roles" / "ci_converge_unit"
+    assert (
+        "arc/worker"
+        in yaml.safe_load((role / "defaults" / "main.yml").read_text("utf-8"))[
+            "ci_converge_unit_directories"
+        ]
+    )
+    assert "/arc/worker/values-*-homelab-worker.yaml" in (role / "tasks" / "main.yml").read_text(
+        "utf-8"
+    )
+
+
+def test_the_one_time_installer_no_longer_installs_worker_sets() -> None:
     script = (_ROOT / "ci-runner" / "k3s" / "install-arc.sh").read_text(encoding="utf-8")
-    step = script.split('log "2b.', 1)[1].split('log "3.', 1)[0]
-    assert "converge-hook-pod-template.sh" in step
-    assert " --publish" in step
-    assert " --render-values " in step
-    assert '-f "$values"' not in step
+    assert 'helm upgrade --install "$release"' not in script
+    assert not list((_ROOT / "ci-runner" / "k3s" / "arc").glob("values-*-homelab-worker.yaml"))
