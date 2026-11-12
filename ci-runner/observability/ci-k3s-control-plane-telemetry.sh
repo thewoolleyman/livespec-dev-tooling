@@ -58,10 +58,24 @@ if not int(metrics_rc):
     handler_timeout_counts = defaultdict(int)
     histogram_series = {
         "etcd_request_duration_seconds": defaultdict(
-            lambda: {"buckets": [], "sum": None, "count": None, "labels": {}}
+            lambda: {
+                "buckets": defaultdict(int),
+                "sum": 0.0,
+                "has_sum": False,
+                "count": 0,
+                "has_count": False,
+                "labels": {},
+            }
         ),
         "apiserver_request_duration_seconds": defaultdict(
-            lambda: {"buckets": [], "sum": None, "count": None, "labels": {}}
+            lambda: {
+                "buckets": defaultdict(int),
+                "sum": 0.0,
+                "has_sum": False,
+                "count": 0,
+                "has_count": False,
+                "labels": {},
+            }
         ),
     }
     pattern = re.compile(r"^(?P<name>[a-zA-Z_:][a-zA-Z0-9_:]*)(?:\{(?P<labels>[^}]*)\})?\s+(?P<value>[-+0-9.eE]+)$")
@@ -92,17 +106,21 @@ if not int(metrics_rc):
             labels = {key: labels[key] for key in ("verb", "resource") if key in labels}
         item = histogram_series[histogram_name][tuple(sorted(labels.items()))]
         item["labels"] = labels
-        if suffix == "_bucket" and le is not None: item["buckets"].append((le, int(value)))
-        elif suffix == "_sum": item["sum"] = value
-        elif suffix == "_count": item["count"] = int(value)
+        if suffix == "_bucket" and le is not None: item["buckets"][le] += int(value)
+        elif suffix == "_sum":
+            item["sum"] += value
+            item["has_sum"] = True
+        elif suffix == "_count":
+            item["count"] += int(value)
+            item["has_count"] = True
     if storage: metrics.append(gauge("apiserver_storage_size_bytes", "By", storage))
     for histogram_name, series in histogram_series.items():
         points = []
         for item in series.values():
-            if item["count"] is None: continue
-            ordered = sorted(item["buckets"], key=lambda pair: float("inf") if pair[0] == "+Inf" else float(pair[0]))
+            if not item["has_count"]: continue
+            ordered = sorted(item["buckets"].items(), key=lambda pair: float("inf") if pair[0] == "+Inf" else float(pair[0]))
             counts = [count for _bound, count in ordered]
-            point = {"timeUnixNano": now_ns, "count": str(item["count"]), "sum": item["sum"] or 0.0, "bucketCounts": [str(value - (counts[index - 1] if index else 0)) for index, value in enumerate(counts)], "explicitBounds": [float(bound) for bound, _value in ordered if bound != "+Inf"]}
+            point = {"timeUnixNano": now_ns, "count": str(item["count"]), "sum": item["sum"] if item["has_sum"] else 0.0, "bucketCounts": [str(value - (counts[index - 1] if index else 0)) for index, value in enumerate(counts)], "explicitBounds": [float(bound) for bound, _value in ordered if bound != "+Inf"]}
             if item["labels"]: point["attributes"] = attrs(item["labels"])
             points.append(point)
         if points: metrics.append({"name": histogram_name, "unit": "s", "histogram": {"aggregationTemporality": 2, "dataPoints": points}})

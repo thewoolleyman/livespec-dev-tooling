@@ -155,6 +155,10 @@ def test_emitter_sends_api_server_request_latency_by_verb_and_resource(
                 'apiserver_request_duration_seconds_bucket{verb="PUT",resource="leases",subresource="",scope="namespace",group="coordination.k8s.io",version="v1",component="apiserver",dry_run="false",le="+Inf"} 4',
                 'apiserver_request_duration_seconds_sum{verb="PUT",resource="leases",subresource="",scope="namespace",group="coordination.k8s.io",version="v1",component="apiserver",dry_run="false"} 0.9',
                 'apiserver_request_duration_seconds_count{verb="PUT",resource="leases",subresource="",scope="namespace",group="coordination.k8s.io",version="v1",component="apiserver",dry_run="false"} 4',
+                'apiserver_request_duration_seconds_bucket{verb="PUT",resource="leases",subresource="",scope="cluster",group="coordination.k8s.io",version="v1",component="apiserver",dry_run="false",le="0.1"} 3',
+                'apiserver_request_duration_seconds_bucket{verb="PUT",resource="leases",subresource="",scope="cluster",group="coordination.k8s.io",version="v1",component="apiserver",dry_run="false",le="+Inf"} 5',
+                'apiserver_request_duration_seconds_sum{verb="PUT",resource="leases",subresource="",scope="cluster",group="coordination.k8s.io",version="v1",component="apiserver",dry_run="false"} 1.2',
+                'apiserver_request_duration_seconds_count{verb="PUT",resource="leases",subresource="",scope="cluster",group="coordination.k8s.io",version="v1",component="apiserver",dry_run="false"} 5',
                 'apiserver_request_duration_seconds_bucket{verb="GET",resource="pods",le="+Inf"} 1',
                 'apiserver_request_duration_seconds_sum{verb="GET",resource="pods"} 0.01',
                 'apiserver_request_duration_seconds_count{verb="GET",resource="pods"} 1',
@@ -173,6 +177,14 @@ def test_emitter_sends_api_server_request_latency_by_verb_and_resource(
         {attribute["key"] for attribute in point["attributes"]} == {"verb", "resource"}
         for point in points
     )
+    lease_put = next(
+        point
+        for point in points
+        if (_attribute(point, "verb"), _attribute(point, "resource")) == ("PUT", "leases")
+    )
+    assert lease_put["count"] == "9"
+    assert lease_put["sum"] == 2.1
+    assert lease_put["bucketCounts"] == ["5", "4"]
 
 
 def test_emitter_sends_only_504_api_server_response_counts(
