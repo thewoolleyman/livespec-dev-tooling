@@ -73,8 +73,10 @@ recipe").
    (`SPECIFICATION/non-functional-requirements.md` §"Runner-pool node rebuild
    recipe", **One procedure, staged.**). Steps 1–3 stay committed shell because
    they run before k3s exists.
-5. **`install-arc.sh`, `install-kueue.sh`** — the phase-1 by-hand cluster
-   provisioning legs, superseded for boot durability by `phase2/reconstruct/`.
+5. **Boot converge (`phase2/reconstruct/converge-ci-stack.sh`)** — installed
+   by step 4's `ci_converge_unit` role and run after k3s starts. It
+   idempotently installs ARC and Kueue from the phase-2 artifacts, including
+   every runner scale set and queue, with no by-hand cluster provisioning leg.
 
 Every node-specific value in steps 1–3 comes from that node's
 `phase0-bare-metal/profiles/<node>.env`, and step 4 reads that profile and the
@@ -105,13 +107,8 @@ end-to-end run of the committed procedure. See
 | `provision-k3s.sh` | Idempotently installs this node's pinned k3s (`v1.36.2+k3s1`) in the ROLE its profile declares (`provision-k3s.sh phase0-bare-metal/profiles/<node>.env`; the role and every other node-specific value are read through the shared `phase0-bare-metal/profile.sh`, so a second node is a second profile and never a second script). A **`server`** runs the six steps it has always run, in that order and with the same install command: the fleet's `/etc/rancher/k3s/config.yaml` from `phase2/k3s-config/` (kubelet `max-pods`, the bundled `local-storage` disable) installed BEFORE the first start so it is already read; the k3s **server** with `traefik`/`servicelb` disabled (this node carries no ingress) and a `k3s-role=arc-runner-host` node label; the pinned `helm`; the Ready wait; the `ci-runner.io/cache-tier-carrier=true` label (idempotently, via `kubectl label --overwrite`, and ONLY when the `ci-cache` tier is actually mounted here) — that is the label the pool's hostPath singletons, the sccache redis, the crates proxy, the PyPI files proxy and the warm-cache CronJob, pin their `nodeSelector` to, because `k3s-role=arc-runner-host` is the RUNNER role and a second pool node carries it too; and the kubeconfig mode. An **`agent`** runs ONE of those steps — the pinned k3s **agent** install — and SKIPS the five that are the server's (the server-only `config.yaml`, `helm` for the converge, the Ready wait, the tier-carrier label and the kubeconfig mode), logging the reason for each. It joins `CLUSTER_JOIN_ADDRESS`, pins `--node-ip` from `NODE_ADDRESS` (mandatory on a node whose wired and wireless interfaces share a subnet), registers every `NODE_TAINTS` taint as its own `--node-taint`, and carries the same `k3s-role=arc-runner-host` label so the `phase2/` node pins still resolve. **Two arguments both roles derive from the profile**, because both are facts about the NODE rather than about its cluster role: `--node-label ci-runner.io/factory=true` when `FACTORY_NODE=true` — the FACTORY label the kubernetes-sandbox-backend selects factory capacity on, carried by ALL THREE pool nodes including the untainted server, which is why it could not be expressed as "the tainted ones" — and `--data-dir` when `NODE_DATA_DIR` names one, for a node with no `ci-containerd` tier to bind its containerd store onto. Both apply at a FRESH install only, so `ansible/roles/node_labels` reconciles the label declaratively on every apply and `ansible/roles/k3s_config` renders the data directory's mount-ordering drop-in. The join token is read AT RUN TIME by k3s out of `CLUSTER_TOKEN_FILE`, which is a PATH and never the token — this tree carries no secret — and the run REFUSES if that file is absent or readable beyond its owner. `--dry-run PROFILE` prints the plan for either role, including the exact install command, and executes nothing; `provision-k3s-exit-tests.sh` asserts both plans and the token-file refusals off-host. Never touches the existing `ci-runner` user, `runner@.service` instances, or podman. |
 | `provision-k3s-exit-tests.sh` | This script's exit tests. Runs `provision-k3s.sh` only through `--dry-run`, never as root, with every host-mutating tool the steps reach for (`curl`, `k3s`, `kubectl`, `helm`, `install`, `chmod`, `tar`, `findmnt`) replaced by a tripwire — so the suite proves that a `server` profile's plan is byte-for-byte the command sequence the single-node era ran, that an `agent` profile's plan is the pinned agent join carrying the version pin, `--server`, `--token-file`, `--node-ip`, `--node-taint` and the runner-role label, that the five server-only steps are skipped with a reason each, and that an absent or too-readable join-token file is refused, while touching no host at all. §E runs the COMMITTED `phase0-bare-metal/profiles/gmktec-xubuntu.env` rather than a fixture derived from the first node's, redirecting only its `CLUSTER_TOKEN_FILE` at a scratch `0600` file (and asserting that is the only substituted line), so the second node's own data is proven to yield `--node-ip 192.168.1.156` and — since R5 emptied its `NODE_TAINTS` — NO `--node-taint` at all. §F does the same for `profiles/hp-xubuntu.env`, the THIRD node and the first factory-only one: a different SHAPE of agent rather than another instance of the second, so the section asserts the factory label on all three plans (the server's included), hp's `--node-ip 192.168.1.4`, its `node-role/ci=factory:NoSchedule` taint, its `--data-dir`, and — the control arm that makes the rest mean anything — that a copy declaring `FACTORY_NODE=false` plans no factory label at all. `tests/livespec_dev_tooling/test_ci_runner_k3s_factory_node_label.py` carries the same assertions in the GATED suite, because nothing in `just check` runs this file. |
 | `ansible/ci-pool.yml` (was `phase2/install-node.sh`) | The ordered node-local provisioning, now a GitOps playbook applied from the control node (`just ansible-apply ansible/ci-pool.yml`), role-aware by each node's `cluster_role`. `phase2/install-node.sh` and every node-local `install-*.sh` it drove were RETIRED when `ansible/ci-pool.yml` reached full parity (`livespec-dev-tooling-9btv`): the Ansible roles under `ansible/roles/` ARE the installers now, the `ci-runner/k3s/phase2/**` files are the runtime artifacts those roles copy, and the legacy shell layer was deleted so it cannot be edited by mistake (pre-deletion SHAs in the retirement commit). See `ansible/README.md` and `SPECIFICATION/non-functional-requirements.md` §"Runner-pool node rebuild recipe". |
-| `install-arc.sh` | Installs the ARC controller (Helm chart `gha-runner-scale-set-controller` 0.14.2) plus ONE `gha-runner-scale-set` (0.14.2) release, the host-unique-label scale set (see below). Phase 1 installed TWO here — one per label; the shared-pool-label release `local-ci-k3s` (`arc/values.yaml`) was retired under `livespec-s43svm.28`, see "Labels" below. Fails closed if the GitHub App installation-token secret isn't already present (never creates it). |
-| `arc/values-host-unique.yaml` | Helm values for the host-unique-label release (`runnerScaleSetName: poweredge-xubuntu-k3s`), `maxRunners: 1`. Kubernetes-mode runners (containerd-backed pods, non-root `securityContext`, no privileged mode) — needing no equivalent of the deleted podman lane's dockershim/sanitize-hook pair. |
-| `install-kueue.sh` | Installs Kueue `v0.19.1` from its released manifest, then applies `kueue/resources.yaml`. |
-| `kueue/resources.yaml` | Minimal phase-1 `ResourceFlavor`/`ClusterQueue`/`LocalQueue` — just enough for Kueue to admit the proof job. Modeling the real fair-share formula is phase 2, deliberately deferred. |
 | `test-job/proof-job.yml` | A `workflow_dispatch`-only GitHub Actions workflow targeting `runs-on: poweredge-xubuntu-k3s` (the scale set NAME as a bare string, not a label array — see the file's own comment) — the host-requirements "a host is proven by EXECUTING a job" proof. Never wired into any `needs:` chain or PR/push trigger, so it can never gate a merge. |
-| `test-job/proof-job-kueue.yaml` | A raw, Kueue-admitted `batch/v1` Job (`suspend: true`, queued via `phase1-proof-lq`) — proves Kueue admission directly with `kubectl`, independent of GitHub's own dispatch plumbing. |
-| `phase2/reconstruct/` | Reconstruct-on-boot for the WHOLE CI cluster stack: a boot-ordered `systemd` `oneshot` (`After=k3s.service`) that idempotently converges the ARC controller, all scale sets, the hook ConfigMap, and Kueue + every queue from this repo with zero manual steps — making the host reconstructible ("cattle") so its datastore can later be made volatile. It SUPERSEDES the by-hand `install-arc.sh` step 2 + `install-kueue.sh` phase-1 legs for boot durability; those remain the phase-1 provisioning path. See `phase2/README.md` "Reconstruct-on-boot" for the scope boundary and the drift it supersedes. |
+| `phase2/reconstruct/` | Reconstruct-on-boot for the WHOLE CI cluster stack: a boot-ordered `systemd` `oneshot` (`After=k3s.service`) whose `converge-ci-stack.sh` idempotently installs the ARC controller, all scale sets, the hook ConfigMap, and Kueue + every queue from this repo with zero manual steps — making the host reconstructible ("cattle") so its datastore can later be made volatile. It is the rebuild step that installs ARC and Kueue. See `phase2/README.md` "Reconstruct-on-boot" for the scope boundary. |
 | `phase2/datastore-tmpfs/` | The k3s datastore (embedded etcd since livespec-dev-tooling-qy2nzf; kine/SQLite before it) on tmpfs: a systemd `.mount` unit (ordered `Before=k3s.service`, never `Required` by it) plus an installer that enables it for next boot and never starts it live. VOLATILE by design — cleared on every reboot so the reconstruct-on-boot path is exercised rather than rotting; safe only because `phase2/reconstruct/` + `secret-reinjection/` rebuild the cluster from empty, which the installer pre-gates on. Fail-safe: a mount failure degrades to the on-disk datastore rather than blocking boot; rollback is disable + restart k3s, the disk copy intact underneath. Removes the kine `Slow SQL` stall class of 2026-09-01 (livespec plan `ci-runner-pod-lifecycle-reliability`, research/003). See `phase2/README.md` "Datastore on tmpfs". |
 
 ## Pinned versions — nothing floats `latest`
@@ -119,10 +116,10 @@ end-to-end run of the committed procedure. See
 | Component | Version | Where the pin lives |
 |---|---|---|
 | k3s | `v1.36.2+k3s1` | `provision-k3s.sh` (`INSTALL_K3S_VERSION`) — **held deliberately; see below** |
-| ARC controller chart | `0.14.2` | `install-arc.sh` |
-| ARC runner scale set chart | `0.14.2` | `install-arc.sh` and every `phase2/arc/values-*.yaml` apply |
+| ARC controller chart | `0.14.2` | `phase2/reconstruct/converge-ci-stack.sh` |
+| ARC runner scale set chart | `0.14.2` | `phase2/reconstruct/converge-ci-stack.sh` and every `phase2/arc/values-*.yaml` apply |
 | Runner image | `ghcr.io/actions/actions-runner:2.338.2@sha256:759a1d94…` | every `values-*.yaml` `template.spec.containers[0].image` |
-| Kueue | `v0.19.1` | `install-kueue.sh` |
+| Kueue | `v0.19.1` | `phase2/reconstruct/converge-ci-stack.sh` |
 | helm | `v3.21.4` | `provision-k3s.sh` (`HELM_VERSION`; checksum-verified against the release's `.sha256sum`) — required by `phase2/reconstruct/converge-ci-stack.sh` |
 
 The **k3s pin is HELD deliberately**, not merely un-bumped
@@ -267,7 +264,8 @@ migration, and it landed on the per-repository scale sets under
 
 ## GitHub registration scope — REPOSITORY, not organization (`thewoolleyman` is a personal account)
 
-`arc/values-host-unique.yaml` (and, before its retirement, `arc/values.yaml`) sets
+`phase2/arc/values-poweredge-xubuntu-k3s.yaml` (and, before its retirement,
+`arc/values.yaml`) sets
 `githubConfigUrl` to `https://github.com/thewoolleyman/livespec-dev-tooling`
 — a specific REPOSITORY, not the account-root form
 `https://github.com/thewoolleyman`. This was discovered live during
@@ -401,9 +399,9 @@ procedure satisfies the requirement; a live rehearsal is not required).
 ## Credential separation
 
 The GitHub App installation token that backs `arc-github-app-installation`
-(referenced from `arc/values-host-unique.yaml` and every `phase2/arc/values-*.yaml`) MUST be created out-of-band —
-`install-arc.sh` fails closed if the secret is missing rather than
-creating it — from the same least-privilege, read-scoped source the
+(referenced from every `phase2/arc/values-*.yaml`) MUST be created out-of-band —
+the boot converge fails closed if the secret is missing rather than creating
+it — from the same least-privilege, read-scoped source the
 existing podman pool's supervisor already uses
 (`gate-runner/mint-jitconfig.sh` (retired; recoverable at `65335aee`)'s token minting), never a broader
 fleet secret. This matches the existing host-requirements "Credential
@@ -414,9 +412,8 @@ environment.
 
 ### Automated boot reinjection (`secret-reinjection/`) — the out-of-band step, automated
 
-`install-arc.sh` still never creates the secret. What was formerly a
-MANUAL out-of-band step (create the secret by hand before running
-`install-arc.sh`) is now automated by the boot-time unit under
+The boot converge still never creates the secret. What was formerly a
+MANUAL out-of-band step is now automated by the boot-time unit under
 `secret-reinjection/`, so a wiped or `tmpfs`-backed k3s datastore comes
 back with the credential ARC needs after ONE boot, with no human
 recreating it. This is the precondition for the tmpfs-datastore cutover
@@ -521,17 +518,14 @@ release's namespace (step 1) — a secret placed there passes nothing
 downstream and leaves the runner-set reconciler unable to find it,
 confirmed live on `poweredge-xubuntu` (`livespec-6r90`, filed off
 `livespec-s43svm.14`'s diagnosis). `arc-runners` may not exist yet on a
-genuinely fresh install (`install-arc.sh` step 2 is what
-`--create-namespace`'s it) — create it yourself first if you need to
-place the secret before running the script: `kubectl create namespace
-arc-runners`.
+genuinely fresh install; the reinjection unit creates it before the boot
+converge needs the secret.
 
 ## Nature
 
 These are **host operational artifacts** (shell, Helm values, Kubernetes
 manifests, docs) — not Python product code — mirroring `../`'s own
 "Nature" section: they are not part of the `just check` aggregate.
-Recreatability is the contract: re-running `provision-k3s.sh` /
-`install-arc.sh` / `install-kueue.sh` converges a fresh host, and
-`test-job/proof-job.yml` + `test-job/proof-job-kueue.yaml` prove the
-path executes a real job.
+Recreatability is the contract: the rebuild sequence's boot converge installs
+the fresh cluster stack, and `test-job/proof-job.yml` proves the path executes
+a real job.

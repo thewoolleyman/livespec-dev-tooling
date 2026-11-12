@@ -62,12 +62,12 @@
 #
 # It also does NOT create the GitHub App installation secret —
 # ../../secret-reinjection/ re-injects it on boot; this script fail-closes if
-# the secret is absent (step 2), exactly like install-arc.sh.
+# the secret is absent (step 2).
 #
-# Pinned chart/manifest versions are co-maintained with their canonical
-# installers and README.md "Pinned versions" — keep in lockstep:
-#   ARC controller + scale set chart : 0.14.2  (../../install-arc.sh)
-#   Kueue                            : v0.19.1 (../../install-kueue.sh, and the
+# Pinned chart/manifest versions are co-maintained with README.md "Pinned
+# versions" — keep in lockstep:
+#   ARC controller + scale set chart : 0.14.2
+#   Kueue                            : v0.19.1 (and the
 #                                       vendored upstream manifest's filename in
 #                                       ../kueue/core/ — step 4 asserts it agrees
 #                                       with KUEUE_VERSION and is present)
@@ -165,8 +165,8 @@ for d in "$ARC_DIR" "$KUEUE_DIR" "$PROVISIONER_DIR" "$WARM_CACHE_DIR" "$OBSERVAB
 done
 [ -x "$RENDER_SA_KUBECONFIG" ] || { echo "FATAL: ${RENDER_SA_KUBECONFIG} not found or not executable" >&2; exit 1; }
 
-ARC_CHART_VERSION="0.14.2"   # co-maintained with ../../install-arc.sh + README
-KUEUE_VERSION="v0.19.1"      # co-maintained with ../../install-kueue.sh
+ARC_CHART_VERSION="0.14.2"   # co-maintained with README
+KUEUE_VERSION="v0.19.1"      # co-maintained with README
 # The two ARC charts, INSTALLED FROM THE ARTIFACT TREE rather than pulled from
 # the upstream OCI registry (2026-10-12, item livespec-dev-tooling-tb2az6).
 # Steps 6 and 7 used to `helm upgrade --install` straight from ghcr.io, which
@@ -230,11 +230,8 @@ NODE_STATUS_SA_PREFIX="node-status-patcher-"
 # livespec repository -- see ../kueue/DERIVATION.md "The fabro fork scale set
 # (2026-11-05)"). Excludes
 # arc/values-EXAMPLE-repo.yaml (a template, not a live release). NOTE the
-# phase-1 install-arc.sh step 2 applies `poweredge-xubuntu-k3s` from the
-# phase-1 file arc/values-host-unique.yaml; this converge SUPERSEDES that with
-# the phase-2 captured file arc/values-poweredge-xubuntu-k3s.yaml for EVERY
-# scale set, so it never touches values-host-unique.yaml and never calls
-# install-arc.sh step 2.
+# The phase-2 captured file arc/values-poweredge-xubuntu-k3s.yaml is the
+# source of truth for `poweredge-xubuntu-k3s`, as it is for every scale set.
 declare -A SCALE_SETS=(
   [fabro-k3s]="values-fabro.yaml"
   [livespec-local-ci-k3s]="values-livespec.yaml"
@@ -421,7 +418,7 @@ fi
 
 # ---------------------------------------------------------------------------
 log "2. Fail-closed pre-gate: the GitHub App installation secret must already exist"
-# Mirrors install-arc.sh step 0. The secret's REQUIRED location is
+# The secret's REQUIRED location is
 # RUNNERS_NAMESPACE (arc-runners) — that is where every gha-runner-scale-set
 # release resolves its githubConfigSecret. This script NEVER creates it;
 # ../../secret-reinjection/ re-injects it on boot and the .service orders
@@ -453,13 +450,9 @@ kubectl -n kube-system rollout status deployment/local-path-provisioner --timeou
 
 # ---------------------------------------------------------------------------
 log "4. Install/upgrade Kueue core (${KUEUE_VERSION}) with the fleet HA overlay, and wait for its webhook to serve"
-# Inlined from install-kueue.sh step 1 (NOT invoked), because install-kueue.sh
-# also applies the PHASE-1 kueue/resources.yaml, whose phase1-proof objects are
-# declared at v1beta1. The phase-2 tree carries the SAME objects at v1beta2
-# (../kueue/cluster-queue-phase1-proof.yaml), applied in step 5 below, so
-# invoking install-kueue.sh would apply them a second time at a second API
-# version. This converge uses the phase-2 kueue tree exclusively — mirroring
-# how it uses the phase-2 values files rather than phase-1 values-host-unique.
+# The converge installs Kueue core and uses the phase-2 kueue tree exclusively.
+# Its phase-1 proof objects are represented at v1beta2 by
+# ../kueue/cluster-queue-phase1-proof.yaml and applied in step 5 below.
 #
 # Applied as ONE kustomize overlay (../kueue/core/: the upstream release
 # manifest plus the fleet's HA patches — two replicas, probe timeouts,
@@ -560,9 +553,8 @@ done
 
 # ---------------------------------------------------------------------------
 log "6. Install/upgrade the ARC controller (idempotent via helm upgrade --install)"
-# Inlined from install-arc.sh step 1 rather than invoked, because install-arc.sh
-# is not decomposed into a controller-only entry point and its step 2 applies
-# the SUPERSEDED phase-1 values-host-unique.yaml (see the SCALE_SETS note).
+# The converge is the controller installation entry point and applies only the
+# phase-2 scale-set values listed above.
 #
 # No --version: a chart TARBALL carries its version intrinsically, and passing
 # the flag beside a local path makes helm reject the pair. The tarball's NAME

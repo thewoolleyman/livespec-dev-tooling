@@ -30,8 +30,8 @@
 #
 # PINNED VERSION: the vendored filename below carries the release, and is
 # co-maintained with KUEUE_VERSION in ../../reconstruct/converge-ci-stack.sh
-# (which asserts the two agree, and that the file is present, before applying),
-# ../../../install-kueue.sh, and README.md "Pinned versions". Bump them together
+# (which asserts the two agree, and that the file is present, before applying)
+# and README.md "Pinned versions". Bump them together
 # — re-fetch the release asset under its new name, refresh the .sha256 beside
 # it, and re-diff manager-config-patch.yaml against the new upstream ConfigMap
 # body, which it must carry in full. The .sha256 records the provenance of bytes

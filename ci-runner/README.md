@@ -84,7 +84,7 @@ did. This section is the authoritative record; it was relocated here from the de
   read+write` only, installed on selected repositories. One key (fingerprint
   `SHA256:mR4QpknOUHIjN/90xKsFGlfWVpB9+5UuECGhOO+/iL4=`).
 - The **App private key** mints unlimited registrations, so it is read only by
-  `install-arc.sh` when seeding the `arc-github-app` Kubernetes `Secret` —
+  the attended seed step when seeding the `arc-github-app` Kubernetes `Secret` —
   from the dedicated `github-ci-runners` 1Password environment, never the shared
   `livespec` one.
 - A **runner** receives only a one-shot **JIT config** (one runner, one job),

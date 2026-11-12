@@ -52,8 +52,7 @@
 # version check and updating this comment + the ledger record):
 #   k3s:   v1.36.2+k3s1  (stable channel)
 #   ARC:   gha-runner-scale-set-controller / gha-runner-scale-set 0.14.2
-#          (installed by install-arc.sh, not this script)
-#   Kueue: v0.19.1        (installed by install-kueue.sh, not this script)
+#   Kueue: v0.19.1        (both installed by the boot converge, not this script)
 #
 # Requires: run as a sudo-capable admin on the node. Outbound HTTPS only
 # (get.k3s.io, GitHub releases) — no inbound reachability required, matching
@@ -241,8 +240,8 @@ build_server_exec() {
   # LoadBalancer services are needed for the ARC + Kueue control plane.
   # --node-label distinguishes this k3s node from any future additional node
   # without colliding with the existing GitHub Actions runner labels (which
-  # live on the runner registration, not the Kubernetes node — see
-  # arc/values-host-unique.yaml).
+  # live on the runner registration, not the Kubernetes node — see the
+  # phase-2 ARC values files).
   local -a exec_args=(server --disable traefik --disable servicelb --node-label "$NODE_LABEL")
   append_profile_node_args exec_args
   INSTALL_EXEC="${exec_args[*]}"
@@ -584,5 +583,5 @@ if [ "$ROLE" = agent ]; then
   log "DONE. Next (from the control node vps): just ansible-apply ansible/ci-pool.yml (see ansible/README.md; the retired phase2/install-node.sh runbook is now that playbook)."
   printf 'This node registered with the cluster at %s; confirm it from the SERVER with: k3s kubectl get nodes -o wide\n' "${CFG[CLUSTER_JOIN_ADDRESS]}"
 else
-  log "DONE. Next (from the control node vps): just ansible-apply ansible/ci-pool.yml, then install-arc.sh and install-kueue.sh (see README.md, rebuild sequence steps 4 and 5)."
+  log "DONE. Next (from the control node vps): just ansible-apply ansible/ci-pool.yml; its ci_converge_unit installs the boot converge (phase2/reconstruct/converge-ci-stack.sh), which installs ARC and Kueue (see README.md, rebuild sequence steps 4 and 5)."
 fi

@@ -5,7 +5,7 @@
 # with the GitHub App credential ARC needs, with ZERO manual steps and NO
 # network at boot.
 #
-# WHY THIS EXISTS: that secret is the ONLY thing install-arc.sh will not
+# WHY THIS EXISTS: that secret is the ONLY thing the boot converge will not
 # create — it fails closed if the secret is absent (see ../README.md
 # "Credential separation"). Until this mechanism, the secret lived ONLY in
 # the k3s datastore and was created BY HAND. A datastore wipe (the coming
@@ -86,9 +86,8 @@ fi
 
 # ---------------------------------------------------------------------------
 log "1. Ensure the arc-runners namespace exists (idempotent)"
-# May not exist on a genuinely fresh cluster — install-arc.sh step 2 is what
-# --create-namespace's it, but this script runs BEFORE that, so create it
-# here. --dry-run=client | apply is the idempotent create-or-noop.
+# May not exist on a genuinely fresh cluster, so this script creates it before
+# the boot converge. --dry-run=client | apply is the idempotent create-or-noop.
 kubectl create namespace "$RUNNERS_NAMESPACE" --dry-run=client -o yaml | kubectl apply -f -
 
 # ---------------------------------------------------------------------------
