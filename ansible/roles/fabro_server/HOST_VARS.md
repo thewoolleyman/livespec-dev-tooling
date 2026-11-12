@@ -914,15 +914,13 @@ eight runs from the petri capacity sampler: every run's sandbox anon peaked at
 number together with the quota, and read any sandbox OOM on this host as an
 INFRASTRUCTURE ending (ruling R235).
 
-That instance's catalog declares `livespec-ci`, `livespec-ci-rust` and
-`livespec-ci-k8s`, each 8GB. The ones on the `kubernetes` providers are 6 CPU
-since 2026-11-05 (see the `sandbox_providers` paragraph below), and
-`livespec-ci-rust` is 4 CPU. `livespec-ci` and `livespec-ci-k8s` run on the
-`kubernetes` provider and so declare no image; `livespec-ci-rust` keeps a docker
-image — the `python-rust-agent` layer, following the pin of the one repository
-that builds Rust rather than the orchestrator's. A dispatch reaches an
-environment only through a factory entry that names it, so a cutover between two
-of them is pointing that entry, and the rollback is pointing it back.
+That instance's active catalog declares `factory-python` and
+`factory-python-rust`. The earlier `livespec-ci`, `livespec-ci-rust` and
+`livespec-ci-k8s` ids are retired: `retired_environments` makes the role remove
+each only after its instance has no non-terminal run that still selects it. A
+dispatch reaches an environment only through a factory entry that names it, so a
+cutover points that entry at an active toolchain-specific id; the retired list
+keeps the old ids from silently remaining available after that cutover.
 
 `sandbox_providers` on that instance declares the `kubernetes` kind at the
 plugin digest the `sandbox_driver_kubernetes` role pins for that kind's path.
