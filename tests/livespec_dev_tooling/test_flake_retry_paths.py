@@ -365,3 +365,29 @@ def test_a_default_argument_is_read_in_the_enclosing_scope(*, tmp_path: Path) ->
     source = _MODULE_ROOT + "def reading(ROOT=ROOT / 'ci-runner' / dynamic):\n    return ROOT\n"
 
     assert _undeterminable_for(source=source, tmp_path=tmp_path)
+
+
+def test_an_annotated_repository_root_binding_keeps_a_dynamic_segment_undeterminable(
+    *, tmp_path: Path
+) -> None:
+    """A root bound with a type annotation is still a repository-root anchor."""
+    source = (
+        _ROOT_BINDING
+        + "REPO_ROOT: Path = Path(__file__).resolve().parents[1]\n"
+        + "def reading(name):\n"
+        + "    return REPO_ROOT / 'ci-runner' / name\n"
+    )
+
+    assert _undeterminable_for(source=source, tmp_path=tmp_path)
+
+
+def test_a_bare_annotation_does_not_bind_a_repository_root(*, tmp_path: Path) -> None:
+    """An annotation with no value binds no root, so it stays a non-repository base."""
+    source = (
+        _ROOT_BINDING
+        + "REPO_ROOT: Path\n"
+        + "def reading(name):\n"
+        + "    return REPO_ROOT / 'ci-runner' / name\n"
+    )
+
+    assert not _undeterminable_for(source=source, tmp_path=tmp_path)
