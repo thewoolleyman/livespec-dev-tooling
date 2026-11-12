@@ -953,6 +953,12 @@ for name in "${fetched[@]}"; do
         marker_key="livespec:sccache:populated:${name}"
         want="${sha}@${toolchain}"
         have="$(redis_cmd GET "${marker_key}" 2>/dev/null || echo "(unreachable)")"
+        # The cache's own record, as read: every outcome below that follows a
+        # readable record carries it into the warm-set state (none when absent).
+        if [[ "${have}" == *@* ]]; then
+          record_commit="${have%@*}"
+          record_toolchain="${have##*@}"
+        fi
         if [ "${have}" = "${want}" ]; then
           log "   sccache: cache already holds ${sha:0:8}@${toolchain}; no build"
           sccache_skipped=$((sccache_skipped + 1))
@@ -974,10 +980,6 @@ for name in "${fetched[@]}"; do
         elif [ "${admitted_last}" -gt "${POPULATE_ADMITTED_JOB_THRESHOLD}" ]; then
           log "   sccache: pool busy (${admitted_last} admitted jobs > threshold ${POPULATE_ADMITTED_JOB_THRESHOLD}); skipping the build this tick (guardrail)"
           sccache_skipped_busy=$((sccache_skipped_busy + 1))
-          if [[ "${have}" == *@* ]]; then
-            record_commit="${have%@*}"
-            record_toolchain="${have##*@}"
-          fi
           lag_outcome=busy
         else
           log "   sccache: pool has ${admitted_last} admitted jobs (threshold ${POPULATE_ADMITTED_JOB_THRESHOLD}); building"
