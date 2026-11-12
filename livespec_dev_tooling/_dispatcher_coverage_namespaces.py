@@ -65,18 +65,23 @@ COVERAGE_CONSUMERS: dict[str, str] = {
 }
 
 
-def process_start_time(*, pid: int) -> str | None:
-    """Return Linux's immutable start-time tick for `pid`, if it is observable."""
-    try:
-        stat = Path(f"/proc/{pid}/stat").read_text(encoding="utf-8")
-    except OSError:
-        return None
+def _parse_start_time(*, stat: str) -> str | None:
+    """Extract the start-time tick from a `/proc/<pid>/stat` line, if it parses."""
     closing_parenthesis = stat.rfind(")")
     fields = stat[closing_parenthesis + 1 :].split()
     start_time_index = 19  # Field 22, after fields 1 (pid) and 2 (comm).
     if closing_parenthesis < 0 or len(fields) <= start_time_index:
         return None
     return fields[start_time_index]
+
+
+def process_start_time(*, pid: int) -> str | None:
+    """Return Linux's immutable start-time tick for `pid`, if it is observable."""
+    try:
+        stat = Path(f"/proc/{pid}/stat").read_text(encoding="utf-8")
+    except OSError:
+        return None
+    return _parse_start_time(stat=stat)
 
 
 def _is_string_keyed_dict(*, value: object) -> TypeGuard[dict[str, object]]:
@@ -107,9 +112,20 @@ def _creator_identity(*, namespace_dir: Path) -> tuple[int, str] | None:
 
 
 def _creator_is_running(*, pid: int, start_time: str) -> bool:
-    """Return whether `pid` still names the recorded process."""
-    observed_start_time = process_start_time(pid=pid)
-    return observed_start_time == start_time
+    """Return whether `pid` may still name the recorded process.
+
+    Only a vanished process or a positively different start time proves the
+    creator gone. A process this runner cannot observe (a permission failure, an
+    unparsable stat line) is treated as running, so its namespace is left alone.
+    """
+    try:
+        stat = Path(f"/proc/{pid}/stat").read_text(encoding="utf-8")
+    except (FileNotFoundError, ProcessLookupError):
+        return False
+    except OSError:
+        return True
+    observed_start_time = _parse_start_time(stat=stat)
+    return observed_start_time is None or observed_start_time == start_time
 
 
 def _is_old_unrecorded_namespace(*, namespace_dir: Path) -> bool:
