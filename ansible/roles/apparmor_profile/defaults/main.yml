@@ -1,7 +1,24 @@
 ---
 apparmor_profile_phase2_dir: "{{ role_path }}/../../../ci-runner/k3s/phase2"
-apparmor_profile_name: ci-runner-workflow
-apparmor_profile_dest: /etc/apparmor.d/ci-runner-workflow
+# The committed profile files, one per profile, each named after the profile it
+# declares.
+apparmor_profile_src_dir: "{{ apparmor_profile_phase2_dir }}/apparmor"
+# The profiles every ci_pool node carries:
+#   * ci-runner-workflow — the profile workflow and factory pods name.
+#   * cri-containerd.apparmor.d — containerd's own default profile, held at node
+#     level so pods that name no profile also survive a stacked label
+#     (livespec-dev-tooling-ddy5xu; see the file's header).
+apparmor_profile_names:
+  - ci-runner-workflow
+  - cri-containerd.apparmor.d
+# The directory the distribution's apparmor unit parses at boot.
+apparmor_profile_dest_dir: /etc/apparmor.d
+# Who owns an installed profile file.
+apparmor_profile_owner: root
+apparmor_profile_group: root
+# Where the kernel exposes each loaded profile as `<name>.<id>/`, with the
+# sha256 of the policy blob it was loaded from (`raw_sha256`) and its `mode`.
+apparmor_profile_loaded_dir: /sys/kernel/security/apparmor/policy/profiles
 # Where apparmor_parser lives on a Debian-family host. Both are the same
 # binary on Ubuntu (/sbin is a symlink into /usr/sbin); both are listed so the
 # check does not depend on which one a given release ships as the real path.
