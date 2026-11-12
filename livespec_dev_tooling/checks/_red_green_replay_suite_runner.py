@@ -12,6 +12,7 @@ import signal
 import subprocess
 import threading
 import time
+import uuid
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -36,6 +37,10 @@ CEILING_ENV: str = "LIVESPEC_SUITE_GREEN_TIMEOUT_SECONDS"
 # Exported by gate-run.sh to the gate's process tree; touching it renews the
 # runner's outer stall window.
 PROGRESS_STAMP_ENV: str = "LIVESPEC_GATE_RUN_PROGRESS_STAMP"
+# Set by `run_suite` to a per-run value that the suite command and every process
+# it starts inherit, so a stall can name a descendant that left the suite's
+# ancestry by exiting its parent after starting a session of its own.
+RUN_MARK_ENV: str = "LIVESPEC_SUITE_GREEN_RUN_MARK"
 _POLL_SECONDS: float = 1.0
 _KILL_GRACE_SECONDS: int = 30
 _READ_BYTES: int = 65536
@@ -165,22 +170,45 @@ def process_table() -> dict[int, tuple[int, int, str]]:
     return records
 
 
-def out_of_group_descendants(*, root_pid: int) -> tuple[tuple[int, str], ...]:
-    """Find live descendants that escaped the suite's original process group."""
+def marked_pids(*, mark: str, proc_root: Path = Path("/proc")) -> frozenset[int]:
+    """Return the pids whose readable environment carries this run's mark."""
+    try:
+        entries = list(proc_root.iterdir())
+    except OSError:
+        return frozenset()
+    marked: set[int] = set()
+    for entry in entries:
+        if not entry.name.isdigit():
+            continue
+        try:
+            environment = (entry / "environ").read_bytes()
+        except OSError:
+            continue
+        if f"{RUN_MARK_ENV}={mark}".encode() in environment.split(b"\0"):
+            marked.add(int(entry.name))
+    return frozenset(marked)
+
+
+def out_of_group_descendants(*, root_pid: int, mark: str) -> tuple[tuple[int, str], ...]:
+    """Find live processes of the run that escaped the suite's original process group."""
     children: dict[int, list[int]] = {}
     records = process_table()
     for pid, (parent, _, _) in records.items():
         children.setdefault(parent, []).append(pid)
-    escapees: list[tuple[int, str]] = []
+    escapees: dict[int, str] = {}
     frontier = [root_pid]
     while frontier:
         parent = frontier.pop()
         for pid in children.get(parent, []):
             _, group, command = records[pid]
             if group != root_pid:
-                escapees.append((pid, command))
+                escapees[pid] = command
             frontier.append(pid)
-    return tuple(escapees)
+    for pid in sorted(marked_pids(mark=mark)):
+        record = records.get(pid)
+        if record is not None and record[1] != root_pid:
+            _ = escapees.setdefault(pid, record[2])
+    return tuple(escapees.items())
 
 
 def is_alive(*, pid: int) -> bool:
@@ -195,10 +223,13 @@ def is_alive(*, pid: int) -> bool:
 
 
 def end_stalled_suite(
-    *, proc: subprocess.Popen[bytes], report: Callable[[str], None] | None = None
+    *,
+    proc: subprocess.Popen[bytes],
+    mark: str,
+    report: Callable[[str], None] | None = None,
 ) -> tuple[tuple[int, str], ...]:
-    """End a stalled suite group and its session-escaping descendants."""
-    escapees = out_of_group_descendants(root_pid=proc.pid)
+    """End a stalled suite group and every process of the run outside it."""
+    escapees = out_of_group_descendants(root_pid=proc.pid, mark=mark)
     for pid, command in escapees:
         if report is not None:
             report(f"suite-green: ending out-of-group descendant pid={pid} cmdline={command}\n")
@@ -237,6 +268,7 @@ def run_suite(
     terminal. Giving it a pseudo-terminal makes those lifecycle updates
     visible before the first completed test renews the stall window.
     """
+    mark = uuid.uuid4().hex
     master_fd, slave_fd = pty.openpty()
     try:
         proc = subprocess.Popen(
@@ -244,7 +276,12 @@ def run_suite(
             stdout=slave_fd,
             stderr=slave_fd,
             cwd=cwd,
-            env={**os.environ, "PYTHONUNBUFFERED": "1", **(environ or {})},
+            env={
+                **os.environ,
+                "PYTHONUNBUFFERED": "1",
+                **(environ or {}),
+                RUN_MARK_ENV: mark,
+            },
             start_new_session=True,
         )
     finally:
@@ -270,7 +307,9 @@ def run_suite(
                     bound=bound,
                 )
                 if reason is not None:
-                    _ = end_stalled_suite(proc=proc, report=lambda text: progress.saw(chunk=text))
+                    _ = end_stalled_suite(
+                        proc=proc, mark=mark, report=lambda text: progress.saw(chunk=text)
+                    )
                     _ = proc.wait(timeout=_KILL_GRACE_SECONDS)
         reader.join(timeout=_KILL_GRACE_SECONDS)
         return SuiteRun(
