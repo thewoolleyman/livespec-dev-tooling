@@ -871,7 +871,7 @@ instance takes it in a window at 0 live runs, under legacy-coordinator-agent's r
 `[run.prepare]`, so the fleet instance and mi-homelab stay on `bbe6938` until the workflow migrated to
 authored setup nodes (`bd-ib-dpsiwz`) is live. On 2026-11-11 the candidate's engine goes back to `bbe6938` for one parity
 sample of sandbox-driver-kubernetes `v0.8.3` (livespec-orchestrator-beads-fabro `bd-ib-u4fp5z`), so that sample isolates the
-driver change; after that sample passed, it returned to `85071c8` for `bd-ib-dpsiwz`'s fix-forward canary. The rollback target is named in `host_vars` beside the pin and never
+driver change; after that sample passed, it returned to `85071c8` for `bd-ib-dpsiwz`'s fix-forward canary. On 2026-11-12 the candidate moves to `d22808f` (`0.408.0-nightly.0`), `85071c8` plus one sqlx `[patch.crates-io]` that lifts `libsqlite3-sys` 0.37.0 → 0.39.1 for RUSTSEC-2026-0459 (`bd-ib-tcdmkr`), first with one canary and environment parity; the fleet instance, mi-homelab and the homelab worker follow together. The rollback target is named in `host_vars` beside the pin and never
 here, because that is the file an operator rolling back edits.
 
 `fabro_server_host_checkout_remote` is declared because the host had no
