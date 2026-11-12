@@ -232,12 +232,35 @@ idle_sleep() {
 # and bounds that wait itself.
 readonly STALL_EXIT_CODE=124
 
+# Pids whose environment carries this run's progress stamp, which the gate
+# command exports and every process it starts inherits. A child that started
+# its own session and whose parent then exited is re-parented to init, so the
+# ancestry walk no longer reaches it; the stamp still names it as the run's.
+stamped_pids() {
+    local stamp="$1" d pid entry
+    local -a environment=()
+    for d in /proc/[0-9]*; do
+        pid="${d##*/}"
+        environment=()
+        { mapfile -d '' -t environment <"/proc/$pid/environ"; } 2>/dev/null || true
+        for entry in "${environment[@]}"; do
+            if [[ "$entry" == "LIVESPEC_GATE_RUN_PROGRESS_STAMP=$stamp" ]]; then
+                printf '%s\n' "$pid"
+                break
+            fi
+        done
+    done
+}
+
 out_of_group_descendants() {
-    local root="$1" group="$2" pid
+    local root="$1" group="$2" stamp="$3" pid
+    local -A seen=()
     while IFS= read -r pid; do
+        [[ -z "${seen[$pid]:-}" ]] || continue
+        seen[$pid]=1
         read_proc_identity "$pid"
         [[ "$PROC_PGRP" == "$group" ]] || printf '%s\n' "$pid"
-    done < <(descendant_pids "$root")
+    done < <(descendant_pids "$root"; stamped_pids "$stamp")
 }
 
 record_and_term_out_of_group_descendants() {
@@ -248,7 +271,7 @@ record_and_term_out_of_group_descendants() {
         printf 'gate-run: ending out-of-group descendant pid=%s cmdline=%s\n' \
             "$pid" "${PROC_CMDLINE:-<exited>}" >>"$dir/output.log"
         escapees+=("$pid")
-    done < <(out_of_group_descendants "$group" "$group")
+    done < <(out_of_group_descendants "$group" "$group" "$dir/progress.stamp")
     for pid in "${escapees[@]}"; do
         kill -TERM "$pid" 2>/dev/null || true
     done
