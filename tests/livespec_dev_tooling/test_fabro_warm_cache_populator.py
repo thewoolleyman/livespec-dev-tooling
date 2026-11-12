@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 __all__: list[str] = []
@@ -99,6 +100,26 @@ def test_the_converge_mounts_the_fabro_populator_script() -> None:
         "--from-file=warm-cache-fabro-populate.sh=${SCRIPT_DIR}/warm-cache-fabro-populate.sh"
         in converge
     )
+
+
+def test_the_converge_unit_installs_every_file_the_warm_cache_converge_reads() -> None:
+    """The role copies an explicit file list; a file the converge reads but the role omits fails the host converge."""
+    converge = _CONVERGE.read_text(encoding="utf-8")
+    role = (_ROOT / "ansible" / "roles" / "ci_converge_unit" / "defaults" / "main.yml").read_text(
+        encoding="utf-8"
+    )
+    # `../arc` is the ARC values directory, which the role installs by fileglob.
+    read_names = {
+        path
+        for path in re.findall(r"\$\{SCRIPT_DIR\}/([A-Za-z0-9_./-]+)", converge)
+        if not path.startswith("../")
+    }
+    installed = set(
+        re.findall(r"^\s*- src: warm-cache/([A-Za-z0-9_./-]+)\s*$", role, flags=re.MULTILINE)
+    )
+
+    assert {"warm-cache-fabro-cronjob.yaml", "warm-cache-fabro-populate.sh"} <= read_names
+    assert sorted(read_names - installed) == []
 
 
 def test_each_profile_installs_the_toolchain_it_compiles_with() -> None:
