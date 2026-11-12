@@ -15,7 +15,7 @@ created_at: 2026-11-12T08:21:21Z
 
 ### Summary
 
-State the factory budget admission rule as a spec clause. On every node labelled ci-runner.io/factory=true, ci-runner.io/factory-admit=true means a factory sandbox pod can be placed there: the node's factory pod count is below its budget (the CPU share) AND its unrequested allocatable memory is at least the factory sandbox pod's memory request. Each memory closing is logged, and the existing overflow, kill-switch and fail-safe behaviour is kept. The interim control stays temporary under the 2026-11-08 maintainer ruling. Two scenarios and the heading-coverage entries ship in the same change.
+State the factory budget admission rule as a spec clause. On every node labelled ci-runner.io/factory=true, ci-runner.io/factory-admit=true means a factory sandbox pod can be placed there: the node's factory pod count is below its budget (the CPU share) AND its unrequested allocatable memory is at least the factory sandbox pod's memory request. Each memory closing is logged, and the existing overflow, kill-switch and fail-safe behaviour is kept. The interim control stays temporary under the 2026-11-08 maintainer ruling. Three scenarios and the heading-coverage entries ship in the same change. When every factory node is closed by memory, the overflow node is logged as OVERFLOW-NO-MEMORY, and the fleet launch cap (derive-the-dispatcher-s-fleet) is named as what prevents dispatch into it.
 
 ### Motivation
 
@@ -38,11 +38,11 @@ The *factory sandbox pod memory request* MUST be one committed value that the ro
 
 **Each memory closing is logged.** When memory closes a node whose count is below its budget, the pass MUST log one line that names the node, its unrequested memory, and the pod memory request it was compared against.
 
-**Overflow, the kill switch and a failed read keep their meaning.** When every factory node is closed by count or by memory, the reconciler MUST keep exactly one factory node admitted and MUST log a line beginning `OVERFLOW`, so that a first-placement pod always has an admitted node. That node MUST be chosen in this order: a node whose unrequested memory covers the pod memory request comes first, then the largest budget minus count, then the most unrequested memory, then the node name. With `FACTORY_BUDGET_GATE=off`, a pass MUST set `ci-runner.io/factory-admit=true` on every factory node whatever its count or memory. When the budget file cannot be read, or a node or pod read fails, the pass MUST change no label and MUST exit non-zero.
+**Overflow, the kill switch and a failed read keep their meaning.** When every factory node is closed by count or by memory, the reconciler MUST keep exactly one factory node admitted and MUST log a line beginning `OVERFLOW`, so that a first-placement pod always has an admitted node. That node MUST be chosen in this order: a node whose unrequested memory covers the pod memory request comes first, then the largest budget minus count, then the most unrequested memory, then the node name. When no factory node's unrequested memory covers the pod memory request, the node kept admitted cannot place a new factory sandbox pod, and a first-placement pod sent there waits out the sandbox driver's start timeout. In that case the line MUST begin `OVERFLOW-NO-MEMORY` and MUST name the admitted node, its unrequested memory and the pod memory request, so that the state is distinguishable from an overflow that still has a memory-fitting node. This reconciler does not prevent dispatch into that state. The fleet's launch cap does, and that bound is stated in §"Fabro factory registry", which the pending derive-the-dispatcher-s-fleet proposal amends to bound the committed run caps by the factory pod budgets. With `FACTORY_BUDGET_GATE=off`, a pass MUST set `ci-runner.io/factory-admit=true` on every factory node whatever its count or memory. When the budget file cannot be read, or a node or pod read fails, the pass MUST change no label and MUST exit non-zero.
 
 This section is spec-first. As of its ratification the shipped reconciler admits on pod count alone, and work item livespec-dev-tooling-uvxmn7 owns the change.
 
-In `SPECIFICATION/scenarios.md`, insert these two scenarios directly after `## Scenario: a factory node keeps its factory label across a control-plane reboot` (before `## Scenario: a node-loss drill holds one agent node NotReady and restores it without touching its workloads`):
+In `SPECIFICATION/scenarios.md`, insert these three scenarios directly after `## Scenario: a factory node keeps its factory label across a control-plane reboot` (before `## Scenario: a node-loss drill holds one agent node NotReady and restores it without touching its workloads`):
 
 ## Scenario: a factory node under its pod budget without memory for one more sandbox pod is not admitted
 
@@ -72,6 +72,16 @@ And every other factory node reads `ci-runner.io/factory-admit=false`
 
 And the pass logs a line beginning `OVERFLOW`
 
+## Scenario: every factory node closed by memory keeps one node admitted and logs OVERFLOW-NO-MEMORY
+
+Given every factory node has unrequested memory below the factory sandbox pod memory request
+
+When the factory budget admission reconciler runs one pass
+
+Then exactly one factory node reads `ci-runner.io/factory-admit=true`
+
+And the pass logs a line beginning `OVERFLOW-NO-MEMORY` naming that node, its unrequested memory and the factory sandbox pod memory request
+
 In `SPECIFICATION/contracts.md` §"Delegated pre-push gate", in the bullet that begins "- **Placement by node pressure.**", replace "which belongs to the factory-vs-CI CPU share" with "which belongs to factory budget admission (`non-functional-requirements.md` §"Factory budget admission")". The gate reconciler's prohibition on reading or writing the label is unchanged.
 
-In `tests/heading-coverage.json`, add three entries in the same revise, each with `"test": "TODO"`, `"work_item": "livespec-dev-tooling-uvxmn7"` and a non-empty `reason` saying the clause is spec-first and livespec-dev-tooling-uvxmn7 owns the test: `non-functional-requirements.md` `## Factory budget admission`, and `scenarios.md` for each of the two new scenario headings.
+In `tests/heading-coverage.json`, add four entries in the same revise, each with `"test": "TODO"`, `"work_item": "livespec-dev-tooling-uvxmn7"` and a non-empty `reason` saying the clause is spec-first and livespec-dev-tooling-uvxmn7 owns the test: `non-functional-requirements.md` `## Factory budget admission`, and `scenarios.md` for each of the three new scenario headings.
