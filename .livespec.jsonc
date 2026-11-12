@@ -567,7 +567,7 @@
         "proof_grade_route": 600
       },
 
-      "wip_cap": 10,
+      "wip_cap": 13,
       // ONE registry-backed entry, naming no machine. The Dispatcher resolves
       // `petri` by name from `/etc/livespec/fabro-factories.json`, which this
       // repository's own `fabro_factory_registry` role renders on every
