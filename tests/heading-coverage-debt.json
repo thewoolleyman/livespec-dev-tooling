@@ -527,6 +527,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: a factory sandbox loss drill deletes exactly one named run's sandbox pod and nothing else",
+    "work_item": "livespec-dev-tooling-5wybjq",
+    "first_seen": "2026-11-12"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: a failed compilation-cache warm build ends the busy-skip streak but keeps the lag start time",
     "work_item": "livespec-dev-tooling-uyevam",
     "first_seen": "2026-11-09"
