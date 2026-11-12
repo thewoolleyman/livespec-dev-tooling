@@ -688,6 +688,22 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: a delegated gate Job that runs longer than the stall window still ends with its own verdict",
+    "test": "TODO",
+    "reason": "A real test at the integration tier or above is owed for this heading: a delegated gate run through the real gate-run.sh, against a fake cluster whose gate Job stays running past a shortened stall window, shows the client renewing the progress stamp at least every 60 s, starting at most one kubectl per watch window, and the run recording the Job's own verdict rather than a stall FAILED or DIED_WITHOUT_VERDICT. livespec-dev-tooling-ie7fas owns it.",
+    "work_item": "livespec-dev-tooling-ie7fas"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a hung kubectl request on a delegated gate wait is timed out and the wait still ends",
+    "test": "TODO",
+    "reason": "A real test at the integration tier or above is owed for this heading: a delegated gate client driven against a kubectl stub that never returns shows the request ended before the stall window, the progress stamp still renewed, and the wait ending with the Job's verdict or a no-verdict state naming the timed-out call. livespec-dev-tooling-ie7fas owns it.",
+    "work_item": "livespec-dev-tooling-ie7fas"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: an opted-in push from an eligible host completes on a green cluster verdict",
     "test": "tests.consumer.test_delegated_pre_push_gate_scenarios.test_an_opted_in_push_from_an_eligible_host_completes_on_a_green_cluster_verdict",
     "reason": "Consumer-tier (integration-tier-or-above per the scenario-tier rule). The gate client's only door to the world is its GateCommandRunner seam, so a canned cluster answers every command and no API server, mirror or host is reached. The mapped arm proves all three Thens: the probe answers 0 for the opted-in fixture repository on a host holding a readable credential and the recipe arm then execs `gate_remote_delegate run` rather than any `just` target; the submit carries `--namespace gates` through the credential wrapper and the manifest rendered for the committed HEAD tree's own hash, which is the same hash the mirror ref is named for; the run polls through a Job that has not been admitted yet before reading `Complete`, so the push completes only AFTER the green verdict; and the existing `green_token write` CLI is invoked, which is the token the pre-push gate's own skip path reads."
@@ -1318,6 +1334,14 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: an agent session's foreground pytest of a gate-Job-only test module is refused whatever its worker count",
+    "test": "TODO",
+    "reason": "A real test at the integration tier or above is owed for this heading: the shipped PreToolUse guard, fed a Bash tool call for a foreground pytest naming a module matched by a fixture repository's declared gate_job_only_tests glob with no -n, on a host that can read the gates kubeconfig, refuses it naming the gate-start form, and does not refuse the same call dispatched through gate-start. livespec-dev-tooling-cvef23 owns it.",
+    "work_item": "livespec-dev-tooling-cvef23"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: an agent session's targeted pytest or a factory sandbox's full suite is not refused",
     "test": "tests.livespec_dev_tooling.agent_hooks.test_pretooluse_background_guard.test_targeted_or_ineligible_foreground_pytest_is_not_refused",
     "reason": "Integration-tier: a real repository fixture proves a named test path stays allowed on an eligible delegated host, and full suites stay allowed when either the gates kubeconfig is unreadable (the factory-sandbox shape) or the repository did not opt in (livespec-dev-tooling-4pchid)."
@@ -1474,6 +1498,22 @@
     "test": "TODO",
     "reason": "Spec-first: a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) or an integration-marked test is owed for this heading, driving the commit-msg suite-green leg after a passing full pre-commit aggregate on the same tree; livespec-dev-tooling-z5fwwn owns it.",
     "work_item": "livespec-dev-tooling-z5fwwn"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a passing test-only commit with no Red intent runs its staged tests once on the committing host",
+    "test": "TODO",
+    "reason": "A real test at the integration tier or above is owed for this heading: a real commit-msg replay gate run on a fixture repository that does not delegate replay runs, for a test-only commit with no Red intent whose staged module passes, shows the staged module run exactly once and TDD-Suite-Green-Scope: staged-tests recorded. livespec-dev-tooling-fjpqqq owns it.",
+    "work_item": "livespec-dev-tooling-fjpqqq"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a passing test-only commit with no Red intent runs its staged tests once in one delegated gate Job",
+    "test": "TODO",
+    "reason": "A real test at the integration tier or above is owed for this heading: a real commit-msg replay gate run in a delegating fixture repository against a fake gates cluster shows the staged modules run exactly once in one gate Job, no pytest started on the committing host, and TDD-Suite-Green-* trailers naming that Job. livespec-dev-tooling-fjpqqq owns it.",
+    "work_item": "livespec-dev-tooling-fjpqqq"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -2231,6 +2271,22 @@
     "test": "TODO",
     "reason": "Spec-first: a real test at the integration tier or above is owed for this scenario, exercising a consumer CI coverage job whose pytest session re-runs no test and confirming the run carries no flake-retries artifact; livespec-dev-tooling-ljea46 owns it.",
     "work_item": "livespec-dev-tooling-ljea46"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a state-writing CLI invoked without its state-path flag refuses and touches no host state",
+    "test": "TODO",
+    "reason": "A real test at the integration tier or above is owed for this heading: each state-writing livespec_dev_tooling entry point (the flake-retry filer, the Docker engine install guard and its preflight), run as a subprocess without its state-location flag, exits non-zero naming the flag and leaves a sentinel host path untouched. livespec-dev-tooling-6cgj2e owns it.",
+    "work_item": "livespec-dev-tooling-6cgj2e"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a committed invoker that omits a state-writing CLI's state-path flag fails the test suite",
+    "test": "TODO",
+    "reason": "A real test at the integration tier or above is owed for this heading: the repository's invoker scan, run over a fixture systemd unit or ansible template that invokes a state-writing entry point without one of its state-location flags, fails naming the invoker file and the missing flag. livespec-dev-tooling-6cgj2e owns it.",
+    "work_item": "livespec-dev-tooling-6cgj2e"
   },
   {
     "spec_root": "SPECIFICATION",

@@ -324,6 +324,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: a committed invoker that omits a state-writing CLI's state-path flag fails the test suite",
+    "work_item": "livespec-dev-tooling-6cgj2e",
+    "first_seen": "2026-11-12"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: a compilation-cache warm build skipped as busy past two populate intervals fires the lag trigger",
     "work_item": "livespec-dev-tooling-uyevam",
     "first_seen": "2026-11-09"
@@ -439,6 +446,13 @@
     "heading": "## Scenario: a default-branch push routes to the master runner target and a pull request does not",
     "work_item": "livespec-dev-tooling-lzkzwb",
     "first_seen": "2026-11-03"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a delegated gate Job that runs longer than the stall window still ends with its own verdict",
+    "work_item": "livespec-dev-tooling-ie7fas",
+    "first_seen": "2026-11-12"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -688,6 +702,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: a hung kubectl request on a delegated gate wait is timed out and the wait still ends",
+    "work_item": "livespec-dev-tooling-ie7fas",
+    "first_seen": "2026-11-12"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: a job on a runner-only node reads the pool's host-served caches over the node network",
     "work_item": "livespec-dev-tooling-zreev4",
     "first_seen": "2026-11-03"
@@ -817,6 +838,20 @@
     "heading": "## Scenario: a node takes runner pods up to its declared churn-slot capacity and no fewer",
     "work_item": "livespec-dev-tooling-mtvxde",
     "first_seen": "2026-11-04"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a passing test-only commit with no Red intent runs its staged tests once in one delegated gate Job",
+    "work_item": "livespec-dev-tooling-fjpqqq",
+    "first_seen": "2026-11-12"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a passing test-only commit with no Red intent runs its staged tests once on the committing host",
+    "work_item": "livespec-dev-tooling-fjpqqq",
+    "first_seen": "2026-11-12"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -1115,6 +1150,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: a state-writing CLI invoked without its state-path flag refuses and touches no host state",
+    "work_item": "livespec-dev-tooling-6cgj2e",
+    "first_seen": "2026-11-12"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: a stopped push gate ends without pushing and reads STOPPED",
     "work_item": "livespec-dev-tooling-kjwanx",
     "first_seen": "2026-11-11"
@@ -1293,6 +1335,13 @@
     "heading": "## Scenario: an aged runner pin raises a trigger",
     "work_item": "livespec-dev-tooling-jkwzwv",
     "first_seen": "2026-11-08"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: an agent session's foreground pytest of a gate-Job-only test module is refused whatever its worker count",
+    "work_item": "livespec-dev-tooling-cvef23",
+    "first_seen": "2026-11-12"
   },
   {
     "spec_root": "SPECIFICATION",

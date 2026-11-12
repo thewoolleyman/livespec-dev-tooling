@@ -988,6 +988,30 @@ And the pre-push gate MUST print a line saying it gated locally
 
 And a gate Job MUST NOT be submitted to the `gates` namespace
 
+## Scenario: a delegated gate Job that runs longer than the stall window still ends with its own verdict
+
+Given a `git push` run through `gate-start` whose pre-push hook delegates its gate, and whose gate Job stays admitted and running for longer than the runner's stall window
+
+When the Job reaches its Complete condition
+
+Then the gate client MUST have renewed the run's progress stamp at least once every 60 seconds throughout the wait
+
+And it MUST have started at most one `kubectl` process per watch window, apart from re-arms after a request that failed or hit its request bound early
+
+And the run MUST record the Job's own verdict, never the runner's stall-bound `FAILED` verdict or a `DIED_WITHOUT_VERDICT` state
+
+## Scenario: a hung kubectl request on a delegated gate wait is timed out and the wait still ends
+
+Given a delegated gate run whose gate client makes a `kubectl` request, on its admission wait or its terminal-state wait, that never returns
+
+When the request reaches its bound
+
+Then the client MUST end that request before the runner's stall window elapses
+
+And it MUST keep renewing the run's progress stamp
+
+And it MUST reach the Job's verdict, or a no-verdict state naming the timed-out call, within the admission bound or poll budget of the wait it is on
+
 ## Scenario: an opted-in push from an eligible host completes on a green cluster verdict
 
 Given a consumer repository whose `[tool.livespec_dev_tooling]` table sets `delegated_gate = true`
@@ -1864,6 +1888,18 @@ Then the guard MUST refuse the tool call with its full-suite pytest `check_id`
 
 And the refusal MUST name `just gate-start -- uv run pytest -n 8`
 
+## Scenario: an agent session's foreground pytest of a gate-Job-only test module is refused whatever its worker count
+
+Given a repository with `delegated_gate = true` whose `[tool.livespec_dev_tooling]` table declares `gate_job_only_tests` matching `tests/livespec_dev_tooling/test_apparmor_profile_role.py`
+
+And an agent session on a host whose user can read the gates kubeconfig
+
+When the session runs a foreground pytest invocation that names that file and passes no `-n`
+
+Then the guard MUST refuse the call and name the one-call `gate-start` form
+
+And the same invocation dispatched through `gate-start` MUST NOT be refused
+
 ## Scenario: an agent session's targeted pytest or a factory sandbox's full suite is not refused
 
 Given a repository with `delegated_gate = true`
@@ -2435,6 +2471,32 @@ When the commit-msg `red_green_replay` check runs its suite-green leg
 Then it MUST NOT start a pytest suite run
 
 And it MUST record its `TDD-Suite-Green-*` trailers from the aggregate run, naming that run
+
+## Scenario: a passing test-only commit with no Red intent runs its staged tests once on the committing host
+
+Given a repository that does not delegate its commit-time replay test runs
+
+And a test-only commit whose subject declares no Red intent, that stages no shared test support, and whose staged test modules pass
+
+When the commit-msg replay gate runs
+
+Then it MUST run the staged test modules exactly once for that commit
+
+And it MUST record `TDD-Suite-Green-Scope: staged-tests`
+
+## Scenario: a passing test-only commit with no Red intent runs its staged tests once in one delegated gate Job
+
+Given a repository that delegates its commit-time replay test runs, on a committing host that can read the gates kubeconfig
+
+And a test-only commit whose subject declares no Red intent, that stages no shared test support, and whose staged test modules pass
+
+When the commit-msg replay gate runs
+
+Then the staged test modules MUST run exactly once, in one gate Job
+
+And a pytest process MUST NOT start on the committing host
+
+And the commit MUST record `TDD-Suite-Green-Scope: staged-tests` with `TDD-Suite-Green-*` trailers that name that gate Job
 
 ## Scenario: the commit-range validation fails a Red+Green commit whose recorded test cannot be collected on its own tree
 
@@ -3334,6 +3396,26 @@ Given the coverage job of one of those repositories, whose pytest session re-run
 When the job's publishing step runs
 
 Then the workflow run MUST carry no artifact from that job named `flake-retries` or `flake-retries-<suffix>`, and that step MUST NOT fail the job
+
+## Scenario: a state-writing CLI invoked without its state-path flag refuses and touches no host state
+
+Given a command-line entry point under `livespec_dev_tooling/` whose run writes host state at a location named by a flag, such as the flake-retry filer's `--state-dir` or the Docker engine install guard's `--state-root`
+
+When it is invoked without that flag
+
+Then it MUST exit non-zero with a message naming the flag
+
+And it MUST NOT create, modify or touch anything under the host location that flag would otherwise have defaulted to
+
+## Scenario: a committed invoker that omits a state-writing CLI's state-path flag fails the test suite
+
+Given a committed systemd unit, ansible task file or template, or script that invokes a command-line entry point under `livespec_dev_tooling/` whose run writes host state
+
+And that invoker does not pass one of the entry point's state-location flags
+
+When the repository's test suite runs
+
+Then it MUST fail with a message naming the invoker file and the missing flag
 
 ## Scenario: the replay legs never retry the Red test and never accept a final failure
 
