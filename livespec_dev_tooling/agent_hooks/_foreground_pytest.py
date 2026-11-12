@@ -172,11 +172,25 @@ def _targets_declared_gate_job_only(*, pytest_argv: tuple[str, ...], cwd: Path) 
     eligible = bool(globs) and delegated_gate_enabled(repo_root=cwd) and gates_kubeconfig_readable()
     return eligible and any(
         fnmatchcase(path.relative_to(cwd).as_posix(), pattern)
-        for argument in pytest_argv[1:]
-        if not argument.startswith("-") and _names_test_path(argument=argument, cwd=cwd)
+        for argument in _positional_arguments(arguments=pytest_argv[1:])
+        if _names_test_path(argument=argument, cwd=cwd)
         for path in _test_modules_under(target=cwd / argument.split("::", maxsplit=1)[0])
         for pattern in globs
     )
+
+
+def _positional_arguments(*, arguments: tuple[str, ...]) -> tuple[str, ...]:
+    """The words that are not the value of a value-taking option, flags included."""
+    positional: list[str] = []
+    expect_option_value = False
+    for argument in arguments:
+        if expect_option_value:
+            expect_option_value = False
+        elif argument in _PYTEST_VALUE_OPTIONS:
+            expect_option_value = True
+        else:
+            positional.append(argument)
+    return tuple(positional)
 
 
 def _test_modules_under(*, target: Path) -> tuple[Path, ...]:
@@ -223,7 +237,7 @@ def _is_full_suite_pytest(*, pytest_argv: tuple[str, ...], cwd: Path) -> bool:
 
 def _names_test_path(*, argument: str, cwd: Path) -> bool:
     """A positional argument is a test path when it is a node id or exists on disk."""
-    return "::" in argument or (cwd / argument).exists()
+    return not argument.startswith("-") and ("::" in argument or (cwd / argument).exists())
 
 
 def _is_numprocesses_option(*, argument: str) -> bool:
