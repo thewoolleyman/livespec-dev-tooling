@@ -94,7 +94,7 @@ value, so a refresh edits only this file. The same checks run on
 `tests/livespec_dev_tooling/fixtures/incident_fleet/claims-wellformed.json`, broken one field at a
 time.
 
-Sixteen claims: six `implemented` and ten `not-applicable`.
+Fourteen claims: four `implemented` and ten `not-applicable`.
 
 - `Normal master context` for this library (gate-reader capability, release-keyed, `v1.198.0`),
   `implemented`. Incident chain `livespec-dev-tooling-t26bbr` landed two expedited commits on
@@ -104,8 +104,8 @@ Sixteen claims: six `implemented` and ten `not-applicable`.
   generation 19. The surface's five files are byte-identical from `v1.195.0` through `v1.198.0`.
   The claim's `proof_ref` names the runs, commits and reads.
 
-- `Commit-msg and TDD`, `Fast-gate timing`, `Focused test selection`, `Touched-file coverage`
-  and `Full coverage producers/consumers` for this library (gate-reader capability,
+- `Fast-gate timing`, `Focused test selection` and `Touched-file coverage` for this library
+  (gate-reader capability,
   release-keyed, `v1.198.0`), `implemented`. The committed, authenticated records for the
   closed `livespec-dev-tooling-t26bbr` chain and the `livespec-dev-tooling-gig42c` R3 scratch
   drill exercise these local-gate behaviors; the former's normal factory repayment is
@@ -139,12 +139,13 @@ release-keyed reason above. The reasons behind those rows, measured on 2026-11-1
 - **No `implemented` claim.** One needs the incident item, the cumulative scope digest and the
   normal factory proof of an incident that exercised the surface, read from that incident's record.
   The remaining local-gate rows are deliberately still unclassified: `Hook installation and
-  wiring`, `Pre-commit before mode selection`, `Pre-push`, `Explicit commands and parallel
-  aggregation`, `Normal evidence caches`, and `Agent tool and stop guards`. The first five no
-  longer have the v1.198.0 surface bytes the exercised chains ran, and the agent-guard surface
-  has no committed exercised incident receipt. The dev-host drill
-  `livespec-dev-tooling-bqnzcm.3.1` must exercise and claim them; this audit is not weakened to
-  classify them early.
+  wiring`, `Pre-commit before mode selection`, `Commit-msg and TDD`, `Pre-push`, `Explicit
+  commands and parallel aggregation`, `Full coverage producers/consumers`, `Normal evidence
+  caches`, and `Agent tool and stop guards`. `Commit-msg and TDD` and `Full coverage
+  producers/consumers` now import `flake_retry_filer.py`, which differs from the v1.198.0
+  exercised surface. The other local-gate rows lack a matching exercised incident receipt. The
+  dev-host drill `livespec-dev-tooling-bqnzcm.3.1` must exercise and claim all eight; this audit
+  is not weakened to classify them early.
 - **Open carriers in this library.** The controller and recovery rows that this library could
   classify each have an open carrier or a proof the observer docs still owe. These are First-failure
   observer (`q6eyrr`, `jpfdcx`), Existing reconciler coordination (`ariayn`), Failed-run retention
