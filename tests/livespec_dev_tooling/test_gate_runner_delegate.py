@@ -633,6 +633,48 @@ def test_a_cluster_gate_uses_the_worktree_tree_and_records_its_job(
     assert captured["check_suite"] == GATE_CHECK_SUITE_FALL_THROUGH
 
 
+def test_a_cluster_gate_records_its_job_before_the_remote_wait_returns(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The stop path can find a Job while the delegated client still waits."""
+    from inspect import signature
+
+    from returns.result import Success
+
+    from livespec_dev_tooling.gate_remote_client import GateRunRequest
+    from livespec_dev_tooling.gate_remote_verdict import GATE_NO_VERDICT, GateVerdict
+
+    module = importlib.import_module("livespec_dev_tooling.gate_runner_delegate")
+    root, _ = _init_repo(tmp_path=tmp_path)
+    run_dir = tmp_path / "run"
+    _ = run_dir.mkdir()
+    request = GateRunRequest(
+        repo_root=root, mirror_url="mirror", manifest="manifest", gate_ref="ref"
+    )
+    monkeypatch.setattr(module, "_working_tree_source", lambda **_kwargs: ("tree", "commit"))
+    monkeypatch.setattr(module, "resolve_renderer", lambda **_kwargs: Path("renderer"))
+    monkeypatch.setattr(module, "gate_remote_request", lambda **_kwargs: Success(request))
+
+    def gate(**kwargs: object) -> GateVerdict:
+        record = kwargs["record_job"]
+        assert callable(record)
+        record("gate-widget-queued")
+        assert (run_dir / "job_name").read_text(encoding="utf-8") == "gate-widget-queued\n"
+        return GateVerdict(state=GATE_NO_VERDICT, detail="interrupted", token_written=False)
+
+    monkeypatch.setattr(module, "run_gated_push", gate)
+
+    assert "record_job" in signature(module.run_cluster_gate).parameters
+    outcome = module.run_cluster_gate(
+        repo_root=root,
+        command=("just", "check"),
+        record_job=lambda name: (run_dir / "job_name").write_text(f"{name}\n", encoding="utf-8"),
+    )
+
+    assert outcome.exit_status == 75
+    assert (run_dir / "job_name").read_text(encoding="utf-8") == "gate-widget-queued\n"
+
+
 def test_a_cluster_gate_reports_a_host_authority_refusal_as_a_failed_verdict(
     *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
