@@ -4,7 +4,7 @@ Status: measured by the ci-runtime-and-cost seat on 2026-11-12 ~21:10Z. Context:
 
 ## Bottom line
 
-**No other fleet repository needs a master lane now.** None of the six showed master-push starvation. Over their last 16–20 master-push CI runs, the worst queue wait on a k3s job was 7.2–11.7 minutes. The orchestrator's master check-per-file-coverage shards waited 28–55 minutes on 2026-11-12.
+**No other fleet repository needs a master lane now, but see the addendum: overseer starved right after this window, and a lane would not have prevented it.** Within the measured window, none of the six showed master-push starvation. Over their last 16–20 master-push CI runs, the worst queue wait on a k3s job was 7.2–11.7 minutes. The orchestrator's master check-per-file-coverage shards waited 28–55 minutes on 2026-11-12.
 
 The orchestrator starved for a reason the others do not share:
 
@@ -13,7 +13,7 @@ The orchestrator starved for a reason the others do not share:
 
 ## Measurements
 
-Master-push queue wait is `started_at − created_at` for each job of a master-push `ci.yml` run whose runner labels or runner name contain `k3s`. The script below takes the most recent master-push runs created on or after 2026-11-05, and the API returned at most 20.
+Master-push queue wait is `started_at − created_at` for each job of a master-push `ci.yml` run whose runner labels or runner name contain `k3s`. The script below takes the most recent master-push runs created from 2026-11-05 to 2026-11-12T21:10:00Z, the window these figures were measured in, and the API returned at most 20. An open-ended window does not reproduce them: by 2026-11-13 it already read overseer at a p95 of 27.5 and a max of 88.0 minutes (see the addendum).
 
 | Repository | Scale-set label (CI_RUNNER_LABELS) | Master runs | k3s jobs | p50 (min) | p95 (min) | max (min) | Run window (UTC) | PR CI runs, 24 h |
 |---|---|---|---|---|---|---|---|---|
@@ -60,7 +60,7 @@ def gh(p):
     raise SystemExit(f"gh api failed: {p}: {r.stderr[:200]}")
 def t(s): return datetime.fromisoformat(s.replace("Z", "+00:00"))
 repo = sys.argv[1]
-runs = gh(f"repos/thewoolleyman/{repo}/actions/runs?branch=master&event=push&per_page=40&created=>=2026-11-05")["workflow_runs"]
+runs = gh(f"repos/thewoolleyman/{repo}/actions/runs?branch=master&event=push&per_page=40&created=2026-11-05..2026-11-12T21:10:00Z")["workflow_runs"]
 runs = [r for r in runs if r["path"].endswith("/ci.yml")]
 qs = []
 for r in runs[:25]:
@@ -85,3 +85,31 @@ Pull-request volume:
 gh api "repos/thewoolleyman/<repo>/actions/runs?event=pull_request&per_page=100&created=>=2026-11-11T21:00:00Z" \
   -q '[.workflow_runs[]|select(.path|endswith("/ci.yml"))]|length'
 ```
+
+## Addendum (2026-11-13): overseer starved, and a lane would not have helped
+
+legacy-coordinator-agent's grade of livespec-dev-tooling#4392 found two livespec-overseer master-push runs just after the measured window that starved:
+
+| Run | Created (UTC) | Worst k3s job wait | Next worst |
+|---|---|---|---|
+| 43307625796 | 2026-11-12 21:10:39 | 88.0 min (check-check-coverage-incremental, started 22:38:37) | 67.1, 64.8 |
+| 43324225226 | 2026-11-12 22:54:48 | 44.6 min (check-red-green-replay, started 23:39:23) | 27.5 |
+
+That puts overseer over this note's own re-measure trigger (a p95 above 15 minutes over 20 runs), so the trigger fired and overseer was re-measured.
+
+**The finding: the wait was not overseer's own pull requests holding its runners, so a master lane would not have shortened it.** A lane only helps when master jobs queue behind the same repository's pull-request jobs on one label. Counting every overseer `ci.yml` k3s job (all 18 runs created 19:30–23:59Z, pull-request and push alike) by whether it had started or was still waiting:
+
+| Instant (UTC) | overseer k3s jobs running | overseer k3s jobs waiting |
+|---|---|---|
+| 21:20 | 2 | 22 |
+| 21:40 | 0 | 29 |
+| 22:00 | 0 | 29 |
+| 22:20 | 1 | 31 |
+
+For about an hour, overseer's own scale set ran **zero to two** jobs while 22–31 waited. Its `maxRunners` is 6 (`ci-runner/k3s/phase2/arc/values-livespec-overseer.yaml`), so its own work was not filling it. The jobs were simply not being admitted. The 23:00Z and 23:20Z counts are left out: a job without `completed_at` counts as running there, and they read 24–25 against a cap of 6, so they are not trustworthy. The zeros above cannot be inflated that way.
+
+That points at pressure above the scale set. Overseer's ClusterQueue sits in the shared `fleet-ci-runner-pool` cohort, whose `nominalQuota` values sum to the pool's churn-slot capacity. The same evening the cluster was loaded: the orchestrator's coverage shards queued 28–55 minutes (handoff 69), livespec-dev-tooling's master check-per-file-coverage ran 45 minutes, and the arm64 macbook worker had been cordoned since 20:00:41Z (livespec-dev-tooling-6csh56). A separate master lane would be another ClusterQueue in the same cohort and would wait on the same admission. It would not have started these jobs sooner.
+
+**Conclusion, amended:** still no master lane for overseer. The 21:10–23:40Z starvation was cluster-wide admission pressure, which belongs to the Kueue and pool owners (gate-job-resources and homelab-k8s-worker-nodes), not to master-lane routing. Why the cohort did not hand overseer its guaranteed floor in that hour is routed to them.
+
+Reproduce the instant counts by listing `repos/thewoolleyman/livespec-overseer/actions/runs?per_page=100&created=2026-11-12T19:30:00Z..2026-11-12T23:59:00Z` (`ci.yml` only), then the jobs of each run. For each k3s job, count it as running at instant T when `started_at <= T < completed_at`, and as waiting when `created_at <= T < started_at`.
