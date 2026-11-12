@@ -5,17 +5,10 @@ from dataclasses import dataclass, field
 from functools import partial
 from pathlib import Path, PurePosixPath
 
+from livespec_dev_tooling.flake_retry_bindings import bound_by, parameter_names
+from livespec_dev_tooling.flake_retry_divisions import division_operands
+
 __all__: list[str] = ["path_literals"]
-
-
-def _division_operands(*, expression: ast.expr) -> tuple[ast.expr, ...]:
-    """Flatten one left-associative path-expression division chain."""
-    if isinstance(expression, ast.BinOp) and isinstance(expression.op, ast.Div):
-        return (
-            *_division_operands(expression=expression.left),
-            *_division_operands(expression=expression.right),
-        )
-    return (expression,)
 
 
 @dataclass(kw_only=True, eq=False)
@@ -26,6 +19,7 @@ class _Scope:
     is_class: bool
     bound: set[str] = field(default_factory=set)
     roots: set[str] = field(default_factory=set)
+    outer: dict[str, bool] = field(default_factory=dict)
 
 
 @dataclass(kw_only=True)
@@ -35,38 +29,17 @@ class _ScopeIndex:
     scope_of: dict[int, _Scope]
     scopes: list[_Scope]
     assignments: list[tuple[list[ast.expr], ast.expr, _Scope]]
-    declared_outer: set[str]
 
 
 _FUNCTIONS = (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)
 _COMPREHENSIONS = (ast.ListComp, ast.SetComp, ast.DictComp, ast.GeneratorExp)
 
 
-def _parameter_names(*, arguments: ast.arguments) -> list[str]:
-    """Name every parameter a function signature binds in the function's own scope."""
-    parameters = [*arguments.posonlyargs, *arguments.args, *arguments.kwonlyargs]
-    variadic = [parameter for parameter in (arguments.vararg, arguments.kwarg) if parameter]
-    return [parameter.arg for parameter in (*parameters, *variadic)]
-
-
-def _bound_by(*, node: ast.AST) -> list[str]:
-    """Name what this node binds in the scope the node itself is evaluated in."""
-    if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Store | ast.Del):
-        return [node.id]
-    if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef):
-        return [node.name]
-    if isinstance(node, ast.Import | ast.ImportFrom):
-        return [(alias.asname or alias.name).split(".")[0] for alias in node.names]
-    if isinstance(node, ast.ExceptHandler) and node.name is not None:
-        return [node.name]
-    return []
-
-
 def _open_scope(*, node: ast.AST, scope: _Scope) -> tuple[_Scope, frozenset[int]] | None:
     """Open the scope a function, class or comprehension node introduces, if it does."""
     if isinstance(node, _FUNCTIONS):
         inner = _Scope(parent=scope, is_class=False)
-        inner.bound.update(_parameter_names(arguments=node.args))
+        inner.bound.update(parameter_names(arguments=node.args))
         body = node.body if isinstance(node.body, list) else [node.body]
         return inner, frozenset(id(child) for child in body)
     if isinstance(node, ast.ClassDef):
@@ -81,19 +54,19 @@ def _open_scope(*, node: ast.AST, scope: _Scope) -> tuple[_Scope, frozenset[int]
 def _index_scopes(*, tree: ast.AST) -> _ScopeIndex:
     """Walk the module once, recording each node's scope and what every scope binds."""
     module = _Scope(parent=None, is_class=False)
-    index = _ScopeIndex(scope_of={}, scopes=[module], assignments=[], declared_outer=set())
+    index = _ScopeIndex(scope_of={}, scopes=[module], assignments=[])
     pending: list[tuple[ast.AST, _Scope]] = [(tree, module)]
     while pending:
         node, scope = pending.pop()
         index.scope_of[id(node)] = scope
-        scope.bound.update(_bound_by(node=node))
+        scope.bound.update(bound_by(node=node))
         if isinstance(node, ast.Assign | ast.AnnAssign) and node.value:
             targets: list[ast.expr] = (
                 node.targets if isinstance(node, ast.Assign) else [node.target]
             )
             index.assignments.append((targets, node.value, scope))
         if isinstance(node, ast.Global | ast.Nonlocal):
-            index.declared_outer.update(node.names)
+            scope.outer.update((name, isinstance(node, ast.Global)) for name in node.names)
         opened = _open_scope(node=node, scope=scope)
         for child in ast.iter_child_nodes(node):
             inside = opened is not None and id(child) in opened[1]
@@ -103,12 +76,24 @@ def _index_scopes(*, tree: ast.AST) -> _ScopeIndex:
     return index
 
 
+def _binding_scope(*, name: str, scope: _Scope, index: _ScopeIndex) -> _Scope:
+    """Return the scope that owns ``name`` when this scope declares it outer."""
+    declaration = scope.outer.get(name)
+    if declaration is not False:
+        return index.scopes[0] if declaration else scope
+    current = scope.parent
+    while current is not None and (current.is_class or name not in current.bound):
+        current = current.parent
+    return current or scope
+
+
 def _is_root_name(*, name: str, scope: _Scope, index: _ScopeIndex) -> bool:
     """Say whether `name`, read in `scope`, is bound to the repository root where it resolves."""
-    if name in index.declared_outer:
-        return any(name in each.roots for each in index.scopes)
     current: _Scope | None = scope
     while current is not None:
+        resolved = _binding_scope(name=name, scope=current, index=index)
+        if resolved is not current:
+            return name in resolved.roots
         if name in current.bound and (current is scope or not current.is_class):
             return name in current.roots
         current = current.parent
@@ -193,8 +178,12 @@ def _repository_root_context(
             if resolved != resolved_root:
                 continue
             for target in targets:
-                if isinstance(target, ast.Name) and target.id not in scope.roots:
-                    scope.roots.add(target.id)
+                if not isinstance(target, ast.Name):
+                    continue
+                target_scope = _binding_scope(name=target.id, scope=scope, index=index)
+                target_scope.bound.add(target.id)
+                if target.id not in target_scope.roots:
+                    target_scope.roots.add(target.id)
                     changed = True
     return frozenset(
         id(expression)
@@ -281,7 +270,7 @@ def path_literals(
         ):
             continue
         names, is_undeterminable = _path_names(
-            operands=_division_operands(expression=node),
+            operands=division_operands(expression=node),
             repo_root=repo_root,
             repository_root_expression_ids=root_expression_ids,
         )
