@@ -142,7 +142,8 @@
       "SPECIFICATION/non-functional-requirements.md §\"Toolchain pins\""
     ],
     "livespec-orchestrator-beads-fabro": [
-      "SPECIFICATION/contracts.md §\"Factory addresses resolved from a host registry\""
+      "SPECIFICATION/contracts.md §\"Factory addresses resolved from a host registry\"",
+      "SPECIFICATION/contracts.md §\"`capture-work-item`\""
     ],
     "livespec-driver-codex": [
       "SPECIFICATION/contracts.md §\"Codex hook-cache compatibility\""
