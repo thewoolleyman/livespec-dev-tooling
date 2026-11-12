@@ -1185,9 +1185,8 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a lease PUT's latency is readable apart from every other API-server request",
-    "test": "TODO",
-    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, reading the livespec metrics dataset after the converged control-plane emitter has run on poweredge-xubuntu and asserting apiserver_request_duration_seconds rows for verb PUT and resource leases carrying none of the summed-away attributes. livespec-dev-tooling-f5qjzn owns it; the implementation PR that ships it replaces this row.",
-    "work_item": "livespec-dev-tooling-f5qjzn"
+    "test": "tests.consumer.test_control_plane_emitter_scenarios.test_lease_put_latency_is_isolated",
+    "reason": "Consumer-tier: runs the committed control-plane emitter against a fixture scrape that includes lease PUT rows under two scopes beside a pods GET row, then proves the emitted lease histogram is distinct, summed, and carries only verb/resource dimensions (livespec-dev-tooling-nbpzvy)."
   },
   {
     "spec_root": "SPECIFICATION",
