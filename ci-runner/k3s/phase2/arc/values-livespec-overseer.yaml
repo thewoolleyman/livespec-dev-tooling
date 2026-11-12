@@ -151,7 +151,7 @@ template:
           # before it installs anything. See ../container-hook/README.md
           # "Runner-image bump procedure".
           - name: ACTIONS_RUNNER_CONTAINER_HOOKS
-            value: /home/runner/fleet-hook/index.js
+            value: /home/runner/hook-template/drill-hook-entry.js
           - name: ACTIONS_RUNNER_PRESEEDED_EXTERNALS_VERSION
             value: "2.338.2"
           # THE WORKFLOW-POD FIX. In kubernetes container mode the job's
