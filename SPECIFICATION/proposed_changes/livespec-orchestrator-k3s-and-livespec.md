@@ -21,11 +21,11 @@ Work item livespec-dev-tooling-2aelab (plan ci-runtime-and-cost) raises livespec
 
 ### Proposed Changes
 
-In SPECIFICATION/non-functional-requirements.md, section "## Adaptive JIT runner admission budget", insert the following sentences immediately after the sentence that ends "are pool facts recorded with the pool's admission derivation, never here.":
+In SPECIFICATION/non-functional-requirements.md, section "## Adaptive JIT runner admission budget", insert the following sentences immediately after "Maintainer-directed 2026-09-06." (the sentence that follows "are pool facts recorded with the pool's admission derivation, never here."), so the new rule does not inherit that dated maintainer attribution:
 
-A repository whose logical ceiling departs from that multiple and floor MUST be listed as an exception row in the pool's admission derivation, naming the repository, its ceiling, the reason, the acceptance check that shows the exception still earns its place, and the kill switch that returns the repository to the rule. An exception's ceiling MUST stay above that repository's guaranteed share. The pool's ceiling check MUST read the exception set from that derivation, never from a copy of its values, and MUST fail, naming the repository and its ceiling, when a repository departs from the rule without an exception row or an exception row's ceiling is not above that repository's guaranteed share.
+A repository whose logical ceiling departs from that multiple and floor MUST be listed as an exception row in the pool's admission derivation, naming the repository, its ceiling, the reason, the acceptance check that shows the exception still earns its place, and the kill switch that returns the repository to the rule. An exception's ceiling MUST stay above that repository's guaranteed share, and it remains subject to the bound this section places on every logical ceiling and to the physical host-wide cap. The pool's ceiling check MUST read the exception set from that derivation, never from a copy of its values, and MUST fail, naming the repository and its ceiling, when a repository departs from the rule without an exception row, when an exception row's ceiling is not above that repository's guaranteed share, or when an exception row names no acceptance check or no kill switch.
 
-In SPECIFICATION/scenarios.md, append the following scenario:
+In SPECIFICATION/scenarios.md, insert the following scenario immediately after the scenario "## Scenario: JIT fleet capacity borrows fairly without exceeding 482 runners":
 
 ## Scenario: a runner ceiling that departs from the pool rule without a recorded exception fails the pool's ceiling check
 
