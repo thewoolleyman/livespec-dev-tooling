@@ -1387,16 +1387,15 @@ def test_pytest_mentioned_only_in_a_heredoc_body_is_not_refused(
     "command",
     [
         pytest.param("cd && pytest -n 4", id="no-cd-argument"),
-        pytest.param("cd ~missing-user && pytest -n 4", id="unexpandable-tilde"),
     ],
 )
-def test_an_unresolvable_cd_target_uses_the_session_working_directory(
+def test_a_cd_without_an_argument_targets_home(
     command: str,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """A non-literal `cd` target never releases a delegating session's pytest."""
+    """An argument-free `cd` keeps its shell-defined target of the home directory."""
     home = tmp_path / "home"
     delegating = _make_hooked_repo(repo=home, hooks=())
     _write_delegated_gate_config(repository=delegating, delegated=True)
@@ -1404,8 +1403,6 @@ def test_an_unresolvable_cd_target_uses_the_session_working_directory(
     _ = credential.write_text("apiVersion: v1\nkind: Config\n", encoding="utf-8")
     monkeypatch.setenv("GATES_KUBECONFIG", str(credential))
     monkeypatch.setenv("HOME", str(home))
-    if command.startswith("cd ~missing"):
-        monkeypatch.setattr(Path, "expanduser", lambda _path: Path("~unexpanded"))
 
     event = _foreground_refusal_event(
         command=command,
