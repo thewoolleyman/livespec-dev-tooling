@@ -405,3 +405,23 @@ def test_reclaim_leaves_a_namespace_whose_recorded_creator_cannot_be_observed(
     reclaim(root=tmp_path)
 
     assert namespace_dir.is_dir()
+
+
+def test_a_namespace_minted_without_an_observable_identity_records_no_creator(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A malformed identity is never persisted: an unobservable creator leaves no record."""
+    assert hasattr(namespaces, "build_namespace_dirs")
+
+    def unobservable(*, pid: int) -> None:
+        assert pid > 0
+
+    monkeypatch.setattr(namespaces, "process_start_time", unobservable)
+
+    directories = namespaces.build_namespace_dirs(
+        targets=["check-coverage"], skip_set=frozenset(), root=tmp_path
+    )
+
+    namespace_dir = directories["full-tree"]
+    assert namespace_dir.is_dir()
+    assert not (namespace_dir / ".livespec-coverage-creator.json").exists()
