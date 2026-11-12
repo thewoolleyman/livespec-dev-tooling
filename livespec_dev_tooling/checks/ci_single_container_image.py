@@ -63,6 +63,7 @@ _JUST_TARGET = re.compile(
     r"\bjust(?:[ \t]+-[^ \t]+(?:[ \t]+(?!check\b)[^ \t-][^ \t]*)?)*[ \t]+"
     r"(?P<target>[a-zA-Z0-9][a-zA-Z0-9_-]*)\b"
 )
+_SHELL_SEPARATOR = re.compile(r"&&|\|\||[;|&#]")
 _CHECK_RECIPE = re.compile(r"^check(?:[ \t]+[^:]*)?:[ \t]*(?P<dependencies>.*)$")
 _RECIPE_HEADER = re.compile(r"^[^ \t#:][^:]*:[ \t]*(?:#.*)?$")
 _HINT = (
@@ -205,7 +206,8 @@ def _runs_aggregate_target(*, lines: list[str], image: _Image, aggregate: set[st
     """Whether this image's job runs any declared aggregate target."""
     for line in lines[image.job_start : image.job_end]:
         for matched in _JUST_TARGET.finditer(line):
-            if matched.group("target") in aggregate:
+            invocation = _SHELL_SEPARATOR.split(line[matched.start("target") :], maxsplit=1)[0]
+            if any(recipe in aggregate for recipe in invocation.split()):
                 return True
     return False
 
