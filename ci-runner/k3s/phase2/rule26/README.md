@@ -32,6 +32,14 @@ shared by every run on the PVC. The engine checkpoints it at most every 300 s,
 so a run ended by its 24-hour deadline leaves its finished mutants for the next
 run id, which reuses them and logs `mutation-kill-matrix: executed N/M mutants`. `run.log` records the start, end, exit code and elapsed seconds.
 
+The engine also stores its baseline measurement (per-test coverage and the
+baseline failures) beside the cache, as
+`/data/cache/mutation-kill-matrix-cache-measure.json`. A later run over the
+same orchestrator commit, engine image and dependency set reuses it, logs
+`mutation-kill-matrix: reused the stored per-test coverage`, and skips the
+serial measure stage (about 3.6 h on run 20261111t1). A change to any input
+file, to the collected tests or to the per-test timeout measures again.
+
 ## Launch
 
 A launch is a committed apply from the control node, never a hand `kubectl
