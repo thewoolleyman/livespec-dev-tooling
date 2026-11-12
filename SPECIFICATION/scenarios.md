@@ -3267,6 +3267,32 @@ When the host-side flake reader runs
 
 Then it MUST file exactly one root-fix work item, for the node id that had none
 
+## Scenario: a root-fix item the reader files in a claim-token tenant names its claim token in the creating write
+
+Given `.livespec.jsonc` commits `dispatcher.claim_tokens` as true
+
+And `tmp/flake-retries/` holds a record for one node id that has no open root-fix work item
+
+When the host-side flake reader runs
+
+Then the reader MUST file the root-fix item through the work-item store's capture path, which names the item's first claim token in the write that creates it
+
+And the item MUST rest in the status the intake gate routed it to, and the reader's pass MUST exit zero
+
+## Scenario: a root-fix item whose intake routing is refused is routed again on the reader's next pass
+
+Given `tmp/flake-retries/` holds records for two node ids, neither of which has an open root-fix work item
+
+And the work-item store's intake gate refuses the first routing of the item the reader files for the first node id
+
+When the host-side flake reader runs
+
+Then it MUST still file and route a root-fix item for the second node id
+
+And its pass MUST exit non-zero, and its log MUST name the first item's id and the refusal text
+
+And when the reader runs again with the intake gate accepting, it MUST route the first item, MUST NOT route the second item again, and MUST NOT file a second root-fix item for either node id while their items are open
+
 ## Scenario: a re-run test's record reaches the host-side reader as a CI artifact
 
 Given the coverage job of this repository, livespec, livespec-overseer or livespec-orchestrator-beads-fabro, whose pytest session re-runs a test
@@ -4656,3 +4682,17 @@ When that member's CI `export-telemetry` job runs
 Then it MUST emit the run's `ci.run` and `ci.job.<name>` spans by running that module
 
 And the member's repository MUST carry no copy of the exporter's span-building logic
+
+## Scenario: a check runner reclaims the coverage directory a killed runner left behind
+
+Given a coverage-namespace directory under the system temp directory whose recorded creator process is no longer running
+
+And a coverage-namespace directory whose recorded creator is a check runner still running
+
+When another check runner starts and creates its own coverage-namespace directories
+
+Then the directory whose creator is no longer running MUST be removed
+
+And the directory whose creator is still running MUST remain in place
+
+And the running runner's verdict MUST be unchanged

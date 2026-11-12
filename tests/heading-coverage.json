@@ -2189,8 +2189,24 @@
     "spec_file": "scenarios.md",
     "heading": "## Scenario: every retried failure files one root-fix work item",
     "test": "TODO",
-    "reason": "Spec-first: a real test at the integration tier or above is owed for this scenario, driving a pytest session that loads the flake-retry plugin against a fixture repository with a controlled change set; livespec-dev-tooling-crxcy4 owns it.",
-    "work_item": "livespec-dev-tooling-crxcy4"
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this scenario, driving the host-side flake reader against fixture retry records for two node ids, one of which already has an open root-fix item; livespec-dev-tooling-o4j3kg owns it (re-owned from livespec-dev-tooling-crxcy4, which closed without it).",
+    "work_item": "livespec-dev-tooling-o4j3kg"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a root-fix item the reader files in a claim-token tenant names its claim token in the creating write",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this scenario, driving the host-side flake reader in a tenant that commits claim tokens and asserting it creates the root-fix item only through the store's capture path and the item rests where intake routed it; livespec-dev-tooling-o4j3kg owns it.",
+    "work_item": "livespec-dev-tooling-o4j3kg"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a root-fix item whose intake routing is refused is routed again on the reader's next pass",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this scenario, driving the host-side flake reader against a work-item store whose intake gate refuses the first routing and accepts the next, asserting the non-zero exit, the logged item id and refusal text, the other node id still filed, and the re-route with no second item; livespec-dev-tooling-o4j3kg owns it.",
+    "work_item": "livespec-dev-tooling-o4j3kg"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -3488,5 +3504,13 @@
     "test": "TODO",
     "reason": "A real test at the integration tier or above is owed for this heading: a consumer-style test runs the shipped CI run-telemetry exporter module, as a member's `export-telemetry` job invokes it, against a recorded run, and shows it emits the `ci.run` and `ci.job.<name>` spans. livespec-dev-tooling-5ua57h owns it.",
     "work_item": "livespec-dev-tooling-5ua57h"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a check runner reclaims the coverage directory a killed runner left behind",
+    "test": "TODO",
+    "reason": "A real test at the integration tier or above is owed for this heading: a check runner started on a host whose system temp directory holds one coverage-namespace directory recorded for a creator that is no longer running and one recorded for a running runner removes the first, leaves the second, and leaves the running runner's verdict unchanged. livespec-dev-tooling-64ik6g owns it.",
+    "work_item": "livespec-dev-tooling-64ik6g"
   }
 ]

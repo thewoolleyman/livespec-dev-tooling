@@ -969,6 +969,17 @@
   # token is read from server.env inside the host-side interpreter, so it is in
   # no argv and never in Ansible's variables; an entry already carrying the
   # instance's current token is left untouched and reports no change.
+  #
+  # It runs in check mode too (check_mode: false below), because the busy probe
+  # after it does (check_mode: false) and cannot answer without this login.
+  # Skipped in check mode, a drift run against an instance whose CLI was never
+  # logged in stopped at the probe with rc 4 "Authentication required" and
+  # reported nothing past it, while the real apply, which runs this step
+  # first, went through. Measured 2026-11-12 on gmktec-xubuntu
+  # fabro-server-homelab-worker-arm64 (:32279), legacy-coordinator-agent GO.
+  # Running it in check mode writes only the same idempotent auth-store entry
+  # a real apply writes, and nothing at all when the entry is current.
+  check_mode: false
   ansible.builtin.command:
     argv:
       - python3

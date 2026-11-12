@@ -97,7 +97,8 @@ _FLEET_COMMIT = "bbe6938"
 # bd-ib-qx45e6, plan fabro-currency), ahead of the fleet instance.
 # 2026-11-11: briefly back on bbe6938 for sandbox-driver-kubernetes v0.8.3's one-pod
 # parity sample (bd-ib-u4fp5z); after it passed, the candidate returned to 85071c8.
-_CANDIDATE_COMMIT = "85071c8"
+# 2026-11-12: d22808f, 85071c8 plus the sqlx patch for RUSTSEC-2026-0459 (bd-ib-tcdmkr).
+_CANDIDATE_COMMIT = "d22808f"
 _PINNED_COMMIT = {"fabro-server": _FLEET_COMMIT, "fabro-server-candidate": _CANDIDATE_COMMIT}
 _SUPERSEDED_CARRIER = "adeefec"
 _SUPERSEDED_BUILD_REFERENCE = "#1048"
