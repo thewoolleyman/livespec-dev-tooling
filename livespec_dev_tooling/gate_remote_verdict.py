@@ -55,6 +55,7 @@ default is an ungated push, and only one of the two is recoverable.
 from __future__ import annotations
 
 import sys
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -81,6 +82,7 @@ __all__: list[str] = [
     "GATE_NO_VERDICT",
     "GATE_PASSED",
     "GateVerdict",
+    "ignore_job_name",
     "run_gated_push",
 ]
 
@@ -106,6 +108,11 @@ _TOKEN_STEP = "write-green-token"  # noqa: S105
 # rather than a bare `python`: the token must be written by the environment the
 # client is already running in, which is the one that resolves the package.
 _GREEN_TOKEN_WRITE_ARGV = (sys.executable, "-m", "livespec_dev_tooling.green_token", "write")
+
+
+def ignore_job_name(*, name: str) -> None:
+    """Keep ordinary delegated gate callers independent of a shell run record."""
+    _ = name
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -179,6 +186,7 @@ def run_gated_push(
     request: GateRunRequest,
     runner: GateCommandRunner = default_gate_command_runner,
     sleeper: Sleeper = default_sleeper,
+    record_job: Callable[..., None] = ignore_job_name,
 ) -> GateVerdict:
     """Gate the current HEAD tree on the cluster and decide whether to push.
 
@@ -189,7 +197,7 @@ def run_gated_push(
     re-discriminated. Which fault it was belongs in the `detail` an operator
     reads; what the client does about it is identical either way.
     """
-    gated = run_gate(request=request, runner=runner, sleeper=sleeper)
+    gated = run_gate(request=request, runner=runner, sleeper=sleeper, record_job=record_job)
     if isinstance(gated, Failure):
         return _no_verdict(failure=gated.failure())
     return _adjudicate(outcome=gated.unwrap(), request=request, runner=runner)
