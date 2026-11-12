@@ -29,6 +29,15 @@ An entry that exists only to carry a port forward MUST be restricted to that for
 
 **Enforced for managed authorized_keys entries.** This repository's `just check` aggregate MUST include `check-ansible-authorized-keys-managed`. It is a repo-private check, outside the canonical fleet-universal slug set, because this repository alone owns the provisioning tree. It MUST converge each role that writes authorized_keys entries against a fixture file holding unrelated keys, and assert four things: only the role's marked entries and the lines carrying its declared retired keys change, every other unmarked line keeps its bytes and order, every forward-only entry carries `restrict`, a no-op command, exact forwards and the locked opposite direction, and a key declared both as a managed entry and as retired makes the converge refuse. It MUST fail the aggregate on any violation. A run that finds no such role MUST report itself as vacuous rather than as a pass.
 
+
+In the same revise commit, the revise that accepts this proposal MUST add one `tests/heading-coverage.json` row for each of the three new `scenarios.md` headings, and MUST regenerate `tests/heading-coverage-debt.json` to match:
+
+- `## Scenario: a managed forward-only authorized_keys entry leaves every other key untouched`
+- `## Scenario: a managed authorized_keys role retires a hand-placed key by its key blob`
+- `## Scenario: a key both managed and retired refuses the converge`
+
+Each row has `spec_root` `SPECIFICATION`, `spec_file` `scenarios.md`, `test` `TODO` and `work_item` `livespec-dev-tooling-sr46h2`, which owes the role and the `check-ansible-authorized-keys-managed` control. Its `reason` states that a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) is owed, converging the role against an authorized_keys fixture, and that a unit-tier test does not satisfy a scenario. The new paragraphs in `non-functional-requirements.md` sit under the existing `## Host provisioning tree` heading and add no heading.
+
 In SPECIFICATION/scenarios.md, add:
 
 ## Scenario: a managed forward-only authorized_keys entry leaves every other key untouched
