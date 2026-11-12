@@ -122,6 +122,7 @@ from livespec_dev_tooling.agent_hooks._foreground_gate import (  # noqa: E402
 )
 from livespec_dev_tooling.agent_hooks._foreground_pytest import (  # noqa: E402
     foreground_full_suite_pytest,
+    foreground_gate_job_only_pytest,
 )
 
 __all__: list[str] = []
@@ -276,6 +277,18 @@ def _foreground_verdict(
     command = tool_input.get("command")
     if tool_name != "Bash" or not isinstance(command, str) or _SANCTIONED_RUNNER.search(command):
         return 0
+    pytest_repository = foreground_gate_job_only_pytest(command=command, cwd=Path.cwd())
+    if pytest_repository is not None:
+        log.error(
+            "DENIED: a foreground gate-Job-only pytest on a delegating host — "
+            "dispatch it through the detached runner",
+            check_id="pretooluse-foreground-gate-job-only-pytest-deny",
+            gate="pytest",
+            command=command,
+            repository=str(pytest_repository),
+            hint=foreground_deny_hint(cwd=Path.cwd(), command=command),
+        )
+        return 2
     pytest_repository = foreground_full_suite_pytest(command=command, cwd=Path.cwd())
     if pytest_repository is not None:
         log.error(
