@@ -28,13 +28,15 @@ That behaviour is load-bearing for recovery. Once an observer unit's `StartLimit
 
 It adds no behaviour the committed role does not already have.
 
+Only this repository carries the observer role. The rule covers every installation the role renders, including the per-repository installations proposed under `the-fleet-audit-can-read`.
+
 ### Proposed Changes
 
 In `SPECIFICATION/contracts.md`, section "Expedited incident execution", append the following sentence to the end of the paragraph that begins "A drill or proof installation whose configuration names a scratch target branch MUST run side by side with the production installation", immediately after its last sentence, which ends "and the fleet audit MUST NOT read it as the running independent controller." No heading is added, removed or renamed in that file.
 
 When that committed observer role restarts an observer unit, production's or a scratch installation's, onto its installation, it MUST first clear the unit's failed and start-limit state, so that a converge shipping a fix while the unit's start limit is tripped is not refused by systemd; a reset that answers that the unit is not loaded, as on a first install, MUST be accepted, any other failed reset MUST stop the converge before the restart, and a check-mode run MUST NOT reset a real unit.
 
-In `SPECIFICATION/scenarios.md`, insert the following scenario immediately after the scenario "a scratch-branch incident drill runs beside production on the full master CI graph" and before the scenario "a recorded scratch-branch drill ends in drill-closed and a master incident is refused".
+In `SPECIFICATION/scenarios.md`, insert the following scenario after the scenario "a scratch-branch incident drill runs beside production on the full master CI graph". Alignment note: livespec-dev-tooling#4351 inserts a scenario in the same position. When that proposal has ratified first, place this scenario after the scenario it inserts; in every case it goes before the scenario "a recorded scratch-branch drill ends in drill-closed and a master incident is refused".
 
 ## Scenario: the committed observer role clears a tripped start limit before it restarts an observer
 
