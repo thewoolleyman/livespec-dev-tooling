@@ -140,3 +140,38 @@ def test_lease_put_latency_is_isolated(tmp_path: Path) -> None:
         )
         == "tests.consumer.test_control_plane_emitter_scenarios.test_lease_put_latency_is_isolated"
     )
+
+
+def test_api_server_504_responses_are_summed_by_verb_and_resource(tmp_path: Path) -> None:
+    """504 rows under two scopes become one data point per verb/resource pair."""
+    payload = _emit(
+        tmp_path=tmp_path,
+        metrics_text="\n".join(
+            [
+                'apiserver_request_total{verb="PUT",resource="leases",scope="namespace",code="504"} 2',
+                'apiserver_request_total{verb="PUT",resource="leases",scope="cluster",code="504"} 3',
+                'apiserver_request_total{verb="GET",resource="pods",scope="cluster",code="504"} 7',
+                'apiserver_request_total{verb="PUT",resource="leases",scope="namespace",code="200"} 11',
+                'apiserver_request_total{verb="GET",resource="pods",scope="cluster",code="500"} 13',
+                "",
+            ]
+        ),
+    )
+    points = _metric(payload=payload, name="apiserver_request_total")["sum"]["dataPoints"]
+    observed = {
+        (_attribute(point=point, name="verb"), _attribute(point=point, name="resource")): point[
+            "asInt"
+        ]
+        for point in points
+    }
+    assert observed == {("GET", "pods"): "7", ("PUT", "leases"): "5"}
+    assert all(
+        {attribute["key"] for attribute in point["attributes"]} == {"verb", "resource"}
+        for point in points
+    )
+    assert (
+        _coverage_test(
+            heading="## Scenario: API-server 504 responses are counted by verb and resource"
+        )
+        == "tests.consumer.test_control_plane_emitter_scenarios.test_api_server_504_responses_are_summed_by_verb_and_resource"
+    )
