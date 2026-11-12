@@ -62,7 +62,8 @@ capacity changes. Read it before editing any number in `kueue/` or any
 
 Confirmed live, `livespec-s43svm.14`, 2026-08-16: `thewoolleyman` is a
 personal GitHub User account, not an Organization. Phase 1's original
-`arc/values.yaml`/`values-host-unique.yaml` pointed `githubConfigUrl`
+`arc/values.yaml` and `arc/values-host-unique.yaml` (the latter since
+deleted, livespec-dev-tooling-y4umcc) pointed `githubConfigUrl`
 at the account root (`https://github.com/thewoolleyman`) — ARC's own
 URL parser (`github/actions/actions.go` in
 `actions/actions-runner-controller`) recognizes exactly three scopes
