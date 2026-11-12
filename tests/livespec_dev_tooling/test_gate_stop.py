@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import argparse
 import os
 import signal
 import subprocess
@@ -9,6 +10,10 @@ import time
 from contextlib import suppress
 from pathlib import Path
 
+from _pytest.monkeypatch import MonkeyPatch
+from returns.result import Success
+
+from livespec_dev_tooling import gate_stop
 from livespec_dev_tooling.install_worktree_pack import CANONICAL_GATE_RUN_BODY
 
 __all__: list[str] = []
@@ -107,3 +112,31 @@ def test_gate_stop_refuses_unknown_and_completed_run_ids(*, tmp_path: Path) -> N
     assert completed.returncode == 1
     assert "terminal" in completed.stdout
     assert not (run_dir / "stopped").exists()
+
+
+def test_gate_stop_only_confirms_a_recorded_job_is_gone(
+    *, monkeypatch: MonkeyPatch, tmp_path: Path
+) -> None:
+    """Stopping signals the client; it must not delete the client's Job itself."""
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    _ = (run_dir / "job_name").write_text("gate-job\n", encoding="utf-8")
+    _ = (run_dir / "pid").write_text("123\n", encoding="utf-8")
+    calls: list[list[str]] = []
+
+    def runner(*, argv: list[str], cwd: Path) -> Success[subprocess.CompletedProcess[str]]:
+        _ = cwd
+        calls.append(argv)
+        return Success(subprocess.CompletedProcess(argv, 0, "", ""))
+
+    monkeypatch.setattr(gate_stop, "default_gate_command_runner", runner)
+    monkeypatch.setattr(
+        gate_stop,
+        "_args",
+        lambda: argparse.Namespace(run_dir=run_dir),
+    )
+    monkeypatch.setattr(gate_stop, "_stop", lambda *, root: set())
+
+    assert gate_stop.main() == 1
+    assert len(calls) == 1
+    assert calls[0][-5:] == ["--namespace", "gates", "get", "job", "gate-job"]
