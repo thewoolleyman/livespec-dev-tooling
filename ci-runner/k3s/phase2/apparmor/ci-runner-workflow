@@ -74,6 +74,15 @@ profile ci-runner-workflow flags=(attach_disconnected,mediate_deleted) {
   ptrace (trace,read,tracedby,readby) peer=ci-runner-workflow,
   ptrace (trace,read,tracedby,readby) peer=ci-runner-workflow//&unconfined,
 
+  # bubblewrap inside a workflow pod. The distribution's `bwrap` profile
+  # attaches to the binary, so a bwrap child's label is this profile stacked
+  # with it, `bwrap//&ci-runner-workflow`, and bwrap reading its own child's
+  # /proc entries is a ptrace-read against that label. Without this line every
+  # node logged it DENIED (requested_mask="read"; 538 lines in 24 h on
+  # poweredge-xubuntu, 2026-11-12, livespec-dev-tooling-yxxwuu). Read only: no
+  # trace is granted to or from the stacked label.
+  ptrace (read,readby) peer=bwrap//&ci-runner-workflow,
+
   # ---- Below here: containerd's default deny set, unchanged. ----
 
   deny @{PROC}/* w,

@@ -387,13 +387,6 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario: a consuming repository's check aggregate refuses a member with no purity declaration",
-    "work_item": "livespec-dev-tooling-ixtdx7",
-    "first_seen": "2026-11-12"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
     "heading": "## Scenario: a coverage consumer that did not reuse reaches the maintainer",
     "work_item": "livespec-dev-tooling-akljpy",
     "first_seen": "2026-11-08"
@@ -523,6 +516,13 @@
     "heading": "## Scenario: a factory response sent on a credential the rotator did not select is attributed to the credential's own account",
     "work_item": "livespec-dev-tooling-n277mo",
     "first_seen": "2026-11-10"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a factory sandbox loss drill deletes exactly one named run's sandbox pod and nothing else",
+    "work_item": "livespec-dev-tooling-5wybjq",
+    "first_seen": "2026-11-12"
   },
   {
     "spec_root": "SPECIFICATION",
