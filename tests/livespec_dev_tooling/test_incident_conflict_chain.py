@@ -657,6 +657,17 @@ def test_a_reopen_refusal_not_known_to_be_final_is_retried_under_its_code(tmp_pa
     assert "incident-authority-refused: incident-reopen-not-eligible" in capsys.readouterr().err
 
 
+def test_a_drill_closed_regression_is_terminal_evidence_and_never_reopens_the_chain(tmp_path):
+    other = _chain(tmp_path, registration=_registration(phase="drill-closed"))
+
+    written = other.writer.record(intent=_intent(phase="drill-closed"), receipt=_RECEIPT)
+
+    assert written == ChainWrite.terminal(reason="drill-evidence")
+    assert other.actions() == [] and other.transitions() == []
+    assert other.history()[-1]["phase"] == "drill-closed"
+    assert other.status() == "active"
+
+
 def test_a_conflict_the_owner_already_resolved_is_terminal_and_never_rewritten(chain):
     assert chain.writer.record(intent=_intent(), receipt=_RECEIPT) == _LANDED
     blocked = chain.history()[-1]

@@ -98,6 +98,7 @@ _CLAIM_NOT_HELD = "incident-rollback-conflict-claim-not-held"
 _REVERTING = "reverting"
 _REPAIR = "repair"
 _MERGED = "master-observation"
+_DRILL_CLOSED = "drill-closed"
 _RECEIPT_PREFIX = "rollback-conflict:"
 _TRUNK = "trunk"
 _TENANT = "tenant-unavailable"
@@ -155,6 +156,8 @@ class ConflictChain:
 
     def record(self, *, intent: RecoveryIntent, receipt: str) -> ChainWrite:
         """Write the conflict; `landed` only when the reply proves it blocked the item."""
+        if intent.registration.phase == _DRILL_CLOSED:
+            return ChainWrite.terminal(reason="drill-evidence")
         if not self.command or not self.installed_reader_approved(self.release, self.command):
             return ChainWrite.retry(reason="reader-unapproved")
         reverting = self._reverting(intent=intent)
