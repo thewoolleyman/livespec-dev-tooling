@@ -510,6 +510,8 @@ jobs:
         run: |
           set +e
           real_git="$(command -v git)"
+          uv_bin="$(mise which uv)"  # the mise shim resolves no version outside the repo, so pin the real binary here
+          echo "uv: $("$uv_bin" --version)"
           probe="$(mktemp -d)"; mkdir -p "$probe/bin" "$probe/p1" "$probe/p2"
           # shellcheck disable=SC2016  # the shim's printf format is single-quoted on purpose
           printf '#!/bin/sh\n{ printf "shim: GIT_CONFIG_PARAMETERS=%%s helpers=%%s argv1=%%s\\n" "$( [ -n "$GIT_CONFIG_PARAMETERS" ] && echo present || echo ABSENT )" "$(%s config --get-all credential.https://github.com.helper | wc -l)" "$1"; } >>"%s/shim.log"\nexec %s "$@"\n' "$real_git" "$probe" "$real_git" > "$probe/bin/git"
@@ -517,11 +519,11 @@ jobs:
           printf '[project]\nname = "probe"\nversion = "0"\nrequires-python = ">=3.10"\ndependencies = ["livespec-runtime @ git+https://github.com/thewoolleyman/livespec-runtime.git@v0.30.2"]\n' > "$probe/p1/pyproject.toml"
           printf '[project]\nname = "probe"\nversion = "0"\nrequires-python = ">=3.10"\ndependencies = ["nope @ git+https://github.com/thewoolleyman/livespec-fc4dzb-probe-does-not-exist.git"]\n' > "$probe/p2/pyproject.toml"
           echo "== 1. cold-cache uv lock of a real git source"
-          (cd "$probe/p1" && PATH="$probe/bin:$PATH" UV_CACHE_DIR="$(mktemp -d)" uv lock 2>&1 | tail -n 5); echo "exit=$?"
+          (cd "$probe/p1" && PATH="$probe/bin:$PATH" UV_CACHE_DIR="$(mktemp -d)" "$uv_bin" lock 2>&1 | tail -n 5); echo "exit=$?"
           echo "== shim log (one line per git call uv made)"
           sort "$probe/shim.log" | uniq -c
           echo "== 2. forced 401 inside uv (GIT_TRACE, credential lines only)"
-          (cd "$probe/p2" && PATH="$probe/bin:$PATH" GIT_TRACE=1 UV_CACHE_DIR="$(mktemp -d)" uv lock 2>&1 | grep -E 'run_command: .*f\(\)|could not read Username|Repository not found|not found|fatal|Authentication failed' | sed 's/password=.*/password=<redacted>/' | head -n 20)
+          (cd "$probe/p2" && PATH="$probe/bin:$PATH" GIT_TRACE=1 UV_CACHE_DIR="$(mktemp -d)" "$uv_bin" lock 2>&1 | grep -E 'run_command: .*f\(\)|could not read Username|Repository not found|not found|fatal|Authentication failed' | sed 's/password=.*/password=<redacted>/' | head -n 20)
           echo "expected: the helper runs, then 'Repository not found' (an authenticated 404), and NO 'could not read Username'"
           exit 0
 
