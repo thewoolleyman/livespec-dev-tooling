@@ -238,6 +238,17 @@ def _install_slow_span(*, pool_bin: Path, sleep_s: int) -> None:
     span.chmod(0o755)
 
 
+def test_wait_for_cache_work_reports_a_timeout(
+    *, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A missing record does not make a detached lifecycle test wait forever."""
+    ticks = iter((0.0, 2.1))
+    monkeypatch.setattr(time, "monotonic", lambda: next(ticks))
+    monkeypatch.setattr(time, "sleep", lambda _: None)
+
+    assert _wait_for_cache_work(recorded=tmp_path / "warm-copy.tsv") is False
+
+
 def _run_post_start(
     *,
     root: Path,
