@@ -11,12 +11,27 @@ from pathlib import Path
 __all__: list[str] = []
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
-_PROXY_MANIFEST = (
+_PYPI_PROXY_MANIFEST = (
     _REPO_ROOT / "ci-runner" / "k3s" / "phase2" / "warm-cache" / "pypi-proxy" / "pypi-proxy.yaml"
 )
+_WRAPPER_MANIFEST = (
+    _REPO_ROOT
+    / "ci-runner"
+    / "k3s"
+    / "phase2"
+    / "warm-cache"
+    / "pypi-proxy"
+    / "pypi-proxy-uv-wrapper.yaml"
+)
 _HOOK_TEMPLATE = _REPO_ROOT / "ci-runner" / "k3s" / "phase2" / "arc" / "hook-pod-template.yaml"
+_WARM_CACHE_CONVERGE = (
+    _REPO_ROOT / "ci-runner" / "k3s" / "phase2" / "warm-cache" / "converge-warm-cache.sh"
+)
+_STACK_CONVERGE = (
+    _REPO_ROOT / "ci-runner" / "k3s" / "phase2" / "reconstruct" / "converge-ci-stack.sh"
+)
 _WRAPPER = re.compile(
-    r"^  name: pypi-proxy-uv-wrapper\n  namespace: ci-warm-cache\ndata:\n  uv: \|\n"
+    r"^  name: pypi-proxy-uv-wrapper\n(?:  namespace: [^\n]+\n)?data:\n  uv: \|\n"
     r"(?P<body>.*?)(?=^---)",
     re.MULTILINE | re.DOTALL,
 )
@@ -24,7 +39,8 @@ _WRAPPER = re.compile(
 
 def test_hp_runner_only_jobs_get_a_read_only_uv_proxy_wrapper() -> None:
     """The wrapper routes frozen wheel URLs without giving a job a write surface."""
-    proxy = _PROXY_MANIFEST.read_text(encoding="utf-8")
+    source = _WRAPPER_MANIFEST if _WRAPPER_MANIFEST.is_file() else _PYPI_PROXY_MANIFEST
+    proxy = source.read_text(encoding="utf-8")
     template = _HOOK_TEMPLATE.read_text(encoding="utf-8")
 
     assert "name: pypi-proxy-uv-wrapper" in proxy
@@ -38,9 +54,39 @@ def test_hp_runner_only_jobs_get_a_read_only_uv_proxy_wrapper() -> None:
 
 def _wrapper_source() -> str:
     """Read the ConfigMap's executable payload, keeping its shell body executable."""
-    matched = _WRAPPER.search(_PROXY_MANIFEST.read_text(encoding="utf-8"))
+    source = _WRAPPER_MANIFEST if _WRAPPER_MANIFEST.is_file() else _PYPI_PROXY_MANIFEST
+    matched = _WRAPPER.search(source.read_text(encoding="utf-8"))
     assert matched is not None, "the PyPI proxy manifest must carry the uv wrapper ConfigMap"
     return textwrap.dedent(matched.group("body"))
+
+
+def test_the_ci_stack_publishes_the_shared_uv_wrapper_for_every_consumer() -> None:
+    """The same wrapper definition is present before ARC creates a workflow pod."""
+    assert _WRAPPER_MANIFEST.is_file()
+    wrapper_definition = _WRAPPER_MANIFEST.read_text(encoding="utf-8")
+    proxy = _PYPI_PROXY_MANIFEST.read_text(encoding="utf-8")
+    warm_cache_converge = _WARM_CACHE_CONVERGE.read_text(encoding="utf-8")
+    stack_converge = _STACK_CONVERGE.read_text(encoding="utf-8")
+    template = _HOOK_TEMPLATE.read_text(encoding="utf-8")
+
+    assert "namespace:" not in wrapper_definition
+    assert "name: pypi-proxy-uv-wrapper" not in proxy
+    assert (
+        'run kubectl -n "${NAMESPACE}" apply -f '
+        '"${SCRIPT_DIR}/pypi-proxy/pypi-proxy-uv-wrapper.yaml"'
+    ) in warm_cache_converge
+    assert (
+        'kubectl -n "$RUNNERS_NAMESPACE" apply -f '
+        '"${WARM_CACHE_DIR}/pypi-proxy/pypi-proxy-uv-wrapper.yaml"'
+    ) in stack_converge
+    assert (
+        "    - name: pypi-proxy-uv-wrapper\n"
+        "      configMap:\n"
+        "        name: pypi-proxy-uv-wrapper\n"
+        "        optional: false\n"
+        "        defaultMode: 365"
+    ) in template
+    assert ("value: /opt/ci-runner/uv-proxy:" "/root/.local/share/mise/installs/uv/") in template
 
 
 def test_a_healthy_hp_source_routes_locked_wheels_without_public_downloads(
