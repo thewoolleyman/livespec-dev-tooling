@@ -24,6 +24,7 @@ __all__: list[str] = [
     "CachedOutcome",
     "load_cache",
     "save_cache",
+    "write_whole",
 ]
 
 
@@ -63,9 +64,25 @@ def load_cache(*, path: Path | None) -> dict[str, CachedOutcome] | None:
     }
 
 
+def write_whole(*, path: Path, text: str) -> None:
+    """Replace `path` with `text` at once: a synced temporary file of its own, then a rename."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    descriptor, partial = tempfile.mkstemp(
+        dir=path.parent, prefix=path.name + ".", suffix=".partial"
+    )
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+            _ = handle.write(text)
+            handle.flush()
+            os.fchmod(handle.fileno(), _CACHE_MODE)
+            os.fsync(handle.fileno())
+        _ = Path(partial).replace(path)
+    finally:
+        Path(partial).unlink(missing_ok=True)
+
+
 def save_cache(*, path: Path, entries: dict[str, CachedOutcome]) -> None:
     """Write the cache holding exactly these outcomes, replacing any earlier file at once."""
-    path.parent.mkdir(parents=True, exist_ok=True)
     document = {
         "schema": CACHE_SCHEMA,
         "entries": {
@@ -73,15 +90,4 @@ def save_cache(*, path: Path, entries: dict[str, CachedOutcome]) -> None:
             for key, outcome in sorted(entries.items())
         },
     }
-    descriptor, partial = tempfile.mkstemp(
-        dir=path.parent, prefix=path.name + ".", suffix=".partial"
-    )
-    try:
-        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
-            _ = handle.write(json.dumps(document, indent=2, sort_keys=True) + "\n")
-            handle.flush()
-            os.fchmod(handle.fileno(), _CACHE_MODE)
-            os.fsync(handle.fileno())
-        _ = Path(partial).replace(path)
-    finally:
-        Path(partial).unlink(missing_ok=True)
+    write_whole(path=path, text=json.dumps(document, indent=2, sort_keys=True) + "\n")
