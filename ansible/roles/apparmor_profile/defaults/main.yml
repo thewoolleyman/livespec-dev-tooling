@@ -24,6 +24,10 @@ apparmor_profile_group: root
 # Where the kernel exposes each loaded profile as `<name>.<id>/`, with the
 # sha256 of the policy blob it was loaded from (`raw_sha256`) and its `mode`.
 apparmor_profile_loaded_dir: /sys/kernel/security/apparmor/policy/profiles
+# Where this role records each load it made: one file per profile, holding the
+# sha256 of the installed file and the kernel's `raw_sha256` right after the
+# load. The next run compares the node against it (see tasks/main.yml).
+apparmor_profile_record_dir: /var/lib/livespec/apparmor-profile
 # Where apparmor_parser lives on a Debian-family host. Both are the same
 # binary on Ubuntu (/sbin is a symlink into /usr/sbin); both are listed so the
 # check does not depend on which one a given release ships as the real path.

@@ -21,11 +21,21 @@
 # THE READER IS THE KERNEL, NOT THE FILE. A file that matches git says nothing
 # about the policy a pod is confined by: containerd loads its own default
 # profile whenever none of that name is loaded, and a file can be installed and
-# never parsed. So the role compares what the kernel holds with what the
-# installed file compiles to, loads on any difference, and fails if the two
-# still differ afterwards. `apparmor_parser -Q -K -S <file> | sha256sum` equals
-# the loaded profile's `raw_sha256` (measured 2026-11-12 on two loaded profiles
-# of the dev host; the final assert fails loudly on a host where it does not).
+# never parsed. The kernel exposes the sha256 of the policy blob each loaded
+# profile came from (`raw_sha256`), so the role RECORDS, at its own load, the
+# installed file's sha256 and the `raw_sha256` the kernel then holds. A profile
+# is pending a load when it has no record, when the installed file is not the
+# recorded one, or when the kernel no longer holds the recorded policy.
+#
+# NOT A FRESH COMPILE. An earlier version compared `raw_sha256` with
+# `apparmor_parser -Q -K -S <file> | sha256sum`. That equality held on the dev
+# host and on no pool node: on gamingpc-xubuntu (kernel 7.0.0-43, apparmor
+# 5.0.2, 2026-11-12) the two differed for a profile whose real `-r` load the
+# kernel logged as "same as current profile, skipping". A skip-kernel-load
+# compile is not the blob a load sends, so nothing here compiles to compare.
+#
+# A boot whose parser cache is stale may load a blob with a different hash than
+# the recorded one. The next apply then reloads and re-records once; harmless.
 # No k3s restart: `apparmor_parser -r` replaces a loaded profile in place.
 #
 # ROLLBACK. Reverting the commit and deleting the file does NOT give a node
@@ -94,45 +104,51 @@
   register: apparmor_profile_installed
   loop: "{{ apparmor_profile_names }}"
 
-- name: Probe the policy the kernel holds against the installed files
+- name: Probe each profile against the record of this role's last load
   # A READ that carries the drift verdict: the load below is a command, so it is
   # skipped under --check, and without this computed `changed_when` a drift
   # report would print `skipping` over a real pending load (the node_taints
   # lesson, livespec-dev-tooling-ewjby3). Under --check the file is not written,
   # so a pending install also counts as a pending load.
   #
-  # It prints three words: the sha256 of the loaded policy, the sha256 the
-  # installed file compiles to, and the loaded profile's mode. `-` stands for a
-  # value that does not exist yet. `-Q` keeps the parser from touching the
-  # kernel and `-K` from reading a cache, so this writes nothing.
+  # It prints `pending` or `current`. `pending` is any of: no record; the
+  # installed file is not the recorded one; the kernel holds no such profile;
+  # the kernel holds a policy other than the recorded one (containerd, or
+  # anything else, loaded over ours).
   ansible.builtin.shell:
     executable: /bin/bash
     cmd: |
       set -euo pipefail
-      loaded=- expected=- mode=-
+      file="{{ apparmor_profile_dest_dir }}/{{ item.item }}"
+      record="{{ apparmor_profile_record_dir }}/{{ item.item }}"
+      held=- installed=- recorded_file=. recorded_held=.
       for dir in "{{ apparmor_profile_loaded_dir }}/{{ item.item }}".[0-9]*; do
         if [ -r "${dir}/raw_sha256" ]; then
-          loaded="$(cat "${dir}/raw_sha256")"
-          mode="$(cat "${dir}/mode")"
+          held="$(cat "${dir}/raw_sha256")"
         fi
       done
-      if [ -r "{{ apparmor_profile_dest_dir }}/{{ item.item }}" ]; then
-        expected="$("{{ apparmor_profile_parser_path }}" -Q -K -S \
-          "{{ apparmor_profile_dest_dir }}/{{ item.item }}" | sha256sum | cut -d' ' -f1)"
+      if [ -r "${file}" ]; then
+        installed="$(sha256sum < "${file}" | cut -d' ' -f1)"
       fi
-      printf '%s %s %s\n' "${loaded}" "${expected}" "${mode}"
+      if [ -r "${record}" ]; then
+        read -r recorded_file recorded_held < "${record}" || true
+      fi
+      if [ "${installed}" = "${recorded_file}" ] && [ "${held}" = "${recorded_held}" ]; then
+        printf 'current\n'
+      else
+        printf 'pending\n'
+      fi
   become: true
   register: apparmor_profile_probe
   check_mode: false
   changed_when: >-
     ansible_check_mode
-    and (item.changed
-         or apparmor_profile_probe.stdout.split()[0] != apparmor_profile_probe.stdout.split()[1])
+    and (item.changed or apparmor_profile_probe.stdout == 'pending')
   loop: "{{ apparmor_profile_installed.results }}"
   loop_control:
     label: "{{ item.item }}"
 
-- name: Load each profile the kernel does not hold as installed
+- name: Load each pending profile
   # -r replaces an already-loaded profile of the same name in place, so the
   # containers it confines pick the new rules up with no restart. -W refreshes
   # the parser's cache, which is what the boot-time load reads.
@@ -144,34 +160,68 @@
       - "{{ apparmor_profile_dest_dir }}/{{ item.item.item }}"
   become: true
   changed_when: true
-  when: item.stdout.split()[0] != item.stdout.split()[1]
+  when: item.stdout == 'pending'
   loop: "{{ apparmor_profile_probe.results }}"
   loop_control:
     label: "{{ item.item.item }}"
 
-- name: Read back the policy the kernel holds
-  # The same read as the probe, after the load, so it stays out of --check.
+- name: Record each load
+  # Written only after a load that succeeded, from what the kernel holds NOW:
+  # the record is this role's statement "this file, loaded by me, is this
+  # policy". The kernel may have skipped an identical blob; the record is the
+  # same either way. Written to a temporary name and renamed, so a reader never
+  # sees half a record.
   ansible.builtin.shell:
     executable: /bin/bash
     cmd: |
       set -euo pipefail
-      loaded=- mode=-
+      umask 022
+      file="{{ apparmor_profile_dest_dir }}/{{ item.item.item }}"
+      record="{{ apparmor_profile_record_dir }}/{{ item.item.item }}"
+      held=-
+      for dir in "{{ apparmor_profile_loaded_dir }}/{{ item.item.item }}".[0-9]*; do
+        if [ -r "${dir}/raw_sha256" ]; then
+          held="$(cat "${dir}/raw_sha256")"
+        fi
+      done
+      if [ "${held}" = - ]; then
+        echo "the kernel holds no {{ item.item.item }} after the load" >&2
+        exit 1
+      fi
+      mkdir -p "{{ apparmor_profile_record_dir }}"
+      printf '%s %s\n' "$(sha256sum < "${file}" | cut -d' ' -f1)" "${held}" > "${record}.new"
+      chmod 0644 "${record}.new"
+      mv -f "${record}.new" "${record}"
+  become: true
+  changed_when: true
+  when: item.stdout == 'pending'
+  loop: "{{ apparmor_profile_probe.results }}"
+  loop_control:
+    label: "{{ item.item.item }}"
+
+- name: Read back what the kernel holds against the record
+  # After the load and the record, so it stays out of --check. It prints the
+  # kernel's policy, the recorded policy and the loaded profile's mode.
+  ansible.builtin.shell:
+    executable: /bin/bash
+    cmd: |
+      set -euo pipefail
+      held=- mode=- recorded_file=. recorded_held=.
       for dir in "{{ apparmor_profile_loaded_dir }}/{{ item }}".[0-9]*; do
         if [ -r "${dir}/raw_sha256" ]; then
-          loaded="$(cat "${dir}/raw_sha256")"
+          held="$(cat "${dir}/raw_sha256")"
           mode="$(cat "${dir}/mode")"
         fi
       done
-      expected="$("{{ apparmor_profile_parser_path }}" -Q -K -S \
-        "{{ apparmor_profile_dest_dir }}/{{ item }}" | sha256sum | cut -d' ' -f1)"
-      printf '%s %s %s\n' "${loaded}" "${expected}" "${mode}"
+      read -r recorded_file recorded_held < "{{ apparmor_profile_record_dir }}/{{ item }}"
+      printf '%s %s %s\n' "${held}" "${recorded_held}" "${mode}"
   become: true
   register: apparmor_profile_after
   changed_when: false
   when: not ansible_check_mode
   loop: "{{ apparmor_profile_names }}"
 
-- name: Refuse a profile the kernel does not hold as installed, in enforce mode
+- name: Refuse a profile the kernel does not hold as recorded, in enforce mode
   # Fail loudly rather than leaving a half-installed node: a pod confined by a
   # different policy than this tree claims, or by one in complain mode, is the
   # silent outcome this role exists to rule out.
@@ -181,9 +231,9 @@
       - item.stdout.split()[2] == 'enforce'
     fail_msg: >-
       {{ item.item }}: the kernel holds policy {{ item.stdout.split()[0] }} in mode
-      {{ item.stdout.split()[2] }}, but the installed file compiles to
-      {{ item.stdout.split()[1] }} and must be enforced
-    success_msg: "{{ item.item }} is loaded as installed, in enforce mode"
+      {{ item.stdout.split()[2] }}, but this role recorded loading
+      {{ item.stdout.split()[1] }} and it must be enforced
+    success_msg: "{{ item.item }} is loaded as recorded, in enforce mode"
   when: not ansible_check_mode
   loop: "{{ apparmor_profile_after.results }}"
   loop_control:
@@ -226,13 +276,18 @@
   loop_control:
     label: "{{ item.item }}"
 
-- name: Remove each absent profile's file
-  # Without the file the boot-time load no longer brings the profile back.
+- name: Remove each absent profile's file and its load record
+  # Without the file the boot-time load no longer brings the profile back, and
+  # without the record a later re-install starts from "never loaded by me".
   ansible.builtin.file:
-    path: "{{ apparmor_profile_dest_dir }}/{{ item }}"
+    path: "{{ item.1 }}/{{ item.0 }}"
     state: absent
   become: true
-  loop: "{{ apparmor_profile_absent }}"
+  loop: >-
+    {{ apparmor_profile_absent
+       | product([apparmor_profile_dest_dir, apparmor_profile_record_dir]) | list }}
+  loop_control:
+    label: "{{ item.1 }}/{{ item.0 }}"
 
 - name: Read back the kernel for each absent profile
   ansible.builtin.shell:
