@@ -105,6 +105,11 @@
 # pod cannot run anywhere else (node-local storage, a node selector) fails here
 # by name.
 #
+# EVERY READ FAILS LOUDLY. A failed `kubectl` read is never taken for an empty
+# answer. Before the deletes it refuses with nothing changed (so does a cluster
+# with no other Ready node); after them it fails saying the post-condition is
+# not established.
+#
 # A DELETE IS NOT AN EVICTION. `evacuate` deletes gracefully and does not go
 # through the eviction API, so no PodDisruptionBudget is consulted: the
 # power-off takes those pods whatever a budget says. A ReplicaSet's or
@@ -423,7 +428,9 @@
           nodes_template+='{.status.conditions[?(@.type=="Ready")].status}{"\n"}{end}'
           other_ready_nodes() {
             local listed name state names=''
-            listed="$(kubectl get nodes --output "jsonpath=${nodes_template}")"
+            # A substitution clears errexit, so a failed read would otherwise
+            # read as "no other node is Ready": say it failed.
+            listed="$(kubectl get nodes --output "jsonpath=${nodes_template}")" || return 1
             while IFS='|' read -r name state; do
               if test "${state}" = 'True' && test "${name}" != "${node}"; then
                 names+=" ${name}"
@@ -461,13 +468,26 @@
             printf '%s' "${count}"
           }
 
+          # EVERY READ FAILS LOUDLY. A read that failed must never be taken for
+          # an empty answer: an empty node list would set every owner's
+          # "before" count to 0, and a pod that was already running elsewhere
+          # would then pass as the replacement.
+          read_back_failed() {
+            printf 'evacuate of node %s: %s could not be read back after the deletes, ' \
+              "${node}" "${1}" >&2
+            printf 'so the post-condition is NOT established. ' >&2
+            printf 'The pods are deleted; re-run to re-check.\n' >&2
+            exit 1
+          }
           table=''
           ready_nodes=''
           if test "${action}" = 'evacuate'; then
-            table="$(all_pods)"
-            ready_nodes="$(other_ready_nodes)"
+            table="$(all_pods)" || refuse "the cluster's pods could not be read."
+            ready_nodes="$(other_ready_nodes)" || refuse "the cluster's nodes could not be read."
+            test -n "${ready_nodes}" \
+              || refuse 'no other node is Ready, so a deleted pod would have nowhere to run.'
           fi
-          pods="$(node_pods)"
+          pods="$(node_pods)" || refuse "the node's pods could not be read."
           selected=''
           left=''
           deleted_owners=''
@@ -531,7 +551,7 @@
           owners_deleted="$(printf '%s' "${deleted_owners}" | sort -u)"
           deadline=$((SECONDS + K3S_WINDOW_EVACUATE_WAIT_SECONDS))
           while :; do
-            pods="$(node_pods)"
+            pods="$(node_pods)" || read_back_failed "the node's pod list"
             remaining=''
             while read -r namespace name _; do
               test -n "${namespace}" || continue
@@ -539,8 +559,8 @@
                 remaining+=" ${namespace}/${name}"
               fi
             done <<< "${pods}"
-            now_table="$(all_pods)"
-            now_ready="$(other_ready_nodes)"
+            now_table="$(all_pods)" || read_back_failed "the cluster's pod list"
+            now_ready="$(other_ready_nodes)" || read_back_failed "the cluster's node list"
             lacking=''
             replaced=''
             while read -r namespace owner; do
