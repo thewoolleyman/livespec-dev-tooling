@@ -234,13 +234,17 @@ spec:
           args:
             - |
               set -euo pipefail
+              @@GATE_FORGE_RETRY@@
               git init --quiet /livespec-core
               cd /livespec-core
               git remote add origin "@@LIVESPEC_CORE_URL@@"
               # `git fetch <ref>` rather than `clone --branch`: the pinned value
               # is a TAG for a consumer that pins a release and a BRANCH for one
-              # that pins nothing, and this one form resolves either.
-              if ! git fetch --quiet --depth 1 origin "@@LIVESPEC_CORE_REF@@"; then
+              # that pins nothing, and this one form resolves either. The fetch
+              # is anonymous and leaves through the pool's one shared egress,
+              # so it goes through forge_retry (forge-retry.sh): a throttled
+              # 401 is retried with growing waits, a missing ref is not.
+              if ! forge_retry "livespec core @@LIVESPEC_CORE_REF@@" git fetch --quiet --depth 1 origin "@@LIVESPEC_CORE_REF@@"; then
                 echo "FATAL: cannot fetch livespec core ref @@LIVESPEC_CORE_REF@@ from @@LIVESPEC_CORE_URL@@ — this is the ref the gated repository's .livespec.jsonc compat.pinned names" >&2
                 exit 1
               fi
@@ -405,7 +409,10 @@ spec:
               # no env block at all. Private siblings are the exception: their
               # clone command reads a short-lived App token from the per-run
               # Secret mount substituted below. The token itself never enters
-              # this manifest, its logs or its termination message.
+              # this manifest, its logs or its termination message. Every clone
+              # runs through forge_retry, the same bounded retry the core fetch
+              # uses, defined once in forge-retry.sh.
+              @@GATE_FORGE_RETRY@@
               @@GATE_SIBLING_CLONES@@
               # THE MEMBERS THIS JOB MUST NOT RUN, carried under the GATED
               # REPOSITORY'S OWN skip variable (livespec-dev-tooling-mex6ga).
