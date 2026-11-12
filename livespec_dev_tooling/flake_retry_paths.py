@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ast
 from dataclasses import dataclass, field
+from functools import partial
 from pathlib import Path, PurePosixPath
 
 __all__: list[str] = ["path_literals"]
@@ -33,7 +34,7 @@ class _ScopeIndex:
 
     scope_of: dict[int, _Scope]
     scopes: list[_Scope]
-    assignments: list[tuple[ast.Assign, _Scope]]
+    assignments: list[tuple[list[ast.expr], ast.expr, _Scope]]
     declared_outer: set[str]
 
 
@@ -86,8 +87,11 @@ def _index_scopes(*, tree: ast.AST) -> _ScopeIndex:
         node, scope = pending.pop()
         index.scope_of[id(node)] = scope
         scope.bound.update(_bound_by(node=node))
-        if isinstance(node, ast.Assign):
-            index.assignments.append((node, scope))
+        if isinstance(node, ast.Assign | ast.AnnAssign) and node.value:
+            targets: list[ast.expr] = (
+                node.targets if isinstance(node, ast.Assign) else [node.target]
+            )
+            index.assignments.append((targets, node.value, scope))
         if isinstance(node, ast.Global | ast.Nonlocal):
             index.declared_outer.update(node.names)
         opened = _open_scope(node=node, scope=scope)
@@ -120,6 +124,13 @@ def _path_from_file_expression(
     repo_root: Path,
 ) -> Path | None:
     """Resolve the limited ``Path(__file__)`` forms that can bind the repository root."""
+    again = partial(
+        _path_from_file_expression,
+        scope=scope,
+        index=index,
+        source_path=source_path,
+        repo_root=repo_root,
+    )
     if isinstance(expression, ast.Name):
         return repo_root if _is_root_name(name=expression.id, scope=scope, index=index) else None
     if (
@@ -136,22 +147,10 @@ def _path_from_file_expression(
         and isinstance(expression.func, ast.Attribute)
         and expression.func.attr == "resolve"
     ):
-        base = _path_from_file_expression(
-            expression=expression.func.value,
-            scope=scope,
-            index=index,
-            source_path=source_path,
-            repo_root=repo_root,
-        )
+        base = again(expression=expression.func.value)
         return None if base is None else base.resolve()
     if isinstance(expression, ast.Attribute) and expression.attr == "parent":
-        base = _path_from_file_expression(
-            expression=expression.value,
-            scope=scope,
-            index=index,
-            source_path=source_path,
-            repo_root=repo_root,
-        )
+        base = again(expression=expression.value)
         return None if base is None else base.parent
     if (
         isinstance(expression, ast.Subscript)
@@ -161,13 +160,7 @@ def _path_from_file_expression(
         and isinstance(expression.slice.value, int)
         and not isinstance(expression.slice.value, bool)
     ):
-        base = _path_from_file_expression(
-            expression=expression.value.value,
-            scope=scope,
-            index=index,
-            source_path=source_path,
-            repo_root=repo_root,
-        )
+        base = again(expression=expression.value.value)
         position = expression.slice.value
         if base is not None and 0 <= position < len(base.parents):
             return base.parents[position]
@@ -189,9 +182,9 @@ def _repository_root_context(
     changed = True
     while changed:
         changed = False
-        for assignment, scope in index.assignments:
+        for targets, value, scope in index.assignments:
             resolved = _path_from_file_expression(
-                expression=assignment.value,
+                expression=value,
                 scope=scope,
                 index=index,
                 source_path=source_path,
@@ -199,7 +192,7 @@ def _repository_root_context(
             )
             if resolved != resolved_root:
                 continue
-            for target in assignment.targets:
+            for target in targets:
                 if isinstance(target, ast.Name) and target.id not in scope.roots:
                     scope.roots.add(target.id)
                     changed = True
@@ -232,19 +225,21 @@ def _path_names(
         return set(), False
     segments: list[str] = []
     undeterminable = False
-    first = operands[0]
     dynamic_segments_are_undeterminable = (
         repository_root_expression_ids is None
-        or (isinstance(first, ast.Constant) and isinstance(first.value, str) and bool(first.value))
-        or (id(first) in repository_root_expression_ids)
+        or (
+            isinstance(operands[0], ast.Constant)
+            and bool(operands[0].value)
+            and isinstance(operands[0].value, str)
+        )
+        or (id(operands[0]) in repository_root_expression_ids)
     )
     for position, operand in enumerate(operands):
         if isinstance(operand, ast.Constant) and isinstance(operand.value, str) and operand.value:
             segments.append(operand.value)
         elif position > 0 and dynamic_segments_are_undeterminable:
             undeterminable = True
-    named_path = "/".join(segments)
-    paths = {named_path}
+    paths = {named_path := "/".join(segments)}
     if repo_root is not None and (repo_root / named_path).is_dir():
         return paths, undeterminable
     if "/" in named_path:
