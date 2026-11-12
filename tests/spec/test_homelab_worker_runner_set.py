@@ -113,7 +113,9 @@ def _run_converge_scale_set_step(*, tmp_path: Path, worker_files: list[str]) -> 
     """Run the converge's own release-map and step-7 text against stub tools; return helm's calls."""
     converge = _CONVERGE.read_text(encoding="utf-8")
     scale_sets = converge.split("declare -A SCALE_SETS=(", 1)[1].split("\nlog() {", 1)[0]
-    step = converge.split('log "7a.', 1)[1].split('log "7b.', 1)[0]
+    step = converge.split('log "7b. Publish the hook-template', 1)[1].split(
+        "# ---------------------------------------------------------------------------", 1
+    )[0]
     arc = tmp_path / "arc"
     (arc / "worker").mkdir(parents=True)
     fleet_files = re.findall(r'\]="(values-[^"]+)"', scale_sets)
@@ -154,7 +156,7 @@ def _run_converge_scale_set_step(*, tmp_path: Path, worker_files: list[str]) -> 
             "RUNNERS_NAMESPACE=arc-runners",
             "ARC_SCALE_SET_CHART=chart.tgz",
             "log() { :; }",
-            f'declare -A SCALE_SETS=({scale_sets}\nlog "7a.{step}',
+            f'declare -A SCALE_SETS=({scale_sets}\nlog "7b. Publish the hook-template{step}',
         ]
     )
     _ = subprocess.run(
