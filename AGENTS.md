@@ -81,6 +81,10 @@ The files:
   Read it also before interpolating a shell variable next to a `:` in zsh
   (`resolve-blocked:$id:ready`): zsh applies `:r` and drive.py refuses the
   mangled id as "unsupported" (2026-11-12).
+  Read it also before resolving a remote ref from `FETCH_HEAD` in a preserve
+  check or seed-source verification: a second fetch overwrites it, and a
+  2026-11-12 check read master's tip as a needs-human ref and reported real
+  preserved work as empty.
 - Read `.ai/fleet-and-secrets.md` before pushing any change under
   `.github/workflows/` (it needs an exemption, a label and the wrapper), before
   changing fleet coordination workflows,

@@ -311,3 +311,29 @@ session acknowledged the hold and never checked auto-merge. The PR merged at
 proved incomplete, because the launch build already skips `cancelled` runs in
 its master-CI ancestor walk, and the coordinator ruled that B' stays live. A
 hold whose basis is sound gets no such second chance, so disarm it at once.
+
+## `FETCH_HEAD` Names Only The Last Fetch — A Preserve Check Can Read Master As The Ref
+
+To learn what a remote ref points at, resolve it by name: `git ls-remote origin
+<ref>`, or an explicit refspec fetch
+(`git fetch origin +<ref>:refs/remotes/origin/<name>`) followed by
+`git rev-parse origin/<name>`. Never read `FETCH_HEAD` after more than one
+fetch in the same command. Each fetch rewrites `FETCH_HEAD`, so it names
+whatever was fetched LAST. Nothing errors: the wrong commit diffs cleanly, and
+an empty diff reads as "this ref preserves nothing".
+
+Measured 2026-11-12 on livespec-dev-tooling-io6hyk. A preserve check
+(coordinator-duties §10) ran `git fetch origin <needs-human ref>`, then
+`git fetch origin master`, then `git rev-parse FETCH_HEAD`. It got master's tip
+`4646a01c`, so its "diff against the master base" compared master with itself.
+The session reported the run's preservation ref as empty, and changed the
+relaunch seed. factory-run-work-preservation then measured the true value: the
+ref was `40871d5f`, the run's own review_fix checkpoint, carrying the same
+11-file patch as the work-in-progress ref. The corrections had to be posted on
+the item and on the plan epic.
+
+How to apply: in any preserve check or seed-source verification, resolve each
+ref by name before diffing it. Cross-check a surprising "empty" or "wrong
+commit" result with `git ls-remote` before reporting it. Compare two preserved
+trees with `git diff <base> <ref> | git patch-id --stable` against each one's
+own master base, not with a direct diff, because their bases drift apart.
