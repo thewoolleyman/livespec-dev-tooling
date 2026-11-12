@@ -157,6 +157,18 @@ def _environment_ids(*, body: str) -> list[str]:
     return ids
 
 
+def _retired_environment_ids(*, body: str) -> list[str]:
+    """Every deliberately retired catalog id an instance block declares."""
+    declared = re.search(
+        r"^    retired_environments:\n(?P<ids>(?:      - \S+\n)*)", body, re.MULTILINE
+    )
+    assert declared is not None, (
+        f"{_HOST_VARS} must declare `retired_environments` when an instance deliberately "
+        "removes catalog entries"
+    )
+    return re.findall(r"^      - (?P<id>\S+)$", declared["ids"], re.MULTILINE)
+
+
 def test_the_section_describes_both_instances_the_host_vars_declare() -> None:
     """Both instances, each named with the port the declaration gives it.
 
@@ -233,7 +245,7 @@ def test_the_section_states_the_fleet_instances_concurrency_and_environment_ids(
         f"{runs} for `{_FLEET_UNIT}`; {_HOST_VARS} declares it, and the section's previous "
         f"figure was the one two directives ago"
     )
-    for environment in ("livespec-ci", "livespec-ci-rust", "livespec-ci-k8s"):
+    for environment in ("factory-python", "factory-python-rust"):
         assert environment in _environment_ids(body=body), (
             f"{_HOST_VARS} must still declare the `{environment}` environment for "
             f"`{_FLEET_UNIT}`: the prose below states that it does"
@@ -242,6 +254,15 @@ def test_the_section_states_the_fleet_instances_concurrency_and_environment_ids(
             f"the {_HOST_SECTION} section must state the environment id `{environment}` "
             f"that {_HOST_VARS} declares for `{_FLEET_UNIT}`: a dispatch reaches this "
             f"instance only through a factory entry naming one of them"
+        )
+    for environment in ("livespec-ci", "livespec-ci-rust", "livespec-ci-k8s"):
+        assert environment in _retired_environment_ids(body=body), (
+            f"{_HOST_VARS} must list the retired `{environment}` catalog id for "
+            f"`{_FLEET_UNIT}`: deleting it is an explicit, run-guarded action"
+        )
+        assert f"`{environment}`" in section and "retired" in section, (
+            f"the {_HOST_SECTION} section must describe `{environment}` as retired, "
+            "rather than leaving an operator to mistake it for an active environment"
         )
 
 
