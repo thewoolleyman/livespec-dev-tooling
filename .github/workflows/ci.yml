@@ -1173,5 +1173,6 @@ jobs:
             echo "::error::ci-green: ci-green-run-jobs-read ended without an answer; failing closed"
             exit 1
           fi
-          python3 -c 'import json, sys; [print(json.dumps({"name": j["name"], "status": j["status"], "conclusion": j["conclusion"]})) for page in json.load(open(sys.argv[1])) for j in page["jobs"]]' "$pages_file" > "$jobs_file"
+          jobs_lines="$(python3 -c 'import json, sys; [print(json.dumps({"name": j["name"], "status": j["status"], "conclusion": j["conclusion"]})) for page in json.load(open(sys.argv[1])) for j in page["jobs"]]' "$pages_file")"
+          printf '%s\n' "$jobs_lines" > "$jobs_file"
           python3 -m livespec_dev_tooling.ci_green_required_legs --workflow .github/workflows/ci.yml --gate-job ci-green --jobs "$jobs_file"
