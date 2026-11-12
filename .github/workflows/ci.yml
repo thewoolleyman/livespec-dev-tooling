@@ -90,6 +90,25 @@ env:
   # as the runs-on fallbacks in this file and MUST stay in lockstep with them.
   UV_CONCURRENT_DOWNLOADS: ${{ contains(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]', 'ubuntu') && '50' || '4' }}
   UV_HTTP_TIMEOUT: ${{ contains(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]', 'ubuntu') && '30' || '60' }}
+  # Answer GitHub's 401 on a git fetch with this job's own token
+  # (livespec-dev-tooling-fc4dzb). Since 2026-11-12 ~13:20Z GitHub has
+  # intermittently refused ANONYMOUS git fetches from the homelab NAT egress
+  # with 401 ("could not read Username for 'https://github.com'"), which
+  # failed uv git-source fetches and sibling clones on the self-hosted pool.
+  # git asks a credential helper ONLY when the server answers 401, so every
+  # fetch stays anonymous until GitHub refuses one, and an explicit credential
+  # (a checkout extraheader, or an App token in a push URL) still wins. A
+  # url.insteadOf rewrite is deliberately NOT used: it would rewrite pushes
+  # too and swap a job's App token for this one. GIT_CONFIG_PARAMETERS reaches
+  # every system-git caller (uv, sibling clones, mise), writes no file, is read
+  # after any GIT_CONFIG_COUNT set (so it neither clobbers nor is clobbered by
+  # another writer's), and carries no token: the helper reads it at call time.
+  # It is the same slot and helper shape as the factory's (bd-ib-awv2iu), in
+  # its gh-less inline form because a bare runner job has no gh on PATH.
+  # No new token and no scope change: this is the job's GITHUB_TOKEN.
+  LIVESPEC_GIT_FETCH_TOKEN: ${{ github.token }}
+  GIT_CONFIG_PARAMETERS: >-
+    'credential.https://github.com.helper=!f() { test "$1" = get || exit 0; echo username=x-access-token; echo "password=${LIVESPEC_GIT_FETCH_TOKEN}"; }; f'
 # merge_group is deliberately ABSENT: no merge queue is configured for this
 # repo (verified live — zero rulesets, required_merge_queue: null; branch
 # protection requires only ci-green). Keeping the vestigial trigger would be
