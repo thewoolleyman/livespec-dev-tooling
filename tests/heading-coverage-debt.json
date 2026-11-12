@@ -331,13 +331,6 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario: a compilation-cache warm build skipped as busy past two populate intervals fires the lag trigger",
-    "work_item": "livespec-dev-tooling-uyevam",
-    "first_seen": "2026-11-09"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
     "heading": "## Scenario: a config-value-only change of .livespec.jsonc leaves a test that names no changed key retried",
     "work_item": "livespec-dev-tooling-n3dr3z",
     "first_seen": "2026-11-09"
@@ -537,13 +530,6 @@
     "heading": "## Scenario: a factory sandbox loss drill deletes exactly one named run's sandbox pod and nothing else",
     "work_item": "livespec-dev-tooling-5wybjq",
     "first_seen": "2026-11-12"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a failed compilation-cache warm build ends the busy-skip streak but keeps the lag start time",
-    "work_item": "livespec-dev-tooling-uyevam",
-    "first_seen": "2026-11-09"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -1587,13 +1573,6 @@
     "heading": "## Scenario: one fleet-wide command adopts the current plugin builds in every fleet member and refuses a split adoption",
     "work_item": "livespec-dev-tooling-7upzav",
     "first_seen": "2026-11-03"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: rebuilding a lagging compilation-cache warm set clears the lag trigger",
-    "work_item": "livespec-dev-tooling-uyevam",
-    "first_seen": "2026-11-09"
   },
   {
     "spec_root": "SPECIFICATION",
