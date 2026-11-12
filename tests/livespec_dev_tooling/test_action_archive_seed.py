@@ -623,7 +623,7 @@ def test_the_entry_point_reads_the_switch_and_canary_from_the_committed_template
 # ---- the postStart record and the wiring ------------------------------------
 
 
-def _wait_for_actions_record(*, recorded: Path) -> None:
+def _wait_for_actions_record(*, recorded: Path) -> bool:
     """Allow the detached postStart cache work to publish its actions row."""
     deadline = time.monotonic() + 2
     while time.monotonic() < deadline:
@@ -631,8 +631,9 @@ def _wait_for_actions_record(*, recorded: Path) -> None:
             row.split("\t", 2)[1:2] == ["actions"]
             for row in recorded.read_text(encoding="utf-8").splitlines()
         ):
-            return
+            return True
         time.sleep(0.01)
+    return False
 
 
 def test_wait_for_actions_record_reports_a_timeout(
