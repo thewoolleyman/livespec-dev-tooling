@@ -58,6 +58,30 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.201.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.200.0...v1.201.0) (2026-11-12)
+
+
+### Features
+
+* add CI run telemetry exporter test ([09c5f2a](https://github.com/thewoolleyman/livespec-dev-tooling/commit/09c5f2a394b743433cea8bb87b295adaa5e7e124))
+* add CI run telemetry exporter test ([fc488b0](https://github.com/thewoolleyman/livespec-dev-tooling/commit/fc488b047f34e78b5013f8e290b69ddce2542910))
+* cover CI run telemetry edge cases ([986a4a6](https://github.com/thewoolleyman/livespec-dev-tooling/commit/986a4a6ee8d80015f7da56aa690173e066905e4b))
+* **fabro-server:** cover resolved settings drift ([c4d7c22](https://github.com/thewoolleyman/livespec-dev-tooling/commit/c4d7c220c76e98444ac73c0f8aba1c98bef95293))
+* **homelab-worker:** a committed removal route and a committed admission-hold lift for a container worker (livespec-dev-tooling-nxxqf5) ([76c9f36](https://github.com/thewoolleyman/livespec-dev-tooling/commit/76c9f36d3901a747310a98b8943495841888c2ac))
+
+
+### Bug Fixes
+
+* a resumed rule-26 kill-matrix run re-judges the baseline failures it reuses (livespec-dev-tooling-pk2ekq) ([04e46e3](https://github.com/thewoolleyman/livespec-dev-tooling/commit/04e46e3260dbf1baf30e28fa4d9cd144256a31ce))
+* a resumed rule-26 kill-matrix run reuses the stored per-test coverage and skips the measure stage (livespec-dev-tooling-pk2ekq) ([915fda9](https://github.com/thewoolleyman/livespec-dev-tooling/commit/915fda97aeedb83b467de8e563dcc39eb97b3cae))
+* a reused rule-26 baseline measurement judges its stored failures again (livespec-dev-tooling-pk2ekq) ([044ed25](https://github.com/thewoolleyman/livespec-dev-tooling/commit/044ed2599350df80a94995cb22deb093eeb291ca))
+* authenticate the settings read and unwrap the settings envelope ([f404181](https://github.com/thewoolleyman/livespec-dev-tooling/commit/f40418197e5e8cc6815eb395692f0dd64f9e2c39))
+* harden foreground pytest guard ([d737f65](https://github.com/thewoolleyman/livespec-dev-tooling/commit/d737f655ee3a13267aad1c0a53d4a832587aef68))
+* read and report the settings endpoint of a stopped Fabro instance ([b9455e9](https://github.com/thewoolleyman/livespec-dev-tooling/commit/b9455e9b461ec23cabf17158bf4a26fbca433e33))
+* **spec:** point Fabro drift scenario at its test ([7aede4d](https://github.com/thewoolleyman/livespec-dev-tooling/commit/7aede4dea56155885dea37c5e55192e1acb5e59f))
+* the rule-26 kill matrix can store its baseline measurement beside the result cache (livespec-dev-tooling-pk2ekq) ([f61331c](https://github.com/thewoolleyman/livespec-dev-tooling/commit/f61331c85fb965fc17a25b12821ce58df8758525))
+* the rule-26 kill-matrix cache save syncs before its rename and uses its own temporary file (livespec-dev-tooling-pk2ekq) ([90a41e1](https://github.com/thewoolleyman/livespec-dev-tooling/commit/90a41e1cfa063783abf04bb975bd5743437d0248))
+
 ## [1.200.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.199.0...v1.200.0) (2026-11-12)
 
 
