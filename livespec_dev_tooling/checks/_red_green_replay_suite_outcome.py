@@ -8,6 +8,8 @@ red or bounded run. The entry point retains scope selection and telemetry.
 from __future__ import annotations
 
 import datetime
+import hashlib
+import re
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -32,9 +34,47 @@ if TYPE_CHECKING:
 __all__: list[str] = [
     "SuiteOutcomeTools",
     "SuiteRunEvidence",
+    "canonical_output_checksum",
+    "failure_detail",
+    "failure_summary",
     "finish_suite_run",
     "run_suite_candidate",
 ]
+
+_NOISE_LINE = re.compile(
+    "".join(
+        (
+            r"^(\[gw\d+\].*|created: \d+/\d+ workers?.*|\d+ workers? \[\d+ items?\].*",
+            r"|[.FEsxXR]*\s*\[\s*\d+%\])$",
+        )
+    )
+)
+_DURATION = re.compile(r"\bin \d+(?:\.\d+)?s(?: \(\d+:\d{2}:\d{2}\))?")
+_FAILED_SUMMARY_LINE = re.compile(r"^(?:FAILED|ERROR)\s+(\S+)", re.MULTILINE)
+_TRACEBACK_LINE = re.compile(r"^\S+\.py:\d+: .+$", re.MULTILINE)
+_FAILURE_DETAIL_LIMIT = 4000
+
+
+def canonical_output_checksum(*, output: str) -> str:
+    """Checksum normalized suite output without scheduling or duration noise."""
+    lines = {
+        _DURATION.sub("in <t>s", line.strip())
+        for line in output.splitlines()
+        if line.strip() and not _NOISE_LINE.match(line.strip())
+    }
+    canonical = "\n".join(sorted(lines))
+    return f"sha256:{hashlib.sha256(canonical.encode('utf-8')).hexdigest()}"
+
+
+def failure_summary(*, output: str) -> str:
+    """Return failed node IDs, falling back to a bounded output head."""
+    failed_node_ids = _FAILED_SUMMARY_LINE.findall(output)
+    return " ".join(failed_node_ids)[:400] if failed_node_ids else " ".join(output.split())[:400]
+
+
+def failure_detail(*, output: str) -> str:
+    """Return each failing one-line traceback, bounded for a refusal."""
+    return "\n".join(_TRACEBACK_LINE.findall(output))[:_FAILURE_DETAIL_LIMIT]
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -63,10 +103,14 @@ def run_suite_candidate(
     bound: SuiteBound,
     log: structlog.stdlib.BoundLogger,
     tools: SuiteOutcomeTools,
+    job_pytest_argv: list[str] | None = None,
 ) -> SuiteRunEvidence:
     """Run the delegated or local suite and retain only its supporting evidence."""
     verdict = unrefused(
-        verdict=tools.run_replay(repo_root=Path.cwd(), pytest_argv=["pytest", *argv[3:]])
+        verdict=tools.run_replay(
+            repo_root=Path.cwd(),
+            pytest_argv=job_pytest_argv or ["pytest", *argv[3:]],
+        )
     )
     if (
         not verdict.local

@@ -17,15 +17,13 @@ file-LLOC ceiling. The leading underscore marks a private sibling.
 
 from __future__ import annotations
 
-import hashlib
 import importlib.util
 import os
-import re
 import subprocess
 import sys
 import time
 from collections.abc import Mapping
-from dataclasses import replace
+from functools import partial
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -45,10 +43,24 @@ from _red_green_replay_pre_commit import (  # noqa: E402
     staged_tree_hash,
 )
 from _red_green_replay_suite_argv import lane_worker_count, visible_cpu_count  # noqa: E402
+from _red_green_replay_suite_execution import (  # noqa: E402
+    SuiteExecutionTools,
+    finish_precomputed_suite_run,
+    run_fresh_suite_green_candidate,
+)
+from _red_green_replay_suite_execution import (  # noqa: E402
+    run_staged_tests_probe as _run_staged_tests_probe,
+)
 from _red_green_replay_suite_outcome import (  # noqa: E402
     SuiteOutcomeTools,
-    finish_suite_run,
-    run_suite_candidate,
+    SuiteRunEvidence,
+    canonical_output_checksum,
+)
+from _red_green_replay_suite_outcome import (  # noqa: E402
+    failure_detail as _suite_failure_detail,
+)
+from _red_green_replay_suite_outcome import (  # noqa: E402
+    failure_summary as _suite_failure_summary,
 )
 from _red_green_replay_suite_runner import (  # noqa: E402
     CEILING_ENV,
@@ -79,6 +91,7 @@ __all__: list[str] = [
     "canonical_output_checksum",
     "handle_suite_green_mode",
     "has_shared_test_support",
+    "run_staged_tests_probe",
     "run_suite",
     "staged_tree_hash",
     "stages_only_shared_test_support",
@@ -88,25 +101,6 @@ __all__: list[str] = [
 ]
 
 _NPROCS_ENV: str = "test_nprocs"
-
-# Lines that vary with xdist scheduling or terminal progress, not with the
-# suite's verdict: worker chatter, `created: N/N workers`, `N workers [M items]`
-# and `....F..  [ 42%]` progress rows.
-_NOISE_LINE = re.compile(
-    "".join(
-        (
-            r"^(\[gw\d+\].*|created: \d+/\d+ workers?.*|\d+ workers? \[\d+ items?\].*",
-            r"|[.FEsxXR]*\s*\[\s*\d+%\])$",
-        )
-    )
-)
-_DURATION = re.compile(r"\bin \d+(?:\.\d+)?s(?: \(\d+:\d{2}:\d{2}\))?")
-_FAILED_SUMMARY_LINE = re.compile(r"^(?:FAILED|ERROR)\s+(\S+)", re.MULTILINE)
-# One `--tb=line` traceback: `<path>.py:<line>: <exception text>`. Kept so a
-# refused commit names WHY a test failed, not only which one did: a `--tb=no`
-# run threw that text away (livespec-dev-tooling-ymjw5d).
-_TRACEBACK_LINE = re.compile(r"^\S+\.py:\d+: .+$", re.MULTILINE)
-_FAILURE_DETAIL_LIMIT = 4000
 
 
 def suite_pytest_argv(
@@ -158,36 +152,6 @@ def stages_only_shared_test_support(*, staged_paths: list[str], tests_paths: lis
     )
 
 
-def canonical_output_checksum(*, output: str) -> str:
-    """Checksum the sorted set of non-noise lines, durations normalized.
-
-    Two runs of the same green suite differ in line order (xdist), in
-    progress rows, and in elapsed time; none of that may move the digest.
-    The pytest summary line (`N passed, M skipped`) is kept, so a changed
-    outcome count does.
-    """
-    lines = {
-        _DURATION.sub("in <t>s", line.strip())
-        for line in output.splitlines()
-        if line.strip() and not _NOISE_LINE.match(line.strip())
-    }
-    canonical = "\n".join(sorted(lines))
-    return f"sha256:{hashlib.sha256(canonical.encode('utf-8')).hexdigest()}"
-
-
-def _suite_failure_summary(*, output: str) -> str:
-    """Return pytest failure node ids, falling back to the bounded output head."""
-    failed_node_ids = _FAILED_SUMMARY_LINE.findall(output)
-    if failed_node_ids:
-        return " ".join(failed_node_ids)[:400]
-    return " ".join(output.split())[:400]
-
-
-def _suite_failure_detail(*, output: str) -> str:
-    """Return each failing test's one-line traceback, bounded in size."""
-    return "\n".join(_TRACEBACK_LINE.findall(output))[:_FAILURE_DETAIL_LIMIT]
-
-
 def _suite_argv(*, test_paths: list[str] | None, log: structlog.stdlib.BoundLogger) -> list[str]:
     """Build the local suite command, recording the serial fallback when needed."""
     xdist_available = xdist_importable()
@@ -218,12 +182,22 @@ def _suite_outcome_tools() -> SuiteOutcomeTools:
     )
 
 
+run_staged_tests_probe = partial(
+    _run_staged_tests_probe,
+    outcome_tools=_suite_outcome_tools,
+    suite_argv=_suite_argv,
+)
+
+
 def _suite_scope(
     *, staged_paths: list[str], tests_paths: list[str] | None
 ) -> tuple[str, list[str] | None]:
     """Select the narrow staged-test scope only when support is isolated."""
-    run_touched_tests = bool(tests_paths) and not has_shared_test_support(staged_paths=staged_paths)
-    return ("staged-tests", tests_paths) if run_touched_tests else ("full-suite", None)
+    return (
+        ("staged-tests", tests_paths)
+        if bool(tests_paths) and not has_shared_test_support(staged_paths=staged_paths)
+        else ("full-suite", None)
+    )
 
 
 def _sandbox_exempt(*, cwd: Path) -> bool:
@@ -270,6 +244,7 @@ def _handle_suite_green_mode(
     log: structlog.stdlib.BoundLogger,
     staged_paths: list[str],
     tests_paths: list[str] | None = None,
+    precomputed_run: SuiteRunEvidence | None = None,
 ) -> int:
     """Green-verify a product/test change that carries no new failing test.
 
@@ -304,42 +279,29 @@ def _handle_suite_green_mode(
             msg_path=msg_path,
         ):
             mode, outcome, exit_status = "reused", "green", 0
+        elif precomputed_run is not None:
+            mode = "ran"
+            outcome, exit_status = finish_precomputed_suite_run(
+                msg_path=msg_path,
+                log=log,
+                scope=scope,
+                run=precomputed_run,
+                tools=_suite_outcome_tools(),
+            )
         else:
-            scope, selected_tests, producer_trailers = _scope_with_affected_tests_evidence(
-                cwd=Path.cwd(),
+            mode = "ran"
+            scope, outcome, exit_status = run_fresh_suite_green_candidate(
+                msg_path=msg_path,
+                log=log,
                 index_tree=index_tree,
                 staged_paths=staged_paths,
                 tests_paths=tests_paths,
+                tools=SuiteExecutionTools(
+                    outcome_tools=_suite_outcome_tools(),
+                    scope_selector=_scope_with_affected_tests_evidence,
+                    suite_argv=_suite_argv,
+                ),
             )
-            bound = suite_bound(environ=os.environ)
-            argv = _suite_argv(test_paths=selected_tests, log=log)
-            log.info(
-                "suite-green-argv: pytest invocation",
-                check_id="red-green-replay-suite-green-argv",
-                argv=argv,
-                scope=scope,
-                stall_seconds=bound.stall_seconds,
-                ceiling_seconds=bound.ceiling_seconds,
-            )
-            tools = _suite_outcome_tools()
-            run = run_suite_candidate(
-                argv=argv,
-                bound=bound,
-                log=log,
-                tools=tools,
-            )
-            if producer_trailers:
-                run = replace(run, gate_trailers=(*run.gate_trailers, *producer_trailers))
-            mode = "ran"
-            outcome = finish_suite_run(
-                run=run,
-                bound=bound,
-                log=log,
-                msg_path=msg_path,
-                scope=scope,
-                tools=tools,
-            )
-            exit_status = 0 if outcome == "green" else 1
     except SystemExit:
         outcome = "red"
         raise

@@ -402,6 +402,62 @@ def test_suite_green_uses_job_evidence_and_falls_back_when_it_has_no_verdict(
     ]
 
 
+def test_test_only_probe_reuses_its_delegated_verdict_for_suite_green_trailers(
+    *, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A passing test-only commit delegates once and retains that Job evidence.
+
+    The routing probe distinguishes a Red candidate from a passing test-only
+    cleanup.  Its staged-test verdict is already exactly the suite-green
+    verdict, so the suite-green leg must consume it rather than run pytest a
+    second time on either the committing host or another gate Job.
+    """
+    from livespec_dev_tooling.commit_replay_delegate import ReplayVerdict
+
+    mod = _load()
+    assert hasattr(mod, "run_staged_tests_probe")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(mod, "xdist_importable", lambda: False)
+    replay_argvs: list[list[str]] = []
+    monkeypatch.setattr(
+        mod,
+        "run_replay",
+        lambda **kwargs: (
+            replay_argvs.append(kwargs["pytest_argv"])
+            or ReplayVerdict(
+                local=False,
+                reason="the Job passed",
+                job_name="gate-staged-tests-1",
+                tree_hash="b" * 40,
+                exit_status=0,
+                output_checksum="sha256:delegated-output",
+            )
+        ),
+    )
+    monkeypatch.setattr(mod, "run_suite", lambda **_kwargs: pytest.fail("pytest ran locally"))
+    monkeypatch.setattr(mod, "staged_tree_hash", lambda **_kwargs: "b" * 40)
+    message = tmp_path / "COMMIT_EDITMSG"
+    message.write_text("chore: tidy a test\n", encoding="utf-8")
+    log = _RecordingLog()
+
+    probe = mod.run_staged_tests_probe(log=log, tests_paths=["tests/test_changed.py"])
+
+    assert (
+        mod.handle_suite_green_mode(
+            msg_path=message,
+            log=log,
+            staged_paths=["tests/test_changed.py"],
+            tests_paths=["tests/test_changed.py"],
+            precomputed_run=probe,
+        )
+        == 0
+    )
+    assert replay_argvs == [["pytest", "tests/test_changed.py"]]
+    final_message = message.read_text(encoding="utf-8")
+    assert "TDD-Suite-Green-Scope: staged-tests" in final_message
+    assert "TDD-Suite-Green-Gate-Job: gate-staged-tests-1" in final_message
+
+
 def test_silent_suite_green_stall_names_the_window_and_missing_test_completion(
     *, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
