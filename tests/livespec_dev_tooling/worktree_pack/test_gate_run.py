@@ -139,6 +139,23 @@ def _end_processes_carrying(*, token: str) -> None:
             os.kill(int(pid), signal.SIGTERM)
 
 
+def test_expected_escapee_cleanup_ends_a_live_process() -> None:
+    """The cleanup backstop terminates a leaked escapee within its own bound."""
+    token = f"livespec-gate-cleanup-probe-{time.monotonic_ns()}"
+    process = subprocess.Popen(["bash", "-c", f"exec -a {token} sleep 300"])
+    try:
+        time.sleep(_POLL_INTERVAL_S)
+        assert _live_processes_carrying(token=token)
+
+        _end_processes_carrying(token=token)
+
+        assert process.wait(timeout=5) == -signal.SIGTERM
+    finally:
+        _end_processes_carrying(token=token)
+        with contextlib.suppress(subprocess.TimeoutExpired):
+            _ = process.wait(timeout=5)
+
+
 def _init_repo(*, tmp_path: Path) -> Path:
     """A throwaway repository carrying the canonical body under `dev-tooling/`."""
     repo = tmp_path / "repo"
