@@ -60,11 +60,13 @@ def _git(*, repo: Path, args: list[str]) -> None:
     _ = subprocess.run(["git", *_GIT_IDENTITY, *args], cwd=repo, check=True, capture_output=True)
 
 
-def _flaky_repository(*, root: Path, touch_test: bool, release: bool = False) -> Path:
+def _flaky_repository(
+    *, root: Path, touch_test: bool, release: bool = False, path_expression: str = ""
+) -> Path:
     repo = root / "repo"
     repo.mkdir()
     _git(repo=repo, args=["init", "-q", "-b", "master", "."])
-    _ = (repo / "test_flaky.py").write_text(_FLAKY_TEST, encoding="utf-8")
+    _ = (repo / "test_flaky.py").write_text(_FLAKY_TEST + path_expression, encoding="utf-8")
     _ = (repo / "conftest.py").write_text(_NO_DELAY_CONFTEST, encoding="utf-8")
     _ = (repo / ".gitignore").write_text("seen\ntmp/\n", encoding="utf-8")
     _ = (repo / "pyproject.toml").write_text(_PYPROJECT.format(version="0.1.0"), encoding="utf-8")
@@ -228,6 +230,31 @@ def test_an_untouched_failing_test_is_retried_on_its_own_and_reported_as_a_flake
     assert [json.loads(line) for line in records.splitlines()] == [
         {"attempts": 2, "nodeid": "test_flaky.py::test_flaky", "outcome": "passed"}
     ]
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    "path_expression",
+    [
+        "\nif False:\n    _ = tmp_path / 'state' / name\n",
+        "\nif False:\n    _ = home / '.config' / name\n",
+        "\nif False:\n    _ = state_root / 'runs' / run_id\n",
+    ],
+)
+def test_a_non_repository_dynamic_path_still_retries_an_untouched_failure(
+    *, tmp_path: Path, path_expression: str
+) -> None:
+    """Temporary, home, and state paths cannot make a test count as touched."""
+    repo = _flaky_repository(
+        root=tmp_path,
+        touch_test=False,
+        path_expression=path_expression,
+    )
+
+    completed = _run_session(repo=repo)
+
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    assert "FLAKE-RETRIED" in completed.stdout
 
 
 @pytest.mark.integration
@@ -801,8 +828,10 @@ def test_an_existing_segmented_directory_does_not_name_its_parent(*, tmp_path: P
     assert marker("livespec_dev_tooling/_vendor/structlog/__init__.py") is None
 
 
-def test_a_partly_dynamic_path_expression_means_touched(*, tmp_path: Path) -> None:
-    """A path expression with a dynamic segment cannot safely receive a retry."""
+def test_an_unbound_dynamic_root_path_expression_is_not_a_repository_path(
+    *, tmp_path: Path
+) -> None:
+    """An unbound root cannot make a dynamic segment name repository code."""
     plugin = importlib.import_module("livespec_dev_tooling.flake_retry")
     test_path = tmp_path / "test_dynamic.py"
     _ = test_path.write_text(
@@ -813,14 +842,11 @@ def test_a_partly_dynamic_path_expression_means_touched(*, tmp_path: Path) -> No
         encoding="utf-8",
     )
 
-    assert (
-        plugin.retry_marker_for(
-            repo_root=tmp_path,
-            test_path=test_path,
-            change_paths={Path("README.md")},
-        )
-        is None
-    )
+    assert plugin.retry_marker_for(
+        repo_root=tmp_path,
+        test_path=test_path,
+        change_paths={Path("README.md")},
+    ) == {"reruns": 3, "reruns_delay": 60}
 
 
 def test_a_change_to_the_plugin_itself_disables_every_retry(*, tmp_path: Path) -> None:

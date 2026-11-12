@@ -48,6 +48,45 @@ def test_a_dynamic_first_operand_is_a_root_and_stays_determinable() -> None:
     assert not undeterminable
 
 
+def test_a_repository_root_name_keeps_a_dynamic_segment_undeterminable(*, tmp_path: Path) -> None:
+    """A root bound from this test file can name a changed repository directory."""
+    analyzer = importlib.import_module("livespec_dev_tooling.flake_retry_paths")
+    source_path = tmp_path / "tests" / "test_anchor.py"
+    source_path.parent.mkdir()
+
+    _, undeterminable = analyzer.path_literals(
+        tree=ast.parse(
+            "from pathlib import Path\n"
+            "_ROOT = Path(__file__).resolve().parents[1]\n"
+            "_TARGET = _ROOT / 'ci-runner' / segment\n"
+        ),
+        repo_root=tmp_path,
+        source_path=source_path,
+    )
+
+    assert undeterminable
+
+
+def test_a_path_parent_index_outside_the_source_path_is_not_a_repository_root(
+    *, tmp_path: Path
+) -> None:
+    """An out-of-range ``parents`` index does not make an unknown root unsafe."""
+    analyzer = importlib.import_module("livespec_dev_tooling.flake_retry_paths")
+    source_path = tmp_path / "test_anchor.py"
+
+    _, undeterminable = analyzer.path_literals(
+        tree=ast.parse(
+            "from pathlib import Path\n"
+            "_ROOT = Path(__file__).resolve().parents[100]\n"
+            "_TARGET = _ROOT / 'ci-runner' / segment\n"
+        ),
+        repo_root=tmp_path,
+        source_path=source_path,
+    )
+
+    assert not undeterminable
+
+
 def test_a_suffixless_terminal_component_names_its_own_directory() -> None:
     """A terminal such as Makefile may be a file, so it names its directory too."""
     analyzer = importlib.import_module("livespec_dev_tooling.flake_retry_paths")
