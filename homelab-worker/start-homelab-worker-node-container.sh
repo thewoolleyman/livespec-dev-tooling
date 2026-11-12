@@ -43,11 +43,13 @@
 #      current copy, so CI pods on the worker run the fleet-patched hook
 #      (research 009). A current copy is not delivered again; a bundle
 #      without its checksum is refused before any host change.
-#  10. The fleet AppArmor profile workflow pods run under
-#      (ci-runner/k3s/phase2/apparmor/ci-runner-workflow) is installed into
-#      the VM's /etc/apparmor.d on stdin and (re)loaded with apparmor_parser,
-#      because the VM kernel is the worker's kernel: a workflow pod naming
-#      the profile cannot start on a node that has not loaded it.
+#  10. The fleet AppArmor profiles are installed into the VM's
+#      /etc/apparmor.d on stdin and (re)loaded with apparmor_parser, because
+#      the VM kernel is the worker's kernel: the profile workflow pods name
+#      (ci-runner/k3s/phase2/apparmor/ci-runner-workflow), without which such
+#      a pod cannot start, and the node-level copy of containerd's default
+#      profile (cri-containerd.apparmor.d beside it), which every pod naming
+#      no profile runs under, as on the fleet's ci_pool nodes.
 #  11. The node's host collector configuration — the otel-collector
 #      repository's file at the commit pinned in telemetry/collector.ref — is
 #      fetched, delivered into the worker's telemetry/config.yaml in the VM on
@@ -82,6 +84,7 @@ probe="$here/probe-vm-capabilities.sh"
 converge="$here/vm/converge-worker-container.sh"
 hook_bundles="${HOMELAB_WORKER_HOOK_BUNDLE_DIR:-$here/../ci-runner/k3s/phase2/container-hook/bundle}"
 apparmor_profile="${HOMELAB_WORKER_APPARMOR_PROFILE:-$here/../ci-runner/k3s/phase2/apparmor/ci-runner-workflow}"
+apparmor_default_profile="${HOMELAB_WORKER_APPARMOR_DEFAULT_PROFILE:-$here/../ci-runner/k3s/phase2/apparmor/cri-containerd.apparmor.d}"
 cache_span="${HOMELAB_WORKER_CACHE_SPAN:-$here/../ci-runner/k3s/phase2/cache-telemetry/ci-cache-span.sh}"
 collector_ref="${HOMELAB_WORKER_COLLECTOR_REF:-$here/telemetry/collector.ref}"
 collector_base_url="${HOMELAB_WORKER_COLLECTOR_BASE_URL:-https://raw.githubusercontent.com/thewoolleyman/otel-collector}"
@@ -185,6 +188,7 @@ for bundle in "$hook_bundles"/*/; do
 done
 [ -n "$hook_versions" ] || die "no container hook bundle under $hook_bundles"
 [ -s "$apparmor_profile" ] || die "the workflow AppArmor profile $apparmor_profile is missing"
+[ -s "$apparmor_default_profile" ] || die "the default AppArmor profile $apparmor_default_profile is missing"
 [ -s "$cache_span" ] || die "the cache-span emitter $cache_span is missing"
 
 # ref_value <key>: one key=value line of the collector pin.
@@ -342,11 +346,13 @@ else
   say "cache-span emitter delivered to $span_dest in VM $worker"
 fi
 
-profile_dest="/etc/apparmor.d/${apparmor_profile##*/}"
-limactl shell --workdir / "$worker" sudo install -D -m 0644 /dev/stdin "$profile_dest" <"$apparmor_profile"
-limactl shell --workdir / "$worker" sudo apparmor_parser -r "$profile_dest" ||
-  die "AppArmor refused the workflow profile $profile_dest in VM $worker; the worker container was not converged"
-say "workflow AppArmor profile loaded from $profile_dest in VM $worker"
+for profile in "$apparmor_profile" "$apparmor_default_profile"; do
+  profile_dest="/etc/apparmor.d/${profile##*/}"
+  limactl shell --workdir / "$worker" sudo install -D -m 0644 /dev/stdin "$profile_dest" <"$profile"
+  limactl shell --workdir / "$worker" sudo apparmor_parser -r "$profile_dest" ||
+    die "AppArmor refused the profile $profile_dest in VM $worker; the worker container was not converged"
+  say "AppArmor profile loaded from $profile_dest in VM $worker"
+done
 
 collector_tmp="$(mktemp)"
 trap 'rm -f "$collector_tmp"' EXIT
