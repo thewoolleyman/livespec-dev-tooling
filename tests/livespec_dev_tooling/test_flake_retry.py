@@ -12,6 +12,18 @@ import pytest
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
+class _RecordingItem:
+    """A collected-item stand-in that records the markers the hook adds."""
+
+    def __init__(self, *, path: Path) -> None:
+        self.path = path
+        self.nodeid = f"{path.name}::test_it"
+        self.markers: list[object] = []
+
+    def add_marker(self, marker: object) -> None:
+        self.markers.append(marker)
+
+
 def test_the_plugin_declares_the_bounded_single_test_retry_policy() -> None:
     """An untouched failure receives three retries, each one minute apart."""
     module_path = _REPO_ROOT / "livespec_dev_tooling" / "flake_retry.py"
@@ -188,16 +200,8 @@ def test_an_outside_root_test_does_not_change_the_decision_for_an_inside_root_te
 
     monkeypatch.setattr(plugin, "change_paths", _change_paths)
 
-    class _Item:
-        def __init__(self, *, path: Path) -> None:
-            self.path = path
-            self.markers: list[object] = []
-
-        def add_marker(self, marker: object) -> None:
-            self.markers.append(marker)
-
-    inside_item = _Item(path=inside)
-    outside_item = _Item(path=outside)
+    inside_item = _RecordingItem(path=inside)
+    outside_item = _RecordingItem(path=outside)
 
     withheld = plugin.mark_untouched_tests(root=repo, items=[outside_item, inside_item])
 
@@ -224,16 +228,7 @@ def test_a_session_unsafe_change_set_marks_no_test_and_names_the_withhold(
 
     monkeypatch.setattr(plugin, "change_paths", _change_paths)
 
-    class _Item:
-        def __init__(self, *, path: Path) -> None:
-            self.path = path
-            self.nodeid = f"{path.name}::test_it"
-            self.markers: list[object] = []
-
-        def add_marker(self, marker: object) -> None:
-            self.markers.append(marker)
-
-    item = _Item(path=test_path)
+    item = _RecordingItem(path=test_path)
     withheld_by_nodeid: dict[str, str] = {}
 
     withheld = plugin.mark_untouched_tests(
