@@ -66,9 +66,7 @@ def test_the_reader_skips_an_open_root_fix_and_files_the_other_nodeid(*, tmp_pat
                     stderr="",
                 )
             )
-        if argv[1] == "create":
-            return _ok(stdout=json.dumps({"id": "dt-new"}))
-        return _ok()
+        return _ok(stdout="dt-new\n")
 
     filer = importlib.import_module("livespec_dev_tooling.flake_retry_filer")
 
@@ -79,12 +77,11 @@ def test_the_reader_skips_an_open_root_fix_and_files_the_other_nodeid(*, tmp_pat
     assert filed == (nodeid_without_fix,)
     assert [call[:3] for call in calls] == [
         ["bd", "list", "--status"],
-        ["bd", "create", f"root-fix: {nodeid_without_fix}"],
-        ["python3", "-c", calls[2][2]],
+        ["python3", "-c", calls[1][2]],
     ]
-    assert "--json" in calls[1]
-    assert "apply_intake_dor" in calls[2][2]
-    assert calls[2][3:] == [str(_PLUGIN_ROOT), "dt-new"]
+    assert "file_captured_work_item" in calls[1][2]
+    assert calls[1][3:5] == [str(_PLUGIN_ROOT), nodeid_without_fix]
+    assert not any(call[:2] == ["bd", "create"] for call in calls)
 
 
 def test_a_filed_root_fix_carries_a_definition_of_done_naming_the_nodeid(*, tmp_path: Path) -> None:
@@ -102,7 +99,7 @@ def test_a_filed_root_fix_carries_a_definition_of_done_naming_the_nodeid(*, tmp_
     def runner(*, argv: list[str], cwd: Path, **_: object) -> Success[GateCommandResult]:
         del cwd
         calls.append(argv)
-        return _ok(stdout=json.dumps({"id": "dt-new"}) if argv[1] == "create" else "[]")
+        return _ok(stdout="dt-new\n" if argv[1] == "-c" else "[]")
 
     filer = importlib.import_module("livespec_dev_tooling.flake_retry_filer")
 
@@ -110,8 +107,8 @@ def test_a_filed_root_fix_carries_a_definition_of_done_naming_the_nodeid(*, tmp_
         repo_root=tmp_path, runner=runner, plugin_root=_PLUGIN_ROOT, state_dir=tmp_path / "state"
     ) == (nodeid,)
 
-    create = next(call for call in calls if call[1] == "create")
-    description = create[create.index("--description") + 1]
+    filing = next(call for call in calls if call[1] == "-c")
+    description = filing[-1]
     assert description == (
         f"Root-cause fix for retried test node id: {nodeid}\n"
         "\n"
@@ -178,16 +175,14 @@ def test_the_reader_ignores_closed_and_non_root_fix_ledger_rows(*, tmp_path: Pat
                     stderr="",
                 )
             )
-        if argv[1] == "create":
-            return _ok(stdout=json.dumps([{"id": "dt-new"}]))
-        return _ok()
+        return _ok(stdout="dt-new\n")
 
     filer = importlib.import_module("livespec_dev_tooling.flake_retry_filer")
 
     assert filer.file_root_fixes(
         repo_root=tmp_path, runner=runner, plugin_root=_PLUGIN_ROOT, state_dir=tmp_path / "state"
     ) == (nodeid,)
-    assert calls[1][2] == f"root-fix: {nodeid}"
+    assert calls[1][4] == nodeid
 
 
 @pytest.mark.parametrize(
@@ -329,20 +324,17 @@ def test_the_dev_host_role_arms_the_reader_and_its_staleness_signal() -> None:
     assert "--check-staleness" in staleness_service
 
 
-def test_each_filed_root_fix_is_routed_through_intake_by_its_own_id(*, tmp_path: Path) -> None:
-    """Every created item is triaged by the orchestrator, never left in backlog."""
+def test_each_filed_root_fix_uses_the_capture_seam(*, tmp_path: Path) -> None:
+    """Every created item is filed and triaged by the orchestrator in one call."""
     nodeids = ("tests/test_a.py::test_one", "tests/test_b.py::test_two")
     _write_records(repo_root=tmp_path, nodeids=nodeids)
-    created: list[str] = []
-    routed: list[str] = []
+    filings: list[list[str]] = []
 
     def runner(*, argv: list[str], cwd: Path, **_: object) -> Success[GateCommandResult]:
         del cwd
-        if argv[1] == "create":
-            created.append(argv[2])
-            return _ok(stdout=json.dumps({"id": f"dt-{len(created)}"}))
         if argv[1] == "-c":
-            routed.append(argv[4])
+            filings.append(argv)
+            return _ok(stdout=f"dt-{len(filings)}\n")
         return _ok(stdout="[]")
 
     filer = importlib.import_module("livespec_dev_tooling.flake_retry_filer")
@@ -352,19 +344,20 @@ def test_each_filed_root_fix_is_routed_through_intake_by_its_own_id(*, tmp_path:
     )
 
     assert filed == nodeids
-    assert routed == ["dt-1", "dt-2"]
+    assert [call[4] for call in filings] == list(nodeids)
+    assert all("file_captured_work_item" in call[2] for call in filings)
 
 
-@pytest.mark.parametrize("created_body", ["{}", "[]", '{"id": 7}', '"dt-1"'])
-def test_the_reader_refuses_a_create_response_without_an_item_id(
-    *, tmp_path: Path, created_body: str
+@pytest.mark.parametrize("filing_body", ["", " \n"])
+def test_the_reader_refuses_a_capture_response_without_an_item_id(
+    *, tmp_path: Path, filing_body: str
 ) -> None:
-    """An item whose id cannot be read cannot be triaged, so the filing stops loudly."""
+    """An item whose capture receipt lacks an id cannot be remembered as filed."""
     _write_records(repo_root=tmp_path, nodeids=("tests/test_a.py::test_one",))
 
     def runner(*, argv: list[str], cwd: Path, **_: object) -> Success[GateCommandResult]:
         del cwd
-        return _ok(stdout=created_body if argv[1] == "create" else "[]")
+        return _ok(stdout=filing_body if argv[1] == "-c" else "[]")
 
     filer = importlib.import_module("livespec_dev_tooling.flake_retry_filer")
 
@@ -385,17 +378,184 @@ def test_the_reader_refuses_an_intake_routing_that_did_not_succeed(*, tmp_path: 
         del cwd
         if argv[1] == "-c":
             return Success(GateCommandResult(returncode=1, stdout="", stderr="refused"))
-        return _ok(stdout=json.dumps({"id": "dt-1"}) if argv[1] == "create" else "[]")
+        return _ok(stdout="[]")
 
     filer = importlib.import_module("livespec_dev_tooling.flake_retry_filer")
 
-    with pytest.raises(OSError, match="^$"):
+    with pytest.raises(OSError, match="refused"):
         _ = filer.file_root_fixes(
             repo_root=tmp_path,
             runner=runner,
             plugin_root=_PLUGIN_ROOT,
             state_dir=tmp_path / "state",
         )
+
+
+def test_a_refused_intake_route_makes_the_host_pass_name_the_item_and_refusal(
+    *, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The timer's non-zero pass gives operators the item id and intake's refusal."""
+    _write_records(repo_root=tmp_path, nodeids=("tests/test_a.py::test_one",))
+
+    def runner(*, argv: list[str], cwd: Path, **_: object) -> Success[GateCommandResult]:
+        del cwd
+        if argv[1] == "list":
+            return _ok(stdout="[]")
+        return Success(
+            GateCommandResult(
+                returncode=1,
+                stdout="",
+                stderr="dt-1: intake (route:ready) refused: claim-token-missing",
+            )
+        )
+
+    filer = importlib.import_module("livespec_dev_tooling.flake_retry_filer")
+    monkeypatch.setattr(filer, "default_gate_command_runner", runner)
+    monkeypatch.setattr(filer, "registered_plugin_root", _fixed_plugin_root)
+
+    assert (
+        filer.main(argv=["--repo-root", str(tmp_path), "--state-dir", str(tmp_path / "state")]) == 1
+    )
+    output = capsys.readouterr().err
+    assert "dt-1" in output
+    assert "claim-token-missing" in output
+
+
+def test_a_refusal_continues_the_pass_and_omits_an_uncreated_item_id(
+    *, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """One refused capture does not hide a later node or invent an item id."""
+    refused = "tests/test_a.py::test_refused"
+    routed = "tests/test_b.py::test_routed"
+    _write_records(repo_root=tmp_path, nodeids=(refused, routed))
+    filings: list[str] = []
+
+    def runner(*, argv: list[str], cwd: Path, **_: object) -> Success[GateCommandResult]:
+        del cwd
+        if argv[1] == "list":
+            return _ok(stdout="[]")
+        nodeid = argv[4]
+        filings.append(nodeid)
+        if nodeid == refused:
+            return Success(
+                GateCommandResult(
+                    returncode=1,
+                    stdout="",
+                    stderr="intake (route:ready) refused: claim-token-missing",
+                )
+            )
+        return _ok(stdout="dt-routed\n")
+
+    filer = importlib.import_module("livespec_dev_tooling.flake_retry_filer")
+    monkeypatch.setattr(filer, "default_gate_command_runner", runner)
+    monkeypatch.setattr(filer, "registered_plugin_root", _fixed_plugin_root)
+
+    assert (
+        filer.main(argv=["--repo-root", str(tmp_path), "--state-dir", str(tmp_path / "state")]) == 1
+    )
+    output = capsys.readouterr().err
+    assert filings == [refused, routed]
+    assert "claim-token-missing" in output
+    assert "dt-refused" not in output
+
+
+def test_an_open_root_fix_is_routed_only_until_intake_marks_it_triaged(*, tmp_path: Path) -> None:
+    """A later record re-routes a stranded item once, never a triaged item."""
+    nodeid = "tests/test_a.py::test_one"
+    items = [
+        {
+            "id": "dt-untriaged",
+            "status": "backlog",
+            "title": f"root-fix: {nodeid}",
+            "labels": [],
+        }
+    ]
+    routed: list[str] = []
+    _write_records(repo_root=tmp_path, nodeids=(nodeid,))
+
+    def runner(*, argv: list[str], cwd: Path, **_: object) -> Success[GateCommandResult]:
+        del cwd
+        if argv[1] == "list":
+            return _ok(stdout=json.dumps(items))
+        routed.append(argv[4])
+        return _ok()
+
+    filer = importlib.import_module("livespec_dev_tooling.flake_retry_filer")
+    state_dir = tmp_path / "state"
+
+    assert filer.file_root_fixes(
+        repo_root=tmp_path, runner=runner, plugin_root=_PLUGIN_ROOT, state_dir=state_dir
+    ) == (nodeid,)
+    items[0]["labels"] = ["intake:triaged"]
+    _append_record(repo_root=tmp_path, record={"nodeid": nodeid, "attempts": 2})
+
+    assert (
+        filer.file_root_fixes(
+            repo_root=tmp_path, runner=runner, plugin_root=_PLUGIN_ROOT, state_dir=state_dir
+        )
+        == ()
+    )
+    assert routed == ["dt-untriaged"]
+
+
+def test_a_capture_command_that_did_not_run_keeps_its_diagnostic(*, tmp_path: Path) -> None:
+    """A missing capture command is surfaced instead of becoming a blank reader failure."""
+    _write_records(repo_root=tmp_path, nodeids=("tests/test_a.py::test_one",))
+
+    def runner(*, argv: list[str], cwd: Path, **_: object) -> object:
+        del cwd
+        if argv[1] == "list":
+            return _ok(stdout="[]")
+        return Failure(GateCommandNotRun(argv=tuple(argv), detail="python3 not on PATH"))
+
+    filer = importlib.import_module("livespec_dev_tooling.flake_retry_filer")
+
+    with pytest.raises(OSError, match="python3 not on PATH"):
+        _ = filer.file_root_fixes(
+            repo_root=tmp_path,
+            runner=runner,
+            plugin_root=_PLUGIN_ROOT,
+            state_dir=tmp_path / "state",
+        )
+
+
+def test_a_refused_route_is_retried_before_its_record_is_remembered(*, tmp_path: Path) -> None:
+    """A failed route remains eligible for the next timer pass instead of becoming silent."""
+    nodeid = "tests/test_a.py::test_one"
+    _write_records(repo_root=tmp_path, nodeids=(nodeid,))
+    items: list[dict[str, str]] = []
+    route_attempts: list[str] = []
+
+    def runner(*, argv: list[str], cwd: Path, **_: object) -> Success[GateCommandResult]:
+        del cwd
+        if argv[1] == "list":
+            return _ok(stdout=json.dumps(items))
+        if "file_captured_work_item" in argv[2]:
+            items.append({"id": "dt-1", "status": "backlog", "title": f"root-fix: {nodeid}"})
+            route_attempts.append("dt-1")
+            return Success(GateCommandResult(returncode=1, stdout="", stderr="dt-1: refused"))
+        route_attempts.append(argv[4])
+        return _ok()
+
+    filer = importlib.import_module("livespec_dev_tooling.flake_retry_filer")
+    state_dir = tmp_path / "state"
+
+    with pytest.raises(OSError, match="dt-1: refused"):
+        _ = filer.file_root_fixes(
+            repo_root=tmp_path,
+            runner=runner,
+            plugin_root=_PLUGIN_ROOT,
+            state_dir=state_dir,
+        )
+    assert not (state_dir / "filed-records").exists()
+
+    assert filer.file_root_fixes(
+        repo_root=tmp_path,
+        runner=runner,
+        plugin_root=_PLUGIN_ROOT,
+        state_dir=state_dir,
+    ) == (nodeid,)
+    assert route_attempts == ["dt-1", "dt-1"]
 
 
 class _FakeLedger:
@@ -409,11 +569,10 @@ class _FakeLedger:
         del cwd
         if argv[1] == "list":
             return _ok(stdout=json.dumps(self.items))
-        if argv[1] == "create":
-            self.items.append({"status": "ready", "title": argv[2]})
-            self.created.append(argv[2])
-            return _ok(stdout=json.dumps({"id": f"dt-{len(self.created)}"}))
-        return _ok()
+        title = f"root-fix: {argv[4]}"
+        self.items.append({"status": "ready", "title": title})
+        self.created.append(title)
+        return _ok(stdout=f"dt-{len(self.created)}\n")
 
     def close_all(self) -> None:
         for item in self.items:
