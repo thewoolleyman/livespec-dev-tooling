@@ -23,7 +23,7 @@ livespec-dev-tooling-fjpqqq (a child of plan dev-host-test-gate-load, filed on l
 
 In SPECIFICATION/contracts.md, section "## Suite-green replay leg", insert this bullet directly after the "**Same-tree reuse.**" bullet:
 
-- **One run of a test-only commit's staged tests.** For a test-only commit whose subject declares no Red intent, the run of its staged test modules that decides between the Red leg and the suite-green leg MUST also be the suite-green leg's run: the replay gate MUST run those staged test modules once in total for that commit, in whichever venue it runs them, and MUST NOT run them a second time on the identical staged tree. When the repository delegates its commit-time replay test runs and the committing host can read the gates kubeconfig (§"Delegated commit-time replay test runs"), that one run MUST be the delegated gate Job, so no pytest process starts on the committing host, and the commit's `TDD-Suite-Green-*` trailers MUST name that Job. The commit records `TDD-Suite-Green-Scope: staged-tests` in either venue.
+- **One run of a test-only commit's staged tests.** For a test-only commit whose subject declares no Red intent, the run of its staged test modules that decides between the Red leg and the suite-green leg MUST also be the suite-green leg's run: the replay gate MUST run those staged test modules once in total for that commit, in whichever venue it runs them, and MUST NOT run them a second time on the identical staged tree. A run that produced no verdict is not that run; the gate MAY run the staged modules again, and its trailers name the run that decided. When the repository delegates its commit-time replay test runs and the committing host can read the gates kubeconfig (§"Delegated commit-time replay test runs"), that one run MUST be the delegated gate Job, a pytest process MUST NOT start on the committing host, and the commit's `TDD-Suite-Green-*` trailers MUST name that Job. The commit records `TDD-Suite-Green-Scope: staged-tests` in either venue.
 
 In SPECIFICATION/scenarios.md, add these two scenarios directly after "## Scenario: a suite-green leg reuses a passing full pre-commit aggregate on the same tree" (each heading preceded and followed by a blank line, matching the surrounding scenarios):
 
@@ -49,7 +49,7 @@ When the commit-msg replay gate runs
 
 Then the staged test modules MUST run exactly once, in one gate Job
 
-And no pytest process MUST start on the committing host
+And a pytest process MUST NOT start on the committing host
 
 And the commit MUST record `TDD-Suite-Green-Scope: staged-tests` with `TDD-Suite-Green-*` trailers that name that gate Job
 
