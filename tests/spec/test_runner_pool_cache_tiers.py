@@ -39,6 +39,7 @@ duration.
 
 from __future__ import annotations
 
+import hashlib
 import re
 from pathlib import Path
 
@@ -89,6 +90,20 @@ _NON_INVOCATIONS = ("#", "log ", "printf", "echo ")
 _KEY_REF = re.compile(
     r"valueFrom:\s*\n\s*configMapKeyRef:\s*\n\s*name:\s*(?P<name>\S+)\s*\n\s*key:\s*(?P<key>\S+)"
 )
+
+
+def _budget_section() -> str:
+    """The README section that documents the ConfigMap-owned budget."""
+    readme = (_WARM_CACHE_DIR / "README.md").read_text(encoding="utf-8")
+    matched = re.search(r"^## Budget\n(?P<section>.*?)(?=^## )", readme, re.MULTILINE | re.DOTALL)
+    assert matched is not None, "the warm-cache README must retain its Budget section"
+    return matched.group("section")
+
+
+def _budget_commitment(*, budgets: dict[str, int]) -> str:
+    """A non-numeric README commitment to the ConfigMap's two budget axes."""
+    payload = f"{budgets['bytes']}\n{budgets['files']}\n".encode()
+    return hashlib.sha256(payload).hexdigest()
 
 
 def _budget_from_configmap() -> dict[str, int]:
@@ -160,6 +175,23 @@ def test_the_two_budgets_are_stated_once_and_injected_from_that_one_place() -> N
         f"tree capped on bytes alone still ships unbounded file COUNT, which is the axis "
         f"that costs a job start on any medium; budgets={budgets}"
     )
+
+
+def test_the_readme_budget_derivation_commits_to_the_configmap_without_repeating_values() -> None:
+    """The derivation detects a changed ConfigMap while keeping its values single-sourced."""
+    budgets = _budget_from_configmap()
+    section = _budget_section()
+    commitment = _budget_commitment(budgets=budgets)
+    assert "`warm-cache-budget` ConfigMap" in section
+    assert f"budget commitment: `sha256:{commitment}`" in section, (
+        "README.md Budget must commit to the ConfigMap's bytes/files so a changed ConfigMap "
+        "cannot silently detach from its reviewed derivation"
+    )
+    for value in budgets.values():
+        assert str(value) not in section, (
+            "README.md Budget must name the ConfigMap as the home of budget values rather "
+            f"than restating {value} outside that one committed place"
+        )
 
     cronjob = _CRONJOB.read_text(encoding="utf-8")
     injected = {
