@@ -1192,9 +1192,8 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: API-server 504 responses are counted by verb and resource",
-    "test": "TODO",
-    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, running the control-plane emitter against a fixture /metrics holding 504 rows for PUT leases under two scopes beside other codes, and asserting one summed 504 data point and no other code. livespec-dev-tooling-f5qjzn owns it; the implementation PR that ships it replaces this row.",
-    "work_item": "livespec-dev-tooling-f5qjzn"
+    "test": "tests.consumer.test_control_plane_emitter_scenarios.test_api_server_504_responses_are_summed_by_verb_and_resource",
+    "reason": "Consumer-tier: runs the committed control-plane emitter against a fixture scrape holding 504 rows across scopes beside 200 and 500 rows, then proves the emitted points are summed once per verb/resource pair and carry no other dimensions (livespec-dev-tooling-nbpzvy)."
   },
   {
     "spec_root": "SPECIFICATION",
