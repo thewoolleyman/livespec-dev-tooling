@@ -129,3 +129,42 @@ def test_cluster_record_requires_a_complete_matching_job(
         )
         is expected
     )
+
+
+@pytest.mark.parametrize(
+    ("status", "carried"),
+    [
+        (
+            {
+                "conditions": [
+                    {"type": "Complete", "status": "False"},
+                    {"type": "Failed", "status": "True"},
+                ]
+            },
+            "Complete=False,Failed=True",
+        ),
+        ({"conditions": [{"type": "Suspended", "status": "True"}]}, "Suspended=True"),
+        ({"conditions": []}, "no conditions"),
+        ({"conditions": "malformed"}, "no conditions"),
+        ({}, "no conditions"),
+    ],
+    ids=["failed", "incomplete", "empty-conditions", "malformed-conditions", "no-status"],
+)
+def test_an_outcome_disagreement_reports_the_conditions_the_cluster_carried(
+    *, tmp_path: Path, status: dict[str, object], carried: str
+) -> None:
+    """A failed Job is distinguishable from an incomplete or malformed one in the diagnostic."""
+    module = importlib.import_module("livespec_dev_tooling._pre_push_cluster_record")
+    evidence = module.Evidence(
+        tree_hash="a" * 40, gate_job="gate-widget-abcde", members_passed=("check-alpha",)
+    )
+    job = json.dumps(
+        {"metadata": {"labels": {"livespec.gate/tree-hash": evidence.tree_hash}}, "status": status}
+    )
+    replies: list[object] = [
+        job,
+        json.dumps({"items": [{"metadata": {"name": "pod"}}]}),
+        'LIVESPEC_GATE_MEMBERS {"check-alpha": "passed"}\n',
+    ]
+    result = module.confirmation(evidence=evidence, cwd=tmp_path, runner=_runner(replies=replies))
+    assert result.disagreements == (("outcome", "Complete=True and Failed!=True", carried),)
