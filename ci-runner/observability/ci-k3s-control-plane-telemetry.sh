@@ -110,7 +110,8 @@ if not int(metrics_rc):
         integer(value, dict(dimensions))
         for dimensions, value in handler_timeout_counts.items()
     ]
-    metrics.append({"name": "apiserver_request_total", "unit": "1", "sum": {"aggregationTemporality": 2, "isMonotonic": True, "dataPoints": handler_timeout_points}})
+    if handler_timeout_points:
+        metrics.append({"name": "apiserver_request_total", "unit": "1", "sum": {"aggregationTemporality": 2, "isMonotonic": True, "dataPoints": handler_timeout_points}})
 
 used, total = filesystem.split()
 metrics.extend([gauge("livespec.ci_k3s.datastore_used_bytes", "By", [integer(used)]), gauge("livespec.ci_k3s.datastore_total_bytes", "By", [integer(total)])])
