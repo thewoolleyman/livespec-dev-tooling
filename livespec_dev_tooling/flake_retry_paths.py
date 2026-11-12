@@ -1,3 +1,5 @@
+"""Static repository-path literals collected from test path expressions."""
+
 from __future__ import annotations
 
 import ast
