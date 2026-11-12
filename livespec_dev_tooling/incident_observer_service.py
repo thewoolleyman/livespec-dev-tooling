@@ -230,6 +230,7 @@ class ControllerService:
                         completion=completion,
                         body=body or b"",
                         wake=self.pr_run_retained,
+                        identity_provisioned=self.installation.ci_identity_policy is not None,
                     ),
                 },
             )

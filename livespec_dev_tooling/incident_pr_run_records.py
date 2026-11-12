@@ -10,6 +10,12 @@ in the same marked-record family and through the same canonical ledger the
 original-run evidence uses, so the item answers its runs without a forge read. A
 record the item already carries is marked written and never written twice, so a
 lost write or a restarted controller resumes from protected state.
+
+While the installation has no CI identity policy, no publication can be verified, so
+each record carries the refusal `identity-not-provisioned`, making the gap visible on
+the item. Only pull-request runs are recorded: ci.yml runs on `push` only for `master`
+and `incident-scratch/**`, so a run on any other branch is a pull-request run, and a
+run on one of those push branches is excluded even when its head is the armed SHA.
 """
 
 from __future__ import annotations
@@ -37,10 +43,12 @@ from livespec_dev_tooling._incident_pr_run_store import (
     pending_records,
 )
 from livespec_dev_tooling.incident_observer_events import completion_run_attempt
+from livespec_dev_tooling.incident_repository_fence import RepositoryFenceBusyError
 from livespec_dev_tooling.incident_strict_json import IncidentJsonRefusalError, strict_json
 
 __all__: list[str] = [
     "INCIDENT_CI_JOB",
+    "NOT_PROVISIONED",
     "PR_RUN_MARKER",
     "PrRunCompletion",
     "PrRunSweep",
@@ -54,7 +62,13 @@ __all__: list[str] = [
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-bqnzcm.4
 PR_RUN_MARKER = "livespec-incident-pr-run-record-v1"
 INCIDENT_CI_JOB = "incident-ci"
+NOT_PROVISIONED = "identity-not-provisioned"
 _INTERVAL_SECONDS = 300
+# The callback's bound on the repository fence, as the target-branch path uses.
+_FENCE_WAIT_SECONDS = 5.0
+# The branches ci.yml runs on `push`; every other branch's run is a pull-request run.
+_PUSH_BRANCHES = ("master",)
+_PUSH_BRANCH_PREFIXES = ("incident-scratch/",)
 _EXPECTED = (OSError, ValueError, TypeError, KeyError, subprocess.SubprocessError)
 
 
@@ -65,20 +79,27 @@ class PrRunCompletion:
     repository: str
     job_name: str
     head_sha: str
+    branch: str
     run_id: int
     run_attempt: int
     conclusion: str
+    identity_provisioned: bool
 
 
 def retain_pr_run(*, state: Path, completion: PrRunCompletion) -> str:
     """Retain the unpublished record of an armed head's incident CI job; name what happened.
 
-    `not-incident-ci` and `not-armed` retain nothing: a run on a head the controller has
-    not armed is not an expedited pull-request CI run and receives no record.
+    `not-incident-ci`, `not-pull-request` and `not-armed` retain nothing: a run on a head
+    the controller has not armed is not an expedited pull-request CI run and receives no
+    record. A fence held past its bound raises RepositoryFenceBusyError.
     """
     if completion.job_name != INCIDENT_CI_JOB:
         return "not-incident-ci"
-    with repository_lock(directory=state, repository=completion.repository) as path:
+    if completion.branch in _PUSH_BRANCHES or completion.branch.startswith(_PUSH_BRANCH_PREFIXES):
+        return "not-pull-request"
+    with repository_lock(
+        directory=state, repository=completion.repository, wait_seconds=_FENCE_WAIT_SECONDS
+    ) as path:
         record = load_record(path=path)
         arm = read_observer_arm(record=record)
         arm_id = record.get("observer_arm_id")
@@ -102,7 +123,8 @@ def retain_pr_run(*, state: Path, completion: PrRunCompletion) -> str:
             "run_id": completion.run_id,
             "run_attempt": completion.run_attempt,
         }
-        content = {"conclusion": completion.conclusion, "refusal": None}
+        refusal = None if completion.identity_provisioned else NOT_PROVISIONED
+        content = {"conclusion": completion.conclusion, "refusal": refusal}
         if not add_record(record=record, kind="unpublished", key=key, content=content):
             return "already-retained"
         save_record(path=path, record=record)
@@ -110,9 +132,14 @@ def retain_pr_run(*, state: Path, completion: PrRunCompletion) -> str:
 
 
 def retain_callback_run(
-    *, state: Path, completion: LeafCompletion, body: bytes, wake: Event
+    *,
+    state: Path,
+    completion: LeafCompletion,
+    body: bytes,
+    wake: Event,
+    identity_provisioned: bool,
 ) -> str:
-    """Retain a verified callback's run record and wake the sweep; name what happened."""
+    """Retain a verified callback's run record; wake the sweep only on `retained`."""
     attempt = completion_run_attempt(body=body)
     if attempt is None:
         return "run-attempt-unreadable"
@@ -123,12 +150,14 @@ def retain_callback_run(
                 repository=completion.repository,
                 job_name=completion.job_name,
                 head_sha=completion.head_sha,
+                branch=completion.branch,
                 run_id=completion.run_id,
                 run_attempt=attempt,
                 conclusion=completion.conclusion,
+                identity_provisioned=identity_provisioned,
             ),
         )
-    except (OSError, ValueError, TypeError, IncidentJsonRefusalError):
+    except (OSError, ValueError, TypeError, IncidentJsonRefusalError, RepositoryFenceBusyError):
         return "state-unavailable"
     if status == "retained":
         wake.set()

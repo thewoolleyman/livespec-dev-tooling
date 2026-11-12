@@ -5,7 +5,9 @@ the expedited pull-request run records (livespec-dev-tooling-bqnzcm.4). A run of
 incident CI job on a pull-request head the controller has armed gets an unpublished
 record carrying its key, the job's conclusion and any refusal code, retained from the
 signed job callback and written onto the incident item by the sweep, once. A run on a
-head the controller has not armed gets no record.
+head the controller has not armed gets no record, and neither does a run on a branch
+ci.yml runs on `push` (`master`, `incident-scratch/**`). While the installation has no
+CI identity policy the record carries the refusal `identity-not-provisioned`.
 """
 
 from __future__ import annotations
@@ -26,6 +28,7 @@ from livespec_dev_tooling._incident_observer_store import (
     repository_lock,
     save_record,
 )
+from livespec_dev_tooling._incident_observer_types import LeafCompletion
 from livespec_dev_tooling._incident_pr_run_store import (
     add_record,
     mark_written,
@@ -34,6 +37,7 @@ from livespec_dev_tooling._incident_pr_run_store import (
     run_tree,
 )
 from livespec_dev_tooling.incident_observer_events import completion_run_attempt
+from livespec_dev_tooling.incident_repository_fence import RepositoryFenceBusyError
 from tests.livespec_dev_tooling.test_incident_observer_target_branch import _World
 
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-bqnzcm.4
@@ -48,12 +52,17 @@ def world(tmp_path, monkeypatch):
     return armed
 
 
-def _pr_leaf(world, *, head=_HEAD, name="incident-ci", attempt=2, delivery="pr-1"):
+_PR_BRANCH = "incident/incident-1-attempt-1"
+
+
+def _pr_leaf(
+    world, *, head=_HEAD, name="incident-ci", attempt=2, delivery="pr-1", branch=_PR_BRANCH
+):
     job = {
         "id": 77,
         "run_id": 4001,
         "head_sha": head,
-        "head_branch": "incident/incident-1-attempt-1",
+        "head_branch": branch,
         "name": name,
         "status": "completed",
         "conclusion": "success",
@@ -121,7 +130,7 @@ def test_an_armed_heads_incident_ci_run_is_recorded_once_on_its_incident_item(wo
         "run_id": 4001,
         "run_attempt": 2,
         "conclusion": "success",
-        "refusal": None,
+        "refusal": "identity-not-provisioned",
         "digest": written[0],
     }
     assert ledger.calls[-1][:3] == ["comments", "add", "incident-1"]
@@ -145,6 +154,7 @@ def test_a_record_the_item_already_carries_is_marked_written_and_never_written_t
         ({"name": "coverage"}, "not-incident-ci"),
         ({"attempt": None}, "run-attempt-unreadable"),
         ({"attempt": 0}, "run-attempt-unreadable"),
+        ({"branch": "incident-scratch/drill-proof"}, "not-pull-request"),
     ],
 )
 def test_a_run_outside_an_armed_heads_incident_ci_job_receives_no_record(world, leaf, expected):
@@ -172,16 +182,85 @@ def test_an_unreadable_controller_record_answers_state_unavailable(world):
     assert _pr_leaf(world)[1]["pr_run"] == "state-unavailable"
 
 
+def _completion(**changes):
+    fields = {
+        "repository": "owner/repo",
+        "job_name": "incident-ci",
+        "head_sha": _HEAD,
+        "branch": _PR_BRANCH,
+        "run_id": 1,
+        "run_attempt": 1,
+        "conclusion": "failure",
+        "identity_provisioned": False,
+    }
+    return runs.PrRunCompletion(**{**fields, **changes})
+
+
 def test_with_no_arm_retained_a_completion_is_not_armed(tmp_path):
-    completion = runs.PrRunCompletion(
-        repository="owner/repo",
-        job_name="incident-ci",
-        head_sha=_HEAD,
-        run_id=1,
-        run_attempt=1,
-        conclusion="failure",
+    assert runs.retain_pr_run(state=tmp_path, completion=_completion()) == "not-armed"
+
+
+@pytest.mark.parametrize("branch", ["master", "incident-scratch/drill-proof"])
+def test_a_run_on_a_push_branch_is_not_a_pull_request_run_even_at_the_armed_head(world, branch):
+    completion = _completion(branch=branch)
+    assert runs.retain_pr_run(state=world.installation.state, completion=completion) == (
+        "not-pull-request"
     )
-    assert runs.retain_pr_run(state=tmp_path, completion=completion) == "not-armed"
+    assert run_tree(record=_record(world))["runs"] == {}
+
+
+def test_a_provisioned_installation_records_no_refusal_until_one_is_answered(world):
+    completion = _completion(identity_provisioned=True)
+    assert runs.retain_pr_run(state=world.installation.state, completion=completion) == ("retained")
+    (row,) = pending_records(record=_record(world))
+    assert row["content"] == {"conclusion": "failure", "refusal": None}
+
+
+def _leaf(*, head=_HEAD):
+    return LeafCompletion(
+        delivery_id="d",
+        repository="owner/repo",
+        head_sha=head,
+        branch=_PR_BRANCH,
+        run_id=5,
+        job_id=6,
+        job_name="incident-ci",
+        conclusion="success",
+    )
+
+
+def _retain(world, *, leaf, wake):
+    return runs.retain_callback_run(
+        state=world.installation.state,
+        completion=leaf,
+        body=b'{"workflow_job": {"run_attempt": 1}}',
+        wake=wake,
+        identity_provisioned=False,
+    )
+
+
+def test_the_sweep_is_woken_only_when_a_record_is_retained(world):
+    wake = threading.Event()
+    assert _retain(world, leaf=_leaf(head="f" * 40), wake=wake) == "not-armed"
+    assert not wake.is_set()
+    assert _retain(world, leaf=_leaf(), wake=wake) == "retained"
+    assert wake.is_set()
+    wake.clear()
+    assert _retain(world, leaf=_leaf(), wake=wake) == "already-retained"
+    assert not wake.is_set()
+
+
+def test_a_held_fence_answers_state_unavailable_within_its_bound(world, monkeypatch):
+    waits = []
+
+    def busy(**kwargs):
+        waits.append(kwargs.get("wait_seconds"))
+        raise RepositoryFenceBusyError("held")
+
+    monkeypatch.setattr(runs, "repository_lock", busy)
+    wake = threading.Event()
+    assert _retain(world, leaf=_leaf(), wake=wake) == "state-unavailable"
+    assert waits == [5.0] and not wake.is_set()
 
 
 _KEY = {
