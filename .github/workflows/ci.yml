@@ -492,15 +492,6 @@ jobs:
       # - mise: tools are baked into the image, so `mise install` is a
       #   near-no-op; a fresh container does not TRUST the repo .mise.toml,
       #   so `mise trust` is required for the shims to resolve.
-      # THROWAWAY PROOF for livespec-dev-tooling-fc4dzb: shows the credential
-      # helper as this job's git sees it. Removed before the PR is marked ready.
-      - name: git-auth probe (throwaway, fc4dzb)
-        run: |
-          printf 'GIT_CONFIG_PARAMETERS=%s\n' "${GIT_CONFIG_PARAMETERS}"
-          git config --show-origin --get-all credential.https://github.com.helper
-          printf 'protocol=https\nhost=github.com\n\n' | git credential fill | sed 's/^password=.\+/password=<present, redacted>/'
-          git ls-remote https://github.com/thewoolleyman/livespec HEAD
-
       - name: Prepare workspace (git trust, mise trust + install, uv sync)
         run: |
           git config --global --add safe.directory '*'
