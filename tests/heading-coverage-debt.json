@@ -359,6 +359,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: a consumer ruled deliberately-normal classifies from claims citing the ruling, with no installation serving it",
+    "work_item": "livespec-dev-tooling-kddu2b",
+    "first_seen": "2026-11-12"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: a consumer whose every livespec_dev_tooling function is declared or locally public passes the commit-hook check",
     "work_item": "livespec-dev-tooling-vobfwi",
     "first_seen": "2026-11-12"
@@ -1416,6 +1423,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: an expedited pull-request run and its omitted members are recorded on the incident work item",
+    "work_item": "livespec-dev-tooling-bqnzcm.4",
+    "first_seen": "2026-11-12"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: an explicit local gate-runner run is recorded as local",
     "work_item": "livespec-dev-tooling-qgv3tb",
     "first_seen": "2026-11-01"
@@ -1426,6 +1440,13 @@
     "heading": "## Scenario: an image written below comment lines inside a container block is counted by the gate and the check alike",
     "work_item": "livespec-dev-tooling-op67ed",
     "first_seen": "2026-11-11"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: an incident label event's forge writes repeat only what did not take effect",
+    "work_item": "livespec-dev-tooling-levu6j",
+    "first_seen": "2026-11-12"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -1447,6 +1468,13 @@
     "heading": "## Scenario: an incident rollback follows released artifacts into consuming repositories",
     "work_item": "livespec-dev-tooling-vg36aq",
     "first_seen": "2026-11-03"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: an incident-ci forge read retries an unusable answer and an unreadable pull-request body fails the selection by name",
+    "work_item": "livespec-dev-tooling-levu6j",
+    "first_seen": "2026-11-12"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -1724,6 +1752,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: the fleet audit reads each consumer's controller and recovery authorization from the installation that serves it",
+    "work_item": "livespec-dev-tooling-iaysvp",
+    "first_seen": "2026-11-12"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: the git object seed covers every gated repository, and a node with no ci-workvols tier seeds only its reflink-capable gate volumes",
     "work_item": "livespec-dev-tooling-zbu7jf",
     "first_seen": "2026-11-11"
@@ -1748,6 +1783,13 @@
     "heading": "## Scenario: the local-aggregate entry point writes no evidence for a failed, dirty or changed tree",
     "work_item": "livespec-dev-tooling-4scqti",
     "first_seen": "2026-11-09"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: the observer role renders one production installation per declared repository beside livespec-dev-tooling's",
+    "work_item": "livespec-dev-tooling-lqp2qx",
+    "first_seen": "2026-11-12"
   },
   {
     "spec_root": "SPECIFICATION",

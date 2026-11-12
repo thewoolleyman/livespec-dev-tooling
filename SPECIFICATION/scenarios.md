@@ -3579,6 +3579,36 @@ And an expedited receipt records deferred replay honestly and remains distinct f
 And a workflow incident requires its scoped host authorization receipt through the credential boundary while the factory retains its existing workflow credential scope.
 ```
 
+## Scenario: an incident-ci forge read retries an unusable answer and an unreadable pull-request body fails the selection by name
+
+```gherkin
+Given an ordinary pull request whose body carries no `livespec-incident-ci` block
+And GitHub answers the incident-ci job's pull-request body read with a body that is not JSON on the first attempt, with HTTP 502 on the second, with HTTP 429 carrying `Retry-After: 20` on the third, and with the pull request's JSON on the fourth
+When CI runs on that pull request
+Then each of the three failed attempts MUST print one escaped line naming the pull-request body read, its attempt number, its HTTP status and kind, the wait it takes next and the first bytes of its answer
+And the read MUST wait 2 seconds after the first attempt, 4 seconds after the second and 20 seconds after the 429
+And the selection step MUST read the fourth attempt's answer, select nothing and pass
+And when GitHub instead answers every attempt with an HTTP 5xx status, the read MUST stop after six attempts, and the selection step MUST fail naming the pull-request body read and its last status, MUST NOT write its block output and MUST NOT report that it selected nothing
+And then the released incident CI entrance MUST NOT run, and the job MUST NOT write an omitted value
+And when GitHub answers with HTTP 429 carrying a `Retry-After` longer than the read's remaining wait budget, the read MUST fail at once, naming the pull-request body read, `rate_limited` and the wait it was asked for
+And an HTTP 404 answer whose body is JSON MUST fail the read at its first attempt without a retry
+And when GitHub answers every attempt of ci-green's read of its own run's jobs with an HTTP 5xx status, ci-green MUST fail closed after six attempts, naming that read.
+```
+
+## Scenario: an incident label event's forge writes repeat only what did not take effect
+
+```gherkin
+Given a same-repository pull request whose newest CI run on its head is still in progress
+And GitHub creates the incident label workflow's `ci-green` hold but answers the create with HTTP 502
+When the expedited-incident-response label is added to that pull request
+Then the shared command MUST NOT repeat the create, and MUST end it with exit status 75, outcome-unknown, naming the create
+And the step MUST re-read the head's `ci-green` check runs, find the hold whose external id is this job's run id and run attempt, and use that hold without creating another
+And when that re-read finds no such hold, the step MUST repeat the create, at most twice
+And a cancel of the run answered with HTTP 503 MUST be repeated by the shared command without a re-read, because a repeated cancel changes nothing
+And a re-run answered with HTTP 429 carrying `Retry-After: 10` MUST be repeated after 10 seconds without a re-read, because a rate-limited request did not take effect
+And a re-run answered with HTTP 502 MUST be repeated only after a re-read shows the run's `run_attempt` unchanged and its status still `completed`.
+```
+
 ## Scenario: an expedited PR defers coverage and spec work while master runs normally
 
 ```gherkin
@@ -3591,6 +3621,20 @@ And every normal master push disables both incident flags and selects its comple
 And the reusable check matrix honours an incident-omitted list only on a pull_request that carries the trusted incident label and has a same-repository head, and each leg it omits reports omitted-by-incident-policy under its real check name.
 And that workflow runs every requested check on a master push or any other event whatever the input carries, and fails a leg closed on an input that is not a JSON array of strings.
 And a caller that wires incident-omitted from anything other than its incident-ci job's guarded output is refused by the repository conformance check on callers.
+```
+
+## Scenario: an expedited pull-request run and its omitted members are recorded on the incident work item
+
+```gherkin
+Given an authorized incident item with explicit attempt/phase and exact repository/base/head identity, and an expedited pull request whose head the independent controller has armed
+When the incident CI job's released aggregate passes and the publisher publishes it to the controller under the protected CI invocation identity
+Then the controller MUST verify the publication against the identical retained arm, retain the aggregate digest and omitted list in that job's attachment slot, and record on the incident item one published record binding the item, attempt, generation, pull request, head, run id and run attempt and carrying the aggregate's passed members, its deferred members with their reasons and its omitted members, with no failed or missing list because a passed aggregate has none.
+And reading the incident item's records by its id alone MUST return that run and every other expedited pull-request run of every attempt, with its omitted members when published and its conclusion and refusal code when not, without a forge read.
+And a repeated publication of the same aggregate MUST answer the retained record and write nothing, and a different aggregate for the same run attempt MUST be recorded as a conflict record beside it.
+And a publication whose pull request, head or arm differs from the retained arm MUST be refused as stale and MUST record no published record.
+And when the controller retained no publication for a completed incident CI job on an armed head, it MUST record from the job's completion delivery an unpublished record carrying exactly the run id, the run attempt, the job's conclusion and the code of any refusal it answered.
+And a controller whose manifest carries no CI identity policy MUST answer identity-not-provisioned, write that code onto the item's unpublished record for the run attempt and into the step summary, and MUST NOT fail the job, while any other refusal or an unreachable controller MUST fail the incident CI job naming its cause.
+And a run of the incident CI job on a head the controller has not armed, including one whose aggregate refused for want of a current arm, MUST receive no record.
 ```
 
 ## Scenario: the first required master leaf failure fences incident recovery
@@ -3655,6 +3699,19 @@ And the committed teardown MUST remove the scratch installation's units, configu
 And the scratch installation MUST NOT be counted as recovery capability for master.
 ```
 
+## Scenario: the observer role renders one production installation per declared repository beside livespec-dev-tooling's
+
+```gherkin
+Given livespec-dev-tooling's production observer installation, whose configuration, manifest, units and published public paths are read back and whose observer is running
+And the committed observer inventory declares a second repository with that repository's own required CI jobs
+When the committed observer role converges the inventory
+Then the second repository MUST have its own production installation whose configuration names that repository and its required CI jobs, with its own manifest whose recovery-principal invocation names that configuration, and its own state directory, reference clone, listener port and units
+And its public routes MUST be published on the role's funnel port at /<name>/callback and /<name>/ordinary-action, each proxied to its own listener and to no other
+And livespec-dev-tooling's configuration, manifest, units and published public paths MUST keep their bytes, and its running observer MUST NOT restart
+And removing the second repository's installation through the role MUST leave livespec-dev-tooling's installation with the same bytes and its observer running
+And a role run whose inventory declares only livespec-dev-tooling MUST render that installation byte-identical to the role's output without the per-repository capability.
+```
+
 
 ## Scenario: a recorded scratch-branch drill ends in drill-closed and a master incident is refused
 
@@ -3699,6 +3756,34 @@ Then the fleet audit expands the committed manifest and reports an explicit impl
 And enablement requires serving-version evidence for gate readers, templates, driver hooks, recovery authorization and independent controller in each applicable consumer.
 And consumer closure retains normal factory proof over the cumulative incident scope and all deferred spec and verification obligations.
 And the operator can inspect attempts, skip reasons, focused evidence, CI runs, rollback and final factory proof through the incident item identity.
+```
+
+## Scenario: the fleet audit reads each consumer's controller and recovery authorization from the installation that serves it
+
+```gherkin
+Given a committed observer inventory declaring production installations for livespec-dev-tooling and for a second manifest consumer, each with its observer running
+And a third manifest consumer that no production installation serves, and a scratch installation running beside them
+When the operator runs `just incident-fleet-audit`
+Then the second consumer's independent-controller serving version MUST be read from its own installation's running observer and configuration, and its recovery-authorization reading MUST use that same reading
+And livespec-dev-tooling's independent-controller and recovery-authorization readings MUST be read from its own installation, unchanged
+And the third consumer's independent-controller and recovery-authorization readings MUST be unverified, and it MUST NOT be on the ready list
+And the scratch installation MUST NOT be read for any consumer.
+```
+
+## Scenario: a consumer ruled deliberately-normal classifies from claims citing the ruling, with no installation serving it
+
+```gherkin
+Given livespec core's committed fleet manifest, authenticated against core's master, with a fleet member that no production observer installation serves and an adopter whose profile is ["instruction-only"] and whose driver-hooks serving version cannot be read
+And committed deliberately-normal claims on every one of the member's 37 rows and on the adopter's Agent tool and stop guards and Operator factory routing rows, each bound to the committed manifest identity, naming a source path, a proof reference and an owner, naming no release build, and giving as its reason the ruling it rests on, who made it, when and where it is recorded
+When the operator runs `just incident-fleet-audit`
+Then every one of the member's 37 rows MUST read deliberately-normal, although its independent-controller and recovery-authorization serving versions read unverified
+And the adopter's two guidance rows MUST read deliberately-normal, and each of its other 35 rows MUST read not-applicable
+And the ready list MUST NOT name either consumer, and the findings MUST NOT name the member for lacking serving-version evidence
+And every check this repository applies to its committed claims MUST accept every one of those claims
+And the same claims with no reason MUST be refused by those checks and left unclassified by the audit
+And a claim on one of the adopter's runtime rows MUST be refused by those checks and left unclassified by the audit
+And when the audit reads a serving version showing the member's independent controller installed and serving for it, each of the member's controller rows MUST read unclassified, and the findings MUST name the member, the surface and the contradiction with its deliberately-normal claim
+And for a consumer whose controller row carries an implemented claim and whose controller serving version cannot be read, that row MUST still read unclassified and the findings MUST name the consumer and the missing controller serving-version evidence.
 ```
 
 ## Scenario: the incident fleet audit command refuses enablement for a consumer without verified serving evidence
