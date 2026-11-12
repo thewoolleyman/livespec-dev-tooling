@@ -211,7 +211,7 @@ def test_gate_stop_handles_an_unreadable_process_environment(
 def test_gate_stop_follows_every_descendant_before_signalling(
     *, monkeypatch: MonkeyPatch, tmp_path: Path
 ) -> None:
-    """A stop sees the child that a detached gate process forked."""
+    """A stop sees every descendant and signals each before the process that started it."""
     gate_stop = _gate_stop()
     run_dir = tmp_path / "run"
     run_dir.mkdir()
@@ -272,6 +272,8 @@ def test_gate_stop_follows_every_descendant_before_signalling(
             return [
                 ProcessEntry(name="123", status=Readable(text="PPid:\t1\n"), marked=True),
                 ProcessEntry(name="456", status=Readable(text="PPid:\t123\n")),
+                ProcessEntry(name="300", status=Readable(text="PPid:\t123\n")),
+                ProcessEntry(name="789", status=Readable(text="PPid:\t456\n")),
                 ProcessEntry(name="999", status=Readable(text="PPid:\tnot-a-pid\n")),
                 ProcessEntry(name="1000", status=Unreadable()),
             ]
@@ -282,7 +284,7 @@ def test_gate_stop_follows_every_descendant_before_signalling(
     )
 
     assert gate_stop.main() == 0
-    assert signalled == [123, 456]
+    assert signalled == [789, 456, 300, 123]
 
 
 def test_gate_stop_terms_every_attributed_process_before_any_kill(
