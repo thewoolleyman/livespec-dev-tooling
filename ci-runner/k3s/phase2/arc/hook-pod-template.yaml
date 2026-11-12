@@ -423,6 +423,11 @@ spec:
               - sh
               - -c
               - |
+                # The kubelet's lifecycle-exec deadline covers this shell, not
+                # each fail-soft cache operation. Let the job container start
+                # immediately; the detached cache setup can finish or fail
+                # without making the workflow pod unhealthy.
+                (
                 # Every path below is fail-soft: this script always exits 0.
                 # No tier copies bytes here: the warm uv cache is already in
                 # the volume as the provisioner's reflink seed (header item 2).
@@ -540,6 +545,8 @@ spec:
                   actions_hit=true; actions_err=
                 fi
                 rec actions "$actions_hit" "$actions_gen" "$(ms)" 0 reflink-seed "$actions_err"
+                exit 0
+                ) >/dev/null 2>&1 &
                 exit 0
         # Header item 6: at pod deletion after the job — the per-tier
         # warm-copy spans postStart recorded (replayed with their own

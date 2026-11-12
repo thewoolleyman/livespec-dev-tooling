@@ -64,6 +64,7 @@ import json
 import os
 import re
 import subprocess
+import time
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -109,6 +110,7 @@ _UV_GENERATION = "20260911T000000Z"
 _TARGET_GENERATION = "20260911T001500Z"
 _ACTIONS_GENERATION = "20260911T004500Z"
 _HOOK_TIMEOUT_S = 60
+_SPAN_TIMEOUT_S = 4
 
 # A population of pod names the canary rule is exercised over, and the one of
 # them the committed rule selects at N=2. Fixed names, so the partition below is
@@ -201,6 +203,7 @@ class _HookRun:
     kill_switch: str | None
     seeds_left: tuple[str, ...]
     cargo_config: str | None
+    elapsed_s: float
 
 
 def _lifecycle_script(*, template: str, hook: str) -> str:
@@ -217,8 +220,32 @@ def _lifecycle_script(*, template: str, hook: str) -> str:
     return "\n".join(line[16:] if line.startswith(" " * 16) else line for line in lines)
 
 
+def _wait_for_cache_work(*, recorded: Path) -> None:
+    """Wait briefly for detached cache work to record every tier."""
+    deadline = time.monotonic() + 2
+    while time.monotonic() < deadline:
+        if recorded.is_file() and len(recorded.read_text(encoding="utf-8").splitlines()) == len(
+            _CACHE_TIERS
+        ):
+            break
+        time.sleep(0.01)
+
+
+def _install_slow_span(*, pool_bin: Path, sleep_s: int) -> None:
+    """Install an emitter double that consumes its whole timeout."""
+    span = pool_bin / "ci-cache-span"
+    span.write_text(f"#!/bin/sh\nsleep {sleep_s}\nexit 0\n", encoding="utf-8")
+    span.chmod(0o755)
+
+
 def _run_post_start(
-    *, root: Path, env: dict[str, str], seeded: bool, proxy_answers: bool
+    *,
+    root: Path,
+    env: dict[str, str],
+    seeded: bool,
+    proxy_answers: bool,
+    span_sleep_s: int | None = None,
+    wait_for_cache_work: bool = True,
 ) -> _HookRun:
     """Run the committed `postStart` hook against a work volume under `root`."""
     work, cargo, pool_bin, stub = root / "w", root / "cargo", root / "bin", root / "stub"
@@ -236,6 +263,8 @@ def _run_post_start(
         (actions_seed / ".generation").write_text(f"{_ACTIONS_GENERATION}\n", encoding="utf-8")
     (stub / "curl").write_text(f"#!/bin/sh\nexit {0 if proxy_answers else 7}\n", encoding="utf-8")
     (stub / "curl").chmod(0o755)
+    if span_sleep_s is not None:
+        _install_slow_span(pool_bin=pool_bin, sleep_s=span_sleep_s)
     script = _lifecycle_script(
         template=_HOOK_TEMPLATE.read_text(encoding="utf-8"), hook="postStart"
     )
@@ -246,6 +275,7 @@ def _run_post_start(
     # The child is the committed hook under `sh`, never a Python interpreter, so it
     # cannot self-instrument under coverage; its environment is built from scratch
     # rather than inherited, so no `COVERAGE_*` variable reaches it either.
+    started = time.monotonic()
     done = subprocess.run(
         ["sh", str(hook)],
         capture_output=True,
@@ -260,6 +290,8 @@ def _run_post_start(
     )
     state = work / "_temp" / "_ci_cache"
     recorded = state / "warm-copy.tsv"
+    if wait_for_cache_work:
+        _wait_for_cache_work(recorded=recorded)
     switch = state / "kill_switch"
     config = cargo / "config.toml"
     rows = recorded.read_text(encoding="utf-8").splitlines() if recorded.is_file() else []
@@ -271,6 +303,7 @@ def _run_post_start(
         kill_switch=switch.read_text(encoding="utf-8") if switch.is_file() else None,
         seeds_left=tuple(tier for tier in _SEEDED_TIERS if (work / "_warm" / tier).exists()),
         cargo_config=config.read_text(encoding="utf-8") if config.is_file() else None,
+        elapsed_s=time.monotonic() - started,
     )
 
 
@@ -587,6 +620,24 @@ def test_a_cache_fault_degrades_a_job_to_cold_and_never_fails_it(*, tmp_path: Pa
         f"['{_POOL_BIN}/ci-cache-span publish-endpoint']",
         "preStop: the hook does not end in an unconditional `exit 0`",
     ], "the fail-soft reader must still convict a hook that turns a cache fault into a kill"
+
+
+def test_post_start_returns_before_cache_span_reaches_its_full_timeout(*, tmp_path: Path) -> None:
+    """The lifecycle hook leaves cache telemetry to a detached process."""
+    slow = _run_post_start(
+        root=tmp_path / "slow-span",
+        env={},
+        seeded=False,
+        proxy_answers=False,
+        span_sleep_s=_SPAN_TIMEOUT_S,
+        wait_for_cache_work=False,
+    )
+    assert slow.exit_code == 0 and slow.elapsed_s < 2, (
+        "the postStart command must return before a cache-span call can consume its full "
+        f"{_SPAN_TIMEOUT_S}s bound: kubelet kills a container when the lifecycle exec itself "
+        f"times out, regardless of the child command's eventual exit status; "
+        f"exit={slow.exit_code} elapsed_s={slow.elapsed_s:.3f}"
+    )
 
 
 def test_a_canary_job_runs_cold_and_is_tagged(*, tmp_path: Path) -> None:
