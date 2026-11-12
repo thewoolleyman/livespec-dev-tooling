@@ -198,3 +198,15 @@ def test_emitter_sends_only_504_api_server_response_counts(
     assert {
         attribute["key"]: attribute["value"]["stringValue"] for attribute in points[0]["attributes"]
     } == {"verb": "PUT", "resource": "leases"}
+
+
+def test_emitter_omits_handler_timeout_metric_when_there_are_no_504s(
+    tmp_path: Path,
+) -> None:
+    """A scrape without handler timeouts emits no synthetic zero datapoint."""
+    payload = _emit(
+        tmp_path=tmp_path,
+        metrics_text='apiserver_request_total{verb="PUT",resource="leases",code="200"} 9\n',
+    )
+    metrics = payload["resourceMetrics"][0]["scopeMetrics"][0]["metrics"]
+    assert "apiserver_request_total" not in {metric["name"] for metric in metrics}
