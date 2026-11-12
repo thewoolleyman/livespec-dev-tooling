@@ -3364,9 +3364,9 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a declared gate resource that no single gate lane can admit is refused naming the largest lane's quotas",
-    "test": "TODO",
+    "test": "tests.consumer.test_gate_lane_capacity_scenarios.test_a_declared_cpu_above_every_committed_lane_is_refused_before_any_gate_job",
     "work_item": "livespec-dev-tooling-jgabjo",
-    "reason": "A real test at the integration tier or above is owed for this heading: an integration test that pushes from a fixture consumer declaring gate_cpu one more than the largest nominal CPU quota committed in cluster-queue-gates.yaml, read from that file rather than stated as a literal, and asserts the gate client refuses before submitting any Job, naming gate_cpu, the declared value and the largest lane's name and quotas as committed (proposal gate-resources-lane-capacity-follow-ups, v192). livespec-dev-tooling-jgabjo owns it."
+    "reason": "Consumer-tier test: drives the delegated gate client from a fixture consumer declaring gate_cpu one more than the largest nominal CPU quota read from cluster-queue-gates.yaml, and asserts its pre-submit refusal names gate_cpu, the declared value, and the largest lane's committed CPU and memory quotas (livespec-dev-tooling-jgabjo)."
   },
   {
     "spec_root": "SPECIFICATION",

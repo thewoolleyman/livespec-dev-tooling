@@ -401,13 +401,6 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario: a declared gate resource that no single gate lane can admit is refused naming the largest lane's quotas",
-    "work_item": "livespec-dev-tooling-jgabjo",
-    "first_seen": "2026-11-11"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
     "heading": "## Scenario: a default-branch push routes to the master runner target and a pull request does not",
     "work_item": "livespec-dev-tooling-lzkzwb",
     "first_seen": "2026-11-03"
