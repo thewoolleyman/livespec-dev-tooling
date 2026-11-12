@@ -68,7 +68,7 @@
   become: true
 
 - name: Resolve the glob-derived members of the installed tree
-  # The three sets the shell installer resolves with a shell glob. Resolving
+  # The sets the shell installer resolves with a shell glob. Resolving
   # them here rather than listing them keeps a new per-repo queue or scale set
   # travelling with no edit to this role. values-EXAMPLE-repo.yaml is excluded
   # because it is an authoring template, never a live release.
@@ -77,6 +77,8 @@
       {{ (query('ansible.builtin.fileglob', ci_converge_unit_phase2_dir ~ '/arc/values-*.yaml')
           | reject('search', 'values-EXAMPLE-repo\.yaml$')
           | map('regex_replace', '^.*/', 'arc/') | list)
+         + (query('ansible.builtin.fileglob', ci_converge_unit_phase2_dir ~ '/arc/worker/values-*-homelab-worker.yaml')
+            | map('regex_replace', '^.*/', 'arc/worker/') | list)
          + (query('ansible.builtin.fileglob', ci_converge_unit_phase2_dir ~ '/kueue/core/*.yaml')
             | map('regex_replace', '^.*/', 'kueue/core/') | list)
          + (query('ansible.builtin.fileglob', ci_converge_unit_phase2_dir ~ '/kueue/cluster-queue-*.yaml')
