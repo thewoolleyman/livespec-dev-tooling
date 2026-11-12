@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import codecs
+import contextlib
 import errno
 import os
 import pty
@@ -38,6 +39,7 @@ PROGRESS_STAMP_ENV: str = "LIVESPEC_GATE_RUN_PROGRESS_STAMP"
 _POLL_SECONDS: float = 1.0
 _KILL_GRACE_SECONDS: int = 30
 _READ_BYTES: int = 65536
+_PROCESS_COLUMNS: int = 4
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -139,6 +141,87 @@ def _drain(*, fd: int, progress: SuiteProgress) -> None:
     progress.saw(chunk=decoder.decode(b"", final=True))
 
 
+def process_table() -> dict[int, tuple[int, int, str]]:
+    """Return PID-indexed parent, group and command records from the host process table."""
+    try:
+        listing = subprocess.run(
+            args=["ps", "-axo", "pid=,ppid=,pgid=,command="],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+    except OSError:
+        return {}
+    if listing.returncode != 0:
+        return {}
+    records: dict[int, tuple[int, int, str]] = {}
+    for line in listing.stdout.splitlines():
+        fields = line.split(maxsplit=3)
+        if len(fields) != _PROCESS_COLUMNS:
+            continue
+        pid, parent, group, command = fields
+        if pid.isdigit() and parent.isdigit() and group.isdigit():
+            records[int(pid)] = (int(parent), int(group), command)
+    return records
+
+
+def out_of_group_descendants(*, root_pid: int) -> tuple[tuple[int, str], ...]:
+    """Find live descendants that escaped the suite's original process group."""
+    children: dict[int, list[int]] = {}
+    records = process_table()
+    for pid, (parent, _, _) in records.items():
+        children.setdefault(parent, []).append(pid)
+    escapees: list[tuple[int, str]] = []
+    frontier = [root_pid]
+    while frontier:
+        parent = frontier.pop()
+        for pid in children.get(parent, []):
+            _, group, command = records[pid]
+            if group != root_pid:
+                escapees.append((pid, command))
+            frontier.append(pid)
+    return tuple(escapees)
+
+
+def is_alive(*, pid: int) -> bool:
+    """Return whether `pid` still accepts signals from this runner."""
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def end_stalled_suite(
+    *, proc: subprocess.Popen[bytes], report: Callable[[str], None] | None = None
+) -> tuple[tuple[int, str], ...]:
+    """End a stalled suite group and its session-escaping descendants."""
+    escapees = out_of_group_descendants(root_pid=proc.pid)
+    for pid, command in escapees:
+        if not is_alive(pid=pid):
+            continue
+        if report is not None:
+            report(f"suite-green: ending out-of-group descendant pid={pid} cmdline={command}\n")
+        with contextlib.suppress(ProcessLookupError):
+            os.kill(pid, signal.SIGTERM)
+    with contextlib.suppress(ProcessLookupError):
+        os.killpg(proc.pid, signal.SIGTERM)
+    deadline = time.monotonic() + _KILL_GRACE_SECONDS
+    while (proc.poll() is None or any(is_alive(pid=pid) for pid, _ in escapees)) and (
+        time.monotonic() < deadline
+    ):
+        time.sleep(_POLL_SECONDS)
+    with contextlib.suppress(ProcessLookupError):
+        os.killpg(proc.pid, signal.SIGKILL)
+    for pid, _ in escapees:
+        if is_alive(pid=pid):
+            with contextlib.suppress(ProcessLookupError):
+                os.kill(pid, signal.SIGKILL)
+    return escapees
+
+
 def run_suite(
     *,
     argv: list[str],
@@ -189,7 +272,7 @@ def run_suite(
                     bound=bound,
                 )
                 if reason is not None:
-                    _ = os.killpg(proc.pid, signal.SIGKILL)
+                    _ = end_stalled_suite(proc=proc, report=lambda text: progress.saw(chunk=text))
                     _ = proc.wait(timeout=_KILL_GRACE_SECONDS)
         reader.join(timeout=_KILL_GRACE_SECONDS)
         return SuiteRun(
