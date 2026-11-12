@@ -32,8 +32,17 @@ disk_guard_threshold_gb: 40
 # factory sandbox pod requests 3 cpu / 7630Mi. After the lanes and the
 # warm-uv-cache pod (500m / 512Mi), cpu fits 3.67 pods and memory
 # (30.4 - 8 - 0.5) / 7.45 = 2.94, so 2. Was 1 (an earlier one-third memory
-# share read against ~26.5 GiB allocatable). REVERT: factory_pod_budget: 1
-factory_pod_budget: 2
+# share read against ~26.5 GiB allocatable).
+#
+# ONE since 2026-11-12 ~19:4xZ (legacy-coordinator-agent GO, R301; plan
+# gate-job-resources). gates-gamingpc-flavor holds TWO gate units, 10 cpu /
+# 16 GiB, for priority 1's hand-land burst, while gmktec and poweredge were
+# saturated (2.1% and 0.7% idle) and gamingpc was 94% idle. The same
+# derivation: memory (30.4 - 16 - 0.5) / 7.45 = 1.86 and cpu
+# (16 - 10 - 0.5) / 3 = 1.83, so 1.
+# REVERT to 2, with the gate lane back to 5 / 8Gi, when the burst ends (that
+# plan archived) and a re-measure shows gate waits under 300 s.
+factory_pod_budget: 1
 
 # --- node_status_credential ---
 # The agent-side account the refresh tool drops its fetch to is this node's
