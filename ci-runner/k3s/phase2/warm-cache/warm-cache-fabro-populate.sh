@@ -294,7 +294,7 @@ ensure_nextest() {
   printf '%s  %s\n' "${want}" "${archive}" | sha256sum --check --status \
     || { log "cargo-nextest ${FABRO_NEXTEST_VERSION} failed its sha256 check"; return 1; }
   mkdir -p "${dir}"
-  tar -xzf "${archive}" -C "${dir}" cargo-nextest || return 1
+  tar --no-same-owner -xzf "${archive}" -C "${dir}" cargo-nextest || return 1
   chmod 755 "${dir}/cargo-nextest"
   export PATH="${dir}:${PATH}"
 }
