@@ -114,7 +114,10 @@ def _creator_is_running(*, pid: int, start_time: str) -> bool:
 
 def _is_old_unrecorded_namespace(*, namespace_dir: Path) -> bool:
     """Return whether an unrecorded namespace has exceeded its grace period."""
-    modified_at = namespace_dir.stat().st_mtime
+    try:
+        modified_at = namespace_dir.stat().st_mtime
+    except OSError:
+        return False  # Vanished under a concurrently finishing runner: nothing to reclaim.
     return time.time() - modified_at > _UNRECORDED_NAMESPACE_MAX_AGE_SECONDS
 
 

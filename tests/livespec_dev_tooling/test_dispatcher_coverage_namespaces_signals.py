@@ -356,3 +356,24 @@ def test_reclaim_logs_an_unremovable_dead_namespace_and_carries_on(
 
     assert namespace_dir.is_dir()
     assert "could not remove abandoned coverage namespace" in caplog.text
+
+
+def test_reclaim_carries_on_when_a_namespace_vanishes_before_its_age_is_read(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A concurrently finishing runner may remove a namespace mid-sweep without aborting it."""
+    assert hasattr(namespaces, "reclaim_abandoned_namespace_dirs")
+    reclaim = namespaces.reclaim_abandoned_namespace_dirs
+    vanishing = tmp_path / "covns-vanishing"
+    vanishing.mkdir()
+
+    def finish_concurrently(path: Path, *, encoding: str) -> str:
+        _ = encoding
+        path.parent.rmdir()
+        raise FileNotFoundError(path)
+
+    monkeypatch.setattr(namespaces.Path, "read_text", finish_concurrently)
+
+    reclaim(root=tmp_path)
+
+    assert not vanishing.exists()
