@@ -135,10 +135,10 @@ priority 5 waited on a relay under a hold nobody re-checked. The top-3 child aud
 DEPENDENCIES lines were printed as status, not worked as a queue.
 
 **Rule P3: read the epics of silent seats every tick.** Every tick reads the newest comments on the epics of seats that
-cannot SendMessage: Mac and Codex seats, today fleet-mutation-testing-rule-26 on chads-macbook-pro (epic
-`livespec-dev-tooling-oi2two`). Silence from a waiting seat is never evidence that it is fine. Rule P3 is in the same
-07:48:20Z scope event. Measured 2026-11-09: that seat posted its ask as a comment on epic `livespec-dev-tooling-oi2two`
-at 07:26Z, and no tick read it.
+cannot SendMessage: seats on other machines and Codex seats, today the gamingpc seat fleet-mutation-testing-rule-26 on
+gamingpc-xubuntu (epic `livespec-dev-tooling-oi2two`). Silence from a waiting seat is never evidence that it is fine.
+Rule P3 is in the same 07:48:20Z scope event. Measured 2026-11-09: that seat posted its ask as a comment on epic
+`livespec-dev-tooling-oi2two` at 07:26Z, and no tick read it.
 
 **A dead login stalls every local seat at once (coordinator's reading).** Measured 2026-11-10: the shared Claude login
 anthropic-3 hit its login-lifetime cap at about 15:14Z. About 25 local seats, the coordinator among them, failed every
@@ -203,9 +203,9 @@ had to post attribution corrections.
 **Never ask the maintainer to relay a message.** The coordinator never asks the maintainer to carry a message to any
 seat. For a seat this session cannot SendMessage, such as one on another machine or a Codex seat, reply as a ledger
 comment on the work item concerned or on its plan epic. Also send it through `herdr --machine <label>` where a saved
-herdr machine reaches that seat (chads-macbook-pro is saved). The maintainer, 2026-11-06, relayed verbatim through the
-homelab-k8s-worker-nodes session, recorded on epic `livespec-dev-tooling-6tgd2z` at 05:57:05Z: "asking the maintainer
-to paste your reply to me is unacceptable".
+herdr machine reaches that seat (chads-macbook-pro and gamingpc-xubuntu are saved). The maintainer, 2026-11-06, relayed
+verbatim through the homelab-k8s-worker-nodes session, recorded on epic `livespec-dev-tooling-6tgd2z` at 05:57:05Z:
+"asking the maintainer to paste your reply to me is unacceptable".
 
 **Stopping a seat's own wasteful or contaminated workload is the coordinator's call.** Direct the owning seat to stop
 it, and clean up after it. Never list it under FOR THE MAINTAINER. If the seat's own attempt was blocked, re-order it,
@@ -351,28 +351,35 @@ track, sat READY and unticketed from about 14:31Z to 16:2xZ. Its Codex owner had
 on bd-ib-voozdp. The maintainer: "Ensure there is a permanent fix for this", recorded on epic
 `livespec-dev-tooling-6tgd2z`.
 
-**A Mac or Codex seat's ask can live only in a ledger comment (coordinator's reading).** Neither kind of seat can
-SendMessage this seat, so read the comments on the items such a seat owns as well as its pane. Measured 2026-11-07:
-livespec-dev-tooling-xpuv6h, owned by fleet-mutation-testing-rule-26 on chads-macbook-pro, waited 48 minutes on one.
+**A Mac, gamingpc or Codex seat's ask can live only in a ledger comment (coordinator's reading).** No seat on another
+machine and no Codex seat can SendMessage this seat, so read the comments on the items such a seat owns as well as its
+pane. Measured 2026-11-07: livespec-dev-tooling-xpuv6h, owned by fleet-mutation-testing-rule-26 (then on
+chads-macbook-pro), waited 48 minutes on one.
 
-**Seats on other machines are read like local ones.** Every tick, run `herdr --machine chads-macbook-pro agent list`,
-then `herdr --machine chads-macbook-pro pane read <pane> --source recent-unwrapped` for each of these seats:
+**Seats on other machines are read like local ones.** Every tick, run `herdr --machine <machine> agent list`, then
+`herdr --machine <machine> pane read <pane> --source recent-unwrapped` for each of these seats:
 
-- fleet-mutation-testing-rule-26 (plan `livespec-dev-tooling-oi2two`), workspace w3, tab w3:t2;
-- development-bootstrap (an ad-hoc docs plan in the macbook-pro-info repo, with no livespec tooling), workspace w3,
-  tab w3:t1.
+- on chads-macbook-pro: development-bootstrap (an ad-hoc docs plan in the macbook-pro-info repo, with no livespec
+  tooling), workspace w3, tab w3:t1;
+- on gamingpc-xubuntu: fleet-mutation-testing-rule-26 (plan `livespec-dev-tooling-oi2two`), workspace
+  livespec-dev-tooling, tab fleet-mutation-testing-rule-26, pane w2:p1. Read it with
+  `herdr --machine gamingpc-xubuntu agent list` and
+  `herdr --machine gamingpc-xubuntu pane read <pane> --source recent-unwrapped`.
 
-They get the standard §3 seat duties. A design or direction call on the maintainer-driven plan goes to the maintainer
-(§9), never decided by the coordinator. Their CI and factory traffic counts in the tick, and any factory launch they
-request is subject to the dispatch freeze (§9). The maintainer, 2026-11-06 ~06:0xZ, recorded on epic
-`livespec-dev-tooling-6tgd2z` at 06:05:46Z: "OK, add fleet-mutation-testing-rule-26 under the chads-macbook-pro
-machine/workspace to your monitored list of plans. They are executing on that machine, but may send stuff to CI
-and/or the factory."
+The rule-26 seat moved from chads-macbook-pro (w3:t2, now closed) to gamingpc-xubuntu at the maintainer's direction,
+recorded on epic `livespec-dev-tooling-6tgd2z` 2026-11-12: "1. Yes, move fleet-mutation-testing-rule-26 onto the
+gamingpc" and "shut down old fleet-mutation-testing-rule-26 pane once its moved.  If it runs into problems, delegate to
+the  pane and session to fix (running on the gamingpc)". These seats get the standard §3 seat duties. A design or
+direction call on the maintainer-driven plan goes to the maintainer (§9), never decided by the coordinator. Their CI and
+factory traffic counts in the tick, and any factory launch they request is subject to the dispatch freeze (§9). The
+maintainer, 2026-11-06 ~06:0xZ, recorded on epic `livespec-dev-tooling-6tgd2z` at 06:05:46Z: "OK, add
+fleet-mutation-testing-rule-26 under the chads-macbook-pro machine/workspace to your monitored list of plans. They are
+executing on that machine, but may send stuff to CI and/or the factory."
 
-**A word given to a Mac or Codex seat goes into its PANE at the moment it is given.** Send it with
+**A word given to a Mac, gamingpc or Codex seat goes into its PANE at the moment it is given.** Send it with
 `herdr --machine <m> pane send-text <pane> "<text>"`, then `herdr --machine <m> pane send-keys <pane> Enter`, not only
-as a ledger comment, and read every top-5 seat's pane text every tick. overseerd cannot see Mac seats, so the
-coordinator owns their restarts. The maintainer, 2026-11-09 ~15:0xZ, recorded on epic `livespec-dev-tooling-6tgd2z`:
+as a ledger comment, and read every top-5 seat's pane text every tick. overseerd cannot see seats on other machines, so
+the coordinator owns their restarts. The maintainer, 2026-11-09 ~15:0xZ, recorded on epic `livespec-dev-tooling-6tgd2z`:
 "why did you let this stall? fleet-mutation-testing-rule-26 . I told overseerd too".
 
 **A flagged row's cause is on the row (coordinator's reading).** The UNTICKETED-READY section prints `HELD spec-change
@@ -1272,6 +1279,11 @@ CI-capacity routing, and is not used to cut the factory cap. Correction recorded
   - dispatch-control-plane is monitor-only, and must not absorb today's operations.
   - Launchers take the factory from the target repository's committed `default_factory` (R503).
   - Keep interactive turns lean (R509).
+  - Never propose GitHub's merge queue for any fleet repository: the account has no team plan. For "green apart, red
+    together", offer only what the account has: branch protection's require-up-to-date (strict), or our own tooling
+    re-testing the rebased result before or after merge. The maintainer, 2026-11-12 ~02:0xZ, recorded on epic
+    `livespec-dev-tooling-6tgd2z` at 01:56:09Z: "I DON'T HAVE A TEAM ACCOUNT I CANNOT USE THE MERGE QUEUE, IVE TOLD YOU
+    THIS MANY TIMES".
 
 ## 13. Directives come from the plan and the ledger, never from a handoff
 
