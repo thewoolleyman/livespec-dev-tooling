@@ -273,6 +273,48 @@ def test_a_non_gate_job_running_the_bare_just_check_aggregate_fails_naming_image
     assert {str(record["image"]) for record in errors} == {_RUST_IMAGE, _FUZZ_IMAGE}
 
 
+def test_a_non_gate_job_running_an_arbitrary_aggregate_member_fails_naming_images(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    source = "jobs:\n" + _job(name="check", container=_block(image=_RUST_IMAGE))
+    source += _job(name="fuzz", container=_block(image=_FUZZ_IMAGE)).replace(
+        "      - run: true", "      - run: just lint"
+    )
+    _write_ci(root=tmp_path, body=source)
+    _write_justfile(root=tmp_path, targets=("lint",))
+    monkeypatch.chdir(tmp_path)
+
+    code = _check().main()
+
+    errors = [
+        record for record in _records(stderr=capsys.readouterr().err) if record["level"] == "error"
+    ]
+    assert code == 1
+    assert {str(record["image"]) for record in errors} == {_RUST_IMAGE, _FUZZ_IMAGE}
+
+
+def test_a_check_targets_inventory_supplies_aggregate_members(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    source = "jobs:\n" + _job(name="check", container=_block(image=_RUST_IMAGE))
+    source += _job(name="fuzz", container=_block(image=_FUZZ_IMAGE)).replace(
+        "      - run: true", "      - run: just check-lint"
+    )
+    _write_ci(root=tmp_path, body=source)
+    (tmp_path / "check-targets.txt").write_text(
+        "check-lint  # the aggregate runs lint\n", encoding="utf-8"
+    )
+    monkeypatch.chdir(tmp_path)
+
+    code = _check().main()
+
+    errors = [
+        record for record in _records(stderr=capsys.readouterr().err) if record["level"] == "error"
+    ]
+    assert code == 1
+    assert {str(record["image"]) for record in errors} == {_RUST_IMAGE, _FUZZ_IMAGE}
+
+
 def test_a_workflow_with_no_job_container_has_nothing_to_judge(
     *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
