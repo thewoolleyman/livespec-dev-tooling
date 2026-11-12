@@ -58,6 +58,35 @@ def test_a_change_to_the_decision_module_withholds_the_retry_marker(*, tmp_path:
     assert marker is None
 
 
+def test_a_dynamic_path_under_the_repository_root_withholds_its_retry(*, tmp_path: Path) -> None:
+    """A dynamic child of a bound repository root may name changed repository code."""
+    test_path = tmp_path / "tests" / "test_example.py"
+    test_path.parent.mkdir()
+    _ = test_path.write_text(
+        "from pathlib import Path\n"
+        "REPO_ROOT = Path(__file__).resolve().parents[1]\n"
+        "target = REPO_ROOT / 'ci-runner' / name\n",
+        encoding="utf-8",
+    )
+
+    assert (
+        retry_marker_for(
+            repo_root=tmp_path,
+            test_path=test_path,
+            change_paths={Path("README.md")},
+        )
+        is None
+    )
+    assert (
+        retry_marker_for(
+            repo_root=tmp_path,
+            test_path=test_path,
+            change_paths={Path("ci-runner/task.py")},
+        )
+        is None
+    )
+
+
 def test_a_version_only_release_change_does_not_withhold_the_session(
     *, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
