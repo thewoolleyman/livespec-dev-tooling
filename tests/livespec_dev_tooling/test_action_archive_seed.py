@@ -28,6 +28,7 @@ import re
 import shutil
 import subprocess
 import tarfile
+import time
 from pathlib import Path
 from typing import Any, cast
 
@@ -622,6 +623,18 @@ def test_the_entry_point_reads_the_switch_and_canary_from_the_committed_template
 # ---- the postStart record and the wiring ------------------------------------
 
 
+def _wait_for_actions_record(*, recorded: Path) -> None:
+    """Allow the detached postStart cache work to publish its actions row."""
+    deadline = time.monotonic() + 2
+    while time.monotonic() < deadline:
+        if recorded.is_file() and any(
+            row.split("\t", 2)[1:2] == ["actions"]
+            for row in recorded.read_text(encoding="utf-8").splitlines()
+        ):
+            return
+        time.sleep(0.01)
+
+
 def _post_start(*, root: Path, seeded: bool, switch: str = "") -> dict[str, str]:
     template = _TEMPLATE.read_text(encoding="utf-8")
     block = re.search(
@@ -670,7 +683,9 @@ def _post_start(*, root: Path, seeded: bool, switch: str = "") -> dict[str, str]
         "copy_method",
         "error",
     )
-    rows = (work / "_temp" / "_ci_cache" / "warm-copy.tsv").read_text(encoding="utf-8").splitlines()
+    recorded = work / "_temp" / "_ci_cache" / "warm-copy.tsv"
+    _wait_for_actions_record(recorded=recorded)
+    rows = recorded.read_text(encoding="utf-8").splitlines()
     parsed = [dict(zip(columns, (row.split("\t") + [""] * 8)[:8], strict=True)) for row in rows]
     mine = [row for row in parsed if row["tier"] == "actions"]
     assert len(mine) == 1, "exactly one actions-tier row per job"
