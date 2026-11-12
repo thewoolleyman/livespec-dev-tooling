@@ -435,6 +435,16 @@ ansible-drift *args:
 ansible-apply *args:
     uvx --from ansible-core==2.21.4 ansible-playbook -i ansible/inventory/legacy.yml "$@"
 
+# `gate-repro` — run ONE diagnosed reproduction gate Job for the committed tree
+# of <repo-root> on the gates-repro-lq lane (one gate unit on gamingpc-xubuntu)
+# and keep its evidence under tmp/gate-repro/ on this host: the Job's full log
+# and status every 300 s, and how it ended. Operator-only, never in `just check`
+# or CI: it needs the gates credential (livespec-dev-tooling-pkmxgu, for the
+# gamingpc gate hang livespec-dev-tooling-ddy5xu).
+[positional-arguments]
+gate-repro repo_root *args:
+    ci-runner/k3s/phase2/gates/gate-repro.sh --repo-root "$@"
+
 # Operator-invoked, future-state-only Git author identity audit. The output
 # path MUST be below this checkout's ignored tmp/ tree. This is deliberately
 # absent from `just check` and CI: it reaches all four legacy hosts and verifies
