@@ -1,0 +1,19 @@
+[Unit]
+Description=PWA service-worker injection proxy for code-serve-web (nginx)
+Documentation=https://nginx.org/en/docs/
+After=network-online.target code-serve-web.service tailscaled.service
+Wants=network-online.target tailscaled.service
+Requires=code-serve-web.service
+
+[Service]
+Type=simple
+PIDFile=/run/code-pwa-proxy.pid
+ExecStartPre=/usr/sbin/nginx -t -c {{ vps_editor_stack_proxy_config_dir }}/nginx.conf
+ExecStart=/usr/sbin/nginx -c {{ vps_editor_stack_proxy_config_dir }}/nginx.conf
+ExecReload=/usr/sbin/nginx -c {{ vps_editor_stack_proxy_config_dir }}/nginx.conf -s reload
+TimeoutStopSec=5s
+PrivateTmp=true
+ProtectSystem=full
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,147 @@
+---
+# vps_editor_stack — the held VS Code web editor and its PWA proxy.
+#
+# The payloads came from vps-info services/code-serve-web and
+# services/code-pwa-proxy. Their retirement remains a vps-info change; this
+# role owns the installed host state in livespec-dev-tooling.
+
+- name: Refuse an editor-stack switch that is not a boolean
+  ansible.builtin.assert:
+    that:
+      - vps_editor_stack_enabled is boolean
+    fail_msg: >-
+      vps_editor_stack_enabled must be the boolean true or false, not
+      {{ vps_editor_stack_enabled | string }}.
+    success_msg: the editor-stack hold switch is a boolean
+
+- name: Install editor-stack package prerequisites
+  ansible.builtin.package:
+    name: ca-certificates
+    state: present
+  become: true
+
+- name: Create the editor-stack apt keyring directory
+  ansible.builtin.file:
+    path: "{{ vps_editor_stack_keyring | dirname }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+
+- name: Fetch the VS Code package signing key
+  ansible.builtin.get_url:
+    url: "{{ vps_editor_stack_key_url }}"
+    dest: "{{ vps_editor_stack_keyring }}"
+    checksum: "sha256:{{ vps_editor_stack_key_sha256 }}"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+
+- name: Look for the vendor-managed VS Code apt source
+  ansible.builtin.stat:
+    path: "{{ vps_editor_stack_vendor_sources }}"
+  become: true
+  register: vps_editor_stack_vendor_sources_stat
+
+- name: Add the VS Code apt repository when the vendor source is absent
+  # The code package installs its own deb822 source. Avoiding a second active
+  # definition prevents Signed-By conflicts on already-provisioned hosts.
+  ansible.builtin.apt_repository:
+    repo: "{{ vps_editor_stack_repo }}"
+    filename: vscode
+    state: present
+    update_cache: true
+  become: true
+  when: not vps_editor_stack_vendor_sources_stat.stat.exists
+
+- name: Install the editor-stack packages
+  ansible.builtin.package:
+    name: "{{ vps_editor_stack_packages }}"
+    state: present
+  become: true
+
+- name: Create the PWA proxy configuration directory
+  ansible.builtin.file:
+    path: "{{ vps_editor_stack_proxy_config_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+
+- name: Install the PWA proxy nginx configuration
+  ansible.builtin.template:
+    src: nginx.conf.j2
+    dest: "{{ vps_editor_stack_proxy_config_dir }}/nginx.conf"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+
+- name: Install the PWA proxy service worker
+  ansible.builtin.copy:
+    src: sw.js
+    dest: "{{ vps_editor_stack_proxy_config_dir }}/sw.js"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+
+- name: Check the PWA proxy configuration
+  ansible.builtin.command:
+    argv: [/usr/sbin/nginx, -t, -c, "{{ vps_editor_stack_proxy_config_dir }}/nginx.conf"]
+  become: true
+  changed_when: false
+  when: not ansible_check_mode
+
+- name: Check whether editor-stack units are already installed
+  ansible.builtin.stat:
+    path: "{{ vps_editor_stack_unit_dir }}/{{ item }}"
+  become: true
+  loop: "{{ vps_editor_stack_units }}"
+  register: vps_editor_stack_unit_stats
+
+- name: Install the code serve-web unit
+  ansible.builtin.template:
+    src: code-serve-web.service.j2
+    dest: "{{ vps_editor_stack_unit_dir }}/code-serve-web.service"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+
+- name: Install the code PWA proxy unit
+  ansible.builtin.template:
+    src: code-pwa-proxy.service.j2
+    dest: "{{ vps_editor_stack_unit_dir }}/code-pwa-proxy.service"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+
+- name: Reload systemd after installing editor-stack units
+  ansible.builtin.systemd_service:
+    daemon_reload: true
+  become: true
+
+- name: Keep code serve-web at the declared hold state
+  ansible.builtin.systemd_service:
+    name: code-serve-web.service
+    enabled: '{{ vps_editor_stack_enabled }}'
+    state: "{{ 'started' if vps_editor_stack_enabled else 'stopped' }}"
+  become: true
+  when: >-
+    not ansible_check_mode
+    or vps_editor_stack_unit_stats.results[0].stat.exists
+
+- name: Keep code PWA proxy at the declared hold state
+  ansible.builtin.systemd_service:
+    name: code-pwa-proxy.service
+    enabled: '{{ vps_editor_stack_enabled }}'
+    state: "{{ 'started' if vps_editor_stack_enabled else 'stopped' }}"
+  become: true
+  when: >-
+    not ansible_check_mode
+    or vps_editor_stack_unit_stats.results[1].stat.exists

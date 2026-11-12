@@ -1,0 +1,30 @@
+---
+# The maintainer's hold. This is the only variable that changes either unit's
+# enabled or active state; set it true only when the hold is deliberately lifted.
+vps_editor_stack_enabled: false
+
+vps_editor_stack_user: ubuntu
+vps_editor_stack_group: ubuntu
+vps_editor_stack_home: /home/ubuntu
+vps_editor_stack_unit_dir: /etc/systemd/system
+vps_editor_stack_proxy_config_dir: /etc/code-pwa-proxy
+vps_editor_stack_vendor_sources: /etc/apt/sources.list.d/vscode.sources
+
+# Microsoft publishes the `code` package from this repository. The key checksum
+# makes a vendor rotation a visible, deliberate update rather than a silent
+# trust change.
+vps_editor_stack_key_url: https://packages.microsoft.com/keys/microsoft.asc
+vps_editor_stack_key_sha256: 2fa9c05d591a1582a9aba276272478c262e95ad00acf60eaee1644d93941e3c6
+vps_editor_stack_keyring: /etc/apt/keyrings/packages.microsoft.asc
+vps_editor_stack_repo: >-
+  deb [arch=amd64,arm64,armhf signed-by=/etc/apt/keyrings/packages.microsoft.asc]
+  https://packages.microsoft.com/repos/code stable main
+
+vps_editor_stack_packages:
+  - ca-certificates
+  - code
+  - nginx-light
+
+vps_editor_stack_units:
+  - code-serve-web.service
+  - code-pwa-proxy.service

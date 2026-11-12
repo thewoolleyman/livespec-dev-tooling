@@ -9,9 +9,8 @@
 # than by position here, so a play that runs one role alone still gets it: the
 # VNC desktop precedes the two desktop applications that need its display.
 #
-# The VS Code web editor (roles code_serve_web and code_pwa_proxy) was RETIRED
-# on 2026-10-16 by the maintainer: the service is shut down and will not be
-# restarted, so this play no longer converges it.
+# The VS Code web editor remains installed under drift control, but the
+# maintainer's hold is the role default: both units are disabled and stopped.
 
 # Each role is tagged so an operator can converge a subset. That matters here
 # because this host carries services with very different interruption costs --
@@ -36,6 +35,8 @@
       tags: [onepassword_desktop]
     - role: claude_desktop
       tags: [claude_desktop]
+    - role: vps_editor_stack
+      tags: [vps_editor_stack]
     - role: btop_loop
       tags: [btop_loop]
     - role: fpart
