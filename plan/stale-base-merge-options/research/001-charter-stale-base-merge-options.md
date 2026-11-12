@@ -43,6 +43,14 @@ GitHub's own merge queue is UNAVAILABLE: the fleet's repositories are on a perso
 organization (the maintainer, coordinator epic scope events 2026-11-12T01:56Z and ~18:0xZ). It is listed only to
 exclude it.
 
+Facts recorded beside that exclusion, not as a recommendation:
+- GitHub documents the merge queue as available to PUBLIC repositories owned by an ORGANIZATION; only private
+  organization repositories need Enterprise Cloud. All 10 fleet repositories are public.
+- Moving them into an organization costs re-registered plugin marketplaces, a new org-owned App, re-registered ARC
+  runners, re-projected secrets and a new GHCR namespace.
+
+Note 004 measures these. The maintainer's direction since then is recorded as scope events on the epic.
+
 ## Work order
 
 1. **Prior art** (research note 002). Find and summarize every earlier discussion and decision, with the maintainer's

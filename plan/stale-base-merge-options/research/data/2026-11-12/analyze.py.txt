@@ -1,0 +1,75 @@
+import json, sys, statistics as st, datetime as dt, collections, heapq
+S=sys.argv[1]
+START=dt.datetime(2026,10,15,tzinfo=dt.timezone.utc); END=dt.datetime(2026,11,12,0,0,tzinfo=dt.timezone.utc)
+REPOS=["livespec-orchestrator-beads-fabro","livespec-dev-tooling","livespec-overseer","livespec","livespec-driver-codex","livespec-driver-pi","livespec-orchestrator-git-jsonl","livespec-driver-claude","livespec-console-beads-fabro","livespec-runtime"]
+RMIN={"livespec-orchestrator-beads-fabro":61.95,"livespec-dev-tooling":33.31,"livespec-overseer":14.01,"livespec":9.70,"livespec-driver-codex":9.38,"livespec-driver-claude":9.19,"livespec-orchestrator-git-jsonl":7.99,"livespec-driver-pi":6.78,"livespec-console-beads-fabro":21.71,"livespec-runtime":5.05}
+T=lambda s: dt.datetime.fromisoformat(s.replace("Z","+00:00"))
+def pct(xs,p):
+    xs=sorted(xs); 
+    return xs[min(len(xs)-1,int(p/100*len(xs)))] if xs else None
+out={}
+for repo in REPOS:
+    D=json.load(open(f"{S}/data/{repo}.json"))
+    prs=[p for p in D["prs"] if START<=T(p["merged_at"])<END]
+    runs=D["runs"]
+    pr_runs=collections.defaultdict(list)
+    for r in runs:
+        if r["event"]=="pull_request": pr_runs[r["head_sha"]].append(r)
+    nruns_pr=sum(1 for r in runs if r["event"]=="pull_request" and START<=T(r["created_at"])<END)
+    rows=[]
+    for p in prs:
+        rs=[r for r in pr_runs.get(p["head_sha"],[]) if r["status"]=="completed"]
+        if not rs: continue
+        r=max(rs,key=lambda r:T(r["updated_at"]))
+        cs=T(r["run_started_at"] or r["created_at"]); ce=T(r["updated_at"])
+        rows.append(dict(n=p["number"],user=p["user"],ref=p["head_ref"],cs=cs,ce=ce,m=T(p["merged_at"]),D=(ce-cs).total_seconds(),concl=r["conclusion"],mc=p["merge_commit_sha"]))
+    rows.sort(key=lambda x:x["m"])
+    mt=[x["m"] for x in rows]
+    import bisect
+    for x in rows:
+        x["behind"]=bisect.bisect_left(mt,x["m"])-bisect.bisect_right(mt,x["cs"])
+    n=len(rows); days=(END-START).days
+    beh=[x["behind"] for x in rows]
+    per_hour=collections.Counter(x["m"].strftime("%Y-%m-%dT%H") for x in rows)
+    per_day=collections.Counter(x["m"].strftime("%Y-%m-%d") for x in rows)
+    gaps=[(mt[i]-mt[i-1]).total_seconds()/60 for i in range(1,len(mt))]
+    Ds=[x["D"]/60 for x in rows]
+    # Sim A: strict + serialized lazy updater (one PR at a time; rebase+rerun only if behind)
+    order=sorted(rows,key=lambda x:x["ce"])
+    tfree=None; last_merge=None; extraA=0; delayA=[]
+    for x in order:
+        start=x["ce"] if tfree is None else max(x["ce"],tfree)
+        if last_merge is not None and last_merge>x["cs"]:
+            tm=start+dt.timedelta(seconds=x["D"]); extraA+=1
+        else: tm=start
+        delayA.append((tm-x["m"]).total_seconds()/60); tfree=tm; last_merge=tm
+    # Sim B: strict + eager updater: every merge restarts CI of every PR whose CI is running/waiting
+    ev=[]; active={}; extraB=0; delayB=[]; merged=0
+    arr=sorted(rows,key=lambda x:x["cs"])
+    i=0; t=None; heap=[]; ver={}
+    for x in arr:
+        heapq.heappush(heap,(x["cs"],0,x["n"],"arrive"))
+    byn={x["n"]:x for x in rows}; gen={}
+    while heap:
+        t,_,nn,kind=heapq.heappop(heap)
+        x=byn[nn]
+        if kind=="arrive":
+            gen[nn]=0; active[nn]=t+dt.timedelta(seconds=x["D"]); heapq.heappush(heap,(active[nn],1,nn,"done0"))
+        else:
+            g=int(kind[4:])
+            if nn not in active or gen[nn]!=g: continue
+            del active[nn]; delayB.append((t-x["m"]).total_seconds()/60); merged+=1
+            for o in list(active):
+                gen[o]+=1; extraB+=1; active[o]=t+dt.timedelta(seconds=byn[o]["D"]); heapq.heappush(heap,(active[o],1,o,f"done{gen[o]}"))
+            if extraB>200000: break
+    out[repo]=dict(merged=n,merges_per_day=round(n/days,1),peak_day=max(per_day.values()) if per_day else 0,peak_hour=max(per_hour.values()) if per_hour else 0,
+        hours_with_ge3=sum(1 for v in per_hour.values() if v>=3),
+        gap_p50_min=round(pct(gaps,50),1) if gaps else None, gap_le_D_frac=round(sum(1 for g in gaps if g<=st.median(Ds))/len(gaps),2) if gaps else None,
+        pr_ci_wall_p50=round(pct(Ds,50),1), pr_ci_wall_p90=round(pct(Ds,90),1),
+        behind_ge1_frac=round(sum(1 for b in beh if b>=1)/n,3) if n else 0, behind_p50=pct(beh,50), behind_p90=pct(beh,90), behind_max=max(beh) if beh else 0,
+        pr_ci_runs_actual=nruns_pr,
+        A_extra_runs=extraA, A_extra_runner_min=round(extraA*RMIN[repo]), A_delay_p50=round(pct(delayA,50),1), A_delay_p90=round(pct(delayA,90),1), A_delay_max=round(max(delayA),1),
+        B_extra_runs=extraB, B_extra_runner_min=round(extraB*RMIN[repo]), B_delay_p50=round(pct(delayB,50),1) if delayB else None, B_delay_p90=round(pct(delayB,90),1) if delayB else None, B_merged=merged)
+    json.dump([{k:(v.isoformat() if isinstance(v,dt.datetime) else v) for k,v in x.items()} for x in rows],open(f"{S}/data/{repo}.rows.json","w"))
+json.dump(out,open(f"{S}/data/summary.json","w"),indent=1)
+for r,v in out.items(): print(r,v)

@@ -1,0 +1,32 @@
+"""Batching-train replay (note 003 option 3/4) with an optional per-run failure probability p.
+
+A failed batch (probability 1-(1-p)^k for k members) is re-tested by splitting it into halves recursively
+(bisection), each half one CI run of the batch's max duration; members merge when their half passes.
+p=0 reproduces note 003's all-green replay. Usage: batch_sim.py <scratchpad> <repo> <runner_min_per_run> <p> [seed]
+"""
+import json,sys,random,datetime as dt
+S,repo,rmin,p=sys.argv[1],sys.argv[2],float(sys.argv[3]),float(sys.argv[4]); rnd=random.Random(int(sys.argv[5]) if len(sys.argv)>5 else 1)
+T=dt.datetime.fromisoformat
+pct=lambda xs,q: sorted(xs)[min(len(xs)-1,int(q/100*len(xs)))]
+rows=json.load(open(f"{S}/data/{repo}.rows.json"))
+for x in rows:
+    for k in ("cs","ce","m"): x[k]=T(x[k])
+order=sorted(rows,key=lambda x:x["ce"]); i=0; t=None; L=None; runs=0; delay=[]
+def test(b,t):
+    """Return (end_time, runs) for testing batch b starting at t, bisecting on failure."""
+    global runs
+    D=dt.timedelta(seconds=max(x["D"] for x in b)); runs+=1; end=t+D
+    fail=any(rnd.random()<p for _ in b)
+    if not fail: return end,[(x,end) for x in b]
+    if len(b)==1: return end,[(b[0],end)]   # ejected; counted as landing at end for latency
+    h=len(b)//2; e1,m1=test(b[:h],end); e2,m2=test(b[h:],e1); return e2,m1+m2
+while i<len(order):
+    if t is None or t<order[i]["ce"]: t=order[i]["ce"]
+    j=i
+    while j<len(order) and order[j]["ce"]<=t: j+=1
+    b=order[i:j]
+    if len(b)==1 and (L is None or b[0]["cs"]>=L): tend=t; merged=[(b[0],t)]
+    else: tend,merged=test(b,t)
+    for x,tm in merged: delay.append((tm-x["m"]).total_seconds()/60)
+    L=tend; t=tend; i=j
+print(json.dumps(dict(repo=repo,p=p,extra_runs=runs,extra_runner_min=round(runs*rmin),delay_p50=round(pct(delay,50),1),delay_p90=round(pct(delay,90),1),delay_max=round(max(delay),1))))

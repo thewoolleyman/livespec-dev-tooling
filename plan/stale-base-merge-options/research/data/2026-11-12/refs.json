@@ -1,0 +1,809 @@
+{
+ "livespec": {
+  "group": "fleet",
+  "counts": {
+   "D-docs/spec/plans (cosmetic)": 555,
+   "F-url/api (redirects)": 4,
+   "G-code/workflow other (review)": 17,
+   "C-config data (must change)": 23,
+   "H-bare owner literal 'thewoolleyman'": 10,
+   "B-actions-uses (verify)": 16,
+   "A-identity-compare (silent break)": 2,
+   "E-tests/fixtures": 18
+  },
+  "examples": {
+   "D-docs/spec/plans (cosmetic)": [
+    ".ai/verifying-against-the-right-source.md: `gh api repos/thewoolleyman/livespec/actions/runners` is a **per-repository**",
+    ".ai/verifying-against-the-right-source.md: `repos/thewoolleyman/livespec-console-beads-fabro/actions/runners`, got back",
+    ".ai/verifying-against-the-right-source.md: They do appear. Measured on `thewoolleyman/livespec` while a job was running:",
+    ".claude/skills/needs-attention-internal/SKILL.md: gh run list --repo thewoolleyman/livespec-dev-tooling --workflow \"Fleet conformance\" --branch master --limit 1"
+   ],
+   "F-url/api (redirects)": [
+    ".claude-plugin/scripts/_vendor/livespec_runtime/LICENSE: https://github.com/thewoolleyman/livespec-runtime at tag v0.3.0.",
+    ".github/workflows/e2e-real.yml: echo \"Set it via: gh secret set ANTHROPIC_API_KEY_LIVESPEC_E2E --repo thewoolleyman/livespec\"",
+    ".github/workflows/k3s-arc-proof-job.yml: # (https://github.com/thewoolleyman/livespec/pull/2352).",
+    "templates/orchestrator-plugin/{% if ecosystem == 'python' %}pyproject.toml{% endif %}.jinja: livespec-dev-tooling = { git = \"https://github.com/thewoolleyman/livespec-dev-tooling.git\", tag = \"v1.178.0\" }"
+   ],
+   "G-code/workflow other (review)": [
+    ".claude-plugin/scripts/livespec/io/gh.py: `owner/name` string (e.g., `thewoolleyman/livespec`) that",
+    ".github/scripts/export-ci-telemetry.sh: #   REPO    - owner/name (e.g. thewoolleyman/livespec)",
+    ".github/workflows/ci.yml: image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.201.0",
+    ".github/workflows/ci.yml: image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.201.0"
+   ],
+   "C-config data (must change)": [
+    ".claude/settings.json: \"repo\": \"thewoolleyman/livespec\",",
+    ".claude/settings.json: \"repo\": \"thewoolleyman/livespec-driver-claude\",",
+    ".claude/settings.json: \"repo\": \"thewoolleyman/livespec-orchestrator-beads-fabro\",",
+    ".claude/settings.json: \"repo\": \"thewoolleyman/livespec-overseer\","
+   ],
+   "H-bare owner literal 'thewoolleyman'": [
+    ".claude/skills/needs-attention-internal/SKILL.md: > OWNER = \"thewoolleyman\"",
+    ".claude/skills/needs-attention-internal/fleet-runner-inventory.py: OWNER = \"thewoolleyman\"",
+    ".github/workflows/auto-enable-merge.yml: contains(fromJSON('[\"thewoolleyman\"]'), github.event.pull_request.user.login)",
+    ".livespec-fleet-manifest.jsonc: \"owner\": \"thewoolleyman\","
+   ],
+   "B-actions-uses (verify)": [
+    ".github/workflows/bump-pin-from-dispatch.yml: uses: thewoolleyman/livespec-dev-tooling/.github/workflows/reusable-bump-pin-from-dispatch.yml@v1.201.0",
+    ".github/workflows/ci.yml: uses: thewoolleyman/livespec-dev-tooling/.github/actions/publish-flake-retries@v1.201.0",
+    ".github/workflows/master-health-reconcile.yml: uses: thewoolleyman/livespec-dev-tooling/.github/workflows/reusable-master-health-reconcile.yml@v1.201.0",
+    ".github/workflows/pin-freshness.yml: uses: thewoolleyman/livespec-dev-tooling/.github/workflows/reusable-pin-freshness.yml@v1.201.0"
+   ],
+   "A-identity-compare (silent break)": [
+    ".github/workflows/reusable-spec-pr-merge-policy.yml: --jq '[.referenced_workflows[]? | select(.path | startswith(\"thewoolleyman/livespec/.github/workflows/reusable-spec-pr-merge-policy.yml@\")) ",
+    "tests/livespec/io/test_gh.py: assert value == \"thewoolleyman/livespec\""
+   ],
+   "E-tests/fixtures": [
+    "tests/_currency/test_codex_remote.py: 'source = \"https://github.com/thewoolleyman/livespec.git\"\\n'",
+    "tests/_currency/test_codex_remote.py: \"source\": \"https://github.com/thewoolleyman/livespec.git\",",
+    "tests/integration/test_ci_host_rebuild_from_bare_metal.py: _PRODUCER_FORGE = \"https://github.com/thewoolleyman/livespec-dev-tooling.git\"",
+    "tests/livespec/commands/test_spec_pr_merge_gather.py: repo=\"thewoolleyman/livespec\","
+   ]
+  }
+ },
+ "livespec-dev-tooling": {
+  "group": "fleet",
+  "counts": {
+   "D-docs/spec/plans (cosmetic)": 2435,
+   "C-config data (must change)": 110,
+   "B-actions-uses (verify)": 25,
+   "G-code/workflow other (review)": 52,
+   "H-bare owner literal 'thewoolleyman'": 22,
+   "F-url/api (redirects)": 17,
+   "A-identity-compare (silent break)": 4,
+   "E-tests/fixtures": 149
+  },
+  "examples": {
+   "D-docs/spec/plans (cosmetic)": [
+    ".ai/coordinator-duties.md: (`gh workflow run release-please.yml -R thewoolleyman/livespec-dev-tooling`, and the orchestrator's when its release",
+    ".ai/independent-host-replay-identity.md: (https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/pull/4237#issuecomment-6650019983)",
+    "AGENTS.md: codex plugin marketplace add thewoolleyman/livespec",
+    "AGENTS.md: codex plugin marketplace add thewoolleyman/livespec-driver-codex"
+   ],
+   "C-config data (must change)": [
+    ".claude/settings.json: \"repo\": \"thewoolleyman/livespec\",",
+    ".claude/settings.json: \"repo\": \"thewoolleyman/livespec-driver-claude\",",
+    ".claude/settings.json: \"repo\": \"thewoolleyman/livespec-orchestrator-beads-fabro\",",
+    ".claude/settings.json: \"repo\": \"thewoolleyman/livespec-overseer\","
+   ],
+   "B-actions-uses (verify)": [
+    ".github/actions/publish-flake-retries/action.yml: #     uses: thewoolleyman/livespec-dev-tooling/.github/actions/publish-flake-retries@vX.Y.Z",
+    ".github/actions/setup/action.yml: # `uses: thewoolleyman/livespec-dev-tooling/.github/actions/setup@<ref>`",
+    ".github/workflows/bump-pin-from-dispatch.yml: uses: thewoolleyman/livespec-dev-tooling/.github/workflows/reusable-bump-pin-from-dispatch.yml@v1.183.0",
+    ".github/workflows/ci-infra-rerun.yml: uses: thewoolleyman/livespec-dev-tooling/.github/workflows/reusable-ci-infra-rerun.yml@master"
+   ],
+   "G-code/workflow other (review)": [
+    ".github/scripts/export-ci-telemetry.sh: #   REPO    - owner/name (e.g. thewoolleyman/livespec)",
+    ".github/workflows/ci-cache-negative-tests.yml: image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.183.0",
+    ".github/workflows/ci.yml: image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.183.1",
+    ".github/workflows/ci.yml: image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.183.1"
+   ],
+   "H-bare owner literal 'thewoolleyman'": [
+    ".github/workflows/auto-enable-merge.yml: contains(fromJSON('[\"thewoolleyman\"]'), github.event.pull_request.user.login)",
+    "livespec_dev_tooling/fleet/_git_identity_audit_report.py: OWNER = \"thewoolleyman\"",
+    "livespec_dev_tooling/incident_fleet_host.py: FLEET_OWNER = \"thewoolleyman\"",
+    "plan/ci-cache-optimization/research/007-landed-lever-reread-and-lever4-2026-11-06.md: OWNER = \"thewoolleyman\""
+   ],
+   "F-url/api (redirects)": [
+    ".github/workflows/reusable-check-matrix.yml: tag=\"$(gh api repos/thewoolleyman/livespec-dev-tooling/releases/latest --jq .tag_name)\"",
+    "ansible/roles/dev_host_retention/templates/livespec-dev-host-retention.service.j2: Documentation=https://github.com/thewoolleyman/livespec-dev-tooling/blob/master/ansible/roles/dev_host_retention/HOST_VARS.md",
+    "ansible/roles/disk_guard/templates/docker-prune.service.j2: Documentation=https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro",
+    "ansible/roles/docker_sandbox_slice/templates/fabro-sandbox.slice.j2: Documentation=https://github.com/thewoolleyman/livespec-dev-tooling/tree/master/ansible/roles/docker_sandbox_slice"
+   ],
+   "A-identity-compare (silent break)": [
+    "ansible/roles/incident_observer/tasks/scratch_preflight.yml: - incident_observer_repository == 'thewoolleyman/livespec-dev-tooling'",
+    "tests/livespec_dev_tooling/cross_repo/test_pin_directory_scan_formats.py: == \"thewoolleyman/livespec-dev-tooling/.github/workflows/reusable-bump.yml\"",
+    "tests/livespec_dev_tooling/cross_repo/test_pin_workflow_template_scan.py: == \"thewoolleyman/livespec-dev-tooling/.github/workflows/reusable-pin-freshness.yml\"",
+    "tests/livespec_dev_tooling/test_ci_pool_observability_and_prune_units.py: assert attrs[\"ci.repository\"] == \"thewoolleyman/livespec-dev-tooling\""
+   ],
+   "E-tests/fixtures": [
+    "tests/consumer/test_delegated_gate_declared_recipe_scenarios.py: _CORE_URL = \"https://github.com/thewoolleyman/livespec.git\"",
+    "tests/consumer/test_fabro_environment_catalog_scenario.py: \"image\": \"ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-agent-v1.93.5\",",
+    "tests/consumer/test_sandbox_image_gate_toolchain_scenarios.py: _CONSUMER_IMAGE = \"ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-rust-v1.126.1\"",
+    "tests/fixtures/fabro_server/hp-xubuntu-fabro-server-2026-11-02.yml: image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-agent-v1.93.5"
+   ]
+  }
+ },
+ "livespec-driver-claude": {
+  "group": "fleet",
+  "counts": {
+   "G-code/workflow other (review)": 13,
+   "D-docs/spec/plans (cosmetic)": 144,
+   "C-config data (must change)": 8,
+   "H-bare owner literal 'thewoolleyman'": 1,
+   "B-actions-uses (verify)": 6,
+   "F-url/api (redirects)": 1,
+   "E-tests/fixtures": 3
+  },
+  "examples": {
+   "G-code/workflow other (review)": [
+    ".claude-plugin/lib/_resolve_core_root_text.py: \"  claude plugin marketplace add thewoolleyman/livespec\\n\"",
+    ".github/scripts/export-ci-telemetry.sh: #   REPO    - owner/name (e.g. thewoolleyman/livespec-driver-claude)",
+    ".github/workflows/ci.yml: image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.201.0",
+    ".github/workflows/ci.yml: image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.201.0"
+   ],
+   "D-docs/spec/plans (cosmetic)": [
+    ".claude-plugin/skills/critique/SKILL.md: `thewoolleyman/livespec` marketplace, which must be installed alongside",
+    ".claude-plugin/skills/doctor/SKILL.md: `thewoolleyman/livespec` marketplace, which must be installed alongside",
+    ".claude-plugin/skills/help/SKILL.md: `thewoolleyman/livespec` marketplace, which must be installed alongside",
+    ".claude-plugin/skills/next/SKILL.md: `thewoolleyman/livespec` marketplace, which must be installed alongside"
+   ],
+   "C-config data (must change)": [
+    ".claude/settings.json: \"repo\": \"thewoolleyman/livespec\",",
+    ".claude/settings.json: \"repo\": \"thewoolleyman/livespec-driver-claude\",",
+    ".claude/settings.json: \"repo\": \"thewoolleyman/livespec-orchestrator-beads-fabro\",",
+    ".claude/settings.json: \"repo\": \"thewoolleyman/livespec-overseer\","
+   ],
+   "H-bare owner literal 'thewoolleyman'": [
+    ".github/workflows/auto-enable-merge.yml: contains(fromJSON('[\"thewoolleyman\"]'), github.event.pull_request.user.login)"
+   ],
+   "B-actions-uses (verify)": [
+    ".github/workflows/bump-pin-from-dispatch.yml: uses: thewoolleyman/livespec-dev-tooling/.github/workflows/reusable-bump-pin-from-dispatch.yml@v1.201.0",
+    ".github/workflows/ci.yml: uses: thewoolleyman/livespec-dev-tooling/.github/actions/publish-flake-retries@v1.201.0",
+    ".github/workflows/pin-freshness.yml: uses: thewoolleyman/livespec-dev-tooling/.github/workflows/reusable-pin-freshness.yml@v1.201.0",
+    ".github/workflows/release-dispatch.yml: uses: thewoolleyman/livespec-dev-tooling/.github/workflows/reusable-release-dispatch.yml@v1.201.0"
+   ],
+   "F-url/api (redirects)": [
+    "justfile: uv run --with 'livespec-runtime @ git+https://github.com/thewoolleyman/livespec-runtime.git@v0.19.0' python dev-tooling/bin/check_spec_gover"
+   ],
+   "E-tests/fixtures": [
+    "tests/e2e-cli/test_cli_e2e.py: marketplace=\"thewoolleyman/livespec-driver-claude\",",
+    "tests/e2e-cli/test_cli_e2e.py: marketplace=\"thewoolleyman/livespec-driver-claude\",",
+    "tests/hooks/test_block_auto_memory.py: '    \"livespec\": { \"github_url\": \"https://github.com/thewoolleyman/livespec\" }\\n'"
+   ]
+  }
+ },
+ "livespec-driver-codex": {
+  "group": "fleet",
+  "counts": {
+   "C-config data (must change)": 8,
+   "G-code/workflow other (review)": 12,
+   "H-bare owner literal 'thewoolleyman'": 1,
+   "B-actions-uses (verify)": 6,
+   "D-docs/spec/plans (cosmetic)": 159,
+   "E-tests/fixtures": 1
+  },
+  "examples": {
+   "C-config data (must change)": [
+    ".claude/settings.json: \"repo\": \"thewoolleyman/livespec\",",
+    ".claude/settings.json: \"repo\": \"thewoolleyman/livespec-driver-claude\",",
+    ".claude/settings.json: \"repo\": \"thewoolleyman/livespec-orchestrator-beads-fabro\",",
+    ".claude/settings.json: \"repo\": \"thewoolleyman/livespec-overseer\","
+   ],
+   "G-code/workflow other (review)": [
+    ".github/scripts/export-ci-telemetry.sh: #   REPO    - owner/name (e.g. thewoolleyman/livespec-driver-codex)",
+    ".github/workflows/ci.yml: image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.197.0",
+    ".github/workflows/ci.yml: image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.197.0",
+    ".github/workflows/ci.yml: image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.197.0"
+   ],
+   "H-bare owner literal 'thewoolleyman'": [
+    ".github/workflows/auto-enable-merge.yml: contains(fromJSON('[\"thewoolleyman\"]'), github.event.pull_request.user.login)"
+   ],
+   "B-actions-uses (verify)": [
+    ".github/workflows/bump-pin-from-dispatch.yml: uses: thewoolleyman/livespec-dev-tooling/.github/workflows/reusable-bump-pin-from-dispatch.yml@v1.197.0",
+    ".github/workflows/ci.yml: uses: thewoolleyman/livespec-dev-tooling/.github/actions/publish-flake-retries@v1.197.0",
+    ".github/workflows/pin-freshness.yml: uses: thewoolleyman/livespec-dev-tooling/.github/workflows/reusable-pin-freshness.yml@v1.197.0",
+    ".github/workflows/release-dispatch.yml: uses: thewoolleyman/livespec-dev-tooling/.github/workflows/reusable-release-dispatch.yml@v1.197.0"
+   ],
+   "D-docs/spec/plans (cosmetic)": [
+    "AGENTS.md: (`thewoolleyman/livespec`); this repo only binds that material to the",
+    "AGENTS.md: codex plugin marketplace add thewoolleyman/livespec",
+    "AGENTS.md: codex plugin marketplace add thewoolleyman/livespec-driver-codex",
+    "AGENTS.md: codex plugin marketplace add thewoolleyman/livespec-orchestrator-beads-fabro"
+   ],
+   "E-tests/fixtures": [
+    "tests/e2e-cli/test_cli_e2e.py: marketplace=\"thewoolleyman/livespec-driver-codex\","
+   ]
+  }
+ },
+ "livespec-driver-pi": {
+  "group": "fleet",
+  "counts": {
+   "C-config data (must change)": 13,
+   "G-code/workflow other (review)": 11,
+   "H-bare owner literal 'thewoolleyman'": 1,
+   "B-actions-uses (verify)": 6,
+   "D-docs/spec/plans (cosmetic)": 64,
+   "F-url/api (redirects)": 6,
+   "E-tests/fixtures": 1
+  },
+  "examples": {
+   "C-config data (must change)": [
+    ".claude/settings.json: \"repo\": \"thewoolleyman/livespec\",",
+    ".claude/settings.json: \"repo\": \"thewoolleyman/livespec-driver-claude\",",
+    ".claude/settings.json: \"repo\": \"thewoolleyman/livespec-orchestrator-beads-fabro\",",
+    ".claude/settings.json: \"repo\": \"thewoolleyman/livespec-overseer\","
+   ],
+   "G-code/workflow other (review)": [
+    ".github/scripts/export-ci-telemetry.sh: #   REPO    - owner/name (e.g. thewoolleyman/livespec-driver-pi)",
+    ".github/workflows/ci.yml: image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.197.0",
+    ".github/workflows/ci.yml: image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.197.0",
+    ".github/workflows/ci.yml: image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.197.0"
+   ],
+   "H-bare owner literal 'thewoolleyman'": [
+    ".github/workflows/auto-enable-merge.yml: contains(fromJSON('[\"thewoolleyman\"]'), github.event.pull_request.user.login)"
+   ],
+   "B-actions-uses (verify)": [
+    ".github/workflows/bump-pin-from-dispatch.yml: uses: thewoolleyman/livespec-dev-tooling/.github/workflows/reusable-bump-pin-from-dispatch.yml@v1.197.0",
+    ".github/workflows/ci.yml: uses: thewoolleyman/livespec-dev-tooling/.github/actions/publish-flake-retries@v1.197.0",
+    ".github/workflows/pin-freshness.yml: uses: thewoolleyman/livespec-dev-tooling/.github/workflows/reusable-pin-freshness.yml@v1.197.0",
+    ".github/workflows/release-dispatch.yml: uses: thewoolleyman/livespec-dev-tooling/.github/workflows/reusable-release-dispatch.yml@v1.197.0"
+   ],
+   "D-docs/spec/plans (cosmetic)": [
+    "AGENTS.md: (`thewoolleyman/livespec`); this repo only binds that material to the pi",
+    "CHANGELOG.md: ## [0.6.2](https://github.com/thewoolleyman/livespec-driver-pi/compare/v0.6.1...v0.6.2) (2026-10-30)",
+    "CHANGELOG.md: * **release:** release the delegated-revise wording fix as v0.6.2 ([385b081](https://github.com/thewoolleyman/livespec-driver-pi/commit/385b",
+    "CHANGELOG.md: ## [0.6.1](https://github.com/thewoolleyman/livespec-driver-pi/compare/v0.6.0...v0.6.1) (2026-10-25)"
+   ],
+   "F-url/api (redirects)": [
+    "dev-tooling/check-doctor-static.sh: core_clone_suffix=\"git/github.com/thewoolleyman/livespec/.claude-plugin\"",
+    "dev-tooling/check-doctor-static.sh: printf '    pi install git:github.com/thewoolleyman/livespec@release -l\\n'",
+    "lib/resolve-core-root.sh: #   3. <project-root>/.pi/git/github.com/thewoolleyman/livespec/.claude-plugin \u2014",
+    "lib/resolve-core-root.sh: #   4. ~/.pi/agent/git/github.com/thewoolleyman/livespec/.claude-plugin \u2014 the"
+   ],
+   "E-tests/fixtures": [
+    "tests/integration/test_resolution_scenarios.py: _CORE_CLONE_SUFFIX = \"git/github.com/thewoolleyman/livespec/.claude-plugin\""
+   ]
+  }
+ },
+ "livespec-orchestrator-beads-fabro": {
+  "group": "fleet",
+  "counts": {
+   "D-docs/spec/plans (cosmetic)": 3263,
+   "G-code/workflow other (review)": 24,
+   "C-config data (must change)": 26,
+   "F-url/api (redirects)": 13,
+   "H-bare owner literal 'thewoolleyman'": 139,
+   "B-actions-uses (verify)": 11,
+   "E-tests/fixtures": 112,
+   "A-identity-compare (silent break)": 3
+  },
+  "examples": {
+   "D-docs/spec/plans (cosmetic)": [
+    ".ai/codex-dogfooding.md: codex plugin marketplace add thewoolleyman/livespec",
+    ".ai/codex-dogfooding.md: codex plugin marketplace add thewoolleyman/livespec-driver-codex",
+    ".ai/git-pr-and-release-mechanics.md: `{\"source\":\"github\",\"repo\":\"thewoolleyman/livespec-orchestrator-beads-fabro\",\"ref\":\"release\"}`,",
+    ".ai/pi-dogfooding.md: pi install git:github.com/thewoolleyman/livespec@release -l --approve"
+   ],
+   "G-code/workflow other (review)": [
+    ".claude-plugin/.fabro/workflows/implement-work-item/workflow.fabro: // thewoolleyman/livespec-tdd-proof (7 genuine setup commits): hp run",
+    ".claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands/_dispatcher_proof_record.py: `thewoolleyman/livespec-overseer` PR #2341 comment 5976999030, a correctly",
+    ".github/scripts/export-ci-telemetry.sh: #   REPO    - owner/name (e.g. thewoolleyman/livespec)",
+    ".github/workflows/acceptance-live-golden-master.yml: #   - Callback: a GitHub commit status POSTed to thewoolleyman/livespec-dev-tooling"
+   ],
+   "C-config data (must change)": [
+    ".claude-plugin/.fabro/workflows/implement-work-item/workflow.toml: # ghcr.io/thewoolleyman/livespec-fabro-sandbox. Since the layered-image",
+    ".claude-plugin/.fabro/workflows/implement-work-item/workflow.toml: docker = \"ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-agent-v1.201.0\"",
+    ".claude/settings.json: \"repo\": \"thewoolleyman/livespec\",",
+    ".claude/settings.json: \"repo\": \"thewoolleyman/livespec-driver-claude\","
+   ],
+   "F-url/api (redirects)": [
+    ".claude-plugin/.pi-plugin/lib/resolve-plugin-root.sh: #   3. <project-root>/.pi/git/github.com/thewoolleyman/livespec-orchestrator-beads-fabro/.claude-plugin",
+    ".claude-plugin/.pi-plugin/lib/resolve-plugin-root.sh: #   4. ~/.pi/agent/git/github.com/thewoolleyman/livespec-orchestrator-beads-fabro/.claude-plugin \u2014 the",
+    ".claude-plugin/scripts/_vendor/livespec_runtime/LICENSE: https://github.com/thewoolleyman/livespec-runtime at tag v0.11.0.",
+    ".claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands/_dispatcher_integration_defaults.py: FLEET_CORE_REPO_URL = \"https://github.com/thewoolleyman/livespec.git\""
+   ],
+   "H-bare owner literal 'thewoolleyman'": [
+    ".github/workflows/auto-enable-merge.yml: contains(fromJSON('[\"thewoolleyman\"]'), github.event.pull_request.user.login)",
+    "dev-tooling/checks/materialized_workflow_toml_size.py: owner=\"thewoolleyman\",",
+    "tests/hooks/test_livespec_sandbox_path_guard.py: self.clone = base / \"repos\" / \"thewoolleyman\" / _LINK_NAME",
+    "tests/hooks_plugin/test_codex_yolo_gate.py: '  \"owner\": \"thewoolleyman\",\\n'"
+   ],
+   "B-actions-uses (verify)": [
+    ".github/workflows/bump-pin-from-dispatch.yml: uses: thewoolleyman/livespec-dev-tooling/.github/workflows/reusable-bump-pin-from-dispatch.yml@v1.201.0",
+    ".github/workflows/ci-root-uid.yml: uses: thewoolleyman/livespec-dev-tooling/.github/actions/publish-flake-retries@v1.201.0",
+    ".github/workflows/ci.yml: uses: thewoolleyman/livespec-dev-tooling/.github/actions/publish-flake-retries@v1.201.0",
+    ".github/workflows/ci.yml: uses: thewoolleyman/livespec-dev-tooling/.github/actions/publish-flake-retries@v1.201.0"
+   ],
+   "E-tests/fixtures": [
+    "tests/conftest.py: repository=\"https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro.git\",",
+    "tests/e2e-cli/test_cli_e2e_round_trip.py: marketplace=\"thewoolleyman/livespec-orchestrator-beads-fabro\",",
+    "tests/e2e-cli/test_codex_skill_picker.py: source = \"https://github.com/thewoolleyman/livespec.git\"",
+    "tests/e2e-cli/test_codex_skill_picker.py: source = \"https://github.com/thewoolleyman/livespec-driver-codex.git\""
+   ],
+   "A-identity-compare (silent break)": [
+    "tests/livespec_orchestrator_beads_fabro/commands/test_dispatcher_proof_release.py: assert record[\"repository\"] == \"thewoolleyman/livespec-orchestrator-beads-fabro\"",
+    "tests/livespec_orchestrator_beads_fabro/commands/test_factory_bypass_gh.py: assert args[args.index(\"--repo\") + 1] == \"thewoolleyman/livespec-dev-tooling\"",
+    "tests/livespec_orchestrator_beads_fabro/commands/test_plan_release_repository.py: assert named.name == \"thewoolleyman/livespec-dev-tooling\""
+   ]
+  }
+ },
+ "livespec-orchestrator-git-jsonl": {
+  "group": "fleet",
+  "counts": {
+   "F-url/api (redirects)": 1,
+   "C-config data (must change)": 10,
+   "G-code/workflow other (review)": 14,
+   "H-bare owner literal 'thewoolleyman'": 3,
+   "B-actions-uses (verify)": 9,
+   "D-docs/spec/plans (cosmetic)": 103,
+   "E-tests/fixtures": 3
+  },
+  "examples": {
+   "F-url/api (redirects)": [
+    ".claude-plugin/scripts/_vendor/livespec_runtime/LICENSE: https://github.com/thewoolleyman/livespec-runtime at tag v0.3.0."
+   ],
+   "C-config data (must change)": [
+    ".claude/settings.json: \"repo\": \"thewoolleyman/livespec\",",
+    ".claude/settings.json: \"repo\": \"thewoolleyman/livespec-driver-claude\",",
+    ".claude/settings.json: \"repo\": \"thewoolleyman/livespec-orchestrator-beads-fabro\",",
+    ".claude/settings.json: \"repo\": \"thewoolleyman/livespec-overseer\","
+   ],
+   "G-code/workflow other (review)": [
+    ".github/scripts/export-ci-telemetry.sh: #   REPO    - owner/name (e.g. thewoolleyman/livespec-orchestrator-git-jsonl)",
+    ".github/workflows/ci.yml: image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.197.0",
+    ".github/workflows/ci.yml: image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.197.0",
+    ".github/workflows/ci.yml: image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.197.0"
+   ],
+   "H-bare owner literal 'thewoolleyman'": [
+    ".github/workflows/auto-enable-merge.yml: contains(fromJSON('[\"thewoolleyman\"]'), github.event.pull_request.user.login)",
+    "tests/livespec_orchestrator_git_jsonl/migration/test_beads_to_jsonl.py: parsed = _beads_dict(assignee=\"thewoolleyman\")",
+    "tests/livespec_orchestrator_git_jsonl/migration/test_beads_to_jsonl.py: assert item.assignee == \"thewoolleyman\""
+   ],
+   "B-actions-uses (verify)": [
+    ".github/workflows/auto-enable-merge.yml: uses: thewoolleyman/livespec/.github/workflows/reusable-spec-pr-merge-policy.yml@v0.47.2",
+    ".github/workflows/bump-pin-from-dispatch.yml: uses: thewoolleyman/livespec-dev-tooling/.github/workflows/reusable-bump-pin-from-dispatch.yml@v1.197.0",
+    ".github/workflows/ci.yml: uses: thewoolleyman/livespec-dev-tooling/.github/actions/publish-flake-retries@v1.197.0",
+    ".github/workflows/ci.yml: uses: thewoolleyman/livespec-dev-tooling/.github/actions/publish-flake-retries@v1.197.0"
+   ],
+   "D-docs/spec/plans (cosmetic)": [
+    "AGENTS.md: codex plugin marketplace add thewoolleyman/livespec",
+    "AGENTS.md: codex plugin marketplace add thewoolleyman/livespec-driver-codex",
+    "CHANGELOG.md: ## [0.12.2](https://github.com/thewoolleyman/livespec-orchestrator-git-jsonl/compare/v0.12.1...v0.12.2) (2026-11-09)",
+    "CHANGELOG.md: * **dev-tooling:** judge heading-coverage.json staging without a pipe under pipefail ([c6805bc](https://github.com/thewoolleyman/livespec-or"
+   ],
+   "E-tests/fixtures": [
+    "tests/e2e-cli/test_cli_e2e_round_trip.py: marketplace=\"thewoolleyman/livespec-orchestrator-git-jsonl\",",
+    "tests/livespec_orchestrator_git_jsonl/commands/test_cross_repo.py: \"github_url\": \"https://github.com/thewoolleyman/livespec-runtime\",",
+    "tests/livespec_orchestrator_git_jsonl/commands/test_cross_repo.py: assert target.github_url == \"https://github.com/thewoolleyman/livespec-runtime\""
+   ]
+  }
+ },
+ "livespec-runtime": {
+  "group": "fleet",
+  "counts": {
+   "C-config data (must change)": 8,
+   "G-code/workflow other (review)": 13,
+   "H-bare owner literal 'thewoolleyman'": 1,
+   "B-actions-uses (verify)": 4,
+   "D-docs/spec/plans (cosmetic)": 137,
+   "E-tests/fixtures": 48
+  },
+  "examples": {
+   "C-config data (must change)": [
+    ".claude/settings.json: \"repo\": \"thewoolleyman/livespec\",",
+    ".claude/settings.json: \"repo\": \"thewoolleyman/livespec-driver-claude\",",
+    ".claude/settings.json: \"repo\": \"thewoolleyman/livespec-orchestrator-beads-fabro\",",
+    ".claude/settings.json: \"repo\": \"thewoolleyman/livespec-overseer\","
+   ],
+   "G-code/workflow other (review)": [
+    ".github/scripts/ensure-codex-plugins.sh: codex plugin marketplace add thewoolleyman/livespec --ref release",
+    ".github/scripts/ensure-codex-plugins.sh: codex plugin marketplace add thewoolleyman/livespec-driver-codex --ref release",
+    ".github/scripts/ensure-codex-plugins.sh: codex plugin marketplace add thewoolleyman/livespec-orchestrator-beads-fabro --ref release",
+    ".github/scripts/export-ci-telemetry.sh: #   REPO    - owner/name (e.g. thewoolleyman/livespec-runtime)"
+   ],
+   "H-bare owner literal 'thewoolleyman'": [
+    ".github/workflows/auto-enable-merge.yml: contains(fromJSON('[\"thewoolleyman\"]'), github.event.pull_request.user.login)"
+   ],
+   "B-actions-uses (verify)": [
+    ".github/workflows/bump-pin-from-dispatch.yml: uses: thewoolleyman/livespec-dev-tooling/.github/workflows/reusable-bump-pin-from-dispatch.yml@v1.197.0",
+    ".github/workflows/pin-freshness.yml: uses: thewoolleyman/livespec-dev-tooling/.github/workflows/reusable-pin-freshness.yml@v1.197.0",
+    ".github/workflows/release-dispatch.yml: uses: thewoolleyman/livespec-dev-tooling/.github/workflows/reusable-release-dispatch.yml@v1.197.0",
+    ".github/workflows/reusable-check-matrix.yml: # `uses: thewoolleyman/livespec-runtime/.github/workflows/reusable-check-matrix.yml@vX.Y.Z`"
+   ],
+   "D-docs/spec/plans (cosmetic)": [
+    "AGENTS.md: codex plugin marketplace add thewoolleyman/livespec",
+    "AGENTS.md: codex plugin marketplace add thewoolleyman/livespec-driver-codex",
+    "AGENTS.md: codex plugin marketplace add thewoolleyman/livespec-orchestrator-beads-fabro",
+    "CHANGELOG.md: ## [0.30.2](https://github.com/thewoolleyman/livespec-runtime/compare/v0.30.1...v0.30.2) (2026-11-11)"
+   ],
+   "E-tests/fixtures": [
+    "tests/consumer/test_cross_repo_resolution.py: \"livespec\": {\"github_url\": \"https://github.com/thewoolleyman/livespec\"},",
+    "tests/consumer/test_cross_repo_resolution.py: \"livespec-runtime\": {\"github_url\": \"https://github.com/thewoolleyman/livespec-runtime\"},",
+    "tests/consumer/test_cross_repo_resolution.py: block={\"livespec\": {\"github_url\": \"https://github.com/thewoolleyman/livespec\"}}",
+    "tests/consumer/test_cross_repo_resolution.py: block={\"livespec\": {\"github_url\": \"https://github.com/thewoolleyman/livespec\"}}"
+   ]
+  }
+ },
+ "livespec-console-beads-fabro": {
+  "group": "fleet",
+  "counts": {
+   "D-docs/spec/plans (cosmetic)": 296,
+   "C-config data (must change)": 15,
+   "G-code/workflow other (review)": 31,
+   "H-bare owner literal 'thewoolleyman'": 1,
+   "B-actions-uses (verify)": 3,
+   "E-tests/fixtures": 7
+  },
+  "examples": {
+   "D-docs/spec/plans (cosmetic)": [
+    ".ai/linkable-references.md: ledger valve](https://github.com/thewoolleyman/livespec-console-beads-fabro/blob/master/SPECIFICATION/scenarios.md)`.",
+    ".ai/livespec-plugin-currency.md: `git ls-remote https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro.git",
+    ".ai/livespec-plugin-currency.md: git ls-remote https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro.git refs/heads/release",
+    ".ai/spec-check-and-ci-discipline.md: (`gh variable get CI_RUNNER_LABELS -R thewoolleyman/livespec-console-beads-fabro`)."
+   ],
+   "C-config data (must change)": [
+    ".claude/settings.json: \"repo\": \"thewoolleyman/livespec\",",
+    ".claude/settings.json: \"repo\": \"thewoolleyman/livespec-driver-claude\",",
+    ".claude/settings.json: \"repo\": \"thewoolleyman/livespec-orchestrator-beads-fabro\",",
+    ".claude/settings.json: \"repo\": \"thewoolleyman/livespec-overseer\","
+   ],
+   "G-code/workflow other (review)": [
+    ".github/scripts/export-ci-telemetry.sh: #   REPO    - owner/name (e.g. thewoolleyman/livespec-console-beads-fabro)",
+    ".github/workflows/ci.yml: image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-rust-v1.197.0",
+    ".github/workflows/ci.yml: image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-rust-v1.197.0",
+    ".github/workflows/ci.yml: repository: thewoolleyman/livespec"
+   ],
+   "H-bare owner literal 'thewoolleyman'": [
+    ".github/workflows/auto-enable-merge.yml: contains(fromJSON('[\"thewoolleyman\"]'), github.event.pull_request.user.login)"
+   ],
+   "B-actions-uses (verify)": [
+    ".github/workflows/bump-pin-from-dispatch.yml: uses: thewoolleyman/livespec-dev-tooling/.github/workflows/reusable-bump-pin-from-dispatch.yml@v1.197.0",
+    ".github/workflows/pin-freshness.yml: uses: thewoolleyman/livespec-dev-tooling/.github/workflows/reusable-pin-freshness.yml@v1.197.0",
+    ".github/workflows/release-lane-watch.yml: uses: thewoolleyman/livespec-dev-tooling/.github/workflows/reusable-release-lane-watch.yml@v1.197.0"
+   ],
+   "E-tests/fixtures": [
+    "crates/console-ci-parity-check/tests/ci_telemetry_runner_attributes.rs: .env(\"REPO\", \"thewoolleyman/livespec-console-beads-fabro\")",
+    "crates/console-ci-parity-check/tests/fixtures/ci-telemetry-run-view-in-progress.json: \"url\": \"https://github.com/thewoolleyman/livespec-console-beads-fabro/actions/runs/4242424242/job/2001\"",
+    "crates/console-ci-parity-check/tests/fixtures/ci-telemetry-run-view-in-progress.json: \"url\": \"https://github.com/thewoolleyman/livespec-console-beads-fabro/actions/runs/4242424242/job/2002\"",
+    "crates/console-ci-parity-check/tests/fixtures/ci-telemetry-run-view-in-progress.json: \"url\": \"https://github.com/thewoolleyman/livespec-console-beads-fabro/actions/runs/4242424242/job/2003\""
+   ]
+  }
+ },
+ "livespec-overseer": {
+  "group": "fleet",
+  "counts": {
+   "D-docs/spec/plans (cosmetic)": 1619,
+   "F-url/api (redirects)": 4,
+   "G-code/workflow other (review)": 14,
+   "C-config data (must change)": 12,
+   "H-bare owner literal 'thewoolleyman'": 1,
+   "B-actions-uses (verify)": 5,
+   "E-tests/fixtures": 3
+  },
+  "examples": {
+   "D-docs/spec/plans (cosmetic)": [
+    ".ai/ci-runner-routing-history.md: https://github.com/thewoolleyman/livespec-dev-tooling/pull/1531): a node-loaded",
+    ".claude-plugin/.codex-plugin/skills/caam-anthropic-loop/SKILL.md: echo \"  codex plugin marketplace add thewoolleyman/livespec-overseer\" >&2",
+    ".claude-plugin/.codex-plugin/skills/drain-backlog/SKILL.md: echo \"  codex plugin marketplace add thewoolleyman/livespec-overseer\" >&2",
+    ".claude-plugin/.codex-plugin/skills/llm-provider-manager/SKILL.md: echo \"  codex plugin marketplace add thewoolleyman/livespec-overseer\" >&2"
+   ],
+   "F-url/api (redirects)": [
+    ".claude-plugin/.pi-plugin/lib/resolve-plugin-root.sh: #   3. <project-root>/.pi/git/github.com/thewoolleyman/livespec-overseer/.claude-plugin",
+    ".claude-plugin/.pi-plugin/lib/resolve-plugin-root.sh: #   4. ~/.pi/agent/git/github.com/thewoolleyman/livespec-overseer/.claude-plugin",
+    ".claude-plugin/overseer/runtime_prefix.py: _PROJECT_GIT_URL = \"https://github.com/thewoolleyman/livespec-overseer.git\"",
+    "overseer/runtime_prefix.py: _PROJECT_GIT_URL = \"https://github.com/thewoolleyman/livespec-overseer.git\""
+   ],
+   "G-code/workflow other (review)": [
+    ".claude-plugin/overseer/_supervisor_release_runtime.py: _REPO = \"thewoolleyman/livespec-overseer\"",
+    ".github/scripts/export-ci-telemetry.sh: #   REPO    - owner/name (e.g. thewoolleyman/livespec)",
+    ".github/workflows/ci.yml: image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.200.0",
+    ".github/workflows/ci.yml: image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.200.0"
+   ],
+   "C-config data (must change)": [
+    ".claude/settings.json: \"repo\": \"thewoolleyman/livespec\",",
+    ".claude/settings.json: \"repo\": \"thewoolleyman/livespec-driver-claude\",",
+    ".claude/settings.json: \"repo\": \"thewoolleyman/livespec-orchestrator-beads-fabro\",",
+    ".claude/settings.json: \"repo\": \"thewoolleyman/livespec-overseer\","
+   ],
+   "H-bare owner literal 'thewoolleyman'": [
+    ".github/workflows/auto-enable-merge.yml: contains(fromJSON('[\"thewoolleyman\"]'), github.event.pull_request.user.login)"
+   ],
+   "B-actions-uses (verify)": [
+    ".github/workflows/bump-pin-from-dispatch.yml: uses: thewoolleyman/livespec-dev-tooling/.github/workflows/reusable-bump-pin-from-dispatch.yml@v1.200.0",
+    ".github/workflows/ci.yml: uses: thewoolleyman/livespec-dev-tooling/.github/actions/publish-flake-retries@v1.200.0",
+    ".github/workflows/pin-freshness.yml: uses: thewoolleyman/livespec-dev-tooling/.github/workflows/reusable-pin-freshness.yml@v1.200.0",
+    ".github/workflows/release-dispatch.yml: uses: thewoolleyman/livespec-dev-tooling/.github/workflows/reusable-release-dispatch.yml@v1.200.0"
+   ],
+   "E-tests/fixtures": [
+    "tests/test_herdr_adapter_contract.py: (`ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.64.1`,",
+    "tests/test_herdr_request_ids.py: (`ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.64.1`) does not",
+    "tests/test_runtime_prefix.py: assert \"git+https://github.com/thewoolleyman/livespec-overseer.git\" in ("
+   ]
+  }
+ },
+ "openbrain": {
+  "group": "outside",
+  "counts": {
+   "C-config data (must change)": 8,
+   "D-docs/spec/plans (cosmetic)": 5,
+   "H-bare owner literal 'thewoolleyman'": 1,
+   "G-code/workflow other (review)": 3
+  },
+  "examples": {
+   "C-config data (must change)": [
+    ".claude/settings.json: \"repo\": \"thewoolleyman/livespec\",",
+    ".claude/settings.json: \"repo\": \"thewoolleyman/livespec-driver-claude\",",
+    ".claude/settings.json: \"repo\": \"thewoolleyman/livespec-orchestrator-beads-fabro\",",
+    ".claude/settings.json: \"repo\": \"thewoolleyman/livespec-overseer\","
+   ],
+   "D-docs/spec/plans (cosmetic)": [
+    "README.md: This project uses [livespec](https://github.com/thewoolleyman/livespec) \u2014",
+    "README.md: /plugin marketplace add thewoolleyman/livespec",
+    "README.md: /plugin marketplace add thewoolleyman/livespec-driver-claude",
+    "README.md: /plugin marketplace add thewoolleyman/livespec-orchestrator-beads-fabro"
+   ],
+   "H-bare owner literal 'thewoolleyman'": [
+    "obsidian-plugin/manifest.json: \"author\": \"thewoolleyman\","
+   ],
+   "G-code/workflow other (review)": [
+    "scripts/update-dev.sh: /plugin marketplace add thewoolleyman/livespec",
+    "scripts/update-dev.sh: /plugin marketplace add thewoolleyman/livespec-driver-claude",
+    "scripts/update-dev.sh: /plugin marketplace add thewoolleyman/livespec-orchestrator-beads-fabro"
+   ]
+  }
+ },
+ "dolt-server": {
+  "group": "outside",
+  "counts": {
+   "C-config data (must change)": 12,
+   "H-bare owner literal 'thewoolleyman'": 2,
+   "D-docs/spec/plans (cosmetic)": 1
+  },
+  "examples": {
+   "C-config data (must change)": [
+    ".claude/settings.json: \"repo\": \"thewoolleyman/livespec\",",
+    ".claude/settings.json: \"repo\": \"thewoolleyman/livespec-driver-claude\",",
+    ".claude/settings.json: \"repo\": \"thewoolleyman/livespec-orchestrator-beads-fabro\",",
+    ".livespec.jsonc: { \"repo\": \"thewoolleyman/livespec\", \"ref\": \"release\" },"
+   ],
+   "H-bare owner literal 'thewoolleyman'": [
+    ".livespec.jsonc: \"owner\": \"thewoolleyman\",",
+    "scripts/verify-dolt-server-dispatch-identity.sh: readonly EXPECTED_APP_OWNER='thewoolleyman'"
+   ],
+   "D-docs/spec/plans (cosmetic)": [
+    "README.md: A [livespec](https://github.com/thewoolleyman/livespec)-managed project"
+   ]
+  }
+ },
+ "resume": {
+  "group": "outside",
+  "counts": {
+   "C-config data (must change)": 4,
+   "D-docs/spec/plans (cosmetic)": 1,
+   "G-code/workflow other (review)": 3
+  },
+  "examples": {
+   "C-config data (must change)": [
+    ".claude/settings.json: \"repo\": \"thewoolleyman/livespec\",",
+    ".claude/settings.json: \"repo\": \"thewoolleyman/livespec-driver-claude\",",
+    ".claude/settings.json: \"repo\": \"thewoolleyman/livespec-orchestrator-beads-fabro\",",
+    ".claude/settings.json: \"repo\": \"thewoolleyman/livespec-overseer\","
+   ],
+   "D-docs/spec/plans (cosmetic)": [
+    "README.md: This is a real product AND a [livespec](https://github.com/thewoolleyman/livespec)"
+   ],
+   "G-code/workflow other (review)": [
+    "scripts/agent-hooks.test.ts: repo: \"thewoolleyman/livespec\",",
+    "scripts/agent-hooks.test.ts: repo: \"thewoolleyman/livespec-overseer\",",
+    "scripts/agent-hooks.test.ts: \"claude plugin marketplace add thewoolleyman/livespec-overseer@v0.12.2\","
+   ]
+  }
+ },
+ "homelab": {
+  "group": "outside",
+  "counts": {
+   "G-code/workflow other (review)": 3,
+   "C-config data (must change)": 8,
+   "D-docs/spec/plans (cosmetic)": 16
+  },
+  "examples": {
+   "G-code/workflow other (review)": [
+    ".claude/hooks/test_ensure_plugins.py: \"repo\": \"thewoolleyman/livespec\",",
+    ".claude/hooks/test_ensure_plugins.py: \"repo\": \"thewoolleyman/livespec-overseer\",",
+    ".claude/hooks/test_ensure_plugins.py: \"thewoolleyman/livespec-overseer@release\","
+   ],
+   "C-config data (must change)": [
+    ".claude/settings.json: \"repo\": \"thewoolleyman/livespec\",",
+    ".claude/settings.json: \"repo\": \"thewoolleyman/livespec-driver-claude\",",
+    ".claude/settings.json: \"repo\": \"thewoolleyman/livespec-orchestrator-beads-fabro\",",
+    ".claude/settings.json: \"repo\": \"thewoolleyman/livespec-overseer\","
+   ],
+   "D-docs/spec/plans (cosmetic)": [
+    "plan/steady-state-loop-hardening/research/008-core-review-triage-and-shared-runtime-rule.md: > its shared piece to `thewoolleyman/livespec-runtime`: specified and",
+    "plan/steady-state-loop-hardening/research/008-core-review-triage-and-shared-runtime-rule.md: **`homelab-loop-hardening-runtime`** (in `thewoolleyman/livespec-runtime`),",
+    "plan/steady-state-loop-hardening/research/reviews/livespec-console-beads-fabro-review-fable.md: - **Reviewer**: Claude Fable 5 (`claude-fable-5`), xhigh reasoning effort \u2014 the \"fable\" leg of the two-model review pair commissioned from t",
+    "plan/steady-state-loop-hardening/research/reviews/livespec-console-beads-fabro-review-sol.md: | Reviewing repository | `livespec-console-beads-fabro`, verified origin `https://github.com/thewoolleyman/livespec-console-beads-fabro.git`"
+   ]
+  }
+ },
+ "hetzner-xubuntu-info": {
+  "group": "outside",
+  "counts": {
+   "C-config data (must change)": 7,
+   "D-docs/spec/plans (cosmetic)": 1,
+   "F-url/api (redirects)": 1
+  },
+  "examples": {
+   "C-config data (must change)": [
+    ".claude/settings.json: \"repo\": \"thewoolleyman/livespec\",",
+    ".claude/settings.json: \"repo\": \"thewoolleyman/livespec-driver-claude\",",
+    ".claude/settings.json: \"repo\": \"thewoolleyman/livespec-orchestrator-beads-fabro\",",
+    ".claude/settings.json: \"repo\": \"thewoolleyman/livespec-overseer\","
+   ],
+   "D-docs/spec/plans (cosmetic)": [
+    "docs/bootstrap-receipt.md: - Livespec's central manifest registers this repo as a `baseline` adopter with `released` posture. Registration landed through [livespec PR "
+   ],
+   "F-url/api (redirects)": [
+    "provisioning/livespec-dev-tooling.pin: repository=https://github.com/thewoolleyman/livespec-dev-tooling.git"
+   ]
+  }
+ },
+ "vps-info": {
+  "group": "outside",
+  "counts": {
+   "C-config data (must change)": 2,
+   "D-docs/spec/plans (cosmetic)": 4,
+   "G-code/workflow other (review)": 1,
+   "F-url/api (redirects)": 2
+  },
+  "examples": {
+   "C-config data (must change)": [
+    ".claude/settings.json: \"repo\": \"thewoolleyman/livespec\",",
+    ".claude/settings.json: \"repo\": \"thewoolleyman/livespec-driver-claude\","
+   ],
+   "D-docs/spec/plans (cosmetic)": [
+    "AGENTS.md: - **Source of truth (2026-10-12): the `keyring_quota` Ansible role** in `livespec-dev-tooling` (`ansible/roles/keyring_quota/`, applied by `",
+    "README.md: > [`livespec-dev-tooling`](https://github.com/thewoolleyman/livespec-dev-tooling)",
+    "services/codex-config/hook-trust.md: [PR #981](https://github.com/thewoolleyman/livespec-driver-codex/pull/981)",
+    "services/codex-config/hook-trust.md: [draft PR #967](https://github.com/thewoolleyman/livespec-driver-codex/pull/967),"
+   ],
+   "G-code/workflow other (review)": [
+    "services/codex-config/review-hook-trust.py: GITHUB_REPO = \"thewoolleyman/livespec-driver-codex\""
+   ],
+   "F-url/api (redirects)": [
+    "services/codex-config/test_reconcile_hook_trust_scope.py: source = \"https://github.com/thewoolleyman/livespec-driver-codex.git\"",
+    "services/codex-config/test_reconcile_hook_trust_scope.py: source = \"https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro.git\""
+   ]
+  }
+ },
+ "poweredge-xubuntu-info": {
+  "group": "outside",
+  "counts": {
+   "C-config data (must change)": 2,
+   "D-docs/spec/plans (cosmetic)": 3
+  },
+  "examples": {
+   "C-config data (must change)": [
+    ".claude/settings.json: \"repo\": \"thewoolleyman/livespec\",",
+    ".claude/settings.json: \"repo\": \"thewoolleyman/livespec-driver-claude\","
+   ],
+   "D-docs/spec/plans (cosmetic)": [
+    "AGENTS.md: `https://github.com/thewoolleyman/livespec/tree/master/plan/poweredge-raid-array-maintenance/research/`.",
+    "AGENTS.md: (`https://github.com/thewoolleyman/livespec-dev-tooling/pull/1694`, README",
+    "MEMORY.md: [livespec-dev-tooling run 34469453160](https://github.com/thewoolleyman/livespec-dev-tooling/actions/runs/34469453160)."
+   ]
+  }
+ },
+ "gmktec-xubuntu-info": {
+  "group": "outside",
+  "counts": {
+   "C-config data (must change)": 2,
+   "D-docs/spec/plans (cosmetic)": 1
+  },
+  "examples": {
+   "C-config data (must change)": [
+    ".claude/settings.json: \"repo\": \"thewoolleyman/livespec\",",
+    ".claude/settings.json: \"repo\": \"thewoolleyman/livespec-driver-claude\","
+   ],
+   "D-docs/spec/plans (cosmetic)": [
+    "AGENTS.md: `ghcr.io/thewoolleyman/livespec-fabro-sandbox` tags into k3s containerd. Factory"
+   ]
+  }
+ },
+ "hp-xubuntu-info": {
+  "group": "outside",
+  "counts": {
+   "C-config data (must change)": 2,
+   "D-docs/spec/plans (cosmetic)": 2
+  },
+  "examples": {
+   "C-config data (must change)": [
+    ".claude/settings.json: \"repo\": \"thewoolleyman/livespec\",",
+    ".claude/settings.json: \"repo\": \"thewoolleyman/livespec-driver-claude\","
+   ],
+   "D-docs/spec/plans (cosmetic)": [
+    "README.md: | `fabro-server.service` | **Stopped and disabled since 2026-11-02.** The legacy Fabro dark-factory server (`127.0.0.1:32276`). Its binary a",
+    "README.md: | `/etc/sysctl.d/99-keyring-quota.conf` (config-only) | Per-non-root-uid kernel keyring ceilings (`kernel.keys.maxbytes = 1048576`, `maxkeys"
+   ]
+  }
+ },
+ "fabro-hosts": {
+  "group": "outside",
+  "counts": {
+   "C-config data (must change)": 2,
+   "D-docs/spec/plans (cosmetic)": 4
+  },
+  "examples": {
+   "C-config data (must change)": [
+    ".claude/settings.json: \"repo\": \"thewoolleyman/livespec\",",
+    ".claude/settings.json: \"repo\": \"thewoolleyman/livespec-driver-claude\","
+   ],
+   "D-docs/spec/plans (cosmetic)": [
+    "AGENTS.md: [`thewoolleyman/livespec-dev-tooling`](https://github.com/thewoolleyman/livespec-dev-tooling),",
+    "README.md: **[`thewoolleyman/livespec-dev-tooling`](https://github.com/thewoolleyman/livespec-dev-tooling),",
+    "README.md: - [`livespec-dev-tooling`](https://github.com/thewoolleyman/livespec-dev-tooling)",
+    "README.md: - [`livespec-orchestrator-beads-fabro`](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro)"
+   ]
+  }
+ },
+ "otel-collector": {
+  "group": "outside",
+  "counts": {
+   "C-config data (must change)": 2,
+   "D-docs/spec/plans (cosmetic)": 1
+  },
+  "examples": {
+   "C-config data (must change)": [
+    ".claude/settings.json: \"repo\": \"thewoolleyman/livespec\",",
+    ".claude/settings.json: \"repo\": \"thewoolleyman/livespec-driver-claude\","
+   ],
+   "D-docs/spec/plans (cosmetic)": [
+    "CLAUDE.md: 2. Get the collector onto the new `config.yaml`. On the livespec dev host (`vps`), `otel-collector.service` is managed by the `otel_collecto"
+   ]
+  }
+ },
+ "local-llm": {
+  "group": "outside",
+  "counts": {
+   "G-code/workflow other (review)": 3,
+   "C-config data (must change)": 2
+  },
+  "examples": {
+   "G-code/workflow other (review)": [
+    ".claude/hooks/test_ensure_plugins.py: \"repo\": \"thewoolleyman/livespec\",",
+    ".claude/hooks/test_ensure_plugins.py: \"repo\": \"thewoolleyman/livespec-overseer\",",
+    ".claude/hooks/test_ensure_plugins.py: \"thewoolleyman/livespec-overseer@release\","
+   ],
+   "C-config data (must change)": [
+    ".claude/settings.json: \"repo\": \"thewoolleyman/livespec\",",
+    ".claude/settings.json: \"repo\": \"thewoolleyman/livespec-driver-claude\","
+   ]
+  }
+ },
+ "1password-env-wrapper": {
+  "group": "outside",
+  "counts": {},
+  "examples": {}
+ },
+ "petri": {
+  "group": "outside",
+  "counts": {},
+  "examples": {}
+ },
+ "fabro": {
+  "group": "outside",
+  "counts": {},
+  "examples": {}
+ },
+ "sandbox-driver-kubernetes": {
+  "group": "outside",
+  "counts": {
+   "G-code/workflow other (review)": 1
+  },
+  "examples": {
+   "G-code/workflow other (review)": [
+    "src/bin/proof.rs: image: \"ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-agent-v1.93.5\".to_owned(),"
+   ]
+  }
+ }
+}

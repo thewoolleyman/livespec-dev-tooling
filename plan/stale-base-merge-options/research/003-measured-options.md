@@ -10,6 +10,19 @@ unavailable: the account is personal (maintainer, 2026-11-12, twice). It appears
 
 Window: 2026-10-15T00:00Z to 2026-11-12T00:00Z (28 days) unless stated.
 
+**Data and scripts.** Everything is committed under `data/2026-11-12/` next to this note. The scripts are stored as
+`*.py.txt`, so the repository's Python gates do not treat analysis scripts as product code; run them as
+`python3 <name>.py.txt`.
+- `fetch.py` pulls the raw gh API dumps of merged PRs and `ci.yml` runs.
+- `analyze.py` writes `rows/<repo>.rows.json` (one row per merged PR: head-CI start and end, merge time, behind count,
+  merge commit) and `summary.json`.
+- `episodes.py` writes `summary2.json` (M4) and reads `rows/<repo>.master-runs.json`.
+- `overlap.py` writes `summary3.json` (M5).
+- `batch_sim.py` runs the batching replay, with a failure-rate parameter.
+- `classify.py` writes `refs.json` (note 004).
+
+The raw dumps themselves are not committed: `fetch.py` regenerates them in about 20 minutes.
+
 ### M1. Merge cadence (gh API, merged pull requests)
 
 | Repository | Merged PRs | Per day | Peak day | Peak hour | Hours with 3 or more merges | Median gap between merges |
@@ -55,6 +68,14 @@ with behind ≥ 1 merged a combination that no CI run ever tested. Source: gh AP
 The `github-ci` export carries master push runs; it carries `pull_request` runs only for the console repository. The PR
 gate equals the master gate (livespec NFR §"CI as a merge gate", "PR gate ≡ master gate"), so the per-run master cost
 is used as the cost of a PR re-run.
+
+**Why the 14-day total is larger than runs × runner-minutes.** Query `dq5Vp19xjc8` sums job spans over ALL 990
+dev-tooling push runs: 33,118 runner-minutes. That includes runs the B' master-push group cancelled partway, so they
+reach no `ci-green`. The per-run figure (`m9QwWrm8ruz`) divides over the 657 runs that DID reach `ci-green`:
+657 × 33.31 = 21,885. The difference, about 11,200 runner-minutes in 14 days, is spend on runs that never produced a
+verdict. That is the same superseded-run waste plan ci-runtime-and-cost measured on 2026-11-09. The baseline below uses
+the larger, all-runs total because that is what the runners actually spent. The per-run figure is used to price
+re-runs, because a queue re-run is a run that completes.
 
 **Baseline for scale (28 days).**
 - livespec-dev-tooling: 2,337 PR CI runs × 33.31 + master 2 × 33,118 (Honeycomb `dq5Vp19xjc8`, 14 d) ≈ **144,000
@@ -142,6 +163,30 @@ two shapes:
 | overseer | 45 | 630 | under +5% | 1 / 1 / 4 | ≈0 / 8 min |
 | livespec | 17 | 165 | under +5% | 1 | ≈0 |
 
+**Sensitivity: when batches fail.** The table above assumes every batch passes. `batch_sim.py` adds a per-PR failure
+probability `p`: a failed batch is bisected into halves, and each half is one more CI run. Two values of `p` were
+measured on the same 28 days:
+- the per-run failure rate of master push runs (`rows/<repo>.master-runs.json`): failures over completed verdicts,
+  3.3% for dev-tooling (44 of 1,333) and 2.4% for the orchestrator (40 of 1,646). This is the best proxy for green
+  code failing CI: flakes, infrastructure and semantic conflicts;
+- the PR CI failure rate: 11.3% for dev-tooling (262 of 2,318) and 6.8% for the orchestrator (186 of 2,750). It is an
+  upper bound, because it includes PRs that were genuinely red, which never enter a queue.
+
+| Repository | p | Extra runner-minutes | Added latency p50 / p90 / max |
+|---|---|---|---|
+| livespec-dev-tooling | 0 | 14,890 | 18 min / 112 min / 6.1 h |
+| livespec-dev-tooling | 3% | 14,790 | 20 min / **4.1 h** / 11.1 h |
+| livespec-dev-tooling | 5% | 14,756 | 23 min / **6.1 h** / 10.8 h |
+| livespec-dev-tooling | 11.3% (upper bound) | 17,954 | **16 h / 95 h**: the single lane backs up |
+| orchestrator | 0 | 40,020 | 8 min / 66 min / 2.9 h |
+| orchestrator | 3% | 40,825 | 8 min / 75 min / 4.3 h |
+| orchestrator | 6.8% (upper bound) | 41,135 | 9 min / 99 min / 9.8 h |
+
+The CI cost barely moves. The **tail latency** does, sharply on dev-tooling. A single-lane batching queue on
+dev-tooling is fragile to its own flake rate. It needs either parallel test lanes, which GitHub's merge queue provides
+as "build concurrency" and which this replay does not model, or a lower flake rate. The +8-18 min median in the
+comparison below holds; the p90 there should be read as 1.3-6 h on dev-tooling at measured failure rates.
+
 What building it would take:
 - one stateless module plus a hosted-runner shim, in the reconciler's mould;
 - CI on its staging ref;
@@ -168,7 +213,7 @@ known answer to "fragile", and it is real engineering.
 | bors-ng | — | — | Staging-branch batches | **Archived** 2024-04-04; makes merge commits (breaks linear history) |
 | Bulldozer, Mergeable | — | — | Do not test the combined result | Not a fix |
 | Prow Tide, Zuul | — | free | Bring their own CI system | Too heavy |
-| GitHub merge queue | **No**: organization-only | — | — | **Excluded** (maintainer, 2026-11-12) |
+| GitHub merge queue | **No** on a personal account. GitHub documents it for PUBLIC repositories owned by an ORGANIZATION, on any plan; only private org repositories need Enterprise Cloud | $0 for public org repositories | Temp branch `gh-readonly-queue/*`, `merge_group` event, parallel groups ("build concurrency"), fast-forwards the tested commit | Excluded on the current account (maintainer, 2026-11-12). Fact recorded, not a recommendation: an org transfer would make it available. The transfer costs (URLs, marketplaces, a new org App, ARC re-registration, secrets, GHCR) are measured in note 004 |
 
 Mergify is the only tool that is free for us and implements the batching train of (b). It costs (b)'s CI and latency
 without building (b). Its two unknowns can only be settled by trying it, and the try is reversible:
@@ -206,14 +251,19 @@ without building (b). Its two unknowns can only be settled by trying it, and the
 | 0. Status quo plus the finished reconciler | No; shortens them | none | none | option A, then 2 adoptions | reverts the culprit |
 | 1. `strict` plus eager updater | Yes | **11-30× today's total** | p90 15-201 h | small bot | stalls |
 | 2. `strict` plus lazy updater (= serializer, = Kodiak) | Yes | +23-25% | **p50 up to 31 h; the line never drains** | small bot | stalls |
-| 3. Self-built batching train | Yes, except bisection misses | **+10-15%** | **p50 +8-18 min, p90 +66-112 min** | large: a new stateless service | halts (by design) |
+| 3. Self-built batching train | Yes, except bisection misses | **+10-15%** | **p50 +8-18 min, p90 +66-112 min** if every batch passes; p90 1.3-6 h on dev-tooling at measured failure rates | large: a new stateless service | halts (by design) |
 | 4. Mergify (free) batching queue | Yes, as 3 | as 3 (+10-15%) | as 3 | small: config, a ruleset bypass, and retiring auto-enable-merge for those repositories | manual or API pause; the reconciler can call it |
 | 5. Overlap-gated re-test | Barely (3 of 44 episode starts) | +1-2% | small | medium | — |
 
 On the quiet repositories (overseer, livespec and the six smaller ones), 1-11% of merges are behind and red episodes
 from this cause are rare. Every option is either cheap or pointless there, so this is a two-repository problem.
 
-## Recommendation
+## Recommendation (as first written; superseded, see below)
+
+> **Superseded 2026-11-12 ~19:0xZ.** The maintainer disfavoured third-party tools in the merge path (scope event on
+> livespec-dev-tooling-xowhol). The seat then recommended option 3, and then, after the maintainer asked about GitHub's
+> own queue, a fleet move to an organization with GitHub's merge queue, subject to the two checks of note 004. The
+> maintainer has not chosen a direction. The original text is kept below for the record.
 
 **Pilot Mergify's free merge queue in batch mode on livespec-dev-tooling, keep red-master-self-healing as the backstop
 by filing option A, and extend the queue to the orchestrator only if the pilot holds its numbers.**
@@ -281,5 +331,5 @@ belongs to red-master-self-healing (zcp5vb), not to this plan's queue decision.
   runs.
 - Third-party facts are from vendor pages read 2026-11-12, and none of them states personal-account support. Only an
   install settles it.
-- The working data (scripts and per-PR rows) are in this seat's session scratchpad and are not committed. They can be
-  regenerated from the gh API in about 20 minutes with the method above.
+- The scripts and per-PR rows are committed under `data/2026-11-12/`. The raw gh API dumps are not; `fetch.py`
+  regenerates them.
