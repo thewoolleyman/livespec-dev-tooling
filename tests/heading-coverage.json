@@ -2677,9 +2677,8 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: drift reports a Fabro instance whose resolved setting differs from its declaration",
-    "test": "TODO",
-    "reason": "A real test at the integration tier or above is owed for this scenario: the fabro-hosts drift comparison run against a fake settings endpoint whose resolved value for a declared setting differs from the host_vars mapping, asserting the instance, setting and both values are reported as drift, the endpoint is not written, and an unreachable endpoint is reported as unreachable. livespec-dev-tooling-po2nrg owns it.",
-    "work_item": "livespec-dev-tooling-po2nrg"
+    "test": "tests.consumer.test_fabro_settings_drift_scenario",
+    "reason": "Consumer-tier integration test runs the fabro_server role's committed settings-endpoint tasks against a recording local endpoint. It proves a declared resolved-value mismatch reports the instance, setting and both values; an endpoint-only default produces no drift; and a 503 is named unreachable while the recording endpoint sees only GET requests (livespec-dev-tooling-po2nrg)."
   },
   {
     "spec_root": "SPECIFICATION",

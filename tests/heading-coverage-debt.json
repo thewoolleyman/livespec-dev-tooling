@@ -1479,13 +1479,6 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario: drift reports a Fabro instance whose resolved setting differs from its declaration",
-    "work_item": "livespec-dev-tooling-po2nrg",
-    "first_seen": "2026-11-05"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
     "heading": "## Scenario: every k3s pool node's load is visible and a silent node fires its dead-man",
     "work_item": "livespec-dev-tooling-uftb4o",
     "first_seen": "2026-10-24"
