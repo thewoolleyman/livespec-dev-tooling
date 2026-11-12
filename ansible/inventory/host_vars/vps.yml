@@ -207,16 +207,17 @@ storage_reclaim_checkout_roots: /data/projects
 # (roles/incident_observer/README.md), and the two Fabro instances' fronts,
 # declared like gmktec-xubuntu's (livespec-dev-tooling-jxw2ve). The role is
 # additive and touches only the ports declared here, so this host's other
-# hand-made mappings (8010, 8443) are left as they are. The 32276 and 32277
-# fronts point at the instances parked above. livespec-dev-tooling-gxepwl
-# retires them through tailscale_serve_retired_ports once that key lands.
+# hand-made mappings (8010, 8443) are left as they are.
 tailscale_serve_mappings:
-  - https_port: 32276
-    backend: http://127.0.0.1:32276
-  - https_port: 32277
-    backend: http://127.0.0.1:32277
   - https_port: 8765
     backend: http://127.0.0.1:8765
+# RETIRED 2026-11-12 (livespec-dev-tooling-gxepwl): the 32276 and 32277 fronts of
+# the two Fabro instances parked above. Each port the node still serves is turned
+# off with `tailscale serve --https=<port> off`. To bring an instance back, move
+# its port from this list back into tailscale_serve_mappings.
+tailscale_serve_retired_ports:
+  - 32276
+  - 32277
 
 # --- vnc_desktop ---
 vnc_desktop_tailscale_ip: 100.89.189.118
