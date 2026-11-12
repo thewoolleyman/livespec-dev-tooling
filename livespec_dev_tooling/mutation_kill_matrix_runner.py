@@ -7,7 +7,8 @@ surface and runs no language model and no network service.  One run:
 1. generates, measures and plans (see `mutation_kill_matrix_stages`): the
    mutant catalogue (generated only, never `mutmut run`), per-test coverage
    with the baseline failures it reveals, and each mutant's selected tests
-   and cache key;
+   and cache key; a measurement stored for an unchanged tree is reused
+   instead of measured again (see `mutation_kill_matrix_measurement`);
 2. reuses every cached outcome whose inputs are unchanged (see
    `mutation_kill_matrix_cache`);
 3. runs every other mutant in a worker's private copy of the target, all of
@@ -38,6 +39,12 @@ from livespec_dev_tooling.mutation_kill_matrix_cache import CachedOutcome, load_
 from livespec_dev_tooling.mutation_kill_matrix_changes import build_changes
 from livespec_dev_tooling.mutation_kill_matrix_checkpoint import Checkpoint
 from livespec_dev_tooling.mutation_kill_matrix_execution import CommandExecutor, execute_command
+from livespec_dev_tooling.mutation_kill_matrix_measurement import (
+    Measurement,
+    measurement_key,
+    measurement_path,
+    reuse_or_measure,
+)
 from livespec_dev_tooling.mutation_kill_matrix_pool import run_pending
 from livespec_dev_tooling.mutation_kill_matrix_selection import (
     COVERAGE_GUIDED_METHOD,
@@ -82,6 +89,7 @@ class RunOptions:
     cache_path: Path | None = None
     previous_report: Path | None = None
     workspace: Path | None = None
+    checkpoint_seconds: float = 300.0
 
 
 def source_revision(*, target: Path) -> str:
@@ -113,6 +121,16 @@ def _write_outputs(
         )
 
 
+def _measured(
+    *, execute: CommandExecutor, target: Path, tests: list[str], timeout: float
+) -> Measurement:
+    """Run the measure stage and name its two results."""
+    coverage, baseline_failures = measure(
+        execute=execute, target=target, tests=tests, timeout=timeout
+    )
+    return Measurement(coverage=coverage, baseline_failures=baseline_failures)
+
+
 def run_kill_matrix(
     *,
     target: Path,
@@ -123,9 +141,20 @@ def run_kill_matrix(
     """Run each mutmut mutant against the tests that execute it and write one report."""
     options = options or RunOptions()
     generated, tests = generate(execute=execute, target=target)
-    coverage, baseline_failures = measure(
-        execute=execute, target=target, tests=tests, timeout=options.per_test_timeout
+    measurement = reuse_or_measure(
+        path=measurement_path(cache_path=options.cache_path),
+        key=measurement_key(
+            target=target,
+            tests=tests,
+            engine_version=ENGINE_VERSION,
+            timeout=options.per_test_timeout,
+            execute=execute,
+        ),
+        measure=lambda: _measured(
+            execute=execute, target=target, tests=tests, timeout=options.per_test_timeout
+        ),
     )
+    coverage, baseline_failures = measurement.coverage, measurement.baseline_failures
     plans = plan_mutants(
         execute=execute,
         target=target,
@@ -152,6 +181,7 @@ def run_kill_matrix(
             if plan.mutant.identifier in reused
         },
         total=len(pending),
+        every_seconds=options.checkpoint_seconds,
     )
     outcomes = reused | run_pending(
         execute=execute,
