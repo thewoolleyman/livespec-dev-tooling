@@ -82,30 +82,11 @@ helm upgrade --install poweredge-xubuntu-k3s \
   -f "${SCRIPT_DIR}/arc/values-host-unique.yaml" \
   oci://ghcr.io/actions/actions-runner-controller-charts/gha-runner-scale-set
 
-# ---------------------------------------------------------------------------
-log "2b. Install/upgrade each homelab worker's host-unique arm64 runner scale set"
-# One release per arc/values-<host>-homelab-worker.yaml (plan
-# homelab-k8s-worker-nodes, research/009): runner pods only on that worker,
-# listener on the fleet's amd64 nodes, minRunners 0. CI reaches the worker only
-# after an operator lifts its admission hold. Each set runs in the fleet's
-# container mode, so its values name the hook pod template revision: publish
-# that revision (idempotent) and render the placeholder, as the phase-2
-# converge does for the fleet sets.
-hook_converge="${SCRIPT_DIR}/phase2/arc/converge-hook-pod-template.sh"
-rendered_dir="$(mktemp -d)"
-trap 'rm -rf "$rendered_dir"' EXIT
-for values in "${SCRIPT_DIR}"/arc/values-*-homelab-worker.yaml; do
-  [ -e "$values" ] || continue
-  release="$(basename "$values" .yaml)"
-  release="${release#values-}-k3s"
-  "$hook_converge" --publish
-  "$hook_converge" --render-values "$values" "$rendered_dir/${values##*/}"
-  helm upgrade --install "$release" \
-    --namespace "$RUNNERS_NAMESPACE" --create-namespace \
-    --version "$ARC_CHART_VERSION" \
-    -f "$rendered_dir/${values##*/}" \
-    oci://ghcr.io/actions/actions-runner-controller-charts/gha-runner-scale-set
-done
+# The homelab workers' host-unique arm64 sets (step 2b here until 2026-11-12)
+# are installed and kept current by phase2/reconstruct/converge-ci-stack.sh
+# step 7, from phase2/arc/worker/values-*-homelab-worker.yaml. This script ran
+# only at first install, so a set it installed kept the hook-template revision
+# of that day through every later hook change.
 
 # ---------------------------------------------------------------------------
 log "3. Verify the scale set is healthy (minRunners: 0 is expected — no idle pods yet)"
