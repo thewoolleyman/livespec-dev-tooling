@@ -24,12 +24,16 @@ of Done.
 
 from __future__ import annotations
 
+import json
+import os
 import re
+import subprocess
+import tempfile
+import textwrap
 from pathlib import Path
 
-import jinja2
-
 _REPO_ROOT = Path(__file__).resolve().parents[2]
+_JUSTFILE = _REPO_ROOT / "justfile"
 _PLAY = _REPO_ROOT / "ansible" / "dev-host.yml"
 _ROLE = _REPO_ROOT / "ansible" / "roles" / "otel_collector"
 _DEFAULTS = _ROLE / "defaults" / "main.yml"
@@ -54,6 +58,7 @@ _SYSTEMD_UNIT_DIRECTORY = "/etc/systemd/system/"
 
 _DRIFT_COMMAND = "just ansible-drift ansible/dev-host.yml --tags otel_collector"
 _APPLY_COMMAND = "just ansible-apply ansible/dev-host.yml --tags otel_collector"
+_ANSIBLE_CORE_PIN = re.compile(r"ansible-core==[0-9][0-9A-Za-z.]*")
 
 
 def _task_blocks(*, body: str) -> list[str]:
@@ -79,23 +84,58 @@ def _task(*, name: str) -> str:
 
 
 def _render_pods_endpoint(*, flannel_subnet: str, override: str = "") -> str:
-    """Render the role's exact endpoint expression for one node's flannel fact."""
+    """Render the role's exact expression through the pinned Ansible engine."""
     task = _task(name="Name the OTLP pods endpoint for this node")
     expression = task.split("otel_collector_otlp_pods_endpoint_effective: >-\n", 1)[1].split(
         "\n  when:", 1
     )[0]
-    environment = jinja2.Environment(undefined=jinja2.StrictUndefined, autoescape=False)
-    environment.filters["regex_replace"] = lambda value, pattern, replacement: re.sub(
-        pattern, replacement, value
-    )
-    return (
-        environment.from_string(expression)
-        .render(
-            otel_collector_otlp_pods_endpoint=override,
-            otel_collector_flannel_subnet_read={"stdout": f"FLANNEL_SUBNET={flannel_subnet}"},
+    pin = _ANSIBLE_CORE_PIN.search(_JUSTFILE.read_text(encoding="utf-8"))
+    assert pin is not None, "just ansible-apply must pin ansible-core exactly"
+
+    with tempfile.TemporaryDirectory() as temporary:
+        root = Path(temporary)
+        rendered = root / "endpoint"
+        play = root / "render.yml"
+        play.write_text(
+            "---\n"
+            "- hosts: localhost\n"
+            "  gather_facts: false\n"
+            "  vars:\n"
+            f"    otel_collector_otlp_pods_endpoint: {json.dumps(override)}\n"
+            "    otel_collector_flannel_subnet_read:\n"
+            f"      stdout: {json.dumps(f'FLANNEL_SUBNET={flannel_subnet}')}\n"
+            "  tasks:\n"
+            "    - name: Render the committed endpoint expression\n"
+            "      ansible.builtin.set_fact:\n"
+            "        rendered_endpoint: >-\n"
+            f"{textwrap.indent(textwrap.dedent(expression).strip(), '          ')}\n"
+            "    - name: Preserve the rendered endpoint for pytest\n"
+            "      ansible.builtin.copy:\n"
+            f"        content: '{{{{ rendered_endpoint }}}}'\n"
+            f"        dest: {json.dumps(str(rendered))}\n",
+            encoding="utf-8",
         )
-        .strip()
-    )
+        result = subprocess.run(
+            [
+                "uvx",
+                "--from",
+                pin[0],
+                "ansible-playbook",
+                "-i",
+                "localhost,",
+                "-c",
+                "local",
+                str(play),
+            ],
+            cwd=_REPO_ROOT,
+            capture_output=True,
+            text=True,
+            timeout=600,
+            check=False,
+            env=os.environ | {"ANSIBLE_NOCOWS": "1"},
+        )
+        assert result.returncode == 0, result.stdout + result.stderr
+        return rendered.read_text(encoding="utf-8")
 
 
 def test_one_committed_converge_carries_a_merged_config_to_the_running_service() -> None:
