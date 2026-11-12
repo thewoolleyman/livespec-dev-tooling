@@ -737,13 +737,6 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario: a lease PUT's latency is readable apart from every other API-server request",
-    "work_item": "livespec-dev-tooling-f5qjzn",
-    "first_seen": "2026-11-09"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
     "heading": "## Scenario: a lever armed by CI but missing from the committed lever source fails the parity check",
     "work_item": "livespec-dev-tooling-nxeg32",
     "first_seen": "2026-11-08"
