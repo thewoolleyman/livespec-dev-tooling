@@ -95,7 +95,7 @@ def test_an_admitted_job_starts_one_terminal_condition_watch() -> None:
     )
     assert calls[1][:3] == ("with-gates-kubeconfig", "sh", "-ceu")
     assert (
-        'kubectl --namespace "$namespace" get job "$job_name" --watch --output json --request-timeout "$timeout"'
+        'kubectl --namespace "$namespace" get job "$job_name" --watch --output json --timeout "$timeout"'
         in calls[1][3]
     )
     assert calls[1][4:] == ("await-gate-terminal-watch", "gate-widget-7f2qd", "gates", "600s")
@@ -106,7 +106,6 @@ def test_a_terminal_watch_stops_the_watcher_without_waiting_for_its_timeout(tmp_
     kubectl = tmp_path / "kubectl"
     kubectl.write_text(
         "#!/bin/sh\n"
-        'for argument in "$@"; do case "$argument" in --timeout*) exit 2 ;; esac; done\n'
         'printf \'%s\\n\' \'{"status": {"conditions": [{"type": "Complete", "status": "True"}]}}\'\n'
         "sleep 60\n",
         encoding="utf-8",

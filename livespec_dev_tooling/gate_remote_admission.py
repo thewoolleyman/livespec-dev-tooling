@@ -56,8 +56,8 @@ cleanup() {
 }
 trap cleanup EXIT
 mkfifo "$fifo"
-kubectl --namespace "$namespace" get job "$job_name" --watch --output json """
-    r"""--request-timeout "$timeout" >"$fifo" 2>"$stderr" &
+kubectl --namespace "$namespace" get job "$job_name" --watch --output json --timeout "$timeout" """
+    r""">"$fifo" 2>"$stderr" &
 watch_pid=$!
 if python3 -c '
 import json
