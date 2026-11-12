@@ -409,3 +409,49 @@ def test_a_non_gate_job_running_a_flag_prefixed_just_target_fails_naming_images(
     ]
     assert code == 1
     assert {str(record["image"]) for record in errors} == {_RUST_IMAGE, _FUZZ_IMAGE}
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "just check-fuzz check-lint",
+        "just --unstable check-fuzz check-lint",
+        "just check-fuzz check-test && echo done",
+    ],
+)
+def test_a_non_gate_job_running_a_later_recipe_of_one_just_invocation_fails_naming_images(
+    *,
+    command: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    source = "jobs:\n" + _job(name="check", container=_block(image=_RUST_IMAGE))
+    source += _job(name="fuzz", container=_block(image=_FUZZ_IMAGE)).replace(
+        "      - run: true", f"      - run: {command}"
+    )
+    _write_ci(root=tmp_path, body=source)
+    _write_justfile(root=tmp_path, targets=("check-lint", "check-test"))
+    monkeypatch.chdir(tmp_path)
+
+    code = _check().main()
+
+    errors = [
+        record for record in _records(stderr=capsys.readouterr().err) if record["level"] == "error"
+    ]
+    assert code == 1
+    assert {str(record["image"]) for record in errors} == {_RUST_IMAGE, _FUZZ_IMAGE}
+
+
+def test_a_non_gate_job_whose_just_recipes_are_all_off_the_aggregate_passes(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = "jobs:\n" + _job(name="check", container=_block(image=_RUST_IMAGE))
+    source += _job(name="fuzz", container=_block(image=_FUZZ_IMAGE)).replace(
+        "      - run: true", "      - run: just check-fuzz check-fuzz-report | tee out.txt"
+    )
+    _write_ci(root=tmp_path, body=source)
+    _write_justfile(root=tmp_path, targets=("check-lint", "check-test"))
+    monkeypatch.chdir(tmp_path)
+
+    assert _check().main() == 0
