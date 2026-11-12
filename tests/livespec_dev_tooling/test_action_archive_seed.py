@@ -653,7 +653,12 @@ def test_wait_for_actions_record_reports_a_timeout(
 
 
 def _post_start(
-    *, root: Path, seeded: bool, switch: str = "", detached_delay_seconds: int = 0
+    *,
+    root: Path,
+    seeded: bool,
+    switch: str = "",
+    detached_delay_seconds: int = 0,
+    write_actions_record: bool = True,
 ) -> dict[str, str]:
     template = _TEMPLATE.read_text(encoding="utf-8")
     block = re.search(
@@ -682,6 +687,12 @@ def _post_start(
         script = script.replace(
             "(\n",
             f"(\nsleep {detached_delay_seconds}\n",
+            1,
+        )
+    if not write_actions_record:
+        script = script.replace(
+            'rec actions "$actions_hit" "$actions_gen" "$(ms)" 0 reflink-seed "$actions_err"',
+            ":",
             1,
         )
     hook = root / "post-start.sh"
@@ -740,6 +751,28 @@ def test_post_start_waits_for_a_loaded_workers_delayed_actions_record(tmp_path: 
     """A delayed detached child still records its actions-tier hit."""
     row = _post_start(root=tmp_path, seeded=True, detached_delay_seconds=11)
     assert row["tier"] == "actions"
+
+
+def test_post_start_names_the_deadline_and_record_path_when_actions_are_missing(
+    *, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A missing detached actions row is an actionable assertion, not a file read error."""
+    ticks = iter((0.0, 30.1))
+    monkeypatch.setattr(time, "monotonic", lambda: next(ticks))
+    monkeypatch.setattr(time, "sleep", lambda _: pytest.fail("the wait should time out first"))
+
+    with pytest.raises(AssertionError, match=r"30-second deadline: .*warm-copy\.tsv"):
+        _post_start(root=tmp_path, seeded=False, write_actions_record=False)
+
+
+def test_wait_for_actions_record_returns_immediately_for_an_existing_actions_row(
+    *, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    recorded = tmp_path / "warm-copy.tsv"
+    recorded.write_text("0\tactions\ttrue\n", encoding="utf-8")
+    monkeypatch.setattr(time, "sleep", lambda _: pytest.fail("an existing row must not sleep"))
+
+    assert _wait_for_actions_record(recorded=recorded) is True
 
 
 def test_every_values_file_starts_the_runner_through_the_entry_point() -> None:
