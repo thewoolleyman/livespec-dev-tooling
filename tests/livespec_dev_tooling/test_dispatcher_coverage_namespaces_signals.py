@@ -377,3 +377,31 @@ def test_reclaim_carries_on_when_a_namespace_vanishes_before_its_age_is_read(
     reclaim(root=tmp_path)
 
     assert not vanishing.exists()
+
+
+@pytest.mark.parametrize("failure", ["permission denied", "unparsable"])
+def test_reclaim_leaves_a_namespace_whose_recorded_creator_cannot_be_observed(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, failure: str
+) -> None:
+    """Only a positively non-matching or vanished creator is reclaimable, never an unobservable one."""
+    assert hasattr(namespaces, "reclaim_abandoned_namespace_dirs")
+    reclaim = namespaces.reclaim_abandoned_namespace_dirs
+    namespace_dir = tmp_path / "covns-unobservable"
+    namespace_dir.mkdir()
+    _write_creator_record(
+        namespace_dir=namespace_dir, creator={"pid": os.getpid(), "start_time": "recorded"}
+    )
+    original_read_text = namespaces.Path.read_text
+
+    def read_text(path: Path, *, encoding: str) -> str:
+        if not str(path).startswith("/proc/"):
+            return original_read_text(path, encoding=encoding)
+        if failure == "permission denied":
+            raise PermissionError(path)
+        return "not a proc stat record"
+
+    monkeypatch.setattr(namespaces.Path, "read_text", read_text)
+
+    reclaim(root=tmp_path)
+
+    assert namespace_dir.is_dir()
