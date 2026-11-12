@@ -18,6 +18,16 @@
 #   never reaches its install half.
 # - factory_kubeconfig installed no unit. It is simply no longer applied, and its
 #   host_vars section is gone.
+# - RETIRED through ROLE PARAMETERS here (bd-ib-iud52v, the legacy Fabro carrier
+#   retirement, 2026-11-12): the DOCKER-store sandbox image warm
+#   (livespec-sandbox-image-warm.timer and .service). It is a role parameter and
+#   NEVER a host_vars value, because ci-pool.yml applies two CONTAINERD warms of
+#   the same role to hp, and a host_vars `absent` would retire them too. Apply
+#   with --tags sandbox_image_warm_docker_retire.
+# - tailscale_serve turns off the serve ports a host names in
+#   tailscale_serve_retired_ports: hp's hand-made legacy Fabro :32276, :32277 and
+#   :32278, still served with no Fabro server behind them. It publishes nothing
+#   here. Apply with --tags tailscale_serve.
 #
 # Run a drift report BEFORE any apply, and read it for k3s-agent and the
 # /srv/sandbox-storage mount. Neither may change here.
@@ -39,3 +49,9 @@
       tags: [storage_reclaim]
     - role: container_reclaim
       tags: [container_reclaim]
+    - role: sandbox_image_warm
+      tags: [sandbox_image_warm_docker_retire]
+      sandbox_image_warm_store: docker
+      sandbox_image_warm_state: absent
+    - role: tailscale_serve
+      tags: [tailscale_serve]

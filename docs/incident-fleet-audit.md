@@ -76,14 +76,72 @@ ready on its own. `just incident-enable` runs its own fresh audit and writes
 `~/.local/state/livespec/incident-enabled/<owner>__<repo>.json` only for a ready repository; it
 refuses, naming the missing evidence (or the unauthenticated-manifest finding), for any other.
 
+## The committed claims
+
+`config/incident-fleet-evidence.json` holds only claims backed by something read from the fleet
+(`livespec-dev-tooling-v46q5g`, `livespec-dev-tooling-ri2lwi`). Each claim names its disposition,
+owner, proof reference and the serving build read for its capability on the day its proof names,
+bound to core's manifest `59912fe1…`. A claim goes stale when that build moves (a pin bump, a
+plugin update, a release that touches a release-keyed surface) or when core's manifest changes;
+its row then prints `unclassified` and the finding names the build the claim expected against the
+one read. Refresh the claim from a new read; never copy the new serving value in without re-reading
+what it proves. `tests/livespec_dev_tooling/test_incident_fleet_committed_claims.py` pins the claim
+set, its binding to the committed manifest identity (fixture
+`tests/livespec_dev_tooling/fixtures/incident_fleet/core-fleet-manifest.jsonc`) and each release
+build as the serving form of a named release tag, so a refresh updates that test with the file.
+
+Eleven claims: one `implemented` and ten `not-applicable`.
+
+- `Normal master context` for this library (gate-reader capability, release-keyed, `v1.198.0`),
+  `implemented`. Incident chain `livespec-dev-tooling-t26bbr` landed two expedited commits on
+  master, and each master push still ran the complete normal job graph with the incident flags
+  forced absent. The same-item unexpedited factory repayment livespec-dev-tooling#4204 then merged
+  on full checks and removed the repair marker, and `complete-incident` closed the chain at
+  generation 19. The surface's five files are byte-identical from `v1.195.0` through `v1.198.0`.
+  The claim's `proof_ref` names the runs, commits and reads.
+
+- `Generated projects` for this library (release-keyed, `v1.198.0`) and, at this library's
+  templates `v1.197.0` (the one release every pin of its reusable workflows and composite actions
+  names in their default-branch workflows, read 2026-11-12), for `livespec-console-beads-fabro`,
+  `livespec-driver-claude`, `livespec-driver-codex`, `livespec-driver-pi`, `livespec-overseer` and
+  `livespec-runtime`. Each default-branch tree holds no `copier.yml`, `.copier-answers.yml` or
+  `.jinja` path. Core's `copier.yml` scaffolds `livespec-impl-*` orchestrator plugin repositories,
+  and the two fleet repositories generated from it, `livespec-orchestrator-beads-fabro` and
+  `livespec-orchestrator-git-jsonl`, each carry a `.copier-answers.yml`.
+- `Focused test selection`, `Touched-file coverage` and `Full coverage producers/consumers` for
+  `hetzner-xubuntu-info`, at the gate readers its dev-host `.venv` records (`v1.195.0`): it has no
+  test file and runs neither pytest nor coverage, locally or in CI.
+
+Every other row stays `unclassified`, and the findings name each row's missing evidence: no
+committed claim, a claim bound to another manifest identity, a malformed claim, a claim for a
+runtime surface of an instruction-only adopter, an unreadable serving version, a release build that
+is not the serving version read, a serving version an independent re-read did not confirm, or a
+release-keyed reason above. The reasons behind those rows, measured on 2026-11-11:
+
+- **Not adopted yet.** No installed plugin build (core, the Claude driver, the orchestrator) carries
+  incident guidance, and no consumer other than this library, core, the orchestrator, the overseer
+  and the Codex driver references the flag. A row is `deliberately-normal` only when someone rules
+  that it is, and no ruling exists. Not having adopted the feature yet is not that ruling.
+- **No `implemented` claim.** One needs the incident item, the cumulative scope digest and the
+  normal factory proof of an incident that exercised the surface, read from that incident's record.
+  This file commits one, for this library's `Normal master context`. No other surface has an
+  incident record that exercised it.
+- **Open carriers in this library.** The controller and recovery rows that this library could
+  classify each have an open carrier or a proof the observer docs still owe. These are First-failure
+  observer (`q6eyrr`, `jpfdcx`), Existing reconciler coordination (`ariayn`), Failed-run retention
+  (`zapgpu`), Workflow-edit authorization (`j2rdde`), Emergency revert and merge authority
+  (`fdquen`), and Recovery dependency independence and Late regression/cleanup (the outage and
+  recovery drills `docs/incident-observer.md` lists as still required). Operator factory routing is
+  in the overseer's installed prose but not in the orchestrator's plan, implement or drive prose.
+- **Unreadable serving builds.** A row whose capability reads `-` cannot classify whatever it
+  claims. This covers every recovery-authorization and independent-controller row outside this
+  library, the template rows of `dolt-server`, `hetzner-xubuntu-info`, `homelab`, `openbrain` and
+  `resume`, and five of the seven instruction-only adopters, whose enabled plugins are not
+  installed for their clones on this host. The other two, `local-llm` and `vps-info`, read a
+  driver-hooks build, but that build carries no incident guidance.
+
 ## Not done by this item
 
-- **Committed claims.** `config/incident-fleet-evidence.json` is empty. Authoring the claims for
-  15 applicable consumers across 37 surfaces and 2 guidance surfaces for each of 7 instruction-only
-  adopters needs per-row proof references read from the installed fleet; it is carried by
-  `livespec-dev-tooling-v46q5g`.
-  Until then every row prints `unclassified`, the per-capability `serving` lines still print the
-  version read for every consumer, and the ready list is empty.
 - **Resolver enforcement.** The incident execution resolver does not yet consult the enablement
   record, so `EXPEDITED_INCIDENT_RESPONSE=1` in a repository that was never enabled is not refused
   by it. Where the record lives so that every resolver (dev host, CI runner, controller host) can

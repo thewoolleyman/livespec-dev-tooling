@@ -106,7 +106,22 @@ capture() {
   echo ":: gate-repro: ${stamp} captured $(wc -l < "${out}/log-${stamp}.txt") log lines of ${job}"
 }
 
-( cd "${TOOLING_ROOT}" && exec mise exec -- uv run python -m livespec_dev_tooling.gate_repro \
+# THE CLIENT RUNS FROM A BUILT, NON-EDITABLE INSTALL OF THIS CHECKOUT, not
+# from its editable venv. The client finds its shipped helper scripts (the
+# private-sibling token minter above all) inside the gated repository first and
+# then beside its own installed package, under livespec_dev_tooling/gates/. That
+# directory exists only in a built wheel, which force-includes it. In a source
+# checkout it is absent, so the first run against livespec-orchestrator-beads-fabro,
+# which names a private sibling, stopped before submitting anything with
+# `mint-private-sibling-token: ... No such file or directory` (2026-11-12 02:41Z).
+# `--with <checkout>` builds and installs this checkout as a wheel. The Python
+# version is the one the checkout pins. `python -I` is load-bearing: this runs
+# from the checkout root, and a plain `python -m` puts the working directory
+# first on sys.path, which imports the SOURCE package (no gates/ directory)
+# instead of the wheel.
+( cd "${TOOLING_ROOT}" && exec mise exec -- uv run --no-project --isolated \
+    --python "$(cat "${TOOLING_ROOT}/.python-version")" --with "${TOOLING_ROOT}" \
+    python -I -m livespec_dev_tooling.gate_repro \
     --repo-root "${repo_root}" --renderer "${RENDERER}" \
     --queue "${queue}" --stack-interval "${interval}" ) > "${out}/client.log" 2>&1 &
 client=$!

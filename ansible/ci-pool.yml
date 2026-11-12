@@ -209,6 +209,10 @@
     # 2/10 — inotify, keyring and netlink receive-buffer sysctls (one role covers all three).
     - role: node_sysctl
       tags: [node_sysctl]
+    # 2a/10 — tso off on flannel.1 where the NIC mis-segments VXLAN TCP (bnx2x
+    # today, i.e. poweredge). Ungated: the role self-gates on the NIC driver.
+    - role: vxlan_tunnel_tso
+      tags: [vxlan_tunnel_tso]
     # 2b/10 — storage layout (mount the LABEL-ed tiers; no-op when live). Gated:
     # this role's whole subject is the three LABEL-keyed tiers and the two binds
     # onto them, and it REFUSES an apply at its first label resolution on a node
