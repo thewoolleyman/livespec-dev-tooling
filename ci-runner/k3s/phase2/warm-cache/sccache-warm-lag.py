@@ -52,15 +52,19 @@ def transition(
 
     `unvisited` means the run stopped before a cache-record read; `unreadable`
     means the read was attempted but unavailable.  Every other non-success,
-    non-busy outcome deliberately ends only the busy streak.
+    non-busy outcome (a failed, refused or unwritable build) read the record,
+    so it ends the busy streak and keeps any recorded lag start, but starts the
+    lag when the record it read is stale or missing and none is recorded yet.
     """
     old = _previous(state=previous)
-    cache_record_commit = record["cache_record_commit"]
-    cache_record_toolchain = record["cache_record_toolchain"]
+    cache_record_commit = record.get("cache_record_commit")
+    cache_record_toolchain = record.get("cache_record_toolchain")
     if outcome == "unvisited":
         return old
     if outcome == "unreadable":
         return {**old, "consecutive_skipped_busy": 0}
+    record_default_branch_commit = record.get("default_branch_commit")
+    checkout_toolchain = record.get("checkout_toolchain")
     record = {
         "last_built_commit": cache_record_commit,
         "last_built_toolchain": cache_record_toolchain,
@@ -71,10 +75,23 @@ def transition(
             **record,
             "lag_started_at_epoch": None,
         }
+    stale = (
+        cache_record_commit is None
+        or cache_record_toolchain is None
+        or cache_record_commit != record_default_branch_commit
+        or cache_record_toolchain != checkout_toolchain
+    )
+    lag_start = old["lag_started_at_epoch"]
+    if lag_start is None and stale:
+        lag_start = run_started_at_epoch
     if outcome == "busy":
         return {
             "consecutive_skipped_busy": old["consecutive_skipped_busy"] + 1,
             **record,
-            "lag_started_at_epoch": old["lag_started_at_epoch"] or run_started_at_epoch,
+            "lag_started_at_epoch": lag_start,
         }
-    return {**old, **record, "consecutive_skipped_busy": 0}
+    return {
+        "consecutive_skipped_busy": 0,
+        **record,
+        "lag_started_at_epoch": lag_start,
+    }
