@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import re
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 
 _VENDOR_DIR = Path(__file__).resolve().parent.parent / "_vendor"
@@ -38,6 +39,10 @@ if str(_VENDOR_DIR) not in sys.path:
     sys.path.insert(0, str(_VENDOR_DIR))
 
 import structlog  # noqa: E402  — vendor-path-aware import after sys.path insert.
+
+from livespec_dev_tooling.cross_repo.fabro_image_pin_rewrite import (  # noqa: E402
+    tag_version_component,
+)
 
 __all__: list[str] = []
 
@@ -49,13 +54,23 @@ _CONTAINER_KEY = re.compile(r"^(?P<indent>[ \t]*)container:[ \t]*(?P<value>.*)$"
 _IMAGE_KEY = re.compile(r"^[ \t]*image:[ \t]*(?P<value>.*)$")
 _QUOTED = re.compile(r"""^(?P<quote>["'])(?P<body>.*?)(?P=quote)""")
 _TRAILING_COMMENT = re.compile(r"[ \t]+#.*$")
-# Two distinct references are the smallest set a delegated gate Job cannot resolve.
-_MIN_CONFLICTING_IMAGES = 2
+_JOB_KEY = re.compile(r"^[ \t]{2}(?P<name>[^ \t:#][^:]*):[ \t]*(?:#.*)?$")
+_JUST_TARGET = re.compile(r"\bjust[ \t]+(?P<target>check(?:-[a-z0-9-]+)?)\b")
+_TARGET = re.compile(r"^check(?:-[a-z0-9-]+)?$")
 _HINT = (
-    "A delegated gate Job runs in the one image it resolves from this workflow, and "
-    "`render-gate-job.sh` refuses a workflow that declares several. Pin every job "
-    "`container:` to the same image reference."
+    "Every job must name one image repository and release version. Layered flavors are "
+    "allowed only off the gate path, beneath a dash-separated gate-flavor prefix."
 )
+
+
+@dataclass(frozen=True, kw_only=True)
+class _Image:
+    """A job container image plus the job's source span."""
+
+    image: str
+    line: int
+    job_start: int
+    job_end: int
 
 
 def _reference(*, raw: str) -> str:
@@ -87,22 +102,87 @@ def _block_image(*, lines: list[str], start: int, parent_indent: int) -> tuple[i
     return None
 
 
-def _container_images(*, source: str) -> list[tuple[int, str]]:
-    """Every job `container:` image in the workflow, as (1-based line, reference)."""
+def _job_span(*, lines: list[str], index: int) -> tuple[int, int] | None:
+    """The half-open span of the job that contains line ``index``."""
+    job_start: int | None = None
+    for candidate in range(index, -1, -1):
+        if _JOB_KEY.match(lines[candidate]) is not None:
+            job_start = candidate
+            break
+    if job_start is None:
+        return None
+    for job_end in range(job_start + 1, len(lines)):
+        if _JOB_KEY.match(lines[job_end]) is not None:
+            return job_start, job_end
+    return job_start, len(lines)
+
+
+def _container_images(*, source: str) -> list[_Image]:
+    """Every job `container:` image in the workflow, with its job's source span."""
     lines = source.splitlines()
-    declared: list[tuple[int, str]] = []
+    declared: list[_Image] = []
     for index, line in enumerate(lines):
         match = _CONTAINER_KEY.match(line)
         if match is None:
             continue
         scalar = _reference(raw=match.group("value"))
+        job = _job_span(lines=lines, index=index)
+        if job is None:
+            continue
         if scalar:
-            declared.append((index + 1, scalar))
+            declared.append(_Image(image=scalar, line=index + 1, job_start=job[0], job_end=job[1]))
             continue
         block = _block_image(lines=lines, start=index + 1, parent_indent=len(match.group("indent")))
         if block is not None:
-            declared.append(block)
+            lineno, image = block
+            declared.append(_Image(image=image, line=lineno, job_start=job[0], job_end=job[1]))
     return declared
+
+
+def _aggregate_targets(*, repo_root: Path) -> set[str]:
+    """The enumerable targets of the consumer's ``just check`` aggregate."""
+    inventory = repo_root / "check-targets.txt"
+    try:
+        source = inventory.read_text(encoding="utf-8")
+    except OSError:
+        try:
+            source = (repo_root / "justfile").read_text(encoding="utf-8")
+        except OSError:
+            return set()
+    entries = {line.split("#", maxsplit=1)[0].strip() for line in source.splitlines()}
+    return {entry for entry in entries if _TARGET.fullmatch(entry)}
+
+
+def _image_parts(*, image: str) -> tuple[str, str, str] | None:
+    """The image repository, layer flavor, and release version a pin names."""
+    repository, separator, tag = image.rpartition(":")
+    version = tag_version_component(tag=tag) if separator else None
+    if version is None:
+        return None
+    anchor = f"-{version}"
+    if not tag.endswith(anchor):
+        return None
+    flavor = tag.removesuffix(anchor)
+    if not flavor:
+        return None
+    return repository, flavor, version
+
+
+def _has_gate_flavor(*, flavors: set[str]) -> str | None:
+    """The flavor that is a dash-separated prefix of all declared flavors."""
+    for candidate in sorted(flavors, key=len):
+        if all(flavor == candidate or flavor.startswith(f"{candidate}-") for flavor in flavors):
+            return candidate
+    return None
+
+
+def _runs_aggregate_target(*, lines: list[str], image: _Image, aggregate: set[str]) -> bool:
+    """Whether this image's job runs any declared aggregate target."""
+    for line in lines[image.job_start : image.job_end]:
+        for matched in _JUST_TARGET.finditer(line):
+            if matched.group("target") in aggregate:
+                return True
+    return False
 
 
 def _configure_logger() -> structlog.stdlib.BoundLogger:
@@ -127,14 +207,42 @@ def main() -> int:
             path=str(_CI_WORKFLOW_PATH),
         )
         return 0
+    source = workflow.read_text(encoding="utf-8")
+    images = _container_images(source=source)
+    if not images:
+        return 0
     lines_by_image: dict[str, list[int]] = {}
-    for lineno, image in _container_images(source=workflow.read_text(encoding="utf-8")):
-        lines_by_image.setdefault(image, []).append(lineno)
-    if len(lines_by_image) < _MIN_CONFLICTING_IMAGES:
+    for image in images:
+        lines_by_image.setdefault(image.image, []).append(image.line)
+    parts = {image.image: _image_parts(image=image.image) for image in images}
+    valid_parts = [part for part in parts.values() if part is not None]
+    repositories = {part[0] for part in valid_parts}
+    versions = {part[2] for part in valid_parts}
+    flavors = {part[1] for part in valid_parts}
+    gate_flavor = _has_gate_flavor(flavors=flavors)
+    aggregate = _aggregate_targets(repo_root=Path.cwd())
+    non_gate_runs_aggregate = False
+    if gate_flavor is not None:
+        for image in images:
+            part = parts[image.image]
+            if part is not None and part[1] != gate_flavor:
+                non_gate_runs_aggregate = _runs_aggregate_target(
+                    lines=source.splitlines(), image=image, aggregate=aggregate
+                )
+            if non_gate_runs_aggregate:
+                break
+    invalid = (
+        any(part is None for part in parts.values())
+        or len(repositories) > 1
+        or len(versions) > 1
+        or gate_flavor is None
+        or non_gate_runs_aggregate
+    )
+    if not invalid:
         return 0
     for image, lines in sorted(lines_by_image.items()):
         log.error(
-            "CI workflow declares more than one distinct job container image",
+            "CI workflow violates the single-container-image gate rule",
             check_id="ci-single-container-image",
             path=str(_CI_WORKFLOW_PATH),
             image=image,
