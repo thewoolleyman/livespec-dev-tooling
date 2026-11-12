@@ -214,6 +214,15 @@ The files:
   than this project's install. On 2026-11-01 a session reported that no
   `classify-tier` verb existed, and the coordinator ruled on that report. The
   verb had shipped in the installed build.
+- Read `.ai/fleet-host-ssh-routes.md` before recording that a fleet host cannot
+  be reached or asking anyone for "a route" to one, and on any of these errors:
+  `failed to look up local user`, `No ED25519 host key is known`, or
+  `Permission denied (publickey)` from a fleet host. Each is usually a wrong
+  account or method; check the record and retry before concluding a host is
+  unreachable: the `tailscale-admin` repository records every machine's SSH
+  account and server, a bare `ssh <host>` uses the wrong
+  account, and `tailscale ssh` cannot reach a Mac. On 2026-11-12 a false "no
+  route to macbook-m4-max" held this repo's homelab plan for about eight hours.
 - Read `.ai/tailnet-posture.md` before proposing any network route into or
   out of the tailnet, any Tailscale key, tag, ACL or grant change, or any way
   for GitHub-hosted runners to reach a fleet host. The tailnet has no tags and
@@ -291,6 +300,14 @@ report. Recorded 2026-11-03: a resumed coordinator ran the plan operation,
 stopped at the `human` pointer, and asked the maintainer about fifteen times
 whether to start the loop while seats ran unwatched. The maintainer: "YOU HAD
 ONE JOB".
+
+**Incident mode is the default response in livespec-dev-tooling.** When its
+master is red, or a production defect there needs a fix faster than the normal
+lane, the coordinator uses EXPEDITED_INCIDENT_RESPONSE (or
+EXPEDITED_INCIDENT_RESPONSE_REVERT) through the path incident t26bbr proved,
+and never waits out a normal roll-forward; livespec, the orchestrator and
+overseer are not yet usable. Recorded in the scope event on
+`livespec-dev-tooling-6tgd2z`, 2026-11-12; see `.ai/coordinator-duties.md` §2.
 
 ## Decision authority — when to ask, proceed, or self-resolve
 

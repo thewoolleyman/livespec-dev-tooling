@@ -287,20 +287,15 @@ spec:
     - name: pypi-proxy-uv-wrapper
       configMap:
         name: pypi-proxy-uv-wrapper
+        optional: false
+        defaultMode: 365
         # DECIMAL 365 == octal 0555 (r-xr-xr-x). Never write a leading-zero
         # octal here: the container hook parses this template as YAML 1.2,
         # which reads `0555` as decimal 555, and the API server rejects every
         # workflow pod ("defaultMode: Invalid value: 555"), as on 2026-11-05.
-        defaultMode: 365
-        # OPTIONAL because a configMap volume resolves in the POD's namespace
-        # (arc-runners) and the wrapper ConfigMap is published in ci-warm-cache
-        # (../warm-cache/pypi-proxy/pypi-proxy.yaml). A required mount kept
-        # every workflow pod in ContainerCreating with "configmap
-        # pypi-proxy-uv-wrapper not found" (2026-11-05). With the volume absent
-        # the mount is an empty directory: the first PATH entry below finds no
-        # `uv` and the real uv runs, which the wrapper does off hp-xubuntu
-        # anyway. Publishing the wrapper into arc-runners is the follow-up.
-        optional: true
+        # This ConfigMap is published into arc-runners by the committed CI
+        # stack converge, so a missing mount is a deployment error, not a
+        # fail-soft fallback to public PyPI.
     - name: ci-runner-bin
       hostPath:
         # The pool-provided binaries (today: sccache, from
@@ -312,11 +307,12 @@ spec:
   containers:
     - name: $job
       env:
-        # The current pinned sandbox image resolves `uv` from this mise install.
-        # Keep the real location explicit after the wrapper's path prefix so a
-        # wrapper can delegate without recursing. The image-bump procedure must
-        # update this path alongside the image's pinned uv release.
-        # Everything after the uv entry is the pinned images' OWN PATH,
+        # The uv wrapper's mount comes first; the wrapper finds the real `uv`
+        # as the first one on this PATH outside its own mount (the mise shims),
+        # so no architecture- or release-specific uv install is named here. An
+        # x86_64-only install entry broke every job on the arm64 homelab
+        # worker with "uv: not found" (exit 127, 2026-11-12).
+        # Everything after the wrapper entry is the pinned images' OWN PATH,
         # verbatim: the python-rust sandbox images put /root/.cargo/bin
         # first, then the mise shims; on an image without a cargo home the
         # entry is simply absent. This env REPLACES the image PATH, so every
@@ -326,7 +322,7 @@ spec:
         # on the rust images from 2026-11-05 to 2026-11-09 (console CI's
         # check-nextest and check-fuzz).
         - name: PATH
-          value: /opt/ci-runner/uv-proxy:/root/.local/share/mise/installs/uv/0.9.26/uv-x86_64-unknown-linux-musl:/root/.cargo/bin:/root/.local/share/mise/shims:/root/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+          value: /opt/ci-runner/uv-proxy:/root/.cargo/bin:/root/.local/share/mise/shims:/root/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
         - name: PYPI_FILES_PROXY
           value: http://pypi-proxy.ci-warm-cache.svc.cluster.local:8081
         # The work volume's reflink-seeded warm uv cache (header item 2):

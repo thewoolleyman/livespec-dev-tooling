@@ -1,8 +1,11 @@
 # values-macbook-m4-max-homelab-worker.yaml — Helm values for the
 # gha-runner-scale-set chart release `macbook-m4-max-homelab-worker-k3s`: the
 # host-unique runner scale set of the homelab worker on the MacBook M4 Max
-# (plan homelab-k8s-worker-nodes, research/009), installed by
-# ../install-arc.sh.
+# (plan homelab-k8s-worker-nodes, research/009), installed and kept current by
+# ../../reconstruct/converge-ci-stack.sh step 7, which upgrades every
+# values-*-homelab-worker.yaml in this directory beside the fleet's sets. It
+# lives in worker/ and not beside them because the fleet's values rules (a
+# churn slot, the ci-runner-scheduler) do not apply to a worker's set.
 #
 # Like poweredge-xubuntu-k3s (values-host-unique.yaml) it exists so a workflow
 # can address THIS host by name — here, to run native arm64 CI on the fleet's
@@ -16,18 +19,18 @@
 #   - the listener stays on the fleet's amd64 nodes.
 #
 # Container mode: jobs run exactly as on the fleet's sets
-# (../phase2/arc/values-livespec-dev-tooling.yaml is the reference the tests
+# (../values-livespec-dev-tooling.yaml is the reference the tests
 # compare against) — hook-created workflow pods on a local-path work volume,
 # the fleet-patched container hook and the fleet hook pod template. The hook
 # binds each workflow pod to its runner's node by nodeName, so the workflow
 # pod needs no class toleration. The worker provides the node paths: the start
 # task delivers the hook and loads the workflow AppArmor profile, and converge
 # binds the hook tree and the local-path storage from the data disk. The
-# `@HOOK_REVISION@` placeholder is rendered by install-arc.sh step 2b. Unlike
+# `@HOOK_REVISION@` placeholder is rendered by that converge step. Unlike
 # the fleet sets it asks for no churn slot and no ci-runner-scheduler: those
 # are the fleet CI nodes' admission, which a worker does not advertise.
 #
-# REPOSITORY-scoped, like the other sets — see ../README.md "GitHub
+# REPOSITORY-scoped, like the other sets — see ../../../README.md "GitHub
 # registration scope".
 githubConfigUrl: "https://github.com/thewoolleyman/livespec-dev-tooling"
 githubConfigSecret: arc-github-app-installation  # same secret as the other sets — see README.md

@@ -44,6 +44,30 @@ them again on the unmutated orchestrator and keeps only those that still
 fail, so a test that failed once (one out-of-memory kill, say) rejoins
 attribution in the next Job.
 
+### One engine commit for the whole matrix
+
+A matrix that needs several Jobs MUST run every Job on the same
+`rule26_kill_matrix_engine_sha`. The cache key covers every installed
+distribution's version, and the Job installs the engine into the
+orchestrator's environment, so livespec-dev-tooling's own version is part of
+the key (1.199.0 at `6a35f37d`, 1.200.0 at `a40114a6`). That is deliberate: the
+orchestrator's tests import `livespec_dev_tooling`. A Job on a different engine
+commit therefore reuses nothing from the Jobs before it, cache and stored
+measurement alike. Fix the engine first, then start the matrix under a new run
+id and keep that commit until the report is written.
+
+### What a slow mutant costs
+
+All of a mutant's selected tests run in one pytest process. When that process
+ends before a test reports (a test hangs past the per-test timeout, or kills
+the process), the first unreported test is run alone and the tests after it
+run together in one further process. A selected test whose file cannot be
+collected under the mutant counts as failed, with no process of its own. Run
+20261111t2 predates this: it re-ran every unreported test alone, and no mutant
+finished between 13:20Z and 14:03Z on 2026-11-12 while 9 of 12 workers sat in
+that loop. A mutant that hangs many tests still costs one per-test timeout for
+each of them.
+
 ## Launch
 
 A launch is a committed apply from the control node, never a hand `kubectl

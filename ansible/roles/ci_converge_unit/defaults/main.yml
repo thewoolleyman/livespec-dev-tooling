@@ -43,6 +43,8 @@ ci_converge_unit_directories:
   - ""
   - arc
   - arc/charts
+  # Each homelab worker's host-unique scale-set values (converge step 7).
+  - arc/worker
   - kueue
   - kueue/core
   # The container-worker queue templates (livespec-dev-tooling-ko26ez.7).
@@ -163,6 +165,12 @@ ci_converge_unit_files:
     mode: "0644"
   - src: warm-cache/pypi-proxy/pypi-proxy.yaml
     dest: warm-cache/pypi-proxy/pypi-proxy.yaml
+    mode: "0644"
+  # The shared uv wrapper ConfigMap (livespec-dev-tooling-rpdowy): both
+  # converge-warm-cache.sh (into ci-warm-cache) and converge-ci-stack.sh step 7a
+  # (into arc-runners) apply it, so a missing copy stops both converges.
+  - src: warm-cache/pypi-proxy/pypi-proxy-uv-wrapper.yaml
+    dest: warm-cache/pypi-proxy/pypi-proxy-uv-wrapper.yaml
     mode: "0644"
   # The ghcr pull-through registry mirror (livespec-dev-tooling-y1t5): its
   # apply-bearing converge and the manifest that converge applies. converge-ci-stack.sh

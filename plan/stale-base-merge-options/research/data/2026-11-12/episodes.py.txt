@@ -1,0 +1,30 @@
+# Note 003 M4 (red-master episodes) and M5-adjacent counts. Usage: episodes.py <dir holding data/<repo>.json and data/<repo>.rows.json>
+import json, sys, datetime as dt, collections, bisect
+S=sys.argv[1]
+START=dt.datetime(2026,10,15,tzinfo=dt.timezone.utc); END=dt.datetime(2026,11,12,0,0,tzinfo=dt.timezone.utc)
+REPOS=["livespec-orchestrator-beads-fabro","livespec-dev-tooling","livespec-overseer","livespec","livespec-driver-codex","livespec-driver-pi","livespec-orchestrator-git-jsonl","livespec-driver-claude","livespec-console-beads-fabro","livespec-runtime"]
+RMIN={"livespec-orchestrator-beads-fabro":61.95,"livespec-dev-tooling":33.31,"livespec-overseer":14.01,"livespec":9.70,"livespec-driver-codex":9.38,"livespec-driver-claude":9.19,"livespec-orchestrator-git-jsonl":7.99,"livespec-driver-pi":6.78,"livespec-console-beads-fabro":21.71,"livespec-runtime":5.05}
+T=lambda s: dt.datetime.fromisoformat(s.replace("Z","+00:00"))
+pct=lambda xs,p: sorted(xs)[min(len(xs)-1,int(p/100*len(xs)))] if xs else None
+res={}
+for repo in REPOS:
+    rows=json.load(open(f"{S}/data/{repo}.rows.json"))
+    for x in rows:
+        for k in ("cs","ce","m"): x[k]=T(x[k])
+    # red-master episodes from master push runs (completed success/failure only)
+    D=json.load(open(f"{S}/data/{repo}.json"))
+    mr=sorted([r for r in D["runs"] if r["event"]=="push" and r["head_branch"]=="master" and r["conclusion"] in ("success","failure") and START<=T(r["created_at"])<END],key=lambda r:T(r["created_at"]))
+    eps=[]; cur=None
+    for r in mr:
+        if r["conclusion"]=="failure" and cur is None: cur={"start":T(r["updated_at"]),"sha":r["head_sha"]}
+        elif r["conclusion"]=="success" and cur is not None:
+            cur["end"]=T(r["updated_at"]); eps.append(cur); cur=None
+    mc={x["mc"]:x for x in rows}
+    behind_culprit=sum(1 for e in eps if e["sha"] in mc and mc[e["sha"]]["behind"]>=1 and mc[e["sha"]]["concl"]=="success")
+    red_h=sum((e["end"]-e["start"]).total_seconds() for e in eps)/3600
+    durs=[(e["end"]-e["start"]).total_seconds()/60 for e in eps]
+    res[repo]=dict(
+      red_episodes=len(eps),red_hours=round(red_h,1),red_min_p50=round(pct(durs,50),1) if durs else None,red_min_p90=round(pct(durs,90),1) if durs else None,
+      episodes_start_on_known_pr=sum(1 for e in eps if e["sha"] in mc), episodes_start_on_behind_green_pr=behind_culprit)
+for r,v in res.items(): print(r,v)
+json.dump(res,open(f"{S}/data/summary2.json","w"),indent=1)

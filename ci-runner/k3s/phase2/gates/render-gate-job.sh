@@ -98,6 +98,10 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TEMPLATE="${GATE_JOB_TEMPLATE:-${SCRIPT_DIR}/gate-job-template.yaml}"
+# The bounded retry every anonymous github.com read in the Job goes through
+# (fetch-livespec-core and the sibling clones). It ships beside this script,
+# in the repository and in the wheel alike, and is inlined into the manifest.
+FORGE_RETRY="${GATE_FORGE_RETRY_SH:-${SCRIPT_DIR}/forge-retry.sh}"
 # The one declared per-class architecture list (livespec-dev-tooling-ko26ez.6).
 # In this repository it sits one level above gates/; the wheel force-includes it
 # at the same relative place beside the packaged renderer.
@@ -425,6 +429,12 @@ for row in ${sibling_rows[@]+"${sibling_rows[@]}"}; do
     fi
   done
   clone_command="git clone --quiet --depth 1 '${sibling_url}' '${GATE_SIBLING_CLONES_ROOT}/${sibling_name}'"
+  # A private sibling's header config stays a `VAR=value` PREFIX, now on the
+  # forge_retry call. The gate container runs bash, and bash places a function
+  # call's prefix assignments in the environment of every command the function
+  # runs, for that call only. So every retried clone carries the header, no
+  # later (public) clone does, and the token never enters any argv.
+  clone_auth_prefix=""
   if [ "${private}" -eq 1 ]; then
     # The mount is declared once however many private siblings there are: ONE
     # token covers all of them, because the host mints it scoped to exactly the
@@ -454,7 +464,7 @@ for row in ${sibling_rows[@]+"${sibling_rows[@]}"}; do
     # may carry, and `base64` WRAPS at 76 columns — which a 60-odd byte payload
     # exceeds — so its output is joined back into one line: a header value
     # carrying a newline is not a header.
-    clone_command="GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0='http.extraHeader' GIT_CONFIG_VALUE_0=\"Authorization: Basic \$(printf 'x-access-token:%s' \"\$(cat ${GATE_PRIVATE_SIBLING_MOUNT}/token)\" | base64 | tr -d '\\n')\" ${clone_command}"
+    clone_auth_prefix="GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0='http.extraHeader' GIT_CONFIG_VALUE_0=\"Authorization: Basic \$(printf 'x-access-token:%s' \"\$(cat ${GATE_PRIVATE_SIBLING_MOUNT}/token)\" | base64 | tr -d '\\n')\" "
   fi
   # SHALLOW, like the core fetch and like the consumer's own CI step: nothing
   # reads a sibling's history — a reader wants its current headings and its
@@ -467,7 +477,7 @@ for row in ${sibling_rows[@]+"${sibling_rows[@]}"}; do
   # The termination-log write is best-effort for the same reason the preflight's
   # is — the message is EVIDENCE and the exit status is the verdict.
   gate_sibling_clone_lines="${gate_sibling_clone_lines}
-if ! ${clone_command}; then
+if ! ${clone_auth_prefix}FORGE_RETRY_RESET_DIR='${GATE_SIBLING_CLONES_ROOT}/${sibling_name}' forge_retry 'sibling ${sibling_name}' ${clone_command}; then
   unclonable=\"FATAL: cannot clone cross-repo sibling '${sibling_name}' from ${sibling_url}. Its checks would read the absent clone as an EMPTY tree and silently drop every allowlisted citation to it, so no recipe was run; this gate is RED.\"
   echo \"\${unclonable}\" >&2
   { printf '%s\\n' \"\${unclonable}\" > /dev/termination-log; } 2> /dev/null || true
@@ -784,6 +794,10 @@ substitute GATE_RECIPE_NAMES "${quoted_recipe_names}"
 substitute_block GATE_RECIPES "${gate_recipe_lines}"
 # An EMPTY block removes the placeholder's whole line, which is exactly what a
 # repository registering no cross-repo siblings must render.
+[ -f "${FORGE_RETRY}" ] || { echo "FATAL: ${FORGE_RETRY} not found — the gate Job's github.com reads need its forge_retry function" >&2; exit 1; }
+# The function only, without its file-header comments: both placeholders sit in
+# scripts whose own comments already say why the retry is there.
+substitute_block GATE_FORGE_RETRY "$(grep -v '^#' "${FORGE_RETRY}")"
 substitute_block GATE_SIBLING_CLONES "${gate_sibling_clone_lines}"
 # EMPTY for a repository whose authority members this run could not establish,
 # which removes the placeholder's whole line: such a Job runs the members it runs

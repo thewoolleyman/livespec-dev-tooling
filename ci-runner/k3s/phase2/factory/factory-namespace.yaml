@@ -86,7 +86,10 @@ spec:
     # request 3 cpu and may burst to 6, so the limit total is 20 runs x 6 = 120
     # while requests.cpu stays 84. ./DERIVATION.md "Request 3, limit 6".
     # REVERT (one apply, with the gmktec host_vars REVERT lines): limits.cpu: "84"
-    limits.cpu: "120"
+    # 21 x 6 = 126 (2026-11-12): one 6-cpu slot over the fleet cap of 20, so a
+    # small limits-bearing pod beside 20 sandboxes cannot refuse the 20th.
+    # ./DERIVATION.md "One limits slot over the fleet cap". REVERT: limits.cpu: "120"
+    limits.cpu: "126"
     limits.memory: 181710Mi
     pods: "42"
 ---

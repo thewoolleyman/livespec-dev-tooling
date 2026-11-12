@@ -114,6 +114,23 @@ of the range gate. The coordinator's correction is recorded on epic `livespec-de
 Measured 2026-11-10 by expedited-incident-response-flag and re-measured by dev-host-test-gate-load: commit 31d49d7a
 passed the range check although its recorded test fails to import on its own tree.
 
+**Incident mode is the default response in livespec-dev-tooling.** When livespec-dev-tooling master is red, or a
+production defect there needs a fix faster than the normal lane, the coordinator uses expedited incident mode:
+EXPEDITED_INCIDENT_RESPONSE, or EXPEDITED_INCIDENT_RESPONSE_REVERT for a revert. It goes through the path incident
+t26bbr proved end to end on 2026-11-11. It never waits out a normal roll-forward.
+
+- The enablement fence (livespec-dev-tooling-2xxnku) is not armed yet. Arming it adds only a refusal; it is not needed
+  for use.
+- livespec, livespec-orchestrator-beads-fabro and livespec-overseer are NOT yet usable. Each becomes usable when its
+  observer install, drill and claims land. Each tick names which repositories are usable.
+- Operator mechanics: `docs/incident-execution.md` and the `docs/incident-*.md` files beside it. The step-by-step
+  incident-mode runbook (`.ai/incident-mode-runbook.md`, steps 3-11 from the t26bbr record) is NOT yet in this
+  repository: it is owed by plan expedited-incident-response-flag (`livespec-dev-tooling-bqnzcm`).
+
+The maintainer, 2026-11-12 ~19:2xZ, recorded in the scope event on epic `livespec-dev-tooling-6tgd2z` at 19:17:17Z:
+"It says the expedited is usable on dev-tooling - confirm you wil use it going forward, and record this everywhere as a
+rule to be noticed by coordinator sessions". This does NOT reopen the no-rerun rule for genuine test failures above.
+
 ## 3. Unblock blocked seats every tick
 
 **Rule P1: every tick starts with priorities 1-5, in order.** Before any peer message is answered, run
@@ -499,11 +516,17 @@ invocation id, never from stdout. Measured 2026-11-11 ~00:36Z: the coordinator r
 | tail -3` on bd-ib-p5e32s, the timeout killed it mid-janitor, the pipe hid exit 124, and the item read as silently
 unreconciled until gmktec-factory-placement traced the journal.
 
-**A hand-lane item carries `admission:manual` and a recorded reason (coordinator's reading).** An item that a seat is
-landing by hand gets the `admission:manual` label plus a ledger comment giving the reason and the end condition.
-Without the label, the dispatcher treats it as factory work and dispatches it. Recorded in the restart handoff on epic
-`livespec-dev-tooling-6tgd2z` at 2026-11-10T02:45:38Z (session 70706809). Measured 2026-11-10:
-livespec-dev-tooling-5xwfda was factory-dispatched while hand-laned.
+**A hand-lane item is held off the factory by the host-only screen or by status `blocked`, never by an admission
+label.** An item that a seat is landing by hand is kept off the factory in one of two ways. Either the host-only screen
+already routes it to the host, or it is held at status `blocked` with its reason and end condition recorded on the item,
+together with the dispatcher's hold-item file. It never gets an `admission:manual` label as the hold. The ratified
+orchestrator contract, contracts.md "Dispatcher policy settings" (line ~7920), makes a committed
+`dispatcher.auto_approve_ready` win over every per-item admission label, and states that "a deliberate per-item hold is
+expressed as status blocked with its reason recorded on the item, never as an admission label". An earlier reading in
+the restart handoff on epic `livespec-dev-tooling-6tgd2z` at 2026-11-10T02:45:38Z (session 70706809) told seats to set
+`admission:manual`, after livespec-dev-tooling-5xwfda was factory-dispatched while hand-laned on 2026-11-10. That
+reading is superseded. The ruling is recorded on epic `livespec-dev-tooling-6tgd2z` at 2026-11-12T15:52:48Z (session
+56abab83), after goal-template-opener-handling correctly declined to set the label on bd-ib-v52w7a.
 
 **Grade a hand-landed carrier yourself before `accept:` (coordinator's reading).** A hand-land parks at 0 graded
 assertions, so a press with no grading closes it unproven. Read the test as well as the reproduction, and say in the
@@ -561,6 +584,14 @@ master), then deleted by the coordinator or the owning seat and reported. CLAUDE
 recorded on epic `livespec-dev-tooling-6tgd2z`: "Why are you asking me this? It's wrong clearly, right? Just fix and
 clean up". Measured that day: an ask to delete the local branch `spec/revise-v162-a-compilation-cache-warm-build`,
 superseded by v163 (a14f9543), sat under `FOR THE MAINTAINER` for several ticks.
+
+**A requirement of a priority plan is not a maintainer ask.** A step that a maintainer-set priority plan requires (for
+example a tool upgrade it needs) is done, with a recorded rollback plan, and reverted if it breaks. It never goes under
+FOR THE MAINTAINER. The maintainer, 2026-11-12 ~18:2xZ, recorded on epic `livespec-dev-tooling-6tgd2z` at 18:23:54Z, on
+the caam 0.1.25 upgrade: "Yes, it's a requirement right?  Just do it, why are you asking me. If it breaks, revert it,
+make sure the plan has a rollback plan". A seat whose own standing rule needs the maintainer's word in its own session
+(caam-anthropic-loop-runner's credential rule) still gets that word there; the coordinator tells the maintainer which
+tab.
 
 ## 6. Never block: no pickers, ever
 
@@ -690,7 +721,9 @@ Every tick reports, in this order:
    trailing-window counts. Compute them from the orchestrator repo's `tmp/petri-canary/*-r267.json` dispatch records
    by file mtime, skipping unreadable in-flight files.
    - M1 YIELD: green records / finished records over a trailing 6 h, plus the 2 h figure. Owner:
-     sandbox-commit-gate-ceiling (P1).
+     sandbox-commit-gate-ceiling (P1). Method: the denominator is the records whose `listed` is not `none`, the
+     records where a run was listed. A no-run refusal (`listed` is `none`) is excluded from the denominator and
+     reported on its own line, bucketed by exit code: 3, 5 and 1.
    - M2 DELIVERED: green records per hour over a trailing 6 h. This is the outcome M1 and M3 drive.
    - M3 SLOTS: live factory runs against `tmp/petri-canary/fleet-cap`, naming any pods that hold quota without a live
      run (stranded). Owner: legacy-dispatcher-agent.
@@ -1281,6 +1314,15 @@ epic `livespec-dev-tooling-6tgd2z`, 2026-11-12T10:33:39Z).
   - dispatch-control-plane is monitor-only, and must not absorb today's operations.
   - Launchers take the factory from the target repository's committed `default_factory` (R503).
   - Keep interactive turns lean (R509).
+  - Never offer GitHub's merge queue for any fleet repository. The maintainer, 2026-11-12 ~18:0xZ, recorded on epic
+    `livespec-dev-tooling-6tgd2z`: "FOR THE MILLIONTH TIME, I DO NOT HAVE AN ENTERPRISE ACCOUNT AND CANNOT USE GITHUBS
+    MERGE QUEUE". Plan `stale-base-merge-options` (livespec-dev-tooling-xowhol, maintainer-driven, priority 3 since
+    2026-11-12T18:23:54Z) owns re-investigating the stale-base options. Until the maintainer rules otherwise in that
+    plan, no seat offers GitHub's merge queue (the maintainer's standing words above). That plan may put measured
+    facts about it to the maintainer in its direction discussion.
+  - **Never raise vmi3006760's swap/RAM configuration.** It is the VPS provider's and intentional. The maintainer,
+    2026-11-12 ~18:2xZ, recorded on epic `livespec-dev-tooling-6tgd2z` at 18:23:54Z: "This is intentional, it's a VPS,
+    I don't configure it. RIGHT? Seems like a bad question".
 
 ## 13. Directives come from the plan and the ledger, never from a handoff
 

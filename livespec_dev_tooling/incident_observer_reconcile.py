@@ -46,6 +46,7 @@ from livespec_dev_tooling._incident_recovery_journal_cause import (
     decode_completion,
     decode_regression,
 )
+from livespec_dev_tooling._incident_recovery_publication import PublicationLedger
 from livespec_dev_tooling.incident_conflict_chain import ConflictChain, is_conflict_receipt
 from livespec_dev_tooling.incident_conflict_publication import ConflictPublication
 from livespec_dev_tooling.incident_controller_installation import ControllerInstallation
@@ -81,6 +82,46 @@ class ObserverReconcile:
         ):
             return _refused(reason="exact repository, action_id and retry_publish required")
         return asdict(self.settle(action_id=action_id, retry=retry, automatic=False))
+
+    def resume_prepared(self) -> tuple[ObserverResult, ...]:
+        """Retry only durable prepared publications after the controller starts.
+
+        A prepared commit is the one immutable publication intent that may be
+        resumed safely. ``settle`` re-enters the principal through its normal
+        expected-head compare-and-swap path, which records a receipt, recomputes
+        after head movement, or leaves the prepared attempt recoverable.
+        """
+        resumed: list[ObserverResult] = []
+        for action_id in self._prepared_action_ids():
+            try:
+                resumed.append(self.settle(action_id=action_id, retry=True, automatic=True))
+            except (OSError, ValueError, TypeError, KeyError):
+                continue
+        return tuple(resumed)
+
+    def _prepared_action_ids(self) -> tuple[str, ...]:
+        settings = self.installation
+        with repository_lock(directory=settings.state, repository=settings.repository) as path:
+            actions = _actions(record=load_record(path=path))
+            candidates = tuple(
+                action_id
+                for action_id, action in actions.items()
+                if _ACTION_ID.fullmatch(action_id) is not None
+                and action.get("status") == "pending"
+                and action.get("receipt") is None
+            )
+        ledger = PublicationLedger(directory=settings.state / "recovery-journal")
+        prepared: list[str] = []
+        for action_id in candidates:
+            try:
+                with ledger.hold(action_id=action_id):
+                    publication = ledger.load(action_id=action_id)
+            except (OSError, ValueError, TypeError, KeyError):
+                continue
+            attempt = publication.open_attempt
+            if publication.receipt is None and attempt is not None and attempt.status == "prepared":
+                prepared.append(action_id)
+        return tuple(prepared)
 
     def settle(self, *, action_id: str, retry: bool, automatic: bool) -> ObserverResult:
         """Settle one retained action's receipt, then write a conflict receipt to the chain."""

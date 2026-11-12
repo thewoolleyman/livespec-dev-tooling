@@ -951,6 +951,30 @@
   },
   {
     "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a delegated gate Job retries a forge read the forge refuses transiently",
+    "test": "TODO",
+    "reason": "A real test at the consumer tier (the `tests.consumer` node-id prefix this repository declares in `scenario_tiers`) is owed for this heading: a fixture consumer's rendered gate Job runs its fetch-livespec-core script against a git double that answers the first fetch with an anonymous 401 and a later one with the ref, and the test shows a second attempt after a wait, the consumer's recipe running, and one log line per attempt naming its number and class. livespec-dev-tooling-yjcyay owns it.",
+    "work_item": "livespec-dev-tooling-yjcyay"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a delegated gate Job fails a forge read of a missing ref at once",
+    "test": "TODO",
+    "reason": "A real test at the consumer tier (the `tests.consumer` node-id prefix this repository declares in `scenario_tiers`) is owed for this heading: a fixture consumer's rendered gate Job runs its fetch-livespec-core script against a git double that reports the pinned ref not found, and the test shows exactly one fetch, a FATAL line naming the ref, and no recipe run. livespec-dev-tooling-yjcyay owns it.",
+    "work_item": "livespec-dev-tooling-yjcyay"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a pushing host retries a private-sibling token mint the forge refuses transiently",
+    "test": "TODO",
+    "reason": "A real test at the consumer tier (the `tests.consumer` node-id prefix this repository declares in `scenario_tiers`) is owed for this heading: a fixture consumer naming a private sibling drives the shipped gate client's mint through a forge double that answers the token request with HTTP 500 and then with a token, and the test shows a second request after a wait, the minted token reaching the gate Job's private clone, and per-attempt status lines that never contain the token. livespec-dev-tooling-yjcyay owns it.",
+    "work_item": "livespec-dev-tooling-yjcyay"
+  },
+  {
+    "spec_root": "SPECIFICATION",
     "spec_file": "contracts.md",
     "heading": "## Master-health reconciler",
     "test": "TODO",
@@ -1599,8 +1623,8 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: dev host retention leaves an aged session scratch directory that a running process holds open",
-    "test": "TODO",
-    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, exercising one run of the committed retention script over a fixture /tmp/claude-<uid> tree holding an aged session directory whose id no process carries, with a fixture process root in which a process holds an open file descriptor beneath that directory and no process carries the session id; livespec-dev-tooling-ovnrsv owns it.",
+    "test": "tests.livespec_dev_tooling.test_dev_host_retention_tmpfs.test_retention_keeps_sessions_held_by_process_cwd_or_file_descriptor",
+    "reason": "The retention fixture process root has no environment carrier for either held session, keeps one by an fd below its scratch directory and another by cwd, and confirms an equally aged unheld peer is removed and logged.",
     "work_item": "livespec-dev-tooling-ovnrsv"
   },
   {
@@ -2445,6 +2469,38 @@
     "test": "tests.livespec_dev_tooling.test_incident_fleet_cli.test_run_as_a_child_process_a_consumer_without_controller_evidence_is_left_out_named_and_refused",
     "reason": "Integration-tier: the real audit and enablement entry points run as a child process (`python -I -c`) against a fixture core manifest and fixture per-capability serving readers; a consumer whose independent-controller serving version cannot be read gets an unclassified controller row, is left out of the ready list and named in the findings with the missing evidence, and the enablement step run for it exits non-zero, names it and the missing evidence and enables nothing; a sibling test runs the same command against a manifest that cannot be authenticated and sees the recorded finding, zero ready repositories and a non-zero exit (livespec-dev-tooling-3wcldx).",
     "work_item": "livespec-dev-tooling-3wcldx"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: the incident enablement step records enablement on the independent controller and every vantage reads it",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this scenario: the real enablement step writes one record through a scratch controller installation's control-credentialed route, and the dev-host hook receipt, the incident CI plan and the arm receipt each record `enabled` from the controller's query route. livespec-dev-tooling-2xxnku owns it.",
+    "work_item": "livespec-dev-tooling-2xxnku"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: an armed enablement fence refuses incident mode without a current enablement record",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this scenario: an armed scratch controller installation is asked to resolve expedited repair at the hook, CI and arm vantages with no record, a stale record and a revoked record, and each refuses by name without falling through to normal mode. livespec-dev-tooling-2xxnku owns it.",
+    "work_item": "livespec-dev-tooling-2xxnku"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: the enablement fence is armed for a repository only after that repository is enabled",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this scenario: the arming write is refused while the installation holds no enablement record bound to the current manifest identity, succeeds once the step has recorded the repository, stays armed after the manifest identity moves, and is refused as an unknown route by a release that lacks the routes. livespec-dev-tooling-2xxnku owns it.",
+    "work_item": "livespec-dev-tooling-2xxnku"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: an armed enablement fence lets an emergency revert through when core's git transport is unreachable past the freshness bound",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this scenario: with core's git transport unreachable past the six-hour freshness bound an armed installation refuses expedited repair naming `unavailable`, lets an emergency revert through, and records `unavailable` at every vantage. livespec-dev-tooling-2xxnku owns it.",
+    "work_item": "livespec-dev-tooling-2xxnku"
   },
   {
     "spec_root": "SPECIFICATION",

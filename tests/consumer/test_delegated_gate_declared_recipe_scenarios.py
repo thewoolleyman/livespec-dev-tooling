@@ -55,6 +55,9 @@ pytestmark = pytest.mark.consumer
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _RENDERER = _REPO_ROOT / "ci-runner" / "k3s" / "phase2" / "gates" / "render-gate-job.sh"
 _TEMPLATE = _RENDERER.parent / "gate-job-template.yaml"
+# The bounded forge-read retry the renderer inlines into the gate container; a
+# clone line extracted from the manifest runs through its `forge_retry`.
+_FORGE_RETRY = _RENDERER.parent / "forge-retry.sh"
 
 # The empty tree's hash — a real git object name, and the one the canned
 # `rev-parse HEAD^{tree}` below answers with.
@@ -1160,7 +1163,7 @@ def test_the_gate_job_provisions_the_sibling_clones_the_consumers_checks_read(
         assert "@" not in command, f"a credential rides the {name} clone: {command}"
 
     assert [
-        command.split("'")[1]
+        next(token for token in command.split("'") if token.startswith("https://"))
         for command in _sibling_clone_commands(manifest=_rendered_for(repo_root=other))
     ] == [url for _name, url in _GADGET_SIBLINGS], (
         "a second declaration renders the same clones, so the set is a constant "
@@ -1455,9 +1458,15 @@ def test_a_private_sibling_clones_with_basic_x_access_token_not_a_bearer_header(
     (stub / "git").chmod(0o755)
     # The clone is the subject of an `if ! … ; then`, so the extracted line is
     # completed into a whole statement rather than having its wrapper stripped:
-    # the shape the renderer emits is then what runs.
+    # the shape the renderer emits is then what runs. It runs through the
+    # committed `forge_retry`, sourced exactly as the renderer inlines it, which
+    # hands git's own output to stderr beside its per-attempt log line.
     sent = subprocess.run(
-        ["bash", "-c", f"{private_clone.replace(mount, str(mounted))}\n  :\nfi\n"],
+        [
+            "bash",
+            "-c",
+            f"source '{_FORGE_RETRY}'\n{private_clone.replace(mount, str(mounted))}\n  :\nfi\n",
+        ],
         env={**os.environ, "PATH": f"{stub}:{os.environ['PATH']}"},
         capture_output=True,
         text=True,
@@ -1466,9 +1475,9 @@ def test_a_private_sibling_clones_with_basic_x_access_token_not_a_bearer_header(
 
     assert sent.returncode == 0, sent.stdout + sent.stderr
     expected = base64.b64encode(f"x-access-token:{token}".encode()).decode()
-    assert sent.stdout == f"Authorization: Basic {expected}", (
+    assert f"Authorization: Basic {expected}" in sent.stderr.splitlines(), (
         "the header the pod sends github.com is not Basic with the username "
-        f"x-access-token and the token as the password: {sent.stdout!r}"
+        f"x-access-token and the token as the password: {sent.stderr!r}"
     )
 
 

@@ -158,6 +158,76 @@ def test_a_retry_refuses_once_the_registration_is_no_longer_the_actions(
     assert world.reverts() == []
 
 
+def test_startup_resumes_a_prepared_publication_without_operator_reconcile(
+    world: World, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    assert hasattr(ObserverReconcile, "resume_prepared")
+    world.forge.hooks[("PATCH", "master")] = principal_tests.raise_oserror
+    request = {
+        "request": asdict(principal_tests.publish_request(world, principal_tests.plan_for(world)))
+    }
+    assert world.call("publish", request)["status"] == "refused"
+    prepared = json.loads(world.ledger.read_text())["attempts"][0]
+    assert prepared["status"] == "prepared"
+    assert world.forge.master() == world.merge
+
+    world.client(monkeypatch)
+    outcomes = ObserverReconcile(installation=world.installation).resume_prepared()
+
+    assert [(outcome.status, outcome.action_id) for outcome in outcomes] == [
+        ("completed", world.intent.action_id)
+    ]
+    assert world.forge.master() == prepared["commit"]
+    assert _status(world=world) == "completed"
+    assert world.forge.count("POST", "git/commits") == 1
+
+
+def test_startup_leaves_a_prepared_publication_recoverable_when_resume_fails(
+    world: World, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    assert hasattr(ObserverReconcile, "resume_prepared")
+    world.forge.hooks[("PATCH", "master")] = principal_tests.raise_oserror
+    request = {
+        "request": asdict(principal_tests.publish_request(world, principal_tests.plan_for(world)))
+    }
+    assert world.call("publish", request)["status"] == "refused"
+
+    world.client(monkeypatch, connect=principal_tests.no_app)
+    outcomes = ObserverReconcile(installation=world.installation).resume_prepared()
+
+    assert [(outcome.status, outcome.action_id) for outcome in outcomes] == [
+        ("pending", world.intent.action_id)
+    ]
+    assert json.loads(world.ledger.read_text())["attempts"][0]["status"] == "prepared"
+    assert _status(world=world) == "pending"
+
+
+def test_startup_ignores_actions_without_prepared_publication_attempts(world: World) -> None:
+    assert hasattr(ObserverReconcile, "resume_prepared")
+    assert ObserverReconcile(installation=world.installation).resume_prepared() == ()
+
+
+def test_startup_continues_when_a_prepared_resume_or_ledger_read_is_unavailable(
+    world: World, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    assert hasattr(ObserverReconcile, "resume_prepared")
+    world.forge.hooks[("PATCH", "master")] = principal_tests.raise_oserror
+    request = {
+        "request": asdict(principal_tests.publish_request(world, principal_tests.plan_for(world)))
+    }
+    assert world.call("publish", request)["status"] == "refused"
+    monkeypatch.setattr(
+        ObserverReconcile, "settle", Mock(side_effect=OSError("principal unavailable"))
+    )
+    assert ObserverReconcile(installation=world.installation).resume_prepared() == ()
+
+    monkeypatch.setattr(
+        reconcile.PublicationLedger, "load", Mock(side_effect=OSError("ledger unavailable"))
+    )
+    assert ObserverReconcile(installation=world.installation).resume_prepared() == ()
+    assert json.loads(world.ledger.read_text())["attempts"][0]["status"] == "prepared"
+
+
 def test_a_regression_caused_action_keeps_its_cause_and_no_completion(
     world: World, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -8,9 +8,7 @@ than granting a retry on incomplete evidence.
 from __future__ import annotations
 
 import ast
-import json
 import os
-from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
@@ -27,6 +25,14 @@ from livespec_dev_tooling.flake_retry_decisions import (
     retry_marker_for as _retry_marker_for,
 )
 from livespec_dev_tooling.flake_retry_finalizers import preserve_finalizers
+from livespec_dev_tooling.flake_retry_records import (
+    RetryResult,
+    failure_from,
+    records_json,
+)
+from livespec_dev_tooling.flake_retry_records import (
+    summary as records_summary,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -53,15 +59,6 @@ _FAILED_NODEIDS: set[str] = set()
 _SESSION_WITHHELD: list[str] = []
 _WITHHELD_BY_NODEID: dict[str, str] = {}
 _WORKER_WITHHELD_KEY = "livespec_flake_retry_withheld"
-
-
-@dataclass(frozen=True, kw_only=True)
-class RetryResult:
-    """The final outcome of a test pytest-rerunfailures has retried."""
-
-    nodeid: str
-    attempts: int
-    outcome: str
 
 
 def retry_marker_for(
@@ -139,14 +136,23 @@ def record_report(*, report: pytest.TestReport) -> None:
     previous = _RESULTS.get(report.nodeid)
     outcome = cast(str, report.outcome)
     if outcome == "rerun":
+        failure = failure_from(longrepr=getattr(report, "longrepr", ""))
         _RESULTS[report.nodeid] = RetryResult(
             nodeid=report.nodeid,
             attempts=(previous.attempts if previous else 0) + 1,
             outcome="rerun",
+            failures=(*previous.failures, failure) if previous else (failure,),
         )
     elif previous is not None:
         _RESULTS[report.nodeid] = RetryResult(
-            nodeid=report.nodeid, attempts=previous.attempts + 1, outcome=outcome
+            nodeid=report.nodeid,
+            attempts=previous.attempts + 1,
+            outcome=outcome,
+            failures=(
+                (*previous.failures, failure_from(longrepr=getattr(report, "longrepr", "")))
+                if outcome == "failed"
+                else previous.failures
+            ),
         )
 
 
@@ -155,7 +161,7 @@ def write_retry_records(*, repo_root: Path, results: Iterable[RetryResult]) -> P
     output = repo_root / "tmp" / "flake-retries" / "retries.jsonl"
     _ = output.parent.mkdir(parents=True, exist_ok=True)
     _ = output.write_text(
-        "".join(json.dumps(result.__dict__, sort_keys=True) + "\n" for result in results),
+        records_json(results=results),
         encoding="utf-8",
     )
     return output
@@ -163,8 +169,7 @@ def write_retry_records(*, repo_root: Path, results: Iterable[RetryResult]) -> P
 
 def retry_summary(*, results: Iterable[RetryResult]) -> str:
     """Render the loud terminal block required for every retry decision."""
-    rows = [f"{result.nodeid}: {result.attempts} attempts, {result.outcome}" for result in results]
-    return "FLAKE-RETRIED\n" + "\n".join(rows)
+    return records_summary(results=results)
 
 
 def announce_retries(
