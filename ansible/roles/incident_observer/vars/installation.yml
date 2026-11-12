@@ -1,0 +1,59 @@
+---
+# A further production incident observer installation beside livespec-dev-tooling's:
+# the variable set that turns this role's ONE installation into the installation
+# serving `incident_observer_installation_name`, the repository (without its owner)
+# of one entry of `incident_observer_installations` (defaults/main.yml).
+# livespec-dev-tooling-lqp2qx; SPECIFICATION/contracts.md, the per-repository
+# installation paragraph.
+#
+# Loaded by ansible/incident-observer-installation.yml (the apply) and by
+# ansible/incident-observer-installation-teardown.yml (the teardown), so both name
+# the same installation. ansible/dev-host.yml never loads it: livespec-dev-tooling's
+# installation is the role's defaults, unchanged.
+#
+# Every value below is DERIVED from the name and the inventory entry it selects;
+# tasks/installation_preflight.yml refuses an override of any single one, an
+# entry that is missing or declared twice, and any path or port shared with
+# another installation, before anything is written.
+#
+# Shared read-only with livespec-dev-tooling's installation, as the scratch
+# instance shares them: the controller account, the venv at the installed
+# release, the canonical reader clone, the three secret files and the recovery
+# App credential. The apply writes none of them.
+incident_observer_installation_entry: >-
+  {{ incident_observer_installations
+     | selectattr('repository', 'match', '^[^/]+/' ~ incident_observer_installation_name ~ '$')
+     | first }}
+incident_observer_repository: "{{ incident_observer_installation_entry.repository }}"
+incident_observer_required_jobs: "{{ incident_observer_installation_entry.required_jobs }}"
+incident_observer_port: "{{ incident_observer_installation_entry.port }}"
+incident_observer_tenant_project_id: "{{ incident_observer_installation_entry.tenant_project_id }}"
+incident_observer_reader_env_var: "{{ incident_observer_installation_entry.reader_env_var }}"
+incident_observer_installation_root: "{{ incident_observer_home }}/installation-{{ incident_observer_installation_name }}"
+incident_observer_config_path: "{{ incident_observer_etc_dir }}/controller-{{ incident_observer_installation_name }}.json"
+incident_observer_manifest_path: "{{ incident_observer_etc_dir }}/released-installation-{{ incident_observer_installation_name }}.json"
+incident_observer_reader_env_path: "{{ incident_observer_etc_dir }}/reader-{{ incident_observer_installation_name }}.env"
+incident_observer_state_dir: "{{ incident_observer_installation_root }}/receipts"
+incident_observer_reference_dir: "{{ incident_observer_installation_root }}/reference"
+# The reference clone is of the SERVED repository, on its default branch: the
+# inverse resolves that repository's landed commits. The manifest's `revision`
+# is still the released livespec-dev-tooling tag's commit, read from
+# livespec-dev-tooling's own reference clone, read-only.
+incident_observer_reference_repo: "https://github.com/{{ incident_observer_installation_entry.repository }}.git"
+incident_observer_reference_version: master
+incident_observer_release_reference_dir: "{{ incident_observer_home }}/reference"
+incident_observer_unit_name: "livespec-incident-observer-{{ incident_observer_installation_name }}"
+incident_observer_unit_path: "/etc/systemd/system/livespec-incident-observer-{{ incident_observer_installation_name }}.service"
+incident_observer_fetch_unit_name: "livespec-incident-reference-fetch-{{ incident_observer_installation_name }}"
+incident_observer_fetch_service_path: "/etc/systemd/system/livespec-incident-reference-fetch-{{ incident_observer_installation_name }}.service"
+incident_observer_fetch_timer_path: "/etc/systemd/system/livespec-incident-reference-fetch-{{ incident_observer_installation_name }}.timer"
+# Its public routes, on the role's one funnel port, each proxied to the same
+# route on its own listener (`incident_observer_funnel_targets` pairs with
+# `incident_observer_funnel_paths` by position).
+incident_observer_funnel_paths: >-
+  {{ incident_observer_installation_routes
+     | map('regex_replace', '^', '/' ~ incident_observer_installation_name) | list }}
+incident_observer_funnel_targets: "{{ incident_observer_installation_routes }}"
+# The teardown keeps the installation root (receipts and reference clone) as
+# evidence. `-e incident_observer_installation_teardown_purge=true` removes it too.
+incident_observer_installation_teardown_purge: false

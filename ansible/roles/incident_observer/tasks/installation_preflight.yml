@@ -1,0 +1,277 @@
+---
+# A further production installation's refusals, shared by the apply
+# (tasks/installation_apply.yml) and the teardown (tasks/installation_teardown.yml),
+# which each include this file BEFORE they write, stop or remove anything.
+# livespec-dev-tooling-lqp2qx.
+#
+# The installation runs on the dev host as the shared controller account, beside
+# livespec-dev-tooling's installation and the scratch instance, so the separation
+# is enforced here, in code. As in tasks/scratch_preflight.yml, no verdict reads a
+# variable that only states what is expected: livespec-dev-tooling's paths and
+# the derived layout are spelled INLINE from fixed literals plus the validated
+# name, and the only variables an assert reads are the ones the role then ACTS on.
+#
+# Six layers, each its own assert so a refusal names its reason:
+#
+# 1. a named installation, not scratch mode, not livespec-dev-tooling, a safe name;
+# 2. the inventory declares that name exactly once, every entry is well formed,
+#    livespec-dev-tooling is its first entry on port 8765, and no two entries
+#    share a repository or a port, or take the scratch instance's port;
+# 3. every value the installations share is exactly livespec-dev-tooling's;
+# 4. every per-installation path and unit name is exactly the layout the name
+#    fixes, and the values the role acts on are the selected entry's;
+# 5. after `realpath` normalization, no installation path is, sits inside, or
+#    contains a path livespec-dev-tooling's installation owns;
+# 6. on the HOST, read as root without following links, no installation path is
+#    a symbolic link, and neither is any path the apply writes beneath them.
+
+- name: Refuse an installation run without a safe name, in scratch mode, or for livespec-dev-tooling
+  ansible.builtin.assert:
+    that:
+      - incident_observer_installation_name is defined
+      - incident_observer_installation_name is string
+      - incident_observer_installation_name | length > 0
+      - incident_observer_installation_name | length <= 60
+      - incident_observer_installation_name is match('[a-z0-9]')
+      - incident_observer_installation_name | regex_findall('[^a-z0-9-]') | length == 0
+      - incident_observer_installation_name != 'livespec-dev-tooling'
+      - not (incident_observer_scratch | bool)
+      - incident_observer_scratch_name is not defined
+      - incident_observer_target_branch | default('', true) | length == 0
+    fail_msg: >-
+      an installation run needs incident_observer_installation_name: one path
+      segment of lowercase letters, digits and hyphens naming a repository the
+      inventory declares, other than livespec-dev-tooling (whose installation
+      ansible/dev-host.yml converges), and no scratch variable. Nothing has been
+      written, stopped or removed.
+    success_msg: the installation is {{ incident_observer_installation_name }}
+
+- name: Refuse an inventory that does not declare this installation exactly once, or is malformed
+  ansible.builtin.assert:
+    that:
+      - incident_observer_installations is sequence
+      - incident_observer_installations | length >= 1
+      - incident_observer_installations[0].repository == 'thewoolleyman/livespec-dev-tooling'
+      - incident_observer_installations[0].port | int == 8765
+      - >-
+        incident_observer_installations
+        | selectattr('repository', 'match', '^[^/]+/' ~ incident_observer_installation_name ~ '$')
+        | list | length == 1
+      - >-
+        incident_observer_installations | map(attribute='repository') | unique | list | length
+        == incident_observer_installations | length
+      - >-
+        incident_observer_installations | map(attribute='repository') | map('regex_replace', '^.*/', '')
+        | unique | list | length == incident_observer_installations | length
+      - >-
+        incident_observer_installations | map(attribute='port') | map('int') | unique | list | length
+        == incident_observer_installations | length
+      - 8766 not in (incident_observer_installations | map(attribute='port') | map('int') | list)
+      - >-
+        incident_observer_installations
+        | selectattr('repository', 'defined') | selectattr('required_jobs', 'defined')
+        | selectattr('port', 'defined') | selectattr('tenant_project_id', 'defined')
+        | selectattr('reader_env_var', 'defined') | list | length
+        == incident_observer_installations | length
+      - >-
+        incident_observer_installations | map(attribute='repository')
+        | select('match', '^[A-Za-z0-9_.-]+/[a-z0-9][a-z0-9-]*$') | list | length
+        == incident_observer_installations | length
+      - >-
+        (incident_observer_installations | map(attribute='required_jobs') | map('last') | unique | list)
+        == ['ci-green']
+    fail_msg: >-
+      incident_observer_installations must list livespec-dev-tooling first on port
+      8765, declare {{ incident_observer_installation_name }} exactly once, give
+      every entry repository, required_jobs (ending in ci-green), port,
+      tenant_project_id and reader_env_var, and share no repository, repository
+      name or port between entries or with the scratch instance's 8766. Nothing
+      has been written, stopped or removed.
+    success_msg: the inventory declares {{ incident_observer_installation_name }} once
+
+- name: Refuse an installation run that would move anything the installations share
+  ansible.builtin.assert:
+    that:
+      - incident_observer_home == '/var/lib/livespec-incident'
+      - incident_observer_etc_dir == '/etc/livespec-incident'
+      - incident_observer_install_dir == '/opt/livespec-incident'
+      - incident_observer_venv == '/opt/livespec-incident/venv'
+      - incident_observer_bin_dir == '/opt/livespec-incident/bin'
+      - incident_observer_reader_dir == '/opt/livespec-incident/reader'
+      - incident_observer_user == 'livespec-incident'
+      - incident_observer_group == 'livespec-incident'
+      - >-
+        incident_observer_secrets
+        == [{'name': 'webhook', 'path': '/etc/livespec-incident/webhook-secret', 'env': 'LIVESPEC_INCIDENT_WEBHOOK_SECRET'},
+            {'name': 'control', 'path': '/etc/livespec-incident/control-secret', 'env': 'LIVESPEC_INCIDENT_CONTROL_SECRET'},
+            {'name': 'query', 'path': '/etc/livespec-incident/query-secret', 'env': 'LIVESPEC_INCIDENT_QUERY_SECRET'}]
+      - incident_observer_recovery_app_path == '/etc/livespec-incident/recovery-app.json'
+      - incident_observer_release_reference_dir == '/var/lib/livespec-incident/reference'
+      - incident_observer_funnel_https_port | int == 10000
+    fail_msg: >-
+      an installation shares livespec-dev-tooling's directories, account, secret
+      files, recovery App credential, release reference clone and funnel port
+      read-only and may not override any of them. Nothing has been written,
+      stopped or removed.
+    success_msg: the installation shares livespec-dev-tooling's installation unchanged
+
+- name: Refuse an installation layout other than the one its name fixes
+  ansible.builtin.assert:
+    that:
+      - >-
+        [incident_observer_installation_root, incident_observer_state_dir, incident_observer_reference_dir,
+         incident_observer_config_path, incident_observer_manifest_path, incident_observer_reader_env_path,
+         incident_observer_unit_path, incident_observer_fetch_service_path, incident_observer_fetch_timer_path]
+        | map('realpath') | list
+        == ['/var/lib/livespec-incident/installation-' ~ incident_observer_installation_name,
+            '/var/lib/livespec-incident/installation-' ~ incident_observer_installation_name ~ '/receipts',
+            '/var/lib/livespec-incident/installation-' ~ incident_observer_installation_name ~ '/reference',
+            '/etc/livespec-incident/controller-' ~ incident_observer_installation_name ~ '.json',
+            '/etc/livespec-incident/released-installation-' ~ incident_observer_installation_name ~ '.json',
+            '/etc/livespec-incident/reader-' ~ incident_observer_installation_name ~ '.env',
+            '/etc/systemd/system/livespec-incident-observer-' ~ incident_observer_installation_name ~ '.service',
+            '/etc/systemd/system/livespec-incident-reference-fetch-' ~ incident_observer_installation_name ~ '.service',
+            '/etc/systemd/system/livespec-incident-reference-fetch-' ~ incident_observer_installation_name ~ '.timer']
+        | map('realpath') | list
+      - incident_observer_unit_name == 'livespec-incident-observer-' ~ incident_observer_installation_name
+      - incident_observer_fetch_unit_name == 'livespec-incident-reference-fetch-' ~ incident_observer_installation_name
+      - >-
+        incident_observer_repository
+        == (incident_observer_installations
+            | selectattr('repository', 'match', '^[^/]+/' ~ incident_observer_installation_name ~ '$')
+            | map(attribute='repository') | first)
+      - >-
+        incident_observer_port | int
+        == (incident_observer_installations
+            | selectattr('repository', 'match', '^[^/]+/' ~ incident_observer_installation_name ~ '$')
+            | map(attribute='port') | first | int)
+      - >-
+        incident_observer_required_jobs
+        == (incident_observer_installations
+            | selectattr('repository', 'match', '^[^/]+/' ~ incident_observer_installation_name ~ '$')
+            | map(attribute='required_jobs') | first)
+      - incident_observer_reference_repo == 'https://github.com/' ~ incident_observer_repository ~ '.git'
+      - >-
+        incident_observer_funnel_paths
+        == ['/' ~ incident_observer_installation_name ~ '/callback',
+            '/' ~ incident_observer_installation_name ~ '/ordinary-action']
+      - incident_observer_funnel_targets == ['/callback', '/ordinary-action']
+    fail_msg: >-
+      every installation path, unit name, port, repository, job list and public
+      route is fixed by incident_observer_installation_name and its inventory
+      entry (vars/installation.yml); override the name or the inventory, never a
+      single value. Nothing has been written, stopped or removed.
+    success_msg: the layout is the one {{ incident_observer_installation_name }} fixes
+
+- name: Refuse any installation path that is, sits inside, or contains a path livespec-dev-tooling's installation owns
+  ansible.builtin.assert:
+    that:
+      - >-
+        [incident_observer_installation_root, incident_observer_state_dir, incident_observer_reference_dir,
+         incident_observer_config_path, incident_observer_manifest_path, incident_observer_reader_env_path,
+         incident_observer_unit_path, incident_observer_fetch_service_path, incident_observer_fetch_timer_path]
+        | map('realpath')
+        | select('match', '^(' ~ (['/etc/livespec-incident/controller.json',
+                                   '/etc/livespec-incident/released-installation.json',
+                                   '/var/lib/livespec-incident/receipts',
+                                   '/var/lib/livespec-incident/reference',
+                                   '/etc/systemd/system/livespec-incident-observer.service',
+                                   '/etc/systemd/system/livespec-incident-reference-fetch.service',
+                                   '/etc/systemd/system/livespec-incident-reference-fetch.timer',
+                                   '/opt/livespec-incident',
+                                   '/opt/livespec-incident/venv',
+                                   '/opt/livespec-incident/bin',
+                                   '/opt/livespec-incident/reader',
+                                   '/etc/livespec-incident/reader.env',
+                                   '/etc/livespec-incident/recovery-app.json',
+                                   '/etc/livespec-incident/webhook-secret',
+                                   '/etc/livespec-incident/control-secret',
+                                   '/etc/livespec-incident/query-secret']
+                                  | map('regex_escape') | join('|')) ~ ')(/|$)')
+        | list | length == 0
+      - >-
+        ['/etc/livespec-incident/controller.json',
+         '/etc/livespec-incident/released-installation.json',
+         '/var/lib/livespec-incident/receipts',
+         '/var/lib/livespec-incident/reference',
+         '/etc/systemd/system/livespec-incident-observer.service',
+         '/etc/systemd/system/livespec-incident-reference-fetch.service',
+         '/etc/systemd/system/livespec-incident-reference-fetch.timer',
+         '/opt/livespec-incident',
+         '/opt/livespec-incident/venv',
+         '/opt/livespec-incident/bin',
+         '/opt/livespec-incident/reader',
+         '/etc/livespec-incident/reader.env',
+         '/etc/livespec-incident/recovery-app.json',
+         '/etc/livespec-incident/webhook-secret',
+         '/etc/livespec-incident/control-secret',
+         '/etc/livespec-incident/query-secret',
+         '/var/lib/livespec-incident',
+         '/etc/livespec-incident']
+        | select('match', '^(' ~ ([incident_observer_installation_root, incident_observer_state_dir,
+                                   incident_observer_reference_dir, incident_observer_config_path,
+                                   incident_observer_manifest_path, incident_observer_reader_env_path,
+                                   incident_observer_unit_path, incident_observer_fetch_service_path,
+                                   incident_observer_fetch_timer_path]
+                                  | map('realpath') | map('regex_escape') | join('|')) ~ ')(/|$)')
+        | list | length == 0
+    fail_msg: >-
+      an installation path, normalized, is, sits inside or contains one of the
+      paths livespec-dev-tooling's installation owns, or is or contains the
+      shared home or configuration directory. Nothing has been written, stopped
+      or removed.
+    success_msg: no installation path touches a path livespec-dev-tooling's installation owns
+
+- name: Read each installation path on the host as root, without following a link
+  ansible.builtin.stat:
+    path: "{{ item }}"
+    follow: false
+    get_checksum: false
+  become: true
+  check_mode: false
+  loop:
+    - "{{ incident_observer_installation_root }}"
+    - "{{ incident_observer_state_dir }}"
+    - "{{ incident_observer_reference_dir }}"
+    - "{{ incident_observer_config_path }}"
+    - "{{ incident_observer_manifest_path }}"
+    - "{{ incident_observer_reader_env_path }}"
+    - "{{ incident_observer_unit_path }}"
+    - "{{ incident_observer_fetch_service_path }}"
+    - "{{ incident_observer_fetch_timer_path }}"
+    - "{{ incident_observer_state_dir }}/recovery-journal"
+    - "{{ incident_observer_state_dir }}/recovery-journal-contexts"
+    - "{{ incident_observer_reference_dir }}/.git"
+    - "{{ incident_observer_reference_dir }}/.beads"
+    - "{{ incident_observer_reference_dir }}/.beads/metadata.json"
+  register: incident_observer_installation_path_stats
+
+- name: Read every link below the installation reference clone's git directory
+  ansible.builtin.find:
+    paths: "{{ incident_observer_reference_dir }}/.git"
+    file_type: link
+    recurse: true
+    follow: false
+  become: true
+  register: incident_observer_installation_reference_git_links
+  check_mode: false
+  when: incident_observer_installation_path_stats.results[11].stat.exists
+
+- name: Refuse an installation path that is a symbolic link on the host
+  ansible.builtin.assert:
+    that:
+      - incident_observer_installation_path_stats.results | length == 14
+      - >-
+        incident_observer_installation_path_stats.results
+        | selectattr('stat.islnk', 'defined') | selectattr('stat.islnk')
+        | list | length == 0
+      - >-
+        incident_observer_installation_reference_git_links.matched | default(0) | int == 0
+    fail_msg: >-
+      {{ (incident_observer_installation_path_stats.results | selectattr('stat.islnk', 'defined')
+          | selectattr('stat.islnk') | map(attribute='item') | list)
+         + (incident_observer_installation_reference_git_links.files | default([])
+            | map(attribute='path') | list) }}
+      is a symbolic link on the host; an installation path must be a real
+      directory or file, or not exist. Nothing has been written, stopped or removed.
+    success_msg: no installation path is a link on the host

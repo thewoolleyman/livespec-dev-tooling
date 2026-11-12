@@ -42,6 +42,11 @@ ReadOnlyPaths=/opt/livespec-incident /etc/livespec-incident
 ReadWritePaths=/var/lib/livespec-incident
 Restart=on-failure
 RestartSec=2
+# Not an early victim if the dev host runs out of memory: the 2026-11-12 12:30Z
+# OOM on vps came from a ~14 GB swing in dispatcher and reconcile processes, and
+# the observer is what reverts master when a repair breaks it. It needs about
+# 0.1 GB, so no MemoryMax/MemoryHigh (livespec-dev-tooling-lqp2qx).
+OOMScoreAdjust=-500
 
 [Install]
 WantedBy=multi-user.target

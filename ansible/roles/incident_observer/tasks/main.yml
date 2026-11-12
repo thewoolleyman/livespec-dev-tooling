@@ -40,9 +40,22 @@
     or incident_observer_scratch_name is defined
     or incident_observer_target_branch | default('', true) | length > 0
 
+- name: Converge a further production installation only through its refusals
+  # A repository other than livespec-dev-tooling that the inventory declares
+  # (defaults/main.yml `incident_observer_installations`), named by
+  # ansible/incident-observer-installation.yml. Its preflight refuses scratch
+  # variables, so the two modes never combine (livespec-dev-tooling-lqp2qx).
+  ansible.builtin.include_tasks: installation_apply.yml
+  when: >-
+    incident_observer_installation_name is defined
+    and not (incident_observer_scratch | bool)
+    and incident_observer_scratch_name is not defined
+    and incident_observer_target_branch | default('', true) | length == 0
+
 - name: Converge the production instance
   ansible.builtin.include_tasks: converge.yml
   when: >-
     not (incident_observer_scratch | bool)
     and incident_observer_scratch_name is not defined
     and incident_observer_target_branch | default('', true) | length == 0
+    and incident_observer_installation_name is not defined
