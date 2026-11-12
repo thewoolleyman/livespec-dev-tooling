@@ -548,6 +548,35 @@
   become: true
   when: incident_observer_reference_ready
 
+- name: Prove the reader's credential opens the tenant this installation serves
+  # A further installation's reader reads ITS repository's tenant: the pointer
+  # above names the database and user its reference clone commits, and the
+  # credential is the one the wrapper projects (one BEADS_DOLT_PASSWORD today,
+  # the same from every checkout). A read through that pointer, as the
+  # controller account, with that credential, must succeed before the
+  # installation serves, so a later per-tenant password can never silently open
+  # another tenant or leave this one unreadable (livespec-dev-tooling-lqp2qx).
+  # Output is withheld: it is ledger content.
+  ansible.builtin.command:
+    argv: [/usr/local/bin/bd, list, --limit, "1", --json]
+    chdir: "{{ incident_observer_reference_dir }}"
+  environment:
+    HOME: "{{ incident_observer_home }}"
+    # `bd` reads its credential from BEADS_DOLT_PASSWORD, whichever control-node
+    # variable the inventory entry names as its source.
+    BEADS_DOLT_PASSWORD: "{{ lookup('ansible.builtin.env', incident_observer_reader_env_var) }}"
+  become: true
+  become_user: "{{ incident_observer_user }}"
+  register: incident_observer_tenant_proof
+  changed_when: false
+  failed_when: incident_observer_tenant_proof.rc != 0
+  check_mode: false
+  no_log: true
+  when:
+    - incident_observer_installation_name is defined
+    - incident_observer_reference_ready
+    - not ansible_check_mode
+
 - name: Read the released tag's commit from the reference clone
   # A further installation's reference clone is of another repository, so the
   # released livespec-dev-tooling tag is read from production's reference
@@ -780,6 +809,21 @@
             | product(incident_observer_installation_routes | default(incident_observer_funnel_paths))
             | map('join') | list)
            | union(incident_observer_funnel_paths) }}
+      # The route each of those paths must proxy to: the same route on the
+      # listener of the installation that declares it, at that entry's port. A
+      # declared path proxied anywhere else is refused below, whichever
+      # installation's converge reads it.
+      incident_observer_funnel_union_routes: >-
+        {{ (incident_observer_installations | default([])
+            | map(attribute='repository') | map('regex_replace', '^.*/', '')
+            | map('regex_replace', '^livespec-dev-tooling$', '')
+            | map('regex_replace', '^(?=.)', '/')
+            | zip(incident_observer_installations | default([]) | map(attribute='port') | map('string'))
+            | product(incident_observer_installation_routes | default(incident_observer_funnel_paths))
+            | map('flatten') | map('join', '|')
+            | map('regex_replace', '^([^|]*)[|]([^|]*)[|](.*)$', '\1\3 proxy http://127.0.0.1:\2\3')
+            | list)
+           | union(incident_observer_funnel_declared_routes) }}
       incident_observer_funnel_published_routes: >-
         {{ incident_observer_funnel_handlers | dict2items | map(attribute='key')
            | zip(incident_observer_funnel_handlers | dict2items | map(attribute='value.Proxy', default=''))
@@ -792,6 +836,11 @@
            else incident_observer_funnel_paths }}
       incident_observer_funnel_extra: >-
         {{ incident_observer_funnel_handlers | list | difference(incident_observer_funnel_union) }}
+      incident_observer_funnel_mistargeted: >-
+        {{ incident_observer_funnel_published_routes
+           | difference(incident_observer_funnel_union_routes)
+           | map('regex_replace', ' proxy .*$', '')
+           | select('in', incident_observer_funnel_union) | list }}
   ansible.builtin.set_fact:
     incident_observer_funnel_granted: >-
       {{ 'funnel' in ((incident_observer_tailscale_status.stdout | from_json).Self.CapMap
@@ -899,18 +948,31 @@
   vars:
     incident_observer_funnel_read: "{{ incident_observer_funnel_after.stdout | default('', true) }}"
     <<: *incident_observer_funnel_reading
+  # A declared path proxied to any listener but the one of the installation
+  # that declares it is refused too (livespec-dev-tooling-lqp2qx): no public
+  # path may reach another installation's listener.
   ansible.builtin.assert:
     that:
       - incident_observer_funnel_extra | length == 0
+      - incident_observer_funnel_mistargeted | length == 0
     fail_msg: >-
-      funnel port {{ incident_observer_funnel_https_port }} publishes
+      the funnel port's public paths are not exactly the declared installations':
+      {% if incident_observer_funnel_extra | length > 0 %}funnel port
+      {{ incident_observer_funnel_https_port }} publishes
       {{ incident_observer_funnel_extra | join(', ') }}, which the role does not
       declare (every declared installation's paths: {{ incident_observer_funnel_union | join(', ') }}).
       Remove it with `tailscale funnel --https={{ incident_observer_funnel_https_port }}
-      --set-path=<path> off`, or declare it, and run this apply again.
+      --set-path=<path> off`, or declare it, and run this apply again. {% endif %}{%
+      if incident_observer_funnel_mistargeted | length > 0 %}funnel port
+      {{ incident_observer_funnel_https_port }} proxies
+      {{ incident_observer_funnel_mistargeted | join(', ') }} to a listener other
+      than the one of the installation that declares it (expected:
+      {{ incident_observer_funnel_union_routes | join('; ') }}). Converge that
+      installation again, or remove the path, and run this apply again.{% endif %}
     success_msg: >-
       funnel port {{ incident_observer_funnel_https_port }} publishes no path
-      beyond {{ incident_observer_funnel_union | join(', ') }}
+      beyond {{ incident_observer_funnel_union | join(', ') }}, each to its own
+      installation's listener
   when: >-
     not (incident_observer_scratch | bool)
     and incident_observer_scratch_name is not defined
