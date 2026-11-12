@@ -113,14 +113,23 @@ def _run_converge_scale_set_step(*, tmp_path: Path, worker_files: list[str]) -> 
     """Run the converge's own release-map and step-7 text against stub tools; return helm's calls."""
     converge = _CONVERGE.read_text(encoding="utf-8")
     scale_sets = converge.split("declare -A SCALE_SETS=(", 1)[1].split("\nlog() {", 1)[0]
-    step = converge.split('log "7a.', 1)[1].split('log "7b.', 1)[0]
+    step = converge.split('log "7a.', 1)[1].split(
+        '# ---------------------------------------------------------------------------\nlog "7b. Assert',
+        1,
+    )[0]
     arc = tmp_path / "arc"
     (arc / "worker").mkdir(parents=True)
     fleet_files = re.findall(r'\]="(values-[^"]+)"', scale_sets)
     for name in [*fleet_files, *(f"worker/{w}" for w in worker_files)]:
         _ = (arc / name).write_text(f"mount: {_PLACEHOLDER}\n", encoding="utf-8")
+    _ = (arc / "chart.tgz").touch()
     stubs = tmp_path / "bin"
     stubs.mkdir()
+    warm = tmp_path / "warm"
+    (warm / "pypi-proxy").mkdir(parents=True)
+    _ = (warm / "pypi-proxy" / "pypi-proxy-uv-wrapper.yaml").write_text(
+        "apiVersion: v1\n", encoding="utf-8"
+    )
     calls = tmp_path / "helm.calls"
     hook_stub = "\n".join(
         [
@@ -143,6 +152,7 @@ def _run_converge_scale_set_step(*, tmp_path: Path, worker_files: list[str]) -> 
     for path, text in (
         (arc / "converge-hook-pod-template.sh", hook_stub),
         (arc / "render-arch-overlay.sh", '#!/bin/bash\n: > "$3"\n'),
+        (stubs / "kubectl", "#!/bin/bash\nexit 0\n"),
         (stubs / "helm", helm_stub),
     ):
         _ = path.write_text(text, encoding="utf-8")
@@ -151,6 +161,7 @@ def _run_converge_scale_set_step(*, tmp_path: Path, worker_files: list[str]) -> 
         [
             "set -euo pipefail",
             f'ARC_DIR="{arc}"',
+            f'WARM_CACHE_DIR="{warm}"',
             "RUNNERS_NAMESPACE=arc-runners",
             "ARC_SCALE_SET_CHART=chart.tgz",
             "log() { :; }",
