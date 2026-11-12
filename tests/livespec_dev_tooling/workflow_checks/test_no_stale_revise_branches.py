@@ -138,7 +138,7 @@ def _run_check(
     extra_argv: list[str] | None = None,
     env_path: str | None = None,
 ) -> subprocess.CompletedProcess[str]:
-    argv = [sys.executable, str(_CHECK)]
+    argv = [sys.executable, "-m", "livespec_dev_tooling.workflow_checks.no_stale_revise_branches"]
     if extra_argv is not None:
         argv.extend(extra_argv)
     env = _scrubbed_environ()
