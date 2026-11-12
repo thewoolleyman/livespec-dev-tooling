@@ -43,6 +43,8 @@ ci_converge_unit_directories:
   - ""
   - arc
   - arc/charts
+  # Each homelab worker's host-unique scale-set values (converge step 7).
+  - arc/worker
   - kueue
   - kueue/core
   # The container-worker queue templates (livespec-dev-tooling-ko26ez.7).

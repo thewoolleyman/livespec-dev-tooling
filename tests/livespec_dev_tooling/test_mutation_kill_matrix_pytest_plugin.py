@@ -89,6 +89,26 @@ def test_each_test_records_whether_any_of_its_phases_failed(
     assert all(isinstance(line["duration"], float) for line in lines)
 
 
+def test_a_file_that_fails_to_collect_is_recorded_and_one_that_collects_is_not(
+    *, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A failed collection leaves a line naming the node, since its tests never report."""
+    module = importlib.import_module(_MODULE)
+    outcomes = tmp_path / "outcomes.jsonl"
+    monkeypatch.setenv(module.OUTCOMES_VARIABLE, str(outcomes))
+
+    module.pytest_collectreport(_Report("tests/test_fine.py", failed=False))
+    assert not outcomes.exists()
+
+    module.pytest_collectreport(_Report("tests/test_broken.py", failed=True))
+    module.pytest_collectreport(_Report("tests/unit", failed=True))
+
+    assert _lines(path=outcomes) == [
+        {"uncollected": "tests/test_broken.py"},
+        {"uncollected": "tests/unit"},
+    ]
+
+
 def test_a_timeout_arms_a_default_action_timer_for_each_test_and_disarms_it(
     *, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

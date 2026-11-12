@@ -227,9 +227,13 @@ def test_an_untouched_failing_test_is_retried_on_its_own_and_reported_as_a_flake
     assert "FLAKE-RETRIED" in completed.stdout
     assert "test_flaky.py::test_flaky: 2 attempts, passed" in completed.stdout
     records = (repo / "tmp" / "flake-retries" / "retries.jsonl").read_text(encoding="utf-8")
-    assert [json.loads(line) for line in records.splitlines()] == [
-        {"attempts": 2, "nodeid": "test_flaky.py::test_flaky", "outcome": "passed"}
-    ]
+    assert len(records.splitlines()) == 1
+    record = json.loads(records)
+    assert record["attempts"] == 2
+    assert record["nodeid"] == "test_flaky.py::test_flaky"
+    assert record["outcome"] == "passed"
+    assert record["failures"][0]["cut"] is False
+    assert "AssertionError: first attempt fails" in record["failures"][0]["text"]
 
 
 @pytest.mark.integration
@@ -544,7 +548,12 @@ def test_the_report_hook_counts_every_attempt_of_a_retried_test(
     monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
 
     def report(outcome: str, when: str = "call") -> object:
-        return SimpleNamespace(when=when, nodeid="t.py::t", outcome=outcome)
+        return SimpleNamespace(
+            when=when,
+            nodeid="t.py::t",
+            outcome=outcome,
+            longrepr="AssertionError: a failed retry" if outcome == "rerun" else "",
+        )
 
     plugin.pytest_runtest_logreport(report("passed", when="setup"))
     plugin.pytest_runtest_logreport(report("passed"))
@@ -555,9 +564,24 @@ def test_the_report_hook_counts_every_attempt_of_a_retried_test(
     reporter = _capturing_reporter(into=written)
     plugin.pytest_terminal_summary(reporter, 0, SimpleNamespace(rootpath=tmp_path))
 
-    assert written == ["FLAKE-RETRIED", "t.py::t: 4 attempts, passed"]
+    assert written == [
+        "FLAKE-RETRIED",
+        "t.py::t: 4 attempts, passed",
+        "  AssertionError: a failed retry",
+        "  AssertionError: a failed retry",
+        "  AssertionError: a failed retry",
+    ]
     records = (tmp_path / "tmp" / "flake-retries" / "retries.jsonl").read_text(encoding="utf-8")
-    assert json.loads(records) == {"attempts": 4, "nodeid": "t.py::t", "outcome": "passed"}
+    assert json.loads(records) == {
+        "attempts": 4,
+        "failures": [
+            {"cut": False, "text": "AssertionError: a failed retry"},
+            {"cut": False, "text": "AssertionError: a failed retry"},
+            {"cut": False, "text": "AssertionError: a failed retry"},
+        ],
+        "nodeid": "t.py::t",
+        "outcome": "passed",
+    }
 
 
 def test_the_summary_hook_is_silent_when_nothing_was_retried(

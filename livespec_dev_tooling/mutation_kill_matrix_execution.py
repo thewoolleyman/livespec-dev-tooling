@@ -2,10 +2,13 @@
 
 All of one mutant's selected tests run in ONE pytest process, which records
 each test's own outcome through `mutation_kill_matrix_pytest_plugin`.  When
-that process ends or times out before a test reports, the test is re-run
-alone, and the lone run decides it: its recorded outcome when it reports one,
-and otherwise its exit status, so a test that kills the process kills the
-mutant.
+that process ends or times out before a test reports, the FIRST unreported
+test is re-run alone, and the lone run decides it: its recorded outcome when
+it reports one, and otherwise its exit status, so a test that kills the
+process kills the mutant.  The tests after it then run together in one
+further process, never one process each: a mutant that hangs one test of
+14,000 must not cost 14,000 processes.  A selected test whose file could not
+be collected under the mutant counts as failed, with no process of its own.
 
 Parallel workers each apply mutants in a private copy of the target, so no
 worker ever sees another worker's mutant.  A copy is only sound when the
@@ -94,6 +97,13 @@ def outcome_environment(*, outcomes: Path, timeout: float) -> tuple[str, ...]:
     return (f"{OUTCOMES_VARIABLE}={outcomes}", f"{TIMEOUT_VARIABLE}={timeout}")
 
 
+def _rows(*, outcomes: Path) -> list[dict[str, object]]:
+    """Read every line the plugin wrote: test outcomes and uncollected nodes."""
+    if not outcomes.is_file():
+        return []
+    return [json.loads(line) for line in outcomes.read_text(encoding="utf-8").splitlines() if line]
+
+
 def read_outcomes(*, outcomes: Path, slower_than: float = 0.0) -> dict[str, bool]:
     """Read the plugin's per-test lines as test node id -> failed.
 
@@ -101,12 +111,11 @@ def read_outcomes(*, outcomes: Path, slower_than: float = 0.0) -> dict[str, bool
     reads as failed: the baseline run arms no per-test timer, so this is how it
     judges the per-test timeout.
     """
-    if not outcomes.is_file():
-        return {}
-    rows = (json.loads(line) for line in outcomes.read_text(encoding="utf-8").splitlines() if line)
     return {
-        row["test"]: bool(row["failed"]) or (0 < slower_than < float(row["duration"]))
-        for row in rows
+        str(row["test"]): bool(row["failed"])
+        or (0 < slower_than < float(cast("float", row["duration"])))
+        for row in _rows(outcomes=outcomes)
+        if "test" in row
     }
 
 
@@ -139,14 +148,42 @@ def _pytest_command(
         "no:cacheprovider",
         "-p",
         PLUGIN_MODULE,
+        # One file that cannot be collected must not stop the files that can.
+        "--continue-on-collection-errors",
         *files,
     ]
 
 
+@dataclass(frozen=True, kw_only=True)
+class _Batch:
+    """What one pytest process settled: reported outcomes, uncollected nodes, exit status."""
+
+    reported: dict[str, bool]
+    uncollected: frozenset[str]
+    returncode: int
+
+    def settled(self, *, tests: list[str]) -> dict[str, bool]:
+        """Return the outcome of every test this process decided."""
+        failed_to_collect = {
+            test: True
+            for test in tests
+            if any(_under(test=test, node=node) for node in self.uncollected)
+        }
+        return failed_to_collect | {
+            test: self.reported[test] for test in tests if test in self.reported
+        }
+
+
+def _under(*, test: str, node: str) -> bool:
+    """Whether a test node id lies in the file or directory `node` names."""
+    path = test.split("::", 1)[0]
+    return bool(node) and (path == node or path.startswith(node + "/"))
+
+
 def _run_batch(
     *, execute: CommandExecutor, tree: WorkerTree, tests: list[str], timeout: float
-) -> tuple[dict[str, bool], subprocess.CompletedProcess[str]]:
-    """Run `tests` in one process and return what it recorded and how it ended."""
+) -> _Batch:
+    """Run `tests` in one process and return what it settled and how it ended."""
     outcomes = tree.scratch / "outcomes.jsonl"
     outcomes.unlink(missing_ok=True)
     result = execute(
@@ -154,22 +191,48 @@ def _run_batch(
         cwd=tree.root,
         timeout=timeout * len(tests) + _GRACE_SECONDS,
     )
-    recorded = read_outcomes(outcomes=outcomes)
-    return {test: recorded[test] for test in tests if test in recorded}, result
+    return _Batch(
+        reported=read_outcomes(outcomes=outcomes),
+        uncollected=frozenset(
+            str(row["uncollected"]) for row in _rows(outcomes=outcomes) if "uncollected" in row
+        ),
+        returncode=result.returncode,
+    )
 
 
 def run_selected(
     *, execute: CommandExecutor, tree: WorkerTree, tests: list[str], timeout: float
 ) -> dict[str, bool]:
-    """Return every test's own failed outcome, re-running alone any that went unreported."""
-    if not tests:
-        return {}
-    outcomes, _ = _run_batch(execute=execute, tree=tree, tests=tests, timeout=timeout)
-    for test in tests:
-        if test in outcomes:
+    """Return every test's own failed outcome.
+
+    A process that leaves tests unsettled sends the first of them to a lone
+    run and the rest to one further process.  A process that settles nothing
+    at all splits the rest in two, so a group that cannot run together still
+    costs far fewer processes than one per test.
+    """
+    outcomes: dict[str, bool] = {}
+    pending = [list(tests)]
+    while pending:
+        group = pending.pop()
+        if not group:
             continue
-        alone, result = _run_batch(execute=execute, tree=tree, tests=[test], timeout=timeout)
-        outcomes[test] = alone.get(test, result.returncode != 0)
+        batch = _run_batch(execute=execute, tree=tree, tests=group, timeout=timeout)
+        outcomes |= batch.settled(tests=group)
+        unsettled = [test for test in group if test not in outcomes]
+        if not unsettled:
+            continue
+        first, *rest = unsettled
+        alone = (
+            batch
+            if len(group) == 1
+            else _run_batch(execute=execute, tree=tree, tests=[first], timeout=timeout)
+        )
+        outcomes[first] = alone.settled(tests=[first]).get(first, alone.returncode != 0)
+        if len(unsettled) == len(group) and len(rest) > 1:
+            half = len(rest) // 2
+            pending += [rest[half:], rest[:half]]
+        else:
+            pending.append(rest)
     return outcomes
 
 
