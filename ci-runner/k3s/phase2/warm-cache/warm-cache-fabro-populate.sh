@@ -219,10 +219,23 @@ checkout_branch() {
   git -C "${repo}" clean -ffdx >/dev/null
 }
 
-# ensure_toolchain TOOLCHAIN [COMPONENT] — the image bakes one Rust, and the
-# fork's jobs compile with a pinned nightly and a pinned stable, so each profile
-# installs the toolchain it compiles with.  rustup is idempotent: a toolchain
-# already present is a no-op.
+# ensure_fork_toolchain_bootstrap — the fork's ARC jobs use buildpack-deps:noble,
+# whose build tools include make, then provision Rust through rustup.  The warm
+# uses that same base and adds only the Python and Rust runtime tools it needs.
+ensure_fork_toolchain_bootstrap() {
+  if command -v python3 >/dev/null && command -v rustup >/dev/null; then
+    export PATH="${HOME}/.cargo/bin:${PATH}"
+    return 0
+  fi
+  DEBIAN_FRONTEND=noninteractive apt-get update
+  DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends python3 rustup
+  export PATH="${HOME}/.cargo/bin:${PATH}"
+  command -v python3 >/dev/null && command -v rustup >/dev/null
+}
+
+# ensure_toolchain TOOLCHAIN [COMPONENT] — the fork's jobs compile with a pinned
+# nightly and a pinned stable, so each profile installs the toolchain it compiles
+# with.  rustup is idempotent: a toolchain already present is a no-op.
 ensure_toolchain() {
   local toolchain="$1" component="${2:-}"
   command -v rustup >/dev/null || { log "rustup is not on PATH; cannot install ${toolchain}"; return 1; }
@@ -363,7 +376,8 @@ warm_profile() {
 [ -n "${SCCACHE_REDIS_WRITER_USERNAME}" ] && [ -n "${SCCACHE_REDIS_WRITER_PASSWORD}" ] || die "writer credential is absent"
 [[ "${SCCACHE_FABRO_MIN_FREE_BYTES}" =~ ^[0-9]+$ ]] && [ "${SCCACHE_FABRO_MIN_FREE_BYTES}" -gt 0 ] \
   || die "SCCACHE_FABRO_MIN_FREE_BYTES must be a positive integer"
-command -v cargo >/dev/null || die "cargo is not on PATH"
+ensure_fork_toolchain_bootstrap || die "the fork build image could not bootstrap python3 and rustup"
+command -v make >/dev/null || die "make is not on PATH"
 command -v git >/dev/null || die "git is not on PATH"
 command -v python3 >/dev/null || die "python3 is not on PATH"
 
