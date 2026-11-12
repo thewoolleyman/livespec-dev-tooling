@@ -79,3 +79,8 @@ gate-status *args:
 [positional-arguments]
 gate-list *args:
     ./dev-tooling/gate-run.sh list "$@"
+
+# Stop a running gate by durable run id; never signal its pid or process group.
+[positional-arguments]
+gate-stop *args:
+    ./dev-tooling/gate-run.sh stop "$@"

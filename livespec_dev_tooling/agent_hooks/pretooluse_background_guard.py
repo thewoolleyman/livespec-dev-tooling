@@ -139,7 +139,7 @@ _GH_GATE_SUBCOMMAND = "pr"
 # one: `git commit -m 'add scripts/gate-run.sh'` stays denied.
 _SANCTIONED_RUNNER: re.Pattern[str] = re.compile(
     r"^\s*(?:mise\s+exec\s+--\s+)?(?:\S*/)?"
-    r"(?:gate-run\.sh|just\s+gate-(?:start|wait|status|list))\b"
+    r"(?:gate-run\.sh|just\s+gate-(?:start|wait|status|list|stop))\b"
 )
 
 
