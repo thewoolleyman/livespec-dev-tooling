@@ -220,15 +220,16 @@ def _lifecycle_script(*, template: str, hook: str) -> str:
     return "\n".join(line[16:] if line.startswith(" " * 16) else line for line in lines)
 
 
-def _wait_for_cache_work(*, recorded: Path) -> None:
+def _wait_for_cache_work(*, recorded: Path) -> bool:
     """Wait briefly for detached cache work to record every tier."""
     deadline = time.monotonic() + 2
     while time.monotonic() < deadline:
         if recorded.is_file() and len(recorded.read_text(encoding="utf-8").splitlines()) == len(
             _CACHE_TIERS
         ):
-            break
+            return True
         time.sleep(0.01)
+    return False
 
 
 def _install_slow_span(*, pool_bin: Path, sleep_s: int) -> None:
