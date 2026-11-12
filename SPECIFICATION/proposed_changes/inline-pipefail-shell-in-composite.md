@@ -17,9 +17,9 @@ Extend "Shell script pipeline verdicts" from shell script files to the inline sh
 
 ### Motivation
 
-The ratified clause covers "every shell script this repository ships or runs in its tests, in whichever directory it lives". That reads as script files, so the inline `run:` bodies of `.github/actions/*/action.yml` and `.github/workflows/*` fall outside it, though GitHub runs a step whose shell is `bash` as `bash --noprofile --norc -eo pipefail`. A read-only scan on 2026-11-12, over the composite actions and workflow files of the ten fleet repositories (livespec, livespec-dev-tooling, livespec-orchestrator-beads-fabro, livespec-overseer, livespec-runtime, livespec-driver-claude, livespec-driver-codex, livespec-driver-pi, livespec-console-beads-fabro, dolt-server), found early-exiting pipeline readers under pipefail only in livespec-dev-tooling:
+The ratified clause covers "every shell script this repository ships or runs in its tests, in whichever directory it lives". That reads as script files, so the inline `run:` bodies of `.github/actions/*/action.yml` and `.github/workflows/*` fall outside it, though GitHub runs a step that names `shell: bash` (directly or through `defaults.run.shell`) as `bash --noprofile --norc -eo pipefail {0}`. A step that names no shell runs on Linux as `bash -e {0}`, without pipefail, unless its body sets pipefail itself. A read-only scan on 2026-11-12, over the composite actions and workflow files of the ten fleet repositories (livespec, livespec-dev-tooling, livespec-orchestrator-beads-fabro, livespec-overseer, livespec-runtime, livespec-driver-claude, livespec-driver-codex, livespec-driver-pi, livespec-console-beads-fabro, dolt-server), found early-exiting pipeline readers under pipefail only in livespec-dev-tooling:
 - `.github/actions/bump-pin-rewrite/action.yml`: `git diff --cached --raw | awk '{ print $2 }' | grep -q '^160000$'`. This is a real verdict: it guards against committing a stray gitlink, and a SIGPIPE reads as "no gitlink".
-- `.github/workflows/reusable-release-dispatch.yml`: `echo "$manifest" | head -20 >&2`. Its status is used through `-e`, so a manifest larger than a pipe buffer fails the step.
+- `.github/workflows/reusable-release-dispatch.yml`: `echo "$manifest" | head -20 >&2`. Its status is used through `-e`. It sits in a failure branch that exits 1 on the next line, so on a manifest larger than a pipe buffer the SIGPIPE changes the step's exit code from 1 to 141.
 - `.github/workflows/reusable-release-dispatch.yml`: `... | head -1 | awk '{print $2}' || true`. Its status is discarded, so it is out of scope.
 The other nine repositories hold 1 to 6 inline early-reader sites each, none of them under pipefail today, so the clause reaches them only if they turn pipefail on. Each repository's own specification governs its own files; this proposal amends livespec-dev-tooling's.
 
@@ -32,11 +32,15 @@ Both follow-ups wait for this proposal to ratify. No fix is owed in either repos
 
 In `SPECIFICATION/non-functional-requirements.md`, section `## Shell script pipeline verdicts`, replace the first sentence with:
 
-"Every shell script this repository ships or runs in its tests, in whichever directory it lives, that runs with `set -o pipefail`, and every inline shell body that one of this repository's composite actions (`.github/actions/*/action.yml`) or workflow files (`.github/workflows/*`) runs under pipefail, MUST judge a pipeline's success only from a reader that consumes the pipeline's whole input. An inline body runs under pipefail when its step's shell is `bash`, which GitHub runs as `bash --noprofile --norc -eo pipefail`, or when the body or its shell names `pipefail`."
+"Every shell script this repository ships or runs in its tests, in whichever directory it lives, that runs with `set -o pipefail`, and every inline shell body that one of this repository's composite actions (`.github/actions/*/action.yml`) or workflow files (`.github/workflows/*`) runs under pipefail (each called a script below), MUST judge a pipeline's success only from a reader that consumes the pipeline's whole input. An inline body runs under pipefail when its step names `shell: bash`, directly or through `defaults.run.shell`, which GitHub runs as `bash --noprofile --norc -eo pipefail {0}`, or when the body sets `pipefail` itself. A step that names no shell runs on Linux as `bash -e {0}`, which is not pipefail unless the body sets it."
 
 Append after the sentence that begins "A pipeline whose status the script does not use":
 
-"Under `set -e` a pipeline's exit status is used whenever the pipeline is neither the condition of an `if`, `while`, `until`, `&&` or `||`, nor followed by `|| true`. Such a pipeline MUST obey the reader rule above even when nothing tests its output."
+"A pipeline's exit status is also used under `set -e`, unless the pipeline is the condition of an `if`, `while` or `until`, is negated with `!`, or is a member of an `&&` or `||` list other than its last, which includes a pipeline followed by `|| true`. Such a pipeline MUST obey the reader rule above even when nothing tests its output."
+
+Replace the section's closing sentence, `Scenario: "a pipefail script reports a match in a large input as a match".`, with:
+
+`Scenarios: "a pipefail script reports a match in a large input as a match" and "a composite action's pipefail step reports a match in a large input as a match".`
 
 In `SPECIFICATION/scenarios.md`, add after `## Scenario: a pipefail script reports a match in a large input as a match`:
 
@@ -50,4 +54,4 @@ Then the step MUST report the pattern as present
 
 And its verdict MUST be the same as for a 200-byte input that contains the pattern"
 
-The revise that accepts this proposal MUST add a `tests/heading-coverage.json` entry for the new scenario heading in the revise commit, with a TODO row naming the integration tier and work item livespec-dev-tooling-ljmpht as owner, and MUST regenerate the debt register.
+The revise that accepts this proposal MUST add a `tests/heading-coverage.json` entry for the new scenario heading in the revise commit, with a TODO row whose `reason` names the integration tier and work item livespec-dev-tooling-ljmpht, and which carries the explicit key `"work_item": "livespec-dev-tooling-ljmpht"`. The revise MUST also regenerate the debt register.
