@@ -192,6 +192,97 @@
       "cumulative_scope": "",
       "normal_factory_proof": "",
       "reason": "hetzner-xubuntu-info has no coverage producer, consumer or artifact, locally or in CI, for an incident to omit."
+    },
+    {
+      "repository": "thewoolleyman/livespec-dev-tooling",
+      "surface": "PR mode transport",
+      "disposition": "implemented",
+      "manifest_sha256": "59912fe1d3cad2938389deba186b0478759f0278be2bfea462c20a39d2a9054c",
+      "source_path": ".github/workflows/incident-label-ci.yml",
+      "release_build": "v1.201.0",
+      "proof_ref": "thewoolleyman/livespec-dev-tooling incident chain livespec-dev-tooling-t26bbr (closed): the incident-label-ci workflow ran and succeeded on both expedited attempt PRs, run 43022740808 (branch incident/livespec-dev-tooling-t26bbr-attempt-1) and run 43042793358 (attempt-2), and the attempt-2 PR CI run 43042866644 took the incident path. See the incident's ledger records on livespec-dev-tooling-t26bbr: the expedited-local-partial pre-commit receipts (2026-11-11T11:53:30Z attempt 1 at base 37f7caa7, 14:30:03Z attempt 2 at base cf4d1715), the DEFERRED SPEC DEBT comment (12:19:04Z) and INCIDENT COMPLETED (21:25:10Z, closed at generation 19). The surface's file at v1.201.0 is byte-identical to the file at both attempt bases.",
+      "owner": "thewoolleyman/livespec-dev-tooling",
+      "incident_item": "livespec-dev-tooling-t26bbr",
+      "cumulative_scope": "2d28a5a1bf041d99f8c171c184b0dd9bec49a6633a80de6a3b6499bcde11498a",
+      "normal_factory_proof": "Same-item unexpedited factory repayment livespec-dev-tooling#4204 merged as 02adb9dbf0907465beb9ee6a831df6e8329139f5 on full checks; master run 43090044473 succeeded and complete-incident closed t26bbr at generation 19."
+    },
+    {
+      "repository": "thewoolleyman/livespec-dev-tooling",
+      "surface": "Parity/completeness enforcement",
+      "disposition": "implemented",
+      "manifest_sha256": "59912fe1d3cad2938389deba186b0478759f0278be2bfea462c20a39d2a9054c",
+      "source_path": "livespec_dev_tooling/checks/ci_gate_parity.py, livespec_dev_tooling/checks/aggregate_completeness.py, livespec_dev_tooling/checks/ci_matrix_completeness.py and livespec_dev_tooling/checks/canonical_recipe_fidelity.py",
+      "release_build": "v1.201.0",
+      "proof_ref": "thewoolleyman/livespec-dev-tooling incident chain livespec-dev-tooling-t26bbr (closed): inside attempt 2's expedited incident-ci entrance (PR CI run 43042866644, job incident-ci, success) the parity and completeness checks ran: ci_gate_parity (exit 0), aggregate_completeness, canonical_recipe_fidelity and ci_matrix_completeness. See the incident's ledger records on livespec-dev-tooling-t26bbr: the expedited-local-partial pre-commit receipts (2026-11-11T11:53:30Z attempt 1 at base 37f7caa7, 14:30:03Z attempt 2 at base cf4d1715), the DEFERRED SPEC DEBT comment (12:19:04Z) and INCIDENT COMPLETED (21:25:10Z, closed at generation 19). The surface's files at v1.201.0 are byte-identical to the files at both attempt bases.",
+      "owner": "thewoolleyman/livespec-dev-tooling",
+      "incident_item": "livespec-dev-tooling-t26bbr",
+      "cumulative_scope": "2d28a5a1bf041d99f8c171c184b0dd9bec49a6633a80de6a3b6499bcde11498a",
+      "normal_factory_proof": "Same-item unexpedited factory repayment livespec-dev-tooling#4204 merged as 02adb9dbf0907465beb9ee6a831df6e8329139f5 on full checks; master run 43090044473 succeeded and complete-incident closed t26bbr at generation 19."
+    },
+    {
+      "repository": "thewoolleyman/livespec-dev-tooling",
+      "surface": "PR factory provenance",
+      "disposition": "implemented",
+      "manifest_sha256": "59912fe1d3cad2938389deba186b0478759f0278be2bfea462c20a39d2a9054c",
+      "source_path": "thewoolleyman/livespec-dev-tooling:livespec_dev_tooling/factory_provenance_gate.py (the root SURFACE_ROOTS pins for this surface)",
+      "release_build": "v1.198.0",
+      "proof_ref": "Incident chain livespec-dev-tooling-t26bbr in thewoolleyman/livespec-dev-tooling (label incident:entry; closed), read 2026-11-12 from the forge and the ledger. The expedited repair PRs livespec-dev-tooling#4161 (attempt 1, head 356cf54a872754c14cdb2048040c5d74d75214ac) and livespec-dev-tooling#4172 (attempt 2, head bbbbbe2f10c029bbaf1cdd2d86f6406e3f4bda03) carried the exact Factory-Override trailer for livespec-dev-tooling-t26bbr and their embedded arms bind the item, attempt, PR, base and head. The normal repayment livespec-dev-tooling#4204 was published by petri run 01M75SZE4R3DAXGKADSABK9GR8 without that override and merged as 02adb9dbf0907465beb9ee6a831df6e8329139f5 after full checks. The surface file is byte-identical from v1.198.0 (a17a87b18d934dbfb7953f4d2209badc7d6dcee4) through the serving head: git diff --name-only v1.198.0 HEAD -- livespec_dev_tooling/factory_provenance_gate.py prints nothing.",
+      "owner": "thewoolleyman/livespec-dev-tooling",
+      "incident_item": "livespec-dev-tooling-t26bbr",
+      "cumulative_scope": "2d28a5a1bf041d99f8c171c184b0dd9bec49a6633a80de6a3b6499bcde11498a",
+      "normal_factory_proof": "Same-item unexpedited factory repayment: livespec-dev-tooling#4204 (branch feat/livespec-dev-tooling-t26bbr, petri run 01M75SZE4R3DAXGKADSABK9GR8, head 1330407360f22bf5b285e7b45750dfd28d861053, no Factory-Override trailer) merged 2026-11-11T19:44:42Z as 02adb9dbf0907465beb9ee6a831df6e8329139f5 on full checks; its master push run 43090044473 succeeded; complete-incident verified generation 19, phase CLOSED, outstanding []."
+    },
+    {
+      "repository": "thewoolleyman/livespec-dev-tooling",
+      "surface": "Retrospective bypass audit",
+      "disposition": "implemented",
+      "manifest_sha256": "59912fe1d3cad2938389deba186b0478759f0278be2bfea462c20a39d2a9054c",
+      "source_path": "thewoolleyman/livespec-dev-tooling:livespec_dev_tooling/_incident_provenance_protocol.py and livespec_dev_tooling/checks/_red_green_replay_incident.py (the roots SURFACE_ROOTS pins for this surface)",
+      "release_build": "v1.198.0",
+      "proof_ref": "Incident chain livespec-dev-tooling-t26bbr in thewoolleyman/livespec-dev-tooling (label incident:entry; closed), read 2026-11-12 from the forge and the ledger. The two expedited PR arms, for #4161 and #4172, retain authenticated item, attempt, operation, generation, PR/base/head and original_paths records rather than a permanent author or label exception. The chain's recorded first master failure reverted attempt 1 as cf4d1715; attempt 2 then reached repayment, whose normal factory PR #4204 removed the marker and closed the outstanding obligation. The two surface files are byte-identical from v1.198.0 (a17a87b18d934dbfb7953f4d2209badc7d6dcee4) through the serving head: git diff --name-only v1.198.0 HEAD -- livespec_dev_tooling/_incident_provenance_protocol.py livespec_dev_tooling/checks/_red_green_replay_incident.py prints nothing.",
+      "owner": "thewoolleyman/livespec-dev-tooling",
+      "incident_item": "livespec-dev-tooling-t26bbr",
+      "cumulative_scope": "2d28a5a1bf041d99f8c171c184b0dd9bec49a6633a80de6a3b6499bcde11498a",
+      "normal_factory_proof": "Same-item unexpedited factory repayment: livespec-dev-tooling#4204 (branch feat/livespec-dev-tooling-t26bbr, petri run 01M75SZE4R3DAXGKADSABK9GR8, head 1330407360f22bf5b285e7b45750dfd28d861053, no Factory-Override trailer) merged 2026-11-11T19:44:42Z as 02adb9dbf0907465beb9ee6a831df6e8329139f5 on full checks; its master push run 43090044473 succeeded; complete-incident verified generation 19, phase CLOSED, outstanding []."
+    },
+    {
+      "repository": "thewoolleyman/livespec-dev-tooling",
+      "surface": "Branch/PR resolution",
+      "disposition": "implemented",
+      "manifest_sha256": "59912fe1d3cad2938389deba186b0478759f0278be2bfea462c20a39d2a9054c",
+      "source_path": "thewoolleyman/livespec-dev-tooling:livespec_dev_tooling/incident_execution.py (the root SURFACE_ROOTS pins for this surface)",
+      "release_build": "v1.198.0",
+      "proof_ref": "Incident chain livespec-dev-tooling-t26bbr in thewoolleyman/livespec-dev-tooling (label incident:entry; closed), read 2026-11-12 from the forge and the ledger. The committed arms select distinct attempt-specific branches and PRs: incident/livespec-dev-tooling-t26bbr-attempt-1 / #4161 at generation 6, then incident/livespec-dev-tooling-t26bbr-attempt-2 / #4172 at generation 12; the same item subsequently resolved its normal repayment as feat/livespec-dev-tooling-t26bbr / #4204. Their recorded heads and bases are bound in the arm records, so the later resolution did not select the earlier expedited carrier. The surface file is byte-identical from v1.198.0 (a17a87b18d934dbfb7953f4d2209badc7d6dcee4) through the serving head: git diff --name-only v1.198.0 HEAD -- livespec_dev_tooling/incident_execution.py prints nothing.",
+      "owner": "thewoolleyman/livespec-dev-tooling",
+      "incident_item": "livespec-dev-tooling-t26bbr",
+      "cumulative_scope": "2d28a5a1bf041d99f8c171c184b0dd9bec49a6633a80de6a3b6499bcde11498a",
+      "normal_factory_proof": "Same-item unexpedited factory repayment: livespec-dev-tooling#4204 (branch feat/livespec-dev-tooling-t26bbr, petri run 01M75SZE4R3DAXGKADSABK9GR8, head 1330407360f22bf5b285e7b45750dfd28d861053, no Factory-Override trailer) merged 2026-11-11T19:44:42Z as 02adb9dbf0907465beb9ee6a831df6e8329139f5 on full checks; its master push run 43090044473 succeeded; complete-incident verified generation 19, phase CLOSED, outstanding []."
+    },
+    {
+      "repository": "thewoolleyman/livespec-dev-tooling",
+      "surface": "Acceptance and completion",
+      "disposition": "implemented",
+      "manifest_sha256": "59912fe1d3cad2938389deba186b0478759f0278be2bfea462c20a39d2a9054c",
+      "source_path": "thewoolleyman/livespec-dev-tooling:livespec_dev_tooling/incident_run_evidence.py (the root SURFACE_ROOTS pins for this surface)",
+      "release_build": "v1.198.0",
+      "proof_ref": "Incident chain livespec-dev-tooling-t26bbr in thewoolleyman/livespec-dev-tooling (label incident:entry; closed), read 2026-11-12 from the forge and the ledger. The chain retained its original three-path cumulative scope through its expedited attempts, failure/revert and normal repayment; bind-repayment-acceptance --pr 4204 verified generation 18, and complete-incident --master-run 43090044473 verified generation 19 against the repayment master run rather than only marker removal. The surface file is byte-identical from v1.198.0 (a17a87b18d934dbfb7953f4d2209badc7d6dcee4) through the serving head: git diff --name-only v1.198.0 HEAD -- livespec_dev_tooling/incident_run_evidence.py prints nothing.",
+      "owner": "thewoolleyman/livespec-dev-tooling",
+      "incident_item": "livespec-dev-tooling-t26bbr",
+      "cumulative_scope": "2d28a5a1bf041d99f8c171c184b0dd9bec49a6633a80de6a3b6499bcde11498a",
+      "normal_factory_proof": "Same-item unexpedited factory repayment: livespec-dev-tooling#4204 (branch feat/livespec-dev-tooling-t26bbr, petri run 01M75SZE4R3DAXGKADSABK9GR8, head 1330407360f22bf5b285e7b45750dfd28d861053, no Factory-Override trailer) merged 2026-11-11T19:44:42Z as 02adb9dbf0907465beb9ee6a831df6e8329139f5 on full checks; its master push run 43090044473 succeeded; complete-incident verified generation 19, phase CLOSED, outstanding []."
+    },
+    {
+      "repository": "thewoolleyman/livespec-dev-tooling",
+      "surface": "Emergency revert and merge authority",
+      "disposition": "implemented",
+      "manifest_sha256": "59912fe1d3cad2938389deba186b0478759f0278be2bfea462c20a39d2a9054c",
+      "source_path": "thewoolleyman/livespec-dev-tooling:livespec_dev_tooling/incident_inverse.py and livespec_dev_tooling/incident_inverse_service.py (the independently served recovery-principal path)",
+      "release_build": "v1.195.0@d4b723761270091517e83dd3ac5d5db48e9f2205+bypass-app-5656677",
+      "proof_ref": "Incident chain livespec-dev-tooling-t26bbr (label incident:entry; closed), read 2026-11-12 from the forge and the ledger. PR #4161's authenticated incident arm names controller_release v1.195.0 and controller_revision d4b723761270091517e83dd3ac5d5db48e9f2205. Its expedited merge d8d23caec1ec979c16bc3c00f13046874f95d735 failed master run 43029995883 at required job check-per-file-coverage (completed 2026-11-11T13:55:38Z). At 2026-11-11T13:56:06Z the recovery principal landed cf4d17152d977a26d05108b78df6bd8b905909b1 directly on master: GitHub's commit API reports verified=true, reason=valid, the author as thewoolleyman-incident-recovery[bot], and the commit carries the retained Incident-Action and Incident-Owner. Its sole parent is d8d23cae and its tree equals d8d23cae^1, proving the authenticated principal published the exact scoped inverse without a recovery PR or pre-merge check wait. Reads: gh pr view 4161; gh api repos/thewoolleyman/livespec-dev-tooling/actions/runs/43029995883/jobs; gh api repos/thewoolleyman/livespec-dev-tooling/commits/cf4d17152d977a26d05108b78df6bd8b905909b1; git rev-parse d8d23cae^1^{tree} cf4d1715^{tree}. The two recovery-principal modules are byte-identical from v1.195.0 through v1.201.0: git diff --name-only v1.195.0 v1.201.0 -- livespec_dev_tooling/incident_inverse.py livespec_dev_tooling/incident_inverse_service.py prints nothing.",
+      "owner": "thewoolleyman/livespec-dev-tooling",
+      "incident_item": "livespec-dev-tooling-t26bbr",
+      "cumulative_scope": "2d28a5a1bf041d99f8c171c184b0dd9bec49a6633a80de6a3b6499bcde11498a",
+      "normal_factory_proof": "Same-item unexpedited factory repayment: livespec-dev-tooling#4204 (branch feat/livespec-dev-tooling-t26bbr, petri run 01M75SZE4R3DAXGKADSABK9GR8, head 1330407360f22bf5b285e7b45750dfd28d861053, no Factory-Override trailer) merged 2026-11-11T19:44:42Z as 02adb9dbf0907465beb9ee6a831df6e8329139f5 on full checks; its master push run 43090044473 (event push, branch master) ran 13 jobs to success including check-per-file-coverage and check-coverage; the repayment removed the repair marker (git show 02adb9db:livespec_dev_tooling/fleet/_read_failure.py has no EXPEDITED_INCIDENT_RESPONSE line, and git grep 'EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-t26bbr' origin/master finds nothing). Closure: bind-repayment-acceptance --pr 4204 verified generation 18 and complete-incident --master-run 43090044473 verified generation 19, phase CLOSED, outstanding [] (t26bbr ledger comments 2026-11-11T21:25Z; coordinator grade 21:46Z; item closed)."
     }
   ]
 }
