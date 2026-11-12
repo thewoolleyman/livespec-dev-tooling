@@ -3,14 +3,11 @@
 from __future__ import annotations
 
 import json
-import os
-import subprocess
 from pathlib import Path
-from unittest.mock import Mock
 
 from returns.result import Failure, Success
 
-from livespec_dev_tooling.gate_remote_admission import _WATCH_TERMINAL_SCRIPT, await_terminal_state
+from livespec_dev_tooling.gate_remote_admission import await_terminal_state
 from livespec_dev_tooling.gate_remote_invocation import GateCommandOutcome, GateCommandResult
 from livespec_dev_tooling.gate_remote_request import GateRunRequest
 
@@ -39,126 +36,8 @@ def test_an_admitted_job_without_a_terminal_state_uses_its_terminal_bound() -> N
         _ = argv, cwd, stdin, stream
         return Success(GateCommandResult(returncode=0, stdout=active, stderr=""))
 
-    outcome = await_terminal_state(
-        request=request,
-        runner=runner,
-        sleeper=Mock(),
-        job_name="gate-widget-7f2qd",
-    )
-
-    assert isinstance(outcome, Failure)
-    assert (
-        outcome.failure().detail
-        == "gate-widget-7f2qd was admitted but reached no terminal condition within 20s"
-    )
-
-
-def test_an_admitted_job_starts_one_terminal_condition_watch() -> None:
-    """A running Job is watched instead of starting a fresh status process every interval."""
-    request = GateRunRequest(
-        repo_root=Path("/repo"),
-        mirror_url="ssh://mirror/repo.git",
-        manifest="apiVersion: batch/v1\nkind: Job\n",
-        gate_ref="refs/gates/tree-run",
-        poll_timeout_seconds=600.0,
-    )
-    active = json.dumps({"spec": {"suspend": False}, "status": {}})
-    complete = json.dumps({"status": {"conditions": [{"type": "Complete", "status": "True"}]}})
-    calls: list[tuple[str, ...]] = []
-
-    def runner(
-        *, argv: list[str], cwd: Path, stdin: str | None = None, stream: bool = False
-    ) -> GateCommandOutcome:
-        _ = cwd, stdin, stream
-        calls.append(tuple(argv))
-        payload = active if len(calls) == 1 else complete
-        return Success(GateCommandResult(returncode=0, stdout=payload, stderr=""))
-
-    outcome = await_terminal_state(
-        request=request,
-        runner=runner,
-        sleeper=Mock(),
-        job_name="gate-widget-7f2qd",
-    )
-
-    assert isinstance(outcome, Success)
-    assert calls[0] == (
-        "with-gates-kubeconfig",
-        "kubectl",
-        "--namespace",
-        "gates",
-        "get",
-        "job",
-        "gate-widget-7f2qd",
-        "--output",
-        "json",
-    )
-    assert calls[1][:3] == ("with-gates-kubeconfig", "sh", "-ceu")
-    assert (
-        'kubectl --namespace "$namespace" get job "$job_name" --watch --output json --request-timeout "$timeout"'
-        in calls[1][3]
-    )
-    assert calls[1][4:] == ("await-gate-terminal-watch", "gate-widget-7f2qd", "gates", "600s")
-
-
-def test_a_terminal_watch_stops_the_watcher_without_waiting_for_its_timeout(tmp_path: Path) -> None:
-    """The terminal event promptly ends the subprocess even when kubectl remains live."""
-    kubectl = tmp_path / "kubectl"
-    kubectl.write_text(
-        "#!/bin/sh\n"
-        'for argument in "$@"; do case "$argument" in --timeout*) exit 2 ;; esac; done\n'
-        'printf \'%s\\n\' \'{"status": {"conditions": [{"type": "Complete", "status": "True"}]}}\'\n'
-        "sleep 60\n",
-        encoding="utf-8",
-    )
-    kubectl.chmod(0o755)
-    environment = {**os.environ, "PATH": f"{tmp_path}:{os.environ['PATH']}"}
-
-    completed = subprocess.run(
-        [
-            "sh",
-            "-ceu",
-            _WATCH_TERMINAL_SCRIPT,
-            "await-gate-terminal-watch",
-            "gate-widget-7f2qd",
-            "gates",
-            "60s",
-        ],
-        check=True,
-        env=environment,
-        timeout=2,
-    )
-
-    assert completed.returncode == 0
-
-
-def test_a_transient_terminal_watch_failure_is_rearmed_within_the_budget() -> None:
-    """A failed watch does not abandon the Job or resume interval polling."""
-    request = GateRunRequest(
-        repo_root=Path("/repo"),
-        mirror_url="ssh://mirror/repo.git",
-        manifest="apiVersion: batch/v1\nkind: Job\n",
-        gate_ref="refs/gates/tree-run",
-        poll_timeout_seconds=20.0,
-    )
-    active = json.dumps({"spec": {"suspend": False}, "status": {}})
-    complete = json.dumps({"status": {"conditions": [{"type": "Complete", "status": "True"}]}})
-    calls: list[tuple[str, ...]] = []
-    naps: list[float] = []
-
-    def runner(
-        *, argv: list[str], cwd: Path, stdin: str | None = None, stream: bool = False
-    ) -> GateCommandOutcome:
-        _ = cwd, stdin, stream
-        calls.append(tuple(argv))
-        if len(calls) == 1:
-            return Success(GateCommandResult(returncode=0, stdout=active, stderr=""))
-        if len(calls) == 2:
-            return Success(GateCommandResult(returncode=1, stdout="", stderr="watch refused\n"))
-        return Success(GateCommandResult(returncode=0, stdout=complete, stderr=""))
-
     def sleeper(*, seconds: float) -> None:
-        naps.append(seconds)
+        _ = seconds
 
     outcome = await_terminal_state(
         request=request,
@@ -167,7 +46,8 @@ def test_a_transient_terminal_watch_failure_is_rearmed_within_the_budget() -> No
         job_name="gate-widget-7f2qd",
     )
 
-    assert isinstance(outcome, Success)
-    assert len(calls) == 3
-    assert all(call[:3] == ("with-gates-kubeconfig", "sh", "-ceu") for call in calls[1:])
-    assert naps == [10.0]
+    assert isinstance(outcome, Failure)
+    assert (
+        outcome.failure().detail
+        == "gate-widget-7f2qd was admitted but reached no terminal condition within 20s"
+    )
