@@ -811,6 +811,13 @@ subprocess_spawn_allowlist = [
     "tests/consumer/test_delegated_gate_check_suite.py",
     "tests/consumer/test_delegated_job_authority_skip.py",
     "tests/consumer/test_ci_matrix_completeness_consumer_levers.py",
+    # livespec-dev-tooling-ixtdx7: this fixture must run its real `just check`
+    # aggregate. An in-process `green_token.main()` call could classify the
+    # members but cannot prove the downstream shell aggregate gives it the full
+    # list, refuses before dispatch, or invokes the member recipes after the
+    # annotation is added. Its child environments scrub COVERAGE_PROCESS_START
+    # and COV_CORE_* before they start the Python CLI.
+    "tests/consumer/test_check_aggregate_purity_declarations.py",
     # Incident transport requires a fresh interpreter for vendor bootstrap and
     # real child environment propagation. These properties cannot be observed
     # in pytest's already-imported process; the exact test file scrubs coverage
