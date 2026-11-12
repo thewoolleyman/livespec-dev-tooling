@@ -717,6 +717,7 @@ _IDLE_GATE_S = 4
 _IDLE_SETTLE_S = 0.7
 _IDLE_WINDOW_S = 1.5
 _WAIT_RETURN_BUDGET_S = 5.0
+_MAX_WAITER_POLLS_AFTER_EXIT = int(_WAIT_RETURN_BUDGET_S / _POLL_INTERVAL_S)
 
 
 def test_gate_wait_polls_well_inside_its_five_second_return_budget() -> None:
@@ -756,6 +757,28 @@ def _spawn_count(*, log: Path) -> int:
     return len(log.read_text(encoding="utf-8").splitlines()) if log.is_file() else 0
 
 
+def _traced_waiter(
+    *,
+    primary: Path,
+    env: dict[str, str],
+    shims: Path,
+    log: Path,
+    poll_log: Path,
+    run_id: str,
+) -> subprocess.Popen[str]:
+    """Start a waiter that records its post-verdict state polls."""
+    waiter_env = _shimmed_env(env=env, shims=shims, log=log)
+    waiter_env["GATE_WAITER_POLL_LOG"] = str(poll_log)
+    return subprocess.Popen(
+        [str(primary / "dev-tooling" / _SCRIPT), "wait", run_id],
+        cwd=str(primary),
+        env=waiter_env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+
+
 @pytest.mark.integration
 def test_an_idle_detached_gate_run_and_an_idle_waiter_spawn_no_per_tick_process(
     *, tmp_path: Path, fixture_repo: tuple[Path, Path, dict[str, str]]
@@ -765,6 +788,7 @@ def test_an_idle_detached_gate_run_and_an_idle_waiter_spawn_no_per_tick_process(
     shims = _shim_dir(root=tmp_path)
     runner_log = tmp_path / "runner-spawns.log"
     waiter_log = tmp_path / "waiter-spawns.log"
+    waiter_poll_log = tmp_path / "waiter-polls-after-exit.log"
     ready = tmp_path / "gate-is-idle"
     # A FIFO opened read-write holds both ends, so the read waits its whole
     # timeout on every host; `<(:)` on macOS dups the pipe's read end and can
@@ -778,13 +802,13 @@ def test_an_idle_detached_gate_run_and_an_idle_waiter_spawn_no_per_tick_process(
         env=_shimmed_env(env=env, shims=shims, log=runner_log),
         command=["bash", "-c", idle_gate],
     )
-    waiter = subprocess.Popen(
-        [str(primary / "dev-tooling" / _SCRIPT), "wait", run_id],
-        cwd=str(primary),
-        env=_shimmed_env(env=env, shims=shims, log=waiter_log),
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
+    waiter = _traced_waiter(
+        primary=primary,
+        env=env,
+        shims=shims,
+        log=waiter_log,
+        poll_log=waiter_poll_log,
+        run_id=run_id,
     )
     assert _wait_for_file(path=ready, timeout_s=_VERDICT_TIMEOUT_S)
     time.sleep(_IDLE_SETTLE_S)
@@ -800,9 +824,10 @@ def test_an_idle_detached_gate_run_and_an_idle_waiter_spawn_no_per_tick_process(
     assert _spawn_count(log=waiter_log) == waiter_before
 
     _ = _await_verdict(primary=primary, run_id=run_id)
-    verdict_at = time.monotonic()
     stdout, _stderr = waiter.communicate(timeout=_VERDICT_TIMEOUT_S)
-    assert time.monotonic() - verdict_at < _WAIT_RETURN_BUDGET_S
+    polls_after_exit = _spawn_count(log=waiter_poll_log)
+    assert polls_after_exit >= 1
+    assert polls_after_exit <= _MAX_WAITER_POLLS_AFTER_EXIT
     assert waiter.returncode == _GATE_EXIT_CODE
     assert "FAILED" in stdout
 

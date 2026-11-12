@@ -1234,6 +1234,15 @@ cmd_status() {
     report_run "$run_id" "$dir"
 }
 
+# When the test harness names a trace file, record every state poll that sees
+# a verdict. This remains builtins only, so tracing does not hide a spawned
+# process in the idle-cost scenario it observes.
+trace_waiter_state_poll_after_exit() {
+    local dir="$1" trace="${GATE_WAITER_POLL_LOG:-}"
+    [[ -n "$trace" && -f "$dir/exit_code" ]] || return 0
+    printf '%s\n' state-poll-after-exit >>"$trace"
+}
+
 cmd_wait() {
     [[ $# -ge 1 ]] || usage
     local run_id="$1" dir
@@ -1244,6 +1253,7 @@ cmd_wait() {
     open_idle_fd
     while true; do
         derive_state_into "$dir"
+        trace_waiter_state_poll_after_exit "$dir"
         [[ "$STATE" == "RUNNING" ]] || break
         idle_sleep "$POLL_INTERVAL_S"
     done
