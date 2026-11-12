@@ -262,26 +262,26 @@ each be at or under the budget, else the generation is renamed
 with both numbers, and the job exits 3. Fixed numbers, not a multiple of
 the last build: a ratchet is self-referential, and the point is an alarm
 when the union drifts; re-deriving it is a reviewed commit against the
-cost table above. Values: **1,350,000,000 bytes and 45,000 files**,
-re-derived 2026-11-11. The ten-lock union outgrew the previous
-1,000,000,000 / 20,000 (set against the 2026-09-04 union of 379 MB / 8,070
-files): run `20261111T093001Z` measured 1,041,015,159 bytes / 32,749 files at
-124 (name,version) pairs, and every populate from 2026-11-08 11:30Z to then
-was refused, leaving the tier on generation `20261108T070002Z`. The growth is
-fleet version skew (one package pinned at several versions across the
-repositories) more than new packages. The new values carry about 37% (files)
-and 30% (bytes) over that measurement, for the pairs master added after it
-(132 on 2026-11-11, including `nodejs-wheel-binaries`). The runaway
-generation was 1,388 MB / 159,409 files, so both axes still trip before that
-shape recurs. livespec-dev-tooling-243dzr owns the full re-derivation
-(including the per-start seed cost) and the test that pins these numbers to
-this paragraph. Home: the
+cost table above. Re-derived 2026-11-12: an empty `UV_CACHE_DIR` was filled by
+`uv sync --frozen --all-groups --no-install-project --no-install-workspace`
+for the ten routed default-branch locks. That union contained 128 distinct
+`(name, version)` pairs and measured 740,981,208 bytes / 18,665 regular files
+with the same `du -sb` and `find -type f` accounting the populator uses. The
+per-start seed cost is the lifecycle sweep's `start-seed-cost` observation:
+`seed.seconds` spans the provisioner's `_warm` creation through the final
+`.uv-generation` marker, while `seed.bytes` uses the same byte accounting as
+the union. The live XFS/reflink measurement remains host-captured after the
+converge; the sweep's ten-second threshold was calibrated from the prior
+12,192-file generation's three-second seed. The measurement retains sufficient
+headroom for lock growth while still alarming before the recorded runaway
+shape. The budget values themselves are deliberately stated only in their
+home: the
 `warm-cache-budget` ConfigMap (`bytes`, `files`) in
 `warm-cache-cronjob.yaml`, injected as `WARM_BUDGET_BYTES` /
 `WARM_BUDGET_FILES` via `configMapKeyRef`; the populator refuses to start
 without them, records the values in effect in every generation's manifest
 and in `last-run.json`, and the sweep emits them as
-`livespec.ci_warm.budget_*` so a chart can draw the line.
+`livespec.ci_warm.budget_*` so a chart can draw the line. Its reviewed budget commitment: `sha256:e54f904da805d86b5fbfb59fe9e9e39bd7d1d823c6bcc9c4661a82339ccc1448`.
 
 ## Metrics
 
