@@ -451,7 +451,9 @@
       {{ fabro_server_binary_path }} is missing or not executable, and this
       instance is not installing one — it declares no binary_source, or it
       declares a source the host already holds. This role never BUILDS a
-      binary. Build it in the pinned factory-integration worktree —
+      binary. Build it from the thewoolleyman/fabro ref of the build this
+      instance pins: factory-integration for the serving v0.408 carrier, or
+      legacy/factory-integration-0254 for the legacy 0.254 build —
       `cargo clean --release -p fabro-spa` then
       `cargo dev build --release -p fabro-cli`, the targeted clean being
       required because Cargo will not otherwise refresh the gitignored SPA
