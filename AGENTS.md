@@ -217,9 +217,10 @@ The files:
 - Read `.ai/fleet-host-ssh-routes.md` before recording that a fleet host cannot
   be reached or asking anyone for "a route" to one, and on any of these errors:
   `failed to look up local user`, `No ED25519 host key is known`, or
-  `Permission denied (publickey)` from a fleet host. Each is a wrong account or
-  method, never an unreachable host: the `tailscale-admin` repository records
-  every machine's SSH account and server, a bare `ssh <host>` uses the wrong
+  `Permission denied (publickey)` from a fleet host. Each is usually a wrong
+  account or method; check the record and retry before concluding a host is
+  unreachable: the `tailscale-admin` repository records every machine's SSH
+  account and server, a bare `ssh <host>` uses the wrong
   account, and `tailscale ssh` cannot reach a Mac. On 2026-11-12 a false "no
   route to macbook-m4-max" held this repo's homelab plan for about eight hours.
 - Read `.ai/tailnet-posture.md` before proposing any network route into or
