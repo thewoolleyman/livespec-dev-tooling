@@ -27,6 +27,18 @@
 # the loaded profile's `raw_sha256` (measured 2026-11-12 on two loaded profiles
 # of the dev host; the final assert fails loudly on a host where it does not).
 # No k3s restart: `apparmor_parser -r` replaces a loaded profile in place.
+#
+# ROLLBACK. Reverting the commit and deleting the file does NOT give a node
+# containerd's own default profile back: containerd generates it only when no
+# profile of that name is loaded, and the kernel keeps ours until it is unloaded
+# or the node reboots. The committed route is:
+#   1. move the name from `apparmor_profile_names` to `apparmor_profile_absent`;
+#   2. apply this role — it removes the file and unloads the profile
+#      (`apparmor_parser -R`);
+#   3. restart k3s on the node (ansible/restart-k3s-agent.yml for an agent), so
+#      containerd loads its own profile again at the next container start.
+# Between 2 and 3 a container that was confined by the unloaded profile runs
+# unconfined, and a new default-profile pod gets containerd's regenerated one.
 
 - name: Locate apparmor_parser
   # `stat` and not a `command -v` probe: the command module runs an executable
@@ -52,6 +64,16 @@
       apparmor_parser:
       {{ apparmor_profile_parser.results | selectattr('stat.exists') | map(attribute='item') | first }}
 
+- name: Refuse a profile named as both present and absent
+  ansible.builtin.assert:
+    that:
+      - apparmor_profile_names | intersect(apparmor_profile_absent) | length == 0
+    fail_msg: >-
+      {{ apparmor_profile_names | intersect(apparmor_profile_absent) | join(', ') }}
+      is in both apparmor_profile_names and apparmor_profile_absent; a profile is
+      either installed or taken away
+    quiet: true
+
 - name: Record the apparmor_parser this host has
   ansible.builtin.set_fact:
     apparmor_profile_parser_path: >-
@@ -64,6 +86,10 @@
     owner: "{{ apparmor_profile_owner }}"
     group: "{{ apparmor_profile_group }}"
     mode: "0644"
+    # The parser compiles the candidate BEFORE it replaces the destination. A
+    # file that does not compile never reaches the directory the boot-time load
+    # reads, where it would fail the next boot's load of that profile.
+    validate: "{{ apparmor_profile_parser_path }} -Q -K %s"
   become: true
   register: apparmor_profile_installed
   loop: "{{ apparmor_profile_names }}"
@@ -160,5 +186,79 @@
     success_msg: "{{ item.item }} is loaded as installed, in enforce mode"
   when: not ansible_check_mode
   loop: "{{ apparmor_profile_after.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+
+- name: Probe the kernel for each profile that must be absent
+  # The same shape as the load probe above: a READ with a computed
+  # `changed_when`, because the unload below is a command and is skipped under
+  # --check. It prints `held` when the kernel holds a profile of that name.
+  ansible.builtin.shell:
+    executable: /bin/bash
+    cmd: |
+      set -euo pipefail
+      state=free
+      for dir in "{{ apparmor_profile_loaded_dir }}/{{ item }}".[0-9]*; do
+        if [ -d "${dir}" ]; then
+          state=held
+        fi
+      done
+      printf '%s\n' "${state}"
+  become: true
+  register: apparmor_profile_absent_probe
+  check_mode: false
+  changed_when: ansible_check_mode and apparmor_profile_absent_probe.stdout == 'held'
+  loop: "{{ apparmor_profile_absent }}"
+
+- name: Unload each absent profile the kernel still holds
+  # -R needs a complete profile definition but uses only its name
+  # (apparmor_parser(8)), so a one-line definition on stdin unloads the profile
+  # whether or not its file is still on disk.
+  ansible.builtin.command:
+    argv:
+      - "{{ apparmor_profile_parser_path }}"
+      - -R
+    stdin: "profile {{ item.item }} { }"
+  become: true
+  changed_when: true
+  when: item.stdout == 'held'
+  loop: "{{ apparmor_profile_absent_probe.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+
+- name: Remove each absent profile's file
+  # Without the file the boot-time load no longer brings the profile back.
+  ansible.builtin.file:
+    path: "{{ apparmor_profile_dest_dir }}/{{ item }}"
+    state: absent
+  become: true
+  loop: "{{ apparmor_profile_absent }}"
+
+- name: Read back the kernel for each absent profile
+  ansible.builtin.shell:
+    executable: /bin/bash
+    cmd: |
+      set -euo pipefail
+      state=free
+      for dir in "{{ apparmor_profile_loaded_dir }}/{{ item }}".[0-9]*; do
+        if [ -d "${dir}" ]; then
+          state=held
+        fi
+      done
+      printf '%s\n' "${state}"
+  become: true
+  register: apparmor_profile_absent_after
+  changed_when: false
+  when: not ansible_check_mode
+  loop: "{{ apparmor_profile_absent }}"
+
+- name: Refuse an absent profile the kernel still holds
+  ansible.builtin.assert:
+    that:
+      - item.stdout == 'free'
+    fail_msg: "{{ item.item }} is still loaded after apparmor_parser -R"
+    success_msg: "{{ item.item }} is not loaded"
+  when: not ansible_check_mode
+  loop: "{{ apparmor_profile_absent_after.results }}"
   loop_control:
     label: "{{ item.item }}"

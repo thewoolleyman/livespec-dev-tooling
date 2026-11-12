@@ -11,6 +11,11 @@ apparmor_profile_src_dir: "{{ apparmor_profile_phase2_dir }}/apparmor"
 apparmor_profile_names:
   - ci-runner-workflow
   - cri-containerd.apparmor.d
+# ROLLBACK list: profiles this role once installed and must now take away. Each
+# name's file is removed from the destination directory and the profile is
+# unloaded from the kernel. A name may not be in both lists. See "Rollback" at
+# the top of tasks/main.yml.
+apparmor_profile_absent: []
 # The directory the distribution's apparmor unit parses at boot.
 apparmor_profile_dest_dir: /etc/apparmor.d
 # Who owns an installed profile file.
