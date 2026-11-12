@@ -421,6 +421,83 @@ def test_a_refused_intake_route_makes_the_host_pass_name_the_item_and_refusal(
     assert "claim-token-missing" in output
 
 
+def test_a_refusal_continues_the_pass_and_omits_an_uncreated_item_id(
+    *, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """One refused capture does not hide a later node or invent an item id."""
+    refused = "tests/test_a.py::test_refused"
+    routed = "tests/test_b.py::test_routed"
+    _write_records(repo_root=tmp_path, nodeids=(refused, routed))
+    filings: list[str] = []
+
+    def runner(*, argv: list[str], cwd: Path, **_: object) -> Success[GateCommandResult]:
+        del cwd
+        if argv[1] == "list":
+            return _ok(stdout="[]")
+        nodeid = argv[4]
+        filings.append(nodeid)
+        if nodeid == refused:
+            return Success(
+                GateCommandResult(
+                    returncode=1,
+                    stdout="",
+                    stderr="intake (route:ready) refused: claim-token-missing",
+                )
+            )
+        return _ok(stdout="dt-routed\n")
+
+    filer = importlib.import_module("livespec_dev_tooling.flake_retry_filer")
+    monkeypatch.setattr(filer, "default_gate_command_runner", runner)
+    monkeypatch.setattr(filer, "registered_plugin_root", _fixed_plugin_root)
+
+    assert (
+        filer.main(argv=["--repo-root", str(tmp_path), "--state-dir", str(tmp_path / "state")]) == 1
+    )
+    output = capsys.readouterr().err
+    assert filings == [refused, routed]
+    assert "claim-token-missing" in output
+    assert "dt-refused" not in output
+
+
+def test_an_open_root_fix_is_routed_only_until_intake_marks_it_triaged(*, tmp_path: Path) -> None:
+    """A later record re-routes a stranded item once, never a triaged item."""
+    nodeid = "tests/test_a.py::test_one"
+    items = [
+        {
+            "id": "dt-untriaged",
+            "status": "backlog",
+            "title": f"root-fix: {nodeid}",
+            "labels": [],
+        }
+    ]
+    routed: list[str] = []
+    _write_records(repo_root=tmp_path, nodeids=(nodeid,))
+
+    def runner(*, argv: list[str], cwd: Path, **_: object) -> Success[GateCommandResult]:
+        del cwd
+        if argv[1] == "list":
+            return _ok(stdout=json.dumps(items))
+        routed.append(argv[4])
+        return _ok()
+
+    filer = importlib.import_module("livespec_dev_tooling.flake_retry_filer")
+    state_dir = tmp_path / "state"
+
+    assert filer.file_root_fixes(
+        repo_root=tmp_path, runner=runner, plugin_root=_PLUGIN_ROOT, state_dir=state_dir
+    ) == (nodeid,)
+    items[0]["labels"] = ["intake:triaged"]
+    _append_record(repo_root=tmp_path, record={"nodeid": nodeid, "attempts": 2})
+
+    assert (
+        filer.file_root_fixes(
+            repo_root=tmp_path, runner=runner, plugin_root=_PLUGIN_ROOT, state_dir=state_dir
+        )
+        == ()
+    )
+    assert routed == ["dt-untriaged"]
+
+
 def test_a_capture_command_that_did_not_run_keeps_its_diagnostic(*, tmp_path: Path) -> None:
     """A missing capture command is surfaced instead of becoming a blank reader failure."""
     _write_records(repo_root=tmp_path, nodeids=("tests/test_a.py::test_one",))
