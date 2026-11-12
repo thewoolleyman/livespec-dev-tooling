@@ -1599,8 +1599,8 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: dev host retention leaves an aged session scratch directory that a running process holds open",
-    "test": "TODO",
-    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, exercising one run of the committed retention script over a fixture /tmp/claude-<uid> tree holding an aged session directory whose id no process carries, with a fixture process root in which a process holds an open file descriptor beneath that directory and no process carries the session id; livespec-dev-tooling-ovnrsv owns it.",
+    "test": "tests.livespec_dev_tooling.test_dev_host_retention_tmpfs.test_retention_keeps_sessions_held_by_process_cwd_or_file_descriptor",
+    "reason": "The retention fixture process root has no environment carrier for either held session, keeps one by an fd below its scratch directory and another by cwd, and confirms an equally aged unheld peer is removed and logged.",
     "work_item": "livespec-dev-tooling-ovnrsv"
   },
   {

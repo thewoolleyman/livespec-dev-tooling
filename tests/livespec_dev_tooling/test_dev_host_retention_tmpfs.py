@@ -11,6 +11,8 @@ import time
 from collections import Counter
 from pathlib import Path
 
+import pytest
+
 _ROOT = Path(__file__).resolve().parents[2]
 _ROLE = _ROOT / "ansible" / "roles" / "dev_host_retention"
 _RETENTION = _ROLE / "files" / "dev-host-retention.sh"
@@ -143,6 +145,7 @@ def test_retention_keeps_a_live_session_when_an_environment_cannot_be_read(
     assert done.stderr == ""
 
 
+@pytest.mark.integration
 def test_retention_keeps_sessions_held_by_process_cwd_or_file_descriptor(*, tmp_path: Path) -> None:
     """A process holding scratch keeps its session without an environment carrier.
 
