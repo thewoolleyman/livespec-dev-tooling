@@ -13,7 +13,7 @@ created_at: 2026-11-12T14:39:56Z
 
 ### Summary
 
-Add a **Forge reads.** bullet to contracts.md §"Delegated pre-push gate", directly after **Cross-repository siblings.**. It names the gate Job's two forge reads: the fetch of the pinned livespec core ref and each sibling clone. A transient refusal (401/403/429/5xx or transport) MUST be retried with a bounded number of attempts, a bounded total wait and growing waits. A ref or repository the forge reports missing MUST fail at once, with a FATAL line naming it. Every attempt MUST be logged with its number and failure class. The retry MUST NOT add a credential. Two scenarios are added to scenarios.md. The bullet states no counts and says nothing about how the retry is packaged.
+Add a **Forge reads.** bullet to contracts.md §"Delegated pre-push gate", directly after **Cross-repository siblings.**. It names the gate Job's two forge reads: the fetch of the pinned livespec core ref and each sibling clone. A transient refusal (401/403/429/5xx or transport) MUST be retried with a bounded number of attempts, a bounded total wait and growing waits. An anonymous 401 counts as transient even when an absent or private repository caused it. A ref reported not found in a readable repository, or a repository reported not found to a credentialed read, MUST fail at once, with a FATAL line naming it. Every attempt MUST be logged with its number and failure class. The retry MUST NOT add a credential. Two scenarios are added to scenarios.md. The bullet states no counts and says nothing about how the retry is packaged.
 
 ### Motivation
 
@@ -37,7 +37,7 @@ It does not state counts or how the retry is packaged. A credential helper, wher
 
 Insert this bullet immediately after the **Cross-repository siblings.** bullet:
 
-> - **Forge reads.** The gate Job reads from the forge in two ways: it fetches the livespec core ref that the consumer's `.livespec.jsonc` `compat.pinned` names, and it clones each cross-repository sibling. When the forge refuses one of these reads transiently, the Job MUST retry that read before letting it fail the gate. A transient refusal is an HTTP 401, 403, 429 or 5xx answer, or a transport failure. The retry MUST be bounded both in its number of attempts and in its total wait, and the wait between attempts MUST grow. A read that still fails once the bound is spent MUST fail the gate exactly as the same read would without the retry. When the forge reports that the ref or the repository does not exist, the Job MUST NOT retry: it MUST fail that read at once with a `FATAL` line naming the missing ref or repository. The Job MUST log every attempt with its attempt number and the class of its failure. The retry MUST NOT add a credential: an anonymous read stays anonymous on every attempt, and a private sibling's clone presents the same installation token on every attempt.
+> - **Forge reads.** The gate Job reads from the forge in two ways: it fetches the livespec core ref that the consumer's `.livespec.jsonc` `compat.pinned` names, and it clones each cross-repository sibling. When the forge refuses one of these reads transiently, the Job MUST retry that read before letting it fail the gate. A transient refusal is an HTTP 401, 403, 429 or 5xx answer, or a transport failure. An HTTP 401 to an ANONYMOUS read counts as transient even when its cause is a repository that does not exist or is private: the forge gives an anonymous reader the same answer in every one of those cases. A 403 can be permanent, because the read lacks the rights, and it is still retried only within the same bound. The retry MUST be bounded both in its number of attempts and in its total wait, and the wait between attempts MUST grow. A read that still fails once the bound is spent MUST fail the gate exactly as the same read would without the retry. Two not-found reports MUST NOT be retried: a ref the forge reports not found in a repository the read can see, and a repository the forge reports not found to a read that presents a credential. In either case the Job MUST fail that read at once with a `FATAL` line naming the missing ref or repository. The Job MUST log every attempt with its attempt number and the class of its failure. The retry MUST NOT add a credential: an anonymous read stays anonymous on every attempt, and a private sibling's clone presents the same installation token on every attempt.
 
 ### scenarios.md
 
@@ -61,7 +61,7 @@ Add these two scenarios immediately after `## Scenario: an opted-in push whose c
 >
 > Given a consumer repository whose `[tool.livespec_dev_tooling]` table sets `delegated_gate = true`
 >
-> And whose `.livespec.jsonc` `compat.pinned` names a livespec core ref that does not exist on the forge
+> And whose `.livespec.jsonc` `compat.pinned` names a livespec core ref that does not exist in the livespec core repository, which the gate Job's anonymous read can see
 >
 > When a git push of a tree that has no green token runs the pre-push gate
 >
