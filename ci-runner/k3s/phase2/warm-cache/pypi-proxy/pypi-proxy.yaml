@@ -184,10 +184,7 @@ metadata:
   labels:
     app.kubernetes.io/name: pypi-proxy
 spec:
-  # DRILL (livespec-dev-tooling-n622ze bullet 2): 0 takes the host-served PyPI
-  # source down for one hp job window, so the wrapper's fail-soft path runs.
-  # Reverted by this PR's revert (PR-B), which restores 1.
-  replicas: 0
+  replicas: 1
   # Recreate, not RollingUpdate: one cache directory on one node; two pods
   # cannot share it.
   strategy:
