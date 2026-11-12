@@ -94,6 +94,18 @@ def test_a_justfile_change_withholds_the_whole_session(*, tmp_path: Path) -> Non
     )
 
 
+def test_the_plugin_returns_a_session_wide_withholding_reason(
+    *, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """An unsafe session hold stops marker assignment before examining individual tests."""
+    plugin = __import__("livespec_dev_tooling.flake_retry", fromlist=["mark_untouched_tests"])
+    monkeypatch.setattr(plugin, "change_paths", Mock(return_value={Path("justfile")}))
+
+    assert plugin.mark_untouched_tests(root=tmp_path, items=[], withheld_by_nodeid={}) == (
+        "a justfile change"
+    )
+
+
 @pytest.mark.parametrize(
     "closure",
     [
