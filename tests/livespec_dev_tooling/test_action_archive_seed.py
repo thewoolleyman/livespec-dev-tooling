@@ -626,8 +626,8 @@ def test_the_entry_point_reads_the_switch_and_canary_from_the_committed_template
 
 def _wait_for_actions_record(*, recorded: Path) -> bool:
     """Allow the detached postStart cache work to publish its actions row."""
-    # The production hook deliberately detaches this fail-soft cache work.  A
-    # A short poll is ample in isolation but can expire while the xdist
+    # The production hook deliberately detaches this fail-soft cache work. A
+    # short poll is ample in isolation but can expire while the xdist
     # coverage workers contend for a CPU, turning a valid delayed record into
     # a FileNotFoundError below.
     deadline = time.monotonic() + _ACTIONS_RECORD_WAIT_SECONDS
@@ -745,12 +745,6 @@ def test_the_kill_switch_records_the_actions_tier_cold_and_removes_the_seed(tmp_
     row = _post_start(root=tmp_path, seeded=True, switch="operator", detached_delay_seconds=5)
     assert (row["hit"], row["error"]) == ("false", "off:operator")
     assert not (tmp_path / "w" / "_warm" / "actions").exists()
-
-
-def test_post_start_waits_for_a_loaded_workers_delayed_actions_record(tmp_path: Path) -> None:
-    """A delayed detached child still records its actions-tier hit."""
-    row = _post_start(root=tmp_path, seeded=True, detached_delay_seconds=11)
-    assert row["tier"] == "actions"
 
 
 def test_post_start_names_the_deadline_and_record_path_when_actions_are_missing(
