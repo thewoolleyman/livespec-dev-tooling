@@ -455,3 +455,68 @@ def test_a_non_gate_job_whose_just_recipes_are_all_off_the_aggregate_passes(
     monkeypatch.chdir(tmp_path)
 
     assert _check().main() == 0
+
+
+def _fuzz_workflow_running(*, steps: str, root: Path) -> None:
+    source = "jobs:\n" + _job(name="check", container=_block(image=_RUST_IMAGE))
+    source += _job(name="fuzz", container=_block(image=_FUZZ_IMAGE)).replace(
+        "      - run: true", steps.rstrip("\n")
+    )
+    _write_ci(root=root, body=source)
+    _write_justfile(root=root, targets=("check-lint", "check-test"))
+
+
+@pytest.mark.parametrize(
+    "steps",
+    [
+        "      # just check\n      - run: just check-fuzz",
+        "      - name: just check-lint\n        run: just check-fuzz",
+        "      - run: echo 'just check-lint'",
+        '      - run: echo "run just check afterwards"',
+        "      - run: just check-fuzz  # not just check-lint",
+        "      - run: |\n          # just check-lint\n          just check-fuzz",
+        "      - run: |\n          echo 'just check'\n          just check-fuzz",
+        "      - name: run just check\n        if: always()\n        run: just check-fuzz",
+    ],
+)
+def test_a_non_gate_job_naming_an_aggregate_target_outside_run_content_passes(
+    *, steps: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _fuzz_workflow_running(steps=steps, root=tmp_path)
+    monkeypatch.chdir(tmp_path)
+
+    assert _check().main() == 0
+
+
+@pytest.mark.parametrize(
+    "steps",
+    [
+        "      - run: |\n          echo start\n          just check-lint",
+        "      - run: >-\n          just\n          check-lint",
+        "      - run: bash -c 'just check-lint'",
+        "      - run: echo start && just check-lint",
+        "      - run: echo start; (just check-lint)",
+        "      - run: mise exec -- just check",
+        '      - run: eval "just check-lint"',
+        '      - run: echo "unterminated; just check-lint',
+        '      - run: "just check-lint"',
+        "      - run: |\n          just check-fuzz \\\n            check-lint",
+    ],
+)
+def test_a_non_gate_job_running_an_aggregate_target_in_run_content_fails_naming_images(
+    *,
+    steps: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _fuzz_workflow_running(steps=steps, root=tmp_path)
+    monkeypatch.chdir(tmp_path)
+
+    code = _check().main()
+
+    errors = [
+        record for record in _records(stderr=capsys.readouterr().err) if record["level"] == "error"
+    ]
+    assert code == 1
+    assert {str(record["image"]) for record in errors} == {_RUST_IMAGE, _FUZZ_IMAGE}
