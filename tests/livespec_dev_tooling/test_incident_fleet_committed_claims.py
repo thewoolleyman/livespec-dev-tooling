@@ -4,7 +4,11 @@
 Definition of Done names (livespec-dev-tooling-v46q5g): a known surface at most once per
 consumer, a disposition, an owner, a proof reference naming its repository, a reason unless
 implemented, an implemented claim's incident record, and a release build in the serving form
-its capability prints. This library's own rows are release-keyed, so they name a tag. Another
+its capability prints. This library's own rows are release-keyed, so they name a tag, except its
+independent-controller and recovery-authorization rows, which name the controller's serving
+version (`<tag>@<commit>`, plus `+bypass-app-<id>` for recovery), and its driver-hooks rows,
+which name the enabled plugins (`<plugin>=<commit>`, comma-joined), exactly as the audit reads them.
+Another
 consumer's templates read as this library's commit, prefixed. Its gate readers read as a bare
 commit. Every claim also binds the committed manifest identity and one of its applicable
 consumers. The fixture is livespec core's `.livespec-fleet-manifest.jsonc` (sha256 59912fe1…),
@@ -40,12 +44,20 @@ _RELEASE_TAG = re.compile(r"v\d+\.\d+\.\d+")
 _COMMIT = re.compile(r"[0-9a-f]{40}")
 _DIGEST = re.compile(r"[0-9a-f]{64}")
 _SELF = "thewoolleyman/livespec-dev-tooling"
+_CONTROLLER = re.compile(r"v\d+\.\d+\.\d+@[0-9a-f]{40}")
+_RECOVERY = re.compile(r"v\d+\.\d+\.\d+@[0-9a-f]{40}\+bypass-app-\d+")
+_DRIVER = re.compile(r"[^=,\s]+=[0-9a-f]{40}(,[^=,\s]+=[0-9a-f]{40})*")
 
 
 def _serving_form_ok(*, claim: CapabilityEvidence) -> bool:
-    if claim.repository == _SELF:
-        return _RELEASE_TAG.fullmatch(claim.release_build) is not None
     capability = SURFACE_CAPABILITY.get(claim.surface)
+    if claim.repository == _SELF:
+        form = {
+            "independent-controller": _CONTROLLER,
+            "recovery-authorization": _RECOVERY,
+            "driver-hooks": _DRIVER,
+        }.get(capability or "", _RELEASE_TAG)
+        return form.fullmatch(claim.release_build) is not None
     if capability == "templates":
         prefix, _, commit = claim.release_build.partition("@")
         return prefix == "livespec-dev-tooling" and _COMMIT.fullmatch(commit) is not None
@@ -149,3 +161,32 @@ def test_a_repeated_consumer_and_surface_is_refused(tmp_path: Path) -> None:
     assert _failures(claims=_load(path=repeated)) == [
         "thewoolleyman/livespec-driver-claude Generated projects: duplicate"
     ]
+
+
+_SELF_RECOVERY = "v1.195.0@d4b723761270091517e83dd3ac5d5db48e9f2205+bypass-app-5656677"
+
+
+@pytest.mark.parametrize(
+    ("surface", "release_build", "accepted"),
+    [
+        ("Emergency revert and merge authority", _SELF_RECOVERY, True),
+        ("Emergency revert and merge authority", "v1.195.0", False),
+        ("First-failure observer", "v1.195.0@d4b723761270091517e83dd3ac5d5db48e9f2205", True),
+        ("First-failure observer", _SELF_RECOVERY, False),
+        ("Pre-push", "v1.201.0", True),
+        ("Pre-push", _SELF_RECOVERY, False),
+        ("Agent tool and stop guards", "livespec@livespec-driver-claude=" + "a" * 40, True),
+        ("Agent tool and stop guards", "v1.201.0", False),
+    ],
+)
+def test_this_library_names_each_capability_in_the_form_the_audit_reads(
+    *, tmp_path: Path, surface: str, release_build: str, accepted: bool
+) -> None:
+    document = json.loads(_WELLFORMED.read_text(encoding="utf-8"))
+    claim = dict(document["evidence"][0])
+    claim.update({"surface": surface, "release_build": release_build})
+    document["evidence"] = [claim]
+    claims = tmp_path / "claims.json"
+    claims.write_text(json.dumps(document), encoding="utf-8")
+    failures = _failures(claims=_load(path=claims))
+    assert ("release-build-not-serving-form" not in " ".join(failures)) is accepted
