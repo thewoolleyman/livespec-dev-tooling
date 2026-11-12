@@ -212,6 +212,52 @@ def test_a_second_run_over_an_unchanged_tree_skips_the_measure_stage(
     assert measures == ["measured", "measured"]
 
 
+def test_a_test_that_failed_once_in_the_stored_baseline_rejoins_attribution_on_reuse(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A reused measurement judges its stored failures again, so a one-off failure heals."""
+    module = importlib.import_module(_MODULE)
+    real_execute = module.execute_command
+    flag = tmp_path / "failed-once.flag"
+    tests = (
+        "from pathlib import Path\n\nfrom calc import add, double\n\n\n"
+        "def test_add():\n"
+        f"    flag = Path({str(flag)!r})\n"
+        "    first = not flag.exists()\n"
+        "    flag.touch()\n"
+        "    assert not first\n"
+        "    assert add(2, 3) == 5\n\n\n"
+        "def test_double():\n    assert double(4) == 8\n"
+    )
+    fixture = _fixture(root=tmp_path, monkeypatch=monkeypatch, tests=tests)
+    options = module.RunOptions(per_test_timeout=10.0, cache_path=tmp_path / "cache.json")
+    measures: list[str] = []
+
+    def counting(*, args: list[str], cwd: Path, timeout: float | None = None) -> object:
+        if "--cov-context=test" in args:
+            measures.append("measured")
+        return real_execute(args=args, cwd=cwd, timeout=timeout)
+
+    def run() -> dict[str, object]:
+        report = module.run_kill_matrix(
+            target=fixture.package, source_revision="r1", execute=counting, options=options
+        )
+        document: dict[str, object] = report.to_dict()
+        return document
+
+    first = run()
+    assert first["baseline_failures"] == ["tests/test_calc.py::test_add"]
+    assert _killers(document=first)[_ADD] == []
+
+    second = run()
+    assert measures == ["measured"]
+    assert second["baseline_failures"] == []
+    assert _killers(document=second) == {
+        _ADD: ["tests/test_calc.py::test_add"],
+        _DOUBLE: ["tests/test_calc.py::test_double"],
+    }
+
+
 def test_a_test_that_kills_the_baseline_process_is_re_run_alone_and_excluded(
     *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
