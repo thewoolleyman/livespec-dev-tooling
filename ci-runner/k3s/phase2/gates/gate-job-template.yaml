@@ -48,7 +48,10 @@ metadata:
     livespec.gate/repo: @@REPO@@
     livespec.gate/tree-hash: @@TREE_HASH@@
     # Requirement 6: the LocalQueue in this namespace, bound to gates-cq.
-    kueue.x-k8s.io/queue-name: gates-lq
+    # render-gate-job.sh writes `gates-lq` here unless it is told `--queue`;
+    # only the operator reproduction route passes one (gates-repro-lq,
+    # ../kueue/cluster-queue-repro-gates.yaml, livespec-dev-tooling-pkmxgu).
+    kueue.x-k8s.io/queue-name: @@QUEUE@@
     # Admission order within gates-cq. gate-priority never preempts; gates-cq
     # keeps the pool's three `Never` preemption settings.
     kueue.x-k8s.io/priority-class: gate-priority
@@ -346,6 +349,13 @@ spec:
           args:
             - |
               set -euo pipefail
+              # REPRODUCTION DIAGNOSTICS, rendered ONLY by the operator route
+              # (`--repro-stack-interval`, livespec-dev-tooling-pkmxgu). An
+              # ordinary gate renders nothing here, and the placeholder's whole
+              # line is removed. FIRST in the script, so a hang in provisioning
+              # (a fetch, a uv sync, a sibling clone) is covered as well as one
+              # inside the recipes.
+              @@GATE_REPRO_DIAGNOSTICS@@
               # THE CORE RESOLUTION, SAID OUT LOUD WHERE A VERDICT'S READER IS.
               # The init container above fetches livespec core at the consumer's
               # pin and this container is handed the path to it, but until this

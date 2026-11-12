@@ -1,0 +1,93 @@
+# cluster-queue-repro-gates.yaml — the REPRODUCTION lane for gate Jobs: one
+# gate's worth of quota on gamingpc-xubuntu, kept apart from gates-cq so an
+# operator can run one diagnosed full-suite gate there while gates-cq's own
+# gamingpc lane stays held at zero (livespec-dev-tooling-pkmxgu, plan
+# gate-job-resources; the hold is livespec-dev-tooling#4210 and the hang it
+# guards against is livespec-dev-tooling-ddy5xu).
+#
+# NOTHING ORDINARY CAN REACH THIS QUEUE. A gate Job lands in the LocalQueue its
+# `kueue.x-k8s.io/queue-name` label names, and render-gate-job.sh writes
+# `gates-lq` there unless it is told `--queue`. Only the operator route passes
+# it: `just gate-repro` runs `python -m livespec_dev_tooling.gate_repro`, which
+# submits through the normal gate client (mirror push, `kubectl create` of a
+# rendered Job, poll, delete on abandonment), never a hand `kubectl create`.
+# Pre-push and pre-commit delegation never name this queue, so held means held
+# for every gate a push or a commit sends.
+#
+# THE FLAVOR PINS THE NODE. Its `nodeLabels` select gamingpc-xubuntu by
+# hostname, exactly as gates-gamingpc-flavor does, and it names the same
+# `gates-hostname` Topology, so Kueue admits a repro gate only when that node
+# has free requests for it, the same topology-aware admission gates-cq uses.
+# It is a SEPARATE flavor because a ResourceFlavor's quota is per ClusterQueue
+# and this queue must hold quota where gates-cq holds none.
+#
+# DELIBERATELY NOT IN cluster-queue-gates.yaml. The readers of that file treat
+# every ResourceFlavor in it as a fleet gate lane: the ci_pool lane test maps
+# each one to a ci_pool host, the gate-unit test counts its quota in whole
+# gate units, and the lane-order reconciler and converge-worker-queues.sh
+# reorder and extend gates-cq's flavor list. A reproduction lane is none of
+# those things. The converge still applies it, because
+# ../reconstruct/converge-ci-stack.sh step 5 and
+# ../reconstruct/install-converge-unit.sh both loop `cluster-queue-*.yaml`.
+#
+# SAME SHAPE AS cluster-queue-phase1-proof.yaml: a flavor, a ClusterQueue and a
+# LocalQueue in one file, with no `cohortName` (it neither lends nor borrows),
+# quota'd on plain cpu/memory rather than on `ci-runner.io/churn-slot`, so it
+# is outside DERIVATION.md's churn-slot apportionment.
+#
+# THE NAME IS LOAD-BEARING. This file needs two objects
+# cluster-queue-gates.yaml declares, the `gates` Namespace (its LocalQueue
+# lives there, and applying a LocalQueue into a missing namespace FAILS under
+# step 5's `set -e`) and the `gates-hostname` Topology. The converge loop takes
+# the glob in sorted order, and `cluster-queue-repro-gates.yaml` sorts after
+# `cluster-queue-gates.yaml` in both the C and UTF-8 collations, while the
+# first-draft name `cluster-queue-gates-repro.yaml` sorted BEFORE it in both.
+#
+# RETIRE this file once ddy5xu has named and fixed the hung step and
+# gates-gamingpc-flavor has its 5 / 8Gi back: then an ordinary gate reaches
+# gamingpc and a separate lane has nothing left to reproduce.
+---
+apiVersion: kueue.x-k8s.io/v1beta2
+kind: ResourceFlavor
+metadata:
+  name: gates-repro-gamingpc-flavor
+spec:
+  nodeLabels:
+    kubernetes.io/hostname: gamingpc-xubuntu
+  topologyName: gates-hostname
+---
+apiVersion: kueue.x-k8s.io/v1beta2
+kind: ClusterQueue
+metadata:
+  name: gates-repro-cq
+spec:
+  namespaceSelector: {}
+  # The pool's three settings, stated for the same reason gates-cq states
+  # them: a reproduction gate never evicts anything.
+  preemption:
+    reclaimWithinCohort: Never
+    borrowWithinCohort:
+      policy: Never
+    withinClusterQueue: Never
+  resourceGroups:
+    - coveredResources: ["cpu", "memory"]
+      flavors:
+        - name: gates-repro-gamingpc-flavor
+          resources:
+            # ONE gate unit (gates-cq's ci-runner.io/gate-unit-cpu and
+            # gate-unit-memory annotations: 5 cpu / 8Gi), the size the held
+            # gates-gamingpc-flavor lane had before the hold. One repro at a
+            # time is the point: a second concurrent gate would make a hang
+            # on this node harder to attribute, not easier.
+            - name: "cpu"
+              nominalQuota: 5
+            - name: "memory"
+              nominalQuota: 8Gi
+---
+apiVersion: kueue.x-k8s.io/v1beta2
+kind: LocalQueue
+metadata:
+  name: gates-repro-lq
+  namespace: gates
+spec:
+  clusterQueue: gates-repro-cq

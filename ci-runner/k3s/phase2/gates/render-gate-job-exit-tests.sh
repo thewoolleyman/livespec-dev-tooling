@@ -69,6 +69,11 @@
 #      rather than restated here, and requests no more than one gate unit, read
 #      from the gates-cq annotations in ../kueue/cluster-queue-gates.yaml
 #      (livespec-dev-tooling-c3nd2h, livespec-dev-tooling-brggiu).
+#   Y. the operator reproduction route's two flags (livespec-dev-tooling-pkmxgu):
+#      --queue names the Job's LocalQueue, which is gates-lq when it is not
+#      passed, and --repro-stack-interval renders the stack diagnostics, which an
+#      ordinary render carries no trace of. A malformed value of either is
+#      refused, and the diagnostics block parses as shell.
 #
 # WHY R EXISTS (livespec-dev-tooling-mex6ga). A member declaring it reads an
 # authorization held outside the tree must not run in the gate Job, but the Job
@@ -1270,6 +1275,66 @@ elif [ "${got_cpu}" -le "${unit_cpu}" ] && [ "${got_mem_req%Gi}" -le "${unit_mem
 else
   fail "a render with no size flags requests cpu ${got_cpu} / memory ${got_mem_req}, more than one gate unit (${unit_cpu} cpu / ${unit_memory})"
 fi
+
+echo "== Y. the operator reproduction route's --queue and --repro-stack-interval =="
+if grep -qF 'kueue.x-k8s.io/queue-name: gates-lq' "${out_a}" && ! grep -qF 'gate-repro' "${out_a}"; then
+  pass "a render with neither flag names gates-lq and carries no reproduction diagnostics"
+else
+  fail "a render with neither flag must name gates-lq and carry no reproduction diagnostics"
+fi
+out_repro="${SCRATCH}/repro.yaml"
+if "${RENDERER}" --repo-root "${SCRATCH}/repo-a" --tree-hash "${HASH_A}" "${OUR_SUITE[@]}" \
+     --queue gates-repro-lq --repro-stack-interval 300 > "${out_repro}" 2>"${SCRATCH}/repro.err"; then
+  if grep -qF 'kueue.x-k8s.io/queue-name: gates-repro-lq' "${out_repro}" && \
+     ! grep -qF 'kueue.x-k8s.io/queue-name: gates-lq' "${out_repro}"; then
+    pass "--queue gates-repro-lq is the Job's LocalQueue"
+  else
+    fail "--queue gates-repro-lq did not become the Job's only queue-name label"
+  fi
+  if grep -qF 'faulthandler.dump_traceback_later(300, repeat=True, file=_stream)' "${out_repro}" && \
+     grep -qF 'export PYTHONPATH="${gate_repro_site}' "${out_repro}" && \
+     grep -qF 'while sleep 300; do gate_repro_report; done' "${out_repro}"; then
+    pass "--repro-stack-interval 300 arms a 300 s stack dump in every Python process and a 300 s report loop"
+  else
+    fail "--repro-stack-interval 300 did not render the stack dump, the PYTHONPATH export and the report loop"
+  fi
+  repro_script="${SCRATCH}/repro-gate-script.sh"
+  if python3 - "${out_repro}" "${repro_script}" <<'GATE_SCRIPT' && bash -n "${repro_script}"; then
+import sys
+
+import yaml
+
+with open(sys.argv[1], encoding="utf-8") as handle:
+    documents = [document for document in yaml.safe_load_all(handle) if document]
+job = next(document for document in documents if document.get("kind") == "Job")
+containers = job["spec"]["template"]["spec"]["containers"]
+gate = next(container for container in containers if container["name"] == "gate")
+with open(sys.argv[2], "w", encoding="utf-8") as handle:
+    handle.write(gate["args"][0])
+GATE_SCRIPT
+    pass "the gate container's script with the diagnostics rendered parses as shell"
+  else
+    fail "the gate container's script with the diagnostics rendered does not parse as shell"
+  fi
+else
+  fail "a render with --queue gates-repro-lq --repro-stack-interval 300 was refused: $(cat "${SCRATCH}/repro.err")"
+fi
+for bad_queue in "" "Gates-LQ" "gates lq" "-gates"; do
+  if "${RENDERER}" --repo-root "${SCRATCH}/repo-a" --tree-hash "${HASH_A}" --queue "${bad_queue}" \
+       > /dev/null 2>&1; then
+    fail "--queue '${bad_queue}' was rendered rather than refused"
+  else
+    pass "--queue '${bad_queue}' is refused"
+  fi
+done
+for bad_interval in 0 030 abc -5 "3 00"; do
+  if "${RENDERER}" --repo-root "${SCRATCH}/repo-a" --tree-hash "${HASH_A}" \
+       --repro-stack-interval "${bad_interval}" > /dev/null 2>&1; then
+    fail "--repro-stack-interval '${bad_interval}' was rendered rather than refused"
+  else
+    pass "--repro-stack-interval '${bad_interval}' is refused"
+  fi
+done
 
 echo
 if [ "${failures}" -eq 0 ]; then

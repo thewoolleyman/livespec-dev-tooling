@@ -576,6 +576,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: a fleet member's CI runs the CI run-telemetry exporter livespec-dev-tooling ships",
+    "work_item": "livespec-dev-tooling-5ua57h",
+    "first_seen": "2026-11-11"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: a gate client that stops waiting on an admitted gate Job deletes it",
     "work_item": "livespec-dev-tooling-f2dgn6",
     "first_seen": "2026-11-05"
@@ -996,6 +1003,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: a self-hosted CI job's span names its runner pod, which joins to the node that ran it",
+    "work_item": "livespec-dev-tooling-wnwwsl",
+    "first_seen": "2026-11-11"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: a silent cluster-state emitter fires its dead-man",
     "work_item": "livespec-dev-tooling-dfdiil",
     "first_seen": "2026-10-24"
@@ -1178,6 +1192,20 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: a workflow naming two image versions fails the single-container-image check",
+    "work_item": "livespec-dev-tooling-fsle5g",
+    "first_seen": "2026-11-11"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a workflow whose layered fuzz flavor runs no aggregate target passes and its gate runs in the base flavor",
+    "work_item": "livespec-dev-tooling-fsle5g",
+    "first_seen": "2026-11-11"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: a workload is never scheduled onto a node whose architecture its image does not publish",
     "work_item": "livespec-dev-tooling-ko26ez.6",
     "first_seen": "2026-11-07"
@@ -1258,6 +1286,13 @@
     "heading": "## Scenario: an explicit local gate-runner run is recorded as local",
     "work_item": "livespec-dev-tooling-qgv3tb",
     "first_seen": "2026-11-01"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: an image written below comment lines inside a container block is counted by the gate and the check alike",
+    "work_item": "livespec-dev-tooling-op67ed",
+    "first_seen": "2026-11-11"
   },
   {
     "spec_root": "SPECIFICATION",

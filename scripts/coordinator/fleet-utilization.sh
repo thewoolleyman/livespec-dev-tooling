@@ -52,6 +52,13 @@ other factory node is printed with its reason, e.g. `hp-xubuntu 55% idle (not-ad
 and never makes a line FLAGGED. When the node labels cannot be read the scoping prints
 UNREAD and no node counts as covered. CI lines (Kueue flavors, ARC scale sets) keep their
 own node scoping.
+
+An ARC line counts a pending runner as waiting only when its EphemeralRunner is older than
+STRANDED_ARC_STARTUP_S (default 90 s, overridable by environment). A younger one is in
+ARC's normal startup window (the set reads "current N, pending N, running 0" for 15-30 s
+while the pods register) and is printed as `starting`; it never makes the line FLAGGED.
+When the EphemeralRunners cannot be read the line says their ages are UNREAD and every
+pending runner counts as waiting.
 """
 
 import argparse
@@ -71,6 +78,14 @@ import time
 # A covered node idle above this % beside a binding cap or quota is stranded capacity.
 # A value-only constant: tune it here, never pin it in a test.
 STRANDED_IDLE_PCT = 40
+
+# An ARC EphemeralRunner pending for no longer than this many seconds is starting, not
+# stranded: ARC's normal runner-startup window (measured 2026-11-12, a listener burst
+# drained in under a minute). Overridable by environment; a value that does not parse is ignored.
+try:
+    STRANDED_ARC_STARTUP_S = int(os.environ.get("STRANDED_ARC_STARTUP_S", "90"))
+except ValueError:
+    STRANDED_ARC_STARTUP_S = 90
 
 # Candidate ssh targets, in order. First that answers wins. `cwoolley` is the
 # account that holds the authorized key on every execution node (verified
@@ -1082,10 +1097,35 @@ def kueue_rows(node_labels, nodes_by_name):
     return rows
 
 
+def arc_runner_ages(now):
+    """({scale set: [age_s of each pending EphemeralRunner]}, None), or (None, reason).
+
+    Pending is ARC's own reading: phase Pending or not yet set. An unparseable
+    creationTimestamp counts as older than the startup window.
+    """
+    doc, err = kube_json(f"ephemeralrunners.actions.github.com -n {ARC_NS} --request-timeout=20s")
+    if doc is None:
+        return None, err
+    ages = collections.defaultdict(list)
+    for r in doc.get("items", []):
+        meta = r.get("metadata") or {}
+        if (r.get("status") or {}).get("phase") not in (None, "", "Pending"):
+            continue
+        owner = (meta.get("labels") or {}).get("actions.github.com/scale-set-name")
+        try:
+            born = datetime.datetime.strptime(meta.get("creationTimestamp", ""), "%Y-%m-%dT%H:%M:%SZ")
+            age = now - born.replace(tzinfo=datetime.UTC).timestamp()
+        except ValueError:
+            age = float("inf")
+        ages[owner].append(age)
+    return ages, None
+
+
 def arc_rows(node_labels, nodes_by_name):
     sets, err = kube_json(f"autoscalingrunnersets.actions.github.com -n {ARC_NS}")
     if sets is None:
         return [unread_row("ARC scale sets", err)]
+    runner_ages, ages_err = arc_runner_ages(time.time())
     lqs, err = kube_json(f"localqueues.kueue.x-k8s.io -n {ARC_NS}")
     lq_pending = {}
     if lqs is None:
@@ -1111,10 +1151,20 @@ def arc_rows(node_labels, nodes_by_name):
         maxr = spec.get("maxRunners")
         binds = maxr is not None and current >= int(maxr)
         lq_text = f"queue {lq} pending UNREAD ({lq_err})" if lq and lq_err else f"{q_pend} pending in {lq or 'no queue'}"
+        if runner_ages is None:
+            stuck = pend_r
+            pend_text = f"{pend_r} pending runner(s) (runner ages UNREAD: {str(ages_err)[:120]})"
+        else:
+            ages = runner_ages.get(name, [])
+            stuck = sum(1 for a in ages if a > STRANDED_ARC_STARTUP_S)
+            starting = len(ages) - stuck
+            pend_text = f"{stuck} pending runner(s) older than {STRANDED_ARC_STARTUP_S}s"
+            if starting:
+                pend_text += f", {starting} starting"
         rows.append(
             stranded_row(
                 f"arc {name}", maxr, f"{current} runners ({st.get('runningEphemeralRunners', 0)} running)", binds,
-                pend_r + q_pend, f"{pend_r} pending runner(s), {lq_text}; GitHub-side queue not visible",
+                stuck + q_pend, f"{pend_text}, {lq_text}; GitHub-side queue not visible",
                 covered, nodes_by_name,
             )
         )

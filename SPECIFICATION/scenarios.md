@@ -4152,7 +4152,7 @@ Then a maintainer notification MUST name the stale detector
 
 ## Scenario: a workflow declaring two container images fails its own CI
 
-Given a pull request whose merge with the default branch makes `.github/workflows/ci.yml` declare two distinct job `container:` images
+Given a pull request whose merge with the default branch makes `.github/workflows/ci.yml` declare two distinct job `container:` images that name two image repositories, or two release versions of one image repository
 
 When its CI runs
 
@@ -4602,3 +4602,57 @@ Given the committed `cluster-queue-gates.yaml`
 When its tests run
 
 Then they MUST fail, naming the `gates-flavor` lane, if that lane's nominal CPU quota is below three times the renderer's default CPU request or its nominal memory quota is below three times the renderer's default memory request
+
+## Scenario: a workflow whose layered fuzz flavor runs no aggregate target passes and its gate runs in the base flavor
+
+Given a consumer whose `.github/workflows/ci.yml` gives five jobs the container image `ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-rust-v1.197.0`
+
+And gives one more job, whose only recipe is `just check-fuzz`, the container image `ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-rust-fuzz-v1.197.0`, written below two comment lines inside its `container:` block
+
+And `check-fuzz` is not a target of that consumer's `just check` aggregate
+
+When the consumer's single-container-image check runs, and the delegated gate renders that consumer's gate Job
+
+Then the check MUST pass
+
+And the gate Job MUST run in `ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-rust-v1.197.0`
+
+## Scenario: a workflow naming two image versions fails the single-container-image check
+
+Given a consumer whose `.github/workflows/ci.yml` gives one job `ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.174.0` and every other job `ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.175.0`
+
+When the consumer's single-container-image check runs
+
+Then it MUST fail, naming both images and each line that declares them
+
+## Scenario: an image written below comment lines inside a container block is counted by the gate and the check alike
+
+Given a consumer whose `.github/workflows/ci.yml` gives one job `ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-rust-v1.197.0` and gives another job `ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-rust-v1.196.0`, written below comment lines inside its `container:` block
+
+When the consumer's single-container-image check runs, and the delegated gate renders that consumer's gate Job
+
+Then the check MUST fail, naming both images
+
+And the delegated gate MUST refuse to render the Job, naming both images
+
+## Scenario: a self-hosted CI job's span names its runner pod, which joins to the node that ran it
+
+Given a fleet member's pull-request CI run whose `check-coverage` job ran on runner `livespec-dev-tooling-k3s-f96mp-runner-kv9mc`
+
+And the runner-pool node telemetry attributes pod `livespec-dev-tooling-k3s-f96mp-runner-kv9mc` to node `poweredge-xubuntu` in that window
+
+When the member's CI run-telemetry exporter emits that run's spans
+
+Then the `ci.job.check-coverage` span MUST carry `ci.runner_name` equal to `livespec-dev-tooling-k3s-f96mp-runner-kv9mc`
+
+And a query joining `ci.runner_name` to `k8s.pod.name` MUST attribute that job to `poweredge-xubuntu`
+
+## Scenario: a fleet member's CI runs the CI run-telemetry exporter livespec-dev-tooling ships
+
+Given a fleet member whose pinned livespec-dev-tooling ships the CI run-telemetry exporter module
+
+When that member's CI `export-telemetry` job runs
+
+Then it MUST emit the run's `ci.run` and `ci.job.<name>` spans by running that module
+
+And the member's repository MUST carry no copy of the exporter's span-building logic

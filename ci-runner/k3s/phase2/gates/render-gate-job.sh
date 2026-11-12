@@ -27,6 +27,15 @@
 #                      [--livespec-core-ref REF]
 #                      [--check-suite 'RECIPE' ...]
 #                      [--pytest-arg ARG ...]
+#                      [--queue LOCALQUEUE] [--repro-stack-interval SECONDS]
+#
+# --queue is the LocalQueue the Job's `kueue.x-k8s.io/queue-name` label names,
+# `gates-lq` by default. --repro-stack-interval renders the reproduction
+# diagnostics described at its block below. Both exist for ONE caller, the
+# operator reproduction route (`python -m livespec_dev_tooling.gate_repro`,
+# livespec-dev-tooling-pkmxgu), which passes `--queue gates-repro-lq`
+# (../kueue/cluster-queue-repro-gates.yaml). The pre-push and pre-commit clients
+# pass neither, so every gate they send renders exactly as it did before.
 #
 # --repo defaults to the basename of --repo-root. --source-url defaults to the
 # in-cluster read-only mirror R4.S4 builds. The resource defaults are the terms
@@ -97,6 +106,7 @@ WORKLOAD_ARCH_CONF="${WORKLOAD_ARCH_CONF:-${SCRIPT_DIR}/../workload-arch.conf}"
 repo_root=""; tree_hash=""; repo=""; source_url=""; gated_repository=""
 cpu="5"; memory="6Gi"; parallelism="4"; ttl_seconds="3600"; gate_ref=""
 livespec_core_ref=""
+queue="gates-lq"; repro_stack_interval=""
 check_suite=()
 pytest_argv=()
 private_siblings=()
@@ -131,6 +141,8 @@ while [ $# -gt 0 ]; do
     --livespec-core-ref) livespec_core_ref="$2"; shift 2 ;;
     --check-suite)       check_suite+=("$2"); shift 2 ;;
     --pytest-arg)        pytest_argv+=("$2"); shift 2 ;;
+    --queue)             queue="$2"; shift 2 ;;
+    --repro-stack-interval) repro_stack_interval="$2"; shift 2 ;;
     --private-sibling)   private_siblings+=("$2"); shift 2 ;;
     --private-sibling-secret) private_sibling_secret="$2"; shift 2 ;;
     --authority-skip-env)     authority_skip_env="$2"; shift 2 ;;
@@ -632,6 +644,77 @@ if [ -n "${authority_skip_env}" ] || [ "${#authority_skip_members[@]}" -gt 0 ]; 
 echo \":: gate: NOT running ${authority_skip_list} here - each reads an authorization held outside the tree and this Job is handed none; the pushing host runs it against this same tree (skipped through this repository's own ${authority_skip_env})\""
 fi
 
+# --- the reproduction diagnostics (livespec-dev-tooling-pkmxgu) --------------
+# A Job label value, so the character set is bounded to what Kubernetes accepts
+# for one and what a LocalQueue name can be.
+case "${queue}" in
+  "" | -* | *[!a-z0-9-]*)
+    echo "FATAL: --queue '${queue}' is not a LocalQueue name" >&2
+    exit 2 ;;
+esac
+# EMPTY unless the operator route asks for it, which removes the placeholder's
+# whole line. When asked for, it captures stacks WITHOUT `kubectl exec`: the
+# gates credential cannot exec into a pod (`.ai/deleted-gate-pod-diagnosis.md`
+# in livespec-dev-tooling), so everything is written into the pod's own log.
+#
+# THE STACKS COME FROM INSIDE EACH PYTHON PROCESS. A `sitecustomize` placed
+# first on PYTHONPATH arms `faulthandler.dump_traceback_later(N, repeat=True)`
+# in every Python process the gate starts, writing to that process's own
+# `stack-<pid>.txt`. faulthandler's watchdog is a C thread that needs no GIL, so
+# it still dumps a process wedged with the GIL held, which a Python thread could
+# not. A process that lives less than N seconds never dumps. NOT pytest's own
+# `faulthandler_timeout`: pytest arms and CANCELS that same per-process timer
+# around every test, which would disarm this one. NOT py-spy: the gate image
+# carries none, and the container has no CAP_SYS_PTRACE.
+#
+# Every N seconds a background loop prints the process tree and, for each live
+# Python process with a dump, its command line and its LATEST dump. The loop's
+# output goes to the container's stdout, beside the recipes' output and outside
+# the recipe log the member report is parsed from.
+gate_repro_block=""
+if [ -n "${repro_stack_interval}" ]; then
+  case "${repro_stack_interval}" in
+    *[!0-9]* | 0*)
+      echo "FATAL: --repro-stack-interval '${repro_stack_interval}' is not a positive whole number of seconds" >&2
+      exit 2 ;;
+  esac
+  gate_repro_block="echo \":: gate-repro: diagnostics on: every ${repro_stack_interval}s, the process tree and each live Python process's latest stack\"
+export GATE_REPRO_STACK_DIR=\"\$(mktemp -d /tmp/gate-repro-stacks.XXXXXX)\"
+gate_repro_site=\"\$(mktemp -d /tmp/gate-repro-site.XXXXXX)\"
+cat > \"\${gate_repro_site}/sitecustomize.py\" <<'GATE_REPRO_SITE'
+import faulthandler
+import os
+
+_directory = os.environ.get(\"GATE_REPRO_STACK_DIR\", \"\")
+_stream = None
+if _directory:
+    try:
+        _stream = open(os.path.join(_directory, f\"stack-{os.getpid()}.txt\"), \"w\")
+    except OSError:
+        _stream = None
+if _stream is not None:
+    faulthandler.dump_traceback_later(${repro_stack_interval}, repeat=True, file=_stream)
+GATE_REPRO_SITE
+export PYTHONPATH=\"\${gate_repro_site}\${PYTHONPATH:+:\${PYTHONPATH}}\"
+gate_repro_report() {
+  echo \":: gate-repro: \$(date -u +%Y-%m-%dT%H:%M:%SZ) process tree\"
+  ps -eo pid,ppid,etimes,stat,pcpu,rss,args --forest || true
+  for stack in \"\${GATE_REPRO_STACK_DIR}\"/stack-*.txt; do
+    [ -e \"\${stack}\" ] || continue
+    pid=\"\${stack##*/stack-}\"
+    pid=\"\${pid%.txt}\"
+    if [ ! -d \"/proc/\${pid}\" ]; then
+      rm -f \"\${stack}\"
+      continue
+    fi
+    [ -s \"\${stack}\" ] || continue
+    echo \":: gate-repro: python pid \${pid}: \$(tr '\\0\\n' '  ' < \"/proc/\${pid}/cmdline\" 2>/dev/null | cut -c1-400)\"
+    awk '/^Timeout \\(/ { start = NR } { line[NR] = \$0 } END { if (start) for (i = start; i <= NR; i++) print line[i] }' \"\${stack}\" || true
+  done
+}
+( set +e; while sleep ${repro_stack_interval}; do gate_repro_report; done ) &"
+fi
+
 # --- substitution ------------------------------------------------------------
 # `&`, `|` and `\` are the characters sed would reinterpret in a replacement with
 # `|` as the delimiter. URLs and image references carry `/` and `:` freely, which
@@ -689,6 +772,7 @@ gate_arches="$(awk -v n="${gate_class_name}" '$1 == "gate" && $2 == n && n != "g
   exit 2
 }
 substitute GATE_ARCHES       "${gate_arches//,/, }"
+substitute QUEUE             "${queue}"
 substitute CPU               "${cpu}"
 substitute MEMORY            "${memory}"
 substitute PARALLELISM       "${parallelism}"
@@ -705,6 +789,7 @@ substitute_block GATE_SIBLING_CLONES "${gate_sibling_clone_lines}"
 # which removes the placeholder's whole line: such a Job runs the members it runs
 # today, where an unreadable authorization FAILS rather than passing.
 substitute_block GATE_AUTHORITY_SKIP "${authority_skip_block}"
+substitute_block GATE_REPRO_DIAGNOSTICS "${gate_repro_block}"
 substitute_block GATE_PRIVATE_SIBLING_VOLUME_MOUNT "${private_sibling_volume_mount}"
 substitute_block GATE_PRIVATE_SIBLING_VOLUME "${private_sibling_volume}"
 
