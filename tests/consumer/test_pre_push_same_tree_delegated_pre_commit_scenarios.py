@@ -345,21 +345,33 @@ def _a_delegated_pre_commit(
 
 
 def _pre_push_evidence(
-    *, repo: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> tuple[int, list[str]]:
+    *,
+    repo: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    record_state: str = "matches",
+) -> tuple[int, list[str], list[str]]:
     """Ask the real green-token module whether a qualifying verdict exists for this push."""
     _delegate, green_token = _modules()
     pre_push = importlib.import_module("livespec_dev_tooling._pre_push_evidence")
 
-    def cluster_record(
+    def cluster_runner(
         *, argv: list[str], cwd: Path, stdin: str | None = None, stream: bool = False
     ) -> Success[GateCommandResult]:
         _ = cwd, stdin, stream
         tree = _git(repo=repo, args=("rev-parse", "HEAD^{tree}"))
         if "job" in argv:
+            if record_state == "missing":
+                return Success(GateCommandResult(returncode=1, stdout="", stderr="NotFound"))
             output = json.dumps(
                 {
-                    "metadata": {"labels": {"livespec.gate/tree-hash": tree}},
+                    "metadata": {
+                        "labels": {
+                            "livespec.gate/tree-hash": (
+                                tree if record_state == "matches" else "b" * 40
+                            )
+                        }
+                    },
                     "status": {"conditions": [{"type": "Complete", "status": "True"}]},
                 }
             )
@@ -369,12 +381,13 @@ def _pre_push_evidence(
             output = 'LIVESPEC_GATE_MEMBERS {"check-approval": "passed", "check-beta": "passed", "check-world": "passed"}\n'
         return Success(GateCommandResult(returncode=0, stdout=output, stderr=""))
 
-    monkeypatch.setattr(pre_push, "default_gate_command_runner", cluster_record)
+    monkeypatch.setattr(pre_push, "default_gate_command_runner", cluster_runner)
     _scrub_process(monkeypatch=monkeypatch)
     monkeypatch.chdir(repo)
     monkeypatch.setattr(sys, "argv", ["green-token", "pre-push-evidence"])
     status = green_token.main()
-    return status, capsys.readouterr().out.splitlines()
+    captured = capsys.readouterr()
+    return status, captured.out.splitlines(), captured.err.splitlines()
 
 
 def _green_token(
@@ -422,7 +435,9 @@ def test_a_full_delegated_pre_commit_pass_records_evidence_the_push_of_that_tree
     assert status == 0
     _ = _git(repo=repo, args=("commit", "-q", "-m", "feat: widget"))
 
-    accepted, lines = _pre_push_evidence(repo=repo, monkeypatch=monkeypatch, capsys=capsys)
+    accepted, lines, _diagnostics = _pre_push_evidence(
+        repo=repo, monkeypatch=monkeypatch, capsys=capsys
+    )
 
     assert accepted == 0, (
         "a clean worktree whose HEAD tree is the tree a delegated pre-commit Job passed must "
@@ -490,6 +505,80 @@ def test_an_accepting_push_runs_only_the_members_the_pre_commit_job_did_not_cove
     ), f"the markers must not leak into the members the aggregate runs; invoked={run.invoked}"
 
 
+def _reused_evidence_falls_through_to_a_new_gate(
+    *,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    cluster_record: str,
+) -> list[str]:
+    """Return the evidence-reader diagnostics after a retained record stops confirming it."""
+    repo = _a_repository(repo=tmp_path / "repo", keys=_BOTH_KEYS)
+    tree = _stage(repo=repo, files={"widget.py": "VALUE = 1\n"})
+    assert (
+        _a_delegated_pre_commit(
+            repo=repo,
+            tree=tree,
+            report=_FULL_REPORT,
+            monkeypatch=monkeypatch,
+            capsys=capsys,
+        )
+        == 0
+    )
+    _ = _git(repo=repo, args=("commit", "-q", "-m", "feat: widget"))
+
+    accepted, lines, diagnostics = _pre_push_evidence(
+        repo=repo,
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+        record_state=cluster_record,
+    )
+
+    assert accepted == 1, "a cluster record that no longer confirms J must not be reused"
+    assert lines == []
+    run = _run_pre_push(root=repo, overrides={"SWITCH_EXIT": "0"})
+    assert run.code == 0, f"output={run.output!r} invoked={run.invoked}"
+    assert _carrying(run=run, needle="gate_remote_delegate run"), f"invoked={run.invoked}"
+    assert "accepted the delegated pre-commit verdict" not in run.output
+    return diagnostics
+
+
+def test_a_missing_cluster_gate_job_record_does_not_reuse_delegated_pre_commit_evidence(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A missing J is named and the pre-push gate submits a fresh Job for T."""
+    diagnostics = _reused_evidence_falls_through_to_a_new_gate(
+        tmp_path=tmp_path,
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+        cluster_record="missing",
+    )
+
+    assert any(
+        _JOB in diagnostic and "cluster no longer holds the gate Job record" in diagnostic
+        for diagnostic in diagnostics
+    ), f"diagnostics={diagnostics}"
+
+
+def test_a_contradictory_cluster_gate_job_record_does_not_reuse_delegated_pre_commit_evidence(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A contradictory J is named and the pre-push gate submits a fresh Job for T."""
+    diagnostics = _reused_evidence_falls_through_to_a_new_gate(
+        tmp_path=tmp_path,
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+        cluster_record="contradicts",
+    )
+
+    assert any(
+        _JOB in diagnostic
+        and "cluster record disagrees with the evidence" in diagnostic
+        and '"field": "tree"' in diagnostic
+        for diagnostic in diagnostics
+    ), f"diagnostics={diagnostics}"
+
+
 # --- Scenario: a pre-commit aggregate that ran on the committing host -------
 
 
@@ -550,7 +639,9 @@ def test_a_local_pre_commit_pass_in_a_both_keys_repository_never_stands_in_for_t
     assert (
         _green_token(repo=repo, argv=("check",), monkeypatch=monkeypatch, capsys=capsys) == 1
     ), "the same-tree evidence a local aggregate writes must not stand in for the pre-push gate"
-    accepted, _lines = _pre_push_evidence(repo=repo, monkeypatch=monkeypatch, capsys=capsys)
+    accepted, _lines, _diagnostics = _pre_push_evidence(
+        repo=repo, monkeypatch=monkeypatch, capsys=capsys
+    )
     assert accepted == 1
 
     run = _run_pre_push(root=tmp_path, overrides={"GREEN_TOKEN_EXIT": "1", "SWITCH_EXIT": "0"})
@@ -617,7 +708,9 @@ def test_a_delegated_pre_commit_pass_does_not_stand_in_when_the_tree_or_worktree
         == 0
     )
     _ = _git(repo=repo, args=("commit", "-q", "-m", "feat: widget"))
-    accepted_first, _lines = _pre_push_evidence(repo=repo, monkeypatch=monkeypatch, capsys=capsys)
+    accepted_first, _lines, _diagnostics = _pre_push_evidence(
+        repo=repo, monkeypatch=monkeypatch, capsys=capsys
+    )
     assert accepted_first == 0, "the control: the evidence qualifies before the difference"
 
     if difference == "head-tree":
@@ -626,7 +719,9 @@ def test_a_delegated_pre_commit_pass_does_not_stand_in_when_the_tree_or_worktree
     else:
         _ = (repo / "widget.py").write_text("VALUE = 3\n", encoding="utf-8")
 
-    accepted, lines = _pre_push_evidence(repo=repo, monkeypatch=monkeypatch, capsys=capsys)
+    accepted, lines, _diagnostics = _pre_push_evidence(
+        repo=repo, monkeypatch=monkeypatch, capsys=capsys
+    )
 
     assert accepted == 1
     assert lines == []
@@ -660,7 +755,9 @@ def test_a_doc_only_or_red_leg_delegated_pre_commit_run_records_no_pre_push_evid
     assert status == 0
     _ = _git(repo=repo, args=("commit", "-q", "-m", "chore: subset"))
 
-    accepted, _lines = _pre_push_evidence(repo=repo, monkeypatch=monkeypatch, capsys=capsys)
+    accepted, _lines, _diagnostics = _pre_push_evidence(
+        repo=repo, monkeypatch=monkeypatch, capsys=capsys
+    )
     assert accepted == 1, "a doc-only or Red-leg subset must never stand in for the pre-push gate"
 
 
@@ -678,7 +775,9 @@ def test_a_job_that_reported_no_member_list_records_no_pre_push_evidence(
         == 0
     )
     _ = _git(repo=repo, args=("commit", "-q", "-m", "feat: widget"))
-    accepted, _lines = _pre_push_evidence(repo=repo, monkeypatch=monkeypatch, capsys=capsys)
+    accepted, _lines, _diagnostics = _pre_push_evidence(
+        repo=repo, monkeypatch=monkeypatch, capsys=capsys
+    )
 
     assert accepted == 1
 
@@ -733,7 +832,9 @@ def test_a_repository_without_both_delegated_keys_keeps_pre_commit_token_reuse(
         capsys=capsys,
     )
     assert _green_token(repo=repo, argv=("check",), monkeypatch=monkeypatch, capsys=capsys) == 0
-    accepted, _lines = _pre_push_evidence(repo=repo, monkeypatch=monkeypatch, capsys=capsys)
+    accepted, _lines, _diagnostics = _pre_push_evidence(
+        repo=repo, monkeypatch=monkeypatch, capsys=capsys
+    )
     assert accepted == 1, "only a both-keys repository has a pre-push evidence reader"
 
     run = _run_pre_push(root=tmp_path, overrides={"GREEN_TOKEN_EXIT": "0", "SWITCH_EXIT": "0"})
