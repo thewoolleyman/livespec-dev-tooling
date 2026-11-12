@@ -352,6 +352,27 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: a consumer whose every livespec_dev_tooling function is declared or locally public passes the commit-hook check",
+    "work_item": "livespec-dev-tooling-vobfwi",
+    "first_seen": "2026-11-12"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a consumer's commit-hook check reports a livespec_dev_tooling function its installed build does not declare",
+    "work_item": "livespec-dev-tooling-vobfwi",
+    "first_seen": "2026-11-12"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a consumer's commit-hook check reports an undeclared livespec_dev_tooling function reached as an attribute of an imported module",
+    "work_item": "livespec-dev-tooling-vobfwi",
+    "first_seen": "2026-11-12"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: a consumer's local pre-commit aggregate run through the shared entry point is reused by its suite-green leg",
     "work_item": "livespec-dev-tooling-4scqti",
     "first_seen": "2026-11-09"
@@ -362,6 +383,13 @@
     "heading": "## Scenario: a consumer's pre-push gate that passes its check set to the shared entry point reuses a qualifying delegated pre-commit verdict",
     "work_item": "livespec-dev-tooling-yud7rc",
     "first_seen": "2026-11-11"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a consuming repository's check aggregate refuses a member with no purity declaration",
+    "work_item": "livespec-dev-tooling-ixtdx7",
+    "first_seen": "2026-11-12"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -390,6 +418,13 @@
     "heading": "## Scenario: a coverage-guided kill-matrix run skips tests that do not execute a mutant",
     "work_item": "livespec-dev-tooling-tcmw34",
     "first_seen": "2026-11-07"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a declaration present only on livespec-dev-tooling's default branch does not satisfy the commit-hook check",
+    "work_item": "livespec-dev-tooling-vobfwi",
+    "first_seen": "2026-11-12"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -1507,6 +1542,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: livespec-dev-tooling's check aggregate fails when its cross_repo_public_api package-data file and pyproject.toml disagree",
+    "work_item": "livespec-dev-tooling-vobfwi",
+    "first_seen": "2026-11-12"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: missing or malformed reconciler configuration fails closed to revert-by-default",
     "work_item": "livespec-dev-tooling-joqff6",
     "first_seen": "2026-10-22"
@@ -1685,5 +1727,12 @@
     "heading": "## Scenario: two scale sets pinning different runner versions fail the check",
     "work_item": "livespec-dev-tooling-jkwzwv",
     "first_seen": "2026-11-08"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: with the fail variable unset, a consumer's commit-hook check reports an undeclared livespec_dev_tooling function and exits 0",
+    "work_item": "livespec-dev-tooling-vobfwi",
+    "first_seen": "2026-11-12"
   }
 ]
