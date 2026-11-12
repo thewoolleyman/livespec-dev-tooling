@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import importlib
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import ModuleType
 
@@ -25,15 +25,25 @@ def _detector() -> ModuleType:
 def test_a_non_reused_mandatory_consumer_names_its_run_job_and_outcome() -> None:
     """A fallback is an immediate maintainer-facing event, not a green CI detail."""
     detector = _detector()
-    notification = detector.reuse_outcome_notification(
-        repository="thewoolleyman/livespec-dev-tooling",
-        run_id="42",
-        job_id="check-coverage",
-        outcome="missing_receipt",
-        completed_at=_NOW,
+    assert hasattr(detector, "detect_notifications")
+    notifications = detector.detect_notifications(
+        now=_NOW,
+        outcomes=(
+            detector.ReuseOutcome(
+                repository="thewoolleyman/livespec-dev-tooling",
+                run_id="42",
+                job_id="check-coverage",
+                outcome="missing_receipt",
+                duration_seconds=901,
+                completed_at=_NOW - timedelta(minutes=10),
+            ),
+        ),
+        jobs=(),
+        detector_last_success=_NOW,
+        schedule_interval=timedelta(minutes=10),
     )
 
-    assert notification.message == (
+    assert [notification.message for notification in notifications] == [
         "coverage reuse fallback repository=thewoolleyman/livespec-dev-tooling "
         "run=42 job=check-coverage outcome=missing_receipt"
-    )
+    ]
