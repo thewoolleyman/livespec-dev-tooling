@@ -1,5 +1,5 @@
 ---
-topic: a-sibling-bump-awaits-the-sandbox-image
+topic: a-bump-to-a-livespec
 author: claude-opus-5-5 (ci-runtime-and-cost)
 created_at: 2026-11-12T10:34:22Z
 ---
