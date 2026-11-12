@@ -333,3 +333,27 @@ def test_an_image_without_a_release_flavor_pin_fails(
     ]
     assert code == 1
     assert {str(record["image"]) for record in errors} == {image}
+
+
+def test_a_non_gate_job_running_a_justfile_recipe_header_target_fails_without_an_inventory(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    source = "jobs:\n" + _job(name="check", container=_block(image=_RUST_IMAGE))
+    source += _job(name="fuzz", container=_block(image=_FUZZ_IMAGE)).replace(
+        "      - run: true", "      - run: just check-lint"
+    )
+    _write_ci(root=tmp_path, body=source)
+    (tmp_path / "justfile").write_text(
+        "check: check-lint check-test\n\ncheck-lint tool='ruff': _setup\n    {{tool}} check\n\n"
+        "check-test:\n    pytest\n",
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(tmp_path)
+
+    code = _check().main()
+
+    errors = [
+        record for record in _records(stderr=capsys.readouterr().err) if record["level"] == "error"
+    ]
+    assert code == 1
+    assert {str(record["image"]) for record in errors} == {_RUST_IMAGE, _FUZZ_IMAGE}
