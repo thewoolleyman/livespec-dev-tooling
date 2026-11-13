@@ -85,6 +85,9 @@ The files:
   check or seed-source verification: a second fetch overwrites it, and a
   2026-11-12 check read master's tip as a needs-human ref and reported real
   preserved work as empty.
+  Read it also before writing ledger or file text through a heredoc: an
+  unquoted `<<EOF` runs every backticked phrase and the write succeeds with
+  words missing (two sweep items, 2026-11-13).
 - Read `.ai/fleet-and-secrets.md` before pushing any change under
   `.github/workflows/` (it needs an exemption, a label and the wrapper), before
   changing fleet coordination workflows,

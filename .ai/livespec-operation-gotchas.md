@@ -175,6 +175,23 @@ roll, and the identical literal command went green. The coordinator's record of 
 `.ai/coordinator-duties.md` (§12, "In zsh, brace a variable before a colon"). It is repeated here because that file
 loads only for coordinator work.
 
+## Quote The Heredoc Delimiter For Ledger Or File Text
+
+An unquoted heredoc (`<<EOF`) is shell-expanded: every backticked phrase in its body RUNS as a command substitution,
+and `$name` expands. Ledger text and these guidance files use backticks for recipe names, flags and paths, so an
+unquoted heredoc feeding `bd create`, `bd comment`, `bd update --description` or a file write silently deletes them.
+The command usually fails with "command not found" on stderr and leaves an empty string in place, so the write
+SUCCEEDS with words missing. Measured 2026-11-13 by the fleet-flaky-tests seat: two fleet copies of
+livespec-dev-tooling-7qb2bs, overseer-qc6lm3 and livespec-driver-codex-qglpti, were filed with their backticked
+recipe names stripped, and each description had to be repaired afterwards; a comment on each records it.
+
+Write `<<'EOF'` (quoted delimiter) for any ledger or file text, or pass the text from a file. After the write, read the
+record back and check that one backticked phrase survived, not just that the command exited 0.
+
+Two more zsh traps beside it, both host-wide: zsh has no `mapfile` (a bash-only builtin, so a snippet copied from a
+bash script fails), and `ls` is lsd (see above). For a list of paths, use `find` or a short python snippet, or wrap
+the loop in `bash -c`.
+
 ## A Clean Filing Display Is Not Evidence Of Admissibility
 
 `filing_display` can print `definition-of-done findings: none` for an item whose
