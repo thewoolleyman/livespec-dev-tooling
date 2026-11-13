@@ -354,6 +354,20 @@ And repositories MAY borrow unused fair capacity
 
 And fleet active runners MUST never exceed 482 or imply 964 capacity
 
+## Scenario: a runner ceiling that departs from the pool rule without a recorded exception fails the pool's ceiling check
+
+Given the pool's admission derivation records the rule's multiple and floor and an exceptions table
+
+And a repository's scale set whose maxRunners departs from that rule
+
+And no exception row names that repository
+
+When the pool's ceiling check runs
+
+Then it MUST fail naming that repository and its maxRunners
+
+And it MUST pass once an exception row names that repository with a ceiling above its guaranteed share, an acceptance check and a kill switch
+
 ## Scenario: JIT circuit state survives restart without a reburst
 
 Given a persisted JIT controller has an open circuit or exhausted retry record
@@ -1734,6 +1748,30 @@ Then the run MUST fail with an annotation naming each missing tag
 
 And it MUST send no sibling-released dispatch
 
+## Scenario: a direct sibling-released dispatch opens its dev-tooling bump PR only after the sandbox image tags are served
+
+Given a livespec-dev-tooling release T whose livespec-fabro-sandbox semver tags are not yet served by ghcr.io
+
+And a consumer that pins livespec-dev-tooling
+
+When a sibling-released dispatch for T reaches that consumer directly, without the release fan-out
+
+Then the consumer's bump workflow MUST open no bump PR while any of T's tags is absent
+
+And it MUST open the bump PR to T once all of T's tags are served
+
+## Scenario: a pin-freshness sweep opens no bump to a dev-tooling release whose sandbox image tags are not served
+
+Given a livespec-dev-tooling release T that is the latest release, and whose python-rust-v<T> sandbox image tag is not served by ghcr.io
+
+And a consumer whose livespec-dev-tooling pin is behind T
+
+When the consumer's pin-freshness sweep runs
+
+Then it MUST open no bump PR to T
+
+And it MUST annotate the missing python-rust-v<T> tag
+
 ## Scenario: a host at its local-gate slot limit queues the next pytest session
 
 Given a host whose local-gate slot limit is set to 2
@@ -2019,6 +2057,18 @@ Then the reported state MUST be `DIED_WITHOUT_VERDICT`
 And the exit code MUST be `75`
 
 And the run MUST NOT be reported as passed
+
+## Scenario: a gate command the stall bound ends leaves a process snapshot that its verdict names
+
+Given a detached gate run whose command, and a descendant that entered its own OS session, produce no output and no progress-stamp renewal for the stall window
+
+When the runner ends the command
+
+Then the run directory MUST hold a `stall-snapshot` written before the first signal, listing each attributed process with its pid, parent pid, session id, elapsed time in whole seconds, wait channel and command line
+
+And the run's `output.log` stall-bound line, and the `FAILED` state that both `gate-wait` and `gate-status` print for the run, MUST name that file
+
+And the verdict MUST be `FAILED`, never a pass
 
 ## Scenario: a shared-config write during a detached gate is recorded with writer attribution and marks the run
 
@@ -4459,6 +4509,16 @@ When staleness is evaluated
 
 Then a maintainer notification MUST name the stale detector
 
+## Scenario: a reuse detector notification is delivered to the dev host's ntfy topic with a logged receipt
+
+Given a fleet CI run whose mandatory coverage consumer job recorded the outcome `missing_receipt`
+
+When the scheduled detector raises the maintainer notification for that run
+
+Then it MUST publish the notification to the dev host's ntfy topic
+
+And it MUST log the message id the ntfy server returned for that notification
+
 ## Scenario: a workflow declaring two container images fails its own CI
 
 Given a pull request whose merge with the default branch makes `.github/workflows/ci.yml` declare two distinct job `container:` images that name two image repositories, or two release versions of one image repository
@@ -5093,3 +5153,31 @@ Given a role whose host variables declare a managed authorized_keys entry for a 
 When the role is converged, under --check or as an apply
 
 Then the converge MUST refuse before writing the file, with a diagnostic naming the conflicting key, and the authorized_keys file MUST be unchanged
+
+## Scenario: the flake-retry plugin parses each module once and gives every item of one test file the same retry decision
+
+Given a repository that loads livespec-dev-tooling's flake-retry pytest plugin
+
+And a test file that yields 200 parametrized test items and imports one in-repository module, `helpers.py`
+
+And a run whose change set is computable and touches no module of that test file's closure
+
+When the session collects and runs those items
+
+Then the plugin MUST read and parse the test file, each `conftest.py` on its directory chain and `helpers.py` at most once each
+
+And every one of the 200 items MUST be marked for retry
+
+And when the change set is changed to modify `helpers.py`, every one of the 200 items MUST be treated as touched and MUST NOT be marked for retry
+
+## Scenario: after a runner version bump converges, every scale set has a listener and serves jobs on the new version
+
+Given the scale-set values files pin actions/runner 2.338.2
+
+And the pull request that moves every values file to actions/runner 2.339.0 has merged
+
+When the committed converge applies it to the live pool
+
+Then every AutoscalingRunnerSet in the `arc-runners` namespace MUST have a listener and an EphemeralRunnerSet
+
+And a CI job of `livespec-orchestrator-beads-fabro` and a CI job of `livespec-dev-tooling` MUST each complete on a k3s runner whose runner version is 2.339.0

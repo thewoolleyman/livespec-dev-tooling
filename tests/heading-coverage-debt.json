@@ -101,7 +101,7 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a CI duration step change reaches the maintainer, and a runner-lane move does not",
-    "work_item": "livespec-dev-tooling-zfgtin",
+    "work_item": "livespec-dev-tooling-wza24d",
     "first_seen": "2026-11-08"
   },
   {
@@ -290,14 +290,14 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a coverage consumer that did not reuse reaches the maintainer",
-    "work_item": "livespec-dev-tooling-zfgtin",
+    "work_item": "livespec-dev-tooling-g3mnat",
     "first_seen": "2026-11-08"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a coverage consumer with no recorded outcome reaches the maintainer",
-    "work_item": "livespec-dev-tooling-zfgtin",
+    "work_item": "livespec-dev-tooling-v2b3yk",
     "first_seen": "2026-11-08"
   },
   {
@@ -422,6 +422,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: a direct sibling-released dispatch opens its dev-tooling bump PR only after the sandbox image tags are served",
+    "work_item": "livespec-dev-tooling-7crrkb",
+    "first_seen": "2026-11-13"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: a factory namespace near its quota and a saturated ClusterQueue are each readable and the quota trigger fires",
     "work_item": "livespec-dev-tooling-r5o5zh",
     "first_seen": "2026-10-24"
@@ -530,6 +537,13 @@
     "heading": "## Scenario: a gate client that stops waiting on an admitted gate Job deletes it",
     "work_item": "livespec-dev-tooling-lugvnr",
     "first_seen": "2026-11-05"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a gate command the stall bound ends leaves a process snapshot that its verdict names",
+    "work_item": "livespec-dev-tooling-q4ahay",
+    "first_seen": "2026-11-13"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -716,6 +730,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: a pin-freshness sweep opens no bump to a dev-tooling release whose sandbox image tags are not served",
+    "work_item": "livespec-dev-tooling-7crrkb",
+    "first_seen": "2026-11-13"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: a pipefail script reports a match in a large input as a match",
     "work_item": "livespec-dev-tooling-fgy4au",
     "first_seen": "2026-11-02"
@@ -814,6 +835,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: a reuse detector notification is delivered to the dev host's ntfy topic with a logged receipt",
+    "work_item": "livespec-dev-tooling-2xulmw",
+    "first_seen": "2026-11-13"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: a reverted incident retains its original CI evidence before another attempt",
     "work_item": "livespec-dev-tooling-mdqkkz",
     "first_seen": "2026-11-03"
@@ -852,6 +880,13 @@
     "heading": "## Scenario: a run of a high-band work item on an opted-in lane is admitted ahead of earlier pending normal runs",
     "work_item": "livespec-dev-tooling-5wewi2",
     "first_seen": "2026-11-08"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a runner ceiling that departs from the pool rule without a recorded exception fails the pool's ceiling check",
+    "work_item": "livespec-dev-tooling-2aelab",
+    "first_seen": "2026-11-13"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -969,7 +1004,7 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a stale detector reaches the maintainer",
-    "work_item": "livespec-dev-tooling-zfgtin",
+    "work_item": "livespec-dev-tooling-zangru",
     "first_seen": "2026-11-08"
   },
   {
@@ -1146,6 +1181,13 @@
     "heading": "## Scenario: a workflow whose layered fuzz flavor runs no aggregate target passes and its gate runs in the base flavor",
     "work_item": "livespec-dev-tooling-fsle5g",
     "first_seen": "2026-11-11"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: after a runner version bump converges, every scale set has a listener and serves jobs on the new version",
+    "work_item": "livespec-dev-tooling-jkwzwv",
+    "first_seen": "2026-11-13"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -1510,6 +1552,13 @@
     "heading": "## Scenario: the first required master leaf failure fences incident recovery",
     "work_item": "livespec-dev-tooling-mdqkkz",
     "first_seen": "2026-11-03"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: the flake-retry plugin parses each module once and gives every item of one test file the same retry decision",
+    "work_item": "livespec-dev-tooling-5y3luz",
+    "first_seen": "2026-11-13"
   },
   {
     "spec_root": "SPECIFICATION",
