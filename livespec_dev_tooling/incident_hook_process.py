@@ -18,6 +18,7 @@ if str(_VENDOR_DIR) not in sys.path:
 
 from returns.pipeline import is_successful  # noqa: E402 — vendor-path-aware import.
 
+from livespec_dev_tooling._incident_enablement_reading import EnablementReader  # noqa: E402
 from livespec_dev_tooling.flake_retry_filer import registered_plugin_root  # noqa: E402
 from livespec_dev_tooling.incident_authority_client import (  # noqa: E402
     call_authority,
@@ -47,8 +48,10 @@ __all__: list[str] = [
     "mapping",
     "parse_query",
     "resolve_current",
+    "resolve_current_reading",
 ]
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-cerkbn
+# EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-exdkra
 _QUERY_KEYS = frozenset(
     ("repository", "item", "attempt", "phase", "operation", "generation", "owner")
 )
@@ -134,6 +137,13 @@ def invoke_authority(
 
 
 def resolve_current(*, reading: dict[str, Any], query: dict[str, Any]) -> ExecutionContext:
+    return resolve_current_reading(reading=reading, query=query, read_enablement=None)[0]
+
+
+def resolve_current_reading(
+    *, reading: dict[str, Any], query: dict[str, Any], read_enablement: EnablementReader | None
+) -> tuple[ExecutionContext, dict[str, Any] | None]:
+    """Resolve the canonical current context, with the vantage's enablement reading."""
     attempt = mapping(value=reading["attempt"])
     names = {
         "repository": "repository",
@@ -164,7 +174,10 @@ def resolve_current(*, reading: dict[str, Any], query: dict[str, Any]) -> Execut
         else None,
     )
     resolved = resolve_execution_context(
-        environ=os.environ, invocation=Invocation.ORDINARY, identity=identity
+        environ=os.environ,
+        invocation=Invocation.ORDINARY,
+        identity=identity,
+        read_enablement=read_enablement,
     )
     if not resolved.is_successful:
         refusal = resolved.failure()
@@ -177,7 +190,7 @@ def resolve_current(*, reading: dict[str, Any], query: dict[str, Any]) -> Execut
         ).is_successful
     ):
         _fail(detail="incident transport differs from canonical current context")
-    return context
+    return context, resolved.enablement
 
 
 def exact_tree(*, repo: Path, context: ExecutionContext, hook: str) -> str:

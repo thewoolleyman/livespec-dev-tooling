@@ -87,8 +87,37 @@ an unreachable controller, or a repository no installation serves. No dev-host f
 the record (`livespec-dev-tooling-qmuk7z`, spec v205). The fence is armed and disarmed by explicit
 writes to the same route (`/fence/arm`, `/fence/disarm`); arming is refused until a record binds
 the current identity. The controller refuses any of these operations, retaining nothing, when it
-names a repository other than its installation's. The resolvers that read the record at each vantage are
-`livespec-dev-tooling-exdkra`.
+names a repository other than its installation's.
+
+## The readers at each vantage
+
+Once an incident flag selects expedited repair or emergency revert in an ordinary invocation, the
+execution resolver reads the record before it produces the context (`livespec-dev-tooling-exdkra`).
+A trusted normal-master or normal-factory-follow-up origin, and an invocation with both flags
+absent, never read it. The reading is one of `enabled`, `absent`, `stale`, `revoked`,
+`unavailable` or `no-installation`, and each vantage records it in the artefact it already
+produces:
+
+- **The dev-host hooks** ask the installation `INSTALLATION_PORTS` names for the repository
+  (`POST 127.0.0.1:<port>/enablement/read` with the projected
+  `LIVESPEC_INCIDENT_OBSERVER_QUERY_TOKEN`). They compare the identity the controller confirmed
+  against their own read of core's default branch, and read `stale` when the two differ. The
+  reading is the `enablement` field of the hook's printed receipt, or of its revert hand-off.
+- **The incident CI entrance** reads the same route at plan time through the observer URL. The
+  reading is the plan's `enablement` field. It is not part of the plan identity that the entrance
+  rechecks, so a reading that changes between rechecks refuses nothing while the installation is
+  disarmed.
+- **The controller** reads its own record. Its `/arm` receipt carries the reading as
+  `enablement`. Its `/current` and `/admitted` answers read the record only while the fence is
+  armed, which is the only time they can refuse.
+
+While the installation is disarmed, no vantage refuses on its reading. While it is armed, a
+vantage that holds the installation's answer refuses expedited repair on every reading but
+`enabled`, and refuses an emergency revert on every such reading except `unavailable`. The refusal
+is the named `incident-not-enabled` configuration refusal, and it names the repository, the
+installation and the reading. A vantage that cannot reach its installation reads `unavailable`
+with no arming state, records that, and refuses nothing. The controller's own armed answers are
+the fence that no entrance can skip.
 
 ## The committed claims
 
@@ -176,7 +205,6 @@ release-keyed reason above. The reasons behind those rows, measured on 2026-11-1
 
 ## Not done by this item
 
-- **Resolver enforcement.** The record now lives on the controller (spec v205,
-  `livespec-dev-tooling-qmuk7z`), but the incident execution resolver does not yet read it, so
-  `EXPEDITED_INCIDENT_RESPONSE=1` in a repository that was never enabled is not refused. The
-  readers at the dev host, the CI runner and the controller host are `livespec-dev-tooling-exdkra`.
+- **Arming production.** Every reader ships disarmed. The production installation's fence is armed
+  only after the fleet audit lists this repository ready, the step records it, and a scratch-branch
+  proof reads `enabled` at the hook and in the CI plan (spec v205's ordering).

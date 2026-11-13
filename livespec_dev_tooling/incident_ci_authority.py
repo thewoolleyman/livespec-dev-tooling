@@ -18,6 +18,10 @@ from dataclasses import dataclass
 from typing import Any, cast
 from urllib.parse import urlsplit
 
+from livespec_dev_tooling._incident_enablement_reading import (
+    EnablementReading,
+    answer_reading,
+)
 from livespec_dev_tooling._incident_ordinary_action import ACCEPTED as _ACCEPTED
 from livespec_dev_tooling._incident_ordinary_action import MAX_REPLY as _MAX_REPLY
 from livespec_dev_tooling._incident_ordinary_action import (
@@ -42,6 +46,7 @@ __all__: list[str] = [
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-qeu4cx
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-a6wgjz
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-ariayn
+# EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-exdkra
 # The reply bound, the 202 status, the header-value rule and the stderr refusal
 # line are shared with the ordinary-action read in `_incident_ordinary_action`.
 # The job's read ceiling. The observer answers /current only after its own
@@ -58,6 +63,8 @@ _OBSERVER_READ_TIMEOUT_SECONDS = 630
 # is still what the certificate is verified against and what the Host header
 # names, so the trust boundary does not move. Unset keeps hostname dialing.
 _CONNECT_ADDRESS_VARIABLE = "LIVESPEC_INCIDENT_OBSERVER_CONNECT_ADDR"
+# The enablement read is one head read on the controller, never a reader pass.
+_ENABLEMENT_READ_TIMEOUT_SECONDS = 60
 _ARM_FIELDS: dict[str, frozenset[str]] = {
     "text": frozenset({"repository"}),
     "int": frozenset({"pr_number"}),
@@ -118,6 +125,44 @@ class CiAuthorityBoundary:
         if not _is_header_value(token=self.observer_token):
             raise ObserverTokenError
         return self._query(route="provenance", query=query)
+
+    def enablement(self, *, repository: str) -> EnablementReading:
+        """Read the enablement record through the installation's query route at plan time.
+
+        A route that cannot be reached, or an answer that does not parse, reads
+        `unavailable` with no arming state, so it is recorded and refuses nothing.
+        """
+        installation = urlsplit(self.observer_url).hostname or "unconfigured"
+        if urlsplit(self.observer_url).scheme != "https" or not _is_header_value(
+            token=self.observer_token
+        ):
+            return EnablementReading(
+                reading="unavailable",
+                armed=None,
+                installation=installation,
+                detail="no https observer URL and query token are configured; nothing was queried",
+            )
+        try:
+            _status, raw = self._exchange(
+                route="enablement/read",
+                query={"repository": repository},
+                connect_to=_connect_address(),
+                timeout=_ENABLEMENT_READ_TIMEOUT_SECONDS,
+            )
+            answer = strict_json(text=raw.decode(), limit=65536)
+        except (
+            OSError,
+            ValueError,
+            IncidentJsonRefusalError,
+            http.client.HTTPException,
+        ) as unreachable:
+            return EnablementReading(
+                reading="unavailable",
+                armed=None,
+                installation=installation,
+                detail=f"enablement/read failed: {type(unreachable).__name__}",
+            )
+        return answer_reading(answer=answer, installation=installation, repository=repository)
 
     def ordinary_action(self, *, query: dict[str, Any]) -> OrdinaryActionOwnership:
         """Ask who owns the master-health reconciler's next step over its window.

@@ -11,6 +11,7 @@ from dataclasses import asdict, replace
 from pathlib import Path
 from typing import Any
 
+from livespec_dev_tooling._incident_enablement_fence import installation_reader
 from livespec_dev_tooling.incident_execution import (
     EXPEDITED_INCIDENT_RESPONSE,
     EXPEDITED_INCIDENT_RESPONSE_REVERT,
@@ -28,7 +29,7 @@ from livespec_dev_tooling.incident_hook_process import (
     exact_tree,
     invoke_authority,
     parse_query,
-    resolve_current,
+    resolve_current_reading,
 )
 from livespec_dev_tooling.incident_hook_receipt import recover_receipt
 from livespec_dev_tooling.incident_hook_scope import HookCall, validate_scope
@@ -50,6 +51,7 @@ from returns.unsafe import unsafe_perform_io  # noqa: E402 — vendor-path-aware
 
 __all__: list[str] = ["main"]
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-cerkbn
+# EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-exdkra
 _REFUSED = 78
 _NORMAL = 75
 _HANDED_OFF = 79
@@ -100,13 +102,14 @@ def _persist(
 
 def _finish(
     *,
-    repo: Path,
     query: dict[str, Any],
     reading: dict[str, Any],
     receipt: dict[str, Any],
     context: ExecutionContext,
+    enablement: dict[str, Any] | None,
     recovered: bool = False,
 ) -> int:
+    repo = Path.cwd()
     if recovered:
         current = invoke_authority(repo=repo, query=query, action="read-current")
         if current != reading:
@@ -117,12 +120,15 @@ def _finish(
     if exact_tree(repo=repo, context=context, hook=receipt["hook"]) != receipt["tree"]:
         return _refuse(reason="local tree changed during incident gates; partial receipt retained")
     _ = sys.stdout.write(
-        canonical(value=dict(schema=1, receipt=receipt, normal_factory_proof=False)) + "\n"
+        canonical(
+            value=dict(schema=1, receipt=receipt, enablement=enablement, normal_factory_proof=False)
+        )
+        + "\n"
     )
     return receipt["exit_status"]
 
 
-def _hand_off(*, identity: OperationIdentity) -> int:
+def _hand_off(*, identity: OperationIdentity, enablement: dict[str, Any] | None) -> int:
     """Name the recorded incident merge and leave the inverse to the recovery boundary.
 
     An emergency inverse is built against current master and published by the
@@ -139,6 +145,7 @@ def _hand_off(*, identity: OperationIdentity) -> int:
         attempt_id=identity.attempt_id,
         operation_id=identity.operation_id,
         recorded_incident_merge_sha=identity.recorded_incident_merge_sha,
+        enablement=enablement,
         normal_factory_proof=False,
     )
     _ = sys.stdout.write(canonical(value=record) + "\n")
@@ -175,9 +182,11 @@ def _run(*, hook: str, extra: list[str], actual_index: str = "") -> int:
         raise HookRefusalError(message)
     repo = Path.cwd()
     reading = invoke_authority(repo=repo, query=query, action="read-current")
-    context = resolve_current(reading=reading, query=query)
+    context, enablement = resolve_current_reading(
+        reading=reading, query=query, read_enablement=installation_reader()
+    )
     if context.mode == ExecutionMode.EMERGENCY_REVERT and context.identity is not None:
-        return _hand_off(identity=context.identity)
+        return _hand_off(identity=context.identity, enablement=enablement)
     started = time.monotonic()
     tree = exact_tree(repo=repo, context=context, hook=hook)
     scope = validate_scope(
@@ -212,7 +221,12 @@ def _run(*, hook: str, extra: list[str], actual_index: str = "") -> int:
     )
     if prior is not None:
         return _finish(
-            repo=repo, query=query, reading=reading, receipt=prior, context=context, recovered=True
+            query=query,
+            reading=reading,
+            receipt=prior,
+            context=context,
+            enablement=enablement,
+            recovered=True,
         )
     inventory = _declared_inventory(repo=repo, repository=str(query["repository"]))
     child = gate_child_environment(environ=os.environ)
@@ -238,7 +252,13 @@ def _run(*, hook: str, extra: list[str], actual_index: str = "") -> int:
     )
     report = replace(report, results=(scope_result, *report.results, *empty))
     receipt = dict(receipt_id=receipt_id, hook=hook, tree=tree, mode=context.mode, **asdict(report))
-    return _finish(repo=repo, query=query, reading=reading, receipt=receipt, context=context)
+    return _finish(
+        query=query,
+        reading=reading,
+        receipt=receipt,
+        context=context,
+        enablement=enablement,
+    )
 
 
 def main(*, argv: list[str] | None = None) -> int:

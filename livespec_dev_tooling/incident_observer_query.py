@@ -10,9 +10,10 @@ from __future__ import annotations
 
 import hashlib
 import re
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from typing import Any, cast
 
+from livespec_dev_tooling._incident_enablement_fence import controller_fence
 from livespec_dev_tooling._incident_observer_store import (
     load_record,
     read_observer_arm,
@@ -20,6 +21,7 @@ from livespec_dev_tooling._incident_observer_store import (
 )
 from livespec_dev_tooling._incident_observer_types import ObserverArm, ObserverArmQuery
 from livespec_dev_tooling.incident_controller_installation import ControllerInstallation
+from livespec_dev_tooling.incident_enablement import IdentitySource, production_identity_source
 from livespec_dev_tooling.incident_observer import route_reconciler_window
 from livespec_dev_tooling.incident_observer_authority import CurrentAuthorityReader
 
@@ -54,6 +56,7 @@ class ObserverQuery:
     """Inspect the protected arm without granting mutation or recovery authority."""
 
     installation: ControllerInstallation
+    source: IdentitySource = field(default_factory=production_identity_source)
 
     def execute(self, *, path: str, payload: dict[str, Any]) -> dict[str, Any]:
         settings = self.installation
@@ -69,6 +72,13 @@ class ObserverQuery:
         arm = self._snapshot(query=query)
         if arm is None:
             return _refused(reason="exact unbound pre-merge arm unavailable")
+        # An armed enablement fence refuses here too, so an entrance that did not ask
+        # is still fenced before CI omission and merge (livespec-dev-tooling-exdkra).
+        _, refusal = controller_fence(
+            installation=settings, source=self.source, phase=arm.phase, shadow=False
+        )
+        if refusal is not None:
+            return _refused(reason=refusal)
         if path == "/current":
             reader = CurrentAuthorityReader(
                 command=settings.reader,
