@@ -37,7 +37,9 @@ def test_the_role_renders_with_the_committed_renderer_on_the_control_node() -> N
     assert "rule26_kill_matrix_renderer" in render
     assert "delegate_to: localhost" in render
     assert "check_mode: false" in render
-    for flag in ("--orchestrator-sha", "--engine-sha", "--workers", "--run"):
+    assert "rule26_kill_matrix_target_sha_flag" in render
+    assert "rule26_kill_matrix_target_sha_flag: --orchestrator-sha" in _DEFAULTS
+    for flag in ("--engine-sha", "--workers", "--run"):
         assert flag in render
 
 
@@ -87,7 +89,7 @@ def test_a_first_run_with_no_namespace_skips_the_diff_and_applies() -> None:
 
 def test_the_role_fails_unless_the_live_job_is_the_rendered_one() -> None:
     read = _task(name_fragment="Read the live kill-matrix Job")
-    assert "rule26-orchestrator-kill-matrix-{{ rule26_kill_matrix_run }}" in read
+    assert "{{ rule26_kill_matrix_job_prefix }}-{{ rule26_kill_matrix_run }}" in read
     verify = _task(name_fragment="Fail unless the live Job")
     assert "ansible.builtin.assert:" in verify
 
@@ -109,12 +111,13 @@ def test_job_absent_deletes_only_the_named_job_and_keeps_the_pvc() -> None:
     delete = _task(name_fragment="Delete the run's kill-matrix Job")
     assert "- namespace\n" not in delete
     assert "- delete\n" in delete
-    assert '- "rule26-orchestrator-kill-matrix-{{ rule26_kill_matrix_run }}"' in delete
+    assert '- "{{ rule26_kill_matrix_job_prefix }}-{{ rule26_kill_matrix_run }}"' in delete
     assert "--cascade=foreground" in delete
     guard = _task(name_fragment="Fail unless a run id names the Job to remove")
     assert "rule26_kill_matrix_run is match('^[a-z0-9-]{1,40}$')" in guard
     verify = _task(name_fragment="Fail unless the Job is gone and the PVC is kept")
-    assert "['persistentvolumeclaim/rule26-orchestrator']" in verify
+    assert "['persistentvolumeclaim/' ~ rule26_kill_matrix_pvc_name]" in verify
+    assert "rule26_kill_matrix_pvc_name: rule26-orchestrator" in _DEFAULTS
     assert "job-absent" in _PLAY
 
 

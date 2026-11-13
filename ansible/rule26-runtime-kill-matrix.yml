@@ -1,0 +1,26 @@
+---
+# Full runtime matrix preparation/launch. Use the committed drift/apply surface;
+# see ci-runner/k3s/phase2/rule26/README-runtime.md for prerequisites and inputs.
+- name: Launch or stop a full runtime mutation matrix
+  hosts: ci_pool
+  gather_facts: false
+  vars:
+    # Adapt the existing role's historical target input without changing its
+    # orchestrator defaults. Runtime operators supply rule26_runtime_sha.
+    rule26_kill_matrix_orchestrator_sha: "{{ rule26_runtime_sha | default('') }}"
+    rule26_kill_matrix_workers: "{{ rule26_runtime_workers | default('') }}"
+    rule26_kill_matrix_renderer: "{{ playbook_dir }}/../ci-runner/k3s/phase2/rule26/render-runtime-job.sh"
+    rule26_kill_matrix_namespace: rule26-runtime
+    rule26_kill_matrix_job_prefix: rule26-runtime-kill-matrix
+    rule26_kill_matrix_pvc_name: rule26-runtime
+    rule26_kill_matrix_target_sha_flag: --target-sha
+    rule26_kill_matrix_renderer_extra_args:
+      - --node
+      - "{{ inventory_hostname }}"
+      - --memory
+      - "{{ rule26_runtime_memory | default('') }}"
+      - --storage
+      - "{{ rule26_runtime_storage | default('') }}"
+  roles:
+    - role: rule26_kill_matrix
+      when: cluster_role == 'server'

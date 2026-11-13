@@ -1,0 +1,150 @@
+# Full, on-demand runtime report; all inputs are rendered by render-runtime-job.sh.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: rule26-runtime
+  labels:
+    app.kubernetes.io/part-of: fleet-mutation-testing-rule-26
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: rule26-runtime
+  namespace: rule26-runtime
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: local-path
+  resources:
+    requests:
+      storage: "@@STORAGE@@"
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: rule26-runtime-kill-matrix-@@RUN@@
+  namespace: rule26-runtime
+  labels:
+    app.kubernetes.io/part-of: fleet-mutation-testing-rule-26
+    livespec.io/work-item: livespec-dev-tooling-mrahu4
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: 86400
+  ttlSecondsAfterFinished: 604800
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/part-of: fleet-mutation-testing-rule-26
+    spec:
+      restartPolicy: Never
+      nodeSelector:
+        kubernetes.io/hostname: "@@NODE@@"
+      tolerations:
+        - key: node-role/ci
+          operator: Equal
+          value: pending
+          effect: NoSchedule
+        - key: livespec.io/factory-pressure
+          operator: Exists
+          effect: PreferNoSchedule
+      automountServiceAccountToken: false
+      containers:
+        - name: kill-matrix
+          image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.189.1
+          imagePullPolicy: IfNotPresent
+          command: ["/bin/bash", "-lc"]
+          args:
+            - |
+              set -euo pipefail
+              out=/data/@@RUN@@
+              # A fresh run id preserves every earlier run's evidence.
+              mkdir "$out"
+              exec > >(tee "$out/run.log") 2>&1
+              exec 9>/data/runtime-matrix.lock
+              flock -n 9 || { echo "another runtime matrix holds the PVC lock"; exit 1; }
+              export RULE26_OUT="$out"
+              export RULE26_TARGET_SHA=@@TARGET_SHA@@
+              export RULE26_ENGINE_SHA=@@ENGINE_SHA@@
+              finish() {
+                status=$?
+                trap - EXIT
+                set +e
+                RULE26_EXIT="$status" python3 - <<'PY'
+              import hashlib, json, os
+              from datetime import datetime, timezone
+              from pathlib import Path
+              out = Path(os.environ['RULE26_OUT'])
+              report = out / 'runtime/reports/mutation-kill-matrix.json'
+              result = {'exit_code': int(os.environ['RULE26_EXIT']),
+                        'finished_at': datetime.now(timezone.utc).isoformat(),
+                        'report_sha256': hashlib.sha256(report.read_bytes()).hexdigest() if report.is_file() else None}
+              (out / 'result.json').write_text(json.dumps(result, indent=2) + '\n')
+              PY
+                recorded=$?
+                if [[ "$status" -ne 0 ]]; then exit "$status"; fi
+                exit "$recorded"
+              }
+              trap finish EXIT
+              echo ":: start $(date -u +%FT%TZ)"
+              git clone --quiet https://github.com/thewoolleyman/livespec-runtime "$out/runtime"
+              git -C "$out/runtime" checkout --quiet --detach @@TARGET_SHA@@
+              git clone --quiet https://github.com/thewoolleyman/livespec-dev-tooling "$out/dev-tooling"
+              git -C "$out/dev-tooling" checkout --quiet --detach @@ENGINE_SHA@@
+              cd "$out/runtime"
+              # Use the consumer's frozen release pin, with no source override.
+              unset PYTHONPATH
+              uv sync --frozen --all-groups
+              uv run --no-sync python - <<'PY'
+              import hashlib, importlib.metadata, json, os, re, subprocess
+              from datetime import datetime, timezone
+              from pathlib import Path
+              from livespec_dev_tooling.mutation_kill_matrix_cache import engine_source_digest
+              from livespec_dev_tooling.mutation_kill_matrix_pytest_plugin import COLLECTED_VARIABLE
+              out = Path(os.environ['RULE26_OUT'])
+              expected = os.environ['RULE26_ENGINE_SHA']
+              dist = importlib.metadata.distribution('livespec-dev-tooling')
+              direct = json.loads(dist.read_text('direct_url.json') or '{}')
+              if direct.get('vcs_info', {}).get('commit_id') != expected:
+                  raise SystemExit('consumer engine pin differs from the named release commit')
+              tags = subprocess.run(['git', '-C', str(out / 'dev-tooling'), 'tag', '--points-at', expected],
+                                    check=True, capture_output=True, text=True).stdout.splitlines()
+              releases = [tag for tag in tags if re.fullmatch(r'v\d+\.\d+\.\d+', tag)]
+              if 'v' + dist.version not in releases:
+                  raise SystemExit('installed engine version has no matching release tag at the named commit')
+              if COLLECTED_VARIABLE != 'KILL_MATRIX_COLLECTED':
+                  raise SystemExit('engine lacks the collected-node inventory repair')
+              actual_target = subprocess.run(['git', 'rev-parse', 'HEAD'], check=True, capture_output=True, text=True).stdout.strip()
+              if actual_target != os.environ['RULE26_TARGET_SHA']:
+                  raise SystemExit('target input is not the checked-out commit')
+              inputs = {'run_id': '@@RUN@@', 'engine_started_at': datetime.now(timezone.utc).isoformat(),
+                        'target_revision': os.environ['RULE26_TARGET_SHA'], 'engine_commit': expected,
+                        'engine_version': dist.version, 'engine_release_tags': releases,
+                        'executing_source_identity': engine_source_digest(),
+                        'lock_sha256': hashlib.sha256(Path('uv.lock').read_bytes()).hexdigest(),
+                        'workers': @@WORKERS@@, 'per_test_timeout_seconds': 120}
+              (out / 'inputs.json').write_text(json.dumps(inputs, indent=2) + '\n')
+              PY
+              mkdir -p /data/cache "$out/scratch"
+              just mutation-kill-matrix --workers @@WORKERS@@ --timeout 120 \
+                --workspace "$out/scratch" --cache /data/cache/mutation-kill-matrix-cache.json
+              test -s reports/mutation-kill-matrix.json
+          env:
+            - name: MISE_TRUSTED_CONFIG_PATHS
+              value: /data/@@RUN@@/runtime:/data/@@RUN@@/dev-tooling
+            - name: UV_CACHE_DIR
+              value: /data/uv-cache
+            - name: PYTHONDONTWRITEBYTECODE
+              value: "1"
+          resources:
+            requests:
+              cpu: "@@WORKERS@@"
+              memory: "@@MEMORY@@"
+            limits:
+              cpu: "@@WORKERS@@"
+              memory: "@@MEMORY@@"
+          volumeMounts:
+            - name: data
+              mountPath: /data
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: rule26-runtime

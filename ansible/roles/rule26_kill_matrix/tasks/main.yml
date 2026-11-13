@@ -48,16 +48,11 @@
 
     - name: Render the committed Job manifest on the control node
       ansible.builtin.command:
-        argv:
-          - "{{ rule26_kill_matrix_renderer }}"
-          - --orchestrator-sha
-          - "{{ rule26_kill_matrix_orchestrator_sha }}"
-          - --engine-sha
-          - "{{ rule26_kill_matrix_engine_sha }}"
-          - --workers
-          - "{{ rule26_kill_matrix_workers | string }}"
-          - --run
-          - "{{ rule26_kill_matrix_run }}"
+        argv: >-
+          {{ [rule26_kill_matrix_renderer, rule26_kill_matrix_target_sha_flag,
+              rule26_kill_matrix_orchestrator_sha, '--engine-sha', rule26_kill_matrix_engine_sha,
+              '--workers', rule26_kill_matrix_workers | string, '--run', rule26_kill_matrix_run]
+             + rule26_kill_matrix_renderer_extra_args }}
       delegate_to: localhost
       become: false
       check_mode: false
@@ -114,7 +109,7 @@
           - "{{ rule26_kill_matrix_namespace }}"
           - get
           - job
-          - "rule26-orchestrator-kill-matrix-{{ rule26_kill_matrix_run }}"
+          - "{{ rule26_kill_matrix_job_prefix }}-{{ rule26_kill_matrix_run }}"
           - -o
           - jsonpath={.metadata.name}
       environment:
@@ -128,7 +123,7 @@
     - name: Fail unless the live Job is the one this run rendered
       ansible.builtin.assert:
         that:
-          - rule26_kill_matrix_live_job.stdout == 'rule26-orchestrator-kill-matrix-' ~ rule26_kill_matrix_run
+          - rule26_kill_matrix_live_job.stdout == rule26_kill_matrix_job_prefix ~ '-' ~ rule26_kill_matrix_run
         success_msg: "launched job/{{ rule26_kill_matrix_live_job.stdout }} in namespace {{ rule26_kill_matrix_namespace }}"
       when: not ansible_check_mode
 
@@ -175,7 +170,7 @@
           - "{{ rule26_kill_matrix_namespace }}"
           - get
           - job
-          - "rule26-orchestrator-kill-matrix-{{ rule26_kill_matrix_run }}"
+          - "{{ rule26_kill_matrix_job_prefix }}-{{ rule26_kill_matrix_run }}"
           - --ignore-not-found
           - -o
           - name
@@ -194,7 +189,7 @@
           - "{{ rule26_kill_matrix_namespace }}"
           - delete
           - job
-          - "rule26-orchestrator-kill-matrix-{{ rule26_kill_matrix_run }}"
+          - "{{ rule26_kill_matrix_job_prefix }}-{{ rule26_kill_matrix_run }}"
           - --ignore-not-found
           - --cascade=foreground
           - --wait=true
@@ -212,8 +207,8 @@
           - -n
           - "{{ rule26_kill_matrix_namespace }}"
           - get
-          - "job/rule26-orchestrator-kill-matrix-{{ rule26_kill_matrix_run }}"
-          - pvc/rule26-orchestrator
+          - "job/{{ rule26_kill_matrix_job_prefix }}-{{ rule26_kill_matrix_run }}"
+          - "pvc/{{ rule26_kill_matrix_pvc_name }}"
           - --ignore-not-found
           - -o
           - name
@@ -228,6 +223,6 @@
     - name: Fail unless the Job is gone and the PVC is kept
       ansible.builtin.assert:
         that:
-          - rule26_kill_matrix_after_job_absent.stdout_lines == ['persistentvolumeclaim/rule26-orchestrator']
-        success_msg: "removed job/rule26-orchestrator-kill-matrix-{{ rule26_kill_matrix_run }}; kept pvc/rule26-orchestrator"
+          - rule26_kill_matrix_after_job_absent.stdout_lines == ['persistentvolumeclaim/' ~ rule26_kill_matrix_pvc_name]
+        success_msg: "removed job/{{ rule26_kill_matrix_job_prefix }}-{{ rule26_kill_matrix_run }}; kept pvc/{{ rule26_kill_matrix_pvc_name }}"
       when: not ansible_check_mode

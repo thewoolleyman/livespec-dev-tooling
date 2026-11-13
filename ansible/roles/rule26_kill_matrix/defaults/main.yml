@@ -14,5 +14,9 @@ rule26_kill_matrix_run: ""
 # The committed renderer, run on the control node over the committed template.
 rule26_kill_matrix_renderer: "{{ role_path }}/../../../ci-runner/k3s/phase2/rule26/render-kill-matrix-job.sh"
 rule26_kill_matrix_namespace: rule26
+rule26_kill_matrix_job_prefix: rule26-orchestrator-kill-matrix
+rule26_kill_matrix_pvc_name: rule26-orchestrator
+rule26_kill_matrix_target_sha_flag: --orchestrator-sha
+rule26_kill_matrix_renderer_extra_args: []
 # The server's admin kubeconfig, the same one ../ci_factory_quota reads.
 rule26_kill_matrix_kubeconfig: /etc/rancher/k3s/k3s.yaml
