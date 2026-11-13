@@ -1458,20 +1458,6 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario: reused delegated pre-commit evidence that the cluster's record of its gate Job contradicts does not stand in for the pre-push gate",
-    "work_item": "livespec-dev-tooling-zfgtin",
-    "first_seen": "2026-11-11"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: reused delegated pre-commit evidence whose gate Job the cluster no longer holds does not stand in for the pre-push gate",
-    "work_item": "livespec-dev-tooling-zfgtin",
-    "first_seen": "2026-11-11"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
     "heading": "## Scenario: runner pods select the committed runner scheduler profile and every other pod keeps the default profile",
     "work_item": "livespec-dev-tooling-mtvxde",
     "first_seen": "2026-11-04"

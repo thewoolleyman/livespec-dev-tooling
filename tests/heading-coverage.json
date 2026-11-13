@@ -3534,17 +3534,15 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: reused delegated pre-commit evidence whose gate Job the cluster no longer holds does not stand in for the pre-push gate",
-    "test": "TODO",
-    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, exercising the pre-push gate's confirmation of reused delegated pre-commit evidence against the cluster's record of its gate Job (a missing record and a disagreeing record each fall back to submitting a gate Job); livespec-dev-tooling-zfgtin owns it. (Re-owned from closed livespec-dev-tooling-7uae5p on 2026-11-13.)",
-    "work_item": "livespec-dev-tooling-zfgtin"
+    "test": "tests.consumer.test_pre_push_same_tree_delegated_pre_commit_scenarios.test_a_missing_cluster_gate_job_record_does_not_reuse_delegated_pre_commit_evidence",
+    "reason": "Consumer-tier: a clean fixture repository reuses delegated pre-commit evidence whose retained gate Job is missing, observes the diagnostic naming that absence, and proves the shipped pre-push route submits a new gate Job (livespec-dev-tooling-ehug6z)."
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: reused delegated pre-commit evidence that the cluster's record of its gate Job contradicts does not stand in for the pre-push gate",
-    "test": "TODO",
-    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, exercising the pre-push gate's confirmation of reused delegated pre-commit evidence against the cluster's record of its gate Job (a missing record and a disagreeing record each fall back to submitting a gate Job); livespec-dev-tooling-zfgtin owns it. (Re-owned from closed livespec-dev-tooling-7uae5p on 2026-11-13.)",
-    "work_item": "livespec-dev-tooling-zfgtin"
+    "test": "tests.consumer.test_pre_push_same_tree_delegated_pre_commit_scenarios.test_a_contradictory_cluster_gate_job_record_does_not_reuse_delegated_pre_commit_evidence",
+    "reason": "Consumer-tier: a clean fixture repository reuses delegated pre-commit evidence whose retained gate Job reports a contradictory tree, observes the disagreement diagnostic, and proves the shipped pre-push route submits a new gate Job (livespec-dev-tooling-ehug6z)."
   },
   {
     "spec_root": "SPECIFICATION",
