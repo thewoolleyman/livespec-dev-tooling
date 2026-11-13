@@ -14,7 +14,9 @@ job. The run sweep then writes it onto the incident item through the ledger port
 A repeated publication of the same aggregate answers `retained` and writes nothing.
 A different aggregate for a run attempt that already holds a published one is kept
 as a `conflict` record naming both digests, never as a replacement. A publication
-whose query no longer matches the retained arm is refused as `publication-stale`
+whose identity token does not verify is refused as `identity-unverified` before any
+controller state is read or written. A publication whose query no longer matches the
+retained arm is refused as `publication-stale`
 and records no published record; when the publishing job was already attached, the
 refusal is retained as an `unpublished` record with the conclusion `unknown`, so it
 reaches the item. An installation with no CI identity policy answers
@@ -28,6 +30,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import time
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from threading import Event
@@ -46,6 +49,7 @@ from livespec_dev_tooling._incident_pr_run_store import (
 from livespec_dev_tooling.incident_ci_attachment import CiJobAttachment
 from livespec_dev_tooling.incident_ci_identity import identity_query
 from livespec_dev_tooling.incident_ci_identity_policy import CiIdentityPolicy
+from livespec_dev_tooling.incident_ci_oidc import verify_oidc
 from livespec_dev_tooling.incident_observer_admission import arm_record_matches
 from livespec_dev_tooling.incident_observer_endpoint import _read_request
 from livespec_dev_tooling.incident_pr_run_records import NOT_PROVISIONED
@@ -137,11 +141,20 @@ class CiPublication:
     wake: Event
 
     def execute(self, *, authorization: str, payload: dict[str, Any]) -> dict[str, Any]:
-        if not isinstance(getattr(self.installation, "ci_identity_policy", None), CiIdentityPolicy):
+        policy = getattr(self.installation, "ci_identity_policy", None)
+        if not isinstance(policy, CiIdentityPolicy):
             return _reply(status="refused", reason=NOT_PROVISIONED)
         query = _query(payload=payload, repository=self.installation.repository)
         if query is None:
             return _reply(status="refused", reason=INVALID)
+        # The identity verifies before any controller state is read or written, so an
+        # unverified publication is refused with no side effect at all.
+        token = authorization.removeprefix("Bearer ")
+        if (
+            not authorization.startswith("Bearer ")
+            or verify_oidc(token=token, policy=policy, now=time.time()) is None
+        ):
+            return _reply(status="refused", reason=UNVERIFIED)
         receipt = CiJobAttachment(installation=self.installation).execute(
             authorization=authorization, payload=payload["query"]
         )
@@ -153,6 +166,7 @@ class CiPublication:
             return _reply(status="refused", reason=UNAVAILABLE)
 
     def _unattached(self, *, query: ObserverArmQuery) -> str:
+        """Classify a verified identity's refused attachment: stale arm, or unverified."""
         settings = self.installation
         with repository_lock(directory=settings.state, repository=settings.repository) as path:
             current = arm_record_matches(record=load_record(path=path), query=query)
