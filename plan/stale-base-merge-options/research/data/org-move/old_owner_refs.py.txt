@@ -66,7 +66,11 @@ def patterns(old_owner: str, repos: list[str]) -> dict[str, str]:
 
 
 def fleet_from_text(text: str) -> list[str]:
-    return [entry["repo"] for entry in json.loads(re.sub(r"^\s*//.*$", "", text, flags=re.M))["fleet"]]
+    """Raises ValueError (JSONDecodeError is one) or KeyError on a manifest with no readable fleet entries."""
+    repos = [entry["repo"] for entry in json.loads(re.sub(r"^\s*//.*$", "", text, flags=re.M))["fleet"]]
+    if not repos:
+        raise ValueError("no fleet entries")
+    return repos
 
 
 def git(repo_dir: Path, *argv: str) -> str:
@@ -96,6 +100,15 @@ def self_test() -> int:
         ("other owner", "https://github.com/new/livespec", {}),
     )
     failures = 0
+    for desc, text in (("manifest with an empty fleet", '{"fleet": []}'), ("manifest that is not JSON", "{oops"),
+                       ("manifest with no fleet key", '{"owner": "x"}')):
+        try:
+            fleet_from_text(text)
+            ok = False
+        except (ValueError, KeyError):
+            ok = True
+        failures += not ok
+        print(f"{'PASS' if ok else 'FAIL'}  {desc}: refused")
     for desc, text, expected in rows:
         got = {k: len(re.findall(p, text)) for k, p in pats.items()}
         got = {k: v for k, v in got.items() if v}
@@ -118,9 +131,13 @@ def main() -> int:
         return self_test()
 
     livespec = args.clones / "livespec"
-    if args.fetch:
-        git(livespec, "fetch", "-q", "origin", "master")
-    repos = fleet_from_text(git(livespec, "show", f"{args.ref}:.livespec-fleet-manifest.jsonc"))
+    try:
+        if args.fetch:
+            git(livespec, "fetch", "-q", "origin", "master")
+        repos = fleet_from_text(git(livespec, "show", f"{args.ref}:.livespec-fleet-manifest.jsonc"))
+    except (subprocess.CalledProcessError, FileNotFoundError, ValueError, KeyError, TypeError) as err:
+        print(f"UNREADABLE fleet manifest: {type(err).__name__}: {str(err).strip()[:200]}")
+        return 2
     pats = patterns(args.old_owner, repos)
 
     rows, unreadable = [], []
