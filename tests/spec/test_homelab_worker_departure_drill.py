@@ -190,7 +190,17 @@ def _run(
     wait: str = "30",
     stub_env: dict[str, str] | None = None,
 ) -> subprocess.CompletedProcess[str]:
-    default = [_HOST, "--mode", mode, "--hold-seconds", hold, "--state-root", str(env.root)]
+    default = [
+        _HOST,
+        "--confirm-depart",
+        _WORKER,
+        "--mode",
+        mode,
+        "--hold-seconds",
+        hold,
+        "--state-root",
+        str(env.root),
+    ]
     return subprocess.run(
         ["/bin/bash", str(_SCRIPT), *(default if args is None else args)],
         capture_output=True,
@@ -250,7 +260,13 @@ def _report(*, result: subprocess.CompletedProcess[str], subject: str) -> str:
         ([_HOST, "--drain", "yes"], "unknown argument"),
         ([_HOST, "--mode"], "needs a value"),
         ([_HOST, "--state-root", "relative/dir"], "is not an absolute directory path"),
-        ([], "usage: departure-drill <host>"),
+        ([], "usage: departure-drill <host> --confirm-depart <host>-homelab-worker"),
+        ([_HOST], f"it needs --confirm-depart {_WORKER} (got 'nothing')"),
+        (
+            [_HOST, "--confirm-depart", f"{_OTHER}-homelab-worker"],
+            f"it needs --confirm-depart {_WORKER} (got '{_OTHER}-homelab-worker')",
+        ),
+        ([_HOST, "--confirm-depart", _HOST], f"it needs --confirm-depart {_WORKER}"),
     ],
 )
 def test_bad_arguments_are_refused_before_any_cluster_or_vm_call(
@@ -571,3 +587,111 @@ def test_a_failed_return_step_is_named_and_is_not_attempted_twice(env: _Env) -> 
     assert [c for c in _calls(env=env) if c.startswith("limactl start")] == [
         f"limactl start --tty=false {_WORKER}"
     ]
+
+
+def test_an_unconfirmed_departure_reads_nothing_and_changes_nothing(env: _Env) -> None:
+    result = _run(env=env, args=[_HOST, "--mode", "power-loss", "--hold-seconds", "60"])
+    assert result.returncode != 0
+    assert "Nothing was read and nothing was changed" in result.stderr
+    assert _calls(env=env) == []
+
+
+def test_the_captured_pods_are_read_a_second_time_after_the_rejoin(env: _Env) -> None:
+    (env.state / "pods.back").write_text(
+        "\n".join(
+            (
+                f"ci|gate-a-2|u-gate-2|Succeeded|{_OTHER}|Job|gate-a|0",
+                f"arc|runner-b|u-runner|Failed|{_WORKER}|EphemeralRunner|runner-b|1 2",
+                f"ci|done-c-1|u-done|Succeeded|{_WORKER}|Job|done-c|0",
+                f"kube-system|flannel-x|u-flannel-x|Running|{_WORKER}|DaemonSet|flannel|1",
+            )
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    result = _run(env=env)
+    assert result.returncode == 0, result.stdout + result.stderr
+    lines = result.stdout.splitlines()
+    start = lines.index("departure-drill: AFTER the rejoin, the pods captured on the node:")
+    assert start > lines.index("departure-drill: AFTER 60s away, the pods captured on the node:")
+    prefix = "departure-drill:   "
+    assert lines[start + 1 : start + 7] == [
+        f"{prefix}replaced-elsewhere: pod ci/gate-a-1 (Running at capture) is, after the rejoin,"
+        f" pod gone; replacement on another node: ci/gate-a-2 on {_OTHER} (Succeeded)",
+        f"{prefix}failed: pod arc/runner-b (Running at capture) is, after the rejoin, phase=Failed"
+        f" node={_WORKER}; replacement on another node: none",
+        f"{prefix}finished-before-departure: pod ci/done-c-1 (Succeeded at capture) is, after the"
+        f" rejoin, phase=Succeeded node={_WORKER}; replacement on another node: none",
+        f"{prefix}gone: pod ci/bare (Running at capture) is, after the rejoin, pod gone;"
+        " replacement on another node: none",
+        f"{prefix}gone: pod ci/crash-d-1 (Running at capture) is, after the rejoin, pod gone;"
+        " replacement on another node: none",
+        f"{prefix}still-bound-to-the-departed-node: pod kube-system/flannel-x (Running at capture)"
+        f" is, after the rejoin, phase=Running node={_WORKER}; replacement on another node: none",
+    ]
+
+
+def test_a_job_that_does_not_retry_is_named_as_lost_after_the_rejoin(env: _Env) -> None:
+    (env.state / "jobs" / "ci.gate-a.back").write_text("j-gate||1|||0", encoding="utf-8")
+    (env.state / "jobs" / "ci.done-c.back").write_text("j-done|1||||6", encoding="utf-8")
+    result = _run(env=env)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert _report(result=result, subject="job ci/gate-a after the rejoin") == (
+        "departure-drill:   job ci/gate-a after the rejoin: succeeded=0 failed=1 active=0"
+        " suspended=false uid=j-gate; backoffLimit=0 and a failed pod: this Job does not retry,"
+        " so its work is lost and its client reads the failure"
+    )
+    assert _report(result=result, subject="job ci/done-c after the rejoin").endswith(
+        "uid=j-done; backoffLimit=6"
+    )
+    assert _report(result=result, subject="job ci/crash-d after the rejoin").endswith(
+        "uid=j-crash; backoffLimit=unset"
+    )
+
+
+def test_a_job_deleted_while_away_reads_gone_after_the_rejoin(env: _Env) -> None:
+    (env.state / "jobs" / "ci.crash-d.back").write_text("", encoding="utf-8")
+    result = _run(env=env)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert _report(result=result, subject="job ci/crash-d after the rejoin") == (
+        "departure-drill:   job ci/crash-d after the rejoin: gone"
+    )
+
+
+def test_a_factory_sandbox_pod_on_the_node_is_named_before_and_after(env: _Env) -> None:
+    with (env.state / "pods").open("a", encoding="utf-8") as pods:
+        pods.write(f"factory|sandbox-run-9|u-sandbox|Running|{_WORKER}|||0\n")
+    result = _run(env=env)
+    assert result.returncode == 0, result.stdout + result.stderr
+    lines = result.stdout.splitlines()
+    before = next(i for i, line in enumerate(lines) if "FACTORY: the node carries" in line)
+    after = next(i for i, line in enumerate(lines) if "FACTORY after the rejoin" in line)
+    departed = next(i for i, line in enumerate(lines) if "DEPARTED at " in line)
+    assert before < departed < after
+    assert lines[before + 1] == "departure-drill:   factory/sandbox-run-9"
+    assert lines[after + 1] == "departure-drill:   factory/sandbox-run-9"
+    assert "a forced stop kills them" in lines[before]
+    assert "this script cannot read a run" in lines[after]
+
+
+def test_a_node_with_no_factory_pod_prints_no_factory_line(env: _Env) -> None:
+    result = _run(env=env)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "FACTORY" not in result.stdout
+
+
+def test_the_header_states_what_the_drill_does_not_prove() -> None:
+    header = " ".join(
+        line.lstrip("# ")
+        for line in _SCRIPT.read_text(encoding="utf-8")
+        .split("\nset -euo pipefail\n", 1)[0]
+        .splitlines()
+    )
+    for stated in (
+        "WHAT THIS DRILL DOES NOT PROVE.",
+        "does not exercise the collector ingest key's dependence on a login Keychain unlock",
+        "IN NETWORK-LOSS MODE THE RETURN RESTORES ONLY THE CONNECTED ROUTE.",
+        "a converge (the start task) may have to follow",
+        "`--confirm-depart` must name the worker's Node, <host>-homelab-worker, exactly",
+    ):
+        assert stated in header, stated
