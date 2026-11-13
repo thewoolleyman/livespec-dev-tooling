@@ -65,11 +65,26 @@ s="$STUB_STATE"
 printf 'limactl %s\\n' "$*" >> "$s/calls.log"
 shift 5
 case "$1 $2" in
+  "docker exec")
+    case "$*" in
+      *"ip -4 -o addr show dev cni0") cat "$s/cni0" 2>/dev/null ;;
+    esac ;;
   "bash -s")
     cat > "$s/converge-stdin"
     n=$(($(if [ -f "$s/converges" ]; then echo "$(<"$s/converges")"; else echo 0; fi) + 1))
     echo "$n" > "$s/converges"
-    if [ "$n" -ge 2 ]; then touch "$s/node-registered"; fi ;;
+    if [ "$n" -eq 1 ] && [ -f "$s/bridge-changes" ]; then
+      printf 'WORKER_NODE_NAME=alpha-homelab-worker\\nOTLP_PODS_ENDPOINT=10.42.3.1:4319\\n' > "$s/node.env"
+    fi
+    if [ "$n" -ge 2 ]; then
+      touch "$s/node-registered"
+      if [ ! -f "$s/no-cni0" ]; then
+        printf '5: cni0    inet 10.42.7.1/24 brd 10.42.7.255 scope global cni0\\n' > "$s/cni0"
+      fi
+    fi
+    if [ "$n" -ge 3 ] && [ -f "$s/cni0" ]; then
+      printf 'WORKER_NODE_NAME=alpha-homelab-worker\\nOTLP_PODS_ENDPOINT=10.42.7.1:4319\\n' > "$s/node.env"
+    fi ;;
   "install -m") cat > "$s/delivered-${5##*/}" ;;
 esac
 """
@@ -197,6 +212,31 @@ def test_a_rerun_for_a_registered_node_mints_and_delivers_nothing(env: _Env) -> 
     assert "bootstrap-token-" not in applied
     assert not list(env.state.glob("delivered-*"))
     assert len([c for c in _calls(env=env) if " bash -s -- " in c]) == 1
+
+
+def test_a_join_refreshes_the_pod_span_endpoint_after_the_node_gets_its_cni_bridge(
+    env: _Env,
+) -> None:
+    """The final converge sees the CIDR assigned during Node registration."""
+    (env.state / "bridge-changes").touch()
+    result = _run(env=env, args=_args(env))
+    assert result.returncode != 0
+    assert (env.state / "node.env").read_text(encoding="utf-8") == (
+        f"WORKER_NODE_NAME={_WORKER}\nOTLP_PODS_ENDPOINT=10.42.7.1:4319\n"
+    )
+    assert "pod-span endpoint now uses cni0 at 10.42.7.1:4319" in result.stdout
+    assert len([call for call in _calls(env=env) if " bash -s -- " in call]) == 3
+
+
+def test_a_join_names_the_pod_span_endpoint_as_not_yet_set_when_cni0_never_appears(
+    env: _Env,
+) -> None:
+    """A pod-less worker leaves the bridge-gated endpoint visibly pending."""
+    (env.state / "no-cni0").touch()
+    result = _run(env=env, args=_args(env))
+    assert result.returncode != 0
+    assert "pod-span endpoint is not yet set" in result.stdout
+    assert len([call for call in _calls(env=env) if " bash -s -- " in call]) == 2
 
 
 @pytest.mark.parametrize(
