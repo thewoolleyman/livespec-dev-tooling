@@ -59,12 +59,12 @@
 #      created without these binds, or with securityfs read-only, is
 #      replaced; its state on the data disk is kept.
 #   7. The node's host collector (DoD assertion 18) reads <state-root>/telemetry,
-#      bound at /etc/otel-collector: the start task delivers its config.yaml
-#      and, when it has the ingest key, .env; converge writes node.env with
-#      WORKER_NODE_NAME and OTLP_PODS_ENDPOINT, the worker's cni0 bridge
-#      address and port 4319 (the address the cluster's flannel gave this
-#      node, read live), and restarts the collector. Without the key, or
-#      before the bridge exists, the collector stays off and converge says so.
+#      bound at /etc/otel-collector: the start task delivers its host
+#      config.yaml and, when it has the ingest key, .env. It starts even before
+#      cni0 exists. When the split pod-span configuration is present, converge
+#      writes node.env with WORKER_NODE_NAME and OTLP_PODS_ENDPOINT from cni0
+#      and restarts only otel-collector-pods; its bind cannot interrupt host
+#      metrics.
 #   8. kubelet-config.yaml and kubelet.env (node name, node IP, host) are
 #      written to enrollment/. The kubelet starts only once the operator has
 #      delivered client-ca.crt there and either bootstrap-kubeconfig is there
@@ -356,14 +356,18 @@ else
 fi
 
 if [ -s "$root/telemetry/config.yaml" ] && [ -s "$root/telemetry/.env" ]; then
-  bridge="$(docker exec "$worker" ip -4 -o addr show dev cni0 2>/dev/null | awk '{print $4}' | cut -d / -f 1 | sed -n 1p || true)"
-  if [ -n "$bridge" ]; then
-    printf 'WORKER_NODE_NAME=%s\nOTLP_PODS_ENDPOINT=%s:4319\n' "$worker" "$bridge" >"$root/telemetry/node.env"
-    docker exec "$worker" systemctl restart otel-collector
-    say "host collector started on $worker (host.name $worker, pod spans on $bridge:4319)"
-  else
-    say "worker $worker has no cni0 bridge yet; its host collector starts on the next run once the node runs a pod"
+  docker exec "$worker" systemctl start otel-collector
+  say "host collector started on $worker (host.name $worker)"
+  if [ -s "$root/telemetry/pods-config.yaml" ]; then
+    bridge="$(docker exec "$worker" ip -4 -o addr show dev cni0 2>/dev/null | awk '{print $4}' | cut -d / -f 1 | sed -n 1p || true)"
+    if [ -n "$bridge" ]; then
+      printf 'WORKER_NODE_NAME=%s\nOTLP_PODS_ENDPOINT=%s:4319\n' "$worker" "$bridge" >"$root/telemetry/node.env"
+      docker exec "$worker" systemctl restart otel-collector-pods
+      say "pod-span collector started on $worker ($bridge:4319)"
+    else
+      say "worker $worker has no cni0 bridge yet; host metrics continue while pod spans await it"
+    fi
   fi
 else
-  say "worker $worker's host collector stays off: the start task delivers its config.yaml and, with the ingest key, .env to $root/telemetry"
+  say "worker $worker's host collector stays off: the start task delivers config.yaml and, with the ingest key, .env to $root/telemetry"
 fi
