@@ -33,7 +33,7 @@ In-flight survey, 2026-11-13. No pending proposal changes `## Homelab worker nod
 
 In `SPECIFICATION/non-functional-requirements.md`, section "Homelab worker nodes", insert the following bullet immediately after the bullet that begins "**Departure and rejoin.**". No heading is added, removed or renamed in that file, and no existing sentence is changed.
 
-- **Stable networking agents under load.** The networking agents the fleet runs on a worker (its pod-network agent, its service proxy and its network-policy agent) MUST stay running for as long as the worker's Node is Ready and the worker carries production load. The observable is each agent pod's container restart count, read from the cluster: over a stated live-load window during which the Node stays Ready, each count MUST NOT rise. A departure of the worker is not such a restart, and "**Departure and rejoin.**" governs it. A restart that is measured MUST be recorded with its cause and fixed at that cause before the window is counted as proof; the count MUST NOT be cleared by deleting or recreating the agent pods for that purpose, and the window's record MUST name each agent pod, its creation time and its restart count at the window's start and end.
+- **Stable networking agents under load.** The networking agents the fleet runs on a worker (its pod-network agent, its service proxy and its network-policy agent) MUST stay running for as long as the worker's Node is Ready and the worker carries production load. The observable is each agent pod's container restart count, read from the cluster: over a live-load window of at least 24 hours during which the Node stays Ready, each count MUST NOT rise. An agent pod replaced during the window ends that window; the window is counted as proof only if no agent pod was replaced, and a replacement is recorded with its cause. A departure of the worker is not such a restart, and "**Departure and rejoin.**" governs it. A restart that is measured MUST be recorded with its cause and fixed at that cause before the window is counted as proof; the count MUST NOT be cleared by deleting or recreating the agent pods for that purpose, and the window's record MUST name each agent pod, its creation time and its restart count at the window's start and end.
 
 In `SPECIFICATION/scenarios.md`, insert the following scenario immediately after the scenario "a worker that leaves mid-run loses no work and rejoins on its own".
 
@@ -41,9 +41,9 @@ In `SPECIFICATION/scenarios.md`, insert the following scenario immediately after
 
 Given an enrolled worker whose Node is Ready and which takes CI jobs, gate jobs and factory runs from the fleet's queues
 
-And the restart count of each of its networking agent pods is read at the start of a stated live-load window
+And the restart count of each of its networking agent pods is read at the start of a live-load window of at least 24 hours
 
-When the window ends with the Node having stayed Ready throughout
+When the window ends with the Node having stayed Ready throughout and no networking agent pod replaced
 
 Then each networking agent pod's restart count MUST equal its count at the start of the window
 
