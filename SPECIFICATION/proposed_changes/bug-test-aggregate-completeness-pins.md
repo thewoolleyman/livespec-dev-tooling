@@ -25,7 +25,7 @@ Every check added to livespec-dev-tooling has had to edit the literal and append
 
 Add this bullet after the existing third bullet ("Changing any such committed value to another value its schema accepts MUST leave every test of the repository passing."):
 
-"- The same holds for a committed INVENTORY: the check aggregate's target list in the `justfile` `check` recipe and in `check-targets.txt`, or any other list a repository commits in more than one place. A test of such an inventory MUST NOT assert its literal member count. It MUST derive the expected members from the committed declarations and assert that the declarations agree, naming each member present in one declaration and absent from another. The derivation covers every member of the inventory whatever its name, not only members whose name begins `check-`. It reads the same member set that §"Expedited incident execution" has the expedited local hooks read, and this bullet places no requirement on a member's name or on its `incident-timing` declaration. It MAY also assert that members a ratified rule requires, such as the canonical check slugs, are present. Adding a member to every declaration of the inventory, with no test edit, MUST leave every test of the repository passing. This bullet is spec-first for livespec-dev-tooling's own `test_aggregate_completeness.py`, which pins the count, and work item livespec-dev-tooling-fmprfr owns the change."
+"- The same holds for a committed INVENTORY: the check aggregate's target list in the `justfile` `check` recipe and in `check-targets.txt`, or any other list a repository commits in more than one place. A test that checks such an inventory's completeness MUST NOT assert its literal member count. It MUST derive the expected members from the committed declarations and assert that the declarations agree, naming each member present in one declaration and absent from another, and the declaration it is absent from. It MUST also assert that every canonical check slug is present, naming each one that is absent, and MAY assert the presence of any other member a ratified rule requires. Adding to every declaration of the inventory a member whose recipe exists and that carries every per-member declaration a ratified rule requires, with no edit to any file under `tests/`, MUST leave every test of the repository passing. This bullet is spec-first for livespec-dev-tooling's own `test_aggregate_completeness.py`, which pins the count, and work item livespec-dev-tooling-fmprfr owns the change."
 
 ### SPECIFICATION/scenarios.md
 
@@ -35,7 +35,7 @@ Add this scenario directly after "## Scenario: changing a committed capacity val
 
 Given a repository whose check aggregate is declared in the `justfile` `check` recipe and in `check-targets.txt`
 
-When a change adds one new `check-*` member to both declarations and edits no test file
+When a change adds to both declarations one new `check-*` member whose recipe exists and that carries every per-member declaration a ratified rule requires (its purity declaration and its CI matrix entry), and edits no file under `tests/`
 
 Then every test of the repository MUST pass
 
