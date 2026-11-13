@@ -5,6 +5,10 @@ The module replaces the fleet's drift-prone repository-local CI telemetry
 exporters.  It accepts recorded GitHub documents for deterministic tests; when
 those documents are not supplied, it reads the same run and jobs data through
 the shared budgeted GitHub client used by the rest of this package.
+
+Coverage consumers write one structured reuse outcome per job log. The stable
+record shape and the OTLP mapping live in :mod:`ci_coverage_reuse` for the
+detector slices that read this export.
 """
 
 from __future__ import annotations
@@ -19,6 +23,11 @@ from pathlib import Path
 from typing import Final, cast
 
 from livespec_dev_tooling.budgeted_gh import gh_read
+from livespec_dev_tooling.ci_coverage_reuse import (
+    COVERAGE_CONSUMER_JOB_ID,
+    coverage_reuse_attributes,
+    coverage_reuse_outcome,
+)
 
 __all__: list[str] = ["main"]
 
@@ -123,6 +132,17 @@ def _job_span(
     if created_at:
         queue_ms = max(0, (start_ns - int(_nanoseconds(timestamp=created_at))) // 1_000_000)
     conclusion = job.get("conclusion", "")
+    attributes = [
+        _attribute(key="repo", value=repo),
+        _attribute(key="ci.run_id", value=run_id, value_type="intValue"),
+        _attribute(key="ci.job.name", value=job.get("name", "")),
+        _attribute(key="ci.job.conclusion", value=conclusion),
+        _attribute(key="ci.job.queue_ms", value=queue_ms, value_type="intValue"),
+    ]
+    reuse_outcome = job.get("coverageReuseOutcome")
+    if isinstance(reuse_outcome, dict):
+        attributes.append(_attribute(key="ci.job.id", value=job_id, value_type="intValue"))
+        attributes.extend(coverage_reuse_attributes(outcome=cast(dict[str, object], reuse_outcome)))
     return {
         "traceId": _hex_id(value=run_id, width=32),
         "spanId": _hex_id(value=job_id, width=16),
@@ -131,13 +151,7 @@ def _job_span(
         "kind": 1,
         "startTimeUnixNano": str(start_ns),
         "endTimeUnixNano": _nanoseconds(timestamp=completed_at),
-        "attributes": [
-            _attribute(key="repo", value=repo),
-            _attribute(key="ci.run_id", value=run_id, value_type="intValue"),
-            _attribute(key="ci.job.name", value=job.get("name", "")),
-            _attribute(key="ci.job.conclusion", value=conclusion),
-            _attribute(key="ci.job.queue_ms", value=queue_ms, value_type="intValue"),
-        ],
+        "attributes": attributes,
         "status": {"code": _status(conclusion=conclusion)},
     }
 
@@ -216,6 +230,19 @@ def _github_documents(
         if line
     ]
     jobs = [job for page in pages for job in cast(list[dict[str, object]], page.get("jobs", []))]
+    for job in cast(list[dict[str, object]], run.get("jobs", [])):
+        if job.get("name") != COVERAGE_CONSUMER_JOB_ID:
+            continue
+        job_id = int(cast(int | str, job["databaseId"]))
+        log_response = gh_read(args=["api", f"repos/{repo}/actions/jobs/{job_id}/logs"])
+        if log_response.returncode != 0:
+            return None
+        outcome = coverage_reuse_outcome(
+            repo=repo, run_id=run_id, job_name=job.get("name"), log=log_response.stdout
+        )
+        if outcome is None:
+            return None
+        job["coverageReuseOutcome"] = outcome
     return run, {"jobs": jobs}
 
 
