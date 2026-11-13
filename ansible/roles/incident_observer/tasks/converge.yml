@@ -621,6 +621,9 @@
   when: incident_observer_ci_identity_enabled | bool and incident_observer_installed
 
 - name: Keep the fetched signing keys beside the policy they feed
+  # Runs in check mode too, writing nothing there: a dry run reports `changed`
+  # here when the forge's keys differ from the ones last pinned. The policy
+  # render and install below need the written file, so they run on apply only.
   ansible.builtin.copy:
     content: "{{ incident_observer_ci_jwks.content }}"
     dest: "{{ incident_observer_ci_jwks_path }}"
@@ -628,9 +631,7 @@
     group: root
     mode: "0644"
   become: true
-  when: >-
-    incident_observer_ci_identity_enabled | bool and incident_observer_installed
-    and not ansible_check_mode
+  when: incident_observer_ci_identity_enabled | bool and incident_observer_installed
 
 - name: Render this installation's CI identity policy from its inventory entry
   # Every value is this installation's: its repository and stable repository and
@@ -728,7 +729,10 @@
 
 - name: Load the whole installation as the controller account before serving it
   # The same loader the service runs at start, under the same euid: a refusal
-  # here names the apply as the failure instead of a unit that exits 2.
+  # here names the apply as the failure instead of a unit that exits 2. With an
+  # approved publisher commit the CI identity policy is REQUIRED: the loader
+  # treats an unusable optional policy as absent, so without this the apply
+  # would pass while every publication answers identity-not-provisioned.
   ansible.builtin.command:
     argv:
       - "{{ incident_observer_venv }}/bin/python"
@@ -737,8 +741,11 @@
       - >-
         import sys; from pathlib import Path;
         from livespec_dev_tooling.incident_controller_installation import ControllerInstallation;
-        sys.exit(0 if ControllerInstallation.load(config=Path(sys.argv[1])) is not None else 1)
+        loaded = ControllerInstallation.load(config=Path(sys.argv[1]));
+        sys.exit(0 if loaded is not None and (sys.argv[2] != 'required'
+        or loaded.ci_identity_policy is not None) else 1)
       - "{{ incident_observer_config_path }}"
+      - "{{ 'required' if incident_observer_ci_identity_enabled | bool else 'optional' }}"
   become: true
   become_user: "{{ incident_observer_user }}"
   changed_when: false

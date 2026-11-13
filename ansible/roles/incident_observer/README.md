@@ -218,6 +218,17 @@ commit, move every caller's pin, then drop the old one. Each caller sets its
 `LIVESPEC_INCIDENT_CI_AUDIENCE` repository variable to its installation's
 audience.
 
+**Trust basis.** The keys come from a TLS read of the forge's fixed issuer
+host, verified against the host's system CA store and nothing else. No
+certificate or key is pinned, and every apply replaces the pinned keys with
+what that read returns. `files/render_ci_identity_policy.py` drops, with its
+kid and the reason, any JWKS row the controller's loader would refuse. It
+refuses outright when no key survives or more than 16 do. With a publisher
+commit approved, the apply's load check fails unless the installation loads
+its policy. A dry run reports a key change on "Keep the fetched signing keys
+beside the policy they feed". The re-rendered policy is shown only by the
+real apply.
+
 ### Rotating the CI issuer keys
 
 The issuer keys are pinned in the policy; the controller never fetches them on

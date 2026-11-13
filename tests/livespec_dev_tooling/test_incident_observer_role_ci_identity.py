@@ -36,8 +36,9 @@ def _argv(*, variables: dict[str, Any]) -> list[str]:
 
 
 def test_no_approved_publisher_commit_provisions_no_policy() -> None:
-    variables = base.production_variables()
-    assert variables["incident_observer_ci_publisher_shas"] == []
+    # The empty list is SET here, so a committed rollout that lists a commit does
+    # not break the property: an empty list leaves production's render unchanged.
+    variables = {**base.production_variables(), "incident_observer_ci_publisher_shas": []}
     assert "--ci-identity-policy" not in _argv(variables=variables)
     base.assert_production_render_matches_fixture(
         rendered=base.render_installation(variables=variables), variables=variables
@@ -47,11 +48,15 @@ def test_no_approved_publisher_commit_provisions_no_policy() -> None:
 def test_an_approved_publisher_commit_binds_the_policy_into_the_manifest() -> None:
     variables = {**base.production_variables(), "incident_observer_ci_publisher_shas": [_SHA]}
     argv = _argv(variables=variables)
-    assert argv[-2:] == ["--ci-identity-policy", "/etc/livespec-incident/ci-identity.json"]
+    resolved = base.resolve(variables=variables)
+    assert argv[-2:] == [
+        "--ci-identity-policy",
+        resolved["incident_observer_ci_identity_policy_path"],
+    ]
 
 
-def test_the_policy_is_rendered_from_the_installations_own_inventory_ids() -> None:
-    variables = {**base.production_variables(), "incident_observer_ci_publisher_shas": [_SHA]}
+def _policy_argv(*, variables: dict[str, Any]) -> tuple[list[str], dict[str, Any]]:
+    """The policy render task's argv as Ansible resolves it for these variables."""
     resolved = base.resolve(variables=variables)
     task = _tasks()[_RENDER_POLICY]
     jinja = base.ansible_jinja()
@@ -62,14 +67,63 @@ def test_the_policy_is_rendered_from_the_installations_own_inventory_ids() -> No
         )(**resolved),
     }
     expression = task["ansible.builtin.command"]["argv"].strip()
-    argv = jinja.compile_expression(expression[2:-2])(**context)
-    entry = resolved["incident_observer_installations"][0]
-    assert argv[argv.index("--repository") + 1] == resolved["incident_observer_repository"]
-    assert argv[argv.index("--repository-id") + 1] == str(entry["repository_id"])
-    assert argv[argv.index("--owner-id") + 1] == str(entry["owner_id"])
-    assert argv[argv.index("--publisher-repository") + 1] == entry["repository"]
-    assert argv[argv.index("--jwks") + 1] == resolved["incident_observer_ci_jwks_path"]
+    return jinja.compile_expression(expression[2:-2])(**context), resolved
+
+
+def _value(*, argv: list[str], flag: str) -> str:
+    return argv[argv.index(flag) + 1]
+
+
+def test_production_renders_its_policy_from_its_own_inventory_entry() -> None:
+    variables = {**base.production_variables(), "incident_observer_ci_publisher_shas": [_SHA]}
+    argv, resolved = _policy_argv(variables=variables)
+    (own,) = [
+        entry
+        for entry in resolved["incident_observer_installations"]
+        if entry["repository"] == resolved["incident_observer_repository"]
+    ]
+    assert _value(argv=argv, flag="--repository") == own["repository"]
+    assert _value(argv=argv, flag="--repository-id") == str(own["repository_id"])
+    assert _value(argv=argv, flag="--owner-id") == str(own["owner_id"])
+    assert _value(argv=argv, flag="--jwks") == resolved["incident_observer_ci_jwks_path"]
     assert argv[-1] == "--publisher-sha=" + _SHA
+
+
+def test_a_further_installation_takes_its_own_ids_and_the_first_entrys_publisher() -> None:
+    # Production is both its own entry and the first, so only a further
+    # installation tells "this installation's ids" from "the publisher repository".
+    inventory = base.production_variables()["incident_observer_installations"]
+    first, further = inventory[0], inventory[1]
+    variables = {
+        **base.production_variables(),
+        "incident_observer_ci_publisher_shas": [_SHA],
+        "incident_observer_repository": further["repository"],
+    }
+    argv, _ = _policy_argv(variables=variables)
+    assert further["repository_id"] != first["repository_id"]
+    assert _value(argv=argv, flag="--repository") == further["repository"]
+    assert _value(argv=argv, flag="--repository-id") == str(further["repository_id"])
+    assert _value(argv=argv, flag="--owner-id") == str(further["owner_id"])
+    assert _value(argv=argv, flag="--publisher-repository") == first["repository"]
+
+
+def test_an_approved_publisher_commit_makes_the_policy_required_at_the_load_check() -> None:
+    load = _tasks()["Load the whole installation as the controller account before serving it"]
+    expression = load["ansible.builtin.command"]["argv"][-1]
+    jinja = base.ansible_jinja()
+    modes = {
+        name: jinja.from_string(expression).render(
+            **base.resolve(
+                variables={
+                    **base.production_variables(),
+                    "incident_observer_ci_publisher_shas": shas,
+                }
+            )
+        )
+        for name, shas in (("approved", [_SHA]), ("none", []))
+    }
+    assert modes == {"approved": "required", "none": "optional"}
+    assert "loaded.ci_identity_policy is not None" in load["ansible.builtin.command"]["argv"][3]
 
 
 def test_the_policy_is_private_to_the_controller_account() -> None:
