@@ -294,4 +294,28 @@ possible. After Phase 4, disable the merge-queue requirement; nothing else depen
    - publishing images under `ghcr.io/<org>`.
 3. **Where `merge_group` CI runs:** guarded self-hosted runners (the seat's pick; a security-policy change) or
    GitHub-hosted runners (a free org's 20-job concurrency cap, shared by all its repositories; latency unmeasured).
+
+   **Measured evidence, 2026-11-13: a stale-base semantic conflict reached master (incident 3hilpy).** The maintainer
+   directed, through legacy-coordinator-agent on 2026-11-13, that this finding be presented WHENEVER this plan brings the
+   maintainer its decisions. The records are the seat's comment on this epic at 06:33:05Z and the coordinator's
+   "MAINTAINER-DIRECTED FINDING" comment.
+   - livespec-dev-tooling#4442 (exdkra, fba395aae) merged at 05:32:32Z. It added a test that monkeypatches
+     `incident_ci_process.load_inventory`.
+   - livespec-dev-tooling#4449 (z5cjph, da0264ace) merged 87 s later, at 05:33:59Z. It moved `load_inventory` into
+     `incident_ci_inventory.py`. It was green on base db9f57be9, which predates #4442.
+   - Master CI run 43372854805 failed. Only the full suite caught it: `check-per-file-coverage`, about 11,900 tests,
+     exactly one failing. Incident 3hilpy fixes it forward.
+
+   A merge queue would have ejected #4449 only if both of these hold:
+   - (a) `merge_group` CI runs the FULL suite, including `check-per-file-coverage`, not a fast subset;
+   - (b) every path to master goes through the queue: factory merges, auto-merge and human merges. Expedited incident
+     pushes also need a stated rule, because the recovery App's bypass skips the queue.
+
+   A merge queue does NOT fix the incident-CI runner-admission defect, livespec-dev-tooling-ehnjlt. The fix that item
+   owes is that an expedited incident's incident-ci job is admitted ahead of ordinary PR traffic in the dev-tooling
+   runner pool. That is a runner-pool scheduling question, and it stays its own item whichever way this call goes.
+
+   For this call, condition (a) means each queued batch runs the full suite. On GitHub-hosted runners, that competes for
+   the free organization's 20 concurrent jobs. On the guarded self-hosted lane, it runs at today's measured capacity
+   (note 003).
 4. **Confirm or edit the Definition of Done above.**
