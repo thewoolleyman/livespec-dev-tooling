@@ -156,6 +156,24 @@ you need to undo it, undo the result, the commit or the pushed branch,
 after the verdict lands. Do not read a quiet gate after a signal as a
 stopped one: read its `VERDICT` line through `gate-status`.
 
+### Do not commit in a worktree while its push gate runs
+
+A delegated pre-push gate gates the tree it captured at launch. When it
+finishes, it compares that tree with the worktree's HEAD. If HEAD has moved,
+it refuses the push even though every target passed: "the gate passed on tree
+X, but HEAD now resolves to Y; that tree was never gated, so no token was
+written". Nothing is pushed, and the whole aggregate has to run again.
+
+Measured 2026-11-13 (plan `dev-host-disk-retention`,
+`livespec-dev-tooling-qgwxo4`): a pre-push gate on
+`fix/memory-bounds-mount-unit-name` passed all 86 targets (12248 tests) in
+37 minutes. It then refused the push, because a test commit had been made in
+the same worktree while it ran. The re-push cost a second full gate.
+
+Finish every commit a branch needs BEFORE you launch its push gate. If a
+commit has to land while the gate runs, make it after the verdict, then push
+again.
+
 ### What this does NOT change
 
 **Nothing is weakened.** The same command runs, with the same hooks,
