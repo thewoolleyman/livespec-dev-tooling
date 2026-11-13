@@ -13,7 +13,7 @@ created_at: 2026-11-13T01:36:36Z
 
 ### Summary
 
-Amend constraints.md §"CI matrix shape" with a paragraph that states, as normative behaviour, how this library's shared ci-green required-leg reader (`livespec_dev_tooling.ci_green_required_legs`) decides which legs of the aggregate gate job's needed jobs are gaps. A `needs:` written as a YAML block sequence MUST yield the same needed jobs and gaps as an inline list. A needed job that declares its own job-level `if:`, concludes `skipped`, and whose own needed jobs all concluded `success` is a designed skip and MUST NOT be a gap. A skipped job with no job-level `if:` MUST be a gap, and so MUST an `if:`-skipped job behind a needed job that did not succeed. A needed job absent from the run's job list MUST be a gap whatever its `if:`, because the forge lists a job its own condition skipped and does not list one it never created. Add five scenarios to scenarios.md, one per behaviour. Work item livespec-dev-tooling-acapf4 carries the implementation.
+Amend constraints.md §"CI matrix shape" with a paragraph that states, as normative behaviour, how this library's shared ci-green required-leg reader (`livespec_dev_tooling.ci_green_required_legs`) decides which legs of the aggregate gate job's needed jobs are gaps. A `needs:` written as a YAML block sequence MUST yield the same needed jobs and gaps as an inline list. A needed job that declares its own job-level `if:`, concludes `skipped`, and whose own needed jobs all concluded `success` is a designed skip and MUST NOT be a gap. A skipped job with no job-level `if:` MUST be a gap, and so MUST an `if:`-skipped job behind a needed job that did not succeed. A needed job absent from the run's job list MUST be a gap whatever its `if:`, because the forge lists a job its own condition skipped and does not list one it never created; a matrix job skipped by its own `if:` has no expanded legs, so its legs read as never created and fail closed. A needed job that concludes `skipped` in a cancelled run MUST be a gap whatever its `if:`, so a `!cancelled()` job skipped by a cancellation never passes as a designed skip. Add six scenarios to scenarios.md, one per behaviour. Work item livespec-dev-tooling-acapf4 carries the implementation.
 
 ### Motivation
 
@@ -31,10 +31,11 @@ Append this paragraph and list at the end of the section, after the paragraph th
 
 Branch protection can require the aggregate gate job (`ci-green`) as its only context, as it does in this repository, and then that job is the whole merge gate. Its verdict MUST therefore rest on the run's own job list and not only on `needs.*.result`. That expression carries one result per needed job and nothing at all for a leg the forge never created. This library's shared required-leg reader, `livespec_dev_tooling.ci_green_required_legs`, reads the workflow text the run used and the run's job list as the Actions jobs API reports it, and decides which legs of the gate job's needed jobs are gaps. The gate MUST fail when the reader reports any gap, naming each one, and MUST pass only when it reports none. The reader MUST meet all of the following:
 - It MUST derive the gate job's needed jobs from a job-level `needs:` written as a YAML block sequence exactly as it does from one written as an inline flow list. The two spellings of the same list MUST yield the same needed jobs and the same gaps.
-- A needed job, or a leg of one, that is absent from the run's job list MUST be a gap naming it as never created, whether or not that job declares a job-level `if:`. A job skipped by its own `if:` still appears in the run's job list with conclusion `skipped`. A job the forge never created does not appear at all, so absence MUST NOT be read as a designed skip.
+- A needed job, or a leg of one, that is absent from the run's job list MUST be a gap naming it as never created, whether or not that job declares a job-level `if:`. A job skipped by its own `if:` still appears in the run's job list with conclusion `skipped`. A job the forge never created does not appear at all, so absence MUST NOT be read as a designed skip. A matrix job is matched leg by leg, under the job name each leg reports (`${{ matrix.target }}` reports one leg per `matrix.target` entry). When a matrix job is skipped by its own `if:`, the forge does not expand its legs: the run's job list carries none of the leg names. Each leg therefore reads as never created and MUST be a gap naming it, so a matrix job skipped by its own `if:` fails closed and is never a designed skip.
 - A leg that appears in the run's job list with a conclusion other than `success` or `skipped` MUST be a gap naming it.
 - A needed job that concludes `skipped` and declares no job-level `if:` MUST be a gap naming it.
-- A needed job that declares its own job-level `if:` and concludes `skipped` MUST NOT be a gap when every job it itself needs appears in the run's job list and concluded `success`. This is a designed skip: the job's own condition chose not to run it.
+- A needed job that declares its own job-level `if:` and concludes `skipped` MUST NOT be a gap when every job it itself needs appears in the run's job list and concluded `success`, and the run is not cancelled under the next rule. This is a designed skip: the job's own condition chose not to run it.
+- A needed job that concludes `skipped` in a cancelled run MUST be a gap naming it, whatever its own `if:` says and whatever its needs concluded. A job conditioned `if: ${{ !cancelled() }}` (as `check-metadata`, `check-metadata-batch` and `check-per-file-coverage` are) concludes `skipped` when the run is cancelled after its needs succeeded. The gate job runs under `always()`, so without this rule it could pass with that leg never executed. The reader MUST treat the run as cancelled when either of two observables holds: any job in the run's job list concluded `cancelled`, or the gate step hands it the gate job's own `cancelled()` status as true. The second observable is needed because a run cancelled before any job was in progress leaves no `cancelled` conclusion in the job list. The gate step evaluates `cancelled()` in the gate job's context and passes the value to the reader beside the job list; the shipped reader reads the job list only, so this input is spec-first.
 - A needed job that declares its own job-level `if:` and concludes `skipped` while any job it itself needs is absent from the run's job list, or concluded anything other than `success`, MUST be a gap naming it. That skip can follow from the upstream job's result rather than from the job's own condition.
 - A needed job whose legs the reader cannot derive MUST be a gap, and so MUST a gate job with no needs the reader can parse, so that the gate fails closed rather than checking less than it needs.
 
@@ -42,7 +43,7 @@ These rules leave the expedited-incident omission path passing. Under an authori
 
 ### SPECIFICATION/scenarios.md
 
-Add these five scenarios, in this order, directly after "## Scenario: a CI run GitHub fails at job creation with an Internal server error is re-run with backoff":
+Add these six scenarios, in this order, directly after "## Scenario: a CI run GitHub fails at job creation with an Internal server error is re-run with backoff":
 
 ## Scenario: the ci-green required-leg reader reads a block-sequence needs list as it reads an inline one
 
@@ -96,6 +97,8 @@ When the required-leg reader reads that run
 
 Then it MUST report a gap naming `check-coverage`, beside the gap naming `check-per-file-coverage`
 
+And where `check-coverage` is a matrix job named `${{ matrix.target }}`, as in this repository's ci.yml, the forge reports none of its leg names, so the gap MUST name each of its legs as never created
+
 And ci-green MUST fail
 
 ## Scenario: a needed job the forge never created is a ci-green gap whatever its if
@@ -112,6 +115,22 @@ Then it MUST report a never-created gap naming `check-lint` and a never-created 
 
 And ci-green MUST fail
 
+## Scenario: a needed job skipped in a cancelled run is a ci-green gap even when its needs succeeded
+
+Given a workflow whose `ci-green` job runs under `always()` and needs `check-lint` and `check-metadata`
+
+And `check-metadata` declares the job-level `if: ${{ !cancelled() }}` and needs `check-lint`
+
+And a run that was cancelled after `check-lint` concluded `success`, whose job list carries `check-metadata` with conclusion `skipped`
+
+And either another job in that run's job list concluded `cancelled`, or the gate step hands the reader the gate job's `cancelled()` status as true
+
+When the required-leg reader reads that run
+
+Then it MUST report a gap naming `check-metadata`
+
+And ci-green MUST fail
+
 ### Revise co-edit (outside the spec target)
 
-The revise commit that accepts this proposal MUST add a `tests/heading-coverage.json` row for each of the five new scenario headings: `"test": "TODO"`, a `reason` naming the unit tier as the tier the owed test runs at and naming livespec-dev-tooling-acapf4 as its owner, and `"work_item": "livespec-dev-tooling-acapf4"`. It MUST also stage the regenerated `tests/heading-coverage-debt.json` from `just generate-heading-coverage-debt-register`. The constraints.md amendment adds no `## ` heading, so it owes no new row.
+The revise commit that accepts this proposal MUST add a `tests/heading-coverage.json` row for each of the six new scenario headings: `"test": "TODO"`, a `reason` naming the unit tier as the tier the owed test runs at and naming livespec-dev-tooling-acapf4 as its owner, and `"work_item": "livespec-dev-tooling-acapf4"`. It MUST also stage the regenerated `tests/heading-coverage-debt.json` from `just generate-heading-coverage-debt-register`. The constraints.md amendment adds no `## ` heading, so it owes no new row.
