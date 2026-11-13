@@ -17,7 +17,13 @@ seat) is seen every tick (rule P3).
 
 TOP mirrors the priorities-record. When the record changes, change TOP in the same
 docs PR; the record wins over this list until then. Nothing here mutates: only
-`bd show` and `bd comments`, through each tenant's credential wrapper.
+`bd show` and `bd comments`, through each tenant's credential wrapper, and local reads
+of the launch hold files.
+
+The HOLDS section (rule HOLD-ENDS-ARE-DRIVEN, coordinator 2026-11-13, after hold-gmktec
+stood more than 3 h past the release of its fix) prints every live hold with its age,
+marks one older than 60 minutes STALE HOLD, and marks one with no OWNER: line or no
+END CONDITION as MALFORMED HOLD.
 """
 import datetime as dt
 import json
@@ -68,12 +74,78 @@ def stranded_header():
     print()
 
 
+HOLD_DIR = "/data/projects/livespec-orchestrator-beads-fabro/tmp/petri-canary"
+HOLD_SNIPPET = 160
+HOLD_RESOLVE = "<<< resolve THIS tick: each clause, its owner, its next action; drive the unmet one"
+
+
+def is_live_hold(name):
+    """A live hold file: hold-*, not lifted, not a script or manifest, not an archived copy.
+
+    Archived copies carry a dotted suffix such as `.pre-lift-<UTC>` or `.bak-<UTC>`; a dotted
+    work-item id such as `hold-item-<epic>.4` stays live, because its suffix is a digit.
+    """
+    if not name.startswith("hold-") or ".lifted" in name or name.endswith(".sh") or "manifest" in name:
+        return False
+    return not any(part[:1] and not part[:1].isdigit() for part in name.split(".")[1:])
+
+
+def hold_line(name, path):
+    """One HOLDS entry: (sort key, text lines) for a live hold file."""
+    try:
+        text = open(path, encoding="utf-8", errors="replace").read()
+        mtime = os.stat(path).st_mtime
+    except OSError as exc:
+        return (0, name), [f"HOLD UNREAD {name}: {exc}"]
+    age = (NOW - dt.datetime.fromtimestamp(mtime, dt.timezone.utc)).total_seconds() / 60
+    lines = text.splitlines()
+    cond = next((ln for ln in lines if "END CONDITION" in ln), None)
+    shown = cond[cond.index("END CONDITION"):] if cond else (lines[0] if lines else "(empty file)")
+    shown = " ".join(shown.split())[:HOLD_SNIPPET]
+    has_owner = any(ln.lstrip().startswith("OWNER:") for ln in lines)
+    stale = age > STALE_MINUTES
+    head = "STALE HOLD" if stale else "HOLD"
+    out = [f"{head} {name} age {age:.0f} min: {shown}" + (f"  {HOLD_RESOLVE}" if stale else "")]
+    missing = [what for what, ok in (("OWNER: line", has_owner), ("END CONDITION", cond)) if not ok]
+    if missing:
+        out.append(
+            f"    MALFORMED HOLD {name}: names no {' and no '.join(missing)}; rewrite it with an owner and a"
+            " checkable end condition"
+        )
+    kind = 1 if name.startswith("hold-item-") else 0
+    return (kind, name), out
+
+
+def holds_header():
+    """Every live launch hold with its age; STALE past 60 minutes, MALFORMED without OWNER:/END CONDITION."""
+    try:
+        entries = [e for e in os.scandir(HOLD_DIR) if is_live_hold(e.name) and e.is_file()]
+    except OSError as exc:
+        print(f"HOLDS UNREAD: {exc}")
+        print()
+        return
+    rows = sorted(hold_line(e.name, e.path) for e in entries)
+    stale = sum(1 for _, out in rows if out[0].startswith("STALE HOLD"))
+    malformed = sum(1 for _, out in rows if any("MALFORMED HOLD" in ln for ln in out))
+    print(
+        f"HOLDS ({HOLD_DIR}; {len(rows)} live, {stale} STALE, {malformed} MALFORMED). A STALE HOLD is resolved THIS"
+        " tick like a STALE plan line: name each END CONDITION clause, its owner and its next action, and drive the"
+        " unmet clause; building a proof for a clause that waits on a natural event counts as driving it"
+        " (rule HOLD-ENDS-ARE-DRIVEN, coordinator-duties §3):"
+    )
+    for _, out in rows or [((0, ""), ["none live"])]:
+        for line in out:
+            print(f"  {line}")
+    print()
+
+
 print(
     "INCIDENT MODE: livespec-dev-tooling USABLE (EXPEDITED_INCIDENT_RESPONSE is the default response to a red master;"
     " coordinator-duties §2). Not yet usable: livespec, orchestrator, overseer."
 )
 print()
 stranded_header()
+holds_header()
 
 
 def run(args, cwd, wrapper):

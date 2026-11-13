@@ -243,6 +243,20 @@ lifted, read the condition the hold file itself names and get its owner's confir
 the coordinator ruled `hold-repo-livespec-dev-tooling` lifted although the file named a canary condition. It was
 restored at 14:43:59Z, and six runs had launched in the gap, none of which merged.
 
+**Rule HOLD-ENDS-ARE-DRIVEN: every hold names an owner and a constructible end, and an old hold is a stall (maintainer
+challenge, 2026-11-13).** A hold file states, on lines of its own, `OWNER:` (the seat that drives its end) and
+`END CONDITION:`. Each clause of the condition names who makes it true and how: a step someone takes (for example, the
+roll that makes a build the launch build), or a proof someone builds. It never names only a natural event that may not
+happen. A canary-coverage clause is met by a traversal of the changed path, or of a byte-equivalent path whose diff is
+shown. `scripts/coordinator/top5` prints every live hold with its age, and a hold older than 60 minutes prints
+`STALE HOLD`. The tick resolves that line the way it resolves a STALE plan line: name each clause, its owner and its
+next action, and drive the unmet clause that tick. The maintainer, 2026-11-13 ~03:5xZ, after hold-gmktec stood more
+than 3 h past the release of its fix (v0.325.0, 00:39:56Z), verbatim: "WHy is this thrashing" and "How is this thrash
+prevented mechanically and systematically from ever happening again?" Measured: clause (a), the launch build, had no
+roll owner, so all 16 fleet clones were still registered at v0.323.1 at 03:48Z. Clause (b) waited on a rare fix-round
+traversal, while a byte-equivalent review_fix_commit_settle SUCCESS (lmuhvi, v0.325.0) had already been rejected as
+"not the same node".
+
 **A wait's condition is checked against the live store before it is carried forward (coordinator's reading).** Holds and
 waits named in handoffs and records go stale silently. Measured 2026-11-10 ~14:58Z: bd-ib-kclvlo (priority 4's awaited
 item) sat READY under a chain-hold whose own stated end, "ticket it the moment reuccp ENDS", had been met about 20 h
