@@ -279,6 +279,32 @@ def test_check_exits_1_when_no_token(
     assert "no token found" in result.stderr
 
 
+def test_pre_push_reuse_dispatches_the_consumers_complete_check_set(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The CLI forwards the shared command and every consumer member unchanged."""
+    received: dict[str, object] = {}
+
+    def reused(**kwargs: object) -> int:
+        received.update(kwargs)
+        return 0
+
+    monkeypatch.setattr(_GREEN_TOKEN.pre_push_reuse, "run_pre_push_command", reused)
+
+    result = _run_module(
+        cwd=tmp_path,
+        command="pre-push-reuse",
+        targets=("check-a", "check-b"),
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+    )
+
+    assert result.returncode == 0
+    assert received["command"] == "pre-push-reuse"
+    assert received["cwd"] == tmp_path
+    assert received["targets"] == ["check-a", "check-b"]
+
+
 def test_check_exits_1_when_tree_hash_mismatch(
     *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

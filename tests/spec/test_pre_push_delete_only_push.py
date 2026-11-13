@@ -64,6 +64,9 @@ _OTHER_OID = "ac1e5d0f3b729648175e2c9a0d4f6b8172635409"
 # delegated switch, and a switch that is off falls through to the aggregate.
 _UV_STUB = """#!/usr/bin/env bash
 printf 'uv %s\\n' "$*" >> "${STUB_LOG}"
+case "$*" in
+    *"green_token pre-push-reuse"*) exit 3 ;;
+esac
 exit 1
 """
 
@@ -93,6 +96,7 @@ def _run_pre_push(*, tmp_path: Path, stdin: str) -> tuple[int, str, list[str]]:
         _ = stub.write_text(body, encoding="utf-8")
         stub.chmod(0o755)
     log = tmp_path / "invocations.log"
+    _ = (tmp_path / "check-targets.txt").write_text("check-example\n", encoding="utf-8")
     env = dict(os.environ)
     env.update({"PATH": f"{stub_dir}{os.pathsep}{env['PATH']}", "STUB_LOG": str(log)})
     completed = subprocess.run(
