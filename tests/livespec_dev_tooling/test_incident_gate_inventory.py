@@ -2,8 +2,14 @@
 
 from __future__ import annotations
 
+import re
+from pathlib import Path
+
+import pytest
+
+from livespec_dev_tooling.check_inventory import inventory_members
 from livespec_dev_tooling.incident_gate_inventory import inventory_gates, timing_classes
-from livespec_dev_tooling.incident_local_gates import select_gates
+from livespec_dev_tooling.incident_local_gates import GateResult, execute_plan, select_gates
 
 __all__: list[str] = []
 
@@ -41,14 +47,57 @@ check-empty # incident-timing:
 
 
 def test_only_recipe_names_become_command_arguments() -> None:
+    gates = inventory_gates(inventory="check-good # incident-timing: fast\n")
+    assert [gate.command for gate in gates] == [("just", "check-good")]
+
+
+@pytest.mark.parametrize(
+    "line", ["check-good; touch unexpected", "check-with extra-argument", "--evaluate"]
+)
+def test_a_member_that_is_not_a_bare_recipe_name_refuses_naming_it(*, line: str) -> None:
+    # livespec-dev-tooling-dixgta: a member the hook cannot hand to `just` is never
+    # skipped without a word; the hook refuses and names the member line.
+    with pytest.raises(ValueError, match=re.escape(line)):
+        _ = inventory_gates(
+            inventory=f"check-good # incident-timing: fast\n{line} # incident-timing: fast\n"
+        )
+
+
+def test_a_member_without_the_check_prefix_is_run_or_deferred_by_its_timing() -> None:
+    # livespec-dev-tooling-dixgta: livespec's `check:` array lists
+    # `e2e-test-claude-code-mock`; the hook reads every member, whatever its prefix.
     gates = inventory_gates(
-        inventory="""check-good # incident-timing: fast
-check-good; touch unexpected # incident-timing: fast
-check-with extra-argument # incident-timing: fast
---evaluate # incident-timing: fast
+        inventory="""check-lint # incident-timing: fast
+e2e-test-claude-code-mock  # incident-timing: slow
+smoke-mock # incident-timing: fast
 """
     )
-    assert [gate.command for gate in gates] == [("just", "check-good")]
+    assert [gate.command for gate in gates] == [
+        ("just", "check-lint"),
+        ("just", "e2e-test-claude-code-mock"),
+        ("just", "smoke-mock"),
+    ]
+    assert [selection.selected for selection in select_gates(gates=gates)] == [True, False, True]
+
+
+def test_the_deferral_of_a_slow_member_without_the_prefix_is_its_receipt_line(
+    *, tmp_path: Path
+) -> None:
+    gates = inventory_gates(inventory="e2e-test-claude-code-mock  # incident-timing: slow\n")
+    report = execute_plan(plan=select_gates(gates=gates), cwd=tmp_path)
+    assert report.results == (
+        GateResult(name="e2e-test-claude-code-mock", status="deferred", reason="known slow gate"),
+    )
+    assert report.exit_status == 0
+
+
+def test_this_repositorys_own_inventory_reads_the_same_gates() -> None:
+    # Every member of this repository's own inventory carries the `check-` prefix,
+    # so reading every member leaves its gates, order and classes unchanged.
+    text = (Path(__file__).resolve().parents[2] / "check-targets.txt").read_text()
+    names = [member.name for member in inventory_members(text=text)]
+    assert [gate.name for gate in inventory_gates(inventory=text)] == names
+    assert list(timing_classes(inventory=text)) == names
 
 
 def test_timing_classes_are_the_one_reading_both_expedited_paths_use() -> None:

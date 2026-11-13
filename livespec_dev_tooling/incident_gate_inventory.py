@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 
-from livespec_dev_tooling.check_inventory import annotation_values, inventory_members
+from livespec_dev_tooling.check_inventory import annotation_values, inventory_lines
 from livespec_dev_tooling.incident_local_gates import GateSpec
 
 __all__: list[str] = ["inventory_gates", "timing_classes"]
@@ -23,11 +23,14 @@ _PRECONDITION_KEY = "incident-precondition"
 # member's `incident-precondition` annotation names that precondition.
 _CLASSES = frozenset({"fast", "slow", "not-applicable"})
 
-# The one stated difference from the aggregate's membership: a member that is
-# not a bare recipe name is never handed to `just` as an argument. The aggregate
-# itself refuses such an inventory at its justfile mirror check in
-# `scripts/just/check.sh`, so for every inventory it can run the sets are equal.
-_RECIPE = re.compile(r"check-[a-z0-9]+(?:-[a-z0-9]+)*")
+# Every member line is read, whatever its prefix (livespec-dev-tooling-dixgta): a
+# consuming repository's `check:` recipe may list a member that is not a `check-`
+# slug, such as livespec's `e2e-test-claude-code-mock`, and the hook must run or
+# defer it by its timing class, never skip it. A member that is not a bare recipe
+# name is never handed to `just` as an argument; it refuses the whole reading,
+# naming the member line, so nothing is run, deferred or receipted.
+_RECIPE = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
+_UNUSABLE = "incident-inventory-unusable-member"
 
 
 def timing_classes(*, inventory: str) -> dict[str, str]:
@@ -38,7 +41,7 @@ def timing_classes(*, inventory: str) -> dict[str, str]:
     declaration, or a member listed twice, is `unclassified`.
     """
     declared: dict[str, list[str]] = {}
-    for member in inventory_members(text=inventory):
+    for member in inventory_lines(text=inventory):
         values = annotation_values(member=member, key=_TIMING_KEY)
         declared.setdefault(member.name, []).append(values[0] if len(values) == 1 else "")
     return {
@@ -51,10 +54,19 @@ def inventory_gates(*, inventory: str) -> tuple[GateSpec, ...]:
     """Build argv from the canonical inventory, retaining explicit deferrals.
 
     These annotations are comments to the normal aggregate's existing reader.
+    A member that is not a bare recipe name raises `ValueError` naming it.
     """
+    members = inventory_lines(text=inventory)
+    unusable = [member.name for member in members if _RECIPE.fullmatch(member.name) is None]
+    if unusable:
+        message = (
+            f"{_UNUSABLE}: {unusable[0]!r} is not a bare recipe name;"
+            " nothing was run, deferred or receipted"
+        )
+        raise ValueError(message)
     preconditions = {
         member.name: " ".join(annotation_values(member=member, key=_PRECONDITION_KEY))
-        for member in inventory_members(text=inventory)
+        for member in members
     }
     return tuple(
         GateSpec(
@@ -64,5 +76,4 @@ def inventory_gates(*, inventory: str) -> tuple[GateSpec, ...]:
             precondition=preconditions[name],
         )
         for name, timing in timing_classes(inventory=inventory).items()
-        if _RECIPE.fullmatch(name) is not None
     )
