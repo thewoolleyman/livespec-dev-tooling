@@ -58,6 +58,34 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.203.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.202.0...v1.203.0) (2026-11-13)
+
+
+### Features
+
+* cover compilation cache warm lag transitions ([6e3637c](https://github.com/thewoolleyman/livespec-dev-tooling/commit/6e3637c7d0440d77a4bc0d88086492d7860d926d))
+* **fabro:** point PATH client at current carrier ([d285833](https://github.com/thewoolleyman/livespec-dev-tooling/commit/d285833df28e1fd613794682454fca56720e76ed))
+* **homelab-worker:** a committed departure drill for a container worker (livespec-dev-tooling-p4cv4l) ([c7cce5f](https://github.com/thewoolleyman/livespec-dev-tooling/commit/c7cce5fa6573c73cdb66656155e798d18950875e))
+* **incident:** an incident forge call retries an unusable answer under one rule, and the entrance's pull-request read refuses naming the read (livespec-dev-tooling-levu6j) ([8b3c067](https://github.com/thewoolleyman/livespec-dev-tooling/commit/8b3c0678786e9db46c25a4a0fddf4ed4eb14b7a3))
+* **incident:** the controller records each expedited pull-request CI run on its incident work item (livespec-dev-tooling-bqnzcm.4) ([26c9256](https://github.com/thewoolleyman/livespec-dev-tooling/commit/26c9256463fc61362b4ada472c032721b9ac7a9b))
+* **incident:** the fleet audit counts the forge-read Action's files among every surface served from ci.yml (livespec-dev-tooling-levu6j) ([f563d29](https://github.com/thewoolleyman/livespec-dev-tooling/commit/f563d297f9141b6bff2bf832f2eecdee9863c465))
+
+
+### Bug Fixes
+
+* a Fabro-pass deferral keeps the busy count, the busy streak and the lag start (livespec-dev-tooling-uyevam) ([7f16309](https://github.com/thewoolleyman/livespec-dev-tooling/commit/7f163099d7dcce5a25f9d6ef10276850c4427940))
+* **ansible:** a failed read never passes evacuate's post-condition (livespec-dev-tooling-acgcwp) ([68fd1b0](https://github.com/thewoolleyman/livespec-dev-tooling/commit/68fd1b04cb7d78b021d6e867f371a586d65617c1))
+* **ansible:** k3s-window-drain.yml gains evacuate and clear-lost, so a powered-off node no longer strands its ARC listeners (livespec-dev-tooling-acgcwp) ([0caaa99](https://github.com/thewoolleyman/livespec-dev-tooling/commit/0caaa99c947576ee7bf90c89bc0a655044db3be6))
+* **ansible:** uncordon needs the node confirmed by name, like evacuate and clear-lost (livespec-dev-tooling-acgcwp) ([5576f68](https://github.com/thewoolleyman/livespec-dev-tooling/commit/5576f68337d38d02565a5878576d5d0400958737))
+* derive warm-set lag bounds from the populate schedule and start lag on failed builds (livespec-dev-tooling-uyevam) ([57908f0](https://github.com/thewoolleyman/livespec-dev-tooling/commit/57908f01031bb54a56fc762c394f9455004e406a))
+* **flake-retry:** bind an annotated repository root as a repository-path anchor (livespec-dev-tooling-ra5o2l) ([f1049c2](https://github.com/thewoolleyman/livespec-dev-tooling/commit/f1049c22f3b5be4fa2b8a9cbd695499bc65f169f))
+* **flake-retry:** resolve global and nonlocal root names through the scope chain (livespec-dev-tooling-ra5o2l) ([8026dba](https://github.com/thewoolleyman/livespec-dev-tooling/commit/8026dba3f2149fbc5dcfdfccae4a6a91bdba5799))
+* **flake-retry:** restore the flake_retry_paths module docstring (livespec-dev-tooling-ra5o2l) ([182c6d6](https://github.com/thewoolleyman/livespec-dev-tooling/commit/182c6d641fccf0906d5addaa12a05b2bb82250ed))
+* **homelab-worker:** the departure drill needs a node confirmation and reads the work again after the rejoin (livespec-dev-tooling-p4cv4l) ([6a66377](https://github.com/thewoolleyman/livespec-dev-tooling/commit/6a6637704c02634e95d8dcacf9bbe66c2c984e19))
+* **incident:** an expedited pull-request run record names identity-not-provisioned, waits a bounded time for the fence, and records pull-request runs only (livespec-dev-tooling-bqnzcm.4) ([24f60a0](https://github.com/thewoolleyman/livespec-dev-tooling/commit/24f60a0ea74c0c0b2a9f1b1242c62d4b5fe44d43))
+* **incident:** the entrance's forge call hands the retry rule the real status and headers of every answer (livespec-dev-tooling-levu6j) ([94adcf0](https://github.com/thewoolleyman/livespec-dev-tooling/commit/94adcf0f5d0efcb84a6711fda591e8c565d27fe8))
+* **otel-collector:** restart the collector when its OTLP pods endpoint changes ([4b1e163](https://github.com/thewoolleyman/livespec-dev-tooling/commit/4b1e1638d3957f3a3c4b12fba5a06a3df778aa84))
+
 ## [1.202.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.201.0...v1.202.0) (2026-11-12)
 
 
