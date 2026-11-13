@@ -193,7 +193,11 @@ def load_repository_inventory(*, repository: str) -> tuple[CiTarget, ...]:
         message = "invalid repository for a released incident CI inventory"
         raise ValueError(message)
     if repository == SELF_REPOSITORY:
-        return load_inventory()
+        targets, source = _decode(text=_PATH.read_bytes().decode())
+        if source is not None:
+            message = "this repository's released incident CI inventory carries a source"
+            raise ValueError(message)
+        return targets
     path = _DIR / f"{repository}.json"
     if not path.is_file() or path.is_symlink():
         message = (
