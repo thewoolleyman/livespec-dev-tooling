@@ -139,6 +139,28 @@ def test_clearing_one_sweep_hold_preserves_other_quarantine_entries(world: World
     assert record["sweep_quarantine"] == {"f" * 64: "another action remains quarantined"}
 
 
+def test_clearing_a_terminal_action_that_holds_a_conflict_receipt_leaves_it_cleared(
+    world: World, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The same call must not republish the receipt and recreate the sweep state it cleared."""
+
+    def terminal_with_receipt(record: dict[str, Any]) -> None:
+        record["actions"][world.intent.action_id].update(
+            status="completed",
+            receipt="rollback-conflict:overlap",
+            sweep={"attempts": 48, "next_at": 9_999_999_999.0, "terminal": "diagnosed"},
+        )
+
+    _edit(world=world, change=terminal_with_receipt)
+    publication = Mock()
+    monkeypatch.setattr(reconcile, "ConflictPublication", publication)
+    reply = _execute(world=world, clear_sweep=True)
+    action = json.loads(Path(world.record).read_text())["actions"][world.intent.action_id]
+    assert reply["receipt"] == "rollback-conflict:overlap"
+    assert "sweep" not in action
+    publication.assert_not_called()
+
+
 @pytest.mark.parametrize("registration", [None, "other-operation"])
 def test_an_action_whose_authority_is_not_its_own_refuses(world: World, registration: Any) -> None:
     def tamper(record: dict[str, Any]) -> None:

@@ -170,6 +170,10 @@ class ObserverReconcile:
         receipt = result.receipt
         if result.status == "reconciled" or not is_conflict_receipt(receipt=receipt):
             return result
+        if clear_sweep:
+            # Publishing would record an attempt and recreate the sweep state just cleared;
+            # the cleared action is left to the next sweep to publish.
+            return result
         published = ConflictPublication(
             state=settings.state,
             repository=settings.repository,
