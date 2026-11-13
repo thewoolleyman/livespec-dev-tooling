@@ -471,6 +471,7 @@ def _fuzz_workflow_running(*, steps: str, root: Path) -> None:
     [
         "      # just check\n      - run: just check-fuzz",
         "      - name: just check-lint\n        run: just check-fuzz",
+        "      - run: echo just check-lint",
         "      - run: echo 'just check-lint'",
         '      - run: echo "run just check afterwards"',
         "      - run: just check-fuzz  # not just check-lint",
@@ -497,6 +498,7 @@ def test_a_non_gate_job_naming_an_aggregate_target_outside_run_content_passes(
         "      - run: echo start && just check-lint",
         "      - run: echo start; (just check-lint)",
         "      - run: mise exec -- just check",
+        "      - run: FOO=1 mise exec -- just check-fuzz check-lint",
         '      - run: eval "just check-lint"',
         '      - run: echo "unterminated; just check-lint',
         '      - run: "just check-lint"',
