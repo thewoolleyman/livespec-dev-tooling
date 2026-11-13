@@ -109,6 +109,6 @@ Then the play MUST NOT uncordon any node
 
 And the play MUST say that the node confirmation is absent or names another node, and that nothing was changed
 
-And a cordon applied with only its confirmation naming the cordon MUST still mark the named node unschedulable
+And a cordon of a schedulable node, applied with only its confirmation naming the cordon, MUST mark that node unschedulable
 
 **Co-edit owed at revise.** This proposal adds four `## ` headings to `scenarios.md` and none to `non-functional-requirements.md`. The revise that accepts it MUST add one `tests/heading-coverage.json` entry per new scenario heading in the same commit. A spec-first `"test": "TODO"` row MUST carry a `reason` that names the tier the owed test runs at and the owning work item, and a `work_item` key naming that open item (livespec-dev-tooling-acgcwp while it is open); the revise MUST then run `just generate-heading-coverage-debt-register` and stage `tests/heading-coverage-debt.json`.
