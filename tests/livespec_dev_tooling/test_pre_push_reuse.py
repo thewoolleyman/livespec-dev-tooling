@@ -237,7 +237,7 @@ def test_no_evidence_requests_the_normal_gate_and_keeps_evidence_protocol_empty(
     )
     assert (
         pre_push_reuse.run_pre_push_command(
-            command=pre_push_reuse.PRE_PUSH_REUSE,
+            command=pre_push_reuse.PRE_PUSH_EVIDENCE,
             cwd=Path(),
             targets=["check-a"],
             log=structlog.get_logger("test"),
@@ -271,27 +271,36 @@ def test_reuse_refuses_an_empty_consumer_check_set(*, monkeypatch: pytest.Monkey
     )
 
 
-def test_pre_push_evidence_reports_a_qualifying_verdict(
+def test_pre_push_evidence_reuses_a_qualifying_verdict(
     *, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """The evidence reader retains its line-oriented protocol for other callers."""
+    """The public command owns the host-side half of an accepted verdict."""
     monkeypatch.setattr(
         pre_push_reuse,
         "accepted_lines",
         lambda **_kwargs: ("job-1", "tree-1", "check-a"),
         raising=False,
     )
+    monkeypatch.setattr(pre_push_reuse, "_host_members", lambda **_kwargs: ())
+    monkeypatch.setattr(
+        pre_push_reuse,
+        "default_gate_command_runner",
+        lambda **_kwargs: Success(GateCommandResult(returncode=0, stdout="", stderr="")),
+    )
 
     assert (
         pre_push_reuse.run_pre_push_command(
             command=pre_push_reuse.PRE_PUSH_EVIDENCE,
             cwd=Path(),
-            targets=[],
+            targets=["check-a"],
             log=structlog.get_logger("test"),
         )
         == 0
     )
-    assert capsys.readouterr().out == "job-1\ntree-1\ncheck-a\n"
+    assert capsys.readouterr().out == (
+        "pre-push reuse: accepted gate Job job-1 for tree tree-1\n"
+        "pre-push reuse: skipped 1 member(s) the verdict covered\n"
+    )
 
 
 def test_module_re_import_with_vendor_in_sys_path() -> None:
