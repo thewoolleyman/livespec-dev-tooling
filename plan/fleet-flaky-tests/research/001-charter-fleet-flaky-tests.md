@@ -16,10 +16,15 @@ by root-cause class, instead of one build per flake inside whichever plan happen
 
 Standing rules this plan works under:
 
-- `.ai/coordinator-duties.md` §2: a flaky check is a defect. Never retry it as a fix, never widen its timeout as a
-  fix. A 429 is not a flake and is simply re-run.
-- The untouched-test 3-retry plugin (Retry a failing test the run did not touch, livespec-dev-tooling-crxcy4) stays
-  with plan dev-host-test-gate-load. Retries are the safety net. A retry never closes a flake item; the root fix does.
+- `.ai/coordinator-duties.md` §2, "A flaky failure may be retried, and still gets a root fix" (maintainer ruling
+  2026-11-13 ~19:39Z, scope event on livespec-dev-tooling-6tgd2z, ported in c9b0f560): a flaky failure of a CI job,
+  a suite, a local commit or push gate, or a factory run MAY be retried, with incremental backoff, at most 3 times per
+  failure, each retry recorded on the root-fix item, and never with a hook disabled. A flaky check is still a defect:
+  a retry is never the fix, and widening its timeout is never the fix. A 429 is not a flake and is simply re-run.
+- The untouched-test 3-retry plugin (livespec-dev-tooling-crxcy4, closed under plan dev-host-test-gate-load) runs
+  first, in place. Its closure attribution is this plan's: livespec-dev-tooling-k3lpwj carries the forms that the
+  plugin now reports as "an indeterminable path in a closure module" and so withholds from retry. A retry never closes
+  a flake item; the root fix does.
 - The shared technique for every timing class: order the test by a rendezvous (a pipe, a file, a readiness signal,
   a child's exit, an injected clock) instead of a wall-clock bound. Any remaining wall-clock wait is a liveness
   guard against a hang only, never the condition that decides pass or fail.
