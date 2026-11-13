@@ -3828,6 +3828,17 @@ And consumer closure retains normal factory proof over the cumulative incident s
 And the operator can inspect attempts, skip reasons, focused evidence, CI runs, rollback and final factory proof through the incident item identity.
 ```
 
+## Scenario: incident focused verification reads its changed set through the isolated object view and disposes symlinked and submodule paths explicitly
+
+```gherkin
+Given an installation whose configured target branch is a scratch branch other than `master`, and an expedited incident repair whose head the reference clone holds alongside a replace ref and a graft that would alter the changed set if honoured
+And the head changes a `.py` under a source prefix stored as a symbolic link to an in-tree module, a second such link whose target leaves the repository, and a submodule gitlink under a source prefix
+When the controller's per-pull-request arm reads the changed set and classifies each changed path
+Then the changed set MUST equal the set read against the merge base with the configured scratch branch with replace refs, grafts and clone configuration ignored
+And the in-tree symbolic-link module MUST be disposed as the module its target names within the head's tree
+And the escaping link and the submodule gitlink MUST each be refused with a reason that names its path
+```
+
 ## Scenario: the fleet audit reads each consumer's controller and recovery authorization from the installation that serves it
 
 ```gherkin

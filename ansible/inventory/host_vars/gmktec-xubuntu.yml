@@ -301,10 +301,11 @@ fabro_server_instances:
     # On this engine the catalog, not the workflow table, decides the image.
     # The orchestrator workflow
     # (.claude-plugin/.fabro/workflows/implement-work-item/workflow.toml) pins
-    # python-agent-v1.189.0; this instance's kubernetes process_spec below runs
-    # v1.188.1, the newest release proven in-pod on the candidate. A catalog image
-    # moves canary-first (candidate, then here), never by the release fan-out;
-    # the trailing divergence is held by livespec-dev-tooling-wrlwvk.
+    # the python-agent image its release names; this instance's kubernetes
+    # process_spec below runs v1.188.1 until the candidate has proven the pinned
+    # image in-pod. A catalog image moves canary-first (candidate, then here),
+    # never by the release fan-out; livespec-dev-tooling-nfnvvb owns closing the
+    # trailing divergence (wrlwvk, which owned it before, closed 2026-11-09).
     environments:
       - id: factory-python
         # REQUEST 3 / LIMIT 6 (bd-ib-zl3qcz): a run's environment cpu replaces the
@@ -694,14 +695,18 @@ fabro_server_instances:
           SANDBOX_DRIVER_KUBERNETES_STATE_DIR: /home/cwoolley/.fabro-candidate/.local/state/sandbox-driver-kubernetes
           SANDBOX_DRIVER_KUBERNETES_CPU_REQUEST_CORES: "3"
         process_spec:
-          # The candidate runs python-agent-v1.188.1, the image the fleet instance
-          # above moved to after this instance proved it. It carries claude-agent-acp 0.91.0 (Claude Code 2.1.300;
+          # The candidate runs python-agent-v1.204.0, the image the orchestrator's
+          # launch build pins (v0.326.0, f4c05ab80e4e; digest
+          # sha256:a337831c976b19f88fce227544e513d48ff3966a75099b2b117cfe905eb6babf),
+          # proven in-pod here first (livespec-dev-tooling-nfnvvb). Its parity is
+          # read against a pod from v1.188.1, which the fleet instance above still
+          # runs and moves to only after that parity read passes.
+          # v1.188.1 carries claude-agent-acp 0.91.0 (Claude Code 2.1.300;
           # livespec-dev-tooling-wrlwvk, #3424), first proven in-pod here on v1.173.0
-          # (run 01M6MQBBRZ7A). Its environment-parity proof against the fleet's v1.136.2
-          # was taken here (run 01M6XWZJ2NF2) before the fleet instance moved off it.
-          # The next image, v1.189.0, is proven here first in the same way.
-          # ROLLBACK: python-agent-v1.173.0.
-          image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-agent-v1.188.1
+          # (run 01M6MQBBRZ7A); its parity proof against v1.136.2 was taken here
+          # (run 01M6XWZJ2NF2).
+          # ROLLBACK: python-agent-v1.188.1.
+          image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-agent-v1.204.0
           cpu_cores: 6
           memory_mb: 7629
       kubernetes-rust:

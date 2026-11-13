@@ -1,41 +1,41 @@
 # Workflow-edit exemption — one exemption binds to one reviewed change.
 #
-# The change: ONE NEW FILE, .github/workflows/reusable-incident-ci-publish.yml,
-# the incident CI publisher of livespec-dev-tooling-bqnzcm.4 (slice 2a). No
-# existing workflow line is deleted or modified. The workflow is called only by
-# `workflow_call`, and nothing calls it until slice 2b pins ci.yml to the master
-# commit that carries it, so CI runtime does not change.
+# The change: .github/workflows/ci.yml's incident-ci step gains five lines that
+# print ONLY the enablement reading the released plan recorded (one json.dumps of
+# the plan's "enablement" field, then one echo), right after the step reads the
+# plan's mode. The whole plan is never printed: it carries an environment map. No
+# existing workflow line is deleted or modified; no job, trigger, permission,
+# runner, concurrency group or required check changes; the added work is one
+# in-process JSON read, so CI runtime does not change.
 #
-# Its one job holds only `id-token: write` (top-level `permissions: {}`): that
-# permission lets the job request its own OIDC identity token, which the
-# independent controller verifies against its pinned CI identity policy. It is
-# not a workflow write scope and grants no credential beyond the job's own
-# identity. No secret is passed in.
-work_item=livespec-dev-tooling-bqnzcm.4
+# The maintainer approved this change in session on 2026-11-13 ("Yes I approve the
+# CI change"; relayed by legacy-coordinator-agent as "I approved A"), recorded on
+# the work item with the approval:workflow-edit-additive label.
+work_item=livespec-dev-tooling-ahl6vz
 change=additive
 ci_runtime=no-significant-increase
-reason=ADDITIVE tier (approval:workflow-edit-additive), under legacy-coordinator-agent's delegated authorization: adds the new reusable workflow reusable-incident-ci-publish.yml, whose single publish job holds only id-token: write and posts a PASSED incident CI aggregate to the controller's /ci/publish (spec v207, an-expedited-pull-request-s). No existing workflow line changes, and nothing calls it until slice 2b.
+reason=ADDITIVE tier (approval:workflow-edit-additive), maintainer-approved 2026-11-13: incident-ci prints only the released plan's enablement reading to its step log, so the exdkra CI-plan vantage can be read back from the run (contracts.md, expedited incident execution). Five added lines; no existing workflow line changes.
 #
 # ---- Preceding entry, kept beside this one as the coordinator directed (2026-11-13) ----
 # The guard (dev-tooling/check-no-workflow-edits.sh) parses exactly ONE live work_item= and
-# reason= line, and a declaration inherited from the base authorizes nothing, so pwabtl's
-# entry is preserved verbatim below as comments, not as a second live declaration.
+# reason= line, and a declaration inherited from the base authorizes nothing, so the
+# bqnzcm.4 slice 2a entry is preserved verbatim below as comments, not as a second live
+# declaration.
 # | # Workflow-edit exemption — one exemption binds to one reviewed change.
 # | #
-# | # The change: .github/workflows/incident-label-ci.yml routes every forge call
-# | # its one step makes through livespec-forge-read, the retrying call the
-# | # composite Action forge-read puts on the job's path. The job gains one first
-# | # step that uses the Action at release tag v1.203.0 (the workflow checks
-# | # nothing out). The hold check-run create carries an external_id naming this
-# | # job, and the two writes whose outcome can be unknown (exit 75), the hold
-# | # create and the re-run, are repeated only after the step re-reads the forge
-# | # state they change. No job, trigger, permission, runner, concurrency group or
-# | # required check changes, and the job's waits keep their bounds.
+# | # The change: ONE NEW FILE, .github/workflows/reusable-incident-ci-publish.yml,
+# | # the incident CI publisher of livespec-dev-tooling-bqnzcm.4 (slice 2a). No
+# | # existing workflow line is deleted or modified. The workflow is called only by
+# | # `workflow_call`, and nothing calls it until slice 2b pins ci.yml to the master
+# | # commit that carries it, so CI runtime does not change.
 # | #
-# | # The line diff replaces the bare `gh api` calls, so it is not mechanically
-# | # additive. The same shape on ci.yml (livespec-dev-tooling-levu6j) was ruled
-# | # coordinator tier and logically additive by legacy-coordinator-agent
-# | # (2026-11-12); the coordinator sets the label and records its ruling on the
-# | # work item.
-# | work_item=livespec-dev-tooling-pwabtl
-# | reason=Route the incident label workflow's forge calls through the released retrying livespec-forge-read, with an external_id on the hold and a re-read before any repeated write, so one unusable GitHub answer cannot strand the ci-green hold (contracts.md, expedited incident execution; proposal one-unretried-github-api-answer)
+# | # Its one job holds only `id-token: write` (top-level `permissions: {}`): that
+# | # permission lets the job request its own OIDC identity token, which the
+# | # independent controller verifies against its pinned CI identity policy. It is
+# | # not a workflow write scope and grants no credential beyond the job's own
+# | # identity. No secret is passed in.
+# | work_item=livespec-dev-tooling-bqnzcm.4
+# | change=additive
+# | ci_runtime=no-significant-increase
+# | reason=ADDITIVE tier (approval:workflow-edit-additive), under legacy-coordinator-agent's delegated authorization: adds the new reusable workflow reusable-incident-ci-publish.yml, whose single publish job holds only id-token: write and posts a PASSED incident CI aggregate to the controller's /ci/publish (spec v207, an-expedited-pull-request-s). No existing workflow line changes, and nothing calls it until slice 2b.
+# | #

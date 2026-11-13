@@ -1423,6 +1423,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: incident focused verification reads its changed set through the isolated object view and disposes symlinked and submodule paths explicitly",
+    "work_item": "livespec-dev-tooling-rgiufy",
+    "first_seen": "2026-11-13"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: livespec-dev-tooling's check aggregate fails when its cross_repo_public_api package-data file and pyproject.toml disagree",
     "work_item": "livespec-dev-tooling-vobfwi",
     "first_seen": "2026-11-12"
