@@ -24,8 +24,7 @@ __all__: list[str] = ["run_pre_push_command", "run_pre_push_reuse"]
 
 CONTINUE_WITH_OWN_GATE = 3
 PRE_PUSH_EVIDENCE = "pre-push-evidence"
-PRE_PUSH_REUSE = "pre-push-reuse"
-PRE_PUSH_COMMANDS = (PRE_PUSH_EVIDENCE, PRE_PUSH_REUSE)
+PRE_PUSH_COMMANDS = (PRE_PUSH_EVIDENCE,)
 
 
 def _write(*, text: str) -> None:
@@ -59,12 +58,11 @@ def _host_members(
 
 def run_pre_push_reuse(*, cwd: Path, targets: list[str], log: structlog.stdlib.BoundLogger) -> int:
     """Reuse evidence or tell the caller to continue with its normal gate."""
+    if not targets:
+        return 1
     evidence = accepted_lines(cwd=cwd, log=log)
     if evidence is None:
         return CONTINUE_WITH_OWN_GATE
-    if not targets:
-        log.error("pre-push reuse: no consumer check-set members were supplied")
-        return 1
     gate_job, tree_hash, *passed = evidence
     host_members = _host_members(targets=targets, cwd=cwd, log=log)
     if host_members is None:
@@ -89,9 +87,6 @@ def run_pre_push_reuse(*, cwd: Path, targets: list[str], log: structlog.stdlib.B
 def run_pre_push_command(
     *, command: str, cwd: Path, targets: list[str], log: structlog.stdlib.BoundLogger
 ) -> int:
-    """Dispatch the two command-line readers of delegated pre-commit evidence."""
-    if command == PRE_PUSH_REUSE:
-        return run_pre_push_reuse(cwd=cwd, targets=targets, log=log)
-    lines = accepted_lines(cwd=cwd, log=log)
-    _write(text="".join(f"{line}\n" for line in lines or ()))
-    return 1 if lines is None else 0
+    """Run the documented delegated pre-push evidence command."""
+    _ = command
+    return run_pre_push_reuse(cwd=cwd, targets=targets, log=log)
