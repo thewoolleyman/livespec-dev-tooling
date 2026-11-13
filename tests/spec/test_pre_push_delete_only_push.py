@@ -64,11 +64,20 @@ _OTHER_OID = "ac1e5d0f3b729648175e2c9a0d4f6b8172635409"
 # delegated switch, and a switch that is off falls through to the aggregate.
 _UV_STUB = """#!/usr/bin/env bash
 printf 'uv %s\\n' "$*" >> "${STUB_LOG}"
+case "$*" in
+    *"check_authority members"*)
+        printf '%s\\n' "${AUTHORITY_MEMBERS:-}"
+        exit "${AUTHORITY_EXIT:-0}"
+        ;;
+esac
 exit 1
 """
 
 _JUST_STUB = """#!/usr/bin/env bash
 printf 'just %s\\n' "$*" >> "${STUB_LOG}"
+if [ "$*" = "check-widget-approval" ]; then
+    exit "${AUTHORITY_MEMBER_EXIT:-0}"
+fi
 exit 0
 """
 
@@ -80,7 +89,14 @@ _PRE_PUSH_COMMAND = re.compile(
 )
 
 
-def _run_pre_push(*, tmp_path: Path, stdin: str) -> tuple[int, str, list[str]]:
+def _run_pre_push(
+    *,
+    tmp_path: Path,
+    stdin: str,
+    authority_members: str = "",
+    authority_exit: str = "0",
+    authority_member_exit: str = "0",
+) -> tuple[int, str, list[str]]:
     """Run the real `check-pre-push.sh` on one hook standard-input payload.
 
     Returns the script's exit code, its stdout, and every command it invoked,
@@ -94,7 +110,15 @@ def _run_pre_push(*, tmp_path: Path, stdin: str) -> tuple[int, str, list[str]]:
         stub.chmod(0o755)
     log = tmp_path / "invocations.log"
     env = dict(os.environ)
-    env.update({"PATH": f"{stub_dir}{os.pathsep}{env['PATH']}", "STUB_LOG": str(log)})
+    env.update(
+        {
+            "PATH": f"{stub_dir}{os.pathsep}{env['PATH']}",
+            "STUB_LOG": str(log),
+            "AUTHORITY_MEMBERS": authority_members,
+            "AUTHORITY_EXIT": authority_exit,
+            "AUTHORITY_MEMBER_EXIT": authority_member_exit,
+        }
+    )
     completed = subprocess.run(
         ["bash", str(_PRE_PUSH)],
         cwd=str(tmp_path),
@@ -172,6 +196,86 @@ def test_an_update_only_push_runs_the_full_gate(*, tmp_path: Path) -> None:
         line for line in invoked if "green_token check" in line
     ], f"the green-token probe is the first member of the unchanged path; invoked={invoked}"
     assert "just hook_gate=1 check" in invoked, f"invoked={invoked}"
+
+
+def test_seed_and_preserve_only_pushes_run_authorization_members_without_the_aggregate(
+    *, tmp_path: Path
+) -> None:
+    """A non-mergeable seed/preserve push skips tests but not authorization checks."""
+    seed = "refs/heads/needs-human/01M6WGJ6MFBXYD51SHD5V890DV"
+    preserve = "refs/heads/preserve/factory-run"
+    code, stdout, invoked = _run_pre_push(
+        tmp_path=tmp_path,
+        stdin=_update_line(ref=seed) + _update_line(ref=preserve),
+        authority_members="check-widget-approval",
+    )
+
+    assert code == 0, f"stdout={stdout!r} invoked={invoked}"
+    assert "just check-widget-approval" in invoked, f"invoked={invoked}"
+    assert not [line for line in invoked if "green_token" in line], f"invoked={invoked}"
+    assert not [line for line in invoked if "gate_remote_delegate" in line], f"invoked={invoked}"
+    assert "just hook_gate=1 check" not in invoked, f"invoked={invoked}"
+    assert seed in stdout and preserve in stdout, f"stdout={stdout!r}"
+    assert "test aggregate was not run" in stdout, f"stdout={stdout!r}"
+
+
+def test_seed_or_preserve_push_is_refused_when_an_authorization_member_fails(
+    *, tmp_path: Path
+) -> None:
+    """The aggregate is inapplicable, but an external authorization remains binding."""
+    code, stdout, invoked = _run_pre_push(
+        tmp_path=tmp_path,
+        stdin=_update_line(ref="refs/heads/needs-human/seed"),
+        authority_members="check-widget-approval",
+        authority_member_exit="7",
+    )
+
+    assert code == 7, f"stdout={stdout!r} invoked={invoked}"
+    assert "just check-widget-approval" in invoked, f"invoked={invoked}"
+    assert "just hook_gate=1 check" not in invoked, f"invoked={invoked}"
+
+
+def test_a_seed_ref_pushed_beside_an_ordinary_ref_keeps_the_full_gate(*, tmp_path: Path) -> None:
+    """A mixed push can publish a merge candidate, so it retains the ordinary path."""
+    code, stdout, invoked = _run_pre_push(
+        tmp_path=tmp_path,
+        stdin=(
+            _update_line(ref="refs/heads/needs-human/seed") + _update_line(ref="refs/heads/feature")
+        ),
+    )
+
+    assert code == 0, f"stdout={stdout!r} invoked={invoked}"
+    assert "just hook_gate=1 check" in invoked, f"invoked={invoked}"
+    assert "test aggregate was not run" not in stdout, f"stdout={stdout!r}"
+
+
+def test_a_seed_update_beside_an_ordinary_ref_deletion_runs_only_authorization_members(
+    *, tmp_path: Path
+) -> None:
+    """A deletion publishes no tree and cannot turn a seed push into an ordinary one."""
+    seed = "refs/heads/needs-human/seed"
+    code, stdout, invoked = _run_pre_push(
+        tmp_path=tmp_path,
+        stdin=_update_line(ref=seed) + _delete_line(ref="refs/heads/gone"),
+        authority_members="check-widget-approval",
+    )
+
+    assert code == 0, f"stdout={stdout!r} invoked={invoked}"
+    assert "just check-widget-approval" in invoked, f"invoked={invoked}"
+    assert "just hook_gate=1 check" not in invoked, f"invoked={invoked}"
+    assert seed in stdout and "test aggregate was not run" in stdout, f"stdout={stdout!r}"
+
+
+def test_a_seed_update_with_a_malformed_remote_oid_keeps_the_full_gate(*, tmp_path: Path) -> None:
+    """An unparseable remote oid is no evidence of a seed-only push, so it fails closed."""
+    code, stdout, invoked = _run_pre_push(
+        tmp_path=tmp_path,
+        stdin=_update_line(ref="refs/heads/needs-human/seed", remote_oid="not-an-oid"),
+    )
+
+    assert code == 0, f"stdout={stdout!r} invoked={invoked}"
+    assert "just hook_gate=1 check" in invoked, f"invoked={invoked}"
+    assert "test aggregate was not run" not in stdout, f"stdout={stdout!r}"
 
 
 def test_an_absent_standard_input_keeps_the_existing_path(*, tmp_path: Path) -> None:

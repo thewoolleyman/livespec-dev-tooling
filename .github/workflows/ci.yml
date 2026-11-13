@@ -1024,6 +1024,11 @@ jobs:
             exit 1
           fi
           mode="$(printf '%s' "$plan" | "$RELEASED_PYTHON" -I -c 'import json, sys; print(json.load(sys.stdin)["mode"])')"
+          # Print ONLY the enablement reading the released plan recorded
+          # (livespec-dev-tooling-ahl6vz), so the run log carries the CI-plan
+          # vantage. Never print the whole plan: it carries an environment map.
+          enablement="$(printf '%s' "$plan" | "$RELEASED_PYTHON" -I -c 'import json, sys; print(json.dumps(json.load(sys.stdin).get("enablement"), sort_keys=True))')"
+          echo "incident-ci: the released plan recorded enablement ${enablement}"
           # An unexpedited PR that retains a block (a factory repayment
           # follow-up, say) is NOT refused: the block is ignored, `omitted`
           # stays unwritten, and the complete normal graph is the gate, exactly
