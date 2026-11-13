@@ -221,8 +221,8 @@ def _lifecycle_script(*, template: str, hook: str) -> str:
 
 
 def _wait_for_cache_work(*, recorded: Path) -> bool:
-    """Wait briefly for detached cache work to record every tier."""
-    deadline = time.monotonic() + 2
+    """Wait for detached cache work until the hook's own timeout expires."""
+    deadline = time.monotonic() + _HOOK_TIMEOUT_S
     while time.monotonic() < deadline:
         if recorded.is_file() and len(recorded.read_text(encoding="utf-8").splitlines()) == len(
             _CACHE_TIERS
@@ -243,11 +243,31 @@ def test_wait_for_cache_work_reports_a_timeout(
     *, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """A missing record does not make a detached lifecycle test wait forever."""
-    ticks = iter((0.0, 2.1))
+    ticks = iter((0.0, 2.1, _HOOK_TIMEOUT_S + 0.1))
+    sleeps: list[float] = []
     monkeypatch.setattr(time, "monotonic", lambda: next(ticks))
-    monkeypatch.setattr(time, "sleep", lambda _: None)
+    monkeypatch.setattr(time, "sleep", sleeps.append)
 
     assert _wait_for_cache_work(recorded=tmp_path / "warm-copy.tsv") is False
+    assert sleeps == [0.01], "the wait must not expire at a shorter test-local deadline"
+
+
+def test_post_start_reports_missing_cache_work_before_reading_kill_switch(
+    *, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A missing detached cache record is a failure, not an absent switch."""
+
+    def cache_work_timed_out(*, recorded: Path) -> bool:
+        _ = recorded
+        return False
+
+    monkeypatch.setattr(
+        f"{__name__}._wait_for_cache_work",
+        cache_work_timed_out,
+    )
+
+    with pytest.raises(AssertionError, match=r"missing cache-work record: .*warm-copy\.tsv"):
+        _ = _run_post_start(root=tmp_path, env={}, seeded=False, proxy_answers=False)
 
 
 def _run_post_start(
@@ -303,7 +323,10 @@ def _run_post_start(
     state = work / "_temp" / "_ci_cache"
     recorded = state / "warm-copy.tsv"
     if wait_for_cache_work:
-        _wait_for_cache_work(recorded=recorded)
+        assert _wait_for_cache_work(recorded=recorded), (
+            "the detached postStart hook timed out before every cache tier recorded; "
+            f"missing cache-work record: {recorded}"
+        )
     switch = state / "kill_switch"
     config = cargo / "config.toml"
     rows = recorded.read_text(encoding="utf-8").splitlines() if recorded.is_file() else []
@@ -807,6 +830,7 @@ def test_a_canary_job_runs_cold_and_is_tagged(*, tmp_path: Path) -> None:
             env={"CI_CACHE_CANARY_N": "2", "HOSTNAME": _SELECTED_AT_TWO},
             seeded=False,
             proxy_answers=False,
+            span_sleep_s=_SPAN_TIMEOUT_S,
         ).kill_switch
         for attempt in range(3)
     ]
