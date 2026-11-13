@@ -19,7 +19,11 @@ from typing import Any, cast
 from wsgiref.simple_server import make_server
 
 from livespec_dev_tooling._incident_ci_identity_json import identity_json
-from livespec_dev_tooling._incident_observer_dispatch import REFUSED_STARTUP
+from livespec_dev_tooling._incident_observer_dispatch import (
+    REFUSED_CONTROL,
+    REFUSED_REQUEST,
+    REFUSED_STARTUP,
+)
 from livespec_dev_tooling._incident_observer_dispatch import RequestDispatcher as _RequestDispatcher
 from livespec_dev_tooling._incident_observer_dispatch import json_reply as _reply
 from livespec_dev_tooling._incident_observer_types import RecoveryIntent
@@ -28,6 +32,7 @@ from livespec_dev_tooling._incident_original_run_ports import installed_ports
 from livespec_dev_tooling.incident_ci_attachment import CiJobAttachment
 from livespec_dev_tooling.incident_ci_identity import CiIdentityVerifier
 from livespec_dev_tooling.incident_ci_job_collection import CiJobCollection
+from livespec_dev_tooling.incident_ci_publication import publication_reply
 from livespec_dev_tooling.incident_conflict_sweep import ConflictSweep, waking_recover
 from livespec_dev_tooling.incident_controller_installation import ControllerInstallation
 from livespec_dev_tooling.incident_observer_control import ObserverControl
@@ -50,6 +55,7 @@ __all__: list[str] = ["ControllerService", "installed_ledger"]
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-gho3w4
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-zbzls2
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-ariayn
+# EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-bqnzcm.4
 _QUERY_PATHS = frozenset(
     {"/current", "/admitted", "/provenance", "/ci/jobs/inspect", RELEASE_SCREEN_PATH}
 ) | {ORDINARY_ACTION_PATH}
@@ -102,6 +108,15 @@ class ControllerService:
         path = str(environ.get("PATH_INFO", ""))
         if path in _OIDC_ROUTES:
             return self._identity(environ=environ, start_response=start_response, path=path)
+        if path == "/ci/publish":
+            # An incident CI job's PASSED aggregate, verified as its attachment is; a
+            # retained record wakes the run sweep that writes it onto the incident item.
+            return publication_reply(
+                installation=self.installation,
+                wake=self.pr_run_retained,
+                environ=environ,
+                start_response=start_response,
+            )
         secret = (
             self.installation.query_secret
             if path in _QUERY_PATHS
@@ -120,12 +135,7 @@ class ControllerService:
                 or payload.get("repository") != self.installation.repository
             ):
                 return _reply(
-                    start_response=start_response,
-                    status="403 Forbidden",
-                    result={
-                        "status": "refused",
-                        "reason": "protected control authentication and repository required",
-                    },
+                    start_response=start_response, status="403 Forbidden", result=REFUSED_CONTROL
                 )
             result = (
                 ObserverRecovery(installation=self.installation, recover=self.recover).execute(
@@ -141,12 +151,7 @@ class ControllerService:
             )
         except (OSError, ValueError, IncidentJsonRefusalError, TypeError, KeyError):
             return _reply(
-                start_response=start_response,
-                status="403 Forbidden",
-                result={
-                    "status": "refused",
-                    "reason": "invalid control request or unavailable protected state",
-                },
+                start_response=start_response, status="403 Forbidden", result=REFUSED_REQUEST
             )
 
     def _handler(

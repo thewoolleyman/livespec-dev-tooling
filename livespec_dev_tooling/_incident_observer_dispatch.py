@@ -8,7 +8,13 @@ from dataclasses import dataclass
 from threading import Thread
 from typing import Any
 
-__all__: list[str] = ["REFUSED_STARTUP", "RequestDispatcher", "json_reply"]
+__all__: list[str] = [
+    "REFUSED_CONTROL",
+    "REFUSED_REQUEST",
+    "REFUSED_STARTUP",
+    "RequestDispatcher",
+    "json_reply",
+]
 
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-47ij37
 # What the service prints when it is not an isolated, provisioned installation.
@@ -18,6 +24,17 @@ REFUSED_STARTUP = json.dumps(
         "reason": "protected released installation and recovery capability required",
     }
 )
+
+# What a control or query route answers without its secret or for another repository.
+REFUSED_CONTROL = {
+    "status": "refused",
+    "reason": "protected control authentication and repository required",
+}
+# What a control or query route answers to an invalid request or unavailable state.
+REFUSED_REQUEST = {
+    "status": "refused",
+    "reason": "invalid control request or unavailable protected state",
+}
 
 
 @dataclass(frozen=True, kw_only=True)
