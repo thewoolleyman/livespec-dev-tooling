@@ -41,7 +41,13 @@ class RetryResult:
 def failure_from(*, longrepr: object) -> RetryFailure:
     """Preserve a compact rendering of a failed pytest report."""
     text = str(longrepr)
-    return RetryFailure(text=text[:_FAILURE_TEXT_LIMIT], cut=len(text) > _FAILURE_TEXT_LIMIT)
+    cut = len(text) > _FAILURE_TEXT_LIMIT
+    if cut:
+        failure_line = next(
+            (line for line in reversed(text.splitlines()) if "AssertionError:" in line), text
+        )
+        text = f"{failure_line}\n{text}"
+    return RetryFailure(text=text[:_FAILURE_TEXT_LIMIT], cut=cut)
 
 
 def records_json(*, results: Iterable[RetryResult]) -> str:
@@ -59,5 +65,8 @@ def summary(*, results: Iterable[RetryResult]) -> str:
 
 
 def _first_failure_line(*, failure: RetryFailure) -> str:
-    """Return a summary-safe first line for one recorded failure."""
-    return next((line for line in failure.text.splitlines() if line), "<no failure text>")
+    """Return the failure-bearing line for one recorded failure's summary."""
+    return next(
+        (line for line in failure.text.splitlines() if "AssertionError:" in line),
+        next((line for line in failure.text.splitlines() if line), "<no failure text>"),
+    )

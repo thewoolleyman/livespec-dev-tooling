@@ -61,12 +61,18 @@ def _git(*, repo: Path, args: list[str]) -> None:
 
 
 def _flaky_repository(
-    *, root: Path, touch_test: bool, release: bool = False, path_expression: str = ""
+    *,
+    root: Path,
+    touch_test: bool,
+    release: bool = False,
+    path_expression: str = "",
+    failure_text: str = "first attempt fails",
 ) -> Path:
     repo = root / "repo"
     repo.mkdir()
     _git(repo=repo, args=["init", "-q", "-b", "master", "."])
-    _ = (repo / "test_flaky.py").write_text(_FLAKY_TEST + path_expression, encoding="utf-8")
+    test_source = _FLAKY_TEST.replace("first attempt fails", failure_text) + path_expression
+    _ = (repo / "test_flaky.py").write_text(test_source, encoding="utf-8")
     _ = (repo / "conftest.py").write_text(_NO_DELAY_CONFTEST, encoding="utf-8")
     _ = (repo / ".gitignore").write_text("seen\ntmp/\n", encoding="utf-8")
     _ = (repo / "pyproject.toml").write_text(_PYPROJECT.format(version="0.1.0"), encoding="utf-8")
@@ -75,7 +81,7 @@ def _flaky_repository(
     _git(repo=repo, args=["commit", "-qm", "base"])
     _git(repo=repo, args=["update-ref", "refs/remotes/origin/master", "HEAD"])
     if touch_test:
-        _ = (repo / "test_flaky.py").write_text(_FLAKY_TEST + "# touched\n", encoding="utf-8")
+        _ = (repo / "test_flaky.py").write_text(test_source + "# touched\n", encoding="utf-8")
     elif release:
         _ = (repo / "pyproject.toml").write_text(
             _PYPROJECT.format(version="0.1.1"), encoding="utf-8"
@@ -280,6 +286,22 @@ def test_an_untouched_failing_test_is_retried_on_its_own_and_reported_as_a_flake
     assert record["outcome"] == "passed"
     assert record["failures"][0]["cut"] is False
     assert "AssertionError: first attempt fails" in record["failures"][0]["text"]
+
+
+@pytest.mark.integration
+def test_a_rerun_record_and_summary_carry_a_long_failed_attempt_text(*, tmp_path: Path) -> None:
+    """The record and terminal summary retain a retried failure's identifying text."""
+    failure_text = "retry-failure-" + "x" * 4_096
+    repo = _flaky_repository(root=tmp_path, touch_test=False, failure_text=failure_text)
+
+    completed = _run_session(repo=repo)
+
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    record = json.loads((repo / "tmp" / "flake-retries" / "retries.jsonl").read_text())
+    recorded_failure = record["failures"][0]
+    assert recorded_failure["cut"] is True
+    assert failure_text[:64] in recorded_failure["text"]
+    assert failure_text[:64] in completed.stdout
 
 
 @pytest.mark.integration
