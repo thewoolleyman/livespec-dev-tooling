@@ -464,7 +464,7 @@ def test_gate_stop_does_not_signal_a_recorded_pid_the_run_did_not_start(
     run_dir.mkdir()
     _ = (run_dir / "pid").write_text("123\n", encoding="utf-8")
     monkeypatch.setattr(gate_stop, "_args", lambda: argparse.Namespace(run_dir=run_dir))
-    monkeypatch.setattr(gate_stop, "_tree", lambda *, root: {root, root + 1})
+    monkeypatch.setattr(gate_stop, "_tree", lambda *, root: {root})
     monkeypatch.setattr(
         gate_stop, "_marked_processes", lambda *, run_dir: {456} if run_dir.is_dir() else set()
     )

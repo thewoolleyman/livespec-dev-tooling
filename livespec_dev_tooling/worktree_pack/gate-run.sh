@@ -922,12 +922,15 @@ cmd_start() {
     # setsid the whole point is lost: the gate would die with the tool
     # call exactly as it does today.
     if command -v setsid >/dev/null 2>&1; then
-        setsid "$self" __child "$dir" "$@" </dev/null >/dev/null 2>&1 &
+        LIVESPEC_GATE_RUN_DIR="$dir" setsid "$self" __child "$dir" "$@" </dev/null >/dev/null 2>&1 &
     else
-        nohup "$self" __child "$dir" "$@" </dev/null >/dev/null 2>&1 &
+        LIVESPEC_GATE_RUN_DIR="$dir" nohup "$self" __child "$dir" "$@" </dev/null >/dev/null 2>&1 &
     fi
     disown 2>/dev/null || true
 
+    # The runner carries LIVESPEC_GATE_RUN_DIR itself, so gate-stop can
+    # verify that the recorded pid still belongs to this run before it
+    # signals that pid's tree.
     # The child publishes its own pid as its first act. Waiting briefly
     # for that file means `start` never returns claiming success for a
     # gate that failed to launch.

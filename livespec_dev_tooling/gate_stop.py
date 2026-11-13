@@ -24,6 +24,7 @@ _EXTRA_ATTRIBUTED_PIDS: ContextVar[set[int] | None] = ContextVar(
 )
 _RUN_DIR: ContextVar[Path] = ContextVar("gate_stop_run_dir")
 _RESCAN_ROUNDS = 5
+_NO_RUNNER = 0
 
 
 def _args() -> argparse.Namespace:
@@ -128,24 +129,30 @@ def _settle(*, pids: set[int]) -> set[int]:
     return alive
 
 
+def _runner_tree(*, root: int) -> set[int]:
+    """Return the runner's process tree, or nothing when no verified runner is recorded."""
+    return set() if root == _NO_RUNNER else _tree(root=root)
+
+
 def _rescan(*, root: int) -> set[int]:
     """Find every live process now attributed to the run, including late forks and sessions."""
-    found = _tree(root=root)
+    found = _runner_tree(root=root)
     for pid in _marked_processes(run_dir=_RUN_DIR.get()):
         found |= _tree(root=pid)
     return found
 
 
 def _stop(*, root: int) -> set[int]:
-    pids = _tree(root=root) | (_EXTRA_ATTRIBUTED_PIDS.get() or set())
+    pids = _runner_tree(root=root) | (_EXTRA_ATTRIBUTED_PIDS.get() or set())
     seen = set(pids)
     _signal(pids=pids, signal_number=signal.SIGTERM)
     alive = _settle(pids=pids)
     late = _rescan(root=root) - seen
     seen |= late
     alive |= late
-    _signal(pids=alive, signal_number=signal.SIGKILL)
-    alive = _settle(pids=alive)
+    if alive:
+        _signal(pids=alive, signal_number=signal.SIGKILL)
+        alive = _settle(pids=alive)
     for _ in range(_RESCAN_ROUNDS):
         late = _rescan(root=root) - seen
         if not late:
@@ -186,11 +193,14 @@ def main() -> int:
     if not pid.isdigit():
         _ = sys.stdout.write(f"gate-stop: run {run_dir.name} has no live pid\n")
         return 1
-    marked = _marked_processes(run_dir=run_dir) - {int(pid)}
-    token = _EXTRA_ATTRIBUTED_PIDS.set(marked)
+    attributed = _marked_processes(run_dir=run_dir)
+    runner = int(pid) if int(pid) in attributed else _NO_RUNNER
+    if runner == _NO_RUNNER:
+        _ = sys.stdout.write(f"gate-stop: pid {pid} is not the runner of this run; not signalled\n")
+    token = _EXTRA_ATTRIBUTED_PIDS.set(attributed - {runner})
     run_token = _RUN_DIR.set(run_dir)
     try:
-        survivors = _stop(root=int(pid))
+        survivors = _stop(root=runner)
     finally:
         _RUN_DIR.reset(run_token)
         _EXTRA_ATTRIBUTED_PIDS.reset(token)
