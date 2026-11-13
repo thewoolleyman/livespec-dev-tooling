@@ -1,4 +1,4 @@
-# 005 — The org move: inventory, halt procedure, cutover outline, draft Definition of Done, maintainer calls
+# 005 — The org move: inventory, halt procedure, cutover outline, Definition of Done, maintainer calls
 
 Written 2026-11-12 ~19:5xZ by the plan seat (epic livespec-dev-tooling-xowhol), after the maintainer chose the org move
 (scope event ~19:3xZ). **This is PREPARATION ONLY.** The cutover waits for priorities 1 and 3 on the coordinator's
@@ -8,6 +8,16 @@ priorities-record (6tgd2z, ~19:4xZ) to land and for the halt to quiesce the flee
 3. bootstrap-credentials-and-onboarding (hxi-vxsmdv).
 
 The halt announcement is the coordinator's.
+
+**Rulings, 2026-11-13.** The maintainer answered all four §5 calls on 2026-11-13. The verbatim words are in epic
+comments 26 and 27, and the scope event at 14:47:39Z records them; the ledger is authoritative over this note. The
+maintainer then revised call 1 at about 20:4xZ (scope event 20:48:09Z): the organization is `livespec-ai`
+(github.com/livespec-ai), which the maintainer created and holds; it moved from Free to GitHub Team the same evening
+(scope event 20:58:10Z: one seat, 60 concurrent hosted jobs). The image namespace is `ghcr.io/livespec-ai`.
+The maintainer confirmed the name through the coordinator at about 21:3xZ and may ask for `livespec` later ("I'm
+asking if I can get livespec in the future"). A later rename to `livespec` would be its own decision; this cutover
+neither waits for it nor plans for it. Phase 1 steps 1-6 run now, before the halt, by the coordinator's direction in
+the same relay.
 
 Scope: the 10 `fleet` entries of livespec's `.livespec-fleet-manifest.jsonc`. Every adopter stays where it is (note 004).
 
@@ -99,7 +109,7 @@ The coordinator announces it. These are the contents. Order: freeze inflow, drai
   for anything recent.
 - No gate Job is on the ARC runners.
 - No release is mid-flight.
-- Every image the held PRs pin is present at `ghcr.io/<org>/<name>:<tag>` (Phase 1 step 4).
+- Every image the held PRs pin is present at `ghcr.io/livespec-ai/<name>:<tag>` (Phase 1 step 4).
 
 **Quiet check (the gate to start the cutover):** all of the above read live by one script,
 `plan/stale-base-merge-options/research/data/org-move/quiet_check.py.txt`. Run it as
@@ -111,7 +121,7 @@ The coordinator announces it. These are the contents. Order: freeze inflow, drai
 - no gate Job for the repository is unfinished in the cluster's `gates` namespace.
 
 Fleet-wide, it also checks that no unfinished gate Job matches no fleet repository, and that each `--image` is present
-under `ghcr.io/<org>`. A Job is unfinished unless it carries a `Complete` or `Failed` condition, so a suspended Job or a
+under `ghcr.io/livespec-ai`. A Job is unfinished unless it carries a `Complete` or `Failed` condition, so a suspended Job or a
 Kueue Job not yet admitted still counts.
 
 It fails closed, and the script exits 0 only when the fleet is quiet. These count as NOT quiet:
@@ -158,9 +168,9 @@ wants expedited incident response available.
    `mi-homelab-factory-bot`. Create the recovery App's org twin as well, unless step 2 recorded that 5656677 can be
    installed on the organization. Keys go into the 1Password environment.
 4. **Publish the images under the organization.** The organization exists from step 1, so publish (or mirror)
-   `livespec-fabro-sandbox` and every other fleet image at `ghcr.io/<org>/<name>`, at each tag the held PRs pin. Make
+   `livespec-fabro-sandbox` and every other fleet image at `ghcr.io/livespec-ai/<name>`, at each tag the held PRs pin. Make
    each package readable by the repositories that pull it. The quiet check (§2) reads "image present at
-   `ghcr.io/<org>`" for each one.
+   `ghcr.io/livespec-ai`" for each one.
 5. **Rehearsal on a throwaway repository** (`thewoolleyman/livespec-transfer-rehearsal`). Seed it with:
    - a reusable workflow called from a second throwaway;
    - a ruleset with an Integration bypass;
@@ -203,7 +213,7 @@ wants expedited incident response available.
    - **Anything that calls a reusable workflow or action at `<org>/livespec-dev-tooling/…@vX`.** That ref does not
      resolve until the transfer and the dev-tooling release in Phase 3.
 
-   Image pulls from `ghcr.io/<org>` are NOT on this list, because step 4 publishes the images first. A pull that is red
+   Image pulls from `ghcr.io/livespec-ai` are NOT on this list, because step 4 publishes the images first. A pull that is red
    is a defect to fix before the halt.
 
    **What proves each PR good before the halt:**
@@ -248,7 +258,11 @@ against note 003's numbers.
 **Rollback.** Before Phase 4, transferring back to the personal account is the rollback, if the rehearsal proves it
 possible. After Phase 4, disable the merge-queue requirement; nothing else depends on it.
 
-## 4. Draft Definition of Done (for the maintainer to confirm; replaces the session-derived "investigate" DoD)
+## 4. Definition of Done (approved by the maintainer 2026-11-13)
+
+The maintainer approved this section as written on 2026-11-13 (call 4 in §5; epic comment 27). It replaces the epic's
+session-derived "investigate" Definition of Done. The epic description is rewritten to match, with its carrier map,
+when the cutover children are filed (the 14:47:39Z scope event's deferral).
 
 - All 10 fleet repositories are owned by the new organization, and each `github.com/thewoolleyman/<repo>` URL redirects
   to it.
@@ -284,16 +298,28 @@ possible. After Phase 4, disable the merge-queue requirement; nothing else depen
 - Merge-queue CI runs on the runners the maintainer chose, and the self-hosted routing check passes in all 10
   repositories.
 
-## 5. Maintainer calls (needed before Phase 1)
+## 5. Maintainer calls (needed before Phase 1; all four ruled 2026-11-13)
 
-1. **The organization's name.**
-2. **Approve the outward-facing grants:**
+1. **The organization's name.** RULED: github.com/livespec-ai. The maintainer first chose
+   github.com/livespec (epic comment 26), which a third party owns, then revised the call to livespec-ai and created the
+   organization (scope event 2026-11-13T20:48:09Z). The maintainer then upgraded it to GitHub Team, one seat (scope
+   event 2026-11-13T20:58:10Z).
+2. **Approve the outward-facing grants:** RULED: approved ("pre-Approved", epic comment 26). That covers the
+   org-owned fleet App, the recovery App's org twin, and publishing under `ghcr.io/livespec-ai`.
    - a new private org-owned fleet App, plus an org twin of the recovery App 5656677. The twin is required unless
      Phase 1 step 2 records that 5656677 can be installed on the organization; a private user-owned App cannot be, and
      that is the expected answer;
-   - publishing images under `ghcr.io/<org>`.
+   - publishing images under `ghcr.io/livespec-ai`.
 3. **Where `merge_group` CI runs:** guarded self-hosted runners (the seat's pick; a security-policy change) or
    GitHub-hosted runners (a free org's 20-job concurrency cap, shared by all its repositories; latency unmeasured).
+
+   RULED: option A, guarded self-hosted runners (epic comment 27). The maintainer accepts the fork-PR secrets exposure
+   while the fleet takes no outside contributions. `merge_group` runs the FULL suite, and every path to master goes
+   through the queue, with a stated rule for expedited incident pushes (conditions (a) and (b) below). The livespec
+   propose-change to the NFR "Fork-exclusion precondition" and the change to dev-tooling's `self_hosted_routing` check
+   are each ratified before their code (§3 Phase 1 step 6).
+   The organization is on GitHub Team (scope event 20:58:10Z), so the hosted lane that the guard routes rejected PRs
+   to has 60 concurrent jobs, not the free organization's 20 weighed below.
 
    **Measured evidence, 2026-11-13: a stale-base semantic conflict reached master (incident 3hilpy).** The maintainer
    directed, through legacy-coordinator-agent on 2026-11-13, that this finding be presented WHENEVER this plan brings the
@@ -346,4 +372,5 @@ possible. After Phase 4, disable the merge-queue requirement; nothing else depen
    For this call, condition (a) means each queued batch runs the full suite. On GitHub-hosted runners, that competes for
    the free organization's 20 concurrent jobs. On the guarded self-hosted lane, it runs at today's measured capacity
    (note 003).
-4. **Confirm or edit the Definition of Done above.**
+4. **Confirm or edit the Definition of Done above.** RULED: approved as written ("I approve these definitions I done
+   of", epic comment 27).
