@@ -82,18 +82,21 @@ The coordinator announces it. These are the contents. Order: freeze inflow, drai
   for more than 24 hours. Four are `Bump pin from sibling dispatch` runs from 2026-08-19, in livespec-driver-claude,
   livespec-driver-codex and livespec-runtime. The other 27 are CI, Auto-enable merge and Master health reconcile runs
   from a 2026-11-11 20:18Z-20:52Z burst, in seven of the 10 repositories. 30 of the 31 have ZERO jobs: GitHub created the
-  run and never its jobs. Every cancel was refused. `gh run cancel` returned 409 "completed", and force-cancel returned
-  409 "not queued yet" (per-run record: comment on this epic, 2026-11-13T00:47:15Z). By legacy-coordinator-agent's ruling
-  (b), the quiet check excludes a run that is `queued` with zero jobs, never updated since creation, and created before
-  the halt announcement (`--halt-at`). It reports such a run as `ghost` with its id, and nothing is deleted. A queued
-  run that has any job still counts as active, and so does a `pending` run held by a concurrency group.
-  **Older than 24 h with a job (ruling (i), legacy-coordinator-agent, received 2026-11-13 ~01:5xZ).** livespec-runtime 32215471962
-  (`Bump pin from sibling dispatch`, 2026-08-19) has one job, queued on `ubuntu-latest`. It refuses cancel like the
-  ghosts, and it had not started in 86 days. The ghost rule therefore also covers a `queued` run that was never updated
-  after creation, was created before `--halt-at`, and is more than 24 h old, whatever its job count. Nothing is
-  deleted, and nothing is excluded by id. `--self-test` checks the boundary rows: just over 24 h (ghost), exactly 24 h
-  and just under (active), plus the zero-job, updated, after-the-halt and `pending` cases. A live run at ~01:5xZ with
-  `--halt-at` set to that minute reported exactly the 31 measured runs as ghosts.
+  run and never its jobs. Every cancel was refused: `gh run cancel` returned 409 "completed", and force-cancel returned
+  409 "not queued yet". The per-run record is the comment on this epic at 2026-11-13T00:47:15Z.
+
+  **The ghost rule** comes from legacy-coordinator-agent's rulings (b) and (i), as the coordinator clarified them in its
+  grade of livespec-dev-tooling#4427. The ruling (i) record is the comment at 2026-11-13T01:55:48Z. A run is a ghost
+  when all four of these hold:
+  - its status is `queued`, NOT `pending` or `waiting`, because a concurrency group holds those runs and they will run;
+  - `updated_at == created_at`;
+  - it was created before the halt announcement (`--halt-at`);
+  - it was created more than 24 h before the check runs.
+
+  Its job count does not matter. That covers livespec-runtime 32215471962, which has one job on `ubuntu-latest`, and
+  whose `updated_at` and `created_at` are both 2026-08-19T04:21:33Z. The quiet check reports each ghost with its id
+  and never deletes it. A run younger than 24 h counts as active whatever its job count, so the rule still fails closed
+  for anything recent.
 - No gate Job is on the ARC runners.
 - No release is mid-flight.
 - Every image the held PRs pin is present at `ghcr.io/<org>/<name>:<tag>` (Phase 1 step 4).
@@ -105,12 +108,18 @@ The coordinator announces it. These are the contents. Order: freeze inflow, drai
 - the latest `ci.yml` run on master completed with success;
 - no run is active;
 - no merged PR still carries `autorelease: pending`;
-- no gate Job is active in the cluster's `gates` namespace.
+- no gate Job for the repository is unfinished in the cluster's `gates` namespace.
 
-It also checks that each `--image` is present under `ghcr.io/<org>`. Any read it cannot take counts as NOT quiet, and
-it exits 0 only when the fleet is quiet. The seat reports its output to the coordinator. A live run (2026-11-13
-~00:3xZ, the fleet working normally) read NOT QUIET in all 10 repositories, as expected. That run is saved beside
-the script.
+Fleet-wide, it also checks that no unfinished gate Job matches no fleet repository, and that each `--image` is present
+under `ghcr.io/<org>`. A Job is unfinished unless it carries a `Complete` or `Failed` condition, so a suspended Job or a
+Kueue Job not yet admitted still counts.
+
+It fails closed. A read it cannot take, an error of any kind, or a listing that fills its page (and so may be cut off)
+counts as NOT quiet, and the script exits 0 only when the fleet is quiet. It reads the fleet list from GitHub at
+`<owner>/livespec@master`, not from a local working tree. `--self-test` checks its pure rules: the ghost boundary
+rows, gate-Job attribution and the manifest parse. The seat reports its output to the coordinator. A live run at 2026-11-13T02:42:29Z, with `--halt-at` set to that
+time and the fleet working normally, read NOT QUIET in 8 of the 10 repositories, as expected. It reported all 31
+measured runs as ghosts and found no unattributed gate Job. That run is saved beside the script.
 
 ## 3. Cutover outline
 
@@ -247,15 +256,23 @@ possible. After Phase 4, disable the merge-queue requirement; nothing else depen
   Phase 1 step 2 recorded that it can be installed on the organization) pushes one commit directly to master through
   the `master-incident-recovery-bypass` ruleset. The commit lands. In the same drill the maintainer's own token is
   refused a direct push to master by the ruleset. The drill does not wait for a real incident.
-- In the committed tree of each of the 10 fleet repositories at master, one committed grep counts 0 occurrences of
-  `github.com/thewoolleyman/<fleet-repo>` and 0 of `ghcr.io/thewoolleyman`. The grep is
-  `plan/stale-base-merge-options/research/data/org-move/old_owner_refs.py.txt`, run against each repository's
-  `origin/master` tree. It grades configuration only, so it excludes every `history/` and `archive/` tree, live `plan/`
-  research notes (counted separately as narrative links) and release-generated `CHANGELOG.md`. Baseline, 2026-11-13
-  ~00:2xZ: 698 graded occurrences in 289 files, beside 659 informational bare `thewoolleyman/<fleet-repo>` slugs
-  (`uses:` refs, marketplace `repo:` entries). Those slugs also lean on the redirect, and the maintainer may want them
-  graded too. Any non-zero count means the move still depends on GitHub's redirects, which break
-  the day someone reuses the old name.
+- In the committed tree of each of the 10 fleet repositories at master, one committed grep counts 0 references to the old
+  owner. The grep is `plan/stale-base-merge-options/research/data/org-move/old_owner_refs.py.txt` (`--old-owner`
+  defaults to `thewoolleyman`; it is never read from the manifest, whose `owner` names the organization after the
+  move). It counts four forms of reference:
+  - `github.com/thewoolleyman/<fleet-repo>`, in https, ssh and API forms;
+  - `raw.githubusercontent.com/thewoolleyman/<fleet-repo>`;
+  - `ghcr.io/thewoolleyman/`;
+  - bare `thewoolleyman/<fleet-repo>` slugs: `uses:` refs, marketplace `repo:` entries and `--repo` arguments. The slugs
+    are graded at the coordinator's direction, because they lean on the redirect just as URLs do.
+
+  It reads each repository's `origin/master` tree and fetches only with `--fetch`. It grades configuration, so it
+  excludes `SPECIFICATION/history/`, the root `archive/`, everything under `plan/`, and `CHANGELOG.md` files. Live plan
+  notes are counted separately as narrative links. Baseline, 2026-11-13 ~02:4xZ: 1,374 graded references in 541 files.
+  Of those, 480 are URLs, 6 are raw URLs, 219 are ghcr references and 669 are slugs. Any non-zero count means the move
+  still depends on GitHub's redirects, which break the day someone reuses the old name. Raw URLs to non-fleet
+  repositories, such as `thewoolleyman/otel-collector` (10 in dev-tooling), stay out of the count, because those
+  repositories do not move.
 - On every fleet host, Claude Code and Codex resolve the fleet marketplaces at the organization's names.
 - Merge-queue CI runs on the runners the maintainer chose, and the self-hosted routing check passes in all 10
   repositories.

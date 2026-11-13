@@ -1,35 +1,48 @@
 """The org move's quiet check: is the fleet drained enough to start the cutover? (note 005 §2)
 
-Run:  python3 quiet_check.py.txt [--owner thewoolleyman] [--halt-at <UTC ISO time>]
+Run:  python3 quiet_check.py.txt [--owner thewoolleyman] [--halt-at <UTC time>]
                                  [--org <org> --image <name>:<tag> ...] [--json]
+      python3 quiet_check.py.txt --self-test
 
-Every condition is read LIVE, from GitHub through `gh` and from the gate cluster through
-`with-gates-kubeconfig kubectl`. A condition this script cannot observe counts as NOT quiet: it fails
-closed, so an outage can never read as a quiet fleet. The fleet is the `fleet` list in livespec's
-`.livespec-fleet-manifest.jsonc`, read from `--clones`. The conditions, per repository:
+Every condition is read LIVE: from GitHub through `gh`, and from the gate cluster through
+`with-gates-kubeconfig kubectl`. A condition this script cannot observe counts as NOT quiet. The
+script fails closed: an outage, an error, or a listing that may be truncated can never read as a
+quiet fleet. The fleet is the `fleet` list in livespec's `.livespec-fleet-manifest.jsonc`, read from
+GitHub at `<owner>/livespec@master` rather than from any local working tree.
+
+The conditions, per repository:
 
   open-prs       every open PR carries `do-not-merge` and has auto-merge OFF
                  (`disarm-on-hold-label.yml` turns auto-merge off when the label is added)
   master-ci      the latest `ci.yml` run on master has completed, and its conclusion is success
-  runs           no workflow run of any kind is `in_progress`, `queued`, `waiting` or `pending`,
-                 except GHOSTS (see `is_ghost`). A ghost is a run whose status is `queued` (not `pending`
-                 or `waiting`, which a concurrency group legitimately holds), that was never updated after it
-                 was created (updated_at == created_at), that was created before `--halt-at` (the halt
-                 announcement), and that EITHER has zero jobs OR is more than 24 h old at check time, with any
-                 number of jobs. GitHub leaves such runs `queued` forever and refuses to cancel them. 31 were
-                 measured on 2026-11-13: 30 with zero jobs, and livespec-runtime 32215471962, which has one job
-                 and had not started in 86 days (comment on livespec-dev-tooling-xowhol, 00:47:15Z).
-                 legacy-coordinator-agent ruled (b) for the zero-job case and (i) for the 24 h case. Ghosts
-                 are reported as `ghost` with their ids and never deleted. Without `--halt-at`, nothing is
-                 excluded, so the check still fails closed. `--self-test` checks the rule's boundary rows.
+  runs           no workflow run of any kind is `in_progress`, `queued`, `waiting`, `pending` or
+                 `requested`, except GHOSTS (see `is_ghost`)
   release        no merged PR still carries `autorelease: pending` (Release Please has not tagged it)
-  gate-jobs      no active gate Job for the repository in the cluster's `gates` namespace
 
-and, once per invocation, for each `--image`:
+and, for the whole fleet:
 
-  image          `ghcr.io/<org>/<name>` has a version tagged `<tag>` (note 005 §3 Phase 1 step 4)
+  gate-jobs      no gate Job in the cluster's `gates` namespace is unfinished. A Job counts as unfinished
+                 unless it carries a `Complete` or `Failed` condition, so suspended Jobs and Kueue Jobs
+                 not yet admitted count too. An unfinished Job whose name matches no fleet repository is
+                 reported as `unattributed` and is NOT quiet.
+  image          for each `--image`, `ghcr.io/<org>/<name>` has a version tagged `<tag>`
+                 (note 005 §3 Phase 1 step 4)
 
-Exit status: 0 when quiet, 1 when anything is not quiet or cannot be observed.
+GHOSTS (legacy-coordinator-agent's rulings (b) and (i), and the coordinator's clarification in its grade
+of livespec-dev-tooling#4427). A ghost is a run that meets all four of these:
+  - its status is `queued`, not `pending` or `waiting`, because a concurrency group holds those runs and
+    they WILL run;
+  - it was never updated after it was created (updated_at == created_at);
+  - it was created before `--halt-at`, the halt announcement;
+  - it was created more than 24 h before the check runs.
+Its job count does not matter. GitHub leaves such runs `queued` for good and refuses to cancel them. 31
+were measured on 2026-11-13: 30 with zero jobs, and livespec-runtime 32215471962 with one, unstarted since
+2026-08-19 (comments on livespec-dev-tooling-xowhol at 00:47:15Z and 01:55:48Z). A ghost is reported as
+`ghost` with its id, and it is never deleted. Without `--halt-at`, no run is a ghost. `--self-test` checks
+the rule's boundary rows.
+
+Exit status: 0 when quiet; 1 when anything is not quiet or cannot be observed, or when a self-test row
+fails.
 """
 
 from __future__ import annotations
@@ -41,13 +54,30 @@ import re
 import subprocess
 import sys
 from collections.abc import Callable
-from pathlib import Path
 
 ACTIVE_RUN_STATES = ("in_progress", "queued", "waiting", "pending", "requested")
+GHOST_MIN_AGE = datetime.timedelta(hours=24)
+RUN_PAGE = 1000
+PR_PAGE = 1000
+STAMP = re.compile(r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ")
 
 
 class Unobservable(Exception):
     pass
+
+
+def utc(stamp: str) -> datetime.datetime:
+    if not isinstance(stamp, str) or not STAMP.fullmatch(stamp):
+        raise Unobservable(f"not a UTC timestamp: {stamp!r}")
+    return datetime.datetime.fromisoformat(stamp.replace("Z", "+00:00"))
+
+
+def is_ghost(state: str, run: dict, halt_at: datetime.datetime | None, now: datetime.datetime) -> bool:
+    """Pure. `run` carries `createdAt` and `updatedAt` as UTC stamps."""
+    if halt_at is None or state != "queued":
+        return False
+    created, updated = utc(run["createdAt"]), utc(run["updatedAt"])
+    return updated == created and created < halt_at and now - created > GHOST_MIN_AGE
 
 
 def run_json(argv: list[str]) -> object:
@@ -55,84 +85,58 @@ def run_json(argv: list[str]) -> object:
     if proc.returncode != 0:
         raise Unobservable(f"{' '.join(argv[:4])}...: {(proc.stderr or proc.stdout).strip()[:200]}")
     try:
-        return json.loads(proc.stdout or "null")
+        value = json.loads(proc.stdout)
     except json.JSONDecodeError as err:
         raise Unobservable(f"{' '.join(argv[:4])}...: unparseable output ({err})") from err
+    if value is None:
+        raise Unobservable(f"{' '.join(argv[:4])}...: returned null")
+    return value
 
 
-def fleet(clones: Path) -> list[str]:
-    text = re.sub(r"^\s*//.*$", "", (clones / "livespec" / ".livespec-fleet-manifest.jsonc").read_text(), flags=re.M)
-    return [entry["repo"] for entry in json.loads(text)["fleet"]]
+def full_list(argv: list[str], page: int) -> list:
+    """A listing that came back with `page` rows may have been cut off, so it is unobservable."""
+    rows = run_json([*argv, "--limit", str(page)])
+    if not isinstance(rows, list):
+        raise Unobservable(f"{' '.join(argv[:4])}...: expected a list")
+    if len(rows) >= page:
+        raise Unobservable(f"{' '.join(argv[:4])}...: {len(rows)} rows hit the {page}-row limit")
+    return rows
 
 
-GHOST_MIN_AGE_SECONDS = 24 * 3600
+def fleet(owner: str) -> list[str]:
+    argv = ["gh", "api", f"/repos/{owner}/livespec/contents/.livespec-fleet-manifest.jsonc?ref=master",
+            "-H", "Accept: application/vnd.github.raw+json"]
+    proc = subprocess.run(argv, capture_output=True, text=True, check=False)
+    if proc.returncode != 0:
+        raise Unobservable(f"fleet manifest: {(proc.stderr or proc.stdout).strip()[:200]}")
+    repos = fleet_from_text(proc.stdout)
+    if not repos:
+        raise Unobservable("fleet manifest has no fleet entries")
+    return repos
 
 
-def _utc(stamp: str) -> datetime.datetime:
-    return datetime.datetime.fromisoformat(stamp.replace("Z", "+00:00"))
+def fleet_from_text(text: str) -> list[str]:
+    return [entry["repo"] for entry in json.loads(re.sub(r"^\s*//.*$", "", text, flags=re.M))["fleet"]]
 
 
-def is_ghost(*, status: str, created_at: str, updated_at: str, halt_at: str | None, now: datetime.datetime,
-             jobs: Callable[[], int]) -> bool:
-    """Ruling (b) plus ruling (i). `jobs` is called only when the 24 h rule alone does not decide."""
-    if not halt_at or status != "queued" or updated_at != created_at or _utc(created_at) >= _utc(halt_at):
-        return False
-    if (now - _utc(created_at)).total_seconds() > GHOST_MIN_AGE_SECONDS:
-        return True
-    return jobs() == 0
-
-
-SELF_TEST_ROWS = (
-    # (description, status, age_seconds, updated_equals_created, created_before_halt, job_count, expected)
-    ("24 h boundary, just over, with a job: ghost by (i)", "queued", 24 * 3600 + 1, True, True, 1, True),
-    ("24 h boundary, exactly 24 h, with a job: active", "queued", 24 * 3600, True, True, 1, False),
-    ("24 h boundary, just under, with a job: active", "queued", 24 * 3600 - 1, True, True, 1, False),
-    ("young, zero jobs: ghost by (b)", "queued", 60, True, True, 0, True),
-    ("old, but updated since created: active", "queued", 90 * 86400, False, True, 0, False),
-    ("old, zero jobs, created after the halt: active", "queued", 90 * 86400, True, False, 0, False),
-    ("pending, zero jobs (a concurrency group): active", "pending", 90 * 86400, True, True, 0, False),
-)
-
-
-def self_test() -> int:
-    halt = datetime.datetime(2026, 11, 20, 10, 0, 0, tzinfo=datetime.timezone.utc)
-    now = halt + datetime.timedelta(seconds=1)  # every row but the "after the halt" one is created before it
-    failures = 0
-    for desc, status, age, same, before, jobs, expected in SELF_TEST_ROWS:
-        created = now - datetime.timedelta(seconds=age)
-        if not before:
-            created = halt + datetime.timedelta(seconds=1)
-        stamp = created.strftime("%Y-%m-%dT%H:%M:%SZ")
-        updated = stamp if same else (created + datetime.timedelta(seconds=5)).strftime("%Y-%m-%dT%H:%M:%SZ")
-        got = is_ghost(status=status, created_at=stamp, updated_at=updated,
-                       halt_at=halt.strftime("%Y-%m-%dT%H:%M:%SZ"), now=now, jobs=lambda j=jobs: j)
-        ok = got == expected
-        failures += not ok
-        print(f"{'PASS' if ok else 'FAIL'}  {desc}: expected {expected}, got {got}")
-    return 1 if failures else 0
-
-
-def job_count(slug: str, run_id: int) -> int:
-    data = run_json(["gh", "api", f"/repos/{slug}/actions/runs/{run_id}/jobs?per_page=1"])
-    return int(data["total_count"])
-
-
-def check_repo(slug: str, halt_at: str | None, now: datetime.datetime) -> dict[str, str]:
+def check_repo(slug: str, halt_at: datetime.datetime | None, now: datetime.datetime) -> dict[str, str]:
     out: dict[str, str] = {}
 
-    def guard(name: str, fn) -> None:
+    def guard(name: str, fn: Callable[[], str]) -> None:
         try:
             out[name] = fn()
-        except Unobservable as err:
-            out[name] = f"UNOBSERVABLE {err}"
+        except Exception as err:  # noqa: BLE001 -- every failure to observe is NOT quiet, never a crash
+            out[name] = f"UNOBSERVABLE {type(err).__name__}: {err}"
 
     def open_prs() -> str:
-        prs = run_json(["gh", "pr", "list", "-R", slug, "--state", "open", "--limit", "200",
-                        "--json", "number,labels,autoMergeRequest"])
-        bad = [f"#{p['number']}" + ("" if any(l["name"] == "do-not-merge" for l in p["labels"]) else "(unlabelled)")
-               + ("(auto-merge on)" if p["autoMergeRequest"] else "")
-               for p in prs
-               if p["autoMergeRequest"] or not any(l["name"] == "do-not-merge" for l in p["labels"])]
+        prs = full_list(["gh", "pr", "list", "-R", slug, "--state", "open", "--json", "number,labels,autoMergeRequest"],
+                        PR_PAGE)
+        bad = []
+        for p in prs:
+            held = any(label["name"] == "do-not-merge" for label in p["labels"])
+            if p["autoMergeRequest"] or not held:
+                bad.append(f"#{p['number']}" + ("" if held else "(unlabelled)")
+                           + ("(auto-merge on)" if p["autoMergeRequest"] else ""))
         return "ok" if not bad else "NOT QUIET " + " ".join(bad)
 
     def master_ci() -> str:
@@ -148,22 +152,17 @@ def check_repo(slug: str, halt_at: str | None, now: datetime.datetime) -> dict[s
     def runs() -> str:
         active, ghosts = [], []
         for state in ACTIVE_RUN_STATES:
-            rows = run_json(["gh", "run", "list", "-R", slug, "--status", state, "--limit", "100",
-                             "--json", "databaseId,workflowName,createdAt,updatedAt"])
+            rows = full_list(["gh", "run", "list", "-R", slug, "--status", state,
+                              "--json", "databaseId,workflowName,createdAt,updatedAt"], RUN_PAGE)
             for r in rows:
                 label = f"{r['databaseId']}:{r['workflowName']}:{state}"
-                # ISO-8601 UTC strings in the same Z form compare correctly as text.
-                if is_ghost(status=state, created_at=r["createdAt"], updated_at=r["updatedAt"], halt_at=halt_at,
-                            now=now, jobs=lambda run_id=r["databaseId"]: job_count(slug, run_id)):
-                    ghosts.append(label)
-                else:
-                    active.append(label)
+                (ghosts if is_ghost(state, r, halt_at, now) else active).append(label)
         ghost_note = f"; ghost {' '.join(ghosts)}" if ghosts else ""
         return ("ok" if not active else "NOT QUIET " + " ".join(active)) + ghost_note
 
     def release() -> str:
-        prs = run_json(["gh", "pr", "list", "-R", slug, "--state", "merged", "--label", "autorelease: pending",
-                        "--limit", "20", "--json", "number"])
+        prs = full_list(["gh", "pr", "list", "-R", slug, "--state", "merged", "--label", "autorelease: pending",
+                         "--json", "number"], PR_PAGE)
         return "ok" if not prs else "NOT QUIET release pending on " + " ".join(f"#{p['number']}" for p in prs)
 
     guard("open-prs", open_prs)
@@ -173,21 +172,33 @@ def check_repo(slug: str, halt_at: str | None, now: datetime.datetime) -> dict[s
     return out
 
 
-def gate_jobs(repos: list[str]) -> dict[str, str]:
-    try:
-        data = run_json(["with-gates-kubeconfig", "kubectl", "get", "jobs", "-n", "gates", "-o", "json"])
-    except Unobservable as err:
-        return {repo: f"UNOBSERVABLE {err}" for repo in repos}
-    active: dict[str, list[str]] = {repo: [] for repo in repos}
-    for job in data["items"]:
-        if (job.get("status", {}).get("active") or 0) <= 0:
+def job_finished(job: dict) -> bool:
+    conditions = job.get("status", {}).get("conditions") or []
+    return any(c.get("type") in ("Complete", "Failed") and c.get("status") == "True" for c in conditions)
+
+
+def attribute_jobs(items: list, repos: list[str]) -> tuple[dict[str, list[str]], list[str]]:
+    """Pure. Map each unfinished gate Job to its fleet repository, or to the unattributed list."""
+    per_repo: dict[str, list[str]] = {repo: [] for repo in repos}
+    unattributed: list[str] = []
+    for job in items:
+        if job_finished(job):
             continue
         name = job["metadata"]["name"]
-        # Job names are gate-<repo>-<suffix>; take the longest fleet name that matches.
         match = max((r for r in repos if name.startswith(f"gate-{r}-")), key=len, default=None)
-        if match:
-            active[match].append(name)
-    return {repo: "ok" if not names else "NOT QUIET " + " ".join(names) for repo, names in active.items()}
+        (per_repo[match] if match else unattributed).append(name)
+    return per_repo, unattributed
+
+
+def gate_jobs(repos: list[str]) -> tuple[dict[str, str], str]:
+    try:
+        data = run_json(["with-gates-kubeconfig", "kubectl", "get", "jobs", "-n", "gates", "-o", "json"])
+        per_repo, unattributed = attribute_jobs(data["items"], repos)
+    except Exception as err:  # noqa: BLE001 -- unobservable is NOT quiet
+        verdict = f"UNOBSERVABLE {type(err).__name__}: {err}"
+        return {repo: verdict for repo in repos}, verdict
+    by_repo = {repo: "ok" if not names else "NOT QUIET " + " ".join(names) for repo, names in per_repo.items()}
+    return by_repo, "ok" if not unattributed else "NOT QUIET unattributed " + " ".join(unattributed)
 
 
 def image_present(org: str, image: str) -> str:
@@ -195,45 +206,107 @@ def image_present(org: str, image: str) -> str:
     if not tag:
         return f"UNOBSERVABLE {image}: no :tag given"
     try:
-        versions = run_json(["gh", "api", "--paginate", f"/orgs/{org}/packages/container/{name}/versions"])
-    except Unobservable as err:
-        return f"UNOBSERVABLE {err}"
-    tags = {t for v in versions for t in v.get("metadata", {}).get("container", {}).get("tags", [])}
+        pages = run_json(["gh", "api", "--paginate", "--slurp", f"/orgs/{org}/packages/container/{name}/versions"])
+        tags = {t for page in pages for v in page for t in v.get("metadata", {}).get("container", {}).get("tags", [])}
+    except Exception as err:  # noqa: BLE001 -- unobservable is NOT quiet
+        return f"UNOBSERVABLE {type(err).__name__}: {err}"
     return "ok" if tag in tags else f"NOT QUIET ghcr.io/{org}/{name}:{tag} absent"
+
+
+SELF_TEST_GHOST = (
+    # (description, state, seconds before now, updated == created, created before halt, expected)
+    ("24 h + 1 s old, unstarted, queued: ghost", "queued", 86401, True, True, True),
+    ("exactly 24 h old: not a ghost", "queued", 86400, True, True, False),
+    ("24 h - 1 s old: not a ghost", "queued", 86399, True, True, False),
+    ("86 days old, unstarted (livespec-runtime 32215471962's shape): ghost", "queued", 86 * 86400, True, True, True),
+    ("pending held by a concurrency group, 86 days old: not a ghost", "pending", 86 * 86400, True, True, False),
+    ("waiting, 86 days old: not a ghost", "waiting", 86 * 86400, True, True, False),
+    ("updated since created, 86 days old: not a ghost", "queued", 86 * 86400, False, True, False),
+    ("created after the halt: not a ghost", "queued", 86 * 86400, True, False, False),
+)
+
+
+def self_test() -> int:
+    failures = 0
+
+    def check(desc: str, got: object, expected: object) -> None:
+        nonlocal failures
+        ok = got == expected
+        failures += not ok
+        print(f"{'PASS' if ok else 'FAIL'}  {desc}: expected {expected}, got {got}")
+
+    fmt = "%Y-%m-%dT%H:%M:%SZ"
+    now = datetime.datetime(2026, 11, 20, 10, 0, 0, tzinfo=datetime.timezone.utc)
+    for desc, state, age, same, before, expected in SELF_TEST_GHOST:
+        created = now - datetime.timedelta(seconds=age)
+        halt = created + datetime.timedelta(seconds=1) if before else created - datetime.timedelta(seconds=1)
+        updated = created if same else created + datetime.timedelta(seconds=5)
+        run = {"createdAt": created.strftime(fmt), "updatedAt": updated.strftime(fmt)}
+        check(desc, is_ghost(state, run, halt, now), expected)
+    run = {"createdAt": "2026-08-19T04:21:33Z", "updatedAt": "2026-08-19T04:21:33Z"}
+    check("no --halt-at: never a ghost", is_ghost("queued", run, None, now), False)
+
+    repos = ["livespec", "livespec-dev-tooling"]
+    done = {"type": "Complete", "status": "True"}
+    jobs = [
+        {"metadata": {"name": "gate-livespec-dev-tooling-a1"}, "status": {"active": 1}},
+        {"metadata": {"name": "gate-livespec-b2"}, "status": {"conditions": [done]}},
+        {"metadata": {"name": "gate-livespec-c3"}, "spec": {"suspend": True}, "status": {}},
+        {"metadata": {"name": "gate-elsewhere-d4"}, "status": {}},
+    ]
+    per_repo, unattributed = attribute_jobs(jobs, repos)
+    check("gate Job: longest fleet prefix wins", per_repo["livespec-dev-tooling"], ["gate-livespec-dev-tooling-a1"])
+    check("gate Job: a suspended / unadmitted Job counts, a Complete one does not", per_repo["livespec"],
+          ["gate-livespec-c3"])
+    check("gate Job: unfinished and matching no fleet repo is unattributed", unattributed, ["gate-elsewhere-d4"])
+
+    text = '{\n  // comment\n  "owner": "x",\n  "fleet": [ { "repo": "a" }, { "repo": "b" } ]\n}\n'
+    check("manifest: comments stripped, fleet read", fleet_from_text(text), ["a", "b"])
+    return 1 if failures else 0
 
 
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--owner", default="thewoolleyman")
-    parser.add_argument("--clones", default="/data/projects", type=Path)
     parser.add_argument("--org")
     parser.add_argument("--image", action="append", default=[])
-    parser.add_argument("--halt-at", help="halt announcement time, UTC, e.g. 2026-11-20T10:00:00Z")
+    parser.add_argument("--halt-at", help="halt announcement time, UTC, for example 2026-11-20T10:00:00Z")
     parser.add_argument("--json", action="store_true")
-    parser.add_argument("--self-test", action="store_true", help="check the ghost rule's boundary rows and exit")
+    parser.add_argument("--self-test", action="store_true", help="check the pure rules' rows and exit")
     args = parser.parse_args()
     if args.self_test:
         return self_test()
     if args.image and not args.org:
         parser.error("--image needs --org")
-    if args.halt_at and not re.fullmatch(r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ", args.halt_at):
+    if args.halt_at and not STAMP.fullmatch(args.halt_at):
         parser.error("--halt-at must be UTC in the form YYYY-MM-DDTHH:MM:SSZ")
-
-    repos = fleet(args.clones)
+    halt_at = utc(args.halt_at) if args.halt_at else None
     now = datetime.datetime.now(datetime.timezone.utc)
-    results = {repo: check_repo(f"{args.owner}/{repo}", args.halt_at, now) for repo in repos}
-    for repo, verdict in gate_jobs(repos).items():
+
+    try:
+        repos = fleet(args.owner)
+    except Exception as err:  # noqa: BLE001 -- without the fleet list nothing is observable
+        print(f"UNOBSERVABLE fleet manifest: {type(err).__name__}: {err}")
+        print("NOT QUIET")
+        return 1
+    results = {repo: check_repo(f"{args.owner}/{repo}", halt_at, now) for repo in repos}
+    by_repo, unattributed = gate_jobs(repos)
+    for repo, verdict in by_repo.items():
         results[repo]["gate-jobs"] = verdict
+    fleet_rows = {"gate-jobs": unattributed}
     images = {image: image_present(args.org, image) for image in args.image}
 
-    quiet = all(v.startswith("ok") for row in results.values() for v in row.values()) and all(
-        v == "ok" for v in images.values())
+    quiet = (all(v.startswith("ok") for row in results.values() for v in row.values())
+             and all(v.startswith("ok") for v in fleet_rows.values())
+             and all(v == "ok" for v in images.values()))
     if args.json:
-        print(json.dumps({"quiet": quiet, "repos": results, "images": images}, indent=2))
+        print(json.dumps({"quiet": quiet, "repos": results, "fleet": fleet_rows, "images": images}, indent=2))
     else:
         for repo, row in results.items():
             for name, verdict in row.items():
                 print(f"{repo:36} {name:10} {verdict}")
+        for name, verdict in fleet_rows.items():
+            print(f"{'(fleet)':36} {name:10} {verdict}")
         for image, verdict in images.items():
             print(f"{'image':36} {image:10} {verdict}")
         print("QUIET" if quiet else "NOT QUIET")
