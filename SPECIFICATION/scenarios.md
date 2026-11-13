@@ -4577,6 +4577,110 @@ Then the pre-commit gate MUST refuse the commit, naming the file, the line and t
 And the pre-push gate MUST refuse the push, naming the file and the line
 And a gating CI job MUST fail, naming the file and the line
 
+## Scenario: two workflow changes that each add their own exemption file merge in either order
+
+Given two changes from the same base that each edit a file under `.github/workflows/`
+And each adds its own differently named exemption file under `.livespec-workflow-edit-exemptions/`, naming a work item that carries the label its tier requires
+
+When either change is merged onto the base first and the other is then merged onto the result
+
+Then each merge MUST NOT conflict on an exemption file
+And the workflow-edit guard MUST exit 0 on each change's own branch
+
+## Scenario: a workflow change with no exemption authored in it is refused by name
+
+Given a change that edits `.github/workflows/ci.yml`
+And the change authors no exemption file in either form
+
+When the workflow-edit guard runs
+
+Then it MUST exit 1
+And its output MUST name `.github/workflows/ci.yml`
+
+## Scenario: an exemption inherited from the base does not admit a workflow change
+
+Given a base whose `.livespec-workflow-edit-exemptions/` directory and root `.livespec-workflow-edit-exemption` file each hold a well-formed exemption naming a labelled work item
+And a change from that base that edits a file under `.github/workflows/` and adds, modifies and stages no exemption file
+
+When the workflow-edit guard runs
+
+Then it MUST exit 1
+And its output MUST name each workflow path the change touches
+
+## Scenario: the legacy root exemption file authored in the change still admits during the transition
+
+Given a change that edits a file under `.github/workflows/`
+And the change modifies the root `.livespec-workflow-edit-exemption` file to a well-formed exemption naming a work item that carries the label its tier requires
+And the change authors no file under `.livespec-workflow-edit-exemptions/`
+
+When the workflow-edit guard runs
+
+Then it MUST exit 0
+
+## Scenario: changing only an exemption file's mode does not author it
+
+Given a base that holds a well-formed exemption naming a labelled work item, as the root `.livespec-workflow-edit-exemption` file or as a file under `.livespec-workflow-edit-exemptions/`
+And a change from that base that edits a file under `.github/workflows/` and changes only that exemption file's mode
+
+When the workflow-edit guard runs
+
+Then it MUST exit 1
+And its output MUST name each workflow path the change touches
+And its output MUST report that exemption as inherited from the base, not authored by this change
+
+## Scenario: renaming a base exemption file does not author it
+
+Given a base that holds a well-formed exemption naming a labelled work item, as the root `.livespec-workflow-edit-exemption` file or as a file under `.livespec-workflow-edit-exemptions/`
+And a change from that base that edits a file under `.github/workflows/` and renames that exemption file to another exemption path in either form, leaving its content identical
+
+When the workflow-edit guard runs
+
+Then it MUST exit 1
+And its output MUST name each workflow path the change touches
+And its output MUST report that exemption as inherited from the base, not authored by this change
+
+## Scenario: copying a base exemption file does not author it
+
+Given a base that holds a well-formed exemption naming a labelled work item, as the root `.livespec-workflow-edit-exemption` file or as a file under `.livespec-workflow-edit-exemptions/`
+And a change from that base that edits a file under `.github/workflows/` and adds a copy of that exemption file at another exemption path in either form, with identical content
+
+When the workflow-edit guard runs
+
+Then it MUST exit 1
+And its output MUST name each workflow path the change touches
+And its output MUST report that exemption as inherited from the base, not authored by this change
+
+## Scenario: deleting a base exemption file does not author it
+
+Given a base that holds a well-formed exemption naming a labelled work item, as the root `.livespec-workflow-edit-exemption` file or as a file under `.livespec-workflow-edit-exemptions/`
+And a change from that base that edits a file under `.github/workflows/`, deletes that exemption file and authors no other exemption
+
+When the workflow-edit guard runs
+
+Then it MUST exit 1
+And its output MUST name each workflow path the change touches
+
+## Scenario: an authored exemption is judged by its work item's label, not admitted by authorship alone
+
+Given a change that edits a file under `.github/workflows/`
+And the change authors one well-formed exemption, either as a new file under `.livespec-workflow-edit-exemptions/` or as root `.livespec-workflow-edit-exemption` content that differs from the base's content at that path
+And the exemption names a work item that carries no label admitting its tier
+
+When the workflow-edit guard runs
+
+Then it MUST exit 1
+And its output MUST name each workflow path the change touches, the work item and the label it needs
+
+## Scenario: a change that authors two exemptions cannot be evaluated
+
+Given a change that edits a file under `.github/workflows/`
+And the change authors two well-formed exemption files, in either form or both
+
+When the workflow-edit guard runs
+
+Then it MUST exit 2
+And its output MUST name each authored exemption file
+
 ## Scenario: a new runner release opens one bump across every scale set
 
 Given a newer actions/runner release than the pinned version is published
