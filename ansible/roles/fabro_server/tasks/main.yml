@@ -1774,7 +1774,9 @@
           --get --data-urlencode 'status=pending' \
           --data-urlencode 'status=runnable' \
           --data-urlencode 'status=initializing' \
+          --data-urlencode 'status=starting' \
           --data-urlencode 'status=running' \
+          --data-urlencode 'status=paused' \
           --data-urlencode 'status=blocked' \
           --data-urlencode 'status=removing' \
           --data-urlencode 'page[limit]=100' "${FABRO_SERVER_RUNS_URL}"
