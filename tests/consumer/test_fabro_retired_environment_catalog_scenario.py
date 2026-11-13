@@ -22,6 +22,7 @@ from pathlib import Path
 from typing import TypeAlias
 from urllib.parse import parse_qs, urlsplit
 
+import jinja2
 import pytest
 import yaml
 
@@ -123,6 +124,59 @@ def test_the_role_reads_all_live_runs_before_retiring_catalog_entries() -> None:
     assert "FABRO_SERVER_ENV_FILE" in delete
     assert "204" in delete and "404" in delete
     assert "changed_when" in delete
+
+
+def _live_run_settings(*, environment: str) -> dict[str, object]:
+    """GET /api/v1/runs/<id>/settings as the serving build answers it.
+
+    The handler returns the run spec's `WorkflowSettings`, whose top level is
+    the `project`, `workflow` and `run` namespaces; the selected environment is
+    `run.environment` (`RunEnvironmentSettings`, carrying its catalog `id`).
+    """
+    return {
+        "project": {"metadata": {}},
+        "workflow": {"metadata": {}},
+        "run": {
+            "metadata": {},
+            "environment": {
+                "id": environment,
+                "provider": "docker",
+                "image": {},
+                "resources": {},
+                "network": {},
+                "lifecycle": {},
+                "labels": {},
+                "env": {},
+            },
+        },
+    }
+
+
+def test_the_recorded_environment_is_the_one_the_live_settings_select() -> None:
+    """The role reads the selected environment where the settings answer carries it."""
+    tasks = yaml.safe_load(_RETIRED_RUN.read_text(encoding="utf-8"))
+    (record,) = [
+        task
+        for task in tasks
+        if task["name"] == "Record this non-terminal run's selected environment"
+    ]
+    expression = record["ansible.builtin.set_fact"]["fabro_server_retired_run_environment"][
+        "environment"
+    ]
+    # A path the answer does not carry renders empty rather than raising, so a
+    # wrong path reads as the wrong environment.
+    environment = jinja2.Environment(undefined=jinja2.ChainableUndefined, autoescape=False)
+    environment.filters["from_json"] = json.loads
+    answer = json.dumps(_live_run_settings(environment="livespec-ci-k8s"))
+    selected = environment.from_string(expression).render(
+        fabro_server_retired_run={"id": "01M79KYY1KVVZ3MFDZS5CEQ8E9"},
+        fabro_server_retired_run_settings_read={"stdout": answer},
+    )
+    assert selected == "livespec-ci-k8s", (
+        "the run settings answer carries the selected environment at "
+        "run.environment.id; a guard reading any other path aborts the converge "
+        "on the first non-terminal run"
+    )
 
 
 def _instance_block(*, unit: str) -> str:

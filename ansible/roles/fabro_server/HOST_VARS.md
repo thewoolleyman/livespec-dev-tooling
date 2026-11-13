@@ -287,7 +287,9 @@ required by the API, so there is no form of that request that skips it.
 role leaves undeclared catalog entries alone unless this list names them. For each
 listed id, it first reads every non-terminal run from that instance's own
 `/api/v1/runs` API and then reads each run's persisted settings to learn its
-selected environment. If any run selects a listed id, the converge fails naming
+selected environment. The settings answer is the run's `WorkflowSettings`, whose
+`project`, `workflow` and `run` namespaces sit at the top level, so the selected
+environment's id is `run.environment.id`. If any run selects a listed id, the converge fails naming
 both the run and the id, and sends no DELETE at all. This all-runs read happens
 before any listed id is deleted, so a later id cannot be removed while an earlier
 one is found unsafe.

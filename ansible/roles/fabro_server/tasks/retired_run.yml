@@ -23,7 +23,7 @@
   ansible.builtin.set_fact:
     fabro_server_retired_run_environment:
       id: "{{ fabro_server_retired_run.id }}"
-      environment: "{{ (fabro_server_retired_run_settings_read.stdout | from_json).environment.id }}"
+      environment: "{{ (fabro_server_retired_run_settings_read.stdout | from_json).run.environment.id }}"
   check_mode: false
 
 - name: Add this non-terminal run to the retirement safety read
