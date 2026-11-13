@@ -17,6 +17,10 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from livespec_dev_tooling.checks._red_green_replay_process_cleanup import (
+    out_of_group_descendants,
+)
+
 __all__: list[str] = [
     "CEILING_ENV",
     "DEFAULT_STALL_SECONDS",
@@ -44,7 +48,6 @@ RUN_MARK_ENV: str = "LIVESPEC_SUITE_GREEN_RUN_MARK"
 _POLL_SECONDS: float = 1.0
 _KILL_GRACE_SECONDS: int = 30
 _READ_BYTES: int = 65536
-_PROCESS_COLUMNS: int = 4
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -146,80 +149,24 @@ def _drain(*, fd: int, progress: SuiteProgress) -> None:
     progress.saw(chunk=decoder.decode(b"", final=True))
 
 
-def process_table() -> dict[int, tuple[int, int, str]]:
-    """Return PID-indexed parent, group and command records from the host process table."""
-    try:
-        listing = subprocess.run(
-            args=["ps", "-axo", "pid=,ppid=,pgid=,command="],
-            check=False,
-            capture_output=True,
-            text=True,
-        )
-    except OSError:
-        return {}
-    if listing.returncode != 0:
-        return {}
-    records: dict[int, tuple[int, int, str]] = {}
-    for line in listing.stdout.splitlines():
-        fields = line.split(maxsplit=3)
-        if len(fields) != _PROCESS_COLUMNS:
-            continue
-        pid, parent, group, command = fields
-        if pid.isdigit() and parent.isdigit() and group.isdigit():
-            records[int(pid)] = (int(parent), int(group), command)
-    return records
-
-
-def marked_pids(*, mark: str, proc_root: Path = Path("/proc")) -> frozenset[int]:
-    """Return the pids whose readable environment carries this run's mark."""
-    try:
-        entries = list(proc_root.iterdir())
-    except OSError:
-        return frozenset()
-    marked: set[int] = set()
-    for entry in entries:
-        if not entry.name.isdigit():
-            continue
-        try:
-            environment = (entry / "environ").read_bytes()
-        except OSError:
-            continue
-        if f"{RUN_MARK_ENV}={mark}".encode() in environment.split(b"\0"):
-            marked.add(int(entry.name))
-    return frozenset(marked)
-
-
-def out_of_group_descendants(*, root_pid: int, mark: str) -> tuple[tuple[int, str], ...]:
-    """Find live processes of the run that escaped the suite's original process group."""
-    children: dict[int, list[int]] = {}
-    records = process_table()
-    for pid, (parent, _, _) in records.items():
-        children.setdefault(parent, []).append(pid)
-    escapees: dict[int, str] = {}
-    frontier = [root_pid]
-    while frontier:
-        parent = frontier.pop()
-        for pid in children.get(parent, []):
-            _, group, command = records[pid]
-            if group != root_pid:
-                escapees[pid] = command
-            frontier.append(pid)
-    for pid in sorted(marked_pids(mark=mark)):
-        record = records.get(pid)
-        if record is not None and record[1] != root_pid:
-            _ = escapees.setdefault(pid, record[2])
-    return tuple(escapees.items())
-
-
 def is_alive(*, pid: int) -> bool:
-    """Return whether `pid` still accepts signals from this runner."""
+    """Return whether `pid` is a runnable process this runner still needs to end."""
     try:
         os.kill(pid, 0)
     except ProcessLookupError:
         return False
     except PermissionError:
         pass
-    return True
+    try:
+        state = (
+            (Path("/proc") / str(pid) / "stat")
+            .read_text(encoding="utf-8")
+            .rsplit(")", 1)[1]
+            .lstrip()[0]
+        )
+    except (IndexError, OSError):
+        return True
+    return state != "Z"
 
 
 def end_stalled_suite(
@@ -241,7 +188,7 @@ def end_stalled_suite(
     while (proc.poll() is None or any(is_alive(pid=pid) for pid, _ in escapees)) and (
         time.monotonic() < deadline
     ):
-        time.sleep(_POLL_SECONDS)
+        time.sleep(0.1)
     with contextlib.suppress(ProcessLookupError):
         os.killpg(proc.pid, signal.SIGKILL)
     for pid, _ in escapees:
