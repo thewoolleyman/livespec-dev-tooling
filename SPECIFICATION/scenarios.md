@@ -5061,3 +5061,35 @@ When livespec-dev-tooling's full `just check` aggregate runs
 Then the aggregate MUST exit non-zero
 
 And its output MUST name that entry
+
+## Scenario: a managed forward-only authorized_keys entry leaves every other key untouched
+
+Given an inventory host account whose authorized_keys file holds keys no role manages, and a role whose host variables declare a forward-only entry for one destination
+
+When the role is converged under --check and then applied
+
+Then the check MUST report the pending entry without writing the file, and the apply MUST add exactly that entry with the role's managed marker, restrict, port forwarding to only the declared destination, the remote-forward direction locked with `permitlisten="invalid.invalid:1"`, and a command that does nothing
+
+And every other unmarked line MUST remain byte-for-byte unchanged and in its original order, the file MUST keep mode 0600, and a reapply MUST report no change
+
+And with that entry's key, a local forward to any other destination, any remote forward, and a shell MUST each be refused
+
+## Scenario: a managed authorized_keys role retires a hand-placed key by its key blob
+
+Given an inventory host account whose authorized_keys file holds a hand-placed unmarked line for a key, with options and a comment the role does not know, and other unmarked lines for unrelated keys
+
+And a role whose host variables name that key, by key type and base64 body, as retired
+
+When the role is converged under --check and then applied
+
+Then the check MUST report the retired line as a removal without writing the file, and the apply MUST remove exactly that line
+
+And every other unmarked line MUST remain byte-for-byte unchanged and in its original order, an unmarked line whose key is not named as retired MUST be left in place, and a reapply MUST report no change
+
+## Scenario: a key both managed and retired refuses the converge
+
+Given a role whose host variables declare a managed authorized_keys entry for a key and also name the same key blob as retired
+
+When the role is converged, under --check or as an apply
+
+Then the converge MUST refuse before writing the file, with a diagnostic naming the conflicting key, and the authorized_keys file MUST be unchanged

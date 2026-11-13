@@ -3728,5 +3728,29 @@
     "test": "TODO",
     "reason": "Spec-first: a real test at the integration tier or above is owed for this scenario: the committed incident label workflow script runs under bash with the forge-read Action's command against a stub gh, and the hold create, cancel and re-run are repeated only as the scenario states. livespec-dev-tooling-levu6j owns it.",
     "work_item": "livespec-dev-tooling-levu6j"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a managed forward-only authorized_keys entry leaves every other key untouched",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) or above is owed for this scenario: converging the authorized_keys role against a fixture holding unrelated keys asserts the marked forward-only entry (restrict, exact permitopen, permitlisten=\"invalid.invalid:1\", a no-op command), --check without a write, every other unmarked line unchanged, mode 0600 and a no-op reapply; the -L, -R and shell refusals are proved on the host. A unit-tier test does not satisfy a scenario. livespec-dev-tooling-sr46h2 owns it, together with the check-ansible-authorized-keys-managed control.",
+    "work_item": "livespec-dev-tooling-sr46h2"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a managed authorized_keys role retires a hand-placed key by its key blob",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) or above is owed for this scenario: converging the role against a fixture holding a hand-placed unmarked line whose key blob a host var names as retired asserts that --check reports the removal without writing, apply removes exactly that line, every other unmarked line keeps its bytes and order, and a reapply reports no change. A unit-tier test does not satisfy a scenario. livespec-dev-tooling-sr46h2 owns it, together with the check-ansible-authorized-keys-managed control.",
+    "work_item": "livespec-dev-tooling-sr46h2"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a key both managed and retired refuses the converge",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) or above is owed for this scenario: converging the role with one key blob declared both as a managed entry and as retired asserts that both --check and apply refuse before writing, with a diagnostic naming the key, and leave the fixture unchanged. A unit-tier test does not satisfy a scenario. livespec-dev-tooling-sr46h2 owns it, together with the check-ansible-authorized-keys-managed control.",
+    "work_item": "livespec-dev-tooling-sr46h2"
   }
 ]
