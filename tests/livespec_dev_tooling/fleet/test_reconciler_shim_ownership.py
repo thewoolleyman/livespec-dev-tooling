@@ -115,8 +115,15 @@ def test_a_public_observer_url_is_dialed_by_name_and_otherwise_nothing_changes()
     ]
 
 
-def test_the_public_observer_url_is_read_by_the_reconciler_alone():
-    """The k3s incident CI job keeps the tailnet URL and connect address it reads today."""
+def test_the_public_observer_url_is_read_by_the_hosted_reusable_workflows_alone():
+    """The k3s incident CI job keeps the tailnet URL and connect address it reads today.
+
+    Only the two GitHub-hosted reusable workflows read the public URL: the reconciler
+    (/ordinary-action, ruled on livespec-dev-tooling-jpfdcx) and the incident CI
+    publisher (/ci/publish, ruled by legacy-coordinator-agent on
+    livespec-dev-tooling-bqnzcm.4, 2026-11-13). Each reaches one token-guarded path
+    on the observer's path-scoped Funnel.
+    """
     workflows = _REPO_ROOT / ".github" / "workflows"
     readers = sorted(
         path.name
@@ -125,7 +132,7 @@ def test_the_public_observer_url_is_read_by_the_reconciler_alone():
     )
     ci = (workflows / "ci.yml").read_text(encoding="utf-8")
 
-    assert readers == ["reusable-master-health-reconcile.yml"]
+    assert readers == ["reusable-incident-ci-publish.yml", "reusable-master-health-reconcile.yml"]
     assert (
         "          LIVESPEC_INCIDENT_OBSERVER_URL: ${{ vars.LIVESPEC_INCIDENT_OBSERVER_URL }}\n"
         "          LIVESPEC_INCIDENT_OBSERVER_CONNECT_ADDR: "

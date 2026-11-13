@@ -1,0 +1,112 @@
+# reusable-incident-ci-publish — the incident CI publisher (livespec-dev-tooling-bqnzcm.4).
+#
+# Publishes the PASSED released aggregate of an expedited pull request's
+# incident-ci job to the independently hosted controller's POST /ci/publish,
+# authenticated by this job's forge-issued OIDC identity token. The controller
+# verifies the publication exactly as it verifies a CI job attachment and then
+# records the run, its passed, deferred and omitted members and the aggregate
+# digest on the incident work item through its own ledger port. The runner never
+# holds a tenant credential (SPECIFICATION/contracts.md §"Expedited incident
+# execution"; docs/incident-ci-identity.md).
+#
+# WHY A SEPARATE REUSABLE WORKFLOW. The controller's CI identity policy approves
+# a publisher by the token's (job_workflow_ref, job_workflow_sha) pair. Only a
+# job that CALLS a reusable workflow gets a job_workflow_ref naming that workflow
+# file, and only a call pinned to a full commit SHA gives a pair the policy can
+# pin. ci.yml therefore calls this file at a master commit SHA, never at a branch
+# or tag and never by local path, so a pull request cannot change the publisher
+# the policy approves.
+#
+# WHERE IT RUNS. Like every reusable workflow this library ships, the job runs
+# on GitHub-hosted capacity (tests/consumer/test_ci_matrix_shape.py). A hosted
+# runner cannot reach the tailnet, so it dials the controller's PUBLIC URL,
+# `LIVESPEC_INCIDENT_OBSERVER_PUBLIC_URL`, with no connect-address override,
+# exactly as the master-health reconciler does: `/ci/publish` is a token-guarded
+# public path on the observer's path-scoped Funnel (.ai/tailnet-posture.md),
+# guarded by the forge-signed identity token the controller verifies against its
+# pinned policy before it reads or writes anything. Publishing that path is the
+# identity-provisioning slice of livespec-dev-tooling-bqnzcm.4, and ci.yml does
+# not call this workflow before it is published.
+#
+# WHY `id-token: write` AND NOTHING BROADER. The one permission is what lets the
+# job request its own OIDC identity token; it is not a workflow write scope and
+# grants no credential beyond the job's own identity, which the controller checks
+# against its pinned policy. Everything else is read without a token: the
+# released package is installed from the public repository by tag, the aggregate,
+# the arm query and the release tag arrive as inputs from incident-ci, and the
+# controller is reached at a repository variable. No `contents`, `pull-requests`, `actions` or `checks` scope is needed, so
+# none is granted, and no secret is passed in.
+#
+# OUTCOME. `published` or `retained` passes. `identity-not-provisioned` (the
+# controller's installation has no CI identity policy yet) passes too, naming the
+# code in the step summary: the run is then recorded on the incident item as an
+# unpublished record from the controller's own completion delivery, and an
+# operator can still deliver an expedited repair. Any other refusal, a conflict,
+# and an unreachable controller fail the job naming the cause.
+name: reusable-incident-ci-publish
+
+on:
+  workflow_call:
+    inputs:
+      release:
+        description: The released livespec-dev-tooling tag incident-ci ran (vX.Y.Z).
+        type: string
+        required: true
+      aggregate:
+        description: The PASSED released aggregate, as the single JSON line incident-ci printed.
+        type: string
+        required: true
+      query:
+        description: The six-field retained arm query, as the JSON line incident-ci wrote.
+        type: string
+        required: true
+
+permissions: {}
+
+jobs:
+  publish:
+    name: publish
+    timeout-minutes: 15
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+    steps:
+      # The tag comes from incident-ci, which resolved it from the forge's latest
+      # release; this job installs exactly that tag of THIS library (a consumer
+      # calls it from its own repository) into a venv outside any workspace, and
+      # the last line proves the module resolves from that venv.
+      - name: Install the released livespec-dev-tooling incident-ci ran
+        id: released
+        shell: bash
+        env:
+          RELEASE: ${{ inputs.release }}
+        run: |
+          case "$RELEASE" in
+            v[0-9]*.[0-9]*.[0-9]*) ;;
+            *) echo "::error::incident-ci-publish: release input '${RELEASE}' is not a release tag"; exit 1 ;;
+          esac
+          venv="${RUNNER_TEMP}/released-dev-tooling"
+          python3 -m venv "$venv"
+          "${venv}/bin/python" -m pip install --quiet \
+            "livespec-dev-tooling @ git+https://github.com/thewoolleyman/livespec-dev-tooling@${RELEASE}"
+          resolved="$("${venv}/bin/python" -I -c 'import livespec_dev_tooling as m; print(m.__file__)')"
+          case "$resolved" in
+            "${venv}"/*) echo "released livespec-dev-tooling ${RELEASE} resolves from ${resolved}" ;;
+            *) echo "::error::released module resolved from ${resolved}, not from ${venv}"; exit 1 ;;
+          esac
+          echo "python=${venv}/bin/python" >> "$GITHUB_OUTPUT"
+
+      # Inputs reach the process through the environment, never through the
+      # script text. The token is requested inside the process and is never
+      # printed. `-I` keeps any working-directory package off the import path.
+      - name: Publish the passed aggregate to the controller
+        shell: bash
+        env:
+          RELEASED_PYTHON: ${{ steps.released.outputs.python }}
+          INCIDENT_CI_RELEASE: ${{ inputs.release }}
+          INCIDENT_CI_AGGREGATE: ${{ inputs.aggregate }}
+          INCIDENT_CI_QUERY: ${{ inputs.query }}
+          LIVESPEC_INCIDENT_OBSERVER_URL: ${{ vars.LIVESPEC_INCIDENT_OBSERVER_PUBLIC_URL }}
+          LIVESPEC_INCIDENT_CI_AUDIENCE: ${{ vars.LIVESPEC_INCIDENT_CI_AUDIENCE }}
+        run: |
+          "$RELEASED_PYTHON" -I -m livespec_dev_tooling.incident_ci_publish publish

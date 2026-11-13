@@ -1,10 +1,17 @@
 # Workflow-edit exemption — one exemption binds to one reviewed change.
 #
-# The change: in .github/workflows/ci.yml, ONE added line in the batch check
-# list runs `just check-ci-single-container-image` beside its sibling checks, so
-# check-ci-matrix-completeness finds the new aggregate member wired into CI.
-# Nothing is deleted or modified. ADDITIVE.
-work_item=livespec-dev-tooling-kzhduc
+# The change: ONE NEW FILE, .github/workflows/reusable-incident-ci-publish.yml,
+# the incident CI publisher of livespec-dev-tooling-bqnzcm.4 (slice 2a). No
+# existing workflow line is deleted or modified. The workflow is called only by
+# `workflow_call`, and nothing calls it until slice 2b pins ci.yml to the master
+# commit that carries it, so CI runtime does not change.
+#
+# Its one job holds only `id-token: write` (top-level `permissions: {}`): that
+# permission lets the job request its own OIDC identity token, which the
+# independent controller verifies against its pinned CI identity policy. It is
+# not a workflow write scope and grants no credential beyond the job's own
+# identity. No secret is passed in.
+work_item=livespec-dev-tooling-bqnzcm.4
 change=additive
 ci_runtime=no-significant-increase
-reason=ADDITIVE tier (approval:workflow-edit-additive), under legacy-coordinator-agent's delegated authorization of 2026-11-11 (hand-land ruling for kzhduc, dpkz32 class: the factory cannot write the ci.yml line). One more check in an existing step, nothing removed; the check is a single-file regex scan (well under a second). actionlint -shellcheck= exit 0. Factory run 01M734HE0P74 preserved the check itself; plan ci-runtime-and-cost (livespec-dev-tooling-ib3oe3).
+reason=ADDITIVE tier (approval:workflow-edit-additive), under legacy-coordinator-agent's delegated authorization: adds the new reusable workflow reusable-incident-ci-publish.yml, whose single publish job holds only id-token: write and posts a PASSED incident CI aggregate to the controller's /ci/publish (spec v207, an-expedited-pull-request-s). No existing workflow line changes, and nothing calls it until slice 2b.
