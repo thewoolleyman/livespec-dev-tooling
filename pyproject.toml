@@ -62,6 +62,7 @@ dependencies = [
 [project.entry-points.pytest11]
 livespec_flake_retry = "livespec_dev_tooling.flake_retry"
 livespec_local_gate_slots = "livespec_dev_tooling.local_gate_slots"
+livespec_thread_exception_policy = "livespec_dev_tooling.thread_exception_policy"
 
 [tool.hatch.build.targets.wheel]
 packages = ["livespec_dev_tooling"]
