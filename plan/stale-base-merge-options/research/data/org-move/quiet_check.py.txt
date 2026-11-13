@@ -16,7 +16,9 @@ The conditions, per repository:
                  (`disarm-on-hold-label.yml` turns auto-merge off when the label is added)
   master-ci      the latest `ci.yml` run on master has completed, and its conclusion is success
   runs           no workflow run of any kind is `in_progress`, `queued`, `waiting`, `pending` or
-                 `requested`, except GHOSTS (see `is_ghost`)
+                 `requested`, except GHOSTS (see `is_ghost`). Read from the REST runs API with every page,
+                 and unobservable unless the rows read equal `total_count` and stay under its 1000 cap.
+                 A mismatch is re-read up to 3 times, because a live fleet races the count.
   release        no merged PR still carries `autorelease: pending` (Release Please has not tagged it)
 
 and, for the whole fleet:
@@ -24,7 +26,9 @@ and, for the whole fleet:
   gate-jobs      no gate Job in the cluster's `gates` namespace is unfinished. A Job counts as unfinished
                  unless it carries a `Complete` or `Failed` condition, so suspended Jobs and Kueue Jobs
                  not yet admitted count too. An unfinished Job whose name matches no fleet repository is
-                 reported as `unattributed` and is NOT quiet.
+                 reported as `unattributed` and is NOT quiet. The `gates` namespace's existence is proved
+                 first, by a server-side dry-run secret create the gates credential is allowed to make (it
+                 may not `get namespaces`). A missing namespace is unobservable, not an empty, quiet list.
   image          for each `--image`, `ghcr.io/<org>/<name>` has a version tagged `<tag>`
                  (note 005 §3 Phase 1 step 4)
 
@@ -53,11 +57,12 @@ import json
 import re
 import subprocess
 import sys
+import time
 from collections.abc import Callable
 
 ACTIVE_RUN_STATES = ("in_progress", "queued", "waiting", "pending", "requested")
 GHOST_MIN_AGE = datetime.timedelta(hours=24)
-RUN_PAGE = 1000
+RUN_API_CAP = 1000  # the runs API returns at most 1000 results for a filtered listing
 PR_PAGE = 1000
 STAMP = re.compile(r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ")
 
@@ -101,6 +106,34 @@ def full_list(argv: list[str], page: int) -> list:
     if len(rows) >= page:
         raise Unobservable(f"{' '.join(argv[:4])}...: {len(rows)} rows hit the {page}-row limit")
     return rows
+
+
+def runs_from_pages(pages: object) -> list[dict]:
+    """Pure. `pages` is `gh api --paginate --slurp` output of /actions/runs. Every run must be accounted for."""
+    if not isinstance(pages, list) or not pages or not all(isinstance(p, dict) for p in pages):
+        raise Unobservable("runs listing: no pages")
+    total = pages[0].get("total_count")
+    rows = [r for p in pages for r in (p.get("workflow_runs") or [])]
+    if not isinstance(total, int) or len(rows) != total:
+        raise Unobservable(f"runs listing: {len(rows)} rows read but total_count says {total}")
+    if total >= RUN_API_CAP:
+        raise Unobservable(f"runs listing: total_count {total} reaches the API's {RUN_API_CAP}-result cap")
+    return [{"databaseId": r["id"], "workflowName": r["name"], "createdAt": r["created_at"],
+             "updatedAt": r["updated_at"]} for r in rows]
+
+
+def consistent_runs(slug: str, state: str, attempts: int = 3) -> list[dict]:
+    """A live fleet can create a run between the count and the page, so a mismatch is re-read, never trusted."""
+    last: Unobservable | None = None
+    for attempt in range(attempts):
+        try:
+            return runs_from_pages(run_json(["gh", "api", "--paginate", "--slurp",
+                                             f"/repos/{slug}/actions/runs?status={state}&per_page=100"]))
+        except Unobservable as err:
+            last = err
+            if attempt + 1 < attempts:
+                time.sleep(2)
+    raise Unobservable(f"{last} (after {attempts} reads)")
 
 
 def fleet(owner: str) -> list[str]:
@@ -152,8 +185,7 @@ def check_repo(slug: str, halt_at: datetime.datetime | None, now: datetime.datet
     def runs() -> str:
         active, ghosts = [], []
         for state in ACTIVE_RUN_STATES:
-            rows = full_list(["gh", "run", "list", "-R", slug, "--status", state,
-                              "--json", "databaseId,workflowName,createdAt,updatedAt"], RUN_PAGE)
+            rows = consistent_runs(slug, state)
             for r in rows:
                 label = f"{r['databaseId']}:{r['workflowName']}:{state}"
                 (ghosts if is_ghost(state, r, halt_at, now) else active).append(label)
@@ -190,9 +222,20 @@ def attribute_jobs(items: list, repos: list[str]) -> tuple[dict[str, list[str]],
     return per_repo, unattributed
 
 
-def gate_jobs(repos: list[str]) -> tuple[dict[str, str], str]:
+NAMESPACE_PROBE = ["with-gates-kubeconfig", "kubectl", "create", "secret", "generic", "quiet-check-namespace-probe",
+                   "-n", "gates", "--dry-run=server", "-o", "json"]
+
+
+def gate_jobs(repos: list[str], read: Callable[[list[str]], object] = run_json) -> tuple[dict[str, str], str]:
     try:
-        data = run_json(["with-gates-kubeconfig", "kubectl", "get", "jobs", "-n", "gates", "-o", "json"])
+        # A missing namespace would list zero Jobs and read as quiet, so the namespace's existence is proved first.
+        # The gates credential may not `get namespaces` (only Jobs, pods and secret creation), so the proof is a
+        # SERVER-SIDE DRY-RUN create of a secret in it: the API server answers it only for an existing namespace
+        # and persists nothing.
+        probe = read(NAMESPACE_PROBE)
+        if not isinstance(probe, dict) or probe.get("metadata", {}).get("namespace") != "gates":
+            raise Unobservable("namespace gates: the dry-run probe did not answer from it")
+        data = read(["with-gates-kubeconfig", "kubectl", "get", "jobs", "-n", "gates", "-o", "json"])
         per_repo, unattributed = attribute_jobs(data["items"], repos)
     except Exception as err:  # noqa: BLE001 -- unobservable is NOT quiet
         verdict = f"UNOBSERVABLE {type(err).__name__}: {err}"
@@ -259,6 +302,42 @@ def self_test() -> int:
     check("gate Job: a suspended / unadmitted Job counts, a Complete one does not", per_repo["livespec"],
           ["gate-livespec-c3"])
     check("gate Job: unfinished and matching no fleet repo is unattributed", unattributed, ["gate-elsewhere-d4"])
+
+    page = {"total_count": 2, "workflow_runs": [
+        {"id": 1, "name": "CI", "created_at": "2026-08-19T04:21:33Z", "updated_at": "2026-08-19T04:21:33Z"}]}
+    page2 = {"total_count": 2, "workflow_runs": [
+        {"id": 2, "name": "CI", "created_at": "2026-08-19T04:21:34Z", "updated_at": "2026-08-19T04:21:34Z"}]}
+
+    def raises(fn: Callable[[], object]) -> bool:
+        try:
+            fn()
+        except Unobservable:
+            return True
+        return False
+
+    check("runs pages: rows summing to total_count are read", [r["databaseId"] for r in runs_from_pages([page, page2])],
+          [1, 2])
+    check("runs pages: rows short of total_count are unobservable", raises(lambda: runs_from_pages([page])), True)
+    check("runs pages: total_count at the 1000 cap is unobservable",
+          raises(lambda: runs_from_pages([{"total_count": 1000, "workflow_runs": []}])), True)
+    check("runs pages: an empty listing reads as no runs",
+          runs_from_pages([{"total_count": 0, "workflow_runs": []}]), [])
+
+    def no_namespace(argv: list[str]) -> object:
+        if argv == NAMESPACE_PROBE:
+            raise Unobservable('namespaces "gates" not found')
+        return {"items": []}
+
+    by_repo, unattributed_verdict = gate_jobs(repos, read=no_namespace)
+    check("gate Jobs: a missing gates namespace is unobservable, not quiet",
+          all(v.startswith("UNOBSERVABLE") for v in [*by_repo.values(), unattributed_verdict]), True)
+
+    def empty_namespace(argv: list[str]) -> object:
+        return {"metadata": {"namespace": "gates"}} if argv == NAMESPACE_PROBE else {"items": []}
+
+    by_repo, unattributed_verdict = gate_jobs(repos, read=empty_namespace)
+    check("gate Jobs: an existing, empty gates namespace is quiet",
+          all(v == "ok" for v in [*by_repo.values(), unattributed_verdict]), True)
 
     text = '{\n  // comment\n  "owner": "x",\n  "fleet": [ { "repo": "a" }, { "repo": "b" } ]\n}\n'
     check("manifest: comments stripped, fleet read", fleet_from_text(text), ["a", "b"])

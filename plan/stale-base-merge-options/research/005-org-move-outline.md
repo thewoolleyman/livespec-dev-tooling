@@ -114,8 +114,15 @@ Fleet-wide, it also checks that no unfinished gate Job matches no fleet reposito
 under `ghcr.io/<org>`. A Job is unfinished unless it carries a `Complete` or `Failed` condition, so a suspended Job or a
 Kueue Job not yet admitted still counts.
 
-It fails closed. A read it cannot take, an error of any kind, or a listing that fills its page (and so may be cut off)
-counts as NOT quiet, and the script exits 0 only when the fleet is quiet. It reads the fleet list from GitHub at
+It fails closed, and the script exits 0 only when the fleet is quiet. These count as NOT quiet:
+- a read it cannot take;
+- an error of any kind;
+- a runs listing whose rows still disagree with GitHub's `total_count` after three reads, or that reaches the API's
+  1,000-result cap;
+- a PR listing that fills its page.
+
+A missing `gates` namespace is caught by a server-side dry-run secret create, because the gates credential may not
+read namespaces. It reads the fleet list from GitHub at
 `<owner>/livespec@master`, not from a local working tree. `--self-test` checks its pure rules: the ghost boundary
 rows, gate-Job attribution and the manifest parse. The seat reports its output to the coordinator. A live run at 2026-11-13T02:42:29Z, with `--halt-at` set to that
 time and the fleet working normally, read NOT QUIET in 8 of the 10 repositories, as expected. It reported all 31
