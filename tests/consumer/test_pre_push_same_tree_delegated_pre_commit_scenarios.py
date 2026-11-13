@@ -95,13 +95,13 @@ case "$*" in
         ;;
     *"green_token undeclared"*)        exit 0 ;;
     *"green_token check")              exit "${GREEN_TOKEN_EXIT:-1}" ;;
-    *"green_token pre-push-evidence")
+    *"green_token pre-push-evidence"*)
         if [ -n "${CLUSTER_READER:-}" ]; then
             exec "${CLUSTER_READER_PYTHON}" "${CLUSTER_READER}"
         fi
-        [ -n "${EVIDENCE:-}" ] || exit 1
-        printf '%b' "${EVIDENCE}"
-        exit 0
+        [ -n "${EVIDENCE:-}" ] || exit 3
+        printf 'pre-push reuse: accepted delegated evidence\n'
+        exit "${REUSE_EXIT:-0}"
         ;;
     *"gate_remote_delegate enabled")   exit "${SWITCH_EXIT:-1}" ;;
     *"pre_commit_delegate run")        exit "${DELEGATE_EXIT:-75}" ;;
@@ -237,6 +237,10 @@ def _carrying(*, run: _Run, needle: str) -> list[str]:
 
 def _run_pre_push(*, root: Path, overrides: dict[str, str]) -> _Run:
     """Run the real `check-pre-push.sh` for one ordinary (non-deletion) ref update."""
+    root.mkdir(parents=True, exist_ok=True)
+    _ = (root / "check-targets.txt").write_text(
+        "".join(f"{member}\n" for member in _MEMBERS), encoding="utf-8"
+    )
     live = "b3d4f1a90c7e25486fd1c0b8a7e6554321098765"
     return _run_script(
         root=root,
@@ -375,6 +379,7 @@ def _cluster_reply(*, argv: list[str], tree: str, record_state: str) -> Success[
 # The hook's own `green_token pre-push-evidence` call, run as the real reader in a child
 # process: only the cluster's answer is replaced, by the scenario module's `_cluster_reply`.
 _CLUSTER_READER = f"""import importlib.util, os, subprocess, sys
+from pathlib import Path
 spec = importlib.util.spec_from_file_location("scenario", {str(Path(__file__).resolve())!r})
 scenario = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(scenario)
@@ -385,7 +390,12 @@ tree = subprocess.run(
 pre_push.default_gate_command_runner = lambda *, argv, cwd, stdin=None, stream=False: (
     scenario._cluster_reply(argv=argv, tree=tree, record_state=os.environ["CLUSTER_RECORD_STATE"])
 )
-sys.argv = ["green-token", "pre-push-evidence"]
+targets = [
+    line.strip()
+    for line in Path("check-targets.txt").read_text(encoding="utf-8").splitlines()
+    if line.strip() and line.strip() != "check-fleet-conformance-admin"
+]
+sys.argv = ["green-token", "pre-push-evidence", *targets]
 sys.exit(green_token.main())
 """
 
@@ -398,8 +408,14 @@ def _pre_push_evidence(
     record_state: str = "matches",
 ) -> tuple[int, list[str], list[str]]:
     """Ask the real green-token module whether a qualifying verdict exists for this push."""
-    _delegate, green_token = _modules()
     pre_push = importlib.import_module("livespec_dev_tooling._pre_push_evidence")
+    diagnostics: list[str] = []
+
+    class _CapturingLog:
+        """Keep the evidence reader's structured diagnostics inspectable by this scenario."""
+
+        def info(self, event: str, **kwargs: object) -> None:
+            diagnostics.append(json.dumps({"event": event, **kwargs}))
 
     def cluster_record(
         *, argv: list[str], cwd: Path, stdin: str | None = None, stream: bool = False
@@ -413,11 +429,9 @@ def _pre_push_evidence(
 
     monkeypatch.setattr(pre_push, "default_gate_command_runner", cluster_record)
     _scrub_process(monkeypatch=monkeypatch)
-    monkeypatch.chdir(repo)
-    monkeypatch.setattr(sys, "argv", ["green-token", "pre-push-evidence"])
-    status = green_token.main()
-    captured = capsys.readouterr()
-    return status, captured.out.splitlines(), captured.err.splitlines()
+    _ = capsys
+    lines = pre_push.accepted_lines(cwd=repo, log=_CapturingLog())
+    return (0 if lines is not None else 1), list(lines or ()), diagnostics
 
 
 def _green_token(
@@ -495,14 +509,18 @@ def test_an_accepting_push_submits_no_gate_job_and_names_the_job_and_tree(
         f"an accepted delegated pre-commit verdict must not submit a gate Job; "
         f"invoked={run.invoked}"
     )
-    narrowed = _carrying(run=run, needle="just-env")
-    assert narrowed == [
-        f"just-env pre_commit_hook= evidence_job={_JOB} evidence_tree={tree} "
-        f"evidence_members={' '.join(_COVERED)} "
-    ], f"the aggregate must be handed the accepted verdict; invoked={run.invoked}"
-    assert _carrying(run=run, needle="just hook_gate=1 check")
-    assert _JOB in run.output
-    assert tree in run.output
+    reuse = _carrying(run=run, needle="green_token pre-push-evidence")
+    assert reuse == [
+        "uv run python -m livespec_dev_tooling.green_token pre-push-evidence "
+        + " ".join(member for member in _MEMBERS if member != _HOOK_OMITTED)
+    ], (
+        "the shared entry point must receive the consumer's check set without the member "
+        f"every hook path omits; invoked={run.invoked}"
+    )
+    assert not _carrying(run=run, needle="just-env"), (
+        "the shared entry point, rather than this script's aggregate, owns the narrowed run; "
+        f"invoked={run.invoked}"
+    )
 
 
 def test_an_accepting_push_runs_only_the_members_the_pre_commit_job_did_not_cover(
@@ -544,6 +562,11 @@ def _reused_evidence_falls_through_to_a_new_gate(
 ) -> list[str]:
     """Return diagnostics after the cluster stops confirming the evidence's gate Job."""
     repo = _a_repository(repo=tmp_path / "repo", keys=_BOTH_KEYS)
+    _ = (repo / "check-targets.txt").write_text(
+        "".join(f"{member}\n" for member in _MEMBERS), encoding="utf-8"
+    )
+    _ = _git(repo=repo, args=("add", "check-targets.txt"))
+    _ = _git(repo=repo, args=("commit", "-q", "-m", "chore: declare checks"))
     tree = _stage(repo=repo, files={"widget.py": "VALUE = 1\n"})
     assert (
         _a_delegated_pre_commit(
@@ -852,7 +875,7 @@ def test_a_member_outside_the_pre_commit_jobs_scope_still_runs_and_refuses_the_p
 
     pushed = _run_pre_push(
         root=tmp_path,
-        overrides={"EVIDENCE": f"{_JOB}\\n{tree}\\n{_BETA}\\n", "JUST_EXIT": "1"},
+        overrides={"EVIDENCE": f"{_JOB}\\n{tree}\\n{_BETA}\\n", "REUSE_EXIT": "1"},
     )
     assert pushed.code != 0, f"output={pushed.output!r} invoked={pushed.invoked}"
 

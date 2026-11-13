@@ -101,31 +101,30 @@ if uv run python -m livespec_dev_tooling.green_token check 2>&1; then
     exec just hook_gate=1 token_match=1 check
 fi
 
-# THE SAME-TREE DELEGATED PRE-COMMIT VERDICT (livespec-dev-tooling-73ocxb; this
-# repo's SPECIFICATION/contracts.md §"Delegated pre-push gate", **Same-tree
-# delegated pre-commit verdict**). In a repository that sets both delegated_gate
-# and delegated_pre_commit, a pre-commit hook whose gate Job passed the FULL
-# aggregate of a clean staged tree recorded pre-push evidence naming that tree,
-# the Job, and the members the Job ran and passed. `green_token pre-push-evidence`
-# accepts it only while this worktree is clean and its HEAD tree is that tree,
-# and prints the Job, the tree and those members.
-#
-# Accepted, this push submits no gate Job and runs no full fall-through: the
-# aggregate runs on this host only the members that verdict does not cover, every
-# world-reading member and every authorization-reading member, and its exit
-# status refuses the push when one of them fails. A pre-commit aggregate that ran
-# on the committing host never records this evidence, so it never lands here.
-#
-# Below the green-token match on purpose: in such a repository the token can be
-# written only by a full `just check` outside the pre-commit hook, or by a
-# delegated pre-push pass, and either one is the Explicit local route.
-if pre_push_evidence="$(uv run python -m livespec_dev_tooling.green_token pre-push-evidence)"; then
-    LIVESPEC_PRE_PUSH_EVIDENCE_JOB="$(sed -n 1p <<<"${pre_push_evidence}")"
-    LIVESPEC_PRE_PUSH_EVIDENCE_TREE="$(sed -n 2p <<<"${pre_push_evidence}")"
-    LIVESPEC_PRE_PUSH_EVIDENCE_MEMBERS="$(sed -n '3,$p' <<<"${pre_push_evidence}" | tr '\n' ' ')"
-    export LIVESPEC_PRE_PUSH_EVIDENCE_JOB LIVESPEC_PRE_PUSH_EVIDENCE_TREE LIVESPEC_PRE_PUSH_EVIDENCE_MEMBERS
-    echo ":: pre-push: accepted the delegated pre-commit verdict of gate Job ${LIVESPEC_PRE_PUSH_EVIDENCE_JOB} for tree ${LIVESPEC_PRE_PUSH_EVIDENCE_TREE}; submitting no gate Job, and running here only the members it did not cover, every world-reading member and every authorization-reading member"
-    exec just hook_gate=1 check
+# THE SAME-TREE DELEGATED PRE-COMMIT VERDICT is the shared library's
+# `pre-push-evidence` command. Consumers pass their own check-set members, so its
+# host-only rerun is identical across the fleet rather than copied into each
+# pre-push hook. Its status 3 means no qualifying evidence and falls through to
+# this hook's ordinary delegated/local gate below. `check-fleet-conformance-admin`
+# is left out of the list: `hook_gate_skips` in check.sh omits it from every hook
+# gate because it reads admin-scoped fleet state, so the shared command must not
+# run it on a push either.
+pre_push_members=()
+if [ -f check-targets.txt ]; then
+    mapfile -t pre_push_members < <(
+        sed -E 's/[[:space:]]*#.*$//; s/^[[:space:]]+//; s/[[:space:]]+$//' check-targets.txt \
+            | grep -E '^check-' \
+            | grep -vxF 'check-fleet-conformance-admin' || true
+    )
+fi
+pre_push_reuse_status=0
+uv run python -m livespec_dev_tooling.green_token pre-push-evidence \
+    "${pre_push_members[@]}" || pre_push_reuse_status=$?
+if [ "${pre_push_reuse_status}" -eq 0 ]; then
+    exit 0
+fi
+if [ "${pre_push_reuse_status}" -ne 3 ]; then
+    exit "${pre_push_reuse_status}"
 fi
 
 # The DELEGATED-GATE fall-through (R4.S7c of plan livespec

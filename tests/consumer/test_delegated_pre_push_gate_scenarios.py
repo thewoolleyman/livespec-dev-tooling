@@ -254,6 +254,7 @@ def _resolved_authority_members(*, repo_root: Path) -> tuple[str, ...]:
 _UV_STUB = """#!/usr/bin/env bash
 printf 'uv %s\\n' "$*" >> "${STUB_LOG}"
 case "$*" in
+    *"green_token pre-push-evidence"*) exit 3 ;;
     *green_token*)                       exit "${GREEN_TOKEN_EXIT}" ;;
     *"gate_remote_delegate enabled")     exit "${SWITCH_EXIT}" ;;
     *"gate_remote_delegate run")         exit "${GATE_RUN_EXIT}" ;;
