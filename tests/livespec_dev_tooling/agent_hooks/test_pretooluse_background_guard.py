@@ -934,10 +934,15 @@ def _foreground_refusal_event(
     return cast("dict[str, object]", event)
 
 
-def _write_delegated_gate_config(*, repository: Path, delegated: bool) -> None:
+def _write_delegated_gate_config(
+    *, repository: Path, delegated: bool, gate_job_only_tests: str = ""
+) -> None:
     """Declare the fixture repository's gate venue selection explicitly."""
     _ = (repository / "pyproject.toml").write_text(
-        f"[tool.livespec_dev_tooling]\ndelegated_gate = {str(delegated).lower()}\n",
+        (
+            f"[tool.livespec_dev_tooling]\ndelegated_gate = {str(delegated).lower()}\n"
+            f"{gate_job_only_tests}"
+        ),
         encoding="utf-8",
     )
 
@@ -1258,6 +1263,101 @@ def test_xdist_makes_a_pytest_naming_an_existing_test_file_a_full_suite(
         {"tool_name": "Bash", "tool_input": {"command": "pytest tests/test_widget.py"}}
     )
     assert _run_main(monkeypatch=monkeypatch, stdin_text=targeted) == 0
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    "command",
+    [
+        pytest.param("pytest tests/roles/test_ansible.py", id="test-file"),
+        pytest.param("pytest tests/roles", id="directory"),
+        pytest.param("pytest tests/roles/test_ansible.py::test_role", id="node-id"),
+    ],
+)
+def test_gate_job_only_tests_refuses_declared_target_without_xdist(
+    command: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A declared ansible-driving test is gate-only even with no worker count."""
+    repository = _make_hooked_repo(repo=tmp_path / "delegating", hooks=())
+    _write_delegated_gate_config(
+        repository=repository,
+        delegated=True,
+        gate_job_only_tests='gate_job_only_tests = ["tests/roles/test_*.py"]\n',
+    )
+    module = repository / "tests" / "roles" / "test_ansible.py"
+    module.parent.mkdir(parents=True)
+    _ = module.write_text("def test_role() -> None:\n    pass\n", encoding="utf-8")
+    credential = tmp_path / "gates.kubeconfig"
+    _ = credential.write_text("apiVersion: v1\nkind: Config\n", encoding="utf-8")
+    monkeypatch.setenv("GATES_KUBECONFIG", str(credential))
+
+    event = _foreground_refusal_event(
+        command=command, cwd=repository, monkeypatch=monkeypatch, capsys=capsys
+    )
+
+    assert event["check_id"] == "pretooluse-foreground-gate-job-only-pytest-deny"
+    assert _one_call_detached_form(command=command) in str(event.get("hint", ""))
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    "declaration",
+    [
+        pytest.param("", id="absent"),
+        pytest.param("gate_job_only_tests = []\n", id="empty"),
+        pytest.param('gate_job_only_tests = ["tests/test_widget.py", 4]\n', id="non-string"),
+    ],
+)
+def test_invalid_gate_job_only_declarations_leave_targeted_pytest_to_full_suite_rule(
+    declaration: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Only a non-empty string declaration makes an explicit test target gate-only."""
+    repository = _make_hooked_repo(repo=tmp_path / "delegating", hooks=())
+    _write_delegated_gate_config(
+        repository=repository, delegated=True, gate_job_only_tests=declaration
+    )
+    tests_dir = repository / "tests"
+    tests_dir.mkdir()
+    _ = (tests_dir / "test_widget.py").write_text("", encoding="utf-8")
+    credential = tmp_path / "gates.kubeconfig"
+    _ = credential.write_text("apiVersion: v1\nkind: Config\n", encoding="utf-8")
+    monkeypatch.setenv("GATES_KUBECONFIG", str(credential))
+    monkeypatch.chdir(repository)
+    payload = json.dumps(
+        {"tool_name": "Bash", "tool_input": {"command": "pytest tests/test_widget.py"}}
+    )
+
+    assert _run_main(monkeypatch=monkeypatch, stdin_text=payload) == 0
+
+
+@pytest.mark.integration
+def test_gate_job_only_pytest_dispatched_through_gate_start_is_allowed(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The detached gate-start form is the refused foreground call's usable remedy."""
+    repository = _make_hooked_repo(repo=tmp_path / "delegating", hooks=())
+    _write_delegated_gate_config(
+        repository=repository,
+        delegated=True,
+        gate_job_only_tests='gate_job_only_tests = ["tests/test_widget.py"]\n',
+    )
+    tests_dir = repository / "tests"
+    tests_dir.mkdir()
+    _ = (tests_dir / "test_widget.py").write_text("", encoding="utf-8")
+    credential = tmp_path / "gates.kubeconfig"
+    _ = credential.write_text("apiVersion: v1\nkind: Config\n", encoding="utf-8")
+    monkeypatch.setenv("GATES_KUBECONFIG", str(credential))
+    monkeypatch.chdir(repository)
+    command = "just gate-start -- pytest tests/test_widget.py"
+    payload = json.dumps({"tool_name": "Bash", "tool_input": {"command": command}})
+
+    assert _run_main(monkeypatch=monkeypatch, stdin_text=payload) == 0
 
 
 @pytest.mark.integration
