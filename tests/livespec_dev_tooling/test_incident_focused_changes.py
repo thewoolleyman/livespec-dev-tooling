@@ -216,7 +216,7 @@ class _Authority:
 
 
 def _observer(
-    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, clone: _Clone
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, clone: _Clone, target_branch: str = "master"
 ) -> tuple[service.ControllerService, _Authority]:
     for name in _GIT_ENV:
         monkeypatch.delenv(name, raising=False)
@@ -235,6 +235,7 @@ def _observer(
         query_secret=b"query" * 8,
         port=8765,
         config=tmp_path / "controller.json",
+        target_branch=target_branch,
     )
     authority = _Authority(clone=clone)
     monkeypatch.setattr(subprocess, "run", authority)
@@ -648,5 +649,128 @@ def test_a_replace_ref_cannot_hide_a_changed_product_file_from_the_reference_clo
         status == "403 Forbidden",
         reason.startswith("incident-focused-evidence-paths-incomplete:"),
         "src/widget.py" in reason,
+    ]
+    assert all(facts), (facts, status, result)
+
+
+def test_an_in_tree_symlinked_module_uses_its_target_modules_disposition(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    clone = _clone(root=tmp_path)
+    _ = _git(repo=clone.repo, args=["checkout", "-q", clone.head])
+    (clone.repo / "src" / "link.py").symlink_to("doc_only.py")
+    _ = _git(repo=clone.repo, args=["add", "src/link.py"])
+    _ = _git(repo=clone.repo, args=["commit", "-qm", "link module"])
+    head = _git(repo=clone.repo, args=["rev-parse", "HEAD"])
+    _ = _git(repo=clone.repo, args=["update-ref", "refs/remotes/origin/master", clone.base])
+    _ = _git(repo=clone.repo, args=["checkout", "-q", clone.base])
+    linked = _Clone(
+        repo=clone.repo,
+        base=clone.base,
+        head=head,
+        tree=_git(repo=clone.repo, args=["rev-parse", head + "^{tree}"]),
+    )
+    application, authority = _observer(tmp_path=tmp_path, monkeypatch=monkeypatch, clone=linked)
+    authority.add(
+        record=_record(
+            clone=linked,
+            paths={**_HONEST, "src/link.py": "non-executable"},
+            covered=_EXECUTABLE,
+        )
+    )
+    status, result = _arm(application=application, clone=linked)
+    assert (status, result.get("status")) == ("202 Accepted", "armed")
+
+
+def test_a_symlinked_module_that_leaves_the_head_tree_is_refused_naming_the_link(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    clone = _clone(root=tmp_path)
+    _ = _git(repo=clone.repo, args=["checkout", "-q", clone.head])
+    (clone.repo / "src" / "escaping.py").symlink_to("../../outside.py")
+    _ = _git(repo=clone.repo, args=["add", "src/escaping.py"])
+    _ = _git(repo=clone.repo, args=["commit", "-qm", "escaping module"])
+    head = _git(repo=clone.repo, args=["rev-parse", "HEAD"])
+    _ = _git(repo=clone.repo, args=["update-ref", "refs/remotes/origin/master", clone.base])
+    _ = _git(repo=clone.repo, args=["checkout", "-q", clone.base])
+    linked = _Clone(
+        repo=clone.repo,
+        base=clone.base,
+        head=head,
+        tree=_git(repo=clone.repo, args=["rev-parse", head + "^{tree}"]),
+    )
+    application, authority = _observer(tmp_path=tmp_path, monkeypatch=monkeypatch, clone=linked)
+    authority.add(
+        record=_record(
+            clone=linked,
+            paths={**_HONEST, "src/escaping.py": "non-executable"},
+            covered=_EXECUTABLE,
+        )
+    )
+    status, result = _arm(application=application, clone=linked)
+    reason = str(result.get("reason"))
+    facts = [
+        status == "403 Forbidden",
+        "src/escaping.py" in reason,
+        "read-current" not in authority.actions,
+    ]
+    assert all(facts), (facts, status, result)
+
+
+def test_a_changed_submodule_is_refused_naming_its_path(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    clone = _clone(root=tmp_path)
+    _ = _git(repo=clone.repo, args=["checkout", "-q", clone.head])
+    _ = _git(
+        repo=clone.repo,
+        args=["update-index", "--add", "--cacheinfo", f"160000,{clone.base},src/component.py"],
+    )
+    _ = _git(repo=clone.repo, args=["commit", "-qm", "submodule"])
+    head = _git(repo=clone.repo, args=["rev-parse", "HEAD"])
+    _ = _git(repo=clone.repo, args=["update-ref", "refs/remotes/origin/master", clone.base])
+    _ = _git(repo=clone.repo, args=["checkout", "-q", clone.base])
+    linked = _Clone(
+        repo=clone.repo,
+        base=clone.base,
+        head=head,
+        tree=_git(repo=clone.repo, args=["rev-parse", head + "^{tree}"]),
+    )
+    application, authority = _observer(tmp_path=tmp_path, monkeypatch=monkeypatch, clone=linked)
+    authority.add(
+        record=_record(
+            clone=linked,
+            paths={**_HONEST, "src/component.py": "non-executable"},
+            covered=_EXECUTABLE,
+        )
+    )
+    status, result = _arm(application=application, clone=linked)
+    reason = str(result.get("reason"))
+    facts = [
+        status == "403 Forbidden",
+        "src/component.py" in reason,
+        "list index out of range" not in reason,
+        "read-current" not in authority.actions,
+    ]
+    assert all(facts), (facts, status, result)
+
+
+def test_the_per_pull_request_arm_uses_its_configured_scratch_target_branch(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    clone = _clone(root=tmp_path, target_ref=False)
+    _ = _git(repo=clone.repo, args=["update-ref", "refs/remotes/origin/scratch", clone.base])
+    _ = _git(repo=clone.repo, args=["update-ref", "refs/remotes/origin/master", clone.head])
+    application, authority = _observer(
+        tmp_path=tmp_path, monkeypatch=monkeypatch, clone=clone, target_branch="scratch"
+    )
+    authority.add(record=_record(clone=clone, paths={}, covered=()))
+    status, result = _arm(application=application, clone=clone)
+    reason = str(result.get("reason"))
+    facts = [
+        status == "403 Forbidden",
+        reason.startswith("incident-focused-evidence-paths-incomplete:"),
+        "src/widget.py" in reason,
+        "read-current" not in authority.actions,
     ]
     assert all(facts), (facts, status, result)
