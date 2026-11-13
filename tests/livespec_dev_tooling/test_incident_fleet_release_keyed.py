@@ -556,7 +556,11 @@ PINNED_SURFACE_ROOTS = {
         "ci-runner/k3s/phase2/gates/render-gate-job.sh",
         "ci-runner/k3s/phase2/gates/gate-job-template.yaml",
     ),
-    "PR mode transport": (".github/workflows/incident-label-ci.yml",),
+    "PR mode transport": (
+        ".github/workflows/incident-label-ci.yml",
+        ".github/actions/forge-read/action.yml",
+        ".github/actions/forge-read/livespec-forge-read",
+    ),
     "CI matrix/batch/direct action": (
         ".github/workflows/ci.yml",
         ".github/workflows/reusable-check-matrix.yml",
