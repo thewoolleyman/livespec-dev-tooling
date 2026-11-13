@@ -722,7 +722,8 @@ def test_the_ci_plan_output_carries_the_plan_time_reading(
     monkeypatch.delenv("GITHUB_STEP_SUMMARY", raising=False)
     monkeypatch.chdir(tmp_path)
     targets = (CiTarget(name="check-fast", classification="fast"),)
-    monkeypatch.setattr(incident_ci_process, "load_inventory", _returning(value=targets))
+    # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-3hilpy
+    monkeypatch.setattr(incident_ci_process, "load_repository_inventory", _returning(value=targets))
     observed = (_event(), json.dumps(packet()))
     monkeypatch.setattr(incident_ci_process, "observe_event", _returning(value=observed))
     monkeypatch.setattr(incident_ci_process, "CiEntry", entry)
