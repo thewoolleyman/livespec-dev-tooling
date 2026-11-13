@@ -342,12 +342,24 @@
   no_log: true
   register: otel_collector_otlp_pods_endpoint_written
   # Both processes read the endpoint from this EnvironmentFile. The pod-span unit
-  # is the one that binds it, so without its own restart it would keep a stale
-  # gateway after a subnet change; its handler skips a host with no pod unit.
+  # is the one that binds it. The host collector follows its ordinary restart
+  # notification; the pod-span notification below is deliberately conditional
+  # so hosts that do not declare a pod collector do not queue its handler.
   notify:
     - Restart the collector onto its managed configuration
-    - Restart the pod-span collector onto its managed configuration
   when: "'OTLP_PODS_ENDPOINT' in otel_collector_required_environment_keys"
+
+- name: Queue the pod-span collector restart after an endpoint change
+  # The endpoint write happens before the unit-file stat and installation tasks.
+  # Queue its handler rather than restarting here, so the handler runs only after
+  # those tasks have established the unit and its config for this converge.
+  ansible.builtin.debug:
+    msg: The pod-span endpoint changed; queue its managed restart.
+  changed_when: true
+  notify: Restart the pod-span collector onto its managed configuration
+  when:
+    - otel_collector_otlp_pods_endpoint_written.changed | default(false)
+    - otel_collector_pod_config_file | length > 0
 
 - name: Look for the collector's ingest-key environment file
   # Only its existence is read here. The values reach the process through the
