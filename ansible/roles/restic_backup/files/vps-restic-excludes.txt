@@ -10,7 +10,9 @@
 # directories; a leading "!" re-includes. See `restic help backup`.
 #
 # Two deliberate policies (mirror these in arq-vps-root-snapshot.sh):
-#   * .git is backed up EVERYWHERE (never excluded).
+#   * Git state is backed up EVERYWHERE (never excluded): .git, .worktrees and
+#     .claude/worktrees. Unpushed commits, stashes, reflogs, local branches and
+#     linked worktrees exist nowhere else.
 #   * /data is backed up VERBATIM (the final "!/data" re-include below).
 
 # --- pseudo / volatile filesystems and volatile state -----------------------
@@ -59,7 +61,6 @@ build
 .mypy_cache
 .ruff_cache
 .claude-flow
-.worktrees
 *.pyc
 .DS_Store
 *.swap
@@ -69,7 +70,6 @@ build
 **/go/pkg
 **/.gradle/caches
 **/.claude/plugins
-**/.claude/worktrees
 **/.codex/plugins
 **/.codex/.tmp
 **/.local/share/pnpm
