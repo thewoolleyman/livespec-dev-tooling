@@ -55,6 +55,15 @@ than left to be inferred from fifteen repositories:
 | `…/fabro-currency/carrier-petri-v0.382-adeefec4c/fabro` | fleet repositories retaining the earlier `dispatcher.factories.petri.bin`, including this repository's own |
 | `…/fabro-currency/carrier-legacy-v0.254-8869e88/fabro` | each repository that declares a `legacy` factory, per `bd-ib-zb2hso` step 1. None commits one yet |
 | `…/fabro-currency/carrier-petri-v0.393-613add19c/fabro` | homelab's `dispatcher.factories.petri.bin` after its R301 rollout |
+| `…/fabro-currency/carrier-petri-v0.408-d22808f8e/fabro` | the vps PATH client for reads and dispatches to gmktec's current board |
+
+The vps PATH client targets the declared 0.408 carrier at
+`/home/ubuntu/.local/state/fabro-currency/carrier-petri-v0.408-d22808f8e/fabro`:
+fabro `0.408.0-nightly.0` (`d22808f`, 2026-11-12), staged from
+`/home/ubuntu/.local/state/fabro-web-prod/v0408-d22808f8e/fabro` with SHA256
+`f32595473ecb0e476fb5b907d56a24aef7afe41040015379c1b88905057cf015`.
+This link is distinct from the vps server units' pinned
+`/home/ubuntu/.fabro/bin/fabro`; changing it never changes their binary.
 
 The R301 homelab rollout consumes the existing owned staged carrier, not a new
 fork or tag: `fabro 0.393.0-nightly.1 (613add1 2026-11-02)`, source
@@ -179,7 +188,7 @@ already were.
 ```yaml
 fabro_client_path_client:
   link: /home/ubuntu/.local/bin/fabro
-  target: /home/ubuntu/.local/state/fabro-currency/carrier-petri-v0.382-adeefec4c/fabro
+  target: /home/ubuntu/.local/state/fabro-currency/carrier-petri-v0.408-d22808f8e/fabro
 ```
 
 `link` is the absolute pathname the host PATH resolves. `target` is the absolute

@@ -163,6 +163,20 @@ fabro_client_builds:
     source: /home/ubuntu/.local/state/fabro-web-prod/v0393-bbe693847/fabro
     sha256: 1529aa9f86b5bf346ae20a731bdf1cb433bc678825c8a43d0c21f513dac0ab1f
 
+  # fabro 0.408.0-nightly.0 (d22808f 2026-11-12). Every gmktec instance now
+  # serves this carrier, which decodes its Kubernetes-sandbox board runs. Keep
+  # the earlier entries: repositories' committed petri bins still name them.
+  - path: /home/ubuntu/.local/state/fabro-currency/carrier-petri-v0.408-d22808f8e/fabro
+    source: /home/ubuntu/.local/state/fabro-web-prod/v0408-d22808f8e/fabro
+    sha256: f32595473ecb0e476fb5b907d56a24aef7afe41040015379c1b88905057cf015
+
+# The PATH client is separate from the parked vps server units' pinned
+# /home/ubuntu/.fabro/bin/fabro. The role replaces this link atomically, never
+# writes through it, so moving PATH cannot change what either unit starts.
+fabro_client_path_client:
+  link: /home/ubuntu/.local/bin/fabro
+  target: /home/ubuntu/.local/state/fabro-currency/carrier-petri-v0.408-d22808f8e/fabro
+
 # --- local_gate_slots ---
 #
 # How many fleet gate test runs this group's hosts execute at once, across every
