@@ -414,3 +414,25 @@ def test_scan_source_ignores_sequences_that_are_not_gh_argvs() -> None:
     )
 
     assert sites == (), f"scan_source fired on a sequence that is not a `gh` argv; got {sites!r}"
+
+
+def test_the_chokepoint_exemption_names_every_gh_argv_the_boundary_builds() -> None:
+    """The budgeted_gh exemption's reason names both argvs that module builds.
+
+    The boundary builds the budgeted read's argv and the incident forge call's
+    `gh api --include` attempts (livespec-dev-tooling-levu6j). A reason that
+    names only one of them understates what the exemption excuses, which is the
+    drift legacy-coordinator-agent's diff-check of livespec-dev-tooling#4401 found.
+    """
+    boundary = _REPO_ROOT / "livespec_dev_tooling" / "budgeted_gh.py"
+    reasons = [
+        exemption.reason
+        for exemption in _MODULE.EXEMPTIONS
+        if exemption.path == "livespec_dev_tooling/budgeted_gh.py"
+    ]
+    facts = (
+        len(reasons) == 1,
+        '"--include"' in boundary.read_text(encoding="utf-8"),
+        all("budgeted read" in reason and "`gh api --include`" in reason for reason in reasons),
+    )
+    assert facts == (True, True, True)
