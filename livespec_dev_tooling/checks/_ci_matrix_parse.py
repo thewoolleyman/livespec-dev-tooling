@@ -481,7 +481,7 @@ def _split_job_blocks(*, body: list[str], job_indent: int) -> list[tuple[str, li
     following top-level workflow key). Lines before the first header (e.g. a
     leading comment) belong to no block and are dropped.
     """
-    header_re = re.compile(rf"^ {{{job_indent}}}([A-Za-z0-9_-]+):\s*$")
+    header_re = re.compile(rf"^ {{{job_indent}}}([A-Za-z0-9_-]+):\s*(?:#.*)?$")
     blocks: list[tuple[str, list[str]]] = []
     current: tuple[str, list[str]] | None = None
     for raw in body:
