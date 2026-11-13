@@ -3379,6 +3379,26 @@ When that test fails
 
 Then the session MUST fail on that first failure, and the plugin MUST NOT re-run the test
 
+## Scenario: a delegated gate Job that routes locked artifacts through the pool's cache still retries an untouched failing test
+
+Given a pushed tree that changes neither `pyproject.toml` nor any `uv.lock`
+
+When a delegated gate Job routes that tree's locked artifacts through the pool's host-served PyPI cache and runs the repository's tests
+
+Then the change set every check reads in the Job (the diff against the merge base, with staged, unstaged and untracked changes) MUST equal the pushed tree's change set
+
+And a failing test the change does not touch MUST be re-run on its own, as the Untouched-test retry bullet requires
+
+## Scenario: a delegated gate Job that routes locked artifacts through the pool's cache still reports a pushed lockfile change
+
+Given a pushed tree that changes `uv.lock`
+
+When a delegated gate Job routes that tree's locked artifacts through the pool's host-served PyPI cache
+
+Then the Job's change set MUST still list `uv.lock`
+
+And the `uv.lock` contents that change set compares MUST be the pushed tree's own bytes, so the cache rewrite neither hides nor fakes a lockfile change
+
 ## Scenario: a change set that touches the build or the plugin disables every retry
 
 Given a repository that loads livespec-dev-tooling's flake-retry pytest plugin
