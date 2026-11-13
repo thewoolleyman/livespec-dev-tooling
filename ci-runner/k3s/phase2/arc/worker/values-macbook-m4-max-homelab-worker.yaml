@@ -16,7 +16,7 @@
 #     the worker's permanent class taint. They do NOT tolerate the admission
 #     hold: the hold is lifted by an explicit operator action, which is the
 #     gate for any CI landing on the worker.
-#   - the listener stays on the fleet's amd64 nodes.
+#   - the listener stays on the fleet's always-on amd64 nodes.
 #
 # Container mode: jobs run exactly as on the fleet's sets
 # (../values-livespec-dev-tooling.yaml is the reference the tests
@@ -46,10 +46,16 @@ containerMode:
       requests:
         storage: 5Gi
 
+# The listener also runs only on a node whose committed profile declares
+# ALWAYS_ON_NODE=true (the `ci-runner.io/always-on` node label), like every
+# fleet set's: a listener on a node that is powered off at will leaves the
+# scale set taking no jobs (livespec-dev-tooling-crvvxt). No homelab worker
+# carries that label.
 listenerTemplate:
   spec:
     nodeSelector:
       kubernetes.io/arch: amd64
+      ci-runner.io/always-on: "true"
     containers:
       - name: listener
 
