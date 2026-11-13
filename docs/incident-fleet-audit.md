@@ -75,7 +75,10 @@ the manifest identity and a serving version equal to its release build, and neve
 ready on its own. `just incident-enable` runs its own fresh audit and, only for a ready
 repository, writes the enablement record to the controller installation that serves it, through
 that installation's control route (`POST /enablement` on its local listener, with the projected
-`LIVESPEC_INCIDENT_CONTROL_SECRET`; run it through the credential wrapper). The controller confirms
+`LIVESPEC_INCIDENT_CONTROL_SECRET`; run it through the credential wrapper). The step posts to
+`127.0.0.1:<port>`, so it MUST run on the controller host itself (for this repository's production
+installation, the `vmi3006760` dev host, port 8765): from any other host it reaches no installation
+and refuses as unreachable. The controller confirms
 the manifest identity with its own two reads of core's default branch before it retains anything,
 answers an exact retry with the retained record, and serves the reading on the read-only query
 route (`/enablement/read`). The step refuses, naming the missing evidence (or the
@@ -83,7 +86,8 @@ unauthenticated-manifest finding), for any other repository, and names the contr
 an unreachable controller, or a repository no installation serves. No dev-host file stands in for
 the record (`livespec-dev-tooling-qmuk7z`, spec v205). The fence is armed and disarmed by explicit
 writes to the same route (`/fence/arm`, `/fence/disarm`); arming is refused until a record binds
-the current identity. The resolvers that read the record at each vantage are
+the current identity. The controller refuses any of these operations, retaining nothing, when it
+names a repository other than its installation's. The resolvers that read the record at each vantage are
 `livespec-dev-tooling-exdkra`.
 
 ## The committed claims
