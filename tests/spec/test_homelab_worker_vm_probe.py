@@ -17,6 +17,8 @@ from pathlib import Path
 
 import pytest
 
+from tests.hang_guard import run_under_hang_guard
+
 __all__: list[str] = []
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -92,13 +94,12 @@ def _run(*, vm: _Vm, tun_is_char_device: bool = True) -> subprocess.CompletedPro
     if tun_is_char_device:
         (vm.root / "dev/net/tun").unlink()
         (vm.root / "dev/net/tun").symlink_to("/dev/null")
-    return subprocess.run(
+    return run_under_hang_guard(
         ["/bin/bash", str(_PROBE), _DATA_MOUNT],
         capture_output=True,
         text=True,
         env={"PATH": f"{vm.bin_dir}:/usr/bin:/bin", "PROBE_ROOT": str(vm.root)},
         check=False,
-        timeout=60,
     )
 
 

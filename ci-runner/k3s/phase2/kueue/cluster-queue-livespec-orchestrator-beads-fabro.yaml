@@ -80,7 +80,9 @@ spec:
               # 12 -> 9 on 2026-11-08 (R301, after the 6e5pyj step-4 KEEP): 3 slots move to
               # livespec-dev-tooling-cq, the only queue holding waiting jobs at window end;
               # the cohort stays 30. See DERIVATION.md.
-              nominalQuota: 9
+              # 9 -> 8 on 2026-11-12: the dedicated orchestrator master-push
+              # lane receives the other slot, leaving dev-tooling master intact.
+              nominalQuota: 8
         # The arm64 container workers' churn slots (livespec-dev-tooling-eorpen), listed AFTER
         # the fleet flavor at nominalQuota 0: this repository reaches a worker only by borrowing
         # once the fleet flavor, its own quota and what it can borrow, has no slot left. Listed

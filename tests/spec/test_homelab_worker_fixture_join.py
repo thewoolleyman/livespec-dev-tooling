@@ -27,6 +27,8 @@ from pathlib import Path
 import pytest
 import yaml
 
+from tests.hang_guard import run_under_hang_guard
+
 __all__: list[str] = []
 
 
@@ -73,7 +75,7 @@ case "$1 $2" in
     esac ;;
   "bash -s")
     cat > "$s/converge-stdin"
-    n=$(($(cat "$s/converges" 2>/dev/null || echo 0) + 1))
+    n=$(($(if [ -f "$s/converges" ]; then echo "$(<"$s/converges")"; else echo 0; fi) + 1))
     echo "$n" > "$s/converges"
     if [ "$n" -ge 2 ]; then touch "$s/node-registered"; fi ;;
   "install -m") cat > "$s/delivered-${5##*/}" ;;
@@ -109,7 +111,7 @@ def mac(tmp_path: Path) -> _Mac:
 def _run(
     *, mac: _Mac, host: str = _HOST, mode: tuple[str, ...] = ()
 ) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
+    return run_under_hang_guard(
         ["/bin/bash", str(_SCRIPT), host, *mode],
         capture_output=True,
         text=True,
@@ -123,7 +125,6 @@ def _run(
             "HOMELAB_WORKER_ENROLL": str(mac.bin_dir / "enroll"),
         },
         check=False,
-        timeout=120,
     )
 
 

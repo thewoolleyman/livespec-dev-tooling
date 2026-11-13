@@ -24,6 +24,8 @@ from pathlib import Path
 
 import pytest
 
+from tests.hang_guard import run_under_hang_guard
+
 __all__: list[str] = []
 
 pytestmark = pytest.mark.integration
@@ -41,7 +43,7 @@ printf 'kubectl %s\\n' "$*" >> "$s/calls.log"
 case "$1 $2" in
   "get node")
     [ "$KUBECTL_FAILS" != node ] || { echo "Connection closed" >&2; exit 255; }
-    [ ! -f "$s/node" ] || printf '%s %s' "$3" "$(cat "$s/node")" ;;
+    [ ! -f "$s/node" ] || printf '%s %s' "$3" "$(<"$s/node")" ;;
   "get pods")
     [ "$KUBECTL_FAILS" != pods ] || { echo "Connection closed" >&2; exit 255; }
     cat "$s/pods" 2>/dev/null ;;
@@ -130,7 +132,7 @@ def _run(
     kubectl_fails: str = "",
     vm_unreachable: bool = False,
 ) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
+    return run_under_hang_guard(
         [
             "/bin/bash",
             str(_SCRIPT),
@@ -147,7 +149,6 @@ def _run(
             "VM_UNREACHABLE": "1" if vm_unreachable else "",
         },
         check=False,
-        timeout=60,
     )
 
 

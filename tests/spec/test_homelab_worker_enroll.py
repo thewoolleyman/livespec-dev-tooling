@@ -13,6 +13,8 @@ from pathlib import Path
 
 import pytest
 
+from tests.hang_guard import run_under_hang_guard
+
 __all__: list[str] = []
 
 pytestmark = pytest.mark.integration
@@ -52,7 +54,7 @@ def _run(
     (tmp_path / "list.conf").write_text(conf, encoding="utf-8")
     log = tmp_path / "calls.log"
     log.write_text("", encoding="utf-8")
-    result = subprocess.run(
+    result = run_under_hang_guard(
         ["/bin/bash", str(_SCRIPT), _NODE],
         capture_output=True,
         text=True,
@@ -67,7 +69,6 @@ def _run(
             "KUBECTL_FAILS": "1" if kubectl_fails else "",
         },
         check=False,
-        timeout=30,
     )
     return result, log.read_text(encoding="utf-8").splitlines()
 

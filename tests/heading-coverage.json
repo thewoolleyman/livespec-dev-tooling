@@ -3250,17 +3250,15 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a delegated gate Job that routes locked artifacts through the pool's cache still retries an untouched failing test",
-    "test": "TODO",
-    "reason": "Spec-first: a real test at the integration tier or above is owed for this scenario: a delegated gate Job that routes an unchanged `uv.lock`'s locked artifacts through the pool's PyPI cache reads the same change set as the pushed tree, so the flake-retry plugin still re-runs an untouched failing test. livespec-dev-tooling-o4hkgh owns it; the implementation PR that ships it replaces this row.",
-    "work_item": "livespec-dev-tooling-o4hkgh"
+    "test": "tests.consumer.test_delegated_gate_lock_routing_keeps_retries.test_a_gate_job_routing_locked_artifacts_through_the_cache_still_retries_an_untouched_test",
+    "reason": "Consumer-tier: the REAL renderer's gate script runs under bash in a real git checkout whose pushed commit changes neither `pyproject.toml` nor `uv.lock`, with a local stand-in for the pool's PyPI files proxy serving the locked artifact; its recipe runs a real pytest session under the flake-retry plugin. It asserts the lock was routed through the stand-in, the checkout is still the pushed tree, the change set is the pushed tree's alone, no retry is withheld and the untouched failing test is re-run and passes (livespec-dev-tooling-o4hkgh)."
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a delegated gate Job that routes locked artifacts through the pool's cache still reports a pushed lockfile change",
-    "test": "TODO",
-    "reason": "Spec-first: a real test at the integration tier or above is owed for this scenario: a delegated gate Job that routes a pushed `uv.lock` change through the pool's PyPI cache still lists `uv.lock` in its change set and compares the pushed tree's own `uv.lock` bytes. livespec-dev-tooling-o4hkgh owns it; the implementation PR that ships it replaces this row.",
-    "work_item": "livespec-dev-tooling-o4hkgh"
+    "test": "tests.consumer.test_delegated_gate_lock_routing_keeps_retries.test_a_gate_job_routing_locked_artifacts_through_the_cache_still_reports_a_pushed_lock_change",
+    "reason": "Consumer-tier: the REAL renderer's gate script runs under bash in a real git checkout whose pushed commit is a version-only release of `pyproject.toml` and `uv.lock`, with a local stand-in for the pool's PyPI files proxy serving the locked artifact. It asserts the lock was routed through the stand-in, `git diff <base> -- uv.lock` as the recipe sees it equals the pushed diff, so the change set lists `uv.lock` with the pushed bytes, and the release still reads as version-only: no retry is withheld and an untouched failing test is re-run (livespec-dev-tooling-o4hkgh)."
   },
   {
     "spec_root": "SPECIFICATION",

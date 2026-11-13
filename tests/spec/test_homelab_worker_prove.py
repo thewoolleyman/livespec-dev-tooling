@@ -29,6 +29,8 @@ from pathlib import Path
 
 import pytest
 
+from tests.hang_guard import run_under_hang_guard
+
 __all__: list[str] = []
 
 # Integration tier: each test runs the real script under /bin/bash against a stub kubectl and
@@ -150,7 +152,7 @@ def _prove(
     taint_delay: str = "0",
     throughput: str = "ok",
 ) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
+    return run_under_hang_guard(
         ["/bin/bash", str(_SCRIPT), *args],
         capture_output=True,
         text=True,
@@ -169,7 +171,6 @@ def _prove(
             "POLICY_SETTLE_SECONDS": "0",
         },
         check=False,
-        timeout=120,
     )
 
 

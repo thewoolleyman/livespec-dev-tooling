@@ -13,6 +13,7 @@ flow — which file is read, which command runs — without a Python child.
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import shutil
@@ -38,6 +39,10 @@ _HOST_INPUTS = frozenset(
         "COVERAGE_FILE",
         "COVERAGE_PROCESS_START",
         "GITHUB_ACTIONS",
+        "GITHUB_JOB",
+        "GITHUB_REPOSITORY",
+        "GITHUB_RUN_ID",
+        "GITHUB_STEP_SUMMARY",
         "LIVESPEC_COVERAGE_DATA_FILE",
         "LIVESPEC_COVERAGE_WRITERS",
     }
@@ -139,6 +144,16 @@ def _reported_total(*, output: str) -> str:
     match = re.search(r"^TOTAL\s+(\d+)\s", output, flags=re.MULTILINE)
     assert match is not None, output
     return match.group(1)
+
+
+def _reuse_outcomes(*, output: str) -> list[dict[str, object]]:
+    """Read the stable CI reuse-record lines emitted by the consumer script."""
+    prefix = "LIVESPEC_COVERAGE_REUSE_OUTCOME "
+    return [
+        json.loads(line.removeprefix(prefix))
+        for line in output.splitlines()
+        if line.startswith(prefix)
+    ]
 
 
 def test_stale_narrow_coverage_file_is_discarded_and_the_clean_suite_runs(
@@ -306,6 +321,73 @@ def test_github_actions_consumer_rejects_data_digest_mismatch(*, tmp_path: Path)
     assert result.returncode != 0
     assert "data-digest mismatch" in result.stdout
     assert _uv_log(tmp_path=tmp_path) == [_PYTEST_WITH_DURATIONS_LINE, _PER_FILE_LINE]
+
+
+@pytest.mark.parametrize(
+    "prepared_outcome",
+    [
+        "reused",
+        "missing_receipt",
+        "tree_mismatch",
+        "data_digest_mismatch",
+        "producer_failed",
+    ],
+)
+def test_github_actions_consumer_records_one_structured_reuse_outcome(
+    *, tmp_path: Path, prepared_outcome: str
+) -> None:
+    """Every CI decision path leaves one log and step-summary record for telemetry."""
+    _install_harness(tmp_path=tmp_path, git_tree=True)
+    if prepared_outcome == "reused":
+        assert (
+            _run(tmp_path=tmp_path, script="check-per-file-coverage.sh", extra={}).returncode == 0
+        )
+    elif prepared_outcome == "missing_receipt":
+        _ = (tmp_path / ".coverage").write_text("unreceipted\n", encoding="utf-8")
+    elif prepared_outcome == "tree_mismatch":
+        assert (
+            _run(tmp_path=tmp_path, script="check-per-file-coverage.sh", extra={}).returncode == 0
+        )
+        _ = (tmp_path / "tracked.py").write_text("VALUE = 2\n", encoding="utf-8")
+    elif prepared_outcome == "data_digest_mismatch":
+        assert (
+            _run(tmp_path=tmp_path, script="check-per-file-coverage.sh", extra={}).returncode == 0
+        )
+        _ = (tmp_path / ".coverage").write_text("changed-data\n", encoding="utf-8")
+    else:
+        assert (
+            _run(
+                tmp_path=tmp_path,
+                script="check-per-file-coverage.sh",
+                extra={"FAKE_PYTEST_STATUS": "3"},
+            ).returncode
+            == 3
+        )
+    summary = tmp_path / "summary.md"
+    result = _run(
+        tmp_path=tmp_path,
+        script="check-coverage.sh",
+        extra={
+            "GITHUB_ACTIONS": "true",
+            "GITHUB_REPOSITORY": "thewoolleyman/livespec-dev-tooling",
+            "GITHUB_RUN_ID": "456",
+            "GITHUB_JOB": "check-coverage",
+            "GITHUB_STEP_SUMMARY": str(summary),
+        },
+    )
+
+    outcomes = _reuse_outcomes(output=result.stdout)
+
+    assert len(outcomes) == 1, result.stdout
+    assert outcomes[0] == {
+        "repository": "thewoolleyman/livespec-dev-tooling",
+        "run_id": "456",
+        "job_id": "check-coverage",
+        "duration_ms": outcomes[0]["duration_ms"],
+        "outcome": prepared_outcome,
+    }
+    assert isinstance(outcomes[0]["duration_ms"], int)
+    assert json.loads(summary.read_text(encoding="utf-8")) == outcomes[0]
 
 
 def test_producer_outside_a_git_tree_leaves_no_marker(*, tmp_path: Path) -> None:

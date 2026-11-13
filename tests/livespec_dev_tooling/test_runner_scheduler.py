@@ -54,6 +54,7 @@ _RUNNER_SCHEDULER_SETS = {
     "values-livespec-driver-pi.yaml",
     "values-livespec-orchestrator-beads-fabro.yaml",
     "values-livespec-orchestrator-git-jsonl.yaml",
+    "values-livespec-orchestrator-master.yaml",
     "values-livespec-overseer.yaml",
     "values-livespec-runtime.yaml",
     "values-livespec.yaml",

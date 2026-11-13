@@ -338,20 +338,6 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario: a delegated gate Job that routes locked artifacts through the pool's cache still reports a pushed lockfile change",
-    "work_item": "livespec-dev-tooling-o4hkgh",
-    "first_seen": "2026-11-13"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a delegated gate Job that routes locked artifacts through the pool's cache still retries an untouched failing test",
-    "work_item": "livespec-dev-tooling-o4hkgh",
-    "first_seen": "2026-11-13"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
     "heading": "## Scenario: a delegated gate Job that runs longer than the stall window still ends with its own verdict",
     "work_item": "livespec-dev-tooling-ie7fas",
     "first_seen": "2026-11-12"

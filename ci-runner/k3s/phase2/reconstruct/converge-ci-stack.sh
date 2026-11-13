@@ -246,6 +246,7 @@ declare -A SCALE_SETS=(
   [livespec-console-beads-k3s]="values-livespec-console-beads-fabro.yaml"
   [livespec-orchestrator-git-k3s]="values-livespec-orchestrator-git-jsonl.yaml"
   [livespec-orchestrator-k3s]="values-livespec-orchestrator-beads-fabro.yaml"
+  [livespec-orchestrator-master-k3s]="values-livespec-orchestrator-master.yaml"
   [livespec-dev-tooling-k3s]="values-livespec-dev-tooling.yaml"
   [livespec-dev-master-k3s]="values-livespec-dev-tooling-master.yaml"
   [livespec-dev-tooling-arm64-k3s]="values-livespec-dev-tooling-arm64.yaml"

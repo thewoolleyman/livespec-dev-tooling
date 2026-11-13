@@ -26,6 +26,8 @@ from pathlib import Path
 
 import pytest
 
+from tests.hang_guard import run_under_hang_guard
+
 __all__: list[str] = []
 
 # Integration tier: each test runs the real script under /bin/bash against stub executables
@@ -187,7 +189,7 @@ def vm(tmp_path: Path) -> _Vm:
 
 
 def _run(*, vm: _Vm, extra: tuple[str, ...] = ()) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
+    return run_under_hang_guard(
         ["/bin/bash", str(_SCRIPT), _WORKER, _HOST, _IMAGE, str(vm.root), *extra],
         capture_output=True,
         text=True,
@@ -201,7 +203,6 @@ def _run(*, vm: _Vm, extra: tuple[str, ...] = ()) -> subprocess.CompletedProcess
             "POLL_SECONDS": "1",
         },
         check=False,
-        timeout=60,
     )
 
 
@@ -241,13 +242,12 @@ def test_a_new_worker_runs_systemd_in_a_container_with_its_state_on_the_data_dis
 def test_an_image_not_pinned_by_digest_is_refused_before_any_container_change(
     vm: _Vm, tmp_path: Path
 ) -> None:
-    result = subprocess.run(
+    result = run_under_hang_guard(
         ["/bin/bash", str(_SCRIPT), _WORKER, _HOST, "ghcr.io/x/y:latest", str(tmp_path)],
         capture_output=True,
         text=True,
         env={"PATH": f"{vm.bin_dir}:/usr/bin:/bin", "STUB_STATE": str(vm.state)},
         check=False,
-        timeout=60,
     )
     assert result.returncode != 0
     assert "is not pinned by digest" in result.stderr
@@ -461,7 +461,7 @@ def test_br_netfilter_is_loaded_and_persisted_before_the_worker_starts(vm: _Vm) 
 def test_a_kernel_without_bridge_netfilter_is_refused_before_any_container_change(
     vm: _Vm,
 ) -> None:
-    result = subprocess.run(
+    result = run_under_hang_guard(
         ["/bin/bash", str(_SCRIPT), _WORKER, _HOST, _IMAGE, str(vm.root)],
         capture_output=True,
         text=True,
@@ -476,7 +476,6 @@ def test_a_kernel_without_bridge_netfilter_is_refused_before_any_container_chang
             "POLL_SECONDS": "1",
         },
         check=False,
-        timeout=60,
     )
     assert result.returncode != 0
     assert "br_netfilter" in result.stderr

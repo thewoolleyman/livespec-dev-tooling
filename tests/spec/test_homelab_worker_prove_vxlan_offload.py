@@ -25,6 +25,8 @@ from pathlib import Path
 
 import pytest
 
+from tests.hang_guard import run_under_hang_guard
+
 __all__: list[str] = []
 
 # Integration tier: each test runs the real script under /bin/bash against a stub kubectl.
@@ -51,17 +53,30 @@ _INITIAL = {
     "flannel.1/tx-udp_tnl-segmentation": "off",
 }
 
+# The stub runs once per kubectl call, and one sweep makes about a hundred of
+# them. It therefore uses bash builtins only and starts NO child process: a
+# stub that ran `cat` and `basename` per setting cost well over a thousand
+# process starts per test, which took 29 s on a quiet host and lost a 120 s
+# bound under full-suite load (the ie7fas seed's commit gate, 2026-11-13).
+# `value_of` and `feature_of` answer in a variable, not on stdout, so no caller
+# needs a command substitution.
 _STUB = r"""#!/bin/bash
 s="$STUB_STATE"
 printf 'kubectl %s\n' "$*" >> "$s/calls.log"
+# value_of <file>: the file's one value, in $value. The files carry no trailing
+# newline, so `read` reports end-of-file after filling the variable.
+value_of() {
+  value=""
+  IFS= read -r value < "$1" || true
+}
 feature_of() {
   case "$1" in
-    rx) echo rx-checksumming ;;
-    gro) echo generic-receive-offload ;;
-    tx) echo tx-checksumming ;;
-    tso) echo tcp-segmentation-offload ;;
-    gso) echo generic-segmentation-offload ;;
-    *) echo "$1" ;;
+    rx) feature=rx-checksumming ;;
+    gro) feature=generic-receive-offload ;;
+    tx) feature=tx-checksumming ;;
+    tso) feature=tcp-segmentation-offload ;;
+    gso) feature=generic-segmentation-offload ;;
+    *) feature="$1" ;;
   esac
 }
 case "$1" in
@@ -81,15 +96,16 @@ case "$1" in
       iface="$3"
       if [ "$2" = -k ]; then
         for f in "$s/nic/$iface"/*; do
-          name="$(basename "$f")"
+          name="${f##*/}"
+          value_of "$f"
           if [ "$iface/$name" = "$STUB_FIXED" ]; then
-            printf '%s: %s [fixed]\n' "$name" "$(cat "$f")"
+            printf '%s: %s [fixed]\n' "$name" "$value"
           else
-            printf '%s: %s\n' "$name" "$(cat "$f")"
+            printf '%s: %s\n' "$name" "$value"
           fi
         done
       else
-        feature="$(feature_of "$4")"
+        feature_of "$4"
         [ -f "$s/nic/$iface/$feature" ] || exit 1
         if [ "$5" = on ] && [ "$iface/$feature" = "$STUB_STICKY" ]; then exit 0; fi
         printf '%s' "$5" > "$s/nic/$iface/$feature"
@@ -99,16 +115,17 @@ case "$1" in
     # the client's timed download: count settings that differ from the initial state
     changed=0
     while read -r key want; do
-      [ "$(cat "$s/nic/$key")" = "$want" ] || changed=$((changed + 1))
+      value_of "$s/nic/$key"
+      [ "$value" = "$want" ] || changed=$((changed + 1))
     done < "$s/initial"
     [ "$changed" -le 1 ] || echo stacked >> "$s/stacked"
     echo "$pod" >> "$s/clients"
     if [ "$pod" = client-out ]; then
-      fast="$(cat "$s/nic/lima0/tx-udp_tnl-segmentation")"
+      value_of "$s/nic/lima0/tx-udp_tnl-segmentation"
     else
-      fast="$(cat "$s/nic/lima0/rx-checksumming")"
+      value_of "$s/nic/lima0/rx-checksumming"
     fi
-    if [ "$fast" = off ]; then echo '100.00 101.00'; else echo '100.00 200.00'; fi ;;
+    if [ "$value" = off ]; then echo '100.00 101.00'; else echo '100.00 200.00'; fi ;;
 esac
 exit 0
 """
@@ -139,7 +156,7 @@ def _run(
     hosts = tmp_path / "hosts"
     hosts.mkdir(exist_ok=True)
     (hosts / f"{_HOST}.env").write_text("WORKER_HOST_OS=Darwin\n", encoding="utf-8")
-    result = subprocess.run(
+    result = run_under_hang_guard(
         ["/bin/bash", str(_SCRIPT), *(args if args is not None else [_HOST, "--peer-node", _PEER])],
         capture_output=True,
         text=True,
@@ -152,7 +169,6 @@ def _run(
             "HOMELAB_WORKER_HOSTS_DIR": str(hosts),
         },
         check=False,
-        timeout=120,
     )
     return result, state
 

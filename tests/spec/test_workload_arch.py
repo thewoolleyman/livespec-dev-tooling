@@ -96,6 +96,38 @@ def test_every_scale_set_the_ci_stack_converge_installs_is_declared() -> None:
     assert releases <= declared, f"undeclared releases: {sorted(releases - declared)}"
 
 
+def test_orchestrator_master_push_has_a_dedicated_converged_lane() -> None:
+    """Master pushes get an independently queued four-runner scale set."""
+    values = _PHASE2 / "arc" / "values-livespec-orchestrator-master.yaml"
+    queue = _PHASE2 / "kueue" / "cluster-queue-livespec-orchestrator-master.yaml"
+    assert values.is_file(), "the orchestrator master-push scale-set values must be committed"
+    assert queue.is_file(), "the orchestrator master-push queue pair must be committed"
+
+    values_text = values.read_text(encoding="utf-8")
+    assert (
+        'githubConfigUrl: "https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro"'
+        in values_text
+    )
+    assert 'runnerScaleSetName: "livespec-orchestrator-master-k3s"' in values_text
+    assert "kueue.x-k8s.io/queue-name: livespec-orchestrator-master-lq" in values_text
+    assert "maxRunners: 4" in values_text
+
+    queue_text = queue.read_text(encoding="utf-8")
+    assert "name: livespec-orchestrator-master-cq" in queue_text
+    assert "name: livespec-orchestrator-master-lq" in queue_text
+    assert "clusterQueue: livespec-orchestrator-master-cq" in queue_text
+    assert "nominalQuota: 1" in queue_text
+    assert "lendingLimit: 0" in queue_text
+
+    converge = _CONVERGE.read_text(encoding="utf-8")
+    assert (
+        '[livespec-orchestrator-master-k3s]="values-livespec-orchestrator-master.yaml"' in converge
+    )
+    assert "release livespec-orchestrator-master-k3s amd64,arm64 none" in _CONF.read_text(
+        encoding="utf-8"
+    )
+
+
 def test_the_converge_passes_each_release_its_arch_overlay() -> None:
     converge = _CONVERGE.read_text(encoding="utf-8")
     assert 'render-arch-overlay.sh" release "$release" "$arch_overlay"' in converge

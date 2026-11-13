@@ -18,6 +18,8 @@ from pathlib import Path
 
 import pytest
 
+from tests.hang_guard import run_under_hang_guard
+
 __all__: list[str] = []
 
 
@@ -93,7 +95,7 @@ def _add_csr(
     conditions: str = "",
 ) -> None:
     key = cluster.root / f"{name}.key"
-    pem = subprocess.run(
+    pem = run_under_hang_guard(
         [
             "openssl",
             "req",
@@ -112,7 +114,6 @@ def _add_csr(
         ],
         capture_output=True,
         check=True,
-        timeout=60,
     ).stdout
     (cluster.root / f"{name}.request").write_text(base64.b64encode(pem).decode(), encoding="utf-8")
     (cluster.root / f"{name}.usages").write_text(
@@ -123,7 +124,7 @@ def _add_csr(
 
 
 def _approve(*, cluster: _Cluster) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
+    return run_under_hang_guard(
         ["/bin/bash", str(_APPROVE), _HOST],
         capture_output=True,
         text=True,
@@ -133,7 +134,6 @@ def _approve(*, cluster: _Cluster) -> subprocess.CompletedProcess[str]:
             "TAILNET_DOMAIN": _DOMAIN,
         },
         check=False,
-        timeout=60,
     )
 
 

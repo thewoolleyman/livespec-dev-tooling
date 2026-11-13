@@ -254,6 +254,11 @@ fi
 exit 0
 """
 
+# The comparison of the checkout with the pushed tree the pod makes after its
+# preflight and before any recipe (livespec-dev-tooling-o4hkgh). The stub `git`
+# answers it with an empty status, which is a checkout still as pushed.
+_CHECKOUT_COMPARISON = "git status --porcelain"
+
 
 def _cross_repo_targets_block(*, siblings: tuple[tuple[str, str], ...]) -> str:
     """The `cross_repo_targets` map, in the shape a real `.livespec.jsonc` writes it.
@@ -715,6 +720,7 @@ def test_a_pinned_pyright_is_warmed_serially_before_the_gate_recipe(*, tmp_path:
     )
     assert unpinned_invocations == [
         f"just --show {_CONSUMER_RECIPE}",
+        _CHECKOUT_COMPARISON,
         f"just {_CONSUMER_RECIPE}",
     ]
 
@@ -1527,7 +1533,11 @@ def test_a_red_members_verdict_names_the_member_not_a_fatal_from_its_own_output(
 
     # The Given, asserted rather than assumed: the recipe RAN, and the fixture
     # `FATAL:` really is inside that member's own captured output.
-    assert invoked == [f"just --show {_CONSUMER_RECIPE}", f"just {_CONSUMER_RECIPE}"]
+    assert invoked == [
+        f"just --show {_CONSUMER_RECIPE}",
+        _CHECKOUT_COMPARISON,
+        f"just {_CONSUMER_RECIPE}",
+    ]
     assert _MEMBER_FIXTURE_FATAL in stdout
     # The verdict STATE and the exit status are untouched by this item.
     assert returncode == 1
@@ -1627,7 +1637,11 @@ def test_a_red_verdict_names_the_members_of_the_last_summary_in_either_shape(
         summary_sequence=summary_sequence,
     )
 
-    assert invoked == [f"just --show {_CONSUMER_RECIPE}", f"just {_CONSUMER_RECIPE}"]
+    assert invoked == [
+        f"just --show {_CONSUMER_RECIPE}",
+        _CHECKOUT_COMPARISON,
+        f"just {_CONSUMER_RECIPE}",
+    ]
     assert returncode == 1
     assert "without naming a failing member" not in stderr, stderr
     verdict_line = next(

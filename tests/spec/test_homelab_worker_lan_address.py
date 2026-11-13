@@ -22,6 +22,8 @@ from pathlib import Path
 
 import pytest
 
+from tests.hang_guard import run_under_hang_guard
+
 __all__: list[str] = []
 
 _SCRIPT = Path(__file__).resolve().parents[2] / "homelab-worker" / "vm" / "converge-lan-address.sh"
@@ -37,7 +39,7 @@ case "$*" in
   "link show dev "*) [ -f "$s/link" ] ;;
   "-4 -o addr show dev "*)
     [ -f "$s/applied" ] || exit 0
-    n=$(cat "$s/settle" 2>/dev/null || echo 0)
+    n=$(if [ -f "$s/settle" ]; then echo "$(<"$s/settle")"; else echo 0; fi)
     if [ "$n" -gt 0 ]; then echo $((n - 1)) > "$s/settle"; exit 0; fi
     printf '3: %s    inet %s brd 10.99.0.255 scope global %s\\n' "$6" "$STUB_CIDR" "$6" ;;
 esac
@@ -78,7 +80,7 @@ def _run(
     *, vm: _Vm, args: tuple[str, ...] = (_IFACE, _CIDR), wait: str = "5"
 ) -> subprocess.CompletedProcess[str]:
     vm.plan.parent.mkdir(exist_ok=True)
-    return subprocess.run(
+    return run_under_hang_guard(
         ["/bin/bash", str(_SCRIPT), *args],
         capture_output=True,
         text=True,
@@ -91,7 +93,6 @@ def _run(
             "POLL_SECONDS": "1",
         },
         check=False,
-        timeout=60,
     )
 
 
