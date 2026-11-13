@@ -149,7 +149,21 @@ release-keyed reason above. The reasons behind those rows, measured on 2026-11-1
 - **Not adopted yet.** No installed plugin build (core, the Claude driver, the orchestrator) carries
   incident guidance, and no consumer other than this library, core, the orchestrator, the overseer
   and the Codex driver references the flag. A row is `deliberately-normal` only when someone rules
-  that it is, and no ruling exists. Not having adopted the feature yet is not that ruling.
+  that it is. Not having adopted the feature yet is not that ruling.
+- **The adopt-or-normal ruling (2026-11-12).** The maintainer ruled, in words recorded verbatim on
+  epic livespec-dev-tooling-bqnzcm ("OK stick with just the 4, lets get this plan done and
+  deployed and ready for retro"), that `livespec-dev-tooling`, `livespec`,
+  `livespec-orchestrator-beads-fabro` and `livespec-overseer` adopt expedited incident mode, and
+  that the other 18 manifest consumers are `deliberately-normal`. Each of their claims cites that
+  ruling: who made it, when, and where it is recorded. A `deliberately-normal` row classifies from
+  the ruling alone, with no release build and no serving read. The one read that contradicts it is
+  a serving version of the consumer's own incident installation (`independent-controller` or
+  `recovery-authorization`), which leaves the row `unclassified` and names the contradiction. A
+  shared gate-reader, template or driver-hooks build is printed and contradicts nothing. A consumer
+  with any `deliberately-normal` row is never ready, and one whose rows are all
+  `deliberately-normal` or `not-applicable` is not named for lacking serving-version evidence. An
+  instruction-only adopter's two guidance rows carry a claim of either kind, and an `implemented`
+  one needs no incident record (spec v207, livespec-dev-tooling-kddu2b).
 - **No `implemented` claim.** One needs the incident item, the cumulative scope digest and the
   normal factory proof of an incident that exercised the surface, read from that incident's record.
   The remaining local-gate rows are deliberately still unclassified: `Hook installation and
