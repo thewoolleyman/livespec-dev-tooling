@@ -58,6 +58,23 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.207.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.206.0...v1.207.0) (2026-11-13)
+
+
+### Features
+
+* declare consumed config API ([b528c05](https://github.com/thewoolleyman/livespec-dev-tooling/commit/b528c0533abef2efc98b98f5a72c849a6c20ec9e))
+* export coverage reuse telemetry ([546db93](https://github.com/thewoolleyman/livespec-dev-tooling/commit/546db936ab9423d16c79aa1cc4a87be318a4a080))
+* record coverage reuse outcomes ([700d188](https://github.com/thewoolleyman/livespec-dev-tooling/commit/700d188dc4c5a0c0925f75571c03d5ed303284bc))
+
+
+### Bug Fixes
+
+* **ansible:** the retired-environment delete sends the revision Fabro requires as If-Match (livespec-dev-tooling-lmuhvi) ([bd3a639](https://github.com/thewoolleyman/livespec-dev-tooling/commit/bd3a639aa2f9c373f4ee5d6fdf5e276d57fa591c))
+* **gates:** a delegated gate Job relocks uv.lock outside the checkout and refuses a dirty tree by name (livespec-dev-tooling-o4hkgh) ([1abfc77](https://github.com/thewoolleyman/livespec-dev-tooling/commit/1abfc77f88720e24de11dd6e838542b7cc985302))
+* **homelab-worker:** hold the combined host collector until the split config is pinned ([4504747](https://github.com/thewoolleyman/livespec-dev-tooling/commit/4504747b8ecbc8d7c2ed2819491945525906339b))
+* run the Python telemetry exporter so the coverage reuse outcome reaches the export ([71220a7](https://github.com/thewoolleyman/livespec-dev-tooling/commit/71220a770cca6beb0fb945545b90da2a67c45be8))
+
 ## [1.206.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.205.0...v1.206.0) (2026-11-13)
 
 
