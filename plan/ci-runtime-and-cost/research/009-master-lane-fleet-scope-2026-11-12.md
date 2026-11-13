@@ -4,7 +4,7 @@ Status: measured by the ci-runtime-and-cost seat on 2026-11-12 ~21:10Z. Context:
 
 ## Bottom line
 
-**No other fleet repository needs a master lane now, but see the addendum: overseer starved right after this window, and a lane would not have prevented it.** Within the measured window, none of the six showed master-push starvation. Over their last 16–20 master-push CI runs, the worst queue wait on a k3s job was 7.2–11.7 minutes. The orchestrator's master check-per-file-coverage shards waited 28–55 minutes on 2026-11-12.
+**No other fleet repository needs a master lane now, but see the addendum: overseer starved right after this window because its runner listener was down, which a lane would not have prevented.** Within the measured window, none of the six showed master-push starvation. Over their last 16–20 master-push CI runs, the worst queue wait on a k3s job was 7.2–11.7 minutes. The orchestrator's master check-per-file-coverage shards waited 28–55 minutes on 2026-11-12.
 
 The orchestrator starved for a reason the others do not share:
 
@@ -106,10 +106,18 @@ That puts overseer over this note's own re-measure trigger (a p95 above 15 minut
 | 22:00 | 0 | 29 |
 | 22:20 | 1 | 31 |
 
-For about an hour, overseer's own scale set ran **zero to two** jobs while 22–31 waited. Its `maxRunners` is 6 (`ci-runner/k3s/phase2/arc/values-livespec-overseer.yaml`), so its own work was not filling it. The jobs were simply not being admitted. The 23:00Z and 23:20Z counts are left out: a job without `completed_at` counts as running there, and they read 24–25 against a cap of 6, so they are not trustworthy. The zeros above cannot be inflated that way.
+For about an hour, overseer's own scale set ran **zero to two** jobs while 22–31 waited. Its `maxRunners` is 6 (`ci-runner/k3s/phase2/arc/values-livespec-overseer.yaml`), so its own work was not filling it. The jobs were not being picked up at all. The 23:00Z and 23:20Z counts are left out: a job without `completed_at` counts as running there, and they read 24–25 against a cap of 6, so they are not trustworthy. The zeros above cannot be inflated that way.
 
-That points at pressure above the scale set. Overseer's ClusterQueue sits in the shared `fleet-ci-runner-pool` cohort, whose `nominalQuota` values sum to the pool's churn-slot capacity. The same evening the cluster was loaded: the orchestrator's coverage shards queued 28–55 minutes (handoff 69), livespec-dev-tooling's master check-per-file-coverage ran 45 minutes, and the arm64 macbook worker had been cordoned since 20:00:41Z (livespec-dev-tooling-6csh56). A separate master lane would be another ClusterQueue in the same cohort and would wait on the same admission. It would not have started these jobs sooner.
+**The measured cause was a listener outage, then designed saturation. Kueue was not short-changing overseer.** Two seats measured it on 2026-11-12, after this addendum's first draft guessed at "admission pressure":
 
-**Conclusion, amended:** still no master lane for overseer. The 21:10–23:40Z starvation was cluster-wide admission pressure, which belongs to the Kueue and pool owners (gate-job-resources and homelab-k8s-worker-nodes), not to master-lane routing. Why the cohort did not hand overseer its guaranteed floor in that hour is routed to them.
+- **From about 21:28 to 22:13Z, overseer had no ARC listener.** The gamingpc-xubuntu power-off left eight listeners Terminating with no replacement, `livespec-overseer-k3s` among them (livespec-dev-tooling-acgcwp; measured by homelab-k8s-worker-nodes). A scale set with no listener takes no jobs, whatever its quota. gate-job-resources saw the overseer listener's last CPU at about 21:28Z on gamingpc and its replacement's first on hp at about 22:12Z (Honeycomb query jz8wZ73C42B).
+- **Kueue honoured overseer's floor the whole time.** That floor is a `nominalQuota` of 1 on churn-slot-flavor; 6 is `maxRunners`, the ceiling. overseer-cq's `livespec.ci_pool.queue_resource_usage` never fell below 1 (query 5mCebgFUxyv). The 3 slots it held during the outage were IDLE runners, at about 0.01 cpu with no workflow pod, because no listener existed to give them jobs (query w3PvJGCXuxt).
+- **From 22:13 to 22:40Z the cohort was ordinarily saturated.** Admitted was 31–32 of 32 nominal, and cohort pending rose from about 1 to 65 at 22:20Z as the restored listeners released their backlog (query ju8JrNZLNna). dev-tooling-cq was borrowing up to 9 slots. With preemption and `reclaimWithinCohort` both `Never`, a borrowed slot returns only when its job ends, which is the designed behaviour.
+- **The quota does not exceed capacity.** The live cohort sums to 31 on churn-slot-flavor, the same as the 31 amd64 churn slots measured at about 23:50Z (poweredge 17, gmktec 8, hp 5, gamingpc 1). The "C = 44" in the ClusterQueue file comments is stale prose.
+- **The arm64 M4 cordon was irrelevant.** Its slot is in its own Kueue flavor, and overseer-cq has no quota there.
+
+The same listener gap hit the orchestrator's listener, which explains part of its 28–55-minute coverage queue that evening: its queue usage fell from 15 to 3.
+
+**Conclusion, amended:** still no master lane for overseer. A master lane would not have prevented this either, because its own listener can die the same way. The defence is listener placement and recovery, which livespec-dev-tooling-acgcwp owns. gate-job-resources also notes that a dead listener's admitted runners keep their quota, so an outage strands cohort slots for every queue, not just the dead set's. That finding belongs with acgcwp too.
 
 Reproduce the instant counts by listing `repos/thewoolleyman/livespec-overseer/actions/runs?per_page=100&created=2026-11-12T19:30:00Z..2026-11-12T23:59:00Z` (`ci.yml` only), then the jobs of each run. For each k3s job, count it as running at instant T when `started_at <= T < completed_at`, and as waiting when `created_at <= T < started_at`.
