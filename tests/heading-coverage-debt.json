@@ -345,13 +345,6 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario: a consumer ruled deliberately-normal classifies from claims citing the ruling, with no installation serving it",
-    "work_item": "livespec-dev-tooling-kddu2b",
-    "first_seen": "2026-11-12"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
     "heading": "## Scenario: a consumer whose every livespec_dev_tooling function is declared or locally public passes the commit-hook check",
     "work_item": "livespec-dev-tooling-vobfwi",
     "first_seen": "2026-11-12"

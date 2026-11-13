@@ -1,6 +1,7 @@
 ---
 # node_labels — reconcile a ci_pool node's FACTORY label to its committed phase0
-# profile's FACTORY_NODE, on the server under the admin kubeconfig.
+# profile's FACTORY_NODE, and its ALWAYS-ON label to that profile's
+# ALWAYS_ON_NODE, on the server under the admin kubeconfig.
 #
 # WHY IT EXISTS, AND WHY IT IS A SIBLING OF ../node_taints RATHER THAN PART OF
 # IT. k3s applies `--node-label` at node REGISTRATION only, exactly as it does
@@ -33,8 +34,11 @@
 # state under `check_mode: false` so the drift report can see it, and mutate
 # only on an apply (livespec-dev-tooling-ewjby3).
 #
-# SCOPE — the FACTORY label ONLY. It never reads, adds or removes any other
-# label on the node. `k3s-role=arc-runner-host` is the RUNNER role and belongs
+# SCOPE — the FACTORY label, and since livespec-dev-tooling-crvvxt the ALWAYS-ON
+# label (the second block of tasks at the foot of this file), which is the same
+# kind of fact: a posture the node's committed profile declares and k3s would
+# otherwise apply at registration only. It never reads, adds or removes any
+# other label on the node. `k3s-role=arc-runner-host` is the RUNNER role and belongs
 # to the install command; `ci-runner.io/cache-tier-carrier` is set by
 # provision-k3s.sh step 2b and only when the tier is actually mounted.
 #
@@ -197,4 +201,98 @@
     - node_labels_live.rc == 0
     - node_labels_factory_declared == 'false'
     - ('node/' ~ inventory_hostname) in node_labels_live.stdout_lines
+  changed_when: true
+
+# ---------------------------------------------------------------------------
+# THE ALWAYS-ON LABEL (livespec-dev-tooling-crvvxt). The same reconcile as the
+# factory label above, for the profile's ALWAYS_ON_NODE and the label every ARC
+# runner scale set's listener pod selects on
+# (ci-runner/k3s/phase2/arc/values-*.yaml `listenerTemplate`). On 2026-11-12
+# gamingpc-xubuntu was powered off for a RAM upgrade and the eight listener pods
+# on it sat Terminating for about 45 minutes, so their scale sets took no jobs;
+# a listener is now only ever placed on a node whose profile declares it
+# always-on. The registration read above is shared: it is a fact about the
+# node, not about either label.
+#
+# REMOVING THIS LABEL DOES NOT MOVE A RUNNING LISTENER. A nodeSelector is
+# checked at scheduling only, so a node retired from always-on keeps the
+# listeners it has until they are next re-created. Read them back with
+# ci-runner/k3s/phase2/arc/read-listener-placement.sh, which exits non-zero
+# while any listener is still on a node without the label.
+# ---------------------------------------------------------------------------
+
+- name: Read this node's profile ALWAYS_ON_NODE
+  # A missing key yields the parser's own default, `false`: a node whose profile
+  # says nothing is never chosen for a listener.
+  ansible.builtin.set_fact:
+    node_labels_always_on_declared: >-
+      {{ lookup('ansible.builtin.file', node_labels_profile)
+      | regex_findall('^ALWAYS_ON_NODE=(.*)$', multiline=True) | first | default('false') }}
+
+- name: Refuse a profile whose ALWAYS_ON_NODE is neither true nor false
+  # Re-asserted here for the reason FACTORY_NODE's enum is: without it a typo
+  # would read as "not true" and silently REMOVE a live always-on label.
+  ansible.builtin.assert:
+    that:
+      - node_labels_always_on_declared in ['true', 'false']
+    fail_msg: >-
+      {{ node_labels_profile }} declares ALWAYS_ON_NODE='{{ node_labels_always_on_declared }}',
+      which is neither 'true' nor 'false'
+    success_msg: >-
+      {{ inventory_hostname }}: ALWAYS_ON_NODE={{ node_labels_always_on_declared }}
+
+- name: Probe the live always-on node label against the profile
+  # A READ with a computed `changed_when`, so `just ansible-drift` reports the
+  # pending reconcile instead of `skipping` over it. Asked as the label SELECTOR
+  # the listener pods schedule by.
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - get
+      - nodes
+      - "-l"
+      - "{{ node_labels_always_on_key }}={{ node_labels_always_on_value }}"
+      - "-o"
+      - name
+  delegate_to: "{{ node_labels_server_host }}"
+  become: true
+  environment:
+    KUBECONFIG: "{{ node_labels_admin_kubeconfig }}"
+  register: node_labels_always_on_live
+  check_mode: false
+  changed_when: >-
+    node_labels_registered.rc == 0
+    and node_labels_always_on_live.rc == 0
+    and (('node/' ~ inventory_hostname) in node_labels_always_on_live.stdout_lines)
+    != (node_labels_always_on_declared == 'true')
+
+- name: Add the always-on label the profile declares but the node lacks
+  ansible.builtin.command:
+    cmd: >-
+      kubectl label --overwrite node {{ inventory_hostname }}
+      {{ node_labels_always_on_key }}={{ node_labels_always_on_value }}
+  delegate_to: "{{ node_labels_server_host }}"
+  become: true
+  environment:
+    KUBECONFIG: "{{ node_labels_admin_kubeconfig }}"
+  when:
+    - node_labels_registered.rc == 0
+    - node_labels_always_on_live.rc == 0
+    - node_labels_always_on_declared == 'true'
+    - ('node/' ~ inventory_hostname) not in node_labels_always_on_live.stdout_lines
+  changed_when: true
+
+- name: Remove the always-on label the profile does not declare
+  # The trailing `-` is kubectl's remove syntax.
+  ansible.builtin.command:
+    cmd: kubectl label node {{ inventory_hostname }} {{ node_labels_always_on_key }}-
+  delegate_to: "{{ node_labels_server_host }}"
+  become: true
+  environment:
+    KUBECONFIG: "{{ node_labels_admin_kubeconfig }}"
+  when:
+    - node_labels_registered.rc == 0
+    - node_labels_always_on_live.rc == 0
+    - node_labels_always_on_declared == 'false'
+    - ('node/' ~ inventory_hostname) in node_labels_always_on_live.stdout_lines
   changed_when: true

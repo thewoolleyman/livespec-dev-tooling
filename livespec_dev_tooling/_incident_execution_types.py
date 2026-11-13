@@ -5,6 +5,7 @@ from __future__ import annotations
 import sys
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 _VENDOR_DIR = Path(__file__).resolve().parent / "_vendor"
 if str(_VENDOR_DIR) not in sys.path:
@@ -77,6 +78,8 @@ class IncidentResolution:
     """Result-backed resolution with an ergonomic boundary-facing inspection API."""
 
     result: Result[ExecutionContext, IncidentConfigurationRefusal]
+    # The vantage's enablement reading, when the resolver read one (livespec-dev-tooling-exdkra).
+    enablement: dict[str, Any] | None = None
 
     @property
     def is_successful(self) -> bool:

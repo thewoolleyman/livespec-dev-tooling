@@ -1,0 +1,402 @@
+"""The org move's quiet check: is the fleet drained enough to start the cutover? (note 005 §2)
+
+Run:  python3 quiet_check.py.txt [--owner thewoolleyman] [--halt-at <UTC time>]
+                                 [--org <org> --image <name>:<tag> ...] [--json]
+      python3 quiet_check.py.txt --self-test
+
+Every condition is read LIVE: from GitHub through `gh`, and from the gate cluster through
+`with-gates-kubeconfig kubectl`. A condition this script cannot observe counts as NOT quiet. The
+script fails closed: an outage, an error, or a listing that may be truncated can never read as a
+quiet fleet. The fleet is the `fleet` list in livespec's `.livespec-fleet-manifest.jsonc`, read from
+GitHub at `<owner>/livespec@master` rather than from any local working tree.
+
+The conditions, per repository:
+
+  open-prs       every open PR carries `do-not-merge` and has auto-merge OFF
+                 (`disarm-on-hold-label.yml` turns auto-merge off when the label is added)
+  master-ci      the latest `ci.yml` run on master has completed, and its conclusion is success
+  runs           no workflow run of any kind is `in_progress`, `queued`, `waiting`, `pending` or
+                 `requested`, except GHOSTS (see `is_ghost`). Read from the REST runs API with every page,
+                 and unobservable unless the rows read equal `total_count` and stay under its 1000 cap.
+                 A mismatch is re-read up to 3 times, because a live fleet races the count.
+  release        no merged PR still carries `autorelease: pending` (Release Please has not tagged it)
+
+and, for the whole fleet:
+
+  gate-jobs      no gate Job in the cluster's `gates` namespace is unfinished. A Job counts as unfinished
+                 unless it carries a `Complete` or `Failed` condition, so suspended Jobs and Kueue Jobs
+                 not yet admitted count too. An unfinished Job whose name matches no fleet repository is
+                 reported as `unattributed` and is NOT quiet. The `gates` namespace's existence is proved
+                 first, by a server-side dry-run secret create the gates credential is allowed to make (it
+                 may not `get namespaces`). A missing namespace is unobservable, not an empty, quiet list.
+  image          for each `--image`, `ghcr.io/<org>/<name>` has a version tagged `<tag>`
+                 (note 005 §3 Phase 1 step 4)
+
+GHOSTS (legacy-coordinator-agent's rulings (b) and (i), and the coordinator's clarification in its grade
+of livespec-dev-tooling#4427). A ghost is a run that meets all four of these:
+  - its status is `queued`, not `pending` or `waiting`, because a concurrency group holds those runs and
+    they WILL run;
+  - it was never updated after it was created (updated_at == created_at);
+  - it was created before `--halt-at`, the halt announcement;
+  - it was created more than 24 h before the check runs.
+Its job count does not matter. GitHub leaves such runs `queued` for good and refuses to cancel them. 31
+were measured on 2026-11-13: 30 with zero jobs, and livespec-runtime 32215471962 with one, unstarted since
+2026-08-19 (comments on livespec-dev-tooling-xowhol at 00:47:15Z and 01:55:48Z). A ghost is reported as
+`ghost` with its id, and it is never deleted. Without `--halt-at`, no run is a ghost. `--self-test` checks
+the rule's boundary rows.
+
+Exit status: 0 when quiet; 1 when anything is not quiet or cannot be observed, or when a self-test row
+fails.
+"""
+
+from __future__ import annotations
+
+import argparse
+import datetime
+import json
+import re
+import subprocess
+import sys
+import time
+from collections.abc import Callable
+
+ACTIVE_RUN_STATES = ("in_progress", "queued", "waiting", "pending", "requested")
+GHOST_MIN_AGE = datetime.timedelta(hours=24)
+RUN_API_CAP = 1000  # the runs API returns at most 1000 results for a filtered listing
+PR_PAGE = 1000
+STAMP = re.compile(r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ")
+
+
+class Unobservable(Exception):
+    pass
+
+
+def utc(stamp: str) -> datetime.datetime:
+    if not isinstance(stamp, str) or not STAMP.fullmatch(stamp):
+        raise Unobservable(f"not a UTC timestamp: {stamp!r}")
+    return datetime.datetime.fromisoformat(stamp.replace("Z", "+00:00"))
+
+
+def is_ghost(state: str, run: dict, halt_at: datetime.datetime | None, now: datetime.datetime) -> bool:
+    """Pure. `run` carries `createdAt` and `updatedAt` as UTC stamps."""
+    if halt_at is None or state != "queued":
+        return False
+    created, updated = utc(run["createdAt"]), utc(run["updatedAt"])
+    return updated == created and created < halt_at and now - created > GHOST_MIN_AGE
+
+
+def run_json(argv: list[str]) -> object:
+    proc = subprocess.run(argv, capture_output=True, text=True, check=False)
+    if proc.returncode != 0:
+        raise Unobservable(f"{' '.join(argv[:4])}...: {(proc.stderr or proc.stdout).strip()[:200]}")
+    try:
+        value = json.loads(proc.stdout)
+    except json.JSONDecodeError as err:
+        raise Unobservable(f"{' '.join(argv[:4])}...: unparseable output ({err})") from err
+    if value is None:
+        raise Unobservable(f"{' '.join(argv[:4])}...: returned null")
+    return value
+
+
+def full_list(argv: list[str], page: int) -> list:
+    """A listing that came back with `page` rows may have been cut off, so it is unobservable."""
+    rows = run_json([*argv, "--limit", str(page)])
+    if not isinstance(rows, list):
+        raise Unobservable(f"{' '.join(argv[:4])}...: expected a list")
+    if len(rows) >= page:
+        raise Unobservable(f"{' '.join(argv[:4])}...: {len(rows)} rows hit the {page}-row limit")
+    return rows
+
+
+def runs_from_pages(pages: object) -> list[dict]:
+    """Pure. `pages` is `gh api --paginate --slurp` output of /actions/runs. Every run must be accounted for."""
+    if not isinstance(pages, list) or not pages or not all(isinstance(p, dict) for p in pages):
+        raise Unobservable("runs listing: no pages")
+    total = pages[0].get("total_count")
+    rows = [r for p in pages for r in (p.get("workflow_runs") or [])]
+    if not isinstance(total, int) or len(rows) != total:
+        raise Unobservable(f"runs listing: {len(rows)} rows read but total_count says {total}")
+    if total >= RUN_API_CAP:
+        raise Unobservable(f"runs listing: total_count {total} reaches the API's {RUN_API_CAP}-result cap")
+    return [{"databaseId": r["id"], "workflowName": r["name"], "createdAt": r["created_at"],
+             "updatedAt": r["updated_at"]} for r in rows]
+
+
+def consistent_runs(slug: str, state: str, attempts: int = 3) -> list[dict]:
+    """A live fleet can create a run between the count and the page, so a mismatch is re-read, never trusted.
+
+    A count that never agrees with the rows, after every attempt, reads UNOBSERVABLE (NOT quiet).
+    """
+    last: Unobservable | None = None
+    for attempt in range(attempts):
+        try:
+            return runs_from_pages(run_json(["gh", "api", "--paginate", "--slurp",
+                                             f"/repos/{slug}/actions/runs?status={state}&per_page=100"]))
+        except Unobservable as err:
+            last = err
+            if attempt + 1 < attempts:
+                time.sleep(2)
+    raise Unobservable(f"{last} (after {attempts} reads)")
+
+
+def fleet(owner: str) -> list[str]:
+    argv = ["gh", "api", f"/repos/{owner}/livespec/contents/.livespec-fleet-manifest.jsonc?ref=master",
+            "-H", "Accept: application/vnd.github.raw+json"]
+    proc = subprocess.run(argv, capture_output=True, text=True, check=False)
+    if proc.returncode != 0:
+        raise Unobservable(f"fleet manifest: {(proc.stderr or proc.stdout).strip()[:200]}")
+    repos = fleet_from_text(proc.stdout)
+    if not repos:
+        raise Unobservable("fleet manifest has no fleet entries")
+    return repos
+
+
+def fleet_from_text(text: str) -> list[str]:
+    return [entry["repo"] for entry in json.loads(re.sub(r"^\s*//.*$", "", text, flags=re.M))["fleet"]]
+
+
+def check_repo(slug: str, halt_at: datetime.datetime | None, now: datetime.datetime) -> dict[str, str]:
+    out: dict[str, str] = {}
+
+    def guard(name: str, fn: Callable[[], str]) -> None:
+        try:
+            out[name] = fn()
+        except Exception as err:  # noqa: BLE001 -- every failure to observe is NOT quiet, never a crash
+            out[name] = f"UNOBSERVABLE {type(err).__name__}: {err}"
+
+    def open_prs() -> str:
+        prs = full_list(["gh", "pr", "list", "-R", slug, "--state", "open", "--json", "number,labels,autoMergeRequest"],
+                        PR_PAGE)
+        bad = []
+        for p in prs:
+            held = any(label["name"] == "do-not-merge" for label in p["labels"])
+            if p["autoMergeRequest"] or not held:
+                bad.append(f"#{p['number']}" + ("" if held else "(unlabelled)")
+                           + ("(auto-merge on)" if p["autoMergeRequest"] else ""))
+        return "ok" if not bad else "NOT QUIET " + " ".join(bad)
+
+    def master_ci() -> str:
+        runs = run_json(["gh", "run", "list", "-R", slug, "--workflow", "ci.yml", "--branch", "master",
+                         "--limit", "1", "--json", "databaseId,status,conclusion,headSha"])
+        if not runs:
+            return "UNOBSERVABLE no ci.yml run on master"
+        r = runs[0]
+        if r["status"] != "completed" or r["conclusion"] != "success":
+            return f"NOT QUIET run {r['databaseId']} {r['status']}/{r['conclusion'] or '-'} @ {r['headSha'][:9]}"
+        return f"ok {r['headSha'][:9]}"
+
+    def runs() -> str:
+        active, ghosts = [], []
+        for state in ACTIVE_RUN_STATES:
+            rows = consistent_runs(slug, state)
+            for r in rows:
+                label = f"{r['databaseId']}:{r['workflowName']}:{state}"
+                (ghosts if is_ghost(state, r, halt_at, now) else active).append(label)
+        ghost_note = f"; ghost {' '.join(ghosts)}" if ghosts else ""
+        return ("ok" if not active else "NOT QUIET " + " ".join(active)) + ghost_note
+
+    def release() -> str:
+        prs = full_list(["gh", "pr", "list", "-R", slug, "--state", "merged", "--label", "autorelease: pending",
+                         "--json", "number"], PR_PAGE)
+        return "ok" if not prs else "NOT QUIET release pending on " + " ".join(f"#{p['number']}" for p in prs)
+
+    guard("open-prs", open_prs)
+    guard("master-ci", master_ci)
+    guard("runs", runs)
+    guard("release", release)
+    return out
+
+
+def job_finished(job: dict) -> bool:
+    conditions = job.get("status", {}).get("conditions") or []
+    return any(c.get("type") in ("Complete", "Failed") and c.get("status") == "True" for c in conditions)
+
+
+def attribute_jobs(items: list, repos: list[str]) -> tuple[dict[str, list[str]], list[str]]:
+    """Pure. Map each unfinished gate Job to its fleet repository, or to the unattributed list."""
+    per_repo: dict[str, list[str]] = {repo: [] for repo in repos}
+    unattributed: list[str] = []
+    for job in items:
+        if job_finished(job):
+            continue
+        name = job["metadata"]["name"]
+        match = max((r for r in repos if name.startswith(f"gate-{r}-")), key=len, default=None)
+        (per_repo[match] if match else unattributed).append(name)
+    return per_repo, unattributed
+
+
+# Existence probe for the `gates` namespace: a server-side DRY RUN, so nothing is ever created (see gate_jobs).
+NAMESPACE_PROBE = ["with-gates-kubeconfig", "kubectl", "create", "secret", "generic", "quiet-check-namespace-probe",
+                   "-n", "gates", "--dry-run=server", "-o", "json"]
+
+
+def gate_jobs(repos: list[str], read: Callable[[list[str]], object] = run_json) -> tuple[dict[str, str], str]:
+    try:
+        # A missing namespace would list zero Jobs and read as quiet, so the namespace's existence is proved first.
+        # The gates credential may not `get namespaces` (only Jobs, pods and secret creation), so the proof is a
+        # SERVER-SIDE DRY-RUN create of a secret in it: the API server answers it only for an existing namespace
+        # and persists nothing. THIS IS A READ-ONLY PROBE, NOT A WRITE: `--dry-run=server` never stores the secret.
+        # It stays within gate-submitter's own grants, so no RBAC change is needed (legacy-coordinator-agent
+        # accepted it in its review of livespec-dev-tooling#4427).
+        probe = read(NAMESPACE_PROBE)
+        if not isinstance(probe, dict) or probe.get("metadata", {}).get("namespace") != "gates":
+            raise Unobservable("namespace gates: the dry-run probe did not answer from it")
+        data = read(["with-gates-kubeconfig", "kubectl", "get", "jobs", "-n", "gates", "-o", "json"])
+        per_repo, unattributed = attribute_jobs(data["items"], repos)
+    except Exception as err:  # noqa: BLE001 -- unobservable is NOT quiet
+        verdict = f"UNOBSERVABLE {type(err).__name__}: {err}"
+        return {repo: verdict for repo in repos}, verdict
+    by_repo = {repo: "ok" if not names else "NOT QUIET " + " ".join(names) for repo, names in per_repo.items()}
+    return by_repo, "ok" if not unattributed else "NOT QUIET unattributed " + " ".join(unattributed)
+
+
+def image_present(org: str, image: str) -> str:
+    name, _, tag = image.partition(":")
+    if not tag:
+        return f"UNOBSERVABLE {image}: no :tag given"
+    try:
+        pages = run_json(["gh", "api", "--paginate", "--slurp", f"/orgs/{org}/packages/container/{name}/versions"])
+        tags = {t for page in pages for v in page for t in v.get("metadata", {}).get("container", {}).get("tags", [])}
+    except Exception as err:  # noqa: BLE001 -- unobservable is NOT quiet
+        return f"UNOBSERVABLE {type(err).__name__}: {err}"
+    return "ok" if tag in tags else f"NOT QUIET ghcr.io/{org}/{name}:{tag} absent"
+
+
+SELF_TEST_GHOST = (
+    # (description, state, seconds before now, updated == created, created before halt, expected)
+    ("24 h + 1 s old, unstarted, queued: ghost", "queued", 86401, True, True, True),
+    ("exactly 24 h old: not a ghost", "queued", 86400, True, True, False),
+    ("24 h - 1 s old: not a ghost", "queued", 86399, True, True, False),
+    ("86 days old, unstarted (livespec-runtime 32215471962's shape): ghost", "queued", 86 * 86400, True, True, True),
+    ("pending held by a concurrency group, 86 days old: not a ghost", "pending", 86 * 86400, True, True, False),
+    ("waiting, 86 days old: not a ghost", "waiting", 86 * 86400, True, True, False),
+    ("updated since created, 86 days old: not a ghost", "queued", 86 * 86400, False, True, False),
+    ("created after the halt: not a ghost", "queued", 86 * 86400, True, False, False),
+)
+
+
+def self_test() -> int:
+    failures = 0
+
+    def check(desc: str, got: object, expected: object) -> None:
+        nonlocal failures
+        ok = got == expected
+        failures += not ok
+        print(f"{'PASS' if ok else 'FAIL'}  {desc}: expected {expected}, got {got}")
+
+    fmt = "%Y-%m-%dT%H:%M:%SZ"
+    now = datetime.datetime(2026, 11, 20, 10, 0, 0, tzinfo=datetime.timezone.utc)
+    for desc, state, age, same, before, expected in SELF_TEST_GHOST:
+        created = now - datetime.timedelta(seconds=age)
+        halt = created + datetime.timedelta(seconds=1) if before else created - datetime.timedelta(seconds=1)
+        updated = created if same else created + datetime.timedelta(seconds=5)
+        run = {"createdAt": created.strftime(fmt), "updatedAt": updated.strftime(fmt)}
+        check(desc, is_ghost(state, run, halt, now), expected)
+    run = {"createdAt": "2026-08-19T04:21:33Z", "updatedAt": "2026-08-19T04:21:33Z"}
+    check("no --halt-at: never a ghost", is_ghost("queued", run, None, now), False)
+
+    repos = ["livespec", "livespec-dev-tooling"]
+    done = {"type": "Complete", "status": "True"}
+    jobs = [
+        {"metadata": {"name": "gate-livespec-dev-tooling-a1"}, "status": {"active": 1}},
+        {"metadata": {"name": "gate-livespec-b2"}, "status": {"conditions": [done]}},
+        {"metadata": {"name": "gate-livespec-c3"}, "spec": {"suspend": True}, "status": {}},
+        {"metadata": {"name": "gate-elsewhere-d4"}, "status": {}},
+    ]
+    per_repo, unattributed = attribute_jobs(jobs, repos)
+    check("gate Job: longest fleet prefix wins", per_repo["livespec-dev-tooling"], ["gate-livespec-dev-tooling-a1"])
+    check("gate Job: a suspended / unadmitted Job counts, a Complete one does not", per_repo["livespec"],
+          ["gate-livespec-c3"])
+    check("gate Job: unfinished and matching no fleet repo is unattributed", unattributed, ["gate-elsewhere-d4"])
+
+    page = {"total_count": 2, "workflow_runs": [
+        {"id": 1, "name": "CI", "created_at": "2026-08-19T04:21:33Z", "updated_at": "2026-08-19T04:21:33Z"}]}
+    page2 = {"total_count": 2, "workflow_runs": [
+        {"id": 2, "name": "CI", "created_at": "2026-08-19T04:21:34Z", "updated_at": "2026-08-19T04:21:34Z"}]}
+
+    def raises(fn: Callable[[], object]) -> bool:
+        try:
+            fn()
+        except Unobservable:
+            return True
+        return False
+
+    check("runs pages: rows summing to total_count are read", [r["databaseId"] for r in runs_from_pages([page, page2])],
+          [1, 2])
+    check("runs pages: rows short of total_count are unobservable", raises(lambda: runs_from_pages([page])), True)
+    check("runs pages: total_count at the 1000 cap is unobservable",
+          raises(lambda: runs_from_pages([{"total_count": 1000, "workflow_runs": []}])), True)
+    check("runs pages: an empty listing reads as no runs",
+          runs_from_pages([{"total_count": 0, "workflow_runs": []}]), [])
+
+    def no_namespace(argv: list[str]) -> object:
+        if argv == NAMESPACE_PROBE:
+            raise Unobservable('namespaces "gates" not found')
+        return {"items": []}
+
+    by_repo, unattributed_verdict = gate_jobs(repos, read=no_namespace)
+    check("gate Jobs: a missing gates namespace is unobservable, not quiet",
+          all(v.startswith("UNOBSERVABLE") for v in [*by_repo.values(), unattributed_verdict]), True)
+
+    def empty_namespace(argv: list[str]) -> object:
+        return {"metadata": {"namespace": "gates"}} if argv == NAMESPACE_PROBE else {"items": []}
+
+    by_repo, unattributed_verdict = gate_jobs(repos, read=empty_namespace)
+    check("gate Jobs: an existing, empty gates namespace is quiet",
+          all(v == "ok" for v in [*by_repo.values(), unattributed_verdict]), True)
+
+    text = '{\n  // comment\n  "owner": "x",\n  "fleet": [ { "repo": "a" }, { "repo": "b" } ]\n}\n'
+    check("manifest: comments stripped, fleet read", fleet_from_text(text), ["a", "b"])
+    return 1 if failures else 0
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--owner", default="thewoolleyman")
+    parser.add_argument("--org")
+    parser.add_argument("--image", action="append", default=[])
+    parser.add_argument("--halt-at", help="halt announcement time, UTC, for example 2026-11-20T10:00:00Z")
+    parser.add_argument("--json", action="store_true")
+    parser.add_argument("--self-test", action="store_true", help="check the pure rules' rows and exit")
+    args = parser.parse_args()
+    if args.self_test:
+        return self_test()
+    if args.image and not args.org:
+        parser.error("--image needs --org")
+    if args.halt_at and not STAMP.fullmatch(args.halt_at):
+        parser.error("--halt-at must be UTC in the form YYYY-MM-DDTHH:MM:SSZ")
+    halt_at = utc(args.halt_at) if args.halt_at else None
+    now = datetime.datetime.now(datetime.timezone.utc)
+
+    try:
+        repos = fleet(args.owner)
+    except Exception as err:  # noqa: BLE001 -- without the fleet list nothing is observable
+        print(f"UNOBSERVABLE fleet manifest: {type(err).__name__}: {err}")
+        print("NOT QUIET")
+        return 1
+    results = {repo: check_repo(f"{args.owner}/{repo}", halt_at, now) for repo in repos}
+    by_repo, unattributed = gate_jobs(repos)
+    for repo, verdict in by_repo.items():
+        results[repo]["gate-jobs"] = verdict
+    fleet_rows = {"gate-jobs": unattributed}
+    images = {image: image_present(args.org, image) for image in args.image}
+
+    quiet = (all(v.startswith("ok") for row in results.values() for v in row.values())
+             and all(v.startswith("ok") for v in fleet_rows.values())
+             and all(v == "ok" for v in images.values()))
+    if args.json:
+        print(json.dumps({"quiet": quiet, "repos": results, "fleet": fleet_rows, "images": images}, indent=2))
+    else:
+        for repo, row in results.items():
+            for name, verdict in row.items():
+                print(f"{repo:36} {name:10} {verdict}")
+        for name, verdict in fleet_rows.items():
+            print(f"{'(fleet)':36} {name:10} {verdict}")
+        for image, verdict in images.items():
+            print(f"{'image':36} {image:10} {verdict}")
+        print("QUIET" if quiet else "NOT QUIET")
+    return 0 if quiet else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

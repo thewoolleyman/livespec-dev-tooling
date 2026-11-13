@@ -152,6 +152,14 @@ PROFILE_REQUIRED_KEYS=(
 #                         the kubernetes-sandbox-backend selects factory
 #                         capacity on. `false` is the default — the behaviour
 #                         before the key existed.
+#   ALWAYS_ON_NODE        `true` renders this node's ALWAYS-ON node label, which
+#                         every ARC runner scale set's listener pod selects on
+#                         (../phase2/arc/values-*.yaml `listenerTemplate`), so a
+#                         listener is only ever placed on a node nobody powers
+#                         off at will. `false` is the default, and the default
+#                         is the SAFE side: a node whose profile says nothing is
+#                         never chosen for a listener
+#                         (livespec-dev-tooling-crvvxt).
 #   NODE_DATA_DIR         the directory k3s keeps THIS node's data in
 #                         (`--data-dir`): the bundled containerd's store, the
 #                         kubelet root and the local-path root. Empty for a node
@@ -177,6 +185,7 @@ declare -gA PROFILE_KEY_DEFAULTS=(
   [CI_NODE_FACILITIES]=full
   [RUNNER_WORKVOL_DIR]=""
   [FACTORY_NODE]=false
+  [ALWAYS_ON_NODE]=false
   [NODE_DATA_DIR]=""
   [KUBELET_ARGS]=""
 )
@@ -272,6 +281,10 @@ profile_load() {
   case "${CFG[FACTORY_NODE]}" in
     true | false) ;;
     *) die "${PROFILE_PATH}: FACTORY_NODE must be 'true' or 'false', got '${CFG[FACTORY_NODE]}'" ;;
+  esac
+  case "${CFG[ALWAYS_ON_NODE]}" in
+    true | false) ;;
+    *) die "${PROFILE_PATH}: ALWAYS_ON_NODE must be 'true' or 'false', got '${CFG[ALWAYS_ON_NODE]}'" ;;
   esac
   case "${CFG[CI_NODE_FACILITIES]}" in
     full | none | runner-only) ;;
