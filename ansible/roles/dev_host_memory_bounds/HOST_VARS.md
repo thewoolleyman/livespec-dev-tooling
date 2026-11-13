@@ -13,7 +13,8 @@ OOM-killed at 15:32:41Z). The numbers and where each came from are in
 | `/tmp` cap, `size=8G,nr_inodes=2m` | `/etc/systemd/system/tmp.mount.d/zz-livespec-memory-bounds.conf` | next boot, or the cutover |
 | Session scratchpads on disk: `/tmp/claude-<uid>` bind-mounts `/var/tmp/claude-<uid>` | `/etc/systemd/system/tmp-claude\x2d<uid>.mount`, enabled | next boot, or the cutover |
 | `TMPDIR=/var/tmp` for every zsh of the login (unless already set) | a marked block in `~<user>/.zshenv` | each new session |
-| `factory-dispatch.slice`, MemoryHigh 18G / MemoryMax 20G | `/etc/systemd/user/` | the next launch into it |
+| `factory-dispatch.slice`, derived from the fleet cap (on the VPS: MemoryHigh 19296M / MemoryMax 21440M) | `/etc/systemd/user/` | the next launch into it |
+| the per-loop scope bound, `3500M` | `/etc/livespec/factory-dispatch-loop-memory-max` | the next launch that reads it |
 | `local-gate.slice`, MemoryHigh 9G / MemoryMax 10G | `/etc/systemd/user/` | the next launch into it |
 | reconcile-runs MemoryHigh 4G / MemoryMax 6G, OOMScoreAdjust 500 | `/etc/systemd/system/reconcile-runs.service.d/50-livespec-memory-bounds.conf` | the next timer pass |
 
@@ -27,7 +28,8 @@ systemd-run --user --scope --slice=local-gate.slice -- <command>
 
 For the dispatcher, each launcher also bounds ITSELF, so one runaway loop
 cannot take the whole slice: `systemd-run --user --scope
---slice=factory-dispatch.slice -p MemoryMax=3500M -- <launcher>`. The figure
+--slice=factory-dispatch.slice -p MemoryMax="$(cat
+/etc/livespec/factory-dispatch-loop-memory-max)" -- <launcher>`. The figure
 is the largest measured loop peak (VmHWM 2532M, 2026-11-13) plus room for the
 loop's drive and preflight children.
 
@@ -55,17 +57,48 @@ loops are launched by the orchestrator's drive path, and the gates by this
 repository's gate recipes. This role installs only the slices.
 
 Dolt's protection (`OOMScoreAdjust=-900`, `MemoryMin=4G` on `doltdb.service`)
-is NOT here. That unit belongs to the dolt-server repository and is bounded
-there.
+is NOT here. That unit, and `dolt-backup.service` beside it, belong to the
+dolt-server repository, which installs them only on the host that runs the
+ledger. So the protection reaches that host and no other.
 
-## The one setting
+## Settings
+
+`dev_host_memory_bounds_state` is the switch: `present` installs everything
+above, and `absent` (the default) removes every file this role wrote. The dev
+hosts group sets `present` in `inventory/group_vars/dev_hosts.yml`.
+
+Every size is a variable, and none of the defaults assumes the dev VPS's RAM,
+its lack of swap, or its fleet cap. A host whose numbers differ sets these in
+its own `host_vars`:
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
-| `dev_host_memory_bounds_state` | `absent` | `present` installs everything above; `absent` removes every file this role wrote. |
+| `dev_host_memory_bounds_tmp_size` | `8G` | The `/tmp` tmpfs cap. |
+| `dev_host_memory_bounds_tmp_nr_inodes` | `2m` | The `/tmp` inode cap. |
+| `dev_host_memory_bounds_dispatch_loop_cap` | `18` | The fleet cap on dispatcher loops on this host. |
+| `dev_host_memory_bounds_dispatch_loop_steady_mib` | `800` | One loop's steady RSS, in MiB. |
+| `dev_host_memory_bounds_dispatch_loop_peak_mib` | `2560` | One loop's peak RSS (VmHWM), in MiB. |
+| `dev_host_memory_bounds_dispatch_concurrent_peaks` | `4` | How many loops may peak at once. |
+| `dev_host_memory_bounds_dispatch_memory_max` | derived | `loop_cap x steady + concurrent_peaks x (peak - steady)`, in MiB. |
+| `dev_host_memory_bounds_dispatch_memory_high` | derived | 90% of the dispatch MemoryMax. |
+| `dev_host_memory_bounds_dispatch_loop_memory_max` | `3500M` | Each launcher's own scope bound: the measured peak plus its children. |
+| `dev_host_memory_bounds_gate_memory_high` / `_max` | `9G` / `10G` | The local-gate slice; one full suite at a time. |
+| `dev_host_memory_bounds_reconcile_memory_high` / `_max` | `4G` / `6G` | The reconcile-runs bound; the measured peak is 3.7G. |
+| `dev_host_memory_bounds_memory_swap_max` | `0` | MemorySwapMax for both slices and reconcile-runs. |
 
-The dev hosts group sets `present` in `inventory/group_vars/dev_hosts.yml`.
-Every other variable is documented at its default in `defaults/main.yml`.
+The per-loop figures were measured on the dev VPS on 2026-11-13. A new host
+should re-measure them (VmRSS and VmHWM of each running `dispatcher.py loop`)
+once dispatch runs there.
+
+### Swap
+
+On a host without swap (the dev VPS), MemorySwapMax has no effect. Above a
+slice's MemoryHigh, its anonymous memory cannot be reclaimed, so the slice
+STALLS; MemoryMax is where processes are killed. On a host WITH swap,
+MemoryHigh reclaims to swap first. The default of `0` keeps the slices and
+reconcile-runs out of swap, so they behave exactly as they do on the VPS, and a
+runaway cannot push the live ledger or the seats into swap. Set it to a size,
+or to `infinity`, only as a deliberate choice for that host.
 
 ## Procedure
 
