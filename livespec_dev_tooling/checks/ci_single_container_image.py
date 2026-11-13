@@ -34,10 +34,9 @@ vendor-path-aware import below.
 from __future__ import annotations
 
 import re
-import shlex
 import sys
 from dataclasses import dataclass
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 
 _VENDOR_DIR = Path(__file__).resolve().parent.parent / "_vendor"
 if str(_VENDOR_DIR) not in sys.path:
@@ -47,6 +46,9 @@ import structlog  # noqa: E402  — vendor-path-aware import after sys.path inse
 
 from livespec_dev_tooling.cross_repo.fabro_image_pin_rewrite import (  # noqa: E402
     tag_version_component,
+)
+from livespec_dev_tooling.checks._ci_single_container_image_shell import (  # noqa: E402
+    runs_aggregate_target,
 )
 
 __all__: list[str] = []
@@ -60,10 +62,6 @@ _IMAGE_KEY = re.compile(r"^[ \t]*image:[ \t]*(?P<value>.*)$")
 _QUOTED = re.compile(r"""^(?P<quote>["'])(?P<body>.*?)(?P=quote)""")
 _TRAILING_COMMENT = re.compile(r"[ \t]+#.*$")
 _JOB_KEY = re.compile(r"^[ \t]{2}(?P<name>[^ \t:#][^:]*):[ \t]*(?:#.*)?$")
-_RUN_KEY = re.compile(r"^(?P<lead>[ \t]*(?:-[ \t]+)?)run:[ \t]*(?P<value>.*)$")
-_BLOCK_SCALAR = re.compile(r"^(?P<style>[|>])[-+0-9]*[ \t]*(?:#.*)?$")
-_SHELL_OPERATOR = re.compile(r"^[();<>|&]+$")
-_UNPARSEABLE_SHELL = re.compile(r"""["'\\]|(?:^|\s)#.*$""")
 _CHECK_RECIPE = re.compile(r"^check(?:[ \t]+[^:]*)?:[ \t]*(?P<dependencies>.*)$")
 _RECIPE_HEADER = re.compile(r"^[^ \t#:][^:]*:[ \t]*(?:#.*)?$")
 _HINT = (
@@ -202,75 +200,6 @@ def _has_gate_flavor(*, flavors: set[str]) -> str | None:
     return None
 
 
-def _run_commands(*, lines: list[str]) -> list[str]:
-    """The shell command lines of every step `run:` value in a job's source lines."""
-    commands: list[str] = []
-    index = 0
-    while index < len(lines):
-        match = _RUN_KEY.match(lines[index])
-        index += 1
-        if match is None:
-            continue
-        key_indent = len(match.group("lead"))
-        body: list[str] = []
-        while index < len(lines) and (
-            not lines[index].strip() or _indent_of(line=lines[index]) > key_indent
-        ):
-            body.append(lines[index].strip())
-            index += 1
-        block = _BLOCK_SCALAR.match(match.group("value"))
-        if block is None:
-            commands.append(_reference(raw=" ".join([match.group("value"), *body])))
-        elif block.group("style") == ">":
-            commands.append(" ".join(part for part in body if part))
-        else:
-            commands.extend(re.sub(r"\\\n", " ", "\n".join(body)).splitlines())
-    return commands
-
-
-def _shell_words(*, command: str) -> list[str]:
-    """The command's shell words, comments removed and quoting resolved."""
-    lexer = shlex.shlex(command, posix=True, punctuation_chars=True)
-    lexer.whitespace_split = True
-    lexer.commenters = "#"
-    try:
-        return list(lexer)
-    except ValueError:
-        return _UNPARSEABLE_SHELL.sub(" ", command).split()
-
-
-def _command_runs_aggregate(*, command: str, aggregate: set[str]) -> bool:
-    """Whether the shell command invokes `just` with any aggregate target."""
-    segment: list[str] = []
-    for word in [*_shell_words(command=command), ";"]:
-        if not _SHELL_OPERATOR.match(word):
-            segment.append(word)
-            continue
-        if _segment_runs_aggregate(words=segment, aggregate=aggregate):
-            return True
-        segment = []
-    return False
-
-
-def _segment_runs_aggregate(*, words: list[str], aggregate: set[str]) -> bool:
-    for position, word in enumerate(words):
-        rest = words[position + 1 :]
-        if PurePosixPath(word).name == "just" and any(recipe in aggregate for recipe in rest):
-            return True
-        shell_script = word == "eval" or (word.startswith("-") and word.endswith("c"))
-        if shell_script and _command_runs_aggregate(command=" ".join(rest), aggregate=aggregate):
-            return True
-    return False
-
-
-def _runs_aggregate_target(*, lines: list[str], image: _Image, aggregate: set[str]) -> bool:
-    """Whether this image's job runs any declared aggregate target in a step `run:`."""
-    return any(
-        _command_runs_aggregate(command=command, aggregate=aggregate)
-        for command in _run_commands(lines=lines[image.job_start : image.job_end])
-    )
-
-
 def _configure_logger() -> structlog.stdlib.BoundLogger:
     structlog.configure(
         processors=[
@@ -308,7 +237,12 @@ def main() -> int:
     gate_flavor = _has_gate_flavor(flavors=flavors)
     aggregate = _aggregate_targets(repo_root=Path.cwd())
     non_gate_runs_aggregate = gate_flavor is not None and any(
-        _runs_aggregate_target(lines=source.splitlines(), image=image, aggregate=aggregate)
+        runs_aggregate_target(
+            lines=source.splitlines(),
+            job_start=image.job_start,
+            job_end=image.job_end,
+            aggregate=aggregate,
+        )
         for image in images
         if (part := parts[image.image]) is not None and part[1] != gate_flavor
     )
