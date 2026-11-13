@@ -123,7 +123,10 @@ def runs_from_pages(pages: object) -> list[dict]:
 
 
 def consistent_runs(slug: str, state: str, attempts: int = 3) -> list[dict]:
-    """A live fleet can create a run between the count and the page, so a mismatch is re-read, never trusted."""
+    """A live fleet can create a run between the count and the page, so a mismatch is re-read, never trusted.
+
+    A count that never agrees with the rows, after every attempt, reads UNOBSERVABLE (NOT quiet).
+    """
     last: Unobservable | None = None
     for attempt in range(attempts):
         try:
@@ -222,6 +225,7 @@ def attribute_jobs(items: list, repos: list[str]) -> tuple[dict[str, list[str]],
     return per_repo, unattributed
 
 
+# Existence probe for the `gates` namespace: a server-side DRY RUN, so nothing is ever created (see gate_jobs).
 NAMESPACE_PROBE = ["with-gates-kubeconfig", "kubectl", "create", "secret", "generic", "quiet-check-namespace-probe",
                    "-n", "gates", "--dry-run=server", "-o", "json"]
 
@@ -231,7 +235,9 @@ def gate_jobs(repos: list[str], read: Callable[[list[str]], object] = run_json) 
         # A missing namespace would list zero Jobs and read as quiet, so the namespace's existence is proved first.
         # The gates credential may not `get namespaces` (only Jobs, pods and secret creation), so the proof is a
         # SERVER-SIDE DRY-RUN create of a secret in it: the API server answers it only for an existing namespace
-        # and persists nothing.
+        # and persists nothing. THIS IS A READ-ONLY PROBE, NOT A WRITE: `--dry-run=server` never stores the secret.
+        # It stays within gate-submitter's own grants, so no RBAC change is needed (legacy-coordinator-agent
+        # accepted it in its review of livespec-dev-tooling#4427).
         probe = read(NAMESPACE_PROBE)
         if not isinstance(probe, dict) or probe.get("metadata", {}).get("namespace") != "gates":
             raise Unobservable("namespace gates: the dry-run probe did not answer from it")
