@@ -39,4 +39,6 @@ And `kubectl get nodes` run by that login MUST list the cluster's nodes
 
 And `kubectl auth can-i get secrets` run by that login MUST print `no`
 
+And `kubectl auth can-i create pods/exec` run by that login MUST print `no`
+
 The revise that accepts this proposal MUST add a tests/heading-coverage.json row for the new scenario heading, a spec-first TODO row naming its tier and an owning work_item (livespec-dev-tooling-cfojg2), and MUST register it in tests/heading-coverage-debt.json.
