@@ -102,6 +102,16 @@ template:
       # rather than straight to the Kubernetes scheduler.
       kueue.x-k8s.io/queue-name: fabro-lq
   spec:
+    # Placed by `ci-runner-scheduler` (../runner-scheduler/runner-scheduler.yaml),
+    # like every scale set whose runner pods request a churn slot
+    # (livespec-dev-tooling-mtvxde, widened fleet-wide by legacy-coordinator-agent's
+    # ruling of 2026-11-13). It ranks nodes by the fraction of their churn slots in
+    # use, as the ratified clause "Runner placement follows admission capacity"
+    # requires, and ONE scheduler then binds every churn-slot pod: while two
+    # schedulers bound them from separate caches they raced for a node's last free
+    # slot and the kubelet refused the loser (OutOfci-runner.io/churn-slot).
+    # Revert: delete this line from every values file and converge.
+    schedulerName: ci-runner-scheduler
     # NODE PINNING (the first scale set that carries one; phase2/README.md
     # "Enumerating the pool" left placement to be "decided then", and this is
     # then). A fabro job's work volume is ~100 GiB, and local-path enforces no
