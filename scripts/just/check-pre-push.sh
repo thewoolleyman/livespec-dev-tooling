@@ -73,6 +73,32 @@ if [ "${ref_updates}" -gt 0 ] && [ "${ref_updates}" -eq "${deleted_refs}" ]; the
     exit 0
 fi
 
+# THE SAME-TREE DELEGATED PRE-COMMIT VERDICT is the shared library's
+# `pre-push-evidence` command. Consumers pass their own check-set members, so its
+# host-only rerun is identical across the fleet rather than copied into each
+# pre-push hook. Its status 3 means no qualifying evidence and falls through to
+# this hook's ordinary delegated/local gate below. `check-fleet-conformance-admin`
+# is left out of the list: `hook_gate_skips` in check.sh omits it from every hook
+# gate because it reads admin-scoped fleet state, so the shared command must not
+# run it on a push either.
+pre_push_members=()
+if [ -f check-targets.txt ]; then
+    mapfile -t pre_push_members < <(
+        sed -E 's/[[:space:]]*#.*$//; s/^[[:space:]]+//; s/[[:space:]]+$//' check-targets.txt \
+            | grep -E '^check-' \
+            | grep -vxF 'check-fleet-conformance-admin' || true
+    )
+fi
+pre_push_reuse_status=0
+uv run python -m livespec_dev_tooling.green_token pre-push-evidence \
+    "${pre_push_members[@]}" || pre_push_reuse_status=$?
+if [ "${pre_push_reuse_status}" -eq 0 ]; then
+    exit 0
+fi
+if [ "${pre_push_reuse_status}" -ne 3 ]; then
+    exit "${pre_push_reuse_status}"
+fi
+
 # THE TOKEN-MATCH PATH. A matching token means this tree is byte-identical to
 # one a green aggregate already judged, which makes the token a MEMOIZATION of
 # that judgement — and memoization is sound only for a pure function. `just
@@ -99,32 +125,6 @@ fi
 if uv run python -m livespec_dev_tooling.green_token check 2>&1; then
     echo ":: pre-push: green token matched - tree byte-identical to last green check, so the token stands in for this tree's TREE-PURE members only; the world-reading members run here (CI is authoritative)"
     exec just hook_gate=1 token_match=1 check
-fi
-
-# THE SAME-TREE DELEGATED PRE-COMMIT VERDICT is the shared library's
-# `pre-push-evidence` command. Consumers pass their own check-set members, so its
-# host-only rerun is identical across the fleet rather than copied into each
-# pre-push hook. Its status 3 means no qualifying evidence and falls through to
-# this hook's ordinary delegated/local gate below. `check-fleet-conformance-admin`
-# is left out of the list: `hook_gate_skips` in check.sh omits it from every hook
-# gate because it reads admin-scoped fleet state, so the shared command must not
-# run it on a push either.
-pre_push_members=()
-if [ -f check-targets.txt ]; then
-    mapfile -t pre_push_members < <(
-        sed -E 's/[[:space:]]*#.*$//; s/^[[:space:]]+//; s/[[:space:]]+$//' check-targets.txt \
-            | grep -E '^check-' \
-            | grep -vxF 'check-fleet-conformance-admin' || true
-    )
-fi
-pre_push_reuse_status=0
-uv run python -m livespec_dev_tooling.green_token pre-push-evidence \
-    "${pre_push_members[@]}" || pre_push_reuse_status=$?
-if [ "${pre_push_reuse_status}" -eq 0 ]; then
-    exit 0
-fi
-if [ "${pre_push_reuse_status}" -ne 3 ]; then
-    exit "${pre_push_reuse_status}"
 fi
 
 # The DELEGATED-GATE fall-through (R4.S7c of plan livespec

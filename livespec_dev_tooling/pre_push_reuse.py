@@ -74,13 +74,13 @@ def run_pre_push_reuse(*, cwd: Path, targets: list[str], log: structlog.stdlib.B
     )
     skipped = len(targets) - len(members_to_run)
     _write(text=f"pre-push reuse: accepted gate Job {gate_job} for tree {tree_hash}\n")
+    _write(text=f"pre-push reuse: skipped {skipped} member(s) the verdict covered\n")
     for member in members_to_run:
         _write(text=f"pre-push reuse: running member {member} on the pushing host\n")
         completed = default_gate_command_runner(argv=["just", member], cwd=cwd, stream=True)
         if not is_successful(completed) or completed.unwrap().returncode != 0:
             log.error("pre-push reuse: member failed", member=member)
             return 1
-    _write(text=f"pre-push reuse: skipped {skipped} member(s) the verdict covered\n")
     return 0
 
 

@@ -64,9 +64,9 @@ def test_reuse_runs_uncovered_and_live_members_then_reports_skips(
     assert invoked == [["just", "check-b"], ["just", "check-c"]]
     assert capsys.readouterr().out == (
         "pre-push reuse: accepted gate Job job-1 for tree tree-1\n"
+        "pre-push reuse: skipped 1 member(s) the verdict covered\n"
         "pre-push reuse: running member check-b on the pushing host\n"
         "pre-push reuse: running member check-c on the pushing host\n"
-        "pre-push reuse: skipped 1 member(s) the verdict covered\n"
     )
 
 
@@ -101,7 +101,38 @@ def test_reuse_names_a_member_that_returns_a_failing_status(
         )
         == 1
     )
-    assert "member=check-a" in capsys.readouterr().out
+    output = capsys.readouterr().out
+    assert "member=check-a" in output
+    assert "pre-push reuse: skipped 0 member(s) the verdict covered\n" in output
+
+
+def test_reuse_prints_the_skipped_count_before_a_failing_member_refuses_the_push(
+    *, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A covered member is counted even when a later host member fails."""
+    monkeypatch.setattr(
+        pre_push_reuse,
+        "accepted_lines",
+        lambda **_kwargs: ("job-1", "tree-1", "check-a"),
+        raising=False,
+    )
+    monkeypatch.setattr(pre_push_reuse, "_host_members", lambda **_kwargs: ())
+    monkeypatch.setattr(
+        pre_push_reuse,
+        "default_gate_command_runner",
+        lambda **_kwargs: Success(GateCommandResult(returncode=3, stdout="", stderr="")),
+        raising=False,
+    )
+
+    assert (
+        pre_push_reuse.run_pre_push_reuse(
+            cwd=Path(), targets=["check-a", "check-b"], log=structlog.get_logger("test")
+        )
+        == 1
+    )
+    output = capsys.readouterr().out
+    assert "pre-push reuse: running member check-b on the pushing host\n" in output
+    assert "pre-push reuse: skipped 1 member(s) the verdict covered\n" in output
 
 
 def test_reuse_names_a_member_that_cannot_start(
