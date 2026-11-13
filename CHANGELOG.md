@@ -58,6 +58,43 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.206.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.205.0...v1.206.0) (2026-11-13)
+
+
+### Features
+
+* alarm on unread gate lane readings ([f46ee8a](https://github.com/thewoolleyman/livespec-dev-tooling/commit/f46ee8a9036187571cff3a4955b6483995cc8fac))
+* cover factory sandbox loss drill ([a08e2ec](https://github.com/thewoolleyman/livespec-dev-tooling/commit/a08e2ecdba6a32b5b7bf948f0a51661982d82ee8))
+* **incident:** the controller records an incident CI job's published PASSED aggregate on its incident item (livespec-dev-tooling-bqnzcm.4) ([dadc673](https://github.com/thewoolleyman/livespec-dev-tooling/commit/dadc67377c891a3d007f19a910bf1468a00fd456))
+* **incident:** the incident CI publisher posts the PASSED aggregate to the controller under its OIDC identity (livespec-dev-tooling-bqnzcm.4) ([140a1d0](https://github.com/thewoolleyman/livespec-dev-tooling/commit/140a1d0f4995fc4a2c93867195d80a895d812f8b))
+
+
+### Bug Fixes
+
+* **ansible:** issue the sandbox loss drill delete with a real UID precondition ([cd6dc61](https://github.com/thewoolleyman/livespec-dev-tooling/commit/cd6dc611dcbdaf4db9d09087b4837692cfe42ea4))
+* **ansible:** retirement guard asks for removing runs and refuses an unreadable listing (livespec-dev-tooling-lmuhvi) ([f30bcdd](https://github.com/thewoolleyman/livespec-dev-tooling/commit/f30bcdd9eaddcaf63e19b01926b4f16f3ec5b53c))
+* **ansible:** retirement guard reads every run and filters non-terminal client-side (livespec-dev-tooling-lmuhvi) ([d20c51d](https://github.com/thewoolleyman/livespec-dev-tooling/commit/d20c51d4860ccf6f4fea50c456216a46de6db599))
+* **ansible:** stamp loss-drill delete and UID-gone times at the events they report ([3207cdc](https://github.com/thewoolleyman/livespec-dev-tooling/commit/3207cdcaf37bd4e2d8d2d16a09883855406d761f))
+* **ansible:** the retirement guard reads a run's environment at run.environment.id (livespec-dev-tooling-lmuhvi) ([3d57011](https://github.com/thewoolleyman/livespec-dev-tooling/commit/3d57011a4607871f271508e48c855880310f0be9))
+* **flake-retry:** a __file__-relative directory is a named repository path (livespec-dev-tooling-4ai5ao) ([18bdbef](https://github.com/thewoolleyman/livespec-dev-tooling/commit/18bdbef4952380ea3398e8cddd4ff508ff307201))
+* **flake-retry:** a path on a non-rooted base names no repository path (livespec-dev-tooling-bob7iv, livespec-dev-tooling-jfy23q) ([869a2d0](https://github.com/thewoolleyman/livespec-dev-tooling/commit/869a2d0f107a82fb4de3b12f1ec374a04fec205e))
+* **flake-retry:** a repository-rooted path with only computed segments is undeterminable (livespec-dev-tooling-4ai5ao) ([3341a09](https://github.com/thewoolleyman/livespec-dev-tooling/commit/3341a09ea97d4552331fe4d58afe6eb5dffb65c6))
+* **flake-retry:** a request path outside its own test module keeps the test touched (livespec-dev-tooling-4ai5ao) ([461280b](https://github.com/thewoolleyman/livespec-dev-tooling/commit/461280b9092393f7198d918f0a8311e86dd82870))
+* **flake-retry:** an unresolved or class-held root keeps the test touched (livespec-dev-tooling-bob7iv, livespec-dev-tooling-4ai5ao) ([674ece6](https://github.com/thewoolleyman/livespec-dev-tooling/commit/674ece60b08393daeaacadf5d1b698db16c96993))
+* **flake-retry:** an upward step widens a request-path span (livespec-dev-tooling-4ai5ao) ([139062d](https://github.com/thewoolleyman/livespec-dev-tooling/commit/139062dbd7e01fefbdc081f6534e1572cfba5cd9))
+* **flake-retry:** solve each test path's closure once per session (livespec-dev-tooling-4ai5ao) ([1672814](https://github.com/thewoolleyman/livespec-dev-tooling/commit/16728140ecae8dfe4904e23639a20554ac3ed18a))
+* **flake-retry:** the closure solve ends on a cycle of bindings (livespec-dev-tooling-4ai5ao) ([231edca](https://github.com/thewoolleyman/livespec-dev-tooling/commit/231edca389c1ca5c4b1a24e398bfe1b38f0330bf))
+* **flake-retry:** the plugin fits its line budget after the rebase, and the real-repository pin asserts only its change set's attribution (livespec-dev-tooling-4ai5ao) ([90fedac](https://github.com/thewoolleyman/livespec-dev-tooling/commit/90fedaccfb9f223f702ef2a254f2997218a8290a))
+* **incident:** /ci/publish verifies the identity token before it reads or writes any controller state (livespec-dev-tooling-bqnzcm.4) ([e78a84e](https://github.com/thewoolleyman/livespec-dev-tooling/commit/e78a84e82032919c584113a65f57105cf9b307c6))
+* **incident:** a conditional-job line says the job may not run on this event (livespec-dev-tooling-yzr6ad) ([1f2a846](https://github.com/thewoolleyman/livespec-dev-tooling/commit/1f2a846a5b638c29980c34bc17858786b230c630))
+* **incident:** key released incident CI inventory members by job and check slug (livespec-dev-tooling-yzr6ad) ([1fc5122](https://github.com/thewoolleyman/livespec-dev-tooling/commit/1fc51220dd69aec2db8a9200e9568df56e48e949))
+* **incident:** the aggregate refuses a plan over an inventory with no runnable execution view (livespec-dev-tooling-yzr6ad) ([f813765](https://github.com/thewoolleyman/livespec-dev-tooling/commit/f8137655e9f2c15eb612e9f62125e690b3aa359a))
+* **incident:** the inventory render script refuses a wrong clone by name and never truncates a committed entry (livespec-dev-tooling-6xd3dz) ([23d49c2](https://github.com/thewoolleyman/livespec-dev-tooling/commit/23d49c2ae784cae482f90401c125cd0c8aa1fc0b))
+* **incident:** the job-level if read fails closed on a commented job key, an escaped quote and an alias (livespec-dev-tooling-yzr6ad) ([55d5d4c](https://github.com/thewoolleyman/livespec-dev-tooling/commit/55d5d4c4e5805b20385fb81b4d28af44054bed84))
+* **incident:** the job-level if read sees block scalars, multi-line values, ref_* tokens and the bracket form (livespec-dev-tooling-yzr6ad) ([94b0be6](https://github.com/thewoolleyman/livespec-dev-tooling/commit/94b0be62d9b96770b2074e26b03236b68579edb9))
+* **incident:** this repository's released CI inventory refuses a source, and the undeclared refusal is asserted in full (livespec-dev-tooling-6xd3dz) ([8563607](https://github.com/thewoolleyman/livespec-dev-tooling/commit/85636075362e1410a7664b70b13583ee11b1a1eb))
+* **rule26:** bind mutation evidence to executing engine source (livespec-dev-tooling-he7huy) ([b022088](https://github.com/thewoolleyman/livespec-dev-tooling/commit/b02208847d1b25699512e65e3d30143e2c28271b))
+
 ## [1.205.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.204.0...v1.205.0) (2026-11-13)
 
 
