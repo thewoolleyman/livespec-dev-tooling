@@ -717,6 +717,41 @@ def test_a_symlinked_module_that_leaves_the_head_tree_is_refused_naming_the_link
     assert all(facts), (facts, status, result)
 
 
+def test_a_symlink_chain_whose_second_link_leaves_the_head_tree_is_refused_naming_that_link(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    clone = _clone(root=tmp_path)
+    _ = _git(repo=clone.repo, args=["checkout", "-q", clone.head])
+    (clone.repo / "src" / "middle.py").symlink_to("../../outside.py")
+    _ = _git(repo=clone.repo, args=["add", "src/middle.py"])
+    _ = _git(repo=clone.repo, args=["commit", "-qm", "unchanged escaping middle link"])
+    target = _git(repo=clone.repo, args=["rev-parse", "HEAD"])
+    (clone.repo / "src" / "chained.py").symlink_to("middle.py")
+    _ = _git(repo=clone.repo, args=["add", "src/chained.py"])
+    _ = _git(repo=clone.repo, args=["commit", "-qm", "chained module"])
+    head = _git(repo=clone.repo, args=["rev-parse", "HEAD"])
+    _ = _git(repo=clone.repo, args=["update-ref", "refs/remotes/origin/master", target])
+    _ = _git(repo=clone.repo, args=["checkout", "-q", clone.base])
+    linked = _Clone(
+        repo=clone.repo,
+        base=clone.base,
+        head=head,
+        tree=_git(repo=clone.repo, args=["rev-parse", head + "^{tree}"]),
+    )
+    application, authority = _observer(tmp_path=tmp_path, monkeypatch=monkeypatch, clone=linked)
+    authority.add(
+        record=_record(clone=linked, paths={"src/chained.py": "non-executable"}, covered=())
+    )
+    status, result = _arm(application=application, clone=linked)
+    reason = str(result.get("reason"))
+    facts = [
+        status == "403 Forbidden",
+        "src/middle.py" in reason,
+        "read-current" not in authority.actions,
+    ]
+    assert all(facts), (facts, status, result)
+
+
 def test_a_changed_submodule_is_refused_naming_its_path(
     *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

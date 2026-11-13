@@ -81,14 +81,14 @@ def _blobs(
         size = int(header.split()[2])
         blobs[name] = (mode, rest[:size])
         batch = rest[size + 1 :]
-    for name, (mode, data) in tuple(blobs.items()):
-        if mode != "120000":
-            continue
-        target = normpath(str(Path(name).parent / data.decode("utf-8")))
+    links = [name for name, (mode, _) in blobs.items() if mode == "120000"]
+    for name in links:
+        target = normpath(str(Path(name).parent / blobs[name][1].decode("utf-8")))
         if target not in tree:
             raise _unclassifiable(name=name, kind="symbolic link outside the head tree at")
         target_mode, target_sha = tree[target]
         blobs[target] = (target_mode, run(args=("cat-file", "blob", target_sha)))
+        links.extend({target} - set(links) if target_mode == "120000" else ())
     return blobs
 
 
