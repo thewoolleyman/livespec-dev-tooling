@@ -5316,3 +5316,27 @@ When the committed converge applies it to the live pool
 Then every AutoscalingRunnerSet in the `arc-runners` namespace MUST have a listener and an EphemeralRunnerSet
 
 And a CI job of `livespec-orchestrator-beads-fabro` and a CI job of `livespec-dev-tooling` MUST each complete on a k3s runner whose runner version is 2.339.0
+
+## Scenario: a shipped script hands its Honeycomb key to curl without placing it in curl's argument vector
+
+Given `pressure-telemetry.sh` runs with `HONEYCOMB_INGEST_KEY_LIVESPEC` set to a known test value, and a recording stand-in for `curl` that records its argument vector, its standard input and every file a `-K` or `-H @` argument names
+
+When the script posts its PSI datapoints
+
+Then no recorded argument vector MUST contain the test value
+
+And the stand-in MUST have received an `X-Honeycomb-Team` header whose value equals the test value, through its standard input or an owner-only file
+
+And the same MUST hold for `ci-runner/observability/triggers/apply-triggers.sh` with its Honeycomb configuration key
+
+## Scenario: a dev host that stops sending host metrics fires its no-data trigger
+
+Given the committed dev-host host list names a host, and the no-data triggers generated from that list have been applied to the `livespec` environment
+
+When that host's otel-collector unit is stopped, so it sends no `system.linux.memory.available` datapoint
+
+Then within two evaluations of its 20-minute window that host's no-data trigger MUST fire to the dev-host recipients, naming the host
+
+And when the unit is started again and datapoints resume, the trigger MUST resolve
+
+And adding a second host to the dev-host list and running the generator MUST add exactly one trigger definition, for that host, and MUST leave every existing definition byte-identical
