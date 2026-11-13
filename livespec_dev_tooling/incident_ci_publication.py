@@ -51,7 +51,7 @@ from livespec_dev_tooling._incident_pr_run_store import (
 from livespec_dev_tooling.incident_ci_attachment import CiJobAttachment
 from livespec_dev_tooling.incident_ci_identity import identity_query
 from livespec_dev_tooling.incident_ci_identity_policy import CiIdentityPolicy
-from livespec_dev_tooling.incident_ci_oidc import unknown_key_id, verify_oidc
+from livespec_dev_tooling.incident_ci_oidc import KEY_UNKNOWN, unknown_key_id, verify_oidc
 from livespec_dev_tooling.incident_observer_admission import arm_record_matches
 from livespec_dev_tooling.incident_observer_endpoint import _read_request
 from livespec_dev_tooling.incident_pr_run_records import NOT_PROVISIONED
@@ -75,8 +75,6 @@ __all__: list[str] = [
 
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-bqnzcm.4
 INVALID = "publication-invalid"
-# Followed by `: kid <k>`: the token's signing key is not one the policy pins.
-KEY_UNKNOWN = "identity-key-unknown"
 STALE = "publication-stale"
 UNVERIFIED = "identity-unverified"
 UNAVAILABLE = "state-unavailable"

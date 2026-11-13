@@ -11,7 +11,15 @@ from livespec_dev_tooling.incident_ci_identity_policy import CiIdentityPolicy
 from livespec_dev_tooling.incident_ci_jws import verify_ci_signature
 from livespec_dev_tooling.incident_strict_json import IncidentJsonRefusalError
 
-__all__: list[str] = ["OidcIdentity", "oidc_current", "unknown_key_id", "verify_oidc"]
+__all__: list[str] = [
+    "KEY_UNKNOWN",
+    "UNVERIFIABLE",
+    "OidcIdentity",
+    "oidc_current",
+    "unknown_key_id",
+    "unverified_reason",
+    "verify_oidc",
+]
 
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-rqhqnb
 _MAX_TOKEN = 16384
@@ -22,6 +30,9 @@ _ISSUER = "https://token.actions.githubusercontent.com"
 _SHA = re.compile(r"[0-9a-f]{40}")
 _REF = re.compile(r"refs/pull/([1-9][0-9]{0,18})/merge")
 _HEADER = frozenset({"alg", "typ", "kid", "x5t", "x5t#S256"})
+# Followed by `: kid <k>`: the token's signing key is not one the policy pins.
+KEY_UNKNOWN = "identity-key-unknown"
+UNVERIFIABLE = "CI issuer identity unverifiable or unsupported"
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -114,6 +125,12 @@ def unknown_key_id(*, token: str, policy: CiIdentityPolicy) -> str | None:
         return kid if _header_valid(header=header) and kid not in pinned else None
     except (ValueError, IncidentJsonRefusalError, TypeError, UnicodeError, RecursionError):
         return None
+
+
+def unverified_reason(*, token: str, policy: CiIdentityPolicy) -> str:
+    """The refusal reason for a token verify_oidc refused: its key id when unpinned."""
+    kid = unknown_key_id(token=token, policy=policy)
+    return UNVERIFIABLE if kid is None else KEY_UNKNOWN + ": kid " + kid
 
 
 def _header_valid(*, header: dict[str, Any]) -> bool:

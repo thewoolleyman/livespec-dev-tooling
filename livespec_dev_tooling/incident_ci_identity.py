@@ -13,7 +13,12 @@ from livespec_dev_tooling.incident_ci_identity_policy import (
     identity_policy_intact,
 )
 from livespec_dev_tooling.incident_ci_job_identity import CiJobIdentity, CiJobVerifier
-from livespec_dev_tooling.incident_ci_oidc import OidcIdentity, oidc_current, verify_oidc
+from livespec_dev_tooling.incident_ci_oidc import (
+    OidcIdentity,
+    oidc_current,
+    unverified_reason,
+    verify_oidc,
+)
 from livespec_dev_tooling.incident_forge_reads import ForgeReads
 from livespec_dev_tooling.incident_observer_admission import (
     observer_arm_admitted,
@@ -109,7 +114,7 @@ class CiIdentityVerifier:
             token = authorization.removeprefix("Bearer ")
             identity = verify_oidc(token=token, policy=policy, now=time.time())
             if identity is None:
-                return _refused(reason="CI issuer identity unverifiable or unsupported")
+                return _refused(reason=unverified_reason(token=token, policy=policy))
             verified = verify_ci_invocation(
                 installation=self.installation, policy=policy, query=query, identity=identity
             )
