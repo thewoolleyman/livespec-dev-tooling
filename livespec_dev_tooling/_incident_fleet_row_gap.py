@@ -37,7 +37,10 @@ def _claim_gap(*, claim: CapabilityEvidence, manifest_sha256: str, instruction_o
         )
     if claim.disposition not in _DISPOSITIONS:
         return f"claim names no known disposition: {claim.disposition}"
-    if not all((claim.source_path, claim.proof_ref, claim.owner, claim.release_build)):
+    needs_release = claim.disposition != "deliberately-normal"
+    if not all((claim.source_path, claim.proof_ref, claim.owner)) or (
+        needs_release and not claim.release_build
+    ):
         return _INCOMPLETE_CLAIM
     if claim.disposition != "implemented":
         return "" if claim.reason else f"claim gives no reason for {claim.disposition}"
@@ -69,6 +72,20 @@ def _serving_gap(
     return ""
 
 
+def _normal_gap(*, claim: CapabilityEvidence) -> str:
+    """A ruling needs no serving read; a build read of the consumer's own installation refutes it.
+
+    The audit hands this claim a serving build only when the row's capability is the
+    consumer's own incident installation; a shared build it read is printed, not passed.
+    """
+    if claim.serving_build:
+        return (
+            f"serving version {claim.serving_build} of this consumer's own incident "
+            "installation contradicts its deliberately-normal claim"
+        )
+    return ""
+
+
 def row_gap(
     *,
     claim: CapabilityEvidence | None,
@@ -83,11 +100,19 @@ def row_gap(
     `claim` carries the serving build the audit read for it. `confirmed` is the
     independent re-read, and `explain` may name why a reader's own read cannot bear the
     claim out (a release-keyed row's reason); its name wins over the generic serving gap.
+    A deliberately-normal claim's evidence is the ruling it cites, so it needs no serving
+    read; a serving build it carries is a read of the consumer's own incident
+    installation, which contradicts that ruling.
     """
     if claim is None:
         return _NO_CLAIM
     if inapplicable:
         return _INAPPLICABLE_CLAIM
-    return _claim_gap(
+    gap = _claim_gap(
         claim=claim, manifest_sha256=manifest_sha256, instruction_only=instruction_only
-    ) or _serving_gap(claim=claim, confirmed=confirmed, explain=explain)
+    )
+    if gap:
+        return gap
+    if claim.disposition == "deliberately-normal":
+        return _normal_gap(claim=claim)
+    return _serving_gap(claim=claim, confirmed=confirmed, explain=explain)
