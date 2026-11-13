@@ -633,3 +633,20 @@ def test_a_coverage_row_without_a_numeric_percent_does_not_cover_a_changed_execu
         "src/widget.py" not in reason,
     ]
     assert all(facts), (facts, status, result)
+
+
+def test_a_replace_ref_cannot_hide_a_changed_product_file_from_the_reference_clone(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    clone = _clone(root=tmp_path)
+    _ = _git(repo=clone.repo, args=["replace", clone.head, clone.base])
+    application, authority = _observer(tmp_path=tmp_path, monkeypatch=monkeypatch, clone=clone)
+    authority.add(record=_record(clone=clone, paths={}, covered=()))
+    status, result = _arm(application=application, clone=clone)
+    reason = str(result.get("reason"))
+    facts = [
+        status == "403 Forbidden",
+        reason.startswith("incident-focused-evidence-paths-incomplete:"),
+        "src/widget.py" in reason,
+    ]
+    assert all(facts), (facts, status, result)
