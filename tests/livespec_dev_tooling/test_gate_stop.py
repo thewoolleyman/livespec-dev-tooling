@@ -299,7 +299,9 @@ def test_gate_stop_terms_every_attributed_process_before_any_kill(
     monkeypatch.setattr(gate_stop, "_args", lambda: argparse.Namespace(run_dir=run_dir))
     monkeypatch.setattr(gate_stop, "_tree", lambda *, root: {root})
     monkeypatch.setattr(
-        gate_stop, "_marked_processes", lambda *, run_dir: {456} if run_dir.is_dir() else set()
+        gate_stop,
+        "_marked_processes",
+        lambda *, run_dir: {123, 456} if run_dir.is_dir() else set(),
     )
     monkeypatch.setattr(gate_stop, "_job_gone", lambda *, run_dir: run_dir.is_dir())
     signals: list[tuple[int, set[int]]] = []
@@ -327,6 +329,9 @@ def test_gate_stop_tolerates_a_process_that_disappears_during_signalling(
     _ = (run_dir / "pid").write_text("123\n", encoding="utf-8")
     monkeypatch.setattr(gate_stop, "_args", lambda: argparse.Namespace(run_dir=run_dir))
     monkeypatch.setattr(gate_stop, "_tree", lambda *, root: {root})
+    monkeypatch.setattr(
+        gate_stop, "_marked_processes", lambda *, run_dir: {123} if run_dir.is_dir() else set()
+    )
     monkeypatch.setattr(
         gate_stop.os, "kill", lambda *_args: (_ for _ in ()).throw(ProcessLookupError)
     )
@@ -370,6 +375,9 @@ def test_gate_stop_names_surviving_processes(
     run_dir.mkdir()
     _ = (run_dir / "pid").write_text("123\n", encoding="utf-8")
     monkeypatch.setattr(gate_stop, "_args", lambda: argparse.Namespace(run_dir=run_dir))
+    monkeypatch.setattr(
+        gate_stop, "_marked_processes", lambda *, run_dir: {123} if run_dir.is_dir() else set()
+    )
     monkeypatch.setattr(gate_stop, "_stop", lambda *, root: {root})
 
     assert gate_stop.main() == 1
@@ -416,7 +424,7 @@ def test_gate_stop_kills_a_process_that_appears_during_the_grace_period(
     gate_stop, signals = _stop_with_marked_scans(
         monkeypatch=monkeypatch,
         tmp_path=tmp_path,
-        scans=lambda call: set() if call == 1 else {456},
+        scans=lambda call: {123} if call == 1 else {123, 456},
         survivors=lambda pids: pids,
     )
 
@@ -435,7 +443,7 @@ def test_gate_stop_keeps_rescanning_after_the_kill_and_names_the_last_stragglers
     gate_stop, signals = _stop_with_marked_scans(
         monkeypatch=monkeypatch,
         tmp_path=tmp_path,
-        scans=lambda call: set() if call == 1 else {1000 + call},
+        scans=lambda call: {123} if call == 1 else {123, 1000 + call},
         survivors=lambda _pids: set(),
     )
 
@@ -445,3 +453,60 @@ def test_gate_stop_keeps_rescanning_after_the_kill_and_names_the_last_stragglers
     named = capsys.readouterr().out
     assert "surviving processes: [" in named
     assert str(max(killed) + 1) in named
+
+
+def test_gate_stop_does_not_signal_a_recorded_pid_the_run_did_not_start(
+    *, capsys: pytest.CaptureFixture[str], monkeypatch: MonkeyPatch, tmp_path: Path
+) -> None:
+    """A reused pid, whose environment lacks the run marker, is never signalled as the runner."""
+    gate_stop = _gate_stop()
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    _ = (run_dir / "pid").write_text("123\n", encoding="utf-8")
+    monkeypatch.setattr(gate_stop, "_args", lambda: argparse.Namespace(run_dir=run_dir))
+    monkeypatch.setattr(gate_stop, "_tree", lambda *, root: {root, root + 1})
+    monkeypatch.setattr(
+        gate_stop, "_marked_processes", lambda *, run_dir: {456} if run_dir.is_dir() else set()
+    )
+    monkeypatch.setattr(gate_stop, "_job_gone", lambda *, run_dir: run_dir.is_dir())
+    signals: list[tuple[int, set[int]]] = []
+    monkeypatch.setattr(
+        gate_stop,
+        "_signal",
+        lambda *, pids, signal_number: signals.append((signal_number, set(pids))),
+    )
+    monkeypatch.setattr(gate_stop, "_settle", lambda *, pids: set(pids) - set(pids))
+
+    assert gate_stop.main() == 0
+    assert (run_dir / "stopped").is_file()
+    assert signals == [(signal.SIGTERM, {456})]
+    assert "pid 123 is not the runner of this run" in capsys.readouterr().out
+
+
+def test_detached_runner_carries_the_run_marker_in_its_own_environment(*, tmp_path: Path) -> None:
+    """The recorded runner pid is verifiable because the runner itself carries the run marker."""
+    root = tmp_path / "repo"
+    root.mkdir()
+    script = _write_runner(root=root)
+    started = _run(
+        script=script,
+        root=root,
+        args=[
+            "start",
+            "--local",
+            "--",
+            "bash",
+            "-c",
+            "trap 'exit 0' TERM; while :; do sleep 1; done",
+        ],
+    )
+    assert started.returncode == 0, started.stderr
+    run_dir = root / "tmp" / "gate-runs" / started.stdout.strip()
+    pid = (run_dir / "pid").read_text(encoding="utf-8").strip()
+
+    try:
+        environment = Path("/proc", pid, "environ").read_bytes().split(b"\0")
+        assert f"LIVESPEC_GATE_RUN_DIR={run_dir}".encode() in environment
+    finally:
+        with suppress(ProcessLookupError, ValueError):
+            os.kill(int(pid), signal.SIGKILL)
