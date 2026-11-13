@@ -95,7 +95,9 @@ class Forge:
     def __init__(self, *, bare, pull, branch="master"):
         self.bare, self.pull, self.branch, self.calls = bare, pull, branch, []
         self.hooks = {}
-        self.lost_patch_reply = self.ref_missing = self.wrong_tree = False
+        self.lost_conflict_reply = self.lost_patch_reply = self.ref_missing = self.wrong_tree = (
+            False
+        )
         self.broken = self.compare = None
 
     def master(self):
@@ -296,7 +298,12 @@ class World(SimpleNamespace):
         def run(argv, *, input, **_):
             del argv
             reply = application.execute(raw=input)
-            return subprocess.CompletedProcess([], 0, stdout=json.dumps(reply).encode())
+            lost_conflict_reply = (
+                self.forge.lost_conflict_reply and json.loads(input)["operation"] == "conflict"
+            )
+            return subprocess.CompletedProcess(
+                [], 0, stdout=b"" if lost_conflict_reply else json.dumps(reply).encode()
+            )
 
         scoped = SimpleNamespace(run=run, TimeoutExpired=subprocess.TimeoutExpired)
         monkeypatch.setattr(client_service, "subprocess", scoped)
@@ -509,6 +516,20 @@ def test_genuine_overlap_with_later_work_is_an_owned_rollbackconflict_request(wo
     assert (context / f"{world.intent.action_id}.json").exists()
     forge = world.client(monkeypatch)
     assert forge.read_exact_receipt(intent=world.intent) == outcome.receipt
+
+
+def test_genuine_overlap_recovers_a_durable_conflict_receipt_after_reply_loss(world, monkeypatch):
+    world.push_later(
+        path="shared.txt",
+        text=(world.author / "shared.txt").read_text().replace("incident first", "later edit"),
+    )
+    world.forge.lost_conflict_reply = True
+    outcome = world.recovered(monkeypatch)
+    assert outcome.status == "rollback-conflict"
+    assert outcome.receipt == (
+        f"rollback-conflict:{world.intent.action_id}:owner:{world.intent.registration.owner}:"
+        f"head:{world.forge.master()}"
+    )
 
 
 def test_conflict_is_refused_when_the_inverse_applies_cleanly(world, monkeypatch):
