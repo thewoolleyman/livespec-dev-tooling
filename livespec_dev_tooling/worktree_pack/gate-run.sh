@@ -132,6 +132,7 @@
 #   75       DIED_WITHOUT_VERDICT (EX_TEMPFAIL) — the gate did not finish;
 #            this is NOT a failing verdict and NOT a pass
 #   64       usage error (EX_USAGE)
+#   69       the gate venue selector cannot be imported (EX_UNAVAILABLE)
 #   70       the runner itself could not launch the gate (EX_SOFTWARE)
 #
 # `set -euo pipefail` (errexit): a runner whose own bookkeeping fails
@@ -871,25 +872,35 @@ cmd_start() {
         rm -rf "$selector_probe_dir"
         return "$EX_UNAVAILABLE"
     fi
-    rm -rf "$selector_probe_dir"
-
     local venue_fields=()
     if [[ "$uv_import_status" -eq 0 && "$force_local" == "true" ]]; then
-        mapfile -t venue_fields < <(
-            uv run --no-sync python -m livespec_dev_tooling.gate_runner_delegate --local -- "$@" 2>/dev/null
-        )
+        if uv run --no-sync python -m livespec_dev_tooling.gate_runner_delegate --local -- "$@" \
+            >"$selector_probe_dir/uv-selector.stdout" \
+            2>"$selector_probe_dir/uv-selector.stderr"; then
+            :
+        fi
+        mapfile -t venue_fields <"$selector_probe_dir/uv-selector.stdout"
     elif [[ "$uv_import_status" -eq 0 ]]; then
-        mapfile -t venue_fields < <(
-            uv run --no-sync python -m livespec_dev_tooling.gate_runner_delegate -- "$@" 2>/dev/null
-        )
+        if uv run --no-sync python -m livespec_dev_tooling.gate_runner_delegate -- "$@" \
+            >"$selector_probe_dir/uv-selector.stdout" \
+            2>"$selector_probe_dir/uv-selector.stderr"; then
+            :
+        fi
+        mapfile -t venue_fields <"$selector_probe_dir/uv-selector.stdout"
     elif [[ "$force_local" == "true" ]]; then
-        mapfile -t venue_fields < <(
-            python3 -m livespec_dev_tooling.gate_runner_delegate --local -- "$@"
-        )
+        if python3 -m livespec_dev_tooling.gate_runner_delegate --local -- "$@" \
+            >"$selector_probe_dir/python-selector.stdout" \
+            2>"$selector_probe_dir/python-selector.stderr"; then
+            :
+        fi
+        mapfile -t venue_fields <"$selector_probe_dir/python-selector.stdout"
     else
-        mapfile -t venue_fields < <(
-            python3 -m livespec_dev_tooling.gate_runner_delegate -- "$@"
-        )
+        if python3 -m livespec_dev_tooling.gate_runner_delegate -- "$@" \
+            >"$selector_probe_dir/python-selector.stdout" \
+            2>"$selector_probe_dir/python-selector.stderr"; then
+            :
+        fi
+        mapfile -t venue_fields <"$selector_probe_dir/python-selector.stdout"
     fi
     # Consumer worktrees normally have their pinned environment ready, but a
     # source checkout with an importable package and no initialized project
@@ -897,19 +908,33 @@ cmd_start() {
     # the package importable.
     if [[ "${#venue_fields[@]}" != "2" && "$uv_import_status" -eq 0 ]]; then
         if [[ "$force_local" == "true" ]]; then
-            mapfile -t venue_fields < <(
-                python3 -m livespec_dev_tooling.gate_runner_delegate --local -- "$@"
-            )
+            if python3 -m livespec_dev_tooling.gate_runner_delegate --local -- "$@" \
+                >"$selector_probe_dir/python-selector.stdout" \
+                2>"$selector_probe_dir/python-selector.stderr"; then
+                :
+            fi
+            mapfile -t venue_fields <"$selector_probe_dir/python-selector.stdout"
         else
-            mapfile -t venue_fields < <(
-                python3 -m livespec_dev_tooling.gate_runner_delegate -- "$@"
-            )
+            if python3 -m livespec_dev_tooling.gate_runner_delegate -- "$@" \
+                >"$selector_probe_dir/python-selector.stdout" \
+                2>"$selector_probe_dir/python-selector.stderr"; then
+                :
+            fi
+            mapfile -t venue_fields <"$selector_probe_dir/python-selector.stdout"
         fi
     fi
     [[ "${#venue_fields[@]}" == "2" ]] || {
         printf 'ERROR: gate venue selection did not return a venue and reason\n' >&2
+        if [[ -s "$selector_probe_dir/uv-selector.stderr" ]]; then
+            cat "$selector_probe_dir/uv-selector.stderr" >&2
+        fi
+        if [[ -s "$selector_probe_dir/python-selector.stderr" ]]; then
+            cat "$selector_probe_dir/python-selector.stderr" >&2
+        fi
+        rm -rf "$selector_probe_dir"
         return "$EX_SOFTWARE"
     }
+    rm -rf "$selector_probe_dir"
     local venue="${venue_fields[0]}"
     local venue_reason="${venue_fields[1]}"
 
