@@ -15,6 +15,30 @@ fi
 
 : "${test_nprocs:?}"
 
+# In GitHub Actions, every invocation writes exactly one JSON object to the
+# step summary and one prefixed copy to the job log.  The log record is the
+# transport consumed by ci_run_telemetry.py, and its stable fields are:
+# repository, run_id, job_id, duration_ms and outcome.  A missing downloaded
+# .coverage is `missing_receipt`: its producer handoff is absent, so it is
+# never evidence of reuse.
+coverage_started_seconds="$SECONDS"
+record_reuse_outcome() {
+    local outcome="$1"
+    local duration_ms
+    local record
+    if [[ "${GITHUB_ACTIONS:-}" != "true" ]]; then
+        return
+    fi
+    duration_ms=$(( (SECONDS - coverage_started_seconds) * 1000 ))
+    printf -v record \
+        '{"repository":"%s","run_id":"%s","job_id":"%s","duration_ms":%d,"outcome":"%s"}' \
+        "${GITHUB_REPOSITORY:-}" "${GITHUB_RUN_ID:-}" "${GITHUB_JOB:-}" "$duration_ms" "$outcome"
+    printf 'LIVESPEC_COVERAGE_REUSE_OUTCOME %s\n' "$record"
+    if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
+        printf '%s\n' "$record" >> "$GITHUB_STEP_SUMMARY"
+    fi
+}
+
 # Aggregate (total) `fail_under = 100` coverage gate, consume-once reuse
 # (work-item livespec-dev-tooling-yilyxr.1). Inside `just check` the parallel
 # dispatcher serializes this target after check-per-file-coverage, whose CLEAN
@@ -59,11 +83,13 @@ fi
 if [[ -n "$failure_status" ]]; then
     echo ":: check-coverage: check-per-file-coverage's clean suite already failed (pytest exit status ${failure_status}); refusing duplicate suite run"
     rm -f "$coverage_file" "$reuse_stamp" "$failure_receipt"
+    record_reuse_outcome "producer_failed"
     exit "$failure_status"
 fi
 if [[ "${GITHUB_ACTIONS:-}" == "true" ]] && [[ -f "$coverage_file" ]] && [[ ! -f "$reuse_stamp" ]]; then
     echo ":: check-coverage: missing coverage reuse receipt beside downloaded .coverage; refusing to start pytest"
     rm -f "$coverage_file" "$failure_receipt"
+    record_reuse_outcome "missing_receipt"
     exit 1
 fi
 if [[ "${GITHUB_ACTIONS:-}" == "true" ]] && [[ -f "$coverage_file" ]] && [[ -f "$reuse_stamp" ]]; then
@@ -76,6 +102,7 @@ if [[ "${GITHUB_ACTIONS:-}" == "true" ]] && [[ -f "$coverage_file" ]] && [[ -f "
         if [[ "$recorded_tree_digest" != "$current_tree_digest" ]]; then
             echo ":: check-coverage: coverage reuse receipt tree mismatch; refusing to start pytest"
             rm -f "$coverage_file" "$reuse_stamp" "$failure_receipt"
+            record_reuse_outcome "tree_mismatch"
             exit 1
         fi
         recorded_data_digest="${recorded_reuse_id##*:coverage:}"
@@ -83,6 +110,7 @@ if [[ "${GITHUB_ACTIONS:-}" == "true" ]] && [[ -f "$coverage_file" ]] && [[ -f "
         if [[ "$recorded_data_digest" != "$current_data_digest" ]]; then
             echo ":: check-coverage: coverage reuse receipt data-digest mismatch; refusing to start pytest"
             rm -f "$coverage_file" "$reuse_stamp" "$failure_receipt"
+            record_reuse_outcome "data_digest_mismatch"
             exit 1
         fi
     fi
@@ -99,6 +127,7 @@ if [[ -n "$reuse_reason" ]]; then
     status=0
     COVERAGE_FILE="$coverage_file" uv run coverage report --fail-under=100 || status=$?
     rm -f "$coverage_file" "$reuse_stamp" "$failure_receipt"
+    record_reuse_outcome "reused"
     exit "$status"
 fi
 if [[ -f "$coverage_file" ]]; then
@@ -108,5 +137,6 @@ else
     echo ":: check-coverage: no reusable .coverage data file; running the clean suite"
     rm -f "$failure_receipt"
 fi
+record_reuse_outcome "missing_receipt"
 env -u COVERAGE_FILE LIVESPEC_COVERAGE_DATA_FILE="$coverage_file" \
     uv run pytest -n "${test_nprocs}" --cov --cov-branch --cov-config=pyproject.toml --cov-report=term-missing
