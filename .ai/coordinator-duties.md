@@ -139,6 +139,13 @@ The maintainer, 2026-11-12 ~19:2xZ, recorded in the scope event on epic `livespe
 "It says the expedited is usable on dev-tooling - confirm you wil use it going forward, and record this everywhere as a
 rule to be noticed by coordinator sessions".
 
+**A failed telemetry export is opened as a bug, by a low-cost means.** The maintainer, 2026-11-13 ~23:1xZ in the
+throughput-track-organization seat's pane, recorded on epic `livespec-dev-tooling-q26e3c` at 23:18:44Z: "Yes, a failed
+telemetry export can instead be opened as a bug, via some low-cost means.  Probably a plan that collects it for now,
+address-honeycomb-alerts can be used for now.  Eventually we will have a dedicated seat in the radar rearchitecture to
+be responsible for telemetry management." The carrier is livespec-dev-tooling-jgkhr5 (owner ci-runtime-and-cost). The
+interim collector is plan address-honeycomb-alerts (bd-ib-xkwdap).
+
 ## 3. Unblock blocked seats every tick
 
 **Rule P1: every tick starts with priorities 1-5, in order.** Before any peer message is answered, run
@@ -1362,12 +1369,19 @@ epic `livespec-dev-tooling-6tgd2z`, 2026-11-12T10:33:39Z).
   - dispatch-control-plane is monitor-only, and must not absorb today's operations.
   - Launchers take the factory from the target repository's committed `default_factory` (R503).
   - Keep interactive turns lean (R509).
-  - Never offer GitHub's merge queue for any fleet repository. The maintainer, 2026-11-12 ~18:0xZ, recorded on epic
-    `livespec-dev-tooling-6tgd2z`: "FOR THE MILLIONTH TIME, I DO NOT HAVE AN ENTERPRISE ACCOUNT AND CANNOT USE GITHUBS
-    MERGE QUEUE". Plan `stale-base-merge-options` (livespec-dev-tooling-xowhol, maintainer-driven, priority 3 since
-    2026-11-12T18:23:54Z) owns re-investigating the stale-base options. Until the maintainer rules otherwise in that
-    plan, no seat offers GitHub's merge queue (the maintainer's standing words above). That plan may put measured
-    facts about it to the maintainer in its direction discussion.
+  - **GitHub's merge queue becomes usable with the organization move.** The maintainer, 2026-11-13 ~23:2xZ in the
+    throughput-track-organization seat's pane, recorded in the scope event on epic `livespec-dev-tooling-q26e3c` at
+    2026-11-13T23:23:17Z, in two messages (the second completes a typo): "1. The stale-base-merge-options track is
+    switching us to an org, so merge queuewill absolutely be usagele" / "usable". It supersedes the 2026-11-12 limit
+    kept below as history.
+    - Once the fleet is on the GitHub organization github.com/livespec-ai (GitHub Team), GitHub's merge queue is
+      usable. A seat may then offer it and design on it.
+    - Plan `stale-base-merge-options` (livespec-dev-tooling-xowhol) owns the org move and the direction for the single
+      full-suite run that guards master. That direction is still open with the maintainer.
+    - Before the org move completes, no repository depends on the merge queue.
+    - History: the 2026-11-12 limit read "Never offer GitHub's merge queue for any fleet repository". The maintainer,
+      2026-11-12 ~18:0xZ, recorded on epic `livespec-dev-tooling-6tgd2z`: "FOR THE MILLIONTH TIME, I DO NOT HAVE AN
+      ENTERPRISE ACCOUNT AND CANNOT USE GITHUBS MERGE QUEUE".
   - **Never raise vmi3006760's swap/RAM configuration.** It is the VPS provider's and intentional. The maintainer,
     2026-11-12 ~18:2xZ, recorded on epic `livespec-dev-tooling-6tgd2z` at 18:23:54Z: "This is intentional, it's a VPS,
     I don't configure it. RIGHT? Seems like a bad question".
