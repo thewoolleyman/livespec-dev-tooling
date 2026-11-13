@@ -1114,32 +1114,39 @@ else
   fail "refused without naming the cause: $(cat "${SCRATCH}/authority-member-shell.err")"
 fi
 
-# Wait until a stand-in proxy answers HTTP, not merely until it accepts a connection, and for up to 30 s:
-# the gate script gives the proxy 2 s to answer /health and treats silence as "proxy down", so a stand-in
-# still starting under CI load turned the W case's proxied artifact direct (master run 41505312652, PR 3174).
+# Each stand-in writes its readiness file only after binding its HTTP server.
+# Waiting for that signal makes the case insensitive to a loaded runner
+# delaying the process between launch and its first answer.  The child exiting
+# first is the corresponding negative readiness signal.
+start_stand_in_proxy() {
+  local root="$1" port="$2" ready="$3"
+  rm -f "${ready}"
+  (
+    cd "${root}" || exit 1
+    exec python3 - "${port}" "${ready}" <<'PY'
+import http.server
+import sys
+
+server = http.server.HTTPServer(("127.0.0.1", int(sys.argv[1])), http.server.SimpleHTTPRequestHandler)
+with open(sys.argv[2], "w", encoding="utf-8") as ready:
+    ready.write("ready\n")
+server.serve_forever()
+PY
+  ) >/dev/null 2>&1 &
+  STAND_IN_PROXY_PID=$!
+}
+
 wait_for_stand_in_proxy() {
-  local port="$1" deadline_seconds="${STAND_IN_PROXY_READY_DEADLINE_SECONDS:-30}" deadline remaining
-  deadline=$((SECONDS + deadline_seconds))
-  while [ "${SECONDS}" -lt "${deadline}" ]; do
-    remaining=$((deadline - SECONDS))
-    if [ "${remaining}" -le 0 ]; then
-      fail "the stand-in proxy on port ${port} never answered HTTP within ${deadline_seconds} s"
+  local child_pid="$1" ready="$2" child_status
+  while ! [ -s "${ready}" ]; do
+    if ! kill -0 "${child_pid}" 2>/dev/null; then
+      wait "${child_pid}" 2>/dev/null
+      child_status=$?
+      fail "the stand-in proxy child ${child_pid} exited before writing readiness (status ${child_status})"
       return 1
-    fi
-    # A TCP open alone accepts a listener whose HTTP service is not ready.
-    # curl requires a successful HTTP status, while its connection and total
-    # transfer limits each use the time left from this helper's one deadline.
-    # The outer timeout remains the hard stop if curl itself is delayed.
-    if timeout --signal=KILL "${remaining}s" \
-      curl --fail --head --http1.0 --silent --show-error \
-        --connect-timeout "${remaining}" --max-time "${remaining}" \
-        "http://127.0.0.1:${port}/" >/dev/null 2>&1; then
-      return 0
     fi
     sleep 0.1
   done
-  fail "the stand-in proxy on port ${port} never answered HTTP within ${deadline_seconds} s"
-  return 1
 }
 
 echo "== U. uvx retries direct PyPI when the proxy fails after a healthy probe =="
@@ -1147,9 +1154,10 @@ uvx_proxy_root="${SCRATCH}/uvx-proxy"
 mkdir -p "${uvx_proxy_root}/simple"
 printf 'simple api\n' > "${uvx_proxy_root}/simple/index.html"
 uvx_proxy_port="$(python3 -c 'import socket; s = socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1]); s.close()')"
-(cd "${uvx_proxy_root}" && exec python3 -m http.server "${uvx_proxy_port}" --bind 127.0.0.1 >/dev/null 2>&1) &
-uvx_proxy_pid=$!
-if wait_for_stand_in_proxy "${uvx_proxy_port}"; then
+uvx_proxy_ready="${SCRATCH}/uvx-proxy.ready"
+start_stand_in_proxy "${uvx_proxy_root}" "${uvx_proxy_port}" "${uvx_proxy_ready}"
+uvx_proxy_pid=${STAND_IN_PROXY_PID}
+if wait_for_stand_in_proxy "${uvx_proxy_pid}" "${uvx_proxy_ready}"; then
   if GATE_TEST_PROXY="http://127.0.0.1:${uvx_proxy_port}" UVX_PROXY_FAIL=1 GATE_RUN_UVX=1 \
        run_gate_script "${declared_out}" "verify publish"; then
     if grep -qF "uvx index=http://127.0.0.1:${uvx_proxy_port}/simple args=test-tool" "${SCRATCH}/stub.log" && \
@@ -1247,9 +1255,10 @@ proxy_root="${SCRATCH}/fake-proxy"
 mkdir -p "${proxy_root}/packages/good"
 printf 'wheel\n' > "${proxy_root}/packages/good/good-1.0.whl"
 proxy_port="$(python3 -c 'import socket; s = socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1]); s.close()')"
-(cd "${proxy_root}" && exec python3 -m http.server "${proxy_port}" --bind 127.0.0.1 >/dev/null 2>&1) &
-proxy_pid=$!
-if wait_for_stand_in_proxy "${proxy_port}"; then
+proxy_ready="${SCRATCH}/fake-proxy.ready"
+start_stand_in_proxy "${proxy_root}" "${proxy_port}" "${proxy_ready}"
+proxy_pid=${STAND_IN_PROXY_PID}
+if wait_for_stand_in_proxy "${proxy_pid}" "${proxy_ready}"; then
   proxied_good="http://127.0.0.1:${proxy_port}/packages/good/good-1.0.whl"
 
   # (1) a pushed tree that leaves uv.lock alone.

@@ -252,6 +252,7 @@ if STAND_IN_PROXY_READY_DEADLINE_SECONDS=0 wait_for_stand_in_proxy "${child_pid}
   printf 'readiness accepted an exited child\n' >&2
   exit 1
 fi
+exit 1
 """
     completed = subprocess.run(
         ["bash", "-c", script, "--", str(_EXIT_TESTS)],
