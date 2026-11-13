@@ -13,7 +13,7 @@ The orchestrator starved for a reason the others do not share:
 
 ## Measurements
 
-Master-push queue wait is `started_at − created_at` for each job of a master-push `ci.yml` run whose runner labels or runner name contain `k3s`. The script below takes the most recent master-push runs created from 2026-11-05 to 2026-11-12T21:10:00Z, the window these figures were measured in, and the API returned at most 20. An open-ended window does not reproduce them: by 2026-11-13 it already read overseer at a p95 of 27.5 and a max of 88.0 minutes (see the addendum).
+Master-push queue wait is `started_at − created_at` for each job of a master-push `ci.yml` run whose runner labels or runner name contain `k3s`. The script below takes the most recent master-push runs created from 2026-11-05 to 2026-11-12T21:10:00Z, the window these figures were measured in, and the API returned at most 20. An open-ended window does not reproduce them. Re-run on 2026-11-13 at about 00:35Z, bounded to `created=2026-11-05..2026-11-13T00:00:00Z`, it read overseer over 20 runs and 202 k3s jobs at a p50 of 0.7, a p95 of 63.5 and a max of 88.0 minutes (see the addendum).
 
 | Repository | Scale-set label (CI_RUNNER_LABELS) | Master runs | k3s jobs | p50 (min) | p95 (min) | max (min) | Run window (UTC) | PR CI runs, 24 h |
 |---|---|---|---|---|---|---|---|---|
@@ -82,22 +82,25 @@ Labels: `gh variable list -R thewoolleyman/<repo>`.
 Pull-request volume:
 
 ```sh
-gh api "repos/thewoolleyman/<repo>/actions/runs?event=pull_request&per_page=100&created=>=2026-11-11T21:00:00Z" \
+gh api "repos/thewoolleyman/<repo>/actions/runs?event=pull_request&per_page=100&created=2026-11-11T21:00:00Z..2026-11-12T21:10:00Z" \
   -q '[.workflow_runs[]|select(.path|endswith("/ci.yml"))]|length'
 ```
 
-## Addendum (2026-11-13): overseer starved, and a lane would not have helped
+## Addendum (2026-11-13): overseer starved; a plain master lane would not have helped
 
-legacy-coordinator-agent's grade of livespec-dev-tooling#4392 found two livespec-overseer master-push runs just after the measured window that starved:
+legacy-coordinator-agent's grade of livespec-dev-tooling#4392 found livespec-overseer master-push runs just after the measured window that starved. Each run's worst wait below was re-read on 2026-11-13 at about 00:35Z, after every job had started:
 
 | Run | Created (UTC) | Worst k3s job wait | Next worst |
 |---|---|---|---|
 | 43307625796 | 2026-11-12 21:10:39 | 88.0 min (check-check-coverage-incremental, started 22:38:37) | 67.1, 64.8 |
-| 43324225226 | 2026-11-12 22:54:48 | 44.6 min (check-red-green-replay, started 23:39:23) | 27.5 |
+| 43324225226 | 2026-11-12 22:54:48 | 67.1 min (check-doctor-static and check-per-file-coverage, started 00:01:56) | 66.3 |
+| 43332538071 | 2026-11-12 23:53:01 | 19.0 min | — |
+
+A first read of 43324225226 at about 23:45Z gave 44.6 minutes, because some of its jobs had not started yet. A wait read from an unfinished run is a floor, not the wait.
 
 That puts overseer over this note's own re-measure trigger (a p95 above 15 minutes over 20 runs), so the trigger fired and overseer was re-measured.
 
-**The finding: the wait was not overseer's own pull requests holding its runners, so a master lane would not have shortened it.** A lane only helps when master jobs queue behind the same repository's pull-request jobs on one label. Counting every overseer `ci.yml` k3s job (all 18 runs created 19:30–23:59Z, pull-request and push alike) by whether it had started or was still waiting:
+**The finding for the 21:10Z run: the wait was not overseer's own pull requests holding its runners, so a master lane would not have shortened it.** The two later runs are treated separately below. A lane only helps when master jobs queue behind the same repository's pull-request jobs on one label. Counting every overseer `ci.yml` k3s job (all 18 runs created 19:30–23:59Z, pull-request and push alike) by whether it had started or was still waiting:
 
 | Instant (UTC) | overseer k3s jobs running | overseer k3s jobs waiting |
 |---|---|---|
@@ -112,12 +115,14 @@ For about an hour, overseer's own scale set ran **zero to two** jobs while 22–
 
 - **From about 21:28 to 22:13Z, overseer had no ARC listener.** The gamingpc-xubuntu power-off left eight listeners Terminating with no replacement, `livespec-overseer-k3s` among them (livespec-dev-tooling-acgcwp; measured by homelab-k8s-worker-nodes). A scale set with no listener takes no jobs, whatever its quota. gate-job-resources saw the overseer listener's last CPU at about 21:28Z on gamingpc and its replacement's first on hp at about 22:12Z (Honeycomb query jz8wZ73C42B).
 - **Kueue honoured overseer's floor the whole time.** That floor is a `nominalQuota` of 1 on churn-slot-flavor; 6 is `maxRunners`, the ceiling. overseer-cq's `livespec.ci_pool.queue_resource_usage` never fell below 1 (query 5mCebgFUxyv). The 3 slots it held during the outage were IDLE runners, at about 0.01 cpu with no workflow pod, because no listener existed to give them jobs (query w3PvJGCXuxt).
-- **From 22:13 to 22:40Z the cohort was ordinarily saturated.** Admitted was 31–32 of 32 nominal, and cohort pending rose from about 1 to 65 at 22:20Z as the restored listeners released their backlog (query ju8JrNZLNna). dev-tooling-cq was borrowing up to 9 slots. With preemption and `reclaimWithinCohort` both `Never`, a borrowed slot returns only when its job ends, which is the designed behaviour.
-- **The quota does not exceed capacity.** The live cohort sums to 31 on churn-slot-flavor, the same as the 31 amd64 churn slots measured at about 23:50Z (poweredge 17, gmktec 8, hp 5, gamingpc 1). The "C = 44" in the ClusterQueue file comments is stale prose.
+- **From 22:13 to 22:40Z the cohort was ordinarily saturated.** Admitted was 31–32 against 32 nominal across BOTH flavors: 31 on churn-slot-flavor plus the 1 arm64 slot of dev-tooling-arm64-cq. churn-slot-flavor alone was therefore full, at 31 of 31. Cohort pending rose from about 1 to 65 at 22:20Z as the restored listeners released their backlog, and dev-tooling-cq was borrowing up to 9 slots (usage 19 against a nominal 10). Both figures come from gate-job-resources' Honeycomb query ju8JrNZLNna over `livespec.ci_pool.queue_resource_usage` and the cohort pending gauge. With preemption and `reclaimWithinCohort` both `Never`, a borrowed slot returns only when its job ends, which is the designed behaviour.
+- **The quota does not exceed capacity.** The live cohort sums to 31 on churn-slot-flavor, the same as the 31 amd64 churn slots in node allocatable `ci-runner.io/churn-slot`, read by homelab-k8s-worker-nodes at about 23:50Z (poweredge 17, gmktec 8, hp 5, gamingpc 1). That is a current read; the per-node allocatable during the window was not read. Inside 22:13–22:40Z gamingpc was cordoned except for 22:20–22:30:56Z, so effective amd64 capacity was about 30 against a quota of 31 (gate-job-resources). At most one admitted Workload could therefore sit node-Pending. The "C = 44" in the ClusterQueue file comments is stale prose.
 - **The arm64 M4 cordon was irrelevant.** Its slot is in its own Kueue flavor, and overseer-cq has no quota there.
 
-The same listener gap hit the orchestrator's listener, which explains part of its 28–55-minute coverage queue that evening: its queue usage fell from 15 to 3.
+The same listener gap hit the orchestrator's listener, which explains part of its 28–55-minute coverage queue that evening: its orchestrator-cq usage fell from 15 to 3 on `livespec.ci_pool.queue_resource_usage`, as reported by gate-job-resources from the same analysis (the query id was not passed on).
 
-**Conclusion, amended:** still no master lane for overseer. A master lane would not have prevented this either, because its own listener can die the same way. The defence is listener placement and recovery, which livespec-dev-tooling-acgcwp owns. gate-job-resources also notes that a dead listener's admitted runners keep their quota, so an outage strands cohort slots for every queue, not just the dead set's. That finding belongs with acgcwp too.
+**The 22:54Z and 23:53Z runs are a different case.** By then the overseer listener was back (about 22:12Z), so they waited 67.1 and 19.0 minutes in the designed cohort saturation above. Overseer-cq's guaranteed floor is 1 slot, so its master jobs queued for that slot, and for whatever it could borrow, alongside its own pull-request jobs. A plain master lane would not change that, because a new scale set without quota of its own waits in the same cohort. One with RESERVED, non-lendable quota would, the way dev-tooling's master queue holds 3 with `lendingLimit: 0`. But the 31 slots are fully allotted, so that slot has to come out of another queue's floor. That is a fleet quota re-allocation, not a routing fix.
+
+**Conclusion, amended:** no plain master lane for overseer. For the 21:10Z run, no lane would have helped, because its own listener can die the same way. The defence is listener placement and recovery, which livespec-dev-tooling-acgcwp owns. gate-job-resources also notes that a dead listener's admitted runners keep their quota, so an outage strands cohort slots for every queue, not just the dead set's. That finding belongs with acgcwp too. Whether master pushes should get reserved, non-lendable quota during saturation, fleet-wide or for overseer, is a Kueue quota decision. It is routed to gate-job-resources as that question, with these two runs as its evidence.
 
 Reproduce the instant counts by listing `repos/thewoolleyman/livespec-overseer/actions/runs?per_page=100&created=2026-11-12T19:30:00Z..2026-11-12T23:59:00Z` (`ci.yml` only), then the jobs of each run. For each k3s job, count it as running at instant T when `started_at <= T < completed_at`, and as waiting when `created_at <= T < started_at`.
