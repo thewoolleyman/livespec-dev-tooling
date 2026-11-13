@@ -288,8 +288,14 @@ def test_otlp_pods_endpoint_override_wins_over_the_flannel_gateway() -> None:
     assert "ansible.builtin.lineinfile:" in write, write
     assert 'regexp: "^OTLP_PODS_ENDPOINT="' in write, write
     assert "otel_collector_otlp_pods_endpoint_effective" in write, write
-    # A rewritten endpoint must restart a running collector onto it.
-    assert "notify: Restart the collector onto its managed configuration" in write, write
+    # A rewritten endpoint must restart the host collector.  The pod-span
+    # restart is deliberately queued by the following task only when this host
+    # actually declares a companion pod configuration.
+    assert "notify:\n    - Restart the collector onto its managed configuration" in write, write
+    queue = _task(name="Queue the pod-span collector restart after an endpoint change")
+    assert "otel_collector_otlp_pods_endpoint_written.changed" in queue, queue
+    assert "otel_collector_pod_config_file | length > 0" in queue, queue
+    assert "notify: Restart the pod-span collector onto its managed configuration" in queue, queue
 
     assert (
         _render_pods_endpoint(flannel_subnet="10.42.5.1/24", override="192.0.2.8:4319")
