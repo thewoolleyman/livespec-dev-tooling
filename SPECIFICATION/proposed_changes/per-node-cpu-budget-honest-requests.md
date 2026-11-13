@@ -31,11 +31,11 @@ Measured gate use (Honeycomb livespec/metrics, `k8s.pod.cpu.usage`, per-pod mean
 | livespec-orchestrator-beads-fabro | 4.6-5.1 |
 | every other repository | about 1-1.6 |
 
-The orchestrator declares no gate_cpu. Its pyproject.toml relies on the renderer default of 5, so lowering the default alone would cut its gates below their use. livespec-dev-tooling's gates use about 3.3 cores (the CPU-time counter reads gate cores about 3% below the usage gauge, query aYYXAQE8FcA), which rounds to the new default, so it need not declare.
+The orchestrator declares no gate_cpu. Its pyproject.toml relies on the renderer default of 5, so lowering the default alone would cut its gates below their use. livespec-dev-tooling's gates use about 3.3 cores by the CPU-time counter `k8s.pod.cpu.time`. The usage gauge reads 3.43 (query toTHf66TeNu), and the counter reads gate cores about 3% lower (query aYYXAQE8FcA). 3.3 rounds to the new default, so it need not declare.
 
 Lane quotas are counted in CPU. gmktec's 15 is 3 x 5, so a lower default with unchanged quotas would let gmktec admit 5 gates instead of 3, on a node that sat at or above capacity in 12 of 24 hours.
 
-The re-derived lanes are gmktec 9, poweredge 21, hp 3 and gamingpc 3, each three times the new unit or a multiple of it. A container-worker lane that `converge-worker-queues.sh` enrolls is already a multiple of the gate unit, so it follows the unit with no edit. Replayed over the last 24 hours of gate pods (query dbbVLi5S76A, 5-minute buckets, orchestrator gates at 5 and every other gate at 3, packed into those lanes), the new lanes leave about 195 more pod-minutes a day waiting than today's lanes do. That is 1.8% of gate pod-time, concentrated in 32 of 273 buckets.
+The re-derived lanes are gmktec 9, poweredge 21, hp 3 and gamingpc 3, each a whole multiple of the new unit. A container-worker lane that `converge-worker-queues.sh` enrolls is already a multiple of the gate unit, so it follows the unit with no edit. Replayed over the last 24 hours of gate pods (query dbbVLi5S76A, 5-minute buckets, orchestrator gates at 5 and every other gate at 3, packed into those lanes), the new lanes leave about 195 more pod-minutes a day waiting than today's lanes do. That is 1.8% of gate pod-time, concentrated in 32 of 273 buckets.
 
 The default is 3 rather than 2 so that a full-size gate stays larger than the 2-CPU replay Job of **Replay Job size**, which plan assertion 2 depends on.
 
