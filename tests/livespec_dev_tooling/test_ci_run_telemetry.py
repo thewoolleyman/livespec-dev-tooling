@@ -4,11 +4,14 @@ from __future__ import annotations
 
 import importlib
 import json
+from copy import deepcopy
 from pathlib import Path
 from types import ModuleType
 from typing import Any
 
 import pytest
+
+from livespec_dev_tooling.budgeted_gh import GhRead
 
 __all__: list[str] = []
 
@@ -57,6 +60,13 @@ _JOBS = {
         {"id": 102, "created_at": "2026-11-12T03:00:10Z"},
     ]
 }
+_COVERAGE_REUSE_OUTCOME = {
+    "repository": _REPOSITORY,
+    "run_id": "42",
+    "job_id": "check-coverage",
+    "duration_ms": 1234,
+    "outcome": "reused",
+}
 
 
 def _exporter() -> ModuleType:
@@ -71,6 +81,155 @@ def _span_attributes(*, span: dict[str, Any]) -> dict[str, str]:
         attribute["key"]: next(iter(attribute["value"].values()))
         for attribute in span["attributes"]
     }
+
+
+def test_the_budgeted_log_read_exports_the_consumer_reuse_outcome(
+    *, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The export reads the script's structured log line for the coverage consumer."""
+    exporter = _exporter()
+    run = deepcopy(_RUN)
+    run["jobs"] = [
+        {
+            "databaseId": 104,
+            "name": "check-coverage",
+            "conclusion": "success",
+            "startedAt": "2026-11-12T03:01:10Z",
+            "completedAt": "2026-11-12T03:02:30Z",
+        }
+    ]
+    responses = iter(
+        [
+            GhRead(returncode=0, stdout=json.dumps(run), stderr=""),
+            GhRead(
+                returncode=0,
+                stdout=json.dumps({"jobs": [{"id": 104, "created_at": "2026-11-12T03:00:10Z"}]}),
+                stderr="",
+            ),
+            GhRead(
+                returncode=0,
+                stdout=f"before\nLIVESPEC_COVERAGE_REUSE_OUTCOME {json.dumps(_COVERAGE_REUSE_OUTCOME)}\nafter\n",
+                stderr="",
+            ),
+        ]
+    )
+
+    def _read(*, args: list[str], **kwargs: object) -> GhRead:
+        _ = args, kwargs
+        return next(responses)
+
+    posted: list[dict[str, Any]] = []
+
+    class _Response:
+        status = 200
+
+        def read(self) -> bytes:
+            return b'{"partialSuccess":{"rejectedSpans":"0"}}'
+
+    class _Connection:
+        def __init__(self, *, host: str, timeout: float) -> None:
+            assert host == "api.honeycomb.io"
+            assert timeout == 30.0
+
+        def request(self, method: str, url: str, body: str, headers: dict[str, str]) -> None:
+            assert method == "POST"
+            assert url == "/v1/traces"
+            assert headers["x-honeycomb-team"] == "test-key"
+            posted.append(json.loads(body))
+
+        def getresponse(self) -> _Response:
+            return _Response()
+
+        def close(self) -> None:
+            return None
+
+    def _connection(host: str, timeout: float) -> _Connection:
+        return _Connection(host=host, timeout=timeout)
+
+    monkeypatch.setattr(exporter, "gh_read", _read)
+    monkeypatch.setattr("http.client.HTTPSConnection", _connection)
+    assert (
+        exporter.main(argv=["--repo", _REPOSITORY, "--run-id", "42", "--ingest-key", "test-key"])
+        == 0
+    )
+
+    spans = posted[0]["resourceSpans"][0]["scopeSpans"][0]["spans"]
+    coverage_span = next(span for span in spans if span["name"] == "ci.job.check-coverage")
+    assert _span_attributes(span=coverage_span) == {
+        "repo": _REPOSITORY,
+        "ci.run_id": "42",
+        "ci.job.id": "104",
+        "ci.job.name": "check-coverage",
+        "ci.job.conclusion": "success",
+        "ci.job.queue_ms": "60000",
+        "ci.coverage_reuse.repository": _REPOSITORY,
+        "ci.coverage_reuse.run_id": "42",
+        "ci.coverage_reuse.job_id": "check-coverage",
+        "ci.coverage_reuse.duration_ms": "1234",
+        "ci.coverage_reuse.outcome": "reused",
+    }
+
+
+@pytest.mark.parametrize(
+    "log_response",
+    [
+        GhRead(returncode=0, stdout="LIVESPEC_COVERAGE_REUSE_OUTCOME {not-json}\n", stderr=""),
+        GhRead(returncode=0, stdout="no coverage outcome\n", stderr=""),
+        GhRead(returncode=0, stdout="LIVESPEC_COVERAGE_REUSE_OUTCOME true\n", stderr=""),
+        GhRead(
+            returncode=0,
+            stdout='LIVESPEC_COVERAGE_REUSE_OUTCOME {"unexpected":"shape"}\n',
+            stderr="",
+        ),
+        GhRead(
+            returncode=0,
+            stdout=(
+                "LIVESPEC_COVERAGE_REUSE_OUTCOME "
+                '{"repository":"thewoolleyman/livespec-dev-tooling","run_id":"42",'
+                '"job_id":"check-coverage","duration_ms":-1,"outcome":"reused"}\n'
+            ),
+            stderr="",
+        ),
+        GhRead(returncode=1, stdout="", stderr="logs unavailable"),
+    ],
+)
+def test_the_export_refuses_an_unreadable_or_invalid_coverage_reuse_record(
+    *, monkeypatch: pytest.MonkeyPatch, log_response: GhRead
+) -> None:
+    """A coverage consumer cannot silently lose its one required detector record."""
+    exporter = _exporter()
+    run = deepcopy(_RUN)
+    run["jobs"] = [
+        {
+            "databaseId": 104,
+            "name": "check-coverage",
+            "conclusion": "success",
+            "startedAt": "2026-11-12T03:01:10Z",
+            "completedAt": "2026-11-12T03:02:30Z",
+        }
+    ]
+    responses = iter(
+        [
+            GhRead(returncode=0, stdout=json.dumps(run), stderr=""),
+            GhRead(
+                returncode=0,
+                stdout=json.dumps({"jobs": [{"id": 104, "created_at": "2026-11-12T03:00:10Z"}]}),
+                stderr="",
+            ),
+            log_response,
+        ]
+    )
+
+    def _read(*, args: list[str], **kwargs: object) -> GhRead:
+        _ = args, kwargs
+        return next(responses)
+
+    monkeypatch.setattr(exporter, "gh_read", _read)
+
+    assert (
+        exporter.main(argv=["--repo", _REPOSITORY, "--run-id", "42", "--ingest-key", "test-key"])
+        == 1
+    )
 
 
 def test_recorded_github_documents_emit_the_shell_exporters_run_and_job_spans(
