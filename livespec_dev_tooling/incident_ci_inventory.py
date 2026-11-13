@@ -20,6 +20,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, cast
 
+from livespec_dev_tooling.checks._ci_job_if import event_bound_jobs
 from livespec_dev_tooling.checks._ci_matrix_parse import parse_ci_jobs
 from livespec_dev_tooling.incident_ci_policy import CiTarget
 from livespec_dev_tooling.incident_gate_inventory import timing_classes
@@ -74,6 +75,7 @@ def render_inventory(
     """
     timing = timing_classes(inventory=inventory)
     jobs = parse_ci_jobs(source=workflow)
+    event_bound = event_bound_jobs(source=workflow)
     # The coverage producer/consumer pair is wired only where both members exist,
     # so an adopter whose workflow has no per-file coverage job still renders.
     paired = {"check-coverage", "check-per-file-coverage"} <= {
@@ -92,9 +94,10 @@ def render_inventory(
                     needs=("check-per-file-coverage",) if consumer else (),
                     produces=("coverage-data",) if producer else (),
                     consumes=("coverage-data",) if consumer else (),
+                    conditional=job.name in event_bound,
                 )
             )
-    document: dict[str, Any] = dict(schema=1, targets=[asdict(target) for target in targets])
+    document: dict[str, Any] = dict(schema=1, targets=[_row(target=target) for target in targets])
     if source is not None:
         document["source"] = asdict(source)
     return (
@@ -105,6 +108,14 @@ def render_inventory(
         )
         + "\n"
     )
+
+
+def _row(*, target: CiTarget) -> dict[str, Any]:
+    """A member's JSON row; `conditional` appears only when set (livespec-dev-tooling-yzr6ad)."""
+    row = asdict(target)
+    if not target.conditional:
+        del row["conditional"]
+    return row
 
 
 def decode_inventory(*, text: str) -> tuple[CiTarget, ...]:
@@ -130,7 +141,9 @@ def _decode(*, text: str) -> tuple[tuple[CiTarget, ...], InventorySource | None]
     for value in cast("list[object]", data["targets"]):
         row = cast("dict[str, Any]", value) if isinstance(value, dict) else {}
         if (
-            set(row) != {"name", "classification", "batch", "needs", "produces", "consumes"}
+            set(row) - {"conditional"}
+            != {"name", "classification", "batch", "needs", "produces", "consumes"}
+            or row.get("conditional", True) is not True
             or any(not isinstance(row[key], str) for key in ("name", "classification", "batch"))
             or not row["name"].startswith("check-")
             or _TEXT.fullmatch(row["name"]) is None
@@ -150,7 +163,7 @@ def _decode(*, text: str) -> tuple[tuple[CiTarget, ...], InventorySource | None]
             CiTarget(**(row | {key: tuple(row[key]) for key in ("needs", "produces", "consumes")}))
         )
     names = {target.name for target in targets}
-    if len(names) != len(targets) or any(
+    if len({(target.batch, target.name) for target in targets}) != len(targets) or any(
         dependency not in names or dependency == target.name
         for target in targets
         for dependency in target.needs

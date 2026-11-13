@@ -12,6 +12,7 @@ from livespec_dev_tooling.incident_execution import ExecutionContext
 __all__: list[str] = [
     "CiAggregate",
     "CiAuthority",
+    "CiConditional",
     "CiDeferral",
     "CiEvent",
     "CiOutcome",
@@ -35,7 +36,12 @@ class CiEvent:
 
 @dataclass(frozen=True, kw_only=True)
 class CiTarget:
-    """One member of a released check inventory, including artifact dependencies."""
+    """One (job, check slug) member of a released inventory, with artifact dependencies.
+
+    `batch` is the declaring job. `conditional` marks a member of a job whose
+    job-level `if:` names the triggering event or ref; the incident entrance
+    never runs such a member, it lists it on a conditional-job line.
+    """
 
     name: str
     classification: str
@@ -43,6 +49,7 @@ class CiTarget:
     needs: tuple[str, ...] = ()
     produces: tuple[str, ...] = ()
     consumes: tuple[str, ...] = ()
+    conditional: bool = False
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -73,6 +80,15 @@ class CiDeferral:
 
 
 @dataclass(frozen=True, kw_only=True)
+class CiConditional:
+    """A job whose `if:` the entrance does not evaluate: its members are listed, never run."""
+
+    job: str
+    names: tuple[str, ...]
+    reason: str
+
+
+@dataclass(frozen=True, kw_only=True)
 class CiPlan:
     """A head-bound execution plan; omitted work is never a check's outcome."""
 
@@ -84,6 +100,8 @@ class CiPlan:
     environment: tuple[tuple[str, str], ...]
     authority: CiAuthority | None
     incident_label: str
+    attribution: tuple[tuple[str, tuple[str, ...]], ...] = ()
+    conditional: tuple[CiConditional, ...] = ()
     # The plan-time enablement reading (livespec-dev-tooling-exdkra). It is recorded in the
     # plan but is not part of the plan identity the entrance rechecks.
     enablement: dict[str, Any] | None = field(default=None, compare=False)
@@ -108,6 +126,8 @@ class CiAggregate:
     missing: tuple[str, ...]
     deferred: tuple[CiDeferral, ...]
     context_name: str = "ci-green"
+    attribution: tuple[tuple[str, tuple[str, ...]], ...] = ()
+    conditional: tuple[CiConditional, ...] = ()
 
     @property
     def successful(self) -> bool:
