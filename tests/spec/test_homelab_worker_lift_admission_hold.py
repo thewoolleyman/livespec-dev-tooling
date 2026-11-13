@@ -24,6 +24,8 @@ from pathlib import Path
 
 import pytest
 
+from tests.hang_guard import run_under_hang_guard
+
 __all__: list[str] = []
 
 pytestmark = pytest.mark.integration
@@ -85,7 +87,7 @@ def env(tmp_path: Path) -> _Env:
 def _run(
     *, env: _Env, args: list[str] | None = None, **stub: str
 ) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
+    return run_under_hang_guard(
         ["/bin/bash", str(_SCRIPT), *([_HOST] if args is None else args)],
         capture_output=True,
         text=True,
@@ -98,7 +100,6 @@ def _run(
             "TAINT_TAKES_CLASS": stub.get("taint_takes_class", ""),
         },
         check=False,
-        timeout=60,
     )
 
 

@@ -22,6 +22,8 @@ from pathlib import Path
 
 import pytest
 
+from tests.hang_guard import run_under_hang_guard
+
 __all__: list[str] = []
 
 _SCRIPT = Path(__file__).resolve().parents[2] / "homelab-worker" / "fixture" / "k3s-fixture.sh"
@@ -86,7 +88,7 @@ def vm(tmp_path: Path) -> _Vm:
 
 
 def _run(*, vm: _Vm, args: list[str]) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
+    return run_under_hang_guard(
         ["/bin/bash", str(_SCRIPT), *args],
         capture_output=True,
         text=True,
@@ -97,7 +99,6 @@ def _run(*, vm: _Vm, args: list[str]) -> subprocess.CompletedProcess[str]:
             "PROC_MOUNTS": str(vm.root.parent / "mounts"),
         },
         check=False,
-        timeout=60,
     )
 
 

@@ -23,6 +23,8 @@ from pathlib import Path
 
 import pytest
 
+from tests.hang_guard import run_under_hang_guard
+
 __all__: list[str] = []
 
 _SCRIPT = Path(__file__).resolve().parents[2] / "homelab-worker" / "remote-kubectl.sh"
@@ -92,14 +94,13 @@ def _run(
     }
     if target is not None:
         environ["REMOTE_KUBECTL_TARGET"] = target
-    return subprocess.run(
+    return run_under_hang_guard(
         ["/bin/bash", str(_SCRIPT), *args],
         input=stdin,
         capture_output=True,
         text=True,
         env=environ,
         check=False,
-        timeout=60,
     )
 
 

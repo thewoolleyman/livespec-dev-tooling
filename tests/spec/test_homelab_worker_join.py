@@ -25,6 +25,8 @@ from pathlib import Path
 
 import pytest
 
+from tests.hang_guard import run_under_hang_guard
+
 __all__: list[str] = []
 
 _HW = Path(__file__).resolve().parents[2] / "homelab-worker"
@@ -123,7 +125,7 @@ def _args(env: _Env, *extra: str) -> list[str]:
 
 
 def _run(*, env: _Env, args: list[str]) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
+    return run_under_hang_guard(
         ["/bin/bash", str(_SCRIPT), *args],
         capture_output=True,
         text=True,
@@ -137,7 +139,6 @@ def _run(*, env: _Env, args: list[str]) -> subprocess.CompletedProcess[str]:
             "HOMELAB_WORKER_ENROLL": str(env.bin_dir / "enroll"),
         },
         check=False,
-        timeout=120,
     )
 
 

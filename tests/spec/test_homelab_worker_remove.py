@@ -24,6 +24,8 @@ from pathlib import Path
 
 import pytest
 
+from tests.hang_guard import run_under_hang_guard
+
 __all__: list[str] = []
 
 pytestmark = pytest.mark.integration
@@ -130,7 +132,7 @@ def _run(
     kubectl_fails: str = "",
     vm_unreachable: bool = False,
 ) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
+    return run_under_hang_guard(
         [
             "/bin/bash",
             str(_SCRIPT),
@@ -147,7 +149,6 @@ def _run(
             "VM_UNREACHABLE": "1" if vm_unreachable else "",
         },
         check=False,
-        timeout=60,
     )
 
 

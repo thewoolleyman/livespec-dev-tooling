@@ -23,6 +23,8 @@ from pathlib import Path
 
 import pytest
 
+from tests.hang_guard import run_under_hang_guard
+
 __all__: list[str] = []
 
 # Integration tier: each test runs the real script under /bin/bash against a stub kubectl.
@@ -78,7 +80,7 @@ def _run(
     hosts.mkdir(exist_ok=True)
     (hosts / f"{_HOST}.env").write_text("HOST=alpha\n", encoding="utf-8")
     (state / "calls.log").write_text("", encoding="utf-8")
-    result = subprocess.run(
+    result = run_under_hang_guard(
         ["/bin/bash", str(_SCRIPT), host, image],
         capture_output=True,
         text=True,
@@ -92,7 +94,6 @@ def _run(
             "HOMELAB_WORKER_HOSTS_DIR": str(hosts),
         },
         check=False,
-        timeout=60,
     )
     return result, state
 
