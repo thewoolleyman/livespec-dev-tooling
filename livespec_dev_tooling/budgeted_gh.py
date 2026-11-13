@@ -1,10 +1,14 @@
 """The ONE budgeted `gh` read boundary for this package's first-party code.
 
-Every first-party GitHub read in `livespec_dev_tooling` goes through
-`GithubBudgetedClient` rather than spawning `gh` at the call site, so the
-conditional-read, pacing, backoff and reserved-floor policies that client
-implements apply uniformly rather than to whichever caller remembered to
-ask (livespec core epic livespec-httc; retrofit livespec-dev-tooling-z69s).
+Every first-party GitHub call in `livespec_dev_tooling` goes through this
+module rather than spawning `gh` at the call site. A read goes through
+`GithubBudgetedClient`, so the conditional-read, pacing, backoff and
+reserved-floor policies that client implements apply uniformly rather than to
+whichever caller remembered to ask (livespec core epic livespec-httc;
+retrofit livespec-dev-tooling-z69s). The one exception is `forge_call`, the
+incident forge call: the incident retry rule owns its own waits and budget and
+must see each answer's real status and headers, so it spawns its `gh api
+--include` attempts here directly (livespec-dev-tooling-levu6j).
 
 The client is VENDORED from livespec-runtime under `_vendor/`, the same
 source-copy pattern `returns`, `structlog` and `tomli` already use here,

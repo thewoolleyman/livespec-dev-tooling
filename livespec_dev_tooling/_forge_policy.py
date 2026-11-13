@@ -18,9 +18,10 @@ The rule, as this module applies it:
   `outcome-unknown`.
 - At most six attempts. Waits double from 2 seconds; a rate-limited answer waits
   what its `Retry-After` names, else until its `X-RateLimit-Reset` when
-  `X-RateLimit-Remaining` is `0`, else 60 seconds doubled per header-less
-  rate-limited answer, never less than the doubling wait. The waits of one call
-  total at most 300 seconds.
+  `X-RateLimit-Remaining` is `0`, else 60 seconds doubled once for every
+  earlier rate-limited answer of the call, never less than the doubling wait.
+  The waits of one call total at most 300 seconds, and a wait that would pass
+  that budget is refused and never taken.
 - Each failed attempt is one escaped line naming the call, the attempt, the
   status, the kind, the next wait and the first 256 bytes of the answer.
 """
