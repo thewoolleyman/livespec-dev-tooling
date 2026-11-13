@@ -18,7 +18,7 @@ from livespec_dev_tooling._flake_retry_closure import (
     module_imports,
 )
 from livespec_dev_tooling._flake_retry_parameters import PYTEST_FIXTURES
-from livespec_dev_tooling._flake_retry_places import repository_places
+from livespec_dev_tooling._flake_retry_places import repository_places, request_span
 from livespec_dev_tooling._flake_retry_root_terms import DOUBT, Key, RootTerm
 from livespec_dev_tooling._flake_retry_roots import module_root_terms, solve_keys
 from livespec_dev_tooling._flake_retry_scopes import index_scopes
@@ -48,7 +48,8 @@ class _ModuleFacts:
     (livespec-dev-tooling-bob7iv). `literals` holds what counts whatever the
     closure; `dependent` holds each path expression whose base is rooted or
     placed only through a binding the closure solves, with the literals it
-    then adds and the names it spells under each place it reaches.
+    then adds and the names it spells under each place it reaches; a span it
+    reaches is named whole, and a span at the root is undeterminable.
     `computed` holds each path expression with no literal segment whose base
     is placed only through such a binding: at the root it is undeterminable,
     and in any other repository directory it names that directory
@@ -81,6 +82,7 @@ def _module_facts(*, repo_root: Path, path: Path) -> _ModuleFacts | None:
         bases=[chain.base for chain in chains],
         import_sources=from_import_sources(nodes=index.nodes, path=path, repo_root=repo_root),
         places=places,
+        request_span=request_span(path=path, repo_root=repo_root),
     )
     operand_ids = {operand_id for chain in chains for operand_id in chain.operand_ids}
     path_component_nodes = {
@@ -102,9 +104,11 @@ def _module_facts(*, repo_root: Path, path: Path) -> _ModuleFacts | None:
     undeterminable = any(chain.undeterminable for chain in chains)
     for chain, term in zip(chains, base_terms, strict=True):
         literals.update(_under(places=term.places, names=chain.names or _ITSELF))
+        literals.update(_under(places=term.spans, names=_ITSELF))
+        undeterminable = undeterminable or "" in term.spans
         if not chain.names:
             undeterminable = undeterminable or "" in term.places
-            computed.extend([term] if term.evidence else [])
+            computed.extend([term] if term.through else [])
             continue
         literals.update(chain.names | chain.segments if term.rooted else ())
         dependent.extend(
@@ -191,9 +195,13 @@ def _closure(
     if (dependent or computed) and not undeterminable:
         bindings = [pair for facts in reached.values() for pair in facts.bindings]
         bindings.extend(_unresolved_terms(facts=reached.values()))
-        rooted, placed = solve_keys(
+        rooted, placed, spanned = solve_keys(
             terms=bindings,
-            rooted_queries=(key for term, _, _ in dependent for key in term.through),
+            rooted_queries=(
+                key
+                for term in (*computed, *(term for term, _, _ in dependent))
+                for key in term.through
+            ),
             placed_queries=(
                 key
                 for term in (*computed, *(term for term, _, _ in dependent))
@@ -209,9 +217,15 @@ def _closure(
         computed_places = [
             {place for key in term.evidence for place in placed.get(key, ())} for term in computed
         ]
-        undeterminable = any("" in places for places in computed_places)
+        reached_spans = [
+            {span for key in term.through for span in spanned.get(key, ())}
+            for term in (*computed, *(term for term, _, _ in dependent))
+        ]
+        undeterminable = any("" in places for places in (*computed_places, *reached_spans))
         literals.update(
-            name for places in computed_places for name in _under(places=places, names=_ITSELF)
+            name
+            for places in (*computed_places, *reached_spans)
+            for name in _under(places=places, names=_ITSELF)
         )
     return set(reached), literals, undeterminable
 

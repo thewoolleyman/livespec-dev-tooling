@@ -6,9 +6,11 @@ When it resolves to a directory inside the repository, that directory is a
 repository path the closure names: followed only by computed segments, it names
 the directory itself, and followed by literal segments, it names them under
 the directory as well as bare. A change inside the directory touches the test;
-a change outside it does not. `request.path`, `request.fspath` and
-`request.node.path` are the test module's own path, and
-`request.config.invocation_params.dir` is the repository root.
+a change outside it does not. In a test module, `request.path`,
+`request.fspath` and `request.node.path` are that module's own path; in a
+`conftest.py` they are some test path under the conftest's own directory, so a
+change anywhere under that directory touches the test; anywhere else they are
+undeterminable. `request.config.invocation_params.dir` is the repository root.
 """
 
 from __future__ import annotations
@@ -28,6 +30,7 @@ _FILE_RELATIVE = (
     + _COMPUTED
     + "    assert (Path(__file__).resolve().parent / f'{name}.json')\n"
 )
+_REQUESTED_DATA = "@pytest.fixture\ndef data(request):\n    return request.path.parent / 'data'\n"
 _DELEGATED_GATE_SHAPE = {
     "pkg/__init__.py": "",
     "pkg/authority.py": (
@@ -43,8 +46,9 @@ def _marker(*, tmp_path: Path, files: dict[str, str], change: str) -> dict[str, 
         path = tmp_path / relative
         path.parent.mkdir(parents=True, exist_ok=True)
         _ = path.write_text(_HEADER + source, encoding="utf-8")
+    test_file = next(relative for relative in files if Path(relative).name.startswith("test_"))
     return retry_marker_for(
-        repo_root=tmp_path, test_path=tmp_path / _TEST_FILE, change_paths={Path(change)}
+        repo_root=tmp_path, test_path=tmp_path / test_file, change_paths={Path(change)}
     )
 
 
@@ -116,6 +120,39 @@ _TOUCHED: dict[str, tuple[dict[str, str], str]] = {
             ),
         },
         "docs/x.md",
+    ),
+    "conftest-request-path-and-a-test-in-a-subdirectory": (
+        {
+            "tests/conftest.py": _REQUESTED_DATA,
+            "tests/sub/test_x.py": "def test_read(data):\n    assert data\n",
+        },
+        "tests/sub/data/x.json",
+    ),
+    "request-path-in-a-helper-module": (
+        {
+            "pkg/__init__.py": "",
+            "pkg/helpers.py": ("def data_dir(request):\n    return request.path.parent / 'data'\n"),
+            _TEST_FILE: (
+                "from pkg.helpers import data_dir\n\n"
+                "def test_read(request):\n    assert data_dir(request)\n"
+            ),
+        },
+        "tests/data/x.json",
+    ),
+    "request-path-in-the-root-conftest": (
+        {"conftest.py": _REQUESTED_DATA, _TEST_FILE: "def test_read(data):\n    assert data\n"},
+        "tests/data/x.json",
+    ),
+    "conftest-request-path-derived-in-the-test": (
+        {
+            "tests/conftest.py": (
+                "@pytest.fixture\ndef here(request):\n    return request.path.parent\n"
+            ),
+            "tests/sub/test_x.py": (
+                "def test_read(here):\n" + _COMPUTED + "    assert (here.parent / name)\n"
+            ),
+        },
+        "tests/sub/x.json",
     ),
 }
 

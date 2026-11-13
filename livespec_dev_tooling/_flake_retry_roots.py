@@ -172,6 +172,7 @@ def module_root_terms(
     bases: Iterable[ast.expr],
     import_sources: Mapping[int, str] | None = None,
     places: Mapping[int, str] | None = None,
+    request_span: str | None = None,
 ) -> tuple[tuple[tuple[Key, RootTerm], ...], tuple[RootTerm, ...]]:
     """The term of each given base, and every binding term a closure can need from this module.
 
@@ -188,6 +189,7 @@ def module_root_terms(
         numbers={id(scope): number for number, scope in enumerate(index.scopes)},
         import_sources={} if import_sources is None else import_sources,
         places={} if places is None else places,
+        request_span=request_span,
     )
     sites: dict[Key, list[Thunk]] = {}
     for node in index.nodes:
@@ -222,35 +224,48 @@ def solve_keys(
     terms: Iterable[tuple[Key, RootTerm]],
     rooted_queries: Iterable[Key],
     placed_queries: Iterable[Key],
-) -> tuple[frozenset[Key], dict[Key, frozenset[str]]]:
-    """Solve which queried keys are rooted, and where each queried key is placed.
+) -> tuple[frozenset[Key], dict[Key, frozenset[str]], dict[Key, frozenset[str]]]:
+    """Solve which queried keys are rooted, where each is placed, and what each spans.
 
     Each pass walks only the keys its queries go through, so a closure's many
-    unrelated bindings cost nothing.
+    unrelated bindings cost nothing. Places travel only through `evidence`;
+    rootedness and spans travel through every `through`.
     """
     by_key: dict[Key, list[RootTerm]] = {}
     for key, term in terms:
         by_key.setdefault(key, []).append(term)
-    rooted = _walk(queries=rooted_queries, terms=by_key, edges=lambda term: term.through)
-    seeds, dependents = _walk(
-        queries=placed_queries, terms=by_key, edges=lambda term: term.evidence
+    seeds, dependents = _walk(queries=rooted_queries, terms=by_key, edges=lambda term: term.through)
+    placed = _spread(
+        walked=_walk(queries=placed_queries, terms=by_key, edges=lambda term: term.evidence),
+        terms=by_key,
+        values=lambda term: term.places,
     )
-    pending = [(key, term.places) for key in seeds for term in by_key[key]]
-    placed: dict[Key, set[str]] = {}
+    spanned = _spread(walked=(seeds, dependents), terms=by_key, values=lambda term: term.spans)
+    rooted = _spread(
+        walked=(seeds, dependents),
+        terms=by_key,
+        values=lambda term: frozenset({""} if term.rooted else ()),
+    )
+    return frozenset(rooted), placed, spanned
+
+
+def _spread(
+    *,
+    walked: tuple[list[Key], dict[Key, list[Key]]],
+    terms: dict[Key, list[RootTerm]],
+    values: Callable[[RootTerm], frozenset[str]],
+) -> dict[Key, frozenset[str]]:
+    """Carry each walked key's own values to every key that goes through it."""
+    seeds, dependents = walked
+    pending = [(key, values(term)) for key in seeds for term in terms[key]]
+    reached: dict[Key, set[str]] = {}
     while pending:
-        key, places = pending.pop()
-        known = placed.setdefault(key, set())
-        added = places - known
+        key, carried = pending.pop()
+        known = reached.setdefault(key, set())
+        added = carried - known
         known.update(added)
         pending.extend((dependent, added) for dependent in dependents.get(key, ()) if added)
-    rooted_seeds, rooted_dependents = rooted
-    reached: set[Key] = set()
-    rooted_pending = [key for key in rooted_seeds if any(term.rooted for term in by_key[key])]
-    while rooted_pending:
-        key = rooted_pending.pop()
-        reached.add(key)
-        rooted_pending.extend(rooted_dependents.pop(key, ()))
-    return frozenset(reached), {key: frozenset(places) for key, places in placed.items()}
+    return {key: frozenset(found) for key, found in reached.items() if found}
 
 
 def _walk(
