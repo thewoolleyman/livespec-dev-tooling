@@ -12,6 +12,11 @@ only an expression the module resolves from `__file__`, a request's test path,
 bindings, fixtures, attribute stores and imports that the whole closure then
 solves; any other derived path, such as `ROOT.parent`, keeps the doubt of its
 object but not its places, so only `through` carries it, never `evidence`.
+
+`spans` are directories a path lies somewhere under, unknown where: a
+request's test path read outside a test module (see `request_span`). Every
+derivation keeps them, and they travel through `through`, so the closure names
+each span directory whole, and a span at the root is undeterminable.
 """
 
 from __future__ import annotations
@@ -20,6 +25,7 @@ import ast
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 
+from livespec_dev_tooling._flake_retry_places import is_request_path
 from livespec_dev_tooling._flake_retry_scopes import Scope, ScopeIndex, owning_scope
 from livespec_dev_tooling.flake_retry_divisions import division_operands
 
@@ -63,6 +69,7 @@ class RootTerm:
     places: frozenset[str]
     through: frozenset[Key]
     evidence: frozenset[Key] = frozenset()
+    spans: frozenset[str] = frozenset()
 
 
 ROOTED = RootTerm(rooted=True, places=frozenset({""}), through=frozenset())
@@ -79,6 +86,7 @@ class TermContext:
     numbers: dict[int, int]
     import_sources: Mapping[int, str]
     places: Mapping[int, str]
+    request_span: str | None
 
 
 def union(*, terms: Iterable[RootTerm]) -> RootTerm:
@@ -87,6 +95,7 @@ def union(*, terms: Iterable[RootTerm]) -> RootTerm:
     return RootTerm(
         rooted=any(term.rooted for term in collected),
         places=frozenset(place for term in collected for place in term.places),
+        spans=frozenset(span for term in collected for span in term.spans),
         through=frozenset(key for term in collected for key in term.through),
         evidence=frozenset(key for term in collected for key in term.evidence),
     )
@@ -101,7 +110,7 @@ def through(*keys: Key) -> RootTerm:
 
 def _derived(*, term: RootTerm) -> RootTerm:
     """A path derived from a base keeps the base's doubt but not its places."""
-    return RootTerm(rooted=term.rooted, places=frozenset(), through=term.through)
+    return RootTerm(rooted=term.rooted, places=frozenset(), through=term.through, spans=term.spans)
 
 
 def _divided(*, term: RootTerm, segments: tuple[ast.expr, ...]) -> RootTerm:
@@ -112,7 +121,10 @@ def _divided(*, term: RootTerm, segments: tuple[ast.expr, ...]) -> RootTerm:
     ) and all(text and not text.startswith("/") and ".." not in text.split("/") for text in texts)
     places = frozenset("/".join(part for part in (place, *texts) if part) for place in term.places)
     return RootTerm(
-        rooted=term.rooted, places=places if plain else frozenset(), through=term.through
+        rooted=term.rooted,
+        places=places if plain else frozenset(),
+        through=term.through,
+        spans=term.spans,
     )
 
 
@@ -165,6 +177,9 @@ def _attribute_term(*, attribute: ast.Attribute, context: TermContext) -> RootTe
     """An attribute is rooted when it names a root, or through its object or an attribute store."""
     if attribute.attr in _ROOT_ATTRIBUTES:
         return DOUBT if attribute.attr == "__file__" else ROOTED
+    if context.request_span is not None and is_request_path(attribute=attribute):
+        spans = frozenset({context.request_span})
+        return RootTerm(rooted=True, places=frozenset(), through=frozenset(), spans=spans)
     stored = through(("attribute", attribute.attr))
     owner = _derived(term=base_term(expression=attribute.value, context=context))
     return union(terms=(owner, stored))

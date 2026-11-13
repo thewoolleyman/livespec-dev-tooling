@@ -22,7 +22,12 @@ from livespec_dev_tooling._flake_retry_scopes import (
     is_root_name,
 )
 
-__all__: list[str] = ["repository_places", "repository_root_expressions"]
+__all__: list[str] = [
+    "is_request_path",
+    "repository_places",
+    "repository_root_expressions",
+    "request_span",
+]
 
 _SAME_PATH_FUNCTIONS = frozenset({"Path", "PurePath", "PosixPath", "abspath", "realpath", "str"})
 _ROOT_ATTRIBUTES = frozenset({"rootpath", "rootdir"})
@@ -44,26 +49,53 @@ def _called_path(*, call: ast.Call, again: _Resolve) -> Path | None:
     return base.parent if base is not None and callee == "dirname" else base
 
 
-def _attribute_path(
-    *, attribute: ast.Attribute, again: _Resolve, source_path: Path, repo_root: Path
-) -> Path | None:
-    """Resolve `.parent`, a request's test path and the pytest root attributes.
-
-    `request.path`, `request.fspath` and `request.node.path` are read as the
-    module's own path; `rootpath`, `rootdir` and `invocation_params.dir` are
-    the repository root.
-    """
+def is_request_path(*, attribute: ast.Attribute) -> bool:
+    """Say whether an attribute is `request.path`, `request.fspath` or `request.node.path`."""
     owner = attribute.value
     requested = getattr(owner, "id", "") == "request" or (
         isinstance(owner, ast.Attribute)
         and owner.attr == "node"
         and getattr(owner.value, "id", "") == "request"
     )
+    return requested and attribute.attr in _TEST_PATH_ATTRIBUTES
+
+
+def _is_test_module(*, path: Path) -> bool:
+    """Say whether pytest collects this file as a test module (`test_*.py` or `*_test.py`)."""
+    return path.name.startswith("test_") or path.name.endswith("_test.py")
+
+
+def request_span(*, path: Path, repo_root: Path) -> str | None:
+    """Where a request's test path can lie when read in this module.
+
+    None in a test module, where it is that module's own path. In a
+    `conftest.py` it is some test under the conftest's own directory, given
+    repository-relative; anywhere else it could be any test, so `""`, the root.
+    """
+    if _is_test_module(path=path):
+        return None
+    if path.name != "conftest.py":
+        return ""
+    relative = path.parent.relative_to(repo_root).as_posix()
+    return "" if relative == "." else relative
+
+
+def _attribute_path(
+    *, attribute: ast.Attribute, again: _Resolve, source_path: Path, repo_root: Path
+) -> Path | None:
+    """Resolve `.parent`, a request's test path and the pytest root attributes.
+
+    `request.path`, `request.fspath` and `request.node.path` resolve to the
+    module's own path only in a test module; elsewhere they stay unresolved
+    here and the closure reads them as a span (see `request_span`).
+    `rootpath`, `rootdir` and `invocation_params.dir` are the repository root.
+    """
+    owner = attribute.value
     if attribute.attr == "parent":
         base = again(expression=owner)
         return None if base is None else base.parent
-    if attribute.attr in _TEST_PATH_ATTRIBUTES and requested:
-        return source_path
+    if is_request_path(attribute=attribute):
+        return source_path if _is_test_module(path=source_path) else None
     rooted = attribute.attr in _ROOT_ATTRIBUTES or (
         attribute.attr == "dir" and getattr(owner, "attr", "") == "invocation_params"
     )
