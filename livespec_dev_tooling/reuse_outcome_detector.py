@@ -29,6 +29,7 @@ _DEFAULT_INTERVAL_SECONDS: Final = 900
 _MAX_INTERVAL_SECONDS: Final = 1_800
 _DEFAULT_STATE_FILE: Final = Path("/var/lib/livespec/coverage-reuse-detector.json")
 _LOOKBACK: Final = timedelta(hours=3)
+_RUN_MARGIN: Final = timedelta(hours=6)
 _RUN_LIMIT: Final = 1_000
 _Read = Callable[..., GhRead]
 
@@ -66,11 +67,17 @@ def evaluate(
 def gather(*, repository: str, since: str, read: _Read = gh_read) -> list[dict[str, object]] | None:
     """Gather completed mandatory-consumer outcomes for one fleet repository.
 
-    Discovery is windowed to runs created at or after `since` rather than to
-    the latest N runs, so unrelated later runs cannot push a consumer out of
-    view.  A listing that fills the run limit may be truncated, so it is read
-    as unanswered rather than as complete.
+    Discovery is windowed to runs created within a margin before `since`
+    rather than to the latest N runs, so unrelated later runs cannot push a
+    consumer out of view and a long-running run whose consumer job finishes
+    inside the window is still listed.  Each consumer job is then graded on
+    its own completion time.  A listing that fills the run limit may be
+    truncated, so it is read as unanswered rather than as complete.
     """
+    window_start = _instant(text=since)
+    if window_start is None:
+        return None
+    run_floor = (window_start - _RUN_MARGIN).strftime("%Y-%m-%dT%H:%M:%SZ")
     runs = read(
         args=[
             "run",
@@ -80,7 +87,7 @@ def gather(*, repository: str, since: str, read: _Read = gh_read) -> list[dict[s
             "--status",
             "completed",
             "--created",
-            f">={since}",
+            f">={run_floor}",
             "--limit",
             str(_RUN_LIMIT),
             "--json",
@@ -95,31 +102,53 @@ def gather(*, repository: str, since: str, read: _Read = gh_read) -> list[dict[s
     recorded: list[dict[str, object]] = []
     for run in listed:
         run_id = int(cast("int | str", run["databaseId"]))
-        jobs = read(
-            args=[
-                "api",
-                f"repos/{repository}/actions/runs/{run_id}/jobs?per_page=100",
-                "--paginate",
-            ]
+        found = _run_outcomes(
+            repository=repository,
+            run_id=run_id,
+            window_start=window_start,
+            read=read,
         )
-        if jobs.returncode != 0:
+        if found is None:
             return None
-        for page in _pages(text=jobs.stdout):
-            for job in cast("list[dict[str, object]]", page.get("jobs", [])):
-                if job.get("name") != COVERAGE_CONSUMER_JOB_ID or not job.get("completed_at"):
-                    continue
-                job_id = int(cast("int | str", job["id"]))
-                log = read(args=["api", f"repos/{repository}/actions/jobs/{job_id}/logs"])
-                if log.returncode != 0:
-                    return None
-                outcome = coverage_reuse_outcome(
-                    repo=repository,
-                    run_id=run_id,
-                    job_name=job.get("name"),
-                    log=log.stdout,
-                )
-                if outcome is not None:
-                    recorded.append({**outcome, "job_id": job_id})
+        recorded.extend(found)
+    return recorded
+
+
+def _run_outcomes(
+    *, repository: str, run_id: int, window_start: datetime, read: _Read
+) -> list[dict[str, object]] | None:
+    """Read the outcomes of one run's consumer jobs that completed in the window."""
+    jobs = read(
+        args=[
+            "api",
+            f"repos/{repository}/actions/runs/{run_id}/jobs?per_page=100",
+            "--paginate",
+        ]
+    )
+    if jobs.returncode != 0:
+        return None
+    recorded: list[dict[str, object]] = []
+    for page in _pages(text=jobs.stdout):
+        for job in cast("list[dict[str, object]]", page.get("jobs", [])):
+            if job.get("name") != COVERAGE_CONSUMER_JOB_ID or not job.get("completed_at"):
+                continue
+            completed = _instant(text=str(job["completed_at"]))
+            if completed is None:
+                return None
+            if completed < window_start:
+                continue
+            job_id = int(cast("int | str", job["id"]))
+            log = read(args=["api", f"repos/{repository}/actions/jobs/{job_id}/logs"])
+            if log.returncode != 0:
+                return None
+            outcome = coverage_reuse_outcome(
+                repo=repository,
+                run_id=run_id,
+                job_name=job.get("name"),
+                log=log.stdout,
+            )
+            if outcome is not None:
+                recorded.append({**outcome, "job_id": job_id})
     return recorded
 
 
@@ -157,6 +186,14 @@ def main(
     for notice in notices:
         _ = sys.stdout.write(f"{json.dumps({'notification': notice.message})}\n")
     return 0
+
+
+def _instant(*, text: str) -> datetime | None:
+    """Parse a GitHub or detector UTC timestamp, or None when it is not one."""
+    try:
+        return datetime.fromisoformat(text.replace("Z", "+00:00")).astimezone(timezone.utc)
+    except ValueError:
+        return None
 
 
 def _pages(*, text: str) -> list[dict[str, object]]:
