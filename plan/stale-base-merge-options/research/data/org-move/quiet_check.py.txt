@@ -12,14 +12,16 @@ closed, so an outage can never read as a quiet fleet. The fleet is the `fleet` l
                  (`disarm-on-hold-label.yml` turns auto-merge off when the label is added)
   master-ci      the latest `ci.yml` run on master has completed, and its conclusion is success
   runs           no workflow run of any kind is `in_progress`, `queued`, `waiting` or `pending`,
-                 except GHOSTS: a run whose status is `queued` (not `pending` or `waiting`, which a
-                 concurrency group legitimately holds), with ZERO jobs, never updated since it was created
-                 (updated_at == created_at), and created before `--halt-at` (the halt announcement).
-                 GitHub leaves such runs `queued` forever and refuses to cancel them; 31 were measured on
-                 2026-11-13 (comment on livespec-dev-tooling-xowhol, 00:47:15Z). Ruling (b) of
-                 legacy-coordinator-agent: they are excluded, reported as `ghost` with their ids, and never
-                 deleted. A ghost with ANY job still counts as active, and without `--halt-at` nothing
-                 is excluded, so the check still fails closed.
+                 except GHOSTS (see `is_ghost`). A ghost is a run whose status is `queued` (not `pending`
+                 or `waiting`, which a concurrency group legitimately holds), that was never updated after it
+                 was created (updated_at == created_at), that was created before `--halt-at` (the halt
+                 announcement), and that EITHER has zero jobs OR is more than 24 h old at check time, with any
+                 number of jobs. GitHub leaves such runs `queued` forever and refuses to cancel them. 31 were
+                 measured on 2026-11-13: 30 with zero jobs, and livespec-runtime 32215471962, which has one job
+                 and had not started in 86 days (comment on livespec-dev-tooling-xowhol, 00:47:15Z).
+                 legacy-coordinator-agent ruled (b) for the zero-job case and (i) for the 24 h case. Ghosts
+                 are reported as `ghost` with their ids and never deleted. Without `--halt-at`, nothing is
+                 excluded, so the check still fails closed. `--self-test` checks the rule's boundary rows.
   release        no merged PR still carries `autorelease: pending` (Release Please has not tagged it)
   gate-jobs      no active gate Job for the repository in the cluster's `gates` namespace
 
@@ -33,10 +35,12 @@ Exit status: 0 when quiet, 1 when anything is not quiet or cannot be observed.
 from __future__ import annotations
 
 import argparse
+import datetime
 import json
 import re
 import subprocess
 import sys
+from collections.abc import Callable
 from pathlib import Path
 
 ACTIVE_RUN_STATES = ("in_progress", "queued", "waiting", "pending", "requested")
@@ -61,12 +65,59 @@ def fleet(clones: Path) -> list[str]:
     return [entry["repo"] for entry in json.loads(text)["fleet"]]
 
 
+GHOST_MIN_AGE_SECONDS = 24 * 3600
+
+
+def _utc(stamp: str) -> datetime.datetime:
+    return datetime.datetime.fromisoformat(stamp.replace("Z", "+00:00"))
+
+
+def is_ghost(*, status: str, created_at: str, updated_at: str, halt_at: str | None, now: datetime.datetime,
+             jobs: Callable[[], int]) -> bool:
+    """Ruling (b) plus ruling (i). `jobs` is called only when the 24 h rule alone does not decide."""
+    if not halt_at or status != "queued" or updated_at != created_at or _utc(created_at) >= _utc(halt_at):
+        return False
+    if (now - _utc(created_at)).total_seconds() > GHOST_MIN_AGE_SECONDS:
+        return True
+    return jobs() == 0
+
+
+SELF_TEST_ROWS = (
+    # (description, status, age_seconds, updated_equals_created, created_before_halt, job_count, expected)
+    ("24 h boundary, just over, with a job: ghost by (i)", "queued", 24 * 3600 + 1, True, True, 1, True),
+    ("24 h boundary, exactly 24 h, with a job: active", "queued", 24 * 3600, True, True, 1, False),
+    ("24 h boundary, just under, with a job: active", "queued", 24 * 3600 - 1, True, True, 1, False),
+    ("young, zero jobs: ghost by (b)", "queued", 60, True, True, 0, True),
+    ("old, but updated since created: active", "queued", 90 * 86400, False, True, 0, False),
+    ("old, zero jobs, created after the halt: active", "queued", 90 * 86400, True, False, 0, False),
+    ("pending, zero jobs (a concurrency group): active", "pending", 90 * 86400, True, True, 0, False),
+)
+
+
+def self_test() -> int:
+    halt = datetime.datetime(2026, 11, 20, 10, 0, 0, tzinfo=datetime.timezone.utc)
+    now = halt + datetime.timedelta(seconds=1)  # every row but the "after the halt" one is created before it
+    failures = 0
+    for desc, status, age, same, before, jobs, expected in SELF_TEST_ROWS:
+        created = now - datetime.timedelta(seconds=age)
+        if not before:
+            created = halt + datetime.timedelta(seconds=1)
+        stamp = created.strftime("%Y-%m-%dT%H:%M:%SZ")
+        updated = stamp if same else (created + datetime.timedelta(seconds=5)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        got = is_ghost(status=status, created_at=stamp, updated_at=updated,
+                       halt_at=halt.strftime("%Y-%m-%dT%H:%M:%SZ"), now=now, jobs=lambda j=jobs: j)
+        ok = got == expected
+        failures += not ok
+        print(f"{'PASS' if ok else 'FAIL'}  {desc}: expected {expected}, got {got}")
+    return 1 if failures else 0
+
+
 def job_count(slug: str, run_id: int) -> int:
     data = run_json(["gh", "api", f"/repos/{slug}/actions/runs/{run_id}/jobs?per_page=1"])
     return int(data["total_count"])
 
 
-def check_repo(slug: str, halt_at: str | None) -> dict[str, str]:
+def check_repo(slug: str, halt_at: str | None, now: datetime.datetime) -> dict[str, str]:
     out: dict[str, str] = {}
 
     def guard(name: str, fn) -> None:
@@ -102,8 +153,8 @@ def check_repo(slug: str, halt_at: str | None) -> dict[str, str]:
             for r in rows:
                 label = f"{r['databaseId']}:{r['workflowName']}:{state}"
                 # ISO-8601 UTC strings in the same Z form compare correctly as text.
-                if (halt_at and state == "queued" and r["updatedAt"] == r["createdAt"]
-                        and r["createdAt"] < halt_at and job_count(slug, r["databaseId"]) == 0):
+                if is_ghost(status=state, created_at=r["createdAt"], updated_at=r["updatedAt"], halt_at=halt_at,
+                            now=now, jobs=lambda run_id=r["databaseId"]: job_count(slug, run_id)):
                     ghosts.append(label)
                 else:
                     active.append(label)
@@ -159,14 +210,18 @@ def main() -> int:
     parser.add_argument("--image", action="append", default=[])
     parser.add_argument("--halt-at", help="halt announcement time, UTC, e.g. 2026-11-20T10:00:00Z")
     parser.add_argument("--json", action="store_true")
+    parser.add_argument("--self-test", action="store_true", help="check the ghost rule's boundary rows and exit")
     args = parser.parse_args()
+    if args.self_test:
+        return self_test()
     if args.image and not args.org:
         parser.error("--image needs --org")
     if args.halt_at and not re.fullmatch(r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ", args.halt_at):
         parser.error("--halt-at must be UTC in the form YYYY-MM-DDTHH:MM:SSZ")
 
     repos = fleet(args.clones)
-    results = {repo: check_repo(f"{args.owner}/{repo}", args.halt_at) for repo in repos}
+    now = datetime.datetime.now(datetime.timezone.utc)
+    results = {repo: check_repo(f"{args.owner}/{repo}", args.halt_at, now) for repo in repos}
     for repo, verdict in gate_jobs(repos).items():
         results[repo]["gate-jobs"] = verdict
     images = {image: image_present(args.org, image) for image in args.image}

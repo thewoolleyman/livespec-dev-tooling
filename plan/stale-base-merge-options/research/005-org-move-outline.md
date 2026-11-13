@@ -87,10 +87,13 @@ The coordinator announces it. These are the contents. Order: freeze inflow, drai
   (b), the quiet check excludes a run that is `queued` with zero jobs, never updated since creation, and created before
   the halt announcement (`--halt-at`). It reports such a run as `ghost` with its id, and nothing is deleted. A queued
   run that has any job still counts as active, and so does a `pending` run held by a concurrency group.
-  **One run is still open.** livespec-runtime 32215471962 (`Bump pin from sibling dispatch`, 2026-08-19) has one job,
-  queued on `ubuntu-latest`, and it refuses cancel like the ghosts do. Because it has a job, it counts as active and holds
-  the quiet check shut. It needs its own ruling before the halt. A 2026-11-13 ~01:1xZ run with `--halt-at` set to that
-  minute matched the measured set exactly: 30 ghosts, plus this one run reported as active.
+  **Older than 24 h with a job (ruling (i), legacy-coordinator-agent, received 2026-11-13 ~01:5xZ).** livespec-runtime 32215471962
+  (`Bump pin from sibling dispatch`, 2026-08-19) has one job, queued on `ubuntu-latest`. It refuses cancel like the
+  ghosts, and it had not started in 86 days. The ghost rule therefore also covers a `queued` run that was never updated
+  after creation, was created before `--halt-at`, and is more than 24 h old, whatever its job count. Nothing is
+  deleted, and nothing is excluded by id. `--self-test` checks the boundary rows: just over 24 h (ghost), exactly 24 h
+  and just under (active), plus the zero-job, updated, after-the-halt and `pending` cases. A live run at ~01:5xZ with
+  `--halt-at` set to that minute reported exactly the 31 measured runs as ghosts.
 - No gate Job is on the ARC runners.
 - No release is mid-flight.
 - Every image the held PRs pin is present at `ghcr.io/<org>/<name>:<tag>` (Phase 1 step 4).
