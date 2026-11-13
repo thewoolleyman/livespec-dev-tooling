@@ -518,9 +518,17 @@ EOF
     differ "worker container $worker is not running (State.Running is '$running')"
 
   # The bridge exists only once the restarted node runs a pod on the pod
-  # network, so it is awaited inside the same bound.
+  # network, and the collector unit binds a few seconds after the bridge is
+  # up (measured 2026-11-13: Node Ready 20:17:44Z, listening 20:17:54Z, and a
+  # single read in between failed a drill that had in fact passed). Both are
+  # awaited inside the same bound; an endpoint mismatch is final at once.
+  collector_pending() {
+    [ -n "$c_endpoint" ] || return 1
+    [ -n "$c_bridge" ] || return 0
+    [ "${c_endpoint%:*}" = "$c_bridge" ] && [ "$c_listening" != true ]
+  }
   read_collector
-  while [ -z "$c_bridge" ] && [ "$waited" -lt "$wait_seconds" ]; do
+  while collector_pending && [ "$waited" -lt "$wait_seconds" ]; do
     sleep "$poll"
     waited="$((waited + poll))"
     read_collector
@@ -535,7 +543,7 @@ EOF
     say "COLLECTOR endpoint mismatch: node.env says $c_endpoint, cni0 is now $c_bridge; nothing rewrote node.env on the return (listening on the stale endpoint: ${c_listening:-false})"
     differ "COLLECTOR: node.env endpoint $c_endpoint is not on the current cni0 address $c_bridge"
   elif [ "$c_listening" != true ]; then
-    say "COLLECTOR not listening: node.env's $c_endpoint matches cni0 ($c_bridge), but nothing listens there"
+    say "COLLECTOR not listening: node.env's $c_endpoint matches cni0 ($c_bridge), but nothing listens there ${waited}s after the return"
     differ "COLLECTOR: nothing listens on $c_endpoint"
   else
     say "COLLECTOR endpoint $c_endpoint matches cni0 ($c_bridge) and is listening"
