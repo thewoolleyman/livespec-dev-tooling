@@ -37,6 +37,7 @@ from types import ModuleType
 from typing import NamedTuple
 
 import pytest
+import structlog
 import yaml
 from returns.result import Success
 
@@ -95,15 +96,10 @@ case "$*" in
         ;;
     *"green_token undeclared"*)        exit 0 ;;
     *"green_token check")              exit "${GREEN_TOKEN_EXIT:-1}" ;;
-    *"green_token pre-push-reuse"*)
+    *"green_token pre-push-evidence"*)
         [ -n "${EVIDENCE:-}" ] || exit 3
         printf 'pre-push reuse: accepted delegated evidence\n'
         exit "${REUSE_EXIT:-0}"
-        ;;
-    *"green_token pre-push-evidence")
-        [ -n "${EVIDENCE:-}" ] || exit 1
-        printf '%b' "${EVIDENCE}"
-        exit 0
         ;;
     *"gate_remote_delegate enabled")   exit "${SWITCH_EXIT:-1}" ;;
     *"pre_commit_delegate run")        exit "${DELEGATE_EXIT:-75}" ;;
@@ -357,7 +353,8 @@ def _pre_push_evidence(
     *, repo: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> tuple[int, list[str]]:
     """Ask the real green-token module whether a qualifying verdict exists for this push."""
-    _delegate, green_token = _modules()
+    _ = capsys
+    _delegate, _green_token = _modules()
     pre_push = importlib.import_module("livespec_dev_tooling._pre_push_evidence")
 
     def cluster_record(
@@ -380,10 +377,8 @@ def _pre_push_evidence(
 
     monkeypatch.setattr(pre_push, "default_gate_command_runner", cluster_record)
     _scrub_process(monkeypatch=monkeypatch)
-    monkeypatch.chdir(repo)
-    monkeypatch.setattr(sys, "argv", ["green-token", "pre-push-evidence"])
-    status = green_token.main()
-    return status, capsys.readouterr().out.splitlines()
+    lines = pre_push.accepted_lines(cwd=repo, log=structlog.get_logger("test"))
+    return (0 if lines is not None else 1), list(lines or ())
 
 
 def _green_token(
@@ -459,9 +454,9 @@ def test_an_accepting_push_submits_no_gate_job_and_names_the_job_and_tree(
         f"an accepted delegated pre-commit verdict must not submit a gate Job; "
         f"invoked={run.invoked}"
     )
-    reuse = _carrying(run=run, needle="green_token pre-push-reuse")
+    reuse = _carrying(run=run, needle="green_token pre-push-evidence")
     assert reuse == [
-        "uv run python -m livespec_dev_tooling.green_token pre-push-reuse " + " ".join(_MEMBERS)
+        "uv run python -m livespec_dev_tooling.green_token pre-push-evidence " + " ".join(_MEMBERS)
     ], f"the shared entry point must receive the consumer's check set; invoked={run.invoked}"
     assert not _carrying(run=run, needle="just-env"), (
         f"the shared entry point, rather than this script's aggregate, owns the narrowed run; "

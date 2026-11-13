@@ -279,7 +279,7 @@ def test_check_exits_1_when_no_token(
     assert "no token found" in result.stderr
 
 
-def test_pre_push_reuse_dispatches_the_consumers_complete_check_set(
+def test_pre_push_evidence_dispatches_the_consumers_complete_check_set(
     *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """The CLI forwards the shared command and every consumer member unchanged."""
@@ -293,14 +293,14 @@ def test_pre_push_reuse_dispatches_the_consumers_complete_check_set(
 
     result = _run_module(
         cwd=tmp_path,
-        command="pre-push-reuse",
+        command="pre-push-evidence",
         targets=("check-a", "check-b"),
         monkeypatch=monkeypatch,
         capsys=capsys,
     )
 
     assert result.returncode == 0
-    assert received["command"] == "pre-push-reuse"
+    assert received["command"] == "pre-push-evidence"
     assert received["cwd"] == tmp_path
     assert received["targets"] == ["check-a", "check-b"]
 
