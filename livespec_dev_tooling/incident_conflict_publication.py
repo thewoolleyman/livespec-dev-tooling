@@ -97,11 +97,13 @@ class ConflictPublication:
 
     def publish(self, *, intent: RecoveryIntent, receipt: str, automatic: bool) -> Published:
         """Write the conflict when the snapshot allows it, then record the outcome."""
-        gate = self._snapshot(action_id=intent.action_id, receipt=receipt, automatic=automatic)
+        gate, operator_override = self._snapshot(
+            action_id=intent.action_id, receipt=receipt, automatic=automatic
+        )
         if gate is not None:
             return gate
         outcome = self.chain.record(intent=intent, receipt=receipt)
-        return record_outcome(
+        published = record_outcome(
             state=self.state,
             repository=self.repository,
             action_id=intent.action_id,
@@ -109,20 +111,34 @@ class ConflictPublication:
             outcome=outcome,
             clock=self.clock,
         )
+        if operator_override and published.status != _SKIPPED:
+            _record_operator_override(
+                state=self.state,
+                repository=self.repository,
+                action_id=intent.action_id,
+                receipt=receipt,
+            )
+        return published
 
-    def _snapshot(self, *, action_id: str, receipt: str, automatic: bool) -> Published | None:
+    def _snapshot(
+        self, *, action_id: str, receipt: str, automatic: bool
+    ) -> tuple[Published | None, bool]:
         with repository_lock(directory=self.state, repository=self.repository) as path:
             action = _actions(record=load_record(path=path)).get(action_id)
         if action is None or action.get("receipt") != receipt:
-            return Published(status=_SKIPPED, reason="the action no longer holds this receipt")
+            return (
+                Published(status=_SKIPPED, reason="the action no longer holds this receipt"),
+                False,
+            )
         if action.get(_RECONCILED):
-            return Published(status=_RECONCILED, reason="already on the chain")
+            return Published(status=_RECONCILED, reason="already on the chain"), False
         terminal = _state(action=action).get(_TERMINAL)
         if terminal:
-            return Published(status=_TERMINAL, reason=str(terminal))
-        if automatic and not is_due(action=action, now=self.clock()):
-            return Published(status=_DEFERRED, reason="backing off")
-        return None
+            return Published(status=_TERMINAL, reason=str(terminal)), False
+        due = is_due(action=action, now=self.clock())
+        if automatic and not due:
+            return Published(status=_DEFERRED, reason="backing off"), False
+        return None, not automatic and not due
 
 
 def record_outcome(
@@ -191,6 +207,21 @@ def _apply(
     state[_TERMINAL] = reason
     action[_SWEEP] = state
     return Published(status=_TERMINAL, reason=reason)
+
+
+def _record_operator_override(
+    *, state: Path, repository: str, action_id: str, receipt: str
+) -> None:
+    """Mark an operator's early retry unless its action changed during the write."""
+    with repository_lock(directory=state, repository=repository) as path:
+        record = load_record(path=path)
+        action = _actions(record=record).get(action_id)
+        if action is None or action.get("receipt") != receipt:
+            return
+        sweep = _state(action=action)
+        sweep["operator_overrides"] = cast("int", sweep.get("operator_overrides", 0)) + 1
+        action[_SWEEP] = sweep
+        save_record(path=path, record=record)
 
 
 def _state(*, action: dict[str, object]) -> dict[str, object]:
