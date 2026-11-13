@@ -249,6 +249,32 @@ def test_a_seed_ref_pushed_beside_an_ordinary_ref_keeps_the_full_gate(*, tmp_pat
     assert "test aggregate was not run" not in stdout, f"stdout={stdout!r}"
 
 
+def test_a_seed_update_beside_an_ordinary_ref_deletion_keeps_the_full_gate(
+    *, tmp_path: Path
+) -> None:
+    """Deleting a mergeable-namespace ref is not a seed-only push, so the gate runs."""
+    code, stdout, invoked = _run_pre_push(
+        tmp_path=tmp_path,
+        stdin=_update_line(ref="refs/heads/needs-human/seed") + _delete_line(ref="refs/heads/gone"),
+    )
+
+    assert code == 0, f"stdout={stdout!r} invoked={invoked}"
+    assert "just hook_gate=1 check" in invoked, f"invoked={invoked}"
+    assert "test aggregate was not run" not in stdout, f"stdout={stdout!r}"
+
+
+def test_a_seed_update_with_a_malformed_remote_oid_keeps_the_full_gate(*, tmp_path: Path) -> None:
+    """An unparseable remote oid is no evidence of a seed-only push, so it fails closed."""
+    code, stdout, invoked = _run_pre_push(
+        tmp_path=tmp_path,
+        stdin=_update_line(ref="refs/heads/needs-human/seed", remote_oid="not-an-oid"),
+    )
+
+    assert code == 0, f"stdout={stdout!r} invoked={invoked}"
+    assert "just hook_gate=1 check" in invoked, f"invoked={invoked}"
+    assert "test aggregate was not run" not in stdout, f"stdout={stdout!r}"
+
+
 def test_an_absent_standard_input_keeps_the_existing_path(*, tmp_path: Path) -> None:
     """No refs read is NOT "nothing to publish" — it is no evidence, so the gate runs.
 
