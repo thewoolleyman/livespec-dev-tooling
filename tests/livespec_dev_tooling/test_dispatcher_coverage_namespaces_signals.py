@@ -116,8 +116,14 @@ def _signal_runner(*, tmp_path: Path, runner: str, signum: int) -> tuple[int, li
     )
     try:
         started = time.monotonic()
-        while not marker.exists() and time.monotonic() - started < 60:
+        while not marker.exists() and time.monotonic() - started < HANG_GUARD_SECONDS:
             time.sleep(0.05)
+        if not marker.exists():
+            pytest.fail(
+                "HANG: waiting for the check runner to reach its held target "
+                f"(the `running` marker) within {HANG_GUARD_SECONDS} s",
+                pytrace=False,
+            )
         process.send_signal(signum)
         status = process.wait(HANG_GUARD_SECONDS)
     finally:
