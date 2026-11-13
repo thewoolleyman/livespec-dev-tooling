@@ -9,6 +9,7 @@
 # --- otel_collector ---
 # The host collector on a k3s agent node, as gmktec-xubuntu's.
 otel_collector_config_file: config.k3s-agent-host.yaml
+otel_collector_pod_config_file: config.k3s-agent-host-pods.yaml
 otel_collector_user: otel-collector
 otel_collector_group: otel-collector
 otel_collector_manage_install: true

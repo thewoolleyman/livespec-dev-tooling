@@ -125,6 +125,7 @@ storage_reclaim_home: /home/cwoolley
 # `config.k3s-agent-host.yaml` was merged for this converge, so the role is the
 # only thing that has ever placed its collector.
 otel_collector_config_file: config.k3s-agent-host.yaml
+otel_collector_pod_config_file: config.k3s-agent-host-pods.yaml
 otel_collector_user: otel-collector
 otel_collector_group: otel-collector
 otel_collector_manage_install: true
