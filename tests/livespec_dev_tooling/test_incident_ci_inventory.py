@@ -242,7 +242,10 @@ def test_a_repository_the_release_carries_no_inventory_for_is_refused_by_name(
     _ = _released(monkeypatch=monkeypatch, tmp_path=tmp_path)
     with pytest.raises(module.InventoryUndeclaredError) as refused:
         module.load_repository_inventory(repository="owner/unknown")
-    assert str(refused.value).startswith("incident-inventory-undeclared: owner/unknown ")
+    assert str(refused.value) == (
+        "incident-inventory-undeclared: owner/unknown has no incident CI inventory"
+        " in this livespec-dev-tooling release"
+    )
 
 
 def test_an_adopter_inventory_must_name_its_own_repository_as_source(monkeypatch, tmp_path):
@@ -280,12 +283,22 @@ def test_an_invalid_repository_key_is_refused_before_any_file_is_read(repository
         module.load_repository_inventory(repository=repository)
 
 
-def test_this_repository_entry_is_its_rendered_tree_and_carries_no_source():
+def test_this_repository_entry_is_the_packaged_inventory_and_carries_no_source():
     packaged = json.loads(_PACKAGED.read_text())
     assert "source" not in packaged
     assert module.load_repository_inventory(repository=module.SELF_REPOSITORY) == (
         module.load_inventory()
     )
+
+
+def test_this_repository_entry_that_carries_a_source_is_refused(monkeypatch, tmp_path):
+    path = tmp_path / "inventory.json"
+    _ = path.write_text(
+        json.dumps(data() | {"source": {"repository": module.SELF_REPOSITORY, "commit": "c" * 40}})
+    )
+    monkeypatch.setattr(module, "_PATH", path)
+    with pytest.raises(ValueError, match="carries a source"):
+        module.load_repository_inventory(repository=module.SELF_REPOSITORY)
 
 
 def test_coverage_members_are_paired_only_when_the_workflow_has_both():
