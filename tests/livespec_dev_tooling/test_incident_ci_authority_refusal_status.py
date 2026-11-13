@@ -150,7 +150,7 @@ def _incident_process(*, monkeypatch, tmp_path, event: CiEvent, payload: str) ->
     monkeypatch.delenv(_VARIABLE, raising=False)
     monkeypatch.delenv("GITHUB_STEP_SUMMARY", raising=False)
     monkeypatch.delenv("GITHUB_OUTPUT", raising=False)
-    monkeypatch.setattr(process, "load_inventory", lambda: _TARGETS)
+    monkeypatch.setattr(process, "load_repository_inventory", lambda **_: _TARGETS)
     monkeypatch.setattr(process, "observe_event", lambda **_: (event, payload))
 
 
