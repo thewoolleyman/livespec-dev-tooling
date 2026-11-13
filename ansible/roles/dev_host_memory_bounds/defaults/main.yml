@@ -1,0 +1,106 @@
+# dev_host_memory_bounds — keep the dev host's memory from being exhausted by
+# the RAM-backed /tmp and by unbounded fleet Python. See HOST_VARS.md for the
+# operator procedure, the live cutover and the rollback.
+#
+# The 2026-11-13 incident this answers: the dev VPS (94 GiB RAM, no swap) was
+# rebooted at 15:53Z at load ~400 after memory exhaustion. The RAM-backed /tmp
+# tmpfs held 35-38 GiB, mostly session scratchpads under /tmp/claude-1000;
+# Python held 19-26 GiB (per-run dispatcher loops, uncapped reconcile-runs,
+# local full-suite gates). The OOM killer fired 130 times on small services
+# and killed Dolt at 15:32:41Z. Evidence: the investigation report under
+# /var/tmp/livespec-dumps/vps-overload-20261113/ and the scope events of
+# 2026-11-13 15:58Z and 16:30Z on epic livespec-dev-tooling-6tgd2z.
+
+# `present` installs every bound below; `absent` removes every file this role
+# wrote and returns the host to how it was before the role ran. Two words, not a
+# boolean, so a typo fails the assert instead of reading as "not absent".
+dev_host_memory_bounds_state: absent
+
+# --- /tmp ------------------------------------------------------------------
+
+# The tmpfs size cap. 8G instead of the systemd default of 50% of RAM (47G on
+# the VPS): /tmp is RAM, and with the session scratchpads moved to disk, what is
+# left there is sockets, locks and short-lived files.
+dev_host_memory_bounds_tmp_size: 8G
+dev_host_memory_bounds_tmp_nr_inodes: 2m
+
+# The drop-in that carries the cap. Named `zz-` ON PURPOSE: `Options=` is a
+# single-value setting, so the LAST drop-in in lexical order wins, and the host
+# already carries a hand-made `override.conf` (size=50%, nr_inodes=100000000).
+# Sorting after it lets this role win without rewriting that file, and lets the
+# rollback (state absent) restore it exactly by removing only this one.
+dev_host_memory_bounds_tmp_dropin_dir: /etc/systemd/system/tmp.mount.d
+dev_host_memory_bounds_tmp_dropin: zz-livespec-memory-bounds.conf
+
+# --- session scratchpads onto disk -----------------------------------------
+
+# The login whose Claude Code scratchpads move. Its uid names the directory
+# Claude Code creates (`/tmp/claude-<uid>`).
+dev_host_memory_bounds_user: ubuntu
+
+# `/tmp/claude-<uid>` becomes a bind mount of this directory on the root disk.
+# The PATH does not change, so every reader of it — the dev_host_retention sweep
+# of dead sessions' scratch, each live session — keeps working unchanged.
+dev_host_memory_bounds_scratch_disk_root: /var/tmp
+dev_host_memory_bounds_scratch_ram_root: /tmp
+
+# The TMPDIR every zsh of that login exports when nothing set one already.
+# `/var/tmp` (disk, 1777, aged by systemd-tmpfiles after 30d) and NOT a private
+# subdirectory, because Node's os.tmpdir() then resolves Claude Code's
+# `claude-<uid>` directory to `/var/tmp/claude-<uid>` — the same directory the
+# bind mount exposes at `/tmp/claude-<uid>`. One directory, two names, so no
+# scratchpad can land on RAM whichever name a tool uses.
+dev_host_memory_bounds_tmpdir: /var/tmp
+dev_host_memory_bounds_zshenv: "/home/{{ dev_host_memory_bounds_user }}/.zshenv"
+
+# --- memory slices ----------------------------------------------------------
+
+# Slices live in the USER manager of `dev_host_memory_bounds_user`, not the
+# system manager: the dispatcher loops and gates are started by that login's
+# sessions, and user@<uid>.service delegates the memory controller (measured
+# 2026-11-13: DelegateControllers=cpu memory pids), so a session can launch into
+# a slice with `systemd-run --user --scope --slice=<name>` and no sudo.
+dev_host_memory_bounds_user_unit_dir: /etc/systemd/user
+
+# ONE slice for every per-run `dispatcher.py loop` and its launcher, SIZED FROM
+# A MEASUREMENT taken 2026-11-13 ~16:5xZ over 13 running loops:
+# - steady RSS 0.23-1.69G, 8.0G in total (the coordinator read 9.7G, ~760M each,
+#   minutes earlier);
+# - PEAK (VmHWM) 0.46-2.53G per loop, 18.5G summed. Five loops had each peaked
+#   at 2.45-2.53G.
+# The fleet cap is now 18 loops. 18 x 0.76G is ~13.7G steady, and 20G leaves
+# room for about four loops at their 2.5G peak together. The earlier 12G (agreed
+# from 5 loops at 0.29-0.78G) would have OOM-killed loops in ordinary operation.
+# There is no swap, so above MemoryHigh the anonymous memory of a loop cannot be
+# reclaimed and the slice STALLS instead. 18G is the brake, and 20G is the kill
+# line. A single runaway loop is bounded per launch, not here: each launcher's
+# own scope carries MemoryMax (see HOST_VARS.md). If the fleet cap grows past
+# 18, grow this with it, by about 0.8G steady and 2.5G peak per loop.
+dev_host_memory_bounds_dispatch_slice: factory-dispatch.slice
+dev_host_memory_bounds_dispatch_memory_high: 18G
+dev_host_memory_bounds_dispatch_memory_max: 20G
+
+# ONE slice for local full-suite gates. With local_gate_slots_limit at 1, one
+# `pytest -n 4 --cov` aggregate runs at a time; the slice bounds what it may hold.
+dev_host_memory_bounds_gate_slice: local-gate.slice
+dev_host_memory_bounds_gate_memory_high: 9G
+dev_host_memory_bounds_gate_memory_max: 10G
+
+# --- reconcile-runs ---------------------------------------------------------
+
+# A host drop-in on the orchestrator's reconcile-runs.service timer unit (the
+# unit itself is installed by that repository's install.sh and stays
+# untouched). MemoryMax is 6G, not 5G, on legacy-dispatcher-agent's
+# measurement: one timer pass sat at 3.7G after 4.5 minutes and was still
+# growing, and a pass killed at MemoryMax is wasted until the next tick. 4G
+# MemoryHigh throttles first; 6G kills only a runaway.
+dev_host_memory_bounds_reconcile_unit: reconcile-runs.service
+dev_host_memory_bounds_reconcile_memory_high: 4G
+dev_host_memory_bounds_reconcile_memory_max: 6G
+
+# The OOM-killer preference for reconcile-runs. Restartable work goes first,
+# so a pressure event takes a reconcile pass before it takes Dolt or a seat.
+dev_host_memory_bounds_reconcile_oom_score_adjust: 500
+
+dev_host_memory_bounds_system_unit_dir: /etc/systemd/system
+dev_host_memory_bounds_reconcile_dropin: 50-livespec-memory-bounds.conf
