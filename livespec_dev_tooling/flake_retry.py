@@ -39,7 +39,7 @@ if TYPE_CHECKING:
 
     from _pytest.terminal import TerminalReporter
 
-    from livespec_dev_tooling.flake_retry_decisions import _ModuleFacts
+    from livespec_dev_tooling.flake_retry_decisions import Closure, _ModuleFacts
 
 __all__: list[str] = [
     "RETRY_ATTEMPTS",
@@ -67,6 +67,7 @@ def retry_marker_for(
     test_path: Path,
     change_paths: set[Path],
     memo: dict[Path, _ModuleFacts | None] | None = None,
+    closures: dict[Path, Closure] | None = None,
 ) -> dict[str, int] | None:
     """Forward the hook's live retry-policy overrides to the extracted decision."""
     return _retry_marker_for(
@@ -74,6 +75,7 @@ def retry_marker_for(
         test_path=test_path,
         change_paths=change_paths,
         memo=memo,
+        closures=closures,
         retry_attempts=RETRY_ATTEMPTS,
         retry_delay_seconds=RETRY_DELAY_SECONDS,
     )
@@ -100,6 +102,7 @@ def mark_untouched_tests(
     if paths is None:
         return withheld_reason()
     memo: dict[Path, _ModuleFacts | None] = {}
+    closures: dict[Path, Closure] = {}
     withheld = session_withheld_reason(
         repo_root=root,
         test_paths=(Path(str(item.path)) for item in items),
@@ -116,6 +119,7 @@ def mark_untouched_tests(
             test_path=test_path,
             memo=memo,
             change_paths=paths,
+            closures=closures,
         )
         if retry_withheld is not None:
             nodeid = getattr(item, "nodeid", None)
@@ -124,7 +128,11 @@ def mark_untouched_tests(
             continue
         if test_path not in markers:
             markers[test_path] = retry_marker_for(
-                repo_root=root, test_path=test_path, change_paths=paths, memo=memo
+                repo_root=root,
+                test_path=test_path,
+                change_paths=paths,
+                memo=memo,
+                closures=closures,
             )
         marker = markers[test_path]
         if marker is not None:
