@@ -783,6 +783,39 @@ def test_gate_start_refuses_when_neither_selector_interpreter_can_import(
     assert not (primary / _STORE).exists()
 
 
+def test_gate_start_keeps_selector_stderr_when_its_output_is_malformed(
+    *, tmp_path: Path, fixture_repo: tuple[Path, Path, dict[str, str]]
+) -> None:
+    """A malformed selector result retains diagnostics from every attempted selector."""
+    primary, _, env = fixture_repo
+    shims = tmp_path / "malformed-selector"
+    shims.mkdir()
+    for interpreter in ("uv", "python3"):
+        shim = shims / interpreter
+        _ = shim.write_text(
+            "#!/bin/sh\n"
+            'case "$*" in\n'
+            "  *install_worktree_pack*|*-c\\ import\\ livespec_dev_tooling*) exit 0 ;;\n"
+            "esac\n"
+            f"printf '%s\\n' '{interpreter} selector diagnostic' >&2\n"
+            "printf '%s\\n' 'cluster_job'\n"
+            "exit 0\n",
+            encoding="utf-8",
+        )
+        shim.chmod(0o755)
+
+    refused = _gate(
+        cwd=primary,
+        env={**env, "PATH": f"{shims}{os.pathsep}{env['PATH']}"},
+        args=["start", "--", "true"],
+    )
+
+    assert refused.returncode == 70
+    assert "gate venue selection did not return a venue and reason" in refused.stderr
+    assert "uv selector diagnostic" in refused.stderr
+    assert "python3 selector diagnostic" in refused.stderr
+
+
 def _shim_dir(*, root: Path, names: tuple[str, ...] = _SHIMMED_COMMANDS) -> Path:
     """A PATH directory whose entries log their exec to `$GATE_SHIM_LOG`, then run the real one.
 
