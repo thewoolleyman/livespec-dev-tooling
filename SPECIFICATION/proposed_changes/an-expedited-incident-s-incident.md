@@ -63,7 +63,7 @@ A pull-request run is DESIGNATED when its pull request has a same-repository hea
 Applying or removing the forge label `stop-the-line` is reserved to legacy-coordinator-agent BY CONVENTION. Every fleet session acts under one forge identity, so the forge cannot enforce it.
 - The coordinator MUST record each designation and its reason on the pull request's work item, or, with none, on its own plan epic. Routing never reads that record.
 - The coordinator's tick MUST list every open pull request that carries `stop-the-line` with no such record, and then remove the label or record the designation.
-- An undue designation uses only the lane's own quota, which lends nothing, so it never harms ordinary traffic. It can delay a real incident.
+- An undue designation holds the lane's reserved quota plus any idle cohort capacity it borrows. It evicts nothing, but borrowed capacity stays held until its job ends, so it can delay ordinary jobs as well as a real incident.
 
 Adding `stop-the-line` MUST take effect on the pull request's newest CI run on its current head by cancelling and re-running that run, as the incident label workflow does for the incident label.
 
