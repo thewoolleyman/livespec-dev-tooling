@@ -3087,32 +3087,32 @@
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a coverage consumer that did not reuse reaches the maintainer",
     "test": "TODO",
-    "reason": "Spec-first: a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) is owed for this scenario, feeding the scheduled detector a mandatory coverage consumer outcome other than reused and asserting a maintainer notification naming repository, run, job and outcome. livespec-dev-tooling-zfgtin owns it (plan ci-runtime-and-cost); the implementation PR that ships it replaces this row. (Re-owned from closed livespec-dev-tooling-akljpy on 2026-11-13.)",
-    "work_item": "livespec-dev-tooling-zfgtin"
+    "reason": "Spec-first: a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) is owed for this scenario, feeding the scheduled detector a mandatory coverage consumer outcome other than reused and asserting a maintainer notification naming repository, run, job and outcome. livespec-dev-tooling-g3mnat owns it (plan ci-runtime-and-cost); the implementation PR that ships it replaces this row.",
+    "work_item": "livespec-dev-tooling-g3mnat"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a coverage consumer with no recorded outcome reaches the maintainer",
     "test": "TODO",
-    "reason": "Spec-first: a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) is owed for this scenario, feeding the scheduled detector a master run whose mandatory coverage consumer job recorded no outcome and asserting a notification naming repository and job. livespec-dev-tooling-zfgtin owns it (plan ci-runtime-and-cost); the implementation PR that ships it replaces this row. (Re-owned from closed livespec-dev-tooling-akljpy on 2026-11-13.)",
-    "work_item": "livespec-dev-tooling-zfgtin"
+    "reason": "Spec-first: a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) is owed for this scenario, feeding the scheduled detector a master run whose mandatory coverage consumer job recorded no outcome and asserting a notification naming repository and job. livespec-dev-tooling-v2b3yk owns it (plan ci-runtime-and-cost); the implementation PR that ships it replaces this row.",
+    "work_item": "livespec-dev-tooling-v2b3yk"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a CI duration step change reaches the maintainer, and a runner-lane move does not",
     "test": "TODO",
-    "reason": "Spec-first: a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) is owed for this scenario, feeding the scheduled detector a same-label duration step change and a label-change-only move and asserting only the first notifies. livespec-dev-tooling-zfgtin owns it (plan ci-runtime-and-cost); the implementation PR that ships it replaces this row. (Re-owned from closed livespec-dev-tooling-akljpy on 2026-11-13.)",
-    "work_item": "livespec-dev-tooling-zfgtin"
+    "reason": "Spec-first: a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) is owed for this scenario, feeding the scheduled detector a same-label duration step change and a label-change-only move and asserting only the first notifies. livespec-dev-tooling-wza24d owns it (plan ci-runtime-and-cost); the implementation PR that ships it replaces this row.",
+    "work_item": "livespec-dev-tooling-wza24d"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a stale detector reaches the maintainer",
     "test": "TODO",
-    "reason": "Spec-first: a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) is owed for this scenario, evaluating staleness with the detector's last success older than twice its interval and asserting a notification naming it. livespec-dev-tooling-zfgtin owns it (plan ci-runtime-and-cost); the implementation PR that ships it replaces this row. (Re-owned from closed livespec-dev-tooling-akljpy on 2026-11-13.)",
-    "work_item": "livespec-dev-tooling-zfgtin"
+    "reason": "Spec-first: a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) is owed for this scenario, evaluating staleness with the detector's last success older than twice its interval and asserting a notification naming it. livespec-dev-tooling-zangru owns it (plan ci-runtime-and-cost); the implementation PR that ships it replaces this row.",
+    "work_item": "livespec-dev-tooling-zangru"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -3744,5 +3744,61 @@
     "heading": "## Scenario: a key both managed and retired refuses the converge",
     "test": "tests.consumer.test_authorized_keys_managed.test_a_key_cannot_be_managed_and_retired_in_the_same_converge",
     "reason": "Consumer-tier fixture convergence proves a managed-and-retired conflict names the blob and leaves the file unchanged in check and apply modes. livespec-dev-tooling-sr46h2."
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: the flake-retry plugin parses each module once and gives every item of one test file the same retry decision",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this scenario, running a pytest session under the flake-retry plugin over a test file that yields 200 parametrized items and imports one in-repository helpers.py, and asserting that the test file, each conftest.py on its chain and helpers.py are each read and parsed at most once, that every item is marked for retry under an untouching change set, and that every item is treated as touched once helpers.py changes. livespec-dev-tooling-5y3luz owns it (plan ci-runtime-and-cost); the implementation PR that ships it replaces this row.",
+    "work_item": "livespec-dev-tooling-5y3luz"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: after a runner version bump converges, every scale set has a listener and serves jobs on the new version",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the e2e tier is owed for this scenario, converging a merged actions/runner version bump onto the live pool and asserting that every AutoscalingRunnerSet in the arc-runners namespace has a listener and an EphemeralRunnerSet, and that a livespec-orchestrator-beads-fabro CI job and a livespec-dev-tooling CI job each complete on a k3s runner of the new version. livespec-dev-tooling-jkwzwv owns it (plan ci-runtime-and-cost); the implementation PR that ships it replaces this row.",
+    "work_item": "livespec-dev-tooling-jkwzwv"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a direct sibling-released dispatch opens its dev-tooling bump PR only after the sandbox image tags are served",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the e2e tier is owed for this scenario, sending a direct sibling-released dispatch for a livespec-dev-tooling release whose livespec-fabro-sandbox semver tags ghcr.io does not yet serve and asserting that the consumer's reusable-bump-pin-from-dispatch.yml run opens no bump PR while any tag is absent and opens it once every tag is served. livespec-dev-tooling-7crrkb owns it (plan ci-runtime-and-cost); the implementation PR that ships it replaces this row.",
+    "work_item": "livespec-dev-tooling-7crrkb"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a pin-freshness sweep opens no bump to a dev-tooling release whose sandbox image tags are not served",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the e2e tier is owed for this scenario, running a consumer's reusable-pin-freshness.yml sweep while the latest livespec-dev-tooling release's python-rust-v<T> sandbox image tag is not served by ghcr.io and asserting that it opens no bump PR to that release, does not wait, and annotates the missing tag. livespec-dev-tooling-7crrkb owns it (plan ci-runtime-and-cost); the implementation PR that ships it replaces this row.",
+    "work_item": "livespec-dev-tooling-7crrkb"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a reuse detector notification is delivered to the dev host's ntfy topic with a logged receipt",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) is owed for this scenario, raising the detector's notification for a mandatory coverage consumer job that recorded missing_receipt and asserting that it is published to the dev host's ntfy topic and that the message id the ntfy server returned is logged as its receipt. livespec-dev-tooling-2xulmw owns it (plan ci-runtime-and-cost); the implementation PR that ships it replaces this row.",
+    "work_item": "livespec-dev-tooling-2xulmw"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a runner ceiling that departs from the pool rule without a recorded exception fails the pool's ceiling check",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) is owed for this scenario, running the pool's ceiling check over a scale set whose maxRunners departs from the rule recorded in the pool's admission derivation and asserting that it fails naming the repository and its maxRunners with no exception row, and passes once an exception row names that repository with a ceiling above its guaranteed share, an acceptance check and a kill switch. livespec-dev-tooling-2aelab owns it (plan ci-runtime-and-cost); the implementation PR that ships it replaces this row.",
+    "work_item": "livespec-dev-tooling-2aelab"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a gate command the stall bound ends leaves a process snapshot that its verdict names",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier is owed for this scenario, driving a detached gate run whose command and a descendant that entered its own OS session stall past the stall window, and asserting that the run directory holds a stall-snapshot written before the first signal listing each attributed process, that the output.log stall-bound line and the FAILED state printed by gate-wait and gate-status name that file, and that the verdict is FAILED. livespec-dev-tooling-q4ahay owns it (plan dev-host-test-gate-load); the implementation PR that ships it replaces this row.",
+    "work_item": "livespec-dev-tooling-q4ahay"
   }
 ]
