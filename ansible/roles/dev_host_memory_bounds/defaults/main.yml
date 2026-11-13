@@ -44,14 +44,6 @@ dev_host_memory_bounds_user: ubuntu
 dev_host_memory_bounds_scratch_disk_root: /var/tmp
 dev_host_memory_bounds_scratch_ram_root: /tmp
 
-# The TMPDIR every zsh of that login exports when nothing set one already.
-# `/var/tmp` (disk, 1777, aged by systemd-tmpfiles after 30d) and NOT a private
-# subdirectory, because Node's os.tmpdir() then resolves Claude Code's
-# `claude-<uid>` directory to `/var/tmp/claude-<uid>` — the same directory the
-# bind mount exposes at `/tmp/claude-<uid>`. One directory, two names, so no
-# scratchpad can land on RAM whichever name a tool uses.
-dev_host_memory_bounds_tmpdir: /var/tmp
-dev_host_memory_bounds_zshenv: "/home/{{ dev_host_memory_bounds_user }}/.zshenv"
 
 # --- memory slices ----------------------------------------------------------
 
@@ -120,8 +112,10 @@ dev_host_memory_bounds_gate_memory_max: 10G
 # unit itself is installed by that repository's install.sh and stays
 # untouched). MemoryMax is 6G, not 5G, on legacy-dispatcher-agent's
 # measurement: one timer pass sat at 3.7G after 4.5 minutes and was still
-# growing, and a pass killed at MemoryMax is wasted until the next tick. 4G
-# MemoryHigh throttles first; 6G kills only a runaway.
+# growing, and a pass killed at MemoryMax is wasted until the next tick.
+# MemoryHigh is 5G, not the first draft's 4G: with no swap a pass held at High
+# STALLS, and a stalled oneshot blocks every later tick, so High sits above the
+# measured peak (coordinator grade, 2026-11-13). 6G kills only a runaway.
 # MEASURED PEAK: 3.7G RSS (16:3xZ, 4.5 min into a pass) and 3.3G (17:1xZ, 5.5
 # min in), both on the dev VPS, 2026-11-13; no pass has yet been read to its end.
 # WHAT A KILL DOES: the pass dies, systemd records the oneshot as failed
@@ -129,7 +123,7 @@ dev_host_memory_bounds_gate_memory_max: 10G
 # legacy-dispatcher-agent confirms a pass is retry-safe. The cost is one wasted
 # pass, which is the reason MemoryMax sits 2G above the measured peak.
 dev_host_memory_bounds_reconcile_unit: reconcile-runs.service
-dev_host_memory_bounds_reconcile_memory_high: 4G
+dev_host_memory_bounds_reconcile_memory_high: 5G
 dev_host_memory_bounds_reconcile_memory_max: 6G
 
 # The OOM-killer preference for reconcile-runs. Restartable work goes first,
