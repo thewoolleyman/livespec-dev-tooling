@@ -27,10 +27,19 @@ _EVENT_BOUND_TOKEN = re.compile(
 
 
 def _without_comment(*, text: str) -> str:
-    """`text` up to a YAML comment: a `#` outside quotes that follows whitespace."""
+    """`text` up to a YAML comment: a `#` outside quotes that follows whitespace.
+
+    Inside a double-quoted string a backslash escapes the next character, so an
+    escaped quote does not end the string.
+    """
     quote = ""
+    escaped = False
     for index, char in enumerate(text):
-        if quote:
+        if escaped:
+            escaped = False
+        elif quote == '"' and char == "\\":
+            escaped = True
+        elif quote:
             quote = "" if char == quote else quote
         elif char in "'\"":
             quote = char
@@ -59,10 +68,19 @@ def _job_level_condition(*, body: list[str]) -> str:
     return ""
 
 
+def _event_bound(*, condition: str) -> bool:
+    """A condition naming the event or ref, or a YAML alias this read cannot resolve."""
+    return condition.startswith("*") or _EVENT_BOUND_TOKEN.search(condition) is not None
+
+
 def event_bound_jobs(*, source: str) -> frozenset[str]:
-    """Names of jobs whose job-level `if:` names the triggering event or ref."""
+    """Names of jobs whose job-level `if:` names the triggering event or ref.
+
+    A YAML alias value (`if: *name`) cannot be read here, so it fails closed:
+    the job counts as event-bound.
+    """
     return frozenset(
         name
         for name, body in job_blocks(source=source)
-        if _EVENT_BOUND_TOKEN.search(_job_level_condition(body=body)) is not None
+        if _event_bound(condition=_job_level_condition(body=body))
     )
