@@ -1027,6 +1027,17 @@ def test_pool_pod_span_receivers_run_in_a_unit_independent_of_hostmetrics() -> N
     assert 'name: "{{ otel_collector_pod_unit_name }}"' in handlers, handlers
 
 
+def test_a_changed_pods_endpoint_restarts_the_pod_span_unit_as_well_as_the_host_collector() -> None:
+    """The pod-span unit reads the endpoint from its EnvironmentFile, so a new gateway restarts it."""
+    blocks = _task_blocks(body=_TASKS.read_text(encoding="utf-8"))
+    endpoint_writes = [block for block in blocks if 'line: "OTLP_PODS_ENDPOINT=' in block]
+    assert len(endpoint_writes) == 1, endpoint_writes
+    assert "Restart the collector onto its managed configuration" in endpoint_writes[0]
+    assert (
+        "Restart the pod-span collector onto its managed configuration" in endpoint_writes[0]
+    ), endpoint_writes[0]
+
+
 def test_the_rendered_unit_for_poweredge_carries_what_only_poweredge_needs() -> None:
     """Assertion 8: the host environment file, the scoped identity, and the start order."""
     poweredge = _rendered_directives(host=_POWEREDGE)
