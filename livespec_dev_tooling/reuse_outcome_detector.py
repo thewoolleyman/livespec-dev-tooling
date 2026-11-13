@@ -13,7 +13,7 @@ import json
 import sys
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Final, cast
 
@@ -28,6 +28,8 @@ __all__: list[str] = ["Notice", "evaluate", "gather", "main"]
 _DEFAULT_INTERVAL_SECONDS: Final = 900
 _MAX_INTERVAL_SECONDS: Final = 1_800
 _DEFAULT_STATE_FILE: Final = Path("/var/lib/livespec/coverage-reuse-detector.json")
+_LOOKBACK: Final = timedelta(hours=3)
+_RUN_LIMIT: Final = 1_000
 _Read = Callable[..., GhRead]
 
 
@@ -61,8 +63,14 @@ def evaluate(
     ]
 
 
-def gather(*, repository: str, read: _Read = gh_read) -> list[dict[str, object]] | None:
-    """Gather completed mandatory-consumer outcomes for one fleet repository."""
+def gather(*, repository: str, since: str, read: _Read = gh_read) -> list[dict[str, object]] | None:
+    """Gather completed mandatory-consumer outcomes for one fleet repository.
+
+    Discovery is windowed to runs created at or after `since` rather than to
+    the latest N runs, so unrelated later runs cannot push a consumer out of
+    view.  A listing that fills the run limit may be truncated, so it is read
+    as unanswered rather than as complete.
+    """
     runs = read(
         args=[
             "run",
@@ -71,16 +79,21 @@ def gather(*, repository: str, read: _Read = gh_read) -> list[dict[str, object]]
             repository,
             "--status",
             "completed",
+            "--created",
+            f">={since}",
             "--limit",
-            "100",
+            str(_RUN_LIMIT),
             "--json",
             "databaseId",
         ]
     )
     if runs.returncode != 0:
         return None
+    listed = cast("list[dict[str, object]]", json.loads(runs.stdout))
+    if len(listed) >= _RUN_LIMIT:
+        return None
     recorded: list[dict[str, object]] = []
-    for run in cast("list[dict[str, object]]", json.loads(runs.stdout)):
+    for run in listed:
         run_id = int(cast("int | str", run["databaseId"]))
         jobs = read(
             args=[
@@ -124,9 +137,11 @@ def main(
     arguments = parser.parse_args(argv)
     if arguments.interval_seconds <= 0 or arguments.interval_seconds > _MAX_INTERVAL_SECONDS:
         return 2
+    started = now().astimezone(timezone.utc)
+    since = (started - _LOOKBACK).isoformat().replace("+00:00", "Z")
     outcomes: list[dict[str, object]] = []
     for repository in cast("list[str]", arguments.repo):
-        gathered = gather(repository=repository, read=read)
+        gathered = gather(repository=repository, since=since, read=read)
         if gathered is None:
             return 1
         outcomes.extend(gathered)
