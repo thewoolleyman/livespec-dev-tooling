@@ -2,8 +2,12 @@
 
 Each run attempt of the incident CI job on an armed head owns one slot. A slot holds
 the records owed to the incident item, in arrival order, each bound to its key and
-content by a domain-separated digest, and whether the item already carries it.
-Malformed state refuses instead of becoming empty.
+content by a domain-separated digest, and whether the item already carries it. A
+record is `unpublished` (the job's conclusion and any refusal code), `published` (a
+PASSED aggregate's members and digest, retained with the publishing job's attachment
+id) or `conflict` (a different aggregate offered for a run attempt that already holds
+a published one, naming both digests). Malformed state refuses instead of becoming
+empty.
 """
 
 from __future__ import annotations
@@ -19,6 +23,7 @@ __all__: list[str] = [
     "add_record",
     "mark_written",
     "pending_records",
+    "published_digests",
     "record_digest",
     "run_slot",
     "run_tree",
@@ -28,7 +33,17 @@ __all__: list[str] = [
 _DIGEST = b"livespec-incident-pr-run-record-v1\0"
 _HEX = re.compile(r"[0-9a-f]{64}")
 _INVALID = "invalid stored expedited pull-request run subtree"
-_KINDS = frozenset({"unpublished"})
+_KINDS = frozenset({"unpublished", "published", "conflict"})
+_PUBLISHED = frozenset(
+    {
+        "controller_build",
+        "attachment_id",
+        "aggregate_digest",
+        "passed",
+        "deferred",
+        "omitted",
+    }
+)
 KEY_INTS = frozenset({"generation", "pr_number", "run_id", "run_attempt"})
 KEY_TEXTS = frozenset(
     {"repository", "incident_item_id", "attempt_id", "arm_id", "base_sha", "head_sha"}
@@ -83,6 +98,12 @@ def pending_records(*, record: dict[str, object]) -> tuple[dict[str, Any], ...]:
     return tuple(row for slot in sorted(runs) for row in runs[slot] if not row["written"])
 
 
+def published_digests(*, record: dict[str, object], slot: str) -> tuple[str, ...]:
+    """The aggregate digests a run attempt's slot already holds as published records."""
+    rows: list[dict[str, Any]] = run_tree(record=record)["runs"].get(slot, [])
+    return tuple(r["content"]["aggregate_digest"] for r in rows if r["kind"] == "published")
+
+
 def mark_written(*, record: dict[str, object], digest: str) -> bool:
     """Mark the record with `digest` as carried by the item; False when none matches."""
     tree = run_tree(record=record)
@@ -122,7 +143,7 @@ def _entry(*, value: object) -> dict[str, Any]:
         or not all(type(key[k]) is int and key[k] >= 0 for k in KEY_INTS)
         or not all(isinstance(key[k], str) for k in KEY_TEXTS)
         or not _HEX.fullmatch(key["arm_id"])
-        or not _unpublished(content=content)
+        or not _CONTENT[entry["kind"]](content=content)
         or entry["digest"] != record_digest(kind=entry["kind"], key=key, content=content)
     ):
         raise ValueError(_INVALID)
@@ -135,3 +156,39 @@ def _unpublished(*, content: dict[str, Any]) -> bool:
         and isinstance(content["conclusion"], str)
         and (content["refusal"] is None or isinstance(content["refusal"], str))
     )
+
+
+def _names(*, value: object) -> bool:
+    return isinstance(value, list) and all(
+        isinstance(name, str) for name in cast("list[object]", value)
+    )
+
+
+def _published(*, content: dict[str, Any]) -> bool:
+    deferred = content.get("deferred")
+    return (
+        frozenset(content) == _PUBLISHED
+        and isinstance(content["controller_build"], str)
+        and all(
+            isinstance(content[k], str) and _HEX.fullmatch(content[k])
+            for k in ("attachment_id", "aggregate_digest")
+        )
+        and _names(value=content["passed"])
+        and _names(value=content["omitted"])
+        and isinstance(deferred, list)
+        and all(
+            isinstance(row, dict)
+            and set(cast("dict[str, object]", row)) == {"name", "reason"}
+            and all(isinstance(v, str) for v in cast("dict[str, object]", row).values())
+            for row in cast("list[object]", deferred)
+        )
+    )
+
+
+def _conflict(*, content: dict[str, Any]) -> bool:
+    return set(content) == {"attachment_id", "retained_digest", "offered_digest"} and all(
+        isinstance(v, str) and _HEX.fullmatch(v) for v in content.values()
+    )
+
+
+_CONTENT = {"unpublished": _unpublished, "published": _published, "conflict": _conflict}
