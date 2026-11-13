@@ -107,6 +107,7 @@ case "$1" in
       "systemctl start otel-collector") printf 'start otel-collector\\n' >> "$s/collector.log" ;;
       "stat -c %d /var/lib/tailscale") cat "$s/ctr-dev" ;;
       "ip -4 -o addr show dev cni0") cat "$s/cni0" 2>/dev/null ;;
+      "cat /run/flannel/subnet.env") cat "$s/flannel-subnet.env" 2>/dev/null || exit 1 ;;
       "systemctl restart otel-collector") printf 'restart otel-collector\\n' >> "$s/collector.log" ;;
       "systemctl restart otel-collector-pods") printf 'restart otel-collector-pods\\n' >> "$s/collector.log" ;;
       *) exit 2 ;;
@@ -617,16 +618,52 @@ def test_a_delivered_collector_gets_its_node_values_and_is_restarted(vm: _Vm) ->
 def test_a_delivered_host_collector_starts_without_a_cni0_bridge(vm: _Vm) -> None:
     """Cordoning the worker may remove cni0, but must not remove hostmetrics."""
     _deliver_telemetry(vm=vm)
+    (vm.state / "flannel-subnet.env").write_text(
+        "FLANNEL_NETWORK=10.42.0.0/16\nFLANNEL_SUBNET=10.42.5.1/24\nFLANNEL_MTU=1450\n",
+        encoding="utf-8",
+    )
     result = _run(vm=vm)
     assert result.returncode == 0, result.stdout + result.stderr
-    collector_log = vm.state / "collector.log"
-    assert collector_log.is_file()
-    assert collector_log.read_text(encoding="utf-8") == "start otel-collector\n"
+    assert (vm.state / "collector.log").read_text(encoding="utf-8") == (
+        "start otel-collector\nrestart otel-collector-pods\n"
+    )
+
+
+def test_the_pod_span_unit_gets_the_flannel_gateway_while_cni0_is_absent(vm: _Vm) -> None:
+    """The unit must fail and retry on the bind, not sit inactive with no node.env."""
+    _deliver_telemetry(vm=vm)
+    (vm.state / "flannel-subnet.env").write_text(
+        "FLANNEL_NETWORK=10.42.0.0/16\nFLANNEL_SUBNET=10.42.5.1/24\nFLANNEL_MTU=1450\n",
+        encoding="utf-8",
+    )
+    result = _run(vm=vm)
+    assert result.returncode == 0, result.stdout + result.stderr
+    node_env = (vm.root / "telemetry" / "node.env").read_text(encoding="utf-8")
+    assert node_env == f"WORKER_NODE_NAME={_WORKER}\nOTLP_PODS_ENDPOINT=10.42.5.1:4319\n"
+
+
+def test_cni0_takes_precedence_over_the_flannel_subnet_for_the_pod_span_bind(vm: _Vm) -> None:
+    _deliver_telemetry(vm=vm)
+    (vm.state / "flannel-subnet.env").write_text("FLANNEL_SUBNET=10.42.5.1/24\n", encoding="utf-8")
+    (vm.state / "cni0").write_text(
+        "5: cni0    inet 10.99.7.1/24 brd 10.99.7.255 scope global cni0\n", encoding="utf-8"
+    )
+    result = _run(vm=vm)
+    assert result.returncode == 0, result.stdout + result.stderr
+    node_env = (vm.root / "telemetry" / "node.env").read_text(encoding="utf-8")
+    assert node_env == f"WORKER_NODE_NAME={_WORKER}\nOTLP_PODS_ENDPOINT=10.99.7.1:4319\n"
+
+
+def test_a_worker_with_no_pod_network_gateway_yet_still_exports_host_metrics(vm: _Vm) -> None:
+    _deliver_telemetry(vm=vm)
+    result = _run(vm=vm)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert (vm.state / "collector.log").read_text(encoding="utf-8") == "start otel-collector\n"
     assert not (vm.root / "telemetry" / "node.env").exists()
 
 
 @pytest.mark.parametrize(("key", "bridge"), [(False, True), (True, False)])
-def test_only_the_pod_span_collector_waits_for_the_bridge(
+def test_only_a_delivered_key_lets_the_collectors_start(
     vm: _Vm, *, key: bool, bridge: bool
 ) -> None:
     _deliver_telemetry(vm=vm, key=key)

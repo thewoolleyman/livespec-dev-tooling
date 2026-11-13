@@ -63,8 +63,10 @@
 #      config.yaml and, when it has the ingest key, .env. When the split pod-span
 #      configuration is present, the host collector starts even before cni0
 #      exists, and converge writes node.env with WORKER_NODE_NAME and
-#      OTLP_PODS_ENDPOINT from cni0 and restarts only otel-collector-pods; its
-#      bind cannot interrupt host metrics. While the pin still names the
+#      OTLP_PODS_ENDPOINT (cni0's address, else the gateway in flannel's
+#      /run/flannel/subnet.env) and restarts only otel-collector-pods, which
+#      retries a bind that fails before cni0 exists; its bind cannot interrupt
+#      host metrics. While the pin still names the
 #      combined configuration (no pods-config.yaml), whose pod receiver needs
 #      node.env, the host collector waits for cni0 and is restarted as before.
 #   8. kubelet-config.yaml and kubelet.env (node name, node IP, host) are
@@ -364,12 +366,24 @@ if [ -s "$root/telemetry/config.yaml" ] && [ -s "$root/telemetry/.env" ]; then
     # without cni0, and only the sibling pod-span unit waits for the bridge.
     docker exec "$worker" systemctl start otel-collector
     say "host collector started on $worker (host.name $worker)"
-    if [ -n "$bridge" ]; then
-      printf 'WORKER_NODE_NAME=%s\nOTLP_PODS_ENDPOINT=%s:4319\n' "$worker" "$bridge" >"$root/telemetry/node.env"
+    # k3s and the worker's flannel create cni0 only once the first pod lands, but
+    # the node's gateway address is already named in flannel's subnet.env; binding
+    # it early fails and retries in the pod-span unit alone, so the unit starts
+    # whenever an address is known and converges itself when cni0 appears.
+    gateway="$bridge"
+    if [ -z "$gateway" ]; then
+      gateway="$(docker exec "$worker" cat /run/flannel/subnet.env 2>/dev/null | sed -n 's/^FLANNEL_SUBNET=\([0-9.]*\)\/[0-9]*$/\1/p' | sed -n 1p || true)"
+    fi
+    if [ -n "$gateway" ]; then
+      printf 'WORKER_NODE_NAME=%s\nOTLP_PODS_ENDPOINT=%s:4319\n' "$worker" "$gateway" >"$root/telemetry/node.env"
       docker exec "$worker" systemctl restart otel-collector-pods
-      say "pod-span collector started on $worker ($bridge:4319)"
+      if [ -n "$bridge" ]; then
+        say "pod-span collector started on $worker ($gateway:4319)"
+      else
+        say "pod-span collector started on $worker ($gateway:4319 from the flannel subnet; cni0 is not up yet, so it retries the bind alone)"
+      fi
     else
-      say "worker $worker has no cni0 bridge yet; host metrics continue while pod spans await it"
+      say "worker $worker names no pod-network gateway yet (no cni0, no flannel subnet); host metrics continue and the pod-span collector starts on the next run"
     fi
   elif [ -n "$bridge" ]; then
     # A pin that is not split yet still names the combined config, whose pod
