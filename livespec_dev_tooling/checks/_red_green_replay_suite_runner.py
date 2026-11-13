@@ -3,12 +3,10 @@
 from __future__ import annotations
 
 import codecs
-import contextlib
 import errno
 import os
 import pty
 import re
-import signal
 import subprocess
 import threading
 import time
@@ -16,6 +14,16 @@ import uuid
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
+
+from livespec_dev_tooling.checks._red_green_replay_suite_processes import (
+    RUN_MARK_ENV,
+    StalledCleanupSettings,
+    StalledCleanupTools,
+    end_stalled_cleanup,
+    is_alive,
+    marked_pids,
+    process_table,
+)
 
 __all__: list[str] = [
     "CEILING_ENV",
@@ -37,14 +45,10 @@ CEILING_ENV: str = "LIVESPEC_SUITE_GREEN_TIMEOUT_SECONDS"
 # Exported by gate-run.sh to the gate's process tree; touching it renews the
 # runner's outer stall window.
 PROGRESS_STAMP_ENV: str = "LIVESPEC_GATE_RUN_PROGRESS_STAMP"
-# Set by `run_suite` to a per-run value that the suite command and every process
-# it starts inherit, so a stall can name a descendant that left the suite's
-# ancestry by exiting its parent after starting a session of its own.
-RUN_MARK_ENV: str = "LIVESPEC_SUITE_GREEN_RUN_MARK"
 _POLL_SECONDS: float = 1.0
 _KILL_GRACE_SECONDS: int = 30
 _READ_BYTES: int = 65536
-_PROCESS_COLUMNS: int = 4
+_SIGNAL_PASSES: int = 3
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -146,49 +150,6 @@ def _drain(*, fd: int, progress: SuiteProgress) -> None:
     progress.saw(chunk=decoder.decode(b"", final=True))
 
 
-def process_table() -> dict[int, tuple[int, int, str]]:
-    """Return PID-indexed parent, group and command records from the host process table."""
-    try:
-        listing = subprocess.run(
-            args=["ps", "-axo", "pid=,ppid=,pgid=,command="],
-            check=False,
-            capture_output=True,
-            text=True,
-        )
-    except OSError:
-        return {}
-    if listing.returncode != 0:
-        return {}
-    records: dict[int, tuple[int, int, str]] = {}
-    for line in listing.stdout.splitlines():
-        fields = line.split(maxsplit=3)
-        if len(fields) != _PROCESS_COLUMNS:
-            continue
-        pid, parent, group, command = fields
-        if pid.isdigit() and parent.isdigit() and group.isdigit():
-            records[int(pid)] = (int(parent), int(group), command)
-    return records
-
-
-def marked_pids(*, mark: str, proc_root: Path = Path("/proc")) -> frozenset[int]:
-    """Return the pids whose readable environment carries this run's mark."""
-    try:
-        entries = list(proc_root.iterdir())
-    except OSError:
-        return frozenset()
-    marked: set[int] = set()
-    for entry in entries:
-        if not entry.name.isdigit():
-            continue
-        try:
-            environment = (entry / "environ").read_bytes()
-        except OSError:
-            continue
-        if f"{RUN_MARK_ENV}={mark}".encode() in environment.split(b"\0"):
-            marked.add(int(entry.name))
-    return frozenset(marked)
-
-
 def out_of_group_descendants(*, root_pid: int, mark: str) -> tuple[tuple[int, str], ...]:
     """Find live processes of the run that escaped the suite's original process group."""
     children: dict[int, list[int]] = {}
@@ -211,44 +172,27 @@ def out_of_group_descendants(*, root_pid: int, mark: str) -> tuple[tuple[int, st
     return tuple(escapees.items())
 
 
-def is_alive(*, pid: int) -> bool:
-    """Return whether `pid` still accepts signals from this runner."""
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        pass
-    return True
-
-
 def end_stalled_suite(
     *,
     proc: subprocess.Popen[bytes],
     mark: str,
     report: Callable[[str], None] | None = None,
 ) -> tuple[tuple[int, str], ...]:
-    """End a stalled suite group and every process of the run outside it."""
-    escapees = out_of_group_descendants(root_pid=proc.pid, mark=mark)
-    for pid, command in escapees:
-        if report is not None:
-            report(f"suite-green: ending out-of-group descendant pid={pid} cmdline={command}\n")
-        with contextlib.suppress(ProcessLookupError):
-            os.kill(pid, signal.SIGTERM)
-    with contextlib.suppress(ProcessLookupError):
-        os.killpg(proc.pid, signal.SIGTERM)
-    deadline = time.monotonic() + _KILL_GRACE_SECONDS
-    while (proc.poll() is None or any(is_alive(pid=pid) for pid, _ in escapees)) and (
-        time.monotonic() < deadline
-    ):
-        time.sleep(_POLL_SECONDS)
-    with contextlib.suppress(ProcessLookupError):
-        os.killpg(proc.pid, signal.SIGKILL)
-    for pid, _ in escapees:
-        if is_alive(pid=pid):
-            with contextlib.suppress(ProcessLookupError):
-                os.kill(pid, signal.SIGKILL)
-    return escapees
+    """End a stalled suite in at most three TERM/grace/KILL attribution passes."""
+    return end_stalled_cleanup(
+        proc=proc,
+        mark=mark,
+        report=report,
+        tools=StalledCleanupTools(
+            find_descendants=out_of_group_descendants,
+            is_pid_alive=is_alive,
+        ),
+        settings=StalledCleanupSettings(
+            grace_seconds=_KILL_GRACE_SECONDS,
+            poll_seconds=_POLL_SECONDS,
+            signal_passes=_SIGNAL_PASSES,
+        ),
+    )
 
 
 def run_suite(
