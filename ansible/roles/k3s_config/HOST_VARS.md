@@ -183,3 +183,26 @@ container in a Lima VM, is not in `ci_pool`, and is owned by plan
 Moving k3s into a slice of its own, or `--kube-reserved` / `--system-reserved`,
 would each need a k3s restart; this drop-in does not. `--reserved-cpus` (a cpuset
 pin) is ruled out.
+
+## Embedded etcd datastore selection
+
+`k3s_config_embedded_etcd` (default `false`, server-only) installs the committed
+`ci-runner/k3s/phase2/k3s-config/config.yaml.d/50-embedded-etcd.yaml` to
+`/etc/rancher/k3s/config.yaml.d/`. That drop-in selects embedded etcd
+(`cluster-init`, its backend quota, snapshots off, the compaction interval). At
+the next k3s start, k3s converts the SQLite datastore to etcd in place. On every
+later boot, it initializes a fresh etcd on the emptied datastore tmpfs.
+
+`poweredge-xubuntu` declares `true` (plan k3s-embedded-etcd-datastore, epic
+`livespec-dev-tooling-qql3lo`, child `livespec-dev-tooling-qy2nzf`). This value
+is committed in the cut-over window, right after the window's
+`-e k3s_config_embedded_etcd=true` apply and k3s restart have verified, so the
+committed state matches the host and drift reads zero without the `-e`. Never
+merge it outside that window. A routine apply would install the drop-in, and any
+later k3s restart would convert the datastore unplanned.
+
+A `false` apply leaves an existing drop-in in place. To roll back, revert this
+value, then run
+`just ansible-apply ansible/ci-pool.yml --limit poweredge-xubuntu --tags k3s_config -e k3s_config_embedded_etcd_rollback=true`
+to remove the drop-in, then a sanctioned reboot (`ansible/reboot-ci-server.yml`).
+The reboot empties the tmpfs, so k3s comes up on SQLite (plan note 003).
