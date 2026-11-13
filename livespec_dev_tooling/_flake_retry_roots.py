@@ -171,7 +171,7 @@ def module_root_terms(
     module: str,
     bases: Iterable[ast.expr],
     import_sources: Mapping[int, str] | None = None,
-    roots: frozenset[int] = frozenset(),
+    places: Mapping[int, str] | None = None,
 ) -> tuple[tuple[tuple[Key, RootTerm], ...], tuple[RootTerm, ...]]:
     """The term of each given base, and every binding term a closure can need from this module.
 
@@ -187,7 +187,7 @@ def module_root_terms(
         module=module,
         numbers={id(scope): number for number, scope in enumerate(index.scopes)},
         import_sources={} if import_sources is None else import_sources,
-        roots=roots,
+        places={} if places is None else places,
     )
     sites: dict[Key, list[Thunk]] = {}
     for node in index.nodes:
@@ -221,9 +221,9 @@ def solve_keys(
     *,
     terms: Iterable[tuple[Key, RootTerm]],
     rooted_queries: Iterable[Key],
-    evident_queries: Iterable[Key],
-) -> tuple[frozenset[Key], frozenset[Key]]:
-    """Solve which queried keys are rooted, and which are evident, on their own or through one.
+    placed_queries: Iterable[Key],
+) -> tuple[frozenset[Key], dict[Key, frozenset[str]]]:
+    """Solve which queried keys are rooted, and where each queried key is placed.
 
     Each pass walks only the keys its queries go through, so a closure's many
     unrelated bindings cost nothing.
@@ -231,44 +231,47 @@ def solve_keys(
     by_key: dict[Key, list[RootTerm]] = {}
     for key, term in terms:
         by_key.setdefault(key, []).append(term)
-    rooted = _solved(
-        queries=rooted_queries,
-        terms=by_key,
-        holds=lambda term: (term.rooted, term.through),
+    rooted = _walk(queries=rooted_queries, terms=by_key, edges=lambda term: term.through)
+    seeds, dependents = _walk(
+        queries=placed_queries, terms=by_key, edges=lambda term: term.evidence
     )
-    evident = _solved(
-        queries=evident_queries,
-        terms=by_key,
-        holds=lambda term: (term.evident, term.evidence),
-    )
-    return rooted, evident
+    pending = [(key, term.places) for key in seeds for term in by_key[key]]
+    placed: dict[Key, set[str]] = {}
+    while pending:
+        key, places = pending.pop()
+        known = placed.setdefault(key, set())
+        added = places - known
+        known.update(added)
+        pending.extend((dependent, added) for dependent in dependents.get(key, ()) if added)
+    rooted_seeds, rooted_dependents = rooted
+    reached: set[Key] = set()
+    rooted_pending = [key for key in rooted_seeds if any(term.rooted for term in by_key[key])]
+    while rooted_pending:
+        key = rooted_pending.pop()
+        reached.add(key)
+        rooted_pending.extend(rooted_dependents.pop(key, ()))
+    return frozenset(reached), {key: frozenset(places) for key, places in placed.items()}
 
 
-def _solved(
+def _walk(
     *,
     queries: Iterable[Key],
     terms: dict[Key, list[RootTerm]],
-    holds: Callable[[RootTerm], tuple[bool, frozenset[Key]]],
-) -> frozenset[Key]:
-    """Every key the queries reach that holds on its own or through a key that holds."""
+    edges: Callable[[RootTerm], frozenset[Key]],
+) -> tuple[list[Key], dict[Key, list[Key]]]:
+    """Every key the queries reach through `edges`, and each reached key's dependents."""
     dependents: dict[Key, list[Key]] = {}
-    seeds: list[Key] = []
+    visited: list[Key] = []
+    seen: set[Key] = set()
     pending = list(queries)
-    visited: set[Key] = set()
     while pending:
         key = pending.pop()
-        if key in visited:
+        if key in seen:
             continue
-        visited.add(key)
+        seen.add(key)
+        visited.extend([key] if key in terms else [])
         for term in terms.get(key, ()):
-            own, keys = holds(term)
-            seeds.extend([key] if own else [])
-            pending.extend(keys)
-            for gone_through in keys:
+            pending.extend(edges(term))
+            for gone_through in edges(term):
                 dependents.setdefault(gone_through, []).append(key)
-    reached: set[Key] = set()
-    while seeds:
-        key = seeds.pop()
-        reached.add(key)
-        seeds.extend(dependents.pop(key, ()))
-    return frozenset(reached)
+    return visited, dependents
