@@ -38,7 +38,7 @@ CLI:
         nothing in a repository that sets both `delegated_gate` and
         `delegated_pre_commit`.
 
-    python -m livespec_dev_tooling.green_token pre-push-reuse TARGET ...
+    python -m livespec_dev_tooling.green_token pre-push-evidence TARGET ...
         When a delegated pre-commit verdict qualifies for this push, run only
         the consumer members it did not cover plus the members that must run
         on the pushing host. Exit 3 when the caller must run its own gate.

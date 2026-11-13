@@ -65,7 +65,7 @@ _OTHER_OID = "ac1e5d0f3b729648175e2c9a0d4f6b8172635409"
 _UV_STUB = """#!/usr/bin/env bash
 printf 'uv %s\\n' "$*" >> "${STUB_LOG}"
 case "$*" in
-    *"green_token pre-push-reuse"*) exit 3 ;;
+    *"green_token pre-push-evidence"*) exit 3 ;;
 esac
 exit 1
 """

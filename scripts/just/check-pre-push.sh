@@ -102,7 +102,7 @@ if uv run python -m livespec_dev_tooling.green_token check 2>&1; then
 fi
 
 # THE SAME-TREE DELEGATED PRE-COMMIT VERDICT is the shared library's
-# `pre-push-reuse` command. Consumers pass their own check-set members, so its
+# `pre-push-evidence` command. Consumers pass their own check-set members, so its
 # host-only rerun is identical across the fleet rather than copied into each
 # pre-push hook. Its status 3 means no qualifying evidence and falls through to
 # this hook's ordinary delegated/local gate below.
@@ -114,7 +114,7 @@ if [ -f check-targets.txt ]; then
     )
 fi
 pre_push_reuse_status=0
-uv run python -m livespec_dev_tooling.green_token pre-push-reuse \
+uv run python -m livespec_dev_tooling.green_token pre-push-evidence \
     "${pre_push_members[@]}" || pre_push_reuse_status=$?
 if [ "${pre_push_reuse_status}" -eq 0 ]; then
     exit 0

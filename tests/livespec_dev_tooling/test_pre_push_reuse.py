@@ -303,6 +303,38 @@ def test_pre_push_evidence_reuses_a_qualifying_verdict(
     )
 
 
+def test_pre_push_evidence_runs_an_uncovered_member(
+    *, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The documented public command executes the host half of a reused verdict."""
+    invoked: list[list[str]] = []
+    monkeypatch.setattr(
+        pre_push_reuse,
+        "accepted_lines",
+        lambda **_kwargs: ("job-1", "tree-1", "check-a"),
+        raising=False,
+    )
+    monkeypatch.setattr(pre_push_reuse, "_host_members", lambda **_kwargs: ())
+
+    def successful_runner(**kwargs: object) -> Success[GateCommandResult]:
+        invoked.append(kwargs["argv"])
+        return Success(GateCommandResult(returncode=0, stdout="", stderr=""))
+
+    monkeypatch.setattr(pre_push_reuse, "default_gate_command_runner", successful_runner)
+
+    assert (
+        pre_push_reuse.run_pre_push_command(
+            command=pre_push_reuse.PRE_PUSH_EVIDENCE,
+            cwd=Path(),
+            targets=["check-a", "check-b"],
+            log=structlog.get_logger("test"),
+        )
+        == 0
+    )
+    assert invoked == [["just", "check-b"]]
+    assert "running member check-b" in capsys.readouterr().out
+
+
 def test_module_re_import_with_vendor_in_sys_path() -> None:
     """Re-importing with the vendor directory present covers the path guard's false arm."""
     import importlib.util
