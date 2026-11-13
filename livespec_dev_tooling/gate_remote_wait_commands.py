@@ -21,14 +21,26 @@ _RUN_WITH_PROGRESS_SCRIPT = (
 set -eu
 progress_stamp=${LIVESPEC_GATE_RUN_PROGRESS_STAMP:-}
 heartbeat() {
+    sleeper_pid=
+    stop_heartbeat() {
+        if test -n "$sleeper_pid"; then
+            kill "$sleeper_pid" 2>/dev/null || true
+            wait "$sleeper_pid" 2>/dev/null || true
+        fi
+        exit 0
+    }
+    trap stop_heartbeat TERM
     while :; do
         if test -n "$progress_stamp"; then
             : >"$progress_stamp"
         fi
-        sleep 30
+        sleep 30 &
+        sleeper_pid=$!
+        wait "$sleeper_pid" || true
+        sleeper_pid=
     done
 }
-heartbeat &
+heartbeat >/dev/null 2>&1 &
 heartbeat_pid=$!
 cleanup() {
     kill "$heartbeat_pid" 2>/dev/null || true
@@ -59,14 +71,26 @@ fifo="$temporary/watch"
 stderr="$temporary/stderr"
 progress_stamp=${LIVESPEC_GATE_RUN_PROGRESS_STAMP:-}
 heartbeat() {
+    sleeper_pid=
+    stop_heartbeat() {
+        if test -n "$sleeper_pid"; then
+            kill "$sleeper_pid" 2>/dev/null || true
+            wait "$sleeper_pid" 2>/dev/null || true
+        fi
+        exit 0
+    }
+    trap stop_heartbeat TERM
     while :; do
         if test -n "$progress_stamp"; then
             : >"$progress_stamp"
         fi
-        sleep 30
+        sleep 30 &
+        sleeper_pid=$!
+        wait "$sleeper_pid" || true
+        sleeper_pid=
     done
 }
-heartbeat &
+heartbeat >/dev/null 2>&1 &
 heartbeat_pid=$!
 cleanup() {
     kill "$heartbeat_pid" 2>/dev/null || true
