@@ -235,7 +235,9 @@
           ansible.builtin.set_fact:
             factory_sandbox_loss_drill_pod_name: "{{ ((factory_sandbox_loss_drill_pods_read.stdout | from_json)['items'])[0].metadata.name }}"
             factory_sandbox_loss_drill_pod_uid: "{{ ((factory_sandbox_loss_drill_pods_read.stdout | from_json)['items'])[0].metadata.uid }}"
-            factory_sandbox_loss_drill_has_sandbox_label: "{{ 'sandbox-driver-kubernetes/sandbox' in ((factory_sandbox_loss_drill_pods_read.stdout | from_json)['items'])[0].metadata.labels }}"
+            factory_sandbox_loss_drill_has_sandbox_label: >-
+              {{ 'sandbox-driver-kubernetes/sandbox' in
+                 ((factory_sandbox_loss_drill_pods_read.stdout | from_json)['items'])[0].metadata.labels }}
 
         - name: Refuse a selected pod that is not a Kubernetes sandbox
           ansible.builtin.fail:
@@ -269,8 +271,9 @@
         - name: Refuse a delete rejected by the resolved UID precondition
           ansible.builtin.fail:
             msg: >-
-              Factory sandbox loss drill delete was refused for resolved UID
-              {{ factory_sandbox_loss_drill_pod_uid }}: {{ factory_sandbox_loss_drill_delete.stderr | trim }}
+              Factory sandbox loss drill delete precondition was refused for
+              resolved UID {{ factory_sandbox_loss_drill_pod_uid }}; API reports
+              UID {{ factory_sandbox_loss_drill_delete.stderr | trim | regex_replace('^current UID ', '') }}.
           when: factory_sandbox_loss_drill_delete.rc != 0
 
         - name: Wait until the selected UID is no longer listed under the pod name

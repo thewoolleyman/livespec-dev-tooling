@@ -44,7 +44,7 @@ case "$*" in
       *) printf '{"items":[%s]}' "$pod" ;;
     esac ;;
   *'delete pod '*)
-    test "$DRILL_MODE" != delete_refused || { printf 'UID precondition failed\n' >&2; exit 1; }
+    test "$DRILL_MODE" != delete_refused || { printf 'current UID uid-current\n' >&2; exit 1; }
     touch "$DRILL_STATE/deleted" ;;
   *'get pod '*)
     test -f "$DRILL_STATE/deleted" || { printf '%s' "$pod"; exit 0; }
@@ -72,7 +72,7 @@ class _Scratch:
 
 
 def _git(*, cwd: Path, args: str) -> None:
-    subprocess.run(args.split(), cwd=cwd, check=True, capture_output=True, text=True)
+    _ = subprocess.run(args.split(), cwd=cwd, check=True, capture_output=True, text=True)
 
 
 def _origin(*, root: Path) -> Path:
@@ -81,13 +81,13 @@ def _origin(*, root: Path) -> Path:
     _git(cwd=source, args="git init --initial-branch main")
     _git(cwd=source, args="git config user.email drill@example.test")
     _git(cwd=source, args="git config user.name Drill")
-    (source / "tracked").write_text("base\n", encoding="utf-8")
+    _ = (source / "tracked").write_text("base\n", encoding="utf-8")
     _git(cwd=source, args="git add tracked")
     _git(cwd=source, args="git commit -m base")
     origin = root / "origin.git"
     _git(cwd=root, args=f"git clone --bare {source} {origin}")
     _git(cwd=source, args=f"git remote add origin {origin}")
-    (source / "tracked").write_text("preserved\n", encoding="utf-8")
+    _ = (source / "tracked").write_text("preserved\n", encoding="utf-8")
     _git(cwd=source, args="git commit -am preserved")
     _git(cwd=source, args="git push origin HEAD:refs/heads/preserved")
     return origin
@@ -98,7 +98,7 @@ def scratch(*, tmp_path: Path) -> _Scratch:
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
     kubectl = bin_dir / "kubectl"
-    kubectl.write_text(_KUBECTL, encoding="utf-8")
+    _ = kubectl.write_text(_KUBECTL, encoding="utf-8")
     kubectl.chmod(0o755)
     state = tmp_path / "state"
     state.mkdir()
@@ -113,7 +113,7 @@ def scratch(*, tmp_path: Path) -> _Scratch:
 
 def _inventory(*, scratch: _Scratch) -> Path:
     path = scratch.root / "inventory.yml"
-    path.write_text(
+    _ = path.write_text(
         "all:\n  children:\n    ci_pool:\n      hosts:\n"
         f"        {_SERVER}:\n          ansible_connection: local\n          cluster_role: server\n",
         encoding="utf-8",
@@ -228,4 +228,14 @@ def test_replacement_ends_the_wait_without_deleting_the_new_uid(*, scratch: _Scr
 def test_still_listed_uid_times_out_without_a_second_delete(*, scratch: _Scratch) -> None:
     code, output = _run(scratch=scratch, mode="stuck")
     assert code != 0, output
+    assert len([line for line in scratch.commands if "delete pod" in line]) == 1
+
+
+def test_uid_precondition_refusal_names_resolved_and_api_reported_uids(
+    *, scratch: _Scratch
+) -> None:
+    code, output = _run(scratch=scratch, mode="delete_refused")
+    assert code != 0, output
+    assert "resolved UID uid-before" in output
+    assert "API reports UID uid-current" in output
     assert len([line for line in scratch.commands if "delete pod" in line]) == 1
