@@ -12,7 +12,10 @@ from typing import Any
 
 from livespec_dev_tooling.incident_ci_entry import CiEntry
 from livespec_dev_tooling.incident_ci_event import ForgeReadUnansweredError, observe_event
-from livespec_dev_tooling.incident_ci_inventory import load_inventory
+from livespec_dev_tooling.incident_ci_inventory import (
+    InventoryUndeclaredError,
+    load_repository_inventory,
+)
 from livespec_dev_tooling.incident_ci_payload import decode_outcome
 from livespec_dev_tooling.incident_ci_policy import CiOutcome
 from livespec_dev_tooling.incident_strict_json import IncidentJsonRefusalError, strict_json
@@ -27,7 +30,7 @@ _MAX_REPORT = 1048576
 
 
 class CiProcess:
-    """A process boundary over packaged inventory and authenticated fresh events."""
+    """A process boundary over per-repository packaged inventory and authenticated fresh events."""
 
     @staticmethod
     def outcomes(*, directory: Path) -> tuple[CiOutcome, ...]:
@@ -54,11 +57,20 @@ class CiProcess:
         environment = dict(os.environ)
         if environment.get("GITHUB_EVENT_NAME") == "push":
             environment = normal_child_environment(environ=environment)
+        # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-z5cjph
+        # The inventory key is the repository the authenticated pull-request read
+        # confirmed (observe_event refuses a read whose base repository differs),
+        # never a candidate-supplied path or a field of the event payload.
         try:
             observed = observe_event(environ=environment)
-        except ForgeReadUnansweredError as unanswered:
-            return _emit(result={"status": "refused", "reason": str(unanswered)}, code=2)
-        if observed is None:
+            targets = (
+                None
+                if observed is None
+                else load_repository_inventory(repository=observed[0].repository)
+            )
+        except (ForgeReadUnansweredError, InventoryUndeclaredError) as refused:
+            return _emit(result={"status": "refused", "reason": str(refused)}, code=2)
+        if observed is None or targets is None:
             return _emit(
                 result={
                     "status": "refused",
@@ -67,7 +79,7 @@ class CiProcess:
                 code=2,
             )
         event, payload = observed
-        entry = CiEntry(repo=args.repo, targets=load_inventory())
+        entry = CiEntry(repo=args.repo, targets=targets)
         plan = entry.plan(event=event, payload=payload, environ=environment)
         if plan is None:
             return _emit(
