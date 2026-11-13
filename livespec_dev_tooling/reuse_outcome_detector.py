@@ -69,8 +69,6 @@ def gather(*, repository: str, read: _Read = gh_read) -> list[dict[str, object]]
             "list",
             "--repo",
             repository,
-            "--branch",
-            "master",
             "--status",
             "completed",
             "--limit",

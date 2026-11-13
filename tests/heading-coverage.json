@@ -3094,9 +3094,8 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a coverage consumer that did not reuse reaches the maintainer",
-    "test": "TODO",
-    "reason": "Spec-first: a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) is owed for this scenario, feeding the scheduled detector a mandatory coverage consumer outcome other than reused and asserting a maintainer notification naming repository, run, job and outcome. livespec-dev-tooling-g3mnat owns it (plan ci-runtime-and-cost); the implementation PR that ships it replaces this row.",
-    "work_item": "livespec-dev-tooling-g3mnat"
+    "test": "tests.consumer.test_coverage_consumer_fallback_notification.test_non_reused_consumer_on_any_branch_raises_a_notification",
+    "reason": "Consumer-tier test: runs the scheduled detector's `main` against a non-master fleet CI run whose mandatory coverage consumer recorded `missing_receipt` and asserts the notification record names repository, run, job and outcome (livespec-dev-tooling-g3mnat)."
   },
   {
     "spec_root": "SPECIFICATION",
