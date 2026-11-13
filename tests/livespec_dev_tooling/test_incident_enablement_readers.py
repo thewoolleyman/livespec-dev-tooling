@@ -13,8 +13,10 @@ installation and the reading. A vantage that cannot reach its installation reads
 from __future__ import annotations
 
 import hashlib
+import io
 import json
 import os
+import sys
 from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
@@ -22,7 +24,13 @@ from typing import Any
 
 import pytest
 
-from livespec_dev_tooling import incident_ci_entry, incident_observer_control
+from livespec_dev_tooling import (
+    incident_ci_entry,
+    incident_ci_process,
+    incident_hook_entry,
+    incident_observer_control,
+    incident_observer_query,
+)
 from livespec_dev_tooling._incident_enablement_fence import controller_fence, installation_reader
 from livespec_dev_tooling._incident_enablement_reading import (
     EnablementReading,
@@ -40,7 +48,7 @@ from livespec_dev_tooling.incident_execution import (
     OperationIdentity,
     resolve_execution_context,
 )
-from livespec_dev_tooling.incident_hook_process import resolve_current_reading
+from livespec_dev_tooling.incident_hook_process import canonical, resolve_current_reading
 from livespec_dev_tooling.incident_observer_admission import arm_before_merge
 from livespec_dev_tooling.incident_observer_control import ObserverControl
 from livespec_dev_tooling.incident_observer_query import ObserverQuery
@@ -616,4 +624,129 @@ def _arm_payload(*, arm: ObserverArm) -> dict[str, Any]:
         "base_sha": arm.base_sha,
         "head_sha": arm.head_sha,
         "authority_receipt": arm.authority_receipt.hex(),
+    }
+
+
+# --- each vantage's artefact carries its reading ------------------------------------------
+
+
+def _hook_wired(*, monkeypatch: pytest.MonkeyPatch, reader: Reader, revert: bool = False) -> None:
+    current = reading()
+    query_ = query()
+    if revert:
+        current["attempt"].update(phase="reverting", landed_commits=["c" * 40])
+        query_["phase"] = "reverting"
+    monkeypatch.delenv("LIVESPEC_INCIDENT_CONTEXT", raising=False)
+    monkeypatch.setenv(
+        EXPEDITED_INCIDENT_RESPONSE_REVERT if revert else EXPEDITED_INCIDENT_RESPONSE, "1"
+    )
+    monkeypatch.delenv(
+        EXPEDITED_INCIDENT_RESPONSE if revert else EXPEDITED_INCIDENT_RESPONSE_REVERT,
+        raising=False,
+    )
+    monkeypatch.setenv(incident_hook_entry.QUERY_ENV, canonical(value=query_))
+    monkeypatch.setenv(incident_hook_entry.LOCAL_OPERATION_ENV, "local-operation-1")
+    monkeypatch.setattr(incident_hook_entry, "trusted_invocation", _ordinary)
+    monkeypatch.setattr(incident_hook_entry, "invoke_authority", _answering(value=current))
+    monkeypatch.setattr(incident_hook_entry, "installation_reader", _returning(value=reader))
+
+
+def _ordinary(*_args: object, **_kwargs: object) -> str:
+    return Invocation.ORDINARY
+
+
+def _answering(*, value: dict[str, Any]) -> Any:
+    def invoke(**_kwargs: object) -> dict[str, Any]:
+        return value
+
+    return invoke
+
+
+def _returning(*, value: object) -> Any:
+    def produce(*_args: object, **_kwargs: object) -> object:
+        return value
+
+    return produce
+
+
+def test_the_hooks_printed_receipt_records_its_enablement_reading(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    reader = Reader(value="absent", armed=False)
+    _hook_wired(monkeypatch=monkeypatch, reader=reader)
+    tree = "f" * 40
+    prior = {"receipt_id": "r", "hook": "pre-commit", "tree": tree, "exit_status": 0}
+    monkeypatch.setattr(incident_hook_entry, "exact_tree", _returning(value=tree))
+    monkeypatch.setattr(incident_hook_entry, "validate_scope", _returning(value={}))
+    monkeypatch.setattr(incident_hook_entry, "recover_receipt", _returning(value=prior))
+    assert incident_hook_entry.main(argv=["pre-commit"]) == 0
+    printed = json.loads(capsys.readouterr().out)
+    assert printed["receipt"] == prior
+    assert printed["enablement"] == reader.reading.record()
+    assert reader.reads == ["owner/repo"]
+
+
+def test_the_hooks_revert_hand_off_records_its_enablement_reading(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    reader = Reader(value="unavailable", armed=True)
+    _hook_wired(monkeypatch=monkeypatch, reader=reader, revert=True)
+    monkeypatch.setattr(sys, "stdin", io.StringIO(""))
+    assert incident_hook_entry.main(argv=["pre-push"]) == 79
+    handoff = json.loads(capsys.readouterr().out)
+    assert handoff["handoff"] == "trusted-recovery-boundary"
+    assert handoff["enablement"] == reader.reading.record()
+
+
+def test_an_armed_hook_refuses_repair_by_name_before_any_gate(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _hook_wired(monkeypatch=monkeypatch, reader=Reader(value="absent", armed=True))
+    gate_reads: list[object] = []
+    monkeypatch.setattr(incident_hook_entry, "exact_tree", gate_reads.append)
+    assert incident_hook_entry.main(argv=["pre-commit"]) == 78
+    assert "incident-not-enabled: " + NOT_ENABLED in capsys.readouterr().err
+    assert gate_reads == [], "an armed refusal comes before any gate selection"
+
+
+def test_the_ci_plan_output_carries_the_plan_time_reading(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    reader = Reader(value="absent", armed=False)
+
+    def entry(**kwargs: Any) -> incident_ci_entry.CiEntry:
+        return incident_ci_entry.CiEntry(**kwargs, current=_true, observer=_true, enablement=reader)
+
+    monkeypatch.setenv("GITHUB_EVENT_NAME", "pull_request")
+    monkeypatch.delenv("GITHUB_OUTPUT", raising=False)
+    monkeypatch.delenv("GITHUB_STEP_SUMMARY", raising=False)
+    monkeypatch.chdir(tmp_path)
+    targets = (CiTarget(name="check-fast", classification="fast"),)
+    monkeypatch.setattr(incident_ci_process, "load_inventory", _returning(value=targets))
+    observed = (_event(), json.dumps(packet()))
+    monkeypatch.setattr(incident_ci_process, "observe_event", _returning(value=observed))
+    monkeypatch.setattr(incident_ci_process, "CiEntry", entry)
+    assert incident_ci_process.main(argv=["plan"]) == 0
+    planned = json.loads(capsys.readouterr().out)
+    assert planned["status"] == "planned"
+    assert planned["enablement"] == reader.reading.record()
+
+
+def test_an_armed_controller_refuses_its_current_answer_unless_the_record_is_enabled(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    settings, arm = _controller_settings(tmp_path=tmp_path)
+    exact = _pre_armed(settings=settings, arm=arm)
+    core = Core()
+    _enabled_and_armed(settings=settings, core=core, revoke=False)
+    monkeypatch.setattr(incident_observer_query.CurrentAuthorityReader, "__call__", _true)
+    query_ = ObserverQuery(installation=settings, source=core.source())
+    assert query_.execute(path="/current", payload=exact)["status"] == "current"
+    revoked = {"repository": "owner/repo", "operation_id": "revoke"}
+    enablement = ObserverEnablement(installation=settings, source=core.source())
+    _ = enablement.execute(path="/enablement/revoke", payload=revoked)
+    assert query_.execute(path="/current", payload=exact) == {
+        "schema": 1,
+        "status": "refused",
+        "reason": f"{NOT_ENABLED} controller:owner/repo: revoked (confirmed {IDENTITY})",
     }
