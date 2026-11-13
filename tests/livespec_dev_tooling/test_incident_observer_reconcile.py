@@ -94,6 +94,51 @@ def test_an_unknown_action_refuses(world: World) -> None:
     assert reply["reason"] == "unknown exact action receipt"
 
 
+def test_an_operator_can_clear_a_repaired_quarantine_and_terminal_sweep_state(world: World) -> None:
+    """One explicit control operation returns a repaired action to the automatic sweep."""
+
+    def add_sweep_state(record: dict[str, Any]) -> None:
+        action = record["actions"][world.intent.action_id]
+        action["sweep"] = {
+            "attempts": 48,
+            "last": "tenant-unavailable",
+            "next_at": 9_999_999_999.0,
+            "streak": 1,
+            "terminal": "tenant-unavailable: no landing after 48 attempts",
+        }
+        record["sweep_quarantine"] = {world.intent.action_id: "sweep state was repaired"}
+
+    _edit(world=world, change=add_sweep_state)
+    reply = _execute(world=world, clear_sweep=True)
+    record = json.loads(Path(world.record).read_text())
+    action = record["actions"][world.intent.action_id]
+    assert reply["status"] == "pending"
+    assert "sweep" not in action
+    assert world.intent.action_id not in record.get("sweep_quarantine", {})
+
+
+def test_clearing_one_sweep_hold_preserves_other_quarantine_entries(world: World) -> None:
+    """The reset touches only the requested action and ignores a later no-op request."""
+
+    def add_sweep_state(record: dict[str, Any]) -> None:
+        action = record["actions"][world.intent.action_id]
+        action["sweep"] = {"terminal": "diagnosed"}
+        record["sweep_quarantine"] = {
+            world.intent.action_id: "repaired",
+            "f" * 64: "another action remains quarantined",
+        }
+
+    _edit(world=world, change=add_sweep_state)
+    reconciler = ObserverReconcile(installation=world.installation)
+    reconciler.clear_sweep_state(action_id=world.intent.action_id)
+    reconciler.clear_sweep_state(action_id="e" * 64)
+    reconciler.clear_sweep_state(action_id=world.intent.action_id)
+    record = json.loads(Path(world.record).read_text())
+    action = record["actions"][world.intent.action_id]
+    assert "sweep" not in action
+    assert record["sweep_quarantine"] == {"f" * 64: "another action remains quarantined"}
+
+
 @pytest.mark.parametrize("registration", [None, "other-operation"])
 def test_an_action_whose_authority_is_not_its_own_refuses(world: World, registration: Any) -> None:
     def tamper(record: dict[str, Any]) -> None:
