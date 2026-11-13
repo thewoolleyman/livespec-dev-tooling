@@ -107,6 +107,7 @@ __all__: list[str] = [
     "load_destructive_cli_allowlist",
     "load_fail_on_unmeasured_first_party",
     "load_gate_check_suite",
+    "load_gate_job_only_tests",
     "load_gate_job_resources",
     "load_mutation_staging_dir",
     "load_plan_lifecycle_anchor",
@@ -1356,6 +1357,23 @@ def load_gate_check_suite(*, repo_root: Path) -> tuple[str, ...] | None:
     if table is None or "gate_check_suite" not in table:
         return None
     return _as_str_tuple(value=table["gate_check_suite"], key="gate_check_suite")
+
+
+def load_gate_job_only_tests(*, repo_root: Path) -> tuple[str, ...]:
+    """Return declared gate-Job-only test globs, or an empty tuple when unavailable.
+
+    This optional declaration narrows a foreground-pytest guard.  A missing,
+    empty, or malformed value deliberately means no extra refusal: the guard
+    retains its existing full-suite rule instead of treating configuration doubt
+    as a new restriction on an explicit test selection.
+    """
+    table = _read_table(repo_root=repo_root)
+    if table is None or "gate_job_only_tests" not in table:
+        return ()
+    try:
+        return _as_str_tuple(value=table["gate_job_only_tests"], key="gate_job_only_tests")
+    except ConfigParseError:
+        return ()
 
 
 # The three gate Job resource keys, in the order the gate client passes them.
