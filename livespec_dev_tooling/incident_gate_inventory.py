@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from collections import Counter
 
 from livespec_dev_tooling.check_inventory import annotation_values, inventory_lines
 from livespec_dev_tooling.incident_local_gates import GateSpec
@@ -68,14 +69,16 @@ def inventory_gates(*, inventory: str) -> tuple[GateSpec, ...]:
         )
         raise ValueError(message)
     classes = timing_classes(inventory=inventory)
+    listed = Counter(member.name for member in members)
     for member in members:
         if classes[member.name] != "unclassified":
             continue
-        why = (
-            "declares no incident-timing class"
-            if not annotation_values(member=member, key=_TIMING_KEY)
-            else "has no single recognised incident-timing class (fast, slow or not-applicable)"
-        )
+        if listed[member.name] > 1:
+            why = f"is listed {listed[member.name]} times"
+        elif not annotation_values(member=member, key=_TIMING_KEY):
+            why = "declares no incident-timing class"
+        else:
+            why = "has no single recognised incident-timing class (fast, slow or not-applicable)"
         message = f"{_UNCLASSIFIED}: {member.name!r} {why}; nothing was run, deferred or receipted"
         raise ValueError(message)
     preconditions = {

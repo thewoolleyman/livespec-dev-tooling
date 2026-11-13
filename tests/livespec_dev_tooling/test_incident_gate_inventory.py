@@ -60,6 +60,18 @@ def test_an_unrecognised_timing_declaration_refuses_naming_the_member(
         _ = inventory_gates(inventory=inventory)
 
 
+def test_a_duplicated_member_is_told_it_is_listed_twice_not_that_its_class_is_unrecognised() -> (
+    None
+):
+    # livespec-dev-tooling-dixgta: a member listed twice with valid declarations is a
+    # duplicate, and its refusal says so rather than calling its timing unrecognised.
+    duplicate = "check-twice # incident-timing: fast\ncheck-twice # incident-timing: fast\n"
+    with pytest.raises(ValueError, match=re.escape("'check-twice' is listed 2 times")):
+        _ = inventory_gates(inventory=duplicate)
+    with pytest.raises(ValueError, match="no single recognised incident-timing class"):
+        _ = inventory_gates(inventory="check-invalid # incident-timing: FAST\n")
+
+
 def test_only_recipe_names_become_command_arguments() -> None:
     gates = inventory_gates(inventory="check-good # incident-timing: fast\n")
     assert [gate.command for gate in gates] == [("just", "check-good")]
