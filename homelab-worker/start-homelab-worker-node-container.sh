@@ -50,11 +50,12 @@
 #      a pod cannot start, and the node-level copy of containerd's default
 #      profile (cri-containerd.apparmor.d beside it), which every pod naming
 #      no profile runs under, as on the fleet's ci_pool nodes.
-#  11. The node's host collector configuration — the otel-collector
-#      repository's file at the commit pinned in telemetry/collector.ref — is
-#      fetched, delivered into the worker's telemetry/config.yaml in the VM on
-#      stdin and verified there against the pinned sha256 before it replaces
-#      the current copy (DoD assertion 18). When the task's environment
+#  11. The node's host collector configuration — and, when its pin declares
+#      one, its separate pod-span configuration — are fetched from the
+#      otel-collector repository at the commit pinned in telemetry/collector.ref,
+#      delivered into the worker's telemetry directory in the VM on stdin and
+#      verified against their pinned sha256 before replacement (DoD assertion
+#      18). When the task's environment
 #      carries HONEYCOMB_INGEST_KEY_LIVESPEC (run it under
 #      with-livespec-env.sh), the key is delivered into telemetry/.env on
 #      stdin, never in an argument; without it the worker still converges and
@@ -200,6 +201,12 @@ collector_file="$(ref_value file)"
 collector_sha="$(ref_value sha256)"
 [ -n "$collector_commit" ] && [ -n "$collector_file" ] && [ -n "$collector_sha" ] ||
   die "the collector pin $collector_ref does not declare commit, file and sha256"
+collector_pod_file="$(ref_value pod_file)"
+collector_pod_sha="$(ref_value pod_sha256)"
+if [ -n "$collector_pod_file" ] && [ -z "$collector_pod_sha" ] ||
+  [ -z "$collector_pod_file" ] && [ -n "$collector_pod_sha" ]; then
+  die "the collector pin $collector_ref must declare pod_file and pod_sha256 together"
+fi
 
 os="$(uname -s)"
 if [ "$os" != "$WORKER_HOST_OS" ]; then
@@ -355,7 +362,8 @@ for profile in "$apparmor_profile" "$apparmor_default_profile"; do
 done
 
 collector_tmp="$(mktemp)"
-trap 'rm -f "$collector_tmp"' EXIT
+collector_pod_tmp=""
+trap 'rm -f "$collector_tmp" "$collector_pod_tmp"' EXIT
 curl -fsSL -o "$collector_tmp" "$collector_base_url/$collector_commit/$collector_file" ||
   die "could not fetch the collector configuration $collector_file at $collector_commit"
 collector_dest="$worker_root/telemetry/config.yaml"
@@ -367,6 +375,21 @@ else
     die "the collector configuration delivered to VM $worker does not match the sha256 pinned in $collector_ref; the worker container was not converged"
   limactl shell --workdir / "$worker" sudo mv "$collector_dest.new" "$collector_dest"
   say "collector configuration $collector_commit delivered to $collector_dest in VM $worker"
+fi
+if [ -n "$collector_pod_file" ]; then
+  collector_pod_tmp="$(mktemp)"
+  curl -fsSL -o "$collector_pod_tmp" "$collector_base_url/$collector_commit/$collector_pod_file" ||
+    die "could not fetch the pod-span collector configuration $collector_pod_file at $collector_commit"
+  collector_pod_dest="$worker_root/telemetry/pods-config.yaml"
+  if [ "$(vm_sha256 "$collector_pod_dest")" = "$collector_pod_sha" ]; then
+    say "pod-span collector configuration $collector_commit is current in VM $worker"
+  else
+    limactl shell --workdir / "$worker" sudo install -D -m 0644 /dev/stdin "$collector_pod_dest.new" <"$collector_pod_tmp"
+    [ "$(vm_sha256 "$collector_pod_dest.new")" = "$collector_pod_sha" ] ||
+      die "the pod-span collector configuration delivered to VM $worker does not match the sha256 pinned in $collector_ref; the worker container was not converged"
+    limactl shell --workdir / "$worker" sudo mv "$collector_pod_dest.new" "$collector_pod_dest"
+    say "pod-span collector configuration $collector_commit delivered to $collector_pod_dest in VM $worker"
+  fi
 fi
 if [ -n "${HONEYCOMB_INGEST_KEY_LIVESPEC:-}" ]; then
   printf 'HONEYCOMB_INGEST_KEY_LIVESPEC=%s\n' "$HONEYCOMB_INGEST_KEY_LIVESPEC" |
