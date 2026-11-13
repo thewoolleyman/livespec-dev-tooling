@@ -52,6 +52,7 @@ from livespec_dev_tooling.fleet._tag_adopt_record import (
 from livespec_dev_tooling.fleet.adopt_orchestrator_build import adopt_build
 from livespec_dev_tooling.fleet.orchestrator_hold_probe import main as hold_probe_main
 from livespec_dev_tooling.fleet.plugin_adoption_path import source_adoption_findings
+from tests.hang_guard import HANG_GUARD_SECONDS
 
 __all__: list[str] = []
 
@@ -898,9 +899,10 @@ def test_a_second_adoption_waits_for_the_first_to_end(*, tmp_path: Path) -> None
             )
         )
         second.start()
-        assert waiting.wait(timeout=10)
+        assert waiting.wait(timeout=HANG_GUARD_SECONDS), "HANG: waiting for the second adoption"
         order.append("first ends")
-    second.join(timeout=10)
+    second.join(timeout=HANG_GUARD_SECONDS)
+    assert not second.is_alive(), "HANG: waiting for the second adoption to finish"
 
     assert order == ["first ends", "1"]
 

@@ -35,6 +35,8 @@ from types import ModuleType
 
 import pytest
 
+from tests.hang_guard import HANG_GUARD_SECONDS
+
 __all__: list[str] = []
 
 
@@ -427,8 +429,8 @@ def test_a_wait_of_several_poll_rounds_adds_no_measurable_cpu_load(*, tmp_path: 
     burned = time.process_time() - before
 
     os.close(holder)
-    waiter.join(timeout=_HANDOFF_TIMEOUT_SECONDS)
-    assert not waiter.is_alive(), "the waiter must take the slot once it frees"
+    waiter.join(timeout=HANG_GUARD_SECONDS)
+    assert not waiter.is_alive(), "HANG: waiting for the slot waiter to proceed"
     assert len(acquired) == 1
     os.close(acquired[0])
 
@@ -469,9 +471,9 @@ def test_a_session_that_queued_runs_once_a_slot_frees_and_reaches_no_verdict(
     session = threading.Thread(target=_queue_as_a_session, daemon=True)
     session.start()
     os.close(occupying)
-    session.join(timeout=_HANDOFF_TIMEOUT_SECONDS)
+    session.join(timeout=HANG_GUARD_SECONDS)
 
-    assert not session.is_alive(), "the queued session must proceed once a slot frees"
+    assert not session.is_alive(), "HANG: waiting for the queued session to proceed"
     assert len(outcome) == 1, (
         "the queued session must return rather than raise: a wait that could "
         "raise would be a verdict about a tree it never looked at"

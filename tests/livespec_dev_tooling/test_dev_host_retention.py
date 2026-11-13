@@ -58,6 +58,7 @@ import pytest
 import yaml
 
 from livespec_dev_tooling.install_worktree_pack import CANONICAL_GATE_RUN_BODY
+from tests.hang_guard import HANG_GUARD_SECONDS
 
 __all__: list[str] = []
 
@@ -335,7 +336,7 @@ def live_child() -> Iterator[subprocess.Popen[bytes]]:
         yield child
     finally:
         child.terminate()
-        _ = child.wait(timeout=30)
+        _ = child.wait(HANG_GUARD_SECONDS)
 
 
 def test_a_run_removes_dangling_images_and_leaves_tagged_and_in_use_ones(*, tmp_path: Path) -> None:
@@ -518,7 +519,7 @@ def uv_in_use(*, tmp_path: Path) -> Iterator[subprocess.Popen[bytes]]:
         yield holder
     finally:
         holder.terminate()
-        _ = holder.wait(timeout=30)
+        _ = holder.wait(HANG_GUARD_SECONDS)
         ready.close()
 
 

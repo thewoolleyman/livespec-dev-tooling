@@ -27,6 +27,7 @@ from livespec_dev_tooling._incident_observer_store import (
 )
 from livespec_dev_tooling.incident_inverse_service import ProcessInverseForge
 from livespec_dev_tooling.incident_protected_path import protected_path
+from tests.hang_guard import HANG_GUARD_SECONDS
 
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-dln3ac
 _REPOSITORY = "controlled/repository"
@@ -176,7 +177,8 @@ def test_descriptor_reuse_and_thread_context_cannot_borrow_old_capability(tmp_pa
             target=lambda: results.append(current_repository_fence(repository=_REPOSITORY))
         )
         worker.start()
-        worker.join(5)
+        worker.join(HANG_GUARD_SECONDS)
+        assert not worker.is_alive(), "HANG: waiting for fence capability worker to finish"
         assert results == [None]
         public = cap.descriptor
         os.close(public)
@@ -243,9 +245,11 @@ def test_child_retains_borrowed_ofd_after_owner_process_dies(tmp_path):
         assert process.stdout is not None and process.stdin is not None
         with selectors.DefaultSelector() as selector:
             selector.register(process.stdout, selectors.EVENT_READ)
-            assert selector.select(timeout=10), "borrower did not acknowledge its actual lock"
+            assert selector.select(
+                timeout=HANG_GUARD_SECONDS
+            ), "HANG: waiting for the borrower to acknowledge its actual lock"
         assert json.loads(process.stdout.readline())["pid"] > 0
-        assert process.wait(timeout=10) == 17
+        assert process.wait(HANG_GUARD_SECONDS) == 17
         _assert_locked(_path(state))
         process.stdin.write(b"x")
         process.stdin.flush()
@@ -255,7 +259,7 @@ def test_child_retains_borrowed_ofd_after_owner_process_dies(tmp_path):
         assert process.stdin is not None
         process.stdin.close()
         process.kill()
-        process.wait(timeout=10)
+        process.wait(HANG_GUARD_SECONDS)
 
 
 def test_malformed_transport_payload_cannot_reuse_ambient_fence(tmp_path, monkeypatch):
@@ -283,12 +287,12 @@ def test_a_bounded_acquisition_waits_for_a_release_and_gives_up_when_none_comes(
     def hold():
         with repository_lock(directory=tmp_path, repository=_REPOSITORY):
             holding.set()
-            release.wait(timeout=10)
+            assert release.wait(timeout=HANG_GUARD_SECONDS), "HANG: waiting to release the fence"
 
     holder = Thread(target=hold)
     holder.start()
     try:
-        assert holding.wait(timeout=5)
+        assert holding.wait(timeout=HANG_GUARD_SECONDS), "HANG: waiting for the fence holder"
         with pytest.raises(store.RepositoryFenceBusyError):
             ExitStack().enter_context(
                 repository_lock(directory=tmp_path, repository=_REPOSITORY, wait_seconds=0.05)
@@ -298,7 +302,8 @@ def test_a_bounded_acquisition_waits_for_a_release_and_gives_up_when_none_comes(
             assert current_repository_fence(repository=_REPOSITORY, directory=tmp_path)
     finally:
         release.set()
-        holder.join(timeout=10)
+        holder.join(timeout=HANG_GUARD_SECONDS)
+        assert not holder.is_alive(), "HANG: waiting for the fence holder to stop"
 
 
 def test_a_bounded_acquisition_of_a_free_fence_succeeds_at_once(tmp_path):

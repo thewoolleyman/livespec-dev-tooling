@@ -9,6 +9,7 @@ import pytest
 
 from livespec_dev_tooling._incident_observer_store import repository_lock, save_record
 from livespec_dev_tooling.incident_observer_invalidation import ObserverCiInvalidation
+from tests.hang_guard import HANG_GUARD_SECONDS, wait_for_barrier
 from tests.livespec_dev_tooling.test_incident_observer_invalidation import (
     _arm,
     _callback,
@@ -58,7 +59,7 @@ def test_arm_read_started_before_invalidation_cannot_rearm_same_generation(
     def reader(argv, **_kwargs):
         if current_thread().name == "arm-worker":
             entered.set()
-            assert release.wait(3)
+            assert release.wait(HANG_GUARD_SECONDS), "HANG: waiting to release invalidation"
         return _reply(argv=argv, attempt=attempt)
 
     monkeypatch.setattr("subprocess.run", reader)
@@ -74,13 +75,14 @@ def test_arm_read_started_before_invalidation_cannot_rearm_same_generation(
         ),
     )
     worker.start()
-    assert entered.wait(3)
+    assert entered.wait(HANG_GUARD_SECONDS), "HANG: waiting for invalidation to start"
     try:
         assert _invalidate(application=application, payload=payload)[1]["status"] == "invalidated"
     finally:
         release.set()
-        worker.join(3)
-    assert not worker.is_alive() and results[0][1]["status"] == "refused"
+        worker.join(HANG_GUARD_SECONDS)
+    assert not worker.is_alive(), "HANG: waiting for invalidation worker to finish"
+    assert results[0][1]["status"] == "refused"
     assert _record(application=application)["observer_arm_invalidated"] is not None
 
 
@@ -91,7 +93,7 @@ def test_new_arm_during_invalidation_read_is_preserved(provisioned, monkeypatch)
 
     def reader(argv, **_kwargs):
         entered.set()
-        assert release.wait(3)
+        assert release.wait(HANG_GUARD_SECONDS), "HANG: waiting to release invalidation"
         return _reply(argv=argv, attempt=old_attempt)
 
     monkeypatch.setattr("subprocess.run", reader)
@@ -100,7 +102,7 @@ def test_new_arm_during_invalidation_read_is_preserved(provisioned, monkeypatch)
         target=lambda: results.append(_invalidate(application=application, payload=payload))
     )
     worker.start()
-    assert entered.wait(3)
+    assert entered.wait(HANG_GUARD_SECONDS), "HANG: waiting for invalidation to start"
     try:
         newer = replace(arm, generation=2, head_sha="d" * 40)
         assert (
@@ -110,8 +112,9 @@ def test_new_arm_during_invalidation_read_is_preserved(provisioned, monkeypatch)
         before = _record(application=application)
     finally:
         release.set()
-        worker.join(3)
-    assert not worker.is_alive() and results[0][1]["status"] == "refused"
+        worker.join(HANG_GUARD_SECONDS)
+    assert not worker.is_alive(), "HANG: waiting for invalidation worker to finish"
+    assert results[0][1]["status"] == "refused"
     assert _record(application=application) == before
 
 
@@ -120,7 +123,7 @@ def test_identical_concurrent_retries_recover_one_receipt(provisioned, monkeypat
     barrier = Barrier(2)
 
     def reader(argv, **_kwargs):
-        barrier.wait(timeout=3)
+        wait_for_barrier(barrier=barrier, waiting_for="the concurrent invalidation readers")
         return _reply(argv=argv, attempt=attempt)
 
     monkeypatch.setattr("subprocess.run", reader)
@@ -132,8 +135,8 @@ def test_identical_concurrent_retries_recover_one_receipt(provisioned, monkeypat
     for worker in workers:
         worker.start()
     for worker in workers:
-        worker.join(3)
-        assert not worker.is_alive()
+        worker.join(HANG_GUARD_SECONDS)
+        assert not worker.is_alive(), "HANG: waiting for the authority worker to finish"
     assert len(replies) == 2 and replies[0][1] == replies[1][1]
     assert replies[0][1]["status"] == "invalidated"
     assert len(_record(application=application)["ci_invalidations"]) == 1

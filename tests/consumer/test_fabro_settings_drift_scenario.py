@@ -20,6 +20,8 @@ from socketserver import StreamRequestHandler, ThreadingTCPServer
 
 import pytest
 
+from tests.hang_guard import HANG_GUARD_SECONDS
+
 pytestmark = pytest.mark.integration
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -87,7 +89,8 @@ def settings_server() -> Iterator[_SettingsServer]:
         yield server
     finally:
         server.shutdown()
-        thread.join(timeout=5)
+        thread.join(timeout=HANG_GUARD_SECONDS)
+        assert not thread.is_alive(), "HANG: waiting for the settings test server to stop"
         server.server_close()
 
 

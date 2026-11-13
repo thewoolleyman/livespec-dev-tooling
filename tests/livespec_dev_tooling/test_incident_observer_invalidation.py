@@ -24,6 +24,7 @@ from livespec_dev_tooling.incident_observer_admission import (
     observer_arm_admitted,
 )
 from livespec_dev_tooling.incident_observer_service import ControllerService
+from tests.hang_guard import HANG_GUARD_SECONDS
 
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-47ij37
 
@@ -167,7 +168,8 @@ def _record(*, application):
 
 def _recovery_completed(*, effects):
     recoveries = [t for t in threading.enumerate() if t.name.startswith("incident-recovery-")]
-    _ = [t.join(timeout=5) for t in recoveries]
+    _ = [t.join(timeout=HANG_GUARD_SECONDS) for t in recoveries]
+    assert not any(t.is_alive() for t in recoveries), "HANG: waiting for incident recovery threads"
     return bool(effects)
 
 
@@ -367,7 +369,7 @@ def test_blocked_invalidation_reader_does_not_delay_bind_or_recovery(provisioned
 
     def reader(argv, **_kwargs):
         entered.set()
-        assert release.wait(3)
+        assert release.wait(HANG_GUARD_SECONDS), "HANG: waiting to release invalidation"
         return _reply(argv=argv, attempt=attempt)
 
     monkeypatch.setattr(subprocess, "run", reader)
@@ -376,7 +378,7 @@ def test_blocked_invalidation_reader_does_not_delay_bind_or_recovery(provisioned
         target=lambda: replies.append(_invalidate(application=application, payload=payload))
     )
     worker.start()
-    assert entered.wait(3)
+    assert entered.wait(HANG_GUARD_SECONDS), "HANG: waiting for invalidation to start"
     try:
         assert (
             _request(
@@ -390,8 +392,9 @@ def test_blocked_invalidation_reader_does_not_delay_bind_or_recovery(provisioned
         assert _recovery_completed(effects=effects) and len(effects) == 1
     finally:
         release.set()
-        worker.join(3)
-    assert not worker.is_alive() and replies[0][1]["status"] == "refused"
+        worker.join(HANG_GUARD_SECONDS)
+    assert not worker.is_alive(), "HANG: waiting for invalidation worker to finish"
+    assert replies[0][1]["status"] == "refused"
 
 
 def test_competing_invalidations_have_one_winner(provisioned, monkeypatch):
@@ -416,5 +419,5 @@ def test_competing_invalidations_have_one_winner(provisioned, monkeypatch):
         worker.start()
     for worker in workers:
         worker.join()
-        assert not worker.is_alive()
+        assert not worker.is_alive(), "HANG: waiting for invalidation worker to finish"
     assert sorted(reply[1]["status"] for reply in replies) == ["invalidated", "refused"]
