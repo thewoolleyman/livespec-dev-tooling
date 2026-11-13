@@ -164,21 +164,24 @@ def test_gate_stop_reports_a_completed_failed_run(
     assert "FAILED" in capsys.readouterr().out
 
 
-def test_gate_stop_handles_an_unreadable_process_environment(
-    *, monkeypatch: MonkeyPatch, tmp_path: Path
+def test_gate_stop_names_an_unreadable_recorded_runner_that_survives(
+    *, capsys: pytest.CaptureFixture[str], monkeypatch: MonkeyPatch, tmp_path: Path
 ) -> None:
-    """An unreadable process environment does not make stopping another run fail."""
+    """An unreadable live runner is attempted and reported if it cannot be stopped."""
     gate_stop = _gate_stop()
     run_dir = tmp_path / "run"
     run_dir.mkdir()
     _ = (run_dir / "pid").write_text("123\n", encoding="utf-8")
     monkeypatch.setattr(gate_stop, "_args", lambda: argparse.Namespace(run_dir=run_dir))
 
+    roots: list[int] = []
+
     def stopped(*, root: int) -> set[int]:
-        _ = root
-        return set()
+        roots.append(root)
+        return {root}
 
     monkeypatch.setattr(gate_stop, "_stop", stopped)
+    monkeypatch.setattr(gate_stop, "_alive", lambda *, pid: pid == 123)
 
     class UnreadableEnvironment:
         """A proc entry whose environment cannot be inspected."""
@@ -206,7 +209,9 @@ def test_gate_stop_handles_an_unreadable_process_environment(
         gate_stop, "Path", lambda value: ProcRoot() if value == "/proc" else path(value)
     )
 
-    assert gate_stop.main() == 0
+    assert gate_stop.main() == 1
+    assert roots == [123]
+    assert "surviving processes: [123]" in capsys.readouterr().out
 
 
 def test_gate_stop_follows_every_descendant_before_signalling(
