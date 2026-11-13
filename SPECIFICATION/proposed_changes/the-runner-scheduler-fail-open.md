@@ -13,7 +13,7 @@ created_at: 2026-11-13T04:07:18Z
 
 ### Summary
 
-MODIFIES the paragraph "Runner placement fails open while its scheduler is down." under "## Runner-pool node rebuild recipe". The scheduler counts as down on a second trigger: its leader-election lease is absent or was last renewed more than 60 seconds ago, even while its replicas read ready. The existing zero-ready trigger, the 30-second rescue, the alert and the failed-read rule are kept. A failed lease read other than not-found changes nothing. The paragraph states the 60-second bound's basis and the one gap it leaves, a leader that renews while binding nothing. Adds four scenarios: stale lease, absent lease, fresh lease, and failed lease read.
+MODIFIES the paragraph "Runner placement fails open while its scheduler is down." under "## Runner-pool node rebuild recipe". The scheduler counts as down on a second trigger: its leader-election lease is absent or was last renewed more than 60 seconds ago, even while its replicas read ready. The existing zero-ready trigger, the 30-second rescue, the alert and the failed-read rule are kept. A failed lease read other than not-found changes nothing. The paragraph states the 60-second bound's basis and the one gap it leaves, a leader that renews while binding nothing. Adds five scenarios: stale lease, absent lease, lease with no renewTime, fresh lease, and failed lease read.
 
 ### Motivation
 
@@ -23,9 +23,9 @@ Work item livespec-dev-tooling-hqbbff, ordered by legacy-coordinator-agent on 20
 
 In SPECIFICATION/non-functional-requirements.md, section "## Runner-pool node rebuild recipe", REPLACE the whole paragraph that begins "**Runner placement fails open while its scheduler is down.** While the scheduler that realizes the rule above has had no ready replica for 60 seconds, a runner pod that names it" with:
 
-**Runner placement fails open while its scheduler is down.** The scheduler that realizes the rule above is down while EITHER it has had no ready replica for 60 seconds, OR its leader-election lease is absent or was last renewed more than 60 seconds ago, even while its replicas read ready. While it is down, a runner pod that names it and is Pending with no node and no scheduling gate MUST, within the next 30 seconds, have its runner re-pointed at the default scheduler and the pod deleted, so the runner controller recreates it under the same runner name naming the default scheduler and a scheduler outage never stalls CI. A runner pod placed this way ignores churn-slot use, and each node's declared churn-slot capacity still limits it through the default scheduler's fit filter. The 60-second lease bound is four durations of the scheduler's 15-second lease: a serving leader renews its lease about every 2 seconds and a standby replica takes the lease over within one lease duration, so a renewal older than the bound means no replica has held the lease through a full handover. The zero-ready state MUST raise an alert. A failed read of the scheduler's state MUST NOT recreate any pod; a failed read of the lease, other than an answer that the lease does not exist, is such a failed read. This rule does not detect a leader that keeps renewing its lease while it binds no pod.
+**Runner placement fails open while its scheduler is down.** The scheduler that realizes the rule above is down while EITHER it has had no ready replica for 60 seconds, OR its leader-election lease is absent or was last renewed more than 60 seconds ago, measured as the reconciler's own clock minus the lease's renewTime, which the lease holder stamps from its node's clock, even while its replicas read ready. A lease that carries no renewTime counts as absent. While it is down, a runner pod that names it and is Pending with no node and no scheduling gate MUST, within the next 30 seconds, have its runner re-pointed at the default scheduler and the pod deleted, so the runner controller recreates it under the same runner name naming the default scheduler and a scheduler outage never stalls CI. A runner pod placed this way ignores churn-slot use, and each node's declared churn-slot capacity still limits it through the default scheduler's fit filter. The 60-second lease bound is four durations of the default 15-second lease: a serving leader renews its lease about every 2 seconds and a standby replica takes the lease over within one lease duration, so a renewal older than the bound means no replica has held the lease through a full handover. Either down state MUST raise an alert. A failed read of the scheduler's state MUST NOT recreate any pod; a failed read of the lease, other than an answer that the lease does not exist, is such a failed read, except that it MUST NOT prevent a rescue the zero-ready trigger already requires. This rule does not detect a leader that keeps renewing its lease while it binds no pod.
 
-In SPECIFICATION/scenarios.md, insert the following four scenarios immediately after "## Scenario: a failed read of the runner scheduler changes nothing" (before "## Scenario: runner pods select the committed runner scheduler profile and every other pod keeps the default profile"). The existing three fail-open scenarios stay unchanged.
+In SPECIFICATION/scenarios.md, insert the following five scenarios immediately after "## Scenario: a failed read of the runner scheduler changes nothing" (before "## Scenario: runner pods select the committed runner scheduler profile and every other pod keeps the default profile"). The existing three fail-open scenarios stay unchanged.
 
 ## Scenario: a runner pod stranded behind a stale runner-scheduler lease is handed to the default scheduler
 
@@ -42,6 +42,16 @@ And the runner controller MUST recreate the pod under the same runner name, nami
 
 Given the runner scheduler has at least one ready replica
 And its leader-election lease does not exist
+And a runner pod that names it is Pending with no node and no scheduling gate
+
+When the fail-open reconciler next runs
+
+Then the pod's runner MUST be re-pointed at the default scheduler and the pod deleted
+
+## Scenario: a runner pod stranded behind a runner-scheduler lease with no renewTime is handed to the default scheduler
+
+Given the runner scheduler has at least one ready replica
+And its leader-election lease exists but carries no renewTime
 And a runner pod that names it is Pending with no node and no scheduling gate
 
 When the fail-open reconciler next runs
@@ -69,4 +79,4 @@ When the fail-open reconciler runs
 Then no runner and no runner pod MUST change
 And the run MUST exit non-zero
 
-The revise that accepts this MUST add a tests/heading-coverage.json row for each new scenario heading, owned by livespec-dev-tooling-hqbbff, at the unit tier (the reconciler's fake-kubectl harness in tests/livespec_dev_tooling/test_runner_scheduler_fail_open.py), and register those rows in the debt register.
+The revise that accepts this MUST add a tests/heading-coverage.json row for each of the five new scenario headings, owned by livespec-dev-tooling-hqbbff, at the unit tier (the reconciler's fake-kubectl harness in tests/livespec_dev_tooling/test_runner_scheduler_fail_open.py), and register those rows in the debt register.
