@@ -308,9 +308,15 @@ holds its environment. So a second paged pass asks for `removing` by name and
 its runs are merged in by id; a build that refuses that one filter fails the
 converge rather than retiring blind. Every page must be a JSON object carrying a
 `data` list and a boolean `meta.has_more`. A page that is not, an HTTP error, or
-a listing longer than the page bound (200 pages per pass; the read honours a
-`FABRO_SERVER_RUNS_MAX_PAGES` override) fails the converge rather than retiring
-on a partial read.
+a listing longer than the page bound (200 pages per pass) fails the converge
+rather than retiring on a partial read. `FABRO_SERVER_RUNS_MAX_PAGES` overrides
+that bound, but it is a test hook only: no host var sets it.
+
+The terminal set is exactly `succeeded`, `failed` and `archived`. A Fabro build
+that reports another finished kind, such as `dead`, has those runs held as
+non-terminal. That errs toward refusing a retirement, never toward deleting an
+environment a run still holds. So a retirement blocked by a run that has
+finished is this rule at work: read the run's status, then remove the run.
 
 When no non-terminal run selects a retired id, the role authenticates with the
 same host-side `FABRO_DEV_TOKEN` request shape as the ordinary catalog converge
