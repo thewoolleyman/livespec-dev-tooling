@@ -130,6 +130,7 @@ def test_the_host_collector_runs_without_the_pod_bridge_while_pod_spans_retry() 
     host_unit = (_IMAGE / "systemd" / "otel-collector.service").read_text(encoding="utf-8")
     assert "ConditionPathExists=/etc/otel-collector/node.env" not in host_unit
     assert "EnvironmentFile=/etc/otel-collector/node.env" not in host_unit
+    assert "EnvironmentFile=-/etc/otel-collector/node.env" in host_unit
     for path in ("config.yaml", ".env"):
         assert f"ConditionPathExists=/etc/otel-collector/{path}" in host_unit, path
     assert "--config=/etc/otel-collector/config.yaml" in host_unit
