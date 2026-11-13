@@ -486,6 +486,7 @@ def _fuzz_workflow_running(*, steps: str, root: Path) -> None:
         "      - run: echo just check-lint",
         "      - run: echo 'just check-lint'",
         '      - run: echo "run just check afterwards"',
+        "      - run: |\n          cat <<'EOF'\n          just check-lint\n          EOF",
         "      - run: just check-fuzz  # not just check-lint",
         "      - run: |\n          # just check-lint\n          just check-fuzz",
         "      - run: |\n          echo 'just check'\n          just check-fuzz",
