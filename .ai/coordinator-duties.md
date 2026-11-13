@@ -27,23 +27,36 @@ to get stable, i accept the burn, your job is to stop wasting tokens on failures
 to 23:30Z: the umask-077 failure class cost about $240 (22% of factory spend) and wall-budget cancels about $227 (21%),
 so their fixes (bd-ib-veyxvz, bd-ib-mr7673) launch first when the dispatch freeze lifts (§9).
 
-## 2. A flaky test gets an in-place retry and a root fix; a whole-job rerun only in one bounded case
+## 2. A flaky failure may be retried, and still gets a root fix
 
-A test the run did not touch is retried up to 3 times, 60 seconds apart, on its own and never as a whole-job rerun,
-and every retried failure gets a root-fix item at once. The retry is the flake-retry pytest plugin's, inside the
-same pytest session (non-functional-requirements.md §"Testing approach", maintainer rulings on
-livespec-dev-tooling-6tgd2z, 2026-11-02 18:38:21Z and 18:39:54Z). A test the run touched, or one whose closure
-cannot be read, is never retried. No seat re-runs a CI job, a suite or a factory run to get past a flake, and that includes a local gate: relaunching
-a `gate-start` commit or push gate after a flake is the same re-run (a 2026-11-11 seat did it, and the relaunch could
-not be stopped once started; see `.ai/gate-runtime-vs-harness-patience.md`).
+**Flakes may be retried.** A flaky failure of a CI job, a suite, a local commit or push gate (a `gate-start` relaunch
+included), or a factory run MAY be retried. The maintainer, 2026-11-13 ~19:3xZ in the
+bootstrap-credentials-and-onboarding session, recorded in the scope event on epic `livespec-dev-tooling-6tgd2z` at ~19:39Z: "WTF IS THIS RULE:
+"Under the no-retry-on-flake rule the agent didn't retry, so I've asked the coordinator for a ruling."  FLAKES MAY NOW
+BE RETRIED>  I MADE THIS CHANGE.  TELL ME WHY YOU THINK THEY CAN'T". It supersedes the no-rerun parts of the 2026-11-02
+and 2026-11-04 rulings below and the 2026-11-07 "one maintainer-ordered rerun set no precedent" paragraph.
 
-**One bounded job-level retry (maintainer ruling 2026-11-04 ~16:4xZ, recorded on epic `livespec-dev-tooling-6tgd2z`).**
-Where the in-place test retry cannot reach (runner teardown or container faults, OOM kills, failures outside
-pytest), the factory's merge-poll does ONE automatic "re-run failed jobs", and only when a classifier marks the
-failure as infrastructure, timeout or load. Every such rerun files a flake item and still requires a root fix. A
-test the PR itself touched is never retried at any level, because its failure can be the PR's own bug. The
-maintainer, pasting the coordinator's proposal: "OK, do these as priority". It amends the 2026-11-02 rulings for
-this case only; until the merge-poll retry ships, no seat reruns a job by hand to get past a test failure.
+Bounds (coordinator's reading):
+
+- Back off incrementally between retries, and retry one failure at most 3 times.
+- Record each retry against a root-fix item. Search the ledger for an owning item first
+  (`/usr/local/bin/with-livespec-env.sh -- bd list --status all --json`), and file one if none owns it.
+- Never disable or bypass a hook to retry.
+- Relaunch a local gate only after the previous run has ended (its `gate-wait` verdict, or exit 75), never alongside
+  it: a launched gate cannot be called back (`.ai/gate-runtime-vs-harness-patience.md`).
+- A test the change itself touched is judged on its own failure first, because its failure can be the change's own bug.
+
+**The in-place test retry still runs first.** A test the run did not touch is retried up to 3 times, 60 seconds
+apart, by the flake-retry pytest plugin inside the same pytest session, and every retried failure gets a root-fix item
+at once (non-functional-requirements.md §"Testing approach", maintainer rulings on livespec-dev-tooling-6tgd2z,
+2026-11-02 18:38:21Z and 18:39:54Z). The plugin does not retry a test the run touched or one whose closure cannot be
+read.
+
+**The merge-poll's automatic job-level retry (maintainer ruling 2026-11-04 ~16:4xZ, recorded on epic
+`livespec-dev-tooling-6tgd2z`).** Where the in-place test retry cannot reach (runner teardown or container faults, OOM
+kills, failures outside pytest), the factory's merge-poll does ONE automatic "re-run failed jobs", and only when a
+classifier marks the failure as infrastructure, timeout or load. Every such rerun files a flake item and still
+requires a root fix. The maintainer, pasting the coordinator's proposal: "OK, do these as priority".
 
 **Two more automatic re-runs: container-init registry errors now, Kueue preemption in principle.** The maintainer,
 2026-11-09 ~09:1xZ in plan ci-runtime-and-cost's session (epic `livespec-dev-tooling-ib3oe3`), recorded in that epic's
@@ -63,8 +76,8 @@ re-runs". It extends this section in two ways:
   measured high-band CI queue waits after 5wewi2 ships. samgg2 is built only if those waits stay material, and is
   closed with the measurement recorded otherwise.
 
-The no-rerun rule for genuine test failures is unchanged: neither re-run fires on a test failure, and a test the PR
-touched is never retried at any level.
+The automatic re-runs stay keyed on their classifiers, and neither fires on a test failure. A seat may still retry a
+flaky test failure by hand within the bounds above.
 
 **A job-creation internal server error gets an automatic re-run with incremental backoff.** A run that GitHub failed
 while creating its jobs carries the annotation "Internal server error. Correlation ID: ..." and has zero or only some of
@@ -77,8 +90,8 @@ during the GitHub incident "Actions and Checks API": three orchestrator master r
 way.
 
 A check that fails intermittently is still a defect. Find the commit that introduced the flaky bound
-(`git log -1 -- <test file>`), and route the root fix to that commit's owner as top priority. Tell every waiting
-session to wait for the fix to merge rather than re-run anything.
+(`git log -1 -- <test file>`), and route the root fix to that commit's owner as top priority. A waiting session
+may retry within the bounds above while the root fix lands.
 
 Measured 2026-10-31: `bd-guard/test/test-capture-start.sh` asserted a 5.0 s wall-clock bound, added that day by
 bd-ib-qbwd7n (#4036). Under normal host load it measured 8-13 s, and it blocked every hand commit in the orchestrator
@@ -93,18 +106,13 @@ livespec-dev-tooling-b2mnrq, the same flake, already had a factory run in flight
 **A 429 is not a flake: re-run it.** A CI job or step that failed on an HTTP 429 rate limit (for example,
 codeload.github.com refusing an `actions/checkout` download at Set up job) is re-run with incremental backoff, and
 repeated if the 429 repeats. Any seat may do this without asking. Never rebase, push an empty commit or close/reopen
-to get a fresh run for a 429. The no-rerun rule above applies to genuine test failures only. The maintainer,
+to get a fresh run for a 429. The maintainer,
 2026-11-03 ~14:1xZ, recorded on epic `livespec-dev-tooling-6tgd2z` at 14:06:47Z: "Retrying on a 429 (and multiple
 times after a incremental backoff wait if it happens mutiple times) should be a no brainer. Why would you uselessly
 rebase and do more unnecwessary work?"
 
-**One maintainer-ordered rerun set no precedent.** The maintainer, 2026-11-07 ~15:5xZ, on livespec-dev-tooling master
-red at c48dfc52, recorded on epic `livespec-dev-tooling-6tgd2z` at 15:55:31Z: "Roll forward or revert, whatever is
-faster." "DO NOT LET THIS BLOCK THE EXPEDITED PLAN" and, after the coordinator put the options, "rerun it". It was a
-ONE-OFF exception for run 42384603843 attempt 2, rerun 15:53:16Z. The root cause was already known and its fix drafted
-(livespec-dev-tooling-y53wpo), and the rerun's purpose was to open `check-master-ci-green` so that fix and the
-expedited plan's own fix could commit. This section stands: another rerun of that kind needs the maintainer's word
-again.
+The 2026-11-07 "one maintainer-ordered rerun set no precedent" paragraph (run 42384603843 attempt 2, master red at
+c48dfc52) is superseded by the 2026-11-13 ruling: such a rerun no longer needs the maintainer's word.
 
 **The CI range gate re-runs nothing, so it is never a backstop for a hook bypass (coordinator's reading).** In CI,
 `check-red-green-replay` checks only that each commit's TDD trailer keys are present. It compares no checksum and
@@ -129,7 +137,7 @@ t26bbr proved end to end on 2026-11-11. It never waits out a normal roll-forward
 
 The maintainer, 2026-11-12 ~19:2xZ, recorded in the scope event on epic `livespec-dev-tooling-6tgd2z` at 19:17:17Z:
 "It says the expedited is usable on dev-tooling - confirm you wil use it going forward, and record this everywhere as a
-rule to be noticed by coordinator sessions". This does NOT reopen the no-rerun rule for genuine test failures above.
+rule to be noticed by coordinator sessions".
 
 ## 3. Unblock blocked seats every tick
 
