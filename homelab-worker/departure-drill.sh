@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# departure-drill.sh <host> [--mode power-loss|network-loss] [--hold-seconds N] [--state-root <dir>]
+# departure-drill.sh <host> --confirm-depart <host>-homelab-worker
+#   [--mode power-loss|network-loss] [--hold-seconds N] [--state-root <dir>]
 # — make <host>'s homelab worker leave the cluster without warning, hold it
 # away for a bounded time, bring it back with one command, and print what the
 # cluster the caller's `kubectl` reaches did with the work that was on it. Run
@@ -13,7 +14,11 @@
 # rejoin.
 #
 #   1. The host, the mode (default power-loss) and the hold (default 600
-#      seconds; an integer from 60 to 3600) are validated.
+#      seconds; an integer from 60 to 3600) are validated. THE FENCE:
+#      `--confirm-depart` must name the worker's Node, <host>-homelab-worker,
+#      exactly. Without it, or with another name, nothing is read and nothing
+#      is changed. It is the same rule the window routes follow: a disruption
+#      acts only on the node an explicit confirmation names.
 #   2. Reads first; nothing is changed until all pass. The Node
 #      <host>-homelab-worker must exist, be Ready and not be cordoned (a drill
 #      on a cordoned node measures nothing), and the VM must answer through
@@ -57,12 +62,27 @@
 #      power-loss mode, `ip link set dev lima0 up` in network-loss mode. No
 #      start task, no join, no converge: "no operator step" is the claim
 #      under test.
+#      IN NETWORK-LOSS MODE THE RETURN RESTORES ONLY THE CONNECTED ROUTE.
+#      Taking lima0 down removes every route over it; bringing it up puts
+#      back the address's own connected route and nothing else. A route
+#      another agent installed over lima0 returns only when that agent
+#      re-syncs, and if it does not, a converge (the start task) may have to
+#      follow. The drill does not run one: whether the worker needs it is
+#      part of what the read-back shows.
 #   7. The Node is awaited Ready for up to WAIT_SECONDS (default 600), then
 #      read back against BEFORE: uid, Ready, taints, enrollment labels and
 #      churn-slot allocatable, whether the worker container runs, and the
 #      collector — the OTLP_PODS_ENDPOINT in <state-root>/telemetry/node.env
 #      (default state root /mnt/lima-hwdata/worker) against the container's
 #      current cni0 address, and whether anything listens there.
+#      The work is then read a SECOND time, after the rejoin: every captured
+#      pod (where it is now, and its replacement if one exists) and every
+#      captured Job with its backoffLimit. A Job with backoffLimit 0 that
+#      reports a failed pod does not retry: a gate Job is such a Job, so its
+#      gate is lost and its client reads the failure. A pod captured in a
+#      factory namespace gets FACTORY lines. This script cannot read a
+#      factory run's own state (it lives in the factory server, not in the
+#      cluster), so it names the sandbox pod and says where to read it.
 #   8. Exit 0 only if the control plane saw the node leave, the node came back
 #      Ready within the bound with the uid, taints, enrollment labels and
 #      churn-slot value it had BEFORE, and the collector listens on the
@@ -70,6 +90,11 @@
 #      findings are on their own lines, prefixed COLLECTOR: the join path has
 #      this gap open (livespec-dev-tooling-qotekb), and the drill shows
 #      whether a plain restart has it too.
+#      WHAT THIS DRILL DOES NOT PROVE. A VM stop and start does not log the
+#      macOS user out, so it does not exercise the collector ingest key's
+#      dependence on a login Keychain unlock. That clause is proved only on
+#      a real host return (a reboot or a fresh login session), and must not
+#      be claimed from this drill.
 #   9. Once the departure has begun, an interrupt or a failed step still
 #      attempts the return step, and says so. A kill that no trap can catch
 #      leaves the worker away; the return is then by hand, `limactl start
@@ -99,19 +124,21 @@ say_lines() {
   [ -z "$1" ] || printf '%s\n' "$1" | sed "s/^/$prog:   /"
 }
 
-usage="usage: $prog <host> [--mode power-loss|network-loss] [--hold-seconds N] [--state-root <dir>]"
+usage="usage: $prog <host> --confirm-depart <host>-homelab-worker [--mode power-loss|network-loss] [--hold-seconds N] [--state-root <dir>]"
 [ "$#" -ge 1 ] || die "$usage"
 host="$1"
 shift
 mode="power-loss"
 hold="600"
 state_root="/mnt/lima-hwdata/worker"
+confirm=""
 while [ "$#" -gt 0 ]; do
   [ "$#" -ge 2 ] || die "$1 needs a value; $usage"
   case "$1" in
     --mode) mode="$2" ;;
     --hold-seconds) hold="$2" ;;
     --state-root) state_root="$2" ;;
+    --confirm-depart) confirm="$2" ;;
     *) die "unknown argument '$1'; $usage" ;;
   esac
   shift 2
@@ -142,6 +169,12 @@ case "$state_root" in
 esac
 state_root="${state_root%/}"
 worker="$host-homelab-worker"
+# The fence. It is checked before the first read, so an unconfirmed run does
+# not even contact the cluster or the VM.
+[ "$confirm" = "$worker" ] ||
+  die "this drill takes $worker out of the cluster; it needs --confirm-depart $worker (got '${confirm:-nothing}'). Nothing was read and nothing was changed"
+# A pod in one of these namespaces is a factory sandbox holding a run.
+factory_namespaces=" factory factory-mi-homelab "
 
 in_vm() {
   limactl shell --workdir / "$worker" sudo "$@"
@@ -166,21 +199,21 @@ read_pods() {
     -o 'jsonpath={range .items[*]}{.metadata.namespace}|{.metadata.name}|{.metadata.uid}|{.status.phase}|{.spec.nodeName}|{.metadata.ownerReferences[*].kind}|{.metadata.ownerReferences[*].name}|{.status.containerStatuses[*].restartCount}{"\n"}{end}' </dev/null
 }
 
-# read_job <namespace> <name>: uid|succeeded|failed|active|suspend, or nothing
-# when the Job is absent.
+# read_job <namespace> <name>: uid|succeeded|failed|active|suspend|backoffLimit,
+# or nothing when the Job is absent.
 read_job() {
   kubectl get job "$2" -n "$1" --ignore-not-found \
-    -o 'jsonpath={.metadata.uid}|{.status.succeeded}|{.status.failed}|{.status.active}|{.spec.suspend}' </dev/null
+    -o 'jsonpath={.metadata.uid}|{.status.succeeded}|{.status.failed}|{.status.active}|{.spec.suspend}|{.spec.backoffLimit}' </dev/null
 }
 
 # job_text <record>: a read_job record in words.
 job_text() {
-  local uid succeeded failed active suspend
+  local uid succeeded failed active suspend _
   [ -n "$1" ] || {
     printf 'gone'
     return
   }
-  IFS='|' read -r uid succeeded failed active suspend <<<"$1"
+  IFS='|' read -r uid succeeded failed active suspend _ <<<"$1"
   printf 'succeeded=%s failed=%s active=%s suspended=%s uid=%s' \
     "${succeeded:-0}" "${failed:-0}" "${active:-0}" "${suspend:-false}" "$uid"
 }
@@ -263,6 +296,57 @@ done 3<<EOF
 $jobs_before
 EOF
 
+# classify_work <pods now> <rejoined: 0|1>: one line per pod captured on the
+# node BEFORE, classed from the given later read of every pod in the cluster.
+classify_work() {
+  printf '%s\n--\n%s\n' "$pods_before" "$1" | awk -F'|' -v worker="$worker" -v rejoined="$2" '
+  $0 == "--" { after = 1; next }
+  NF < 5 { next }
+  { split($6, kind, " "); split($7, owner, " ") }
+  !after {
+    existed[$3] = 1
+    if ($5 == worker) {
+      n++
+      ns[n] = $1; name[n] = $2; uid[n] = $3; phase[n] = $4
+      key[n] = (kind[1] == "" ? "" : $1 "|" kind[1] "|" owner[1])
+    }
+    next
+  }
+  {
+    now_phase[$3] = $4; now_node[$3] = $5; present[$3] = 1
+    k = $1 "|" kind[1] "|" owner[1]
+    if (kind[1] != "" && !($3 in existed) && $5 != "" && $5 != worker && !(k in replacement))
+      replacement[k] = $1 "/" $2 " on " $5 " (" $4 ")"
+  }
+  END {
+    for (i = 1; i <= n; i++) {
+      new_pod = (key[i] != "" && key[i] in replacement) ? replacement[key[i]] : ""
+      if (uid[i] in present) now = "phase=" now_phase[uid[i]] " node=" now_node[uid[i]]
+      else now = "pod gone"
+      if (phase[i] == "Succeeded") class = "finished-before-departure"
+      else if (phase[i] == "Failed") class = "failed"
+      else if (new_pod != "") class = "replaced-elsewhere"
+      else if (!(uid[i] in present)) class = "gone"
+      else if (now_phase[uid[i]] == "Failed") class = "failed"
+      else if (now_phase[uid[i]] == "Succeeded") class = "finished-before-departure"
+      else class = "still-bound-to-the-departed-node"
+      if (rejoined)
+        printf "%s: pod %s/%s (%s at capture) is, after the rejoin, %s; replacement on another node: %s\n", \
+          class, ns[i], name[i], phase[i], now, (new_pod == "" ? "none" : new_pod)
+      else
+        printf "%s: pod %s/%s was %s, now %s; replacement on another node: %s\n", \
+          class, ns[i], name[i], phase[i], now, (new_pod == "" ? "none" : new_pod)
+    }
+  }'
+}
+
+factory_pods="$(printf '%s\n' "$captured" | awk -F'|' -v spaces="$factory_namespaces" '
+  NF && index(spaces, " " $1 " ") { print $1 "/" $2 }')"
+if [ -n "$factory_pods" ]; then
+  say "FACTORY: the node carries factory sandbox pods; a forced stop kills them, and each one's run is read at the factory server, not here:"
+  say_lines "$factory_pods"
+fi
+
 # --- departure -----------------------------------------------------------------
 departed=0
 return_attempted=0
@@ -332,41 +416,7 @@ done
 pods_after="$(read_pods)" ||
   die "could not read the cluster's pods at the end of the hold; the evidence was not captured"
 say "AFTER ${hold}s away, the pods captured on the node:"
-say_lines "$(printf '%s\n--\n%s\n' "$pods_before" "$pods_after" | awk -F'|' -v worker="$worker" '
-  $0 == "--" { after = 1; next }
-  NF < 5 { next }
-  { split($6, kind, " "); split($7, owner, " ") }
-  !after {
-    existed[$3] = 1
-    if ($5 == worker) {
-      n++
-      ns[n] = $1; name[n] = $2; uid[n] = $3; phase[n] = $4
-      key[n] = (kind[1] == "" ? "" : $1 "|" kind[1] "|" owner[1])
-    }
-    next
-  }
-  {
-    now_phase[$3] = $4; now_node[$3] = $5; present[$3] = 1
-    k = $1 "|" kind[1] "|" owner[1]
-    if (kind[1] != "" && !($3 in existed) && $5 != "" && $5 != worker && !(k in replacement))
-      replacement[k] = $1 "/" $2 " on " $5 " (" $4 ")"
-  }
-  END {
-    for (i = 1; i <= n; i++) {
-      new_pod = (key[i] != "" && key[i] in replacement) ? replacement[key[i]] : ""
-      if (uid[i] in present) now = "phase=" now_phase[uid[i]] " node=" now_node[uid[i]]
-      else now = "pod gone"
-      if (phase[i] == "Succeeded") class = "finished-before-departure"
-      else if (phase[i] == "Failed") class = "failed"
-      else if (new_pod != "") class = "replaced-elsewhere"
-      else if (!(uid[i] in present)) class = "gone"
-      else if (now_phase[uid[i]] == "Failed") class = "failed"
-      else if (now_phase[uid[i]] == "Succeeded") class = "finished-before-departure"
-      else class = "still-bound-to-the-departed-node"
-      printf "%s: pod %s/%s was %s, now %s; replacement on another node: %s\n", \
-        class, ns[i], name[i], phase[i], now, (new_pod == "" ? "none" : new_pod)
-    }
-  }')"
+say_lines "$(classify_work "$pods_after" 0)"
 say "AFTER ${hold}s away, the Jobs that owned them:"
 while IFS=' ' read -r job_ns job_name record <&3; do
   [ -n "$job_name" ] || continue
@@ -380,7 +430,7 @@ EOF
 # --- return --------------------------------------------------------------------
 case "$mode" in
   power-loss) say "RETURN: limactl start $worker, and nothing else" ;;
-  network-loss) say "RETURN: $lan_iface up in VM $worker, and nothing else" ;;
+  network-loss) say "RETURN: $lan_iface up in VM $worker, and nothing else (only the connected route comes back with it; see step 6 of this script's header)" ;;
 esac
 return_worker ||
   die "the return step failed; VM $worker is still away, return it by hand (see step 9 of this script's header)"
@@ -429,6 +479,38 @@ else
     differ "taints: were [${b_enrolled_taints% }], now [${a_enrolled_taints% }]"
   [ "$a_unschedulable" != true ] ||
     differ "the Node is now cordoned"
+
+  # The work, read a second time now that the node is back.
+  if pods_rejoined="$(read_pods)"; then
+    say "AFTER the rejoin, the pods captured on the node:"
+    say_lines "$(classify_work "$pods_rejoined" 1)"
+  else
+    say "AFTER the rejoin, the cluster's pods could not be read: the work's fate after the rejoin was not captured"
+    differ "the pods could not be read back after the rejoin"
+  fi
+  say "AFTER the rejoin, the Jobs that owned them:"
+  while IFS=' ' read -r job_ns job_name record <&3; do
+    [ -n "$job_name" ] || continue
+    if ! now="$(read_job "$job_ns" "$job_name")"; then
+      say "  job $job_ns/$job_name could not be read after the rejoin"
+      differ "Job $job_ns/$job_name could not be read back after the rejoin"
+      continue
+    fi
+    IFS='|' read -r _ _ now_failed _ _ now_backoff <<<"$now"
+    fate=""
+    if [ -n "$now" ] && [ "${now_backoff:-}" = 0 ] && [ "${now_failed:-0}" != 0 ]; then
+      fate="; backoffLimit=0 and a failed pod: this Job does not retry, so its work is lost and its client reads the failure"
+    elif [ -n "$now" ]; then
+      fate="; backoffLimit=${now_backoff:-unset}"
+    fi
+    say "  job $job_ns/$job_name after the rejoin: $(job_text "$now")$fate"
+  done 3<<EOF
+$jobs_before
+EOF
+  if [ -n "$factory_pods" ]; then
+    say "FACTORY after the rejoin: read each run's state at the factory server for these sandbox pods (their pod lines are above); this script cannot read a run:"
+    say_lines "$factory_pods"
+  fi
 
   running="$(in_vm docker inspect -f '{{.State.Running}}' "$worker" 2>/dev/null)" || running="absent"
   say "AFTER worker container $worker: running=$running"
