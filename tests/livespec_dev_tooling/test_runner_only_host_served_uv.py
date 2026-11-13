@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import re
+import shutil
 import subprocess
 import textwrap
 from pathlib import Path
@@ -223,23 +224,96 @@ def test_off_hp_the_wrapper_runs_the_first_uv_on_path_outside_its_own_mount(
 ) -> None:
     """On either node architecture the wrapper delegates to that node's own uv, not a fixed path."""
     wrapper_dir, install_dir = _mise_layout(root=tmp_path, triple=triple)
-    environment = {key: value for key, value in os.environ.items() if key != "CI_RUNNER_REAL_UV"}
 
     result = subprocess.run(
         [str(wrapper_dir / "uv"), "--version"],
         cwd=tmp_path,
         capture_output=True,
         check=False,
-        env={
-            **environment,
-            "CI_RUNNER_NODE_NAME": node,
-            "PATH": f"{wrapper_dir}:{install_dir}:/usr/bin:/bin",
-        },
+        env=_explicit_env(
+            node=node,
+            path=f"{wrapper_dir}:{install_dir}:{_tools_dir(root=tmp_path)}",
+            home=tmp_path,
+        ),
         text=True,
+        timeout=30,
     )
 
     assert result.returncode == 0, result.stderr
     assert result.stdout == f"{triple} uv --version\n"
+
+
+def _tools_dir(*, root: Path) -> Path:
+    """A PATH directory holding only the one external command the wrapper runs, `dirname`."""
+    tools = root / "tools"
+    tools.mkdir(exist_ok=True)
+    dirname = shutil.which("dirname")
+    assert dirname is not None
+    link = tools / "dirname"
+    if not link.exists():
+        link.symlink_to(dirname)
+    return tools
+
+
+def _explicit_env(*, node: str, path: str, home: Path) -> dict[str, str]:
+    """The wrapper's whole environment, named here rather than inherited from the test process.
+
+    Inheriting os.environ lets an ambient variable (CI_RUNNER_REAL_UV, PYPI_FILES_PROXY, a
+    developer's PATH entry) change what the wrapper resolves, so a run would prove the host's
+    shell rather than the wrapper.
+    """
+    return {"CI_RUNNER_NODE_NAME": node, "HOME": str(home), "PATH": path}
+
+
+def test_a_path_holding_only_the_wrappers_own_mount_exits_127_naming_that_mount(
+    *, tmp_path: Path
+) -> None:
+    """With no uv on PATH outside its own mount, the wrapper refuses instead of re-entering itself."""
+    wrapper_dir, _install_dir = _mise_layout(root=tmp_path, triple="x86_64-unknown-linux-musl")
+    empty_dir = tmp_path / "empty"
+    empty_dir.mkdir()
+
+    result = subprocess.run(
+        [str(wrapper_dir / "uv"), "--version"],
+        cwd=tmp_path,
+        capture_output=True,
+        check=False,
+        env=_explicit_env(
+            node="poweredge-xubuntu",
+            path=f"{wrapper_dir}:{empty_dir}:{_tools_dir(root=tmp_path)}",
+            home=tmp_path,
+        ),
+        text=True,
+        timeout=30,
+    )
+
+    assert result.returncode == 127
+    assert result.stdout == ""
+    assert result.stderr == f"ci-runner: no uv on PATH outside {wrapper_dir.resolve()}\n"
+
+
+def test_a_symlinked_wrapper_mount_skips_itself_and_runs_the_nodes_uv(*, tmp_path: Path) -> None:
+    """Reached through a symlink, the wrapper still recognizes its own mount and cannot loop."""
+    wrapper_dir, install_dir = _mise_layout(root=tmp_path, triple="aarch64-unknown-linux-musl")
+    linked_dir = tmp_path / "linked-uv-proxy"
+    linked_dir.symlink_to(wrapper_dir, target_is_directory=True)
+
+    result = subprocess.run(
+        [str(linked_dir / "uv"), "--version"],
+        cwd=tmp_path,
+        capture_output=True,
+        check=False,
+        env=_explicit_env(
+            node="macbook-m4-max-homelab-worker",
+            path=f"{linked_dir}:{wrapper_dir}:{install_dir}:{_tools_dir(root=tmp_path)}",
+            home=tmp_path,
+        ),
+        text=True,
+        timeout=30,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout == "aarch64-unknown-linux-musl uv --version\n"
 
 
 def test_the_wrapper_and_the_job_path_name_no_architecture_specific_uv_install() -> None:
