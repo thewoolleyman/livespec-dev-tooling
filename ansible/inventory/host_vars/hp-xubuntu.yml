@@ -50,6 +50,7 @@ lan_ssh_fallback_must_stay_running:
 # thewoolleyman/otel-collector, which the fleet host guard now refuses to let
 # anyone run. Its start order and its Wants are the role's defaults already.
 otel_collector_config_file: config.hp-factory.yaml
+otel_collector_pod_config_file: config.hp-factory-pods.yaml
 otel_collector_user: otel-collector
 otel_collector_group: otel-collector
 otel_collector_manage_install: true

@@ -168,6 +168,28 @@
       untouched.
     success_msg: the merged configuration names receivers, exporters and a service
 
+- name: Read the merged pod-span collector configuration on the control node
+  # cni0 appears only after the first pod lands. Keep its keyless bind in a
+  # separate process so that expected early bind failure cannot stop the host
+  # metrics pipeline.
+  ansible.builtin.set_fact:
+    otel_collector_merged_pod_config: >-
+      {{ lookup('ansible.builtin.url', otel_collector_pod_config_url, split_lines=false) }}
+  when: otel_collector_pod_config_file | length > 0
+
+- name: Refuse a fetch that did not answer with a pod-span collector configuration
+  ansible.builtin.assert:
+    that:
+      - otel_collector_merged_pod_config is search('(?m)^receivers:')
+      - otel_collector_merged_pod_config is search('(?m)^exporters:')
+      - otel_collector_merged_pod_config is search('(?m)^service:')
+    fail_msg: >-
+      {{ otel_collector_pod_config_url }} did not answer with a pod-span
+      collector configuration. Nothing has been written and the running host
+      collector is untouched.
+    success_msg: the merged pod-span configuration names receivers, exporters and a service
+  when: otel_collector_pod_config_file | length > 0
+
 - name: Name the environment keys the merged configuration reads
   # Derived from the configuration itself rather than listed here, so the
   # preflight below cannot go stale when the collector repository adds or drops
@@ -176,7 +198,7 @@
   # configuration carries its own default for that one, so the host owes no entry.
   ansible.builtin.set_fact:
     otel_collector_required_environment_keys: >-
-      {{ otel_collector_merged_config
+      {{ (otel_collector_merged_config ~ '\n' ~ (otel_collector_merged_pod_config | default('')))
          | regex_findall('[$][{]env:([A-Za-z_][A-Za-z0-9_]*)[}]') | unique | sort }}
 
 - name: Read this node's flannel subnet for the OTLP pods endpoint
@@ -319,8 +341,25 @@
   become: true
   no_log: true
   register: otel_collector_otlp_pods_endpoint_written
-  notify: Restart the collector onto its managed configuration
+  # Both processes read the endpoint from this EnvironmentFile. The pod-span unit
+  # is the one that binds it. The host collector follows its ordinary restart
+  # notification; the pod-span notification below is deliberately conditional
+  # so hosts that do not declare a pod collector do not queue its handler.
+  notify:
+    - Restart the collector onto its managed configuration
   when: "'OTLP_PODS_ENDPOINT' in otel_collector_required_environment_keys"
+
+- name: Queue the pod-span collector restart after an endpoint change
+  # The endpoint write happens before the unit-file stat and installation tasks.
+  # Queue its handler rather than restarting here, so the handler runs only after
+  # those tasks have established the unit and its config for this converge.
+  ansible.builtin.debug:
+    msg: The pod-span endpoint changed; queue its managed restart.
+  changed_when: true
+  notify: Restart the pod-span collector onto its managed configuration
+  when:
+    - otel_collector_otlp_pods_endpoint_written.changed | default(false)
+    - otel_collector_pod_config_file | length > 0
 
 - name: Look for the collector's ingest-key environment file
   # Only its existence is read here. The values reach the process through the
@@ -419,6 +458,17 @@
   become: true
   notify: Restart the collector onto its managed configuration
 
+- name: Install the merged pod-span collector configuration
+  ansible.builtin.copy:
+    content: "{{ otel_collector_merged_pod_config }}"
+    dest: "{{ otel_collector_pod_config_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+  notify: Restart the pod-span collector onto its managed configuration
+  when: otel_collector_pod_config_file | length > 0
+
 - name: Look for a unit systemd already knows
   # Read before the write below, so the handlers and the service task can tell
   # a host this role has already converged from one where a `--check` run has
@@ -441,6 +491,28 @@
   notify:
     - Reload systemd for the managed collector units
     - Restart the collector onto its managed configuration
+
+- name: Look for the pod-span unit systemd already knows
+  ansible.builtin.stat:
+    path: "{{ otel_collector_pod_unit_path }}"
+    get_checksum: false
+  become: true
+  register: otel_collector_pod_unit_stat
+  check_mode: false
+  when: otel_collector_pod_config_file | length > 0
+
+- name: Install the pod-span collector's unit
+  ansible.builtin.template:
+    src: otel-collector-pods.service.j2
+    dest: "{{ otel_collector_pod_unit_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+  notify:
+    - Reload systemd for the managed collector units
+    - Restart the pod-span collector onto its managed configuration
+  when: otel_collector_pod_config_file | length > 0
 
 - name: Create the collector cluster identity directory
   ansible.builtin.file:
@@ -572,3 +644,15 @@
   # converged, the unit was deliberately not written, so systemd knows nothing
   # to enable and the task would fail on the dry run's own omission.
   when: not ansible_check_mode or otel_collector_unit_stat.stat.exists
+
+- name: Keep the pod-span collector enabled and running
+  # A cni0 bind can fail until the first pod lands. Restart=on-failure in the
+  # separate unit retries that receiver without touching hostmetrics.
+  ansible.builtin.systemd_service:
+    name: "{{ otel_collector_pod_unit_name }}"
+    enabled: true
+    state: started
+  become: true
+  when:
+    - otel_collector_pod_config_file | length > 0
+    - not ansible_check_mode or otel_collector_pod_unit_stat.stat.exists

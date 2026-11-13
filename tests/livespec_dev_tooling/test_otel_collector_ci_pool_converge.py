@@ -83,6 +83,7 @@ _TASKS = _ROLE / "tasks" / "main.yml"
 _BINARY_TASKS = _ROLE / "tasks" / "binary.yml"
 _HANDLERS = _ROLE / "handlers" / "main.yml"
 _UNIT_TEMPLATE = _ROLE / "templates" / "otel-collector.service.j2"
+_POD_UNIT_TEMPLATE = _ROLE / "templates" / "otel-collector-pods.service.j2"
 
 _ROLE_NAME = "otel_collector"
 _DEV_HOST = "vps"
@@ -104,6 +105,18 @@ _CONFIG_FILES = {
     # A k3s agent node like gmktec, so it runs gmktec's agent-host shape.
     _GAMINGPC: "config.k3s-agent-host.yaml",
 }
+
+# The host configuration must never bind the pod-network address.  Each pool
+# posture instead names its companion configuration, run by a separate unit so
+# a missing cni0 gateway can restart only that unit.
+_POD_CONFIG_FILES = {
+    _POWEREDGE: "config.ci-runner-host-pods.yaml",
+    _GMKTEC: "config.k3s-agent-host-pods.yaml",
+    _HP: "config.hp-factory-pods.yaml",
+    _GAMINGPC: "config.k3s-agent-host-pods.yaml",
+}
+_POD_CONFIG_PATH = "/etc/otel-collector/pods-config.yaml"
+_POD_UNIT_NAME = "otel-collector-pods.service"
 
 # The dedicated system account every pool node's collector runs as, matching the
 # two sibling units. `vps`'s collector has always run as the login account.
@@ -966,6 +979,69 @@ def test_hosts_without_cluster_identity_skip_every_identity_artifact_task() -> N
 
 
 # --- the rendered unit ------------------------------------------------------
+
+
+def test_pool_pod_span_receivers_run_in_a_unit_independent_of_hostmetrics() -> None:
+    """A missing cni0 gateway may restart pod spans, never host telemetry."""
+    defaults = _declared_variables()["defaults"]
+    assert defaults.get("otel_collector_pod_config_file") == "", defaults
+
+    for host, pod_config_file in _POD_CONFIG_FILES.items():
+        resolved = _resolved(host=host)
+        assert "otel_collector_pod_config_file" in resolved, host
+        assert resolved["otel_collector_pod_config_file"] == pod_config_file, resolved
+        assert resolved["otel_collector_pod_config_path"] == _POD_CONFIG_PATH, resolved
+        assert resolved["otel_collector_pod_unit_name"] == _POD_UNIT_NAME, resolved
+
+    pod_template = _POD_UNIT_TEMPLATE.read_text(encoding="utf-8")
+    assert "{{ otel_collector_pod_config_path }}" in pod_template, pod_template
+    assert "{{ otel_collector_pod_unit_description }}" in pod_template, pod_template
+    assert "Restart=on-failure" in pod_template, pod_template
+
+    blocks = _task_blocks(body=_TASKS.read_text(encoding="utf-8"))
+    pod_config_fetches = [
+        block
+        for block in blocks
+        if "otel_collector_merged_pod_config" in block and "lookup('ansible.builtin.url'" in block
+    ]
+    assert len(pod_config_fetches) == 1, pod_config_fetches
+    assert "otel_collector_pod_config_url" in pod_config_fetches[0], pod_config_fetches[0]
+
+    pod_config_installs = [
+        block
+        for block in blocks
+        if "otel_collector_merged_pod_config" in block and "ansible.builtin.copy:" in block
+    ]
+    assert len(pod_config_installs) == 1, pod_config_installs
+    assert 'dest: "{{ otel_collector_pod_config_path }}"' in pod_config_installs[0]
+    assert "Restart the pod-span collector onto its managed configuration" in pod_config_installs[0]
+
+    pod_unit_installs = [
+        block for block in blocks if "src: otel-collector-pods.service.j2" in block
+    ]
+    assert len(pod_unit_installs) == 1, pod_unit_installs
+    assert 'dest: "{{ otel_collector_pod_unit_path }}"' in pod_unit_installs[0]
+
+    handlers = _HANDLERS.read_text(encoding="utf-8")
+    assert 'name: "{{ otel_collector_unit_name }}"' in handlers, handlers
+    assert 'name: "{{ otel_collector_pod_unit_name }}"' in handlers, handlers
+
+
+def test_a_changed_pods_endpoint_restarts_the_pod_span_unit_as_well_as_the_host_collector() -> None:
+    """The pod-span unit reads the endpoint from its EnvironmentFile, so a new gateway restarts it."""
+    blocks = _task_blocks(body=_TASKS.read_text(encoding="utf-8"))
+    endpoint_writes = [block for block in blocks if 'line: "OTLP_PODS_ENDPOINT=' in block]
+    assert len(endpoint_writes) == 1, endpoint_writes
+    assert "Restart the collector onto its managed configuration" in endpoint_writes[0]
+
+    pod_restarts = [
+        block
+        for block in blocks
+        if "Restart the pod-span collector onto its managed configuration" in block
+        and "otel_collector_otlp_pods_endpoint_written.changed" in block
+    ]
+    assert len(pod_restarts) == 1, pod_restarts
+    assert "otel_collector_pod_config_file | length > 0" in pod_restarts[0]
 
 
 def test_the_rendered_unit_for_poweredge_carries_what_only_poweredge_needs() -> None:

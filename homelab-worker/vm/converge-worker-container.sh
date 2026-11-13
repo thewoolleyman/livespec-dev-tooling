@@ -59,12 +59,16 @@
 #      created without these binds, or with securityfs read-only, is
 #      replaced; its state on the data disk is kept.
 #   7. The node's host collector (DoD assertion 18) reads <state-root>/telemetry,
-#      bound at /etc/otel-collector: the start task delivers its config.yaml
-#      and, when it has the ingest key, .env; converge writes node.env with
-#      WORKER_NODE_NAME and OTLP_PODS_ENDPOINT, the worker's cni0 bridge
-#      address and port 4319 (the address the cluster's flannel gave this
-#      node, read live), and restarts the collector. Without the key, or
-#      before the bridge exists, the collector stays off and converge says so.
+#      bound at /etc/otel-collector: the start task delivers its host
+#      config.yaml and, when it has the ingest key, .env. When the split pod-span
+#      configuration is present, the host collector starts even before cni0
+#      exists, and converge writes node.env with WORKER_NODE_NAME and
+#      OTLP_PODS_ENDPOINT (cni0's address, else the gateway in flannel's
+#      /run/flannel/subnet.env) and restarts only otel-collector-pods, which
+#      retries a bind that fails before cni0 exists; its bind cannot interrupt
+#      host metrics. While the pin still names the
+#      combined configuration (no pods-config.yaml), whose pod receiver needs
+#      node.env, the host collector waits for cni0 and is restarted as before.
 #   8. kubelet-config.yaml and kubelet.env (node name, node IP, host) are
 #      written to enrollment/. The kubelet starts only once the operator has
 #      delivered client-ca.crt there and either bootstrap-kubeconfig is there
@@ -357,13 +361,40 @@ fi
 
 if [ -s "$root/telemetry/config.yaml" ] && [ -s "$root/telemetry/.env" ]; then
   bridge="$(docker exec "$worker" ip -4 -o addr show dev cni0 2>/dev/null | awk '{print $4}' | cut -d / -f 1 | sed -n 1p || true)"
-  if [ -n "$bridge" ]; then
+  if [ -s "$root/telemetry/pods-config.yaml" ]; then
+    # The split pins: the host config carries no pod receiver, so it runs with or
+    # without cni0, and only the sibling pod-span unit waits for the bridge.
+    docker exec "$worker" systemctl start otel-collector
+    say "host collector started on $worker (host.name $worker)"
+    # k3s and the worker's flannel create cni0 only once the first pod lands, but
+    # the node's gateway address is already named in flannel's subnet.env; binding
+    # it early fails and retries in the pod-span unit alone, so the unit starts
+    # whenever an address is known and converges itself when cni0 appears.
+    gateway="$bridge"
+    if [ -z "$gateway" ]; then
+      gateway="$(docker exec "$worker" cat /run/flannel/subnet.env 2>/dev/null | sed -n 's/^FLANNEL_SUBNET=\([0-9.]*\)\/[0-9]*$/\1/p' | sed -n 1p || true)"
+    fi
+    if [ -n "$gateway" ]; then
+      printf 'WORKER_NODE_NAME=%s\nOTLP_PODS_ENDPOINT=%s:4319\n' "$worker" "$gateway" >"$root/telemetry/node.env"
+      docker exec "$worker" systemctl restart otel-collector-pods
+      if [ -n "$bridge" ]; then
+        say "pod-span collector started on $worker ($gateway:4319)"
+      else
+        say "pod-span collector started on $worker ($gateway:4319 from the flannel subnet; cni0 is not up yet, so it retries the bind alone)"
+      fi
+    else
+      say "worker $worker names no pod-network gateway yet (no cni0, no flannel subnet); host metrics continue and the pod-span collector starts on the next run"
+    fi
+  elif [ -n "$bridge" ]; then
+    # A pin that is not split yet still names the combined config, whose pod
+    # receiver reads node.env: starting it without cni0 would abort the process
+    # before hostmetrics exports, so it waits for the bridge as it always did.
     printf 'WORKER_NODE_NAME=%s\nOTLP_PODS_ENDPOINT=%s:4319\n' "$worker" "$bridge" >"$root/telemetry/node.env"
     docker exec "$worker" systemctl restart otel-collector
     say "host collector started on $worker (host.name $worker, pod spans on $bridge:4319)"
   else
-    say "worker $worker has no cni0 bridge yet; its host collector starts on the next run once the node runs a pod"
+    say "worker $worker has no cni0 bridge yet; its combined-config host collector starts on the next run once the node runs a pod, until the split pod-span configuration is pinned"
   fi
 else
-  say "worker $worker's host collector stays off: the start task delivers its config.yaml and, with the ingest key, .env to $root/telemetry"
+  say "worker $worker's host collector stays off: the start task delivers config.yaml and, with the ingest key, .env to $root/telemetry"
 fi
