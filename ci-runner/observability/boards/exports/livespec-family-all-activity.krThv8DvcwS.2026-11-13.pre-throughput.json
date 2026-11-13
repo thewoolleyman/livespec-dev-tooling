@@ -1,0 +1,394 @@
+{
+ "board": {
+  "id": "krThv8DvcwS",
+  "links": {
+   "board_url": "https://ui.honeycomb.io/thewoolleyweb/environments/livespec/board/krThv8DvcwS"
+  },
+  "type": "flexible",
+  "name": "livespec family — all activity",
+  "description": "Dogfooded telemetry for the livespec family (livespec, impl-beads, dev-tooling, runtime, impl-git-jsonl, driver-claude): CI, Red-Green-Replay commit gates, the beads+fabro dispatcher, sandbox runs, and harness sub-agents. Seeded from the captured-history replay (29f pipeline); live data flows once the 29f.3 sandbox→host hop is verified.",
+  "panels": [
+   {
+    "type": "text",
+    "position": {
+     "x_coordinate": 0,
+     "y_coordinate": 0,
+     "height": 4,
+     "width": 6
+    },
+    "text_panel": {
+     "content": "## livespec family — all activity\n\nOne view across the family's dogfooded telemetry. **Sources:** `github-ci` (CI runs + per-check jobs), `livespec-rgr` (Red→Green commit-gate cycles), `livespec-dispatcher` (beads+fabro dispatch stages), `fabro-sandbox` (sandbox runs), `claude-subagents` (harness sub-agents).\n\n_Seeded 2026-06-14 from the captured-history replay (3,311 spans, ~last 60 days). Live emission begins once the 29f.3 sandbox→host OTLP hop is verified. Use the **Service** / **Repo** filters to scope._"
+    }
+   },
+   {
+    "type": "query",
+    "position": {
+     "x_coordinate": 6,
+     "y_coordinate": 0,
+     "height": 8,
+     "width": 4
+    },
+    "query_panel": {
+     "query_id": "AMQi4NJVYnp",
+     "query_annotation_id": "7mnNpz27y8V",
+     "visualization_settings": {
+      "charts": [
+       {
+        "chart_type": "tsbar",
+        "chart_index": 0
+       }
+      ]
+     },
+     "query_style": "combo",
+     "dataset": "github-ci"
+    }
+   },
+   {
+    "type": "query",
+    "position": {
+     "x_coordinate": 0,
+     "y_coordinate": 8,
+     "height": 12,
+     "width": 4
+    },
+    "query_panel": {
+     "query_id": "pYNZa5tzftr",
+     "query_annotation_id": "5fJijjFXk5A",
+     "visualization_settings": {
+      "charts": [
+       {
+        "chart_type": "tsbar",
+        "chart_index": 0
+       }
+      ]
+     },
+     "query_style": "combo",
+     "dataset": "github-ci"
+    }
+   },
+   {
+    "type": "query",
+    "position": {
+     "x_coordinate": 4,
+     "y_coordinate": 8,
+     "height": 20,
+     "width": 4
+    },
+    "query_panel": {
+     "query_id": "C98H4ss6KvQ",
+     "query_annotation_id": "dPMMwT29cfZ",
+     "visualization_settings": {
+      "charts": [
+       {
+        "chart_type": "line",
+        "chart_index": 0
+       }
+      ]
+     },
+     "query_style": "combo",
+     "dataset": "livespec-rgr"
+    }
+   },
+   {
+    "type": "query",
+    "position": {
+     "x_coordinate": 8,
+     "y_coordinate": 8,
+     "height": 12,
+     "width": 4
+    },
+    "query_panel": {
+     "query_id": "nVJKgGcysag",
+     "query_annotation_id": "riWCSmd7CwA",
+     "visualization_settings": {
+      "charts": [
+       {
+        "chart_type": "tsbar",
+        "chart_index": 0
+       }
+      ]
+     },
+     "query_style": "combo",
+     "dataset": "livespec-dispatcher"
+    }
+   },
+   {
+    "type": "query",
+    "position": {
+     "x_coordinate": 0,
+     "y_coordinate": 28,
+     "height": 8,
+     "width": 4
+    },
+    "query_panel": {
+     "query_id": "cBZKhqg6S62",
+     "query_annotation_id": "fwtjCLLBSDT",
+     "visualization_settings": {
+      "charts": [
+       {
+        "chart_type": "cbar",
+        "chart_index": 0
+       }
+      ]
+     },
+     "query_style": "combo",
+     "dataset": "fabro-sandbox"
+    }
+   },
+   {
+    "type": "query",
+    "position": {
+     "x_coordinate": 4,
+     "y_coordinate": 28,
+     "height": 8,
+     "width": 4
+    },
+    "query_panel": {
+     "query_id": "wC3s5m7HxBi",
+     "query_annotation_id": "ybnqpo8mrU3",
+     "visualization_settings": {
+      "charts": [
+       {
+        "chart_type": "cbar",
+        "chart_index": 0
+       }
+      ]
+     },
+     "query_style": "combo",
+     "dataset": "claude-subagents"
+    }
+   }
+  ],
+  "tags": [
+   {
+    "key": "team",
+    "value": "livespec"
+   },
+   {
+    "key": "kind",
+    "value": "dogfood"
+   }
+  ],
+  "preset_filters": [
+   {
+    "column": "service.name",
+    "alias": "Service"
+   },
+   {
+    "column": "repo",
+    "alias": "Repo"
+   }
+  ]
+ },
+ "queries": {
+  "AMQi4NJVYnp": {
+   "id": "AMQi4NJVYnp",
+   "breakdowns": [
+    "ci.conclusion"
+   ],
+   "calculations": [
+    {
+     "op": "COUNT"
+    }
+   ],
+   "filters": [
+    {
+     "column": "name",
+     "op": "=",
+     "value": "ci.run",
+     "join_column": ""
+    }
+   ],
+   "orders": [
+    {
+     "op": "COUNT",
+     "order": "descending"
+    }
+   ],
+   "time_range": 7776000,
+   "granularity": 86400
+  },
+  "pYNZa5tzftr": {
+   "id": "pYNZa5tzftr",
+   "breakdowns": [
+    "ci.job.name"
+   ],
+   "calculations": [
+    {
+     "column": "duration_ms",
+     "op": "P50"
+    },
+    {
+     "column": "duration_ms",
+     "op": "P90"
+    }
+   ],
+   "filters": [
+    {
+     "column": "ci.job.name",
+     "op": "exists",
+     "join_column": ""
+    }
+   ],
+   "orders": [
+    {
+     "column": "duration_ms",
+     "op": "P90",
+     "order": "descending"
+    }
+   ],
+   "limit": 15,
+   "time_range": 7776000,
+   "granularity": 86400
+  },
+  "C98H4ss6KvQ": {
+   "id": "C98H4ss6KvQ",
+   "breakdowns": [
+    "repo"
+   ],
+   "calculations": [
+    {
+     "column": "duration_ms",
+     "op": "P50"
+    },
+    {
+     "column": "duration_ms",
+     "op": "P90"
+    },
+    {
+     "column": "duration_ms",
+     "op": "MAX"
+    },
+    {
+     "op": "COUNT"
+    }
+   ],
+   "orders": [
+    {
+     "op": "COUNT",
+     "order": "descending"
+    }
+   ],
+   "limit": 10,
+   "time_range": 7776000,
+   "granularity": 86400
+  },
+  "nVJKgGcysag": {
+   "id": "nVJKgGcysag",
+   "breakdowns": [
+    "name"
+   ],
+   "calculations": [
+    {
+     "column": "duration_ms",
+     "op": "P50"
+    },
+    {
+     "column": "duration_ms",
+     "op": "P90"
+    }
+   ],
+   "filters": [
+    {
+     "column": "name",
+     "op": "starts-with",
+     "value": "dispatcher.stage.",
+     "join_column": ""
+    }
+   ],
+   "orders": [
+    {
+     "column": "duration_ms",
+     "op": "P90",
+     "order": "descending"
+    }
+   ],
+   "limit": 12,
+   "time_range": 7776000,
+   "granularity": 604800
+  },
+  "cBZKhqg6S62": {
+   "id": "cBZKhqg6S62",
+   "breakdowns": [
+    "fabro.status"
+   ],
+   "calculations": [
+    {
+     "op": "COUNT"
+    }
+   ],
+   "orders": [
+    {
+     "op": "COUNT",
+     "order": "descending"
+    }
+   ],
+   "time_range": 7776000,
+   "granularity": 604800
+  },
+  "wC3s5m7HxBi": {
+   "id": "wC3s5m7HxBi",
+   "breakdowns": [
+    "name"
+   ],
+   "calculations": [
+    {
+     "op": "COUNT"
+    }
+   ],
+   "orders": [
+    {
+     "op": "COUNT",
+     "order": "descending"
+    }
+   ],
+   "limit": 10,
+   "time_range": 7776000,
+   "granularity": 604800
+  }
+ },
+ "annotations": {
+  "7mnNpz27y8V": {
+   "id": "7mnNpz27y8V",
+   "query_id": "AMQi4NJVYnp",
+   "name": "CI runs by outcome",
+   "description": "CI workflow runs grouped by conclusion (success / failure / action_required).",
+   "source": "board"
+  },
+  "5fJijjFXk5A": {
+   "id": "5fJijjFXk5A",
+   "query_id": "pYNZa5tzftr",
+   "name": "Slowest CI checks — P50 / P90 (ms)",
+   "description": "Per-check CI job durations. check-coverage P90 ~83s is the slow tail (motivates the 7us.8 fastest-first gate).",
+   "source": "board"
+  },
+  "dPMMwT29cfZ": {
+   "id": "dPMMwT29cfZ",
+   "query_id": "C98H4ss6KvQ",
+   "name": "Red→Green cycle duration by repo (ms)",
+   "description": "RGR commit-gate cycle time (impl + Red gate + Green gate) per family repo.",
+   "source": "board"
+  },
+  "riWCSmd7CwA": {
+   "id": "riWCSmd7CwA",
+   "query_id": "nVJKgGcysag",
+   "name": "Dispatcher stage durations (ms)",
+   "description": "Per-stage timing of the beads+fabro dispatcher loop (fabro-run, janitor, ledger, etc.).",
+   "source": "board"
+  },
+  "fwtjCLLBSDT": {
+   "id": "fwtjCLLBSDT",
+   "query_id": "cBZKhqg6S62",
+   "name": "Fabro sandbox runs by status",
+   "description": "Dark-factory sandbox dispatch outcomes.",
+   "source": "board"
+  },
+  "ybnqpo8mrU3": {
+   "id": "ybnqpo8mrU3",
+   "query_id": "wC3s5m7HxBi",
+   "name": "Sub-agent activity by type",
+   "description": "Harness sub-agent sessions by agent type (general-purpose, livespec-implementer, Explore, ...).",
+   "source": "board"
+  }
+ }
+}

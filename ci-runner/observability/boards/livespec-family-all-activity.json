@@ -1,0 +1,367 @@
+{
+  "name": "livespec family — all activity",
+  "description": "Dogfooded telemetry for the livespec family (livespec, impl-beads, dev-tooling, runtime, impl-git-jsonl, driver-claude): CI, Red-Green-Replay commit gates, the beads+fabro dispatcher, sandbox runs, and harness sub-agents. Seeded from the captured-history replay (29f pipeline); live data flows once the 29f.3 sandbox→host hop is verified.",
+  "type": "flexible",
+  "layout_generation": "manual",
+  "tags": [
+    {
+      "key": "team",
+      "value": "livespec"
+    },
+    {
+      "key": "kind",
+      "value": "dogfood"
+    }
+  ],
+  "panels": [
+    {
+      "type": "query",
+      "key": "prs-merged-green-per-hour-by-repo",
+      "dataset": "pr-throughput",
+      "query_style": "combo",
+      "position": {
+        "x_coordinate": 0,
+        "y_coordinate": 0,
+        "height": 9,
+        "width": 8
+      },
+      "annotation": {
+        "name": "THROUGHPUT — PRs merged green per hour, by repository",
+        "description": "THE ONE METRIC of the throughput track (livespec-dev-tooling-q26e3c). COUNT of merged pull requests whose covering default-branch CI run concluded success, per hour, by repo. One event per merged PR, timestamped at the merge. Green = the first CI push run at or after the PR's merge head that reached a verdict succeeded (a concurrency-cancelled run is not a verdict). Emitter: the merged-green reconciler (livespec-dev-tooling-gaetnq; a stopgap emits until it lands). Definition: plan/throughput-track-organization/research/003."
+      },
+      "query": {
+        "calculations": [
+          {
+            "op": "COUNT"
+          }
+        ],
+        "filters": [
+          {
+            "column": "pr.merged_green",
+            "op": "=",
+            "value": true
+          }
+        ],
+        "breakdowns": [
+          "repo"
+        ],
+        "orders": [
+          {
+            "op": "COUNT",
+            "order": "descending"
+          }
+        ],
+        "time_range": 86400,
+        "granularity": 3600
+      }
+    },
+    {
+      "type": "query",
+      "key": "prs-merged-not-green-by-repo",
+      "dataset": "pr-throughput",
+      "query_style": "combo",
+      "position": {
+        "x_coordinate": 8,
+        "y_coordinate": 0,
+        "height": 9,
+        "width": 4
+      },
+      "annotation": {
+        "name": "Merged but NOT green — PRs per hour, by repository",
+        "description": "The loss beside the one metric: merged pull requests whose covering default-branch CI run FAILED, per hour, by repo. Every one of these is a PR the throughput metric does not count."
+      },
+      "query": {
+        "calculations": [
+          {
+            "op": "COUNT"
+          }
+        ],
+        "filters": [
+          {
+            "column": "pr.merged_green",
+            "op": "=",
+            "value": false
+          }
+        ],
+        "breakdowns": [
+          "repo"
+        ],
+        "orders": [
+          {
+            "op": "COUNT",
+            "order": "descending"
+          }
+        ],
+        "time_range": 86400,
+        "granularity": 3600
+      }
+    },
+    {
+      "type": "text",
+      "position": {
+        "x_coordinate": 0,
+        "y_coordinate": 9,
+        "height": 4,
+        "width": 6
+      },
+      "text_panel": {
+        "content": "## livespec family — all activity\n\nOne view across the family's dogfooded telemetry. **Sources:** `github-ci` (CI runs + per-check jobs), `livespec-rgr` (Red→Green commit-gate cycles), `livespec-dispatcher` (beads+fabro dispatch stages), `fabro-sandbox` (sandbox runs), `claude-subagents` (harness sub-agents).\n\n_Seeded 2026-06-14 from the captured-history replay (3,311 spans, ~last 60 days). Live emission begins once the 29f.3 sandbox→host OTLP hop is verified. Use the **Service** / **Repo** filters to scope._"
+      }
+    },
+    {
+      "type": "query",
+      "key": "ci-runs-by-outcome",
+      "dataset": "github-ci",
+      "query_style": "combo",
+      "position": {
+        "x_coordinate": 6,
+        "y_coordinate": 9,
+        "height": 8,
+        "width": 4
+      },
+      "annotation": {
+        "name": "CI runs by outcome",
+        "description": "CI workflow runs grouped by conclusion (success / failure / action_required)."
+      },
+      "query": {
+        "breakdowns": [
+          "ci.conclusion"
+        ],
+        "calculations": [
+          {
+            "op": "COUNT"
+          }
+        ],
+        "filters": [
+          {
+            "column": "name",
+            "op": "=",
+            "value": "ci.run",
+            "join_column": ""
+          }
+        ],
+        "orders": [
+          {
+            "op": "COUNT",
+            "order": "descending"
+          }
+        ],
+        "time_range": 7776000,
+        "granularity": 86400
+      }
+    },
+    {
+      "type": "query",
+      "key": "slowest-ci-checks-p50-p90-ms",
+      "dataset": "github-ci",
+      "query_style": "combo",
+      "position": {
+        "x_coordinate": 0,
+        "y_coordinate": 17,
+        "height": 12,
+        "width": 4
+      },
+      "annotation": {
+        "name": "Slowest CI checks — P50 / P90 (ms)",
+        "description": "Per-check CI job durations. check-coverage P90 ~83s is the slow tail (motivates the 7us.8 fastest-first gate)."
+      },
+      "query": {
+        "breakdowns": [
+          "ci.job.name"
+        ],
+        "calculations": [
+          {
+            "column": "duration_ms",
+            "op": "P50"
+          },
+          {
+            "column": "duration_ms",
+            "op": "P90"
+          }
+        ],
+        "filters": [
+          {
+            "column": "ci.job.name",
+            "op": "exists",
+            "join_column": ""
+          }
+        ],
+        "orders": [
+          {
+            "column": "duration_ms",
+            "op": "P90",
+            "order": "descending"
+          }
+        ],
+        "limit": 15,
+        "time_range": 7776000,
+        "granularity": 86400
+      }
+    },
+    {
+      "type": "query",
+      "key": "red-green-cycle-duration-by-repo-ms",
+      "dataset": "livespec-rgr",
+      "query_style": "combo",
+      "position": {
+        "x_coordinate": 4,
+        "y_coordinate": 17,
+        "height": 20,
+        "width": 4
+      },
+      "annotation": {
+        "name": "Red→Green cycle duration by repo (ms)",
+        "description": "RGR commit-gate cycle time (impl + Red gate + Green gate) per family repo."
+      },
+      "query": {
+        "breakdowns": [
+          "repo"
+        ],
+        "calculations": [
+          {
+            "column": "duration_ms",
+            "op": "P50"
+          },
+          {
+            "column": "duration_ms",
+            "op": "P90"
+          },
+          {
+            "column": "duration_ms",
+            "op": "MAX"
+          },
+          {
+            "op": "COUNT"
+          }
+        ],
+        "orders": [
+          {
+            "op": "COUNT",
+            "order": "descending"
+          }
+        ],
+        "limit": 10,
+        "time_range": 7776000,
+        "granularity": 86400
+      }
+    },
+    {
+      "type": "query",
+      "key": "dispatcher-stage-durations-ms",
+      "dataset": "livespec-dispatcher",
+      "query_style": "combo",
+      "position": {
+        "x_coordinate": 8,
+        "y_coordinate": 17,
+        "height": 12,
+        "width": 4
+      },
+      "annotation": {
+        "name": "Dispatcher stage durations (ms)",
+        "description": "Per-stage timing of the beads+fabro dispatcher loop (fabro-run, janitor, ledger, etc.)."
+      },
+      "query": {
+        "breakdowns": [
+          "name"
+        ],
+        "calculations": [
+          {
+            "column": "duration_ms",
+            "op": "P50"
+          },
+          {
+            "column": "duration_ms",
+            "op": "P90"
+          }
+        ],
+        "filters": [
+          {
+            "column": "name",
+            "op": "starts-with",
+            "value": "dispatcher.stage.",
+            "join_column": ""
+          }
+        ],
+        "orders": [
+          {
+            "column": "duration_ms",
+            "op": "P90",
+            "order": "descending"
+          }
+        ],
+        "limit": 12,
+        "time_range": 7776000,
+        "granularity": 604800
+      }
+    },
+    {
+      "type": "query",
+      "key": "fabro-sandbox-runs-by-status",
+      "dataset": "fabro-sandbox",
+      "query_style": "combo",
+      "position": {
+        "x_coordinate": 0,
+        "y_coordinate": 37,
+        "height": 8,
+        "width": 4
+      },
+      "annotation": {
+        "name": "Fabro sandbox runs by status",
+        "description": "Dark-factory sandbox dispatch outcomes."
+      },
+      "query": {
+        "breakdowns": [
+          "fabro.status"
+        ],
+        "calculations": [
+          {
+            "op": "COUNT"
+          }
+        ],
+        "orders": [
+          {
+            "op": "COUNT",
+            "order": "descending"
+          }
+        ],
+        "time_range": 7776000,
+        "granularity": 604800
+      }
+    },
+    {
+      "type": "query",
+      "key": "sub-agent-activity-by-type",
+      "dataset": "claude-subagents",
+      "query_style": "combo",
+      "position": {
+        "x_coordinate": 4,
+        "y_coordinate": 37,
+        "height": 8,
+        "width": 4
+      },
+      "annotation": {
+        "name": "Sub-agent activity by type",
+        "description": "Harness sub-agent sessions by agent type (general-purpose, livespec-implementer, Explore, ...)."
+      },
+      "query": {
+        "breakdowns": [
+          "name"
+        ],
+        "calculations": [
+          {
+            "op": "COUNT"
+          }
+        ],
+        "orders": [
+          {
+            "op": "COUNT",
+            "order": "descending"
+          }
+        ],
+        "limit": 10,
+        "time_range": 7776000,
+        "granularity": 604800
+      }
+    }
+  ]
+}
