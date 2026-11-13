@@ -37,7 +37,7 @@ Then the `ci-registry-mirror` namespace MUST hold the mirror's Deployment and Se
 
 And `just ansible-drift ansible/ci-pool.yml --tags registry_mirror_node` MUST report no change on any node whose `/etc/rancher/k3s/registries.yaml` is the installer's rendering for that node
 
-And neither the converge nor the role MUST have restarted k3s or containerd on any node
+And the converge and the role MUST NOT have restarted k3s or containerd on any node
 
 And a node that cannot reach the mirror MUST still pull its images from ghcr.io
 
