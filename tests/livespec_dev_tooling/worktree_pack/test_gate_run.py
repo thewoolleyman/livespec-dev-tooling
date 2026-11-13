@@ -1026,6 +1026,32 @@ def test_a_stalled_gate_reaps_an_escapee_orphaned_before_the_stall(
 
 
 @pytest.mark.integration
+def test_a_stalled_gate_reaps_a_descendant_that_respawns_after_term(
+    *, fixture_repo: tuple[Path, Path, dict[str, str]]
+) -> None:
+    """A TERM handler's session-escaping replacement is caught by a later pass."""
+    primary, worktree, env = fixture_repo
+    token = f"livespec-gate-term-respawn-{time.monotonic_ns()}"
+    command = (
+        "setsid bash -c 'trap '\"'\"'setsid python3 -c \"import time; time.sleep(300)\" "
+        f"{token} & exit 0'\"'\"' TERM; exec sleep 300' & echo collected; exec sleep 300"
+    )
+    try:
+        run_id = _start(
+            cwd=worktree,
+            env={**env, _STALL_ENV: "2", _STALL_GRACE_ENV: "1"},
+            command=["bash", "-c", command],
+        )
+        output = (_await_verdict(primary=primary, run_id=run_id) / "output.log").read_text(
+            encoding="utf-8"
+        )
+        assert not _live_processes_carrying(token=token)
+        assert output.count("ending out-of-group descendant pid=") >= 2
+    finally:
+        _end_processes_carrying(token=token)
+
+
+@pytest.mark.integration
 def test_a_gate_that_keeps_making_progress_is_not_ended_by_the_stall_window(
     *, fixture_repo: tuple[Path, Path, dict[str, str]]
 ) -> None:

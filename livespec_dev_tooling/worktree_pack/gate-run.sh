@@ -310,18 +310,32 @@ run_gate_with_stall_bound() {
         elif (( SECONDS - quiet_since >= stall )); then
             printf '\ngate-run: no output for %ss, the stall window (LIVESPEC_SUITE_GREEN_STALL_SECONDS); ending the gate'"'"'s whole process group, workers included — not a pass\n' \
                 "$stall" >>"$dir/output.log"
-            mapfile -t escaped < <(record_and_term_out_of_group_descendants "$dir" "$gate_pid")
-            kill -TERM -- "-$gate_pid" 2>/dev/null || true
+            for _pass in 1 2 3; do
+                mapfile -t escaped < <(record_and_term_out_of_group_descendants "$dir" "$gate_pid")
+                kill -TERM -- "-$gate_pid" 2>/dev/null || true
+                ended=$SECONDS
+                while { kill -0 -- "-$gate_pid" 2>/dev/null || any_pids_alive "${escaped[@]}"; } \
+                    && (( SECONDS - ended < grace )); do
+                    idle_sleep 1
+                done
+                kill -KILL -- "-$gate_pid" 2>/dev/null || true
+                for pid in "${escaped[@]}"; do
+                    if kill -0 "$pid" 2>/dev/null; then
+                        kill -KILL "$pid" 2>/dev/null || true
+                    fi
+                done
+            done
+            mapfile -t escaped < <(out_of_group_descendants "$gate_pid" "$gate_pid" "$stamp")
             ended=$SECONDS
-            # Wait for the whole GROUP and its session-escaping descendants,
-            # not just the leader: each TERM handler gets its grace period.
-            while { kill -0 -- "-$gate_pid" 2>/dev/null || any_pids_alive "${escaped[@]}"; } \
-                && (( SECONDS - ended < grace )); do
+            while any_pids_alive "${escaped[@]}" && (( SECONDS - ended < grace )); do
                 idle_sleep 1
             done
-            kill -KILL -- "-$gate_pid" 2>/dev/null || true
             for pid in "${escaped[@]}"; do
-                kill -KILL "$pid" 2>/dev/null || true
+                if kill -0 "$pid" 2>/dev/null; then
+                    read_proc_cmdline "$pid"
+                    printf 'gate-run: unended out-of-group descendant pid=%s cmdline=%s after 3 signalling passes\n' \
+                        "$pid" "${PROC_CMDLINE:-<exited>}" >>"$dir/output.log"
+                fi
             done
             wait "$gate_pid" 2>/dev/null || true
             close_idle_fd || true
