@@ -453,6 +453,75 @@
     or (k3s_config_system_slice_cpu_weight_removed.changed | default(false))
   tags: [k3s_system_slice_cpu_weight]
 
+# user.slice's ROOT-LEVEL CPU SHARE (livespec-dev-tooling-wsjl7j). For a node that
+# is also a workstation: local login sessions run in user.slice, which sits at
+# systemd's default cpu.weight of 100 beside kubepods.slice at the weight the
+# kubelet derives from allocatable CPU (567 on gamingpc-xubuntu, measured
+# 2026-11-13), so under full contention a local session was entitled to about
+# 13% of the CPU. These five tasks carry the tag k3s_user_slice_cpu_weight of
+# their own, so an apply narrowed to it touches nothing else this role manages.
+# systemd re-applies a changed CPUWeight= to the running slice on the
+# daemon-reload below. NOTHING HERE RESTARTS k3s — no task notifies the handler
+# chain, and the reload has no `state:`.
+
+- name: Refuse a user.slice CPU weight systemd would not accept
+  ansible.builtin.assert:
+    that:
+      - k3s_config_user_slice_cpu_weight | string | regex_search('^[0-9]+$') is not none
+      - k3s_config_user_slice_cpu_weight | int >= 1
+      - k3s_config_user_slice_cpu_weight | int <= 10000
+    fail_msg: >-
+      k3s_config_user_slice_cpu_weight is
+      {{ k3s_config_user_slice_cpu_weight | to_json }}; it must be an integer
+      from 1 to 10000 (systemd's CPUWeight= range), or empty to manage no weight.
+    success_msg: the user.slice CPU weight is one systemd accepts
+  when: k3s_config_user_slice_cpu_weight | string | length > 0
+  tags: [k3s_user_slice_cpu_weight]
+
+- name: Create the drop-in directory for the user.slice CPU weight
+  ansible.builtin.file:
+    path: "{{ k3s_config_user_slice_drop_in_dir }}"
+    state: directory
+    owner: "{{ k3s_config_user_slice_drop_in_owner }}"
+    group: "{{ k3s_config_user_slice_drop_in_group }}"
+    mode: "0755"
+  become: true
+  when: k3s_config_user_slice_cpu_weight | string | length > 0
+  tags: [k3s_user_slice_cpu_weight]
+
+- name: Write the user.slice CPU weight drop-in
+  ansible.builtin.template:
+    src: user-slice-cpu-weight.conf.j2
+    dest: "{{ k3s_config_user_slice_drop_in_dir }}/{{ k3s_config_user_slice_cpu_weight_drop_in }}"
+    owner: "{{ k3s_config_user_slice_drop_in_owner }}"
+    group: "{{ k3s_config_user_slice_drop_in_group }}"
+    mode: "0644"
+  become: true
+  register: k3s_config_user_slice_cpu_weight_written
+  when: k3s_config_user_slice_cpu_weight | string | length > 0
+  tags: [k3s_user_slice_cpu_weight]
+
+- name: Remove the user.slice CPU weight drop-in when none is declared
+  ansible.builtin.file:
+    path: "{{ k3s_config_user_slice_drop_in_dir }}/{{ k3s_config_user_slice_cpu_weight_drop_in }}"
+    state: absent
+  become: true
+  register: k3s_config_user_slice_cpu_weight_removed
+  when: k3s_config_user_slice_cpu_weight | string | length == 0
+  tags: [k3s_user_slice_cpu_weight]
+
+- name: Make systemd apply the changed user.slice CPU weight to the running slice
+  # daemon_reload ONLY. No `state:` — a k3s restart kills every CI job on the
+  # node and is a human-gated window. Reached only when this pass changed the
+  # drop-in, so a converged node reloads nothing.
+  ansible.builtin.systemd_service:
+    daemon_reload: true
+  become: true
+  when: >-
+    (k3s_config_user_slice_cpu_weight_written.changed | default(false))
+    or (k3s_config_user_slice_cpu_weight_removed.changed | default(false))
+  tags: [k3s_user_slice_cpu_weight]
+
 - name: Refuse an embedded-etcd request on an agent, or one that also asks for rollback
   # Embedded etcd is the SERVER's datastore. An agent has none, and a k3s agent
   # given `cluster-init` would refuse to start. Install and rollback are

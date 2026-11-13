@@ -42,7 +42,46 @@ disk_guard_threshold_gb: 40
 # (16 - 10 - 0.5) / 3 = 1.83, so 1.
 # REVERT to 2, with the gate lane back to 5 / 8Gi, when the burst ends (that
 # plan archived) and a re-measure shows gate waits under 300 s.
+#
+# NOT RE-DERIVED for the 2026-11-13 reserves (livespec-dev-tooling-wsjl7j). The
+# two derivations above read 16 cpu / 30.4 GiB allocatable. Once the k3s agent
+# restarts on the profile's new KUBELET_ARGS the node offers 12000m / 94597Mi.
+# Memory then binds nothing here; cpu does: with the 10-cpu gate lane,
+# (12 - 10 - 0.5) / 3 = 0.5, so a factory pod and two gates no longer fit
+# together, and with the lane back at 5 cpu, (12 - 5 - 0.5) / 3 = 2.17. This
+# value and the gate lane are their owners' to re-derive; this change moves
+# neither.
 factory_pod_budget: 1
+
+# --- k3s_config ---
+# user.slice's CPU share, so the maintainer's local sessions on this
+# workstation keep at least a quarter of the CPU when pods want every core
+# (livespec-dev-tooling-wsjl7j; maintainer direction 2026-11-13 ~04:31Z: "leave
+# some headroom (probably 25%) to support running local sessions or
+# processes"). A weight is a SHARE: it never keeps a core idle, it only decides
+# who wins when demand exceeds cores. Pods use every core a local session
+# leaves idle, and a local session uses every core the pods leave idle.
+#
+# The arithmetic. Local login sessions run in user.slice, which competes at the
+# cgroup root with kubepods.slice and system.slice. The kubelet weights
+# kubepods.slice from allocatable CPU: at the 12000m this node's profile yields
+# (ci-runner/k3s/phase0-bare-metal/profiles/gamingpc-xubuntu.env), that is
+# 12288 shares, and 1 + ((12288 - 2) x 9999) / 262142 = 469. system.slice is at
+# systemd's default of 100. For a share of at least 25%:
+#   w / (w + 469 + 100) >= 0.25   gives   w >= 190.
+# 200 gives 200 / 769 = 26.0%, about 4.2 of 16 CPUs. Measured before this
+# change, 2026-11-13: kubepods.slice 567, system.slice 100, user.slice 100, so
+# user.slice was entitled to 100 / 767 = 13%. (init.scope, the fourth root
+# peer, is systemd itself and does not compete for CPU in practice; counted at
+# full demand it would make the 200 share 23.0%.)
+#
+# system.slice's weight is deliberately NOT set on this node here. Raising it
+# (k3s_config_system_slice_cpu_weight, as the other agents declare) dilutes
+# user.slice, so this value must be re-derived in the same change; so must it
+# when the profile's CPU reserves change. Takes effect on a daemon-reload, no
+# restart; revert by removing this key and re-applying
+# --tags k3s_user_slice_cpu_weight.
+k3s_config_user_slice_cpu_weight: 200
 
 # --- node_status_credential ---
 # The agent-side account the refresh tool drops its fetch to is this node's
