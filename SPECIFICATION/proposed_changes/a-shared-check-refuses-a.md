@@ -14,7 +14,7 @@ created_at: 2026-11-13T00:55:16Z
 
 ### Summary
 
-Add a canonical per-commit shared check, `no_unratified_scenario_numbers`. It fails when a pending proposed-change file carries a numbered scenario heading whose number is not already a scenario heading in the same spec tree's ratified `scenarios.md`. So a proposal names a new scenario without a number, and the revise assigns the number when it cuts the version. The check gates on a new UNION role key, `proposed_changes_dirs`. A consumer whose pending proposals still carry pre-assigned numbers declares that key `{ unarmed_until = "<ledger-id>" }`, naming its own open adoption item, until that item's pull request has rewritten them.
+Add a canonical per-commit shared check, `no_unratified_scenario_numbers`. It fails when a pending proposed-change file carries a numbered scenario heading whose number is not already a scenario heading in the same spec tree's ratified `scenarios.md`. So a proposal names a new scenario without a number, and the revise assigns the number when it cuts the version. The check reads a new OPTIONAL role key, `proposed_changes_dirs`. A consumer that has not declared the key is unarmed, and the check says so on a loud line in its output on every run. Each consumer declares the key when it adopts the check; a consumer whose pending proposals still carry pre-assigned numbers declares it in the pull request that rewrites them.
 
 ### Motivation
 
@@ -36,7 +36,9 @@ Fleet scope, counted 2026-11-13 in each primary checkout's `SPECIFICATION/scenar
 - Three number their scenarios: livespec-orchestrator-beads-fabro (331 numbered, plus 14 unnumbered), livespec-console-beads-fabro (34) and livespec-orchestrator-git-jsonl (6).
 - livespec core's `scenarios.md` has no scenario headings.
 
-The coordinator's ordering rule is adoption first, then arming. The check must not refuse the orchestrator's in-flight proposals that claim 347 to 358: their own revises, or that repository's adoption pull request, renumber them. `unarmed_until` is the existing sanctioned spelling for exactly that: a requirement deliberately switched off pending named, still-open work.
+The coordinator's ordering rule is adoption first, then arming. The check must not refuse the orchestrator's in-flight proposals that claim 347 to 358: their own revises, or that repository's adoption pull request, renumber them.
+
+The key is OPTIONAL, on the coordinator's ruling (legacy-coordinator-agent, session 56ce1bcd, 2026-11-13). A REQUIRED key would fail every consumer that has not yet adopted the check at its next pin bump, which arms the check ahead of adoption. That is the failure shape in which one shared release turned five repositories red. Two conditions keep the optional form from staying silently unarmed. First, an undeclared key prints a loud UNARMED line on every run. Second, each consumer's adoption declares the key: the six unnumbered consumers in their bump pull requests, and the numbered ones in their adoption items, in the order livespec-orchestrator-git-jsonl, livespec-console-beads-fabro, livespec-orchestrator-beads-fabro. Making the key required once every fleet consumer has declared it is a separate follow-up, not part of this proposal.
 
 A numbered heading whose number the ratified `scenarios.md` already carries stays legal. Without that exemption, a proposal that edits a ratified numbered scenario would be refused for quoting the heading it edits.
 
@@ -54,19 +56,17 @@ Then add this H3 section after `### `no_ambient_environment_loops` check` and be
 >
 > **A pending proposal names a new scenario without a number. The revise assigns the number.** A scenario number written into a proposal before its revise is a reservation that nothing serializes, so two proposals in flight together can claim the same number. The revise is the one serialized point, so it is where a number is assigned. A consumer whose `scenarios.md` numbers its scenarios gives a new scenario the next free number when its revise cuts the version. Until then the proposal writes the scenario as `Scenario: <description>`.
 >
-> Invocation: `python -m livespec_dev_tooling.checks.no_unratified_scenario_numbers`. The check gates on the role key `proposed_changes_dirs` (§"Role keys"). It inspects every `.md` file directly inside each declared directory. For each directory, the RATIFIED `scenarios.md` is the file of that name in the directory's parent, the spec root the directory belongs to. A spec root with no `scenarios.md` ratifies no scenario number.
+> Invocation: `python -m livespec_dev_tooling.checks.no_unratified_scenario_numbers`. The check reads the role key `proposed_changes_dirs` (§"Role keys"). It inspects every `.md` file directly inside each declared directory. For each directory, the RATIFIED `scenarios.md` is the file of that name in the directory's parent, the spec root the directory belongs to. A spec root with no `scenarios.md` ratifies no scenario number.
 >
 > A line of an inspected file is a NUMBERED SCENARIO HEADING when, after one optional leading unified-diff marker (`+`, `-` or a space) and then any run of blockquote markers (`>`) and whitespace are removed, it begins with one to six `#` characters, whitespace, the word `Scenario`, whitespace and a run of decimal digits. Those digits are its number. The prefix rule exists because proposals carry new text as quoted paragraphs and as fenced unified diffs, and a heading inside either is still the heading the revise would write.
 >
 > The check MUST fail, exiting `4`, on every numbered scenario heading in an inspected file whose number is not the number of a numbered scenario heading in the ratified `scenarios.md`. It MUST name, for each finding, the file, the line number and the heading text. It MUST NOT fail on a numbered scenario heading whose number the ratified `scenarios.md` already carries: a proposal that edits a ratified scenario quotes that scenario's heading. It MUST NOT fail on a scenario number that appears outside a heading, such as a prose reference to `Scenario 239`. It MUST NOT inspect `history/`, so an archived proposal is never re-judged. It MUST exit `0` when no finding remains.
 >
-> **Arming follows adoption.** A consumer whose pending proposals still carry pre-assigned scenario numbers MUST declare `proposed_changes_dirs = { unarmed_until = "<ledger-id>" }`, naming its own open work item for adopting this check. That item's pull request MUST, in one change, rewrite each pending proposal's unratified numbered scenario heading to the unnumbered form and declare the key populated. A proposal whose own revise lands first is renumbered by that revise, which leaves the adoption pull request less to rewrite. A consumer whose pending proposals carry no unratified numbered scenario heading declares the key populated in the pull request that adopts the release carrying this check.
+> **Arming follows adoption.** The check is armed for a consumer only once that consumer declares `proposed_changes_dirs`. While the key is undeclared, the check MUST inspect no proposal, MUST exit `0`, and MUST print `no_unratified_scenario_numbers UNARMED: <repo> declares no proposed_changes_dirs` on every run, where `<repo>` names the consumer's repository. That line is how an unarmed consumer stays visible instead of silently passing. A consumer whose pending proposals still carry pre-assigned scenario numbers MUST NOT declare the key before those headings are rewritten. Its adoption pull request MUST, in one change, rewrite each pending proposal's unratified numbered scenario heading to the unnumbered form and declare the key. A proposal whose own revise lands first is renumbered by that revise, which leaves the adoption pull request less to rewrite. A consumer whose pending proposals carry no unratified numbered scenario heading declares the key in the pull request that adopts the release carrying this check.
 
 **2. `SPECIFICATION/contracts.md` §"Role keys".** Add this bullet to the role-key inventory after the `target_dirs` bullet:
 
-> - **`proposed_changes_dirs`** — array of strings. Repo-root-relative paths of the consumer's pending proposed-change directories, one per spec tree, such as `SPECIFICATION/proposed_changes/`. **Consumers:** `no_unratified_scenario_numbers`. It is that check's GATING key. MUST be declared as either a populated array or exactly one of the four declared-absent spellings per §"Declared-absent spellings for the union role keys". `unarmed_until` is the spelling for a consumer whose pending proposals still carry pre-assigned scenario numbers, per that check's §"Arming follows adoption". `not_applicable` is the spelling for a consumer with no spec tree.
-
-In §"Declared-absent spellings for the union role keys", extend the UNION-key enumeration so the sentence reads: The **UNION keys** — `pure_trees`, `target_dirs`, `source_tree_prefixes`, `dataclasses_tree`, `neutral_hook_body_path`, `proposed_changes_dirs` — are those whose declared value IS a consuming check's scan universe.
+> - **`proposed_changes_dirs`** — array of strings. Repo-root-relative paths of the consumer's pending proposed-change directories, one per spec tree, such as `SPECIFICATION/proposed_changes/`. **Consumers:** `no_unratified_scenario_numbers`. OPTIONAL. An undeclared key leaves that check unarmed, and the check prints its UNARMED line, per that check's §"Arming follows adoption". A declared key MUST be a non-empty array, because an armed check inspecting nothing is a configuration defect: a declared empty array MUST make the check exit non-zero, naming the key. It is not a UNION key, and it takes no declared-absent spelling.
 
 **3. `SPECIFICATION/scenarios.md`.** Append these scenarios:
 
@@ -96,9 +96,9 @@ In §"Declared-absent spellings for the union role keys", extend the UNION-key e
 >
 > Then the check exits `0`
 >
-> ## Scenario: a consumer whose pending proposals still carry pre-assigned numbers stays unarmed until its adoption item rewrites them
+> ## Scenario: a consumer that has not declared proposed_changes_dirs is unarmed and says so, until its adoption pull request declares the key
 >
-> Given a consumer that declares `proposed_changes_dirs = { unarmed_until = "<ledger-id>" }` naming its own open adoption item
+> Given a consumer that does not declare `proposed_changes_dirs`
 >
 > And a pending proposal in its `SPECIFICATION/proposed_changes/` quotes an unratified `## Scenario 358 — <title>`
 >
@@ -106,8 +106,10 @@ In §"Declared-absent spellings for the union role keys", extend the UNION-key e
 >
 > Then the check exits `0` and inspects no proposal
 >
-> When the adoption item's pull request rewrites that heading to `## Scenario: <title>` and declares `proposed_changes_dirs` populated
+> And its output carries the line `no_unratified_scenario_numbers UNARMED: <repo> declares no proposed_changes_dirs`
 >
-> Then the check exits `0` and inspects every pending proposal
+> When the consumer's adoption pull request rewrites that heading to `## Scenario: <title>` and declares `proposed_changes_dirs` with its `SPECIFICATION/proposed_changes/` directory
+>
+> Then the check exits `0`, inspects every pending proposal, and prints no UNARMED line
 
 **4. `tests/heading-coverage.json` (the revise's co-edit).** Add one entry per new scenario heading, with `test` set to `TODO` and a reason stating that a real test is owed, citing `livespec-dev-tooling-kw5tox` as its `work_item`. Example reason: "Spec-first: a real test is owed that runs the shared check against a fixture consumer tree in this state. livespec-dev-tooling-kw5tox owns it."
