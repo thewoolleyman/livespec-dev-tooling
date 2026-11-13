@@ -109,6 +109,34 @@ def test_expiry_fails_the_test_as_a_hang_that_names_the_command(
     assert "after 1 s" in message
 
 
+def test_an_unhandled_worker_exception_fails_the_test_and_names_it(tmp_path: Path) -> None:
+    test_file = tmp_path / "test_worker_exception.py"
+    test_file.write_text(
+        "from threading import Thread\n\n"
+        "def test_worker_exception() -> None:\n"
+        "    worker = Thread(target=lambda: (_ for _ in ()).throw(RuntimeError('worker boom')))\n"
+        "    worker.start()\n"
+        "    worker.join()\n",
+        encoding="utf-8",
+    )
+    result = run_under_hang_guard(
+        [
+            sys.executable,
+            "-m",
+            "pytest",
+            "-q",
+            "-c",
+            str(Path(__file__).resolve().parents[1] / "pyproject.toml"),
+            str(test_file),
+        ],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert "RuntimeError: worker boom" in result.stdout + result.stderr
+
+
 def test_no_concurrency_wait_test_file_keeps_a_bound_of_its_own() -> None:
     files = sorted(_CONCURRENCY_WAIT_TESTS)
     assert files
