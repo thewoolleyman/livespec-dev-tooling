@@ -22,16 +22,16 @@
 #   livespec-orchestrator-beads-fabro-cq (29 -> 26) so the cohort still sums to
 #   exactly C = 44. dev-tooling's own 6 was the first donor and was withdrawn:
 #   see DERIVATION.md for the re-ruling and why. The cohort has since moved
-#   44 -> 31 and sums to the registered churn-slot capacity, poweredge 17 +
-#   gmktec 8 + hp 5 + gamingpc 1 (DERIVATION.md "gamingpc-xubuntu joins:
-#   cohort 31 (2026-11-11)"); this slice's 3 is unchanged.
+#   44 -> 30 and sums to the registered churn-slot capacity, poweredge 17 +
+#   gmktec 6 + hp 4 + gamingpc 3 (DERIVATION.md "Per-node CPU budget cut:
+#   cohort 30 (2026-11-13)"); this slice's 3 is unchanged.
 #
 # lendingLimit: 0 — the one cohort member that lends NOTHING. Every other
 # queue lends its whole unused floor (Kueue's default). Reclaim is Never in this
 # cohort (DERIVATION.md "NEVER EVICT A HEALTHY RUNNING JOB"), so a lent master
 # slot would be borrowed by a pull-request backlog and only come back when that
 # borrower's job finished — exactly the wait this slice exists to remove. With
-# lendingLimit 0 the 3 slots sit idle when no master run is queued (3 of 31,
+# lendingLimit 0 the 3 slots sit idle when no master run is queued (3 of 30,
 # 10 %), which is the ruled price. This queue may still BORROW above its 3 from
 # idle peers, up to its scale set's maxRunners (6). lendingLimit is beta and
 # enabled by default at the pinned Kueue v0.19.1 (see the v1beta2

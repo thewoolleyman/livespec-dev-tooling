@@ -18,8 +18,8 @@
 #   master-push slice it is a DONATION: 1 churn slot MOVED from
 #   livespec-orchestrator-beads-fabro-cq (26 -> 25), the cohort's largest quota
 #   and the queue the apportionment rule's excess-deduction step takes from, so
-#   the cohort sum was unchanged: 44 then, 31 since DERIVATION.md
-#   "gamingpc-xubuntu joins: cohort 31 (2026-11-11)" (the 450-point JIT startup budget
+#   the cohort sum was unchanged: 44 then, 30 since DERIVATION.md
+#   "Per-node CPU budget cut: cohort 30 (2026-11-13)" (the 450-point JIT startup budget
 #   caps the summed node capacity at 45; it cannot rise to make room).
 #   Why 1 and not 0: the apportionment rule's step 5 gives no repository a
 #   floor of zero, because a borrow-only queue under a saturated cohort starves
@@ -29,7 +29,7 @@
 #
 # lendingLimit: NOT set, so this queue lends its whole unused floor like every
 # member but the master slice. The fork is not a fleet merge gate; reserving
-# its slot (lendingLimit: 0) would idle 1 of the cohort's 31 slots whenever the fork is
+# its slot (lendingLimit: 0) would idle 1 of the cohort's 30 slots whenever the fork is
 # quiet, which is most of the time. The cost is that a lent slot comes back
 # only when its borrower's job finishes.
 #

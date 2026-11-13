@@ -14,10 +14,10 @@
 # DERIVATION.md "Recomputation on the tenth repository (2026-09-04)" for the
 # full arithmetic; the summary is below.
 #
-# nominalQuota for THIS repo: 9, the churn-slot-flavor value below, which is
-# the authority. The cohort's churn-slot-flavor quotas sum to 31, equal to the
-# pool's registered churn-slot capacity: poweredge 17 + gmktec 8 + hp 5 +
-# gamingpc 1 (DERIVATION.md "gamingpc-xubuntu joins: cohort 31 (2026-11-11)").
+# nominalQuota for THIS repo: 7, the churn-slot-flavor value below, which is
+# the authority. The cohort's churn-slot-flavor quotas sum to 30, equal to the
+# pool's registered churn-slot capacity: poweredge 17 + gmktec 6 + hp 4 +
+# gamingpc 3 (DERIVATION.md "Per-node CPU budget cut: cohort 30 (2026-11-13)").
 # The demand-weight apportionment at C = 44 that set the earlier values was
 # superseded by the measured re-derivations from 2026-10-22 on, and each change
 # since is a dated DERIVATION.md section. To change a quota, follow
@@ -27,7 +27,7 @@
 #
 # nominalQuota is this repo's GUARANTEED FLOOR, not its ceiling. Unused quota
 # anywhere in the `fleet-ci-runner-pool` cohort is borrowable automatically,
-# so this repo can burst well above 9 when its peers are idle (except into the
+# so this repo can burst well above 7 when its peers are idle (except into the
 # master-push slice, which lends nothing). The per-repo
 # ceiling is a SEPARATE number — ../arc/values-livespec-orchestrator-beads-fabro.yaml's
 # maxRunners (50). The two are different terms of the same min() and are
@@ -80,7 +80,8 @@ spec:
               # 8 -> 7 on 2026-11-13: the per-node CPU budget cuts gmktec 8 -> 6 and
               # hp 5 -> 4 and raises gamingpc 1 -> 3, so the cohort falls 31 -> 30.
               # legacy-coordinator-agent ruled the unit leaves this queue, with
-              # dev-tooling-cq kept at 10; maxRunners unchanged. See DERIVATION.md
+              # dev-tooling-cq kept at 10. Its scale set's maxRunners follows the
+              # bounded-multiple rule to max(2 x 7, 6) = 14 (was 16). See DERIVATION.md
               # "Per-node CPU budget cut: cohort 30 (2026-11-13)".
               nominalQuota: 7
         # The arm64 container workers' churn slots (livespec-dev-tooling-eorpen), listed AFTER
