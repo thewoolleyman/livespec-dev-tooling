@@ -41,7 +41,7 @@ printf 'kubectl %s\\n' "$*" >> "$s/calls.log"
 case "$1 $2" in
   "get node")
     [ "$KUBECTL_FAILS" != node ] || { echo "Connection closed" >&2; exit 255; }
-    [ ! -f "$s/node" ] || printf '%s %s' "$3" "$(cat "$s/node")" ;;
+    [ ! -f "$s/node" ] || printf '%s %s' "$3" "$(<"$s/node")" ;;
   "get pods")
     [ "$KUBECTL_FAILS" != pods ] || { echo "Connection closed" >&2; exit 255; }
     cat "$s/pods" 2>/dev/null ;;
