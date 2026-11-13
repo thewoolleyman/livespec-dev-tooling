@@ -8,10 +8,13 @@ repository path, and its segments do not count as literals of the closure
 
 Each base and each binding becomes a `RootTerm`: rooted on its own, or rooted
 through scope-resolved bindings, fixtures, attribute stores or imports that the
-whole closure then solves. Anything this module cannot classify is rooted, so
-a doubt keeps a test touched: a name bound where no value is recorded, a
-fixture nothing in the closure defines, and an import the closure cannot
-resolve. A class body binds attributes too, so a root held there is read
+whole closure then solves. A base this module cannot classify is rooted, so
+the literal segments of a `/` chain on it count: a name bound where no value
+is recorded, a fixture nothing in the closure defines, and an import the
+closure cannot resolve. Only the forms named here are read; a value reached
+another way -- `getattr`, an alias, a helper defined in a test module and
+imported by another -- is not, and a chain on it counts only as its other
+rules allow. A class body binds attributes too, so a root held there is read
 through `self` and `cls`, as an attribute, a method or a property.
 """
 
@@ -38,8 +41,9 @@ from livespec_dev_tooling._flake_retry_scopes import (
     binding_scope,
     owning_scope,
 )
+from livespec_dev_tooling._flake_retry_spans import EXACT, Span, crossed
 
-__all__: list[str] = ["module_root_terms", "solve_keys"]
+__all__: list[str] = ["module_root_terms", "reached", "solve_keys"]
 
 _FUNCTIONS = (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)
 
@@ -220,62 +224,77 @@ def module_root_terms(
 
 
 def solve_keys(
-    *,
-    terms: Iterable[tuple[Key, RootTerm]],
-    rooted_queries: Iterable[Key],
-    placed_queries: Iterable[Key],
-) -> tuple[frozenset[Key], dict[Key, frozenset[str]], dict[Key, frozenset[str]]]:
-    """Solve which queried keys are rooted, where each is placed, and what each spans.
+    *, terms: Iterable[tuple[Key, RootTerm]], queries: Iterable[Key]
+) -> tuple[frozenset[Key], dict[Key, frozenset[Span]]]:
+    """Solve which queried keys are rooted, and where each lies (see `Span`).
 
-    Each pass walks only the keys its queries go through, so a closure's many
-    unrelated bindings cost nothing. Places travel only through `evidence`;
-    rootedness and spans travel through every `through`.
+    The walk follows only the keys the queries go through, so a closure's
+    many unrelated bindings cost nothing. Rootedness crosses every `through`
+    edge unchanged; a location crosses it as `crossed` says, widened by the
+    dependent term's upward steps.
     """
     by_key: dict[Key, list[RootTerm]] = {}
     for key, term in terms:
         by_key.setdefault(key, []).append(term)
-    seeds, dependents = _walk(queries=rooted_queries, terms=by_key, edges=lambda term: term.through)
-    placed = _spread(
-        walked=_walk(queries=placed_queries, terms=by_key, edges=lambda term: term.evidence),
-        terms=by_key,
-        values=lambda term: term.places,
-    )
-    spanned = _spread(walked=(seeds, dependents), terms=by_key, values=lambda term: term.spans)
+    walked = _walk(queries=queries, terms=by_key)
     rooted = _spread(
-        walked=(seeds, dependents),
+        walked=walked,
         terms=by_key,
-        values=lambda term: frozenset({""} if term.rooted else ()),
+        own=lambda term: frozenset({("", 0)} if term.rooted else ()),
+        step=lambda _key, _term, values: values,
     )
-    return frozenset(rooted), placed, spanned
+    located = _spread(
+        walked=walked,
+        terms=by_key,
+        own=lambda term: frozenset({*((place, EXACT) for place in term.places), *term.spans}),
+        step=lambda key, term, values: crossed(
+            values=values, ascent=term.ascent, exact_passes=key in term.evidence
+        ),
+    )
+    return frozenset(rooted), located
+
+
+def reached(*, term: RootTerm, located: dict[Key, frozenset[Span]]) -> frozenset[Span]:
+    """Where the keys a term goes through place it, once its own upward steps are taken."""
+    return frozenset(
+        span
+        for key in term.through
+        for span in crossed(
+            values=located.get(key, ()), ascent=term.ascent, exact_passes=key in term.evidence
+        )
+    )
+
+
+_Step = Callable[[Key, RootTerm, frozenset[Span]], frozenset[Span]]
 
 
 def _spread(
     *,
-    walked: tuple[list[Key], dict[Key, list[Key]]],
+    walked: tuple[list[Key], dict[Key, list[tuple[Key, RootTerm]]]],
     terms: dict[Key, list[RootTerm]],
-    values: Callable[[RootTerm], frozenset[str]],
-) -> dict[Key, frozenset[str]]:
+    own: Callable[[RootTerm], frozenset[Span]],
+    step: _Step,
+) -> dict[Key, frozenset[Span]]:
     """Carry each walked key's own values to every key that goes through it."""
     seeds, dependents = walked
-    pending = [(key, values(term)) for key in seeds for term in terms[key]]
-    reached: dict[Key, set[str]] = {}
+    pending = [(key, own(term)) for key in seeds for term in terms[key]]
+    found: dict[Key, set[Span]] = {}
     while pending:
         key, carried = pending.pop()
-        known = reached.setdefault(key, set())
-        added = carried - known
+        known = found.setdefault(key, set())
+        added = frozenset(carried - known)
         known.update(added)
-        pending.extend((dependent, added) for dependent in dependents.get(key, ()) if added)
-    return {key: frozenset(found) for key, found in reached.items() if found}
+        pending.extend(
+            (dependent, step(key, term, added)) for dependent, term in dependents.get(key, ())
+        )
+    return {key: frozenset(values) for key, values in found.items() if values}
 
 
 def _walk(
-    *,
-    queries: Iterable[Key],
-    terms: dict[Key, list[RootTerm]],
-    edges: Callable[[RootTerm], frozenset[Key]],
-) -> tuple[list[Key], dict[Key, list[Key]]]:
-    """Every key the queries reach through `edges`, and each reached key's dependents."""
-    dependents: dict[Key, list[Key]] = {}
+    *, queries: Iterable[Key], terms: dict[Key, list[RootTerm]]
+) -> tuple[list[Key], dict[Key, list[tuple[Key, RootTerm]]]]:
+    """Every key the queries reach through `through`, and each edge back to its dependent."""
+    dependents: dict[Key, list[tuple[Key, RootTerm]]] = {}
     visited: list[Key] = []
     seen: set[Key] = set()
     pending = list(queries)
@@ -286,7 +305,7 @@ def _walk(
         seen.add(key)
         visited.extend([key] if key in terms else [])
         for term in terms.get(key, ()):
-            pending.extend(edges(term))
-            for gone_through in edges(term):
-                dependents.setdefault(gone_through, []).append(key)
+            pending.extend(term.through)
+            for gone_through in term.through:
+                dependents.setdefault(gone_through, []).append((key, term))
     return visited, dependents

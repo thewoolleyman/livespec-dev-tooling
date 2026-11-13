@@ -10,7 +10,10 @@ a change outside it does not. In a test module, `request.path`,
 `request.fspath` and `request.node.path` are that module's own path; in a
 `conftest.py` they are some test path under the conftest's own directory, so a
 change anywhere under that directory touches the test; anywhere else they are
-undeterminable. `request.config.invocation_params.dir` is the repository root.
+undeterminable. An upward step -- `.parent`, `dirname`, a `..` segment or
+`parents[n]` -- widens such a span, and turns a directory reached through a
+fixture into a span, so a change above the conftest's directory still touches
+the test. `request.config.invocation_params.dir` is the repository root.
 """
 
 from __future__ import annotations
@@ -31,6 +34,16 @@ _FILE_RELATIVE = (
     + "    assert (Path(__file__).resolve().parent / f'{name}.json')\n"
 )
 _REQUESTED_DATA = "@pytest.fixture\ndef data(request):\n    return request.path.parent / 'data'\n"
+_SUB_TEST = "tests/sub/test_x.py"
+_USE = "def test_read(data):\n    assert data\n"
+_HERE = "@pytest.fixture\ndef here(request):\n    return request.path.parent\n"
+_HERE_PARENT_DATA = "def test_read(here):\n    assert (here.parent / 'data')\n"
+
+
+def _sub_data(*, base: str) -> str:
+    return f"@pytest.fixture\ndef data(request):\n    return {base} / 'data'\n"
+
+
 _DELEGATED_GATE_SHAPE = {
     "pkg/__init__.py": "",
     "pkg/authority.py": (
@@ -154,6 +167,59 @@ _TOUCHED: dict[str, tuple[dict[str, str], str]] = {
         },
         "tests/sub/x.json",
     ),
+    "span-widened-by-two-parent-steps": (
+        {"tests/sub/conftest.py": _sub_data(base="request.path.parent.parent"), _SUB_TEST: _USE},
+        "tests/data/x.json",
+    ),
+    "span-widened-by-parents-index": (
+        {
+            "tests/sub/conftest.py": _sub_data(base="Path(str(request.path)).parents[1]"),
+            _SUB_TEST: _USE,
+        },
+        "tests/data/x.json",
+    ),
+    "span-widened-past-its-directory-by-parents-index": (
+        {
+            "tests/sub/conftest.py": _sub_data(base="request.path.parents[2]"),
+            "tests/sub/deep/test_x.py": _USE,
+        },
+        "tests/data/x.json",
+    ),
+    "span-widened-by-a-dot-dot-segment": (
+        {"tests/sub/conftest.py": _sub_data(base="request.path.parent / '..'"), _SUB_TEST: _USE},
+        "tests/data/x.json",
+    ),
+    "span-widened-by-a-parent-step-in-the-test": (
+        {"tests/sub/conftest.py": _HERE, _SUB_TEST: _HERE_PARENT_DATA},
+        "tests/data/x.json",
+    ),
+    "span-widened-to-the-root-with-computed-segments": (
+        {
+            "tests/conftest.py": _HERE,
+            _TEST_FILE: "def test_read(here):\n" + _COMPUTED + "    assert (here.parent / name)\n",
+        },
+        "zz.json",
+    ),
+    "fixture-directory-and-a-parent-step-in-the-test": (
+        {
+            "tests/sub/conftest.py": (
+                "@pytest.fixture\ndef here():\n    return Path(__file__).resolve().parent\n"
+            ),
+            _SUB_TEST: _HERE_PARENT_DATA,
+        },
+        "tests/data/x.json",
+    ),
+    "span-widened-by-a-computed-parents-index": (
+        {
+            "tests/sub/conftest.py": (
+                "@pytest.fixture\ndef data(request):\n"
+                + _COMPUTED
+                + "    return request.path.parents[len(name)] / 'data'\n"
+            ),
+            _SUB_TEST: _USE,
+        },
+        "docs/x.md",
+    ),
 }
 
 _RETRIED: dict[str, tuple[dict[str, str], str]] = {
@@ -163,6 +229,10 @@ _RETRIED: dict[str, tuple[dict[str, str], str]] = {
     ),
     "request-path-and-a-change-outside-its-directory": (
         {_TEST_FILE: "def test_read(request):\n    assert (request.path.parent / 'data')\n"},
+        "docs/data/x.json",
+    ),
+    "widened-span-and-a-change-outside-it": (
+        {"tests/sub/conftest.py": _sub_data(base="request.path.parent.parent"), _SUB_TEST: _USE},
         "docs/data/x.json",
     ),
     "package-directory-and-a-workflow-change": (

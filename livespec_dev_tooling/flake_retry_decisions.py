@@ -1,8 +1,11 @@
 """The static safety decision behind the flake-retry pytest hook.
 
 The pytest hook surface delegates here to decide whether a failing test can be
-retried. This module reads a test's import closure without executing it and
-fails closed whenever that closure or the complete change set is uncertain.
+retried. This module reads a test's import closure without executing it. It
+fails closed when the change set is incomplete or unsafe, when a closure
+module cannot be parsed, and when a `/` path chain it reads is undeterminable.
+Paths built any other way (`os.path.join`, f-strings, `with_name`,
+`request.module.__file__`) are not read as locations.
 """
 
 from __future__ import annotations
@@ -17,10 +20,12 @@ from livespec_dev_tooling._flake_retry_closure import (
     from_import_sources,
     module_imports,
 )
+from livespec_dev_tooling._flake_retry_naming import named, own_spans
 from livespec_dev_tooling._flake_retry_parameters import PYTEST_FIXTURES
 from livespec_dev_tooling._flake_retry_places import repository_places, request_span
-from livespec_dev_tooling._flake_retry_root_terms import DOUBT, Key, RootTerm
+from livespec_dev_tooling._flake_retry_root_terms import DOUBT, Key, RootTerm, ascended
 from livespec_dev_tooling._flake_retry_roots import module_root_terms, solve_keys
+from livespec_dev_tooling._flake_retry_roots import reached as reached_from
 from livespec_dev_tooling._flake_retry_scopes import index_scopes
 from livespec_dev_tooling.flake_retry_paths import path_chains
 from livespec_dev_tooling.flake_retry_release import version_only_release_change
@@ -37,7 +42,6 @@ RETRY_ATTEMPTS = 3
 RETRY_DELAY_SECONDS = 60
 _UNSAFE_NAMES = {"pyproject.toml", "uv.lock", "justfile", "conftest.py"}
 _PLUGIN_FILE_NAMES = {"flake_retry.py", Path(__file__).name}
-_ITSELF = frozenset({""})
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -47,20 +51,15 @@ class _ModuleFacts:
     A path expression counts only when its base is repository-rooted
     (livespec-dev-tooling-bob7iv). `literals` holds what counts whatever the
     closure; `dependent` holds each path expression whose base is rooted or
-    placed only through a binding the closure solves, with the literals it
-    then adds and the names it spells under each place it reaches; a span it
-    reaches is named whole, and a span at the root is undeterminable.
-    `computed` holds each path expression with no literal segment whose base
-    is placed only through such a binding: at the root it is undeterminable,
-    and in any other repository directory it names that directory
-    (livespec-dev-tooling-4ai5ao).
+    located only through a binding the closure solves, with the literals it
+    then adds and the names it spells where its base lies (see `named`,
+    livespec-dev-tooling-4ai5ao).
     """
 
     imports: frozenset[Path]
     literals: frozenset[str]
     undeterminable_paths: bool
     dependent: tuple[tuple[RootTerm, frozenset[str], frozenset[str]], ...]
-    computed: tuple[RootTerm, ...]
     bindings: tuple[tuple[Key, RootTerm], ...]
     defined: frozenset[Key]
     requested: frozenset[Key]
@@ -100,16 +99,12 @@ def _module_facts(*, repo_root: Path, path: Path) -> _ModuleFacts | None:
         or (Path(node.value).suffix and id(node) not in operand_ids)
     }
     dependent: list[tuple[RootTerm, frozenset[str], frozenset[str]]] = []
-    computed: list[RootTerm] = []
     undeterminable = any(chain.undeterminable for chain in chains)
-    for chain, term in zip(chains, base_terms, strict=True):
-        literals.update(_under(places=term.places, names=chain.names or _ITSELF))
-        literals.update(_under(places=term.spans, names=_ITSELF))
-        undeterminable = undeterminable or "" in term.spans
-        if not chain.names:
-            undeterminable = undeterminable or "" in term.places
-            computed.extend([term] if term.through else [])
-            continue
+    for chain, base in zip(chains, base_terms, strict=True):
+        term = ascended(term=base, steps=chain.ascent) if chain.ascent else base
+        found, unknowable = named(spans=own_spans(term=term), names=chain.names)
+        literals.update(found)
+        undeterminable = undeterminable or unknowable
         literals.update(chain.names | chain.segments if term.rooted else ())
         dependent.extend(
             [(term, chain.names | chain.segments, chain.names)] if term.through else []
@@ -119,7 +114,6 @@ def _module_facts(*, repo_root: Path, path: Path) -> _ModuleFacts | None:
         literals=frozenset(literals),
         undeterminable_paths=undeterminable,
         dependent=tuple(dependent),
-        computed=tuple(computed),
         bindings=tuple(pair for pair in bindings if pair[1].rooted or pair[1].through),
         defined=frozenset(key for key, _ in bindings if key[0] in {"fixture", "export"}),
         requested=frozenset(
@@ -129,16 +123,6 @@ def _module_facts(*, repo_root: Path, path: Path) -> _ModuleFacts | None:
             if key[0] in {"request", "export"}
         ),
     )
-
-
-def _under(*, places: Iterable[str], names: Iterable[str]) -> set[str]:
-    """Each name spelled under each repository directory a path base is placed in.
-
-    The root adds nothing a bare name does not already spell; `_ITSELF` names
-    the directory itself.
-    """
-    spelled = list(names)
-    return {"/".join(filter(None, (place, name))) for place in places if place for name in spelled}
 
 
 def _unresolved_terms(*, facts: Iterable[_ModuleFacts]) -> list[tuple[Key, RootTerm]]:
@@ -190,43 +174,17 @@ def _closure(
         pending.extend(facts.imports - reached.keys())
     literals = {literal for facts in reached.values() for literal in facts.literals}
     dependent = [pair for facts in reached.values() for pair in facts.dependent]
-    computed = [term for facts in reached.values() for term in facts.computed]
     undeterminable = any(facts.undeterminable_paths for facts in reached.values())
-    if (dependent or computed) and not undeterminable:
+    if dependent and not undeterminable:
         bindings = [pair for facts in reached.values() for pair in facts.bindings]
         bindings.extend(_unresolved_terms(facts=reached.values()))
-        rooted, placed, spanned = solve_keys(
-            terms=bindings,
-            rooted_queries=(
-                key
-                for term in (*computed, *(term for term, _, _ in dependent))
-                for key in term.through
-            ),
-            placed_queries=(
-                key
-                for term in (*computed, *(term for term, _, _ in dependent))
-                for key in term.evidence
-            ),
+        rooted, located = solve_keys(
+            terms=bindings, queries=(key for term, _, _ in dependent for key in term.through)
         )
-        literals.update(
-            name for term, names, _ in dependent if term.through & rooted for name in names
-        )
-        for term, _, spelled in dependent:
-            term_places = {place for key in term.evidence for place in placed.get(key, ())}
-            literals.update(_under(places=term_places, names=spelled))
-        computed_places = [
-            {place for key in term.evidence for place in placed.get(key, ())} for term in computed
-        ]
-        reached_spans = [
-            {span for key in term.through for span in spanned.get(key, ())}
-            for term in (*computed, *(term for term, _, _ in dependent))
-        ]
-        undeterminable = any("" in places for places in (*computed_places, *reached_spans))
-        literals.update(
-            name
-            for places in (*computed_places, *reached_spans)
-            for name in _under(places=places, names=_ITSELF)
-        )
+        for term, names, spelled in dependent:
+            found, unknowable = named(spans=reached_from(term=term, located=located), names=spelled)
+            literals.update(found | (names if term.through & rooted else set()))
+            undeterminable = undeterminable or unknowable
     return set(reached), literals, undeterminable
 
 

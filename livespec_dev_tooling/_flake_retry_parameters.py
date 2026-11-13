@@ -5,7 +5,8 @@ function's parameter names no repository path (livespec-dev-tooling-bob7iv).
 A parameter that pytest feeds -- one of a test function, a fixture function
 or a test-class method, other than `self` or `cls` -- is the fixture it
 requests, or the values a `parametrize` mark supplies. A requested fixture
-the whole closure cannot resolve is a doubt, so it keeps the test touched.
+the whole closure cannot resolve is rooted, so the literal segments of a `/`
+chain on it count.
 """
 
 from __future__ import annotations
