@@ -13,7 +13,7 @@ created_at: 2026-11-13T01:59:43Z
 
 ### Summary
 
-Extend the list of repository-rooted bases in the "Untouched-test retry" bullet with two more: the current working directory (`Path.cwd()` or `os.getcwd()`) and pytest's root path (`rootpath` or `rootdir` read from a pytest config object). A closure path built on either base then names a repository path, so a change to that path touches the test. Add one scenario for a test that names a changed file through `Path.cwd()`.
+Extend the list of repository-rooted bases in the "Untouched-test retry" bullet with two more: the current working directory (`Path.cwd()` or `os.getcwd()`) and pytest's root path (`rootpath` or `rootdir` read from a pytest config object). A closure path built on either base then names a repository path, so a change to that path touches the test. Add one scenario whose two cases cover a test that names a changed file through `Path.cwd()` and one that names it through `request.config.rootpath`.
 
 ### Motivation
 
@@ -33,7 +33,7 @@ In `SPECIFICATION/non-functional-requirements.md`, bullet "Untouched-test retry"
 
 with:
 
-"A base is repository-rooted when it is a string literal; an expression derived from `__file__`, such as `Path(__file__).resolve().parents[2]`; the current working directory (`Path.cwd()` or `os.getcwd()`); pytest's root path (`rootpath` or `rootdir` read from a pytest config object, such as `request.config.rootpath` or `pytestconfig.rootpath`); or a name that the closure binds by assignment, anywhere in the closure, to a repository-rooted expression."
+"A base is repository-rooted when it is a string literal; an expression derived from `__file__`, such as `Path(__file__).resolve().parents[2]`; the current working directory (`Path.cwd()` or `os.getcwd()`); pytest's root path (`rootpath` or `rootdir` read from a pytest config object, such as `request.config.rootpath` or `pytestconfig.rootpath`); or a name that the closure binds by assignment, anywhere in the closure, to a repository-rooted expression. This holds even when the test changes its working directory (for example `monkeypatch.chdir(tmp_path)`) before the expression runs; counting such a base as rooted errs toward touched."
 
 The rest of the bullet is unchanged. In particular, the following sentence's list of non-rooted bases (a function parameter, `tmp_path`, a directory derived from it, a home directory or a state directory) stays as it is.
 
@@ -51,6 +51,20 @@ When the flake-retry plugin decides that test's retry
 
 Then the plugin MUST treat the test as touched
 
+And the session MUST fail on that first failure, and the plugin MUST NOT re-run the test
+
+Given a repository that loads livespec-dev-tooling's flake-retry pytest plugin
+
+And a change set that contains `tests/fixtures/data.json`
+
+And a failing test whose closure names that file only as `request.config.rootpath / "tests" / "fixtures" / "data.json"`
+
+When the flake-retry plugin decides that test's retry
+
+Then the plugin MUST treat the test as touched
+
 And the session MUST fail on that first failure, and the plugin MUST NOT re-run the test"
+
+The scenario's two Given/When/Then cases prove the two new bases, the working directory and pytest's root path, under its one heading.
 
 The revise that accepts this proposal MUST add a `tests/heading-coverage.json` entry for the new scenario heading in the revise commit. The entry is a TODO row whose `reason` names the integration tier and livespec-dev-tooling-wc23r2 as the owning work item, and which carries the explicit key `"work_item": "livespec-dev-tooling-wc23r2"`. The revise MUST also regenerate the heading-coverage debt register (`just generate-heading-coverage-debt-register`) and stage `tests/heading-coverage-debt.json`.
