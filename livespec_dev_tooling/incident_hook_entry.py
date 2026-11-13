@@ -32,7 +32,7 @@ from livespec_dev_tooling.incident_hook_process import (
 )
 from livespec_dev_tooling.incident_hook_receipt import recover_receipt
 from livespec_dev_tooling.incident_hook_scope import HookCall, validate_scope
-from livespec_dev_tooling.incident_local_gates import GateResult, route_resolved_gates
+from livespec_dev_tooling.incident_local_gates import GateResult, GateSpec, route_resolved_gates
 from livespec_dev_tooling.incident_transport import (
     LOCAL_OPERATION_ENV,
     QUERY_ENV,
@@ -145,6 +145,15 @@ def _hand_off(*, identity: OperationIdentity) -> int:
     return _HANDED_OFF
 
 
+def _declared_inventory(*, repo: Path, repository: str) -> tuple[GateSpec, ...]:
+    # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-vxs7ru
+    declared = repo / "check-targets.txt"
+    if not declared.is_file():
+        message = f"incident-inventory-undeclared: {repository} declares no check-targets.txt"
+        raise HookRefusalError(message)
+    return inventory_gates(inventory=declared.read_text())
+
+
 @impure_safe
 def _run(*, hook: str, extra: list[str], actual_index: str = "") -> int:
     if trusted_invocation(environ=os.environ, repo=Path.cwd()) != Invocation.ORDINARY:
@@ -205,7 +214,7 @@ def _run(*, hook: str, extra: list[str], actual_index: str = "") -> int:
         return _finish(
             repo=repo, query=query, reading=reading, receipt=prior, context=context, recovered=True
         )
-    inventory = inventory_gates(inventory=(repo / "check-targets.txt").read_text())
+    inventory = _declared_inventory(repo=repo, repository=str(query["repository"]))
     child = gate_child_environment(environ=os.environ)
     scope_result = GateResult(
         name="incident-carrier-scope",

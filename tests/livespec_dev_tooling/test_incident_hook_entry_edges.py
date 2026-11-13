@@ -22,7 +22,7 @@ from livespec_dev_tooling.incident_hook_process import HookRefusalError, canonic
 _INCIDENT_ENV_PREFIXES = ("GIT_", "EXPEDITED_", "LIVESPEC_INCIDENT_")
 
 
-def _repository(*, root: Path, failure: int = 0) -> tuple[str, str]:
+def _repository(*, root: Path, failure: int = 0, inventory: bool = True) -> tuple[str, str]:
     for args in (
         ["init", "-q"],
         ["config", "user.name", "Fixture"],
@@ -32,9 +32,10 @@ def _repository(*, root: Path, failure: int = 0) -> tuple[str, str]:
     ):
         subprocess.run(["git", *args], cwd=root, check=True, capture_output=True)
     (root / "app.py").write_text("value = 1\n")
-    (root / "check-targets.txt").write_text(
-        "check-fast # incident-timing: fast\ncheck-never # incident-timing: slow\n"
-    )
+    if inventory:
+        (root / "check-targets.txt").write_text(
+            "check-fast # incident-timing: fast\ncheck-never # incident-timing: slow\n"
+        )
     (root / "justfile").write_text(
         'check-fast:\n    python3 -c \'import os,sys; assert not any(k in os.environ for k in ["EXPEDITED_INCIDENT_RESPONSE","LIVESPEC_INCIDENT_AUTHORITY_QUERY"]); print("fast"); sys.exit('
         + str(failure)
@@ -53,11 +54,11 @@ def _repository(*, root: Path, failure: int = 0) -> tuple[str, str]:
 
 
 def _wired(
-    *, root: Path, monkeypatch: pytest.MonkeyPatch, failure: int = 0
+    *, root: Path, monkeypatch: pytest.MonkeyPatch, failure: int = 0, inventory: bool = True
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     delete = monkeypatch.delenv
     _ = [delete(key) for key in os.environ.copy() if key.startswith(_INCIDENT_ENV_PREFIXES)]
-    head, tree = _repository(root=root, failure=failure)
+    head, tree = _repository(root=root, failure=failure, inventory=inventory)
     query = dict(
         repository="owner/repo",
         item="incident-1",
@@ -277,6 +278,20 @@ def test_empty_inventory_is_explicit_and_never_ordinary_success(
     monkeypatch.setattr(module, "inventory_gates", lambda **_kwargs: ())
     assert module.main(argv=["pre-commit"]) == 0
     assert receipts[0]["results"][-1]["name"] == "incident-inventory"
+
+
+def test_undeclared_inventory_fails_closed_with_a_named_refusal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-vxs7ru
+    _reading, receipts = _wired(root=tmp_path, monkeypatch=monkeypatch, inventory=False)
+    assert module.main(argv=["pre-commit"]) == 78
+    err = capsys.readouterr().err
+    assert "incident-inventory-undeclared: owner/repo declares no check-targets.txt" in err
+    assert "FileNotFoundError" not in err
+    assert "No such file" not in err
+    assert not receipts
+    assert not (tmp_path / "slow-was-launched").exists()
 
 
 @pytest.mark.parametrize("wrong", ["receipt", "checksum", "normalroute", "tree"])
