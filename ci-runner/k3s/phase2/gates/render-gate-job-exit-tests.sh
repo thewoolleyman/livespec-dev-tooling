@@ -598,6 +598,24 @@ if [ "${1:-}" = "--show" ]; then
     *)          exit 1 ;;
   esac
 fi
+# Case W: what a check reading the run's change set sees WHEN THE RECIPES RUN.
+# The change set is the one the flake-retry plugin reads
+# (livespec_dev_tooling/flake_retry_changes.py `change_paths`): the diff from
+# the merge base with origin/master, plus staged, unstaged and untracked paths.
+if [ -n "${RECIPE_STATE:-}" ]; then
+  base="$(git merge-base HEAD origin/master)"
+  {
+    echo "status:"
+    git status --porcelain
+    echo "changes:"
+    {
+      git diff --name-only "${base}" HEAD --no-renames
+      git diff --name-only --cached --no-renames
+      git diff --name-only --no-renames
+      git ls-files --others --exclude-standard
+    } | sort -u
+  } > "${RECIPE_STATE}"
+fi
 if [ "${GATE_RUN_UVX:-}" = 1 ]; then
   if [ -n "${UVX_STREAM_DIR:-}" ]; then
     uvx test-tool > "${UVX_STREAM_DIR}/out" 2> "${UVX_STREAM_DIR}/err"
@@ -624,10 +642,33 @@ if [ "${1:-}" = "clone" ]; then
   [ -n "${CLONE_FAILS}" ] && exit 1
   exit 0
 fi
+# Cases W and WD run the script in a REAL repository, so everything but a clone
+# reaches the real git there and the working-tree comparison under test is
+# git's own. A hook's GIT_DIR or GIT_INDEX_FILE must not point it elsewhere.
+if [ -n "${GATE_REAL_GIT:-}" ]; then
+  exec env -u GIT_DIR -u GIT_INDEX_FILE -u GIT_WORK_TREE -u GIT_COMMON_DIR \
+    -u GIT_OBJECT_DIRECTORY -u GIT_ALTERNATE_OBJECT_DIRECTORIES "${GATE_REAL_GIT}" "$@"
+fi
 [ "${3:-}" = "rev-parse" ] && echo "0000000000000000000000000000000000000000"
 exit 0
 STUB
 chmod +x "${STUB_DIR}/git"
+
+# A `uv` for case W's proxied cache warm. A `sync` records where it ran, the
+# environment it was pointed at and the lock it was handed, and touches no
+# network; UV_SYNC_FAILS makes it fail as a sync that could not install would.
+cat > "${STUB_DIR}/uv" <<'STUB'
+#!/usr/bin/env bash
+printf 'uv %s\n' "$*" >> "${STUB_LOG}"
+if [ "${1:-}" = "sync" ]; then
+  printf '%s\n' "${PWD}" >> "${UV_STUB_DIR}/sync-dirs"
+  printf '%s\n' "${UV_PROJECT_ENVIRONMENT:-}" >> "${UV_STUB_DIR}/sync-envs"
+  cp uv.lock "${UV_STUB_DIR}/synced.lock" 2>/dev/null || :
+  [ -n "${UV_SYNC_FAILS:-}" ] && { echo 'error: Failed to download `good==1.0`' >&2; exit 1; }
+fi
+exit 0
+STUB
+chmod +x "${STUB_DIR}/uv"
 
 cat > "${STUB_DIR}/uvx" <<'STUB'
 #!/usr/bin/env bash
@@ -663,6 +704,8 @@ run_gate_script() {
   # Leaves the invocation log at ${SCRATCH}/stub.log and returns the script's
   # own exit status, which IS the Job's verdict.
   : > "${SCRATCH}/stub.log"
+  rm -rf "${SCRATCH}/uv-stub"
+  mkdir -p "${SCRATCH}/uv-stub"
   gate_script "$1" > "${SCRATCH}/gate-script.sh"
   mkdir -p "${SCRATCH}/gate-cwd"
   (
@@ -671,6 +714,8 @@ run_gate_script() {
       CLONE_FAILS="${3:-}" PYPI_FILES_PROXY="${GATE_TEST_PROXY:-http://127.0.0.1:9}" \
       UVX_PROXY_FAIL="${UVX_PROXY_FAIL:-}" UVX_TOOL_FAILS="${UVX_TOOL_FAILS:-}" \
       UVX_STREAM_DIR="${UVX_STREAM_DIR:-}" GATE_RUN_UVX="${GATE_RUN_UVX:-}" \
+      GATE_REAL_GIT="${GATE_REAL_GIT:-}" RECIPE_STATE="${RECIPE_STATE:-}" \
+      UV_STUB_DIR="${SCRATCH}/uv-stub" UV_SYNC_FAILS="${UV_SYNC_FAILS:-}" \
       bash "${SCRATCH}/gate-script.sh" > "${SCRATCH}/gate.out" 2> "${SCRATCH}/gate.err"
   )
 }
@@ -678,9 +723,10 @@ run_gate_script() {
 if run_gate_script "${declared_out}" "verify publish"; then
   if [ "$(cat "${SCRATCH}/stub.log")" = "just --show verify
 just --show publish
+git status --porcelain
 just verify
 just publish" ]; then
-    pass "a tree providing both recipes preflights both, then runs both in order"
+    pass "a tree providing both recipes preflights both, compares the checkout with the pushed tree, then runs both in order"
   else
     fail "the provided tree ran the wrong commands: $(cat "${SCRATCH}/stub.log")"
   fi
@@ -1149,47 +1195,197 @@ else
   fail "an unreachable uvx proxy made the gate fail: $(cat "${SCRATCH}/gate.err")"
 fi
 
-echo "== W. locked artifacts use the proxy when served and fall through on a miss =="
-# Run the rendered script against a local stand-in proxy. It serves exactly one
-# locked artifact: that URL must be rewritten, while the 404 remains direct.
-# Stopping the proxy then proves an unavailable service leaves both direct and
-# does not turn install-worktree-pack's preparation into a gate failure.
+echo "== W. locked artifacts route through the proxy from a copy OUTSIDE the checkout =="
+# The checkout under test is a REAL repository here: origin/master carries one
+# uv.lock and the pushed HEAD either keeps it or changes it. A local stand-in
+# proxy serves exactly one locked artifact. The script must route that artifact
+# through the proxy and leave its 404 neighbour direct, as before, but in a COPY
+# of the lock outside the checkout: the checkout's own uv.lock stays the pushed
+# bytes, so the change set a check reads when the recipes run is the pushed
+# tree's (livespec-dev-tooling-o4hkgh). The in-place rewrite it replaces put
+# uv.lock in every delegated gate's change set, and the flake-retry plugin then
+# withheld every retry in that session as a non-version-only uv.lock change.
+real_git="$(command -v git)"
+fixture_git() {
+  env -u GIT_DIR -u GIT_INDEX_FILE -u GIT_WORK_TREE -u GIT_COMMON_DIR \
+    -u GIT_OBJECT_DIRECTORY -u GIT_ALTERNATE_OBJECT_DIRECTORIES \
+    "${real_git}" -c core.hooksPath=/dev/null -c commit.gpgsign=false \
+    -c user.name=gate-fixture -c user.email=gate-fixture@example.invalid \
+    -C "${SCRATCH}/gate-cwd" "$@"
+}
+make_gate_checkout() {
+  # make_gate_checkout <uv.lock on origin/master> <uv.lock the pushed HEAD carries>
+  # The pushed commit always changes README.md, so its change set is never empty.
+  rm -rf "${SCRATCH}/gate-cwd"
+  mkdir -p "${SCRATCH}/gate-cwd"
+  fixture_git init --quiet
+  printf '[project]\nname = "gate-fixture"\nversion = "0.1.0"\n' > "${SCRATCH}/gate-cwd/pyproject.toml"
+  printf '3.12\n' > "${SCRATCH}/gate-cwd/.python-version"
+  printf '%s\n' "$1" > "${SCRATCH}/gate-cwd/uv.lock"
+  printf 'base\n' > "${SCRATCH}/gate-cwd/README.md"
+  fixture_git add -A
+  fixture_git commit --quiet -m base
+  fixture_git update-ref refs/remotes/origin/master HEAD
+  printf 'pushed\n' > "${SCRATCH}/gate-cwd/README.md"
+  printf '%s\n' "$2" > "${SCRATCH}/gate-cwd/uv.lock"
+  fixture_git add -A
+  fixture_git commit --quiet -m pushed
+  # The pod's checkout is a detached HEAD at the pushed ref.
+  fixture_git checkout --quiet --detach HEAD
+}
+# recipe_state_section <status|changes>: one section of the state the stub
+# `just` recorded when the recipes ran.
+recipe_state_section() {
+  awk -v want="$1:" '/^(status|changes):$/ { on = ($0 == want); next } on' "${SCRATCH}/recipe-state"
+}
 lock_good='https://files.pythonhosted.org/packages/good/good-1.0.whl'
 lock_missing='https://files.pythonhosted.org/packages/missing/missing-1.0.whl'
 lock_body="wheels = [{ url = \"${lock_good}\", hash = \"sha256:good\" }, { url = \"${lock_missing}\", hash = \"sha256:missing\" }]"
+lock_pushed="${lock_body}
+# the pushed tree's own lock change"
 proxy_root="${SCRATCH}/fake-proxy"
-mkdir -p "${proxy_root}/packages/good" "${SCRATCH}/gate-cwd"
+mkdir -p "${proxy_root}/packages/good"
 printf 'wheel\n' > "${proxy_root}/packages/good/good-1.0.whl"
 proxy_port="$(python3 -c 'import socket; s = socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1]); s.close()')"
 (cd "${proxy_root}" && exec python3 -m http.server "${proxy_port}" --bind 127.0.0.1 >/dev/null 2>&1) &
 proxy_pid=$!
 if wait_for_stand_in_proxy "${proxy_port}"; then
-  printf '%s\n' "${lock_body}" > "${SCRATCH}/gate-cwd/uv.lock"
-  if GATE_TEST_PROXY="http://127.0.0.1:${proxy_port}" run_gate_script "${declared_out}" "verify publish"; then
-    proxied_good="http://127.0.0.1:${proxy_port}/packages/good/good-1.0.whl"
-    rewritten="$(cat "${SCRATCH}/gate-cwd/uv.lock")"
-    if printf '%s' "${rewritten}" | grep -F "${proxied_good}" >/dev/null && \
-       printf '%s' "${rewritten}" | grep -F "${lock_missing}" >/dev/null; then
+  proxied_good="http://127.0.0.1:${proxy_port}/packages/good/good-1.0.whl"
+
+  # (1) a pushed tree that leaves uv.lock alone.
+  make_gate_checkout "${lock_body}" "${lock_body}"
+  if GATE_REAL_GIT="${real_git}" RECIPE_STATE="${SCRATCH}/recipe-state" \
+       GATE_TEST_PROXY="http://127.0.0.1:${proxy_port}" run_gate_script "${declared_out}" "verify publish"; then
+    synced_lock="$(cat "${SCRATCH}/uv-stub/synced.lock" 2>/dev/null || true)"
+    sync_dir="$(cat "${SCRATCH}/uv-stub/sync-dirs" 2>/dev/null || true)"
+    sync_env="$(cat "${SCRATCH}/uv-stub/sync-envs" 2>/dev/null || true)"
+    if printf '%s' "${synced_lock}" | grep -F "${proxied_good}" >/dev/null && \
+       printf '%s' "${synced_lock}" | grep -F "${lock_missing}" >/dev/null && \
+       ! printf '%s' "${synced_lock}" | grep -F "${lock_good}" >/dev/null; then
       pass "a served locked artifact uses the proxy while its missing neighbour stays direct"
     else
-      fail "the lock did not route only the proxy-served artifact: ${rewritten}"
+      fail "the synced lock did not route only the proxy-served artifact: ${synced_lock:-<no uv sync ran>}"
+    fi
+    case "${sync_dir}" in
+      "${SCRATCH}/gate-cwd"|"${SCRATCH}/gate-cwd/"*|"")
+        fail "the proxied lock was not synced from a copy outside the checkout: sync ran in '${sync_dir}'" ;;
+      *)
+        if [ "$(printf '%s\n' "${sync_dir}" | wc -l)" -eq 1 ] && [ ! -e "${sync_dir}" ]; then
+          pass "the proxied lock is synced once, from a copy outside the checkout that is removed afterwards"
+        else
+          fail "the out-of-tree lock copy synced more than once or was left behind: ${sync_dir}"
+        fi ;;
+    esac
+    case "${sync_env}" in
+      "${SCRATCH}/gate-cwd"|"${SCRATCH}/gate-cwd/"*|"")
+        fail "the proxied sync installed into the checkout instead of a throwaway environment: '${sync_env}'" ;;
+      *) pass "the proxied sync installs into a throwaway environment outside the checkout" ;;
+    esac
+    if grep -qE '^uv sync .*--frozen' "${SCRATCH}/stub.log" && \
+       grep -qE '^uv sync .*--no-install-project' "${SCRATCH}/stub.log"; then
+      pass "the proxied sync is frozen to the copied lock and installs no project"
+    else
+      fail "the proxied sync is not a frozen, project-less sync: $(grep -E '^uv ' "${SCRATCH}/stub.log" || true)"
+    fi
+    if [ "$(fixture_git show HEAD:uv.lock)" = "$(cat "${SCRATCH}/gate-cwd/uv.lock")" ]; then
+      pass "the checkout's uv.lock is still the pushed tree's bytes"
+    else
+      fail "the checkout's uv.lock was rewritten in place: $(cat "${SCRATCH}/gate-cwd/uv.lock")"
+    fi
+    if [ -z "$(recipe_state_section status)" ] && [ "$(recipe_state_section changes)" = "README.md" ]; then
+      pass "when the recipes run the change set is the pushed tree's alone, with no uv.lock in it"
+    else
+      fail "the change set the recipes saw is not the pushed tree's: $(cat "${SCRATCH}/recipe-state" 2>/dev/null || echo '<recipes never ran>')"
     fi
   else
     fail "the gate script failed while preparing a lock with a proxy miss: $(cat "${SCRATCH}/gate.err")"
   fi
+
+  # (3) a pushed tree that changes uv.lock itself.
+  make_gate_checkout "${lock_body}" "${lock_pushed}"
+  if GATE_REAL_GIT="${real_git}" RECIPE_STATE="${SCRATCH}/recipe-state" \
+       GATE_TEST_PROXY="http://127.0.0.1:${proxy_port}" run_gate_script "${declared_out}" "verify publish"; then
+    if [ "$(recipe_state_section changes)" = "README.md
+uv.lock" ] && [ -z "$(recipe_state_section status)" ] && \
+       [ "$(fixture_git show HEAD:uv.lock)" = "$(cat "${SCRATCH}/gate-cwd/uv.lock")" ] && \
+       [ "$(cat "${SCRATCH}/gate-cwd/uv.lock")" = "${lock_pushed}" ]; then
+      pass "a pushed uv.lock change still reaches the change set, with the pushed bytes"
+    else
+      fail "a pushed uv.lock change did not reach the change set with its own bytes: $(cat "${SCRATCH}/recipe-state" 2>/dev/null || echo '<recipes never ran>') lock=$(cat "${SCRATCH}/gate-cwd/uv.lock")"
+    fi
+  else
+    fail "the gate script failed on a pushed uv.lock change: $(cat "${SCRATCH}/gate.err")"
+  fi
+
+  # A proxied sync that fails is a warning, never a gate failure: the recipes'
+  # own uv then installs whatever the cache lacks directly from PyPI.
+  make_gate_checkout "${lock_body}" "${lock_body}"
+  if GATE_REAL_GIT="${real_git}" UV_SYNC_FAILS=1 \
+       GATE_TEST_PROXY="http://127.0.0.1:${proxy_port}" run_gate_script "${declared_out}" "verify publish"; then
+    if grep -qF 'WARN' "${SCRATCH}/gate.err" && \
+       [ "$(fixture_git show HEAD:uv.lock)" = "$(cat "${SCRATCH}/gate-cwd/uv.lock")" ]; then
+      pass "a failed proxied sync warns, leaves the checkout as pushed, and the gate still runs"
+    else
+      fail "a failed proxied sync did not warn or changed the checkout: $(cat "${SCRATCH}/gate.err")"
+    fi
+  else
+    fail "a failed proxied sync made gate preparation fail: $(cat "${SCRATCH}/gate.err")"
+  fi
 fi
 kill "${proxy_pid}" 2>/dev/null || true
 wait "${proxy_pid}" 2>/dev/null || true
-printf '%s\n' "${lock_body}" > "${SCRATCH}/gate-cwd/uv.lock"
-if run_gate_script "${declared_out}" "verify publish"; then
-  if [ "$(cat "${SCRATCH}/gate-cwd/uv.lock")" = "${lock_body}" ]; then
+make_gate_checkout "${lock_body}" "${lock_body}"
+if GATE_REAL_GIT="${real_git}" run_gate_script "${declared_out}" "verify publish"; then
+  if [ "$(cat "${SCRATCH}/gate-cwd/uv.lock")" = "${lock_body}" ] && \
+     [ ! -s "${SCRATCH}/uv-stub/sync-dirs" ]; then
     pass "an unreachable proxy leaves locked artifacts direct and the gate preparation succeeds"
   else
-    fail "an unreachable proxy rewrote a lock instead of falling through: $(cat "${SCRATCH}/gate-cwd/uv.lock")"
+    fail "an unreachable proxy rewrote or synced a lock instead of falling through: $(cat "${SCRATCH}/gate-cwd/uv.lock")"
   fi
 else
   fail "an unreachable proxy made gate preparation fail: $(cat "${SCRATCH}/gate.err")"
 fi
+
+echo "== WD. a checkout that differs from the pushed tree is refused by name =="
+# Before the recipes run, the script compares the checkout with the pushed tree
+# (`git status --porcelain`). A difference is a NAMED red verdict that runs no
+# recipe, never a silent pass: whatever made it, every check reading the run's
+# change set would judge a different change set than the pushing host's.
+make_gate_checkout "${lock_body}" "${lock_body}"
+printf 'stray\n' > "${SCRATCH}/gate-cwd/stray-provisioning-output.txt"
+printf 'edited in the pod\n' > "${SCRATCH}/gate-cwd/README.md"
+if GATE_REAL_GIT="${real_git}" run_gate_script "${declared_out}" "verify publish"; then
+  fail "a checkout that differs from the pushed tree reported a GREEN gate"
+elif ! grep -qF 'FATAL:' "${SCRATCH}/gate.err" || \
+     ! grep -qF 'stray-provisioning-output.txt' "${SCRATCH}/gate.err" || \
+     ! grep -qF 'README.md' "${SCRATCH}/gate.err"; then
+  fail "red, but the refusal does not name the differing paths: $(cat "${SCRATCH}/gate.err")"
+elif [ -n "$(grep -E '^just ' "${SCRATCH}/stub.log" | grep -vF -- '--show' || true)" ]; then
+  fail "a recipe RAN in a checkout that differs from the pushed tree: $(cat "${SCRATCH}/stub.log")"
+else
+  pass "a checkout that differs from the pushed tree is red, names each path, and runs no recipe"
+fi
+# Case E's discipline: with the comparison removed the same checkout must stop
+# being refused, or the case above proves nothing.
+noclean="${SCRATCH}/noclean-template.yaml"
+sed 's/gate_dirty="$(git status --porcelain)"/gate_dirty=""/' "${TEMPLATE}" > "${noclean}"
+noclean_out="${SCRATCH}/noclean.yaml"
+if cmp -s "${TEMPLATE}" "${noclean}"; then
+  fail "could not build the no-comparison mutant template"
+elif GATE_JOB_TEMPLATE="${noclean}" "${RENDERER}" --repo-root "${SCRATCH}/repo-a" \
+     --tree-hash "${HASH_A}" --check-suite verify --check-suite publish \
+     > "${noclean_out}" 2>/dev/null; then
+  if GATE_REAL_GIT="${real_git}" run_gate_script "${noclean_out}" "verify publish"; then
+    pass "without the comparison the same checkout is NOT refused — case WD is load-bearing"
+  else
+    fail "the no-comparison mutant refused anyway — case WD proves nothing: $(cat "${SCRATCH}/gate.err")"
+  fi
+else
+  fail "the renderer refused the no-comparison mutant template"
+fi
+# Leave the shared gate directory as the cases after this one found it.
+rm -rf "${SCRATCH}/gate-cwd"
+mkdir -p "${SCRATCH}/gate-cwd"
 
 echo "== X. the gate container is sized by --cpu, --memory and --parallelism =="
 # Prints "<cpu request> <memory request> <memory limit> <LIVESPEC_TEST_PARALLELISM>"

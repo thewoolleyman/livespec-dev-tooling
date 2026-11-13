@@ -10,7 +10,10 @@ time (48 rebuilds a day at the CronJob cadence is 5 GB/day direct), delegated
 gate Jobs, and runner-only hp-xubuntu workflow jobs. Gate Jobs start with the
 seeded generation, route any locked artifact the proxy serves through
 `/packages/`, fall through to direct PyPI for a miss or unreachable service,
-and use the rewritten `/simple/` API for `uvx` tool environments. The gate
+and use the rewritten `/simple/` API for `uvx` tool environments. A gate
+rewrites a COPY of each lock outside its checkout and syncs that copy into the
+uv cache, so the checkout's own `uv.lock` stays the pushed bytes and the run's
+change set stays the pushed tree's (livespec-dev-tooling-o4hkgh). The gate
 applies that index only to `uvx` and retries direct PyPI if proxy resolution
 fails, rather than setting a global `UV_DEFAULT_INDEX` that could make locked
 `uv run` unsatisfiable. hp workflow pods receive a read-only `uv` wrapper from

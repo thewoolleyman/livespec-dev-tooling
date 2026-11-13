@@ -449,9 +449,38 @@ spec:
               # rewrite checked only /health, then made a proxy 404 read as an
               # unsatisfiable package. Probe every locked artifact instead:
               # rewrite the URLs the proxy serves, preserving hashes, and leave
-              # a miss or unreachable service at its original PyPI URL. The
-              # workspace is a throwaway fetch, so the rewritten lock never
-              # leaves this Job.
+              # a miss or unreachable service at its original PyPI URL.
+              #
+              # THE REWRITE IS MADE IN A COPY OUTSIDE THE CHECKOUT, never in
+              # the tree under test (livespec-dev-tooling-o4hkgh). It used to
+              # rewrite each uv.lock IN PLACE, so every check that reads the
+              # run's change set (the merge-base diff plus staged, unstaged and
+              # untracked paths) saw uv.lock as changed in every delegated
+              # gate, and the flake-retry plugin rightly withheld every in-place
+              # retry of the session as a non-version-only uv.lock change
+              # (gate 20261113T050147Z-4041556, and hundreds more across the
+              # fleet). Now the project's pyproject.toml, uv.lock and
+              # .python-version are copied outside the tree, the COPY's lock is
+              # rewritten, and a frozen sync of the copy into a throwaway
+              # environment fetches the locked artifacts through the proxy into
+              # UV_CACHE_DIR. uv keys those cache entries by the lock's registry
+              # and the file name, not by the URL it downloaded from: that is
+              # how the warm-cache populator serves every ORIGINAL lock from a
+              # generation it built from rewritten clones (../warm-cache/README.md
+              # "The PyPI files proxy"). The recipes' own uv, reading the
+              # checkout's unmodified lock, then installs from that cache.
+              #
+              # NOT AN IN-PLACE REWRITE HIDDEN FROM GIT (skip-worktree or
+              # assume-unchanged): the flake-retry plugin's version-only release
+              # test reads uv.lock's BYTES from disk rather than through git, so
+              # a pushed release commit's lock would still be compared with
+              # proxied URLs in it and read as more than a version bump.
+              #
+              # BEST EFFORT, as the in-place rewrite was: a copy that cannot be
+              # synced (a workspace member the copy lacks, a proxy that goes
+              # away mid-sync) warns, and the recipes' uv fetches whatever the
+              # cache lacks directly from PyPI. It never fails the gate, because
+              # it never changes the tree being judged.
               gate_pypi_proxy_serves() {
                 local path="$1" hostport host port
                 hostport="${PYPI_FILES_PROXY#http://}"
@@ -511,17 +540,50 @@ spec:
                 rm -f "${unavailable}" "${rewrite_script}"
                 printf '%s %s\n' "${served}" "${direct}"
               }
+              # Prints "<served> <direct>" on stdout and everything else on
+              # stderr, because the caller reads the counts from stdout.
+              warm_uv_cache_through_pypi_proxy() {
+                local lock="$1" project copy served fallback extra
+                project="$(dirname "${lock}")"
+                if [ ! -f "${project}/pyproject.toml" ] || \
+                   ! copy="$(mktemp -d "${gate_lock_copies}/project.XXXXXX")" || \
+                   ! cp "${project}/pyproject.toml" "${lock}" "${copy}/"; then
+                  echo ":: gate: WARN: cannot copy ${lock} and the pyproject.toml beside it outside the checkout; its locked artifacts will be fetched directly from files.pythonhosted.org" >&2
+                  printf '0 0\n'
+                  return 0
+                fi
+                for extra in .python-version uv.toml; do
+                  if [ -f "${project}/${extra}" ]; then
+                    cp "${project}/${extra}" "${copy}/" || true
+                  fi
+                done
+                read -r served fallback < <(rewrite_lock_through_pypi_proxy "${copy}/uv.lock")
+                if ! (cd "${copy}" && UV_PROJECT_ENVIRONMENT="${copy}/.venv" \
+                      uv sync --frozen --all-groups --no-install-project --no-install-workspace --quiet) >&2; then
+                  echo ":: gate: WARN: the proxied sync of a copy of ${lock} failed; the recipes' uv will fetch whatever the cache lacks directly from files.pythonhosted.org" >&2
+                fi
+                rm -rf "${copy}"
+                printf '%s %s\n' "${served:-0}" "${fallback:-0}"
+              }
               if gate_pypi_proxy_answers /health; then
                 locks=0
                 proxied=0
                 direct=0
+                # Beside the uv cache, so the throwaway environments are linked
+                # from it rather than copied; anywhere outside the checkout when
+                # that directory is not writable.
+                gate_lock_copies_parent="${UV_CACHE_DIR:+$(dirname "${UV_CACHE_DIR}")}"
+                if ! gate_lock_copies="$(mktemp -d "${gate_lock_copies_parent:-${TMPDIR:-/tmp}}/gate-lock-copies.XXXXXX" 2> /dev/null)"; then
+                  gate_lock_copies="$(mktemp -d)"
+                fi
                 while IFS= read -r -d '' lock; do
-                  read -r served fallback < <(rewrite_lock_through_pypi_proxy "${lock}")
+                  read -r served fallback < <(warm_uv_cache_through_pypi_proxy "${lock}")
                   locks=$((locks + 1))
                   proxied=$((proxied + served))
                   direct=$((direct + fallback))
                 done < <(find . -name uv.lock -not -path '*/.git/*' -print0)
-                echo ":: gate: ${locks} uv.lock file(s): ${proxied} locked artifacts through ${PYPI_FILES_PROXY}, ${direct} direct PyPI fallbacks"
+                rm -rf "${gate_lock_copies}"
+                echo ":: gate: ${locks} uv.lock file(s): ${proxied} locked artifacts through ${PYPI_FILES_PROXY}, ${direct} direct PyPI fallbacks, synced from copies outside the checkout"
               else
                 echo ":: gate: WARN: pypi files proxy ${PYPI_FILES_PROXY} not answering /health; locked artifacts will be fetched directly from files.pythonhosted.org" >&2
               fi
@@ -581,6 +643,30 @@ spec:
               # available: an unpinned consumer keeps its recipe unchanged.
               if [ -f uv.lock ] && grep -Eq '^[[:space:]]*name = "pyright"[[:space:]]*$' uv.lock; then
                 uv run --frozen pyright --version
+              fi
+              # THE CHECKOUT IS STILL THE PUSHED TREE, OR THE GATE IS RED
+              # (livespec-dev-tooling-o4hkgh). Everything above PROVISIONS, and
+              # none of it may change a file the repository tracks or leave an
+              # untracked one: every check that reads the run's change set (the
+              # merge-base diff plus staged, unstaged and untracked paths, as
+              # the flake-retry plugin reads it) would otherwise judge a
+              # different change set here than on the pushing host, and nothing
+              # would say so. A provisioning step that breaks this is a defect
+              # of this template, so it is refused by name before any recipe
+              # runs. Ignored paths (a virtualenv, a build's egg-info) are not
+              # differences.
+              if ! gate_dirty="$(git status --porcelain)"; then
+                refusal="FATAL: git status --porcelain failed in the gate checkout, so it cannot be shown to be the pushed tree. No recipe was run; this gate is RED."
+                echo "${refusal}" >&2
+                { printf '%s\n' "${refusal}" > /dev/termination-log; } 2> /dev/null || true
+                exit 1
+              fi
+              if [ -n "${gate_dirty}" ]; then
+                gate_dirty_paths="$(printf '%s\n' "${gate_dirty}" | awk '{ printf "%s%s", (NR > 1 ? ", " : ""), substr($0, 4) }')"
+                refusal="FATAL: before any check ran, the gate checkout differs from the pushed tree (git status --porcelain) at: ${gate_dirty_paths}. A gate provisioning step changed the tree under test. No recipe was run; this gate is RED."
+                echo "${refusal}" >&2
+                { printf '%s\n' "${refusal}" > /dev/termination-log; } 2> /dev/null || true
+                exit 1
               fi
               # THE RECIPES, CAPTURED — AND THE VERDICT DETAIL THEY OWN
               # (livespec-dev-tooling-plbimj). Everything above this line is
@@ -754,7 +840,8 @@ spec:
               value: /__w/_warm/uv
             # Frozen locks retain absolute files.pythonhosted.org URLs. The
             # gate script probes this origin per artifact before replacing only
-            # URLs the proxy can serve; a miss remains direct PyPI.
+            # URLs the proxy can serve, in a copy of the lock outside the
+            # checkout; a miss remains direct PyPI.
             - name: PYPI_FILES_PROXY
               value: http://pypi-proxy.ci-warm-cache.svc.cluster.local:8081
             - name: CI_CACHE_KILL_SWITCH

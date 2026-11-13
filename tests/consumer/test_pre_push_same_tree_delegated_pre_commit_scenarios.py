@@ -793,6 +793,9 @@ def test_the_gate_job_prints_one_structured_line_naming_every_member_it_ran(
     script, literal = _gate_pod_script(consumer=tmp_path / "consumer")
     pod = tmp_path / "pod"
     pod.mkdir()
+    # A gate pod's workspace is a git checkout, and the Job refuses to run any
+    # recipe in one that differs from the pushed tree (livespec-dev-tooling-o4hkgh).
+    _ = _git(repo=pod, args=("init", "--quiet"))
     stub_dir = tmp_path / "pod-bin"
     stub_dir.mkdir()
     stub = stub_dir / "just"
