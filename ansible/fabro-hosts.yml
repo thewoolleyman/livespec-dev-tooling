@@ -152,6 +152,19 @@
         loop_var: fabro_server_instance
         label: "{{ fabro_server_instance.unit_name }}"
 
+# The dispatch hosts that this tree reaches only for their Fabro client logins.
+# The same role runs with its render switch off (group_vars/
+# fabro_dispatch_clients.yml), so each one gets a dev-token login per
+# registered factory and no registry or fleet-limit file. No facts are needed:
+# the role reads only inventory variables and the factory hosts' server.env
+# files (livespec-dev-tooling-yyadq6).
+- name: Fabro client logins on the dispatch-only hosts
+  hosts: fabro_dispatch_clients
+  gather_facts: false
+  roles:
+    - role: fabro_factory_registry
+      tags: [fabro_factory_registry]
+
 - name: Fabro services on the dev host
   hosts: dev_hosts
   gather_facts: true

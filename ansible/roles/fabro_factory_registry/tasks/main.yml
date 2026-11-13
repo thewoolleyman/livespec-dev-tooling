@@ -167,6 +167,7 @@
     group: "{{ fabro_factory_registry_group }}"
     mode: "0755"
   become: true
+  when: fabro_factory_registry_render | bool
 
 # WHOLE-FILE, which is what makes an entry the inventory no longer declares
 # disappear: the content is the derived mapping and nothing else, so a converge
@@ -184,6 +185,7 @@
     group: "{{ fabro_factory_registry_group }}"
     mode: "0644"
   become: true
+  when: fabro_factory_registry_render | bool
 
 - name: Create the directory this host's Fabro fleet limits live in
   ansible.builtin.file:
@@ -193,6 +195,7 @@
     group: "{{ fabro_factory_registry_group }}"
     mode: "0755"
   become: true
+  when: fabro_factory_registry_render | bool
 
 - name: Install each Fabro factory's fleet limit
   ansible.builtin.template:
@@ -205,6 +208,7 @@
   loop: "{{ fabro_factory_registry_entries }}"
   loop_control:
     label: "{{ item.key }}"
+  when: fabro_factory_registry_render | bool
 
 # THE CLIENT LOGINS. The Dispatcher on this host reads each registered factory's
 # board with this host's Fabro client, which needs a dev-token login per server

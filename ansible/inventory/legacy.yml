@@ -44,6 +44,20 @@
 # ---------------------------------------------------------------------------
 all:
   children:
+    # Dispatch hosts that this tree reaches ONLY to log their Fabro client in
+    # to every registered factory (ansible/fabro-hosts.yml's dispatch-client
+    # play; group_vars/fabro_dispatch_clients.yml). They are deliberately NOT
+    # under `legacy`: they are not sunset machines, and their own provisioning
+    # lives in their own repository. Any later dispatch host joins here
+    # (livespec-dev-tooling-yyadq6).
+    fabro_dispatch_clients:
+      hosts:
+        # The Hetzner interactive AI host that takes the dispatch seats off
+        # the VPS, governed by hetzner-xubuntu-info (its hxi-3euehs). It is
+        # reached over the tailnet's OpenSSH as `ubuntu`, per the
+        # tailscale-admin record.
+        hetzner-xubuntu:
+          ansible_user: ubuntu
     legacy:
       children:
         dev_hosts:
