@@ -1,17 +1,39 @@
 # Workflow-edit exemption — one exemption binds to one reviewed change.
 #
-# The change: .github/workflows/ci.yml routes the incident-ci job's latest-release
-# read and pull-request body read, and ci-green's read of its own run's jobs,
-# through livespec-forge-read (the composite Action .github/actions/forge-read),
-# which retries an unusable GitHub answer. An unreadable pull-request body fails
-# the selection step without writing its block output. Each job gains one step
-# that uses the Action from the checked-out tree. No job, trigger, permission,
-# runner or required check changes; the incident label workflow is unchanged
-# until a release ships the Action.
+# The change: ONE NEW FILE, .github/workflows/reusable-incident-ci-publish.yml,
+# the incident CI publisher of livespec-dev-tooling-bqnzcm.4 (slice 2a). No
+# existing workflow line is deleted or modified. The workflow is called only by
+# `workflow_call`, and nothing calls it until slice 2b pins ci.yml to the master
+# commit that carries it, so CI runtime does not change.
 #
-# The line diff replaces three bare `gh api` reads and ci-green's ad-hoc
-# two-retry, so it is not mechanically additive. legacy-coordinator-agent ruled
-# it coordinator tier and logically additive (2026-11-12); the coordinator sets
-# the label and records that ruling on the work item.
-work_item=livespec-dev-tooling-levu6j
-reason=Route the incident-ci and ci-green forge reads through the retrying livespec-forge-read so one unusable GitHub answer cannot redden the required ci-green check (contracts.md, expedited incident execution; proposal one-unretried-github-api-answer)
+# Its one job holds only `id-token: write` (top-level `permissions: {}`): that
+# permission lets the job request its own OIDC identity token, which the
+# independent controller verifies against its pinned CI identity policy. It is
+# not a workflow write scope and grants no credential beyond the job's own
+# identity. No secret is passed in.
+work_item=livespec-dev-tooling-bqnzcm.4
+change=additive
+ci_runtime=no-significant-increase
+reason=ADDITIVE tier (approval:workflow-edit-additive), under legacy-coordinator-agent's delegated authorization: adds the new reusable workflow reusable-incident-ci-publish.yml, whose single publish job holds only id-token: write and posts a PASSED incident CI aggregate to the controller's /ci/publish (spec v207, an-expedited-pull-request-s). No existing workflow line changes, and nothing calls it until slice 2b.
+#
+# ---- Preceding entry, kept beside this one as the coordinator directed (2026-11-13) ----
+# The guard (dev-tooling/check-no-workflow-edits.sh) parses exactly ONE live work_item= and
+# reason= line, and a declaration inherited from the base authorizes nothing, so levu6j's
+# entry is preserved verbatim below as comments, not as a second live declaration.
+# | # Workflow-edit exemption — one exemption binds to one reviewed change.
+# | #
+# | # The change: .github/workflows/ci.yml routes the incident-ci job's latest-release
+# | # read and pull-request body read, and ci-green's read of its own run's jobs,
+# | # through livespec-forge-read (the composite Action .github/actions/forge-read),
+# | # which retries an unusable GitHub answer. An unreadable pull-request body fails
+# | # the selection step without writing its block output. Each job gains one step
+# | # that uses the Action from the checked-out tree. No job, trigger, permission,
+# | # runner or required check changes; the incident label workflow is unchanged
+# | # until a release ships the Action.
+# | #
+# | # The line diff replaces three bare `gh api` reads and ci-green's ad-hoc
+# | # two-retry, so it is not mechanically additive. legacy-coordinator-agent ruled
+# | # it coordinator tier and logically additive (2026-11-12); the coordinator sets
+# | # the label and records that ruling on the work item.
+# | work_item=livespec-dev-tooling-levu6j
+# | reason=Route the incident-ci and ci-green forge reads through the retrying livespec-forge-read so one unusable GitHub answer cannot redden the required ci-green check (contracts.md, expedited incident execution; proposal one-unretried-github-api-answer)
