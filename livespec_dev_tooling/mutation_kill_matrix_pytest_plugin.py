@@ -1,7 +1,7 @@
 """Pytest plugin that records each test's own outcome for the Rule-26 kill matrix.
 
 The engine runs all of one mutant's selected tests in one pytest process and
-loads this plugin with ``-p``.  Three environment variables drive it:
+loads this plugin with ``-p``.  Four environment variables drive it:
 
 - ``KILL_MATRIX_OUTCOMES`` names a file that receives one JSON line per test,
   appended and flushed as soon as the test's teardown ends, so a process that
@@ -14,7 +14,9 @@ loads this plugin with ``-p``.  Three environment variables drive it:
   the timeout;
 - ``KILL_MATRIX_SELECT`` names a file of node ids, one per line; collected
   items outside it are deselected, so a long selection never has to fit on a
-  command line.
+  command line;
+- ``KILL_MATRIX_COLLECTED`` names a JSON file that receives the exact final
+  collected node ids, independently of pytest's human-readable console output.
 
 A test FAILED when any of its setup, call or teardown phases failed.  Each line
 also carries the test's duration, which the baseline run (armed with no timer)
@@ -41,6 +43,7 @@ from pathlib import Path
 import pytest
 
 __all__: list[str] = [
+    "COLLECTED_VARIABLE",
     "OUTCOMES_VARIABLE",
     "SELECT_VARIABLE",
     "TIMEOUT_VARIABLE",
@@ -48,6 +51,7 @@ __all__: list[str] = [
 
 
 OUTCOMES_VARIABLE = "KILL_MATRIX_OUTCOMES"
+COLLECTED_VARIABLE = "KILL_MATRIX_COLLECTED"
 TIMEOUT_VARIABLE = "KILL_MATRIX_TIMEOUT"
 SELECT_VARIABLE = "KILL_MATRIX_SELECT"
 
@@ -59,10 +63,19 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
     select = os.environ.get(SELECT_VARIABLE)
     if not select:
         return
-    wanted = set(Path(select).read_text(encoding="utf-8").split())
+    wanted = set(Path(select).read_text(encoding="utf-8").splitlines())
     deselected = [item for item in items if item.nodeid not in wanted]
     items[:] = [item for item in items if item.nodeid in wanted]
     config.hook.pytest_deselected(items=deselected)
+
+
+def pytest_collection_finish(session: pytest.Session) -> None:
+    """Capture exact final node ids when the engine requests a collection inventory."""
+    collected = os.environ.get(COLLECTED_VARIABLE)
+    if collected:
+        _ = Path(collected).write_text(
+            json.dumps([item.nodeid for item in session.items]) + "\n", encoding="utf-8"
+        )
 
 
 @pytest.hookimpl(hookwrapper=True)
