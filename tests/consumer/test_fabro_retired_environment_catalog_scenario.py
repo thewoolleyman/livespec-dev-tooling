@@ -28,6 +28,16 @@ _RETIRED_RUN = _MAIN.with_name("retired_run.yml")
 _INVENTORY = _ROOT / "ansible" / "inventory" / "host_vars" / "gmktec-xubuntu.yml"
 _HOST_VARS = _ROOT / "ansible" / "roles" / "fabro_server" / "HOST_VARS.md"
 _HEADING_COVERAGE = _ROOT / "tests" / "heading-coverage.json"
+_NON_TERMINAL_STATUSES = (
+    "pending",
+    "runnable",
+    "initializing",
+    "starting",
+    "running",
+    "paused",
+    "blocked",
+    "removing",
+)
 
 
 def _tasks(*, source: Path) -> list[tuple[str, str]]:
@@ -72,6 +82,8 @@ def test_the_role_reads_all_live_runs_before_retiring_catalog_entries() -> None:
     assert "/api/v1/runs" in read_runs
     assert "--header @-" in read_runs
     assert "FABRO_SERVER_ENV_FILE" in read_runs
+    for status in _NON_TERMINAL_STATUSES:
+        assert f"'status={status}'" in read_runs, f"the run read must ask for {status} runs"
     assert "include_tasks: retired_run.yml" in _task(
         source=_MAIN, name="Read every non-terminal run's selected environment"
     )
@@ -150,6 +162,8 @@ def test_gmktec_declares_the_completed_environment_rename_and_its_operator_inter
     assert "| `retired_environments` |" in document
     assert "DELETE /api/v1/environments/{id}" in document
     assert "non-terminal run" in document
+    for status in _NON_TERMINAL_STATUSES:
+        assert f"`{status}`" in document, f"HOST_VARS.md must name the {status} run status"
 
     coverage = json.loads(_HEADING_COVERAGE.read_text(encoding="utf-8"))
     row = next(

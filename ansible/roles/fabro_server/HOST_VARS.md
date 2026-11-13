@@ -290,7 +290,10 @@ listed id, it first reads every non-terminal run from that instance's own
 selected environment. If any run selects a listed id, the converge fails naming
 both the run and the id, and sends no DELETE at all. This all-runs read happens
 before any listed id is deleted, so a later id cannot be removed while an earlier
-one is found unsafe.
+one is found unsafe. "Non-terminal" means every run status that can still
+progress or resume: `pending`, `runnable`, `initializing`, `starting`,
+`running`, `paused`, `blocked` and `removing`. A `paused` or `starting` run
+counts, because it still holds its selected environment.
 
 When no non-terminal run selects a retired id, the role authenticates with the
 same host-side `FABRO_DEV_TOKEN` request shape as the ordinary catalog converge
