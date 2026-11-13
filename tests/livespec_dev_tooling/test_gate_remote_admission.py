@@ -51,3 +51,49 @@ def test_an_admitted_job_without_a_terminal_state_uses_its_terminal_bound() -> N
         outcome.failure().detail
         == "gate-widget-7f2qd was admitted but reached no terminal condition within 20s"
     )
+
+
+def test_a_watch_window_that_ends_before_the_job_rearms_until_it_gets_the_verdict() -> None:
+    """A clean watch-window end is not a no-verdict until the whole budget expires."""
+    request = GateRunRequest(
+        repo_root=Path("/repo"),
+        mirror_url="ssh://mirror/repo.git",
+        manifest="apiVersion: batch/v1\nkind: Job\n",
+        gate_ref="refs/gates/tree-run",
+        poll_timeout_seconds=600.0,
+    )
+    active = json.dumps({"spec": {"suspend": False}, "status": {}})
+    complete = json.dumps({"status": {"conditions": [{"type": "Complete", "status": "True"}]}})
+    calls: list[tuple[str, ...]] = []
+
+    def runner(
+        *, argv: list[str], cwd: Path, stdin: str | None = None, stream: bool = False
+    ) -> GateCommandOutcome:
+        _ = cwd, stdin, stream
+        calls.append(tuple(argv))
+        if len(calls) == 1:
+            return Success(GateCommandResult(returncode=0, stdout=active, stderr=""))
+        if len(calls) == 2:
+            return Success(
+                GateCommandResult(
+                    returncode=1,
+                    stdout="",
+                    stderr="Job watch ended before a terminal condition was observed\n",
+                )
+            )
+        return Success(GateCommandResult(returncode=0, stdout=complete, stderr=""))
+
+    def sleeper(*, seconds: float) -> None:
+        _ = seconds
+
+    outcome = await_terminal_state(
+        request=request,
+        runner=runner,
+        sleeper=sleeper,
+        job_name="gate-widget-7f2qd",
+    )
+
+    watches = [argv for argv in calls if "await-gate-terminal-watch" in argv]
+    assert isinstance(outcome, Success)
+    assert len(watches) == 2
+    assert all(argv[-1] == "240s" for argv in watches)
