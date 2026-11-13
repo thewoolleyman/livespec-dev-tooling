@@ -1711,7 +1711,7 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: the fleet audit reads each consumer's controller and recovery authorization from the installation that serves it",
-    "work_item": "livespec-dev-tooling-iaysvp",
+    "work_item": "livespec-dev-tooling-djk6ig",
     "first_seen": "2026-11-12"
   },
   {

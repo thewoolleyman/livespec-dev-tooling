@@ -3702,8 +3702,8 @@
     "spec_file": "scenarios.md",
     "heading": "## Scenario: the fleet audit reads each consumer's controller and recovery authorization from the installation that serves it",
     "test": "TODO",
-    "reason": "Spec-first: a real test at the integration tier or above is owed for this scenario: the real audit runs against fixture observer installations for two consumers and none for a third, and reads each served consumer's controller and recovery serving versions from its own installation and leaves the third unverified. livespec-dev-tooling-iaysvp owns it.",
-    "work_item": "livespec-dev-tooling-iaysvp"
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this scenario: the real audit runs against fixture observer installations for two consumers and none for a third, and reads each served consumer's controller and recovery serving versions from its own installation and leaves the third unverified. livespec-dev-tooling-djk6ig owns it.",
+    "work_item": "livespec-dev-tooling-djk6ig"
   },
   {
     "spec_root": "SPECIFICATION",
