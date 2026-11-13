@@ -1,6 +1,13 @@
 [
   {
     "spec_root": "SPECIFICATION",
+    "spec_file": "constraints.md",
+    "heading": "## No credential in a process's argument vector",
+    "work_item": "livespec-dev-tooling-d5k6qc",
+    "first_seen": "2026-11-13"
+  },
+  {
+    "spec_root": "SPECIFICATION",
     "spec_file": "contracts.md",
     "heading": "## CI priority record",
     "work_item": "livespec-dev-tooling-5wewi2",
@@ -404,6 +411,13 @@
     "heading": "## Scenario: a delegated replay leg's trailers name the gate Job and the staged tree",
     "work_item": "livespec-dev-tooling-sewnfp",
     "first_seen": "2026-11-01"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a dev host that stops sending host metrics fires its no-data trigger",
+    "work_item": "livespec-dev-tooling-exx6f5",
+    "first_seen": "2026-11-13"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -950,6 +964,13 @@
     "heading": "## Scenario: a self-hosted CI job's span names its runner pod, which joins to the node that ran it",
     "work_item": "livespec-dev-tooling-wnwwsl",
     "first_seen": "2026-11-11"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a shipped script hands its Honeycomb key to curl without placing it in curl's argument vector",
+    "work_item": "livespec-dev-tooling-d5k6qc",
+    "first_seen": "2026-11-13"
   },
   {
     "spec_root": "SPECIFICATION",
