@@ -1127,7 +1127,10 @@ kubectl get nodes -l k3s-role=arc-runner-host \
   -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}ci-runner.io/churn-slot={.status.allocatable.ci-runner\.io/churn-slot}{"\n"}{end}'
 
 if [ "${arc_listeners_placeable}" != true ]; then
-  echo "FATAL: the runner scale sets were NOT installed or upgraded: ${arc_listeners_refusal}. Every other step of this converge ran. Set the label from the committed profiles (just ansible-apply ansible/ci-pool.yml --tags node_labels, or re-run converge-always-on-node-labels.sh) and re-run this converge (systemctl start converge-ci-stack.service)." >&2
+  # Sorted, so the message is the same on every run: a bash associative array
+  # has no key order of its own.
+  not_installed="$(printf '%s\n' "${!SCALE_SETS[@]}" | sort | tr '\n' ' ')"
+  echo "FATAL: the runner scale sets were NOT installed or upgraded: ${arc_listeners_refusal}. The ${#SCALE_SETS[@]} scale sets not installed or upgraded: ${not_installed% }. Every other step of this converge ran. Set the label from the committed profiles (just ansible-apply ansible/ci-pool.yml --tags node_labels, or re-run converge-always-on-node-labels.sh) and re-run this converge (systemctl start converge-ci-stack.service)." >&2
   exit 1
 fi
 
