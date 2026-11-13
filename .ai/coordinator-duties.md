@@ -1074,6 +1074,32 @@ every plain-text embed) carries a worst-case test sized from bd-ib-qshcwc's 110,
 include a large-subject item. Recorded in the restart handoff on epic `livespec-dev-tooling-6tgd2z` at
 2026-11-10T14:46:55Z (session d11a725b).
 
+**A canary covers every path the release changed (rule CANARY-COVERS-CHANGED-PATHS).** This binds every orchestrator
+release canary and roll. A written lesson failed twice, so the rule is enforced mechanically, in two parts:
+
+1. **A static gate before merge.** Every workflow node that declares an `output_schema` emits a conforming directive on
+   every outgoing edge, the success edge included. This check would have refused 171ca17b2 at commit time.
+2. **A canary coverage record before the roll.** The canary report lists every graph node and edge the release
+   changed, taken from the `workflow.fabro` diff between the old and the new launch builds. For each one it cites a run
+   journal row showing that the path was traversed. A changed path with no traversal blocks the roll, unless a
+   factory-captured routing test of exactly that node and edge is named. The roll step refuses to run without the
+   record.
+
+gmktec-factory-placement owns the canary and the roll, and the mechanism lives in the orchestrator. The carriers are
+`livespec-dev-tooling-faetyh` (the roll refusal in this repository) and the orchestrator proposal topic
+`the-roll-refuses-a-tag-without-canary-coverage-of-changed-workfl`. The maintainer, 2026-11-13 ~00:3xZ, on the
+fix_commit_settle stop-the-line, recorded on epic `livespec-dev-tooling-6tgd2z` at 2026-11-13T00:19:55Z: "Ensure this
+doesn't happen again, and get things back on track ASAP. THen you can restart". Measured: v0.312.3 on 2026-11-10 and
+v0.321.0 (171ca17b2) on 2026-11-12 both passed canaries that never reached the changed path. The fix_commit_settle
+success edge cost 6 runs, and the fix was reverted by livespec-orchestrator-beads-fabro#5100.
+
+**Stop the line at the second deterministic failure (rule STOP-AT-SECOND).** This binds the coordinator and the
+dispatcher. A deterministic failure class is the same node and the same signature on the same launch build. It stops
+the line at its SECOND occurrence, with a fleet-wide hold on new launches. Never wait for a third. A class that is
+plausibly transient follows the flake rules in §2 instead. Recorded on epic `livespec-dev-tooling-6tgd2z` at
+2026-11-13T00:19:55Z. Measured 2026-11-12: the earlier ">2" threshold cost runs to the fix_commit_settle class on
+v0.321.0.
+
 **Preserve before any cancel.** No seat cancels, removes or abandons a factory run until that run's committed tree is
 on a ref on origin, verified with `git ls-remote`. A diff pointer, a run id or a resume pointer is not a preserved
 tree. While the factory cannot preserve a run itself, the mechanism is the node-copy preserve script that

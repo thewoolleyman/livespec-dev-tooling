@@ -30,8 +30,9 @@ TOP = [
     ("3 bootstrap-credentials-and-onboarding (hetzner-xubuntu-info; the Hetzner seat move)", "hxi-vxsmdv"),
     ("4 stale-base-merge-options (now the GitHub org move plus merge queue; prep only)", "livespec-dev-tooling-xowhol"),
     ("5 secret-writer-stored-key-alias (homelab; workspace homelab, tab secret-writer-stored-key-alias)", "hl-bvycoc"),
-    ("6a implement-test-performance: gate suite double-run fix", "livespec-dev-tooling-sv6m5p"),
-    ("6b gate-job-resources", "livespec-dev-tooling-ukoeah"),
+    ("6 address-honeycomb-alerts (orchestrator; carriers dolt-server-cudtkp, donph5, 7tfa3x, bd-ib-z2y4ca, bd-ib-immkx7)", "bd-ib-xkwdap"),
+    ("7a implement-test-performance: gate suite double-run fix", "livespec-dev-tooling-sv6m5p"),
+    ("7b gate-job-resources", "livespec-dev-tooling-ukoeah"),
 ]
 WRAPPER = ["/usr/local/bin/with-livespec-env.sh", "--"]
 # The homelab tenant refuses the livespec wrapper (Error 1045 for user 'homelab');
