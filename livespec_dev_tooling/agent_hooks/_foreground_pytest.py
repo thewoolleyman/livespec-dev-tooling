@@ -234,7 +234,7 @@ def _test_modules(*, path: str, cwd: Path) -> tuple[Path, ...]:
     if selected.is_file() and selected.suffix == ".py":
         return (selected,)
     if selected.is_dir():
-        return tuple(sorted(selected.rglob("test_*.py")))
+        return tuple(sorted({*selected.rglob("test_*.py"), *selected.rglob("*_test.py")}))
     return ()
 
 
