@@ -15,7 +15,9 @@ A repeated publication of the same aggregate answers `retained` and writes nothi
 A different aggregate for a run attempt that already holds a published one is kept
 as a `conflict` record naming both digests, never as a replacement. A publication
 whose identity token does not verify is refused as `identity-unverified` before any
-controller state is read or written. A publication whose query no longer matches the
+controller state is read or written, or as `identity-key-unknown: kid <k>` when its
+signing key is one the policy does not pin (a forge key rotation: re-apply the
+incident_observer role to refresh the pinned keys). A publication whose query no longer matches the
 retained arm is refused as `publication-stale`
 and records no published record; when the publishing job was already attached, the
 refusal is retained as an `unpublished` record with the conclusion `unknown`, so it
@@ -49,7 +51,7 @@ from livespec_dev_tooling._incident_pr_run_store import (
 from livespec_dev_tooling.incident_ci_attachment import CiJobAttachment
 from livespec_dev_tooling.incident_ci_identity import identity_query
 from livespec_dev_tooling.incident_ci_identity_policy import CiIdentityPolicy
-from livespec_dev_tooling.incident_ci_oidc import verify_oidc
+from livespec_dev_tooling.incident_ci_oidc import unknown_key_id, verify_oidc
 from livespec_dev_tooling.incident_observer_admission import arm_record_matches
 from livespec_dev_tooling.incident_observer_endpoint import _read_request
 from livespec_dev_tooling.incident_pr_run_records import NOT_PROVISIONED
@@ -61,6 +63,7 @@ if TYPE_CHECKING:
 
 __all__: list[str] = [
     "INVALID",
+    "KEY_UNKNOWN",
     "STALE",
     "UNAVAILABLE",
     "UNVERIFIED",
@@ -72,6 +75,8 @@ __all__: list[str] = [
 
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-bqnzcm.4
 INVALID = "publication-invalid"
+# Followed by `: kid <k>`: the token's signing key is not one the policy pins.
+KEY_UNKNOWN = "identity-key-unknown"
 STALE = "publication-stale"
 UNVERIFIED = "identity-unverified"
 UNAVAILABLE = "state-unavailable"
@@ -154,7 +159,10 @@ class CiPublication:
             not authorization.startswith("Bearer ")
             or verify_oidc(token=token, policy=policy, now=time.time()) is None
         ):
-            return _reply(status="refused", reason=UNVERIFIED)
+            kid = unknown_key_id(token=token, policy=policy)
+            return _reply(
+                status="refused", reason=UNVERIFIED if kid is None else f"{KEY_UNKNOWN}: kid {kid}"
+            )
         receipt = CiJobAttachment(installation=self.installation).execute(
             authorization=authorization, payload=payload["query"]
         )

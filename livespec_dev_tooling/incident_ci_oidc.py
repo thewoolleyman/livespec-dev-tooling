@@ -11,7 +11,7 @@ from livespec_dev_tooling.incident_ci_identity_policy import CiIdentityPolicy
 from livespec_dev_tooling.incident_ci_jws import verify_ci_signature
 from livespec_dev_tooling.incident_strict_json import IncidentJsonRefusalError
 
-__all__: list[str] = ["OidcIdentity", "oidc_current", "verify_oidc"]
+__all__: list[str] = ["OidcIdentity", "oidc_current", "unknown_key_id", "verify_oidc"]
 
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-rqhqnb
 _MAX_TOKEN = 16384
@@ -92,6 +92,27 @@ def verify_oidc(*, token: str, policy: CiIdentityPolicy, now: float) -> OidcIden
         UnicodeError,
         RecursionError,
     ):
+        return None
+
+
+def unknown_key_id(*, token: str, policy: CiIdentityPolicy) -> str | None:
+    """The header's key id when the token is well-formed but no pinned key carries it.
+
+    A forge key rotation presents exactly this: a token signed under a key the policy
+    has not yet pinned. Naming the key id lets an operator refresh the pinned keys
+    instead of guessing. The header passes the same shape checks verify_oidc applies,
+    so the returned id is bounded printable ASCII. None means the key is pinned or the
+    token is not well-formed, and the caller's generic refusal stands.
+    """
+    try:
+        parts = token.split(".")
+        if len(token) > _MAX_TOKEN or len(parts) != _JWS_PARTS:
+            return None
+        header = identity_json(raw=unbase64url(value=parts[0], limit=5462), limit=4096)
+        kid = cast("str", header.get("kid"))
+        pinned = {row[0] for row in policy.keys}
+        return kid if _header_valid(header=header) and kid not in pinned else None
+    except (ValueError, IncidentJsonRefusalError, TypeError, UnicodeError, RecursionError):
         return None
 
 
