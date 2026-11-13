@@ -221,6 +221,7 @@ def test_this_repository_has_opted_in() -> None:
 _UV_STUB = """#!/usr/bin/env bash
 printf 'uv %s\\n' "$*" >> "${STUB_LOG}"
 case "$*" in
+    *"green_token pre-push-reuse"*)    exit 3 ;;
     *green_token*)                       exit "${GREEN_TOKEN_EXIT}" ;;
     *"gate_remote_delegate enabled")     exit "${SWITCH_EXIT}" ;;
     *"gate_remote_delegate run")         exit "${GATE_RUN_EXIT}" ;;
