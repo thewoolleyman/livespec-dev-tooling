@@ -1,14 +1,16 @@
 # Per-node CPU budget for the self-hosted pool
 
-This is the ONE budget from which every CPU-bearing cap of the pool derives:
+This budget OWNS one cap: each gate lane's cpu quota. Its authority is
+`node-cpu-budget.yaml` beside this file, and `kueue/cluster-queue-gates.yaml`
+must equal it.
 
-- each node's CI churn-slot capacity (`ADMISSION_CAPACITY_C` in
-  `../phase0-bare-metal/profiles/<node>.env`);
-- each gate lane's cpu quota (`kueue/cluster-queue-gates.yaml`);
-- each node's factory pod budget (`factory_pod_budget` in
-  `ansible/inventory/host_vars/<node>.yml`).
+It CITES, and does not own, the pool's other CPU-bearing caps. Each lives only
+in its own file, with its own owner:
 
-Its machine-readable form is `node-cpu-budget.yaml` beside this file.
+- each node's CI churn-slot capacity: `ADMISSION_CAPACITY_C` in
+  `../phase0-bare-metal/profiles/<node>.env`;
+- each node's factory pod budget: `factory_pod_budget` in
+  `ansible/inventory/host_vars/<node>.yml`.
 
 It covers four classes on every pool node: gates, factory sandboxes, CI runners
 and the system. Plan `gate-job-resources` owns it (epic
@@ -17,13 +19,12 @@ ends when the radar re-architecture's load-management role takes it. The ruling 
 recorded on `livespec-dev-tooling-6tgd2z` at 2026-11-13T19:45:09Z: "the classes
 together fit each node, and no node sits idle while work waits".
 
-A change to one of the caps above is made HERE first. The cap's own file then
-follows. Each cap keeps its own owner:
+Each cap has one owner:
 
 | Cap | Owner | Work item |
 |---|---|---|
 | Churn slots | ci-runtime-and-cost | `livespec-dev-tooling-6e5pyj` |
-| Gate lanes | this plan | `livespec-dev-tooling-wirn53` |
+| Gate lanes | this plan (`node-cpu-budget.yaml`) | `livespec-dev-tooling-wirn53` |
 | Factory pod budgets | each node's host_vars owner (gmktec-factory-placement; homelab-k8s-worker-nodes for gamingpc) | — |
 
 ## The rule
@@ -43,8 +44,8 @@ For each node:
   pressure"). Past that point every extra job only lengthens every job
   (`.ai/ci-node-capacity-reads.md`).
 
-`node-cpu-budget.yaml` beside this file holds the budgeted caps in
-machine-readable form, and it names the cap files that must equal them.
+`node-cpu-budget.yaml` beside this file is the authority for the gate lanes.
+It names the files that own the other caps.
 
 **Maintainer ruling, 2026-11-13 ~21:3xZ: "Do whatever maximises throughput."**
 A request-based fit was considered and NOT taken. It would have required:
@@ -52,7 +53,8 @@ A request-based fit was considered and NOT taken. It would have required:
 - every node's committed requests to fit its allocatable CPU with every churn
   slot in use.
 
-That fit required cutting the x86 factory pod budget from 19 to 14, which would
+That fit required cutting the x86 factory pod budget from 19 (its value at
+~21:0xZ, before livespec-dev-tooling#4492 made it 20) to 14, which would
 have queued about 12% of factory pod-time (below). So under the ruling:
 - CI pods stay BestEffort;
 - factory pod budgets stay at today's values;
@@ -177,39 +179,47 @@ buckets keep one late sample per pod and read the workflow pod at 0.77-1.00
 Decided by plan gate-job-resources, 2026-11-13, under the maintainer's
 throughput ruling.
 
-| Node | Allocatable | System | Gate lane (was) |
+Today's lanes are in `node-cpu-budget.yaml`, the authority, so they are not
+repeated here. wirn53 moves the yaml, the lanes and the gate-unit annotation to
+this target in one commit, after the #4565 revise:
+
+| Node | Allocatable (read 2026-11-13T23:33:37Z) | System | Target gate lane |
 |---|---|---|---|
-| gmktec-xubuntu | 32 | 1.6 | **9** (15) |
-| poweredge-xubuntu | 72 | 5.7 | **21** (30) |
-| hp-xubuntu | 14.5 | 1.2 | **3** (5) |
-| gamingpc-xubuntu | 12 | in reserves | **3** (5) |
-| macbook-m4-max-homelab-worker | 12 | in reserves | 3 (5) |
+| gmktec-xubuntu | 32 | 1.6 | 9 (3 units) |
+| poweredge-xubuntu | 72 | 5.7 | 21 (7 units) |
+| hp-xubuntu | 14.5 (capacity 16) | 1.2 | 3 (1 unit) |
+| gamingpc-xubuntu | 12 (capacity 16; reserves take 4) | not read | 3 (1 unit) |
+
+A container worker's lane is not listed. `converge-worker-queues.sh` derives it
+from the gate unit, so it follows the default with no edit.
 
 Churn slots and factory pod budgets are NOT restated here. Each number lives in
 its one owning file:
 
 - **Churn slots.** `ADMISSION_CAPACITY_C` in
   `../phase0-bare-metal/profiles/<node>.env`. ci-runtime-and-cost owns them
-  under `livespec-dev-tooling-6e5pyj`. On master they are gmktec 8, hp 5,
-  gamingpc 1 and poweredge 17. livespec-dev-tooling#4568 (open) moves them to
-  6, 4, 3 and 17, and re-sums the cohort to 30 in `kueue/DERIVATION.md`. The
-  basis for that change is the work item's own, and this budget does not
-  restate it.
+  under `livespec-dev-tooling-6e5pyj`. livespec-dev-tooling#4568 changes them,
+  with the cohort re-sum in `kueue/DERIVATION.md`. Read the values and their
+  basis there.
 - **Factory pod budgets.** `factory_pod_budget` in
   `ansible/inventory/host_vars/<node>.yml`. The maintainer's throughput ruling
-  keeps them at their committed values. gamingpc went 1 -> 2 in
-  livespec-dev-tooling#4492, applied and read back at 21:50:37Z.
+  keeps them at their committed values. Read them there.
 
 How the lanes follow:
 
-- **Gate lanes.** The default request drops to 3, and each lane drops to the
-  node's gate share of measured gate use:
-  - gmktec runs 7.4 average gate cores: 3 gates;
-  - poweredge runs 17.1: 7 gates;
-  - hp runs 2.0 and gamingpc 0.8: 1 gate each.
+- **Gate lanes.** The default request drops to 3 CPUs, so the gate unit is 3.
+  Each lane is a whole multiple of it. The rule actually used:
+  - **gmktec:** its specification floor, three default-size gates, 9. It runs
+    7.4 average gate cores.
+  - **hp and gamingpc:** one unit each, the floor for every other lane. They run
+    2.0 and 0.8 average gate cores.
+  - **poweredge:** the smallest whole multiple that keeps the replayed extra
+    gate queueing under 2% of gate pod-time, given the lanes above. 18 replays
+    at 2.1% and 21 at 1.8% (query `dbbVLi5S76A`), so 21. Its 17.1 average gate
+    cores alone would give 18.
 
-  Every lane is a multiple of the 3-CPU gate unit. Without the lane cut, a
-  3-CPU default would let gmktec admit 5 gates instead of 3.
+  Without the lane cut, a 3-CPU default would let gmktec admit 5 gates instead
+  of 3.
 
 **What the decisions cost, measured on the last 24 hours:**
 
@@ -222,7 +232,8 @@ How the lanes follow:
   - The coordinator ruled this cost not significant (~21:1xZ).
 - **Factory, the option NOT taken** (query `764UoV97fVs`). Factory pods averaged
   11.6 concurrent across the fleet: p50 12.0, p90 18.4, max 21.6. An x86 budget
-  of 14 instead of 19 would have queued about 12% of factory pod-time, about
+  of 14 instead of the then 19 (20 since #4492) would have queued about 12% of
+factory pod-time, about
   1,950 pod-minutes a day.
 
 ## What is in force, and what waits for the specification revise
@@ -242,7 +253,7 @@ How the lanes follow:
    default.
 2. **The gate default becomes 3.** In the same commit:
    - `gates-cq`'s `ci-runner.io/gate-unit-cpu` becomes 3;
-   - every committed lane takes its `gate_cpu` above;
+   - `node-cpu-budget.yaml` and every committed lane take the target above;
    - enrolled worker lanes follow the unit through `converge-worker-queues.sh`.
 
 **Not done: a gate CPU limit.** A limit must be at least the request, so the
