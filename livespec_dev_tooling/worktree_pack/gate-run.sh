@@ -348,9 +348,18 @@ run_gate_with_stall_bound() {
             done
             kill -KILL -- "-$gate_pid" 2>/dev/null || true
             # A descendant can have started another during the grace period, so
-            # rescan until a scan finds no runnable one left (bounded).
-            for (( round = 0; round < 50; round++ )); do
+            # rescan until a scan finds no runnable one left. The grace bound
+            # restarts whenever a scan names a pid not seen before, and only
+            # ends the wait for already-signalled pids that will not die.
+            ended=$SECONDS
+            while :; do
+                round=${#ESCAPED[@]}
                 end_out_of_group_descendants "$dir" "$gate_pid" KILL || break
+                if (( ${#ESCAPED[@]} > round )); then
+                    ended=$SECONDS
+                elif (( SECONDS - ended >= grace )); then
+                    break
+                fi
                 idle_sleep 0.2
             done
             wait "$gate_pid" 2>/dev/null || true
