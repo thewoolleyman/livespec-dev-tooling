@@ -62,11 +62,12 @@ def test_the_final_kill_keeps_rescanning_while_each_scan_finds_a_new_escapee(
 
     def scan(**_kwargs: object) -> tuple[tuple[int, str], ...]:
         scans[0] += 1
-        if scans[0] > 400:
-            return ()
-        pid = 1000 + scans[0]
-        spawned.add(pid)
-        return ((pid, "respawned"),)
+        survivors = sorted(spawned - killed)
+        if scans[0] <= 1000:
+            pid = 1000 + scans[0]
+            spawned.add(pid)
+            survivors.append(pid)
+        return tuple((pid, "respawned") for pid in survivors)
 
     def deliver(pid: int, sig: int) -> None:
         if sig == signal.SIGKILL:

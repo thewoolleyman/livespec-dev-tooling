@@ -215,11 +215,18 @@ def end_stalled_suite(
         end_escapees(sig=signal.SIGTERM)
     with contextlib.suppress(ProcessLookupError):
         os.killpg(proc.pid, signal.SIGKILL)
+    # Rescan until a scan finds nothing runnable. The grace bound restarts each
+    # time a scan names a process not seen before, and only ends the wait for
+    # processes already signalled that still will not die.
     deadline = time.monotonic() + _KILL_GRACE_SECONDS
     while True:
+        known = len(ended)
         end_escapees(sig=signal.SIGKILL)
         time.sleep(0.1)
-        if not _live_escapees(proc=proc, mark=mark) or time.monotonic() >= deadline:
+        if len(ended) > known:
+            deadline = time.monotonic() + _KILL_GRACE_SECONDS
+        live = _live_escapees(proc=proc, mark=mark)
+        if not live or (time.monotonic() >= deadline and all(pid in ended for pid in live)):
             break
     return tuple(ended.items())
 
