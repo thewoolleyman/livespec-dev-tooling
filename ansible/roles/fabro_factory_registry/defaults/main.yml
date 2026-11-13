@@ -56,6 +56,13 @@ fabro_factory_registry_limits_dir: /home/ubuntu/.local/state/livespec/fleet-limi
 # tasks for real as a non-root user, whose chown to root would otherwise fail.
 fabro_factory_registry_owner: root
 fabro_factory_registry_group: root
+# Whether this host gets the registry file and the fleet-limit files. On by
+# default, which is every `dev_hosts` host (§"Fabro factory registry" requires
+# both there). A DISPATCH CLIENT host turns it off in its group's vars
+# (`group_vars/fabro_dispatch_clients.yml`): it runs only the client logins
+# below, because its own provisioning renders its registry from the pinned
+# inventory (livespec-dev-tooling-yyadq6).
+fabro_factory_registry_render: true
 # Whether this host's Fabro client is logged in to every registered factory
 # (tasks/main.yml, "THE CLIENT LOGINS"). Off by default: a host that declares
 # registry entries but does not dispatch has no client to log in. The dev host
