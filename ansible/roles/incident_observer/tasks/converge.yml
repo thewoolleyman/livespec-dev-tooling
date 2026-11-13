@@ -1028,7 +1028,8 @@
       tailscale funnel exited 0 but {{ incident_observer_funnel_pending | join(', ') }}
       on port {{ incident_observer_funnel_https_port }} is not in this node's
       funnel status as a proxy to production's listener, so GitHub cannot
-      deliver callbacks or a hosted reconciler cannot ask who owns its step.
+      deliver callbacks, a hosted reconciler cannot ask who owns its step, or a
+      hosted incident CI publisher cannot publish its aggregate.
       Read `tailscale funnel status` and the tailnet policy's funnel grant for
       this node.
     success_msg: >-

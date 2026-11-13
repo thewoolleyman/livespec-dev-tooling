@@ -178,12 +178,20 @@ incident_observer_port: 8765
 #     token is checked before the body is read, and a missing or wrong token
 #     gets 403 (maintainer ruling, option A, livespec-dev-tooling-jpfdcx,
 #     2026-11-10).
+#   - POST /ci/publish: the incident CI publisher runs on GitHub-hosted runners
+#     and publishes an expedited pull request's PASSED aggregate. Its guard is
+#     the job's forge-signed OIDC identity token, verified against the pinned
+#     CI identity policy before any state is read or written; an unverified
+#     publication is refused with no side effect (legacy-coordinator-agent's
+#     ruling on livespec-dev-tooling-bqnzcm.4, 2026-11-13). Exactly this path:
+#     no prefix and no wildcard.
 # An apply refuses when any declared path is left unpublished after it
 # publishes, and whenever the funnel port publishes a path not in this list.
 incident_observer_funnel_https_port: 10000
 incident_observer_funnel_paths:
   - /callback
   - /ordinary-action
+  - /ci/publish
 
 # --- the production installation inventory --------------------------------------
 # One entry per repository a production observer installation serves
@@ -320,6 +328,7 @@ incident_observer_installations:
 incident_observer_installation_routes:
   - /callback
   - /ordinary-action
+  - /ci/publish
 
 # --- units ------------------------------------------------------------------
 incident_observer_unit_name: livespec-incident-observer

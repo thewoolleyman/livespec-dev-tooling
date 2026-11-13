@@ -154,8 +154,9 @@
       - >-
         incident_observer_funnel_paths
         == ['/' ~ incident_observer_installation_name ~ '/callback',
-            '/' ~ incident_observer_installation_name ~ '/ordinary-action']
-      - incident_observer_funnel_targets == ['/callback', '/ordinary-action']
+            '/' ~ incident_observer_installation_name ~ '/ordinary-action',
+            '/' ~ incident_observer_installation_name ~ '/ci/publish']
+      - incident_observer_funnel_targets == ['/callback', '/ordinary-action', '/ci/publish']
     fail_msg: >-
       every installation path, unit name, port, repository, job list and public
       route is fixed by incident_observer_installation_name and its inventory
