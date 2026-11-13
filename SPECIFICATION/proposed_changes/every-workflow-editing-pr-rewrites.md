@@ -103,7 +103,7 @@ The guard MUST exit `2`, naming the cause, when the change cannot be evaluated:
 - the `change=` value is anything other than `additive`;
 - the ledger cannot be read.
 
-The guard MUST exit `0` otherwise. No environment variable changes the verdict.
+The guard MUST exit `0` otherwise. Apart from the GITHUB_ACTIONS venue rule above, no environment variable changes the verdict.
 
 The transition ends only by a later revision that retires the legacy root file. The ci-runtime-and-cost plan seat, which owns livespec-dev-tooling-oim422, owns that revision. That revision MUST name livespec-dev-tooling-hnbn7z, the filed work item that lists each fleet repository that tracks the root file together with the livespec-dev-tooling release it pins, and checks that each pins a release whose guard reads the directory. hnbn7z's green run on a fleet host triggers the retiring revision, and the revision MUST NOT land before that check passes for every listed repository.
 
@@ -116,7 +116,7 @@ And each adds its own differently named exemption file under `.livespec-workflow
 
 When either change is merged onto the base first and the other is then merged onto the result
 
-Then neither merge MUST conflict on an exemption file
+Then each merge MUST NOT conflict on an exemption file
 And the workflow-edit guard MUST exit 0 on each change's own branch
 
 ## Scenario: a workflow change with no exemption authored in it is refused by name
