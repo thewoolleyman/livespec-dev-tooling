@@ -280,7 +280,7 @@ def test_the_loader_reads_the_branch_the_role_renders_and_master_when_none(host)
 
 @pytest.mark.parametrize(
     ("installed", "stdout", "holds"),
-    [(True, "1.195.0\n", True), (True, "1.187.0\n", False), (False, "", False)],
+    [(True, "1.205.0\n", True), (True, "1.187.0\n", False), (False, "", False)],
 )
 def test_a_scratch_apply_refuses_a_venv_production_does_not_already_serve(
     *, installed: bool, stdout: str, holds: bool
