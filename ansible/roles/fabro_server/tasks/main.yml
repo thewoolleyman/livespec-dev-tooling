@@ -1764,22 +1764,84 @@
   # reads each non-terminal run's persisted settings before the refusal decides
   # whether the catalog may change. The request is GET /api/v1/runs on this
   # instance's own loopback server, never the CLI's ambient default target.
+  #
+  # The read sends NO server-side status filter. Each Fabro build refuses, with
+  # HTTP 400, any status variant its own enum lacks, and builds differ: the
+  # gmktec server refused `starting` and `paused` on 2026-11-13
+  # (livespec-dev-tooling-lmuhvi). So every page of runs is read, and a run
+  # counts as non-terminal unless its status is succeeded, failed or archived,
+  # including a status this role has never heard of. The token reaches curl on
+  # stdin (`--header @-`), never in argv. A listing longer than the page bound
+  # leaves meta.has_more true, which the refusal below turns into a failure.
   ansible.builtin.shell:
     executable: /bin/bash
     cmd: |
       set -euo pipefail
-      printf 'Authorization: Bearer %s\n' \
-        "$(sed -n 's/^FABRO_DEV_TOKEN=//p' "${FABRO_SERVER_ENV_FILE}" | tail -n 1)" |
-        curl --silent --show-error --fail-with-body --header @- \
-          --get --data-urlencode 'status=pending' \
-          --data-urlencode 'status=runnable' \
-          --data-urlencode 'status=initializing' \
-          --data-urlencode 'status=starting' \
-          --data-urlencode 'status=running' \
-          --data-urlencode 'status=paused' \
-          --data-urlencode 'status=blocked' \
-          --data-urlencode 'status=removing' \
-          --data-urlencode 'page[limit]=100' "${FABRO_SERVER_RUNS_URL}"
+      python3 - <<'PY'
+      import json
+      import os
+      import subprocess
+      import sys
+      from urllib.parse import urlencode
+
+      TERMINAL = {"succeeded", "failed", "archived"}
+      PAGE_LIMIT = 100
+
+      with open(os.environ["FABRO_SERVER_ENV_FILE"], encoding="utf-8") as env:
+          tokens = [
+              line.rstrip("\n")[len("FABRO_DEV_TOKEN="):]
+              for line in env
+              if line.startswith("FABRO_DEV_TOKEN=")
+          ]
+      if not tokens:
+          sys.exit("run listing refused: the server env file has no FABRO_DEV_TOKEN")
+      header = f"Authorization: Bearer {tokens[-1]}\n"
+      max_pages = int(os.environ.get("FABRO_SERVER_RUNS_MAX_PAGES", "200"))
+      runs_url = os.environ["FABRO_SERVER_RUNS_URL"]
+
+      kept = []
+      offset = 0
+      pages = 0
+      more = True
+      while more and pages < max_pages:
+          query = urlencode({"page[limit]": PAGE_LIMIT, "page[offset]": offset})
+          read = subprocess.run(
+              [
+                  "curl", "--silent", "--show-error", "--fail-with-body",
+                  "--header", "@-", "--header", "Accept: application/json",
+                  f"{runs_url}?{query}",
+              ],
+              input=header,
+              capture_output=True,
+              text=True,
+              check=False,
+          )
+          if read.returncode != 0:
+              sys.exit(
+                  f"run listing refused: {read.stderr.strip()}: {read.stdout.strip()}"
+              )
+          body = json.loads(read.stdout)
+          data = body.get("data") or []
+          pages += 1
+          offset += len(data)
+          more = bool((body.get("meta") or {}).get("has_more"))
+          for run in data:
+              lifecycle = run.get("lifecycle")
+              kind = None
+              if isinstance(lifecycle, dict) and isinstance(lifecycle.get("status"), dict):
+                  kind = lifecycle["status"].get("kind")
+              if kind is None:
+                  kind = run.get("status")
+              if not (isinstance(kind, str) and kind in TERMINAL):
+                  kept.append({"id": run["id"], "status": kind})
+          if not data:
+              break
+
+      print(json.dumps({
+          "data": kept,
+          "meta": {"has_more": more, "pages": pages, "read": offset},
+      }))
+      PY
   become: true
   environment:
     FABRO_SERVER_ENV_FILE: "{{ fabro_server_home_dir }}/storage/server.env"
