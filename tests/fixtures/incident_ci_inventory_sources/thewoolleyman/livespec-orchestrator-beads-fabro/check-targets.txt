@@ -1,0 +1,155 @@
+# The `just check` aggregate inventory for livespec-orchestrator-beads-fabro, in the aggregate's own order.
+# It MUST list exactly the members of the justfile `check:` recipe's targets,
+# in the same order; the `check:` recipe refuses to run when the two differ.
+#
+# Every member carries an `incident-timing` class, read by livespec-dev-tooling's
+# expedited incident hooks (EXPEDITED_INCIDENT_RESPONSE) and nothing else. The
+# aggregate's reader drops every comment, so annotations never change what
+# `just check` runs.
+#
+# Each recipe was run alone, in sequence, capped at 90 s, on vps (vmi3006760,
+# 18 cores) on 2026-11-13, at load 47-82: the method livespec-dev-tooling
+# used for its own inventory (livespec-dev-tooling-oqpw6t). A member that took
+# 45 s or more, or hit the cap, is `slow` and is deferred on the expedited
+# path; 45 s leaves a 25% margin under the hooks' 60 s per-gate bound. A member
+# whose first time was slow but within reach of the threshold was re-timed
+# alone at lower load (38-70), and the faster run classifies it: `slow` defers the
+# gate, while a fast gate that overruns 60 s is still recorded as a deferred
+# timeout, so the faster reading is the safer one. A gate that encodes a
+# normal-path precondition an incident commit cannot meet by design is
+# `not-applicable` and names that precondition. Both `slow` and `not-applicable`
+# gates are recorded as DEFERRED, with their reason, in every expedited
+# receipt, and both still run in the full `just check` aggregate.
+# 87 are `fast`, 7 `slow` and 7 `not-applicable`. The slowest of the rest:
+# check-all-declared 37.6 s; check-fresh-clone-setup 35.5 s; check-heading-coverage-debt-register 34.8 s.
+# A new member needs a measured class; a missing one is unclassified and deferred.
+#
+# Shipped members declare their purity in their own livespec-dev-tooling module;
+# each repo-private member carries a `# purity:` declaration here, so the
+# green-token reader can classify the whole aggregate. `tree-pure`: the
+# committed tree alone decides the verdict. `world-reading`: state outside the
+# tree can change it (a host tool or home directory, or the ledger).
+check-agents-ai-references-resolve  # incident-timing: fast
+check-aggregate-completeness  # incident-timing: fast
+check-all-declared  # incident-timing: fast
+check-assert-never-exhaustiveness  # incident-timing: fast
+# check-branch-protection-alignment reads this repository's live branch protection
+# from the forge, which needs a credential with admin read on the repository: a
+# soft host dependency. Deferred for an incident (legacy-coordinator-agent's ruling,
+# 2026-11-13, from fleet-flaky-tests' sweep); `just check` and CI still run it.
+check-branch-protection-alignment  # incident-timing: not-applicable # incident-precondition: forge-admin-read-credential
+check-canonical-recipe-fidelity  # incident-timing: fast
+check-check-coverage-incremental  # incident-timing: fast
+check-check-mutation  # incident-timing: fast
+check-check-tools  # incident-timing: fast
+check-ci-gate-parity  # incident-timing: fast
+check-ci-matrix-completeness  # incident-timing: fast
+check-ci-single-container-image  # incident-timing: fast
+check-claude-md-coverage  # incident-timing: fast
+check-codex-hook-reconcilable  # incident-timing: fast
+check-comment-line-anchors  # incident-timing: fast
+check-commit-pairs-source-and-test  # incident-timing: not-applicable # incident-precondition: a-staged-test-beside-each-staged-source-file
+check-delegated-gate-check-suite  # incident-timing: fast
+check-delegated-job-authority-skip  # incident-timing: fast
+check-file-lloc  # incident-timing: fast
+check-fleet-marketplace-relative-sources  # incident-timing: fast
+check-global-writes  # incident-timing: fast
+check-handoff-dispatch-routing  # incident-timing: fast
+check-heading-coverage  # incident-timing: fast
+check-heading-coverage-debt-register  # incident-timing: fast
+check-hook-trees-not-io-exempt  # incident-timing: fast
+check-keyword-only-args  # incident-timing: fast
+check-local-memory-drift-audit  # incident-timing: fast
+check-main-guard  # incident-timing: fast
+check-marketplace-ref-release-only  # incident-timing: fast
+check-master-ci-green  # incident-timing: not-applicable # incident-precondition: green-master-ci
+check-match-keyword-only  # incident-timing: fast
+check-newtype-domain-primitives  # incident-timing: fast
+check-no-direct-destructive-cli  # incident-timing: fast
+check-no-direct-tool-invocation  # incident-timing: fast
+check-no-except-outside-io  # incident-timing: slow
+check-no-fmt-directives  # incident-timing: fast
+check-no-inheritance  # incident-timing: fast
+check-no-lloc-soft-warnings  # incident-timing: fast
+check-no-raise-outside-io  # incident-timing: fast
+check-no-shadow-ledger-body-identical  # incident-timing: fast
+check-no-shadow-ledger-body-typechecks  # incident-timing: fast
+check-no-todo-registry  # incident-timing: fast
+check-no-write-direct  # incident-timing: fast
+check-partition-completeness  # incident-timing: fast
+check-pbt-coverage-pure-modules  # incident-timing: fast
+check-per-file-coverage  # incident-timing: slow
+check-plan-anchor-declared  # incident-timing: fast
+check-plan-epic-parity  # incident-timing: fast
+check-plan-no-live-handoff-file  # incident-timing: fast
+check-plan-no-tombstone  # incident-timing: fast
+check-plan-record-conformance  # incident-timing: fast
+check-plugin-resolution  # incident-timing: fast
+check-primary-checkout-commit-refuse-hook-installed  # incident-timing: fast
+check-private-calls  # incident-timing: fast
+check-public-api-result-typed  # incident-timing: fast
+check-red-green-replay  # incident-timing: not-applicable # incident-precondition: tdd-trailers-or-pull-request-event-admission
+check-required-role-keys-declared  # incident-timing: fast
+check-rop-pipeline-shape  # incident-timing: fast
+check-rule-26-keep-out  # incident-timing: fast
+check-self-hosted-routing  # incident-timing: fast
+check-self-hosted-uv-lane  # incident-timing: fast
+check-shell-quality  # incident-timing: slow
+check-skill-invocation-paths  # incident-timing: fast
+check-source-trees-scoped-to-consumer  # incident-timing: fast
+check-supervisor-discipline  # incident-timing: fast
+check-tests-mirror-pairing  # incident-timing: fast
+check-tests-no-subprocess-spawn  # incident-timing: fast
+check-tool-backed-check-completeness  # incident-timing: fast
+check-vendor-manifest  # incident-timing: fast
+check-work-item-interpolation-delimiters  # incident-timing: fast
+check-work-item-status-vocabulary  # incident-timing: fast
+check-wrapper-shape  # incident-timing: fast
+check-format  # purity: tree-pure  # incident-timing: fast
+check-lint  # purity: tree-pure  # incident-timing: fast
+check-types  # purity: tree-pure  # incident-timing: slow
+check-coverage  # purity: tree-pure  # incident-timing: slow
+check-work-item-merge-evidence  # purity: tree-pure  # incident-timing: fast
+check-work-item-state-invariants  # purity: tree-pure  # incident-timing: fast
+check-status-conformance  # purity: tree-pure  # incident-timing: fast
+check-closed-item-integrity  # purity: tree-pure  # incident-timing: fast
+check-plan-close-proof  # purity: tree-pure  # incident-timing: fast
+check-plan-continuation-ruling  # purity: tree-pure  # incident-timing: fast
+check-needs-attention-surface-ownership  # purity: tree-pure  # incident-timing: fast
+check-spec-id-presence-discipline  # purity: tree-pure  # incident-timing: fast
+check-no-fleet-toolchain-literals  # purity: tree-pure  # incident-timing: fast
+check-codex-plugin-structure  # purity: tree-pure  # incident-timing: fast
+check-pi-plugin-structure  # purity: tree-pure  # incident-timing: fast
+check-bd-guard  # purity: tree-pure  # incident-timing: slow
+check-fleet-launch  # purity: tree-pure  # incident-timing: slow
+# check-codex-skill-picker is a live, authenticated Codex TUI acceptance, host-dependent
+# by design. With no `codex` on PATH it skips with exit 0, because
+# dev-tooling/just-check-codex-skill-picker.sh probes `command -v codex`. On a host WITH
+# codex it drives the real TUI against the host's ~/.codex home and installed plugin, and
+# fails when that home is not prepared (for example a missing ~/.codex/tmp). Deferred
+# for an incident (legacy-coordinator-agent's ruling, 2026-11-13); work item 7qb2bs
+# (fleet-flaky-tests) makes it hermetic. `just check` still runs it, and CI's aggregate
+# job invokes it, where it exits 0 unless LIVESPEC_REQUIRE_CODEX_TUI_PICKER=1.
+check-codex-skill-picker  # purity: world-reading  # incident-timing: not-applicable # incident-precondition: authenticated-codex-cli-with-installed-plugin
+check-no-fleet-pat-dispatch-surface  # purity: tree-pure  # incident-timing: fast
+check-spec-governance-default-block  # purity: tree-pure  # incident-timing: fast
+check-seam-equivalence  # purity: tree-pure  # incident-timing: fast
+check-ci-wires-repo-local-gates  # purity: tree-pure  # incident-timing: fast
+# check-fabro-graph-validity hands the workflow graphs to the host's `fabro validate`,
+# so its verdict depends on the host's fabro build: a soft host dependency. It
+# probes for the binary through resolve_fabro_bin, then shutil.which or an
+# executable-file check (dev-tooling/checks/fabro_graph_validity.py). Deferred for
+# an incident (legacy-coordinator-agent's ruling, 2026-11-13); fleet-flaky-tests owns
+# pinning fabro. `just check` and CI still run it.
+check-fabro-graph-validity  # purity: world-reading  # incident-timing: not-applicable # incident-precondition: a-host-fabro-cli
+check-fabro-port-seam  # purity: tree-pure  # incident-timing: fast
+check-no-workflow-edits  # purity: world-reading  # authority: ledger  # incident-timing: fast
+check-fresh-clone-setup  # purity: tree-pure  # incident-timing: fast
+# check-doctor-static runs livespec core's doctor from the host's installed core plugin
+# (dev-tooling/just-check-doctor-static.sh resolves it under ~/.claude/plugins) and exits 1
+# when that plugin is absent: a hard host dependency. Deferred for an incident
+# (legacy-coordinator-agent's ruling, 2026-11-13); fleet-flaky-tests owns pinning core.
+# `just check` and CI still run it.
+check-doctor-static  # purity: world-reading  # incident-timing: not-applicable # incident-precondition: livespec-core-plugin-installed
+check-acp-preflight-config  # purity: tree-pure  # incident-timing: fast
+check-materialized-workflow-toml-size  # purity: tree-pure  # incident-timing: fast

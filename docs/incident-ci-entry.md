@@ -21,7 +21,13 @@ with `just render-incident-ci-inventory <owner/repo> <clone> <commit>`, and the
 file records that commit as its `source`. Rerun it on a newer default-branch
 commit when the adopter adds, removes or renames a target or changes a timing
 annotation; the change reaches CI with the next release. An adopter with no
-committed `check-targets.txt` cannot be rendered, so it stays undeclared.
+committed `check-targets.txt` cannot be rendered, so it stays undeclared. The
+script also keeps the exact source bytes it rendered from, with their git blob
+ids at that commit, under `tests/fixtures/incident_ci_inventory_sources/`, and
+`tests/livespec_dev_tooling/test_incident_ci_inventory_sources.py` proves each
+released entry equals a fresh render of them. The released entries are
+livespec, livespec-orchestrator-beads-fabro and livespec-overseer
+(livespec-dev-tooling-k5nzpk).
 
 Each inventory contains its repository's full normal workflow's members, their
 batches, their timing classes and the coverage producer/consumer dependency
