@@ -135,12 +135,23 @@ def _path_names(
     repo_root: Path | None,
     repository_root_expression_ids: frozenset[int] | None,
 ) -> tuple[set[str], bool]:
+    """Name the paths one division chain spells, and whether a segment is unknowable.
+
+    A chain with no string literal names nothing; it is undeterminable only when
+    its base is the repository root, because a computed segment under the root
+    names a repository path no literal of the closure spells
+    (livespec-dev-tooling-4ai5ao).
+    """
     has_literal = any(
         isinstance(operand, ast.Constant) and isinstance(operand.value, str) and operand.value
         for operand in operands
     )
     if not has_literal:
-        return set(), False
+        rooted_base = (
+            repository_root_expression_ids is not None
+            and id(operands[0]) in repository_root_expression_ids
+        )
+        return set(), rooted_base
     segments: list[str] = []
     undeterminable = False
     dynamic_segments_are_undeterminable = (
