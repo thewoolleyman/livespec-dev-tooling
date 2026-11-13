@@ -14,7 +14,10 @@ from pathlib import Path
 
 import pytest
 
-from livespec_dev_tooling.flake_retry_decisions import retry_marker_for
+from livespec_dev_tooling.flake_retry_decisions import (
+    retry_marker_for,
+    retry_withheld_reason_for,
+)
 
 _MARKER = {"reruns": 3, "reruns_delay": 60}
 _SPEC_CHANGE = {Path("SPECIFICATION/proposed_changes/x.md")}
@@ -225,11 +228,19 @@ def test_a_file_named_through_a_file_rooted_path_above_the_tests_is_touched(
 
 
 @pytest.mark.integration
-def test_the_workflow_edit_commit_leaves_the_delegated_gate_scenarios_retryable() -> None:
-    """Commit 63302bba's change set does not touch the delegated-gate scenario tests."""
+def test_the_workflow_edit_commit_names_nothing_the_delegated_gate_scenarios_read() -> None:
+    """Commit 63302bba's change set names no module or literal of the delegated-gate scenarios.
+
+    This reads the real repository, so the scenarios' closure grows with it: a
+    module joining it can make the test touched for its own reason, such as a
+    path it builds that no analysis can determine. Only this change set's own
+    attribution is asserted; the temporary-root case above pins the retry.
+    """
     test_path = _REPO_ROOT / "tests/consumer/test_delegated_gate_declared_recipe_scenarios.py"
     change = {Path(".github/workflows/ci.yml"), Path(".livespec-workflow-edit-exemption")}
 
-    assert (
-        retry_marker_for(repo_root=_REPO_ROOT, test_path=test_path, change_paths=change) == _MARKER
+    reason = retry_withheld_reason_for(
+        repo_root=_REPO_ROOT, test_path=test_path, memo={}, change_paths=change
     )
+
+    assert not (reason or "").startswith(("changed closure module", "closure string literal"))
