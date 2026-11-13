@@ -33,11 +33,23 @@ _MODULE_PATH = (
     / "checks"
     / "ci_single_container_image.py"
 )
+_WORKFLOW_HELPER_PATH = _MODULE_PATH.with_name("_ci_single_container_image_workflow.py")
 
 
 def _check() -> ModuleType:
     assert _MODULE_PATH.is_file()
     return importlib.import_module("livespec_dev_tooling.checks.ci_single_container_image")
+
+
+def test_workflow_parsing_is_extracted_to_a_cohesive_module() -> None:
+    assert _WORKFLOW_HELPER_PATH.is_file()
+
+    workflow = importlib.import_module(
+        "livespec_dev_tooling.checks._ci_single_container_image_workflow"
+    )
+
+    assert hasattr(workflow, "container_images")
+    assert hasattr(workflow, "aggregate_targets")
 
 
 def _write_ci(*, root: Path, body: str) -> None:
@@ -471,6 +483,7 @@ def _fuzz_workflow_running(*, steps: str, root: Path) -> None:
     [
         "      # just check\n      - run: just check-fuzz",
         "      - name: just check-lint\n        run: just check-fuzz",
+        "      - run: echo just check-lint",
         "      - run: echo 'just check-lint'",
         '      - run: echo "run just check afterwards"',
         "      - run: just check-fuzz  # not just check-lint",
@@ -497,6 +510,7 @@ def test_a_non_gate_job_naming_an_aggregate_target_outside_run_content_passes(
         "      - run: echo start && just check-lint",
         "      - run: echo start; (just check-lint)",
         "      - run: mise exec -- just check",
+        "      - run: FOO=1 mise exec -- just check-fuzz check-lint",
         '      - run: eval "just check-lint"',
         '      - run: echo "unterminated; just check-lint',
         '      - run: "just check-lint"',
