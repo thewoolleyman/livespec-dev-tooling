@@ -1,0 +1,97 @@
+{
+  "owner": "thewoolleyman",
+  "rows": [
+    {
+      "repo": "livespec",
+      "ref": "origin/master@f2acd171",
+      "url": 73,
+      "ghcr": 8,
+      "slug": 103,
+      "prose": 40,
+      "graded_files": 18
+    },
+    {
+      "repo": "livespec-dev-tooling",
+      "ref": "origin/master@2d7639478",
+      "url": 66,
+      "ghcr": 98,
+      "slug": 275,
+      "prose": 129,
+      "graded_files": 93
+    },
+    {
+      "repo": "livespec-driver-claude",
+      "ref": "origin/master@b34d090",
+      "url": 8,
+      "ghcr": 8,
+      "slug": 32,
+      "prose": 2,
+      "graded_files": 7
+    },
+    {
+      "repo": "livespec-driver-codex",
+      "ref": "origin/master@6926295",
+      "url": 8,
+      "ghcr": 8,
+      "slug": 38,
+      "prose": 0,
+      "graded_files": 5
+    },
+    {
+      "repo": "livespec-driver-pi",
+      "ref": "origin/master@cf6375b",
+      "url": 40,
+      "ghcr": 9,
+      "slug": 22,
+      "prose": 2,
+      "graded_files": 18
+    },
+    {
+      "repo": "livespec-orchestrator-beads-fabro",
+      "ref": "origin/master@f8a1626e7",
+      "url": 164,
+      "ghcr": 34,
+      "slug": 91,
+      "prose": 51,
+      "graded_files": 94
+    },
+    {
+      "repo": "livespec-orchestrator-git-jsonl",
+      "ref": "origin/master@eff70c1",
+      "url": 17,
+      "ghcr": 9,
+      "slug": 22,
+      "prose": 0,
+      "graded_files": 8
+    },
+    {
+      "repo": "livespec-runtime",
+      "ref": "origin/master@a2cb527",
+      "url": 56,
+      "ghcr": 7,
+      "slug": 17,
+      "prose": 0,
+      "graded_files": 15
+    },
+    {
+      "repo": "livespec-console-beads-fabro",
+      "ref": "origin/master@60b3887",
+      "url": 22,
+      "ghcr": 27,
+      "slug": 38,
+      "prose": 2,
+      "graded_files": 15
+    },
+    {
+      "repo": "livespec-overseer",
+      "ref": "origin/master@88221220",
+      "url": 25,
+      "ghcr": 11,
+      "slug": 21,
+      "prose": 0,
+      "graded_files": 16
+    }
+  ],
+  "unreadable": [],
+  "graded_total": 698
+}
