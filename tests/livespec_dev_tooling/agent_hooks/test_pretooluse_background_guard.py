@@ -1721,6 +1721,7 @@ def test_an_unreadable_venue_still_refuses_the_foreground_command(
         'mise exec -- just gate-wait "$(cat tmp/run-checks.id)"',
         "mise exec -- just gate-status 20260805T051456Z-4055481",
         "mise exec -- just gate-list",
+        "mise exec -- just gate-stop 20260805T051456Z-4055481",
         # Asking git what the subcommand does runs no hook.
         "git commit -h",
         "git push --help",
