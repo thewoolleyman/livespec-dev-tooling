@@ -91,7 +91,15 @@ case "$*" in
   "cat "*) exec "$@" ;;
   *"addr show dev cni0")
     if [ -f "$s/returned" ] && [ -f "$s/cni0.back" ]; then cat "$s/cni0.back"; else cat "$s/cni0"; fi ;;
-  *"ss -Hltn") cat "$s/listeners" ;;
+  *"ss -Hltn")
+    # "listeners.back" is what listens from the SECOND read after the return on.
+    if [ -f "$s/returned" ] && [ -f "$s/listeners.back" ]; then
+      n="$(($(cat "$s/ss.count" 2>/dev/null || echo 0) + 1))"
+      echo "$n" > "$s/ss.count"
+      if [ "$n" -ge 2 ]; then cat "$s/listeners.back"; else cat "$s/listeners"; fi
+    else
+      cat "$s/listeners"
+    fi ;;
 esac
 exit 0
 """
@@ -535,6 +543,35 @@ def test_a_collector_that_does_not_listen_on_its_endpoint_fails_on_a_collector_l
     assert result.returncode != 0
     assert "COLLECTOR not listening: node.env's 10.9.5.1:4319 matches cni0" in result.stdout
     assert "COLLECTOR: nothing listens on 10.9.5.1:4319" in result.stderr
+
+
+def test_a_collector_that_listens_only_after_the_first_read_is_awaited_inside_the_bound(
+    env: _Env,
+) -> None:
+    listening = (env.state / "listeners").read_text(encoding="utf-8")
+    (env.state / "listeners.back").write_text(listening, encoding="utf-8")
+    (env.state / "listeners").write_text(
+        "LISTEN 0 4096 127.0.0.1:10248 0.0.0.0:*\n", encoding="utf-8"
+    )
+    result = _run(env=env, wait="50")
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "COLLECTOR endpoint 10.9.5.1:4319 matches cni0 (10.9.5.1) and is listening" in (
+        result.stdout
+    )
+    calls = _calls(env=env)
+    waited = calls[calls.index(f"limactl start --tty=false {_WORKER}") :]
+    assert [c for c in waited if c.startswith("sleep ")] == ["sleep 25"]
+
+
+def test_a_collector_that_never_listens_is_awaited_to_the_bound_and_the_wait_is_named(
+    env: _Env,
+) -> None:
+    (env.state / "listeners").write_text(
+        "LISTEN 0 4096 127.0.0.1:10248 0.0.0.0:*\n", encoding="utf-8"
+    )
+    result = _run(env=env, wait="50")
+    assert result.returncode != 0
+    assert "but nothing listens there 50s after the return" in result.stdout
 
 
 def test_a_missing_cni0_address_is_awaited_inside_the_bound_then_fails_on_a_collector_line(
