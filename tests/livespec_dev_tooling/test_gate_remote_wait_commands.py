@@ -1,0 +1,98 @@
+"""Tests for the bounded commands used by delegated gate waits."""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+from returns.result import Failure, Success
+
+from livespec_dev_tooling.gate_remote_admission import await_terminal_state
+from livespec_dev_tooling.gate_remote_invocation import GateCommandOutcome, GateCommandResult
+from livespec_dev_tooling.gate_remote_request import GateRunRequest
+from livespec_dev_tooling.gate_remote_wait_commands import (
+    admission_read_argv,
+    terminal_watch_argv,
+)
+
+__all__: list[str] = []
+
+
+def test_admission_reads_are_wrapped_and_bounded() -> None:
+    """Admission reads keep the credential wrapper and their request deadline."""
+    argv = admission_read_argv(namespace="gates", job_name="gate-widget-7f2qd")
+
+    assert argv[:3] == ["with-gates-kubeconfig", "sh", "-ceu"]
+    assert 'timeout 270s "$@" --output json --request-timeout=240s' in argv[3]
+    assert argv[4:] == [
+        "await-gate-admission-read",
+        "kubectl",
+        "--namespace",
+        "gates",
+        "get",
+        "job",
+        "gate-widget-7f2qd",
+    ]
+
+
+def test_terminal_watches_cap_the_window_and_renew_progress() -> None:
+    """A terminal watch has a 240-second cap while the Job remains running."""
+    argv = terminal_watch_argv(
+        namespace="gates",
+        job_name="gate-widget-7f2qd",
+        remaining_seconds=999.0,
+    )
+
+    assert argv[:3] == ["with-gates-kubeconfig", "sh", "-ceu"]
+    assert "sleep 30" in argv[3]
+    assert 'kubectl --namespace "$namespace" get job "$job_name" --watch --output json' in argv[3]
+    assert argv[4:] == [
+        "await-gate-terminal-watch",
+        "gate-widget-7f2qd",
+        "gates",
+        "240s",
+    ]
+
+
+def test_terminal_watches_round_a_short_remaining_wait_up_to_one_second() -> None:
+    """A nonzero watch deadline never becomes an invalid zero-second request."""
+    argv = terminal_watch_argv(
+        namespace="gates",
+        job_name="gate-widget-7f2qd",
+        remaining_seconds=0.1,
+    )
+
+    assert argv[-1] == "1s"
+
+
+def test_terminal_wait_stops_when_its_deadline_elapses_between_watch_windows() -> None:
+    """A watch re-arm cannot spend past the terminal-state wait deadline."""
+    request = GateRunRequest(
+        repo_root=Path("/repo"),
+        mirror_url="ssh://mirror/repo.git",
+        manifest="apiVersion: batch/v1\nkind: Job\n",
+        gate_ref="refs/gates/tree-run",
+        poll_timeout_seconds=20.0,
+    )
+    active = json.dumps({"spec": {"suspend": False}, "status": {}})
+    clocks = iter((0.0, 0.0, 10.0, 10.0, 20.0))
+
+    def runner(
+        *, argv: list[str], cwd: Path, stdin: str | None = None, stream: bool = False
+    ) -> GateCommandOutcome:
+        _ = argv, cwd, stdin, stream
+        return Success(GateCommandResult(returncode=0, stdout=active, stderr=""))
+
+    def sleeper(*, seconds: float) -> None:
+        _ = seconds
+
+    outcome = await_terminal_state(
+        request=request,
+        runner=runner,
+        sleeper=sleeper,
+        job_name="gate-widget-7f2qd",
+        clock=lambda: next(clocks),
+    )
+
+    assert isinstance(outcome, Failure)
+    assert outcome.failure().detail.endswith("reached no terminal condition within 20s")

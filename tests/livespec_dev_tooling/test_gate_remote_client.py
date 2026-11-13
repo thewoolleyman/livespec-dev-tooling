@@ -449,7 +449,10 @@ def test_every_later_step_names_the_job_the_cluster_assigned() -> None:
 
     assert is_successful(outcome)
     assert outcome.unwrap().job_name == assigned
-    assert cluster.only(kind="get-job").argv[-4:] == ("job", assigned, "--output", "json")
+    admission = cluster.only(kind="get-job").argv
+    assert admission[:3] == (GATES_WRAPPER, "sh", "-ceu")
+    assert "--request-timeout=240s" in admission[3]
+    assert admission[-5:] == ("--namespace", "gates", "get", "job", assigned)
     assert f"job/{assigned}" in cluster.only(kind="stream-logs").argv
 
 
