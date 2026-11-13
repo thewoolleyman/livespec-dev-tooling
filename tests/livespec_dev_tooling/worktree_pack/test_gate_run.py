@@ -1261,6 +1261,74 @@ def test_a_stalled_gate_reaps_an_escapee_that_respawns_another_on_term(
         _end_processes_carrying(token=token)
 
 
+_RESCAN_DRIVER = """
+COUNT="$WORK/count"; KILLED="$WORK/killed"; SPAWNED="$WORK/spawned"
+echo 0 >"$COUNT"; : >"$KILLED"; : >"$SPAWNED"
+out_of_group_descendants() {
+    local n pid
+    n=$(<"$COUNT"); n=$((n + 1)); echo "$n" >"$COUNT"
+    while IFS= read -r pid; do
+        grep -qx "$pid" "$KILLED" || echo "$pid"
+    done <"$SPAWNED"
+    if (( n <= 120 )); then echo $((90000000 + n)) >>"$SPAWNED"; fi
+}
+kill() {
+    local arg
+    for arg in "$@"; do
+        if [[ "$arg" =~ ^9[0-9]{7}$ ]]; then
+            [[ "$1" == -KILL ]] && echo "$arg" >>"$KILLED"
+            return 0
+        fi
+    done
+    builtin kill "$@"
+}
+any_pids_alive() {
+    local pid
+    for pid in "$@"; do
+        if [[ "$pid" =~ ^9[0-9]{7}$ ]]; then
+            grep -qx "$pid" "$KILLED" || return 0
+        else
+            builtin kill -0 "$pid" 2>/dev/null && return 0
+        fi
+    done
+    return 1
+}
+idle_sleep() { sleep 0.01; }
+rc=0
+run_gate_with_stall_bound "$WORK" sleep 300 || rc=$?
+echo "status=$rc scans=$(<"$COUNT") unkilled=$(grep -vxFf "$KILLED" "$SPAWNED" | wc -l)"
+"""
+
+
+@pytest.mark.integration
+def test_a_stalled_gate_keeps_rescanning_while_each_scan_finds_a_new_escapee(
+    *, tmp_path: Path
+) -> None:
+    """The final kill rounds end only when a scan finds nothing, not after a fixed count."""
+    body = CANONICAL_GATE_RUN_BODY.removesuffix('main "$@"\n')
+    harness = tmp_path / "harness.sh"
+    work = tmp_path / "work"
+    work.mkdir()
+    _write(path=harness, text=body + _RESCAN_DRIVER)
+
+    done = subprocess.run(
+        ["bash", str(harness)],
+        env={
+            "PATH": os.environ["PATH"],
+            "WORK": str(work),
+            _STALL_ENV: "1",
+            _STALL_GRACE_ENV: "1",
+        },
+        capture_output=True,
+        text=True,
+        timeout=_VERDICT_TIMEOUT_S,
+        check=False,
+    )
+
+    assert "status=124" in done.stdout, done.stderr
+    assert "unkilled=0" in done.stdout, done.stdout
+
+
 @pytest.mark.integration
 def test_a_gate_that_keeps_making_progress_is_not_ended_by_the_stall_window(
     *, tmp_path: Path, fixture_repo: tuple[Path, Path, dict[str, str]]
