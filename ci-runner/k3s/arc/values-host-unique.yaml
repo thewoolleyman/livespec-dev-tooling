@@ -49,6 +49,18 @@ containerMode:
       requests:
         storage: 5Gi
 
+# The listener pod runs only on a node whose committed profile declares
+# ALWAYS_ON_NODE=true (the `ci-runner.io/always-on` node label), exactly as in
+# the phase-2 values files that supersede this one: a listener on a node that
+# is powered off at will leaves the scale set taking no jobs
+# (livespec-dev-tooling-crvvxt).
+listenerTemplate:
+  spec:
+    nodeSelector:
+      ci-runner.io/always-on: "true"
+    containers:
+      - name: listener
+
 template:
   spec:
     securityContext:

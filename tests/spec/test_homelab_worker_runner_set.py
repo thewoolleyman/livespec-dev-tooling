@@ -8,7 +8,7 @@ file and assert rules that hold for any host:
   and idles at zero runners;
 - its runner pods select that host's worker and arm64, and tolerate the permanent class taint but
   not the admission hold, so lifting the hold stays the operator's explicit gate;
-- its listener runs on the fleet's amd64 nodes, never on a worker;
+- its listener runs on the fleet's always-on amd64 nodes, never on a worker;
 - the runner image is pinned by digest;
 - jobs run in the fleet's container mode (compared against the fleet's reference set), asking
   for none of the fleet CI nodes' capacity;
@@ -70,9 +70,12 @@ def test_runner_pods_land_only_on_that_hosts_arm64_worker(path: Path) -> None:
 
 
 @pytest.mark.parametrize("path", _VALUES, ids=lambda p: p.name)
-def test_the_listener_runs_on_the_fleets_amd64_nodes(path: Path) -> None:
+def test_the_listener_runs_on_the_fleets_always_on_amd64_nodes(path: Path) -> None:
     listener = _load(path)["listenerTemplate"]["spec"]
-    assert listener["nodeSelector"] == {"kubernetes.io/arch": "amd64"}
+    assert listener["nodeSelector"] == {
+        "kubernetes.io/arch": "amd64",
+        "ci-runner.io/always-on": "true",
+    }
     assert not listener.get("tolerations")
 
 
