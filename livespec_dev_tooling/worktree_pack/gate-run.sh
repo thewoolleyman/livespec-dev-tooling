@@ -288,6 +288,16 @@ any_pids_alive() {
     return 1
 }
 
+still_attributed() {
+    local candidate="$1" current
+    shift
+    for current in "$@"; do
+        [[ "$current" == "$candidate" ]] && return 0
+    done
+    return 1
+}
+
+
 run_gate_with_stall_bound() {
     local dir="$1"
     shift
@@ -305,7 +315,7 @@ run_gate_with_stall_bound() {
     # Opened after the gate launches, so the gate inherits nothing of ours.
     open_idle_fd || true
     local quiet_since=$SECONDS quiet_tick_count=0 ended
-    local -a escaped=()
+    local -a escaped=() verified=() survivors=()
     while kill -0 "$gate_pid" 2>/dev/null; do
         if [[ "$dir/output.log" -nt "$observed" || "$stamp" -nt "$observed" ]]; then
             : >"$observed"
@@ -325,19 +335,25 @@ run_gate_with_stall_bound() {
                     && (( SECONDS - ended < grace )); do
                     idle_sleep 1
                 done
+                # Re-attribute immediately before SIGKILL. A session-escaping
+                # descendant that appeared during the TERM grace did not get
+                # TERM in this pass, so reserve its TERM/KILL sequence for a
+                # later pass instead of skipping straight to KILL.
+                mapfile -t verified < <(out_of_group_descendants "$gate_pid" "$gate_pid" "$stamp")
                 kill -KILL -- "-$gate_pid" 2>/dev/null || true
                 for pid in "${escaped[@]}"; do
-                    if kill -0 "$pid" 2>/dev/null; then
+                    if still_attributed "$pid" "${verified[@]}" && kill -0 "$pid" 2>/dev/null; then
                         kill -KILL "$pid" 2>/dev/null || true
                     fi
                 done
             done
-            mapfile -t escaped < <(out_of_group_descendants "$gate_pid" "$gate_pid" "$stamp")
+            mapfile -t survivors < <(out_of_group_descendants "$gate_pid" "$gate_pid" "$stamp")
             ended=$SECONDS
-            while any_pids_alive "${escaped[@]}" && (( SECONDS - ended < grace )); do
+            while ((${#survivors[@]})) && (( SECONDS - ended < grace )); do
                 idle_sleep 1
+                mapfile -t survivors < <(out_of_group_descendants "$gate_pid" "$gate_pid" "$stamp")
             done
-            for pid in "${escaped[@]}"; do
+            for pid in "${survivors[@]}"; do
                 if kill -0 "$pid" 2>/dev/null; then
                     read_proc_cmdline "$pid"
                     printf 'gate-run: unended out-of-group descendant pid=%s cmdline=%s after 3 signalling passes\n' \
