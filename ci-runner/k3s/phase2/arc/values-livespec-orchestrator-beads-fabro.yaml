@@ -261,4 +261,7 @@ minRunners: 0
 # 34 -> 24 on 2026-11-08: the ClusterQueue drops 17 -> 12, max(2 x 12, 6) = 24.
 # 24 -> 18 on 2026-11-08: the ClusterQueue drops 12 -> 9, max(2 x 9, 6) = 18.
 # 18 -> 16 on 2026-11-12: one slot moves to the dedicated master-push lane.
-maxRunners: 16
+# 16 -> 14 on 2026-11-13: the ClusterQueue falls 8 -> 7 (per-node CPU budget,
+# cohort 30), max(2 x 7, 6) = 14, the bounded-multiple rule the fleet-capacity
+# scenario test enforces.
+maxRunners: 14

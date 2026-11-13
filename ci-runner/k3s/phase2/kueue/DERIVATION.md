@@ -2198,3 +2198,29 @@ read back a Running listener and the GitHub runner scale set, then set the
 orchestrator repository's `CI_RUNNER_LABELS_MASTER` to
 `["livespec-orchestrator-master-k3s"]`. Setting that variable first would route
 master pushes to a listener that does not yet exist.
+
+## Per-node CPU budget cut: cohort 30 (2026-11-13)
+
+**Why.** gmktec-xubuntu was CPU-saturated in 12 of the 24 hours to 2026-11-13 ~19:45Z. ARC CI runners were its largest class at about 13.7 average concurrent cores, and their pods request 0 CPU, so the scheduler cannot see them (kubernetes-observability, Honeycomb gjXENomXanV and zoqy32uv3nW). The maintainer approved a per-node CPU budget at 19:45Z, in a scope event on livespec-dev-tooling-6tgd2z. gate-job-resources owns it (plan ukoeah). Each node's declared churn-slot capacity is the in-spec lever: the ratified "Runner placement follows admission capacity" makes it the only per-node limit on runner pods. So legacy-coordinator-agent ruled that the slot change land first, on its own, under livespec-dev-tooling-6e5pyj. A runner CPU request waits for a spec revise.
+
+**The budget.** Cores per CI job were measured from class cores divided by half the arc-runners pod count, because each job has a runner pod and a workflow pod: gmktec 1.67, hp 1.77 and poweredge 1.4 (window 2026-11-12 19:00Z to 11-13 01:00Z, Honeycomb GeJPtsYP2y8). Budgets after the system share are gmktec 30, hp 13.3 and poweredge 66 cores. kubernetes-observability's windows W1-W4 (GeJPtsYP2y8, 9HcAtrYUHGZ, y4PSHW5Bwnj, p4JpAQGQcsU) show gamingpc averaging 1.6-3.0 busy cores of 12.
+
+| Node | Slots | Basis |
+| --- | --- | --- |
+| gmktec-xubuntu | 8 -> 6 | 6 x 1.67 caps the runner peak near 10 cores, down from 13.4, inside the 30-core budget with its gates and factory |
+| hp-xubuntu | 5 -> 4 | 13.9 cores of CI demand at 5 slots fell to 13.4 of its 13.3 budget |
+| gamingpc-xubuntu | 1 -> 3 | STRANDED-CAPACITY: about 8 idle cores; 3 x 1.7 + one gate (5) + one factory run (4) exceeds 12 only if all three peak together |
+| poweredge-xubuntu | 17 | unchanged; 17 x 1.4 fits its 66 cores with gates and factory |
+| macbook-m4-max-homelab-worker | 1 (arm64 flavor) | unchanged; its arm64 slot serves only queues with arm64 quota, which is 0 today |
+
+**The quota.** The node capacity falls 31 -> 30 (poweredge 17 + gmktec 6 + hp 4 + gamingpc 3), so the churn-slot-flavor quotas must sum to 30. legacy-coordinator-agent ruled the split. At cohort 28 it was dev-tooling-cq 10 -> 8 and orchestrator-cq 8 -> 7, with units that gamingpc's raise adds back going to dev-tooling-cq first, then orchestrator-cq. gamingpc's +2 restores dev-tooling-cq to 10, so the net change is one unit off orchestrator-cq. The master lanes (lendingLimit 0) and every 1-slot queue are unchanged, and so is every other maxRunners value. The orchestrator's scale set follows the bounded-multiple rule `max(2 x nominalQuota, 6)` to 14, which tests/consumer/test_jit_fleet_capacity_scenarios.py enforces.
+
+| Queue | Change | maxRunners |
+| --- | --- | --- |
+| livespec-orchestrator-beads-fabro-cq | 8 -> 7 | max(2 x 7, 6) = 14 (was 16) |
+
+**Order.** Lower the quota before the node capacity: apply `ci_converge_unit`, then `node_extended_resource`. The quota sum then never exceeds the slots that exist. Among the nodes, raise gamingpc before cutting gmktec and hp, so capacity never dips below 30 in between.
+
+**Proof.** The pull request records the 24-hour before-reads: CPU pressure on gmktec and hp, CI queue wait p50/p95, and job duration p50 on gmktec. The same reads are repeated 2-3 hours after the apply. The claim "throughput does not fall" is a measurement, not an assumption.
+
+**Kill switch.** Restore gmktec 8, hp 5 and gamingpc 1 in their profiles livespec-orchestrator-beads-fabro-cq 8, and its maxRunners 16, and re-apply both roles in the reverse order.
