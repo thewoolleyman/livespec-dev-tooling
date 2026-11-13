@@ -255,21 +255,21 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a consumer whose every livespec_dev_tooling function is declared or locally public passes the commit-hook check",
-    "work_item": "livespec-dev-tooling-vobfwi",
+    "work_item": "livespec-dev-tooling-7vtgis",
     "first_seen": "2026-11-12"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a consumer's commit-hook check reports a livespec_dev_tooling function its installed build does not declare",
-    "work_item": "livespec-dev-tooling-vobfwi",
+    "work_item": "livespec-dev-tooling-7vtgis",
     "first_seen": "2026-11-12"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a consumer's commit-hook check reports an undeclared livespec_dev_tooling function reached as an attribute of an imported module",
-    "work_item": "livespec-dev-tooling-vobfwi",
+    "work_item": "livespec-dev-tooling-7vtgis",
     "first_seen": "2026-11-12"
   },
   {
@@ -318,7 +318,7 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a declaration present only on livespec-dev-tooling's default branch does not satisfy the commit-hook check",
-    "work_item": "livespec-dev-tooling-vobfwi",
+    "work_item": "livespec-dev-tooling-7vtgis",
     "first_seen": "2026-11-12"
   },
   {
@@ -703,14 +703,14 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a passing test-only commit with no Red intent runs its staged tests once in one delegated gate Job",
-    "work_item": "livespec-dev-tooling-fjpqqq",
+    "work_item": "livespec-dev-tooling-7vtgis",
     "first_seen": "2026-11-12"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a passing test-only commit with no Red intent runs its staged tests once on the committing host",
-    "work_item": "livespec-dev-tooling-fjpqqq",
+    "work_item": "livespec-dev-tooling-7vtgis",
     "first_seen": "2026-11-12"
   },
   {
@@ -1270,7 +1270,7 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: an incident label event's forge writes repeat only what did not take effect",
-    "work_item": "livespec-dev-tooling-levu6j",
+    "work_item": "livespec-dev-tooling-7vtgis",
     "first_seen": "2026-11-12"
   },
   {
@@ -1298,7 +1298,7 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: an incident-ci forge read retries an unusable answer and an unreadable pull-request body fails the selection by name",
-    "work_item": "livespec-dev-tooling-levu6j",
+    "work_item": "livespec-dev-tooling-7vtgis",
     "first_seen": "2026-11-12"
   },
   {
@@ -1438,7 +1438,7 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: livespec-dev-tooling's check aggregate fails when its cross_repo_public_api package-data file and pyproject.toml disagree",
-    "work_item": "livespec-dev-tooling-vobfwi",
+    "work_item": "livespec-dev-tooling-7vtgis",
     "first_seen": "2026-11-12"
   },
   {
@@ -1627,7 +1627,7 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: with the fail variable unset, a consumer's commit-hook check reports an undeclared livespec_dev_tooling function and exits 0",
-    "work_item": "livespec-dev-tooling-vobfwi",
+    "work_item": "livespec-dev-tooling-7vtgis",
     "first_seen": "2026-11-12"
   }
 ]
