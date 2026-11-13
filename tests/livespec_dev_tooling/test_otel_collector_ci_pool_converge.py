@@ -1033,9 +1033,15 @@ def test_a_changed_pods_endpoint_restarts_the_pod_span_unit_as_well_as_the_host_
     endpoint_writes = [block for block in blocks if 'line: "OTLP_PODS_ENDPOINT=' in block]
     assert len(endpoint_writes) == 1, endpoint_writes
     assert "Restart the collector onto its managed configuration" in endpoint_writes[0]
-    assert (
-        "Restart the pod-span collector onto its managed configuration" in endpoint_writes[0]
-    ), endpoint_writes[0]
+
+    pod_restarts = [
+        block
+        for block in blocks
+        if "Restart the pod-span collector onto its managed configuration" in block
+        and "otel_collector_otlp_pods_endpoint_written.changed" in block
+    ]
+    assert len(pod_restarts) == 1, pod_restarts
+    assert "otel_collector_pod_config_file | length > 0" in pod_restarts[0]
 
 
 def test_the_rendered_unit_for_poweredge_carries_what_only_poweredge_needs() -> None:
