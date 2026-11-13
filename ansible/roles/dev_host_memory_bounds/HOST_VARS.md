@@ -33,8 +33,22 @@ loop's drive and preflight children.
 
 When a cap is reached, the kernel OOM-kills the largest process inside that
 scope or slice, and nothing outside it. A dispatcher loop killed that way
-leaves its Fabro run running on the factory server, which is a different host.
-The reconcile-runs timer is the path that picks up a run whose loop is gone.
+leaves the factory run and its publication intact: the run executes on the
+factory server, and its draft publication is a node inside that run. What the
+LOOP owns after that is stranded:
+
+- the post-run merge wait and acceptance;
+- the item's ledger disposition, which needs a `reconcile-merged --pr <n>` or a
+  reconcile-runs pass;
+- the long-run preserve request for a run past 330 minutes, which has to be
+  taken by hand.
+
+The reconcile-runs timer covers only the orchestrator tenant, and it holds a
+succeeded run rather than closing it. The 15:53Z reboot of 2026-11-13 killed
+every loop at once and showed exactly this: seven runs finished and published,
+and their items sat active with merged PRs until each was reconciled by hand
+(legacy-dispatcher-agent, 2026-11-13). That cost is why the per-launcher cap
+sits well above the measured peak, not at it.
 
 The launch paths that do so are owned by the code that launches. The dispatcher
 loops are launched by the orchestrator's drive path, and the gates by this
