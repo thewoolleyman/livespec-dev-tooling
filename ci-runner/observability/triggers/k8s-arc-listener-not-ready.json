@@ -18,6 +18,10 @@
         "column": "k8s.pod.name",
         "op": "ends-with",
         "value": "-listener"
+      },
+      {
+        "column": "k8s.container.ready",
+        "op": "exists"
       }
     ],
     "breakdowns": [

@@ -1,0 +1,55 @@
+{
+  "name": "k3s node NotReady — poweredge-xubuntu k8s.node.condition_ready < 1 for 10 min",
+  "description": "Fires when MIN(k8s.node.condition_ready) for host.name=poweredge-xubuntu over the trailing 10 min is below 1 — the kubelet reports the single k3s node as NotReady (or Unknown), so no ARC runner pod can be scheduled and every fleet repository's gating jobs will queue. Value trigger (cannot fire on silence; the k3s dead-man covers that). Condition metrics are 1=true, 0=false, -1=unknown. Runbook: ssh poweredge-xubuntu; sudo kubectl describe node poweredge-xubuntu | sed -n '/Conditions/,/Addresses/p'; systemctl status k3s. livespec-s43svm.20, 2026-08-23. Adopted 2026-11-13 from the hand-made live trigger GCxLjyxxkmp into this tree (Rule G sweep), with a k8s.node.condition_ready exists filter so a silent node does not read as NotReady; silence is k8s-node-silent-poweredge's job.",
+  "query": {
+    "calculations": [
+      {
+        "column": "k8s.node.condition_ready",
+        "op": "MIN"
+      }
+    ],
+    "filters": [
+      {
+        "column": "host.name",
+        "op": "=",
+        "value": "poweredge-xubuntu"
+      },
+      {
+        "column": "k8s.node.condition_ready",
+        "op": "exists"
+      }
+    ],
+    "time_range": 600,
+    "granularity": 60
+  },
+  "threshold": {
+    "value": 1,
+    "op": "<",
+    "exceeded_limit": 1
+  },
+  "frequency": 300,
+  "alert_type": "on_change",
+  "disabled": false,
+  "recipients": [
+    {
+      "id": "jKw2EyfLJ3W"
+    },
+    {
+      "id": "fort2EXXuVy"
+    }
+  ],
+  "tags": [
+    {
+      "key": "service",
+      "value": "k3s"
+    },
+    {
+      "key": "host",
+      "value": "poweredge-xubuntu"
+    },
+    {
+      "key": "kind",
+      "value": "value"
+    }
+  ]
+}

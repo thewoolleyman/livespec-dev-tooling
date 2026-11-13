@@ -12,6 +12,10 @@
       {
         "column": "k8s.readiness_check",
         "op": "exists"
+      },
+      {
+        "column": "livespec.ci_k3s.readiness_check",
+        "op": "exists"
       }
     ],
     "breakdowns": [

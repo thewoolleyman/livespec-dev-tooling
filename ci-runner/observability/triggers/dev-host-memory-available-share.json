@@ -19,6 +19,14 @@
         "column": "livespec.host.role",
         "op": "=",
         "value": "dev-host"
+      },
+      {
+        "column": "system.linux.memory.available",
+        "op": "exists"
+      },
+      {
+        "column": "system.memory.limit",
+        "op": "exists"
       }
     ],
     "breakdowns": [
