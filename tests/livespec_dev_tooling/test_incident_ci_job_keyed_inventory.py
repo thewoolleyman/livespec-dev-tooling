@@ -35,7 +35,7 @@ from livespec_dev_tooling.incident_execution import (
 _ROOT = Path(__file__).resolve().parents[2]
 _FIXTURE = _ROOT / "tests/fixtures/incident_ci_inventory_livespec_a91c015d"
 _LABEL = "expedited-incident-response"
-_NOT_RUN = "job not run on this event"
+_NOT_RUN = "job may not run on this event"
 
 
 def _decoded(*, text: str) -> tuple[tuple[CiTarget, ...] | None, str | None]:

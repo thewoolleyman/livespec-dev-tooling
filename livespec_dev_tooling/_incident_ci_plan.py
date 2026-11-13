@@ -28,8 +28,8 @@ __all__: list[str] = [
 ]
 
 NOT_RUN = (
-    "job not run on this event: its if: names the triggering event or ref,"
-    " which the incident entrance does not evaluate"
+    "job may not run on this event: its if: names the triggering event or ref, which"
+    " the incident entrance does not evaluate, so the entrance does not run its members"
 )
 
 _COVERAGE = ("check-coverage", "check-per-file-coverage", "check-check-coverage-incremental")
