@@ -115,3 +115,54 @@ def test_malformed_detector_clock_leaves_the_recorded_fallback_visible() -> None
         "coverage reuse fallback: repository=thewoolleyman/livespec-dev-tooling "
         "run=42 job=84 outcome=tree_mismatch"
     ]
+
+
+def test_duration_regression_names_job_and_compares_24_hour_p90_to_7_day_baseline() -> None:
+    """A material regression is visible even when other jobs remain normal."""
+    detector = importlib.import_module("livespec_dev_tooling.reuse_outcome_detector")
+
+    notices = detector.evaluate(
+        outcomes=[],
+        jobs=[
+            {
+                "repository": "thewoolleyman/livespec-dev-tooling",
+                "job_id": 84,
+                "name": "check-coverage",
+                "runner_label": "k3s",
+                "completed_at": "2026-11-12T20:55:00Z",
+                "duration_seconds": 1_260,
+            },
+            {
+                "repository": "thewoolleyman/livespec-dev-tooling",
+                "job_id": 85,
+                "name": "check-coverage",
+                "runner_label": "k3s",
+                "completed_at": "2026-11-08T20:55:00Z",
+                "duration_seconds": 300,
+            },
+            {
+                "repository": "thewoolleyman/livespec-dev-tooling",
+                "job_id": 86,
+                "name": "check-lint",
+                "runner_label": "k3s",
+                "completed_at": "2026-11-12T20:55:00Z",
+                "duration_seconds": 600,
+            },
+            {
+                "repository": "thewoolleyman/livespec-dev-tooling",
+                "job_id": 87,
+                "name": "check-lint",
+                "runner_label": "k3s",
+                "completed_at": "2026-11-08T20:55:00Z",
+                "duration_seconds": 300,
+            },
+        ],
+        now="2026-11-12T21:00:00Z",
+        last_success="2026-11-12T20:55:00Z",
+        interval_seconds=900,
+    )
+
+    assert [notice.message for notice in notices] == [
+        "CI duration regression: job=check-coverage runner=k3s "
+        "p90_24h_seconds=1260 baseline_7d_seconds=300"
+    ]

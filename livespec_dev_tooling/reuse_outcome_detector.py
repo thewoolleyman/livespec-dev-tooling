@@ -5,8 +5,13 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+from math import ceil
+from typing import Final, cast
 
 __all__: list[str] = ["Notice", "evaluate"]
+
+_DURATION_FACTOR: Final = 2
+_DURATION_MARGIN_SECONDS: Final = 5 * 60
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -58,6 +63,51 @@ def _missing_outcome_notices(
     ]
 
 
+def _percentile_90(*, values: Sequence[float]) -> float:
+    """Return the nearest-rank 90th percentile of a non-empty duration sample."""
+    return sorted(values)[ceil(len(values) * 0.9) - 1]
+
+
+def _duration_notice(
+    *, key: tuple[str, str], current: Sequence[float], baseline: Sequence[float]
+) -> Notice | None:
+    """Render a notice only for a materially slower current duration distribution."""
+    current_p90 = _percentile_90(values=current)
+    baseline_p90 = _percentile_90(values=baseline)
+    if (
+        current_p90 <= baseline_p90 * _DURATION_FACTOR
+        or current_p90 - baseline_p90 <= _DURATION_MARGIN_SECONDS
+    ):
+        return None
+    name, runner = key
+    return Notice(
+        message=(
+            "CI duration regression: "
+            f"job={name} runner={runner} p90_24h_seconds={current_p90:g} "
+            f"baseline_7d_seconds={baseline_p90:g}"
+        )
+    )
+
+
+def _duration_notices(*, jobs: Sequence[dict[str, object]], now: datetime) -> list[Notice]:
+    """Compare each job and runner's current-day p90 with its preceding seven days."""
+    current: dict[tuple[str, str], list[float]] = {}
+    baseline: dict[tuple[str, str], list[float]] = {}
+    recent_start = now - timedelta(days=1)
+    for job in jobs:
+        if "duration_seconds" not in job:
+            continue
+        completed = cast(datetime, _timestamp(value=job["completed_at"]))
+        bucket = baseline if completed < recent_start else current
+        key = (str(job["name"]), str(job["runner_label"]))
+        bucket.setdefault(key, []).append(float(str(job["duration_seconds"])))
+    candidates = (
+        _duration_notice(key=key, current=current[key], baseline=baseline[key])
+        for key in sorted(current.keys() & baseline.keys())
+    )
+    return [notice for notice in candidates if notice is not None]
+
+
 def evaluate(
     *,
     outcomes: Sequence[dict[str, object]],
@@ -87,4 +137,5 @@ def evaluate(
         jobs=jobs,
         now=current_time,
     )
-    return [*fallback_notices, *missing_notices]
+    duration_notices = _duration_notices(jobs=jobs, now=current_time)
+    return [*fallback_notices, *missing_notices, *duration_notices]
