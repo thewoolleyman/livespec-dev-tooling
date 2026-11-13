@@ -395,15 +395,11 @@ def _answering(*, status: int, body: str) -> _Responder:
     return respond
 
 
-def _refusing_the_removing_read(query: _Query) -> tuple[int, bytes]:
-    """A build whose status enum lacks `removing`: the unfiltered page is fine."""
-    if "status" in query:
-        return 400, b"unknown variant `removing`"
-    return 200, json.dumps({"data": [], "meta": {"has_more": False}}).encode()
+_EMPTY_PAGE = (200, json.dumps({"data": [], "meta": {"has_more": False}}).encode())
 
-
-_UNREADABLE_LISTINGS: dict[str, _Responder] = {
+_UNREADABLE_ANSWERS: dict[str, _Responder] = {
     "server error": _answering(status=500, body='{"errors": []}'),
+    "status filter refused": _answering(status=400, body="unknown variant `removing`"),
     "empty object": _answering(status=200, body="{}"),
     "no meta": _answering(status=200, body='{"data": []}'),
     "no has_more": _answering(status=200, body='{"data": [], "meta": {"total": 0}}'),
@@ -412,20 +408,57 @@ _UNREADABLE_LISTINGS: dict[str, _Responder] = {
     ),
     "data not a list": _answering(status=200, body='{"data": "x", "meta": {"has_more": false}}'),
     "body not an object": _answering(status=200, body="[]"),
-    "removing filter refused": _refusing_the_removing_read,
 }
 
 
-@pytest.mark.parametrize("shape", sorted(_UNREADABLE_LISTINGS))
+def _on_pass(*, answer: _Responder, read_pass: str) -> _Responder:
+    """Give one read pass the unreadable answer and the other a readable empty page."""
+
+    def respond(query: _Query) -> tuple[int, bytes]:
+        if ("status" in query) == (read_pass == "removing"):
+            return answer(query)
+        return _EMPTY_PAGE
+
+    return respond
+
+
+@pytest.mark.parametrize("read_pass", ["listing", "removing"])
+@pytest.mark.parametrize("shape", sorted(_UNREADABLE_ANSWERS))
 def test_the_run_read_refuses_a_listing_it_cannot_read_completely(
-    tmp_path: Path, shape: str
+    tmp_path: Path, shape: str, read_pass: str
 ) -> None:
-    """Any listing the guard cannot read in full fails the task, never proceeds as empty."""
+    """An unreadable page on EITHER pass fails the task, never proceeds as empty."""
     seen: list[_Query] = []
     result = _run_read(
-        tmp_path=tmp_path, responder=_UNREADABLE_LISTINGS[shape], seen=seen, extra_env={}
+        tmp_path=tmp_path,
+        responder=_on_pass(answer=_UNREADABLE_ANSWERS[shape], read_pass=read_pass),
+        seen=seen,
+        extra_env={},
     )
 
-    assert result.returncode != 0, (shape, result.stdout)
-    assert "run listing refused" in result.stderr, (shape, result.stderr)
-    assert _TOKEN not in result.stdout + result.stderr
+    facts = [
+        result.returncode != 0,
+        "run listing refused" in result.stderr,
+        _TOKEN not in result.stdout + result.stderr,
+        (read_pass == "listing") or any(query.get("status") == ["removing"] for query in seen),
+    ]
+    assert all(facts), (shape, read_pass, facts, result.stdout, result.stderr)
+
+
+def test_the_run_read_holds_a_run_both_passes_list_once(tmp_path: Path) -> None:
+    """A run moving to `removing` between the passes is held once, under either reading."""
+    listed = {"id": "run-moving", "lifecycle": {"status": {"kind": "running"}}}
+    moving = {"id": "run-moving", "lifecycle": {"status": {"kind": "removing"}}}
+    finished = {"id": "run-late", "lifecycle": {"status": {"kind": "succeeded"}}}
+    late = {"id": "run-late", "lifecycle": {"status": {"kind": "removing"}}}
+
+    def respond(query: _Query) -> tuple[int, bytes]:
+        data = [moving, late] if "status" in query else [listed, finished]
+        return 200, json.dumps({"data": data, "meta": {"has_more": False}}).encode()
+
+    seen: list[_Query] = []
+    result = _run_read(tmp_path=tmp_path, responder=respond, seen=seen, extra_env={})
+
+    assert result.returncode == 0, result.stderr
+    held = [run["id"] for run in json.loads(result.stdout)["data"]]
+    assert held == ["run-moving", "run-late"]
