@@ -248,7 +248,7 @@ def test_the_fair_shares_sum_to_the_capacity_the_node_profiles_declare() -> None
 def test_measured_job_hours_derive_the_committed_fair_shares() -> None:
     """Seven-day pool job-hours are the dated, auditable source of every quota."""
     expected = {
-        "livespec-orchestrator-beads-fabro-cq": 8,
+        "livespec-orchestrator-beads-fabro-cq": 7,
         "livespec-orchestrator-master-cq": 1,
         "livespec-dev-tooling-cq": 10,
         "livespec-dev-tooling-master-cq": 3,
@@ -274,6 +274,7 @@ def test_measured_job_hours_derive_the_committed_fair_shares() -> None:
     )
     assert "## The fabro fork scale set (2026-11-05)" in derivation
     assert "## gamingpc-xubuntu joins: cohort 31 (2026-11-11)" in derivation
+    assert "## Per-node CPU budget cut: cohort 30 (2026-11-13)" in derivation
 
 
 def test_master_push_slice_reserves_its_quota_and_lends_none_of_it() -> None:
@@ -308,7 +309,7 @@ def test_rederived_orchestrator_ceiling_removes_its_recorded_exception() -> None
     rule_value = max(_CEILING_MULTIPLE * quota, _CEILING_FLOOR)
     derivation = _DERIVATION.read_text(encoding="utf-8")
 
-    assert rule_value == 16
+    assert rule_value == 14
     assert rule_value >= 12
     # Its DERIVATION.md row is gone with it: every row there must match an
     # exception here (test_every_recorded_exception_is_a_derivation_row_...).

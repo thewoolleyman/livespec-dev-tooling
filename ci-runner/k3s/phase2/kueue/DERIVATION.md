@@ -2223,4 +2223,4 @@ master pushes to a listener that does not yet exist.
 
 **Proof.** The pull request records the 24-hour before-reads: CPU pressure on gmktec and hp, CI queue wait p50/p95, and job duration p50 on gmktec. The same reads are repeated 2-3 hours after the apply. The claim "throughput does not fall" is a measurement, not an assumption.
 
-**Kill switch.** Restore gmktec 8, hp 5 and gamingpc 1 in their profiles livespec-orchestrator-beads-fabro-cq 8, and its maxRunners 16, and re-apply both roles in the reverse order.
+**Kill switch.** Restore gmktec 8, hp 5 and gamingpc 1 in their profiles, livespec-orchestrator-beads-fabro-cq 8 and its maxRunners 16, and re-apply both roles in the reverse order.
