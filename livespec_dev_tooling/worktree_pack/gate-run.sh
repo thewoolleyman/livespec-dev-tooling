@@ -279,9 +279,20 @@ record_and_term_out_of_group_descendants() {
 }
 
 any_pids_alive() {
-    local pid
+    local pid line="" rest state
     for pid in "$@"; do
-        kill -0 "$pid" 2>/dev/null && return 0
+        kill -0 "$pid" 2>/dev/null || continue
+        # `kill -0` still succeeds for a terminated child that has become a
+        # zombie. It cannot execute and needs no further signal, so do not
+        # make the recorded verdict wait through the whole grace period.
+        if [[ ! -r "/proc/$pid/stat" ]]; then
+            return 0
+        fi
+        line=""
+        { read -r line <"/proc/$pid/stat"; } 2>/dev/null || continue
+        rest="${line##*) }"
+        state="${rest%% *}"
+        [[ "$state" == "Z" ]] || return 0
     done
     return 1
 }

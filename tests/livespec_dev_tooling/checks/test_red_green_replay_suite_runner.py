@@ -27,11 +27,24 @@ _MODULE_PATH = (
     / "checks"
     / "_red_green_replay_suite_runner.py"
 )
+_PROCESS_CLEANUP_PATH = _MODULE_PATH.with_name("_red_green_replay_process_cleanup.py")
 _CONFTEST_PATH = Path(__file__).resolve().parents[2] / "conftest.py"
 
 
 def _load():
     spec = importlib.util.spec_from_file_location("_rgr_suite_runner_under_test", str(_MODULE_PATH))
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def _load_process_cleanup():
+    assert _PROCESS_CLEANUP_PATH.is_file()
+    spec = importlib.util.spec_from_file_location(
+        "_rgr_process_cleanup_under_test", str(_PROCESS_CLEANUP_PATH)
+    )
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     sys.modules[spec.name] = module
@@ -340,7 +353,9 @@ def test_a_stalled_suite_reaps_a_descendant_that_started_its_own_session() -> No
         _ = [os.kill(int(pid), signal.SIGTERM) for pid in _live_processes_carrying(token)]
 
 
-def test_a_stalled_suite_reaps_an_escapee_orphaned_before_the_stall() -> None:
+def test_a_stalled_suite_reaps_an_escapee_orphaned_before_the_stall(
+    *, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """A session-escaping child whose parent already exited is still ended."""
     mod = _load()
     token = f"livespec-stall-orphan-escape-{uuid.uuid4().hex}"
@@ -349,12 +364,15 @@ def test_a_stalled_suite_reaps_an_escapee_orphaned_before_the_stall() -> None:
         "printf ready; sleep 300"
     )
     try:
+        monkeypatch.setattr(mod, "_KILL_GRACE_SECONDS", 5)
+        started = time.monotonic()
         run = mod.run_suite(
             argv=["sh", "-c", orphaned],
             bound=mod.SuiteBound(stall_seconds=2, ceiling_seconds=None),
         )
 
         assert run.timed_out is True
+        assert time.monotonic() - started < 4
         assert not _live_processes_carrying(token)
         assert "ending out-of-group descendant pid=" in run.output
         assert token in run.output
@@ -364,11 +382,11 @@ def test_a_stalled_suite_reaps_an_escapee_orphaned_before_the_stall() -> None:
 
 def test_marked_pids_names_every_process_carrying_the_run_mark(*, tmp_path: Path) -> None:
     """Only numeric entries whose readable environment holds the exact mark count."""
-    mod = _load()
-    mark_entry = f"{mod.RUN_MARK_ENV}=wanted".encode()
+    cleanup = _load_process_cleanup()
+    mark_entry = f"{cleanup.RUN_MARK_ENV}=wanted".encode()
     for name, environment in (
         ("12", b"A=1\0" + mark_entry + b"\0"),
-        ("13", b"A=1\0" + f"{mod.RUN_MARK_ENV}=other".encode() + b"\0"),
+        ("13", b"A=1\0" + f"{cleanup.RUN_MARK_ENV}=other".encode() + b"\0"),
         ("14", b""),
     ):
         (tmp_path / name).mkdir()
@@ -378,17 +396,17 @@ def test_marked_pids_names_every_process_carrying_the_run_mark(*, tmp_path: Path
     (tmp_path / "self").mkdir()
     (tmp_path / "self" / "environ").write_bytes(mark_entry)
 
-    assert mod.marked_pids(mark="wanted", proc_root=tmp_path) == frozenset({12})
-    assert mod.marked_pids(mark="wanted", proc_root=tmp_path / "absent") == frozenset()
+    assert cleanup.marked_pids(mark="wanted", proc_root=tmp_path) == frozenset({12})
+    assert cleanup.marked_pids(mark="wanted", proc_root=tmp_path / "absent") == frozenset()
 
 
 def test_out_of_group_descendants_adds_marked_processes_the_ancestry_walk_misses(
     *, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A marked orphan joins the ancestry escapees once; in-group and vanished pids do not."""
-    mod = _load()
+    cleanup = _load_process_cleanup()
     monkeypatch.setattr(
-        mod,
+        cleanup,
         "process_table",
         lambda: {
             10: (1, 10, "leader"),
@@ -398,9 +416,9 @@ def test_out_of_group_descendants_adds_marked_processes_the_ancestry_walk_misses
             21: (1, 10, "same group"),
         },
     )
-    monkeypatch.setattr(mod, "marked_pids", lambda **_kwargs: frozenset({11, 20, 21, 22}))
+    monkeypatch.setattr(cleanup, "marked_pids", lambda **_kwargs: frozenset({11, 20, 21, 22}))
 
-    found = mod.out_of_group_descendants(root_pid=10, mark="mark")
+    found = cleanup.out_of_group_descendants(root_pid=10, mark="mark")
 
     assert sorted(found) == [
         (11, "escaped child"),
@@ -409,33 +427,46 @@ def test_out_of_group_descendants_adds_marked_processes_the_ancestry_walk_misses
     ]
 
 
+def _assert_process_table_refusals(*, cleanup, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Exercise the process-table reader's unavailable and malformed cases."""
+
+    def unavailable(**_kwargs: object) -> None:
+        raise OSError("ps unavailable")
+
+    monkeypatch.setattr(cleanup.subprocess, "run", unavailable)
+    assert cleanup.process_table() == {}
+    monkeypatch.setattr(
+        cleanup.subprocess,
+        "run",
+        lambda **_kwargs: types.SimpleNamespace(returncode=1, stdout=""),
+    )
+    assert cleanup.process_table() == {}
+    listing = types.SimpleNamespace(
+        returncode=0, stdout="short\nnot-a-pid 2 3 command\n4 5 6 command line\n"
+    )
+    monkeypatch.setattr(cleanup.subprocess, "run", lambda **_kwargs: listing)
+    assert cleanup.process_table() == {4: (5, 6, "command line")}
+
+
 def test_process_cleanup_tolerates_unavailable_process_records_and_disappearing_pids(
     *, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The cleanup path safely handles incomplete process-table observations."""
     mod = _load()
+    cleanup = _load_process_cleanup()
 
-    def unavailable(**_kwargs: object) -> None:
-        raise OSError("ps unavailable")
-
-    monkeypatch.setattr(mod.subprocess, "run", unavailable)
-    assert mod.process_table() == {}
-    monkeypatch.setattr(
-        mod.subprocess,
-        "run",
-        lambda **_kwargs: types.SimpleNamespace(returncode=1, stdout=""),
-    )
-    assert mod.process_table() == {}
-    listing = types.SimpleNamespace(
-        returncode=0, stdout="short\nnot-a-pid 2 3 command\n4 5 6 command line\n"
-    )
-    monkeypatch.setattr(mod.subprocess, "run", lambda **_kwargs: listing)
-    assert mod.process_table() == {4: (5, 6, "command line")}
+    _assert_process_table_refusals(cleanup=cleanup, monkeypatch=monkeypatch)
 
     monkeypatch.setattr(mod.os, "kill", _process_missing)
     assert mod.is_alive(pid=1) is False
 
     monkeypatch.setattr(mod.os, "kill", _process_forbidden)
+    assert mod.is_alive(pid=1) is True
+
+    def unreadable_stat(*_args: object, **_kwargs: object) -> str:
+        raise OSError("process record unavailable")
+
+    monkeypatch.setattr(mod.Path, "read_text", unreadable_stat)
     assert mod.is_alive(pid=1) is True
 
     class FinishedProcess:
