@@ -78,18 +78,26 @@ The coordinator announces it. These are the contents. Order: freeze inflow, drai
 - Every open PR in the 10 repositories is either merged green or parked with `do-not-merge` and a ledger note.
 - Master CI is green, with a completed verdict, in all 10 repositories.
 - No workflow run is in progress or queued in the 10 repositories (`gh run list --status in_progress` / `queued` empty).
-  **Orphaned queued runs must be CANCELLED; they never drain.** Measured 2026-11-13 ~01:3xZ: 31 runs had sat in `queued`
+  **Ghost runs never drain, and GitHub will not cancel them.** Measured 2026-11-13 ~00:3xZ: 31 runs had sat in `queued`
   for more than 24 hours. Four are `Bump pin from sibling dispatch` runs from 2026-08-19, in livespec-driver-claude,
   livespec-driver-codex and livespec-runtime. The other 27 are CI, Auto-enable merge and Master health reconcile runs
-  from a 2026-11-11 20:18Z-20:52Z burst, in seven of the 10 repositories. Waiting does not clear them, so the drain
-  cancels every queued run older than the halt announcement (`gh run cancel <id> -R <repo>`) and records each id.
+  from a 2026-11-11 20:18Z-20:52Z burst, in seven of the 10 repositories. 30 of the 31 have ZERO jobs: GitHub created the
+  run and never its jobs. Every cancel was refused. `gh run cancel` returned 409 "completed", and force-cancel returned
+  409 "not queued yet" (per-run record: comment on this epic, 2026-11-13T00:47:15Z). By legacy-coordinator-agent's ruling
+  (b), the quiet check excludes a run that is `queued` with zero jobs, never updated since creation, and created before
+  the halt announcement (`--halt-at`). It reports such a run as `ghost` with its id, and nothing is deleted. A queued
+  run that has any job still counts as active, and so does a `pending` run held by a concurrency group.
+  **One run is still open.** livespec-runtime 32215471962 (`Bump pin from sibling dispatch`, 2026-08-19) has one job,
+  queued on `ubuntu-latest`, and it refuses cancel like the ghosts do. Because it has a job, it counts as active and holds
+  the quiet check shut. It needs its own ruling before the halt. A 2026-11-13 ~01:1xZ run with `--halt-at` set to that
+  minute matched the measured set exactly: 30 ghosts, plus this one run reported as active.
 - No gate Job is on the ARC runners.
 - No release is mid-flight.
 - Every image the held PRs pin is present at `ghcr.io/<org>/<name>:<tag>` (Phase 1 step 4).
 
 **Quiet check (the gate to start the cutover):** all of the above read live by one script,
 `plan/stale-base-merge-options/research/data/org-move/quiet_check.py.txt`. Run it as
-`python3 -I quiet_check.py.txt [--org <org> --image <name>:<tag> ...]`. For each fleet repository it checks five things:
+`python3 -I quiet_check.py.txt --halt-at <announcement UTC> [--org <org> --image <name>:<tag> ...]`. For each fleet repository it checks five things:
 - every open PR carries `do-not-merge` with auto-merge off;
 - the latest `ci.yml` run on master completed with success;
 - no run is active;
@@ -98,7 +106,7 @@ The coordinator announces it. These are the contents. Order: freeze inflow, drai
 
 It also checks that each `--image` is present under `ghcr.io/<org>`. Any read it cannot take counts as NOT quiet, and
 it exits 0 only when the fleet is quiet. The seat reports its output to the coordinator. A live run (2026-11-13
-~01:3xZ, the fleet working normally) read NOT QUIET in all 10 repositories, as expected. That run is saved beside
+~00:3xZ, the fleet working normally) read NOT QUIET in all 10 repositories, as expected. That run is saved beside
 the script.
 
 ## 3. Cutover outline
@@ -241,7 +249,7 @@ possible. After Phase 4, disable the merge-queue requirement; nothing else depen
   `plan/stale-base-merge-options/research/data/org-move/old_owner_refs.py.txt`, run against each repository's
   `origin/master` tree. It grades configuration only, so it excludes every `history/` and `archive/` tree, live `plan/`
   research notes (counted separately as narrative links) and release-generated `CHANGELOG.md`. Baseline, 2026-11-13
-  ~01:2xZ: 698 graded occurrences in 289 files, beside 659 informational bare `thewoolleyman/<fleet-repo>` slugs
+  ~00:2xZ: 698 graded occurrences in 289 files, beside 659 informational bare `thewoolleyman/<fleet-repo>` slugs
   (`uses:` refs, marketplace `repo:` entries). Those slugs also lean on the redirect, and the maintainer may want them
   graded too. Any non-zero count means the move still depends on GitHub's redirects, which break
   the day someone reuses the old name.

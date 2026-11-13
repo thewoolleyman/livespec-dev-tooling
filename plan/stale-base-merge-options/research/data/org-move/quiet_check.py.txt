@@ -1,6 +1,7 @@
 """The org move's quiet check: is the fleet drained enough to start the cutover? (note 005 §2)
 
-Run:  python3 quiet_check.py.txt [--owner thewoolleyman] [--org <org> --image <name>:<tag> ...] [--json]
+Run:  python3 quiet_check.py.txt [--owner thewoolleyman] [--halt-at <UTC ISO time>]
+                                 [--org <org> --image <name>:<tag> ...] [--json]
 
 Every condition is read LIVE, from GitHub through `gh` and from the gate cluster through
 `with-gates-kubeconfig kubectl`. A condition this script cannot observe counts as NOT quiet: it fails
@@ -10,7 +11,15 @@ closed, so an outage can never read as a quiet fleet. The fleet is the `fleet` l
   open-prs       every open PR carries `do-not-merge` and has auto-merge OFF
                  (`disarm-on-hold-label.yml` turns auto-merge off when the label is added)
   master-ci      the latest `ci.yml` run on master has completed, and its conclusion is success
-  runs           no workflow run of any kind is `in_progress`, `queued`, `waiting` or `pending`
+  runs           no workflow run of any kind is `in_progress`, `queued`, `waiting` or `pending`,
+                 except GHOSTS: a run whose status is `queued` (not `pending` or `waiting`, which a
+                 concurrency group legitimately holds), with ZERO jobs, never updated since it was created
+                 (updated_at == created_at), and created before `--halt-at` (the halt announcement).
+                 GitHub leaves such runs `queued` forever and refuses to cancel them; 31 were measured on
+                 2026-11-13 (comment on livespec-dev-tooling-xowhol, 00:47:15Z). Ruling (b) of
+                 legacy-coordinator-agent: they are excluded, reported as `ghost` with their ids, and never
+                 deleted. A ghost with ANY job still counts as active, and without `--halt-at` nothing
+                 is excluded, so the check still fails closed.
   release        no merged PR still carries `autorelease: pending` (Release Please has not tagged it)
   gate-jobs      no active gate Job for the repository in the cluster's `gates` namespace
 
@@ -52,7 +61,12 @@ def fleet(clones: Path) -> list[str]:
     return [entry["repo"] for entry in json.loads(text)["fleet"]]
 
 
-def check_repo(slug: str) -> dict[str, str]:
+def job_count(slug: str, run_id: int) -> int:
+    data = run_json(["gh", "api", f"/repos/{slug}/actions/runs/{run_id}/jobs?per_page=1"])
+    return int(data["total_count"])
+
+
+def check_repo(slug: str, halt_at: str | None) -> dict[str, str]:
     out: dict[str, str] = {}
 
     def guard(name: str, fn) -> None:
@@ -81,12 +95,20 @@ def check_repo(slug: str) -> dict[str, str]:
         return f"ok {r['headSha'][:9]}"
 
     def runs() -> str:
-        active = []
+        active, ghosts = [], []
         for state in ACTIVE_RUN_STATES:
-            rows = run_json(["gh", "run", "list", "-R", slug, "--status", state, "--limit", "50",
-                             "--json", "databaseId,workflowName"])
-            active += [f"{r['databaseId']}:{r['workflowName']}:{state}" for r in rows]
-        return "ok" if not active else "NOT QUIET " + " ".join(active)
+            rows = run_json(["gh", "run", "list", "-R", slug, "--status", state, "--limit", "100",
+                             "--json", "databaseId,workflowName,createdAt,updatedAt"])
+            for r in rows:
+                label = f"{r['databaseId']}:{r['workflowName']}:{state}"
+                # ISO-8601 UTC strings in the same Z form compare correctly as text.
+                if (halt_at and state == "queued" and r["updatedAt"] == r["createdAt"]
+                        and r["createdAt"] < halt_at and job_count(slug, r["databaseId"]) == 0):
+                    ghosts.append(label)
+                else:
+                    active.append(label)
+        ghost_note = f"; ghost {' '.join(ghosts)}" if ghosts else ""
+        return ("ok" if not active else "NOT QUIET " + " ".join(active)) + ghost_note
 
     def release() -> str:
         prs = run_json(["gh", "pr", "list", "-R", slug, "--state", "merged", "--label", "autorelease: pending",
@@ -135,13 +157,16 @@ def main() -> int:
     parser.add_argument("--clones", default="/data/projects", type=Path)
     parser.add_argument("--org")
     parser.add_argument("--image", action="append", default=[])
+    parser.add_argument("--halt-at", help="halt announcement time, UTC, e.g. 2026-11-20T10:00:00Z")
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args()
     if args.image and not args.org:
         parser.error("--image needs --org")
+    if args.halt_at and not re.fullmatch(r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ", args.halt_at):
+        parser.error("--halt-at must be UTC in the form YYYY-MM-DDTHH:MM:SSZ")
 
     repos = fleet(args.clones)
-    results = {repo: check_repo(f"{args.owner}/{repo}") for repo in repos}
+    results = {repo: check_repo(f"{args.owner}/{repo}", args.halt_at) for repo in repos}
     for repo, verdict in gate_jobs(repos).items():
         results[repo]["gate-jobs"] = verdict
     images = {image: image_present(args.org, image) for image in args.image}
