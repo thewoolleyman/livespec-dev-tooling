@@ -1228,6 +1228,40 @@ def test_a_stalled_gate_reaps_an_escapee_orphaned_before_the_stall(
 
 
 @pytest.mark.integration
+def test_a_stalled_gate_reaps_an_escapee_that_respawns_another_on_term(
+    *, fixture_repo: tuple[Path, Path, dict[str, str]]
+) -> None:
+    """An escapee that answers TERM by starting a new session-leader is ended too."""
+    primary, worktree, env = fixture_repo
+    token = f"livespec-gate-respawn-{time.monotonic_ns()}"
+    handler = (
+        "import os, signal, subprocess, sys, time\n"
+        "def on_term(*_):\n"
+        f"    subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(300)', {token!r}],"
+        " start_new_session=True)\n"
+        "    os._exit(0)\n"
+        "signal.signal(signal.SIGTERM, on_term)\n"
+        "time.sleep(300)\n"
+    )
+    script = worktree / "respawn.py"
+    _write(path=script, text=handler)
+    respawning = f"setsid python3 {script} & echo collected; exec sleep 300"
+    try:
+        run_id = _start(
+            cwd=worktree,
+            env={**env, _STALL_ENV: "2", _STALL_GRACE_ENV: "1"},
+            command=["bash", "-c", respawning],
+        )
+
+        run_dir = _await_verdict(primary=primary, run_id=run_id)
+        output = (run_dir / "output.log").read_text(encoding="utf-8")
+        assert not _live_processes_carrying(token=token)
+        assert output.count("ending out-of-group descendant pid=") >= 2
+    finally:
+        _end_processes_carrying(token=token)
+
+
+@pytest.mark.integration
 def test_a_gate_that_keeps_making_progress_is_not_ended_by_the_stall_window(
     *, tmp_path: Path, fixture_repo: tuple[Path, Path, dict[str, str]]
 ) -> None:
