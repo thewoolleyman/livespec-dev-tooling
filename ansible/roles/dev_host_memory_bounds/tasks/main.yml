@@ -47,7 +47,17 @@
     - "{{ dev_host_memory_bounds_gate_memory_max }}"
     - "{{ dev_host_memory_bounds_reconcile_memory_high }}"
     - "{{ dev_host_memory_bounds_reconcile_memory_max }}"
+    - "{{ dev_host_memory_bounds_dispatch_loop_memory_max }}"
   tags: [dev_host_memory_bounds_cutover]
+
+- name: Refuse a swap bound systemd will not read
+  ansible.builtin.assert:
+    that:
+      - dev_host_memory_bounds_memory_swap_max | string is match('^([0-9]+[KMG]?|infinity)$')
+    fail_msg: >-
+      dev_host_memory_bounds_memory_swap_max must be 0, a size like 2G, or
+      infinity; got '{{ dev_host_memory_bounds_memory_swap_max }}'
+    success_msg: the swap bound is readable
 
 - name: Read the uid of the login whose scratchpads move
   ansible.builtin.getent:
@@ -167,6 +177,29 @@
   become: true
   when: dev_host_memory_bounds_state == 'present'
 
+- name: Create the directory the per-loop dispatch bound is published in
+  ansible.builtin.file:
+    path: "{{ dev_host_memory_bounds_dispatch_loop_memory_max_file | dirname }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+  when: dev_host_memory_bounds_state == 'present'
+
+- name: Publish the per-loop dispatch bound for launchers to read
+  # A launcher runs `systemd-run --user --scope --slice=<dispatch slice>
+  # -p MemoryMax=$(cat <this file>)` so the bound is this host's, not a
+  # number copied from another host.
+  ansible.builtin.copy:
+    content: "{{ dev_host_memory_bounds_dispatch_loop_memory_max }}\n"
+    dest: "{{ dev_host_memory_bounds_dispatch_loop_memory_max_file }}"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+  when: dev_host_memory_bounds_state == 'present'
+
 - name: Install the user-manager memory slices
   ansible.builtin.template:
     src: memory-slice.slice.j2
@@ -206,6 +239,7 @@
       {{ dev_host_memory_bounds_system_unit_dir }}/{{ dev_host_memory_bounds_reconcile_unit }}.d/{{ dev_host_memory_bounds_reconcile_dropin }}
     - "{{ dev_host_memory_bounds_user_unit_dir }}/{{ dev_host_memory_bounds_dispatch_slice }}"
     - "{{ dev_host_memory_bounds_user_unit_dir }}/{{ dev_host_memory_bounds_gate_slice }}"
+    - "{{ dev_host_memory_bounds_dispatch_loop_memory_max_file }}"
   when: dev_host_memory_bounds_state == 'absent'
 
 - name: Disable the scratchpad bind mount

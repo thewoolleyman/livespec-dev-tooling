@@ -62,23 +62,51 @@ dev_host_memory_bounds_zshenv: "/home/{{ dev_host_memory_bounds_user }}/.zshenv"
 # a slice with `systemd-run --user --scope --slice=<name>` and no sudo.
 dev_host_memory_bounds_user_unit_dir: /etc/systemd/user
 
-# ONE slice for every per-run `dispatcher.py loop` and its launcher, SIZED FROM
-# A MEASUREMENT taken 2026-11-13 ~16:5xZ over 13 running loops:
-# - steady RSS 0.23-1.69G, 8.0G in total (the coordinator read 9.7G, ~760M each,
-#   minutes earlier);
+# ONE slice for every per-run `dispatcher.py loop` and its launcher. Its size
+# is DERIVED from four host variables, so a host with a different fleet cap or
+# different RAM sets those and nothing else:
+#
+#   MemoryMax  = loop_cap x loop_steady + concurrent_peaks x (loop_peak - loop_steady)
+#   MemoryHigh = 90% of MemoryMax
+#
+# The per-loop figures were measured on the dev VPS, 2026-11-13 ~16:5xZ, over 13
+# running loops:
+# - steady RSS 0.23-1.69G, 8.0G in total (the coordinator read 9.7G, ~760M
+#   each, minutes earlier);
 # - PEAK (VmHWM) 0.46-2.53G per loop, 18.5G summed. Five loops had each peaked
 #   at 2.45-2.53G.
-# The fleet cap is now 18 loops. 18 x 0.76G is ~13.7G steady, and 20G leaves
-# room for about four loops at their 2.5G peak together. The earlier 12G (agreed
-# from 5 loops at 0.29-0.78G) would have OOM-killed loops in ordinary operation.
-# There is no swap, so above MemoryHigh the anonymous memory of a loop cannot be
-# reclaimed and the slice STALLS instead. 18G is the brake, and 20G is the kill
-# line. A single runaway loop is bounded per launch, not here: each launcher's
-# own scope carries MemoryMax (see HOST_VARS.md). If the fleet cap grows past
-# 18, grow this with it, by about 0.8G steady and 2.5G peak per loop.
+# At the VPS's fleet cap of 18 the formula gives 18 x 800M + 4 x 1760M = 21440M.
+# The first draft's 12G, agreed from 5 loops at 0.29-0.78G, would have OOM-killed
+# loops in ordinary operation.
 dev_host_memory_bounds_dispatch_slice: factory-dispatch.slice
-dev_host_memory_bounds_dispatch_memory_high: 18G
-dev_host_memory_bounds_dispatch_memory_max: 20G
+dev_host_memory_bounds_dispatch_loop_cap: 18
+dev_host_memory_bounds_dispatch_loop_steady_mib: 800
+dev_host_memory_bounds_dispatch_loop_peak_mib: 2560
+dev_host_memory_bounds_dispatch_concurrent_peaks: 4
+dev_host_memory_bounds_dispatch_memory_max: >-
+  {{ dev_host_memory_bounds_dispatch_loop_cap | int * dev_host_memory_bounds_dispatch_loop_steady_mib | int
+     + dev_host_memory_bounds_dispatch_concurrent_peaks | int
+       * (dev_host_memory_bounds_dispatch_loop_peak_mib | int - dev_host_memory_bounds_dispatch_loop_steady_mib | int) }}M
+dev_host_memory_bounds_dispatch_memory_high: >-
+  {{ ((dev_host_memory_bounds_dispatch_memory_max | regex_replace('M$', '') | int) * 0.9) | int }}M
+
+# The bound EACH launcher puts on its own scope, so one runaway loop cannot take
+# the whole slice: the largest measured peak (VmHWM 2532M) plus room for the
+# loop's drive and preflight children. The role publishes it in
+# `dev_host_memory_bounds_dispatch_loop_memory_max_file` so a launcher reads this
+# host's value instead of hard-coding the VPS's.
+dev_host_memory_bounds_dispatch_loop_memory_max: 3500M
+dev_host_memory_bounds_dispatch_loop_memory_max_file: /etc/livespec/factory-dispatch-loop-memory-max
+
+# SWAP. The dev VPS has none, so above a slice's MemoryHigh the anonymous memory
+# of its processes cannot be reclaimed and the slice STALLS until it falls back
+# under; MemoryMax is the kill line. On a host WITH swap, MemoryHigh reclaims to
+# swap first, so how much of a slice may go to swap is a deliberate choice, made
+# here for every slice and the reconcile-runs drop-in. 0 keeps their behaviour
+# identical to the no-swap host (stall at High, kill at Max) and keeps a
+# runaway from pushing the live ledger or the seats into swap. `infinity`
+# removes the bound.
+dev_host_memory_bounds_memory_swap_max: "0"
 
 # ONE slice for local full-suite gates. With local_gate_slots_limit at 1, one
 # `pytest -n 4 --cov` aggregate runs at a time; the slice bounds what it may hold.
@@ -94,6 +122,12 @@ dev_host_memory_bounds_gate_memory_max: 10G
 # measurement: one timer pass sat at 3.7G after 4.5 minutes and was still
 # growing, and a pass killed at MemoryMax is wasted until the next tick. 4G
 # MemoryHigh throttles first; 6G kills only a runaway.
+# MEASURED PEAK: 3.7G RSS (16:3xZ, 4.5 min into a pass) and 3.3G (17:1xZ, 5.5
+# min in), both on the dev VPS, 2026-11-13; no pass has yet been read to its end.
+# WHAT A KILL DOES: the pass dies, systemd records the oneshot as failed
+# (Restart=no), and the next timer tick asks the same inventory question again.
+# legacy-dispatcher-agent confirms a pass is retry-safe. The cost is one wasted
+# pass, which is the reason MemoryMax sits 2G above the measured peak.
 dev_host_memory_bounds_reconcile_unit: reconcile-runs.service
 dev_host_memory_bounds_reconcile_memory_high: 4G
 dev_host_memory_bounds_reconcile_memory_max: 6G
