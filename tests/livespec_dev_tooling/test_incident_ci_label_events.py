@@ -26,6 +26,13 @@ rules, because each rule here is a security or merge-safety property:
   release, as neutral, the holds of this label on the head up to its own.
 - **auto-enable-merge cannot race the hold.** Its gate skips the unlabeled
   event of the incident label, and `ci.yml` still does not trigger on labels.
+- **Every forge call retries an unusable answer under one rule.** The job's
+  first step puts livespec-forge-read on its path through the composite Action
+  `forge-read` at a release tag of this library (the workflow checks nothing
+  out), and the script makes no bare `gh api` call. The hold create carries an
+  external_id naming this job, and the two writes whose outcome can be unknown
+  (exit 75), the hold create and the re-run, are repeated only after the step
+  re-reads the forge state they change (work item livespec-dev-tooling-pwabtl).
 
 Each rule is exercised twice, as the sibling `test_incident_ci_workflow_wiring`
 does: against the committed workflow (expecting silence) and against a copy
@@ -64,18 +71,23 @@ _JOB_PERMISSIONS = {"actions": "write", "checks": "write", "pull-requests": "rea
 _EXPRESSION = "${{"
 
 # The forge reads and writes the restart must make.
-_HEAD_READ = """gh api "repos/${repo}/pulls/${PR_NUMBER}" --jq '.head.sha'"""
+_HEAD_READ = """livespec-forge-read incident-label-head-read "repos/${repo}/pulls/${PR_NUMBER}" | jq -r '.head.sha'"""
 _RUNS_ON_HEAD = "actions/workflows/ci.yml/runs?event=pull_request&head_sha=${head}"
 _SELECT_BY_PR = "select(any(.pull_requests[]; .number == (env.PR_NUMBER | tonumber)))"
 _NO_RUN = re.compile(r'if \[ -z "\$run_id" \]; then\n(?P<body>(?:.*\n)*?)[ ]*fi\n')
-_HOLD_POST = 'hold_id="$(gh api -X POST "repos/${repo}/check-runs"'
-_HOLD_FIELDS = '-f name=ci-green -f head_sha="$head" -f status=in_progress'
+_HOLD_POST = 'created="$(livespec-forge-read incident-label-hold-create --method POST "repos/${repo}/check-runs"'
+_HOLD_FIELDS = '--field name=ci-green --field head_sha="$head" --field status=in_progress'
 _HOLD_EXPORT = 'export HOLD_ID="$hold_id"'
 _CANCEL = '/actions/runs/${run_id}/cancel"'
 _RERUN = '/actions/runs/${run_id}/rerun"'
 _LOOP_BREAK = '[ "$status" = "completed" ] && break'
 _RETRY_HEAD = r"for attempt in \$\(seq 1 (?P<bound>\d+)\); do\n"
-_RETRY_CANCEL = r'[ ]*if gh api -X POST "repos/\$\{repo\}/actions/runs/\$\{run_id\}/cancel"'
+_RETRY_CANCEL = "".join(
+    (
+        r"[ ]*if livespec-forge-read incident-label-run-cancel --method POST --idempotent ",
+        r'"repos/\$\{repo\}/actions/runs/\$\{run_id\}/cancel"',
+    )
+)
 _RETRY = re.compile(_RETRY_HEAD + _RETRY_CANCEL + r" >/dev/null; then\n[ ]*break\n")
 _UNTIL_COMPLETED = r'(?P<body>(?:.*\n)*?)[ ]*done\n[ ]*if \[ "\$status" != "completed" \]; then\n'
 _THEN_EXIT = r"(?P<after>(?:.*\n)*?)[ ]*fi\n"
@@ -93,8 +105,43 @@ _HOLDS_SELECT = (
     + _HELD_TITLE
     + ") and .id <= (env.HOLD_ID | tonumber))"
 )
-_RELEASE = 'gh api -X PATCH "repos/${repo}/check-runs/${id}"'
-_RELEASE_FIELDS = "-f status=completed -f conclusion=neutral"
+_RELEASE = "".join(
+    (
+        "livespec-forge-read incident-label-hold-release --method PATCH --idempotent ",
+        '"repos/${repo}/check-runs/${id}"',
+    )
+)
+_RELEASE_FIELDS = "--field status=completed --field conclusion=neutral"
+
+# The forge-read rule (livespec-dev-tooling-pwabtl): the Action at a release tag,
+# no bare forge call, and a re-read of the state before a write whose outcome is
+# unknown (exit 75) is repeated.
+_FORGE_READ_USES = re.compile(
+    r"thewoolleyman/livespec-dev-tooling/\.github/actions/forge-read@v\d+\.\d+\.\d+"
+)
+_BARE_GH = re.compile(r"(?<![\w-])gh api\b")
+_HOLD_REF = '--field external_id="$hold_ref"'
+_HOLD_REREAD = re.compile(
+    "".join(
+        (
+            r'\[ "\$created_rc" -eq 75 \] \|\| exit "\$created_rc"\n',
+            r'[ ]*hold_id="\$\(livespec-forge-read incident-label-hold-read "\$holds" \| ',
+            r"jq -r --arg ref \"\$hold_ref\" '\[\.check_runs\[\] \| select\(\.external_id == \$ref\)\]",
+            r"[^\n]*\n",
+            r'[ ]*\[ -n "\$hold_id" \] && break\n',
+        )
+    )
+)
+_RERUN_REREAD = re.compile(
+    "".join(
+        (
+            r'\[ "\$rerun_rc" -eq 75 \] \|\| exit "\$rerun_rc"\n',
+            r'[ ]*after="\$\(livespec-forge-read incident-label-run-read "repos/\$\{repo\}/actions/runs/',
+            r"\$\{run_id\}\" \| jq -r '\.run_attempt'\)\"\n",
+            r'[ ]*if \[ "\$after" -gt "\$before" \]; then\n',
+        )
+    )
+)
 
 _AUTO_MERGE_SKIP = "&& !(github.event.action == 'unlabeled' && " + _INCIDENT_LABEL_TEST + ")"
 
@@ -200,6 +247,23 @@ def _order_findings(*, script: str) -> list[str]:
     return findings
 
 
+def _forge_read_findings(*, jobs: dict[str, Any], script: str) -> list[str]:
+    findings: list[str] = []
+    steps = _seq(value=_map(value=jobs.get(_JOB)).get("steps"))
+    first = str(_map(value=steps[0] if steps else {}).get("uses", ""))
+    if _FORGE_READ_USES.fullmatch(first) is None:
+        findings.append("livespec-forge-read is not put on the path from a release tag first")
+    if _BARE_GH.search(script) is not None:
+        findings.append("a forge call bypasses livespec-forge-read")
+    if _HOLD_REF not in script or _HOLD_REREAD.search(script) is None:
+        findings.append(
+            "the hold create is repeated without re-reading the hold by its external_id"
+        )
+    if _RERUN_REREAD.search(script) is None:
+        findings.append("the re-run is repeated without re-reading the run's attempt")
+    return findings
+
+
 def label_workflow_findings(*, source: str) -> list[str]:
     """Every way the label workflow departs from its pinned, merge-safe shape."""
     workflow = _load(source=source)
@@ -214,6 +278,7 @@ def label_workflow_findings(*, source: str) -> list[str]:
         *_job_findings(jobs=jobs),
         *_selection_findings(script=script),
         *_order_findings(script=script),
+        *_forge_read_findings(jobs=jobs, script=script),
     ]
 
 
@@ -241,6 +306,12 @@ def _mutated(*, source: str, old: str, new: str) -> str:
     return source.replace(old, new)
 
 
+def test_a_label_workflow_with_no_steps_is_a_finding() -> None:
+    source = _LABEL_WORKFLOW.read_text(encoding="utf-8")
+    cut = source[: source.index("    steps:\n")] + "    steps: []\n"
+    assert _FIRST in label_workflow_findings(source=cut)
+
+
 def test_committed_label_workflow_holds_until_ci_has_rerun_on_incident_events_only() -> None:
     assert label_workflow_findings(source=_LABEL_WORKFLOW.read_text(encoding="utf-8")) == []
 
@@ -260,8 +331,17 @@ _HOLD = "the hold is not an in-progress ci-green check run on the head"
 _STOP = "an unfinished run is not stopped by a retried, waited-for cancel"
 _KEPT = "the hold is not kept until the re-run completes"
 _RELEASED = "the holds up to this job's own are not released as neutral"
-_HOLD_LINE = '          hold_id="$(gh api'
-_RERUN_LINE = '          gh api -X POST "repos/${repo}' + _RERUN + " >/dev/null\n"
+_HOLD_LINE = '          holds="repos/'
+_RERUN_LINE = (
+    '            livespec-forge-read incident-label-run-rerun --method POST "repos/${repo}'
+    + _RERUN
+    + " >/dev/null || rerun_rc=$?\n"
+)
+_FIRST = "livespec-forge-read is not put on the path from a release tag first"
+_BYPASS = "a forge call bypasses livespec-forge-read"
+_HOLD_BLIND = "the hold create is repeated without re-reading the hold by its external_id"
+_RERUN_BLIND = "the re-run is repeated without re-reading the run's attempt"
+_USES = "uses: thewoolleyman/livespec-dev-tooling/.github/actions/forge-read@v1.203.0"
 
 
 @pytest.mark.parametrize(
@@ -307,8 +387,8 @@ _RERUN_LINE = '          gh api -X POST "repos/${repo}' + _RERUN + " >/dev/null\
             "a run: script interpolates an expression",
         ),
         (
-            "--jq '.head.sha'",
-            "--jq '.base.sha'",
+            "jq -r '.head.sha'",
+            "jq -r '.base.sha'",
             "the restart does not read the current head from the forge",
         ),
         (
@@ -321,7 +401,7 @@ _RERUN_LINE = '          gh api -X POST "repos/${repo}' + _RERUN + " >/dev/null\
             "\n            exit 1\n",
             "a PR with no CI run listed yet does not stop green",
         ),
-        ("status=in_progress", "status=completed -f conclusion=success", _HOLD),
+        ("status=in_progress", "status=completed --field conclusion=success", _HOLD),
         (_HOLD_EXPORT + "\n", "\n", _HOLD),
         ("$(seq 1 30)", "$(seq 1 0)", _STOP),
         (
@@ -361,13 +441,49 @@ _RERUN_LINE = '          gh api -X POST "repos/${repo}' + _RERUN + " >/dev/null\
             _KEPT,
         ),
         ("conclusion=neutral", "conclusion=success", _RELEASED),
-        ("            gh api -X PATCH", "            true -X PATCH", _RELEASED),
+        (
+            "            livespec-forge-read incident-label-hold-release",
+            "            true incident-label-hold-release",
+            _RELEASED,
+        ),
         (" and .id <= (env.HOLD_ID | tonumber)", "", _RELEASED),
         (_HELD_TITLE, "true", _RELEASED),
         (
             _RERUN_LINE,
-            "          " + _RELEASE + " " + _RELEASE_FIELDS + "\n" + _RERUN_LINE,
+            "            " + _RELEASE + " " + _RELEASE_FIELDS + "\n" + _RERUN_LINE,
             "the hold is released before the re-run completes",
+        ),
+        (
+            _USES,
+            "uses: thewoolleyman/livespec-dev-tooling/.github/actions/forge-read@master",
+            _FIRST,
+        ),
+        (_USES, "uses: ./.github/actions/forge-read", _FIRST),
+        (
+            "          set -euo pipefail\n",
+            '          set -euo pipefail\n          gh api "repos/${GITHUB_REPOSITORY}" >/dev/null\n',
+            _BYPASS,
+        ),
+        (' \\\n              --field external_id="$hold_ref"', "", _HOLD_BLIND),
+        (
+            '            [ -n "$hold_id" ] && break\n',
+            "            true\n",
+            _HOLD_BLIND,
+        ),
+        (
+            '            [ "$created_rc" -eq 75 ] || exit "$created_rc"\n',
+            "",
+            _HOLD_BLIND,
+        ),
+        (
+            '            if [ "$after" -gt "$before" ]; then\n',
+            "            if false; then\n",
+            _RERUN_BLIND,
+        ),
+        (
+            '            [ "$rerun_rc" -eq 75 ] || exit "$rerun_rc"\n',
+            "",
+            _RERUN_BLIND,
         ),
     ],
 )
@@ -384,8 +500,7 @@ def test_a_rerun_before_the_stop_is_waited_for_is_a_finding() -> None:
     moved = _mutated(
         source=moved,
         old="            for _ in $(seq 1 60); do\n",
-        new=_RERUN_LINE.replace("          ", "            ", 1)
-        + "            for _ in $(seq 1 60); do\n",
+        new=_RERUN_LINE + "            for _ in $(seq 1 60); do\n",
     )
     assert "the run is re-run before the stop has been waited for" in label_workflow_findings(
         source=moved
@@ -395,7 +510,7 @@ def test_a_rerun_before_the_stop_is_waited_for_is_a_finding() -> None:
 def test_a_rerun_wait_that_is_gone_entirely_is_a_finding() -> None:
     source = _LABEL_WORKFLOW.read_text(encoding="utf-8")
     start = source.index("          for poll in $(seq 1 460); do\n")
-    end = source.index('          holds="repos/')
+    end = source.index("          for id in $(")
     assert _KEPT in label_workflow_findings(source=source[:start] + source[end:])
 
 
