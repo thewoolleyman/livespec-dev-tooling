@@ -82,7 +82,7 @@ def process_start_time(*, pid: int) -> str | None:
     """Return Linux's immutable start-time tick for `pid`, if it is observable."""
     try:
         stat = Path(f"/proc/{pid}/stat").read_text(encoding="utf-8")
-    except OSError:
+    except (OSError, UnicodeDecodeError):
         return None
     return _parse_start_time(stat=stat)
 
@@ -102,7 +102,7 @@ def _creator_identity(
     except OSError as error:
         _LOGGER.warning("could not read creator record %s: %s", record, error)
         return "unreadable", None
-    except json.JSONDecodeError as error:
+    except (json.JSONDecodeError, UnicodeDecodeError) as error:
         _LOGGER.warning("malformed creator record %s: %s", record, error)
         return "malformed", None
     if not _is_string_keyed_dict(value=loaded):
@@ -128,7 +128,7 @@ def _creator_is_gone(*, pid: int, start_time: str) -> bool:
         observed = proc_stat.read_text(encoding="utf-8")
     except FileNotFoundError:
         return True
-    except OSError as error:
+    except (OSError, UnicodeDecodeError) as error:
         _LOGGER.warning("could not observe coverage creator %s: %s", proc_stat, error)
         return False
     observed_start_time = _parse_start_time(stat=observed)

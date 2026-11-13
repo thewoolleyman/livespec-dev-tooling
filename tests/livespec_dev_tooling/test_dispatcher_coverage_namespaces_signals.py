@@ -37,6 +37,10 @@ touch "$RUNNING_MARKER"
 case "${FAKE_JUST_ACTION:-sleep}" in
     sleep) exec sleep 120 ;;
     pass) exit 0 ;;
+    wait)
+        until test -e "$RUNNING_MARKER.release"; do sleep 0.05; done
+        exit 0
+        ;;
 esac
 """
 
@@ -210,7 +214,7 @@ def test_a_new_runner_reclaims_a_sigkilled_namespace_but_leaves_a_live_aggregate
             bin_dir=bin_dir,
             scratch=scratch,
             marker=tmp_path / "live-running",
-            action="sleep",
+            action="wait",
         )
         processes.append(live)
         _wait_for_marker(marker=tmp_path / "live-running")
@@ -227,6 +231,10 @@ def test_a_new_runner_reclaims_a_sigkilled_namespace_but_leaves_a_live_aggregate
         assert reclaimer.wait(timeout=30) == 0
         assert sorted(scratch.glob("covns-*")) == live_dirs
         assert live.poll() is None
+
+        _ = (tmp_path / "live-running.release").write_text("", encoding="utf-8")
+        assert live.wait(timeout=30) == 0
+        assert list(scratch.glob("covns-*")) == []
     finally:
         for process in processes:
             with suppress(ProcessLookupError):
@@ -292,6 +300,22 @@ def test_reclaim_keeps_an_old_namespace_with_a_malformed_creator_record(
     assert "malformed creator record" in caplog.text
 
 
+def test_reclaim_keeps_and_logs_an_old_namespace_with_an_undecodable_creator_record(
+    *, tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A record that is not UTF-8 is a malformed record, never an absent one or a crash."""
+    namespace_dir = tmp_path / "covns-undecodable"
+    namespace_dir.mkdir()
+    _ = (namespace_dir / ".livespec-coverage-creator.json").write_bytes(b"\xff\xfe{")
+    old_time = time.time() - 24 * 60 * 60 - 1
+    os.utime(namespace_dir, (old_time, old_time))
+
+    namespaces.reclaim_abandoned_namespace_dirs(root=tmp_path)
+
+    assert namespace_dir.is_dir()
+    assert "malformed creator record" in caplog.text
+
+
 def test_reclaim_keeps_and_logs_an_old_namespace_with_an_unreadable_creator_record(
     *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
@@ -313,7 +337,7 @@ def test_reclaim_keeps_and_logs_an_old_namespace_with_an_unreadable_creator_reco
     assert "could not read creator record" in caplog.text
 
 
-@pytest.mark.parametrize("failure", ["permission", "unparsable"])
+@pytest.mark.parametrize("failure", ["permission", "unparsable", "undecodable"])
 def test_reclaim_keeps_and_logs_a_namespace_when_creator_state_cannot_be_observed(
     *,
     tmp_path: Path,
@@ -333,6 +357,8 @@ def test_reclaim_keeps_and_logs_a_namespace_when_creator_state_cannot_be_observe
         if str(path).startswith("/proc/"):
             if failure == "permission":
                 raise PermissionError(path)
+            if failure == "undecodable":
+                raise UnicodeDecodeError("utf-8", b"\xff", 0, 1, "invalid start byte")
             return "not a proc stat record"
         return original_read_text(path, encoding=encoding)
 
@@ -396,6 +422,20 @@ def test_process_start_time_returns_none_when_procfs_cannot_be_read(
         raise PermissionError(path)
 
     monkeypatch.setattr(namespaces.Path, "read_text", refuse_procfs)
+
+    assert namespaces.process_start_time(pid=os.getpid()) is None
+
+
+def test_process_start_time_returns_none_when_procfs_data_is_not_utf8(
+    *, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Undecodable procfs bytes yield no identity rather than raising into the runner."""
+
+    def undecodable(path: Path, *, encoding: str) -> str:
+        _ = (path, encoding)
+        raise UnicodeDecodeError("utf-8", b"\xff", 0, 1, "invalid start byte")
+
+    monkeypatch.setattr(namespaces.Path, "read_text", undecodable)
 
     assert namespaces.process_start_time(pid=os.getpid()) is None
 
