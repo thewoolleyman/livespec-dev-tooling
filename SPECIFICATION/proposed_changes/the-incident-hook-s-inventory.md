@@ -13,7 +13,7 @@ created_at: 2026-11-13T05:15:00Z
 
 ### Summary
 
-Amends contracts.md section Expedited incident execution and the scenario "an expedited local gate skips slow work and preserves fast failures". The expedited local hooks read every member of the repository's committed check-targets.txt inventory whatever its name, not only `check-` slugs. A member is deferred only when its timing is declared slow or not-applicable, or when it is selected and reaches the sixty-second deadline. A member with no timing declaration, an unrecognised declaration, two conflicting declarations, a member listed more than once, or a member line that is not a bare recipe name is refused by name, and nothing is run, deferred or receipted. This replaces "Known slow and unclassified gates MUST be recorded as deferred".
+Amends contracts.md section Expedited incident execution and the scenario "an expedited local gate skips slow work and preserves fast failures". The expedited local hooks read every member of the repository's committed check-targets.txt inventory whatever its name, not only `check-` slugs. A member is deferred only when its timing is declared slow or not-applicable, or when it is selected and reaches the sixty-second deadline. A member with no timing declaration, an unrecognised declaration, two conflicting declarations, a member listed more than once, or a member line that is not a bare recipe name is refused by name, and nothing is run, deferred or receipted. This replaces "Known slow and unclassified gates MUST be recorded as deferred". Dropping "unknown" from the sixty-second clause is deliberate: an unclassified member now refuses before selection, so the deadline applies to selected fast gates.
 
 ### Motivation
 
@@ -27,7 +27,7 @@ In SPECIFICATION/contracts.md, section "## Expedited incident execution", in the
 
 with:
 
-"The expedited local hooks MUST read every member of the repository's committed `check-targets.txt` inventory, whatever its name, and not only members whose name begins `check-`. A member whose `incident-timing` is declared `slow`, or declared `not-applicable` with its precondition, MUST be recorded as deferred with its reason rather than launched, and a selected gate reaching sixty seconds MUST stop its owned process group and record deferred-timeout. A member that carries no `incident-timing` declaration, a declaration other than exactly one of `fast`, `slow` or `not-applicable`, or two conflicting declarations, a member listed more than once, and a member line that is not a bare recipe name MUST each refuse the commit or push before any gate runs, naming that member and its fault (a duplicated member is named as listed more than once), and the hooks MUST NOT run, defer or receipt any gate for it."
+"The expedited local hooks MUST read every member of the repository's committed `check-targets.txt` inventory, whatever its name, and not only members whose name begins `check-`. A member whose `incident-timing` is declared `slow` or `not-applicable` MUST be recorded as deferred with its reason rather than launched, and a selected gate reaching sixty seconds MUST stop its owned process group and record deferred-timeout. A member that carries no `incident-timing` declaration, a declaration other than exactly one of `fast`, `slow` or `not-applicable`, or two conflicting declarations, a member listed more than once, and a member line that is not a bare recipe name MUST each refuse the commit or push before any gate runs, naming that member and its fault (a duplicated member is named as listed more than once), and the hooks MUST NOT run, defer or receipt any gate."
 
 In SPECIFICATION/scenarios.md, in "## Scenario: an expedited local gate skips slow work and preserves fast failures", replace the step:
 
@@ -37,6 +37,14 @@ with:
 
 "And a declared slow or not-applicable gate is reported as deferred with its reason instead of launching the normal full aggregate.
 And an inventory member whose name does not begin `check-`, declared slow, is reported as deferred with its reason like any slow gate.
-And an inventory member with no timing declaration, an unrecognised or conflicting declaration, or listed more than once refuses the commit by name, and no gate is run, deferred or receipted."
+And an inventory member with no timing declaration, an unrecognised or conflicting declaration, or listed more than once, or an inventory line that is not a bare recipe name, refuses the commit by name, and no gate is run, deferred or receipted."
+
+In the same scenario, replace the step:
+
+"And an unknown selected gate that reaches sixty seconds terminates its owned process group and records deferred-timeout."
+
+with:
+
+"And a selected gate that reaches sixty seconds terminates its owned process group and records deferred-timeout."
 
 The ratifying revise owes the heading-coverage co-edit for this scenario if its heading text changes (it does not, as proposed) and records livespec-dev-tooling-dixgta as the implementing item.
