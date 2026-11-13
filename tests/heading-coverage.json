@@ -573,10 +573,58 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: every scale set's listener pod runs on an always-on node",
+    "test": "TODO",
+    "reason": "Spec-first (v215): a real test at the integration tier or above is owed for this heading. Its proof is host-captured on the live production cluster (the committed listener read-back exiting 0 with every listener on a labelled node); that read was captured and independently verified once on livespec-dev-tooling-crvvxt (closed 2026-11-13), and the listener-spread converge re-reads it. livespec-dev-tooling-zrsyfp owns it.",
+    "work_item": "livespec-dev-tooling-zrsyfp"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: the listener read-back fails when a listener is on a node that is not always on",
+    "test": "TODO",
+    "reason": "Spec-first (v215): a real test at the integration tier or above is owed for this heading. The whole-scenario test already exists at the unit tier, tests.livespec_dev_tooling.test_always_on_node_label.test_the_read_back_names_a_misplaced_listener_and_a_scale_set_with_no_listener_in_one_run (livespec-dev-tooling#4414), and runs the committed read-back end to end against a stub kubectl, but it does not carry the integration tier the scenario floor reads; this row maps to it once it does. livespec-dev-tooling-zrsyfp owns it, with the other read-back tests it adds.",
+    "work_item": "livespec-dev-tooling-zrsyfp"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: the listener pods of the scale sets are spread across the always-on nodes",
+    "test": "TODO",
+    "reason": "Spec-first (v215): a real test at the integration tier or above is owed for this heading. Its proof is host-captured on the live production cluster, after a converge that re-creates the listener pods. livespec-dev-tooling-zrsyfp owns it.",
+    "work_item": "livespec-dev-tooling-zrsyfp"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: the listener read-back counts the listener pods on each always-on node",
+    "test": "TODO",
+    "reason": "Spec-first (v215): a real test at the integration tier or above is owed for this heading: a stub-kubectl test that runs the committed ci-runner/k3s/phase2/arc/read-listener-placement.sh end to end and asserts the per-node counts and exit status 0. livespec-dev-tooling-zrsyfp owns it.",
+    "work_item": "livespec-dev-tooling-zrsyfp"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: the listener read-back prints no count when the read of the always-on nodes fails",
+    "test": "TODO",
+    "reason": "Spec-first (v215): a real test at the integration tier or above is owed for this heading: a stub-kubectl test that runs the committed ci-runner/k3s/phase2/arc/read-listener-placement.sh end to end with a failing labelled-nodes read and asserts exit status 2 and no per-node count. livespec-dev-tooling-zrsyfp owns it.",
+    "work_item": "livespec-dev-tooling-zrsyfp"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: a node-loss drill holds one agent node NotReady and restores it without touching its workloads",
     "test": "tests.livespec_dev_tooling.test_node_loss_drill_playbook.test_the_drill_stops_the_agent_after_the_wait_holds_it_and_restores_the_node",
     "reason": "Integration-tier (`pytestmark = pytest.mark.integration`, the marker fallback this repository's `scenario_tiers` leaves for a test living in the mirror tree): ONE confirmed apply of the real committed `ansible/node-loss-drill.yml`, driven end-to-end through the pinned `ansible-core` against a three-host `ci_pool` inventory and stand-in `kubectl`, `systemctl` and `sudo` on PATH. THE STAND-INS ARE A COUPLED STATE MACHINE, which is what makes the scenario's Then-clauses measured rather than modelled: the stand-in `systemctl` writes the agent's simulated state to a file and the stand-in `kubectl` derives the node's Ready condition from it — `True` while running, `Unknown` once stopped — so the drill's NotReady wait can only be satisfied AFTER its own stop ran and its Ready wait only after its own start, and a play that stopped nothing hangs out its retries and FAILS rather than passing on a canned answer. Both stand-ins append to ONE ordered log, so every clause is asserted by POSITION in it: the stop comes after the LAST pod read (the \"before it takes the agent down\" clause, which no file-layout reading establishes), the API is read for the Ready condition BETWEEN the stop and the start (the NotReady observation itself), the start follows the stop, and the posture is read once before the stop and again after it is back. The configured hold is read back OUT of the drill's own two reported instants rather than taken from the flag that set it, so a drill that bounced the agent instead of holding the node down is convicted. The scenario's \"MUST NOT have cordoned, drained, evicted or deleted the factory sandbox pod\" is asserted both ways: no such verb appears in the committed file's executable text, and every logged cluster call is a `get`. Sibling tests supply the counter-examples the single happy path cannot: three one-axis drifts (a taint added, the factory label gone, the churn-slot capacity changed) each fail the play at the verification while STILL leaving the agent running, and a node whose runner and gate pods are Running refuses before the stop (plan factory-worker-nodes-gitops, freeze-driver ruling R71, livespec-dev-tooling-raynnh).",
     "work_item": "livespec-dev-tooling-raynnh"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: an agent restart is not refused for an ARC listener pod and is refused for workload",
+    "test": "TODO",
+    "reason": "Spec-first (v215): a real test at the integration tier or above is owed for this heading, driving the committed ansible/restart-k3s-agent.yml through pinned ansible-core against a kubectl stand-in whose node carries an arc-systems AutoscalingListener pod, with and without a workload pod beside it. livespec-dev-tooling-6yxdxu owns it.",
+    "work_item": "livespec-dev-tooling-6yxdxu"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -593,6 +641,38 @@
   "test": "tests.livespec_dev_tooling.test_factory_sandbox_loss_drill_playbook.test_deletes_exactly_one_uid_and_reports_the_api_observed_times",
   "reason": "Integration-tier: the test drives the committed playbook through pinned ansible-core against a stateful kubectl stand-in and a real local Git origin. It proves the one UID-preconditioned sandbox-pod delete, UID disappearance wait and UTC report; siblings cover consent, validation, selection, preserved-ref and same-name replacement refusals. The live-cluster half is host-captured.",
     "work_item": "livespec-dev-tooling-5wybjq"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a planned power-off evacuation moves a cordoned node's listener pods and leaves its other pods",
+    "test": "TODO",
+    "reason": "Spec-first (v215): a real test at the integration tier or above is owed for this heading, driving the committed ansible/k3s-window-drain.yml evacuate action against a stateful kubectl stand-in. The play and its unit-tier tests (tests/livespec_dev_tooling/test_k3s_window_drain_playbook.py) landed in livespec-dev-tooling#4404; those tests do not carry the integration tier. livespec-dev-tooling-acgcwp owns it.",
+    "work_item": "livespec-dev-tooling-acgcwp"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: clearing a lost node is refused for a node that reads Ready",
+    "test": "TODO",
+    "reason": "Spec-first (v215): a real test at the integration tier or above is owed for this heading, driving the committed ansible/k3s-window-drain.yml clear-lost action on a Ready node against a stateful kubectl stand-in. The play and its unit-tier tests (tests/livespec_dev_tooling/test_k3s_window_drain_playbook.py) landed in livespec-dev-tooling#4404; those tests do not carry the integration tier. livespec-dev-tooling-acgcwp owns it.",
+    "work_item": "livespec-dev-tooling-acgcwp"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: clearing a lost node force-deletes its stuck listener pods and reports each pod it cleared",
+    "test": "TODO",
+    "reason": "Spec-first (v215): a real test at the integration tier or above is owed for this heading, driving the committed ansible/k3s-window-drain.yml clear-lost action on a lost node against a stateful kubectl stand-in. The play and its unit-tier tests (tests/livespec_dev_tooling/test_k3s_window_drain_playbook.py) landed in livespec-dev-tooling#4404; those tests do not carry the integration tier. livespec-dev-tooling-acgcwp owns it.",
+    "work_item": "livespec-dev-tooling-acgcwp"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: an uncordon whose node confirmation is absent or names another node changes nothing",
+    "test": "TODO",
+    "reason": "Spec-first (v215): a real test at the integration tier or above is owed for this heading, driving the committed ansible/k3s-window-drain.yml cordon and uncordon actions against a stateful kubectl stand-in. The play and its unit-tier tests (tests/livespec_dev_tooling/test_k3s_window_drain_playbook.py) landed in livespec-dev-tooling#4404; those tests do not carry the integration tier. livespec-dev-tooling-acgcwp owns it.",
+    "work_item": "livespec-dev-tooling-acgcwp"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -2717,6 +2797,14 @@
     "test": "tests.spec.test_homelab_worker_departure_drill.test_each_captured_pod_is_classified_from_the_read_back",
     "reason": "Integration-tier: the departure drill reads live workload replacements after the worker rejoins and reports their preservation state (livespec-dev-tooling-zfgtin).",
     "work_item": "livespec-dev-tooling-zfgtin"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a worker's networking agents do not restart while it carries load",
+    "test": "TODO",
+    "reason": "Spec-first (v215): a real test at the integration tier or above is owed for this heading. Its proof is host-captured: it needs the real worker and the production cluster over a stated live-load window, reading each networking agent pod's restart count at the window's start and end. livespec-dev-tooling-p4cv4l owns it.",
+    "work_item": "livespec-dev-tooling-p4cv4l"
   },
   {
     "spec_root": "SPECIFICATION",

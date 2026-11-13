@@ -709,6 +709,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: a planned power-off evacuation moves a cordoned node's listener pods and leaves its other pods",
+    "work_item": "livespec-dev-tooling-acgcwp",
+    "first_seen": "2026-11-14"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: a prepared incident recovery publication completes after the controller restarts",
     "work_item": "livespec-dev-tooling-52die6",
     "first_seen": "2026-11-11"
@@ -1101,6 +1108,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: a worker's networking agents do not restart while it carries load",
+    "work_item": "livespec-dev-tooling-p4cv4l",
+    "first_seen": "2026-11-14"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: a workflow GitHub cannot parse is refused at every gate",
     "work_item": "livespec-dev-tooling-f3q7r7",
     "first_seen": "2026-11-08"
@@ -1146,6 +1160,13 @@
     "heading": "## Scenario: an aged runner pin raises a trigger",
     "work_item": "livespec-dev-tooling-jkwzwv",
     "first_seen": "2026-11-08"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: an agent restart is not refused for an ARC listener pod and is refused for workload",
+    "work_item": "livespec-dev-tooling-6yxdxu",
+    "first_seen": "2026-11-14"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -1297,6 +1318,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: an uncordon whose node confirmation is absent or names another node changes nothing",
+    "work_item": "livespec-dev-tooling-acgcwp",
+    "first_seen": "2026-11-14"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: an unknown CI-facilities posture is refused",
     "work_item": "livespec-dev-tooling-62zla3",
     "first_seen": "2026-11-03"
@@ -1374,6 +1402,20 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: clearing a lost node force-deletes its stuck listener pods and reports each pod it cleared",
+    "work_item": "livespec-dev-tooling-acgcwp",
+    "first_seen": "2026-11-14"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: clearing a lost node is refused for a node that reads Ready",
+    "work_item": "livespec-dev-tooling-acgcwp",
+    "first_seen": "2026-11-14"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: copying a base exemption file does not author it",
     "work_item": "livespec-dev-tooling-oim422",
     "first_seen": "2026-11-13"
@@ -1398,6 +1440,13 @@
     "heading": "## Scenario: every k3s pool node's load is visible and a silent node fires its dead-man",
     "work_item": "livespec-dev-tooling-r5o5zh",
     "first_seen": "2026-10-24"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: every scale set's listener pod runs on an always-on node",
+    "work_item": "livespec-dev-tooling-zrsyfp",
+    "first_seen": "2026-11-14"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -1552,6 +1601,34 @@
     "heading": "## Scenario: the legacy root exemption file authored in the change still admits during the transition",
     "work_item": "livespec-dev-tooling-oim422",
     "first_seen": "2026-11-13"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: the listener pods of the scale sets are spread across the always-on nodes",
+    "work_item": "livespec-dev-tooling-zrsyfp",
+    "first_seen": "2026-11-14"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: the listener read-back counts the listener pods on each always-on node",
+    "work_item": "livespec-dev-tooling-zrsyfp",
+    "first_seen": "2026-11-14"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: the listener read-back fails when a listener is on a node that is not always on",
+    "work_item": "livespec-dev-tooling-zrsyfp",
+    "first_seen": "2026-11-14"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: the listener read-back prints no count when the read of the always-on nodes fails",
+    "work_item": "livespec-dev-tooling-zrsyfp",
+    "first_seen": "2026-11-14"
   },
   {
     "spec_root": "SPECIFICATION",
