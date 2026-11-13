@@ -2219,8 +2219,12 @@ master pushes to a listener that does not yet exist.
 | --- | --- | --- |
 | livespec-orchestrator-beads-fabro-cq | 8 -> 7 | max(2 x 7, 6) = 14 (was 16) |
 
-**Order.** Lower the quota before the node capacity: apply `ci_converge_unit`, then `node_extended_resource`. The quota sum then never exceeds the slots that exist. Among the nodes, raise gamingpc before cutting gmktec and hp, so capacity never dips below 30 in between.
+**Order.** The roles do not enforce it: `node_extended_resource` runs on every `ci_pool` host in one play with no `serial`, so `--tags` alone changes every node at once. Run three applies, in this order:
+
+1. `just ansible-apply ansible/ci-pool.yml --tags ci_converge_unit`. It runs on the server only. The quotas fall to 30 while the nodes still advertise 31, so the quota sum never exceeds the slots that exist.
+2. `just ansible-apply ansible/ci-pool.yml --tags node_extended_resource --limit gamingpc-xubuntu`. This raises gamingpc 1 -> 3, and capacity reads 33.
+3. `just ansible-apply ansible/ci-pool.yml --tags node_extended_resource --limit gmktec-xubuntu,hp-xubuntu`. This cuts gmktec 8 -> 6 and hp 5 -> 4, and capacity reads 30. It never dips below the quota sum in between.
 
 **Proof.** The pull request records the 24-hour before-reads: CPU pressure on gmktec and hp, CI queue wait p50/p95, and job duration p50 on gmktec. The same reads are repeated 2-3 hours after the apply. The claim "throughput does not fall" is a measurement, not an assumption.
 
-**Kill switch.** Restore gmktec 8, hp 5 and gamingpc 1 in their profiles, livespec-orchestrator-beads-fabro-cq 8 and its maxRunners 16, and re-apply both roles in the reverse order.
+**Kill switch.** Restore gmktec 8, hp 5 and gamingpc 1 in their profiles, livespec-orchestrator-beads-fabro-cq 8 and its maxRunners 16. Then apply in the reverse order: `node_extended_resource --limit gmktec-xubuntu,hp-xubuntu` (raise), then `--limit gamingpc-xubuntu` (cut), then `ci_converge_unit` (quotas back to 31).
