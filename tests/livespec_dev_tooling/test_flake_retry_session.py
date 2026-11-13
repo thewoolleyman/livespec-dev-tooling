@@ -290,7 +290,7 @@ def test_an_untouched_failing_test_is_retried_on_its_own_and_reported_as_a_flake
 
 @pytest.mark.integration
 def test_a_rerun_record_and_summary_carry_a_long_failed_attempt_text(*, tmp_path: Path) -> None:
-    """The record and terminal summary retain a retried failure's identifying text."""
+    """The record keeps the first 4000 characters and the summary its first non-empty line."""
     failure_text = "retry-failure-" + "x" * 4_096
     repo = _flaky_repository(root=tmp_path, touch_test=False, failure_text=failure_text)
 
@@ -299,9 +299,12 @@ def test_a_rerun_record_and_summary_carry_a_long_failed_attempt_text(*, tmp_path
     assert completed.returncode == 0, completed.stdout + completed.stderr
     record = json.loads((repo / "tmp" / "flake-retries" / "retries.jsonl").read_text())
     recorded_failure = record["failures"][0]
+    recorded_text = recorded_failure["text"]
     assert recorded_failure["cut"] is True
-    assert failure_text[:64] in recorded_failure["text"]
-    assert failure_text[:64] in completed.stdout
+    assert len(recorded_text) == 4_000
+    first_line = next(line for line in recorded_text.splitlines() if line)
+    assert "def test_flaky" in first_line
+    assert f"  {first_line}" in completed.stdout.splitlines()
 
 
 @pytest.mark.integration
