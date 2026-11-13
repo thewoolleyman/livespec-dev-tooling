@@ -141,9 +141,13 @@ def _unsafe_change_reason(*, repo_root: Path, change_paths: set[Path]) -> str | 
 
 
 def retry_withheld_reason_for(
-    *, repo_root: Path, test_path: Path, memo: dict[Path, _ModuleFacts | None]
+    *,
+    repo_root: Path,
+    test_path: Path,
+    memo: dict[Path, _ModuleFacts | None],
+    change_paths: set[Path] | None = None,
 ) -> str | None:
-    """Name closure uncertainty that makes this test itself count as touched."""
+    """Name the closure evidence that makes this test itself count as touched."""
     if not test_path.is_relative_to(repo_root):
         return None
     analyzed = _closure(repo_root=repo_root, test_path=test_path, memo=memo)
@@ -151,7 +155,14 @@ def retry_withheld_reason_for(
         return "an unparseable closure module"
     if analyzed[2]:
         return "an indeterminable path in a closure module"
-    return None
+    if change_paths is None:
+        return None
+    modules, literals, _ = analyzed
+    changed_modules = {path.relative_to(repo_root) for path in modules} & change_paths
+    if changed_modules:
+        return f"changed closure module {min(changed_modules).as_posix()}"
+    named_literals = literals & _changed_names(paths=change_paths)
+    return f"closure string literal {min(named_literals)!r}" if named_literals else None
 
 
 def session_withheld_reason(
@@ -189,10 +200,14 @@ def retry_marker_for(
     analyzed = _closure(repo_root=repo_root, test_path=test_path, memo=memo)
     if analyzed is None:
         return None
-    modules, literals, undeterminable_paths = analyzed
-    if undeterminable_paths:
-        return None
-    relative_modules = {path.relative_to(repo_root) for path in modules}
-    if relative_modules & change_paths or literals & _changed_names(paths=change_paths):
+    if (
+        retry_withheld_reason_for(
+            repo_root=repo_root,
+            test_path=test_path,
+            memo={} if memo is None else memo,
+            change_paths=change_paths,
+        )
+        is not None
+    ):
         return None
     return {"reruns": retry_attempts, "reruns_delay": retry_delay_seconds}

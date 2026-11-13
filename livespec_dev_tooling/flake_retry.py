@@ -115,9 +115,12 @@ def mark_untouched_tests(
             repo_root=root,
             test_path=test_path,
             memo=memo,
+            change_paths=paths,
         )
         if retry_withheld is not None:
-            withheld_by_nodeid[item.nodeid] = retry_withheld
+            nodeid = getattr(item, "nodeid", None)
+            if isinstance(nodeid, str):
+                withheld_by_nodeid[nodeid] = retry_withheld
             continue
         if test_path not in markers:
             markers[test_path] = retry_marker_for(
