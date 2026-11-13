@@ -916,9 +916,22 @@ def test_a_refused_private_sibling_secret_deletes_the_submitted_job() -> None:
             return Success(GateCommandResult(returncode=1, stdout="", stderr="secret refused\n"))
         return cluster(argv=argv, cwd=cwd, stdin=stdin, stream=stream)
 
-    outcome = run_gate(request=request, runner=runner, sleeper=cluster.sleep)
+    recorded: list[str] = []
+
+    def record_job(*, name: str) -> None:
+        recorded.append(name)
+
+    outcome = run_gate(
+        request=request,
+        runner=runner,
+        sleeper=cluster.sleep,
+        record_job=record_job,
+    )
     assert isinstance(outcome, Failure)
     assert outcome.failure().step == "create-private-sibling-token-secret"
+    # The durable runner has to know the Job while the client is still
+    # executing cleanup, including this failure path before its normal wait.
+    assert recorded == [_JOB]
     assert cluster.only(kind="delete-job").argv == (
         GATES_WRAPPER,
         "kubectl",
