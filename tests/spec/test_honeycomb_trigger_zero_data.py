@@ -109,7 +109,8 @@ def test_rejecting_control_a_calculated_field_needs_every_source_column() -> Non
     definition = {
         "query": {
             "calculated_fields": [
-                {"name": "share", "expression": "DIV($mem.available, $mem.limit)"}
+                {"name": "unused", "expression": "$other.column"},
+                {"name": "share", "expression": "DIV($mem.available, $mem.limit)"},
             ],
             "calculations": [{"op": "MIN", "column": "share"}],
             "filters": [{"column": "mem.available", "op": "exists"}],
@@ -136,4 +137,10 @@ def test_admitting_control_a_threshold_zero_cannot_cross_needs_no_exists() -> No
     definition = _value_trigger(filters=[])
     definition["query"]["calculations"] = [{"op": "MAX", "column": "k8s.container.restarts"}]
     definition["threshold"] = {"op": ">", "value": 3}
+    assert zero_data_problems(definition=definition) == []
+
+
+def test_admitting_control_a_definition_with_no_threshold_is_not_judged() -> None:
+    definition = _value_trigger(filters=[])
+    del definition["threshold"]
     assert zero_data_problems(definition=definition) == []
