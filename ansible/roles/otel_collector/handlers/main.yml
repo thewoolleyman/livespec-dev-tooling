@@ -32,3 +32,12 @@
     state: restarted
   become: true
   when: not ansible_check_mode or otel_collector_unit_stat.stat.exists
+
+- name: Restart the pod-span collector onto its managed configuration
+  ansible.builtin.systemd_service:
+    name: "{{ otel_collector_pod_unit_name }}"
+    state: restarted
+  become: true
+  when:
+    - otel_collector_pod_config_file | length > 0
+    - not ansible_check_mode or otel_collector_pod_unit_stat.stat.exists

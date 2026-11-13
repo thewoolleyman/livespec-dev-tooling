@@ -37,6 +37,7 @@ none.
 | variable | default | meaning |
 | --- | --- | --- |
 | `otel_collector_config_file` | `config.yaml` | which configuration this host runs out of the collector repository |
+| `otel_collector_pod_config_file` | `""` | companion pod-span configuration; when set, the role runs it in `otel-collector-pods.service` independently from hostmetrics |
 | `otel_collector_config_ref` | `main` | the ref it is read at; resolved to a commit sha with `git ls-remote` at apply time and every file fetched at that sha, because raw.githubusercontent.com caches a branch name for five minutes (`max-age=300`); a full sha holds or rolls back a host |
 | `otel_collector_user` / `_group` | `ubuntu` | the account the collector runs as |
 | `otel_collector_user_groups` | `[]` | further groups that account is appended to (`docker` where the configuration reads the engine socket) |
